@@ -26,6 +26,8 @@ export type ContextCaseHost = {
 };
 
 export type ContextRunPorts = {
+  policy: PolicyOverlay;
+  codeDigest: string;
   openCase(entry: ExpandedCase): Promise<ContextCaseHost>;
   modelAlias: string;
   deadline(caseId: string, signal: AbortSignal): Promise<void>;
@@ -133,7 +135,9 @@ const installRules = async (entry: ExpandedCase, host: ContextCaseHost): Promise
   return Object.fromEntries([...added].map(([datasetId, productId]) => [productId, datasetId]));
 };
 
-const stoppedBeforeStart = (entry: ExpandedCase, runIndex: number, reason: string, details: Pick<Transcript, 'ruleIds' | 'datasetSeed'>, modelAlias: string): Transcript => ({
+type Measured = Omit<Transcript, 'policy' | 'codeDigest'>;
+
+const stoppedBeforeStart = (entry: ExpandedCase, runIndex: number, reason: string, details: Pick<Transcript, 'ruleIds' | 'datasetSeed'>, modelAlias: string): Measured => ({
   caseId: entry.id,
   runIndex,
   run: { id: `stopped-${entry.id}-${runIndex}`, status: 'FAILED', step: 0, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }, modelAlias },
@@ -151,7 +155,7 @@ const runCase = async (
   host: ContextCaseHost,
   ports: ContextRunPorts,
   state: CaseState,
-  emit: (transcript: Transcript) => Promise<void>,
+  emit: (transcript: Measured) => Promise<void>,
 ): Promise<void> => {
   const ruleIds = await installRules(entry, host);
   for (const memory of entry.memories ?? []) await host.seedMemory(memory);
@@ -161,7 +165,7 @@ const runCase = async (
     expiry.passed = true;
   });
   const tagged = (): Pick<Transcript, 'ruleIds' | 'datasetSeed'> => ({ ...(Object.keys(ruleIds).length === 0 ? {} : { ruleIds }), datasetSeed: expanded.seed });
-  const placeholder = (runIndex: number, reason: string): Transcript => stoppedBeforeStart(entry, runIndex, reason, tagged(), ports.modelAlias);
+  const placeholder = (runIndex: number, reason: string): Measured => stoppedBeforeStart(entry, runIndex, reason, tagged(), ports.modelAlias);
   const driveWithin = async (runId: string): Promise<{ driven: Driven; expired: boolean }> => {
     const driving = driveRun(host.api, entry, runId);
     const first = await Promise.race([driving.then(() => 'done' as const), expired.then(() => 'expired' as const)]);
@@ -232,7 +236,8 @@ const runCase = async (
 export const runContextDataset = async (expanded: ExpandedContextDataset, ports: ContextRunPorts): Promise<ContextRunResult> => {
   const transcripts: Transcript[] = [];
   const state: CaseState = { spent: 0 };
-  const emit = async (transcript: Transcript): Promise<void> => {
+  const emit = async (measured: Measured): Promise<void> => {
+    const transcript: Transcript = { ...measured, policy: ports.policy, codeDigest: ports.codeDigest };
     transcripts.push(transcript);
     if (ports.onTranscript !== undefined) await ports.onTranscript(transcript);
   };

@@ -10,14 +10,15 @@ const message = (letter: string, size: number): InputItem => ({ type: 'message',
 const estimatedMeter = (): TokenMeter =>
   createTokenMeter({ counter: shapeCounter(() => ESTIMATED_ERROR_SHAPE), model: MODEL, capabilities: capabilitiesFor(200000, { tokenCounting: 'estimated' }) });
 
-describe('one bound rule: a function of the estimated part only', () => {
+describe('one bound rule: a function of the uncounted part only', () => {
   it('gives an observed exact count no bound from the counter', async () => {
     const meter = estimatedMeter();
     const fresh = await meter.count({ input: [message('a', 4000)], tools: [] });
     meter.observe({ inputDigest: fresh.inputDigest, inputTokens: fresh.inputTokens });
     const observed = await meter.count({ input: [message('a', 4000)], tools: [] });
-    expect(observed.errorBoundAt(0)).toBe(Math.ceil(meter.relativeError() * 0));
-    expect(observed.errorBoundAt(observed.inputTokens)).toBe(Math.ceil(meter.relativeError() * observed.inputTokens));
+    expect(observed.underAt(0)).toBe(0);
+    expect(observed.underAt(observed.inputTokens)).toBe(0);
+    expect(observed.overTolerance).toBe(0);
   });
 
   it('adds nothing from the counter for an observed count under an exact-mode meter', async () => {
@@ -27,15 +28,15 @@ describe('one bound rule: a function of the estimated part only', () => {
       capabilities: capabilitiesFor(200000, { tokenCounting: 'exact' }),
     });
     const fresh = await meter.count({ input: [message('a', 4000)], tools: [] });
-    expect(fresh.errorBound).toBeGreaterThan(0);
+    expect(fresh.underAt(fresh.inputTokens)).toBeGreaterThan(0);
     meter.observe({ inputDigest: fresh.inputDigest, inputTokens: fresh.inputTokens });
     const observed = await meter.count({ input: [message('a', 4000)], tools: [] });
-    expect(observed.errorBound).toBe(0);
-    expect(observed.errorBoundAt(0)).toBe(0);
-    expect(observed.errorBoundAt(observed.inputTokens)).toBe(0);
+    expect(observed.overTolerance).toBe(0);
+    expect(observed.underAt(0)).toBe(0);
+    expect(observed.underAt(observed.inputTokens)).toBe(0);
   });
 
-  it('grows the bound only above the observed prefix', async () => {
+  it('grows the bound only above the known part', async () => {
     const meter = createTokenMeter({
       counter: shapeCounter(() => ESTIMATED_ERROR_SHAPE),
       model: MODEL,
@@ -46,12 +47,14 @@ describe('one bound rule: a function of the estimated part only', () => {
     meter.observe({ inputDigest: observed.inputDigest, inputTokens: observed.inputTokens });
     const counted = await meter.count({ input: [head, message('t', 400)], tools: [] });
     const tail = counted.inputTokens - observed.inputTokens;
-    expect(counted.errorBoundAt(observed.inputTokens)).toBe(1);
-    expect(counted.errorBoundAt(observed.inputTokens + 10)).toBe(3);
-    expect(counted.errorBound).toBe(Math.ceil(0.3 * tail));
+    expect(counted.known).toBe(observed.inputTokens);
+    expect(counted.underAt(observed.inputTokens)).toBe(0);
+    expect(counted.underAt(observed.inputTokens + 1)).toBe(1);
+    expect(counted.underAt(observed.inputTokens + 10)).toBe(3);
+    expect(counted.underAt(counted.inputTokens)).toBe(Math.ceil(0.3 * tail));
   });
 
-  it('keeps errorBound equal to errorBoundAt(inputTokens) for fresh, incremental and observed records', async () => {
+  it('keeps the under side non-decreasing for fresh, incremental and observed records', async () => {
     const random = seeded(77);
     for (const tokenCounting of ['exact', 'estimated'] as const) {
       for (let trial = 0; trial < 60; trial += 1) {
@@ -68,7 +71,12 @@ describe('one bound rule: a function of the estimated part only', () => {
         if (random.next() < 0.7) meter.observe({ inputDigest: head.inputDigest, inputTokens: Math.round(head.inputTokens * (random.int(50, 160) / 100)) });
         records.push(await meter.count({ input: items.slice(0, 2), tools: [] }));
         records.push(await meter.count({ input: items, tools: [] }));
-        for (const record of records) expect(record.errorBound, `${tokenCounting} ${trial}`).toBe(record.errorBoundAt(record.inputTokens));
+        for (const record of records) {
+          for (let size = 1; size <= record.inputTokens + 200; size += 37) {
+            expect(record.underAt(size), `${tokenCounting} ${trial}`).toBeGreaterThanOrEqual(record.underAt(size - 1));
+            expect(record.freshUnderAt(size), `${tokenCounting} ${trial}`).toBeGreaterThanOrEqual(record.freshUnderAt(size - 1));
+          }
+        }
       }
     }
   });
@@ -79,14 +87,15 @@ describe('one bound rule: a function of the estimated part only', () => {
     const observed = await meter.count({ input: [head], tools: [] });
     meter.observe({ inputDigest: observed.inputDigest, inputTokens: observed.inputTokens });
     const counted = await meter.count({ input: [head, message('t', 400)], tools: [] });
-    const inputBudget = counted.inputTokens + counted.errorBound;
-    expect(maxInputFor({ ceiling: counted.inputTokens, inputBudget, errorBoundAt: counted.errorBoundAt })).toBe(counted.inputTokens);
+    const inputBudget = counted.inputTokens + counted.underAt(counted.inputTokens);
+    expect(maxInputFor({ ceiling: counted.inputTokens, inputBudget, errorBoundAt: counted.underAt })).toBe(counted.inputTokens);
   });
 
-  it('keeps the bound of an exact counter with a fixed offset', async () => {
+  it('keeps the bound of an exact counter with a fixed offset, and none at zero uncounted tokens', async () => {
     const meter = createTokenMeter({ counter: fakeCounter(30), model: MODEL, capabilities: capabilitiesFor(200000) });
     const counted = await meter.count({ input: [message('a', 400)], tools: [] });
-    expect(counted.errorBound).toBe(30);
-    expect(counted.errorBoundAt(0)).toBe(30);
+    expect(counted.overTolerance).toBe(30);
+    expect(counted.underAt(counted.inputTokens)).toBe(30);
+    expect(counted.underAt(0)).toBe(0);
   });
 });

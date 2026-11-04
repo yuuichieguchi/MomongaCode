@@ -18,16 +18,16 @@ import {
   saveContextReport,
   saveTranscript,
 } from '@momonga/eval';
-import type { ContextDataset, ContextModel, EvalReport, GateName, GoldenCase, GoldenDataset, PolicyOverlay, Transcript } from '@momonga/eval';
+import type { ContextDataset, ContextModel, EvalReport, GateName, GoldenCase, GoldenDataset, PolicyOverlay, RecordedRun, Transcript } from '@momonga/eval';
 import type { MomongaPaths } from '@momonga/foundation';
 import { goldenRunApi } from '../client/golden-run-api.ts';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
-import { codeDigestOfRunningCli } from '../eval/code-digest.ts';
 import { nodeContextEffects } from '../eval/context-effects.ts';
 import { runContextLive, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects } from '../eval/context-host.ts';
 import type { CliPorts } from '../ports.ts';
+import { codeDigestOfRunningCli } from '../eval/code-digest.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 
 export class EvaluateUsageError extends Error {
@@ -56,6 +56,7 @@ const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenData
   const client = connectRuntime(paths);
   const workspaces: string[] = [];
   if (record !== undefined) await ports.files.ensureDirectory(record);
+  const codeDigest = record === undefined ? undefined : await codeDigestOfRunningCli();
   try {
     return await runDataset(dataset, {
       api: goldenRunApi(client, undefined, {
@@ -72,7 +73,9 @@ const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenData
         await populate(ports, cwd, golden);
         return { cwd, env };
       },
-      ...(record === undefined ? {} : { onTranscript: async (transcript: Transcript) => void (await saveTranscript(ports.files, record, transcript)) }),
+      ...(record === undefined || codeDigest === undefined
+        ? {}
+        : { onTranscript: async (run: RecordedRun) => void (await saveTranscript(ports.files, record, { ...run, policy: {}, codeDigest })) }),
     });
   } finally {
     await Promise.all(workspaces.map((directory) => ports.files.removeTree(directory)));
@@ -108,7 +111,7 @@ const runContextLiveCommand = async (
   ports: CliPorts,
   hostEffects: (ports: CliPorts) => ContextHostEffects,
   dataset: ContextDataset,
-  options: { alias: string; seed: number; policy: PolicyOverlay; record: string | undefined; interrupt: AbortSignal | undefined },
+  options: { alias: string; seed: number; policy: PolicyOverlay; codeDigest: string | undefined; record: string | undefined; interrupt: AbortSignal | undefined },
 ): Promise<Transcript[]> => {
   const { RUNTIME_DEFAULTS } = await import('@momonga/runtime');
   if (options.record !== undefined) await ports.files.ensureDirectory(options.record);
@@ -118,6 +121,7 @@ const runContextLiveCommand = async (
     seed: options.seed,
     alias: options.alias,
     policy: options.policy,
+    ...(options.codeDigest === undefined ? {} : { codeDigest: options.codeDigest }),
     models: loadUserModels({ home: ports.home }),
     limits: { maxTotalTokens: RUNTIME_DEFAULTS.limits.maxTotalTokens, defaultTimeoutMs: RUNTIME_DEFAULTS.runTimeoutMs },
     onUnreadableHomes: (count) => ports.stderr.write(unreadableHomesNotice(count)),
@@ -157,6 +161,7 @@ export const evaluateContext = async (
       alias: mode.alias,
       seed: datasetSeed,
       policy,
+      codeDigest: options.codeDigest,
       record: options.record === undefined ? undefined : path.resolve(ports.cwd, options.record),
       interrupt: options.interrupt,
     });
@@ -166,8 +171,6 @@ export const evaluateContext = async (
     transcripts,
     model,
     seed: CONTEXT_BOOTSTRAP_SEED,
-    policy,
-    codeDigest: options.codeDigest ?? (await codeDigestOfRunningCli()),
     ...(datasetSeed === undefined ? {} : { datasetSeed }),
   });
   if (options.report !== undefined) await saveContextReport(ports.files, path.resolve(ports.cwd, options.report), report);

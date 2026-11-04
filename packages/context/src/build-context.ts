@@ -109,7 +109,7 @@ const hostsFirst = (tools: readonly FunctionTool[], hostOf: Readonly<Record<stri
 
 const metering = (input: BuildContextInput, ports: BuildContextPorts, tools: readonly FunctionTool[]) => {
   const { capabilities } = input;
-  const budgetOf = (counted: MeterCount) => budgetFor(capabilities, counted.errorBound);
+  const budgetOf = (counted: MeterCount) => budgetFor(capabilities, counted.underAt(counted.inputTokens));
   const fits = (counted: MeterCount): boolean => counted.inputTokens <= budgetOf(counted).I;
   const countInput = (items: readonly InputItem[]): Promise<MeterCount> => ports.meter.count({ input: items, tools });
   return { tools: [...tools], budgetOf, fits, countInput };
@@ -600,14 +600,14 @@ export const buildContext = async (input: BuildContextInput, ports: BuildContext
 
   if (!fits(total)) {
     const inputBudget = budgetFor(capabilities, 0).I;
-    const maxInput = maxInputFor({ ceiling, inputBudget, errorBoundAt: total.errorBoundAt });
+    const maxInput = maxInputFor({ ceiling, inputBudget, errorBoundAt: total.freshUnderAt });
     if (maxInput === undefined || maxInput < pinnedTokens) {
       throw new PinnedBoundError({
         pinnedTokens,
         ceiling,
         breakdown: await breakdownOf(ports, systemMessage, layers, head.governing, task, tools),
         inputBudget,
-        boundAtZero: total.errorBoundAt(0),
+        boundAtZero: total.underAt(0),
         maxInput,
       });
     }

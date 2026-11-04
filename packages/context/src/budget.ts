@@ -9,10 +9,10 @@ export const MIN_ITEM_CAP = 64;
 
 export const MIN_ROOM_TOKENS = MIN_ITEM_CAP + summaryItemTokensFor(MIN_SUMMARY_TOKENS) + WORKING_STATE_MESSAGE_MIN_TOKENS;
 
-export const budgetFor = (capabilities: Capabilities, errorBound: number): ContextBudget => {
+export const budgetFor = (capabilities: Capabilities, under: number): ContextBudget => {
   const W = capabilities.contextWindow;
   const R = outputReserveFor(capabilities);
-  const margin = marginFloorFor(W) + errorBound;
+  const margin = marginFloorFor(W) + under;
   return { W, R, margin, I: Math.max(0, W - R - margin) };
 };
 

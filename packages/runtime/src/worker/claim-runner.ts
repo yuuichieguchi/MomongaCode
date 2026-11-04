@@ -23,6 +23,7 @@ import { readRunLimits } from './limits.ts';
 import { decideAfterResponse, responsePending, resumeInFlight, runModelStep } from './model-step.ts';
 import { guidelineOf, guidelineVersionFor } from './guideline-pin.ts';
 import { memoryShareFor } from './memory-share.ts';
+import { foldMeterFor, meterEventsOf } from './meter-journal.ts';
 import { aliasChainReaches } from './model-switch.ts';
 import { readPins } from './pins.ts';
 import { rolesFor } from './role-pin.ts';
@@ -337,6 +338,9 @@ const drive = async (
   const composeRules = await permissionRulesComposerFor(options, session);
   let measuredInlineLimit: Promise<number> | undefined;
   const targetFacts = new Map<string, { meter: TokenMeter; capabilities: Capabilities }>();
+  const meterEvents = meterEventsOf(options.store, session.id, pins.modelAlias);
+  const aliasMeter = createTokenMeter({ counter: { count: (request) => control.recordingRaised(gateway.countTokens(request, { signal: control.signal })) }, model: pins.modelAlias, capabilities: pins.capabilities });
+  aliasMeter.restore(foldMeterFor(meterEvents, pins.capabilities));
   const ctx: ClaimContext = {
     options,
     claim,
@@ -367,19 +371,18 @@ const drive = async (
     control,
     terminals,
     agentSpan,
-    meter: createTokenMeter({ counter: { count: (request) => control.recordingRaised(gateway.countTokens(request, { signal: control.signal })) }, model: pins.modelAlias, capabilities: pins.capabilities }),
+    meter: aliasMeter,
     targetFacts: async (target) => {
       const known = targetFacts.get(target);
       if (known !== undefined) return known;
       const capabilities = await control.recordingRaised(gateway.capabilities(pins.modelAlias, { signal: control.signal, target }));
-      const created = {
+      const meter = createTokenMeter({
+        counter: { count: (request) => control.recordingRaised(gateway.countTokens({ ...request, momonga: { ...request.momonga, target } }, { signal: control.signal })) },
+        model: pins.modelAlias,
         capabilities,
-        meter: createTokenMeter({
-          counter: { count: (request) => control.recordingRaised(gateway.countTokens({ ...request, momonga: { ...request.momonga, target } }, { signal: control.signal })) },
-          model: pins.modelAlias,
-          capabilities,
-        }),
-      };
+      });
+      meter.restore(foldMeterFor(meterEvents, capabilities, target));
+      const created = { capabilities, meter };
       targetFacts.set(target, created);
       return created;
     },

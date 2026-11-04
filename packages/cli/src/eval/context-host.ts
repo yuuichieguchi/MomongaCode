@@ -4,6 +4,7 @@ import { caseSettingsFor, expandContextDataset, liveBoundsFor, runContextDataset
 import type { ContextCaseHost, ContextDataset, ExpandedCase, PolicyOverlay, Transcript, WorkspaceStep } from '@momonga/eval';
 import { momongaLayout, socketPathLimit } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
+import { codeDigestOfRunningCli } from './code-digest.ts';
 import { goldenRunApi } from '../client/golden-run-api.ts';
 import type { RuntimeClient } from '../client/runtime-client.ts';
 
@@ -341,6 +342,7 @@ export type ContextLiveInput = {
   models: UserModels;
   limits: { maxTotalTokens: number; defaultTimeoutMs: number };
   policy?: PolicyOverlay;
+  codeDigest?: string;
   guideline?: string;
   interrupt?: AbortSignal;
   onTranscript?(transcript: Transcript): Promise<void>;
@@ -364,10 +366,13 @@ export const runContextLive = async (effects: ContextHostEffects, input: Context
     ...(interrupt === undefined ? {} : { interrupt }),
   });
   const bounds = liveBoundsFor(input.dataset, input.limits);
+  const codeDigest = input.codeDigest ?? (await codeDigestOfRunningCli());
   const interrupted = new Promise<never>((_resolve, reject) => {
     interrupt?.addEventListener('abort', () => reject(new ContextInterrupted()), { once: true });
   });
   const running = runContextDataset(expandContextDataset(input.dataset, input.seed), {
+    policy: input.policy ?? {},
+    codeDigest,
     openCase: hosts.openCase,
     modelAlias: input.alias,
     bounds,

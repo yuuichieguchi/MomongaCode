@@ -82,7 +82,7 @@ const estimateFor = async (ctx: ClaimContext, observation: InputObservation, ans
     meter: answered.meter,
     inputDigest: counted.inputDigest,
     estimatedTokens: counted.inputTokens,
-    marginTokens: marginFloorFor(answered.capabilities.contextWindow) + counted.errorBound,
+    marginTokens: marginFloorFor(answered.capabilities.contextWindow) + counted.overTolerance,
   };
 };
 
@@ -175,7 +175,16 @@ const handleResult = async (
       code: 'fallback_target',
     });
   }
-  if (estimate !== undefined) estimate.meter.observe({ inputDigest: estimate.inputDigest, inputTokens: reported });
+  if (estimate !== undefined) {
+    const target = fallback?.target;
+    if (target === undefined) throw new GatewayFailureError('the model response names no answering target');
+    recorded.push({
+      type: 'meter.observed',
+      target,
+      fallback: fallbackTargetOf(response) !== undefined,
+      ...estimate.meter.observe({ inputDigest: estimate.inputDigest, inputTokens: reported }),
+    });
+  }
   if (truncation !== undefined) return terminals.finish('FAILED', { error: truncation }, recorded);
   journal.append(recorded);
   ctx.memory.streak = 0;

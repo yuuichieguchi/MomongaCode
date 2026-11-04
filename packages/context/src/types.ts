@@ -75,9 +75,11 @@ export type MeterRequest = {
 export type MeterCount = {
   inputTokens: number;
   inputDigest: string;
-  errorBound: number;
-  errorBoundAt(tokens: number): number;
-  estimatedTokens: number;
+  known: number;
+  uncounted: number;
+  overTolerance: number;
+  underAt(tokens: number): number;
+  freshUnderAt(tokens: number): number;
 };
 
 export type UsageObservation = {
@@ -85,13 +87,40 @@ export type UsageObservation = {
   inputTokens: number;
 };
 
+export type MeterObservation = {
+  inputDigest: string;
+  itemCount: number;
+  counted: number;
+  reported: number;
+  kept: number;
+  known: number;
+  uncounted: number;
+  miss: number;
+  contextWindow: number;
+  tokenErrorRatio?: number;
+  tokenCounting: Capabilities['tokenCounting'];
+};
+
+export type MeterMiss = { miss: number; uncounted: number };
+
+export type MeterReport = {
+  observation: MeterObservation;
+  input: readonly InputItem[];
+  tools: readonly FunctionTool[];
+};
+
+export type MeterMemory = {
+  latest?: MeterReport;
+  misses: readonly MeterMiss[];
+};
+
 export type ItemCountContext = { callNames: Readonly<Record<string, string>>; withTools: boolean };
 
 export type TokenMeter = {
   count(request: MeterRequest): Promise<MeterCount>;
   countItem(item: InputItem, context: ItemCountContext): Promise<number>;
-  observe(observation: UsageObservation): void;
-  relativeError(): number;
+  observe(observation: UsageObservation): MeterObservation;
+  restore(memory: MeterMemory): void;
 };
 
 export type TokenMeterOptions = {

@@ -197,6 +197,7 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
     case 'skill.activated':
     case 'tool.loaded':
     case 'loop.warned':
+    case 'meter.observed':
     case 'approval.rule.persisted':
     case 'job.finished':
     case 'usage.charged':

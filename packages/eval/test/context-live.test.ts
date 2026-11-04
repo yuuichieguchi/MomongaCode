@@ -24,7 +24,8 @@ import {
 import type { EvalRunApi, Transcript } from '@momonga/eval';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { publicEventsOf } from './fixtures.ts';
-import { TEST_CODE_DIGEST, compacted, contextCase, fidelity, governing, recorded } from './context-fixtures.ts';
+import { RECORDED_IDENTITY } from './fixtures.ts';
+import { compacted, contextCase, fidelity, governing, recorded } from './context-fixtures.ts';
 
 const pair = (scenario: string, extra: Record<string, unknown> = {}) => [
   { ...contextCase(`${scenario}-on`, scenario, 'on'), ...extra },
@@ -95,7 +96,7 @@ const harness = (script: Script = {}) => {
       close: async () => void log.push(`close ${entry.id}`),
     };
   };
-  return { log, sessions, addedRules, retired, memories, inputs, cancelled, ports: { openCase, modelAlias: 'gamma', deadline: NEVER, bounds: { datasetTokens: 1_000_000, caseDeadlineMs: {} } } };
+  return { log, sessions, addedRules, retired, memories, inputs, cancelled, ports: { ...RECORDED_IDENTITY, openCase, modelAlias: 'gamma', deadline: NEVER, bounds: { datasetTokens: 1_000_000, caseDeadlineMs: {} } } };
 };
 
 const rule = (id: string, text: string, overrides: Record<string, unknown> = {}) => ({ id, kind: 'constraint', target: 'test-runner', text, inScope: true, live: true, supersedes: [], ...overrides });
@@ -234,7 +235,7 @@ describe('runContextDataset', () => {
     const context = harness({ events: (cwd) => (cwd.endsWith('-off') ? events : []) });
     const dataset = datasetOf(pair('a'));
     const { transcripts } = await runContextDataset(expandContextDataset(dataset, 1), context.ports);
-    expect(() => buildContextReport({ codeDigest: TEST_CODE_DIGEST, dataset, transcripts, model: 'fake', seed: 1, datasetSeed: 1 })).toThrow(EvalError);
+    expect(() => buildContextReport({ dataset, transcripts, model: 'fake', seed: 1, datasetSeed: 1 })).toThrow(EvalError);
   });
 });
 
@@ -252,7 +253,7 @@ describe('the bounds of a live run', () => {
     const dataset = datasetOf(pair('a'));
     const { transcripts } = await runContextDataset(expandContextDataset(dataset, 1), { ...context.ports, deadline: async () => undefined });
     expect(context.cancelled).toEqual(['r1', 'r2']);
-    const report = buildContextReport({ codeDigest: TEST_CODE_DIGEST, dataset, transcripts, model: 'fake', seed: 1, datasetSeed: 1 });
+    const report = buildContextReport({ dataset, transcripts, model: 'fake', seed: 1, datasetSeed: 1 });
     expect(report.cases.map((entry) => [entry.id, entry.runs, entry.passedRuns])).toEqual([
       ['a-on', 1, 0],
       ['a-off', 1, 0],
@@ -270,7 +271,7 @@ describe('the bounds of a live run', () => {
     const dataset = datasetOf([...pair('a'), ...pair('b')]);
     const { transcripts } = await runContextDataset(expandContextDataset(dataset, 1), { ...context.ports, bounds: { datasetTokens: 100, caseDeadlineMs: {} } });
     expect(context.inputs).toEqual(['work on a', 'work on a']);
-    const report = buildContextReport({ codeDigest: TEST_CODE_DIGEST, dataset, transcripts, model: 'fake', seed: 1, datasetSeed: 1 });
+    const report = buildContextReport({ dataset, transcripts, model: 'fake', seed: 1, datasetSeed: 1 });
     expect(report.cases.map((entry) => entry.runs)).toEqual([1, 1, 1, 1]);
     expect(report.stopped).toEqual([
       { caseId: 'b-on', runIndex: 0, reason: expect.stringContaining('cost cap') },
@@ -346,7 +347,7 @@ describe('transcripts of a live run', () => {
   it('reads a governing load through the rule map', () => {
     const dataset = datasetOf(pair('a', { rules: [rule('only', 'Use vitest.')] }));
     const transcripts = [live(), { ...recorded('a-off', 0, [governing('fact-9')]), ruleIds: { 'fact-9': 'only' } }];
-    const report = buildContextReport({ codeDigest: TEST_CODE_DIGEST, dataset, transcripts, model: 'fake', seed: 1, datasetSeed: 7 });
+    const report = buildContextReport({ dataset, transcripts, model: 'fake', seed: 1, datasetSeed: 7 });
     expect(report.metrics.governanceFidelity).toMatchObject({ successes: 2, trials: 2 });
     expect(report.metrics.governanceConsistency).toMatchObject({ successes: 2, trials: 2 });
   });
@@ -356,7 +357,7 @@ describe('reports of live runs', () => {
   const scenarios = ['a', 'b', 'c', 'd'];
   const dataset = () => datasetOf(scenarios.flatMap((scenario) => pair(scenario)));
   const transcripts = () => scenarios.flatMap((scenario) => [recorded(`${scenario}-on`, 0, [compacted(1, 'model', fidelity([], 1, 1))]), recorded(`${scenario}-off`, 0, [])]);
-  const reportWith = (datasetSeed: number) => buildContextReport({ codeDigest: TEST_CODE_DIGEST, dataset: dataset(), transcripts: transcripts(), model: 'real', seed: 1, datasetSeed });
+  const reportWith = (datasetSeed: number) => buildContextReport({ dataset: dataset(), transcripts: transcripts(), model: 'real', seed: 1, datasetSeed });
 
   it('states the dataset seed', () => {
     expect(reportWith(7).datasetSeed).toBe(7);

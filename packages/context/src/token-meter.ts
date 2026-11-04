@@ -1,19 +1,60 @@
 import { canonicalJson } from '@momonga/foundation';
-import { EXACT_ERROR_SHAPE, errorBoundOfShape } from '@momonga/protocol';
-import type { CountTokensRequest, CountTokensResult, ErrorShape, FunctionTool, InputItem } from '@momonga/protocol';
+import { ceilRatio, marginFloorFor, quantizedRatioOf, errorBoundOfShape } from '@momonga/protocol';
+import type { CountTokensMethod, CountTokensRequest, ErrorShape, FunctionTool, InputItem } from '@momonga/protocol';
 import { digestChain, itemDigest } from './digests.ts';
-import type { ItemCountContext, MeterCount, MeterRequest, TokenMeter, TokenMeterOptions, UsageObservation } from './types.ts';
+import type {
+  ItemCountContext,
+  MeterCount,
+  MeterMemory,
+  MeterMiss,
+  MeterObservation,
+  MeterRequest,
+  TokenMeter,
+  TokenMeterOptions,
+  UsageObservation,
+} from './types.ts';
 
-const ERROR_WINDOW = 20;
-const ESTIMATED_ERROR_FLOOR = 0.1;
-const MAX_RELATIVE_ERROR = 1;
+export const ERROR_WINDOW = 20;
 const MAX_COUNTED = 1024;
-const MAX_OBSERVATIONS = 64;
+const MAX_REPLIES = 4096;
 const MAX_ITEM_COUNTS = 8192;
 
-type CountedRecord = { itemCount: number; inputTokens: number; counterShape: ErrorShape; estimatedTokens: number };
+type Reply = { tokens: number; method: CountTokensMethod; shape: ErrorShape };
 
-const estimatedPartOf = (result: CountTokensResult): number => (result.method === 'estimated' ? result.input_tokens : 0);
+type Sigma = (tokens: number) => number;
+
+type Decomposition = {
+  inputTokens: number;
+  known: number;
+  uncounted: number;
+  overCount: number;
+  restA: number;
+  fixedA: number;
+  restB: number;
+  sigmaB: Sigma;
+};
+
+type Counted = {
+  epoch: number;
+  decomposition: Decomposition;
+  input: readonly InputItem[];
+  tools: readonly FunctionTool[];
+  instructions: string | undefined;
+  chain: readonly string[];
+  view: MeterCount;
+};
+
+type Latest = {
+  input: readonly InputItem[];
+  tools: readonly FunctionTool[];
+  instructions: string | undefined;
+  chain: readonly string[];
+  inputDigest: string;
+  itemCount: number;
+  reported: number;
+  kept: number;
+  decomposition: Decomposition;
+};
 
 const remember = <V>(map: Map<string, V>, key: string, value: V, limit: number): void => {
   map.delete(key);
@@ -24,20 +65,49 @@ const remember = <V>(map: Map<string, V>, key: string, value: V, limit: number):
   }
 };
 
+const noSigma: Sigma = () => 0;
+
+const nothingCounted = (inputTokens: number, known: number, uncounted: number): Decomposition => ({
+  inputTokens,
+  known,
+  uncounted,
+  overCount: 0,
+  restA: 0,
+  fixedA: 0,
+  restB: 0,
+  sigmaB: noSigma,
+});
+
+const ceilQuotient = (numerator: bigint, denominator: bigint): bigint => (numerator + denominator - 1n) / denominator;
+
 export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOptions): TokenMeter => {
-  const counted = new Map<string, CountedRecord>();
-  const observations = new Map<string, CountedRecord>();
+  const replies = new Map<string, Reply>();
+  const counted = new Map<string, Counted>();
   const itemTokens = new Map<string, number>();
   const baselines = new Map<string, number>();
-  const errors: number[] = [];
+  let misses: readonly MeterMiss[] = [];
+  let latest: Latest | undefined;
+  let epoch = 0;
+  const marginFloor = BigInt(marginFloorFor(capabilities.contextWindow));
+  const configuredRatio = capabilities.tokenErrorRatio === undefined ? undefined : quantizedRatioOf(capabilities.tokenErrorRatio);
 
-  const relativeError = (): number => {
-    const observed = errors.length > 0 ? Math.max(...errors) : 0;
-    return capabilities.tokenCounting === 'estimated' ? Math.max(ESTIMATED_ERROR_FLOOR, observed) : observed;
+  const sigmaOf = (reply: Reply): Sigma => {
+    if (configuredRatio !== undefined && reply.method === capabilities.tokenCounting) {
+      return (tokens) => (tokens <= 0 ? 0 : Math.max(reply.shape.minimum, ceilRatio(configuredRatio, tokens)));
+    }
+    return (tokens) => (tokens <= 0 ? 0 : errorBoundOfShape(reply.shape, tokens));
   };
 
-  const combined = (relativeBound: number, counterBound: number): number =>
-    capabilities.tokenCounting === 'estimated' ? Math.max(relativeBound, counterBound) : relativeBound + counterBound;
+  const excessAt = (window: readonly MeterMiss[]) => (size: number): number => {
+    const bigSize = BigInt(size);
+    let best = 0n;
+    for (const { miss, uncounted } of window) {
+      const scaled = uncounted >= 1 && size > uncounted ? ceilQuotient(BigInt(miss) * bigSize, BigInt(uncounted)) : BigInt(miss);
+      if (scaled - marginFloor > best) best = scaled - marginFloor;
+    }
+    if (best > BigInt(Number.MAX_SAFE_INTEGER)) throw new RangeError(`the observed excess ${best} is beyond the exact range of a number`);
+    return Number(best);
+  };
 
   const requestOf = (
     input: readonly InputItem[],
@@ -50,6 +120,15 @@ export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOpt
     ...(instructions === undefined ? {} : { instructions }),
   });
 
+  const replyFor = async (key: string, request: CountTokensRequest): Promise<Reply> => {
+    const known = replies.get(key);
+    if (known !== undefined) return known;
+    const result = await counter.count(request);
+    const reply = { tokens: result.input_tokens, method: result.method, shape: result.error_shape };
+    remember(replies, key, reply, MAX_REPLIES);
+    return reply;
+  };
+
   const baselineOf = async (tools: readonly FunctionTool[], instructions: string | undefined): Promise<number> => {
     if (tools.length === 0 && instructions === undefined) return 0;
     const key = canonicalJson({ instructions: instructions ?? null, tools });
@@ -60,55 +139,83 @@ export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOpt
     return result.input_tokens;
   };
 
+  const suffixOf = async (
+    items: readonly InputItem[],
+    chain: readonly string[],
+    from: number,
+    tools: readonly FunctionTool[],
+    instructions: string | undefined,
+  ): Promise<Reply> => {
+    const reply = await replyFor(`suffix:${chain[0]}:${chain[from]}:${chain[items.length]}`, requestOf(items.slice(from), tools, instructions));
+    return { ...reply, tokens: reply.tokens - (await baselineOf(tools, instructions)) };
+  };
+
+  const splitOf = async (
+    chain: readonly string[],
+    input: readonly InputItem[],
+    tools: readonly FunctionTool[],
+    instructions: string | undefined,
+    fresh: Reply,
+  ): Promise<Decomposition | undefined> => {
+    if (latest === undefined || latest.chain[0] !== chain[0]) return undefined;
+    let shared = 0;
+    while (shared < input.length && shared < latest.itemCount && latest.chain[shared + 1] === chain[shared + 1]) shared += 1;
+    const dropped = shared === latest.itemCount ? undefined : await suffixOf(latest.input, latest.chain, shared, tools, instructions);
+    const added = shared === input.length ? undefined : await suffixOf(input, chain, shared, tools, instructions);
+    const restA = dropped?.tokens ?? 0;
+    const restB = added?.tokens ?? 0;
+    const known = latest.kept - restA;
+    if (known < 0) return undefined;
+    return {
+      inputTokens: known + restB,
+      known,
+      uncounted: restA + restB,
+      overCount: latest.kept - latest.reported,
+      restA,
+      fixedA: dropped === undefined ? 0 : sigmaOf(dropped)(restA),
+      restB,
+      sigmaB: sigmaOf(added ?? fresh),
+    };
+  };
+
+  const underOf = (decomposition: Decomposition, window: readonly MeterMiss[]): ((tokens: number) => number) => {
+    const excess = excessAt(window);
+    return (tokens) => {
+      const added = Math.max(0, tokens - decomposition.known);
+      return decomposition.fixedA + decomposition.sigmaB(added) + excess(decomposition.restA + added);
+    };
+  };
+
+  const viewOf = (inputDigest: string, chosen: Decomposition, freshUnderAt: (tokens: number) => number, underAt: (tokens: number) => number): MeterCount => ({
+    inputTokens: chosen.inputTokens,
+    inputDigest,
+    known: chosen.known,
+    uncounted: chosen.uncounted,
+    overTolerance: chosen.overCount + chosen.fixedA + chosen.sigmaB(chosen.restB),
+    underAt,
+    freshUnderAt,
+  });
+
   const count = async ({ input, tools, instructions }: MeterRequest): Promise<MeterCount> => {
     const chain = digestChain({ instructions: instructions ?? null, tools }, input);
-    const digestAt = (length: number): string => chain[length] as string;
-    const inputDigest = digestAt(input.length);
-    const withBound = (record: CountedRecord): MeterCount => {
-      const relative = relativeError();
-      const estimatedTokens = Math.min(record.estimatedTokens, record.inputTokens);
-      const observedPrefix = record.inputTokens - estimatedTokens;
-      const errorBoundAt = (tokens: number): number =>
-        combined(Math.ceil(relative * tokens), errorBoundOfShape(record.counterShape, Math.max(0, tokens - observedPrefix)));
-      return {
-        inputTokens: record.inputTokens,
-        inputDigest,
-        errorBound: errorBoundAt(record.inputTokens),
-        errorBoundAt,
-        estimatedTokens,
-      };
-    };
-
+    const inputDigest = chain[input.length] as string;
     const known = counted.get(inputDigest);
-    if (known !== undefined) return withBound(known);
+    if (known !== undefined && known.epoch === epoch) return known.view;
 
-    const lengths = [...new Set([...observations.values()].map((entry) => entry.itemCount))]
-      .filter((length) => length <= input.length)
-      .sort((a, b) => b - a);
-    let record: CountedRecord | undefined;
-    for (const length of lengths) {
-      const observation = observations.get(digestAt(length));
-      if (observation === undefined) continue;
-      if (length === input.length) {
-        record = observation;
-      } else {
-        const suffix = await counter.count(requestOf(input.slice(length), tools, instructions));
-        const baseline = await baselineOf(tools, instructions);
-        record = {
-          itemCount: input.length,
-          inputTokens: observation.inputTokens + suffix.input_tokens - baseline,
-          counterShape: suffix.error_shape,
-          estimatedTokens: observation.estimatedTokens + Math.max(0, estimatedPartOf(suffix) - baseline),
-        };
-      }
-      break;
-    }
-    if (record === undefined) {
-      const result = await counter.count(requestOf(input, tools, instructions));
-      record = { itemCount: input.length, inputTokens: result.input_tokens, counterShape: result.error_shape, estimatedTokens: estimatedPartOf(result) };
-    }
-    remember(counted, inputDigest, record, MAX_COUNTED);
-    return withBound(record);
+    const fresh = await replyFor(`fresh:${inputDigest}`, requestOf(input, tools, instructions));
+    const freshDecomposition: Decomposition = { ...nothingCounted(fresh.tokens, 0, fresh.tokens), restB: fresh.tokens, sigmaB: sigmaOf(fresh) };
+    const window = misses;
+    const freshUnderAt = underOf(freshDecomposition, window);
+    const split = await splitOf(chain, input, tools, instructions, fresh);
+    const splitUnderAt = split === undefined ? undefined : underOf(split, window);
+    const useSplit =
+      split !== undefined &&
+      splitUnderAt !== undefined &&
+      split.inputTokens + splitUnderAt(split.inputTokens) <= fresh.tokens + freshUnderAt(fresh.tokens);
+    const chosen = useSplit ? split : freshDecomposition;
+    const view = viewOf(inputDigest, chosen, freshUnderAt, useSplit && splitUnderAt !== undefined ? splitUnderAt : freshUnderAt);
+    remember(counted, inputDigest, { epoch, decomposition: chosen, input, tools, instructions, chain, view }, MAX_COUNTED);
+    return view;
   };
 
   const countItem = async (item: InputItem, { callNames, withTools }: ItemCountContext): Promise<number> => {
@@ -124,24 +231,66 @@ export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOpt
     return result.input_tokens;
   };
 
-  const observe = ({ inputDigest, inputTokens }: UsageObservation): void => {
+  const observe = ({ inputDigest, inputTokens }: UsageObservation): MeterObservation => {
     const record = counted.get(inputDigest);
-    if (record === undefined) throw new Error(`token meter has no count for input digest ${inputDigest}`);
-    const estimate = record.inputTokens;
-    const underEstimate = Math.max(0, inputTokens - estimate) / Math.max(estimate, 1);
-    errors.push(Math.min(underEstimate, MAX_RELATIVE_ERROR));
-    if (errors.length > ERROR_WINDOW) errors.shift();
-    const conservative = Math.max(estimate, inputTokens);
-    const confirmed = inputTokens >= estimate;
-    const kept = {
-      ...record,
-      inputTokens: conservative,
-      counterShape: confirmed ? EXACT_ERROR_SHAPE : record.counterShape,
-      estimatedTokens: confirmed ? 0 : record.estimatedTokens,
+    const source =
+      record !== undefined
+        ? { input: record.input, tools: record.tools, instructions: record.instructions, chain: record.chain, decomposition: record.decomposition }
+        : latest !== undefined && latest.inputDigest === inputDigest
+          ? latest
+          : undefined;
+    if (source === undefined) throw new Error(`token meter has no count for input digest ${inputDigest}`);
+    const { decomposition } = source;
+    const reported = inputTokens;
+    const kept = Math.max(decomposition.inputTokens, reported);
+    const miss = Math.max(0, reported - (decomposition.inputTokens - decomposition.overCount) - decomposition.fixedA - decomposition.sigmaB(decomposition.restB));
+    latest = {
+      input: source.input,
+      tools: source.tools,
+      instructions: source.instructions,
+      chain: source.chain,
+      inputDigest,
+      itemCount: source.input.length,
+      reported,
+      kept,
+      decomposition,
     };
-    remember(counted, inputDigest, kept, MAX_COUNTED);
-    remember(observations, inputDigest, kept, MAX_OBSERVATIONS);
+    misses = [...misses, { miss, uncounted: decomposition.uncounted }].slice(-ERROR_WINDOW);
+    epoch += 1;
+    return {
+      inputDigest,
+      itemCount: source.input.length,
+      counted: decomposition.inputTokens,
+      reported,
+      kept,
+      known: decomposition.known,
+      uncounted: decomposition.uncounted,
+      miss,
+      contextWindow: capabilities.contextWindow,
+      ...(capabilities.tokenErrorRatio === undefined ? {} : { tokenErrorRatio: capabilities.tokenErrorRatio }),
+      tokenCounting: capabilities.tokenCounting,
+    };
   };
 
-  return { count, countItem, observe, relativeError };
+  const restore = ({ latest: report, misses: window }: MeterMemory): void => {
+    counted.clear();
+    misses = [...window].slice(-ERROR_WINDOW);
+    latest =
+      report === undefined
+        ? undefined
+        : {
+            input: report.input,
+            tools: report.tools,
+            instructions: undefined,
+            chain: digestChain({ instructions: null, tools: report.tools }, report.input),
+            inputDigest: report.observation.inputDigest,
+            itemCount: report.observation.itemCount,
+            reported: report.observation.reported,
+            kept: report.observation.kept,
+            decomposition: nothingCounted(report.observation.counted, report.observation.known, report.observation.uncounted),
+          };
+    epoch += 1;
+  };
+
+  return { count, countItem, observe, restore };
 };

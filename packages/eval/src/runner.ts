@@ -3,7 +3,7 @@ import type { GoldenCase, GoldenDataset } from './dataset.ts';
 import { grade } from './graders.ts';
 import { buildReport } from './report.ts';
 import type { CaseResult, EvalReport } from './report.ts';
-import type { Transcript, TranscriptChild, TranscriptReflection, TranscriptRun } from './transcript.ts';
+import type { RecordedRun, Transcript, TranscriptChild, TranscriptReflection, TranscriptRun } from './transcript.ts';
 
 export type EvalWorkspace = { cwd: string; env: Record<string, string> };
 
@@ -22,7 +22,7 @@ export type EvalRunApi = {
 export type EvalPorts = {
   api: EvalRunApi;
   workspace(golden: GoldenCase, runIndex: number): Promise<EvalWorkspace>;
-  onTranscript?(transcript: Transcript): Promise<void>;
+  onTranscript?(transcript: RecordedRun): Promise<void>;
 };
 
 export class EvalError extends Error {
@@ -81,17 +81,17 @@ export const driveRun = async (api: EvalRunApi, golden: Pick<GoldenCase, 'id' | 
   return { events, children };
 };
 
-const runOnce = async (ports: EvalPorts, golden: GoldenCase, runIndex: number): Promise<Transcript> => {
+const runOnce = async (ports: EvalPorts, golden: GoldenCase, runIndex: number): Promise<RecordedRun> => {
   const workspace = await ports.workspace(golden, runIndex);
   const session = await ports.api.createSession({ ...workspace, permissionMode: golden.permissionMode });
   const run = await ports.api.createRun(session.id, { input: golden.input, ...(golden.timeoutMs === undefined ? {} : { timeoutMs: golden.timeoutMs }) });
   const { events, children } = await driveRun(ports.api, golden, run.id);
-  const transcript: Transcript = { caseId: golden.id, runIndex, run: await ports.api.getRun(run.id), events, children, reflection: await ports.api.reflectionOf(run.id) };
+  const transcript: RecordedRun = { caseId: golden.id, runIndex, run: await ports.api.getRun(run.id), events, children, reflection: await ports.api.reflectionOf(run.id) };
   if (ports.onTranscript !== undefined) await ports.onTranscript(transcript);
   return transcript;
 };
 
-const resultOf = (golden: GoldenCase, transcripts: readonly Transcript[]): CaseResult => ({
+const resultOf = (golden: GoldenCase, transcripts: readonly RecordedRun[]): CaseResult => ({
   golden,
   runs: transcripts.map((transcript) => ({ runIndex: transcript.runIndex, runId: transcript.run.id, graded: grade(golden.graders, transcript) })),
 });
@@ -99,7 +99,7 @@ const resultOf = (golden: GoldenCase, transcripts: readonly Transcript[]): CaseR
 export const runDataset = async (dataset: GoldenDataset, ports: EvalPorts): Promise<EvalReport> => {
   const results: CaseResult[] = [];
   for (const golden of dataset.cases) {
-    const transcripts: Transcript[] = [];
+    const transcripts: RecordedRun[] = [];
     for (let runIndex = 0; runIndex < golden.runs; runIndex += 1) transcripts.push(await runOnce(ports, golden, runIndex));
     results.push(resultOf(golden, transcripts));
   }

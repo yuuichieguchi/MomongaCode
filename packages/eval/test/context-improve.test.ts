@@ -25,7 +25,7 @@ import {
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { ContextReport, GuidelineCompletion, GuidelineCompletionRequest, ImproveInput, Transcript } from '@momonga/eval';
 import { MIN_SUMMARY_TOKENS } from '@momonga/protocol';
-import { TEST_CODE_DIGEST, bash, contextCase, fidelity, read, recorded, summarized } from './context-fixtures.ts';
+import { bash, contextCase, fidelity, read, recorded, summarized } from './context-fixtures.ts';
 
 const SCENARIOS = ['a', 'b', 'c', 'd'] as const;
 const USAGE = { inputTokens: 7, outputTokens: 3, totalTokens: 10 };
@@ -49,7 +49,7 @@ const transcriptsOf = ({ failingOn = [], failingOff = [], noCompaction = [], ori
 
 const measured = (shape: Shape = {}) => {
   const transcripts = transcriptsOf(shape);
-  return { report: buildContextReport({ codeDigest: TEST_CODE_DIGEST, dataset, transcripts, model: shape.model ?? 'real', seed: 1 }), transcripts, tokens: 100 };
+  return { report: buildContextReport({ dataset, transcripts, model: shape.model ?? 'real', seed: 1 }), transcripts, tokens: 100 };
 };
 
 const analysis = (extra: Record<string, unknown> = {}): string =>

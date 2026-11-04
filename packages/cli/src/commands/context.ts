@@ -25,7 +25,6 @@ import type { RuntimeClient } from '../client/runtime-client.ts';
 import { createGatewayClient as createCliGatewayClient } from '../client/gateway-client.ts';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
-import { codeDigestOfRunningCli } from '../eval/code-digest.ts';
 import { nodeContextEffects } from '../eval/context-effects.ts';
 import { runContextLive, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects } from '../eval/context-host.ts';
@@ -144,7 +143,6 @@ export const contextImprove = async (
   hostEffects: (ports: CliPorts) => ContextHostEffects = nodeContextEffects,
 ): Promise<number> => {
   const dataset = await loadContextDataset(ports.files, path.resolve(ports.cwd, options.dataset));
-  const codeDigest = await codeDigestOfRunningCli();
   await ensureDaemon(ports, paths);
   const client = connectRuntime(paths);
   const gatewayInfo = createCliGatewayClient({ socketPath: paths.sockets.gateway });
@@ -172,7 +170,7 @@ export const contextImprove = async (
               onUnownedHomes: (roots) => ports.stderr.write(unownedHomesNotice(roots)),
               ...(options.interrupt === undefined ? {} : { interrupt: options.interrupt }),
             });
-            const report = buildContextReport({ dataset, transcripts, model: options.model, seed: CONTEXT_BOOTSTRAP_SEED, datasetSeed: options.seed, codeDigest });
+            const report = buildContextReport({ dataset, transcripts, model: options.model, seed: CONTEXT_BOOTSTRAP_SEED, datasetSeed: options.seed });
             return { report, transcripts, tokens: tokensOf(transcripts) };
           },
           complete: completer.complete,

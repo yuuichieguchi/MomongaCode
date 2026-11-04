@@ -137,6 +137,7 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   'skill.activated': true,
   'tool.loaded': true,
   'loop.warned': true,
+  'meter.observed': true,
   'approval.rule.persisted': true,
   notice: true,
 };

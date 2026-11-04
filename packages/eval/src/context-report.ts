@@ -262,8 +262,16 @@ export type BuildContextReportInput = {
   model: ContextModel;
   seed: number;
   datasetSeed?: number;
-  policy?: PolicyOverlay;
-  codeDigest: string;
+};
+
+const identityOf = (transcripts: readonly Transcript[]): { policy: PolicyOverlay; codeDigest: string } => {
+  const [first] = transcripts;
+  if (first === undefined) throw new EvalError('the report has no transcript to take the policy and the code digest from');
+  const policies = new Set(transcripts.map((transcript) => canonicalJson(transcript.policy)));
+  if (policies.size > 1) throw new EvalError('the transcripts record different policy overlays, so they do not measure one run configuration');
+  const digests = new Set(transcripts.map((transcript) => transcript.codeDigest));
+  if (digests.size > 1) throw new EvalError(`the transcripts record different codeDigest values (${[...digests].join(', ')}), so they were not produced by one build`);
+  return { policy: first.policy, codeDigest: first.codeDigest };
 };
 
 export const buildContextReport = (input: BuildContextReportInput): ContextReport => {
@@ -277,6 +285,7 @@ export const buildContextReport = (input: BuildContextReportInput): ContextRepor
   const cases = measured.map(({ entry, measures }) => caseReportOf(entry, measures));
   const measures = measured.flatMap((item) => item.measures);
   const transcripts = measured.flatMap((item) => item.transcripts);
+  const identity = identityOf(transcripts);
   return {
     format: CONTEXT_REPORT_FORMAT,
     dataset: input.dataset.name,
@@ -284,8 +293,8 @@ export const buildContextReport = (input: BuildContextReportInput): ContextRepor
     datasetSeed,
     model: input.model,
     modelAliases: [...new Set(measures.flatMap((measure) => (measure.modelAlias === undefined ? [] : [measure.modelAlias])))].sort(),
-    policy: input.policy ?? {},
-    codeDigest: input.codeDigest,
+    policy: identity.policy,
+    codeDigest: identity.codeDigest,
     metrics: metricsOf(cases, measured, input.seed),
     meaningless: input.model === 'fake' ? [...MODEL_DEPENDENT_METRICS] : [],
     unclassifiedCompactions: total(measures, (measure) => measure.facts.unclassified),

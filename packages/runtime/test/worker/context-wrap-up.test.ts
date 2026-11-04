@@ -66,12 +66,8 @@ describe('context-overflow wrap-up (path 3)', () => {
   });
 
   it('cannot leave a stop notice behind a crash before the wrap-up request, and a recovery rebuild that fits continues the run', async () => {
-    const capabilities = capabilitiesFor(4000, { tokenCounting: 'estimated' });
-    const env = await makeEnv({ capabilities });
-    env.gateway.script.push(
-      callsStep([{ callId: 'k0', name: 'Big', args: { letter: 'a', size: 0, pad: 'p'.repeat(4920) } }], usageOf(1000, 10)),
-      textStep('Continued normally.'),
-    );
+    const env = await makeEnv({ capabilities: capabilitiesFor(4000) });
+    env.gateway.script.push(...overflowScript(), textStep('Continued normally.'));
     const run = env.enqueue('Fill the context');
     let crashed = false;
     const { store, appends } = recordingStore(env, (payloads) => {
@@ -81,7 +77,7 @@ describe('context-overflow wrap-up (path 3)', () => {
       }
     });
 
-    await env.runOnce(env.worker('worker-1', { ...withinTurnWorker(), store }));
+    await env.runOnce(env.worker('worker-1', { ...withinTurnWorker(LONG_DESCRIPTION), store }));
 
     expect(crashed).toBe(true);
     const crashedAppend = appends.find((payloads) => payloads.some(isStopNotice));

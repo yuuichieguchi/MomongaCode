@@ -113,6 +113,7 @@ describe('run event payloads', () => {
       | 'skill.activated'
       | 'tool.loaded'
       | 'loop.warned'
+      | 'meter.observed'
       | 'approval.rule.persisted'
       | 'notice'
     >();

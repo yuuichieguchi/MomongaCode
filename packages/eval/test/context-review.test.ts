@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BOOTSTRAP_RESAMPLES, BOOTSTRAP_TAIL_RANK, CONTEXT_DATASET_FORMAT, EvalError, MINIMUM_PAIRS, buildContextReport, formatContextReport, parseContextDataset } from '@momonga/eval';
 import type { Transcript } from '@momonga/eval';
 import type { RunEventPayload } from '@momonga/protocol';
-import { TEST_CODE_DIGEST, compacted, contextCase, fidelity, governing, historyRead, marked, padding, read, recorded, summarized } from './context-fixtures.ts';
+import { compacted, contextCase, fidelity, governing, historyRead, marked, padding, read, recorded, summarized } from './context-fixtures.ts';
 
 const sample = (both: Record<string, unknown> = {}, onOnly: Record<string, unknown> = {}) =>
   parseContextDataset(
@@ -19,7 +19,7 @@ const sample = (both: Record<string, unknown> = {}, onOnly: Record<string, unkno
     'sample.json',
   );
 
-const build = (dataset: ReturnType<typeof sample>, transcripts: Transcript[]) => buildContextReport({ codeDigest: TEST_CODE_DIGEST, dataset, transcripts, model: 'real', seed: 1 });
+const build = (dataset: ReturnType<typeof sample>, transcripts: Transcript[]) => buildContextReport({ dataset, transcripts, model: 'real', seed: 1 });
 
 const base = (s1On: RunEventPayload[], s2On: RunEventPayload[] = [summarized(2, fidelity([], 1, 1))], s1Off: RunEventPayload[] = [], s2Off: RunEventPayload[] = []): Transcript[] => [
   recorded('s1-on', 0, s1On),

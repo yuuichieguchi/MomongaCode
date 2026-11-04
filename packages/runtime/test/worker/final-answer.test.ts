@@ -26,6 +26,7 @@ describe('worker final answer', () => {
       'agent.message.delta',
       'model.responded',
       'usage.updated',
+      'meter.observed',
       'run.status',
     ]);
     expect(env.run(run.id).status).toBe('COMPLETED');

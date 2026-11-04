@@ -11,7 +11,7 @@ import {
   parseContextReport,
   parsePolicyOverlay,
 } from '@momonga/eval';
-import type { Transcript } from '@momonga/eval';
+import type { PolicyOverlay, Transcript } from '@momonga/eval';
 import { contextCase, recorded } from './context-fixtures.ts';
 
 const SCENARIOS = ['a', 'b'] as const;
@@ -30,10 +30,10 @@ const transcripts: Transcript[] = SCENARIOS.flatMap((scenario) => [recorded(`${s
 const MAIN_CODE = 'a'.repeat(64);
 const HEAD_CODE = 'b'.repeat(64);
 
-const reportWith = (policy?: Record<string, unknown>, codeDigest = MAIN_CODE) =>
-  buildContextReport({ dataset, transcripts, model: 'real', seed: 1, codeDigest, ...(policy === undefined ? {} : { policy }) });
+const reportWith = (policy: PolicyOverlay = {}, codeDigest = MAIN_CODE) =>
+  buildContextReport({ dataset, transcripts: transcripts.map((transcript) => ({ ...transcript, policy, codeDigest })), model: 'real', seed: 1 });
 
-const EVERY_KEY = {
+const EVERY_KEY: PolicyOverlay = {
   context: { cachePrefix: true, outputFormatters: ['log', 'json', 'grep', 'identicalOutput'], loopGuidance: true, observedCapacity: true },
   tools: { deferral: true, conciseDescriptions: true },
   memory: { repositoryFacts: true },

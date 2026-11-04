@@ -472,6 +472,7 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
     case 'hook.completed':
     case 'tool.updated':
     case 'usage.updated':
+    case 'meter.observed':
     case 'context.contribution':
       return state;
     case 'context.governing_loaded':
