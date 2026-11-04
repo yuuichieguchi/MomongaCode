@@ -202,7 +202,7 @@ describe('momonga eval compare', () => {
   it('judges the token terms with --gate token and prints why a term with no measure fails', async () => {
     const context = harness();
     context.stored.set('/w/a.json', await reportFile('a.json', 0, 'real'));
-    context.stored.set('/w/b.json', await reportFile('b.json', 0, 'real'));
+    context.stored.set('/w/b.json', JSON.stringify({ ...JSON.parse(await reportFile('b.json', 0, 'real')), policy: { context: { cachePrefix: true } } }));
     await run(context.program, 'eval', 'compare', 'a.json', 'b.json', '--gate', 'token');
     const text = context.stdout.join('');
     expect(text).toContain('gate: FAIL');
@@ -238,5 +238,41 @@ describe('momonga eval <dataset>', () => {
     await run(program, 'eval', 'golden.json', '--replay', 'g');
     expect(stdout.join('')).toContain('dataset golden: PASS');
     expect(completed).toEqual([0]);
+  });
+});
+
+describe('momonga eval context --settings', () => {
+  it('belongs to a live run, so a replay refuses it', async () => {
+    const { program, stored } = harness();
+    stored.set('/w/policy.json', JSON.stringify({ context: { cachePrefix: true } }));
+    await expect(run(program, 'eval', 'context', 'context.json', '--replay', 't', '--model', 'real', '--settings', 'policy.json')).rejects.toThrow(/--settings.*live run/);
+  });
+
+  it('refuses an overlay with a key outside the token design before any case runs, and names the file', async () => {
+    const { program, stored, completed } = harness();
+    stored.set('/w/bad.json', JSON.stringify({ context: { autoCompact: false } }));
+    await expect(run(program, 'eval', 'context', 'context.json', '--model', 'fake', '--alias', 'default', '--settings', 'bad.json')).rejects.toThrow(/bad\.json/);
+    expect(completed).toEqual([]);
+  });
+});
+
+describe('momonga eval compare --gate token and the policies', () => {
+  it('refuses two reports whose policies are identical', async () => {
+    const context = harness();
+    context.stored.set('/w/a.json', await reportFile('a.json', 0, 'real'));
+    context.stored.set('/w/b.json', await reportFile('b.json', 0, 'real'));
+    await expect(run(context.program, 'eval', 'compare', 'a.json', 'b.json', '--gate', 'token')).rejects.toThrow(/identical/);
+    expect(context.completed).toEqual([]);
+  });
+
+  it('prints both policies when they differ', async () => {
+    const context = harness();
+    const candidate = { ...JSON.parse(await reportFile('b.json', 0, 'real')), policy: { context: { cachePrefix: true } } };
+    context.stored.set('/w/a.json', await reportFile('a.json', 0, 'real'));
+    context.stored.set('/w/b.json', `${JSON.stringify(candidate, null, 2)}\n`);
+    await run(context.program, 'eval', 'compare', 'a.json', 'b.json', '--gate', 'token');
+    const text = context.stdout.join('');
+    expect(text).toContain('baseline policy: {}');
+    expect(text).toContain('candidate policy: {"context":{"cachePrefix":true}}');
   });
 });

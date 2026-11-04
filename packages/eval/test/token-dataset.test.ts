@@ -1,0 +1,34 @@
+import fs from 'node:fs/promises';
+import { describe, expect, it } from 'vitest';
+import { expandContextDataset, parseContextDataset } from '@momonga/eval';
+
+const TOKEN_CASE_KINDS = ['repeated-reads', 'test-failures', 'json-api', 'large-grep', 'loop-prone', 'deferral'] as const;
+
+const load = async () => parseContextDataset(await fs.readFile(new URL('../datasets/token.json', import.meta.url), 'utf8'), 'token.json');
+
+const kindOf = (scenario: string): string | undefined => TOKEN_CASE_KINDS.find((kind) => scenario === kind || scenario.startsWith(`${kind}-`));
+
+describe('the token dataset', () => {
+  it('validates against the context dataset schema and expands', async () => {
+    const dataset = await load();
+    expect(dataset.name).toBe('token');
+    expect(expandContextDataset(dataset, 0).cases.length).toBe(dataset.cases.length);
+  });
+
+  it.each(TOKEN_CASE_KINDS)('holds at least one %s scenario', async (kind) => {
+    const dataset = await load();
+    expect(dataset.cases.some((entry) => kindOf(entry.scenario) === kind)).toBe(true);
+  });
+
+  it('names every scenario by one of the token case kinds', async () => {
+    const dataset = await load();
+    expect(dataset.cases.filter((entry) => kindOf(entry.scenario) === undefined).map((entry) => entry.scenario)).toEqual([]);
+  });
+
+  it('gives every deferral case noise runs', async () => {
+    const dataset = await load();
+    const deferral = dataset.cases.filter((entry) => kindOf(entry.scenario) === 'deferral');
+    expect(deferral.length).toBeGreaterThan(0);
+    for (const entry of deferral) expect(entry.noise.level, entry.id).toBeGreaterThan(0);
+  });
+});
