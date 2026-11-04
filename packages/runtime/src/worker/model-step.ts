@@ -17,6 +17,7 @@ import { runStopHooks } from './hook-step.ts';
 import { recordCalls, settleCalls } from './tool-step.ts';
 import { pinnedDigestOf } from './pinned-digest.ts';
 import { recordPrefix } from './prefix-record.ts';
+import { cacheControlsOf } from './cache-controls.ts';
 
 const DEADLINE_CODE = 'deadline_exceeded';
 const REFUSAL_CODES = ['guardrail_violation', 'refusal', 'content_filter'];
@@ -350,7 +351,7 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   const { built, wrapUp } = outcome;
   const summarising = limit !== undefined || wrapUp !== undefined;
   const step = journal.state.step + 1;
-  const body: CreateResponseBody = {
+  const plainBody: CreateResponseBody = {
     model: ctx.alias,
     input: built.input,
     tools: built.tools,
@@ -365,6 +366,7 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   if (cancelIfInterrupted(ctx) === 'done') return 'done';
   const position = { step, attempt: 1 };
   const prefixRecord = recordPrefix(ctx, built, summarising);
+  const body: CreateResponseBody = { ...plainBody, ...cacheControlsOf(ctx, built, prefixRecord?.prefix) };
   journal.append([
     ...(wrapUp === undefined ? [] : [{ type: 'notice' as const, level: 'error' as const, message: wrapUp.notice, code: 'context_wrap_up' }]),
     ...(prefixRecord === undefined ? [] : prefixRecord.notices),

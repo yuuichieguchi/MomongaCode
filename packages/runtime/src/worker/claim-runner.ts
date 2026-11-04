@@ -361,13 +361,33 @@ const drive = async (
   const aliasCounter = counterOf(firstTarget);
   const meterEvents = meterEventsOf(options.store, session.id);
   const aliasMeterCapabilities = withCalibration(pins.capabilities, firstCapabilities);
+  const token = tokenPolicyOf(pins.token);
   const aliasMeter = createTokenMeter({
     counter: { count: (request) => control.recordingRaised(gateway.countTokens(request, { signal: control.signal })) },
     model: pins.modelAlias,
     capabilities: aliasMeterCapabilities,
+    observedCapacity: token.observedCapacity,
   });
   aliasMeter.restore(foldMeterFor(options.store, meterEvents, aliasMeterCapabilities, aliasCounter));
-  const token = tokenPolicyOf(pins.token);
+  const factsOf = async (target: string): Promise<{ meter: TokenMeter; capabilities: Capabilities; counter: string }> => {
+    const known = targetFacts.get(target);
+    if (known !== undefined) return known;
+    const capabilities = await control.recordingRaised(gateway.capabilities(pins.modelAlias, { signal: control.signal, target }));
+    const meter = createTokenMeter({
+      counter: { count: (request) => control.recordingRaised(gateway.countTokens({ ...request, momonga: { ...request.momonga, target } }, { signal: control.signal })) },
+      model: pins.modelAlias,
+      capabilities,
+      observedCapacity: token.observedCapacity,
+    });
+    const counter = counterOf(target);
+    meter.restore(foldMeterFor(options.store, meterEvents, capabilities, counter));
+    const created = { capabilities, meter, counter };
+    targetFacts.set(target, created);
+    return created;
+  };
+  const fallbackMeters = token.observedCapacity
+    ? (await Promise.all(listing.targets.filter((target) => target !== firstTarget).map(factsOf))).map((facts) => facts.meter)
+    : [];
   const visibleNow = (): FunctionTool[] =>
     toolSet.forModel({ mode: session.permissionMode, rules: composeRules(), conciseDescriptions: token.conciseDescriptions });
   const claimVisible = token.cachePrefix ? visibleNow() : undefined;
@@ -409,23 +429,10 @@ const drive = async (
     terminals,
     agentSpan,
     meter: aliasMeter,
+    fallbackMeters,
     counter: aliasCounter,
     calibration: listing.capabilities,
-    targetFacts: async (target) => {
-      const known = targetFacts.get(target);
-      if (known !== undefined) return known;
-      const capabilities = await control.recordingRaised(gateway.capabilities(pins.modelAlias, { signal: control.signal, target }));
-      const meter = createTokenMeter({
-        counter: { count: (request) => control.recordingRaised(gateway.countTokens({ ...request, momonga: { ...request.momonga, target } }, { signal: control.signal })) },
-        model: pins.modelAlias,
-        capabilities,
-      });
-      const counter = counterOf(target);
-      meter.restore(foldMeterFor(options.store, meterEvents, capabilities, counter));
-      const created = { capabilities, meter, counter };
-      targetFacts.set(target, created);
-      return created;
-    },
+    targetFacts: factsOf,
     pinnedDigest: { value: undefined },
     memory,
     verificationCommands: (await options.settings.verification(session)).commands,

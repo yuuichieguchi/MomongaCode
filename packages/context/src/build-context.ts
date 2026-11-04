@@ -11,8 +11,8 @@ import {
   summaryItemTokensFor,
   summaryTokenCapFor,
 } from '@momonga/protocol';
-import type { FunctionCallOutputInputItem, FunctionTool, InputItem, MessageInputItem } from '@momonga/protocol';
-import { MIN_ROOM_TOKENS, budgetFor, capacityFor, inputCeilingFor, itemCapFor, memoryBudgetFor, summaryInputCeilingFor, pinnedFloorFor, withCalibration } from './budget.ts';
+import type { Capabilities, FunctionCallOutputInputItem, FunctionTool, InputItem, MessageInputItem } from '@momonga/protocol';
+import { MIN_ROOM_TOKENS, budgetFor, capacityFor, inputCeilingFor, itemCapFor, memoryBudgetFor, summaryInputCeilingFor, pinnedFloorAt, withCalibration } from './budget.ts';
 import { anatomyOf, historyLayerOf } from './anatomy.ts';
 import type { TaggedItem } from './anatomy.ts';
 import { chainTail, digestChain, frozenItem } from './digests.ts';
@@ -155,6 +155,20 @@ const breakdownOf = async (
   };
 };
 
+const capacityOver = async (
+  sized: Capabilities,
+  ports: BuildContextPorts,
+  items: readonly InputItem[],
+  offered: readonly FunctionTool[],
+): Promise<number> => {
+  let smallest = Number.POSITIVE_INFINITY;
+  for (const meter of [ports.meter, ...(ports.fallbackMeters ?? [])]) {
+    const counted = await meter.count({ input: items, tools: offered });
+    smallest = Math.min(smallest, capacityFor(sized, counted.underAt));
+  }
+  return smallest;
+};
+
 const admittedFloor = (input: BuildContextInput): boolean => input.observedCapacity === true && input.pinnedTokens !== undefined;
 
 const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): Promise<Head> => {
@@ -180,8 +194,7 @@ const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): 
   }
   const governing = governingMessageOf(sources.governing);
   const sized = input.calibration === undefined ? capabilities : withCalibration(capabilities, input.calibration);
-  const ceiling = inputCeilingFor(sized);
-  const toolFloor = pinnedFloorFor(sized);
+  const observed = input.observedCapacity === true;
   const countWith = (offered: readonly FunctionTool[]): Promise<MeterCount> =>
     ports.meter.count({ input: [...pinnedLayers, ...governing, task], tools: offered });
   const fitsFloor = (counted: MeterCount): boolean => metering(input, ports, candidates).fits(counted) && counted.inputTokens <= toolFloor;
@@ -193,6 +206,10 @@ const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): 
     return host === undefined || offered.some((other) => other.name === host);
   };
   const eligible = candidates.filter((tool) => standsWith(tool, candidates));
+  const toolFloor =
+    input.pinnedTokens !== undefined
+      ? 0
+      : pinnedFloorAt(observed ? await capacityOver(sized, ports, [...pinnedLayers, ...governing], eligible) : inputCeilingFor(sized));
   let tools = eligible;
   let leftOut: string[] = [];
   let pinnedCounted: MeterCount | undefined;
@@ -214,6 +231,7 @@ const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): 
     pinnedCounted = await countWith(tools);
   }
   const { fits } = metering(input, ports, tools);
+  const ceiling = observed ? await capacityOver(sized, ports, [...pinnedLayers, ...governing, task], tools) : inputCeilingFor(sized);
   const toolNotices: ContextNotice[] = [];
   if (leftOut.length > 0) {
     toolNotices.push({
@@ -810,7 +828,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   const admitted = admittedFloor(input);
   let total = await measureAssembled();
   if (input.observedCapacity === true) {
-    ceiling = capacityFor(sized, total.underAt);
+    ceiling = await capacityOver(sized, ports, assemble(), tools);
     roomLeft = ceiling - floorTokens;
     const observedItemCap = input.itemCap ?? itemCapFor(capabilities, roomLeft);
     summaryCap = summaryTokenCapFor(capabilities, roomLeft);
@@ -901,6 +919,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   const finalInput = assemble();
   const arrivalsStart = cachePrefix ? head.pinnedLayers.length + (memoryMessage === undefined ? 0 : 1) : layers.length - fitted.arrivals.length;
   const zones: ContextZones = {
+    stableEnd: head.pinnedLayers.length,
     arrivalsStart,
     arrivalsEnd: arrivalsStart + fitted.arrivals.length,
     fixedEnd: layers.length,

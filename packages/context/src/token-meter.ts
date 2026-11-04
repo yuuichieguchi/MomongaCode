@@ -79,7 +79,7 @@ const nothingCounted = (inputTokens: number, known: number, uncounted: number): 
 
 const ceilQuotient = (numerator: bigint, denominator: bigint): bigint => (numerator + denominator - 1n) / denominator;
 
-export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOptions): TokenMeter => {
+export const createTokenMeter = ({ counter, model, capabilities, observedCapacity = false }: TokenMeterOptions): TokenMeter => {
   const replies = new Map<string, Reply>();
   const counted = new Map<string, Counted>();
   const itemTokens = new Map<string, number>();
@@ -235,7 +235,7 @@ export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOpt
     if (record === undefined) throw new Error(`token meter has no count for input digest ${inputDigest}`);
     const { decomposition } = record;
     const reported = inputTokens;
-    const kept = Math.max(decomposition.inputTokens, reported);
+    const kept = observedCapacity ? reported : Math.max(decomposition.inputTokens, reported);
     const miss = Math.max(0, reported - (decomposition.inputTokens - decomposition.overCount) - decomposition.fixedA - decomposition.sigmaB(decomposition.restB));
     latest = {
       input: record.input,
@@ -278,7 +278,7 @@ export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOpt
             inputDigest: report.observation.inputDigest,
             itemCount: report.observation.itemCount,
             reported: report.observation.reported,
-            kept: report.observation.kept,
+            kept: observedCapacity ? report.observation.reported : report.observation.kept,
           };
     epoch += 1;
   };

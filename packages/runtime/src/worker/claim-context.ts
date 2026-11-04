@@ -47,6 +47,7 @@ export type ClaimContext = {
   terminals: Terminals;
   agentSpan: TraceSpan;
   meter: TokenMeter;
+  fallbackMeters: readonly TokenMeter[];
   counter: string;
   calibration: Calibration;
   targetFacts(target: string): Promise<{ meter: TokenMeter; capabilities: Capabilities; counter: string }>;
