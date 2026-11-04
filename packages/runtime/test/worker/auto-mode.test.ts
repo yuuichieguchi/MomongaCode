@@ -130,7 +130,6 @@ describe('auto mode in the worker', () => {
     await env.runOnce(env.worker('worker-2'));
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.ofType(run.id, 'tool.permission.classified')).toHaveLength(1);
-    console.log(JSON.stringify(env.events(run.id).filter((e) => e.type.startsWith('tool')).map((e) => [e.type, (e as any).output, (e as any).status])));
     expect(fs.readFileSync(target, 'utf8')).toBe('x');
   });
 });

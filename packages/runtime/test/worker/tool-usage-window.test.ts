@@ -80,6 +80,29 @@ describe('toolUsageWindowOf', () => {
     expect(deferredSetOf({ runs: toolUsageWindowOf(env.store, env.session.cwd) })).toEqual(['Glob', 'Grep']);
   });
 
+  it('counts a tool called only by a child or grandchild run as called by its root run (open item 8)', async () => {
+    const env = await makeEnv({ mode: 'bypassPermissions' });
+    for (let index = 0; index < TOOL_USAGE_WINDOW_RUNS - 1; index += 1) pastRun(env, usual(index));
+    env.clock.advance(1);
+    const root = env.enqueue('Delegate', { history: 'fresh' });
+    const rootClaim = env.seed(root.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' }, requested(1, ['Read', 'Glob', 'Grep'])], 'hold');
+    const child = env.store.createChildRun({ parentRunId: root.id, parentCallId: 'call_child', input: 'Search', pins: {}, modelAlias: 'fm' });
+    if (child.kind !== 'created') throw new Error(`child run was not created: ${child.kind}`);
+    const childClaim = env.seed(child.run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' }, requested(1, ['Grep']), called('call_child_grep', 'Grep')], 'hold');
+    const grandchild = env.store.createChildRun({ parentRunId: child.run.id, parentCallId: 'call_grandchild', input: 'List', pins: {}, modelAlias: 'fm' });
+    if (grandchild.kind !== 'created') throw new Error(`grandchild run was not created: ${grandchild.kind}`);
+    const grandchildClaim = env.seed(grandchild.run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' }, requested(1, ['Glob']), called('call_grandchild_glob', 'Glob')], 'hold');
+    expect(env.store.transition(grandchildClaim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
+    expect(env.store.transition(childClaim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
+    expect(env.store.transition(rootClaim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
+
+    const window = toolUsageWindowOf(env.store, env.session.cwd);
+
+    expect(window).toHaveLength(TOOL_USAGE_WINDOW_RUNS);
+    expect(window[0]).toEqual({ offered: ['Glob', 'Grep', 'Read'], called: ['Glob', 'Grep'] });
+    expect(deferredSetOf({ runs: window })).toEqual([]);
+  });
+
   it('feeds deferredSetOf: nineteen such runs defer nothing', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     for (let index = 0; index < TOOL_USAGE_WINDOW_RUNS - 1; index += 1) pastRun(env, usual(index));
