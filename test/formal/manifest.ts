@@ -94,7 +94,7 @@ export const readManifest = (file: string): Manifest => {
   return { format: MANIFEST_FORMAT, unitSuiteSeconds: positiveNumber(parsed['unitSuiteSeconds'], 'unitSuiteSeconds'), entries: entries.map(entryOf) };
 };
 
-const moduleOf = (config: string): string => config.split('.')[0] as string;
+export const moduleOf = (config: string): string => config.split('.')[0] as string;
 
 export const discoveryProblems = (specDir: string, manifest: Manifest): string[] => {
   const files = fs.readdirSync(specDir);

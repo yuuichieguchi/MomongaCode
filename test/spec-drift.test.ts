@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createKernelLockMechanism } from '@momonga/foundation';
 import { EVENT_TYPES, RUN_STATUSES, TERMINAL_STATUSES } from '@momonga/protocol';
-import { readManifest } from './formal/manifest.ts';
+import { moduleOf, readManifest } from './formal/manifest.ts';
 import { CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from '@momonga/store';
 
 const specPath = path.resolve(import.meta.dirname, '..', 'specs', 'tla', 'RunRecovery.tla');
@@ -159,7 +159,8 @@ describe('the checked configurations against the repaired recovery design', () =
     for (const file of configs) {
       const text = fs.readFileSync(path.join(configDir, file), 'utf8');
       const listed = text.slice(text.search(/^(INVARIANTS|PROPERTIES)/m)).split('\n').map((line) => line.trim()).filter((line) => /^[A-Z][A-Za-z]+$/.test(line) && line !== 'INVARIANTS' && line !== 'PROPERTIES');
-      for (const name of listed) expect(spec, `${file} names ${name}`).toMatch(new RegExp(`^${name} ==`, 'm'));
+      const moduleText = fs.readFileSync(path.join(configDir, `${moduleOf(file.slice(0, -'.cfg'.length))}.tla`), 'utf8');
+      for (const name of listed) expect(moduleText, `${file} names ${name}`).toMatch(new RegExp(`^${name} ==`, 'm'));
     }
   });
 
