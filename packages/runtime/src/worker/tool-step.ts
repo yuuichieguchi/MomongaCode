@@ -13,6 +13,8 @@ import type { TraceSpan } from '../ports.ts';
 import type { ClaimContext, Flow } from './claim-context.ts';
 import { pinnedFailureFor, taskOf } from './context-step.ts';
 import { ownEntries } from './own-entries.ts';
+import { offeredInBody } from './tool-offer.ts';
+import type { OfferedInBody } from './tool-offer.ts';
 
 export const REJECTED_OUTPUT = 'The user rejected this tool call.';
 
@@ -71,6 +73,7 @@ export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
     settled,
     ...(result.plan === undefined ? [] : [{ type: 'plan.updated' as const, entries: result.plan }]),
     ...(result.skill === undefined ? [] : [{ type: 'skill.activated' as const, name: result.skill.name, content: result.skill.content }]),
+    ...(result.toolsLoaded === undefined ? [] : [{ type: 'tool.loaded' as const, names: result.toolsLoaded }]),
     ...(result.authorizationRequired === undefined
       ? []
       : [{ type: 'mcp.authorization.required' as const, callId, server: result.authorizationRequired.server }]),
@@ -82,6 +85,11 @@ const batchFormatterOf = (ctx: ClaimContext): BatchOutputFormatter | undefined =
   if (enabled.length === 0) return undefined;
   const terms = termsOf(taskOf(ctx).text);
   return ({ output, tool }) => formatToolOutput({ output, tool, enabled, terms });
+};
+
+const offeredOfRequest = (ctx: ClaimContext): OfferedInBody | undefined => {
+  const requested = ctx.options.store.readLatestRunEventBefore(ctx.run.id, 'model.requested', ctx.journal.state.lastSeq + 1);
+  return requested === undefined || requested.type !== 'model.requested' ? undefined : offeredInBody(ctx.run.id, requested.body);
 };
 
 const approvalOptions = (suggestedRule: string | undefined): PermissionOption[] => [
@@ -200,11 +208,13 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   const spans = new Map<string, TraceSpan>();
   const halt: { reason?: string; hookEvent?: string } = {};
   const formatOutput = batchFormatterOf(ctx);
+  const offered = offeredOfRequest(ctx);
   let outcomes: CallOutcome[];
   try {
     outcomes = await options.tools.executor.runBatch({
       calls,
       toolSet: ctx.toolSet,
+      ...(offered === undefined ? {} : { offered }),
       fence: ctx.claim,
       runId: run.id,
       step,

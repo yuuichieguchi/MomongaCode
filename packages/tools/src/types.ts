@@ -22,6 +22,7 @@ export type ToolResult = {
   content?: ToolContent[];
   plan?: PlanEntry[];
   skill?: SkillActivation;
+  toolsLoaded?: string[];
   authorizationRequired?: { server: string };
   files?: ToolFile[];
   exitCode?: number;

@@ -1,6 +1,8 @@
+import { deferredSetOf } from '@momonga/memory';
 import type { Run, RuntimeStore, Session } from '@momonga/store';
 import type { SettingsPort } from '../ports.ts';
 import { readTokenPin } from './pins.ts';
+import { toolUsageWindowOf } from './tool-usage-window.ts';
 import type { TokenPin } from './pins.ts';
 
 export type { TokenPin } from './pins.ts';
@@ -39,4 +41,15 @@ export const tokenPinFor = async (input: {
     ...(context.loopGuidance ? { loopGuidance: true } : {}),
     ...(context.observedCapacity ? { observedCapacity: true } : {}),
   };
+};
+
+export const deferredPinFor = async (input: {
+  store: RuntimeStore;
+  settings: Pick<SettingsPort, 'tools'>;
+  session: Session;
+  run: Run;
+}): Promise<Pick<TokenPin, 'deferred'>> => {
+  const { store, settings, session, run } = input;
+  if (run.parentRunId !== null || !(await settings.tools(session)).deferral) return {};
+  return { deferred: deferredSetOf({ runs: toolUsageWindowOf(store, session.cwd) }) };
 };

@@ -14,7 +14,7 @@ import {
   textOfItem,
   workingStateCapFor,
 } from '@momonga/context';
-import type { ActivatedSkill, BuildContextInput, ContextArrival, BuildContextPorts, BuiltContext, CompactionPlan, ContextEviction, LoadedGoverning, PinnedMeasure, TouchedPath } from '@momonga/context';
+import type { ActivatedSkill, TokenMeter, BuildContextInput, ContextArrival, BuildContextPorts, BuiltContext, CompactionPlan, ContextEviction, LoadedGoverning, PinnedMeasure, TouchedPath } from '@momonga/context';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { resolveGoverning } from '@momonga/memory';
 import type { Session } from '@momonga/store';
@@ -167,6 +167,32 @@ const portsOf = (ctx: ClaimContext): BuildContextPorts => ({
 });
 
 export const measurePinnedFor = (ctx: ClaimContext): Promise<PinnedMeasure> => measurePinned(contextInputOf(ctx, undefined, 0), portsOf(ctx));
+
+export type ToolsMeasure = { measure: PinnedMeasure; floorTokens: number; kept: readonly string[] };
+
+export const measureToolsWith = async (ctx: ClaimContext, tools: readonly FunctionTool[]): Promise<ToolsMeasure> => {
+  const input: BuildContextInput = { ...contextInputOf(ctx, undefined, 0) };
+  delete input.pinnedTokens;
+  const counts: { tools: readonly FunctionTool[]; tokens: number }[] = [];
+  const ports = portsOf(ctx);
+  const meter: TokenMeter = {
+    ...ports.meter,
+    count: async (request) => {
+      const counted = await ports.meter.count(request);
+      counts.push({ tools: request.tools, tokens: counted.inputTokens });
+      return counted;
+    },
+  };
+  const measure = await measurePinned({ ...input, sources: { ...input.sources, tools: [...tools] } }, { ...ports, meter });
+  const first = counts[0];
+  const last = counts[counts.length - 1];
+  if (first === undefined || last === undefined) throw new Error('measuring the pinned floor counted nothing');
+  return { measure, floorTokens: first.tokens, kept: last.tools.map((tool) => tool.name) };
+};
+
+export const rememberAdmittedTools = (ctx: ClaimContext, tools: readonly FunctionTool[], pinnedTokens: number): void => {
+  if (ctx.token.observedCapacity && admittedFloors.has(ctx)) admittedFloors.set(ctx, { pinnedTokens, tools: [...tools] });
+};
 
 const withNewSkills = (arrivals: readonly ContextArrival[], activatedSkills: readonly ActivatedSkill[]): ContextArrival[] => [
   ...arrivals,
