@@ -72,7 +72,8 @@ export type FakeScriptedReply =
     }
   | { kind: 'error'; status: number; body: unknown; headers?: Record<string, string> }
   | { kind: 'hang'; chunks?: FakeStreamChunk[] }
-  | { kind: 'raw-sse'; events: string[] };
+  | { kind: 'raw-sse'; events: string[] }
+  | { kind: 'error-event'; body: unknown };
 
 export interface RecordedRequest {
   method: string;
@@ -581,6 +582,10 @@ export const startFakeChatCompletions = async (
     }
     completionCount += 1;
     const id = `chatcmpl-fake-${completionCount}`;
+    if (reply.kind === 'error-event') {
+      writeFmError(response, id, reply.body);
+      return;
+    }
     response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
     if (reply.kind === 'hang') {
       writeScriptedChunks(response, reply.chunks ?? [], id);

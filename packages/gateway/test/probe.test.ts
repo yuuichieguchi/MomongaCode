@@ -7,6 +7,7 @@ import {
   FAKE_GUARDRAIL_ERROR,
   FAKE_PAYLOAD_TOO_LARGE_ERROR,
   FM_CONTEXT_OVERFLOW_ERROR,
+  FM_UNSUPPORTED_GUIDE_ERROR,
   countFakeRequestTokens,
   startFakeChatCompletions,
   type FakeChatCompletionsOptions,
@@ -357,6 +358,41 @@ describe('runProbe server features', () => {
     });
     expect(report.constrained.accepted).toBe(true);
     expect(isProbeReport(report)).toBe(true);
+  });
+
+  const isConstrainedSample = (body: unknown): boolean => {
+    const messages = (body as { messages?: Array<{ role?: unknown; content?: unknown }> }).messages ?? [];
+    return messages[0]?.role === 'system' && messages[0]?.content === 'Answer only with JSON that matches the given schema.';
+  };
+
+  it('stops the constrained samples at an fm error event that is a failure, as the native and parallel samples do', async () => {
+    const failureEvent = { error: { message: 'The model failed to generate a response.', code: '500', type: 'server_error' } };
+    const fake = await startFakeChatCompletions({
+      scenario: 'tools-ok',
+      wire: 'fm',
+      contextSizeExposure: 'models',
+      routes: [{ match: isConstrainedSample, reply: { kind: 'error-event', body: failureEvent } }],
+    });
+    servers.push(fake);
+
+    await expect(runProbe({ socketPath: fake.socketPath, managedHealthRoute: true, now: fixedNow, samples: 5, vocabulary: FM_VOCABULARY })).rejects.toThrow(
+      'failed with HTTP 200',
+    );
+    expect(fake.routeHits).toEqual([1]);
+  });
+
+  it('reads an fm unsupported generation guide error event on the constrained samples as constrained not accepted, and sends no more samples', async () => {
+    const { report, fake } = await probe(
+      {
+        scenario: 'tools-ok',
+        wire: 'fm',
+        contextSizeExposure: 'models',
+        routes: [{ match: isConstrainedSample, reply: { kind: 'error-event', body: FM_UNSUPPORTED_GUIDE_ERROR } }],
+      },
+      { samples: 5, vocabulary: FM_VOCABULARY },
+    );
+    expect(report.constrained).toEqual({ accepted: false, validRate: 0 });
+    expect(fake.routeHits).toEqual([1]);
   });
 
   it('marks nested objects unsupported when rejected', async () => {
