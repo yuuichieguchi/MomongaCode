@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { titleOf } from './support/cases.ts';
 import { readDb } from './support/db.ts';
 import { createE2eHome } from './support/home.ts';
-import { KEYS, spawnPty } from './support/pty.ts';
+import { KEYS, spawnPty, untilRunEnds } from './support/pty.ts';
 import { baseSettings, sandboxChoiceOf, startUpstream, writeSettingsFile } from './support/stack.ts';
 import { chatCompletions, hangReply, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
@@ -125,7 +125,7 @@ describe('cli: interactive TUI through a pty', () => {
 
     pty.write(KEYS.escape);
     await pty.waitFor('CANCELLED');
-    await pty.waitFor(/mode: default \(shift\+tab\) · tokens: \d+( · context: \d+%)?\s*$/);
+    await untilRunEnds(pty, 'default');
 
     pty.write(KEYS.up);
     await pty.waitFor('line two');

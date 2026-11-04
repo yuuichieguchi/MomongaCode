@@ -6,7 +6,7 @@ import { titleOf } from './support/cases.ts';
 import { OPEN_LOG_FILE_NAME, SECRETS_FILE_NAME, runCli } from './support/cli.ts';
 import type { E2eHome } from './support/home.ts';
 import { PNG_BYTES, WINDOW_WITH_ROOM_FOR_ALL_TOOLS_AND_AN_IMAGE, prepareProduct, requestText, writePng, writeUserSkill } from './support/product.ts';
-import { KEYS, spawnPty } from './support/pty.ts';
+import { KEYS, spawnPty, untilRunEnds } from './support/pty.ts';
 import type { PtySession } from './support/pty.ts';
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
@@ -24,9 +24,6 @@ const submit = async (pty: PtySession, text: string): Promise<void> => {
   await pty.waitFor(`> ${text}`);
   pty.write(KEYS.enter);
 };
-
-const untilRunEnds = (pty: PtySession, mode: string): Promise<void> =>
-  pty.waitFor(new RegExp(`mode: ${mode} \\(shift\\+tab\\) · tokens: [\\d.]+k?( · context: \\d+%)?\\s*$`));
 
 const leave = async (pty: PtySession): Promise<void> => {
   pty.write(KEYS.ctrlD);
