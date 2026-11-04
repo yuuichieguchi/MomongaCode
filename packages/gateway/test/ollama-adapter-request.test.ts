@@ -184,8 +184,8 @@ describe('ollama request: structured output and thinking', () => {
   });
 
   for (const effort of ['minimal', 'low', 'high'] as const) {
-    it(`sends think true for reasoning effort ${effort}`, async () => {
-      expect((await sentBody({ model: 'devstral-small-2', input: [userText('hi')], max_output_tokens: 300, reasoning_effort: effort })).think).toBe(true);
+    it(`sends no think true for reasoning effort ${effort} to a target without a reasoning capability`, async () => {
+      expect((await sentBody({ model: 'devstral-small-2', input: [userText('hi')], max_output_tokens: 300, reasoning_effort: effort })).think).not.toBe(true);
     });
   }
 

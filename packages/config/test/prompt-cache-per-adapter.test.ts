@@ -39,7 +39,7 @@ const accepted: ReadonlyArray<{ adapter: Adapter; promptCache: unknown }> = [
   { adapter: 'anthropic', promptCache: BREAKPOINTS },
   { adapter: 'chat-completions', promptCache: KEY },
   { adapter: 'open-responses', promptCache: KEY },
-  ...(['anthropic', 'chat-completions', 'open-responses', 'ollama'] as const).flatMap((adapter) => [
+  ...(['chat-completions', 'open-responses', 'ollama'] as const).flatMap((adapter) => [
     { adapter, promptCache: { kind: 'automatic' } },
     { adapter, promptCache: { kind: 'none' } },
   ]),

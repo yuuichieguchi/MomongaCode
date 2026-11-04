@@ -150,6 +150,7 @@ describe('both probes read the cached-token count by one rule (S1)', () => {
       const fake = await startFakeOllama({ cacheProbe: 'malformed' });
       return (await probeOllamaTarget({ probeRecordDir: makeDir(), upstream: { kind: 'tcp', baseUrl: fake.origin }, model: OLLAMA_MODEL, contextWindow: 32768 })).report;
     });
+    expect([{ kind: 'recorded', promptCache: undefined }, { kind: 'refused' }]).toContainEqual(chatCompletions);
     expect(ollama).toEqual(chatCompletions);
   });
 

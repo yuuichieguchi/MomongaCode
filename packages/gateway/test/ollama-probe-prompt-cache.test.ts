@@ -42,6 +42,7 @@ describe('the Ollama cache probe builds its chat body with the adapter body buil
     expect(bodies).toHaveLength(2);
     for (const body of bodies) {
       expect(body.model).toBe(OLLAMA_MODEL);
+      expect(body.stream).toBe(false);
       expect(body.truncate).toBe(false);
       expect(body.options.num_ctx).toBe(32768);
       expect(body.options.num_predict).toBe(1);
