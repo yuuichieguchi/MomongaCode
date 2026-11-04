@@ -1,6 +1,6 @@
 {
   "format": "momonga-eval-context/1",
-  "name": "token",
+  "name": "economy",
   "cases": [
     {
       "id": "repeated-reads-on",
@@ -87,8 +87,8 @@
       "description": "Measures a test run whose output is long and repetitive: the failing test name sits among sixty identical stack lines, and the answer must name it. Automatic compaction is on.",
       "scenario": "test-failures",
       "input": "Run node test/run.js and tell me which test fails and what it expected.",
-      "permissionMode": "bypassPermissions",
-      "onAsk": "reject_once",
+      "permissionMode": "default",
+      "onAsk": "allow_once",
       "runs": 2,
       "minPassRate": 1,
       "files": {
@@ -125,8 +125,8 @@
       "description": "Measures a test run whose output is long and repetitive: the failing test name sits among sixty identical stack lines, and the answer must name it. The same task with context.autoCompact false; the contrast for the on case.",
       "scenario": "test-failures",
       "input": "Run node test/run.js and tell me which test fails and what it expected.",
-      "permissionMode": "bypassPermissions",
-      "onAsk": "reject_once",
+      "permissionMode": "default",
+      "onAsk": "allow_once",
       "runs": 2,
       "minPassRate": 1,
       "files": {

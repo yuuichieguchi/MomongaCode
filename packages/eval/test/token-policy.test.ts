@@ -19,10 +19,10 @@ const SCENARIOS = ['a', 'b'] as const;
 const dataset = parseContextDataset(
   JSON.stringify({
     format: CONTEXT_DATASET_FORMAT,
-    name: 'token',
+    name: 'economy',
     cases: SCENARIOS.flatMap((scenario) => [contextCase(`${scenario}-on`, scenario, 'on'), contextCase(`${scenario}-off`, scenario, 'off')]),
   }),
-  'token.json',
+  'economy.json',
 );
 
 const transcripts: Transcript[] = SCENARIOS.flatMap((scenario) => [recorded(`${scenario}-on`, 0, []), recorded(`${scenario}-off`, 0, [])]);

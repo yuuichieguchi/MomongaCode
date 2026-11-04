@@ -5,14 +5,14 @@ import { CONTRIBUTION_WINDOW_RUNS } from '@momonga/memory';
 
 const TOKEN_CASE_KINDS = ['repeated-reads', 'test-failures', 'json-api', 'large-grep', 'loop-prone', 'deferral'] as const;
 
-const load = async () => parseContextDataset(await fs.readFile(new URL('../datasets/token.json', import.meta.url), 'utf8'), 'token.json');
+const load = async () => parseContextDataset(await fs.readFile(new URL('../datasets/economy.json', import.meta.url), 'utf8'), 'economy.json');
 
 const kindOf = (scenario: string): string | undefined => TOKEN_CASE_KINDS.find((kind) => scenario === kind || scenario.startsWith(`${kind}-`));
 
-describe('the token dataset', () => {
+describe('the economy dataset', () => {
   it('validates against the context dataset schema and expands', async () => {
     const dataset = await load();
-    expect(dataset.name).toBe('token');
+    expect(dataset.name).toBe('economy');
     expect(expandContextDataset(dataset, 0).cases.length).toBe(dataset.cases.length);
   });
 
