@@ -28,6 +28,19 @@ export const inputCeilingFor = (capabilities: Capabilities): number => {
   return Math.max(0, discountedFloor(sizingFractionFor(capabilities), W - R - marginFloorFor(W)));
 };
 
+export const capacityFor = (capabilities: Capabilities, underAt: (tokens: number) => number): number => {
+  const inputBudget = budgetFor(capabilities, 0).I;
+  const fits = (tokens: number): boolean => tokens + underAt(tokens) <= inputBudget;
+  let low = 0;
+  let high = inputBudget;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (fits(middle)) low = middle;
+    else high = middle - 1;
+  }
+  return low;
+};
+
 export const summaryInputCeilingFor = (capabilities: Capabilities): number => {
   const { W, R } = budgetFor(capabilities, 0);
   return Math.max(0, Math.min(discountedFloor(sizingFractionFor(capabilities), W - marginFloorFor(W)), W - R));

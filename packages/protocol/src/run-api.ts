@@ -2,6 +2,7 @@ import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.t
 import { GUIDELINE_TEXT_PATTERN } from './guideline-text.ts';
 import { HOOK_EVENTS, HOOK_OUTCOMES, HOOK_PRE_TOOL_DECISIONS } from './hooks.ts';
 import { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
+import { PREFIX_EVENTS } from './prefix-events.ts';
 import { MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES, REFLECTION_DROP_CAUSES, REFLECTION_JOB_STATES } from './memory.ts';
 import type { ContextChargePurpose, SummaryFidelity, SummarySource } from './context-record.ts';
 import { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES } from './permission-denial.ts';
@@ -187,7 +188,16 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
     required: ['from', 'to'],
   },
   'model.requested': {
-    properties: { step: nonNegativeInteger, attempt: integer, digest: string, anatomy: tokenAnatomy },
+    properties: {
+      step: nonNegativeInteger,
+      attempt: integer,
+      digest: string,
+      anatomy: tokenAnatomy,
+      prefix: closed(
+        { preservedItems: nonNegativeInteger, toolsChanged: boolean, causes: { type: 'array', items: enumOf(PREFIX_EVENTS) } },
+        ['preservedItems', 'toolsChanged', 'causes'],
+      ),
+    },
     required: ['step', 'attempt', 'digest'],
   },
   'model.responded': {
@@ -437,7 +447,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
     required: ['fromRunId', 'fromLastSeq', 'itemCount', 'nextItemSeq', 'closures', 'partialMessage', 'markers', 'digest'],
   },
   'context.truncated': {
-    properties: { callId: string, handle: string, kind: enumOf(['omitted', 'truncated', 'reference']) },
+    properties: { callId: string, handle: string, kind: enumOf(['omitted', 'truncated', 'reference']), keptChars: nonNegativeInteger },
     required: ['callId', 'handle', 'kind'],
   },
   'instructions.loaded': { properties: { path: string }, required: ['path'] },
@@ -1211,7 +1221,7 @@ type ReducedEventType =
 type PublicPayload =
   | Exclude<RunEventPayload, { type: ReducedEventType }>
   | { type: 'user.message'; text: string; images?: { mediaType: ImageMediaType; byteLength: number }[] }
-  | { type: 'model.requested'; step: number; attempt: number; digest: string; anatomy?: TokenAnatomy }
+  | { type: 'model.requested'; step: number; attempt: number; digest: string; anatomy?: TokenAnatomy; prefix?: Extract<RunEventPayload, { type: 'model.requested' }>['prefix'] }
   | { type: 'run.started'; attempt: number }
   | { type: 'context.compacted'; summary: string; replacedThroughSeq: number; source?: SummarySource; fidelity?: SummaryFidelity; guidelineVersion?: number }
   | { type: 'context.compaction_rejected'; step?: number; attempt?: number }
@@ -1256,6 +1266,7 @@ export const toPublicRunEvent = (event: RunEvent | SessionEvent): PublicRunEvent
         attempt: event.attempt,
         digest: event.digest,
         ...(event.anatomy === undefined ? {} : { anatomy: event.anatomy }),
+        ...(event.prefix === undefined ? {} : { prefix: event.prefix }),
       };
     case 'run.started':
       return { ...envelope, type: event.type, attempt: event.attempt };

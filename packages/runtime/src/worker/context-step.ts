@@ -3,6 +3,7 @@ import {
   PinnedBoundError,
   PinnedOverflowError,
   PinnedRoomError,
+  PrefixChangedError,
   budgetFor,
   buildContext,
   checkSummary,
@@ -13,16 +14,18 @@ import {
   textOfItem,
   workingStateCapFor,
 } from '@momonga/context';
-import type { ActivatedSkill, BuildContextInput, BuildContextPorts, BuiltContext, CompactionPlan, ContextEviction, LoadedGoverning, PinnedMeasure, TouchedPath } from '@momonga/context';
+import type { ActivatedSkill, BuildContextInput, ContextArrival, BuildContextPorts, BuiltContext, CompactionPlan, ContextEviction, LoadedGoverning, PinnedMeasure, TouchedPath } from '@momonga/context';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { resolveGoverning } from '@momonga/memory';
 import type { Session } from '@momonga/store';
 import { compactionSummaryMessage, decodeCompactionSummary, tokensForText, userMessageContent } from '@momonga/protocol';
-import type { CompactRequest, CompactResource, CompactionInputItem, ContentPart, MessageInputItem, RunEvent, RunEventPayload, RunState, SummaryFidelity } from '@momonga/protocol';
+import type { CompactRequest, CompactResource, CompactionInputItem, ContentPart, FunctionTool, InputItem, MessageInputItem, RunEvent, RunEventPayload, RunState, SummaryFidelity } from '@momonga/protocol';
 import { foldRunState } from '@momonga/store';
 import { GatewayRequestError } from '../gateway-client.ts';
 import { recallQueryOf } from '../memory/recall-query.ts';
 import type { WorkerBlobs } from './types.ts';
+import { arrivalsOf } from './context-arrivals.ts';
+import { FORM_EVENT_TYPES, formsSinceCompaction, renderedFormsOf } from './context-forms.ts';
 import type { ClaimContext } from './claim-context.ts';
 import { touchedPathsOf } from './touched-paths.ts';
 import { wrapUpInstructionFor } from './wrap-up.ts';
@@ -85,7 +88,17 @@ const workingStateOf = (ctx: ClaimContext, state: RunState): string | undefined 
 const projectedWorkingStateOf = (ctx: ClaimContext, state: RunState): string | undefined =>
   state.history.length === 0 ? undefined : workingStateOf(ctx, projectCompaction(ctx, state.nextItemSeq - 1, compactionSummaryMessage(''), ''));
 
-export const contextInputOf = (ctx: ClaimContext, wrapUp: WrapUpReason | undefined, level: number, scan: GoverningScan = 'active'): BuildContextInput => {
+type AdmittedFloor = { pinnedTokens: number; tools: FunctionTool[] };
+
+const admittedFloors = new WeakMap<ClaimContext, AdmittedFloor>();
+
+export const contextInputOf = (
+  ctx: ClaimContext,
+  wrapUp: WrapUpReason | undefined,
+  level: number,
+  scan: GoverningScan = 'active',
+  trailing: readonly InputItem[] = [],
+): BuildContextInput => {
   const { options, journal } = ctx;
   const state = journal.state;
   const session = sessionOf(ctx);
@@ -93,13 +106,16 @@ export const contextInputOf = (ctx: ClaimContext, wrapUp: WrapUpReason | undefin
   const projectedWorkingState = projectedWorkingStateOf(ctx, state);
   const task = taskOf(ctx);
   const touchedPaths = touchedPathsOf(state.workingFacts.touched, session.cwd);
+  const admitted = ctx.token.observedCapacity ? admittedFloors.get(ctx) : undefined;
+  const rendered = ctx.token.observedCapacity ? renderedFormsOf(options.store, ctx.run.id, state.lastSeq) : undefined;
+  const wrapUpItems: InputItem[] = wrapUp === undefined ? [] : [{ type: 'message', role: 'user', content: wrapUpInstructionFor(wrapUp) }];
   return {
     capabilities: ctx.capabilities,
     calibration: ctx.calibration,
     model: ctx.alias,
     sources: {
       systemPrompt: ctx.systemPrompt,
-      tools: ctx.functionTools(),
+      tools: admitted === undefined ? ctx.functionTools() : admitted.tools,
       task: { type: 'message', role: 'user', content: task.content },
       taskSeq: state.taskSeq,
       ...(ctx.skills.catalog === undefined ? {} : { skillCatalog: ctx.skills.catalog }),
@@ -122,7 +138,22 @@ export const contextInputOf = (ctx: ClaimContext, wrapUp: WrapUpReason | undefin
     home: options.home,
     level,
     ...(ctx.pinnedDigest.value === undefined ? {} : { expectedPinnedDigest: ctx.pinnedDigest.value }),
-    ...(wrapUp === undefined ? {} : { tools: 'none' as const, trailing: [{ type: 'message' as const, role: 'user' as const, content: wrapUpInstructionFor(wrapUp) }] }),
+    ...(wrapUp === undefined ? {} : { tools: 'none' as const }),
+    ...(wrapUpItems.length + trailing.length === 0 ? {} : { trailing: [...wrapUpItems, ...trailing] }),
+    ...(ctx.token.cachePrefix
+      ? {
+          layout: 'cachePrefix' as const,
+          arrivals: arrivalsOf(options.store, ctx.run.id, state),
+          ...(state.memoriesLoaded === undefined ? {} : { pinnedMemoryIds: state.memoriesLoaded.map((memory) => memory.id) }),
+        }
+      : {}),
+    ...(ctx.token.observedCapacity
+      ? {
+          observedCapacity: true as const,
+          ...(admitted === undefined ? {} : { pinnedTokens: admitted.pinnedTokens }),
+          ...(rendered === undefined ? {} : { forms: rendered.forms, renderedFull: rendered.renderedFull }),
+        }
+      : {}),
   };
 };
 
@@ -137,14 +168,31 @@ const portsOf = (ctx: ClaimContext): BuildContextPorts => ({
 
 export const measurePinnedFor = (ctx: ClaimContext): Promise<PinnedMeasure> => measurePinned(contextInputOf(ctx, undefined, 0), portsOf(ctx));
 
+const withNewSkills = (arrivals: readonly ContextArrival[], activatedSkills: readonly ActivatedSkill[]): ContextArrival[] => [
+  ...arrivals,
+  ...activatedSkills
+    .filter((skill) => !arrivals.some((arrival) => arrival.kind === 'skill' && arrival.name === skill.name))
+    .map((skill): ContextArrival => ({ kind: 'skill', name: skill.name, content: skill.content })),
+];
+
 export const measureLayersWith = (ctx: ClaimContext, activatedSkills: readonly ActivatedSkill[]): Promise<void> => {
   const input = contextInputOf(ctx, undefined, 0);
-  return measureLayers({ ...input, sources: { ...input.sources, activatedSkills } }, portsOf(ctx));
+  return measureLayers(
+    {
+      ...input,
+      sources: { ...input.sources, activatedSkills },
+      ...(input.arrivals === undefined ? {} : { arrivals: withNewSkills(input.arrivals, activatedSkills) }),
+    },
+    portsOf(ctx),
+  );
 };
 
-const buildOnce = async (ctx: ClaimContext, wrapUp: WrapUpReason | undefined, level: number): Promise<BuiltContext> => {
-  const built = await buildContext(contextInputOf(ctx, wrapUp, level), portsOf(ctx));
-  if (wrapUp === undefined) ctx.pinnedDigest.value ??= built.pinnedDigest;
+const buildOnce = async (ctx: ClaimContext, wrapUp: WrapUpReason | undefined, level: number, trailing: readonly InputItem[]): Promise<BuiltContext> => {
+  const built = await buildContext(contextInputOf(ctx, wrapUp, level, 'active', trailing), portsOf(ctx));
+  if (wrapUp === undefined) {
+    ctx.pinnedDigest.value ??= built.pinnedDigest;
+    if (ctx.token.observedCapacity && !admittedFloors.has(ctx)) admittedFloors.set(ctx, { pinnedTokens: built.pinnedTokens, tools: built.tools });
+  }
   return built;
 };
 
@@ -348,7 +396,8 @@ const recordContextFacts = (ctx: ClaimContext, built: BuiltContext): void => {
     if (memory === undefined) throw new Error(`the context loaded memory ${id}, which the run did not recall`);
     return { id, status: memory.status };
   });
-  if (canonicalJson(loadedMemories) !== canonicalJson(memoriesLoaded ?? [])) payloads.push({ type: 'context.memories_loaded', memories: loadedMemories });
+  const firstRanking = ctx.token.cachePrefix && memoriesLoaded === undefined;
+  if (firstRanking || canonicalJson(loadedMemories) !== canonicalJson(memoriesLoaded ?? [])) payloads.push({ type: 'context.memories_loaded', memories: loadedMemories });
   if (payloads.length > 0) ctx.journal.append(payloads);
   const unmarked = built.loadedMemoryIds.filter((id) => !ctx.usedMemoryIds.has(id));
   if (unmarked.length > 0) {
@@ -359,13 +408,23 @@ const recordContextFacts = (ctx: ClaimContext, built: BuiltContext): void => {
 
 const recordEvictions = (ctx: ClaimContext, evictions: readonly ContextEviction[]): void => {
   const state = ctx.journal.state;
+  const recordedForms = ctx.token.observedCapacity ? formsSinceCompaction(ctx.options.store.readRunEventsOfTypes(ctx.run.id, [...FORM_EVENT_TYPES])) : undefined;
   const unreflected = evictions.filter((eviction) => {
     const entry = state.history.find((candidate) => candidate.callId === eviction.callId && candidate.item.type === 'function_call_output');
     if (entry === undefined) return false;
-    return eviction.kind === 'omitted' ? !state.evicted.includes(eviction.callId) : entry.handle === undefined;
+    if (eviction.kind === 'omitted') return !state.evicted.includes(eviction.callId);
+    return entry.handle === undefined || (recordedForms !== undefined && recordedForms.get(eviction.callId) !== eviction.keptChars);
   });
   if (unreflected.length === 0) return;
-  ctx.journal.append(unreflected.map((eviction) => ({ type: 'context.truncated', callId: eviction.callId, handle: eviction.handle, kind: eviction.kind })));
+  ctx.journal.append(
+    unreflected.map((eviction) => ({
+      type: 'context.truncated',
+      callId: eviction.callId,
+      handle: eviction.handle,
+      kind: eviction.kind,
+      ...(eviction.keptChars === undefined ? {} : { keptChars: eviction.keptChars }),
+    })),
+  );
 };
 
 export const recoverRejectedCompaction = (ctx: ClaimContext, error: unknown, position?: { step: number; attempt: number }): 'recovered' | 'done' => {
@@ -462,7 +521,18 @@ const budgetStopNotice = (ctx: ClaimContext, error: ContextOverflowError, attemp
   );
 };
 
-export const buildNext = async (ctx: ClaimContext, options: { wrapUp?: WrapUpReason } = {}): Promise<BuildOutcome> => {
+export const buildNext = async (ctx: ClaimContext, options: { wrapUp?: WrapUpReason; trailing?: readonly InputItem[] } = {}): Promise<BuildOutcome> => {
+  try {
+    return await buildNextUnguarded(ctx, options);
+  } catch (error) {
+    if (!(error instanceof PrefixChangedError)) throw error;
+    ctx.terminals.yieldTo('QUEUED', ctx.options.clock.now(), { refundAttempt: true });
+    return { kind: 'done' };
+  }
+};
+
+const buildNextUnguarded = async (ctx: ClaimContext, options: { wrapUp?: WrapUpReason; trailing?: readonly InputItem[] }): Promise<BuildOutcome> => {
+  const trailing = options.trailing ?? [];
   const attempt: FinalAttempt = { successes: 0, attempts: 0, triedAtLastLevel: false };
   const levelsWithCompaction = new Set<number>();
   let proactiveDone = false;
@@ -494,7 +564,7 @@ export const buildNext = async (ctx: ClaimContext, options: { wrapUp?: WrapUpRea
     if (cancelIfInterrupted(ctx) === 'done') return { kind: 'done' };
     let built: BuiltContext;
     try {
-      built = await buildOnce(ctx, options.wrapUp, level);
+      built = await buildOnce(ctx, options.wrapUp, level, trailing);
     } catch (error) {
       if (error instanceof PinnedOverflowError) {
         ctx.terminals.finish('FAILED', { error: pinnedFailureFor(ctx, error) });
@@ -522,7 +592,7 @@ export const buildNext = async (ctx: ClaimContext, options: { wrapUp?: WrapUpRea
       if (options.wrapUp !== undefined) return stop(error, 'the final summary request does not fit either');
       let wrapUpBuilt: BuiltContext;
       try {
-        wrapUpBuilt = await buildOnce(ctx, 'context', error.level);
+        wrapUpBuilt = await buildOnce(ctx, 'context', error.level, trailing);
       } catch (wrapUpError) {
         if (wrapUpError instanceof ContextOverflowError || wrapUpError instanceof PinnedOverflowError) {
           return stop(error, 'the context does not fit even without tools, so no final summary was requested');

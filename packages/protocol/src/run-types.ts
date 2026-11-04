@@ -243,7 +243,7 @@ export type RunEventPayload =
       activatedSkills?: ActivatedSkillRecord[];
       digest: string;
     }
-  | { type: 'context.truncated'; callId: string; handle: string; kind: 'omitted' | 'truncated' | 'reference' }
+  | { type: 'context.truncated'; callId: string; handle: string; kind: 'omitted' | 'truncated' | 'reference'; keptChars?: number }
   | { type: 'instructions.loaded'; path: string; content: string }
   | { type: 'skill.activated'; name: string; content: string }
   | { type: 'approval.rule.persisted'; approvalId: string; effect: 'allow' | 'deny'; rule: string }

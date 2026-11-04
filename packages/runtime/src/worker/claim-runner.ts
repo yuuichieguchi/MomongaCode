@@ -4,7 +4,7 @@ import { signalUntil } from '../memory/deadline-signal.ts';
 import { createTokenMeter, withCalibration } from '@momonga/context';
 import type { TokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex } from '@momonga/foundation';
-import type { Capabilities } from '@momonga/protocol';
+import type { Capabilities, FunctionTool } from '@momonga/protocol';
 import { isFatalStoreError } from '@momonga/store';
 import type { Claim } from '@momonga/store';
 import type { ClaimContext, Flow, RunMemory, Terminals } from './claim-context.ts';
@@ -23,6 +23,7 @@ import { readRunLimits } from './limits.ts';
 import { decideAfterResponse, responsePending, resumeInFlight, runModelStep } from './model-step.ts';
 import { guidelineOf, guidelineVersionFor } from './guideline-pin.ts';
 import { memoryShareFor } from './memory-share.ts';
+import { watchMode } from './mode-watch.ts';
 import { foldMeterFor, meterEventsOf } from './meter-journal.ts';
 import { aliasChainReaches } from './model-switch.ts';
 import { readPins } from './pins.ts';
@@ -306,6 +307,9 @@ const drive = async (
         }
       : readPins(recorded);
   journal.append([{ type: 'run.started', attempt: claim.attempt, now: clock.now(), pins: { ...pins }, mode: session.permissionMode }]);
+  const [startedEvent] = store.readRunEvents(run.id, journal.state.lastSeq - 1, 1);
+  if (startedEvent === undefined) throw new Error(`run ${run.id} has no event at seq ${journal.state.lastSeq} after its run.started`);
+  const modeWatch = watchMode(store, session.id, startedEvent.id);
   const knownNotes = new Set(journal.state.notes.map((note) => note.message));
   const toolNotices = [...skills.warnings, ...(agentSet?.warnings ?? []), ...toolSet.notices].filter((message) => !knownNotes.has(message));
   if (toolNotices.length > 0) journal.append([...new Set(toolNotices)].map((message) => ({ type: 'notice', level: 'warning', message })));
@@ -356,6 +360,10 @@ const drive = async (
     capabilities: aliasMeterCapabilities,
   });
   aliasMeter.restore(foldMeterFor(options.store, meterEvents, aliasMeterCapabilities, aliasCounter));
+  const token = tokenPolicyOf(pins.token);
+  const offerNow = (): FunctionTool[] =>
+    toolSet.forModel({ mode: session.permissionMode, rules: composeRules(), conciseDescriptions: token.conciseDescriptions });
+  const claimOffer = token.cachePrefix ? offerNow() : undefined;
   const ctx: ClaimContext = {
     options,
     claim,
@@ -371,7 +379,7 @@ const drive = async (
     recalled,
     usedMemoryIds: new Set<string>(),
     env,
-    functionTools: () => toolSet.forModel({ mode: session.permissionMode, rules: composeRules() }),
+    functionTools: () => (claimOffer === undefined ? offerNow() : [...claimOffer]),
     companions: () => ({
       hostOf: Object.fromEntries(toolSet.companions),
       keepWithoutHost: options.store.jobs.listForSession(session.id).some((job) => job.status === 'running'),
@@ -408,7 +416,7 @@ const drive = async (
     memory,
     verificationCommands: (await options.settings.verification(session)).commands,
     autoCompact: (await options.settings.context(session)).autoCompact,
-    token: tokenPolicyOf(pins.token),
+    token,
   };
 
   const governingFailure = await governingFailureAtStart(ctx);
@@ -430,6 +438,10 @@ const drive = async (
     }
     if (control.cancelRequested()) {
       terminals.cancel();
+      return;
+    }
+    if (modeWatch.changed()) {
+      terminals.yieldTo('QUEUED', clock.now(), { refundAttempt: true });
       return;
     }
     flow = await runModelStep(ctx);
