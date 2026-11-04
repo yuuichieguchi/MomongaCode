@@ -48,4 +48,37 @@ describe('B10: a fallback target checked against the alias window fits its own w
     },
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );
+
+  const compositionOf = (arith: ProofArith, admitted: boolean): { readonly windows: TwoWindows; readonly server: ProofInt } => {
+    const windows = twoWindowsOf(arith);
+    arith.given(windows.alias.W.le(windows.Wt));
+    const c = arith.int('c');
+    const under = arith.int('under');
+    const server = arith.int('server');
+    arith.given(c.ge(0), under.ge(0), server.le(c.add(under).add(windows.targetMargin)));
+    if (admitted) arith.given(c.add(under).le(windows.alias.I0));
+    return { windows, server };
+  };
+
+  it(
+    'B10 composition with B8 (i): server <= c + under + marginFloorFor(W_t) and c + under <= I0(W_a) give server <= W_t - R',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'B10-composition');
+      const { windows, server } = compositionOf(arith, true);
+      expect(await hypothesesSatisfiable(arith)).toBe(true);
+      expect(await prove(arith, server.le(windows.Wt.sub(windows.alias.R)))).toEqual({ status: 'proved' });
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'B10 composition evidence: is refuted without c + under <= I0(W_a)',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'B10-composition-evidence');
+      const { windows, server } = compositionOf(arith, false);
+      const model = await expectRefuted(arith, server.le(windows.Wt.sub(windows.alias.R)));
+      expect(BigInt(String(model.c)) + BigInt(String(model.under))).toBeGreaterThan(BigInt(String(model.I0)));
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
 });
