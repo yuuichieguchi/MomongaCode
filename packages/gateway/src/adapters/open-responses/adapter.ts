@@ -7,7 +7,7 @@ import { createUpstreamClassifier } from '../shared/classify.ts';
 import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { StreamFailure, UnsupportedInputError, UpstreamProtocolError } from '../shared/failures.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
-import { matchesContextOverflow } from '../chat-completions/classify.ts';
+import { CHAT_COMPLETIONS_VOCABULARY, verdictsOf } from '../chat-completions/vocabulary.ts';
 import { httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
 import { MAX_SSE_EVENT_BYTES } from '../shared/limits.ts';
 import { ResponseEmitter } from '../shared/response-emitter.ts';
@@ -17,7 +17,7 @@ import { buildResponsesBody } from './request.ts';
 import { OpenResponsesStreamDriver } from './stream-driver.ts';
 import type { OpenResponsesAdapter, OpenResponsesAdapterOptions } from './types.ts';
 
-const verdicts = { guardrail: (): boolean => false, contextOverflow: matchesContextOverflow };
+const verdicts = verdictsOf(CHAT_COMPLETIONS_VOCABULARY, () => false);
 
 export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions): OpenResponsesAdapter => {
   const pool = createEndpointPool({ label: OPEN_RESPONSES_PROVIDER_LABEL, unixPath: OPEN_RESPONSES_PATH, urlSuffix: OPEN_RESPONSES_SUFFIX }, options.liveness);

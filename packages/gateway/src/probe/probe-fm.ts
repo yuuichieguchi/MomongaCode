@@ -7,6 +7,7 @@ import { readOsBuild, sha256OfFile } from '../managed/fm-record-key.ts';
 import { createFmServe } from '../managed/fm-serve.ts';
 import type { ExecFn } from '../managed/fm-serve.ts';
 import { parseCount } from '../managed/fm-target.ts';
+import { FM_VOCABULARY } from '../adapters/chat-completions/vocabulary.ts';
 import { decideToolCalling } from './decide.ts';
 import { saveProbeRecord } from './record.ts';
 import type { ProbeRecordKey } from './record.ts';
@@ -49,6 +50,7 @@ export const probeManagedFm = async (options: ProbeManagedFmOptions): Promise<Pr
     const report = await runProbe({
       socketPath: endpoint.socketPath,
       managedHealthRoute: true,
+      vocabulary: FM_VOCABULARY,
       countTokens: async (text) => parseCount(await execWithStdin(options.binary, ['count-tokens', '-q'], text, signal)),
       ...(options.samples === undefined ? {} : { samples: options.samples }),
       ...(options.signal === undefined ? {} : { signal: options.signal }),

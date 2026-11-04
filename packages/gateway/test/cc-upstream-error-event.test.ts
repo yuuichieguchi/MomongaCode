@@ -3,10 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { createChatCompletionsAdapter, createManagedFmTarget } from '@momonga/gateway';
 import type { ExecResult, FmServe } from '@momonga/gateway';
 import type { HealthResult } from '@momonga/protocol';
-import { FM_CONTEXT_OVERFLOW_ERROR, createFakeClock, startFakeSseUpstream } from '@momonga/testkit';
+import { FM_CONTEXT_OVERFLOW_ERROR, FM_UNSUPPORTED_GUIDE_ERROR, createFakeClock, startFakeSseUpstream } from '@momonga/testkit';
 import type { FakeUpstreamServer } from '@momonga/testkit';
 import { START_MS, makeDir, postJson, readSse, registerCleanup, startGateway } from './gateway-helpers.ts';
-import { collect, terminalOf, userText } from './cc-support.ts';
+import { CC_CAPABILITIES, collect, terminalOf, userText } from './cc-support.ts';
 
 const FM_ROLE_CHUNK = {
   id: 'chatcmpl-fm',
@@ -54,7 +54,45 @@ const unprobedFmAdapter = async (upstream: FakeUpstreamServer) => {
   return adapter;
 };
 
+const genericAdapter = (upstream: FakeUpstreamServer) => {
+  const adapter = createChatCompletionsAdapter({
+    resolveEndpoint: async () => ({ kind: 'unix', socketPath: upstream.socketPath }),
+    toolCalling: () => 'native',
+    capabilities: async () => CC_CAPABILITIES,
+    clock: createFakeClock(START_MS),
+  });
+  registerCleanup(() => adapter.close());
+  return adapter;
+};
+
+const classifiedFailure = async (adapter: ReturnType<typeof genericAdapter>) => {
+  const { events, error } = await collect(adapter, { model: 'system', input: [userText('hello')] });
+  return { error: error === undefined ? terminalOf(events).response.error : adapter.classify(error).error };
+};
+
 describe('an upstream error event inside a 200 chat-completions stream', () => {
+  it('surfaces fm reporting an unsupported generation guide as the invalid_request that a generic upstream 400 rejection takes', async () => {
+    const upstream = await startFmStyleUpstream(FM_UNSUPPORTED_GUIDE_ERROR);
+    const adapter = await unprobedFmAdapter(upstream);
+
+    const { error: failure } = await classifiedFailure(adapter);
+
+    expect(failure.type).toBe('invalid_request');
+    expect(failure.message).toContain(FM_UNSUPPORTED_GUIDE_ERROR.error.message);
+    expect(NOT_THE_ERROR_ITSELF).not.toContain(failure.code);
+  });
+
+  it('leaves fm\'s unsupported generation guide wording to fm: a generic chat-completions target surfaces it as the server error it reports', async () => {
+    const upstream = await startFmStyleUpstream(FM_UNSUPPORTED_GUIDE_ERROR);
+    const adapter = genericAdapter(upstream);
+
+    const { error: failure } = await classifiedFailure(adapter);
+
+    expect(failure.type).toBe('server_error');
+    expect(failure.message).toContain(FM_UNSUPPORTED_GUIDE_ERROR.error.message);
+    expect(NOT_THE_ERROR_ITSELF).not.toContain(failure.code);
+  });
+
   it('surfaces fm reporting a transcript over its context size as a context_window_exceeded failure, the shape the Anthropic overflow takes', async () => {
     const upstream = await startFmStyleUpstream(FM_CONTEXT_OVERFLOW_ERROR);
     const adapter = await unprobedFmAdapter(upstream);

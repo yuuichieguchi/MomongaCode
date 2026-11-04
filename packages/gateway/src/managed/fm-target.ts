@@ -13,6 +13,8 @@ import type {
 } from '@momonga/protocol';
 import type { ChatCompletionsEndpoint } from '../adapters/chat-completions/types.ts';
 import { matchesGuardrailCode } from '../adapters/chat-completions/classify.ts';
+import { FM_VOCABULARY } from '../adapters/chat-completions/vocabulary.ts';
+import type { ErrorVocabulary } from '../adapters/chat-completions/vocabulary.ts';
 import { estimatedCountOf } from '../core/estimate.ts';
 import { capabilitiesFromProbe } from '../probe/decide.ts';
 import type { KeywordSupport } from '../probe/envelope.ts';
@@ -46,6 +48,7 @@ export type ManagedFmTarget = {
   countTokens: (target: AdapterTarget, request: CountTokensRequest, signal: AbortSignal) => Promise<CountTokensResult>;
   health: (target: AdapterTarget) => Promise<HealthResult>;
   isGuardrail: (target: AdapterTarget, status: number, body: unknown) => boolean;
+  vocabulary: ErrorVocabulary;
   close: () => Promise<void>;
 };
 
@@ -162,6 +165,7 @@ export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Pr
     },
     health: () => options.fmServe.health(),
     isGuardrail: (_target, _status, body) => isGuardrail(body),
+    vocabulary: FM_VOCABULARY,
     close: () => options.fmServe.stop(),
   };
 };

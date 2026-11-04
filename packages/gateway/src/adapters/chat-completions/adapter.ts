@@ -12,7 +12,8 @@ import type {
 } from '@momonga/protocol';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
 import { hiddenReasoningTokens } from '../../core/hidden-reasoning.ts';
-import { classifyChatCompletionsError, matchesContextOverflow, matchesGuardrailCode } from './classify.ts';
+import { classifyChatCompletionsError, matchesGuardrailCode } from './classify.ts';
+import { CHAT_COMPLETIONS_VOCABULARY, verdictsOf } from './vocabulary.ts';
 import { boundedSseBytes } from '../shared/body-reading.ts';
 import { buildConstrainedBody } from './constrained-request.ts';
 import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
@@ -51,6 +52,7 @@ const DONE_MARKER = '[DONE]';
 export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOptions): ChatCompletionsAdapter => {
   const pool = createEndpointPool({ label: 'chat-completions', unixPath: CHAT_COMPLETIONS_PATH, urlSuffix: CHAT_COMPLETIONS_SUFFIX }, options.liveness);
   const { health, countTokens, isGuardrail } = options;
+  const vocabulary = options.vocabulary ?? CHAT_COMPLETIONS_VOCABULARY;
   let closing: Promise<void> | undefined;
   let closed = false;
 
@@ -107,10 +109,12 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
         signal,
       });
       if (response.status !== 200) {
-        throw await httpErrorOf(response, options.clock, nestedErrorDetail, {
-          guardrail: (status, parsed) => (isGuardrail === undefined ? matchesGuardrailCode(parsed) : isGuardrail(ctx.target, status, parsed)),
-          contextOverflow: matchesContextOverflow,
-        });
+        throw await httpErrorOf(
+          response,
+          options.clock,
+          nestedErrorDetail,
+          verdictsOf(vocabulary, (status, parsed) => (isGuardrail === undefined ? matchesGuardrailCode(parsed) : isGuardrail(ctx.target, status, parsed))),
+        );
       }
 
       const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request });
@@ -122,7 +126,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
         for await (const message of decodeSse(boundedSseBytes(response.body, MAX_SSE_EVENT_BYTES))) {
           ctx.signal.throwIfAborted();
           const errorEvent = upstreamErrorEventBody(message);
-          if (errorEvent !== undefined) throw upstreamErrorFailure(response.status, errorEvent.body);
+          if (errorEvent !== undefined) throw upstreamErrorFailure(vocabulary, response.status, errorEvent.body);
           if (message.data === DONE_MARKER) break;
           if (opening !== undefined) {
             const events = opening;

@@ -10,6 +10,7 @@ import type {
 } from '@momonga/protocol';
 import type { UpstreamEndpoint, UpstreamLiveness } from '../shared/http-client.ts';
 import type { KeywordSupport } from '../../probe/envelope.ts';
+import type { ErrorVocabulary } from './vocabulary.ts';
 
 export type ChatCompletionsEndpoint = UpstreamEndpoint;
 
@@ -22,6 +23,7 @@ export type ChatCompletionsAdapterOptions = {
   countTokens?: (target: AdapterTarget, request: CountTokensRequest, signal: AbortSignal) => Promise<CountTokensResult>;
   capabilities: (target: AdapterTarget) => Promise<Capabilities>;
   health?: (target: AdapterTarget) => Promise<HealthResult>;
+  vocabulary?: ErrorVocabulary;
   isGuardrail?: (target: AdapterTarget, status: number, body: unknown) => boolean;
   close?: () => Promise<void>;
   clock: Clock;

@@ -11,7 +11,8 @@ import {
   type ProbeKeyword,
   type ProbeReport,
 } from '@momonga/protocol';
-import { matchesContextOverflow } from '../adapters/chat-completions/classify.ts';
+import { CHAT_COMPLETIONS_VOCABULARY } from '../adapters/chat-completions/vocabulary.ts';
+import type { ErrorVocabulary } from '../adapters/chat-completions/vocabulary.ts';
 import { decodeUpstreamReply } from '../adapters/chat-completions/upstream-reply.ts';
 import type { UpstreamReply } from '../adapters/chat-completions/upstream-reply.ts';
 import { summaryRequestOf } from '../adapters/shared/compact.ts';
@@ -27,6 +28,7 @@ export interface ProbeOptions {
   baseUrl?: string;
   headers?: Record<string, string>;
   managedHealthRoute?: boolean;
+  vocabulary?: ErrorVocabulary;
   model?: string;
   samples?: number;
   countTokens?: (text: string) => Promise<number>;
@@ -48,7 +50,6 @@ const IMAGE_PROMPT = 'Describe this image.';
 const IMAGE_PROBE_SMALL_SIDE = 512;
 const IMAGE_PROBE_LARGE_SIDE = 2048;
 const IMAGE_PROBE_MAX_SIDE = 8192;
-const IMAGE_REJECTION_STATUSES = [400, 413] as const;
 const CALIBRATION_WORD_COUNTS = [20, 80, 320] as const;
 const CONTEXT_FIELDS = [
   'context_window',
@@ -78,7 +79,16 @@ const TINY_PNG =
 const ajv = new Ajv2020.default({ strict: false });
 const validateToolArguments = ajv.compile(PROBE_TOOL.parameters);
 
-type ChatResult = HttpResult & { reply: UpstreamReply };
+type ProbeOutcome = 'accepted' | 'unsupported' | 'overflow' | 'failure';
+
+type ChatResult = HttpResult & { reply: UpstreamReply; outcome: ProbeOutcome };
+
+const outcomeOf = (vocabulary: ErrorVocabulary, status: number, reply: UpstreamReply): ProbeOutcome => {
+  if (reply.kind === 'completion') return status === 200 ? 'accepted' : 'failure';
+  const kind = vocabulary.kindOf(status, reply.body);
+  if (kind === 'context_overflow') return 'overflow';
+  return kind === 'unsupported' ? 'unsupported' : 'failure';
+};
 
 const reportsError = (result: HttpResult | ChatResult): boolean => 'reply' in result && result.reply.kind === 'error';
 
@@ -88,9 +98,14 @@ const expectStatus = (result: HttpResult | ChatResult, allowed: readonly number[
   }
 };
 
-const isAcceptedOrRejected = (result: HttpResult, what: string): boolean => {
-  expectStatus(result, [200, 400], what);
-  return result.status === 200;
+const failProbeStep = (result: HttpResult, what: string): never => {
+  throw new Error(`Probe step "${what}" failed with HTTP ${result.status}: ${result.text.slice(0, 500)}`);
+};
+
+const isAcceptedOrRejected = (result: ChatResult, what: string): boolean => {
+  if (result.outcome === 'accepted') return true;
+  if (result.outcome === 'unsupported') return false;
+  return failProbeStep(result, what);
 };
 
 const assistantMessage = (body: unknown): unknown => field(firstOf(field(body, 'choices')), 'message');
@@ -175,9 +190,11 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
   const model = options.model ?? listedId;
   if (typeof model !== 'string') throw new Error('Probe could not determine a model id from /v1/models');
 
+  const vocabulary = options.vocabulary ?? CHAT_COMPLETIONS_VOCABULARY;
   const post = async (body: Record<string, unknown>): Promise<ChatResult> => {
     const result = await client.post('chat', { model, ...body });
-    return { ...result, reply: await decodeUpstreamReply(result.status, result.text) };
+    const reply = await decodeUpstreamReply(result.status, result.text);
+    return { ...result, reply, outcome: outcomeOf(vocabulary, result.status, reply) };
   };
   const stepTimeoutMs = options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS;
   const sleep = options.sleep ?? systemSleep;
@@ -291,8 +308,8 @@ const baselinePromptTokens = async (chat: Chat): Promise<number | undefined> => 
 
 const imageCost = async (chat: Chat, imageUrl: string): Promise<ImageCost> => {
   const result = await imagePromptRequest(chat, imageUrl);
-  expectStatus(result, [200, ...IMAGE_REJECTION_STATUSES], 'image token measurement');
-  if (result.status !== 200) return { rejected: true };
+  if (result.outcome === 'unsupported' || result.outcome === 'overflow') return { rejected: true };
+  if (result.outcome !== 'accepted') return failProbeStep(result, 'image token measurement');
   return { rejected: false, promptTokens: promptTokensOf(parseJson(result.text)) };
 };
 
@@ -426,8 +443,7 @@ const sampleNative = async (
     });
     if (index === 0) {
       if (result === undefined) throw new Error('Probe step "native tools" timed out on its first sample');
-      expectStatus(result, [200, 400], 'native tools');
-      if (result.status === 400) return { accepted: false, validRate: 0, firstValidCall: undefined };
+      if (!isAcceptedOrRejected(result, 'native tools')) return { accepted: false, validRate: 0, firstValidCall: undefined };
     }
     if (result === undefined || result.status !== 200) continue;
     const call = nativeCallOf(parseJson(result.text));
@@ -469,7 +485,7 @@ const roundTrip = async (chat: Chat, call: NativeCall): Promise<boolean> => {
     ],
     tools: [{ type: 'function', function: { name: PROBE_TOOL.name, description: 'Get the weather', parameters: PROBE_TOOL.parameters } }],
   });
-  if (result.status === 400) return false;
+  if (result.outcome === 'unsupported') return false;
   expectStatus(result, [200], 'native round trip');
   const content = field(assistantMessage(parseJson(result.text)), 'content');
   return typeof content === 'string' && content.length > 0;
@@ -497,8 +513,7 @@ const sampleParallel = async (chat: Chat, samples: number): Promise<NonNullable<
     });
     if (index === 0) {
       if (result === undefined) throw new Error('Probe step "parallel tool calls" timed out on its first sample');
-      expectStatus(result, [200, 400], 'parallel tool calls');
-      if (result.status === 400) return { accepted: false, multiCallRate: 0 };
+      if (!isAcceptedOrRejected(result, 'parallel tool calls')) return { accepted: false, multiCallRate: 0 };
     }
     if (result === undefined || result.status !== 200) continue;
     if (toolCallCount(parseJson(result.text)) >= 2) several += 1;
@@ -557,8 +572,7 @@ const measureReasoning = async (chat: Chat, contextWindow: number): Promise<NonN
   const lowestBaseline = Math.min(...baseline);
   for (const effort of PROBED_REASONING_EFFORTS) {
     const result = await chat({ ...body, reasoning_effort: effort });
-    expectStatus(result, [200, 400], 'reasoning');
-    if (result.status !== 200) continue;
+    if (!isAcceptedOrRejected(result, 'reasoning')) continue;
     const spent = hiddenReasoningOf(parseJson(result.text));
     if (headroomTokens === 0 || (spent !== undefined && spent * REASONING_REDUCTION_FACTOR <= lowestBaseline)) {
       return { control: 'reasoning_effort', lowest: effort };
@@ -622,10 +636,11 @@ const searchContextWindow = async (chat: Chat): Promise<ProbeReport['contextWind
   const attempt = async (words: number): Promise<{ ok: boolean; promptTokens: number }> => {
     const result = await chat({ messages: [{ role: 'user', content: wordsOf(words) }], max_tokens: 1 });
     const { reply } = result;
-    if (reply.kind === 'completion') return { ok: true, promptTokens: promptTokensOf({ usage: reply.usage }) ?? words };
-    if (!matchesContextOverflow(result.status, reply.body)) {
-      throw new Error(`Probe step "context window search" failed with HTTP ${result.status}: ${result.text.slice(0, 500)}`);
+    if (reply.kind === 'completion') {
+      if (result.outcome !== 'accepted') return failProbeStep(result, 'context window search');
+      return { ok: true, promptTokens: promptTokensOf({ usage: reply.usage }) ?? words };
     }
+    if (result.outcome !== 'overflow') return failProbeStep(result, 'context window search');
     if (!overflowRecorded) {
       overflowRecorded = true;
       overflowErrorShape = reply.body;
