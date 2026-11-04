@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { openResponsesStream, openResponsesTextReply, openingEvents, terminalEvent } from '@momonga/testkit';
 import { userInput } from './gateway-helpers.ts';
+import { fixtureText } from './ollama-support.ts';
 import { startOpenResponsesGateway, streamResponse, terminalOf } from './upstream-gateway-support.ts';
 
 const REASONING = 'Consider the file layout first.';
@@ -38,6 +39,32 @@ describe('open-responses reasoning (R2b)', () => {
     const output: any[] = terminalOf(frames).response.output;
     expect(output.map((item) => item.type)).toEqual(['reasoning', 'message']);
     expect(output[0]).toMatchObject({ type: 'reasoning', encrypted_content: ENCRYPTED, content: [{ type: 'reasoning_text', text: REASONING }] });
+  });
+
+  it('passes the reasoning_summary_text deltas of a recorded Ollama /v1/responses stream through as reasoning', async () => {
+    const frames = fixtureText('qwen-v1-responses-reasoning.sse')
+      .split('\n\n')
+      .filter((block) => block.trim() !== '')
+      .map((block) => {
+        const event = /^event: (.*)$/m.exec(block)?.[1];
+        const data = /^data: (.*)$/m.exec(block)?.[1] ?? '';
+        return { ...(event === undefined ? {} : { event }), data: JSON.parse(data) };
+      });
+    const summaryDeltas = frames.filter((frame) => frame.data.type === 'response.reasoning_summary_text.delta').map((frame) => frame.data.delta as string);
+    const recordedSummary = summaryDeltas.join('');
+    expect(recordedSummary.length).toBeGreaterThan(0);
+    const gateway = await startOpenResponsesGateway({ script: [{ kind: 'stream', frames }] });
+
+    const out = await streamResponse(gateway);
+
+    const reasoningDeltas = out
+      .filter((frame) => frame.data.type === 'response.reasoning_summary_text.delta' || frame.data.type === 'response.reasoning.delta')
+      .map((frame) => frame.data.delta)
+      .join('');
+    expect(reasoningDeltas).toBe(recordedSummary);
+    const output: any[] = terminalOf(out).response.output;
+    expect(output.map((item) => item.type)).toEqual(['reasoning', 'message']);
+    expect(output[0].summary).toEqual([{ type: 'summary_text', text: recordedSummary }]);
   });
 
   it('sends a reasoning item of the history upstream as the reasoning item', async () => {

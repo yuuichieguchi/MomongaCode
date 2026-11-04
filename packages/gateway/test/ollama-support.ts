@@ -18,28 +18,23 @@ export const fixtureLines = (name: string): string[] => fixtureText(name).split(
 
 export const SHORT_TOOL_CALL = 'short-tool-call.ndjson';
 export const LONG_TEXT_THEN_TOOL_CALL = 'long-text-then-tool-call.ndjson';
+export const QWEN_NATIVE_THINKING = 'qwen-native-thinking.ndjson';
 export const OLLAMA_MODEL = 'devstral-small-2';
 export const TRAINED_CONTEXT_LENGTH = 393216;
 export const RECORDED_SERVER_VERSION = '0.40.13';
 
-export const PLACEHOLDER_TAGS_DIGEST = 'placeholder-digest-one-not-captured-from-ollama';
-export const PLACEHOLDER_TAGS_DIGEST_AFTER_PULL = 'placeholder-digest-two-not-captured-from-ollama';
-export const placeholderTagsListing = (digest: string) => ({
-  models: [{ name: `${OLLAMA_MODEL}:latest`, model: `${OLLAMA_MODEL}:latest`, digest }],
+export const QWEN_MODEL = 'qwen3.8:27b';
+export const RECORDED_TAGS = fixtureJson('tags.json');
+const recordedDigestOf = (name: string): string => RECORDED_TAGS.models.find((entry: { name: string }) => entry.name === name).digest;
+export const DEVSTRAL_DIGEST = recordedDigestOf(`${OLLAMA_MODEL}:latest`);
+export const QWEN_DIGEST = recordedDigestOf(QWEN_MODEL);
+export const tagsWithDevstralDigest = (digest: string) => ({
+  models: RECORDED_TAGS.models.map((entry: { name: string }) => (entry.name === `${OLLAMA_MODEL}:latest` ? { ...entry, digest } : entry)),
 });
 
-export const PLACEHOLDER_MODEL_NOT_FOUND = {
-  status: 404,
-  body: { error: 'PLACEHOLDER not captured: the 404 body Ollama 0.40.13 returns from /api/chat for a model that is not pulled' },
-};
-export const PLACEHOLDER_CONTEXT_OVERFLOW = {
-  status: 400,
-  body: { error: 'PLACEHOLDER not captured: the error Ollama 0.40.13 returns for an input longer than num_ctx' },
-};
-export const PLACEHOLDER_UNSUPPORTED = {
-  status: 400,
-  body: { error: 'PLACEHOLDER not captured: the error Ollama 0.40.13 returns when a model does not support tools' },
-};
+export const MODEL_NOT_FOUND = { status: 404, body: { error: "model 'no-such-model' not found" } };
+export const CONTEXT_OVERFLOW = { status: 400, body: { error: 'request (2559 tokens) exceeds the available context size (2048 tokens), try increasing it' } };
+export const THINKING_UNSUPPORTED = { status: 400, body: { error: '"devstral-small-2" does not support thinking' } };
 
 export type OllamaChatReply =
   | { kind: 'ndjson'; lines: readonly string[] }
@@ -102,7 +97,7 @@ export const startFakeOllama = async (options: FakeOllamaOptions = {}): Promise<
       return;
     }
     if (url.pathname === '/api/tags' && req.method === 'GET') {
-      sendJson(res, 200, options.tags?.() ?? placeholderTagsListing(PLACEHOLDER_TAGS_DIGEST));
+      sendJson(res, 200, options.tags?.() ?? RECORDED_TAGS);
       return;
     }
     if (url.pathname.endsWith('/chat/completions') && req.method === 'POST') {

@@ -34,6 +34,12 @@ describe('ollama target settings', () => {
     await expect(result).rejects.toThrow(/contextWindow/);
   });
 
+  it('rejects an ollama target without capabilities.maxOutputTokens', async () => {
+    const { tree, result } = load({ local: ollamaTarget({ capabilities: { contextWindow: 32768 } }) });
+    await expect(result).rejects.toThrow(userSettingsPath(tree));
+    await expect(result).rejects.toThrow(/maxOutputTokens/);
+  });
+
   it('rejects an ollama target without capabilities', async () => {
     const { capabilities: _omitted, ...withoutCapabilities } = ollamaTarget();
     const { tree, result } = load({ local: withoutCapabilities });

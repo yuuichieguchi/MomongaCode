@@ -38,6 +38,7 @@ describe('ollama request: the native chat endpoint and the context size (I1)', (
       { role: 'user', content: 'hi' },
     ]);
     expect(body.options).toMatchObject({ num_ctx: 12288, num_predict: 300 });
+    expect(body.truncate).toBe(false);
   });
 
   it('follows the resolved contextWindow, not a constant', async () => {
@@ -178,10 +179,24 @@ describe('ollama request: structured output and thinking', () => {
     expect('format' in (await sentBody({ model: 'devstral-small-2', input: [userText('hi')], max_output_tokens: 300 }))).toBe(false);
   });
 
-  it('sends think only when the request carries a reasoning setting', async () => {
-    const without = await sentBody({ model: 'devstral-small-2', input: [userText('hi')], max_output_tokens: 300 });
-    const withSetting = await sentBody({ model: 'devstral-small-2', input: [userText('hi')], max_output_tokens: 300, reasoning_effort: 'high' });
-    expect('think' in without).toBe(false);
-    expect('think' in withSetting).toBe(true);
+  it('sends no think without a reasoning setting', async () => {
+    expect('think' in (await sentBody({ model: 'devstral-small-2', input: [userText('hi')], max_output_tokens: 300 }))).toBe(false);
+  });
+
+  for (const effort of ['minimal', 'low', 'high'] as const) {
+    it(`sends think true for reasoning effort ${effort}`, async () => {
+      expect((await sentBody({ model: 'devstral-small-2', input: [userText('hi')], max_output_tokens: 300, reasoning_effort: effort })).think).toBe(true);
+    });
+  }
+
+  it('sends think false for reasoning effort none', async () => {
+    expect((await sentBody({ model: 'devstral-small-2', input: [userText('hi')], max_output_tokens: 300, reasoning_effort: 'none' })).think).toBe(false);
+  });
+
+  it('sends truncate false on every request', async () => {
+    const plain = await sentBody({ model: 'devstral-small-2', input: [userText('hi')] });
+    const withTools = await sentBody({ model: 'devstral-small-2', input: [userText('hi')], tools: [readFileTool], max_output_tokens: 300 });
+    expect(plain.truncate).toBe(false);
+    expect(withTools.truncate).toBe(false);
   });
 });

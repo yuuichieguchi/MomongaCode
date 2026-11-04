@@ -4,7 +4,7 @@ import { createFakeClock } from '@momonga/testkit';
 import { ollamaEventsOf } from '../src/adapters/ollama/stream.ts';
 import { START_MS } from './gateway-helpers.ts';
 import { expectSpecValid, terminalOf } from './cc-support.ts';
-import { LONG_TEXT_THEN_TOOL_CALL, SHORT_TOOL_CALL, chunkLine, doneLine, fixtureText, seededRandom } from './ollama-support.ts';
+import { LONG_TEXT_THEN_TOOL_CALL, QWEN_NATIVE_THINKING, SHORT_TOOL_CALL, chunkLine, doneLine, fixtureText, seededRandom } from './ollama-support.ts';
 
 const request: AdapterRequest = { model: 'devstral-small-2', input: [{ type: 'message', role: 'user', content: 'go' }], max_output_tokens: 300 };
 
@@ -69,10 +69,7 @@ const observedOf = (events: readonly StreamEvent[]): Expected => {
   };
 };
 
-const THINKING_TEXT_AND_TWO_CALLS = [
-  chunkLine({ thinking: 'The user wants ' }),
-  chunkLine({ thinking: 'two files read.' }),
-  chunkLine({ content: 'Reading both — ' }),
+const TWO_CALLS = [
   chunkLine({ content: 'ファイルを読みます。' }),
   chunkLine({ tool_calls: [{ id: 'call_first', function: { index: 0, name: 'Read', arguments: { file_path: 'a.txt' } } }] }),
   chunkLine({ tool_calls: [{ id: 'call_second', function: { index: 1, name: 'Read', arguments: { file_path: 'b/ü.txt', limit: 20 } } }] }),
@@ -84,7 +81,8 @@ const THINKING_TEXT_AND_TWO_CALLS = [
 const STREAMS: Record<string, string> = {
   [SHORT_TOOL_CALL]: fixtureText(SHORT_TOOL_CALL),
   [LONG_TEXT_THEN_TOOL_CALL]: fixtureText(LONG_TEXT_THEN_TOOL_CALL),
-  'thinking, text and two calls': THINKING_TEXT_AND_TWO_CALLS,
+  [QWEN_NATIVE_THINKING]: fixtureText(QWEN_NATIVE_THINKING),
+  'text and two calls': TWO_CALLS,
 };
 
 describe('ollama stream (I2, I3): the same items and usage for any split of the NDJSON into reads', () => {

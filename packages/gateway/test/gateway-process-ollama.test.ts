@@ -7,11 +7,11 @@ import { getJson, outputText, postJson, readJson, userInput } from './gateway-he
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import {
   OLLAMA_MODEL,
-  PLACEHOLDER_TAGS_DIGEST,
-  PLACEHOLDER_TAGS_DIGEST_AFTER_PULL,
+  DEVSTRAL_DIGEST,
+  QWEN_DIGEST,
   chunkLine,
   doneLine,
-  placeholderTagsListing,
+  tagsWithDevstralDigest,
   startFakeOllama,
 } from './ollama-support.ts';
 import type { FakeOllamaOptions } from './ollama-support.ts';
@@ -42,6 +42,20 @@ const probedHome = async (options: FakeOllamaOptions) => {
 };
 
 describe('an ollama target in a started gateway', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+  it('fails a request with precondition_failed naming the probe command while no probe record exists, without calling /api/chat', async () => {
+    const fake = await startFakeOllama({ chat: [textReply('never sent')] });
+    const home = makeHome();
+    writeSettings(home, { models: { aliases: { fast: ['local'] }, targets: { local: ollamaTarget(fake.origin) } } });
+    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+
+    const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: 'fast', input: userInput('hi') }));
+
+    expect(response.status).toBe(412);
+    expect(response.body.error.code).toBe('precondition_failed');
+    expect(response.body.error.message).toContain('momonga gateway probe local');
+    expect(fake.chatBodies()).toEqual([]);
+  });
+
   it('answers through /api/chat with num_ctx equal to the configured contextWindow', async () => {
     const { fake, home } = await probedHome({ chat: [textReply('hello')] });
     const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
@@ -66,15 +80,15 @@ describe('an ollama target in a started gateway', { timeout: REAL_PROCESS_TEST_T
     if (target === undefined) throw new Error('the settings resolved no local target');
 
     expect(entry.targetCounters).toEqual({
-      local: targetCounterOf({ target, codeDigest: await codeDigestOfRunningProcess(), upstreamIdentity: PLACEHOLDER_TAGS_DIGEST }),
+      local: targetCounterOf({ target, codeDigest: await codeDigestOfRunningProcess(), upstreamIdentity: DEVSTRAL_DIGEST }),
     });
   });
 
   it('fails every request once the model is pulled again under the same tag, until it is probed again', async () => {
-    let digest = PLACEHOLDER_TAGS_DIGEST;
-    const { fake, home } = await probedHome({ tags: () => placeholderTagsListing(digest), chat: [textReply('never sent')] });
+    let digest = DEVSTRAL_DIGEST;
+    const { fake, home } = await probedHome({ tags: () => tagsWithDevstralDigest(digest), chat: [textReply('never sent')] });
     const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
-    digest = PLACEHOLDER_TAGS_DIGEST_AFTER_PULL;
+    digest = QWEN_DIGEST;
 
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: 'fast', input: userInput('hi') }));
 
