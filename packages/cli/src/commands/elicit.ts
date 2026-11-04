@@ -1,4 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
+import { escapeTerminalLine } from '@momonga/protocol';
 import type { ElicitationAnswerRecord } from '@momonga/protocol';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import { describeElicitation } from '../elicit/describe.ts';
@@ -20,6 +21,9 @@ export class ElicitationUsageError extends Error {
 export type ElicitOptions = { accept: boolean; decline: boolean; cancel: boolean; set: readonly string[]; responses?: string };
 
 const titleOf = (view: ElicitationView): string => view.toolCall.title;
+
+const elicitationText = (view: ElicitationView): string =>
+  describeElicitation(view.id, view.server, titleOf(view), view.requests).map(escapeTerminalLine).join('\n');
 
 const chosenActions = (options: ElicitOptions): string[] =>
   [options.accept ? '--accept' : undefined, options.decline ? '--decline' : undefined, options.cancel ? '--cancel' : undefined, options.responses === undefined ? undefined : '--responses'].filter(
@@ -100,14 +104,14 @@ export const elicit = async (ports: CliPorts, paths: MomongaPaths, inputId: stri
       const runId = await activeRunIdOf(client, ports.cwd);
       const pending = await pendingElicitationsOf(client, runId);
       ports.stdout.write(
-        pending.length === 0 ? `run ${runId} has no pending elicitations\n` : `${pending.map((view) => describeElicitation(view.id, view.server, titleOf(view), view.requests)).join('\n')}\n`,
+        pending.length === 0 ? `run ${runId} has no pending elicitations\n` : `${pending.map(elicitationText).join('\n')}\n`,
       );
       return 0;
     }
     const view = await client.getElicitation(inputId);
     if (actions.length === 0) {
       if (options.set.length > 0) throw new ElicitationUsageError('--set needs --accept');
-      ports.stdout.write(`${describeElicitation(view.id, view.server, titleOf(view), view.requests)}\n`);
+      ports.stdout.write(`${elicitationText(view)}\n`);
       return 0;
     }
     if (options.set.length > 0 && !options.accept) throw new ElicitationUsageError('--set needs --accept');

@@ -1,3 +1,4 @@
+import { escapeTerminalLine } from '@momonga/protocol';
 import type { PermissionDenial, PermissionMode, PermissionOption, PublicRunEvent, RunStatus, ToolKind } from '@momonga/protocol';
 import { startFlow } from '../elicit/flow.ts';
 import { mcpAuthorizationNotice } from '../mcp/messages.ts';
@@ -174,7 +175,7 @@ export const reduceEvent = (transcript: Transcript, event: PublicRunEvent): Tran
       };
     }
     case 'mcp.authorization.required':
-      return appendEntry(transcript, { kind: 'notice', level: 'warning', text: mcpAuthorizationNotice(event.server) });
+      return appendEntry(transcript, { kind: 'notice', level: 'warning', text: escapeTerminalLine(mcpAuthorizationNotice(event.server)) });
     case 'tool.started':
       return { ...transcript, entries: updateTool(transcript.entries, event.callId, (tool) => ({ ...tool, status: 'running' })) };
     case 'tool.completed':
@@ -188,13 +189,13 @@ export const reduceEvent = (transcript: Transcript, event: PublicRunEvent): Tran
         })),
       };
     case 'hook.completed':
-      return appendEntry(transcript, { kind: 'notice', level: hookLevel(event), text: describeHook(event) });
+      return appendEntry(transcript, { kind: 'notice', level: hookLevel(event), text: describeHook(event).map(escapeTerminalLine).join('\n') });
     case 'tool.permission.classified': {
       const title = transcript.entries.find((entry) => entry.kind === 'tool' && entry.callId === event.callId);
       return appendEntry(transcript, {
         kind: 'notice',
         level: classificationLevel(event),
-        text: describeClassification(event, title?.kind === 'tool' ? title.title : event.callId),
+        text: escapeTerminalLine(describeClassification(event, title?.kind === 'tool' ? title.title : event.callId)),
       });
     }
     case 'tool.reconciled':
