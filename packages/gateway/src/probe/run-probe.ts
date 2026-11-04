@@ -129,6 +129,8 @@ const retryAfterMs = (value: string | undefined, now: Date): number | undefined 
   return Number.isNaN(at) ? undefined : Math.max(0, at - now.getTime());
 };
 
+const estimatedCount = async (text: string): Promise<number> => tokensForText(text);
+
 const wordsOf = (count: number): string => Array.from({ length: count }, () => 'word').join(' ');
 
 const cachedTokensOf = (reply: UpstreamReply): number | undefined => {
@@ -231,12 +233,12 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
   };
   const chat = retryingRateLimits(post);
 
-  const contextWindow = reportedContextWindow(modelsBody, healthResult.text) ?? (await searchContextWindow(chat));
+  const contextWindow = reportedContextWindow(modelsBody, healthResult.text) ?? (await searchContextWindow(chat, options.countTokens));
   bound.tokens = maxOutputTokensFor(contextWindow.value);
 
   const plain = await chat({ messages: [{ role: 'user', content: PLAIN_PROMPT }] });
   expectStatus(plain, [200], 'plain completion');
-  const usageReported = promptTokensOf(parseJson(plain.text)) !== undefined;
+  const usageReported = promptTokensOf(plain.reply.body) !== undefined;
 
   const streaming = await probeStreaming(client, model, outputBoundFor(bound.field, bound.tokens));
 
@@ -255,7 +257,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
   if (options.guardrailPrompt !== undefined) {
     const result = await chat({ messages: [{ role: 'user', content: options.guardrailPrompt }] });
     expectStatus(result, [200, 400], 'guardrail');
-    if (result.status === 400) guardrail.errorShape = parseJson(result.text);
+    if (result.status === 400) guardrail.errorShape = result.reply.body;
   }
 
   const constrainedAccepted = isAcceptedOrRejected(
@@ -317,7 +319,7 @@ type Chat = (body: Record<string, unknown>) => Promise<ChatResult>;
 const outputTokensOf = (result: ChatResult): number => {
   const completionTokens = field(result.reply.kind === 'completion' ? result.reply.usage : undefined, 'completion_tokens');
   if (typeof completionTokens === 'number') return completionTokens;
-  const content = field(assistantMessage(parseJson(result.text)), 'content');
+  const content = field(assistantMessage(result.reply.body), 'content');
   if (typeof content === 'string') return tokensForText(content);
   return failProbeStep(result, 'output bound');
 };
@@ -348,13 +350,13 @@ const imageCostProbeOf = (chat: Chat): ImageCostProbe => ({
   baseline: async () => {
     const result = await imagePromptRequest(chat, undefined);
     expectStatus(result, [200], 'image token baseline');
-    return promptTokensOf(parseJson(result.text));
+    return promptTokensOf(result.reply.body);
   },
   cost: async (imageUrl) => {
     const result = await imagePromptRequest(chat, imageUrl);
     if (result.outcome === 'unsupported' || result.outcome === 'overflow') return { rejected: true };
     if (result.outcome !== 'accepted') return failProbeStep(result, 'image token measurement');
-    return { rejected: false, promptTokens: promptTokensOf(parseJson(result.text)) };
+    return { rejected: false, promptTokens: promptTokensOf(result.reply.body) };
   },
 });
 
@@ -429,7 +431,7 @@ const sampleNative = async (
       return { accepted: false, validRate: 0, firstValidCall: undefined };
     }
     if (result === undefined || result.status !== 200) continue;
-    const call = nativeCallOf(parseJson(result.text));
+    const call = nativeCallOf(result.reply.body);
     if (nativeCallValid(call)) {
       valid += 1;
       firstValidCall ??= call;
@@ -455,7 +457,7 @@ const sampleConstrained = async (
     });
     if (index === 0 && !isFirstSampleAccepted(result, 'constrained samples')) return { accepted: false, validRate: 0 };
     if (result === undefined || result.status !== 200) continue;
-    if (constrainedValid(parseJson(result.text))) valid += 1;
+    if (constrainedValid(result.reply.body)) valid += 1;
   }
   return { accepted: true, validRate: samples === 0 ? 0 : valid / samples };
 };
@@ -475,7 +477,7 @@ const roundTrip = async (chat: Chat, call: NativeCall): Promise<boolean> => {
   });
   if (result.outcome === 'unsupported') return false;
   expectStatus(result, [200], 'native round trip');
-  const content = field(assistantMessage(parseJson(result.text)), 'content');
+  const content = field(assistantMessage(result.reply.body), 'content');
   return typeof content === 'string' && content.length > 0;
 };
 
@@ -501,7 +503,7 @@ const sampleParallel = async (chat: Chat, samples: number): Promise<NonNullable<
     });
     if (index === 0 && !isFirstSampleAccepted(result, 'parallel tool calls')) return { accepted: false, multiCallRate: 0 };
     if (result === undefined || result.status !== 200) continue;
-    if (toolCallCount(parseJson(result.text)) >= 2) several += 1;
+    if (toolCallCount(result.reply.body) >= 2) several += 1;
   }
   return { accepted: true, multiCallRate: samples === 0 ? 0 : several / samples };
 };
@@ -549,7 +551,7 @@ const measureReasoning = async (chat: Chat, contextWindow: number): Promise<NonN
   for (let index = 0; index < REASONING_BASELINE_SAMPLES; index += 1) {
     const result = await chat(body);
     expectStatus(result, [200], 'reasoning baseline');
-    const spent = hiddenReasoningOf(parseJson(result.text));
+    const spent = hiddenReasoningOf(result.reply.body);
     if (spent === undefined) return { control: 'none' };
     baseline.push(spent);
   }
@@ -558,7 +560,7 @@ const measureReasoning = async (chat: Chat, contextWindow: number): Promise<NonN
   for (const effort of PROBED_REASONING_EFFORTS) {
     const result = await chat({ ...body, reasoning_effort: effort });
     if (!isAcceptedOrRejected(result, 'reasoning')) continue;
-    const spent = hiddenReasoningOf(parseJson(result.text));
+    const spent = hiddenReasoningOf(result.reply.body);
     if (headroomTokens === 0 || (spent !== undefined && spent * REASONING_REDUCTION_FACTOR <= lowestBaseline)) {
       return { control: 'reasoning_effort', lowest: effort };
     }
@@ -575,7 +577,7 @@ const calibrate = async (
     const text = wordsOf(wordCount);
     const result = await chat({ messages: [{ role: 'user', content: text }] });
     expectStatus(result, [200], 'token calibration');
-    const reported = promptTokensOf(parseJson(result.text));
+    const reported = promptTokensOf(result.reply.body);
     if (reported === undefined) throw new Error('Probe token calibration: usage.prompt_tokens missing');
     const counted = await countTokens(text);
     if (!(counted > 0)) throw new Error('Probe token calibration: countTokens returned a non-positive count');
@@ -614,16 +616,19 @@ const reportedContextWindow = (modelsBody: unknown, healthText: string): ProbeRe
   return undefined;
 };
 
-const searchContextWindow = async (chat: Chat): Promise<ProbeReport['contextWindow']> => {
+const searchContextWindow = async (chat: Chat, countTokens: ProbeOptions['countTokens']): Promise<ProbeReport['contextWindow']> => {
   let overflowErrorShape: unknown;
   let overflowRecorded = false;
 
   const attempt = async (words: number): Promise<{ ok: boolean; promptTokens: number }> => {
-    const result = await chat({ messages: [{ role: 'user', content: wordsOf(words) }], outputTokens: ONE_OUTPUT_TOKEN });
+    const text = wordsOf(words);
+    const result = await chat({ messages: [{ role: 'user', content: text }], outputTokens: ONE_OUTPUT_TOKEN });
     const { reply } = result;
     if (reply.kind === 'completion') {
       if (result.outcome !== 'accepted') return failProbeStep(result, 'context window search');
-      return { ok: true, promptTokens: promptTokensOf({ usage: reply.usage }) ?? words };
+      const reported = promptTokensOf({ usage: reply.usage });
+      if (reported !== undefined) return { ok: true, promptTokens: reported };
+      return { ok: true, promptTokens: await (countTokens ?? estimatedCount)(text) };
     }
     if (result.outcome !== 'overflow') return failProbeStep(result, 'context window search');
     if (!overflowRecorded) {

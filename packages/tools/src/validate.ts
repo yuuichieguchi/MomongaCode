@@ -61,7 +61,7 @@ const parseArguments = (tool: AnyTool, rawArguments: unknown): ValidationResult 
   try {
     return { ok: true, value: JSON.parse(rawArguments) as unknown };
   } catch (error) {
-    return { ok: false, message: `Invalid JSON arguments for ${tool.name}: ${(error as Error).message}` };
+    return { ok: false, message: `Invalid JSON arguments for ${tool.name}: ${(error as Error).message}\nReceived: ${rawArguments}` };
   }
 };
 
