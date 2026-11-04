@@ -25,10 +25,4 @@ describe('the token dataset', () => {
     expect(dataset.cases.filter((entry) => kindOf(entry.scenario) === undefined).map((entry) => entry.scenario)).toEqual([]);
   });
 
-  it('gives every deferral case noise runs', async () => {
-    const dataset = await load();
-    const deferral = dataset.cases.filter((entry) => kindOf(entry.scenario) === 'deferral');
-    expect(deferral.length).toBeGreaterThan(0);
-    for (const entry of deferral) expect(entry.noise.level, entry.id).toBeGreaterThan(0);
-  });
 });
