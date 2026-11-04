@@ -78,7 +78,7 @@ export const makeHarness = (options: HarnessOptions = {}) => {
     ...FAKE_LEASE,
     ...options.executor,
   });
-  const session = { cwd: layout.project, readLedger: new Map<string, { sha256: string; mtimeMs: number }>() };
+  const session = { cwd: layout.project, workingDirectory: layout.project, readLedger: new Map<string, { sha256: string; mtimeMs: number }>() };
   const started: string[] = [];
   const input = (
     toolSet: ToolSet,
@@ -87,7 +87,7 @@ export const makeHarness = (options: HarnessOptions = {}) => {
   ): ExecutionBatchInput => {
     const batch = {
     calls: calls.map((entry) =>
-      bindApproval(entry, toolSet, { cwd: (extra.session ?? session).cwd, home: extra.home ?? layout.home, roots: extra.roots ?? [layout.project] }),
+      bindApproval(entry, toolSet, { cwd: (extra.session ?? session).cwd, workingDirectory: (extra.session ?? session).workingDirectory, home: extra.home ?? layout.home, roots: extra.roots ?? [layout.project] }),
     ),
     toolSet,
     fence: { runId: 'run-1', workerId: 'w1', leaseToken: 1 },
@@ -146,7 +146,7 @@ const subjectForDigest = (subject: PermissionSubject, cwd: string): unknown => {
 
 export const expectedSubjectDigest = (subject: PermissionSubject, cwd: string): string => sha256Hex(canonicalJson(subjectForDigest(subject, cwd)));
 
-const digestForCall = (entry: HarnessCall, toolSet: ToolSet, context: { cwd: string; home: string; roots: readonly string[] }): string => {
+const digestForCall = (entry: HarnessCall, toolSet: ToolSet, context: { cwd: string; workingDirectory: string; home: string; roots: readonly string[] }): string => {
   const tool = toolSet.get(entry.name);
   if (tool === undefined) return UNRESOLVED_SUBJECT_DIGEST;
   const validation = validateToolInput(tool, entry.arguments);
@@ -158,7 +158,7 @@ const digestForCall = (entry: HarnessCall, toolSet: ToolSet, context: { cwd: str
   }
 };
 
-const bindApproval = (entry: HarnessCall, toolSet: ToolSet, context: { cwd: string; home: string; roots: readonly string[] }): ToolCall => {
+const bindApproval = (entry: HarnessCall, toolSet: ToolSet, context: { cwd: string; workingDirectory: string; home: string; roots: readonly string[] }): ToolCall => {
   const { approval, ...rest } = entry;
   if (approval === undefined) return rest;
   if (typeof approval !== 'string') return { ...rest, approval };

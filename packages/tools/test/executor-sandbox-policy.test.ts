@@ -50,7 +50,7 @@ describe('executor: readDenied path subjects', () => {
             sandboxPolicy: deniedPolicy(harness, vault),
           }),
         );
-        expect(outcome).toEqual({ callId: 'c1', kind: 'result', result: { status: 'failed', output: `Permission denied: ${target} is blocked by the sandbox policy`, denial: { source: 'sandbox', reason: `${target} is blocked by the sandbox policy` } } });
+        expect(outcome).toEqual({ callId: 'c1', kind: 'result', result: { status: 'failed', output: 'Permission denied: vault/secret.txt is blocked by the sandbox policy', denial: { source: 'sandbox', reason: 'vault/secret.txt is blocked by the sandbox policy' } } });
         expect(runs).toEqual([]);
       });
     }
@@ -64,7 +64,7 @@ describe('executor: readDenied path subjects', () => {
     const [outcome] = await harness.executor.runBatch(
       harness.input(await toolSetOf(pathTool('read', vault, runs)), [call('c1', 'PathTool')], { sandboxPolicy: deniedPolicy(harness, vault) }),
     );
-    expect(outcome).toMatchObject({ kind: 'result', result: { status: 'failed', output: `Permission denied: ${vault} is blocked by the sandbox policy` } });
+    expect(outcome).toMatchObject({ kind: 'result', result: { status: 'failed', output: 'Permission denied: vault is blocked by the sandbox policy' } });
   });
 
   it('does not deny a sibling sharing the name prefix', async () => {

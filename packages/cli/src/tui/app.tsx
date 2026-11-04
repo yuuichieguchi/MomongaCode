@@ -173,9 +173,9 @@ function EntryView({ entry }: { entry: Entry }) {
   }
 }
 
-function ApprovalPrompt({ approval, tool, selected }: { approval: PendingApproval; tool: Extract<Entry, { kind: 'tool' }> | undefined; selected: number }) {
+function ApprovalPrompt({ approval, tool, selected, workingDirectory }: { approval: PendingApproval; tool: Extract<Entry, { kind: 'tool' }> | undefined; selected: number; workingDirectory: string }) {
   const { rows } = useWindowSize();
-  const diff = tool === undefined ? undefined : diffOfToolInput(tool.name, tool.rawInput);
+  const diff = tool === undefined ? undefined : diffOfToolInput(tool.name, tool.rawInput, workingDirectory);
   return (
     <Box flexDirection="column" borderStyle="round" paddingX={1}>
       <Text bold>{shown(`Permission requested: ${tool?.title ?? approval.callId}`)}</Text>
@@ -724,7 +724,7 @@ export function App(props: AppProps) {
           <Text dimColor>esc to exit</Text>
         </Box>
       ) : null}
-      {phase.kind === 'ready' && transcript.approval !== undefined ? <ApprovalPrompt approval={transcript.approval} tool={pendingTool} selected={approvalIndex} /> : null}
+      {phase.kind === 'ready' && transcript.approval !== undefined ? <ApprovalPrompt approval={transcript.approval} tool={pendingTool} selected={approvalIndex} workingDirectory={backend.cwd} /> : null}
       {phase.kind === 'ready' && transcript.elicitation !== undefined ? (
         <ElicitationPrompt elicitation={transcript.elicitation} title={pendingTitle} editor={elicitEditor} selected={approvalIndex} />
       ) : null}

@@ -1,7 +1,7 @@
 import { PinnedOverflowError } from '@momonga/context';
 import { canonicalJson, parseJsonOrText } from '@momonga/foundation';
 import type { PermissionOption, RunEventPayload, RunState, ToolAwait } from '@momonga/protocol';
-import type { CallOutcome, NeedsApprovalOutcome, NeedsInputOutcome, ResultOutcome, ToolCall, WaitingOutcome } from '@momonga/tools';
+import type { CallOutcome, DisplayContext, NeedsApprovalOutcome, NeedsInputOutcome, ResultOutcome, ToolCall, WaitingOutcome } from '@momonga/tools';
 import { validateToolInput } from '@momonga/tools';
 import type { Session } from '@momonga/store';
 import { createToolHooks } from '@momonga/tools';
@@ -17,12 +17,12 @@ export const REJECTED_OUTPUT = 'The user rejected this tool call.';
 
 type PendingCall = RunState['pendingCalls'][string];
 
-const callPayload = (ctx: ClaimContext, item: { call_id: string; name: string; arguments: string }): RunEventPayload => {
+const callPayload = (ctx: ClaimContext, display: DisplayContext, item: { call_id: string; name: string; arguments: string }): RunEventPayload => {
   const rawInput = parseJsonOrText(item.arguments);
   const tool = ctx.toolSet.get(item.name);
   const validation = tool === undefined ? undefined : validateToolInput(tool, rawInput);
   const input = validation?.ok === true ? validation.value : undefined;
-  const locations = tool !== undefined && input !== undefined ? tool.locations?.(input) : undefined;
+  const locations = tool !== undefined && input !== undefined ? tool.locations?.(input, display) : undefined;
   return {
     type: 'tool.call',
     callId: item.call_id,
@@ -30,7 +30,7 @@ const callPayload = (ctx: ClaimContext, item: { call_id: string; name: string; a
     name: item.name,
     kind: tool?.kind ?? 'other',
     ...(tool === undefined ? {} : { sideEffect: tool.sideEffect }),
-    title: tool !== undefined && input !== undefined ? tool.title(input) : item.name,
+    title: tool !== undefined && input !== undefined ? tool.title(input, display) : item.name,
     rawInput,
     ...(locations === undefined ? {} : { locations }),
   };
@@ -39,8 +39,11 @@ const callPayload = (ctx: ClaimContext, item: { call_id: string; name: string; a
 export const recordCalls = (ctx: ClaimContext): void => {
   const { pendingCalls } = ctx.journal.state;
   const payloads: RunEventPayload[] = [];
+  const session = ctx.options.store.getSession(ctx.run.sessionId);
+  if (session === undefined) throw new Error(`unknown session ${ctx.run.sessionId}`);
+  const display = ctx.options.tools.sessionState(session);
   for (const { item } of ownEntries(ctx.journal.state)) {
-    if (item.type === 'function_call' && pendingCalls[item.call_id] === undefined) payloads.push(callPayload(ctx, item));
+    if (item.type === 'function_call' && pendingCalls[item.call_id] === undefined) payloads.push(callPayload(ctx, display, item));
   }
   if (payloads.length > 0) ctx.journal.append(payloads);
 };

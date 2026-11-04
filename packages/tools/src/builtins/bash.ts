@@ -1,13 +1,13 @@
 import { randomBytes } from 'node:crypto';
 import { commandSpecsFor, readPathsOfCommand } from '@momonga/policy';
-import { findHolders, reconcileProcessGroup, stoppedCommandResult } from '@momonga/foundation';
+import { findHolders, reconcileProcessGroup, resolveToolPath, stoppedCommandResult } from '@momonga/foundation';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import type { SandboxExit } from '@momonga/sandbox';
 import type { BackgroundJobs } from '../ports.ts';
 import type { ReconcileContext, ToolContext, ToolResult } from '../types.ts';
 import { createCapture, pumpOutput } from '../capture.ts';
 import { describeJobStatus } from './jobs.ts';
-import { canonicalDirectories, insideAny } from './paths.ts';
+import { canonicalDirectories, insideAny, shownPath } from './paths.ts';
 import { nodeShellPorts, resolveBashPath } from './shell.ts';
 
 type BashInput = { command: string; timeout?: number; description?: string; run_in_background?: boolean };
@@ -92,7 +92,7 @@ export const bashTool = defineTool<BashInput>({
   timeoutMs: (input) => Math.min(input.run_in_background === true ? DEFAULT_TIMEOUT_MS : (input.timeout ?? DEFAULT_TIMEOUT_MS), MAX_TIMEOUT_MS),
   title: (input) => input.description ?? input.command.slice(0, TITLE_CHARS),
   subject: (input) => ({ kind: 'command', tool: 'Bash', command: input.command }),
-  locations: (input) => readPathsOfCommand(input.command, commandSpecsFor(process.platform)).map((target) => ({ path: target })),
+  locations: (input, ctx) => readPathsOfCommand(input.command, commandSpecsFor(process.platform)).map((target) => ({ path: resolveToolPath(ctx.cwd, target) })),
   execute: async (input, ctx) => {
     if (input.run_in_background === true) return startBackgroundJob(input, ctx);
     const marker = requireMarker(ctx);
@@ -135,7 +135,7 @@ export const bashTool = defineTool<BashInput>({
       if (insideAny(extracted.cwd, canonicalDirectories(ctx.roots))) {
         ctx.session.cwd = extracted.cwd;
       } else {
-        output += `${output === '' ? '' : '\n'}Shell cwd was reset to ${ctx.session.cwd}`;
+        output += `${output === '' ? '' : '\n'}Shell cwd was reset to ${shownPath(ctx, ctx.session.cwd)}`;
       }
     }
     for (const note of notes) output += `${output === '' ? '' : '\n'}${note}`;

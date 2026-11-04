@@ -27,7 +27,7 @@ describe('path subject digest fails closed', () => {
         {
           callId: 'p1',
           kind: 'result',
-          result: { status: 'failed', output: `Permission check failed: ${target} cannot be resolved to a real location` },
+          result: { status: 'failed', output: 'Permission check failed: locked/inner/file.txt cannot be resolved to a real location' },
         },
       ]);
       expect(runs).toEqual([]);

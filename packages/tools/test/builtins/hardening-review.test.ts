@@ -90,13 +90,13 @@ describe('walking toward an allowed entry never reads inside the denied dir', ()
   it('Glob from the project finds the allowed file despite an ignore-all file in the denied dir', async () => {
     const fx = await fixture();
     const result = resultOf(await fx.tools.run('Glob', { pattern: '**/*.txt' }, { sandboxPolicy: fx.sandboxPolicy }));
-    expect(lines(result.output)).toEqual([fx.visibleFile, fx.allowedFile].sort());
+    expect(lines(result.output)).toEqual([fx.visibleFile, fx.allowedFile].map((file) => path.relative(fx.tools.layout.project, file)).sort());
   });
 
   it('Grep with the JS backend finds the allowed file despite an ignore-all file in the denied dir', async () => {
     const fx = await fixture();
     const result = resultOf(await fx.tools.run('Grep', { pattern: 'alpha' }, { sandboxPolicy: fx.sandboxPolicy, env: { PATH: JS_BACKEND_PATH, LANG: 'C' } }));
-    expect(lines(result.output)).toEqual([fx.visibleFile, fx.allowedFile].sort());
+    expect(lines(result.output)).toEqual([fx.visibleFile, fx.allowedFile].map((file) => path.relative(fx.tools.layout.project, file)).sort());
   });
 
   it('Glob never lists the denied dir nor reads files directly inside it', async () => {
@@ -165,7 +165,7 @@ describe.each(grepBackends)('Grep allowed-root discovery (%s backend)', (_name, 
     expect(result.status).toBe('completed');
     const matches = result.output.split('\n').filter((line) => line.includes('needle here'));
     expect(matches).toHaveLength(1);
-    expect(matches[0]).toContain(deepFile);
+    expect(matches[0]).toContain(path.relative(tools.layout.project, deepFile));
   });
 
   it.runIf(available)('does not reach an allowed entry whose denied parent is ignored by the project', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
@@ -180,7 +180,7 @@ describe.each(grepBackends)('Grep allowed-root discovery (%s backend)', (_name, 
       readAllowed: [...(tools.sandboxPolicy.readAllowed ?? []), path.join(vault, 'ok')],
     };
     const result = await grepFrom(tools, sandboxPolicy);
-    expect(result.output).toContain(visible);
+    expect(result.output).toContain(path.relative(tools.layout.project, visible));
     expect(result.output).not.toContain('needle hidden');
   });
 });
@@ -212,7 +212,7 @@ describe.each(grepBackends)('Grep with an allowed target (%s backend)', (_name, 
     expect(result.status).toBe('completed');
     const matches = result.output.split('\n').filter((line) => line.includes('needle deep'));
     expect(matches).toHaveLength(1);
-    expect(matches[0]).toContain(deepFile);
+    expect(matches[0]).toContain(path.relative(tools.layout.project, deepFile));
   });
 
   it.runIf(available)('finds a match in an allowed entry below a denied dir inside the target exactly once', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
@@ -230,7 +230,7 @@ describe.each(grepBackends)('Grep with an allowed target (%s backend)', (_name, 
     expect(result.status).toBe('completed');
     const matches = result.output.split('\n').filter((line) => line.includes('needle allowed'));
     expect(matches).toHaveLength(1);
-    expect(matches[0]).toContain(allowedFile);
+    expect(matches[0]).toContain(path.relative(tools.layout.project, allowedFile));
     expect(result.output).not.toContain('needle secret');
   });
 });

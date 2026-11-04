@@ -5,6 +5,7 @@ import type { MemoryStorePort, MemorySaveRequest } from '@momonga/tools';
 import { call, makeHarness, toolSetOf } from '../harness.ts';
 import { keyFor } from '../helpers.ts';
 
+const TITLE_CTX = { cwd: '/work/a', workingDirectory: '/work/a' };
 const FAKE_KEY = 'sk-abcdefghijklmnopqrstuvwxyz0123456789';
 
 const viewOf = (overrides: Partial<MemoryView> = {}): MemoryView => ({
@@ -198,9 +199,9 @@ describe('memory tools', () => {
     const subjectCtx = { cwd: '/work', roots: ['/work'] } as never;
 
     it('names the notes it replaces and the paths it binds in the title', () => {
-      const title = saveTool().title({ text: 'x', scope: 'user', supersedes: ['mem-1', 'mem-2'], paths: ['src/a.ts'] });
+      const title = saveTool().title({ text: 'x', scope: 'user', supersedes: ['mem-1', 'mem-2'], paths: ['src/a.ts'] }, TITLE_CTX);
       expect(title).toBe('Save a user memory replacing mem-1, mem-2 bound to src/a.ts');
-      expect(saveTool().title({ text: 'x', scope: 'project' })).toBe('Save a project memory');
+      expect(saveTool().title({ text: 'x', scope: 'project' }, TITLE_CTX)).toBe('Save a project memory');
     });
 
     it('puts text, kind, paths and supersedes in the subject, so the digest covers everything later sessions see', () => {

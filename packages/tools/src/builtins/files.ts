@@ -5,6 +5,8 @@ import { StringDecoder } from 'node:string_decoder';
 import { sha256Hex } from '@momonga/foundation';
 import type { ToolSessionState } from '../types.ts';
 import { ToolExecutionError } from '../types.ts';
+import { shownPath } from './paths.ts';
+import type { PathScope } from './paths.ts';
 
 const BINARY_SNIFF_BYTES = 8192;
 
@@ -72,6 +74,7 @@ export const scanLines = async (
 };
 
 export type AtomicWrite = {
+  scope: PathScope;
   target: string;
   requestedPath: string;
   content: string;
@@ -94,21 +97,23 @@ export const updateLedgerAfterWrite = async (session: ToolSessionState, canonica
   }
 };
 
-const differentLocation = (requestedPath: string, expected: string, actual: string): ToolExecutionError =>
-  new ToolExecutionError(`${requestedPath} resolves to a different location than when it was approved (${expected} → ${actual}); retry the call`);
+const differentLocation = (scope: PathScope, requestedPath: string, expected: string, actual: string): ToolExecutionError =>
+  new ToolExecutionError(
+    `${shownPath(scope, requestedPath)} resolves to a different location than when it was approved (${shownPath(scope, expected)} → ${shownPath(scope, actual)}); retry the call`,
+  );
 
-const assertResolvesTo = async (requestedPath: string, directory: string): Promise<void> => {
+const assertResolvesTo = async (scope: PathScope, requestedPath: string, directory: string): Promise<void> => {
   const resolved = await fs.promises.realpath(directory);
-  if (resolved !== directory) throw differentLocation(requestedPath, directory, resolved);
+  if (resolved !== directory) throw differentLocation(scope, requestedPath, directory, resolved);
 };
 
-const createMissingDirectories = async (directory: string, requestedPath: string): Promise<void> => {
+const createMissingDirectories = async (scope: PathScope, directory: string, requestedPath: string): Promise<void> => {
   const missing: string[] = [];
   for (let current = directory; (await statIfExists(current)) === undefined; current = path.dirname(current)) missing.push(current);
   for (const level of missing.reverse()) {
     await fs.promises.mkdir(level);
     try {
-      await assertResolvesTo(requestedPath, level);
+      await assertResolvesTo(scope, requestedPath, level);
     } catch (error) {
       await fs.promises.rmdir(level).catch((removeError: unknown) => {
         const code = (removeError as NodeJS.ErrnoException).code;
@@ -122,8 +127,8 @@ const createMissingDirectories = async (directory: string, requestedPath: string
 export const writeFileAtomically = async (write: AtomicWrite): Promise<string | undefined> => {
   const { target, content, mode } = write;
   const directory = path.dirname(target);
-  await createMissingDirectories(directory, write.requestedPath);
-  await assertResolvesTo(write.requestedPath, directory);
+  await createMissingDirectories(write.scope, directory, write.requestedPath);
+  await assertResolvesTo(write.scope, write.requestedPath, directory);
   const temporary = path.join(directory, `.${path.basename(target)}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`);
   const handle = await fs.promises.open(temporary, 'wx', mode);
   try {
@@ -134,7 +139,7 @@ export const writeFileAtomically = async (write: AtomicWrite): Promise<string | 
     } finally {
       await handle.close();
     }
-    await assertResolvesTo(write.requestedPath, directory);
+    await assertResolvesTo(write.scope, write.requestedPath, directory);
     await fs.promises.rename(temporary, target);
   } catch (error) {
     await fs.promises.rm(temporary, { force: true });
@@ -155,8 +160,8 @@ export const writeFileAtomically = async (write: AtomicWrite): Promise<string | 
   return ledgerWarning;
 };
 
-export const assertSameLocation = (requestedPath: string, approvedPath: string, currentPath: string): void => {
-  if (currentPath !== approvedPath) throw differentLocation(requestedPath, approvedPath, currentPath);
+export const assertSameLocation = (scope: PathScope, requestedPath: string, approvedPath: string, currentPath: string): void => {
+  if (currentPath !== approvedPath) throw differentLocation(scope, requestedPath, approvedPath, currentPath);
 };
 
 export const newFileMode = (): number => 0o666 & ~process.umask();
@@ -166,14 +171,14 @@ export const recordInLedger = async (session: ToolSessionState, canonical: strin
   session.readLedger.set(canonical, { sha256, mtimeMs: stat.mtimeMs });
 };
 
-export const assertReadAndUnchanged = async (session: ToolSessionState, canonical: string): Promise<string> => {
+export const assertReadAndUnchanged = async (session: ToolSessionState, canonical: string, shown: string): Promise<string> => {
   const entry = session.readLedger.get(canonical);
   if (entry === undefined) {
-    throw new ToolExecutionError(`${canonical} has not been read in this session; Read it first before modifying it`);
+    throw new ToolExecutionError(`${shown} has not been read in this session; Read it first before modifying it`);
   }
   const current = await sha256OfFile(canonical);
   if (current !== entry.sha256) {
-    throw new ToolExecutionError(`${canonical} has changed since it was last read; Read it again before modifying it`);
+    throw new ToolExecutionError(`${shown} has changed since it was last read; Read it again before modifying it`);
   }
   return current;
 };

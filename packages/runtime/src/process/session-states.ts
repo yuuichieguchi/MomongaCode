@@ -27,7 +27,7 @@ export const createSessionStates = ({ clock, store, logger }: SessionStatesOptio
         existing.lastUsedAt = clock.now();
         return existing.state;
       }
-      const entry: Entry = { state: { cwd: session.cwd, readLedger: new Map() }, lastUsedAt: clock.now() };
+      const entry: Entry = { state: { cwd: session.cwd, workingDirectory: session.cwd, readLedger: new Map() }, lastUsedAt: clock.now() };
       entries.set(session.id, entry);
       return entry.state;
     },

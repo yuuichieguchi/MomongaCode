@@ -129,7 +129,7 @@ describe('permission', () => {
   it('asks before a trusted session searches every project, binding the subject to all', async () => {
     const { port, searches } = fakePort();
     const set = await toolSet(port);
-    expect(set.get(HISTORY_SEARCH_TOOL_NAME)?.subject({ query: 'needle', scope: 'all' }, { cwd: '/work/a', home: '/home', roots: [] })).toEqual({ kind: 'history', tool: 'HistorySearch', project: 'all' });
+    expect(set.get(HISTORY_SEARCH_TOOL_NAME)?.subject({ query: 'needle', scope: 'all' }, { cwd: '/work/a', workingDirectory: '/work/a', home: '/home', roots: [] })).toEqual({ kind: 'history', tool: 'HistorySearch', project: 'all' });
     expect((await run(makeHarness(), port, HISTORY_SEARCH_TOOL_NAME, { query: 'needle', scope: 'all' }))?.kind).toBe('needs_approval');
     expect(searches).toEqual([]);
   });
@@ -143,7 +143,7 @@ describe('permission', () => {
   it('asks before reading a run of another project, naming that project in the subject', async () => {
     const { port, reads } = fakePort({ projects: { 'run-b': '/work/b' } });
     const set = await toolSet(port);
-    expect(set.get(HISTORY_READ_TOOL_NAME)?.subject({ runId: 'run-b' }, { cwd: '/work/a', home: '/home', roots: [] })).toEqual({ kind: 'history', tool: 'HistoryRead', project: '/work/b' });
+    expect(set.get(HISTORY_READ_TOOL_NAME)?.subject({ runId: 'run-b' }, { cwd: '/work/a', workingDirectory: '/work/a', home: '/home', roots: [] })).toEqual({ kind: 'history', tool: 'HistoryRead', project: '/work/b' });
     expect((await run(makeHarness(), port, HISTORY_READ_TOOL_NAME, { runId: 'run-b' }))?.kind).toBe('needs_approval');
     expect(reads).toEqual([]);
   });

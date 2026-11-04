@@ -114,7 +114,7 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const result = resultOf(await bash(tools, `cd ${tools.layout.outside}`));
     expect(tools.session.cwd).toBe(tools.layout.project);
-    expect(result.output.trimEnd().endsWith(`Shell cwd was reset to ${tools.layout.project}`)).toBe(true);
+    expect(result.output.trimEnd().endsWith('Shell cwd was reset to .')).toBe(true);
     expect(result.output).not.toContain('__MOMONGA_CWD_');
   });
 

@@ -12,7 +12,7 @@ describe('Write', () => {
     const tools = await makeBuiltins();
     const file = path.join(tools.layout.project, 'new.txt');
     const result = resultOf(await tools.run('Write', { file_path: file, content: 'a\nb\nc' }, { mode: 'acceptEdits' }));
-    expect(result).toMatchObject({ status: 'completed', output: `Created ${file} (3 lines)` });
+    expect(result).toMatchObject({ status: 'completed', output: 'Created new.txt (3 lines)' });
     expect(result.content).toEqual([{ type: 'diff', path: file, oldText: null, newText: 'a\nb\nc' }]);
     expect(fs.readFileSync(file, 'utf8')).toBe('a\nb\nc');
     expect(tools.session.readLedger.get(file)).toEqual({ sha256: sha256('a\nb\nc'), mtimeMs: fs.statSync(file).mtimeMs });
@@ -71,7 +71,7 @@ describe('Write', () => {
     const file = tools.write('existing.txt', 'old\n');
     resultOf(await tools.run('Read', { file_path: file }));
     const result = resultOf(await tools.run('Write', { file_path: file, content: 'new 1\nnew 2' }, { mode: 'acceptEdits' }));
-    expect(result).toMatchObject({ status: 'completed', output: `Updated ${file} (2 lines)` });
+    expect(result).toMatchObject({ status: 'completed', output: 'Updated existing.txt (2 lines)' });
     expect(result.content).toEqual([{ type: 'diff', path: file, oldText: 'old\n', newText: 'new 1\nnew 2' }]);
     expect(fs.readFileSync(file, 'utf8')).toBe('new 1\nnew 2');
     expect(tools.session.readLedger.get(file)?.sha256).toBe(sha256('new 1\nnew 2'));
@@ -149,10 +149,11 @@ describe('Write', () => {
     expect(fs.existsSync(file)).toBe(false);
   });
 
-  it('rejects a relative path', async () => {
+  it('resolves a relative path against the working directory', async () => {
     const tools = await makeBuiltins();
     const result = resultOf(await tools.run('Write', { file_path: 'x.txt', content: '' }, { mode: 'acceptEdits' }));
-    expect(result).toMatchObject({ status: 'failed', output: 'file_path must be an absolute path' });
+    expect(result).toMatchObject({ status: 'completed', output: 'Created x.txt (0 lines)' });
+    expect(fs.readFileSync(path.join(tools.layout.project, 'x.txt'), 'utf8')).toBe('');
   });
 
   it('is denied inside a readDenied path even with approval in bypass mode', async () => {
@@ -186,7 +187,7 @@ describe('Write', () => {
       const file = tools.write('r.txt', 'old');
       seedInterrupted(tools, 'r2', { path: file, preHash: sha256('old'), postHash: sha256('new') });
       const outcome = await tools.run('Write', { file_path: file, content: 'new' }, { mode: 'acceptEdits' }, undefined, 'r2');
-      expect(outcome).toMatchObject({ kind: 'result', reconciled: 'not_applied', result: { status: 'completed', output: `Updated ${file} (1 line)` } });
+      expect(outcome).toMatchObject({ kind: 'result', reconciled: 'not_applied', result: { status: 'completed', output: 'Updated r.txt (1 line)' } });
       expect(fs.readFileSync(file, 'utf8')).toBe('new');
     });
 

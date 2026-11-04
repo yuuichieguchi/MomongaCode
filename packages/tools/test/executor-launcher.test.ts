@@ -47,7 +47,7 @@ const launcherHarness = (layout: Layout) => {
       harness.input(await toolSetOf(writeTool(target, runs)), [call('c1', 'PathTool', {}, 'allow_once')], {
         mode: 'bypassPermissions',
         roots: [home],
-        session: { cwd: home, readLedger: new Map() },
+        session: { cwd: home, workingDirectory: home, readLedger: new Map() },
         sandboxPolicy,
       }),
     );

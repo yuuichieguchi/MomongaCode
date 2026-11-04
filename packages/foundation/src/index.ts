@@ -148,6 +148,7 @@ export type { RotatingLogFile, RotatingLogFileOptions } from './rotating-log.ts'
 export { StartupCancelled, exitCodeForStartError, nodeEntryIo, runDaemonEntry } from './daemon-entry.ts';
 export type { DaemonCloseResult, DaemonDefinition, DaemonHandle, DaemonStartContext, EntryIo, EntrySignal, LogTarget } from './daemon-entry.ts';
 export { UNRESOLVABLE_ERRNO_CODES, resolveCanonicalPath, unresolvableReasonOf } from './path-resolution.ts';
+export { displayToolPath, resolveToolPath } from './tool-path.ts';
 export type { PathResolution, UnresolvableErrno, UnresolvableReason, Unresolved } from './path-resolution.ts';
 export { gitlinksOfIndex } from './git-index.ts';
 export type { GitlinkRead } from './git-index.ts';
@@ -160,7 +161,7 @@ export type { Expression, FileMatcher, FilePattern, FilePatternContext, GlobSegm
 export { HOST_FLAVOUR, flavourOf, nativePathOf, patternPathOf, specifierOf } from './path-flavour.ts';
 export type { PathFlavour } from './path-flavour.ts';
 export type { RuleEnforcement } from './file-rules.ts';
-export { EMPTY_FILE_RULES, FileRuleError, HOST_RULE_ENFORCEMENT, ruleEnforcementOf, compileFileRuleSet, inWritableArea, lexicallyWithin, writableAreaOf, writableCheckOf, fileRuleBlocks, fileRuleFingerprint } from './file-rules.ts';
+export { EMPTY_FILE_RULES, FileRuleError, HOST_RULE_ENFORCEMENT, ruleEnforcementOf, compileFileRuleSet, inWritableArea, lexicallyWithin, writableAreaOf, writableCheckOf, fileRuleBlocks, fileRuleBlockingForm, fileRuleFingerprint } from './file-rules.ts';
 export type { FileRuleAccess, FileRuleEffect, FileRuleEntry, FileRuleException, FileRuleProvenance, FileRuleSet, FileRuleSpec, WritableArea } from './file-rules.ts';
 export { nodeCommandRunner, nodeSyncCommandRunner } from './platform/command-runner.ts';
 export type { CommandOptions, CommandResult, CommandRunner, SyncCommandRunner } from './platform/command-runner.ts';

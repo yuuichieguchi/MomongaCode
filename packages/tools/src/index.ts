@@ -47,6 +47,7 @@ export type {
   ReconcileContext,
   ReconcileResult,
   SkillActivation,
+  DisplayContext,
   SubjectContext,
   ToolContent,
   ToolContext,

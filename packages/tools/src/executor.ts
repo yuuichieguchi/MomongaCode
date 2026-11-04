@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalJson, canonicalPath, comparableFromParts, containsByComponents, computeBackoff, fileRuleFingerprint, hostKernelLock, hostReapTiming, locateThroughFiles, momongaLayout, reapMarkedProcessesWithReport, sha256Hex, writableAreaOf, writableCheckOf } from '@momonga/foundation';
+import { canonicalJson, canonicalPath, comparableFromParts, containsByComponents, computeBackoff, displayToolPath, fileRuleFingerprint, hostKernelLock, hostReapTiming, locateThroughFiles, momongaLayout, reapMarkedProcessesWithReport, sha256Hex, writableAreaOf, writableCheckOf } from '@momonga/foundation';
 import type { Clock, FileRuleProvenance, KernelLockMechanism, PathResolution, ProcessInspector, ReapReport, ReapTiming, SignalSender, UninspectableRegistry } from '@momonga/foundation';
 import { absoluteFrom, createGlobDeadline, decide, fileRuleSpecsOf, globBudgetMs, prepareGlobs, settleGlobs, suggestAllowRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject, PolicyHostFilesystem } from '@momonga/policy';
@@ -20,7 +20,7 @@ import type { ToolSet } from './registry.ts';
 import { cancellableTimer } from './timers.ts';
 import { MINIMUM_INLINE_OUTPUT_CHARS, truncateOutput } from './truncate.ts';
 import { ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
-import type { AnyTool, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState } from './types.ts';
+import type { AnyTool, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
 import { validateToolInput } from './validate.ts';
 
 const DEFAULT_IDEMPOTENCY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -218,7 +218,11 @@ const storedOutcome = (stored: unknown): ResultOutcome => {
 
 const readDeniedPath = (subject: PermissionSubject, access: ReadAccessMatcher, cwd: string): string | undefined => {
   if (subject.kind !== 'path' || !access.deniesAnything) return undefined;
-  return subject.paths.find((target) => access.blocks(target, cwd));
+  const target = subject.paths.find((candidate) => access.blocks(candidate, cwd));
+  if (target === undefined) return undefined;
+  const matched = access.blockedForm(target, cwd);
+  if (matched === undefined) throw new Error(`${target} is read-denied but no matching form was found`);
+  return matched;
 };
 
 const readRuleToolOf = (subjectTool: string): ReadFamilyTool => (subjectTool === 'Grep' || subjectTool === 'Glob' ? subjectTool : 'Read');
@@ -227,8 +231,8 @@ const ruleBlock = (subject: PermissionSubject, access: BatchAccess, cwd: string)
   if (subject.kind !== 'path') return undefined;
   const tool = readRuleToolOf(subject.tool);
   for (const target of subject.paths) {
-    const provenance = access.blockedBy(target, cwd, tool) ?? (subject.access === 'write' ? access.writeBlockedBy(target, cwd) : undefined);
-    if (provenance !== undefined) return { target, provenance };
+    const block = access.blockedMatch(target, cwd, tool) ?? (subject.access === 'write' ? access.writeBlockedMatch(target, cwd) : undefined);
+    if (block !== undefined) return { target: block.matched, provenance: block.provenance };
   }
   return undefined;
 };
@@ -316,28 +320,39 @@ type BatchAccess = ReadAccessMatcher & {
 
 const rootsOf = (batch: BatchCore): readonly string[] => (batch.tmpDir === undefined ? batch.roots : [...batch.roots, batch.tmpDir]);
 
-const digestSubject = (subject: PermissionSubject, cwd: string, canonicalise: (absolute: string) => PathResolution): unknown => {
+const subjectContextOf = (batch: BatchCore): SubjectContext => ({
+  cwd: batch.session.cwd,
+  workingDirectory: batch.session.workingDirectory,
+  home: batch.home,
+  roots: rootsOf(batch),
+});
+
+const digestSubject = (subject: PermissionSubject, cwd: string, canonicalise: (absolute: string) => PathResolution, show: (absolute: string) => string): unknown => {
   if (subject.kind === 'path') {
     return {
       ...subject,
       paths: subject.paths.map((target) => {
         const absolute = absoluteFrom(target, cwd);
         const real = canonicalise(absolute);
-        if (!real.ok) throw new Error(`${absolute} cannot be resolved to a real location`);
+        if (!real.ok) throw new Error(`${show(absolute)} cannot be resolved to a real location`);
         return real.path;
       }),
     };
   }
   if (subject.kind === 'command') {
     const canonicalCwd = canonicalise(cwd);
-    if (!canonicalCwd.ok) throw new Error(`session cwd ${cwd} cannot be resolved to a real location`);
+    if (!canonicalCwd.ok) throw new Error(`session cwd ${show(cwd)} cannot be resolved to a real location`);
     return { subject, cwd: canonicalCwd.path };
   }
   return subject;
 };
 
-export const subjectDigestOf = (subject: PermissionSubject, cwd: string, canonicalise: (absolute: string) => PathResolution): string =>
-  sha256Hex(canonicalJson(digestSubject(subject, cwd, canonicalise)));
+export const subjectDigestOf = (
+  subject: PermissionSubject,
+  cwd: string,
+  canonicalise: (absolute: string) => PathResolution,
+  show: (absolute: string) => string = (absolute) => absolute,
+): string => sha256Hex(canonicalJson(digestSubject(subject, cwd, canonicalise, show)));
 
 const failedOutcome = (callId: string, output: string): ResultOutcome => ({
   callId,
@@ -490,16 +505,17 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     batch: ExecutionBatchInput,
   ): Promise<{ outcome: CallOutcome } | { decision: Decision }> => {
     const cwd = batch.session.cwd;
+    const shown = (absolute: string): string => displayToolPath(batch.session.workingDirectory, absolute);
     const blockedPath = readDeniedPath(subject, access, cwd);
-    if (blockedPath !== undefined) return { outcome: deniedOutcome(call.callId, { source: 'sandbox', reason: `${blockedPath} is blocked by the sandbox policy` }) };
+    if (blockedPath !== undefined) return { outcome: deniedOutcome(call.callId, { source: 'sandbox', reason: `${shown(blockedPath)} is blocked by the sandbox policy` }) };
     const writeBlockedPath = access.writeDeniedPath(subject, cwd);
     if (writeBlockedPath !== undefined) {
-      return { outcome: deniedOutcome(call.callId, { source: 'sandbox', reason: `${writeBlockedPath} is write-protected by the sandbox policy` }) };
+      return { outcome: deniedOutcome(call.callId, { source: 'sandbox', reason: `${shown(writeBlockedPath)} is write-protected by the sandbox policy` }) };
     }
     const blockedByRule = ruleBlock(subject, access, cwd);
     if (blockedByRule !== undefined) {
       return {
-        outcome: deniedOutcome(call.callId, { source: 'rule', reason: `${blockedByRule.target} is blocked by ${describeProvenance(blockedByRule.provenance)}` }),
+        outcome: deniedOutcome(call.callId, { source: 'rule', reason: `${shown(blockedByRule.target)} is blocked by ${describeProvenance(blockedByRule.provenance)}` }),
       };
     }
     const globs = await prepareGlobs({
@@ -564,7 +580,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         if (!validation.ok) return failedOutcome(call.callId, `A PreToolUse hook returned an input that ${tool.name} rejects: ${validation.message}`);
         let subject: PermissionSubject;
         try {
-          subject = tool.subject(validation.value, { cwd, home: batch.home, roots: rootsOf(batch) });
+          subject = tool.subject(validation.value, subjectContextOf(batch));
         } catch (error) {
           return failedOutcome(call.callId, describeThrown(tool.name, error));
         }
@@ -591,7 +607,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     if ((decision.kind === 'ask' || unsandboxedExec)) {
       let subjectDigest: string;
       try {
-        subjectDigest = subjectDigestOf(subject, cwd, options.fs.canonicalise);
+        subjectDigest = subjectDigestOf(subject, cwd, options.fs.canonicalise, (absolute) => displayToolPath(batch.session.workingDirectory, absolute));
       } catch (error) {
         return failedOutcome(call.callId, `Permission check failed: ${error instanceof Error ? error.message : String(error)}`);
       }
@@ -604,7 +620,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           const classified = await batch.classifier.classify({
             callId: call.callId,
             toolName: tool.name,
-            title: tool.title(input),
+            title: tool.title(input, batch.session),
             input,
             reason: effective.reason,
             subjectDigest,
@@ -619,14 +635,14 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           unsandboxedExec || decision.source === 'protected' || decision.source === 'hook' || decision.rule?.layer === 'governance'
             ? undefined
             : suggestAllowRule(policyTool, subject, cwd, options.fs.canonicalise);
-        const locations = tool.locations?.(input);
+        const locations = tool.locations?.(input, batch.session);
         return {
           callId: call.callId,
           kind: 'needs_approval',
           decision: effective,
           subjectDigest,
           ...(suggestedRule === undefined ? {} : { suggestedRule }),
-          title: tool.title(input),
+          title: tool.title(input, batch.session),
           toolKind: tool.kind,
           ...(locations === undefined ? {} : { locations }),
         };
@@ -682,7 +698,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
 
     let subject: PermissionSubject;
     try {
-      subject = tool.subject(input, { cwd, home: batch.home, roots: rootsOf(batch) });
+      subject = tool.subject(input, subjectContextOf(batch));
     } catch (error) {
       return outcome(failedOutcome(call.callId, describeThrown(tool.name, error)));
     }
@@ -760,9 +776,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     activeKeys.set(key, (activeKeys.get(key) ?? 0) + 1);
     const trace = batch.traceparentFor?.(callId);
     const reconcileCtx: ReconcileContext = {
-      cwd: batch.session.cwd,
-      home: batch.home,
-      roots: rootsOf(batch),
+      ...subjectContextOf(batch),
       ...(batch.tmpDir === undefined ? {} : { tmpDir: batch.tmpDir }),
       runId: batch.runId,
       step: batch.step,

@@ -8,6 +8,7 @@ import { expectedSubjectDigest } from './harness.ts';
 
 const subjectContext = (tools: Awaited<ReturnType<typeof makeBuiltins>>) => ({
   cwd: tools.session.cwd,
+  workingDirectory: tools.session.workingDirectory,
   home: tools.layout.home,
   roots: [tools.layout.project],
 });

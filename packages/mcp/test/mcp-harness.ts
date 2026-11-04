@@ -232,7 +232,7 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000)) => {
       home,
       roots: [project],
       env: {},
-      session: { cwd: project, readLedger: new Map() },
+      session: { cwd: project, workingDirectory: project, readLedger: new Map() },
       sandbox: unusedSandbox,
       sandboxPolicy: { writableRoots: [project], writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: compileFileRuleSet([], [project], null, resolveCanonicalPath, volumeIsCaseInsensitive, HOST_FLAVOUR, HOST_RULE_ENFORCEMENT), readDenied: [], network: 'deny' },
       deadlineAt: clock.now() + 600_000,

@@ -1,15 +1,24 @@
 import path from 'node:path';
-import { comparableContains, resolveCanonicalPath } from '@momonga/foundation';
+import { comparableContains, displayToolPath, resolveCanonicalPath, resolveToolPath } from '@momonga/foundation';
 import { ToolInputError } from '../types.ts';
+import type { SubjectContext } from '../types.ts';
 
-export const requireAbsolute = (field: string, value: string): string => {
-  if (!path.isAbsolute(value)) throw new ToolInputError(`${field} must be an absolute path`);
-  return value;
+export type PathScope = Pick<SubjectContext, 'workingDirectory'>;
+
+export const resolvedPathOf = (scope: PathScope, value: string): string => resolveToolPath(scope.workingDirectory, value);
+
+export const accessedPathOf = (scope: PathScope, value: string): string => {
+  const absolute = resolvedPathOf(scope, value);
+  const resolution = resolveCanonicalPath(absolute);
+  return resolution.ok ? resolution.path : absolute;
 };
 
-export const canonicalPathOf = (field: string, value: string): string => {
-  const resolution = resolveCanonicalPath(requireAbsolute(field, value));
-  if (!resolution.ok) throw new ToolInputError(`${field} cannot be resolved to a real location: ${value}`);
+export const shownPath = (scope: PathScope, absolute: string): string => displayToolPath(scope.workingDirectory, absolute);
+
+export const canonicalPathOf = (scope: PathScope, field: string, value: string): string => {
+  const absolute = resolvedPathOf(scope, value);
+  const resolution = resolveCanonicalPath(absolute);
+  if (!resolution.ok) throw new ToolInputError(`${field} cannot be resolved to a real location: ${shownPath(scope, absolute)}`);
   return resolution.path;
 };
 

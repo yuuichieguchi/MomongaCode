@@ -1,4 +1,4 @@
-import { isRecord } from '@momonga/foundation';
+import { displayToolPath, isRecord, resolveToolPath } from '@momonga/foundation';
 
 export type DiffLine = { kind: 'context' | 'removed' | 'added' | 'header'; text: string };
 
@@ -32,20 +32,21 @@ export const diffOfStrings = (oldText: string, newText: string): DiffLine[] => {
   ];
 };
 
-export const diffOfToolInput = (name: string, rawInput: unknown): DiffLine[] | undefined => {
+export const diffOfToolInput = (name: string, rawInput: unknown, workingDirectory: string): DiffLine[] | undefined => {
   if (!isRecord(rawInput)) return undefined;
   const filePath = rawInput['file_path'];
   if (typeof filePath !== 'string') return undefined;
+  const header: DiffLine = { kind: 'header', text: displayToolPath(workingDirectory, resolveToolPath(workingDirectory, filePath)) };
   if (name === 'Edit') {
     const oldString = rawInput['old_string'];
     const newString = rawInput['new_string'];
     if (typeof oldString !== 'string' || typeof newString !== 'string') return undefined;
-    return [{ kind: 'header', text: filePath }, ...diffOfStrings(oldString, newString)];
+    return [header, ...diffOfStrings(oldString, newString)];
   }
   if (name === 'Write') {
     const content = rawInput['content'];
     if (typeof content !== 'string') return undefined;
-    return [{ kind: 'header', text: filePath }, ...diffOfStrings('', content)];
+    return [header, ...diffOfStrings('', content)];
   }
   return undefined;
 };

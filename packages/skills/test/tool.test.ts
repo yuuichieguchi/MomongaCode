@@ -43,7 +43,7 @@ describe('activate_skill tool', () => {
   it('is a read-only tool without a permission subject so that it never asks', async () => {
     const tool = await toolOf();
     expect(tool).toMatchObject({ kind: 'read', sideEffect: 'read_only' });
-    expect(tool.subject({ name: 'pdf' }, { cwd: '/work/app', home: HOME, roots: ['/work/app'] })).toEqual({ kind: 'none', tool: 'activate_skill' });
+    expect(tool.subject({ name: 'pdf' }, { cwd: '/work/app', workingDirectory: '/work/app', home: HOME, roots: ['/work/app'] })).toEqual({ kind: 'none', tool: 'activate_skill' });
   });
 
   it('registers in the tool registry', async () => {

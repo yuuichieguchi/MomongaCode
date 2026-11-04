@@ -1,6 +1,7 @@
 import type { ToolIdempotencyRecord } from '../ports.ts';
-import type { ReconcileResult } from '../types.ts';
+import type { ReconcileContext, ReconcileResult } from '../types.ts';
 import { hashOfFileIfExists } from './files.ts';
+import { shownPath } from './paths.ts';
 
 export type PreparedWrite = { path: string; preHash: string | null; postHash: string };
 
@@ -13,13 +14,14 @@ export const parsePreparedWrite = (value: unknown): PreparedWrite => {
   return { path, preHash, postHash };
 };
 
-export const reconcileWrite = async (record: ToolIdempotencyRecord, label: string): Promise<ReconcileResult> => {
+export const reconcileWrite = async (record: ToolIdempotencyRecord, label: string, ctx: ReconcileContext, requested: string): Promise<ReconcileResult> => {
   const prepared = parsePreparedWrite(record.meta['prepared']);
+  const shown = shownPath(ctx, requested);
   const current = await hashOfFileIfExists(prepared.path);
-  if (current === prepared.postHash) return { outcome: 'already_applied', output: `${label} to ${prepared.path} had already been applied` };
+  if (current === prepared.postHash) return { outcome: 'already_applied', output: `${label} to ${shown} had already been applied` };
   if (current === prepared.preHash) return { outcome: 'not_applied', output: '' };
   return {
     outcome: 'unknown',
-    output: `${prepared.path} matches neither the state before nor after the interrupted ${label}; inspect it before retrying.`,
+    output: `${shown} matches neither the state before nor after the interrupted ${label}; inspect it before retrying.`,
   };
 };

@@ -95,7 +95,7 @@ describe.runIf(HAS_REAL_SANDBOX)('every approvable command form prints the same 
     const built = await makeBuiltins({ sandbox: recorded.sandbox });
     const roots = [project];
     const sandboxPolicy = buildSandboxPolicy({ roots, home, tmpDir, sessionsTmpRoot: path.join(base, 'sessions'), fileRules: computeFileRules([], roots, tmpDir, HOST_RULE_ENFORCEMENT), protectedSet: protectedSetFor(roots, filesystem), network: 'deny' });
-    resultOf(await built.run('Bash', { command: 'pwd' }, { env: plainEnv as Record<string, string>, roots, home, tmpDir, sandboxPolicy, session: { cwd: project, readLedger: new Map() } }));
+    resultOf(await built.run('Bash', { command: 'pwd' }, { env: plainEnv as Record<string, string>, roots, home, tmpDir, sandboxPolicy, session: { cwd: project, workingDirectory: project, readLedger: new Map() } }));
     spawned = recorded.spawns[0] as RecordedSpawn;
   });
 

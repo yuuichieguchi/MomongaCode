@@ -175,10 +175,14 @@ describe('Edit', () => {
     expect(fs.readFileSync(target, 'utf8')).toBe('bye\n');
   });
 
-  it('rejects a relative path', async () => {
+  it('resolves a relative path against the working directory', async () => {
     const tools = await makeBuiltins();
+    const file = tools.write('x.txt', 'a\n');
+    tools.markRead(file);
     const result = resultOf(await tools.run('Edit', { file_path: 'x.txt', old_string: 'a', new_string: 'b' }, ACCEPT));
-    expect(result).toMatchObject({ status: 'failed', output: 'file_path must be an absolute path' });
+    expect(result.status).toBe('completed');
+    expect(result.output.split('\n')[0]).toBe('The file x.txt has been updated. Here is the result of running cat -n on a snippet of the edited file:');
+    expect(fs.readFileSync(file, 'utf8')).toBe('b\n');
   });
 
   describe('reconcile of an interrupted edit', () => {

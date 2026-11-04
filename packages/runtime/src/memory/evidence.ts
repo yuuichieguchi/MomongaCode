@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { lexicallyWithin } from '@momonga/foundation';
+import { lexicallyWithin, resolveToolPath } from '@momonga/foundation';
 import { EvidenceOutsideRootError, EvidenceUnreadableError } from '@momonga/memory';
 import type { EvidencePorts } from '@momonga/memory';
 import type { MemoryEvidence, RunEvent } from '@momonga/protocol';
@@ -154,7 +154,7 @@ const checkEvidenceOf = (input: BindMemoryEvidenceInput, boundPaths: ReadonlySet
 export const bindMemoryEvidence = async (input: BindMemoryEvidenceInput): Promise<MemoryEvidence[]> => {
   const bound = new Map<string, MemoryEvidence>();
   for (const given of input.paths) {
-    const resolved = path.resolve(input.project, given);
+    const resolved = resolveToolPath(input.project, given);
     if (!lexicallyWithin(resolved, input.project)) throw new MemoryEvidenceError(`${given} is outside the project, so a note cannot be bound to it`);
     const recorded = latestRecordedHash(input.events, resolved);
     if (recorded === undefined) throw new MemoryEvidenceError(`${given} was not read or written in this run, so a note cannot be bound to it. Read the file first.`);

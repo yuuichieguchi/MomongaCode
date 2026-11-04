@@ -261,7 +261,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     sessionState: (target: Session) => {
       const existing = sessionStates.get(target.id);
       if (existing !== undefined) return existing;
-      const created: ToolSessionState = { cwd: target.cwd, readLedger: new Map() };
+      const created: ToolSessionState = { cwd: target.cwd, workingDirectory: target.cwd, readLedger: new Map() };
       sessionStates.set(target.id, created);
       return created;
     },

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { lexicallyWithin } from '@momonga/foundation';
+import { lexicallyWithin, resolveToolPath } from '@momonga/foundation';
 import { EvidenceOutsideRootError, EvidenceUnreadableError } from '@momonga/memory';
 import type { AddMemoryRequest, MemoryEvidence } from '@momonga/protocol';
 import { MEMORY_TEXT_MAX_CHARS, memoryTextProblem } from '@momonga/tools';
@@ -24,7 +24,7 @@ export type MemoryAddContext = {
 };
 
 const fileEvidenceOf = async (project: string, given: string, ports: ReturnType<typeof createEvidencePorts>): Promise<MemoryEvidence> => {
-  const resolved = path.resolve(project, given);
+  const resolved = resolveToolPath(project, given);
   if (!lexicallyWithin(resolved, project)) throw new MemoryAddRefusal(`${given} is outside the project, so a memory cannot be bound to it`, 'paths');
   let sha256: string | undefined;
   try {
