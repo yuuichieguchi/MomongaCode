@@ -48,6 +48,21 @@ describe('formatToolOutput', () => {
     expect(result?.output).toContain('item-33');
   });
 
+  it('formats a Bash command that prints JSON with json, which takes precedence over log', () => {
+    const raw = jsonRaw();
+    const result = formatToolOutput({ output: raw, tool: BASH, enabled: ['log', 'json'], terms: [] });
+    expect(result?.formatter).toBe('json');
+    expect(result?.output).toContain(formatJson(raw, []) as string);
+  });
+
+  it('falls back to log for a Bash command that prints JSON when only log is enabled', () => {
+    expect(formatToolOutput({ output: jsonRaw(), tool: BASH, enabled: ['log'], terms: [] })?.formatter).not.toBe('json');
+  });
+
+  it('formats the Grep output with grep even when json is enabled too', () => {
+    expect(formatToolOutput({ output: grepRaw(), tool: GREP, enabled: ['json', 'grep', 'log'], terms: [] })?.formatter).toBe('grep');
+  });
+
   it('formats nothing when no formatter is enabled', () => {
     expect(formatToolOutput({ output: grepRaw(), tool: GREP, enabled: [], terms: [] })).toBeUndefined();
     expect(formatToolOutput({ output: logRaw(), tool: BASH, enabled: [], terms: [] })).toBeUndefined();

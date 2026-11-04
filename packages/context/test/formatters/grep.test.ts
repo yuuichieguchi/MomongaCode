@@ -56,6 +56,16 @@ describe('the grep formatter', () => {
     expect(formatGrep(['src/app/main.ts', '/opt/vendor/lib/b.ts'].join('\n'))).toBeUndefined();
   });
 
+  it('declines context-mode output, whose context lines and separators it cannot render exactly', () => {
+    const raw = ['src/app/main.ts-8-  if (ready) {', 'src/app/main.ts:9:  return null;', 'src/app/main.ts-10-  }', '--', 'src/app/main.ts:20:  return null;'].join('\n');
+    expect(formatGrep(raw)).toBeUndefined();
+  });
+
+  it('declines a record whose path cannot be told apart from its line number without ambiguity', () => {
+    const raw = ['src/a:12:b.ts:3:  return null;', 'src/a:12:b.ts:5:  return null;'].join('\n');
+    expect(formatGrep(raw)).toBeUndefined();
+  });
+
   it('declines an output of counts', () => {
     expect(formatGrep(['src/app/main.ts:4', '/opt/vendor/lib/b.ts:1'].join('\n'))).toBeUndefined();
   });

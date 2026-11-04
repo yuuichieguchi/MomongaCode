@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { HISTORY_OUTPUT_HEAD_CHARS, HISTORY_OUTPUT_TAIL_CHARS } from '@momonga/store';
+import { HISTORY_OUTPUT_HEAD_CHARS, HISTORY_OUTPUT_TAIL_CHARS } from '@momonga/foundation';
 import { FAILURE_MARKERS, formatLog } from '@momonga/context';
 
 const progressLine = (index: number): string => `step ${String(index).padStart(3, '0')} ok`;

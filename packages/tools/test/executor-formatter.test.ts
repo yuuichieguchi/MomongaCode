@@ -27,9 +27,14 @@ describe('the batch output formatter in finalizeResult', () => {
     expect(seen).toEqual([{ output: RAW, status: 'completed', tool: { name: 'Grep', kind: 'search' } }]);
   });
 
-  it('returns the formatted text and stores the raw output under the handle even when the formatted text fits inline', async () => {
+  it('returns one header line naming the formatter and the raw handle, then the formatted text, and stores the raw output even when it fits inline', async () => {
     const { harness, result } = await runWith(RAW, () => ({ output: 'formatted view', formatter: 'grep', version: 1 }));
-    expect(result.output).toBe('formatted view');
+    const [header, ...rest] = result.output.split('\n');
+    expect(header).toContain('grep');
+    expect(header).toContain(blobHandle(1));
+    expect(rest.join('\n')).toBe('formatted view');
+    expect(result.output).toBe(`${header as string}\nformatted view`);
+    expect(result.truncated).toBe(false);
     expect(result.handle).toBe(blobHandle(1));
     expect(harness.blobs.stored.get(blobHandle(1))?.text).toBe(RAW);
     expect(harness.blobs.puts).toHaveLength(1);
@@ -38,7 +43,11 @@ describe('the batch output formatter in finalizeResult', () => {
 
   it('stores the raw output of a short result that was formatted, so ReadOutput returns it byte for byte (T4-4)', async () => {
     const { harness, result } = await runWith(SHORT_RAW, () => ({ output: 'short', formatter: 'log', version: 2 }));
-    expect(result.output).toBe('short');
+    const [header, ...rest] = result.output.split('\n');
+    expect(header).toContain('log');
+    expect(header).toContain(blobHandle(1));
+    expect(rest.join('\n')).toBe('short');
+    expect(result.truncated).toBe(false);
     expect(result.handle).toBe(blobHandle(1));
     expect(harness.blobs.stored.get(blobHandle(1))?.text).toBe(SHORT_RAW);
     expect(result.formatted).toEqual({ formatter: 'log', version: 2 });
@@ -51,7 +60,10 @@ describe('the batch output formatter in finalizeResult', () => {
     expect(harness.blobs.stored.get(blobHandle(1))?.text).toBe(RAW);
     expect(result.handle).toBe(blobHandle(1));
     expect(result.output.length).toBeLessThanOrEqual(LIMIT);
-    expect(result.output.startsWith('formatted-001\n')).toBe(true);
+    const lines = result.output.split('\n');
+    expect(lines[0]).toContain('grep');
+    expect(lines[0]).toContain(blobHandle(1));
+    expect(lines[1]).toBe('formatted-001');
     expect(result.output.endsWith('\nformatted-080')).toBe(true);
     expect(result.output).toContain(blobHandle(1));
     expect(result.output).toContain('ReadOutput');

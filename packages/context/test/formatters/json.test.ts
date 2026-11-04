@@ -39,6 +39,12 @@ describe('the json formatter', () => {
     expect(formatted).not.toContain('user-23');
   });
 
+  it('matches task terms without regard to ASCII case', () => {
+    const formatted = formatJson(RAW, ['NEEDLE-Owner']) as string;
+    expect(formatted).toContain('needle-owner');
+    expect(formatted).not.toContain('user-23');
+  });
+
   it('keeps a one-element array in full', () => {
     const raw = JSON.stringify({ items: [{ sku: 'only-sku-1', qty: 3 }] });
     const formatted = formatJson(raw, []) as string;
