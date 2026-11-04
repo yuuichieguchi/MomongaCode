@@ -18,4 +18,15 @@ describe('the code digest of the running process', () => {
     const cliEvalCopy = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'cli', 'src', 'eval', 'code-digest.ts');
     expect(fs.existsSync(cliEvalCopy)).toBe(false);
   });
+
+  it('is imported from @momonga/foundation by the gateway and by the eval host', () => {
+    const packages = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+    const importsFromFoundation = (directory: string): boolean =>
+      fs
+        .readdirSync(path.join(packages, directory), { recursive: true, encoding: 'utf8' })
+        .filter((file) => file.endsWith('.ts'))
+        .some((file) => /import \{[^}]*\bcodeDigestOfRunningProcess\b[^}]*\} from '@momonga\/foundation'/.test(fs.readFileSync(path.join(packages, directory, file), 'utf8')));
+    expect(importsFromFoundation(path.join('gateway', 'src'))).toBe(true);
+    expect(importsFromFoundation(path.join('cli', 'src', 'eval'))).toBe(true);
+  });
 });

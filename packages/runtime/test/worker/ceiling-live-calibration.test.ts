@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { inputCeilingFor } from '@momonga/context';
+import { inputCeilingFor, pinnedFloorFor } from '@momonga/context';
 import type { Capabilities } from '@momonga/protocol';
 import { inputTokensOf, tokensOfText } from './fake-gateway.ts';
 import { capabilitiesFor, makeEnv } from './harness.ts';
@@ -52,3 +52,36 @@ describe('the build ceiling of a claim resumed after the calibration of the alia
     expect(env.gateway.streams).toHaveLength(1);
   });
 });
+
+describe('the tool floor of a claim resumed after the calibration of the alias targets changed', () => {
+  const FLOOR_WINDOW = 1500;
+  const pinnedSmall = (): Capabilities => capabilitiesFor(FLOOR_WINDOW, { maxOutputTokens: 1024 });
+  const listedSmall = (): Capabilities => capabilitiesFor(2 * FLOOR_WINDOW, { maxOutputTokens: 1024, tokenErrorRatio: LIVE_RATIO });
+
+  it('reads the ratio from the claim listing and keeps the pinned window, so the resumed build leaves out tools for room', async () => {
+    const env = await makeEnv({ capabilities: pinnedSmall() });
+    env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: path.join(env.project, 'out.txt'), content: 'approved' } }]));
+    const run = env.enqueue('Write it');
+
+    expect(await env.runOnce(env.worker('worker-1'))).toBe('yielded');
+    expect(env.run(run.id).status).toBe('WAITING_HUMAN');
+    const firstBody = env.gateway.streams[0]?.body;
+    if (firstBody === undefined) throw new Error('the first claim made no model call');
+    const stable = inputTokensOf({ ...firstBody, input: (firstBody.input as unknown[]).slice(0, -1) as typeof firstBody.input });
+    expect(stable).toBeLessThanOrEqual(pinnedFloorFor(pinnedSmall()));
+    expect(stable).toBeGreaterThan(pinnedFloorFor(capabilitiesFor(FLOOR_WINDOW, { maxOutputTokens: 1024, tokenErrorRatio: LIVE_RATIO })));
+    expect(stable).toBeLessThanOrEqual(pinnedFloorFor(listedSmall()));
+    expect(env.ofType(run.id, 'notice').map((notice) => notice.code)).not.toContain('tools_dropped');
+    env.resolveApproval(run.id, 'allow_once');
+    env.gateway.script.push(textStep('Written.'));
+
+    env.gateway.capabilitiesValue = listedSmall();
+    expect(await env.runOnce(env.worker('worker-2'))).toBe('yielded');
+
+    const secondBody = env.gateway.streams[1]?.body;
+    if (secondBody === undefined) throw new Error('the resumed claim made no model call');
+    expect((secondBody.tools ?? []).length).toBeLessThan((firstBody.tools ?? []).length);
+    expect(env.ofType(run.id, 'notice').map((notice) => notice.code)).toContain('tools_dropped');
+  });
+});
+

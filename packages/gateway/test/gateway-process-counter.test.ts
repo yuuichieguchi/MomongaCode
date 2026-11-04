@@ -3,13 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
 import { codeDigestOfRunningProcess } from '@momonga/foundation';
 import { saveEndpointRecord, targetCounterOf } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecurityPort } from '@momonga/testkit';
 import { startFake } from './cc-support.ts';
 import { getJson } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, homePaths, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { makeReport } from './report-fixture.ts';
 
 const KEY_VARIABLE = 'MOMONGA_COUNTER_TEST_KEY';
+const SECRET_NAME = 'counter-test-secret';
 const IDENTITY_FIELDS = ['id', 'object', 'owned_by'];
 
 const listedCounters = async (socketPath: string): Promise<Record<string, string>> => {
@@ -53,6 +54,25 @@ describe('the counters a started gateway lists', { timeout: REAL_PROCESS_TEST_TI
 
     expect(firstCounters['primary']).toMatch(/^[0-9a-f]{64}$/);
     expect(secondCounters).toEqual(firstCounters);
+  });
+
+  it('keeps the value of a stored secret out of the counter: two values of the same apiKeySecret give the same counter', async () => {
+    const fake = await startFake({ scenario: 'tools-ok' });
+    const settings = { models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath, { toolCalling: 'native', apiKeySecret: SECRET_NAME }) } } };
+    const launchWithSecret = async (value: string) => {
+      const home = makeHome();
+      writeSettings(home, settings);
+      const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, execWithStdin: createFakeSecurityPort(() => ({ [SECRET_NAME]: value })) });
+      const counters = await listedCounters(handle.socketPath);
+      await handle.close();
+      return counters;
+    };
+
+    const first = await launchWithSecret('first-value-of-the-secret');
+    const second = await launchWithSecret('second-value-of-the-secret');
+
+    expect(first['primary']).toMatch(/^[0-9a-f]{64}$/);
+    expect(second).toEqual(first);
   });
 
   it('covers the upstream identity of the probe record of a probed endpoint target, and changes with a newly saved record', async () => {
