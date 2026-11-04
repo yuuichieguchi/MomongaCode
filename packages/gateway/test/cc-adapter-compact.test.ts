@@ -84,7 +84,7 @@ describe('summaryRequestOf', () => {
     expect(transcriptOf(request)).not.toContain('You are a helpful coding agent.');
   });
 
-  it('renders roles, calls and results as tagged elements and skips reasoning and system items', () => {
+  it('renders roles, calls, results and reasoning as tagged elements in order and skips system items', () => {
     const transcript = transcriptOf(summaryRequestOf(compactRequest(), 64));
     expect(transcript.startsWith('<transcript>')).toBe(true);
     expect(transcript.endsWith(TRANSCRIPT_TAIL)).toBe(true);
@@ -92,11 +92,11 @@ describe('summaryRequestOf', () => {
       '<transcript>',
       '<item role="user">Fix the parser bug</item>',
       '<item role="assistant">Reading the file</item>',
+      'hidden reasoning',
       '<tool_call id="c1" name="Read">{"path":"src/parse.ts"}</tool_call>',
       '<tool_result id="c1">export const parse = 1;</tool_result>',
       TRANSCRIPT_TAIL,
     ]);
-    expect(transcript).not.toContain('hidden reasoning');
     expect(transcript).not.toContain('hidden system text');
   });
 

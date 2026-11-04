@@ -28,6 +28,17 @@ describe('ollama target settings', () => {
     });
   });
 
+  it('defaults billing to local, as an fm target, and maxConcurrency to 1', async () => {
+    const { result } = load({ local: ollamaTarget() });
+    const target = (await result).settings.models.targets['local'];
+    expect(target).toMatchObject({ billing: 'local', maxConcurrency: 1, capabilities: { maxConcurrency: 1 } });
+  });
+
+  it('keeps a maxConcurrency the settings raise', async () => {
+    const { result } = load({ local: ollamaTarget({ maxConcurrency: 3 }) });
+    expect((await result).settings.models.targets['local']).toMatchObject({ maxConcurrency: 3 });
+  });
+
   it('rejects an ollama target without capabilities.contextWindow', async () => {
     const { tree, result } = load({ local: ollamaTarget({ capabilities: { maxOutputTokens: 4096 } }) });
     await expect(result).rejects.toThrow(userSettingsPath(tree));
