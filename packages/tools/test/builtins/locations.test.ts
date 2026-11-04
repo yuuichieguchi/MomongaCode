@@ -29,8 +29,8 @@ describe('recorded locations of the search and shell tools', () => {
     expect(locationsOf(name, { file_path: '/elsewhere/a.ts', content: '', old_string: 'a', new_string: 'b' })).toEqual([{ path: '/elsewhere/a.ts' }]);
   });
 
-  it('records the read targets of a Bash command that the permission analysis computes', () => {
-    expect(locationsOf('Bash', { command: 'cat secrets/prod.env' })).toEqual([{ path: 'secrets/prod.env' }]);
+  it('records the read targets of a Bash command as absolute paths, resolving relative ones against the shell directory', () => {
+    expect(locationsOf('Bash', { command: 'cat secrets/prod.env' })).toEqual([{ path: '/work/shell-moved-here/secrets/prod.env' }]);
     expect(locationsOf('Bash', { command: 'cat /etc/hosts | head -1' })).toEqual([{ path: '/etc/hosts' }]);
   });
 

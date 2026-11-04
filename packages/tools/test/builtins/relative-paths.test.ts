@@ -588,6 +588,17 @@ describe('a working directory reached through a symlink', () => {
   });
 });
 
+describe('Bash locations', () => {
+  it('resolves a relative path in the command against the shell directory and keeps an absolute one as written', async () => {
+    const tools = await makeBuiltins();
+    const shell = moveShellTo(tools, 'sub');
+    const bash = toolNamed(tools, 'Bash');
+    const ctx = contextAfterCd(tools, shell);
+    expect(bash.locations?.({ command: 'cat a.txt' }, ctx)).toEqual([{ path: path.join(project(tools), 'sub', 'a.txt') }]);
+    expect(bash.locations?.({ command: '/bin/cat /etc/hosts' }, ctx)).toEqual([{ path: '/etc/hosts' }]);
+  });
+});
+
 describe.runIf(HAS_REAL_SANDBOX)('a real Bash cd', () => {
   it('moves the shell but not the base of relative file paths', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const tools = await makeBuiltins({ realSandbox: true });
