@@ -1,5 +1,6 @@
 import { compactionSummaryMessage } from '@momonga/protocol';
 import type { AdapterInputItem, AdapterRequest, ContentPart, FunctionTool, PromptCacheCounts, ToolChoice } from '@momonga/protocol';
+import { callArgumentsObject } from '../shared/call-arguments.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { hasImagePart, imageSourceOf } from '../shared/image-part.ts';
 import { reasoningTextOf, textOfContent } from '../shared/input-text.ts';
@@ -54,14 +55,6 @@ const EPHEMERAL: CacheControl = { type: 'ephemeral' };
 const EMPTY_OBJECT_SCHEMA = { type: 'object', properties: {} } as const;
 const SUPPORTED_IMAGE_MEDIA_TYPES: ReadonlySet<string> = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 
-const parseToolInput = (callId: string, text: string): unknown => {
-  try {
-    return JSON.parse(text);
-  } catch (error) {
-    throw new UnsupportedInputError('invalid_function_call_arguments', `function_call "${callId}" has arguments that are not valid JSON`, 'input', { cause: error });
-  }
-};
-
 const textBlocksOf = (text: string): AnthropicTextBlock[] => (text === '' ? [] : [{ type: 'text', text }]);
 
 const imageBlockOf = (part: Extract<ContentPart, { type: 'input_image' }>): AnthropicImageBlock => {
@@ -94,7 +87,7 @@ const blocksOf = (item: AdapterInputItem): Converted | undefined => {
       return { role: 'user', blocks: textBlocksOf(textOfContent(summary.content)) };
     }
     case 'function_call':
-      return { role: 'assistant', blocks: [{ type: 'tool_use', id: item.call_id, name: item.name, input: parseToolInput(item.call_id, item.arguments) }] };
+      return { role: 'assistant', blocks: [{ type: 'tool_use', id: item.call_id, name: item.name, input: callArgumentsObject(item.arguments) }] };
     case 'function_call_output': {
       const content = hasImagePart(item.output) ? partBlocksOf(item.output) : textOfContent(item.output);
       return { role: 'user', blocks: [{ type: 'tool_result', tool_use_id: item.call_id, ...(content === '' ? {} : { content }) }] };

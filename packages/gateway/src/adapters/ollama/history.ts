@@ -1,5 +1,6 @@
 import { compactionSummaryMessage } from '@momonga/protocol';
 import type { AdapterInputItem, ContentPart } from '@momonga/protocol';
+import { callArgumentsObject } from '../shared/call-arguments.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { imageSourceOf, isImagePart } from '../shared/image-part.ts';
 import { reasoningTextOf, textOfContent } from '../shared/input-text.ts';
@@ -8,14 +9,6 @@ export type OllamaMessage = Record<string, unknown>;
 
 type ToolCall = { function: { name: string; arguments: unknown } };
 type AssistantDraft = { content: string; thinking: string | undefined; toolCalls: ToolCall[]; hasMessage: boolean };
-
-const parseArguments = (callId: string, text: string): unknown => {
-  try {
-    return JSON.parse(text);
-  } catch (error) {
-    throw new UnsupportedInputError('invalid_function_call_arguments', `function_call "${callId}" has arguments that are not valid JSON`, 'input', { cause: error });
-  }
-};
 
 const userMessageOf = (content: string | readonly ContentPart[]): OllamaMessage => {
   if (typeof content === 'string') return { role: 'user', content };
@@ -61,7 +54,7 @@ export const ollamaHistoryOf = (input: readonly AdapterInputItem[]): OllamaMessa
     }
     if (item.type === 'function_call') {
       namesByCallId.set(item.call_id, item.name);
-      current().toolCalls.push({ function: { name: item.name, arguments: parseArguments(item.call_id, item.arguments) } });
+      current().toolCalls.push({ function: { name: item.name, arguments: callArgumentsObject(item.arguments) } });
       continue;
     }
     if (item.type === 'message' && item.role === 'assistant') {

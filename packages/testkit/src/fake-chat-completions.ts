@@ -570,7 +570,7 @@ export const startFakeChatCompletions = async (
     });
     chunk({}, out.finishReason);
     const streamOptions = isRecord(body['stream_options']) ? body['stream_options'] : {};
-    if (options.wire === 'fm' || (streamOptions['include_usage'] === true && options.streamUsage === true)) {
+    if (streamOptions['include_usage'] === true && options.streamUsage === true) {
       send({ ...base, choices: [], usage: usageFor(body, out) });
     }
     response.write('data: [DONE]\n\n');

@@ -70,8 +70,10 @@ describe('buildMessagesBody', () => {
     ]);
   });
 
-  it('rejects tool arguments that are not JSON', () => {
-    expect(() => bodyOf([call('c1', 'read_file', '{oops')])).toThrow(UnsupportedInputError);
+  it('sends an empty object as the input of a call whose arguments are not a JSON object', () => {
+    const inputs = [call('c1', 'read_file', '{oops'), call('c2', 'read_file', '[1]'), call('c3', 'read_file', '')];
+    const blocks = bodyOf(inputs).messages.flatMap((message) => (Array.isArray(message.content) ? message.content : []));
+    expect(blocks.map((block) => (block as { input?: unknown }).input)).toEqual([{}, {}, {}]);
   });
 
   it('rejects file input and an image in an assistant turn', () => {

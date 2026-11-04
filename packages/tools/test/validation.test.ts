@@ -79,6 +79,14 @@ describe('validation messages', () => {
     expect(result.message.startsWith('Invalid JSON arguments for Edit: ')).toBe(true);
   });
 
+  it('quotes the full received text after the parse message', () => {
+    const received = `{"old_string":"${'x'.repeat(400)}\n"`;
+    const result = validateToolInput(makeTool('Edit', { inputSchema: EDIT_SCHEMA }), received);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message.endsWith(`\nReceived: ${received}`)).toBe(true);
+  });
+
   it('names a missing required property at the root', async () => {
     expect(await failedOutput({})).toBe('Invalid input for Edit:\n- old_string: required property is missing');
   });
