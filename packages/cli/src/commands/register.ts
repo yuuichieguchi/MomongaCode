@@ -42,7 +42,7 @@ const registerElicit: CommandGroup = (program, deps) => {
       deps.complete(
         await elicit(
           deps.ports,
-          pathsOf(deps.ports),
+          await pathsOf(deps.ports),
           inputId,
           { accept: options.accept === true, decline: options.decline === true, cancel: options.cancel === true, set: options.set, ...(options.responses === undefined ? {} : { responses: options.responses }) },
           deps.interrupt,
@@ -58,14 +58,14 @@ const registerMcp: CommandGroup = (program, deps) => {
     .description('list the MCP servers with their transport and authorization state')
     .option('--json', 'print the servers as JSON')
     .action(async (options: { json?: true }) => {
-      deps.complete(await mcpList(deps.ports, pathsOf(deps.ports), options.json === true));
+      deps.complete(await mcpList(deps.ports, await pathsOf(deps.ports), options.json === true));
     });
   mcp
     .command('login <server>')
     .description('authorize a remote MCP server in the browser')
     .option('--no-browser', 'print the authorization URL without opening the browser')
     .action(async (server: string, options: { browser: boolean }) => {
-      deps.complete(await mcpLogin(deps.ports, pathsOf(deps.ports), server, { openBrowser: options.browser, interrupt: deps.interrupt }));
+      deps.complete(await mcpLogin(deps.ports, await pathsOf(deps.ports), server, { openBrowser: options.browser, interrupt: deps.interrupt }));
     });
 };
 
@@ -82,7 +82,7 @@ const registerMemory: CommandGroup = (program, deps) => {
     .option('--json', 'print the memory as JSON')
     .action(async (text: string[], options: { kind?: MemoryKind; path: string[]; user?: true; json?: true }) => {
       deps.complete(
-        await memoryAdd(deps.ports, pathsOf(deps.ports), text.join(' '), {
+        await memoryAdd(deps.ports, await pathsOf(deps.ports), text.join(' '), {
           ...(options.kind === undefined ? {} : { kind: options.kind }),
           user: options.user === true,
           paths: options.path,
@@ -98,7 +98,7 @@ const registerMemory: CommandGroup = (program, deps) => {
     .option('--json', 'print the memories as JSON')
     .action(async (options: { scope?: MemoryScope; project?: string; json?: true }) => {
       deps.complete(
-        await memoryList(deps.ports, pathsOf(deps.ports), {
+        await memoryList(deps.ports, await pathsOf(deps.ports), {
           ...(options.scope === undefined ? {} : { scope: options.scope }),
           ...(options.project === undefined ? {} : { project: options.project }),
           json: options.json === true,
@@ -110,52 +110,52 @@ const registerMemory: CommandGroup = (program, deps) => {
     .description('show a memory with its source')
     .option('--json', 'print the memory as JSON')
     .action(async (id: string, options: { json?: true }) => {
-      deps.complete(await memoryShow(deps.ports, pathsOf(deps.ports), id, options.json === true));
+      deps.complete(await memoryShow(deps.ports, await pathsOf(deps.ports), id, options.json === true));
     });
   memory
     .command('history <id>')
     .description('show a memory with the notes it replaced and the ones that replaced it, and their validity')
     .option('--json', 'print the memories as JSON')
     .action(async (id: string, options: { json?: true }) => {
-      deps.complete(await memoryHistory(deps.ports, pathsOf(deps.ports), id, options.json === true));
+      deps.complete(await memoryHistory(deps.ports, await pathsOf(deps.ports), id, options.json === true));
     });
   memory
     .command('delete <id>')
     .description('delete a memory')
     .action(async (id: string) => {
-      deps.complete(await memoryDelete(deps.ports, pathsOf(deps.ports), id));
+      deps.complete(await memoryDelete(deps.ports, await pathsOf(deps.ports), id));
     });
   const review = memory
     .command('review')
     .description('list the memories the agent proposed in this folder and wait for your decision')
     .option('--json', 'print the memories as JSON')
     .action(async (options: { json?: true }) => {
-      deps.complete(await memoryReview(deps.ports, pathsOf(deps.ports), { json: options.json === true }));
+      deps.complete(await memoryReview(deps.ports, await pathsOf(deps.ports), { json: options.json === true }));
     });
   review
     .command('accept <id>')
     .description('accept a proposed memory, so later sessions recall it')
     .action(async (id: string) => {
-      deps.complete(await memoryAccept(deps.ports, pathsOf(deps.ports), id));
+      deps.complete(await memoryAccept(deps.ports, await pathsOf(deps.ports), id));
     });
   review
     .command('reject <id>')
     .description('reject a proposed memory, so it is never recalled and never proposed again')
     .action(async (id: string) => {
-      deps.complete(await memoryReject(deps.ports, pathsOf(deps.ports), id));
+      deps.complete(await memoryReject(deps.ports, await pathsOf(deps.ports), id));
     });
   memory
     .command('restore <id>')
     .description('bring an archived memory back')
     .action(async (id: string) => {
-      deps.complete(await memoryRestore(deps.ports, pathsOf(deps.ports), id));
+      deps.complete(await memoryRestore(deps.ports, await pathsOf(deps.ports), id));
     });
   memory
     .command('promote <id>')
     .description('write an accepted procedure memory as a skill')
     .requiredOption('--skill <name>', 'the name of the skill to write')
     .action(async (id: string, options: { skill: string }) => {
-      deps.complete(await memoryPromote(deps.ports, pathsOf(deps.ports), id, options.skill));
+      deps.complete(await memoryPromote(deps.ports, await pathsOf(deps.ports), id, options.skill));
     });
 };
 
@@ -191,7 +191,7 @@ const registerRule: CommandGroup = (program, deps) => {
     .action(async (target: string, text: string[], flags: RuleAddFlags) => {
       const until = untilOf(flags.until);
       deps.complete(
-        await ruleAdd(deps.ports, pathsOf(deps.ports), target, text.join(' '), {
+        await ruleAdd(deps.ports, await pathsOf(deps.ports), target, text.join(' '), {
           kind: flags.kind,
           user: flags.user === true,
           paths: flags.path,
@@ -207,20 +207,20 @@ const registerRule: CommandGroup = (program, deps) => {
     .description('list the rules of this folder and the rules for every folder, enforced or text-only')
     .option('--json', 'print the rules as JSON')
     .action(async (options: { json?: true }) => {
-      deps.complete(await ruleList(deps.ports, pathsOf(deps.ports), options.json === true));
+      deps.complete(await ruleList(deps.ports, await pathsOf(deps.ports), options.json === true));
     });
   rule
     .command('retire <id>')
     .description('retire a rule; a retired rule stays in the history')
     .action(async (id: string) => {
-      deps.complete(await ruleRetire(deps.ports, pathsOf(deps.ports), id));
+      deps.complete(await ruleRetire(deps.ports, await pathsOf(deps.ports), id));
     });
   rule
     .command('history <id>')
     .description('show the rules a rule replaced and the ones that replaced it, with their validity')
     .option('--json', 'print the rules as JSON')
     .action(async (id: string, options: { json?: true }) => {
-      deps.complete(await ruleHistory(deps.ports, pathsOf(deps.ports), id, options.json === true));
+      deps.complete(await ruleHistory(deps.ports, await pathsOf(deps.ports), id, options.json === true));
     });
 };
 
@@ -234,7 +234,7 @@ const registerCost: CommandGroup = (program, deps) => {
     .option('--json', 'print the report as JSON')
     .action(async (runId: string | undefined, options: { session?: string; all?: true; breakdown?: true; json?: true }) => {
       deps.complete(
-        await showCost(deps.ports, pathsOf(deps.ports), {
+        await showCost(deps.ports, await pathsOf(deps.ports), {
           ...(runId === undefined ? {} : { runId }),
           ...(options.session === undefined ? {} : { session: options.session }),
           all: options.all === true,
@@ -254,7 +254,7 @@ const registerEvaluate: CommandGroup = (program, deps) => {
     .option('--replay <directory>', 'grade recorded transcripts instead of running the dataset')
     .action(async (dataset: string, options: { record?: string; replay?: string }) => {
       deps.complete(
-        await evaluate(deps.ports, pathsOf(deps.ports), dataset, {
+        await evaluate(deps.ports, await pathsOf(deps.ports), dataset, {
           interrupt: deps.interrupt,
           ...(options.record === undefined ? {} : { record: options.record }),
           ...(options.replay === undefined ? {} : { replay: options.replay }),
@@ -314,7 +314,7 @@ const registerContext: CommandGroup = (program, deps) => {
     .requiredOption('--outcome <file>', 'the file the outcome is written to: the candidates, the text of the winner, its report, the dataset digest, the parent version and a digest of the whole')
     .action(async (options: { dataset: string; model: ContextModel; alias: string; seed?: number; outcome: string }) => {
       deps.complete(
-        await contextImprove(deps.ports, pathsOf(deps.ports), {
+        await contextImprove(deps.ports, await pathsOf(deps.ports), {
           dataset: options.dataset,
           model: options.model,
           alias: options.alias,
@@ -330,20 +330,20 @@ const registerContext: CommandGroup = (program, deps) => {
     .description('store the winner of an outcome file that context improve wrote, after checking its digest and its parent and showing its full text')
     .argument('<outcome-file>', 'the outcome file written by context improve --outcome')
     .action(async (outcomeFile: string) => {
-      deps.complete(await guidelineAdopt(deps.ports, pathsOf(deps.ports), outcomeFile));
+      deps.complete(await guidelineAdopt(deps.ports, await pathsOf(deps.ports), outcomeFile));
     });
   guideline
     .command('list')
     .description('list the adopted guidelines, oldest first')
     .action(async () => {
-      deps.complete(await guidelineList(deps.ports, pathsOf(deps.ports)));
+      deps.complete(await guidelineList(deps.ports, await pathsOf(deps.ports)));
     });
   guideline
     .command('rollback')
     .description('return to the text of an earlier version, recorded as a new version')
     .argument('<version>', 'the version to return to', versionArgument)
     .action(async (version: number) => {
-      deps.complete(await guidelineRollback(deps.ports, pathsOf(deps.ports), version));
+      deps.complete(await guidelineRollback(deps.ports, await pathsOf(deps.ports), version));
     });
 };
 
@@ -353,7 +353,7 @@ const registerSecret: CommandGroup = (program, deps) => {
     .command('set <name>')
     .description('store a secret in the platform secret store; the value is read from the terminal')
     .action(async (name: string) => {
-      deps.complete(await secretSet(deps.ports, pathsOf(deps.ports), name, deps.interrupt));
+      deps.complete(await secretSet(deps.ports, await pathsOf(deps.ports), name, deps.interrupt));
     });
 };
 
@@ -363,7 +363,7 @@ const registerModels: CommandGroup = (program, deps) => {
     .description('list the model aliases with the capabilities their targets declare')
     .option('--json', 'print the models as JSON')
     .action(async (options: { json?: true }) => {
-      deps.complete(await listModels(deps.ports, pathsOf(deps.ports), options.json === true));
+      deps.complete(await listModels(deps.ports, await pathsOf(deps.ports), options.json === true));
     });
 };
 
@@ -377,7 +377,7 @@ const registerPolicy: CommandGroup = (program, deps) => {
     .option('--secret <path>', 'a further secret location to keep out of reach; repeat for several', collect, [])
     .action(async (options: { json?: true; mode?: PermissionMode; secret: string[] }) => {
       deps.complete(
-        await policyVerify(deps.ports, pathsOf(deps.ports), deps.policyVerify(), {
+        await policyVerify(deps.ports, await pathsOf(deps.ports), await deps.policyVerify(), {
           json: options.json === true,
           secrets: options.secret,
           ...(options.mode === undefined ? {} : { mode: options.mode }),
@@ -392,14 +392,14 @@ const registerRunTree: CommandGroup = (program, deps) => {
     .description('show a run, the subagent runs under it and the approvals waiting in them; the latest run of this directory when no id is given')
     .option('--json', 'print the runs and approvals as JSON')
     .action(async (runId: string | undefined, options: { json?: true }) => {
-      deps.complete(await showStatus(deps.ports, pathsOf(deps.ports), runId, options.json === true));
+      deps.complete(await showStatus(deps.ports, await pathsOf(deps.ports), runId, options.json === true));
     });
   program
     .command('jobs [session-id]')
     .description('list the background jobs of a session, including those of its subagents; the newest session of this directory when no id is given')
     .option('--json', 'print the jobs as JSON')
     .action(async (sessionId: string | undefined, options: { json?: true }) => {
-      deps.complete(await listJobs(deps.ports, pathsOf(deps.ports), sessionId, options.json === true));
+      deps.complete(await listJobs(deps.ports, await pathsOf(deps.ports), sessionId, options.json === true));
     });
 };
 

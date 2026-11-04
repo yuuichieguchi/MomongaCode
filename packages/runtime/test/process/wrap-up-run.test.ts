@@ -108,7 +108,7 @@ describe('wrap-up call on the wire (in-process gateway, fake chat-completions up
     const status = await settle(launched, stack.temp, runId);
     const view = (await launched.http('GET', `/v1/runs/${runId}`)).json.run;
     expect({ status, stopReason: view.stopReason, error: view.error }).toEqual({ status: 'STOPPED', stopReason: 'max_steps', error: undefined });
-    expect(noticesOf(stack.temp, runId).some((message) => message.includes('context_length_exceeded'))).toBe(true);
+    expect(noticesOf(stack.temp, runId).some((message) => message.includes('context_window_exceeded'))).toBe(true);
     expect(stack.completions()).toBe(2);
   });
 

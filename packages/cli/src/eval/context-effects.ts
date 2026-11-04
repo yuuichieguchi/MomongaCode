@@ -102,9 +102,9 @@ export const nodeContextEffects = (ports: CliPorts): ContextHostEffects => ({
   readSecret: (name, signal) => ports.secretStore().read(name, signal),
   copyEndpointProbeRecord: async (probe, paths) => {
     const { endpointKeyOf } = await import('@momonga/gateway');
-    await copyEndpointProbeRecord(ports.files, pathsOf(ports).probe, paths.probe, { endpoint: endpointKeyOf(probe.upstream), model: probe.model });
+    await copyEndpointProbeRecord(ports.files, (await pathsOf(ports)).probe, paths.probe, { endpoint: endpointKeyOf(probe.upstream), model: probe.model });
   },
-  copyProbeRecord: async (target, paths) => void (await copyProbeRecord(ports.files, pathsOf(ports).probe, paths.probe, target)),
+  copyProbeRecord: async (target, paths) => void (await copyProbeRecord(ports.files, (await pathsOf(ports)).probe, paths.probe, target)),
   listRoots: () => listEvalRoots(shortTempBase(ports.platform), ports.platform === 'win32' ? undefined : process.getuid?.()),
   readOwner: (root) => readEvalOwner(ports.files, root),
   sessionEnv: (root) => environmentSnapshot({ home: ports.home, env: caseEnvironment(ports.env, root, ports.platform) }),

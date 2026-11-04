@@ -1,5 +1,5 @@
 import type { ErrorType, StreamEvent, Usage } from '@momonga/protocol';
-import { UpstreamProtocolError } from '../shared/failures.ts';
+import { CONTEXT_WINDOW_EXCEEDED, UpstreamProtocolError } from '../shared/failures.ts';
 import { MAX_TOOL_CALLS } from '../shared/limits.ts';
 import type { ResponseEmitter } from '../shared/response-emitter.ts';
 import { AssistantRecorder } from './assistant-recorder.ts';
@@ -201,7 +201,7 @@ export class AnthropicStreamDriver {
         this.emitter.incomplete('max_output_tokens', usage, this.firstInputTokens, cacheWrite);
         return;
       case 'model_context_window_exceeded':
-        this.emitter.fail('context_window_exceeded', 'invalid_request', 'the model stopped because the conversation exceeded its context window');
+        this.emitter.fail(CONTEXT_WINDOW_EXCEEDED, 'invalid_request', 'the model stopped because the conversation exceeded its context window');
         return;
       case 'refusal':
         this.emitter.incomplete('content_filter', usage, this.firstInputTokens, cacheWrite);

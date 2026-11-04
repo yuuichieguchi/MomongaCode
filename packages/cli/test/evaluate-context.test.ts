@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { freshHome } from './fresh-home.ts';
 import { CONTEXT_DATASET_FORMAT, DATASET_FORMAT, encodeTranscript } from '@momonga/eval';
 import type { Transcript } from '@momonga/eval';
 import type { EntryIo } from '@momonga/foundation';
@@ -68,7 +69,7 @@ const harness = (failingOn: number = 0) => {
   const completed: number[] = [];
   const ports = {
     version: '9.9.9',
-    home: '/h',
+    home: freshHome(),
     cwd: '/w',
     terminal: undefined,
     stdout: { write: (text: string) => stdout.push(text) },

@@ -19,7 +19,7 @@ import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { StreamFailure, UnsupportedInputError, UpstreamProtocolError } from '../shared/failures.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
 import type { CompletionResponse } from '../shared/http-client.ts';
-import { httpErrorOf } from '../shared/http-error.ts';
+import { NO_VERDICTS, httpErrorOf } from '../shared/http-error.ts';
 import { MAX_SSE_EVENT_BYTES, MAX_UNARY_BODY_BYTES } from '../shared/limits.ts';
 import { ResponseEmitter } from '../shared/response-emitter.ts';
 import {
@@ -37,8 +37,6 @@ import type { AnthropicCountTokensBody } from './request.ts';
 import type { AnthropicRequestBody } from './request.ts';
 import { AnthropicStreamDriver, inputTokensOf } from './stream-driver.ts';
 import type { AnthropicAdapter, AnthropicAdapterOptions } from './types.ts';
-
-const neverGuardrail = (): boolean => false;
 
 type Paused = { content: Record<string, unknown>[]; usage: AnthropicUsageFields; firstInputTokens: number };
 
@@ -113,7 +111,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
         const body: AnthropicRequestBody =
           paused === undefined ? base : { ...base, messages: [...base.messages, { role: 'assistant', content: paused.content }] };
         const response = await pool.clientFor(endpoint).post({ headers: headersFor(apiKey, 'text/event-stream'), body: JSON.stringify(body), signal });
-        if (response.status !== 200) throw await httpErrorOf(response, options.clock, anthropicErrorDetail, neverGuardrail);
+        if (response.status !== 200) throw await httpErrorOf(response, options.clock, anthropicErrorDetail, NO_VERDICTS);
         emitter ??= new ResponseEmitter({ clock: options.clock, model: request.model, request });
         const driver = new AnthropicStreamDriver(emitter, paused === undefined ? undefined : { usage: paused.usage, firstInputTokens: paused.firstInputTokens });
         yield* readSegment(response, driver, ctx);
@@ -156,7 +154,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
         signal,
         subpath: ANTHROPIC_COUNT_TOKENS_SUBPATH,
       });
-      if (response.status !== 200) throw await httpErrorOf(response, options.clock, anthropicErrorDetail, neverGuardrail);
+      if (response.status !== 200) throw await httpErrorOf(response, options.clock, anthropicErrorDetail, NO_VERDICTS);
       const { text, truncated } = await readTextLimited(response.body, MAX_UNARY_BODY_BYTES);
       if (truncated) throw new UpstreamProtocolError(`the upstream count_tokens reply exceeds ${MAX_UNARY_BODY_BYTES} bytes`);
       return countReplyOf(countTokensOf(text), 'exact', EXACT_ERROR_SHAPE);

@@ -9,7 +9,7 @@ export type ProgramDeps = {
   interrupt: AbortSignal;
   entryIo(args: readonly string[]): EntryIo;
   entries: DaemonEntries;
-  update(): UpdateWiring;
-  policyVerify(): PolicyVerifyHost;
+  update(): UpdateWiring | Promise<UpdateWiring>;
+  policyVerify(): PolicyVerifyHost | Promise<PolicyVerifyHost>;
   complete(code: number): void;
 };

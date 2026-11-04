@@ -11,7 +11,7 @@ type ErrorFields = ConstructorParameters<typeof GatewayRequestError>[0];
 
 const thrown = (fields: ErrorFields): ScriptStep => ({ events: [], error: new GatewayRequestError(fields) });
 
-const REJECTED = { status: 400, type: 'invalid_request', code: 'context_length_exceeded', message: 'the prompt is longer than the model accepts' } satisfies ErrorFields;
+const REJECTED = { status: 400, type: 'invalid_request', code: 'context_window_exceeded', message: 'the prompt is longer than the model accepts' } satisfies ErrorFields;
 
 type WrapUpPath = { label: string; reason: 'max_steps' | 'budget'; limits: Record<string, number>; first: () => ScriptStep };
 

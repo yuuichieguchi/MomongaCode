@@ -17,10 +17,10 @@ export const runUpdateFixture = async (version: string): Promise<void> => {
   process.once('SIGINT', () => interrupt.abort());
   const ports = nodePorts(version);
   const releaseUrl = process.env[RELEASE_URL_ENV];
-  const wiring = nodeUpdateWiring(ports, pathsOf(ports));
+  const wiring = nodeUpdateWiring(ports, await pathsOf(ports));
   const program = buildProgram({
     ports,
-    policyVerify: () => nodePolicyVerifyHost(ports, pathsOf(ports)),
+    policyVerify: async () => nodePolicyVerifyHost(ports, await pathsOf(ports)),
     entries: daemonEntries(ports.self, ports.version),
     update: () => ({
       ...wiring,

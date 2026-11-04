@@ -57,7 +57,7 @@ export const buildProgram = (given: ProgramDeps): Command => {
 
   program.hook('preAction', async (_program, action) => {
     if (isBackgroundCheckExempt(action.name())) return;
-    const wiring = deps.update();
+    const wiring = await deps.update();
     try {
       if (!startsInteractiveSession(program, action)) {
         const notice = await announceUpdate(wiring);
@@ -87,12 +87,12 @@ export const buildProgram = (given: ProgramDeps): Command => {
         ...(options.dangerouslySkipPermissions === true ? { bypassAllowed: true } : {}),
       };
       if (options.print !== undefined) {
-        deps.complete(await runHeadless(ports, pathsOf(ports), { prompt: options.print, format: options.outputFormat, verbose: options.verbose === true, interrupt: deps.interrupt, ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...session }));
+        deps.complete(await runHeadless(ports, await pathsOf(ports), { prompt: options.print, format: options.outputFormat, verbose: options.verbose === true, interrupt: deps.interrupt, ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...session }));
         return;
       }
       if (ports.terminal === undefined) throw new Error('the interactive session needs a terminal; pass --print <prompt> to run without one');
       const { runInteractive } = await import('./tui/run-interactive.tsx');
-      deps.complete(await runInteractive(ports, pathsOf(ports), ports.terminal, { ...(prompt === undefined ? {} : { prompt }), ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...session }, deps.update()));
+      deps.complete(await runInteractive(ports, await pathsOf(ports), ports.terminal, { ...(prompt === undefined ? {} : { prompt }), ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...session }, await deps.update()));
     });
 
   program
@@ -103,7 +103,7 @@ export const buildProgram = (given: ProgramDeps): Command => {
     .option('--verbose', 'print tool activity to stderr')
     .action(async (runId: string | undefined, options: { outputFormat: OutputFormat; after: number; verbose?: true }) => {
       deps.complete(
-        await attachRun(ports, pathsOf(ports), {
+        await attachRun(ports, await pathsOf(ports), {
           ...(runId === undefined ? {} : { runId }),
           format: options.outputFormat,
           after: options.after,
@@ -117,14 +117,14 @@ export const buildProgram = (given: ProgramDeps): Command => {
     .command('approve [approval-id] [option]')
     .description('list pending approvals, show one, or resolve it with allow_once, allow_always, reject_once or reject_always')
     .action(async (approvalId: string | undefined, option: string | undefined) => {
-      deps.complete(await approve(ports, pathsOf(ports), approvalId, option));
+      deps.complete(await approve(ports, await pathsOf(ports), approvalId, option));
     });
 
   program
     .command('cancel [run-id]')
     .description('cancel a run; the running run of this directory when no id is given')
     .action(async (runId: string | undefined) => {
-      deps.complete(await cancelRun(ports, pathsOf(ports), runId));
+      deps.complete(await cancelRun(ports, await pathsOf(ports), runId));
     });
 
   program
@@ -132,14 +132,14 @@ export const buildProgram = (given: ProgramDeps): Command => {
     .description('show the model and tool spans of a run; the latest run of this directory when no id is given')
     .option('--json', 'print the trace as JSON')
     .action(async (runId: string | undefined, options: { json?: true }) => {
-      deps.complete(await showTrace(ports, pathsOf(ports), runId, options.json === true));
+      deps.complete(await showTrace(ports, await pathsOf(ports), runId, options.json === true));
     });
 
   program
     .command('acp')
     .description('speak the Agent Client Protocol on standard input and output so an editor can drive momonga')
     .action(async () => {
-      deps.complete(await serveAcp(ports, pathsOf(ports), deps.interrupt));
+      deps.complete(await serveAcp(ports, await pathsOf(ports), deps.interrupt));
     });
 
   program
@@ -147,18 +147,18 @@ export const buildProgram = (given: ProgramDeps): Command => {
     .description('replace this executable with the latest release after verifying its checksum and signature')
     .option('--check', 'only report whether a newer release exists')
     .action(async (options: { check?: true }) => {
-      deps.complete(await runUpdate(deps.update(), ports.stdout, { checkOnly: options.check === true, interrupt: deps.interrupt }));
+      deps.complete(await runUpdate(await deps.update(), ports.stdout, { checkOnly: options.check === true, interrupt: deps.interrupt }));
     });
 
   const daemon = program.command('daemon').description('manage the background daemon');
   daemon.command('start').description('start the daemon, or restart it when it runs another version').action(async () => {
-    deps.complete(await daemonStart(ports, pathsOf(ports)));
+    deps.complete(await daemonStart(ports, await pathsOf(ports)));
   });
   daemon.command('status').action(async () => {
-    deps.complete(await daemonStatus(ports, pathsOf(ports)));
+    deps.complete(await daemonStatus(ports, await pathsOf(ports)));
   });
   daemon.command('stop').action(async () => {
-    deps.complete(await daemonStop(ports, pathsOf(ports)));
+    deps.complete(await daemonStop(ports, await pathsOf(ports)));
   });
 
   const gateway = program.command('gateway').description('inspect and tune the model gateway');
@@ -169,7 +169,7 @@ export const buildProgram = (given: ProgramDeps): Command => {
     .option('--samples <count>', 'samples per measured rate', integerArgument(1))
     .action(async (target: string, options: { fmBinary: string; samples?: number }) => {
       deps.complete(
-        await probeTarget(ports, pathsOf(ports), target, {
+        await probeTarget(ports, await pathsOf(ports), target, {
           fmBinary: options.fmBinary,
           interrupt: deps.interrupt,
           ...(options.samples === undefined ? {} : { samples: options.samples }),
@@ -194,7 +194,7 @@ export const buildProgram = (given: ProgramDeps): Command => {
     .command(UPDATE_CHECK_COMMAND, { hidden: true })
     .helpOption(false)
     .action(async () => {
-      deps.complete(await runBackgroundCheck(deps.update(), deps.interrupt));
+      deps.complete(await runBackgroundCheck(await deps.update(), deps.interrupt));
     });
   internal(INTERNAL_COMMANDS.supervise, deps.entries.supervise);
   internal(INTERNAL_COMMANDS.gateway, deps.entries.gateway);
