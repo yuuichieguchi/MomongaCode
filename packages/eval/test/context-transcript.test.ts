@@ -12,8 +12,8 @@ const withEvent = (transcript: Transcript, fields: Record<string, unknown>): Tra
 });
 
 describe('transcripts and the context events', () => {
-  it('does not bump the transcript format for the context events, which only add optional fields; format 3 is the side effect of a tool call', () => {
-    expect(TRANSCRIPT_FORMAT).toBe('momonga-transcript/3');
+  it('does not bump the transcript format for the context events, which only add optional fields; format 4 is the identity of the run', () => {
+    expect(TRANSCRIPT_FORMAT).toBe('momonga-transcript/4');
   });
 
   it('decodes a context.compacted written before source, fidelity and guidelineVersion', () => {

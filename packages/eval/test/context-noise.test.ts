@@ -1,3 +1,4 @@
+import { RECORDED_IDENTITY } from './fixtures.ts';
 import { describe, expect, it } from 'vitest';
 import {
   CONTEXT_DATASET_FORMAT,
@@ -183,6 +184,7 @@ describe('a stopped run in a replay', () => {
     run: { id: `stopped-${caseId}`, status: 'FAILED', step: 0, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } },
     events: [],
     children: [],
+    ...RECORDED_IDENTITY,
     stopped: 'the case deadline passed',
   });
 

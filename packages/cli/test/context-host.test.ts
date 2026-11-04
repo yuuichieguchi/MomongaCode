@@ -548,3 +548,28 @@ describe('the isolation of a case', () => {
     expect(() => assertSocketsFit(`/tmp/${'a'.repeat(72)}`, 'linux')).not.toThrow();
   });
 });
+
+describe('the identity a live run stamps on its transcripts', () => {
+  const HEAD_CODE = 'b'.repeat(64);
+
+  it('records the --settings overlay and the code digest of the CLI in every transcript', async () => {
+    const context = harness();
+    const stored: Transcript[] = [];
+    const policy = { context: { cachePrefix: true } };
+    const transcripts = await runContextLive(context.effects, input({ policy, codeDigest: HEAD_CODE, onTranscript: async (transcript) => void stored.push(transcript) }));
+    expect(transcripts).toHaveLength(2);
+    for (const transcript of [...transcripts, ...stored]) {
+      expect(transcript.policy).toEqual(policy);
+      expect(transcript.codeDigest).toBe(HEAD_CODE);
+    }
+  });
+
+  it('records an empty policy without an overlay', async () => {
+    const context = harness();
+    const transcripts = await runContextLive(context.effects, input({ codeDigest: HEAD_CODE }));
+    expect(transcripts.map((transcript) => [transcript.policy, transcript.codeDigest])).toEqual([
+      [{}, HEAD_CODE],
+      [{}, HEAD_CODE],
+    ]);
+  });
+});

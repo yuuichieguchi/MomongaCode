@@ -2,9 +2,9 @@ import { sha256Hex } from '@momonga/foundation';
 import type { RunEventPayload, RunStatus, SummaryFidelity, SummarySource } from '@momonga/protocol';
 import { fixtureCompactionItem } from '@momonga/testkit';
 import type { Transcript } from '@momonga/eval';
-import { publicEventsOf } from './fixtures.ts';
+import { RECORDED_CODE_DIGEST, RECORDED_IDENTITY, publicEventsOf } from './fixtures.ts';
 
-export const TEST_CODE_DIGEST = 'c'.repeat(64);
+export const TEST_CODE_DIGEST = RECORDED_CODE_DIGEST;
 
 export const compacted = (replacedThroughSeq: number, source?: SummarySource, fidelity?: SummaryFidelity): RunEventPayload => ({
   type: 'context.compacted',
@@ -105,6 +105,7 @@ export const recorded = (
     run: { id: `run-${caseId}-${runIndex}`, status: options.status ?? 'COMPLETED', step: 1, usage: { inputTokens: totalTokens - 1, outputTokens: 1, totalTokens }, ...(options.modelAlias === undefined ? {} : { modelAlias: options.modelAlias }) },
     events: publicEventsOf(payloads),
     children: options.children ?? [],
+    ...RECORDED_IDENTITY,
     reflection: options.reflection ?? { state: 'none' },
   };
 };

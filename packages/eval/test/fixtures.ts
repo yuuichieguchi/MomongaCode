@@ -4,6 +4,10 @@ import { approvalWaitResumeRun, finalAnswerRun, materializeEvents, toolRoundTrip
 import type { GoldenCase } from '@momonga/eval';
 import type { Transcript, TranscriptChild, TranscriptRun } from '@momonga/eval';
 
+export const RECORDED_CODE_DIGEST = 'c'.repeat(64);
+
+export const RECORDED_IDENTITY = { policy: {}, codeDigest: RECORDED_CODE_DIGEST } as const;
+
 export const publicEventsOf = (payloads: readonly RunEventPayload[]): PublicRunEvent[] => materializeEvents(payloads).map(toPublicRunEvent);
 
 const completedRun = (id: string, step: number, totalTokens: number): TranscriptRun => ({
@@ -19,6 +23,7 @@ export const finalAnswerTranscript = (caseId: string, runIndex: number): Transcr
   run: completedRun(`run-${caseId}-${runIndex}`, 1, 12),
   events: publicEventsOf(finalAnswerRun.payloads),
   children: [],
+  ...RECORDED_IDENTITY,
 });
 
 export const toolRoundTripTranscript = (caseId: string, runIndex: number): Transcript => ({
@@ -27,6 +32,7 @@ export const toolRoundTripTranscript = (caseId: string, runIndex: number): Trans
   run: completedRun(`run-${caseId}-${runIndex}`, 2, 59),
   events: publicEventsOf(toolRoundTripRun.payloads),
   children: [],
+  ...RECORDED_IDENTITY,
 });
 
 export const approvalTranscript = (caseId: string, runIndex: number): Transcript => ({
@@ -35,6 +41,7 @@ export const approvalTranscript = (caseId: string, runIndex: number): Transcript
   run: completedRun(`run-${caseId}-${runIndex}`, 2, 48),
   events: publicEventsOf(approvalWaitResumeRun.payloads),
   children: [],
+  ...RECORDED_IDENTITY,
 });
 
 export type ScriptedCall = {
@@ -77,6 +84,7 @@ export const callsTranscript = (caseId: string, calls: readonly ScriptedCall[], 
   run: completedRun(`run-${caseId}`, 2, 40),
   events: publicEventsOf(calls.flatMap(payloadsOfCall)),
   children: children.map((child): TranscriptChild => ({ runId: child.runId, agent: child.agent, events: publicEventsOf(child.calls.flatMap(payloadsOfCall)) })),
+  ...RECORDED_IDENTITY,
 });
 
 export const goldenCase = (overrides: Partial<GoldenCase> & Pick<GoldenCase, 'id' | 'graders'>): GoldenCase => ({
