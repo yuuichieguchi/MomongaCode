@@ -16,7 +16,7 @@ import { matchesGuardrailCode } from '../adapters/chat-completions/classify.ts';
 import { FM_VOCABULARY } from '../adapters/chat-completions/vocabulary.ts';
 import type { ErrorVocabulary } from '../adapters/chat-completions/vocabulary.ts';
 import { estimatedCountOf } from '../core/estimate.ts';
-import { capabilitiesFromProbe } from '../probe/decide.ts';
+import { capabilitiesFromProbe, layerOf, mergeCapabilities } from '../probe/decide.ts';
 import type { KeywordSupport } from '../probe/envelope.ts';
 import { loadProbeRecord, resolveToolCalling } from '../probe/record.ts';
 import type { ProbeRecordKey } from '../probe/record.ts';
@@ -150,7 +150,11 @@ const guardrailMatcherOf = (report: ProbeReport | null): ((body: unknown) => boo
 export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Promise<ManagedFmTarget> => {
   const report = await loadProbeRecord(options.probeRecordDir, options.recordKey);
   const { mode } = resolveToolCalling(options.toolCallingSetting, report);
-  const capabilities = report === null ? unprobedCapabilities(mode) : capabilitiesFromProbe(report, { mode });
+  const { parallelToolCalls: _unprobedParallel, ...probedDefaults } = unprobedCapabilities(mode);
+  const capabilities =
+    report === null
+      ? unprobedCapabilities(mode)
+      : mergeCapabilities({ defaults: probedDefaults, declared: {}, probed: layerOf(capabilitiesFromProbe(report, { mode })), probedAt: report.probedAt });
   const keywordSupport = report === null ? UNPROBED_KEYWORD_SUPPORT : report.keywordSupport;
   const isGuardrail = guardrailMatcherOf(report);
 

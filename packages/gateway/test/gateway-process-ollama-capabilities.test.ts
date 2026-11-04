@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { momongaPaths } from '@momonga/foundation';
-import { probeOllamaTarget } from '@momonga/gateway';
+import { endpointKeyOf, probeOllamaTarget } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { outputText, postJson, readJson, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
@@ -29,8 +29,7 @@ const gatewayOverProbedOllama = async (showCapabilities: readonly string[], repl
   });
   await probeOllamaTarget({
     probeRecordDir: momongaPaths(home, process.platform, {}).probe,
-    upstream: { kind: 'tcp', baseUrl: fake.origin },
-    model: OLLAMA_MODEL,
+    upstream: { kind: 'tcp', baseUrl: fake.origin }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL,
     contextWindow: CONTEXT_WINDOW,
   });
   fake.requests.length = 0;
@@ -50,14 +49,16 @@ const imageInput = [
 ];
 
 describe('a started gateway follows the probed Ollama capabilities (W2)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
-  it('refuses an image for a target whose probe found no vision, although the settings declare image input, without calling /api/chat', async () => {
-    const { fake, client } = await gatewayOverProbedOllama(['completion', 'tools'], [textReply('never sent')]);
+  it('sends an image to a target whose probe found no vision when the settings declare image input', async () => {
+    const { fake, client } = await gatewayOverProbedOllama(['completion', 'tools'], [textReply('seen')]);
 
     const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: imageInput }));
 
-    expect(response.status).toBe(400);
-    expect(response.body.error.code).toBe('capability_unsupported');
-    expect(fake.chatBodies()).toEqual([]);
+    expect(response.status).toBe(200);
+    expect(outputText(response.body)).toBe('seen');
+    const bodies = fake.chatBodies();
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0].messages.at(-1).images).toEqual(['iVBORw0KGgo=']);
   });
 
   it('sends no think true for a reasoning effort to a target whose probe found no thinking', async () => {

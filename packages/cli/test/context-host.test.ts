@@ -160,7 +160,7 @@ const harness = (behaviour: Behaviour = {}) => {
     },
     copyProbeRecord: async (target, paths) => void probeCopies.push(`${target} -> ${paths.probe}`),
     copyEndpointProbeRecord: async (probe, paths) =>
-      void endpointProbeCopies.push(`${probe.upstream.kind === 'unix' ? probe.upstream.socketPath : probe.upstream.baseUrl} ${probe.model} -> ${paths.probe}`),
+      void endpointProbeCopies.push(`${probe.endpoint} ${probe.model} -> ${paths.probe}`),
     listRoots: async () => [...roots.keys(), ...(behaviour.staleRoots ?? []).map((stale) => stale.root), ...(behaviour.unreadableRoots ?? []), ...(behaviour.legacyRoots ?? [])],
     readOwner: async (root) => {
       if (behaviour.unreadableRoots?.includes(root) === true) return 'unreadable';
@@ -386,7 +386,7 @@ describe('the settings, credentials and probe records of a live run', () => {
     models.resolved.targets['t'] = target({ toolCalling: 'auto' as never });
     models.declared.targets = { ...models.declared.targets, t: { ...declaredTarget, toolCalling: 'auto' } as never };
     const settings = liveSettingsFor(models, 'default');
-    expect(settings.endpointProbes).toEqual([{ upstream: { kind: 'tcp', baseUrl: 'https://upstream.invalid/v1' }, model: 'm' }]);
+    expect(settings.endpointProbes).toEqual([{ endpoint: 'https://upstream.invalid/v1', model: 'm' }]);
     expect(liveSettingsFor(userModels(), 'default').endpointProbes).toEqual([]);
   });
 

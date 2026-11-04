@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { loadEndpointRecord, probeOllamaTarget } from '@momonga/gateway';
+import { endpointKeyOf, loadEndpointRecord, probeOllamaTarget } from '@momonga/gateway';
 import { makeDir } from './gateway-helpers.ts';
 import { DEVSTRAL_DIGEST, OLLAMA_MODEL, QWEN_DIGEST, QWEN_MODEL, TRAINED_CONTEXT_LENGTH, startFakeOllama, tagsWithDevstralDigest } from './ollama-support.ts';
 
 const probe = (origin: string, dir: string, contextWindow: number, model = OLLAMA_MODEL) =>
-  probeOllamaTarget({ probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: origin }, model, contextWindow });
+  probeOllamaTarget({ probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: origin }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: origin }), model }, model, contextWindow });
 
 describe('the Ollama probe', () => {
   it('reads /api/version, /api/show for the model and /api/tags, and records the digest as the upstream identity', async () => {

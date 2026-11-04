@@ -1,7 +1,7 @@
 import http from 'node:http';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { capabilitiesFromProbe, decideToolCalling, probeOllamaTarget, runProbe } from '@momonga/gateway';
+import { capabilitiesFromProbe, decideToolCalling, endpointKeyOf, probeOllamaTarget, runProbe } from '@momonga/gateway';
 import type { Capabilities, ProbeReport } from '@momonga/protocol';
 import { startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
@@ -148,7 +148,7 @@ describe('both probes read the cached-token count by one rule (S1)', () => {
     const chatCompletions = await outcomeOf(() => probeThrough('malformed'));
     const ollama = await outcomeOf(async () => {
       const fake = await startFakeOllama({ cacheProbe: 'malformed' });
-      return (await probeOllamaTarget({ probeRecordDir: makeDir(), upstream: { kind: 'tcp', baseUrl: fake.origin }, model: OLLAMA_MODEL, contextWindow: 32768 })).report;
+      return (await probeOllamaTarget({ probeRecordDir: makeDir(), upstream: { kind: 'tcp', baseUrl: fake.origin }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL, contextWindow: 32768 })).report;
     });
     expect([{ kind: 'recorded', promptCache: undefined }, { kind: 'refused' }]).toContainEqual(chatCompletions);
     expect(ollama).toEqual(chatCompletions);
@@ -158,7 +158,7 @@ describe('both probes read the cached-token count by one rule (S1)', () => {
     const chatCompletions = await outcomeOf(() => probeThrough('unreported'));
     const ollama = await outcomeOf(async () => {
       const fake = await startFakeOllama({ cacheProbe: 'unreported' });
-      return (await probeOllamaTarget({ probeRecordDir: makeDir(), upstream: { kind: 'tcp', baseUrl: fake.origin }, model: OLLAMA_MODEL, contextWindow: 32768 })).report;
+      return (await probeOllamaTarget({ probeRecordDir: makeDir(), upstream: { kind: 'tcp', baseUrl: fake.origin }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL, contextWindow: 32768 })).report;
     });
     expect(chatCompletions).toEqual({ kind: 'recorded', promptCache: undefined });
     expect(ollama).toEqual(chatCompletions);

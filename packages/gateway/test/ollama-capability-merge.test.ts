@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadEndpointRecord, probeOllamaTarget, runProbe } from '@momonga/gateway';
+import { endpointKeyOf, loadEndpointRecord, probeOllamaTarget, runProbe } from '@momonga/gateway';
 import type { AdapterRequest, Capabilities, ReasoningEffort } from '@momonga/protocol';
 import { startFakeChatCompletions } from '@momonga/testkit';
 import { buildOllamaBody } from '../src/adapters/ollama/request.ts';
@@ -15,7 +15,7 @@ const showWith = (capabilities: readonly string[]) => ({ ...RECORDED_SHOW, capab
 const probedTarget = async (showCapabilities: readonly string[], declared: Capabilities, cacheProbe: 'automatic' | 'none' = 'none') => {
   const fake = await startFakeOllama({ show: showWith(showCapabilities), cacheProbe });
   const dir = makeDir();
-  const result = await probeOllamaTarget({ probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: fake.origin }, model: OLLAMA_MODEL, contextWindow: 12288 });
+  const result = await probeOllamaTarget({ probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: fake.origin }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL, contextWindow: 12288 });
   const record = await loadEndpointRecord(dir, result.key);
   return createProbedOllamaTarget({
     targetName: 'local',
@@ -48,12 +48,12 @@ describe('the Ollama probe report is merged into the capabilities (W2)', () => {
     expect(buildOllamaBody(askedWith('high'), capabilities).think).toBe(true);
   });
 
-  it('takes image input away from a target whose probe found no vision, whatever was declared', async () => {
+  it('keeps the declared image input of a target whose probe found no vision', async () => {
     const target = await probedTarget(['completion', 'tools'], OLLAMA_CAPABILITIES);
     const capabilities = await target.capabilities();
     expect(OLLAMA_CAPABILITIES.imageInput).toBe(true);
-    expect(capabilities.imageInput).toBe(false);
-    expect(capabilities.imageTokens).toBeUndefined();
+    expect(capabilities.imageInput).toBe(true);
+    expect(capabilities.imageTokens).toEqual(OLLAMA_CAPABILITIES.imageTokens);
   });
 
   it('keeps the declared image input of a target whose probe found vision', async () => {

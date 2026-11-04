@@ -64,7 +64,24 @@ const FM_TARGET_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-const TARGET_CAPABILITIES_SCHEMA = {
+const BREAKPOINTS_PROMPT_CACHE = {
+  type: 'object',
+  properties: { kind: { const: 'breakpoints' }, maxBreakpoints: POSITIVE_INTEGER },
+  required: ['kind', 'maxBreakpoints'],
+  additionalProperties: false,
+} as const;
+
+const promptCacheOf = (kinds: readonly ('key' | 'automatic' | 'none')[]) =>
+  ({ type: 'object', properties: { kind: { enum: [...kinds] } }, required: ['kind'], additionalProperties: false }) as const;
+
+const ANTHROPIC_PROMPT_CACHE = { oneOf: [BREAKPOINTS_PROMPT_CACHE, promptCacheOf(['none'])] } as const;
+
+const KEYED_PROMPT_CACHE = promptCacheOf(['key', 'automatic', 'none']);
+
+const OLLAMA_PROMPT_CACHE = promptCacheOf(['automatic', 'none']);
+
+const targetCapabilitiesSchema = (promptCache: object) =>
+  ({
   type: 'object',
   properties: {
     contextWindow: { type: 'integer', minimum: 1, maximum: MAX_BUDGET_COUNT },
@@ -100,22 +117,18 @@ const TARGET_CAPABILITIES_SCHEMA = {
         },
       ],
     },
-    promptCache: {
-      oneOf: [
-        {
-          type: 'object',
-          properties: { kind: { const: 'breakpoints' }, maxBreakpoints: POSITIVE_INTEGER },
-          required: ['kind', 'maxBreakpoints'],
-          additionalProperties: false,
-        },
-        { type: 'object', properties: { kind: { enum: ['key', 'automatic', 'none'] } }, required: ['kind'], additionalProperties: false },
-      ],
-    },
+    promptCache: promptCache,
     source: { enum: ['declared', 'probed', 'config', 'unprobed'] },
   },
   required: ['contextWindow', 'maxOutputTokens'],
   additionalProperties: false,
-} as const;
+}) as const;
+
+const ANTHROPIC_CAPABILITIES_SCHEMA = targetCapabilitiesSchema(ANTHROPIC_PROMPT_CACHE);
+
+const KEYED_CAPABILITIES_SCHEMA = targetCapabilitiesSchema(KEYED_PROMPT_CACHE);
+
+const OLLAMA_CAPABILITIES_SCHEMA = targetCapabilitiesSchema(OLLAMA_PROMPT_CACHE);
 
 const BILLING_SCHEMA = { enum: [...TARGET_BILLINGS] } as const;
 
@@ -146,7 +159,7 @@ const CHAT_COMPLETIONS_TARGET_SCHEMA = {
     provider: { type: 'string', pattern: PROVIDER_NAME_PATTERN },
     toolCalling: { enum: ['auto', 'native', 'constrained'] },
     billing: BILLING_SCHEMA,
-    capabilities: TARGET_CAPABILITIES_SCHEMA,
+    capabilities: KEYED_CAPABILITIES_SCHEMA,
     maxConcurrency: POSITIVE_INTEGER,
     admissionTimeoutMs: NON_NEGATIVE_INTEGER,
   },
@@ -166,7 +179,7 @@ const OPEN_RESPONSES_TARGET_SCHEMA = {
     provider: { type: 'string', pattern: PROVIDER_NAME_PATTERN },
     toolCalling: { enum: ['native', 'none'] },
     billing: BILLING_SCHEMA,
-    capabilities: TARGET_CAPABILITIES_SCHEMA,
+    capabilities: KEYED_CAPABILITIES_SCHEMA,
     maxConcurrency: POSITIVE_INTEGER,
     admissionTimeoutMs: NON_NEGATIVE_INTEGER,
   },
@@ -184,7 +197,7 @@ const ANTHROPIC_TARGET_SCHEMA = {
     socketPath: { type: 'string', minLength: 1 },
     ...API_KEY_PROPERTIES,
     billing: BILLING_SCHEMA,
-    capabilities: TARGET_CAPABILITIES_SCHEMA,
+    capabilities: ANTHROPIC_CAPABILITIES_SCHEMA,
     maxConcurrency: POSITIVE_INTEGER,
     admissionTimeoutMs: NON_NEGATIVE_INTEGER,
   },
@@ -201,7 +214,7 @@ const OLLAMA_TARGET_SCHEMA = {
     baseUrl: { type: 'string', minLength: 1 },
     socketPath: { type: 'string', minLength: 1 },
     billing: BILLING_SCHEMA,
-    capabilities: TARGET_CAPABILITIES_SCHEMA,
+    capabilities: OLLAMA_CAPABILITIES_SCHEMA,
     maxConcurrency: POSITIVE_INTEGER,
     admissionTimeoutMs: NON_NEGATIVE_INTEGER,
   },

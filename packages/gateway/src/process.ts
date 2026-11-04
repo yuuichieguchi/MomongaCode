@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { credentialEnvNames, loadUserSettings, probeRecordKeyOf, secretNames } from '@momonga/config';
+import { credentialEnvNames, loadUserSettings, probeRecordKeyOf, secretNames, upstreamEndpointOf } from '@momonga/config';
 import {
   acquireProcessLock,
   SecretEmptyError,
@@ -126,12 +126,6 @@ const withBinaryGuard = (managed: ManagedFmTarget, binary: string, files: Proces
   };
 };
 
-const endpointOf = (target: RemoteTarget): UpstreamEndpoint => {
-  if (target.socketPath !== undefined) return { kind: 'unix', socketPath: target.socketPath };
-  if (target.baseUrl !== undefined) return { kind: 'tcp', baseUrl: target.baseUrl };
-  throw new Error(`${target.adapter} target has neither socketPath nor baseUrl`);
-};
-
 const capabilitiesOf = (target: RemoteTarget, mode: ToolCallingMode): Capabilities => ({ ...target.capabilities, toolCalling: mode });
 
 const startupFailureOf = (error: unknown): Error | undefined =>
@@ -235,7 +229,7 @@ const createAutoChatCompletionsAdapter = async (
   clock: Clock,
   refusal: PreconditionFailedError | undefined,
 ) => {
-  const upstream = endpointOf(target);
+  const upstream = upstreamEndpointOf(target);
   const key = endpointProbeKeyOf(name, target);
   const { endpoint } = key;
   const loaded = chatRecordOf(await loadEndpointRecord(probeRecordDir, key), key);
@@ -250,7 +244,7 @@ const createAutoChatCompletionsAdapter = async (
       return readEndpointIdentity(probeEndpointOf(upstream, apiKey), target.model, fields, signal);
     },
     saveRecord: (record) =>
-      saveEndpointRecord(probeRecordDir, { endpoint, model: target.model }, record.identity, record.identityFields, record.report),
+      saveEndpointRecord(probeRecordDir, key, record.identity, record.identityFields, record.report),
   });
   const adapter = createChatCompletionsAdapter({
     resolveEndpoint: async (_target, signal) => {
@@ -269,7 +263,7 @@ const createAutoChatCompletionsAdapter = async (
 };
 
 const createProbedOllamaAdapter = async (name: string, target: Extract<RemoteTarget, { adapter: 'ollama' }>, probeRecordDir: string, clock: Clock) => {
-  const upstream = endpointOf(target);
+  const upstream = upstreamEndpointOf(target);
   const key = endpointProbeKeyOf(name, target);
   const { endpoint } = key;
   const loaded = ollamaRecordOf(await loadEndpointRecord(probeRecordDir, key), key);
@@ -297,9 +291,9 @@ const ollamaRefusalsOf = async (targets: ReadonlyArray<readonly [string, Resolve
     const [, target] = entry;
     return (target.adapter === 'chat-completions' || target.adapter === 'open-responses') && target.baseUrl !== undefined;
   });
-  const answers = await Promise.all(candidates.map(async ([, target]) => answersAsOllama(endpointOf(target), signal)));
+  const answers = await Promise.all(candidates.map(async ([, target]) => answersAsOllama(upstreamEndpointOf(target), signal)));
   return new Map(
-    candidates.flatMap(([name, target], index) => (answers[index] === true ? [[name, ollamaServerRefusal(name, target.adapter, endpointKeyOf(endpointOf(target)))] as const] : [])),
+    candidates.flatMap(([name, target], index) => (answers[index] === true ? [[name, ollamaServerRefusal(name, target.adapter, endpointKeyOf(upstreamEndpointOf(target)))] as const] : [])),
   );
 };
 
@@ -522,7 +516,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       const common = {
         resolveEndpoint: async () => {
           if (refusal !== undefined) throw refusal;
-          return endpointOf(target);
+          return upstreamEndpointOf(target);
         },
         capabilities: async () => capabilitiesOf(target, mode),
         clock,

@@ -1,18 +1,21 @@
 import { isRecord } from '@momonga/foundation';
 import type { OllamaProbeReport } from '@momonga/protocol';
 import type { UpstreamEndpoint } from '../adapters/shared/http-client.ts';
+import { buildOllamaChatBody } from '../adapters/ollama/request.ts';
 import { isConnectionFailure } from '../adapters/shared/classify.ts';
 import { StreamFailure, UpstreamHttpError } from '../adapters/shared/failures.ts';
 import { ProbeTimeoutError, createProbeClient } from './client.ts';
 import type { ProbeClient } from './client.ts';
 import { saveEndpointRecord } from './endpoint-record.ts';
 import type { EndpointKey } from './endpoint-record.ts';
-import { IDENTITY_READ_TIMEOUT_MS, endpointKeyOf, probeEndpointOf } from './endpoint-target.ts';
+import { IDENTITY_READ_TIMEOUT_MS, probeEndpointOf } from './endpoint-target.ts';
+import { cachedCountOf } from './cached-count.ts';
 import { parseJson } from './json.ts';
 
 export type ProbeOllamaTargetOptions = {
   probeRecordDir: string;
   upstream: UpstreamEndpoint;
+  key: EndpointKey;
   model: string;
   contextWindow: number;
   signal?: AbortSignal;
@@ -22,6 +25,7 @@ export type ProbeOllamaTargetResult = { report: OllamaProbeReport; key: Endpoint
 
 const CHAT_PATH = '/api/chat';
 const CACHE_PROBE_WORDS = 1536;
+const CACHE_PROBE_OUTPUT_TOKENS = 1;
 const CACHE_PROBE_TIMEOUT_MS = 120_000;
 const VERSION_PATH = '/api/version';
 const SHOW_PATH = '/api/show';
@@ -106,19 +110,15 @@ const capabilitiesOf = (show: unknown, model: string): readonly string[] => {
 };
 
 const measurePromptCache = async (client: ProbeClient, model: string, contextWindow: number): Promise<OllamaProbeReport['promptCache']> => {
-  const request = {
-    model,
-    messages: [{ role: 'user', content: Array.from({ length: CACHE_PROBE_WORDS }, () => 'word').join(' ') }],
-    stream: false,
-    options: { num_ctx: contextWindow, num_predict: 1 },
-  };
+  const request = buildOllamaChatBody(
+    { model, input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: Array.from({ length: CACHE_PROBE_WORDS }, () => 'word').join(' ') }] }] },
+    { contextWindow, maxOutputTokens: CACHE_PROBE_OUTPUT_TOKENS },
+    false,
+  );
   await jsonOf(client, 'POST', CHAT_PATH, request);
   const repeated = await jsonOf(client, 'POST', CHAT_PATH, request);
-  const cached = isRecord(repeated) ? repeated['prompt_eval_cached_count'] : undefined;
+  const cached = cachedCountOf(isRecord(repeated) ? repeated['prompt_eval_cached_count'] : undefined, 'prompt_eval_cached_count');
   if (cached === undefined) return undefined;
-  if (typeof cached !== 'number' || !Number.isSafeInteger(cached) || cached < 0) {
-    throw new Error(`the Ollama server answered ${CHAT_PATH} with a prompt_eval_cached_count that is not a non-negative integer`);
-  }
   return { kind: cached > 0 ? 'automatic' : 'none' };
 };
 
@@ -131,7 +131,7 @@ export const probeOllamaTarget = async (options: ProbeOllamaTargetOptions): Prom
     tags: await jsonOf(client, 'GET', TAGS_PATH),
   }));
   const serverVersion = versionOf(version);
-  if (serverVersion === undefined) throw new Error(`the server at ${endpointKeyOf(upstream)} did not answer ${VERSION_PATH} in Ollama's form`);
+  if (serverVersion === undefined) throw new Error(`the server at ${options.key.endpoint} did not answer ${VERSION_PATH} in Ollama's form`);
   const trained = trainedContextOf(show, model);
   if (options.contextWindow > trained) {
     throw new Error(`the context window ${options.contextWindow} is above the trained context length ${trained} of model ${model}`);
@@ -151,7 +151,7 @@ export const probeOllamaTarget = async (options: ProbeOllamaTargetOptions): Prom
     thinkingSupported: capabilities.includes('thinking'),
     ...(promptCache === undefined ? {} : { promptCache }),
   };
-  const key: EndpointKey = { endpoint: endpointKeyOf(upstream), model };
+  const { key } = options;
   await saveEndpointRecord(options.probeRecordDir, key, identity, [], report);
   return { report, key, identity };
 };

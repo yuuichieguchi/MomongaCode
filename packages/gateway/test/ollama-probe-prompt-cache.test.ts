@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadEndpointRecord, probeOllamaTarget } from '@momonga/gateway';
+import { endpointKeyOf, loadEndpointRecord, probeOllamaTarget } from '@momonga/gateway';
 import type { Capabilities } from '@momonga/protocol';
 import { isOllamaProbeReport } from '../src/probe/report-schema.ts';
 import { createProbedOllamaTarget } from '../src/probe/ollama-target.ts';
@@ -9,7 +9,7 @@ import { OLLAMA_CAPABILITIES, OLLAMA_MODEL, startFakeOllama } from './ollama-sup
 const probeWith = async (cacheProbe: 'automatic' | 'none' | 'unreported') => {
   const fake = await startFakeOllama({ cacheProbe });
   const dir = makeDir();
-  const result = await probeOllamaTarget({ probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: fake.origin }, model: OLLAMA_MODEL, contextWindow: 32768 });
+  const result = await probeOllamaTarget({ probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: fake.origin }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL, contextWindow: 32768 });
   return { fake, dir, result };
 };
 

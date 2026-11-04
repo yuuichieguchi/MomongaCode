@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { momongaPaths } from '@momonga/foundation';
-import { endpointIdentityOf, loadEndpointRecord, probeEndpointTarget, saveEndpointRecord } from '@momonga/gateway';
+import { endpointIdentityOf, endpointKeyOf, loadEndpointRecord, probeEndpointTarget, saveEndpointRecord } from '@momonga/gateway';
 import { tokensForText } from '@momonga/protocol';
 import type { FakeChatCompletionsOptions } from '@momonga/testkit';
 import { getJson, postJson, readJson, userInput } from './gateway-helpers.ts';
@@ -33,8 +33,7 @@ const probedSetup = async (models: () => Array<Record<string, unknown>>) => {
   });
   await probeEndpointTarget({
     probeRecordDir: momongaPaths(home, process.platform, {}).probe,
-    upstream: { kind: 'unix', socketPath: fake.socketPath },
-    model: 'qwen-fake',
+    upstream: { kind: 'unix', socketPath: fake.socketPath }, key: { endpoint: endpointKeyOf({ kind: 'unix', socketPath: fake.socketPath }), model: 'qwen-fake' }, model: 'qwen-fake',
     apiKey: undefined,
     samples: 2,
   });
