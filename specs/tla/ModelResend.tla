@@ -52,19 +52,37 @@
 (*     recovery, deadline, cancel, stream restart) are not modelled        *)
 (*   - the recording of the rejection and of the accepted answer is one    *)
 (*     atomic append each                                                  *)
+(*   - the outcome (accept or reject) is charged once, when it is recorded:*)
+(*     the event model.rejected carries the usage of the rejected answer and*)
+(*     the run's spend counts it (charged); a replayed answer costs nothing*)
+(*   - joining a call in flight always succeeds; in the code a resend can get*)
+(*     409 idempotency_key_in_progress when the call is no longer joinable*)
+(*     (gateway/src/core/idempotency.ts:42, run.ts:215), which is requeued and*)
+(*     costs a claim                                                      *)
+(*   - one target, so one meter; a fallback meter is compared the same way*)
+(*     against its own counter from the claim's listing                   *)
 (*                                                                         *)
 (* Configurations (scripts/tlc.sh <name>, specs/tla/<name>.cfg)            *)
 (*   ModelResend             the rule, enough claims for every crash and   *)
-(*                           counter change; every invariant and Settles   *)
+(*                           counter change; every invariant and Accepted  *)
 (*                           (under weak fairness of the runtime and the   *)
 (*                           gateway): holds                               *)
 (*   ModelResend.attemptLimit the rule with fewer claims than crashes and  *)
 (*                           changes, so the run can end FAILED; every     *)
 (*                           invariant: holds                              *)
+(*   ModelResend.attemptLimitReached  the attemptLimit constants, NotFailed *)
+(*                           refuted: the FAILED end is reachable          *)
+(*   ModelResend.decisionCrash the ModelResend constants,                  *)
+(*                           DecidedRejectsNeverRedelivered refuted: a     *)
+(*                           crash between the decision and the record     *)
+(*                           redelivers the answer; the design accepts it  *)
 (*   ModelResend.fixedAttempt the attempt stays 1 (the code of today):     *)
 (*                           RejectedNeverRedelivered refuted (a stored    *)
 (*                           rejected answer is replayed to every next     *)
 (*                           claim)                                        *)
+(*                                                                         *)
+(* AcceptedMatchesCounter holds by construction of Decide; it is a sanity  *)
+(* check of the model, not evidence.                                       *)
 (*                                                                         *)
 (* Finding (crash window): the rule records the rejection after the        *)
 (* claim has decided it. A crash between the decision and the record       *)
@@ -102,10 +120,11 @@ VARIABLES
     redelivered,
     redeliveredDecided,
     accCtr,
-    accMeter
+    accMeter,
+    charged
 
 vars == <<phase, pc, claims, crashes, changes, gwCtr, mCtr, reqRec, recAtt, att, gw, gwAns, calls,
-          recRejected, decidedRejected, redelivered, redeliveredDecided, accCtr, accMeter>>
+          recRejected, decidedRejected, redelivered, redeliveredDecided, accCtr, accMeter, charged>>
 
 TypeOK ==
     /\ phase \in Phases
@@ -127,6 +146,7 @@ TypeOK ==
     /\ redeliveredDecided \in BOOLEAN
     /\ accCtr \in (0..MaxChanges) \cup {NoCounter}
     /\ accMeter \in (0..MaxChanges) \cup {NoCounter}
+    /\ charged \in [Attempts -> 0..MaxClaims]
 
 Init ==
     /\ phase = "run"
@@ -148,6 +168,7 @@ Init ==
     /\ redeliveredDecided = FALSE
     /\ accCtr = NoCounter
     /\ accMeter = NoCounter
+    /\ charged = [a \in Attempts |-> 0]
 
 Claim ==
     /\ phase = "run"
@@ -157,7 +178,7 @@ Claim ==
     /\ mCtr' = gwCtr
     /\ pc' = "claimed"
     /\ UNCHANGED <<phase, crashes, changes, gwCtr, reqRec, recAtt, att, gw, gwAns, calls,
-                   recRejected, decidedRejected, redelivered, redeliveredDecided, accCtr, accMeter>>
+                   recRejected, decidedRejected, redelivered, redeliveredDecided, accCtr, accMeter, charged>>
 
 Exhaust ==
     /\ phase = "run"
@@ -165,14 +186,14 @@ Exhaust ==
     /\ claims = MaxClaims
     /\ phase' = "failed"
     /\ UNCHANGED <<pc, claims, crashes, changes, gwCtr, mCtr, reqRec, recAtt, att, gw, gwAns, calls,
-                   recRejected, decidedRejected, redelivered, redeliveredDecided, accCtr, accMeter>>
+                   recRejected, decidedRejected, redelivered, redeliveredDecided, accCtr, accMeter, charged>>
 
 Record ==
     /\ pc = "claimed"
     /\ reqRec' = TRUE
     /\ pc' = "recorded"
     /\ UNCHANGED <<phase, claims, crashes, changes, gwCtr, mCtr, recAtt, att, gw, gwAns, calls,
-                   recRejected, decidedRejected, redelivered, redeliveredDecided, accCtr, accMeter>>
+                   recRejected, decidedRejected, redelivered, redeliveredDecided, accCtr, accMeter, charged>>
 
 Send ==
     /\ pc = "recorded"
@@ -184,14 +205,14 @@ Send ==
                /\ calls' = [calls EXCEPT ![recAtt] = @ + 1]
           ELSE UNCHANGED <<gw, gwAns, calls>>
     /\ UNCHANGED <<phase, claims, crashes, changes, gwCtr, mCtr, reqRec, recAtt,
-                   recRejected, decidedRejected, redelivered, redeliveredDecided, accCtr, accMeter>>
+                   recRejected, decidedRejected, redelivered, redeliveredDecided, accCtr, accMeter, charged>>
 
 Finish ==
     /\ \E a \in Attempts :
         /\ gw[a] = "inflight"
         /\ gw' = [gw EXCEPT ![a] = "done"]
     /\ UNCHANGED <<phase, pc, claims, crashes, changes, gwCtr, mCtr, reqRec, recAtt, att, gwAns, calls,
-                   recRejected, decidedRejected, redelivered, redeliveredDecided, accCtr, accMeter>>
+                   recRejected, decidedRejected, redelivered, redeliveredDecided, accCtr, accMeter, charged>>
 
 Deliver ==
     /\ pc = "sent"
@@ -200,7 +221,7 @@ Deliver ==
     /\ redelivered' = (redelivered \/ att \in recRejected)
     /\ redeliveredDecided' = (redeliveredDecided \/ att \in decidedRejected)
     /\ UNCHANGED <<phase, claims, crashes, changes, gwCtr, mCtr, reqRec, recAtt, att, gw, gwAns, calls,
-                   recRejected, decidedRejected, accCtr, accMeter>>
+                   recRejected, decidedRejected, accCtr, accMeter, charged>>
 
 Decide ==
     /\ pc = "got"
@@ -210,13 +231,14 @@ Decide ==
           ELSE /\ pc' = "rej"
                /\ decidedRejected' = decidedRejected \cup {att}
     /\ UNCHANGED <<phase, claims, crashes, changes, gwCtr, mCtr, reqRec, recAtt, att, gw, gwAns, calls,
-                   recRejected, redelivered, redeliveredDecided, accCtr, accMeter>>
+                   recRejected, redelivered, redeliveredDecided, accCtr, accMeter, charged>>
 
 RecordAccept ==
     /\ pc = "acc"
     /\ phase' = "done"
     /\ accCtr' = gwAns[att]
     /\ accMeter' = mCtr
+    /\ charged' = [charged EXCEPT ![att] = @ + 1]
     /\ pc' = "none"
     /\ UNCHANGED <<claims, crashes, changes, gwCtr, mCtr, reqRec, recAtt, att, gw, gwAns, calls,
                    recRejected, decidedRejected, redelivered, redeliveredDecided>>
@@ -225,6 +247,7 @@ RecordReject ==
     /\ pc = "rej"
     /\ recRejected' = recRejected \cup {att}
     /\ recAtt' = IF AttemptOnReject THEN att + 1 ELSE att
+    /\ charged' = [charged EXCEPT ![att] = @ + 1]
     /\ pc' = "none"
     /\ UNCHANGED <<phase, claims, crashes, changes, gwCtr, mCtr, reqRec, att, gw, gwAns, calls,
                    decidedRejected, redelivered, redeliveredDecided, accCtr, accMeter>>
@@ -236,7 +259,7 @@ Crash ==
     /\ crashes' = crashes + 1
     /\ pc' = "none"
     /\ UNCHANGED <<phase, claims, changes, gwCtr, mCtr, reqRec, recAtt, att, gw, gwAns, calls,
-                   recRejected, decidedRejected, redelivered, redeliveredDecided, accCtr, accMeter>>
+                   recRejected, decidedRejected, redelivered, redeliveredDecided, accCtr, accMeter, charged>>
 
 CounterChange ==
     /\ phase = "run"
@@ -244,7 +267,7 @@ CounterChange ==
     /\ changes' = changes + 1
     /\ gwCtr' = gwCtr + 1
     /\ UNCHANGED <<phase, pc, claims, crashes, mCtr, reqRec, recAtt, att, gw, gwAns, calls,
-                   recRejected, decidedRejected, redelivered, redeliveredDecided, accCtr, accMeter>>
+                   recRejected, decidedRejected, redelivered, redeliveredDecided, accCtr, accMeter, charged>>
 
 Ended ==
     /\ phase # "run"
@@ -285,7 +308,12 @@ AcceptedMatchesCounter == phase = "done" => accCtr = accMeter
 
 DecidedRejectsNeverRedelivered == ~redeliveredDecided
 
-Settles == <>(phase # "run")
+NotFailed == phase # "failed"
+
+ChargedOncePerAttempt ==
+    /\ \A a \in Attempts : charged[a] <= 1 /\ (charged[a] > 0 => calls[a] = 1)
+    /\ \A a \in recRejected : charged[a] = 1
+    /\ phase = "done" => charged[att] = 1
 
 Accepted == <>(phase = "done")
 
