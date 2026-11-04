@@ -1,0 +1,18 @@
+{
+  "format": "momonga-tla-manifest/1",
+  "unitSuiteSeconds": 215.2,
+  "entries": [
+    { "config": "RunRecovery", "role": "check", "expect": "holds", "args": [], "tier": "every-run", "distinctStates": 1064426, "measuredSeconds": 34.8, "budgetSeconds": 70 },
+    { "config": "RunRecovery.children", "role": "check", "expect": "holds", "args": [], "tier": "deep", "distinctStates": 62478876, "measuredSeconds": 1074.4, "budgetSeconds": 2149 },
+    { "config": "RunRecovery.childrenSmall", "role": "check", "expect": "holds", "args": [], "tier": "every-run", "distinctStates": 29528, "measuredSeconds": 3.2, "budgetSeconds": 7 },
+    { "config": "RunRecovery.liveNone", "role": "check", "expect": "holds", "args": ["-lncheck", "final"], "tier": "every-run", "distinctStates": 4346, "measuredSeconds": 5.5, "budgetSeconds": 11 },
+    { "config": "RunRecovery.liveSpawn", "role": "check", "expect": "holds", "args": ["-lncheck", "final"], "tier": "deep", "distinctStates": 1984616, "measuredSeconds": 4146.3, "budgetSeconds": 8293 },
+    { "config": "RunRecovery.liveSpawnSmall", "role": "check", "expect": "holds", "args": ["-lncheck", "final"], "tier": "every-run", "distinctStates": 28712, "measuredSeconds": 99.4, "budgetSeconds": 199 },
+    { "config": "RunRecovery.lockOnly", "role": "evidence", "expect": "holds", "args": [], "tier": "every-run", "distinctStates": 1065330, "measuredSeconds": 36.5, "budgetSeconds": 73 },
+    { "config": "RunRecovery.unfixed", "role": "evidence", "expect": { "violates": "AtMostOnceEffect", "exitCode": 12 }, "args": [], "tier": "every-run", "distinctStates": 1109388, "measuredSeconds": 41.6, "budgetSeconds": 84 },
+    { "config": "RunRecovery.fenceOnly", "role": "evidence", "expect": { "violates": "AtMostOnceEffect", "exitCode": 12 }, "args": [], "tier": "every-run", "distinctStates": 1040252, "measuredSeconds": 29.5, "budgetSeconds": 59 },
+    { "config": "RunRecovery.unlocked", "role": "evidence", "expect": { "violates": "AtMostOnceEffect", "exitCode": 12 }, "args": [], "tier": "every-run", "distinctStates": 1041366, "measuredSeconds": 18.2, "budgetSeconds": 37 },
+    { "config": "RunRecovery.reapOnly", "role": "evidence", "expect": { "violates": "AtMostOnceEffect", "exitCode": 12 }, "args": [], "tier": "every-run", "distinctStates": 1126730, "measuredSeconds": 19.3, "budgetSeconds": 39 },
+    { "config": "RunRecovery.noReap", "role": "evidence", "expect": { "violates": "ReconcileSeesStoppedEffect", "exitCode": 12 }, "args": [], "tier": "every-run", "distinctStates": 979559, "measuredSeconds": 17.1, "budgetSeconds": 35 }
+  ]
+}

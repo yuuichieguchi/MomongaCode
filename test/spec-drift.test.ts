@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createKernelLockMechanism } from '@momonga/foundation';
 import { EVENT_TYPES, RUN_STATUSES, TERMINAL_STATUSES } from '@momonga/protocol';
+import { readManifest } from './formal/manifest.ts';
 import { CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from '@momonga/store';
 
 const specPath = path.resolve(import.meta.dirname, '..', 'specs', 'tla', 'RunRecovery.tla');
@@ -105,6 +106,14 @@ const constantsOf = (name: string): Record<string, string> => {
   return Object.fromEntries([...block.matchAll(/^\s+(\w+)\s*=\s*(.+)$/gm)].map((match) => [match[1] as string, (match[2] as string).trim()]));
 };
 
+const manifest = readManifest(path.join(configDir, 'manifest.json'));
+const recoveryEntries = manifest.entries.filter((entry) => entry.config.split('.')[0] === 'RunRecovery');
+const checkNames = recoveryEntries.filter((entry) => entry.role === 'check').map((entry) => entry.config);
+const evidenceNames = recoveryEntries.filter((entry) => entry.role === 'evidence').map((entry) => entry.config);
+const configText = (name: string): string => fs.readFileSync(path.join(configDir, `${name}.cfg`), 'utf8');
+const hasInvariantSection = (name: string): boolean => /^INVARIANTS$/m.test(configText(name));
+const lists = (name: string, invariant: string): boolean => new RegExp(`^\\s+${invariant}$`, 'm').test(configText(name));
+
 describe('the checked configurations against the repaired recovery design', () => {
   const repairs = (name: string): [string, string, string] => {
     const constants = constantsOf(name);
@@ -112,25 +121,31 @@ describe('the checked configurations against the repaired recovery design', () =
   };
 
   it('checks the code with all three repairs in every configuration that is not evidence', () => {
-    for (const name of ['RunRecovery', 'RunRecovery.children', 'RunRecovery.liveNone', 'RunRecovery.liveSpawn']) {
-      expect(repairs(name)).toEqual(['FALSE', 'FALSE', 'FALSE']);
+    expect(checkNames.length).toBeGreaterThan(0);
+    for (const name of checkNames) {
+      expect(repairs(name), name).toEqual(['FALSE', 'FALSE', 'FALSE']);
     }
   });
 
   it('keeps one configuration per missing repair, the ones with a single repair, and one with none as evidence', () => {
-    expect(repairs('RunRecovery.unlocked')).toEqual(['FALSE', 'TRUE', 'FALSE']);
-    expect(repairs('RunRecovery.noReap')).toEqual(['FALSE', 'FALSE', 'TRUE']);
-    expect(repairs('RunRecovery.lockOnly')).toEqual(['FALSE', 'FALSE', 'TRUE']);
-    expect(repairs('RunRecovery.fenceOnly')).toEqual(['FALSE', 'TRUE', 'TRUE']);
-    expect(repairs('RunRecovery.reapOnly')).toEqual(['TRUE', 'TRUE', 'FALSE']);
-    expect(repairs('RunRecovery.unfixed')).toEqual(['TRUE', 'TRUE', 'TRUE']);
+    const switchesOf: Record<string, [string, string, string]> = {
+      'RunRecovery.unlocked': ['FALSE', 'TRUE', 'FALSE'],
+      'RunRecovery.noReap': ['FALSE', 'FALSE', 'TRUE'],
+      'RunRecovery.lockOnly': ['FALSE', 'FALSE', 'TRUE'],
+      'RunRecovery.fenceOnly': ['FALSE', 'TRUE', 'TRUE'],
+      'RunRecovery.reapOnly': ['TRUE', 'TRUE', 'FALSE'],
+      'RunRecovery.unfixed': ['TRUE', 'TRUE', 'TRUE'],
+    };
+    expect([...evidenceNames].sort()).toEqual(Object.keys(switchesOf).sort());
+    for (const name of evidenceNames) expect(repairs(name), name).toEqual(switchesOf[name]);
   });
 
-  it('checks the reconcile and lock invariants in the configurations that check the code', () => {
-    for (const name of ['RunRecovery', 'RunRecovery.children']) {
-      const text = fs.readFileSync(path.join(configDir, `${name}.cfg`), 'utf8');
+  it('checks the reconcile and lock invariants in the configurations that check the code with an invariant section', () => {
+    const invariantChecks = checkNames.filter(hasInvariantSection);
+    expect(invariantChecks.length).toBeGreaterThan(0);
+    for (const name of invariantChecks) {
       for (const invariant of ['AtMostOnceEffect', 'ReconcileSeesStoppedEffect', 'NoEffectDuringReconcile', 'LockIsExclusive']) {
-        expect(text).toMatch(new RegExp(`^\\s+${invariant}$`, 'm'));
+        expect(lists(name, invariant), `${name} lists ${invariant}`).toBe(true);
       }
     }
   });
@@ -173,8 +188,10 @@ describe('the checked configurations against the repaired recovery design', () =
   });
 
   it('records the edges of run.status events in every configuration that checks OnlyDeclaredEdges', () => {
-    for (const name of ['RunRecovery', 'RunRecovery.children']) {
-      expect(constantsOf(name)['StatusEdgesRecorded']).toBe('TRUE');
+    const checkingEdges = checkNames.filter((name) => lists(name, 'OnlyDeclaredEdges'));
+    expect(checkingEdges.length).toBeGreaterThan(0);
+    for (const name of checkingEdges) {
+      expect(constantsOf(name)['StatusEdgesRecorded'], name).toBe('TRUE');
     }
   });
 });
