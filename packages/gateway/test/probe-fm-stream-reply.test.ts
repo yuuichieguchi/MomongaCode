@@ -44,7 +44,7 @@ describe('the fm probe reads a streamed reply through the decoder every probe st
     expect(report.outputBoundField).toBe('max_completion_tokens');
   });
 
-  it('reads the tool calls, the content and the usage of every streamed sample as it reads them from a JSON reply', async () => {
+  it('reads the tool calls and the content of every streamed sample as it reads them from a JSON reply, and reports the usage fm never streams as absent', async () => {
     const options = { scenario: 'tools-ok', contextWindow: 4096, contextSizeExposure: 'none' } as const;
     const streamed = await startFakeChatCompletions({ ...options, wire: 'fm' });
     const unary = await startFakeChatCompletions(options);
@@ -53,14 +53,11 @@ describe('the fm probe reads a streamed reply through the decoder every probe st
     const fromStream = await runProbe({ socketPath: streamed.socketPath, managedHealthRoute: true, samples: 2, vocabulary: FM_VOCABULARY });
     const fromJson = await runProbe({ socketPath: unary.socketPath, managedHealthRoute: true, samples: 2 });
 
-    expect({
-      usageReported: fromStream.usageReported,
-      nativeTools: fromStream.nativeTools,
-      constrained: fromStream.constrained,
-    }).toEqual({
-      usageReported: fromJson.usageReported,
+    expect({ nativeTools: fromStream.nativeTools, constrained: fromStream.constrained }).toEqual({
       nativeTools: fromJson.nativeTools,
       constrained: fromJson.constrained,
     });
+    expect(fromStream.usageReported).toBe(false);
+    expect(fromJson.usageReported).toBe(true);
   });
 });

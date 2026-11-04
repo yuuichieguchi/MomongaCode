@@ -129,6 +129,8 @@ const retryAfterMs = (value: string | undefined, now: Date): number | undefined 
   return Number.isNaN(at) ? undefined : Math.max(0, at - now.getTime());
 };
 
+const estimatedCount = async (text: string): Promise<number> => tokensForText(text);
+
 const wordsOf = (count: number): string => Array.from({ length: count }, () => 'word').join(' ');
 
 const cachedTokensOf = (reply: UpstreamReply): number | undefined => {
@@ -231,7 +233,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
   };
   const chat = retryingRateLimits(post);
 
-  const contextWindow = reportedContextWindow(modelsBody, healthResult.text) ?? (await searchContextWindow(chat));
+  const contextWindow = reportedContextWindow(modelsBody, healthResult.text) ?? (await searchContextWindow(chat, options.countTokens));
   bound.tokens = maxOutputTokensFor(contextWindow.value);
 
   const plain = await chat({ messages: [{ role: 'user', content: PLAIN_PROMPT }] });
@@ -614,16 +616,19 @@ const reportedContextWindow = (modelsBody: unknown, healthText: string): ProbeRe
   return undefined;
 };
 
-const searchContextWindow = async (chat: Chat): Promise<ProbeReport['contextWindow']> => {
+const searchContextWindow = async (chat: Chat, countTokens: ProbeOptions['countTokens']): Promise<ProbeReport['contextWindow']> => {
   let overflowErrorShape: unknown;
   let overflowRecorded = false;
 
   const attempt = async (words: number): Promise<{ ok: boolean; promptTokens: number }> => {
-    const result = await chat({ messages: [{ role: 'user', content: wordsOf(words) }], outputTokens: ONE_OUTPUT_TOKEN });
+    const text = wordsOf(words);
+    const result = await chat({ messages: [{ role: 'user', content: text }], outputTokens: ONE_OUTPUT_TOKEN });
     const { reply } = result;
     if (reply.kind === 'completion') {
       if (result.outcome !== 'accepted') return failProbeStep(result, 'context window search');
-      return { ok: true, promptTokens: promptTokensOf({ usage: reply.usage }) ?? words };
+      const reported = promptTokensOf({ usage: reply.usage });
+      if (reported !== undefined) return { ok: true, promptTokens: reported };
+      return { ok: true, promptTokens: await (countTokens ?? estimatedCount)(text) };
     }
     if (result.outcome !== 'overflow') return failProbeStep(result, 'context window search');
     if (!overflowRecorded) {

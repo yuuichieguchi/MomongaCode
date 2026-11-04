@@ -9,6 +9,7 @@ import {
   FM_CONTEXT_OVERFLOW_ERROR,
   FM_UNSUPPORTED_GUIDE_ERROR,
   countFakeRequestTokens,
+  countFakeTokens,
   startFakeChatCompletions,
   type FakeChatCompletionsOptions,
   type FakeChatCompletionsServer,
@@ -132,7 +133,7 @@ describe('runProbe context window', () => {
     let firstRejectedSize = 64;
     while (countFakeRequestTokens(searchPrompt(firstRejectedSize)) + 1 <= window) firstRejectedSize *= 2;
 
-    const { report, fake } = await probe({ scenario: 'tools-ok', contextWindow: window, contextSizeExposure: 'none', wire: 'fm' }, { vocabulary: FM_VOCABULARY });
+    const { report, fake } = await probe({ scenario: 'tools-ok', contextWindow: window, contextSizeExposure: 'none', wire: 'fm' }, { vocabulary: FM_VOCABULARY, countTokens: async (text) => countFakeTokens(text) });
 
     const searchSizes = fake.requests
       .filter((request) => request.path === '/v1/chat/completions' && (request.body as { max_completion_tokens?: unknown }).max_completion_tokens === 1)
