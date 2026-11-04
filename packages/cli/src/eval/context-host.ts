@@ -175,7 +175,7 @@ export const unreadableHomesNotice = (count: number): string =>
   `${count} temporary ${count === 1 ? 'entry' : 'entries'} of an earlier run could not be read and ${count === 1 ? 'was' : 'were'} skipped\n`;
 
 export const unownedHomesNotice = (roots: readonly string[]): string =>
-  `${escapeTerminalLine(`${roots.length} temporary ${roots.length === 1 ? 'entry' : 'entries'} of an earlier run carry${roots.length === 1 ? 'es' : ''} an old owner marker that names no owner and ${roots.length === 1 ? 'was' : 'were'} left in place: ${roots.join(', ')}`)}\n`;
+  `${escapeTerminalLine(`${roots.length} temporary ${roots.length === 1 ? 'entry' : 'entries'} of an earlier run ${roots.length === 1 ? 'carries' : 'carry'} an old owner marker that names no owner and ${roots.length === 1 ? 'was' : 'were'} left in place: ${roots.join(', ')}`)}\n`;
 
 export type SweepResult = { removed: string[]; unreadable: number; unowned: string[] };
 

@@ -175,7 +175,7 @@ describe('a value a person did not write stays on its own line in command output
 
   it('shows the roots of unowned temporary homes with a newline on the notice line', () => {
     expect(unownedHomesNotice([`/a ${FORGED}`])).toBe(
-      `1 temporary entry of an earlier run carryes an old owner marker that names no owner and was left in place: /a ${SHOWN}\n`,
+      `1 temporary entry of an earlier run carries an old owner marker that names no owner and was left in place: /a ${SHOWN}\n`,
     );
   });
 });
