@@ -94,14 +94,17 @@ describe('the code digest of the running process', () => {
     expect(fs.existsSync(cliEvalCopy)).toBe(false);
   });
 
-  it('is imported from @momonga/foundation by the gateway and by the eval host', () => {
+  it('is imported from @momonga/foundation by the gateway and by the commands that run the eval host, and the eval host does not compute it', () => {
     const packages = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-    const importsFromFoundation = (directory: string): boolean =>
-      fs
-        .readdirSync(path.join(packages, directory), { recursive: true, encoding: 'utf8' })
-        .filter((file) => file.endsWith('.ts'))
-        .some((file) => /import \{[^}]*\bcodeDigestOfRunningProcess\b[^}]*\} from '@momonga\/foundation'/.test(fs.readFileSync(path.join(packages, directory, file), 'utf8')));
-    expect(importsFromFoundation(path.join('gateway', 'src'))).toBe(true);
-    expect(importsFromFoundation(path.join('cli', 'src', 'eval'))).toBe(true);
+    const importsFromFoundation = (source: string): boolean =>
+      /import \{[^}]*\bcodeDigestOfRunningProcess\b[^}]*\} from '@momonga\/foundation'/.test(fs.readFileSync(path.join(packages, source), 'utf8'));
+    const gatewaySources = fs
+      .readdirSync(path.join(packages, 'gateway', 'src'), { recursive: true, encoding: 'utf8' })
+      .filter((file) => file.endsWith('.ts'))
+      .map((file) => path.join('gateway', 'src', file));
+    expect(gatewaySources.some(importsFromFoundation)).toBe(true);
+    expect(importsFromFoundation(path.join('cli', 'src', 'commands', 'evaluate.ts'))).toBe(true);
+    expect(importsFromFoundation(path.join('cli', 'src', 'commands', 'context.ts'))).toBe(true);
+    expect(fs.readFileSync(path.join(packages, 'cli', 'src', 'eval', 'context-host.ts'), 'utf8')).not.toMatch(/\bcodeDigestOf\w*\b|createHash/);
   });
 });
