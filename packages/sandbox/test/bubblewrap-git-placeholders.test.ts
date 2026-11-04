@@ -80,7 +80,7 @@ describe.runIf(HAS_BWRAP)('git in a normal repository with bubblewrap placeholde
     const commonDir = await run(sh('git rev-parse --git-common-dir'));
     expect(commonDir.stderr).not.toContain('fatal');
     expect(commonDir.code).toBe(0);
-    expect(commonDir.stdout.trim()).toBe('.git');
+    expect(fs.realpathSync(path.resolve(repo, commonDir.stdout.trim()))).toBe(fs.realpathSync(path.join(repo, '.git')));
   });
 
   it('shows the sandbox a commondir that holds a dot, and git status exits 0', async () => {
