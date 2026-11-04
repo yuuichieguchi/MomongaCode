@@ -44,7 +44,6 @@ const LEAN_DENY = ['Write', 'Edit', 'Bash', ...MEMORY_DENY, ...HISTORY_DENY] as 
 const CONSTRAINED_DENY = ['Read', 'Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob', ...MEMORY_DENY, ...HISTORY_DENY] as const;
 const FULL_LINE_CHARS = [90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200] as const;
 const EXPECTED_OUTPUT_RESERVE = 1024;
-const EXPECTED_CEILING_AT_4096 = 2300;
 const AFTER_COMPACTION = 'after compaction';
 
 type PlannedCase = { readonly id: E2eCaseId; readonly title: string; readonly spec: PlanCaseSpec };
@@ -224,7 +223,7 @@ const assertLeanProperties = (observed: Observed, haystack: Haystack, plan: Plan
   const shape = plan.shape.tool === 'Read' ? `Read with ${plan.shape.lineChars}-character lines` : `ReadOutput with limit ${plan.shape.limit}`;
   expect(
     planned?.facts.escalationNotices,
-    `Bash is denied and no background job runs, so BashOutput and KillBash are not offered and the lean deny list leaves Glob and UpdatePlan offered, so the pinned prefix is ${plan.sizing.pinned} tokens against the ceiling ${plan.sizing.ceiling}, which leaves ${plan.sizing.ceiling - plan.sizing.pinned} tokens of room; the planner took ${shape}, the first shape in the grid whose step growth of ${growth} tokens makes the request before the escalation (${wireCounts[before - 1]} tokens) plus one more step exceed the ceiling while the recent steps are kept whole, and reducing them to one is then journaled exactly once`,
+    `Bash is denied and no background job runs, so BashOutput and KillBash are not offered and the lean deny list leaves Glob and UpdatePlan offered, so the pinned prefix is ${plan.sizing.pinned} tokens against the ceiling ${plan.sizing.ceiling}, which leaves ${plan.sizing.ceiling - plan.sizing.pinned} tokens of room; the planner took ${shape}, the first shape in the grid whose step growth of ${growth} tokens makes the request before the escalation (${wireCounts[before - 1]} tokens) plus one more step exceed the fit limit after that request's report while the recent steps are kept whole, and reducing them to one is then journaled exactly once`,
   ).toHaveLength(1);
   expect(messages, "the real run journals exactly the notices of the planner's dry run, which offers the same tools under the same deny list").toEqual(planned?.facts.notices);
   const plannedShape: HistoryShape = { positions: Array.from({ length: before }, (_unused, step) => ({ turn: 0, step })), turnCount: 1, currentTurn: 0, lastStep: before - 1 };
