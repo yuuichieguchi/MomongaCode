@@ -1,10 +1,13 @@
 import { amountOfUnits } from './cost.ts';
 import type { CallBilling, PricedCall } from './cost.ts';
-import { RUN_ROLE, escapeTerminalLine } from '@momonga/protocol';
+import { CACHE_MISS_CAUSES, RUN_ROLE, escapeTerminalLine } from '@momonga/protocol';
+import type { CacheMissCause, PrefixEvent } from '@momonga/protocol';
 
 export type BreakdownAnatomy = {
   layers: Readonly<Record<string, number | Readonly<Record<string, number>> | undefined>>;
 };
+
+export type BreakdownPrefix = { broken: false } | { broken: true; causes: readonly PrefixEvent[] };
 
 export type BreakdownCall = {
   runId: string;
@@ -12,10 +15,12 @@ export type BreakdownCall = {
   role?: string;
   provider: string;
   model: string;
+  target?: string;
   billing: CallBilling;
   at: Date;
   price: PricedCall;
   anatomy?: BreakdownAnatomy;
+  prefix?: BreakdownPrefix;
   usage: { inputTokens: number; cachedInputTokens: number; cacheWriteInputTokens: number; outputTokens: number; reasoningTokens: number };
   timing?: { firstEventMs?: number; durationMs: number };
 };
@@ -32,6 +37,8 @@ export type RoleBreakdown = {
 
 export type UnpricedCall = { runId: string; provider: string; model: string; step?: number; reason: string };
 
+export type CauseCounts = Partial<Record<CacheMissCause, number>>;
+
 export type CostBreakdown = {
   calls: number;
   layers: { estimated: true; shares: Record<string, number>; tokens: Record<string, number>; callsWithoutAnatomy: number };
@@ -44,6 +51,8 @@ export type CostBreakdown = {
     reasoningTokens: number;
   };
   cacheHitRatio: number | null;
+  cacheBreaks: CauseCounts;
+  cacheMissCauses: CauseCounts;
   timeToFirstToken: TimingSummary | null;
   duration: TimingSummary | null;
   roles: Record<string, RoleBreakdown>;
@@ -59,6 +68,48 @@ export type UnjoinedRecord = { runId: string; step?: number; reason: string };
 export type CostBreakdownOptions = { unjoined?: readonly UnjoinedRecord[]; callsWithoutResponseId?: number };
 
 const roleOf = (call: BreakdownCall): string => call.role ?? RUN_ROLE;
+
+const isMain = (call: BreakdownCall): boolean => roleOf(call) === RUN_ROLE;
+
+const countCauses = (causes: readonly CacheMissCause[]): CauseCounts => {
+  const counts: CauseCounts = {};
+  for (const cause of CACHE_MISS_CAUSES) {
+    const count = causes.filter((entry) => entry === cause).length;
+    if (count > 0) counts[cause] = count;
+  }
+  return counts;
+};
+
+const breakCausesOf = (prefix: BreakdownPrefix | undefined): CacheMissCause[] => {
+  if (prefix === undefined || !prefix.broken) return [];
+  return prefix.causes.length === 0 ? ['unexplained'] : [...prefix.causes];
+};
+
+const missCausesOf = (calls: readonly BreakdownCall[]): CacheMissCause[] => {
+  const misses: CacheMissCause[] = [];
+  const runIds = [...new Set(calls.map((call) => call.runId))];
+  for (const runId of runIds) {
+    const ordered = calls.filter((call) => call.runId === runId).toSorted((left, right) => left.at.getTime() - right.at.getTime());
+    let previousMain: BreakdownCall | undefined;
+    let sideSincePreviousMain = false;
+    for (const call of ordered) {
+      if (!isMain(call)) {
+        sideSincePreviousMain = true;
+        continue;
+      }
+      if (call.usage.cachedInputTokens === 0) {
+        const [recorded] = breakCausesOf(call.prefix);
+        if (recorded !== undefined) misses.push(recorded);
+        else if (previousMain !== undefined && previousMain.target !== undefined && call.target !== undefined && previousMain.target !== call.target) misses.push('target_changed');
+        else if (previousMain !== undefined && sideSincePreviousMain) misses.push('side_call');
+        else misses.push('unexplained');
+      }
+      previousMain = call;
+      sideSincePreviousMain = false;
+    }
+  }
+  return misses;
+};
 
 const MEDIAN_RANK = 0.5;
 const P95_RANK = 0.95;
@@ -148,6 +199,8 @@ export const buildCostBreakdown = (calls: readonly BreakdownCall[], options: Cos
     },
     billed,
     cacheHitRatio: billed.inputTokens === 0 || inconsistentUsage.length > 0 ? null : billed.cacheReadTokens / billed.inputTokens,
+    cacheBreaks: countCauses(calls.filter(isMain).flatMap((call) => breakCausesOf(call.prefix))),
+    cacheMissCauses: countCauses(missCausesOf(calls)),
     timeToFirstToken: main?.timeToFirstToken ?? null,
     duration: main?.duration ?? null,
     roles,
@@ -170,6 +223,11 @@ const roleLine = (role: string, entry: RoleBreakdown): string => {
 const timingLine = (label: string, summary: TimingSummary | null): string =>
   summary === null ? `${label}: not recorded` : `${label}: median ${summary.median} ms, p95 ${summary.p95} ms (n=${summary.n})`;
 
+const causeLine = (label: string, counts: CauseCounts): string[] => {
+  const entries = CACHE_MISS_CAUSES.flatMap((cause) => (counts[cause] === undefined ? [] : [`${cause} ${counts[cause]}`]));
+  return entries.length === 0 ? [] : [`${label}: ${entries.join(', ')}`];
+};
+
 export const formatCostBreakdown = (breakdown: CostBreakdown): string => {
   const { billed } = breakdown;
   const shares = Object.entries(breakdown.layers.shares).filter(([, tokens]) => tokens > 0);
@@ -191,6 +249,8 @@ export const formatCostBreakdown = (breakdown: CostBreakdown): string => {
       : [`billed tokens by kind are incomplete: ${breakdown.inconsistentUsage.length} of ${breakdown.calls} call(s) report more cached and written input than input and are excluded from the input figures`]),
     `billed tokens: input ${billed.inputTokens} = uncached ${billed.uncachedInputTokens} + cache read ${billed.cacheReadTokens} + cache write ${billed.cacheWriteTokens}; output ${billed.outputTokens} (reasoning ${billed.reasoningTokens})`,
     breakdown.cacheHitRatio === null ? `cache hit ratio: none (${breakdown.inconsistentUsage.length > 0 ? 'a call has inconsistent usage' : 'no input'})` : `cache hit ratio: ${percent(breakdown.cacheHitRatio)}`,
+    ...causeLine('cache breaks by cause', breakdown.cacheBreaks),
+    ...causeLine('cache-miss causes', breakdown.cacheMissCauses),
     timingLine('time to first token', breakdown.timeToFirstToken),
     timingLine('duration', breakdown.duration),
     ...Object.entries(breakdown.roles).map(([role, entry]) => roleLine(role, entry)),

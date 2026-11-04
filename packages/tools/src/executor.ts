@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalJson, canonicalPath, comparableFromParts, containsByComponents, computeBackoff, displayToolPath, fileRuleFingerprint, hostKernelLock, hostReapTiming, locateThroughFiles, momongaLayout, reapMarkedProcessesWithReport, sha256Hex, writableAreaOf, writableCheckOf } from '@momonga/foundation';
+import { canonicalJson, canonicalPath, comparableFromParts, containsByComponents, computeBackoff, displayToolPath, fileRuleFingerprint, hostKernelLock, hostReapTiming, lexicallyWithin, locateThroughFiles, momongaLayout, reapMarkedProcessesWithReport, resolveCanonicalPath, sha256Hex, writableAreaOf, writableCheckOf } from '@momonga/foundation';
 import type { Clock, FileRuleProvenance, KernelLockMechanism, PathResolution, ProcessInspector, ReapReport, ReapTiming, SignalSender, UninspectableRegistry } from '@momonga/foundation';
 import { absoluteFrom, createGlobDeadline, decide, fileRuleSpecsOf, globBudgetMs, prepareGlobs, settleGlobs, suggestAllowRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject, PolicyHostFilesystem } from '@momonga/policy';
@@ -314,10 +314,15 @@ const createWriteGuard = (batch: ExecutionBatchInput): ((subject: PermissionSubj
   };
   return (subject, cwd) => {
     if (subject.kind !== 'path' || subject.access !== 'write') return undefined;
-    return subject.paths.find((target) => {
-      const lexical = path.resolve(cwd, target);
-      return blocks(absoluteFrom(target, cwd)) || blocks(lexical) || blocksLauncher(lexical);
-    });
+    for (const target of subject.paths) {
+      const requested = path.resolve(cwd, target);
+      const resolvedInput = absoluteFrom(target, cwd);
+      if (!(blocks(resolvedInput) || blocks(requested) || blocksLauncher(requested))) continue;
+      if (blocksLauncher(requested) || entries.some((entry) => lexicallyWithin(requested, entry))) return requested;
+      const resolution = resolveCanonicalPath(resolvedInput);
+      return resolution.ok ? resolution.path : requested;
+    }
+    return undefined;
   };
 };
 
@@ -698,20 +703,21 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     const outcome = (value: CallOutcome): Admission => ({ kind: 'outcome', outcome: value });
     if (batch.signal.aborted) return outcome(failedOutcome(call.callId, `${call.name} was cancelled`));
     if (haltedBatches.has(batch)) return outcome(failedOutcome(call.callId, `${call.name} was not run: a hook stopped the run`));
-    const tool = batch.toolSet.get(call.name);
-    if (tool === undefined) {
-      const available = batch.toolSet.tools.map((candidate) => candidate.name).join(', ');
-      return outcome(failedOutcome(call.callId, `Unknown tool "${call.name}". Available tools: ${available}`));
-    }
-    if (batch.offered !== undefined && !batch.offered.tools.includes(call.name)) {
+    const { offered } = batch;
+    if (offered !== undefined && !offered.tools.includes(call.name)) {
       return outcome(
         failedOutcome(
           call.callId,
-          batch.offered.catalog.includes(call.name)
+          offered.catalog.includes(call.name)
             ? `Tool "${call.name}" is not loaded: load it with LoadTools first`
-            : `Tool "${call.name}" was not offered in the request that produced this call, so it cannot run`,
+            : `Tool "${call.name}" was not offered in the request that produced this call, so it cannot run. Available tools: ${offered.tools.join(', ')}`,
         ),
       );
+    }
+    const tool = batch.toolSet.get(call.name);
+    if (tool === undefined) {
+      const available = (offered === undefined ? batch.toolSet.tools.map((candidate) => candidate.name) : offered.tools).join(', ');
+      return outcome(failedOutcome(call.callId, `Unknown tool "${call.name}". Available tools: ${available}`));
     }
     const validation = validateToolInput(tool, call.arguments);
     if (!validation.ok) return outcome(failedOutcome(call.callId, validation.message));

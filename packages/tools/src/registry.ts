@@ -42,22 +42,35 @@ const assertRegistrable = (tool: AnyTool): void => {
   compileInputSchema(tool);
 };
 
-const digestEntryOf = (tool: AnyTool): unknown[] => {
-  const base = [tool.name, tool.description, tool.kind, tool.sideEffect, tool.inputSchema];
-  if (tool.conciseDescription === undefined && tool.conciseParameterDescriptions === undefined) return base;
-  return [...base, tool.conciseDescription ?? null, tool.conciseParameterDescriptions ?? null];
+const digestEntryOf = (tool: AnyTool): unknown[] => [
+  tool.name,
+  tool.description,
+  tool.kind,
+  tool.sideEffect,
+  tool.inputSchema,
+  tool.conciseDescription ?? null,
+  tool.conciseParameterDescriptions ?? null,
+];
+
+const hasConciseVariant = (tool: AnyTool): boolean => tool.conciseDescription !== undefined || tool.conciseParameterDescriptions !== undefined;
+
+const conciseDescriptionOf = (tool: AnyTool): string => {
+  if (tool.conciseDescription === undefined) throw new Error(`tool ${JSON.stringify(tool.name)} has a concise variant without a concise description`);
+  return tool.conciseDescription;
 };
 
 const digestOf = (tools: readonly AnyTool[]): string => sha256Hex(canonicalJson(tools.map(digestEntryOf)));
 
 const conciseSchemaOf = (tool: AnyTool): Record<string, unknown> => {
-  const concise = tool.conciseParameterDescriptions;
+  const concise = tool.conciseParameterDescriptions ?? {};
   const properties = tool.inputSchema['properties'];
-  if (concise === undefined || properties === undefined || properties === null || typeof properties !== 'object') return tool.inputSchema;
+  if (properties === undefined || properties === null || typeof properties !== 'object') return tool.inputSchema;
   const replaced = Object.fromEntries(
     Object.entries(properties).map(([field, schema]) => {
+      if (typeof (schema as { description?: unknown }).description !== 'string') return [field, schema];
       const text = concise[field];
-      return [field, text === undefined ? schema : { ...(schema as Record<string, unknown>), description: text }];
+      if (text === undefined) throw new Error(`tool ${JSON.stringify(tool.name)} has a concise variant without a concise text for parameter ${JSON.stringify(field)}`);
+      return [field, { ...(schema as Record<string, unknown>), description: text }];
     }),
   );
   return { ...tool.inputSchema, properties: replaced };
@@ -81,13 +94,16 @@ const buildToolSet = (tools: readonly AnyTool[], notices: readonly string[], aut
       const concise = conciseDescriptions === true;
       return frozenTools
         .filter((tool) => visible.has(tool.name))
-        .map((tool) => ({
-          type: 'function',
-          name: tool.name,
-          description: concise ? (tool.conciseDescription ?? tool.description) : tool.description,
-          parameters: concise ? conciseSchemaOf(tool) : tool.inputSchema,
-          strict: false,
-        }));
+        .map((tool) => {
+          const useConcise = concise && hasConciseVariant(tool);
+          return {
+            type: 'function',
+            name: tool.name,
+            description: useConcise ? conciseDescriptionOf(tool) : tool.description,
+            parameters: useConcise ? conciseSchemaOf(tool) : tool.inputSchema,
+            strict: false,
+          };
+        });
     },
   };
 };

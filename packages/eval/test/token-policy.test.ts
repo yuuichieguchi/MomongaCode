@@ -42,7 +42,10 @@ const EVERY_KEY: PolicyOverlay = {
 
 describe('parsePolicyOverlay', () => {
   it('accepts every token key', () => {
-    expect(parsePolicyOverlay(JSON.stringify(EVERY_KEY), 'policy.json')).toEqual(EVERY_KEY);
+    expect(parsePolicyOverlay(JSON.stringify(EVERY_KEY), 'policy.json')).toEqual({
+      ...EVERY_KEY,
+      context: { ...EVERY_KEY.context, outputFormatters: ['grep', 'identicalOutput', 'json', 'log'] },
+    });
   });
 
   it('accepts an empty overlay', () => {

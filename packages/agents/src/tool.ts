@@ -31,6 +31,8 @@ export const createAgentTool = (agents: readonly AgentDefinition[], runs: ChildR
       'Available subagents:',
       ...agents.map((agent) => `- ${agent.name}: ${oneLine(agent.description)}`),
     ].join('\n'),
+    conciseDescription: `Delegates a task to a subagent that works in its own context and returns its final message. Put everything it needs in prompt. Subagents: ${agents.map((agent) => agent.name).join(', ')}`,
+    conciseParameterDescriptions: { description: 'Short task summary', prompt: 'Task for the subagent', subagent_type: 'Subagent to use' },
     kind: 'other',
     sideEffect: 'read_only',
     inputSchema: {

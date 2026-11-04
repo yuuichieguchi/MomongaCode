@@ -11,6 +11,7 @@ export type BilledCall = {
   step?: number;
   role?: string;
   responseId?: string;
+  target?: string;
   provider: string;
   model: string;
   billing: CallBilling;
@@ -67,12 +68,14 @@ export const billedCallOf = (runId: string, span: SpanRecord, table: PriceTable)
   const step = span.attributes[MOMONGA_ATTRIBUTES.step];
   const role = optionalString(span, MOMONGA_ATTRIBUTES.role);
   const responseId = optionalString(span, A.ATTR_GEN_AI_RESPONSE_ID);
+  const target = optionalString(span, MOMONGA_ATTRIBUTES.target);
   return {
     runId,
     spanId: span.spanId,
     ...(typeof step === 'number' ? { step } : {}),
     ...(role === undefined ? {} : { role }),
     ...(responseId === undefined ? {} : { responseId }),
+    ...(target === undefined ? {} : { target }),
     provider,
     model,
     billing,

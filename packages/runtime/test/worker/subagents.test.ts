@@ -114,7 +114,7 @@ describe('worker subagents', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     expect(env.store.getSession(child.sessionId)?.permissionMode).toBe('plan');
     expect(fs.existsSync(target)).toBe(false);
     const completed = env.ofType(child.id, 'tool.completed');
-    expect(completed).toMatchObject([{ status: 'failed', output: 'Tool "Write" was not offered in the request that produced this call, so it cannot run' }]);
+    expect(completed).toMatchObject([{ status: 'failed', output: 'Tool "Write" was not offered in the request that produced this call, so it cannot run. Available tools: ' }]);
     expect(completed[0]).not.toHaveProperty('denial');
     expect(env.ofType(child.id, 'tool.permission.requested')).toEqual([]);
     expect(env.ofType(child.id, 'tool.started')).toEqual([]);

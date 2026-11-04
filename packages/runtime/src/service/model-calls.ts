@@ -1,16 +1,39 @@
 import { MAX_BILLED_CALLS_PAGE, RUNLESS, buildCostBreakdown, formatCostBreakdown } from '@momonga/observability';
-import type { BreakdownCall, CostBreakdown, UnjoinedRecord } from '@momonga/observability';
+import type { BreakdownCall, BreakdownPrefix, CostBreakdown, UnjoinedRecord } from '@momonga/observability';
 import { RUN_ROLE } from '@momonga/protocol';
-import type { BilledCallsCursorView, BilledCallsPageView, BilledCallView, CallTiming, RunTraceCall } from '@momonga/protocol';
+import type { BilledCallsCursorView, BilledCallsPageView, BilledCallView, CallTiming, RunEvent, RunEventPayload, RunTraceCall, RunTraceEvent, RunTracePrefix } from '@momonga/protocol';
 import type { ModelCallRecord, RuntimeStore } from '@momonga/store';
 import { gatewayProtocolError } from '../gateway-client.ts';
 
 export const traceCallsOf = (records: readonly ModelCallRecord[]): RunTraceCall[] =>
   records.flatMap((record) =>
-    record.kind === 'requested' ? [{ step: record.step, attempt: record.attempt, ...(record.anatomy === undefined ? {} : { anatomy: record.anatomy }) }] : [],
+    record.kind === 'requested'
+      ? [
+          {
+            step: record.step,
+            attempt: record.attempt,
+            ...(record.anatomy === undefined ? {} : { anatomy: record.anatomy }),
+            ...(record.prefix === undefined ? {} : { prefix: record.prefix }),
+          },
+        ]
+      : [],
   );
 
-type Response = Pick<BreakdownCall, 'anatomy' | 'timing'> & { step: number; id?: string };
+export const TRACE_EVENT_TYPES = ['tool.loaded', 'loop.warned'] as const satisfies readonly RunEventPayload['type'][];
+
+export const traceEventsOf = (events: readonly RunEvent[]): RunTraceEvent[] =>
+  events.flatMap((event): RunTraceEvent[] => {
+    if (event.type === 'tool.loaded') return [{ step: event.step, type: 'tool.loaded', names: event.names }];
+    if (event.type === 'loop.warned') return [{ step: event.step, type: 'loop.warned', signature: event.signature }];
+    return [];
+  });
+
+type Response = Pick<BreakdownCall, 'anatomy' | 'prefix' | 'timing'> & { step: number; id?: string };
+
+const prefixOf = (prefix: RunTracePrefix | undefined): BreakdownPrefix | undefined => {
+  if (prefix === undefined) return undefined;
+  return prefix.toolsChanged || prefix.causes.length > 0 ? { broken: true, causes: prefix.causes } : { broken: false };
+};
 
 const responsesOf = (records: readonly ModelCallRecord[]): Response[] => {
   const requests = new Map<string, ModelCallRecord>();
@@ -22,10 +45,12 @@ const responsesOf = (records: readonly ModelCallRecord[]): Response[] => {
     }
     const request = requests.get(`${record.step}:${record.attempt}`);
     const anatomy = request?.kind === 'requested' ? request.anatomy : undefined;
+    const prefix = request?.kind === 'requested' ? prefixOf(request.prefix) : undefined;
     responses.push({
       step: record.step,
       ...(record.responseId === undefined ? {} : { id: record.responseId }),
       ...(anatomy === undefined ? {} : { anatomy }),
+      ...(prefix === undefined ? {} : { prefix }),
       ...(record.timing === undefined ? {} : { timing: record.timing }),
     });
   }
@@ -38,6 +63,7 @@ const breakdownCallOf = (call: BilledCallView, joined: Partial<Response>): Break
   ...(call.role === undefined ? {} : { role: call.role }),
   provider: call.provider,
   model: call.model,
+  ...(call.target === undefined ? {} : { target: call.target }),
   billing: call.billing,
   at: new Date(call.startMs),
   price:
@@ -46,6 +72,7 @@ const breakdownCallOf = (call: BilledCallView, joined: Partial<Response>): Break
       : call.price,
   usage: call.usage,
   ...(joined.anatomy === undefined ? {} : { anatomy: joined.anatomy }),
+  ...(joined.prefix === undefined ? {} : { prefix: joined.prefix }),
   ...(joined.timing === undefined ? {} : { timing: joined.timing }),
 });
 

@@ -2,7 +2,7 @@ export { createBodyQueue } from './body-queue.ts';
 export type { BodyQueue, BodyQueueLimits } from './body-queue.ts';
 export { installOtelErrorHandler } from './errors.ts';
 export { buildCostBreakdown, formatCostBreakdown } from './cost-breakdown.ts';
-export type { BreakdownAnatomy, BreakdownCall, CostBreakdown, CostBreakdownOptions, TimingSummary, UnjoinedRecord, UnpricedCall } from './cost-breakdown.ts';
+export type { BreakdownAnatomy, BreakdownCall, BreakdownPrefix, CauseCounts, CostBreakdown, CostBreakdownOptions, TimingSummary, UnjoinedRecord, UnpricedCall } from './cost-breakdown.ts';
 export { MAX_BILLED_CALLS_PAGE, RUNLESS, billedCallsOfRun, pageBilledCalls } from './billed-calls.ts';
 export type { BilledCall, BilledCallWire, BilledCallsCursor, BilledCallsPage } from './billed-calls.ts';
 export { LOCAL_PRICE_VERSION, amountOfUnits, definePriceTable, findPriceEntry, priceCall } from './cost.ts';
