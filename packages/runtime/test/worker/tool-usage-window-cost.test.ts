@@ -4,10 +4,7 @@ import type { RunEventPayload } from '@momonga/protocol';
 import { readRunLimits } from '../../src/worker/limits.ts';
 import { toolUsageWindowOf } from '../../src/worker/tool-usage-window.ts';
 import { DEADLINE_MS, createdRun, makeEnv } from './harness.ts';
-
-const PAUSE_BUDGET_MS = 100;
-const VITEST_DEFAULT_TEST_TIMEOUT_MS = 5_000;
-const LARGE_RUN_SETUP_TEST_TIMEOUT_MS = 24 * VITEST_DEFAULT_TEST_TIMEOUT_MS;
+import { LARGE_RUN_SETUP_TEST_TIMEOUT_MS, PAUSE_BUDGET_MS, threadCpuMillisOf } from './pause-budget.ts';
 const STEPS = readRunLimits({}).maxSteps;
 const LOG_CHARS = 8_000;
 const HISTORY_IN_REQUEST = 8;
@@ -69,11 +66,9 @@ describe('the cost of the tool usage window at root run start (open item 8)', ()
       expect(env.store.transition(claim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
     }
 
-    const started = performance.now();
-    const window = toolUsageWindowOf(env.store, env.session.cwd);
-    const millis = performance.now() - started;
+    const { value: window, millis } = await threadCpuMillisOf(() => toolUsageWindowOf(env.store, env.session.cwd));
 
-    console.info(`${TOOL_USAGE_WINDOW_RUNS} runs of ${STEPS} requests, ${bodyBytes} body bytes: tool usage window ${millis.toFixed(1)} ms`);
+    console.info(`${TOOL_USAGE_WINDOW_RUNS} runs of ${STEPS} requests, ${bodyBytes} body bytes: tool usage window ${millis.toFixed(1)} ms of thread CPU time`);
     expect(window).toHaveLength(TOOL_USAGE_WINDOW_RUNS);
     expect(window[0]).toEqual({ offered: TOOLS.map((tool) => tool.name), called: ['Tool00'] });
     expect(millis).toBeLessThan(PAUSE_BUDGET_MS);

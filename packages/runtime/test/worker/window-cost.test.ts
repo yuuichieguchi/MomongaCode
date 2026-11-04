@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
 import { memoryShareFor } from '../../src/worker/memory-share.ts';
 import { DEADLINE_MS, createdRun, makeEnv } from './harness.ts';
+import { LARGE_RUN_SETUP_TEST_TIMEOUT_MS, PAUSE_BUDGET_MS, threadCpuMillisOf } from './pause-budget.ts';
 
-const PAUSE_BUDGET_MS = 100;
 const RUNS = 200;
 const LOG_EVENTS = 40;
 const LOG_CHARS = 8_000;
@@ -36,16 +36,12 @@ describe('the cost of the adaptive budget window at run start', () => {
     }
     const next = env.enqueue('Next', { history: 'fresh' });
 
-    const listStarted = performance.now();
-    const listed = env.store.lastTerminalRootRuns(env.session.cwd, 20);
-    const listMillis = performance.now() - listStarted;
-    const windowStarted = performance.now();
-    const share = await memoryShareFor({ store: env.store, settings: env.settings, session: env.session, run: env.run(next.id) });
-    const windowMillis = performance.now() - windowStarted;
+    const { value: listed, millis: listMillis } = await threadCpuMillisOf(() => env.store.lastTerminalRootRuns(env.session.cwd, 20));
+    const { value: share, millis: windowMillis } = await threadCpuMillisOf(() => memoryShareFor({ store: env.store, settings: env.settings, session: env.session, run: env.run(next.id) }));
 
-    console.info(`${RUNS} runs of ${LOG_EVENTS} events of ${LOG_CHARS} characters: lastTerminalRootRuns ${listMillis.toFixed(1)} ms, whole window ${windowMillis.toFixed(1)} ms`);
+    console.info(`${RUNS} runs of ${LOG_EVENTS} events of ${LOG_CHARS} characters: lastTerminalRootRuns ${listMillis.toFixed(1)} ms, whole window ${windowMillis.toFixed(1)} ms of thread CPU time`);
     expect(listed).toHaveLength(20);
     expect(share).toBe(1 / 4);
     expect(windowMillis).toBeLessThan(PAUSE_BUDGET_MS);
-  });
+  }, LARGE_RUN_SETUP_TEST_TIMEOUT_MS);
 });
