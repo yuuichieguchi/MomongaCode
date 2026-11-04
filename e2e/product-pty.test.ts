@@ -5,7 +5,7 @@ import { startMcpHttpFixture } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
 import { OPEN_LOG_FILE_NAME, SECRETS_FILE_NAME, runCli } from './support/cli.ts';
 import type { E2eHome } from './support/home.ts';
-import { PNG_BYTES, prepareProduct, requestText, writePng, writeUserSkill } from './support/product.ts';
+import { PNG_BYTES, WINDOW_WITH_ROOM_FOR_ALL_TOOLS_AND_AN_IMAGE, prepareProduct, requestText, writePng, writeUserSkill } from './support/product.ts';
 import { KEYS, spawnPty } from './support/pty.ts';
 import type { PtySession } from './support/pty.ts';
 import { chatCompletions, textReply, toolCallReply } from './support/upstream.ts';
@@ -122,7 +122,7 @@ describe('skills, memory and images in the terminal', () => {
   });
 
   it(titleOf('cli-image-pty'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
-    const { home, fake } = await prepareProduct({ imageInput: true, script: [textReply('It is a picture.')] });
+    const { home, fake } = await prepareProduct({ imageInput: true, contextWindow: WINDOW_WITH_ROOM_FOR_ALL_TOOLS_AND_AN_IMAGE, script: [textReply('It is a picture.')] });
     const shot = writePng(home.project, 'shot.png');
     const pty = await spawnWithFakes(home);
     await trustAndWait(pty);
