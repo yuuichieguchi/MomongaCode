@@ -1,7 +1,7 @@
 import { defineTool, ToolExecutionError } from '../types.ts';
 import { looksBinary, recordInLedger, regularFileProblem, scanLines, statIfExists } from './files.ts';
 import { DEFAULT_LINE_LIMIT, pageNumberedLines, pastEndMessage } from './format.ts';
-import { canonicalPathOf, requireAbsolute } from './paths.ts';
+import { canonicalPathOf, resolvedPathOf, shownPath } from './paths.ts';
 
 type ReadInput = { file_path: string; offset?: number; limit?: number };
 
@@ -9,13 +9,13 @@ export const readTool = defineTool<ReadInput>({
   name: 'Read',
   tier: 'essential',
   description:
-    'Reads a text file from the filesystem. file_path must be absolute. Returns at most 2000 lines by default in cat -n format; use offset (1-based line) and limit to page through large files. Lines longer than 2000 characters are cut. Binary files are refused.',
+    'Reads a text file from the filesystem. file_path may be absolute or relative; a relative path is resolved against the working directory. Returns at most 2000 lines by default in cat -n format; use offset (1-based line) and limit to page through large files. Lines longer than 2000 characters are cut. Binary files are refused.',
   kind: 'read',
   sideEffect: 'read_only',
   inputSchema: {
     type: 'object',
     properties: {
-      file_path: { type: 'string', description: 'Absolute path of the file to read' },
+      file_path: { type: 'string', description: 'Path of the file to read; a relative path is resolved against the working directory' },
       offset: { type: 'integer', minimum: 1, description: 'Line number to start reading from (1-based)' },
       limit: { type: 'integer', minimum: 1, description: 'Number of lines to read' },
     },
@@ -24,20 +24,21 @@ export const readTool = defineTool<ReadInput>({
   },
   pagesOutput: true,
   timeoutMs: 30_000,
-  title: (input) => `Read ${input.file_path}`,
-  locations: (input) => [{ path: input.file_path, ...(input.offset === undefined ? {} : { line: input.offset }) }],
-  subject: (input) => ({ kind: 'path', tool: 'Read', paths: [requireAbsolute('file_path', input.file_path)], access: 'read' }),
+  title: (input, ctx) => `Read ${shownPath(ctx, resolvedPathOf(ctx, input.file_path))}`,
+  locations: (input, ctx) => [{ path: resolvedPathOf(ctx, input.file_path), ...(input.offset === undefined ? {} : { line: input.offset }) }],
+  subject: (input, ctx) => ({ kind: 'path', tool: 'Read', paths: [resolvedPathOf(ctx, input.file_path)], access: 'read' }),
   execute: async (input, ctx) => {
-    const canonical = canonicalPathOf('file_path', input.file_path);
+    const canonical = canonicalPathOf(ctx, 'file_path', input.file_path);
+    const shown = shownPath(ctx, canonical);
     const stat = await statIfExists(canonical);
-    if (stat === undefined) throw new ToolExecutionError(`File does not exist: ${input.file_path}`);
+    if (stat === undefined) throw new ToolExecutionError(`File does not exist: ${shown}`);
     if (stat.isDirectory()) {
-      throw new ToolExecutionError(`${input.file_path} is a directory, not a file; use Glob to find files or Bash with ls to list it`);
+      throw new ToolExecutionError(`${shown} is a directory, not a file; use Glob to find files or Bash with ls to list it`);
     }
-    const problem = regularFileProblem(stat, input.file_path);
+    const problem = regularFileProblem(stat, shown);
     if (problem !== undefined) throw new ToolExecutionError(problem);
     if (await looksBinary(canonical)) {
-      throw new ToolExecutionError(`${input.file_path} is a binary file (${stat.size} bytes) and cannot be read as text`);
+      throw new ToolExecutionError(`${shown} is a binary file (${stat.size} bytes) and cannot be read as text`);
     }
     const offset = input.offset ?? 1;
     const lastLine = offset + (input.limit ?? DEFAULT_LINE_LIMIT) - 1;

@@ -148,6 +148,7 @@ export type { RotatingLogFile, RotatingLogFileOptions } from './rotating-log.ts'
 export { StartupCancelled, exitCodeForStartError, nodeEntryIo, runDaemonEntry } from './daemon-entry.ts';
 export type { DaemonCloseResult, DaemonDefinition, DaemonHandle, DaemonStartContext, EntryIo, EntrySignal, LogTarget } from './daemon-entry.ts';
 export { UNRESOLVABLE_ERRNO_CODES, resolveCanonicalPath, unresolvableReasonOf } from './path-resolution.ts';
+export { displayToolPath, resolveToolPath } from './tool-path.ts';
 export type { PathResolution, UnresolvableErrno, UnresolvableReason, Unresolved } from './path-resolution.ts';
 export { gitlinksOfIndex } from './git-index.ts';
 export type { GitlinkRead } from './git-index.ts';

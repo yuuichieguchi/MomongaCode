@@ -78,7 +78,7 @@ describe('review 1: ripgrep excludes readDenied entries inside the search target
         await tools.run('Grep', { pattern: 'alpha', output_mode: outputMode }, { sandbox: unsandboxed, sandboxPolicy: withReadDenied(tools, vault), env: { PATH: RG_PATH } }),
       );
       expect(result.status).toBe('completed');
-      expect(result.output).toContain(visible);
+      expect(result.output).toContain(path.relative(tools.layout.project, visible));
       expect(result.output).not.toContain('vault');
       expect(result.output).not.toContain('secret');
       expect(result.output).not.toContain('deeper');
@@ -87,7 +87,7 @@ describe('review 1: ripgrep excludes readDenied entries inside the search target
     it('adds no unreadable-path note for readDenied entries under Seatbelt', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
       const { tools, visible, vault } = await makeVaultTree(true);
       const result = resultOf(await tools.run('Grep', { pattern: 'alpha', output_mode: outputMode }, { sandboxPolicy: withReadDenied(tools, vault), env: { PATH: RG_PATH } }));
-      expect(result.output).toContain(visible);
+      expect(result.output).toContain(path.relative(tools.layout.project, visible));
       expect(result.output).not.toContain('vault');
       expect(result.output).not.toContain('(some paths could not be read)');
     });
@@ -318,14 +318,14 @@ describe('review 7: symlinked files into readDenied and dangling symlinks', () =
   it('Glob skips them', async () => {
     const { tools, older, newer } = await makeLinkedTree();
     const result = resultOf(await tools.run('Glob', { pattern: '*.txt' }));
-    expect(result.output.split('\n')).toEqual([newer, older]);
+    expect(result.output.split('\n')).toEqual([newer, older].map((file) => path.relative(tools.layout.project, file)));
   });
 
   it('Grep with the JS backend skips them', async () => {
     const { tools, older, newer } = await makeLinkedTree();
     const result = resultOf(await tools.run('Grep', { pattern: 'alpha' }, { env: { PATH: JS_BACKEND_PATH } }));
     expect(result.status).toBe('completed');
-    expect(result.output.split('\n')).toEqual([newer, older]);
+    expect(result.output.split('\n')).toEqual([newer, older].map((file) => path.relative(tools.layout.project, file)));
   });
 });
 
@@ -346,7 +346,7 @@ describe.runIf(process.platform === 'darwin')('review 8: readDenied comparison i
     put(tools, 'vault/secret.txt', 'x', 2);
     const sandboxPolicy = withReadDenied(tools, path.join(tools.layout.project, 'VAULT'));
     const result = resultOf(await tools.run('Glob', { pattern: '**/*.txt' }, { sandboxPolicy }));
-    expect(result.output.split('\n')).toEqual([visible]);
+    expect(result.output.split('\n')).toEqual([path.relative(tools.layout.project, visible)]);
   });
 
   it('Grep with the JS backend skips a subtree whose readDenied entry differs in case', async () => {
@@ -355,7 +355,7 @@ describe.runIf(process.platform === 'darwin')('review 8: readDenied comparison i
     put(tools, 'vault/secret.txt', 'alpha', 2);
     const sandboxPolicy = withReadDenied(tools, path.join(tools.layout.project, 'VAULT'));
     const result = resultOf(await tools.run('Grep', { pattern: 'alpha' }, { sandboxPolicy, env: { PATH: JS_BACKEND_PATH } }));
-    expect(result.output.split('\n')).toEqual([visible]);
+    expect(result.output.split('\n')).toEqual([path.relative(tools.layout.project, visible)]);
   });
 });
 
@@ -380,7 +380,7 @@ describe('review 9: Grep parity for type and .rgignore', () => {
       const tools = await makeBuiltins({ realSandbox });
       const tree = makeIgnoreTree(tools);
       const result = resultOf(await tools.run('Grep', { pattern: 'alpha' }, { env: { PATH: envPath } }));
-      expect(result.output.split('\n')).toEqual(tree.expected);
+      expect(result.output.split('\n')).toEqual(tree.expected.map((file) => path.relative(tools.layout.project, file)));
     });
   });
 
@@ -401,7 +401,7 @@ describe('review 9: Grep parity for type and .rgignore', () => {
     const tools = await makeBuiltins();
     const tree = makeIgnoreTree(tools);
     const result = resultOf(await tools.run('Glob', { pattern: '*.txt' }));
-    expect(result.output.split('\n')).toEqual(tree.expected);
+    expect(result.output.split('\n')).toEqual(tree.expected.map((file) => path.relative(tools.layout.project, file)));
   });
 });
 

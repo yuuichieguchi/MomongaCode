@@ -148,7 +148,7 @@ describe('createBuiltinTools', () => {
       ], { sandboxPolicy: tools.sandboxPolicy, tmpDir: tools.tmpDir }),
     );
     expect(read).toMatchObject({ kind: 'result', result: { status: 'completed', output: '     1\ta' } });
-    expect(glob).toMatchObject({ kind: 'result', result: { status: 'completed', output: file } });
+    expect(glob).toMatchObject({ kind: 'result', result: { status: 'completed', output: 'a.txt' } });
     expect(plan).toMatchObject({ kind: 'result', result: { status: 'completed', output: 'Plan updated (1 entries)' } });
   });
 });

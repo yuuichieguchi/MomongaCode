@@ -25,6 +25,8 @@ const fixture = async (options: { realSandbox?: boolean } = {}) => {
 
 const linesOf = (output: string): string[] => output.split('\n').filter((line) => line !== '').sort();
 
+const relativeTo = (tools: Builtins, ...files: string[]): string[] => files.map((file) => path.relative(tools.layout.project, file)).sort();
+
 const grep = (tools: Builtins, args: Record<string, unknown>, sandboxPolicy: unknown, envPath: string) =>
   tools.run('Grep', { pattern: 'alpha', ...args }, { sandboxPolicy: sandboxPolicy as Builtins['sandboxPolicy'], env: { PATH: envPath, LANG: 'C' } });
 
@@ -64,40 +66,40 @@ describe('readAllowed inside a readDenied root (builtins)', () => {
     const fx = await fixture();
     const result = resultOf(await fx.tools.run('Glob', { pattern: '**/*.txt', path: fx.ok }, { sandboxPolicy: fx.sandboxPolicy }));
     expect(result.status).toBe('completed');
-    expect(linesOf(result.output)).toEqual([fx.allowedFile]);
+    expect(linesOf(result.output)).toEqual(relativeTo(fx.tools, fx.allowedFile));
   });
 
   it('Glob from the project includes the allowed dir and skips its denied siblings', async () => {
     const fx = await fixture();
     const result = resultOf(await fx.tools.run('Glob', { pattern: '**/*.txt' }, { sandboxPolicy: fx.sandboxPolicy }));
-    expect(linesOf(result.output)).toEqual([fx.visibleFile, fx.allowedFile].sort());
+    expect(linesOf(result.output)).toEqual(relativeTo(fx.tools, fx.visibleFile, fx.allowedFile));
   });
 
   it('Glob skips a symlinked dir in the allowed dir that points into home/.momonga', async () => {
     const fx = await fixture();
     fs.symlinkSync(path.dirname(fx.token), path.join(fx.ok, 'linked'));
     const result = resultOf(await fx.tools.run('Glob', { pattern: '**/*.txt', path: fx.ok }, { sandboxPolicy: fx.sandboxPolicy }));
-    expect(linesOf(result.output)).toEqual([fx.allowedFile]);
+    expect(linesOf(result.output)).toEqual(relativeTo(fx.tools, fx.allowedFile));
   });
 
   it('Grep with the JS backend searches the allowed dir', async () => {
     const fx = await fixture();
     const result = resultOf(await grep(fx.tools, { path: fx.ok }, fx.sandboxPolicy, JS_BACKEND_PATH));
     expect(result.status).toBe('completed');
-    expect(linesOf(result.output)).toEqual([fx.allowedFile]);
+    expect(linesOf(result.output)).toEqual(relativeTo(fx.tools, fx.allowedFile));
   });
 
   it('Grep with the JS backend from the project finds the allowed file and skips denied siblings', async () => {
     const fx = await fixture();
     const result = resultOf(await grep(fx.tools, {}, fx.sandboxPolicy, JS_BACKEND_PATH));
-    expect(linesOf(result.output)).toEqual([fx.visibleFile, fx.allowedFile].sort());
+    expect(linesOf(result.output)).toEqual(relativeTo(fx.tools, fx.visibleFile, fx.allowedFile));
   });
 
   it('Grep with the JS backend skips a symlink in the allowed dir that points into home/.momonga', async () => {
     const fx = await fixture();
     fs.symlinkSync(fx.token, path.join(fx.ok, 'link.txt'));
     const result = resultOf(await grep(fx.tools, { path: fx.ok }, fx.sandboxPolicy, JS_BACKEND_PATH));
-    expect(linesOf(result.output)).toEqual([fx.allowedFile]);
+    expect(linesOf(result.output)).toEqual(relativeTo(fx.tools, fx.allowedFile));
   });
 });
 
@@ -106,14 +108,14 @@ describe.runIf(HAS_RG)('readAllowed inside a readDenied root (Grep with ripgrep 
     const fx = await fixture({ realSandbox: true });
     const result = resultOf(await grep(fx.tools, { path: fx.ok }, fx.sandboxPolicy, RG_PATH));
     expect(result.status).toBe('completed');
-    expect(linesOf(result.output)).toEqual([fx.allowedFile]);
+    expect(linesOf(result.output)).toEqual(relativeTo(fx.tools, fx.allowedFile));
   });
 
   it('from the project finds the allowed file and skips denied siblings', PROCESS_TIMEOUT, async () => {
     const fx = await fixture({ realSandbox: true });
     const result = resultOf(await grep(fx.tools, {}, fx.sandboxPolicy, RG_PATH));
     expect(result.status).toBe('completed');
-    expect(linesOf(result.output)).toEqual([fx.visibleFile, fx.allowedFile].sort());
+    expect(linesOf(result.output)).toEqual(relativeTo(fx.tools, fx.visibleFile, fx.allowedFile));
   });
 
   it('never returns content reached through a symlink in the allowed dir into home/.momonga', PROCESS_TIMEOUT, async () => {

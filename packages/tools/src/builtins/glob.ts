@@ -3,7 +3,7 @@ import path from 'node:path';
 import picomatch from 'picomatch';
 import { defineTool, ToolExecutionError } from '../types.ts';
 import { statIfExists } from './files.ts';
-import { canonicalPathOf, requireAbsolute } from './paths.ts';
+import { canonicalPathOf, resolvedPathOf, shownPath } from './paths.ts';
 import { walkFiles } from './walk.ts';
 
 type GlobInput = { pattern: string; path?: string };
@@ -20,32 +20,32 @@ export const globTool = defineTool<GlobInput>({
   name: 'Glob',
   tier: 'essential',
   description:
-    'Finds files by glob pattern (for example "**/*.ts"), matched relative to path. path defaults to the current working directory and must be an absolute directory. Respects .gitignore and .ignore, skips .git, includes dotfiles. Returns absolute paths, newest first, at most 100.',
+    'Finds files by glob pattern (for example "**/*.ts"), matched relative to path. path is a directory, defaults to the working directory, and a relative path is resolved against the working directory. Respects .gitignore and .ignore, skips .git, includes dotfiles. Returns paths relative to the working directory when inside it and absolute otherwise, newest first, at most 100.',
   kind: 'search',
   sideEffect: 'read_only',
   inputSchema: {
     type: 'object',
     properties: {
       pattern: { type: 'string', minLength: 1, description: 'Glob pattern to match files against' },
-      path: { type: 'string', description: 'Absolute directory to search; defaults to the current working directory' },
+      path: { type: 'string', description: 'Directory to search; a relative path is resolved against the working directory; defaults to the working directory' },
     },
     required: ['pattern'],
     additionalProperties: false,
   },
   timeoutMs: 60_000,
   title: (input) => `Glob ${input.pattern}`,
-  locations: (input) => [{ path: input.path ?? '.' }],
+  locations: (input, ctx) => [{ path: resolvedPathOf(ctx, input.path ?? '.') }],
   subject: (input, ctx) => ({
     kind: 'path',
     tool: 'Glob',
-    paths: [requireAbsolute('path', input.path ?? ctx.cwd)],
+    paths: [resolvedPathOf(ctx, input.path ?? '.')],
     access: 'read',
   }),
   execute: async (input, ctx) => {
-    const root = canonicalPathOf('path', input.path ?? ctx.session.cwd);
+    const root = canonicalPathOf(ctx, 'path', input.path ?? '.');
     const stat = await statIfExists(root);
-    if (stat === undefined) throw new ToolExecutionError(`Directory does not exist: ${root}`);
-    if (!stat.isDirectory()) throw new ToolExecutionError(`${root} is not a directory`);
+    if (stat === undefined) throw new ToolExecutionError(`Directory does not exist: ${shownPath(ctx, root)}`);
+    if (!stat.isDirectory()) throw new ToolExecutionError(`${shownPath(ctx, root)} is not a directory`);
     const isMatch = picomatch(input.pattern, { dot: true });
     const matches: string[] = [];
     for await (const entry of walkFiles({
@@ -62,7 +62,7 @@ export const globTool = defineTool<GlobInput>({
     }
     if (matches.length === 0) return { status: 'completed', output: 'No files found' };
     const sorted = await sortByMtimeThenPath(matches);
-    const shown = sorted.slice(0, MAX_RESULTS);
+    const shown = sorted.slice(0, MAX_RESULTS).map((file) => shownPath(ctx, file));
     return { status: 'completed', output: [...shown, ...(sorted.length > MAX_RESULTS ? [TRUNCATION_NOTICE] : [])].join('\n') };
   },
 });

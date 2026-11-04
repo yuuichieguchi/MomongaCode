@@ -168,7 +168,7 @@ describe('MCP tool definitions', () => {
   it('uses an mcp subject with the normalized tool part and the request timeout', async () => {
     const { set } = await modernSet({ requestTimeoutMs: 45_000 });
     const tool = set.get(DOTTED);
-    expect(tool?.subject({}, { cwd: '/', home: '/', roots: [] })).toEqual({ kind: 'mcp', server: 'modern', tool: DOTTED_PART });
+    expect(tool?.subject({}, { cwd: '/', workingDirectory: '/', home: '/', roots: [] })).toEqual({ kind: 'mcp', server: 'modern', tool: DOTTED_PART });
     expect(tool?.timeoutMs).toBe(45_000);
     expect(tool?.prepare).toBeUndefined();
     expect(tool?.reconcile).toBeUndefined();

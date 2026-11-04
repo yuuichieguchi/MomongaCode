@@ -48,6 +48,8 @@ const failedWith = (outcome: CallOutcome | undefined): string => {
   return (outcome as { result: { output: string } }).result.output;
 };
 
+const inProject = (tools: Builtins, file: string): string => path.relative(tools.layout.project, file);
+
 const blockedMessage = (target: string, ruleText: string): string => `Permission denied: ${target} is blocked by ${ruleText} (user: ${SOURCE})`;
 
 const stream = (text: string): AsyncIterable<Uint8Array> => ({
@@ -113,7 +115,7 @@ describe('executor guards read the user file rules', () => {
     const visible = tools.write('notes.txt', 'n');
     const outcome = await tools.run('Glob', { pattern: '**/*', path: tools.layout.project }, withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')]));
     const output = resultOf(outcome).output;
-    expect(output.split('\n')).toContain(visible);
+    expect(output.split('\n')).toContain(inProject(tools, visible));
     expect(output).not.toContain('.env');
   });
 
@@ -122,7 +124,7 @@ describe('executor guards read the user file rules', () => {
     tools.write('.env', 'secret');
     const visible = tools.write('notes.txt', 'secret');
     const outcome = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { env: { PATH: JS_BACKEND_PATH, LANG: 'C' } }));
-    expect(resultOf(outcome).output).toBe(visible);
+    expect(resultOf(outcome).output).toBe(inProject(tools, visible));
   });
 
   it('hands ripgrep a policy that carries fileRules and drops the denied records', async () => {
@@ -133,7 +135,7 @@ describe('executor guards read the user file rules', () => {
     expect(spawned).toHaveLength(1);
     expect(spawned[0]?.command.argv).toContain('--null');
     expect((spawned[0]?.policy as SandboxPolicy & { fileRules?: unknown }).fileRules).toBe((options.sandboxPolicy as SandboxPolicy & { fileRules: unknown }).fileRules);
-    expect(resultOf(outcome).output).toBe(path.join(project, 'notes.txt'));
+    expect(resultOf(outcome).output).toBe(inProject(tools, path.join(project, 'notes.txt')));
   });
 
   it.each([
@@ -148,7 +150,7 @@ describe('executor guards read the user file rules', () => {
     const output = resultOf(outcome).output;
     expect(output).not.toContain('.env');
     expect(output).not.toContain('\u0000');
-    expect(output).toBe(expected(project));
+    expect(output).toBe(expected(inProject(tools, project)));
   });
 
   it('resolves a relative record path against the ripgrep spawn cwd', async () => {
@@ -232,7 +234,8 @@ describe('Grep parses each --null record path up to its NUL', () => {
     ['content', 'newline_content', { '-B': 1 }],
   ] as const)('drops a Read-denied file whose name holds a newline in %s mode', async (mode, recording, extra) => {
     const { tools, project, notes } = await newlineFixture();
-    const expected = { files_with_matches: notes, count: `${notes}:1`, content: `${notes}:1:SECRET-VALUE in notes` }[mode];
+    const shownNotes = inProject(tools, notes);
+    const expected = { files_with_matches: shownNotes, count: `${shownNotes}:1`, content: `${shownNotes}:1:SECRET-VALUE in notes` }[mode];
     const outcome = await grepRecorded(tools, recorded(RECORDINGS[recording], project), [ruleOf(tools, 'deny', 'Read(proj/sub/**)')], { path: project, output_mode: mode, ...extra });
     const output = resultOf(outcome).output;
     expect(output).toBe(expected);
@@ -246,10 +249,12 @@ describe('Grep parses each --null record path up to its NUL', () => {
     ['content', 'newline_content', { '-B': 1 }],
   ] as const)('keeps a newline name as one record without a deny in %s mode', async (mode, recording, extra) => {
     const { tools, project, notes, odd } = await newlineFixture();
+    const shownNotes = inProject(tools, notes);
+    const shownOdd = inProject(tools, odd);
     const expected = {
-      files_with_matches: [notes, odd].join('\n'),
-      count: [`${notes}:1`, `${odd}:1`].join('\n'),
-      content: [`${notes}:1:SECRET-VALUE in notes`, '--', `${odd}-1-before`, `${odd}:2:SECRET-VALUE`].join('\n'),
+      files_with_matches: [shownNotes, shownOdd].join('\n'),
+      count: [`${shownNotes}:1`, `${shownOdd}:1`].join('\n'),
+      content: [`${shownNotes}:1:SECRET-VALUE in notes`, '--', `${shownOdd}-1-before`, `${shownOdd}:2:SECRET-VALUE`].join('\n'),
     }[mode];
     const outcome = await grepRecorded(tools, recorded(RECORDINGS[recording], project), [], { path: project, output_mode: mode, ...extra });
     expect(resultOf(outcome)).toMatchObject({ status: 'completed', output: expected });
@@ -263,7 +268,7 @@ describe('Grep parses each --null record path up to its NUL', () => {
     const outcome = await grepRecorded(tools, stdout(project), [], { path: project, output_mode: mode });
     const output = failedWith(outcome);
     expect(output).not.toMatch(/^Internal error/);
-    expect(output).toContain(`${project}/notes.txt`);
+    expect(output).toContain(`${inProject(tools, project)}/notes.txt`);
   });
 });
 
@@ -368,9 +373,10 @@ describe('one compilation per batch: every reader uses batch.sandboxPolicy.fileR
 describe('Grep(...) and Glob(...) entries apply to their own tool only (pins)', () => {
   it('a Grep deny drops the ripgrep records of a matching file', async () => {
     const { tools, project } = await grepFixture();
+    const shown = inProject(tools, project);
     const outcome = await grepRecorded(tools, recorded(RECORDINGS.content, project), [ruleOf(tools, 'deny', 'Grep(proj/sub/**)')], { pattern: 'secret', path: project, output_mode: 'content', '-C': 1 });
     expect(resultOf(outcome).output).toBe(
-      [`${project}/.env:1:TOKEN=secret-one`, `${project}/.env-2-plain`, '--', `${project}/notes.txt-1-before`, `${project}/notes.txt:2:secret in notes`, `${project}/notes.txt-3-after`].join('\n'),
+      [`${shown}/.env:1:TOKEN=secret-one`, `${shown}/.env-2-plain`, '--', `${shown}/notes.txt-1-before`, `${shown}/notes.txt:2:secret in notes`, `${shown}/notes.txt-3-after`].join('\n'),
     );
   });
 
@@ -386,15 +392,15 @@ describe('Grep(...) and Glob(...) entries apply to their own tool only (pins)', 
   it('a Glob deny hides the file from Glob and leaves Read and Grep alone', async () => {
     const { tools, secret, visible, options } = await secretsFixture('Glob(secrets/**)');
     expect(resultOf(await tools.run('Read', { file_path: secret }, options)).status).toBe('completed');
-    expect(resultOf(await tools.run('Glob', { pattern: '**/*', path: tools.layout.project }, options)).output).toBe(visible);
-    expect(resultOf(await tools.run('Grep', { pattern: 'KEY', path: tools.layout.project }, options)).output).toBe([visible, secret].join('\n'));
+    expect(resultOf(await tools.run('Glob', { pattern: '**/*', path: tools.layout.project }, options)).output).toBe(inProject(tools, visible));
+    expect(resultOf(await tools.run('Grep', { pattern: 'KEY', path: tools.layout.project }, options)).output).toBe([visible, secret].map((file) => inProject(tools, file)).join('\n'));
   });
 
   it('a Grep deny hides the file from Grep and leaves Read and Glob alone', async () => {
     const { tools, secret, visible, options } = await secretsFixture('Grep(secrets/**)');
     expect(resultOf(await tools.run('Read', { file_path: secret }, options)).status).toBe('completed');
-    expect(resultOf(await tools.run('Glob', { pattern: '**/*', path: tools.layout.project }, options)).output).toBe([visible, secret].join('\n'));
-    expect(resultOf(await tools.run('Grep', { pattern: 'KEY', path: tools.layout.project }, options)).output).toBe(visible);
+    expect(resultOf(await tools.run('Glob', { pattern: '**/*', path: tools.layout.project }, options)).output).toBe([visible, secret].map((file) => inProject(tools, file)).join('\n'));
+    expect(resultOf(await tools.run('Grep', { pattern: 'KEY', path: tools.layout.project }, options)).output).toBe(inProject(tools, visible));
   });
 });
 

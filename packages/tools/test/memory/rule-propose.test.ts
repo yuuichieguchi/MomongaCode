@@ -4,7 +4,7 @@ import type { AnyTool, GovernancePort, MemoryStorePort, RuleProposalInput } from
 
 const INPUT: RuleProposalInput = { kind: 'constraint', target: 'pandas', text: 'do not use pandas', scope: 'project', paths: ['src/**'], enforcement: { behavior: 'deny', rule: 'Bash(pip install pandas)' }, supersedes: [] };
 
-const CTX = { cwd: '/work/a', home: '/home/u', roots: ['/work/a'] };
+const CTX = { cwd: '/work/a', workingDirectory: '/work/a', home: '/home/u', roots: ['/work/a'] };
 
 const canonicalise = (absolute: string) => ({ ok: true as const, path: absolute });
 
@@ -60,7 +60,7 @@ describe('RulePropose', () => {
 
   it('shows the full text, target, scope and enforcement in the question', () => {
     const longText = `${'never call the production database directly '.repeat(20)}end-of-text`;
-    const title = tool().title({ ...INPUT, text: longText } as never);
+    const title = tool().title({ ...INPUT, text: longText } as never, CTX);
     expect(title).toContain(longText);
     expect(title).toContain('pandas');
     expect(title).toContain('src/**');

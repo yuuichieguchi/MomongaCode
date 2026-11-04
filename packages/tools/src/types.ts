@@ -31,14 +31,18 @@ export type ToolPending = { status: 'pending'; awaits: ToolAwait; wakeAt?: numbe
 
 export type ToolSessionState = {
   cwd: string;
+  workingDirectory: string;
   readLedger: Map<string, { sha256: string; mtimeMs: number }>;
 };
 
 export type SubjectContext = {
   cwd: string;
+  workingDirectory: string;
   home: string;
   roots: readonly string[];
 };
+
+export type DisplayContext = Pick<SubjectContext, 'cwd' | 'workingDirectory'>;
 
 export type ToolResume = {
   checkpoint: Record<string, unknown> | undefined;
@@ -108,8 +112,8 @@ export type ToolBody<Input> = {
   companionOf?: string;
   schemaMode?: 'strict' | 'lenient';
   timeoutMs: number | ((input: Input) => number);
-  title(input: Input): string;
-  locations?(input: Input): { path: string; line?: number }[];
+  title(input: Input, ctx: DisplayContext): string;
+  locations?(input: Input, ctx: DisplayContext): { path: string; line?: number }[];
   prepare?(input: Input, ctx: ToolContext): Promise<Record<string, unknown>>;
   execute(input: Input, ctx: ToolContext, prepared: Record<string, unknown> | undefined): Promise<ToolResult | ToolPending>;
   reconcile?(input: Input, record: ToolIdempotencyRecord, ctx: ReconcileContext): Promise<ReconcileResult>;

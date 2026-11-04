@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import path from 'node:path';
 import { commandSpecsFor, readPathsOfCommand } from '@momonga/policy';
 import { findHolders, reconcileProcessGroup, stoppedCommandResult } from '@momonga/foundation';
 import { defineTool, ToolExecutionError } from '../types.ts';
@@ -92,7 +93,7 @@ export const bashTool = defineTool<BashInput>({
   timeoutMs: (input) => Math.min(input.run_in_background === true ? DEFAULT_TIMEOUT_MS : (input.timeout ?? DEFAULT_TIMEOUT_MS), MAX_TIMEOUT_MS),
   title: (input) => input.description ?? input.command.slice(0, TITLE_CHARS),
   subject: (input) => ({ kind: 'command', tool: 'Bash', command: input.command }),
-  locations: (input) => readPathsOfCommand(input.command, commandSpecsFor(process.platform)).map((target) => ({ path: target })),
+  locations: (input, ctx) => readPathsOfCommand(input.command, commandSpecsFor(process.platform)).map((target) => ({ path: path.isAbsolute(target) ? target : path.resolve(ctx.cwd, target) })),
   execute: async (input, ctx) => {
     if (input.run_in_background === true) return startBackgroundJob(input, ctx);
     const marker = requireMarker(ctx);

@@ -10,7 +10,7 @@ import type { ToolContext } from '../types.ts';
 import { extensionsForType } from './file-types.ts';
 import { looksBinary, regularFileProblem, statIfExists } from './files.ts';
 import { sortByMtimeThenPath } from './glob.ts';
-import { canonicalPathOf, requireAbsolute } from './paths.ts';
+import { canonicalPathOf, resolvedPathOf, shownPath } from './paths.ts';
 import { isPermissionError, reachableAllowedRoots, walkFiles } from './walk.ts';
 
 type OutputMode = 'content' | 'files_with_matches' | 'count';
@@ -130,7 +130,7 @@ const nextRecord = (stdout: string, position: number, mode: OutputMode): { recor
   return { record: { recordPath, payload: stdout.slice(nul + 1, end) }, next: end + 1 };
 };
 
-const recordsOf = (stdout: string, mode: OutputMode, input: GrepInput, visible: (recordPath: string) => boolean): string[] => {
+const recordsOf = (stdout: string, mode: OutputMode, input: GrepInput, visible: (recordPath: string) => boolean, show: (recordPath: string) => string): string[] => {
   const groups: string[][] = [[]];
   const entries: string[] = [];
   for (let position = 0; position < stdout.length; ) {
@@ -144,13 +144,13 @@ const recordsOf = (stdout: string, mode: OutputMode, input: GrepInput, visible: 
     if (mode === 'files_with_matches') {
       if (visible(recordPath)) entries.push(recordPath);
     } else if (mode === 'count') {
-      if (!COUNT_PAYLOAD.test(payload)) throw malformedRecord(recordPath);
-      if (visible(recordPath)) entries.push(`${recordPath}:${payload}`);
+      if (!COUNT_PAYLOAD.test(payload)) throw malformedRecord(show(recordPath));
+      if (visible(recordPath)) entries.push(`${show(recordPath)}:${payload}`);
     } else {
       const parsed = CONTENT_PAYLOAD.exec(payload);
-      if (parsed === null) throw malformedRecord(recordPath);
+      if (parsed === null) throw malformedRecord(show(recordPath));
       const [, lineNumber, kind, text] = parsed as unknown as [string, string, string, string];
-      if (visible(recordPath)) (groups[groups.length - 1] as string[]).push(lineNumbersWanted(input) ? `${recordPath}${kind}${lineNumber}${kind}${text}` : `${recordPath}${kind}${text}`);
+      if (visible(recordPath)) (groups[groups.length - 1] as string[]).push(lineNumbersWanted(input) ? `${show(recordPath)}${kind}${lineNumber}${kind}${text}` : `${show(recordPath)}${kind}${text}`);
     }
   }
   if (mode !== 'content') return entries;
@@ -185,12 +185,21 @@ const searchWithRipgrep = async (
     }
     return verdict;
   };
+  const shownCache = new Map<string, string>();
+  const show = (recordPath: string): string => {
+    let shown = shownCache.get(recordPath);
+    if (shown === undefined) {
+      shown = shownPath(ctx, recordPath);
+      shownCache.set(recordPath, shown);
+    }
+    return shown;
+  };
   const [stdout, stderr, exit] = await Promise.all([collect(child.stdout), collect(child.stderr), child.exited]);
   if (exit.code === 1 && stdout === '') return { entries: [], unreadable: false };
-  if (exit.code === 0) return { entries: recordsOf(stdout, mode, input, visible), unreadable: false };
+  if (exit.code === 0) return { entries: recordsOf(stdout, mode, input, visible, show), unreadable: false };
   if (exit.code === 2) {
     const ioErrorsOnly = lineList(stderr).every((line) => line.includes('os error'));
-    if (stdout !== '') return { entries: recordsOf(stdout, mode, input, visible), unreadable: true };
+    if (stdout !== '') return { entries: recordsOf(stdout, mode, input, visible, show), unreadable: true };
     if (ioErrorsOnly) return { entries: [], unreadable: true };
   }
   const reason = exit.signal === null ? `exit code ${exit.code}` : `signal ${exit.signal}`;
@@ -313,11 +322,11 @@ const searchWithJavaScript = async (input: GrepInput, mode: OutputMode, target: 
     const hits = matchedLineNumbers(text, lines, expression, multiline);
     if (hits.length === 0) continue;
     if (mode === 'files_with_matches') files.push(file);
-    else if (mode === 'count') entries.push(`${file}:${hits.length}`);
-    else groups.push(...splitGroups(contentLines(file, lines, hits, input)));
+    else if (mode === 'count') entries.push(`${shownPath(ctx, file)}:${hits.length}`);
+    else groups.push(...splitGroups(contentLines(shownPath(ctx, file), lines, hits, input)));
   }
 
-  if (mode === 'files_with_matches') return { entries: await sortByMtimeThenPath(files), unreadable };
+  if (mode === 'files_with_matches') return { entries: files, unreadable };
   if (mode === 'count') return { entries, unreadable };
   const joined: string[] = [];
   groups.forEach((group, index) => {
@@ -331,14 +340,14 @@ export const grepTool = defineTool<GrepInput>({
   name: 'Grep',
   tier: 'essential',
   description:
-    'Searches file contents with a regular expression (ripgrep syntax when available). path is an absolute file or directory and defaults to the current working directory. output_mode: files_with_matches (default, newest first), content (path:line:text with optional -A/-B/-C context), or count. Respects .gitignore and .ignore, skips .git, includes dotfiles. head_limit and offset page through the output entries.',
+    'Searches file contents with a regular expression (ripgrep syntax when available). path is a file or directory, defaults to the working directory, and a relative path is resolved against the working directory. output_mode: files_with_matches (default, newest first), content (path:line:text with optional -A/-B/-C context), or count. Respects .gitignore and .ignore, skips .git, includes dotfiles. head_limit and offset page through the output entries.',
   kind: 'search',
   sideEffect: 'read_only',
   inputSchema: {
     type: 'object',
     properties: {
       pattern: { type: 'string', minLength: 1, description: 'Regular expression to search for' },
-      path: { type: 'string', description: 'Absolute file or directory to search; defaults to the current working directory' },
+      path: { type: 'string', description: 'File or directory to search; a relative path is resolved against the working directory; defaults to the working directory' },
       glob: { type: 'string', description: 'Glob filter for file names, for example "*.js"' },
       type: { type: 'string', description: 'File type filter, for example "ts" or "py"' },
       output_mode: { type: 'string', enum: ['content', 'files_with_matches', 'count'] },
@@ -356,16 +365,16 @@ export const grepTool = defineTool<GrepInput>({
   },
   timeoutMs: 60_000,
   title: (input) => `Grep ${input.pattern}`,
-  locations: (input) => [{ path: input.path ?? '.' }],
+  locations: (input, ctx) => [{ path: resolvedPathOf(ctx, input.path ?? '.') }],
   subject: (input, ctx) => {
     if (input.type !== undefined) extensionsForType(input.type);
-    return { kind: 'path', tool: 'Grep', paths: [requireAbsolute('path', input.path ?? ctx.cwd)], access: 'read' };
+    return { kind: 'path', tool: 'Grep', paths: [resolvedPathOf(ctx, input.path ?? '.')], access: 'read' };
   },
   execute: async (input, ctx) => {
-    const target = canonicalPathOf('path', input.path ?? ctx.session.cwd);
+    const target = canonicalPathOf(ctx, 'path', input.path ?? '.');
     const stat = await statIfExists(target);
-    if (stat === undefined) throw new ToolExecutionError(`Path does not exist: ${target}`);
-    const problem = stat.isDirectory() ? undefined : regularFileProblem(stat, target);
+    if (stat === undefined) throw new ToolExecutionError(`Path does not exist: ${shownPath(ctx, target)}`);
+    const problem = stat.isDirectory() ? undefined : regularFileProblem(stat, shownPath(ctx, target));
     if (problem !== undefined) throw new ToolExecutionError(problem);
     const mode = input.output_mode ?? 'files_with_matches';
     const ripgrep = resolveRipgrep(ctx.env['PATH']);
@@ -373,7 +382,7 @@ export const grepTool = defineTool<GrepInput>({
       ripgrep === undefined
         ? await searchWithJavaScript(input, mode, target, stat.isDirectory(), ctx)
         : await searchWithRipgrep(ripgrep, input, mode, target, stat.isDirectory(), ctx);
-    const ordered = mode === 'files_with_matches' && ripgrep !== undefined ? await sortByMtimeThenPath(found.entries) : found.entries;
+    const ordered = mode === 'files_with_matches' ? (await sortByMtimeThenPath(found.entries)).map((file) => shownPath(ctx, file)) : found.entries;
     const skipped = ordered.slice(input.offset ?? 0);
     const limited = input.head_limit === undefined || input.head_limit === 0 ? skipped : skipped.slice(0, input.head_limit);
     const lines = limited.length === 0 ? ['No matches found'] : limited;

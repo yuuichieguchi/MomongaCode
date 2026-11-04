@@ -104,7 +104,7 @@ describe('the Agent tool', () => {
     expect(tool.description).toContain('- r: Reviews code');
     expect(tool.inputSchema).toMatchObject({ properties: { subagent_type: { enum: ['r'] } }, required: ['description', 'prompt', 'subagent_type'] });
     expect(tool.sideEffect).toBe('read_only');
-    expect(tool.subject({}, { cwd: '/', home: HOME, roots: [] })).toEqual({ kind: 'none', tool: 'Agent' });
+    expect(tool.subject({}, { cwd: '/', workingDirectory: '/', home: HOME, roots: [] })).toEqual({ kind: 'none', tool: 'Agent' });
   });
 
   it('asks to wait for a running child, keyed by the call, until the run deadline', async () => {
