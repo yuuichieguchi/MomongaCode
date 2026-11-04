@@ -53,11 +53,9 @@ type OutputState = {
   tokens: number;
   handle: string | undefined;
   persisted: boolean;
-  recordedHandle: string | undefined;
   reference: OutputReference | undefined;
   mode: 'full' | 'truncated' | 'omitted';
   renderedTokens: number;
-  frozen: boolean;
   keptChars: number | undefined;
 };
 
@@ -84,6 +82,7 @@ type Head = {
   pinnedTokens: number;
   ceiling: number;
   room: number;
+  frozen: InputItem[];
 };
 
 export type MaxInputBounds = {
@@ -129,9 +128,15 @@ const metering = (input: BuildContextInput, ports: BuildContextPorts, tools: rea
   const { capabilities } = input;
   const budgetOf = (counted: MeterCount) => budgetFor(capabilities, counted.underAt(counted.inputTokens));
   const fits = (counted: MeterCount): boolean => counted.inputTokens <= budgetOf(counted).I;
-  const countInput = (items: readonly InputItem[]): Promise<MeterCount> => ports.meter.count({ input: items, tools });
+  const countInput = (items: readonly InputItem[], sent?: true): Promise<MeterCount> =>
+    ports.meter.count({ input: items, tools, ...(sent === undefined ? {} : { sent }) });
   return { tools: [...tools], budgetOf, fits, countInput };
 };
+
+const frozenPorts = (ports: BuildContextPorts, frozen: readonly InputItem[]): BuildContextPorts => ({
+  ...ports,
+  meter: { ...ports.meter, count: (request) => ports.meter.count({ ...request, frozen: request.frozen ?? frozen }) },
+});
 
 const breakdownOf = async (
   ports: BuildContextPorts,
@@ -158,12 +163,12 @@ const breakdownOf = async (
 const capacityOver = async (
   sized: Capabilities,
   ports: BuildContextPorts,
-  items: readonly InputItem[],
+  frozen: readonly InputItem[],
   offered: readonly FunctionTool[],
 ): Promise<number> => {
   let smallest = Number.POSITIVE_INFINITY;
   for (const meter of [ports.meter, ...(ports.fallbackMeters ?? [])]) {
-    const counted = await meter.count({ input: items, tools: offered });
+    const counted = await meter.count({ input: frozen, tools: offered, frozen });
     smallest = Math.min(smallest, capacityFor(sized, counted.underAt));
   }
   return smallest;
@@ -171,11 +176,11 @@ const capacityOver = async (
 
 const admittedFloor = (input: BuildContextInput): boolean => input.observedCapacity === true && input.pinnedTokens !== undefined;
 
-const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): Promise<Head> => {
+const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContextPorts): Promise<Head> => {
   const { capabilities, sources } = input;
   const candidates = candidateToolsOf(input);
   const discovered = await discoverInstructions({
-    reader: ports.instructions,
+    reader: suppliedPorts.instructions,
     home: input.home,
     projectRoot: input.projectRoot,
     trusted: input.trusted,
@@ -195,6 +200,8 @@ const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): 
   const governing = governingMessageOf(sources.governing);
   const sized = input.calibration === undefined ? capabilities : withCalibration(capabilities, input.calibration);
   const observed = input.observedCapacity === true;
+  const frozen = await frozenInputOf(input, suppliedPorts, { discovered, pinnedLayers, governing, task });
+  const ports = frozenPorts(suppliedPorts, frozen);
   const countWith = (offered: readonly FunctionTool[]): Promise<MeterCount> =>
     ports.meter.count({ input: [...pinnedLayers, ...governing, task], tools: offered });
   const fitsFloor = (counted: MeterCount): boolean => metering(input, ports, candidates).fits(counted) && counted.inputTokens <= toolFloor;
@@ -207,9 +214,7 @@ const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): 
   };
   const eligible = candidates.filter((tool) => standsWith(tool, candidates));
   const toolFloor =
-    input.pinnedTokens !== undefined
-      ? 0
-      : pinnedFloorAt(observed ? await capacityOver(sized, ports, [...pinnedLayers, ...governing], eligible) : inputCeilingFor(sized));
+    input.pinnedTokens !== undefined ? 0 : pinnedFloorAt(observed ? await capacityOver(sized, ports, frozen, eligible) : inputCeilingFor(sized));
   let tools = eligible;
   let leftOut: string[] = [];
   let pinnedCounted: MeterCount | undefined;
@@ -231,7 +236,7 @@ const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): 
     pinnedCounted = await countWith(tools);
   }
   const { fits } = metering(input, ports, tools);
-  const ceiling = observed ? await capacityOver(sized, ports, [...pinnedLayers, ...governing, task], tools) : inputCeilingFor(sized);
+  const ceiling = observed ? await capacityOver(sized, ports, frozen, tools) : inputCeilingFor(sized);
   const toolNotices: ContextNotice[] = [];
   if (leftOut.length > 0) {
     toolNotices.push({
@@ -267,6 +272,7 @@ const measureHead = async (input: BuildContextInput, ports: BuildContextPorts): 
     pinnedTokens,
     ceiling,
     room,
+    frozen,
   };
 };
 
@@ -306,22 +312,113 @@ const journalArrivalsOf = (input: BuildContextInput, discovered: DiscoveredInstr
   });
 };
 
+const candidateArrivalsOf = (input: BuildContextInput, discovered: DiscoveredInstructions): ArrivalEntry[] =>
+  input.layout === 'cachePrefix'
+    ? journalArrivalsOf(input, discovered)
+    : [
+        ...discovered.nested.map(instructionArrivalOf),
+        ...input.sources.activatedSkills.map((skill) => skillArrivalOf(skill.name, skill.content)),
+      ];
+
+const layerItemsOf = (
+  appendOnly: boolean,
+  pinnedLayers: readonly InputItem[],
+  governing: readonly InputItem[],
+  memory: MessageInputItem | undefined,
+  arrivals: readonly ArrivalEntry[],
+): InputItem[] =>
+  appendOnly
+    ? [...pinnedLayers, ...(memory === undefined ? [] : [memory]), ...arrivals.map((entry) => entry.message), ...governing]
+    : [...pinnedLayers, ...governing, ...(memory === undefined ? [] : [memory]), ...arrivals.map((entry) => entry.message)];
+
+const pinnedMemoryMessageOf = (input: BuildContextInput): MessageInputItem | undefined => {
+  const ranked = input.sources.memories ?? [];
+  if (input.pinnedMemoryIds === undefined || ranked.length === 0) return undefined;
+  const chosen = input.pinnedMemoryIds.flatMap((id) => ranked.filter((memory) => memory.id === id));
+  return { type: 'message', role: 'user', content: renderMemories(chosen, ranked.length - chosen.length) };
+};
+
+const historyItemsOf = (sources: BuildContextInput['sources']) =>
+  retainedHistoryOf(sources.history, sources.summary).map((entry) => {
+    const item = frozenItem(entry.item);
+    const held = heldSkillOf(item, sources.activatedSkills) !== undefined;
+    return {
+      seq: entry.seq,
+      item: pointToHeldSkill(item, sources.activatedSkills),
+      ...(entry.handle === undefined || held ? {} : { handle: entry.handle }),
+    };
+  });
+
+type FrozenSlot = { item: InputItem; output?: { callId: string; text: string; full: boolean; original: FunctionCallOutputInputItem } };
+
+const frozenInputOf = async (
+  input: BuildContextInput,
+  ports: BuildContextPorts,
+  parts: { discovered: DiscoveredInstructions; pinnedLayers: readonly InputItem[]; governing: readonly InputItem[]; task: InputItem },
+): Promise<InputItem[]> => {
+  const { sources, evicted, forms, renderedFull } = input;
+  const entries = historyItemsOf(sources);
+  const callNames = new Map<string, string>();
+  for (const entry of entries) if (entry.item.type === 'function_call') callNames.set(entry.item.call_id, entry.item.name);
+  const countContextFor = (callId: string): ItemCountContext => {
+    const name = callNames.get(callId);
+    return { callNames: name === undefined ? {} : { [callId]: name }, withTools: input.tools !== 'none' };
+  };
+  const slots: FrozenSlot[] = [];
+  let complete = true;
+  for (const entry of entries) {
+    const original = entry.item;
+    if (original.type !== 'function_call_output') {
+      slots.push({ item: original });
+      continue;
+    }
+    const callId = original.call_id;
+    const text = outputTextOf(original.output);
+    const handle = 'handle' in entry ? entry.handle : ports.blobs.handleFor(text);
+    const kept = forms?.get(callId);
+    if (evicted.has(callId)) {
+      const tokens = await ports.meter.countItem(original, countContextFor(callId));
+      slots.push({ item: withOutput(original, omittedMarker(tokens, handle)), output: { callId, text, full: false, original } });
+    } else if (kept !== undefined) {
+      const tokens = await ports.meter.countItem(original, countContextFor(callId));
+      slots.push({ item: withOutput(original, headAndTail(text, kept, truncatedMarker(tokens, handle))), output: { callId, text, full: false, original } });
+    } else if (renderedFull?.has(callId) === true) {
+      slots.push({ item: original, output: { callId, text, full: true, original } });
+    } else {
+      complete = false;
+      break;
+    }
+  }
+  if (input.outputFormatters?.includes('identicalOutput') === true) {
+    const outputs = slots.flatMap((slot, index) => (slot.output === undefined ? [] : [{ index, ...slot.output }]));
+    const referents = identicalReferents(outputs.map(({ callId, text, full }) => ({ callId, text, full })));
+    for (const { index, callId, text, original } of outputs) {
+      const referent = referents.get(callId);
+      if (referent !== undefined) (slots[index] as FrozenSlot).item = withOutput(original, identicalMarker(referent, ports.blobs.handleFor(text)));
+    }
+  }
+  const items = slots.map((slot) => slot.item);
+  const taskAt = entries.findIndex((entry) => entry.seq > sources.taskSeq);
+  const ordered =
+    taskAt < 0 ? (complete ? [...items, parts.task] : items) : taskAt <= items.length ? [...items.slice(0, taskAt), parts.task, ...items.slice(taskAt)] : items;
+  const summaryItems: InputItem[] = sources.summary === undefined ? [] : [frozenItem(sources.summary.item)];
+  const layers = layerItemsOf(
+    input.layout === 'cachePrefix',
+    parts.pinnedLayers,
+    parts.governing,
+    pinnedMemoryMessageOf(input),
+    candidateArrivalsOf(input, parts.discovered),
+  );
+  return [...layers, ...summaryItems, ...ordered];
+};
+
 const fitLayers = async (input: BuildContextInput, ports: BuildContextPorts, head: Head): Promise<FittedLayers> => {
-  const { sources } = input;
   const { tools, fits, countInput } = metering(input, ports, head.tools);
   const { systemMessage, task, pinnedLayers, governing, notices, ceiling } = head;
   const appendOnly = input.layout === 'cachePrefix';
   const admitted = admittedFloor(input);
-  let arrivals: ArrivalEntry[] = appendOnly
-    ? journalArrivalsOf(input, head.discovered)
-    : [
-        ...head.discovered.nested.map(instructionArrivalOf),
-        ...sources.activatedSkills.map((skill) => skillArrivalOf(skill.name, skill.content)),
-      ];
-  const layersOf = (memory: MessageInputItem | undefined): InputItem[] =>
-    appendOnly
-      ? [...pinnedLayers, ...(memory === undefined ? [] : [memory]), ...arrivals.map((entry) => entry.message), ...governing]
-      : [...pinnedLayers, ...governing, ...(memory === undefined ? [] : [memory]), ...arrivals.map((entry) => entry.message)];
+  let arrivals: ArrivalEntry[] = candidateArrivalsOf(input, head.discovered);
+  const layersOf = (memory: MessageInputItem | undefined): InputItem[] => layerItemsOf(appendOnly, pinnedLayers, governing, memory, arrivals);
   const layersWith = (memory: MessageInputItem | undefined): InputItem[] => layersOf(memory);
   const floorOf = (layerItems: readonly InputItem[]): InputItem[] => [...layerItems, task];
   const exceeds = (counted: MeterCount): boolean => !fits(counted) || counted.inputTokens > ceiling;
@@ -380,7 +477,8 @@ const fitLayers = async (input: BuildContextInput, ports: BuildContextPorts, hea
 };
 
 export const measureLayers = async (input: BuildContextInput, ports: BuildContextPorts): Promise<void> => {
-  await fitLayers(input, ports, await measureHead(input, ports));
+  const head = await measureHead(input, ports);
+  await fitLayers(input, frozenPorts(ports, head.frozen), head);
 };
 
 export const measurePinned = async (input: BuildContextInput, ports: BuildContextPorts): Promise<PinnedMeasure> => {
@@ -418,9 +516,9 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   if (!Number.isInteger(requestedLevel) || requestedLevel < 0) throw new RangeError(`level must be a non-negative integer, received ${requestedLevel}`);
 
   const head = await measureHead(input, ports);
+  ports = frozenPorts(ports, head.frozen);
   const { tools, budgetOf, fits, countInput } = metering(input, ports, head.tools);
-  const { discovered, notices, systemMessage, task, pinnedDigest, pinnedTokens } = head;
-  let ceiling = head.ceiling;
+  const { discovered, notices, systemMessage, task, pinnedDigest, pinnedTokens, ceiling } = head;
 
   const fitted = await fitLayers(input, ports, head);
   const { layersWith, floorOf, exceeds } = fitted;
@@ -437,11 +535,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   let memoryCount = 0;
   if (input.pinnedMemoryIds !== undefined && rankedMemories.length > 0) {
     memoryCount = memoryCandidates.length;
-    memoryMessage = {
-      type: 'message',
-      role: 'user',
-      content: renderMemories(memoryCandidates, rankedMemories.length - memoryCount),
-    };
+    memoryMessage = pinnedMemoryMessageOf(input);
     if (memoryCount < rankedMemories.length) {
       notices.push({
         code: 'memories_dropped',
@@ -491,10 +585,9 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     sources.summary === undefined || sources.workingState === undefined ? [] : [workingStateMessage(sources.workingState)];
   const prefixDigest = chainTail(digestChain({ scope: 'prefix', tools }, [...layers, ...summaryItems]));
 
-  const sized = input.calibration === undefined ? capabilities : withCalibration(capabilities, input.calibration);
-  let roomLeft = ceiling - floorTokens;
-  let itemCap = input.itemCap ?? itemCapFor(capabilities, roomLeft);
-  let summaryCap = summaryTokenCapFor(capabilities, roomLeft);
+  const roomLeft = ceiling - floorTokens;
+  const itemCap = input.itemCap ?? itemCapFor(capabilities, roomLeft);
+  const summaryCap = summaryTokenCapFor(capabilities, roomLeft);
   const callNames = new Map<string, string>();
   const countContextFor = (callId: string): ItemCountContext => {
     const name = callNames.get(callId);
@@ -559,7 +652,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
 
   const measureAssembled = async (): Promise<MeterCount> => {
     await refreshReferences();
-    return countInput(assemble());
+    return countInput(assemble(), true);
   };
 
   const referrersAfterEviction = async (referrers: readonly OutputState[]): Promise<number> => {
@@ -598,25 +691,16 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     reports.delete(state.callId);
   };
 
-  const rerenderFrom = async (firstSlot: number, onlyNew: boolean): Promise<void> => {
+  const rerenderFrom = async (firstSlot: number): Promise<void> => {
     for (const [index, slot] of slots.entries()) {
       const state = slot.output;
-      if (index < firstSlot || state === undefined || state.mode === 'omitted' || (onlyNew && state.frozen)) continue;
-      state.frozen = false;
+      if (index < firstSlot || state === undefined || state.mode === 'omitted') continue;
       if (state.tokens > itemCap) await truncateSlot(slot, state);
       else if (state.mode === 'truncated') restoreFull(slot, state);
     }
   };
 
-  const historyItems = retainedHistoryOf(sources.history, sources.summary).map((entry) => {
-    const item = frozenItem(entry.item);
-    const held = heldSkillOf(item, sources.activatedSkills) !== undefined;
-    return {
-      seq: entry.seq,
-      item: pointToHeldSkill(item, sources.activatedSkills),
-      ...(entry.handle === undefined || held ? {} : { handle: entry.handle }),
-    };
-  });
+  const historyItems = historyItemsOf(sources);
 
   for (const entry of historyItems) {
     if (entry.item.type === 'function_call') callNames.set(entry.item.call_id, entry.item.name);
@@ -648,11 +732,9 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
         tokens,
         handle: 'handle' in entry ? entry.handle : undefined,
         persisted: 'handle' in entry,
-        recordedHandle: 'handle' in entry ? entry.handle : undefined,
         reference: undefined,
         mode: 'full',
         renderedTokens: tokens,
-        frozen: false,
         keptChars: undefined,
       };
       slot.output = state;
@@ -668,9 +750,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
         await ensureHandle(state);
         slot.item = await renderKept(state, state.handle as string, frozenKept);
         state.mode = 'truncated';
-        state.frozen = true;
       } else if (input.renderedFull?.has(state.callId) === true) {
-        state.frozen = true;
       } else if (tokens > itemCap) {
         await truncateSlot(slot, state);
       }
@@ -718,8 +798,8 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     for (const slot of slots) {
       const state = slot.output;
       if (state?.reference === undefined) continue;
+      if (input.recordedReferences.has(state.callId)) continue;
       const handle = blobs.handleFor(state.text);
-      if (state.recordedHandle === handle) continue;
       await blobs.put(state.text, { mediaType: BLOB_MEDIA_TYPE });
       referenceReports.push({ callId: state.callId, handle, kind: 'reference' });
     }
@@ -827,17 +907,6 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   const cachePrefix = input.layout === 'cachePrefix';
   const admitted = admittedFloor(input);
   let total = await measureAssembled();
-  if (input.observedCapacity === true) {
-    ceiling = await capacityOver(sized, ports, assemble(), tools);
-    roomLeft = ceiling - floorTokens;
-    const observedItemCap = input.itemCap ?? itemCapFor(capabilities, roomLeft);
-    summaryCap = summaryTokenCapFor(capabilities, roomLeft);
-    if (observedItemCap !== itemCap) {
-      itemCap = observedItemCap;
-      await rerenderFrom(0, true);
-      total = await measureAssembled();
-    }
-  }
   const inputBudgetAtZero = budgetFor(capabilities, 0).I;
   const boundOfBuild = (tokens: number): number => counts.reduce((widest, counted) => Math.max(widest, counted.underAt(tokens)), 0);
   const exactHighMark = (): number => floorTokens + floorRatio(compactAt, ceiling - floorTokens);
@@ -864,12 +933,12 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
       while (await evictOldest()) continue;
     } else {
       while ((total.inputTokens > lowMark() || !fits(total)) && (await evictOldest())) {
-        if (input.forms !== undefined || input.renderedFull !== undefined) await rerenderFrom(firstEvicted as number, false);
+        if (input.forms !== undefined || input.renderedFull !== undefined) await rerenderFrom(firstEvicted as number);
         total = await measureAssembled();
       }
     }
     if (cachePrefix) {
-      if (firstEvicted !== undefined && (input.forms !== undefined || input.renderedFull !== undefined)) await rerenderFrom(firstEvicted, false);
+      if (firstEvicted !== undefined && (input.forms !== undefined || input.renderedFull !== undefined)) await rerenderFrom(firstEvicted);
       total = await measureAssembled();
     }
     highMark = await highMarkNow();
@@ -938,7 +1007,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   for (const item of trailing) layerByItem.set(item, 'notices');
   layerByItem.set(systemMessage, 'system');
   const tagged = finalInput.map((item): TaggedItem => ({ item, layer: layerByItem.get(item) ?? historyLayerOf(item) }));
-  const anatomy = await anatomyOf(meter, tools, tagged, total, (item) =>
+  const anatomy = await anatomyOf(ports.meter, tools, tagged, total, (item) =>
     countContextFor(item.type === 'function_call_output' ? item.call_id : ''),
   );
   return {

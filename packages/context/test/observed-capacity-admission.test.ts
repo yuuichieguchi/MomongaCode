@@ -49,6 +49,7 @@ const buildWith = (capabilities: Capabilities, under: UnderRule, { memories, fil
     model: MODEL,
     sources: sourcesWith({ history: [user(1, 'question')], ...(memories === undefined ? {} : { memories }) }),
     evicted: new Set<string>(),
+    recordedReferences: new Set<string>(),
     touchedPaths: files === undefined ? [] : [touchedFile('/proj/src/file.ts')],
     trusted: true,
     projectRoot: PROJECT,

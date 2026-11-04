@@ -1,4 +1,4 @@
-import { PinnedOverflowError, formatToolOutput } from '@momonga/context';
+import { PinnedOverflowError, formatToolOutput, formattedHeader } from '@momonga/context';
 import { canonicalJson, parseJsonOrText } from '@momonga/foundation';
 import { termsOf } from '@momonga/protocol';
 import type { PermissionOption, RunEventPayload, RunState, ToolAwait } from '@momonga/protocol';
@@ -84,7 +84,10 @@ const batchFormatterOf = (ctx: ClaimContext): BatchOutputFormatter | undefined =
   const enabled = ctx.token.outputFormatters;
   if (enabled.length === 0) return undefined;
   const terms = termsOf(taskOf(ctx).text);
-  return ({ output, tool }) => formatToolOutput({ output, tool, enabled, terms });
+  return ({ output, tool }) => {
+    const formatted = formatToolOutput({ output, tool, enabled, terms });
+    return formatted === undefined ? undefined : { ...formatted, header: (handle) => formattedHeader(formatted.formatter, handle) };
+  };
 };
 
 export const offeredOfRequest = (store: Pick<RuntimeStore, 'readLatestRunEventBefore'>, runId: string, lastSeq: number): OfferedInBody => {

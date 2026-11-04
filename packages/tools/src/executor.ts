@@ -57,7 +57,7 @@ export type BatchOutputFormatter = (input: {
   output: string;
   status: 'completed' | 'failed';
   tool: { name: string; kind: ToolKind };
-}) => { output: string; formatter: string; version: number } | undefined;
+}) => { output: string; formatter: string; version: number; header: (handle: string) => string } | undefined;
 
 type BatchCore = BatchCallbacks & {
   calls: readonly ToolCall[];
@@ -480,7 +480,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       return undefined;
     }
     if (formatted === undefined) return undefined;
-    const used = useFormattedOutput({ raw: result.output, formatted: formatted.output, formatter: formatted.formatter, limit, blobs: scopedBlobs(runId) });
+    const used = useFormattedOutput({ raw: result.output, formatted: formatted.output, header: formatted.header, limit, blobs: scopedBlobs(runId) });
     return used === undefined ? undefined : { ...used, formatted: { formatter: formatted.formatter, version: formatted.version } };
   };
 

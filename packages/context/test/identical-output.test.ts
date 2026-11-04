@@ -102,7 +102,7 @@ describe('identicalOutput at build time', () => {
       entry.item.type === 'function_call_output' && entry.item.call_id === 'c2' ? { ...entry, handle: handleOf(SAME) } : entry,
     );
     const before = await build(plain);
-    const after = await build(recorded);
+    const after = await build(recorded, { recordedReferences: new Set(['c2']) });
     expect(after.result.input).toEqual(before.result.input);
     expect(after.result.evictions).toEqual([]);
   });

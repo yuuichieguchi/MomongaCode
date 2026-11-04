@@ -71,6 +71,8 @@ export type MeterRequest = {
   input: readonly InputItem[];
   tools: readonly FunctionTool[];
   instructions?: string;
+  frozen?: readonly InputItem[];
+  sent?: true;
 };
 
 export type MeterCount = {
@@ -150,6 +152,7 @@ export type BuildContextInput = {
   model: string;
   sources: ContextSources;
   evicted: ReadonlySet<string>;
+  recordedReferences: ReadonlySet<string>;
   touchedPaths: readonly TouchedPath[];
   trusted: boolean;
   projectRoot: string;
