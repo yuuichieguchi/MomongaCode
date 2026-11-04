@@ -3,7 +3,7 @@ import { createFsInstructionReader } from '@momonga/context';
 import { COMPACTION_INSTRUCTIONS_MARKER, wireOf, wireTokensOf } from '@momonga/gateway';
 import type { ChatWire } from '@momonga/gateway';
 import { ESTIMATED_ERROR_BOUND_RATIO, marginFloorFor, summaryItemTokensFor, summaryTokenCapFor } from '@momonga/protocol';
-import type { Capabilities, CountTokensResult, FunctionCallItem, RunEvent } from '@momonga/protocol';
+import type { Capabilities, CountTokensResult, CreateResponseBody, FunctionCallItem, RunEvent } from '@momonga/protocol';
 import { RUNTIME_DEFAULTS, buildSystemPrompt, createGatewayClient, createHistoryPort, createMemoryPort } from '@momonga/runtime';
 import type { GatewayPort } from '@momonga/runtime';
 import { createUnsandboxed } from '@momonga/sandbox';
@@ -18,7 +18,7 @@ import { outputStep, textStep } from '../../packages/runtime/test/worker/scripts
 import { HAYSTACK_LINE_COUNT, HAYSTACK_READ_BACK_LINE, NEEDLE, writeFiller } from './haystack.ts';
 import type { Haystack } from './haystack.ts';
 import type { E2eHome } from './home.ts';
-import { E2E_MODEL_ALIAS } from './gateway-count.ts';
+import { E2E_MODEL_ALIAS, countRequestOf } from './gateway-count.ts';
 import { SESSION_PATH } from './runtime-client.ts';
 import { SUPERVISOR_APP_VERSION } from './stack.ts';
 import { envelopeFinalReply, envelopeToolCallsReply, textReply, toolCallReply, wireTokensOfRequest } from './upstream.ts';
@@ -293,7 +293,7 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
     const counts: CountTokensResult[] = [];
     const observedCounts: number[] = [];
     const reportingStream = async function* (body: Parameters<GatewayPort['stream']>[0], options: Parameters<GatewayPort['stream']>[1]) {
-      const counted = await client.countTokens(body as Parameters<GatewayPort['countTokens']>[0], { signal: options.signal });
+      const counted = await client.countTokens(countRequestOf(body), { signal: options.signal });
       const reported = Math.max(0, counted.input_tokens + perturbation - REPORTED_BELOW_ESTIMATE_TOKENS);
       for await (const event of fake.stream(body, options)) {
         if (event.type === 'response.completed' || event.type === 'response.incomplete') {
@@ -357,7 +357,7 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
     const bodies = ofType(journal, 'model.requested').map((event) => event.data['body']);
     const signal = AbortSignal.timeout(30_000);
     const wireCounts: number[] = [];
-    for (const body of bodies) wireCounts.push((await client.countTokens(body as Parameters<GatewayPort['countTokens']>[0], { signal })).input_tokens);
+    for (const body of bodies) wireCounts.push((await client.countTokens(countRequestOf(body as CreateResponseBody), { signal })).input_tokens);
     return {
       perturbation,
       fillers,
