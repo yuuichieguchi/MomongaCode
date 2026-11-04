@@ -35,6 +35,20 @@ describe('the Ollama probe measures the prompt cache from a repeated /api/chat',
   });
 });
 
+describe('the Ollama cache probe builds its chat body with the adapter body builder (S2)', () => {
+  it('sends truncate false, num_ctx equal to the context window and an output limit of one token', async () => {
+    const { fake } = await probeWith('automatic');
+    const bodies = fake.chatBodies();
+    expect(bodies).toHaveLength(2);
+    for (const body of bodies) {
+      expect(body.model).toBe(OLLAMA_MODEL);
+      expect(body.truncate).toBe(false);
+      expect(body.options.num_ctx).toBe(32768);
+      expect(body.options.num_predict).toBe(1);
+    }
+  });
+});
+
 describe('the probed Ollama cache becomes the capability unless declared', () => {
   const targetFor = async (declared: Capabilities) => {
     const { dir, result } = await probeWith('automatic');
