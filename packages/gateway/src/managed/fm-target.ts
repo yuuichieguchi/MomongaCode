@@ -1,4 +1,4 @@
-import { canonicalJson } from '@momonga/foundation';
+import { canonicalJson, createUdsClient } from '@momonga/foundation';
 import { countReplyOf } from '@momonga/protocol';
 import type {
   AdapterTarget,
@@ -18,6 +18,7 @@ import type { ErrorVocabulary } from '../adapters/chat-completions/vocabulary.ts
 import { estimatedCountOf } from '../core/estimate.ts';
 import { capabilitiesFromProbe, layerOf, mergeCapabilities } from '../probe/decide.ts';
 import type { KeywordSupport } from '../probe/envelope.ts';
+import { field, firstOf, parseJson } from '../probe/json.ts';
 import { loadProbeRecord, resolveToolCalling } from '../probe/record.ts';
 import type { ProbeRecordKey } from '../probe/record.ts';
 import { LICENSE_NOT_ACCEPTED_EXIT_CODE, LICENSE_REMEDIATION, PRECONDITION_MESSAGE, outputOf } from './fm-serve.ts';
@@ -38,12 +39,14 @@ export type ManagedFmTargetOptions = {
   probeRecordDir: string;
   recordKey: ProbeRecordKey;
   toolCallingSetting: ToolCallingSetting;
+  declaredModel?: string;
 };
 
 export type ManagedFmTarget = {
   resolveEndpoint: (target: AdapterTarget) => Promise<ChatCompletionsEndpoint>;
   toolCalling: (target: AdapterTarget) => ToolCallingMode;
   keywordSupport: (target: AdapterTarget) => KeywordSupport;
+  upstreamModel: (target: AdapterTarget, signal: AbortSignal) => Promise<string>;
   capabilities: (target: AdapterTarget) => Promise<Capabilities>;
   countTokens: (target: AdapterTarget, request: CountTokensRequest, signal: AbortSignal) => Promise<CountTokensResult>;
   health: (target: AdapterTarget) => Promise<HealthResult>;
@@ -147,6 +150,20 @@ const guardrailMatcherOf = (report: ProbeReport | null): ((body: unknown) => boo
   return matchesGuardrailCode;
 };
 
+const listedModelId = async (socketPath: string, signal: AbortSignal): Promise<string> => {
+  const client = createUdsClient(socketPath);
+  try {
+    const response = await client.request({ method: 'GET', path: '/v1/models', signal });
+    const text = await response.text();
+    if (response.status !== 200) throw new Error(`fm serve answered GET /v1/models with HTTP ${response.status}: ${text.slice(0, 200)}`);
+    const id = field(firstOf(field(parseJson(text), 'data')), 'id');
+    if (typeof id !== 'string') throw new Error('fm serve lists no model id at GET /v1/models');
+    return id;
+  } finally {
+    await client.close();
+  }
+};
+
 export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Promise<ManagedFmTarget> => {
   const report = await loadProbeRecord(options.probeRecordDir, options.recordKey);
   const { mode } = resolveToolCalling(options.toolCallingSetting, report);
@@ -157,11 +174,23 @@ export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Pr
       : mergeCapabilities({ defaults: layerOf(probedDefaults).core, declared: {}, probed: layerOf(capabilitiesFromProbe(report, { mode })).layer, probedAt: report.probedAt });
   const keywordSupport = report === null ? UNPROBED_KEYWORD_SUPPORT : report.keywordSupport;
   const isGuardrail = guardrailMatcherOf(report);
+  const knownModel = options.declaredModel ?? report?.modelId;
+  let listedModel: Promise<string> | undefined;
+  const upstreamModel = async (_target: AdapterTarget, signal: AbortSignal): Promise<string> => {
+    if (knownModel !== undefined) return knownModel;
+    const { socketPath } = await options.fmServe.ensureRunning();
+    listedModel ??= listedModelId(socketPath, signal).catch((error: unknown) => {
+      listedModel = undefined;
+      throw error;
+    });
+    return listedModel;
+  };
 
   return {
     resolveEndpoint: () => options.fmServe.ensureRunning(),
     toolCalling: () => mode,
     keywordSupport: () => keywordSupport,
+    upstreamModel,
     capabilities: async () => capabilities,
     countTokens: async (_target, request, signal) => {
       const text = countedText(request);

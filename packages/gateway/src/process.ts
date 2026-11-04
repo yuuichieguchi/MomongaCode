@@ -215,6 +215,7 @@ const createFmAdapter = async (name: string, target: Extract<ResolvedTarget, { a
     probeRecordDir: context.paths.probe,
     recordKey: { target: name, binarySha256: context.binarySha256, osBuild: context.osBuild },
     toolCallingSetting: target.toolCalling,
+    ...(target.model === undefined ? {} : { declaredModel: target.model }),
   });
   return createChatCompletionsAdapter({ ...withBinaryGuard(managed, context.binary, files), clock });
 };
@@ -344,7 +345,7 @@ export const gatewayConfigOf = (targets: ResolvedTargets, aliases: Record<string
         {
           kind: target.adapter,
           provider: providerNameOf(target),
-          model: target.model,
+          model: target.adapter === 'fm' ? (target.model ?? name) : target.model,
           billing: target.billing,
           maxConcurrency: target.maxConcurrency,
           admissionTimeoutMs: target.admissionTimeoutMs,

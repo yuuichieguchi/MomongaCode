@@ -3,11 +3,14 @@ import { decodeSse } from '@momonga/foundation';
 import {
   ESTIMATED_ERROR_BOUND_RATIO,
   PROBE_KEYWORDS,
+  DEFAULT_OUTPUT_BOUND_FIELD,
+  OUTPUT_BOUND_FIELDS,
   SUMMARY_PROMPT_TOKENS,
   summaryInputLimitFor,
   summaryTokenCapFor,
   tokensForText,
   type ImageTokenModel,
+  type OutputBoundField,
   type ProbeKeyword,
   type ProbeReport,
 } from '@momonga/protocol';
@@ -15,6 +18,7 @@ import { CHAT_COMPLETIONS_VOCABULARY } from '../adapters/chat-completions/vocabu
 import type { ErrorVocabulary } from '../adapters/chat-completions/vocabulary.ts';
 import { decodeUpstreamReply } from '../adapters/chat-completions/upstream-reply.ts';
 import type { UpstreamReply } from '../adapters/chat-completions/upstream-reply.ts';
+import { outputBoundFor } from '../adapters/chat-completions/output-bound.ts';
 import { summaryRequestOf } from '../adapters/shared/compact.ts';
 import { hiddenReasoningTokens } from '../core/hidden-reasoning.ts';
 import { cachedCountOf } from './cached-count.ts';
@@ -48,6 +52,10 @@ const SEARCH_INITIAL_WORDS = 64;
 const SEARCH_MAX_WORDS = 262144;
 const DEFAULT_STEP_TIMEOUT_MS = 120000;
 const CACHE_PROBE_WORDS = 1536;
+const OUTPUT_BOUND_PROBE_TOKENS = 16;
+const OUTPUT_BOUND_HONOURED_FACTOR = 2;
+const ONE_OUTPUT_TOKEN = 1;
+const LONG_ANSWER_PROMPT = 'Count from 1 to 300, one number per line, and write nothing else.';
 const CALIBRATION_WORD_COUNTS = [20, 80, 320] as const;
 const CONTEXT_FIELDS = [
   'context_window',
@@ -195,29 +203,42 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
   if (typeof model !== 'string') throw new Error('Probe could not determine a model id from /v1/models');
 
   const vocabulary = options.vocabulary ?? CHAT_COMPLETIONS_VOCABULARY;
-  const post = async (body: Record<string, unknown>): Promise<ChatResult> => {
+  const send: Chat = async (body) => {
     const result = await client.post('chat', { model, ...body });
     const reply = await decodeUpstreamReply(result.status, result.text);
     return { ...result, reply, outcome: outcomeOf(vocabulary, result.status, reply) };
   };
   const stepTimeoutMs = options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS;
   const sleep = options.sleep ?? systemSleep;
-  const chat: Chat = async (body) => {
-    let result = await post(body);
-    for (let retry = 0; result.status === 429 && retry < MAX_RATE_LIMIT_RETRIES; retry += 1) {
-      const waitMs = retryAfterMs(result.headers['retry-after'], now());
-      if (waitMs === undefined || waitMs > stepTimeoutMs) return result;
-      await sleep(waitMs, options.signal);
-      result = await post(body);
-    }
-    return result;
+  const retryingRateLimits =
+    (once: Chat): Chat =>
+    async (body) => {
+      let result = await once(body);
+      for (let retry = 0; result.status === 429 && retry < MAX_RATE_LIMIT_RETRIES; retry += 1) {
+        const waitMs = retryAfterMs(result.headers['retry-after'], now());
+        if (waitMs === undefined || waitMs > stepTimeoutMs) return result;
+        await sleep(waitMs, options.signal);
+        result = await once(body);
+      }
+      return result;
+    };
+
+  const outputBoundField = await measureOutputBoundField(retryingRateLimits(send));
+  const bound = { field: outputBoundField === 'none' ? DEFAULT_OUTPUT_BOUND_FIELD : outputBoundField, tokens: OUTPUT_BOUND_PROBE_TOKENS };
+  const post: Chat = (body) => {
+    const { outputTokens, ...rest } = body;
+    return send({ ...rest, ...outputBoundFor(bound.field, typeof outputTokens === 'number' ? outputTokens : bound.tokens) });
   };
+  const chat = retryingRateLimits(post);
+
+  const contextWindow = reportedContextWindow(modelsBody, healthResult.text) ?? (await searchContextWindow(chat));
+  bound.tokens = maxOutputTokensFor(contextWindow.value);
 
   const plain = await chat({ messages: [{ role: 'user', content: PLAIN_PROMPT }] });
   expectStatus(plain, [200], 'plain completion');
   const usageReported = promptTokensOf(parseJson(plain.text)) !== undefined;
 
-  const streaming = await probeStreaming(client, model);
+  const streaming = await probeStreaming(client, model, outputBoundFor(bound.field, bound.tokens));
 
   const stopSequences = isAcceptedOrRejected(
     await chat({ messages: [{ role: 'user', content: PLAIN_PROMPT }], stop: ['STOP'] }),
@@ -262,9 +283,6 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
   const tokenCalibration =
     usageReported && options.countTokens !== undefined ? await calibrate(chat, options.countTokens) : undefined;
 
-  const contextWindow =
-    reportedContextWindow(modelsBody, healthResult.text) ?? (await searchContextWindow(chat));
-
   const reasoning = await measureReasoning(chat, contextWindow.value);
 
   const promptCache = await measurePromptCache(chat);
@@ -282,6 +300,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
     constrained,
     keywordSupport,
     stopSequences,
+    outputBoundField,
     parallelToolCalls,
     reasoning,
     maxConcurrency,
@@ -295,10 +314,34 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
 
 type Chat = (body: Record<string, unknown>) => Promise<ChatResult>;
 
+const outputTokensOf = (result: ChatResult): number => {
+  const completionTokens = field(result.reply.kind === 'completion' ? result.reply.usage : undefined, 'completion_tokens');
+  if (typeof completionTokens === 'number') return completionTokens;
+  const content = field(assistantMessage(parseJson(result.text)), 'content');
+  if (typeof content === 'string') return tokensForText(content);
+  return failProbeStep(result, 'output bound');
+};
+
+const honoursOutputBound = async (send: Chat, candidate: OutputBoundField): Promise<boolean> => {
+  const result = await send({
+    messages: [{ role: 'user', content: LONG_ANSWER_PROMPT }],
+    ...outputBoundFor(candidate, OUTPUT_BOUND_PROBE_TOKENS),
+  });
+  if (!isAcceptedOrRejected(result, `output bound ${candidate}`)) return false;
+  return outputTokensOf(result) <= OUTPUT_BOUND_PROBE_TOKENS * OUTPUT_BOUND_HONOURED_FACTOR;
+};
+
+const measureOutputBoundField = async (send: Chat): Promise<OutputBoundField | 'none'> => {
+  for (const candidate of OUTPUT_BOUND_FIELDS) {
+    if (await honoursOutputBound(send, candidate)) return candidate;
+  }
+  return 'none';
+};
+
 const imagePromptRequest = (chat: Chat, imageUrl: string | undefined): Promise<ChatResult> => {
   const parts: unknown[] = [{ type: 'text', text: IMAGE_PROMPT }];
   if (imageUrl !== undefined) parts.push({ type: 'image_url', image_url: { url: imageUrl } });
-  return chat({ messages: [{ role: 'user', content: parts }], max_tokens: 1 });
+  return chat({ messages: [{ role: 'user', content: parts }], outputTokens: ONE_OUTPUT_TOKEN });
 };
 
 const imageCostProbeOf = (chat: Chat): ImageCostProbe => ({
@@ -316,7 +359,7 @@ const imageCostProbeOf = (chat: Chat): ImageCostProbe => ({
 });
 
 const measurePromptCache = async (chat: Chat): Promise<ProbeReport['promptCache']> => {
-  const request = { messages: [{ role: 'user', content: wordsOf(CACHE_PROBE_WORDS) }], max_tokens: 1 };
+  const request = { messages: [{ role: 'user', content: wordsOf(CACHE_PROBE_WORDS) }], outputTokens: ONE_OUTPUT_TOKEN };
   expectStatus(await chat(request), [200], 'prompt cache first request');
   const repeated = await chat(request);
   expectStatus(repeated, [200], 'prompt cache repeated request');
@@ -325,12 +368,13 @@ const measurePromptCache = async (chat: Chat): Promise<ProbeReport['promptCache'
   return { kind: cached > 0 ? 'automatic' : 'none' };
 };
 
-const probeStreaming = async (client: ProbeClient, model: string): Promise<ProbeReport['streaming']> => {
+const probeStreaming = async (client: ProbeClient, model: string, outputBound: object): Promise<ProbeReport['streaming']> => {
   const { status, chunks } = await client.stream('chat', {
     model,
     messages: [{ role: 'user', content: PLAIN_PROMPT }],
     stream: true,
     stream_options: { include_usage: true },
+    ...outputBound,
   });
   if (status !== 200) {
     for await (const chunk of chunks) void chunk;
@@ -495,7 +539,7 @@ const summaryShapedBody = (contextWindow: number): Record<string, unknown> => {
       { role: 'system', content: summary.instructions },
       { role: 'user', content },
     ],
-    max_tokens: maxOutputTokens,
+    outputTokens: maxOutputTokens,
   };
 };
 
@@ -575,7 +619,7 @@ const searchContextWindow = async (chat: Chat): Promise<ProbeReport['contextWind
   let overflowRecorded = false;
 
   const attempt = async (words: number): Promise<{ ok: boolean; promptTokens: number }> => {
-    const result = await chat({ messages: [{ role: 'user', content: wordsOf(words) }], max_tokens: 1 });
+    const result = await chat({ messages: [{ role: 'user', content: wordsOf(words) }], outputTokens: ONE_OUTPUT_TOKEN });
     const { reply } = result;
     if (reply.kind === 'completion') {
       if (result.outcome !== 'accepted') return failProbeStep(result, 'context window search');

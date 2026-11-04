@@ -17,7 +17,7 @@ const chatTarget = (overrides: Record<string, unknown> = {}): Record<string, unk
   ...overrides,
 });
 
-const DEFAULT_FM_TARGET = { adapter: 'fm', model: 'default', toolCalling: 'auto', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 30000 };
+const DEFAULT_FM_TARGET = { adapter: 'fm', toolCalling: 'auto', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 30000 };
 
 const resolvedCapabilities = (maxConcurrency: number) => ({
   contextWindow: 128000,

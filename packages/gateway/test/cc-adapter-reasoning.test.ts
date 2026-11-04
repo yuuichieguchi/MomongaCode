@@ -31,14 +31,14 @@ describe('chat-completions reasoning control', () => {
     await collect(adapter, artefactRequest);
     const body = lastCompletionBody(fake);
     expect('reasoning_effort' in body).toBe(false);
-    expect(body.max_tokens).toBe(400);
+    expect(body.max_completion_tokens).toBe(400);
   });
 
   it('never lifts the output cap above the output limit of the target', async () => {
     const fake = await startFake({ scenario: 'none' });
     const adapter = makeAdapter(fake, { capabilities: async () => withReasoning({ control: 'none', headroomTokens: 5000 }) });
     await collect(adapter, artefactRequest);
-    expect(lastCompletionBody(fake).max_tokens).toBe(CC_CAPABILITIES.maxOutputTokens);
+    expect(lastCompletionBody(fake).max_completion_tokens).toBe(CC_CAPABILITIES.maxOutputTokens);
   });
 
   it('keeps the cap as asked when no reasoning was measured', async () => {
@@ -46,7 +46,7 @@ describe('chat-completions reasoning control', () => {
     await collect(makeAdapter(fake), artefactRequest);
     const body = lastCompletionBody(fake);
     expect('reasoning_effort' in body).toBe(false);
-    expect(body.max_tokens).toBe(100);
+    expect(body.max_completion_tokens).toBe(100);
   });
 
   it('changes nothing for a request that did not ask for low reasoning', async () => {
@@ -55,7 +55,7 @@ describe('chat-completions reasoning control', () => {
     await collect(adapter, { model: 'system', input: [userText('hi')], max_output_tokens: 100 });
     const body = lastCompletionBody(fake);
     expect('reasoning_effort' in body).toBe(false);
-    expect(body.max_tokens).toBe(100);
+    expect(body.max_completion_tokens).toBe(100);
   });
 });
 
@@ -69,7 +69,7 @@ describe('chat-completions compaction summary and reasoning', () => {
     await adapter.compact?.(compactRequest, context);
     const body = lastCompletionBody(fake);
     expect(body.reasoning_effort).toBe('minimal');
-    expect(body.max_tokens).toBe(64);
+    expect(body.max_completion_tokens).toBe(64);
   });
 
   it('leaves room for reasoning in the request cap of a target that cannot control it, and accepts a short visible summary whose reasoning exceeded the cap', async () => {
@@ -79,7 +79,7 @@ describe('chat-completions compaction summary and reasoning', () => {
     });
     const adapter = makeAdapter(fake, { capabilities: async () => withReasoning({ control: 'none', headroomTokens: 400 }) });
     const result = await adapter.compact?.(compactRequest, context);
-    expect(lastCompletionBody(fake).max_tokens).toBe(464);
+    expect(lastCompletionBody(fake).max_completion_tokens).toBe(464);
     expect(result?.summary).toBe('GOAL: fix it. STATE: none.');
     expect(result?.usage.output_tokens_details.reasoning_tokens).toBe(360);
   });

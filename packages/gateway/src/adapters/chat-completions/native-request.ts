@@ -14,6 +14,7 @@ export type ChatRequestBody = {
   reasoning_effort?: string;
   response_format?: unknown;
   max_tokens?: number;
+  max_completion_tokens?: number;
   temperature?: number;
   top_p?: number;
   prompt_cache_key?: string;
@@ -31,8 +32,7 @@ const toolOf = (tool: FunctionTool): unknown => ({
 const toolChoiceOf = (choice: ToolChoice): unknown =>
   typeof choice === 'string' ? choice : { type: 'function', function: { name: choice.name } };
 
-export const samplingOf = (request: AdapterRequest): Pick<ChatRequestBody, 'max_tokens' | 'temperature' | 'top_p'> => ({
-  ...(request.max_output_tokens === undefined || request.max_output_tokens === null ? {} : { max_tokens: request.max_output_tokens }),
+export const samplingOf = (request: AdapterRequest): Pick<ChatRequestBody, 'temperature' | 'top_p'> => ({
   ...(request.temperature === undefined || request.temperature === null ? {} : { temperature: request.temperature }),
   ...(request.top_p === undefined || request.top_p === null ? {} : { top_p: request.top_p }),
 });

@@ -1,6 +1,6 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { JSONSchemaType } from 'ajv';
-import { REASONING_EFFORTS } from '@momonga/protocol';
+import { OUTPUT_BOUND_FIELDS, REASONING_EFFORTS } from '@momonga/protocol';
 import type { EndpointProbeReport, OllamaProbeReport, ProbeReport } from '@momonga/protocol';
 
 const bool = { type: 'boolean' } as const;
@@ -76,6 +76,7 @@ const reportSchema: JSONSchemaType<ProbeReport> = {
       },
     },
     stopSequences: bool,
+    outputBoundField: { type: 'string', enum: [...OUTPUT_BOUND_FIELDS, 'none'], nullable: true },
     parallelToolCalls: {
       type: 'object',
       nullable: true,

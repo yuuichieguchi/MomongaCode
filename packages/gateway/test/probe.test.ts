@@ -135,7 +135,7 @@ describe('runProbe context window', () => {
     const { report, fake } = await probe({ scenario: 'tools-ok', contextWindow: window, contextSizeExposure: 'none', wire: 'fm' }, { vocabulary: FM_VOCABULARY });
 
     const searchSizes = fake.requests
-      .filter((request) => request.path === '/v1/chat/completions' && (request.body as { max_tokens?: unknown }).max_tokens === 1)
+      .filter((request) => request.path === '/v1/chat/completions' && (request.body as { max_completion_tokens?: unknown }).max_completion_tokens === 1)
       .map((request) => (request.body as { messages?: Array<{ content?: unknown }> }).messages?.[0]?.content)
       .filter((content): content is string => typeof content === 'string' && /^word( word)*$/.test(content))
       .map(words);
@@ -230,7 +230,7 @@ describe('runProbe server features', () => {
     const { fake } = await probe({ scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600 } });
     const imagePrompts = fake.requests.filter((request) => JSON.stringify(request.body ?? '').includes('Describe this image.'));
     expect(imagePrompts.length).toBeGreaterThan(3);
-    expect(imagePrompts.every((request) => (request.body as { max_tokens?: number }).max_tokens === 1)).toBe(true);
+    expect(imagePrompts.every((request) => (request.body as { max_completion_tokens?: number }).max_completion_tokens === 1)).toBe(true);
   });
 
   it('waits for Retry-After on a 429 and repeats the request, keeping the whole probe', async () => {

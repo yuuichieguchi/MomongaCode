@@ -67,12 +67,12 @@ describe('POST /v1/responses/compact for a chat-completions target', () => {
     expect(JSON.stringify(followUp)).not.toContain(item.encrypted_content);
   });
 
-  it('passes momonga.max_summary_tokens to the upstream as max_tokens and into the instructions', async () => {
+  it('passes momonga.max_summary_tokens to the upstream as max_completion_tokens and into the instructions', async () => {
     const fake = await startFake({ scenario: 'tools-ok', script: [textReply(SUMMARY)] });
     const harness = await startCcGateway({ fm: ccAdapterFor(fake) });
     expect((await compact(harness, { momonga: { max_summary_tokens: 100 } })).status).toBe(200);
     const body = completionBodies(fake)[0];
-    expect(body.max_tokens).toBe(100);
+    expect(body.max_completion_tokens).toBe(100);
     expect(body.messages[0]).toEqual({ role: 'system', content: instructionsFor(100, RESTATE_CLAUSE) });
   });
 
@@ -125,7 +125,7 @@ describe('momonga request validation on /v1/responses/compact', () => {
     const fake = await startFake({ scenario: 'tools-ok', script: [textReply(SUMMARY)] });
     const harness = await startCcGateway({ fm: ccAdapterFor(fake) });
     expect((await compact(harness, { momonga: { max_summary_tokens: 64 } })).status).toBe(200);
-    expect(completionBodies(fake)[0].max_tokens).toBe(64);
+    expect(completionBodies(fake)[0].max_completion_tokens).toBe(64);
   });
 
   it('rejects a cap above every candidate maximum with param momonga.max_summary_tokens', async () => {
@@ -148,7 +148,7 @@ describe('momonga request validation on /v1/responses/compact', () => {
     expect(response.status).toBe(200);
     expect(summaryOfResource(response.body)).toBe('from large');
     expect(completionBodies(small)).toHaveLength(0);
-    expect(completionBodies(large)[0].max_tokens).toBe(200);
+    expect(completionBodies(large)[0].max_completion_tokens).toBe(200);
   });
 });
 

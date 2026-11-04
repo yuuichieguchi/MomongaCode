@@ -114,7 +114,7 @@ export type ModelTarget = FmTarget | ChatCompletionsTarget | OpenResponsesTarget
 
 export type ResolvedFmTarget = {
   adapter: 'fm';
-  model: string;
+  model?: string;
   toolCalling: FmToolCalling;
   billing: 'local';
   maxConcurrency: number;

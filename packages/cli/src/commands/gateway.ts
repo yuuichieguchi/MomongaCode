@@ -50,6 +50,9 @@ const apiKeyOf = async (ports: CliPorts, target: ChatCompletionsConfig, interrup
   return value;
 };
 
+const outputBoundText = (report: { outputBoundField?: string }): string =>
+  `output bound: ${report.outputBoundField === 'none' ? 'neither max_completion_tokens nor max_tokens is honoured' : (report.outputBoundField ?? 'not measured')}`;
+
 type EndpointProbe = Awaited<ReturnType<typeof import('@momonga/gateway').probeEndpointTarget>>;
 
 export const probeEndpointText = (name: string, endpoint: string, recordPath: string, report: EndpointProbe['report'], toolCalling: EndpointProbe['toolCalling']): string => {
@@ -58,7 +61,7 @@ export const probeEndpointText = (name: string, endpoint: string, recordPath: st
   return `${escapedLines([
     `probed ${name}: model ${report.modelId} at ${endpoint}, context window ${report.contextWindow.value} (${report.contextWindow.method})`,
     `  tool calling: ${toolCalling} (native ${report.nativeTools.validRate}, constrained ${report.constrained.validRate})`,
-    `  structured output: ${report.constrained.accepted ? 'json_schema' : 'none'}, stop sequences: ${report.stopSequences}, usage reported: ${report.usageReported}`,
+    `  structured output: ${report.constrained.accepted ? 'json_schema' : 'none'}, stop sequences: ${report.stopSequences}, usage reported: ${report.usageReported}, ${outputBoundText(report)}`,
     `  parallel tool calls: ${parallel === undefined ? 'not measured' : `${parallel.accepted && parallel.multiCallRate >= 0.9} (${parallel.multiCallRate} of replies carried several calls)`}`,
     `  reasoning: ${reasoning === undefined ? 'not measured' : reasoning.control === 'reasoning_effort' ? `reasoning_effort, lowest ${reasoning.lowest}` : `cannot be controlled${reasoning.headroomTokens === undefined ? '' : `, leaves room for ${reasoning.headroomTokens} tokens`}`}`,
     `  max concurrency: ${report.maxConcurrency}`,
@@ -86,7 +89,7 @@ export const probeFmText = (target: string, recordPath: string, report: Endpoint
   `${escapedLines([
     `probed ${target}: model ${report.modelId}, context window ${report.contextWindow.value} (${report.contextWindow.method})`,
     `  tool calling: ${toolCalling} (native ${report.nativeTools.validRate}, constrained ${report.constrained.validRate})`,
-    `  stop sequences: ${report.stopSequences}, usage reported: ${report.usageReported}, max concurrency: ${report.maxConcurrency}`,
+    `  stop sequences: ${report.stopSequences}, usage reported: ${report.usageReported}, ${outputBoundText(report)}, max concurrency: ${report.maxConcurrency}`,
     `  recorded in ${recordPath}`,
   ])}\n`;
 
@@ -146,6 +149,7 @@ export const probeFm = async (ports: CliPorts, paths: MomongaPaths, target: stri
     socketPath: path.join(paths.run, FM_PROBE_SOCKET_NAME),
     env: ports.env,
     signal: options.interrupt,
+    ...(configured.model === undefined ? {} : { model: configured.model }),
     onWarning: (message) => ports.stderr.write(`${escapedLines([`momonga: ${message}`])}\n`),
     ...(options.samples === undefined ? {} : { samples: options.samples }),
   });

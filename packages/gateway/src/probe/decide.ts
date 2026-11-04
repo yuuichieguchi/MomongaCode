@@ -56,6 +56,7 @@ export const capabilitiesFromProbe = (report: ProbeReport, decision: ToolCalling
     structuredOutput: report.constrained.accepted ? 'json_schema' : 'none',
     streaming: report.streaming.supported,
     stopSequences: report.stopSequences,
+    ...(report.outputBoundField === undefined || report.outputBoundField === 'none' ? {} : { outputBoundField: report.outputBoundField }),
     ...probedImageCapability(report),
     ...parallelCallsDecision(report, thresholds),
     ...(report.reasoning === undefined ? {} : { reasoning: report.reasoning }),
@@ -85,7 +86,7 @@ export const withImageDefault = (declared: DeclaredCapabilities): Capabilities =
 };
 
 const splitByPrecedence = (layer: CapabilityLayer) => {
-  const { toolCalling, structuredOutput, streaming, stopSequences, parallelToolCalls, usageReported, reasoning, ...declaredFirst } = layer;
+  const { toolCalling, structuredOutput, streaming, stopSequences, outputBoundField, parallelToolCalls, usageReported, reasoning, ...declaredFirst } = layer;
   return {
     declaredFirst,
     probeFirst: {
@@ -93,6 +94,7 @@ const splitByPrecedence = (layer: CapabilityLayer) => {
       ...(structuredOutput === undefined ? {} : { structuredOutput }),
       ...(streaming === undefined ? {} : { streaming }),
       ...(stopSequences === undefined ? {} : { stopSequences }),
+      ...(outputBoundField === undefined ? {} : { outputBoundField }),
       ...(parallelToolCalls === undefined ? {} : { parallelToolCalls }),
       ...(usageReported === undefined ? {} : { usageReported }),
       ...(reasoning === undefined ? {} : { reasoning }),

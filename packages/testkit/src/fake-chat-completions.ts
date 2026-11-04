@@ -23,6 +23,7 @@ export interface FakeChatCompletionsOptions {
   streamUsage?: boolean;
   usageReported?: boolean;
   stopSupported?: boolean;
+  outputBound?: { honours: 'max_completion_tokens' | 'max_tokens' | 'both' | 'neither' };
   maxConcurrency?: number;
   overflow?: 'reject' | 'queue';
   imageInput?: boolean;
@@ -147,6 +148,8 @@ export const JSON_SCHEMA_UNSUPPORTED_MESSAGE = "response_format type 'json_schem
 export const IMAGE_UNSUPPORTED_MESSAGE = 'image input is not supported by this model.';
 export const FAKE_DETERMINISTIC_REPLY = 'This is a deterministic reply.';
 export const FAKE_REASONING_WORD = 'step ';
+const FAKE_RUNAWAY_WORDS = 400;
+const FAKE_RUNAWAY_WORD = 'word ';
 export const FAKE_PAYLOAD_TOO_LARGE_ERROR = {
   error: { message: 'Request entity too large.', type: 'invalid_request_error', param: null, code: null },
 } as const;
@@ -164,6 +167,10 @@ export const FAKE_GUARDRAIL_ERROR = {
     code: 'guardrail_violation',
   },
 } as const;
+
+const fmUnknownModelError =(requested: unknown, listed: string) => ({
+  error: { code: '400', message: `Unknown model '${String(requested)}'. Available models: ${listed}`, type: 'invalid_request_error' },
+});
 
 const invalidRequest = (message: string, code: string | null = null, param: string | null = null): HttpFailure =>
   new HttpFailure(400, { error: { message, type: 'invalid_request_error', param, code } });
@@ -399,6 +406,7 @@ export const startFakeChatCompletions = async (
   };
 
   const validateCompletionRequest = (body: Json): void => {
+    if (options.wire === 'fm' && body['model'] !== modelId) throw new HttpFailure(400, fmUnknownModelError(body['model'], modelId));
     const messages = Array.isArray(body['messages']) ? (body['messages'] as ChatMessage[]) : [];
     const responseFormat = isRecord(body['response_format']) ? body['response_format'] : undefined;
     if (responseFormat?.['type'] === 'json_object') throw invalidRequest(JSON_OBJECT_UNSUPPORTED_MESSAGE, null, 'response_format');
@@ -475,6 +483,20 @@ export const startFakeChatCompletions = async (
     }
   };
 
+  const boundHonoured = (body: Json): number => {
+    const honours = options.outputBound?.honours;
+    const fromMaxCompletion = honours === 'max_completion_tokens' || honours === 'both' ? body['max_completion_tokens'] : undefined;
+    const fromMax = honours === 'max_tokens' || honours === 'both' ? body['max_tokens'] : undefined;
+    const bounds = [fromMaxCompletion, fromMax].filter((bound): bound is number => typeof bound === 'number');
+    return bounds.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...bounds);
+  };
+
+  const runawayReply = (limit: number): string => {
+    let words = FAKE_RUNAWAY_WORDS;
+    while (words > 1 && countFakeTokens(FAKE_RUNAWAY_WORD.repeat(words).trimEnd()) > limit) words -= 1;
+    return FAKE_RUNAWAY_WORD.repeat(words).trimEnd();
+  };
+
   const complete = (body: Json): CompletionOut => {
     const messages = Array.isArray(body['messages']) ? (body['messages'] as ChatMessage[]) : [];
     const last = messages.at(-1);
@@ -492,6 +514,7 @@ export const startFakeChatCompletions = async (
     if (lastRole === 'tool') {
       return { content: `Tool result received: ${lastText}`, toolCalls: [], finishReason: 'stop' };
     }
+    if (options.outputBound !== undefined) return { content: runawayReply(boundHonoured(body)), toolCalls: [], finishReason: 'stop' };
     return { content: FAKE_DETERMINISTIC_REPLY, toolCalls: [], finishReason: 'stop' };
   };
 
