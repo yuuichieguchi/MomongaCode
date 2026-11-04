@@ -105,6 +105,8 @@ export type ToolDefinition<Input> = SideEffectBinding<Input> & ToolBody<Input>;
 export type ToolBody<Input> = {
   name: string;
   description: string;
+  conciseDescription?: string;
+  conciseParameterDescriptions?: Readonly<Record<string, string>>;
   kind: ToolKind;
   inputSchema: Record<string, unknown>;
   pagesOutput?: true;

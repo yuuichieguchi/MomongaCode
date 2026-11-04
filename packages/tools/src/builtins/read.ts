@@ -1,6 +1,6 @@
 import { defineTool, ToolExecutionError } from '../types.ts';
 import { looksBinary, recordInLedger, regularFileProblem, scanLines, statIfExists } from './files.ts';
-import { DEFAULT_LINE_LIMIT, pageNumberedLines, pastEndMessage } from './format.ts';
+import { DEFAULT_LINE_LIMIT, MAX_LINE_CHARS, pageNumberedLines, pastEndMessage } from './format.ts';
 import { accessedPathOf, canonicalPathOf, resolvedPathOf, shownPath } from './paths.ts';
 
 type ReadInput = { file_path: string; offset?: number; limit?: number };
@@ -8,8 +8,13 @@ type ReadInput = { file_path: string; offset?: number; limit?: number };
 export const readTool = defineTool<ReadInput>({
   name: 'Read',
   tier: 'essential',
-  description:
-    'Reads a text file from the filesystem. file_path may be absolute or relative; a relative path is resolved against the working directory. Returns at most 2000 lines by default in cat -n format; use offset (1-based line) and limit to page through large files. Lines longer than 2000 characters are cut. Binary files are refused.',
+  description: `Reads a text file from the filesystem. file_path may be absolute or relative; a relative path is resolved against the working directory. Returns at most ${DEFAULT_LINE_LIMIT} lines by default in cat -n format; use offset (1-based line) and limit to page through large files. Lines longer than ${MAX_LINE_CHARS} characters are cut. Binary files are refused.`,
+  conciseDescription: `Reads a text file. A relative file_path is resolved against the working directory. Returns up to ${DEFAULT_LINE_LIMIT} lines (cat -n); page with offset and limit. Binary files are refused.`,
+  conciseParameterDescriptions: {
+    file_path: 'File to read; a relative path is resolved against the working directory',
+    offset: 'First line, 1-based',
+    limit: 'Number of lines',
+  },
   kind: 'read',
   sideEffect: 'read_only',
   inputSchema: {

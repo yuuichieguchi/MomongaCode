@@ -73,6 +73,14 @@ export const editTool = defineTool<EditInput>({
   name: 'Edit',
   description:
     'Replaces text in an existing file. file_path may be absolute or relative; a relative path is resolved against the working directory. The file must have been read with Read first and must be unchanged since. old_string must match exactly once (include surrounding context to make it unique) unless replace_all is true.',
+  conciseDescription:
+    'Replaces text in a file you have Read and that is unchanged since. A relative file_path is resolved against the working directory. old_string must match exactly once unless replace_all is true.',
+  conciseParameterDescriptions: {
+    file_path: 'File to modify; a relative path is resolved against the working directory',
+    old_string: 'Exact text to replace',
+    new_string: 'Replacement text',
+    replace_all: 'Replace every occurrence',
+  },
   kind: 'edit',
   sideEffect: 'write',
   subjectKind: 'path',
