@@ -12,6 +12,12 @@ export const writeTool = defineTool<WriteInput>({
   name: 'Write',
   description:
     'Writes a file, creating missing parent directories. file_path may be absolute or relative; a relative path is resolved against the working directory. An existing file must have been read with Read first and must be unchanged since. Replaces the whole file; prefer Edit for partial changes.',
+  conciseDescription:
+    'Writes a whole file, creating parent directories. A relative file_path is resolved against the working directory. Read an existing file first; it must be unchanged since. Prefer Edit for partial changes.',
+  conciseParameterDescriptions: {
+    file_path: 'File to write; a relative path is resolved against the working directory',
+    content: 'Full new content',
+  },
   kind: 'edit',
   sideEffect: 'write',
   subjectKind: 'path',

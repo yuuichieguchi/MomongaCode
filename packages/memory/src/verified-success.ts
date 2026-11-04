@@ -31,18 +31,25 @@ const writtenPaths = (call: CallEvent, event: Extract<RunEvent, { type: 'tool.co
   return written.length === 0 ? undefined : written;
 };
 
-export const isVerifiedSuccess = (input: VerifiedSuccessInput): boolean => {
+export type PassingCheck = { command: string; callId: string; seq: number };
+
+export type VerifiedSuccessAnalysis = { verified: boolean; passingChecks: PassingCheck[] };
+
+export const analyseVerifiedSuccess = (input: VerifiedSuccessInput): VerifiedSuccessAnalysis => {
   const calls = new Map<string, CallEvent>();
   const bases = new Map<string, ApprovalBasis | undefined>();
   const manifests = new Set(input.manifests);
   let manifestWritten = false;
   let latestCheckPassed: boolean | undefined;
+  const latestChecks = new Map<string, { callId: string; seq: number; passed: boolean }>();
   const wrote = (paths: readonly string[]): void => {
     latestCheckPassed = undefined;
+    latestChecks.clear();
     if (paths.some((written) => manifests.has(path.basename(written)))) manifestWritten = true;
   };
   const wroteUnknownPaths = (): void => {
     latestCheckPassed = undefined;
+    latestChecks.clear();
     manifestWritten = true;
   };
   const mayHaveWritten = (call: CallEvent): boolean => {
@@ -78,7 +85,18 @@ export const isVerifiedSuccess = (input: VerifiedSuccessInput): boolean => {
       continue;
     }
     const command = commandOf(call);
-    if (command !== undefined && event.exitCode !== undefined && input.commands.includes(command)) latestCheckPassed = event.exitCode === 0;
+    if (command !== undefined && event.exitCode !== undefined && input.commands.includes(command)) {
+      latestCheckPassed = event.exitCode === 0;
+      latestChecks.delete(command);
+      latestChecks.set(command, { callId: event.callId, seq: event.seq, passed: latestCheckPassed });
+    }
   }
-  return input.status === 'COMPLETED' && !manifestWritten && latestCheckPassed === true;
+  const verified = input.status === 'COMPLETED' && !manifestWritten && latestCheckPassed === true;
+  const passingChecks = [...latestChecks]
+    .filter(([, check]) => check.passed)
+    .map(([command, { callId, seq }]) => ({ command, callId, seq }))
+    .sort((left, right) => left.seq - right.seq);
+  return { verified, passingChecks };
 };
+
+export const isVerifiedSuccess = (input: VerifiedSuccessInput): boolean => analyseVerifiedSuccess(input).verified;

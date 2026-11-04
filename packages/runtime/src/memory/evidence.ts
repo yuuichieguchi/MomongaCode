@@ -116,6 +116,7 @@ export type BindMemoryEvidenceInput = {
   project: string;
   trusted: boolean;
   verificationCommands: readonly string[];
+  onlyCommand?: string;
   head(): Promise<string | undefined>;
 };
 
@@ -142,7 +143,7 @@ const checkEvidenceOf = (input: BindMemoryEvidenceInput, boundPaths: ReadonlySet
   const lastWrite = Math.max(0, ...completed.filter((event) => event.files?.some((file) => file.access === 'write' && boundPaths.has(file.path)) === true).map((event) => event.seq));
   const matches = completed.filter((event) => {
     const command = commandOf.get(event.callId);
-    return event.seq > lastWrite && event.exitCode !== undefined && command !== undefined && input.verificationCommands.includes(command);
+    return event.seq > lastWrite && event.exitCode !== undefined && command !== undefined && input.verificationCommands.includes(command) && (input.onlyCommand === undefined || command === input.onlyCommand);
   });
   const latest = matches.at(-1);
   if (latest === undefined || latest.exitCode === undefined) return undefined;

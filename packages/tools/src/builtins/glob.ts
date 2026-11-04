@@ -8,7 +8,7 @@ import { walkFiles } from './walk.ts';
 
 type GlobInput = { pattern: string; path?: string };
 
-const MAX_RESULTS = 100;
+export const MAX_GLOB_RESULTS = 100;
 const TRUNCATION_NOTICE = '(Results are truncated. Consider a more specific path or pattern.)';
 
 export const sortByMtimeThenPath = async (files: readonly string[]): Promise<string[]> => {
@@ -19,8 +19,12 @@ export const sortByMtimeThenPath = async (files: readonly string[]): Promise<str
 export const globTool = defineTool<GlobInput>({
   name: 'Glob',
   tier: 'essential',
-  description:
-    'Finds files by glob pattern (for example "**/*.ts"), matched relative to path. path is a directory, defaults to the working directory, and a relative path is resolved against the working directory. Respects .gitignore and .ignore, skips .git, includes dotfiles. Returns paths relative to the working directory when inside it and absolute otherwise, newest first, at most 100.',
+  description: `Finds files by glob pattern (for example "**/*.ts"), matched relative to path. path is a directory, defaults to the working directory, and a relative path is resolved against the working directory. Respects .gitignore and .ignore, skips .git, includes dotfiles. Returns paths relative to the working directory when inside it and absolute otherwise, newest first, at most ${MAX_GLOB_RESULTS}.`,
+  conciseDescription: `Finds files by glob pattern, for example "**/*.ts", under path. A relative path is resolved against the working directory, which is also the default. Respects .gitignore, includes dotfiles. Newest first, at most ${MAX_GLOB_RESULTS}.`,
+  conciseParameterDescriptions: {
+    pattern: 'Glob pattern',
+    path: 'Directory to search; a relative path is resolved against the working directory',
+  },
   kind: 'search',
   sideEffect: 'read_only',
   inputSchema: {
@@ -63,7 +67,7 @@ export const globTool = defineTool<GlobInput>({
     }
     if (matches.length === 0) return { status: 'completed', output: 'No files found' };
     const sorted = await sortByMtimeThenPath(matches);
-    const listed = sorted.slice(0, MAX_RESULTS).map((file) => shownPath(ctx, file));
-    return { status: 'completed', output: [...listed, ...(sorted.length > MAX_RESULTS ? [TRUNCATION_NOTICE] : [])].join('\n') };
+    const listed = sorted.slice(0, MAX_GLOB_RESULTS).map((file) => shownPath(ctx, file));
+    return { status: 'completed', output: [...listed, ...(sorted.length > MAX_GLOB_RESULTS ? [TRUNCATION_NOTICE] : [])].join('\n') };
   },
 });

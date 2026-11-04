@@ -12,8 +12,8 @@ import { nodeShellPorts, resolveBashPath } from './shell.ts';
 
 type BashInput = { command: string; timeout?: number; description?: string; run_in_background?: boolean };
 
-const DEFAULT_TIMEOUT_MS = 120_000;
-const MAX_TIMEOUT_MS = 600_000;
+export const DEFAULT_TIMEOUT_MS = 120_000;
+export const MAX_TIMEOUT_MS = 600_000;
 export const DEFAULT_BACKGROUND_TIMEOUT_MS = 1_800_000;
 export const MAX_BACKGROUND_TIMEOUT_MS = 7_200_000;
 const TITLE_CHARS = 80;
@@ -73,8 +73,14 @@ const startBackgroundJob = async (input: BashInput, ctx: ToolContext): Promise<T
 
 export const bashTool = defineTool<BashInput>({
   name: 'Bash',
-  description:
-    'Runs a shell command with /bin/bash inside a sandbox, in the current working directory. Output combines stdout and stderr. A cd that stays inside the workspace persists to later calls. timeout is in milliseconds (default 120000, maximum 600000). No process started by the command outlives it. With run_in_background the command starts as a background job and the call returns its job id at once; read its output with BashOutput and stop it with KillBash. For a background job timeout is the time the job may run (default 1800000, maximum 7200000); a job ends with its command, with KillBash, at its time limit, or when MomongaCode stops.',
+  description: `Runs a shell command with /bin/bash inside a sandbox, in the current working directory. Output combines stdout and stderr. A cd that stays inside the workspace persists to later calls. timeout is in milliseconds (default ${DEFAULT_TIMEOUT_MS}, maximum ${MAX_TIMEOUT_MS}). No process started by the command outlives it. With run_in_background the command starts as a background job and the call returns its job id at once; read its output with BashOutput and stop it with KillBash. For a background job timeout is the time the job may run (default ${DEFAULT_BACKGROUND_TIMEOUT_MS}, maximum ${MAX_BACKGROUND_TIMEOUT_MS}); a job ends with its command, with KillBash, at its time limit, or when MomongaCode stops.`,
+  conciseDescription: `Runs a bash command in a sandbox in the working directory; output is stdout and stderr. timeout is in milliseconds (default ${DEFAULT_TIMEOUT_MS}, maximum ${MAX_TIMEOUT_MS}). With run_in_background it returns a job id; use BashOutput and KillBash. A background job's timeout defaults to ${DEFAULT_BACKGROUND_TIMEOUT_MS}, maximum ${MAX_BACKGROUND_TIMEOUT_MS}.`,
+  conciseParameterDescriptions: {
+    command: 'Command to run',
+    timeout: 'Timeout in milliseconds',
+    description: 'What the command does',
+    run_in_background: 'Run as a background job and return its job id',
+  },
   kind: 'execute',
   sideEffect: 'exec',
   subjectKind: 'command',

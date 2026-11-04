@@ -39,8 +39,14 @@ export const bashOutputTool = defineTool<BashOutputInput>({
   name: 'BashOutput',
   tier: 'optional',
   companionOf: 'Bash',
-  description:
-    'Reads the output a background job (started with Bash run_in_background) has produced since the last BashOutput call, and reports whether the job is running, exited or stopped. filter keeps only the output lines that match a regular expression; the other new lines are discarded. With block true the call waits until the job ends or timeout milliseconds pass (default 30000, maximum 600000).',
+  description: `Reads the output a background job (started with Bash run_in_background) has produced since the last BashOutput call, and reports whether the job is running, exited or stopped. filter keeps only the output lines that match a regular expression; the other new lines are discarded. With block true the call waits until the job ends or timeout milliseconds pass (default ${DEFAULT_OUTPUT_WAIT_MS}, maximum ${MAX_OUTPUT_WAIT_MS}).`,
+  conciseDescription: `Reads the new output of a background job and its state. filter keeps only lines matching a regular expression. With block true it waits until the job ends or timeout ms pass (default ${DEFAULT_OUTPUT_WAIT_MS}, maximum ${MAX_OUTPUT_WAIT_MS}).`,
+  conciseParameterDescriptions: {
+    bash_id: 'Job id from Bash',
+    filter: 'Regular expression; keep matching lines only',
+    block: 'Wait for the job to end',
+    timeout: 'Maximum wait in milliseconds',
+  },
   kind: 'execute',
   sideEffect: 'read_only',
   inputSchema: {
@@ -81,6 +87,8 @@ export const killBashTool = defineTool<KillBashInput>({
   tier: 'optional',
   companionOf: 'Bash',
   description: 'Stops a background job started with Bash run_in_background, together with every process it started. Stopping a job that has already ended reports how it ended.',
+  conciseDescription: 'Stops a background job and every process it started.',
+  conciseParameterDescriptions: { shell_id: 'Job id from Bash' },
   kind: 'execute',
   sideEffect: 'write',
   subjectKind: 'none',

@@ -28,6 +28,8 @@ export const createHistoryTools = ({ port, trusted, project }: HistoryToolsOptio
     tier: 'optional',
     description:
       'Searches the recorded history of earlier runs and sessions for all the given words. Returns run ids, seq ranges and short snippets, best matches first; use HistoryRead with a run id and seq range to read the recorded events. Scope project (the default) searches this project; scope all also reaches other trusted projects and asks for approval first.',
+    conciseDescription:
+      'Searches earlier runs for all the given words; returns run ids, seq ranges and snippets. Read the events with HistoryRead. scope: project (default) or all, which asks for approval.',
     kind: 'search',
     sideEffect: 'read_only',
     inputSchema: {
@@ -57,6 +59,8 @@ export const createHistoryTools = ({ port, trusted, project }: HistoryToolsOptio
     tier: 'optional',
     description:
       'Reads the recorded events of one run, redacted, for a step or a seq range. Without runId it reads the current run, including ranges that context compaction replaced. A long range is paged: follow the instruction at the end of the output with seqFrom and offset.',
+    conciseDescription:
+      'Reads the recorded events of one run for a step or seq range; the current run if runId is omitted. A long range is paged: follow the instruction at the end with seqFrom and offset.',
     kind: 'read',
     sideEffect: 'read_only',
     inputSchema: {

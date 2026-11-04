@@ -1,7 +1,8 @@
-import { PinnedOverflowError } from '@momonga/context';
+import { PinnedOverflowError, formatToolOutput } from '@momonga/context';
 import { canonicalJson, parseJsonOrText } from '@momonga/foundation';
+import { termsOf } from '@momonga/protocol';
 import type { PermissionOption, RunEventPayload, RunState, ToolAwait } from '@momonga/protocol';
-import type { CallOutcome, DisplayContext, NeedsApprovalOutcome, NeedsInputOutcome, ResultOutcome, ToolCall, WaitingOutcome } from '@momonga/tools';
+import type { BatchOutputFormatter, CallOutcome, DisplayContext, NeedsApprovalOutcome, NeedsInputOutcome, ResultOutcome, ToolCall, WaitingOutcome } from '@momonga/tools';
 import { validateToolInput } from '@momonga/tools';
 import type { Session } from '@momonga/store';
 import { createToolHooks } from '@momonga/tools';
@@ -10,7 +11,7 @@ import { createAutoClassifier } from './auto-classifier.ts';
 import { haltRun, hookRunContextFor } from './hook-step.ts';
 import type { TraceSpan } from '../ports.ts';
 import type { ClaimContext, Flow } from './claim-context.ts';
-import { pinnedFailureFor } from './context-step.ts';
+import { pinnedFailureFor, taskOf } from './context-step.ts';
 import { ownEntries } from './own-entries.ts';
 
 export const REJECTED_OUTPUT = 'The user rejected this tool call.';
@@ -60,6 +61,7 @@ export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
           ...(result.content === undefined ? {} : { content: result.content }),
           ...(result.truncated === undefined ? {} : { truncated: result.truncated }),
           ...(result.handle === undefined ? {} : { handle: result.handle }),
+          ...(result.formatted === undefined ? {} : { formatted: result.formatted }),
           ...(result.denial === undefined ? {} : { denial: result.denial }),
           ...(result.files === undefined ? {} : { files: result.files }),
           ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
@@ -73,6 +75,13 @@ export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
       ? []
       : [{ type: 'mcp.authorization.required' as const, callId, server: result.authorizationRequired.server }]),
   ];
+};
+
+const batchFormatterOf = (ctx: ClaimContext): BatchOutputFormatter | undefined => {
+  const enabled = ctx.token.outputFormatters;
+  if (enabled.length === 0) return undefined;
+  const terms = termsOf(taskOf(ctx).text);
+  return ({ output, tool }) => formatToolOutput({ output, tool, enabled, terms });
 };
 
 const approvalOptions = (suggestedRule: string | undefined): PermissionOption[] => [
@@ -190,6 +199,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   const classifier = session.permissionMode === 'auto' ? createAutoClassifier(ctx, options.tools.sessionState(session).cwd, step) : undefined;
   const spans = new Map<string, TraceSpan>();
   const halt: { reason?: string; hookEvent?: string } = {};
+  const formatOutput = batchFormatterOf(ctx);
   let outcomes: CallOutcome[];
   try {
     outcomes = await options.tools.executor.runBatch({
@@ -212,6 +222,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
       signal: ctx.control.signal,
       ...(toolHooks === undefined ? {} : { hooks: toolHooks }),
       ...(classifier === undefined ? {} : { classifier }),
+      ...(formatOutput === undefined ? {} : { formatOutput }),
       onHalt: (reason, hookEvent) => {
         halt.reason = reason;
         halt.hookEvent = hookEvent;

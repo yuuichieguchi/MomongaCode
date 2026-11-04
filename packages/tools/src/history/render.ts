@@ -71,7 +71,7 @@ const eventText = (event: RunEvent, ownRun: boolean): string => {
     case 'tool.updated':
       return `tool update ${event.callId}: ${contentTextOf(event.content)}`;
     case 'tool.completed': {
-      if (ownRun && event.handle !== undefined) return `tool result ${event.callId} ${event.status}: the output was truncated; the full output is saved under handle ${event.handle}, readable with the ReadOutput tool`;
+      if (ownRun && event.truncated === true && event.handle !== undefined) return `tool result ${event.callId} ${event.status}: the output was truncated; the full output is saved under handle ${event.handle}, readable with the ReadOutput tool`;
       return `tool result ${event.callId} ${event.status}${event.truncated === true ? ' (the recorded output was truncated)' : ''}: ${event.output}`;
     }
     case 'tool.reconciled':
