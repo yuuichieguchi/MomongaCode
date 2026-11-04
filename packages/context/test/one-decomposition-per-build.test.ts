@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ESTIMATED_ERROR_SHAPE } from '@momonga/protocol';
+import { ESTIMATED_ERROR_SHAPE, summaryTokenCapFor } from '@momonga/protocol';
 import type { InputItem, MessageInputItem } from '@momonga/protocol';
 import { MIN_ROOM_TOKENS, PinnedRoomError, buildContext, capacityFor, createTokenMeter, inputCeilingFor, itemCapFor, measurePinned } from '@momonga/context';
 import type { BuildContextInput, BuildContextPorts, HistoryItem, MeterCount, TokenMeter } from '@momonga/context';
@@ -82,13 +82,13 @@ describe('one decomposition per build, chosen on the frozen items before the new
     spy.meter.observe({ inputDigest: built.inputDigest, inputTokens: REPORTED });
     spy.reset();
 
-    await buildContext(inputWith([...first, assistant(2, 'b'.repeat(1_200))]), portsOf(spy.meter));
+    const next = await buildContext(inputWith([...first, assistant(2, 'b'.repeat(1_200))]), portsOf(spy.meter));
 
     expect(spy.counts.length).toBeGreaterThan(0);
     const capacities = spy.counts.map((counted) => capacityFor(sized, counted.underAt));
     expect(new Set(capacities)).toEqual(new Set([SPLIT_CAPACITY_AT_REPORTED]));
     expect(capacities).not.toContain(STATIC_CEILING);
-    expect(spy.counts.at(-1)?.known).toBe(REPORTED);
+    expect(spy.counts.find((counted) => counted.inputDigest === next.inputDigest)?.known).toBe(REPORTED);
   });
 
   it('measures the admission head at the C of the build decomposition after a report, not at the static ceiling', async () => {
@@ -102,6 +102,7 @@ describe('one decomposition per build, chosen on the frozen items before the new
     expect(measured.ceiling).toBe(SPLIT_CAPACITY_AT_REPORTED);
     expect(measured.room).toBe(SPLIT_CAPACITY_AT_REPORTED - measured.pinnedTokens);
     expect(measured.itemCap).toBe(itemCapFor(sized, SPLIT_CAPACITY_AT_REPORTED - measured.pinnedTokens));
+    expect(measured.summaryCap).toBe(summaryTokenCapFor(sized, SPLIT_CAPACITY_AT_REPORTED - measured.pinnedTokens));
   });
 
   describe('a pinned prefix that leaves no room under the static ceiling but room under the split C', () => {
@@ -135,6 +136,7 @@ describe('one decomposition per build, chosen on the frozen items before the new
       expect(measured.pinnedTokens).toBe(pinned);
       expect(measured.ceiling).toBe(capacity);
       expect(measured.itemCap).toBe(itemCapFor(sized, capacity - pinned));
+      expect(measured.summaryCap).toBe(summaryTokenCapFor(sized, capacity - pinned));
     });
 
   });
