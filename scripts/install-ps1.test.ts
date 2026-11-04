@@ -31,6 +31,22 @@ describe('install.ps1', () => {
     expect(source).toContain('set MOMONGA_RELEASE_PUBLIC_KEY to the ssh public key line the maintainers publish');
   });
 
+  it('declares an empty embedded repository right after the embedded release public key', () => {
+    const lines = fs.readFileSync(SCRIPT, 'utf8').split('\n');
+    const keyLine = lines.indexOf("$embeddedReleasePublicKey = ''");
+    expect(keyLine).toBeGreaterThanOrEqual(0);
+    expect(lines[keyLine + 1]).toBe("$embeddedReleaseRepo = ''");
+  });
+
+  it('builds the download URL from the embedded repository, with MOMONGA_REPO only as an override', () => {
+    const source = fs.readFileSync(SCRIPT, 'utf8');
+    expect(source).not.toContain('if (-not $env:MOMONGA_REPO)');
+    expect(source.match(/\$embeddedReleaseRepo\b/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    const urlLines = source.split('\n').filter((line) => line.includes('https://github.com/'));
+    expect(urlLines.length).toBe(2);
+    for (const line of urlLines) expect(line).not.toContain('$env:MOMONGA_REPO');
+  });
+
   it('refuses plain http to anything but the loopback interface', () => {
     const source = fs.readFileSync(SCRIPT, 'utf8');
     expect(source).toContain("-notmatch '^https://'");

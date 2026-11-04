@@ -12,6 +12,9 @@ readonly BINARY="$OUT_DIR/$ASSET_NAME"
 readonly ARCHIVE="$OUT_DIR/$ASSET_NAME.zip"
 readonly CHECKSUMS="$OUT_DIR/$CHECKSUMS_NAME"
 readonly SIGNATURE="$OUT_DIR/$SIGNATURE_NAME"
+readonly MOMONGA_TEAM_ID="PQQBSRKD72"
+readonly SIGNING_IDENTITY="Developer ID Application: Yuuichi Eguchi ($MOMONGA_TEAM_ID)"
+readonly RELEASE_SIGNING_KEY="$HOME/.ssh/momonga-release"
 readonly OTHER_TARGETS=(linux-x64 linux-arm64 win-x64)
 readonly OTHER_ASSETS=(momonga-linux-x64 momonga-linux-arm64 momonga-win-x64.exe)
 
@@ -93,13 +96,14 @@ case "$DRY_RUN" in
   *) fail "DRY_RUN must be 0 or 1, got '$DRY_RUN'" ;;
 esac
 
-require_env SIGNING_IDENTITY APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER MOMONGA_REPO MOMONGA_TEAM_ID RELEASE_SIGNING_KEY
-[ -f "$RELEASE_SIGNING_KEY" ] || fail "RELEASE_SIGNING_KEY must be the path of the ssh private key that signs $CHECKSUMS_NAME"
+require_env APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER
+[ -f "$RELEASE_SIGNING_KEY" ] || fail "the ssh private key that signs $CHECKSUMS_NAME must be at $RELEASE_SIGNING_KEY"
 [ -f "$APPLE_API_KEY" ] || fail "APPLE_API_KEY must be the path of the App Store Connect .p8 key file"
-[[ "$MOMONGA_REPO" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || fail "MOMONGA_REPO must be <owner>/<repo>, got '$MOMONGA_REPO'"
-[[ "$MOMONGA_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]] || fail "MOMONGA_TEAM_ID must be a 10-character Apple Team ID, got '$MOMONGA_TEAM_ID'"
 
 readonly RELEASE_KEY_TOOL="$ROOT/scripts/release-key.ts"
+MOMONGA_REPO="$(node "$RELEASE_KEY_TOOL" print-repo)" || fail "the installers do not embed a usable release repository; nothing was built"
+readonly MOMONGA_REPO
+[[ "$MOMONGA_REPO" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || fail "MOMONGA_REPO must be <owner>/<repo>, got '$MOMONGA_REPO'"
 pinned_key="$(node "$RELEASE_KEY_TOOL" print)" || fail "the installers do not pin a usable release public key; nothing was built"
 readonly pinned_key
 readonly UPDATE_SOURCE_FLAGS=(--repo "$MOMONGA_REPO" --team-id "$MOMONGA_TEAM_ID" --release-public-key "$pinned_key")

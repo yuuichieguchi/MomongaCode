@@ -203,6 +203,56 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
     expect(outcome.stderr).toBe('install.sh: set MOMONGA_REPO=<owner>/<repo> or MOMONGA_RELEASE_BASE_URL\n');
   });
 
+  const EMBEDDED_REPO_DECLARATION = 'readonly EMBEDDED_RELEASE_REPO=""';
+
+  const installerWithRepo = (repo: string): string => {
+    const source = fs.readFileSync(INSTALL_SCRIPT, 'utf8');
+    expect(source).toContain(EMBEDDED_REPO_DECLARATION);
+    const directory = fs.mkdtempSync(path.join(root, 'embedded-'));
+    const script = path.join(directory, 'install.sh');
+    fs.writeFileSync(script, source.replace(EMBEDDED_REPO_DECLARATION, `readonly EMBEDDED_RELEASE_REPO="${repo}"`));
+    return script;
+  };
+
+  const fetchedUrls = async (script: string, extra: NodeJS.ProcessEnv): Promise<{ urls: string[]; outcome: Outcome }> => {
+    const stubs = unameStub('Darwin', 'arm64');
+    const log = path.join(stubs, 'curl.log');
+    fs.writeFileSync(path.join(stubs, 'curl'), `#!/bin/sh\nfor last; do :; done\nprintf '%s\\n' "$last" >> "${log}"\nexit 22\n`, { mode: 0o755 });
+    const env: NodeJS.ProcessEnv = { ...baseEnv(), PATH: `${stubs}:/usr/bin:/bin`, ...extra };
+    delete env['MOMONGA_RELEASE_BASE_URL'];
+    const outcome = await new Promise<Outcome>((resolve, reject) => {
+      execFile('/bin/bash', [script], { env }, (error, stdout, stderr) => {
+        if (error === null) return resolve({ code: 0, stdout, stderr });
+        if (typeof error.code === 'number') return resolve({ code: error.code, stdout, stderr });
+        reject(error);
+      });
+    });
+    const urls = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter((line) => line.length > 0) : [];
+    return { urls, outcome };
+  };
+
+  it('declares an empty embedded repository right after the embedded release public key', () => {
+    const lines = fs.readFileSync(INSTALL_SCRIPT, 'utf8').split('\n');
+    const keyLine = lines.indexOf('readonly EMBEDDED_RELEASE_PUBLIC_KEY=""');
+    expect(keyLine).toBeGreaterThanOrEqual(0);
+    expect(lines[keyLine + 1]).toBe(EMBEDDED_REPO_DECLARATION);
+  });
+
+  it('downloads the latest release of the embedded repository when MOMONGA_REPO is not set', async () => {
+    const { urls } = await fetchedUrls(installerWithRepo('embedded-owner/embedded-repo'), {});
+    expect(urls[0]).toBe('https://github.com/embedded-owner/embedded-repo/releases/latest/download/SHA256SUMS');
+  });
+
+  it('downloads the requested version of the embedded repository when MOMONGA_VERSION is set', async () => {
+    const { urls } = await fetchedUrls(installerWithRepo('embedded-owner/embedded-repo'), { MOMONGA_VERSION: '1.2.3' });
+    expect(urls[0]).toBe('https://github.com/embedded-owner/embedded-repo/releases/download/v1.2.3/SHA256SUMS');
+  });
+
+  it('lets MOMONGA_REPO override the embedded repository', async () => {
+    const { urls } = await fetchedUrls(installerWithRepo('embedded-owner/embedded-repo'), { MOMONGA_REPO: 'override-owner/override-repo' });
+    expect(urls[0]).toBe('https://github.com/override-owner/override-repo/releases/latest/download/SHA256SUMS');
+  });
+
   it('refuses a release whose checksums are signed by another key, even when the binary matches them', async () => {
     served = { [`/${ASSET}`]: TAMPERED_BINARY, ...signedSums(`${sha256(TAMPERED_BINARY)}  ${ASSET}\n`, attacker.privateKey) };
     const outcome = await runInstall(baseEnv());
