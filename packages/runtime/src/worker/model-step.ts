@@ -7,7 +7,9 @@ import { modelKey } from '../model-key.ts';
 import { GatewayFailureError } from './errors.ts';
 import { isRecord } from './json.ts';
 import { buildNext, cancelIfInterrupted, recoverRejectedCompaction } from './context-step.ts';
-import { isLoop } from './loop-detection.ts';
+import { loopSignatureOf } from './loop-detection.ts';
+import { loopGuidanceFactsOf, loopGuidanceItem } from './loop-guidance.ts';
+import type { CallResult } from './loop-guidance.ts';
 import { streamModel } from './model-stream.ts';
 import type { StreamedModel } from './model-stream.ts';
 import { summaryStopReason } from './wrap-up.ts';
@@ -61,11 +63,26 @@ export const decideAfterResponse = async (ctx: ClaimContext): Promise<Flow> => {
     if ((await runStopHooks(ctx)) === 'continue') return 'continue';
     return terminals.finish('COMPLETED');
   }
-  if (isLoop(journal.state, ctx.limits.loopThreshold)) {
-    journal.append([
-      { type: 'notice', level: 'warning', message: `The model repeated the same tool call with the same results ${ctx.limits.loopThreshold} times in a row, so the run stops.`, code: 'tool_loop_detected' },
-    ]);
-    return terminals.finish('STOPPED', { stopReason: 'loop' });
+  const repeatedSignature = loopSignatureOf(journal.state, ctx.limits.loopThreshold);
+  if (repeatedSignature !== undefined) {
+    const warned = ctx.token.loopGuidance && journal.state.loopWarned?.signature !== repeatedSignature;
+    if (warned) {
+      journal.append([
+        { type: 'loop.warned', signature: repeatedSignature },
+        {
+          type: 'notice',
+          level: 'warning',
+          message: `The model repeated the same tool call with the same results ${ctx.limits.loopThreshold} times in a row, so it is warned and the next identical call stops the run.`,
+          code: 'tool_loop_warned',
+        },
+      ]);
+    } else {
+      const repeats = ctx.token.loopGuidance ? ctx.limits.loopThreshold + 1 : ctx.limits.loopThreshold;
+      journal.append([
+        { type: 'notice', level: 'warning', message: `The model repeated the same tool call with the same results ${repeats} times in a row, so the run stops.`, code: 'tool_loop_detected' },
+      ]);
+      return terminals.finish('STOPPED', { stopReason: 'loop' });
+    }
   }
   recordCalls(ctx);
   return settleCalls(ctx);
@@ -289,12 +306,46 @@ const observationOf = (body: CreateResponseBody): InputObservation | undefined =
   return { input: body.input, tools: body.tools ?? [] };
 };
 
+const loopGuidancePending = (ctx: ClaimContext): boolean => {
+  if (!ctx.token.loopGuidance || ctx.journal.state.loopWarned === undefined) return false;
+  const { store } = ctx.options;
+  const warned = store.readRunEventsOfTypes(ctx.run.id, ['loop.warned']).at(-1);
+  if (warned === undefined) throw new Error(`run ${ctx.run.id} folded a loop warning that its journal does not hold`);
+  const requested = store.readLatestRunEventBefore(ctx.run.id, 'model.requested', ctx.journal.state.lastSeq + 1);
+  return requested === undefined || requested.seq < warned.seq;
+};
+
+const loopGuidanceTrailing = (ctx: ClaimContext): InputItem[] => {
+  if (!loopGuidancePending(ctx)) return [];
+  const { state } = ctx.journal;
+  if (state.loopWarned === undefined) throw new Error(`run ${ctx.run.id} has no loop warning to write guidance for`);
+  const statuses = new Map<string, CallResult>(
+    ctx.options.store.readRunEventsOfTypes(ctx.run.id, ['tool.completed']).flatMap((event) => (event.type === 'tool.completed' ? [[event.callId, event.status] as const] : [])),
+  );
+  const ours = new Map<string, string>(
+    state.history.flatMap((entry) => (entry.item.type === 'function_call_output' && entry.callId !== undefined ? [[entry.item.call_id, entry.callId] as const] : [])),
+  );
+  return [
+    loopGuidanceItem(
+      loopGuidanceFactsOf({
+        state,
+        signature: state.loopWarned.signature,
+        resultOf: (providerCallId) => {
+          const callId = ours.get(providerCallId);
+          return callId === undefined ? undefined : statuses.get(callId);
+        },
+        isExecute: (toolName) => ctx.toolSet.get(toolName)?.kind === 'execute',
+      }),
+    ),
+  ];
+};
+
 export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   const { journal, terminals, options } = ctx;
   if (options.clock.now() >= ctx.run.deadlineAt) return terminals.finish('STOPPED', { stopReason: 'timeout' });
   if (ctx.control.yieldRequested()) return terminals.yieldLease();
   const limit = limitReached(ctx);
-  const outcome = await buildNext(ctx, limit === undefined ? {} : { wrapUp: limit });
+  const outcome = await buildNext(ctx, { ...(limit === undefined ? {} : { wrapUp: limit }), trailing: loopGuidanceTrailing(ctx) });
   if (outcome.kind === 'done') return 'done';
   const { built, wrapUp } = outcome;
   const summarising = limit !== undefined || wrapUp !== undefined;

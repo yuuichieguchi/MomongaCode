@@ -139,7 +139,7 @@ export const contextInputOf = (
     level,
     ...(ctx.pinnedDigest.value === undefined ? {} : { expectedPinnedDigest: ctx.pinnedDigest.value }),
     ...(wrapUp === undefined ? {} : { tools: 'none' as const }),
-    ...(wrapUpItems.length + trailing.length === 0 ? {} : { trailing: [...wrapUpItems, ...trailing] }),
+    ...(wrapUpItems.length + trailing.length === 0 ? {} : { trailing: [...trailing, ...wrapUpItems] }),
     ...(ctx.token.cachePrefix
       ? {
           layout: 'cachePrefix' as const,
