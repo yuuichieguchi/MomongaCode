@@ -134,7 +134,7 @@ describe('runProbe context window', () => {
     const { report, fake } = await probe({ scenario: 'tools-ok', contextWindow: window, contextSizeExposure: 'none', wire: 'fm' });
 
     const searchSizes = fake.requests
-      .filter((request) => request.path === '/v1/chat/completions')
+      .filter((request) => request.path === '/v1/chat/completions' && (request.body as { max_tokens?: unknown }).max_tokens === 1)
       .map((request) => (request.body as { messages?: Array<{ content?: unknown }> }).messages?.[0]?.content)
       .filter((content): content is string => typeof content === 'string' && /^word( word)*$/.test(content))
       .map(words);
