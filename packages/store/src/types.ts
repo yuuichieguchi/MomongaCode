@@ -461,7 +461,7 @@ export type ReflectionStore = {
   release(runId: string): ReflectionJob;
   finish(runId: string, reason?: string): ReflectionJob;
   complete(completion: ReflectionCompletion): ReflectionJob;
-  fail(runId: string, reason: string, charge?: ContextChargeInput): ReflectionJob;
+  fail(runId: string, reason: string, charge?: ContextChargeInput, candidates?: readonly SaveCandidateInput[]): ReflectionJob;
 };
 
 export type ContextCharge = ContextChargeInput & { id: number; createdAt: number };
