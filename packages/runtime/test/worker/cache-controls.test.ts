@@ -156,19 +156,13 @@ const seeded = (seed: number) => {
   };
 };
 
-type Requested = { seq: number; body: CachedBody };
+type Recorded = { body: CachedBody; prefix: { preservedItems: number; toolsChanged: boolean } | undefined };
 
-const epochsOf = (requests: readonly Requested[], compactedSeqs: readonly number[]): Requested[][] => {
-  const epochs = new Map<number, Requested[]>();
-  for (const request of requests) {
-    const epoch = compactedSeqs.filter((seq) => seq < request.seq).length;
-    epochs.set(epoch, [...(epochs.get(epoch) ?? []), request]);
-  }
-  return [...epochs.values()];
-};
+const continuesEpoch = (previous: Recorded, next: Recorded): boolean =>
+  next.prefix !== undefined && !next.prefix.toolsChanged && next.prefix.preservedItems >= marksOf(previous.body).history;
 
 describe('the marks over generated request sequences (4.5; T2-5 has no formal model)', () => {
-  it.for(Array.from({ length: 12 }, (_, index) => index + 1))('keep their order within each epoch, seed %i', async (seed) => {
+  it.for(Array.from({ length: 12 }, (_, index) => index + 1))('keep their order, and previousHistory follows the recorded prefix relation, seed %i', async (seed) => {
     const draw = seeded(seed);
     const compacting = draw(0, 1) === 1;
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
@@ -186,47 +180,70 @@ describe('the marks over generated request sequences (4.5; T2-5 has no formal mo
 
     expect(env.run(run.id).status).toBe('COMPLETED');
     const seededSteps = compacting ? 1 : 0;
-    const requested = env
-      .ofType(run.id, 'model.requested')
-      .slice(seededSteps)
-      .map((event): Requested => ({ seq: event.seq, body: event.body as CachedBody }));
-    expect(requested).toHaveLength(steps + 1);
-    const compactedSeqs = env.ofType(run.id, 'context.compacted').map((event) => event.seq);
-    for (const epoch of epochsOf(requested, compactedSeqs)) {
-      epoch.forEach(({ body }, index) => {
-        const marks = marksOf(body);
-        expect(marks.stable).toBeLessThanOrEqual(marks.fixed);
-        expect(marks.fixed).toBeLessThanOrEqual(marks.history);
-        expect(marks.history).toBeLessThanOrEqual(inputOf(body).length);
-        const previous = index === 0 ? undefined : marksOf(epoch[index - 1]!.body);
-        if (previous === undefined) {
-          if (compacting) expect(marks.previousHistory).toBeUndefined();
-        } else {
-          expect(marks.previousHistory).toBe(previous.history);
-          expect(marks.history).toBeGreaterThanOrEqual(previous.history);
-        }
-        if (marks.previousHistory !== undefined) expect(marks.previousHistory).toBeLessThanOrEqual(marks.history);
-      });
-    }
+    const recorded = env.ofType(run.id, 'model.requested').map((event): Recorded => ({ body: event.body as CachedBody, prefix: event.prefix }));
+    expect(recorded).toHaveLength(seededSteps + steps + 1);
+    recorded.slice(seededSteps).forEach((request, offset) => {
+      const marks = marksOf(request.body);
+      expect(marks.stable).toBeLessThanOrEqual(marks.fixed);
+      expect(marks.fixed).toBeLessThanOrEqual(marks.history);
+      expect(marks.history).toBeLessThanOrEqual(inputOf(request.body).length);
+      const previous = recorded[seededSteps + offset - 1];
+      if (previous === undefined) {
+        expect(marks.previousHistory).toBeUndefined();
+        return;
+      }
+      if (continuesEpoch(previous, request)) {
+        expect(marks.previousHistory).toBe(marksOf(previous.body).history);
+        expect(marks.fixed).toBeLessThanOrEqual(marks.previousHistory as number);
+        expect(marks.previousHistory).toBeLessThanOrEqual(marks.history);
+      } else {
+        expect(marks.previousHistory).toBeUndefined();
+      }
+    });
   });
 });
 
 describe('previousHistory survives a new claim (4.5)', () => {
-  it('reads the previous request of the run from the journal after the claim yields on a mode change', async () => {
+  it('reads the previous request of the run from the journal after the claim yields on a shutdown', async () => {
     const env = await envWithRootAgents(false);
+    let shutdown: Promise<void> | undefined;
+    const first = env.worker('worker-1');
     env.toolbox.hooks.Echo = async () => {
-      const changed = env.store.setPermissionMode(env.session.id, 'plan');
-      if (changed.kind !== 'ok') throw new Error(`the mode could not be changed: ${changed.kind}`);
+      shutdown = first.abort('shutdown');
     };
     echoThenDone(env);
     const run = env.enqueue('Echo then finish');
 
-    await env.runOnce(env.worker());
+    await env.runOnce(first);
+    await shutdown;
+    await env.runOnce(env.worker('worker-2'));
+
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(env.ofType(run.id, 'run.started')).toHaveLength(2);
+    const [before, after] = sentBodies(env);
+    expect(env.ofType(run.id, 'model.requested')[1]?.prefix).toMatchObject({ toolsChanged: false });
+    expect(marksOf(after!).previousHistory).toBe(marksOf(before!).history);
+    expect(after!.prompt_cache_key).toBe(keyOf(after!, 2));
+  });
+});
+
+describe.for([false, true])('a new arrival ends the epoch (4.5), cachePrefix %s', (cachePrefix) => {
+  it('leaves previousHistory absent on the next request, with marks in the gateway order', async () => {
+    const env = await envWithRootAgents(cachePrefix);
+    env.instructions.files.set(`${env.project}/src/AGENTS.md`, 'Nested rule: name things plainly.');
+    env.gateway.script.push(callsStep([{ callId: 'c1', name: 'Read', args: { file_path: `${env.project}/src/a.ts` } }]), textStep('Done.'));
+    const run = env.enqueue('Read a file');
+
     await env.runOnce(env.worker());
 
-    expect(env.ofType(run.id, 'run.started')).toHaveLength(2);
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(env.ofType(run.id, 'instructions.loaded')).toHaveLength(2);
     const [first, second] = sentBodies(env);
-    expect(marksOf(second!).previousHistory).toBe(marksOf(first!).history);
-    expect(second!.prompt_cache_key).toBe(keyOf(second!, 2));
+    expect(inputOf(second!).some((item) => canonicalJson(item).includes('Nested rule'))).toBe(true);
+    const marks = marksOf(second!);
+    expect(marks.previousHistory).toBeUndefined();
+    expect(marks.stable).toBeLessThanOrEqual(marks.fixed);
+    expect(marks.fixed).toBeLessThanOrEqual(marks.history);
+    expect(marks.fixed).toBeGreaterThan(marksOf(first!).fixed);
   });
 });
