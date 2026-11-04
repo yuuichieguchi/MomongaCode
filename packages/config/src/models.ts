@@ -71,13 +71,12 @@ type RemoteTargetInput = {
   admissionTimeoutMs?: number;
 };
 
-type CapabilityDefaults = Omit<TargetCapabilitiesCore, 'contextWindow' | 'maxOutputTokens'> & { imageInput: false };
+type CapabilityDefaults = Omit<TargetCapabilitiesCore, 'contextWindow' | 'maxOutputTokens' | 'imageInput' | 'imageTokens'>;
 
 const CHAT_COMPLETIONS_CAPABILITY_DEFAULTS: CapabilityDefaults = {
   structuredOutput: 'none',
   streaming: true,
   stopSequences: true,
-  imageInput: false,
   schemaDialect: 'json-schema-2020-12',
   tokenCounting: 'estimated',
   usageReported: true,
@@ -120,7 +119,10 @@ const resolveRemote = (
   if (socketPath !== undefined) checkSocketPath(socketPath, home, where);
   const maxConcurrency = target.maxConcurrency ?? serving.maxConcurrency;
   const { imageInput, imageTokens, ...core } = { ...defaults, ...target.capabilities, maxConcurrency };
-  const capabilities = { ...core, ...imageCapability(imageInput, imageTokens, `${where}: `) };
+  const capabilities = {
+    ...core,
+    ...(imageInput === undefined && imageTokens === undefined ? {} : imageCapability(imageInput ?? false, imageTokens, `${where}: `)),
+  };
   return {
     ...(baseUrl === undefined ? {} : { baseUrl }),
     ...(socketPath === undefined ? {} : { socketPath }),

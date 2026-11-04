@@ -19,7 +19,8 @@ import { summaryRequestOf } from '../adapters/shared/compact.ts';
 import { hiddenReasoningTokens } from '../core/hidden-reasoning.ts';
 import { cachedCountOf } from './cached-count.ts';
 import { maxOutputTokensFor } from './decide.ts';
-import { solidPngDataUrl } from './solid-png.ts';
+import { IMAGE_PROMPT, SEARCH_TOLERANCE, TINY_PNG, measureImageTokens } from './image-tokens.ts';
+import type { ImageCostProbe } from './image-tokens.ts';
 import { ProbeTimeoutError, createProbeClient, systemSleep, type HttpResult, type ProbeClient, type ProbeEndpoint } from './client.ts';
 import { buildToolCallEnvelope, keywordProbeSchemas, type KeywordSupport, type ProbeTool } from './envelope.ts';
 import { field, firstOf, isRecord, parseJson } from './json.ts';
@@ -46,12 +47,7 @@ const CONCURRENCY_ATTEMPTS = 8;
 const SEARCH_INITIAL_WORDS = 64;
 const SEARCH_MAX_WORDS = 262144;
 const DEFAULT_STEP_TIMEOUT_MS = 120000;
-const SEARCH_TOLERANCE = 0.01;
 const CACHE_PROBE_WORDS = 1536;
-const IMAGE_PROMPT = 'Describe this image.';
-const IMAGE_PROBE_SMALL_SIDE = 512;
-const IMAGE_PROBE_LARGE_SIDE = 2048;
-const IMAGE_PROBE_MAX_SIDE = 8192;
 const CALIBRATION_WORD_COUNTS = [20, 80, 320] as const;
 const CONTEXT_FIELDS = [
   'context_window',
@@ -74,10 +70,6 @@ const PROBE_TOOL: ProbeTool = {
 const TOOL_PROMPT = `Please call ${PROBE_TOOL.name} for Tokyo for 3 days`;
 const SYSTEM_PROMPT = 'Answer only with JSON that matches the given schema.';
 const PLAIN_PROMPT = 'Say hello in one short sentence.';
-const TINY_PNG_SIDE = 1;
-const TINY_PNG =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
-
 const ajv = new Ajv2020.default({ strict: false });
 const validateToolArguments = ajv.compile(PROBE_TOOL.parameters);
 
@@ -236,7 +228,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
     'image input',
   );
 
-  const imageTokens = imageInputAccepted && usageReported ? await measureImageTokens(chat) : undefined;
+  const imageTokens = imageInputAccepted && usageReported ? await measureImageTokens(imageCostProbeOf(chat)) : undefined;
 
   const guardrail: ProbeReport['guardrail'] = {};
   if (options.guardrailPrompt !== undefined) {
@@ -303,102 +295,25 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
 
 type Chat = (body: Record<string, unknown>) => Promise<ChatResult>;
 
-type ImageCost = { rejected: true } | { rejected: false; promptTokens: number | undefined };
-
-type MeasuredImage = { side: number; tokens: number };
-
-type Measurement = MeasuredImage | 'rejected' | 'unusable';
-
 const imagePromptRequest = (chat: Chat, imageUrl: string | undefined): Promise<ChatResult> => {
   const parts: unknown[] = [{ type: 'text', text: IMAGE_PROMPT }];
   if (imageUrl !== undefined) parts.push({ type: 'image_url', image_url: { url: imageUrl } });
   return chat({ messages: [{ role: 'user', content: parts }], max_tokens: 1 });
 };
 
-const baselinePromptTokens = async (chat: Chat): Promise<number | undefined> => {
-  const result = await imagePromptRequest(chat, undefined);
-  expectStatus(result, [200], 'image token baseline');
-  return promptTokensOf(parseJson(result.text));
-};
-
-const imageCost = async (chat: Chat, imageUrl: string): Promise<ImageCost> => {
-  const result = await imagePromptRequest(chat, imageUrl);
-  if (result.outcome === 'unsupported' || result.outcome === 'overflow') return { rejected: true };
-  if (result.outcome !== 'accepted') return failProbeStep(result, 'image token measurement');
-  return { rejected: false, promptTokens: promptTokensOf(parseJson(result.text)) };
-};
-
-const measureUrl = async (chat: Chat, baseline: number, side: number, imageUrl: string): Promise<Measurement> => {
-  const cost = await imageCost(chat, imageUrl);
-  if (cost.rejected) return 'rejected';
-  if (cost.promptTokens === undefined || cost.promptTokens - baseline <= 0) return 'unusable';
-  return { side, tokens: cost.promptTokens - baseline };
-};
-
-const measureSide = (chat: Chat, baseline: number, side: number): Promise<Measurement> => measureUrl(chat, baseline, side, solidPngDataUrl(side));
-
-const bisectLargestAccepted = async (chat: Chat, baseline: number, accepted: MeasuredImage, rejectedFrom: number): Promise<MeasuredImage | undefined> => {
-  let largest = accepted;
-  let rejectedSide = rejectedFrom;
-  while (rejectedSide - largest.side > Math.max(1, Math.floor(largest.side * SEARCH_TOLERANCE))) {
-    const middle = Math.floor((largest.side + rejectedSide) / 2);
-    const measured = await measureSide(chat, baseline, middle);
-    if (measured === 'unusable') return undefined;
-    if (measured === 'rejected') rejectedSide = middle;
-    else largest = measured;
-  }
-  return largest;
-};
-
-type Ceiling = { largest: MeasuredImage; plateau: boolean };
-
-const findCeiling = async (chat: Chat, baseline: number, small: MeasuredImage, floorTokens: number): Promise<Ceiling | undefined> => {
-  let previous = small;
-  for (let side = IMAGE_PROBE_LARGE_SIDE; side <= IMAGE_PROBE_MAX_SIDE; side *= 2) {
-    const measured = await measureSide(chat, baseline, side);
-    if (measured === 'unusable') return undefined;
-    if (measured === 'rejected') {
-      const largest = await bisectLargestAccepted(chat, baseline, previous, side);
-      return largest === undefined ? undefined : { largest, plateau: false };
-    }
-    if (measured.tokens <= previous.tokens && previous.tokens > floorTokens) return { largest: measured, plateau: true };
-    previous = measured;
-  }
-  return { largest: previous, plateau: false };
-};
-
-const referenceBelowPlateau = async (chat: Chat, baseline: number, start: MeasuredImage, model: Pick<ImageTokenModel, 'minTokens' | 'maxTokens'>, plateau: boolean): Promise<MeasuredImage | undefined> => {
-  let candidate = start;
-  for (;;) {
-    if (candidate.tokens <= model.minTokens) return undefined;
-    if (!plateau || candidate.tokens < model.maxTokens) return candidate;
-    const side = Math.floor(candidate.side / 2);
-    if (side < 1) return undefined;
-    const measured = await measureSide(chat, baseline, side);
-    if (measured === 'rejected' || measured === 'unusable') return undefined;
-    candidate = measured;
-  }
-};
-
-const measureImageTokens = async (chat: Chat): Promise<ImageTokenModel | undefined> => {
-  const baseline = await baselinePromptTokens(chat);
-  if (baseline === undefined) return undefined;
-  const tiny = await measureUrl(chat, baseline, TINY_PNG_SIDE, TINY_PNG);
-  if (tiny === 'rejected' || tiny === 'unusable') return undefined;
-  const small = await measureSide(chat, baseline, IMAGE_PROBE_SMALL_SIDE);
-  if (small === 'unusable') return undefined;
-  const ceiling =
-    small === 'rejected'
-      ? { largest: await bisectLargestAccepted(chat, baseline, tiny, IMAGE_PROBE_SMALL_SIDE), plateau: false }
-      : await findCeiling(chat, baseline, small, tiny.tokens);
-  if (ceiling?.largest === undefined || ceiling.largest.side === tiny.side) return undefined;
-  const { largest, plateau } = ceiling;
-  const model = { minTokens: tiny.tokens, maxTokens: largest.tokens };
-  const start = small === 'rejected' ? largest : small;
-  const reference = model.minTokens === model.maxTokens ? start : await referenceBelowPlateau(chat, baseline, start, model, plateau);
-  if (reference === undefined) return undefined;
-  return { pixelsPerToken: reference.side ** 2 / reference.tokens, ...model };
-};
+const imageCostProbeOf = (chat: Chat): ImageCostProbe => ({
+  baseline: async () => {
+    const result = await imagePromptRequest(chat, undefined);
+    expectStatus(result, [200], 'image token baseline');
+    return promptTokensOf(parseJson(result.text));
+  },
+  cost: async (imageUrl) => {
+    const result = await imagePromptRequest(chat, imageUrl);
+    if (result.outcome === 'unsupported' || result.outcome === 'overflow') return { rejected: true };
+    if (result.outcome !== 'accepted') return failProbeStep(result, 'image token measurement');
+    return { rejected: false, promptTokens: promptTokensOf(parseJson(result.text)) };
+  },
+});
 
 const measurePromptCache = async (chat: Chat): Promise<ProbeReport['promptCache']> => {
   const request = { messages: [{ role: 'user', content: wordsOf(CACHE_PROBE_WORDS) }], max_tokens: 1 };

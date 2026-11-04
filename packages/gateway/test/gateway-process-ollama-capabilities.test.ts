@@ -11,7 +11,7 @@ const IMAGE_TOKENS = { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 };
 
 const textReply = (text: string) => ({ kind: 'ndjson' as const, lines: [chunkLine({ content: text }), doneLine({ prompt_eval_count: 33, eval_count: 4 })] });
 
-const gatewayOverProbedOllama = async (showCapabilities: readonly string[], replies: ReturnType<typeof textReply>[]) => {
+const gatewayOverProbedOllama = async (showCapabilities: readonly string[], replies: ReturnType<typeof textReply>[], declareImage = true) => {
   const fake = await startFakeOllama({ show: { ...fixtureJson('api-show.json'), capabilities: showCapabilities }, chat: replies });
   const home = makeHome();
   writeSettings(home, {
@@ -22,7 +22,7 @@ const gatewayOverProbedOllama = async (showCapabilities: readonly string[], repl
           adapter: 'ollama',
           model: OLLAMA_MODEL,
           baseUrl: fake.origin,
-          capabilities: { contextWindow: CONTEXT_WINDOW, maxOutputTokens: 2048, imageInput: true, imageTokens: IMAGE_TOKENS },
+          capabilities: { contextWindow: CONTEXT_WINDOW, maxOutputTokens: 2048, ...(declareImage ? { imageInput: true, imageTokens: IMAGE_TOKENS } : {}) },
         },
       },
     },
@@ -59,6 +59,25 @@ describe('a started gateway follows the probed Ollama capabilities (W2)', { time
     const bodies = fake.chatBodies();
     expect(bodies).toHaveLength(1);
     expect(bodies[0].messages.at(-1).images).toEqual(['iVBORw0KGgo=']);
+  });
+
+  it('refuses an image for a target that declares nothing and whose probe found no vision, without calling /api/chat', async () => {
+    const { fake, client } = await gatewayOverProbedOllama(['completion', 'tools'], [textReply('never sent')], false);
+
+    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: imageInput }));
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.code).toBe('capability_unsupported');
+    expect(fake.chatBodies()).toEqual([]);
+  });
+
+  it('sends an image to a target that declares nothing and whose probe found vision', async () => {
+    const { fake, client } = await gatewayOverProbedOllama(['completion', 'tools', 'vision'], [textReply('seen')], false);
+
+    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: imageInput }));
+
+    expect(response.status).toBe(200);
+    expect(fake.chatBodies()).toHaveLength(1);
   });
 
   it('sends no think true for a reasoning effort to a target whose probe found no thinking', async () => {

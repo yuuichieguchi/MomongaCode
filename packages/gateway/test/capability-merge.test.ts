@@ -10,8 +10,8 @@ const declared: Capabilities = { ...OLLAMA_CAPABILITIES, contextWindow: 8192, st
 describe('one merge decides declared against probed capabilities', () => {
   it('keeps the declared window, output, image and prompt cache over the probe', () => {
     const merged = mergeCapabilities({
-      defaults: declared,
-      declared: layerOf(declared),
+      defaults: layerOf(declared).core,
+      declared: layerOf(declared).layer,
       probed: { contextWindow: 1024, maxOutputTokens: 64, promptCache: { kind: 'automatic' }, image: { imageInput: false } },
       probedAt: PROBED_AT,
     });
@@ -20,8 +20,8 @@ describe('one merge decides declared against probed capabilities', () => {
 
   it('takes the probed tool calling, structured output and parallel calls over the declaration', () => {
     const merged = mergeCapabilities({
-      defaults: declared,
-      declared: layerOf(declared),
+      defaults: layerOf(declared).core,
+      declared: layerOf(declared).layer,
       probed: { toolCalling: 'none', structuredOutput: 'json_schema', parallelToolCalls: true, reasoning: { control: 'none' } },
       probedAt: PROBED_AT,
     });
@@ -29,13 +29,13 @@ describe('one merge decides declared against probed capabilities', () => {
   });
 
   it('keeps the declared value of a field the probe did not measure', () => {
-    const merged = mergeCapabilities({ defaults: declared, declared: layerOf(declared), probed: {}, probedAt: PROBED_AT });
+    const merged = mergeCapabilities({ defaults: layerOf(declared).core, declared: layerOf(declared).layer, probed: {}, probedAt: PROBED_AT });
     expect(merged).toMatchObject({ structuredOutput: 'none', parallelToolCalls: false, toolCalling: 'native' });
   });
 
   it('gives the probed values to a target that declares nothing, over its defaults', () => {
     const merged = mergeCapabilities({
-      defaults: declared,
+      defaults: layerOf(declared).core,
       declared: {},
       probed: { contextWindow: 1024, maxOutputTokens: 64, image: { imageInput: false } },
       probedAt: PROBED_AT,
