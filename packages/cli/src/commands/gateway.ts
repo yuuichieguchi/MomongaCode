@@ -68,11 +68,17 @@ export const probeEndpointText = (name: string, endpoint: string, recordPath: st
 
 type OllamaProbe = Awaited<ReturnType<typeof import('@momonga/gateway').probeOllamaTarget>>;
 
+const imageInputTextOf = (report: OllamaProbe['report']): string => {
+  if (!report.imageInputAccepted) return 'false';
+  if (report.imageTokens === undefined) return 'true (vision reported, but the image token cost could not be measured, so image input stays off unless imageTokens is declared)';
+  return `true (${report.imageTokens.pixelsPerToken.toFixed(1)} pixels per token, ${report.imageTokens.minTokens} to ${report.imageTokens.maxTokens} tokens)`;
+};
+
 export const probeOllamaText = (name: string, endpoint: string, recordPath: string, report: OllamaProbe['report'], contextWindow: number): string =>
   `${escapedLines([
     `probed ${name}: model ${report.modelId} at ${endpoint}, Ollama ${report.serverVersion}`,
     `  trained context length ${report.contextWindow.value} (${report.contextWindow.method}), configured context window ${contextWindow}`,
-    `  tool calling: ${report.nativeTools.accepted ? 'native' : 'none'}, image input: ${report.imageInputAccepted}, thinking: ${report.thinkingSupported}`,
+    `  tool calling: ${report.nativeTools.accepted ? 'native' : 'none'}, image input: ${imageInputTextOf(report)}, thinking: ${report.thinkingSupported}`,
     `  recorded in ${recordPath}`,
   ])}\n`;
 

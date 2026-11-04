@@ -3,6 +3,7 @@ import { endpointKeyOf, loadEndpointRecord, probeOllamaTarget, runProbe } from '
 import type { AdapterRequest, Capabilities, ReasoningEffort } from '@momonga/protocol';
 import { startFakeChatCompletions } from '@momonga/testkit';
 import { buildOllamaBody } from '../src/adapters/ollama/request.ts';
+import type { DeclaredCapabilities } from '../src/probe/decide.ts';
 import { createProbedEndpointTarget } from '../src/probe/endpoint-target.ts';
 import { createProbedOllamaTarget } from '../src/probe/ollama-target.ts';
 import { makeDir } from './gateway-helpers.ts';
@@ -12,7 +13,7 @@ const RECORDED_SHOW = fixtureJson('api-show.json');
 
 const showWith = (capabilities: readonly string[]) => ({ ...RECORDED_SHOW, capabilities });
 
-const probedTarget = async (showCapabilities: readonly string[], declared: Capabilities, cacheProbe: 'automatic' | 'none' = 'none') => {
+const probedTarget = async (showCapabilities: readonly string[], declared: DeclaredCapabilities, cacheProbe: 'automatic' | 'none' = 'none') => {
   const fake = await startFakeOllama({ show: showWith(showCapabilities), cacheProbe });
   const dir = makeDir();
   const result = await probeOllamaTarget({ probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: fake.origin }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL, contextWindow: 12288 });
@@ -61,6 +62,27 @@ describe('the Ollama probe report is merged into the capabilities (W2)', () => {
     const capabilities = await target.capabilities();
     expect(capabilities.imageInput).toBe(true);
     expect(capabilities.imageTokens).toEqual(OLLAMA_CAPABILITIES.imageTokens);
+  });
+});
+
+const { imageInput: _imageInput, imageTokens: _imageTokens, ...UNDECLARED_IMAGE } = OLLAMA_CAPABILITIES;
+
+describe('image input of an Ollama target follows the declaration, then the probe (decision 1)', () => {
+  it('follows the probe and its measured image token model when the settings declare no image input', async () => {
+    const capabilities = await (await probedTarget(['completion', 'tools', 'vision'], UNDECLARED_IMAGE)).capabilities();
+    expect(capabilities.imageInput).toBe(true);
+    expect(capabilities.imageTokens).toMatchObject({ minTokens: 1, maxTokens: 1600 });
+  });
+
+  it('has no image input when the settings declare none and the probe found no vision', async () => {
+    const capabilities = await (await probedTarget(['completion', 'tools'], UNDECLARED_IMAGE)).capabilities();
+    expect(capabilities.imageInput).toBe(false);
+    expect(capabilities.imageTokens).toBeUndefined();
+  });
+
+  it('keeps a declared imageInput false over a probe that found vision', async () => {
+    const capabilities = await (await probedTarget(['completion', 'tools', 'vision'], { ...UNDECLARED_IMAGE, imageInput: false })).capabilities();
+    expect(capabilities.imageInput).toBe(false);
   });
 });
 

@@ -39,7 +39,9 @@ export type FmToolCalling = 'auto' | 'native' | 'constrained';
 
 export type TargetCapabilitiesCore = Omit<CapabilitiesCore, 'toolCalling' | 'probedAt' | 'maxConcurrency'>;
 
-export type TargetCapabilities = TargetCapabilitiesCore & ImageCapability;
+export type DeclaredImage = ImageCapability | { imageInput?: undefined; imageTokens?: undefined };
+
+export type TargetCapabilities = TargetCapabilitiesCore & DeclaredImage;
 
 export type DeclaredTargetCapabilities = Pick<TargetCapabilitiesCore, 'contextWindow' | 'maxOutputTokens'> &
   Partial<TargetCapabilitiesCore> & { imageInput?: boolean; imageTokens?: ImageTokenModel };

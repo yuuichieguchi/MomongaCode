@@ -154,7 +154,7 @@ export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Pr
   const capabilities =
     report === null
       ? unprobedCapabilities(mode)
-      : mergeCapabilities({ defaults: probedDefaults, declared: {}, probed: layerOf(capabilitiesFromProbe(report, { mode })), probedAt: report.probedAt });
+      : mergeCapabilities({ defaults: layerOf(probedDefaults).core, declared: {}, probed: layerOf(capabilitiesFromProbe(report, { mode })).layer, probedAt: report.probedAt });
   const keywordSupport = report === null ? UNPROBED_KEYWORD_SUPPORT : report.keywordSupport;
   const isGuardrail = guardrailMatcherOf(report);
 

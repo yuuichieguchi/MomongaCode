@@ -72,9 +72,16 @@ export const capabilitiesFromProbe = (report: ProbeReport, decision: ToolCalling
 
 export type CapabilityLayer = Partial<CapabilitiesCore> & { image?: ImageCapability };
 
-export const layerOf = (capabilities: Capabilities): CapabilitiesCore & { image: ImageCapability } => {
-  const { imageInput, imageTokens, ...core } = capabilities;
-  return { ...core, image: imageCapability(imageInput, imageTokens) };
+export type DeclaredCapabilities = CapabilitiesCore & (ImageCapability | { imageInput?: undefined; imageTokens?: undefined });
+
+export const layerOf = (declared: DeclaredCapabilities): { core: CapabilitiesCore; layer: CapabilityLayer } => {
+  const { imageInput, imageTokens, ...core } = declared;
+  return { core, layer: { ...core, ...(imageInput === undefined ? {} : { image: imageCapability(imageInput, imageTokens) }) } };
+};
+
+export const withImageDefault = (declared: DeclaredCapabilities): Capabilities => {
+  const { core, layer } = layerOf(declared);
+  return { ...core, ...(layer.image ?? imageCapability(false, undefined)) };
 };
 
 const splitByPrecedence = (layer: CapabilityLayer) => {
@@ -94,7 +101,7 @@ const splitByPrecedence = (layer: CapabilityLayer) => {
 };
 
 export type CapabilityMerge = {
-  defaults: Capabilities;
+  defaults: CapabilitiesCore;
   declared: CapabilityLayer;
   probed: CapabilityLayer;
   probedAt: string;
@@ -104,11 +111,11 @@ export const mergeCapabilities = ({ defaults, declared, probed, probedAt }: Capa
   const fromDeclaration = splitByPrecedence(declared);
   const fromProbe = splitByPrecedence(probed);
   const { image, ...merged } = {
-    ...layerOf(defaults),
+    ...defaults,
     ...fromProbe.declaredFirst,
     ...fromDeclaration.probeFirst,
     ...fromProbe.probeFirst,
     ...fromDeclaration.declaredFirst,
   };
-  return { ...merged, ...image, source: 'probed', probedAt };
+  return { ...merged, ...(image ?? imageCapability(false, undefined)), source: 'probed', probedAt };
 };

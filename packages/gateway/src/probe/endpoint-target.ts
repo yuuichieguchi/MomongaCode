@@ -5,7 +5,8 @@ import { PreconditionFailedError, StreamFailure, UpstreamHttpError } from '../ad
 import type { KeywordSupport } from './envelope.ts';
 import { ProbeTimeoutError, createProbeClient } from './client.ts';
 import type { ProbeEndpoint } from './client.ts';
-import { capabilitiesFromProbe, decideToolCalling, layerOf, mergeCapabilities } from './decide.ts';
+import { capabilitiesFromProbe, decideToolCalling, layerOf, mergeCapabilities, withImageDefault } from './decide.ts';
+import type { DeclaredCapabilities } from './decide.ts';
 import { endpointIdentityOf } from './endpoint-record.ts';
 import type { EndpointRecord } from './endpoint-record.ts';
 import { parseJson } from './json.ts';
@@ -111,7 +112,7 @@ export type ProbedEndpointTargetOptions = {
   targetName: string;
   endpoint: string;
   model: string;
-  declared: Capabilities;
+  declared: DeclaredCapabilities;
   record: EndpointRecord | null;
   readIdentity: (fields: readonly string[], signal: AbortSignal) => Promise<string>;
   saveRecord: (record: EndpointRecord) => Promise<void>;
@@ -127,6 +128,7 @@ export type ProbedEndpointTarget = {
 
 export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions): ProbedEndpointTarget => {
   const { targetName, endpoint, model, declared } = options;
+  const declaredParts = layerOf(declared);
   let record = options.record;
   let saving: Promise<void> = Promise.resolve();
 
@@ -176,15 +178,15 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
     verify,
     raiseHeadroom,
     capabilities: async () => {
-      if (record === null) return { ...declared, source: 'unprobed' };
+      if (record === null) return { ...withImageDefault(declared), source: 'unprobed' };
       const decision = decideToolCalling(record.report);
       const { toolCalling, structuredOutput, streaming, stopSequences, parallelToolCalls, usageReported, reasoning, promptCache } = capabilitiesFromProbe(
         record.report,
         decision,
       );
       return mergeCapabilities({
-        defaults: declared,
-        declared: layerOf(declared),
+        defaults: declaredParts.core,
+        declared: declaredParts.layer,
         probed: {
           toolCalling,
           structuredOutput,

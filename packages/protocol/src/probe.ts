@@ -41,6 +41,7 @@ export type OllamaProbeReport = {
   contextWindow: { value: number; method: 'reported' };
   nativeTools: { accepted: boolean };
   imageInputAccepted: boolean;
+  imageTokens?: ImageTokenModel;
   thinkingSupported: boolean;
   promptCache?: { kind: 'automatic' | 'none' };
   reasoning?: undefined;

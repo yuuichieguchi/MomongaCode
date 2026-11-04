@@ -51,6 +51,7 @@ export type {
   ResolvedModelTarget,
   ResolvedOllamaTarget,
   ResolvedOpenResponsesTarget,
+  DeclaredImage,
   TargetCapabilities,
   ContextSettings,
   ToolsSettings,

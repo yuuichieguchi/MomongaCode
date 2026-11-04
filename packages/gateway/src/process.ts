@@ -30,6 +30,8 @@ import {
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import type { AdapterTarget, Capabilities, ProviderAdapter, ToolCallingMode } from '@momonga/protocol';
 import { chatRecordOf, loadEndpointRecord, ollamaRecordOf, saveEndpointRecord } from './probe/endpoint-record.ts';
+import type { DeclaredCapabilities } from './probe/decide.ts';
+import { withImageDefault } from './probe/decide.ts';
 import { createProbedEndpointTarget, endpointKeyOf, ollamaServerRefusal, probeEndpointOf, readEndpointIdentity } from './probe/endpoint-target.ts';
 import { answersAsOllama, readOllamaDigest } from './probe/ollama.ts';
 import { createProbedOllamaTarget } from './probe/ollama-target.ts';
@@ -126,7 +128,9 @@ const withBinaryGuard = (managed: ManagedFmTarget, binary: string, files: Proces
   };
 };
 
-const capabilitiesOf = (target: RemoteTarget, mode: ToolCallingMode): Capabilities => ({ ...target.capabilities, toolCalling: mode });
+const declaredCapabilitiesOf = (target: RemoteTarget, mode: ToolCallingMode): DeclaredCapabilities => ({ ...target.capabilities, toolCalling: mode });
+
+const capabilitiesOf = (target: RemoteTarget, mode: ToolCallingMode): Capabilities => withImageDefault(declaredCapabilitiesOf(target, mode));
 
 const startupFailureOf = (error: unknown): Error | undefined =>
   error instanceof SecretUnavailableError || error instanceof SecretEmptyError ? error : undefined;
@@ -237,7 +241,7 @@ const createAutoChatCompletionsAdapter = async (
     targetName: name,
     endpoint,
     model: target.model,
-    declared: capabilitiesOf(target, 'native'),
+    declared: declaredCapabilitiesOf(target, 'native'),
     record: loaded,
     readIdentity: async (fields, signal) => {
       const apiKey = await readKey({ name, model: target.model }, signal);
@@ -271,7 +275,7 @@ const createProbedOllamaAdapter = async (name: string, target: Extract<RemoteTar
     targetName: name,
     endpoint,
     model: target.model,
-    declared: capabilitiesOf(target, 'native'),
+    declared: declaredCapabilitiesOf(target, 'native'),
     record: loaded,
     readDigest: (signal) => readOllamaDigest(upstream, target.model, signal),
   });
