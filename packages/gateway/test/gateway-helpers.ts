@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -43,6 +44,8 @@ export const makeDir = (): string => {
 
 export const TEST_VERSION = '0.0.0-test';
 
+export const counterForTest = (target: string): string => createHash('sha256').update(`test counter of ${target}`).digest('hex');
+
 export type TargetSpec = {
   kind?: string;
   provider?: string;
@@ -51,6 +54,7 @@ export type TargetSpec = {
   maxConcurrency?: number;
   admissionTimeoutMs?: number;
   capabilities?: GatewayConfig['models']['targets'][string]['capabilities'];
+  counter?: string;
 };
 
 export type ConfigOverrides = {
@@ -77,6 +81,7 @@ export const buildConfig = (overrides: ConfigOverrides = {}): GatewayConfig => {
       billing: spec.billing ?? 'metered',
       maxConcurrency: spec.maxConcurrency ?? 4,
       admissionTimeoutMs: spec.admissionTimeoutMs ?? 5000,
+      counter: spec.counter ?? counterForTest(name),
       ...(spec.capabilities === undefined ? {} : { capabilities: spec.capabilities }),
     };
   }

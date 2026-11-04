@@ -8,6 +8,7 @@ const ENVELOPE = { id: 9, runId: 'r1', sessionId: 's1', seq: 5, step: 1, leaseTo
 const OBSERVED: RunEventPayload = {
   type: 'meter.observed',
   target: 'primary',
+  counter: 'c'.repeat(64),
   fallback: false,
   inputDigest: 'd'.repeat(64),
   itemCount: 3,

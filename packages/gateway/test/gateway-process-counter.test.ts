@@ -1,0 +1,80 @@
+import path from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { loadUserSettings } from '@momonga/config';
+import { codeDigestOfRunningProcess } from '@momonga/foundation';
+import { saveEndpointRecord, targetCounterOf } from '@momonga/gateway';
+import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { startFake } from './cc-support.ts';
+import { getJson } from './gateway-helpers.ts';
+import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, homePaths, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { makeReport } from './report-fixture.ts';
+
+const KEY_VARIABLE = 'MOMONGA_COUNTER_TEST_KEY';
+const IDENTITY_FIELDS = ['id', 'object', 'owned_by'];
+
+const listedCounters = async (socketPath: string): Promise<Record<string, string>> => {
+  const models = await getJson(clientFor(socketPath), '/v1/momonga/models');
+  const entry = models.body.data.find((model: { id: string }) => model.id === 'fast');
+  return entry.targetCounters;
+};
+
+const resolvedPrimary = async (home: string) => {
+  const { settings } = await loadUserSettings({ home });
+  const target = settings.models.targets['primary'];
+  if (target === undefined) throw new Error('the settings resolved no primary target');
+  return target;
+};
+
+describe('the counters a started gateway lists', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+  it('derives a target counter from its resolved definition and the code digest of the running gateway', async () => {
+    const fake = await startFake({ scenario: 'tools-ok' });
+    const home = makeHome();
+    writeSettings(home, { models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath, { toolCalling: 'native' }) } } });
+    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+
+    const counters = await listedCounters(handle.socketPath);
+
+    expect(counters).toEqual({ primary: targetCounterOf({ target: await resolvedPrimary(home), codeDigest: await codeDigestOfRunningProcess() }) });
+  });
+
+  it('keeps the value of a key out of the counter: two values of the same apiKeyEnv give the same counter', async () => {
+    const fake = await startFake({ scenario: 'tools-ok' });
+    const settings = { models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath, { toolCalling: 'native', apiKeyEnv: KEY_VARIABLE }) } } };
+    const firstHome = makeHome();
+    writeSettings(firstHome, settings);
+    const secondHome = makeHome();
+    writeSettings(secondHome, settings);
+
+    const first = await launchGateway({ home: firstHome, env: baseEnv(firstHome, { [KEY_VARIABLE]: 'first-value-of-the-key' }), version: PROCESS_VERSION });
+    const firstCounters = await listedCounters(first.socketPath);
+    await first.close();
+    const second = await launchGateway({ home: secondHome, env: baseEnv(secondHome, { [KEY_VARIABLE]: 'second-value-of-the-key' }), version: PROCESS_VERSION });
+    const secondCounters = await listedCounters(second.socketPath);
+
+    expect(firstCounters['primary']).toMatch(/^[0-9a-f]{64}$/);
+    expect(secondCounters).toEqual(firstCounters);
+  });
+
+  it('covers the upstream identity of the probe record of a probed endpoint target, and changes with a newly saved record', async () => {
+    const fake = await startFake({ scenario: 'tools-ok' });
+    const settings = { models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath, { toolCalling: 'auto' }) } } };
+    const key = { endpoint: `unix:${fake.socketPath}`, model: 'system' };
+    const launchWithRecord = async (identity: string) => {
+      const home = makeHome();
+      writeSettings(home, settings);
+      await saveEndpointRecord(path.join(homePaths(home).root, 'state', 'probe'), key, identity, IDENTITY_FIELDS, makeReport(1, 1));
+      const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+      const counters = await listedCounters(handle.socketPath);
+      await handle.close();
+      return { counters, target: await resolvedPrimary(home) };
+    };
+
+    const one = await launchWithRecord('identity-one');
+    const two = await launchWithRecord('identity-two');
+
+    const codeDigest = await codeDigestOfRunningProcess();
+    expect(one.counters).toEqual({ primary: targetCounterOf({ target: one.target, codeDigest, upstreamIdentity: 'identity-one' }) });
+    expect(two.counters).toEqual({ primary: targetCounterOf({ target: two.target, codeDigest, upstreamIdentity: 'identity-two' }) });
+    expect(two.counters['primary']).not.toBe(one.counters['primary']);
+  });
+});

@@ -320,6 +320,23 @@ describe('run event payloads', () => {
     expectTypeOf<Payload<'skill.activated'>>().toEqualTypeOf<{ type: 'skill.activated'; name: string; content: string }>();
     expectTypeOf<Payload<'tool.loaded'>>().toEqualTypeOf<{ type: 'tool.loaded'; names: string[] }>();
     expectTypeOf<Payload<'loop.warned'>>().toEqualTypeOf<{ type: 'loop.warned'; signature: string }>();
+    expectTypeOf<Payload<'meter.observed'>>().toEqualTypeOf<{
+      type: 'meter.observed';
+      target: string;
+      counter: string;
+      fallback: boolean;
+      inputDigest: string;
+      itemCount: number;
+      counted: number;
+      reported: number;
+      kept: number;
+      known: number;
+      uncounted: number;
+      miss: number;
+      contextWindow: number;
+      tokenErrorRatio?: number;
+      tokenCounting: 'exact' | 'calibrated' | 'estimated';
+    }>();
     expectTypeOf<Payload<'notice'>>().toEqualTypeOf<{
       type: 'notice';
       level: 'info' | 'warning' | 'error';

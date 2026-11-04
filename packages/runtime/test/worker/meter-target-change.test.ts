@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Capabilities, StreamEvent } from '@momonga/protocol';
 import { usageOf } from '@momonga/testkit';
-import { inputTokensOf } from './fake-gateway.ts';
+import { fakeCounterOf, inputTokensOf } from './fake-gateway.ts';
 import type { ScriptStep } from './fake-gateway.ts';
 import { capabilitiesFor, makeEnv } from './harness.ts';
 import { textStep } from './scripts.ts';
@@ -41,14 +41,17 @@ describe('the alias meter after the alias moved to another first target', () => 
       answeredFirstBy(textStep('Done.', { usage: usageOf(2 * firstCount, 5) }), 't1'),
       answeredFirstBy(textStep('Again.', { usage: usageOf(secondCount, 5) }), 't2'),
     );
+    env.gateway.targetsByAlias[env.session.modelAlias] = ['t1'];
     const one = env.enqueue(FIRST_TASK);
     await env.runOnce(env.worker());
+    env.gateway.targetsByAlias[env.session.modelAlias] = ['t2'];
     const two = env.enqueue(SECOND_TASK);
     await env.runOnce(env.worker('worker-2'));
 
     expect(env.run(one.id).status).toBe('COMPLETED');
-    expect(env.ofType(one.id, 'meter.observed')).toMatchObject([{ target: 't1', fallback: false, counted: firstCount, reported: 2 * firstCount }]);
+    expect(fakeCounterOf('t1')).not.toBe(fakeCounterOf('t2'));
+    expect(env.ofType(one.id, 'meter.observed')).toMatchObject([{ target: 't1', counter: fakeCounterOf('t1'), fallback: false, counted: firstCount, reported: 2 * firstCount }]);
     expect({ status: env.run(two.id).status, error: env.run(two.id).error?.code }).toEqual({ status: 'COMPLETED', error: undefined });
-    expect(env.ofType(two.id, 'meter.observed')[0]).toMatchObject({ target: 't2', fallback: false, known: 0, counted: secondCount });
+    expect(env.ofType(two.id, 'meter.observed')[0]).toMatchObject({ target: 't2', counter: fakeCounterOf('t2'), fallback: false, known: 0, counted: secondCount });
   });
 });

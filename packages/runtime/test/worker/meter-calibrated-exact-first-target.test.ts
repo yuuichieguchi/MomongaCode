@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ESTIMATED_ERROR_BOUND_RATIO, marginFloorFor } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
 import { usageOf } from '@momonga/testkit';
-import { PRIMARY_TARGET, inputTokensOf } from './fake-gateway.ts';
+import { PRIMARY_TARGET, fakeCounterOf, inputTokensOf } from './fake-gateway.ts';
 import { capabilitiesFor, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { textStep } from './scripts.ts';
@@ -22,6 +22,7 @@ const aliasEnv = async (): Promise<Env> => {
   const env = await makeEnv({ capabilities: mergedAlias() });
   env.gateway.capabilitiesByTarget.set(PRIMARY_TARGET, calibratedExactFirst());
   env.gateway.capabilitiesByTarget.set(FALLBACK_TARGET, estimatedFallback());
+  env.gateway.targetsByAlias[env.session.modelAlias] = [PRIMARY_TARGET, FALLBACK_TARGET];
   env.gateway.countMethod = 'exact';
   return env;
 };
@@ -46,7 +47,7 @@ describe('a configured tokenErrorRatio of the first target on a mixed alias', ()
 
     await env.runOnce(env.worker());
 
-    expect(env.ofType(run.id, 'meter.observed')).toMatchObject([{ target: PRIMARY_TARGET, fallback: false, counted: count, reported }]);
+    expect(env.ofType(run.id, 'meter.observed')).toMatchObject([{ target: PRIMARY_TARGET, counter: fakeCounterOf(PRIMARY_TARGET), fallback: false, counted: count, reported, tokenCounting: 'exact', tokenErrorRatio: RATIO }]);
     expect({ status: env.run(run.id).status, error: env.run(run.id).error?.code }).toEqual({ status: 'COMPLETED', error: undefined });
   });
 });

@@ -12,6 +12,7 @@ const NONE: ClientFeatures = { notices: false, compaction: false, elicitation: {
 const OBSERVED: RunEventPayload = {
   type: 'meter.observed',
   target: 'primary',
+  counter: 'c'.repeat(64),
   fallback: false,
   inputDigest: 'd'.repeat(64),
   itemCount: 3,

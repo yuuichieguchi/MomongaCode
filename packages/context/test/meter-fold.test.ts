@@ -1,39 +1,43 @@
 import { describe, expect, it } from 'vitest';
 import { foldMeter } from '@momonga/context';
-import type { MeterCount, MeterObservation, TokenMeter } from '@momonga/context';
-import type { Capabilities, CapabilityOverride, FunctionTool, InputItem, RunEventPayload } from '@momonga/protocol';
+import type { FoldedEvent, MeterCount, MeterObservation, ObservedEvent, TokenMeter } from '@momonga/context';
+import type { Capabilities, CapabilityOverride, CreateResponseBody, FunctionTool, InputItem } from '@momonga/protocol';
 import { MODEL, capabilitiesFor, seeded } from './helpers.ts';
 import { ESTIMATED, EXACT, meterOf, piece, pieceCounter, toolOf } from './meter-fixtures.ts';
 import type { PieceCounterOptions } from './meter-fixtures.ts';
 
 const W = 1600;
 
-type Journal = RunEventPayload[];
-
-const requested = (journal: Journal, input: readonly InputItem[], tools: readonly FunctionTool[]): void => {
-  journal.push({
-    type: 'model.requested',
-    step: journal.length,
-    attempt: 1,
-    digest: `request-${journal.length}`,
-    body: { model: MODEL, input: [...input], ...(tools.length > 0 ? { tools: [...tools] } : {}) },
-  });
-};
+const COUNTER_A = 'a'.repeat(64);
+const COUNTER_B = 'b'.repeat(64);
 
 type Route = { target: string; fallback: boolean };
 
 const ALIAS: Route = { target: 'primary', fallback: false };
 const SECONDARY: Route = { target: 'secondary', fallback: true };
 
-const observed = (journal: Journal, route: Route, observation: MeterObservation): void => {
-  journal.push({ type: 'meter.observed', ...route, ...observation });
+type Journal = { events: FoldedEvent[]; bodies: Map<number, CreateResponseBody> };
+
+const emptyJournal = (): Journal => ({ events: [], bodies: new Map() });
+
+const observed = (journal: Journal, route: Route, counter: string, observation: MeterObservation, input: readonly InputItem[], tools: readonly FunctionTool[]): void => {
+  const seq = journal.events.length + 1;
+  journal.bodies.set(seq, { model: MODEL, input: [...input], ...(tools.length > 0 ? { tools: [...tools] } : {}) });
+  journal.events.push({ type: 'meter.observed', seq, ...route, counter, ...observation });
 };
 
-const sourceOf = (route: Route) => (route.fallback ? { fallbackTarget: route.target } : {});
+const bodyOf =
+  (journal: Journal) =>
+  (event: ObservedEvent): unknown => {
+    if (event.seq === undefined) throw new Error('a folded meter.observed has no seq');
+    const body = journal.bodies.get(event.seq);
+    if (body === undefined) throw new Error(`no request body was recorded for seq ${event.seq}`);
+    return body;
+  };
 
-const restored = (options: PieceCounterOptions, override: CapabilityOverride, journal: Journal, route: Route): TokenMeter => {
+const restored = (options: PieceCounterOptions, override: CapabilityOverride, journal: Journal, counter: string): TokenMeter => {
   const meter = meterOf(pieceCounter(options), W, override);
-  meter.restore(foldMeter(journal, { capabilities: capabilitiesFor(W, override), ...sourceOf(route) }));
+  meter.restore(foldMeter(journal.events, { counter, capabilities: capabilitiesFor(W, override), bodyOf: bodyOf(journal) }));
   return meter;
 };
 
@@ -61,14 +65,16 @@ const COUNTERS: readonly { options: PieceCounterOptions; override: CapabilityOve
 const TOOLS = [toolOf('Read', 300)];
 
 describe('the meter is a fold of the journal', () => {
-  it('equals the live meter after any sequence of counts, reports and claim boundaries', async () => {
+  it('equals the live meter of its counter after any sequence of counts, reports of two counters and claim boundaries', async () => {
     const random = seeded(4242);
     let boundaries = 0;
     let splits = 0;
+    let foreign = 0;
     for (let trial = 0; trial < 60; trial += 1) {
       const { options, override } = COUNTERS[trial % COUNTERS.length] as (typeof COUNTERS)[number];
-      const journal: Journal = [];
+      const journal = emptyJournal();
       const live = meterOf(pieceCounter(options), W, override);
+      const other = meterOf(pieceCounter(options), W, override);
       let claimed = meterOf(pieceCounter(options), W, override);
       let names = 0;
       const fresh = (): InputItem => piece(`n${(names += 1)}`, random.int(1, 120));
@@ -85,32 +91,38 @@ describe('the meter is a fold of the journal', () => {
         const claimedCount = await claimed.count({ input, tools });
         expect(viewOf(claimedCount), label).toEqual(viewOf(liveCount));
         if (liveCount.known > 0) splits += 1;
-        if (random.next() < 0.7) {
-          requested(journal, input, tools);
-          const reported = Math.max(0, liveCount.inputTokens + random.int(-Math.floor(0.4 * liveCount.inputTokens), Math.floor(0.4 * liveCount.inputTokens)));
+        const spread = Math.floor(0.4 * liveCount.inputTokens);
+        if (random.next() < 0.6) {
+          const reported = Math.max(0, liveCount.inputTokens + random.int(-spread, spread));
           const liveObserved = live.observe({ inputDigest: liveCount.inputDigest, inputTokens: reported });
           const claimedObserved = claimed.observe({ inputDigest: claimedCount.inputDigest, inputTokens: reported });
           expect(claimedObserved, label).toEqual(liveObserved);
-          observed(journal, ALIAS, liveObserved);
+          observed(journal, random.next() < 0.5 ? ALIAS : SECONDARY, COUNTER_A, liveObserved, input, tools);
+        }
+        if (random.next() < 0.4) {
+          const otherCount = await other.count({ input, tools });
+          const reported = Math.max(0, otherCount.inputTokens + random.int(-spread, spread) + 17);
+          observed(journal, random.next() < 0.5 ? ALIAS : SECONDARY, COUNTER_B, other.observe({ inputDigest: otherCount.inputDigest, inputTokens: reported }), input, tools);
+          foreign += 1;
         }
         if (random.next() < 0.25) {
-          claimed = restored(options, override, journal, ALIAS);
+          claimed = restored(options, override, journal, COUNTER_A);
           boundaries += 1;
         }
       }
     }
     expect(boundaries).toBeGreaterThan(100);
     expect(splits).toBeGreaterThan(100);
+    expect(foreign).toBeGreaterThan(300);
   });
 
   it('refuses observe after restore until the claim counts that input, then answers as the live meter', async () => {
-    const journal: Journal = [];
+    const journal = emptyJournal();
     const live = meterOf(pieceCounter(ESTIMATED), W, { tokenCounting: 'estimated' });
     const input = [piece('a', 100), piece('b', 50)];
-    requested(journal, input, []);
     const counted = await live.count({ input, tools: [] });
-    observed(journal, ALIAS, live.observe({ inputDigest: counted.inputDigest, inputTokens: 140 }));
-    const claimed = restored(ESTIMATED, { tokenCounting: 'estimated' }, journal, ALIAS);
+    observed(journal, ALIAS, COUNTER_A, live.observe({ inputDigest: counted.inputDigest, inputTokens: 140 }), input, []);
+    const claimed = restored(ESTIMATED, { tokenCounting: 'estimated' }, journal, COUNTER_A);
     const other = await meterOf(pieceCounter(ESTIMATED), W, { tokenCounting: 'estimated' }).count({ input: [piece('z', 30)], tools: [] });
 
     expect(() => claimed.observe({ inputDigest: counted.inputDigest, inputTokens: 250 })).toThrow(counted.inputDigest);
@@ -125,16 +137,45 @@ describe('the meter is a fold of the journal', () => {
     expect(answered.reported).toBe(250);
     expect(answered.kept).toBe(250);
   });
+
+  it('takes the request body of the latest kept report from bodyOf and asks bodyOf for nothing else', async () => {
+    const journal = emptyJournal();
+    const live = meterOf(pieceCounter(ESTIMATED), W, { tokenCounting: 'estimated' });
+    const first = [piece('a', 100)];
+    const firstCount = await live.count({ input: first, tools: [] });
+    observed(journal, ALIAS, COUNTER_A, live.observe({ inputDigest: firstCount.inputDigest, inputTokens: 90 }), first, []);
+    const second = [piece('a', 100), piece('b', 40)];
+    const secondCount = await live.count({ input: second, tools: [] });
+    observed(journal, ALIAS, COUNTER_A, live.observe({ inputDigest: secondCount.inputDigest, inputTokens: 150 }), second, []);
+    const foreign = [piece('z', 70)];
+    const foreignCount = await meterOf(pieceCounter(ESTIMATED), W, { tokenCounting: 'estimated' }).count({ input: foreign, tools: [] });
+    const foreignObservation: MeterObservation = { inputDigest: foreignCount.inputDigest, itemCount: 1, counted: 70, reported: 70, kept: 70, known: 0, uncounted: 70, miss: 0, contextWindow: W, tokenCounting: 'estimated' };
+    observed(journal, ALIAS, COUNTER_B, foreignObservation, foreign, []);
+    const asked: number[] = [];
+
+    const memory = foldMeter(journal.events, {
+      counter: COUNTER_A,
+      capabilities: capabilitiesFor(W, { tokenCounting: 'estimated' }),
+      bodyOf: (event) => {
+        asked.push(event.seq ?? -1);
+        return bodyOf(journal)(event);
+      },
+    });
+
+    expect(asked).toEqual([2]);
+    expect(memory.latest?.input).toEqual(second);
+    expect(memory.latest?.observation.reported).toBe(150);
+    expect(memory.misses).toHaveLength(2);
+  });
 });
 
-describe('the keys of the fold: contextWindow, tokenErrorRatio and tokenCounting of the current capabilities', () => {
-  const journalOf = async (override: CapabilityOverride): Promise<Journal> => {
-    const journal: Journal = [];
+describe('the keys of the fold: the counter, the window and the calibration of the meter', () => {
+  const journalOf = async (override: CapabilityOverride, route: Route = ALIAS, counter: string = COUNTER_A): Promise<Journal> => {
+    const journal = emptyJournal();
     const live = meterOf(pieceCounter(ESTIMATED), W, override);
     const input = [piece('a', 200)];
-    requested(journal, input, []);
     const counted = await live.count({ input, tools: [] });
-    observed(journal, ALIAS, live.observe({ inputDigest: counted.inputDigest, inputTokens: 250 }));
+    observed(journal, route, counter, live.observe({ inputDigest: counted.inputDigest, inputTokens: 250 }), input, []);
     return journal;
   };
 
@@ -142,11 +183,28 @@ describe('the keys of the fold: contextWindow, tokenErrorRatio and tokenCounting
 
   const viewAfter = async (meter: TokenMeter) => viewOf(await meter.count({ input: next, tools: [] }));
 
-  it('carries the report when window, ratio and counting are unchanged', async () => {
+  it('carries the report when the counter, the window and the calibration are unchanged', async () => {
     const journal = await journalOf({ tokenCounting: 'estimated' });
-    const view = await viewAfter(restored(ESTIMATED, { tokenCounting: 'estimated' }, journal, ALIAS));
+    const view = await viewAfter(restored(ESTIMATED, { tokenCounting: 'estimated' }, journal, COUNTER_A));
     expect(view.known).toBe(250);
     expect(view.inputTokens).toBe(350);
+  });
+
+  it.each([
+    ['an alias meter folding a report of a fallback route', SECONDARY],
+    ['a meter folding a report that names another target', { target: 'tertiary', fallback: false }],
+  ])('carries a report of the same counter whatever its route: %s', async (_label, route) => {
+    const journal = await journalOf({ tokenCounting: 'estimated' }, route);
+    const view = await viewAfter(restored(ESTIMATED, { tokenCounting: 'estimated' }, journal, COUNTER_A));
+    expect(view.known).toBe(250);
+  });
+
+  it('starts afresh when the report names another counter, on the same route, window and calibration', async () => {
+    const journal = await journalOf({ tokenCounting: 'estimated' }, ALIAS, COUNTER_B);
+    const meter = restored(ESTIMATED, { tokenCounting: 'estimated' }, journal, COUNTER_A);
+    const untouched = meterOf(pieceCounter(ESTIMATED), W, { tokenCounting: 'estimated' });
+    expect(await viewAfter(meter)).toEqual(await viewAfter(untouched));
+    expect((await viewAfter(meter)).known).toBe(0);
   });
 
   it.each([
@@ -156,41 +214,36 @@ describe('the keys of the fold: contextWindow, tokenErrorRatio and tokenCounting
   ])('starts afresh when %s changed', async (_label, change) => {
     const journal = await journalOf({ tokenCounting: 'estimated' });
     const capabilities = change(capabilitiesFor(W, { tokenCounting: 'estimated' }));
-    const counter = pieceCounter(ESTIMATED);
-    const meter = meterOf(counter, capabilities.contextWindow, { tokenCounting: capabilities.tokenCounting, ...(capabilities.tokenErrorRatio === undefined ? {} : { tokenErrorRatio: capabilities.tokenErrorRatio }) });
-    meter.restore(foldMeter(journal, { capabilities }));
-    const untouched = meterOf(pieceCounter(ESTIMATED), capabilities.contextWindow, { tokenCounting: capabilities.tokenCounting, ...(capabilities.tokenErrorRatio === undefined ? {} : { tokenErrorRatio: capabilities.tokenErrorRatio }) });
+    const override: CapabilityOverride = { tokenCounting: capabilities.tokenCounting, ...(capabilities.tokenErrorRatio === undefined ? {} : { tokenErrorRatio: capabilities.tokenErrorRatio }) };
+    const meter = meterOf(pieceCounter(ESTIMATED), capabilities.contextWindow, override);
+    meter.restore(foldMeter(journal.events, { counter: COUNTER_A, capabilities, bodyOf: bodyOf(journal) }));
+    const untouched = meterOf(pieceCounter(ESTIMATED), capabilities.contextWindow, override);
     expect(await viewAfter(meter)).toEqual(await viewAfter(untouched));
     expect((await viewAfter(meter)).known).toBe(0);
   });
 });
 
 describe('which meter folds which events', () => {
-  it('gives the alias meter the events with fallback false and each fallback meter the events with fallback true for its target', async () => {
-    const journal: Journal = [];
-    const primary = meterOf(pieceCounter(ESTIMATED), W, { tokenCounting: 'estimated' });
-    const secondary = meterOf(pieceCounter(ESTIMATED), W, { tokenCounting: 'estimated' });
-    const first = [piece('a', 100)];
-    requested(journal, first, []);
-    const counted = await primary.count({ input: first, tools: [] });
-    observed(journal, ALIAS, primary.observe({ inputDigest: counted.inputDigest, inputTokens: 100 }));
-    const second = [piece('a', 100), piece('b', 100)];
-    requested(journal, second, []);
-    const fallback = await secondary.count({ input: second, tools: [] });
-    observed(journal, SECONDARY, secondary.observe({ inputDigest: fallback.inputDigest, inputTokens: 250 }));
-
-    const tertiary = meterOf(pieceCounter(ESTIMATED), W, { tokenCounting: 'estimated' });
-    requested(journal, second, []);
-    const other = await tertiary.count({ input: second, tools: [] });
-    observed(journal, { target: 'tertiary', fallback: true }, tertiary.observe({ inputDigest: other.inputDigest, inputTokens: 210 }));
+  it('gives each meter the events of its own counter, whatever their target and fallback flag', async () => {
+    const journal = emptyJournal();
+    const first = meterOf(pieceCounter(ESTIMATED), W, { tokenCounting: 'estimated' });
+    const second = meterOf(pieceCounter(ESTIMATED), W, { tokenCounting: 'estimated' });
+    const one = [piece('a', 100)];
+    const counted = await first.count({ input: one, tools: [] });
+    observed(journal, ALIAS, COUNTER_A, first.observe({ inputDigest: counted.inputDigest, inputTokens: 100 }), one, []);
+    const two = [piece('a', 100), piece('b', 100)];
+    const fallback = await second.count({ input: two, tools: [] });
+    observed(journal, SECONDARY, COUNTER_B, second.observe({ inputDigest: fallback.inputDigest, inputTokens: 250 }), two, []);
+    const sameCounterOtherRoute = await first.count({ input: two, tools: [] });
+    observed(journal, { target: 'tertiary', fallback: true }, COUNTER_A, first.observe({ inputDigest: sameCounterOtherRoute.inputDigest, inputTokens: 210 }), two, []);
 
     const next = [piece('a', 100), piece('b', 100), piece('c', 50)];
-    const foldedPrimary = restored(ESTIMATED, { tokenCounting: 'estimated' }, journal, ALIAS);
-    const foldedSecondary = restored(ESTIMATED, { tokenCounting: 'estimated' }, journal, SECONDARY);
+    const foldedA = restored(ESTIMATED, { tokenCounting: 'estimated' }, journal, COUNTER_A);
+    const foldedB = restored(ESTIMATED, { tokenCounting: 'estimated' }, journal, COUNTER_B);
 
-    expect(viewOf(await foldedPrimary.count({ input: next, tools: [] }))).toEqual(viewOf(await primary.count({ input: next, tools: [] })));
-    expect(viewOf(await foldedSecondary.count({ input: next, tools: [] }))).toEqual(viewOf(await secondary.count({ input: next, tools: [] })));
-    expect((await foldedPrimary.count({ input: next, tools: [] })).known).toBe(100);
-    expect((await foldedSecondary.count({ input: next, tools: [] })).known).toBe(250);
+    expect(viewOf(await foldedA.count({ input: next, tools: [] }))).toEqual(viewOf(await first.count({ input: next, tools: [] })));
+    expect(viewOf(await foldedB.count({ input: next, tools: [] }))).toEqual(viewOf(await second.count({ input: next, tools: [] })));
+    expect((await foldedA.count({ input: next, tools: [] })).known).toBe(210);
+    expect((await foldedB.count({ input: next, tools: [] })).known).toBe(250);
   });
 });

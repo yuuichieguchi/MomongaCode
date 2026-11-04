@@ -3,7 +3,9 @@ import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { saveProbeRecord } from '@momonga/gateway';
+import { loadUserSettings } from '@momonga/config';
+import { codeDigestOfRunningProcess } from '@momonga/foundation';
+import { saveProbeRecord, targetCounterOf } from '@momonga/gateway';
 import { DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { getJson, makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { makeReport } from './report-fixture.ts';
@@ -156,6 +158,20 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
     const entry = models.body.data.find((model: { id: string }) => model.id === 'default');
     expect(entry.targets).toEqual(['fm']);
     expect(entry.capabilities.source).toBe('probed');
+  });
+
+  it('lists the fm target counter over its resolved definition, the binary sha256, the sw_vers build and the code digest', async () => {
+    const { fm, dumpFile, home } = await fakeFmSetup();
+    reapServeGroups(dumpFile);
+    const binarySha256 = createHash('sha256').update(fs.readFileSync(fm.binaryPath)).digest('hex');
+    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });
+    const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
+    const entry = models.body.data.find((model: { id: string }) => model.id === 'default');
+    const target = (await loadUserSettings({ home })).settings.models.targets['fm'];
+    if (target === undefined) throw new Error('the default settings resolved no fm target');
+    expect(entry.targetCounters).toEqual({
+      fm: targetCounterOf({ target, codeDigest: await codeDigestOfRunningProcess(), fm: { binarySha256, osBuild: FAKE_OS_BUILD } }),
+    });
   });
 
   it('treats a probe record for another OS build as unprobed', async () => {
