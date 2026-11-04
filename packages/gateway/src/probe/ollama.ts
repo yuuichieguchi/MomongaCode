@@ -1,6 +1,7 @@
 import { isRecord } from '@momonga/foundation';
 import type { OllamaProbeReport } from '@momonga/protocol';
 import type { UpstreamEndpoint } from '../adapters/shared/http-client.ts';
+import { isConnectionFailure } from '../adapters/shared/classify.ts';
 import { StreamFailure, UpstreamHttpError } from '../adapters/shared/failures.ts';
 import { ProbeTimeoutError, createProbeClient } from './client.ts';
 import type { ProbeClient } from './client.ts';
@@ -54,9 +55,10 @@ export const answersAsOllama = async (upstream: UpstreamEndpoint, signal: AbortS
       const result = await client.request('GET', VERSION_PATH);
       return result.status === 200 && versionOf(parseJson(result.text)) !== undefined;
     });
-  } catch {
+  } catch (error) {
     signal.throwIfAborted();
-    return false;
+    if (error instanceof StreamFailure || isConnectionFailure(error)) return false;
+    throw error;
   }
 };
 

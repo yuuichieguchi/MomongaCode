@@ -192,10 +192,6 @@ export class ResponseEmitter {
     return this.reasoningIndexByKey.size;
   }
 
-  hasReasoning(key: number): boolean {
-    return this.reasoningIndexByKey.has(key);
-  }
-
   beginReasoning(key: number, annotation: ReasoningAnnotation = {}): void {
     if (this.reasoningIndexByKey.has(key)) throw new Error(`reasoning item ${key} is already open`);
     const reasoning: OpenReasoning = { kind: 'reasoning', id: newId('rs', this.options.clock), outputIndex: this.allocate(), content: [], summary: [] };
@@ -245,11 +241,6 @@ export class ResponseEmitter {
     }
     reasoning.summary[summaryIndex] += delta;
     this.emit({ type: 'response.reasoning_summary_text.delta', item_id: reasoning.id, output_index: reasoning.outputIndex, summary_index: summaryIndex, delta });
-  }
-
-  hasReasoningText(key: number): boolean {
-    const reasoning = this.reasoningOf(key);
-    return reasoning.content.length > 0 || reasoning.summary.length > 0;
   }
 
   completeReasoning(key: number): void {
