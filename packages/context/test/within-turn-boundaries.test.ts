@@ -169,12 +169,16 @@ describe('pinned tokens supplied by the caller', () => {
     expect(built.pinnedTokens).toBe(inputCeilingFor(capabilities) + 1);
   });
 
-  it('raise a pinned overflow when the same pinned part is measured without a supplied value', async () => {
-    const input = inputFor(capabilities, { sources: sourcesWith({ systemPrompt: 'x'.repeat(4 * (inputCeilingFor(capabilities) + 1)) }) });
-    const error = await buildContext(input, harness(capabilities).ports).catch((caught: unknown) => caught);
+  it('raise a pinned overflow with the fresh count when an oversized pinned part is measured without a supplied value', async () => {
+    const systemPrompt = 'x'.repeat(4 * (inputCeilingFor(capabilities) + 1));
+    const input = inputFor(capabilities, { sources: sourcesWith({ systemPrompt }) });
+    const { ports } = harness(capabilities);
+    const fresh = (await ports.meter.count({ input: [{ type: 'message', role: 'system', content: systemPrompt }, TASK], tools: [] })).inputTokens;
+    const error = await buildContext(input, ports).catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(PinnedOverflowError);
     expect(error).not.toBeInstanceOf(PinnedRoomError);
+    expect((error as PinnedOverflowError).pinnedTokens).toBe(fresh);
   });
 });
 
