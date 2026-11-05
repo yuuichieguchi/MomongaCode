@@ -78,5 +78,5 @@ export type ProviderAdapter = {
   compact?(request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult>;
   renderCompactWire?(request: AdapterCompactRequest, target: AdapterTarget, cap: number, reasoningOrigin: ReasoningOrigin): Record<string, unknown>;
   renderWire?(request: AdapterRequest, target: AdapterTarget, options: RenderWireOptions): Record<string, unknown>;
-  toolChoiceWire?(target: AdapterTarget): ToolChoiceWire;
+  toolChoiceWire(target: AdapterTarget): ToolChoiceWire;
 };

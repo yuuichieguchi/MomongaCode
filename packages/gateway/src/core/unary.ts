@@ -26,7 +26,7 @@ import type { RetryOutcome } from './retry.ts';
 import { adapterContextOf, originOf } from './adapter-context.ts';
 import type { TargetRuntime } from './router.ts';
 import type { Services } from './services.ts';
-import { NO_TOOL_CHOICE_WIRE, resolveToolChoice } from './tool-choice.ts';
+import { resolveToolChoice } from './tool-choice.ts';
 import { textOfWire } from './wire-text.ts';
 import type { RequestValidator } from './validation.ts';
 
@@ -155,7 +155,7 @@ const countTokens = async (
   const resolved = resolveInput(services.store, services.codec, undefined, normalizeInput(request.input));
   await services.router.narrow(request.model, [target], { images: inputHasImages(resolved.forAdapter) });
   const { allowedTools } = await services.router.capabilitiesOf(target);
-  const toolChoiceWire = target.adapter.toolChoiceWire?.({ name: target.name, model: target.model }) ?? NO_TOOL_CHOICE_WIRE;
+  const toolChoiceWire = target.adapter.toolChoiceWire({ name: target.name, model: target.model });
   const counted = asGatewayError(target, () =>
     resolveToolChoice(adapterRequestOf(target.model, request, resolved.forAdapter), allowedTools, target.name, toolChoiceWire),
   );
