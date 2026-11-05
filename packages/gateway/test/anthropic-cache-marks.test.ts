@@ -1,3 +1,4 @@
+import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
 import { anthropicTextReply } from '@momonga/testkit';
 import type { AdapterInputItem, AdapterRequest, Capabilities, PromptCacheCounts } from '@momonga/protocol';
@@ -27,7 +28,7 @@ const cachedTextsOf = (body: WireBody): string[] => {
 };
 
 const bodyWith = (request: AdapterRequest, maxBreakpoints: number, marks: PromptCacheCounts) =>
-  buildMessagesBody(request, MAX_TOKENS, { cache: { maxBreakpoints, marks } });
+  buildMessagesBody(request, MAX_TOKENS, { cache: { maxBreakpoints, marks } }, EVERY_REASONING_IS_OWN);
 
 describe('Anthropic breakpoints follow the marks the client sends', () => {
   it('places a breakpoint on the last wire block before each mark, and nowhere else', () => {
@@ -76,12 +77,12 @@ describe('Anthropic breakpoints follow the marks the client sends', () => {
   });
 
   it('keeps the inferred placement when no marks are given', () => {
-    const withMarks = buildMessagesBody({ model: 'm', input: CONVERSATION, tools: [tool] }, MAX_TOKENS, { cache: { maxBreakpoints: 4 } });
+    const withMarks = buildMessagesBody({ model: 'm', input: CONVERSATION, tools: [tool] }, MAX_TOKENS, { cache: { maxBreakpoints: 4 } }, EVERY_REASONING_IS_OWN);
     expect(cachedTextsOf(withMarks).sort()).toEqual(['five', 'rules', 'tool:read_file']);
   });
 
   it('puts no breakpoint into a body rendered for counting, marks or not', () => {
-    const body = buildCountTokensBody({ model: 'm', input: CONVERSATION, tools: [tool], cacheMarks: MARKS });
+    const body = buildCountTokensBody({ model: 'm', input: CONVERSATION, tools: [tool], cacheMarks: MARKS }, EVERY_REASONING_IS_OWN);
     expect(cachedTextsOf(body)).toEqual([]);
   });
 });

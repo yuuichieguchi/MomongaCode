@@ -1,4 +1,4 @@
-import type { AdapterInputItem, AdapterRequest, FunctionTool, ToolChoice } from '@momonga/protocol';
+import type { AdapterInputItem, AdapterRequest, FunctionTool, ReasoningOrigin, ToolChoice } from '@momonga/protocol';
 import { SYSTEM_PART_SEPARATOR, systemTextOf } from '../shared/system-text.ts';
 import { nativeHistoryOf, plainHistoryOf } from './plain-history.ts';
 import type { ChatMessage } from './plain-history.ts';
@@ -37,12 +37,12 @@ export const samplingOf = (request: AdapterRequest): Pick<ChatRequestBody, 'temp
   ...(request.top_p === undefined || request.top_p === null ? {} : { top_p: request.top_p }),
 });
 
-export const buildNativeBody = (request: AdapterRequest): ChatRequestBody => {
+export const buildNativeBody = (request: AdapterRequest, origin: ReasoningOrigin): ChatRequestBody => {
   const messages: ChatMessage[] = [];
   const tools = request.tools ?? [];
   const system = systemTextOf(request.instructions, request.input);
   if (system.length > 0) messages.push({ role: 'system', content: system.join(SYSTEM_PART_SEPARATOR) });
-  messages.push(...(tools.length === 0 ? plainHistoryOf(request.input, { envelopeReplies: false }) : nativeHistoryOf(request.input)));
+  messages.push(...(tools.length === 0 ? plainHistoryOf(request.input, { envelopeReplies: false, origin: origin }) : nativeHistoryOf(request.input, origin)));
   return {
     model: request.model,
     messages,

@@ -31,7 +31,7 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
 
   async function* create(request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
     if (closed) throw new Error('the ollama adapter is closed');
-    const body = buildOllamaBody(request, await options.capabilities(ctx.target));
+    const body = buildOllamaBody(request, await options.capabilities(ctx.target), ctx.reasoningOrigin);
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     try {
@@ -54,7 +54,7 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
   const compact = async (request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult> => {
     const capabilities = await options.capabilities(ctx.target);
     const cap = request.momonga?.max_summary_tokens ?? summaryTokenCapFor(capabilities);
-    for await (const event of create(summaryRequestOf(request, cap), ctx)) {
+    for await (const event of create(summaryRequestOf(request, cap, ctx.reasoningOrigin), ctx)) {
       const collected = summaryOfTerminal(event, cap);
       if (collected === undefined) continue;
       if (collected.usage === null) throw new UpstreamProtocolError('the upstream reported no usage for the summary');

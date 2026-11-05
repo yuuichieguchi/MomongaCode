@@ -1,3 +1,4 @@
+import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import fs from 'node:fs';
 import type http from 'node:http';
 import path from 'node:path';
@@ -219,7 +220,7 @@ export const collectOllama = async (
 ): Promise<Collected> => {
   const events: StreamEvent[] = [];
   try {
-    for await (const event of adapter.create(request, { signal, target: OLLAMA_TARGET, attempt: 1 })) events.push(event);
+    for await (const event of adapter.create(request, { signal, target: OLLAMA_TARGET, attempt: 1, reasoningOrigin: EVERY_REASONING_IS_OWN })) events.push(event);
   } catch (error) {
     return { events, error };
   }

@@ -119,6 +119,8 @@ export type {
 export { LOOP_GROUPS_KEPT } from './loop-groups.ts';
 export { findDanglingOutput, findUnpairedCalls } from './call-pairing.ts';
 export { compactionSummaryMessage, decodeCompactionSummary } from './compaction-summary.ts';
+export { decodePayloadSegment, encodePayloadSegment, joinEnvelope, splitEnvelope } from './envelope-grammar.ts';
+export type { EnvelopeSegments } from './envelope-grammar.ts';
 export { PROBE_KEYWORDS } from './probe.ts';
 export type { EndpointProbeReport, OllamaProbeReport, ProbeKeyword, ProbeReport } from './probe.ts';
 export { EVENT_TYPES, RUN_API_SCHEMAS, base64ByteLength, toPublicRunEvent } from './run-api.ts';
@@ -368,6 +370,7 @@ export type {
   DecodedCompactionItem,
   LenientItems,
   ProviderAdapter,
+  ReasoningOrigin,
   RenderWireOptions,
 } from './adapter.ts';
 export { ADAPTER_NEUTRAL_ERROR_CODES } from './adapter.ts';

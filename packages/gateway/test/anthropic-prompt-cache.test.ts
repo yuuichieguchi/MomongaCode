@@ -1,3 +1,4 @@
+import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
 import { anthropicCountTokensReply, anthropicTextReply } from '@momonga/testkit';
 import type { AdapterInputItem, Capabilities } from '@momonga/protocol';
@@ -21,17 +22,17 @@ const breakpointsIn = (value: unknown): number => JSON.stringify(value).split('"
 
 describe('the Anthropic body follows the cache plan it is given', () => {
   it('sends no breakpoint without a plan', () => {
-    expect(breakpointsIn(buildMessagesBody(FOUR_PLACES, MAX_TOKENS, { cache: undefined }))).toBe(0);
+    expect(breakpointsIn(buildMessagesBody(FOUR_PLACES, MAX_TOKENS, { cache: undefined }, EVERY_REASONING_IS_OWN))).toBe(0);
   });
 
   it('sends breakpoints, at most the declared maximum, with a plan', () => {
-    const count = breakpointsIn(buildMessagesBody(FOUR_PLACES, MAX_TOKENS, { cache: { maxBreakpoints: 4 } }));
+    const count = breakpointsIn(buildMessagesBody(FOUR_PLACES, MAX_TOKENS, { cache: { maxBreakpoints: 4 } }, EVERY_REASONING_IS_OWN));
     expect(count).toBeGreaterThan(0);
     expect(count).toBeLessThanOrEqual(4);
   });
 
   it('never sends more breakpoints than the plan allows', () => {
-    expect(breakpointsIn(buildMessagesBody(FOUR_PLACES, MAX_TOKENS, { cache: { maxBreakpoints: 1 } }))).toBeLessThanOrEqual(1);
+    expect(breakpointsIn(buildMessagesBody(FOUR_PLACES, MAX_TOKENS, { cache: { maxBreakpoints: 1 } }, EVERY_REASONING_IS_OWN))).toBeLessThanOrEqual(1);
   });
 });
 
