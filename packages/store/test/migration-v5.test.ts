@@ -64,7 +64,7 @@ describe('migration v5 on a populated v4 database', () => {
   it('records the fifth migration with its name', () => {
     const { dbPath } = migrated();
     const rows = rawDb(dbPath).prepare('SELECT version, name FROM schema_migrations ORDER BY version').all();
-    expect(rows.map((row) => Number(row['version']))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
+    expect(rows.map((row) => Number(row['version']))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
     expect(rows[4]?.['name']).toBe('record whether a run inherits the history of its predecessor');
   });
 

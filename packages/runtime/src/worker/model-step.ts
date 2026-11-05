@@ -327,9 +327,7 @@ const loopGuidanceTrailing = (ctx: ClaimContext): InputItem[] => {
   if (!loopGuidancePending(ctx)) return [];
   const { state } = ctx.journal;
   if (state.loopWarned === undefined) throw new Error(`run ${ctx.run.id} has no loop warning to write guidance for`);
-  const statuses = new Map<string, CallResult>(
-    ctx.options.store.readRunEventsOfTypes(ctx.run.id, ['tool.completed']).flatMap((event) => (event.type === 'tool.completed' ? [[event.callId, event.status] as const] : [])),
-  );
+  const statuses = new Map<string, CallResult>(Object.entries(state.callResults));
   const ours = new Map<string, string>(
     state.history.flatMap((entry) => (entry.item.type === 'function_call_output' && entry.callId !== undefined ? [[entry.item.call_id, entry.callId] as const] : [])),
   );

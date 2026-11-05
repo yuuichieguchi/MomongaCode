@@ -1,6 +1,7 @@
 import { canonicalJson, parseJsonOrText, sha256Hex } from '@momonga/foundation';
 import {
   LOOP_GROUPS_KEPT,
+  STOP_HOOK_FEEDBACK_PREFIX,
   STOP_REASONS,
   emptyWorkingFacts,
   findDanglingOutput,
@@ -37,6 +38,13 @@ export const initialRunState = (ids: { runId: string; sessionId: string }): RunS
   toolCallCounts: {},
   steps: {},
   loadedInstructions: [],
+  hookCompletions: {},
+  stopHookRanSinceResponse: false,
+  stopHookContinuations: 0,
+  compactions: 0,
+  lastCompactionSeq: 0,
+  callResults: {},
+  formsSinceCompaction: {},
   activatedSkills: [],
   loadedTools: [],
   loopGroups: [],
@@ -304,10 +312,34 @@ const withStep = (steps: RunState['steps'], step: number, body: unknown): RunSta
   return typeof toolChoice === 'string' ? { ...steps, [step]: { toolChoice, summary: toolChoice === 'none' } } : steps;
 };
 
-const withInstruction = (current: RunState['loadedInstructions'], path: string, textSha256: string, seq: number): RunState['loadedInstructions'] =>
-  current.some((entry) => entry.path === path)
-    ? current.map((entry) => (entry.path === path ? { path, textSha256, seq: entry.seq } : entry))
-    : [...current, { path, textSha256, seq }];
+const withInstruction = (current: RunState['loadedInstructions'], path: string, content: string, seq: number): RunState['loadedInstructions'] => {
+  const textSha256 = sha256Hex(content);
+  return current.some((entry) => entry.path === path)
+    ? current.map((entry) => (entry.path === path ? { path, textSha256, seq: entry.seq, content } : entry))
+    : [...current, { path, textSha256, seq, content }];
+};
+
+const withCompactionRecorded = (state: RunState, event: { seq: number }, compacted: boolean): RunState => ({
+  ...state,
+  compactions: compacted ? state.compactions + 1 : state.compactions,
+  lastCompactionSeq: event.seq,
+  formsSinceCompaction: {},
+});
+
+const withForm = (state: RunState, event: Extract<RunEvent, { type: 'context.truncated' }>): RunState => {
+  if (event.kind === 'truncated' && event.keptChars !== undefined) return { ...state, formsSinceCompaction: { ...state.formsSinceCompaction, [event.callId]: event.keptChars } };
+  if (event.kind === 'omitted') {
+    const { [event.callId]: _omitted, ...rest } = state.formsSinceCompaction;
+    return { ...state, formsSinceCompaction: rest };
+  }
+  return state;
+};
+
+const withHookCompleted = (state: RunState, event: Extract<RunEvent, { type: 'hook.completed' }>): RunState => ({
+  ...state,
+  hookCompletions: { ...state.hookCompletions, [event.hookEvent]: (state.hookCompletions[event.hookEvent] ?? 0) + 1 },
+  stopHookRanSinceResponse: event.hookEvent === 'Stop' ? true : state.stopHookRanSinceResponse,
+});
 
 const withLoadedTools = (current: readonly string[], names: readonly string[]): string[] => [
   ...current,
@@ -324,6 +356,7 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       const appended = appendItems(rest, [{ item: { type: 'message', role: 'user', content: userMessageContent(event.text, event.images) } }], event.seq);
       return {
         ...appended,
+        stopHookContinuations: event.text.startsWith(STOP_HOOK_FEEDBACK_PREFIX) ? state.stopHookContinuations + 1 : state.stopHookContinuations,
         workingFacts:
           state.lastSeq === 0
             ? withTaskText(appended.workingFacts, event.text)
@@ -366,6 +399,7 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
           ...(event.response.incompleteReason === undefined ? {} : { incompleteReason: event.response.incompleteReason }),
         },
         usage: addUsage(state.usage, requiredSpend(event)),
+        stopHookRanSinceResponse: false,
       };
     }
     case 'model.rejected': {
@@ -449,18 +483,20 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       return state;
     case 'tool.started':
       return withCall(state, event.callId, event.type, (call) => ({ ...call, status: 'started', idemKey: event.idemKey }));
-    case 'tool.completed':
-      return completeCall(state, event);
+    case 'tool.completed': {
+      const completed = completeCall(state, event);
+      return { ...completed, callResults: { ...completed.callResults, [event.callId]: event.status } };
+    }
     case 'tool.reconciled':
       return reconcileCall(state, event);
     case 'context.compacted':
-      return compact(state, event);
+      return withCompactionRecorded(compact(state, event), event, true);
     case 'context.compaction_rejected':
-      return rejectCompaction(state, event);
+      return withCompactionRecorded(rejectCompaction(state, event), event, false);
     case 'context.inherited':
       return applyInheritance(state, event);
     case 'context.truncated':
-      return truncate(state, event);
+      return withForm(truncate(state, event), event);
     case 'notice':
       return { ...state, notes: [...state.notes, { level: event.level, message: event.message, ...(event.code === undefined ? {} : { code: event.code }), ...(event.toolKey === undefined ? {} : { toolKey: event.toolKey }), ...(event.reduction === undefined ? {} : { reduction: event.reduction }) }] };
     case 'agent.message.delta':
@@ -473,8 +509,9 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       return withCall(state, event.callId, event.type, (call) => ({ ...call, awaiting: event.awaits }));
     case 'plan.updated':
       return { ...state, workingFacts: { ...state.workingFacts, plan: { seq: event.seq, entries: event.entries } } };
-    case 'job.finished':
     case 'hook.completed':
+      return withHookCompleted(state, event);
+    case 'job.finished':
     case 'tool.updated':
     case 'usage.updated':
     case 'meter.observed':
@@ -485,7 +522,7 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
     case 'context.memories_loaded':
       return { ...state, memoriesLoaded: event.memories };
     case 'instructions.loaded':
-      return { ...state, loadedInstructions: withInstruction(state.loadedInstructions, event.path, sha256Hex(event.content), event.seq) };
+      return { ...state, loadedInstructions: withInstruction(state.loadedInstructions, event.path, event.content, event.seq) };
     case 'skill.activated':
       return { ...state, activatedSkills: withSkill(state.activatedSkills, { name: event.name, content: event.content, seq: event.seq }) };
     case 'tool.loaded':

@@ -4,11 +4,10 @@ import type { RuntimeStore } from '@momonga/store';
 import { ToolExecutionError, createGovernanceTools } from '@momonga/tools';
 import type { GovernancePort as GovernanceToolPort } from '@momonga/tools';
 import type { GovernancePort, SettingsPort } from '../ports.ts';
-import { callSeqOf } from '../process/run-events.ts';
 import { ruleParses } from './rules.ts';
 
 export type GovernancePortOptions = {
-  store: Pick<RuntimeStore, 'governing' | 'readRunEvents'>;
+  store: Pick<RuntimeStore, 'governing' | 'toolCallSeq'>;
   settings: Pick<SettingsPort, 'trusted'>;
 };
 
@@ -27,7 +26,8 @@ export const createGovernancePort = ({ store, settings }: GovernancePortOptions)
         const target = normalizeTarget(request.target);
         const enforcement = request.enforcement ?? null;
         const supersedes = request.supersedes ?? [];
-        const seq = callSeqOf(store, request.runId, request.callId);
+        const seq = store.toolCallSeq(request.runId, request.callId);
+        if (seq === undefined) throw new Error(`run ${request.runId} has no tool.call event for ${request.callId}`);
         const source = { kind: 'proposal' as const, sessionId: session.id, runId: request.runId, seq, callId: request.callId };
         const candidate: GoverningFactView = {
           id: '',

@@ -2,12 +2,11 @@ import { ChildRunError, pinOf } from '@momonga/agents';
 import type { ChildRunOutcome, ChildRuns } from '@momonga/agents';
 import { TERMINAL_STATUSES, assistantTextOf } from '@momonga/protocol';
 import type { InputItem, RunState } from '@momonga/protocol';
-import { foldRunState, initialRunState } from '@momonga/store';
 import type { Run, RuntimeStore } from '@momonga/store';
 import { parentPinsOf } from '../worker/pins.ts';
 
 export type ChildRunsOptions = {
-  store: Pick<RuntimeStore, 'createChildRun' | 'getRun' | 'listChildRuns' | 'load' | 'readRunEventsOfTypes'>;
+  store: Pick<RuntimeStore, 'createChildRun' | 'getRun' | 'listChildRuns' | 'finalTextOf' | 'readRunEventsOfTypes'>;
   modelAliases(): Promise<readonly string[]>;
 };
 
@@ -30,12 +29,6 @@ export const finalTextOf = (state: RunState): string => {
 };
 
 export const createChildRuns = ({ store, modelAliases }: ChildRunsOptions): ChildRuns => {
-  const foldedFinalText = (run: Run): string => {
-    const loaded = store.load(run.id);
-    const state = loaded.tail.reduce(foldRunState, loaded.snapshot?.state ?? initialRunState({ runId: run.id, sessionId: run.sessionId }));
-    return finalTextOf(state);
-  };
-
   const outcomeOf = (run: Run): ChildRunOutcome => {
     if (!isTerminalStatus(run.status)) return { state: 'running', runId: run.id, sessionId: run.sessionId };
     return {
@@ -45,7 +38,7 @@ export const createChildRuns = ({ store, modelAliases }: ChildRunsOptions): Chil
       status: run.status,
       ...(run.stopReason === undefined ? {} : { stopReason: run.stopReason }),
       ...(run.error === undefined ? {} : { error: run.error }),
-      text: foldedFinalText(run),
+      text: store.finalTextOf(run.id),
     };
   };
 
