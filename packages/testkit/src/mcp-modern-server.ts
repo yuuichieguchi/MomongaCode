@@ -154,6 +154,12 @@ const EXTRA_TOOLS: Record<string, Tool> = {
     inputSchema: objectSchema({}, []),
     outputSchema: { type: 'object', if: { anyOf: [{ properties: { a: {} } }], not: {} }, then: false } as unknown as Tool['outputSchema'],
   },
+  bad_output_schema: {
+    name: 'bad_output_schema',
+    description: 'A tool whose output schema does not compile',
+    inputSchema: objectSchema({}, []),
+    outputSchema: { type: 'object', properties: { a: { type: 'nonsense' } } } as unknown as Tool['outputSchema'],
+  },
   if_annotations: {
     name: 'if_annotations',
     description: 'A 2020-12 schema whose if subschema evaluates every property',

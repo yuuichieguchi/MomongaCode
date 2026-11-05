@@ -116,6 +116,7 @@ export type ToolBody<Input> = {
   schemaMode?: 'strict' | 'lenient';
   outputSchema?: Record<string, unknown>;
   server?: string;
+  validatorIdentity?: string;
   timeoutMs: number | ((input: Input) => number);
   title(input: Input, ctx: DisplayContext): string;
   locations?(input: Input, ctx: DisplayContext): { path: string; line?: number }[];

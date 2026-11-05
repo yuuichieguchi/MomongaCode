@@ -2,7 +2,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import type { ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import type { AnyTool } from './types.ts';
-import { SchemaValidatorFailure, compileUntrustedSchema, untrustedSchemaFailure } from './untrusted-schema.ts';
+import { SchemaValidatorFailure, compileUntrustedSchema, schemaIdentity, untrustedSchemaFailure } from './untrusted-schema.ts';
 import { validateUntrusted } from './validate-untrusted.ts';
 
 const MAX_REPORTED_ERRORS = 20;
@@ -12,15 +12,22 @@ addFormats.default(ajv);
 
 const compiled = new WeakMap<Record<string, unknown>, ValidateFunction>();
 
-const assertOutputSchemaUsable = (tool: AnyTool): void => {
-  if (tool.outputSchema === undefined) return;
-  const failure = untrustedSchemaFailure(tool.outputSchema);
+export const recordedFailureOf = (tool: AnyTool): string | undefined => {
+  const identity = schemaIdentity(tool);
+  const input = untrustedSchemaFailure(identity, tool.inputSchema);
+  if (input !== undefined || tool.outputSchema === undefined) return input;
+  return untrustedSchemaFailure(identity, tool.outputSchema);
+};
+
+const assertUsable = (tool: AnyTool): void => {
+  const failure = recordedFailureOf(tool);
   if (failure !== undefined) throw new SchemaValidatorFailure(failure);
 };
 
 export const compileInputSchema = (tool: AnyTool): ValidateFunction => {
   if (tool.schemaMode === 'lenient') {
-    assertOutputSchemaUsable(tool);
+    assertUsable(tool);
+    if (tool.outputSchema !== undefined) compileUntrustedSchema(tool.outputSchema);
     return compileUntrustedSchema(tool.inputSchema);
   }
   const cached = compiled.get(tool.inputSchema);
@@ -84,8 +91,8 @@ const parseArguments = (tool: AnyTool, rawArguments: unknown): ValidationResult 
 
 const validateLenient = (tool: AnyTool, parsed: { ok: true; value: unknown }): ValidationResult => {
   try {
-    assertOutputSchemaUsable(tool);
-    const verdict = validateUntrusted(tool.inputSchema, parsed.value);
+    assertUsable(tool);
+    const verdict = validateUntrusted(schemaIdentity(tool), tool.inputSchema, parsed.value);
     return verdict.valid ? parsed : { ok: false, message: describeErrors(tool.name, verdict.errors) };
   } catch (error) {
     if (error instanceof SchemaValidatorFailure) return unavailable(tool, error.message);

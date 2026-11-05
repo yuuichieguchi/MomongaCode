@@ -5,6 +5,7 @@ import type { AnyTool, ToolListOptions, ToolResult, ToolResume, ToolSource, Tool
 import { McpUnavailableError } from './connection.ts';
 import { parseElicitationAnswer } from './input-requests.ts';
 import { authorizationRequiredFor, isTransientRemoteFailure } from './remote-errors.ts';
+import { mcpToolIdentity } from './tool-identity.ts';
 import { McpInputSuspension, parseCheckpoint } from './suspension.ts';
 import { DEFAULT_REQUEST_TIMEOUT_MS } from './tasks.ts';
 import type { McpResume } from './suspension.ts';
@@ -106,6 +107,7 @@ const buildTool = (
     inputSchema,
     ...(tool.outputSchema === undefined ? {} : { outputSchema: sanitizeSchema(tool.outputSchema) }),
     server,
+    validatorIdentity: mcpToolIdentity(server, tool.name),
     schemaMode: 'lenient',
     timeoutMs: options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
     title: () => `${sanitizeServerText(server)}: ${titleOf(tool)}`,

@@ -49,9 +49,11 @@ export const registerInputRoutes = (route: RouteRegistrar, deps: InputRoutesDeps
     let responses;
     const notices: string[] = [];
     try {
-      responses = parseElicitationAnswers(view.requests, body.responses, (request, message) =>
-        notices.push(`Elicitation ${JSON.stringify(cleanFailureMessage(request.key))} of MCP server ${JSON.stringify(cleanFailureMessage(view.server))} was declined: its requestedSchema validator failed: ${message}`),
-      );
+      responses = parseElicitationAnswers(view.requests, body.responses, {
+        server: view.server,
+        onValidatorFailure: (request, message) =>
+          notices.push(`Elicitation ${JSON.stringify(cleanFailureMessage(request.key))} of MCP server ${JSON.stringify(cleanFailureMessage(view.server))} was declined: its requestedSchema validator failed: ${message}`),
+      });
     } catch (error) {
       if (error instanceof McpElicitationAnswerError) throw invalidRequest(error.message, 'responses');
       throw error;

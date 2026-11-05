@@ -15,7 +15,7 @@ const ISOLATED_COMPILER_OPTIONS = { ...OPTIONS, validateSchema: false } as const
 
 type AjvCore = AjvCoreModule.default;
 
-type CacheEntry = { validate: ValidateFunction } | { failure: string; announced: boolean };
+type CacheEntry = { validate: ValidateFunction } | { failure: string };
 
 export class SchemaValidatorFailure extends Error {
   constructor(message: string) {
@@ -115,7 +115,7 @@ export const compileUntrustedSchema = (schema: Record<string, unknown>): Validat
   try {
     entry = { validate: compileIsolated(schema) };
   } catch (error) {
-    entry = { failure: cleanFailureMessage(error instanceof Error ? error.message : String(error)), announced: false };
+    entry = { failure: cleanFailureMessage(error instanceof Error ? error.message : String(error)), };
   }
   remember(key, entry);
   return resolve(entry);
@@ -123,18 +123,21 @@ export const compileUntrustedSchema = (schema: Record<string, unknown>): Validat
 
 export const untrustedSchemaCacheSize = (): number => cache.size;
 
-export const recordUntrustedSchemaFailure = (schema: Record<string, unknown>, message: string): void => {
-  remember(keyOf(schema), { failure: cleanFailureMessage(message), announced: false });
+const validateFailures = new Map<string, string>();
+
+const failureKeyOf = (identity: string, schema: Record<string, unknown>): string => `${identity}\u0000${keyOf(schema)}`;
+
+export const schemaIdentity = (tool: { name: string; validatorIdentity?: string }): string => tool.validatorIdentity ?? tool.name;
+
+export const recordValidateFailure = (identity: string, schema: Record<string, unknown>, message: string): void => {
+  const key = failureKeyOf(identity, schema);
+  validateFailures.delete(key);
+  validateFailures.set(key, cleanFailureMessage(message));
+  if (validateFailures.size > MAX_CACHED_VALIDATORS) {
+    const oldest = validateFailures.keys().next();
+    if (oldest.done !== true) validateFailures.delete(oldest.value);
+  }
 };
 
-export const untrustedSchemaFailure = (schema: Record<string, unknown>): string | undefined => {
-  const entry = cache.get(keyOf(schema));
-  return entry !== undefined && 'failure' in entry ? entry.failure : undefined;
-};
-
-export const takeUntrustedSchemaFailureNotice = (schema: Record<string, unknown>): string | undefined => {
-  const entry = cache.get(keyOf(schema));
-  if (entry === undefined || !('failure' in entry) || entry.announced) return undefined;
-  entry.announced = true;
-  return entry.failure;
-};
+export const untrustedSchemaFailure = (identity: string, schema: Record<string, unknown>): string | undefined =>
+  validateFailures.get(failureKeyOf(identity, schema));

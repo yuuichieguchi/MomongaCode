@@ -21,8 +21,8 @@ import { cancellableTimer } from './timers.ts';
 import { MINIMUM_INLINE_OUTPUT_CHARS, truncateOutput, useFormattedOutput } from './truncate.ts';
 import { ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
 import type { AnyTool, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
-import { cleanFailureMessage, takeUntrustedSchemaFailureNotice } from './untrusted-schema.ts';
-import { validateToolInput } from './validate.ts';
+import { cleanFailureMessage } from './untrusted-schema.ts';
+import { recordedFailureOf, validateToolInput } from './validate.ts';
 import type { ValidationResult } from './validate.ts';
 
 const DEFAULT_IDEMPOTENCY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -441,6 +441,8 @@ const settleWithin = async (pending: Promise<unknown>, ms: number): Promise<void
   }
 };
 
+const MAX_ANNOUNCED_RUNS = 256;
+
 export const createToolExecutor = (options: ToolExecutorOptions): InspectableToolExecutor => {
   if (options.maxInlineOutputChars !== undefined && options.maxInlineOutputChars < MINIMUM_INLINE_OUTPUT_CHARS) {
     throw new RangeError(`maxInlineOutputChars must be at least ${MINIMUM_INLINE_OUTPUT_CHARS}`);
@@ -468,17 +470,25 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   };
   const activeKeys = new Map<string, number>();
 
+  const announcedByRun = new Map<string, Set<string>>();
+
   const announceValidatorFailure = (batch: BatchCore, tool: AnyTool): void => {
     if (tool.schemaMode !== 'lenient') return;
-    for (const schema of [tool.inputSchema, tool.outputSchema]) {
-      if (schema === undefined) continue;
-      const failure = takeUntrustedSchemaFailureNotice(schema);
-      if (failure === undefined) continue;
-      const origin = tool.server === undefined ? '' : ` of MCP server ${JSON.stringify(cleanFailureMessage(tool.server))}`;
-      const message = `Tool ${cleanFailureMessage(tool.name)}${origin} is unavailable for the rest of this run: its schema validator failed: ${failure}`;
-      options.onWarning(message);
-      batch.onWarning?.(message);
+    const failure = recordedFailureOf(tool);
+    if (failure === undefined) return;
+    const announced = announcedByRun.get(batch.runId) ?? new Set<string>();
+    if (announced.has(tool.name)) return;
+    announced.add(tool.name);
+    announcedByRun.delete(batch.runId);
+    announcedByRun.set(batch.runId, announced);
+    if (announcedByRun.size > MAX_ANNOUNCED_RUNS) {
+      const oldest = announcedByRun.keys().next();
+      if (oldest.done !== true) announcedByRun.delete(oldest.value);
     }
+    const origin = tool.server === undefined ? '' : ` of MCP server ${JSON.stringify(cleanFailureMessage(tool.server))}`;
+    const message = `Tool ${cleanFailureMessage(tool.name)}${origin} is unavailable for the rest of this run: its schema validator failed: ${failure}`;
+    options.onWarning(message);
+    batch.onWarning?.(message);
   };
 
   const rejectionOf = (batch: BatchCore, tool: AnyTool, validation: Extract<ValidationResult, { ok: false }>): string => {

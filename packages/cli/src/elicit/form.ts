@@ -90,7 +90,7 @@ const FALSE_WORDS = ['n', 'no', 'false', '0'];
 
 const checkAgainst = (schema: Readonly<Record<string, unknown>>, value: unknown, label: string): ContentCheck => {
   try {
-    const verdict = validateUntrusted(schema, value);
+    const verdict = validateUntrusted('cli-elicitation', schema, value);
     if (verdict.valid) return { kind: 'valid' };
     return { kind: 'invalid', message: verdict.errors.map((error) => `${label}${error.instancePath} ${error.message ?? error.keyword}`).join('; ') };
   } catch (error) {

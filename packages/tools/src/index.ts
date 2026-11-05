@@ -72,8 +72,8 @@ export {
   SchemaValidatorFailure,
   cleanFailureMessage,
   compileUntrustedSchema,
-  recordUntrustedSchemaFailure,
-  takeUntrustedSchemaFailureNotice,
+  recordValidateFailure,
+  schemaIdentity,
   untrustedSchemaCacheSize,
   untrustedSchemaFailure,
 } from './untrusted-schema.ts';

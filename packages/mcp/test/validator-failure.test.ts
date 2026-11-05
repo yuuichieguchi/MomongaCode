@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FIXTURE_EXTRA_TOOLS_ENV } from '@momonga/testkit';
-import { compileUntrustedSchema } from '@momonga/tools';
+import { schemaIdentity, untrustedSchemaFailure } from '@momonga/tools';
 import type { ToolSet } from '@momonga/tools';
 import { callRecords, entry, makeExecutor, makePool, makeRecordFile, modernConfig } from './mcp-harness.ts';
 
@@ -65,7 +65,8 @@ describe('validating MCP tool arguments with a third-party 2020-12 schema', () =
     expect(notices[0]).toContain('modern');
     expect(notices[0]).toContain(ENGINE_MESSAGE);
 
-    expect(() => compileUntrustedSchema((tool as { inputSchema: Record<string, unknown> }).inputSchema)).toThrow(ENGINE_MESSAGE);
+    const thrower = tool as { inputSchema: Record<string, unknown>; name: string; validatorIdentity?: string };
+    expect(untrustedSchemaFailure(schemaIdentity(thrower), thrower.inputSchema)).toContain(ENGINE_MESSAGE);
 
     const runsAfterFirst = validatorRuns.count;
     expect(runsAfterFirst).toBe(1);

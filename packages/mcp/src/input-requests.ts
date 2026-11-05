@@ -88,14 +88,14 @@ export const parseElicitationAnswer = (key: string, value: unknown): Elicitation
   return { action, content: content as Record<string, ElicitationContentValue> };
 };
 
-const validateAgainst = (request: ElicitationRequest, answer: ElicitationAnswer): void => {
+const validateAgainst = (server: string, request: ElicitationRequest, answer: ElicitationAnswer): void => {
   if (answer.action !== 'accept') return;
   if (request.mode === 'url') {
     if (answer.content !== undefined) throw new McpElicitationAnswerError(request.key, `an accepted url elicitation "${request.key}" must not carry content`);
     return;
   }
   if (answer.content === undefined) throw new McpElicitationAnswerError(request.key, `an accepted form elicitation "${request.key}" must carry content`);
-  const verdict = validateUntrusted(request.requestedSchema, answer.content);
+  const verdict = validateUntrusted(`mcp-elicitation\u0000${server}\u0000${request.key}`, request.requestedSchema, answer.content);
   if (!verdict.valid) {
     const detail = verdict.errors.map((error) => `${error.instancePath || '(root)'} ${error.message ?? error.keyword}`).join('; ');
     throw new McpElicitationAnswerError(request.key, `the content for "${request.key}" does not match the requested schema: ${detail}`);
@@ -105,7 +105,7 @@ const validateAgainst = (request: ElicitationRequest, answer: ElicitationAnswer)
 export const parseElicitationAnswers = (
   requests: readonly ElicitationRequest[],
   raw: unknown,
-  onValidatorFailure: (request: ElicitationRequest, message: string) => void = () => undefined,
+  options: { server: string; onValidatorFailure(request: ElicitationRequest, message: string): void } = { server: '', onValidatorFailure: () => undefined },
 ): Record<string, ElicitationAnswer> => {
   if (!isRecord(raw)) throw new McpElicitationAnswerError('', 'responses must be an object keyed by request key');
   const known = new Set(requests.map((request) => request.key));
@@ -117,11 +117,11 @@ export const parseElicitationAnswers = (
     if (!(request.key in raw)) throw new McpElicitationAnswerError(request.key, `no answer was given for "${request.key}"`);
     const answer = parseElicitationAnswer(request.key, raw[request.key]);
     try {
-      validateAgainst(request, answer);
+      validateAgainst(options.server, request, answer);
       answers[request.key] = answer;
     } catch (error) {
       if (!(error instanceof SchemaValidatorFailure)) throw error;
-      onValidatorFailure(request, error.message);
+      options.onValidatorFailure(request, error.message);
       answers[request.key] = { action: 'decline' };
     }
   }
