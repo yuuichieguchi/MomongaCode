@@ -40,14 +40,11 @@ export const serveJournalReader = (handlers: Readonly<Record<string, JournalHand
       return;
     }
     void (async () => {
-      let fields: JournalReplyFields;
       try {
-        fields = await handler(request);
+        outgoing.postMessage({ ...(await handler(request)), id, ok: true });
       } catch (error) {
         outgoing.postMessage({ id, ok: false, error: errorOf(error) });
-        return;
       }
-      outgoing.postMessage({ id, ok: true, ...fields });
     })();
   });
 };
