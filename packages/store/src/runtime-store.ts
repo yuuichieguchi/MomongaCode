@@ -348,6 +348,9 @@ const decodeModelCallRecord = (row: Row): ModelCallRecord => {
 };
 
 type Measured = { lastSeq: number; journaled: boolean; contribution: Pick<ContributionPayload, 'items'> | undefined };
+type Prepared = Measured & { leadingDigest: string };
+
+const digestOfLeading = (leadingEvents: readonly RunEventPayload[]): string => JSON.stringify(leadingEvents);
 
 const payloadStep = (payload: RunEventPayload): number => ('step' in payload ? payload.step : 0);
 
@@ -390,7 +393,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const trust = createTrustStore(db, clock, home);
   const originOf = (cwd: string): 'trusted' | 'untrusted' => (trust.decisionFor(cwd).decision === 'trusted' ? 'trusted' : 'untrusted');
   const touched = new Map<string, { runId?: string; sessionId: string }>();
-  const prepared = new Map<string, Measured>();
+  const prepared = new Map<string, Prepared>();
 
   const recordTouch = (sessionId: string, runId: string | null): void => {
     if (options.onCommit === undefined) return;
@@ -543,13 +546,16 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     };
   };
 
-  const prepareTerminal = (runId: string): void => {
+  const prepareTerminal = (runId: string, leadingEvents: readonly RunEventPayload[] = []): void => {
     const hook = options.contribution;
     const row = sql.selectRun.get({ id: runId });
     if (hook === undefined || row === undefined) return;
     const run = decodeRun(row);
-    if (isTerminal(run.status) || prepared.get(runId)?.lastSeq === run.lastSeq) return;
-    prepared.set(runId, measureContribution(hook, run));
+    if (isTerminal(run.status)) return;
+    const leadingDigest = digestOfLeading(leadingEvents);
+    const existing = prepared.get(runId);
+    if (existing !== undefined && existing.lastSeq === run.lastSeq && existing.leadingDigest === leadingDigest) return;
+    prepared.set(runId, { ...measureContribution(hook, run, leadingEvents), leadingDigest });
   };
 
   const prepareChildren = (runId: string): void => {
@@ -561,19 +567,20 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     }
   };
 
-  const prepareTree = (runId: string): void => {
-    prepareTerminal(runId);
+  const prepareTree = (runId: string, leadingEvents: readonly RunEventPayload[] = []): void => {
+    prepareTerminal(runId, leadingEvents);
     prepareChildren(runId);
   };
 
-  const prepareStopping = (runId: string): void => {
+  const prepareStopping = (runId: string, nowMs: number): void => {
     const { status } = requireRun(runId);
-    if (status === 'QUEUED' || status === 'WAITING_HUMAN') prepareTree(runId);
+    if (status === 'QUEUED') prepareTree(runId);
+    if (status === 'WAITING_HUMAN') prepareTree(runId, approvalOps.listPendingDue(runId, nowMs).flatMap((approval) => expiryEvents(runId, approval)));
   };
 
   const prepareLateAnswer = (approvalId: string): void => {
     const approval = approvalOps.store.get(approvalId);
-    if (approval !== undefined && approval.status === 'pending' && approval.expiresAt <= clock.now()) prepareStopping(approval.runId);
+    if (approval !== undefined && approval.status === 'pending' && approval.expiresAt <= clock.now()) prepareStopping(approval.runId, clock.now());
   };
 
   const prepareExhausted = (): void => {
@@ -586,7 +593,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     const ready = prepared.get(run.id);
     prepared.delete(run.id);
     const { journaled, contribution } =
-      ready !== undefined && ready.lastSeq === run.lastSeq && !leadingEvents.some((event) => hook.eventTypes.includes(event.type))
+      ready !== undefined && ready.lastSeq === run.lastSeq && ready.leadingDigest === digestOfLeading(leadingEvents)
         ? ready
         : measureContribution(hook, run, leadingEvents);
     if (contribution !== undefined && to === 'COMPLETED') {
@@ -711,8 +718,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return run === undefined ? leaseLost : moveWorker(run, from, to, change, preceding);
     });
 
-  const expireApproval = (runId: string, approval: Approval): RunEventPayload[] => {
-    approvalOps.end(approval.id, 'expired');
+  const expiryEvents = (runId: string, approval: Approval): RunEventPayload[] => {
     const notice: RunEventPayload = {
       type: 'notice',
       level: 'warning',
@@ -722,6 +728,11 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return approvalAnnounced(runId, approval.id)
       ? [cancelledEvent(approval, 'expired'), notice]
       : [notice];
+  };
+
+  const expireApproval = (runId: string, approval: Approval): RunEventPayload[] => {
+    approvalOps.end(approval.id, 'expired');
+    return expiryEvents(runId, approval);
   };
 
   const stopWaitingRun = (run: Run, nowMs: number): boolean => {
@@ -1358,7 +1369,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     transition: (claim, from, to, patch, preceding = []) =>
       afterPreparing(
         () => {
-          if (isTerminal(to)) prepareTree(claim.runId);
+          if (isTerminal(to)) prepareTree(claim.runId, preceding);
         },
         () => workerTransition(claim, from, to, patch === undefined ? {} : { patch }, preceding),
       ),
@@ -1417,7 +1428,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     appendAsService: (runId, expectedVersion, to, events, patch) =>
       afterPreparing(
         () => {
-          if (to !== null && isTerminal(to)) prepareTree(runId);
+          if (to !== null && isTerminal(to)) prepareTree(runId, events);
         },
         () =>
           transaction<ServiceMutationResult>(() => {
@@ -1562,7 +1573,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       for (const row of sql.dueWaitingRuns.all({ nowMs })) {
         const runId = readerFor('runs', 'due', row).string('id');
         const didStop = afterPreparing(
-          () => prepareStopping(runId),
+          () => prepareStopping(runId, nowMs),
           () => transaction(() => stopWaitingRun(requireRun(runId), nowMs)),
         );
         if (didStop) stopped.push(runId);
