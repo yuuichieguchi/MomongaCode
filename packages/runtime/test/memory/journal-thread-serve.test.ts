@@ -6,10 +6,42 @@ const turn = (): Promise<void> => new Promise((resolve) => setImmediate(resolve)
 
 const fakeChannel = (): { incoming: EventEmitter; outgoing: { postMessage(message: unknown): void }; sent: unknown[] } => {
   const sent: unknown[] = [];
-  return { incoming: new EventEmitter(), outgoing: { postMessage: (message) => sent.push(message) }, sent };
+  return { incoming: new EventEmitter(), outgoing: { postMessage: (message) => sent.push(structuredClone(message)) }, sent };
 };
 
 describe('serveJournalReader', () => {
+  it('keeps the request id and ok true over id and ok fields returned by a handler', async () => {
+    const channel = fakeChannel();
+    serveJournalReader({ spoof: () => ({ id: 999, ok: false, value: 1 }) }, channel);
+    channel.incoming.emit('message', { id: 4, kind: 'spoof' });
+    await turn();
+    expect(channel.sent).toEqual([{ id: 4, ok: true, value: 1 }]);
+  });
+
+  it('turns a reply that cannot be cloned into exactly one request error naming the clone failure, then keeps serving', async () => {
+    const channel = fakeChannel();
+    serveJournalReader({ uncloneable: () => ({ f: () => 1 }), echo: (request: Readonly<Record<string, unknown>>) => ({ echoed: request['value'] }) }, channel);
+    channel.incoming.emit('message', { id: 5, kind: 'uncloneable' });
+    await turn();
+    channel.incoming.emit('message', { id: 6, kind: 'echo', value: 'next' });
+    await turn();
+    expect(channel.sent).toEqual([
+      { id: 5, ok: false, error: { name: 'DataCloneError', message: expect.any(String) } },
+      { id: 6, ok: true, echoed: 'next' },
+    ]);
+  });
+
+  it.each([
+    ['no numeric id', { kind: 'ping' }],
+    ['no string kind', { id: 1 }],
+  ])('throws synchronously and posts nothing for a message with %s', async (_label, message) => {
+    const channel = fakeChannel();
+    serveJournalReader({ ping: () => ({}) }, channel);
+    expect(() => channel.incoming.emit('message', message)).toThrow();
+    await turn();
+    expect(channel.sent).toEqual([]);
+  });
+
   it('answers a registered kind with the handler reply fields under the request id', async () => {
     const channel = fakeChannel();
     serveJournalReader({ echo: (request: Readonly<Record<string, unknown>>) => ({ echoed: request['value'] }) }, channel);
