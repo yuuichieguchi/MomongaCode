@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { createScriptedAdapter, textResponseEvents, waitFor } from '@momonga/testkit';
+import { createFakeClock, createScriptedAdapter, textResponseEvents, waitFor } from '@momonga/testkit';
+import { createLiveSpanTelemetry } from './gateway-support.ts';
 import {
+  START_MS,
   expectErrorBody,
   outputText,
   postJson,
   readJson,
   readSse,
+  registerCleanup,
   sseIterator,
   startGateway,
   userInput,
@@ -16,6 +19,7 @@ const events = (text: string) => textResponseEvents({ model: 'scripted-primary',
 const body = { model: 'fast', input: userInput('hi') };
 const streamBody = { ...body, stream: true };
 const key = (value: string) => ({ 'idempotency-key': value });
+const JOINER_DEADLINE_MS = 60_000;
 
 const drain = async (iterator: AsyncIterator<SseFrame>, initial: SseFrame[]): Promise<SseFrame[]> => {
   const frames = [...initial];
@@ -41,28 +45,29 @@ describe('Idempotency-Key', () => {
 
   it('gives a stream joining mid-flight the full identical event sequence from the start', async () => {
     const primary = createScriptedAdapter({ calls: [{ events: events('shared'), gate: { name: 'g', afterEvents: 2 } }] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const clock = createFakeClock(START_MS);
+    const live = createLiveSpanTelemetry(clock);
+    const { client, timers } = await startGateway({ adapters: { primary }, clock, telemetry: live.telemetry });
+    registerCleanup(() => primary.release('g'));
     const firstPending = postJson(client, '/v1/responses', streamBody, key('k-2'));
-    let firstArrived = false;
-    const markArrived = (): void => {
-      firstArrived = true;
-    };
-    void firstPending.then(markArrived, markArrived);
-    await waitFor(() => primary.calls[0]?.emitted === 2, { description: 'the opening events' });
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    const heldBeforeOutput = !firstArrived;
+    await waitFor(() => primary.calls[0]?.emitted === 2 && primary.calls[0]?.outcome === 'pending', { description: 'the adapter parked after the opening events' });
+    expect(live.attemptSpans()).toHaveLength(1);
+    expect(live.commitEvents()).toBe(0);
 
-    const secondPending = postJson(client, '/v1/responses', streamBody, key('k-2'));
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    const secondPending = postJson(client, '/v1/responses', streamBody, { ...key('k-2'), 'momonga-deadline-ms': String(JOINER_DEADLINE_MS) });
+    await waitFor(() => primary.calls.length === 1 && timers.pending().some((timer) => timer.delayMs === JOINER_DEADLINE_MS), {
+      description: 'the joiner subscribed to the in-flight run',
+      maxTurns: 20_000,
+    });
     primary.release('g');
 
     const secondResponse = await secondPending;
+    expect(live.commitEvents()).toBe(1);
     expect(secondResponse.status).toBe(200);
     const firstIterator = sseIterator(await firstPending);
     const secondIterator = sseIterator(secondResponse);
     const firstStep = await firstIterator.next();
     const secondStep = await secondIterator.next();
-    expect(heldBeforeOutput).toBe(true);
     const firstAll = await drain(firstIterator, firstStep.done === true ? [] : [firstStep.value]);
     const secondAll = await drain(secondIterator, secondStep.done === true ? [] : [secondStep.value]);
     expect(firstAll.slice(0, 2).map((frame) => frame.data.type)).toEqual(['response.created', 'response.in_progress']);
