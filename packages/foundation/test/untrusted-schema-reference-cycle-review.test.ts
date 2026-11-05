@@ -38,6 +38,14 @@ const remoteBoundary = () =>
     engine: ataEngine,
   });
 
+const EMBEDDED = 'https://remote.example/inner.json';
+
+const embeddedBoundary = (inner: Record<string, unknown>) =>
+  createUntrustedBoundary({
+    remotes: new Map([['https://remote.example/outer.json', { $defs: { inner: { $id: EMBEDDED, ...inner } } }]]),
+    engine: ataEngine,
+  });
+
 describe('cycles the checker must refuse', () => {
   it.each([
     ['a reference into an unindexed location that refers back to the root', { x: { $ref: '#' }, $ref: '#/x' }, ['#/x/$ref', '#/$ref']],
@@ -69,6 +77,23 @@ describe('cycles the checker must refuse', () => {
   it('refuses a schema whose reference enters a cycle in a remote document, naming the remote pointer', () => {
     const boundary = remoteBoundary();
     expectCycleRefusal(boundary.compile, { $ref: `${REMOTE}#/$defs/loop` }, [`${REMOTE}#/$defs/loop/not/$ref`]);
+  });
+});
+
+describe('resources embedded in a remote document that is not yet entered', () => {
+  it('refuses a reference to an embedded resource whose subschema cycles, labelling the pointer with that resource', () => {
+    const boundary = embeddedBoundary({ $defs: { loop: { not: { $ref: '#/$defs/loop' } } } });
+    expectCycleRefusal(boundary.compile, { $ref: `${EMBEDDED}#/$defs/loop` }, [`${EMBEDDED}#/$defs/loop/not/$ref`]);
+  });
+
+  it('refuses a reference through an $anchor inside the embedded resource', () => {
+    const boundary = embeddedBoundary({ $defs: { loop: { $anchor: 'loop', anyOf: [{ $ref: '#loop' }] } } });
+    expectCycleRefusal(boundary.compile, { $ref: `${EMBEDDED}#loop` }, [`${EMBEDDED}#/$defs/loop/anyOf/0/$ref`]);
+  });
+
+  it('refuses a reference to the embedded resource itself', () => {
+    const boundary = embeddedBoundary({ not: { $ref: EMBEDDED } });
+    expectCycleRefusal(boundary.compile, { $ref: EMBEDDED }, [`${EMBEDDED}#/not/$ref`]);
   });
 });
 
