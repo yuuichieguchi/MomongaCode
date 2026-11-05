@@ -13,25 +13,25 @@ export interface SubjectSpec {
 }
 
 const BOOST: Record<Op, string[]> = {
-  drop: ['unevaluatedProperties', 'unevaluatedItems', 'properties', 'items', 'contains', 'maxContains', 'oneOf', 'if', 'additionalProperties'],
+  drop: ['unevaluatedProperties', 'unevaluatedItems', 'properties', 'items', 'containsMax', 'oneOfOverlap', 'refDependency', 'if', 'additionalProperties'],
   reject: ['$ref', 'oneOf', 'patternProperties', 'not'],
-  'fill-type': ['not', 'if', 'oneOf', 'const', 'enum', 'allOf', 'contains', 'unevaluatedItems', 'unevaluatedProperties'],
+  'fill-type': ['not', 'if', 'oneOfOverlap', 'containsMax', 'const', 'enum', 'allOf', 'unevaluatedItems', 'unevaluatedProperties'],
   'split-enum': ['enum', 'type', 'unevaluatedProperties', 'allOf'],
   'split-type-array': ['typeArray', 'enum', 'const', 'unevaluatedProperties', 'allOf'],
   'const-as-enum': ['const', 'enum', 'type'],
-  'ensure-key': ['unevaluatedProperties', 'allOf', 'additionalProperties', 'properties', 'anyOf', 'oneOf', 'contains', 'unevaluatedItems'],
+  'ensure-key': ['unevaluatedProperties', 'allOf', 'additionalProperties', 'properties', 'anyOf', 'oneOfOverlap', 'containsMax', 'refDependency', 'unevaluatedItems'],
   label: ['properties', 'anyOf', 'items'],
   'property-order': ['properties', 'allOf'],
-  'require-all': ['properties', 'required', 'oneOf', 'contains', 'maxContains', 'anyOf'],
-  'declare-required': ['required', 'additionalProperties', 'patternProperties', 'unevaluatedProperties', 'allOf'],
-  'inline-refs': ['allOf', 'unevaluatedProperties', 'not', 'properties', 'contains', 'unevaluatedItems'],
+  'require-all': ['properties', 'required', 'oneOfOverlap', 'containsMax', 'anyOf'],
+  'declare-required': ['required', 'additionalProperties', 'patternProperties', 'unevaluatedProperties', 'allOf', 'refDependency'],
+  'inline-refs': ['allOf', 'unevaluatedProperties', 'not', 'properties', 'containsMax', 'refDependency', 'unevaluatedItems'],
   'empty-parameters': ['properties'],
 };
 
 export const SUBJECTS: SubjectSpec[] = [
   ...OPS.map((op): SubjectSpec => ({ name: op, group: 'primitive', op, boost: BOOST[op] })),
-  ...Object.keys(BUILTINS).map((builtin): SubjectSpec => ({ name: builtin, group: 'built-in', builtin, boost: ['$ref', 'enum', 'typeArray', 'required', 'const', 'properties'] })),
-  { name: 'random-user-definitions', group: 'random-definitions', boost: ['$ref', 'enum', 'typeArray', 'required', 'const', 'properties'] },
+  ...Object.keys(BUILTINS).map((builtin): SubjectSpec => ({ name: builtin, group: 'built-in', builtin, boost: ['$ref', 'enum', 'typeArray', 'required', 'const', 'properties', 'oneOfOverlap', 'containsMax', 'refDependency'] })),
+  { name: 'random-user-definitions', group: 'random-definitions', boost: ['$ref', 'enum', 'typeArray', 'required', 'const', 'properties', 'oneOfOverlap', 'containsMax', 'refDependency'] },
 ];
 
 export interface Variant {

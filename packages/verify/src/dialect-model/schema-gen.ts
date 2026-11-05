@@ -75,7 +75,7 @@ const referenceNode = (rng: Rng, env: Env): Json => {
       multipleOf: 2,
     } as Record<string, Json>)[key] as Json;
   } else {
-    const key = rng.pick(['properties', 'items', 'allOf', 'additionalProperties', 'not', 'anyOf', 'unevaluatedProperties', 'patternProperties', 'contains']);
+    const key = rng.pick(['properties', 'items', 'allOf', 'additionalProperties', 'not', 'anyOf', 'unevaluatedProperties', 'unevaluatedItems', 'patternProperties', 'contains']);
     node[key] = ({
       properties: { b: {} },
       items: { type: 'string' },
@@ -85,6 +85,7 @@ const referenceNode = (rng: Rng, env: Env): Json => {
       anyOf: [{ type: 'string' }, { type: 'number' }],
       unevaluatedProperties: false,
       patternProperties: { '^a': { type: 'string' } },
+      unevaluatedItems: false,
       contains: { type: 'string' },
     } as Record<string, Json>)[key] as Json;
   }
@@ -149,7 +150,7 @@ const adders: Record<string, Adder> = {
     node['prefixItems'] = Array.from({ length: rng.range(1, 2) }, () => child(rng, depth, env));
   },
   contains: (node, rng, depth, env) => {
-    node['contains'] = child(rng, depth, env);
+    node['contains'] = rng.chance(0.5) ? { type: rng.pick(TYPES) } : child(rng, depth, env);
     if (rng.chance(0.5)) node['minContains'] = rng.pick([0, 1, 2]);
     if (rng.chance(0.4)) node['maxContains'] = rng.pick([0, 1, 2]);
   },
@@ -209,6 +210,10 @@ const adders: Record<string, Adder> = {
     node['anyOf'] = Array.from({ length: rng.range(1, 3) }, () => child(rng, depth, env));
   },
   oneOf: (node, rng, depth, env) => {
+    if (rng.chance(0.4)) {
+      adders['oneOfOverlap']?.(node, rng, depth, env);
+      return;
+    }
     node['oneOf'] = Array.from({ length: rng.range(1, 3) }, () => child(rng, depth, env));
   },
   not: (node, rng, depth, env) => {
@@ -218,6 +223,22 @@ const adders: Record<string, Adder> = {
     node['if'] = child(rng, depth, env);
     if (rng.chance(0.8)) node['then'] = child(rng, depth, env);
     if (rng.chance(0.6)) node['else'] = child(rng, depth, env);
+  },
+  oneOfOverlap: (node, rng) => {
+    const pool: Json[] = [true, {}, { type: rng.pick(TYPES) }, { type: [rng.pick(TYPES.filter((entry) => entry !== 'null')), 'null'] }];
+    node['oneOf'] = rng.shuffle(pool).slice(0, rng.range(2, 3));
+  },
+  containsMax: (node, rng) => {
+    node['contains'] = rng.chance(0.7) ? { type: rng.pick(TYPES) } : {};
+    node['maxContains'] = rng.pick([0, 1, 2]);
+    if (rng.chance(0.5)) node['minContains'] = rng.pick([0, 1]);
+    if (rng.chance(0.5)) node['type'] = 'array';
+  },
+  refDependency: (node, rng, _depth, env) => {
+    if (env.refs.length === 0) return;
+    node['allOf'] = [referenceNode(rng, env)];
+    node[rng.pick(['unevaluatedProperties', 'unevaluatedItems'])] = false;
+    if (rng.chance(0.4)) node['additionalProperties'] = rng.pick<Json>([false, true]);
   },
   annotation: (node, rng) => {
     const key = rng.pick(ANNOTATION_KEYS);
@@ -311,6 +332,7 @@ const buildDefinitions = (rng: Rng, depth: number, env: Env): JsonObject => {
     const built = build(rng, depth - 1, env);
     const body: JsonObject = typeof built === 'object' && built !== null && !Array.isArray(built) ? built : { type: 'object' };
     if (rng.chance(0.4)) apply(rng.pick(['additionalProperties', 'unevaluatedProperties']), body, rng, depth - 2, env);
+    if (rng.chance(0.5)) apply(rng.pick(['properties', 'patternProperties', 'prefixItems', 'items', 'containsMax', 'allOf']), body, rng, depth - 2, env);
     if (loops) {
       const target = rng.chance(0.3) ? '#' : pointer;
       const recursive: JsonObject = { $ref: target };

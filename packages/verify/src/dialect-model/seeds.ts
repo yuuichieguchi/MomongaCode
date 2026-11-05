@@ -55,6 +55,19 @@ export const SEEDS: Seed[] = [
       return typeof schema === 'object' && schema !== null && !Array.isArray(schema) && schema['type'] === 'object' ? null : 'rendered root is not an object type';
     },
   },
+  { name: 'require-all: required name that is not a property', schema: { properties: {}, required: ['x'] }, site: 'response-format', definition: only({ op: 'require-all' }), cls: 'N', witnesses: WITNESSES },
+  { name: 'fill-type: oneOf with overlapping branches', schema: { type: 'array', oneOf: [true, {}] }, site: 'response-format', definition: only({ op: 'fill-type', fallback: 'number' }), cls: 'N', witnesses: [[], [1], 'x', null] },
+  { name: 'ensure-key additionalProperties false: oneOf branch', schema: { additionalProperties: true, oneOf: [{}, true] }, site: 'response-format', definition: only({ op: 'ensure-key', key: 'additionalProperties', value: false }), cls: 'N', witnesses: WITNESSES },
+  { name: 'inline-refs: minContains beside a $ref whose target has contains', schema: { properties: { r: { $ref: '#/$defs/d0', minContains: 0 } }, $defs: { d0: { contains: {} } } }, site: 'response-format', definition: only({ op: 'inline-refs' }), cls: 'P', witnesses: [{ r: [] }, { r: [1] }, {}] },
+  { name: 'drop: properties beside additionalProperties', schema: { additionalProperties: false, properties: { foo: true } }, site: 'response-format', definition: only({ op: 'drop', keys: ['properties'] }), cls: 'W', witnesses: [{ foo: null }, { foo: 1 }, { bar: 1 }, {}] },
+  { name: 'drop: patternProperties beside additionalProperties', schema: { additionalProperties: false, patternProperties: { '^a': true } }, site: 'response-format', definition: only({ op: 'drop', keys: ['patternProperties'] }), cls: 'W', witnesses: [{ ab: 1 }, { zz: 1 }, {}] },
+  { name: 'drop: properties beside unevaluatedProperties', schema: { properties: { zz: true }, unevaluatedProperties: false }, site: 'response-format', definition: only({ op: 'drop', keys: ['properties'] }), cls: 'W', witnesses: [{ zz: null }, {}] },
+  { name: 'drop: prefixItems beside unevaluatedItems', schema: { unevaluatedItems: false, prefixItems: [{}] }, site: 'response-format', definition: only({ op: 'drop', keys: ['prefixItems'] }), cls: 'W', witnesses: [[null], [], [1, 2]] },
+  { name: 'drop: items beside unevaluatedItems', schema: { unevaluatedItems: false, items: {} }, site: 'response-format', definition: only({ op: 'drop', keys: ['items'] }), cls: 'W', witnesses: [[null], [], [1, 2]] },
+  { name: 'drop: type under contains with maxContains', schema: { contains: { type: 'boolean' }, maxContains: 1 }, site: 'response-format', definition: only({ op: 'drop', keys: ['type'] }), cls: 'W', witnesses: [[false, null], [false], [], [1]] },
+  { name: 'drop: type inside a oneOf branch', schema: { oneOf: [{}, { type: ['null'] }] }, site: 'response-format', definition: only({ op: 'drop', keys: ['type'] }), cls: 'W', witnesses: [true, null, 1] },
+  { name: 'drop: prefixItems in a $ref target beside unevaluatedItems', schema: { $ref: '#/$defs/d0', unevaluatedItems: false, $defs: { d0: { prefixItems: [{}] } } }, site: 'response-format', definition: only({ op: 'drop', keys: ['prefixItems'] }), cls: 'W', witnesses: [[null], [], [1, 2]] },
+  { name: 'drop: items in an allOf element beside unevaluatedItems', schema: { allOf: [{ items: {} }], unevaluatedItems: false }, site: 'response-format', definition: only({ op: 'drop', keys: ['items'] }), cls: 'W', witnesses: [[null], [], [1, 2]] },
 ];
 
 export interface SeedOutcome {

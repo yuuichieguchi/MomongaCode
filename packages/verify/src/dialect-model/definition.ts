@@ -27,7 +27,6 @@ export const DESCENT_POSITIVE = [
   'additionalProperties',
   'patternProperties',
   'anyOf',
-  'oneOf',
   'allOf',
   'then',
   'else',
@@ -36,7 +35,7 @@ export const DESCENT_POSITIVE = [
   '$defs',
   'definitions',
 ] as const;
-export const DESCENT = [...DESCENT_POSITIVE, 'not', 'if'] as const;
+export const DESCENT = [...DESCENT_POSITIVE, 'oneOf', 'not', 'if'] as const;
 
 export interface Clause {
   kinds: Kind[];
@@ -120,7 +119,7 @@ export const DEFINITION_SCHEMA: Json = {
     id: { type: 'string', pattern: '^[a-z][a-z0-9-]{0,62}$' },
     kind: { enum: [...KINDS] },
     descentPositive: { enum: [...DESCENT_POSITIVE] },
-    descent: { anyOf: [{ $ref: '#/$defs/descentPositive' }, { enum: ['not', 'if'] }] },
+    descent: { anyOf: [{ $ref: '#/$defs/descentPositive' }, { enum: ['oneOf', 'not', 'if'] }] },
     clause: {
       type: 'object',
       properties: {

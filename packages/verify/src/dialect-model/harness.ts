@@ -2,7 +2,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import { resolveRules, type Definition } from './definition.ts';
 import { instancesFor } from './instance-gen.ts';
 import { clone, deepEqual, exact, isObject, type Json, type JsonObject, type Schema } from './json.ts';
-import { STATED_REASONS, type FailureReason } from './primitives.ts';
+import { allowedDropKeys, STATED_REASONS, type FailureReason } from './primitives.ts';
 import type { Rng } from './prng.ts';
 import { createRng } from './prng.ts';
 import { render, type Rendered } from './render.ts';
@@ -100,10 +100,10 @@ const standaloneNode = (node: Schema, root: Schema): Json | undefined => {
 const dropKeysOf = (definition: Definition): Set<string> => {
   const keys = new Set<string>();
   for (const rule of resolveRules(definition)) if (rule.op === 'drop') for (const key of rule.keys) keys.add(key);
-  return keys;
+  return allowedDropKeys([...keys]);
 };
 
-const isDeletionOf = (original: Json | undefined, output: Json | undefined, allowed: ReadonlySet<string>): boolean => {
+export const isDeletionOf = (original: Json | undefined, output: Json | undefined, allowed: ReadonlySet<string>): boolean => {
   if (deepEqual(original, output)) return true;
   if (Array.isArray(original) && Array.isArray(output)) {
     return original.length === output.length && original.every((entry, index) => isDeletionOf(entry, output[index], allowed));

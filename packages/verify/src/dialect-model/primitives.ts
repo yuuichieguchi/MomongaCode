@@ -8,12 +8,12 @@ export type FailureReason =
   | 'loop'
   | 'reject'
   | 'polarity'
-  | 'unevaluated'
-  | 'ref-merge'
+  | 'dependency'
+  | 'ref-sibling'
   | 'written-key'
   | 'unresolved-ref';
 
-export const STATED_REASONS: readonly FailureReason[] = ['loop', 'reject', 'polarity', 'unevaluated', 'ref-merge', 'written-key'];
+export const STATED_REASONS: readonly FailureReason[] = ['loop', 'reject', 'polarity', 'dependency', 'written-key', 'unsatisfiable', 'ref-sibling'];
 
 export class RenderFailure extends Error {
   readonly reason: FailureReason;
@@ -37,10 +37,13 @@ export interface State {
   site: Site;
   edges: string[];
   pointer: string[];
-  positive: boolean;
+  position: Position;
   ancestors: Ancestor[];
   holder: { value: Schema };
+  pendingDrops: { node: JsonObject; keys: string[] }[];
 }
+
+export type Position = 'P' | 'N' | 'M';
 
 const pathOf = (state: State): string => `/${state.pointer.join('/')}`;
 
@@ -113,13 +116,13 @@ const scanReferenceSites = (document: Schema): RefSite[] => {
   return sites;
 };
 
-const unevaluatedConflict = (node: JsonObject, state: State): boolean => {
-  if (unevaluatedIsRestrictive(node)) return true;
+const inPlaceChain = (state: State): JsonObject[] => {
+  const nodes: JsonObject[] = [];
   const locations: string[][] = [state.pointer];
   for (let index = state.ancestors.length - 1; index >= 0; index -= 1) {
     const ancestor = state.ancestors[index] as Ancestor;
     if (!SAME_LOCATION_EDGES.includes(ancestor.edge)) break;
-    if (unevaluatedIsRestrictive(ancestor.node)) return true;
+    nodes.push(ancestor.node);
     locations.push(state.pointer.slice(0, ancestor.pointerLength));
   }
   const known = new Set(locations.map((location) => JSON.stringify(location)));
@@ -130,7 +133,7 @@ const unevaluatedConflict = (node: JsonObject, state: State): boolean => {
     for (const site of sites) {
       if (!known.has(JSON.stringify(site.target))) continue;
       for (const entry of site.chain) {
-        if (unevaluatedIsRestrictive(entry.node)) return true;
+        if (!nodes.includes(entry.node)) nodes.push(entry.node);
         const key = JSON.stringify(entry.location);
         if (!known.has(key)) {
           known.add(key);
@@ -139,8 +142,86 @@ const unevaluatedConflict = (node: JsonObject, state: State): boolean => {
       }
     }
   }
-  return false;
+  return nodes;
 };
+
+const unevaluatedConflict = (node: JsonObject, state: State): boolean =>
+  unevaluatedIsRestrictive(node) || inPlaceChain(state).some((entry) => unevaluatedIsRestrictive(entry));
+
+const IN_PLACE = ['allOf', 'anyOf', 'oneOf', 'if', 'then', 'else', 'dependentSchemas', '$ref'];
+
+const DEPENDENTS: Record<string, string[]> = {
+  properties: ['additionalProperties', 'unevaluatedProperties'],
+  patternProperties: ['additionalProperties', 'unevaluatedProperties'],
+  additionalProperties: ['unevaluatedProperties'],
+  prefixItems: ['items', 'unevaluatedItems'],
+  items: ['additionalItems', 'unevaluatedItems'],
+  contains: ['minContains', 'maxContains', 'unevaluatedItems'],
+  if: ['then', 'else', 'unevaluatedProperties', 'unevaluatedItems'],
+  allOf: ['unevaluatedProperties', 'unevaluatedItems'],
+  anyOf: ['unevaluatedProperties', 'unevaluatedItems'],
+  oneOf: ['unevaluatedProperties', 'unevaluatedItems'],
+  then: ['unevaluatedProperties', 'unevaluatedItems'],
+  else: ['unevaluatedProperties', 'unevaluatedItems'],
+  dependentSchemas: ['unevaluatedProperties', 'unevaluatedItems'],
+  $ref: ['unevaluatedProperties', 'unevaluatedItems'],
+};
+
+const DEPENDS_ON: Record<string, string[]> = {
+  additionalProperties: ['properties', 'patternProperties'],
+  items: ['prefixItems'],
+  additionalItems: ['items'],
+  minContains: ['contains'],
+  maxContains: ['contains'],
+  then: ['if'],
+  else: ['if'],
+  unevaluatedProperties: ['properties', 'patternProperties', 'additionalProperties', ...IN_PLACE],
+  unevaluatedItems: ['prefixItems', 'items', 'contains', ...IN_PLACE],
+};
+
+const FEEDS_PROPERTIES = ['properties', 'patternProperties', 'additionalProperties', 'unevaluatedProperties', ...IN_PLACE];
+const FEEDS_ITEMS = ['prefixItems', 'items', 'contains', 'unevaluatedItems', ...IN_PLACE];
+
+export const dropClosure = (node: JsonObject, keys: readonly string[]): string[] => {
+  const closure = new Set<string>();
+  const queue = keys.filter((key) => Object.hasOwn(node, key));
+  while (queue.length > 0) {
+    const key = queue.pop() as string;
+    if (closure.has(key)) continue;
+    closure.add(key);
+    for (const dependent of DEPENDENTS[key] ?? []) if (Object.hasOwn(node, dependent)) queue.push(dependent);
+  }
+  return [...closure];
+};
+
+export const allowedDropKeys = (keys: readonly string[]): Set<string> => {
+  const allowed = new Set<string>();
+  const queue = [...keys];
+  while (queue.length > 0) {
+    const key = queue.pop() as string;
+    if (allowed.has(key)) continue;
+    allowed.add(key);
+    queue.push(...(DEPENDENTS[key] ?? []));
+  }
+  return allowed;
+};
+
+const dropWithClosure = (node: JsonObject, keys: readonly string[], state: State): JsonObject => {
+  const closure = dropClosure(node, keys);
+  if (closure.length === 0) return node;
+  const feeds: string[] = [];
+  if (closure.some((key) => FEEDS_PROPERTIES.includes(key))) feeds.push('unevaluatedProperties');
+  if (closure.some((key) => FEEDS_ITEMS.includes(key))) feeds.push('unevaluatedItems');
+  if (feeds.length > 0) {
+    for (const entry of inPlaceChain(state)) {
+      const present = feeds.filter((key) => Object.hasOwn(entry, key));
+      if (present.length > 0) state.pendingDrops.push({ node: entry, keys: present });
+    }
+  }
+  return copyWithout(node, closure);
+};
+
+const dependencySets = (keys: ReadonlySet<string>, dependent: string): string => (DEPENDS_ON[dependent] ?? []).filter((key) => keys.has(key)).sort().join(',');
 
 const valuesType = (values: readonly Json[]): string | undefined => {
   if (values.length === 0) return undefined;
@@ -250,7 +331,7 @@ const ensureKey = (node: JsonObject, rule: Extract<Rule, { op: 'ensure-key' }>, 
   }
   if (!write) return node;
   if (rule.key === 'additionalProperties' && rule.value === true && unevaluatedConflict(node, state)) {
-    throw new RenderFailure('unevaluated', pathOf(state), 'additionalProperties true would mark properties evaluated');
+    throw new RenderFailure('dependency', pathOf(state), 'additionalProperties true would mark properties evaluated');
   }
   return { ...node, [rule.key]: clone(rule.value) };
 };
@@ -266,14 +347,13 @@ const declareRequired = (node: JsonObject, state: State): JsonObject => {
       properties[name] = {};
     } else {
       const open = node['additionalProperties'];
-      if (open === false) throw new RenderFailure('unsatisfiable', pathOf(state), `required ${name} is forbidden by additionalProperties false`, node);
       properties[name] = open === undefined || open === true ? {} : clone(open);
     }
     added = true;
   }
   if (!added) return node;
   if (unevaluatedConflict(node, state)) {
-    throw new RenderFailure('unevaluated', pathOf(state), 'a declared property would become evaluated');
+    throw new RenderFailure('dependency', pathOf(state), 'a declared property would become evaluated');
   }
   return { ...node, properties };
 };
@@ -289,14 +369,23 @@ const mergeReference = (target: Json, siblings: JsonObject, state: State): Json 
   if (keys.length === 0) return target;
   for (const key of keys) {
     if (!isAnnotationKey(key) && !ASSERTION_KEYS.has(key)) {
-      throw new RenderFailure('ref-merge', pathOf(state), `sibling ${key} is neither an annotation nor an assertion`);
+      throw new RenderFailure('ref-sibling', pathOf(state), `sibling ${key} is neither an annotation nor an assertion`);
     }
   }
   if (target === true) return siblings;
   if (target === false) return false;
-  if (!isObject(target)) throw new RenderFailure('ref-merge', pathOf(state), 'target is not a schema');
+  if (!isObject(target)) throw new RenderFailure('ref-sibling', pathOf(state), 'target is not a schema');
   const shared = keys.filter((key) => Object.hasOwn(target, key));
-  if (shared.length > 0) throw new RenderFailure('ref-merge', pathOf(state), `sibling shares ${shared.join(',')} with the target`);
+  if (shared.length > 0) throw new RenderFailure('ref-sibling', pathOf(state), `sibling shares ${shared.join(',')} with the target`);
+  const targetKeys = new Set(Object.keys(target));
+  const siblingKeys = new Set([...keys, '$ref']);
+  const mergedKeys = new Set([...targetKeys, ...keys]);
+  for (const dependent of Object.keys(DEPENDS_ON)) {
+    const origin = keys.includes(dependent) ? siblingKeys : targetKeys;
+    if ((keys.includes(dependent) || targetKeys.has(dependent)) && dependencySets(origin, dependent) !== dependencySets(mergedKeys, dependent)) {
+      throw new RenderFailure('dependency', pathOf(state), `${dependent} would see a different dependency set after the merge`);
+    }
+  }
   return { ...target, ...siblings };
 };
 
@@ -335,7 +424,7 @@ export const applyRule = (rule: Rule, node: Schema, state: State): Schema => {
       return node;
     }
     case 'drop':
-      return copyWithout(node, rule.keys);
+      return dropWithClosure(node, rule.keys, state);
     case 'fill-type':
       return fillType(node, rule.fallback);
     case 'split-enum':
@@ -353,8 +442,12 @@ export const applyRule = (rule: Rule, node: Schema, state: State): Schema => {
     }
     case 'property-order':
       return isObject(node['properties']) ? { ...node, [rule.key]: Object.keys(node['properties']) } : node;
-    case 'require-all':
-      return isObject(node['properties']) ? { ...node, required: Object.keys(node['properties']) } : node;
+    case 'require-all': {
+      if (!isObject(node['properties'])) return node;
+      const existing = Array.isArray(node['required']) ? node['required'] : [];
+      const union = [...existing, ...Object.keys(node['properties']).filter((name) => !existing.includes(name))];
+      return { ...node, required: union };
+    }
     case 'declare-required':
       return declareRequired(node, state);
     default:
