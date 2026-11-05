@@ -10,6 +10,7 @@ import type { UpstreamGateway } from './upstream-gateway-support.ts';
 import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { TARGET } from './cc-support.ts';
 import { wireOf } from '../src/adapters/chat-completions/wire.ts';
+import { createRequestValidator } from '../src/core/validation.ts';
 
 const toolNamed = (name: string) => ({
   type: 'function' as const,
@@ -564,8 +565,31 @@ describe('one validation of the allowed-set size for create and count_tokens', (
     const counted = await readJson(await postJson(counting.client, '/v1/momonga/count_tokens', countBody(TOOLS, tooMany)));
     expect(created.status).toBe(400);
     expect(counted.status).toBe(400);
+    expect(created.body.error.param).toBe('tool_choice.tools');
+    expect(String(created.body.error.message)).toContain('128');
     expect(counted.body).toEqual(created.body);
     expect(counting.fake.requests).toHaveLength(0);
+  });
+});
+
+describe('the request validator maps an oversized allowed set to its own oneOf branch', () => {
+  const thrownBy = (parse: () => unknown): any => {
+    try {
+      parse();
+    } catch (error) {
+      return error;
+    }
+    return undefined;
+  };
+
+  it('reports tool_choice.tools and the 128-item limit for create and count_tokens alike', () => {
+    const validator = createRequestValidator();
+    const body = { model: 'fast', input: 'hello', tools: TOOLS, tool_choice: allowed(Array.from({ length: 129 }, () => 'alpha'), 'auto') };
+    const fromCreate = thrownBy(() => validator.parseCreate(body));
+    const fromCount = thrownBy(() => validator.parseCountTokens(body));
+    expect(fromCreate?.body?.param).toBe('tool_choice.tools');
+    expect(String(fromCreate?.body?.message)).toContain('128');
+    expect(fromCount?.body).toEqual(fromCreate?.body);
   });
 });
 
