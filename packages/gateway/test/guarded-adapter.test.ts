@@ -170,17 +170,17 @@ describe('guardAdapter classify (G1)', () => {
   });
 
   it.for([
-    { label: 'a known code', code: 'context_length_exceeded', expected: 'context_length_exceeded' },
-    { label: 'a code of 64 characters', code: 'c'.repeat(64), expected: 'c'.repeat(64) },
-    { label: 'a code with dots, colons and dashes', code: 'upstream.v1:bad-request', expected: 'upstream.v1:bad-request' },
-    { label: 'a code of 65 characters', code: 'c'.repeat(65), expected: null },
-    { label: 'a code of 70 characters', code: 'c'.repeat(70), expected: null },
-    { label: 'a code with a space', code: 'bad code', expected: null },
-    { label: 'an empty code', code: '', expected: null },
-    { label: 'a code with a slash', code: 'a/b', expected: null },
-    { label: 'a null code', code: null, expected: null },
-    { label: 'a code equal to the configured key', code: TEST_API_KEY, expected: null },
-  ])('maps $label to the code shape check result', ({ code, expected }) => {
+    { label: 'a known code is kept', code: 'context_length_exceeded', expected: 'context_length_exceeded' },
+    { label: 'a code of 64 characters is kept', code: 'c'.repeat(64), expected: 'c'.repeat(64) },
+    { label: 'a code with dots, colons and dashes is kept', code: 'upstream.v1:bad-request', expected: 'upstream.v1:bad-request' },
+    { label: 'a code of 65 characters fails the shape check and becomes upstream_error', code: 'c'.repeat(65), expected: 'upstream_error' },
+    { label: 'a code of 70 characters fails the shape check and becomes upstream_error', code: 'c'.repeat(70), expected: 'upstream_error' },
+    { label: 'a code with a space fails the shape check and becomes upstream_error', code: 'bad code', expected: 'upstream_error' },
+    { label: 'an empty code fails the shape check and becomes upstream_error', code: '', expected: 'upstream_error' },
+    { label: 'a code with a slash fails the shape check and becomes upstream_error', code: 'a/b', expected: 'upstream_error' },
+    { label: 'a missing upstream code becomes upstream_error', code: null, expected: 'upstream_error' },
+    { label: 'a code equal to the configured key is scrubbed and becomes upstream_error', code: TEST_API_KEY, expected: 'upstream_error' },
+  ])('classify never leaves a failure without a code: $label', ({ code, expected }) => {
     const guard = guardAdapter(baseAdapter({ classify: () => classifiedOf('plain', code) }), redactor);
     expect(guard.classify(new Error('x')).error.code).toBe(expected);
   });
@@ -406,19 +406,19 @@ describe('guardAdapter thrown errors (G3)', () => {
     expect(error.body).toEqual({ type: 'invalid_request', code: 'invalid_body', param: null, message: 'bad body' });
   });
 
-  it('nulls a GatewayError code and param equal to the configured key', async () => {
+  it('replaces a GatewayError code equal to the configured key by upstream_error and nulls the param', async () => {
     const original = new GatewayError({ status: 400, type: 'invalid_request', code: TEST_API_KEY, param: TEST_API_KEY, message: 'bad body' });
     const error = (await rejectionOf(() => guardAdapter(throwing(original), redactor).capabilities(TARGET))) as GatewayError;
     expect(error).toBeInstanceOf(GatewayError);
     expect(error.status).toBe(400);
-    expect(error.body).toEqual({ type: 'invalid_request', code: null, param: null, message: 'bad body' });
+    expect(error.body).toEqual({ type: 'invalid_request', code: 'upstream_error', param: null, message: 'bad body' });
   });
 
-  it('nulls a GatewayError code that fails the shape check', async () => {
+  it('replaces a GatewayError code that fails the shape check by upstream_error', async () => {
     const original = new GatewayError({ status: 400, type: 'invalid_request', code: 'bad code', param: null, message: 'bad body' });
     const error = (await rejectionOf(() => guardAdapter(throwing(original), redactor).capabilities(TARGET))) as GatewayError;
     expect(error).toBeInstanceOf(GatewayError);
-    expect(error.body.code).toBeNull();
+    expect(error.body.code).toBe('upstream_error');
   });
 
   it('rethrows a ClientDisconnectedError unchanged', async () => {
