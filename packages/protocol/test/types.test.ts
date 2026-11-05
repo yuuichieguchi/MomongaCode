@@ -1,6 +1,7 @@
 import { describe, expectTypeOf, it } from 'vitest';
 import type {
   Capabilities,
+  CapabilityOverride,
   HealthResult,
   ProbeKeyword,
   ProbeReport,
@@ -21,8 +22,7 @@ describe('protocol capability types', () => {
         promptCache?: { kind: 'breakpoints'; maxBreakpoints: number } | { kind: 'key' } | { kind: 'automatic' } | { kind: 'none' };
         contextWindow: number;
         maxOutputTokens: number;
-        toolCalling: ToolCallingMode | 'needs_probe';
-        needsProbe?: { message: string; evidence: string; remedy: string };
+        toolCalling: ToolCallingMode | { state: 'needs_probe'; message: string; evidence: string; remedy: string };
         structuredOutput: 'json_schema' | 'none';
         streaming: boolean;
         stopSequences: boolean;
@@ -41,6 +41,13 @@ describe('protocol capability types', () => {
         | { imageInput: true; imageTokens: { pixelsPerToken: number; maxTokens: number; minTokens: number } }
       )
     >();
+  });
+
+  it('cannot override tool calling and cannot express needs_probe without its details', () => {
+    expectTypeOf<keyof CapabilityOverride>().not.toEqualTypeOf<never>();
+    expectTypeOf<'toolCalling'>().not.toExtend<keyof CapabilityOverride>();
+    expectTypeOf<{ state: 'needs_probe' }>().not.toExtend<Capabilities['toolCalling']>();
+    expectTypeOf<'needs_probe'>().not.toExtend<Capabilities['toolCalling']>();
   });
 
   it('cannot express image input without a token model', () => {
