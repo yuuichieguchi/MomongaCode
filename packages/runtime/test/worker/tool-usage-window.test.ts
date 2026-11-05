@@ -6,13 +6,7 @@ import { makeEnv } from './harness.ts';
 
 type Env = Awaited<ReturnType<typeof makeEnv>>;
 
-const requested = (step: number, names: readonly string[]): RunEventPayload => ({
-  type: 'model.requested',
-  step,
-  attempt: 1,
-  digest: `d${step}`,
-  body: { model: 'fm', input: 'seed', tools: names.map((name) => ({ type: 'function', name })) },
-});
+const offered = (names: readonly string[]): RunEventPayload => ({ type: 'tool.offered', names: [...names] });
 
 const called = (callId: string, name: string): RunEventPayload => ({
   type: 'tool.call',
@@ -32,14 +26,14 @@ const pastRun = (env: Env, payloads: readonly RunEventPayload[], status: 'COMPLE
   return run.id;
 };
 
-const usual = (index: number): RunEventPayload[] => [requested(1, ['Read', 'Glob', 'Grep']), called(`call_${index}`, 'Read'), requested(2, ['Read', 'Glob', 'Grep'])];
+const usual = (index: number): RunEventPayload[] => [offered(['Glob', 'Grep', 'Read']), called(`call_${index}`, 'Read')];
 
 describe('toolUsageWindowOf', () => {
   it('lists the offered and called tool names of the newest terminal root runs of the project, newest first', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
-    pastRun(env, [requested(1, ['Read', 'Bash'])]);
-    const middle = pastRun(env, [requested(1, ['Read']), called('call_a', 'Read'), requested(2, ['Read', 'Glob']), called('call_b', 'Glob')], 'FAILED');
-    const newest = pastRun(env, [requested(1, ['Grep', 'Read'])]);
+    pastRun(env, [offered(['Read', 'Bash'])]);
+    const middle = pastRun(env, [offered(['Read']), called('call_a', 'Read'), offered(['Glob', 'Read']), called('call_b', 'Glob')], 'FAILED');
+    const newest = pastRun(env, [offered(['Grep', 'Read'])]);
 
     const window = toolUsageWindowOf(env.store, env.session.cwd);
 
@@ -60,15 +54,15 @@ describe('toolUsageWindowOf', () => {
 
   it('leaves out a run that has not ended', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
-    pastRun(env, [requested(1, ['Read'])]);
-    pastRun(env, [requested(1, ['Bash'])], 'hold');
+    pastRun(env, [offered(['Read'])]);
+    pastRun(env, [offered(['Bash'])], 'hold');
 
     expect(toolUsageWindowOf(env.store, env.session.cwd)).toEqual([{ offered: ['Read'], called: [] }]);
   });
 
   it('is empty for a project with no runs', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
-    pastRun(env, [requested(1, ['Read'])]);
+    pastRun(env, [offered(['Read'])]);
 
     expect(toolUsageWindowOf(env.store, '/some/other/project')).toEqual([]);
   });
@@ -85,13 +79,13 @@ describe('toolUsageWindowOf', () => {
     for (let index = 0; index < TOOL_USAGE_WINDOW_RUNS - 1; index += 1) pastRun(env, usual(index));
     env.clock.advance(1);
     const root = env.enqueue('Delegate', { history: 'fresh' });
-    const rootClaim = env.seed(root.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' }, requested(1, ['Read', 'Glob', 'Grep'])], 'hold');
+    const rootClaim = env.seed(root.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' }, offered(['Read', 'Glob', 'Grep'])], 'hold');
     const child = env.store.createChildRun({ parentRunId: root.id, parentCallId: 'call_child', input: 'Search', pins: {}, modelAlias: 'fm' });
     if (child.kind !== 'created') throw new Error(`child run was not created: ${child.kind}`);
-    const childClaim = env.seed(child.run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' }, requested(1, ['Grep']), called('call_child_grep', 'Grep')], 'hold');
+    const childClaim = env.seed(child.run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' }, offered(['Grep']), called('call_child_grep', 'Grep')], 'hold');
     const grandchild = env.store.createChildRun({ parentRunId: child.run.id, parentCallId: 'call_grandchild', input: 'List', pins: {}, modelAlias: 'fm' });
     if (grandchild.kind !== 'created') throw new Error(`grandchild run was not created: ${grandchild.kind}`);
-    const grandchildClaim = env.seed(grandchild.run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' }, requested(1, ['Glob']), called('call_grandchild_glob', 'Glob')], 'hold');
+    const grandchildClaim = env.seed(grandchild.run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' }, offered(['Glob']), called('call_grandchild_glob', 'Glob')], 'hold');
     expect(env.store.transition(grandchildClaim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
     expect(env.store.transition(childClaim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
     expect(env.store.transition(rootClaim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');

@@ -260,6 +260,15 @@ const prepareStatements = (db: DatabaseSync) => ({
     `WITH RECURSIVE tree(id) AS (SELECT :runId UNION ALL SELECT r.id FROM runs r JOIN tree t ON r.parent_run_id = t.id)
      SELECT DISTINCT json_extract(e.payload_json, '$.name') AS name FROM events e JOIN tree t ON e.run_id = t.id WHERE e.type = 'tool.call' ORDER BY name`,
   ),
+  toolOfferedNames: db.prepare(
+    `WITH RECURSIVE tree(id) AS (SELECT :runId UNION ALL SELECT r.id FROM runs r JOIN tree t ON r.parent_run_id = t.id)
+     SELECT DISTINCT n.value AS name
+     FROM tree t
+     JOIN events e ON e.run_id = t.id AND e.seq = (SELECT MAX(o.seq) FROM events o WHERE o.run_id = t.id AND o.type = 'tool.offered')
+     JOIN json_each(e.payload_json, '$.names') n
+     ORDER BY name`,
+  ),
+  hasToolOffered: db.prepare("SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.offered' LIMIT 1"),
   modelChanges: db.prepare("SELECT * FROM events WHERE session_id = :sessionId AND type = 'model.changed' AND id > :after ORDER BY id"),
   sessionEvents: db.prepare('SELECT * FROM events WHERE session_id = :sessionId AND id > :after ORDER BY id LIMIT :limit'),
   selectExhausted: db.prepare(
@@ -1463,6 +1472,11 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     lastTerminalRootRuns: (project, limit) => sql.lastTerminalRootRuns.all({ project, limit }).map(decodeRun),
 
     toolCallNames: (runId) => sql.toolCallNames.all({ runId }).map((row) => String(row.name)),
+
+    toolOfferedNames: (runId) => {
+      if (sql.hasToolOffered.get({ runId }) === undefined) throw new Error(`run ${runId} has no tool.offered record`);
+      return sql.toolOfferedNames.all({ runId }).map((row) => String(row.name));
+    },
 
     readSessionEvents: (sessionId, afterId, limit) =>
       sql.sessionEvents.all({ sessionId, after: afterId, limit }).map(decodeEvent),

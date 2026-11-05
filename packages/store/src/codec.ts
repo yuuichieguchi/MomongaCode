@@ -136,6 +136,7 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   'instructions.loaded': true,
   'skill.activated': true,
   'tool.loaded': true,
+  'tool.offered': true,
   'loop.warned': true,
   'meter.observed': true,
   'model.rejected': true,
@@ -417,6 +418,7 @@ export const decodeRunState = (identity: string, value: unknown): RunState | und
     Array.isArray(state['activatedSkills']) &&
     state['activatedSkills'].every(isActivatedSkill) &&
     isArrayOf(state['loadedTools'], (name) => typeof name === 'string') &&
+    (state['offeredTools'] === undefined || isArrayOf(state['offeredTools'], (name) => typeof name === 'string')) &&
     (state['loopWarned'] === undefined || isLoopWarned(state['loopWarned'])) &&
     (state['streaming'] === undefined || isStreaming(state['streaming'])) &&
     (state['mode'] === undefined || PERMISSION_MODES.some((mode) => mode === state['mode'])) &&

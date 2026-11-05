@@ -112,6 +112,7 @@ describe('run event payloads', () => {
       | 'instructions.loaded'
       | 'skill.activated'
       | 'tool.loaded'
+      | 'tool.offered'
       | 'loop.warned'
       | 'meter.observed'
       | 'model.rejected'
@@ -420,6 +421,7 @@ describe('RunState', () => {
       memoriesLoaded?: { id: string; status: MemoryStatus }[];
       activatedSkills: { name: string; content: string; seq: number }[];
       loadedTools: string[];
+      offeredTools?: string[];
       loopWarned?: { signature: string };
       streaming?: { step: number; attempt: number; seen: boolean; items: { itemId: string; text: string }[] };
       mode?: PermissionMode;

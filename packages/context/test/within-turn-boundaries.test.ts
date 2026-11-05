@@ -162,13 +162,23 @@ describe('level contract', () => {
 });
 
 describe('pinned tokens supplied by the caller', () => {
-  it('reports a supplied value above the ceiling as a pinned overflow, not as missing room', async () => {
-    const input = inputFor(capabilities, { pinnedTokens: inputCeilingFor(capabilities) + 1 });
-    const error = await buildContext(input, harness(capabilities).ports).catch((caught: unknown) => caught);
+  it.for([false, true])('are an admitted floor that no build re-checks against the ceiling (observed capacity %s)', async (observed) => {
+    const input = inputFor(capabilities, { pinnedTokens: inputCeilingFor(capabilities) + 1, ...(observed ? { observedCapacity: true as const } : {}) });
+    const built = await buildContext(input, harness(capabilities).ports);
+
+    expect(built.pinnedTokens).toBe(inputCeilingFor(capabilities) + 1);
+  });
+
+  it('raise a pinned overflow with the fresh count when an oversized pinned part is measured without a supplied value', async () => {
+    const systemPrompt = 'x'.repeat(4 * (inputCeilingFor(capabilities) + 1));
+    const input = inputFor(capabilities, { sources: sourcesWith({ systemPrompt }) });
+    const { ports } = harness(capabilities);
+    const fresh = (await ports.meter.count({ input: [{ type: 'message', role: 'system', content: systemPrompt }, TASK], tools: [] })).inputTokens;
+    const error = await buildContext(input, ports).catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(PinnedOverflowError);
     expect(error).not.toBeInstanceOf(PinnedRoomError);
-    expect((error as PinnedOverflowError).pinnedTokens).toBe(inputCeilingFor(capabilities) + 1);
+    expect((error as PinnedOverflowError).pinnedTokens).toBe(fresh);
   });
 });
 

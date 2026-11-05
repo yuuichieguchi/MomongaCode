@@ -1,10 +1,16 @@
-import { describe, expect, it } from 'vitest';
-import { FIXTURE_EXTRA_TOOLS_ENV } from '@momonga/testkit';
+import { describe, expect, it, vi } from 'vitest';
+import { ENGINE_FAILURE_MESSAGE, FIXTURE_EXTRA_TOOLS_ENV } from '@momonga/testkit';
 import { callRecords, entry, makeExecutor, makePool, makeRecordFile, modernConfig } from './mcp-harness.ts';
+
+vi.mock('../../foundation/src/untrusted-engine.ts', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../foundation/src/untrusted-engine.ts')>();
+  const { injectEngineFailure } = await import('../../testkit/src/engine-failure.ts');
+  return { ...original, ataEngine: injectEngineFailure(original.ataEngine) };
+});
 
 const THROWING_OUTPUT = 'mcp__modern__output_validator_throws';
 const SAME_RUN = { runId: 'run-output-validator-failure' };
-const ENGINE_MESSAGE = 'props0 is not defined';
+const ENGINE_MESSAGE = ENGINE_FAILURE_MESSAGE;
 
 describe('checking MCP structured output with a third-party 2020-12 output schema', () => {
   it('returns a tool error saying the output could not be checked and makes the tool unavailable when the output validator throws', async () => {

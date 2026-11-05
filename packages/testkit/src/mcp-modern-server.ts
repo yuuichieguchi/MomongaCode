@@ -24,6 +24,7 @@ import {
   MODERN_FIXTURE_STDERR_ENV,
   type ModernFixtureRecord,
 } from './mcp-fixtures.ts';
+import { engineFailureSchema } from './engine-failure.ts';
 
 const objectSchema = (properties: NonNullable<Tool['inputSchema']['properties']>, required: string[]): Tool['inputSchema'] => ({
   type: 'object',
@@ -145,14 +146,14 @@ const EXTRA_TOOLS: Record<string, Tool> = {
   },
   validator_throws: {
     name: 'validator_throws',
-    description: 'A valid 2020-12 schema whose compiled validator throws while validating',
-    inputSchema: { type: 'object', if: { anyOf: [{ properties: { a: {} } }], not: {} }, then: false } as unknown as Tool['inputSchema'],
+    description: 'A 2020-12 schema whose engine is made to throw while validating',
+    inputSchema: engineFailureSchema() as unknown as Tool['inputSchema'],
   },
   output_validator_throws: {
     name: 'output_validator_throws',
-    description: 'A valid 2020-12 output schema whose compiled validator throws while validating',
+    description: 'A 2020-12 output schema whose engine is made to throw while validating',
     inputSchema: objectSchema({}, []),
-    outputSchema: { type: 'object', if: { anyOf: [{ properties: { a: {} } }], not: {} }, then: false } as unknown as Tool['outputSchema'],
+    outputSchema: engineFailureSchema() as unknown as Tool['outputSchema'],
   },
   bad_output_schema: {
     name: 'bad_output_schema',
@@ -164,6 +165,37 @@ const EXTRA_TOOLS: Record<string, Tool> = {
     name: 'if_annotations',
     description: 'A 2020-12 schema whose if subschema evaluates every property',
     inputSchema: { type: 'object', if: { unevaluatedProperties: {} }, then: {}, unevaluatedProperties: false } as unknown as Tool['inputSchema'],
+  },
+  format_email: {
+    name: 'format_email',
+    description: 'A 2020-12 schema with an email format',
+    inputSchema: objectSchema({ address: { type: 'string', format: 'email' } }, ['address']),
+  },
+  schema_draft04: {
+    name: 'schema_draft04',
+    description: 'A schema that declares draft-04',
+    inputSchema: { $schema: 'http://json-schema.org/draft-04/schema#', type: 'object' } as unknown as Tool['inputSchema'],
+  },
+  schema_2019_09: {
+    name: 'schema_2019_09',
+    description: 'A schema that declares 2019-09',
+    inputSchema: { $schema: 'https://json-schema.org/draft/2019-09/schema', type: 'object' } as unknown as Tool['inputSchema'],
+  },
+  schema_unknown: {
+    name: 'schema_unknown',
+    description: 'A schema that declares an unknown dialect',
+    inputSchema: { $schema: 'https://example.invalid/dialect/schema', type: 'object' } as unknown as Tool['inputSchema'],
+  },
+  schema_absent: { name: 'schema_absent', description: 'A schema without $schema', inputSchema: { type: 'object' } as unknown as Tool['inputSchema'] },
+  schema_draft07: {
+    name: 'schema_draft07',
+    description: 'A schema that declares draft-07',
+    inputSchema: { $schema: 'http://json-schema.org/draft-07/schema#', type: 'object' } as unknown as Tool['inputSchema'],
+  },
+  remote_ref: {
+    name: 'remote_ref',
+    description: 'A schema with a $ref to a remote that nobody registered',
+    inputSchema: { type: 'object', properties: { a: { $ref: 'https://example.invalid/remote.json' } } } as unknown as Tool['inputSchema'],
   },
   'a.b': { name: 'a.b', description: 'dot', inputSchema: objectSchema({}, []) },
   'a/b': { name: 'a/b', description: 'slash', inputSchema: objectSchema({}, []) },
@@ -327,6 +359,13 @@ const createFixtureServer = (): Server => {
       case 'deep_not_3000':
       case 'validator_throws':
       case 'if_annotations':
+      case 'format_email':
+      case 'schema_draft04':
+      case 'schema_2019_09':
+      case 'schema_unknown':
+      case 'schema_absent':
+      case 'schema_draft07':
+      case 'remote_ref':
       case 'a.b':
       case 'a/b':
       case 'a_b':

@@ -24,6 +24,7 @@ export const weightMeter = (under: UnderRule = () => 0): WeightMeter => {
       const inputTokens = weightOfAll(request.input) + toolWeightOf(request.tools);
       const counted: MeterCount = {
         inputTokens,
+        freshInputTokens: inputTokens,
         inputDigest: sha256Hex(canonicalJson({ input: request.input, tools: request.tools })),
         known: 0,
         uncounted: inputTokens,

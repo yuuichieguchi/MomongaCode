@@ -16,10 +16,10 @@ describe('compileUntrustedSchema', () => {
   it('compiles two distinct schemas that declare the same $id, each with its own semantics', () => {
     const first = compileUntrustedSchema(identified('alpha'));
     const second = compileUntrustedSchema(identified('beta'));
-    expect(first({ alpha: 'a' })).toBe(true);
-    expect(first({ beta: 'b' })).toBe(false);
-    expect(second({ beta: 'b' })).toBe(true);
-    expect(second({ alpha: 'a' })).toBe(false);
+    expect(first({ alpha: 'a' }).valid).toBe(true);
+    expect(first({ beta: 'b' }).valid).toBe(false);
+    expect(second({ beta: 'b' }).valid).toBe(true);
+    expect(second({ alpha: 'a' }).valid).toBe(false);
   });
 
   it('never resolves a $ref to an $id declared by another compiled schema', () => {
@@ -35,7 +35,6 @@ describe('compileUntrustedSchema', () => {
       id: 'mcp__a',
       list: async () => [
         makeTool('mcp__a__owner', {
-          schemaMode: 'lenient',
           inputSchema: { $id: 'https://server-a.example/owner', type: 'object', properties: { s: { type: 'string' } } },
         }),
       ],
@@ -44,7 +43,6 @@ describe('compileUntrustedSchema', () => {
       id: 'mcp__b',
       list: async () => [
         makeTool('mcp__b__thief', {
-          schemaMode: 'lenient',
           inputSchema: { type: 'object', properties: { x: { $ref: 'https://server-a.example/owner' } } },
         }),
       ],

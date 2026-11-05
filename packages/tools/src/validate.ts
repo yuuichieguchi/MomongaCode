@@ -1,15 +1,8 @@
-import Ajv2020 from 'ajv/dist/2020.js';
-import type { ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
-import addFormats from 'ajv-formats';
 import type { AnyTool } from './types.ts';
 import { SchemaValidatorFailure, compileUntrustedSchema, sha256Hex, untrustedSchemaFailure, validateUntrusted } from '@momonga/foundation';
+import type { UntrustedError } from '@momonga/foundation';
 
 const MAX_REPORTED_ERRORS = 20;
-
-const ajv = new Ajv2020.default({ strict: true, allErrors: true, coerceTypes: false, useDefaults: false, removeAdditional: false });
-addFormats.default(ajv);
-
-const compiled = new WeakMap<Record<string, unknown>, ValidateFunction>();
 
 export const schemaIdentity = (tool: { name: string; validatorIdentity?: string }): string => tool.validatorIdentity ?? tool.name;
 
@@ -29,17 +22,10 @@ const assertUsable = (tool: AnyTool): void => {
   if (failure !== undefined) throw new SchemaValidatorFailure(failure);
 };
 
-export const compileInputSchema = (tool: AnyTool): ValidateFunction => {
-  if (tool.schemaMode === 'lenient') {
-    assertUsable(tool);
-    if (tool.outputSchema !== undefined) compileUntrustedSchema(tool.outputSchema);
-    return compileUntrustedSchema(tool.inputSchema);
-  }
-  const cached = compiled.get(tool.inputSchema);
-  if (cached !== undefined) return cached;
-  const validate = ajv.compile(tool.inputSchema);
-  compiled.set(tool.inputSchema, validate);
-  return validate;
+export const compileToolSchemas = (tool: AnyTool): void => {
+  assertUsable(tool);
+  if (tool.outputSchema !== undefined) compileUntrustedSchema(tool.outputSchema);
+  compileUntrustedSchema(tool.inputSchema);
 };
 
 const unescapePointerSegment = (segment: string): string => segment.replaceAll('~1', '/').replaceAll('~0', '~');
@@ -57,7 +43,7 @@ const renderPath = (segments: readonly string[]): string => {
 const pathSegments = (instancePath: string): string[] =>
   instancePath === '' ? [] : instancePath.slice(1).split('/').map(unescapePointerSegment);
 
-const describeError = (error: ErrorObject): string => {
+const describeError = (error: UntrustedError): string => {
   const segments = pathSegments(error.instancePath);
   switch (error.keyword) {
     case 'required':
@@ -67,11 +53,11 @@ const describeError = (error: ErrorObject): string => {
     case 'enum':
       return `${renderPath(segments)}: must be one of: ${(error.params['allowedValues'] as unknown[]).map(String).join(', ')}`;
     default:
-      return `${renderPath(segments)}: ${error.message ?? `failed ${error.keyword}`}`;
+      return `${renderPath(segments)}: ${error.message}`;
   }
 };
 
-const describeErrors = (toolName: string, errors: readonly ErrorObject[]): string => {
+const describeErrors = (toolName: string, errors: readonly UntrustedError[]): string => {
   const lines = errors.slice(0, MAX_REPORTED_ERRORS).map((error) => `- ${describeError(error)}`);
   if (errors.length > MAX_REPORTED_ERRORS) lines.push(`- … ${errors.length - MAX_REPORTED_ERRORS} more errors`);
   return [`Invalid input for ${toolName}:`, ...lines].join('\n');
@@ -98,7 +84,9 @@ const parseArguments = (tool: AnyTool, rawArguments: unknown): ValidationResult 
   }
 };
 
-const validateLenient = (tool: AnyTool, parsed: { ok: true; value: unknown }): ValidationResult => {
+export const validateToolInput = (tool: AnyTool, rawArguments: unknown): ValidationResult => {
+  const parsed = parseArguments(tool, rawArguments);
+  if (!parsed.ok) return parsed;
   try {
     const verdict = validateUntrusted(schemaIdentity(tool), tool.inputSchema, parsed.value);
     return verdict.valid ? parsed : { ok: false, reason: 'invalid', message: describeErrors(tool.name, verdict.errors) };
@@ -106,13 +94,4 @@ const validateLenient = (tool: AnyTool, parsed: { ok: true; value: unknown }): V
     if (error instanceof SchemaValidatorFailure) return unavailable(tool, error.message);
     throw error;
   }
-};
-
-export const validateToolInput = (tool: AnyTool, rawArguments: unknown): ValidationResult => {
-  const parsed = parseArguments(tool, rawArguments);
-  if (!parsed.ok) return parsed;
-  if (tool.schemaMode === 'lenient') return validateLenient(tool, parsed);
-  const validate = compileInputSchema(tool);
-  if (validate(parsed.value)) return parsed;
-  return { ok: false, reason: 'invalid', message: describeErrors(tool.name, validate.errors ?? []) };
 };
