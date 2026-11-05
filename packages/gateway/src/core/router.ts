@@ -1,5 +1,5 @@
 import type { Clock } from '@momonga/foundation';
-import { applyCapabilityOverride, imageCapability, sizingRatioFor, summaryTokenCapFor } from '@momonga/protocol';
+import { MOMONGA_REQUEST_FIELDS, applyCapabilityOverride, imageCapability, sizingRatioFor, summaryTokenCapFor } from '@momonga/protocol';
 import type { Capabilities, CapabilityOverride, ClientOperation, FunctionTool, ToolChoice, ToolCallingMode, ToolCallingState, GatewayHealth, HealthResult, ImageCapability, ProviderAdapter, TargetBilling, TargetHealth } from '@momonga/protocol';
 import { constrainsToolChoice, resolveToolChoice } from './tool-choice.ts';
 import { UnsupportedInputError } from './unsupported-input.ts';
@@ -233,8 +233,8 @@ export const createRouter = (options: RouterOptions): Router => {
           stage: REFUSAL_STAGES.summaryCap,
           error: invalidRequest(
             'invalid_summary_cap',
-            'momonga.max_summary_tokens exceeds the largest summary any target of the model alias accepts: the smaller of its summary cap and its maxOutputTokens',
-            'momonga.max_summary_tokens',
+            `${MOMONGA_REQUEST_FIELDS.maxSummaryTokens} exceeds the largest summary any target of the model alias accepts: the smaller of its summary cap and its maxOutputTokens`,
+            MOMONGA_REQUEST_FIELDS.maxSummaryTokens,
           ),
         };
       }

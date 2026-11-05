@@ -205,7 +205,16 @@ export const defaultSandboxSetting = (platform: NodeJS.Platform = process.platfo
 
 export type OtlpSettings = { endpoint: string; headers?: Record<string, string> };
 
-export type TelemetrySettings = { otlp?: OtlpSettings; captureMessageContent?: boolean };
+export type TelemetrySettings = { otlp?: OtlpSettings; captureMessageContent?: boolean; contentRetentionDays?: number };
+
+export type ResolvedTelemetrySettings = { captureMessageContent: boolean; contentRetentionDays: number };
+
+export const DEFAULT_CONTENT_RETENTION_DAYS = 30;
+
+export const resolveTelemetrySettings = (settings: TelemetrySettings | undefined): ResolvedTelemetrySettings => ({
+  captureMessageContent: settings?.captureMessageContent === true,
+  contentRetentionDays: settings?.contentRetentionDays ?? DEFAULT_CONTENT_RETENTION_DAYS,
+});
 
 export type PriceEntrySettings = {
   provider: string;

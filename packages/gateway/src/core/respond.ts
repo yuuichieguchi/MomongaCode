@@ -16,7 +16,7 @@ import type {
   UsageSource,
 } from '@momonga/protocol';
 import { modelCostOf } from './model-cost.ts';
-import { TERMINAL_STREAM_EVENT_TYPES, carriesOutput, isReasoningEffort } from '@momonga/protocol';
+import { MOMONGA_SPAN_NOTES, TERMINAL_STREAM_EVENT_TYPES, carriesOutput, isReasoningEffort } from '@momonga/protocol';
 import { startAttemptSpan } from './attempt-span.ts';
 import type { AttemptSpan, TraceParent } from './attempt-span.ts';
 import { breakerVerdictOf, retryableFailureOf } from './breaker-verdict.ts';
@@ -296,7 +296,7 @@ async function* relay(
       try {
         await opened.iterator.return?.();
       } catch (error) {
-        opened.span.note('momonga.adapter_cleanup_error', messageOfError(error));
+        opened.span.note(MOMONGA_SPAN_NOTES.adapterCleanupError, messageOfError(error));
       }
       if (thrown === undefined) {
         opened.span.fail('cancelled', control.signal.reason ?? new ClientDisconnectedError(), 'the response stream was closed before it completed');
@@ -403,7 +403,7 @@ async function* relaySteps(
     try {
       await opened.iterator.return?.();
     } catch (error) {
-      opened.span.note('momonga.adapter_cleanup_error', messageOfError(error));
+      opened.span.note(MOMONGA_SPAN_NOTES.adapterCleanupError, messageOfError(error));
     }
   }
 

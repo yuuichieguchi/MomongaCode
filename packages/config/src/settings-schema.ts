@@ -431,6 +431,7 @@ export const SETTINGS_SCHEMA = {
           additionalProperties: false,
         },
         captureMessageContent: { type: 'boolean' },
+        contentRetentionDays: POSITIVE_INTEGER,
       },
       additionalProperties: false,
     },

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { credentialEnvNames, loadUserSettings, probeRecordKeyOf, secretNames, upstreamEndpointOf } from '@momonga/config';
+import { credentialEnvNames, loadUserSettings, probeRecordKeyOf, resolveTelemetrySettings, secretNames, upstreamEndpointOf } from '@momonga/config';
 import {
   acquireProcessLock,
   SecretEmptyError,
@@ -26,6 +26,7 @@ import {
   exportersFor,
   openTraceStore,
   pageBilledCalls,
+  startBodyPurge,
 } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import type { AdapterTarget, Capabilities, ProviderAdapter, ToolCallingMode } from '@momonga/protocol';
@@ -100,6 +101,8 @@ export type GatewayProcess = {
 };
 
 type Phase = 'starting' | 'running' | 'closing' | 'closed';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const toError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
@@ -440,15 +443,25 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     });
     const priceTable = definePriceTable(settings.pricing === undefined ? [] : settings.pricing);
     const traceStore: TraceStore = openTraceStore({ path: paths.traces.gateway, clock });
+    const telemetrySettings = resolveTelemetrySettings(settings.telemetry);
+    const contentRetentionMs = telemetrySettings.contentRetentionDays * DAY_MS;
     const telemetry: Telemetry = createTelemetry({
       serviceName: 'momonga-gateway',
       serviceVersion: options.version,
       clock,
       store: traceStore,
       exporters: exportersFor(settings.telemetry),
-      captureMessageContent: settings.telemetry?.captureMessageContent === true,
+      captureMessageContent: telemetrySettings.captureMessageContent,
+      contentRetentionMs,
     });
     cleanups.push(() => closeTelemetry(telemetry, traceStore));
+    const bodyPurge = startBodyPurge({
+      store: traceStore,
+      timers,
+      report: (error) => logger.error('trace body purge failed', { err: toError(error) }),
+      legacyRetentionMs: contentRetentionMs,
+    });
+    cleanups.push(() => bodyPurge.stop());
 
     signal?.throwIfAborted();
     const childEnv = minimalChildEnv(options.env);

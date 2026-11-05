@@ -30,7 +30,7 @@ const setup = (captureMessageContent?: boolean) => {
   const store = openTraceStore({ path: path.join(dir, 'traces.db'), clock });
   cleanups.push(() => store.close());
   const memory = new InMemorySpanExporter();
-  const telemetry = createTelemetry({ serviceName: 'momonga-test', serviceVersion: '9.9.9', clock, store, exporters: [memory], batch: QUIET_BATCH, ...(captureMessageContent === undefined ? {} : { captureMessageContent }) });
+  const telemetry = createTelemetry({ serviceName: 'momonga-test', serviceVersion: '9.9.9', clock, store, exporters: [memory], batch: QUIET_BATCH, ...(captureMessageContent === undefined ? {} : { captureMessageContent, contentRetentionMs: 60_000 }) });
   cleanups.push(() => telemetry.shutdown());
   const tracer = createTracerPort(telemetry);
   const finished = async (): Promise<ReadableSpan[]> => {
