@@ -7,6 +7,9 @@ import { CC_CAPABILITIES, collect, lastCompletionBody, makeAdapter, startFake, u
 import { OLLAMA_CAPABILITIES, chunkLine, collectOllama, doneLine, makeOllamaAdapter, startFakeOllama } from './ollama-support.ts';
 import { REMOTE_CAPABILITIES, startAnthropicGateway, startOpenResponsesGateway } from './upstream-gateway-support.ts';
 import type { UpstreamGateway } from './upstream-gateway-support.ts';
+import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
+import { TARGET } from './cc-support.ts';
+import { wireOf } from '../src/adapters/chat-completions/wire.ts';
 
 const toolNamed = (name: string) => ({
   type: 'function' as const,
@@ -354,5 +357,137 @@ describe('the response echoes tool_choice with a concrete mode', () => {
     );
     expect(response.status).toBe(200);
     expect(response.body.tool_choice).toEqual(allowed(['alpha', 'beta'], 'auto'));
+  });
+});
+
+describe('count what is sent: the count body carries the create body tools and tool_choice', () => {
+  const sentAndCounted = async (capabilities: Capabilities, toolChoice: unknown) => {
+    const creating = await startAnthropicGateway({ capabilities, script: [anthropicTextReply(['ok'])] });
+    const counting = await startAnthropicGateway({ capabilities, script: [anthropicCountTokensReply(42)] });
+    const body = { model: 'fast', input: userInput('hello'), tools: TOOLS, tool_choice: toolChoice };
+    const created = await readJson(await postJson(creating.client, '/v1/responses', body));
+    const counted = await readJson(await postJson(counting.client, '/v1/momonga/count_tokens', body));
+    expect(created.status).toBe(200);
+    expect(counted.status).toBe(200);
+    const sent = creating.fake.requests[0]?.body as any;
+    const count = counting.fake.requests[0]?.body as any;
+    expect(counting.fake.requests[0]?.path).toBe('/v1/messages/count_tokens');
+    return { sent, count };
+  };
+
+  const expectSameChoice = ({ sent, count }: { sent: any; count: any }) => {
+    expect(count.tools).toEqual(sent.tools);
+    expect(count.tool_choice).toEqual(sent.tool_choice);
+  };
+
+  it('anthropic filter form over a subset: counted with the filtered tools and the choice sent', async () => {
+    const pair = await sentAndCounted(withAllowedTools(REMOTE_CAPABILITIES, ['filter']), TWO_AUTO);
+    expect(listedNames(pair.sent)).toEqual(['alpha', 'beta']);
+    expectSameChoice(pair);
+  });
+
+  it('anthropic single_tool form for a required set of one: counted with the forced tool', async () => {
+    const pair = await sentAndCounted(withAllowedTools(REMOTE_CAPABILITIES, ['single_tool']), ONE_REQUIRED);
+    expect(pair.sent.tool_choice).toEqual({ type: 'tool', name: 'alpha' });
+    expectSameChoice(pair);
+  });
+
+  it('anthropic plain required: counted with tool_choice any', async () => {
+    const pair = await sentAndCounted(REMOTE_CAPABILITIES, 'required');
+    expect(pair.sent.tool_choice).toEqual({ type: 'any' });
+    expectSameChoice(pair);
+  });
+
+  it('anthropic plain none: counted with tool_choice none', async () => {
+    const pair = await sentAndCounted(REMOTE_CAPABILITIES, 'none');
+    expect(pair.sent.tool_choice).toEqual({ type: 'none' });
+    expectSameChoice(pair);
+  });
+
+  it('chat-completions renderWire for the filter form renders the tools the create body sends', async () => {
+    const capabilities = withAllowedTools({ ...CC_CAPABILITIES, toolCalling: 'native' }, ['filter']);
+    const fake = await startFake({ scenario: 'tools-ok', script: [ccReply('ok')] });
+    const adapter = makeAdapter(fake, { toolCalling: () => 'native', capabilities: async () => capabilities });
+    const { error } = await collect(adapter, ccRequest(TWO_AUTO));
+    expect(error).toBeUndefined();
+    const sent = lastCompletionBody(fake);
+    expect(listedNames(sent)).toEqual(['alpha', 'beta']);
+    const rendered = adapter.renderWire?.(ccRequest(TWO_AUTO), TARGET, { reasoningOrigin: EVERY_REASONING_IS_OWN, allowedTools: ['filter'] });
+    expect(rendered).toEqual(wireOf(sent));
+  });
+});
+
+describe('filter on the constrained path: the allowed tools alone in the listing and the envelope', () => {
+  it('a constrained target declaring only filter lists and admits exactly the allowed tools', async () => {
+    const { error, fake } = await ccConstrainedSent(withAllowedTools({ ...CC_CAPABILITIES, toolCalling: 'constrained' }, ['filter']), TWO_AUTO);
+    expect(error).toBeUndefined();
+    const body = lastCompletionBody(fake);
+    expect(systemText(body)).toContain('"name":"alpha"');
+    expect(systemText(body)).toContain('"name":"beta"');
+    expect(systemText(body)).not.toContain('"name":"gamma"');
+    const validate = envelopeValidator(body);
+    expect(validate(callOf('alpha'))).toBe(true);
+    expect(validate(callOf('beta'))).toBe(true);
+    expect(validate(callOf('gamma'))).toBe(false);
+  });
+
+  it('a constrained target declaring filter and envelope keeps every tool listed and restricts by the envelope', async () => {
+    const { error, fake } = await ccConstrainedSent(withAllowedTools({ ...CC_CAPABILITIES, toolCalling: 'constrained' }, ['filter', 'envelope']), TWO_AUTO);
+    expect(error).toBeUndefined();
+    const body = lastCompletionBody(fake);
+    for (const name of ALL_NAMES) expect(systemText(body)).toContain(`"name":"${name}"`);
+    const validate = envelopeValidator(body);
+    expect(validate(callOf('alpha'))).toBe(true);
+    expect(validate(callOf('gamma'))).toBe(false);
+  });
+});
+
+describe('an allowed set equal to the request tools is the plain mode, on a target that declares no form', () => {
+  const ALL_AUTO = allowed(ALL_NAMES, 'auto');
+  const ALL_REQUIRED = allowed(ALL_NAMES, 'required');
+
+  it('chat-completions native sends plain auto with every tool', async () => {
+    const { error, fake } = await ccNativeSent({ ...CC_CAPABILITIES, toolCalling: 'native' }, ALL_AUTO);
+    expect(error).toBeUndefined();
+    const body = lastCompletionBody(fake);
+    expect(listedNames(body)).toEqual(ALL_NAMES);
+    expect(body.tool_choice).toBe('auto');
+  });
+
+  it('chat-completions native sends plain required with every tool', async () => {
+    const { error, fake } = await ccNativeSent({ ...CC_CAPABILITIES, toolCalling: 'native' }, ALL_REQUIRED);
+    expect(error).toBeUndefined();
+    const body = lastCompletionBody(fake);
+    expect(listedNames(body)).toEqual(ALL_NAMES);
+    expect(body.tool_choice).toBe('required');
+  });
+
+  it('anthropic sends plain auto through the gateway and echoes the request as given', async () => {
+    const gateway = await startAnthropicGateway({ capabilities: REMOTE_CAPABILITIES, script: [anthropicTextReply(['ok'])] });
+    const response = await readJson(
+      await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hello'), tools: TOOLS, tool_choice: ALL_AUTO }),
+    );
+    expect(response.status).toBe(200);
+    const body = gateway.fake.requests[0]?.body as any;
+    expect(listedNames(body)).toEqual(ALL_NAMES);
+    expect(body.tool_choice).toEqual({ type: 'auto' });
+    expect(response.body.tool_choice).toEqual(ALL_AUTO);
+  });
+
+  it('anthropic sends plain required as tool_choice any', async () => {
+    const gateway = await startAnthropicGateway({ capabilities: REMOTE_CAPABILITIES, script: [anthropicTextReply(['ok'])] });
+    const response = await readJson(
+      await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hello'), tools: TOOLS, tool_choice: ALL_REQUIRED }),
+    );
+    expect(response.status).toBe(200);
+    expect((gateway.fake.requests[0]?.body as any).tool_choice).toEqual({ type: 'any' });
+  });
+
+  it('ollama sends every tool for an allowed set of every tool with auto', async () => {
+    const fake = await startFakeOllama({ chat: [{ kind: 'ndjson' as const, lines: [chunkLine({ content: 'ok' }), doneLine()] }] });
+    const request = { model: 'devstral-small-2', input: [userText('hello')], tools: TOOLS, tool_choice: ALL_AUTO } as AdapterRequest;
+    const { error } = await collectOllama(makeOllamaAdapter(fake), request);
+    expect(error).toBeUndefined();
+    expect(listedNames(fake.chatBodies()[0])).toEqual(ALL_NAMES);
   });
 });
