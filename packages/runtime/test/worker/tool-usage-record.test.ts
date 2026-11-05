@@ -170,4 +170,25 @@ describe('the tool usage window reads one offered-names record per run (person i
     expect(window[0]).toEqual({ offered: ['Counter', 'Echo', LOADER, 'Write'], called: [LOADER] });
     expect(reads.bodyReads).toEqual([]);
   });
+
+  it('writes a cumulative record immediately before the request that sends a name not yet recorded', async () => {
+    const env = await makeEnv();
+    const target = path.join(env.project, 'w.txt');
+    env.gateway.script.push(callsStep([{ callId: 'write-1', name: 'Write', args: { file_path: target, content: 'x' } }]), textStep('Done.'));
+    const run = env.enqueue('Use the tools', { history: 'fresh' });
+    await env.runOnce(env.worker('first', { toolList: toolsOf(env, ['Echo', 'Write']) }));
+    expect(env.run(run.id).status).toBe('WAITING_HUMAN');
+    env.resolveApproval(run.id, 'allow_once');
+    await env.runOnce(env.worker('second', { toolList: toolsOf(env, ['Echo', 'Write', 'Counter']) }));
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    const events = eventsOf(env, run.id);
+    const requests = events.filter((event) => event.type === 'model.requested');
+    const records = events.filter((event) => event.type === TOOL_OFFERED);
+    const second = requests[1];
+    if (second === undefined) throw new Error('the run sent one request only');
+
+    expect(records.map((record) => record.names)).toEqual([[], ['Echo', 'Write'], ['Counter', 'Echo', 'Write']]);
+    expect(events.find((event) => event.seq === second.seq - 1)?.type).toBe(TOOL_OFFERED);
+    expect(records.at(-1)?.seq).toBe(second.seq - 1);
+  });
 });

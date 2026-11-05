@@ -5,8 +5,10 @@ import { describe, expect, it } from 'vitest';
 import { canonicalJson, migrate } from '@momonga/foundation';
 import type { RunEventPayload } from '@momonga/protocol';
 import { createFakeClock } from '@momonga/testkit';
+import { encodeRunState } from '../../../store/src/codec.ts';
+import { foldRunState, initialRunState } from '../../../store/src/fold.ts';
 import { MIGRATIONS } from '../../../store/src/schema.ts';
-import { START_MS, makeStoreDir, openStoreAt } from '../../../store/test/helpers.ts';
+import { START_MS, callEvent, makeStoreDir, openStoreAt, rawDb } from '../../../store/test/helpers.ts';
 import { toolUsageWindowOf } from '../../src/worker/tool-usage-window.ts';
 import { bodyWatchedStore } from './body-watched-store.ts';
 
@@ -56,6 +58,8 @@ const OLD_RUNS: OldRun[] = [
     createdAt: START_MS + 11,
     events: [started(['Counter', 'Write']), requested(1, [tool('Grep')]), call('call_grep', 'Grep')],
   },
+  { id: 'r3', session: 's1', parent: null, status: 'QUEUED', createdAt: START_MS + 20, events: [started(['Write']), requested(1, [tool('Echo')])] },
+  { id: 'r4', session: 's1', parent: null, status: 'STOPPED', createdAt: START_MS + 21, events: [{ type: 'user.message', text: 'hello' }] },
 ];
 
 const storeWrittenBeforeTheRecord = (): string => {
@@ -85,6 +89,14 @@ const storeWrittenBeforeTheRecord = (): string => {
         run.parent,
         run.parent === null ? null : 'call_agent',
       );
+      if (run.id === 'r3') {
+        db.prepare('INSERT INTO snapshots (run_id, seq, state_json, created_at) VALUES (?, ?, ?, ?)').run(
+          run.id,
+          run.events.length,
+          canonicalJson(encodeRunState({ ...initialRunState({ runId: run.id, sessionId: run.session }), lastSeq: run.events.length })),
+          run.createdAt,
+        );
+      }
       run.events.forEach((payload, seq) => insertEvent.run(run.id, run.session, seq + 1, 'step' in payload ? payload.step : 0, run.createdAt, payload.type, canonicalJson(payload)));
     });
   } finally {
@@ -106,5 +118,32 @@ describe('the offered-names record of runs written before it existed (person ite
       { offered: ['Write'], called: [] },
     ]);
     expect(reads.bodyReads).toEqual([]);
+  });
+
+  it('gives a run that was not finished at the upgrade its record at last_seq + 1, folded over its snapshot, and lets the next append land after it', () => {
+    const dbPath = storeWrittenBeforeTheRecord();
+    const store = openStoreAt(dbPath, createFakeClock(START_MS + 100));
+
+    expect(rawDb(dbPath).prepare("SELECT last_seq FROM runs WHERE id = 'r3'").get()).toEqual({ last_seq: 3 });
+    const loaded = store.load('r3');
+    expect(loaded.snapshot?.seq).toBe(2);
+    expect(loaded.tail.map((event) => [event.seq, event.type])).toEqual([[3, 'tool.offered']]);
+    const folded = loaded.tail.reduce(foldRunState, loaded.snapshot?.state ?? initialRunState({ runId: 'r3', sessionId: 's1' }));
+    expect(folded.offeredTools).toEqual(['Echo', 'Write']);
+
+    const claim = store.claim('worker');
+    if (claim === null) throw new Error('the queued run was not claimed');
+    expect(claim.runId).toBe('r3');
+    expect(store.append(claim, [callEvent('call_after')]).kind).toBe('ok');
+    expect(store.readRunEvents('r3', 3, 10).map((event) => event.seq)).toEqual([4]);
+    expect(rawDb(dbPath).prepare("SELECT last_seq FROM runs WHERE id = 'r3'").get()).toEqual({ last_seq: 4 });
+  });
+
+  it('gives a run that never recorded run.started no record', () => {
+    const dbPath = storeWrittenBeforeTheRecord();
+    openStoreAt(dbPath, createFakeClock(START_MS + 100));
+
+    expect(rawDb(dbPath).prepare("SELECT COUNT(*) AS n FROM events WHERE run_id = 'r4' AND type = 'tool.offered'").get()).toEqual({ n: 0 });
+    expect(rawDb(dbPath).prepare("SELECT last_seq FROM runs WHERE id = 'r4'").get()).toEqual({ last_seq: 1 });
   });
 });
