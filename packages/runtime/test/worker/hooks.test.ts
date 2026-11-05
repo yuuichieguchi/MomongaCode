@@ -107,7 +107,7 @@ describe('worker hooks', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     await env.runOnce(workerWithProcesses(env));
     expect(env.ofType(run.id, 'hook.completed')).toMatchObject([{ outcome: 'timed_out' }]);
     expect(fs.existsSync(target)).toBe(false);
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
     await env.runOnce(workerWithProcesses(env));
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(fs.readFileSync(target, 'utf8')).toBe('x');
@@ -169,7 +169,7 @@ describe('worker hooks', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'x' } }]), textStep('written'));
     const run = env.enqueue('write it');
     await env.runOnce(workerWithProcesses(env));
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
     await env.runOnce(workerWithProcesses(env));
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(fs.readFileSync(target, 'utf8')).toBe('x');

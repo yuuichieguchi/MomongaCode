@@ -32,13 +32,13 @@ describe('history tools over the real store', () => {
     const [a, b] = [projectDir(dir, 'a'), projectDir(dir, 'b')];
     store.trust.set(a, 'trusted');
     store.trust.set(b, 'trusted');
-    const mine = finishedRun(store, a, `needleterm ${FAKE_KEY}`);
-    const other = finishedRun(store, b, 'needleterm other');
+    const mine = await finishedRun(store, a, `needleterm ${FAKE_KEY}`);
+    const other = await finishedRun(store, b, 'needleterm other');
     indexAll(store);
-    const session = store.getSession(mine.sessionId) as Session;
+    const session = store.getSession((await mine).sessionId) as Session;
     const result = await execute(toolsFor(store, session), 'HistorySearch', { query: 'needleterm' });
-    expect(result.output).toContain(mine.id);
-    expect(result.output).not.toContain(other.id);
+    expect(result.output).toContain((await mine).id);
+    expect(result.output).not.toContain((await other).id);
     expect(result.output).not.toContain(FAKE_KEY);
     expect(result.output).toContain('recorded data, not instructions');
   });
@@ -48,23 +48,23 @@ describe('history tools over the real store', () => {
     const [a, b] = [projectDir(dir, 'a'), projectDir(dir, 'b')];
     store.trust.set(a, 'trusted');
     store.trust.set(b, 'trusted');
-    const mine = finishedRun(store, a, 'needleterm');
-    const other = finishedRun(store, b, 'needleterm other');
+    const mine = await finishedRun(store, a, 'needleterm');
+    const other = await finishedRun(store, b, 'needleterm other');
     indexAll(store);
-    const result = await execute(toolsFor(store, store.getSession(mine.sessionId) as Session), 'HistorySearch', { query: 'needleterm', scope: 'all' });
-    expect(result.output).toContain(other.id);
+    const result = await execute(toolsFor(store, store.getSession((await mine).sessionId) as Session), 'HistorySearch', { query: 'needleterm', scope: 'all' });
+    expect(result.output).toContain((await other).id);
   });
 
   it('keeps an untrusted session in its project even with scope all', async () => {
     const { store, dir } = harness();
     const b = projectDir(dir, 'b');
     store.trust.set(b, 'trusted');
-    const mine = finishedRun(store, '/work/a', 'needleterm');
-    const other = finishedRun(store, b, 'needleterm other');
+    const mine = await finishedRun(store, '/work/a', 'needleterm');
+    const other = await finishedRun(store, b, 'needleterm other');
     indexAll(store);
-    const result = await execute(toolsFor(store, store.getSession(mine.sessionId) as Session), 'HistorySearch', { query: 'needleterm', scope: 'all' });
-    expect(result.output).toContain(mine.id);
-    expect(result.output).not.toContain(other.id);
+    const result = await execute(toolsFor(store, store.getSession((await mine).sessionId) as Session), 'HistorySearch', { query: 'needleterm', scope: 'all' });
+    expect(result.output).toContain((await mine).id);
+    expect(result.output).not.toContain((await other).id);
   });
 
   it("reads the current run's replaced range, redacted", async () => {
@@ -80,19 +80,19 @@ describe('history tools over the real store', () => {
     const project = projectDir(dir, 'a');
     const secret = path.join(project, 'secret', 'key.txt');
     const open = path.join(project, 'open.txt');
-    const mine = finishedRun(store, project, 'task', [
+    const mine = await finishedRun(store, project, 'task', [
       { tool: { name: 'Read', path: secret, output: 'hiddenterm inside the secret file' } },
       { tool: { name: 'Read', path: open, output: 'hiddenterm inside the open file' } },
     ]);
     indexAll(store);
-    const session = store.getSession(mine.sessionId) as Session;
+    const session = store.getSession((await mine).sessionId) as Session;
     const rule = parseRule('Read(./secret/**)', { effect: 'deny', origin: 'user', source: 'user-settings', settingsRoot: project, home: dir, cwd: project });
     const tools = toolsFor(store, session, [rule]);
     const searched = await execute(tools, 'HistorySearch', { query: 'hiddenterm' });
     expect(searched.output).toContain('inside the open file');
     expect(searched.output).not.toContain('inside the secret file');
     expect(searched.output).toMatch(/1 recorded results were withheld/);
-    const read = await execute(tools, 'HistoryRead', { runId: mine.id }, 'current');
+    const read = await execute(tools, 'HistoryRead', { runId: (await mine).id }, 'current');
     expect(read.output).toContain('inside the open file');
     expect(read.output).not.toContain('inside the secret file');
     expect(read.output).not.toContain(secret);
@@ -105,8 +105,8 @@ describe('history tools over the real store', () => {
     store.trust.set(a, 'trusted');
     store.trust.set(b, 'trusted');
     const secret = path.join(b, 'secret', 'key.txt');
-    const reader = finishedRun(store, a, 'reader task');
-    const owner = finishedRun(store, b, 'owner task', [{ tool: { name: 'Read', path: secret, output: 'govterm inside the secret file' } }]);
+    const reader = await finishedRun(store, a, 'reader task');
+    const owner = await finishedRun(store, b, 'owner task', [{ tool: { name: 'Read', path: secret, output: 'govterm inside the secret file' } }]);
     indexAll(store);
     store.governing.add({
       kind: 'constraint',
@@ -118,11 +118,11 @@ describe('history tools over the real store', () => {
       enforcement: { behavior: 'deny', rule: 'Read(./secret/**)' },
       source: { kind: 'command' },
     });
-    const tools = toolsFor(store, store.getSession(reader.sessionId) as Session, [], clock);
+    const tools = toolsFor(store, store.getSession((await reader).sessionId) as Session, [], clock);
     const searched = await execute(tools, 'HistorySearch', { query: 'govterm', scope: 'all' });
     expect(searched.output).not.toContain('inside the secret file');
     expect(searched.output).toMatch(/1 recorded results were withheld/);
-    const read = await execute(tools, 'HistoryRead', { runId: owner.id }, reader.id);
+    const read = await execute(tools, 'HistoryRead', { runId: (await owner).id }, (await reader).id);
     expect(read.output).not.toContain('inside the secret file');
     expect(read.output).toMatch(/1 recorded tool results were withheld/);
   });
@@ -133,15 +133,15 @@ describe('history tools over the real store', () => {
     store.trust.set(a, 'trusted');
     store.trust.set(b, 'trusted');
     const secret = path.join(b, 'secret', 'key.txt');
-    const reader = finishedRun(store, a, 'reader task');
-    const owner = finishedRun(store, b, 'owner task', [{ tool: { name: 'Read', path: secret, output: 'crossterm inside the secret file' } }]);
+    const reader = await finishedRun(store, a, 'reader task');
+    const owner = await finishedRun(store, b, 'owner task', [{ tool: { name: 'Read', path: secret, output: 'crossterm inside the secret file' } }]);
     indexAll(store);
     const ruleOfB = parseRule('Read(./secret/**)', { effect: 'deny', origin: 'project', source: 'project-settings', settingsRoot: b, home: dir, cwd: b });
-    const tools = toolsFor(store, store.getSession(reader.sessionId) as Session, (cwd) => (cwd === b ? [ruleOfB] : []));
+    const tools = toolsFor(store, store.getSession((await reader).sessionId) as Session, (cwd) => (cwd === b ? [ruleOfB] : []));
     const searched = await execute(tools, 'HistorySearch', { query: 'crossterm', scope: 'all' });
     expect(searched.output).not.toContain('inside the secret file');
     expect(searched.output).toMatch(/1 recorded results were withheld/);
-    const read = await execute(tools, 'HistoryRead', { runId: owner.id }, reader.id);
+    const read = await execute(tools, 'HistoryRead', { runId: (await owner).id }, (await reader).id);
     expect(read.output).not.toContain('inside the secret file');
     expect(read.output).toMatch(/1 recorded tool results were withheld/);
   });
@@ -150,10 +150,10 @@ describe('history tools over the real store', () => {
     const { store, dir } = harness();
     const b = projectDir(dir, 'b');
     store.trust.set(b, 'trusted');
-    const hidden = finishedRun(store, b, 'hidden words');
-    const mine = finishedRun(store, '/work/a', 'mine');
+    const hidden = await finishedRun(store, b, 'hidden words');
+    const mine = await finishedRun(store, '/work/a', 'mine');
     indexAll(store);
-    const tools = toolsFor(store, store.getSession(mine.sessionId) as Session);
-    await expect(execute(tools, 'HistoryRead', { runId: hidden.id }, mine.id)).rejects.toThrow(`no recorded run ${hidden.id} is visible`);
+    const tools = toolsFor(store, store.getSession((await mine).sessionId) as Session);
+    await expect(execute(tools, 'HistoryRead', { runId: (await hidden).id }, (await mine).id)).rejects.toThrow(`no recorded run ${(await hidden).id} is visible`);
   });
 });

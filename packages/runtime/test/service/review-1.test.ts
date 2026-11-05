@@ -232,7 +232,7 @@ describe('SS5 coverage gaps', () => {
       { type: 'notice', level: 'info', message: `B${big}` },
       { type: 'notice', level: 'info', message: 'C' },
     ]);
-    expect(env.store.transition(claim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
+    expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
     const lastSeq = (await env.getRun(run.id)).lastSeq as number;
 
     const frames = await (await env.stream(`/v1/runs/${run.id}/events`)).toEnd(10_000);

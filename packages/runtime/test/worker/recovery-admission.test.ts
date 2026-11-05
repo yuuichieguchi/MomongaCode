@@ -16,11 +16,11 @@ describe('worker tool-set notice', () => {
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: first, content: 'one' } }]));
     const run = env.enqueue('Write two files');
     await env.runOnce(env.worker('worker-1'));
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
     env.gateway.script.push(callsStep([{ callId: 'call_w_2', name: 'Write', args: { file_path: second, content: 'two' } }]));
     await env.runOnce(env.worker('worker-2', { toolList: reduced }));
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
     env.gateway.script.push(textStep('Both written.'));
 
     await env.runOnce(env.worker('worker-3', { toolList: reduced }));
@@ -41,7 +41,7 @@ describe('worker tool-set notice', () => {
       { type: 'notice', level: 'warning', message: 'The tool set differs from the one this run started with.', code: 'tools_changed' },
     ]);
     expect(appended.kind).toBe('ok');
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
     env.gateway.script.push(callsStep([{ callId: 'call_w_2', name: 'Write', args: { file_path: second, content: 'two' } }]));
 
     await env.runOnce(env.worker('worker-2', { toolList: reduced }));
@@ -71,10 +71,10 @@ describe('worker MCP authorization notice', () => {
     const run = env.enqueue('Write two files');
     await env.runOnce(env.worker('worker-1', { tools }));
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
     env.gateway.script.push(callsStep([{ callId: 'call_w_2', name: 'Write', args: { file_path: second, content: 'two' } }]));
     await env.runOnce(env.worker('worker-2', { tools }));
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
     env.gateway.script.push(textStep('Both written.'));
 
     await env.runOnce(env.worker('worker-3', { tools }));
@@ -170,7 +170,7 @@ describe('worker offering of the job tools', () => {
     const run = env.enqueue('Write a file');
     startJob(env, run.id);
     await env.runOnce(env.worker('w1', { toolList: withJobTools(env) }));
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
     env.gateway.script.push(textStep('Written.'));
 
     await env.runOnce(env.worker('w2', { toolList: withJobTools(env) }));
@@ -209,7 +209,7 @@ describe('worker offering of the job tools', () => {
     const jobId = startJob(env, run.id);
     await env.runOnce(env.worker('w1', { toolList: withJobTools(env) }));
     env.store.jobs.finish(jobId, { status: 'exited', exitCode: 0 });
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
     env.gateway.script.push(textStep('Written.'));
 
     await env.runOnce(env.worker('w2', { toolList: withJobTools(env) }));

@@ -64,8 +64,8 @@ const claimRun = (store: RuntimeStore, runId: string) => {
   throw new Error(`run ${runId} could not be claimed`);
 };
 
-const finishRun = (store: RuntimeStore, runId: string): void => {
-  const result = store.transition(claimRun(store, runId), ['RUNNING'], 'COMPLETED');
+const finishRun = async (store: RuntimeStore, runId: string): Promise<void> => {
+  const result = await store.transition(claimRun(store, runId), ['RUNNING'], 'COMPLETED');
   if (result.kind !== 'ok') throw new Error(`run ${runId} did not complete: ${JSON.stringify(result)}`);
 };
 
@@ -178,7 +178,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     await f.toolRuntime.port.toolSet(runId, { signal: signalNever(), env: toolEnv() });
     expect(markerCount(f)).toBe(1);
 
-    finishRun(f.store, runId);
+    await finishRun(f.store, runId);
     await flushMicrotasks();
     expect(f.toolRuntime.mcpPools.release(runId)).toBe(false);
     f.timers.advance(POOL_IDLE_CLOSE_MS - 1);
@@ -196,7 +196,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     const runId = newRun(f);
     await f.toolRuntime.port.toolSet(runId, { signal: signalNever(), env: toolEnv() });
     const claim = claimRun(f.store, runId);
-    expect(f.store.transition(claim, ['RUNNING'], 'WAITING_HUMAN').kind).toBe('ok');
+    expect((await f.store.transition(claim, ['RUNNING'], 'WAITING_HUMAN')).kind).toBe('ok');
 
     await flushMicrotasks();
     f.timers.advance(POOL_REFERENCE_AUDIT_MS);
@@ -362,7 +362,7 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     writeUserSettings(f.temp.home, { mcpServers: { fx: fixtureServer } });
     const runId = newRun(f);
     await f.toolRuntime.port.toolSet(runId, { signal: signalNever(), env: toolEnv() });
-    finishRun(f.store, runId);
+    await finishRun(f.store, runId);
     await flushMicrotasks();
     f.timers.advance(POOL_IDLE_CLOSE_MS);
     await waitFor(() => markerCount(f) === 0, { description: 'the idle pool to close' });

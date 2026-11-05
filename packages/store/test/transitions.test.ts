@@ -6,10 +6,10 @@ import { enqueue, harness, mustClaim, mustRun, newSession } from './helpers.ts';
 import { parkWaitingHuman } from './approval-fixture.ts';
 
 const ALLOWED: Record<RunStatus, readonly RunStatus[]> = {
-  QUEUED: ['CANCELLED'],
+  QUEUED: ['CANCELLING'],
   RUNNING: ['WAITING_TOOL', 'WAITING_HUMAN', 'COMPLETED', 'STOPPED', 'FAILED', 'CANCELLING', 'QUEUED'],
   WAITING_TOOL: ['QUEUED', 'CANCELLING'],
-  WAITING_HUMAN: ['QUEUED', 'CANCELLED', 'STOPPED'],
+  WAITING_HUMAN: ['QUEUED', 'CANCELLING', 'STOPPED'],
   CANCELLING: ['CANCELLED'],
   COMPLETED: [],
   STOPPED: [],
@@ -21,7 +21,7 @@ const WORKER_OWNED: readonly RunStatus[] = ['RUNNING', 'CANCELLING'];
 
 type Fixture = { store: RuntimeStore; run: Run; claim?: Claim };
 
-const arrange = (from: RunStatus): Fixture => {
+const arrange = async (from: RunStatus): Promise<Fixture> => {
   const { store } = harness();
   const created = enqueue(store, newSession(store).id);
   const claimIt = () => mustClaim(store, 'w1');
@@ -39,6 +39,7 @@ const arrange = (from: RunStatus): Fixture => {
     }
     case 'CANCELLED':
       store.requestCancel(created.id);
+      expect(await store.finishCancelled(() => undefined)).toEqual([created.id]);
       return { store, run: mustRun(store, created.id) };
     case 'WAITING_HUMAN':
       parkWaitingHuman(store, claimIt());
@@ -63,10 +64,10 @@ describe('transition table', () => {
     expect(cases).toHaveLength(81);
   });
 
-  it.each(cases.filter(([, , allowed]) => allowed))('%s -> %s is allowed and writes run.status', (from, to) => {
-    const fixture = arrange(from);
+  it.each(cases.filter(([, , allowed]) => allowed))('%s -> %s is allowed and writes run.status', async (from, to) => {
+    const fixture = await arrange(from);
     expect(fixture.run.status).toBe(from);
-    const result = attempt(fixture, from, to);
+    const result = await attempt(fixture, from, to);
     expect(result.kind).toBe('ok');
     const after = mustRun(fixture.store, fixture.run.id);
     expect(after.status).toBe(to);
@@ -79,9 +80,9 @@ describe('transition table', () => {
     expect(events.at(-1)).toMatchObject({ type: 'run.status', from, to, seq: after.lastSeq });
   });
 
-  it.each(cases.filter(([, , allowed]) => !allowed))('%s -> %s is rejected as a conflict and writes nothing', (from, to) => {
-    const fixture = arrange(from);
-    const result = attempt(fixture, from, to);
+  it.each(cases.filter(([, , allowed]) => !allowed))('%s -> %s is rejected as a conflict and writes nothing', async (from, to) => {
+    const fixture = await arrange(from);
+    const result = await attempt(fixture, from, to);
     expect(result.kind).toBe('conflict');
     expect(mustRun(fixture.store, fixture.run.id)).toEqual(fixture.run);
     expect(fixture.store.readRunEvents(fixture.run.id, fixture.run.lastSeq, 10)).toEqual([]);
@@ -89,20 +90,20 @@ describe('transition table', () => {
 });
 
 describe('transition', () => {
-  it('rejects QUEUED -> RUNNING outside claim', () => {
-    const fixture = arrange('QUEUED');
+  it('rejects QUEUED -> RUNNING outside claim', async () => {
+    const fixture = await arrange('QUEUED');
     expect(fixture.store.appendAsService(fixture.run.id, fixture.run.version, 'RUNNING', []).kind).toBe('conflict');
   });
 
-  it('rejects when the current status is not in the expected from list', () => {
-    const fixture = arrange('RUNNING');
-    expect(fixture.store.transition(fixture.claim!, ['WAITING_TOOL'], 'QUEUED').kind).toBe('conflict');
+  it('rejects when the current status is not in the expected from list', async () => {
+    const fixture = await arrange('RUNNING');
+    expect((await fixture.store.transition(fixture.claim!, ['WAITING_TOOL'], 'QUEUED')).kind).toBe('conflict');
     expect(mustRun(fixture.store, fixture.run.id).status).toBe('RUNNING');
   });
 
-  it('records the stop reason from the patch', () => {
-    const fixture = arrange('RUNNING');
-    const result = fixture.store.transition(fixture.claim!, ['RUNNING'], 'STOPPED', { stopReason: 'max_steps' });
+  it('records the stop reason from the patch', async () => {
+    const fixture = await arrange('RUNNING');
+    const result = await fixture.store.transition(fixture.claim!, ['RUNNING'], 'STOPPED', { stopReason: 'max_steps' });
     expect(result).toMatchObject({ kind: 'ok', run: { status: 'STOPPED', stopReason: 'max_steps' } });
     expect(fixture.store.readRunEvents(fixture.run.id, 0, 10).at(-1)).toMatchObject({
       type: 'run.status',
@@ -112,32 +113,32 @@ describe('transition', () => {
     });
   });
 
-  it('records the error from the patch on FAILED', () => {
-    const fixture = arrange('RUNNING');
-    const result = fixture.store.transition(fixture.claim!, ['RUNNING'], 'FAILED', { error: { code: 'boom', message: 'x' } });
+  it('records the error from the patch on FAILED', async () => {
+    const fixture = await arrange('RUNNING');
+    const result = await fixture.store.transition(fixture.claim!, ['RUNNING'], 'FAILED', { error: { code: 'boom', message: 'x' } });
     expect(result).toMatchObject({ kind: 'ok', run: { status: 'FAILED', error: { code: 'boom', message: 'x' } } });
   });
 
-  it('keeps terminal runs immutable even for the lease holder', () => {
-    const fixture = arrange('RUNNING');
-    expect(fixture.store.transition(fixture.claim!, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
+  it('keeps terminal runs immutable even for the lease holder', async () => {
+    const fixture = await arrange('RUNNING');
+    expect((await fixture.store.transition(fixture.claim!, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
     const done = mustRun(fixture.store, fixture.run.id);
-    const result = fixture.store.transition(fixture.claim!, ['COMPLETED'], 'FAILED');
+    const result = await fixture.store.transition(fixture.claim!, ['COMPLETED'], 'FAILED');
     expect(['conflict', 'lease_lost']).toContain(result.kind);
     expect(mustRun(fixture.store, fixture.run.id)).toEqual(done);
   });
 });
 
 describe('appendAsService', () => {
-  it('rejects a stale version as a conflict', () => {
-    const fixture = arrange('WAITING_HUMAN');
+  it('rejects a stale version as a conflict', async () => {
+    const fixture = await arrange('WAITING_HUMAN');
     const result = fixture.store.appendAsService(fixture.run.id, fixture.run.version - 1, 'QUEUED', []);
     expect(result).toMatchObject({ kind: 'conflict' });
     expect(mustRun(fixture.store, fixture.run.id)).toEqual(fixture.run);
   });
 
-  it('appends events before the status change and bumps the version once', () => {
-    const fixture = arrange('WAITING_HUMAN');
+  it('appends events before the status change and bumps the version once', async () => {
+    const fixture = await arrange('WAITING_HUMAN');
     const result = fixture.store.appendAsService(fixture.run.id, fixture.run.version, 'QUEUED', [
       { type: 'tool.permission.resolved', approvalId: 'a1', optionId: 'allow_once' },
     ]);
@@ -148,16 +149,16 @@ describe('appendAsService', () => {
     ]);
   });
 
-  it('appends events without a status change', () => {
-    const fixture = arrange('QUEUED');
+  it('appends events without a status change', async () => {
+    const fixture = await arrange('QUEUED');
     const result = fixture.store.appendAsService(fixture.run.id, fixture.run.version, null, [
       { type: 'notice', level: 'info', message: 'service note' },
     ]);
     expect(result).toMatchObject({ kind: 'ok', run: { status: 'QUEUED', lastSeq: fixture.run.lastSeq + 1 } });
   });
 
-  it('refuses to append to a terminal run', () => {
-    const fixture = arrange('COMPLETED');
+  it('refuses to append to a terminal run', async () => {
+    const fixture = await arrange('COMPLETED');
     const result = fixture.store.appendAsService(fixture.run.id, fixture.run.version, null, [
       { type: 'notice', level: 'info', message: 'late' },
     ]);
@@ -165,8 +166,8 @@ describe('appendAsService', () => {
     expect(fixture.store.readRunEvents(fixture.run.id, fixture.run.lastSeq, 10)).toEqual([]);
   });
 
-  it('lets only one of two callers holding the same version append events', () => {
-    const fixture = arrange('QUEUED');
+  it('lets only one of two callers holding the same version append events', async () => {
+    const fixture = await arrange('QUEUED');
     const notice = { type: 'notice', level: 'info', message: 'x' } as const;
     expect(fixture.store.appendAsService(fixture.run.id, fixture.run.version, null, [notice]).kind).toBe('ok');
     const second = fixture.store.appendAsService(fixture.run.id, fixture.run.version, null, [notice]);
@@ -174,14 +175,14 @@ describe('appendAsService', () => {
     expect(fixture.store.readRunEvents(fixture.run.id, fixture.run.lastSeq, 10)).toHaveLength(1);
   });
 
-  it('bumps the version on every service append', () => {
-    const fixture = arrange('QUEUED');
+  it('bumps the version on every service append', async () => {
+    const fixture = await arrange('QUEUED');
     const result = fixture.store.appendAsService(fixture.run.id, fixture.run.version, null, [{ type: 'notice', level: 'info', message: 'service note' }]);
     expect(result).toMatchObject({ kind: 'ok', run: { version: fixture.run.version + 1 } });
   });
 
-  it('does not let a fenced worker append invalidate a service version', () => {
-    const fixture = arrange('RUNNING');
+  it('does not let a fenced worker append invalidate a service version', async () => {
+    const fixture = await arrange('RUNNING');
     const current = mustRun(fixture.store, fixture.run.id);
     expect(fixture.store.append(fixture.claim!, [{ type: 'notice', level: 'info', message: 'from worker' }]).kind).toBe('ok');
     expect(mustRun(fixture.store, fixture.run.id).version).toBe(current.version);

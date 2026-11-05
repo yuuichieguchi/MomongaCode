@@ -31,11 +31,11 @@ const pinsWith = (roles: Record<string, string> | undefined): Record<string, unk
   ...(roles === undefined ? {} : { roles }),
 });
 
-const finishWithPins = (store: RuntimeStore, pins: Record<string, unknown>, events: readonly RunEventPayload[]): void => {
+const finishWithPins = async (store: RuntimeStore, pins: Record<string, unknown>, events: readonly RunEventPayload[]): Promise<void> => {
   const claim = mustClaim(store, 'w1');
   const appended = store.append(claim, [{ type: 'run.started', attempt: claim.attempt, now: 0, pins }, ...events]);
   if (appended.kind !== 'ok') throw new Error(`append failed: ${appended.kind}`);
-  const finished = store.transition(claim, ['RUNNING'], 'COMPLETED', {});
+  const finished = await store.transition(claim, ['RUNNING'], 'COMPLETED', {});
   if (finished.kind !== 'ok') throw new Error(`finish failed: ${finished.kind}`);
 };
 
@@ -65,9 +65,9 @@ const setup = () => {
       random: () => 0.5,
     });
   const verified: RunEventPayload[] = [...fileTool('w1', 'Write', { path: path.join(project, 'src/a.ts'), sha256: SHA, access: 'write' }), ...bash('t1', 'npm test', 0, 'ok')];
-  const finishedRun = (roles: Record<string, string> | undefined) => {
+  const finishedRun = async (roles: Record<string, string> | undefined) => {
     const run = enqueue(store, session.id, 'fix the bug');
-    finishWithPins(store, pinsWith(roles), verified);
+    await finishWithPins(store, pinsWith(roles), verified);
     return run;
   };
   return { store, api: store as unknown as Api, gateway, settings, reflector, finishedRun, project };
@@ -83,7 +83,7 @@ describe('the reflection role', () => {
     expect(env.gateway.streams.map((stream) => stream.body.model)).toEqual(['cheap']);
     expect(env.gateway.streams.map((stream) => stream.role)).toEqual(['reflection']);
     expect(env.gateway.capabilityRequests).toEqual(['cheap']);
-    expect(env.api.contextCharges.list()).toMatchObject([{ purpose: 'reflection', runId: run.id, model: 'cheap', inputTokens: 100, outputTokens: 20, totalTokens: 120 }]);
+    expect(env.api.contextCharges.list()).toMatchObject([{ purpose: 'reflection', runId: (await run).id, model: 'cheap', inputTokens: 100, outputTokens: 20, totalTokens: 120 }]);
   });
 
   it('guards a cap taken from the wrong model: the output cap follows the capabilities of the role alias', async () => {
@@ -118,7 +118,7 @@ describe('the reflection role', () => {
     env.gateway.script.push(textStep(REPLY));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
     expect(env.gateway.streams).toHaveLength(0);
-    const job = env.api.reflection.get(run.id);
+    const job = env.api.reflection.get((await run).id);
     expect(job?.state).toBe('done');
     expect(job?.lastError).toContain('models.roles.reflection');
     expect(job?.lastError).toContain('plain');

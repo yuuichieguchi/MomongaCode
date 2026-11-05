@@ -91,7 +91,7 @@ describe('worker input request', () => {
     const { run } = await ask(env, seen);
     const inputId = env.ofType(run.id, 'tool.elicitation.requested')[0]?.inputId as string;
     const responses = { who: { action: 'accept' as const, content: { name: 'Ada' } } };
-    const resolved = env.store.resolveElicitation(inputId, responses);
+    const resolved = await env.store.resolveElicitation(inputId, responses);
     expect(resolved.kind).toBe('ok');
     env.gateway.script.push(textStep('Greeted.'));
 
@@ -110,7 +110,7 @@ describe('worker input request', () => {
     const { run } = await ask(env, [], { approvalTtlMs: 1000 });
 
     env.clock.advance(1000);
-    expect(env.store.expireApprovals(env.clock.now())).toEqual([run.id]);
+    expect(await env.store.expireApprovals(env.clock.now())).toEqual([run.id]);
 
     expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
     expect(env.ofType(run.id, 'tool.elicitation.cancelled')).toEqual([expect.objectContaining({ reason: 'expired' })]);

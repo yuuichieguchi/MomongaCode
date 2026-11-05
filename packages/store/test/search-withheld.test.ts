@@ -15,9 +15,9 @@ const stepsOf = [
 ];
 
 describe('search hits whose path a read deny rule now covers', () => {
-  it('yields no snippet and no hit for the step, and counts what it withheld', () => {
+  it('yields no snippet and no hit for the step, and counts what it withheld', async () => {
     const { store } = harness();
-    const run = finishedRun(store, '/work/a', 'task', stepsOf);
+    const run = await finishedRun(store, '/work/a', 'task', stepsOf);
     indexAll(store);
     const result = store.search.query(OWN, { query: 'withheldterm', scope: 'project', readDenied: denySecret });
     expect(result.anchors.map((anchor) => anchor.steps.map((step) => step.step))).toEqual([[2]]);
@@ -26,27 +26,27 @@ describe('search hits whose path a read deny rule now covers', () => {
     expect(result.withheld).toBe(1);
   });
 
-  it('shows both steps and states nothing withheld when no predicate is given', () => {
+  it('shows both steps and states nothing withheld when no predicate is given', async () => {
     const { store } = harness();
-    finishedRun(store, '/work/a', 'task', stepsOf);
+    await finishedRun(store, '/work/a', 'task', stepsOf);
     indexAll(store);
     const result = store.search.query(OWN, { query: 'withheldterm', scope: 'project' });
     expect(result.anchors[0]?.steps.map((step) => step.step).sort()).toEqual([1, 2]);
     expect(result.withheld).toBeUndefined();
   });
 
-  it('drops a run whose only hits were withheld', () => {
+  it('drops a run whose only hits were withheld', async () => {
     const { store } = harness();
-    finishedRun(store, '/work/a', 'task', [stepsOf[0] as (typeof stepsOf)[number]]);
+    await finishedRun(store, '/work/a', 'task', [stepsOf[0] as (typeof stepsOf)[number]]);
     indexAll(store);
     const result = store.search.query(OWN, { query: 'withheldterm', scope: 'project', readDenied: denySecret });
     expect(result.anchors).toEqual([]);
     expect(result.withheld).toBe(1);
   });
 
-  it('applies to the short-term scan as well', () => {
+  it('applies to the short-term scan as well', async () => {
     const { store } = harness();
-    finishedRun(store, '/work/a', 'task', [{ tool: { name: 'Read', path: SECRET, output: '設計 inside the secret file' } }]);
+    await finishedRun(store, '/work/a', 'task', [{ tool: { name: 'Read', path: SECRET, output: '設計 inside the secret file' } }]);
     indexAll(store);
     const result = store.search.query(OWN, { query: '設計', scope: 'project', readDenied: denySecret });
     expect(result.anchors).toEqual([]);
@@ -55,12 +55,12 @@ describe('search hits whose path a read deny rule now covers', () => {
 });
 
 describe('the origin of a run', () => {
-  it('is the trust decision at run creation, whatever the decision is when the run is indexed', () => {
+  it('is the trust decision at run creation, whatever the decision is when the run is indexed', async () => {
     const { store, dir } = harness();
     const [a, b] = [projectDir(dir, 'a'), projectDir(dir, 'b')];
     store.trust.set(a, 'trusted');
-    const trustedThen = finishedRun(store, a, 'needleterm a');
-    const untrustedThen = finishedRun(store, b, 'needleterm b');
+    const trustedThen = await finishedRun(store, a, 'needleterm a');
+    const untrustedThen = await finishedRun(store, b, 'needleterm b');
     store.trust.set(a, 'untrusted');
     store.trust.set(b, 'trusted');
     indexAll(store);
@@ -71,9 +71,9 @@ describe('the origin of a run', () => {
 });
 
 describe('reading a range', () => {
-  it('names the recorded paths of the calls in the range even when the call event lies before it', () => {
+  it('names the recorded paths of the calls in the range even when the call event lies before it', async () => {
     const { store } = harness();
-    const run = finishedRun(store, '/work/a', 'task', stepsOf);
+    const run = await finishedRun(store, '/work/a', 'task', stepsOf);
     const events = store.readRunEvents(run.id, 0, 100);
     const completedSeq = events.find((event) => event.type === 'tool.completed')?.seq ?? 0;
     const page = store.search.readRange(OWN, { runId: run.id, seqFrom: completedSeq, seqTo: completedSeq, limit: 10, redactor });
@@ -82,9 +82,9 @@ describe('reading a range', () => {
     expect(page.callPaths).toEqual({ 'call-1': [SECRET] });
   });
 
-  it('cuts a page at the character budget of its payloads, and always returns at least one event', () => {
+  it('cuts a page at the character budget of its payloads, and always returns at least one event', async () => {
     const { store } = harness();
-    const run = finishedRun(store, '/work/a', 'task', [{ tool: { name: 'Read', path: '/work/a/big', output: 'z'.repeat(200_000) } }, { tool: { name: 'Read', path: '/work/a/big2', output: 'y'.repeat(200_000) } }]);
+    const run = await finishedRun(store, '/work/a', 'task', [{ tool: { name: 'Read', path: '/work/a/big', output: 'z'.repeat(200_000) } }, { tool: { name: 'Read', path: '/work/a/big2', output: 'y'.repeat(200_000) } }]);
     const first = store.search.readRange(OWN, { runId: run.id, limit: HISTORY_READ_PAGE_EVENTS, redactor });
     if (first.kind !== 'ok') throw new Error(first.kind);
     expect(first.nextSeq).not.toBeNull();

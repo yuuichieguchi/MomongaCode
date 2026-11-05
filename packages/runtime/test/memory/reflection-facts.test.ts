@@ -68,9 +68,9 @@ const setup = ({ enabled = false, facts = true, trusted = true }: Options = {}) 
       timers: createFakeTimers(clock),
       random: () => 0.5,
     });
-  const finishedRun = (events: readonly RunEventPayload[]) => {
+  const finishedRun = async (events: readonly RunEventPayload[]) => {
     const run = enqueue(store, session.id, 'fix the bug');
-    finishClaimed(store, events);
+    await finishClaimed(store, events);
     return run;
   };
   return { store, api: store as unknown as Api, clock, project, session, gateway, reflector, finishedRun };
@@ -114,8 +114,8 @@ describe('repository facts with reflection off', () => {
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
     expect(env.gateway.streams).toEqual([]);
     expect(env.api.contextCharges.list()).toEqual([]);
-    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', lastError: 'reflection is off', dropped: [] });
-    expect(candidatesOf(env, run.id)).toEqual([
+    expect(env.api.reflection.get((await run).id)).toMatchObject({ state: 'done', lastError: 'reflection is off', dropped: [] });
+    expect(candidatesOf(env, (await run).id)).toEqual([
       { text: NPM_TEST_FACT, kind: 'procedure', scope: 'project', origin: 'trusted', project: env.project, ordinal: 0 },
       { text: LINT_FACT, kind: 'procedure', scope: 'project', origin: 'trusted', project: env.project, ordinal: 1 },
     ]);
@@ -129,12 +129,12 @@ describe('repository facts with reflection off', () => {
     expect(evidence[NPM_TEST_FACT]).toEqual([
       { kind: 'file', project: env.project, path: 'package.json', sha256: MANIFEST_SHA },
       { kind: 'commit', sha: HEAD },
-      { kind: 'check', runId: run.id, callId: 't1', seq: seqOf(env.store, run.id, 't1'), command: 'npm test', exitCode: 0 },
+      { kind: 'check', runId: (await run).id, callId: 't1', seq: seqOf(env.store, (await run).id, 't1'), command: 'npm test', exitCode: 0 },
     ]);
     expect(evidence[LINT_FACT]).toEqual([
       { kind: 'file', project: env.project, path: 'package.json', sha256: MANIFEST_SHA },
       { kind: 'commit', sha: HEAD },
-      { kind: 'check', runId: run.id, callId: 't2', seq: seqOf(env.store, run.id, 't2'), command: 'npm run lint', exitCode: 0 },
+      { kind: 'check', runId: (await run).id, callId: 't2', seq: seqOf(env.store, (await run).id, 't2'), command: 'npm run lint', exitCode: 0 },
     ]);
   });
 
@@ -144,15 +144,15 @@ describe('repository facts with reflection off', () => {
     await env.reflector().runOne(SIGNAL);
     const run = env.finishedRun(VERIFIED_TWICE(env.project));
     await env.reflector().runOne(SIGNAL);
-    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', lastError: 'reflection is off', dropped: [{ ordinal: 0, text: NPM_TEST_FACT, cause: 'duplicate', reason: DUPLICATE_REASON }] });
-    expect(candidatesOf(env, run.id).map((candidate) => [candidate.text, candidate.ordinal])).toEqual([[LINT_FACT, 1]]);
+    expect(env.api.reflection.get((await run).id)).toMatchObject({ state: 'done', lastError: 'reflection is off', dropped: [{ ordinal: 0, text: NPM_TEST_FACT, cause: 'duplicate', reason: DUPLICATE_REASON }] });
+    expect(candidatesOf(env, (await run).id).map((candidate) => [candidate.text, candidate.ordinal])).toEqual([[LINT_FACT, 1]]);
   });
 
   it('keeps today\'s ending when facts are off', async () => {
     const env = setup({ enabled: false, facts: false });
     const run = env.finishedRun(VERIFIED_TWICE(env.project));
     await env.reflector().runOne(SIGNAL);
-    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', lastError: 'reflection is off', dropped: [] });
+    expect(env.api.reflection.get((await run).id)).toMatchObject({ state: 'done', lastError: 'reflection is off', dropped: [] });
     expect(env.api.memories.candidates()).toEqual([]);
   });
 
@@ -160,7 +160,7 @@ describe('repository facts with reflection off', () => {
     const env = setup({ enabled: false, facts: true });
     const run = env.finishedRun(UNVERIFIED(env.project));
     await env.reflector().runOne(SIGNAL);
-    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', lastError: 'reflection is off' });
+    expect(env.api.reflection.get((await run).id)).toMatchObject({ state: 'done', lastError: 'reflection is off' });
     expect(env.api.memories.candidates()).toEqual([]);
   });
 
@@ -168,7 +168,7 @@ describe('repository facts with reflection off', () => {
     const env = setup({ enabled: false, facts: true, trusted: false });
     const run = env.finishedRun(VERIFIED_TWICE(env.project));
     await env.reflector().runOne(SIGNAL);
-    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', lastError: 'the run was not made in a trusted folder' });
+    expect(env.api.reflection.get((await run).id)).toMatchObject({ state: 'done', lastError: 'the run was not made in a trusted folder' });
     expect(env.api.memories.candidates()).toEqual([]);
   });
 });
@@ -179,7 +179,7 @@ describe('repository facts with reflection on', () => {
     const run = env.finishedRun(UNVERIFIED(env.project));
     await env.reflector().runOne(SIGNAL);
     expect(env.gateway.streams).toEqual([]);
-    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', lastError: 'the run is not a verified success' });
+    expect(env.api.reflection.get((await run).id)).toMatchObject({ state: 'done', lastError: 'the run is not a verified success' });
     expect(env.api.memories.candidates()).toEqual([]);
   });
 
@@ -190,8 +190,8 @@ describe('repository facts with reflection on', () => {
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
     expect(env.gateway.streams).toHaveLength(1);
     expect(env.api.contextCharges.list()).toHaveLength(1);
-    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', lastError: null, dropped: [{ ordinal: 2, text: NPM_TEST_FACT, cause: 'duplicate', reason: DUPLICATE_REASON }] });
-    expect(candidatesOf(env, run.id).map((candidate) => [candidate.text, candidate.kind, candidate.ordinal])).toEqual([
+    expect(env.api.reflection.get((await run).id)).toMatchObject({ state: 'done', lastError: null, dropped: [{ ordinal: 2, text: NPM_TEST_FACT, cause: 'duplicate', reason: DUPLICATE_REASON }] });
+    expect(candidatesOf(env, (await run).id).map((candidate) => [candidate.text, candidate.kind, candidate.ordinal])).toEqual([
       [NPM_TEST_FACT, 'procedure', 0],
       [LINT_FACT, 'procedure', 1],
       ['the fixture needs a seed', 'fact', 3],
@@ -205,15 +205,15 @@ describe('repository facts with reflection on', () => {
     const failure = new Error('connection lost');
     env.gateway.script.push({ events: [], error: failure }, { events: [], error: failure }, { events: [], error: failure });
     await expect(reflector.runOne(SIGNAL)).rejects.toBe(failure);
-    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'running', attempts: 1 });
+    expect(env.api.reflection.get((await run).id)).toMatchObject({ state: 'running', attempts: 1 });
     expect(env.api.memories.candidates()).toEqual([]);
     env.clock.advance(REQUEUE_BASE_MS * 4);
     await expect(reflector.runOne(SIGNAL)).rejects.toBe(failure);
     expect(env.api.memories.candidates()).toEqual([]);
     env.clock.advance(REQUEUE_BASE_MS * 4);
     await expect(reflector.runOne(SIGNAL)).rejects.toBe(failure);
-    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'failed', attempts: MAX_ATTEMPTS, lastError: 'connection lost' });
-    expect(candidatesOf(env, run.id).map((candidate) => [candidate.text, candidate.kind, candidate.ordinal])).toEqual([
+    expect(env.api.reflection.get((await run).id)).toMatchObject({ state: 'failed', attempts: MAX_ATTEMPTS, lastError: 'connection lost' });
+    expect(candidatesOf(env, (await run).id).map((candidate) => [candidate.text, candidate.kind, candidate.ordinal])).toEqual([
       [NPM_TEST_FACT, 'procedure', 0],
       [LINT_FACT, 'procedure', 1],
     ]);

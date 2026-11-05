@@ -418,13 +418,13 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     raw().prepare('UPDATE sessions SET model_alias = ? WHERE id = ?').run(alias, session.id);
   };
 
-  const resolveApproval = (runId: string, kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always', approvalId?: string): void => {
+  const resolveApproval = async (runId: string, kind: 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always', approvalId?: string): Promise<void> => {
     const requests = ofType(runId, 'tool.permission.requested');
     const requested = approvalId === undefined ? requests.at(-1) : requests.find((candidate) => candidate.approvalId === approvalId);
     if (requested === undefined) throw new Error(`run ${runId} has no permission request ${approvalId ?? ''}`);
     const option = requested.options.find((candidate) => candidate.kind === kind);
     if (option === undefined) throw new Error(`permission request ${requested.approvalId} offers no ${kind} option`);
-    const resolved = store.resolveApproval(requested.approvalId, option.optionId);
+    const resolved = await store.resolveApproval(requested.approvalId, option.optionId);
     if (resolved.kind !== 'ok') throw new Error(`approval ${requested.approvalId} could not be resolved: ${resolved.kind}`);
   };
 

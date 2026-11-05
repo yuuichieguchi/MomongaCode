@@ -18,11 +18,11 @@ const called = (callId: string, name: string): RunEventPayload => ({
   rawInput: {},
 });
 
-const pastRun = (env: Env, payloads: readonly RunEventPayload[], status: 'COMPLETED' | 'FAILED' | 'hold' = 'COMPLETED'): string => {
+const pastRun = async (env: Env, payloads: readonly RunEventPayload[], status: 'COMPLETED' | 'FAILED' | 'hold' = 'COMPLETED'): Promise<string> => {
   env.clock.advance(1);
   const run = env.enqueue('Past work', { history: 'fresh' });
   const claim = env.seed(run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' }, ...payloads], 'hold');
-  if (status !== 'hold') expect(env.store.transition(claim, ['RUNNING'], status).kind).toBe('ok');
+  if (status !== 'hold') expect((await env.store.transition(claim, ['RUNNING'], status)).kind).toBe('ok');
   return run.id;
 };
 
@@ -86,9 +86,9 @@ describe('toolUsageWindowOf', () => {
     const grandchild = env.store.createChildRun({ parentRunId: child.run.id, parentCallId: 'call_grandchild', input: 'List', pins: {}, modelAlias: 'fm' });
     if (grandchild.kind !== 'created') throw new Error(`grandchild run was not created: ${grandchild.kind}`);
     const grandchildClaim = env.seed(grandchild.run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' }, offered(['Glob']), called('call_grandchild_glob', 'Glob')], 'hold');
-    expect(env.store.transition(grandchildClaim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
-    expect(env.store.transition(childClaim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
-    expect(env.store.transition(rootClaim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
+    expect((await env.store.transition(grandchildClaim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
+    expect((await env.store.transition(childClaim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
+    expect((await env.store.transition(rootClaim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
 
     const window = toolUsageWindowOf(env.store, env.session.cwd);
 

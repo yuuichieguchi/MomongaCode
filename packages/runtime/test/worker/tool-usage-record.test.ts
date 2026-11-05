@@ -35,11 +35,11 @@ const called = (callId: string, name: string): RunEventPayload => ({
   rawInput: {},
 });
 
-const pastRun = (env: Env, payloads: readonly RunEventPayload[]): string => {
+const pastRun = async (env: Env, payloads: readonly RunEventPayload[]): Promise<string> => {
   env.clock.advance(1);
   const run = env.enqueue('Past work', { history: 'fresh' });
   const claim = env.seed(run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' }, ...payloads], 'hold');
-  expect(env.store.transition(claim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
+  expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
   return run.id;
 };
 
@@ -178,7 +178,7 @@ describe('the tool usage window reads one offered-names record per run (person i
     const run = env.enqueue('Use the tools', { history: 'fresh' });
     await env.runOnce(env.worker('first', { toolList: toolsOf(env, ['Echo', 'Write']) }));
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
     await env.runOnce(env.worker('second', { toolList: toolsOf(env, ['Echo', 'Write', 'Counter']) }));
     expect(env.run(run.id).status).toBe('COMPLETED');
     const events = eventsOf(env, run.id);

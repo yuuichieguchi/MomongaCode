@@ -18,7 +18,7 @@ const answered = async (env: Env, task: string, answer: string): Promise<string>
   return run.id;
 };
 
-const answeredWithoutRecordedMode = (env: Env, task: string, answer: string): string => {
+const answeredWithoutRecordedMode = async (env: Env, task: string, answer: string): Promise<string> => {
   const run = env.enqueue(task);
   const payloads: RunEventPayload[] = [
     { type: 'run.started', attempt: 1, now: env.clock.now(), pins: {} },
@@ -26,7 +26,7 @@ const answeredWithoutRecordedMode = (env: Env, task: string, answer: string): st
     { type: 'model.responded', step: 1, attempt: 1, response: { status: 'completed', output: [assistantMessage('msg_old', answer)], usage: USAGE } },
   ];
   const claim = env.seed(run.id, payloads, 'hold');
-  expect(env.store.transition(claim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
+  expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
   expect(env.fold(run.id).mode).toBeUndefined();
   return run.id;
 };
