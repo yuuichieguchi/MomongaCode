@@ -1,13 +1,8 @@
-import { JsonDepthError, isRecord, parseOutsideJson } from '@momonga/foundation';
+import { isRecord } from '@momonga/foundation';
+import { usableUpstreamJson } from './upstream-json.ts';
 
 const parsedObjectOf = (text: string): Record<string, unknown> | undefined => {
-  let parsed: unknown;
-  try {
-    parsed = parseOutsideJson(text);
-  } catch (error) {
-    if (error instanceof SyntaxError || error instanceof JsonDepthError) return undefined;
-    throw error;
-  }
+  const parsed = usableUpstreamJson(text);
   return isRecord(parsed) ? parsed : undefined;
 };
 

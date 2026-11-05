@@ -1,5 +1,5 @@
-import { parseOutsideJson } from '@momonga/foundation';
 import { UpstreamProtocolError } from '../shared/failures.ts';
+import { parseUpstreamJson } from '../shared/upstream-json.ts';
 import type { AnthropicContentBlock, AnthropicDelta } from './events.ts';
 
 type Recorded = { block: Record<string, unknown>; partialJson: string };
@@ -42,11 +42,7 @@ export class AssistantRecorder {
     if (recorded === undefined) return;
     this.open.delete(index);
     if (recorded.partialJson !== '') {
-      try {
-        recorded.block['input'] = parseOutsideJson(recorded.partialJson);
-      } catch (error) {
-        throw new UpstreamProtocolError(`the upstream streamed tool input that is not valid JSON: ${(error as Error).message}`);
-      }
+      recorded.block['input'] = parseUpstreamJson(recorded.partialJson, (what) => new UpstreamProtocolError(`the upstream streamed tool input is malformed: ${what}`));
     }
     this.finished.set(index, recorded.block);
   }

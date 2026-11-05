@@ -1,4 +1,5 @@
-import { decodeSse, isRecord, parseOutsideJson } from '@momonga/foundation';
+import { decodeSse, isRecord } from '@momonga/foundation';
+import { usableUpstreamJson } from '../shared/upstream-json.ts';
 import type { SseEvent } from '@momonga/foundation';
 import { CONTEXT_WINDOW_EXCEEDED, GUARDRAIL_VIOLATION, StreamFailure, UNSUPPORTED_REQUEST } from '../shared/failures.ts';
 import { errorObjectOf, upstreamErrorText } from './vocabulary.ts';
@@ -12,14 +13,7 @@ export type UpstreamReply =
   | { kind: 'completion'; usage: Record<string, unknown> | undefined; body: unknown }
   | { kind: 'error'; status: number; body: unknown };
 
-const parseJson = (text: string): unknown => {
-  try {
-    return parseOutsideJson(text);
-  } catch (error) {
-    if (error instanceof SyntaxError) return undefined;
-    throw error;
-  }
-};
+const parseJson = usableUpstreamJson;
 
 export const upstreamErrorEventBody = (event: SseEvent): { body: unknown } | undefined =>
   event.event === ERROR_EVENT ? { body: parseJson(event.data) ?? event.data } : undefined;

@@ -1,7 +1,7 @@
 import { Client, ProtocolError, SdkError, SdkErrorCode, TRACEPARENT_META_KEY, TRACESTATE_META_KEY, isCallToolResult, isInputRequiredResult } from '@modelcontextprotocol/client';
-import type { CallToolResult, Implementation, ProtocolEra, Tool } from '@modelcontextprotocol/client';
+import type { CallToolResult, Implementation, JSONRPCMessage, ProtocolEra, Tool, Transport } from '@modelcontextprotocol/client';
 import type { McpServerConfig, McpServerScope } from '@momonga/config';
-import { CircuitBreaker, checkJsonDepth, computeBackoff } from '@momonga/foundation';
+import { CircuitBreaker, JsonDepthError, checkJsonDepth, computeBackoff } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { authorizeMcpServer } from './authorize.ts';
 import { createMcpOAuthProvider } from './oauth-provider.ts';
@@ -101,6 +101,7 @@ export type McpConnectionOptions = {
   markers?: McpMarkerOptions;
   closeGraceMs?: number;
   mrtrMaxRounds?: number;
+  onNotice?: (message: string) => void;
 };
 
 export class McpUnavailableError extends Error {
@@ -134,8 +135,33 @@ const describeExit = (transport: ConnectionTransport): string | undefined => {
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-const checkResultDepth = (result: object): void => {
-  for (const member of Object.values(result)) checkJsonDepth(member);
+const isResponse = (message: JSONRPCMessage): boolean => 'id' in message && !('method' in message);
+
+const boundedMessages = (transport: ConnectionTransport, server: string, onNotice: ((message: string) => void) | undefined): ConnectionTransport => {
+  const bounded = (handler: NonNullable<Transport['onmessage']>): NonNullable<Transport['onmessage']> => (message, extra) => {
+    try {
+      checkJsonDepth(message);
+    } catch (error) {
+      if (!(error instanceof JsonDepthError)) throw error;
+      if (isResponse(message)) {
+        handler({ jsonrpc: '2.0', id: (message as { id: string | number }).id, error: { code: -32603, message: `MCP server "${server}" sent a response that is too deep: ${error.message}` } }, extra);
+        return;
+      }
+      onNotice?.(`MCP server "${server}" sent a message that was dropped as too deep: ${error.message}`);
+      return;
+    }
+    handler(message, extra);
+  };
+  return new Proxy(transport, {
+    get: (target, property) => {
+      const value: unknown = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+    set: (target, property, value: unknown) => {
+      Reflect.set(target, property, property === 'onmessage' && typeof value === 'function' ? bounded(value as NonNullable<Transport['onmessage']>) : value, target);
+      return true;
+    },
+  });
 };
 
 class ManagedConnection implements McpServerConnection {
@@ -365,7 +391,6 @@ class ManagedConnection implements McpServerConnection {
         }
         throw error;
       }
-      checkResultDepth(result);
       if (!isInputRequiredResult(result)) return validateStructuredOutput(mcpToolIdentity(this.name, input.name), input.name, tool, result);
       rounds += 1;
       if (rounds > maxRounds) {
@@ -415,7 +440,6 @@ class ManagedConnection implements McpServerConnection {
           }),
         accept: (taskId, value) => {
           if (!isCallToolResult(value)) throw new McpTaskError(taskId, `task ${taskId} completed with a result that is not a tool result`);
-          checkResultDepth(value);
           return validateStructuredOutput(mcpToolIdentity(this.name, input.name), input.name, tool, value);
         },
       });
@@ -599,7 +623,8 @@ class ManagedConnection implements McpServerConnection {
       this.lastError = errorMessage(error);
       throw error;
     }
-    const { transport, guarded } = opened;
+    const { guarded } = opened;
+    const transport = boundedMessages(opened.transport, this.name, this.options.onNotice);
     this.lastTransport = transport;
     this.pendingTransport = transport;
     const remote = 'url' in config;
