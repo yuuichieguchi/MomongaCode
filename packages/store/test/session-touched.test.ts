@@ -87,7 +87,6 @@ describe('session_touched, the per-session record of declared locations', () => 
 
   it('the migration fills the record from the locations of existing tool.call events, so a session that predates it keeps its activations', () => {
     const before = MIGRATIONS.filter((migration) => !JSON.stringify(migration).includes('session_touched'));
-    expect(before.length).toBeLessThan(MIGRATIONS.length);
     const dbPath = path.join(makeStoreDir(), 'runtime.db');
     const db = new DatabaseSync(dbPath);
     try {
@@ -105,6 +104,7 @@ describe('session_touched, the per-session record of declared locations', () => 
       db.close();
     }
     fs.chmodSync(dbPath, 0o600);
+    expect(before.length).toBeLessThan(MIGRATIONS.length);
     const store = openStoreAt(dbPath, createFakeClock(START_MS + 10));
     expect(pathsOf(store, 's1')).toEqual(['/work/a/legacy/a.ts', '/work/a/scripts/build.sh']);
   });

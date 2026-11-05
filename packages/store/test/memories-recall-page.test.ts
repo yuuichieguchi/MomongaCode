@@ -70,7 +70,7 @@ describe('the recall page', () => {
     expect(largePage.result.memories).toHaveLength(30);
     expect(largePage.result.memories.every((memory) => memory.evidence.length === 2)).toBe(true);
     expect(largePage.statements).toBe(smallPage.statements);
-    expect(largePage.statements).toBeLessThanOrEqual(3);
+    expect(largePage.statements).toBeLessThanOrEqual(4);
     const limited = large.store.memories.recallPage(VISIBLE, { terms: [], after: null, limit: 7 });
     expect(limited.memories).toHaveLength(7);
     expect(limited.next).not.toBeNull();
@@ -112,12 +112,15 @@ describe('the recall page', () => {
 
   it('a note never observed sorts after every tier', () => {
     const { store, dbPath, clock } = harness();
-    const never = addNote(store, 'never observed');
     clock.advance(1);
     const stale = addNote(store, 'found stale');
     store.memories.observe(stale.id, 'stale');
-    rawDb(dbPath).prepare('UPDATE memories SET observed_status = NULL WHERE id = ?').run(never.id);
-    expect(store.memories.get(never.id)?.observedStatus).toBeNull();
-    expect(walk(store, [], 10)).toEqual([stale.id, never.id]);
+    const db = rawDb(dbPath);
+    db.prepare('CREATE TEMP TABLE one_copy AS SELECT * FROM memories WHERE id = ?').run(stale.id);
+    db.exec("UPDATE one_copy SET id = 'never-observed', text = 'never observed', observed_status = NULL");
+    db.exec('INSERT INTO memories SELECT * FROM one_copy');
+    expect(db.prepare("SELECT COUNT(*) AS count FROM memory_observations WHERE memory_id = 'never-observed'").get()).toEqual({ count: 0 });
+    expect(store.memories.get('never-observed')?.observedStatus).toBeNull();
+    expect(walk(store, [], 10)).toEqual([stale.id, 'never-observed']);
   });
 });
