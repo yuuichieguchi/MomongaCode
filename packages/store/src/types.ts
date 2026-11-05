@@ -2,6 +2,7 @@ import type { Clock, Redactor } from '@momonga/foundation';
 import type { CANCEL_ORIGINS } from './transitions.ts';
 import type {
   BilledDetail,
+  Capabilities,
   CallTiming,
   TokenAnatomy,
   RunTracePrefix,
@@ -137,6 +138,17 @@ export type ResolveApprovalResult =
 export type ModelCallRecord =
   | { kind: 'requested'; seq: number; step: number; attempt: number; anatomy?: TokenAnatomy; prefix?: RunTracePrefix }
   | { kind: 'responded'; seq: number; step: number; attempt: number; responseId?: string; timing?: CallTiming };
+
+export type StartedCall = { callId: string; name: string; idemKey: string };
+
+export type MeterKey = { counter: string; contextWindow: number; tokenErrorRatio?: number; tokenCounting: 'exact' | 'calibrated' | 'estimated' };
+
+export type MeterRecord = {
+  runId: string;
+  seq: number;
+  event: Extract<RunEventPayload, { type: 'meter.observed' }>;
+  misses: { miss: number; uncounted: number }[];
+};
 
 export type HeartbeatResult = { kind: 'ok'; cancelRequested: boolean; status: ClaimStatus } | LeaseLost;
 export type AppendResult = { kind: 'ok'; lastSeq: number } | LeaseLost;
@@ -525,6 +537,12 @@ export type RuntimeStore = {
   readRunEventsOfTypes(runId: string, types: readonly RunEventPayload['type'][]): RunEvent[];
   readLatestRunEventBefore<T extends RunEventPayload['type']>(runId: string, type: T, beforeSeq: number): Extract<RunEvent, { type: T }> | undefined;
   readModelCallEvents(runId: string): ModelCallRecord[];
+  toolCallSeq(runId: string, callId: string): number | undefined;
+  finalTextOf(runId: string): string;
+  inFlightModelRequestOf(runId: string): { step: number; attempt: number } | undefined;
+  startedCallsOf(runId: string): StartedCall[];
+  hasNoticeCode(runId: string, code: string): boolean;
+  meterRecordOf(sessionId: string, key: MeterKey): MeterRecord | undefined;
   lastTerminalRootRuns(project: string, limit: number): Run[];
   toolCallNames(rootRunId: string): string[];
   toolOfferedNames(rootRunId: string): string[];
@@ -574,6 +592,7 @@ export type RuntimeStore = {
   guidelines: GuidelineStore;
   governing: GoverningFactStore;
   search: SearchStore;
+  readonly journalFacts: JournalFacts;
   close(): void;
 };
 
@@ -596,7 +615,37 @@ export type ContributionRequest = { runId: string; leading: readonly RunEventPay
 
 export type ContributionMeasured = { lastSeq: number; contribution?: ContributionPayload };
 
-export type ContributionPreparer = {
+export type VerdictRequest = { runId: string; commands: readonly string[]; manifests: readonly string[] };
+
+export type VerdictFact = {
+  command: string;
+  text: string;
+  kind: 'procedure';
+  check: { callId: string; seq: number };
+  manifestPaths: string[];
+};
+
+export type VerdictReply = { lastSeq: number; verified: boolean; facts: VerdictFact[] };
+
+export type EvidenceRequest = { runId: string; paths: readonly string[]; verificationCommands: readonly string[]; onlyCommand?: string };
+
+export type RecordedHash = { sha256: string; seq: number };
+
+export type RecordedCheck = { callId: string; seq: number; command: string; exitCode: number };
+
+export type EvidenceReply = { lastSeq: number; recorded: (RecordedHash | null)[]; check: RecordedCheck | null };
+
+export type ReflectionInputRequest = { runId: string; project: string; capabilities: Capabilities };
+
+export type ReflectionInputReply = { lastSeq: number; input: string };
+
+export type JournalFacts = {
+  verdict(request: VerdictRequest, signal?: AbortSignal): Promise<VerdictReply>;
+  evidence(request: EvidenceRequest, signal?: AbortSignal): Promise<EvidenceReply>;
+  reflectionInput(request: ReflectionInputRequest, signal?: AbortSignal): Promise<ReflectionInputReply>;
+};
+
+export type ContributionPreparer = JournalFacts & {
   measure(request: ContributionRequest, signal?: AbortSignal): Promise<ContributionMeasured>;
 };
 

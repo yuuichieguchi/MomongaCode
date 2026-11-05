@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { createRun, createSession, makeRuntimeFixture, writeProjectSettings, writeUserSettings } from '../process/helpers.ts';
+import { withInProcessFacts } from './in-process-facts.ts';
 import { bash, exported, finishClaimed } from './reflection-fixture.ts';
 
 type Fixture = Awaited<ReturnType<typeof makeRuntimeFixture>>;
 
 const verified = (f: Fixture, runId: string): Promise<boolean> =>
-  exported<(deps: unknown, runId: string) => Promise<boolean>>('isRunVerified')({ store: f.store, settings: f.composition.settings }, runId);
+  exported<(deps: unknown, runId: string) => Promise<boolean>>('isRunVerified')({ store: withInProcessFacts(f.store, f.temp.dbPath), settings: f.composition.settings }, runId);
 
 const projectCheckRun = async (f: Fixture) => {
   const session = createSession(f.store, f.temp.project);

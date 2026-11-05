@@ -34,7 +34,12 @@ const throughTheThread = (dbPath: () => string): { preparer: ContributionPrepare
     return started;
   };
   return {
-    preparer: { measure: async (request) => (await client()).measure(request) },
+    preparer: {
+      measure: async (request) => (await client()).measure(request),
+      verdict: async (request) => (await client()).verdict(request),
+      evidence: async (request) => (await client()).evidence(request),
+      reflectionInput: async (request) => (await client()).reflectionInput(request),
+    },
     close: async () => {
       if (started !== undefined) await (await started).close();
     },

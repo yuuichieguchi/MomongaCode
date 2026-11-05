@@ -10,8 +10,8 @@ export { DAY_MS, archivableIds, duplicateMarks, isIdleBeyondWindow } from './upk
 export type { DuplicateKeepers, DuplicateMark, DuplicateNote, ForgetWindow, UpkeepNote } from './upkeep.ts';
 export { isVerifiedSuccess } from './verified-success.ts';
 export type { VerifiedSuccessInput } from './verified-success.ts';
-export { repositoryFactText, repositoryFactsOf } from './repository-facts.ts';
-export type { RepositoryFact } from './repository-facts.ts';
+export { REPOSITORY_FACTS_EVENT_TYPES, createRepositoryFactsFold, repositoryFactText, repositoryFactsOf } from './repository-facts.ts';
+export type { RepositoryFact, RepositoryFactsFold } from './repository-facts.ts';
 export { MIN_IDENTIFIER_BYTES, measureContribution } from './contribution.ts';
 export type { InjectedItem, ItemContribution, RenderedWorkingState } from './contribution.ts';
 export { TOOL_USAGE_WINDOW_RUNS, deferredSetOf } from './tool-usage.ts';

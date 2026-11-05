@@ -580,6 +580,145 @@ const RUN_CANCEL_ORIGIN = `
 ALTER TABLE runs ADD COLUMN cancel_origin TEXT CHECK (cancel_origin IS NULL OR cancel_origin IN ('QUEUED', 'WAITING_HUMAN', 'RUNNING', 'WAITING_TOOL'));
 `;
 
+const APPEND_TIME_RECORDS = `
+ALTER TABLE events ADD COLUMN call_id TEXT;
+ALTER TABLE events ADD COLUMN approval_id TEXT;
+ALTER TABLE events ADD COLUMN tool_name TEXT;
+ALTER TABLE events ADD COLUMN notice_code TEXT;
+ALTER TABLE events ADD COLUMN model_call_json TEXT;
+
+DROP TRIGGER events_reject_update;
+UPDATE events SET call_id = json_extract(payload_json, '$.callId') WHERE type IN ('tool.call', 'tool.permission.requested', 'tool.elicitation.requested');
+UPDATE events SET approval_id = json_extract(payload_json, '$.approvalId') WHERE type = 'tool.permission.requested';
+UPDATE events SET approval_id = json_extract(payload_json, '$.inputId') WHERE type = 'tool.elicitation.requested';
+UPDATE events SET tool_name = json_extract(payload_json, '$.name') WHERE type = 'tool.call';
+UPDATE events SET notice_code = json_extract(payload_json, '$.code') WHERE type = 'notice';
+UPDATE events SET model_call_json = json_object(
+  'attempt', json_extract(payload_json, '$.attempt'),
+  'anatomy', json(json_extract(payload_json, '$.anatomy')),
+  'prefix', json(json_extract(payload_json, '$.prefix'))
+) WHERE type = 'model.requested';
+UPDATE events SET model_call_json = json_object(
+  'attempt', json_extract(payload_json, '$.attempt'),
+  'responseId', json_extract(payload_json, '$.response.id'),
+  'timing', json(json_extract(payload_json, '$.response.timing'))
+) WHERE type = 'model.responded';
+CREATE TRIGGER events_reject_update BEFORE UPDATE ON events BEGIN
+  SELECT RAISE(ABORT, 'events are append-only: UPDATE is not allowed');
+END;
+
+CREATE INDEX events_call_ids ON events (run_id, call_id) WHERE call_id IS NOT NULL;
+CREATE INDEX events_approval_ids ON events (run_id, approval_id) WHERE approval_id IS NOT NULL;
+CREATE INDEX events_tool_names ON events (run_id, tool_name) WHERE tool_name IS NOT NULL;
+CREATE INDEX events_notice_codes ON events (run_id, notice_code) WHERE notice_code IS NOT NULL;
+
+CREATE TABLE run_records (
+  run_id TEXT PRIMARY KEY REFERENCES runs (id),
+  final_text TEXT,
+  in_flight_step INTEGER,
+  in_flight_attempt INTEGER
+);
+CREATE TABLE started_calls (
+  run_id TEXT NOT NULL REFERENCES runs (id),
+  call_id TEXT NOT NULL,
+  call_seq INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  idem_key TEXT NOT NULL,
+  PRIMARY KEY (run_id, call_id)
+);
+CREATE TABLE meter_records (
+  session_id TEXT NOT NULL REFERENCES sessions (id),
+  counter TEXT NOT NULL,
+  context_window INTEGER NOT NULL,
+  token_error_ratio REAL,
+  token_counting TEXT NOT NULL,
+  run_id TEXT NOT NULL REFERENCES runs (id),
+  seq INTEGER NOT NULL,
+  event_json TEXT NOT NULL,
+  misses_json TEXT NOT NULL
+);
+CREATE UNIQUE INDEX meter_records_key ON meter_records (session_id, counter, context_window, COALESCE(token_error_ratio, -1), token_counting);
+
+INSERT INTO run_records (run_id, final_text)
+WITH items AS (
+  SELECT e.run_id AS run_id, e.seq AS seq, CAST(o.key AS INTEGER) AS position,
+    (SELECT group_concat(json_extract(p.value, '$.text'), '') FROM json_each(o.value, '$.content') p
+      WHERE json_extract(p.value, '$.type') = 'output_text' AND json_type(p.value, '$.text') = 'text') AS text
+  FROM events e, json_each(e.payload_json, '$.response.output') o
+  WHERE e.type = 'model.responded' AND json_extract(o.value, '$.type') = 'message' AND json_extract(o.value, '$.role') = 'assistant' AND json_type(o.value, '$.content') = 'array'
+),
+texted AS (
+  SELECT run_id, text, ROW_NUMBER() OVER (PARTITION BY run_id ORDER BY seq DESC, position DESC) AS recency FROM items WHERE text <> ''
+)
+SELECT run_id, text FROM texted WHERE recency = 1;
+
+INSERT INTO run_records (run_id, in_flight_step, in_flight_attempt)
+WITH RECURSIVE
+last_requested AS (
+  SELECT e.run_id AS run_id, e.seq AS seq, e.step AS step, json_extract(e.payload_json, '$.attempt') AS attempt
+  FROM events e
+  WHERE e.type = 'model.requested' AND e.seq = (SELECT MAX(x.seq) FROM events x WHERE x.run_id = e.run_id AND x.type = 'model.requested')
+),
+following AS (
+  SELECT l.run_id AS run_id, e.type AS type, e.step AS step, json_extract(e.payload_json, '$.attempt') AS attempt,
+    ROW_NUMBER() OVER (PARTITION BY l.run_id ORDER BY e.seq) AS rn
+  FROM last_requested l JOIN events e ON e.run_id = l.run_id AND e.seq > l.seq AND e.type IN ('model.responded', 'model.rejected', 'context.compaction_rejected')
+),
+walk(run_id, rn, step, attempt, open) AS (
+  SELECT run_id, 0, step, attempt, 1 FROM last_requested
+  UNION ALL
+  SELECT w.run_id, f.rn, w.step,
+    CASE WHEN w.open = 1 AND f.type = 'model.rejected' AND f.step = w.step AND f.attempt = w.attempt THEN w.attempt + 1 ELSE w.attempt END,
+    CASE WHEN w.open = 1 AND f.step = w.step AND f.attempt = w.attempt AND f.type IN ('model.responded', 'context.compaction_rejected') THEN 0 ELSE w.open END
+  FROM walk w JOIN following f ON f.run_id = w.run_id AND f.rn = w.rn + 1
+)
+SELECT w.run_id, w.step, w.attempt FROM walk w
+WHERE w.open = 1 AND w.rn = (SELECT MAX(v.rn) FROM walk v WHERE v.run_id = w.run_id)
+ON CONFLICT (run_id) DO UPDATE SET in_flight_step = excluded.in_flight_step, in_flight_attempt = excluded.in_flight_attempt;
+
+INSERT INTO started_calls (run_id, call_id, call_seq, name, idem_key)
+WITH started AS (
+  SELECT run_id, json_extract(payload_json, '$.callId') AS call_id, json_extract(payload_json, '$.idemKey') AS idem_key,
+    ROW_NUMBER() OVER (PARTITION BY run_id, json_extract(payload_json, '$.callId') ORDER BY seq DESC) AS recency
+  FROM events WHERE type = 'tool.started'
+),
+finished AS (
+  SELECT DISTINCT run_id, json_extract(payload_json, '$.callId') AS call_id FROM events WHERE type IN ('tool.completed', 'tool.reconciled')
+)
+SELECT s.run_id, s.call_id, c.seq, c.tool_name, s.idem_key
+FROM started s
+JOIN events c ON c.run_id = s.run_id AND c.type = 'tool.call' AND c.call_id = s.call_id
+LEFT JOIN finished f ON f.run_id = s.run_id AND f.call_id = s.call_id
+WHERE s.recency = 1 AND f.call_id IS NULL;
+
+INSERT INTO meter_records (session_id, counter, context_window, token_error_ratio, token_counting, run_id, seq, event_json, misses_json)
+WITH observed AS (
+  SELECT e.id AS id, e.session_id AS session_id, e.run_id AS run_id, e.seq AS seq, e.payload_json AS payload_json,
+    json_extract(e.payload_json, '$.counter') AS counter,
+    json_extract(e.payload_json, '$.contextWindow') AS context_window,
+    json_extract(e.payload_json, '$.tokenErrorRatio') AS token_error_ratio,
+    json_extract(e.payload_json, '$.tokenCounting') AS token_counting,
+    json_extract(e.payload_json, '$.miss') AS miss,
+    json_extract(e.payload_json, '$.uncounted') AS uncounted
+  FROM events e WHERE e.type = 'meter.observed'
+),
+ranked AS (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY session_id, counter, context_window, COALESCE(token_error_ratio, -1), token_counting ORDER BY id DESC) AS recency FROM observed
+)
+SELECT l.session_id, l.counter, l.context_window, l.token_error_ratio, l.token_counting, l.run_id, l.seq, l.payload_json,
+  (SELECT json_group_array(json_object('miss', m.miss, 'uncounted', m.uncounted)) FROM (
+    SELECT r.miss AS miss, r.uncounted AS uncounted FROM ranked r
+    WHERE r.session_id = l.session_id AND r.counter = l.counter AND r.context_window = l.context_window
+      AND COALESCE(r.token_error_ratio, -1) = COALESCE(l.token_error_ratio, -1) AND r.token_counting = l.token_counting AND r.recency <= 20
+    ORDER BY r.id
+  ) m)
+FROM ranked l WHERE l.recency = 1;
+`;
+
+const TYPED_READ_INDEX = `
+CREATE INDEX events_by_run_type ON events (run_id, type, seq);
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -608,4 +747,10 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 17, name: 'index the model switches of a session, so a resume reads them without scanning the events of the session', sql: MODEL_CHANGE_INDEX },
   { version: 18, name: 'record, for each run written before the offered-names record, the tool names it offered, derived once from its pinned deferred set and its recorded requests', sql: TOOL_OFFERED_RECORD },
   { version: 19, name: 'record the status a cancelled run had when it became CANCELLING, so a run that never ran is finished by the sweeper and not claimed', sql: RUN_CANCEL_ORIGIN },
+  {
+    version: 20,
+    name: 'write the facts readers need at append: call, approval and tool-name columns, the model-call detail, notice codes, the final text, the in-flight request and the started calls of a run, and the meter of a session; derived once for runs written before',
+    sql: APPEND_TIME_RECORDS,
+  },
+  { version: 21, name: 'index the events of a run by type and seq, so every read of a run\'s events of some types seeks to the matches without stepping over the others', sql: TYPED_READ_INDEX },
 ];

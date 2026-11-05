@@ -13,9 +13,3 @@ export const readAllRunEvents = (store: Pick<RuntimeStore, 'readRunEvents'>, run
     after = last.seq;
   }
 };
-
-export const callSeqOf = (store: Pick<RuntimeStore, 'readRunEvents'>, runId: string, callId: string): number => {
-  const call = readAllRunEvents(store, runId).find((event) => event.type === 'tool.call' && event.callId === callId);
-  if (call === undefined) throw new Error(`run ${runId} has no tool.call event for ${callId}`);
-  return call.seq;
-};

@@ -8,6 +8,7 @@ import { EvidenceOutsideRootError, EvidenceUnreadableError } from '@momonga/memo
 import type { RunEvent, ToolFile } from '@momonga/protocol';
 import { MemoryEvidenceError, bindMemoryEvidence, createEvidencePorts, readGitHead } from '@momonga/runtime';
 import type { EvidenceCommand } from '@momonga/runtime';
+import { createEvidenceFold } from '../../src/memory/evidence-fold.ts';
 
 const PROJECT = '/work/a';
 const HASH = 'a'.repeat(64);
@@ -27,11 +28,14 @@ const fileOf = (target: string, access: ToolFile['access'], sha256 = HASH): Tool
 const binding = (events: RunEvent[], paths: string[], overrides: { trusted?: boolean; head?: string | undefined } = {}) =>
   bindMemoryEvidence({
     runId: 'r1',
-    events,
     paths,
     project: PROJECT,
     trusted: overrides.trusted ?? true,
-    verificationCommands: ['npm test'],
+    journal: async (resolved) => {
+      const fold = createEvidenceFold({ paths: resolved, verificationCommands: ['npm test'] });
+      for (const event of events) fold.add(event);
+      return { lastSeq: events.length, ...fold.finish() };
+    },
     head: async () => ('head' in overrides ? overrides.head : HEAD),
   });
 

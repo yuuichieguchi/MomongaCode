@@ -1,6 +1,8 @@
 import type { RunEventPayload } from '@momonga/protocol';
 import type { ContributionMeasured, ContributionPayload, ContributionPreparer, ContributionRequest, RuntimeStore } from '@momonga/store';
 
+import { noJournalFacts } from './helpers.ts';
+
 export type Reply = { kind: 'fresh'; id: string } | { kind: 'stale'; id: string } | { kind: 'fail'; error: Error } | { kind: 'nothing' };
 
 export type SeenRequest = { runId: string; leading: RunEventPayload[] };
@@ -19,6 +21,7 @@ export const fakePreparer = (replies: Reply[] = [], fallback: Reply = { kind: 'f
   let bound: RuntimeStore | undefined;
   let action: ((request: SeenRequest, call: number) => void) | undefined;
   const preparer: ContributionPreparer = {
+    ...noJournalFacts,
     measure: async (request: ContributionRequest): Promise<ContributionMeasured> => {
       const seen: SeenRequest = { runId: request.runId, leading: [...request.leading] };
       requests.push(seen);

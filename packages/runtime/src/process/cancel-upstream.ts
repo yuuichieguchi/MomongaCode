@@ -1,5 +1,4 @@
 import type { RuntimeStore } from '@momonga/store';
-import { foldRunState, initialRunState } from '@momonga/store';
 import type { GatewayClient } from '../gateway-client.ts';
 import { modelKey } from '../model-key.ts';
 import type { ServiceTimers } from '../service/timers.ts';
@@ -10,7 +9,7 @@ export type CancelUpstreamTracker = {
 };
 
 export type CancelUpstreamOptions = {
-  store: Pick<RuntimeStore, 'getRun' | 'load'>;
+  store: Pick<RuntimeStore, 'getRun' | 'inFlightModelRequestOf'>;
   gatewayClient: Pick<GatewayClient, 'cancel'>;
   timers: ServiceTimers;
 };
@@ -28,9 +27,7 @@ export const createCancelUpstream = ({ store, gatewayClient, timers }: CancelUps
   const cancelInFlight = async (runId: string, caller: AbortSignal | undefined): Promise<void> => {
     const run = store.getRun(runId);
     if (run === undefined) return;
-    const { snapshot, tail } = store.load(runId);
-    const state = tail.reduce(foldRunState, snapshot?.state ?? initialRunState({ runId, sessionId: run.sessionId }));
-    const inFlight = state.inFlightModelRequest;
+    const inFlight = store.inFlightModelRequestOf(runId);
     if (inFlight === undefined) return;
     await gatewayClient.cancel(modelKey(runId, inFlight.step, inFlight.attempt), { signal: caller === undefined ? controller.signal : AbortSignal.any([controller.signal, caller]) });
   };

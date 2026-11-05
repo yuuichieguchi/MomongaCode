@@ -24,7 +24,7 @@ import { decideAfterResponse, responsePending, resumeInFlight, runModelStep } fr
 import { guidelineOf, guidelineVersionFor } from './guideline-pin.ts';
 import { memoryShareFor } from './memory-share.ts';
 import { watchMode } from './mode-watch.ts';
-import { foldMeterFor, meterEventsOf } from './meter-journal.ts';
+import { foldMeterFor } from './meter-journal.ts';
 import { aliasChainReaches } from './model-switch.ts';
 import { readPins } from './pins.ts';
 import { rolesFor } from './role-pin.ts';
@@ -371,7 +371,6 @@ const drive = async (
   const firstCapabilities = firstTarget === undefined ? undefined : listing.targetCapabilities[firstTarget];
   if (firstTarget === undefined || firstCapabilities === undefined) throw new Error(`the gateway lists no target for the model ${pins.modelAlias}`);
   const aliasCounter = counterOf(firstTarget);
-  const meterEvents = meterEventsOf(options.store, session.id);
   const aliasMeterCapabilities = withCalibration(pins.capabilities, firstCapabilities);
   const token = tokenPolicyOf(pins.token);
   const aliasMeter = createTokenMeter({
@@ -380,7 +379,7 @@ const drive = async (
     capabilities: aliasMeterCapabilities,
     observedCapacity: token.observedCapacity,
   });
-  aliasMeter.restore(foldMeterFor(options.store, meterEvents, aliasMeterCapabilities, aliasCounter));
+  aliasMeter.restore(foldMeterFor(options.store, session.id, aliasMeterCapabilities, aliasCounter));
   const factsOf = async (target: string): Promise<{ meter: TokenMeter; capabilities: Capabilities; counter: string }> => {
     const known = targetFacts.get(target);
     if (known !== undefined) return known;
@@ -392,7 +391,7 @@ const drive = async (
       observedCapacity: token.observedCapacity,
     });
     const counter = counterOf(target);
-    meter.restore(foldMeterFor(options.store, meterEvents, capabilities, counter));
+    meter.restore(foldMeterFor(options.store, session.id, capabilities, counter));
     const created = { capabilities, meter, counter };
     targetFacts.set(target, created);
     return created;

@@ -12,6 +12,7 @@ import { enqueue, harness, makeStoreDir, newSession, rawDb } from '../../../stor
 import { createFakeGateway } from '../worker/fake-gateway.ts';
 import type { ScriptStep } from '../worker/fake-gateway.ts';
 import { capabilitiesFor } from '../worker/harness.ts';
+import { withInProcessFacts } from './in-process-facts.ts';
 import { failedStep, textStep } from '../worker/scripts.ts';
 import { bash, exported, fileTool, finishClaimed } from './reflection-fixture.ts';
 
@@ -45,7 +46,9 @@ const CANDIDATE_REPLY = (paths: string[], text = 'the fixture needs a seed') => 
 type Options = { enabled?: boolean; maxTokens?: number; window?: number; structured?: boolean; trusted?: boolean };
 
 const setup = ({ enabled = true, maxTokens, window = 100_000, structured = true, trusted = true }: Options = {}) => {
-  const { store, clock, dbPath } = harness();
+  const opened = harness();
+  const { clock, dbPath } = opened;
+  const store = withInProcessFacts(opened.store, dbPath);
   const project = makeStoreDir();
   if (trusted) store.trust.set(project, 'trusted');
   const session = newSession(store, project);

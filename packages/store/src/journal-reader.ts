@@ -47,6 +47,7 @@ export type JournalReaderOptions = {
 export type JournalReader = {
   measure(hook: TerminalContribution, request: ContributionRequest): ContributionMeasured;
   eventsOfTypes(runId: string, types: readonly RunEventPayload['type'][]): RunEvent[];
+  visitRun(runId: string, types: readonly RunEventPayload['type'][], visit: (event: RunEvent) => void): Run;
 };
 
 const typePlaceholders = (types: readonly string[]): { list: string; bound: Record<string, string> } => ({
@@ -96,11 +97,14 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
   function* rangedRows(runId: string, lastSeq: number, types: readonly string[], excluding: boolean): Generator<Row> {
     const { list, bound } = typePlaceholders(types);
     const statement = db.prepare(
-      `SELECT * FROM events WHERE run_id = :runId AND seq >= :from AND seq < :until AND type ${excluding ? 'NOT IN' : 'IN'} (${list}) ORDER BY seq`,
+      excluding
+        ? `SELECT * FROM events WHERE run_id = :runId AND seq >= :from AND seq < :until AND type NOT IN (${list}) ORDER BY seq`
+        : `SELECT * FROM events WHERE run_id = :runId AND type IN (${list}) AND seq >= :from AND seq < :until`,
     );
     for (let from = 1; from <= lastSeq; from += JOURNAL_SCAN_RANGE_ROWS) {
       const until = Math.min(from + JOURNAL_SCAN_RANGE_ROWS, lastSeq + 1);
-      yield* statement.iterate({ runId, from, until, ...bound });
+      const rows = statement.all({ runId, from, until, ...bound });
+      yield* excluding ? rows : rows.sort((a, b) => Number(a['seq']) - Number(b['seq']));
       stepped(until - from);
       unit();
     }
@@ -108,6 +112,22 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
 
   const eventsOfTypes = (runId: string, types: readonly RunEventPayload['type'][]): RunEvent[] =>
     types.length === 0 ? [] : decodeEach(rangedRows(runId, lastSeqOf(runId), types, false));
+
+  const visitRun = (runId: string, types: readonly RunEventPayload['type'][], visit: (event: RunEvent) => void): Run =>
+    readTx(db, () => {
+      const row = selectRun.get({ id: runId });
+      if (row === undefined) throw new Error(`unknown run ${runId}`);
+      const run = decodeRun(row);
+      if (types.length === 0) return run;
+      for (const eventRow of rangedRows(runId, run.lastSeq, types, false)) {
+        options.onDecode?.(1, typeof eventRow['payload_json'] === 'string' ? Buffer.byteLength(eventRow['payload_json']) : 0);
+        const [event] = decodeRunEvents([eventRow]);
+        if (event === undefined) throw new Error('a journal row did not decode to an event');
+        visit(event);
+        unit();
+      }
+      return run;
+    });
 
   const hookEventsOfTypes = (runId: string, types: readonly RunEventPayload['type'][]): RunEvent[] => {
     const plain = types.filter((type) => type !== 'model.requested');
@@ -156,5 +176,5 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
       return contribution === undefined ? { lastSeq: run.lastSeq } : { lastSeq: run.lastSeq, contribution };
     });
 
-  return { measure, eventsOfTypes };
+  return { measure, eventsOfTypes, visitRun };
 };

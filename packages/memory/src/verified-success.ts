@@ -11,6 +11,8 @@ export type VerifiedSuccessInput = {
 
 type CallEvent = Extract<RunEvent, { type: 'tool.call' }>;
 
+type CallFacts = { kind: string; command: string | undefined; paths: string[] };
+
 const WRITING_KINDS: readonly string[] = ['edit', 'delete', 'move'];
 
 const commandOf = (call: CallEvent): string | undefined => {
@@ -25,8 +27,10 @@ const pathsNamedBy = (call: CallEvent): string[] => {
   return typeof given === 'string' ? [...located, given] : located;
 };
 
-const writtenPaths = (call: CallEvent, event: Extract<RunEvent, { type: 'tool.completed' }>): string[] | undefined => {
-  if (event.files === undefined) return WRITING_KINDS.includes(call.kind) ? pathsNamedBy(call) : undefined;
+const factsOfCall = (call: CallEvent): CallFacts => ({ kind: call.kind, command: commandOf(call), paths: pathsNamedBy(call) });
+
+const writtenPaths = (call: CallFacts, event: Extract<RunEvent, { type: 'tool.completed' }>): string[] | undefined => {
+  if (event.files === undefined) return WRITING_KINDS.includes(call.kind) ? call.paths : undefined;
   const written = event.files.filter((file) => file.access === 'write').map((file) => file.path);
   return written.length === 0 ? undefined : written;
 };
@@ -35,8 +39,15 @@ export type PassingCheck = { command: string; callId: string; seq: number };
 
 export type VerifiedSuccessAnalysis = { verified: boolean; passingChecks: PassingCheck[] };
 
-export const analyseVerifiedSuccess = (input: VerifiedSuccessInput): VerifiedSuccessAnalysis => {
-  const calls = new Map<string, CallEvent>();
+export const VERIFIED_SUCCESS_EVENT_TYPES = ['tool.call', 'tool.started', 'tool.completed', 'tool.reconciled'] as const satisfies readonly RunEvent['type'][];
+
+export type VerifiedSuccessFold = {
+  add(event: RunEvent): void;
+  finish(status: string): VerifiedSuccessAnalysis;
+};
+
+export const createVerifiedSuccessFold = (input: Pick<VerifiedSuccessInput, 'commands' | 'manifests'>): VerifiedSuccessFold => {
+  const calls = new Map<string, CallFacts>();
   const bases = new Map<string, ApprovalBasis | undefined>();
   const manifests = new Set(input.manifests);
   let manifestWritten = false;
@@ -52,51 +63,58 @@ export const analyseVerifiedSuccess = (input: VerifiedSuccessInput): VerifiedSuc
     latestChecks.clear();
     manifestWritten = true;
   };
-  const mayHaveWritten = (call: CallEvent): boolean => {
-    const command = commandOf(call);
-    return command !== undefined && !input.commands.includes(command) && bases.get(call.callId) !== 'read_only';
-  };
-  for (const event of input.events) {
+  const mayHaveWritten = (callId: string, call: CallFacts): boolean =>
+    call.command !== undefined && !input.commands.includes(call.command) && bases.get(callId) !== 'read_only';
+  const add = (event: RunEvent): void => {
     if (event.type === 'tool.call') {
-      calls.set(event.callId, event);
-      continue;
+      calls.set(event.callId, factsOfCall(event));
+      return;
     }
     if (event.type === 'tool.started') {
       bases.set(event.callId, event.basis);
-      continue;
+      return;
     }
-    const call = calls.get(event.type === 'tool.completed' || event.type === 'tool.reconciled' ? event.callId : '');
-    if (call === undefined) continue;
+    if (event.type !== 'tool.completed' && event.type !== 'tool.reconciled') return;
+    const call = calls.get(event.callId);
+    if (call === undefined) return;
     if (event.type === 'tool.reconciled') {
-      if (event.outcome === 'not_applied') continue;
-      if (WRITING_KINDS.includes(call.kind)) wrote(pathsNamedBy(call));
-      else if (mayHaveWritten(call)) wroteUnknownPaths();
-      continue;
+      if (event.outcome === 'not_applied') return;
+      if (WRITING_KINDS.includes(call.kind)) wrote(call.paths);
+      else if (mayHaveWritten(event.callId, call)) wroteUnknownPaths();
+      return;
     }
-    if (event.type !== 'tool.completed' || event.denial !== undefined) continue;
-    if (mayHaveWritten(call)) {
+    if (event.denial !== undefined) return;
+    if (mayHaveWritten(event.callId, call)) {
       wroteUnknownPaths();
-      continue;
+      return;
     }
-    if (event.status !== 'completed') continue;
+    if (event.status !== 'completed') return;
     const written = writtenPaths(call, event);
     if (written !== undefined) {
       wrote(written);
-      continue;
+      return;
     }
-    const command = commandOf(call);
-    if (command !== undefined && event.exitCode !== undefined && input.commands.includes(command)) {
+    if (call.command !== undefined && event.exitCode !== undefined && input.commands.includes(call.command)) {
       latestCheckPassed = event.exitCode === 0;
-      latestChecks.delete(command);
-      latestChecks.set(command, { callId: event.callId, seq: event.seq, passed: latestCheckPassed });
+      latestChecks.delete(call.command);
+      latestChecks.set(call.command, { callId: event.callId, seq: event.seq, passed: latestCheckPassed });
     }
-  }
-  const verified = input.status === 'COMPLETED' && !manifestWritten && latestCheckPassed === true;
-  const passingChecks = [...latestChecks]
-    .filter(([, check]) => check.passed)
-    .map(([command, { callId, seq }]) => ({ command, callId, seq }))
-    .sort((left, right) => left.seq - right.seq);
-  return { verified, passingChecks };
+  };
+  const finish = (status: string): VerifiedSuccessAnalysis => {
+    const verified = status === 'COMPLETED' && !manifestWritten && latestCheckPassed === true;
+    const passingChecks = [...latestChecks]
+      .filter(([, check]) => check.passed)
+      .map(([command, { callId, seq }]) => ({ command, callId, seq }))
+      .sort((left, right) => left.seq - right.seq);
+    return { verified, passingChecks };
+  };
+  return { add, finish };
+};
+
+export const analyseVerifiedSuccess = (input: VerifiedSuccessInput): VerifiedSuccessAnalysis => {
+  const fold = createVerifiedSuccessFold(input);
+  for (const event of input.events) fold.add(event);
+  return fold.finish(input.status);
 };
 
 export const isVerifiedSuccess = (input: VerifiedSuccessInput): boolean => analyseVerifiedSuccess(input).verified;

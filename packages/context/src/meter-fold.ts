@@ -1,5 +1,5 @@
+import { ERROR_WINDOW } from '@momonga/protocol';
 import type { Capabilities, CreateResponseBody, InputItem, RunEventPayload } from '@momonga/protocol';
-import { ERROR_WINDOW } from './token-meter.ts';
 import type { MeterMemory, MeterMiss, MeterObservation, MeterReport } from './types.ts';
 
 export type FoldedEvent = RunEventPayload & { runId?: string; seq?: number };
@@ -33,6 +33,13 @@ const observationOf = (event: ObservedEvent): MeterObservation => ({
   ...(event.tokenErrorRatio === undefined ? {} : { tokenErrorRatio: event.tokenErrorRatio }),
   tokenCounting: event.tokenCounting,
 });
+
+export type MeterRecordView = { event: ObservedEvent; misses: readonly MeterMiss[] };
+
+export const meterMemoryOf = (record: MeterRecordView | undefined, bodyOf: (event: ObservedEvent) => unknown): MeterMemory => {
+  if (record === undefined) return { misses: [] };
+  return { latest: { observation: observationOf(record.event), ...reportedRequestOf(bodyOf(record.event)) }, misses: [...record.misses] };
+};
 
 export const foldMeter = (events: readonly FoldedEvent[], { counter, capabilities, bodyOf }: MeterFoldOptions): MeterMemory => {
   let latest: ObservedEvent | undefined;

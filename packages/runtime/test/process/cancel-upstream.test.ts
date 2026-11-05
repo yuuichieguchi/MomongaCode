@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
-import { initialRunState } from '@momonga/store';
+import { foldRunState, initialRunState } from '@momonga/store';
 import type { LoadedRun, Run } from '@momonga/store';
 import { afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { createCancelUpstream } from '../../src/process/cancel-upstream.ts';
@@ -50,11 +50,12 @@ const fakeStore = (runs: Record<string, LoadedRun>) => {
   return {
     loads,
     getRun: (id: string) => (id in runs ? ({ id, sessionId: SESSION_ID } as Run) : undefined),
-    load: (id: string): LoadedRun => {
+    inFlightModelRequestOf: (id: string): { step: number; attempt: number } | undefined => {
       loads.push(id);
       const loaded = runs[id];
       if (loaded === undefined) throw new Error(`no run ${id}`);
-      return loaded;
+      const state = loaded.tail.reduce(foldRunState, loaded.snapshot?.state ?? initialRunState({ runId: id, sessionId: SESSION_ID }));
+      return state.inFlightModelRequest === undefined ? undefined : { step: state.inFlightModelRequest.step, attempt: state.inFlightModelRequest.attempt };
     },
   };
 };

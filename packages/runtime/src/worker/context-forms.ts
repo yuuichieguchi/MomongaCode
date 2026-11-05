@@ -1,7 +1,7 @@
-import type { RunEvent } from '@momonga/protocol';
+import type { RunState } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 
-type Store = Pick<RuntimeStore, 'readRunEventsOfTypes' | 'readLatestRunEventBefore'>;
+type Store = Pick<RuntimeStore, 'readLatestRunEventBefore'>;
 
 export type RenderedForms = { forms: ReadonlyMap<string, number>; renderedFull: ReadonlySet<string> };
 
@@ -14,24 +14,9 @@ const callIdsOfOutputs = (body: unknown): string[] => {
   );
 };
 
-export const formsSinceCompaction = (events: readonly RunEvent[]): Map<string, number> => {
-  const lastCompaction = events.findLast((event) => event.type === 'context.compacted' || event.type === 'context.compaction_rejected');
-  const afterSeq = lastCompaction?.seq ?? 0;
-  const kept = new Map<string, number>();
-  for (const event of events) {
-    if (event.seq <= afterSeq) continue;
-    if (event.type === 'context.truncated' && event.kind === 'truncated' && event.keptChars !== undefined) kept.set(event.callId, event.keptChars);
-    if (event.type === 'context.truncated' && event.kind === 'omitted') kept.delete(event.callId);
-  }
-  return kept;
-};
-
-export const FORM_EVENT_TYPES = ['context.truncated', 'context.compacted', 'context.compaction_rejected'] as const;
-
-export const renderedFormsOf = (store: Store, runId: string, lastSeq: number): RenderedForms | undefined => {
-  const previous = store.readLatestRunEventBefore(runId, 'model.requested', lastSeq + 1);
+export const renderedFormsOf = (store: Store, state: RunState): RenderedForms | undefined => {
+  const previous = store.readLatestRunEventBefore(state.runId, 'model.requested', state.lastSeq + 1);
   if (previous === undefined) return undefined;
-  const events = store.readRunEventsOfTypes(runId, [...FORM_EVENT_TYPES]);
-  if (events.some((event) => event.seq > previous.seq && (event.type === 'context.compacted' || event.type === 'context.compaction_rejected'))) return undefined;
-  return { forms: formsSinceCompaction(events), renderedFull: new Set(callIdsOfOutputs(previous.body)) };
+  if (state.lastCompactionSeq > previous.seq) return undefined;
+  return { forms: new Map(Object.entries(state.formsSinceCompaction)), renderedFull: new Set(callIdsOfOutputs(previous.body)) };
 };

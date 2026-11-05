@@ -25,7 +25,7 @@ import { GatewayRequestError } from '../gateway-client.ts';
 import { recallQueryOf } from '../memory/recall-query.ts';
 import type { WorkerBlobs } from './types.ts';
 import { arrivalsOf } from './context-arrivals.ts';
-import { FORM_EVENT_TYPES, formsSinceCompaction, renderedFormsOf } from './context-forms.ts';
+import { renderedFormsOf } from './context-forms.ts';
 import type { ClaimContext } from './claim-context.ts';
 import { touchedPathsOf } from './touched-paths.ts';
 import { wrapUpInstructionFor } from './wrap-up.ts';
@@ -129,7 +129,7 @@ const offeredInputOf = (
   const recorded = admittedFloors.get(ctx);
   const admittedTools = recorded !== undefined && (ctx.token.observedCapacity || recorded.offered === offered) ? recorded : undefined;
   const admittedFloor = admittedTools !== undefined && admittedTools.governing === governingKey ? admittedTools : undefined;
-  const rendered = ctx.token.observedCapacity ? renderedFormsOf(options.store, ctx.run.id, state.lastSeq) : undefined;
+  const rendered = ctx.token.observedCapacity ? renderedFormsOf(options.store, state) : undefined;
   const wrapUpItems: InputItem[] = wrapUp === undefined ? [] : [{ type: 'message', role: 'user', content: wrapUpInstructionFor(wrapUp) }];
   const input: BuildContextInput = {
     capabilities: ctx.capabilities,
@@ -166,7 +166,7 @@ const offeredInputOf = (
     ...(ctx.token.cachePrefix
       ? {
           layout: 'cachePrefix' as const,
-          arrivals: arrivalsOf(options.store, ctx.run.id, state),
+          arrivals: arrivalsOf(state),
           ...(state.memoriesLoaded === undefined ? {} : { pinnedMemoryIds: state.memoriesLoaded.map((memory) => memory.id) }),
         }
       : {}),
@@ -493,7 +493,7 @@ const recordContextFacts = (ctx: ClaimContext, built: BuiltContext): void => {
 
 const recordEvictions = (ctx: ClaimContext, evictions: readonly ContextEviction[]): void => {
   const state = ctx.journal.state;
-  const recordedForms = ctx.token.observedCapacity ? formsSinceCompaction(ctx.options.store.readRunEventsOfTypes(ctx.run.id, [...FORM_EVENT_TYPES])) : undefined;
+  const recordedForms = ctx.token.observedCapacity ? new Map(Object.entries(state.formsSinceCompaction)) : undefined;
   const unreflected = evictions.filter((eviction) => {
     const entry = state.history.find((candidate) => candidate.callId === eviction.callId && candidate.item.type === 'function_call_output');
     if (entry === undefined) return false;
@@ -601,7 +601,7 @@ const budgetStopNotice = (ctx: ClaimContext, error: ContextOverflowError, attemp
   return (
     `The context needs ${error.inputTokens} tokens but at most ${error.ceiling} fit (window ${W}, output reserve ${R}, estimation margin ${W - R - error.ceiling}). ` +
     `The fixed prefix takes ${prefix}. ` +
-    `Earlier in this run: ${ctx.journal.state.evicted.length} tool outputs were replaced by handles and ${ctx.journal.countRecorded('context.compacted') - attempt.successes} compaction(s) were recorded. ` +
+    `Earlier in this run: ${ctx.journal.state.evicted.length} tool outputs were replaced by handles and ${ctx.journal.state.compactions - attempt.successes} compaction(s) were recorded. ` +
     `Final attempt: ${attempt.attempts} compaction(s) ran; no further compaction was possible because ${reason}; ` +
     `${protectionClause(error)}; ${wrapUpClause}.`
   );
