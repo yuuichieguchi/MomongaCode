@@ -41,7 +41,7 @@ const sentWire = async (harness: Harness, fake: FakeChatCompletionsServer, body:
 };
 
 describe('wireOf and wireTokensOf', () => {
-  it('keeps exactly messages, tools and response_format in their original order', () => {
+  it('keeps exactly the prompt parts, messages and tools, in their original order', () => {
     const body = {
       model: 'system',
       messages: [{ role: 'user', content: 'hi' }],
@@ -55,8 +55,8 @@ describe('wireOf and wireTokensOf', () => {
       top_p: 0.9,
     };
     const wire = wireOf(body as never);
-    expect(Object.keys(wire)).toEqual(['messages', 'tools', 'response_format']);
-    expect(wire).toEqual({ messages: body.messages, tools: body.tools, response_format: body.response_format });
+    expect(Object.keys(wire)).toEqual(['messages', 'tools']);
+    expect(wire).toEqual({ messages: body.messages, tools: body.tools });
   });
 
   it('omits a key the body does not have', () => {
@@ -141,16 +141,18 @@ describe('POST /v1/momonga/count_tokens counts the chat-completions wire', () =>
     expect(counted.body).toEqual({ input_tokens: tokens, method: 'estimated', error_bound: boundOf(tokens), error_shape: { ratio: 0.3, minimum: 1 } });
   });
 
-  it('counts the constrained tool listing and envelope, so the same request costs more than in native mode', async () => {
+  it('counts the constrained tool listing but not the response_format schema, so the same request costs more than in native mode', async () => {
     const native = await gatewayFor('native');
     const constrained = await gatewayFor('constrained');
     const body = { input: [userText('hi')], tools };
-    const constrainedWire = (await sentWire(constrained.harness, constrained.fake, body)) as { response_format: unknown };
-    expect(constrainedWire.response_format).toBeDefined();
+    const constrainedWire = (await sentWire(constrained.harness, constrained.fake, body)) as { messages: Array<{ role: string; content: string }> };
+    expect(lastCompletionBody(constrained.fake).response_format).toBeDefined();
+    expect(constrainedWire).not.toHaveProperty('response_format');
     const nativeCount = (await count(native.harness, body)).body.input_tokens as number;
     const constrainedCount = (await count(constrained.harness, body)).body.input_tokens as number;
     expect(constrainedCount).toBe(tokensOfWire(constrainedWire));
-    expect(constrainedCount - nativeCount).toBeGreaterThanOrEqual(Math.floor(JSON.stringify(constrainedWire.response_format).length / 4));
+    expect(constrainedCount).toBeGreaterThan(nativeCount);
+    expect(constrainedWire.messages[0]?.content).toContain('read_file');
   });
 
   it('counts a raw compaction item as the decoded summary message the upstream receives', async () => {
@@ -163,13 +165,15 @@ describe('POST /v1/momonga/count_tokens counts the chat-completions wire', () =>
     expect(counted.body.input_tokens).toBe(tokensOfWire(wire));
   });
 
-  it('accepts tool_choice and lets it change the constrained envelope', async () => {
+  it('accepts tool_choice and counts the same prompt parts, since it only changes the envelope schema', async () => {
     const { harness, fake } = await gatewayFor('constrained');
+    const autoFormat = (await sentWire(harness, fake, { input: [userText('hi')], tools }), lastCompletionBody(fake).response_format);
     const wire = await sentWire(harness, fake, { input: [userText('hi')], tools, tool_choice: 'required' });
+    expect(lastCompletionBody(fake).response_format).not.toEqual(autoFormat);
     const auto = await count(harness, { input: [userText('hi')], tools });
     const required = await count(harness, { input: [userText('hi')], tools, tool_choice: 'required' });
     expect(required.status).toBe(200);
-    expect(required.body.input_tokens).not.toBe(auto.body.input_tokens);
+    expect(required.body.input_tokens).toBe(auto.body.input_tokens);
     expect(required.body.input_tokens).toBe(tokensOfWire(wire));
   });
 
@@ -376,7 +380,8 @@ describe('a target with its own counter', () => {
     });
     const harness = await startCcGateway({ fm: adapter });
     const body = { instructions: 'Be terse.', input: [userText('count these words')], tools };
-    const wire = (await sentWire(harness, fake, body)) as { messages: Array<{ content: string }>; response_format: unknown };
+    const wire = (await sentWire(harness, fake, body)) as { messages: Array<{ content: string }> };
+    const sentFormat = lastCompletionBody(fake).response_format;
     const counted = await count(harness, body);
     expect(counted.body).toEqual({ input_tokens: 777, method: 'calibrated', error_bound: 11, error_shape: { ratio: 0, minimum: 11 } });
     expect(seen).toHaveLength(1);
@@ -384,7 +389,8 @@ describe('a target with its own counter', () => {
     expect(typeof text).toBe('string');
     expect(seen[0]?.tools).toBeUndefined();
     for (const message of wire.messages) expect(text).toContain(message.content);
-    expect(text).toContain(JSON.stringify(wire.response_format));
+    expect(sentFormat).toBeDefined();
+    expect(text).not.toContain(JSON.stringify(sentFormat));
     expect(text).not.toContain('"type":"message"');
   });
 });

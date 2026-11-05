@@ -55,6 +55,16 @@ describe('chat-completions error classification', () => {
     expect(result.error).toMatchObject({ type: 'invalid_request', code: 'payload_too_large' });
   });
 
+  it('maps a 413 whose message names the context window to the unified context_window_exceeded invalid_request', async () => {
+    const fake = await startFake({
+      scenario: 'tools-ok',
+      script: [{ kind: 'error', status: 413, body: errorBody('This request exceeds the context window of the model.') }],
+    });
+    const result = await classified(fake);
+    expect(result.retryable).toBe(false);
+    expect(result.error).toMatchObject({ type: 'invalid_request', code: 'context_window_exceeded' });
+  });
+
   it('maps an OpenAI-style context_length_exceeded rejection to the unified context_window_exceeded invalid_request', async () => {
     const fake = await startFake({ scenario: 'tools-ok', contextWindow: 8 });
     const result = await classified(fake, { model: 'system', input: [userText('one two three four five six seven eight nine ten')] });

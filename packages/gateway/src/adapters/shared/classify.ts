@@ -2,6 +2,7 @@ import type { ClassifiedError, ErrorBody } from '@momonga/protocol';
 import {
   CONTEXT_WINDOW_EXCEEDED,
   CompactionReplyError,
+  GUARDRAIL_VIOLATION,
   PreconditionFailedError,
   StreamFailure,
   UNSUPPORTED_REQUEST,
@@ -47,6 +48,15 @@ const body = (type: ErrorBody['type'], code: string | null, message: string, par
 
 const classifyHttp = (error: UpstreamHttpError): ClassifiedError => {
   const { status, upstreamCode, upstreamMessage } = error;
+  if (error.guardrail) {
+    return { retryable: false, error: body('model_error', GUARDRAIL_VIOLATION, upstreamMessage) };
+  }
+  if (error.contextOverflow) {
+    return { retryable: false, error: body('invalid_request', CONTEXT_WINDOW_EXCEEDED, error.message) };
+  }
+  if (error.unsupported) {
+    return { retryable: false, error: body('invalid_request', UNSUPPORTED_REQUEST, error.message) };
+  }
   if (status === 429) {
     return {
       retryable: true,
@@ -60,15 +70,6 @@ const classifyHttp = (error: UpstreamHttpError): ClassifiedError => {
   if (status === 413) return { retryable: false, error: body('invalid_request', 'payload_too_large', error.message) };
   if (status === 401 || status === 403) {
     return { retryable: false, error: body('invalid_request', 'authentication_failed', error.message) };
-  }
-  if (error.guardrail) {
-    return { retryable: false, error: body('model_error', 'guardrail_violation', upstreamMessage) };
-  }
-  if (error.contextOverflow) {
-    return { retryable: false, error: body('invalid_request', CONTEXT_WINDOW_EXCEEDED, error.message) };
-  }
-  if (error.unsupported) {
-    return { retryable: false, error: body('invalid_request', UNSUPPORTED_REQUEST, error.message) };
   }
   if (status >= 400) {
     return { retryable: false, error: body('invalid_request', upstreamCode, error.message) };
@@ -84,7 +85,7 @@ export const createUpstreamClassifier =
       return { retryable: error.retryable, error: body('model_error', error.code, error.message) };
     }
     if (error instanceof StreamFailure) {
-      return { retryable: error.errorType !== 'invalid_request' && error.errorType !== 'not_found', error: body(error.errorType, error.code, error.message) };
+      return { retryable: error.errorType !== 'invalid_request' && error.errorType !== 'not_found' && error.code !== GUARDRAIL_VIOLATION, error: body(error.errorType, error.code, error.message) };
     }
     if (error instanceof PreconditionFailedError) {
       const lines = [error.message, ...(error.detail === undefined ? [] : [error.detail]), ...(error.remediation === undefined ? [] : [`remedy: ${error.remediation}`])];
