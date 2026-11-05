@@ -30,10 +30,12 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor): Guarde
   const shaped = (value: unknown, shape: RegExp): string | null =>
     typeof value === 'string' && shape.test(value) && redactor.text(value) === value ? value : null;
 
+  const namedCode = (code: unknown): string => shaped(code, CODE_SHAPE) ?? UNNAMED_FAILURE_CODE;
+
   const guardedBody = (body: ErrorBody): ErrorBody => ({
     message: redactor.text(body.message),
     type: body.type,
-    code: shaped(body.code, CODE_SHAPE),
+    code: namedCode(body.code),
     param: shaped(body.param, PARAM_SHAPE),
   });
 
@@ -57,7 +59,7 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor): Guarde
   };
 
   const guardedEvent = (event: StreamEvent): StreamEvent => {
-    if (event.type === 'error') return { ...event, error: { ...guardedBody(event.error), code: guardedBody(event.error).code ?? UNNAMED_FAILURE_CODE } };
+    if (event.type === 'error') return { ...event, error: guardedBody(event.error) };
     if (event.type !== 'response.failed') return event;
     const { error } = event.response;
     if (typeof error !== 'object' || error === null) return event;
@@ -66,7 +68,7 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor): Guarde
       response: {
         ...event.response,
         error: {
-          code: shaped(error.code, CODE_SHAPE) ?? UNNAMED_FAILURE_CODE,
+          code: namedCode(error.code),
           type: error.type,
           message: redactor.text(error.message),
           param: 'param' in error ? shaped(error.param, PARAM_SHAPE) : null,
