@@ -32,7 +32,7 @@ const startFmGateway = async (temp: RunHome): Promise<void> => {
   const dumpFile = path.join(temp.root, 'fm-invocations.jsonl');
   fm.configure({ envDumpFile: dumpFile, serve: { guardrailTrigger: GUARDRAIL_TRIGGER } });
   onCleanup(() => killGroupsForCleanup(servePids(dumpFile)));
-  writeUserSettings(temp.home, { sandbox: 'none' });
+  writeUserSettings(temp.home, { sandbox: 'none', models: { aliases: { default: ['fm'] }, targets: { fm: { adapter: 'fm', toolCalling: 'native' } } } });
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
   try {
     const gateway = await startGatewayProcess({ home: temp.home, env: sessionEnvFor(temp.home), version: GATEWAY_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });

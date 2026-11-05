@@ -9,7 +9,9 @@ export type {
   PromptCacheCapability,
   ReasoningCapability,
   ReasoningEffort,
+  NeedsProbe,
   ToolCallingMode,
+  ToolCallingState,
   ToolCallingSetting,
 } from './capabilities.ts';
 export { CALL_ROLES, COMPACTION_RESULT_EVENT, COMPACTION_ROLE, HEADER_ROLES, ROLE_HEADER, RUN_ID_HEADER, RUN_ROLE, STREAM_IDLE_HEADER } from './headers.ts';
@@ -272,6 +274,7 @@ export type {
   PermissionOption,
   RunEvent,
   RunEventEnvelope,
+  NoticeReduction,
   RunEventPayload,
   RunState,
   RunStatus,

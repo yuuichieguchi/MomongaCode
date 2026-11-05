@@ -14,12 +14,12 @@ import {
   textOfItem,
   workingStateCapFor,
 } from '@momonga/context';
-import type { ActivatedSkill, TokenMeter, BuildContextInput, ContextArrival, BuildContextPorts, BuiltContext, CompactionPlan, ContextEviction, LoadedGoverning, PinnedMeasure, TouchedPath } from '@momonga/context';
+import type { ActivatedSkill, TokenMeter, BuildContextInput, ContextArrival, ContextNotice, BuildContextPorts, BuiltContext, CompactionPlan, ContextEviction, LoadedGoverning, PinnedMeasure, TouchedPath } from '@momonga/context';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { resolveGoverning } from '@momonga/memory';
 import type { Session } from '@momonga/store';
 import { compactionSummaryMessage, decodeCompactionSummary, tokensForText, userMessageContent } from '@momonga/protocol';
-import type { CompactRequest, CompactResource, CompactionInputItem, ContentPart, FunctionTool, InputItem, MessageInputItem, RunEvent, RunEventPayload, RunState, SummaryFidelity } from '@momonga/protocol';
+import type { CompactRequest, CompactResource, CompactionInputItem, ContentPart, FunctionTool, InputItem, MessageInputItem, NoticeReduction, RunEvent, RunEventPayload, RunState, SummaryFidelity } from '@momonga/protocol';
 import { foldRunState } from '@momonga/store';
 import { GatewayRequestError } from '../gateway-client.ts';
 import { recallQueryOf } from '../memory/recall-query.ts';
@@ -238,7 +238,7 @@ const buildOnce = async (ctx: ClaimContext, wrapUp: WrapUpReason | undefined, le
 
 type CompactedPayload = Extract<RunEventPayload, { type: 'context.compacted' }>;
 type CompactedEvent = Extract<RunEvent, { type: 'context.compacted' }>;
-type CompactionSource = Pick<CompactionPlan, 'throughSeq' | 'input' | 'summaryTokenCap' | 'pinnedText'>;
+type CompactionSource = Pick<CompactionPlan, 'throughSeq' | 'input' | 'summaryTokenCap' | 'pinnedText' | 'notices'>;
 
 const wholeBlobText = async (blobs: WorkerBlobs, handle: string, scope: { runId: string }): Promise<string> => {
   const { totalBytes } = await blobs.read(handle, { offset: 0, length: 0 }, scope);
@@ -353,6 +353,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
         `Compaction summary failed (${error.code}): ${error.message}${roleAlias === undefined ? '' : ` [models.roles.compaction names alias ${roleAlias}]`}; the deterministic summary was used`,
       ),
       deterministicCompaction(ctx, plan, NO_ADOPTED_GUIDELINE),
+      ...unrecordedNoticePayloads(ctx, plan.notices),
     ]);
     return;
   }
@@ -401,6 +402,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
     accepted
       ? { type: 'context.compacted', item, summary, replacedThroughSeq: plan.throughSeq, source: 'model', fidelity, guidelineVersion }
       : deterministicCompaction(ctx, plan, guidelineVersion, fidelity),
+    ...unrecordedNoticePayloads(ctx, plan.notices),
   ]);
 };
 
@@ -414,14 +416,28 @@ export const cancelIfInterrupted = (ctx: ClaimContext): 'done' | undefined => {
   return interrupted(ctx) ? ctx.terminals.cancel() : undefined;
 };
 
-const recordContextFacts = (ctx: ClaimContext, built: BuiltContext): void => {
-  const known = new Set(ctx.journal.state.notes.map((note) => note.message));
+const unrecordedNoticePayloads = (ctx: ClaimContext, notices: readonly ContextNotice[]): RunEventPayload[] => {
+  const identityOf = (message: string, code: string | undefined, reduction: NoticeReduction | undefined): string =>
+    reduction === undefined ? canonicalJson(['message', message]) : canonicalJson(['reduction', code, reduction.turn, reduction.from, reduction.to]);
+  const known = new Set(ctx.journal.state.notes.map((note) => identityOf(note.message, note.code, note.reduction)));
   const payloads: RunEventPayload[] = [];
-  for (const notice of built.notices) {
-    if (known.has(notice.message)) continue;
-    known.add(notice.message);
-    payloads.push({ type: 'notice', level: 'warning', message: notice.message, code: notice.code });
+  for (const notice of notices) {
+    const identity = identityOf(notice.message, notice.code, notice.reduction);
+    if (known.has(identity)) continue;
+    known.add(identity);
+    payloads.push({
+      type: 'notice',
+      level: 'warning',
+      message: notice.message,
+      code: notice.code,
+      ...(notice.reduction === undefined ? {} : { reduction: notice.reduction }),
+    });
   }
+  return payloads;
+};
+
+const recordContextFacts = (ctx: ClaimContext, built: BuiltContext): void => {
+  const payloads = unrecordedNoticePayloads(ctx, built.notices);
   for (const instruction of built.loadedInstructions) {
     const recorded = ctx.journal.state.loadedInstructions.find((entry) => entry.path === instruction.path);
     if (recorded?.textSha256 === instruction.textSha256) continue;
