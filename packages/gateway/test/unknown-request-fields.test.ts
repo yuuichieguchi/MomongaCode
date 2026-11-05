@@ -190,18 +190,12 @@ describe('unknown fields narrow the candidates of a multi-target alias', () => {
   });
 });
 
-describe('compact applies the same rule against CompactResponseMethodPublicBody', () => {
-  it('carries top_k and x_future to the open-responses upstream and echoes neither', async () => {
+describe('compact refuses every unknown field on every target, because no adapter relays the compact body', () => {
+  it('refuses top_k and x_future on an open-responses alias with 400 unknown_parameter and sends nothing', async () => {
     const alias = await startAlias([OPEN]);
     const response = await alias.post('/v1/responses/compact', UNKNOWN);
-    expect(response.status).toBe(200);
-    expect(response.body.output[0].type).toBe('compaction');
-    const sent = alias.sentTo(OPEN);
-    expect(sent).toHaveLength(1);
-    expect((sent[0] as Record<string, unknown>)['top_k']).toBe(40);
-    expect((sent[0] as Record<string, unknown>)['x_future']).toEqual({ a: 1 });
-    expect(Object.keys(response.body)).not.toContain('top_k');
-    expect(Object.keys(response.body)).not.toContain('x_future');
+    expectUnknownParameter(response, 'top_k', ['top_k', 'x_future']);
+    expect(alias.sentTo(OPEN)).toEqual([]);
   });
 
   it.for([ANTHROPIC, CHAT_NATIVE, CHAT_CONSTRAINED, OLLAMA])('refuses top_k on %s with 400 unknown_parameter and sends nothing', async (target) => {
@@ -218,11 +212,61 @@ describe('compact applies the same rule against CompactResponseMethodPublicBody'
     expect(alias.sentTo(ANTHROPIC)).toEqual([]);
   });
 
-  it('carries a create-only field to the open-responses upstream at compact', async () => {
+  it('treats a create-only field as unknown at compact on an open-responses alias: safety_identifier gets the 400 and nothing is sent', async () => {
     const alias = await startAlias([OPEN]);
     const response = await alias.post('/v1/responses/compact', { safety_identifier: 'user-1' });
+    expectUnknownParameter(response, 'safety_identifier', ['safety_identifier']);
+    expect(alias.sentTo(OPEN)).toEqual([]);
+  });
+
+  it('refuses top_k on a mixed alias of open-responses and anthropic and sends nothing to either', async () => {
+    const alias = await startAlias([OPEN, ANTHROPIC]);
+    const response = await alias.post('/v1/responses/compact', { top_k: 40 });
+    expectUnknownParameter(response, 'top_k', ['top_k']);
+    expect(alias.sentTo(OPEN)).toEqual([]);
+    expect(alias.sentTo(ANTHROPIC)).toEqual([]);
+  });
+
+  it('sends the open-responses upstream only the summary request the gateway builds, whatever known compact fields the client sets', async () => {
+    const minimal = await startAlias([OPEN]);
+    const baseline = await minimal.post('/v1/responses/compact', {});
+    const full = await startAlias([OPEN]);
+    const response = await full.post('/v1/responses/compact', { instructions: 'agent context', prompt_cache_key: 'cache-key-1' });
+
+    expect(baseline.status).toBe(200);
     expect(response.status).toBe(200);
-    expect((alias.sentTo(OPEN)[0] as Record<string, unknown>)['safety_identifier']).toBe('user-1');
+    expect(minimal.sentTo(OPEN)).toHaveLength(1);
+    expect(full.sentTo(OPEN)).toHaveLength(1);
+    const builtKeys = Object.keys(minimal.sentTo(OPEN)[0] as Record<string, unknown>).sort();
+    expect(Object.keys(full.sentTo(OPEN)[0] as Record<string, unknown>).sort()).toEqual(builtKeys);
+    expect(builtKeys).not.toContain('prompt_cache_key');
+  });
+});
+
+describe('create still carries unknown fields to an open-responses target while compact refuses them', () => {
+  it('relays top_k to /v1/responses on the same open-responses alias that refuses it at compact', async () => {
+    const alias = await startAlias([OPEN]);
+    const compacted = await alias.post('/v1/responses/compact', { top_k: 40 });
+    const created = await alias.post('/v1/responses', { top_k: 40 });
+    expectUnknownParameter(compacted, 'top_k', ['top_k']);
+    expect(created.status).toBe(200);
+    expect(alias.sentTo(OPEN)).toHaveLength(1);
+    expect((alias.sentTo(OPEN)[0] as Record<string, unknown>)['top_k']).toBe(40);
+  });
+});
+
+describe('each adapter declares the client-facing operations whose client body it relays', () => {
+  it('declares create only for open-responses, and no operation for anthropic, chat-completions or ollama', async () => {
+    const open = await openUpstream([]);
+    const anthropic = await anthropicUpstream();
+    const chat = await chatUpstream('native');
+    const ollama = await ollamaUpstream();
+    expect([...open.adapter.relaysClientBody]).toEqual(['create']);
+    for (const upstream of [anthropic, chat, ollama]) expect([...upstream.adapter.relaysClientBody]).toEqual([]);
+    for (const upstream of [open, anthropic, chat, ollama]) {
+      expect(upstream.adapter.relaysClientBody).not.toContain('compact');
+      expect(upstream.adapter.relaysClientBody).not.toContain('count_tokens');
+    }
   });
 });
 
