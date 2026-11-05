@@ -1,4 +1,4 @@
-import type { Capabilities, HealthResult, ReasoningEffort } from './capabilities.ts';
+import type { AllowedToolsForm, Capabilities, HealthResult, ReasoningEffort } from './capabilities.ts';
 import type { CountTokensRequest, CountTokensResult } from './gateway-api.ts';
 import type { CompactMomongaExtension, ErrorBody, FunctionTool, InputItem, PromptCacheCounts, ReasoningInputItem, StreamEvent, TextField, ToolChoice, Usage } from './open-responses.ts';
 
@@ -60,7 +60,7 @@ export type AdapterCompactRequest = {
 
 export type LenientItems = { callNames: Record<string, string>; withTools: boolean };
 
-export type RenderWireOptions = { reasoningOrigin: ReasoningOrigin; lenientItems?: LenientItems };
+export type RenderWireOptions = { reasoningOrigin: ReasoningOrigin; lenientItems?: LenientItems; allowedTools?: readonly AllowedToolsForm[] };
 
 export type AdapterCompactResult = { summary: string; usage: Usage; cacheWriteInputTokens?: number };
 

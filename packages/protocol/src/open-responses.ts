@@ -162,7 +162,13 @@ export type ResponseFunctionTool = {
   strict: boolean;
 };
 
-export type ToolChoice = 'none' | 'auto' | 'required' | { type: 'function'; name: string };
+export type ToolChoiceMode = 'auto' | 'required' | 'none';
+
+export type AllowedToolsChoice = { type: 'allowed_tools'; tools: Array<{ type: 'function'; name: string }>; mode?: ToolChoiceMode };
+
+export type ToolChoice = 'none' | 'auto' | 'required' | { type: 'function'; name: string } | AllowedToolsChoice;
+
+export type ResponseToolChoice = Exclude<ToolChoice, AllowedToolsChoice> | (AllowedToolsChoice & { mode: ToolChoiceMode });
 
 export type TextFormat =
   | { type: 'text' }
@@ -223,7 +229,7 @@ export type ResponseResource = {
   output: ItemField[];
   error: ResponseError | null;
   tools: ResponseFunctionTool[];
-  tool_choice: ToolChoice;
+  tool_choice: ResponseToolChoice;
   truncation: 'auto' | 'disabled';
   parallel_tool_calls: boolean;
   text: ResponseTextField;

@@ -27,6 +27,7 @@ describe('protocol capability types', () => {
         stopSequences: boolean;
         outputBoundField?: 'max_completion_tokens' | 'max_tokens';
         parallelToolCalls?: boolean;
+        allowedTools?: readonly ('native' | 'envelope' | 'single_tool' | 'filter')[];
         schemaDialect: 'json-schema-2020-12' | 'guided-generation';
         tokenCounting: 'exact' | 'calibrated' | 'estimated';
         tokenErrorRatio?: number;

@@ -101,6 +101,9 @@ export type PromptCacheCapability =
   | { kind: 'automatic' }
   | { kind: 'none' };
 
+export const ALLOWED_TOOLS_FORMS = ['native', 'envelope', 'single_tool', 'filter'] as const;
+export type AllowedToolsForm = (typeof ALLOWED_TOOLS_FORMS)[number];
+
 export type CapabilitiesCore = {
   promptCache?: PromptCacheCapability;
   reasoning?: ReasoningCapability;
@@ -112,6 +115,7 @@ export type CapabilitiesCore = {
   stopSequences: boolean;
   outputBoundField?: OutputBoundField;
   parallelToolCalls?: boolean;
+  allowedTools?: readonly AllowedToolsForm[];
   schemaDialect: 'json-schema-2020-12' | 'guided-generation';
   tokenCounting: 'exact' | 'calibrated' | 'estimated';
   tokenErrorRatio?: number;

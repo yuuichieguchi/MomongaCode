@@ -1,4 +1,5 @@
 export type {
+  AllowedToolsForm,
   Capabilities,
   CapabilitiesCore,
   CapabilityOverride,
@@ -87,6 +88,7 @@ export {
   outputTokensFor,
   thinkingBudgetFor,
   THINKING_OFFS,
+  ALLOWED_TOOLS_FORMS,
   requireStructuredOutput,
 } from './capabilities.ts';
 export type { OutputTokenCapabilities, StructuredOutputVerdict, TargetBilling } from './capabilities.ts';
@@ -347,6 +349,9 @@ export type {
   TextField,
   TextFormat,
   ToolChoice,
+  ToolChoiceMode,
+  AllowedToolsChoice,
+  ResponseToolChoice,
   Usage,
 } from './open-responses.ts';
 export { MOMONGA_EVENT_PREFIX } from './gateway-api.ts';

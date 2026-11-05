@@ -10,6 +10,7 @@ import type {
   TextField,
   TextFormat,
 } from '@momonga/protocol';
+import { echoedToolChoice } from './tool-choice.ts';
 
 export type ResourceIdentity = { id: string; model: string; createdAtSeconds: number };
 
@@ -65,7 +66,7 @@ export const baseResource = (
   output: [],
   error: null,
   ...echoedFields(body),
-  tool_choice: body.tool_choice ?? "auto",
+  tool_choice: echoedToolChoice(body.tool_choice),
   truncation: body.truncation ?? "disabled",
   parallel_tool_calls: body.parallel_tool_calls ?? false,
   top_p: body.top_p ?? 1,

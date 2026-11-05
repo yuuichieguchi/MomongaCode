@@ -155,6 +155,7 @@ const countTokens = async (
   await services.router.narrow(request.model, [target], { images: inputHasImages(resolved.forAdapter) });
   const renderWire = target.adapter.renderWire;
   if (renderWire !== undefined) {
+    const { allowedTools } = await services.router.capabilitiesOf(target);
     const lenient = request.momonga?.lenient_items;
     const lenientItems: LenientItems | undefined =
       lenient === undefined ? undefined : { callNames: lenient.call_names, withTools: lenient.with_tools };
@@ -163,7 +164,11 @@ const countTokens = async (
         target.adapter,
         adapterRequestOf(target.model, request, resolved.forAdapter),
         { name: target.name, model: target.model },
-        lenientItems === undefined ? { reasoningOrigin: originOf(services, target) } : { reasoningOrigin: originOf(services, target), lenientItems },
+        {
+          reasoningOrigin: originOf(services, target),
+          ...(lenientItems === undefined ? {} : { lenientItems }),
+          ...(allowedTools === undefined ? {} : { allowedTools }),
+        },
       ),
     );
     return countWire(services, target, wire, signal, deadlineAt);

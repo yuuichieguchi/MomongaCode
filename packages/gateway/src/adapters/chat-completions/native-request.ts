@@ -1,4 +1,5 @@
 import type { AdapterInputItem, AdapterRequest, FunctionTool, ReasoningOrigin, ToolChoice } from '@momonga/protocol';
+import { allowedToolsModeOf } from '../../core/tool-choice.ts';
 import { SYSTEM_PART_SEPARATOR, systemTextOf } from '../shared/system-text.ts';
 import { nativeHistoryOf, plainHistoryOf } from './plain-history.ts';
 import type { ChatMessage } from './plain-history.ts';
@@ -29,8 +30,14 @@ const toolOf = (tool: FunctionTool): unknown => ({
   },
 });
 
-const toolChoiceOf = (choice: ToolChoice): unknown =>
-  typeof choice === 'string' ? choice : { type: 'function', function: { name: choice.name } };
+const toolChoiceOf = (choice: ToolChoice): unknown => {
+  if (typeof choice === 'string') return choice;
+  if (choice.type === 'function') return { type: 'function', function: { name: choice.name } };
+  return {
+    type: 'allowed_tools',
+    allowed_tools: { mode: allowedToolsModeOf(choice), tools: choice.tools.map((tool) => ({ type: 'function', function: { name: tool.name } })) },
+  };
+};
 
 export const samplingOf = (request: AdapterRequest): Pick<ChatRequestBody, 'temperature' | 'top_p'> => ({
   ...(request.temperature === undefined || request.temperature === null ? {} : { temperature: request.temperature }),
