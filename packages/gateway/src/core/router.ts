@@ -1,11 +1,13 @@
 import type { Clock } from '@momonga/foundation';
-import { applyCapabilityOverride, imageCapability, sizingRatioFor } from '@momonga/protocol';
-import type { Capabilities, CapabilityOverride, ToolCallingMode, ToolCallingState, GatewayHealth, HealthResult, ImageCapability, ProviderAdapter, TargetBilling, TargetHealth } from '@momonga/protocol';
+import { applyCapabilityOverride, imageCapability, sizingRatioFor, summaryTokenCapFor } from '@momonga/protocol';
+import type { Capabilities, CapabilityOverride, FunctionTool, ToolChoice, ToolCallingMode, ToolCallingState, GatewayHealth, HealthResult, ImageCapability, ProviderAdapter, TargetBilling, TargetHealth } from '@momonga/protocol';
+import { isAllowedTools, resolveToolChoice } from './tool-choice.ts';
+import { UnsupportedInputError } from './unsupported-input.ts';
 import { createAdmissionGate } from './admission.ts';
 import type { AdmissionGate } from './admission.ts';
 import { preconditionText } from '../precondition-text.ts';
 import { invalidRequest, notFound } from './errors.ts';
-import { CandidateRefused, REFUSAL_STAGES, refusalErrorOf } from './candidate-refusal.ts';
+import { CandidateRefused, REFUSAL_STAGES, UnprobedTarget, refusalErrorOf } from './candidate-refusal.ts';
 import type { Refusal } from './candidate-refusal.ts';
 import { carriesSampling, samplingRefusalOf } from './sampling.ts';
 import type { SamplingRequest } from './sampling.ts';
@@ -29,9 +31,17 @@ export type TargetRuntime = {
   lastFailure: { code: string | null; message: string } | undefined;
 };
 
-export type CandidateRequirements = { tools?: boolean; images?: boolean; sampling?: SamplingRequest };
+export type ToolChoiceRequirement = { tools: readonly FunctionTool[] | null | undefined; tool_choice: ToolChoice | null | undefined };
 
-export type Narrowed = { targets: TargetRuntime[]; capabilitiesOf(target: TargetRuntime): Promise<Capabilities> };
+export type CandidateRequirements = {
+  tools?: boolean;
+  images?: boolean;
+  sampling?: SamplingRequest;
+  toolChoice?: ToolChoiceRequirement;
+  summaryCap?: number;
+};
+
+export type Narrowed = { targets: TargetRuntime[]; refusals: Refusal[]; capabilitiesOf(target: TargetRuntime): Promise<Capabilities> };
 
 export type Router = {
   aliases(): string[];
@@ -180,7 +190,9 @@ export const createRouter = (options: RouterOptions): Router => {
     const judge = (target: TargetRuntime, capabilities: Capabilities): Refusal | undefined => {
       if (requirements.tools === true) {
         const { toolCalling } = capabilities;
-        if (typeof toolCalling !== 'string') throw invalidRequest('precondition_failed', preconditionText(toolCalling.message, toolCalling.evidence, toolCalling.remedy), null, 412);
+        if (typeof toolCalling !== 'string') {
+          throw new UnprobedTarget(invalidRequest('precondition_failed', preconditionText(toolCalling.message, toolCalling.evidence, toolCalling.remedy), null, 412));
+        }
         if (toolCalling === 'none') {
           return { stage: REFUSAL_STAGES.tools, error: invalidRequest('capability_unsupported', `no target of model alias "${alias}" supports tool calling`, 'tools') };
         }
@@ -192,6 +204,36 @@ export const createRouter = (options: RouterOptions): Router => {
         const refusal = samplingRefusalOf(sampling, { name: target.name, kind: target.adapter.kind }, target.adapter.sampling, capabilities);
         if (refusal !== undefined) return { stage: REFUSAL_STAGES.sampling, error: invalidRequest('sampling_not_accepted', refusal.message, refusal.field) };
       }
+      const { toolChoice } = requirements;
+      if (toolChoice !== undefined && isAllowedTools(toolChoice.tool_choice) && typeof capabilities.toolCalling === 'string') {
+        try {
+          resolveToolChoice(
+            {
+              model: target.model,
+              input: [],
+              ...(toolChoice.tools === null || toolChoice.tools === undefined ? {} : { tools: [...toolChoice.tools] }),
+              tool_choice: toolChoice.tool_choice,
+            },
+            capabilities.allowedTools,
+            target.name,
+            target.adapter.toolChoiceWire(capabilities, { name: target.name, model: target.model }),
+          );
+        } catch (error) {
+          if (!(error instanceof UnsupportedInputError)) throw error;
+          return { stage: REFUSAL_STAGES.toolChoice, error: invalidRequest(error.code, error.message, error.param) };
+        }
+      }
+      const { summaryCap } = requirements;
+      if (summaryCap !== undefined && Math.min(summaryTokenCapFor(capabilities), capabilities.maxOutputTokens) < summaryCap) {
+        return {
+          stage: REFUSAL_STAGES.summaryCap,
+          error: invalidRequest(
+            'invalid_summary_cap',
+            'momonga.max_summary_tokens exceeds the largest summary any target of the model alias accepts: the smaller of its summary cap and its maxOutputTokens',
+            'momonga.max_summary_tokens',
+          ),
+        };
+      }
       return undefined;
     };
     const capabilitiesForAttempt = async (target: TargetRuntime): Promise<Capabilities> => {
@@ -201,8 +243,8 @@ export const createRouter = (options: RouterOptions): Router => {
       if (refusal !== undefined) throw new CandidateRefused(refusal);
       return capabilities;
     };
-    const judging = requirements.tools === true || requirements.images === true || samples;
-    if (!judging) return { targets: [...all], capabilitiesOf: capabilitiesForAttempt };
+    const judging = requirements.tools === true || requirements.images === true || samples || isAllowedTools(requirements.toolChoice?.tool_choice);
+    if (!judging) return { targets: [...all], refusals: [], capabilitiesOf: capabilitiesForAttempt };
     const resolved = await Promise.all(all.map((target) => resolve(target).catch(() => undefined)));
     const refusals: Refusal[] = [];
     const kept: TargetRuntime[] = [];
@@ -212,13 +254,19 @@ export const createRouter = (options: RouterOptions): Router => {
         kept.push(target);
         return;
       }
-      const refusal = judge(target, capabilities);
+      let refusal: Refusal | undefined;
+      try {
+        refusal = judge(target, capabilities);
+      } catch (error) {
+        if (error instanceof UnprobedTarget) throw error.error;
+        throw error;
+      }
       verdicts.set(target, refusal);
       if (refusal === undefined) kept.push(target);
       else refusals.push(refusal);
     });
     if (kept.length === 0) throw refusalErrorOf(refusals);
-    return { targets: kept, capabilitiesOf: capabilitiesForAttempt };
+    return { targets: kept, refusals, capabilitiesOf: capabilitiesForAttempt };
   };
 
   return {

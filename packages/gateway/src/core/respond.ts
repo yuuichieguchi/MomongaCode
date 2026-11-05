@@ -32,7 +32,7 @@ import type { RetryOutcome } from './retry.ts';
 import type { Release } from './admission.ts';
 import { adapterContextOf } from './adapter-context.ts';
 import type { Narrowed, TargetRuntime } from './router.ts';
-import { CandidateRefused } from './candidate-refusal.ts';
+import { CandidateRefused, UnprobedTarget } from './candidate-refusal.ts';
 import type { RunControl } from './run.ts';
 import type { Services } from './services.ts';
 import type { CommitRequest } from './store.ts';
@@ -174,7 +174,7 @@ const openAttempt = async (
     capabilities = await narrowed.capabilitiesOf(target);
   } catch (error) {
     release();
-    if (error instanceof CandidateRefused) throw error;
+    if (error instanceof CandidateRefused || error instanceof UnprobedTarget) throw error;
     const failure = failureFrom(target.adapter, error, signal);
     const failed = startSpan();
     failed.fail(errorTypeOf(failure), failure, messageOf(failure));
@@ -569,11 +569,12 @@ async function* relaySteps(
 export async function* executeResponse(services: Services, job: ResponseJob, control: RunControl): AsyncGenerator<StreamEvent> {
   const { signal } = control;
   const resolved = resolveInput(services.store, services.codec, job.body.previous_response_id, job.clientInput, job.connection);
-  const narrowed = await services.router.candidates(job.alias, { tools: (job.body.tools?.length ?? 0) > 0, images: inputHasImages(resolved.forAdapter), sampling: job.body });
+  const narrowed = await services.router.candidates(job.alias, { tools: (job.body.tools?.length ?? 0) > 0, images: inputHasImages(resolved.forAdapter), sampling: job.body, toolChoice: { tools: job.body.tools, tool_choice: job.body.tool_choice } });
   const disarm = armDeadline(services, job.deadlineAt, control.abort);
   try {
     const outcome = await runWithRetry({
       candidates: narrowed.targets,
+      refusals: narrowed.refusals,
       policy: { ...services.config.retry, random: services.random, clock: services.clock, timers: services.timers },
       signal,
       deadlineAt: job.deadlineAt,

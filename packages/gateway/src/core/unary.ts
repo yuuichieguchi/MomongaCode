@@ -27,7 +27,7 @@ import { failureFrom, runWithRetry } from './retry.ts';
 import type { RetryOutcome } from './retry.ts';
 import { adapterContextOf, originOf } from './adapter-context.ts';
 import type { Narrowed, TargetRuntime } from './router.ts';
-import { CandidateRefused, REFUSAL_STAGES, refusalErrorOf } from './candidate-refusal.ts';
+import { CandidateRefused, REFUSAL_STAGES, UnprobedTarget } from './candidate-refusal.ts';
 import type { Refusal } from './candidate-refusal.ts';
 import type { Services } from './services.ts';
 import { resolveToolChoice } from './tool-choice.ts';
@@ -63,6 +63,7 @@ const identifier = (services: Services, prefix: string): string => `${prefix}_${
 const callTargets = <T>(
   services: Services,
   candidates: readonly TargetRuntime[],
+  refusals: readonly Refusal[],
   signal: AbortSignal,
   deadlineAt: number | undefined,
   call: (target: TargetRuntime, attemptNumber: number, signal: AbortSignal) => Promise<T>,
@@ -70,6 +71,7 @@ const callTargets = <T>(
   withDeadline(services, deadlineAt, signal, (guarded) =>
     runWithRetry({
       candidates,
+      refusals,
       policy: { ...services.config.retry, random: services.random, clock: services.clock, timers: services.timers },
       signal: guarded,
       deadlineAt,
@@ -205,8 +207,11 @@ const countTokens = async (
   const candidates = found === undefined ? aliasTargets : [found];
   if (candidates.length === 0) throw new Error(`model alias "${request.model}" has no targets`);
   const resolved = resolveInput(services.store, services.codec, undefined, normalizeInput(request.input));
-  const narrowed = await services.router.narrow(request.model, candidates, { images: inputHasImages(resolved.forAdapter) });
-  const outcome = await callTargets(services, narrowed.targets, signal, deadlineAt, (chosen, attemptNumber, guarded) =>
+  const narrowed = await services.router.narrow(request.model, candidates, {
+    images: inputHasImages(resolved.forAdapter),
+    toolChoice: { tools: request.tools, tool_choice: request.tool_choice },
+  });
+  const outcome = await callTargets(services, narrowed.targets, narrowed.refusals, signal, deadlineAt, (chosen, attemptNumber, guarded) =>
     countOnTarget(services, chosen, narrowed, request, resolved, guarded, attemptNumber),
   );
   return settleCounted(outcome);
@@ -223,7 +228,10 @@ const compactOnce = async (
 ): Promise<CompactResource> => {
   const targets = services.router.targetsOf(request.model);
   const resolved = resolveInput(services.store, services.codec, request.previous_response_id, normalizeInput(request.input));
-  const narrowed = await services.router.narrow(request.model, targets, { images: inputHasImages(resolved.forAdapter) });
+  const narrowed = await services.router.narrow(request.model, targets, {
+    images: inputHasImages(resolved.forAdapter),
+    ...(request.momonga?.max_summary_tokens === undefined ? {} : { summaryCap: request.momonga.max_summary_tokens }),
+  });
   const supporting = narrowed.targets.filter((target) => target.adapter.compact !== undefined);
   if (supporting.length === 0) {
     throw invalidRequest('capability_unsupported', `no target of model alias "${request.model}" supports compaction`, 'model');
@@ -234,23 +242,12 @@ const compactOnce = async (
     ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
     momonga: { ...request.momonga, max_summary_tokens: cap },
   });
-  const capRefusal: Refusal = {
-    stage: REFUSAL_STAGES.summaryCap,
-    error: invalidRequest(
-      'invalid_summary_cap',
-      'momonga.max_summary_tokens exceeds the largest summary any target of the model alias accepts: the smaller of its summary cap and its maxOutputTokens',
-      'momonga.max_summary_tokens',
-    ),
-  };
   const sizeRefusal: Refusal = {
     stage: REFUSAL_STAGES.inputSize,
     error: invalidRequest('compaction_input_too_large', 'the conversation to summarise does not fit the context window of any target', 'input'),
   };
-  const capFor = (capabilities: Capabilities): number | undefined => {
-    const maximum = Math.min(summaryTokenCapFor(capabilities), capabilities.maxOutputTokens);
-    const cap = request.momonga?.max_summary_tokens ?? maximum;
-    return cap > maximum ? undefined : cap;
-  };
+  const capFor = (capabilities: Capabilities): number =>
+    request.momonga?.max_summary_tokens ?? Math.min(summaryTokenCapFor(capabilities), capabilities.maxOutputTokens);
   const wireFor = (target: TargetRuntime, capabilities: Capabilities, cap: number): Record<string, unknown> | undefined => {
     const renderCompactWire = target.adapter.renderCompactWire;
     if (renderCompactWire === undefined) return undefined;
@@ -270,40 +267,8 @@ const compactOnce = async (
           ...(trace.tracestate === undefined ? {} : { tracestate: trace.tracestate }),
         });
   const spans = new Map<TargetRuntime, AttemptSpan>();
-  const outcome = await callTargets(services, supporting, signal, deadlineAt, async (target, attemptNumber, guarded) => {
-    const compact = target.adapter.compact;
-    if (compact === undefined) throw new TypeError(`target "${target.name}" lost its compact capability`);
-    let capabilities: Capabilities;
-    try {
-      capabilities = await narrowed.capabilitiesOf(target);
-    } catch (error) {
-      if (error instanceof CandidateRefused) throw error;
-      const failure = failureFrom(target.adapter, error, guarded);
-      startAttemptSpan({
-        telemetry: services.telemetry,
-        parent,
-        providerName: target.provider,
-        billing: target.billing,
-        requestModel: target.model,
-        maxTokens: undefined,
-        stream: false,
-        runId: trace.runId,
-        step: undefined,
-        attempt: attemptNumber,
-        targetName: target.name,
-        role: COMPACTION_ROLE,
-        startedAtMs: services.clock.now(),
-        request: { input: resolved.forAdapter, instructions: request.instructions, tools: undefined },
-      }).fail(errorTypeOf(failure), failure, messageOf(failure));
-      throw failure;
-    }
-    const cap = capFor(capabilities);
-    if (cap === undefined) throw new CandidateRefused(capRefusal);
-    const wire = wireFor(target, capabilities, cap);
-    if (wire !== undefined && !fitsWindow(capabilities, cap, (await countWireOnce(services, target, capabilities, wire, guarded, attemptNumber)).result)) {
-      throw new CandidateRefused(sizeRefusal);
-    }
-    const span = startAttemptSpan({
+  const startSpan = (target: TargetRuntime, attemptNumber: number, cap: number | undefined): AttemptSpan =>
+    startAttemptSpan({
       telemetry: services.telemetry,
       parent,
       providerName: target.provider,
@@ -319,13 +284,33 @@ const compactOnce = async (
       startedAtMs: services.clock.now(),
       request: { input: resolved.forAdapter, instructions: request.instructions, tools: undefined },
     });
+  const failSpan = (span: AttemptSpan, failure: unknown): void => span.fail(errorTypeOf(failure), failure, messageOf(failure));
+  const outcome = await callTargets(services, supporting, narrowed.refusals, signal, deadlineAt, async (target, attemptNumber, guarded) => {
+    const compact = target.adapter.compact;
+    if (compact === undefined) throw new TypeError(`target "${target.name}" lost its compact capability`);
+    let capabilities: Capabilities;
+    let cap: number;
+    try {
+      capabilities = await narrowed.capabilitiesOf(target);
+      cap = capFor(capabilities);
+      const wire = wireFor(target, capabilities, cap);
+      if (wire !== undefined && !fitsWindow(capabilities, cap, (await countWireOnce(services, target, capabilities, wire, guarded, attemptNumber)).result)) {
+        throw new CandidateRefused(sizeRefusal);
+      }
+    } catch (error) {
+      if (error instanceof CandidateRefused || error instanceof UnprobedTarget) throw error;
+      const failure = failureFrom(target.adapter, error, guarded);
+      failSpan(startSpan(target, attemptNumber, undefined), failure);
+      throw failure;
+    }
+    const span = startSpan(target, attemptNumber, cap);
     try {
       const result = await compact.call(target.adapter, compactRequestFor(target, cap), adapterContextOf(services, target, capabilities, guarded, attemptNumber));
       spans.set(target, span);
       return result;
     } catch (error) {
       const failure = failureFrom(target.adapter, error, guarded);
-      span.fail(errorTypeOf(failure), failure, messageOf(failure));
+      failSpan(span, failure);
       throw failure;
     }
   });
