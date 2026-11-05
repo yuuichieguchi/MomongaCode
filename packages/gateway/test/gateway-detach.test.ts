@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { FAKE_DETERMINISTIC_REPLY, createScriptedAdapter, textResponseEvents, waitFor } from '@momonga/testkit';
-import { outputText, postJson, readJson, readSse, registerCleanup, sseIterator, startGateway, userInput, type SseFrame } from './gateway-helpers.ts';
-import { bigTextEvents, openRawPost } from './gateway-support.ts';
+import { FAKE_DETERMINISTIC_REPLY, createFakeClock, createScriptedAdapter, textResponseEvents, waitFor } from '@momonga/testkit';
+import { START_MS, outputText, postJson, readJson, readSse, registerCleanup, sseIterator, startGateway, userInput, type SseFrame } from './gateway-helpers.ts';
+import { bigTextEvents, createLiveSpanTelemetry, openRawPost } from './gateway-support.ts';
 import { makeAdapter, startFake } from './cc-support.ts';
 
 const events = (text: string) => textResponseEvents({ model: 'scripted-primary', chunks: [text] });
@@ -11,7 +11,6 @@ const key = (value: string) => ({ 'idempotency-key': value });
 
 const DETACHED_MAX_MS = 1_800_000;
 const JOINER_DEADLINE_MS = 60_000;
-const CLIENT_RECEIPT_WINDOW_MS = 50;
 
 type Timers = Awaited<ReturnType<typeof startGateway>>['timers'];
 const timerPending = (timers: Timers, delayMs: number): boolean => timers.pending().some((timer) => timer.delayMs === delayMs);
@@ -23,7 +22,6 @@ const joinerSubscribed = (timers: Timers): Promise<void> =>
   waitFor(() => timerPending(timers, JOINER_DEADLINE_MS), { description: 'the joiner subscribed', maxTurns: 20_000 });
 const joinerLeft = (timers: Timers): Promise<void> =>
   waitFor(() => !timerPending(timers, JOINER_DEADLINE_MS), { description: 'the joiner left', maxTurns: 20_000 });
-const clientReceiptWindow = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, CLIENT_RECEIPT_WINDOW_MS));
 
 const drain = async (iterator: AsyncIterator<SseFrame>): Promise<SseFrame[]> => {
   const frames: SseFrame[] = [];
@@ -77,26 +75,23 @@ describe('detached keyed runs', () => {
   it('lets a request joining a detached run receive every frame from the first one, with one upstream call', async () => {
     const plan = events('joined late');
     const primary = createScriptedAdapter({ calls: [{ events: plan, gate: { name: 'g', afterEvents: 3 } }] });
-    const { client, socketPath, timers } = await startGateway({ adapters: { primary } });
+    const clock = createFakeClock(START_MS);
+    const live = createLiveSpanTelemetry(clock);
+    const { client, socketPath, timers } = await startGateway({ adapters: { primary }, clock, telemetry: live.telemetry });
     registerCleanup(() => primary.release('g'));
     const raw = await openRawPost(socketPath, '/v1/responses', streamBody, { headers: key('d-3') });
-    await waitFor(() => primary.calls[0]?.emitted === 3);
+    await waitFor(() => primary.calls[0]?.emitted === 3 && primary.calls[0]?.outcome === 'pending', { description: 'the adapter parked after the lifecycle events' });
     raw.socket.destroy();
     await detached(timers);
 
     const joining = postJson(client, '/v1/responses', streamBody, key('d-3'));
-    let arrived = false;
-    const markArrived = (): void => {
-      arrived = true;
-    };
-    void joining.then(markArrived, markArrived);
     await rejoined(timers);
-    await clientReceiptWindow();
-    const heldBeforeOutput = !arrived;
+    expect(live.attemptSpans()).toHaveLength(1);
+    expect(live.commitEvents()).toBe(0);
     primary.release('g');
     const joined = sseIterator(await joining);
     const first = await joined.next();
-    expect(heldBeforeOutput).toBe(true);
+    expect(live.commitEvents()).toBe(1);
     expect(first.done).not.toBe(true);
     const frames = [first.value as SseFrame, ...(await drain(joined))];
     expect(frames.map((frame) => frame.data.type)).toEqual(plan.map((event) => event.type));
@@ -109,28 +104,25 @@ describe('detached keyed runs', () => {
   it('ends only the joiner when the joiner disconnects, and the leader still completes', async () => {
     const plan = events('leader survives');
     const primary = createScriptedAdapter({ calls: [{ events: plan, gate: { name: 'g', afterEvents: 2 } }] });
-    const { client, socketPath, timers } = await startGateway({ adapters: { primary } });
+    const clock = createFakeClock(START_MS);
+    const live = createLiveSpanTelemetry(clock);
+    const { client, socketPath, timers } = await startGateway({ adapters: { primary }, clock, telemetry: live.telemetry });
     registerCleanup(() => primary.release('g'));
     const leading = postJson(client, '/v1/responses', streamBody, key('d-4'));
-    let arrived = false;
-    const markArrived = (): void => {
-      arrived = true;
-    };
-    void leading.then(markArrived, markArrived);
-    await waitFor(() => primary.calls[0]?.emitted === 2, { description: 'the opening events' });
+    await waitFor(() => primary.calls[0]?.emitted === 2 && primary.calls[0]?.outcome === 'pending', { description: 'the adapter parked after the opening events' });
     const joiner = await openRawPost(socketPath, '/v1/responses', streamBody, {
       headers: { ...key('d-4'), 'momonga-deadline-ms': String(JOINER_DEADLINE_MS) },
     });
     await joinerSubscribed(timers);
     joiner.socket.destroy();
     await joinerLeft(timers);
-    await clientReceiptWindow();
-    const heldBeforeOutput = !arrived;
+    expect(live.attemptSpans()).toHaveLength(1);
+    expect(live.commitEvents()).toBe(0);
     expect(primary.calls[0]?.signal.aborted).toBe(false);
     primary.release('g');
     const leader = sseIterator(await leading);
+    expect(live.commitEvents()).toBe(1);
     const rest = await drain(leader);
-    expect(heldBeforeOutput).toBe(true);
     expect(rest.at(-1)?.data.type).toBe('response.completed');
     expect(primary.calls).toHaveLength(1);
     expect(primary.calls[0]?.emitted).toBe(plan.length);

@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { carriesOutput } from '@momonga/protocol';
 import type { StreamEvent } from '@momonga/protocol';
-import { createScriptedAdapter, textResponseEvents } from '@momonga/testkit';
-import { postJson, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
+import { createFakeClock, createScriptedAdapter, textResponseEvents, waitFor } from '@momonga/testkit';
+import { START_MS, postJson, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
+import { createLiveSpanTelemetry } from './gateway-support.ts';
 
 const text = textResponseEvents({ model: 'scripted-primary', chunks: ['shown'] });
 const opening = text.slice(0, 2);
@@ -19,6 +20,68 @@ const reasoningStream = (): StreamEvent[] => {
     { ...completed, sequence_number: 5, response: { ...completed.response, output: [{ ...reasoningItem, summary: [{ type: 'summary_text', text: 'thinking' }] }] } },
   ] as unknown as StreamEvent[];
 };
+
+const completedWith = (sequenceNumber: number, output: unknown[]): StreamEvent => {
+  if (completed === undefined || completed.type !== 'response.completed') throw new Error('fixture shape');
+  return { ...completed, sequence_number: sequenceNumber, response: { ...completed.response, output } } as unknown as StreamEvent;
+};
+
+const reasoningDeltaStream = (): StreamEvent[] =>
+  [
+    ...opening,
+    { type: 'response.output_item.added', sequence_number: 2, output_index: 0, item: { type: 'reasoning', id: 'rs_2', summary: [] } },
+    { type: 'response.reasoning.delta', sequence_number: 3, item_id: 'rs_2', output_index: 0, content_index: 0, delta: 'pondering' },
+    completedWith(4, []),
+  ] as unknown as StreamEvent[];
+
+const refusalStream = (): StreamEvent[] =>
+  [
+    ...opening,
+    { type: 'response.output_item.added', sequence_number: 2, output_index: 0, item: { type: 'message', id: 'msg_r', role: 'assistant', status: 'in_progress', content: [] } },
+    { type: 'response.content_part.added', sequence_number: 3, item_id: 'msg_r', output_index: 0, content_index: 0, part: { type: 'refusal', refusal: '' } },
+    { type: 'response.refusal.delta', sequence_number: 4, item_id: 'msg_r', output_index: 0, content_index: 0, delta: 'no' },
+    completedWith(5, []),
+  ] as unknown as StreamEvent[];
+
+const functionCallItem = { type: 'function_call', id: 'fc_1', call_id: 'call_1', name: 'lookup', arguments: '', status: 'in_progress' };
+
+const functionCallStream = (): StreamEvent[] =>
+  [
+    ...opening,
+    { type: 'response.output_item.added', sequence_number: 2, output_index: 0, item: functionCallItem },
+    { type: 'response.function_call_arguments.delta', sequence_number: 3, item_id: 'fc_1', output_index: 0, delta: '{}' },
+    completedWith(4, []),
+  ] as unknown as StreamEvent[];
+
+const silentStream = (): StreamEvent[] => [...opening, completedWith(2, [])];
+
+const lifecycleCount = (events: readonly StreamEvent[]): number => events.findIndex(carriesOutput);
+
+const commitEventsWhileParked = async (events: StreamEvent[], afterEvents: number): Promise<{ parked: number; finished: number }> => {
+  const clock = createFakeClock(START_MS);
+  const live = createLiveSpanTelemetry(clock);
+  const primary = createScriptedAdapter({ calls: [{ events, gate: { name: 'g', afterEvents } }] });
+  const { client } = await startGateway({ adapters: { primary }, clock, telemetry: live.telemetry });
+  registerCleanup(() => primary.release('g'));
+  const pending = postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true });
+  await waitFor(() => primary.calls[0]?.emitted === afterEvents && primary.calls[0]?.outcome === 'pending', {
+    description: `the adapter parked at its gate after ${afterEvents} events`,
+  });
+  await waitFor(() => live.attemptSpans().length === 1, { description: 'the attempt span started' });
+  const parked = live.commitEvents();
+  primary.release('g');
+  await (await pending).text();
+  await waitFor(() => primary.calls[0]?.outcome !== 'pending', { description: 'the upstream call finished' });
+  return { parked, finished: live.commitEvents() };
+};
+
+const outputKinds: Array<[string, () => StreamEvent[]]> = [
+  ['an output text delta', () => text],
+  ['a reasoning delta', reasoningDeltaStream],
+  ['a reasoning summary delta', reasoningStream],
+  ['a refusal delta', refusalStream],
+  ['a function call item', functionCallStream],
+];
 
 const heldBeforeOutput = (events: readonly StreamEvent[]): string[] => {
   const first = events.findIndex(carriesOutput);
@@ -60,5 +123,26 @@ describe('what counts as output for the commit point (W3)', () => {
 
     expect(response.status).toBe(200);
     expect(body).toContain('event: response.reasoning_summary_text.delta');
+  });
+
+  it.each(outputKinds)('records no commit event on the attempt span while only lifecycle events before %s have been pulled', async (_kind, stream) => {
+    const events = stream();
+    const { parked, finished } = await commitEventsWhileParked(events, lifecycleCount(events));
+    expect(parked).toBe(0);
+    expect(finished).toBe(1);
+  });
+
+  it.each(outputKinds)('records exactly one commit event on the attempt span as soon as %s has been pulled', async (_kind, stream) => {
+    const events = stream();
+    const { parked, finished } = await commitEventsWhileParked(events, lifecycleCount(events) + 1);
+    expect(parked).toBe(1);
+    expect(finished).toBe(1);
+  });
+
+  it('records exactly one commit event, at the terminal event, for a stream with no output', async () => {
+    const events = silentStream();
+    expect(events.some(carriesOutput)).toBe(false);
+    const beforeTerminal = await commitEventsWhileParked(events, 2);
+    expect(beforeTerminal).toEqual({ parked: 0, finished: 1 });
   });
 });
