@@ -101,6 +101,24 @@ describe('the journal thread build', () => {
     BUILD_TIMEOUT_MS,
   );
 
+  it(
+    'rejects and leaves no temporary file when the rename onto the target fails',
+    async () => {
+      const directory = path.join(root, 'rename-fails');
+      const target = path.join(directory, 'journal-thread-code.generated.ts');
+      fs.mkdirSync(target, { recursive: true });
+      fs.writeFileSync(path.join(target, 'occupant'), 'x');
+      await expect(writeJournalThreadModule(target)).rejects.toThrow();
+      expect(fs.readdirSync(directory)).toEqual(['journal-thread-code.generated.ts']);
+    },
+    BUILD_TIMEOUT_MS,
+  );
+
+  it('ignores every generated module by pattern, in any package', () => {
+    const relative = path.join('packages', 'store', 'src', 'x.generated.ts');
+    expect(execFileSync('git', ['check-ignore', '--no-index', relative], { cwd: repoRoot, encoding: 'utf8' })).toBe(`${relative}\n`);
+  });
+
   it('keeps the source-tree generated module out of git', () => {
     const relative = path.relative(repoRoot, journalThreadModule);
     expect(relative).toBe(path.join('packages', 'runtime', 'src', 'memory', 'journal-thread-code.generated.ts'));

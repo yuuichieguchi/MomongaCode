@@ -8,6 +8,9 @@ import { createFakeClock, createFakeTimers, withTempDir } from '@momonga/testkit
 import type { FakeTimers } from '@momonga/testkit';
 import { JournalThreadError, startJournalThread } from '../../src/memory/journal-thread-client.ts';
 import type { JournalThreadClient, JournalThreadOptions } from '../../src/memory/journal-thread-client.ts';
+import { JOURNAL_THREAD_CODE } from '../../src/memory/journal-thread-code.generated.ts';
+
+const runningWorkerCount = (): number => (process.report.getReport() as unknown as { workers: unknown[] }).workers.length;
 
 const GENEROUS_SILENCE_MS = 600_000;
 const SILENCE_MS = 5_000;
@@ -121,6 +124,31 @@ describe('journal thread start and handshake', () => {
   it('rejects start with JournalThreadError when the thread cannot open the database', async (context) => {
     const { dir, identity } = fixture(context);
     const error = await rejectionOf(startJournalThread({ databasePath: path.join(dir, 'missing', 'runtime.db'), identity, silenceLimitMs: GENEROUS_SILENCE_MS }));
+    expect(error).toBeInstanceOf(JournalThreadError);
+  });
+
+  it('rejects start with JournalThreadError when the file at the path is replaced after the thread opened it', async (context) => {
+    const { databasePath, dir } = fixture(context);
+    const replacement = path.join(dir, 'replacement.db');
+    const db = openDatabase(replacement);
+    db.exec('CREATE TABLE events (id INTEGER PRIMARY KEY, payload_json TEXT NOT NULL)');
+    db.close();
+    const replacementStat = fs.statSync(replacement);
+    const swapAfterOpen = [
+      '{',
+      "const sqlite = require('node:sqlite');",
+      'const Original = sqlite.DatabaseSync;',
+      'sqlite.DatabaseSync = class extends Original {',
+      '  constructor(...args) {',
+      '    super(...args);',
+      `    require('node:fs').renameSync(${JSON.stringify(replacement)}, ${JSON.stringify(databasePath)});`,
+      '  }',
+      '};',
+      '}',
+    ].join('\n');
+    const error = await rejectionOf(
+      startJournalThread({ databasePath, identity: { dev: replacementStat.dev, ino: replacementStat.ino }, silenceLimitMs: GENEROUS_SILENCE_MS, code: `${swapAfterOpen}\n${JOURNAL_THREAD_CODE}` }),
+    );
     expect(error).toBeInstanceOf(JournalThreadError);
   });
 
@@ -299,6 +327,31 @@ describe('journal thread silence watchdog', () => {
 });
 
 describe('journal thread shutdown', () => {
+  it('closes during a respawn handshake: the request rejects, close resolves, no Worker is left and nothing spawns after', async (context) => {
+    const { databasePath, identity, marker } = fixture(context);
+    const timers = fakeTimers();
+    const code = [
+      `if (require('node:fs').existsSync(${JSON.stringify(marker)})) {`,
+      `  require('node:fs').appendFileSync(${JSON.stringify(marker)}, 'x');`,
+      '  setInterval(() => {}, 1000);',
+      '} else {',
+      fakeThread(marker, `if (message.kind === 'die') process.exit(7); ${PONG}`),
+      '}',
+    ].join('\n');
+    const baseline = runningWorkerCount();
+    const client = await started(context, { databasePath, identity, silenceLimitMs: SILENCE_MS, timers, code });
+    expect(await rejectionOf(client.request({ kind: 'die' }))).toBeInstanceOf(JournalThreadError);
+    const respawning = tracked(client.ping());
+    await until(() => spawnCountOf(marker) === 2);
+    expect(respawning.settled()).toBe(false);
+    await client.close();
+    expect(await respawning.outcome).toBeInstanceOf(JournalThreadError);
+    expect(runningWorkerCount()).toBe(baseline);
+    expect(await rejectionOf(client.ping())).toBeInstanceOf(JournalThreadError);
+    expect(spawnCountOf(marker)).toBe(2);
+    expect(runningWorkerCount()).toBe(baseline);
+  });
+
   it('rejects a request in flight at close with JournalThreadError', async (context) => {
     const { databasePath, identity, marker } = fixture(context);
     const client = await started(context, { databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code: fakeThread(marker, '') });
