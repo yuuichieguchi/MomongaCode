@@ -6,6 +6,7 @@ import {
   postJson,
   readJson,
   readSse,
+  registerCleanup,
   sseIterator,
   startGateway,
   userInput,
@@ -16,6 +17,8 @@ const events = (text: string) => textResponseEvents({ model: 'scripted-primary',
 const body = { model: 'fast', input: userInput('hi') };
 const streamBody = { ...body, stream: true };
 const key = (value: string) => ({ 'idempotency-key': value });
+const JOINER_DEADLINE_MS = 60_000;
+const CLIENT_RECEIPT_WINDOW_MS = 50;
 
 const drain = async (iterator: AsyncIterator<SseFrame>, initial: SseFrame[]): Promise<SseFrame[]> => {
   const frames = [...initial];
@@ -41,7 +44,8 @@ describe('Idempotency-Key', () => {
 
   it('gives a stream joining mid-flight the full identical event sequence from the start', async () => {
     const primary = createScriptedAdapter({ calls: [{ events: events('shared'), gate: { name: 'g', afterEvents: 2 } }] });
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client, timers } = await startGateway({ adapters: { primary } });
+    registerCleanup(() => primary.release('g'));
     const firstPending = postJson(client, '/v1/responses', streamBody, key('k-2'));
     let firstArrived = false;
     const markArrived = (): void => {
@@ -49,11 +53,14 @@ describe('Idempotency-Key', () => {
     };
     void firstPending.then(markArrived, markArrived);
     await waitFor(() => primary.calls[0]?.emitted === 2, { description: 'the opening events' });
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, CLIENT_RECEIPT_WINDOW_MS));
     const heldBeforeOutput = !firstArrived;
 
-    const secondPending = postJson(client, '/v1/responses', streamBody, key('k-2'));
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    const secondPending = postJson(client, '/v1/responses', streamBody, { ...key('k-2'), 'momonga-deadline-ms': String(JOINER_DEADLINE_MS) });
+    await waitFor(() => timers.pending().some((timer) => timer.delayMs === JOINER_DEADLINE_MS), {
+      description: 'the joiner subscribed to the in-flight run',
+      maxTurns: 20_000,
+    });
     primary.release('g');
 
     const secondResponse = await secondPending;

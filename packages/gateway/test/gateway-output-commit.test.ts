@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { carriesOutput } from '@momonga/protocol';
 import type { StreamEvent } from '@momonga/protocol';
 import { createScriptedAdapter, textResponseEvents } from '@momonga/testkit';
-import { postJson, startGateway, userInput } from './gateway-helpers.ts';
+import { postJson, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
 
 const text = textResponseEvents({ model: 'scripted-primary', chunks: ['shown'] });
 const opening = text.slice(0, 2);
@@ -51,19 +51,13 @@ describe('what counts as output for the commit point (W3)', () => {
   it('commits at a reasoning summary delta, so the client receives the response before the upstream continues', async () => {
     const primary = createScriptedAdapter({ calls: [{ events: reasoningStream(), gate: { name: 'g', afterEvents: 4 } }] });
     const { client } = await startGateway({ adapters: { primary } });
-    const pending = postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true });
-    let arrived = false;
-    const markArrived = (): void => {
-      arrived = true;
-    };
-    void pending.then(markArrived, markArrived);
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    const committedBeforeRelease = arrived;
+    registerCleanup(() => primary.release('g'));
+    const response = await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true });
+    expect(primary.calls[0]?.emitted).toBe(4);
+    expect(primary.calls[0]?.outcome).toBe('pending');
     primary.release('g');
-    const response = await pending;
     const body = await response.text();
 
-    expect(committedBeforeRelease).toBe(true);
     expect(response.status).toBe(200);
     expect(body).toContain('event: response.reasoning_summary_text.delta');
   });
