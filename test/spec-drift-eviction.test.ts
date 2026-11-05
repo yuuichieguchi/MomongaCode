@@ -52,6 +52,28 @@ describe('RequestPrefix.tla states the eviction and reference rules the code imp
     expect(oldestFirst).toMatch(/NoGain\(/);
   });
 
+  it('prices a referent and its unprotected copies as one candidate, with no promotion to price (item 2, corrected)', () => {
+    expect(definitionOf('NoGain')).not.toMatch(/dupOf/);
+    const group = definitionOf('GroupOf');
+    expect(group).toMatch(/dupOf\s*=\s*h\[i\]\.id/);
+    expect(group).toMatch(/step\s*<=\s*step\s*-\s*Keep/);
+    expect(definitionOf('Evict')).toMatch(/GroupOf\(hist,\s*first\)/);
+    expect(definitionOf('Evict')).toMatch(/i \\in group THEN \[hist\[i\] EXCEPT !\.evicted = TRUE\]/);
+    expect(definitionOf('OldestFirst')).toMatch(/CandidatePosition\(hist, i\)/);
+    expect(definitionOf('CandidatePosition')).toMatch(/h\[k\]\.id = h\[i\]\.dupOf/);
+  });
+
+  it('checks the group rule in an every-run configuration, and an evidence configuration that evicts protected copies violates NoProtectedEvicted', () => {
+    const groups = fs.readFileSync(path.join(tlaDir, 'RequestPrefix.groups.cfg'), 'utf8');
+    const evidence = fs.readFileSync(path.join(tlaDir, 'RequestPrefix.protectedCopies.cfg'), 'utf8');
+    expect(groups).toMatch(/EvictProtectedCopies = FALSE/);
+    expect(groups).toMatch(/RefModel = TRUE/);
+    expect(checkedIn(groups)).toContain('NoProtectedEvicted');
+    expect(evidence).toMatch(/EvictProtectedCopies = TRUE/);
+    expect(checkedIn(evidence)).toContain('NoProtectedEvicted');
+    expect(mainConfig).toMatch(/EvictProtectedCopies = FALSE/);
+  });
+
   it('makes the next full copy the referent when a referent stops being full, instead of sending every referrer to full', () => {
     const evict = definitionOf('Evict');
     expect(evict).toMatch(/NextReferent\(/);

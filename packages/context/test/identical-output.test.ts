@@ -12,7 +12,6 @@ import {
   output,
   outputTextOf,
   sourcesWith,
-  textOf,
   tokensOfItem,
   tokensOfItems,
   user,
@@ -127,11 +126,11 @@ const PRESSURE_WINDOW = 4000;
 const BIG = 'a'.repeat(2400);
 const FILLER = (letter: string): string => letter.repeat(2400);
 
-const pressuredHistory = (referrerProtected: boolean): HistoryItem[] => [
+const pressuredHistory = (referrerProtected: boolean, copy = 'c2'): HistoryItem[] => [
   user(1, 'old question'),
   call(2, 'c1'),
   output(3, 'c1', BIG),
-  ...(referrerProtected ? [] : [call(4, 'c2'), output(5, 'c2', BIG)]),
+  ...(referrerProtected ? [] : [call(4, copy), output(5, copy, BIG)]),
   call(6, 'f1'),
   output(7, 'f1', FILLER('b')),
   call(8, 'f2'),
@@ -150,12 +149,6 @@ const buildPressured = async (history: HistoryItem[], overrides: Parameters<type
     inputFor(capabilities, { sources: sourcesWith({ history }), keepRecentTurns: 1, outputFormatters: ['identicalOutput'], ...overrides }),
     ports,
   );
-};
-
-const outputItemOf = (items: readonly InputItem[], callId: string): FunctionCallOutputInputItem => {
-  const found = items.find((item): item is FunctionCallOutputInputItem => item.type === 'function_call_output' && item.call_id === callId);
-  if (found === undefined) throw new Error(`no output for ${callId}`);
-  return found;
 };
 
 const omittedIds = (evictions: readonly { callId: string; kind: string }[]): string[] =>
@@ -181,29 +174,68 @@ describe('identicalOutput under eviction pressure', () => {
     expect(result.inputTokens).toBe(tokensOfItems(result.input));
   });
 
-  it('evicts an unprotected referent exactly when the measured gain rule drops tokens, and never selects the reference rendering itself', async () => {
-    const pair = pressuredHistory(false).filter((entry) => entry.seq <= 5);
-    const unpressured = await buildPressured(pair, { evicted: new Set(['c1']) });
-    const omittedItem = outputItemOf(unpressured.input, 'c1');
-    const rerenderedItem = outputItemOf(unpressured.input, 'c2');
-    const referentFull = tokensOfItem({ ...omittedItem, output: BIG });
-    const referenceMarker = tokensOfItem({ ...rerenderedItem, output: referenceTo('c1', handleOf(BIG)) });
-    const evictionDrops = tokensOfItem(omittedItem) + tokensOfItem(rerenderedItem) < referentFull + referenceMarker;
-    expect(unpressured.evictions.filter((eviction) => eviction.callId === 'c2')).toEqual([]);
+  it('evicts an unprotected referent and its unprotected copy as one candidate, both becoming omitted markers with no promotion, and f3 stays', async () => {
+    const copy = 'c22';
+    const history = pressuredHistory(false, copy);
+    const outputEntry = (callId: string): FunctionCallOutputInputItem =>
+      (history.find((entry) => entry.item.type === 'function_call_output' && entry.item.call_id === callId) as HistoryItem).item as FunctionCallOutputInputItem;
+    const omittedMarkerOf = (callId: string): string => `[tool output omitted: ${tokensOfItem(outputEntry(callId))} tokens; stored as ${handleOf(BIG)}; read it with ReadOutput]`;
+    const promotionGain =
+      tokensOfItem(outputEntry('c1')) +
+      tokensOfItem({ ...outputEntry(copy), output: referenceTo('c1', handleOf(BIG)) }) -
+      tokensOfItem({ ...outputEntry('c1'), output: omittedMarkerOf('c1') }) -
+      tokensOfItem(outputEntry(copy));
+    expect(promotionGain).toBe(0);
 
-    const result = await buildPressured(pressuredHistory(false));
-    const omitted = omittedIds(result.evictions);
-    const ordinaryCandidates = evictionDrops ? ['c2', 'f1', 'f2', 'f3'] : ['f1', 'f2', 'f3'];
-    if (evictionDrops) {
-      expect(omitted[0]).toBe('c1');
-      expect(outputTextOf(result.input, 'c1')).toBe(textOf(omittedItem.output));
-      expect([textOf(rerenderedItem.output), outputTextOf(result.input, 'c1')]).toContain(outputTextOf(result.input, 'c2'));
-    } else {
-      expect(outputTextOf(result.input, 'c1')).toBe(BIG);
-      expect(outputTextOf(result.input, 'c2')).toBe(referenceTo('c1', handleOf(BIG)));
-    }
-    const afterReferent = evictionDrops ? omitted.slice(1) : omitted;
-    expect(afterReferent).toEqual(ordinaryCandidates.slice(0, afterReferent.length));
+    const result = await buildPressured(history);
+
+    expect(omittedIds(result.evictions)).toEqual(['c1', copy, 'f1', 'f2']);
+    expect(result.evictions.filter((eviction) => eviction.callId === 'c1' || eviction.callId === copy)).toEqual([
+      { callId: 'c1', handle: handleOf(BIG), kind: 'omitted' },
+      { callId: copy, handle: handleOf(BIG), kind: 'omitted' },
+    ]);
+    expect(outputTextOf(result.input, 'c1')).toBe(omittedMarkerOf('c1'));
+    expect(outputTextOf(result.input, copy)).toBe(omittedMarkerOf(copy));
+    expect(outputTextOf(result.input, 'f3')).toBe(FILLER('d'));
+    expect(result.inputTokens).toBe(tokensOfItems(result.input));
+  });
+
+  it('never evicts a protected copy: the group leaves without it, and the earliest protected copy becomes the full referent of the later ones', async () => {
+    const referent = 'read-the-first-copy-of-the-shared-file';
+    const history: HistoryItem[] = [
+      user(1, 'old question'),
+      call(2, referent),
+      output(3, referent, BIG),
+      call(4, 'c2'),
+      output(5, 'c2', BIG),
+      call(6, 'f1'),
+      output(7, 'f1', FILLER('b')),
+      call(8, 'f2'),
+      output(9, 'f2', FILLER('c')),
+      assistant(10, 'old answer'),
+      user(11, 'current question'),
+      call(12, 'p1'),
+      output(13, 'p1', BIG),
+      call(14, 'p2'),
+      output(15, 'p2', BIG),
+    ];
+    const outputEntry = (callId: string): FunctionCallOutputInputItem =>
+      (history.find((entry) => entry.item.type === 'function_call_output' && entry.item.call_id === callId) as HistoryItem).item as FunctionCallOutputInputItem;
+    const omittedText = (callId: string): string => `[tool output omitted: ${tokensOfItem(outputEntry(callId))} tokens; stored as ${handleOf(BIG)}; read it with ReadOutput]`;
+    const withText = (callId: string, text: string): number => tokensOfItem({ ...outputEntry(callId), output: text });
+    const before =
+      withText(referent, BIG) + withText('c2', referenceTo(referent, handleOf(BIG))) + withText('p1', referenceTo(referent, handleOf(BIG))) + withText('p2', referenceTo(referent, handleOf(BIG)));
+    const after = withText(referent, omittedText(referent)) + withText('c2', omittedText('c2')) + withText('p1', BIG) + withText('p2', referenceTo('p1', handleOf(BIG)));
+    expect(after).toBeLessThan(before);
+
+    const result = await buildPressured(history);
+
+    expect(omittedIds(result.evictions).slice(0, 2)).toEqual([referent, 'c2']);
+    expect(result.evictions.filter((eviction) => eviction.callId === 'p1' || eviction.callId === 'p2')).toEqual([{ callId: 'p2', handle: handleOf(BIG), kind: 'reference' }]);
+    expect(outputTextOf(result.input, referent)).toBe(omittedText(referent));
+    expect(outputTextOf(result.input, 'c2')).toBe(omittedText('c2'));
+    expect(outputTextOf(result.input, 'p1')).toBe(BIG);
+    expect(outputTextOf(result.input, 'p2')).toBe(referenceTo('p1', handleOf(BIG)));
     expect(result.inputTokens).toBe(tokensOfItems(result.input));
   });
 });
