@@ -148,7 +148,7 @@ describe('the tool usage window reads one offered-names record per run (person i
     expect(reads.bodyReads).toEqual([]);
   });
 
-  it('updates the record of a run when tools_loaded adds a tool mid-run', async () => {
+  it('records the pinned set at run.started and the sent names with the first request, and adds nothing when tools_loaded loads a pinned tool', async () => {
     const env = await deferralEnv();
     await warmWindow(env);
     env.gateway.script.push(callsStep([{ callId: 'load-1', name: LOADER, args: { names: ['Write'] } }]), textStep('Done.'));
@@ -157,15 +157,16 @@ describe('the tool usage window reads one offered-names record per run (person i
     const events = eventsOf(env, run.id);
     const loadedAt = events.find((event) => event.type === 'tool.loaded')?.seq;
     if (loadedAt === undefined) throw new Error('the run recorded no tool.loaded');
+    const startedAt = events.find((event) => event.type === 'run.started')?.seq ?? Infinity;
+    const firstRequestAt = events.find((event) => event.type === 'model.requested')?.seq ?? -Infinity;
     const records = events.filter((event) => event.type === TOOL_OFFERED);
     const { store, reads } = bodyWatchedStore(env.store);
 
     const window = toolUsageWindowOf(store, env.project);
 
-    const startedAt = events.find((event) => event.type === 'run.started')?.seq ?? Infinity;
-    const firstRequestAt = events.find((event) => event.type === 'model.requested')?.seq ?? -Infinity;
-    expect(records.filter((record) => record.seq > startedAt && record.seq < firstRequestAt).map((record) => record.names)).toEqual([['Counter', 'Echo', LOADER, 'Write']]);
-    expect(records.filter((record) => record.seq > loadedAt).map((record) => record.names)).toEqual([['Counter', 'Echo', LOADER, 'Write']]);
+    expect(records.map((record) => record.names)).toEqual([['Counter', 'Write'], ['Counter', 'Echo', LOADER, 'Write']]);
+    expect(records.every((record) => record.seq > startedAt && record.seq < firstRequestAt)).toBe(true);
+    expect(records.some((record) => record.seq > loadedAt)).toBe(false);
     expect(window[0]).toEqual({ offered: ['Counter', 'Echo', LOADER, 'Write'], called: [LOADER] });
     expect(reads.bodyReads).toEqual([]);
   });

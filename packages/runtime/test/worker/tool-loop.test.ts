@@ -31,7 +31,7 @@ describe('worker tool loop', () => {
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.gateway.streams.map((stream) => stream.idempotencyKey)).toEqual([modelKey(run.id, 1), modelKey(run.id, 2)]);
 
-    const toolEvents = env.events(run.id).filter((event) => event.type.startsWith('tool.'));
+    const toolEvents = env.events(run.id).filter((event) => event.type.startsWith('tool.') && event.type !== 'tool.offered');
     const position = (type: string, callId: string): number =>
       toolEvents.findIndex((event) => event.type === type && 'callId' in event && event.callId === callId);
     expect(toolEvents.slice(0, 2).map((event) => event.type)).toEqual(['tool.call', 'tool.call']);

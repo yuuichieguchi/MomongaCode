@@ -34,7 +34,7 @@ import { createSkillAdmission } from './skill-admission.ts';
 import { createTerminals } from './terminals.ts';
 import { createLoadToolsTool, withLoadTools } from './load-tools-tool.ts';
 import { createToolLoading } from './tool-admission.ts';
-import { offerFor } from './tool-offer.ts';
+import { offerFor, offeredRecordFor } from './tool-offer.ts';
 import type { ToolOffer } from './tool-offer.ts';
 import { settleCalls } from './tool-step.ts';
 import type { WorkerOptions } from './types.ts';
@@ -313,8 +313,12 @@ const drive = async (
           },
         }
       : readPins(recorded);
-  journal.append([{ type: 'run.started', attempt: claim.attempt, now: clock.now(), pins: { ...pins }, mode: session.permissionMode }]);
-  const [startedEvent] = store.readRunEvents(run.id, journal.state.lastSeq - 1, 1);
+  const startOffered = offeredRecordFor(journal.state.offeredTools, pins.token?.deferred ?? []);
+  journal.append([
+    { type: 'run.started', attempt: claim.attempt, now: clock.now(), pins: { ...pins }, mode: session.permissionMode },
+    ...(startOffered === undefined ? [] : [startOffered]),
+  ]);
+  const [startedEvent] = store.readRunEvents(run.id, journal.state.lastSeq - (startOffered === undefined ? 1 : 2), 1);
   if (startedEvent === undefined) throw new Error(`run ${run.id} has no event at seq ${journal.state.lastSeq} after its run.started`);
   const modeWatch = watchMode(store, session.id, startedEvent.id);
   const knownNotes = new Set(journal.state.notes.map((note) => note.message));

@@ -22,6 +22,8 @@ describe('worker final answer', () => {
     expect(typesOf(events)).toEqual([
       'user.message',
       'run.started',
+      'tool.offered',
+      'tool.offered',
       'model.requested',
       'agent.message.delta',
       'model.responded',
