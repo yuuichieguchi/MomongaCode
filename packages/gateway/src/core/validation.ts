@@ -360,8 +360,6 @@ export type RequestValidator = {
   unknownCompactFields(body: unknown): UnknownFields;
 };
 
-const COUNT_TOKENS_KEYS: ReadonlySet<string> = new Set(['model', 'input', 'instructions', 'tools', 'tool_choice', 'momonga']);
-
 const unknownFieldsOf = (body: unknown, known: ReadonlySet<string>): UnknownFields =>
   Object.fromEntries(Object.entries(requireRecord(body, 'body')).filter(([key]) => key !== 'momonga' && !known.has(key)));
 
@@ -414,7 +412,7 @@ export const createRequestValidator = (): RequestValidator => {
       if (typeof record['model'] !== 'string' || record['model'] === '') {
         throwIssue({ segments: ['model'], message: 'is required and must be a non-empty string' });
       }
-      const unknownKeys = Object.keys(record).filter((key) => !COUNT_TOKENS_KEYS.has(key));
+      const unknownKeys = Object.keys(unknownFieldsOf(record, kit.createProperties));
       if (unknownKeys.length > 0) throw unknownParameterError(unknownKeys, record['model'] as string, 'count_tokens accepts no unknown request fields');
       const input = record['input'];
       if (typeof input !== 'string' && !Array.isArray(input)) {
