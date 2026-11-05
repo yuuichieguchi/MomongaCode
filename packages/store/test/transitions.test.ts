@@ -92,7 +92,7 @@ describe('transition table', () => {
 describe('transition', () => {
   it('rejects QUEUED -> RUNNING outside claim', async () => {
     const fixture = await arrange('QUEUED');
-    expect(fixture.store.appendAsService(fixture.run.id, fixture.run.version, 'RUNNING', []).kind).toBe('conflict');
+    expect((await fixture.store.appendAsService(fixture.run.id, fixture.run.version, 'RUNNING', [])).kind).toBe('conflict');
   });
 
   it('rejects when the current status is not in the expected from list', async () => {
@@ -162,16 +162,16 @@ describe('appendAsService', () => {
     const result = fixture.store.appendAsService(fixture.run.id, fixture.run.version, null, [
       { type: 'notice', level: 'info', message: 'late' },
     ]);
-    expect(result.kind).toBe('conflict');
+    expect((await result).kind).toBe('conflict');
     expect(fixture.store.readRunEvents(fixture.run.id, fixture.run.lastSeq, 10)).toEqual([]);
   });
 
   it('lets only one of two callers holding the same version append events', async () => {
     const fixture = await arrange('QUEUED');
     const notice = { type: 'notice', level: 'info', message: 'x' } as const;
-    expect(fixture.store.appendAsService(fixture.run.id, fixture.run.version, null, [notice]).kind).toBe('ok');
+    expect((await fixture.store.appendAsService(fixture.run.id, fixture.run.version, null, [notice])).kind).toBe('ok');
     const second = fixture.store.appendAsService(fixture.run.id, fixture.run.version, null, [notice]);
-    expect(second.kind).toBe('conflict');
+    expect((await second).kind).toBe('conflict');
     expect(fixture.store.readRunEvents(fixture.run.id, fixture.run.lastSeq, 10)).toHaveLength(1);
   });
 
@@ -186,6 +186,6 @@ describe('appendAsService', () => {
     const current = mustRun(fixture.store, fixture.run.id);
     expect(fixture.store.append(fixture.claim!, [{ type: 'notice', level: 'info', message: 'from worker' }]).kind).toBe('ok');
     expect(mustRun(fixture.store, fixture.run.id).version).toBe(current.version);
-    expect(fixture.store.appendAsService(current.id, current.version, null, [{ type: 'notice', level: 'info', message: 'service note' }]).kind).toBe('ok');
+    expect((await fixture.store.appendAsService(current.id, current.version, null, [{ type: 'notice', level: 'info', message: 'service note' }])).kind).toBe('ok');
   });
 });

@@ -78,12 +78,12 @@ const leadingOf = (value: unknown): RunEventPayload[] => {
   return value as RunEventPayload[];
 };
 
-export const contributionHandler = (readerOf: () => JournalReader, current: { progress: (() => void) | undefined }): JournalHandler => (request, progress) => {
+export const contributionHandler = (reader: JournalReader, current: { progress: (() => void) | undefined }): JournalHandler => (request, progress) => {
   const { runId, leading } = request;
   if (typeof runId !== 'string') throw new TypeError('a contribution request must carry the id of its run');
   current.progress = progress;
   try {
-    const measured = readerOf().measure(contributionAtTerminal, { runId, leading: leadingOf(leading) });
+    const measured = reader.measure(contributionAtTerminal, { runId, leading: leadingOf(leading) });
     return measured.contribution === undefined ? { lastSeq: measured.lastSeq } : { lastSeq: measured.lastSeq, items: measured.contribution.items };
   } finally {
     current.progress = undefined;
@@ -101,9 +101,8 @@ const serve = (data: JournalThreadData): void => {
   }
   const current: { progress: (() => void) | undefined } = { progress: undefined };
   const gate = createProgressGate({ now: () => performance.now(), intervalMs: JOURNAL_PROGRESS_INTERVAL_MS, post: () => current.progress?.() });
-  let reader: JournalReader | undefined;
-  const readerOf = (): JournalReader => (reader ??= createJournalReader(db, { unit: gate.unit }));
-  serveJournalReader({ ping: () => ({ threadId }), contribution: contributionHandler(readerOf, current) }, { incoming: parentPort, outgoing: data.port });
+  const reader = createJournalReader(db, { unit: gate.unit });
+  serveJournalReader({ ping: () => ({ threadId }), contribution: contributionHandler(reader, current) }, { incoming: parentPort, outgoing: data.port });
   parentPort.on('close', () => db.close());
   data.port.postMessage({ ready: true, dev: after.dev, ino: after.ino });
 };

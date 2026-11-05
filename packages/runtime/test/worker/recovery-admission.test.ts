@@ -40,7 +40,7 @@ describe('worker tool-set notice', () => {
     const appended = env.store.appendAsService(run.id, env.run(run.id).version, null, [
       { type: 'notice', level: 'warning', message: 'The tool set differs from the one this run started with.', code: 'tools_changed' },
     ]);
-    expect(appended.kind).toBe('ok');
+    expect((await appended).kind).toBe('ok');
     await env.resolveApproval(run.id, 'allow_once');
     env.gateway.script.push(callsStep([{ callId: 'call_w_2', name: 'Write', args: { file_path: second, content: 'two' } }]));
 

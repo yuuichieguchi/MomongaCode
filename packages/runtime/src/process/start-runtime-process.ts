@@ -9,7 +9,6 @@ import {
   createRedactor,
   ensureMomongaDirs,
   momongaPaths,
-  openDatabase,
   ProcessLockHeldError,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
   reapMarkerDirectory,
@@ -22,7 +21,7 @@ import type { Telemetry, TraceStore } from '@momonga/observability';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import type { Sandbox } from '@momonga/sandbox';
-import { isFatalStoreError, openRuntimeStore } from '@momonga/store';
+import { isFatalStoreError, migrateRuntimeDatabase, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import { ShellNotFoundError, clearCallLocks, createPolicyFilesystem, nodeShellHost, resolveBashPath } from '@momonga/tools';
 import type { ShellHost } from '@momonga/tools';
@@ -365,7 +364,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
 
     const { notifier, store, journalThread } = await step('store', async () => {
-      openDatabase(paths.databases.runtime).close();
+      migrateRuntimeDatabase(paths.databases.runtime);
       const { dev, ino } = fs.statSync(paths.databases.runtime);
       const startedThread = await startJournalThread({ databasePath: paths.databases.runtime, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
       const createdNotifier = createRunNotifier();

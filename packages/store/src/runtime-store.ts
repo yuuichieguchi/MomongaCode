@@ -354,6 +354,15 @@ const assertPositiveInteger = (name: string, value: number): void => {
   if (!Number.isInteger(value) || value < 1) throw new RangeError(`openRuntimeStore: ${name} must be a positive integer, got ${value}`);
 };
 
+export const migrateRuntimeDatabase = (file: string): void => {
+  const db = openDatabase(file);
+  try {
+    migrate(db, MIGRATIONS);
+  } finally {
+    db.close();
+  }
+};
+
 export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => {
   assertPositiveInteger('leaseMs', options.leaseMs);
   assertPositiveInteger('maxAttempts', options.maxAttempts);
@@ -1352,26 +1361,30 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         return { kind: 'ok', run: changeStatus(run, 'CANCELLING', { edges: SERVICE_TRANSITIONS }), changed: true };
       }),
 
-    appendAsService: (runId, expectedVersion, to, events, patch) => {
+    appendAsService: async (runId, expectedVersion, to, events, patch) => {
       rejectContribution(events);
-      if (to !== null && isTerminal(to) && preparer !== undefined) {
-        throw new Error(`appendAsService cannot move run ${runId} to ${to}: ending a run is an awaited operation while a preparer is configured`);
-      }
-      return transaction<ServiceMutationResult>(() => {
-        const run = requireRun(runId);
-        if (run.version !== expectedVersion) {
-          return conflict(`run ${runId} is at version ${run.version}, expected ${expectedVersion}`);
-        }
-        if (isTerminal(run.status)) return conflict(`run ${runId} is ${run.status} and immutable`);
-        if (to === null) {
-          const appended = appendPayloads(run, events);
-          writeRun({ ...appended, version: run.version + 1 });
-          return { kind: 'ok', run: requireRun(runId) };
-        }
-        if (!SERVICE_TRANSITIONS[run.status].includes(to)) return conflict(`run ${runId} cannot move from ${run.status} to ${to}`);
-        const change: StatusChange = { edges: SERVICE_TRANSITIONS, ...(patch === undefined ? {} : { patch }) };
-        return { kind: 'ok', run: changeStatus(run, to, change, events) };
-      });
+      return operate(
+        () => {
+          if (to === null || !isTerminal(to)) return undefined;
+          const row = sql.selectRun.get({ id: runId });
+          return row === undefined || isTerminal(decodeRun(row).status) ? undefined : { runId, leading: events, expiring: [] };
+        },
+        (prepared): ServiceMutationResult => {
+          const run = requireRun(runId);
+          if (run.version !== expectedVersion) {
+            return conflict(`run ${runId} is at version ${run.version}, expected ${expectedVersion}`);
+          }
+          if (isTerminal(run.status)) return conflict(`run ${runId} is ${run.status} and immutable`);
+          if (to === null) {
+            const appended = appendPayloads(run, events);
+            writeRun({ ...appended, version: run.version + 1 });
+            return { kind: 'ok', run: requireRun(runId) };
+          }
+          if (!SERVICE_TRANSITIONS[run.status].includes(to)) return conflict(`run ${runId} cannot move from ${run.status} to ${to}`);
+          const change: StatusChange = { edges: SERVICE_TRANSITIONS, ...(patch === undefined ? {} : { patch }) };
+          return { kind: 'ok', run: changeStatus(run, to, change, events, prepared) };
+        },
+      );
     },
 
     readRunEvents: (runId, afterSeq, limit) => decodeEvents(sql.runEvents.all({ runId, after: afterSeq, limit })),
@@ -1518,7 +1531,6 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           );
           if (didStop) stopped.push(runId);
         } catch (error) {
-          if (onError === undefined) throw error;
           onError(error, runId);
         }
       }

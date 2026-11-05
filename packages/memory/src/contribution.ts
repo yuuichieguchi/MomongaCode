@@ -29,15 +29,42 @@ const MAX_ASCII = 0x7f;
 const isWordCode = (code: number): boolean => (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code === 95;
 const isSeparatorCode = (code: number): boolean => code === 46 || code === 47 || code === 45;
 
-export const tokensOf = (text: string): Tokens => {
-  const tokens = new Set<string>();
+export const CHUNK_CHARS = 1_048_576;
+
+export const SEGMENTS_PER_UNIT = 4096;
+
+const isTokenCode = (code: number): boolean => isWordCode(code) || isSeparatorCode(code) || code > MAX_ASCII;
+
+const chunkEnd = (text: string, start: number): number => {
+  const target = start + CHUNK_CHARS;
+  if (target >= text.length) return text.length;
+  for (let index = target; index < text.length; index += 1) if (!isTokenCode(text.charCodeAt(index))) return index;
+  return text.length;
+};
+
+const addTokens = (tokens: Set<string>, text: string, unit: (() => void) | undefined): void => {
   for (const [run] of text.matchAll(RUNS)) {
     if (run.charCodeAt(0) < 0x80) {
       tokens.add(run);
       for (const word of run.split(SEPARATORS)) tokens.add(word);
     } else {
-      for (const { segment, isWordLike } of WORD_SEGMENTER.segment(run)) if (isWordLike === true) tokens.add(segment);
+      let segments = 0;
+      for (const { segment, isWordLike } of WORD_SEGMENTER.segment(run)) {
+        if (isWordLike === true) tokens.add(segment);
+        segments += 1;
+        if (segments % SEGMENTS_PER_UNIT === 0) unit?.();
+      }
     }
+  }
+};
+
+export const tokensOf = (text: string, unit?: () => void): Tokens => {
+  const tokens = new Set<string>();
+  for (let start = 0; start < text.length; ) {
+    const end = chunkEnd(text, start);
+    addTokens(tokens, text.slice(start, end), unit);
+    start = end;
+    unit?.();
   }
   return tokens;
 };
@@ -88,11 +115,16 @@ const nonAsciiOccurrenceHolds = (text: string, start: number, identifier: string
   return false;
 };
 
-export const hasToken = (text: string, identifier: string): boolean => {
+export const hasToken = (text: string, identifier: string, unit?: () => void): boolean => {
   const kind = WORD_CODE_ASCII_ONLY.test(identifier) ? 'word' : COMPOUND_ASCII_ONLY.test(identifier) ? 'compound' : NON_ASCII_ONLY.test(identifier) ? 'non-ascii' : undefined;
   if (kind === undefined) return false;
-  for (let start = text.indexOf(identifier); start >= 0; start = text.indexOf(identifier, start + 1)) {
-    if (kind === 'non-ascii' ? nonAsciiOccurrenceHolds(text, start, identifier) : asciiOccurrenceHolds(text, start, identifier, kind)) return true;
+  for (let from = 0; from < text.length; from += CHUNK_CHARS) {
+    unit?.();
+    const window = text.slice(from, from + CHUNK_CHARS + identifier.length - 1);
+    for (let local = window.indexOf(identifier); local >= 0 && local < CHUNK_CHARS; local = window.indexOf(identifier, local + 1)) {
+      const start = from + local;
+      if (kind === 'non-ascii' ? nonAsciiOccurrenceHolds(text, start, identifier) : asciiOccurrenceHolds(text, start, identifier, kind)) return true;
+    }
   }
   return false;
 };
@@ -175,16 +207,16 @@ export const measureContribution = ({
   };
 
   const retainedBefore = (identifier: string, owner: string): boolean => {
-    if (hasToken(task, identifier)) return true;
+    if (hasToken(task, identifier, unit)) return true;
     for (let index = segments.length - 1; index >= 0; index -= 1) {
       unit?.();
-      if (hasToken((segments[index] as Segment).text, identifier)) return true;
+      if (hasToken((segments[index] as Segment).text, identifier, unit)) return true;
     }
-    if (summaryOnScreen !== undefined && summaryOnScreen.owner !== owner && hasToken(summaryOnScreen.text, identifier)) return true;
-    if (workingStateOnScreen !== undefined && owner !== 'working_state' && hasToken(workingStateOnScreen, identifier)) return true;
+    if (summaryOnScreen !== undefined && summaryOnScreen.owner !== owner && hasToken(summaryOnScreen.text, identifier, unit)) return true;
+    if (workingStateOnScreen !== undefined && owner !== 'working_state' && hasToken(workingStateOnScreen, identifier, unit)) return true;
     return pinned.some((layer) => {
       unit?.();
-      return hasToken(layer, identifier);
+      return hasToken(layer, identifier, unit);
     });
   };
 
@@ -213,7 +245,7 @@ export const measureContribution = ({
         nextItemSeq = event.nextItemSeq + 1;
         break;
       case 'model.responded': {
-        const step = [tokensOf(stepTextOf(event.response.output))];
+        const step = [tokensOf(stepTextOf(event.response.output), unit)];
         const known = new Map<string, boolean>();
         const isNew = (identifier: string, owner: string): boolean => {
           const key = `${owner}\n${identifier}`;

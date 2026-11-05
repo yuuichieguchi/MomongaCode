@@ -130,7 +130,7 @@ describe('worker subagents', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     await env.runOnce(worker);
     const [child] = env.store.listChildRuns(parent.id);
     if (child === undefined) throw new Error('missing child');
-    env.store.appendAsService(parent.id, env.run(parent.id).version, 'QUEUED', []);
+    await env.store.appendAsService(parent.id, env.run(parent.id).version, 'QUEUED', []);
     expect(env.run(parent.id).status).toBe('QUEUED');
 
     await env.runOnce(worker);

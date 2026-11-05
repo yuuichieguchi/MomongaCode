@@ -520,7 +520,7 @@ export type RuntimeStore = {
     to: RunStatus | null,
     events: readonly RunEventPayload[],
     patch?: StatusPatch,
-  ): ServiceMutationResult;
+  ): Promise<ServiceMutationResult>;
   readRunEvents(runId: string, afterSeq: number, limit: number): RunEvent[];
   readRunEventsOfTypes(runId: string, types: readonly RunEventPayload['type'][]): RunEvent[];
   readLatestRunEventBefore<T extends RunEventPayload['type']>(runId: string, type: T, beforeSeq: number): Extract<RunEvent, { type: T }> | undefined;
@@ -549,7 +549,7 @@ export type RuntimeStore = {
   resolveElicitation(elicitationId: string, responses: Record<string, ElicitationAnswerRecord>, notices?: readonly string[]): Promise<ResolveElicitationResult>;
   elicitationView(elicitationId: string): ElicitationView | undefined;
   pendingElicitationViews(runId: string): ElicitationView[];
-  expireApprovals(nowMs: number, onError?: SweepErrorSink): Promise<string[]>;
+  expireApprovals(nowMs: number, onError: SweepErrorSink): Promise<string[]>;
   finishCancelled(onError: SweepErrorSink): Promise<string[]>;
   deadLetterExhausted(onError: SweepErrorSink): Promise<string[]>;
   terminalRunIdsWithCheckpoint(): string[];

@@ -26,8 +26,6 @@ export type JournalThreadClient = ContributionPreparer & {
   close(): Promise<void>;
 };
 
-export { JournalThreadError };
-
 type Pending = { readonly resolve: (reply: JournalThreadReply) => void; readonly reject: (error: JournalThreadError) => void };
 
 type Live = {
