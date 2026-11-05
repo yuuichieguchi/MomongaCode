@@ -59,7 +59,7 @@ const lifecycleHooksFor = async (ctx: ClaimContext, hooks: HooksSettings): Promi
 const alreadyRan = (ctx: ClaimContext, event: HookExecution['hookEvent']): boolean =>
   ctx.journal.countWhere((recorded) => recorded.type === 'hook.completed' && recorded.hookEvent === event) > 0;
 
-export const haltRun = (ctx: ClaimContext, event: string, reason: string | undefined): Flow => {
+export const haltRun = (ctx: ClaimContext, event: string, reason: string | undefined): Promise<Flow> => {
   const message = reason === undefined || reason === '' ? `a ${event} hook stopped the run` : reason;
   ctx.journal.append([{ type: 'notice', level: 'warning', message: `Stopped by a ${event} hook: ${message}`, code: 'hook_stopped' }]);
   return ctx.terminals.finish('FAILED', { error: { code: HOOK_STOPPED_CODE, message } });

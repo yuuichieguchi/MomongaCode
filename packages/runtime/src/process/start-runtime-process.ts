@@ -9,6 +9,7 @@ import {
   createRedactor,
   ensureMomongaDirs,
   momongaPaths,
+  openDatabase,
   ProcessLockHeldError,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
   reapMarkerDirectory,
@@ -27,7 +28,8 @@ import { ShellNotFoundError, clearCallLocks, createPolicyFilesystem, nodeShellHo
 import type { ShellHost } from '@momonga/tools';
 import { createFsInstructionReader } from '@momonga/context';
 import { createGatewayClient } from '../gateway-client.ts';
-import { contributionAtTerminal } from '../memory/contribution.ts';
+import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../memory/journal-thread-limits.ts';
+import { startJournalThread } from '../memory/journal-thread-client.ts';
 import type { GatewayClient } from '../gateway-client.ts';
 import { createTracerPort } from '../tracer.ts';
 import { createRunNotifier } from '../service/notifier.ts';
@@ -362,6 +364,13 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       await reapMarkerDirectory({ dir: paths.markers.mcp, killGraceMs: MARKER_REAP_KILL_GRACE_MS, label: 'mcp', onWarning, timing: reapTiming });
     });
 
+    const journalThread = await step('journal-thread', async () => {
+      openDatabase(paths.databases.runtime).close();
+      const { dev, ino } = fs.statSync(paths.databases.runtime);
+      return startJournalThread({ databasePath: paths.databases.runtime, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+    });
+    cleanups.push({ name: 'journal-thread', run: () => journalThread.close() });
+
     const { notifier, store } = await step('store', (): { notifier: RunNotifier; store: RuntimeStore } => {
       const createdNotifier = createRunNotifier();
       const opened = openRuntimeStore({
@@ -372,7 +381,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         maxAttempts: STORE_MAX_ATTEMPTS,
         maxTotalAttempts: STORE_MAX_TOTAL_ATTEMPTS,
         onCommit: createdNotifier.onCommit,
-        contribution: contributionAtTerminal,
+        preparer: journalThread,
       });
       return { notifier: createdNotifier, store: opened };
     });

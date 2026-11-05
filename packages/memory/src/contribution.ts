@@ -142,11 +142,13 @@ export const measureContribution = ({
   task,
   injected,
   workingStates = [],
+  unit,
 }: {
   events: readonly RunEvent[];
   task: string;
   injected: readonly InjectedItem[];
   workingStates?: readonly RenderedWorkingState[];
+  unit?: () => void;
 }): ItemContribution[] => {
   const identifiers = injected.map(identifiersOf);
   const credited = new Set<number>();
@@ -227,6 +229,7 @@ export const measureContribution = ({
       default:
         break;
     }
+    unit?.();
   }
 
   const reported = new Map<string, ItemContribution>();

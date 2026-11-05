@@ -1,6 +1,6 @@
 import { ConfigError } from '@momonga/config';
 import { SandboxPolicyError } from '@momonga/sandbox';
-import { InheritanceError } from '@momonga/store';
+import { InheritanceError, JournalThreadError } from '@momonga/store';
 import { EarlierAttemptNotStoppedError } from '@momonga/tools';
 import { GatewayFailureError } from './errors.ts';
 import { GatewayRequestError } from '../gateway-client.ts';
@@ -23,6 +23,7 @@ export const dispositionOf = (error: unknown, interruptions: number): FailureDis
   if (error instanceof InheritanceError) return { kind: 'fail', code: error.code, message: INHERITANCE_FAILURE_MESSAGE };
   if (error instanceof EarlierAttemptNotStoppedError) return { kind: 'fail', code: error.code, message: error.message };
   if (error instanceof GatewayFailureError) return { kind: 'requeue', refund: false, retryAfterMs: 0, interrupted: false };
+  if (error instanceof JournalThreadError) return { kind: 'requeue', refund: false, retryAfterMs: 0, interrupted: false };
   if (!(error instanceof GatewayRequestError)) return { kind: 'fail', code: 'internal_error', message: error instanceof Error ? error.message : String(error) };
   const retryAfterMs = error.retryAfterMs ?? 0;
   if (error.code === 'deadline_exceeded') return { kind: 'timeout' };

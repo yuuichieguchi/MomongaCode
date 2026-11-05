@@ -4,8 +4,11 @@ export type { InheritanceErrorCode, InheritanceKind, InheritanceOutcome, Inherit
 export { StoreIdentityError, isFatalStoreError } from './fatal.ts';
 export { DuplicateChargeError } from './context-charges.ts';
 export { sameRunRequest } from './run-request.ts';
-export { CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from './transitions.ts';
+export { CANCEL_ORIGINS, CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from './transitions.ts';
 export { openRuntimeStore } from './runtime-store.ts';
+export { JournalThreadError, StalePreparation } from './journal-port.ts';
+export { createJournalReader } from './journal-reader.ts';
+export type { JournalReader, JournalReaderOptions } from './journal-reader.ts';
 export { GuidelineConflictError, GuidelineTextError } from './guidelines.ts';
 export {
   HISTORY_CANDIDATE_LIMIT,
@@ -103,6 +106,11 @@ export type {
   StartJobInput,
   StatusPatch,
   TerminalContribution,
+  CancelOrigin,
+  ContributionMeasured,
+  ContributionPreparer,
+  ContributionRequest,
+  SweepErrorSink,
   TrustDecision,
   TrustStore,
   WaitTargets,
