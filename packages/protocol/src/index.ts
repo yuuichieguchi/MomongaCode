@@ -238,7 +238,6 @@ export {
   CLASSIFIER_VERDICTS,
   CLASSIFIER_VERDICT_SCHEMA,
   classifierAllows,
-  parseClassifierVerdict,
 } from './auto-mode.ts';
 export type { ClassifierVerdict } from './auto-mode.ts';
 export {

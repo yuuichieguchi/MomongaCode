@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { JsonDepthError, canonicalPath, comparableContains, parseOutsideJson } from '@momonga/foundation';
+import { JsonDepthError, MAX_JSON_DEPTH, canonicalPath, comparableContains, parseOutsideJson } from '@momonga/foundation';
 
 export type JsonFile = { found: false } | { found: true; value: unknown };
 
@@ -8,6 +8,7 @@ const NUMBER = /^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?/;
 
 class JsonSyntaxScanner {
   private offset = 0;
+  private depth = 0;
   private readonly text: string;
 
   constructor(text: string) {
@@ -38,8 +39,7 @@ class JsonSyntaxScanner {
 
   private value(): void {
     const char = this.text.charAt(this.offset);
-    if (char === '{') return this.object();
-    if (char === '[') return this.array();
+    if (char === '{' || char === '[') return this.container(char);
     if (char === '"') return this.string();
     for (const literal of ['true', 'false', 'null']) {
       if (this.text.startsWith(literal, this.offset)) {
@@ -50,6 +50,14 @@ class JsonSyntaxScanner {
     const match = NUMBER.exec(this.text.slice(this.offset));
     if (match === null) throw this.offset;
     this.offset += match[0].length;
+  }
+
+  private container(open: '{' | '['): void {
+    this.depth += 1;
+    if (this.depth > MAX_JSON_DEPTH) throw new JsonDepthError();
+    if (open === '{') this.object();
+    else this.array();
+    this.depth -= 1;
   }
 
   private string(): void {
@@ -152,7 +160,13 @@ export const parseJsonText = (text: string, source: string): unknown => {
     value = parseOutsideJson(text);
   } catch (error) {
     if (error instanceof JsonDepthError) throw new Error(`${source}: ${error.message}`, { cause: error });
-    const offset = new JsonSyntaxScanner(text).firstErrorOffset();
+    let offset: number | undefined;
+    try {
+      offset = new JsonSyntaxScanner(text).firstErrorOffset();
+    } catch (scanFailure) {
+      if (scanFailure instanceof JsonDepthError) throw new Error(`${source}: ${scanFailure.message}`, { cause: scanFailure });
+      throw scanFailure;
+    }
     if (offset === undefined) throw error;
     const { line, column } = lineAndColumn(text, offset);
     throw new Error(`${source}: invalid JSON at line ${line} column ${column}: ${(error as Error).message}`, { cause: error });

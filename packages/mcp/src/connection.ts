@@ -41,7 +41,6 @@ const MIN_SECRET_CHARS = 8;
 const SECRET_HEADER = /auth|token|key|secret|cookie|password/i;
 const DESCRIPTIVE_HEADER = /^(accept(-charset|-encoding|-language)?|content-(type|language)|cache-control|user-agent)$/i;
 const REDACTED = '[redacted]';
-// The SDK arms a wall-clock timer per request that cannot be paused while a call is parked for the person; the call's own budget runs on the injected timers, so the SDK timer is set to the longest delay Node accepts.
 const SDK_TIMER_CEILING_MS = 2_147_483_647;
 
 export const MRTR_MAX_ROUNDS = 10;
