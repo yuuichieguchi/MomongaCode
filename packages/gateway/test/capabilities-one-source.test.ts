@@ -143,10 +143,12 @@ const sourcesUnder = (directory: string): string[] =>
   });
 
 const CAPABILITIES_DELEGATION = /capabilities: \(target(?:: AdapterTarget)?\) => options\.capabilities\(target\)/g;
-const OWN_CAPABILITIES_READ = /\boptions\.capabilities\(|\{[^}]*\bcapabilities\b[^}]*\}\s*=\s*options\b/;
+const CAPABILITIES_METHOD_BLOCK = /\n(\s*)capabilities: async \(target(?:: AdapterTarget)?\) => \{\n[\s\S]*?\n\1\},?\n/g;
+const OWN_CAPABILITIES_READ =
+  /\boptions\s*(\.|\[['"])capabilities\b|\{[^}]*\bcapabilities\b[^}]*\}\s*=\s*options\b|\boptions\s*(\.|\[['"])toolCalling\b|\{[^}]*\btoolCalling\b[^}]*\}\s*=\s*options\b/;
 
 const sendAndCountSourceOf = (relative: string): string =>
-  fs.readFileSync(path.join(adaptersDir, relative), 'utf8').replace(CAPABILITIES_DELEGATION, '');
+  fs.readFileSync(path.join(adaptersDir, relative), 'utf8').replace(CAPABILITIES_DELEGATION, '').replace(CAPABILITIES_METHOD_BLOCK, '\n');
 
 describe('compaction follows the capabilities the router resolves', () => {
   const BUDGET_REASONING = { control: 'thinking' as const, form: 'budget' as const, budgets: { low: 2048 } };
@@ -177,6 +179,22 @@ describe('adapters never read their own capabilities option on the send or count
 
   it('scans the adapter sources that send upstream', () => {
     expect(files).toEqual(expect.arrayContaining(['anthropic/adapter.ts', 'chat-completions/adapter.ts', 'ollama/adapter.ts', 'open-responses/adapter.ts']));
+  });
+
+  it.for([
+    'const capabilities = await options.capabilities(ctx.target);',
+    "const capabilities = await options['capabilities'](ctx.target);",
+    'const read = options.capabilities;',
+    'const { capabilities } = options;',
+    'const mode = options.toolCalling(target);',
+    "const mode = options['toolCalling'](target);",
+    'const { toolCalling, clock } = options;',
+  ])('the guard flags %s', (line) => {
+    expect(line).toMatch(OWN_CAPABILITIES_READ);
+  });
+
+  it('the guard keeps the one delegation that answers the adapter capabilities() method', () => {
+    expect('    capabilities: (target) => options.capabilities(target),\n'.replace(CAPABILITIES_DELEGATION, '')).not.toMatch(OWN_CAPABILITIES_READ);
   });
 
   it.for(files)('%s reads capabilities only from the adapter context', (relative) => {
