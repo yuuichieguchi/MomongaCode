@@ -108,6 +108,7 @@ const expectUnknownParameter = (response: { status: number; body: any }, param: 
   expect(response.status).toBe(400);
   expectErrorBody(response.body, { type: 'invalid_request', code: 'unknown_parameter', param });
   for (const field of named) expect(String(response.body.error.message)).toContain(field);
+  expect(String(response.body.error.message)).toContain('"fast"');
 };
 
 describe('an open-responses target carries unknown create fields to its upstream unchanged', () => {
@@ -203,11 +204,25 @@ describe('compact applies the same rule against CompactResponseMethodPublicBody'
     expect(Object.keys(response.body)).not.toContain('x_future');
   });
 
-  it.for([ANTHROPIC, OLLAMA])('refuses top_k on %s with 400 unknown_parameter and sends nothing', async (target) => {
+  it.for([ANTHROPIC, CHAT_NATIVE, CHAT_CONSTRAINED, OLLAMA])('refuses top_k on %s with 400 unknown_parameter and sends nothing', async (target) => {
     const alias = await startAlias([target]);
     const response = await alias.post('/v1/responses/compact', { top_k: 40 });
     expectUnknownParameter(response, 'top_k', ['top_k']);
     expect(alias.sentTo(target)).toEqual([]);
+  });
+
+  it('treats a create-only field as unknown at compact: safety_identifier is refused on anthropic', async () => {
+    const alias = await startAlias([ANTHROPIC]);
+    const response = await alias.post('/v1/responses/compact', { safety_identifier: 'user-1' });
+    expectUnknownParameter(response, 'safety_identifier', ['safety_identifier']);
+    expect(alias.sentTo(ANTHROPIC)).toEqual([]);
+  });
+
+  it('carries a create-only field to the open-responses upstream at compact', async () => {
+    const alias = await startAlias([OPEN]);
+    const response = await alias.post('/v1/responses/compact', { safety_identifier: 'user-1' });
+    expect(response.status).toBe(200);
+    expect((alias.sentTo(OPEN)[0] as Record<string, unknown>)['safety_identifier']).toBe('user-1');
   });
 });
 
