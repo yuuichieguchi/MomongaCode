@@ -126,24 +126,25 @@ const causeOfRetryableFailure = async () => {
 
 describe('a refusal undoes only its own send', () => {
   it('[a] compact: a real failure then a summary-cap refusal keeps the failure and answers invalid_summary_cap', async () => {
-    const a = await targetOf([restarting, fulfil(SMALL_CAP)]);
+    const a = await targetOf([restarting, restarting, fulfil(SMALL_CAP)]);
     const { harness, failedSpansOf } = await tracedGatewayOf({ a }, RETRYING);
     const response = await send(harness, COMPACT_PATH, compactBody);
     expect(response.status).toBe(400);
     expect(response.body.error?.code).toBe('invalid_summary_cap');
-    expect(a.resolver.calls).toBe(2);
+    expect(a.resolver.calls).toBe(3);
     expect(await failedSpansOf('a')).toHaveLength(1);
     expect(await breakerOf(harness, 'a')).toBe('open');
   });
 
   it('[a, b] compact: b serves, a keeps its failure record and is not a fallback', async () => {
     const expectedCause = await causeOfRetryableFailure();
-    const a = await targetOf([restarting, fulfil(SMALL_CAP)]);
+    const a = await targetOf([restarting, restarting, fulfil(SMALL_CAP)]);
     const b = await targetOf([fulfil(CC_CAPABILITIES)]);
     const { harness, failedSpansOf } = await tracedGatewayOf({ a, b }, RETRYING);
     const response = await send(harness, COMPACT_PATH, compactBody);
     expect(response.status).toBe(200);
     expect(response.body.momonga?.fallbackFrom ?? []).not.toContain('a');
+    expect(a.resolver.calls).toBe(3);
     expect(await failedSpansOf('a')).toHaveLength(1);
     expect(await breakerOf(harness, 'a')).toBe('open');
     const followUp = await send(harness, CREATE_PATH, { model: 'fast', input: userInput('hi') });
