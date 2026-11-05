@@ -272,6 +272,7 @@ export type {
   PermissionOption,
   RunEvent,
   RunEventEnvelope,
+  NoticeReduction,
   RunEventPayload,
   RunState,
   RunStatus,
