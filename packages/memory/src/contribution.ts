@@ -126,8 +126,9 @@ const pinnedLayersOf = (body: unknown): string[] => {
 
 const regexSource = (literal: string): string => literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-const withoutInjectedBlocks = (layer: string, injected: readonly InjectedItem[]): string =>
+const withoutInjectedBlocks = (layer: string, injected: readonly InjectedItem[], unit: (() => void) | undefined): string =>
   injected.reduce((rest, item) => {
+    unit?.();
     if (item.kind === 'memory') return rest.replace(new RegExp(`<memory id="${regexSource(escapeXmlAttribute(item.id))}"[^>]*>[^<]*</memory>`, 'g'), '');
     if (item.kind === 'governing') return rest.replace(new RegExp(`(^|\\n)\\[${regexSource(item.id)}\\] [^\\n]*?: ${regexSource(item.text)}(?=\\n|$)`, 'g'), '$1');
     return rest;
@@ -169,18 +170,22 @@ export const measureContribution = ({
     for (const layer of pinnedLayersOf(body)) {
       if (pinnedSeen.has(layer)) continue;
       pinnedSeen.add(layer);
-      pinned.push(withoutInjectedBlocks(layer, injected));
+      pinned.push(withoutInjectedBlocks(layer, injected, unit));
     }
   };
 
   const retainedBefore = (identifier: string, owner: string): boolean => {
     if (hasToken(task, identifier)) return true;
     for (let index = segments.length - 1; index >= 0; index -= 1) {
+      unit?.();
       if (hasToken((segments[index] as Segment).text, identifier)) return true;
     }
     if (summaryOnScreen !== undefined && summaryOnScreen.owner !== owner && hasToken(summaryOnScreen.text, identifier)) return true;
     if (workingStateOnScreen !== undefined && owner !== 'working_state' && hasToken(workingStateOnScreen, identifier)) return true;
-    return pinned.some((layer) => hasToken(layer, identifier));
+    return pinned.some((layer) => {
+      unit?.();
+      return hasToken(layer, identifier);
+    });
   };
 
   for (const event of events) {

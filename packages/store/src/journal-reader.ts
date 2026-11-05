@@ -73,6 +73,7 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
       if (digest !== null && known.has(digest)) continue;
       if (digest !== null) known.add(digest);
       wanted.push(reader.number('seq'));
+      unit();
     }
     return wanted;
   };
