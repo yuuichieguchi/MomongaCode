@@ -38,8 +38,7 @@ const chatAdapter = (mode: ToolCallingMode) =>
     resolveEndpoint: async () => {
       throw new Error('rendering a wire never reaches the upstream');
     },
-    toolCalling: () => mode,
-    capabilities: async () => CC_CAPABILITIES,
+    capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: mode }),
     clock: createFakeClock(START_MS),
   });
 

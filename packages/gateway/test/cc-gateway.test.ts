@@ -9,7 +9,6 @@ const singleTarget = { aliases: { fast: ['fm'] }, targets: { fm: { model: 'syste
 
 const startCcGateway = async (fake: FakeChatCompletionsServer, toolCalling: 'native' | 'constrained' | 'none') => {
   const adapter = makeAdapter(fake, {
-    toolCalling: () => toolCalling,
     capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling }),
   });
   return startGateway({ adapters: { fm: adapter }, config: singleTarget });

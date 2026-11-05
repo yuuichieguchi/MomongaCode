@@ -223,7 +223,6 @@ describe('closed adapter', () => {
     const resolveEndpoint = vi.fn(async () => ({ kind: 'unix' as const, socketPath: '/never.sock' }));
     const adapter = createChatCompletionsAdapter({
       resolveEndpoint,
-      toolCalling: () => 'native',
       capabilities: async () => {
         throw new Error('unused');
       },

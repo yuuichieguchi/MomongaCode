@@ -241,7 +241,7 @@ describe('the merge is wire-only through the gateway', () => {
 
   it('sends one upstream user message while the idempotency digest stays that of the unmerged request', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
-    const adapter = makeAdapter(fake, { toolCalling: () => 'native' as const, capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: 'native' as const }) });
+    const adapter = makeAdapter(fake, { capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: 'native' as const }) });
     const { client } = await startGateway({ adapters: { fm: adapter }, config: singleTarget });
     const headers = { 'idempotency-key': `merge-${START_MS}` };
 

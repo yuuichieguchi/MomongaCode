@@ -19,6 +19,7 @@ import {
   userText,
   TARGET,
 } from './cc-support.ts';
+import { CC_CAPABILITIES } from './cc-support.ts';
 
 const ALL_KEYWORDS: Record<ProbeKeyword, boolean> = {
   enum: true,
@@ -30,7 +31,7 @@ const ALL_KEYWORDS: Record<ProbeKeyword, boolean> = {
   additionalProperties: true,
 };
 
-const constrained = { toolCalling: () => 'constrained' as const };
+const constrained = { capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: 'constrained' as const }) };
 
 const contentChunks = (parts: string[]): FakeStreamChunk[] => [
   { delta: { role: 'assistant', content: '' } },

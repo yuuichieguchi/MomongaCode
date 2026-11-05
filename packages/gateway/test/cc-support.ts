@@ -1,7 +1,7 @@
 import { contextOf } from './own-reasoning.ts';
 import { createChatCompletionsAdapter } from '@momonga/gateway';
 import type { ChatCompletionsAdapter, ChatCompletionsAdapterOptions } from '@momonga/gateway';
-import type { AdapterRequest, AdapterTarget, Capabilities, StreamEvent } from '@momonga/protocol';
+import type { AdapterRequest, AdapterTarget, Capabilities, StreamEvent, ToolCallingMode } from '@momonga/protocol';
 import { createFakeClock, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsOptions, FakeChatCompletionsServer } from '@momonga/testkit';
 import { START_MS, registerCleanup, validator } from './gateway-helpers.ts';
@@ -33,15 +33,14 @@ export const startFake = async (options: FakeChatCompletionsOptions): Promise<Fa
 export const makeAdapter = (
   fake: FakeChatCompletionsServer,
   overrides: Partial<ChatCompletionsAdapterOptions> = {},
+  mode: ToolCallingMode = 'native',
 ): ChatCompletionsAdapter => {
   const clock = createFakeClock(START_MS);
-  const toolCalling = overrides.toolCalling ?? (() => 'native' as const);
   const adapter = createChatCompletionsAdapter({
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
-    capabilities: async (target) => ({ ...CC_CAPABILITIES, toolCalling: toolCalling(target) }),
+    capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: mode }),
     clock,
     ...overrides,
-    toolCalling,
   });
   registerCleanup(() => adapter.close());
   return adapter;

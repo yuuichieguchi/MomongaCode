@@ -49,7 +49,6 @@ describe('chat-completions parallel_tool_calls', () => {
   it('does not send parallel_tool_calls in constrained mode, where tools travel inside response_format', async () => {
     const fake = await startFake({ scenario: 'json-schema-only' });
     const adapter = makeAdapter(fake, {
-      toolCalling: () => 'constrained',
       capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: 'constrained', parallelToolCalls: false }),
     });
     await collect(adapter, withTools);

@@ -101,7 +101,7 @@ describe('a probe-derived override reaches the send path as it reaches the count
       scenario,
       script: [{ kind: 'stream' as const, chunks: [{ delta: { role: 'assistant' as const, content: reply } }, { delta: {}, finishReason: 'stop' as const }] }],
     });
-    const adapter = makeAdapter(fake, { toolCalling: () => toolCalling, capabilities: async () => withoutAllowedTools({ ...CC_CAPABILITIES, toolCalling }) });
+    const adapter = makeAdapter(fake, { capabilities: async () => withoutAllowedTools({ ...CC_CAPABILITIES, toolCalling }) });
     const gateway = await startGateway({
       adapters: { fm: adapter },
       config: { aliases: { fast: ['fm'] }, targets: { fm: { model: 'system', capabilities: FILTER_OVERRIDE } } },

@@ -41,7 +41,7 @@ const startCc = async (options: {
   script: FakeScriptedReply[];
 }): Promise<{ fake: FakeChatCompletionsServer; client: Awaited<ReturnType<typeof startGateway>>['client'] }> => {
   const fake = await startFake({ scenario: options.scenario, script: options.script });
-  const adapter = makeAdapter(fake, { toolCalling: () => options.own, capabilities: options.capabilities ?? declared(options.own) });
+  const adapter = makeAdapter(fake, { capabilities: options.capabilities ?? declared(options.own) });
   const { client } = await startGateway({
     adapters: { fm: adapter },
     config: { aliases: { fast: ['fm'] }, targets: { fm: { model: 'system', ...(options.override === undefined ? {} : { capabilities: options.override }) } } },
@@ -142,7 +142,7 @@ describe('a request resolves the capabilities of each target it tries exactly on
       call <= callsAtStart + 1 ? { ...CC_CAPABILITIES, toolCalling: 'native', allowedTools: ['filter'] } : { ...CC_CAPABILITIES, toolCalling: 'native' },
     );
     const fake = await startFake({ scenario: 'tools-ok', script: [textReply('ok')] });
-    const adapter = makeAdapter(fake, { toolCalling: () => 'native', capabilities: declaration.capabilities });
+    const adapter = makeAdapter(fake, { capabilities: declaration.capabilities });
     const { client } = await startGateway({ adapters: { fm: adapter }, config: { aliases: { fast: ['fm'] }, targets: { fm: { model: 'system' } } } });
     callsAtStart = declaration.calls();
     const created = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hello'), tools: TOOLS, tool_choice: TWO_AUTO }));

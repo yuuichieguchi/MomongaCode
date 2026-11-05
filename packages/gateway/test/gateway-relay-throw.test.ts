@@ -18,9 +18,12 @@ describe('a relay that throws before the response concludes', () => {
     registerCleanup(() => telemetry.shutdown());
     const primary = createScriptedAdapter({ calls: [{ events: textResponseEvents({ model: 'model-a', chunks: ['hi'] }) }] });
     const priceTable = new Proxy([], {
-      get: () => {
-        throw new Error('the price table is unavailable');
-      },
+      get: (target, property, receiver) =>
+        property === 'filter'
+          ? () => {
+              throw new Error('the price table is unavailable');
+            }
+          : Reflect.get(target, property, receiver),
     });
     const { client } = await startGateway({
       adapters: { primary },

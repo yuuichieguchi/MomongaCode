@@ -48,7 +48,6 @@ afterEach(async () => {
 const adapterIn = (mode: ToolCallingMode) => {
   const adapter = createChatCompletionsAdapter({
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: '/nonexistent/never-used.sock' }),
-    toolCalling: () => mode,
     capabilities: async () => ({ ...CAPABILITIES, toolCalling: mode }),
     clock: createFakeClock(0),
   });

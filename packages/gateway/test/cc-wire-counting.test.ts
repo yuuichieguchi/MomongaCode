@@ -90,7 +90,6 @@ describe('renderWire is byte-equal to the wire create sends', () => {
   it.for(cases)('%s', async ([, mode, request]) => {
     const fake = await startFake({ scenario: scenarioFor(mode) });
     const adapter = makeAdapter(fake, {
-      toolCalling: () => mode,
       capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: mode }),
     });
     expect(adapter.renderWire).toBeTypeOf('function');
@@ -102,7 +101,7 @@ describe('renderWire is byte-equal to the wire create sends', () => {
 describe('renderWire with lenient items in native mode with tools', () => {
   const lenientNative = async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
-    return makeAdapter(fake, { toolCalling: () => 'native', capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: 'native' }) });
+    return makeAdapter(fake, { capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: 'native' }) });
   };
 
   it('renders a lone output as a raw tool message with the raw text, never a tool_result block', async () => {
@@ -328,7 +327,6 @@ describe('lenient lone-item counts', () => {
 describe('counting for a named target of the alias', () => {
   const counterAdapter = (fake: FakeChatCompletionsServer, inputTokens: number) =>
     makeAdapter(fake, {
-      toolCalling: () => 'constrained',
       capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: 'constrained', tokenCounting: 'calibrated' }),
       countTokens: async (): Promise<CountTokensResult> => ({ input_tokens: inputTokens, method: 'calibrated', error_bound: 3, error_shape: { ratio: 0, minimum: 3 } }),
     });
@@ -372,7 +370,6 @@ describe('a target with its own counter', () => {
     const fake = await startFake({ scenario: 'json-schema-only' });
     const seen: CountTokensRequest[] = [];
     const adapter = makeAdapter(fake, {
-      toolCalling: () => 'constrained',
       capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: 'constrained', tokenCounting: 'calibrated' }),
       countTokens: async (_target, request): Promise<CountTokensResult> => {
         seen.push(request);
