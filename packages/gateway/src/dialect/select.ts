@@ -3,6 +3,8 @@ import { isRecord, typeIncludes } from './schema.ts';
 import type { JsonObject } from './schema.ts';
 import type { NodeContext, RenderState } from './state.ts';
 
+const PROPERTY_DECLARING_APPLICATORS = ['anyOf', 'allOf', 'oneOf', '$ref', '$dynamicRef', 'if', 'then', 'else', 'dependentSchemas'] as const;
+
 type KindTest = (node: JsonObject, context: NodeContext, state: RenderState) => boolean;
 
 const KIND_TESTS: Record<DialectKind, KindTest> = {
@@ -10,7 +12,7 @@ const KIND_TESTS: Record<DialectKind, KindTest> = {
   root: (_node, context, state) => context.isRoot && state.site.kind !== 'tool-parameters',
   'tool-parameters': (_node, context, state) => context.isRoot && state.site.kind === 'tool-parameters',
   'object-with-properties': (node) => isRecord(node['properties']) && (node['type'] === undefined || typeIncludes(node, 'object')),
-  'object-without-properties': (node) => typeIncludes(node, 'object') && !isRecord(node['properties']),
+  'object-without-properties': (node) => typeIncludes(node, 'object') && !isRecord(node['properties']) && !PROPERTY_DECLARING_APPLICATORS.some((keyword) => keyword in node),
   'any-of': (node) => Array.isArray(node['anyOf']),
   'any-of-branch': (_node, context) => context.via === 'anyOf',
   enum: (node) => Array.isArray(node['enum']),
