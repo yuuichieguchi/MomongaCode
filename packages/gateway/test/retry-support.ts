@@ -7,7 +7,6 @@ export const TOTAL_WAIT_MS = 84_000;
 export const BASE_MS = 500;
 export const MAX_MS = 8000;
 export const BUDGET = { totalWaitMs: TOTAL_WAIT_MS, baseMs: BASE_MS, maxMs: MAX_MS };
-export const ONE_SEND_BUDGET = { totalWaitMs: 1 };
 export const BREAKER_OUT_OF_THE_WAY = { failureThreshold: 1000, openMs: 30_000 };
 export const DEFERRED_HEADER = 'momonga-deferred';
 

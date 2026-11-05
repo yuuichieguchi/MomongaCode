@@ -112,7 +112,7 @@ describe('breaker verdict after the first event', () => {
 });
 
 describe('one verdict per request and target', () => {
-  const THREE_SENDS_BUDGET = { maxAttempts: 3, baseMs: BASE_MS, maxMs: MAX_MS, totalWaitMs: 375 + 750 };
+  const THREE_SENDS_BUDGET = { maxAttempts: 3, baseMs: BASE_MS, maxMs: MAX_MS, totalWaitMs: 1200 };
 
   const startThreeSends = async (calls: Parameters<typeof createScriptedAdapter>[0]['calls'], failureThreshold: number) => {
     const primary = createScriptedAdapter({ calls });

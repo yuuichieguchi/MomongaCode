@@ -552,8 +552,8 @@ describe('gateway client bounds', () => {
   });
 
   it.for([
-    { code: 'all_targets_unavailable', retryAfterMs: 30_000, expected: { kind: 'requeue', refund: false, retryAfterMs: 30_000, interrupted: false } },
-    { code: 'all_targets_unreachable', retryAfterMs: undefined, expected: { kind: 'fail', code: 'all_targets_unreachable' } },
+    { code: 'gateway_closed', retryAfterMs: 30_000, expected: { kind: 'requeue', refund: true, retryAfterMs: 30_000, interrupted: false } },
+    { code: 'provider_unavailable', retryAfterMs: undefined, expected: { kind: 'fail', code: 'provider_unavailable' } },
   ])('lets the worker requeue or fail a $code error event exactly as it does an HTTP reply', async ({ code, retryAfterMs, expected }) => {
     const fake = await startRawHttpFake();
     const errorEvent = {

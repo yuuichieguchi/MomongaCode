@@ -43,10 +43,10 @@ describe('the gateway commits at the first event that carries output (R-b)', () 
   it('streams one clean response to the client when a failure before output was retried', async () => {
     const { primary, started } = startOne([{ events: BEFORE_OUTPUT, failure: { status: 503, message: 'down before output' } }, ok('recovered')]);
     const harness = await started;
-    const pending = postJson(harness.client, '/v1/responses', { ...request, stream: true });
+    const reading = postJson(harness.client, '/v1/responses', { ...request, stream: true }).then(readSse);
 
-    await driveTimers(harness, [pending]);
-    const frames = await readSse(await pending);
+    await driveTimers(harness, [reading]);
+    const frames = await reading;
 
     expect(primary.calls).toHaveLength(2);
     expect(frames.filter((frame) => frame.event === 'response.created')).toHaveLength(1);
@@ -57,10 +57,10 @@ describe('the gateway commits at the first event that carries output (R-b)', () 
   it('does not retry a failure after output and marks the failed response retryable for a retryable error', async () => {
     const { primary, started } = startOne([{ events: THROUGH_FIRST_DELTA, failure: { status: 503, message: 'down after output' } }, ok('never sent')]);
     const harness = await started;
-    const pending = postJson(harness.client, '/v1/responses', { ...request, stream: true });
+    const reading = postJson(harness.client, '/v1/responses', { ...request, stream: true }).then(readSse);
 
-    await driveTimers(harness, [pending]);
-    const frames = await readSse(await pending);
+    await driveTimers(harness, [reading]);
+    const frames = await reading;
 
     expect(primary.calls).toHaveLength(1);
     const last = frames.at(-1);
@@ -71,7 +71,9 @@ describe('the gateway commits at the first event that carries output (R-b)', () 
   it('marks a failed response after output not retryable for a non-retryable error', async () => {
     const { primary, started } = startOne([{ events: THROUGH_FIRST_DELTA, failure: { status: 400, message: 'rejected after output' } }]);
     const harness = await started;
-    const frames = await readSse(await postJson(harness.client, '/v1/responses', { ...request, stream: true }));
+    const reading = postJson(harness.client, '/v1/responses', { ...request, stream: true }).then(readSse);
+    await driveTimers(harness, [reading]);
+    const frames = await reading;
 
     expect(primary.calls).toHaveLength(1);
     const last = frames.at(-1);

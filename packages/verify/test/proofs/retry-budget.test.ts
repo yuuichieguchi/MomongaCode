@@ -148,6 +148,25 @@ describe('item 11: the gateway retry budget', () => {
   );
 
   it(
+    'R3base proves the first K waits, each at least half its cap, sum to at least S_K',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'R3base');
+      const { baseMs, maxMs: max } = retry();
+      const doublings = doublingsUntilMax(BigInt(baseMs), BigInt(max));
+      const { ctx } = arith;
+      const waits = Array.from({ length: Number(doublings) }, (_unused, index) => {
+        const wait = arith.int(`wait${index}`);
+        arith.given(wait.mul(2).ge(ctx.Int.val(BigInt(baseMs) * 2n ** BigInt(index))));
+        return wait;
+      });
+      const waited = waits.reduce((total: ProofInt, wait) => total.add(wait), ctx.Int.val(0n));
+      expect(await satisfiable(arith)).toBe(true);
+      expect(await prove(arith, waited.ge(ctx.Int.val(halfCapsBeforeMax(BigInt(baseMs), doublings))))).toEqual({ status: 'proved' });
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
     'R3b proves the number of waits within the budget is at most K + floor(2 (totalWaitMs - S_K) / maxMs)',
     async () => {
       const { arith, total, waits, waited, doublings, prefix, maxMs: maxWaitMs } = tailArith('R3b', maxMs());

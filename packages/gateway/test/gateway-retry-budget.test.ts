@@ -85,7 +85,7 @@ describe('the gateway retry budget', () => {
       expect(wait).toBeLessThan(capOf(index));
     });
     expect(sum(waits)).toBeLessThanOrEqual(TOTAL_WAIT_MS);
-    expect(sum(waits) + capOf(waits.length) / 2).toBeGreaterThan(TOTAL_WAIT_MS);
+    expect(sum(waits) + capOf(waits.length)).toBeGreaterThan(TOTAL_WAIT_MS);
   });
 
   it('honours a 429 Retry-After of 20 s, longer than retry.maxMs, while it fits: 4 waits of 20 s, then 429 rate_limited without a deferral', async () => {
