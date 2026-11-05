@@ -138,3 +138,77 @@ describe('startTerminalSweeper (O15 ii): the one owner of the sweeper-owned canc
     await sweeper.close();
   });
 });
+
+describe('startTerminalSweeper: what close() waits for and what an error report names (review of fd3c85df, findings 4 and 6)', () => {
+  it('tracks cancelUpstream like releaseStopped: a call that never settles holds close() until the closing signal aborts it, and nothing runs or reports after close() resolves', async () => {
+    const order: string[] = [];
+    const errors: unknown[] = [];
+    const signals: (AbortSignal | undefined)[] = [];
+    let cancelCalls = 0;
+    const store = {
+      finishCancelled: async (): Promise<string[]> => ['run-cancelled'],
+      deadLetterExhausted: async (): Promise<string[]> => [],
+    };
+    const sweeper = startTerminalSweeper({
+      store,
+      timers: createFakeTimers(createFakeClock(START_MS)),
+      intervalMs: 1000,
+      cancelUpstream: (runId: string, signal?: AbortSignal) => {
+        cancelCalls += 1;
+        signals.push(signal);
+        return new Promise<void>((_resolve, reject) => {
+          signal?.addEventListener('abort', () => {
+            order.push(`cancelUpstream ${runId} aborted`);
+            reject(signal.reason);
+          });
+        });
+      },
+      releaseStopped: async () => undefined,
+      onError: (error: unknown) => void errors.push(error),
+    });
+    await sweeper.sweep();
+    await afterMicrotasks();
+    expect(cancelCalls).toBe(1);
+    expect(signals[0]).toBeInstanceOf(AbortSignal);
+    expect(signals[0]?.aborted).toBe(false);
+
+    await sweeper.close().then(() => order.push('close resolved'));
+
+    expect(order).toEqual(['cancelUpstream run-cancelled aborted', 'close resolved']);
+    const reportedAtClose = errors.length;
+    await afterMicrotasks();
+    expect(cancelCalls).toBe(1);
+    expect(errors).toHaveLength(reportedAtClose);
+  });
+
+  it('names the run in the report of a run the store could not finish or dead-letter', async () => {
+    const failure = new JournalThreadError('the journal thread exited');
+    const reports: unknown[][] = [];
+    const store = {
+      finishCancelled: async (onError: SweepErrorSink): Promise<string[]> => {
+        onError(failure, 'run-cancel-failed');
+        return [];
+      },
+      deadLetterExhausted: async (onError: SweepErrorSink): Promise<string[]> => {
+        onError(failure, 'run-dead-letter-failed');
+        return [];
+      },
+    };
+    const sweeper = startTerminalSweeper({
+      store,
+      timers: createFakeTimers(createFakeClock(START_MS)),
+      intervalMs: 1000,
+      cancelUpstream: async () => undefined,
+      releaseStopped: async () => undefined,
+      onError: (...args: unknown[]) => void reports.push(args),
+    });
+
+    await sweeper.sweep();
+
+    expect(reports).toEqual([
+      [failure, 'run-cancel-failed'],
+      [failure, 'run-dead-letter-failed'],
+    ]);
+    await sweeper.close();
+  });
+});

@@ -114,6 +114,28 @@ describe('startApprovalSweeper with an awaited expireApprovals', () => {
   });
 });
 
+describe('startApprovalSweeper names the run in an error report (review of fd3c85df, finding 6)', () => {
+  it('reports a run the store could not stop with its run id', async () => {
+    const clock = createFakeClock(START_MS);
+    const timers = createFakeTimers(clock);
+    const failure = new Error('the journal thread exited');
+    const reports: unknown[][] = [];
+    const store = {
+      expireApprovals: async (_now: number, onError: (error: unknown, runId: string) => void): Promise<string[]> => {
+        onError(failure, 'run-not-stopped');
+        return [];
+      },
+    };
+    const sweeper = startSweeper({ store, clock, timers, intervalMs: 1000, releaseStopped: async () => undefined, onError: (...args: unknown[]) => void reports.push(args) });
+
+    timers.advance(1000);
+    await afterMicrotasks();
+
+    expect(reports).toEqual([[failure, 'run-not-stopped']]);
+    await sweeper.close();
+  });
+});
+
 describe('releaseStoppedRunsAtStartup', () => {
   it('releases every run the store lists as stopped, in order, and reports a failed release without skipping the rest', async () => {
     const released: string[] = [];

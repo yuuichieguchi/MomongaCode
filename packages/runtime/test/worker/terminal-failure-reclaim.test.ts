@@ -46,7 +46,7 @@ describe('a run whose terminal transition failed', () => {
     expect(env.run(run.id).failedAttempts).toBe(0);
   });
 
-  it('inside the error path of the worker escapes, keeps the lease until it expires, is not claimed again, and is dead-lettered by the sweep', async () => {
+  it('tries FAILED exactly twice in one claim at an attempt cap of 1 (once for the gateway failure, once for the journal thread failure that O2 requeues and the cap turns into FAILED), then escapes, keeps the lease until it expires, is not claimed again, and is dead-lettered by the sweep', async () => {
     const env = await makeEnv({ maxAttempts: 1, maxTotalAttempts: 1 });
     env.gateway.script.push(failedStep('upstream_unavailable'), textStep('never sent'));
     const run = env.enqueue('Work');
@@ -57,7 +57,7 @@ describe('a run whose terminal transition failed', () => {
       () => undefined,
       () => undefined,
     );
-    expect(failures()).toBeGreaterThanOrEqual(1);
+    expect(failures()).toBe(2);
     const stranded = env.run(run.id);
     expect(stranded.status).toBe('RUNNING');
     expect(stranded.leaseOwner).toBe('worker-1');
