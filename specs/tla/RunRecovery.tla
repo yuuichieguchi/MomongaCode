@@ -508,7 +508,7 @@ Init ==
     /\ wresp = [w \in Workers |-> "none"]
     /\ wretry = [w \in Workers |-> FALSE]
     /\ wstep = [w \in Workers |-> 0]
-    /\ flags = [stale |-> FALSE, reissue |-> FALSE, retryUnknown |-> FALSE]
+    /\ flags = [stale |-> FALSE, reissue |-> FALSE, retryUnknown |-> FALSE, killed |-> {}]
 
 -----------------------------------------------------------------------------
 (* store.claim: dead-letter exhausted runs, then take one claimable run *)
@@ -1000,6 +1000,42 @@ SpecWithoutWorkers == Init /\ [][Next]_vars /\ \A r \in Runs : WF_vars(ExpireDea
 
 SpecWithoutSweeper == Init /\ [][NextWithoutSweeper]_vars /\ \A r \in Runs : WF_vars(ExpireDead(r))
 
+LiveTimeoutOutcomes(kind, k) ==
+    IF kind = "exec" THEN {"unknown"}
+    ELSE IF eff[k] > 0 THEN {"already_applied", "unknown"}
+    ELSE {"not_applied", "unknown"}
+
+LiveKill(w, outcomes(_, _)) ==
+    /\ pc[w] = "complete"
+    /\ ~lost[w]
+    /\ LedgerFenced(w)
+    /\ LET r == wr[w]
+           s == wstep[w]
+           k == <<r, s>>
+           kind == RespKind(r, s)
+       IN /\ child' = [child EXCEPT ![k] = FALSE]
+          /\ IF idem[k] \in {"PENDING", "UNKNOWN"}
+             THEN /\ \E o \in outcomes(kind, k) :
+                        /\ idem' = [idem EXCEPT ![k] = "COMPLETED"]
+                        /\ idemRes' = [idemRes EXCEPT ![k] = o]
+                  /\ flags' = [flags EXCEPT !.killed = @ \cup (IF kind = "exec" THEN {k} ELSE {})]
+                  /\ Goto(w, "journalOut")
+                  /\ wlock' = [wlock EXCEPT ![w] = FALSE]
+                  /\ UNCHANGED <<wr, wt, ws, lost, wcancel, wresp, wretry, wstep>>
+             ELSE /\ ToIdle(w)
+                  /\ UNCHANGED <<idem, idemRes, flags>>
+    /\ UNCHANGED <<run, ev, appr, eff, dl>>
+
+LiveTimeout(w) == LiveKill(w, LiveTimeoutOutcomes)
+
+RecordedCompleted(kind, k) == {"completed"}
+
+LiveTimeoutRecordsCompleted(w) == LiveKill(w, RecordedCompleted)
+
+SpecLiveTimeout == Init /\ [][Next \/ \E w \in Workers : LiveTimeout(w)]_vars
+
+SpecLiveTimeoutFailed == Init /\ [][Next \/ \E w \in Workers : LiveTimeoutRecordsCompleted(w)]_vars
+
 -----------------------------------------------------------------------------
 (* Properties *)
 
@@ -1038,6 +1074,8 @@ LockIsExclusive ==
     \A w, x \in Workers : (w # x /\ wlock[w] /\ wlock[x]) => KeyOf(w) # KeyOf(x)
 
 UnknownNeverRetried == ~flags.retryUnknown
+
+KilledExecIsUnknown == \A k \in flags.killed : idem[k] = "COMPLETED" => idemRes[k] = "unknown"
 
 RecordedResponseNeverReRequested == ~flags.reissue
 

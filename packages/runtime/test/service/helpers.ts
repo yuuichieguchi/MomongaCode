@@ -29,6 +29,7 @@ import type { FakeSettings } from '../worker/fake-settings.ts';
 import { createFakeToolbox } from '../worker/fake-tools.ts';
 import type { FakeToolbox } from '../worker/fake-tools.ts';
 import { createFakeTracer } from '../worker/fake-tracer.ts';
+import type { AutoGateInput } from '../auto-gate-fixtures.ts';
 import { capabilitiesFor, createFakeInstructions, diskAgentCatalog, diskSkillsPort, fakeSandbox, inertGovernancePort, inertHistoryPort, testSystemPrompt, unavailableEvidenceRun } from '../worker/harness.ts';
 
 export const START_MS = 1_800_000_000_000;
@@ -88,6 +89,7 @@ export type SettingsDefault = {
   additionalDirectories?: readonly string[];
   credentialEnvNames?: readonly string[];
   autoModeClassifier?: string;
+  autoModeGate?: AutoGateInput;
 };
 
 export type SessionCreateSettingsResult = {
@@ -96,6 +98,7 @@ export type SessionCreateSettingsResult = {
   additionalDirectories: readonly string[];
   credentialEnvNames: readonly string[];
   autoModeClassifier?: string;
+  autoModeGate?: AutoGateInput;
 };
 
 export type FakePorts = {
@@ -132,6 +135,7 @@ export const createFakePorts = (): FakePorts => {
         additionalDirectories: entry.additionalDirectories ?? [],
         credentialEnvNames: entry.credentialEnvNames ?? [DECLARED_CREDENTIAL],
         ...(entry.autoModeClassifier === undefined ? {} : { autoModeClassifier: entry.autoModeClassifier }),
+        ...(entry.autoModeGate === undefined ? {} : { autoModeGate: entry.autoModeGate }),
       };
     },
   };

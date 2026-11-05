@@ -14,6 +14,8 @@
     { "config": "RunRecovery.unlocked", "role": "evidence", "expect": { "violates": "AtMostOnceEffect", "exitCode": 12 }, "args": [], "tier": "every-run", "distinctStates": 1039279, "measuredSeconds": 21.4, "budgetSeconds": 43 },
     { "config": "RunRecovery.reapOnly", "role": "evidence", "expect": { "violates": "AtMostOnceEffect", "exitCode": 12 }, "args": [], "tier": "every-run", "distinctStates": 1129650, "measuredSeconds": 29.4, "budgetSeconds": 59 },
     { "config": "RunRecovery.noReap", "role": "evidence", "expect": { "violates": "ReconcileSeesStoppedEffect", "exitCode": 12 }, "args": [], "tier": "every-run", "distinctStates": 984524, "measuredSeconds": 24.3, "budgetSeconds": 49 },
+    { "config": "RunRecovery.liveTimeout", "role": "check", "expect": "holds", "args": [], "tier": "every-run", "distinctStates": 19748, "measuredSeconds": 9.2, "budgetSeconds": 19 },
+    { "config": "RunRecovery.liveTimeoutFailed", "role": "evidence", "expect": { "violates": "KilledExecIsUnknown", "exitCode": 12 }, "args": [], "tier": "every-run", "distinctStates": 23153, "measuredSeconds": 10.5, "budgetSeconds": 21 },
     { "config": "RequestPrefix", "role": "check", "expect": "holds", "args": [], "tier": "every-run", "distinctStates": 1168496, "measuredSeconds": 28.3, "budgetSeconds": 57 },
     { "config": "RequestPrefix.noModeYield", "role": "check", "expect": "holds", "args": [], "tier": "every-run", "distinctStates": 146076, "measuredSeconds": 5.1, "budgetSeconds": 11 },
     { "config": "RequestPrefix.parallel", "role": "check", "expect": "holds", "args": [], "tier": "every-run", "distinctStates": 241340, "measuredSeconds": 9.1, "budgetSeconds": 19 },
