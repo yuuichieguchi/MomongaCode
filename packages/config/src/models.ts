@@ -164,8 +164,8 @@ const checkThinkingBudgets = (target: AnthropicTarget, where: string): void => {
 
 const resolveAnthropic = (target: AnthropicTarget, home: string, where: string, warnings: string[]): ResolvedAnthropicTarget => {
   checkThinkingBudgets(target, where);
-  if (target.capabilities.reasoning?.control !== 'thinking') {
-    warnings.push(`${where}: capabilities.reasoning declares no thinking form, so the target is sent no thinking request; declare { control: "thinking", form: "adaptive" | "budget" } to enable it`);
+  if (target.capabilities.reasoning === undefined) {
+    warnings.push(`${where}: capabilities.reasoning is not declared, so no thinking form is known and the target is sent no thinking request; declare { control: "thinking", form: "adaptive" | "budget" } to enable it`);
   }
   return {
     adapter: 'anthropic',

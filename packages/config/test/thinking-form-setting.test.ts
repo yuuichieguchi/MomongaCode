@@ -100,4 +100,9 @@ describe('an anthropic target that declares no thinking form', () => {
     const { warnings } = await load(anthropicTarget({ control: 'thinking', form: 'adaptive', efforts: ['low'] }));
     expect(thinkingWarningsOf(warnings)).toEqual([]);
   });
+
+  it('says nothing about thinking when the target explicitly declares that reasoning cannot be controlled', async () => {
+    const { warnings } = await load(anthropicTarget({ control: 'none' }));
+    expect(thinkingWarningsOf(warnings)).toEqual([]);
+  });
 });

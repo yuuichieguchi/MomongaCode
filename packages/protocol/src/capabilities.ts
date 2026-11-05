@@ -69,11 +69,12 @@ export const acceptedReasoningEfforts = (capability: ReasoningCapability): Reaso
 };
 
 export const clampReasoningEffort = (requested: ReasoningEffort, accepted: readonly ReasoningEffort[]): ReasoningEffort => {
-  const ordered = ladderOrder(accepted);
-  const lowest = ordered[0];
-  if (lowest === undefined) throw new Error('clampReasoningEffort needs at least one accepted level');
+  if (requested === 'none' && accepted.includes('none')) return 'none';
+  const ladder = ladderOrder(accepted).filter((level) => level !== 'none');
+  const lowest = ladder[0];
+  if (lowest === undefined) throw new Error('clampReasoningEffort needs at least one accepted ladder level');
   const rank = REASONING_EFFORTS.indexOf(requested);
-  return ordered.findLast((level) => REASONING_EFFORTS.indexOf(level) <= rank) ?? lowest;
+  return ladder.findLast((level) => REASONING_EFFORTS.indexOf(level) <= rank) ?? lowest;
 };
 
 export type PromptCacheCapability =
