@@ -32,6 +32,7 @@ const probedSetup = async (models: () => Array<Record<string, unknown>>) => {
     models: { aliases: { fast: ['local'] }, targets: { local: ccTarget(fake.socketPath, { toolCalling: 'auto', model: 'qwen-fake' }) } },
   });
   await probeEndpointTarget({
+    schemaDialect: 'json-schema-2020-12',
     probeRecordDir: momongaPaths(home, process.platform, {}).probe,
     upstream: { kind: 'unix', socketPath: fake.socketPath }, key: { endpoint: endpointKeyOf({ kind: 'unix', socketPath: fake.socketPath }), model: 'qwen-fake' }, model: 'qwen-fake',
     apiKey: undefined,

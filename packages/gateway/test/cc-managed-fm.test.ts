@@ -165,7 +165,7 @@ describe('createManagedFmTarget probe-derived settings', () => {
     const { managed } = await setup({ report });
     expect((await managed.capabilities(TARGET)).toolCalling).toBe('constrained');
     expect(managed.keywordSupport(TARGET)).toEqual({ ...ALL_TRUE, pattern: false, anyOf: false });
-    expect(await managed.capabilities(TARGET)).toEqual({ ...capabilitiesFromProbe(report, { mode: 'constrained' }), allowedTools: ['envelope'] });
+    expect(await managed.capabilities(TARGET)).toEqual({ ...capabilitiesFromProbe(report, { mode: 'constrained' }), schemaDialect: 'guided-generation', allowedTools: ['envelope'] });
   });
 
   it('exposes the tool-calling mode only through capabilities', async () => {

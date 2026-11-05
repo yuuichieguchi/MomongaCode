@@ -91,7 +91,7 @@ describe('one merge decides a declared against a probed prompt cache for every p
   const endpointTargetWith = async (declared: Capabilities) => {
     const fake = await startFakeChatCompletions({ scenario: 'tools-ok', streamUsage: true });
     try {
-      const report = { ...(await runProbe({ socketPath: fake.socketPath, samples: 2, now: () => new Date('2026-11-05T12:00:00.000Z') })), promptCache: { kind: 'automatic' as const } };
+      const report = { ...(await runProbe({ schemaDialect: 'json-schema-2020-12', socketPath: fake.socketPath, samples: 2, now: () => new Date('2026-11-05T12:00:00.000Z') })), promptCache: { kind: 'automatic' as const } };
       return createProbedEndpointTarget({
         targetName: 'remote',
         endpoint: 'unix:/nowhere',

@@ -1,0 +1,1771 @@
+{
+ "source": "fm serve --socket, /usr/bin/fm sha256 f429257df40311ba075484be92c273ab4e882e5694f970c621a4d606b3a956d0, OS build 26A428, measured 2026-11-05",
+ "replies": [
+  {
+   "name": "probe shape",
+   "status": 200,
+   "outcome": {
+    "kind": "content_only"
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "city": {
+          "type": "string"
+         },
+         "days": {
+          "type": "integer",
+          "minimum": 1
+         }
+        },
+        "required": [
+         "city",
+         "days"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "probe shape, stream false",
+   "status": 200,
+   "outcome": {
+    "kind": "content_only"
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "city": {
+          "type": "string"
+         },
+         "days": {
+          "type": "integer",
+          "minimum": 1
+         }
+        },
+        "required": [
+         "city",
+         "days"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ],
+    "stream": false
+   }
+  },
+  {
+   "name": "probe shape, stream true",
+   "status": 200,
+   "outcome": {
+    "kind": "content_only"
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "city": {
+          "type": "string"
+         },
+         "days": {
+          "type": "integer",
+          "minimum": 1
+         }
+        },
+        "required": [
+         "city",
+         "days"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ],
+    "stream": true
+   }
+  },
+  {
+   "name": "tool not needed",
+   "status": 200,
+   "outcome": {
+    "kind": "content_only"
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Say hello in one short sentence."
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "city": {
+          "type": "string"
+         },
+         "days": {
+          "type": "integer",
+          "minimum": 1
+         }
+        },
+        "required": [
+         "city",
+         "days"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "two tools",
+   "status": 200,
+   "outcome": {
+    "kind": "content_only"
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "city": {
+          "type": "string"
+         },
+         "days": {
+          "type": "integer",
+          "minimum": 1
+         }
+        },
+        "required": [
+         "city",
+         "days"
+        ],
+        "additionalProperties": false
+       }
+      }
+     },
+     {
+      "type": "function",
+      "function": {
+       "name": "get_time",
+       "description": "Get the time in a zone",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "zone": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "zone"
+        ]
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "tool_choice required",
+   "status": 200,
+   "outcome": {
+    "kind": "streamed_error",
+    "message": "An unsupported generation guide was used."
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "city": {
+          "type": "string"
+         },
+         "days": {
+          "type": "integer",
+          "minimum": 1
+         }
+        },
+        "required": [
+         "city",
+         "days"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ],
+    "tool_choice": "required"
+   }
+  },
+  {
+   "name": "tool_choice named",
+   "status": 200,
+   "outcome": {
+    "kind": "streamed_error",
+    "message": "An unsupported generation guide was used."
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "city": {
+          "type": "string"
+         },
+         "days": {
+          "type": "integer",
+          "minimum": 1
+         }
+        },
+        "required": [
+         "city",
+         "days"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ],
+    "tool_choice": {
+     "type": "function",
+     "function": {
+      "name": "probe_weather"
+     }
+    }
+   }
+  },
+  {
+   "name": "tool_choice none",
+   "status": 200,
+   "outcome": {
+    "kind": "content_only"
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "city": {
+          "type": "string"
+         },
+         "days": {
+          "type": "integer",
+          "minimum": 1
+         }
+        },
+        "required": [
+         "city",
+         "days"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ],
+    "tool_choice": "none"
+   }
+  },
+  {
+   "name": "auto, no minimum",
+   "status": 200,
+   "outcome": {
+    "kind": "content_only"
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "city": {
+          "type": "string"
+         },
+         "days": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "city",
+         "days"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "named, no minimum",
+   "status": 200,
+   "outcome": {
+    "kind": "streamed_error",
+    "message": "An unsupported generation guide was used."
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "city": {
+          "type": "string"
+         },
+         "days": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "city",
+         "days"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ],
+    "tool_choice": {
+     "type": "function",
+     "function": {
+      "name": "probe_weather"
+     }
+    }
+   }
+  },
+  {
+   "name": "auto, fm keys",
+   "status": 200,
+   "outcome": {
+    "kind": "content_only"
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "city": {
+          "type": "string"
+         },
+         "days": {
+          "type": "integer",
+          "minimum": 1
+         }
+        },
+        "required": [
+         "city",
+         "days"
+        ],
+        "additionalProperties": false,
+        "title": "probe_weather_arguments",
+        "x-order": [
+         "city",
+         "days"
+        ]
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "named, fm keys",
+   "status": 200,
+   "outcome": {
+    "kind": "streamed_error",
+    "message": "An unsupported generation guide was used."
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "city": {
+          "type": "string"
+         },
+         "days": {
+          "type": "integer",
+          "minimum": 1
+         }
+        },
+        "required": [
+         "city",
+         "days"
+        ],
+        "additionalProperties": false,
+        "title": "probe_weather_arguments",
+        "x-order": [
+         "city",
+         "days"
+        ]
+       }
+      }
+     }
+    ],
+    "tool_choice": {
+     "type": "function",
+     "function": {
+      "name": "probe_weather"
+     }
+    }
+   }
+  },
+  {
+   "name": "auto, fm keys no minimum",
+   "status": 200,
+   "outcome": {
+    "kind": "content_only"
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "city": {
+          "type": "string"
+         },
+         "days": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "city",
+         "days"
+        ],
+        "additionalProperties": false,
+        "title": "probe_weather_arguments",
+        "x-order": [
+         "city",
+         "days"
+        ]
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "named, fm keys no minimum",
+   "status": 200,
+   "outcome": {
+    "kind": "streamed_error",
+    "message": "An unsupported generation guide was used."
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "city": {
+          "type": "string"
+         },
+         "days": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "city",
+         "days"
+        ],
+        "additionalProperties": false,
+        "title": "probe_weather_arguments",
+        "x-order": [
+         "city",
+         "days"
+        ]
+       }
+      }
+     }
+    ],
+    "tool_choice": {
+     "type": "function",
+     "function": {
+      "name": "probe_weather"
+     }
+    }
+   }
+  },
+  {
+   "name": "auto, enum without type",
+   "status": 400,
+   "outcome": {
+    "kind": "refused",
+    "message": "Invalid request: The data couldn\u2019t be read because it isn\u2019t in the correct format."
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "city": {
+          "enum": [
+           "Tokyo",
+           "Osaka"
+          ]
+         },
+         "days": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "city",
+         "days"
+        ]
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "named, enum without type",
+   "status": 400,
+   "outcome": {
+    "kind": "refused",
+    "message": "Invalid request: The data couldn\u2019t be read because it isn\u2019t in the correct format."
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "city": {
+          "enum": [
+           "Tokyo",
+           "Osaka"
+          ]
+         },
+         "days": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "city",
+         "days"
+        ]
+       }
+      }
+     }
+    ],
+    "tool_choice": {
+     "type": "function",
+     "function": {
+      "name": "probe_weather"
+     }
+    }
+   }
+  },
+  {
+   "name": "auto, anyOf without title",
+   "status": 400,
+   "outcome": {
+    "kind": "refused",
+    "message": "Invalid request: The data couldn\u2019t be read because it isn\u2019t in the correct format."
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "city": {
+          "anyOf": [
+           {
+            "type": "string"
+           },
+           {
+            "type": "integer"
+           }
+          ]
+         },
+         "days": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "city",
+         "days"
+        ]
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "named, anyOf without title",
+   "status": 400,
+   "outcome": {
+    "kind": "refused",
+    "message": "Invalid request: The data couldn\u2019t be read because it isn\u2019t in the correct format."
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "city": {
+          "anyOf": [
+           {
+            "type": "string"
+           },
+           {
+            "type": "integer"
+           }
+          ]
+         },
+         "days": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "city",
+         "days"
+        ]
+       }
+      }
+     }
+    ],
+    "tool_choice": {
+     "type": "function",
+     "function": {
+      "name": "probe_weather"
+     }
+    }
+   }
+  },
+  {
+   "name": "auto, bare object",
+   "status": 400,
+   "outcome": {
+    "kind": "refused",
+    "message": "Invalid request: The data couldn\u2019t be read because it isn\u2019t in the correct format."
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object"
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "named, bare object",
+   "status": 400,
+   "outcome": {
+    "kind": "refused",
+    "message": "Invalid request: The data couldn\u2019t be read because it isn\u2019t in the correct format."
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object"
+       }
+      }
+     }
+    ],
+    "tool_choice": {
+     "type": "function",
+     "function": {
+      "name": "probe_weather"
+     }
+    }
+   }
+  },
+  {
+   "name": "native params: titled anyOf of bare objects",
+   "status": 400,
+   "outcome": {
+    "kind": "refused",
+    "message": "Invalid request: The data couldn\u2019t be read because it is missing."
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "v": {
+          "title": "V",
+          "anyOf": [
+           {
+            "type": "object",
+            "properties": {
+             "a": {
+              "type": "string"
+             }
+            },
+            "required": [
+             "a"
+            ]
+           },
+           {
+            "type": "object",
+            "properties": {
+             "b": {
+              "type": "integer"
+             }
+            },
+            "required": [
+             "b"
+            ]
+           }
+          ]
+         }
+        },
+        "required": [
+         "v"
+        ]
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "native params: titled anyOf of fm-keyed objects",
+   "status": 200,
+   "outcome": {
+    "kind": "content_only"
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "v": {
+          "title": "V",
+          "anyOf": [
+           {
+            "type": "object",
+            "properties": {
+             "a": {
+              "type": "string"
+             }
+            },
+            "required": [
+             "a"
+            ],
+            "title": "A",
+            "x-order": [
+             "a"
+            ],
+            "additionalProperties": false
+           },
+           {
+            "type": "object",
+            "properties": {
+             "b": {
+              "type": "integer"
+             }
+            },
+            "required": [
+             "b"
+            ],
+            "title": "B",
+            "x-order": [
+             "b"
+            ],
+            "additionalProperties": false
+           }
+          ]
+         }
+        },
+        "required": [
+         "v"
+        ]
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "native params: empty properties",
+   "status": 200,
+   "outcome": {
+    "kind": "content_only"
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object",
+        "properties": {}
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "native params: typed enum",
+   "status": 200,
+   "outcome": {
+    "kind": "content_only"
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "city": {
+          "type": "string",
+          "enum": [
+           "Tokyo",
+           "Osaka"
+          ]
+         }
+        },
+        "required": [
+         "city"
+        ]
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "native params2: union object missing additionalProperties",
+   "status": 400,
+   "outcome": {
+    "kind": "refused",
+    "message": "Invalid request: The data couldn\u2019t be read because it is missing."
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "v": {
+          "title": "V",
+          "anyOf": [
+           {
+            "type": "object",
+            "properties": {
+             "a": {
+              "type": "string"
+             }
+            },
+            "required": [
+             "a"
+            ],
+            "title": "A",
+            "x-order": [
+             "a"
+            ]
+           },
+           {
+            "type": "object",
+            "properties": {
+             "b": {
+              "type": "integer"
+             }
+            },
+            "required": [
+             "b"
+            ],
+            "title": "B",
+            "x-order": [
+             "b"
+            ],
+            "additionalProperties": false
+           }
+          ]
+         }
+        },
+        "required": [
+         "v"
+        ]
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "native params2: x-order names unknown key",
+   "status": 400,
+   "outcome": {
+    "kind": "refused",
+    "message": "Invalid request: The data couldn\u2019t be read because it isn\u2019t in the correct format."
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "city": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "city"
+        ],
+        "x-order": [
+         "city",
+         "zzz"
+        ]
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "native params2: property-less object inside titled anyOf",
+   "status": 400,
+   "outcome": {
+    "kind": "refused",
+    "message": "Invalid request: The data couldn\u2019t be read because it is missing."
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "v": {
+          "title": "V",
+          "anyOf": [
+           {
+            "type": "object",
+            "properties": {
+             "a": {
+              "type": "object"
+             }
+            },
+            "required": [
+             "a"
+            ],
+            "title": "A",
+            "x-order": [
+             "a"
+            ],
+            "additionalProperties": false
+           },
+           {
+            "type": "object",
+            "properties": {
+             "b": {
+              "type": "integer"
+             }
+            },
+            "required": [
+             "b"
+            ],
+            "title": "B",
+            "x-order": [
+             "b"
+            ],
+            "additionalProperties": false
+           }
+          ]
+         }
+        },
+        "required": [
+         "v"
+        ]
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "native params2: {}",
+   "status": 400,
+   "outcome": {
+    "kind": "refused",
+    "message": "Invalid request: The data couldn\u2019t be read because it isn\u2019t in the correct format."
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather",
+       "parameters": {}
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "native params2: no parameters key",
+   "status": 400,
+   "outcome": {
+    "kind": "refused",
+    "message": "Invalid JSON: The data couldn\u2019t be read because it is missing."
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Please call probe_weather for Tokyo for 3 days"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "probe_weather",
+       "description": "Get the weather"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "builtin tool set",
+   "status": 200,
+   "outcome": {
+    "kind": "content_only"
+   },
+   "request": {
+    "model": "system",
+    "max_completion_tokens": 1005,
+    "messages": [
+     {
+      "role": "user",
+      "content": "Read the file README.md"
+     }
+    ],
+    "tools": [
+     {
+      "type": "function",
+      "function": {
+       "name": "Read",
+       "description": "Reads a text file from the filesystem. file_path may be absolute or relative; a relative path is resolved against the working directory. Returns at most 2000 lines by default in cat -n format; use offset (1-based line) and limit to page through large files. Lines longer than 2000 characters are cut. Binary files are refused.",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "file_path": {
+          "type": "string",
+          "description": "Path of the file to read; a relative path is resolved against the working directory"
+         },
+         "offset": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Line number to start reading from (1-based)"
+         },
+         "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of lines to read"
+         }
+        },
+        "required": [
+         "file_path"
+        ],
+        "additionalProperties": false
+       }
+      }
+     },
+     {
+      "type": "function",
+      "function": {
+       "name": "Write",
+       "description": "Writes a file, creating missing parent directories. file_path may be absolute or relative; a relative path is resolved against the working directory. An existing file must have been read with Read first and must be unchanged since. Replaces the whole file; prefer Edit for partial changes.",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "file_path": {
+          "type": "string",
+          "description": "Path of the file to write; a relative path is resolved against the working directory"
+         },
+         "content": {
+          "type": "string",
+          "description": "Full new content of the file"
+         }
+        },
+        "required": [
+         "file_path",
+         "content"
+        ],
+        "additionalProperties": false
+       }
+      }
+     },
+     {
+      "type": "function",
+      "function": {
+       "name": "Edit",
+       "description": "Replaces text in an existing file. file_path may be absolute or relative; a relative path is resolved against the working directory. The file must have been read with Read first and must be unchanged since. old_string must match exactly once (include surrounding context to make it unique) unless replace_all is true.",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "file_path": {
+          "type": "string",
+          "description": "Path of the file to modify; a relative path is resolved against the working directory"
+         },
+         "old_string": {
+          "type": "string",
+          "description": "Exact text to replace"
+         },
+         "new_string": {
+          "type": "string",
+          "description": "Replacement text"
+         },
+         "replace_all": {
+          "type": "boolean",
+          "description": "Replace every occurrence of old_string"
+         }
+        },
+        "required": [
+         "file_path",
+         "old_string",
+         "new_string"
+        ],
+        "additionalProperties": false
+       }
+      }
+     },
+     {
+      "type": "function",
+      "function": {
+       "name": "Glob",
+       "description": "Finds files by glob pattern (for example \"**/*.ts\"), matched relative to path. path is a directory, defaults to the working directory, and a relative path is resolved against the working directory. Respects .gitignore and .ignore, skips .git, includes dotfiles. Returns paths relative to the working directory when inside it and absolute otherwise, newest first, at most 100.",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "pattern": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Glob pattern to match files against"
+         },
+         "path": {
+          "type": "string",
+          "description": "Directory to search; a relative path is resolved against the working directory; defaults to the working directory"
+         }
+        },
+        "required": [
+         "pattern"
+        ],
+        "additionalProperties": false
+       }
+      }
+     },
+     {
+      "type": "function",
+      "function": {
+       "name": "Grep",
+       "description": "Searches file contents with a regular expression (ripgrep syntax when available). path is a file or directory, defaults to the working directory, and a relative path is resolved against the working directory. output_mode: files_with_matches (default, newest first), content (path:line:text with optional -A/-B/-C context), or count. Respects .gitignore and .ignore, skips .git, includes dotfiles. head_limit and offset page through the output entries.",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "pattern": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Regular expression to search for"
+         },
+         "path": {
+          "type": "string",
+          "description": "File or directory to search; a relative path is resolved against the working directory; defaults to the working directory"
+         },
+         "glob": {
+          "type": "string",
+          "description": "Glob filter for file names, for example \"*.js\""
+         },
+         "type": {
+          "type": "string",
+          "description": "File type filter, for example \"ts\" or \"py\""
+         },
+         "output_mode": {
+          "type": "string",
+          "enum": [
+           "content",
+           "files_with_matches",
+           "count"
+          ]
+         },
+         "-i": {
+          "type": "boolean",
+          "description": "Case-insensitive search"
+         },
+         "-n": {
+          "type": "boolean",
+          "description": "Show line numbers in content mode (default true)"
+         },
+         "-A": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Lines of context after each match"
+         },
+         "-B": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Lines of context before each match"
+         },
+         "-C": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Lines of context before and after each match"
+         },
+         "head_limit": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Return at most this many output entries (0 means unlimited)"
+         },
+         "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Skip this many output entries first"
+         },
+         "multiline": {
+          "type": "boolean",
+          "description": "Let patterns match across lines"
+         }
+        },
+        "required": [
+         "pattern"
+        ],
+        "additionalProperties": false
+       }
+      }
+     },
+     {
+      "type": "function",
+      "function": {
+       "name": "Bash",
+       "description": "Runs a shell command with /bin/bash inside a sandbox, in the current working directory. Output combines stdout and stderr. A cd that stays inside the workspace persists to later calls. timeout is in milliseconds (default 120000, maximum 600000). No process started by the command outlives it. With run_in_background the command starts as a background job and the call returns its job id at once; read its output with BashOutput and stop it with KillBash. For a background job timeout is the time the job may run (default 1800000, maximum 7200000); a job ends with its command, with KillBash, at its time limit, or when MomongaCode stops.",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "command": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The command to run"
+         },
+         "timeout": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 7200000,
+          "description": "Timeout in milliseconds"
+         },
+         "description": {
+          "type": "string",
+          "description": "Short description of what the command does"
+         },
+         "run_in_background": {
+          "type": "boolean",
+          "description": "Run the command as a background job and return its job id immediately"
+         }
+        },
+        "required": [
+         "command"
+        ],
+        "additionalProperties": false
+       }
+      }
+     },
+     {
+      "type": "function",
+      "function": {
+       "name": "BashOutput",
+       "description": "Reads the output a background job (started with Bash run_in_background) has produced since the last BashOutput call, and reports whether the job is running, exited or stopped. filter keeps only the output lines that match a regular expression; the other new lines are discarded. With block true the call waits until the job ends or timeout milliseconds pass (default 30000, maximum 600000).",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "bash_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The job id returned by Bash"
+         },
+         "filter": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Regular expression; only matching lines of the new output are returned"
+         },
+         "block": {
+          "type": "boolean",
+          "description": "Wait for the job to end"
+         },
+         "timeout": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600000,
+          "description": "How long block may wait, in milliseconds"
+         }
+        },
+        "required": [
+         "bash_id"
+        ],
+        "additionalProperties": false
+       }
+      }
+     },
+     {
+      "type": "function",
+      "function": {
+       "name": "KillBash",
+       "description": "Stops a background job started with Bash run_in_background, together with every process it started. Stopping a job that has already ended reports how it ended.",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "shell_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The job id returned by Bash"
+         }
+        },
+        "required": [
+         "shell_id"
+        ],
+        "additionalProperties": false
+       }
+      }
+     },
+     {
+      "type": "function",
+      "function": {
+       "name": "ReadOutput",
+       "description": "Reads a saved tool output by the handle reported when the output was truncated. Returns at most 2000 lines by default in cat -n format; use offset (1-based line) and limit to page.",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "handle": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Output handle from a truncated result"
+         },
+         "offset": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Line number to start reading from (1-based)"
+         },
+         "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of lines to read"
+         }
+        },
+        "required": [
+         "handle"
+        ],
+        "additionalProperties": false
+       }
+      }
+     },
+     {
+      "type": "function",
+      "function": {
+       "name": "UpdatePlan",
+       "description": "Records the current task plan. Send the complete list of entries every time; each entry has content, a status (pending, in_progress, completed) and a priority (high, medium, low).",
+       "parameters": {
+        "type": "object",
+        "properties": {
+         "entries": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+           "type": "object",
+           "properties": {
+            "content": {
+             "type": "string",
+             "minLength": 1,
+             "maxLength": 500
+            },
+            "status": {
+             "type": "string",
+             "enum": [
+              "pending",
+              "in_progress",
+              "completed"
+             ]
+            },
+            "priority": {
+             "type": "string",
+             "enum": [
+              "high",
+              "medium",
+              "low"
+             ]
+            }
+           },
+           "required": [
+            "content",
+            "status",
+            "priority"
+           ],
+           "additionalProperties": false
+          }
+         }
+        },
+        "required": [
+         "entries"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ]
+   }
+  }
+ ]
+}

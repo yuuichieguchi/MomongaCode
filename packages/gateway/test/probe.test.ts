@@ -29,11 +29,11 @@ const fixedNow = () => new Date('2026-10-23T12:00:00.000Z');
 
 const probe = async (
   options: FakeChatCompletionsOptions,
-  probeOptions: Omit<Parameters<typeof runProbe>[0], 'socketPath'> = {},
+  probeOptions: Omit<Parameters<typeof runProbe>[0], 'socketPath' | 'schemaDialect'> = {},
 ): Promise<{ report: ProbeReport; fake: FakeChatCompletionsServer }> => {
   const fake = await startFakeChatCompletions(options);
   servers.push(fake);
-  const report = await runProbe({ socketPath: fake.socketPath, managedHealthRoute: true, now: fixedNow, ...probeOptions });
+  const report = await runProbe({ schemaDialect: options.wire === 'fm' ? 'guided-generation' : 'json-schema-2020-12', socketPath: fake.socketPath, managedHealthRoute: true, now: fixedNow, ...probeOptions });
   return { report, fake };
 };
 
@@ -380,7 +380,7 @@ describe('runProbe server features', () => {
     });
     servers.push(fake);
 
-    await expect(runProbe({ socketPath: fake.socketPath, managedHealthRoute: true, now: fixedNow, samples: 5, vocabulary: FM_VOCABULARY })).rejects.toThrow(
+    await expect(runProbe({ schemaDialect: 'guided-generation', socketPath: fake.socketPath, managedHealthRoute: true, now: fixedNow, samples: 5, vocabulary: FM_VOCABULARY })).rejects.toThrow(
       'failed with HTTP 200',
     );
     expect(fake.routeHits).toEqual([1]);
@@ -484,7 +484,7 @@ describe('runProbe context window calibration', () => {
     });
     servers.push(fake);
 
-    await expect(runProbe({ socketPath: fake.socketPath, managedHealthRoute: true, samples: 2 })).rejects.toThrow(/payload_too_large.*413/);
+    await expect(runProbe({ schemaDialect: 'json-schema-2020-12', socketPath: fake.socketPath, managedHealthRoute: true, samples: 2 })).rejects.toThrow(/payload_too_large.*413/);
   });
 
   it('records the first overflow response body for a context_length_exceeded 400', async () => {
@@ -579,7 +579,7 @@ describe('runProbe step timeout and client lifecycle', () => {
   it('closes its connections after a failed probe', async () => {
     const fake = await startFakeChatCompletions({ scenario: 'tools-ok', latencyMs: 800 });
     servers.push(fake);
-    await expect(runProbe({ socketPath: fake.socketPath, stepTimeoutMs: 100 })).rejects.toThrow();
+    await expect(runProbe({ schemaDialect: 'json-schema-2020-12', socketPath: fake.socketPath, stepTimeoutMs: 100 })).rejects.toThrow();
     await vi.waitFor(() => expect(fake.openConnections()).toBe(0));
   });
 });

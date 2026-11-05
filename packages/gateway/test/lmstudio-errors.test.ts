@@ -61,7 +61,7 @@ describe('the probe of an LM Studio server', () => {
     });
     servers.push(fake);
 
-    const report = await runProbe({ socketPath: fake.socketPath, managedHealthRoute: true, samples: 2 });
+    const report = await runProbe({ schemaDialect: 'json-schema-2020-12', socketPath: fake.socketPath, managedHealthRoute: true, samples: 2 });
 
     expect(report.contextWindow.method).toBe('searched');
     expect(Math.abs(report.contextWindow.value - window)).toBeLessThanOrEqual(window * 0.02);

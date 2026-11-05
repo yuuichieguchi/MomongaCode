@@ -16,7 +16,7 @@ afterEach(async () => {
 const probe = async (options: FakeChatCompletionsOptions): Promise<{ report: ProbeReport; fake: FakeChatCompletionsServer }> => {
   const fake = await startFakeChatCompletions(options);
   servers.push(fake);
-  const report = await runProbe({ socketPath: fake.socketPath, samples: 4, now: () => new Date('2026-10-23T12:00:00.000Z') });
+  const report = await runProbe({ schemaDialect: 'json-schema-2020-12', socketPath: fake.socketPath, samples: 4, now: () => new Date('2026-10-23T12:00:00.000Z') });
   return { report, fake };
 };
 
@@ -85,7 +85,7 @@ describe('probe of reasoning control', () => {
   it('does not accept a baseline request that the server refuses', async () => {
     const fake = await startFakeChatCompletions({ scenario: 'tools-ok', routes: [{ match: (body) => String((body as { messages?: Array<{ content?: unknown }> }).messages?.[0]?.content).includes(COMPACTION_INSTRUCTIONS_MARKER), reply: { kind: 'error', status: 400, body: { error: { message: 'bad', type: 'invalid_request_error', param: null, code: null } } } }] });
     servers.push(fake);
-    await expect(runProbe({ socketPath: fake.socketPath, samples: 1 })).rejects.toThrow('reasoning baseline');
+    await expect(runProbe({ schemaDialect: 'json-schema-2020-12', socketPath: fake.socketPath, samples: 1 })).rejects.toThrow('reasoning baseline');
   });
 
   it('reports a model without reasoning as accepting the lowest effort and needing no room', async () => {

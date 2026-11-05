@@ -115,6 +115,7 @@ const probeChatCompletions = async (
     upstream: upstreamEndpointOf(target),
     key: endpointRecordKeyOf(name, target),
     model: target.model,
+    schemaDialect: target.capabilities.schemaDialect,
     apiKey: await apiKeyOf(ports, target, options.interrupt),
     signal: options.interrupt,
     ...(options.samples === undefined ? {} : { samples: options.samples }),

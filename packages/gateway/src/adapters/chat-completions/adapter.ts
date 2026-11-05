@@ -28,17 +28,7 @@ import { upstreamErrorEventBody, upstreamErrorFailure } from './upstream-reply.t
 import type { ChatCompletionsAdapter, ChatCompletionsAdapterOptions } from './types.ts';
 import { wireOf } from './wire.ts';
 import type { ChatWire } from './wire.ts';
-import type { KeywordSupport } from '../../probe/envelope.ts';
-
-const FULL_KEYWORD_SUPPORT: KeywordSupport = {
-  enum: true,
-  anyOf: true,
-  const: true,
-  pattern: true,
-  minimum: true,
-  nested: true,
-  additionalProperties: true,
-};
+import { FULL_KEYWORD_SUPPORT } from '../../probe/lowering.ts';
 
 const DONE_MARKER = '[DONE]';
 
@@ -82,10 +72,11 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
     if (mode === 'none' && hasTools) {
       throw new UnsupportedInputError('capability_unsupported', 'this target does not support tool calling', 'tools');
     }
+    const dialect = options.schemaDialect(target);
     if (mode === 'constrained') {
-      return buildConstrainedBody(resolveToolChoice(request, allowedTools, target.name, toolChoiceWire(capabilities, target)), options.keywordSupport?.(target) ?? FULL_KEYWORD_SUPPORT, origin);
+      return buildConstrainedBody(resolveToolChoice(request, allowedTools, target.name, toolChoiceWire(capabilities, target)), options.keywordSupport?.(target) ?? FULL_KEYWORD_SUPPORT, origin, dialect);
     }
-    return { body: buildNativeBody(resolveToolChoice(request, allowedTools, target.name, toolChoiceWire(capabilities, target)), origin), envelope: undefined };
+    return { body: buildNativeBody(resolveToolChoice(request, allowedTools, target.name, toolChoiceWire(capabilities, target)), origin, dialect), envelope: undefined };
   };
 
   const lenientWireOf = (request: AdapterRequest, target: AdapterTarget, lenient: LenientItems, origin: ReasoningOrigin, capabilities: Capabilities): ChatWire => {
