@@ -37,12 +37,16 @@ for (const spec of SUBJECTS) {
       instances: report.stats.instances,
       validUnderOriginal: report.stats.validOriginal,
       validUnderRendered: report.stats.validRendered,
+      refusedByBoundary: report.stats.refused,
       oracleErrors: report.stats.oracleErrors,
+      ajvCrossCheck: { disagreements: report.stats.ajvDisagreements, crashes: report.stats.ajvCrashes },
       unverifiableUnsatisfiable: report.stats.unverifiable,
       counterexamples: report.counterexamples,
       seconds: (Date.now() - begun) / 1000,
     })}\n`,
   );
+  for (const [reason, example] of Object.entries(report.stats.refusedExamples)) process.stdout.write(`  refused ${reason}: ${example}\n`);
+  for (const sample of report.stats.ajvSamples) process.stdout.write(`  ajv-disagrees ${sample}\n`);
   for (const sample of report.oracleSamples) process.stdout.write(`  oracle-error ${sample}\n`);
   for (const cluster of report.clusters) {
     process.stdout.write(`  cluster ${cluster.signature} x${cluster.count} (minimised ${cluster.minimised})\n`);
@@ -50,6 +54,8 @@ for (const spec of SUBJECTS) {
   }
 }
 
+const oracleErrorTotal = reports.reduce((sum, report) => sum + report.stats.oracleErrors, 0);
 const total = reports.reduce((sum, report) => sum + report.counterexamples, 0) + seedOutcomes.filter((outcome) => outcome.failure !== null || outcome.assertion !== null).length;
+process.stdout.write(`total oracle errors: ${oracleErrorTotal}\n`);
 process.stdout.write(`total counterexamples: ${total}; wall seconds: ${(Date.now() - started) / 1000}\n`);
-process.exitCode = total === 0 ? 0 : 1;
+process.exitCode = total === 0 && oracleErrorTotal === 0 ? 0 : 1;

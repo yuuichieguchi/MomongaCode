@@ -1,5 +1,5 @@
 import { BUILTINS, type Definition, type Rule } from './definition.ts';
-import { checkCase, type CheckClass, type Failure } from './harness.ts';
+import { checkCase, emptyStats, type CheckClass, type Failure } from './harness.ts';
 import type { Json } from './json.ts';
 import type { Rendered } from './render.ts';
 import { render } from './render.ts';
@@ -78,7 +78,10 @@ export interface SeedOutcome {
 }
 
 export const runSeed = (seed: Seed): SeedOutcome => {
-  const failure = checkCase({ schema: seed.schema, site: seed.site, definition: seed.definition, cls: seed.cls, seed: 1, perDocument: 60, forcedInstances: seed.witnesses });
+  const stats = emptyStats();
+  const checked = checkCase({ schema: seed.schema, site: seed.site, definition: seed.definition, cls: seed.cls, seed: 1, perDocument: 60, forcedInstances: seed.witnesses, stats });
+  const refusal = Object.keys(stats.refused)[0];
+  const failure: Failure | null = checked ?? (refusal === undefined ? null : { kind: 'oracle-error', detail: `seed refused by the boundary: ${refusal}` });
   const rendered = render(seed.schema, seed.definition, seed.site);
   const assertion = seed.assertRendered === undefined ? null : seed.assertRendered(rendered);
   const summary = rendered.ok ? `rendered ${JSON.stringify(rendered.schema ?? null)}` : `render failed: ${rendered.reason}`;
