@@ -123,7 +123,7 @@ export { decodePayloadSegment, encodePayloadSegment, joinEnvelope, splitEnvelope
 export type { EnvelopeSegments } from './envelope-grammar.ts';
 export { PROBE_KEYWORDS } from './probe.ts';
 export type { EndpointProbeReport, OllamaProbeReport, ProbeKeyword, ProbeReport } from './probe.ts';
-export { EVENT_TYPES, RUN_API_SCHEMAS, base64ByteLength, toPublicRunEvent } from './run-api.ts';
+export { EVENT_TYPES, RUN_API_SCHEMAS, base64ByteLength, runApiSchemaName, toPublicRunEvent } from './run-api.ts';
 export { MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES } from './run-api.ts';
 export type {
   JobView,
@@ -376,6 +376,7 @@ export type {
 export { ADAPTER_NEUTRAL_ERROR_CODES } from './adapter.ts';
 export type { AdapterNeutralErrorCode } from './adapter.ts';
 export { OPEN_RESPONSES_OPENAPI } from './open-responses-spec.ts';
+export { OPEN_RESPONSES_COMPONENT_NAMES, OPEN_RESPONSES_REGISTRY_ID, OPEN_RESPONSES_REMOTE_DOCUMENTS, OPEN_RESPONSES_SCHEMA_REGISTRY, openResponsesComponentSchema, openResponsesSchemaRegistry } from './open-responses-registry.ts';
 export { SUPERVISOR_API_VERSION } from './supervisor-api.ts';
 export type {
   SupervisorChildHealth,

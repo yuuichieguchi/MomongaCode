@@ -10,7 +10,6 @@
     "@momonga/config": "*",
     "@momonga/foundation": "*",
     "@momonga/memory": "*",
-    "@momonga/protocol": "*",
-    "ajv": "8.20.0"
+    "@momonga/protocol": "*"
   }
 }

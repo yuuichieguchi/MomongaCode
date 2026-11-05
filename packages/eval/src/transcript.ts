@@ -1,6 +1,5 @@
-import Ajv2020 from 'ajv/dist/2020.js';
-import type { ValidateFunction } from 'ajv/dist/2020.js';
-import { isRecord } from '@momonga/foundation';
+import { defineProductSchema, isRecord, productErrorsText } from '@momonga/foundation';
+import type { ProductValidator } from '@momonga/foundation';
 import { MEMORY_ORIGINS, REFLECTION_JOB_STATES, RUN_API_SCHEMAS, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
 import { validatePolicyOverlay } from './context-policy.ts';
 import type { PolicyOverlay } from './context-policy.ts';
@@ -52,13 +51,13 @@ export class TranscriptError extends Error {
   }
 }
 
-const ajv = new Ajv2020.default({ strict: false });
-const validateEvent: ValidateFunction<PublicRunEvent> = ajv.compile<PublicRunEvent>(RUN_API_SCHEMAS.PublicRunEvent);
+const validateEvent: ProductValidator<PublicRunEvent> = defineProductSchema('run-api/PublicRunEvent', RUN_API_SCHEMAS.PublicRunEvent);
 
 export const parsePublicRunEvent = (value: unknown, where: string): PublicRunEvent => {
-  if (validateEvent(value)) return value;
-  const first = validateEvent.errors?.[0];
-  throw new TranscriptError(`${where}: not a public run event${first === undefined ? '' : ` (${first.instancePath || '/'}: ${first.message ?? 'schema violation'})`}`);
+  const verdict = validateEvent(value);
+  if (verdict.valid) return verdict.value;
+  const first = verdict.errors[0];
+  throw new TranscriptError(`${where}: not a public run event${first === undefined ? '' : ` (${first.instancePath || '/'}: ${first.message})`}`);
 };
 
 
@@ -66,8 +65,9 @@ const CODE_DIGEST = /^[0-9a-f]{64}$/;
 
 const policyOf = (value: unknown, where: string): PolicyOverlay | null => {
   if (value === null) return null;
-  if (!validatePolicyOverlay(value)) throw new TranscriptError(`${where}: policy must be a token policy overlay`);
-  return value;
+  const verdict = validatePolicyOverlay(value);
+  if (!verdict.valid) throw new TranscriptError(`${where}: policy must be a token policy overlay`);
+  return verdict.value;
 };
 
 const codeDigestOf = (value: unknown, where: string): string | null => {
@@ -113,7 +113,7 @@ const childrenOf = (value: unknown, where: string): TranscriptChild[] => {
 
 type LiveFields = Pick<Transcript, 'ruleIds' | 'datasetSeed' | 'noiseTokens' | 'noiseReflectionsUnsettled' | 'stopped'>;
 
-const validateReflectionView: ValidateFunction = ajv.compile(RUN_API_SCHEMAS.RunReflection);
+const validateReflectionView: ProductValidator<unknown> = defineProductSchema('run-api/RunReflection', RUN_API_SCHEMAS.RunReflection);
 
 const reflectionOf = (value: unknown, where: string): TranscriptReflection => {
   if (!isRecord(value)) throw new TranscriptError(`${where}: reflection must be an object`);
@@ -122,8 +122,9 @@ const reflectionOf = (value: unknown, where: string): TranscriptReflection => {
     throw new TranscriptError(`${where}: reflection.state must be none or a reflection job state`);
   }
   if (reason !== undefined && (typeof reason !== 'string' || reason === '')) throw new TranscriptError(`${where}: reflection.reason must be a non-empty string`);
-  if (charges !== undefined && !validateReflectionView({ job: null, charges, queuedAhead: 0 })) {
-    throw new TranscriptError(`${where}: reflection.charges are not context charges: ${ajv.errorsText(validateReflectionView.errors, { dataVar: 'reflection' })}`);
+  const chargesVerdict = charges === undefined ? undefined : validateReflectionView({ job: null, charges, queuedAhead: 0 });
+  if (chargesVerdict !== undefined && !chargesVerdict.valid) {
+    throw new TranscriptError(`${where}: reflection.charges are not context charges: ${productErrorsText(chargesVerdict.errors, 'reflection')}`);
   }
   return {
     state: state as TranscriptReflection['state'],

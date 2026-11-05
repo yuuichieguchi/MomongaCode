@@ -10,7 +10,7 @@ export type UntrustedError = {
 
 export type ErrorDescriber = (errors: readonly RawError[], instance: unknown) => UntrustedError[];
 
-type Located = { readonly pointer: string; readonly node: unknown };
+type Located = { readonly uri: string; readonly pointer: string; readonly node: unknown };
 
 type Context = { readonly base: Located; readonly prefix: string; readonly instance: unknown };
 
@@ -42,7 +42,9 @@ const valueAt = (instance: unknown, instancePath: string): unknown => {
   return value;
 };
 
-const fragmentUri = (rootUri: string, pointer: string): string => `${rootUri}#${pointer.split('/').map(encodeURIComponent).join('/')}`;
+const fragmentUri = (documentUri: string, pointer: string): string => `${documentUri}#${pointer.split('/').map(encodeURIComponent).join('/')}`;
+
+const locationKey = (at: Located): string => `${at.uri}#${at.pointer}`;
 
 const sanitizeParam = (value: unknown): unknown => {
   if (typeof value === 'string') return sanitizeServerText(value);
@@ -87,39 +89,55 @@ export const createErrorDescriber = ({ root, rootUri, engine, registry }: { root
   const probes = new Map<string, EngineValidator>();
   const probeRegistry = { ...registry, [rootUri]: root };
 
+  const documentAt = (uri: string): unknown => (uri === rootUri ? root : registry[uri]);
+
   const probeOf = (branch: Located): EngineValidator => {
-    const cached = probes.get(branch.pointer);
+    const key = locationKey(branch);
+    const cached = probes.get(key);
     if (cached !== undefined) return cached;
-    const compiled = engine.compile({ $id: PROBE_ID, $ref: fragmentUri(rootUri, branch.pointer) }, probeRegistry);
-    probes.set(branch.pointer, compiled);
+    const compiled = engine.compile({ $id: PROBE_ID, $ref: fragmentUri(branch.uri, branch.pointer) }, probeRegistry);
+    probes.set(key, compiled);
     return compiled;
   };
 
   const referenceTarget = (at: Located): Located | undefined => {
     if (!isRecord(at.node)) return undefined;
     const ref = at.node['$ref'];
-    if (typeof ref !== 'string' || !ref.startsWith('#')) return undefined;
+    if (typeof ref !== 'string') return undefined;
+    const hash = ref.indexOf('#');
+    const location = hash < 0 ? ref : ref.slice(0, hash);
+    let uri = at.uri;
+    if (location !== '') {
+      try {
+        const resolved = new URL(location, at.uri);
+        resolved.hash = '';
+        uri = resolved.href;
+      } catch {
+        return undefined;
+      }
+    }
     let pointer: string;
     try {
-      pointer = decodeURIComponent(ref.slice(1));
+      pointer = decodeURIComponent(hash < 0 ? '' : ref.slice(hash + 1));
     } catch {
       return undefined;
     }
     if (pointer !== '' && !pointer.startsWith('/')) return undefined;
-    let node: unknown = root;
+    let node: unknown = documentAt(uri);
+    if (node === undefined) return undefined;
     for (const token of segmentsOf(pointer)) {
       node = childOf(node, token)?.value;
       if (node === undefined) return undefined;
     }
-    return { pointer, node };
+    return { uri, pointer, node };
   };
 
   const stepInto = (at: Located, token: string, seen: Set<string>): Located | undefined => {
     const direct = childOf(at.node, token);
-    if (direct !== undefined) return { pointer: `${at.pointer}/${escapeToken(direct.key)}`, node: direct.value };
+    if (direct !== undefined) return { uri: at.uri, pointer: `${at.pointer}/${escapeToken(direct.key)}`, node: direct.value };
     const target = referenceTarget(at);
-    if (target === undefined || seen.has(target.pointer)) return undefined;
-    seen.add(target.pointer);
+    if (target === undefined || seen.has(locationKey(target))) return undefined;
+    seen.add(locationKey(target));
     return stepInto(target, token, seen);
   };
 
@@ -133,15 +151,15 @@ export const createErrorDescriber = ({ root, rootUri, engine, registry }: { root
     }
     const list = at === undefined ? undefined : stepInto(at, keyword, new Set());
     if (list === undefined || !Array.isArray(list.node)) return undefined;
-    return list.node.map((node, index) => ({ pointer: `${list.pointer}/${index}`, node }));
+    return list.node.map((node, index) => ({ uri: list.uri, pointer: `${list.pointer}/${index}`, node }));
   };
 
   const shapeOf = (branch: Located): Record<string, unknown> | undefined => {
     const seen = new Set<string>();
     let at: Located | undefined = branch;
-    while (at !== undefined && !seen.has(at.pointer)) {
+    while (at !== undefined && !seen.has(locationKey(at))) {
       if (isRecord(at.node) && isRecord(at.node['properties'])) return at.node;
-      seen.add(at.pointer);
+      seen.add(locationKey(at));
       at = referenceTarget(at);
     }
     return undefined;
@@ -188,11 +206,12 @@ export const createErrorDescriber = ({ root, rootUri, engine, registry }: { root
       const deepest = Math.max(...contenders.map((outcome) => rawDepthOf(outcome.errors)));
       const finalists = pool.length > 0 ? pool : contenders.filter((outcome) => rawDepthOf(outcome.errors) === deepest);
       const best = finalists.reduce((winner, outcome) => (outcome.errors.length < winner.errors.length ? outcome : winner));
-      return flatten(best.errors, { base: best.branch, prefix: path, instance });
+      const reported = pool.length > 0 ? best.errors : best.errors.filter((candidate) => rawDepthOf([candidate]) === deepest);
+      return flatten(reported, { base: best.branch, prefix: path, instance });
     });
 
   return (errors, instance) => {
-    const flat = flatten(errors, { base: { pointer: '', node: root }, prefix: '', instance });
+    const flat = flatten(errors, { base: { uri: rootUri, pointer: '', node: root }, prefix: '', instance });
     const unique = new Map(flat.map((error) => [JSON.stringify([error.instancePath, error.keyword, error.message, error.params]), error]));
     return [...unique.values()].sort(compareErrors);
   };

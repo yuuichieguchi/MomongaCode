@@ -1339,3 +1339,9 @@ export const toPublicRunEvent = (event: RunEvent | SessionEvent): PublicRunEvent
     }
   }
 };
+
+export const runApiSchemaName = (schema: JsonSchema): string => {
+  const entry = Object.entries(RUN_API_SCHEMAS).find(([, candidate]) => candidate === schema);
+  if (entry === undefined) throw new Error('the schema is not one of RUN_API_SCHEMAS');
+  return entry[0];
+};

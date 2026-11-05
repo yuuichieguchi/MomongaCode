@@ -1,9 +1,8 @@
-import Ajv2020 from 'ajv/dist/2020.js';
-import type { ValidateFunction } from 'ajv/dist/2020.js';
 import { defaultContextSettings, defaultMemorySettings, defaultToolsSettings } from '@momonga/config';
 import { OUTPUT_FORMATTERS } from '@momonga/protocol';
 import type { OutputFormatterName } from '@momonga/protocol';
-import { canonicalJson } from '@momonga/foundation';
+import { canonicalJson, defineProductSchema } from '@momonga/foundation';
+import type { ProductValidator, UntrustedError } from '@momonga/foundation';
 import { EvalError } from './runner.ts';
 
 export type PolicyOverlay = {
@@ -34,15 +33,14 @@ export const POLICY_OVERLAY_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-const ajv = new Ajv2020.default({ strict: true });
-export const validatePolicyOverlay: ValidateFunction<PolicyOverlay> = ajv.compile<PolicyOverlay>(POLICY_OVERLAY_SCHEMA);
+export const validatePolicyOverlay: ProductValidator<PolicyOverlay> = defineProductSchema('eval/policy-overlay', POLICY_OVERLAY_SCHEMA);
 
-const describeViolation = (): string => {
-  const first = validatePolicyOverlay.errors?.[0];
+const describeViolation = (errors: readonly UntrustedError[]): string => {
+  const first = errors[0];
   if (first === undefined) return '/: schema violation';
   const extra = first.keyword === 'additionalProperties' ? `/${String(first.params['additionalProperty'])}` : '';
   const pointer = `${first.instancePath}${extra}`;
-  return `${pointer === '' ? '/' : pointer}: ${first.message ?? 'schema violation'}`;
+  return `${pointer === '' ? '/' : pointer}: ${first.message}`;
 };
 
 const withoutDefaults = <T extends object>(section: T | undefined, defaults: Record<string, unknown>): T | undefined => {
@@ -68,6 +66,7 @@ export const parsePolicyOverlay = (text: string, source: string): PolicyOverlay 
   } catch (error) {
     throw new EvalError(`${source}: not valid JSON: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
-  if (!validatePolicyOverlay(value)) throw new EvalError(`${source}: not a token policy overlay (${describeViolation()})`);
-  return normalisePolicyOverlay(value);
+  const verdict = validatePolicyOverlay(value);
+  if (!verdict.valid) throw new EvalError(`${source}: not a token policy overlay (${describeViolation(verdict.errors)})`);
+  return normalisePolicyOverlay(verdict.value);
 };

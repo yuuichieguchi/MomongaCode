@@ -1,6 +1,5 @@
-import Ajv2020 from 'ajv/dist/2020.js';
-import type { ValidateFunction } from 'ajv/dist/2020.js';
-import { canonicalJson } from '@momonga/foundation';
+import { canonicalJson, defineProductSchema } from '@momonga/foundation';
+import type { ProductValidator } from '@momonga/foundation';
 import { GOVERNING_KINDS } from '@momonga/protocol';
 import type { GoverningKind } from '@momonga/protocol';
 import { DATASET_SCHEMA, DatasetError, assertGoldenCases, describeFirstError, isInsideWorkspace, jsonOf } from './dataset.ts';
@@ -143,8 +142,7 @@ export const CONTEXT_DATASET_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-const ajv = new Ajv2020.default({ strict: true });
-const validateContextDataset: ValidateFunction<ContextDataset> = ajv.compile<ContextDataset>(CONTEXT_DATASET_SCHEMA);
+const validateContextDataset: ProductValidator<ContextDataset> = defineProductSchema('eval/context-dataset', CONTEXT_DATASET_SCHEMA);
 
 export const bindingRuleIds = (rules: readonly ContextRule[]): string[] => {
   const superseded = new Set(rules.filter((rule) => rule.inScope).flatMap((rule) => rule.supersedes));
@@ -287,17 +285,19 @@ const assertPairs = (dataset: ContextDataset, source: string): void => {
 
 export const parseContextDataset = (text: string, source: string): ContextDataset => {
   const value = jsonOf(text, source);
-  if (!validateContextDataset(value)) throw new DatasetError(`${source}: invalid dataset at ${describeFirstError(validateContextDataset)}`);
-  assertGoldenCases(value, source);
-  for (const entry of value.cases) {
+  const verdict = validateContextDataset(value);
+  if (!verdict.valid) throw new DatasetError(`${source}: invalid dataset at ${describeFirstError(verdict.errors)}`);
+  const dataset = verdict.value;
+  assertGoldenCases(dataset, source);
+  for (const entry of dataset.cases) {
     assertRevisions(entry, source);
     assertWorkspace(entry, source);
     assertGold(entry, source);
     assertMemoryPaths(entry, source);
     assertNoiseNamesNoTarget(entry, source);
   }
-  assertPairs(value, source);
-  return value;
+  assertPairs(dataset, source);
+  return dataset;
 };
 
 const FNV_OFFSET = 0x811c9dc5;
