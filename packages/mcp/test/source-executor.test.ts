@@ -172,7 +172,6 @@ describe('MCP tool definitions', () => {
     expect(tool?.timeoutMs).toBe(45_000);
     expect(tool?.prepare).toBeUndefined();
     expect(tool?.reconcile).toBeUndefined();
-    expect(tool?.schemaMode).toBe('lenient');
   });
 });
 

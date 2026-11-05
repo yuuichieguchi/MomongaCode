@@ -108,7 +108,6 @@ const buildTool = (
     ...(tool.outputSchema === undefined ? {} : { outputSchema: sanitizeSchema(tool.outputSchema) }),
     server,
     validatorIdentity: mcpToolIdentity(server, tool.name),
-    schemaMode: 'lenient',
     timeoutMs: options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
     title: () => `${sanitizeServerText(server)}: ${titleOf(tool)}`,
     subject: () => ({ kind: 'mcp', server, tool: toolPart }),

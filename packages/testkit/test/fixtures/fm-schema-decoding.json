@@ -1,0 +1,2406 @@
+{
+ "source": "fm serve --socket, /usr/bin/fm sha256 f429257df40311ba075484be92c273ab4e882e5694f970c621a4d606b3a956d0, OS build 26A428, measured 2026-11-05",
+ "replies": [
+  {
+   "name": "enum no type",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.dataCorrupted: Data was corrupted. Path: properties.value. Debug description: None of these keys were present: 'type', 'const', '$ref', 'anyOf'",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "enum": [
+       "alpha",
+       "beta"
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "enum with type string",
+   "schemaName": "probe",
+   "status": 200,
+   "message": null,
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "type": "string",
+      "enum": [
+       "alpha",
+       "beta"
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "anyOf scalars",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.dataCorrupted: Data was corrupted. Path: properties.value. Debug description: AnyOf schemas require a 'title' key",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "integer"
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "anyOf scalars + title",
+   "schemaName": "probe",
+   "status": 200,
+   "message": null,
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "integer"
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "anyOf objects bare",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.keyNotFound: Key 'x-order' not found in keyed decoding container. Path: properties.value.anyOf[0]. Debug description: No value associated with key CodingKeys(stringValue: \"x-order\", intValue: nil) (\"x-order\").",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "a": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "a"
+        ]
+       },
+       {
+        "type": "object",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ]
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "anyOf objects + title on anyOf",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.keyNotFound: Key 'x-order' not found in keyed decoding container. Path: properties.value.anyOf[0]. Debug description: No value associated with key CodingKeys(stringValue: \"x-order\", intValue: nil) (\"x-order\").",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "a": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "a"
+        ]
+       },
+       {
+        "type": "object",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ]
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "anyOf objects + title on anyOf + titles on branches",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.keyNotFound: Key 'x-order' not found in keyed decoding container. Path: properties.value.anyOf[0]. Debug description: No value associated with key CodingKeys(stringValue: \"x-order\", intValue: nil) (\"x-order\").",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "a": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "a"
+        ],
+        "title": "A"
+       },
+       {
+        "type": "object",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "title": "B"
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "anyOf objects + title on anyOf + x-order on branches",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.keyNotFound: Key 'additionalProperties' not found in keyed decoding container. Path: properties.value.anyOf[0]. Debug description: No value associated with key CodingKeys(stringValue: \"additionalProperties\", intValue: nil) (\"additionalProperties\").",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "a": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "a"
+        ],
+        "x-order": [
+         "a"
+        ]
+       },
+       {
+        "type": "object",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "x-order": [
+         "b"
+        ]
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "anyOf objects + title on anyOf + titles and x-order on branches",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.keyNotFound: Key 'additionalProperties' not found in keyed decoding container. Path: properties.value.anyOf[0]. Debug description: No value associated with key CodingKeys(stringValue: \"additionalProperties\", intValue: nil) (\"additionalProperties\").",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "a": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "a"
+        ],
+        "title": "A",
+        "x-order": [
+         "a"
+        ]
+       },
+       {
+        "type": "object",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "title": "B",
+        "x-order": [
+         "b"
+        ]
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "root type object + anyOf, bare",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.keyNotFound: Key 'x-order' not found in keyed decoding container. Path: anyOf[0]. Debug description: No value associated with key CodingKeys(stringValue: \"x-order\", intValue: nil) (\"x-order\").",
+   "schema": {
+    "type": "object",
+    "anyOf": [
+     {
+      "type": "object",
+      "properties": {
+       "a": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "a"
+      ]
+     },
+     {
+      "type": "object",
+      "properties": {
+       "b": {
+        "type": "integer"
+       }
+      },
+      "required": [
+       "b"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "root anyOf only, bare",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.keyNotFound: Key 'x-order' not found in keyed decoding container. Path: anyOf[0]. Debug description: No value associated with key CodingKeys(stringValue: \"x-order\", intValue: nil) (\"x-order\").",
+   "schema": {
+    "anyOf": [
+     {
+      "type": "object",
+      "properties": {
+       "a": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "a"
+      ]
+     },
+     {
+      "type": "object",
+      "properties": {
+       "b": {
+        "type": "integer"
+       }
+      },
+      "required": [
+       "b"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "root anyOf only + title",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.keyNotFound: Key 'x-order' not found in keyed decoding container. Path: anyOf[0]. Debug description: No value associated with key CodingKeys(stringValue: \"x-order\", intValue: nil) (\"x-order\").",
+   "schema": {
+    "title": "R",
+    "anyOf": [
+     {
+      "type": "object",
+      "properties": {
+       "a": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "a"
+      ]
+     },
+     {
+      "type": "object",
+      "properties": {
+       "b": {
+        "type": "integer"
+       }
+      },
+      "required": [
+       "b"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "root anyOf only + title + branch titles + x-order",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.keyNotFound: Key 'additionalProperties' not found in keyed decoding container. Path: anyOf[0]. Debug description: No value associated with key CodingKeys(stringValue: \"additionalProperties\", intValue: nil) (\"additionalProperties\").",
+   "schema": {
+    "title": "R",
+    "anyOf": [
+     {
+      "type": "object",
+      "properties": {
+       "a": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "a"
+      ],
+      "title": "A",
+      "x-order": [
+       "a"
+      ]
+     },
+     {
+      "type": "object",
+      "properties": {
+       "b": {
+        "type": "integer"
+       }
+      },
+      "required": [
+       "b"
+      ],
+      "title": "B",
+      "x-order": [
+       "b"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "root type object + anyOf + title + branch titles + x-order",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.keyNotFound: Key 'additionalProperties' not found in keyed decoding container. Path: anyOf[0]. Debug description: No value associated with key CodingKeys(stringValue: \"additionalProperties\", intValue: nil) (\"additionalProperties\").",
+   "schema": {
+    "type": "object",
+    "title": "R",
+    "anyOf": [
+     {
+      "type": "object",
+      "properties": {
+       "a": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "a"
+      ],
+      "title": "A",
+      "x-order": [
+       "a"
+      ]
+     },
+     {
+      "type": "object",
+      "properties": {
+       "b": {
+        "type": "integer"
+       }
+      },
+      "required": [
+       "b"
+      ],
+      "title": "B",
+      "x-order": [
+       "b"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "nested object no title no x-order",
+   "schemaName": "probe",
+   "status": 200,
+   "message": null,
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "type": "object",
+      "properties": {
+       "a": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "a"
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "anyOf objs: anyOf title, branch x-order+addl, no branch title",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.dataCorrupted: Data was corrupted. Path: properties.value.anyOf. Debug description: Object schemas require a 'title' key",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "a": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "a"
+        ],
+        "x-order": [
+         "a"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "x-order": [
+         "b"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "anyOf objs: anyOf title, branch title+x-order+addl",
+   "schemaName": "probe",
+   "status": 200,
+   "message": null,
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "a": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "a"
+        ],
+        "title": "A",
+        "x-order": [
+         "a"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "title": "B",
+        "x-order": [
+         "b"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "anyOf objs: no anyOf title, branch title+x-order+addl",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.dataCorrupted: Data was corrupted. Path: properties.value. Debug description: AnyOf schemas require a 'title' key",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "a": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "a"
+        ],
+        "title": "A",
+        "x-order": [
+         "a"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "title": "B",
+        "x-order": [
+         "b"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "anyOf objs: anyOf title, branch title+x-order, no addl",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.keyNotFound: Key 'additionalProperties' not found in keyed decoding container. Path: properties.value.anyOf[0]. Debug description: No value associated with key CodingKeys(stringValue: \"additionalProperties\", intValue: nil) (\"additionalProperties\").",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "a": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "a"
+        ],
+        "title": "A",
+        "x-order": [
+         "a"
+        ]
+       },
+       {
+        "type": "object",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "title": "B",
+        "x-order": [
+         "b"
+        ]
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "anyOf objs: anyOf title, branch title+x-order+addl true",
+   "schemaName": "probe",
+   "status": 200,
+   "message": null,
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "a": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "a"
+        ],
+        "title": "A",
+        "x-order": [
+         "a"
+        ],
+        "additionalProperties": true
+       },
+       {
+        "type": "object",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "title": "B",
+        "x-order": [
+         "b"
+        ],
+        "additionalProperties": true
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "anyOf objs: branches without required",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.keyNotFound: Key 'required' not found in keyed decoding container. Path: properties.value.anyOf[0]. Debug description: No value associated with key CodingKeys(stringValue: \"required\", intValue: nil) (\"required\").",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "a": {
+          "type": "string"
+         }
+        },
+        "title": "A",
+        "x-order": [
+         "a"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "title": "B",
+        "x-order": [
+         "b"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "anyOf objs: branch x-order subset",
+   "schemaName": "probe",
+   "status": 200,
+   "message": null,
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "a": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "a"
+        ],
+        "title": "A",
+        "x-order": [],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "title": "B",
+        "x-order": [
+         "b"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "root anyOf only: title + branch title+x-order+addl",
+   "schemaName": "probe",
+   "status": 200,
+   "message": null,
+   "schema": {
+    "title": "R",
+    "anyOf": [
+     {
+      "type": "object",
+      "properties": {
+       "a": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "a"
+      ],
+      "title": "A",
+      "x-order": [
+       "a"
+      ],
+      "additionalProperties": false
+     },
+     {
+      "type": "object",
+      "properties": {
+       "b": {
+        "type": "integer"
+       }
+      },
+      "required": [
+       "b"
+      ],
+      "title": "B",
+      "x-order": [
+       "b"
+      ],
+      "additionalProperties": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "root anyOf only: no title + branch title+x-order+addl",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.dataCorrupted: Data was corrupted. Debug description: AnyOf schemas require a 'title' key",
+   "schema": {
+    "anyOf": [
+     {
+      "type": "object",
+      "properties": {
+       "a": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "a"
+      ],
+      "title": "A",
+      "x-order": [
+       "a"
+      ],
+      "additionalProperties": false
+     },
+     {
+      "type": "object",
+      "properties": {
+       "b": {
+        "type": "integer"
+       }
+      },
+      "required": [
+       "b"
+      ],
+      "title": "B",
+      "x-order": [
+       "b"
+      ],
+      "additionalProperties": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "root type object + anyOf: title + branches full",
+   "schemaName": "probe",
+   "status": 200,
+   "message": null,
+   "schema": {
+    "type": "object",
+    "title": "R",
+    "anyOf": [
+     {
+      "type": "object",
+      "properties": {
+       "a": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "a"
+      ],
+      "title": "A",
+      "x-order": [
+       "a"
+      ],
+      "additionalProperties": false
+     },
+     {
+      "type": "object",
+      "properties": {
+       "b": {
+        "type": "integer"
+       }
+      },
+      "required": [
+       "b"
+      ],
+      "title": "B",
+      "x-order": [
+       "b"
+      ],
+      "additionalProperties": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "anyOf branch with nested bare object",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.keyNotFound: Key 'x-order' not found in keyed decoding container. Path: properties.value.anyOf[0].properties.n. Debug description: No value associated with key CodingKeys(stringValue: \"x-order\", intValue: nil) (\"x-order\").",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "n": {
+          "type": "object",
+          "properties": {
+           "a": {
+            "type": "string"
+           }
+          },
+          "required": [
+           "a"
+          ]
+         }
+        },
+        "required": [
+         "n"
+        ],
+        "title": "N",
+        "x-order": [
+         "n"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "title": "B",
+        "x-order": [
+         "b"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "anyOf branch with const property",
+   "schemaName": "probe",
+   "status": 200,
+   "message": null,
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "k": {
+          "const": "x"
+         }
+        },
+        "required": [
+         "k"
+        ],
+        "title": "K",
+        "x-order": [
+         "k"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "title": "B",
+        "x-order": [
+         "b"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "anyOf branch with type string const",
+   "schemaName": "probe",
+   "status": 200,
+   "message": null,
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "k": {
+          "type": "string",
+          "const": "x"
+         }
+        },
+        "required": [
+         "k"
+        ],
+        "title": "K",
+        "x-order": [
+         "k"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "title": "B",
+        "x-order": [
+         "b"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "duplicate branch titles, different shapes",
+   "schemaName": "probe",
+   "status": 200,
+   "message": null,
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "title": "Same",
+        "properties": {
+         "a": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "a"
+        ],
+        "x-order": [
+         "a"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "title": "Same",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "x-order": [
+         "b"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "branch title equals anyOf title",
+   "schemaName": "probe",
+   "status": 200,
+   "message": null,
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "title": "V",
+        "properties": {
+         "a": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "a"
+        ],
+        "x-order": [
+         "a"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "title": "B",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "x-order": [
+         "b"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "x-order names unknown key",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.dataCorrupted: Data was corrupted. Path: properties.value.anyOf.properties.zzz. Debug description: Missing property 'zzz' in x-order",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "title": "A",
+        "properties": {
+         "a": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "a"
+        ],
+        "x-order": [
+         "a",
+         "zzz"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "title": "B",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "x-order": [
+         "b"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "x-order omits a property",
+   "schemaName": "probe",
+   "status": 200,
+   "message": null,
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "title": "A",
+        "properties": {
+         "a": {
+          "type": "string"
+         },
+         "c": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "a",
+         "c"
+        ],
+        "x-order": [
+         "a"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "title": "B",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "x-order": [
+         "b"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "required empty",
+   "schemaName": "probe",
+   "status": 200,
+   "message": null,
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "title": "A",
+        "properties": {
+         "a": {
+          "type": "string"
+         }
+        },
+        "required": [],
+        "x-order": [
+         "a"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "title": "B",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "x-order": [
+         "b"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "array of anyOf objects inside branch",
+   "schemaName": "probe",
+   "status": 200,
+   "message": null,
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "title": "A",
+        "properties": {
+         "xs": {
+          "type": "array",
+          "items": {
+           "title": "I",
+           "anyOf": [
+            {
+             "type": "object",
+             "title": "A2",
+             "properties": {
+              "a": {
+               "type": "string"
+              }
+             },
+             "required": [
+              "a"
+             ],
+             "x-order": [
+              "a"
+             ],
+             "additionalProperties": false
+            },
+            {
+             "type": "object",
+             "title": "B2",
+             "properties": {
+              "b": {
+               "type": "integer"
+              }
+             },
+             "required": [
+              "b"
+             ],
+             "x-order": [
+              "b"
+             ],
+             "additionalProperties": false
+            }
+           ]
+          }
+         }
+        },
+        "required": [
+         "xs"
+        ],
+        "x-order": [
+         "xs"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "title": "B",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "x-order": [
+         "b"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "array items bare object inside branch",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.keyNotFound: Key 'x-order' not found in keyed decoding container. Path: properties.value.anyOf[0].properties.xs.items. Debug description: No value associated with key CodingKeys(stringValue: \"x-order\", intValue: nil) (\"x-order\").",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "title": "A",
+        "properties": {
+         "xs": {
+          "type": "array",
+          "items": {
+           "type": "object",
+           "properties": {
+            "a": {
+             "type": "string"
+            }
+           },
+           "required": [
+            "a"
+           ]
+          }
+         }
+        },
+        "required": [
+         "xs"
+        ],
+        "x-order": [
+         "xs"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "title": "B",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "x-order": [
+         "b"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "minItems inside branch",
+   "schemaName": "probe",
+   "status": 200,
+   "message": null,
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "title": "A",
+        "properties": {
+         "xs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+           "type": "string"
+          }
+         }
+        },
+        "required": [
+         "xs"
+        ],
+        "x-order": [
+         "xs"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "title": "B",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "x-order": [
+         "b"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "pattern inside branch",
+   "schemaName": "probe",
+   "status": 200,
+   "message": null,
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "title": "A",
+        "properties": {
+         "p": {
+          "type": "string",
+          "pattern": "^[a-z]+$"
+         }
+        },
+        "required": [
+         "p"
+        ],
+        "x-order": [
+         "p"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "title": "B",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "x-order": [
+         "b"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "top-level property {}",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.dataCorrupted: Data was corrupted. Path: properties.value. Debug description: None of these keys were present: 'type', 'const', '$ref', 'anyOf'",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {}
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "top-level property description only",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.dataCorrupted: Data was corrupted. Path: properties.value. Debug description: None of these keys were present: 'type', 'const', '$ref', 'anyOf'",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "description": "x"
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "top-level property {type: object} no properties",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.typeMismatch: Expected value of type Dictionary<String, Any>. Path: $defs.probe_value.additionalProperties. Debug description: Expected to decode Dictionary<String, Any> but found bool instead.",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "type": "object"
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "branch property {type: object} no properties",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.keyNotFound: Key 'additionalProperties' not found in keyed decoding container. Path: properties.value.anyOf[0].properties.o. Debug description: No value associated with key CodingKeys(stringValue: \"additionalProperties\", intValue: nil) (\"additionalProperties\").",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "title": "A",
+        "properties": {
+         "o": {
+          "type": "object"
+         }
+        },
+        "required": [
+         "o"
+        ],
+        "x-order": [
+         "o"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "title": "B",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "x-order": [
+         "b"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "branch property {}",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.dataCorrupted: Data was corrupted. Path: properties.value.anyOf[0].properties.o. Debug description: None of these keys were present: 'type', 'const', '$ref', 'anyOf'",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "title": "A",
+        "properties": {
+         "o": {}
+        },
+        "required": [
+         "o"
+        ],
+        "x-order": [
+         "o"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "title": "B",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "x-order": [
+         "b"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "branch missing title and required",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.keyNotFound: Key 'required' not found in keyed decoding container. Path: properties.value.anyOf[0]. Debug description: No value associated with key CodingKeys(stringValue: \"required\", intValue: nil) (\"required\").",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "a": {
+          "type": "string"
+         }
+        },
+        "x-order": [
+         "a"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "title": "B",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "x-order": [
+         "b"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "branch missing title and x-order",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.keyNotFound: Key 'x-order' not found in keyed decoding container. Path: properties.value.anyOf[0]. Debug description: No value associated with key CodingKeys(stringValue: \"x-order\", intValue: nil) (\"x-order\").",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "a": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "a"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "title": "B",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "x-order": [
+         "b"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "branch missing type only",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.dataCorrupted: Data was corrupted. Path: properties.value.anyOf[0]. Debug description: None of these keys were present: 'type', 'const', '$ref', 'anyOf'",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "title": "A",
+        "properties": {
+         "a": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "a"
+        ],
+        "x-order": [
+         "a"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "title": "B",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "x-order": [
+         "b"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "branch missing everything except type+properties",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.keyNotFound: Key 'x-order' not found in keyed decoding container. Path: properties.value.anyOf[0]. Debug description: No value associated with key CodingKeys(stringValue: \"x-order\", intValue: nil) (\"x-order\").",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "a": {
+          "type": "string"
+         }
+        }
+       },
+       {
+        "type": "object",
+        "title": "B",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ],
+        "x-order": [
+         "b"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "second branch bare, first full",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.keyNotFound: Key 'x-order' not found in keyed decoding container. Path: properties.value.anyOf[1]. Debug description: No value associated with key CodingKeys(stringValue: \"x-order\", intValue: nil) (\"x-order\").",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "value": {
+      "title": "V",
+      "anyOf": [
+       {
+        "type": "object",
+        "title": "A",
+        "properties": {
+         "a": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "a"
+        ],
+        "x-order": [
+         "a"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "b": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "b"
+        ]
+       }
+      ]
+     }
+    },
+    "required": [
+     "value"
+    ]
+   }
+  },
+  {
+   "name": "top-level x-order names unknown key",
+   "schemaName": "probe",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.dataCorrupted: Data was corrupted. Path: properties.zzz. Debug description: Missing property 'zzz' in x-order",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "a": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "a"
+    ],
+    "x-order": [
+     "a",
+     "zzz"
+    ]
+   }
+  },
+  {
+   "name": "top-level object with title only",
+   "schemaName": "probe",
+   "status": 200,
+   "message": null,
+   "schema": {
+    "type": "object",
+    "title": "T",
+    "properties": {
+     "a": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "a"
+    ]
+   }
+  },
+  {
+   "name": "probe flat envelope",
+   "schemaName": "probe",
+   "status": 200,
+   "message": null,
+   "schema": {
+    "type": "object",
+    "properties": {
+     "kind": {
+      "type": "string"
+     },
+     "text": {
+      "type": "string"
+     },
+     "calls": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": {
+       "type": "object",
+       "properties": {
+        "name": {
+         "const": "probe_weather"
+        },
+        "arguments": {
+         "type": "object",
+         "properties": {
+          "city": {
+           "type": "string"
+          },
+          "days": {
+           "type": "integer",
+           "minimum": 1
+          }
+         },
+         "required": [
+          "city",
+          "days"
+         ],
+         "additionalProperties": false
+        }
+       },
+       "required": [
+        "name",
+        "arguments"
+       ]
+      }
+     }
+    },
+    "required": [
+     "kind"
+    ]
+   }
+  },
+  {
+   "name": "product body as sent",
+   "schemaName": "momonga_tool_envelope",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.keyNotFound: Key 'x-order' not found in keyed decoding container. Path: anyOf[0]. Debug description: No value associated with key CodingKeys(stringValue: \"x-order\", intValue: nil) (\"x-order\").",
+   "schema": {
+    "type": "object",
+    "anyOf": [
+     {
+      "type": "object",
+      "properties": {
+       "kind": {
+        "const": "final"
+       },
+       "text": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "kind",
+       "text"
+      ]
+     },
+     {
+      "type": "object",
+      "properties": {
+       "kind": {
+        "const": "tool_calls"
+       },
+       "calls": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+         "anyOf": [
+          {
+           "type": "object",
+           "properties": {
+            "name": {
+             "const": "read_file"
+            },
+            "arguments": {
+             "type": "object",
+             "properties": {
+              "path": {
+               "type": "string"
+              }
+             },
+             "required": [
+              "path"
+             ],
+             "additionalProperties": false
+            }
+           },
+           "required": [
+            "name",
+            "arguments"
+           ]
+          },
+          {
+           "type": "object",
+           "properties": {
+            "name": {
+             "const": "list_dir"
+            },
+            "arguments": {
+             "type": "object",
+             "properties": {
+              "dir": {
+               "type": "string"
+              }
+             },
+             "required": [
+              "dir"
+             ]
+            }
+           },
+           "required": [
+            "name",
+            "arguments"
+           ]
+          }
+         ]
+        }
+       }
+      },
+      "required": [
+       "kind",
+       "calls"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "product body decorated",
+   "schemaName": "momonga_tool_envelope",
+   "status": 200,
+   "message": null,
+   "schema": {
+    "type": "object",
+    "anyOf": [
+     {
+      "type": "object",
+      "properties": {
+       "kind": {
+        "const": "final"
+       },
+       "text": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "kind",
+       "text"
+      ],
+      "title": "O4",
+      "x-order": [
+       "kind",
+       "text"
+      ],
+      "additionalProperties": false
+     },
+     {
+      "type": "object",
+      "properties": {
+       "kind": {
+        "const": "tool_calls"
+       },
+       "calls": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+         "anyOf": [
+          {
+           "type": "object",
+           "properties": {
+            "name": {
+             "const": "read_file"
+            },
+            "arguments": {
+             "type": "object",
+             "properties": {
+              "path": {
+               "type": "string"
+              }
+             },
+             "required": [
+              "path"
+             ],
+             "additionalProperties": false,
+             "title": "O9",
+             "x-order": [
+              "path"
+             ]
+            }
+           },
+           "required": [
+            "name",
+            "arguments"
+           ],
+           "title": "O11",
+           "x-order": [
+            "name",
+            "arguments"
+           ],
+           "additionalProperties": false
+          },
+          {
+           "type": "object",
+           "properties": {
+            "name": {
+             "const": "list_dir"
+            },
+            "arguments": {
+             "type": "object",
+             "properties": {
+              "dir": {
+               "type": "string"
+              }
+             },
+             "required": [
+              "dir"
+             ],
+             "title": "O15",
+             "x-order": [
+              "dir"
+             ],
+             "additionalProperties": false
+            }
+           },
+           "required": [
+            "name",
+            "arguments"
+           ],
+           "title": "O17",
+           "x-order": [
+            "name",
+            "arguments"
+           ],
+           "additionalProperties": false
+          }
+         ],
+         "title": "U18"
+        }
+       }
+      },
+      "required": [
+       "kind",
+       "calls"
+      ],
+      "title": "O21",
+      "x-order": [
+       "kind",
+       "calls"
+      ],
+      "additionalProperties": false
+     }
+    ],
+    "title": "U22"
+   }
+  },
+  {
+   "name": "product body under probe-measured support",
+   "schemaName": "momonga_tool_envelope",
+   "status": 400,
+   "message": "Invalid response_format schema: DecodingError.typeMismatch: Expected value of type Dictionary<String, Any>. Path: $defs.momonga_tool_envelope_calls_item_arguments.additionalProperties. Debug description: Expected to decode Dictionary<String, Any> but found bool instead.",
+   "schema": {
+    "type": "object",
+    "properties": {
+     "kind": {
+      "type": "string"
+     },
+     "text": {
+      "type": "string"
+     },
+     "calls": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+       "type": "object",
+       "properties": {
+        "name": {
+         "type": "string"
+        },
+        "arguments": {
+         "type": "object"
+        }
+       },
+       "required": [
+        "name",
+        "arguments"
+       ]
+      }
+     }
+    },
+    "required": [
+     "kind"
+    ]
+   }
+  }
+ ]
+}

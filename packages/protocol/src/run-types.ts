@@ -167,6 +167,7 @@ export type RunEventPayload =
       formatted?: { formatter: string; version: number };
     }
   | { type: 'tool.loaded'; names: string[] }
+  | { type: 'tool.offered'; names: string[] }
   | { type: 'loop.warned'; signature: string }
   | {
       type: 'model.rejected';
@@ -314,6 +315,7 @@ export type RunState = {
   memoriesLoaded?: { id: string; status: MemoryStatus }[];
   activatedSkills: ActivatedSkillEntry[];
   loadedTools: string[];
+  offeredTools?: string[];
   loopWarned?: { signature: string };
   streaming?: { step: number; attempt: number; seen: boolean; items: { itemId: string; text: string }[] };
   mode?: PermissionMode;

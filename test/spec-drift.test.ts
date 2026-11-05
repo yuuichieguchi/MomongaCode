@@ -56,6 +56,7 @@ const UNMODELLED_EVENT_TYPES = [
   'tool.elicitation.requested',
   'tool.elicitation.resolved',
   'tool.loaded',
+  'tool.offered',
   'tool.permission.classified',
   'tool.updated',
   'usage.charged',
