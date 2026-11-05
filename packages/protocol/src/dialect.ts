@@ -1,5 +1,7 @@
 export type DialectId = string;
 
+export const DIALECT_ID_PATTERN = '^[a-z][a-z0-9-]{0,62}$';
+
 export const DIALECT_KINDS = [
   'any',
   'root',
@@ -158,7 +160,7 @@ export const DIALECT_DEFINITION_SCHEMA: Record<string, unknown> = {
   required: ['rules'],
   additionalProperties: false,
   $defs: {
-    id: { type: 'string', pattern: '^[a-z][a-z0-9-]{0,62}$' },
+    id: { type: 'string', pattern: DIALECT_ID_PATTERN },
     kind: { enum: [...DIALECT_KINDS] },
     descentPositive: { enum: [...DIALECT_POSITIVE_DESCENTS] },
     descent: { anyOf: [{ $ref: '#/$defs/descentPositive' }, { enum: [...DIALECT_NON_POSITIVE_DESCENTS] }] },

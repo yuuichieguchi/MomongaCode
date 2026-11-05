@@ -145,6 +145,7 @@ export { PROBE_KEYWORDS } from './probe.ts';
 export type { EndpointProbeReport, OllamaProbeReport, ProbeDialectAttempt, ProbeDialectResult, ProbeKeyword, ProbeReport, ProbeReportDialect } from './probe.ts';
 export {
   DIALECT_DEFINITION_SCHEMA,
+  DIALECT_ID_PATTERN,
   DIALECT_FILL_TYPES,
   DIALECT_KINDS,
   DIALECT_NON_POSITIVE_DESCENTS,

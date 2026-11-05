@@ -26,7 +26,8 @@ const isCapabilities = (value: unknown): value is Capabilities =>
   typeof value['stopSequences'] === 'boolean' &&
   typeof value['imageInput'] === 'boolean' &&
   (value['parallelToolCalls'] === undefined || typeof value['parallelToolCalls'] === 'boolean') &&
-  oneOf(value['schemaDialect'], ['json-schema-2020-12', 'fm-generation']) &&
+  typeof value['schemaDialect'] === 'string' &&
+  value['schemaDialect'] !== '' &&
   oneOf(value['tokenCounting'], ['exact', 'calibrated', 'estimated']) &&
   typeof value['usageReported'] === 'boolean' &&
   typeof value['maxConcurrency'] === 'number' &&
