@@ -172,7 +172,6 @@ const checkThinkingBudgets = (target: AnthropicTarget, where: string): void => {
   }
 };
 
-
 const checkSamplingVersion = (target: AnthropicTarget, apiVersion: AnthropicApiVersion, where: string): void => {
   const { sampling } = target.capabilities;
   if (sampling === undefined || sampling.accepts === 'none') return;

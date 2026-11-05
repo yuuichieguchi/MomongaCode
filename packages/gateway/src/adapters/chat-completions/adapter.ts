@@ -1,5 +1,4 @@
 import { decodeSse } from '@momonga/foundation';
-import { RENDERS_EVERY_SAMPLING_FIELD } from '../shared/sampling.ts';
 import { summaryTokenCapFor } from '@momonga/protocol';
 import type { AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, LenientItems, ReasoningOrigin, RenderWireOptions, StreamEvent } from '@momonga/protocol';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
@@ -12,6 +11,7 @@ import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { createConstrainedSink } from './constrained-sink.ts';
 import type { ConstrainedPlan } from './constrained-sink.ts';
 import { StreamFailure, UnsupportedInputError } from '../shared/failures.ts';
+import { RENDERS_EVERY_SAMPLING_FIELD } from '../shared/sampling.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
 import { retryAfterHint, httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
 import { MAX_SSE_EVENT_BYTES } from '../shared/limits.ts';

@@ -8,7 +8,7 @@ export type AnthropicAdapterOptions = {
   capabilities: (target: AdapterTarget) => Promise<Capabilities>;
   health?: (target: AdapterTarget) => Promise<HealthResult>;
   clock: Clock;
-  apiVersion?: AnthropicApiVersion;
+  apiVersion: AnthropicApiVersion;
   liveness?: UpstreamLiveness;
 };
 

@@ -1,5 +1,5 @@
 import { decodeSse } from '@momonga/foundation';
-import { DEFAULT_ANTHROPIC_API_VERSION, EXACT_ERROR_SHAPE, anthropicVersionSamplingBound, countReplyOf, summaryTokenCapFor } from '@momonga/protocol';
+import { EXACT_ERROR_SHAPE, anthropicVersionSamplingBound, countReplyOf, summaryTokenCapFor } from '@momonga/protocol';
 import type { AdapterCompactRequest, AdapterSampling, AdapterCompactResult, AdapterContext, AdapterCountTokensResult, AdapterInputItem, AdapterRequest, AdapterTarget, CountTokensRequest, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
 import { normalizeInput } from '../../core/input.ts';
@@ -50,7 +50,7 @@ const asAdapterInput = (request: CountTokensRequest): AdapterInputItem[] =>
 export const createAnthropicAdapter = (options: AnthropicAdapterOptions): AnthropicAdapter => {
   const pool = createEndpointPool({ label: ANTHROPIC_PROVIDER_LABEL, unixPath: ANTHROPIC_MESSAGES_PATH, urlSuffix: ANTHROPIC_MESSAGES_PATH }, options.liveness);
   const { health } = options;
-  const apiVersion = options.apiVersion ?? DEFAULT_ANTHROPIC_API_VERSION;
+  const apiVersion = options.apiVersion;
   const sampling: AdapterSampling = {
     renders: ANTHROPIC_SAMPLING_FIELDS,
     bound: { label: `API version ${apiVersion}`, accepts: anthropicVersionSamplingBound(apiVersion) },

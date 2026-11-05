@@ -1,5 +1,4 @@
 import { decodeSse } from '@momonga/foundation';
-import { RENDERS_EVERY_SAMPLING_FIELD } from '../shared/sampling.ts';
 import { summaryTokenCapFor } from '@momonga/protocol';
 import type { AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
@@ -12,6 +11,7 @@ import { CHAT_COMPLETIONS_VOCABULARY } from '../chat-completions/vocabulary.ts';
 import { retryAfterHint, httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
 import { MAX_SSE_EVENT_BYTES } from '../shared/limits.ts';
 import { ResponseEmitter } from '../shared/response-emitter.ts';
+import { RENDERS_EVERY_SAMPLING_FIELD } from '../shared/sampling.ts';
 import { OPEN_RESPONSES_PATH, OPEN_RESPONSES_PROVIDER_LABEL, OPEN_RESPONSES_SUFFIX, SSE_DONE_MARKER } from './constants.ts';
 import { parseOpenResponsesEvent } from './events.ts';
 import { buildResponsesBody } from './request.ts';
