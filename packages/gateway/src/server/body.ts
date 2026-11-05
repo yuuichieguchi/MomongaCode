@@ -1,7 +1,18 @@
+import { JsonDepthError, parseOutsideJson } from '@momonga/foundation';
 import { invalidRequest } from '../core/errors.ts';
 
 const payloadTooLarge = (maxBytes: number) =>
   invalidRequest('payload_too_large', `request body exceeds the limit of ${maxBytes} bytes`, null, 413);
+
+export const parseRequestJson = (text: string, subject: string): unknown => {
+  try {
+    return parseOutsideJson(text);
+  } catch (error) {
+    if (error instanceof JsonDepthError) throw invalidRequest('json_too_deep', `${subject} is too deeply nested: ${error.message}`);
+    if (error instanceof SyntaxError) throw invalidRequest('invalid_json', `${subject} is not valid JSON: ${error.message}`);
+    throw error;
+  }
+};
 
 export const readJsonBody = async (request: Request, maxBytes: number): Promise<unknown> => {
   const declared = request.headers.get('content-length');
@@ -26,9 +37,5 @@ export const readJsonBody = async (request: Request, maxBytes: number): Promise<
   } catch {
     throw invalidRequest('invalid_json', 'the request body is not valid UTF-8');
   }
-  try {
-    return JSON.parse(text);
-  } catch (error) {
-    throw invalidRequest('invalid_json', `the request body is not valid JSON: ${(error as Error).message}`);
-  }
+  return parseRequestJson(text, 'the request body');
 };

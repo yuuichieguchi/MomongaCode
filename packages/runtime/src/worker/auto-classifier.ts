@@ -1,6 +1,7 @@
 import { budgetFor } from '@momonga/context';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import { CLASSIFIER_VERDICT_SCHEMA, assistantTextOf, classifierAllows, escapeXmlText, outputReserveFor, parseClassifierVerdict, requireStructuredOutput } from '@momonga/protocol';
+import { CLASSIFIER_VERDICT_SCHEMA, assistantTextOf, classifierAllows, escapeXmlText, outputReserveFor, requireStructuredOutput } from '@momonga/protocol';
+import { parseClassifierVerdict } from './classifier-verdict.ts';
 import type { CreateResponseBody, ResponseResource, RunEventPayload } from '@momonga/protocol';
 import type { AutoClassifier, AutoClassifierRequest } from '@momonga/tools';
 import { GatewayRequestError } from '../gateway-client.ts';

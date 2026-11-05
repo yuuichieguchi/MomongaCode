@@ -10,6 +10,7 @@ import type { ResponsesService } from '../core/responses-service.ts';
 import type { Services } from '../core/services.ts';
 import type { StoredResponse } from '../core/store.ts';
 import { isRecord } from '@momonga/foundation';
+import { parseRequestJson } from './body.ts';
 import { createInboundQueue } from './inbound-queue.ts';
 import type { InboundQueue } from './inbound-queue.ts';
 import type { RequestTracker } from './tracker.ts';
@@ -59,12 +60,7 @@ const createConnectionResponses = (): ConnectionResponses => {
 };
 
 const parseCreateEvent = (text: string): Record<string, unknown> => {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (error) {
-    throw invalidRequest('invalid_json', `the WebSocket message is not valid JSON: ${(error as Error).message}`);
-  }
+  const parsed = parseRequestJson(text, 'the WebSocket message');
   if (!isRecord(parsed)) throw invalidRequest('invalid_body', 'the WebSocket message must be a JSON object');
   const { type, ...body } = parsed;
   if (type !== 'response.create') throw invalidRequest('invalid_event_type', 'the WebSocket message type must be "response.create"', 'type');

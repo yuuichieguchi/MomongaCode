@@ -2,6 +2,7 @@ import { isRecord } from '@momonga/foundation';
 import { CHAT_REASONING_FIELDS } from '@momonga/protocol';
 import type { ChatReasoningField, Usage } from '@momonga/protocol';
 import { UpstreamProtocolError } from '../shared/failures.ts';
+import { parseUpstreamJson } from '../shared/upstream-json.ts';
 
 export type ToolCallFragment = {
   index: number;
@@ -84,12 +85,7 @@ const fragmentOf = (value: unknown): ToolCallFragment => {
 };
 
 export const parseUpstreamChunk = (data: string): UpstreamChunk => {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(data);
-  } catch {
-    throw invalid('it is not valid JSON');
-  }
+  const parsed = parseUpstreamJson(data, invalid);
   if (!isRecord(parsed)) throw invalid('it is not a JSON object');
   const usage = usageOf(parsed['usage']);
   const choices = parsed['choices'];

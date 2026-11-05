@@ -7,6 +7,7 @@ import { boundedSseBytes, readTextLimited } from '../shared/body-reading.ts';
 import { createUpstreamClassifier } from '../shared/classify.ts';
 import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { StreamFailure, UnsupportedInputError, UpstreamProtocolError } from '../shared/failures.ts';
+import { parseUpstreamJson } from '../shared/upstream-json.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
 import type { CompletionResponse } from '../shared/http-client.ts';
 import { httpErrorOf } from '../shared/http-error.ts';
@@ -32,12 +33,7 @@ import type { AnthropicAdapter, AnthropicAdapterOptions } from './types.ts';
 type Paused = { content: Record<string, unknown>[]; usage: AnthropicUsageFields; firstInputTokens: number };
 
 const countTokensOf = (text: string): number => {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    throw new UpstreamProtocolError('the upstream count_tokens reply is not valid JSON');
-  }
+  const parsed = parseUpstreamJson(text, (what) => new UpstreamProtocolError(`the upstream count_tokens reply is malformed: ${what}`));
   const tokens = typeof parsed === 'object' && parsed !== null ? (parsed as { input_tokens?: unknown }).input_tokens : undefined;
   if (typeof tokens !== 'number' || !Number.isSafeInteger(tokens) || tokens < 0) {
     throw new UpstreamProtocolError('the upstream count_tokens reply lacks a non-negative integer input_tokens');

@@ -1,13 +1,8 @@
 import { isRecord } from '@momonga/foundation';
+import { usableUpstreamJson } from './upstream-json.ts';
 
 const parsedObjectOf = (text: string): Record<string, unknown> | undefined => {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (error) {
-    if (error instanceof SyntaxError) return undefined;
-    throw error;
-  }
+  const parsed = usableUpstreamJson(text);
   return isRecord(parsed) ? parsed : undefined;
 };
 

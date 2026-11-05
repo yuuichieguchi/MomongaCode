@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { parseOutsideJson } from '../json-depth.ts';
 import type { CommandRunner } from './command-runner.ts';
 import { powershellArgs, powershellLiteral, powershellPath } from './windows-scripts.ts';
 import { WINDOWS_PROBE_TIMEOUT_MS } from './windows-inspector.ts';
@@ -44,7 +45,7 @@ export const aclProblem = (report: AclReport): string | undefined => {
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export const parseAclReport = (text: string): AclReport => {
-  const parsed: unknown = JSON.parse(text);
+  const parsed: unknown = parseOutsideJson(text);
   if (!isRecord(parsed)) throw new Error(`ACL report is not an object: ${text}`);
   const text_ = (name: string): string => {
     const value = parsed[name];

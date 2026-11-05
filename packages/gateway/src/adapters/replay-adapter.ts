@@ -12,6 +12,7 @@ import type {
 } from '@momonga/protocol';
 
 import { createStoredDataChecks } from '../core/validation.ts';
+import { parseUpstreamJson } from './shared/upstream-json.ts';
 
 const RECORD_FILE_MODE = 0o600;
 const RECORD_DIRECTORY_MODE = 0o700;
@@ -35,7 +36,7 @@ class ReplayMismatchError extends Error {
 const digestOf = (request: AdapterRequest): string => sha256Hex(canonicalJson(request));
 
 const parseEntry = (line: string, path: string, lineNumber: number): ReplayEntry => {
-  const parsed: unknown = JSON.parse(line);
+  const parsed: unknown = parseUpstreamJson(line, (what) => new TypeError(`${path}:${lineNumber} ${what}`));
   if (typeof parsed !== 'object' || parsed === null) throw new TypeError(`${path}:${lineNumber} is not a JSON object`);
   const { digest, events } = parsed as Record<string, unknown>;
   if (typeof digest !== 'string' || !Array.isArray(events)) {
