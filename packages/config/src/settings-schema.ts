@@ -1,5 +1,5 @@
 import { SECRET_NAME_PATTERN } from '@momonga/foundation';
-import { HOOK_COMMAND_TYPE, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, REASONING_EFFORTS, TARGET_BILLINGS } from '@momonga/protocol';
+import { HOOK_COMMAND_TYPE, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, REASONING_EFFORTS, TARGET_BILLINGS, THINKING_OFFS } from '@momonga/protocol';
 import type { CallRole } from '@momonga/protocol';
 
 export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const satisfies readonly CallRole[];
@@ -83,7 +83,45 @@ const KEYED_PROMPT_CACHE = promptCacheOf(['key', 'automatic', 'none']);
 
 const OLLAMA_PROMPT_CACHE = promptCacheOf(['automatic', 'none']);
 
-const targetCapabilitiesSchema = (promptCache: object, extraProperties: object = {}) =>
+const MIN_THINKING_BUDGET = 1024;
+
+const THINKING_ADAPTIVE_EFFORTS = REASONING_EFFORTS.filter((effort) => effort !== 'none' && effort !== 'minimal');
+
+const THINKING_BUDGET_EFFORTS = REASONING_EFFORTS.filter((effort) => effort !== 'none');
+
+const THINKING_OFF_SCHEMA = { enum: [...THINKING_OFFS] } as const;
+
+const THINKING_REASONING_SCHEMAS = [
+  {
+    type: 'object',
+    properties: {
+      control: { const: 'thinking' },
+      form: { const: 'adaptive' },
+      efforts: { type: 'array', items: { enum: THINKING_ADAPTIVE_EFFORTS }, minItems: 1, uniqueItems: true },
+      off: THINKING_OFF_SCHEMA,
+    },
+    required: ['control', 'form', 'efforts'],
+    additionalProperties: false,
+  },
+  {
+    type: 'object',
+    properties: {
+      control: { const: 'thinking' },
+      form: { const: 'budget' },
+      budgets: {
+        type: 'object',
+        properties: Object.fromEntries(THINKING_BUDGET_EFFORTS.map((effort) => [effort, { type: 'integer', minimum: MIN_THINKING_BUDGET }])),
+        minProperties: 1,
+        additionalProperties: false,
+      },
+      off: THINKING_OFF_SCHEMA,
+    },
+    required: ['control', 'form', 'budgets'],
+    additionalProperties: false,
+  },
+] as const;
+
+const targetCapabilitiesSchema = (promptCache: object, extraProperties: object = {}, extraReasoning: readonly object[] = []) =>
   ({
   type: 'object',
   properties: {
@@ -119,6 +157,7 @@ const targetCapabilitiesSchema = (promptCache: object, extraProperties: object =
           required: ['control', 'lowest'],
           additionalProperties: false,
         },
+        ...extraReasoning,
       ],
     },
     promptCache: promptCache,
@@ -128,7 +167,7 @@ const targetCapabilitiesSchema = (promptCache: object, extraProperties: object =
   additionalProperties: false,
 }) as const;
 
-const ANTHROPIC_CAPABILITIES_SCHEMA = targetCapabilitiesSchema(ANTHROPIC_PROMPT_CACHE);
+const ANTHROPIC_CAPABILITIES_SCHEMA = targetCapabilitiesSchema(ANTHROPIC_PROMPT_CACHE, {}, THINKING_REASONING_SCHEMAS);
 
 const KEYED_CAPABILITIES_SCHEMA = targetCapabilitiesSchema(KEYED_PROMPT_CACHE);
 
