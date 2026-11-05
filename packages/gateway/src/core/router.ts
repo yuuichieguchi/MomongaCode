@@ -5,8 +5,10 @@ import { createAdmissionGate } from './admission.ts';
 import type { AdmissionGate } from './admission.ts';
 import { preconditionText } from '../precondition-text.ts';
 import { invalidRequest, notFound } from './errors.ts';
+import { CandidateRefused, REFUSAL_STAGES, refusalErrorOf } from './candidate-refusal.ts';
+import type { Refusal } from './candidate-refusal.ts';
 import { carriesSampling, samplingRefusalOf } from './sampling.ts';
-import type { SamplingRefusal, SamplingRequest } from './sampling.ts';
+import type { SamplingRequest } from './sampling.ts';
 import { TargetBreaker } from './request-breaker.ts';
 import { guardAdapter } from './guarded-adapter.ts';
 import type { ReasoningOriginCodec } from './reasoning-origin.ts';
@@ -161,55 +163,62 @@ export const createRouter = (options: RouterOptions): Router => {
   };
 
   const narrow = async (alias: string, all: readonly TargetRuntime[], requirements: CandidateRequirements): Promise<Narrowed> => {
-    const resolutions = new Map<TargetRuntime, Promise<Capabilities>>();
+    const memo = new Map<TargetRuntime, Promise<Capabilities>>();
+    const verdicts = new Map<TargetRuntime, Refusal | undefined>();
     const resolve = (target: TargetRuntime): Promise<Capabilities> => {
-      const known = resolutions.get(target);
+      const known = memo.get(target);
       if (known !== undefined) return known;
       const started = capabilitiesOf(target);
-      resolutions.set(target, started);
+      memo.set(target, started);
+      started.catch(() => {
+        if (memo.get(target) === started) memo.delete(target);
+      });
       return started;
     };
-    const judged = (targets: readonly TargetRuntime[]): Promise<(Capabilities | undefined)[]> =>
-      Promise.all(targets.map((target) => resolve(target).catch(() => undefined)));
-    let remaining = [...all];
-    if (requirements.tools === true) {
-      const capabilities = await judged(remaining);
-      for (const entry of capabilities) {
-        if (entry !== undefined && typeof entry.toolCalling !== 'string') {
-          const { toolCalling } = entry;
-          throw invalidRequest('precondition_failed', preconditionText(toolCalling.message, toolCalling.evidence, toolCalling.remedy), null, 412);
+    const { sampling } = requirements;
+    const samples = sampling !== undefined && carriesSampling(sampling);
+    const judge = (target: TargetRuntime, capabilities: Capabilities): Refusal | undefined => {
+      if (requirements.tools === true) {
+        const { toolCalling } = capabilities;
+        if (typeof toolCalling !== 'string') throw invalidRequest('precondition_failed', preconditionText(toolCalling.message, toolCalling.evidence, toolCalling.remedy), null, 412);
+        if (toolCalling === 'none') {
+          return { stage: REFUSAL_STAGES.tools, error: invalidRequest('capability_unsupported', `no target of model alias "${alias}" supports tool calling`, 'tools') };
         }
       }
-      remaining = remaining.filter((_, index) => capabilities[index]?.toolCalling !== 'none');
-      if (remaining.length === 0) {
-        throw invalidRequest('capability_unsupported', `no target of model alias "${alias}" supports tool calling`, 'tools');
+      if (requirements.images === true && !capabilities.imageInput) {
+        return { stage: REFUSAL_STAGES.images, error: invalidRequest('capability_unsupported', `no target of model alias "${alias}" supports image input`, 'input') };
       }
-    }
-    if (requirements.images === true) {
-      const capabilities = await judged(remaining);
-      remaining = remaining.filter((_, index) => capabilities[index]?.imageInput !== false);
-      if (remaining.length === 0) {
-        throw invalidRequest('capability_unsupported', `no target of model alias "${alias}" supports image input`, 'input');
+      if (sampling !== undefined && samples) {
+        const refusal = samplingRefusalOf(sampling, { name: target.name, kind: target.adapter.kind }, target.adapter.sampling, capabilities);
+        if (refusal !== undefined) return { stage: REFUSAL_STAGES.sampling, error: invalidRequest('sampling_not_accepted', refusal.message, refusal.field) };
       }
-    }
-    const { sampling } = requirements;
-    if (sampling !== undefined && carriesSampling(sampling)) {
-      const capabilities = await judged(remaining);
-      const refusals = new Map<TargetRuntime, SamplingRefusal>();
-      remaining.forEach((target, index) => {
-        const entry = capabilities[index];
-        if (entry === undefined) return;
-        const refusal = samplingRefusalOf(sampling, { name: target.name, kind: target.adapter.kind }, target.adapter.sampling, entry);
-        if (refusal !== undefined) refusals.set(target, refusal);
-      });
-      const accepted = remaining.filter((target) => !refusals.has(target));
-      const [first] = refusals.values();
-      if (accepted.length === 0 && first !== undefined) {
-        throw invalidRequest('sampling_not_accepted', [...refusals.values()].map((refusal) => refusal.message).join('; '), first.field);
+      return undefined;
+    };
+    const capabilitiesForAttempt = async (target: TargetRuntime): Promise<Capabilities> => {
+      const capabilities = await resolve(target);
+      if (!verdicts.has(target)) verdicts.set(target, judge(target, capabilities));
+      const refusal = verdicts.get(target);
+      if (refusal !== undefined) throw new CandidateRefused(refusal);
+      return capabilities;
+    };
+    const judging = requirements.tools === true || requirements.images === true || samples;
+    if (!judging) return { targets: [...all], capabilitiesOf: capabilitiesForAttempt };
+    const resolved = await Promise.all(all.map((target) => resolve(target).catch(() => undefined)));
+    const refusals: Refusal[] = [];
+    const kept: TargetRuntime[] = [];
+    all.forEach((target, index) => {
+      const capabilities = resolved[index];
+      if (capabilities === undefined) {
+        kept.push(target);
+        return;
       }
-      remaining = accepted;
-    }
-    return { targets: remaining, capabilitiesOf: resolve };
+      const refusal = judge(target, capabilities);
+      verdicts.set(target, refusal);
+      if (refusal === undefined) kept.push(target);
+      else refusals.push(refusal);
+    });
+    if (kept.length === 0) throw refusalErrorOf(refusals);
+    return { targets: kept, capabilitiesOf: capabilitiesForAttempt };
   };
 
   return {

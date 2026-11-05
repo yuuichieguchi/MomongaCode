@@ -15,7 +15,7 @@ import type {
 } from '@momonga/protocol';
 import { armDeadline, parseDeadlineHeader, withDeadline } from './deadline.ts';
 import { estimateInputTokens, estimatedCountOf, imageTokensOfWire, wireTokensOf } from './estimate.ts';
-import { ClientDisconnectedError, GatewayError, detachedRunExpiredError, gatewayErrorFromBody, gatewayClosedError, invalidRequest, isRunCancelled, runCancelledError } from './errors.ts';
+import { ClientDisconnectedError, detachedRunExpiredError, gatewayErrorFromBody, gatewayClosedError, invalidRequest, isRunCancelled, runCancelledError } from './errors.ts';
 import { parseIdempotencyKey, reusedError } from './idempotency.ts';
 import { inputHasImages, normalizeInput, resolveInput } from './input.ts';
 import type { ResolvedInput } from './input.ts';
@@ -27,6 +27,8 @@ import { failureFrom, runWithRetry } from './retry.ts';
 import type { RetryOutcome } from './retry.ts';
 import { adapterContextOf, originOf } from './adapter-context.ts';
 import type { Narrowed, TargetRuntime } from './router.ts';
+import { CandidateRefused, REFUSAL_STAGES, refusalErrorOf } from './candidate-refusal.ts';
+import type { Refusal } from './candidate-refusal.ts';
 import type { Services } from './services.ts';
 import { resolveToolChoice } from './tool-choice.ts';
 import { textOfWire } from './wire-text.ts';
@@ -92,9 +94,6 @@ const adapterRequestOf = (model: string, request: CountTokensRequest, input: Ada
   ...(request.tool_choice === undefined ? {} : { tool_choice: request.tool_choice }),
 });
 
-const isTargetFailure = (error: unknown, signal: AbortSignal): error is GatewayError =>
-  error instanceof GatewayError && !signal.aborted && error.body.code !== 'deadline_exceeded';
-
 const asGatewayError = <T>(target: TargetRuntime, render: () => T): T => {
   try {
     return render();
@@ -126,23 +125,6 @@ const countWireOnce = async (
 const settleCounted = (outcome: RetryOutcome<Counted>): CountTokensResult => {
   outcome.settle(outcome.value.contacted ? 'success' : 'neutral');
   return outcome.value.result;
-};
-
-const countWire = async (
-  services: Services,
-  target: TargetRuntime,
-  capabilities: Capabilities,
-  wire: Record<string, unknown>,
-  signal: AbortSignal,
-  deadlineAt: number | undefined,
-): Promise<CountTokensResult> => {
-  if (target.adapter.countWire === undefined && target.adapter.countTokens === undefined) {
-    return estimatedCountOf(wireTokensOf(wire, capabilities.imageTokens));
-  }
-  const outcome = await callTargets(services, [target], signal, deadlineAt, (chosen, attemptNumber, guarded) =>
-    countWireOnce(services, chosen, capabilities, wire, guarded, attemptNumber),
-  );
-  return settleCounted(outcome);
 };
 
 const countOnTarget = async (
@@ -252,55 +234,34 @@ const compactOnce = async (
     ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
     momonga: { ...request.momonga, max_summary_tokens: cap },
   });
-  const capsByTarget = new Map<TargetRuntime, number>();
-  const sized: TargetRuntime[] = [];
-  let withinCap = 0;
-  let counterFailure: GatewayError | undefined;
-  for (const target of supporting) {
-    let capabilities: Capabilities;
-    try {
-      capabilities = await narrowed.capabilitiesOf(target);
-    } catch {
-      withinCap += 1;
-      sized.push(target);
-      continue;
-    }
-    const maximum = Math.min(summaryTokenCapFor(capabilities), capabilities.maxOutputTokens);
-    const cap = request.momonga?.max_summary_tokens ?? maximum;
-    if (cap > maximum) continue;
-    withinCap += 1;
-    capsByTarget.set(target, cap);
-    const renderCompactWire = target.adapter.renderCompactWire;
-    if (renderCompactWire === undefined) {
-      sized.push(target);
-      continue;
-    }
-    const wire = asGatewayError(target, () =>
-      renderCompactWire.call(target.adapter, compactRequestFor(target, cap), { name: target.name, model: target.model }, cap, originOf(services, target), capabilities),
-    );
-    let counted: CountTokensResult;
-    try {
-      counted = await countWire(services, target, capabilities, wire, signal, deadlineAt);
-    } catch (error) {
-      if (!isTargetFailure(error, signal)) throw error;
-      counterFailure = error;
-      continue;
-    }
-    const reasoningTokens = outputTokensFor(capabilities, LOWEST_REASONING_EFFORT, cap) - cap;
-    const limit = summaryInputLimitFor(capabilities, cap, reasoningTokens);
-    if (counted.input_tokens + counted.error_bound <= limit) sized.push(target);
-  }
-  if (sized.length === 0 && counterFailure !== undefined) throw counterFailure;
-  if (withinCap === 0) {
-    throw invalidRequest(
+  const capRefusal: Refusal = {
+    stage: REFUSAL_STAGES.summaryCap,
+    error: invalidRequest(
       'invalid_summary_cap',
       'momonga.max_summary_tokens exceeds the largest summary any target of the model alias accepts: the smaller of its summary cap and its maxOutputTokens',
       'momonga.max_summary_tokens',
+    ),
+  };
+  const sizeRefusal: Refusal = {
+    stage: REFUSAL_STAGES.inputSize,
+    error: invalidRequest('compaction_input_too_large', 'the conversation to summarise does not fit the context window of any target', 'input'),
+  };
+  const capFor = (capabilities: Capabilities): number | undefined => {
+    const maximum = Math.min(summaryTokenCapFor(capabilities), capabilities.maxOutputTokens);
+    const cap = request.momonga?.max_summary_tokens ?? maximum;
+    return cap > maximum ? undefined : cap;
+  };
+  const wireFor = (target: TargetRuntime, capabilities: Capabilities, cap: number): Record<string, unknown> | undefined => {
+    const renderCompactWire = target.adapter.renderCompactWire;
+    if (renderCompactWire === undefined) return undefined;
+    return asGatewayError(target, () =>
+      renderCompactWire.call(target.adapter, compactRequestFor(target, cap), { name: target.name, model: target.model }, cap, originOf(services, target), capabilities),
     );
-  }
-  if (sized.length === 0) {
-    throw invalidRequest('compaction_input_too_large', 'the conversation to summarise does not fit the context window of any target', 'input');
-  }
+  };
+  const fitsWindow = (capabilities: Capabilities, cap: number, counted: CountTokensResult): boolean => {
+    const reasoningTokens = outputTokensFor(capabilities, LOWEST_REASONING_EFFORT, cap) - cap;
+    return counted.input_tokens + counted.error_bound <= summaryInputLimitFor(capabilities, cap, reasoningTokens);
+  };
   const parent =
     services.telemetry === undefined || trace.traceparent === undefined
       ? undefined
@@ -309,10 +270,39 @@ const compactOnce = async (
           ...(trace.tracestate === undefined ? {} : { tracestate: trace.tracestate }),
         });
   const spans = new Map<TargetRuntime, AttemptSpan>();
-  const outcome = await callTargets(services, sized, signal, deadlineAt, async (target, attemptNumber, guarded) => {
+  const outcome = await callTargets(services, supporting, signal, deadlineAt, async (target, attemptNumber, guarded) => {
     const compact = target.adapter.compact;
     if (compact === undefined) throw new TypeError(`target "${target.name}" lost its compact capability`);
-    const cap = capsByTarget.get(target);
+    let capabilities: Capabilities;
+    try {
+      capabilities = await narrowed.capabilitiesOf(target);
+    } catch (error) {
+      if (error instanceof CandidateRefused) throw error;
+      const failure = failureFrom(target.adapter, error, guarded);
+      startAttemptSpan({
+        telemetry: services.telemetry,
+        parent,
+        providerName: target.provider,
+        billing: target.billing,
+        requestModel: target.model,
+        maxTokens: undefined,
+        stream: false,
+        runId: trace.runId,
+        step: undefined,
+        attempt: attemptNumber,
+        targetName: target.name,
+        role: COMPACTION_ROLE,
+        startedAtMs: services.clock.now(),
+        request: { input: resolved.forAdapter, instructions: request.instructions, tools: undefined },
+      }).fail(errorTypeOf(failure), failure, messageOf(failure));
+      throw failure;
+    }
+    const cap = capFor(capabilities);
+    if (cap === undefined) throw new CandidateRefused(capRefusal);
+    const wire = wireFor(target, capabilities, cap);
+    if (wire !== undefined && !fitsWindow(capabilities, cap, (await countWireOnce(services, target, capabilities, wire, guarded, attemptNumber)).result)) {
+      throw new CandidateRefused(sizeRefusal);
+    }
     const span = startAttemptSpan({
       telemetry: services.telemetry,
       parent,
@@ -330,8 +320,6 @@ const compactOnce = async (
       request: { input: resolved.forAdapter, instructions: request.instructions, tools: undefined },
     });
     try {
-      const capabilities = await narrowed.capabilitiesOf(target);
-      if (cap === undefined) throw new TypeError(`target "${target.name}" has no summary cap`);
       const result = await compact.call(target.adapter, compactRequestFor(target, cap), adapterContextOf(services, target, capabilities, guarded, attemptNumber));
       spans.set(target, span);
       return result;

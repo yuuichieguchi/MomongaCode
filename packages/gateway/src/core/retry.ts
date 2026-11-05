@@ -2,6 +2,8 @@ import { computeBackoff } from '@momonga/foundation';
 import type { Clock, FallbackCause } from '@momonga/foundation';
 import type { ClassifiedError } from '@momonga/protocol';
 import { DEFERRED_HEADER } from '@momonga/protocol';
+import { CandidateRefused, refusalErrorOf } from './candidate-refusal.ts';
+import type { Refusal } from './candidate-refusal.ts';
 import { breakerVerdictOf } from './breaker-verdict.ts';
 import type { BreakerVerdict } from './breaker-verdict.ts';
 import { GatewayError, SKIPPABLE_CODES, deadlineExceededError, gatewayErrorFromBody } from './errors.ts';
@@ -27,7 +29,7 @@ export const emptyStreamFailure = (): UpstreamFailure =>
   });
 
 export const failureFrom = (adapter: GuardedAdapter, error: unknown, signal: AbortSignal): unknown => {
-  if (error instanceof GatewayError || error instanceof UpstreamFailure) return error;
+  if (error instanceof GatewayError || error instanceof UpstreamFailure || error instanceof CandidateRefused) return error;
   if (signal.aborted) return signal.reason;
   return new UpstreamFailure(adapter.classify(error));
 };
@@ -105,8 +107,10 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
   let attempts = 0;
   let firstSendAt: number | undefined;
   let lastFailure: LastFailure | undefined;
+  const refusals: Refusal[] = [];
   const elapsedMs = (): number => (firstSendAt === undefined ? 0 : policy.clock.now() - firstSendAt);
   const exhausted = (): never => {
+    if (lastFailure === undefined && refusals.length > 0) throw refusalErrorOf(refusals);
     if (lastFailure === undefined) throw new Error('runWithRetry ended without trying any candidate');
     if (lastFailure.kind === 'skip') throw lastFailure.error;
     throw finalError(lastFailure.classified, policy.totalWaitMs);
@@ -118,6 +122,10 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
     let verdict: BreakerVerdict = 'neutral';
     let causeHere: FallbackCause | undefined;
     let committed = false;
+    let refused = false;
+    const failureBefore = target.lastFailure;
+    const lastBefore = lastFailure;
+    const attemptsBefore = attempts;
     try {
       for (;;) {
         if (signal.aborted) throw signal.reason;
@@ -143,6 +151,15 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
             },
           };
         } catch (error) {
+          if (error instanceof CandidateRefused) {
+            refusals.push(error.refusal);
+            refused = true;
+            verdict = 'neutral';
+            attempts = attemptsBefore;
+            target.lastFailure = failureBefore;
+            lastFailure = lastBefore;
+            break;
+          }
           if (error instanceof GatewayError && isSkipCode(error.body.code)) {
             verdict = 'neutral';
             target.lastFailure = { code: error.body.code, message: error.message };
@@ -181,6 +198,7 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
     } finally {
       if (!committed && sends > 0) target.breaker.record(holder, verdict);
     }
+    if (refused) continue;
     fallbackFrom.push(target.name);
     fallbackCauses.push(causeHere ?? openBreakerCause(target));
   }

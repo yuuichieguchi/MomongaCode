@@ -32,6 +32,7 @@ import type { RetryOutcome } from './retry.ts';
 import type { Release } from './admission.ts';
 import { adapterContextOf } from './adapter-context.ts';
 import type { Narrowed, TargetRuntime } from './router.ts';
+import { CandidateRefused } from './candidate-refusal.ts';
 import type { RunControl } from './run.ts';
 import type { Services } from './services.ts';
 import type { CommitRequest } from './store.ts';
@@ -151,24 +152,36 @@ const openAttempt = async (
   signal: AbortSignal,
 ): Promise<Opened> => {
   const release = await target.gate.acquire(signal);
-  const span = startAttemptSpan({
-    telemetry: services.telemetry,
-    parent: job.parent,
-    providerName: target.provider,
-    billing: target.billing,
-    requestModel: target.model,
-    maxTokens: job.body.max_output_tokens ?? undefined,
-    stream: job.body.stream === true,
-    runId: job.runId,
-    step: job.step,
-    attempt: attemptNumber,
-    targetName: target.name,
-    role: job.role,
-    startedAtMs: services.clock.now(),
-    request: { input: resolved.forAdapter, instructions: job.body.instructions, tools: job.body.tools },
-  });
+  const startSpan = (): AttemptSpan =>
+    startAttemptSpan({
+      telemetry: services.telemetry,
+      parent: job.parent,
+      providerName: target.provider,
+      billing: target.billing,
+      requestModel: target.model,
+      maxTokens: job.body.max_output_tokens ?? undefined,
+      stream: job.body.stream === true,
+      runId: job.runId,
+      step: job.step,
+      attempt: attemptNumber,
+      targetName: target.name,
+      role: job.role,
+      startedAtMs: services.clock.now(),
+      request: { input: resolved.forAdapter, instructions: job.body.instructions, tools: job.body.tools },
+    });
+  let capabilities: Capabilities;
   try {
-    const capabilities = await narrowed.capabilitiesOf(target);
+    capabilities = await narrowed.capabilitiesOf(target);
+  } catch (error) {
+    release();
+    if (error instanceof CandidateRefused) throw error;
+    const failure = failureFrom(target.adapter, error, signal);
+    const failed = startSpan();
+    failed.fail(errorTypeOf(failure), failure, messageOf(failure));
+    throw failure;
+  }
+  const span = startSpan();
+  try {
     const stream = target.adapter.create(adapterRequestFor(job, resolved, target), adapterContextOf(services, target, capabilities, signal, attemptNumber));
     const iterator = stream[Symbol.asyncIterator]();
     const held: StreamEvent[] = [];
