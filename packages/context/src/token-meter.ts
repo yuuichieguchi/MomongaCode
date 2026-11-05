@@ -80,26 +80,32 @@ const nothingCounted = (inputTokens: number, known: number, uncounted: number): 
   sigmaB: noSigma,
 });
 
-const markUnclosed = (items: readonly InputItem[], unclosed: boolean[]): void => {
+const unclosedPositions = (items: readonly InputItem[]): boolean[] => {
   const firstCall = new Map<string, number>();
   const lastOutput = new Map<string, number>();
   items.forEach((item, index) => {
     if (item.type === 'function_call' && !firstCall.has(item.call_id)) firstCall.set(item.call_id, index);
     if (item.type === 'function_call_output') lastOutput.set(item.call_id, index);
   });
+  const delta = new Array<number>(items.length + 2).fill(0);
   for (const [callId, call] of firstCall) {
     const output = lastOutput.get(callId);
-    if (output === undefined) continue;
-    for (let position = call + 1; position <= output; position += 1) unclosed[position] = true;
+    if (output === undefined || output <= call) continue;
+    delta[call + 1] = (delta[call + 1] as number) + 1;
+    delta[output + 1] = (delta[output + 1] as number) - 1;
   }
+  let running = 0;
+  return delta.map((change) => {
+    running += change;
+    return running > 0;
+  });
 };
 
 export const callClosedBoundary = (a: readonly InputItem[], b: readonly InputItem[], commonPrefix: number): number => {
-  const unclosed: boolean[] = [];
-  markUnclosed(a, unclosed);
-  markUnclosed(b, unclosed);
+  const unclosedInA = unclosedPositions(a);
+  const unclosedInB = unclosedPositions(b);
   let position = commonPrefix;
-  while (position > 0 && unclosed[position] === true) position -= 1;
+  while (position > 0 && (unclosedInA[position] === true || unclosedInB[position] === true)) position -= 1;
   return position;
 };
 

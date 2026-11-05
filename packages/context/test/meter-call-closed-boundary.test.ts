@@ -35,17 +35,28 @@ const seeded = (seed: number): (() => number) => {
 const sequenceOf = (random: () => number): InputItem[] => {
   const items: InputItem[] = [];
   const pending: string[] = [];
+  const used: string[] = [];
   let next = 0;
   const steps = 1 + Math.floor(random() * 14);
+  const freshId = (): string => {
+    const id = `c${next}`;
+    next += 1;
+    used.push(id);
+    return id;
+  };
   for (let step = 0; step < steps; step += 1) {
     const roll = random();
-    if (roll < 0.2) items.push(message(`m${step}`));
-    else if (roll < 0.3) items.push(reasoning(`r${step}`));
-    else if (roll < 0.55) {
-      const id = `c${next}`;
-      next += 1;
+    if (roll < 0.15) items.push(message(`m${step}`));
+    else if (roll < 0.22) items.push(reasoning(`r${step}`));
+    else if (roll < 0.42) {
+      const id = used.length > 0 && random() < 0.2 ? (used[Math.floor(random() * used.length)] as string) : freshId();
       items.push(call(id));
       pending.push(id);
+    } else if (roll < 0.47) items.push(output(`never${step}`));
+    else if (roll < 0.52) {
+      const id = freshId();
+      items.push(output(id));
+      items.push(call(id));
     } else if (pending.length > 0) {
       const index = Math.floor(random() * pending.length);
       items.push(output(pending.splice(index, 1)[0] as string));
@@ -65,7 +76,7 @@ describe('the call-closed boundary of the meter split', () => {
     let rewrites = 0;
     for (let index = 0; index < CASES; index += 1) {
       const a = sequenceOf(random);
-      const b = random() < 0.5 ? rewritten(a, random) : [...rewritten(a, random), ...sequenceOf(random).map((item) => (item.type === 'message' ? item : message('tail')))];
+      const b = random() < 0.5 ? rewritten(a, random) : [...rewritten(a, random), ...sequenceOf(random)];
       const prefix = commonPrefixOf(a, b);
       if (prefix < Math.min(a.length, b.length)) rewrites += 1;
       const j = callClosedBoundary(a, b, prefix);
@@ -99,5 +110,35 @@ describe('the call-closed boundary of the meter split', () => {
     const a = [reasoning('r'), call('c1'), call('c2'), output('c1'), output('c2')];
     const b = [reasoning('r'), call('c1'), call('c2'), output('c1'), output('c2', 'new')];
     expect(callClosedBoundary(a, b, commonPrefixOf(a, b))).toBe(1);
+  });
+
+  it('treats a repeated call id as one call from its first occurrence to its last output', () => {
+    const a = [call('c0'), output('c0'), message('x'), call('c0'), output('c0')];
+    const b = [call('c0'), output('c0'), message('x'), call('c0'), output('c0', 'new')];
+    expect(callClosedBoundary(a, b, commonPrefixOf(a, b))).toBe(0);
+    expect(callClosedBoundary(a, a, 4)).toBe(0);
+    expect(callClosedBoundary([call('c0'), call('c0'), message('x')], [call('c0'), call('c0'), message('y')], 2)).toBe(2);
+  });
+
+  it('does not let an output without any call block a position', () => {
+    const a = [message('x'), output('never'), message('y')];
+    const b = [message('x'), output('never'), message('z')];
+    expect(callClosedBoundary(a, b, 2)).toBe(2);
+  });
+
+  it('does not let an output that comes before its call block a position', () => {
+    const a = [output('c0'), call('c0'), message('y')];
+    expect(callClosedBoundary(a, a, 2)).toBe(2);
+  });
+
+  it('marks a large parallel batch in linear time', () => {
+    const size = 5000;
+    const ids = Array.from({ length: size }, (_, index) => `c${index}`);
+    const a = [...ids.map(call), ...ids.map((id) => output(id))];
+    const b = [...ids.map(call), ...ids.map((id, index) => (index === size - 1 ? output(id, 'new') : output(id)))];
+    const started = performance.now();
+    const j = callClosedBoundary(a, b, size * 2 - 1);
+    expect(j).toBe(0);
+    expect(performance.now() - started).toBeLessThan(500);
   });
 });
