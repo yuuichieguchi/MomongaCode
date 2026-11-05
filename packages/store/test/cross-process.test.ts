@@ -24,7 +24,7 @@ while (written < rounds) {
     process.exit(3);
   }
   const run = store.getRun(runId);
-  const result = store.appendAsService(runId, run.version, null, [{ type: 'notice', level: 'info', message: 'child' }]);
+  const result = await store.appendAsService(runId, run.version, null, [{ type: 'notice', level: 'info', message: 'child' }]);
   if (result.kind === 'ok') written += 1;
 }
 store.close();

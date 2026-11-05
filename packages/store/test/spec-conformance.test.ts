@@ -97,7 +97,7 @@ describe('facts that specs/tla/RunRecovery.tla relies on', () => {
     const claim = mustClaim(h.store, 'w1');
     await h.store.transition(claim, ['RUNNING'], 'COMPLETED');
     const done = mustRun(h.store, run.id);
-    expect(h.store.appendAsService(run.id, done.version, null, [{ type: 'notice', level: 'info', message: 'late' }])).toMatchObject({
+    expect(await h.store.appendAsService(run.id, done.version, null, [{ type: 'notice', level: 'info', message: 'late' }])).toMatchObject({
       kind: 'conflict',
     });
     expect(mustRun(h.store, run.id)).toEqual(done);

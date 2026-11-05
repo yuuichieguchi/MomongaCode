@@ -132,14 +132,14 @@ describe('transition', () => {
 describe('appendAsService', () => {
   it('rejects a stale version as a conflict', async () => {
     const fixture = await arrange('WAITING_HUMAN');
-    const result = fixture.store.appendAsService(fixture.run.id, fixture.run.version - 1, 'QUEUED', []);
+    const result = await fixture.store.appendAsService(fixture.run.id, fixture.run.version - 1, 'QUEUED', []);
     expect(result).toMatchObject({ kind: 'conflict' });
     expect(mustRun(fixture.store, fixture.run.id)).toEqual(fixture.run);
   });
 
   it('appends events before the status change and bumps the version once', async () => {
     const fixture = await arrange('WAITING_HUMAN');
-    const result = fixture.store.appendAsService(fixture.run.id, fixture.run.version, 'QUEUED', [
+    const result = await fixture.store.appendAsService(fixture.run.id, fixture.run.version, 'QUEUED', [
       { type: 'tool.permission.resolved', approvalId: 'a1', optionId: 'allow_once' },
     ]);
     expect(result).toMatchObject({ kind: 'ok', run: { status: 'QUEUED', version: fixture.run.version + 1 } });
@@ -151,7 +151,7 @@ describe('appendAsService', () => {
 
   it('appends events without a status change', async () => {
     const fixture = await arrange('QUEUED');
-    const result = fixture.store.appendAsService(fixture.run.id, fixture.run.version, null, [
+    const result = await fixture.store.appendAsService(fixture.run.id, fixture.run.version, null, [
       { type: 'notice', level: 'info', message: 'service note' },
     ]);
     expect(result).toMatchObject({ kind: 'ok', run: { status: 'QUEUED', lastSeq: fixture.run.lastSeq + 1 } });
@@ -159,7 +159,7 @@ describe('appendAsService', () => {
 
   it('refuses to append to a terminal run', async () => {
     const fixture = await arrange('COMPLETED');
-    const result = fixture.store.appendAsService(fixture.run.id, fixture.run.version, null, [
+    const result = await fixture.store.appendAsService(fixture.run.id, fixture.run.version, null, [
       { type: 'notice', level: 'info', message: 'late' },
     ]);
     expect((await result).kind).toBe('conflict');
@@ -170,14 +170,14 @@ describe('appendAsService', () => {
     const fixture = await arrange('QUEUED');
     const notice = { type: 'notice', level: 'info', message: 'x' } as const;
     expect((await fixture.store.appendAsService(fixture.run.id, fixture.run.version, null, [notice])).kind).toBe('ok');
-    const second = fixture.store.appendAsService(fixture.run.id, fixture.run.version, null, [notice]);
+    const second = await fixture.store.appendAsService(fixture.run.id, fixture.run.version, null, [notice]);
     expect((await second).kind).toBe('conflict');
     expect(fixture.store.readRunEvents(fixture.run.id, fixture.run.lastSeq, 10)).toHaveLength(1);
   });
 
   it('bumps the version on every service append', async () => {
     const fixture = await arrange('QUEUED');
-    const result = fixture.store.appendAsService(fixture.run.id, fixture.run.version, null, [{ type: 'notice', level: 'info', message: 'service note' }]);
+    const result = await fixture.store.appendAsService(fixture.run.id, fixture.run.version, null, [{ type: 'notice', level: 'info', message: 'service note' }]);
     expect(result).toMatchObject({ kind: 'ok', run: { version: fixture.run.version + 1 } });
   });
 
