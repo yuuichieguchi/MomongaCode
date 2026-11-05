@@ -46,7 +46,7 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor): Guarde
 
   const guardedGatewayError = (error: GatewayError): GatewayError => {
     const message = redactor.text(error.body.message);
-    const code = shaped(error.body.code, CODE_SHAPE);
+    const code = namedCode(error.body.code);
     const param = shaped(error.body.param, PARAM_SHAPE);
     if (message === error.body.message && code === error.body.code && param === error.body.param) return error;
     return new GatewayError({ status: error.status, type: error.body.type, code, param, headers: { ...error.headers }, message });
