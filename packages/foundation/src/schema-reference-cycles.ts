@@ -1,5 +1,5 @@
 import { ENGINE_ROOT_BASE } from './engine-root.ts';
-import { resolveUri, splitFragment, walkPointer } from './schema-references.ts';
+import { pointerTrail, resolveReference, resolveUri, splitFragment } from './schema-references.ts';
 import { dialectOfUri } from './untrusted-dialect.ts';
 import type { SchemaDialect } from './untrusted-dialect.ts';
 
@@ -23,8 +23,12 @@ type Index = {
   readonly resources: Map<string, Json>;
   readonly anchors: Map<string, Map<string, Json>>;
   readonly dynamicAnchors: Map<string, Json[]>;
+  readonly documents: Map<Json, Document>;
+  readonly pendingRemotes: Set<Json>;
   readonly rootBase: string;
 };
+
+type Document = { readonly document: string; readonly draft07: boolean };
 
 const IN_PLACE_SINGLE = ['not', 'if', 'then', 'else'] as const;
 const IN_PLACE_LIST = ['allOf', 'anyOf', 'oneOf'] as const;
@@ -35,7 +39,13 @@ const PLAIN_NAME_ID = /^#[A-Za-z][A-Za-z0-9_.:-]*$/;
 
 const isRecord = (value: unknown): value is Json => typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const escapePointer = (segment: string): string => segment.replace(/~/g, '~0').replace(/\//g, '~1');
+const FRAGMENT_SAFE = /^[A-Za-z0-9\-._~!$&'()*+,;=:@?]$/;
+
+const percentEncode = (text: string): string => [...text].map((char) => (FRAGMENT_SAFE.test(char) ? char : encodeURIComponent(char))).join('');
+
+const escapePointer = (segment: string): string => percentEncode(segment.replace(/~/g, '~0').replace(/\//g, '~1'));
+
+const encodedPointer = (pointer: string): string => pointer.split('/').map(percentEncode).join('/');
 
 const listOf = <K, V>(map: Map<K, V[]>, key: K): V[] => {
   let list = map.get(key);
@@ -114,39 +124,50 @@ const indexLocations = (root: Pending, index: Index): void => {
   }
 };
 
-const within = (resource: Json, resourceBase: string, fragment: string, index: Index): Json | undefined => {
-  if (fragment === '') return resource;
-  const target = fragment.startsWith('/') ? walkPointer(resource, fragment) : index.anchors.get(resourceBase)?.get(fragment);
-  return isRecord(target) ? target : undefined;
+const enterRemote = (uri: string, index: Index): void => {
+  const resource = index.resources.get(uri);
+  if (resource === undefined || !index.pendingRemotes.delete(resource)) return;
+  const entry = index.documents.get(resource);
+  if (entry === undefined) return;
+  indexLocations({ node: resource, base: resolveUri(ENGINE_ROOT_BASE, splitFragment(entry.document)[0]), pointer: '', document: entry.document, draft07: entry.draft07, resourceRoot: true }, index);
 };
 
-const lookup = (reference: string, fromBase: string, index: Index): Json | undefined => {
-  const [uri, fragment] = splitFragment(resolveUri(fromBase, reference));
-  let resource = index.resources.get(uri);
-  let resourceBase = uri;
-  if (resource === undefined && (uri === ENGINE_ROOT_BASE || uri === '')) {
-    resource = index.resources.get(index.rootBase);
-    resourceBase = index.rootBase;
+const baseAlong = (trail: readonly unknown[], start: string, draft07: boolean): string => {
+  let base = start;
+  for (const step of trail.slice(1, -1)) {
+    const id = isRecord(step) ? step['$id'] : undefined;
+    if (typeof id === 'string' && !(draft07 && PLAIN_NAME_ID.test(id))) base = splitFragment(resolveUri(base, id))[0];
   }
-  if (resource === undefined) {
-    const [rawUri, rawFragment] = splitFragment(reference);
-    const raw = index.resources.get(rawUri);
-    return raw === undefined ? undefined : within(raw, rawUri, rawFragment, index);
-  }
-  return within(resource, resourceBase, fragment, index);
+  return base;
+};
+
+const lookup = (reference: string, from: Location, index: Index): Json | undefined => {
+  enterRemote(splitFragment(resolveUri(from.base, reference))[0], index);
+  enterRemote(splitFragment(reference)[0], index);
+  const resolved = resolveReference(reference, from.base, index);
+  if (resolved.kind === 'engine' || !isRecord(resolved.target)) return undefined;
+  const target = resolved.target;
+  if (index.locations.has(target)) return target;
+  const entry = isRecord(resolved.resource) ? index.documents.get(resolved.resource) : undefined;
+  const document = entry?.document ?? from.document;
+  const draft07 = entry?.draft07 ?? from.draft07;
+  const trail = resolved.fragment.startsWith('/') ? pointerTrail(resolved.resource, resolved.fragment) : [resolved.resource];
+  const base = trail === undefined ? resolved.resourceBase : baseAlong(trail, resolved.resourceBase, draft07);
+  indexLocations({ node: target, base, pointer: resolved.fragment.startsWith('/') ? encodedPointer(resolved.fragment) : '', document, draft07, resourceRoot: false }, index);
+  return target;
 };
 
 const edgesOf = (location: Location, index: Index): Edge[] => {
   const edges: Edge[] = location.inPlace.map(({ child, pointer }) => ({ target: child, pointer }));
   const reference = location.node['$ref'];
   if (typeof reference === 'string') {
-    const target = lookup(reference, location.base, index);
+    const target = lookup(reference, location, index);
     if (target !== undefined) edges.push({ target, pointer: `${location.pointer}/$ref` });
   }
   const dynamic = location.draft07 ? undefined : location.node['$dynamicRef'];
   if (typeof dynamic === 'string') {
     const pointer = `${location.pointer}/$dynamicRef`;
-    const target = lookup(dynamic, location.base, index);
+    const target = lookup(dynamic, location, index);
     if (target !== undefined) edges.push({ target, pointer });
     const fragment = splitFragment(resolveUri(location.base, dynamic))[1];
     for (const candidate of index.dynamicAnchors.get(fragment) ?? []) edges.push({ target: candidate, pointer });
@@ -164,23 +185,27 @@ export const inPlaceReferenceCycle = (schema: Json, dialect: SchemaDialect, remo
     resources: new Map(),
     anchors: new Map(),
     dynamicAnchors: new Map(),
+    documents: new Map(),
+    pendingRemotes: new Set(),
     rootBase: typeof rootId === 'string' ? resolveUri(ENGINE_ROOT_BASE, splitFragment(rootId)[0]) : ENGINE_ROOT_BASE,
   };
+  index.documents.set(schema, { document: '', draft07: rootIsDraft07 });
   indexLocations({ node: schema, base: index.rootBase, pointer: '', document: '', draft07: rootIsDraft07, resourceRoot: true }, index);
+  const starts = [...index.locations.values()];
   for (const [key, document] of remotes) {
     if (!isRecord(document)) continue;
     const declared = document['$schema'];
     const draft07 = declared === undefined ? rootIsDraft07 : typeof declared === 'string' && dialectOfUri(declared) === 'draft-07';
     const prepared = '$id' in document ? document : { ...document, $id: key };
-    const base = resolveUri(ENGINE_ROOT_BASE, splitFragment(key)[0]);
-    indexLocations({ node: prepared, base, pointer: '', document: key, draft07, resourceRoot: true }, index);
+    index.documents.set(prepared, { document: key, draft07 });
+    index.pendingRemotes.add(prepared);
     if (!index.resources.has(key)) index.resources.set(key, prepared);
     const declaredId = prepared['$id'];
     if (typeof declaredId === 'string' && declaredId !== '' && declaredId[0] !== '#' && !index.resources.has(declaredId)) index.resources.set(declaredId, prepared);
   }
   const finished = new Set<Json>();
   const onPath = new Set<Json>();
-  for (const start of index.locations.values()) {
+  for (const start of starts) {
     if (finished.has(start.node)) continue;
     const path: { readonly location: Location; readonly edges: Edge[]; position: number }[] = [{ location: start, edges: edgesOf(start, index), position: 0 }];
     onPath.add(start.node);
