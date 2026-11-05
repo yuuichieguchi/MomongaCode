@@ -182,6 +182,9 @@ describe('the manifest of specs/tla', () => {
       'RunRecovery.noReap': { role: 'evidence', expect: { violates: 'ReconcileSeesStoppedEffect', exitCode: 12 }, args: [], tier: 'every-run' },
       'RunRecovery.uniformCancel': { role: 'check', expect: 'holds', args: [], tier: 'every-run' },
       'RunRecovery.uniformCancelLive': { role: 'check', expect: 'holds', args: LIVENESS_ARGS, tier: 'deep' },
+      'RunRecovery.uniformCancelNoWorkers': { role: 'check', expect: 'holds', args: LIVENESS_ARGS, tier: 'every-run' },
+      'RunRecovery.uniformCancelNoSweeper': { role: 'evidence', expect: { violates: 'CancelNeedsNoWorker', exitCode: 13 }, args: LIVENESS_ARGS, tier: 'every-run' },
+      'RunRecovery.uniformCancelFull': { role: 'check', expect: 'holds', args: LIVENESS_ARGS, tier: 'deep' },
     });
   });
 
