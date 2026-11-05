@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { estimateInputTokens, wireTokensOf } from '@momonga/gateway';
+import { PROMPT_PART_KEYS, type PromptPartKey } from '../src/core/prompt-parts.ts';
 import { textOfWire } from '../src/core/wire-text.ts';
 
 const textInput = (text: string) => [{ type: 'message' as const, role: 'user' as const, content: [{ type: 'input_text' as const, text }] }];
@@ -54,9 +55,22 @@ describe('the parts of a wire that a count covers', () => {
     expect(wireTokensOf({ ...promptParts, ...decodingFields })).toBe(wireTokensOf(promptParts));
   });
 
-  it('renders every counted part into the text a counter receives', () => {
-    const text = textOfWire({ ...promptParts, ...decodingFields });
-    for (const expected of ['count these words', 'Be terse.', 'Answer in one line.', 'and these', 'read_file']) expect(text).toContain(expected);
-    for (const excluded of ['envelope', 'budget_tokens', 'effort']) expect(text).not.toContain(excluded);
+  it('renders every key of PROMPT_PART_KEYS into the text a counter receives, and nothing else', () => {
+    const valueOf: Record<PromptPartKey, (marker: string) => unknown> = {
+      messages: (marker) => [{ role: 'user', content: marker }],
+      system: (marker) => marker,
+      instructions: (marker) => marker,
+      input: (marker) => [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: marker }] }],
+      tools: (marker) => [{ type: 'function', name: marker }],
+    };
+    const markerOf = (key: string): string => `marker-of-${key}`;
+    const wire: Record<string, unknown> = {
+      ...Object.fromEntries(PROMPT_PART_KEYS.map((key) => [key, valueOf[key](markerOf(key))])),
+      response_format: { type: 'json_schema', name: markerOf('response_format') },
+      max_tokens: 4096,
+    };
+    const text = textOfWire(wire);
+    for (const key of PROMPT_PART_KEYS) expect(text).toContain(markerOf(key));
+    expect(text).not.toContain(markerOf('response_format'));
   });
 });

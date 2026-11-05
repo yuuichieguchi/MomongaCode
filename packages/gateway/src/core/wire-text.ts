@@ -1,5 +1,5 @@
 import { isRecord } from '@momonga/foundation';
-import { promptPartsOf } from './prompt-parts.ts';
+import { PROMPT_PART_KEYS, type PromptPartKey } from './prompt-parts.ts';
 
 const textOfContent = (content: unknown): string[] => {
   if (typeof content === 'string') return [content];
@@ -20,14 +20,15 @@ const textOfEntries = (entries: unknown): string[] => {
   });
 };
 
-export const textOfWire = (renderedWire: Record<string, unknown>): string => {
-  const wire: Record<string, unknown> = promptPartsOf(renderedWire);
-  const parts = [
-    ...textOfEntries(wire['messages']),
-    ...textOfContent(wire['system']),
-    ...textOfContent(wire['instructions']),
-    ...textOfEntries(wire['input']),
-    ...(wire['tools'] === undefined ? [] : [JSON.stringify(wire['tools'])]),
-  ];
-  return parts.filter((part) => part !== '').join('\n');
+const renderPart: Record<PromptPartKey, (value: unknown) => string[]> = {
+  messages: textOfEntries,
+  system: textOfContent,
+  instructions: textOfContent,
+  input: textOfEntries,
+  tools: (value) => (value === undefined ? [] : [JSON.stringify(value)]),
 };
+
+export const textOfWire = (renderedWire: Record<string, unknown>): string =>
+  PROMPT_PART_KEYS.flatMap((key) => renderPart[key](renderedWire[key]))
+    .filter((part) => part !== '')
+    .join('\n');
