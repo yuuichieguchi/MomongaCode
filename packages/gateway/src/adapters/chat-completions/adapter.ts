@@ -102,7 +102,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
 
   async function* create(request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
     if (closed) throw new Error('the chat-completions adapter is closed');
-    const capabilities = await options.capabilities(ctx.target);
+    const capabilities = ctx.capabilities;
     const planned = bodyFor(request, ctx.target, ctx.reasoningOrigin, capabilities.allowedTools);
     const { envelope } = planned;
     const body = withCapabilityOptions(planned.body, request, capabilities);
@@ -174,7 +174,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
   }
 
   const compact = async (request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult> => {
-    const capabilities = await options.capabilities(ctx.target);
+    const capabilities = ctx.capabilities;
     const cap = request.momonga?.max_summary_tokens ?? summaryTokenCapFor(capabilities);
     const summaryRequest = summaryRequestOf(request, cap, ctx.reasoningOrigin);
     for await (const event of create(summaryRequest, ctx)) {

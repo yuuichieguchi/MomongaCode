@@ -1,4 +1,4 @@
-import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
+import { contextOf } from './own-reasoning.ts';
 import { createChatCompletionsAdapter } from '@momonga/gateway';
 import type { ChatCompletionsAdapter, ChatCompletionsAdapterOptions } from '@momonga/gateway';
 import type { AdapterRequest, AdapterTarget, Capabilities, StreamEvent } from '@momonga/protocol';
@@ -55,7 +55,7 @@ export const collect = async (
 ): Promise<Collected> => {
   const events: StreamEvent[] = [];
   try {
-    for await (const event of adapter.create(request, { signal, target: TARGET, attempt: 1, reasoningOrigin: EVERY_REASONING_IS_OWN })) events.push(event);
+    for await (const event of adapter.create(request, await contextOf(adapter, TARGET, signal))) events.push(event);
   } catch (error) {
     return { events, error };
   }

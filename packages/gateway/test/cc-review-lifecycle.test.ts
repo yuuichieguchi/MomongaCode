@@ -8,7 +8,7 @@ import type { ExecResult, FmServe, FmServeTimers, ProbeRecordKey, ProviderAdapte
 import { createFakeClock, createFakeTimers, createScriptedAdapter, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, makeDir, registerCleanup, startGateway } from './gateway-helpers.ts';
-import { TARGET } from './cc-support.ts';
+import { CC_CAPABILITIES, TARGET } from './cc-support.ts';
 import { saveProbeRecord } from '@momonga/gateway';
 import { makeReport } from './report-fixture.ts';
 
@@ -233,7 +233,7 @@ describe('closed adapter', () => {
     const iterator = adapter
       .create(
         { model: 'm', input: [{ type: 'message', role: 'user', content: 'x' }] },
-        { signal: new AbortController().signal, target: TARGET, attempt: 1, reasoningOrigin: EVERY_REASONING_IS_OWN },
+        { signal: new AbortController().signal, target: TARGET, attempt: 1, reasoningOrigin: EVERY_REASONING_IS_OWN, capabilities: CC_CAPABILITIES },
       )
       [Symbol.asyncIterator]();
     await expect(iterator.next()).rejects.toThrow(/closed/);

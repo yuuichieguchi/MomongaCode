@@ -111,8 +111,8 @@ const countWire = async (
   const { imageTokens: imageModel } = await services.router.capabilitiesOf(target);
   const adapterCountWire = target.adapter.countWire;
   if (adapterCountWire !== undefined) {
-    const counted = await callTargets(services, [target], signal, deadlineAt, (chosen, attemptNumber, guarded) =>
-      adapterCountWire.call(chosen.adapter, wire, adapterContextOf(services, chosen, guarded, attemptNumber)),
+    const counted = await callTargets(services, [target], signal, deadlineAt, async (chosen, attemptNumber, guarded) =>
+      adapterCountWire.call(chosen.adapter, wire, await adapterContextOf(services, chosen, guarded, attemptNumber)),
     );
     counted.settle('success');
     return counted.value;
@@ -122,11 +122,11 @@ const countWire = async (
     const tokens = wireTokensOf(wire, imageModel);
     return estimatedCountOf(tokens);
   }
-  const outcome = await callTargets(services, [target], signal, deadlineAt, (chosen, attemptNumber, guarded) =>
+  const outcome = await callTargets(services, [target], signal, deadlineAt, async (chosen, attemptNumber, guarded) =>
     adapterCountTokens.call(
       chosen.adapter,
       { model: chosen.model, input: textOfWire(wire) },
-      adapterContextOf(services, chosen, guarded, attemptNumber),
+      await adapterContextOf(services, chosen, guarded, attemptNumber),
     ),
   );
   outcome.settle('success');
@@ -191,7 +191,7 @@ const countTokens = async (
     );
     return estimatedCountOf(inputTokens);
   }
-  const outcome = await callTargets(services, [target], signal, deadlineAt, (chosen, attemptNumber, guarded) =>
+  const outcome = await callTargets(services, [target], signal, deadlineAt, async (chosen, attemptNumber, guarded) =>
     adapterCountTokens.call(
       chosen.adapter,
       {
@@ -201,7 +201,7 @@ const countTokens = async (
         ...(counted.tools === undefined ? {} : { tools: counted.tools }),
         ...(counted.tool_choice === undefined ? {} : { tool_choice: counted.tool_choice }),
       },
-      adapterContextOf(services, chosen, guarded, attemptNumber),
+      await adapterContextOf(services, chosen, guarded, attemptNumber),
     ),
   );
   outcome.settle('success');
@@ -302,7 +302,7 @@ const compactOnce = async (
       request: { input: resolved.forAdapter, instructions: request.instructions, tools: undefined },
     });
     try {
-      const result = await compact.call(target.adapter, compactRequestFor(target, cap), adapterContextOf(services, target, guarded, attemptNumber));
+      const result = await compact.call(target.adapter, compactRequestFor(target, cap), await adapterContextOf(services, target, guarded, attemptNumber));
       spans.set(target, span);
       return result;
     } catch (error) {

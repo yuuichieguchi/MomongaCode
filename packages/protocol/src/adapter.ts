@@ -43,6 +43,7 @@ export type AdapterContext = {
   target: AdapterTarget;
   attempt: number;
   reasoningOrigin: ReasoningOrigin;
+  capabilities: Capabilities;
 };
 
 export type ClassifiedError = {

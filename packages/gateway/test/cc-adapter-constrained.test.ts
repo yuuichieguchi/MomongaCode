@@ -1,4 +1,4 @@
-import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
+import { contextOf } from './own-reasoning.ts';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
 import { canonicalJson } from '@momonga/foundation';
@@ -171,7 +171,7 @@ describe('constrained streaming', () => {
     });
     const controller = new AbortController();
     const adapter = makeAdapter(fake, constrained);
-    const iterator = adapter.create(toolRequest('hello'), { signal: controller.signal, target: TARGET, attempt: 1, reasoningOrigin: EVERY_REASONING_IS_OWN })[Symbol.asyncIterator]();
+    const iterator = adapter.create(toolRequest('hello'), await contextOf(adapter, TARGET, controller.signal))[Symbol.asyncIterator]();
     let delta: any;
     for (;;) {
       const step = await iterator.next();

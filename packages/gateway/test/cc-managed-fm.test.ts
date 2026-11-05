@@ -1,4 +1,4 @@
-import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
+import { contextOf } from './own-reasoning.ts';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
@@ -320,7 +320,7 @@ describe('createManagedFmTarget compaction and wire counting', () => {
     expect(adapter.compact).toBeTypeOf('function');
     const result = await adapter.compact?.(
       { model: 'system', input: [userText('summarise this')], momonga: { max_summary_tokens: 64 } },
-      { signal: new AbortController().signal, target: TARGET, attempt: 1, reasoningOrigin: EVERY_REASONING_IS_OWN },
+      await contextOf(adapter, TARGET),
     );
     expect(result?.summary).toBe(FAKE_DETERMINISTIC_REPLY);
   });

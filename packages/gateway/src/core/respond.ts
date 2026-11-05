@@ -165,7 +165,7 @@ const openAttempt = async (
     request: { input: resolved.forAdapter, instructions: job.body.instructions, tools: job.body.tools },
   });
   try {
-    const stream = target.adapter.create(adapterRequestFor(job, resolved, target), adapterContextOf(services, target, signal, attemptNumber));
+    const stream = target.adapter.create(adapterRequestFor(job, resolved, target), await adapterContextOf(services, target, signal, attemptNumber));
     const iterator = stream[Symbol.asyncIterator]();
     const held: StreamEvent[] = [];
     for (;;) {
