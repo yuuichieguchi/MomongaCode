@@ -1,24 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import type { Capabilities, ReasoningCapability } from '@momonga/protocol';
+import type { AnthropicApiVersion, Capabilities, ReasoningCapability, SamplingCapability, SamplingField } from '@momonga/protocol';
 import { anthropicTextReply } from '@momonga/testkit';
 import { postJson, readJson, userInput } from './gateway-helpers.ts';
 import { REMOTE_CAPABILITIES, startAnthropicGateway } from './upstream-gateway-support.ts';
-import type { AnthropicApiVersion } from './upstream-gateway-support.ts';
 
-type SamplingDeclaration =
-  | { accepts: 'none' }
-  | { accepts: 'without_thinking'; topP: { min: number; max: number } }
-  | { accepts: 'free' };
-
-type SamplingParam = 'temperature' | 'top_p' | 'frequency_penalty' | 'presence_penalty';
-
-type Case = { label: string; param: SamplingParam; value: number | null };
+type Case = { label: string; param: SamplingField; value: number | null };
 
 const ADAPTIVE: ReasoningCapability = { control: 'thinking', form: 'adaptive', efforts: ['low', 'medium', 'high'] };
 
-const NONE: SamplingDeclaration = { accepts: 'none' };
-const WITHOUT_THINKING: SamplingDeclaration = { accepts: 'without_thinking', topP: { min: 0.95, max: 1 } };
-const FREE: SamplingDeclaration = { accepts: 'free' };
+const NONE: SamplingCapability = { accepts: 'none' };
+const WITHOUT_THINKING: SamplingCapability = { accepts: 'without_thinking', topP: { min: 0.95, max: 1 } };
+const FREE: SamplingCapability = { accepts: 'free' };
 
 const TEMPERATURE: Case = { label: 'temperature 0.2', param: 'temperature', value: 0.2 };
 const TOP_P_INSIDE: Case = { label: 'top_p 0.97, inside 0.95-1', param: 'top_p', value: 0.97 };
@@ -32,7 +24,7 @@ const ANTHROPIC_WIRE_CASES = [TEMPERATURE, TOP_P_INSIDE, TOP_P_OUTSIDE];
 
 const LEGACY: AnthropicApiVersion = '2023-06-01';
 
-type Target = { sampling?: SamplingDeclaration; reasoning?: ReasoningCapability; apiVersion?: AnthropicApiVersion };
+type Target = { sampling?: SamplingCapability; reasoning?: ReasoningCapability; apiVersion?: AnthropicApiVersion };
 
 const capabilitiesOf = (target: Target): Capabilities =>
   Object.assign({}, REMOTE_CAPABILITIES, { reasoning: target.reasoning ?? ADAPTIVE }, target.sampling === undefined ? {} : { sampling: target.sampling });
@@ -73,9 +65,9 @@ const expectRefused = async (target: Target, thinking: Thinking, sample: Case, .
   expect(sent).toEqual([]);
 };
 
-type Row = { declaration: string; sampling: SamplingDeclaration | undefined; thinking: Thinking; sample: Case; outcome: 'forwarded' | 'refused' };
+type Row = { declaration: string; sampling: SamplingCapability | undefined; thinking: Thinking; sample: Case; outcome: 'forwarded' | 'refused' };
 
-const rowsFor = (declaration: string, sampling: SamplingDeclaration | undefined, thinking: Thinking, forwarded: readonly Case[]): Row[] =>
+const rowsFor = (declaration: string, sampling: SamplingCapability | undefined, thinking: Thinking, forwarded: readonly Case[]): Row[] =>
   EVERY_CASE.map((sample) => ({ declaration, sampling, thinking, sample, outcome: forwarded.includes(sample) ? 'forwarded' : 'refused' }));
 
 const legacyMatrix: Row[] = [
@@ -97,9 +89,13 @@ describe('sampling parameters on an anthropic target with API version 2023-06-01
   });
 
   it('reads the top_p range from the declaration rather than a fixed 0.95-1', async () => {
-    const narrow: SamplingDeclaration = { accepts: 'without_thinking', topP: { min: 0.3, max: 0.6 } };
+    const narrow: SamplingCapability = { accepts: 'without_thinking', topP: { min: 0.3, max: 0.6 } };
     await expectForwarded({ apiVersion: LEGACY, sampling: narrow }, ON, TOP_P_OUTSIDE);
     await expectRefused({ apiVersion: LEGACY, sampling: narrow }, ON, TOP_P_INSIDE);
+  });
+
+  it.for([0.95, 1])('forwards top_p %s with thinking on, since the declared range is inclusive', async (value) => {
+    await expectForwarded({ apiVersion: LEGACY, sampling: WITHOUT_THINKING }, ON, { label: `top_p ${value}`, param: 'top_p', value });
   });
 
   it('refuses a penalty under every declaration, because the anthropic wire has no penalty field', async () => {
@@ -123,6 +119,30 @@ describe('a carried sampling parameter is any non-null value, the default includ
     const { response, sent } = await send({}, OFF, { label: 'temperature null', param: 'temperature', value: null });
     expect(response.status).toBe(200);
     expect('temperature' in sent[0]).toBe(false);
+  });
+});
+
+describe('a request carrying several sampling fields', () => {
+  const sendBoth = async (target: Target, fields: Record<string, number>) => {
+    const gateway = await startAnthropicGateway({ script: [anthropicTextReply(['ok'])], capabilities: capabilitiesOf(target), apiVersion: LEGACY });
+    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi'), ...fields }));
+    return { response, sent: sentBodies(gateway) };
+  };
+
+  it('names the second field when only the second is refused', async () => {
+    const { response, sent } = await sendBoth({ sampling: FREE }, { temperature: 0.2, frequency_penalty: 0.3 });
+    expect(response.status).toBe(400);
+    expect(response.body.error.param).toBe('frequency_penalty');
+    expect(response.body.error.message.startsWith('frequency_penalty ')).toBe(true);
+    expect(response.body.error.message).not.toContain('temperature');
+    expect(sent).toEqual([]);
+  });
+
+  it('checks the fields in the order temperature, top_p, frequency_penalty, presence_penalty, whatever the body order', async () => {
+    const { response } = await sendBoth({ sampling: NONE }, { presence_penalty: 0.4, top_p: 0.97, temperature: 0.2 });
+    expect(response.status).toBe(400);
+    expect(response.body.error.param).toBe('temperature');
+    expect(response.body.error.message.startsWith('temperature ')).toBe(true);
   });
 });
 

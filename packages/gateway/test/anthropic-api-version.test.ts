@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { anthropicCountTokensReply, anthropicTextReply } from '@momonga/testkit';
 import { postJson, readJson, readSse, userInput } from './gateway-helpers.ts';
 import { startAnthropicGateway } from './upstream-gateway-support.ts';
-import type { AnthropicApiVersion } from './upstream-gateway-support.ts';
+import type { AnthropicApiVersion } from '@momonga/protocol';
 
 const versionsSent = (gateway: Awaited<ReturnType<typeof startAnthropicGateway>>): unknown[] =>
   gateway.fake.requests.map((request) => request.headers['anthropic-version']);

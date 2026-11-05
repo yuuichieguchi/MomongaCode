@@ -1,7 +1,8 @@
 import { expect } from 'vitest';
 import { createAnthropicAdapter, createOpenResponsesAdapter } from '@momonga/gateway';
 import type { PriceTable } from '@momonga/observability';
-import type { Capabilities, StreamEvent } from '@momonga/protocol';
+import { DEFAULT_ANTHROPIC_API_VERSION } from '@momonga/protocol';
+import type { AnthropicApiVersion, Capabilities, StreamEvent } from '@momonga/protocol';
 import { createFakeClock, startFakeAnthropic, startFakeOpenResponses } from '@momonga/testkit';
 import type { FakeAnthropicOptions, FakeOpenResponsesOptions, FakeUpstreamServer } from '@momonga/testkit';
 import { START_MS, postJson, readSse, registerCleanup, startGateway, userInput, validator } from './gateway-helpers.ts';
@@ -34,8 +35,6 @@ export const readFileTool = {
 
 export type UpstreamGateway = Harness & { fake: FakeUpstreamServer };
 
-export type AnthropicApiVersion = '2026-10-21' | '2023-06-01';
-
 const singleTarget = { aliases: { fast: ['remote'] }, targets: { remote: { model: 'upstream-model', kind: 'remote' } } };
 
 export const startAnthropicGateway = async (
@@ -50,17 +49,13 @@ export const startAnthropicGateway = async (
 ): Promise<UpstreamGateway> => {
   const fake = await startFakeAnthropic({ apiKey: options.apiKey ?? FAKE_API_KEY, ...options });
   registerCleanup(() => fake.close());
-  const adapter = createAnthropicAdapter(
-    Object.assign(
-      {
-        resolveEndpoint: async () => ({ kind: 'unix' as const, socketPath: fake.socketPath }),
-        apiKey: async () => options.sentKey ?? FAKE_API_KEY,
-        capabilities: async () => options.capabilities ?? REMOTE_CAPABILITIES,
-        clock: createFakeClock(START_MS),
-      },
-      options.apiVersion === undefined ? {} : { apiVersion: options.apiVersion },
-    ),
-  );
+  const adapter = createAnthropicAdapter({
+    resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
+    apiKey: async () => options.sentKey ?? FAKE_API_KEY,
+    capabilities: async () => options.capabilities ?? REMOTE_CAPABILITIES,
+    clock: createFakeClock(START_MS),
+    apiVersion: options.apiVersion ?? DEFAULT_ANTHROPIC_API_VERSION,
+  });
   registerCleanup(() => adapter.close());
   const harness = await startGateway({
     adapters: { remote: adapter },

@@ -1,19 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import type { AdapterRequest, Capabilities } from '@momonga/protocol';
+import type { AdapterRequest, Capabilities, SamplingCapability } from '@momonga/protocol';
 import { openResponsesTextReply } from '@momonga/testkit';
 import { CC_CAPABILITIES, collect, completionBodies, makeAdapter, startFake, terminalOf } from './cc-support.ts';
 import { postJson, readJson, readSse, startGateway, userInput } from './gateway-helpers.ts';
 import { chunkLine, collectOllama, doneLine, makeOllamaAdapter, OLLAMA_CAPABILITIES, startFakeOllama } from './ollama-support.ts';
 import { REMOTE_CAPABILITIES, startOpenResponsesGateway } from './upstream-gateway-support.ts';
 
-type SamplingDeclaration = { accepts: 'none' } | { accepts: 'without_thinking'; topP: { min: number; max: number } } | { accepts: 'free' };
-
 const PENALTIES = { frequency_penalty: 0.3, presence_penalty: 0.4 } as const;
 const EVERY_SAMPLING_FIELD = { temperature: 0.2, top_p: 0.9, ...PENALTIES } as const;
 
 const singleTarget = { aliases: { fast: ['remote'] }, targets: { remote: { model: 'upstream-model', kind: 'remote' } } };
 
-const withSampling = (capabilities: Capabilities, sampling: SamplingDeclaration | undefined, extra: Record<string, unknown> = {}): Capabilities =>
+const withSampling = (capabilities: Capabilities, sampling: SamplingCapability | undefined, extra: Record<string, unknown> = {}): Capabilities =>
   Object.assign({}, capabilities, extra, sampling === undefined ? {} : { sampling });
 
 const startChatCompletionsGateway = async (capabilities: Capabilities) => {
@@ -84,6 +82,19 @@ describe('thinking on through the reasoning_effort control', () => {
     expect(response.body.error.param).toBe('temperature');
     expect(response.body.error.message).toContain('remote');
     expect(completionBodies(gateway.fake)).toEqual([]);
+  });
+});
+
+describe('thinking off through the reasoning_effort control', () => {
+  it('a chat-completions target under without_thinking forwards temperature when effort none resolves to none', async () => {
+    const capabilities = withSampling(CC_CAPABILITIES, { accepts: 'without_thinking', topP: { min: 0.95, max: 1 } }, { reasoning: { control: 'reasoning_effort', lowest: 'none' } });
+    const gateway = await startChatCompletionsGateway(capabilities);
+    const response = await readJson(
+      await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi'), reasoning: { effort: 'none' }, temperature: 0.2 }),
+    );
+    expect(response.status).toBe(200);
+    const [body] = completionBodies(gateway.fake);
+    expect(body.temperature).toBe(0.2);
   });
 });
 

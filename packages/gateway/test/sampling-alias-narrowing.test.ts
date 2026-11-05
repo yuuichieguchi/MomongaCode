@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createAnthropicAdapter } from '@momonga/gateway';
-import type { Capabilities, ProviderAdapter } from '@momonga/protocol';
+import type { AnthropicApiVersion, Capabilities, ProviderAdapter } from '@momonga/protocol';
 import { anthropicTextReply, createFakeClock, startFakeAnthropic } from '@momonga/testkit';
 import type { FakeUpstreamServer } from '@momonga/testkit';
 import { CC_CAPABILITIES, completionBodies, makeAdapter, startFake } from './cc-support.ts';
@@ -10,17 +10,19 @@ import { FAKE_API_KEY, REMOTE_CAPABILITIES } from './upstream-gateway-support.ts
 const FIRST_ANTHROPIC = 'anthropic-first';
 const SECOND_ANTHROPIC = 'anthropic-second';
 const CHAT_FREE = 'chat-free';
+const LEGACY_FREE = 'anthropic-legacy-free';
 
 type Upstream = { adapter: ProviderAdapter; sent: () => unknown[] };
 
-const anthropicUpstream = async (): Promise<Upstream> => {
+const anthropicUpstream = async (apiVersion: AnthropicApiVersion, capabilities: Capabilities): Promise<Upstream> => {
   const fake: FakeUpstreamServer = await startFakeAnthropic({ apiKey: FAKE_API_KEY, script: [anthropicTextReply(['from anthropic'])] });
   registerCleanup(() => fake.close());
   const adapter = createAnthropicAdapter({
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
     apiKey: async () => FAKE_API_KEY,
-    capabilities: async () => REMOTE_CAPABILITIES,
+    capabilities: async () => capabilities,
     clock: createFakeClock(START_MS),
+    apiVersion,
   });
   registerCleanup(() => adapter.close());
   return { adapter, sent: () => fake.requests.filter((request) => request.path === '/v1/messages').map((request) => request.body) };
@@ -32,9 +34,15 @@ const chatFreeUpstream = async (): Promise<Upstream> => {
   return { adapter: makeAdapter(fake, { capabilities: async () => capabilities }), sent: () => completionBodies(fake) };
 };
 
+const upstreamFor = (name: string): Promise<Upstream> => {
+  if (name === CHAT_FREE) return chatFreeUpstream();
+  if (name === LEGACY_FREE) return anthropicUpstream('2023-06-01', Object.assign({}, REMOTE_CAPABILITIES, { sampling: { accepts: 'free' } }));
+  return anthropicUpstream('2026-10-21', REMOTE_CAPABILITIES);
+};
+
 const startAlias = async (order: readonly string[]) => {
   const upstreams: Record<string, Upstream> = {};
-  for (const name of order) upstreams[name] = name === CHAT_FREE ? await chatFreeUpstream() : await anthropicUpstream();
+  for (const name of order) upstreams[name] = await upstreamFor(name);
   const harness = await startGateway({
     adapters: Object.fromEntries(Object.entries(upstreams).map(([name, upstream]) => [name, upstream.adapter])),
     config: {
@@ -75,6 +83,24 @@ describe('sampling acceptance narrows the candidates of a multi-target alias', (
     expect(response.body.error.message).toContain(SECOND_ANTHROPIC);
     expect(alias.sentTo(FIRST_ANTHROPIC)).toEqual([]);
     expect(alias.sentTo(SECOND_ANTHROPIC)).toEqual([]);
+  });
+
+  it('serves temperature from a 2023-06-01 anthropic target declaring free ahead of a default-version anthropic target', async () => {
+    const alias = await startAlias([LEGACY_FREE, FIRST_ANTHROPIC]);
+    const response = await alias.post({ temperature: 0.2 });
+    expect(response.status).toBe(200);
+    expect(alias.sentTo(LEGACY_FREE)).toHaveLength(1);
+    expect((alias.sentTo(LEGACY_FREE)[0] as Record<string, unknown>)['temperature']).toBe(0.2);
+    expect(alias.sentTo(FIRST_ANTHROPIC)).toEqual([]);
+  });
+
+  it('serves temperature from the 2023-06-01 anthropic target when the default-version target comes first, sending nothing to it', async () => {
+    const alias = await startAlias([FIRST_ANTHROPIC, LEGACY_FREE]);
+    const response = await alias.post({ temperature: 0.2 });
+    expect(response.status).toBe(200);
+    expect(alias.sentTo(FIRST_ANTHROPIC)).toEqual([]);
+    expect(alias.sentTo(LEGACY_FREE)).toHaveLength(1);
+    expect((alias.sentTo(LEGACY_FREE)[0] as Record<string, unknown>)['temperature']).toBe(0.2);
   });
 
   it('keeps the alias order for a request that carries no sampling field', async () => {

@@ -108,6 +108,7 @@ const startUpstream = async (kind: AdapterKind, script: readonly Script[]): Prom
       apiKey: async () => FAKE_API_KEY,
       capabilities: async () => REMOTE_CAPABILITIES,
       clock: createFakeClock(START_MS),
+      apiVersion: '2026-10-21',
     });
     registerCleanup(() => adapter.close());
     const bodies = () => fake.requests.filter((request) => request.path === '/v1/messages').map((request: any) => request.body.messages);
