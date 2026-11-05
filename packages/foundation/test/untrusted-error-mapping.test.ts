@@ -78,3 +78,21 @@ describe('the error mapping at the untrusted-schema boundary', () => {
     ]);
   });
 });
+
+describe('the error mapping on a recursive schema', () => {
+  const TREE = {
+    $ref: '#/$defs/node',
+    $defs: {
+      node: {
+        anyOf: [
+          { type: 'object', properties: { kind: { const: 'leaf' }, v: { type: 'number' } }, required: ['kind', 'v'] },
+          { type: 'object', properties: { kind: { const: 'branch' }, kids: { type: 'array', items: { $ref: '#/$defs/node' } } }, required: ['kind', 'kids'] },
+        ],
+      },
+    },
+  };
+
+  it('reports the failing leaf inside a branch, with every level keeping its full anyOf', () => {
+    expect(errorsOf(TREE, { kind: 'branch', kids: [{ kind: 'leaf', v: 'x' }] })).toEqual([{ instancePath: '/kids/0/v', keyword: 'type', message: 'must be number' }]);
+  });
+});
