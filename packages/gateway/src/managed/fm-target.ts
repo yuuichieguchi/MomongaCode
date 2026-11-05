@@ -182,7 +182,9 @@ const listedModelId = async (socketPath: string, signal: AbortSignal): Promise<s
 
 export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Promise<ManagedFmTarget> => {
   const report = await loadProbeRecord(options.probeRecordDir, options.recordKey);
-  const { mode } = resolveToolCalling(options.toolCallingSetting, report);
+  const targetName = options.recordKey.target;
+  const toolCalling = (): ToolCallingMode => resolveToolCalling(options.toolCallingSetting, report, targetName).mode;
+  const mode: ToolCallingMode = report === null && options.toolCallingSetting === 'auto' ? 'none' : toolCalling();
   const { parallelToolCalls: _unprobedParallel, ...probedDefaults } = unprobedCapabilities(mode);
   const declaredField = options.declaredOutputBoundField === undefined ? {} : { outputBoundField: options.declaredOutputBoundField };
   const capabilities =
@@ -205,7 +207,7 @@ export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Pr
 
   return {
     resolveEndpoint: () => options.fmServe.ensureRunning(),
-    toolCalling: () => mode,
+    toolCalling,
     keywordSupport: () => keywordSupport,
     upstreamModel,
     capabilities: async () => capabilities,

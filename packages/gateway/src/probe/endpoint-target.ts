@@ -10,6 +10,7 @@ import type { DeclaredCapabilities } from './decide.ts';
 import { endpointIdentityOf } from './endpoint-record.ts';
 import type { EndpointRecord } from './endpoint-record.ts';
 import { parseJson } from './json.ts';
+import { missingRecordFailure, remedyOf } from './remedy.ts';
 
 export const IDENTITY_READ_TIMEOUT_MS = 10_000;
 
@@ -99,7 +100,7 @@ export const memoizedVerification = (verifyOnce: (signal: AbortSignal) => Promis
   };
 };
 
-export const remedyOf = (targetName: string): string => `run \`momonga gateway probe ${targetName}\``;
+export { remedyOf };
 
 export const ollamaServerRefusal = (targetName: string, adapter: string, endpoint: string): PreconditionFailedError =>
   new PreconditionFailedError(
@@ -134,10 +135,10 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
 
   const requireRecord = (): EndpointRecord => {
     if (record === null) {
-      throw new PreconditionFailedError(
+      throw missingRecordFailure(
         `the target "${targetName}" sets toolCalling to auto, but no probe record exists`,
         `no record for ${endpoint} and model ${model}`,
-        remedyOf(targetName),
+        targetName,
       );
     }
     return record;

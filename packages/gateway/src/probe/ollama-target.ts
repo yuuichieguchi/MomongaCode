@@ -4,7 +4,8 @@ import { PreconditionFailedError } from '../adapters/shared/failures.ts';
 import type { OllamaEndpointRecord } from './endpoint-record.ts';
 import { layerOf, mergeCapabilities, withImageDefault } from './decide.ts';
 import type { DeclaredCapabilities } from './decide.ts';
-import { memoizedVerification, remedyOf } from './endpoint-target.ts';
+import { memoizedVerification } from './endpoint-target.ts';
+import { missingRecordFailure, remedyOf } from './remedy.ts';
 
 export type ProbedOllamaTargetOptions = {
   targetName: string;
@@ -26,10 +27,10 @@ export const createProbedOllamaTarget = (options: ProbedOllamaTargetOptions): Pr
 
   const verifyOnce = async (signal: AbortSignal): Promise<void> => {
     if (record === null) {
-      throw new PreconditionFailedError(
+      throw missingRecordFailure(
         `the ollama target "${targetName}" has no probe record`,
         `no record for ${endpoint} and model ${model}`,
-        remedyOf(targetName),
+        targetName,
       );
     }
     const digest = await options.readDigest(signal);

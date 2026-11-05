@@ -19,6 +19,7 @@ import {
   launchGateway,
   makeHome,
   until,
+  writeSettings,
 } from './gateway-process-helpers.ts';
 
 const MINIMAL_NAMES = new Set(['PATH', 'HOME', 'LANG', 'TMPDIR']);
@@ -47,6 +48,10 @@ const fakeFmSetup = async () => {
   return { fm, dumpFile, home };
 };
 
+const declareNativeFm = (home: string): void => {
+  writeSettings(home, { models: { aliases: { default: ['fm'] }, targets: { fm: { adapter: 'fm', toolCalling: 'native' } } } });
+};
+
 const servePids = (dumpFile: string): number[] =>
   readDump(dumpFile)
     .filter((record) => record.argv[0] === 'serve')
@@ -60,6 +65,7 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
   it('gives every fm invocation exactly the minimal env', async () => {
     const { fm, dumpFile, home } = await fakeFmSetup();
     reapServeGroups(dumpFile);
+    declareNativeFm(home);
     const env = baseEnv(home, {
       PATH: `${MINIMAL_PATH}:/opt/homebrew/bin:/usr/local/bin`,
       LANG: 'ja_JP.UTF-8',
@@ -92,6 +98,7 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
   it('runs fm serve as the leader of its own process group and marks it under run/markers/targets/fm', async () => {
     const { fm, dumpFile, home } = await fakeFmSetup();
     reapServeGroups(dumpFile);
+    declareNativeFm(home);
     const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });
     expect((await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', body))).status).toBe(200);
     const [pid] = servePids(dumpFile);
@@ -109,6 +116,7 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
   it('reaps a stale fm group left behind by a killed gateway before claiming fm.sock', async () => {
     const { fm, dumpFile, home } = await fakeFmSetup();
     reapServeGroups(dumpFile);
+    declareNativeFm(home);
     const paths = homePaths(home);
     fs.mkdirSync(paths.fmMarkers, { recursive: true, mode: 0o700 });
     for (const dir of [paths.root, path.dirname(paths.socket), path.dirname(paths.fmMarkers), paths.fmMarkers]) fs.chmodSync(dir, 0o700);

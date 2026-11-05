@@ -4,6 +4,7 @@ import type { ProbeReport, ToolCallingMode, ToolCallingSetting } from '@momonga/
 import { modeIsPrivate } from '@momonga/foundation';
 import { decideToolCalling } from './decide.ts';
 import { isRecord } from './json.ts';
+import { missingRecordFailure } from './remedy.ts';
 import { isProbeReport } from './report-schema.ts';
 
 export interface ProbeRecordKey {
@@ -75,11 +76,21 @@ export const loadProbeRecord = async (dir: string, key: ProbeRecordKey): Promise
 
 export interface ResolvedToolCalling {
   mode: ToolCallingMode;
-  source: 'config' | 'probed' | 'unprobed';
+  source: 'config' | 'probed';
 }
 
-export const resolveToolCalling = (setting: ToolCallingSetting, report: ProbeReport | null): ResolvedToolCalling => {
+export const resolveToolCalling = (
+  setting: ToolCallingSetting,
+  report: ProbeReport | null,
+  targetName: string,
+): ResolvedToolCalling => {
   if (setting === 'native' || setting === 'constrained') return { mode: setting, source: 'config' };
-  if (report === null) return { mode: 'native', source: 'unprobed' };
+  if (report === null) {
+    throw missingRecordFailure(
+      `the target "${targetName}" sets toolCalling to auto, but no probe record exists`,
+      `no record for ${targetName}`,
+      targetName,
+    );
+  }
   return { mode: decideToolCalling(report).mode, source: 'probed' };
 };
