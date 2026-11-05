@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { MAX_JSON_DEPTH } from '@momonga/foundation';
 import type { McpStdioServerConfig } from '@momonga/config';
 import {
   FIXTURE_EXTRA_TOOLS_ENV,
@@ -10,6 +11,7 @@ import {
   MODERN_FIXTURE_RECORD_ENV,
   REAL_PROCESS_TEST_TIMEOUT_MS,
   killPidsForCleanup,
+  nestedNotSchema,
 } from '@momonga/testkit';
 import {
   callRecords,
@@ -92,14 +94,32 @@ describe('schema nesting depth', () => {
     expect(set.notices.filter((notice) => notice.includes('failed to list tools'))).toEqual([]);
     expect(set.get('mcp__modern__echo')?.name).toBe('mcp__modern__echo');
   });
+});
 
-  it('accepts nesting depth 64 and rejects depth 65', async () => {
-    const harness = makePool([entry('modern', modernConfig(makeRecordFile(), extras('deep_64', 'deep_65')))]);
-    const set = await harness.snapshot();
-    expect(set.get('mcp__modern__deep_64')?.name).toBe('mcp__modern__deep_64');
-    expect(set.notices.filter((notice) => notice.includes('mcp__modern__deep_64'))).toEqual([]);
-    expect(set.get('mcp__modern__deep_65')).toBeUndefined();
-    expect(set.notices.filter((notice) => notice.includes('mcp__modern__deep_65'))).toHaveLength(1);
+const LIST_RESULT_WRAPPING = 3;
+
+const notChainAt = (listDepth: number): string => `deep_not_${listDepth - LIST_RESULT_WRAPPING}`;
+
+describe('tools/list and the one JSON depth bound', () => {
+  it('counts the tools/list result wrapping as three levels around the input schema', () => {
+    expect(JSON.stringify({ tools: [{ inputSchema: nestedNotSchema(2) }] })).toBe('{"tools":[{"inputSchema":{"type":"object","not":{}}}]}');
+  });
+
+  it(`lists a tool whose tools/list entry nests exactly ${MAX_JSON_DEPTH} deep`, async () => {
+    const name = notChainAt(MAX_JSON_DEPTH);
+    const set = await makePool([entry('modern', modernConfig(makeRecordFile(), extras(name)))]).snapshot();
+    expect(set.get(`mcp__modern__${name}`)?.name).toBe(`mcp__modern__${name}`);
+    expect(set.notices.filter((notice) => notice.includes(name))).toEqual([]);
+  });
+
+  it(`refuses a tool whose tools/list entry nests ${MAX_JSON_DEPTH + 1} deep, naming the depth`, async () => {
+    const name = notChainAt(MAX_JSON_DEPTH + 1);
+    const set = await makePool([entry('modern', modernConfig(makeRecordFile(), extras(name)))]).snapshot();
+    expect(set.get(`mcp__modern__${name}`)).toBeUndefined();
+    const notices = set.notices.filter((notice) => notice.includes(name));
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatch(/depth/i);
+    expect(notices[0]).toContain(String(MAX_JSON_DEPTH));
   });
 });
 
