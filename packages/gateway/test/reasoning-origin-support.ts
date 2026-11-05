@@ -128,6 +128,7 @@ const startUpstream = async (kind: AdapterKind, script: readonly Script[]): Prom
 export type TargetPlan = { name: string; kind: AdapterKind; model: string; script: readonly Script[] };
 
 export type World = {
+  client: Awaited<ReturnType<typeof startGateway>>['client'];
   upstreams: Record<string, Upstream>;
   turn: (target: string, input: unknown[]) => Promise<any[]>;
 };
@@ -150,7 +151,7 @@ export const startWorld = async (plans: readonly TargetPlan[], hmacKey: Uint8Arr
     if (last?.type !== 'response.completed') throw new Error(`turn on ${target} did not complete: ${JSON.stringify(last)}`);
     return last.response.output;
   };
-  return { upstreams, turn };
+  return { client, upstreams, turn };
 };
 
 export const reasoningOf = (output: readonly any[]): any => {
