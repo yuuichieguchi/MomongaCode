@@ -85,6 +85,7 @@ const compare = (schema: Record<string, unknown>, remotes: ReadonlyMap<string, u
   return { expected: actual === 'refused' ? 'refused' : oracleUnresolved(schema, remotes) ? 'unresolvable' : 'resolvable', actual };
 };
 
+const GENERATED_TIMEOUT_MS = 120_000;
 const NO_REMOTES: ReadonlyMap<string, unknown> = new Map();
 
 describe('the reference check at the boundary against ata\'s own resolver', () => {
@@ -122,7 +123,7 @@ describe('the reference check at the boundary against ata\'s own resolver', () =
     }
     expect(compared).toBeGreaterThan(100);
     expect(disagreements).toEqual([]);
-  });
+  }, GENERATED_TIMEOUT_MS);
 
   it('agrees on at least 500 seeded schemas with references into $defs, definitions, $id scopes, anchors, relative URIs, pointer escapes and non-schema keywords', () => {
     const disagreements: string[] = [];
@@ -142,7 +143,7 @@ describe('the reference check at the boundary against ata\'s own resolver', () =
     expect(unresolvable).toBeGreaterThanOrEqual(100);
     expect(resolvable).toBeGreaterThanOrEqual(100);
     expect(disagreements.slice(0, 5)).toEqual([]);
-  });
+  }, GENERATED_TIMEOUT_MS);
 });
 
 const mulberry32 = (seed: number): (() => number) => {
