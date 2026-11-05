@@ -2,7 +2,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
 import type { AdapterRequest, Capabilities } from '@momonga/protocol';
 import { anthropicCountTokensReply, anthropicTextReply, openResponsesTextReply } from '@momonga/testkit';
-import { postJson, readJson, userInput } from './gateway-helpers.ts';
+import { postJson, readJson, readSse, startGateway, userInput } from './gateway-helpers.ts';
 import { CC_CAPABILITIES, collect, lastCompletionBody, makeAdapter, startFake, userText } from './cc-support.ts';
 import { OLLAMA_CAPABILITIES, chunkLine, collectOllama, doneLine, makeOllamaAdapter, startFakeOllama } from './ollama-support.ts';
 import { REMOTE_CAPABILITIES, startAnthropicGateway, startOpenResponsesGateway } from './upstream-gateway-support.ts';
@@ -53,11 +53,11 @@ const ccNativeSent = async (capabilities: Capabilities, toolChoice: unknown) => 
   return { error: error as any, fake };
 };
 
-const ccConstrainedSent = async (capabilities: Capabilities, toolChoice: unknown) => {
+const ccConstrainedSent = async (capabilities: Capabilities, toolChoice: unknown, keywords = ALL_KEYWORDS) => {
   const fake = await startFake({ scenario: 'json-schema-only', script: [ccReply('{"kind":"final","text":"ok"}')] });
   const adapter = makeAdapter(fake, {
     toolCalling: () => 'constrained',
-    keywordSupport: () => ALL_KEYWORDS,
+    keywordSupport: () => keywords,
     capabilities: async () => capabilities,
   });
   const { error } = await collect(adapter, ccRequest(toolChoice));
@@ -489,5 +489,107 @@ describe('an allowed set equal to the request tools is the plain mode, on a targ
     const { error } = await collectOllama(makeOllamaAdapter(fake), request);
     expect(error).toBeUndefined();
     expect(listedNames(fake.chatBodies()[0])).toEqual(ALL_NAMES);
+  });
+});
+
+const SUBSET_TOOLS = [toolNamed('alpha'), toolNamed('beta')];
+
+const countBody = (tools: unknown, toolChoice: unknown) => ({ model: 'fast', input: userInput('hello'), tools, tool_choice: toolChoice });
+
+const startOllamaGateway = async (capabilities: Capabilities) => {
+  const fake = await startFakeOllama({ chat: [{ kind: 'ndjson' as const, lines: [chunkLine({ content: 'ok' }), doneLine()] }] });
+  const adapter = makeOllamaAdapter(fake, { capabilities: async () => capabilities });
+  return startGateway({
+    adapters: { local: adapter },
+    config: { aliases: { fast: ['local'] }, targets: { local: { model: 'devstral-small-2', kind: 'local' } } },
+  });
+};
+
+describe('count what is sent on adapters that count by estimate', () => {
+  it('ollama with the filter form counts the allowed tools that create sends, not every tool', async () => {
+    const gateway = await startOllamaGateway(withAllowedTools(OLLAMA_CAPABILITIES, ['filter']));
+    const filtered = await readJson(await postJson(gateway.client, '/v1/momonga/count_tokens', countBody(TOOLS, TWO_AUTO)));
+    const subset = await readJson(await postJson(gateway.client, '/v1/momonga/count_tokens', countBody(SUBSET_TOOLS, 'auto')));
+    expect(filtered.status).toBe(200);
+    expect(subset.status).toBe(200);
+    expect(filtered.body.input_tokens).toBe(subset.body.input_tokens);
+  });
+
+  it('open-responses with the filter form counts the allowed tools that create sends, not every tool', async () => {
+    const gateway = await startOpenResponsesGateway({ capabilities: withAllowedTools(REMOTE_CAPABILITIES, ['filter']), script: [] });
+    const filtered = await readJson(await postJson(gateway.client, '/v1/momonga/count_tokens', countBody(TOOLS, TWO_AUTO)));
+    const subset = await readJson(await postJson(gateway.client, '/v1/momonga/count_tokens', countBody(SUBSET_TOOLS, 'auto')));
+    expect(filtered.status).toBe(200);
+    expect(subset.status).toBe(200);
+    expect(filtered.body.input_tokens).toBe(subset.body.input_tokens);
+  });
+});
+
+describe('a form the target cannot express on this request is not chosen', () => {
+  const NO_LITERALS = { ...ALL_KEYWORDS, const: false, enum: false };
+  const constrained = (forms: readonly string[]) => withAllowedTools({ ...CC_CAPABILITIES, toolCalling: 'constrained' }, forms);
+
+  it('a constrained target without const or enum falls through from envelope to filter', async () => {
+    const { error, fake } = await ccConstrainedSent(constrained(['envelope', 'filter']), TWO_AUTO, NO_LITERALS);
+    expect(error).toBeUndefined();
+    const body = lastCompletionBody(fake);
+    expect(systemText(body)).toContain('"name":"alpha"');
+    expect(systemText(body)).toContain('"name":"beta"');
+    expect(systemText(body)).not.toContain('"name":"gamma"');
+  });
+
+  it('a constrained target without const or enum declaring only envelope is refused with the standard message', async () => {
+    const { error, fake } = await ccConstrainedSent(constrained(['envelope']), TWO_AUTO, NO_LITERALS);
+    expectNamedRefusal(error, 'fm');
+    expect(chatRequestCount(fake)).toBe(0);
+  });
+});
+
+describe('ollama with every tool allowed and required', () => {
+  it('is refused with the standard allowed_tools message, not the plain-choice message', async () => {
+    const fake = await startFakeOllama({ chat: [{ kind: 'ndjson' as const, lines: [chunkLine({ content: 'ok' }), doneLine()] }] });
+    const request = { model: 'devstral-small-2', input: [userText('hello')], tools: TOOLS, tool_choice: allowed(ALL_NAMES, 'required') } as AdapterRequest;
+    const { error } = await collectOllama(makeOllamaAdapter(fake), request);
+    expectNamedRefusal(error, 'local');
+    expect(fake.chatBodies()).toHaveLength(0);
+  });
+});
+
+describe('one validation of the allowed-set size for create and count_tokens', () => {
+  it('refuses 129 entries with the same 400 at both endpoints', async () => {
+    const tooMany = allowed(Array.from({ length: 129 }, () => 'alpha'), 'auto');
+    const creating = await startAnthropicGateway({ capabilities: REMOTE_CAPABILITIES, script: [anthropicTextReply(['ok'])] });
+    const counting = await startAnthropicGateway({ capabilities: REMOTE_CAPABILITIES, script: [anthropicCountTokensReply(42)] });
+    const created = await readJson(await postJson(creating.client, '/v1/responses', countBody(TOOLS, tooMany)));
+    const counted = await readJson(await postJson(counting.client, '/v1/momonga/count_tokens', countBody(TOOLS, tooMany)));
+    expect(created.status).toBe(400);
+    expect(counted.status).toBe(400);
+    expect(counted.body).toEqual(created.body);
+    expect(counting.fake.requests).toHaveLength(0);
+  });
+});
+
+describe('duplicate allowed names count once', () => {
+  it('a set naming every tool with duplicates is plain auto on a target that declares no form', async () => {
+    const { error, fake } = await ccNativeSent({ ...CC_CAPABILITIES, toolCalling: 'native' }, allowed(['alpha', 'alpha', 'beta', 'gamma', 'beta'], 'auto'));
+    expect(error).toBeUndefined();
+    expect(lastCompletionBody(fake).tool_choice).toBe('auto');
+  });
+
+  it('a required set naming one tool twice forces that tool through single_tool', async () => {
+    const gateway = await startAnthropicGateway({ capabilities: withAllowedTools(REMOTE_CAPABILITIES, ['single_tool']), script: [anthropicTextReply(['ok'])] });
+    const response = await readJson(await postJson(gateway.client, '/v1/responses', countBody(TOOLS, allowed(['alpha', 'alpha'], 'required'))));
+    expect(response.status).toBe(200);
+    expect((gateway.fake.requests[0]?.body as any).tool_choice).toEqual({ type: 'tool', name: 'alpha' });
+  });
+});
+
+describe('the streaming echo carries a concrete mode', () => {
+  it('echoes mode auto in response.created and the terminal event for a request that omits mode', async () => {
+    const gateway = await startOpenResponsesGateway({ capabilities: withAllowedTools(REMOTE_CAPABILITIES, ['native']), script: [openResponsesTextReply(['ok'])] });
+    const frames = await readSse(await postJson(gateway.client, '/v1/responses', { ...countBody(TOOLS, TWO_NO_MODE), stream: true }));
+    const withResource = frames.filter((frame) => frame.data?.response !== undefined);
+    expect(withResource.length).toBeGreaterThan(1);
+    for (const frame of withResource) expect(frame.data.response.tool_choice).toEqual(allowed(['alpha', 'beta'], 'auto'));
   });
 });
