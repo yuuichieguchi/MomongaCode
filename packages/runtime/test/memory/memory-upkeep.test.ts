@@ -83,7 +83,7 @@ describe('runMemoryUpkeep', () => {
       supersedes: [replaced.id],
     }).memory;
     clock.advance(FORGET_MS);
-    store.memories.markUsed([kept.id, replacement.id]);
+    store.memories.stampContributed([kept.id, replacement.id], clock.now());
     expect(await upkeep()).toMatchObject({ duplicates: 0, archived: 0 });
     expect(store.memories.get(replaced.id)?.state).toBe('active');
   });
@@ -110,12 +110,12 @@ describe('runMemoryUpkeep', () => {
     expect(store.memories.search({ trusted: true, project }, ['unbound'], { include: 'all' }).map((memory) => memory.id)).toEqual([unbound.id]);
   });
 
-  it('keeps a note that was used inside the window', async () => {
+  it('keeps a note that contributed inside the window', async () => {
     const { store, clock, save, upkeep } = setup();
     const note = save('used note');
     const other = save('idle note');
     clock.advance(FORGET_MS - 1);
-    store.memories.markUsed([note.id]);
+    store.memories.stampContributed([note.id], clock.now());
     clock.advance(1);
     await upkeep();
     expect(store.memories.get(note.id)?.state).toBe('active');

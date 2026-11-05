@@ -65,7 +65,7 @@ describe('initialRunState', () => {
       history: [],
       nextItemSeq: 1,
       taskSeq: 1,
-      workingFacts: { written: [], touched: [], commands: [], messages: [], itemEvents: [] },
+      workingFacts: { written: [], commands: [], messages: [], itemEvents: [] },
       evicted: [],
       pendingCalls: {},
       notes: [],
@@ -102,7 +102,6 @@ describe('foldRunState on recorded runs', () => {
       nextItemSeq: 3,
       workingFacts: {
         written: [],
-        touched: [],
         commands: [],
         messages: [],
         taskText: 'say hi',
@@ -141,7 +140,6 @@ describe('foldRunState on recorded runs', () => {
       nextItemSeq: 5,
       workingFacts: {
         written: [],
-        touched: [],
         commands: [],
         messages: [],
         taskText: 'read a.txt',
@@ -429,7 +427,7 @@ describe('history seqs', () => {
     expect(state.summary).toEqual({ item: fixtureCompactionItem('cmp-1', 'first'), summary: 'first', replacedThroughSeq: 3 });
   });
 
-  it('accumulates what the model touched in the working facts and keeps it when a compaction replaces the calls', () => {
+  it('keeps no touched list in the run state, before or after a compaction, because the record is session_touched', () => {
     const payloads: RunEventPayload[] = [
       { type: 'user.message', text: 'go' },
       ...responded(1, [
@@ -444,15 +442,10 @@ describe('history seqs', () => {
       { type: 'context.compacted', item: fixtureCompactionItem('cmp-1', 'first'), summary: 'first', replacedThroughSeq: 7 },
     ];
     const before = foldAll(materializeEvents(payloads.slice(0, 3)));
-    const expected = [
-      { kind: 'file', path: 'legacy/a.ts' },
-      { kind: 'directory', path: 'lib' },
-      { kind: 'directory' },
-    ];
-    expect(before.workingFacts.touched).toEqual(expected);
+    expect(before.workingFacts).not.toHaveProperty('touched');
     const after = foldAll(materializeEvents(payloads));
     expect(after.history.map((historyEntry) => historyEntry.seq)).toEqual([8]);
-    expect(after.workingFacts.touched).toEqual(expected);
+    expect(after.workingFacts).not.toHaveProperty('touched');
   });
 
   it('replaces the summary on a later compaction and keeps numbering', () => {

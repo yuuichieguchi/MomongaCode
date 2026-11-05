@@ -172,19 +172,22 @@ describe('worker memory: recall', () => {
     expect(recalledBlock(env, 1)).toBeUndefined();
   });
 
-  it('stamps the last-used time of the notes that reached the context', async () => {
+  it('injecting a memory does not move its idle clock', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     await saveInFirstRun(env, 'prefers tabs');
     const [saved] = env.store.memories.list();
     env.clock.advance(60_000);
 
     env.gateway.script.push(textStep('Hello.'));
+    const before = env.gateway.streams.length;
     env.enqueue('Say hello', { history: 'fresh' });
     await env.runOnce(memoryWorker(env, 'worker-2'));
 
-    const [used] = env.store.memories.list();
-    expect(used?.lastUsedAt).toBe((saved?.lastUsedAt ?? 0) + 60_000);
-    expect(used?.createdAt).toBe(saved?.createdAt);
+    expect(recalledBlock(env, before)).toContain(`<memory id="${saved?.id}"`);
+    const [shown] = env.store.memories.list();
+    expect(saved?.keptAt).toEqual(expect.any(Number));
+    expect(shown?.keptAt).toBe(saved?.keptAt);
+    expect(shown?.contributedAt).toBeNull();
   });
 
   it('loads project memories only in a trusted folder and user memories everywhere', async () => {

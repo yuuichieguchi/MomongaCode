@@ -16,7 +16,7 @@ const save = (store: RuntimeStore, runId: string, callId: string, text: string, 
   store.memories.save({ origin, scope, project, text, runId, step: 2, callId }).memory;
 
 describe('memory store', () => {
-  it('records the scope, the source run, step and tool.call event, and the creation and last-used times', () => {
+  it('records the scope, the source run, step and tool.call event, the creation time, and starts keptAt at creation', () => {
     const { store } = harness();
     const { session, run } = startRun(store, ['c1']);
     const { memory, created } = store.memories.save({ origin: 'trusted', scope: 'project', project: '/work/a', text: 'tests live in test/', runId: run.id, step: 2, callId: 'c1' });
@@ -30,7 +30,7 @@ describe('memory store', () => {
       text: 'tests live in test/',
       source: { kind: 'tool', sessionId: session.id, runId: run.id, step: 2, callId: 'c1', seq: call?.seq },
       createdAt: START_MS,
-      lastUsedAt: START_MS,
+      keptAt: START_MS,
       kind: 'fact',
       state: 'active',
       duplicateOf: null,
@@ -38,6 +38,7 @@ describe('memory store', () => {
       supersededBy: [],
       retiredAt: null,
       contributedAt: null,
+      observedStatus: 'unbound',
       evidence: [],
     });
     expect(store.memories.get(memory.id)).toEqual(memory);
@@ -65,7 +66,7 @@ describe('memory store', () => {
     expect(() => store.memories.save({ origin: 'trusted', scope: 'user', project: '/work/a', text: 'x', runId: run.id, step: 1, callId: 'c2' })).toThrow(RangeError);
   });
 
-  it('recalls user memories everywhere and project memories only for their own project, most recently used first', () => {
+  it('recalls user memories everywhere and project memories only for their own project, most recently kept first', () => {
     const { store, clock } = harness();
     const { run } = startRun(store, ['c1', 'c2', 'c3', 'c4']);
     const older = save(store, run.id, 'c1', 'older user memory');
@@ -75,13 +76,23 @@ describe('memory store', () => {
     save(store, run.id, 'c3', 'project b memory', 'project', '/work/b');
     clock.advance(10);
     const newest = save(store, run.id, 'c4', 'newest user memory');
-    expect(store.memories.recall({ trusted: true, project: '/work/a' }).map((memory) => memory.id)).toEqual([newest.id, mine.id, older.id]);
-    expect(store.memories.recall({ trusted: false }).map((memory) => memory.id)).toEqual([newest.id, older.id]);
-    clock.advance(10);
-    store.memories.markUsed([older.id]);
-    expect(store.memories.recall({ trusted: true, project: '/work/a' }).map((memory) => memory.id)).toEqual([older.id, newest.id, mine.id]);
-    expect(store.memories.get(older.id)?.lastUsedAt).toBe(START_MS + 40);
-    expect(store.memories.get(older.id)?.createdAt).toBe(START_MS);
+    const page = (visibility: Parameters<RuntimeStore['memories']['recallPage']>[0]) =>
+      store.memories.recallPage(visibility, { terms: [], after: null, limit: 10 }).memories.map((memory) => memory.id);
+    expect(page({ trusted: true, project: '/work/a' })).toEqual([newest.id, mine.id, older.id]);
+    expect(page({ trusted: false })).toEqual([newest.id, older.id]);
+  });
+
+  it('markUsed does not exist', () => {
+    const { store } = harness();
+    expect('markUsed' in store.memories).toBe(false);
+  });
+
+  it('a new note starts at its creation time', () => {
+    const { store, clock } = harness();
+    clock.advance(1234);
+    const note = store.memories.addByCommand({ scope: 'user', project: null, text: 'prefers tabs', evidence: [] });
+    expect(note.keptAt).toBe(START_MS + 1234);
+    expect(note.createdAt).toBe(START_MS + 1234);
   });
 
   it('keeps a user memory saved in an untrusted folder out of trusted projects and shows it only where the folder is untrusted', () => {

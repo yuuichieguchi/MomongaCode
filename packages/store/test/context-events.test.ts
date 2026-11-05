@@ -81,6 +81,13 @@ describe('context events in the journal', () => {
       expect(decodeEvent(row(payload))).toEqual({ ...payload, ...ENVELOPE });
     });
 
+    it('memories on tool.completed round trips', () => {
+      const payload = { ...base, memories: ['0193a1b2-0000-7000-8000-000000000001', '0193a1b2-0000-7000-8000-000000000002'] };
+      expect(decodeEvent(row(payload))).toEqual({ ...payload, ...ENVELOPE });
+      expect(() => decodeEvent(row({ ...base, memories: 'not-a-list' }))).toThrow(/corrupt/);
+      expect(() => decodeEvent(row({ ...base, memories: [7] }))).toThrow(/corrupt/);
+    });
+
     it.each([
       ['files that are not an array', { files: 'a.ts' }],
       ['a file without a sha256', { files: [{ path: '/p/a.ts', access: 'write' }] }],
@@ -103,6 +110,6 @@ describe('context events in the journal', () => {
       ...ENVELOPE,
     } as RunEvent;
     expect(foldRunState(start(), event).summary).toEqual({ item, summary: 'so far', replacedThroughSeq: 3 });
-    expect(SNAPSHOT_STATE_VERSION).toBe(14);
+    expect(SNAPSHOT_STATE_VERSION).toBe(15);
   });
 });

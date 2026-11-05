@@ -41,7 +41,7 @@ describe('memory api', () => {
 
     const listed = await env.http('GET', '/v1/memories');
     expect(listed.status).toBe(200);
-    expect(listed.json).toEqual({ memories: [viewed(user), viewed(project)] });
+    expect(listed.json).toEqual({ memories: [viewed(user), viewed(project)], next: null });
     expect(listed.json.memories[0].source).toEqual({ kind: 'tool', sessionId: session.id, runId: run.id, step: 1, callId: 'c1', seq: call?.seq });
     expectSchema('MemoriesResponse', listed.json);
 
@@ -53,9 +53,12 @@ describe('memory api', () => {
     const removed = await env.http('DELETE', `/v1/memories/${user.id}`);
     expect(removed.status).toBe(204);
     expect(removed.text).toBe('');
-    expect((await env.http('GET', '/v1/memories')).json).toEqual({ memories: [viewed(project)] });
-    expectError(await env.http('GET', `/v1/memories/${user.id}`), 404, 'not_found');
-    expectError(await env.http('DELETE', `/v1/memories/${user.id}`), 404, 'not_found');
+    expect((await env.http('GET', '/v1/memories')).json).toEqual({ memories: [viewed(project)], next: null });
+    const retired = await env.http('GET', `/v1/memories/${user.id}`);
+    expect(retired.status).toBe(200);
+    expect(retired.json.memory.retiredAt).toEqual(expect.any(Number));
+    expect((await env.http('DELETE', `/v1/memories/${user.id}`)).status).toBe(204);
+    expectError(await env.http('DELETE', '/v1/memories/0193a1b2-0000-7000-8000-00000000dead'), 404, 'not_found');
   });
 
   it('filters by scope and by project', async () => {
@@ -67,10 +70,10 @@ describe('memory api', () => {
     const here = env.store.memories.save({ origin: 'trusted', scope: 'project', project: session.cwd, text: 'here', runId: run.id, step: 1, callId: 'c2' }).memory;
     const there = env.store.memories.save({ origin: 'trusted', scope: 'project', project: fs.realpathSync.native(other), text: 'there', runId: run.id, step: 1, callId: 'c3' }).memory;
 
-    expect((await env.http('GET', '/v1/memories?scope=user')).json).toEqual({ memories: [viewed(user)] });
-    expect((await env.http('GET', '/v1/memories?scope=project')).json).toEqual({ memories: [viewed(here), viewed(there)] });
-    expect((await env.http('GET', `/v1/memories?project=${encodeURIComponent(other)}`)).json).toEqual({ memories: [viewed(there)] });
-    expect((await env.http('GET', `/v1/memories?scope=project&project=${encodeURIComponent(session.cwd)}`)).json).toEqual({ memories: [viewed(here)] });
+    expect((await env.http('GET', '/v1/memories?scope=user')).json).toEqual({ memories: [viewed(user)], next: null });
+    expect((await env.http('GET', '/v1/memories?scope=project')).json).toEqual({ memories: [viewed(here), viewed(there)], next: null });
+    expect((await env.http('GET', `/v1/memories?project=${encodeURIComponent(other)}`)).json).toEqual({ memories: [viewed(there)], next: null });
+    expect((await env.http('GET', `/v1/memories?scope=project&project=${encodeURIComponent(session.cwd)}`)).json).toEqual({ memories: [viewed(here)], next: null });
   });
 
   it('rejects an unknown scope, a relative project and a contradictory filter', async () => {
@@ -89,7 +92,7 @@ describe('memory api', () => {
     const { run } = await seedCalls(env);
     const gone = path.join(env.layout.root, 'gone');
     const memory = env.store.memories.save({ origin: 'trusted', scope: 'project', project: gone, text: 'left behind', runId: run.id, step: 1, callId: 'c1' }).memory;
-    expect((await env.http('GET', `/v1/memories?project=${encodeURIComponent(gone)}`)).json).toEqual({ memories: [viewed(memory)] });
+    expect((await env.http('GET', `/v1/memories?project=${encodeURIComponent(gone)}`)).json).toEqual({ memories: [viewed(memory)], next: null });
   });
 
   it('allows only reading, adding and deleting', async () => {

@@ -103,11 +103,11 @@ describe('accept and reject', () => {
     expect(memories.get(memory.id)?.state).toBe('rejected');
   });
 
-  it('counts an acceptance as a use, so a candidate that waited is not archived at once', () => {
+  it('accept sets keptAt, so a candidate that waited is not archived at once', () => {
     const { clock, memories, candidate } = started();
     const { memory } = candidate(0, 'waiting');
     clock.advance(5000);
-    expect(memories.accept(memory.id).memory?.lastUsedAt).toBe(clock.now());
+    expect(memories.accept(memory.id).memory?.keptAt).toBe(clock.now());
   });
 
   it('accepts only a candidate', () => {
@@ -149,7 +149,7 @@ describe('paging for upkeep', () => {
     const start = memories.revision();
     const note = saved('c1', 'one');
     expect(memories.revision()).toBe(start + 1);
-    store.memories.markUsed([note.id]);
+    store.memories.observe(note.id, 'stale');
     memories.restore(note.id);
     expect(memories.revision()).toBe(start + 1);
     memories.archive(note.id);
@@ -158,7 +158,7 @@ describe('paging for upkeep', () => {
     const proposed = candidate(0, 'two');
     memories.accept(proposed.memory.id);
     expect(memories.revision()).toBe(start + 5);
-    expect(store.memories.delete(note.id)).toBe(true);
+    expect(store.memories.retire(note.id)?.retired).toBe(true);
     expect(memories.revision()).toBe(start + 6);
   });
 });
@@ -184,12 +184,12 @@ describe('duplicate and archive', () => {
     expect(ids(store.memories.recall(VISIBLE))).toEqual([note.id]);
   });
 
-  it('counts a restore as a use, so the next sweep does not archive it again', () => {
+  it('restore sets keptAt, so the next sweep does not archive it again', () => {
     const { clock, memories, saved } = started();
     const note = saved('c1', 'old habit');
     memories.archive(note.id);
     clock.advance(1000);
-    expect(memories.restore(note.id).memory?.lastUsedAt).toBe(clock.now());
+    expect(memories.restore(note.id).memory?.keptAt).toBe(clock.now());
   });
 
   it('restores only an archived memory', () => {
