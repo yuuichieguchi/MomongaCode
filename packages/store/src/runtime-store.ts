@@ -350,7 +350,7 @@ const decodeModelCallRecord = (row: Row): ModelCallRecord => {
 type Measured = { lastSeq: number; journaled: boolean; contribution: Pick<ContributionPayload, 'items'> | undefined };
 type Prepared = Measured & { leadingDigest: string };
 
-const digestOfLeading = (leadingEvents: readonly RunEventPayload[]): string => JSON.stringify(leadingEvents);
+const digestOfLeading = (leadingEvents: readonly RunEventPayload[]): string => canonicalJson(leadingEvents);
 
 const payloadStep = (payload: RunEventPayload): number => ('step' in payload ? payload.step : 0);
 
@@ -578,13 +578,13 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     if (status === 'WAITING_HUMAN') prepareTree(runId, approvalOps.listPendingDue(runId, nowMs).flatMap((approval) => expiryEvents(runId, approval)));
   };
 
-  const prepareLateAnswer = (approvalId: string): void => {
+  const prepareLateAnswer = (approvalId: string, now: number): void => {
     const approval = approvalOps.store.get(approvalId);
-    if (approval !== undefined && approval.status === 'pending' && approval.expiresAt <= clock.now()) prepareStopping(approval.runId, clock.now());
+    if (approval !== undefined && approval.status === 'pending' && approval.expiresAt <= now) prepareStopping(approval.runId, now);
   };
 
-  const prepareExhausted = (): void => {
-    for (const row of sql.listExhausted.all({ now: clock.now(), maxAttempts, maxTotalAttempts })) prepareTree(decodeRun(row).id);
+  const prepareExhausted = (now: number): void => {
+    for (const row of sql.listExhausted.all({ now, maxAttempts, maxTotalAttempts })) prepareTree(decodeRun(row).id);
   };
 
   const settleContribution = (run: Run, to: TerminalStatus, leadingEvents: readonly RunEventPayload[]): RunEventPayload[] => {
@@ -759,12 +759,11 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return false;
   };
 
-  const resolveInTransaction = (approvalId: string, optionId: string): ResolveApprovalResult => {
+  const resolveInTransaction = (approvalId: string, optionId: string, now: number): ResolveApprovalResult => {
     const approval = approvalOps.store.get(approvalId);
     if (approval === undefined || approval.kind !== 'permission') return { kind: 'not_found' };
     if (approval.status !== 'pending') return { kind: 'approval_not_pending', status: approval.status };
     if (!approvalAnnounced(approval.runId, approval.id)) return { kind: 'request_missing' };
-    const now = clock.now();
     const run = requireRun(approval.runId);
     if (approval.expiresAt <= now) {
       stopWaitingRun(run, now);
@@ -837,13 +836,12 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     };
   };
 
-  const resolveElicitationInTransaction = (elicitationId: string, responses: Record<string, ElicitationAnswerRecord>, notices: readonly string[]): ResolveElicitationResult => {
+  const resolveElicitationInTransaction = (elicitationId: string, responses: Record<string, ElicitationAnswerRecord>, notices: readonly string[], now: number): ResolveElicitationResult => {
     const approval = approvalOps.store.get(elicitationId);
     if (approval === undefined) return { kind: 'not_found' };
     if (approval.kind !== 'elicitation') return { kind: 'wrong_kind' };
     if (approval.status !== 'pending') return { kind: 'approval_not_pending', status: approval.status };
     if (!approvalAnnounced(approval.runId, approval.id)) return { kind: 'request_missing' };
-    const now = clock.now();
     const run = requireRun(approval.runId);
     if (approval.expiresAt <= now) {
       stopWaitingRun(run, now);
@@ -1322,10 +1320,10 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return row === undefined ? undefined : decodeRun(row);
     },
 
-    claim: (workerId) =>
-      afterPreparing(prepareExhausted, () =>
+    claim: (workerId) => {
+      const now = clock.now();
+      return afterPreparing(() => prepareExhausted(now), () =>
         transaction(() => {
-          const now = clock.now();
           for (;;) {
             const exhausted = sql.selectExhausted.get({ now, maxAttempts, maxTotalAttempts });
             if (exhausted === undefined) break;
@@ -1337,7 +1335,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           const status: ClaimStatus = expectOneOf('runs', run.id, 'status', CLAIM_STATUSES, run.status);
           return { runId: run.id, sessionId: run.sessionId, workerId, leaseToken: run.leaseToken, attempt: run.attempts, status };
         }),
-      ),
+      );
+    },
 
     heartbeat: (claim) =>
       transaction<HeartbeatResult>( () => {
@@ -1518,11 +1517,13 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         return { kind: 'ok', approval: requested.approval };
       }),
 
-    resolveApproval: (approvalId, optionId) =>
-      afterPreparing(
-        () => prepareLateAnswer(approvalId),
-        () => transaction<ResolveApprovalResult>(() => resolveInTransaction(approvalId, optionId)),
-      ),
+    resolveApproval: (approvalId, optionId) => {
+      const now = clock.now();
+      return afterPreparing(
+        () => prepareLateAnswer(approvalId, now),
+        () => transaction<ResolveApprovalResult>(() => resolveInTransaction(approvalId, optionId, now)),
+      );
+    },
 
     requestElicitation: (claim, input) =>
       transaction<RequestApprovalResult>(() => {
@@ -1547,11 +1548,13 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         return { kind: 'ok', approval: requested.approval };
       }),
 
-    resolveElicitation: (elicitationId, responses, notices = []) =>
-      afterPreparing(
-        () => prepareLateAnswer(elicitationId),
-        () => transaction<ResolveElicitationResult>(() => resolveElicitationInTransaction(elicitationId, responses, notices)),
-      ),
+    resolveElicitation: (elicitationId, responses, notices = []) => {
+      const now = clock.now();
+      return afterPreparing(
+        () => prepareLateAnswer(elicitationId, now),
+        () => transaction<ResolveElicitationResult>(() => resolveElicitationInTransaction(elicitationId, responses, notices, now)),
+      );
+    },
 
     elicitationView: (elicitationId) => {
       const approval = approvalOps.store.get(elicitationId);
