@@ -204,7 +204,7 @@ describe('WebSocket transport over the unix socket', () => {
     expect(await client.closed).toBe(1000);
   });
 
-  it('applies the momonga-deadline-ms of the upgrade request to every turn', async () => {
+  it('applies the momonga-deadline-ms of the upgrade request to every turn, ending a turn held before output with an error', async () => {
     const adapter = createScriptedAdapter({ calls: [{ ...textCall('never'), gate: { name: 'held', afterEvents: 1 } }] });
     const harness = await startGateway({ adapters: { primary: adapter } });
     const client = await open(`ws+unix://${harness.socketPath}:/v1/responses`, { 'momonga-deadline-ms': '2000' });
@@ -212,7 +212,18 @@ describe('WebSocket transport over the unix socket', () => {
     await waitFor(() => adapter.calls.length === 1, { description: 'call started' });
     harness.timers.advance(2000);
     const turn = await client.untilTerminal();
-    expect(turn.at(-1)).toMatchObject({ type: 'response.failed', response: { error: { code: 'deadline_exceeded' } } });
+    expect(turn.map((message) => message['type'])).toEqual(['error']);
+    expect(turn.at(-1)).toMatchObject({ type: 'error', error: { code: 'deadline_exceeded' } });
+  });
+
+  it('carries the deferral in the WebSocket error envelope when the only target asks for longer than the whole budget', async () => {
+    const adapter = createScriptedAdapter({ calls: [{ failure: { status: 429, message: 'come back later', retryAfterMs: 100_000 } }] });
+    const harness = await startGateway({ adapters: { primary: adapter } });
+    const client = await connectUnix(harness);
+    client.send(create());
+    const turn = await client.untilTerminal();
+    expect(turn.at(-1)).toMatchObject({ type: 'error', status: 429, retry_after_ms: 100_000, deferred: true, error: { code: 'rate_limited' } });
+    expect(adapter.calls).toHaveLength(1);
   });
 
   it('closes idle connections with going-away when the gateway closes and waits for none', async () => {
@@ -222,7 +233,7 @@ describe('WebSocket transport over the unix socket', () => {
     expect(await client.closed).toBe(1001);
   });
 
-  it('lets an in-flight turn finish its terminal event before the connection closes on gateway close', async () => {
+  it('ends an in-flight turn held before output with a gateway_closed error before the connection closes on gateway close', async () => {
     const adapter = createScriptedAdapter({ calls: [{ ...textCall('late'), gate: { name: 'g', afterEvents: 1 } }] });
     const harness = await startGateway({ adapters: { primary: adapter } });
     const client = await connectUnix(harness);
@@ -230,7 +241,8 @@ describe('WebSocket transport over the unix socket', () => {
     await waitFor(() => adapter.calls.length === 1, { description: 'call started' });
     const closing = harness.gateway.close();
     const turn = await client.untilTerminal();
-    expect(turn.at(-1)?.['type']).toBe('response.failed');
+    expect(turn.map((message) => message['type'])).toEqual(['error']);
+    expect(turn.at(-1)).toMatchObject({ type: 'error', error: { code: 'gateway_closed' } });
     await closing;
     expect(await client.closed).toBe(1001);
   });

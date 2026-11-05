@@ -25,6 +25,7 @@ export type McpToolSourceOptions = {
   server: string;
   connection: McpServerConnection;
   requestTimeoutMs?: number;
+  takeNotices?: () => string[];
 };
 
 const normalizeToolPart = (server: string, original: string): string => {
@@ -162,7 +163,7 @@ export const createMcpToolSource = (options: McpToolSourceOptions): ToolSource =
       listed = await connection.listTools(listOptions?.signal === undefined ? undefined : { signal: listOptions.signal });
     } catch (error) {
       if (authorizationRequiredFor(error) === undefined) throw error;
-      return { tools: [], notices: [], authorizationRequired: [server] };
+      return { tools: [], notices: options.takeNotices?.() ?? [], authorizationRequired: [server] };
     }
     const tools: AnyTool[] = [];
     const notices: string[] = [];
@@ -176,7 +177,7 @@ export const createMcpToolSource = (options: McpToolSourceOptions): ToolSource =
         notices.push(`skipped ${JSON.stringify(displayName)}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
-    return { tools, notices };
+    return { tools, notices: [...notices, ...(options.takeNotices?.() ?? [])] };
   };
   return {
     id: `mcp__${server}`,

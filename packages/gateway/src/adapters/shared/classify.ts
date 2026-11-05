@@ -66,7 +66,11 @@ const classifyHttp = (error: UpstreamHttpError): ClassifiedError => {
     };
   }
   if (status >= 500) {
-    return { retryable: error.retryHint !== false, error: body('server_error', upstreamCode ?? 'upstream_error', error.message) };
+    return {
+      retryable: error.retryHint !== false,
+      ...(error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs }),
+      error: body('server_error', upstreamCode ?? 'upstream_error', error.message),
+    };
   }
   if (status === 413) return { retryable: false, error: body('invalid_request', 'payload_too_large', error.message) };
   if (status === 401 || status === 403) {

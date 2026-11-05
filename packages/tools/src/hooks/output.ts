@@ -1,3 +1,4 @@
+import { parseOutsideJson } from '@momonga/foundation';
 import { HOOK_PRE_TOOL_DECISIONS } from '@momonga/protocol';
 import type { HookEvent, HookPreToolDecision } from '@momonga/protocol';
 
@@ -62,7 +63,7 @@ export const parseHookOutput = (event: HookEvent, stdout: string): HookOutputRes
   if (!text.startsWith('{')) return { ok: true, value: { plainText: text } };
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    parsed = parseOutsideJson(text);
   } catch (error) {
     return fail(`the output is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }

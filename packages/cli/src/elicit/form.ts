@@ -1,4 +1,4 @@
-import { isRecord } from '@momonga/foundation';
+import { isRecord, parseOutsideJson } from '@momonga/foundation';
 import { SchemaValidatorFailure, validateUntrusted } from '@momonga/foundation';
 
 export type ContentValue = string | number | boolean | string[];
@@ -135,7 +135,7 @@ const coerce = (field: FormField, text: string): { ok: true; value: unknown } | 
     }
     case 'json':
       try {
-        return { ok: true, value: JSON.parse(text) };
+        return { ok: true, value: parseOutsideJson(text) };
       } catch (error) {
         return { ok: false, reason: 'invalid', error: `${field.name} must be JSON: ${error instanceof Error ? error.message : String(error)}` };
       }

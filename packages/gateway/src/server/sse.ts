@@ -1,5 +1,5 @@
 import { encodeSse } from '@momonga/foundation';
-import { COMPACTION_RESULT_EVENT } from '@momonga/protocol';
+import { COMPACTION_RESULT_EVENT, DEFERRED_HEADER } from '@momonga/protocol';
 import type { CompactResource, StreamEvent } from '@momonga/protocol';
 import { frameOf } from '../core/frame.ts';
 import { ClientDisconnectedError, GatewayError, readerStalledError } from '../core/errors.ts';
@@ -17,16 +17,21 @@ export type SseOptions = {
   onError: (error: unknown) => void;
 };
 
-export const errorEventOf = (error: GatewayError): StreamEvent => {
+export const errorHintsOf = (error: GatewayError): { retry_after_ms?: number; deferred?: true } => {
   const retryAfterSeconds = Number(error.headers['retry-after']);
   return {
-    type: 'error',
-    sequence_number: 0,
-    error: error.body,
-    status: error.status,
     ...(Number.isFinite(retryAfterSeconds) ? { retry_after_ms: retryAfterSeconds * 1000 } : {}),
+    ...(error.headers[DEFERRED_HEADER] === 'true' ? { deferred: true as const } : {}),
   };
 };
+
+export const errorEventOf = (error: GatewayError): StreamEvent => ({
+  type: 'error',
+  sequence_number: 0,
+  error: error.body,
+  status: error.status,
+  ...errorHintsOf(error),
+});
 
 export const gatewayErrorOf = (error: unknown, onError: (error: unknown) => void): GatewayError => {
   if (error instanceof GatewayError) return error;

@@ -5,7 +5,7 @@ import { counterForTest, getJson, postJson, readJson, readSse, startGateway, use
 const aliasConfig = {
   aliases: { fast: ['primary', 'secondary'], solo: ['secondary'] },
   targets: { primary: { model: 'scripted-primary' }, secondary: { model: 'scripted-secondary' } },
-  retry: { maxAttempts: 1 },
+  retry: { maxAttempts: 1, totalWaitMs: 1 },
 };
 
 const answering = (model: string, text: string) => ({ events: textResponseEvents({ model, chunks: [text], usage: usageOf(9, 3) }) });

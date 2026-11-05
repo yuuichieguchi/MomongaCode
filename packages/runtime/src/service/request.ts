@@ -1,4 +1,4 @@
-import { defineProductSchema, productErrorsText } from '@momonga/foundation';
+import { JsonDepthError, defineProductSchema, parseOutsideJson, productErrorsText } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
 import { RUN_API_SCHEMAS, runApiSchemaName } from '@momonga/protocol';
 import type { ImageAttachment, JsonSchema, PermissionMode } from '@momonga/protocol';
@@ -95,8 +95,9 @@ export const readJson = async (request: Request, accepted: readonly string[], ma
     throw invalidRequest('the request body is not valid UTF-8');
   }
   try {
-    return JSON.parse(text);
-  } catch {
+    return parseOutsideJson(text);
+  } catch (error) {
+    if (error instanceof JsonDepthError) throw invalidRequest(`the request body is too deep: ${error.message}`);
     throw invalidRequest('the request body is not valid JSON');
   }
 };

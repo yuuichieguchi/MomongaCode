@@ -18,6 +18,8 @@ export class GuardedAdapterError extends Error {
   }
 }
 
+const UNNAMED_FAILURE_CODE = 'upstream_error';
+
 const CODE_SHAPE = /^[A-Za-z0-9_.:-]{1,64}$/;
 const PARAM_SHAPE = /^[A-Za-z0-9_.[\]:-]{1,128}$/;
 
@@ -27,10 +29,12 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
   const shaped = (value: unknown, shape: RegExp): string | null =>
     typeof value === 'string' && shape.test(value) && redactor.text(value) === value ? value : null;
 
+  const namedCode = (code: unknown): string => shaped(code, CODE_SHAPE) ?? UNNAMED_FAILURE_CODE;
+
   const guardedBody = (body: ErrorBody): ErrorBody => ({
     message: redactor.text(body.message),
     type: body.type,
-    code: shaped(body.code, CODE_SHAPE),
+    code: namedCode(body.code),
     param: shaped(body.param, PARAM_SHAPE),
   });
 
@@ -41,7 +45,7 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
 
   const guardedGatewayError = (error: GatewayError): GatewayError => {
     const message = redactor.text(error.body.message);
-    const code = shaped(error.body.code, CODE_SHAPE);
+    const code = namedCode(error.body.code);
     const param = shaped(error.body.param, PARAM_SHAPE);
     if (message === error.body.message && code === error.body.code && param === error.body.param) return error;
     return new GatewayError({ status: error.status, type: error.body.type, code, param, headers: { ...error.headers }, message });
@@ -58,19 +62,20 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
     if (event.type !== 'response.failed') return event;
     const { error } = event.response;
     if (typeof error !== 'object' || error === null) return event;
-    const rebuilt: unknown = {
+    const rebuilt = {
       ...event,
       response: {
         ...event.response,
         error: {
-          code: shaped(error.code, CODE_SHAPE),
+          code: namedCode(error.code),
           type: error.type,
           message: redactor.text(error.message),
           param: 'param' in error ? shaped(error.param, PARAM_SHAPE) : null,
+          ...(error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs }),
         },
       },
     };
-    return rebuilt as StreamEvent;
+    return rebuilt as unknown as StreamEvent;
   };
 
   const converting = async <T>(step: () => Promise<T>): Promise<T> => {

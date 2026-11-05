@@ -6,7 +6,9 @@ const fail = (kind: string, path: string): never => {
 
 const childKey = (path: string, key: string): string => (path === '' ? key : `${path}.${key}`);
 
-const encode = (value: unknown, path: string, ancestors: Set<object>): string => {
+type Frame = { readonly container: object; readonly keys: readonly string[] | undefined; readonly length: number; readonly path: string; next: number };
+
+const scalarText = (value: unknown, path: string): string | undefined => {
   if (value === null) return 'null';
   switch (typeof value) {
     case 'string':
@@ -26,30 +28,57 @@ const encode = (value: unknown, path: string, ancestors: Set<object>): string =>
     case 'symbol':
       return fail('symbol', path);
     default:
-      break;
-  }
-  const object = value as object;
-  if (ancestors.has(object)) return fail('circular reference', path);
-  ancestors.add(object);
-  try {
-    if (Array.isArray(object)) {
-      const items = object.map((item: unknown, index) => encode(item, `${path}[${index}]`, ancestors));
-      return `[${items.join(',')}]`;
-    }
-    const prototype = Object.getPrototypeOf(object) as unknown;
-    if (prototype !== Object.prototype && prototype !== null) {
-      return fail(`non-plain object ${(object as { constructor?: { name?: string } }).constructor?.name ?? 'unknown'}`, path);
-    }
-    const record = object as Record<string, unknown>;
-    const entries = Object.keys(record)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${encode(record[key], childKey(path, key), ancestors)}`);
-    return `{${entries.join(',')}}`;
-  } finally {
-    ancestors.delete(object);
+      return undefined;
   }
 };
 
-export const canonicalJson = (value: unknown): string => encode(value, '', new Set());
+export const canonicalJson = (value: unknown): string => {
+  const out: string[] = [];
+  const stack: Frame[] = [];
+  const ancestors = new Set<object>();
+  const visit = (current: unknown, path: string): void => {
+    const text = scalarText(current, path);
+    if (text !== undefined) {
+      out.push(text);
+      return;
+    }
+    const container = current as object;
+    if (ancestors.has(container)) return fail('circular reference', path);
+    ancestors.add(container);
+    if (Array.isArray(container)) {
+      out.push('[');
+      stack.push({ container, keys: undefined, length: container.length, path, next: 0 });
+      return;
+    }
+    const prototype = Object.getPrototypeOf(container) as unknown;
+    if (prototype !== Object.prototype && prototype !== null) {
+      return fail(`non-plain object ${(container as { constructor?: { name?: string } }).constructor?.name ?? 'unknown'}`, path);
+    }
+    const keys = Object.keys(container).sort();
+    out.push('{');
+    stack.push({ container, keys, length: keys.length, path, next: 0 });
+  };
+  visit(value, '');
+  while (stack.length > 0) {
+    const frame = stack[stack.length - 1] as Frame;
+    if (frame.next >= frame.length) {
+      out.push(frame.keys === undefined ? ']' : '}');
+      ancestors.delete(frame.container);
+      stack.pop();
+      continue;
+    }
+    if (frame.next > 0) out.push(',');
+    const position = frame.next;
+    frame.next += 1;
+    if (frame.keys === undefined) {
+      visit((frame.container as unknown[])[position], `${frame.path}[${position}]`);
+    } else {
+      const key = frame.keys[position] as string;
+      out.push(`${JSON.stringify(key)}:`);
+      visit((frame.container as Record<string, unknown>)[key], childKey(frame.path, key));
+    }
+  }
+  return out.join('');
+};
 
 export const sha256Hex = (data: string | Uint8Array): string => createHash('sha256').update(data).digest('hex');

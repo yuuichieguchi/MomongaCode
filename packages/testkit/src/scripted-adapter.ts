@@ -189,7 +189,11 @@ export const createScriptedAdapter = (options: ScriptedAdapterOptions): Scripted
           };
         }
         if (error.status >= 500) {
-          return { retryable: true, error: { type: 'server_error', code: 'upstream_error', message: error.message, param: null } };
+          return {
+            retryable: true,
+            ...(error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs }),
+            error: { type: 'server_error', code: 'upstream_error', message: error.message, param: null },
+          };
         }
         return { retryable: false, error: { type: 'invalid_request', code: 'upstream_rejected', message: error.message, param: null } };
       }

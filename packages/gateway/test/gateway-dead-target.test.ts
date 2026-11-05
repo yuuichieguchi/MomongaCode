@@ -2,7 +2,8 @@ import net from 'node:net';
 import { describe, expect, it } from 'vitest';
 import { createChatCompletionsAdapter, GATEWAY_CONFIG_DEFAULTS } from '@momonga/gateway';
 import { createFakeClock } from '@momonga/testkit';
-import { START_MS, expectErrorBody, postJson, readJson, startGateway, userInput } from './gateway-helpers.ts';
+import { START_MS, expectErrorBody, getJson, postJson, readJson, startGateway, userInput } from './gateway-helpers.ts';
+import { driveTimers } from './retry-support.ts';
 import { CC_CAPABILITIES, startFake } from './cc-support.ts';
 
 const request = { model: 'fast', input: userInput('hi'), stream: false };
@@ -15,8 +16,17 @@ const refusedBaseUrl = async (): Promise<string> => {
   return `http://127.0.0.1:${port}/v1`;
 };
 
+const SENDS_PER_BUDGET = 18;
+
+const deadConfig = {
+  aliases: { fast: ['dead'] },
+  targets: { dead: { model: 'upstream-model' } },
+  retry: GATEWAY_CONFIG_DEFAULTS.retry,
+  breaker: GATEWAY_CONFIG_DEFAULTS.breaker,
+};
+
 describe('a target that refuses connections', () => {
-  it('opens its breaker after the configured number of failures and then fails at once naming the cause', async () => {
+  it('spends the whole budget on every request, before and after its breaker opens, and fails each with provider_unavailable', async () => {
     const baseUrl = await refusedBaseUrl();
     let connectAttempts = 0;
     const adapter = createChatCompletionsAdapter({
@@ -28,46 +38,22 @@ describe('a target that refuses connections', () => {
       capabilities: async () => CC_CAPABILITIES,
       clock: createFakeClock(START_MS),
     });
-    const { client, clock } = await startGateway({
-      adapters: { dead: adapter },
-      config: {
-        aliases: { fast: ['dead'] },
-        targets: { dead: { model: 'upstream-model' } },
-        retry: { maxAttempts: 1 },
-        breaker: GATEWAY_CONFIG_DEFAULTS.breaker,
-      },
-    });
+    const harness = await startGateway({ adapters: { dead: adapter }, config: deadConfig });
+    const requests = GATEWAY_CONFIG_DEFAULTS.breaker.failureThreshold + 1;
 
-    for (let call = 1; call <= GATEWAY_CONFIG_DEFAULTS.breaker.failureThreshold; call += 1) {
-      const refused = await readJson(await postJson(client, '/v1/responses', request));
+    for (let call = 1; call <= requests; call += 1) {
+      const pending = postJson(harness.client, '/v1/responses', request);
+      await driveTimers(harness, [pending]);
+      const refused = await readJson(await pending);
       expect(refused.status).toBe(502);
       expectErrorBody(refused.body, { type: 'server_error', code: 'provider_unavailable' });
+      expect(refused.body.error.message).toContain('the chat-completions upstream is unreachable');
+      expect(connectAttempts).toBe(call * SENDS_PER_BUDGET);
     }
-    expect(connectAttempts).toBe(GATEWAY_CONFIG_DEFAULTS.breaker.failureThreshold);
-
-    const cooling = await readJson(await postJson(client, '/v1/responses', request));
-
-    expect(cooling.status).toBe(503);
-    expectErrorBody(cooling.body, { type: 'server_error', code: 'all_targets_unavailable' });
-    expect(cooling.headers['retry-after']).toBe(String(GATEWAY_CONFIG_DEFAULTS.breaker.openMs / 1000));
-    expect(cooling.body.error.message).toContain('the chat-completions upstream is unreachable');
-    expect(connectAttempts).toBe(GATEWAY_CONFIG_DEFAULTS.breaker.failureThreshold);
-
-    clock.advance(GATEWAY_CONFIG_DEFAULTS.breaker.openMs);
-    const trial = await readJson(await postJson(client, '/v1/responses', request));
-    expect(trial.status).toBe(502);
-    expect(connectAttempts).toBe(GATEWAY_CONFIG_DEFAULTS.breaker.failureThreshold + 1);
-
-    const dead = await readJson(await postJson(client, '/v1/responses', request));
-
-    expect(dead.status).toBe(503);
-    expectErrorBody(dead.body, { type: 'server_error', code: 'all_targets_unreachable' });
-    expect(dead.body.error.message).toContain('dead');
-    expect(dead.body.error.message).toContain('the chat-completions upstream is unreachable');
-    expect(connectAttempts).toBe(GATEWAY_CONFIG_DEFAULTS.breaker.failureThreshold + 1);
+    expect((await getJson(harness.client, '/v1/momonga/health')).body.targets.dead).toMatchObject({ breaker: 'open' });
   });
 
-  it('serves the call again when the target comes back within the cooldown', async () => {
+  it('serves the next call as soon as the target comes back, without waiting out the cooldown', async () => {
     const baseUrl = await refusedBaseUrl();
     const fake = await startFake({ scenario: 'tools-ok' });
     let alive = false;
@@ -77,23 +63,15 @@ describe('a target that refuses connections', () => {
       capabilities: async () => CC_CAPABILITIES,
       clock: createFakeClock(START_MS),
     });
-    const { client, clock } = await startGateway({
-      adapters: { dead: adapter },
-      config: {
-        aliases: { fast: ['dead'] },
-        targets: { dead: { model: 'upstream-model' } },
-        retry: { maxAttempts: 1 },
-        breaker: GATEWAY_CONFIG_DEFAULTS.breaker,
-      },
-    });
+    const harness = await startGateway({ adapters: { dead: adapter }, config: deadConfig });
     for (let call = 1; call <= GATEWAY_CONFIG_DEFAULTS.breaker.failureThreshold; call += 1) {
-      await readJson(await postJson(client, '/v1/responses', request));
+      const pending = postJson(harness.client, '/v1/responses', request);
+      await driveTimers(harness, [pending]);
+      expect((await readJson(await pending)).status).toBe(502);
     }
-    expect((await readJson(await postJson(client, '/v1/responses', request))).status).toBe(503);
 
     alive = true;
-    clock.advance(GATEWAY_CONFIG_DEFAULTS.breaker.openMs);
-    const served = await readJson(await postJson(client, '/v1/responses', request));
+    const served = await readJson(await postJson(harness.client, '/v1/responses', request));
 
     expect(served.status).toBe(200);
   });
