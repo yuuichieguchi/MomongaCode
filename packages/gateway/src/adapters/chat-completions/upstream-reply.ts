@@ -2,7 +2,7 @@ import { decodeSse, isRecord } from '@momonga/foundation';
 import type { SseEvent } from '@momonga/foundation';
 import { CONTEXT_WINDOW_EXCEEDED, GUARDRAIL_VIOLATION, StreamFailure, UNSUPPORTED_REQUEST } from '../shared/failures.ts';
 import { errorObjectOf, upstreamErrorText } from './vocabulary.ts';
-import type { ErrorVocabulary } from './vocabulary.ts';
+import type { ErrorVocabulary } from '../shared/vocabulary.ts';
 
 const ERROR_EVENT = 'error';
 const DONE_MARKER = '[DONE]';

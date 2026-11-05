@@ -7,6 +7,7 @@ import {
   FAKE_GUARDRAIL_ERROR,
   FAKE_PAYLOAD_TOO_LARGE_ERROR,
   FM_CONTEXT_OVERFLOW_ERROR,
+  FM_GUARDRAIL_ERROR,
   FM_UNSUPPORTED_GUIDE_ERROR,
   countFakeRequestTokens,
   countFakeTokens,
@@ -21,6 +22,8 @@ const servers: FakeChatCompletionsServer[] = [];
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => server.close()));
 });
+
+const CACHE_PROBE_WORDS = 1536;
 
 const fixedNow = () => new Date('2026-10-23T12:00:00.000Z');
 
@@ -139,7 +142,7 @@ describe('runProbe context window', () => {
     const searchSizes = fake.requests
       .filter((request) => request.path === '/v1/chat/completions' && (request.body as { max_completion_tokens?: unknown }).max_completion_tokens === 1)
       .map((request) => (request.body as { messages?: Array<{ content?: unknown }> }).messages?.[0]?.content)
-      .filter((content): content is string => typeof content === 'string')
+      .filter((content): content is string => typeof content === 'string' && content === fillerText(words(content)) && words(content) !== CACHE_PROBE_WORDS)
       .map(words);
     expect(report.contextWindow.method).toBe('searched');
     expect(Math.abs(report.contextWindow.value - window)).toBeLessThanOrEqual(window * 0.02);
@@ -410,6 +413,18 @@ describe('runProbe server features', () => {
       { guardrailPrompt: 'please discuss GUARDRAIL-PROBE' },
     );
     expect(report.guardrail.errorShape).toEqual(FAKE_GUARDRAIL_ERROR);
+  });
+
+  it('records the guardrail error shape fm sends as an error event inside a 200 stream, through the same decoded error kind', async () => {
+    const { report } = await probe(
+      {
+        scenario: 'tools-ok',
+        wire: 'fm',
+        routes: [{ match: (body) => JSON.stringify(body).includes('GUARDRAIL-PROBE'), reply: { kind: 'error-event', body: FM_GUARDRAIL_ERROR } }],
+      },
+      { guardrailPrompt: 'please discuss GUARDRAIL-PROBE', vocabulary: FM_VOCABULARY },
+    );
+    expect(report.guardrail.errorShape).toEqual(FM_GUARDRAIL_ERROR);
   });
 
   it('leaves the guardrail error shape undefined when nothing triggers', async () => {

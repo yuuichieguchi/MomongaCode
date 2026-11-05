@@ -15,7 +15,7 @@ import type {
 import type { ChatCompletionsEndpoint } from '../adapters/chat-completions/types.ts';
 import { matchesGuardrailCode } from '../adapters/chat-completions/classify.ts';
 import { FM_VOCABULARY } from '../adapters/chat-completions/vocabulary.ts';
-import type { ErrorVocabulary } from '../adapters/chat-completions/vocabulary.ts';
+import type { ErrorVocabulary } from '../adapters/shared/vocabulary.ts';
 import { estimatedCountOf } from '../core/estimate.ts';
 import { capabilitiesFromProbe, layerOf, mergeCapabilities } from '../probe/decide.ts';
 import type { KeywordSupport } from '../probe/envelope.ts';
@@ -145,11 +145,25 @@ const errorOf = (body: unknown): Record<string, unknown> | undefined => {
 
 const nonEmptyString = (value: unknown): string | undefined => (typeof value === 'string' && value !== '' ? value : undefined);
 
+const BARE_STATUS_CODE = /^\d{3}$/;
+const GENERIC_ERROR_CODES: ReadonlySet<string> = new Set(['invalid_request_error', 'invalid_request', 'bad_request', 'server_error', 'internal_error', 'error']);
+
+const isGenericCode = (code: string): boolean => BARE_STATUS_CODE.test(code) || GENERIC_ERROR_CODES.has(code);
+
 const guardrailMatcherOf = (report: ProbeReport | null): ((body: unknown) => boolean) => {
   const shape = errorOf(report?.guardrail.errorShape);
   const code = nonEmptyString(shape?.['code']);
-  if (code !== undefined) return (body) => errorOf(body)?.['code'] === code;
-  return matchesGuardrailCode;
+  const message = nonEmptyString(shape?.['message']);
+  const type = nonEmptyString(shape?.['type']);
+  if (code === undefined || (message === undefined && isGenericCode(code))) return matchesGuardrailCode;
+  return (body) => {
+    const error = errorOf(body);
+    return (
+      error?.['code'] === code &&
+      (message === undefined || error?.['message'] === message) &&
+      (type === undefined || error?.['type'] === type)
+    );
+  };
 };
 
 const listedModelId = async (socketPath: string, signal: AbortSignal): Promise<string> => {

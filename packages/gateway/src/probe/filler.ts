@@ -53,7 +53,7 @@ const SENTENCES: ReadonlyArray<(pick: Pick) => string> = [
   (pick) => `${pick(TIMES).replace(/^./, (letter) => letter.toUpperCase())}, the ${pick(NOUNS)} ${pick(VERBS)} a ${pick(ADJECTIVES)} ${pick(NOUNS)} ${pick(PLACES)} the ${pick(NOUNS)}.`,
   (pick) => `Everyone said the ${pick(NOUNS)} ${pick(ADVERBS)} ${pick(VERBS)} every ${pick(ADJECTIVES)} ${pick(NOUNS)}, and the ${pick(NOUNS)} ${pick(VERBS)} it too.`,
   (pick) => `Nobody ${pick(VERBS)} the ${pick(ADJECTIVES)} ${pick(NOUNS)} ${pick(PLACES)} the ${pick(ADJECTIVES)} ${pick(NOUNS)} as ${pick(ADVERBS)} as the ${pick(NOUNS)}.`,
-  (pick) => `Her ${pick(ADJECTIVES)} ${pick(NOUNS)} ${pick(VERBS)} two ${pick(ADJECTIVES)} ${pick(NOUNS)}s ${pick(TIMES)}, and then ${pick(VERBS)} the ${pick(NOUNS)}.`,
+  (pick) => `Her ${pick(ADJECTIVES)} ${pick(NOUNS)} ${pick(VERBS)} that ${pick(ADJECTIVES)} ${pick(NOUNS)} ${pick(TIMES)}, and then ${pick(VERBS)} the ${pick(NOUNS)}.`,
 ];
 
 export const fillerText = (wordCount: number): string => {

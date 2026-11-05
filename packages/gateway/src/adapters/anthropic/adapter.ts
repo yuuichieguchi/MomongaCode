@@ -20,7 +20,7 @@ import { StreamFailure, UnsupportedInputError, UpstreamProtocolError } from '../
 import { createEndpointPool } from '../shared/http-client.ts';
 import type { CompletionResponse } from '../shared/http-client.ts';
 import { httpErrorOf } from '../shared/http-error.ts';
-import { HTTP_TRANSPORT_VOCABULARY } from '../chat-completions/vocabulary.ts';
+import { HTTP_TRANSPORT_VOCABULARY } from '../shared/vocabulary.ts';
 import { MAX_SSE_EVENT_BYTES, MAX_UNARY_BODY_BYTES } from '../shared/limits.ts';
 import { ResponseEmitter } from '../shared/response-emitter.ts';
 import {

@@ -6,7 +6,7 @@ import type { HealthResult, ProbeReport } from '@momonga/protocol';
 import { FM_CONTEXT_OVERFLOW_ERROR, FM_GUARDRAIL_ERROR, createFakeClock, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeScriptedReply } from '@momonga/testkit';
 import { START_MS, makeDir, postJson, readJson, readSse, registerCleanup, startGateway } from './gateway-helpers.ts';
-import { makeAdapter, userText } from './cc-support.ts';
+import { collect, makeAdapter, userText } from './cc-support.ts';
 import { makeReport } from './report-fixture.ts';
 
 const RECORD_KEY = { target: 'fm', binarySha256: 'cd'.repeat(32), osBuild: '25A100' };
@@ -111,5 +111,44 @@ describe('fm classifies its error vocabulary the same in an error event inside a
       message: FM_CONTEXT_OVERFLOW_ERROR.error.message,
       upstreamRequests: 1,
     });
+  });
+});
+
+const OTHER_SERVER_ERROR = { error: { code: '500', type: 'server_error', message: 'the model service restarted' } };
+
+const reportRecordingCode500Guardrail = (): ProbeReport => ({
+  ...makeReport(1, 1),
+  guardrail: { errorShape: { error: { code: '500', type: 'server_error', message: 'a guardrail message recorded from another build' } } },
+});
+
+describe('a recorded guardrail shape with a generic code never matches by its code alone', () => {
+  const request = { model: 'system', input: [userText('one two three four five six seven eight nine ten')] };
+
+  it('keeps a 500 error body with a different message a retryable server_error', async () => {
+    const fake = await startFakeFm({ kind: 'error', status: 500, body: OTHER_SERVER_ERROR });
+    const adapter = await fmAdapter(fake, reportRecordingCode500Guardrail());
+
+    const { error } = await collect(adapter, request);
+
+    expect(adapter.classify(error)).toMatchObject({ retryable: true, error: { type: 'server_error' } });
+  });
+
+  it('keeps a 500 error event with a different message a server_error failure', async () => {
+    const fake = await startFakeFm({ kind: 'error-event', body: OTHER_SERVER_ERROR });
+    const adapter = await fmAdapter(fake, reportRecordingCode500Guardrail());
+
+    const { events, error } = await collect(adapter, request);
+
+    expect(error).toBeUndefined();
+    expect(events.at(-1)).toMatchObject({ type: 'response.failed', response: { error: { type: 'server_error', code: '500' } } });
+  });
+
+  it('matches the recorded guardrail when code and message both agree', async () => {
+    const fake = await startFakeFm({ kind: 'error', status: 500, body: reportRecordingCode500Guardrail().guardrail.errorShape });
+    const adapter = await fmAdapter(fake, reportRecordingCode500Guardrail());
+
+    const { error } = await collect(adapter, request);
+
+    expect(adapter.classify(error)).toMatchObject({ retryable: false, error: { type: 'model_error', code: 'guardrail_violation' } });
   });
 });

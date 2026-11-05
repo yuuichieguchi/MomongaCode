@@ -4,7 +4,7 @@ import { readTextLimited } from './body-reading.ts';
 import { UpstreamHttpError } from './failures.ts';
 import type { CompletionResponse } from './http-client.ts';
 import { MAX_ERROR_BODY_BYTES } from './limits.ts';
-import type { ErrorVocabulary } from '../chat-completions/vocabulary.ts';
+import type { ErrorVocabulary } from './vocabulary.ts';
 
 export type UpstreamErrorDetail = { code?: string | null; message?: string };
 

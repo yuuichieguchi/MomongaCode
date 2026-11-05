@@ -1,14 +1,8 @@
 import { isRecord } from '@momonga/foundation';
-
-export type UpstreamErrorKind = 'guardrail' | 'context_overflow' | 'unsupported' | 'failure';
-
-export type ErrorVocabulary = {
-  readonly kindOf: (status: number, body: unknown) => UpstreamErrorKind;
-};
+import { transportKindOf } from '../shared/vocabulary.ts';
+import type { ErrorVocabulary } from '../shared/vocabulary.ts';
 
 const HTTP_ERROR_FROM = 400;
-const BAD_REQUEST_STATUS = 400;
-const PAYLOAD_TOO_LARGE_STATUS = 413;
 const CONTEXT_OVERFLOW_CODE = 'context_length_exceeded';
 export const CONTEXT_OVERFLOW_WORDING = /\bcontext (?:length|size|window)\b/i;
 const FM_CONTEXT_OVERFLOW_MESSAGE = "The session's transcript exceeded the model's context size.";
@@ -27,14 +21,8 @@ export const upstreamErrorText = (body: unknown): string | undefined => {
   return typeof message === 'string' ? message : undefined;
 };
 
-const transportKindOf = (status: number): UpstreamErrorKind => {
-  if (status === PAYLOAD_TOO_LARGE_STATUS) return 'context_overflow';
-  return status === BAD_REQUEST_STATUS ? 'unsupported' : 'failure';
-};
-
 export const CHAT_COMPLETIONS_VOCABULARY: ErrorVocabulary = {
   kindOf: (status, body) => {
-    if (status === PAYLOAD_TOO_LARGE_STATUS) return 'context_overflow';
     const message = upstreamErrorText(body);
     if (errorObjectOf(body)?.['code'] === CONTEXT_OVERFLOW_CODE || (message !== undefined && CONTEXT_OVERFLOW_WORDING.test(message))) return 'context_overflow';
     return transportKindOf(status);
@@ -50,8 +38,6 @@ export const FM_VOCABULARY: ErrorVocabulary = {
     return status >= HTTP_ERROR_FROM ? transportKindOf(status) : 'failure';
   },
 };
-
-export const HTTP_TRANSPORT_VOCABULARY: ErrorVocabulary = { kindOf: (status) => transportKindOf(status) };
 
 export const withGuardrailMatcher = (vocabulary: ErrorVocabulary, isGuardrail: (status: number, body: unknown) => boolean): ErrorVocabulary => ({
   kindOf: (status, body) => {

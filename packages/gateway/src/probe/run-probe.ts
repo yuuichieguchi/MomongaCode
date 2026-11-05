@@ -15,7 +15,7 @@ import {
   type ProbeReport,
 } from '@momonga/protocol';
 import { CHAT_COMPLETIONS_VOCABULARY } from '../adapters/chat-completions/vocabulary.ts';
-import type { ErrorVocabulary, UpstreamErrorKind } from '../adapters/chat-completions/vocabulary.ts';
+import type { ErrorVocabulary, UpstreamErrorKind } from '../adapters/shared/vocabulary.ts';
 import { decodeUpstreamReply, upstreamErrorMessage } from '../adapters/chat-completions/upstream-reply.ts';
 import type { UpstreamReply } from '../adapters/chat-completions/upstream-reply.ts';
 import { outputBoundFor } from '../adapters/chat-completions/output-bound.ts';
@@ -91,7 +91,7 @@ const errorKindOf = (vocabulary: ErrorVocabulary, reply: UpstreamReply): Upstrea
 
 const outcomeOf = (status: number, reply: UpstreamReply, kind: UpstreamErrorKind | undefined): ProbeOutcome => {
   if (reply.kind === 'completion') return status === 200 ? 'accepted' : 'failure';
-  if (kind === 'context_overflow') return 'overflow';
+  if (kind === 'context_overflow' || kind === 'payload_too_large') return 'overflow';
   return kind === 'unsupported' ? 'unsupported' : 'failure';
 };
 
@@ -259,8 +259,11 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
   const guardrail: ProbeReport['guardrail'] = {};
   if (options.guardrailPrompt !== undefined) {
     const result = await chat({ messages: [{ role: 'user', content: options.guardrailPrompt }] });
-    expectStatus(result, [200, 400], 'guardrail');
-    if (result.status === 400) guardrail.errorShape = result.reply.body;
+    if (result.reply.kind === 'error' && (result.errorKind === 'guardrail' || result.status === 400)) {
+      guardrail.errorShape = result.reply.body;
+    } else {
+      expectStatus(result, [200], 'guardrail');
+    }
   }
 
   const constrainedAccepted = isAcceptedOrRejected(
