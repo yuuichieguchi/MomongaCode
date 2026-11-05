@@ -181,3 +181,18 @@ describe('the work the error mapping does on a recursive schema with two branche
     if (!verdict.valid) expect(verdict.errors.length).toBeGreaterThan(0);
   });
 });
+
+describe('the error mapping on a schema that names its own root by the engine base', () => {
+  it('reports the failing branch of an anyOf whose branch refers to the root by ata://root', () => {
+    const schema = {
+      $defs: { a: { type: 'object', properties: { n: { type: 'number' } } } },
+      properties: { p: { anyOf: [{ $ref: 'ata://root#/$defs/a' }, { type: 'string' }] } },
+    };
+    expect(errorsOf(schema, { p: { n: 'x' } })).toEqual([{ instancePath: '/p/n', keyword: 'type', message: 'must be number' }]);
+  });
+
+  it('gives the root no second name: a reference to the former synthetic root id is unresolvable', () => {
+    const schema = { $defs: { a: { type: 'number' } }, properties: { p: { anyOf: [{ $ref: 'urn:momonga:untrusted-root#/$defs/a' }, { type: 'string' }] } } };
+    expect(() => validateUntrusted('error-mapping', schema, { p: true })).toThrow('cannot be resolved');
+  });
+});

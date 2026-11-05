@@ -156,6 +156,15 @@ const mulberry32 = (seed: number): (() => number) => {
   };
 };
 
+const META_REFERENCES = [
+  'https://json-schema.org/draft/2020-12/meta/validation#/$defs/simpleTypes',
+  'https://json-schema.org/draft/2020-12/meta/validation#/$defs/nope',
+  'https://json-schema.org/draft/2020-12/schema',
+  'https://json-schema.org/draft/2020-12/schema#/$defs/nope',
+  'http://json-schema.org/draft-07/schema#/definitions/simpleTypes',
+  'http://json-schema.org/draft-07/schema#/definitions/nope',
+  'http://json-schema.org/draft-07/schema#',
+];
 const IDS = ['http://e.example/a', 'http://e.example/b/', 'urn:x:y', 'sub/c.json', 'd.json', 'http://e.example/a/e.json'];
 const ANCHORS = ['A', 'B', 'foo'];
 const KEYS = ['a', 'b', 'a/b', 'c d'];
@@ -187,6 +196,7 @@ const generateSchema = (rng: () => number): Record<string, unknown> => {
       `ata://root#/${defsKeyword}/${escape(key)}`,
       'http://momonga.invalid/root#',
       `#/${defsKeyword}/${escape(key)}/${defsKeyword}/${escape(pick(KEYS))}`,
+      pick(META_REFERENCES),
     ]);
   };
 

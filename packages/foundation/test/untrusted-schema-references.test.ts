@@ -45,4 +45,17 @@ describe('references and dialects at the untrusted-schema boundary', () => {
       ]),
     );
   });
+
+  it.each([
+    ['a fragment that names nothing in the 2020-12 validation vocabulary', { $ref: 'https://json-schema.org/draft/2020-12/meta/validation#/$defs/nope' }],
+    ['a fragment that names nothing in the draft-07 metaschema', { $schema: 'http://json-schema.org/draft-07/schema#', properties: { a: { $ref: 'http://json-schema.org/draft-07/schema#/definitions/nope' } } }],
+  ])('refuses %s at compile time', (_label, schema) => {
+    expect(() => validateUntrusted('metaschema-refs', schema, {})).toThrow(SchemaValidatorFailure);
+  });
+
+  it('accepts a fragment that exists in a metaschema', () => {
+    const schema = { properties: { t: { $ref: 'https://json-schema.org/draft/2020-12/meta/validation#/$defs/simpleTypes' } } };
+    expect(validateUntrusted('metaschema-refs', schema, { t: 'string' })).toEqual({ valid: true });
+    expect(validateUntrusted('metaschema-refs', schema, { t: 'nonsense' }).valid).toBe(false);
+  });
 });
