@@ -29,7 +29,7 @@ export type TargetRuntime = {
 
 export type CandidateRequirements = { tools?: boolean; images?: boolean; sampling?: SamplingRequest };
 
-export type Narrowed = { targets: TargetRuntime[]; capabilitiesOf(target: TargetRuntime): Capabilities };
+export type Narrowed = { targets: TargetRuntime[]; capabilitiesOf(target: TargetRuntime): Promise<Capabilities> };
 
 export type Router = {
   aliases(): string[];
@@ -161,36 +161,45 @@ export const createRouter = (options: RouterOptions): Router => {
   };
 
   const narrow = async (alias: string, all: readonly TargetRuntime[], requirements: CandidateRequirements): Promise<Narrowed> => {
-    const resolved = new Map(await Promise.all(all.map(async (target) => [target, await capabilitiesOf(target)] as const)));
-    const resolvedOf = (target: TargetRuntime): Capabilities => {
-      const capabilities = resolved.get(target);
-      if (capabilities === undefined) throw new TypeError(`target "${target.name}" was not part of the narrowing`);
-      return capabilities;
+    const resolutions = new Map<TargetRuntime, Promise<Capabilities>>();
+    const resolve = (target: TargetRuntime): Promise<Capabilities> => {
+      const known = resolutions.get(target);
+      if (known !== undefined) return known;
+      const started = capabilitiesOf(target);
+      resolutions.set(target, started);
+      return started;
     };
+    const judged = (targets: readonly TargetRuntime[]): Promise<(Capabilities | undefined)[]> =>
+      Promise.all(targets.map((target) => resolve(target).catch(() => undefined)));
     let remaining = [...all];
     if (requirements.tools === true) {
-      const capabilities = remaining.map(resolvedOf);
-      for (const { toolCalling } of capabilities) {
-        if (typeof toolCalling !== 'string') throw invalidRequest('precondition_failed', preconditionText(toolCalling.message, toolCalling.evidence, toolCalling.remedy), null, 412);
+      const capabilities = await judged(remaining);
+      for (const entry of capabilities) {
+        if (entry !== undefined && typeof entry.toolCalling !== 'string') {
+          const { toolCalling } = entry;
+          throw invalidRequest('precondition_failed', preconditionText(toolCalling.message, toolCalling.evidence, toolCalling.remedy), null, 412);
+        }
       }
-      remaining = remaining.filter((_, index) => (capabilities[index] as Capabilities).toolCalling !== 'none');
+      remaining = remaining.filter((_, index) => capabilities[index]?.toolCalling !== 'none');
       if (remaining.length === 0) {
         throw invalidRequest('capability_unsupported', `no target of model alias "${alias}" supports tool calling`, 'tools');
       }
     }
     if (requirements.images === true) {
-      const capabilities = remaining.map(resolvedOf);
-      remaining = remaining.filter((_, index) => (capabilities[index] as Capabilities).imageInput);
+      const capabilities = await judged(remaining);
+      remaining = remaining.filter((_, index) => capabilities[index]?.imageInput !== false);
       if (remaining.length === 0) {
         throw invalidRequest('capability_unsupported', `no target of model alias "${alias}" supports image input`, 'input');
       }
     }
     const { sampling } = requirements;
     if (sampling !== undefined && carriesSampling(sampling)) {
-      const capabilities = remaining.map(resolvedOf);
+      const capabilities = await judged(remaining);
       const refusals = new Map<TargetRuntime, SamplingRefusal>();
       remaining.forEach((target, index) => {
-        const refusal = samplingRefusalOf(sampling, { name: target.name, kind: target.adapter.kind }, target.adapter.sampling, capabilities[index] as Capabilities);
+        const entry = capabilities[index];
+        if (entry === undefined) return;
+        const refusal = samplingRefusalOf(sampling, { name: target.name, kind: target.adapter.kind }, target.adapter.sampling, entry);
         if (refusal !== undefined) refusals.set(target, refusal);
       });
       const accepted = remaining.filter((target) => !refusals.has(target));
@@ -200,7 +209,7 @@ export const createRouter = (options: RouterOptions): Router => {
       }
       remaining = accepted;
     }
-    return { targets: remaining, capabilitiesOf: resolvedOf };
+    return { targets: remaining, capabilitiesOf: resolve };
   };
 
   return {

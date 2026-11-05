@@ -1,5 +1,5 @@
 import { endpointKeyOf } from '@momonga/config';
-import type { Capabilities, ToolCallingMode } from '@momonga/protocol';
+import type { Capabilities } from '@momonga/protocol';
 import type { UpstreamEndpoint } from '../adapters/shared/http-client.ts';
 import { PreconditionFailedError, StreamFailure, UpstreamHttpError } from '../adapters/shared/failures.ts';
 import type { KeywordSupport } from './envelope.ts';
@@ -119,7 +119,6 @@ export type ProbedEndpointTargetOptions = {
 };
 
 export type ProbedEndpointTarget = {
-  toolCalling: () => ToolCallingMode;
   keywordSupport: () => KeywordSupport;
   capabilities: () => Promise<Capabilities>;
   verify: (signal: AbortSignal) => Promise<void>;
@@ -172,7 +171,6 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
   };
 
   return {
-    toolCalling: () => decideToolCalling(requireRecord().report).mode,
     keywordSupport: () => requireRecord().report.keywordSupport,
     verify,
     raiseHeadroom,

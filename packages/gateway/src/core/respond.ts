@@ -31,7 +31,7 @@ import { UpstreamFailure, emptyStreamFailure, failureFrom, runWithRetry } from '
 import type { RetryOutcome } from './retry.ts';
 import type { Release } from './admission.ts';
 import { adapterContextOf } from './adapter-context.ts';
-import type { TargetRuntime } from './router.ts';
+import type { Narrowed, TargetRuntime } from './router.ts';
 import type { RunControl } from './run.ts';
 import type { Services } from './services.ts';
 import type { CommitRequest } from './store.ts';
@@ -146,7 +146,7 @@ const openAttempt = async (
   job: ResponseJob,
   resolved: ResolvedInput,
   target: TargetRuntime,
-  capabilities: Capabilities,
+  narrowed: Narrowed,
   attemptNumber: number,
   signal: AbortSignal,
 ): Promise<Opened> => {
@@ -168,6 +168,7 @@ const openAttempt = async (
     request: { input: resolved.forAdapter, instructions: job.body.instructions, tools: job.body.tools },
   });
   try {
+    const capabilities = await narrowed.capabilitiesOf(target);
     const stream = target.adapter.create(adapterRequestFor(job, resolved, target), adapterContextOf(services, target, capabilities, signal, attemptNumber));
     const iterator = stream[Symbol.asyncIterator]();
     const held: StreamEvent[] = [];
@@ -563,7 +564,7 @@ export async function* executeResponse(services: Services, job: ResponseJob, con
       policy: { ...services.config.retry, random: services.random, clock: services.clock, timers: services.timers },
       signal,
       deadlineAt: job.deadlineAt,
-      attempt: (target, attemptNumber) => openAttempt(services, job, resolved, target, narrowed.capabilitiesOf(target), attemptNumber, signal),
+      attempt: (target, attemptNumber) => openAttempt(services, job, resolved, target, narrowed, attemptNumber, signal),
     });
     yield* relay(services, job, resolved, outcome, control);
   } finally {
