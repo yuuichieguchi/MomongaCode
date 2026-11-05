@@ -18,6 +18,7 @@ export const makeReport = (nativeValidRate: number, constrainedValidRate: number
     nested: true,
     additionalProperties: true,
   },
+  schemaDialect: { selected: null, shape: null, tried: [] },
   stopSequences: false,
   maxConcurrency: 1,
   imageInputAccepted: false,

@@ -42,11 +42,14 @@ describe('constrained tool calling against fm', () => {
       vocabulary: FM_VOCABULARY,
     });
 
-    expect(report.schemaDialect.selected).toBe('explicit-keys');
-    expect(report.keywordSupport?.enum).toBe(true);
-    expect(report.keywordSupport?.anyOf).toBe(true);
+    const { keywordSupport, schemaDialect } = report;
+    if (keywordSupport === undefined) throw new Error('the probe measured no keyword support');
+    if (schemaDialect.selected === null) throw new Error('the probe selected no dialect');
+    expect(schemaDialect.selected).toBe('explicit-keys');
+    expect(keywordSupport.enum).toBe(true);
+    expect(keywordSupport.anyOf).toBe(true);
 
-    const { events, error } = await constrainedRunOnFm(report.keywordSupport ?? UNPROBED_FM_SUPPORT, report.schemaDialect.selected ?? 'json-schema-2020-12');
+    const { events, error } = await constrainedRunOnFm(keywordSupport, schemaDialect.selected);
 
     expect(error).toBeUndefined();
     expect(terminalOf(events).type).toBe('response.completed');

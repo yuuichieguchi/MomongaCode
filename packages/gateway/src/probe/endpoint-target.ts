@@ -173,7 +173,11 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
   };
 
   return {
-    keywordSupport: () => requireRecord().report.keywordSupport,
+    keywordSupport: () => {
+      const { keywordSupport } = requireRecord().report;
+      if (keywordSupport === undefined) throw new Error('the probe record holds no keyword support');
+      return keywordSupport;
+    },
     schemaDialect: () => declared.schemaDialect,
     verify,
     raiseHeadroom,
