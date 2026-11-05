@@ -2,14 +2,17 @@
 EXTENDS Naturals, Sequences, FiniteSets
 
 CONSTANTS
-    MaxAppends,
+    MaxApprovals,
+    MaxBeats,
     MaxWorkerCrashes,
     MaxDaemonCrashes,
     MaxStalls,
-    Leading,
+    LeadingChanges,
+    HeartbeatAppends,
     CommitMeasuresInline,
     NoRePrepare,
     LeadingUnseen,
+    ClockTwice,
     SeparateWrite,
     NoFence,
     MeasureOnLoop,
@@ -18,15 +21,17 @@ CONSTANTS
 Holders == {"h1", "h2"}
 Service == "s"
 Instances == Holders \cup {Service}
-Pcs == {"none", "idle", "awaiting", "measuring", "ready", "done", "failed", "lost", "dead"}
-Live == {"idle", "awaiting", "measuring", "ready"}
+Pcs == {"none", "idle", "awaiting", "measuring", "inlining", "ready", "done", "failed", "lost", "dead"}
+Live == {"idle", "awaiting", "measuring", "inlining", "ready"}
 Statuses == {"active", "terminal"}
 LeaseStates == {"held", "free"}
 
 VARIABLES
     status,
     jr,
-    appends,
+    cancels,
+    resolved,
+    beats,
     wcrashes,
     dcrashes,
     stalls,
@@ -35,13 +40,16 @@ VARIABLES
     ownBlock,
     pc,
     cur,
+    lead,
+    pl,
     ploc,
+    plead,
     reprep,
     inlineMeasured,
     badCommit
 
-vars == <<status, jr, appends, wcrashes, dcrashes, stalls, lease, loopBusy, ownBlock,
-          pc, cur, ploc, reprep, inlineMeasured, badCommit>>
+vars == <<status, jr, cancels, resolved, beats, wcrashes, dcrashes, stalls, lease, loopBusy, ownBlock,
+          pc, cur, lead, pl, ploc, plead, reprep, inlineMeasured, badCommit>>
 
 Ev == [k |-> "e"]
 LeadEv == [k |-> "L"]
@@ -52,14 +60,14 @@ Positions(kind) == {p \in 1..Len(jr) : jr[p].k = kind}
 
 HolderAlive == \E h \in Holders : cur[h] /\ pc[h] \in Live
 
-Seen == IF LeadingUnseen THEN 0 ELSE Leading
-
-LeadingEvents == IF Leading = 1 THEN <<LeadEv>> ELSE <<>>
+LeadEvents(n) == IF n = 1 THEN <<LeadEv>> ELSE <<>>
 
 TypeOK ==
     /\ status \in Statuses
     /\ \A p \in 1..Len(jr) : jr[p].k \in {"e", "L", "C", "T"}
-    /\ appends \in 0..MaxAppends
+    /\ cancels \in 0..1
+    /\ resolved \in 0..MaxApprovals
+    /\ beats \in 0..MaxBeats
     /\ wcrashes \in 0..MaxWorkerCrashes
     /\ dcrashes \in 0..MaxDaemonCrashes
     /\ stalls \in 0..MaxStalls
@@ -68,7 +76,10 @@ TypeOK ==
     /\ ownBlock \in BOOLEAN
     /\ pc \in [Instances -> Pcs]
     /\ cur \in [Holders -> BOOLEAN]
+    /\ lead \in 0..1
+    /\ pl \in [Instances -> 0..1]
     /\ ploc \in [Instances -> Nat]
+    /\ plead \in [Instances -> 0..1]
     /\ reprep \in [Instances -> Nat]
     /\ inlineMeasured \in BOOLEAN
     /\ badCommit \in BOOLEAN
@@ -76,7 +87,9 @@ TypeOK ==
 Init ==
     /\ status = "active"
     /\ jr = <<Ev>>
-    /\ appends = 0
+    /\ cancels = 0
+    /\ resolved = 0
+    /\ beats = 0
     /\ wcrashes = 0
     /\ dcrashes = 0
     /\ stalls = 0
@@ -85,26 +98,55 @@ Init ==
     /\ ownBlock = FALSE
     /\ pc = [i \in Instances |-> IF i = "h1" THEN "idle" ELSE "none"]
     /\ cur = [h \in Holders |-> h = "h1"]
+    /\ lead = 0
+    /\ pl = [i \in Instances |-> 0]
     /\ ploc = [i \in Instances |-> 0]
+    /\ plead = [i \in Instances |-> 0]
     /\ reprep = [i \in Instances |-> 0]
     /\ inlineMeasured = FALSE
     /\ badCommit = FALSE
 
-External ==
+Cancel ==
     /\ status = "active"
-    /\ appends < MaxAppends
+    /\ cancels = 0
+    /\ cancels' = 1
     /\ jr' = Append(jr, Ev)
-    /\ appends' = appends + 1
-    /\ UNCHANGED <<status, wcrashes, dcrashes, stalls, lease, loopBusy, ownBlock,
-                   pc, cur, ploc, reprep, inlineMeasured, badCommit>>
+    /\ UNCHANGED <<status, resolved, beats, wcrashes, dcrashes, stalls, lease, loopBusy, ownBlock,
+                   pc, cur, lead, pl, ploc, plead, reprep, inlineMeasured, badCommit>>
+
+Resolve ==
+    /\ status = "active"
+    /\ resolved < MaxApprovals
+    /\ resolved' = resolved + 1
+    /\ jr' = Append(jr, Ev)
+    /\ UNCHANGED <<status, cancels, beats, wcrashes, dcrashes, stalls, lease, loopBusy, ownBlock,
+                   pc, cur, lead, pl, ploc, plead, reprep, inlineMeasured, badCommit>>
+
+Keepalive ==
+    /\ HeartbeatAppends
+    /\ status = "active"
+    /\ HolderAlive
+    /\ beats < MaxBeats
+    /\ beats' = beats + 1
+    /\ jr' = Append(jr, Ev)
+    /\ UNCHANGED <<status, cancels, resolved, wcrashes, dcrashes, stalls, lease, loopBusy, ownBlock,
+                   pc, cur, lead, pl, ploc, plead, reprep, inlineMeasured, badCommit>>
+
+Due ==
+    /\ LeadingChanges
+    /\ status = "active"
+    /\ lead = 0
+    /\ lead' = 1
+    /\ UNCHANGED <<status, jr, cancels, resolved, beats, wcrashes, dcrashes, stalls, lease, loopBusy, ownBlock,
+                   pc, cur, pl, ploc, plead, reprep, inlineMeasured, badCommit>>
 
 StartService ==
     /\ status = "active"
     /\ (pc[Service] \in {"none", "dead", "lost"} \/ (pc[Service] = "failed" /\ RetryAfterFailure))
     /\ pc' = [pc EXCEPT ![Service] = "idle"]
     /\ reprep' = [reprep EXCEPT ![Service] = 0]
-    /\ UNCHANGED <<status, jr, appends, wcrashes, dcrashes, stalls, lease, loopBusy, ownBlock,
-                   cur, ploc, inlineMeasured, badCommit>>
+    /\ UNCHANGED <<status, jr, cancels, resolved, beats, wcrashes, dcrashes, stalls, lease, loopBusy, ownBlock,
+                   cur, lead, pl, ploc, plead, inlineMeasured, badCommit>>
 
 Reclaim(h) ==
     /\ status = "active"
@@ -115,26 +157,30 @@ Reclaim(h) ==
     /\ cur' = [g \in Holders |-> g = h]
     /\ pc' = [pc EXCEPT ![h] = "idle"]
     /\ reprep' = [reprep EXCEPT ![h] = 0]
-    /\ UNCHANGED <<status, jr, appends, wcrashes, dcrashes, stalls, loopBusy, ownBlock,
-                   ploc, inlineMeasured, badCommit>>
+    /\ UNCHANGED <<status, jr, cancels, resolved, beats, wcrashes, dcrashes, stalls, loopBusy, ownBlock,
+                   lead, pl, ploc, plead, inlineMeasured, badCommit>>
 
 Plan(i) ==
     /\ status = "active"
     /\ pc[i] = "idle"
     /\ pc' = [pc EXCEPT ![i] = "awaiting"]
-    /\ UNCHANGED <<status, jr, appends, wcrashes, dcrashes, stalls, lease, loopBusy, ownBlock,
-                   cur, ploc, reprep, inlineMeasured, badCommit>>
+    /\ pl' = [pl EXCEPT ![i] = lead]
+    /\ UNCHANGED <<status, jr, cancels, resolved, beats, wcrashes, dcrashes, stalls, lease, loopBusy, ownBlock,
+                   cur, lead, ploc, plead, reprep, inlineMeasured, badCommit>>
+
+SeenBy(i) == IF LeadingUnseen THEN 0 ELSE pl[i]
 
 WorkerRun(i) ==
     /\ ~MeasureOnLoop
     /\ pc[i] = "awaiting"
     /\ ploc' = [ploc EXCEPT ![i] = Len(jr)]
+    /\ plead' = [plead EXCEPT ![i] = SeenBy(i)]
     /\ pc' = [pc EXCEPT ![i] = "ready"]
     /\ IF SeparateWrite /\ status = "active"
-          THEN jr' = Append(jr, ContributionEv(Len(jr) + Seen))
+          THEN jr' = Append(jr, ContributionEv(Len(jr) + SeenBy(i)))
           ELSE jr' = jr
-    /\ UNCHANGED <<status, appends, wcrashes, dcrashes, stalls, lease, loopBusy, ownBlock,
-                   cur, reprep, inlineMeasured, badCommit>>
+    /\ UNCHANGED <<status, cancels, resolved, beats, wcrashes, dcrashes, stalls, lease, loopBusy, ownBlock,
+                   cur, lead, pl, reprep, inlineMeasured, badCommit>>
 
 LoopMeasureStart(i) ==
     /\ MeasureOnLoop
@@ -142,32 +188,35 @@ LoopMeasureStart(i) ==
     /\ ~loopBusy
     /\ loopBusy' = TRUE
     /\ ploc' = [ploc EXCEPT ![i] = Len(jr)]
+    /\ plead' = [plead EXCEPT ![i] = SeenBy(i)]
     /\ pc' = [pc EXCEPT ![i] = "measuring"]
-    /\ UNCHANGED <<status, jr, appends, wcrashes, dcrashes, stalls, lease, ownBlock,
-                   cur, reprep, inlineMeasured, badCommit>>
+    /\ UNCHANGED <<status, jr, cancels, resolved, beats, wcrashes, dcrashes, stalls, lease, ownBlock,
+                   cur, lead, pl, reprep, inlineMeasured, badCommit>>
 
 LoopMeasureEnd(i) ==
     /\ MeasureOnLoop
     /\ pc[i] = "measuring"
     /\ loopBusy' = FALSE
     /\ pc' = [pc EXCEPT ![i] = "ready"]
-    /\ UNCHANGED <<status, jr, appends, wcrashes, dcrashes, stalls, lease, ownBlock,
-                   cur, ploc, reprep, inlineMeasured, badCommit>>
+    /\ UNCHANGED <<status, jr, cancels, resolved, beats, wcrashes, dcrashes, stalls, lease, ownBlock,
+                   cur, lead, pl, ploc, plead, reprep, inlineMeasured, badCommit>>
 
 WorkerCrash ==
     /\ wcrashes < MaxWorkerCrashes
     /\ \E i \in Instances : pc[i] = "awaiting"
     /\ wcrashes' = wcrashes + 1
     /\ pc' = [i \in Instances |-> IF pc[i] = "awaiting" THEN "failed" ELSE pc[i]]
-    /\ UNCHANGED <<status, jr, appends, dcrashes, stalls, lease, loopBusy, ownBlock,
-                   cur, ploc, reprep, inlineMeasured, badCommit>>
+    /\ UNCHANGED <<status, jr, cancels, resolved, beats, dcrashes, stalls, lease, loopBusy, ownBlock,
+                   cur, lead, pl, ploc, plead, reprep, inlineMeasured, badCommit>>
 
 Fresh(i) == ploc[i] = Len(jr)
 
 Fenced(i) == IF i \in Holders THEN cur[i] ELSE TRUE
 
+CommitLeading(i) == IF ClockTwice THEN lead ELSE pl[i]
+
 WriteTerminal(i, cov, measuredInline) ==
-    /\ jr' = jr \o LeadingEvents \o (IF SeparateWrite THEN <<>> ELSE <<ContributionEv(cov)>>) \o <<TermEv>>
+    /\ jr' = jr \o LeadEvents(CommitLeading(i)) \o (IF SeparateWrite THEN <<>> ELSE <<ContributionEv(cov)>>) \o <<TermEv>>
     /\ status' = "terminal"
     /\ pc' = [pc EXCEPT ![i] = "done"]
     /\ inlineMeasured' = (inlineMeasured \/ measuredInline)
@@ -178,19 +227,31 @@ CommitFresh(i) ==
     /\ status = "active"
     /\ (Fenced(i) \/ NoFence)
     /\ (Fresh(i) \/ NoRePrepare \/ SeparateWrite)
-    /\ WriteTerminal(i, ploc[i] + Seen, FALSE)
-    /\ UNCHANGED <<appends, wcrashes, dcrashes, stalls, lease, loopBusy, ownBlock,
-                   cur, ploc, reprep>>
+    /\ WriteTerminal(i, ploc[i] + plead[i], FALSE)
+    /\ UNCHANGED <<cancels, resolved, beats, wcrashes, dcrashes, stalls, lease, loopBusy, ownBlock,
+                   cur, lead, pl, ploc, plead, reprep>>
 
-CommitInline(i) ==
+CommitInlineStart(i) ==
     /\ CommitMeasuresInline
     /\ pc[i] = "ready"
     /\ status = "active"
     /\ Fenced(i)
     /\ ~Fresh(i)
-    /\ WriteTerminal(i, Len(jr) + Leading, TRUE)
-    /\ UNCHANGED <<appends, wcrashes, dcrashes, stalls, lease, loopBusy, ownBlock,
-                   cur, ploc, reprep>>
+    /\ ~loopBusy
+    /\ loopBusy' = TRUE
+    /\ pc' = [pc EXCEPT ![i] = "inlining"]
+    /\ UNCHANGED <<status, jr, cancels, resolved, beats, wcrashes, dcrashes, stalls, lease, ownBlock,
+                   cur, lead, pl, ploc, plead, reprep, inlineMeasured, badCommit>>
+
+CommitInlineEnd(i) ==
+    /\ CommitMeasuresInline
+    /\ pc[i] = "inlining"
+    /\ status = "active"
+    /\ Fenced(i)
+    /\ loopBusy' = FALSE
+    /\ WriteTerminal(i, Len(jr) + CommitLeading(i), TRUE)
+    /\ UNCHANGED <<cancels, resolved, beats, wcrashes, dcrashes, stalls, lease, ownBlock,
+                   cur, lead, pl, ploc, plead, reprep>>
 
 CommitRefuseStale(i) ==
     /\ ~CommitMeasuresInline
@@ -202,32 +263,33 @@ CommitRefuseStale(i) ==
     /\ ~Fresh(i)
     /\ pc' = [pc EXCEPT ![i] = "idle"]
     /\ reprep' = [reprep EXCEPT ![i] = reprep[i] + 1]
-    /\ UNCHANGED <<status, jr, appends, wcrashes, dcrashes, stalls, lease, loopBusy, ownBlock,
-                   cur, ploc, inlineMeasured, badCommit>>
+    /\ UNCHANGED <<status, jr, cancels, resolved, beats, wcrashes, dcrashes, stalls, lease, loopBusy, ownBlock,
+                   cur, lead, pl, ploc, plead, inlineMeasured, badCommit>>
 
 CommitLost(i) ==
     /\ ~NoFence
-    /\ pc[i] = "ready"
+    /\ pc[i] \in {"ready", "inlining"}
     /\ status = "active"
     /\ ~Fenced(i)
     /\ pc' = [pc EXCEPT ![i] = "lost"]
-    /\ UNCHANGED <<status, jr, appends, wcrashes, dcrashes, stalls, lease, loopBusy, ownBlock,
-                   cur, ploc, reprep, inlineMeasured, badCommit>>
+    /\ loopBusy' = (loopBusy /\ pc[i] # "inlining")
+    /\ UNCHANGED <<status, jr, cancels, resolved, beats, wcrashes, dcrashes, stalls, lease, ownBlock,
+                   cur, lead, pl, ploc, plead, reprep, inlineMeasured, badCommit>>
 
 Stop(i) ==
     /\ status = "terminal"
     /\ pc[i] \in Live
     /\ pc' = [pc EXCEPT ![i] = "done"]
-    /\ UNCHANGED <<status, jr, appends, wcrashes, dcrashes, stalls, lease, loopBusy, ownBlock,
-                   cur, ploc, reprep, inlineMeasured, badCommit>>
+    /\ UNCHANGED <<status, jr, cancels, resolved, beats, wcrashes, dcrashes, stalls, lease, loopBusy, ownBlock,
+                   cur, lead, pl, ploc, plead, reprep, inlineMeasured, badCommit>>
 
 ExpireHolderGone ==
     /\ status = "active"
     /\ lease = "held"
     /\ ~HolderAlive
     /\ lease' = "free"
-    /\ UNCHANGED <<status, jr, appends, wcrashes, dcrashes, stalls, loopBusy, ownBlock,
-                   pc, cur, ploc, reprep, inlineMeasured, badCommit>>
+    /\ UNCHANGED <<status, jr, cancels, resolved, beats, wcrashes, dcrashes, stalls, loopBusy, ownBlock,
+                   pc, cur, lead, pl, ploc, plead, reprep, inlineMeasured, badCommit>>
 
 ExpireBlocked ==
     /\ status = "active"
@@ -236,8 +298,8 @@ ExpireBlocked ==
     /\ loopBusy
     /\ lease' = "free"
     /\ ownBlock' = TRUE
-    /\ UNCHANGED <<status, jr, appends, wcrashes, dcrashes, stalls, loopBusy,
-                   pc, cur, ploc, reprep, inlineMeasured, badCommit>>
+    /\ UNCHANGED <<status, jr, cancels, resolved, beats, wcrashes, dcrashes, stalls, loopBusy,
+                   pc, cur, lead, pl, ploc, plead, reprep, inlineMeasured, badCommit>>
 
 ExpireStall ==
     /\ status = "active"
@@ -246,8 +308,8 @@ ExpireStall ==
     /\ stalls < MaxStalls
     /\ stalls' = stalls + 1
     /\ lease' = "free"
-    /\ UNCHANGED <<status, jr, appends, wcrashes, dcrashes, loopBusy, ownBlock,
-                   pc, cur, ploc, reprep, inlineMeasured, badCommit>>
+    /\ UNCHANGED <<status, jr, cancels, resolved, beats, wcrashes, dcrashes, loopBusy, ownBlock,
+                   pc, cur, lead, pl, ploc, plead, reprep, inlineMeasured, badCommit>>
 
 DaemonCrash ==
     /\ status = "active"
@@ -255,13 +317,16 @@ DaemonCrash ==
     /\ dcrashes' = dcrashes + 1
     /\ pc' = [i \in Instances |-> IF pc[i] \in Live THEN "dead" ELSE pc[i]]
     /\ loopBusy' = FALSE
-    /\ UNCHANGED <<status, jr, appends, wcrashes, stalls, lease, ownBlock,
-                   cur, ploc, reprep, inlineMeasured, badCommit>>
+    /\ UNCHANGED <<status, jr, cancels, resolved, beats, wcrashes, stalls, lease, ownBlock,
+                   cur, lead, pl, ploc, plead, reprep, inlineMeasured, badCommit>>
 
 Stutter == UNCHANGED vars
 
 Next ==
-    \/ External
+    \/ Cancel
+    \/ Resolve
+    \/ Keepalive
+    \/ Due
     \/ StartService
     \/ WorkerCrash
     \/ ExpireHolderGone
@@ -275,7 +340,8 @@ Next ==
         \/ LoopMeasureStart(i)
         \/ LoopMeasureEnd(i)
         \/ CommitFresh(i)
-        \/ CommitInline(i)
+        \/ CommitInlineStart(i)
+        \/ CommitInlineEnd(i)
         \/ CommitRefuseStale(i)
         \/ CommitLost(i)
         \/ Stop(i)
@@ -288,7 +354,8 @@ Fairness ==
         /\ WF_vars(LoopMeasureStart(i))
         /\ WF_vars(LoopMeasureEnd(i))
         /\ WF_vars(CommitFresh(i))
-        /\ WF_vars(CommitInline(i))
+        /\ WF_vars(CommitInlineStart(i))
+        /\ WF_vars(CommitInlineEnd(i))
         /\ WF_vars(CommitRefuseStale(i))
         /\ WF_vars(CommitLost(i))
         /\ WF_vars(Stop(i))
@@ -314,7 +381,7 @@ FencedCommit == ~badCommit
 
 LeaseKeptWhileAwaiting == ~ownBlock
 
-RePrepareBounded == \A i \in Instances : reprep[i] <= MaxAppends
+RePrepareBounded == \A i \in Instances : reprep[i] <= 1 + MaxApprovals
 
 Terminates == <>(status = "terminal")
 
