@@ -1,4 +1,5 @@
 import { canonicalJson, sha256Hex } from './canonical-json.ts';
+import { rootUriOf } from './engine-root.ts';
 import { unresolvableReference } from './schema-references.ts';
 import { META_SCHEMA_URIS, dialectOfSchema, dialectOfUri } from './untrusted-dialect.ts';
 import type { SchemaDialect } from './untrusted-dialect.ts';
@@ -13,7 +14,6 @@ export type { UntrustedError } from './untrusted-errors.ts';
 const MAX_CACHED_VALIDATORS = 512;
 const MAX_FAILURE_MESSAGE_CHARS = 200;
 const MAX_SCHEMA_PROBLEMS = 3;
-const SYNTHETIC_ROOT_URI = 'urn:momonga:untrusted-root';
 
 export const cleanFailureMessage = (message: string): string => capText(sanitizeServerText(message), MAX_FAILURE_MESSAGE_CHARS);
 
@@ -60,11 +60,6 @@ const registryOf = (remotes: RemoteDocuments): Record<string, object> =>
     }),
   );
 
-const absoluteIdOf = (schema: Record<string, unknown>): string | undefined => {
-  const id = schema['$id'];
-  return typeof id === 'string' && /^[a-z][a-z0-9+.-]*:/i.test(id) ? id.split('#')[0] : undefined;
-};
-
 type Compilation = { readonly remotes: RemoteDocuments; readonly registry: Record<string, object>; readonly engine: Engine; readonly metas: Map<string, EngineValidator> };
 
 const assertSchemaValid = (schema: Record<string, unknown>, meta: Meta, compilation: Compilation): void => {
@@ -82,13 +77,17 @@ const assertSchemaValid = (schema: Record<string, unknown>, meta: Meta, compilat
 const compileIsolated = (schema: Record<string, unknown>, compilation: Compilation): UntrustedValidate => {
   const meta = metaOf(schema, compilation.remotes);
   assertSchemaValid(schema, meta, compilation);
-  const unresolved = unresolvableReference(schema, meta.dialect, compilation.remotes);
+  const resolvesInEngine = (absolute: string): boolean => {
+    const verdict = compilation.engine.compile({ $ref: absolute }, compilation.registry)(0);
+    return verdict.valid || !verdict.errors.some((error) => error.keyword === '$ref' && error.schemaPath === '#/$ref' && error.params['ref'] === absolute);
+  };
+  const unresolved = unresolvableReference(schema, meta.dialect, compilation.remotes, resolvesInEngine);
   if (unresolved !== undefined) throw new Error(`reference "${unresolved}" cannot be resolved`);
   const root = structuredClone(schema);
   const validate = compilation.engine.compile(root, compilation.registry);
-  const rootUri = absoluteIdOf(root) ?? SYNTHETIC_ROOT_URI;
+  const rootUri = rootUriOf(root);
   const describe = createErrorDescriber({
-    root: absoluteIdOf(root) === undefined ? { ...root, $id: rootUri } : root,
+    root,
     rootUri,
     engine: compilation.engine,
     registry: compilation.registry,

@@ -15,6 +15,7 @@ type Located = { readonly pointer: string; readonly node: unknown };
 type Context = { readonly base: Located; readonly prefix: string; readonly instance: unknown };
 
 const MAX_MESSAGE_CHARS = 200;
+const PROBE_ID = 'urn:momonga:error-probe';
 const VARIANT_KEYWORDS: ReadonlySet<string> = new Set(['anyOf', 'oneOf']);
 const KEY_ALIASES: Readonly<Record<string, string>> = { prefixItems: 'items', $defs: 'definitions' };
 
@@ -89,7 +90,7 @@ export const createErrorDescriber = ({ root, rootUri, engine, registry }: { root
   const probeOf = (branch: Located): EngineValidator => {
     const cached = probes.get(branch.pointer);
     if (cached !== undefined) return cached;
-    const compiled = engine.compile({ $ref: fragmentUri(rootUri, branch.pointer) }, probeRegistry);
+    const compiled = engine.compile({ $id: PROBE_ID, $ref: fragmentUri(rootUri, branch.pointer) }, probeRegistry);
     probes.set(branch.pointer, compiled);
     return compiled;
   };

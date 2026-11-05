@@ -1,3 +1,4 @@
+import { ENGINE_ROOT_BASE } from './engine-root.ts';
 import { dialectOfUri } from './untrusted-dialect.ts';
 import type { SchemaDialect } from './untrusted-dialect.ts';
 
@@ -10,8 +11,6 @@ type State = {
   rootBase: string;
 };
 
-const ENGINE_ROOT_BASE = 'ata://root';
-
 const SINGLE_KEYWORDS = ['additionalProperties', 'contains', 'propertyNames', 'if', 'then', 'else', 'not', 'items', 'unevaluatedItems', 'unevaluatedProperties'] as const;
 const MAP_KEYWORDS = ['$defs', 'definitions', 'properties', 'patternProperties', 'dependentSchemas'] as const;
 const LIST_KEYWORDS = ['allOf', 'anyOf', 'oneOf', 'prefixItems'] as const;
@@ -22,29 +21,6 @@ const DRAFT_07_MAP_SUBSCHEMAS = ['properties', 'patternProperties', '$defs', 'de
 const DRAFT_07_LIST_SUBSCHEMAS = ['allOf', 'anyOf', 'oneOf', 'prefixItems'] as const;
 const DRAFT_07_SINGLE_SUBSCHEMAS = ['items', 'contains', 'not', 'if', 'then', 'else', 'additionalProperties', 'propertyNames'] as const;
 const PLAIN_NAME_ID = /^#[A-Za-z][A-Za-z0-9_.:-]*$/;
-
-const BUILT_IN_METASCHEMAS: ReadonlySet<string> = new Set(
-  [
-    'https://json-schema.org/draft/2020-12/schema',
-    'https://json-schema.org/draft/2020-12/meta/core',
-    'https://json-schema.org/draft/2020-12/meta/applicator',
-    'https://json-schema.org/draft/2020-12/meta/validation',
-    'https://json-schema.org/draft/2020-12/meta/meta-data',
-    'https://json-schema.org/draft/2020-12/meta/format-annotation',
-    'https://json-schema.org/draft/2020-12/meta/content',
-    'https://json-schema.org/draft/2020-12/meta/unevaluated',
-    'http://json-schema.org/draft-07/schema',
-    'http://json-schema.org/draft-04/schema',
-    'http://json-schema.org/draft-06/schema',
-    'https://json-schema.org/draft/2019-09/schema',
-    'https://json-schema.org/draft/2019-09/meta/core',
-    'https://json-schema.org/draft/2019-09/meta/applicator',
-    'https://json-schema.org/draft/2019-09/meta/validation',
-    'https://json-schema.org/draft/2019-09/meta/meta-data',
-    'https://json-schema.org/draft/2019-09/meta/format',
-    'https://json-schema.org/draft/2019-09/meta/content',
-  ].flatMap((id) => [id, id.replace(/^https:/, 'http:'), id.replace(/^http:/, 'https:')]),
-);
 
 const isObject = (value: unknown): value is Json => typeof value === 'object' && value !== null;
 
@@ -197,7 +173,9 @@ const walkPointer = (root: unknown, pointer: string): unknown => {
   return node;
 };
 
-const resolves = (reference: string, fromBase: string, state: State): boolean => {
+export type EngineResolution = (absoluteReference: string) => boolean;
+
+const resolves = (reference: string, fromBase: string, state: State, resolvesInEngine: EngineResolution): boolean => {
   const [uri, fragment] = splitFragment(resolveUri(fromBase, reference));
   let resource = state.resources.get(uri);
   let resourceBase = uri;
@@ -214,14 +192,14 @@ const resolves = (reference: string, fromBase: string, state: State): boolean =>
       if (rawFragment.startsWith('/')) return walkPointer(resource, rawFragment) !== undefined;
       return state.anchors.get(resourceBase)?.get(rawFragment) !== undefined;
     }
-    return BUILT_IN_METASCHEMAS.has(uri);
+    return resolvesInEngine(resolveUri(fromBase, reference));
   }
   if (fragment === '') return true;
   if (fragment.startsWith('/')) return walkPointer(resource, fragment) !== undefined;
   return state.anchors.get(resourceBase)?.get(fragment) !== undefined;
 };
 
-export const unresolvableReference = (schema: Json, dialect: SchemaDialect, remotes: ReadonlyMap<string, unknown>): string | undefined => {
+export const unresolvableReference = (schema: Json, dialect: SchemaDialect, remotes: ReadonlyMap<string, unknown>, resolvesInEngine: EngineResolution): string | undefined => {
   const rootIsDraft07 = dialect === 'draft-07';
   const root = normalized(schema, rootIsDraft07);
   const documents = new Map<string, unknown>();
@@ -245,7 +223,7 @@ export const unresolvableReference = (schema: Json, dialect: SchemaDialect, remo
       const reference = node[keyword];
       if (typeof reference !== 'string') continue;
       try {
-        if (!resolves(reference, base, full)) return reference;
+        if (!resolves(reference, base, full, resolvesInEngine)) return reference;
       } catch {
         return reference;
       }

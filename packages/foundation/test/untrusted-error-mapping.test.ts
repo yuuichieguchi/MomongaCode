@@ -196,3 +196,14 @@ describe('the error mapping on a schema that names its own root by the engine ba
     expect(() => validateUntrusted('error-mapping', schema, { p: true })).toThrow('cannot be resolved');
   });
 });
+
+describe('the error mapping on a root that declares a relative $id', () => {
+  it('probes branches in the same base the engine gives the root', () => {
+    const schema = {
+      $id: 'sub/c.json',
+      $defs: { a: { type: 'object', properties: { n: { type: 'number' } } } },
+      properties: { p: { anyOf: [{ $ref: '#/$defs/a' }, { type: 'string' }] } },
+    };
+    expect(errorsOf(schema, { p: { n: 'x' } })).toEqual([{ instancePath: '/p/n', keyword: 'type', message: 'must be number' }]);
+  });
+});
