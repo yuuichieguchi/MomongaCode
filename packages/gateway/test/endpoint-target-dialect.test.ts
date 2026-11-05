@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { Capabilities, ConstructSupport, ProbeReport } from '@momonga/protocol';
+import type { ConstructSupport, ProbeReport } from '@momonga/protocol';
+import type { DeclaredCapabilities } from '../src/probe/decide.ts';
 import { createProbedEndpointTarget } from '../src/probe/endpoint-target.ts';
-import type { ProbedEndpointTargetOptions } from '../src/probe/endpoint-target.ts';
 import { CC_CAPABILITIES } from './cc-support.ts';
 import { makeReport } from './report-fixture.ts';
 
@@ -15,12 +15,12 @@ const reportOf = (schemaDialect: ProbeReport['schemaDialect'], constructSupport?
 const SELECTED_EXPLICIT = reportOf({ selected: 'explicit-keys', shape: 'union', tried: [{ id: 'explicit-keys', result: 'accepted' }] }, CONSTRUCTS);
 const SELECTED_2020 = reportOf({ selected: 'json-schema-2020-12', shape: 'union', tried: [{ id: 'json-schema-2020-12', result: 'accepted' }] });
 
-const targetOf = (targetName: string, declared: Partial<Capabilities>, report: ProbeReport | null) =>
+const targetOf = (targetName: string, declared: DeclaredCapabilities, report: ProbeReport | null) =>
   createProbedEndpointTarget({
     targetName,
     endpoint: 'unix:/nowhere',
     model: 'm',
-    declared: declared as ProbedEndpointTargetOptions['declared'],
+    declared,
     record: report === null ? null : { identity: 'id', identityFields: [], report },
     readIdentity: async () => 'id',
     saveRecord: async () => undefined,
@@ -34,9 +34,9 @@ describe('one resolution of the dialect id: declared, else the record, else json
   });
 
   it('hands the recorded construct table to the adapter beside the keyword table', () => {
-    const target = targetOf('remote', UNDECLARED, SELECTED_EXPLICIT) as ReturnType<typeof targetOf> & { constructSupport: () => ConstructSupport | undefined };
+    const target = targetOf('remote', UNDECLARED, SELECTED_EXPLICIT);
     expect(target.constructSupport()).toEqual(CONSTRUCTS);
-    const unmeasured = targetOf('remote', UNDECLARED, SELECTED_2020) as typeof target;
+    const unmeasured = targetOf('remote', UNDECLARED, SELECTED_2020);
     expect(unmeasured.constructSupport()).toBeUndefined();
   });
 

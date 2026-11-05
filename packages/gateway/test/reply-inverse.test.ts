@@ -14,12 +14,9 @@ import { FAKE_API_KEY, REMOTE_CAPABILITIES } from './upstream-gateway-support.ts
 const EDIT_RECORD: WrapRecord = { tool: 'edit', wrapped: [{ at: [], property: 'note' }] };
 const VIEW_RECORD: WrapRecord = { tool: 'view', wrapped: [{ at: [], property: 'path' }] };
 
-type EmitterOptions = ConstructorParameters<typeof ResponseEmitter>[0];
-
 const emitterWith = (wraps: ReadonlyMap<string, WrapRecord> | undefined) => {
   const request: AdapterRequest = { model: 'm', input: [] };
-  const options = { clock: createFakeClock(START_MS), model: 'm', request, ...(wraps === undefined ? {} : { wraps }) } as EmitterOptions;
-  const emitter = new ResponseEmitter(options);
+  const emitter = new ResponseEmitter({ clock: createFakeClock(START_MS), model: 'm', request, ...(wraps === undefined ? {} : { wraps }) });
   emitter.start();
   emitter.take();
   return emitter;

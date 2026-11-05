@@ -28,7 +28,9 @@ import { upstreamErrorEventBody, upstreamErrorFailure } from './upstream-reply.t
 import type { ChatCompletionsAdapter, ChatCompletionsAdapterOptions } from './types.ts';
 import { wireOf } from './wire.ts';
 import type { ChatWire } from './wire.ts';
-import { FULL_KEYWORD_SUPPORT } from '../../probe/lowering.ts';
+import { NO_USER_DIALECTS, resolveDialect } from '../../dialect/choice.ts';
+import { RenderLedger } from '../../dialect/ledger.ts';
+import { FULL_KEYWORD_SUPPORT } from '../../dialect/keyword-support.ts';
 
 const DONE_MARKER = '[DONE]';
 
@@ -66,17 +68,24 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
     origin: ReasoningOrigin,
     capabilities: Capabilities,
     allowedTools: readonly AllowedToolsForm[] | undefined,
-  ): { body: ChatRequestBody; envelope: ConstrainedPlan | undefined } => {
+  ): { body: ChatRequestBody; envelope: ConstrainedPlan | undefined; ledger: RenderLedger } => {
     const mode = modeOf(capabilities);
     const hasTools = (request.tools ?? []).length > 0;
     if (mode === 'none' && hasTools) {
       throw new UnsupportedInputError('capability_unsupported', 'this target does not support tool calling', 'tools');
     }
-    const dialect = options.schemaDialect(target);
+    const dialect = resolveDialect(options.schemaDialect(target), options.userDialects ?? NO_USER_DIALECTS, options.constructSupport?.(target));
     if (mode === 'constrained') {
-      return buildConstrainedBody(resolveToolChoice(request, allowedTools, target.name, toolChoiceWire(capabilities, target)), options.keywordSupport?.(target) ?? FULL_KEYWORD_SUPPORT, origin, dialect);
+      return buildConstrainedBody(
+        resolveToolChoice(request, allowedTools, target.name, toolChoiceWire(capabilities, target)),
+        options.keywordSupport?.(target) ?? FULL_KEYWORD_SUPPORT,
+        origin,
+        dialect,
+        options.envelopeShape?.(target),
+      );
     }
-    return { body: buildNativeBody(resolveToolChoice(request, allowedTools, target.name, toolChoiceWire(capabilities, target)), origin, dialect), envelope: undefined };
+    const ledger = new RenderLedger();
+    return { body: buildNativeBody(resolveToolChoice(request, allowedTools, target.name, toolChoiceWire(capabilities, target)), origin, dialect, ledger), envelope: undefined, ledger };
   };
 
   const lenientWireOf = (request: AdapterRequest, target: AdapterTarget, lenient: LenientItems, origin: ReasoningOrigin, capabilities: Capabilities): ChatWire => {
@@ -101,7 +110,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
     if (closed) throw new Error('the chat-completions adapter is closed');
     const capabilities = ctx.capabilities;
     const planned = bodyFor(request, ctx.target, ctx.reasoningOrigin, capabilities, capabilities.allowedTools);
-    const { envelope } = planned;
+    const { envelope, ledger } = planned;
     const body = withCapabilityOptions(planned.body, request, capabilities);
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
@@ -128,7 +137,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
         );
       }
 
-      const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request, ...retryAfterHint(response, options.clock) });
+      const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request, wraps: ledger.wraps, narrowings: ledger.narrowings, ...retryAfterHint(response, options.clock) });
       const sink = envelope === undefined ? createNativeSink(emitter) : createConstrainedSink(emitter, envelope, options.clock);
       const driver = new StreamDriver(emitter, sink);
 

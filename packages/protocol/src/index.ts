@@ -5,6 +5,7 @@ export type {
   SamplingCapability,
   SamplingField,
   TopPRange,
+  AliasCapabilities,
   Capabilities,
   CapabilitiesCore,
   CapabilityOverride,

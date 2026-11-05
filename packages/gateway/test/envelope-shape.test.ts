@@ -10,7 +10,7 @@ const TOOLS = [
 ];
 
 const envelopeOf = (shape: 'union' | 'flat') =>
-  (buildToolsEnvelope as (...args: unknown[]) => Record<string, unknown>)(TOOLS, SUPPORT_ALL, false, 'json-schema-2020-12', shape);
+  buildToolsEnvelope(TOOLS, SUPPORT_ALL, false, 'json-schema-2020-12', shape);
 
 describe('envelopeAround follows the recorded shape, not support.anyOf (rule 4)', () => {
   it('builds the flat envelope when the record says flat, although anyOf is supported', () => {

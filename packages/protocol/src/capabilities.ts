@@ -157,6 +157,8 @@ export type CapabilitiesCore = {
 
 export type Capabilities = CapabilitiesCore & ImageCapability;
 
+export type AliasCapabilities = Omit<Capabilities, 'schemaDialect'> & { schemaDialect?: DialectId };
+
 export type StructuredOutputVerdict = { ok: true } | { ok: false; reason: string };
 
 export const requireStructuredOutput = (capabilities: Pick<Capabilities, 'structuredOutput'>, setting: string, alias: string): StructuredOutputVerdict =>

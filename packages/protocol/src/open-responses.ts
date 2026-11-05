@@ -253,6 +253,7 @@ export type ResponseResource = {
   momonga?: MomongaResponseExtension;
   contextInputTokens?: number;
   cacheWriteInputTokens?: number;
+  schemaNarrowings?: SchemaNarrowing[];
 };
 
 export type PromptCacheCounts = { stable: number; fixed: number; previousHistory?: number; history: number };

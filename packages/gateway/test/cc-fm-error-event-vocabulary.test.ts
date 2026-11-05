@@ -8,6 +8,7 @@ import type { FakeChatCompletionsServer, FakeScriptedReply } from '@momonga/test
 import { START_MS, makeDir, postJson, readJson, readSse, registerCleanup, startGateway } from './gateway-helpers.ts';
 import { collect, makeAdapter, userText } from './cc-support.ts';
 import { makeReport } from './report-fixture.ts';
+import { CURRENT_DIALECTS } from './dialect-currency.ts';
 
 const RECORD_KEY = { target: 'fm', binarySha256: 'cd'.repeat(32), osBuild: '25A100' };
 
@@ -27,7 +28,7 @@ const fmAdapter = async (fake: FakeChatCompletionsServer, report?: ProbeReport) 
     health: async (): Promise<HealthResult> => ({ ok: true }),
   };
   const probeRecordDir = path.join(makeDir(), 'probe');
-  if (report !== undefined) await saveProbeRecord(probeRecordDir, RECORD_KEY, report);
+  if (report !== undefined) await saveProbeRecord(probeRecordDir, RECORD_KEY, report, CURRENT_DIALECTS);
   const managed = await createManagedFmTarget({
     fmServe,
     binary: '/opt/fake/fm',

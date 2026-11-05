@@ -11,6 +11,7 @@ const REPORT = {
   nativeTools: { accepted: true, validRate: 1, roundTripOk: true },
   constrained: { accepted: true, validRate: 0.5 },
   keywordSupport: { enum: true, anyOf: true, const: true, pattern: true, minimum: true, nested: true, additionalProperties: true },
+  schemaDialect: { selected: 'json-schema-2020-12', shape: 'union', tried: [{ id: 'json-schema-2020-12', result: 'accepted' }] },
   stopSequences: true,
   maxConcurrency: 1,
   imageInputAccepted: false,
@@ -26,6 +27,7 @@ const OLLAMA_REPORT = {
   nativeTools: { accepted: true },
   imageInputAccepted: false,
   thinkingSupported: false,
+  schemaDialect: { selected: null, shape: null, tried: [] },
 };
 
 const without = (record: Record<string, unknown>, key: string): Record<string, unknown> => Object.fromEntries(Object.entries(record).filter(([name]) => name !== key));

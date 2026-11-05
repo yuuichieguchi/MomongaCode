@@ -11,7 +11,7 @@ afterEach(async () => {
 const probeWith = async (options: FakeChatCompletionsOptions) => {
   const fake = await startFakeChatCompletions(options);
   servers.push(fake);
-  const report = await runProbe({ schemaDialect: 'json-schema-2020-12', socketPath: fake.socketPath, managedHealthRoute: true, samples: 2 });
+  const report = await runProbe({ socketPath: fake.socketPath, managedHealthRoute: true, samples: 2 });
   return { report, fake };
 };
 

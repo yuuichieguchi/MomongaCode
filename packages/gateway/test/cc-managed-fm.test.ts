@@ -84,7 +84,7 @@ const setup = async (config: Setup = {}) => {
   const dir = makeDir();
   const socketPath = path.join(dir, 'fm.sock');
   const recordDir = path.join(dir, 'probe');
-  if (config.report !== undefined) await (saveProbeRecord as (...args: unknown[]) => Promise<void>)(recordDir, RECORD_KEY, config.report, { userDialects: {}, probeMethod: PROBE_METHOD_VERSION });
+  if (config.report !== undefined) await saveProbeRecord(recordDir, RECORD_KEY, config.report, { userDialects: {}, probeMethod: PROBE_METHOD_VERSION });
   const clock = createFakeClock(START_MS);
   const children: FakeFmChild[] = [];
   const spawn = vi.fn((_file: string, _args: readonly string[]) => {
@@ -182,7 +182,7 @@ describe('createManagedFmTarget probe-derived settings', () => {
   it('hands the recorded construct table to the adapter', async () => {
     const constructSupport = { ref: 'accepted', typeArray: 'accepted', mixedEnum: 'refused' } as const;
     const { managed } = await setup({ report: { ...makeReport(0.5, 1), constructSupport } as ProbeReport });
-    expect((managed as ManagedFmTarget & { constructSupport: (target: typeof TARGET) => unknown }).constructSupport(TARGET)).toEqual(constructSupport);
+    expect(managed.constructSupport(TARGET)).toEqual(constructSupport);
   });
 
   it('resolves an unprobed target that declares no dialect to json-schema-2020-12', async () => {

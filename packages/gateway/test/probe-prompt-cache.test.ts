@@ -100,12 +100,12 @@ const startCachingServer = async (fake: FakeChatCompletionsServer, behaviour: Ca
 const probeThrough = async (behaviour: CachingBehaviour): Promise<ProbeReport> => {
   const fake = await startFake();
   const socketPath = await startCachingServer(fake, behaviour);
-  return runProbe({ schemaDialect: 'json-schema-2020-12', socketPath, samples: 2, now: NOW });
+  return runProbe({ socketPath, samples: 2, now: NOW });
 };
 
 const plainReport = async (): Promise<ProbeReport> => {
   const fake = await startFake();
-  return runProbe({ schemaDialect: 'json-schema-2020-12', socketPath: fake.socketPath, samples: 2, now: NOW });
+  return runProbe({ socketPath: fake.socketPath, samples: 2, now: NOW });
 };
 
 describe('the probe sends one request twice and records the prompt cache from the second answer', () => {

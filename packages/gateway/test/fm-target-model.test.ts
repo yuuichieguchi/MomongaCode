@@ -4,6 +4,7 @@ import type { FmServe, ProbeRecordKey } from '@momonga/gateway';
 import { startFakeChatCompletions, type FakeChatCompletionsServer } from '@momonga/testkit';
 import { makeDir } from './gateway-helpers.ts';
 import { makeReport } from './report-fixture.ts';
+import { CURRENT_DIALECTS } from './dialect-currency.ts';
 
 const RECORD_KEY: ProbeRecordKey = { target: 'fm', binarySha256: 'ab'.repeat(32), osBuild: '25A100' };
 const LISTED = 'listed-by-fm';
@@ -33,7 +34,7 @@ const startListing = async (): Promise<{ fake: FakeChatCompletionsServer; fmServ
 
 const targetOf = async (fmServe: FmServe, extra: { declaredModel?: string; declaredOutputBoundField?: 'max_tokens' | 'max_completion_tokens'; report?: ReturnType<typeof makeReport> } = {}) => {
   const probeRecordDir = makeDir();
-  if (extra.report !== undefined) await saveProbeRecord(probeRecordDir, RECORD_KEY, extra.report);
+  if (extra.report !== undefined) await saveProbeRecord(probeRecordDir, RECORD_KEY, extra.report, CURRENT_DIALECTS);
   return createManagedFmTarget({
     fmServe,
     binary: '/usr/bin/fm',

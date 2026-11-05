@@ -1,5 +1,7 @@
 import { isRecord } from '@momonga/foundation';
-import type { OllamaProbeReport } from '@momonga/protocol';
+import type { DialectId, OllamaProbeReport } from '@momonga/protocol';
+import { NO_USER_DIALECTS } from '../dialect/choice.ts';
+import type { UserDialects } from '../dialect/choice.ts';
 import type { UpstreamEndpoint } from '../adapters/shared/http-client.ts';
 import { buildOllamaChatBody } from '../adapters/ollama/request.ts';
 import { NO_REASONING_IS_OWN } from '../adapters/shared/reasoning-origin.ts';
@@ -11,6 +13,10 @@ import { saveEndpointRecord } from './endpoint-record.ts';
 import type { EndpointKey } from './endpoint-record.ts';
 import { IDENTITY_READ_TIMEOUT_MS, probeEndpointOf } from './endpoint-target.ts';
 import { cachedCountOf } from './cached-count.ts';
+import { maxOutputTokensFor } from './decide.ts';
+import { DEFAULT_SAMPLES, PROBE_METHOD_VERSION } from './run-probe.ts';
+import { messagesOf, selectDialect } from './select-dialect.ts';
+import type { SelectionTransport } from './select-dialect.ts';
 import { IMAGE_PROMPT, measureImageTokens } from './image-tokens.ts';
 import type { ImageCostProbe } from './image-tokens.ts';
 import { parseJson } from './json.ts';
@@ -21,6 +27,9 @@ export type ProbeOllamaTargetOptions = {
   key: EndpointKey;
   model: string;
   contextWindow: number;
+  samples?: number;
+  userDialects?: UserDialects;
+  declaredDialect?: DialectId;
   signal?: AbortSignal;
 };
 
@@ -165,6 +174,29 @@ const measurePromptCache = async (client: ProbeClient, model: string, contextWin
   return { kind: cached > 0 ? 'automatic' : 'none' };
 };
 
+const ABSENT_STATUSES: readonly number[] = [404, 501];
+
+const ollamaTransport = (client: ProbeClient, model: string, contextWindow: number): SelectionTransport => ({
+  legs: { responseFormat: true, tools: false },
+  request: async (request) => {
+    if (request.kind === 'tools' || request.kind === 'construct-tools') throw new Error('the Ollama dialect step has no tools leg');
+    const result = await client.request('POST', CHAT_PATH, {
+      model,
+      messages: messagesOf(request),
+      stream: false,
+      truncate: false,
+      options: { num_ctx: contextWindow, num_predict: maxOutputTokensFor(contextWindow) },
+      format: request.schema,
+    });
+    if (ABSENT_STATUSES.includes(result.status)) return { kind: 'absent' };
+    if (result.status >= 400 && result.status < 500) return { kind: 'refused', detail: result.text.slice(0, 500) };
+    if (result.status !== 200) throw new UpstreamHttpError(result.status, null, `POST ${CHAT_PATH} was refused for the dialect step: ${result.text}`, undefined, false);
+    const message = (parseJson(result.text) as { message?: unknown } | undefined)?.message;
+    const content = isRecord(message) ? message['content'] : undefined;
+    return { kind: 'ok', content: typeof content === 'string' ? content : undefined };
+  },
+});
+
 export const probeOllamaTarget = async (options: ProbeOllamaTargetOptions): Promise<ProbeOllamaTargetResult> => {
   const { model, upstream } = options;
   const signal = options.signal ?? new AbortController().signal;
@@ -187,6 +219,19 @@ export const probeOllamaTarget = async (options: ProbeOllamaTargetOptions): Prom
     ? await withClient(upstream, signal, (client) => measureImageTokens(imageCostProbeOf(client, model, options.contextWindow)), CACHE_PROBE_TIMEOUT_MS)
     : undefined;
   const promptCache = await withClient(upstream, signal, (client) => measurePromptCache(client, model, options.contextWindow), CACHE_PROBE_TIMEOUT_MS);
+  const userDialects = options.userDialects ?? NO_USER_DIALECTS;
+  const selection = await withClient(
+    upstream,
+    signal,
+    (client) =>
+      selectDialect({
+        transport: ollamaTransport(client, model, options.contextWindow),
+        samples: options.samples ?? DEFAULT_SAMPLES,
+        userDialects,
+        declaredDialect: options.declaredDialect,
+      }),
+    CACHE_PROBE_TIMEOUT_MS,
+  );
   const report: OllamaProbeReport = {
     kind: 'ollama',
     probedAt: new Date().toISOString(),
@@ -197,9 +242,14 @@ export const probeOllamaTarget = async (options: ProbeOllamaTargetOptions): Prom
     imageInputAccepted,
     ...(imageTokens === undefined ? {} : { imageTokens }),
     thinkingSupported: capabilities.includes('thinking'),
+    schemaDialect: selection.dialect,
     ...(promptCache === undefined ? {} : { promptCache }),
   };
   const { key } = options;
-  await saveEndpointRecord(options.probeRecordDir, key, identity, [], report);
+  await saveEndpointRecord(options.probeRecordDir, key, identity, [], report, {
+    userDialects,
+    probeMethod: PROBE_METHOD_VERSION,
+    ...(options.declaredDialect === undefined ? {} : { declaredDialect: options.declaredDialect }),
+  });
   return { report, key, identity };
 };

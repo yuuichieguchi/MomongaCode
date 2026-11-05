@@ -1,10 +1,10 @@
 import { createUdsClient, isRecord } from '@momonga/foundation';
-import type { Capabilities, MomongaModelEntry, MomongaModelList, UsageReport } from '@momonga/protocol';
+import type { AliasCapabilities, Capabilities, MomongaModelEntry, MomongaModelList, UsageReport } from '@momonga/protocol';
 
 export type GatewayClient = {
   models(): Promise<readonly MomongaModelEntry[]>;
   modelOf(alias: string): Promise<MomongaModelEntry>;
-  capabilitiesOf(alias: string): Promise<Capabilities>;
+  capabilitiesOf(alias: string): Promise<AliasCapabilities>;
   contextWindowOf(alias: string): Promise<number>;
   usageOf(runId: string): Promise<UsageReport>;
   close(): Promise<void>;
@@ -80,7 +80,7 @@ export const createGatewayClient = (options: { socketPath: string }): GatewayCli
     return entry;
   };
 
-  const capabilitiesOf = async (alias: string): Promise<Capabilities> => (await modelOf(alias)).capabilities;
+  const capabilitiesOf = async (alias: string): Promise<AliasCapabilities> => (await modelOf(alias)).capabilities;
 
   const contextWindowOf = async (alias: string): Promise<number> => (await capabilitiesOf(alias)).contextWindow;
 

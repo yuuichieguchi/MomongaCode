@@ -42,8 +42,8 @@ const NONE_OF_BUILTINS = reportSelecting(null, [
 const NONE_WITH_MINE = reportSelecting(null, [...NONE_OF_BUILTINS.schemaDialect.tried.map(({ id, result }) => ({ id, result: result as 'refused' })), { id: 'mine', result: 'refused' }]);
 
 const save = (dir: string, report: ProbeReport, currency: Currency) =>
-  (saveProbeRecord as (...args: unknown[]) => Promise<void>)(dir, key, report, currency);
-const load = (dir: string, currency: Currency) => (loadProbeRecord as (...args: unknown[]) => Promise<ProbeReport | null>)(dir, key, currency);
+  saveProbeRecord(dir, key, report, currency);
+const load = (dir: string, currency: Currency) => loadProbeRecord(dir, key, currency);
 
 const rewrite = (file: string, change: (stored: Record<string, unknown>) => Record<string, unknown>) => {
   fs.writeFileSync(file, JSON.stringify(change(JSON.parse(fs.readFileSync(file, 'utf8')))));
@@ -107,9 +107,9 @@ describe('record invalidation of the fm record (rule 7)', () => {
 
 describe('record invalidation of the endpoint record (rule 7)', () => {
   const saveEndpoint = (dir: string, report: ProbeReport, currency: Currency) =>
-    (saveEndpointRecord as (...args: unknown[]) => Promise<void>)(dir, endpointKey, 'identity', ['id'], report, currency);
+    saveEndpointRecord(dir, endpointKey, 'identity', ['id'], report, currency);
   const loadEndpoint = (dir: string, currency: Currency) =>
-    (loadEndpointRecord as (...args: unknown[]) => Promise<{ report: ProbeReport } | null>)(dir, endpointKey, currency);
+    loadEndpointRecord(dir, endpointKey, currency);
   const fileOf = (dir: string) => path.join(dir, endpointRecordFileName(endpointKey));
 
   it('writes both fields and loads the record back', async () => {

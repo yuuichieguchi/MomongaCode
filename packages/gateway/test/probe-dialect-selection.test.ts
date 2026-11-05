@@ -20,7 +20,7 @@ const isRecord = (value: unknown): value is Json => typeof value === 'object' &&
 const probe = async (options: FakeChatCompletionsOptions, extra: Json = {}): Promise<{ report: ProbeReport; fake: FakeChatCompletionsServer }> => {
   const fake = await startFakeChatCompletions(options);
   servers.push(fake);
-  const report = await runProbe({ socketPath: fake.socketPath, managedHealthRoute: true, now: fixedNow, samples: 2, ...extra } as Parameters<typeof runProbe>[0]);
+  const report = await runProbe({ socketPath: fake.socketPath, managedHealthRoute: true, now: fixedNow, samples: 2, ...extra });
   return { report, fake };
 };
 

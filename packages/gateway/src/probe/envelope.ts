@@ -1,11 +1,17 @@
 import type { ProbeKeyword } from '@momonga/protocol';
+import { resolvedOf, withKeywordSupport } from '../dialect/choice.ts';
+import type { DialectChoice } from '../dialect/choice.ts';
+import type { RenderLedger } from '../dialect/ledger.ts';
+import type { KeywordSupport } from '../dialect/keyword-support.ts';
+import { renderSchema } from '../dialect/render.ts';
+import { renderToolParameters } from '../dialect/tool-render.ts';
 import type { JsonObject } from './json.ts';
-import { lowerSchema, type KeywordSupport } from './lowering.ts';
-import { renderAssembled, type SchemaDialect } from './schema-dialect.ts';
+
+export type EnvelopeShape = 'union' | 'flat';
 
 export interface ProbeTool {
   name: string;
-  parameters: JsonObject;
+  parameters?: JsonObject | null | undefined;
 }
 
 const literal = (value: string, support: KeywordSupport): JsonObject => {
@@ -14,16 +20,18 @@ const literal = (value: string, support: KeywordSupport): JsonObject => {
   return { type: 'string' };
 };
 
-const callSchema = (tool: ProbeTool, support: KeywordSupport): JsonObject => ({
+const argumentsOf = (tool: ProbeTool, support: KeywordSupport, dialect: DialectChoice, ledger: RenderLedger | undefined): unknown => {
+  if (!support.nested) return { type: 'object' };
+  return renderToolParameters(tool, withKeywordSupport(dialect, support), ledger).schema ?? { type: 'object' };
+};
+
+const callSchema = (tool: ProbeTool, support: KeywordSupport, dialect: DialectChoice, ledger: RenderLedger | undefined): JsonObject => ({
   type: 'object',
-  properties: {
-    name: literal(tool.name, support),
-    arguments: support.nested ? lowerSchema(tool.parameters, support) : { type: 'object' },
-  },
+  properties: { name: literal(tool.name, support), arguments: argumentsOf(tool, support, dialect, ledger) },
   required: ['name', 'arguments'],
 });
 
-const envelopeAround = (calls: JsonObject, support: KeywordSupport, requireToolCalls: boolean): JsonObject => {
+const envelopeAround = (calls: JsonObject, support: KeywordSupport, requireToolCalls: boolean, shape: EnvelopeShape): JsonObject => {
   if (requireToolCalls) {
     return {
       type: 'object',
@@ -31,7 +39,7 @@ const envelopeAround = (calls: JsonObject, support: KeywordSupport, requireToolC
       required: ['kind', 'calls'],
     };
   }
-  if (!support.anyOf) {
+  if (shape === 'flat') {
     return {
       type: 'object',
       properties: {
@@ -43,7 +51,6 @@ const envelopeAround = (calls: JsonObject, support: KeywordSupport, requireToolC
     };
   }
   return {
-    type: 'object',
     anyOf: [
       {
         type: 'object',
@@ -59,16 +66,16 @@ const envelopeAround = (calls: JsonObject, support: KeywordSupport, requireToolC
   };
 };
 
-export const buildToolCallEnvelope = (tool: ProbeTool, support: KeywordSupport, dialect: SchemaDialect): JsonObject =>
-  renderAssembled(
-    envelopeAround({ type: 'array', minItems: 1, maxItems: 1, items: callSchema(tool, support) }, support, false),
-    dialect,
-  );
-
-const callItemsFor = (tools: readonly ProbeTool[], support: KeywordSupport): JsonObject => {
+const callItemsFor = (
+  tools: readonly ProbeTool[],
+  support: KeywordSupport,
+  shape: EnvelopeShape,
+  dialect: DialectChoice,
+  ledger: RenderLedger | undefined,
+): JsonObject => {
   const [only] = tools;
-  if (tools.length === 1 && only !== undefined) return callSchema(only, support);
-  if (support.anyOf) return { anyOf: tools.map((tool) => callSchema(tool, support)) };
+  if (tools.length === 1 && only !== undefined) return callSchema(only, support, dialect, ledger);
+  if (shape === 'union' && support.anyOf) return { anyOf: tools.map((tool) => callSchema(tool, support, dialect, ledger)) };
   const names = tools.map((tool) => tool.name);
   return {
     type: 'object',
@@ -81,13 +88,13 @@ export const buildToolsEnvelope = (
   tools: readonly ProbeTool[],
   support: KeywordSupport,
   requireToolCalls: boolean,
-  dialect: SchemaDialect,
+  dialect: DialectChoice,
+  shape: EnvelopeShape,
+  ledger?: RenderLedger,
 ): JsonObject => {
   if (tools.length === 0) throw new RangeError('buildToolsEnvelope: at least one tool is required');
-  return renderAssembled(
-    envelopeAround({ type: 'array', minItems: 1, items: callItemsFor(tools, support) }, support, requireToolCalls),
-    dialect,
-  );
+  const assembled = envelopeAround({ type: 'array', minItems: 1, items: callItemsFor(tools, support, shape, dialect, ledger) }, support, requireToolCalls, shape);
+  return renderSchema(assembled, { kind: 'response-format' }, resolvedOf(dialect)).schema as JsonObject;
 };
 
 export const keywordProbeSchemas: Record<ProbeKeyword, JsonObject> = {

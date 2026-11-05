@@ -53,6 +53,7 @@ export type OllamaProbeReport = {
   imageInputAccepted: boolean;
   imageTokens?: ImageTokenModel;
   thinkingSupported: boolean;
+  schemaDialect: ProbeReportDialect;
   promptCache?: { kind: 'automatic' | 'none' };
   reasoning?: undefined;
 };

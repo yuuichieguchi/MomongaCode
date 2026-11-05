@@ -1,11 +1,12 @@
-import type { SchemaDialect } from './schema-dialect.ts';
-import type { ProbeReport, ToolCallingMode } from '@momonga/protocol';
+import type { DialectId, ProbeReport, ToolCallingMode } from '@momonga/protocol';
+import { NO_USER_DIALECTS } from '../dialect/choice.ts';
+import type { UserDialects } from '../dialect/choice.ts';
 import type { UpstreamEndpoint } from '../adapters/shared/http-client.ts';
 import { decideToolCalling } from './decide.ts';
 import { endpointIdentityOf, saveEndpointRecord, stableIdentityFieldsOf } from './endpoint-record.ts';
 import type { EndpointKey } from './endpoint-record.ts';
 import { probeEndpointOf, readModelsListing } from './endpoint-target.ts';
-import { runProbe } from './run-probe.ts';
+import { PROBE_METHOD_VERSION, runProbe } from './run-probe.ts';
 
 export type ProbeEndpointTargetOptions = {
   probeRecordDir: string;
@@ -13,7 +14,8 @@ export type ProbeEndpointTargetOptions = {
   key: EndpointKey;
   model: string;
   apiKey: string | undefined;
-  schemaDialect: SchemaDialect;
+  userDialects?: UserDialects;
+  declaredDialect?: DialectId;
   samples?: number;
   signal?: AbortSignal;
 };
@@ -33,7 +35,8 @@ export const probeEndpointTarget = async (options: ProbeEndpointTargetOptions): 
   const report = await runProbe({
     ...(endpoint.kind === 'unix' ? { socketPath: endpoint.socketPath } : { baseUrl: endpoint.baseUrl, ...(endpoint.headers === undefined ? {} : { headers: endpoint.headers }) }),
     model: options.model,
-    schemaDialect: options.schemaDialect,
+    ...(options.userDialects === undefined ? {} : { userDialects: options.userDialects }),
+    ...(options.declaredDialect === undefined ? {} : { declaredDialect: options.declaredDialect }),
     signal,
     ...(options.samples === undefined ? {} : { samples: options.samples }),
   });
@@ -41,6 +44,10 @@ export const probeEndpointTarget = async (options: ProbeEndpointTargetOptions): 
   const identityFields = stableIdentityFieldsOf(firstListing, secondListing, options.model);
   const identity = endpointIdentityOf(firstListing, options.model, identityFields);
   const { key } = options;
-  await saveEndpointRecord(options.probeRecordDir, key, identity, identityFields, report);
+  await saveEndpointRecord(options.probeRecordDir, key, identity, identityFields, report, {
+    userDialects: options.userDialects ?? NO_USER_DIALECTS,
+    probeMethod: PROBE_METHOD_VERSION,
+    ...(options.declaredDialect === undefined ? {} : { declaredDialect: options.declaredDialect }),
+  });
   return { report, toolCalling: decideToolCalling(report).mode, key, identity, identityFields };
 };

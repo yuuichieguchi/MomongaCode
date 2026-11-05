@@ -11,6 +11,7 @@ import { HMAC_KEY, START_MS, TEST_VERSION, buildConfig, makeDir, registerCleanup
 import { CC_CAPABILITIES, TARGET } from './cc-support.ts';
 import { saveProbeRecord } from '@momonga/gateway';
 import { makeReport } from './report-fixture.ts';
+import { CURRENT_DIALECTS } from './dialect-currency.ts';
 
 const KEY: ProbeRecordKey = { target: 'fm', binarySha256: 'ef'.repeat(32), osBuild: '25A100' };
 const userRequest = { model: 'fast', input: [{ type: 'message' as const, role: 'user' as const, content: 'x' }] };
@@ -182,7 +183,7 @@ describe('adapter and gateway shutdown', () => {
 describe('count-tokens', () => {
   const calibrated = async (ratio: number, counted: string, signals: AbortSignal[]) => {
     const dir = makeDir();
-    await saveProbeRecord(dir, KEY, { ...makeReport(1, 1), tokenCalibration: { ratio, errorBound: 0.1 } });
+    await saveProbeRecord(dir, KEY, { ...makeReport(1, 1), tokenCalibration: { ratio, errorBound: 0.1 } }, CURRENT_DIALECTS);
     return createManagedFmTarget({
       fmServe: { restarts: 0, start: async () => ({ kind: 'unix', socketPath: '/s' }), ensureRunning: async () => ({ kind: 'unix', socketPath: '/s' }), stop: async () => undefined, health: async () => ({ ok: true }) },
       binary: '/usr/bin/fm',

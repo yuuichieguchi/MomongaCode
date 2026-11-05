@@ -91,7 +91,7 @@ describe('the construct-table getter of the chat-completions adapter (decision e
 
   it('fails a tool whose $ref the table records refused before any request, naming the tool and the path', async () => {
     const fake = await startFake({ scenario: 'tools-ok', script: [textReply('ok')] });
-    const adapter = makeAdapter(fake, { constructSupport: () => ({ ref: 'refused', typeArray: 'accepted', mixedEnum: 'accepted' }) } as never);
+    const adapter = makeAdapter(fake, { constructSupport: () => ({ ref: 'refused', typeArray: 'accepted', mixedEnum: 'accepted' }) });
     const { error } = await collect(adapter, toolRequest('fetch', REF_PARAMETERS));
     expect(error).toMatchObject({ code: 'unsupported_tool_schema', reason: 'construct', tool: 'fetch', path: '/properties/r' });
     expect(completionBodies(fake)).toEqual([]);
@@ -99,7 +99,7 @@ describe('the construct-table getter of the chat-completions adapter (decision e
 
   it('fails the same tool in constrained mode before any request', async () => {
     const fake = await startFake({ scenario: 'json-schema-only', script: [textReply('ok')] });
-    const adapter = makeAdapter(fake, { constructSupport: () => ({ ref: 'refused', typeArray: 'accepted', mixedEnum: 'accepted' }) } as never, 'constrained');
+    const adapter = makeAdapter(fake, { constructSupport: () => ({ ref: 'refused', typeArray: 'accepted', mixedEnum: 'accepted' }) }, 'constrained');
     const { error } = await collect(adapter, toolRequest('fetch', REF_PARAMETERS));
     expect(error).toMatchObject({ code: 'unsupported_tool_schema', reason: 'construct', tool: 'fetch' });
     expect(completionBodies(fake)).toEqual([]);

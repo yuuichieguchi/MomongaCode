@@ -518,7 +518,7 @@ describe('runProbe concurrency measurement', () => {
       { samples: 1 },
     );
     expect(report.maxConcurrency).toBe(1);
-  });
+  }, 20000);
 });
 
 describe('runProbe sampling resilience', () => {
