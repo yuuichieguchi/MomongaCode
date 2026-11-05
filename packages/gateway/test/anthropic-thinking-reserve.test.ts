@@ -6,7 +6,7 @@ import { summaryInputLimitFor, summaryTokenCapFor } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
 import { anthropicCountTokensReply, anthropicTextReply } from '@momonga/testkit';
 import { postJson, readJson, userInput } from './gateway-helpers.ts';
-import { REMOTE_CAPABILITIES, startAnthropicGateway } from './upstream-gateway-support.ts';
+import { REMOTE_CAPABILITIES, startAnthropicGateway, streamResponse } from './upstream-gateway-support.ts';
 
 const BUDGET_TARGET: Capabilities = {
   ...REMOTE_CAPABILITIES,
@@ -24,6 +24,16 @@ describe('compaction on a budget-form target', () => {
 
     const sent: any[] = gateway.fake.requests.filter((request) => request.path === '/v1/messages').map((request) => request.body);
     for (const body of sent) expect(todayLimit + body.max_tokens).toBeLessThanOrEqual(BUDGET_TARGET.contextWindow);
+  });
+});
+
+describe('a visible cap at or above the model output maximum on a budget-form target', () => {
+  it.for([64_000, 70_000])('sends max_tokens equal to the visible cap %i and the minimum budget of 1024', async (visible) => {
+    const gateway = await startAnthropicGateway({ script: [anthropicTextReply(['ok'])], capabilities: BUDGET_TARGET });
+    await streamResponse(gateway, { reasoning: { effort: 'low', summary: null }, max_output_tokens: visible });
+    const body: any = gateway.fake.requests.filter((request) => request.path === '/v1/messages').at(-1)?.body;
+    expect(body.max_tokens).toBe(visible);
+    expect(body.thinking).toEqual({ type: 'enabled', budget_tokens: 1024 });
   });
 });
 

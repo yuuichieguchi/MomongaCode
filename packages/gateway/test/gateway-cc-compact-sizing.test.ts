@@ -83,18 +83,21 @@ describe('the reasoning headroom term of the summary input bound', () => {
   const W = 4096;
   const CAP = 100;
   const HEADROOM = 500;
-  const LIMIT = W - CAP - HEADROOM - 82;
+  const ROOMY_LIMIT = W - CAP - HEADROOM - 82;
+  const CAPPED_LIMIT = W - CAP - 82;
 
   it.for([
-    [LIMIT, 200],
-    [LIMIT + 1, 400],
-  ] as const)('a counted request of %i tokens answers %i when the room kept for reasoning is subtracted', async ([tokens, status]) => {
+    [CAP + HEADROOM, ROOMY_LIMIT, 200],
+    [CAP + HEADROOM, ROOMY_LIMIT + 1, 400],
+    [CAP, CAPPED_LIMIT, 200],
+    [CAP, CAPPED_LIMIT + 1, 400],
+  ] as const)('with a model output maximum of %i, a counted request of %i tokens answers %i: the input limit subtracts only the reasoning room the wire output cap can hold', async ([maxOutputTokens, tokens, status]) => {
     const fake = await startFake({ scenario: 'tools-ok', script: [textReply('note')] });
     const adapter = makeAdapter(fake, {
       capabilities: async () => ({
         ...CC_CAPABILITIES,
         contextWindow: W,
-        maxOutputTokens: CAP,
+        maxOutputTokens,
         tokenCounting: 'calibrated',
         reasoning: { control: 'none', headroomTokens: HEADROOM },
       }),

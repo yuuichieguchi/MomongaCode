@@ -43,4 +43,15 @@ describe('the output tokens a request may spend, visible plus reasoning', () => 
   it('adds the measured headroom of a target that cannot control reasoning when an effort is asked for', () => {
     expect(outputTokensFor(capabilities({ control: 'none', headroomTokens: 400 }), 'none', 64)).toBe(464);
   });
+
+  it('adds measured headroom only up to the model output maximum', () => {
+    expect(outputTokensFor(capabilities({ control: 'none', headroomTokens: 500 }, 300), 'none', 100)).toBe(300);
+  });
+
+  it.for([
+    ['budget', BUDGET],
+    ['headroom', { control: 'none', headroomTokens: 500 } as ReasoningCapability],
+  ] as const)('never lowers a requested visible cap above the model output maximum (%s)', ([, reasoning]) => {
+    expect(outputTokensFor(capabilities(reasoning, 20000), 'low', 25000)).toBe(25000);
+  });
 });
