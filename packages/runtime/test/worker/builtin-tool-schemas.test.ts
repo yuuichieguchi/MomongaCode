@@ -5,35 +5,40 @@ import { describe, expect, it } from 'vitest';
 import { HOST_RULE_ENFORCEMENT, createRedactor, validateUntrusted } from '@momonga/foundation';
 import { createAgentsPort, createChildRuns, createGovernancePort, createHistoryPort, createMemoryPort } from '@momonga/runtime';
 import { createNodeSkillFileSystem } from '@momonga/skills';
-import { createLoadToolsTool } from '../../src/worker/load-tools-tool.ts';
-import { createToolLoading } from '../../src/worker/tool-admission.ts';
 import { createBuiltinTools, createToolRegistry } from '@momonga/tools';
 import type { AnyTool, ToolSet } from '@momonga/tools';
 import { makeEnv, unavailableEvidenceRun } from './harness.ts';
-import { textStep } from './scripts.ts';
+import { callsStep, textStep } from './scripts.ts';
 
-const composedTools = async (): Promise<readonly AnyTool[]> => {
+const offeredTools = async (): Promise<readonly AnyTool[]> => {
   const env = await makeEnv();
+  env.settings.toolsValue = { ...env.settings.toolsValue, deferral: true };
   const skillDirectory = path.join(env.project, '.agents', 'skills', 'lint-skill');
   fs.mkdirSync(skillDirectory, { recursive: true });
   fs.writeFileSync(path.join(skillDirectory, 'SKILL.md'), '---\nname: lint-skill\ndescription: a skill for the lint\n---\nBody.\n');
   const agentDirectory = path.join(env.project, '.momonga', 'agents');
   fs.mkdirSync(agentDirectory, { recursive: true });
   fs.writeFileSync(path.join(agentDirectory, 'lint-agent.md'), '---\nname: lint-agent\ndescription: an agent for the lint\n---\nYou review code.\n');
-  const registered: AnyTool[] = [];
+  const offered: ToolSet[] = [];
   const toolSet = async (_runId: string, options: { additionalTools?: readonly AnyTool[]; only?: readonly string[] }): Promise<ToolSet> => {
     const registry = createToolRegistry();
-    for (const tool of [...createBuiltinTools(), ...(options.additionalTools ?? [])]) {
-      registry.register(tool);
-      registered.push(tool);
-    }
+    for (const tool of [...createBuiltinTools(), ...(options.additionalTools ?? [])]) registry.register(tool);
     return registry.snapshot();
   };
-  env.gateway.script.push(textStep('Done.'));
+  env.gateway.script.push(callsStep([{ callId: 'lint-1', name: 'UpdatePlan', args: { entries: [{ content: 'lint', status: 'pending', priority: 'low' }] } }]), textStep('Done.'));
   env.enqueue('Compose the tools');
   await env.runOnce(
     env.worker('worker-lint', {
-      tools: { toolSet },
+      tools: {
+        toolSet,
+        executor: {
+          ...env.executor,
+          runBatch: async (batch) => {
+            offered.push(batch.toolSet);
+            return env.executor.runBatch(batch);
+          },
+        },
+      },
       memories: createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun }),
       history: createHistoryPort({ store: env.store, settings: env.settings, clock: env.clock, home: env.home, redactor: createRedactor({ credentials: [] }), enforcement: HOST_RULE_ENFORCEMENT }),
       governance: createGovernancePort({ store: env.store, settings: env.settings }),
@@ -45,12 +50,14 @@ const composedTools = async (): Promise<readonly AnyTool[]> => {
       }),
     }),
   );
-  return [...registered, createLoadToolsTool(createToolLoading(() => { throw new Error('the lint never runs a tool'); }))];
+  const first = offered[0];
+  if (first === undefined) throw new Error('the claim never ran a batch, so it offered no tool set');
+  return first.tools;
 };
 
-describe('lint of every tool the runtime registers', () => {
+describe('lint of every tool a claim offers', () => {
   it('compiles each input and output schema with Ajv strict mode and accepts it through the untrusted-schema boundary', async () => {
-    const tools = await composedTools();
+    const tools = await offeredTools();
     const names = tools.map((tool) => tool.name);
     expect(names.length).toBeGreaterThan(createBuiltinTools().length);
     expect(new Set(names).size).toBe(names.length);
