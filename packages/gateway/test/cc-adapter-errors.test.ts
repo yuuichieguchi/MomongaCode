@@ -48,11 +48,11 @@ describe('chat-completions error classification', () => {
     expect(result.error.type).toBe('server_error');
   });
 
-  it('maps 413 to a non-retryable invalid_request payload_too_large', async () => {
+  it('maps 413 to the non-retryable context_window_exceeded invalid_request its vocabulary names', async () => {
     const fake = await startFake({ scenario: 'tools-ok', contextWindow: 8, contextOverflowStatus: 413 });
     const result = await classified(fake, { model: 'system', input: [userText('one two three four five six seven eight nine ten')] });
     expect(result.retryable).toBe(false);
-    expect(result.error).toMatchObject({ type: 'invalid_request', code: 'payload_too_large' });
+    expect(result.error).toMatchObject({ type: 'invalid_request', code: 'context_window_exceeded' });
   });
 
   it('maps an OpenAI-style context_length_exceeded rejection to the unified context_window_exceeded invalid_request', async () => {

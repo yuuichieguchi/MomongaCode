@@ -1,6 +1,6 @@
 import { decodeSse, isRecord } from '@momonga/foundation';
 import type { SseEvent } from '@momonga/foundation';
-import { CONTEXT_WINDOW_EXCEEDED, StreamFailure, UNSUPPORTED_REQUEST } from '../shared/failures.ts';
+import { CONTEXT_WINDOW_EXCEEDED, GUARDRAIL_VIOLATION, StreamFailure, UNSUPPORTED_REQUEST } from '../shared/failures.ts';
 import { errorObjectOf, upstreamErrorText } from './vocabulary.ts';
 import type { ErrorVocabulary } from './vocabulary.ts';
 
@@ -107,6 +107,7 @@ export const upstreamErrorMessage = (body: unknown): string => {
 export const upstreamErrorFailure = (vocabulary: ErrorVocabulary, status: number, body: unknown): StreamFailure => {
   const message = upstreamErrorMessage(body);
   const kind = vocabulary.kindOf(status, body);
+  if (kind === 'guardrail') return new StreamFailure(GUARDRAIL_VIOLATION, 'model_error', message);
   if (kind === 'context_overflow') return new StreamFailure(CONTEXT_WINDOW_EXCEEDED, 'invalid_request', message);
   if (kind === 'unsupported') return new StreamFailure(UNSUPPORTED_REQUEST, 'invalid_request', message);
   const errorCode = errorObjectOf(body)?.['code'];

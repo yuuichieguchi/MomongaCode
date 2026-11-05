@@ -4,14 +4,9 @@ import { readTextLimited } from './body-reading.ts';
 import { UpstreamHttpError } from './failures.ts';
 import type { CompletionResponse } from './http-client.ts';
 import { MAX_ERROR_BODY_BYTES } from './limits.ts';
+import type { ErrorVocabulary } from '../chat-completions/vocabulary.ts';
 
 export type UpstreamErrorDetail = { code?: string | null; message?: string };
-
-export type ErrorVerdicts = {
-  guardrail: (status: number, body: unknown) => boolean;
-  contextOverflow: (status: number, body: unknown) => boolean;
-  unsupported: (status: number, body: unknown) => boolean;
-};
 
 
 export type ErrorDetailReader = (parsed: unknown) => UpstreamErrorDetail;
@@ -20,7 +15,7 @@ export const httpErrorOf = async (
   response: CompletionResponse,
   clock: Clock,
   readDetail: ErrorDetailReader,
-  verdicts: ErrorVerdicts,
+  vocabulary: ErrorVocabulary,
 ): Promise<UpstreamHttpError> => {
   const { text } = await readTextLimited(response.body, MAX_ERROR_BODY_BYTES);
   let parsed: unknown;
@@ -30,6 +25,7 @@ export const httpErrorOf = async (
     if (!(error instanceof SyntaxError)) throw error;
   }
   const detail = readDetail(parsed);
+  const kind = vocabulary.kindOf(response.status, parsed);
   const message = detail.message ?? text;
   const shouldRetry = response.headers['x-should-retry'];
   return new UpstreamHttpError(
@@ -37,10 +33,10 @@ export const httpErrorOf = async (
     detail.code ?? null,
     message === '' ? `HTTP ${response.status}` : message,
     parseRetryAfter(response.headers['retry-after'], clock.now()),
-    verdicts.guardrail(response.status, parsed),
+    kind === 'guardrail',
     shouldRetry === 'false' ? false : undefined,
-    verdicts.contextOverflow(response.status, parsed),
-    verdicts.unsupported(response.status, parsed),
+    kind === 'context_overflow',
+    kind === 'unsupported',
   );
 };
 

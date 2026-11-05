@@ -1,6 +1,7 @@
 import type { ErrorType } from '@momonga/protocol';
 
 export const CONTEXT_WINDOW_EXCEEDED = 'context_window_exceeded';
+export const GUARDRAIL_VIOLATION = 'guardrail_violation';
 export const UNSUPPORTED_REQUEST = 'unsupported_request';
 
 export class StreamFailure extends Error {

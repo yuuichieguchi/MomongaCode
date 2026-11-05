@@ -15,8 +15,8 @@ import {
   type ProbeReport,
 } from '@momonga/protocol';
 import { CHAT_COMPLETIONS_VOCABULARY } from '../adapters/chat-completions/vocabulary.ts';
-import type { ErrorVocabulary } from '../adapters/chat-completions/vocabulary.ts';
-import { decodeUpstreamReply } from '../adapters/chat-completions/upstream-reply.ts';
+import type { ErrorVocabulary, UpstreamErrorKind } from '../adapters/chat-completions/vocabulary.ts';
+import { decodeUpstreamReply, upstreamErrorMessage } from '../adapters/chat-completions/upstream-reply.ts';
 import type { UpstreamReply } from '../adapters/chat-completions/upstream-reply.ts';
 import { outputBoundFor } from '../adapters/chat-completions/output-bound.ts';
 import { summaryRequestOf } from '../adapters/shared/compact.ts';
@@ -27,6 +27,7 @@ import { IMAGE_PROMPT, SEARCH_TOLERANCE, TINY_PNG, measureImageTokens } from './
 import type { ImageCostProbe } from './image-tokens.ts';
 import { ProbeTimeoutError, createProbeClient, systemSleep, type HttpResult, type ProbeClient, type ProbeEndpoint } from './client.ts';
 import { buildToolCallEnvelope, keywordProbeSchemas, type KeywordSupport, type ProbeTool } from './envelope.ts';
+import { fillerText } from './filler.ts';
 import { field, firstOf, isRecord, parseJson } from './json.ts';
 
 export interface ProbeOptions {
@@ -83,11 +84,13 @@ const validateToolArguments = ajv.compile(PROBE_TOOL.parameters);
 
 type ProbeOutcome = 'accepted' | 'unsupported' | 'overflow' | 'failure';
 
-type ChatResult = HttpResult & { reply: UpstreamReply; outcome: ProbeOutcome };
+type ChatResult = HttpResult & { reply: UpstreamReply; outcome: ProbeOutcome; errorKind: UpstreamErrorKind | undefined };
 
-const outcomeOf = (vocabulary: ErrorVocabulary, status: number, reply: UpstreamReply): ProbeOutcome => {
+const errorKindOf = (vocabulary: ErrorVocabulary, reply: UpstreamReply): UpstreamErrorKind | undefined =>
+  reply.kind === 'error' ? vocabulary.kindOf(reply.status, reply.body) : undefined;
+
+const outcomeOf = (status: number, reply: UpstreamReply, kind: UpstreamErrorKind | undefined): ProbeOutcome => {
   if (reply.kind === 'completion') return status === 200 ? 'accepted' : 'failure';
-  const kind = vocabulary.kindOf(status, reply.body);
   if (kind === 'context_overflow') return 'overflow';
   return kind === 'unsupported' ? 'unsupported' : 'failure';
 };
@@ -131,7 +134,6 @@ const retryAfterMs = (value: string | undefined, now: Date): number | undefined 
 
 const estimatedCount = async (text: string): Promise<number> => tokensForText(text);
 
-const wordsOf = (count: number): string => Array.from({ length: count }, () => 'word').join(' ');
 
 const cachedTokensOf = (reply: UpstreamReply): number | undefined => {
   if (reply.kind !== 'completion') return undefined;
@@ -208,7 +210,8 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
   const send: Chat = async (body) => {
     const result = await client.post('chat', { model, ...body });
     const reply = await decodeUpstreamReply(result.status, result.text);
-    return { ...result, reply, outcome: outcomeOf(vocabulary, result.status, reply) };
+    const errorKind = errorKindOf(vocabulary, reply);
+    return { ...result, reply, errorKind, outcome: outcomeOf(result.status, reply, errorKind) };
   };
   const stepTimeoutMs = options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS;
   const sleep = options.sleep ?? systemSleep;
@@ -361,7 +364,7 @@ const imageCostProbeOf = (chat: Chat): ImageCostProbe => ({
 });
 
 const measurePromptCache = async (chat: Chat): Promise<ProbeReport['promptCache']> => {
-  const request = { messages: [{ role: 'user', content: wordsOf(CACHE_PROBE_WORDS) }], outputTokens: ONE_OUTPUT_TOKEN };
+  const request = { messages: [{ role: 'user', content: fillerText(CACHE_PROBE_WORDS) }], outputTokens: ONE_OUTPUT_TOKEN };
   expectStatus(await chat(request), [200], 'prompt cache first request');
   const repeated = await chat(request);
   expectStatus(repeated, [200], 'prompt cache repeated request');
@@ -574,7 +577,7 @@ const calibrate = async (
 ): Promise<{ ratio: number; errorBound: number }> => {
   const points: Array<{ reported: number; counted: number }> = [];
   for (const wordCount of CALIBRATION_WORD_COUNTS) {
-    const text = wordsOf(wordCount);
+    const text = fillerText(wordCount);
     const result = await chat({ messages: [{ role: 'user', content: text }] });
     expectStatus(result, [200], 'token calibration');
     const reported = promptTokensOf(result.reply.body);
@@ -621,7 +624,7 @@ const searchContextWindow = async (chat: Chat, countTokens: ProbeOptions['countT
   let overflowRecorded = false;
 
   const attempt = async (words: number): Promise<{ ok: boolean; promptTokens: number }> => {
-    const text = wordsOf(words);
+    const text = fillerText(words);
     const result = await chat({ messages: [{ role: 'user', content: text }], outputTokens: ONE_OUTPUT_TOKEN });
     const { reply } = result;
     if (reply.kind === 'completion') {
@@ -630,7 +633,11 @@ const searchContextWindow = async (chat: Chat, countTokens: ProbeOptions['countT
       if (reported !== undefined) return { ok: true, promptTokens: reported };
       return { ok: true, promptTokens: await (countTokens ?? estimatedCount)(text) };
     }
-    if (result.outcome !== 'overflow') return failProbeStep(result, 'context window search');
+    if (result.outcome !== 'overflow') {
+      throw new Error(
+        `Probe step "context window search" at ${words} words got an upstream error of kind ${result.errorKind ?? 'failure'} (HTTP ${result.status}): ${upstreamErrorMessage(reply.body)}`,
+      );
+    }
     if (!overflowRecorded) {
       overflowRecorded = true;
       overflowErrorShape = reply.body;

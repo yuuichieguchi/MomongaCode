@@ -20,7 +20,7 @@ import { StreamFailure, UnsupportedInputError, UpstreamProtocolError } from '../
 import { createEndpointPool } from '../shared/http-client.ts';
 import type { CompletionResponse } from '../shared/http-client.ts';
 import { httpErrorOf } from '../shared/http-error.ts';
-import { HTTP_TRANSPORT_VOCABULARY, verdictsOf } from '../chat-completions/vocabulary.ts';
+import { HTTP_TRANSPORT_VOCABULARY } from '../chat-completions/vocabulary.ts';
 import { MAX_SSE_EVENT_BYTES, MAX_UNARY_BODY_BYTES } from '../shared/limits.ts';
 import { ResponseEmitter } from '../shared/response-emitter.ts';
 import {
@@ -60,8 +60,6 @@ const asAdapterInput = (request: CountTokensRequest): AdapterInputItem[] =>
     if (item.type === 'compaction') throw new UnsupportedInputError('unsupported_input', 'a compaction item must be decoded before token counting', 'input');
     return item;
   });
-
-const VERDICTS = verdictsOf(HTTP_TRANSPORT_VOCABULARY, () => false);
 
 export const createAnthropicAdapter = (options: AnthropicAdapterOptions): AnthropicAdapter => {
   const pool = createEndpointPool({ label: ANTHROPIC_PROVIDER_LABEL, unixPath: ANTHROPIC_MESSAGES_PATH, urlSuffix: ANTHROPIC_MESSAGES_PATH }, options.liveness);
@@ -114,7 +112,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
         const body: AnthropicRequestBody =
           paused === undefined ? base : { ...base, messages: [...base.messages, { role: 'assistant', content: paused.content }] };
         const response = await pool.clientFor(endpoint).post({ headers: headersFor(apiKey, 'text/event-stream'), body: JSON.stringify(body), signal });
-        if (response.status !== 200) throw await httpErrorOf(response, options.clock, anthropicErrorDetail, VERDICTS);
+        if (response.status !== 200) throw await httpErrorOf(response, options.clock, anthropicErrorDetail, HTTP_TRANSPORT_VOCABULARY);
         emitter ??= new ResponseEmitter({ clock: options.clock, model: request.model, request });
         const driver = new AnthropicStreamDriver(emitter, paused === undefined ? undefined : { usage: paused.usage, firstInputTokens: paused.firstInputTokens });
         yield* readSegment(response, driver, ctx);
@@ -164,7 +162,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
         signal,
         subpath: ANTHROPIC_COUNT_TOKENS_SUBPATH,
       });
-      if (response.status !== 200) throw await httpErrorOf(response, options.clock, anthropicErrorDetail, VERDICTS);
+      if (response.status !== 200) throw await httpErrorOf(response, options.clock, anthropicErrorDetail, HTTP_TRANSPORT_VOCABULARY);
       const { text, truncated } = await readTextLimited(response.body, MAX_UNARY_BODY_BYTES);
       if (truncated) throw new UpstreamProtocolError(`the upstream count_tokens reply exceeds ${MAX_UNARY_BODY_BYTES} bytes`);
       return countReplyOf(countTokensOf(text), 'exact', EXACT_ERROR_SHAPE);

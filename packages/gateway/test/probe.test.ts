@@ -14,6 +14,7 @@ import {
   type FakeChatCompletionsOptions,
   type FakeChatCompletionsServer,
 } from '@momonga/testkit';
+import { fillerText } from '../src/probe/filler.ts';
 import { isProbeReport } from '../src/probe/report-schema.ts';
 
 const servers: FakeChatCompletionsServer[] = [];
@@ -129,7 +130,7 @@ describe('runProbe context window', () => {
 
   it('reads an overflow that fm reports as an error event in a 200 stream as a rejection through fm\'s vocabulary, and stops doubling at the first one', async () => {
     const window = 3000;
-    const searchPrompt = (count: number) => ({ messages: [{ role: 'user', content: Array.from({ length: count }, () => 'word').join(' ') }] });
+    const searchPrompt = (count: number) => ({ messages: [{ role: 'user', content: fillerText(count) }] });
     let firstRejectedSize = 64;
     while (countFakeRequestTokens(searchPrompt(firstRejectedSize)) + 1 <= window) firstRejectedSize *= 2;
 
@@ -138,7 +139,7 @@ describe('runProbe context window', () => {
     const searchSizes = fake.requests
       .filter((request) => request.path === '/v1/chat/completions' && (request.body as { max_completion_tokens?: unknown }).max_completion_tokens === 1)
       .map((request) => (request.body as { messages?: Array<{ content?: unknown }> }).messages?.[0]?.content)
-      .filter((content): content is string => typeof content === 'string' && /^word( word)*$/.test(content))
+      .filter((content): content is string => typeof content === 'string')
       .map(words);
     expect(report.contextWindow.method).toBe('searched');
     expect(Math.abs(report.contextWindow.value - window)).toBeLessThanOrEqual(window * 0.02);
