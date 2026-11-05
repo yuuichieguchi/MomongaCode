@@ -1,4 +1,4 @@
-import { DEFAULT_OUTPUT_BOUND_FIELD, acceptedReasoningEfforts, clampReasoningEffort } from '@momonga/protocol';
+import { DEFAULT_OUTPUT_BOUND_FIELD, acceptedReasoningEfforts, clampReasoningEffort, outputTokensFor } from '@momonga/protocol';
 import type { AdapterRequest, Capabilities } from '@momonga/protocol';
 import type { ChatRequestBody } from './native-request.ts';
 import { outputBoundFor } from './output-bound.ts';
@@ -13,9 +13,7 @@ const reasoningEffortOption = (request: AdapterRequest, capabilities: Capabiliti
 const outputBoundTokens = (request: AdapterRequest, capabilities: Capabilities): number | undefined => {
   const requested = request.max_output_tokens;
   if (requested === undefined || requested === null) return undefined;
-  const { reasoning } = capabilities;
-  const headroom = request.reasoning_effort === undefined || reasoning?.control !== 'none' ? 0 : (reasoning.headroomTokens ?? 0);
-  return headroom === 0 ? requested : Math.min(requested + headroom, capabilities.maxOutputTokens);
+  return Math.min(outputTokensFor(capabilities, request.reasoning_effort, requested), Math.max(requested, capabilities.maxOutputTokens));
 };
 
 const outputBoundOption = (request: AdapterRequest, capabilities: Capabilities): Partial<ChatRequestBody> => {

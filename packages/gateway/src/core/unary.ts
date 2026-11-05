@@ -1,5 +1,5 @@
 import { canonicalJson, sha256Hex, uuidv7 } from '@momonga/foundation';
-import { COMPACTION_ROLE, summaryInputLimitFor, summaryTokenCapFor } from '@momonga/protocol';
+import { COMPACTION_ROLE, LOWEST_REASONING_EFFORT, outputTokensFor, summaryInputLimitFor, summaryTokenCapFor } from '@momonga/protocol';
 import type {
   AdapterCompactRequest,
   AdapterInputItem,
@@ -246,8 +246,8 @@ const compactOnce = async (
       counterFailure = error;
       continue;
     }
-    const reasoningHeadroom = capabilities.reasoning?.control === 'none' ? (capabilities.reasoning.headroomTokens ?? 0) : 0;
-    const limit = summaryInputLimitFor(capabilities, cap, reasoningHeadroom);
+    const reasoningTokens = outputTokensFor(capabilities, LOWEST_REASONING_EFFORT, cap) - cap;
+    const limit = summaryInputLimitFor(capabilities, cap, reasoningTokens);
     if (counted.input_tokens + counted.error_bound <= limit) sized.push(target);
   }
   if (sized.length === 0 && counterFailure !== undefined) throw counterFailure;

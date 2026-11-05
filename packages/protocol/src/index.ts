@@ -84,10 +84,12 @@ export {
   isReasoningEffort,
   acceptedReasoningEfforts,
   clampReasoningEffort,
+  outputTokensFor,
+  thinkingBudgetFor,
   THINKING_OFFS,
   requireStructuredOutput,
 } from './capabilities.ts';
-export type { StructuredOutputVerdict, TargetBilling } from './capabilities.ts';
+export type { OutputTokenCapabilities, StructuredOutputVerdict, TargetBilling } from './capabilities.ts';
 export { OUTPUT_FORMATTERS } from './output-formatters.ts';
 export type { OutputFormatterName } from './output-formatters.ts';
 export { CACHE_MISS_CAUSES, PREFIX_EVENTS } from './prefix-events.ts';

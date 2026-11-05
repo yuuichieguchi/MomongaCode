@@ -1,5 +1,5 @@
-import { acceptedReasoningEfforts, clampReasoningEffort, compactionSummaryMessage } from '@momonga/protocol';
-import type { AdapterInputItem, AdapterRequest, ContentPart, FunctionTool, PromptCacheCounts, ReasoningCapability, ReasoningOrigin, ThinkingAdaptiveEffort, ThinkingBudgetEffort, ThinkingOff, ToolChoice } from '@momonga/protocol';
+import { acceptedReasoningEfforts, clampReasoningEffort, compactionSummaryMessage, outputTokensFor, thinkingBudgetFor } from '@momonga/protocol';
+import type { AdapterInputItem, AdapterRequest, ContentPart, FunctionTool, PromptCacheCounts, ReasoningCapability, ReasoningOrigin, ThinkingAdaptiveEffort, ThinkingOff, ToolChoice } from '@momonga/protocol';
 import { callArgumentsObject } from '../shared/call-arguments.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { hasImagePart, imageSourceOf } from '../shared/image-part.ts';
@@ -229,15 +229,14 @@ const MIN_BUDGET_TOKENS = 1024;
 type ThinkingPlan = { maxTokens: number; thinking?: AnthropicThinking; outputConfig?: { effort: ThinkingAdaptiveEffort } };
 
 const thinkingPlanOf = (effort: AdapterRequest['reasoning_effort'], reasoning: ReasoningCapability | undefined, visibleCap: number | undefined, modelMaximum: number): ThinkingPlan => {
-  const maxTokens = visibleCap ?? modelMaximum;
+  const maxTokens = outputTokensFor({ maxOutputTokens: modelMaximum, reasoning }, effort, visibleCap);
   if (effort === undefined || reasoning?.control !== 'thinking') return { maxTokens };
   const level = clampReasoningEffort(effort, acceptedReasoningEfforts(reasoning));
   if (level === 'none') return { maxTokens, thinking: { type: reasoning.off as ThinkingOff } };
   if (reasoning.form === 'adaptive') return { maxTokens, thinking: { type: 'adaptive' }, outputConfig: { effort: level as ThinkingAdaptiveEffort } };
-  const declared = reasoning.budgets[level as ThinkingBudgetEffort] as number;
-  if (visibleCap === undefined) return { maxTokens: modelMaximum, thinking: { type: 'enabled', budget_tokens: declared } };
-  const wireCap = Math.min(modelMaximum, visibleCap + declared);
-  return { maxTokens: wireCap, thinking: { type: 'enabled', budget_tokens: Math.max(MIN_BUDGET_TOKENS, Math.min(declared, wireCap - visibleCap)) } };
+  const declared = thinkingBudgetFor(reasoning, level) as number;
+  if (visibleCap === undefined) return { maxTokens, thinking: { type: 'enabled', budget_tokens: declared } };
+  return { maxTokens, thinking: { type: 'enabled', budget_tokens: Math.max(MIN_BUDGET_TOKENS, Math.min(declared, maxTokens - visibleCap)) } };
 };
 
 export const buildMessagesBody = (request: AdapterRequest, maxTokens: number, options: BodyOptions, origin: ReasoningOrigin): AnthropicRequestBody => {
