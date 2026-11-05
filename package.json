@@ -14,7 +14,7 @@
     "test:tlc-deep": "MOMONGA_TLC_TIER=deep vitest run --project unit test/formal",
     "test:e2e": "vitest run --project e2e",
     "test:packaging": "vitest run --project packaging",
-    "typecheck": "tsc -p tsconfig.json",
+    "typecheck": "node scripts/bundle.ts --journal-thread && tsc -p tsconfig.json",
     "bundle": "node scripts/bundle.ts",
     "sea": "node scripts/sea.ts",
     "test:sea": "vitest run --project packaging scripts/sea.test.ts",
