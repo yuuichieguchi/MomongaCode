@@ -1,15 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import { makeEnv, modelKey } from './harness.ts';
+import { GatewayRequestError } from '../../src/gateway-client.ts';
 import { failedStep, textStep, thrownStep } from './scripts.ts';
 import type { ScriptStep } from './fake-gateway.ts';
 
-const FAILURES: [string, () => ScriptStep][] = [
-  ['a response.failed server error', () => failedStep('upstream_unavailable', 'server_error')],
+const gatewayErrorStep = (fields: ConstructorParameters<typeof GatewayRequestError>[0]): ScriptStep => ({ events: [], error: new GatewayRequestError(fields) });
+
+const REQUEUED: [string, () => ScriptStep][] = [
   ['a thrown stream error', () => thrownStep()],
+  [
+    'a gateway_unavailable proven not sent',
+    () => gatewayErrorStep({ status: 503, type: 'transport', code: 'gateway_unavailable', message: 'the gateway socket refused the connection', provenNotSent: true }),
+  ],
+  ['a gateway_closed 503', () => gatewayErrorStep({ status: 503, type: 'server_error', code: 'gateway_closed', message: 'the gateway is shutting down' })],
+  ['a stream_interrupted', () => gatewayErrorStep({ status: 502, type: 'server_error', code: 'stream_interrupted', message: 'the gateway stream ended before a terminal event' })],
 ];
 
 describe('worker gateway failures', () => {
-  it.each(FAILURES)('requeues with backoff after %s and re-sends the same key and body', async (_label, failure) => {
+  it.each(REQUEUED)('requeues with backoff after %s and re-sends the same key and body', async (_label, failure) => {
     const env = await makeEnv();
     env.gateway.script.push(failure(), textStep('Recovered.'));
     const run = env.enqueue('Work');
@@ -35,6 +43,24 @@ describe('worker gateway failures', () => {
     expect(env.gateway.generations.get(modelKey(run.id, 1, 1))).toBe(2);
     expect(env.ofType(run.id, 'model.requested')).toHaveLength(1);
     expect(env.ofType(run.id, 'model.responded')).toEqual([expect.objectContaining({ step: 1, attempt: 1 })]);
+  });
+
+  it('fails the step on the first claim after a server_error that the gateway returned once its retry budget was spent', async () => {
+    const env = await makeEnv({ maxAttempts: 20, maxTotalAttempts: 20 });
+    env.gateway.script.push(
+      gatewayErrorStep({ status: 502, type: 'server_error', code: 'upstream_error', message: 'the upstream responded with HTTP 503' }),
+      textStep('never sent'),
+    );
+    const run = env.enqueue('Work');
+
+    expect(await env.runOnce(env.worker())).toBe('yielded');
+
+    const after = env.run(run.id);
+    expect(after.status).toBe('FAILED');
+    expect(after.error).toEqual({ code: 'upstream_error', message: 'the upstream responded with HTTP 503' });
+    expect(env.ofType(run.id, 'run.status').some((event) => event.to === 'QUEUED')).toBe(false);
+    expect(env.gateway.streams).toHaveLength(1);
+    expect(env.gateway.script).toHaveLength(1);
   });
 
   it('dead-letters the run as FAILED once the store attempt limit is exhausted', async () => {
