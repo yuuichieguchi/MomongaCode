@@ -6,7 +6,7 @@
     { "config": "RunRecovery.children", "role": "check", "expect": "holds", "args": [], "tier": "deep", "distinctStates": 62945640, "measuredSeconds": 1481.2, "budgetSeconds": 2963 },
     { "config": "RunRecovery.childrenSmall", "role": "check", "expect": "holds", "args": [], "tier": "every-run", "distinctStates": 30452, "measuredSeconds": 2.6, "budgetSeconds": 6 },
     { "config": "RunRecovery.liveNone", "role": "check", "expect": "holds", "args": ["-lncheck", "final"], "tier": "every-run", "distinctStates": 4390, "measuredSeconds": 8.8, "budgetSeconds": 18 },
-    { "config": "RunRecovery.liveSpawn", "role": "check", "expect": "holds", "args": ["-lncheck", "final"], "tier": "deep", "distinctStates": 1984616, "measuredSeconds": 4146.3, "budgetSeconds": 8293 },
+    { "config": "RunRecovery.liveSpawn", "role": "check", "expect": "holds", "args": ["-lncheck", "final"], "tier": "deep", "distinctStates": 2076338, "measuredSeconds": 6469.2, "budgetSeconds": 12939 },
     { "config": "RunRecovery.liveSpawnSmall", "role": "check", "expect": "holds", "args": ["-lncheck", "final"], "tier": "every-run", "distinctStates": 30260, "measuredSeconds": 95.4, "budgetSeconds": 191 },
     { "config": "RunRecovery.lockOnly", "role": "evidence", "expect": "holds", "args": [], "tier": "every-run", "distinctStates": 1071230, "measuredSeconds": 19.8, "budgetSeconds": 40 },
     { "config": "RunRecovery.unfixed", "role": "evidence", "expect": { "violates": "AtMostOnceEffect", "exitCode": 12 }, "args": [], "tier": "every-run", "distinctStates": 1115959, "measuredSeconds": 19.9, "budgetSeconds": 40 },
