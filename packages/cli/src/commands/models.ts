@@ -7,9 +7,14 @@ import { escapedLines } from '../terminal-writer.ts';
 
 const yesNo = (value: boolean): string => (value ? 'yes' : 'no');
 
+const toolCallingText = (capabilities: Capabilities): string =>
+  capabilities.toolCalling === 'needs_probe' && capabilities.needsProbe !== undefined
+    ? `needs probe: ${capabilities.needsProbe.remedy}`
+    : capabilities.toolCalling;
+
 const describeCapabilities = (capabilities: Capabilities): string[] => [
   `    context window: ${capabilities.contextWindow}, max output: ${capabilities.maxOutputTokens}`,
-  `    tool calling: ${capabilities.toolCalling}, parallel tool calls: ${capabilities.parallelToolCalls === undefined ? 'unknown' : yesNo(capabilities.parallelToolCalls)}, structured output: ${capabilities.structuredOutput}`,
+  `    tool calling: ${toolCallingText(capabilities)}, parallel tool calls: ${capabilities.parallelToolCalls === undefined ? 'unknown' : yesNo(capabilities.parallelToolCalls)}, structured output: ${capabilities.structuredOutput}`,
   `    image input: ${yesNo(capabilities.imageInput)}, streaming: ${yesNo(capabilities.streaming)}, stop sequences: ${yesNo(capabilities.stopSequences)}`,
   `    token counting: ${capabilities.tokenCounting}, usage reported: ${yesNo(capabilities.usageReported)}, max concurrency: ${capabilities.maxConcurrency}`,
   `    schema dialect: ${capabilities.schemaDialect}, source: ${capabilities.source}${capabilities.probedAt === undefined ? '' : ` (probed ${capabilities.probedAt})`}`,

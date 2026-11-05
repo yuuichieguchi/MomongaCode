@@ -1,4 +1,8 @@
 export type ToolCallingMode = 'native' | 'constrained' | 'none';
+
+export type ToolCallingState = ToolCallingMode | 'needs_probe';
+
+export type NeedsProbe = { message: string; evidence: string; remedy: string };
 export type ToolCallingSetting = 'native' | 'constrained' | 'auto';
 
 export const TARGET_BILLINGS = ['metered', 'local'] as const;
@@ -53,7 +57,8 @@ export type CapabilitiesCore = {
   reasoning?: ReasoningCapability;
   contextWindow: number;
   maxOutputTokens: number;
-  toolCalling: ToolCallingMode;
+  toolCalling: ToolCallingState;
+  needsProbe?: NeedsProbe;
   structuredOutput: 'json_schema' | 'none';
   streaming: boolean;
   stopSequences: boolean;
@@ -84,7 +89,10 @@ export const applyCapabilityOverride = (declared: Capabilities, override: Capabi
   const { imageInput: overrideInput, imageTokens: overrideTokens, ...overrideCore } = override;
   const imageInput = overrideInput ?? declaredInput;
   const imageTokens = overrideTokens ?? (imageInput ? declaredTokens : undefined);
-  return { ...declaredCore, ...overrideCore, ...imageCapability(imageInput, imageTokens) };
+  const merged = { ...declaredCore, ...overrideCore, ...imageCapability(imageInput, imageTokens) };
+  if (overrideCore.toolCalling === undefined) return merged;
+  const { needsProbe: _answeredByOverride, ...answered } = merged;
+  return answered;
 };
 
 export type HealthResult = {

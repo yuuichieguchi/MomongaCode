@@ -21,7 +21,8 @@ describe('protocol capability types', () => {
         promptCache?: { kind: 'breakpoints'; maxBreakpoints: number } | { kind: 'key' } | { kind: 'automatic' } | { kind: 'none' };
         contextWindow: number;
         maxOutputTokens: number;
-        toolCalling: ToolCallingMode;
+        toolCalling: ToolCallingMode | 'needs_probe';
+        needsProbe?: { message: string; evidence: string; remedy: string };
         structuredOutput: 'json_schema' | 'none';
         streaming: boolean;
         stopSequences: boolean;

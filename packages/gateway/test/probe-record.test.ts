@@ -120,31 +120,34 @@ describe('probe record failure handling', () => {
   });
 });
 
+const needsProbe = { message: 'the target "fm" sets toolCalling to auto, but no probe record exists', evidence: 'no record for the fm binary', remedy: 'run `momonga gateway probe fm`' };
+
 describe('resolveToolCalling', () => {
   it('uses explicit native from config regardless of the record', () => {
-    expect(resolveToolCalling('native', makeReport(0, 1), 'fm')).toEqual({ mode: 'native', source: 'config' });
-    expect(resolveToolCalling('native', null, 'fm')).toEqual({ mode: 'native', source: 'config' });
+    expect(resolveToolCalling('native', makeReport(0, 1), needsProbe)).toEqual({ mode: 'native', source: 'config' });
+    expect(resolveToolCalling('native', null, needsProbe)).toEqual({ mode: 'native', source: 'config' });
   });
 
   it('uses explicit constrained from config regardless of the record', () => {
-    expect(resolveToolCalling('constrained', makeReport(1, 0), 'fm')).toEqual({ mode: 'constrained', source: 'config' });
-    expect(resolveToolCalling('constrained', null, 'fm')).toEqual({ mode: 'constrained', source: 'config' });
+    expect(resolveToolCalling('constrained', makeReport(1, 0), needsProbe)).toEqual({ mode: 'constrained', source: 'config' });
+    expect(resolveToolCalling('constrained', null, needsProbe)).toEqual({ mode: 'constrained', source: 'config' });
   });
 
   it('decides from the record under auto', () => {
-    expect(resolveToolCalling('auto', makeReport(1, 1), 'fm')).toEqual({ mode: 'native', source: 'probed' });
-    expect(resolveToolCalling('auto', makeReport(0.5, 0.95), 'fm')).toEqual({ mode: 'constrained', source: 'probed' });
-    expect(resolveToolCalling('auto', makeReport(0.5, 0.5), 'fm')).toEqual({ mode: 'none', source: 'probed' });
+    expect(resolveToolCalling('auto', makeReport(1, 1), needsProbe)).toEqual({ mode: 'native', source: 'probed' });
+    expect(resolveToolCalling('auto', makeReport(0.5, 0.95), needsProbe)).toEqual({ mode: 'constrained', source: 'probed' });
+    expect(resolveToolCalling('auto', makeReport(0.5, 0.5), needsProbe)).toEqual({ mode: 'none', source: 'probed' });
   });
 
   it('fails with precondition_failed and the probe remedy under auto without a record, and resolves no mode', () => {
-    expect.assertions(3);
+    expect.assertions(4);
     try {
-      resolveToolCalling('auto', null, 'fm');
+      resolveToolCalling('auto', null, needsProbe);
     } catch (error) {
       expect(error).toBeInstanceOf(PreconditionFailedError);
-      expect((error as PreconditionFailedError).remediation).toBe('run `momonga gateway probe fm`');
-      expect((error as PreconditionFailedError).message).toContain('"fm"');
+      expect((error as PreconditionFailedError).remediation).toBe(needsProbe.remedy);
+      expect((error as PreconditionFailedError).message).toBe(needsProbe.message);
+      expect((error as PreconditionFailedError).detail).toBe(needsProbe.evidence);
     }
   });
 });

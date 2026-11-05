@@ -10,7 +10,7 @@ import type { DeclaredCapabilities } from './decide.ts';
 import { endpointIdentityOf } from './endpoint-record.ts';
 import type { EndpointRecord } from './endpoint-record.ts';
 import { parseJson } from './json.ts';
-import { missingRecordFailure, remedyOf } from './remedy.ts';
+import { needsProbeOf, preconditionOf, remedyOf } from './remedy.ts';
 
 export const IDENTITY_READ_TIMEOUT_MS = 10_000;
 
@@ -100,7 +100,6 @@ export const memoizedVerification = (verifyOnce: (signal: AbortSignal) => Promis
   };
 };
 
-export { remedyOf };
 
 export const ollamaServerRefusal = (targetName: string, adapter: string, endpoint: string): PreconditionFailedError =>
   new PreconditionFailedError(
@@ -132,15 +131,14 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
   const declaredParts = layerOf(declared);
   let record = options.record;
   let saving: Promise<void> = Promise.resolve();
+  const needsProbe = needsProbeOf(
+    targetName,
+    `the target "${targetName}" sets toolCalling to auto, but no probe record exists`,
+    `no record for ${endpoint} and model ${model}`,
+  );
 
   const requireRecord = (): EndpointRecord => {
-    if (record === null) {
-      throw missingRecordFailure(
-        `the target "${targetName}" sets toolCalling to auto, but no probe record exists`,
-        `no record for ${endpoint} and model ${model}`,
-        targetName,
-      );
-    }
+    if (record === null) throw preconditionOf(needsProbe);
     return record;
   };
 
@@ -179,7 +177,7 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
     verify,
     raiseHeadroom,
     capabilities: async () => {
-      if (record === null) return { ...withImageDefault(declared), source: 'unprobed' };
+      if (record === null) return { ...withImageDefault(declared), toolCalling: 'needs_probe', needsProbe, source: 'unprobed' };
       const decision = decideToolCalling(record.report);
       const { toolCalling, structuredOutput, streaming, stopSequences, outputBoundField, parallelToolCalls, usageReported, reasoning, promptCache } = capabilitiesFromProbe(
         record.report,
