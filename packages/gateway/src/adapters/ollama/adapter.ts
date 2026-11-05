@@ -6,7 +6,7 @@ import { StreamFailure, UpstreamProtocolError } from '../shared/failures.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
 import { retryAfterHint, httpErrorOf } from '../shared/http-error.ts';
 import type { ErrorDetailReader } from '../shared/http-error.ts';
-import { resolveToolChoice } from '../shared/tool-choice.ts';
+import { resolveToolChoice } from '../../core/tool-choice.ts';
 import { OLLAMA_TOOL_CHOICE, buildOllamaBody } from './request.ts';
 import { ollamaEventsOf } from './stream.ts';
 import type { OllamaAdapter, OllamaAdapterOptions } from './types.ts';
@@ -70,6 +70,7 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
     capabilities: (target: AdapterTarget) => options.capabilities(target),
     create,
     compact,
+    toolChoiceWire: () => OLLAMA_TOOL_CHOICE,
     classify: createUpstreamClassifier(OLLAMA_LABEL),
     ...(health === undefined ? {} : { health: (target: AdapterTarget) => health(target) }),
     close: () => {

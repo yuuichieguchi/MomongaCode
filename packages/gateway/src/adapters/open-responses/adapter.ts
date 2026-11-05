@@ -1,8 +1,7 @@
 import { decodeSse } from '@momonga/foundation';
 import { summaryTokenCapFor } from '@momonga/protocol';
-import type { AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
-import { resolveToolChoice } from '../shared/tool-choice.ts';
-import type { ToolChoiceWire } from '../shared/tool-choice.ts';
+import type { ToolChoiceWire, AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
+import { resolveToolChoice } from '../../core/tool-choice.ts';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
 import { boundedSseBytes } from '../shared/body-reading.ts';
 import { createUpstreamClassifier } from '../shared/classify.ts';
@@ -105,6 +104,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
     create,
     compact,
     renderCompactWire,
+    toolChoiceWire: () => OPEN_RESPONSES_TOOL_CHOICE,
     classify: createUpstreamClassifier(OPEN_RESPONSES_PROVIDER_LABEL),
     ...(health === undefined ? {} : { health: (target: AdapterTarget) => health(target) }),
     close: () => {

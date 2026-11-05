@@ -388,6 +388,7 @@ export type {
   ProviderAdapter,
   ReasoningOrigin,
   RenderWireOptions,
+  ToolChoiceWire,
 } from './adapter.ts';
 export { ADAPTER_NEUTRAL_ERROR_CODES } from './adapter.ts';
 export type { AdapterNeutralErrorCode } from './adapter.ts';

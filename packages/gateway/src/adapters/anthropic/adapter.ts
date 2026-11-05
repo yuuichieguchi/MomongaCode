@@ -1,10 +1,9 @@
 import { decodeSse } from '@momonga/foundation';
 import { EXACT_ERROR_SHAPE, countReplyOf, summaryTokenCapFor } from '@momonga/protocol';
-import type { AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterCountTokensResult, AdapterInputItem, AdapterRequest, AdapterTarget, CountTokensRequest, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
+import type { ToolChoiceWire, AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterCountTokensResult, AdapterInputItem, AdapterRequest, AdapterTarget, CountTokensRequest, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
 import { normalizeInput } from '../../core/input.ts';
-import { resolveToolChoice } from '../shared/tool-choice.ts';
-import type { ToolChoiceWire } from '../shared/tool-choice.ts';
+import { resolveToolChoice } from '../../core/tool-choice.ts';
 import { boundedSseBytes, readTextLimited } from '../shared/body-reading.ts';
 import { createUpstreamClassifier } from '../shared/classify.ts';
 import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
@@ -228,6 +227,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
     countWire,
     compact,
     renderCompactWire,
+    toolChoiceWire: () => ANTHROPIC_TOOL_CHOICE,
     classify: createUpstreamClassifier(ANTHROPIC_PROVIDER_LABEL),
     ...(health === undefined ? {} : { health: (target: AdapterTarget) => health(target) }),
     close: () => {

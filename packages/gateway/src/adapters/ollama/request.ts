@@ -1,7 +1,6 @@
 import { acceptedReasoningEfforts, clampReasoningEffort } from '@momonga/protocol';
-import type { AdapterRequest, Capabilities, FunctionTool, ReasoningCapability, ReasoningEffort, ReasoningOrigin } from '@momonga/protocol';
+import type { ToolChoiceWire, AdapterRequest, Capabilities, FunctionTool, ReasoningCapability, ReasoningEffort, ReasoningOrigin } from '@momonga/protocol';
 import { forbidsTools } from '../../core/tool-choice.ts';
-import type { ToolChoiceWire } from '../shared/tool-choice.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { SYSTEM_PART_SEPARATOR, systemTextOf } from '../shared/system-text.ts';
 import { ollamaHistoryOf } from './history.ts';

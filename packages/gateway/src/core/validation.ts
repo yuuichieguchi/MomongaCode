@@ -245,37 +245,16 @@ const validateTools = (tools: unknown): void => {
   });
 };
 
-const KNOWN_TOOL_CHOICES: ReadonlySet<unknown> = new Set(['none', 'auto', 'required']);
-
-const validateAllowedTools = (choice: SchemaObject, tools: unknown): void => {
-  const entries = choice['tools'];
-  if (!Array.isArray(entries) || entries.length === 0) {
-    throwIssue({ segments: ['tool_choice', 'tools'], message: 'is required and must be a non-empty array' });
-  }
-  const mode = choice['mode'];
-  if (mode !== undefined && !KNOWN_TOOL_CHOICES.has(mode)) {
-    throwIssue({ segments: ['tool_choice', 'mode'], message: 'must be "none", "auto" or "required"' });
-  }
+const validateAllowedNames = (choice: SchemaObject, tools: unknown): void => {
   const declared = new Set(
     (Array.isArray(tools) ? tools : []).flatMap((tool) => (isRecord(tool) && typeof tool['name'] === 'string' ? [tool['name']] : [])),
   );
-  (entries as unknown[]).forEach((entry, index) => {
-    const at = ['tool_choice', 'tools', String(index)];
-    if (!isRecord(entry) || entry['type'] !== 'function' || typeof entry['name'] !== 'string' || entry['name'] === '') {
-      throwIssue({ segments: at, message: 'must be a function choice with a name' });
-    }
-    const name = (entry as SchemaObject)['name'] as string;
+  (choice['tools'] as SchemaObject[]).forEach((entry, index) => {
+    const name = entry['name'] as string;
     if (!declared.has(name)) {
       throw invalidRequest('invalid_request', `tool_choice.tools[${index}] names "${name}", which is not among the request tools`, 'tool_choice');
     }
   });
-};
-
-const validateToolChoice = (choice: unknown, tools: unknown): void => {
-  if (KNOWN_TOOL_CHOICES.has(choice)) return;
-  if (isRecord(choice) && choice['type'] === 'function' && typeof choice['name'] === 'string' && choice['name'] !== '') return;
-  if (isRecord(choice) && choice['type'] === 'allowed_tools') return validateAllowedTools(choice, tools);
-  throwIssue({ segments: ['tool_choice'], message: 'must be "none", "auto", "required", a function choice with a name or an allowed_tools choice' });
 };
 
 const requireKnownKeys = (record: SchemaObject, known: readonly string[], prefix: readonly string[]): void => {
@@ -376,6 +355,7 @@ export const createRequestValidator = (): RequestValidator => {
   const kit = specKit();
   const createSchema = kit.compile('CreateResponseBody');
   const compactSchema = kit.compile('CompactResponseMethodPublicBody');
+  const toolChoiceSchema = kit.compile('ToolChoiceParam');
 
   const validateItems = (items: readonly unknown[]): void => {
     items.forEach((item, index) => {
@@ -403,7 +383,7 @@ export const createRequestValidator = (): RequestValidator => {
       }
       validateCreateMomonga(record['momonga'], inputLengthOf(record['input']));
       const createToolChoice = record['tool_choice'];
-      if (createToolChoice !== undefined && createToolChoice !== null) validateToolChoice(createToolChoice, record['tools']);
+      if (isRecord(createToolChoice) && createToolChoice['type'] === 'allowed_tools') validateAllowedNames(createToolChoice, record['tools']);
       return assertValidated<CreateResponseBody>(body);
     },
     parseCompact: (body) => {
@@ -428,7 +408,11 @@ export const createRequestValidator = (): RequestValidator => {
       const tools = record['tools'];
       if (tools !== undefined) validateTools(tools);
       const toolChoice = record['tool_choice'];
-      if (toolChoice !== undefined) validateToolChoice(toolChoice, tools);
+      if (toolChoice !== undefined) {
+        const verdict = toolChoiceSchema(toolChoice);
+        if (!verdict.valid) throwIssue(issueOf(verdict.errors, ['tool_choice']));
+        if (isRecord(toolChoice) && toolChoice['type'] === 'allowed_tools') validateAllowedNames(toolChoice, tools);
+      }
       validateCountMomonga(record['momonga']);
       return assertValidated<CountTokensRequest>(body);
     },

@@ -1,9 +1,8 @@
 import { decodeSse } from '@momonga/foundation';
 import { summaryTokenCapFor } from '@momonga/protocol';
-import type { AdapterCompactRequest, AllowedToolsForm, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, LenientItems, ReasoningOrigin, RenderWireOptions, StreamEvent } from '@momonga/protocol';
+import type { AdapterCompactRequest, AllowedToolsForm, ToolChoiceWire, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, LenientItems, ReasoningOrigin, RenderWireOptions, StreamEvent } from '@momonga/protocol';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
-import { resolveToolChoice } from '../shared/tool-choice.ts';
-import type { ToolChoiceWire } from '../shared/tool-choice.ts';
+import { NO_TOOL_CHOICE_WIRE, resolveToolChoice } from '../../core/tool-choice.ts';
 import { hiddenReasoningTokens } from '../../core/hidden-reasoning.ts';
 import { classifyChatCompletionsError, matchesGuardrailCode } from './classify.ts';
 import { CHAT_COMPLETIONS_VOCABULARY, withGuardrailMatcher } from './vocabulary.ts';
@@ -44,7 +43,9 @@ const DONE_MARKER = '[DONE]';
 
 const NATIVE_TOOL_CHOICE: ToolChoiceWire = { forms: ['native', 'single_tool', 'filter'], expressesRequired: true };
 
-const CONSTRAINED_TOOL_CHOICE: ToolChoiceWire = { forms: ['envelope', 'single_tool', 'filter'], expressesRequired: true };
+const PINNING_CONSTRAINED_TOOL_CHOICE: ToolChoiceWire = { forms: ['envelope', 'single_tool', 'filter'], expressesRequired: true };
+
+const LITERALLESS_CONSTRAINED_TOOL_CHOICE: ToolChoiceWire = { forms: ['filter'], expressesRequired: true };
 
 export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOptions): ChatCompletionsAdapter => {
   const pool = createEndpointPool({ label: 'chat-completions', unixPath: CHAT_COMPLETIONS_PATH, urlSuffix: CHAT_COMPLETIONS_SUFFIX }, options.liveness);
@@ -54,6 +55,14 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
     isGuardrail === undefined ? matchesGuardrailCode(parsed) : isGuardrail(target, status, parsed);
   let closing: Promise<void> | undefined;
   let closed = false;
+
+  const toolChoiceWire = (target: AdapterTarget): ToolChoiceWire => {
+    const mode = options.toolCalling(target);
+    if (mode === 'none') return NO_TOOL_CHOICE_WIRE;
+    if (mode === 'native') return NATIVE_TOOL_CHOICE;
+    const support = options.keywordSupport?.(target) ?? FULL_KEYWORD_SUPPORT;
+    return support.const || support.enum ? PINNING_CONSTRAINED_TOOL_CHOICE : LITERALLESS_CONSTRAINED_TOOL_CHOICE;
+  };
 
   const bodyFor = (
     request: AdapterRequest,
@@ -67,9 +76,9 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
       throw new UnsupportedInputError('capability_unsupported', 'this target does not support tool calling', 'tools');
     }
     if (mode === 'constrained') {
-      return buildConstrainedBody(resolveToolChoice(request, allowedTools, target.name, CONSTRAINED_TOOL_CHOICE), options.keywordSupport?.(target) ?? FULL_KEYWORD_SUPPORT, origin);
+      return buildConstrainedBody(resolveToolChoice(request, allowedTools, target.name, toolChoiceWire(target)), options.keywordSupport?.(target) ?? FULL_KEYWORD_SUPPORT, origin);
     }
-    return { body: buildNativeBody(resolveToolChoice(request, allowedTools, target.name, NATIVE_TOOL_CHOICE), origin), envelope: undefined };
+    return { body: buildNativeBody(resolveToolChoice(request, allowedTools, target.name, toolChoiceWire(target)), origin), envelope: undefined };
   };
 
   const lenientWireOf = (request: AdapterRequest, target: AdapterTarget, lenient: LenientItems, origin: ReasoningOrigin): ChatWire => {
@@ -194,6 +203,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
     compact,
     renderWire,
     renderCompactWire,
+    toolChoiceWire,
     classify: classifyChatCompletionsError,
     ...(health === undefined ? {} : { health: (target: AdapterTarget) => health(target) }),
     ...(countTokens === undefined
