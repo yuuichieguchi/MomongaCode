@@ -107,6 +107,32 @@ describe('resources embedded in a remote document that is not yet entered', () =
   });
 });
 
+describe('resources embedded in the compiled document', () => {
+  it('labels a cycle inside an embedded resource with its root-relative pointer', () => {
+    const schema = {
+      $defs: { e: { $id: 'https://x.test/e', 'x-k': { a: { allOf: [{ $ref: '#/x-k/a' }] } } } },
+      allOf: [{ $ref: 'https://x.test/e#/x-k/a' }],
+    };
+    expectCycleRefusal(compileUntrustedSchema, schema, ['#/$defs/e/x-k/a/allOf/0/$ref']);
+  });
+
+  it('labels a cycle reached through an $anchor inside an embedded resource with its root-relative pointer', () => {
+    const schema = {
+      $defs: { e: { $id: 'https://x.test/e', $defs: { loop: { $anchor: 'loop', anyOf: [{ $ref: '#loop' }] } } } },
+      allOf: [{ $ref: 'https://x.test/e#loop' }],
+    };
+    expectCycleRefusal(compileUntrustedSchema, schema, ['#/$defs/e/$defs/loop/anyOf/0/$ref']);
+  });
+
+  it('labels a cycle under an unknown keyword of an embedded resource reached by a pointer fragment', () => {
+    const schema = {
+      $defs: { e: { $id: 'https://x.test/e2', 'x-k': { a: { not: { $ref: 'https://x.test/e2#/x-k/a' } } } } },
+      $ref: 'https://x.test/e2#/x-k/a',
+    };
+    expectCycleRefusal(compileUntrustedSchema, schema, ['#/$defs/e/x-k/a/not/$ref']);
+  });
+});
+
 describe('schemas the checker must accept', () => {
   it('accepts a schema that never references the cycle in a remote document', () => {
     const boundary = remoteBoundary();

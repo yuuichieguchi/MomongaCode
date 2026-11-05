@@ -29,7 +29,7 @@ type Index = {
   readonly rootBase: string;
 };
 
-type Document = { readonly document: string; readonly draft07: boolean };
+type Document = { readonly document: string; readonly draft07: boolean; readonly prefix: string };
 
 const IN_PLACE_SINGLE = ['not', 'if', 'then', 'else'] as const;
 const IN_PLACE_LIST = ['allOf', 'anyOf', 'oneOf'] as const;
@@ -94,7 +94,9 @@ const indexLocations = (root: Pending, index: Index, scanOnly: boolean): void =>
         if (document !== '') {
           document = base;
           pointer = '';
-          index.documents.set(node, { document, draft07: item.draft07 });
+          index.documents.set(node, { document, draft07: item.draft07, prefix: '' });
+        } else {
+          index.documents.set(node, { document, draft07: item.draft07, prefix: pointer });
         }
       }
     }
@@ -172,7 +174,7 @@ const lookup = (reference: string, from: Location, index: Index): Json | undefin
   const draft07 = entry?.draft07 ?? from.draft07;
   const trail = resolved.fragment.startsWith('/') ? pointerTrail(resolved.resource, resolved.fragment) : [resolved.resource];
   const base = trail === undefined ? resolved.resourceBase : baseAlong(trail, resolved.resourceBase, draft07);
-  indexLocations({ node: target, base, pointer: resolved.fragment.startsWith('/') ? encodedPointer(resolved.fragment) : '', document, draft07, resourceRoot: false }, index, false);
+  indexLocations({ node: target, base, pointer: resolved.fragment.startsWith('/') ? `${entry?.prefix ?? ''}${encodedPointer(resolved.fragment)}` : entry?.prefix ?? '', document, draft07, resourceRoot: false }, index, false);
   return target;
 };
 
@@ -209,7 +211,7 @@ export const inPlaceReferenceCycle = (schema: Json, dialect: SchemaDialect, remo
     owners: new Map(),
     rootBase: typeof rootId === 'string' ? resolveUri(ENGINE_ROOT_BASE, splitFragment(rootId)[0]) : ENGINE_ROOT_BASE,
   };
-  index.documents.set(schema, { document: '', draft07: rootIsDraft07 });
+  index.documents.set(schema, { document: '', draft07: rootIsDraft07, prefix: '' });
   indexLocations({ node: schema, base: index.rootBase, pointer: '', document: '', draft07: rootIsDraft07, resourceRoot: true }, index, false);
   const starts = [...index.locations.values()];
   for (const [key, document] of remotes) {
@@ -217,7 +219,7 @@ export const inPlaceReferenceCycle = (schema: Json, dialect: SchemaDialect, remo
     const declared = document['$schema'];
     const draft07 = declared === undefined ? rootIsDraft07 : typeof declared === 'string' && dialectOfUri(declared) === 'draft-07';
     const prepared = '$id' in document ? document : { ...document, $id: key };
-    index.documents.set(prepared, { document: key, draft07 });
+    index.documents.set(prepared, { document: key, draft07, prefix: '' });
     index.pendingRemotes.add(prepared);
     indexLocations({ node: prepared, base: resolveUri(ENGINE_ROOT_BASE, splitFragment(key)[0]), pointer: '', document: key, draft07, resourceRoot: true }, index, true);
     if (!index.resources.has(key)) index.resources.set(key, prepared);
