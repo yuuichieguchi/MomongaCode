@@ -27,10 +27,15 @@
 (*     (inside the margin M, refresh first) at age 1 and Stale (inside the *)
 (*     skew S, never sent) from age 2; clock skew, the values of L, S, B   *)
 (*     and M, and earliest_refresh_at are the Z3 proof plan-refresh        *)
-(*   - the retries inside one refresh are one outcome: answered, or given  *)
-(*     up (a transient failure: nothing is known about the server)         *)
+(*   - a refresh attempt ends answered, or given up (a timeout or lost     *)
+(*     response: nothing is known about the server). After a give-up the   *)
+(*     client may resend the same token up to MaxResend times in the same  *)
+(*     request while holding the mutex (ReqRetry), or end the refresh as a *)
+(*     transient failure at any give-up; the count is per request. The     *)
+(*     backoff and the Retry-After cap are the Z3 proof plan-refresh       *)
 (*   - the ID token, the JWKS, the scope verdict and PKCE are a candidate  *)
-(*     subject at install (PlanSignIn models the attempt)                  *)
+(*     subject and the client id of the registration the authorization     *)
+(*     came from (inSrc); PlanSignIn models the attempt                    *)
 (*   - the exchange of a code and the install are one step; a crash        *)
 (*     before the install leaves the record unchanged, the same as not     *)
 (*     starting                                                            *)
@@ -60,41 +65,48 @@
 (*   acked, badSend, forcedCnt, soDone, outConfirmed, lossKind,            *)
 (*   startedAfterOut                                                       *)
 (*                                                                         *)
-(* Readings of the design that the properties fix                           *)
-(*   - I-C3: a send of token t counts as unanswered when the client gave   *)
-(*     up, or a crash orphaned it, or a crash dropped the knowledge that   *)
-(*     the answer arrived but was not yet persisted. Every arrival at the  *)
-(*     server of an already consumed token must be paid for by one of      *)
-(*     these (slack), and a token whose answer was received is never sent  *)
-(*     again (badSend). Resending a token after an unanswered send, which  *)
-(*     includes every retry of a transient failure, is allowed                *)
-(*   - I-C9: the coalescing memory (mForced) is per process; a restart may *)
-(*     force a refresh for a generation that an earlier process forced     *)
+(* Statements of the properties (the wording of review 1, F7 and rulings)  *)
+(*   - I-C3: after a send whose answer was received, never resend; after   *)
+(*     an unanswered send, resend at most attempts - 1 times within one    *)
+(*     refresh. A send is unanswered when the client gave up, a crash      *)
+(*     orphaned it, or a crash dropped the knowledge that the answer       *)
+(*     arrived but was not yet persisted. Checked as: badSend (a token     *)
+(*     whose answer was received is never sent) and slack (every arrival   *)
+(*     at the server of an already consumed token is paid for by an        *)
+(*     unanswered send of that token)                                      *)
+(*   - I-C9: at most one forced refresh per generation per gateway         *)
+(*     process; mForced is memory, so a restart may force once more, and   *)
+(*     that resend is within I-C3                                          *)
 (*   - I-C10: after sign-out has returned, no request starts (reads a      *)
-(*     bearer), and neither the file nor the memory holds a refresh token. *)
-(*     The access token of a request already in flight is not recalled     *)
+(*     bearer) and neither the file nor the memory holds a refresh token   *)
+(*     (SignOutFinal). The access token of a request already in flight is  *)
+(*     not recalled. confirmed is reported only when the token revoked is  *)
+(*     known to be the latest: no pendingRefresh on the file and the       *)
+(*     memory record flushed; otherwise unconfirmed. Then a confirmed      *)
+(*     revocation leaves no live family (SignOutRevokesFamily). With       *)
+(*     GateConfirm = FALSE the report is confirmed whenever the server     *)
+(*     answered 200, and the lost rotation refutes the property            *)
+(*     (PlanCredential.signOutAfterLoss): the server answers an empty 200  *)
+(*     for a consumed token and the family with the replacement stays live *)
 (*   - I-C6: a record is in needs_sign_in only when the server family is   *)
 (*     revoked (a terminal code was the answer)                            *)
-(*   - I-C7: registration surviving is dSub never changing; the cause of a *)
+(*   - I-C7: registration survives: an install writes dSub and dClient     *)
+(*     only from absent (IdentityPinned), and LossDetected holds that the  *)
+(*     record keeps its subject and client id; the cause of a              *)
 (*     needs_sign_in that was caused by a consumed token is                *)
 (*     refresh_interrupted (CauseAttributed)                               *)
-(*                                                                         *)
-(* Finding (PlanCredential.signOutAfterLoss): after a lost rotation the    *)
-(* file holds the consumed token. Sign-out revokes it, the server answers  *)
-(* an empty 200 (design F11: "including for an already-invalid token"),   *)
-(* the gateway reports confirmed, and the family with the replacement      *)
-(* token stays live at OpenAI. Nobody holds that token, so SignOutFinal    *)
-(* holds, but SignOutRevokesFamily does not. The design's statement that   *)
-(* serialization makes the question of O4 moot does not cover this case.  *)
+(*   - I-C8: an install requires the same sub and client id as the record  *)
+(*     (PinIdentity); AccountsIsolated says over content that the tokens   *)
+(*     of the record of account a come from the family of a and the client *)
+(*     id is the one registered for a; OtherAccountsUntouched says a step  *)
+(*     changes the file of at most one account                             *)
 (*                                                                         *)
 (* Properties                                                              *)
 (*   SingleUse (I-C3), MutualExclusion (I-C4), PersistBeforeForget         *)
 (*   (I-C5), NoEraseOnTransient (I-C6), LossDetected and CauseAttributed   *)
-(*   (I-C7), IdentityPinned and AccountsIsolated (I-C8), Coalesced (I-C9), *)
-(*   SignOutFinal (I-C10), SignOutRevokesFamily (the strict reading of     *)
-(*   I-C10, "a confirmed revocation leaves no live family"; it is refuted  *)
-(*   by the lost rotation, see PlanCredential.signOutAfterLoss), and the   *)
-(*   liveness properties Settles and AllServed.                            *)
+(*   (I-C7), IdentityPinned, AccountsIsolated and OtherAccountsUntouched   *)
+(*   (I-C8), Coalesced (I-C9), SignOutFinal and SignOutRevokesFamily       *)
+(*   (I-C10), and the liveness properties Settles and AllServed            *)
 (*                                                                         *)
 (* Configurations (scripts/tlc.sh <name>, specs/tla/<name>.cfg)            *)
 (*   PlanCredential              one account, two requests, one crash, one *)
@@ -107,9 +119,12 @@
 (*   PlanCredential.crashPoints  persist failures with crashes, every      *)
 (*                               crash point of section 5.5                *)
 (*   PlanCredential.twoAccounts  two records, independent mutexes          *)
-(*   PlanCredential.live         Settles and AllServed under weak fairness *)
-(*                               (scripts/tlc.sh <name> -lncheck final)    *)
-(*   PlanCredential.deep         larger bounds                             *)
+(*   PlanCredential.live         Settles under weak fairness with every    *)
+(*                               fault allowed (-lncheck final)            *)
+(*   PlanCredential.liveServed   AllServed with the faults it survives:    *)
+(*                               401, failed persist, clock (-lncheck      *)
+(*                               final)                                    *)
+(*   PlanCredential.deep         larger bounds, with a sign-in             *)
 (*   PlanCredential.noMutex      no mutex: SingleUse refuted               *)
 (*   PlanCredential.eraseOnTransient  tokens cleared on a given-up answer: *)
 (*                               NoEraseOnTransient refuted                *)
@@ -118,7 +133,15 @@
 (*                               written: PersistBeforeForget refuted      *)
 (*   PlanCredential.signOutNoWait  sign-out does not wait for the mutex:   *)
 (*                               SignOutFinal refuted                      *)
-(*   PlanCredential.noCoalesce   every 401 forces a refresh: Coalesced     *)
+(*   PlanCredential.noCoalesceGen     a 401 on an older generation forces  *)
+(*                               a refresh: Coalesced refuted              *)
+(*   PlanCredential.noCoalesceForced  a 401 on the current generation      *)
+(*                               after a forced refresh that failed        *)
+(*                               forces again: Coalesced refuted           *)
+(*   PlanCredential.pinIdentityOff  an install writes a subject or client  *)
+(*                               that differs: IdentityPinned refuted      *)
+(*   PlanCredential.crossAccount  an install takes the tokens of another   *)
+(*                               account's registration: AccountsIsolated  *)
 (*                               refuted                                   *)
 (*   PlanCredential.mutexOnly    only the mutex; SingleUse and             *)
 (*                               MutualExclusion hold                      *)
@@ -126,8 +149,9 @@
 (*                               hold, CauseAttributed is not checked      *)
 (*   PlanCredential.noIntentCause  the same, CauseAttributed refuted: this *)
 (*                               is what pendingRefresh buys               *)
-(*   PlanCredential.signOutAfterLoss  SignOutRevokesFamily refuted by a    *)
-(*                               sign-out after a lost rotation            *)
+(*   PlanCredential.signOutAfterLoss  GateConfirm = FALSE: SignOutRevokes  *)
+(*                               Family refuted by a sign-out after a lost *)
+(*                               rotation                                  *)
 (*                                                                         *)
 (* The design (section 9) states that the module and PlanSignIn share      *)
 (* state names and terminal codes through a JSON emitted by the            *)
@@ -140,17 +164,20 @@ CONSTANTS
     Reqs, SecondReqs, SecondAcct,
     MaxClock, MaxCrash, MaxGiveUp, MaxDisc, MaxSignIn, MaxSignOut,
     MaxPersistFail, MaxReject, MaxRevokeFail,
-    UseMutex, Coalesce, EraseOnTransient, ForgetFirst, SignOutWaits, Intent
+    UseMutex, CoalesceGen, CoalesceForced, EraseOnTransient, ForgetFirst, SignOutWaits, Intent,
+    PinIdentity, GateConfirm, MaxResend
 
 ASSUME Reqs # {} /\ SecondReqs \subseteq Reqs /\ SecondAcct \in BOOLEAN /\ (SecondReqs # {} => SecondAcct)
 
 Accts == IF SecondAcct THEN {"a1", "a2"} ELSE {"a1"}
 Subs == {"s1", "s2"}
 AcctSub == [a \in Accts |-> IF a = "a1" THEN "s1" ELSE "s2"]
+AcctClient == [a \in Accts |-> IF a = "a1" THEN 1 ELSE 2]
 ReqAcct == [r \in Reqs |-> IF r \in SecondReqs THEN "a2" ELSE "a1"]
 
 ASSUME \A c \in {MaxClock, MaxCrash, MaxGiveUp, MaxDisc, MaxSignIn, MaxSignOut, MaxPersistFail, MaxReject, MaxRevokeFail} : c \in Nat
-ASSUME \A c \in {UseMutex, Coalesce, EraseOnTransient, ForgetFirst, SignOutWaits, Intent} : c \in BOOLEAN
+ASSUME \A c \in {UseMutex, CoalesceGen, CoalesceForced, EraseOnTransient, ForgetFirst, SignOutWaits, Intent, PinIdentity, GateConfirm} : c \in BOOLEAN
+ASSUME MaxResend \in Nat
 
 None == "none"
 MaxTok == 9
@@ -162,24 +189,24 @@ Causes == TerminalCodes \cup {"refresh_interrupted", "transient", None}
 AcctStates == {"active", "needs_sign_in", "signing_out", "registered"}
 
 VARIABLES
-    dState, dGen, dRt, dCause, dPend, dIss, dSub,
+    dState, dGen, dRt, dCause, dPend, dIss, dSub, dClient, dFam,
     mState, mGen, mRt, mDirty, mIss, mForced,
     sCur, sUsed, sRev, sStart, sNext,
     net, pktN,
     holder, waitq,
-    rph, rpur, rtok, rpkt, rgot, rgen, rretried, rres,
-    inPh, inCand, outPh, prPh,
+    rph, rpur, rtok, rtry, rpkt, rgot, rgen, rretried, rres,
+    inPh, inCand, inSrc, outPh, prPh,
     clock,
     crashes, giveups, discs, signins, signouts, pfails, rejects, rvfails,
     slack, acked, badSend, forcedCnt, soDone, outConfirmed, lossKind, startedAfterOut
 
-diskVars == <<dState, dGen, dRt, dCause, dPend, dIss, dSub>>
+diskVars == <<dState, dGen, dRt, dCause, dPend, dIss, dSub, dClient, dFam>>
 memVars == <<mState, mGen, mRt, mDirty, mIss, mForced>>
 srvVars == <<sCur, sUsed, sRev, sStart, sNext>>
 netVars == <<net, pktN>>
 lockVars == <<holder, waitq>>
-reqVars == <<rph, rpur, rtok, rpkt, rgot, rgen, rretried, rres>>
-actVars == <<inPh, inCand, outPh, prPh>>
+reqVars == <<rph, rpur, rtok, rtry, rpkt, rgot, rgen, rretried, rres>>
+actVars == <<inPh, inCand, inSrc, outPh, prPh>>
 budgetVars == <<crashes, giveups, discs, signins, signouts, pfails, rejects, rvfails>>
 ghostVars == <<slack, acked, badSend, forcedCnt, soDone, outConfirmed, lossKind, startedAfterOut>>
 vars == <<diskVars, memVars, srvVars, netVars, lockVars, reqVars, actVars, clock, budgetVars, ghostVars>>
@@ -195,6 +222,8 @@ Init ==
     /\ dPend = [a \in Accts |-> FALSE]
     /\ dIss = [a \in Accts |-> 0]
     /\ dSub = AcctSub
+    /\ dClient = AcctClient
+    /\ dFam = [a \in Accts |-> a]
     /\ mState = [a \in Accts |-> "active"]
     /\ mGen = [a \in Accts |-> 1]
     /\ mRt = [a \in Accts |-> 1]
@@ -220,6 +249,8 @@ Init ==
     /\ rres = [r \in Reqs |-> None]
     /\ inPh = [a \in Accts |-> "none"]
     /\ inCand = [a \in Accts |-> AcctSub[a]]
+    /\ inSrc = [a \in Accts |-> a]
+    /\ rtry = [r \in Reqs |-> 0]
     /\ outPh = [a \in Accts |-> "none"]
     /\ prPh = [a \in Accts |-> "none"]
     /\ clock = 0
@@ -265,7 +296,7 @@ Finish(r, res) ==
 Start(r) ==
     LET a == ReqAcct[r] IN
     /\ rph[r] = "idle"
-    /\ UNCHANGED <<diskVars, memVars, srvVars, netVars, holder, rpur, rtok, rpkt, rgot, rretried, actVars, clock, budgetVars>>
+    /\ UNCHANGED <<diskVars, memVars, srvVars, netVars, holder, rpur, rtok, rtry, rpkt, rgot, rretried, actVars, clock, budgetVars>>
     /\ UNCHANGED <<slack, acked, badSend, forcedCnt, soDone, outConfirmed, lossKind>>
     /\ IF mState[a] # "active"
         THEN /\ Finish(r, "signIn") /\ UNCHANGED <<rgen, startedAfterOut, waitq>>
@@ -279,7 +310,7 @@ ReqGrant(r) ==
     LET a == ReqAcct[r] IN
     /\ rph[r] = "want"
     /\ CanTake(a, r)
-    /\ UNCHANGED <<diskVars, memVars, srvVars, netVars, rtok, rpkt, rgot, rretried, actVars, clock, budgetVars>>
+    /\ UNCHANGED <<diskVars, memVars, srvVars, netVars, rtok, rtry, rpkt, rgot, rretried, actVars, clock, budgetVars>>
     /\ UNCHANGED <<slack, acked, badSend, forcedCnt, soDone, outConfirmed, lossKind>>
     /\ IF mState[a] # "active"
         THEN /\ Finish(r, "signIn") /\ Pop(a) /\ UNCHANGED <<rpur, rgen, startedAfterOut>>
@@ -297,7 +328,7 @@ ReqPend(r) ==
     /\ dIss' = Set(dIss, a, mIss[a])
     /\ mDirty' = Set(mDirty, a, FALSE)
     /\ rph' = Set(rph, r, "send")
-    /\ UNCHANGED <<dCause, dSub, mState, mGen, mRt, mIss, mForced, srvVars, netVars, lockVars, rpur, rtok, rpkt, rgot, rgen, rretried, rres, actVars, clock, budgetVars, ghostVars>>
+    /\ UNCHANGED <<dCause, dSub, dClient, dFam, mState, mGen, mRt, mIss, mForced, srvVars, netVars, lockVars, rpur, rtok, rtry, rpkt, rgot, rgen, rretried, rres, actVars, clock, budgetVars, ghostVars>>
 
 ReqSend(r) ==
     LET a == ReqAcct[r] IN
@@ -312,7 +343,7 @@ ReqSend(r) ==
              /\ pktN' = pktN + 1
              /\ badSend' = Set(badSend, a, badSend[a] \/ mRt[a] \in acked[a])
              /\ UNCHANGED <<holder, waitq, rres>>
-    /\ UNCHANGED <<diskVars, memVars, srvVars, rpur, rgot, rgen, rretried, actVars, clock, budgetVars, slack, acked, forcedCnt, soDone, outConfirmed, lossKind, startedAfterOut>>
+    /\ UNCHANGED <<diskVars, memVars, srvVars, rpur, rtry, rgot, rgen, rretried, actVars, clock, budgetVars, slack, acked, forcedCnt, soDone, outConfirmed, lossKind, startedAfterOut>>
 
 Deliver(p) ==
     LET a == p.a
@@ -345,7 +376,7 @@ ClearTokens(a, cause, loss) ==
     /\ mRt' = Set(mRt, a, 0)
     /\ mDirty' = Set(mDirty, a, FALSE)
     /\ lossKind' = Set(lossKind, a, loss)
-    /\ UNCHANGED <<dGen, dIss, dSub, mGen, mIss, mForced>>
+    /\ UNCHANGED <<dGen, dIss, dSub, dClient, dFam, mGen, mIss, mForced>>
 
 ReqRecv(r) ==
     LET a == ReqAcct[r] IN
@@ -360,7 +391,7 @@ ReqRecv(r) ==
             ELSE /\ ClearTokens(a, IF dPend[a] THEN "refresh_interrupted" ELSE p.rv, IF p.rv = "refresh_token_reused" THEN "reused" ELSE "other")
                  /\ Finish(r, "signIn") /\ Release(a)
                  /\ UNCHANGED <<acked, rgot>>
-        /\ UNCHANGED <<srvVars, pktN, rpur, rtok, rpkt, rgen, rretried, actVars, clock, budgetVars, slack, badSend, forcedCnt, soDone, outConfirmed, startedAfterOut>>
+        /\ UNCHANGED <<srvVars, pktN, rpur, rtok, rtry, rpkt, rgen, rretried, actVars, clock, budgetVars, slack, badSend, forcedCnt, soDone, outConfirmed, startedAfterOut>>
 
 ReqGiveUp(r) ==
     LET a == ReqAcct[r]
@@ -381,14 +412,28 @@ ReqGiveUp(r) ==
                             THEN Begin(r, mGen[a]) /\ UNCHANGED rres
                             ELSE Finish(r, "unavailable") /\ UNCHANGED <<rgen, startedAfterOut>>
                      ELSE Finish(r, "rejected") /\ UNCHANGED <<rgen, startedAfterOut>>
-        /\ UNCHANGED <<srvVars, pktN, rpur, rtok, rpkt, rgot, rretried, actVars, clock, acked, badSend, forcedCnt, soDone, outConfirmed, crashes, discs, signins, signouts, pfails, rejects, rvfails>>
+        /\ UNCHANGED <<srvVars, pktN, rpur, rtok, rtry, rpkt, rgot, rretried, actVars, clock, acked, badSend, forcedCnt, soDone, outConfirmed, crashes, discs, signins, signouts, pfails, rejects, rvfails>>
+
+ReqRetry(r) ==
+    LET a == ReqAcct[r]
+        t == rtok[r]
+    IN
+    \E p \in net :
+        /\ rph[r] = "await" /\ p.id = rpkt[r] /\ p.live
+        /\ giveups < MaxGiveUp /\ rtry[r] < MaxResend
+        /\ giveups' = giveups + 1
+        /\ net' = IF p.st = "replied" THEN net \ {p} ELSE (net \ {p}) \cup {[p EXCEPT !.live = FALSE]}
+        /\ slack' = Set(slack, a, Set(slack[a], t, slack[a][t] + 1))
+        /\ rph' = Set(rph, r, "send")
+        /\ rtry' = Set(rtry, r, rtry[r] + 1)
+        /\ UNCHANGED <<diskVars, memVars, srvVars, pktN, lockVars, rpur, rtok, rpkt, rgot, rgen, rretried, rres, actVars, clock, acked, badSend, forcedCnt, soDone, outConfirmed, lossKind, startedAfterOut, crashes, discs, signins, signouts, pfails, rejects, rvfails>>
 
 ReqForget(r) ==
     LET a == ReqAcct[r] IN
     /\ rph[r] = "forget"
     /\ dRt' = Set(dRt, a, 0)
     /\ rph' = Set(rph, r, "persist")
-    /\ UNCHANGED <<dState, dGen, dCause, dPend, dIss, dSub, memVars, srvVars, netVars, lockVars, rpur, rtok, rpkt, rgot, rgen, rretried, rres, actVars, clock, budgetVars, ghostVars>>
+    /\ UNCHANGED <<dState, dGen, dCause, dPend, dIss, dSub, dClient, dFam, memVars, srvVars, netVars, lockVars, rpur, rtok, rtry, rpkt, rgot, rgen, rretried, rres, actVars, clock, budgetVars, ghostVars>>
 
 ReqPersist(r) ==
     LET a == ReqAcct[r]
@@ -416,12 +461,12 @@ ReqPersist(r) ==
           /\ mDirty' = Set(mDirty, a, TRUE)
           /\ pfails' = pfails + 1
           /\ UNCHANGED <<dState, dGen, dRt, dCause, dPend, dIss>>
-    /\ UNCHANGED <<dSub, mForced, srvVars, netVars, rpur, rtok, rpkt, rgot, rres, actVars, clock, crashes, giveups, discs, signins, signouts, rejects, rvfails, slack, acked, badSend, forcedCnt, soDone, outConfirmed, lossKind>>
+    /\ UNCHANGED <<dSub, dClient, dFam, mForced, srvVars, netVars, rpur, rtok, rtry, rpkt, rgot, rres, actVars, clock, crashes, giveups, discs, signins, signouts, rejects, rvfails, slack, acked, badSend, forcedCnt, soDone, outConfirmed, lossKind>>
 
 ReqResult(r) ==
     LET a == ReqAcct[r] IN
     /\ rph[r] = "inflight"
-    /\ UNCHANGED <<diskVars, memVars, srvVars, netVars, holder, rpur, rtok, rpkt, rgot, rgen, actVars, clock, crashes, giveups, discs, signins, signouts, pfails, rvfails, ghostVars>>
+    /\ UNCHANGED <<diskVars, memVars, srvVars, netVars, holder, rpur, rtok, rtry, rpkt, rgot, rgen, actVars, clock, crashes, giveups, discs, signins, signouts, pfails, rvfails, ghostVars>>
     /\ \/ /\ Finish(r, "served") /\ UNCHANGED <<waitq, rretried, rejects>>
        \/ /\ sRev[a] \/ rejects < MaxReject
           /\ rejects' = IF sRev[a] THEN rejects ELSE rejects + 1
@@ -435,12 +480,12 @@ ForceGrant(r) ==
     IN
     /\ rph[r] = "wantForce"
     /\ CanTake(a, r)
-    /\ UNCHANGED <<diskVars, srvVars, netVars, rtok, rpkt, rgot, actVars, clock, budgetVars, slack, acked, badSend, soDone, outConfirmed, lossKind>>
+    /\ UNCHANGED <<diskVars, srvVars, netVars, rtok, rtry, rpkt, rgot, actVars, clock, budgetVars, slack, acked, badSend, soDone, outConfirmed, lossKind>>
     /\ IF mState[a] # "active"
         THEN /\ Finish(r, "signIn") /\ Pop(a) /\ UNCHANGED <<memVars, rpur, rgen, rretried, startedAfterOut, forcedCnt>>
-        ELSE IF Coalesce /\ mGen[a] > g
+        ELSE IF CoalesceGen /\ mGen[a] > g
             THEN /\ Begin(r, mGen[a]) /\ Pop(a) /\ rretried' = Set(rretried, r, TRUE) /\ UNCHANGED <<memVars, rpur, rres, forcedCnt>>
-            ELSE IF Coalesce /\ mForced[a] = g
+            ELSE IF CoalesceForced /\ mGen[a] = g /\ mForced[a] = g
                 THEN /\ Finish(r, "rejected") /\ Pop(a) /\ UNCHANGED <<memVars, rpur, rgen, rretried, startedAfterOut, forcedCnt>>
                 ELSE /\ Take(a, r)
                      /\ mForced' = Set(mForced, a, g)
@@ -454,8 +499,7 @@ ForceGrant(r) ==
 
 SiStart(a) ==
     /\ inPh[a] = "none" /\ signins < MaxSignIn
-    /\ \E c \in Subs :
-        /\ inCand' = Set(inCand, a, c)
+    /\ \E c \in Subs, s \in Accts : inCand' = Set(inCand, a, c) /\ inSrc' = Set(inSrc, a, s)
     /\ inPh' = Set(inPh, a, "want")
     /\ Enqueue(a, "in")
     /\ signins' = signins + 1
@@ -465,25 +509,28 @@ SiGrant(a) ==
     /\ inPh[a] = "want" /\ CanTake(a, "in")
     /\ Take(a, "in")
     /\ inPh' = Set(inPh, a, "install")
-    /\ UNCHANGED <<diskVars, memVars, srvVars, netVars, reqVars, inCand, outPh, prPh, clock, budgetVars, ghostVars>>
+    /\ UNCHANGED <<diskVars, memVars, srvVars, netVars, reqVars, inCand, inSrc, outPh, prPh, clock, budgetVars, ghostVars>>
 
 SiInstall(a) ==
-    LET n == sNext[a] + 1
+    LET s == inSrc[a]
+        n == sNext[s] + 1
         g == Max(mGen[a], dGen[a]) + 1
+        allowed == ~PinIdentity \/ (inCand[a] = dSub[a] /\ AcctClient[s] = dClient[a])
     IN
     /\ inPh[a] = "install"
     /\ Release(a)
     /\ inPh' = Set(inPh, a, "none")
-    /\ IF inCand[a] = dSub[a] /\ sNext[a] < MaxTok
-        THEN /\ sNext' = Set(sNext, a, n) /\ sCur' = Set(sCur, a, n) /\ sStart' = Set(sStart, a, n) /\ sRev' = Set(sRev, a, FALSE)
+    /\ IF allowed /\ sNext[s] < MaxTok
+        THEN /\ sNext' = Set(sNext, s, n) /\ sCur' = Set(sCur, s, n) /\ sStart' = Set(sStart, s, n) /\ sRev' = Set(sRev, s, FALSE)
+             /\ dSub' = Set(dSub, a, inCand[a]) /\ dClient' = Set(dClient, a, AcctClient[s]) /\ dFam' = Set(dFam, a, s)
              /\ dState' = Set(dState, a, "active") /\ dGen' = Set(dGen, a, g) /\ dRt' = Set(dRt, a, n)
              /\ dCause' = Set(dCause, a, None) /\ dPend' = Set(dPend, a, FALSE) /\ dIss' = Set(dIss, a, clock)
              /\ mState' = Set(mState, a, "active") /\ mGen' = Set(mGen, a, g) /\ mRt' = Set(mRt, a, n)
              /\ mDirty' = Set(mDirty, a, FALSE) /\ mIss' = Set(mIss, a, clock) /\ mForced' = Set(mForced, a, 0)
              /\ soDone' = Set(soDone, a, FALSE) /\ outConfirmed' = Set(outConfirmed, a, None) /\ lossKind' = Set(lossKind, a, None)
-             /\ UNCHANGED <<sUsed, dSub>>
+             /\ UNCHANGED <<sUsed>>
         ELSE UNCHANGED <<diskVars, memVars, srvVars, soDone, outConfirmed, lossKind>>
-    /\ UNCHANGED <<netVars, reqVars, inCand, outPh, prPh, clock, budgetVars, slack, acked, badSend, forcedCnt, startedAfterOut>>
+    /\ UNCHANGED <<netVars, reqVars, inCand, inSrc, outPh, prPh, clock, budgetVars, slack, acked, badSend, forcedCnt, startedAfterOut>>
 
 -----------------------------------------------------------------------------
 (* Sign-out *)
@@ -494,7 +541,7 @@ SoStart(a) ==
     /\ outPh' = Set(outPh, a, "want")
     /\ signouts' = signouts + 1
     /\ IF SignOutWaits THEN Enqueue(a, "out") ELSE UNCHANGED waitq
-    /\ UNCHANGED <<diskVars, memVars, srvVars, netVars, holder, reqVars, inPh, inCand, prPh, clock, crashes, giveups, discs, signins, pfails, rejects, rvfails, ghostVars>>
+    /\ UNCHANGED <<diskVars, memVars, srvVars, netVars, holder, reqVars, inPh, inCand, inSrc, prPh, clock, crashes, giveups, discs, signins, pfails, rejects, rvfails, ghostVars>>
 
 SoGrant(a) ==
     /\ outPh[a] = "want"
@@ -502,20 +549,20 @@ SoGrant(a) ==
     /\ dState' = Set(dState, a, "signing_out")
     /\ mState' = Set(mState, a, "signing_out")
     /\ outPh' = Set(outPh, a, IF mRt[a] = 0 THEN "clear" ELSE "revoke")
-    /\ UNCHANGED <<dGen, dRt, dCause, dPend, dIss, dSub, mGen, mRt, mDirty, mIss, mForced, srvVars, netVars, reqVars, inPh, inCand, prPh, clock, budgetVars, ghostVars>>
+    /\ UNCHANGED <<dGen, dRt, dCause, dPend, dIss, dSub, dClient, dFam, mGen, mRt, mDirty, mIss, mForced, srvVars, netVars, reqVars, inPh, inCand, inSrc, prPh, clock, budgetVars, ghostVars>>
 
 SoRevoke(a) ==
     LET t == mRt[a] IN
     /\ outPh[a] = "revoke"
     /\ outPh' = Set(outPh, a, "clear")
     /\ \/ /\ sRev' = IF t = sCur[a] /\ t >= sStart[a] THEN Set(sRev, a, TRUE) ELSE sRev
-          /\ outConfirmed' = Set(outConfirmed, a, "yes")
+          /\ outConfirmed' = Set(outConfirmed, a, IF GateConfirm /\ (dPend[a] \/ mDirty[a]) THEN "no" ELSE "yes")
           /\ rvfails' = rvfails
        \/ /\ rvfails < MaxRevokeFail
           /\ rvfails' = rvfails + 1
           /\ outConfirmed' = Set(outConfirmed, a, "no")
           /\ UNCHANGED sRev
-    /\ UNCHANGED <<diskVars, memVars, sCur, sUsed, sStart, sNext, netVars, lockVars, reqVars, inPh, inCand, prPh, clock, crashes, giveups, discs, signins, signouts, pfails, rejects>>
+    /\ UNCHANGED <<diskVars, memVars, sCur, sUsed, sStart, sNext, netVars, lockVars, reqVars, inPh, inCand, inSrc, prPh, clock, crashes, giveups, discs, signins, signouts, pfails, rejects>>
     /\ UNCHANGED <<slack, acked, badSend, forcedCnt, soDone, lossKind, startedAfterOut>>
 
 SoClear(a) ==
@@ -531,7 +578,7 @@ SoClear(a) ==
     /\ lossKind' = Set(lossKind, a, None)
     /\ outPh' = Set(outPh, a, "none")
     /\ IF SignOutWaits THEN Release(a) ELSE UNCHANGED lockVars
-    /\ UNCHANGED <<dGen, dIss, dSub, mGen, mIss, mForced, srvVars, netVars, reqVars, inPh, inCand, prPh, clock, budgetVars, slack, acked, badSend, forcedCnt, outConfirmed, startedAfterOut>>
+    /\ UNCHANGED <<dGen, dIss, dSub, dClient, dFam, mGen, mIss, mForced, srvVars, netVars, reqVars, inPh, inCand, inSrc, prPh, clock, budgetVars, slack, acked, badSend, forcedCnt, outConfirmed, startedAfterOut>>
 
 -----------------------------------------------------------------------------
 (* Persist retry *)
@@ -540,13 +587,13 @@ PrStart(a) ==
     /\ prPh[a] = "none" /\ mDirty[a] /\ mState[a] = "active"
     /\ prPh' = Set(prPh, a, "want")
     /\ Enqueue(a, "pr")
-    /\ UNCHANGED <<diskVars, memVars, srvVars, netVars, holder, reqVars, inPh, inCand, outPh, clock, budgetVars, ghostVars>>
+    /\ UNCHANGED <<diskVars, memVars, srvVars, netVars, holder, reqVars, inPh, inCand, inSrc, outPh, clock, budgetVars, ghostVars>>
 
 PrGrant(a) ==
     /\ prPh[a] = "want" /\ CanTake(a, "pr")
     /\ Take(a, "pr")
     /\ prPh' = Set(prPh, a, "write")
-    /\ UNCHANGED <<diskVars, memVars, srvVars, netVars, reqVars, inPh, inCand, outPh, clock, budgetVars, ghostVars>>
+    /\ UNCHANGED <<diskVars, memVars, srvVars, netVars, reqVars, inPh, inCand, inSrc, outPh, clock, budgetVars, ghostVars>>
 
 PrWrite(a) ==
     /\ prPh[a] = "write"
@@ -566,7 +613,7 @@ PrWrite(a) ==
        \/ /\ mDirty[a] /\ mState[a] = "active" /\ pfails < MaxPersistFail
           /\ pfails' = pfails + 1
           /\ UNCHANGED <<dState, dGen, dRt, dCause, dPend, dIss, mDirty>>
-    /\ UNCHANGED <<dSub, mState, mGen, mRt, mIss, mForced, srvVars, netVars, reqVars, inPh, inCand, outPh, clock, crashes, giveups, discs, signins, signouts, rejects, rvfails, ghostVars>>
+    /\ UNCHANGED <<dSub, dClient, dFam, mState, mGen, mRt, mIss, mForced, srvVars, netVars, reqVars, inPh, inCand, inSrc, outPh, clock, crashes, giveups, discs, signins, signouts, rejects, rvfails, ghostVars>>
 
 -----------------------------------------------------------------------------
 (* Faults *)
@@ -600,7 +647,7 @@ Crash ==
     /\ outPh' = [a \in Accts |-> IF dState[a] = "signing_out" THEN IF dRt[a] = 0 THEN "clear" ELSE "revoke" ELSE "none"]
     /\ prPh' = [a \in Accts |-> "none"]
     /\ forcedCnt' = [a \in Accts |-> [g \in Gens |-> 0]]
-    /\ UNCHANGED <<diskVars, srvVars, pktN, rpur, rtok, rpkt, rgot, rgen, rretried, inCand, clock, giveups, discs, signins, signouts, pfails, rejects, rvfails>>
+    /\ UNCHANGED <<diskVars, srvVars, pktN, rpur, rtok, rtry, rpkt, rgot, rgen, rretried, inCand, inSrc, clock, giveups, discs, signins, signouts, pfails, rejects, rvfails>>
     /\ UNCHANGED <<badSend, soDone, outConfirmed, lossKind, startedAfterOut>>
 
 AllDone == \A r \in Reqs : rph[r] = "done"
@@ -609,7 +656,7 @@ Terminated == AllDone /\ UNCHANGED vars
 
 Next ==
     \/ Tick
-    \/ \E r \in Reqs : Start(r) \/ ReqGrant(r) \/ ReqPend(r) \/ ReqSend(r) \/ ReqRecv(r) \/ ReqGiveUp(r)
+    \/ \E r \in Reqs : Start(r) \/ ReqGrant(r) \/ ReqPend(r) \/ ReqSend(r) \/ ReqRecv(r) \/ ReqGiveUp(r) \/ ReqRetry(r)
                        \/ ReqForget(r) \/ ReqPersist(r) \/ ReqResult(r) \/ ForceGrant(r)
     \/ \E p \in net : Deliver(p)
     \/ \E a \in Accts : SiStart(a) \/ SiGrant(a) \/ SiInstall(a) \/ SoStart(a) \/ SoGrant(a) \/ SoRevoke(a) \/ SoClear(a)
@@ -657,16 +704,18 @@ NoEraseOnTransient ==
     \A a \in Accts : (dState[a] = "needs_sign_in" => sRev[a]) /\ (mState[a] = "needs_sign_in" => sRev[a])
 
 LossDetected ==
-    \A a \in Accts : (dState[a] = "needs_sign_in" => dCause[a] # None) /\ dSub[a] = AcctSub[a]
+    \A a \in Accts : (dState[a] = "needs_sign_in" => dCause[a] # None) /\ dSub[a] = AcctSub[a] /\ dClient[a] = AcctClient[a]
 
 CauseAttributed ==
     \A a \in Accts : (dState[a] = "needs_sign_in" /\ lossKind[a] = "reused") => dCause[a] = "refresh_interrupted"
 
-IdentityPinned == [][\A a \in Accts : dSub'[a] = dSub[a]]_vars
+IdentityPinned == [][\A a \in Accts : (dSub'[a] = dSub[a] \/ dSub[a] = None) /\ (dClient'[a] = dClient[a] \/ dClient[a] = 0)]_vars
 
-DiskOf(a) == <<dState[a], dGen[a], dRt[a], dCause[a], dPend[a], dIss[a], dSub[a]>>
+DiskOf(a) == <<dState[a], dGen[a], dRt[a], dCause[a], dPend[a], dIss[a], dSub[a], dClient[a], dFam[a]>>
 
-AccountsIsolated == [][Cardinality({a \in Accts : DiskOf(a)' # DiskOf(a)}) <= 1]_vars
+AccountsIsolated == \A a \in Accts : dFam[a] = a /\ dClient[a] = AcctClient[a]
+
+OtherAccountsUntouched == [][Cardinality({a \in Accts : DiskOf(a)' # DiskOf(a)}) <= 1]_vars
 
 Coalesced == \A a \in Accts : \A g \in Gens : forcedCnt[a][g] <= 1
 

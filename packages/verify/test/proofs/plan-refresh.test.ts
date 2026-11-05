@@ -99,6 +99,53 @@ describe('the plan credential numbers of design-chatgpt-plan.md section 6', () =
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );
 
+  const retryAfterArith = (name: string, capMs: number) => {
+    const arith = proofArith(z3.engine().api, name);
+    const attempts = constant(arith, 'attempts', retry().maxAttempts);
+    const timeout = constant(arith, 'T_a', PLAN.attemptTimeoutMs);
+    const budget = constant(arith, 'B', PLAN.refreshBudgetMs);
+    const cap = constant(arith, 'retryAfterCap', capMs);
+    const { baseMs, maxMs } = retry();
+    const ceiling = arith.ctx.Int.val(BigInt(maxMs));
+    let waited: ProofInt = arith.ctx.Int.val(0n);
+    for (let index = 0; index < retry().maxAttempts - 1; index += 1) {
+      const backoff = arith.min(arith.ctx.Int.val(BigInt(baseMs * 2 ** index)), ceiling);
+      const retryAfter = arith.int(`retryAfter${index}`);
+      arith.given(retryAfter.ge(0));
+      const honoured = arith.min(retryAfter, cap);
+      const wait = arith.int(`wait${index}`);
+      arith.given(wait.eq(arith.max(backoff, honoured)));
+      waited = waited.add(wait);
+    }
+    return { arith, attempts, timeout, budget, cap, waited };
+  };
+
+  it(
+    'P1r proves the refresh budget B covers every attempt timeout and every wait when a Retry-After is honoured up to a cap of 7.5 s, whatever the server sends, and 7.5 s is the largest such cap',
+    async () => {
+      const { arith, attempts, timeout, budget, waited } = retryAfterArith('P1r', 7_500);
+      expect(await hypothesesSatisfiable(arith)).toBe(true);
+      expect(await prove(arith, attempts.mul(timeout).add(waited).le(budget))).toEqual({ status: 'proved' });
+      const largest = arith.int('largestCap');
+      arith.given(largest.mul(retry().maxAttempts - 1).add(attempts.mul(timeout)).le(budget), largest.add(1).mul(retry().maxAttempts - 1).add(attempts.mul(timeout)).gt(budget));
+      expect(await prove(arith, largest.eq(arith.ctx.Int.val(7_500n)))).toEqual({ status: 'proved' });
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'P1rw refutes it for a cap equal to the retry policy maximum of 8 s, and for a Retry-After honoured without a cap',
+    async () => {
+      const capped = retryAfterArith('P1rw', retry().maxMs);
+      expect(await hypothesesSatisfiable(capped.arith)).toBe(true);
+      await expectRefuted(capped.arith, capped.attempts.mul(capped.timeout).add(capped.waited).le(capped.budget));
+      const unbounded = retryAfterArith('P1ru', 3_600_000);
+      expect(await hypothesesSatisfiable(unbounded.arith)).toBe(true);
+      await expectRefuted(unbounded.arith, unbounded.attempts.mul(unbounded.timeout).add(unbounded.waited).le(unbounded.budget));
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
   it(
     'P2 proves M = S + B, so a refresh that starts at the margin and takes any time up to B ends with at least the skew allowance S left',
     async () => {
@@ -146,7 +193,7 @@ describe('the plan credential numbers of design-chatgpt-plan.md section 6', () =
   );
 
   it(
-    'P4 proves two refreshes of one account start at least L - M apart, whatever the response times',
+    'P4 proves two lazy refreshes of one account start at least L - M apart: the token a refresh issues expires L after the response, and a lazy refresh starts only when at most M remains',
     async () => {
       const arith = proofArith(z3.engine().api, 'P4');
       const lifetime = constant(arith, 'L', PLAN.accessLifetimeMs);
@@ -154,10 +201,29 @@ describe('the plan credential numbers of design-chatgpt-plan.md section 6', () =
       const margin = constant(arith, 'M', PLAN.marginMs);
       const firstStart = arith.int('firstStart');
       const firstEnd = arith.int('firstEnd');
+      const expiresAt = arith.int('expiresAt');
       const secondStart = arith.int('secondStart');
-      arith.given(firstEnd.ge(firstStart), firstEnd.le(firstStart.add(budget)), secondStart.ge(firstEnd.add(lifetime).sub(margin)));
+      arith.given(firstEnd.ge(firstStart), firstEnd.le(firstStart.add(budget)), expiresAt.eq(firstEnd.add(lifetime)));
+      arith.given(secondStart.ge(firstEnd), expiresAt.sub(secondStart).le(margin));
       expect(await hypothesesSatisfiable(arith)).toBe(true);
       expect(await prove(arith, secondStart.sub(firstStart).ge(lifetime.sub(margin)))).toEqual({ status: 'proved' });
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'P4f refutes the same spacing for a forced refresh: it starts on a 401 whatever remains, so only the per-generation coalescing of the model PlanCredential bounds it',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'P4f');
+      const lifetime = constant(arith, 'L', PLAN.accessLifetimeMs);
+      const budget = constant(arith, 'B', PLAN.refreshBudgetMs);
+      const margin = constant(arith, 'M', PLAN.marginMs);
+      const firstStart = arith.int('firstStart');
+      const firstEnd = arith.int('firstEnd');
+      const secondStart = arith.int('secondStart');
+      arith.given(firstEnd.ge(firstStart), firstEnd.le(firstStart.add(budget)), secondStart.ge(firstEnd));
+      expect(await hypothesesSatisfiable(arith)).toBe(true);
+      await expectRefuted(arith, secondStart.sub(firstStart).ge(lifetime.sub(margin)));
     },
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );

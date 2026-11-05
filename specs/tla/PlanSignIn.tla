@@ -21,11 +21,15 @@
 (*   - a crash of the gateway: the attempt table is memory and is lost,    *)
 (*     the records are files and survive                                   *)
 (*                                                                         *)
-(* A callback is one of nine kinds, each with one defect at most:          *)
-(*   valid, wrongState, denied (access_denied), foreignClient, noClient,   *)
-(*   badGrant (invalid_grant at the exchange), badToken (the ID token      *)
-(*   fails verification), wrongSub (another account signed in), noScope    *)
-(*   (valid ID token, no chatgpt.tokens.use.direct)                         *)
+(* A callback is one of ten kinds, each with one defect at most:           *)
+(*   valid, wrongState, denied (access_denied with the right state),       *)
+(*   deniedForged (access_denied with a wrong state), foreignClient (a     *)
+(*   client id other than the saved one), noClient (no client_id: for a    *)
+(*   returning sign-in this means the saved id, sign-in.txt:47; for a new  *)
+(*   registration it is a protocol failure), badGrant (invalid_grant at    *)
+(*   the exchange), badToken (the ID token fails verification), wrongSub   *)
+(*   (another account signed in), noScope (valid ID token, no              *)
+(*   chatgpt.tokens.use.direct)                                            *)
 (*                                                                         *)
 (* Abstractions (a proof holds only for this model)                        *)
 (*   - cryptography: the verdicts of the signature, issuer, audience,      *)
@@ -37,51 +41,62 @@
 (*     no time (T_a is inside the TTL of the design)                        *)
 (*   - a returning sign-in is an attempt whose record has an issued client *)
 (*     id when it begins; the callback of a returning attempt carries the  *)
-(*     saved id, a foreign id, or none; the callback of a new registration *)
-(*     carries a fresh issued id, or none                                  *)
+(*     saved id or a foreign id, or omits it (meaning the saved id); the   *)
+(*     callback of a new registration carries a fresh issued id, or none.  *)
+(*     An issued id encodes its label (10 * label index + n)               *)
 (*   - the host id, login_hint, id_token_hint are not modelled             *)
 (*   - the account mutex of PlanCredential is not modelled here: install   *)
 (*     is one step, the checks before it are separate steps                 *)
 (*                                                                         *)
 (* Ghost variables: completions, log (one entry per install with the       *)
-(* evidence the gateway had), lateIssue, issued.                           *)
+(* evidence the gateway had, one per rejection with its reason),           *)
+(* lateIssue, issued.                                                      *)
 (*                                                                         *)
 (* Switches                                                                *)
 (*   Serial   a begin is refused while another attempt of the label is     *)
-(*            pending or consumed (attempts one after the other)           *)
-(*   Cas      the registered record and the install compare the issued    *)
-(*            client id and the subject with the record in the same step   *)
-(*            that writes it. The design as written does not do this: the  *)
-(*            checks of steps 3 and 8 and the writes of steps 4 and 10 are *)
-(*            separate. Cas = FALSE is the design as written; Cas = TRUE   *)
-(*            is the smallest change that makes NoOverwrite and ClientKept *)
-(*            hold for overlapping attempts (PlanSignIn.overlapFixed)      *)
+(*            pending or consumed (attempts one after the other); not part *)
+(*            of the design, used by the evidence configurations that need *)
+(*            attempts one after the other                                 *)
+(*   Cas      the registered record (step 4) and the install (step 10)     *)
+(*            compare the issued client id and the subject with the record *)
+(*            in the same step that writes it, under the account mutex;    *)
+(*            the first validated subject binds the record (ruling 1 of    *)
+(*            review 1). Cas = FALSE is the design before that ruling      *)
+(*   CheckTtl, StateFirst, CheckState, HonourVerdict, PinIdentity,         *)
+(*   RegisterFirst  each switches one rule off for its evidence            *)
+(*            configuration; StateFirst orders the state check before the  *)
+(*            handling of access_denied                                    *)
 (*                                                                         *)
 (* Properties                                                              *)
 (*   AttemptOnce (I-S1), StateIsolation (I-S2), InstallGate (I-S3),        *)
 (*   NoOverwrite (I-S4), RejectLeavesRecords (I-S4, a rejected attempt     *)
-(*   changes no record), OtherLabelsUntouched (I-S4), ExpiryRespected      *)
-(*   (I-S6), RegisteredBeforeExchange and NoIdAfterRegister (section 5.1), *)
-(*   ClientKept, OneIdPerLabel, and the liveness property AttemptEnds      *)
+(*   changes no record), OtherLabelsUntouched (I-S4, a step changes the    *)
+(*   record of at most one label) with RecordsOwnRegistration (the client  *)
+(*   id in the record of a label was issued for that label), ExpiryRe-     *)
+(*   spected (I-S6), DeniedAfterState (a forged access_denied is a state   *)
+(*   failure), RegisteredBeforeExchange (section 5.1), ClientKept,         *)
+(*   OneIdPerLabel, and the liveness property AttemptEnds                  *)
 (*                                                                         *)
-(* Finding (PlanSignIn.overlap): with the design as written, two           *)
-(* overlapping attempts of one label that both begin before any record     *)
-(* exists both pass steps 3 and 8, both write, and the second install      *)
-(* replaces the subject or the client of the first. NoOverwrite is         *)
-(* therefore not in the PlanSignIn and PlanSignIn.otherAccount lists.      *)
+(* Stated limit (PlanSignIn.registrationWindow, ruling 3 of review 1):     *)
+(* a crash between the callback and the registered write loses the issued  *)
+(* id, and the next sign-in registers again; the first id is an orphan     *)
+(* app at OpenAI. Two overlapping first sign-ins orphan one id the same    *)
+(* way. Neither can be closed by ordering.                                 *)
 (*                                                                         *)
 (* Configurations (scripts/tlc.sh <name>, specs/tla/<name>.cfg)            *)
-(*   PlanSignIn               two overlapping attempts, one label: I-S1,   *)
-(*                            I-S2, I-S3, I-S6 and the rejection rule hold *)
-(*   PlanSignIn.otherAccount  two labels, two attempts                     *)
+(*   PlanSignIn               two overlapping attempts, one label, Cas     *)
+(*   PlanSignIn.otherAccount  two labels, two attempts, Cas                *)
 (*   PlanSignIn.expiry        a short TTL, late callbacks, the sweep       *)
 (*                            (AttemptEnds, scripts/tlc.sh <name>          *)
 (*                            -lncheck final)                               *)
-(*   PlanSignIn.registration  attempts one after the other, a crash at any *)
-(*                            point: the issued id is persisted before the *)
+(*   PlanSignIn.registration  a crash at any point, overlapping attempts,  *)
+(*                            Cas: the issued id is persisted before the   *)
 (*                            exchange and reused                          *)
-(*   PlanSignIn.overlap       the finding above: NoOverwrite refuted       *)
-(*   PlanSignIn.overlapFixed  Cas = TRUE: NoOverwrite and ClientKept hold  *)
+(*   PlanSignIn.overlap       Cas = FALSE: NoOverwrite refuted             *)
+(*   PlanSignIn.expiryIgnored  a callback after the TTL is accepted:       *)
+(*                            ExpiryRespected refuted                      *)
+(*   PlanSignIn.deniedFirst   access_denied is handled before the state    *)
+(*                            check: DeniedAfterState refuted              *)
 (*   PlanSignIn.noStateCheck  the state is not compared: StateIsolation    *)
 (*                            refuted                                      *)
 (*   PlanSignIn.verdictIgnored  the ID token and scope verdicts are not    *)
@@ -99,14 +114,15 @@ EXTENDS Integers, FiniteSets
 
 CONSTANTS
     Attempts, SecondLabel, MaxClock, TTL, MaxCrash, MaxCb,
-    CheckState, HonourVerdict, PinIdentity, RegisterFirst, Serial, Cas
+    CheckState, HonourVerdict, PinIdentity, RegisterFirst, Serial, Cas, CheckTtl, StateFirst
 
 ASSUME Attempts # {} /\ TTL \in Nat /\ MaxClock \in Nat /\ MaxCrash \in Nat /\ MaxCb \in Nat
-ASSUME \A c \in {SecondLabel, CheckState, HonourVerdict, PinIdentity, RegisterFirst, Serial, Cas} : c \in BOOLEAN
+ASSUME \A c \in {SecondLabel, CheckState, HonourVerdict, PinIdentity, RegisterFirst, Serial, Cas, CheckTtl, StateFirst} : c \in BOOLEAN
 
 None == "none"
 Labels == IF SecondLabel THEN {"l1", "l2"} ELSE {"l1"}
-Kinds == {"valid", "wrongState", "denied", "foreignClient", "noClient", "badGrant", "badToken", "wrongSub", "noScope"}
+LblIdx(l) == IF l = "l1" THEN 1 ELSE 2
+Kinds == {"valid", "wrongState", "denied", "deniedForged", "foreignClient", "noClient", "badGrant", "badToken", "wrongSub", "noScope"}
 AttStates == {"free", "pending", "consumed", "installed", "rejected", "expired", "replaced", "lost"}
 Active == {"pending", "consumed"}
 Phases == {"none", "validate", "register", "exchange", "verify", "install"}
@@ -146,8 +162,8 @@ Set(f, k, v) == [f EXCEPT ![k] = v]
 CbClient(i) ==
     LET k == cur[i] IN
     IF mode[i] = "new"
-        THEN IF k \in {"noClient", "denied"} THEN 0 ELSE issuedFor[i]
-        ELSE IF k = "foreignClient" THEN 99 ELSE IF k = "noClient" THEN 0 ELSE savedAt[i]
+        THEN IF k \in {"noClient", "denied", "deniedForged"} THEN 0 ELSE issuedFor[i]
+        ELSE IF k = "foreignClient" THEN 99 ELSE savedAt[i]
 
 SubOf(i) == IF cur[i] = "wrongSub" THEN "s2" ELSE "s1"
 
@@ -180,11 +196,11 @@ Expire(i) ==
 
 Complete(i, k) ==
     LET l == albl[i]
-        issues == mode[i] = "new" /\ ~(k \in {"noClient", "denied"})
+        issues == mode[i] = "new" /\ ~(k \in {"noClient", "denied", "deniedForged"})
     IN
     /\ att[i] = "pending" /\ cbCount[i] < MaxCb
     /\ cbCount' = Set(cbCount, i, cbCount[i] + 1)
-    /\ IF clock > dl[i]
+    /\ IF CheckTtl /\ clock > dl[i]
         THEN /\ att' = Set(att, i, "expired")
              /\ UNCHANGED <<cur, ph, issuedFor, cat, issued, lateIssue, completions>>
         ELSE /\ att' = Set(att, i, "consumed")
@@ -193,7 +209,7 @@ Complete(i, k) ==
              /\ cat' = Set(cat, i, clock)
              /\ completions' = Set(completions, i, completions[i] + 1)
              /\ issued' = IF issues THEN Set(issued, l, issued[l] + 1) ELSE issued
-             /\ issuedFor' = Set(issuedFor, i, IF issues THEN issued[l] + 1 ELSE 0)
+             /\ issuedFor' = Set(issuedFor, i, IF issues THEN 10 * LblIdx(l) + issued[l] + 1 ELSE 0)
              /\ lateIssue' = IF issues /\ rClient[l] # 0 THEN Set(lateIssue, l, TRUE) ELSE lateIssue
     /\ UNCHANGED <<albl, dl, mode, savedAt, rState, rClient, rSub, log, clock, crashes>>
 
@@ -206,15 +222,21 @@ Validate(i) ==
     LET k == cur[i]
         l == albl[i]
         c == CbClient(i)
-        stateBad == CheckState /\ k = "wrongState"
+        forged == k \in {"wrongState", "deniedForged"}
+        stateBad == CheckState /\ forged
+        deniedK == k \in {"denied", "deniedForged"}
         clientBad == IF rClient[l] = 0 THEN c = 0 ELSE PinIdentity /\ c # rClient[l]
+        why == IF StateFirst
+                THEN (IF stateBad THEN "state" ELSE IF deniedK THEN "denied" ELSE IF clientBad THEN "client" ELSE None)
+                ELSE (IF deniedK THEN "denied" ELSE IF stateBad THEN "state" ELSE IF clientBad THEN "client" ELSE None)
     IN
     /\ att[i] = "consumed" /\ ph[i] = "validate"
-    /\ IF k = "denied" \/ stateBad \/ clientBad
-        THEN Settle(i, "rejected")
+    /\ IF why # None
+        THEN /\ Settle(i, "rejected")
+             /\ log' = log \cup {[kind |-> "reject", att |-> i, why |-> why, forged |-> forged]}
         ELSE /\ ph' = Set(ph, i, IF RegisterFirst /\ rClient[l] = 0 THEN "register" ELSE "exchange")
-             /\ UNCHANGED att
-    /\ UNCHANGED <<albl, dl, mode, savedAt, cur, issuedFor, cat, cbCount, rState, rClient, rSub, issued, lateIssue, completions, log, clock, crashes>>
+             /\ UNCHANGED <<att, log>>
+    /\ UNCHANGED <<albl, dl, mode, savedAt, cur, issuedFor, cat, cbCount, rState, rClient, rSub, issued, lateIssue, completions, clock, crashes>>
 
 Register(i) ==
     LET l == albl[i] IN
@@ -260,7 +282,7 @@ Install(i) ==
              /\ rClient' = Set(rClient, l, c)
              /\ rSub' = Set(rSub, l, s)
              /\ Settle(i, "installed")
-             /\ log' = log \cup {[att |-> i, lbl |-> l, state |-> newState, stOk |-> k # "wrongState", idvOk |-> k # "badToken",
+             /\ log' = log \cup {[kind |-> "install", att |-> i, lbl |-> l, state |-> newState, stOk |-> ~(k \in {"wrongState", "deniedForged"}), idvOk |-> k # "badToken",
                                   scopeOk |-> k # "noScope", subOk |-> rSub[l] \in {None, s}, clientOk |-> rClient[l] \in {0, c},
                                   fresh |-> cat[i] <= dl[i]]}
     /\ UNCHANGED <<albl, dl, mode, savedAt, cur, issuedFor, cat, cbCount, issued, lateIssue, completions, clock, crashes>>
@@ -298,13 +320,19 @@ TypeOK ==
 
 AttemptOnce == \A i \in Attempts : completions[i] <= 1
 
-StateIsolation == \A e \in log : e.stOk
+Installs == {e \in log : e.kind = "install"}
 
-InstallGate == \A e \in log : e.idvOk /\ (e.state = "active" => e.scopeOk)
+DeniedAfterState == \A e \in log : (e.kind = "reject" /\ e.why = "denied") => ~e.forged
 
-NoOverwrite == \A e \in log : e.subOk /\ e.clientOk
+RecordsOwnRegistration == \A l \in Labels : rClient[l] = 0 \/ rClient[l] \div 10 = LblIdx(l)
 
-ExpiryRespected == \A e \in log : e.fresh
+StateIsolation == \A e \in Installs : e.stOk
+
+InstallGate == \A e \in Installs : e.idvOk /\ (e.state = "active" => e.scopeOk)
+
+NoOverwrite == \A e \in Installs : e.subOk /\ e.clientOk
+
+ExpiryRespected == \A e \in Installs : e.fresh
 
 RegisteredBeforeExchange == \A i \in Attempts : (att[i] = "consumed" /\ ph[i] \in {"exchange", "verify", "install"}) => rClient[albl[i]] # 0
 
