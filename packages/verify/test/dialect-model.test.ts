@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { BUILTINS, type Definition } from '../src/dialect-model/definition.ts';
 import { isValidDefinition } from '../src/dialect-model/definition-gen.ts';
+import { instanceCandidates } from '../src/dialect-model/harness.ts';
+import type { Json } from '../src/dialect-model/json.ts';
 import { render } from '../src/dialect-model/render.ts';
 import { runSeed, SEEDS } from '../src/dialect-model/seeds.ts';
 import { runSubject, SUBJECTS } from '../src/dialect-model/subjects.ts';
@@ -55,6 +57,31 @@ describe('dialect model: the renderer', () => {
     const result = render({ not: {} }, { rules: [{ select: [{ kinds: ['any'] }], op: 'fill-type', fallback: 'string' }] }, 'response-format');
     expect(result.ok).toBe(false);
   });
+});
+
+describe('dialect model: the instance shrinker', () => {
+  const descentCycle = (start: Json): string[] | null => {
+    const finished = new Set<string>();
+    const visit = (value: Json, path: string[]): string[] | null => {
+      const key = JSON.stringify(value);
+      if (path.includes(key)) return [...path, key];
+      if (finished.has(key)) return null;
+      for (const candidate of instanceCandidates(value)) {
+        const cycle = visit(candidate, [...path, key]);
+        if (cycle !== null) return cycle;
+      }
+      finished.add(key);
+      return null;
+    };
+    return visit(start, []);
+  };
+
+  it.each([0, 1, 2, -1, 2.5, '', 'x', true, false, null, [0, 1], { a: 1, b: 'x' }, [[1], { a: 0 }]].map((value) => [JSON.stringify(value), value] as const))(
+    'never returns to an instance it shrank from, starting at %s',
+    (_name, value) => {
+      expect(descentCycle(value)).toBeNull();
+    },
+  );
 });
 
 describe('dialect model: property test', () => {

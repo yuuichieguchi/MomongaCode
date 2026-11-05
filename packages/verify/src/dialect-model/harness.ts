@@ -224,7 +224,7 @@ const schemaCandidates = function* (value: Json): Generator<Json> {
   }
 };
 
-const instanceCandidates = function* (value: Json): Generator<Json> {
+export const instanceCandidates = function*(value: Json): Generator<Json> {
   if (Array.isArray(value)) {
     for (let index = 0; index < value.length; index += 1) yield value.filter((_, position) => position !== index);
     for (let index = 0; index < value.length; index += 1) {
