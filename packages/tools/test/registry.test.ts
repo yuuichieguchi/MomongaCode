@@ -45,8 +45,9 @@ describe('createToolRegistry register', () => {
 
   it.each([
     ['unknown type name', { type: 'object', properties: { a: { type: 'strin' } } }],
-    ['unknown keyword under strict mode', { type: 'object', properties: {}, notAKeyword: true }],
-  ])('throws when Ajv cannot compile the schema (%s)', (_label, inputSchema) => {
+    ['unresolvable $ref', { type: 'object', properties: { a: { $ref: '#/$defs/missing' } } }],
+    ['unsupported dialect', { $schema: 'http://json-schema.org/draft-04/schema#', type: 'object' }],
+  ])('throws when the schema cannot be compiled (%s)', (_label, inputSchema) => {
     const registry = createToolRegistry();
     expect(() => registry.register(makeTool('Bad', { inputSchema }))).toThrow();
   });

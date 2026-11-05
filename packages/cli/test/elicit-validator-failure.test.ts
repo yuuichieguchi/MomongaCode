@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { untrustedSchemaFailure } from '@momonga/foundation';
 import type { ElicitationRequestView } from '@momonga/protocol';
+import { overflowingRefChainSchema } from '@momonga/testkit';
 import { decide, enterValue, startFlow } from '../src/elicit/flow.ts';
 
 const THROWING_FORM: ElicitationRequestView = {
   key: 'profile',
   mode: 'form',
   message: 'Tell me about you',
-  requestedSchema: { type: 'object', properties: { name: { type: 'string' } }, if: { anyOf: [{ properties: { a: {} } }], not: {} }, then: false },
+  requestedSchema: { ...overflowingRefChainSchema(), properties: { name: { type: 'string' } } },
 };
 
 describe('elicitation flow with a requestedSchema whose validator throws', () => {

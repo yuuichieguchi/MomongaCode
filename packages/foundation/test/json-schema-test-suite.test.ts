@@ -1,8 +1,8 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { clearUntrustedSchemaCaches, registerUntrustedRemoteSchemas, validateUntrusted } from '@momonga/foundation';
+import { describe, expect, it } from 'vitest';
+import { clearUntrustedSchemaCaches, createUntrustedBoundary, validateUntrusted } from '@momonga/foundation';
 
 const SUITE = fileURLToPath(new URL('./fixtures/json-schema-test-suite/', import.meta.url));
 const REMOTE_BASE = 'http://localhost:1234/';
@@ -34,6 +34,8 @@ const asDraft07 = (schema: unknown): unknown => {
   return { ...schema, $schema: DRAFT_07_URI };
 };
 
+const suiteBoundary = createUntrustedBoundary(new Map(Object.entries(remotes())));
+
 const runGroups = (label: string, groups: readonly SuiteGroup[], prepare: (schema: unknown) => unknown): Outcome => {
   const outcome: Outcome = { total: 0, failures: [], throws: [] };
   groups.forEach((group, index) => {
@@ -42,7 +44,7 @@ const runGroups = (label: string, groups: readonly SuiteGroup[], prepare: (schem
       outcome.total += 1;
       const name = `${label} > ${group.description} > ${test.description}`;
       try {
-        const verdict = validateUntrusted(`suite:${label}:${index}`, schema, structuredClone(test.data));
+        const verdict = suiteBoundary.validate(`suite:${label}:${index}`, schema, structuredClone(test.data));
         if (verdict.valid !== test.valid) outcome.failures.push(name);
       } catch (error) {
         outcome.throws.push(`${name}: ${error instanceof Error ? error.message : String(error)}`);
@@ -76,12 +78,6 @@ describe('the vendored official JSON Schema Test Suite', () => {
 });
 
 describe('every required test of the official suite through the untrusted-schema boundary', () => {
-  beforeAll(() => {
-    clearUntrustedSchemaCaches();
-    registerUntrustedRemoteSchemas(remotes());
-  });
-  afterAll(() => clearUntrustedSchemaCaches());
-
   it(
     'passes all 1300 required draft 2020-12 tests with no throw',
     () => {

@@ -7,6 +7,8 @@ import {
   FIXTURE_HOSTILE_TITLE,
   FIXTURE_HOSTILE_TITLE_DESCRIPTION,
   nestedNotSchema,
+  overflowingInstance,
+  recursiveSchema,
   requestedExtraTools,
   withIdInputSchema,
   withIdOutputSchema,
@@ -145,14 +147,14 @@ const EXTRA_TOOLS: Record<string, Tool> = {
   },
   validator_throws: {
     name: 'validator_throws',
-    description: 'A valid 2020-12 schema whose compiled validator throws while validating',
-    inputSchema: { type: 'object', if: { anyOf: [{ properties: { a: {} } }], not: {} }, then: false } as unknown as Tool['inputSchema'],
+    description: 'A recursive 2020-12 schema whose validator overflows the stack on a deeply nested object',
+    inputSchema: recursiveSchema() as unknown as Tool['inputSchema'],
   },
   output_validator_throws: {
     name: 'output_validator_throws',
-    description: 'A valid 2020-12 output schema whose compiled validator throws while validating',
+    description: 'A recursive 2020-12 output schema whose validator overflows the stack on a deeply nested result',
     inputSchema: objectSchema({}, []),
-    outputSchema: { type: 'object', if: { anyOf: [{ properties: { a: {} } }], not: {} }, then: false } as unknown as Tool['outputSchema'],
+    outputSchema: recursiveSchema() as unknown as Tool['outputSchema'],
   },
   bad_output_schema: {
     name: 'bad_output_schema',
@@ -350,7 +352,7 @@ const createFixtureServer = (): Server => {
       case 'with_id':
         return { content: [], structuredContent: { v: String(args['v']) } };
       case 'output_validator_throws':
-        return { content: [{ type: 'text', text: 'unchecked' }], structuredContent: { a: 'unchecked' } };
+        return { content: [{ type: 'text', text: 'unchecked' }], structuredContent: overflowingInstance() };
       case 'hostile_title':
       case 'hostile_text_more':
       case 'deep_64':

@@ -197,9 +197,8 @@ export {
   clearUntrustedSchemaCaches,
   compileUntrustedSchema,
   recordValidateFailure,
-  registerUntrustedRemoteSchemas,
   untrustedSchemaCacheSize,
   untrustedSchemaFailure,
 } from './untrusted-schema.ts';
-export { validateUntrusted } from './validate-untrusted.ts';
-export type { UntrustedVerdict } from './validate-untrusted.ts';
+export type { RemoteDocuments, UntrustedError, UntrustedValidate, UntrustedVerdict } from './untrusted-schema.ts';
+export { createUntrustedBoundary, validateUntrusted } from './validate-untrusted.ts';

@@ -1,16 +1,28 @@
-import type { ErrorObject } from 'ajv/dist/2020.js';
-import { SchemaValidatorFailure, cleanFailureMessage, compileUntrustedSchema, recordValidateFailure } from './untrusted-schema.ts';
+import { SchemaValidatorFailure, cleanFailureMessage, compileUntrustedSchema, createUntrustedSchemaCompiler, recordValidateFailure } from './untrusted-schema.ts';
+import type { RemoteDocuments, UntrustedValidate, UntrustedVerdict } from './untrusted-schema.ts';
 
-export type UntrustedVerdict = { valid: true } | { valid: false; errors: readonly ErrorObject[] };
+export type { UntrustedVerdict } from './untrusted-schema.ts';
 
-export const validateUntrusted = (identity: string, schema: Record<string, unknown>, data: unknown): UntrustedVerdict => {
-  const validate = compileUntrustedSchema(schema);
-  try {
-    if (validate(data)) return { valid: true };
-    return { valid: false, errors: validate.errors ?? [] };
-  } catch (error) {
-    const failure = new SchemaValidatorFailure(cleanFailureMessage(error instanceof Error ? error.message : String(error)));
-    recordValidateFailure(identity, schema, failure.message);
-    throw failure;
-  }
+type Compile = (schema: Record<string, unknown>) => UntrustedValidate;
+
+const validateThrough =
+  (compile: Compile) =>
+  (identity: string, schema: Record<string, unknown>, data: unknown): UntrustedVerdict => {
+    const validate = compile(schema);
+    try {
+      return validate(data);
+    } catch (error) {
+      const failure = new SchemaValidatorFailure(cleanFailureMessage(error instanceof Error ? error.message : String(error)));
+      recordValidateFailure(identity, schema, failure.message);
+      throw failure;
+    }
+  };
+
+export const validateUntrusted = validateThrough((schema) => compileUntrustedSchema(schema));
+
+export const createUntrustedBoundary = (
+  remotes: RemoteDocuments,
+): { compile: Compile; validate: (identity: string, schema: Record<string, unknown>, data: unknown) => UntrustedVerdict } => {
+  const compile = createUntrustedSchemaCompiler(remotes);
+  return { compile, validate: validateThrough(compile) };
 };

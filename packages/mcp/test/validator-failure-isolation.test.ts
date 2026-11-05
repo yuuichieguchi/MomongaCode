@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { clearUntrustedSchemaCaches, untrustedSchemaFailure } from '@momonga/foundation';
 import { schemaIdentity } from '@momonga/tools';
-import { FIXTURE_EXTRA_TOOLS_ENV } from '@momonga/testkit';
+import { FIXTURE_EXTRA_TOOLS_ENV, overflowingInstance } from '@momonga/testkit';
 import { entry, makeExecutor, makePool, makeRecordFile, modernConfig } from './mcp-harness.ts';
 
-const ENGINE_MESSAGE = 'props0 is not defined';
+const ENGINE_MESSAGE = 'Maximum call stack size exceeded';
 const withThrower = () => modernConfig(makeRecordFile(), { [FIXTURE_EXTRA_TOOLS_ENV]: 'validator_throws' });
 
 describe('a validate-time failure of a tool whose schema another server sends identically', () => {
@@ -18,11 +18,11 @@ describe('a validate-time failure of a tool whose schema another server sends id
     const warnings: string[] = [];
     const executor = makeExecutor(undefined, (message) => warnings.push(message));
 
-    await executor.run(set, alpha, {});
+    await executor.run(set, alpha, overflowingInstance());
     expect(warnings.filter((message) => message.includes(alpha))).toHaveLength(1);
     expect(warnings.filter((message) => message.includes(beta))).toEqual([]);
 
-    await executor.run(set, beta, {});
+    await executor.run(set, beta, overflowingInstance());
     const betaNotices = warnings.filter((message) => message.includes(beta));
     expect(betaNotices).toHaveLength(1);
     expect(betaNotices[0]).toContain(ENGINE_MESSAGE);
@@ -31,7 +31,7 @@ describe('a validate-time failure of a tool whose schema another server sends id
   it('skips only the failed tool from the next snapshot', async () => {
     const pool = makePool([entry('gamma', withThrower()), entry('delta', withThrower())]);
     const set = await pool.snapshot();
-    await makeExecutor().run(set, 'mcp__gamma__validator_throws', {});
+    await makeExecutor().run(set, 'mcp__gamma__validator_throws', overflowingInstance());
     const next = await pool.snapshot();
     expect(next.get('mcp__gamma__validator_throws')).toBeUndefined();
     expect(next.get('mcp__delta__validator_throws')).toBeDefined();
@@ -45,11 +45,11 @@ describe('a validate-time failure of a tool whose schema another server sends id
     const executor = makeExecutor(undefined, (message) => warnings.push(message));
     const sameRun = { runId: 'run-shared', fence: { runId: 'run-shared', workerId: 'w1', leaseToken: 1 } };
 
-    await executor.run(set, name, {}, sameRun);
-    await executor.run(set, name, {}, sameRun);
+    await executor.run(set, name, overflowingInstance(), sameRun);
+    await executor.run(set, name, overflowingInstance(), sameRun);
     expect(warnings.filter((message) => message.includes(name))).toHaveLength(1);
 
-    const other = await executor.run(set, name, {}, { runId: 'run-other' });
+    const other = await executor.run(set, name, overflowingInstance(), { runId: 'run-other' });
     expect(other).toMatchObject({ kind: 'result', result: { status: 'failed' } });
     expect(warnings.filter((message) => message.includes(name))).toHaveLength(2);
 
@@ -67,11 +67,11 @@ describe('a validate-time failure of a tool whose schema another server sends id
     const executor = makeExecutor(undefined, (message) => warnings.push(message));
     const live = { runId: 'run-live' };
 
-    await executor.run(set, name, {}, live);
+    await executor.run(set, name, overflowingInstance(), live);
     expect(untrustedSchemaFailure(schemaIdentity(tool), tool.inputSchema)).toContain(ENGINE_MESSAGE);
 
     clearUntrustedSchemaCaches();
-    const again = await executor.run(set, name, {}, live);
+    const again = await executor.run(set, name, overflowingInstance(), live);
     expect(again).toMatchObject({ kind: 'result', result: { status: 'failed' } });
     expect(untrustedSchemaFailure(schemaIdentity(tool), tool.inputSchema)).toBeUndefined();
     expect(warnings.filter((message) => message.includes(name))).toHaveLength(1);

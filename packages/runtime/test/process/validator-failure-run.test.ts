@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, FIXTURE_EXTRA_TOOLS_ENV, MCP_MODERN_SERVER_PATH, fakeUsageOfRequest } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, FIXTURE_EXTRA_TOOLS_ENV, MCP_MODERN_SERVER_PATH, fakeUsageOfRequest, overflowingInstance } from '@momonga/testkit';
 import { launchRuntime, readDb, scriptedToolCall, startStack, waitForCondition } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
 
 const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 const THROWING = 'mcp__fx__validator_throws';
-const ENGINE_MESSAGE = 'props0 is not defined';
+const ENGINE_MESSAGE = 'Maximum call stack size exceeded';
 const MCP_SETTINGS = { mcpServers: { fx: { command: process.execPath, args: [MCP_MODERN_SERVER_PATH], env: { [FIXTURE_EXTRA_TOOLS_ENV]: 'validator_throws' } } } };
 
 const finalAnswer = {
@@ -32,7 +32,7 @@ const offeredToolNames = (body: any): string[] => (Array.isArray(body?.tools) ? 
 
 describe('a run whose MCP tool validator throws while validating (system timers, in-process gateway)', () => {
   it('answers both calls with the unavailable tool error, keeps the offered tool set and completes on its first attempt', PROCESS_TIMEOUT, async () => {
-    const stack = await startStack({ script: [scriptedToolCall(THROWING, {}, 'call_1'), scriptedToolCall(THROWING, {}, 'call_2'), finalAnswer] }, MCP_SETTINGS);
+    const stack = await startStack({ script: [scriptedToolCall(THROWING, overflowingInstance(), 'call_1'), scriptedToolCall(THROWING, overflowingInstance(), 'call_2'), finalAnswer] }, MCP_SETTINGS);
     const launched = await launchRuntime(stack.temp);
     const session = await launched.createSession({ permissionMode: 'bypassPermissions', bypassAllowed: true });
     const run = await launched.createRun(session.id, { input: 'Use the tool twice' });

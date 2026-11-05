@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { parseElicitationAnswers, parseInputRequests } from '@momonga/mcp';
+import { overflowingRefChainSchema } from '@momonga/testkit';
 
 const throwingForm = {
   method: 'elicitation/create',
   params: {
     message: 'Name?',
-    requestedSchema: { type: 'object', properties: { name: { type: 'string' } }, if: { anyOf: [{ properties: { a: {} } }], not: {} }, then: false },
+    requestedSchema: overflowingRefChainSchema(),
   },
 };
 
@@ -17,6 +18,6 @@ describe('checking an elicitation answer against a requestedSchema whose validat
     const answers = parseElicitationAnswers(requests, { who: { action: 'accept', content: { name: 'Ada' } } }, { server: 'fx', onValidatorFailure: (request, message) => failures.push(`${request.key}: ${message}`) });
     expect(answers).toEqual({ who: { action: 'decline' } });
     expect(failures).toHaveLength(1);
-    expect(failures[0]).toContain('props0 is not defined');
+    expect(failures[0]).toContain('Maximum call stack size exceeded');
   });
 });

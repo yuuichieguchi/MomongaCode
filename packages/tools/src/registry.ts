@@ -2,7 +2,7 @@ import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { modelVisibleTools } from '@momonga/policy';
 import type { PermissionRule } from '@momonga/policy';
 import type { FunctionTool, PermissionMode } from '@momonga/protocol';
-import { compileInputSchema } from './validate.ts';
+import { compileToolSchemas } from './validate.ts';
 import { TOOL_TIERS } from './types.ts';
 import type { AnyTool } from './types.ts';
 
@@ -39,7 +39,7 @@ export type ToolRegistry = {
 const assertRegistrable = (tool: AnyTool): void => {
   if (!TOOL_NAME.test(tool.name)) throw new Error(`invalid tool name ${JSON.stringify(tool.name)}: must match ${TOOL_NAME.source}`);
   if (tool.inputSchema['type'] !== 'object') throw new Error(`tool ${JSON.stringify(tool.name)} input schema must have root type "object"`);
-  compileInputSchema(tool);
+  compileToolSchemas(tool);
 };
 
 const digestEntryOf = (tool: AnyTool): unknown[] => [

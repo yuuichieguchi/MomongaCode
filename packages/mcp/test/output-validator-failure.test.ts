@@ -4,7 +4,7 @@ import { callRecords, entry, makeExecutor, makePool, makeRecordFile, modernConfi
 
 const THROWING_OUTPUT = 'mcp__modern__output_validator_throws';
 const SAME_RUN = { runId: 'run-output-validator-failure' };
-const ENGINE_MESSAGE = 'props0 is not defined';
+const ENGINE_MESSAGE = 'Maximum call stack size exceeded';
 
 describe('checking MCP structured output with a third-party 2020-12 output schema', () => {
   it('returns a tool error saying the output could not be checked and makes the tool unavailable when the output validator throws', async () => {

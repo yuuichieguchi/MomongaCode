@@ -107,6 +107,9 @@ export {
   FIXTURE_ID_INPUT_SCHEMA_ID,
   FIXTURE_ID_OUTPUT_SCHEMA_ID,
   nestedNotSchema,
+  overflowingInstance,
+  overflowingRefChainSchema,
+  recursiveSchema,
 } from './mcp-fixtures.ts';
 export type { ModernFixtureRecord } from './mcp-fixtures.ts';
 export { killGroupsForCleanup, killPidsForCleanup, stopSupervisorHolder } from './process-groups.ts';

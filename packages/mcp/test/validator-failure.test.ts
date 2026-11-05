@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { FIXTURE_EXTRA_TOOLS_ENV } from '@momonga/testkit';
+import { FIXTURE_EXTRA_TOOLS_ENV, overflowingInstance } from '@momonga/testkit';
 import { untrustedSchemaFailure } from '@momonga/foundation';
 import { schemaIdentity } from '@momonga/tools';
 import type { ToolSet } from '@momonga/tools';
@@ -9,24 +9,23 @@ const validatorRuns = vi.hoisted(() => ({ count: 0 }));
 
 vi.mock('../../foundation/src/untrusted-schema.ts', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../foundation/src/untrusted-schema.ts')>();
-  const isThrowingSchema = (schema: Record<string, unknown>): boolean => schema['then'] === false && typeof schema['if'] === 'object';
+  const isThrowingSchema = (schema: Record<string, unknown>): boolean => typeof schema['additionalProperties'] === 'object' && schema['additionalProperties'] !== null && 'not' in schema['additionalProperties'];
   return {
     ...original,
     compileUntrustedSchema: (schema: Record<string, unknown>) => {
       const validate = original.compileUntrustedSchema(schema);
       if (!isThrowingSchema(schema)) return validate;
-      const counted = (data: unknown) => {
+      return (data: unknown) => {
         validatorRuns.count += 1;
         return validate(data);
       };
-      return Object.defineProperty(counted, 'errors', { get: () => validate.errors });
     },
   };
 });
 
 const THROWING = 'mcp__modern__validator_throws';
 const IF_ANNOTATIONS = 'mcp__modern__if_annotations';
-const ENGINE_MESSAGE = 'props0 is not defined';
+const ENGINE_MESSAGE = 'Maximum call stack size exceeded';
 const UNAVAILABLE = /unavailable/i;
 const SAME_RUN = { runId: 'run-validator-failure' };
 
@@ -56,7 +55,7 @@ describe('validating MCP tool arguments with a third-party 2020-12 schema', () =
     const warnings: string[] = [];
     const executor = makeExecutor(undefined, (message) => warnings.push(message));
 
-    const first = await executor.run(set, THROWING, {}, SAME_RUN);
+    const first = await executor.run(set, THROWING, overflowingInstance(), SAME_RUN);
     expect(first).toMatchObject({ kind: 'result', result: { status: 'failed' } });
     expect(outputOf(first)).toMatch(UNAVAILABLE);
     expect(outputOf(first)).toContain(THROWING);
@@ -72,7 +71,7 @@ describe('validating MCP tool arguments with a third-party 2020-12 schema', () =
 
     const runsAfterFirst = validatorRuns.count;
     expect(runsAfterFirst).toBe(1);
-    const second = await executor.run(set, THROWING, {}, SAME_RUN);
+    const second = await executor.run(set, THROWING, overflowingInstance(), SAME_RUN);
     expect(second).toMatchObject({ kind: 'result', result: { status: 'failed' } });
     expect(outputOf(second)).toBe(outputOf(first));
     expect(validatorRuns.count).toBe(runsAfterFirst);

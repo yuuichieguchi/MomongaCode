@@ -58,6 +58,33 @@ export const nestedNotSchema = (depth: number): Record<string, unknown> => {
   return depth <= 1 ? { type: 'object' } : { type: 'object', not: inner };
 };
 
+const VALIDATOR_OVERFLOW_DEPTH = 400;
+const VALIDATOR_OVERFLOW_HOPS = 440;
+const HEAVY_HOP_NOTS = 12;
+const RECURSIVE_NOTS = 55;
+
+const heavyHop = (target: string, nots: number): Record<string, unknown> => {
+  let hop: Record<string, unknown> = { $ref: target };
+  for (let level = 0; level < nots; level += 1) hop = { not: hop };
+  return hop;
+};
+
+export const recursiveSchema = (): Record<string, unknown> => ({ type: 'object', additionalProperties: heavyHop('#', RECURSIVE_NOTS) });
+
+export const overflowingInstance = (): Record<string, unknown> => {
+  let instance: Record<string, unknown> = {};
+  for (let level = 0; level < VALIDATOR_OVERFLOW_DEPTH; level += 1) instance = { a: instance };
+  return instance;
+};
+
+export const overflowingRefChainSchema = (): Record<string, unknown> => {
+  const definitions: Record<string, unknown> = {};
+  for (let index = 0; index < VALIDATOR_OVERFLOW_HOPS; index += 1) {
+    definitions[`d${index.toString(36)}`] = index === VALIDATOR_OVERFLOW_HOPS - 1 ? {} : heavyHop(`#/$defs/d${(index + 1).toString(36)}`, HEAVY_HOP_NOTS);
+  }
+  return { type: 'object', $defs: definitions, ...heavyHop('#/$defs/d0', HEAVY_HOP_NOTS) };
+};
+
 export const withIdInputSchema = (): Record<string, unknown> => ({
   $id: FIXTURE_ID_INPUT_SCHEMA_ID,
   type: 'object',
