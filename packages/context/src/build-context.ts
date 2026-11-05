@@ -83,6 +83,22 @@ type Head = {
   ceiling: number;
   room: number;
   frozen: InputItem[];
+  layers: InputItem[];
+  counted: MeterCount;
+  arrivals: ArrivalEntry[];
+  instructionFiles: LoadedInstructionFile[];
+  memoryMessage: MessageInputItem | undefined;
+  memoryCount: number;
+};
+
+type Evaluation = {
+  layers: InputItem[];
+  frozen: InputItem[];
+  ports: BuildContextPorts;
+  ceiling: number;
+  counted: MeterCount;
+  exceeds: boolean;
+  leavesNoRoom: boolean;
 };
 
 export type MaxInputBounds = {
@@ -200,13 +216,21 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
   const governing = governingMessageOf(sources.governing);
   const sized = input.calibration === undefined ? capabilities : withCalibration(capabilities, input.calibration);
   const observed = input.observedCapacity === true;
-  const frozen = await frozenInputOf(input, suppliedPorts, { discovered, pinnedLayers, governing, task });
-  const ports = frozenPorts(suppliedPorts, frozen);
-  const countWith = (offered: readonly FunctionTool[]): Promise<MeterCount> =>
-    ports.meter.count({ input: [...pinnedLayers, ...governing, task], tools: offered });
-  const fitsFloor = (counted: MeterCount): boolean => metering(input, ports, candidates).fits(counted) && counted.inputTokens <= toolFloor;
+  const tail = await frozenTailOf(input, suppliedPorts, task);
+  const appendOnly = input.layout === 'cachePrefix';
+  const recordedMemory = pinnedMemoryMessageOf(input);
+  let arrivals: ArrivalEntry[] = candidateArrivalsOf(input, discovered);
+  const layersFor = (entries: readonly ArrivalEntry[], memory: MessageInputItem | undefined): InputItem[] =>
+    layerItemsOf(appendOnly, pinnedLayers, governing, memory, entries);
+  const baseKeys = new Set(arrivals.map((entry) => entry.key));
+  const admittedArrivals = appendOnly ? arrivals : arrivals.filter((entry) => entry.layer === 'skills');
+  const toolFrozen = [...layersFor(admittedArrivals, recordedMemory), ...tail];
+  const toolPorts = frozenPorts(suppliedPorts, toolFrozen);
+  const countWith = (offered: readonly FunctionTool[], over: BuildContextPorts): Promise<MeterCount> =>
+    over.meter.count({ input: [...pinnedLayers, ...governing, task], tools: offered });
+  const fitsFloor = (counted: MeterCount): boolean => metering(input, toolPorts, candidates).fits(counted) && counted.inputTokens <= toolFloor;
   const stableFitsFloor = async (offered: readonly FunctionTool[]): Promise<boolean> =>
-    fitsFloor(await ports.meter.count({ input: [...pinnedLayers, ...governing], tools: offered }));
+    fitsFloor(await toolPorts.meter.count({ input: [...pinnedLayers, ...governing], tools: offered }));
   const hostOf = input.companions === undefined || input.companions.keepWithoutHost ? {} : input.companions.hostOf;
   const standsWith = (tool: FunctionTool, offered: readonly FunctionTool[]): boolean => {
     const host = hostOf[tool.name];
@@ -214,36 +238,121 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
   };
   const eligible = candidates.filter((tool) => standsWith(tool, candidates));
   const toolFloor =
-    input.pinnedTokens !== undefined ? 0 : pinnedFloorAt(observed ? await capacityOver(sized, ports, frozen, eligible) : inputCeilingFor(sized));
+    input.pinnedTokens !== undefined ? 0 : pinnedFloorAt(observed ? await capacityOver(sized, toolPorts, toolFrozen, eligible) : inputCeilingFor(sized));
   let tools = eligible;
   let leftOut: string[] = [];
-  let pinnedCounted: MeterCount | undefined;
-  if (input.pinnedTokens === undefined) {
-    if (!(await stableFitsFloor(eligible))) {
-      const required = requiredToolsOf(input, eligible);
-      const kept: FunctionTool[] = [...required];
-      const droppedForRoom: string[] = [];
-      for (const tool of hostsFirst(eligible, hostOf)) {
-        if (required.includes(tool) || !standsWith(tool, kept)) continue;
-        if (await stableFitsFloor([...kept, tool])) kept.push(tool);
-        else droppedForRoom.push(tool.name);
-      }
-      if (kept.length > 0 || (await stableFitsFloor(kept))) {
-        tools = eligible.filter((tool) => kept.includes(tool));
-        leftOut = droppedForRoom;
-      }
+  if (input.pinnedTokens === undefined && !(await stableFitsFloor(eligible))) {
+    const required = requiredToolsOf(input, eligible);
+    const kept: FunctionTool[] = [...required];
+    const droppedForRoom: string[] = [];
+    for (const tool of hostsFirst(eligible, hostOf)) {
+      if (required.includes(tool) || !standsWith(tool, kept)) continue;
+      if (await stableFitsFloor([...kept, tool])) kept.push(tool);
+      else droppedForRoom.push(tool.name);
     }
-    pinnedCounted = await countWith(tools);
+    if (kept.length > 0 || (await stableFitsFloor(kept))) {
+      tools = eligible.filter((tool) => kept.includes(tool));
+      leftOut = droppedForRoom;
+    }
   }
-  const { fits } = metering(input, ports, tools);
-  const ceiling = observed ? await capacityOver(sized, ports, frozen, tools) : inputCeilingFor(sized);
-  const toolNotices: ContextNotice[] = [];
+  const { fits } = metering(input, toolPorts, tools);
+  const notices: ContextNotice[] = [...discovered.notices, ...governingNoticesOf(sources.governing)];
   if (leftOut.length > 0) {
-    toolNotices.push({
+    notices.push({
       code: 'tools_dropped',
       message: `Tools ${leftOut.join(', ')} were left out because the declared context window leaves no room for them`,
     });
   }
+  const evaluate = async (layerItems: InputItem[]): Promise<Evaluation> => {
+    const frozen = [...layerItems, ...tail];
+    const evaluationPorts = frozenPorts(suppliedPorts, frozen);
+    const ceiling = observed ? await capacityOver(sized, evaluationPorts, frozen, tools) : inputCeilingFor(sized);
+    const counted = await evaluationPorts.meter.count({ input: [...layerItems, task], tools });
+    return {
+      layers: layerItems,
+      frozen,
+      ports: evaluationPorts,
+      ceiling,
+      counted,
+      exceeds: !fits(counted) || counted.inputTokens > ceiling,
+      leavesNoRoom: ceiling - counted.inputTokens < MIN_ROOM_TOKENS,
+    };
+  };
+  const refused = (path: string): void => {
+    notices.push({ code: 'instructions_dropped', message: `${path} was dropped because the context budget was exceeded` });
+  };
+  let current = await evaluate(layersFor(arrivals, recordedMemory));
+  if (appendOnly) {
+    for (const file of discovered.nested) {
+      if (baseKeys.has(`instructions:${file.instruction.path}`)) continue;
+      const candidate = [...arrivals, instructionArrivalOf(file)];
+      const next = await evaluate(layersFor(candidate, recordedMemory));
+      if (next.exceeds || next.leavesNoRoom) {
+        refused(file.instruction.path);
+      } else {
+        arrivals = candidate;
+        current = next;
+      }
+    }
+  } else {
+    while ((current.exceeds || current.leavesNoRoom) && arrivals.some((entry) => entry.layer === 'instructions')) {
+      const index = arrivals.findIndex((entry) => entry.layer === 'instructions');
+      const [dropped] = arrivals.splice(index, 1);
+      if (dropped?.file === undefined) break;
+      refused(dropped.file.instruction.path);
+      current = await evaluate(layersFor(arrivals, recordedMemory));
+    }
+  }
+  const rankedMemories = sources.memories ?? [];
+  const memoryCandidates =
+    input.pinnedMemoryIds === undefined
+      ? rankedMemories
+      : input.pinnedMemoryIds.flatMap((id) => rankedMemories.filter((memory) => memory.id === id));
+  let memoryMessage = recordedMemory;
+  let memoryCount = 0;
+  const memoriesDropped = (kept: number, total: number): void => {
+    if (kept < total) {
+      notices.push({
+        code: 'memories_dropped',
+        message: `${total - kept} of ${total} saved memories were left out of the context because of its budget`,
+      });
+    }
+  };
+  if (input.pinnedMemoryIds !== undefined && rankedMemories.length > 0) {
+    memoryCount = memoryCandidates.length;
+    memoriesDropped(memoryCount, rankedMemories.length);
+  } else if (memoryCandidates.length > 0) {
+    const withMemories = async (count: number): Promise<{ message: MessageInputItem; evaluation: Evaluation; fitsBudget: boolean }> => {
+      const message: MessageInputItem = {
+        type: 'message',
+        role: 'user',
+        content: renderMemories(memoryCandidates.slice(0, count), memoryCandidates.length - count),
+      };
+      const evaluation = await evaluate(layersFor(arrivals, message));
+      const baseTokens = (await evaluation.ports.meter.count({ input: [...layersFor(arrivals, undefined), task], tools })).inputTokens;
+      const fitsBudget =
+        !evaluation.exceeds &&
+        !evaluation.leavesNoRoom &&
+        evaluation.counted.inputTokens - baseTokens <= memoryBudgetFor(evaluation.ceiling - baseTokens, input.memoryShare);
+      return { message, evaluation, fitsBudget };
+    };
+    if ((await withMemories(0)).fitsBudget) {
+      let low = 0;
+      let high = memoryCandidates.length;
+      while (low < high) {
+        const middle = Math.ceil((low + high) / 2);
+        if ((await withMemories(middle)).fitsBudget) low = middle;
+        else high = middle - 1;
+      }
+      memoryCount = low;
+      const chosen = await withMemories(memoryCount);
+      memoryMessage = chosen.message;
+      current = chosen.evaluation;
+    }
+    memoriesDropped(memoryCount, memoryCandidates.length);
+  }
+  const { layers, frozen, ceiling, counted, ports } = current;
+  const pinnedCounted = input.pinnedTokens === undefined ? await countWith(tools, ports) : undefined;
   const pinnedTokens = input.pinnedTokens ?? (pinnedCounted as MeterCount).inputTokens;
   const admitted = admittedFloor(input);
   if (!admitted && (pinnedTokens > ceiling || (pinnedCounted !== undefined && !fits(pinnedCounted)))) {
@@ -259,9 +368,25 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
       breakdown: await breakdownOf(ports, systemMessage, instructionMessages, governing, task, tools),
     });
   }
+  if (!admitted && current.exceeds) {
+    throw new PinnedOverflowError({
+      pinnedTokens: counted.inputTokens,
+      ceiling,
+      breakdown: await breakdownOf(ports, systemMessage, layers, governing, task, tools),
+    });
+  }
+  if (!admitted && current.leavesNoRoom) {
+    throw new PinnedRoomError({
+      pinnedTokens: counted.inputTokens,
+      ceiling,
+      room: ceiling - counted.inputTokens,
+      minimum: MIN_ROOM_TOKENS,
+      breakdown: await breakdownOf(ports, systemMessage, layers, governing, task, tools),
+    });
+  }
   return {
     discovered,
-    notices: [...discovered.notices, ...governingNoticesOf(sources.governing), ...toolNotices],
+    notices,
     tools,
     systemMessage,
     task,
@@ -273,20 +398,16 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
     ceiling,
     room,
     frozen,
+    layers,
+    counted,
+    arrivals,
+    instructionFiles: arrivals.flatMap((entry) => (entry.file === undefined ? [] : [entry.file])),
+    memoryMessage,
+    memoryCount,
   };
 };
 
 type ArrivalEntry = { key: string; message: MessageInputItem; layer: 'skills' | 'instructions'; file: LoadedInstructionFile | undefined };
-
-type FittedLayers = {
-  arrivals: ArrivalEntry[];
-  instructionFiles: LoadedInstructionFile[];
-  layers: InputItem[];
-  counted: MeterCount;
-  layersWith(memory: MessageInputItem | undefined): InputItem[];
-  floorOf(layerItems: readonly InputItem[]): InputItem[];
-  exceeds(counted: MeterCount): boolean;
-};
 
 const skillArrivalOf = (name: string, content: string): ArrivalEntry => ({
   key: `skill:${name}`,
@@ -351,11 +472,7 @@ const historyItemsOf = (sources: BuildContextInput['sources']) =>
 
 type FrozenSlot = { item: InputItem; output?: { callId: string; text: string; full: boolean; original: FunctionCallOutputInputItem } };
 
-const frozenInputOf = async (
-  input: BuildContextInput,
-  ports: BuildContextPorts,
-  parts: { discovered: DiscoveredInstructions; pinnedLayers: readonly InputItem[]; governing: readonly InputItem[]; task: InputItem },
-): Promise<InputItem[]> => {
+const frozenTailOf = async (input: BuildContextInput, ports: BuildContextPorts, task: InputItem): Promise<InputItem[]> => {
   const { sources, evicted, forms, renderedFull } = input;
   const entries = historyItemsOf(sources);
   const callNames = new Map<string, string>();
@@ -400,85 +517,13 @@ const frozenInputOf = async (
   const items = slots.map((slot) => slot.item);
   const taskAt = entries.findIndex((entry) => entry.seq > sources.taskSeq);
   const ordered =
-    taskAt < 0 ? (complete ? [...items, parts.task] : items) : taskAt <= items.length ? [...items.slice(0, taskAt), parts.task, ...items.slice(taskAt)] : items;
+    taskAt < 0 ? (complete ? [...items, task] : items) : taskAt <= items.length ? [...items.slice(0, taskAt), task, ...items.slice(taskAt)] : items;
   const summaryItems: InputItem[] = sources.summary === undefined ? [] : [frozenItem(sources.summary.item)];
-  const layers = layerItemsOf(
-    input.layout === 'cachePrefix',
-    parts.pinnedLayers,
-    parts.governing,
-    pinnedMemoryMessageOf(input),
-    candidateArrivalsOf(input, parts.discovered),
-  );
-  return [...layers, ...summaryItems, ...ordered];
-};
-
-const fitLayers = async (input: BuildContextInput, ports: BuildContextPorts, head: Head): Promise<FittedLayers> => {
-  const { tools, fits, countInput } = metering(input, ports, head.tools);
-  const { systemMessage, task, pinnedLayers, governing, notices, ceiling } = head;
-  const appendOnly = input.layout === 'cachePrefix';
-  const admitted = admittedFloor(input);
-  let arrivals: ArrivalEntry[] = candidateArrivalsOf(input, head.discovered);
-  const layersOf = (memory: MessageInputItem | undefined): InputItem[] => layerItemsOf(appendOnly, pinnedLayers, governing, memory, arrivals);
-  const layersWith = (memory: MessageInputItem | undefined): InputItem[] => layersOf(memory);
-  const floorOf = (layerItems: readonly InputItem[]): InputItem[] => [...layerItems, task];
-  const exceeds = (counted: MeterCount): boolean => !fits(counted) || counted.inputTokens > ceiling;
-  const leavesNoRoom = (counted: MeterCount): boolean => ceiling - counted.inputTokens < MIN_ROOM_TOKENS;
-  let layers = layersWith(undefined);
-  let counted = await countInput(floorOf(layers));
-  if (appendOnly) {
-    const known = new Set(arrivals.map((entry) => entry.key));
-    for (const file of head.discovered.nested) {
-      if (known.has(`instructions:${file.instruction.path}`)) continue;
-      const before = arrivals;
-      arrivals = [...arrivals, instructionArrivalOf(file)];
-      const next = await countInput(floorOf(layersWith(undefined)));
-      if (exceeds(next) || leavesNoRoom(next)) {
-        arrivals = before;
-        notices.push({
-          code: 'instructions_dropped',
-          message: `${file.instruction.path} was dropped because the context budget was exceeded`,
-        });
-      } else {
-        counted = next;
-        layers = layersWith(undefined);
-      }
-    }
-  } else {
-    while ((exceeds(counted) || leavesNoRoom(counted)) && arrivals.some((entry) => entry.layer === 'instructions')) {
-      const index = arrivals.findIndex((entry) => entry.layer === 'instructions');
-      const [dropped] = arrivals.splice(index, 1);
-      if (dropped?.file === undefined) break;
-      notices.push({
-        code: 'instructions_dropped',
-        message: `${dropped.file.instruction.path} was dropped because the context budget was exceeded`,
-      });
-      layers = layersWith(undefined);
-      counted = await countInput(floorOf(layers));
-    }
-  }
-  if (!admitted && exceeds(counted)) {
-    throw new PinnedOverflowError({
-      pinnedTokens: counted.inputTokens,
-      ceiling,
-      breakdown: await breakdownOf(ports, systemMessage, layers, governing, task, tools),
-    });
-  }
-  if (!admitted && leavesNoRoom(counted)) {
-    throw new PinnedRoomError({
-      pinnedTokens: counted.inputTokens,
-      ceiling,
-      room: ceiling - counted.inputTokens,
-      minimum: MIN_ROOM_TOKENS,
-      breakdown: await breakdownOf(ports, systemMessage, layers, governing, task, tools),
-    });
-  }
-  const instructionFiles = arrivals.flatMap((entry) => (entry.file === undefined ? [] : [entry.file]));
-  return { arrivals, instructionFiles, layers, counted, layersWith, floorOf, exceeds };
+  return [...summaryItems, ...ordered];
 };
 
 export const measureLayers = async (input: BuildContextInput, ports: BuildContextPorts): Promise<void> => {
-  const head = await measureHead(input, ports);
-  await fitLayers(input, frozenPorts(ports, head.frozen), head);
+  await measureHead(input, ports);
 };
 
 export const measurePinned = async (input: BuildContextInput, ports: BuildContextPorts): Promise<PinnedMeasure> => {
@@ -518,67 +563,13 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   const head = await measureHead(input, ports);
   ports = frozenPorts(ports, head.frozen);
   const { tools, budgetOf, fits, countInput } = metering(input, ports, head.tools);
-  const { discovered, notices, systemMessage, task, pinnedDigest, pinnedTokens, ceiling } = head;
-
-  const fitted = await fitLayers(input, ports, head);
-  const { layersWith, floorOf, exceeds } = fitted;
-  let layers = fitted.layers;
-  let layersCounted = fitted.counted;
-  let memoryMessage: MessageInputItem | undefined;
-  const layersOf = (): InputItem[] => layersWith(memoryMessage);
-
+  const { discovered, notices, systemMessage, task, pinnedDigest, pinnedTokens, ceiling, layers, memoryMessage, memoryCount } = head;
   const rankedMemories = sources.memories ?? [];
   const memoryCandidates =
     input.pinnedMemoryIds === undefined
       ? rankedMemories
       : input.pinnedMemoryIds.flatMap((id) => rankedMemories.filter((memory) => memory.id === id));
-  let memoryCount = 0;
-  if (input.pinnedMemoryIds !== undefined && rankedMemories.length > 0) {
-    memoryCount = memoryCandidates.length;
-    memoryMessage = pinnedMemoryMessageOf(input);
-    if (memoryCount < rankedMemories.length) {
-      notices.push({
-        code: 'memories_dropped',
-        message: `${rankedMemories.length - memoryCount} of ${rankedMemories.length} saved memories were left out of the context because of its budget`,
-      });
-    }
-    layers = layersOf();
-    layersCounted = await countInput(floorOf(layers));
-  } else if (memoryCandidates.length > 0) {
-    const baseTokens = layersCounted.inputTokens;
-    const memoryBudget = memoryBudgetFor(ceiling - baseTokens, input.memoryShare);
-    const fitsWith = async (count: number): Promise<boolean> => {
-      memoryMessage = {
-        type: 'message',
-        role: 'user',
-        content: renderMemories(memoryCandidates.slice(0, count), memoryCandidates.length - count),
-      };
-      const counted = await countInput(floorOf(layersOf()));
-      return !exceeds(counted) && ceiling - counted.inputTokens >= MIN_ROOM_TOKENS && counted.inputTokens - baseTokens <= memoryBudget;
-    };
-    if (await fitsWith(0)) {
-      let low = 0;
-      let high = memoryCandidates.length;
-      while (low < high) {
-        const middle = Math.ceil((low + high) / 2);
-        if (await fitsWith(middle)) low = middle;
-        else high = middle - 1;
-      }
-      memoryCount = low;
-      await fitsWith(memoryCount);
-    } else {
-      memoryMessage = undefined;
-    }
-    if (memoryCount < memoryCandidates.length) {
-      notices.push({
-        code: 'memories_dropped',
-        message: `${memoryCandidates.length - memoryCount} of ${memoryCandidates.length} saved memories were left out of the context because of its budget`,
-      });
-    }
-    layers = layersOf();
-    layersCounted = await countInput(floorOf(layers));
-  }
-  const floorTokens = layersCounted.inputTokens;
+  const floorTokens = head.counted.inputTokens;
 
   const summaryItems: InputItem[] = sources.summary === undefined ? [] : [frozenItem(sources.summary.item)];
   const workingStateItems: InputItem[] =
@@ -990,19 +981,19 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
 
   const hint = levelIndex === 0 && total.inputTokens > highMark ? await compactionFor('proactive', 0) : undefined;
   const finalInput = assemble();
-  const arrivalsStart = cachePrefix ? head.pinnedLayers.length + (memoryMessage === undefined ? 0 : 1) : layers.length - fitted.arrivals.length;
+  const arrivalsStart = cachePrefix ? head.pinnedLayers.length + (memoryMessage === undefined ? 0 : 1) : layers.length - head.arrivals.length;
   const zones: ContextZones = {
     stableEnd: head.pinnedLayers.length,
     arrivalsStart,
-    arrivalsEnd: arrivalsStart + fitted.arrivals.length,
+    arrivalsEnd: arrivalsStart + head.arrivals.length,
     fixedEnd: layers.length,
     historyEnd: finalInput.length - workingStateItems.length - trailing.length,
-    arrivalKeys: fitted.arrivals.map((entry) => entry.key),
+    arrivalKeys: head.arrivals.map((entry) => entry.key),
   };
   const layerByItem = new Map<InputItem, TaggedItem['layer']>();
   layerByItem.set(task, 'history.user');
   for (const message of head.catalogMessages) layerByItem.set(message, 'skills');
-  for (const entry of fitted.arrivals) layerByItem.set(entry.message, entry.layer);
+  for (const entry of head.arrivals) layerByItem.set(entry.message, entry.layer);
   for (const file of [discovered.user, discovered.root]) if (file !== undefined) layerByItem.set(file.message, 'instructions');
   for (const message of head.governing) layerByItem.set(message, 'governing');
   if (memoryMessage !== undefined) layerByItem.set(memoryMessage, 'memories');
@@ -1027,7 +1018,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     evictions: reported(),
     ...(hint !== undefined && 'plan' in hint ? { compaction: hint.plan } : {}),
     notices,
-    loadedInstructions: [discovered.user, discovered.root, ...fitted.instructionFiles]
+    loadedInstructions: [discovered.user, discovered.root, ...head.instructionFiles]
       .filter((file) => file !== undefined)
       .map((file) => file.instruction),
     loadedMemoryIds: memoryCandidates.slice(0, memoryCount).map((memory) => memory.id),
