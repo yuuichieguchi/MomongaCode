@@ -26,6 +26,7 @@ export type ToolResult = {
   authorizationRequired?: { server: string };
   files?: ToolFile[];
   exitCode?: number;
+  validatorFailure?: string;
 };
 
 export type ToolPending = { status: 'pending'; awaits: ToolAwait; wakeAt?: number };
@@ -114,6 +115,9 @@ export type ToolBody<Input> = {
   tier?: ToolTier;
   companionOf?: string;
   schemaMode?: 'strict' | 'lenient';
+  outputSchema?: Record<string, unknown>;
+  server?: string;
+  validatorIdentity?: string;
   timeoutMs: number | ((input: Input) => number);
   title(input: Input, ctx: DisplayContext): string;
   locations?(input: Input, ctx: DisplayContext): { path: string; line?: number }[];
