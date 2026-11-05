@@ -85,40 +85,32 @@ describe('schemas carrying $id across re-listing', () => {
   });
 });
 
-describe('schema nesting depth', () => {
-  it('skips a 3000-level not chain with a per-tool notice while the other tools still list', async () => {
-    const harness = makePool([entry('modern', modernConfig(makeRecordFile(), extras('deep_not_3000')))]);
-    const set = await harness.snapshot();
-    expect(set.get('mcp__modern__deep_not_3000')).toBeUndefined();
-    expect(set.notices.filter((notice) => notice.includes('mcp__modern__deep_not_3000'))).toHaveLength(1);
-    expect(set.notices.filter((notice) => notice.includes('failed to list tools'))).toEqual([]);
-    expect(set.get('mcp__modern__echo')?.name).toBe('mcp__modern__echo');
-  });
-});
+const LIST_MESSAGE_WRAPPING = 4;
 
-const LIST_RESULT_WRAPPING = 3;
+const notChainAt = (messageDepth: number): string => `deep_not_${messageDepth - LIST_MESSAGE_WRAPPING}`;
 
-const notChainAt = (listDepth: number): string => `deep_not_${listDepth - LIST_RESULT_WRAPPING}`;
+const depthNoticesOf = (notices: readonly string[]): string[] => notices.filter((notice) => notice.includes('modern') && /depth/i.test(notice));
 
-describe('tools/list and the one JSON depth bound', () => {
-  it('counts the tools/list result wrapping as three levels around the input schema', () => {
-    expect(JSON.stringify({ tools: [{ inputSchema: nestedNotSchema(2) }] })).toBe('{"tools":[{"inputSchema":{"type":"object","not":{}}}]}');
+describe('a tools/list reply is measured as one message from its JSON-RPC root', () => {
+  it('counts the message, result, tools array and tool as four levels around the input schema', () => {
+    expect(JSON.stringify({ id: 1, result: { tools: [{ inputSchema: nestedNotSchema(1) }] } })).toBe('{"id":1,"result":{"tools":[{"inputSchema":{"type":"object"}}]}}');
   });
 
-  it(`lists a tool whose tools/list entry nests exactly ${MAX_JSON_DEPTH} deep`, async () => {
+  it(`lists every tool when the reply is exactly ${MAX_JSON_DEPTH} deep`, async () => {
     const name = notChainAt(MAX_JSON_DEPTH);
     const set = await makePool([entry('modern', modernConfig(makeRecordFile(), extras(name)))]).snapshot();
     expect(set.get(`mcp__modern__${name}`)?.name).toBe(`mcp__modern__${name}`);
-    expect(set.notices.filter((notice) => notice.includes(name))).toEqual([]);
+    expect(set.get('mcp__modern__echo')?.name).toBe('mcp__modern__echo');
+    expect(depthNoticesOf(set.notices)).toEqual([]);
   });
 
-  it(`refuses a tool whose tools/list entry nests ${MAX_JSON_DEPTH + 1} deep, naming the depth`, async () => {
-    const name = notChainAt(MAX_JSON_DEPTH + 1);
+  it.each([MAX_JSON_DEPTH + 1, 3000])('fails the whole listing when one schema makes the reply %i deep, with one notice naming the server and the depth', async (messageDepth) => {
+    const name = notChainAt(messageDepth);
     const set = await makePool([entry('modern', modernConfig(makeRecordFile(), extras(name)))]).snapshot();
     expect(set.get(`mcp__modern__${name}`)).toBeUndefined();
-    const notices = set.notices.filter((notice) => notice.includes(name));
+    expect(set.get('mcp__modern__echo')).toBeUndefined();
+    const notices = depthNoticesOf(set.notices);
     expect(notices).toHaveLength(1);
-    expect(notices[0]).toMatch(/depth/i);
     expect(notices[0]).toContain(String(MAX_JSON_DEPTH));
   });
 });

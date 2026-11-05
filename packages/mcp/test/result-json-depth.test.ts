@@ -1,81 +1,138 @@
 import { describe, expect, it } from 'vitest';
-import { JsonDepthError, MAX_JSON_DEPTH } from '@momonga/foundation';
-import { MIN_TASK_POLL_MS, parseInputRequests } from '@momonga/mcp';
-import { createFakeClock } from '@momonga/testkit';
-import { makeRemoteConnection, observedTimers, startHttpFixture, textOf } from './remote-harness.ts';
+import { MAX_JSON_DEPTH } from '@momonga/foundation';
+import { McpInputSuspension } from '@momonga/mcp';
+import { nestedArraysJsonText, nestedNotJsonText } from '@momonga/testkit';
+import { makeRemoteConnection, startHttpFixture, textOf } from './remote-harness.ts';
 
-const nestedArrays = (depth: number): unknown => {
-  let value: unknown[] = [];
-  for (let level = 1; level < depth; level += 1) value = [value];
-  return value;
+const STACK_BREAKING_NESTING = 10_000;
+
+const RESULT_META_WRAPPING = 3;
+const NOTIFICATION_DATA_WRAPPING = 2;
+const LIST_SCHEMA_WRAPPING = 4;
+const ELICITATION_META_WRAPPING = 5;
+
+const outcomeOf = <T>(promise: Promise<T>): Promise<{ value: T } | { error: unknown }> =>
+  promise.then(
+    (value) => ({ value }),
+    (error: unknown) => ({ error }),
+  );
+
+const causesOf = (error: unknown): unknown[] => {
+  const chain: unknown[] = [];
+  for (let current = error; current !== undefined && chain.length < 32; current = (current as { cause?: unknown }).cause) chain.push(current);
+  return chain;
 };
 
-const structuredOfDepth = (depth: number): Record<string, unknown> => ({ n: 2, extra: nestedArrays(depth - 1) });
-
-const completedTaskCall = async (structuredContent: unknown): Promise<{ outcome: Promise<unknown> }> => {
-  const fixture = await startHttpFixture({ era: 'modern', taskPollIntervalMs: 1 });
-  const timers = observedTimers(createFakeClock(1_000_000));
-  const { connection } = makeRemoteConnection({ fixture, timers });
-  await connection.listTools();
-  const scheduled = timers.nextScheduled((ms) => ms === MIN_TASK_POLL_MS);
-  const outcome = connection.callTool({ name: 'structured_task', arguments: {}, timeoutMs: 1_000_000 });
-  outcome.catch(() => undefined);
-  await scheduled;
-  fixture.completeTask(fixture.taskIds()[0] as string, 'task result', structuredContent);
-  timers.advance(MIN_TASK_POLL_MS);
-  return { outcome };
+const expectDepthRefusal = (error: unknown): void => {
+  expect(error).toBeInstanceOf(Error);
+  expect(causesOf(error).some((link) => link instanceof RangeError)).toBe(false);
+  expect((error as Error).message).toMatch(/depth/i);
+  expect((error as Error).message).toContain(String(MAX_JSON_DEPTH));
 };
 
-describe('MCP tool results and the one JSON depth bound', () => {
-  it('builds structured content whose depth is the depth under test', () => {
-    expect(JSON.stringify(structuredOfDepth(3))).toBe('{"n":2,"extra":[[]]}');
+describe('the deep values the fixture sends', () => {
+  it('builds a not chain whose JSON depth is its nesting', () => {
+    expect(nestedNotJsonText(1)).toBe('{"type":"object"}');
+    expect(nestedNotJsonText(3)).toBe('{"type":"object","not":{"not":{}}}');
+    expect(nestedArraysJsonText(2)).toBe('[[]]');
+  });
+});
+
+describe('MCP responses are measured once, at the message that enters', () => {
+  const deepResult = async (messageDepth: number) => {
+    const fixture = await startHttpFixture({ era: 'modern', deepTools: {} });
+    const { connection } = makeRemoteConnection({ fixture });
+    await connection.listTools();
+    return outcomeOf(connection.callTool({ name: 'deep_result', arguments: { nesting: messageDepth - RESULT_META_WRAPPING } }));
+  };
+
+  it(`returns a tools/call response that is exactly ${MAX_JSON_DEPTH} deep`, async () => {
+    const outcome = await deepResult(MAX_JSON_DEPTH);
+    expect('value' in outcome && textOf(outcome.value)).toBe('deep result');
   });
 
-  it(`accepts a tool result nested exactly ${MAX_JSON_DEPTH} deep`, async () => {
-    const { outcome } = await completedTaskCall(structuredOfDepth(MAX_JSON_DEPTH));
-    expect(textOf((await outcome) as { content?: unknown })).toBe('task result');
+  it(`fails the call when its response is ${MAX_JSON_DEPTH + 1} deep, naming the depth`, async () => {
+    const outcome = await deepResult(MAX_JSON_DEPTH + 1);
+    expect('error' in outcome).toBe(true);
+    if ('error' in outcome) expectDepthRefusal(outcome.error);
   });
+});
 
-  it(`refuses a tool result nested ${MAX_JSON_DEPTH + 1} deep with the typed depth error`, async () => {
-    const { outcome } = await completedTaskCall(structuredOfDepth(MAX_JSON_DEPTH + 1));
-    const error = await outcome.then(
-      () => undefined,
-      (failure: unknown) => failure,
+describe('MCP notifications are measured at the message that enters', () => {
+  const callWithNotification = async (notificationDepth: number) => {
+    const notices: string[] = [];
+    const fixture = await startHttpFixture({ era: 'modern', deepTools: {} });
+    const { connection } = makeRemoteConnection({ fixture, connection: { onNotice: (message: string) => notices.push(message) } });
+    await connection.listTools();
+    const outcome = await outcomeOf(
+      connection.callTool({ name: 'deep_result', arguments: { nesting: 1, notifyNesting: notificationDepth - NOTIFICATION_DATA_WRAPPING } }),
     );
-    expect(error).toBeInstanceOf(JsonDepthError);
-    expect((error as Error).message).toMatch(/depth/i);
-    expect((error as Error).message).toContain(String(MAX_JSON_DEPTH));
+    return { notices, outcome };
+  };
+
+  it(`keeps a notification exactly ${MAX_JSON_DEPTH} deep without a notice`, async () => {
+    const { notices, outcome } = await callWithNotification(MAX_JSON_DEPTH);
+    expect('value' in outcome && textOf(outcome.value)).toBe('deep result');
+    expect(notices.filter((notice) => /depth/i.test(notice))).toEqual([]);
+  });
+
+  it(`drops a notification ${MAX_JSON_DEPTH + 1} deep with a notice naming the server and the depth, and the call still completes`, async () => {
+    const { notices, outcome } = await callWithNotification(MAX_JSON_DEPTH + 1);
+    expect('value' in outcome && textOf(outcome.value)).toBe('deep result');
+    const depthNotices = notices.filter((notice) => /depth/i.test(notice));
+    expect(depthNotices).toHaveLength(1);
+    expect(depthNotices[0]).toContain('remote');
+    expect(depthNotices[0]).toContain(String(MAX_JSON_DEPTH));
   });
 });
 
-const inputRequestsOfDepth = (depth: number): Record<string, unknown> => ({
-  who: {
-    method: 'elicitation/create',
-    params: { message: 'Name?', requestedSchema: { type: 'object', properties: { name: { type: 'string' } } }, _meta: nestedArrays(depth - 3) },
-  },
+describe('a tools/list reply is measured as one message', () => {
+  const listing = async (schemaNesting: number) => {
+    const fixture = await startHttpFixture({ era: 'modern', deepTools: { outputSchemaNesting: schemaNesting } });
+    const { connection } = makeRemoteConnection({ fixture });
+    return outcomeOf(connection.listTools());
+  };
+
+  it(`lists every tool when the reply is exactly ${MAX_JSON_DEPTH} deep`, async () => {
+    const outcome = await listing(MAX_JSON_DEPTH - LIST_SCHEMA_WRAPPING);
+    expect('value' in outcome).toBe(true);
+    if (!('value' in outcome)) return;
+    const names = (outcome.value as Array<{ name: string }>).map((tool) => tool.name);
+    expect(names).toContain('deep_output');
+    expect(names).toContain('echo');
+  });
+
+  it(`fails the whole listing when one outputSchema makes the reply ${MAX_JSON_DEPTH + 1} deep`, async () => {
+    const outcome = await listing(MAX_JSON_DEPTH + 1 - LIST_SCHEMA_WRAPPING);
+    expect('error' in outcome).toBe(true);
+    if ('error' in outcome) expectDepthRefusal(outcome.error);
+  });
+
+  it(`refuses a ${STACK_BREAKING_NESTING}-deep outputSchema at the message without any stack overflow`, async () => {
+    const outcome = await listing(STACK_BREAKING_NESTING);
+    expect('error' in outcome).toBe(true);
+    if ('error' in outcome) expectDepthRefusal(outcome.error);
+  });
 });
 
-const thrownBy = (run: () => unknown): unknown => {
-  try {
-    run();
-  } catch (error) {
-    return error;
-  }
-  throw new Error('expected a throw');
-};
+describe('an elicitation input request is measured with the message that carries it', () => {
+  const elicitation = async (messageDepth: number) => {
+    const fixture = await startHttpFixture({ era: 'modern', deepTools: { elicitationMetaNesting: messageDepth - ELICITATION_META_WRAPPING } });
+    const { connection } = makeRemoteConnection({ fixture });
+    await connection.listTools();
+    return outcomeOf(connection.callTool({ name: 'mrtr_elicit', arguments: {} }));
+  };
 
-describe('MCP input requests and the one JSON depth bound', () => {
-  it('builds input requests whose depth is the depth under test', () => {
-    expect(JSON.stringify(inputRequestsOfDepth(5)['who'])).toContain('"_meta":[[]]');
+  it(`hands back an input request whose message is exactly ${MAX_JSON_DEPTH} deep`, async () => {
+    const outcome = await elicitation(MAX_JSON_DEPTH);
+    expect('error' in outcome && outcome.error).toBeInstanceOf(McpInputSuspension);
   });
 
-  it(`accepts an input request nested exactly ${MAX_JSON_DEPTH} deep`, () => {
-    expect(parseInputRequests(inputRequestsOfDepth(MAX_JSON_DEPTH))).toMatchObject([{ key: 'who', mode: 'form', message: 'Name?' }]);
-  });
-
-  it(`refuses an input request nested ${MAX_JSON_DEPTH + 1} deep with the typed depth error`, () => {
-    const error = thrownBy(() => parseInputRequests(inputRequestsOfDepth(MAX_JSON_DEPTH + 1)));
-    expect(error).toBeInstanceOf(JsonDepthError);
-    expect((error as Error).message).toContain(String(MAX_JSON_DEPTH));
+  it(`fails the call when the message carrying the input request is ${MAX_JSON_DEPTH + 1} deep, naming the depth`, async () => {
+    const outcome = await elicitation(MAX_JSON_DEPTH + 1);
+    expect('error' in outcome).toBe(true);
+    if (!('error' in outcome)) return;
+    expect(outcome.error).not.toBeInstanceOf(McpInputSuspension);
+    expectDepthRefusal(outcome.error);
   });
 });
