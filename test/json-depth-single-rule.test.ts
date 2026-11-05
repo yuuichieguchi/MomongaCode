@@ -46,7 +46,10 @@ const INTERNAL_PARSES: Readonly<Record<string, InternalParse>> = {
   'packages/store/src/rows.ts': { calls: 1, reason: 'rows the runtime store wrote to its own SQLite database' },
   'packages/store/src/search.ts': { calls: 1, reason: 'a round trip of an event the store already holds, through the redactor' },
   'packages/gateway/src/core/store.ts': { calls: 1, reason: 'records the gateway wrote to its own store' },
-  'packages/gateway/src/core/compaction.ts': { calls: 1, reason: 'a compaction payload the gateway minted, parsed only after its HMAC verifies' },
+  'packages/protocol/src/envelope-grammar.ts': {
+    calls: 1,
+    reason: 'a payload the gateway minted, parsed in the gateway only after its HMAC verifies and in the runtime only from its own gateway\'s output',
+  },
   'packages/gateway/src/probe/record.ts': { calls: 1, reason: 'probe records the product wrote' },
   'packages/gateway/src/probe/endpoint-record.ts': { calls: 1, reason: 'endpoint probe records the product wrote' },
   'packages/cli/src/history-store.ts': { calls: 1, reason: 'the prompt history file the product writes' },
@@ -87,10 +90,11 @@ describe('one JSON depth rule for every value that enters from outside', () => {
     expect(() => checkJsonDepth([atBound])).toThrow(JsonDepthError);
   });
 
-  it.each(BOUNDARIES)('%s checks depth through the one foundation walk', (file) => {
+  it.each(BOUNDARIES)('%s bounds depth through the one foundation walk or entry', (file) => {
     const source = sourceOf(file);
-    expect(source).toMatch(/\bcheckJsonDepth\(/);
-    if (!file.startsWith('packages/foundation/')) expect(source).toMatch(/import \{[^}]*\bcheckJsonDepth\b[^}]*\} from '@momonga\/foundation'/);
+    const walk = /\b(checkJsonDepth|parseOutsideJson)\(/.exec(source)?.[1];
+    expect(walk).toBeDefined();
+    if (!file.startsWith('packages/foundation/')) expect(source).toMatch(new RegExp(`import \\{[^}]*\\b${walk}\\b[^}]*\\} from '@momonga/foundation'`));
   });
 
   it('declares no JSON depth constant other than the one in foundation', () => {
