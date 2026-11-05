@@ -107,9 +107,6 @@ export {
   FIXTURE_ID_INPUT_SCHEMA_ID,
   FIXTURE_ID_OUTPUT_SCHEMA_ID,
   nestedNotSchema,
-  overflowingInstance,
-  overflowingRefChainSchema,
-  recursiveSchema,
 } from './mcp-fixtures.ts';
 export type { ModernFixtureRecord } from './mcp-fixtures.ts';
 export { killGroupsForCleanup, killPidsForCleanup, stopSupervisorHolder } from './process-groups.ts';
@@ -200,3 +197,4 @@ export {
   startMcpHttpFixture,
 } from './mcp-http-fixture.ts';
 export type { FixtureNote, McpHttpFixture, McpHttpFixtureEra, McpHttpFixtureOptions, RecordedHttpRequest } from './mcp-http-fixture.ts';
+export { ENGINE_FAILURE_KEY, ENGINE_FAILURE_MESSAGE, engineFailureSchema, injectEngineFailure } from './engine-failure.ts';

@@ -7,8 +7,6 @@ import {
   FIXTURE_HOSTILE_TITLE,
   FIXTURE_HOSTILE_TITLE_DESCRIPTION,
   nestedNotSchema,
-  overflowingInstance,
-  recursiveSchema,
   requestedExtraTools,
   withIdInputSchema,
   withIdOutputSchema,
@@ -26,6 +24,7 @@ import {
   MODERN_FIXTURE_STDERR_ENV,
   type ModernFixtureRecord,
 } from './mcp-fixtures.ts';
+import { engineFailureSchema } from './engine-failure.ts';
 
 const objectSchema = (properties: NonNullable<Tool['inputSchema']['properties']>, required: string[]): Tool['inputSchema'] => ({
   type: 'object',
@@ -147,14 +146,14 @@ const EXTRA_TOOLS: Record<string, Tool> = {
   },
   validator_throws: {
     name: 'validator_throws',
-    description: 'A recursive 2020-12 schema whose validator overflows the stack on a deeply nested object',
-    inputSchema: recursiveSchema() as unknown as Tool['inputSchema'],
+    description: 'A 2020-12 schema whose engine is made to throw while validating',
+    inputSchema: engineFailureSchema() as unknown as Tool['inputSchema'],
   },
   output_validator_throws: {
     name: 'output_validator_throws',
-    description: 'A recursive 2020-12 output schema whose validator overflows the stack on a deeply nested result',
+    description: 'A 2020-12 output schema whose engine is made to throw while validating',
     inputSchema: objectSchema({}, []),
-    outputSchema: recursiveSchema() as unknown as Tool['outputSchema'],
+    outputSchema: engineFailureSchema() as unknown as Tool['outputSchema'],
   },
   bad_output_schema: {
     name: 'bad_output_schema',
@@ -352,7 +351,7 @@ const createFixtureServer = (): Server => {
       case 'with_id':
         return { content: [], structuredContent: { v: String(args['v']) } };
       case 'output_validator_throws':
-        return { content: [{ type: 'text', text: 'unchecked' }], structuredContent: overflowingInstance() };
+        return { content: [{ type: 'text', text: 'unchecked' }], structuredContent: { a: 'unchecked' } };
       case 'hostile_title':
       case 'hostile_text_more':
       case 'deep_64':

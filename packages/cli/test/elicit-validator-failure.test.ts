@@ -1,14 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { untrustedSchemaFailure } from '@momonga/foundation';
 import type { ElicitationRequestView } from '@momonga/protocol';
-import { overflowingRefChainSchema } from '@momonga/testkit';
+import { ENGINE_FAILURE_KEY } from '@momonga/testkit';
 import { decide, enterValue, startFlow } from '../src/elicit/flow.ts';
+
+vi.mock('../../foundation/src/untrusted-engine.ts', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../foundation/src/untrusted-engine.ts')>();
+  const { injectEngineFailure } = await import('../../testkit/src/engine-failure.ts');
+  return { ...original, ataEngine: injectEngineFailure(original.ataEngine) };
+});
 
 const THROWING_FORM: ElicitationRequestView = {
   key: 'profile',
   mode: 'form',
   message: 'Tell me about you',
-  requestedSchema: { ...overflowingRefChainSchema(), properties: { name: { type: 'string' } } },
+  requestedSchema: { type: 'object', properties: { name: { type: 'string' } }, [ENGINE_FAILURE_KEY]: true },
 };
 
 describe('elicitation flow with a requestedSchema whose validator throws', () => {
