@@ -7,6 +7,7 @@ import { preconditionText } from '../precondition-text.ts';
 import { invalidRequest, notFound } from './errors.ts';
 import { TargetBreaker } from './request-breaker.ts';
 import { guardAdapter } from './guarded-adapter.ts';
+import type { ReasoningOriginCodec } from './reasoning-origin.ts';
 import type { GuardedAdapter } from './guarded-adapter.ts';
 import type { Redactor } from './redaction.ts';
 import type { GatewayConfig, GatewayTimers } from '../types.ts';
@@ -43,6 +44,7 @@ export type RouterOptions = {
   clock: Clock;
   timers: GatewayTimers;
   redactor: Redactor;
+  reasoningOrigin: ReasoningOriginCodec;
 };
 
 const requireEntry = <T>(entries: Record<string, T>, name: string, kind: string): T => {
@@ -118,7 +120,7 @@ export const createRouter = (options: RouterOptions): Router => {
       model: target.model,
       billing: target.billing,
       counter: target.counter,
-      adapter: guardAdapter(requireEntry(adapters, name, 'adapter'), options.redactor),
+      adapter: guardAdapter(requireEntry(adapters, name, 'adapter'), options.redactor, options.reasoningOrigin),
       breaker: new TargetBreaker({ failureThreshold: config.breaker.failureThreshold, openMs: config.breaker.openMs, clock }),
       gate: createAdmissionGate({
         targetName: name,

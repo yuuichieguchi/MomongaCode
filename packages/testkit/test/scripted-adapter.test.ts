@@ -21,7 +21,7 @@ describe('createScriptedAdapter', () => {
   it('emits the scripted events and records the call', async () => {
     const adapter = createScriptedAdapter({ calls: [{ events: textResponseEvents({ model: 'm', chunks: ['a'] }) }] });
     const controller = new AbortController();
-    const types = await collect(adapter.create(request, { signal: controller.signal, target, attempt: 1 }));
+    const types = await collect(adapter.create(request, { signal: controller.signal, target, attempt: 1, reasoningOrigin: { own: (item: unknown) => item as never } }));
     expect(types[0]).toBe('response.created');
     expect(types.at(-1)).toBe('response.completed');
     expect(adapter.calls).toHaveLength(1);
@@ -36,7 +36,7 @@ describe('createScriptedAdapter', () => {
     });
     const seen: string[] = [];
     const run = async (): Promise<void> => {
-      for await (const event of adapter.create(request, { signal: new AbortController().signal, target, attempt: 1 })) seen.push(event.type);
+      for await (const event of adapter.create(request, { signal: new AbortController().signal, target, attempt: 1, reasoningOrigin: { own: (item: unknown) => item as never } })) seen.push(event.type);
     };
     const error = await run().then(
       () => undefined,
@@ -75,13 +75,13 @@ describe('createScriptedAdapter', () => {
     const adapter = createScriptedAdapter({
       calls: [{ events, gate: { name: 'g', afterEvents: 1 } }, { events, gate: { name: 'never', afterEvents: 0 } }],
     });
-    const first = collect(adapter.create(request, { signal: new AbortController().signal, target, attempt: 1 }));
+    const first = collect(adapter.create(request, { signal: new AbortController().signal, target, attempt: 1, reasoningOrigin: { own: (item: unknown) => item as never } }));
     await waitFor(() => adapter.calls[0]?.emitted === 1);
     adapter.release('g');
     expect((await first).length).toBe(events.length);
 
     const controller = new AbortController();
-    const second = collect(adapter.create(request, { signal: controller.signal, target, attempt: 1 }));
+    const second = collect(adapter.create(request, { signal: controller.signal, target, attempt: 1, reasoningOrigin: { own: (item: unknown) => item as never } }));
     await waitFor(() => adapter.calls.length === 2);
     controller.abort(new Error('closing'));
     await expect(second).rejects.toThrow('closing');
@@ -92,7 +92,7 @@ describe('createScriptedAdapter', () => {
     const clock = createFakeClock(0);
     const timers = createFakeTimers(clock);
     const adapter = createScriptedAdapter({ timers, calls: [{ delayMs: 250, events: textResponseEvents({ model: 'm', chunks: ['a'] }) }] });
-    const done = collect(adapter.create(request, { signal: new AbortController().signal, target, attempt: 1 }));
+    const done = collect(adapter.create(request, { signal: new AbortController().signal, target, attempt: 1, reasoningOrigin: { own: (item: unknown) => item as never } }));
     await waitFor(() => timers.pending().length === 1);
     expect(timers.pending()[0]?.delayMs).toBe(250);
     expect(adapter.calls[0]?.emitted).toBe(0);
@@ -102,7 +102,7 @@ describe('createScriptedAdapter', () => {
 
   it('fails clearly when called more times than scripted', async () => {
     const adapter = createScriptedAdapter({ kind: 'k', calls: [] });
-    await expect(collect(adapter.create(request, { signal: new AbortController().signal, target, attempt: 1 }))).rejects.toThrow(
+    await expect(collect(adapter.create(request, { signal: new AbortController().signal, target, attempt: 1, reasoningOrigin: { own: (item: unknown) => item as never } }))).rejects.toThrow(
       'scripted adapter k: no plan for call #1',
     );
   });
@@ -116,7 +116,7 @@ describe('createScriptedAdapter', () => {
       countTokens: { input_tokens: 42, method: 'exact', error_bound: 0, error_shape: { ratio: 0, minimum: 0 } },
       compactSummary: 'summary text',
     });
-    const ctx = { signal: new AbortController().signal, target, attempt: 1 };
+    const ctx = { signal: new AbortController().signal, target, attempt: 1, reasoningOrigin: { own: (item: never) => item } };
     expect(await full.countTokens?.({ model: 'fast', input: 'hi' }, ctx)).toEqual({ input_tokens: 42, method: 'exact', error_bound: 0, error_shape: { ratio: 0, minimum: 0 } });
     expect((await full.compact?.({ model: 'scripted-model', input: [] }, ctx))?.summary).toBe('summary text');
     expect(full.countCalls).toHaveLength(1);

@@ -2,6 +2,7 @@ import { isRecord } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import type { AdapterRequest, StreamEvent, Usage } from '@momonga/protocol';
 import { StreamFailure, UpstreamProtocolError } from '../shared/failures.ts';
+import { parseUpstreamJson } from '../shared/upstream-json.ts';
 import { MAX_NDJSON_LINE_BYTES, MAX_TOOL_CALLS } from '../shared/limits.ts';
 import { ResponseEmitter } from '../shared/response-emitter.ts';
 
@@ -81,12 +82,7 @@ class OllamaStreamDriver {
   }
 
   private apply(line: string): void {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      throw invalid('it is not valid JSON');
-    }
+    const parsed = parseUpstreamJson(line, invalid);
     if (!isRecord(parsed)) throw invalid('it is not a JSON object');
     if (!this.started) {
       this.started = true;

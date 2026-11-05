@@ -1,4 +1,4 @@
-import { ITEM_CAP, ITEM_ROOM, MIN_SUMMARY_TOKENS, ceilRatio, floorRatio, marginFloorFor, outputReserveFor, sizingFractionFor, summaryItemTokensFor } from '@momonga/protocol';
+import { ITEM_CAP, LOWEST_REASONING_EFFORT, ITEM_ROOM, MIN_SUMMARY_TOKENS, ceilRatio, floorRatio, marginFloorFor, outputReserveFor, outputTokensFor, sizingFractionFor, summaryItemTokensFor } from '@momonga/protocol';
 import type { Ratio } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
 import type { Calibration, ContextBudget } from './types.ts';
@@ -16,7 +16,7 @@ export const withCalibration = (capabilities: Capabilities, calibration: Calibra
 
 export const budgetFor = (capabilities: Capabilities, under: number): ContextBudget => {
   const W = capabilities.contextWindow;
-  const R = outputReserveFor(capabilities);
+  const R = outputTokensFor(capabilities, LOWEST_REASONING_EFFORT, outputReserveFor(capabilities));
   const margin = marginFloorFor(W) + under;
   return { W, R, margin, I: Math.max(0, W - R - margin) };
 };

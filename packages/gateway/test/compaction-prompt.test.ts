@@ -1,3 +1,4 @@
+import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
 import { createAnthropicAdapter, createOpenResponsesAdapter } from '@momonga/gateway';
 import { ESTIMATED_CHARACTERS_PER_TOKEN, MAX_COMPACTION_GUIDELINE_CHARS, MIN_SUMMARY_TOKENS, SUMMARY_PROMPT_TOKENS } from '@momonga/protocol';
@@ -18,7 +19,7 @@ const compactRequest = (momonga: AdapterCompactRequest['momonga'] = {}): Adapter
   momonga,
 });
 
-const instructionsOf = (request: AdapterCompactRequest, cap = 512): string => summaryRequestOf(request, cap).instructions ?? '';
+const instructionsOf = (request: AdapterCompactRequest, cap = 512): string => summaryRequestOf(request, cap, EVERY_REASONING_IS_OWN).instructions ?? '';
 
 describe('the compaction prompt', () => {
   it('names the six sections in order', () => {
@@ -74,7 +75,7 @@ describe('every adapter renders the same prompt', () => {
       anthropic: createAnthropicAdapter({ ...shared, apiKey: async () => 'unused' }),
       responses: createOpenResponsesAdapter(shared),
     };
-    return Object.entries(adapters).map(([name, adapter]) => [name, JSON.stringify(adapter.renderCompactWire?.(request, target, 512))]);
+    return Object.entries(adapters).map(([name, adapter]) => [name, JSON.stringify(adapter.renderCompactWire?.(request, target, 512, EVERY_REASONING_IS_OWN))]);
   };
 
   it('carries the sections, the backtick rule and the guideline on each wire', async () => {
@@ -113,7 +114,7 @@ describe('momonga.guideline validation', () => {
 
 describe('SUMMARY_PROMPT_TOKENS', () => {
   const transcriptEnvelope = (): string => {
-    const [item] = summaryRequestOf({ ...compactRequest(), input: [] }, 512).input;
+    const [item] = summaryRequestOf({ ...compactRequest(), input: [] }, 512, EVERY_REASONING_IS_OWN).input;
     if (item?.type !== 'message' || typeof item.content !== 'string') throw new Error('an empty transcript is not a plain text message');
     return item.content;
   };

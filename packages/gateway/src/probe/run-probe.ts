@@ -1,5 +1,5 @@
-import Ajv2020 from 'ajv/dist/2020.js';
-import { decodeSse } from '@momonga/foundation';
+import { decodeSse, defineProductSchema } from '@momonga/foundation';
+import type { ProductValidator } from '@momonga/foundation';
 import {
   ESTIMATED_ERROR_BOUND_RATIO,
   PROBE_KEYWORDS,
@@ -20,6 +20,7 @@ import { decodeUpstreamReply, upstreamErrorMessage } from '../adapters/chat-comp
 import type { UpstreamReply } from '../adapters/chat-completions/upstream-reply.ts';
 import { outputBoundFor } from '../adapters/chat-completions/output-bound.ts';
 import { summaryRequestOf } from '../adapters/shared/compact.ts';
+import { NO_REASONING_IS_OWN } from '../adapters/shared/reasoning-origin.ts';
 import { hiddenReasoningTokens } from '../core/hidden-reasoning.ts';
 import { cachedCountOf } from './cached-count.ts';
 import { maxOutputTokensFor } from './decide.ts';
@@ -79,8 +80,7 @@ const PROBE_TOOL: ProbeTool = {
 const TOOL_PROMPT = `Please call ${PROBE_TOOL.name} for Tokyo for 3 days`;
 const SYSTEM_PROMPT = 'Answer only with JSON that matches the given schema.';
 const PLAIN_PROMPT = 'Say hello in one short sentence.';
-const ajv = new Ajv2020.default({ strict: false });
-const validateToolArguments = ajv.compile(PROBE_TOOL.parameters);
+const validateToolArguments: ProductValidator<unknown> = defineProductSchema('gateway/probe-tool-arguments', PROBE_TOOL.parameters);
 
 type ProbeOutcome = 'accepted' | 'unsupported' | 'overflow' | 'too_large' | 'failure';
 
@@ -141,7 +141,7 @@ const cachedTokensOf = (reply: UpstreamReply): number | undefined => {
   return cachedCountOf(field(field(reply.usage, 'prompt_tokens_details'), 'cached_tokens'), 'usage.prompt_tokens_details.cached_tokens');
 };
 
-const toolArgumentsValid = (args: unknown): boolean => isRecord(args) && validateToolArguments(args);
+const toolArgumentsValid = (args: unknown): boolean => isRecord(args) && validateToolArguments(args).valid;
 
 interface NativeCall {
   id: string;
@@ -541,6 +541,7 @@ const summaryShapedBody = (contextWindow: number): Record<string, unknown> => {
   const summary = summaryRequestOf(
     { model: '', input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: transcript }] }] },
     cap,
+    NO_REASONING_IS_OWN,
   );
   const content = (summary.input[0] as { content: unknown }).content;
   return {

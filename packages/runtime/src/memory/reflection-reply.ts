@@ -1,4 +1,4 @@
-import { isRecord } from '@momonga/foundation';
+import { isRecord, parseOutsideJson } from '@momonga/foundation';
 import { MEMORY_KINDS } from '@momonga/protocol';
 import type { MemoryKind } from '@momonga/protocol';
 import { MEMORY_TEXT_MAX_CHARS } from '@momonga/tools';
@@ -53,7 +53,7 @@ const candidateOf = (value: unknown, index: number): ReflectionCandidate | { err
 export const parseReflectionReply = (text: string): { candidates: ReflectionCandidate[] } | { error: string } => {
   let value: unknown;
   try {
-    value = JSON.parse(text);
+    value = parseOutsideJson(text);
   } catch (error) {
     return schemaFailure(`the reply is not JSON (${error instanceof Error ? error.message : String(error)})`);
   }

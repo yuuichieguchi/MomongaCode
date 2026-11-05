@@ -1,6 +1,5 @@
-import Ajv2020 from 'ajv/dist/2020.js';
-import type { ValidateFunction } from 'ajv/dist/2020.js';
-import { sha256Hex } from '@momonga/foundation';
+import { defineProductSchema, parseOutsideJson, sha256Hex } from '@momonga/foundation';
+import type { ProductValidator } from '@momonga/foundation';
 import { GUIDELINE_TEXT_PATTERN, MIN_SUMMARY_TOKENS, escapeXmlAttribute, escapeXmlText } from '@momonga/protocol';
 import type { BilledDetail } from '@momonga/protocol';
 import { describeFirstError } from './dataset.ts';
@@ -83,13 +82,12 @@ export type GuidelineAnalysis = {
   reliability_score: number;
 };
 
-const ajv = new Ajv2020.default({ strict: true });
-const validateAnalysis: ValidateFunction<GuidelineAnalysis> = ajv.compile<GuidelineAnalysis>(GUIDELINE_ANALYSIS_SCHEMA);
-const validateCandidate: ValidateFunction<{ guideline: string }> = ajv.compile<{ guideline: string }>(GUIDELINE_CANDIDATE_SCHEMA);
+const validateAnalysis: ProductValidator<GuidelineAnalysis> = defineProductSchema('eval/guideline-analysis', GUIDELINE_ANALYSIS_SCHEMA);
+const validateCandidate: ProductValidator<{ guideline: string }> = defineProductSchema('eval/guideline-candidate', GUIDELINE_CANDIDATE_SCHEMA);
 
 const jsonOrError = (text: string): { value: unknown } | { error: string } => {
   try {
-    return { value: JSON.parse(text) as unknown };
+    return { value: parseOutsideJson(text) };
   } catch (error) {
     return { error: `the reply is not JSON (${error instanceof Error ? error.message : String(error)})` };
   }
@@ -98,15 +96,17 @@ const jsonOrError = (text: string): { value: unknown } | { error: string } => {
 export const parseGuidelineAnalysis = (text: string): { analysis: GuidelineAnalysis } | { error: string } => {
   const parsed = jsonOrError(text);
   if ('error' in parsed) return parsed;
-  if (!validateAnalysis(parsed.value)) return { error: describeFirstError(validateAnalysis) };
-  return { analysis: parsed.value };
+  const verdict = validateAnalysis(parsed.value);
+  if (!verdict.valid) return { error: describeFirstError(verdict.errors) };
+  return { analysis: verdict.value };
 };
 
 export const parseGuidelineCandidate = (text: string): { guideline: string } | { error: string } => {
   const parsed = jsonOrError(text);
   if ('error' in parsed) return parsed;
-  if (!validateCandidate(parsed.value)) return { error: describeFirstError(validateCandidate) };
-  return { guideline: parsed.value.guideline };
+  const verdict = validateCandidate(parsed.value);
+  if (!verdict.valid) return { error: describeFirstError(verdict.errors) };
+  return { guideline: verdict.value.guideline };
 };
 
 export type GuidelineCompletionRequest = {

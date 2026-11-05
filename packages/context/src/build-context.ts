@@ -97,6 +97,7 @@ type Evaluation = {
   ports: BuildContextPorts;
   ceiling: number;
   counted: MeterCount;
+  ceilingTokens: number;
   exceeds: boolean;
   leavesNoRoom: boolean;
 };
@@ -190,7 +191,10 @@ const capacityOver = async (
   return smallest;
 };
 
-const admittedFloor = (input: BuildContextInput): boolean => input.observedCapacity === true && input.pinnedTokens !== undefined;
+const admittedFloor = (input: BuildContextInput): boolean => input.pinnedTokens !== undefined;
+
+const ceilingTokensOf = (input: BuildContextInput, counted: MeterCount): number =>
+  input.observedCapacity === true ? counted.inputTokens : counted.freshInputTokens;
 
 const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContextPorts): Promise<Head> => {
   const { capabilities, sources } = input;
@@ -228,7 +232,8 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
   const toolPorts = frozenPorts(suppliedPorts, toolFrozen);
   const countWith = (offered: readonly FunctionTool[], over: BuildContextPorts): Promise<MeterCount> =>
     over.meter.count({ input: [...pinnedLayers, ...governing, task], tools: offered });
-  const fitsFloor = (counted: MeterCount): boolean => metering(input, toolPorts, candidates).fits(counted) && counted.inputTokens <= toolFloor;
+  const fitsFloor = (counted: MeterCount): boolean =>
+    metering(input, toolPorts, candidates).fits(counted) && ceilingTokensOf(input, counted) <= toolFloor;
   const stableFitsFloor = async (offered: readonly FunctionTool[]): Promise<boolean> =>
     fitsFloor(await toolPorts.meter.count({ input: [...pinnedLayers, ...governing], tools: offered }));
   const hostOf = input.companions === undefined || input.companions.keepWithoutHost ? {} : input.companions.hostOf;
@@ -236,12 +241,13 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
     const host = hostOf[tool.name];
     return host === undefined || offered.some((other) => other.name === host);
   };
+  const selectsTools = input.pinnedTokens === undefined && input.toolsFrozen !== true;
   const eligible = candidates.filter((tool) => standsWith(tool, candidates));
   const toolFloor =
-    input.pinnedTokens !== undefined ? 0 : pinnedFloorAt(observed ? await capacityOver(sized, toolPorts, toolFrozen, eligible) : inputCeilingFor(sized));
+    !selectsTools ? 0 : pinnedFloorAt(observed ? await capacityOver(sized, toolPorts, toolFrozen, eligible) : inputCeilingFor(sized));
   let tools = eligible;
   let leftOut: string[] = [];
-  if (input.pinnedTokens === undefined && !(await stableFitsFloor(eligible))) {
+  if (selectsTools && !(await stableFitsFloor(eligible))) {
     const required = requiredToolsOf(input, eligible);
     const kept: FunctionTool[] = [...required];
     const droppedForRoom: string[] = [];
@@ -268,14 +274,16 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
     const evaluationPorts = frozenPorts(suppliedPorts, frozen);
     const ceiling = observed ? await capacityOver(sized, evaluationPorts, frozen, tools) : inputCeilingFor(sized);
     const counted = await evaluationPorts.meter.count({ input: [...layerItems, task], tools });
+    const ceilingTokens = ceilingTokensOf(input, counted);
     return {
       layers: layerItems,
       frozen,
       ports: evaluationPorts,
       ceiling,
       counted,
-      exceeds: !fits(counted) || counted.inputTokens > ceiling,
-      leavesNoRoom: ceiling - counted.inputTokens < MIN_ROOM_TOKENS,
+      ceilingTokens,
+      exceeds: !fits(counted) || ceilingTokens > ceiling,
+      leavesNoRoom: ceiling - ceilingTokens < MIN_ROOM_TOKENS,
     };
   };
   const refused = (path: string): void => {
@@ -329,11 +337,11 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
         content: renderMemories(memoryCandidates.slice(0, count), memoryCandidates.length - count),
       };
       const evaluation = await evaluate(layersFor(arrivals, message));
-      const baseTokens = (await evaluation.ports.meter.count({ input: [...layersFor(arrivals, undefined), task], tools })).inputTokens;
+      const baseTokens = ceilingTokensOf(input, await evaluation.ports.meter.count({ input: [...layersFor(arrivals, undefined), task], tools }));
       const fitsBudget =
         !evaluation.exceeds &&
         !evaluation.leavesNoRoom &&
-        evaluation.counted.inputTokens - baseTokens <= memoryBudgetFor(evaluation.ceiling - baseTokens, input.memoryShare);
+        evaluation.ceilingTokens - baseTokens <= memoryBudgetFor(evaluation.ceiling - baseTokens, input.memoryShare);
       return { message, evaluation, fitsBudget };
     };
     if ((await withMemories(0)).fitsBudget) {
@@ -351,9 +359,9 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
     }
     memoriesDropped(memoryCount, memoryCandidates.length);
   }
-  const { layers, frozen, ceiling, counted, ports } = current;
+  const { layers, frozen, ceiling, counted, ceilingTokens, ports } = current;
   const pinnedCounted = input.pinnedTokens === undefined ? await countWith(tools, ports) : undefined;
-  const pinnedTokens = input.pinnedTokens ?? (pinnedCounted as MeterCount).inputTokens;
+  const pinnedTokens = input.pinnedTokens ?? ceilingTokensOf(input, pinnedCounted as MeterCount);
   const admitted = admittedFloor(input);
   if (!admitted && (pinnedTokens > ceiling || (pinnedCounted !== undefined && !fits(pinnedCounted)))) {
     throw new PinnedOverflowError({ pinnedTokens, ceiling, breakdown: await breakdownOf(ports, systemMessage, instructionMessages, governing, task, tools) });
@@ -370,16 +378,16 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
   }
   if (!admitted && current.exceeds) {
     throw new PinnedOverflowError({
-      pinnedTokens: counted.inputTokens,
+      pinnedTokens: ceilingTokens,
       ceiling,
       breakdown: await breakdownOf(ports, systemMessage, layers, governing, task, tools),
     });
   }
   if (!admitted && current.leavesNoRoom) {
     throw new PinnedRoomError({
-      pinnedTokens: counted.inputTokens,
+      pinnedTokens: ceilingTokens,
       ceiling,
-      room: ceiling - counted.inputTokens,
+      room: ceiling - ceilingTokens,
       minimum: MIN_ROOM_TOKENS,
       breakdown: await breakdownOf(ports, systemMessage, layers, governing, task, tools),
     });
@@ -784,21 +792,51 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     for (const [index, slot] of slots.entries()) {
       const state = slot.output;
       if (state === undefined || state.mode === 'omitted' || state.reference !== undefined || protectedSlots.has(index)) continue;
-      const handle = state.handle ?? blobs.handleFor(state.text);
-      const probe = withOutput(state.original, omittedMarker(state.tokens, handle));
-      const referrers = slots.flatMap((other) => (other.output?.reference?.to === state.callId ? [other.output] : []));
-      const tokensBefore = state.renderedTokens + referrers.reduce((sum, referrer) => sum + (referrer.reference as OutputReference).tokens, 0);
-      const tokensAfter = (await meter.countItem(probe, countContextFor(state.callId))) + (await referrersAfterEviction(referrers));
+      const copies = slots.flatMap((other, otherIndex) =>
+        other.output?.reference?.to === state.callId ? [{ slot: other, state: other.output, index: otherIndex }] : [],
+      );
+      const group = [{ slot, state, index }, ...copies.filter((copy) => !protectedSlots.has(copy.index))];
+      const staying = copies.filter((copy) => protectedSlots.has(copy.index)).map((copy) => copy.state);
+      const markers = new Map<OutputState, { handle: string; probe: InputItem }>();
+      for (const member of group) {
+        const handle = member.state.handle ?? blobs.handleFor(member.state.text);
+        markers.set(member.state, { handle, probe: withOutput(member.state.original, omittedMarker(member.state.tokens, handle)) });
+      }
+      let tokensBefore = state.renderedTokens + copies.reduce((sum, copy) => sum + (copy.state.reference as OutputReference).tokens, 0);
+      let tokensAfter = await referrersAfterEviction(staying);
+      for (const member of group) {
+        tokensAfter += await meter.countItem((markers.get(member.state) as { probe: InputItem }).probe, countContextFor(member.state.callId));
+      }
       if (tokensAfter >= tokensBefore) continue;
-      state.handle = handle;
-      slot.item = probe;
-      state.mode = 'omitted';
-      state.renderedTokens = await meter.countItem(slot.item, countContextFor(state.callId));
-      reports.set(state.callId, { eviction: { callId: state.callId, handle, kind: 'omitted' }, state });
-      firstEvicted = firstEvicted === undefined ? index : Math.min(firstEvicted, index);
+      for (const member of group) {
+        const { handle, probe } = markers.get(member.state) as { handle: string; probe: InputItem };
+        member.state.handle = handle;
+        member.slot.item = probe;
+        member.state.mode = 'omitted';
+        member.state.renderedTokens = await meter.countItem(probe, countContextFor(member.state.callId));
+        reports.set(member.state.callId, { eviction: { callId: member.state.callId, handle, kind: 'omitted' }, state: member.state });
+        firstEvicted = firstEvicted === undefined ? member.index : Math.min(firstEvicted, member.index);
+      }
       return true;
     }
     return false;
+  };
+
+  const passSnapshot = () => ({
+    items: slots.map((slot) => slot.item),
+    states: slots.flatMap((slot) => (slot.output === undefined ? [] : [{ state: slot.output, fields: { ...slot.output } }])),
+    reports: new Map(reports),
+    firstEvicted,
+    counted: counts.length,
+  });
+
+  const restorePass = (snapshot: ReturnType<typeof passSnapshot>): void => {
+    for (const [index, slot] of slots.entries()) slot.item = snapshot.items[index] as InputItem;
+    for (const { state, fields } of snapshot.states) Object.assign(state, fields);
+    reports.clear();
+    for (const [callId, report] of snapshot.reports) reports.set(callId, report);
+    firstEvicted = snapshot.firstEvicted;
+    counts.length = snapshot.counted;
   };
 
   const persistReferences = async (): Promise<void> => {
@@ -936,7 +974,10 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   };
   let highMark = await highMarkNow();
   const lowMark = (): number => floorTokens + floorRatio(EVICT_LOW_WATER, highMark - floorTokens);
+  const loadOf = (counted: MeterCount): number => counted.inputTokens + counted.underAt(counted.inputTokens);
   if (total.inputTokens > highMark || !fits(total)) {
+    const unevicted = total;
+    const snapshot = passSnapshot();
     if (cachePrefix) {
       while (await evictOldest()) continue;
     } else {
@@ -948,6 +989,11 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     if (cachePrefix) {
       if (firstEvicted !== undefined && (input.forms !== undefined || input.renderedFull !== undefined)) await rerenderFrom(firstEvicted);
       total = await measureAssembled();
+    }
+    const kept = fits(total) || (!fits(unevicted) && loadOf(total) < loadOf(unevicted));
+    if (!kept) {
+      restorePass(snapshot);
+      total = unevicted;
     }
     highMark = await highMarkNow();
   }

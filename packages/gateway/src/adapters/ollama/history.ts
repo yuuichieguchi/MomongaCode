@@ -1,9 +1,10 @@
 import { compactionSummaryMessage } from '@momonga/protocol';
-import type { AdapterInputItem, ContentPart } from '@momonga/protocol';
+import type { AdapterInputItem, ContentPart, ReasoningOrigin } from '@momonga/protocol';
 import { callArgumentsObject } from '../shared/call-arguments.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { imageSourceOf, isImagePart } from '../shared/image-part.ts';
 import { reasoningTextOf, textOfContent } from '../shared/input-text.ts';
+import { ownReasoning } from '../shared/reasoning-origin.ts';
 
 export type OllamaMessage = Record<string, unknown>;
 
@@ -23,7 +24,7 @@ const userMessageOf = (content: string | readonly ContentPart[]): OllamaMessage 
   return { role: 'user', content: text, ...(images.length === 0 ? {} : { images }) };
 };
 
-export const ollamaHistoryOf = (input: readonly AdapterInputItem[]): OllamaMessage[] => {
+export const ollamaHistoryOf = (input: readonly AdapterInputItem[], origin: ReasoningOrigin): OllamaMessage[] => {
   const messages: OllamaMessage[] = [];
   const namesByCallId = new Map<string, string>();
   let draft: AssistantDraft | undefined;
@@ -46,7 +47,9 @@ export const ollamaHistoryOf = (input: readonly AdapterInputItem[]): OllamaMessa
 
   for (const item of input) {
     if (item.type === 'reasoning') {
-      const text = reasoningTextOf(item);
+      const own = ownReasoning(item, origin);
+      if (own === undefined) continue;
+      const text = reasoningTextOf(own);
       if (text === '') continue;
       if (draft !== undefined && (draft.thinking !== undefined || draft.hasMessage || draft.toolCalls.length > 0)) flush();
       current().thinking = text;

@@ -1,3 +1,4 @@
+import { parseOutsideJson } from '@momonga/foundation';
 import { asciiLower } from '@momonga/protocol';
 import type { OutputFormatterName } from '@momonga/protocol';
 import { formatGrep } from './grep.ts';
@@ -24,7 +25,7 @@ const EXECUTE_KIND = 'execute';
 
 const parsesAsJson = (output: string): boolean => {
   try {
-    JSON.parse(output);
+    parseOutsideJson(output);
     return true;
   } catch {
     return false;

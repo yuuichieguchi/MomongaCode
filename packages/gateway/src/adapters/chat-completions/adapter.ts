@@ -1,15 +1,6 @@
 import { decodeSse } from '@momonga/foundation';
 import { summaryTokenCapFor } from '@momonga/protocol';
-import type {
-  AdapterCompactRequest,
-  AdapterCompactResult,
-  AdapterContext,
-  AdapterRequest,
-  AdapterTarget,
-  LenientItems,
-  RenderWireOptions,
-  StreamEvent,
-} from '@momonga/protocol';
+import type { AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, LenientItems, ReasoningOrigin, RenderWireOptions, StreamEvent } from '@momonga/protocol';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
 import { hiddenReasoningTokens } from '../../core/hidden-reasoning.ts';
 import { classifyChatCompletionsError, matchesGuardrailCode } from './classify.ts';
@@ -61,6 +52,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
   const bodyFor = (
     request: AdapterRequest,
     target: AdapterTarget,
+    origin: ReasoningOrigin,
   ): { body: ChatRequestBody; envelope: ConstrainedPlan | undefined } => {
     const mode = options.toolCalling(target);
     const hasTools = (request.tools ?? []).length > 0;
@@ -68,32 +60,32 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
       throw new UnsupportedInputError('capability_unsupported', 'this target does not support tool calling', 'tools');
     }
     if (mode === 'constrained') {
-      return buildConstrainedBody(request, options.keywordSupport?.(target) ?? FULL_KEYWORD_SUPPORT);
+      return buildConstrainedBody(request, options.keywordSupport?.(target) ?? FULL_KEYWORD_SUPPORT, origin);
     }
-    return { body: buildNativeBody(request), envelope: undefined };
+    return { body: buildNativeBody(request, origin), envelope: undefined };
   };
 
-  const lenientWireOf = (request: AdapterRequest, target: AdapterTarget, lenient: LenientItems): ChatWire => {
+  const lenientWireOf = (request: AdapterRequest, target: AdapterTarget, lenient: LenientItems, origin: ReasoningOrigin): ChatWire => {
     const { callNames, withTools } = lenient;
     if (options.toolCalling(target) === 'constrained') {
-      return { messages: plainHistoryOf(request.input, { envelopeReplies: withTools, callNames }) };
+      return { messages: plainHistoryOf(request.input, { envelopeReplies: withTools, callNames, origin }) };
     }
     return {
-      messages: withTools ? nativeHistoryOf(request.input) : plainHistoryOf(request.input, { envelopeReplies: false, callNames }),
+      messages: withTools ? nativeHistoryOf(request.input, origin) : plainHistoryOf(request.input, { envelopeReplies: false, callNames, origin }),
     };
   };
 
-  const renderCompactWire = (request: AdapterCompactRequest, target: AdapterTarget, cap: number): ChatWire =>
-    wireOf(bodyFor(summaryRequestOf(request, cap), target).body);
+  const renderCompactWire = (request: AdapterCompactRequest, target: AdapterTarget, cap: number, origin: ReasoningOrigin): ChatWire =>
+    wireOf(bodyFor(summaryRequestOf(request, cap, origin), target, origin).body);
 
-  const renderWire = (request: AdapterRequest, target: AdapterTarget, renderOptions?: RenderWireOptions): ChatWire =>
-    renderOptions?.lenientItems === undefined
-      ? wireOf(bodyFor(request, target).body)
-      : lenientWireOf(request, target, renderOptions.lenientItems);
+  const renderWire = (request: AdapterRequest, target: AdapterTarget, renderOptions: RenderWireOptions): ChatWire =>
+    renderOptions.lenientItems === undefined
+      ? wireOf(bodyFor(request, target, renderOptions.reasoningOrigin).body)
+      : lenientWireOf(request, target, renderOptions.lenientItems, renderOptions.reasoningOrigin);
 
   async function* create(request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
     if (closed) throw new Error('the chat-completions adapter is closed');
-    const planned = bodyFor(request, ctx.target);
+    const planned = bodyFor(request, ctx.target, ctx.reasoningOrigin);
     const { envelope } = planned;
     const body = withCapabilityOptions(planned.body, request, await options.capabilities(ctx.target));
     const upstream = new AbortController();
@@ -166,7 +158,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
   const compact = async (request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult> => {
     const capabilities = await options.capabilities(ctx.target);
     const cap = request.momonga?.max_summary_tokens ?? summaryTokenCapFor(capabilities);
-    const summaryRequest = summaryRequestOf(request, cap);
+    const summaryRequest = summaryRequestOf(request, cap, ctx.reasoningOrigin);
     for await (const event of create(summaryRequest, ctx)) {
       const collected = summaryOfTerminal(event, cap);
       if (collected === undefined) continue;
@@ -181,7 +173,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
       }
       const usage =
         collected.usage ??
-        estimatedUsage(wireTokensOf(renderWire(summaryRequest, ctx.target), capabilities.imageTokens), tokensForText(collected.summary));
+        estimatedUsage(wireTokensOf(renderWire(summaryRequest, ctx.target, { reasoningOrigin: ctx.reasoningOrigin }), capabilities.imageTokens), tokensForText(collected.summary));
       return { summary: collected.summary, usage };
     }
     throw new StreamFailure('upstream_protocol_error', 'model_error', 'the upstream ended without a terminal event');

@@ -1,6 +1,6 @@
 import { decodeSse } from '@momonga/foundation';
 import { summaryTokenCapFor } from '@momonga/protocol';
-import type { AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, StreamEvent } from '@momonga/protocol';
+import type { AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
 import { boundedSseBytes } from '../shared/body-reading.ts';
 import { createUpstreamClassifier } from '../shared/classify.ts';
@@ -30,7 +30,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
       throw new UnsupportedInputError('capability_unsupported', 'this target does not support tool calling', 'tools');
     }
     const body = {
-      ...buildResponsesBody(request),
+      ...buildResponsesBody(request, ctx.reasoningOrigin),
       ...(capabilities.promptCache?.kind === 'key' && request.promptCacheKey !== undefined ? { prompt_cache_key: request.promptCacheKey } : {}),
     };
     const upstream = new AbortController();
@@ -80,18 +80,18 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
   const compact = async (request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult> => {
     const capabilities = await options.capabilities(ctx.target);
     const cap = request.momonga?.max_summary_tokens ?? summaryTokenCapFor(capabilities);
-    const summaryRequest = summaryRequestOf(request, cap);
+    const summaryRequest = summaryRequestOf(request, cap, ctx.reasoningOrigin);
     for await (const event of create(summaryRequest, ctx)) {
       const collected = summaryOfTerminal(event, cap);
       if (collected === undefined) continue;
-      const usage = collected.usage ?? estimatedUsage(wireTokensOf(buildResponsesBody(summaryRequest), capabilities.imageTokens), tokensForText(collected.summary));
+      const usage = collected.usage ?? estimatedUsage(wireTokensOf(buildResponsesBody(summaryRequest, ctx.reasoningOrigin), capabilities.imageTokens), tokensForText(collected.summary));
       return { summary: collected.summary, usage };
     }
     throw new StreamFailure('upstream_protocol_error', 'model_error', 'the upstream ended without a terminal event');
   };
 
-  const renderCompactWire = (request: AdapterCompactRequest, _target: AdapterTarget, cap: number): Record<string, unknown> => {
-    const { model: _model, stream: _stream, store: _store, ...wire } = buildResponsesBody(summaryRequestOf(request, cap));
+  const renderCompactWire = (request: AdapterCompactRequest, _target: AdapterTarget, cap: number, origin: ReasoningOrigin): Record<string, unknown> => {
+    const { model: _model, stream: _stream, store: _store, ...wire } = buildResponsesBody(summaryRequestOf(request, cap, origin), origin);
     return wire;
   };
 

@@ -25,6 +25,7 @@ export type McpToolSourceOptions = {
   server: string;
   connection: McpServerConnection;
   requestTimeoutMs?: number;
+  takeNotices?: () => string[];
 };
 
 const normalizeToolPart = (server: string, original: string): string => {
@@ -108,7 +109,6 @@ const buildTool = (
     ...(tool.outputSchema === undefined ? {} : { outputSchema: sanitizeSchema(tool.outputSchema) }),
     server,
     validatorIdentity: mcpToolIdentity(server, tool.name),
-    schemaMode: 'lenient',
     timeoutMs: options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
     title: () => `${sanitizeServerText(server)}: ${titleOf(tool)}`,
     subject: () => ({ kind: 'mcp', server, tool: toolPart }),
@@ -163,7 +163,7 @@ export const createMcpToolSource = (options: McpToolSourceOptions): ToolSource =
       listed = await connection.listTools(listOptions?.signal === undefined ? undefined : { signal: listOptions.signal });
     } catch (error) {
       if (authorizationRequiredFor(error) === undefined) throw error;
-      return { tools: [], notices: [], authorizationRequired: [server] };
+      return { tools: [], notices: options.takeNotices?.() ?? [], authorizationRequired: [server] };
     }
     const tools: AnyTool[] = [];
     const notices: string[] = [];
@@ -177,7 +177,7 @@ export const createMcpToolSource = (options: McpToolSourceOptions): ToolSource =
         notices.push(`skipped ${JSON.stringify(displayName)}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
-    return { tools, notices };
+    return { tools, notices: [...notices, ...(options.takeNotices?.() ?? [])] };
   };
   return {
     id: `mcp__${server}`,

@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { getRequestListener } from '@hono/node-server';
 import { listenUnix } from '@momonga/foundation';
 import { createCompactionCodec } from '../core/compaction.ts';
+import { createReasoningOriginCodec } from '../core/reasoning-origin.ts';
 import { GatewayError, gatewayClosedError } from '../core/errors.ts';
 import { createResponsesService } from '../core/responses-service.ts';
 import { createRedactor } from '../core/redaction.ts';
@@ -97,14 +98,16 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
   try {
     const redactor = createRedactor({ credentials: options.credentials });
     options.credentialFeed?.((credential) => redactor.add(credential));
+    const reasoningOrigin = createReasoningOriginCodec(options.hmacKey);
     const services: Services = {
       config: options.config,
       clock,
       timers,
       random: options.random,
-      router: createRouter({ config: options.config, adapters: options.adapters, clock, timers, redactor }),
+      router: createRouter({ config: options.config, adapters: options.adapters, clock, timers, redactor, reasoningOrigin }),
       store,
       codec: createCompactionCodec(options.hmacKey),
+      reasoningOrigin,
       telemetry: options.telemetry,
       priceTable: options.priceTable,
       closeSignal: closeController.signal,

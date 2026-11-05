@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { sha256Hex } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
-import { ACCEPTANCE_MAX_OUTPUT, ACCEPTANCE_WINDOW, ESCALATION_NOTICE_PREFIX, GREP_AND_READ_BACK_CALLS, PERTURBATIONS, escalationBudgetVerdict, budgetFor, dryRun, factsOf, verdictOf, isCompactionRequest, journalOfRows, ofType, plannedSteps, summaryRoute, summaryTextOf, upstreamRepliesOf, wireTokensOfBody, acceptanceTarget } from './budget.ts';
+import { ACCEPTANCE_MAX_OUTPUT, ACCEPTANCE_WINDOW, ESCALATION_NOTICE_PREFIX, GREP_AND_READ_BACK_CALLS, PERTURBATIONS, escalationBudgetVerdict, fitLimitAfterReport, budgetFor, dryRun, factsOf, verdictOf, isCompactionRequest, journalOfRows, ofType, plannedSteps, summaryRoute, summaryTextOf, upstreamRepliesOf, wireTokensOfBody, acceptanceTarget } from './budget.ts';
 import type { FillerShape, JournalEvent, PlanCaseSpec } from './budget.ts';
 import type { Capabilities } from '@momonga/protocol';
 import { readDb } from './db.ts';
@@ -140,18 +140,44 @@ describe('planner acceptance criteria', () => {
         toolCalling: 'native',
         usageReported: true,
       };
-      const facts = (requestsBeforeEscalation: number) => ({ requestsBeforeEscalation }) as Parameters<typeof escalationBudgetVerdict>[0];
-
-      it('accepts an escalation after a request whose next step would not fit', async () => {
-        expect(await escalationBudgetVerdict(facts(5), [1596, 1919, 2072, 2196, 2650, 2400], capabilities)).toBeUndefined();
+      type Evidence = Parameters<typeof escalationBudgetVerdict>[0];
+      const evidence = (overrides: Partial<Evidence>): Evidence => ({
+        facts: { requestsBeforeEscalation: 4 } as Evidence['facts'],
+        wireCounts: [1000, 1900, 2000, 2400, 2600],
+        perturbation: 0,
+        unevictedAtEscalation: 2900,
+        overflows: [{ inputTokens: 2900, inputBudget: 2990 - 150, level: 0 }],
+        ...overrides,
       });
 
-      it('rejects an escalation that happened while the next step still fitted, as a rule moved earlier would do', async () => {
-        expect(await escalationBudgetVerdict(facts(3), [1000, 1100, 1200, 1300], capabilities)).toMatch(/^\(g\) escalated although/);
+      it('fits at most 2853 tokens after a report of 2400 at W=4096, where the bound is ceil(0.3 x the tokens past it) against I0 = 2990', async () => {
+        expect(await fitLimitAfterReport(capabilities, 2400)).toBe(2853);
       });
 
-      it('rejects an escalation with too few requests before it to see a growth', async () => {
-        expect(await escalationBudgetVerdict(facts(1), [1596, 1919], capabilities)).toMatch(/^\(g\) /);
+      it('(g1, g2) accepts an escalation whose unevicted input does not fit and whose level-0 pass was refused', async () => {
+        expect(await escalationBudgetVerdict(evidence({}), capabilities)).toBeUndefined();
+      });
+
+      it('(g2) accepts a kept level-0 pass that lowered the load below the unevicted 2900+150', async () => {
+        expect(await escalationBudgetVerdict(evidence({ overflows: [{ inputTokens: 2700, inputBudget: 2990 - 300, level: 0 }] }), capabilities)).toBeUndefined();
+      });
+
+      it('(g1) judges the unevicted input by the escalating step’s own growth, not by the largest growth seen before', async () => {
+        expect(await escalationBudgetVerdict(evidence({ unevictedAtEscalation: 2500 }), capabilities)).toMatch(/^\(g1\) escalated although the unevicted input/);
+      });
+
+      it('(g1) rejects a dry run whose escalating step left no measurable growth', async () => {
+        expect(await escalationBudgetVerdict(evidence({ unevictedAtEscalation: undefined }), capabilities)).toMatch(/^\(g1\) /);
+      });
+
+      it('(g2) rejects a dry run with no level-0 ContextOverflowError captured before the escalation', async () => {
+        expect(await escalationBudgetVerdict(evidence({ overflows: [] }), capabilities)).toMatch(/^\(g2\) 0 level-0 ContextOverflowErrors/);
+      });
+
+      it('(g2) rejects a kept level-0 pass that raised the load: 2890+290 against the unevicted 2900+150', async () => {
+        expect(await escalationBudgetVerdict(evidence({ overflows: [{ inputTokens: 2890, inputBudget: 2990 - 290, level: 0 }] }), capabilities)).toMatch(
+          /^\(g2\) the level-0 pass was kept although it does not lower the load/,
+        );
       });
     });
 

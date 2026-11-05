@@ -4,7 +4,8 @@ EXTENDS Naturals, Sequences, FiniteSets, TLC
 CONSTANTS
     MaxSteps, MaxCalls, Keep, Deferred, MaxCompactions, MaxClaims,
     MaxArrivals, MaxGovChanges, MaxModeChanges, Caps,
-    ModeYield, OfferPerBuild, GovFirstInF, RerankMemories, RerenderPerBuild, RefModel
+    ModeYield, OfferPerBuild, GovFirstInF, RerankMemories, RerenderPerBuild, RefModel,
+    EvictProtectedCopies
 
 VARIABLES
     hist, arrivals, gov, memo, offer, offerMode, mode, loaded, pending,
@@ -41,7 +42,12 @@ Full(it) == IsOut(it) /\ ~it.evicted /\ ~Truncated(it)
 
 Candidate(it) == IsOut(it) /\ ~it.evicted /\ it.step <= step - Keep /\ it.dupOf = 0
 
-NoGain(h, i) == h[i].size = 1 \/ \E j \in DOMAIN h : h[j].dupOf = h[i].id
+NoGain(h, i) == h[i].size = 1
+
+GroupOf(h, i) ==
+    {i} \cup {j \in DOMAIN h :
+                /\ IsOut(h[j]) /\ ~h[j].evicted /\ h[j].dupOf = h[i].id
+                /\ (EvictProtectedCopies \/ h[j].step <= step - Keep)}
 
 NextReferent(h, i) ==
     IF h[i].kind # "work" \/ ~Full(h[i])
@@ -204,8 +210,9 @@ Evict ==
                 LET pool == candidates \ skipped
                 IN /\ pool # {}
                    /\ LET first == CHOOSE i \in pool : \A j \in pool : i <= j
+                          group == GroupOf(hist, first)
                           rendered == [i \in DOMAIN hist |->
-                              IF i = first THEN [hist[i] EXCEPT !.evicted = TRUE]
+                              IF i \in group THEN [hist[i] EXCEPT !.evicted = TRUE]
                               ELSE IF IsOut(hist[i]) /\ ~hist[i].evicted /\ i > first THEN [hist[i] EXCEPT !.form = cap]
                               ELSE hist[i]]
                       IN /\ hist' = [i \in DOMAIN rendered |->
@@ -350,10 +357,13 @@ NoProtectedEvicted ==
     [][compactions' = compactions =>
         \A i \in DOMAIN hist : (~hist[i].evicted /\ hist'[i].evicted) => (IsOut(hist[i]) /\ hist[i].step <= step - Keep)]_vars
 
+CandidatePosition(h, i) ==
+    IF h[i].dupOf = 0 THEN i ELSE CHOOSE k \in DOMAIN h : h[k].id = h[i].dupOf
+
 OldestFirst ==
     [][compactions' = compactions =>
         \A i \in DOMAIN hist : (~hist[i].evicted /\ hist'[i].evicted) =>
-            \A j \in 1..(i - 1) : Candidate(hist[j]) => (hist'[j].evicted \/ NoGain(hist, j))]_vars
+            \A j \in 1..(CandidatePosition(hist, i) - 1) : Candidate(hist[j]) => (hist'[j].evicted \/ NoGain(hist, j))]_vars
 
 ResendUnchanged ==
     [][sent' = "resend" => (lastReq' = lastReq /\ lastReq' = recorded)]_vars

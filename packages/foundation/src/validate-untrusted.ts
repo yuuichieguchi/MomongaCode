@@ -1,16 +1,31 @@
-import type { ErrorObject } from 'ajv/dist/2020.js';
-import { SchemaValidatorFailure, cleanFailureMessage, compileUntrustedSchema, recordValidateFailure } from './untrusted-schema.ts';
+import { SchemaValidatorFailure, cleanFailureMessage, compileUntrustedSchema, createUntrustedSchemaCompiler, recordValidateFailure } from './untrusted-schema.ts';
+import type { Engine } from './untrusted-engine.ts';
+import type { RemoteDocuments, UntrustedValidate, UntrustedVerdict } from './untrusted-schema.ts';
 
-export type UntrustedVerdict = { valid: true } | { valid: false; errors: readonly ErrorObject[] };
+export type { UntrustedVerdict } from './untrusted-schema.ts';
 
-export const validateUntrusted = (identity: string, schema: Record<string, unknown>, data: unknown): UntrustedVerdict => {
-  const validate = compileUntrustedSchema(schema);
+type Compile = (schema: Record<string, unknown>) => UntrustedValidate;
+
+export const validateGuarded = (identity: string, schema: Record<string, unknown>, validate: UntrustedValidate, data: unknown): UntrustedVerdict => {
   try {
-    if (validate(data)) return { valid: true };
-    return { valid: false, errors: validate.errors ?? [] };
+    return validate(data);
   } catch (error) {
     const failure = new SchemaValidatorFailure(cleanFailureMessage(error instanceof Error ? error.message : String(error)));
     recordValidateFailure(identity, schema, failure.message);
     throw failure;
   }
+};
+
+const validateThrough =
+  (compile: Compile) =>
+  (identity: string, schema: Record<string, unknown>, data: unknown): UntrustedVerdict =>
+    validateGuarded(identity, schema, compile(schema), data);
+
+export const validateUntrusted = validateThrough((schema) => compileUntrustedSchema(schema));
+
+export const createUntrustedBoundary = (
+  { remotes, engine }: { remotes: RemoteDocuments; engine: Engine },
+): { compile: Compile; validate: (identity: string, schema: Record<string, unknown>, data: unknown) => UntrustedVerdict } => {
+  const compile = createUntrustedSchemaCompiler({ remotes, engine });
+  return { compile, validate: validateThrough(compile) };
 };

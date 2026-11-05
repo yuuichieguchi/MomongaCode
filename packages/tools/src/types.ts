@@ -114,7 +114,6 @@ export type ToolBody<Input> = {
   pagesOutput?: true;
   tier?: ToolTier;
   companionOf?: string;
-  schemaMode?: 'strict' | 'lenient';
   outputSchema?: Record<string, unknown>;
   server?: string;
   validatorIdentity?: string;

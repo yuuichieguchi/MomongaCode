@@ -76,7 +76,7 @@ const governingFor = (ctx: ClaimContext, session: Session, touched: readonly Tou
     ...(scan === 'live' ? { ignorePaths: true } : {}),
   });
 
-const governingKeyOf = (governing: LoadedGoverning): string => canonicalJson({ active: governing.active, conflicts: governing.conflicts });
+const governingKeyOf = (governing: { active: unknown; conflicts: unknown }): string => canonicalJson({ active: governing.active, conflicts: governing.conflicts });
 
 const EMPTY_GOVERNING: LoadedGoverning = { active: [], conflicts: [] };
 
@@ -88,7 +88,11 @@ const workingStateOf = (ctx: ClaimContext, state: RunState): string | undefined 
 const projectedWorkingStateOf = (ctx: ClaimContext, state: RunState): string | undefined =>
   state.history.length === 0 ? undefined : workingStateOf(ctx, projectCompaction(ctx, state.nextItemSeq - 1, compactionSummaryMessage(''), ''));
 
-type AdmittedFloor = { pinnedTokens: number; tools: FunctionTool[] };
+type AdmittedFloor = { pinnedTokens: number; tools: FunctionTool[]; offered: string; governing: string };
+
+type Companions = ReturnType<ClaimContext['companions']>;
+
+const offeredKeyOf = (tools: readonly FunctionTool[], companions: Companions): string => sha256Hex(canonicalJson({ tools, companions }));
 
 const admittedFloors = new WeakMap<ClaimContext, AdmittedFloor>();
 
@@ -101,13 +105,15 @@ const recordedReferencesOf = (ctx: ClaimContext): ReadonlySet<string> =>
       )
     : new Set<string>();
 
-export const contextInputOf = (
+type OfferedInput = { input: BuildContextInput; offered: string; governing: string };
+
+const offeredInputOf = (
   ctx: ClaimContext,
   wrapUp: WrapUpReason | undefined,
   level: number,
-  scan: GoverningScan = 'active',
-  trailing: readonly InputItem[] = [],
-): BuildContextInput => {
+  scan: GoverningScan,
+  trailing: readonly InputItem[],
+): OfferedInput => {
   const { options, journal } = ctx;
   const state = journal.state;
   const session = sessionOf(ctx);
@@ -115,21 +121,28 @@ export const contextInputOf = (
   const projectedWorkingState = projectedWorkingStateOf(ctx, state);
   const task = taskOf(ctx);
   const touchedPaths = touchedPathsOf(state.workingFacts.touched, session.cwd);
-  const admitted = ctx.token.observedCapacity ? admittedFloors.get(ctx) : undefined;
+  const candidates = ctx.functionTools();
+  const companions = ctx.companions();
+  const offered = offeredKeyOf(candidates, companions);
+  const governing = governingFor(ctx, session, touchedPaths, scan);
+  const governingKey = governingKeyOf(governing);
+  const recorded = admittedFloors.get(ctx);
+  const admittedTools = recorded !== undefined && (ctx.token.observedCapacity || recorded.offered === offered) ? recorded : undefined;
+  const admittedFloor = admittedTools !== undefined && admittedTools.governing === governingKey ? admittedTools : undefined;
   const rendered = ctx.token.observedCapacity ? renderedFormsOf(options.store, ctx.run.id, state.lastSeq) : undefined;
   const wrapUpItems: InputItem[] = wrapUp === undefined ? [] : [{ type: 'message', role: 'user', content: wrapUpInstructionFor(wrapUp) }];
-  return {
+  const input: BuildContextInput = {
     capabilities: ctx.capabilities,
     calibration: ctx.calibration,
     model: ctx.alias,
     sources: {
       systemPrompt: ctx.systemPrompt,
-      tools: admitted === undefined ? ctx.functionTools() : admitted.tools,
+      tools: admittedTools === undefined ? candidates : admittedTools.tools,
       task: { type: 'message', role: 'user', content: task.content },
       taskSeq: state.taskSeq,
       ...(ctx.skills.catalog === undefined ? {} : { skillCatalog: ctx.skills.catalog }),
       activatedSkills: state.activatedSkills,
-      governing: governingFor(ctx, session, touchedPaths, scan),
+      governing,
       memories: ctx.recalled.rank(recallQueryOf(task.text, touchedPaths.map((entry) => entry.path), session.cwd)),
       history: state.history
         .filter((entry) => entry.seq !== state.taskSeq)
@@ -138,7 +151,7 @@ export const contextInputOf = (
       ...(workingState === undefined ? {} : { workingState }),
       ...(projectedWorkingState === undefined ? {} : { projectedWorkingState }),
     },
-    companions: ctx.companions(),
+    companions,
     evicted: new Set(state.evicted),
     recordedReferences: recordedReferencesOf(ctx),
     ...(ctx.memoryShare === undefined ? {} : { memoryShare: ctx.memoryShare }),
@@ -157,16 +170,26 @@ export const contextInputOf = (
           ...(state.memoriesLoaded === undefined ? {} : { pinnedMemoryIds: state.memoriesLoaded.map((memory) => memory.id) }),
         }
       : {}),
+    ...(admittedTools === undefined ? {} : { toolsFrozen: true as const }),
+    ...(admittedFloor === undefined ? {} : { pinnedTokens: admittedFloor.pinnedTokens }),
     ...(ctx.token.observedCapacity
       ? {
           observedCapacity: true as const,
-          ...(admitted === undefined ? {} : { pinnedTokens: admitted.pinnedTokens }),
           ...(rendered === undefined ? {} : { forms: rendered.forms, renderedFull: rendered.renderedFull }),
         }
       : {}),
     outputFormatters: ctx.token.outputFormatters,
   };
+  return { input, offered, governing: governingKey };
 };
+
+export const contextInputOf = (
+  ctx: ClaimContext,
+  wrapUp: WrapUpReason | undefined,
+  level: number,
+  scan: GoverningScan = 'active',
+  trailing: readonly InputItem[] = [],
+): BuildContextInput => offeredInputOf(ctx, wrapUp, level, scan, trailing).input;
 
 const portsOf = (ctx: ClaimContext): BuildContextPorts => ({
   meter: ctx.meter,
@@ -185,6 +208,7 @@ export type ToolsMeasure = { measure: PinnedMeasure; floorTokens: number; kept: 
 export const measureToolsWith = async (ctx: ClaimContext, tools: readonly FunctionTool[]): Promise<ToolsMeasure> => {
   const input: BuildContextInput = { ...contextInputOf(ctx, undefined, 0) };
   delete input.pinnedTokens;
+  delete input.toolsFrozen;
   const counts: { tools: readonly FunctionTool[]; tokens: number }[] = [];
   const ports = portsOf(ctx);
   const meter: TokenMeter = {
@@ -205,7 +229,8 @@ export const measureToolsWith = async (ctx: ClaimContext, tools: readonly Functi
 export const hasAdmittedTools = (ctx: ClaimContext): boolean => ctx.token.observedCapacity && admittedFloors.has(ctx);
 
 export const rememberAdmittedTools = (ctx: ClaimContext, tools: readonly FunctionTool[], pinnedTokens: number): void => {
-  if (ctx.token.observedCapacity && admittedFloors.has(ctx)) admittedFloors.set(ctx, { pinnedTokens, tools: [...tools] });
+  const admitted = admittedFloors.get(ctx);
+  if (ctx.token.observedCapacity && admitted !== undefined) admittedFloors.set(ctx, { ...admitted, pinnedTokens, tools: [...tools] });
 };
 
 const withNewSkills = (arrivals: readonly ContextArrival[], activatedSkills: readonly ActivatedSkill[]): ContextArrival[] => [
@@ -217,6 +242,7 @@ const withNewSkills = (arrivals: readonly ContextArrival[], activatedSkills: rea
 
 export const measureLayersWith = (ctx: ClaimContext, activatedSkills: readonly ActivatedSkill[]): Promise<void> => {
   const input = contextInputOf(ctx, undefined, 0);
+  delete input.pinnedTokens;
   return measureLayers(
     {
       ...input,
@@ -228,10 +254,13 @@ export const measureLayersWith = (ctx: ClaimContext, activatedSkills: readonly A
 };
 
 const buildOnce = async (ctx: ClaimContext, wrapUp: WrapUpReason | undefined, level: number, trailing: readonly InputItem[]): Promise<BuiltContext> => {
-  const built = await buildContext(contextInputOf(ctx, wrapUp, level, 'active', trailing), portsOf(ctx));
+  const { input, offered, governing } = offeredInputOf(ctx, wrapUp, level, 'active', trailing);
+  const built = await buildContext(input, portsOf(ctx));
   if (wrapUp === undefined) {
     ctx.pinnedDigest.value ??= built.pinnedDigest;
-    if (ctx.token.observedCapacity && !admittedFloors.has(ctx)) admittedFloors.set(ctx, { pinnedTokens: built.pinnedTokens, tools: built.tools });
+    if (input.pinnedTokens === undefined) {
+      admittedFloors.set(ctx, { pinnedTokens: built.pinnedTokens, tools: built.tools, offered, governing });
+    }
   }
   return built;
 };
@@ -632,6 +661,7 @@ const buildNextUnguarded = async (ctx: ClaimContext, options: { wrapUp?: WrapUpR
         continue;
       }
       if (!(error instanceof ContextOverflowError)) throw error;
+      ctx.options.onContextOverflow?.(error);
       if (error.compaction !== undefined && ctx.autoCompact && !levelsWithCompaction.has(level)) {
         levelsWithCompaction.add(level);
         if (cancelIfInterrupted(ctx) === 'done') return { kind: 'done' };

@@ -1,5 +1,7 @@
 import fs from 'node:fs';
-import Ajv2020 from 'ajv/dist/2020.js';
+import { defineProductSchema } from '@momonga/foundation';
+import type { ProductValidator } from '@momonga/foundation';
+import { OPEN_RESPONSES_COMPONENT_NAMES, OPEN_RESPONSES_REMOTE_DOCUMENTS, openResponsesComponentSchema } from '@momonga/protocol';
 
 export const OPEN_RESPONSES_SPEC_URL = new URL(
   '../../protocol/vendor/open-responses/2026-04-24/openapi.json',
@@ -24,7 +26,10 @@ export type OpenResponsesValidator = {
 export const loadOpenResponsesSpec = (): OpenResponsesSpec =>
   JSON.parse(fs.readFileSync(OPEN_RESPONSES_SPEC_URL, 'utf8')) as OpenResponsesSpec;
 
-const SPEC_ID = 'https://momonga.invalid/open-responses/2026-04-24/openapi.json';
+const componentValidators: ReadonlyMap<string, ProductValidator<unknown>> = new Map(
+  OPEN_RESPONSES_COMPONENT_NAMES.map((name) => [name, defineProductSchema(`open-responses/${name}`, openResponsesComponentSchema(name), OPEN_RESPONSES_REMOTE_DOCUMENTS)]),
+);
+
 const REF_PREFIX = '#/components/schemas/';
 
 const asRecord = (value: unknown, where: string): SchemaObject => {
@@ -57,8 +62,6 @@ const deriveStreamEventSchemaNames = (spec: OpenResponsesSpec): Map<string, stri
 
 export const createOpenResponsesValidator = (): OpenResponsesValidator => {
   const spec = loadOpenResponsesSpec();
-  const ajv = new Ajv2020.default({ strict: false, allErrors: true });
-  ajv.addSchema({ $id: SPEC_ID, components: spec.components });
   const eventNames = deriveStreamEventSchemaNames(spec);
   return {
     spec,
@@ -66,11 +69,10 @@ export const createOpenResponsesValidator = (): OpenResponsesValidator => {
       if (spec.components.schemas[componentName] === undefined) {
         throw new Error(`Open Responses spec has no component schema named ${componentName}`);
       }
-      const validator = ajv.getSchema(`${SPEC_ID}${REF_PREFIX}${componentName}`);
-      if (validator === undefined) throw new Error(`Ajv could not compile component ${componentName}`);
-      const valid = validator(value) === true;
-      const errors = (validator.errors ?? []).map((error) => `${error.instancePath || '/'} ${error.message ?? 'invalid'}`);
-      return { valid, errors: valid ? [] : errors };
+      const validator = componentValidators.get(componentName);
+      if (validator === undefined) throw new Error(`Open Responses registry has no component schema named ${componentName}`);
+      const verdict = validator(value);
+      return verdict.valid ? { valid: true, errors: [] } : { valid: false, errors: verdict.errors.map((error) => `${error.instancePath || '/'} ${error.message}`) };
     },
     streamEventSchemaNames: () => new Map(eventNames),
   };

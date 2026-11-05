@@ -154,16 +154,33 @@ export type FunctionTool = {
   strict?: boolean;
 };
 
+export type ResponseFunctionTool = {
+  type: 'function';
+  name: string;
+  description: string | null;
+  parameters: Record<string, unknown> | null;
+  strict: boolean;
+};
+
 export type ToolChoice = 'none' | 'auto' | 'required' | { type: 'function'; name: string };
 
 export type TextFormat =
   | { type: 'text' }
   | { type: 'json_object' }
-  | { type: 'json_schema'; name: string; description?: string; schema: Record<string, unknown>; strict?: boolean };
+  | { type: 'json_schema'; name: string; description?: string; schema: Record<string, unknown>; strict?: boolean | null };
 
-export type TextField = { format: TextFormat; verbosity?: 'low' | 'medium' | 'high' };
+export type ResponseTextFormat =
+  | { type: 'text' }
+  | { type: 'json_object' }
+  | { type: 'json_schema'; name: string; description: string | null; schema: null; strict: boolean };
+
+export type TextField = { format?: TextFormat | null; verbosity?: 'low' | 'medium' | 'high' };
+
+export type ResponseTextField = { format: ResponseTextFormat; verbosity?: 'low' | 'medium' | 'high' };
 
 export type ReasoningConfig = { effort?: string | null; summary?: string | null };
+
+export type ResponseReasoning = { effort: string | null; summary: string | null };
 
 export type Usage = {
   input_tokens: number;
@@ -205,17 +222,17 @@ export type ResponseResource = {
   instructions: string | null;
   output: ItemField[];
   error: ResponseError | null;
-  tools: FunctionTool[];
+  tools: ResponseFunctionTool[];
   tool_choice: ToolChoice;
   truncation: 'auto' | 'disabled';
   parallel_tool_calls: boolean;
-  text: TextField;
+  text: ResponseTextField;
   top_p: number;
   presence_penalty: number;
   frequency_penalty: number;
   top_logprobs: number;
   temperature: number;
-  reasoning: ReasoningConfig | null;
+  reasoning: ResponseReasoning | null;
   usage: Usage | null;
   max_output_tokens: number | null;
   max_tool_calls: number | null;
