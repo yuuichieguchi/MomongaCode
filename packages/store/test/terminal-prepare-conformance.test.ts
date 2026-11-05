@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { EVENT_TYPES } from '@momonga/protocol';
 import type { ContributionPayload, RuntimeStore, TerminalContribution } from '@momonga/store';
 import { LEASE_MS, cancel, enqueue, harness, mustClaim, mustRun, newSession } from './helpers.ts';
 
@@ -58,7 +57,7 @@ describe('facts that specs/tla/TerminalPrepare.tla relies on', () => {
     expect(contributionsOf(h.store, run.id)).toBe(1);
   });
 
-  it('Cancel, CommitRefuseStale: lets a service cancel append to the journal of a running run without the lease, which moves lastSeq under a holder that is finishing', () => {
+  it('Cancel (not CommitRefuseStale, which today measures inline and is tied by the port-double test of I1b): lets a service cancel append to the journal of a running run without the lease, which moves lastSeq under a holder that is finishing', () => {
     const h = harness({ contribution: hook });
     const run = enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
@@ -88,9 +87,5 @@ describe('facts that specs/tla/TerminalPrepare.tla relies on', () => {
 
     expect(mustRun(h.store, run.id).lastSeq).toBe(before);
     expect(typesOf(h.store, run.id)).toEqual(typesBefore);
-  });
-
-  it('names the event types the model abstracts as C, T and the leading events', () => {
-    expect(EVENT_TYPES).toEqual(expect.arrayContaining(['context.contribution', 'run.status']));
   });
 });

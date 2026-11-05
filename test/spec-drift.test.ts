@@ -84,6 +84,16 @@ describe('RunRecovery.tla against the implementation', () => {
     expect(tableOf(name)).toEqual(codeTable(table));
   });
 
+  it('proposes (UniformCancel, O13 of the off-loop design) exactly two service rows that differ from the store: QUEUED and WAITING_HUMAN end through CANCELLING', () => {
+    const proposed = stringsIn(definitionOf('UniformServiceEdges'));
+    expect(proposed).toEqual(['QUEUED', 'CANCELLING', 'WAITING_HUMAN', 'QUEUED', 'CANCELLING', 'STOPPED']);
+    expect(SERVICE_TRANSITIONS.QUEUED).toEqual(['CANCELLED']);
+    expect([...SERVICE_TRANSITIONS.WAITING_HUMAN].sort()).toEqual(['CANCELLED', 'QUEUED', 'STOPPED']);
+    expect(stringsIn(definitionOf('UniformSweepEdges'))).toEqual(['WAITING_HUMAN', 'QUEUED', 'CANCELLING', 'STOPPED']);
+    expect(SWEEP_TRANSITIONS.QUEUED).toEqual(['STOPPED']);
+    expect(spec).toContain('CancelTarget(status) == IF ~UniformCancel');
+  });
+
   it('models only event kinds that the protocol defines', () => {
     const modelled = setOf('ModelledEvents');
     expect(modelled.filter((kind) => !(EVENT_TYPES as readonly string[]).includes(kind))).toEqual([]);

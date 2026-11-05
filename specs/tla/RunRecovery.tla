@@ -146,7 +146,8 @@ CONSTANTS
     NoCallLock,
     NoReapBeforeReconcile,
     StatusEdgesRecorded,
-    ParentCalls
+    ParentCalls,
+    UniformCancel
 
 (* StatusEdgesRecorded = FALSE drops the from and to status of the         *)
 (* run.status events. No worker action reads them; only OnlyDeclaredEdges  *)
@@ -298,6 +299,14 @@ Withdraw(S, r) ==
          IN AppendEvs([S EXCEPT !.appr[r][s] = "withdrawn"], r,
                    <<E("tool.permission.cancelled", s, "withdrawn", "")>>)
 
+UniformServiceEdges == [ServiceEdges EXCEPT !["QUEUED"] = {"CANCELLING"}, !["WAITING_HUMAN"] = {"QUEUED", "CANCELLING", "STOPPED"}]
+
+UniformSweepEdges == [SweepEdges EXCEPT !["WAITING_HUMAN"] = {"QUEUED", "CANCELLING", "STOPPED"}]
+
+SvcEdges == IF UniformCancel THEN UniformServiceEdges ELSE ServiceEdges
+
+SwpEdges == IF UniformCancel THEN UniformSweepEdges ELSE SweepEdges
+
 (* changeStatus without its cascade *)
 Base(S, r, to, lead, refund, resetFailures) ==
     LET x == S.run[r]
@@ -313,7 +322,7 @@ Base(S, r, to, lead, refund, resetFailures) ==
             !.owner = IF keeps THEN @ ELSE NoOwner,
             !.live = IF keeps THEN @ ELSE FALSE]]
 
-CancelTarget(status) == IF status \in {"QUEUED", "WAITING_HUMAN"} THEN "CANCELLED" ELSE "CANCELLING"
+CancelTarget(status) == IF ~UniformCancel /\ status \in {"QUEUED", "WAITING_HUMAN"} THEN "CANCELLED" ELSE "CANCELLING"
 
 WakeParent(S) ==
     IF S.run[Parent].status = "WAITING_TOOL"
@@ -924,7 +933,7 @@ Deadline(r) ==
 RequestCancel(r) ==
     /\ run[r].status \notin Terminal \cup {"CANCELLING", "ABSENT"}
     /\ LET to == CancelTarget(run[r].status)
-       IN /\ to \in ServiceEdges[run[r].status]
+       IN /\ to \in SvcEdges[run[r].status]
           /\ SetStore(Change(Snap, r, to, <<>>, FALSE, FALSE))
     /\ UNCHANGED <<idem, idemRes, eff, dl, child, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
 
@@ -939,14 +948,14 @@ Resolve(r, s, choice) ==
 
 SweepQueued(r) ==
     /\ run[r].status = "QUEUED" /\ dl[r]
-    /\ "STOPPED" \in SweepEdges["QUEUED"]
+    /\ "STOPPED" \in SwpEdges["QUEUED"]
     /\ SetStore(Change(Snap, r, "STOPPED", <<>>, FALSE, FALSE))
     /\ UNCHANGED <<idem, idemRes, eff, dl, child, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
 
 SweepHuman(r) ==
     /\ run[r].status = "WAITING_HUMAN"
     /\ PendingStep(Snap, r) # {} \/ dl[r]
-    /\ "STOPPED" \in ServiceEdges["WAITING_HUMAN"]
+    /\ "STOPPED" \in SvcEdges["WAITING_HUMAN"]
     /\ LET due == PendingStep(Snap, r)
            S0 == [Snap EXCEPT !.appr[r] = [s \in Steps |-> IF s \in due THEN "expired" ELSE @[s]]]
            lead == IF due = {} THEN <<>>
@@ -957,7 +966,7 @@ SweepHuman(r) ==
 
 SweepTool(r) ==
     /\ run[r].status = "WAITING_TOOL" /\ dl[r]
-    /\ "QUEUED" \in ServiceEdges["WAITING_TOOL"]
+    /\ "QUEUED" \in SvcEdges["WAITING_TOOL"]
     /\ SetStore(Change(Snap, r, "QUEUED", <<>>, FALSE, FALSE))
     /\ UNCHANGED <<idem, idemRes, eff, dl, child, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
 
@@ -1051,8 +1060,8 @@ OnlyDeclaredEdges ==
         LET from == ev[r][i].x
             to == ev[r][i].y
         IN \/ to \in WorkerEdges[from]
-           \/ to \in ServiceEdges[from]
-           \/ to \in SweepEdges[from]
+           \/ to \in SvcEdges[from]
+           \/ to \in SwpEdges[from]
            \/ to \in DeadLetterEdges[from]
 
 EventsAppendOnly ==

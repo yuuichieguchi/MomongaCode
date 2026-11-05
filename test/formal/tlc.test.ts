@@ -180,6 +180,8 @@ describe('the manifest of specs/tla', () => {
       'RunRecovery.unlocked': evidenceAtMostOnce,
       'RunRecovery.reapOnly': evidenceAtMostOnce,
       'RunRecovery.noReap': { role: 'evidence', expect: { violates: 'ReconcileSeesStoppedEffect', exitCode: 12 }, args: [], tier: 'every-run' },
+      'RunRecovery.uniformCancel': { role: 'check', expect: 'holds', args: [], tier: 'every-run' },
+      'RunRecovery.uniformCancelLive': { role: 'check', expect: 'holds', args: LIVENESS_ARGS, tier: 'deep' },
     });
   });
 

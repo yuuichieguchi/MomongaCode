@@ -30,6 +30,15 @@ describe('who reads the snapshot of a run, which a terminal transition writes on
     ]);
   });
 
+  it('is reachable through an aliased store only where a type grants it: Pick<RuntimeStore, ..., load>', () => {
+    expect(filesMatching(/Pick<RuntimeStore,[^>]*'load'/)).toEqual([
+      'runtime/src/process/cancel-upstream.ts',
+      'runtime/src/process/child-runs.ts',
+      'runtime/src/process/release-stopped.ts',
+    ]);
+    expect(filesMatching(/\bload:\s*\(runId/)).toEqual(['store/src/runtime-store.ts']);
+  });
+
   it('is written only through store.writeSnapshot, by the journal', () => {
     expect(filesMatching(/\.writeSnapshot\(/)).toEqual(['runtime/src/worker/journal.ts']);
   });

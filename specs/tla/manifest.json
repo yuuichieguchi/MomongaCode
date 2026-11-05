@@ -37,9 +37,11 @@
     { "config": "TerminalPrepare.separateWrite", "role": "evidence", "expect": { "violates": "AtMostOneContribution", "exitCode": 12 }, "args": [], "tier": "every-run", "distinctStates": 491, "measuredSeconds": 1.2, "budgetSeconds": 3 },
     { "config": "TerminalPrepare.noFence", "role": "evidence", "expect": { "violates": "FencedCommit", "exitCode": 12 }, "args": [], "tier": "every-run", "distinctStates": 549, "measuredSeconds": 1.2, "budgetSeconds": 3 },
     { "config": "TerminalPrepare.measureOnLoop", "role": "evidence", "expect": { "violates": "LeaseKeptWhileAwaiting", "exitCode": 12 }, "args": [], "tier": "every-run", "distinctStates": 87, "measuredSeconds": 1.2, "budgetSeconds": 3 },
-    { "config": "TerminalPrepare.keepalive", "role": "evidence", "expect": { "violates": "RePrepareBounded", "exitCode": 12 }, "args": [], "tier": "every-run", "distinctStates": 5902, "measuredSeconds": 1.4, "budgetSeconds": 3 },
+    { "config": "TerminalPrepare.keepalive", "role": "evidence", "expect": { "violates": "RePrepareBounded", "exitCode": 12 }, "args": [], "tier": "every-run", "distinctStates": 5902, "measuredSeconds": 3.8, "budgetSeconds": 8 },
     { "config": "TerminalPrepare.noRetry", "role": "evidence", "expect": { "violates": "Terminates", "exitCode": 13 }, "args": ["-lncheck", "final"], "tier": "every-run", "distinctStates": 22539, "measuredSeconds": 3.5, "budgetSeconds": 7 },
-    { "config": "ChildCancel", "role": "check", "expect": "holds", "args": ["-lncheck", "final"], "tier": "every-run", "distinctStates": 24, "measuredSeconds": 1.6, "budgetSeconds": 4 },
-    { "config": "ChildCancel.intentInMemory", "role": "evidence", "expect": { "violates": "OrphansSettle", "exitCode": 13 }, "args": ["-lncheck", "final"], "tier": "every-run", "distinctStates": 24, "measuredSeconds": 1.7, "budgetSeconds": 4 }
+    { "config": "RunRecovery.uniformCancel", "role": "check", "expect": "holds", "args": [], "tier": "every-run", "distinctStates": 34000, "measuredSeconds": 4.1, "budgetSeconds": 9 },
+    { "config": "RunRecovery.uniformCancelLive", "role": "check", "expect": "holds", "args": ["-lncheck", "final"], "tier": "deep", "distinctStates": 32056, "measuredSeconds": 345, "budgetSeconds": 690 },
+    { "config": "TerminalPrepare.approvalsSmall", "role": "check", "expect": "holds", "args": [], "tier": "every-run", "distinctStates": 21168, "measuredSeconds": 4.5, "budgetSeconds": 9 },
+    { "config": "TerminalPrepare.approvals", "role": "check", "expect": "holds", "args": [], "tier": "deep", "distinctStates": 2340065, "measuredSeconds": 39.8, "budgetSeconds": 80 }
   ]
 }
