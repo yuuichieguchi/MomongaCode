@@ -2,6 +2,7 @@ import { canonicalJson } from '@momonga/foundation';
 import { ESTIMATED_ERROR_SHAPE, countReplyOf, errorBoundOfShape, tokensForText } from '@momonga/protocol';
 import type { AdapterInputItem, CountTokensResult, FunctionTool, ImageTokenModel, ItemField, Usage } from '@momonga/protocol';
 import { withoutImages } from './image-tokens.ts';
+import { promptPartsOf } from './prompt-parts.ts';
 
 export { tokensForText };
 
@@ -18,8 +19,8 @@ export const estimateInputTokens = (request: EstimateInput, imageModel?: ImageTo
 
 export const imageTokensOfWire = (wire: unknown, imageModel?: ImageTokenModel): number => withoutImages(wire, imageModel).imageTokens;
 
-export const wireTokensOf = (wire: unknown, imageModel?: ImageTokenModel): number => {
-  const { value, imageTokens } = withoutImages(wire, imageModel);
+export const wireTokensOf = (wire: Readonly<Record<string, unknown>>, imageModel?: ImageTokenModel): number => {
+  const { value, imageTokens } = withoutImages(promptPartsOf(wire), imageModel);
   return tokensForText(JSON.stringify(value)) + imageTokens;
 };
 

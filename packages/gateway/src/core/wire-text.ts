@@ -1,5 +1,7 @@
 import { isRecord } from '@momonga/foundation';
-export const textOfWire = (wire: Record<string, unknown>): string => {
+import { promptPartsOf } from './prompt-parts.ts';
+export const textOfWire = (renderedWire: Record<string, unknown>): string => {
+  const wire = promptPartsOf(renderedWire);
   const parts: string[] = [];
   const messages = wire['messages'];
   if (Array.isArray(messages)) {
@@ -19,6 +21,5 @@ export const textOfWire = (wire: Record<string, unknown>): string => {
     for (const block of system) if (isRecord(block) && typeof block['text'] === 'string') parts.push(block['text']);
   }
   if (wire['tools'] !== undefined) parts.push(JSON.stringify(wire['tools']));
-  if (wire['response_format'] !== undefined) parts.push(JSON.stringify(wire['response_format']));
   return parts.filter((part) => part !== '').join('\n');
 };
