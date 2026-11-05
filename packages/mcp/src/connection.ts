@@ -17,6 +17,7 @@ import type { GuardedFetch } from './remote-policy.ts';
 import type { McpRemotePorts } from './remote-ports.ts';
 import { createRemoteTransport } from './remote-transport.ts';
 import type { ConnectionTransport } from './remote-transport.ts';
+import { mcpToolIdentity } from './tool-identity.ts';
 import { createSafeSchemaValidator } from './schema-validator.ts';
 import { createStdioTransport } from './stdio-transport.ts';
 import { DEFAULT_CLOSE_GRACE_MS } from './stdio-transport.ts';
@@ -361,7 +362,7 @@ class ManagedConnection implements McpServerConnection {
         }
         throw error;
       }
-      if (!isInputRequiredResult(result)) return validateStructuredOutput(input.name, tool, result);
+      if (!isInputRequiredResult(result)) return validateStructuredOutput(mcpToolIdentity(this.name, input.name), input.name, tool, result);
       rounds += 1;
       if (rounds > maxRounds) {
         throw new SdkError(SdkErrorCode.InputRequiredRoundsExceeded, `Multi-round-trip request 'tools/call' still required input after ${maxRounds} rounds`, { rounds: maxRounds });
@@ -410,7 +411,7 @@ class ManagedConnection implements McpServerConnection {
           }),
         accept: (taskId, value) => {
           if (!isCallToolResult(value)) throw new McpTaskError(taskId, `task ${taskId} completed with a result that is not a tool result`);
-          return validateStructuredOutput(input.name, tool, value);
+          return validateStructuredOutput(mcpToolIdentity(this.name, input.name), input.name, tool, value);
         },
       });
     } finally {
@@ -603,7 +604,7 @@ class ManagedConnection implements McpServerConnection {
         capabilities: { elicitation: { form: {}, url: {} }, ...(remote ? { extensions: { [TASKS_EXTENSION]: {} } } : {}) },
         versionNegotiation: { mode: 'auto' },
         inputRequired: { autoFulfill: false },
-        jsonSchemaValidator: createSafeSchemaValidator(),
+        jsonSchemaValidator: createSafeSchemaValidator(this.name),
         listChanged: { tools: { autoRefresh: false, debounceMs: 0, onChanged: () => undefined } },
       },
     );

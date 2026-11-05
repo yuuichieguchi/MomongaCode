@@ -143,6 +143,28 @@ const EXTRA_TOOLS: Record<string, Tool> = {
     description: 'A\u009b31mB\ud800C\u001b[31',
     inputSchema: objectSchema({}, []),
   },
+  validator_throws: {
+    name: 'validator_throws',
+    description: 'A valid 2020-12 schema whose compiled validator throws while validating',
+    inputSchema: { type: 'object', if: { anyOf: [{ properties: { a: {} } }], not: {} }, then: false } as unknown as Tool['inputSchema'],
+  },
+  output_validator_throws: {
+    name: 'output_validator_throws',
+    description: 'A valid 2020-12 output schema whose compiled validator throws while validating',
+    inputSchema: objectSchema({}, []),
+    outputSchema: { type: 'object', if: { anyOf: [{ properties: { a: {} } }], not: {} }, then: false } as unknown as Tool['outputSchema'],
+  },
+  bad_output_schema: {
+    name: 'bad_output_schema',
+    description: 'A tool whose output schema does not compile',
+    inputSchema: objectSchema({}, []),
+    outputSchema: { type: 'object', properties: { a: { type: 'nonsense' } } } as unknown as Tool['outputSchema'],
+  },
+  if_annotations: {
+    name: 'if_annotations',
+    description: 'A 2020-12 schema whose if subschema evaluates every property',
+    inputSchema: { type: 'object', if: { unevaluatedProperties: {} }, then: {}, unevaluatedProperties: false } as unknown as Tool['inputSchema'],
+  },
   'a.b': { name: 'a.b', description: 'dot', inputSchema: objectSchema({}, []) },
   'a/b': { name: 'a/b', description: 'slash', inputSchema: objectSchema({}, []) },
   a_b: { name: 'a_b', description: 'underscore', inputSchema: objectSchema({}, []) },
@@ -296,11 +318,15 @@ const createFixtureServer = (): Server => {
         return text('added later');
       case 'with_id':
         return { content: [], structuredContent: { v: String(args['v']) } };
+      case 'output_validator_throws':
+        return { content: [{ type: 'text', text: 'unchecked' }], structuredContent: { a: 'unchecked' } };
       case 'hostile_title':
       case 'hostile_text_more':
       case 'deep_64':
       case 'deep_65':
       case 'deep_not_3000':
+      case 'validator_throws':
+      case 'if_annotations':
       case 'a.b':
       case 'a/b':
       case 'a_b':

@@ -198,7 +198,7 @@ const unusedSandbox: ExecutionBatchInput['sandbox'] = {
 
 let runCounter = 0;
 
-export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000)) => {
+export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000), onWarning: (message: string) => void = () => undefined) => {
   const root = makeDir();
   const home = path.join(root, 'home');
   const project = path.join(root, 'project');
@@ -214,18 +214,24 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000)) => {
     processMarkerDir: markers,
     callLockDir: callLocks,
     kernelLock: createFakeKernelLock({ inheritable: false }),
-    onWarning: () => undefined,
+    onWarning,
     readOnlyRetry: { attempts: 3, baseMs: 0, maxMs: 0 },
   });
   const rule = (effect: RuleEffect, text: string): PermissionRule =>
     parseRule(text, { effect, origin: 'user', source: 'user-settings', settingsRoot: project, home, cwd: project });
+  const journalCodes = new Map<string, Set<string>>();
   const input = (toolSet: ToolSet, calls: ToolCall[], extra: Partial<ExecutionBatchInput> = {}): ExecutionBatchInput => {
     runCounter += 1;
+    const runId = extra.runId ?? `run-${runCounter}`;
+    const codes = journalCodes.get(runId) ?? new Set<string>();
+    journalCodes.set(runId, codes);
     return {
       calls,
       toolSet,
-      fence: { runId: `run-${runCounter}`, workerId: 'w1', leaseToken: 1 },
-      runId: `run-${runCounter}`,
+      fence: { runId, workerId: 'w1', leaseToken: 1 },
+      runId,
+      onWarning: (_message, toolKey) => codes.add(toolKey),
+      toolUnavailable: (toolKey) => codes.has(toolKey),
       step: 1,
       mode: 'default',
       rules: [],

@@ -41,7 +41,7 @@ describe('proactive compaction inside one turn', () => {
     const built = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history }), level: 0 }), harness(capabilities).ports);
 
     expect(built.inputTokens).toBe(2378);
-    expect(built.compaction).toEqual({ throughSeq: 4, summaryTokenCap: SUMMARY_CAP, input: [TASK, ...itemsOf(history, 4)], pinnedText: PINNED_TEXT });
+    expect(built.compaction).toEqual({ throughSeq: 4, summaryTokenCap: SUMMARY_CAP, input: [TASK, ...itemsOf(history, 4)], pinnedText: PINNED_TEXT, notices: [] });
   });
 
   it('gives no hint when the region is below twice the summary item', async () => {
@@ -90,7 +90,7 @@ describe('forced compaction inside one turn', () => {
     const error = await overflowOf(inputFor(capabilities, { sources: sourcesWith({ history }), level: 0 }), harness(capabilities).ports);
 
     expect(error.inputTokens).toBe(2946);
-    expect(error.compaction).toEqual({ throughSeq: 4, summaryTokenCap: SUMMARY_CAP, input: [TASK, ...itemsOf(history, 4)], pinnedText: PINNED_TEXT });
+    expect(error.compaction).toEqual({ throughSeq: 4, summaryTokenCap: SUMMARY_CAP, input: [TASK, ...itemsOf(history, 4)], pinnedText: PINNED_TEXT, notices: [] });
   });
 
   it('takes the latest cut before the last step at the last level', async () => {
@@ -99,6 +99,19 @@ describe('forced compaction inside one turn', () => {
 
     expect(error.lastLevel).toBe(true);
     expect(error.compaction?.throughSeq).toBe(10);
+  });
+
+  it('carries the reduction it was planned at as structured data', async () => {
+    const history = stepsOf([930, 930, 2205, 2205, 2205, 2205]);
+    const error = await overflowOf(inputFor(capabilities, { sources: sourcesWith({ history }), level: 1 }), harness(capabilities).ports);
+
+    expect(error.compaction?.notices).toEqual([
+      {
+        code: 'recent_steps_shrunk',
+        message: 'recent steps of the current turn were reduced from 4 to 1 because the context budget was exceeded',
+        reduction: { turn: expect.any(Number), from: 4, to: 1 },
+      },
+    ]);
   });
 
   it('reports deficit_not_closed when the summary would not close the deficit', async () => {

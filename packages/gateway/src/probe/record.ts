@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ProbeReport, ToolCallingMode, ToolCallingSetting } from '@momonga/protocol';
+import type { NeedsProbe, ProbeReport, ToolCallingMode, ToolCallingSetting } from '@momonga/protocol';
 import { modeIsPrivate } from '@momonga/foundation';
 import { decideToolCalling } from './decide.ts';
 import { isRecord } from './json.ts';
+import { preconditionOf } from './remedy.ts';
 import { isProbeReport } from './report-schema.ts';
 
 export interface ProbeRecordKey {
@@ -75,11 +76,18 @@ export const loadProbeRecord = async (dir: string, key: ProbeRecordKey): Promise
 
 export interface ResolvedToolCalling {
   mode: ToolCallingMode;
-  source: 'config' | 'probed' | 'unprobed';
+  source: 'config' | 'probed';
 }
 
-export const resolveToolCalling = (setting: ToolCallingSetting, report: ProbeReport | null): ResolvedToolCalling => {
+export const isUnprobedAuto = (setting: ToolCallingSetting, report: ProbeReport | null): boolean =>
+  setting === 'auto' && report === null;
+
+export const resolveToolCalling = (
+  setting: ToolCallingSetting,
+  report: ProbeReport | null,
+  needsProbe: NeedsProbe,
+): ResolvedToolCalling => {
   if (setting === 'native' || setting === 'constrained') return { mode: setting, source: 'config' };
-  if (report === null) return { mode: 'native', source: 'unprobed' };
+  if (report === null) throw preconditionOf(needsProbe);
   return { mode: decideToolCalling(report).mode, source: 'probed' };
 };

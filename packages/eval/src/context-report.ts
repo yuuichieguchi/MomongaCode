@@ -528,7 +528,7 @@ export const parseContextReport = (text: string, source: string): ContextReport 
   const value = jsonOf(text, source);
   if (isRecord(value) && typeof value['format'] === 'string' && Object.hasOwn(RETIRED_CONTEXT_REPORT_FORMATS, value['format'])) {
     throw new EvalError(
-      `${source}: ${value['format']} reports do not record ${RETIRED_CONTEXT_REPORT_FORMATS[value['format']]}, so they cannot be compared as ${CONTEXT_REPORT_FORMAT}; run eval context again`,
+      `${source}: ${value['format']} reports do not record ${RETIRED_CONTEXT_REPORT_FORMATS[value['format']]}, so ${value['format']} is retired and cannot be compared as ${CONTEXT_REPORT_FORMAT}; build a ${CONTEXT_REPORT_FORMAT} base from one bundle: run \`momonga eval context <dataset> --model real --alias <alias> --report <off report>\` without --settings, then \`momonga eval context <dataset> --model real --alias <alias> --settings <policy file> --report <on report>\`, then \`momonga eval compare <off report> <on report> --gate token\``,
     );
   }
   if (!validateContextReport(value)) throw new EvalError(`${source}: not a context report (${describeFirstError(validateContextReport)})`);

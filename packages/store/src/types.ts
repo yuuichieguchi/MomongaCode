@@ -542,7 +542,7 @@ export type RuntimeStore = {
     claim: Claim,
     input: { callId: string; expiresAt: number; server: string; requests: ElicitationRequestView[] },
   ): RequestApprovalResult;
-  resolveElicitation(elicitationId: string, responses: Record<string, ElicitationAnswerRecord>): ResolveElicitationResult;
+  resolveElicitation(elicitationId: string, responses: Record<string, ElicitationAnswerRecord>, notices?: readonly string[]): ResolveElicitationResult;
   elicitationView(elicitationId: string): ElicitationView | undefined;
   pendingElicitationViews(runId: string): ElicitationView[];
   expireApprovals(nowMs: number): string[];

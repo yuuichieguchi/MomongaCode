@@ -345,6 +345,8 @@ describe('run event payloads', () => {
       level: 'info' | 'warning' | 'error';
       message: string;
       code?: string;
+      toolKey?: string;
+      reduction?: { turn: number; from: number; to: number };
     }>();
   });
 
@@ -354,6 +356,8 @@ describe('run event payloads', () => {
       level: 'info' | 'warning' | 'error';
       message: string;
       code?: string;
+      toolKey?: string;
+      reduction?: { turn: number; from: number; to: number };
       id: number;
       runId: string;
       sessionId: string;
@@ -407,7 +411,7 @@ describe('RunState', () => {
         }
       >;
       inFlightModelRequest?: { step: number; attempt: number; digest: string; body: unknown; requestedSeq: number };
-      notes: { level: 'info' | 'warning' | 'error'; message: string; code?: string }[];
+      notes: { level: 'info' | 'warning' | 'error'; message: string; code?: string; toolKey?: string; reduction?: { turn: number; from: number; to: number } }[];
       toolCallCounts: Record<string, number>;
       steps: Record<number, { toolChoice: string; summary: boolean }>;
       lastResponse?: { step: number; incomplete: boolean; incompleteReason?: string; refusal: boolean; callIds: string[] };

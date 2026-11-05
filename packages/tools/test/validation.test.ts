@@ -68,6 +68,7 @@ describe('validation messages', () => {
   it('returns the model-facing message for invalid input', () => {
     expect(validateToolInput(makeTool('Edit', { inputSchema: EDIT_SCHEMA }), { old_string: 'x', foo: 1 })).toEqual({
       ok: false,
+      reason: 'invalid',
       message: 'Invalid input for Edit:\n- (root): unknown property "foo"',
     });
   });

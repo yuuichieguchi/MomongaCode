@@ -247,7 +247,7 @@ export type RunEventPayload =
   | { type: 'instructions.loaded'; path: string; content: string }
   | { type: 'skill.activated'; name: string; content: string }
   | { type: 'approval.rule.persisted'; approvalId: string; effect: 'allow' | 'deny'; rule: string }
-  | { type: 'notice'; level: 'info' | 'warning' | 'error'; message: string; code?: string };
+  | { type: 'notice'; level: 'info' | 'warning' | 'error'; message: string; code?: string; toolKey?: string; reduction?: NoticeReduction };
 
 export type SessionEventPayload =
   | { type: 'mode.changed'; mode: PermissionMode }
@@ -268,6 +268,8 @@ export type RunEventEnvelope = {
 export type RunEvent = RunEventPayload extends infer Payload ? (Payload extends unknown ? Payload & RunEventEnvelope : never) : never;
 
 export type PendingCallStatus = 'requested' | 'awaiting_approval' | 'awaiting_input' | 'started' | 'completed' | 'reconciled';
+
+export type NoticeReduction = { turn: number; from: number; to: number };
 
 export type RunState = {
   runId: string;
@@ -303,7 +305,7 @@ export type RunState = {
     }
   >;
   inFlightModelRequest?: { step: number; attempt: number; digest: string; body: unknown; requestedSeq: number };
-  notes: { level: 'info' | 'warning' | 'error'; message: string; code?: string }[];
+  notes: { level: 'info' | 'warning' | 'error'; message: string; code?: string; toolKey?: string; reduction?: NoticeReduction }[];
   toolCallCounts: Record<string, number>;
   steps: Record<number, { toolChoice: string; summary: boolean }>;
   lastResponse?: { step: number; incomplete: boolean; incompleteReason?: string; refusal: boolean; callIds: string[] };

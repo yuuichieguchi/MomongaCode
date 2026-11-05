@@ -348,6 +348,9 @@ const decodeModelCallRecord = (row: Row): ModelCallRecord => {
 };
 
 type Measured = { lastSeq: number; journaled: boolean; contribution: Pick<ContributionPayload, 'items'> | undefined };
+type Prepared = Measured & { leadingDigest: string };
+
+const digestOfLeading = (leadingEvents: readonly RunEventPayload[]): string => canonicalJson(leadingEvents);
 
 const payloadStep = (payload: RunEventPayload): number => ('step' in payload ? payload.step : 0);
 
@@ -390,7 +393,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const trust = createTrustStore(db, clock, home);
   const originOf = (cwd: string): 'trusted' | 'untrusted' => (trust.decisionFor(cwd).decision === 'trusted' ? 'trusted' : 'untrusted');
   const touched = new Map<string, { runId?: string; sessionId: string }>();
-  const prepared = new Map<string, Measured>();
+  const prepared = new Map<string, Prepared>();
 
   const recordTouch = (sessionId: string, runId: string | null): void => {
     if (options.onCommit === undefined) return;
@@ -543,13 +546,16 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     };
   };
 
-  const prepareTerminal = (runId: string): void => {
+  const prepareTerminal = (runId: string, leadingEvents: readonly RunEventPayload[] = []): void => {
     const hook = options.contribution;
     const row = sql.selectRun.get({ id: runId });
     if (hook === undefined || row === undefined) return;
     const run = decodeRun(row);
-    if (isTerminal(run.status) || prepared.get(runId)?.lastSeq === run.lastSeq) return;
-    prepared.set(runId, measureContribution(hook, run));
+    if (isTerminal(run.status)) return;
+    const leadingDigest = digestOfLeading(leadingEvents);
+    const existing = prepared.get(runId);
+    if (existing !== undefined && existing.lastSeq === run.lastSeq && existing.leadingDigest === leadingDigest) return;
+    prepared.set(runId, { ...measureContribution(hook, run, leadingEvents), leadingDigest });
   };
 
   const prepareChildren = (runId: string): void => {
@@ -561,23 +567,24 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     }
   };
 
-  const prepareTree = (runId: string): void => {
-    prepareTerminal(runId);
+  const prepareTree = (runId: string, leadingEvents: readonly RunEventPayload[] = []): void => {
+    prepareTerminal(runId, leadingEvents);
     prepareChildren(runId);
   };
 
-  const prepareStopping = (runId: string): void => {
+  const prepareStopping = (runId: string, nowMs: number): void => {
     const { status } = requireRun(runId);
-    if (status === 'QUEUED' || status === 'WAITING_HUMAN') prepareTree(runId);
+    if (status === 'QUEUED') prepareTree(runId);
+    if (status === 'WAITING_HUMAN') prepareTree(runId, approvalOps.listPendingDue(runId, nowMs).flatMap((approval) => expiryEvents(runId, approval)));
   };
 
-  const prepareLateAnswer = (approvalId: string): void => {
+  const prepareLateAnswer = (approvalId: string, now: number): void => {
     const approval = approvalOps.store.get(approvalId);
-    if (approval !== undefined && approval.status === 'pending' && approval.expiresAt <= clock.now()) prepareStopping(approval.runId);
+    if (approval !== undefined && approval.status === 'pending' && approval.expiresAt <= now) prepareStopping(approval.runId, now);
   };
 
-  const prepareExhausted = (): void => {
-    for (const row of sql.listExhausted.all({ now: clock.now(), maxAttempts, maxTotalAttempts })) prepareTree(decodeRun(row).id);
+  const prepareExhausted = (now: number): void => {
+    for (const row of sql.listExhausted.all({ now, maxAttempts, maxTotalAttempts })) prepareTree(decodeRun(row).id);
   };
 
   const settleContribution = (run: Run, to: TerminalStatus, leadingEvents: readonly RunEventPayload[]): RunEventPayload[] => {
@@ -586,7 +593,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     const ready = prepared.get(run.id);
     prepared.delete(run.id);
     const { journaled, contribution } =
-      ready !== undefined && ready.lastSeq === run.lastSeq && !leadingEvents.some((event) => hook.eventTypes.includes(event.type))
+      ready !== undefined && ready.lastSeq === run.lastSeq && ready.leadingDigest === digestOfLeading(leadingEvents)
         ? ready
         : measureContribution(hook, run, leadingEvents);
     if (contribution !== undefined && to === 'COMPLETED') {
@@ -711,8 +718,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return run === undefined ? leaseLost : moveWorker(run, from, to, change, preceding);
     });
 
-  const expireApproval = (runId: string, approval: Approval): RunEventPayload[] => {
-    approvalOps.end(approval.id, 'expired');
+  const expiryEvents = (runId: string, approval: Approval): RunEventPayload[] => {
     const notice: RunEventPayload = {
       type: 'notice',
       level: 'warning',
@@ -722,6 +728,11 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return approvalAnnounced(runId, approval.id)
       ? [cancelledEvent(approval, 'expired'), notice]
       : [notice];
+  };
+
+  const expireApproval = (runId: string, approval: Approval): RunEventPayload[] => {
+    approvalOps.end(approval.id, 'expired');
+    return expiryEvents(runId, approval);
   };
 
   const stopWaitingRun = (run: Run, nowMs: number): boolean => {
@@ -748,12 +759,11 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return false;
   };
 
-  const resolveInTransaction = (approvalId: string, optionId: string): ResolveApprovalResult => {
+  const resolveInTransaction = (approvalId: string, optionId: string, now: number): ResolveApprovalResult => {
     const approval = approvalOps.store.get(approvalId);
     if (approval === undefined || approval.kind !== 'permission') return { kind: 'not_found' };
     if (approval.status !== 'pending') return { kind: 'approval_not_pending', status: approval.status };
     if (!approvalAnnounced(approval.runId, approval.id)) return { kind: 'request_missing' };
-    const now = clock.now();
     const run = requireRun(approval.runId);
     if (approval.expiresAt <= now) {
       stopWaitingRun(run, now);
@@ -826,13 +836,12 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     };
   };
 
-  const resolveElicitationInTransaction = (elicitationId: string, responses: Record<string, ElicitationAnswerRecord>): ResolveElicitationResult => {
+  const resolveElicitationInTransaction = (elicitationId: string, responses: Record<string, ElicitationAnswerRecord>, notices: readonly string[], now: number): ResolveElicitationResult => {
     const approval = approvalOps.store.get(elicitationId);
     if (approval === undefined) return { kind: 'not_found' };
     if (approval.kind !== 'elicitation') return { kind: 'wrong_kind' };
     if (approval.status !== 'pending') return { kind: 'approval_not_pending', status: approval.status };
     if (!approvalAnnounced(approval.runId, approval.id)) return { kind: 'request_missing' };
-    const now = clock.now();
     const run = requireRun(approval.runId);
     if (approval.expiresAt <= now) {
       stopWaitingRun(run, now);
@@ -841,11 +850,12 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     if (run.cancelRequested) return { kind: 'run_cancelled' };
     const answered = approvalOps.markAnswered(approval.id, responses);
     const event: RunEventPayload = { type: 'tool.elicitation.resolved', inputId: approval.id, responses };
+    const events: RunEventPayload[] = [event, ...notices.map((message): RunEventPayload => ({ type: 'notice', level: 'warning', message, code: 'elicitation_validator_failed' }))];
     const settled = run.status === 'WAITING_HUMAN' && approvalOps.store.listPending(run.id).length === 0;
     if (settled) {
-      changeStatus(run, 'QUEUED', { edges: SERVICE_TRANSITIONS, availableAt: now }, [event]);
+      changeStatus(run, 'QUEUED', { edges: SERVICE_TRANSITIONS, availableAt: now }, events);
     } else {
-      writeRun({ ...appendPayloads(run, [event]), version: run.version + 1 });
+      writeRun({ ...appendPayloads(run, events), version: run.version + 1 });
     }
     return { kind: 'ok', elicitation: answered, run: requireRun(run.id) };
   };
@@ -1310,10 +1320,10 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return row === undefined ? undefined : decodeRun(row);
     },
 
-    claim: (workerId) =>
-      afterPreparing(prepareExhausted, () =>
+    claim: (workerId) => {
+      const now = clock.now();
+      return afterPreparing(() => prepareExhausted(now), () =>
         transaction(() => {
-          const now = clock.now();
           for (;;) {
             const exhausted = sql.selectExhausted.get({ now, maxAttempts, maxTotalAttempts });
             if (exhausted === undefined) break;
@@ -1325,7 +1335,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           const status: ClaimStatus = expectOneOf('runs', run.id, 'status', CLAIM_STATUSES, run.status);
           return { runId: run.id, sessionId: run.sessionId, workerId, leaseToken: run.leaseToken, attempt: run.attempts, status };
         }),
-      ),
+      );
+    },
 
     heartbeat: (claim) =>
       transaction<HeartbeatResult>( () => {
@@ -1357,7 +1368,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     transition: (claim, from, to, patch, preceding = []) =>
       afterPreparing(
         () => {
-          if (isTerminal(to)) prepareTree(claim.runId);
+          if (isTerminal(to)) prepareTree(claim.runId, preceding);
         },
         () => workerTransition(claim, from, to, patch === undefined ? {} : { patch }, preceding),
       ),
@@ -1416,7 +1427,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     appendAsService: (runId, expectedVersion, to, events, patch) =>
       afterPreparing(
         () => {
-          if (to !== null && isTerminal(to)) prepareTree(runId);
+          if (to !== null && isTerminal(to)) prepareTree(runId, events);
         },
         () =>
           transaction<ServiceMutationResult>(() => {
@@ -1506,11 +1517,13 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         return { kind: 'ok', approval: requested.approval };
       }),
 
-    resolveApproval: (approvalId, optionId) =>
-      afterPreparing(
-        () => prepareLateAnswer(approvalId),
-        () => transaction<ResolveApprovalResult>(() => resolveInTransaction(approvalId, optionId)),
-      ),
+    resolveApproval: (approvalId, optionId) => {
+      const now = clock.now();
+      return afterPreparing(
+        () => prepareLateAnswer(approvalId, now),
+        () => transaction<ResolveApprovalResult>(() => resolveInTransaction(approvalId, optionId, now)),
+      );
+    },
 
     requestElicitation: (claim, input) =>
       transaction<RequestApprovalResult>(() => {
@@ -1535,11 +1548,13 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         return { kind: 'ok', approval: requested.approval };
       }),
 
-    resolveElicitation: (elicitationId, responses) =>
-      afterPreparing(
-        () => prepareLateAnswer(elicitationId),
-        () => transaction<ResolveElicitationResult>(() => resolveElicitationInTransaction(elicitationId, responses)),
-      ),
+    resolveElicitation: (elicitationId, responses, notices = []) => {
+      const now = clock.now();
+      return afterPreparing(
+        () => prepareLateAnswer(elicitationId, now),
+        () => transaction<ResolveElicitationResult>(() => resolveElicitationInTransaction(elicitationId, responses, notices, now)),
+      );
+    },
 
     elicitationView: (elicitationId) => {
       const approval = approvalOps.store.get(elicitationId);
@@ -1561,7 +1576,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       for (const row of sql.dueWaitingRuns.all({ nowMs })) {
         const runId = readerFor('runs', 'due', row).string('id');
         const didStop = afterPreparing(
-          () => prepareStopping(runId),
+          () => prepareStopping(runId, nowMs),
           () => transaction(() => stopWaitingRun(requireRun(runId), nowMs)),
         );
         if (didStop) stopped.push(runId);

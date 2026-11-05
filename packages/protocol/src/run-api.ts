@@ -458,7 +458,13 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
     required: ['approvalId', 'effect', 'rule'],
   },
   notice: {
-    properties: { level: enumOf(['info', 'warning', 'error']), message: string, code: string },
+    properties: {
+      level: enumOf(['info', 'warning', 'error']),
+      message: string,
+      code: string,
+      toolKey: string,
+      reduction: closed({ turn: nonNegativeInteger, from: nonNegativeInteger, to: nonNegativeInteger }, ['turn', 'from', 'to']),
+    },
     required: ['level', 'message'],
   },
 };

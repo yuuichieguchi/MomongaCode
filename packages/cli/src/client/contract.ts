@@ -49,5 +49,3 @@ export const checkCostBreakdown = guard<CostBreakdownView>(RUN_API_SCHEMAS.CostB
 export const checkGuidelines = guard<GuidelinesResponse>(RUN_API_SCHEMAS.GuidelinesResponse);
 export const checkGuideline = guard<GuidelineResponse>(RUN_API_SCHEMAS.GuidelineResponse);
 export const checkContextCharge = guard<ContextChargeResponse>(RUN_API_SCHEMAS.ContextChargeResponse);
-
-export const compileRequestedSchema = (schema: Readonly<Record<string, unknown>>): ValidateFunction => ajv.compile(schema);
