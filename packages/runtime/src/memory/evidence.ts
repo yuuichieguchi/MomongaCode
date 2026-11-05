@@ -4,7 +4,8 @@ import path from 'node:path';
 import { lexicallyWithin, resolveToolPath } from '@momonga/foundation';
 import { EvidenceOutsideRootError, EvidenceUnreadableError } from '@momonga/memory';
 import type { EvidencePorts } from '@momonga/memory';
-import type { MemoryEvidence, RunEvent } from '@momonga/protocol';
+import type { MemoryEvidence } from '@momonga/protocol';
+import type { EvidenceReply } from '@momonga/store';
 import { ToolExecutionError } from '@momonga/tools';
 
 export type EvidenceCommand = {
@@ -111,57 +112,30 @@ export const readGitHead = async ({ project, trusted, run, signal }: EvidencePor
 
 export type BindMemoryEvidenceInput = {
   runId: string;
-  events: readonly RunEvent[];
   paths: readonly string[];
   project: string;
   trusted: boolean;
-  verificationCommands: readonly string[];
-  onlyCommand?: string;
+  journal(paths: readonly string[]): Promise<EvidenceReply>;
   head(): Promise<string | undefined>;
 };
 
-type FileEvent = Extract<RunEvent, { type: 'tool.completed' }>;
-
-const latestRecordedHash = (events: readonly RunEvent[], resolved: string): { sha256: string; seq: number } | undefined => {
-  let found: { sha256: string; seq: number } | undefined;
-  for (const event of events) {
-    if (event.type !== 'tool.completed') continue;
-    const file = event.files?.find((candidate) => candidate.path === resolved);
-    if (file !== undefined) found = { sha256: file.sha256, seq: event.seq };
-  }
-  return found;
-};
-
-const checkEvidenceOf = (input: BindMemoryEvidenceInput, boundPaths: ReadonlySet<string>): MemoryEvidence | undefined => {
-  const commandOf = new Map<string, string>();
-  for (const event of input.events) {
-    if (event.type === 'tool.call' && event.name === 'Bash' && typeof event.rawInput === 'object' && event.rawInput !== null && 'command' in event.rawInput && typeof event.rawInput.command === 'string') {
-      commandOf.set(event.callId, event.rawInput.command);
-    }
-  }
-  const completed = input.events.filter((event): event is FileEvent => event.type === 'tool.completed');
-  const lastWrite = Math.max(0, ...completed.filter((event) => event.files?.some((file) => file.access === 'write' && boundPaths.has(file.path)) === true).map((event) => event.seq));
-  const matches = completed.filter((event) => {
-    const command = commandOf.get(event.callId);
-    return event.seq > lastWrite && event.exitCode !== undefined && command !== undefined && input.verificationCommands.includes(command) && (input.onlyCommand === undefined || command === input.onlyCommand);
-  });
-  const latest = matches.at(-1);
-  if (latest === undefined || latest.exitCode === undefined) return undefined;
-  const command = commandOf.get(latest.callId);
-  if (command === undefined) return undefined;
-  return { kind: 'check', runId: input.runId, callId: latest.callId, seq: latest.seq, command, exitCode: latest.exitCode };
-};
-
 export const bindMemoryEvidence = async (input: BindMemoryEvidenceInput): Promise<MemoryEvidence[]> => {
+  const resolvedPaths = input.paths.map((given) => resolveToolPath(input.project, given));
+  const facts = await input.journal(resolvedPaths);
   const bound = new Map<string, MemoryEvidence>();
-  for (const given of input.paths) {
-    const resolved = resolveToolPath(input.project, given);
+  for (const [index, given] of input.paths.entries()) {
+    const resolved = resolvedPaths[index];
+    const recorded = facts.recorded[index];
+    if (resolved === undefined || recorded === undefined) throw new Error(`the journal thread answered ${facts.recorded.length} recorded hashes for ${input.paths.length} paths`);
     if (!lexicallyWithin(resolved, input.project)) throw new MemoryEvidenceError(`${given} is outside the project, so a note cannot be bound to it`);
-    const recorded = latestRecordedHash(input.events, resolved);
-    if (recorded === undefined) throw new MemoryEvidenceError(`${given} was not read or written in this run, so a note cannot be bound to it. Read the file first.`);
+    if (recorded === null) throw new MemoryEvidenceError(`${given} was not read or written in this run, so a note cannot be bound to it. Read the file first.`);
     bound.set(resolved, { kind: 'file', project: input.project, path: path.relative(input.project, resolved), sha256: recorded.sha256 });
   }
   const commit = input.trusted ? await input.head() : undefined;
-  const check = checkEvidenceOf(input, new Set(bound.keys()));
-  return [...bound.values(), ...(commit === undefined ? [] : [{ kind: 'commit' as const, sha: commit }]), ...(check === undefined ? [] : [check])];
+  const { check } = facts;
+  return [
+    ...bound.values(),
+    ...(commit === undefined ? [] : [{ kind: 'commit' as const, sha: commit }]),
+    ...(check === null ? [] : [{ kind: 'check' as const, runId: input.runId, ...check }]),
+  ];
 };

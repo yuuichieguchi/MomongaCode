@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { RunEvent, RunEventPayload } from '@momonga/protocol';
 import type { ContributionPayload, RuntimeStore, TerminalContribution } from '@momonga/store';
 import { EXPIRES_MS, awaitingApproval } from './approval-fixture.ts';
-import { DEADLINE_MS, LEASE_MS, START_MS, callEvent, cancel, enqueue, harness, mustClaim, mustRun, newSession, payloadOf } from './helpers.ts';
+import { DEADLINE_MS, LEASE_MS, START_MS, callEvent, cancel, enqueue, harness, mustClaim, mustRun, newSession, noJournalFacts, payloadOf } from './helpers.ts';
 import type { Harness } from './helpers.ts';
 import { fakePreparer } from './preparer-fixture.ts';
 
@@ -225,6 +225,7 @@ describe('the contributed_at stamp', () => {
     let bound: RuntimeStore | undefined;
     const h = harness({
       preparer: {
+        ...noJournalFacts,
         measure: async ({ runId }) => ({ lastSeq: bound?.getRun(runId)?.lastSeq ?? -1, contribution: { type: 'context.contribution', items } }),
       },
     });

@@ -4,6 +4,7 @@ import type { RunEventPayload } from '@momonga/protocol';
 import { contributionAtTerminal, pinnedDigestOf } from '@momonga/runtime';
 import { createJournalReader, foldRunState, initialRunState } from '@momonga/store';
 import type { ContributionPreparer, RuntimeStore } from '@momonga/store';
+import { noJournalFacts } from '../../../store/test/helpers.ts';
 import { makeEnv } from './harness.ts';
 import { LARGE_RUN_SETUP_TEST_TIMEOUT_MS } from './pause-budget.ts';
 import { functionCallItem } from './scripts.ts';
@@ -72,6 +73,7 @@ type Counts = { decodedRows: number; decodedBytes: number; encodedBytes: number 
 type Path = 'thread' | 'inline';
 
 const threadDouble = (dbPath: () => string): ContributionPreparer => ({
+  ...noJournalFacts,
   measure: async (request) => {
     const db = openDatabase(dbPath());
     try {
@@ -83,6 +85,7 @@ const threadDouble = (dbPath: () => string): ContributionPreparer => ({
 });
 
 const inlineControl = (store: () => RuntimeStore): ContributionPreparer => ({
+  ...noJournalFacts,
   measure: async (request) => {
     const events = store().readRunEvents(request.runId, 0, 1_000_000);
     const run = store().getRun(request.runId);
