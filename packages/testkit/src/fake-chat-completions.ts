@@ -475,7 +475,10 @@ export const startFakeChatCompletions = async (
       if (!jsonSchemaAccepted) throw invalidRequest(JSON_SCHEMA_UNSUPPORTED_MESSAGE, null, 'response_format');
       const jsonSchema = isRecord(responseFormat['json_schema']) ? responseFormat['json_schema'] : {};
       const fmRefusal = options.wire === 'fm' ? fmSchemaRefusalOf(String(jsonSchema['name']), jsonSchema['schema']) : undefined;
-      if (fmRefusal?.status === 500) throw new HttpFailure(500, structuredClone(FM_UNSUPPORTED_GUIDE_ERROR) as unknown as Json);
+      if (fmRefusal?.status === 500) {
+        if (body['stream'] !== false) throw new FmStreamedError(FM_UNSUPPORTED_GUIDE_ERROR);
+        throw new HttpFailure(500, structuredClone(FM_UNSUPPORTED_GUIDE_ERROR) as unknown as Json);
+      }
       if (fmRefusal !== undefined) throw new HttpFailure(400, fmSchemaRefusalError(fmRefusal.message));
       const used = findUsedKeywords(jsonSchema['schema'], unsupportedKeywords);
       if (used.length > 0) {
