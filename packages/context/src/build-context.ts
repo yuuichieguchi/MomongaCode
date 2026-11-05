@@ -384,7 +384,7 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
   }
   if (!admitted && current.leavesNoRoom) {
     throw new PinnedRoomError({
-      pinnedTokens: counted.inputTokens,
+      pinnedTokens: ceilingTokens,
       ceiling,
       room: ceiling - ceilingTokens,
       minimum: MIN_ROOM_TOKENS,
