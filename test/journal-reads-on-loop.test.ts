@@ -74,4 +74,13 @@ describe('readers that answer from append-time records do not walk the journal o
   it('arrivals do not re-read every instructions.loaded event at each build (row 21)', () => {
     expect(filesMatching(/readRunEventsOfTypes\([^)]*\['instructions\.loaded'\]/)).toEqual([]);
   });
+
+  it('inheritance neither folds the source nor decodes a copied context.inherited row on the main thread (row 11)', () => {
+    const runtimeStore = fs.readFileSync(path.join(packagesDir, 'store/src/runtime-store.ts'), 'utf8');
+    expect(runtimeStore).not.toMatch(/\bprojectInheritance\(/);
+    expect(runtimeStore).not.toMatch(/\bfoldedRun\(/);
+    expect(runtimeStore).not.toMatch(/\binheritedEventRow\b/);
+    expect(runtimeStore).not.toMatch(/\bcarriedSkillsOf\(/);
+    expect(filesMatching(/\bevent\.history\.length\b/)).toEqual([]);
+  });
 });

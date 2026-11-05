@@ -103,6 +103,6 @@ describe('context events in the journal', () => {
       ...ENVELOPE,
     } as RunEvent;
     expect(foldRunState(start(), event).summary).toEqual({ item, summary: 'so far', replacedThroughSeq: 3 });
-    expect(SNAPSHOT_STATE_VERSION).toBe(14);
+    expect(SNAPSHOT_STATE_VERSION).toBe(15);
   });
 });
