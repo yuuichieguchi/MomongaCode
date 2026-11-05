@@ -65,7 +65,7 @@ export type LenientItems = { callNames: Record<string, string>; withTools: boole
 
 export type ToolChoiceWire = { forms: readonly AllowedToolsForm[]; expressesRequired: boolean };
 
-export type RenderWireOptions = { reasoningOrigin: ReasoningOrigin; lenientItems?: LenientItems; allowedTools?: readonly AllowedToolsForm[] };
+export type RenderWireOptions = { reasoningOrigin: ReasoningOrigin; capabilities: Capabilities; lenientItems?: LenientItems };
 
 export type AdapterCompactResult = { summary: string; usage: Usage; cacheWriteInputTokens?: number };
 
@@ -80,7 +80,7 @@ export type ProviderAdapter = {
   countTokens?(request: CountTokensRequest, ctx: AdapterContext): Promise<AdapterCountTokensResult>;
   countWire?(wire: Record<string, unknown>, ctx: AdapterContext): Promise<AdapterCountTokensResult>;
   compact?(request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult>;
-  renderCompactWire?(request: AdapterCompactRequest, target: AdapterTarget, cap: number, reasoningOrigin: ReasoningOrigin): Record<string, unknown>;
+  renderCompactWire?(request: AdapterCompactRequest, target: AdapterTarget, cap: number, reasoningOrigin: ReasoningOrigin, capabilities: Capabilities): Record<string, unknown>;
   renderWire?(request: AdapterRequest, target: AdapterTarget, options: RenderWireOptions): Record<string, unknown>;
-  toolChoiceWire(target: AdapterTarget): ToolChoiceWire;
+  toolChoiceWire(capabilities: Capabilities, target: AdapterTarget): ToolChoiceWire;
 };

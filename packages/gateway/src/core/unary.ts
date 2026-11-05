@@ -2,6 +2,7 @@ import { canonicalJson, sha256Hex, uuidv7 } from '@momonga/foundation';
 import { COMPACTION_ROLE, LOWEST_REASONING_EFFORT, outputTokensFor, summaryInputLimitFor, summaryTokenCapFor } from '@momonga/protocol';
 import type {
   AdapterCompactRequest,
+  Capabilities,
   AdapterInputItem,
   AdapterRequest,
   CompactRequest,
@@ -104,15 +105,16 @@ const asGatewayError = <T>(target: TargetRuntime, render: () => T): T => {
 const countWire = async (
   services: Services,
   target: TargetRuntime,
+  capabilities: Capabilities,
   wire: Record<string, unknown>,
   signal: AbortSignal,
   deadlineAt: number | undefined,
 ): Promise<CountTokensResult> => {
-  const { imageTokens: imageModel } = await services.router.capabilitiesOf(target);
+  const { imageTokens: imageModel } = capabilities;
   const adapterCountWire = target.adapter.countWire;
   if (adapterCountWire !== undefined) {
-    const counted = await callTargets(services, [target], signal, deadlineAt, async (chosen, attemptNumber, guarded) =>
-      adapterCountWire.call(chosen.adapter, wire, await adapterContextOf(services, chosen, guarded, attemptNumber)),
+    const counted = await callTargets(services, [target], signal, deadlineAt, (chosen, attemptNumber, guarded) =>
+      adapterCountWire.call(chosen.adapter, wire, adapterContextOf(services, chosen, capabilities, guarded, attemptNumber)),
     );
     counted.settle('success');
     return counted.value;
@@ -122,11 +124,11 @@ const countWire = async (
     const tokens = wireTokensOf(wire, imageModel);
     return estimatedCountOf(tokens);
   }
-  const outcome = await callTargets(services, [target], signal, deadlineAt, async (chosen, attemptNumber, guarded) =>
+  const outcome = await callTargets(services, [target], signal, deadlineAt, (chosen, attemptNumber, guarded) =>
     adapterCountTokens.call(
       chosen.adapter,
       { model: chosen.model, input: textOfWire(wire) },
-      await adapterContextOf(services, chosen, guarded, attemptNumber),
+      adapterContextOf(services, chosen, capabilities, guarded, attemptNumber),
     ),
   );
   outcome.settle('success');
@@ -153,9 +155,10 @@ const countTokens = async (
   }
   if (target === undefined) throw new Error(`model alias "${request.model}" has no targets`);
   const resolved = resolveInput(services.store, services.codec, undefined, normalizeInput(request.input));
-  await services.router.narrow(request.model, [target], { images: inputHasImages(resolved.forAdapter) });
-  const { allowedTools } = await services.router.capabilitiesOf(target);
-  const toolChoiceWire = target.adapter.toolChoiceWire({ name: target.name, model: target.model });
+  const narrowed = await services.router.narrow(request.model, [target], { images: inputHasImages(resolved.forAdapter) });
+  const capabilities = narrowed.capabilitiesOf(target);
+  const { allowedTools } = capabilities;
+  const toolChoiceWire = target.adapter.toolChoiceWire(capabilities, { name: target.name, model: target.model });
   const counted = asGatewayError(target, () =>
     resolveToolChoice(adapterRequestOf(target.model, request, resolved.forAdapter), allowedTools, target.name, toolChoiceWire),
   );
@@ -171,12 +174,12 @@ const countTokens = async (
         { name: target.name, model: target.model },
         {
           reasoningOrigin: originOf(services, target),
+          capabilities,
           ...(lenientItems === undefined ? {} : { lenientItems }),
-          ...(allowedTools === undefined ? {} : { allowedTools }),
         },
       ),
     );
-    return countWire(services, target, wire, signal, deadlineAt);
+    return countWire(services, target, capabilities, wire, signal, deadlineAt);
   }
   const countable: InputItem[] = resolved.forAdapter.map((item) =>
     item.type === 'compaction_summary'
@@ -187,11 +190,11 @@ const countTokens = async (
   if (adapterCountTokens === undefined) {
     const inputTokens = estimateInputTokens(
       { input: resolved.forAdapter, instructions: request.instructions, tools: counted.tools },
-      (await services.router.capabilitiesOf(target)).imageTokens,
+      capabilities.imageTokens,
     );
     return estimatedCountOf(inputTokens);
   }
-  const outcome = await callTargets(services, [target], signal, deadlineAt, async (chosen, attemptNumber, guarded) =>
+  const outcome = await callTargets(services, [target], signal, deadlineAt, (chosen, attemptNumber, guarded) =>
     adapterCountTokens.call(
       chosen.adapter,
       {
@@ -201,7 +204,7 @@ const countTokens = async (
         ...(counted.tools === undefined ? {} : { tools: counted.tools }),
         ...(counted.tool_choice === undefined ? {} : { tool_choice: counted.tool_choice }),
       },
-      await adapterContextOf(services, chosen, guarded, attemptNumber),
+      adapterContextOf(services, chosen, capabilities, guarded, attemptNumber),
     ),
   );
   outcome.settle('success');
@@ -219,8 +222,8 @@ const compactOnce = async (
 ): Promise<CompactResource> => {
   const targets = services.router.targetsOf(request.model);
   const resolved = resolveInput(services.store, services.codec, request.previous_response_id, normalizeInput(request.input));
-  const eligible = await services.router.narrow(request.model, targets, { images: inputHasImages(resolved.forAdapter) });
-  const supporting = eligible.filter((target) => target.adapter.compact !== undefined);
+  const narrowed = await services.router.narrow(request.model, targets, { images: inputHasImages(resolved.forAdapter) });
+  const supporting = narrowed.targets.filter((target) => target.adapter.compact !== undefined);
   if (supporting.length === 0) {
     throw invalidRequest('capability_unsupported', `no target of model alias "${request.model}" supports compaction`, 'model');
   }
@@ -235,7 +238,7 @@ const compactOnce = async (
   let withinCap = 0;
   let counterFailure: GatewayError | undefined;
   for (const target of supporting) {
-    const capabilities = await services.router.capabilitiesOf(target);
+    const capabilities = narrowed.capabilitiesOf(target);
     const maximum = Math.min(summaryTokenCapFor(capabilities), capabilities.maxOutputTokens);
     const cap = request.momonga?.max_summary_tokens ?? maximum;
     if (cap > maximum) continue;
@@ -247,11 +250,11 @@ const compactOnce = async (
       continue;
     }
     const wire = asGatewayError(target, () =>
-      renderCompactWire.call(target.adapter, compactRequestFor(target, cap), { name: target.name, model: target.model }, cap, originOf(services, target)),
+      renderCompactWire.call(target.adapter, compactRequestFor(target, cap), { name: target.name, model: target.model }, cap, originOf(services, target), capabilities),
     );
     let counted: CountTokensResult;
     try {
-      counted = await countWire(services, target, wire, signal, deadlineAt);
+      counted = await countWire(services, target, capabilities, wire, signal, deadlineAt);
     } catch (error) {
       if (!isTargetFailure(error, signal)) throw error;
       counterFailure = error;
@@ -302,7 +305,7 @@ const compactOnce = async (
       request: { input: resolved.forAdapter, instructions: request.instructions, tools: undefined },
     });
     try {
-      const result = await compact.call(target.adapter, compactRequestFor(target, cap), await adapterContextOf(services, target, guarded, attemptNumber));
+      const result = await compact.call(target.adapter, compactRequestFor(target, cap), adapterContextOf(services, target, narrowed.capabilitiesOf(target), guarded, attemptNumber));
       spans.set(target, span);
       return result;
     } catch (error) {

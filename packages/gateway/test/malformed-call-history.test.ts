@@ -47,7 +47,7 @@ const renderChat = (mode: ToolCallingMode, request: AdapterRequest): { messages?
   const adapter = chatAdapter(mode);
   const render = adapter.renderWire;
   if (render === undefined) throw new Error('the chat-completions adapter renders no wire');
-  return render.call(adapter, request, TARGET, { reasoningOrigin: EVERY_REASONING_IS_OWN }) as { messages?: unknown[] };
+  return render.call(adapter, request, TARGET, { reasoningOrigin: EVERY_REASONING_IS_OWN, capabilities: { ...CC_CAPABILITIES, toolCalling: mode } }) as { messages?: unknown[] };
 };
 
 const parsesAsJsonObject = (text: unknown): boolean => {

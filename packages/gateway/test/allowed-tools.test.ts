@@ -415,7 +415,7 @@ describe('count what is sent: the count body carries the create body tools and t
     expect(error).toBeUndefined();
     const sent = lastCompletionBody(fake);
     expect(listedNames(sent)).toEqual(['alpha', 'beta']);
-    const rendered = adapter.renderWire?.(ccRequest(TWO_AUTO), TARGET, { reasoningOrigin: EVERY_REASONING_IS_OWN, allowedTools: ['filter'] });
+    const rendered = adapter.renderWire?.(ccRequest(TWO_AUTO), TARGET, { reasoningOrigin: EVERY_REASONING_IS_OWN, capabilities });
     expect(rendered).toEqual(wireOf(sent));
   });
 });

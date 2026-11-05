@@ -28,6 +28,6 @@ describe('renderCompactWire', () => {
       { ...request, momonga: { max_summary_tokens: cap } },
       await contextOf(adapter, TARGET),
     );
-    expect(JSON.stringify(adapter.renderCompactWire?.(request, TARGET, cap, EVERY_REASONING_IS_OWN))).toBe(JSON.stringify(wireOf(lastCompletionBody(fake))));
+    expect(JSON.stringify(adapter.renderCompactWire?.(request, TARGET, cap, EVERY_REASONING_IS_OWN, await adapter.capabilities(TARGET)))).toBe(JSON.stringify(wireOf(lastCompletionBody(fake))));
   });
 });

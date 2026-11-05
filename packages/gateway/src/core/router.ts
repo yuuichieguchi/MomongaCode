@@ -29,14 +29,16 @@ export type TargetRuntime = {
 
 export type CandidateRequirements = { tools?: boolean; images?: boolean; sampling?: SamplingRequest };
 
+export type Narrowed = { targets: TargetRuntime[]; capabilitiesOf(target: TargetRuntime): Capabilities };
+
 export type Router = {
   aliases(): string[];
   hasAlias(alias: string): boolean;
   targetsOf(alias: string): TargetRuntime[];
   capabilitiesOf(target: TargetRuntime): Promise<Capabilities>;
   aliasCapabilitiesOf(alias: string): Promise<Capabilities>;
-  candidates(alias: string, requirements: CandidateRequirements): Promise<TargetRuntime[]>;
-  narrow(alias: string, targets: readonly TargetRuntime[], requirements: CandidateRequirements): Promise<TargetRuntime[]>;
+  candidates(alias: string, requirements: CandidateRequirements): Promise<Narrowed>;
+  narrow(alias: string, targets: readonly TargetRuntime[], requirements: CandidateRequirements): Promise<Narrowed>;
   health(): Promise<Pick<GatewayHealth, 'ok' | 'targets'>>;
 };
 
@@ -158,10 +160,16 @@ export const createRouter = (options: RouterOptions): Router => {
     return mergeCapabilities([first, ...rest]);
   };
 
-  const narrow = async (alias: string, all: readonly TargetRuntime[], requirements: CandidateRequirements): Promise<TargetRuntime[]> => {
+  const narrow = async (alias: string, all: readonly TargetRuntime[], requirements: CandidateRequirements): Promise<Narrowed> => {
+    const resolved = new Map(await Promise.all(all.map(async (target) => [target, await capabilitiesOf(target)] as const)));
+    const resolvedOf = (target: TargetRuntime): Capabilities => {
+      const capabilities = resolved.get(target);
+      if (capabilities === undefined) throw new TypeError(`target "${target.name}" was not part of the narrowing`);
+      return capabilities;
+    };
     let remaining = [...all];
     if (requirements.tools === true) {
-      const capabilities = await Promise.all(remaining.map((target) => capabilitiesOf(target)));
+      const capabilities = remaining.map(resolvedOf);
       for (const { toolCalling } of capabilities) {
         if (typeof toolCalling !== 'string') throw invalidRequest('precondition_failed', preconditionText(toolCalling.message, toolCalling.evidence, toolCalling.remedy), null, 412);
       }
@@ -171,7 +179,7 @@ export const createRouter = (options: RouterOptions): Router => {
       }
     }
     if (requirements.images === true) {
-      const capabilities = await Promise.all(remaining.map((target) => capabilitiesOf(target)));
+      const capabilities = remaining.map(resolvedOf);
       remaining = remaining.filter((_, index) => (capabilities[index] as Capabilities).imageInput);
       if (remaining.length === 0) {
         throw invalidRequest('capability_unsupported', `no target of model alias "${alias}" supports image input`, 'input');
@@ -179,7 +187,7 @@ export const createRouter = (options: RouterOptions): Router => {
     }
     const { sampling } = requirements;
     if (sampling !== undefined && carriesSampling(sampling)) {
-      const capabilities = await Promise.all(remaining.map((target) => capabilitiesOf(target)));
+      const capabilities = remaining.map(resolvedOf);
       const refusals = new Map<TargetRuntime, SamplingRefusal>();
       remaining.forEach((target, index) => {
         const refusal = samplingRefusalOf(sampling, { name: target.name, kind: target.adapter.kind }, target.adapter.sampling, capabilities[index] as Capabilities);
@@ -192,7 +200,7 @@ export const createRouter = (options: RouterOptions): Router => {
       }
       remaining = accepted;
     }
-    return remaining;
+    return { targets: remaining, capabilitiesOf: resolvedOf };
   };
 
   return {

@@ -1,6 +1,7 @@
 import { uuidv7 } from '@momonga/foundation';
 import type {
   AdapterRequest,
+  Capabilities,
   CreateResponseBody,
   ErrorType,
   FailedResponseResource,
@@ -53,6 +54,7 @@ type Opened = {
   held: StreamEvent[];
   release: Release;
   span: AttemptSpan;
+  capabilities: Capabilities;
 };
 
 type Pulled = { kind: 'event'; event: StreamEvent } | { kind: 'failed'; error: unknown };
@@ -144,6 +146,7 @@ const openAttempt = async (
   job: ResponseJob,
   resolved: ResolvedInput,
   target: TargetRuntime,
+  capabilities: Capabilities,
   attemptNumber: number,
   signal: AbortSignal,
 ): Promise<Opened> => {
@@ -165,7 +168,7 @@ const openAttempt = async (
     request: { input: resolved.forAdapter, instructions: job.body.instructions, tools: job.body.tools },
   });
   try {
-    const stream = target.adapter.create(adapterRequestFor(job, resolved, target), await adapterContextOf(services, target, signal, attemptNumber));
+    const stream = target.adapter.create(adapterRequestFor(job, resolved, target), adapterContextOf(services, target, capabilities, signal, attemptNumber));
     const iterator = stream[Symbol.asyncIterator]();
     const held: StreamEvent[] = [];
     for (;;) {
@@ -177,7 +180,7 @@ const openAttempt = async (
       if (carriesOutput(step.value) || TERMINAL_TYPES.has(step.value.type)) break;
     }
     span.committed();
-    return { iterator, held, release, span };
+    return { iterator, held, release, span, capabilities };
   } catch (error) {
     release();
     const failure = failureFrom(target.adapter, error, signal);
@@ -462,7 +465,7 @@ async function* relaySteps(
     estimatedUsage(
       estimateInputTokens(
         { input: resolved.forAdapter, instructions: job.body.instructions, tools: job.body.tools ?? undefined },
-        (await services.router.capabilitiesOf(target)).imageTokens,
+        opened.capabilities.imageTokens,
       ),
       estimateOutputTokens(upstreamOutput),
     );
@@ -552,15 +555,15 @@ async function* relaySteps(
 export async function* executeResponse(services: Services, job: ResponseJob, control: RunControl): AsyncGenerator<StreamEvent> {
   const { signal } = control;
   const resolved = resolveInput(services.store, services.codec, job.body.previous_response_id, job.clientInput, job.connection);
-  const candidates = await services.router.candidates(job.alias, { tools: (job.body.tools?.length ?? 0) > 0, images: inputHasImages(resolved.forAdapter), sampling: job.body });
+  const narrowed = await services.router.candidates(job.alias, { tools: (job.body.tools?.length ?? 0) > 0, images: inputHasImages(resolved.forAdapter), sampling: job.body });
   const disarm = armDeadline(services, job.deadlineAt, control.abort);
   try {
     const outcome = await runWithRetry({
-      candidates,
+      candidates: narrowed.targets,
       policy: { ...services.config.retry, random: services.random, clock: services.clock, timers: services.timers },
       signal,
       deadlineAt: job.deadlineAt,
-      attempt: (target, attemptNumber) => openAttempt(services, job, resolved, target, attemptNumber, signal),
+      attempt: (target, attemptNumber) => openAttempt(services, job, resolved, target, narrowed.capabilitiesOf(target), attemptNumber, signal),
     });
     yield* relay(services, job, resolved, outcome, control);
   } finally {
