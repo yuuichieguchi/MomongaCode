@@ -1,4 +1,4 @@
-import { reasoningEffortToSend } from '@momonga/protocol';
+import { acceptedReasoningEfforts, clampReasoningEffort } from '@momonga/protocol';
 import type { AdapterRequest, Capabilities, FunctionTool, ReasoningCapability, ReasoningEffort, ReasoningOrigin } from '@momonga/protocol';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { SYSTEM_PART_SEPARATOR, systemTextOf } from '../shared/system-text.ts';
@@ -35,12 +35,12 @@ const requireToolChoice = (request: AdapterRequest): void => {
 
 const formatOf = (request: AdapterRequest): { format?: unknown } => {
   const format = request.text?.format;
-  if (format === undefined || format.type === 'text') return {};
+  if (format === undefined || format === null || format.type === 'text') return {};
   return { format: format.type === 'json_schema' ? format.schema : 'json' };
 };
 
 const thinkOf = (effort: ReasoningEffort | undefined, reasoning: ReasoningCapability | undefined): { think?: boolean } =>
-  effort === undefined || reasoning?.control !== 'reasoning_effort' ? {} : { think: reasoningEffortToSend(effort, reasoning.lowest) !== 'none' };
+  effort === undefined || reasoning?.control !== 'reasoning_effort' ? {} : { think: clampReasoningEffort(effort, acceptedReasoningEfforts(reasoning)) !== 'none' };
 
 export type OllamaBodyCapabilities = Pick<Capabilities, 'contextWindow' | 'maxOutputTokens' | 'reasoning'>;
 

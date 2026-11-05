@@ -1,5 +1,5 @@
-import { compactionSummaryMessage } from '@momonga/protocol';
-import type { AdapterInputItem, AdapterRequest, ContentPart, FunctionTool, PromptCacheCounts, ReasoningOrigin, ToolChoice } from '@momonga/protocol';
+import { acceptedReasoningEfforts, clampReasoningEffort, compactionSummaryMessage, outputTokensFor, thinkingBudgetFor } from '@momonga/protocol';
+import type { AdapterInputItem, AdapterRequest, ContentPart, FunctionTool, PromptCacheCounts, ReasoningCapability, ReasoningOrigin, ThinkingAdaptiveEffort, ThinkingOff, ToolChoice } from '@momonga/protocol';
 import { callArgumentsObject } from '../shared/call-arguments.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { hasImagePart, imageSourceOf } from '../shared/image-part.ts';
@@ -44,13 +44,17 @@ export type AnthropicRequestBody = {
   tool_choice?: AnthropicToolChoice;
   temperature?: number;
   top_p?: number;
+  thinking?: AnthropicThinking;
+  output_config?: { effort: ThinkingAdaptiveEffort };
 };
+
+export type AnthropicThinking = { type: 'adaptive' } | { type: 'enabled'; budget_tokens: number } | { type: ThinkingOff };
 
 export type AnthropicCountTokensBody = Pick<AnthropicRequestBody, 'model' | 'system' | 'tools' | 'tool_choice'> & { messages: AnthropicMessage[] };
 
 export type CachePlan = { maxBreakpoints: number; marks?: PromptCacheCounts };
 
-export type BodyOptions = { cache: CachePlan | undefined };
+export type BodyOptions = { cache: CachePlan | undefined; reasoning?: ReasoningCapability | undefined };
 
 const EPHEMERAL: CacheControl = { type: 'ephemeral' };
 const EMPTY_OBJECT_SCHEMA = { type: 'object', properties: {} } as const;
@@ -220,11 +224,27 @@ const requestParts = (request: AdapterRequest, options: BodyOptions, origin: Rea
   return { tools, system, messages: converted.messages, toolChoice };
 };
 
+const MIN_BUDGET_TOKENS = 1024;
+
+type ThinkingPlan = { maxTokens: number; thinking?: AnthropicThinking; outputConfig?: { effort: ThinkingAdaptiveEffort } };
+
+const thinkingPlanOf = (effort: AdapterRequest['reasoning_effort'], reasoning: ReasoningCapability | undefined, visibleCap: number | undefined, modelMaximum: number): ThinkingPlan => {
+  const maxTokens = outputTokensFor({ maxOutputTokens: modelMaximum, reasoning }, effort, visibleCap);
+  if (effort === undefined || reasoning?.control !== 'thinking') return { maxTokens };
+  const level = clampReasoningEffort(effort, acceptedReasoningEfforts(reasoning));
+  if (level === 'none') return { maxTokens, thinking: { type: reasoning.off as ThinkingOff } };
+  if (reasoning.form === 'adaptive') return { maxTokens, thinking: { type: 'adaptive' }, outputConfig: { effort: level as ThinkingAdaptiveEffort } };
+  const declared = thinkingBudgetFor(reasoning, level) as number;
+  if (visibleCap === undefined) return { maxTokens, thinking: { type: 'enabled', budget_tokens: declared } };
+  return { maxTokens, thinking: { type: 'enabled', budget_tokens: Math.max(MIN_BUDGET_TOKENS, Math.min(declared, maxTokens - visibleCap)) } };
+};
+
 export const buildMessagesBody = (request: AdapterRequest, maxTokens: number, options: BodyOptions, origin: ReasoningOrigin): AnthropicRequestBody => {
   const { tools, system, messages, toolChoice } = requestParts(request, options, origin);
+  const plan = thinkingPlanOf(request.reasoning_effort, options.reasoning, request.max_output_tokens ?? undefined, maxTokens);
   return {
     model: request.model,
-    max_tokens: request.max_output_tokens ?? maxTokens,
+    max_tokens: plan.maxTokens,
     stream: true,
     ...(system.length === 0 ? {} : { system }),
     messages,
@@ -232,6 +252,8 @@ export const buildMessagesBody = (request: AdapterRequest, maxTokens: number, op
     ...(toolChoice === undefined ? {} : { tool_choice: toolChoice }),
     ...(request.temperature === undefined || request.temperature === null ? {} : { temperature: request.temperature }),
     ...(request.top_p === undefined || request.top_p === null ? {} : { top_p: request.top_p }),
+    ...(plan.thinking === undefined ? {} : { thinking: plan.thinking }),
+    ...(plan.outputConfig === undefined ? {} : { output_config: plan.outputConfig }),
   };
 };
 

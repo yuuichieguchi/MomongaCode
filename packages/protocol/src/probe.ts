@@ -25,7 +25,7 @@ export type ProbeReport = {
   stopSequences: boolean;
   outputBoundField?: OutputBoundField | 'none';
   parallelToolCalls?: { accepted: boolean; multiCallRate: number };
-  reasoning?: ReasoningCapability;
+  reasoning?: Exclude<ReasoningCapability, { control: 'thinking' }>;
   maxConcurrency: number;
   imageInputAccepted: boolean;
   imageTokens?: ImageTokenModel;

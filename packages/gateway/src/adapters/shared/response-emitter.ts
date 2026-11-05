@@ -14,7 +14,7 @@ import type {
   StreamEvent,
   Usage,
 } from '@momonga/protocol';
-import { echoedTools } from '../../core/resource.ts';
+import { echoedFields } from '../../core/resource.ts';
 import { MAX_CALL_ARGUMENT_CHARS, MAX_RESPONSE_TEXT_CHARS } from './limits.ts';
 import { UpstreamProtocolError } from './failures.ts';
 
@@ -408,6 +408,7 @@ export class ResponseEmitter {
     const terminal = state.status !== 'in_progress';
     return {
       id: this.responseId,
+      ...echoedFields({ tools: request.tools, text: request.text }),
       object: 'response',
       created_at: this.createdAtSeconds,
       completed_at: terminal ? Math.floor(this.options.clock.now() / 1000) : null,
@@ -418,17 +419,14 @@ export class ResponseEmitter {
       instructions: request.instructions ?? null,
       output: [...state.output],
       error: null,
-      tools: echoedTools(request.tools),
       tool_choice: request.tool_choice ?? 'auto',
       truncation: 'disabled',
       parallel_tool_calls: request.parallel_tool_calls ?? false,
-      text: { format: { type: 'text' } },
       top_p: request.top_p ?? 1,
       presence_penalty: 0,
       frequency_penalty: 0,
       top_logprobs: 0,
       temperature: request.temperature ?? 1,
-      reasoning: null,
       usage: state.usage,
       max_output_tokens: request.max_output_tokens ?? null,
       max_tool_calls: null,

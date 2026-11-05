@@ -1,5 +1,5 @@
-import Ajv2020 from 'ajv/dist/2020.js';
-import { canonicalJson, parseOutsideJson, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, defineProductSchema, parseOutsideJson, sha256Hex } from '@momonga/foundation';
+import type { ProductValidator } from '@momonga/foundation';
 import { GUIDELINE_TEXT_PATTERN } from '@momonga/protocol';
 import { GATE_CHECKS } from './context-compare.ts';
 import type { ContextComparison } from './context-compare.ts';
@@ -206,8 +206,7 @@ const OUTCOME_FILE_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-const ajv = new Ajv2020.default({ strict: true });
-const validateOutcomeFile = ajv.compile<GuidelineOutcomeFile>(OUTCOME_FILE_SCHEMA);
+const validateOutcomeFile: ProductValidator<GuidelineOutcomeFile> = defineProductSchema('eval/guideline-outcome', OUTCOME_FILE_SCHEMA);
 
 export const parseOutcomeFile = (text: string): GuidelineOutcomeFile => {
   let value: unknown;
@@ -216,11 +215,13 @@ export const parseOutcomeFile = (text: string): GuidelineOutcomeFile => {
   } catch (error) {
     throw new EvalError(`the outcome file is not JSON: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
-  if (!validateOutcomeFile(value)) throw new EvalError(`the outcome file is not a ${GUIDELINE_OUTCOME_FORMAT} file: ${describeFirstError(validateOutcomeFile)}`);
-  if (digestOf(value.outcome) !== value.digest) {
+  const verdict = validateOutcomeFile(value);
+  if (!verdict.valid) throw new EvalError(`the outcome file is not a ${GUIDELINE_OUTCOME_FORMAT} file: ${describeFirstError(verdict.errors)}`);
+  const file = verdict.value;
+  if (digestOf(file.outcome) !== file.digest) {
     throw new EvalError('the outcome file was changed after context improve wrote it: its digest does not match its content, so the text in it is not the text that was measured');
   }
-  return value;
+  return file;
 };
 
 export const adoptionOf = (file: GuidelineOutcomeFile): GuidelineAdoption => {

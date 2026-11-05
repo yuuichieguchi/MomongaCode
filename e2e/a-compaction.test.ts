@@ -219,11 +219,11 @@ const assertLeanProperties = (observed: Observed, haystack: Haystack, plan: Plan
   ).toEqual([]);
   const before = planned?.facts.requestsBeforeEscalation ?? 0;
   const wireCounts = planned?.wireCounts ?? [];
-  const growth = Math.max(0, ...wireCounts.slice(1, before).map((count, index) => count - (wireCounts[index] as number)));
+  const unevicted = planned?.unevictedAtEscalation;
   const shape = plan.shape.tool === 'Read' ? `Read with ${plan.shape.lineChars}-character lines` : `ReadOutput with limit ${plan.shape.limit}`;
   expect(
     planned?.facts.escalationNotices,
-    `Bash is denied and no background job runs, so BashOutput and KillBash are not offered and the lean deny list leaves Glob and UpdatePlan offered, so the pinned prefix is ${plan.sizing.pinned} tokens against the ceiling ${plan.sizing.ceiling}, which leaves ${plan.sizing.ceiling - plan.sizing.pinned} tokens of room; the planner took ${shape}, the first shape in the grid whose step growth of ${growth} tokens makes the request before the escalation (${wireCounts[before - 1]} tokens) plus one more step exceed the fit limit after that request's report while the recent steps are kept whole, and reducing them to one is then journaled exactly once`,
+    `Bash is denied and no background job runs, so BashOutput and KillBash are not offered and the lean deny list leaves Glob and UpdatePlan offered, so the pinned prefix is ${plan.sizing.pinned} tokens against the ceiling ${plan.sizing.ceiling}, which leaves ${plan.sizing.ceiling - plan.sizing.pinned} tokens of room; the planner took ${shape}, the first shape in the grid for which (g1) the unevicted input of ${unevicted} tokens, the request before the escalation (${wireCounts[before - 1]} tokens) plus the escalating step's own growth, exceeds the fit limit after that request's report, and (g2) the level-0 pass is the one ContextOverflowError, so the recent steps are kept whole until then, and reducing them to one is then journaled exactly once`,
   ).toHaveLength(1);
   expect(messages, "the real run journals exactly the notices of the planner's dry run, which offers the same tools under the same deny list").toEqual(planned?.facts.notices);
   const plannedShape: HistoryShape = { positions: Array.from({ length: before }, (_unused, step) => ({ turn: 0, step })), turnCount: 1, currentTurn: 0, lastStep: before - 1 };
