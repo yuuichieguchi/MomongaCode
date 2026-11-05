@@ -19,7 +19,7 @@ import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { resolveGoverning } from '@momonga/memory';
 import type { Session } from '@momonga/store';
 import { compactionSummaryMessage, decodeCompactionSummary, tokensForText, userMessageContent } from '@momonga/protocol';
-import type { CompactRequest, CompactResource, CompactionInputItem, ContentPart, FunctionTool, InputItem, MessageInputItem, RunEvent, RunEventPayload, RunState, SummaryFidelity } from '@momonga/protocol';
+import type { CompactRequest, CompactResource, CompactionInputItem, ContentPart, FunctionTool, InputItem, MessageInputItem, NoticeReduction, RunEvent, RunEventPayload, RunState, SummaryFidelity } from '@momonga/protocol';
 import { foldRunState } from '@momonga/store';
 import { GatewayRequestError } from '../gateway-client.ts';
 import { recallQueryOf } from '../memory/recall-query.ts';
@@ -238,7 +238,7 @@ const buildOnce = async (ctx: ClaimContext, wrapUp: WrapUpReason | undefined, le
 
 type CompactedPayload = Extract<RunEventPayload, { type: 'context.compacted' }>;
 type CompactedEvent = Extract<RunEvent, { type: 'context.compacted' }>;
-type CompactionSource = Pick<CompactionPlan, 'throughSeq' | 'input' | 'summaryTokenCap' | 'pinnedText'>;
+type CompactionSource = Pick<CompactionPlan, 'throughSeq' | 'input' | 'summaryTokenCap' | 'pinnedText' | 'notices'>;
 
 const wholeBlobText = async (blobs: WorkerBlobs, handle: string, scope: { runId: string }): Promise<string> => {
   const { totalBytes } = await blobs.read(handle, { offset: 0, length: 0 }, scope);
@@ -353,6 +353,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
         `Compaction summary failed (${error.code}): ${error.message}${roleAlias === undefined ? '' : ` [models.roles.compaction names alias ${roleAlias}]`}; the deterministic summary was used`,
       ),
       deterministicCompaction(ctx, plan, NO_ADOPTED_GUIDELINE),
+      ...unrecordedNoticePayloads(ctx, plan.notices),
     ]);
     return;
   }
@@ -401,6 +402,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
     accepted
       ? { type: 'context.compacted', item, summary, replacedThroughSeq: plan.throughSeq, source: 'model', fidelity, guidelineVersion }
       : deterministicCompaction(ctx, plan, guidelineVersion, fidelity),
+    ...unrecordedNoticePayloads(ctx, plan.notices),
   ]);
 };
 
@@ -415,12 +417,21 @@ export const cancelIfInterrupted = (ctx: ClaimContext): 'done' | undefined => {
 };
 
 const unrecordedNoticePayloads = (ctx: ClaimContext, notices: readonly ContextNotice[]): RunEventPayload[] => {
-  const known = new Set(ctx.journal.state.notes.map((note) => note.message));
+  const identityOf = (message: string, code: string | undefined, reduction: NoticeReduction | undefined): string =>
+    reduction === undefined ? canonicalJson(['message', message]) : canonicalJson(['reduction', code, reduction.turn, reduction.from, reduction.to]);
+  const known = new Set(ctx.journal.state.notes.map((note) => identityOf(note.message, note.code, note.reduction)));
   const payloads: RunEventPayload[] = [];
   for (const notice of notices) {
-    if (known.has(notice.message)) continue;
-    known.add(notice.message);
-    payloads.push({ type: 'notice', level: 'warning', message: notice.message, code: notice.code });
+    const identity = identityOf(notice.message, notice.code, notice.reduction);
+    if (known.has(identity)) continue;
+    known.add(identity);
+    payloads.push({
+      type: 'notice',
+      level: 'warning',
+      message: notice.message,
+      code: notice.code,
+      ...(notice.reduction === undefined ? {} : { reduction: notice.reduction }),
+    });
   }
   return payloads;
 };
@@ -589,8 +600,6 @@ const buildNextUnguarded = async (ctx: ClaimContext, options: { wrapUp?: WrapUpR
     try {
       await compactThrough(ctx, plan);
       attempt.successes += 1;
-      const reductionNotices = unrecordedNoticePayloads(ctx, plan.notices);
-      if (reductionNotices.length > 0) ctx.journal.append(reductionNotices);
       return 'compacted';
     } catch (error) {
       if (error instanceof GatewayRequestError) delete ctx.control.inFlight.compactionKey;

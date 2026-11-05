@@ -768,12 +768,14 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     protectionNotices.push({
       code: 'recent_turns_shrunk',
       message: 'recent turns were reduced to the current turn because the context budget was exceeded',
+      reduction: { turn: currentTurn, from: requestedKeepTurns, to: protection.keepTurns },
     });
   }
   if (protection.keepSteps < requestedKeepSteps) {
     protectionNotices.push({
       code: 'recent_steps_shrunk',
       message: `recent steps of the current turn were reduced from ${requestedKeepSteps} to ${protection.keepSteps} because the context budget was exceeded`,
+      reduction: { turn: currentTurn, from: requestedKeepSteps, to: protection.keepSteps },
     });
   }
 

@@ -8,6 +8,7 @@ import type {
   InputItem,
   MemoryView,
   MessageInputItem,
+  NoticeReduction,
   OutputFormatterName,
   TokenAnatomy,
 } from '@momonga/protocol';
@@ -199,7 +200,7 @@ export type NoticeCode =
   | 'recent_turns_shrunk'
   | 'recent_steps_shrunk';
 
-export type ContextNotice = { code: NoticeCode; message: string };
+export type ContextNotice = { code: NoticeCode; message: string; reduction?: NoticeReduction };
 
 export type EvictionKind = 'omitted' | 'truncated' | 'reference';
 

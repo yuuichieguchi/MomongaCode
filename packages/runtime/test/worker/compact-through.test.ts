@@ -38,7 +38,7 @@ const contextFor = (options: { failAppendOnce?: boolean; summaryText?: string; h
       gateway: {
         compact: async (request: CompactRequest, callOptions: { idempotencyKey: string }) => {
           requests.push({ request: structuredClone(request), idempotencyKey: callOptions.idempotencyKey });
-          if (options.failCompaction === true) throw new GatewayRequestError({ status: 400, type: 'invalid_request_error', code: 'context_length_exceeded', message: 'too long' });
+          if (options.failCompaction === true) throw new GatewayRequestError({ status: 400, type: 'invalid_request', code: 'context_length_exceeded', message: 'too long' });
           const known = produced.get(callOptions.idempotencyKey);
           if (known !== undefined) return known;
           const resource: CompactResource = {
@@ -100,7 +100,7 @@ describe('compactThrough', () => {
   it('sends the rendered input verbatim with the cap and retains_user_request, no instructions, under the whole-body key', async () => {
     const { ctx, appended, requests } = contextFor();
 
-    await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText });
+    await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText, notices: [] });
 
     expect(requests).toHaveLength(1);
     const [sent] = requests;
@@ -116,7 +116,7 @@ describe('compactThrough', () => {
   it('records the measured duration of the compaction call on its charge', async () => {
     const { ctx, appended } = contextFor();
 
-    await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText });
+    await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText, notices: [] });
 
     expect(appended[0]).toMatchObject({ type: 'usage.charged', purpose: 'compaction', timing: { durationMs: 40 }, responseId: 'compaction_1' });
   });
@@ -124,8 +124,8 @@ describe('compactThrough', () => {
   it('derives a new key when only the cap differs', async () => {
     const { ctx, requests } = contextFor();
 
-    await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText });
-    await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 241, pinnedText });
+    await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText, notices: [] });
+    await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 241, pinnedText, notices: [] });
 
     expect(requests.map((entry) => entry.request.momonga?.max_summary_tokens)).toEqual([240, 241]);
     expect(requests[0]?.idempotencyKey).not.toBe(requests[1]?.idempotencyKey);
@@ -141,7 +141,7 @@ describe('compactThrough', () => {
       { type: 'function_call_output', call_id: 'c1', output: `[tool output omitted: 900 tokens; stored as ${handle}; read it with ReadOutput]` },
     ];
 
-    await compactThrough(ctx, { throughSeq: 3, input: rendered, summaryTokenCap: 240, pinnedText });
+    await compactThrough(ctx, { throughSeq: 3, input: rendered, summaryTokenCap: 240, pinnedText, notices: [] });
 
     expect(appended.at(-1)).toMatchObject({ type: 'context.compacted', source: 'model', fidelity: { fabricated: [] } });
   });
@@ -149,7 +149,7 @@ describe('compactThrough', () => {
   it('replaces a summary that names a handle the model never saw', async () => {
     const { ctx, appended } = contextFor({ summaryText: `STATE:\n${'cd34'.repeat(16)}` });
 
-    await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText });
+    await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText, notices: [] });
 
     expect(appended.at(-1)).toMatchObject({ type: 'context.compacted', source: 'deterministic', fidelity: { fabricated: ['cd34'.repeat(16)] } });
   });
@@ -157,7 +157,7 @@ describe('compactThrough', () => {
   it('goes on when a recorded blob is unreadable, leaves the token it held unverifiable, and says so', async () => {
     const { ctx, appended } = contextFor({ summaryText: `STATE:\n\`src/only/in-blob.ts\``, history: withBlob });
 
-    await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText });
+    await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText, notices: [] });
 
     expect(appended.at(-1)).toMatchObject({ type: 'context.compacted', source: 'deterministic', fidelity: { fabricated: ['src/only/in-blob.ts'] } });
     const notice = appended.find((payload) => payload.type === 'notice');
@@ -167,7 +167,7 @@ describe('compactThrough', () => {
   it('reads a recorded blob scoped to the run being compacted', async () => {
     const { ctx, readScopes } = contextFor({ summaryText: 'STATE:\nnothing to name', history: withBlob });
 
-    await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText });
+    await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText, notices: [] });
 
     expect(readScopes).toEqual([{ runId: 'run_compact' }]);
   });
@@ -175,7 +175,7 @@ describe('compactThrough', () => {
   it('keeps a model summary whose tokens are all found in readable text, and still says the blob was unreadable', async () => {
     const { ctx, appended } = contextFor({ summaryText: 'STATE:\nnothing to name', history: withBlob });
 
-    await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText });
+    await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText, notices: [] });
 
     expect(appended.at(-1)).toMatchObject({ type: 'context.compacted', source: 'model' });
     expect(appended.some((payload) => payload.type === 'notice' && payload.message.includes(BLOB))).toBe(true);
@@ -183,7 +183,7 @@ describe('compactThrough', () => {
 
   it('asks again under the same key after the claim ended between the reply and the journal append, and the model writes no second summary', async () => {
     const { ctx, appended, requests, produced } = contextFor({ failAppendOnce: true });
-    const plan = { throughSeq: 3, input, summaryTokenCap: 240, pinnedText };
+    const plan = { throughSeq: 3, input, summaryTokenCap: 240, pinnedText, notices: [] };
 
     await expect(compactThrough(ctx, plan)).rejects.toThrow('the claim ended before the compaction was recorded');
     await compactThrough(ctx, plan);

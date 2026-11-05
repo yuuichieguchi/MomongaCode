@@ -462,7 +462,7 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
     case 'context.truncated':
       return truncate(state, event);
     case 'notice':
-      return { ...state, notes: [...state.notes, { level: event.level, message: event.message, ...(event.code === undefined ? {} : { code: event.code }), ...(event.toolKey === undefined ? {} : { toolKey: event.toolKey }) }] };
+      return { ...state, notes: [...state.notes, { level: event.level, message: event.message, ...(event.code === undefined ? {} : { code: event.code }), ...(event.toolKey === undefined ? {} : { toolKey: event.toolKey }), ...(event.reduction === undefined ? {} : { reduction: event.reduction }) }] };
     case 'agent.message.delta':
       return withDelta(state, event, true);
     case 'agent.thought.delta':
