@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ESTIMATED_ERROR_SHAPE } from '@momonga/protocol';
 import type { MemoryView, MessageInputItem } from '@momonga/protocol';
-import { ContextOverflowError, budgetFor, buildContext, capacityFor, createTokenMeter, inputCeilingFor, measurePinned } from '@momonga/context';
+import { budgetFor, buildContext, capacityFor, createTokenMeter, inputCeilingFor, measurePinned } from '@momonga/context';
 import type { BuildContextInput, BuildContextPorts, BuiltContext, HistoryItem, MeterCount, TokenMeter } from '@momonga/context';
 import { HOME, MODEL, PROJECT, SYSTEM_PROMPT, assistant, buildThroughLevels, call, capabilitiesFor, fakeBlobs, fakeReader, output, shapeCounter, sourcesWith, tokensOfItem, tokensOfItems } from './helpers.ts';
 
@@ -78,10 +78,10 @@ const lastSent = (reported: Reported, built: BuiltContext): MeterCount => {
 const boundOf = (counted: MeterCount): number => counted.inputTokens + counted.underAt(counted.inputTokens);
 const omittedIds = (built: BuiltContext): string[] => built.evictions.filter((entry) => entry.kind === 'omitted').map((entry) => entry.callId).sort();
 
-describe('person item 8 measurement: a memory admitted inside a build moves the split point j', () => {
+describe('person item 8: one input, one decomposition for a memory admitted inside a build', () => {
   it('without the memory, the build ends on the frozen split decomposition and keeps all history', async () => {
     const reported = await reportedMeter();
-    const frozenC = (await measurePinned(inputWith(second, [memory]), reported.ports)).ceiling;
+    const frozenC = (await measurePinned(inputWith(second, []), reported.ports)).ceiling;
 
     const built = await buildContext(inputWith(second, []), reported.ports);
     const counted = lastSent(reported, built);
@@ -92,36 +92,21 @@ describe('person item 8 measurement: a memory admitted inside a build moves the 
     expect(built.evictions).toEqual([]);
   });
 
-  it('admits the memory against the frozen split C, ends on a decomposition with j at slot 1, and the final fit test evicts history', async () => {
+  it('decides the memory before the decomposition, so level 0 sends the memory with all history on the fresh count at the static ceiling', async () => {
     const reported = await reportedMeter();
-    const frozenC = (await measurePinned(inputWith(second, [memory]), reported.ports)).ceiling;
-    expect(frozenC).toBeGreaterThan(inputCeilingFor(sized));
+    const input = inputWith(second, [memory]);
+    const ownC = (await measurePinned(input, reported.ports)).ceiling;
 
-    const levelZero = await buildContext(inputWith(second, [memory]), reported.ports).catch((caught: unknown) => caught);
-    expect(levelZero).toBeInstanceOf(ContextOverflowError);
-    const overflow = levelZero as ContextOverflowError;
-    const atLevelZero = reported.sent.at(-1) as MeterCount;
-    expect(overflow.level).toBe(0);
-    expect(overflow.lastLevel).toBe(false);
-    expect({ evictions: overflow.evictions, compaction: overflow.compaction, blocked: overflow.compactionBlockedBy?.reason }).toEqual({ evictions: [], compaction: undefined, blocked: 'no_step_boundary_outside_protection' });
-    expect(overflow.ceiling).toBe(frozenC);
-    expect(overflow.inputTokens).toBe(atLevelZero.inputTokens);
-    expect(atLevelZero.known).toBe(tokensOfItem(systemMessage));
-    expect(boundOf(atLevelZero)).toBeGreaterThan(I0);
-    expect(atLevelZero.inputTokens + atLevelZero.freshUnderAt(atLevelZero.inputTokens)).toBeLessThanOrEqual(I0);
-    expect(atLevelZero.inputTokens).toBeLessThanOrEqual(frozenC);
-
-    reported.sent.length = 0;
-    const { built, level } = await buildThroughLevels(inputWith(second, [memory]), reported.ports);
+    const { built, level } = await buildThroughLevels(input, reported.ports);
     const counted = lastSent(reported, built);
 
-    expect(level).toBe(1);
     expect(built.loadedMemoryIds).toEqual(['mem-1']);
-    expect(omittedIds(built)).toEqual(['c1', 'c2']);
-    expect(counted.known).toBe(tokensOfItem(systemMessage));
-    expect(capacityFor(sized, counted.underAt)).toBeLessThan(frozenC);
+    expect(omittedIds(built)).toEqual([]);
+    expect(level).toBe(0);
+    expect(capacityFor(sized, counted.underAt)).toBe(ownC);
+    expect(ownC).toBe(inputCeilingFor(sized));
+    expect(counted.known).toBe(0);
     expect(tokensOfItems(built.input)).toBe(built.inputTokens);
-    expect(built.inputTokens).toBeLessThan(WINDOW);
   });
 
   it('sends a request whose bound fits I0', async () => {

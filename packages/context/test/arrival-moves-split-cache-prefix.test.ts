@@ -2,16 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { canonicalJson } from '@momonga/foundation';
 import { ESTIMATED_ERROR_SHAPE } from '@momonga/protocol';
 import type { InputItem, MemoryView } from '@momonga/protocol';
-import { ContextOverflowError, budgetFor, buildContext, capacityFor, createTokenMeter, inputCeilingFor, measurePinned } from '@momonga/context';
+import { budgetFor, buildContext, capacityFor, createTokenMeter, inputCeilingFor, measurePinned } from '@momonga/context';
 import type { BuildContextInput, BuildContextPorts, BuiltContext, HistoryItem, MeterCount, TokenMeter } from '@momonga/context';
-import { HOME, MODEL, PROJECT, SYSTEM_PROMPT, assistant, buildThroughLevels, call, capabilitiesFor, fakeBlobs, fakeReader, output, shapeCounter, sourcesWith, tokensOfItem, tokensOfItems, touchedFile } from './helpers.ts';
+import { HOME, MODEL, PROJECT, assistant, buildThroughLevels, call, capabilitiesFor, fakeBlobs, fakeReader, output, shapeCounter, sourcesWith, tokensOfItems, touchedFile } from './helpers.ts';
 
 const WINDOW = 8192;
 const sized = capabilitiesFor(WINDOW, { tokenCounting: 'estimated', maxOutputTokens: 1024 });
 const I0 = budgetFor(sized, 0).I;
 const NESTED = '/proj/sub/AGENTS.md';
 const touched = [touchedFile('/proj/sub/x.ts')];
-const systemTokens = tokensOfItem({ type: 'message', role: 'system', content: SYSTEM_PROMPT });
 
 const first: HistoryItem[] = [call(1, 'c1'), output(2, 'c1', 'a'.repeat(7000)), call(3, 'c2'), output(4, 'c2', 'b'.repeat(7000)), assistant(5, 'done')];
 const second: HistoryItem[] = [...first, assistant(6, 'more')];
@@ -80,7 +79,6 @@ const lastSent = (reported: Reported, built: BuiltContext): MeterCount => {
 };
 
 const boundOf = (counted: MeterCount): number => counted.inputTokens + counted.underAt(counted.inputTokens);
-const freshBoundOf = (counted: MeterCount): number => counted.inputTokens + counted.freshUnderAt(counted.inputTokens);
 const omittedIds = (built: BuiltContext): string[] => built.evictions.filter((entry) => entry.kind === 'omitted').map((entry) => entry.callId).sort();
 const sharedItems = (a: readonly InputItem[], b: readonly InputItem[]): number => {
   let shared = 0;
@@ -102,51 +100,37 @@ describe('person item 8, Q4: a nested AGENTS.md discovered inside a build under 
     expect(built.evictions).toEqual([]);
   });
 
-  it('a 4000-character arrival: admitted against the frozen split C, j falls to slot 1 (F is the system message alone here), and the final fit test evicts history that fits by the fresh count', async () => {
+  it('a 4000-character arrival is decided before the decomposition: level 0 keeps all history, on the fresh count at the static ceiling', async () => {
     const { files, input } = nestedBuild(4000);
     const reported = await reportedMeter('cachePrefix', files);
-    const frozenC = (await measurePinned(input, reported.ports)).ceiling;
-    expect(frozenC).toBeGreaterThan(inputCeilingFor(sized));
+    const ownC = (await measurePinned(input, reported.ports)).ceiling;
 
-    const levelZero = await buildContext(input, reported.ports).catch((caught: unknown) => caught);
-    expect(levelZero).toBeInstanceOf(ContextOverflowError);
-    const overflow = levelZero as ContextOverflowError;
-    const atLevelZero = reported.sent.at(-1) as MeterCount;
-    expect(overflow.level).toBe(0);
-    expect(overflow.lastLevel).toBe(false);
-    expect(overflow.evictions).toEqual([]);
-    expect(overflow.ceiling).toBe(frozenC);
-    expect(atLevelZero.known).toBe(systemTokens);
-    expect(atLevelZero.inputTokens).toBeLessThanOrEqual(frozenC);
-    expect(boundOf(atLevelZero)).toBeGreaterThan(I0);
-    expect(freshBoundOf(atLevelZero)).toBeLessThanOrEqual(I0);
-
-    reported.sent.length = 0;
     const { built, level } = await buildThroughLevels(input, reported.ports);
     const counted = lastSent(reported, built);
 
-    expect(level).toBe(1);
-    expect(omittedIds(built)).toEqual(['c1', 'c2']);
+    expect(level).toBe(0);
+    expect(omittedIds(built)).toEqual([]);
     expect(built.loadedInstructions.map((loaded) => loaded.path)).toContain(NESTED);
-    expect(counted.known).toBe(systemTokens);
     expect(sharedItems(reported.first.input, built.input)).toBe(1);
-    expect(capacityFor(sized, counted.underAt)).toBeLessThan(frozenC);
+    expect(capacityFor(sized, counted.underAt)).toBe(ownC);
+    expect(ownC).toBe(inputCeilingFor(sized));
+    expect(counted.known).toBe(0);
     expect(tokensOfItems(built.input)).toBe(built.inputTokens);
     expect(boundOf(counted)).toBeLessThanOrEqual(I0);
   });
 
-  it('a 500-character arrival fits at level 0 with no eviction, but j still falls to slot 1 and C falls with it', async () => {
+  it('a 500-character arrival fits at level 0 with no eviction, j falls, and C is the C of its own input', async () => {
     const { files, input } = nestedBuild(500);
     const reported = await reportedMeter('cachePrefix', files);
-    const frozenC = (await measurePinned(input, reported.ports)).ceiling;
+    const ownC = (await measurePinned(input, reported.ports)).ceiling;
 
     const built = await buildContext(input, reported.ports);
     const counted = lastSent(reported, built);
 
     expect(built.evictions).toEqual([]);
-    expect(counted.known).toBe(systemTokens);
+    expect(counted.known).toBe(0);
     expect(sharedItems(reported.first.input, built.input)).toBe(1);
-    expect(capacityFor(sized, counted.underAt)).toBeLessThan(frozenC);
+    expect(capacityFor(sized, counted.underAt)).toBe(ownC);
   });
 
   it('a 40000-character arrival is refused with instructions_dropped and then j does not move', async () => {
@@ -180,25 +164,24 @@ describe('person item 8, Q4: a nested AGENTS.md discovered inside a build under 
 });
 
 describe('person item 8, Q4: a memory too big for its budget, default layout', () => {
-  it('lands the "1 more saved note is not shown" framing at slot 1 and moves j, with C falling and no eviction', async () => {
+  it('lands the "1 more saved note is not shown" framing at slot 1 and moves j, with C the C of its own input and no eviction', async () => {
     const reported = await reportedMeter('default');
     const input = inputWith('default', second, {}, [memoryOf('m'.repeat(40000))]);
-    const frozenC = (await measurePinned(input, reported.ports)).ceiling;
+    const ownC = (await measurePinned(input, reported.ports)).ceiling;
 
     reported.sent.length = 0;
     const built = await buildContext(input, reported.ports);
     const counted = lastSent(reported, built);
     const slotOne = built.input[1];
 
-    expect(frozenC).toBeGreaterThan(inputCeilingFor(sized));
     expect(built.loadedMemoryIds).toEqual([]);
     expect(noticeCodes(built)).toEqual(['memories_dropped']);
     expect(slotOne).toMatchObject({ type: 'message', role: 'user' });
     expect(JSON.stringify(slotOne)).toContain('1 more saved note is not shown');
     expect(JSON.stringify(slotOne)).not.toContain('<memory ');
-    expect(counted.known).toBe(systemTokens);
+    expect(counted.known).toBe(0);
     expect(sharedItems(reported.first.input, built.input)).toBe(1);
-    expect(capacityFor(sized, counted.underAt)).toBeLessThan(frozenC);
+    expect(capacityFor(sized, counted.underAt)).toBe(ownC);
     expect(built.evictions).toEqual([]);
   });
 });
