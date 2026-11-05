@@ -132,7 +132,7 @@ describe('failed responses keep the original error type', () => {
     expectErrorBody(response.body, { type: 'too_many_requests', code: 'stream_interrupted' });
   });
 
-  it('maps an unclassified interruption to 502 model_error', async () => {
+  it('classifies an unclassified failure before any output with the adapter classifier, not as an interruption', async () => {
     const base = createScriptedAdapter({ calls: [] });
     const primary = {
       ...base,
@@ -144,7 +144,8 @@ describe('failed responses keep the original error type', () => {
     const { client } = await startGateway({ adapters: { primary } });
     const response = await readJson(await postJson(client, '/v1/responses', request));
     expect(response.status).toBe(502);
-    expectErrorBody(response.body, { type: 'model_error', code: 'stream_interrupted' });
+    expectErrorBody(response.body, { type: 'model_error', code: 'adapter_error' });
+    expect(response.body.error.message).toContain('parser blew up');
   });
 
   it('keeps server_error for a 5xx interruption', async () => {

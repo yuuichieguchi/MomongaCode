@@ -1,4 +1,4 @@
-import { isRecord } from '@momonga/foundation';
+import { checkJsonDepth, isRecord } from '@momonga/foundation';
 import { SchemaValidatorFailure, validateUntrusted } from '@momonga/foundation';
 import { sanitizeSchema } from './schema-sanitizer.ts';
 import { capText, sanitizeServerText } from './text.ts';
@@ -65,6 +65,7 @@ const parseEntry = (key: string, entry: unknown): ElicitationRequest => {
 };
 
 export const parseInputRequests = (inputRequests: unknown): ElicitationRequest[] => {
+  checkJsonDepth(inputRequests);
   if (!isRecord(inputRequests)) throw new McpInputProtocolError('inputRequests is not an object');
   return Object.entries(inputRequests).map(([key, entry]) => parseEntry(key, entry));
 };

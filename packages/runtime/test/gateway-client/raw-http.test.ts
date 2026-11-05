@@ -256,6 +256,53 @@ describe('gateway client error mapping', () => {
     expectGatewayError(error, { status: 429, type: 'too_many_requests', code: 'rate_limited', message: 'slow down', retryAfterMs: 3000 });
   });
 
+  it('carries the gateway deferral of a 429 on the error', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond((_request, response) => {
+      response.writeHead(429, { 'content-type': 'application/json', 'retry-after': '100', 'momonga-deferred': 'true' });
+      response.end(JSON.stringify({ error: { message: 'wait longer than the budget', type: 'too_many_requests', param: null, code: 'rate_limited' } }));
+    });
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock);
+
+    const error = await settle(collect(client.stream(streamBody(), callOptions(clock))));
+
+    expectGatewayError(error, { status: 429, type: 'too_many_requests', code: 'rate_limited', retryAfterMs: 100_000 });
+    expect((error as { deferred?: boolean }).deferred).toBe(true);
+  });
+
+  it('leaves a 429 without the deferral header undeferred', async () => {
+    const fake = await startRawHttpFake();
+    fake.respond((_request, response) => {
+      response.writeHead(429, { 'content-type': 'application/json', 'retry-after': '20' });
+      response.end(JSON.stringify({ error: { message: 'slow down', type: 'too_many_requests', param: null, code: 'rate_limited' } }));
+    });
+    const clock = fakeClock();
+    const client = makeClient(fake.socketPath, clock);
+
+    const error = await settle(collect(client.stream(streamBody(), callOptions(clock))));
+
+    expect((error as { deferred?: boolean }).deferred).toBeUndefined();
+  });
+
+  it('carries the deferral of an error event on the error', async () => {
+    const fake = await startRawHttpFake();
+    const errorEvent = {
+      type: 'error',
+      sequence_number: 0,
+      status: 429,
+      retry_after_ms: 100_000,
+      deferred: true,
+      error: { type: 'too_many_requests', code: 'rate_limited', message: 'wait longer than the budget', param: null },
+    };
+    fake.respond(sseReply([': open\n\n', sseFrame(errorEvent)]));
+    const client = makeClient(fake.socketPath, fakeClock());
+
+    const error = await settle(collect(client.stream(streamBody(), callOptions(fakeClock()))));
+
+    expect((error as { deferred?: boolean }).deferred).toBe(true);
+  });
+
   it('parses retry-after as an HTTP date relative to the clock and keeps param', async () => {
     const fake = await startRawHttpFake();
     fake.respond((_request, response) => {
@@ -505,8 +552,8 @@ describe('gateway client bounds', () => {
   });
 
   it.for([
-    { code: 'all_targets_unavailable', retryAfterMs: 30_000, expected: { kind: 'requeue', refund: false, retryAfterMs: 30_000, interrupted: false } },
-    { code: 'all_targets_unreachable', retryAfterMs: undefined, expected: { kind: 'fail', code: 'all_targets_unreachable' } },
+    { code: 'gateway_closed', retryAfterMs: 30_000, expected: { kind: 'requeue', refund: true, retryAfterMs: 30_000, interrupted: false } },
+    { code: 'provider_unavailable', retryAfterMs: undefined, expected: { kind: 'fail', code: 'provider_unavailable' } },
   ])('lets the worker requeue or fail a $code error event exactly as it does an HTTP reply', async ({ code, retryAfterMs, expected }) => {
     const fake = await startRawHttpFake();
     const errorEvent = {

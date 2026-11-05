@@ -11,7 +11,8 @@ import type {
   StreamEvent,
 } from '@momonga/protocol';
 import { DEFAULT_SCRIPTED_CAPABILITIES, responseResource } from '@momonga/testkit';
-import { ClientDisconnectedError, GatewayError, missingApiKeyError, runCancelledError } from '../src/core/errors.ts';
+import { ADAPTER_NEUTRAL_ERROR_CODES } from '@momonga/protocol';
+import { ClientDisconnectedError, GatewayError, SKIPPABLE_CODES, missingApiKeyError, runCancelledError } from '../src/core/errors.ts';
 import { GuardedAdapterError, guardAdapter } from '../src/core/guarded-adapter.ts';
 import { createRedactor } from '../src/core/redaction.ts';
 import type { TargetRuntime } from '../src/core/router.ts';
@@ -156,6 +157,18 @@ describe('guardAdapter this binding', () => {
   });
 });
 
+describe('every neutral and skip code survives the guard unchanged (W2)', () => {
+  it.for([...ADAPTER_NEUTRAL_ERROR_CODES, ...SKIPPABLE_CODES])('keeps %s, so the redacted code classifies as the upstream code does', (code) => {
+    const guard = guardAdapter(baseAdapter({ classify: () => classifiedOf('plain', code) }), redactor, REASONING_ORIGIN_CODEC);
+    expect(guard.classify(new Error('x')).error.code).toBe(code);
+  });
+
+  it('covers a non-empty set of codes', () => {
+    expect(ADAPTER_NEUTRAL_ERROR_CODES.length).toBeGreaterThan(0);
+    expect(SKIPPABLE_CODES.size).toBeGreaterThan(0);
+  });
+});
+
 describe('guardAdapter classify (G1)', () => {
   it('redacts the message and keeps type, code, param, retryable and retryAfterMs', () => {
     const guard = guardAdapter(baseAdapter({ classify: () => classifiedOf(ECHO, 'invalid_api_key', 'input[0]') }), redactor, REASONING_ORIGIN_CODEC);
@@ -172,17 +185,17 @@ describe('guardAdapter classify (G1)', () => {
   });
 
   it.for([
-    { label: 'a known code', code: 'context_length_exceeded', expected: 'context_length_exceeded' },
-    { label: 'a code of 64 characters', code: 'c'.repeat(64), expected: 'c'.repeat(64) },
-    { label: 'a code with dots, colons and dashes', code: 'upstream.v1:bad-request', expected: 'upstream.v1:bad-request' },
-    { label: 'a code of 65 characters', code: 'c'.repeat(65), expected: null },
-    { label: 'a code of 70 characters', code: 'c'.repeat(70), expected: null },
-    { label: 'a code with a space', code: 'bad code', expected: null },
-    { label: 'an empty code', code: '', expected: null },
-    { label: 'a code with a slash', code: 'a/b', expected: null },
-    { label: 'a null code', code: null, expected: null },
-    { label: 'a code equal to the configured key', code: TEST_API_KEY, expected: null },
-  ])('maps $label to the code shape check result', ({ code, expected }) => {
+    { label: 'a known code is kept', code: 'context_length_exceeded', expected: 'context_length_exceeded' },
+    { label: 'a code of 64 characters is kept', code: 'c'.repeat(64), expected: 'c'.repeat(64) },
+    { label: 'a code with dots, colons and dashes is kept', code: 'upstream.v1:bad-request', expected: 'upstream.v1:bad-request' },
+    { label: 'a code of 65 characters fails the shape check and becomes upstream_error', code: 'c'.repeat(65), expected: 'upstream_error' },
+    { label: 'a code of 70 characters fails the shape check and becomes upstream_error', code: 'c'.repeat(70), expected: 'upstream_error' },
+    { label: 'a code with a space fails the shape check and becomes upstream_error', code: 'bad code', expected: 'upstream_error' },
+    { label: 'an empty code fails the shape check and becomes upstream_error', code: '', expected: 'upstream_error' },
+    { label: 'a code with a slash fails the shape check and becomes upstream_error', code: 'a/b', expected: 'upstream_error' },
+    { label: 'a missing upstream code becomes upstream_error', code: null, expected: 'upstream_error' },
+    { label: 'a code equal to the configured key is scrubbed and becomes upstream_error', code: TEST_API_KEY, expected: 'upstream_error' },
+  ])('classify never leaves a failure without a code: $label', ({ code, expected }) => {
     const guard = guardAdapter(baseAdapter({ classify: () => classifiedOf('plain', code) }), redactor, REASONING_ORIGIN_CODEC);
     expect(guard.classify(new Error('x')).error.code).toBe(expected);
   });
@@ -233,13 +246,13 @@ const collect = async (iterable: AsyncIterable<StreamEvent>): Promise<StreamEven
 };
 
 describe('guardAdapter create events (G2)', () => {
-  it('rebuilds a response.failed error with a redacted message, shape-checked code and param, and no extra fields', async () => {
+  it('rebuilds a response.failed error with a redacted message, a scrubbed code replaced by upstream_error, a shape-checked param, and no extra fields', async () => {
     const inner = baseAdapter({
       create: () => eventsOf([failedEvent({ code: 'bad code', type: 'server_error', message: ECHO, extra: TEST_API_KEY, param: 'p'.repeat(200) })]),
     });
     const [event] = await collect(guardAdapter(inner, redactor, REASONING_ORIGIN_CODEC).create(REQUEST, ctx()));
     const error = (event as { response: { error: unknown } }).response.error;
-    expect(error).toEqual({ code: null, type: 'server_error', message: REDACTED_ECHO, param: null });
+    expect(error).toEqual({ code: 'upstream_error', type: 'server_error', message: REDACTED_ECHO, param: null });
   });
 
   it('keeps a valid response.failed code and param', async () => {
@@ -255,7 +268,7 @@ describe('guardAdapter create events (G2)', () => {
     });
   });
 
-  it('redacts an error event message and shape-checks its code and param', async () => {
+  it('redacts an error event message, replaces a scrubbed code by upstream_error and shape-checks its param', async () => {
     const inner = baseAdapter({
       create: () =>
         eventsOf([
@@ -267,10 +280,10 @@ describe('guardAdapter create events (G2)', () => {
         ]),
     });
     const [event] = await collect(guardAdapter(inner, redactor, REASONING_ORIGIN_CODEC).create(REQUEST, ctx()));
-    expect(event).toEqual({ type: 'error', sequence_number: 3, error: { message: `boom ${REDACTED}`, type: 'server_error', code: null, param: null } });
+    expect(event).toEqual({ type: 'error', sequence_number: 3, error: { message: `boom ${REDACTED}`, type: 'server_error', code: 'upstream_error', param: null } });
   });
 
-  it('nulls a response.failed code and an error event code and param equal to the configured key', async () => {
+  it('replaces a response.failed code and an error event code equal to the configured key by upstream_error, and nulls the param', async () => {
     const inner = baseAdapter({
       create: () =>
         eventsOf([
@@ -279,8 +292,8 @@ describe('guardAdapter create events (G2)', () => {
         ]),
     });
     const [errorEvent, failed] = await collect(guardAdapter(inner, redactor, REASONING_ORIGIN_CODEC).create(REQUEST, ctx()));
-    expect((errorEvent as { error: unknown }).error).toEqual({ message: 'hiccup', type: 'server_error', code: null, param: null });
-    expect((failed as { response: { error: unknown } }).response.error).toEqual({ code: null, type: 'server_error', message: 'failed', param: null });
+    expect((errorEvent as { error: unknown }).error).toEqual({ message: 'hiccup', type: 'server_error', code: 'upstream_error', param: null });
+    expect((failed as { response: { error: unknown } }).response.error).toEqual({ code: 'upstream_error', type: 'server_error', message: 'failed', param: null });
   });
 
   it('passes other events through unchanged', async () => {
@@ -407,19 +420,19 @@ describe('guardAdapter thrown errors (G3)', () => {
     expect(error.body).toEqual({ type: 'invalid_request', code: 'invalid_body', param: null, message: 'bad body' });
   });
 
-  it('nulls a GatewayError code and param equal to the configured key', async () => {
+  it('replaces a GatewayError code equal to the configured key by upstream_error and nulls the param', async () => {
     const original = new GatewayError({ status: 400, type: 'invalid_request', code: TEST_API_KEY, param: TEST_API_KEY, message: 'bad body' });
     const error = (await rejectionOf(() => guardAdapter(throwing(original), redactor, REASONING_ORIGIN_CODEC).capabilities(TARGET))) as GatewayError;
     expect(error).toBeInstanceOf(GatewayError);
     expect(error.status).toBe(400);
-    expect(error.body).toEqual({ type: 'invalid_request', code: null, param: null, message: 'bad body' });
+    expect(error.body).toEqual({ type: 'invalid_request', code: 'upstream_error', param: null, message: 'bad body' });
   });
 
-  it('nulls a GatewayError code that fails the shape check', async () => {
+  it('replaces a GatewayError code that fails the shape check by upstream_error', async () => {
     const original = new GatewayError({ status: 400, type: 'invalid_request', code: 'bad code', param: null, message: 'bad body' });
     const error = (await rejectionOf(() => guardAdapter(throwing(original), redactor, REASONING_ORIGIN_CODEC).capabilities(TARGET))) as GatewayError;
     expect(error).toBeInstanceOf(GatewayError);
-    expect(error.body.code).toBeNull();
+    expect(error.body.code).toBe('upstream_error');
   });
 
   it('rethrows a ClientDisconnectedError unchanged', async () => {

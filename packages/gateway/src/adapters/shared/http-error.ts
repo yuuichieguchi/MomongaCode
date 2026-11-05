@@ -1,7 +1,8 @@
-import { parseRetryAfter, isRecord } from '@momonga/foundation';
+import { isRecord, parseRetryAfter } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { readTextLimited } from './body-reading.ts';
 import { UpstreamHttpError } from './failures.ts';
+import { usableUpstreamJson } from './upstream-json.ts';
 import type { CompletionResponse } from './http-client.ts';
 import { MAX_ERROR_BODY_BYTES } from './limits.ts';
 import type { ErrorVocabulary } from './vocabulary.ts';
@@ -18,12 +19,7 @@ export const httpErrorOf = async (
   vocabulary: ErrorVocabulary,
 ): Promise<UpstreamHttpError> => {
   const { text } = await readTextLimited(response.body, MAX_ERROR_BODY_BYTES);
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (error) {
-    if (!(error instanceof SyntaxError)) throw error;
-  }
+  const parsed = usableUpstreamJson(text);
   const detail = readDetail(parsed);
   const kind = vocabulary.kindOf(response.status, parsed);
   const message = detail.message ?? text;
@@ -32,12 +28,20 @@ export const httpErrorOf = async (
     response.status,
     detail.code ?? null,
     message === '' ? `HTTP ${response.status}` : message,
-    parseRetryAfter(response.headers['retry-after'], clock.now()),
+    retryAfterOf(response, clock),
     kind === 'guardrail',
     shouldRetry === 'false' ? false : undefined,
     kind === 'context_overflow',
     kind === 'unsupported',
   );
+};
+
+export const retryAfterOf = (response: { headers: Record<string, string> }, clock: Clock): number | undefined =>
+  parseRetryAfter(response.headers['retry-after'], clock.now());
+
+export const retryAfterHint = (response: { headers: Record<string, string> }, clock: Clock): { retryAfterMs?: number } => {
+  const retryAfterMs = retryAfterOf(response, clock);
+  return retryAfterMs === undefined ? {} : { retryAfterMs };
 };
 
 export const nestedErrorDetail: ErrorDetailReader = (parsed) => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createScriptedAdapter, textResponseEvents, waitFor } from '@momonga/testkit';
+import { driveTimers } from './retry-support.ts';
 import { expectErrorBody, getJson, outputText, postJson, readJson, startGateway, userInput } from './gateway-helpers.ts';
 
 const ok = (model: string, text = 'ok') => ({ events: textResponseEvents({ model, chunks: [text] }) });
@@ -65,30 +66,29 @@ describe('retry', () => {
     expect(timers.pending()).toEqual([]);
   });
 
-  it('retries 5xx up to retry.maxAttempts with capped exponential backoff, then returns 502 server_error', async () => {
+  it('retries a 5xx on the only target past retry.maxAttempts with equal-jitter waits until the next wait would pass retry.totalWaitMs', async () => {
     const primary = createScriptedAdapter({
       calls: [
         { failure: { status: 500, message: 'e1' } },
         { failure: { status: 502, message: 'e2' } },
         { failure: { status: 503, message: 'e3' } },
+        { failure: { status: 500, message: 'e4' } },
+        ok('scripted-primary', 'never reached'),
       ],
     });
-    const baseMs = 100;
-    const maxMs = 10_000;
-    const { client, timers } = await startGateway({ adapters: { primary }, config: { retry: { maxAttempts: 3, baseMs, maxMs } } });
+    const harness = await startGateway({
+      adapters: { primary },
+      config: { retry: { maxAttempts: 3, baseMs: 100, maxMs: 10_000, totalWaitMs: 1000 } },
+    });
+    const { client, timers } = harness;
     const pending = postJson(client, '/v1/responses', request);
-    for (let retry = 1; retry <= 2; retry += 1) {
-      await waitFor(() => primary.calls.length === retry && timers.pending().length > 0, { description: `backoff ${retry}` });
-      const delay = timers.pending().at(-1)?.delayMs ?? -1;
-      expect(delay).toBeGreaterThanOrEqual(0);
-      expect(delay).toBeLessThanOrEqual(Math.min(maxMs, baseMs * 2 ** retry));
-      timers.advance(delay);
-    }
+    const waits = await driveTimers(harness, [pending]);
     const response = await readJson(await pending);
+    expect(waits).toEqual([75, 150, 300]);
     expect(response.status).toBe(502);
     expectErrorBody(response.body, { type: 'server_error', code: 'upstream_error' });
-    expect(response.body.error.message).toContain('e3');
-    expect(primary.calls.map((call: { attempt: number }) => call.attempt)).toEqual([1, 2, 3]);
+    expect(response.body.error.message).toContain('e4');
+    expect(primary.calls.map((call: { attempt: number }) => call.attempt)).toEqual([1, 2, 3, 4]);
     expect(timers.pending()).toEqual([]);
   });
 
@@ -146,22 +146,52 @@ describe('circuit breaker', () => {
     expect(health.targets.b).toMatchObject({ breaker: 'closed', ok: true });
   });
 
-  it('returns 503 server_error all_targets_unavailable when every breaker of the alias is open', async () => {
-    const a = createScriptedAdapter({ calls: [{ failure: { status: 503, message: 'a down' } }] });
+  it('ignores an open breaker when no later candidate exists and sends to the target anyway', async () => {
+    const a = createScriptedAdapter({ calls: [{ failure: { status: 503, message: 'a down' } }, ok('model-a', 'a answers')] });
     const { client } = await startGateway({
       adapters: { a },
       config: {
         aliases: { fast: ['a'] },
         targets: { a: { model: 'model-a' } },
-        retry: { maxAttempts: 1 },
+        retry: { maxAttempts: 1, totalWaitMs: 1 },
         breaker: { failureThreshold: 1, openMs: 10_000 },
       },
     });
-    await readJson(await postJson(client, '/v1/responses', request));
+    const failed = await readJson(await postJson(client, '/v1/responses', request));
+    expect(failed.status).toBe(502);
+    expect((await getJson(client, '/v1/momonga/health')).body.targets.a).toMatchObject({ breaker: 'open' });
+
     const response = await readJson(await postJson(client, '/v1/responses', request));
-    expect(response.status).toBe(503);
-    expectErrorBody(response.body, { type: 'server_error', code: 'all_targets_unavailable' });
-    expect(a.calls).toHaveLength(1);
+
+    expect(response.status).toBe(200);
+    expect(outputText(response.body)).toBe('a answers');
+    expect(a.calls).toHaveLength(2);
+  });
+
+  it('ignores an open breaker when the later candidate cannot pass either', async () => {
+    const a = createScriptedAdapter({ calls: [{ failure: { status: 503, message: 'a down' } }, ok('model-a', 'a answers')] });
+    const b = createScriptedAdapter({ calls: [{ failure: { status: 503, message: 'b down' } }] });
+    const { client } = await startGateway({
+      adapters: { a, b },
+      config: {
+        aliases: { fast: ['a', 'b'] },
+        targets: { a: { model: 'model-a' }, b: { model: 'model-b' } },
+        retry: { maxAttempts: 1, totalWaitMs: 1 },
+        breaker: { failureThreshold: 1, openMs: 10_000 },
+      },
+    });
+    const failed = await readJson(await postJson(client, '/v1/responses', request));
+    expect(failed.status).toBe(502);
+    const health = (await getJson(client, '/v1/momonga/health')).body;
+    expect(health.targets.a).toMatchObject({ breaker: 'open' });
+    expect(health.targets.b).toMatchObject({ breaker: 'open' });
+
+    const response = await readJson(await postJson(client, '/v1/responses', request));
+
+    expect(response.status).toBe(200);
+    expect(outputText(response.body)).toBe('a answers');
+    expect(response.body.momonga.fallbackFrom ?? []).toEqual([]);
+    expect(b.calls).toHaveLength(1);
   });
 });
 

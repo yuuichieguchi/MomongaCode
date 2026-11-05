@@ -202,9 +202,16 @@ const EXTRA_TOOLS: Record<string, Tool> = {
   a_b: { name: 'a_b', description: 'underscore', inputSchema: objectSchema({}, []) },
 };
 
+const NESTED_NOT_TOOL = /^deep_not_(\d+)$/;
+
+const nestedNotTool = (name: string): Tool | undefined => {
+  const depth = NESTED_NOT_TOOL.exec(name)?.[1];
+  return depth === undefined ? undefined : { name, description: `A ${depth}-level not chain`, inputSchema: nestedNotSchema(Number(depth)) as Tool['inputSchema'] };
+};
+
 const extraTools = (): Tool[] =>
   requestedExtraTools(process.env[FIXTURE_EXTRA_TOOLS_ENV]).flatMap((name) => {
-    const tool = EXTRA_TOOLS[name];
+    const tool = EXTRA_TOOLS[name] ?? nestedNotTool(name);
     return tool === undefined ? [] : [tool];
   });
 

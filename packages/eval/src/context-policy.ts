@@ -1,7 +1,7 @@
 import { defaultContextSettings, defaultMemorySettings, defaultToolsSettings } from '@momonga/config';
 import { OUTPUT_FORMATTERS } from '@momonga/protocol';
 import type { OutputFormatterName } from '@momonga/protocol';
-import { canonicalJson, defineProductSchema } from '@momonga/foundation';
+import { canonicalJson, defineProductSchema, parseOutsideJson } from '@momonga/foundation';
 import type { ProductValidator, UntrustedError } from '@momonga/foundation';
 import { EvalError } from './runner.ts';
 
@@ -62,7 +62,7 @@ export const normalisePolicyOverlay = (overlay: PolicyOverlay): PolicyOverlay =>
 export const parsePolicyOverlay = (text: string, source: string): PolicyOverlay => {
   let value: unknown;
   try {
-    value = JSON.parse(text);
+    value = parseOutsideJson(text);
   } catch (error) {
     throw new EvalError(`${source}: not valid JSON: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }

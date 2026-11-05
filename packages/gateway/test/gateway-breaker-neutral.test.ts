@@ -8,7 +8,7 @@ describe('breaker accounting for non-retryable rejections', () => {
     const primary = createScriptedAdapter({ calls: statuses.map((status) => ({ failure: { status, message: `s${status}` } })) });
     const { client } = await startGateway({
       adapters: { primary },
-      config: { retry: { maxAttempts: 1 }, breaker: { failureThreshold: 3, openMs: 30_000 } },
+      config: { retry: { maxAttempts: 1, totalWaitMs: 1 }, breaker: { failureThreshold: 3, openMs: 30_000 } },
     });
     for (let index = 0; index < statuses.length; index += 1) {
       const response = await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') });

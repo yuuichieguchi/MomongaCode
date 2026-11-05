@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RunEventPayload, StreamEvent } from '@momonga/protocol';
+import { GatewayRequestError } from '@momonga/runtime';
 import type { GatewayPort } from '@momonga/runtime';
 import { foldRunState, initialRunState } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
@@ -54,7 +55,7 @@ describe('partial assistant text on an interrupted stream', () => {
     const env = await makeEnv();
     const run = env.enqueue('Talk');
     const gateway = partialGateway(env, ['Hello ', 'wor', 'ld'], async () => {
-      throw new Error('gateway connection reset');
+      throw new GatewayRequestError({ status: 0, type: 'transport', code: 'stream_interrupted', message: 'the gateway stream was interrupted: other side closed' });
     });
 
     await env.runOnce(env.worker('worker-1', { gateway }));
