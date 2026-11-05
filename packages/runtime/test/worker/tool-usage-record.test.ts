@@ -144,8 +144,7 @@ describe('the tool usage window reads one offered-names record per run (person i
     const window = toolUsageWindowOf(store, env.project);
 
     expect(window).toHaveLength(1);
-    expect(window[0]?.offered).toContain('Counter');
-    expect(window[0]?.offered).toEqual([...new Set([...namesSentTo(env, root.id), ...namesSentTo(env, child.id)])].sort());
+    expect(window[0]).toEqual({ offered: ['Agent', 'Counter', 'Echo'], called: ['Agent'] });
     expect(reads.bodyReads).toEqual([]);
   });
 
