@@ -83,7 +83,7 @@ const compileIsolated = (schema: Record<string, unknown>, compilation: Compilati
   const meta = metaOf(schema, compilation.remotes);
   assertSchemaValid(schema, meta, compilation);
   const unresolved = unresolvableReference(schema, meta.dialect, compilation.remotes);
-  if (unresolved !== undefined) throw new Error(`$ref "${unresolved}" cannot be resolved`);
+  if (unresolved !== undefined) throw new Error(`reference "${unresolved}" cannot be resolved`);
   const root = structuredClone(schema);
   const validate = compilation.engine.compile(root, compilation.registry);
   const rootUri = absoluteIdOf(root) ?? SYNTHETIC_ROOT_URI;

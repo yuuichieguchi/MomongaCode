@@ -1,154 +1,255 @@
+import { dialectOfUri } from './untrusted-dialect.ts';
 import type { SchemaDialect } from './untrusted-dialect.ts';
 
-type Resource = { readonly node: unknown; readonly anchors: Set<string> };
-type Reference = { readonly ref: string; readonly base: string };
+type Json = Record<string, unknown>;
 
-const SYNTHETIC_ROOT = 'http://momonga.invalid/root';
+type State = {
+  readonly resources: Map<string, unknown>;
+  readonly anchors: Map<string, Map<string, unknown>>;
+  readonly nodeBase: Map<unknown, string>;
+  rootBase: string;
+};
 
-const SCHEMA_KEYWORDS = [
-  'additionalProperties',
-  'additionalItems',
-  'items',
-  'contains',
-  'propertyNames',
-  'not',
-  'if',
-  'then',
-  'else',
-  'unevaluatedItems',
-  'unevaluatedProperties',
-  'contentSchema',
-] as const;
-const SCHEMA_LIST_KEYWORDS = ['allOf', 'anyOf', 'oneOf', 'prefixItems', 'items'] as const;
-const SCHEMA_MAP_KEYWORDS = ['properties', 'patternProperties', 'dependentSchemas', 'dependencies', '$defs', 'definitions'] as const;
+const ENGINE_ROOT_BASE = 'ata://root';
 
-const BUILT_IN_METASCHEMAS: ReadonlySet<string> = new Set([
-  'https://json-schema.org/draft/2020-12/schema',
-  'https://json-schema.org/draft/2020-12/meta/core',
-  'https://json-schema.org/draft/2020-12/meta/applicator',
-  'https://json-schema.org/draft/2020-12/meta/validation',
-  'https://json-schema.org/draft/2020-12/meta/meta-data',
-  'https://json-schema.org/draft/2020-12/meta/format-annotation',
-  'https://json-schema.org/draft/2020-12/meta/content',
-  'https://json-schema.org/draft/2020-12/meta/unevaluated',
-  'http://json-schema.org/draft-07/schema',
-]);
+const SINGLE_KEYWORDS = ['additionalProperties', 'contains', 'propertyNames', 'if', 'then', 'else', 'not', 'items', 'unevaluatedItems', 'unevaluatedProperties'] as const;
+const MAP_KEYWORDS = ['$defs', 'definitions', 'properties', 'patternProperties', 'dependentSchemas'] as const;
+const LIST_KEYWORDS = ['allOf', 'anyOf', 'oneOf', 'prefixItems'] as const;
+const REFERENCE_KEYWORDS = ['$ref', '$dynamicRef'] as const;
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+const DRAFT_07_REF_SIBLINGS: ReadonlySet<string> = new Set(['$ref', '$defs', 'definitions', '$schema', '$comment', 'title', 'description', 'examples', 'default', 'readOnly', 'writeOnly']);
+const DRAFT_07_MAP_SUBSCHEMAS = ['properties', 'patternProperties', '$defs', 'definitions', 'dependentSchemas'] as const;
+const DRAFT_07_LIST_SUBSCHEMAS = ['allOf', 'anyOf', 'oneOf', 'prefixItems'] as const;
+const DRAFT_07_SINGLE_SUBSCHEMAS = ['items', 'contains', 'not', 'if', 'then', 'else', 'additionalProperties', 'propertyNames'] as const;
+const PLAIN_NAME_ID = /^#[A-Za-z][A-Za-z0-9_.:-]*$/;
 
-const resolveUri = (reference: string, base: string): string | undefined => {
+const BUILT_IN_METASCHEMAS: ReadonlySet<string> = new Set(
+  [
+    'https://json-schema.org/draft/2020-12/schema',
+    'https://json-schema.org/draft/2020-12/meta/core',
+    'https://json-schema.org/draft/2020-12/meta/applicator',
+    'https://json-schema.org/draft/2020-12/meta/validation',
+    'https://json-schema.org/draft/2020-12/meta/meta-data',
+    'https://json-schema.org/draft/2020-12/meta/format-annotation',
+    'https://json-schema.org/draft/2020-12/meta/content',
+    'https://json-schema.org/draft/2020-12/meta/unevaluated',
+    'http://json-schema.org/draft-07/schema',
+    'http://json-schema.org/draft-04/schema',
+    'http://json-schema.org/draft-06/schema',
+    'https://json-schema.org/draft/2019-09/schema',
+    'https://json-schema.org/draft/2019-09/meta/core',
+    'https://json-schema.org/draft/2019-09/meta/applicator',
+    'https://json-schema.org/draft/2019-09/meta/validation',
+    'https://json-schema.org/draft/2019-09/meta/meta-data',
+    'https://json-schema.org/draft/2019-09/meta/format',
+    'https://json-schema.org/draft/2019-09/meta/content',
+  ].flatMap((id) => [id, id.replace(/^https:/, 'http:'), id.replace(/^http:/, 'https:')]),
+);
+
+const isObject = (value: unknown): value is Json => typeof value === 'object' && value !== null;
+
+const isRecord = (value: unknown): value is Json => isObject(value) && !Array.isArray(value);
+
+const resolveUri = (base: string, reference: string): string => {
   try {
-    return new URL(reference, base).href;
+    return new URL(reference, base === '' ? ENGINE_ROOT_BASE : base).href;
   } catch {
-    return undefined;
+    return reference;
   }
 };
 
-const splitFragment = (uri: string): { document: string; fragment: string } => {
+const splitFragment = (uri: string): [string, string] => {
   const hash = uri.indexOf('#');
-  return hash === -1 ? { document: uri, fragment: '' } : { document: uri.slice(0, hash), fragment: uri.slice(hash + 1) };
+  return hash < 0 ? [uri, ''] : [uri.slice(0, hash), decodeURIComponent(uri.slice(hash + 1))];
 };
 
-const pointerTarget = (root: unknown, pointer: string): { found: boolean } => {
-  let node = root;
-  for (const raw of pointer.split('/').slice(1)) {
-    const token = raw.replaceAll('~1', '/').replaceAll('~0', '~');
-    if (Array.isArray(node)) {
-      if (!/^(0|[1-9]\d*)$/.test(token) || Number(token) >= node.length) return { found: false };
-      node = node[Number(token)];
-    } else if (isRecord(node)) {
-      if (!Object.hasOwn(node, token)) return { found: false };
-      node = node[token];
+const normalizeDraft07 = (node: unknown): void => {
+  if (!isObject(node)) return;
+  const schema = node as Json;
+  if (typeof schema['$ref'] === 'string') {
+    for (const key of Object.keys(schema)) if (!DRAFT_07_REF_SIBLINGS.has(key)) delete schema[key];
+  }
+  const id = schema['$id'];
+  if (typeof id === 'string' && PLAIN_NAME_ID.test(id)) {
+    if (schema['$anchor'] === undefined) schema['$anchor'] = id.slice(1);
+    delete schema['$id'];
+  }
+  if (schema['definitions'] && !schema['$defs']) {
+    schema['$defs'] = schema['definitions'];
+    delete schema['definitions'];
+  }
+  const dependencies = schema['dependencies'];
+  if (dependencies && isRecord(dependencies)) {
+    for (const [key, value] of Object.entries(dependencies)) {
+      const target = Array.isArray(value) ? 'dependentRequired' : 'dependentSchemas';
+      if (!schema[target]) schema[target] = {};
+      Object.defineProperty(schema[target], key, { value, writable: true, enumerable: true, configurable: true });
+    }
+    delete schema['dependencies'];
+  }
+  if (Array.isArray(schema['items'])) {
+    schema['prefixItems'] = schema['items'];
+    if (schema['additionalItems'] !== undefined) {
+      schema['items'] = schema['additionalItems'];
+      delete schema['additionalItems'];
     } else {
-      return { found: false };
+      delete schema['items'];
     }
   }
-  return { found: true };
+  for (const keyword of DRAFT_07_MAP_SUBSCHEMAS) {
+    const map = schema[keyword];
+    if (isObject(map)) for (const key of Object.keys(map)) normalizeDraft07((map as Json)[key]);
+  }
+  for (const keyword of DRAFT_07_LIST_SUBSCHEMAS) {
+    const list = schema[keyword];
+    if (Array.isArray(list)) for (const entry of list) normalizeDraft07(entry);
+  }
+  for (const keyword of DRAFT_07_SINGLE_SUBSCHEMAS) normalizeDraft07(schema[keyword]);
 };
 
-const decodeFragment = (fragment: string): string | undefined => {
-  try {
-    return decodeURIComponent(fragment);
-  } catch {
-    return undefined;
+const normalized = (document: unknown, draft07: boolean): unknown => {
+  if (!draft07 || !isObject(document)) return document;
+  const copy = structuredClone(document);
+  normalizeDraft07(copy);
+  return copy;
+};
+
+const anchorMapOf = (maps: Map<string, Map<string, unknown>>, base: string): Map<string, unknown> => {
+  let map = maps.get(base);
+  if (map === undefined) {
+    map = new Map();
+    maps.set(base, map);
+  }
+  return map;
+};
+
+const indexResource = (node: unknown, base: string, state: State): void => {
+  if (!isObject(node)) return;
+  if (!state.resources.has(base)) state.resources.set(base, node);
+  walkSchema(node, base, state, true);
+};
+
+const walkSchema = (node: unknown, base: string, state: State, isResourceRoot: boolean): void => {
+  if (!isObject(node)) return;
+  const schema = node as Json;
+  if (state.nodeBase.has(node)) return;
+  state.nodeBase.set(node, base);
+  if (!isResourceRoot && typeof schema['$id'] === 'string') {
+    const embedded = splitFragment(resolveUri(base, schema['$id']))[0];
+    state.nodeBase.delete(node);
+    indexResource(node, embedded, state);
+    return;
+  }
+  if (typeof schema['$anchor'] === 'string') anchorMapOf(state.anchors, base).set(schema['$anchor'], node);
+  if (typeof schema['$dynamicAnchor'] === 'string') anchorMapOf(state.anchors, base).set(schema['$dynamicAnchor'], node);
+  for (const keyword of SINGLE_KEYWORDS) if (schema[keyword] !== undefined) walkSchema(schema[keyword], base, state, false);
+  for (const keyword of MAP_KEYWORDS) {
+    const map = schema[keyword];
+    if (isRecord(map)) for (const key of Object.keys(map)) walkSchema(map[key], base, state, false);
+  }
+  for (const keyword of LIST_KEYWORDS) {
+    const list = schema[keyword];
+    if (Array.isArray(list)) for (const entry of list) walkSchema(entry, base, state, false);
+  }
+  const dependencies = schema['propertyDependencies'];
+  if (isRecord(dependencies)) {
+    for (const choices of Object.values(dependencies)) {
+      if (isRecord(choices)) for (const entry of Object.values(choices)) walkSchema(entry, base, state, false);
+    }
   }
 };
 
-type Collected = { readonly resources: Map<string, Resource>; readonly references: Reference[] };
-
-const collect = (root: unknown, rootUri: string, dialect: SchemaDialect, into: Collected, recordReferences: boolean): void => {
-  const visit = (node: unknown, base: string, resource: Resource): void => {
-    if (!isRecord(node)) return;
-    const ref = node['$ref'];
-    const refSiblingsIgnored = dialect === 'draft-07' && typeof ref === 'string';
-    let currentBase = base;
-    let currentResource = resource;
-    const id = refSiblingsIgnored ? undefined : node['$id'];
-    if (typeof id === 'string') {
-      if (dialect === 'draft-07' && id.startsWith('#')) {
-        resource.anchors.add(id.slice(1));
-      } else {
-        const resolved = resolveUri(id, base);
-        if (resolved !== undefined) {
-          currentBase = splitFragment(resolved).document;
-          currentResource = { node, anchors: new Set() };
-          into.resources.set(currentBase, currentResource);
-        }
-      }
+const indexSchemas = (root: unknown, documents: ReadonlyMap<string, unknown> | undefined): State => {
+  const state: State = { resources: new Map(), anchors: new Map(), nodeBase: new Map(), rootBase: ENGINE_ROOT_BASE };
+  const rootId = isObject(root) ? (root as Json)['$id'] : undefined;
+  state.rootBase = typeof rootId === 'string' ? resolveUri(ENGINE_ROOT_BASE, splitFragment(rootId)[0]) : ENGINE_ROOT_BASE;
+  indexResource(root, state.rootBase, state);
+  if (documents !== undefined) {
+    for (const [id, document] of documents) {
+      const base = resolveUri(ENGINE_ROOT_BASE, splitFragment(id)[0]);
+      if (!state.resources.has(base)) indexResource(document, base, state);
+      if (!state.resources.has(id)) state.resources.set(id, document);
     }
-    if (dialect === '2020-12') {
-      for (const keyword of ['$anchor', '$dynamicAnchor'] as const) {
-        const anchor = node[keyword];
-        if (typeof anchor === 'string') currentResource.anchors.add(anchor);
-      }
-    }
-    if (typeof ref === 'string' && recordReferences) into.references.push({ ref, base: currentBase });
-    if (refSiblingsIgnored) return;
-    for (const keyword of SCHEMA_KEYWORDS) visit(node[keyword], currentBase, currentResource);
-    for (const keyword of SCHEMA_LIST_KEYWORDS) {
-      const list = node[keyword];
-      if (Array.isArray(list)) for (const entry of list) visit(entry, currentBase, currentResource);
-    }
-    for (const keyword of SCHEMA_MAP_KEYWORDS) {
-      const map = node[keyword];
-      if (isRecord(map)) for (const entry of Object.values(map)) visit(entry, currentBase, currentResource);
-    }
-  };
-  const rootResource: Resource = { node: root, anchors: new Set() };
-  into.resources.set(rootUri, rootResource);
-  visit(root, rootUri, rootResource);
+  }
+  return state;
 };
 
-const firstUnresolvable = (collected: Collected): string | undefined => {
-  for (const { ref, base } of collected.references) {
-    const absolute = resolveUri(ref, base);
-    if (absolute === undefined) return ref;
-    const { document, fragment } = splitFragment(absolute);
-    const resource = collected.resources.get(document);
-    if (resource === undefined) {
-      if (BUILT_IN_METASCHEMAS.has(document)) continue;
-      return ref;
+const walkPointer = (root: unknown, pointer: string): unknown => {
+  if (pointer === '' || pointer === '/') return root;
+  let node: unknown = root;
+  for (const raw of pointer.split('/').slice(1)) {
+    const part = raw.replace(/~1/g, '/').replace(/~0/g, '~');
+    if (!isObject(node)) return undefined;
+    if (Array.isArray(node)) {
+      node = node[Number(part)];
+    } else if (part in node) {
+      node = node[part];
+    } else if (part === 'definitions' && node['$defs']) {
+      node = node['$defs'];
+    } else if (part === '$defs' && node['definitions']) {
+      node = node['definitions'];
+    } else if (part === 'items' && Array.isArray(node['prefixItems'])) {
+      node = node['prefixItems'];
+    } else {
+      return undefined;
     }
-    if (fragment === '') continue;
-    const decoded = decodeFragment(fragment);
-    if (decoded === undefined) return ref;
-    if (decoded.startsWith('/')) {
-      if (!pointerTarget(resource.node, decoded).found) return ref;
-    } else if (!resource.anchors.has(decoded)) {
-      return ref;
+  }
+  return node;
+};
+
+const resolves = (reference: string, fromBase: string, state: State): boolean => {
+  const [uri, fragment] = splitFragment(resolveUri(fromBase, reference));
+  let resource = state.resources.get(uri);
+  let resourceBase = uri;
+  if (resource === undefined && (uri === ENGINE_ROOT_BASE || uri === '')) {
+    resource = state.resources.get(state.rootBase);
+    resourceBase = state.rootBase;
+  }
+  if (resource === undefined) {
+    const [rawUri, rawFragment] = splitFragment(reference);
+    if (state.resources.has(rawUri)) {
+      resource = state.resources.get(rawUri);
+      resourceBase = rawUri;
+      if (rawFragment === '') return resource !== undefined;
+      if (rawFragment.startsWith('/')) return walkPointer(resource, rawFragment) !== undefined;
+      return state.anchors.get(resourceBase)?.get(rawFragment) !== undefined;
+    }
+    return BUILT_IN_METASCHEMAS.has(uri);
+  }
+  if (fragment === '') return true;
+  if (fragment.startsWith('/')) return walkPointer(resource, fragment) !== undefined;
+  return state.anchors.get(resourceBase)?.get(fragment) !== undefined;
+};
+
+export const unresolvableReference = (schema: Json, dialect: SchemaDialect, remotes: ReadonlyMap<string, unknown>): string | undefined => {
+  const rootIsDraft07 = dialect === 'draft-07';
+  const root = normalized(schema, rootIsDraft07);
+  const documents = new Map<string, unknown>();
+  for (const [key, document] of remotes) {
+    if (!isObject(document)) continue;
+    const declared = (document as Json)['$schema'];
+    const draft07 = declared === undefined ? rootIsDraft07 : typeof declared === 'string' && dialectOfUri(declared) === 'draft-07';
+    const entry = isRecord(document) && !('$id' in document) ? { ...document, $id: key } : document;
+    const prepared = normalized(entry, draft07);
+    documents.set(key, prepared);
+    const id = isRecord(prepared) ? prepared['$id'] : undefined;
+    const original = isRecord(entry) ? entry['$id'] : undefined;
+    const declaredId = typeof id === 'string' && id !== '' ? id : typeof original === 'string' && original !== '' && original[0] !== '#' ? original : undefined;
+    if (declaredId !== undefined && declaredId !== key) documents.set(declaredId, prepared);
+  }
+  const own = indexSchemas(root, undefined);
+  const full = indexSchemas(root, documents);
+  for (const [node, base] of own.nodeBase) {
+    if (!isRecord(node)) continue;
+    for (const keyword of REFERENCE_KEYWORDS) {
+      const reference = node[keyword];
+      if (typeof reference !== 'string') continue;
+      try {
+        if (!resolves(reference, base, full)) return reference;
+      } catch {
+        return reference;
+      }
     }
   }
   return undefined;
-};
-
-export const unresolvableReference = (schema: Record<string, unknown>, dialect: SchemaDialect, remotes: ReadonlyMap<string, unknown>): string | undefined => {
-  const collected: Collected = { resources: new Map(), references: [] };
-  for (const [uri, document] of remotes) {
-    const rootUri = splitFragment(uri).document;
-    collect(document, rootUri, dialect, collected, false);
-  }
-  const declaredId = schema['$id'];
-  const rootBase = typeof declaredId === 'string' ? (resolveUri(declaredId, SYNTHETIC_ROOT) ?? SYNTHETIC_ROOT) : SYNTHETIC_ROOT;
-  collect(schema, splitFragment(rootBase).document, dialect, collected, true);
-  return firstUnresolvable(collected);
 };

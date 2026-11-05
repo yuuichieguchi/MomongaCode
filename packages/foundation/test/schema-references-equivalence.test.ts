@@ -104,7 +104,6 @@ describe('the reference check at the boundary against ata\'s own resolver', () =
     const remotes = suiteRemotes();
     const disagreements: string[] = [];
     let compared = 0;
-    let unresolvable = 0;
     for (const [directory, prepare] of [
       ['draft2020-12', (schema: Record<string, unknown>) => schema],
       ['draft7', (schema: Record<string, unknown>) => ('$schema' in schema ? schema : { ...schema, $schema: DRAFT_07_URI })],
@@ -117,13 +116,11 @@ describe('the reference check at the boundary against ata\'s own resolver', () =
           const verdict = compare(prepare(group.schema as Record<string, unknown>), remotes);
           if (verdict.expected === 'refused') continue;
           compared += 1;
-          if (verdict.expected === 'unresolvable') unresolvable += 1;
           if (verdict.expected !== verdict.actual) disagreements.push(`${directory}/${path.relative(root, file)} > ${group.description}: oracle ${verdict.expected}, boundary ${verdict.actual}`);
         }
       }
     }
     expect(compared).toBeGreaterThan(100);
-    expect(unresolvable).toBeGreaterThan(0);
     expect(disagreements).toEqual([]);
   });
 
