@@ -11,6 +11,10 @@ const measured = JSON.parse(fs.readFileSync(new URL('./fixtures/fm-schema-measur
   results: Measurement[];
 };
 
+type DictionaryReplay = { schema: unknown; out: { prompt: string; status: number; content: string }[] };
+
+const dictionary = JSON.parse(fs.readFileSync(new URL('./fixtures/evidence-fm-dictionary.json', import.meta.url), 'utf8')) as DictionaryReplay;
+
 const post = (socketPath: string, body: unknown): Promise<{ status: number; text: string }> =>
   new Promise((resolve, reject) => {
     const request = http.request(
@@ -56,5 +60,27 @@ describe('the fake fm answers the schemas measured on the real fm serve on 2026-
       expect(JSON.parse(result.text)).toEqual({ error: { code: '400', message: measurement.error, type: 'invalid_request_error' } });
     }
     if (measurement.status === 500) expect(result.text).toContain(measurement.error);
+  });
+});
+
+describe('the fake fm answers the free-form object as the real fm serve did on 2026-11-05', () => {
+  it('replays the six samples recorded for properties {} with additionalProperties true', () => {
+    expect(dictionary.out).toHaveLength(6);
+  });
+
+  it.each(dictionary.out.map((sample, index) => [`sample ${index + 1}: ${sample.prompt}`, sample] as const))('%s', async (_name, sample) => {
+    const fake = await startFakeChatCompletions({ scenario: 'tools-ok', wire: 'fm' });
+    servers.push(fake);
+
+    const result = await post(fake.socketPath, {
+      model: 'system',
+      stream: false,
+      messages: [{ role: 'user', content: sample.prompt }],
+      response_format: { type: 'json_schema', json_schema: { name: 'probe', strict: true, schema: dictionary.schema } },
+    });
+
+    expect(result.status).toBe(sample.status);
+    const reply = JSON.parse(result.text) as { choices: { message: { content: string } }[] };
+    expect(JSON.parse(reply.choices[0]?.message.content ?? '')).toEqual(JSON.parse(sample.content));
   });
 });

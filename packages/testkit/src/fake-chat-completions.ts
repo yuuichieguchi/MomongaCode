@@ -475,7 +475,8 @@ export const startFakeChatCompletions = async (
       if (!jsonSchemaAccepted) throw invalidRequest(JSON_SCHEMA_UNSUPPORTED_MESSAGE, null, 'response_format');
       const jsonSchema = isRecord(responseFormat['json_schema']) ? responseFormat['json_schema'] : {};
       const fmRefusal = options.wire === 'fm' ? fmSchemaRefusalOf(String(jsonSchema['name']), jsonSchema['schema']) : undefined;
-      if (fmRefusal !== undefined) throw new HttpFailure(400, fmSchemaRefusalError(fmRefusal));
+      if (fmRefusal?.status === 500) throw new HttpFailure(500, structuredClone(FM_UNSUPPORTED_GUIDE_ERROR) as unknown as Json);
+      if (fmRefusal !== undefined) throw new HttpFailure(400, fmSchemaRefusalError(fmRefusal.message));
       const used = findUsedKeywords(jsonSchema['schema'], unsupportedKeywords);
       if (used.length > 0) {
         if (options.wire === 'fm') throw new FmStreamedError(FM_UNSUPPORTED_GUIDE_ERROR);
@@ -654,7 +655,7 @@ export const startFakeChatCompletions = async (
     const out = complete(body);
     if (out.delayMs !== undefined) await delay(out.delayMs, undefined, { signal });
     const id = `chatcmpl-fake-${completionCount}`;
-    if (body['stream'] === true || options.wire === 'fm') {
+    if (body['stream'] === true || (options.wire === 'fm' && body['stream'] !== false)) {
       writeStream(response, body, out, id);
       return;
     }
