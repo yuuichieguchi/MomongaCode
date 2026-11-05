@@ -26,7 +26,7 @@ const startSilentUpstream = async (script: FakeUpstreamReply[]) => {
   registerCleanup(() => adapter.close());
   return startGateway({
     adapters: { remote: adapter },
-    config: { aliases: { fast: ['remote'] }, targets: { remote: { model: 'upstream-model', kind: 'remote' } }, retry: { maxAttempts: 1 } },
+    config: { aliases: { fast: ['remote'] }, targets: { remote: { model: 'upstream-model', kind: 'remote' } }, retry: { maxAttempts: 1, totalWaitMs: 1 } },
   });
 };
 

@@ -163,6 +163,23 @@ describe('worker gateway failures', () => {
     expect(env.gateway.streams).toHaveLength(1);
   });
 
+  it('fails the step with rate_limited instead of requeueing a deferral beyond the attempt limit', async () => {
+    const env = await makeEnv({ maxAttempts: 2, maxTotalAttempts: 2 });
+    env.gateway.script.push(deferredStep(), deferredStep(), textStep('never sent'));
+    const run = env.enqueue('Work');
+
+    expect(await env.runOnce(env.worker())).toBe('yielded');
+    const requeued = env.run(run.id);
+    expect(requeued.status).toBe('QUEUED');
+    env.clock.set(requeued.availableAt);
+    expect(await env.runOnce(env.worker('worker-2'))).toBe('yielded');
+
+    const after = env.run(run.id);
+    expect(after.status).toBe('FAILED');
+    expect(after.error?.code).toBe('rate_limited');
+    expect(env.gateway.streams).toHaveLength(2);
+  });
+
   it('dead-letters the run as FAILED once the store attempt limit is exhausted by requeued hop failures', async () => {
     const env = await makeEnv({ maxAttempts: 3, maxTotalAttempts: 3 });
     env.gateway.script.push(thrownStep(), thrownStep(), thrownStep(), textStep('never sent'));

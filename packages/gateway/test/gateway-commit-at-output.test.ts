@@ -54,6 +54,46 @@ describe('the gateway commits at the first event that carries output (R-b)', () 
     expect(frames.at(-1)?.event).toBe('response.completed');
   });
 
+  const failedBeforeOutput = (code: string) => {
+    const created = full[0];
+    if (created === undefined || created.type !== 'response.created') throw new Error('fixture shape');
+    return [
+      ...full.slice(0, 2),
+      {
+        type: 'response.failed' as const,
+        sequence_number: 2,
+        response: { ...created.response, status: 'failed' as const, error: { code, message: `failed with ${code}` } },
+      },
+    ];
+  };
+
+  it('retries a response.failed terminal before any output that carries a failure code, within the budget', async () => {
+    const { primary, started } = startOne([{ events: failedBeforeOutput('server_exploded') }, ok('recovered')]);
+    const harness = await started;
+    const reading = postJson(harness.client, '/v1/responses', { ...request, stream: true }).then(readSse);
+
+    const waits = await driveTimers(harness, [reading]);
+    const frames = await reading;
+
+    expect(waits).toEqual([375]);
+    expect(primary.calls).toHaveLength(2);
+    expect(frames.some((frame) => frame.event === 'response.failed')).toBe(false);
+    expect(frames.at(-1)?.event).toBe('response.completed');
+  });
+
+  it('does not retry a response.failed terminal before any output that carries a neutral code', async () => {
+    const { primary, started } = startOne([{ events: failedBeforeOutput('content_filter') }, ok('never sent')]);
+    const harness = await started;
+    const reading = postJson(harness.client, '/v1/responses', { ...request, stream: true }).then(readSse);
+
+    await driveTimers(harness, [reading]);
+    const frames = await reading;
+
+    expect(primary.calls).toHaveLength(1);
+    expect(frames.at(-1)?.event).toBe('response.failed');
+    expect(frames.at(-1)?.data.response.error.code).toBe('content_filter');
+  });
+
   it('does not retry a failure after output and marks the failed response retryable for a retryable error', async () => {
     const { primary, started } = startOne([{ events: THROUGH_FIRST_DELTA, failure: { status: 503, message: 'down after output' } }, ok('never sent')]);
     const harness = await started;

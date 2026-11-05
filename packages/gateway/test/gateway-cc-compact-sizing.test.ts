@@ -30,7 +30,7 @@ describe('a candidate whose counter fails is dropped, not fatal', () => {
     const healthy = await startFake({ scenario: 'tools-ok', script: [textReply('from second')] });
     const harness = await startCcGateway(
       { first: first.adapter, second: ccAdapterFor(healthy) },
-      { retry: { maxAttempts: 1 }, breaker: { failureThreshold: 1, openMs: 30_000 } },
+      { retry: { maxAttempts: 1, totalWaitMs: 1 }, breaker: { failureThreshold: 1, openMs: 30_000 } },
     );
     const response = await compact(harness);
     expect(response.status).toBe(200);
@@ -42,7 +42,7 @@ describe('a candidate whose counter fails is dropped, not fatal', () => {
   it('answers the counter failure, not a size error, when every counter fails', async () => {
     const first = await failingCounter();
     const second = await failingCounter();
-    const harness = await startCcGateway({ first: first.adapter, second: second.adapter }, { retry: { maxAttempts: 1 } });
+    const harness = await startCcGateway({ first: first.adapter, second: second.adapter }, { retry: { maxAttempts: 1, totalWaitMs: 1 } });
     const response = await compact(harness);
     expect(response.status).toBeGreaterThanOrEqual(500);
     expect(response.body.error.type).toBe('server_error');
@@ -131,7 +131,7 @@ describe('error precedence when every candidate is dropped', () => {
     const adapters = failingFirst
       ? { a: failing.adapter, b: large.adapter }
       : { a: large.adapter, b: failing.adapter, c: trailing.adapter };
-    const harness = await startCcGateway(adapters, { retry: { maxAttempts: 1 } });
+    const harness = await startCcGateway(adapters, { retry: { maxAttempts: 1, totalWaitMs: 1 } });
     const response = await compact(harness);
     expect(response.body.error.type).toBe('server_error');
     expect(response.body.error.code).toBe('upstream_error');
@@ -182,7 +182,7 @@ describe('a dead request stops sizing instead of dropping the candidate', () => 
   it.for(['unkeyed', 'keyed'] as const)('answers gateway_closed for a %s request when the gateway closes during the first counter, and never sizes or calls the second target', async (kind) => {
     const first = await heldCounter();
     const second = await countingCounter();
-    const harness = await startCcGateway({ first: first.adapter, second: second.adapter }, { retry: { maxAttempts: 1 }, closeGraceMs: 1000 });
+    const harness = await startCcGateway({ first: first.adapter, second: second.adapter }, { retry: { maxAttempts: 1, totalWaitMs: 1 }, closeGraceMs: 1000 });
     const pending = postJson(
       harness.client,
       '/v1/responses/compact',
@@ -213,7 +213,7 @@ describe('a dead request stops sizing instead of dropping the candidate', () => 
   it.for(['deadline', 'client abort'] as const)('propagates a %s during the first counter and never sizes or calls the second target', async (kind) => {
     const first = await heldCounter();
     const second = await countingCounter();
-    const harness = await startCcGateway({ first: first.adapter, second: second.adapter }, { retry: { maxAttempts: 1 } });
+    const harness = await startCcGateway({ first: first.adapter, second: second.adapter }, { retry: { maxAttempts: 1, totalWaitMs: 1 } });
     const body = JSON.stringify({ model: 'fast', input: [userText('summarise this')] });
     const client = new AbortController();
     const pending = harness.client

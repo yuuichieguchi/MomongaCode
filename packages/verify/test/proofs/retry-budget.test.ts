@@ -179,6 +179,55 @@ describe('item 11: the gateway retry budget', () => {
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );
 
+  const spreadArith = (name: string, perEarlierTargetCap: bigint) => {
+    const arith = proofArith(z3.engine().api, name);
+    const { ctx } = arith;
+    const attempts = ctx.Int.val(BigInt(retry().maxAttempts));
+    const candidates = arith.int('candidates');
+    const left = arith.int('earlierTargets');
+    const earlier = arith.int('earlierSends');
+    const here = arith.int('sendsHere');
+    const last = arith.int('lastTargetSends');
+    arith.given(
+      candidates.ge(1),
+      left.ge(0),
+      left.lt(candidates.sub(1)),
+      earlier.ge(0),
+      earlier.le(left.mul(attempts)),
+      here.ge(1),
+      here.le(ctx.Int.val(perEarlierTargetCap)),
+      last.ge(1),
+      last.le(ctx.Int.val(BigInt(MAX_SENDS))),
+    );
+    return { arith, ctx, attempts, candidates, left, earlier, here, last };
+  };
+
+  it(
+    'R4 proves at most (C - 1) maxAttempts + 25 sends across C candidates: each earlier target is capped at maxAttempts and the last uses at most the single-target bound',
+    async () => {
+      const { arith, ctx, attempts, candidates, left, earlier, here, last } = spreadArith('R4', BigInt(retry().maxAttempts));
+      expect(await satisfiable(arith)).toBe(true);
+      expect(await prove(arith, earlier.add(here).le(left.add(1).mul(attempts)))).toEqual({ status: 'proved' });
+      const total = earlier.add(here).add(last);
+      const bound = candidates.sub(1).mul(attempts).add(ctx.Int.val(BigInt(MAX_SENDS)));
+      expect(await prove(arith, total.le(bound))).toEqual({ status: 'proved' });
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'R4w refutes the multi-target bound when an earlier target may also use the single-target bound instead of maxAttempts',
+    async () => {
+      const { arith, ctx, attempts, candidates, left, earlier, here, last } = spreadArith('R4w', BigInt(MAX_SENDS));
+      expect(await satisfiable(arith)).toBe(true);
+      const total = earlier.add(here).add(last);
+      const bound = candidates.sub(1).mul(attempts).add(ctx.Int.val(BigInt(MAX_SENDS)));
+      const model = await expectRefuted(arith, total.le(bound));
+      expect(BigInt(model.sendsHere as string)).toBeGreaterThan(BigInt(retry().maxAttempts));
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
   it(
     'R3w refutes the sends bound under full jitter, where a wait can be 0',
     async () => {
