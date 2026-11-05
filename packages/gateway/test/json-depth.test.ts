@@ -5,6 +5,7 @@ import { createScriptedAdapter } from '@momonga/testkit';
 import type { FakeStreamChunk } from '@momonga/testkit';
 import { parseUpstreamChunk } from '../src/adapters/chat-completions/upstream-chunk.ts';
 import { collect, listDirTool, makeAdapter, ofType, startFake, terminalOf, userText } from './cc-support.ts';
+import { CC_CAPABILITIES } from './cc-support.ts';
 import { postJson, readJson, startGateway } from './gateway-helpers.ts';
 
 const nestedArraysText = (depth: number): string => `${'['.repeat(depth)}${']'.repeat(depth)}`;
@@ -60,7 +61,7 @@ describe('upstream chat completion chunks and the one JSON depth bound', () => {
 });
 
 describe('constrained model output and the one JSON depth bound', () => {
-  const constrained = { toolCalling: () => 'constrained' as const };
+  const constrained = { capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: 'constrained' as const }) };
 
   const envelopeOf = (depth: number): string => `{"kind":"tool_calls","calls":[{"name":"list_dir","arguments":{"dir":".","z":${nestedArraysText(depth - 4)}}}]}`;
 

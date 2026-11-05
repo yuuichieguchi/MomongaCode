@@ -7,7 +7,6 @@ import type {
   CountTokensResult,
   HealthResult,
   ProviderAdapter,
-  ToolCallingMode,
 } from '@momonga/protocol';
 import type { UpstreamEndpoint, UpstreamLiveness } from '../shared/http-client.ts';
 import type { KeywordSupport } from '../../probe/envelope.ts';
@@ -20,7 +19,6 @@ export type ChatCompletionsAdapterOptions = {
   sampling?: AdapterSampling;
   upstreamModel?: (target: AdapterTarget, signal: AbortSignal) => Promise<string>;
   onSummaryReasoning?: (target: AdapterTarget, hiddenReasoningTokens: number) => Promise<void>;
-  toolCalling: (target: AdapterTarget) => ToolCallingMode;
   keywordSupport?: (target: AdapterTarget) => KeywordSupport;
   apiKey?: (target: AdapterTarget, signal: AbortSignal) => string | undefined | Promise<string | undefined>;
   countTokens?: (target: AdapterTarget, request: CountTokensRequest, signal: AbortSignal) => Promise<CountTokensResult>;

@@ -75,7 +75,7 @@ describe('every adapter renders the same prompt', () => {
       anthropic: createAnthropicAdapter({ ...shared, apiVersion: '2026-10-21', apiKey: async () => 'unused' }),
       responses: createOpenResponsesAdapter(shared),
     };
-    return Object.entries(adapters).map(([name, adapter]) => [name, JSON.stringify(adapter.renderCompactWire?.(request, target, 512, EVERY_REASONING_IS_OWN))]);
+    return Object.entries(adapters).map(([name, adapter]) => [name, JSON.stringify(adapter.renderCompactWire?.(request, target, 512, EVERY_REASONING_IS_OWN, REMOTE_CAPABILITIES))]);
   };
 
   it('carries the sections, the backtick rule and the guideline on each wire', async () => {

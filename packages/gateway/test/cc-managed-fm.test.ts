@@ -1,4 +1,4 @@
-import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
+import { contextOf } from './own-reasoning.ts';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
@@ -163,9 +163,14 @@ describe('createManagedFmTarget probe-derived settings', () => {
   it('decides tool calling and keyword support from the probe record', async () => {
     const report = { ...makeReport(0.5, 1), keywordSupport: { ...ALL_TRUE, pattern: false, anyOf: false } };
     const { managed } = await setup({ report });
-    expect(managed.toolCalling(TARGET)).toBe('constrained');
+    expect((await managed.capabilities(TARGET)).toolCalling).toBe('constrained');
     expect(managed.keywordSupport(TARGET)).toEqual({ ...ALL_TRUE, pattern: false, anyOf: false });
     expect(await managed.capabilities(TARGET)).toEqual({ ...capabilitiesFromProbe(report, { mode: 'constrained' }), allowedTools: ['envelope'] });
+  });
+
+  it('exposes the tool-calling mode only through capabilities', async () => {
+    const { managed } = await setup({ report: makeReport(0.5, 1) });
+    expect(managed).not.toHaveProperty('toolCalling');
   });
 
   it('declares the envelope as its only allowed_tools form, probed or not', async () => {
@@ -196,7 +201,7 @@ describe('createManagedFmTarget probe-derived settings', () => {
 
   it('uses the declared native tool calling, full keyword support and conservative unprobed capabilities without a record', async () => {
     const { managed } = await setup();
-    expect(managed.toolCalling(TARGET)).toBe('native');
+    expect((await managed.capabilities(TARGET)).toolCalling).toBe('native');
     expect(managed.keywordSupport(TARGET)).toEqual(ALL_TRUE);
     expect(await managed.capabilities(TARGET)).toMatchObject({
       contextWindow: 4096,
@@ -320,7 +325,7 @@ describe('createManagedFmTarget compaction and wire counting', () => {
     expect(adapter.compact).toBeTypeOf('function');
     const result = await adapter.compact?.(
       { model: 'system', input: [userText('summarise this')], momonga: { max_summary_tokens: 64 } },
-      { signal: new AbortController().signal, target: TARGET, attempt: 1, reasoningOrigin: EVERY_REASONING_IS_OWN },
+      await contextOf(adapter, TARGET),
     );
     expect(result?.summary).toBe(FAKE_DETERMINISTIC_REPLY);
   });

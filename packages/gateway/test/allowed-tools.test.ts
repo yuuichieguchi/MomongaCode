@@ -51,7 +51,7 @@ const ccReply = (content: string) => ({
 
 const ccNativeSent = async (capabilities: Capabilities, toolChoice: unknown) => {
   const fake = await startFake({ scenario: 'tools-ok', script: [ccReply('ok')] });
-  const adapter = makeAdapter(fake, { toolCalling: () => 'native', capabilities: async () => capabilities });
+  const adapter = makeAdapter(fake, { capabilities: async () => capabilities });
   const { error } = await collect(adapter, ccRequest(toolChoice));
   return { error: error as any, fake };
 };
@@ -59,7 +59,6 @@ const ccNativeSent = async (capabilities: Capabilities, toolChoice: unknown) => 
 const ccConstrainedSent = async (capabilities: Capabilities, toolChoice: unknown, keywords = ALL_KEYWORDS) => {
   const fake = await startFake({ scenario: 'json-schema-only', script: [ccReply('{"kind":"final","text":"ok"}')] });
   const adapter = makeAdapter(fake, {
-    toolCalling: () => 'constrained',
     keywordSupport: () => keywords,
     capabilities: async () => capabilities,
   });
@@ -410,12 +409,12 @@ describe('count what is sent: the count body carries the create body tools and t
   it('chat-completions renderWire for the filter form renders the tools the create body sends', async () => {
     const capabilities = withAllowedTools({ ...CC_CAPABILITIES, toolCalling: 'native' }, ['filter']);
     const fake = await startFake({ scenario: 'tools-ok', script: [ccReply('ok')] });
-    const adapter = makeAdapter(fake, { toolCalling: () => 'native', capabilities: async () => capabilities });
+    const adapter = makeAdapter(fake, { capabilities: async () => capabilities });
     const { error } = await collect(adapter, ccRequest(TWO_AUTO));
     expect(error).toBeUndefined();
     const sent = lastCompletionBody(fake);
     expect(listedNames(sent)).toEqual(['alpha', 'beta']);
-    const rendered = adapter.renderWire?.(ccRequest(TWO_AUTO), TARGET, { reasoningOrigin: EVERY_REASONING_IS_OWN, allowedTools: ['filter'] });
+    const rendered = adapter.renderWire?.(ccRequest(TWO_AUTO), TARGET, { reasoningOrigin: EVERY_REASONING_IS_OWN, capabilities });
     expect(rendered).toEqual(wireOf(sent));
   });
 });

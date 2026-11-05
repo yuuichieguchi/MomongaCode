@@ -13,7 +13,7 @@ import {
   createFakeClock,
   startFakeAnthropic,
 } from '@momonga/testkit';
-import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
+import { contextOf } from './own-reasoning.ts';
 import { START_MS, postJson, readSse, registerCleanup, userInput } from './gateway-helpers.ts';
 import { FAKE_API_KEY, REMOTE_CAPABILITIES, readFileTool, startAnthropicGateway, streamResponse, terminalOf } from './upstream-gateway-support.ts';
 
@@ -37,7 +37,7 @@ const sentFor = async (reasoning: ReasoningCapability | undefined, effort: Reaso
 
 const VISIBLE = 1000;
 
-const CONTEXT = { signal: new AbortController().signal, target: { name: 'remote', model: 'remote-model' }, attempt: 1, reasoningOrigin: EVERY_REASONING_IS_OWN };
+const REMOTE_TARGET = { name: 'remote', model: 'remote-model' };
 
 const directAdapter = async (reasoning: ReasoningCapability, reply: ReturnType<typeof anthropicTextReply>) => {
   const fake = await startFakeAnthropic({ apiKey: FAKE_API_KEY, script: [reply] });
@@ -56,7 +56,7 @@ const directAdapter = async (reasoning: ReasoningCapability, reply: ReturnType<t
 const directBodyFor = async (reasoning: ReasoningCapability, effort: ReasoningEffort): Promise<any> => {
   const { fake, adapter } = await directAdapter(reasoning, anthropicTextReply(['ok']));
   const request = { model: 'remote-model', input: [{ type: 'message' as const, role: 'user' as const, content: 'hello' }], max_output_tokens: VISIBLE, reasoning_effort: effort };
-  for await (const _event of adapter.create(request, CONTEXT)) {
+  for await (const _event of adapter.create(request, await contextOf(adapter, REMOTE_TARGET))) {
     continue;
   }
   return fake.requests.filter((request) => request.path === '/v1/messages').at(-1)?.body;
@@ -169,7 +169,7 @@ describe('anthropic thinking request from a declared budget form', () => {
   it('adds the lowest budget to the compaction summary cap, and the summary still arrives', async () => {
     const { fake, adapter } = await directAdapter(BUDGET, anthropicTextReply(['GOAL: fix it. STATE: none.']));
     const compactRequest: AdapterCompactRequest = { model: 'remote-model', input: [{ type: 'message', role: 'user', content: 'a long conversation' }], momonga: { max_summary_tokens: 64 } };
-    const result = await adapter.compact?.(compactRequest, CONTEXT);
+    const result = await adapter.compact?.(compactRequest, await contextOf(adapter, REMOTE_TARGET));
     expect(result?.summary).toBe('GOAL: fix it. STATE: none.');
     const body: any = fake.requests.filter((request) => request.path === '/v1/messages').at(-1)?.body;
     expect(body.thinking).toEqual({ type: 'enabled', budget_tokens: 2048 });

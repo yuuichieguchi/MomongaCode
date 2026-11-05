@@ -33,7 +33,7 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
 
   async function* create(request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
     if (closed) throw new Error('the ollama adapter is closed');
-    const capabilities = await options.capabilities(ctx.target);
+    const capabilities = ctx.capabilities;
     const body = buildOllamaBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.name, OLLAMA_TOOL_CHOICE), capabilities, ctx.reasoningOrigin);
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
@@ -55,7 +55,7 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
   }
 
   const compact = async (request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult> => {
-    const capabilities = await options.capabilities(ctx.target);
+    const capabilities = ctx.capabilities;
     const cap = request.momonga?.max_summary_tokens ?? summaryTokenCapFor(capabilities);
     for await (const event of create(summaryRequestOf(request, cap, ctx.reasoningOrigin), ctx)) {
       const collected = summaryOfTerminal(event, cap);

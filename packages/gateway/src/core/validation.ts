@@ -257,6 +257,17 @@ const validateAllowedNames = (choice: SchemaObject, tools: unknown): void => {
   });
 };
 
+const validateToolChoiceSatisfiable = (choice: unknown, tools: unknown): void => {
+  const declared = (Array.isArray(tools) ? tools : []).flatMap((tool) => (isRecord(tool) && typeof tool['name'] === 'string' ? [tool['name']] : []));
+  if (choice === 'required' && declared.length === 0) {
+    throw invalidRequest('invalid_request', 'tool_choice is required, but the request declares no tools', 'tool_choice');
+  }
+  if (isRecord(choice) && choice['type'] === 'function' && typeof choice['name'] === 'string' && !declared.includes(choice['name'])) {
+    throw invalidRequest('invalid_request', `tool_choice.name "${choice['name']}" is not among the request tools`, 'tool_choice.name');
+  }
+  if (isRecord(choice) && choice['type'] === 'allowed_tools') validateAllowedNames(choice as SchemaObject, tools);
+};
+
 const requireKnownKeys = (record: SchemaObject, known: readonly string[], prefix: readonly string[]): void => {
   for (const key of Object.keys(record)) {
     if (!known.includes(key)) throwIssue({ segments: [...prefix, key], message: 'is not a known key' });
@@ -382,8 +393,7 @@ export const createRequestValidator = (): RequestValidator => {
         throw invalidRequest('capability_unsupported', 'background responses are not supported', 'background');
       }
       validateCreateMomonga(record['momonga'], inputLengthOf(record['input']));
-      const createToolChoice = record['tool_choice'];
-      if (isRecord(createToolChoice) && createToolChoice['type'] === 'allowed_tools') validateAllowedNames(createToolChoice, record['tools']);
+      validateToolChoiceSatisfiable(record['tool_choice'], record['tools']);
       return assertValidated<CreateResponseBody>(body);
     },
     parseCompact: (body) => {
@@ -411,7 +421,7 @@ export const createRequestValidator = (): RequestValidator => {
       if (toolChoice !== undefined) {
         const verdict = toolChoiceSchema(toolChoice);
         if (!verdict.valid) throwIssue(issueOf(verdict.errors, ['tool_choice']));
-        if (isRecord(toolChoice) && toolChoice['type'] === 'allowed_tools') validateAllowedNames(toolChoice, tools);
+        validateToolChoiceSatisfiable(toolChoice, tools);
       }
       validateCountMomonga(record['momonga']);
       return assertValidated<CountTokensRequest>(body);

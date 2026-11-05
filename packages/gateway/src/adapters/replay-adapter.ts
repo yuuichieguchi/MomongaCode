@@ -124,8 +124,8 @@ export const createReplayAdapter = (options: ReplayAdapterOptions): ProviderAdap
       if (options.capabilities === undefined) throw new TypeError('createReplayAdapter: strict mode without an inner adapter needs a capabilities option to answer capabilities()');
       return options.capabilities;
     },
-    toolChoiceWire: (target) => {
-      if (inner !== undefined) return inner.toolChoiceWire(target);
+    toolChoiceWire: (capabilities, target) => {
+      if (inner !== undefined) return inner.toolChoiceWire(capabilities, target);
       if (options.toolChoiceWire === undefined) throw new TypeError('createReplayAdapter: strict mode without an inner adapter needs a toolChoiceWire option to answer toolChoiceWire()');
       return options.toolChoiceWire;
     },
