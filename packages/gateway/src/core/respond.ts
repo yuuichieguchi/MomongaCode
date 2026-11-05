@@ -99,6 +99,8 @@ const adapterRequestFor = (job: ResponseJob, resolved: ResolvedInput, target: Ta
     ...(body.max_output_tokens === undefined ? {} : { max_output_tokens: body.max_output_tokens }),
     ...(body.temperature === undefined ? {} : { temperature: body.temperature }),
     ...(body.top_p === undefined ? {} : { top_p: body.top_p }),
+    ...(body.frequency_penalty === undefined ? {} : { frequency_penalty: body.frequency_penalty }),
+    ...(body.presence_penalty === undefined ? {} : { presence_penalty: body.presence_penalty }),
     ...(isReasoningEffort(body.reasoning?.effort) ? { reasoning_effort: body.reasoning.effort } : {}),
     ...(body.text === undefined || body.text === null ? {} : { text: body.text }),
     ...(body.prompt_cache_key === undefined || body.prompt_cache_key === null ? {} : { promptCacheKey: body.prompt_cache_key }),
@@ -550,7 +552,7 @@ async function* relaySteps(
 export async function* executeResponse(services: Services, job: ResponseJob, control: RunControl): AsyncGenerator<StreamEvent> {
   const { signal } = control;
   const resolved = resolveInput(services.store, services.codec, job.body.previous_response_id, job.clientInput, job.connection);
-  const candidates = await services.router.candidates(job.alias, { tools: (job.body.tools?.length ?? 0) > 0, images: inputHasImages(resolved.forAdapter) });
+  const candidates = await services.router.candidates(job.alias, { tools: (job.body.tools?.length ?? 0) > 0, images: inputHasImages(resolved.forAdapter), sampling: job.body });
   const disarm = armDeadline(services, job.deadlineAt, control.abort);
   try {
     const outcome = await runWithRetry({

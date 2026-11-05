@@ -1,4 +1,5 @@
 import net from 'node:net';
+import { SAMPLING_FIELDS } from '@momonga/protocol';
 import type { AdapterRequest, ProviderAdapter, StreamEvent } from '@momonga/protocol';
 import { DEFAULT_SCRIPTED_CAPABILITIES, responseResource, textResponseEvents, usageOf } from '@momonga/testkit';
 import { createTelemetry } from '@momonga/observability';
@@ -13,6 +14,7 @@ export const createHangingAdapter = (events: readonly StreamEvent[]): HangingAda
   const signals: AbortSignal[] = [];
   return {
     kind: 'hanging',
+    sampling: { renders: SAMPLING_FIELDS },
     pulled,
     signals,
     capabilities: async () => DEFAULT_SCRIPTED_CAPABILITIES,

@@ -1,6 +1,8 @@
 import { describe, expectTypeOf, it } from 'vitest';
 import type {
+  AdapterSampling,
   Capabilities,
+  ProviderAdapter,
   HealthResult,
   ProbeKeyword,
   ProbeReport,
@@ -34,6 +36,7 @@ describe('protocol capability types', () => {
         maxConcurrency: number;
         source: 'declared' | 'probed' | 'config' | 'unprobed';
         probedAt?: string;
+        sampling?: { accepts: 'none' } | { accepts: 'without_thinking'; topP: { min: number; max: number } } | { accepts: 'free' };
         reasoning?:
           | { control: 'none'; headroomTokens?: number }
           | { control: 'reasoning_effort'; lowest: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' }
@@ -44,6 +47,11 @@ describe('protocol capability types', () => {
         | { imageInput: true; imageTokens: { pixelsPerToken: number; maxTokens: number; minTokens: number } }
       )
     >();
+  });
+
+  it('requires every adapter to declare the sampling fields it renders', () => {
+    expectTypeOf<ProviderAdapter['sampling']>().toEqualTypeOf<AdapterSampling>();
+    expectTypeOf<ReturnType<ProviderAdapter['capabilities']>>().toEqualTypeOf<Promise<Capabilities>>();
   });
 
   it('cannot express needs_probe without its details', () => {

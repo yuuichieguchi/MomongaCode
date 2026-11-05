@@ -11,6 +11,7 @@ import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { createConstrainedSink } from './constrained-sink.ts';
 import type { ConstrainedPlan } from './constrained-sink.ts';
 import { StreamFailure, UnsupportedInputError } from '../shared/failures.ts';
+import { RENDERS_EVERY_SAMPLING_FIELD } from '../shared/sampling.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
 import { retryAfterHint, httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
 import { MAX_SSE_EVENT_BYTES } from '../shared/limits.ts';
@@ -181,6 +182,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
 
   return {
     kind: 'chat-completions',
+    sampling: options.sampling ?? RENDERS_EVERY_SAMPLING_FIELD,
     capabilities: (target) => options.capabilities(target),
     create,
     compact,

@@ -218,7 +218,7 @@ const createFmAdapter = async (name: string, target: Extract<ResolvedTarget, { a
     ...(target.model === undefined ? {} : { declaredModel: target.model }),
     ...(target.outputBoundField === undefined ? {} : { declaredOutputBoundField: target.outputBoundField }),
   });
-  return createChatCompletionsAdapter({ ...withBinaryGuard(managed, context.binary, files), clock });
+  return createChatCompletionsAdapter({ ...withBinaryGuard(managed, context.binary, files), sampling: { renders: [] }, clock });
 };
 
 const endpointProbeKeyOf = (name: string, target: ResolvedTarget): EndpointProbeKey => {
@@ -535,7 +535,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
           adapters[name] = createOpenResponsesAdapter({ ...common, apiKey: readKey });
           break;
         case 'anthropic':
-          adapters[name] = createAnthropicAdapter({ ...common, apiKey: (adapterTarget, signal) => requiredKey(readKey, adapterTarget, signal) });
+          adapters[name] = createAnthropicAdapter({ ...common, apiVersion: target.apiVersion, apiKey: (adapterTarget, signal) => requiredKey(readKey, adapterTarget, signal) });
           break;
       }
     }

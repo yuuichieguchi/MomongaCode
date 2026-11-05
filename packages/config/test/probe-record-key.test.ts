@@ -27,7 +27,7 @@ const configurations: ReadonlyArray<readonly [string, ResolvedModelTarget, Retur
   ['chat-completions native', { ...remote, adapter: 'chat-completions', model: 'm', provider: 'p', baseUrl: 'https://upstream.invalid/v1', toolCalling: 'native' }, undefined],
   ['chat-completions constrained', { ...remote, adapter: 'chat-completions', model: 'm', provider: 'p', baseUrl: 'https://upstream.invalid/v1', toolCalling: 'constrained' }, undefined],
   ['open-responses', { ...remote, adapter: 'open-responses', model: 'm', provider: 'p', baseUrl: 'https://upstream.invalid/v1', toolCalling: 'native' }, undefined],
-  ['anthropic', { ...remote, adapter: 'anthropic', model: 'm', baseUrl: 'https://upstream.invalid', toolCalling: 'native' }, undefined],
+  ['anthropic', { ...remote, adapter: 'anthropic', model: 'm', baseUrl: 'https://upstream.invalid', toolCalling: 'native', apiVersion: '2026-10-21' }, undefined],
   ['ollama over tcp', { ...remote, adapter: 'ollama', model: 'qwen3', baseUrl: 'http://127.0.0.1:11434' }, { kind: 'endpoint', key: { endpoint: 'http://127.0.0.1:11434', model: 'qwen3' } }],
   ['ollama over a socket', { ...remote, adapter: 'ollama', model: 'qwen3', socketPath: '/s/ollama.sock' }, { kind: 'endpoint', key: { endpoint: 'unix:/s/ollama.sock', model: 'qwen3' } }],
 ];

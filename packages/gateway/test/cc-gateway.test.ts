@@ -134,6 +134,7 @@ describe('/v1/momonga/health with adapter health', () => {
     const seen: unknown[] = [];
     const unhealthy: ProviderAdapter = {
       kind: scripted.kind,
+      sampling: scripted.sampling,
       capabilities: async () => DEFAULT_SCRIPTED_CAPABILITIES,
       create: (request, ctx) => scripted.create(request, ctx),
       classify: (error) => scripted.classify(error),
@@ -166,6 +167,7 @@ describe('/v1/momonga/health with adapter health', () => {
     const scripted = createScriptedAdapter({ calls: [] });
     const adapter: ProviderAdapter = {
       kind: scripted.kind,
+      sampling: scripted.sampling,
       capabilities: async () => DEFAULT_SCRIPTED_CAPABILITIES,
       create: (request, ctx) => scripted.create(request, ctx),
       classify: (error) => scripted.classify(error),
@@ -181,6 +183,7 @@ describe('/v1/momonga/health with a throwing adapter health', () => {
     const scripted = createScriptedAdapter({ calls: [] });
     const broken: ProviderAdapter = {
       kind: scripted.kind,
+      sampling: scripted.sampling,
       capabilities: async () => DEFAULT_SCRIPTED_CAPABILITIES,
       create: (request, ctx) => scripted.create(request, ctx),
       classify: (error) => scripted.classify(error),

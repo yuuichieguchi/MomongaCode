@@ -47,6 +47,7 @@ const directAdapter = async (reasoning: ReasoningCapability, reply: ReturnType<t
     apiKey: async () => FAKE_API_KEY,
     capabilities: async () => withReasoning(reasoning),
     clock: createFakeClock(START_MS),
+    apiVersion: '2026-10-21',
   });
   registerCleanup(() => adapter.close());
   return { fake, adapter };
