@@ -137,12 +137,35 @@ const sourcesUnder = (directory: string): string[] =>
     return /\.tsx?$/.test(entry.name) ? [path.relative(adaptersDir, full)] : [];
   });
 
-const COMPACT_BLOCK = /\n  const compact = [\s\S]*?\n  \};\n/;
 const CAPABILITIES_DELEGATION = /capabilities: \(target(?:: AdapterTarget)?\) => options\.capabilities\(target\)/g;
 const OWN_CAPABILITIES_READ = /\boptions\.capabilities\(|\{[^}]*\bcapabilities\b[^}]*\}\s*=\s*options\b/;
 
 const sendAndCountSourceOf = (relative: string): string =>
-  fs.readFileSync(path.join(adaptersDir, relative), 'utf8').replace(COMPACT_BLOCK, '\n').replace(CAPABILITIES_DELEGATION, '');
+  fs.readFileSync(path.join(adaptersDir, relative), 'utf8').replace(CAPABILITIES_DELEGATION, '');
+
+describe('compaction follows the capabilities the router resolves', () => {
+  const BUDGET_REASONING = { control: 'thinking' as const, form: 'budget' as const, budgets: { low: 2048 } };
+
+  const compactedSummaryBody = async (own: Capabilities, override: Record<string, unknown> | undefined) => {
+    const target = { model: 'upstream-model', kind: 'remote', ...(override === undefined ? {} : { capabilities: override }) };
+    const gateway = await startAnthropicGateway({
+      capabilities: own,
+      config: { aliases: { fast: ['remote'] }, targets: { remote: target } },
+      script: [anthropicCountTokensReply(10), anthropicTextReply(['summary'])],
+    });
+    const compacted = await readJson(await postJson(gateway.client, '/v1/responses/compact', { model: 'fast', input: userInput('do X') }));
+    expect(compacted.status).toBe(200);
+    return gateway.fake.requests.filter((request) => request.path === '/v1/messages').at(-1)?.body as any;
+  };
+
+  it('anthropic: a thinking form set only by the override reaches the summary request as if the adapter declared it', async () => {
+    const declared = await compactedSummaryBody({ ...withoutAllowedTools(REMOTE_CAPABILITIES), reasoning: BUDGET_REASONING }, undefined);
+    expect(declared.thinking).toBeDefined();
+    const overridden = await compactedSummaryBody(withoutAllowedTools(REMOTE_CAPABILITIES), { reasoning: BUDGET_REASONING });
+    expect(overridden.thinking).toEqual(declared.thinking);
+    expect(overridden.max_tokens).toBe(declared.max_tokens);
+  });
+});
 
 describe('adapters never read their own capabilities option on the send or count path', () => {
   const files = sourcesUnder(adaptersDir);
