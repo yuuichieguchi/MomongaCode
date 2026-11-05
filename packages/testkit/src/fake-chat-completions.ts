@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { tokensForText } from '@momonga/protocol';
+import { fmSchemaRefusalOf } from './fm-schema-decoding.ts';
 import { collectAllowedNames, findUsedKeywords, generateInstance } from './schema-instance.ts';
 
 export type FakeScenario = 'tools-ok' | 'tools-400' | 'tools-ignored' | 'json-schema-only' | 'none';
@@ -171,6 +172,8 @@ export const FAKE_GUARDRAIL_ERROR = {
 const fmUnknownModelError =(requested: unknown, listed: string) => ({
   error: { code: '400', message: `Unknown model '${String(requested)}'. Available models: ${listed}`, type: 'invalid_request_error' },
 });
+
+const fmSchemaRefusalError = (message: string): Json => ({ error: { code: '400', message, type: 'invalid_request_error' } });
 
 const invalidRequest = (message: string, code: string | null = null, param: string | null = null): HttpFailure =>
   new HttpFailure(400, { error: { message, type: 'invalid_request_error', param, code } });
@@ -459,6 +462,8 @@ export const startFakeChatCompletions = async (
     if (responseFormat?.['type'] === 'json_schema') {
       if (!jsonSchemaAccepted) throw invalidRequest(JSON_SCHEMA_UNSUPPORTED_MESSAGE, null, 'response_format');
       const jsonSchema = isRecord(responseFormat['json_schema']) ? responseFormat['json_schema'] : {};
+      const fmRefusal = options.wire === 'fm' ? fmSchemaRefusalOf(String(jsonSchema['name']), jsonSchema['schema']) : undefined;
+      if (fmRefusal !== undefined) throw new HttpFailure(400, fmSchemaRefusalError(fmRefusal));
       const used = findUsedKeywords(jsonSchema['schema'], unsupportedKeywords);
       if (used.length > 0) {
         if (options.wire === 'fm') throw new FmStreamedError(FM_UNSUPPORTED_GUIDE_ERROR);
