@@ -19,7 +19,7 @@ export type FormField = {
 
 export type ParsedValue = { ok: true; value: ContentValue | undefined } | { ok: false; reason: 'invalid' | 'validator-failed'; error: string };
 
-export type ElicitationOrigin = { server: string | undefined; key: string };
+export type ElicitationOrigin = { server: string; key: string };
 
 export type ContentCheck = { kind: 'valid' } | { kind: 'invalid'; message: string } | { kind: 'validator-failed'; message: string };
 

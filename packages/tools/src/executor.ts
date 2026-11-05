@@ -22,7 +22,7 @@ import { MINIMUM_INLINE_OUTPUT_CHARS, truncateOutput, useFormattedOutput } from 
 import { ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
 import type { AnyTool, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
 import { cleanFailureMessage } from '@momonga/foundation';
-import { schemaIdentity, unavailable, validateToolInput } from './validate.ts';
+import { toolRefusalKey, unavailable, validateToolInput } from './validate.ts';
 import type { ValidationResult } from './validate.ts';
 
 const DEFAULT_IDEMPOTENCY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -50,8 +50,8 @@ type BatchCallbacks = {
   leaseLost?(): boolean;
   onLeaseLost?(): void;
   onOutcome?(outcome: ResultOutcome): void;
-  onWarning?(message: string, code: string): void;
-  toolUnavailable?(identity: string): boolean;
+  onWarning?(message: string, toolKey: string): void;
+  toolUnavailable?(toolKey: string): boolean;
   traceparentFor?(callId: string): { traceparent: string; tracestate?: string } | undefined;
   onStarted?(callId: string, idemKey: string, basis: ApprovalBasis): void | Promise<void>;
   onUpdate?(callId: string, content: ToolContent[]): void;
@@ -469,15 +469,15 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   };
   const activeKeys = new Map<string, number>();
 
-  const isRefused = (batch: BatchCore, tool: AnyTool): boolean => tool.schemaMode === 'lenient' && batch.toolUnavailable?.(schemaIdentity(tool)) === true;
+  const isRefused = (batch: BatchCore, tool: AnyTool): boolean => tool.schemaMode === 'lenient' && batch.toolUnavailable?.(toolRefusalKey(tool)) === true;
 
   const announceValidatorFailure = (batch: BatchCore, tool: AnyTool, detail: string): void => {
-    const identity = schemaIdentity(tool);
-    if (batch.toolUnavailable?.(identity) === true) return;
+    const toolKey = toolRefusalKey(tool);
+    if (batch.toolUnavailable?.(toolKey) === true) return;
     const origin = tool.server === undefined ? '' : ` of MCP server ${JSON.stringify(cleanFailureMessage(tool.server))}`;
     const message = `Tool ${cleanFailureMessage(tool.name)}${origin} is unavailable for the rest of this run: its schema validator failed: ${detail}`;
     options.onWarning(message);
-    batch.onWarning?.(message, `tool_validator_failed:${identity}`);
+    batch.onWarning?.(message, toolKey);
   };
 
   const validateFor = (batch: BatchCore, tool: AnyTool, raw: unknown): ValidationResult =>

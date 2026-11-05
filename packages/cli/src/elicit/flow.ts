@@ -6,7 +6,7 @@ import type { ContentValue, FormField } from './form.ts';
 export type ElicitationDecision = 'accept' | 'decline' | 'cancel';
 
 export type ElicitationFlow = {
-  readonly server: string | undefined;
+  readonly server: string;
   readonly requests: readonly ElicitationRequestView[];
   readonly index: number;
   readonly stage: 'fields' | 'decision';
@@ -19,7 +19,7 @@ export type ElicitationFlow = {
   readonly complete: boolean;
 };
 
-const enter = (server: string | undefined, requests: readonly ElicitationRequestView[], index: number, answers: ElicitationFlow['answers'], notices: readonly string[]): ElicitationFlow => {
+const enter = (server: string, requests: readonly ElicitationRequestView[], index: number, answers: ElicitationFlow['answers'], notices: readonly string[]): ElicitationFlow => {
   const request = requests[index];
   if (request === undefined) throw new RangeError(`elicitation request ${index} does not exist`);
   const fields = request.mode === 'form' ? fieldsOf(request.requestedSchema) : [];
@@ -38,7 +38,7 @@ const enter = (server: string | undefined, requests: readonly ElicitationRequest
   };
 };
 
-export const startFlow = (requests: readonly ElicitationRequestView[], server?: string): ElicitationFlow => enter(server, requests, 0, {}, []);
+export const startFlow = (requests: readonly ElicitationRequestView[], server: string): ElicitationFlow => enter(server, requests, 0, {}, []);
 
 export const currentRequest = (flow: ElicitationFlow): ElicitationRequestView => {
   const request = flow.requests[flow.index];

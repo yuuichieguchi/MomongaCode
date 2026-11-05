@@ -61,7 +61,7 @@ export type {
   ToolSessionState,
   ToolTier,
 } from './types.ts';
-export { schemaIdentity, validateToolInput } from './validate.ts';
+export { TOOL_VALIDATOR_FAILED_CODE, schemaIdentity, toolRefusalKey, validateToolInput } from './validate.ts';
 export type { ValidationResult } from './validate.ts';
 export { buildSandboxPolicy, createBuiltinTools } from './builtins/index.ts';
 export { readOnlyEnvironment, readOnlySandboxPolicy } from './read-only-call.ts';

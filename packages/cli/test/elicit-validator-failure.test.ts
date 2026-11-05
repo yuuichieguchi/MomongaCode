@@ -12,7 +12,7 @@ const THROWING_FORM: ElicitationRequestView = {
 
 describe('elicitation flow with a requestedSchema whose validator throws', () => {
   it('answers decline for the request instead of accepting unchecked content or throwing the engine error', () => {
-    const flow = decide(enterValue(startFlow([THROWING_FORM]), 'Ada'), 'accept');
+    const flow = decide(enterValue(startFlow([THROWING_FORM], 'fx'), 'Ada'), 'accept');
     expect(flow.complete).toBe(true);
     expect(flow.answers).toEqual({ profile: { action: 'decline' } });
   });

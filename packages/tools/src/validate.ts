@@ -2,7 +2,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import type { ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import type { AnyTool } from './types.ts';
-import { SchemaValidatorFailure, compileUntrustedSchema, untrustedSchemaFailure, validateUntrusted } from '@momonga/foundation';
+import { SchemaValidatorFailure, compileUntrustedSchema, sha256Hex, untrustedSchemaFailure, validateUntrusted } from '@momonga/foundation';
 
 const MAX_REPORTED_ERRORS = 20;
 
@@ -12,6 +12,10 @@ addFormats.default(ajv);
 const compiled = new WeakMap<Record<string, unknown>, ValidateFunction>();
 
 export const schemaIdentity = (tool: { name: string; validatorIdentity?: string }): string => tool.validatorIdentity ?? tool.name;
+
+export const TOOL_VALIDATOR_FAILED_CODE = 'tool_validator_failed';
+
+export const toolRefusalKey = (tool: { name: string; validatorIdentity?: string }): string => sha256Hex(schemaIdentity(tool));
 
 export const recordedFailureOf = (tool: AnyTool): string | undefined => {
   const identity = schemaIdentity(tool);
