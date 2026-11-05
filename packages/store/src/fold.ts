@@ -490,6 +490,8 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       return { ...state, activatedSkills: withSkill(state.activatedSkills, { name: event.name, content: event.content, seq: event.seq }) };
     case 'tool.loaded':
       return { ...state, loadedTools: withLoadedTools(state.loadedTools, event.names) };
+    case 'tool.offered':
+      return { ...state, offeredTools: [...event.names] };
     case 'loop.warned':
       return { ...state, loopWarned: { signature: event.signature } };
     case 'approval.rule.persisted': {
