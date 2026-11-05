@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { JsonDepthError, MAX_JSON_DEPTH, canonicalJson } from '@momonga/foundation';
 
-const STACK_BREAKING_DEPTH = 3000;
+const UNBOUNDED_DEPTH = 100_000;
 
 const nested = (depth: number): unknown => {
   let value: unknown = 1;
@@ -11,34 +11,42 @@ const nested = (depth: number): unknown => {
 
 const nestedText = (depth: number): string => `${'{"a":'.repeat(depth)}1${'}'.repeat(depth)}`;
 
-const thrownBy = (run: () => unknown): unknown => {
+const outcomeOf = (run: () => string): { text: string } | { error: unknown } => {
   try {
-    run();
+    return { text: run() };
   } catch (error) {
-    return error;
+    return { error };
   }
-  throw new Error('expected a throw');
 };
 
-describe('canonicalJson enforces the one JSON depth bound', () => {
-  it('bounds JSON depth at 128', () => {
-    expect(MAX_JSON_DEPTH).toBe(128);
+describe('canonicalJson has no depth limit of its own', () => {
+  it(`encodes a value past the outside-data bound exactly`, () => {
+    expect(canonicalJson(nested(MAX_JSON_DEPTH + 1))).toBe(nestedText(MAX_JSON_DEPTH + 1));
   });
 
-  it('encodes a value exactly at the bound', () => {
-    expect(canonicalJson(nested(MAX_JSON_DEPTH))).toBe(nestedText(MAX_JSON_DEPTH));
+  it('sorts keys at every level of a nested value', () => {
+    expect(canonicalJson({ b: [{ d: 1, c: { f: 2, e: 3 } }], a: null })).toBe('{"a":null,"b":[{"c":{"e":3,"f":2},"d":1}]}');
   });
 
-  it('counts an array as one level, like an object', () => {
-    expect(canonicalJson([nested(MAX_JSON_DEPTH - 1)])).toBe(`[${nestedText(MAX_JSON_DEPTH - 1)}]`);
-    expect(thrownBy(() => canonicalJson([nested(MAX_JSON_DEPTH)]))).toBeInstanceOf(JsonDepthError);
+  it(`encodes a value ${UNBOUNDED_DEPTH} levels deep without a stack overflow or a depth error`, () => {
+    const outcome = outcomeOf(() => canonicalJson([nested(UNBOUNDED_DEPTH)]));
+    if ('error' in outcome) {
+      expect(outcome.error).not.toBeInstanceOf(RangeError);
+      expect(outcome.error).not.toBeInstanceOf(JsonDepthError);
+    }
+    expect(outcome).toHaveProperty('text');
+    if ('text' in outcome) {
+      expect(outcome.text.length).toBe(nestedText(UNBOUNDED_DEPTH).length + 2);
+      expect(outcome.text.startsWith(`[${'{"a":'.repeat(8)}`)).toBe(true);
+      expect(outcome.text.endsWith(`1${'}'.repeat(8)}]`)).toBe(true);
+    }
   });
 
-  it.each([MAX_JSON_DEPTH + 1, STACK_BREAKING_DEPTH])('throws the typed depth error at depth %i, naming the bound', (depth) => {
-    const error = thrownBy(() => canonicalJson(nested(depth)));
-    expect(error).not.toBeInstanceOf(RangeError);
-    expect(error).toBeInstanceOf(JsonDepthError);
-    expect((error as Error).message).toMatch(/depth/i);
-    expect((error as Error).message).toContain(String(MAX_JSON_DEPTH));
+  it('still reports a cycle with its path', () => {
+    const inner: Record<string, unknown> = {};
+    const root = { a: { b: inner } };
+    inner['c'] = root;
+    expect(() => canonicalJson(root)).toThrow(TypeError);
+    expect(() => canonicalJson(root)).toThrow('canonicalJson: cannot encode circular reference at a.b.c');
   });
 });

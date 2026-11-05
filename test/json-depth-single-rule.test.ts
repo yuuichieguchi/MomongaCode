@@ -29,7 +29,6 @@ const BOUNDARIES = [
   'packages/eval/src/dataset.ts',
   'packages/mcp/src/input-requests.ts',
   'packages/mcp/src/connection.ts',
-  'packages/foundation/src/canonical-json.ts',
 ];
 
 const CONSTANT_DECLARATION = /\b(?:const|let|var)\s+([A-Z][A-Z0-9_]*DEPTH[A-Z0-9_]*)\s*=\s*\d/g;
@@ -138,5 +137,11 @@ describe('one JSON depth rule for every value that enters from outside', () => {
   it('bounds model output in the constrained sink with the foundation constant', () => {
     const source = sourceOf('packages/gateway/src/adapters/chat-completions/constrained-sink.ts');
     expect(source).toMatch(/import \{[^}]*\bMAX_JSON_DEPTH\b[^}]*\} from '@momonga\/foundation'/);
+  });
+
+  it('leaves canonicalJson without a depth limit of its own', () => {
+    const source = sourceOf('packages/foundation/src/canonical-json.ts');
+    expect(source).not.toMatch(/\bcheckJsonDepth\b/);
+    expect(source).not.toMatch(/\bMAX_JSON_DEPTH\b/);
   });
 });
