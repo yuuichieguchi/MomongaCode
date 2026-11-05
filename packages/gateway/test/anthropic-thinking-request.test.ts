@@ -75,7 +75,7 @@ describe('anthropic thinking request from a declared adaptive form', () => {
     expect(JSON.stringify(body)).not.toContain('"max"');
   });
 
-  it('lifts minimal, which no target declares, to the lowest declared level', async () => {
+  it('clamps the internal level minimal up to the lowest declared adaptive level', async () => {
     const body = await directBodyFor(ADAPTIVE, 'minimal');
     expect(body.thinking).toEqual({ type: 'adaptive' });
     expect(body.output_config).toEqual({ effort: 'low' });
@@ -123,7 +123,7 @@ describe('anthropic thinking request from a declared budget form', () => {
     expect(body.thinking).toEqual({ type: 'enabled', budget_tokens: 6000 });
   });
 
-  it('lifts minimal to the lowest declared budget', async () => {
+  it('clamps the internal level minimal up to the lowest declared budget', async () => {
     const body = await directBodyFor(BUDGET, 'minimal');
     expect(body.thinking).toEqual({ type: 'enabled', budget_tokens: 2048 });
   });
@@ -137,6 +137,25 @@ describe('anthropic thinking request from a declared budget form', () => {
     const body = await sentFor({ ...BUDGET, off: 'disabled' }, 'none', { max_output_tokens: VISIBLE });
     expect(body.thinking).toEqual({ type: 'disabled' });
     expect(body.max_tokens).toBe(VISIBLE);
+  });
+
+  it('sends the declared budget under the model maximum when the request asks for no visible cap', async () => {
+    const body = await sentFor(BUDGET, 'high');
+    expect(body.max_tokens).toBe(REMOTE_CAPABILITIES.maxOutputTokens);
+    expect(body.thinking).toEqual({ type: 'enabled', budget_tokens: 6000 });
+  });
+
+  it('keeps the budget at 1024 when the requested cap is within 1024 of the model maximum', async () => {
+    const body = await sentFor(BUDGET, 'low', { max_output_tokens: REMOTE_CAPABILITIES.maxOutputTokens - 500 });
+    expect(body.max_tokens).toBe(REMOTE_CAPABILITIES.maxOutputTokens);
+    expect(body.thinking).toEqual({ type: 'enabled', budget_tokens: 1024 });
+  });
+
+  it('rejects minimal in a public request, since the Open Responses effort enum has no minimal', async () => {
+    const gateway = await startAnthropicGateway({ script: [anthropicTextReply(['ok'])], capabilities: withReasoning(BUDGET) });
+    const response = await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi'), reasoning: { effort: 'minimal' } });
+    expect(response.status).toBe(400);
+    expect(sentBodies(gateway)).toEqual([]);
   });
 
   it('shrinks the budget when the model output maximum binds, keeping it below max_tokens', async () => {
