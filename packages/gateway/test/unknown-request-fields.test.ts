@@ -66,7 +66,7 @@ const chatUpstream = async (toolCalling: 'native' | 'constrained'): Promise<Upst
     scenario: toolCalling === 'native' ? 'tools-ok' : 'json-schema-only',
     script: [{ kind: 'stream', chunks: [{ delta: { role: 'assistant', content: reply } }, { delta: {}, finishReason: 'stop' }] }],
   });
-  const adapter = makeAdapter(fake, { toolCalling: () => toolCalling, capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling }) });
+  const adapter = makeAdapter(fake, { capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling }) });
   return { adapter, model: 'system', sent: () => completionBodies(fake) };
 };
 
