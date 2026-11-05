@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
 import { canonicalJson, openDatabase, sha256Hex } from '@momonga/foundation';
 import type { RunEventPayload } from '@momonga/protocol';
-import { createJournalReader, openRuntimeStore } from '@momonga/store';
+import { JournalThreadError, createJournalReader, openRuntimeStore } from '@momonga/store';
 import type { Claim, ContributionPreparer, Run, RuntimeStore, RuntimeStoreOptions, TerminalContribution } from '@momonga/store';
 import { createFakeClock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
@@ -40,7 +40,12 @@ export type StoreOptions = {
   home?: string;
 };
 
+const unexercised = (): Promise<never> => Promise.reject(new JournalThreadError('this store test double answers no journal facts'));
+
+export const noJournalFacts = { verdict: unexercised, evidence: unexercised, reflectionInput: unexercised };
+
 export const hookPreparer = (hook: TerminalContribution, dbPath: string): ContributionPreparer => ({
+  ...noJournalFacts,
   measure: async (request) => {
     const db = openDatabase(dbPath);
     try {

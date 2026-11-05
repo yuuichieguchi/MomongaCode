@@ -2,6 +2,7 @@ import type { Clock, Redactor } from '@momonga/foundation';
 import type { CANCEL_ORIGINS } from './transitions.ts';
 import type {
   BilledDetail,
+  Capabilities,
   CallTiming,
   TokenAnatomy,
   RunTracePrefix,
@@ -574,6 +575,7 @@ export type RuntimeStore = {
   guidelines: GuidelineStore;
   governing: GoverningFactStore;
   search: SearchStore;
+  readonly journalFacts: JournalFacts;
   close(): void;
 };
 
@@ -596,7 +598,37 @@ export type ContributionRequest = { runId: string; leading: readonly RunEventPay
 
 export type ContributionMeasured = { lastSeq: number; contribution?: ContributionPayload };
 
-export type ContributionPreparer = {
+export type VerdictRequest = { runId: string; commands: readonly string[]; manifests: readonly string[] };
+
+export type VerdictFact = {
+  command: string;
+  text: string;
+  kind: 'procedure';
+  check: { callId: string; seq: number };
+  manifestPaths: string[];
+};
+
+export type VerdictReply = { lastSeq: number; verified: boolean; facts: VerdictFact[] };
+
+export type EvidenceRequest = { runId: string; paths: readonly string[]; verificationCommands: readonly string[]; onlyCommand?: string };
+
+export type RecordedHash = { sha256: string; seq: number };
+
+export type RecordedCheck = { callId: string; seq: number; command: string; exitCode: number };
+
+export type EvidenceReply = { lastSeq: number; recorded: (RecordedHash | null)[]; check: RecordedCheck | null };
+
+export type ReflectionInputRequest = { runId: string; project: string; capabilities: Capabilities };
+
+export type ReflectionInputReply = { lastSeq: number; input: string };
+
+export type JournalFacts = {
+  verdict(request: VerdictRequest, signal?: AbortSignal): Promise<VerdictReply>;
+  evidence(request: EvidenceRequest, signal?: AbortSignal): Promise<EvidenceReply>;
+  reflectionInput(request: ReflectionInputRequest, signal?: AbortSignal): Promise<ReflectionInputReply>;
+};
+
+export type ContributionPreparer = JournalFacts & {
   measure(request: ContributionRequest, signal?: AbortSignal): Promise<ContributionMeasured>;
 };
 

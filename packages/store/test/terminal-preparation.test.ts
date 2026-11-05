@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ElicitationRequestView } from '@momonga/protocol';
 import type { Claim, ContributionPreparer, Run, RuntimeStore } from '@momonga/store';
 import { EXPIRES_MS, awaitingApproval } from './approval-fixture.ts';
-import { LEASE_MS, callEvent, cancel, enqueue, harness, mustClaim, mustRun, newSession, rawDb } from './helpers.ts';
+import { LEASE_MS, callEvent, cancel, enqueue, harness, mustClaim, mustRun, newSession, noJournalFacts, rawDb } from './helpers.ts';
 import type { Harness } from './helpers.ts';
 import { contributionOf } from './preparer-fixture.ts';
 
@@ -19,6 +19,7 @@ const measuring = (options: { maxAttempts?: number } = {}): { h: Harness; measur
   let probe: (() => boolean) | undefined;
   let bound: RuntimeStore | undefined;
   const preparer: ContributionPreparer = {
+    ...noJournalFacts,
     measure: async ({ runId }) => {
       if (probe === undefined || bound === undefined) throw new Error('the write-lock probe is not ready');
       measurements.push({ runId, underWriteLock: probe() });
