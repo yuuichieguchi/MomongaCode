@@ -170,8 +170,9 @@ const classified = (code: string | null, param: string | null): ClassifiedError 
 describe('T10: codes and params are forwarded or dropped by shape', () => {
   it.for([
     { label: 'the code context_length_exceeded is kept', code: 'context_length_exceeded', param: null, expected: { code: 'context_length_exceeded', param: null } },
-    { label: 'a code of 70 characters becomes null', code: 'c'.repeat(70), param: null, expected: { code: null, param: null } },
-    { label: 'a code with a space becomes null', code: 'bad code', param: null, expected: { code: null, param: null } },
+    { label: 'a code of 70 characters fails the shape check and the failure carries upstream_error', code: 'c'.repeat(70), param: null, expected: { code: 'upstream_error', param: null } },
+    { label: 'a code with a space fails the shape check and the failure carries upstream_error', code: 'bad code', param: null, expected: { code: 'upstream_error', param: null } },
+    { label: 'an upstream 4xx without a code still gives the failure the code upstream_error', code: null, param: null, expected: { code: 'upstream_error', param: null } },
     {
       label: 'the param input[0].encrypted_content is kept',
       code: 'invalid_body',
@@ -180,7 +181,7 @@ describe('T10: codes and params are forwarded or dropped by shape', () => {
     },
     { label: 'a param of 200 characters becomes null', code: 'invalid_body', param: 'p'.repeat(200), expected: { code: 'invalid_body', param: null } },
     { label: 'a param with a space becomes null', code: 'invalid_body', param: 'input 0', expected: { code: 'invalid_body', param: null } },
-    { label: 'a code equal to the configured key becomes null', code: TEST_API_KEY, param: null, expected: { code: null, param: null } },
+    { label: 'a code equal to the configured key is scrubbed and the failure carries upstream_error', code: TEST_API_KEY, param: null, expected: { code: 'upstream_error', param: null } },
     { label: 'a param equal to the configured key becomes null', code: 'invalid_body', param: TEST_API_KEY, expected: { code: 'invalid_body', param: null } },
   ])('classify: $label', async ({ code, param, expected }) => {
     const { client } = await startGateway({ adapters: { primary: failingAdapter(classified(code, param)) }, credentials: [TEST_API_KEY] });
