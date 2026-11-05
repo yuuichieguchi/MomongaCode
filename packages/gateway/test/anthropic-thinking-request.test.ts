@@ -204,6 +204,7 @@ describe('thinking in a tool loop on a target that declares the adaptive form', 
     const first = await streamResponse(gateway, { tools: [readFileTool], input: userInput('read a.txt'), reasoning: { effort: 'medium', summary: null } });
     const output: any[] = terminalOf(first).response.output;
     expect(output.map((item) => item.type)).toEqual(['reasoning', 'function_call']);
+    const callId: string = output[1].call_id;
 
     await readSse(
       await postJson(gateway.client, '/v1/responses', {
@@ -211,7 +212,7 @@ describe('thinking in a tool loop on a target that declares the adaptive form', 
         stream: true,
         tools: [readFileTool],
         reasoning: { effort: 'medium', summary: null },
-        input: [...userInput('read a.txt'), ...output, { type: 'function_call_output', call_id: 'toolu_01', output: 'alpha' }],
+        input: [...userInput('read a.txt'), ...output, { type: 'function_call_output', call_id: callId, output: 'alpha' }],
       }),
     );
 
@@ -221,7 +222,7 @@ describe('thinking in a tool loop on a target that declares the adaptive form', 
     const assistant = secondBody.messages.find((message: any) => message.role === 'assistant');
     expect(assistant.content).toEqual([
       { type: 'thinking', thinking: THINKING, signature: SIGNATURE },
-      { type: 'tool_use', id: 'toolu_01', name: 'read_file', input: { path: 'a.txt' } },
+      { type: 'tool_use', id: callId, name: 'read_file', input: { path: 'a.txt' } },
     ]);
   });
 });

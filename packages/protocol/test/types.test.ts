@@ -34,7 +34,11 @@ describe('protocol capability types', () => {
         maxConcurrency: number;
         source: 'declared' | 'probed' | 'config' | 'unprobed';
         probedAt?: string;
-        reasoning?: { control: 'none'; headroomTokens?: number } | { control: 'reasoning_effort'; lowest: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' };
+        reasoning?:
+          | { control: 'none'; headroomTokens?: number }
+          | { control: 'reasoning_effort'; lowest: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' }
+          | { control: 'thinking'; form: 'adaptive'; efforts: readonly ('low' | 'medium' | 'high' | 'xhigh')[]; off?: 'disabled' | 'between_tools' }
+          | { control: 'thinking'; form: 'budget'; budgets: Readonly<Partial<Record<'minimal' | 'low' | 'medium' | 'high' | 'xhigh', number>>>; off?: 'disabled' | 'between_tools' };
       } & (
         | { imageInput: false; imageTokens?: undefined }
         | { imageInput: true; imageTokens: { pixelsPerToken: number; maxTokens: number; minTokens: number } }
@@ -78,7 +82,11 @@ describe('protocol capability types', () => {
       stopSequences: boolean;
       outputBoundField?: 'max_completion_tokens' | 'max_tokens' | 'none';
       parallelToolCalls?: { accepted: boolean; multiCallRate: number };
-      reasoning?: { control: 'none'; headroomTokens?: number } | { control: 'reasoning_effort'; lowest: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' };
+      reasoning?:
+          | { control: 'none'; headroomTokens?: number }
+          | { control: 'reasoning_effort'; lowest: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' }
+          | { control: 'thinking'; form: 'adaptive'; efforts: readonly ('low' | 'medium' | 'high' | 'xhigh')[]; off?: 'disabled' | 'between_tools' }
+          | { control: 'thinking'; form: 'budget'; budgets: Readonly<Partial<Record<'minimal' | 'low' | 'medium' | 'high' | 'xhigh', number>>>; off?: 'disabled' | 'between_tools' };
       maxConcurrency: number;
       imageInputAccepted: boolean;
       imageTokens?: { pixelsPerToken: number; maxTokens: number; minTokens: number };

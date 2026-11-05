@@ -27,6 +27,10 @@ describe('one clamping rule for every reasoning control', () => {
     expect(clampReasoningEffort('none', ['low', 'medium', 'high'])).toBe('low');
   });
 
+  it('never clamps a ladder level to none, which means thinking off', () => {
+    expect(clampReasoningEffort('minimal', ['none', 'low', 'medium'])).toBe('low');
+  });
+
   it('keeps none when the target accepts none', () => {
     expect(clampReasoningEffort('none', ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'])).toBe('none');
   });
