@@ -23,20 +23,25 @@ const okTarget = async (): Promise<{ fake: FakeChatCompletionsServer; adapter: C
   return { fake, adapter: makeAdapter(fake) };
 };
 
-const rejectingTarget = async (message: string): Promise<ChatCompletionsAdapter> => {
+type Failure = (message: string) => Error;
+
+const plainError: Failure = (message) => new Error(message);
+const refusedConnection: Failure = (message) => Object.assign(new Error(message), { code: 'ECONNREFUSED' });
+
+const rejectingTarget = async (message: string, failure: Failure = plainError): Promise<ChatCompletionsAdapter> => {
   const fake = await startFake({ scenario: 'tools-ok', script: [] });
   return makeAdapter(fake, {
     capabilities: async () => {
-      throw new Error(message);
+      throw failure(message);
     },
   });
 };
 
-const unreachableTarget = async (message: string): Promise<ChatCompletionsAdapter> => {
+const unreachableTarget = async (message: string, failure: Failure = plainError): Promise<ChatCompletionsAdapter> => {
   const fake = await startFake({ scenario: 'tools-ok', script: [] });
   return makeAdapter(fake, {
     resolveEndpoint: async () => {
-      throw new Error(message);
+      throw failure(message);
     },
   });
 };
@@ -67,6 +72,12 @@ const expectServedByOk = (operation: (typeof OPERATIONS)[number], response: { st
 
 const failureOf = (response: { status: number; body: any }) => ({ status: response.status, code: response.body.error?.code, message: response.body.error?.message });
 
+const outcomeOf = (response: { status: number; body: any }) => ({
+  ...failureOf(response),
+  target: response.body.momonga?.target,
+  fallbackFrom: response.body.momonga?.fallbackFrom,
+});
+
 describe('a candidate whose capabilities cannot be resolved is a failed attempt, not a failed request', () => {
   it.for(OPERATIONS)('[ok, rejecting] $name is served by ok', async (operation) => {
     const ok = await okTarget();
@@ -74,11 +85,45 @@ describe('a candidate whose capabilities cannot be resolved is a failed attempt,
     expectServedByOk(operation, await send(client, operation), ok.fake);
   });
 
-  it.for(OPERATIONS)('[rejecting, ok] $name is served by ok', async (operation) => {
+  it.for(OPERATIONS)('[rejecting, ok] with a plain Error: $name ends as the same error thrown inside the attempt does', async (operation) => {
+    const reference = await okTarget();
+    const referenceGateway = await gatewayOf({ rejecting: await unreachableTarget(FIRST_FAILURE), ok: reference.adapter }, ['rejecting', 'ok']);
+    const expected = outcomeOf(await send(referenceGateway.client, operation));
+    const referenceOkCalls = completionBodies(reference.fake).length;
+
     const ok = await okTarget();
     const { client } = await gatewayOf({ rejecting: await rejectingTarget(FIRST_FAILURE), ok: ok.adapter }, ['rejecting', 'ok']);
+    expect(outcomeOf(await send(client, operation))).toEqual(expected);
+    expect(completionBodies(ok.fake)).toHaveLength(referenceOkCalls);
+  });
+
+  it.for(OPERATIONS)('[rejecting, ok] with a retryable rejection: $name falls back to ok', async (operation) => {
+    const ok = await okTarget();
+    const { client } = await gatewayOf({ rejecting: await rejectingTarget(FIRST_FAILURE, refusedConnection), ok: ok.adapter }, ['rejecting', 'ok']);
     expectServedByOk(operation, await send(client, operation), ok.fake);
   });
+
+  it.for(OPERATIONS.filter((operation) => operation.path !== '/v1/momonga/count_tokens'))(
+    '[rejecting, ok] with a retryable rejection: $name records the fallback and the breaker as a retryable attempt failure does',
+    async (operation) => {
+      const reference = await okTarget();
+      const referenceGateway = await gatewayOf({ rejecting: await unreachableTarget(FIRST_FAILURE, refusedConnection), ok: reference.adapter }, ['rejecting', 'ok']);
+      const expected = await send(referenceGateway.client, operation);
+      const expectedHealth = await getJson(referenceGateway.client, '/v1/momonga/health');
+      expect(expected.status).toBe(200);
+
+      const ok = await okTarget();
+      const { client } = await gatewayOf({ rejecting: await rejectingTarget(FIRST_FAILURE, refusedConnection), ok: ok.adapter }, ['rejecting', 'ok']);
+      const response = await send(client, operation);
+      expect(response.status).toBe(200);
+      if (operation.path === '/v1/responses') expect(response.body.momonga?.fallbackFrom).toEqual(['rejecting']);
+      expect(response.body.momonga?.fallbackFrom).toEqual(expected.body.momonga?.fallbackFrom);
+      expect(response.body.momonga?.fallbackCauses).toEqual(expected.body.momonga?.fallbackCauses);
+      const health = await getJson(client, '/v1/momonga/health');
+      expect(health.body.targets.rejecting.breaker).toBe(expectedHealth.body.targets.rejecting.breaker);
+      expect(health.body.targets.ok.breaker).toBe(expectedHealth.body.targets.ok.breaker);
+    },
+  );
 
   it.for(OPERATIONS)('[rejecting, rejecting] $name fails with the failure of the first target', async (operation) => {
     const { client } = await gatewayOf({ first: await rejectingTarget(FIRST_FAILURE), second: await rejectingTarget(SECOND_FAILURE) }, ['first', 'second']);
@@ -86,20 +131,6 @@ describe('a candidate whose capabilities cannot be resolved is a failed attempt,
     expect(response.status).not.toBe(200);
     expect(String(response.body.error?.message)).toContain(FIRST_FAILURE);
     expect(String(response.body.error?.message)).not.toContain(SECOND_FAILURE);
-  });
-
-  it.for(CREATES)('[rejecting, ok] $name records the rejection as a fallback cause and opens the breaker of the rejecting target', async (operation) => {
-    const ok = await okTarget();
-    const { client } = await gatewayOf({ rejecting: await rejectingTarget(FIRST_FAILURE), ok: ok.adapter }, ['rejecting', 'ok']);
-    const response = await send(client, operation);
-    expect(response.status).toBe(200);
-    expect(response.body.momonga?.fallbackFrom).toEqual(['rejecting']);
-    expect(response.body.momonga.fallbackCauses).toHaveLength(1);
-    expect(response.body.momonga.fallbackCauses[0].target).toBe('rejecting');
-    expect(response.body.momonga.fallbackCauses[0].message).toContain(FIRST_FAILURE);
-    const health = await getJson(client, '/v1/momonga/health');
-    expect(health.body.targets.rejecting.breaker).toBe('open');
-    expect(health.body.targets.ok.breaker).toBe('closed');
   });
 
   it.for(CREATES)('[rejecting, rejecting] $name fails as two failed attempts do', async (operation) => {
