@@ -4,7 +4,7 @@ import { applyRule, RenderFailure, type FailureReason, type State } from './prim
 import { selects, type Site } from './selector.ts';
 import { childSlots, collectReferenceSegments, setSlot, slotValue } from './walk.ts';
 
-export type Rendered = { ok: true; schema: Schema } | { ok: false; reason: FailureReason; path: string; detail: string };
+export type Rendered = { ok: true; schema: Schema } | { ok: false; reason: FailureReason; path: string; detail: string; node: Schema };
 
 const changedKeys = (before: Schema, after: Schema): string[] => {
   const left = isObject(before) ? before : {};
@@ -66,7 +66,7 @@ export const render = (input: Schema | null, definition: Definition, site: Site)
       holder.value = value;
     }, state);
   } catch (error) {
-    if (error instanceof RenderFailure) return { ok: false, reason: error.reason, path: error.path, detail: error.message };
+    if (error instanceof RenderFailure) return { ok: false, reason: error.reason, path: error.path, detail: error.message, node: error.node };
     throw error;
   }
   return { ok: true, schema: holder.value };

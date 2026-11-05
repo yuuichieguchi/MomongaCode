@@ -161,5 +161,6 @@ const mergeStats = (target: CheckStats, source: CheckStats): void => {
   target.validOriginal += source.validOriginal;
   target.validRendered += source.validRendered;
   target.oracleErrors += source.oracleErrors;
+  target.unverifiable += source.unverifiable;
   for (const [reason, count] of Object.entries(source.failedRenders)) target.failedRenders[reason] = (target.failedRenders[reason] ?? 0) + count;
 };

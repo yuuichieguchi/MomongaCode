@@ -18,10 +18,12 @@ export const STATED_REASONS: readonly FailureReason[] = ['loop', 'reject', 'pola
 export class RenderFailure extends Error {
   readonly reason: FailureReason;
   readonly path: string;
-  constructor(reason: FailureReason, path: string, detail: string) {
+  readonly node: Schema;
+  constructor(reason: FailureReason, path: string, detail: string, node?: Schema) {
     super(`${reason} at ${path}: ${detail}`);
     this.reason = reason;
     this.path = path;
+    this.node = node;
   }
 }
 
@@ -186,7 +188,7 @@ const splitEnum = (node: JsonObject, state: State): JsonObject => {
   if (!Array.isArray(node['enum'])) return node;
   const allowed = typesOf(node);
   const values = allowed === undefined ? node['enum'] : node['enum'].filter((value) => allowed.some((type) => matchesType(value, type)));
-  if (values.length === 0) throw new RenderFailure('unsatisfiable', pathOf(state), 'no enum value has an allowed type');
+  if (values.length === 0) throw new RenderFailure('unsatisfiable', pathOf(state), 'no enum value has an allowed type', node);
   const groups = new Map<string, Json[]>();
   for (const value of values) {
     const raw = jsonTypeOf(value);
@@ -218,7 +220,7 @@ const splitTypeArray = (node: JsonObject, state: State): JsonObject => {
     }
     branches.push(branch);
   }
-  if (branches.length === 0) throw new RenderFailure('unsatisfiable', pathOf(state), 'no branch keeps a value');
+  if (branches.length === 0) throw new RenderFailure('unsatisfiable', pathOf(state), 'no branch keeps a value', node);
   return { ...parentAnnotations(node), anyOf: branches };
 };
 
@@ -226,7 +228,7 @@ const constAsEnum = (node: JsonObject, state: State): JsonObject => {
   if (!('const' in node)) return node;
   const value = node['const'] as Json;
   if (Array.isArray(node['enum']) && !node['enum'].some((member) => deepEqual(member, value))) {
-    throw new RenderFailure('unsatisfiable', pathOf(state), 'const is outside enum');
+    throw new RenderFailure('unsatisfiable', pathOf(state), 'const is outside enum', node);
   }
   const result: JsonObject = {};
   for (const key of Object.keys(node)) {
@@ -264,7 +266,7 @@ const declareRequired = (node: JsonObject, state: State): JsonObject => {
       properties[name] = {};
     } else {
       const open = node['additionalProperties'];
-      if (open === false) throw new RenderFailure('unsatisfiable', pathOf(state), `required ${name} is forbidden by additionalProperties false`);
+      if (open === false) throw new RenderFailure('unsatisfiable', pathOf(state), `required ${name} is forbidden by additionalProperties false`, node);
       properties[name] = open === undefined || open === true ? {} : clone(open);
     }
     added = true;

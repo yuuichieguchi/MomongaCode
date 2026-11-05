@@ -1,7 +1,7 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import { resolveRules, type Definition } from './definition.ts';
 import { instancesFor } from './instance-gen.ts';
-import { clone, deepEqual, exact, isObject, type Json, type Schema } from './json.ts';
+import { clone, deepEqual, exact, isObject, type Json, type JsonObject, type Schema } from './json.ts';
 import { STATED_REASONS, type FailureReason } from './primitives.ts';
 import type { Rng } from './prng.ts';
 import { createRng } from './prng.ts';
@@ -38,6 +38,7 @@ export interface CheckStats {
   validOriginal: number;
   validRendered: number;
   oracleErrors: number;
+  unverifiable: number;
 }
 
 export const emptyStats = (): CheckStats => ({
@@ -49,6 +50,7 @@ export const emptyStats = (): CheckStats => ({
   validOriginal: 0,
   validRendered: 0,
   oracleErrors: 0,
+  unverifiable: 0,
 });
 
 export class OracleError extends Error {}
@@ -83,6 +85,17 @@ export interface CaseInput {
   forcedInstances?: readonly Json[];
   stats?: CheckStats;
 }
+
+const standaloneNode = (node: Schema, root: Schema): Json | undefined => {
+  if (!isObject(node)) return node;
+  const result: JsonObject = { ...clone(node) };
+  if (isObject(root)) {
+    for (const key of ['$defs', 'definitions'] as const) {
+      if (!(key in result) && key in root) result[key] = clone(root[key] as Json);
+    }
+  }
+  return result;
+};
 
 const dropKeysOf = (definition: Definition): Set<string> => {
   const keys = new Set<string>();
@@ -123,10 +136,21 @@ const checkCaseUnguarded = (input: CaseInput): Failure | null => {
   if (!first.ok) {
     if (stats !== undefined) stats.failedRenders[first.reason] = (stats.failedRenders[first.reason] ?? 0) + 1;
     if (first.reason === 'unsatisfiable') {
-      const validOriginal = validators.compile(original);
-      const probes = [...instancesFor(original, original, rng, input.perDocument), ...(input.forcedInstances ?? [])];
+      const standalone = standaloneNode(first.node, original);
+      if (standalone === undefined) {
+        if (stats !== undefined) stats.unverifiable += 1;
+        return null;
+      }
+      let validNode: (value: Json) => boolean;
+      try {
+        validNode = validators.compile(standalone);
+      } catch {
+        if (stats !== undefined) stats.unverifiable += 1;
+        return null;
+      }
+      const probes = [...instancesFor(standalone, standalone, rng, input.perDocument), ...(input.forcedInstances ?? [])];
       if (stats !== undefined) stats.instances += probes.length;
-      const witness = probes.find((probe) => validOriginal(probe));
+      const witness = probes.find((probe) => validNode(probe));
       if (witness !== undefined) return { kind: 'false-unsatisfiable', reason: 'unsatisfiable', path: first.path, instance: witness, detail: first.detail };
       return null;
     }

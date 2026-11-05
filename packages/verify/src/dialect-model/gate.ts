@@ -38,6 +38,7 @@ for (const spec of SUBJECTS) {
       validUnderOriginal: report.stats.validOriginal,
       validUnderRendered: report.stats.validRendered,
       oracleErrors: report.stats.oracleErrors,
+      unverifiableUnsatisfiable: report.stats.unverifiable,
       counterexamples: report.counterexamples,
       seconds: (Date.now() - begun) / 1000,
     })}\n`,

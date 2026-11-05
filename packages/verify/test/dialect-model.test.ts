@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BUILTINS } from '../src/dialect-model/definition.ts';
+import { BUILTINS, type Definition } from '../src/dialect-model/definition.ts';
 import { isValidDefinition } from '../src/dialect-model/definition-gen.ts';
 import { render } from '../src/dialect-model/render.ts';
 import { runSeed, SEEDS } from '../src/dialect-model/seeds.ts';
@@ -7,6 +7,12 @@ import { runSubject, SUBJECTS } from '../src/dialect-model/subjects.ts';
 
 const SCHEMAS_PER_SUBJECT = Number(process.env['DIALECT_MODEL_SCHEMAS'] ?? '300');
 const GATE_TIMEOUT_MS = 60 * 60 * 1000;
+
+const explicitKeys = (): Definition => {
+  const definition = BUILTINS['explicit-keys'];
+  if (definition === undefined) throw new Error('explicit-keys is not defined');
+  return definition;
+};
 
 const rule = (extra: Record<string, unknown>): unknown => ({ rules: [{ select: [{ kinds: ['any'] }], ...extra }] });
 
@@ -39,8 +45,8 @@ describe('dialect model: the renderer', () => {
   it('leaves its input unchanged and renders deterministically', () => {
     const input = { type: ['string', 'null'], enum: ['a'], properties: { a: { enum: [1, 'x'] } } };
     const copy = structuredClone(input);
-    const first = render(input, BUILTINS['explicit-keys']!, 'response-format');
-    const second = render(input, BUILTINS['explicit-keys']!, 'response-format');
+    const first = render(input, explicitKeys(), 'response-format');
+    const second = render(input, explicitKeys(), 'response-format');
     expect(input).toEqual(copy);
     expect(first).toEqual(second);
   });
