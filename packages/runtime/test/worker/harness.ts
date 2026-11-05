@@ -15,7 +15,7 @@ import type { AgentCatalogPort, EvidenceRun, GovernancePort, HistoryPort, Memory
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import { foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
-import type { Claim, Run, RuntimeStore, Session } from '@momonga/store';
+import type { Claim, ContributionPreparer, Run, RuntimeStore, Session } from '@momonga/store';
 import { FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 import { createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
@@ -123,6 +123,7 @@ export type EnvOptions = {
   mode?: PermissionMode;
   maxAttempts?: number;
   maxTotalAttempts?: number;
+  preparer?: ContributionPreparer;
 };
 
 export type BatchInput = Parameters<ToolExecutor['runBatch']>[0];
@@ -163,7 +164,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     leaseMs: LEASE_MS,
     maxAttempts: options.maxAttempts ?? 5,
     maxTotalAttempts: options.maxTotalAttempts ?? 50,
-    contribution: contributionAtTerminal,
+    ...(options.preparer === undefined ? { contribution: contributionAtTerminal } : { preparer: options.preparer }),
   });
   const gateway: FakeGateway = createFakeGateway(options.capabilities ?? capabilitiesFor(100_000));
   const settings: FakeSettings = createFakeSettings({ home, project });

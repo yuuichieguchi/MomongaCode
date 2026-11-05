@@ -17,16 +17,23 @@ const waitingRun = async (env: ServiceEnv) => {
 const typesAfter = (env: ServiceEnv, runId: string, seq: number): string[] => env.runEvents(runId).filter((event) => event.seq > seq).map((event) => event.type);
 
 describe('cancel', () => {
-  it('cancels a QUEUED run with 202 and CANCELLED', async () => {
-    const env = await startService();
+  it('answers a cancel of a QUEUED run with 202 and CANCELLING, and starts neither the upstream cancel nor the release in the request', async () => {
+    const upstream: string[] = [];
+    const released: string[] = [];
+    const env = await startService({
+      cancelUpstream: async (runId: string) => void upstream.push(runId),
+      releaseStopped: async (runId: string) => void released.push(runId),
+    });
     const session = await env.createSession();
     const run = await env.createRun(session.id);
 
     const response = await env.http('POST', `/v1/runs/${run.id}/cancel`);
 
     expect(response.status).toBe(202);
-    expect(response.json.run).toMatchObject({ id: run.id, status: 'CANCELLED', cancelRequested: true });
-    expect((await env.getRun(run.id)).status).toBe('CANCELLED');
+    expect(response.json.run).toMatchObject({ id: run.id, status: 'CANCELLING', cancelRequested: true });
+    expect((await env.getRun(run.id)).status).toBe('CANCELLING');
+    expect(upstream).toEqual([]);
+    expect(released).toEqual([]);
   });
 
   it('moves a RUNNING run to CANCELLING and withdraws its pending approvals with the cancelled event first', async () => {
@@ -50,7 +57,7 @@ describe('cancel', () => {
     expect(env.ofType(run.id, 'run.status').at(-1)).toMatchObject({ from: 'RUNNING', to: 'CANCELLING' });
   });
 
-  it('cancels a WAITING_HUMAN run with 202 and CANCELLED and withdraws its approvals', async () => {
+  it('answers a cancel of a WAITING_HUMAN run with 202 and CANCELLING and withdraws its approvals', async () => {
     const env = await startService();
     const { run } = await waitingRun(env);
     const [pending] = (await env.http('GET', `/v1/runs/${run.id}/approvals`)).json.approvals;
@@ -59,12 +66,12 @@ describe('cancel', () => {
     const response = await env.http('POST', `/v1/runs/${run.id}/cancel`);
 
     expect(response.status).toBe(202);
-    expect(response.json.run).toMatchObject({ status: 'CANCELLED', cancelRequested: true });
+    expect(response.json.run).toMatchObject({ status: 'CANCELLING', cancelRequested: true });
     expect((await env.http('GET', `/v1/approvals/${pending.id}`)).json.approval.status).toBe('withdrawn');
     expect((await env.http('GET', `/v1/runs/${run.id}/approvals`)).json.approvals).toEqual([]);
     expect(typesAfter(env, run.id, before)).toEqual(['tool.permission.cancelled', 'run.status']);
     expect(env.ofType(run.id, 'tool.permission.cancelled').at(-1)).toMatchObject({ approvalId: pending.id, reason: 'withdrawn' });
-    expect(env.ofType(run.id, 'run.status').at(-1)).toMatchObject({ from: 'WAITING_HUMAN', to: 'CANCELLED' });
+    expect(env.ofType(run.id, 'run.status').at(-1)).toMatchObject({ from: 'WAITING_HUMAN', to: 'CANCELLING' });
   });
 
   it('keeps a CANCELLING run CANCELLING with 202', async () => {

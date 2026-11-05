@@ -4,6 +4,16 @@ import type { ContributionPayload, RuntimeStore, TerminalContribution } from '@m
 import { EXPIRES_MS, awaitingApproval } from './approval-fixture.ts';
 import { DEADLINE_MS, LEASE_MS, START_MS, callEvent, cancel, enqueue, harness, mustClaim, mustRun, newSession, payloadOf } from './helpers.ts';
 import type { Harness } from './helpers.ts';
+import { fakePreparer } from './preparer-fixture.ts';
+
+const preparedHarness = (options: { maxAttempts?: number } = {}) => {
+  const fake = fakePreparer();
+  const h = harness({ preparer: fake.preparer, ...options });
+  fake.bind(h.store);
+  return h;
+};
+
+const ignoreSweepErrors = (): void => undefined;
 
 const contributionFor = (id: string): ContributionPayload => ({ type: 'context.contribution', items: [{ kind: 'memory', id, contributed: true }] });
 
@@ -66,14 +76,15 @@ describe('context.contribution at every terminal transition of the store', () =>
     expect(countOf(h.store, run.id)).toBe(1);
   });
 
-  it('precedes the status when a run is cancelled while it waits for a person, after the withdrawals', () => {
-    const { hook } = recording();
-    const h = harness({ contribution: hook });
+  it('a cancel of a run that waits for a person withdraws first and reaches CANCELLING; the sweeper finish then writes the contribution before CANCELLED', async () => {
+    const h = preparedHarness();
     const { runId } = awaitingApproval(h.store, [{ callId: 'call_1' }], 'waiting');
 
-    expect(cancel(h.store, runId).status).toBe('CANCELLED');
+    expect(cancel(h.store, runId).status).toBe('CANCELLING');
+    expect(tailTypes(h.store, runId, 2)).toEqual(['tool.permission.cancelled', 'run.status:CANCELLING']);
 
-    expect(tailTypes(h.store, runId, 3)).toEqual(['tool.permission.cancelled', 'context.contribution', 'run.status:CANCELLED']);
+    expect(await h.store.finishCancelled(ignoreSweepErrors)).toEqual([runId]);
+    expect(tailTypes(h.store, runId, 4)).toEqual(['tool.permission.cancelled', 'run.status:CANCELLING', 'context.contribution', 'run.status:CANCELLED']);
   });
 
   it('precedes the status when the deadline stops a queued run', () => {
@@ -109,22 +120,21 @@ describe('context.contribution at every terminal transition of the store', () =>
     expect(tailTypes(h.store, runId, 4)).toEqual(['tool.permission.cancelled', 'notice', 'context.contribution', 'run.status:STOPPED']);
   });
 
-  it('precedes the status when the run is dead-lettered', () => {
-    const { hook } = recording();
-    const h = harness({ contribution: hook, maxAttempts: 1 });
+  it('precedes the status when the dead-letter sweep ends the run', async () => {
+    const h = preparedHarness({ maxAttempts: 1 });
     const run = enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w1');
     h.clock.advance(LEASE_MS);
 
     expect(h.store.claim('w2')).toBeNull();
+    expect(await h.store.deadLetterExhausted(ignoreSweepErrors)).toEqual([run.id]);
 
     expect(mustRun(h.store, run.id)).toMatchObject({ status: 'FAILED', deadLetter: true });
     expect(tailTypes(h.store, run.id, 2)).toEqual(['context.contribution', 'run.status:FAILED']);
   });
 
-  it('precedes the status of a queued child run that its parent cancels', () => {
-    const { hook } = recording();
-    const h = harness({ contribution: hook });
+  it('a queued child run that its parent cancels becomes CANCELLING, and its own sweeper finish writes its contribution before CANCELLED', async () => {
+    const h = preparedHarness();
     const parent = enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w-parent');
     const created = h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, modelAlias: 'fm' });
@@ -132,7 +142,9 @@ describe('context.contribution at every terminal transition of the store', () =>
 
     cancel(h.store, parent.id);
 
-    expect(mustRun(h.store, created.run.id).status).toBe('CANCELLED');
+    expect(mustRun(h.store, created.run.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'QUEUED' });
+    expect(tailTypes(h.store, created.run.id, 1)).toEqual(['run.status:CANCELLING']);
+    expect(await h.store.finishCancelled(ignoreSweepErrors)).toEqual([created.run.id]);
     expect(tailTypes(h.store, created.run.id, 2)).toEqual(['context.contribution', 'run.status:CANCELLED']);
   });
 
@@ -287,38 +299,29 @@ describe('measuring over the journal as it stands after the transaction', () => 
   });
 });
 
-describe('the journaled contribution and the contributed_at stamp', () => {
-  it('keeps the event a crash left in the journal, adds no second one and still stamps a completed run', () => {
-    const { hook, seen } = recording();
-    const h = harness({ contribution: hook });
-    const run = enqueue(h.store, newSession(h.store).id);
-    const id = savedMemory(h, run.id, 'call_1', 'launch with zorpLauncher');
-    const claim = mustClaim(h.store, 'w2');
-    expect(h.store.append(claim, [contributionFor(id)]).kind).toBe('ok');
-    h.clock.advance(5);
-
-    expect(h.store.transition(claim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
-
-    expect(countOf(h.store, run.id)).toBe(1);
-    expect(seen).toEqual([]);
-    expect(h.store.memories.get(id)?.contributedAt).toBe(START_MS + 5);
-  });
-
-  it('stamps only the memories that contributed', () => {
-    const h = harness({ contribution: recording().hook });
+describe('the contributed_at stamp', () => {
+  it('stamps only the memories that the preparer reports as contributed', async () => {
+    let items: ContributionPayload['items'] = [];
+    let bound: RuntimeStore | undefined;
+    const h = harness({
+      preparer: {
+        measure: async ({ runId }) => ({ lastSeq: bound?.getRun(runId)?.lastSeq ?? -1, contribution: { type: 'context.contribution', items } }),
+      },
+    });
+    bound = h.store;
     const run = enqueue(h.store, newSession(h.store).id);
     const used = savedMemory(h, run.id, 'call_1', 'used note');
     const unused = savedMemory(h, run.id, 'call_2', 'unused note');
     const claim = mustClaim(h.store, 'w2');
-    const items: ContributionPayload['items'] = [
+    items = [
       { kind: 'memory', id: used, contributed: true },
       { kind: 'memory', id: unused, contributed: false },
       { kind: 'summary', id: 'summary-9', contributed: true },
     ];
-    expect(h.store.append(claim, [{ type: 'context.contribution', items }]).kind).toBe('ok');
 
-    expect(h.store.transition(claim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
+    expect((await h.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
 
+    expect(countOf(h.store, run.id)).toBe(1);
     expect(h.store.memories.get(used)?.contributedAt).toBe(START_MS);
     expect(h.store.memories.get(unused)?.contributedAt).toBeNull();
   });

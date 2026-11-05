@@ -45,7 +45,7 @@ describe('a run whose terminal transition failed', () => {
     expect(env.run(run.id).failedAttempts).toBe(0);
   });
 
-  it('inside the error path of the worker escapes, keeps the lease until it expires, and is dead-lettered by the next claim', async () => {
+  it('inside the error path of the worker escapes, keeps the lease until it expires, is not claimed again, and is dead-lettered by the sweep', async () => {
     const env = await makeEnv({ maxAttempts: 1, maxTotalAttempts: 1 });
     env.gateway.script.push(failedStep('upstream_unavailable'), textStep('never sent'));
     const run = env.enqueue('Work');
@@ -64,7 +64,12 @@ describe('a run whose terminal transition failed', () => {
 
     env.clock.advance(LEASE_MS + 1);
     expect(await env.runOnce(env.worker('worker-2'))).toBe('idle');
+    expect(env.run(run.id)).toMatchObject({ status: 'RUNNING', deadLetter: false });
 
+    const reported: unknown[] = [];
+    expect(await env.store.deadLetterExhausted((error) => void reported.push(error))).toEqual([run.id]);
+
+    expect(reported).toEqual([]);
     expect(env.run(run.id)).toMatchObject({ status: 'FAILED', deadLetter: true });
     expect(env.run(run.id).error?.code).toBe('max_total_attempts');
     expect(env.gateway.streams).toHaveLength(1);

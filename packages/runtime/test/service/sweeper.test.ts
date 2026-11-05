@@ -53,6 +53,58 @@ describe('startApprovalSweeper', () => {
   });
 });
 
+describe('startApprovalSweeper with an awaited expireApprovals', () => {
+  it('awaits expireApprovals before it releases the stopped runs and arms the next timer, so sweeps never overlap, and close awaits it', async () => {
+    const clock = createFakeClock(START_MS);
+    const timers = createFakeTimers(clock);
+    const calls: number[] = [];
+    const released: string[] = [];
+    const errors: unknown[] = [];
+    let settle: (runIds: string[]) => void = () => undefined;
+    const store = {
+      expireApprovals: (now: number): Promise<string[]> => {
+        calls.push(now);
+        return new Promise<string[]>((resolve) => {
+          settle = resolve;
+        });
+      },
+    };
+    const sweeper = startSweeper({
+      store,
+      clock,
+      timers,
+      intervalMs: 1000,
+      releaseStopped: async (runId: string) => void released.push(runId),
+      onError: (error: unknown) => errors.push(error),
+    });
+
+    timers.advance(1000);
+    await afterMicrotasks();
+    timers.advance(3000);
+    await afterMicrotasks();
+    expect(calls).toEqual([START_MS + 1000]);
+    expect(released).toEqual([]);
+
+    settle(['run-stopped']);
+    await afterMicrotasks();
+    expect(released).toEqual(['run-stopped']);
+    expect(errors).toEqual([]);
+    timers.advance(1000);
+    await afterMicrotasks();
+    expect(calls).toEqual([START_MS + 1000, START_MS + 5000]);
+
+    let closed = false;
+    const closing = Promise.resolve(sweeper.close()).then(() => {
+      closed = true;
+    });
+    await afterMicrotasks();
+    expect(closed).toBe(false);
+    settle([]);
+    await closing;
+    expect(closed).toBe(true);
+  });
+});
+
 describe('releaseStoppedRunsAtStartup', () => {
   it('releases every run the store lists as stopped, in order, and reports a failed release without skipping the rest', async () => {
     const released: string[] = [];

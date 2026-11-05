@@ -10,7 +10,7 @@ const specPath = path.resolve(import.meta.dirname, '..', 'specs', 'tla', 'RunRec
 const spec = fs.readFileSync(specPath, 'utf8');
 
 const definitionOf = (name: string): string => {
-  const start = spec.search(new RegExp(`^${name} ==`, 'm'));
+  const start = spec.search(new RegExp(`^${name}(\\([^)]*\\))? ==`, 'm'));
   if (start === -1) throw new Error(`${name} is not defined in ${specPath}`);
   const end = spec.indexOf('\n\n', start);
   return spec.slice(start, end === -1 ? undefined : end);
@@ -85,14 +85,34 @@ describe('RunRecovery.tla against the implementation', () => {
     expect(tableOf(name)).toEqual(codeTable(table));
   });
 
-  it('proposes (UniformCancel, O13 of the off-loop design) exactly two service rows that differ from the store: QUEUED and WAITING_HUMAN end through CANCELLING', () => {
-    const proposed = stringsIn(definitionOf('UniformServiceEdges'));
-    expect(proposed).toEqual(['QUEUED', 'CANCELLING', 'WAITING_HUMAN', 'QUEUED', 'CANCELLING', 'STOPPED']);
-    expect(SERVICE_TRANSITIONS.QUEUED).toEqual(['CANCELLED']);
-    expect([...SERVICE_TRANSITIONS.WAITING_HUMAN].sort()).toEqual(['CANCELLED', 'QUEUED', 'STOPPED']);
-    expect(stringsIn(definitionOf('UniformSweepEdges'))).toEqual(['WAITING_HUMAN', 'QUEUED', 'CANCELLING', 'STOPPED']);
-    expect(SWEEP_TRANSITIONS.QUEUED).toEqual(['STOPPED']);
-    expect(spec).toContain('CancelTarget(status) == IF ~UniformCancel');
+  it('ends a cancel of every non-terminal status through CANCELLING, in the model and in the store (O13): no service or sweep edge leads to CANCELLED', () => {
+    expect(tableOf('ServiceEdges')['QUEUED']).toEqual(['CANCELLING']);
+    expect(tableOf('ServiceEdges')['WAITING_HUMAN']).toEqual(['CANCELLING', 'QUEUED', 'STOPPED']);
+    expect(tableOf('SweepEdges')['WAITING_HUMAN']).toEqual(['CANCELLING', 'QUEUED', 'STOPPED']);
+    for (const table of [SERVICE_TRANSITIONS, SWEEP_TRANSITIONS]) {
+      expect(Object.values(table).flat()).not.toContain('CANCELLED');
+    }
+    expect([...SERVICE_TRANSITIONS.QUEUED]).toEqual(['CANCELLING']);
+    expect([...SERVICE_TRANSITIONS.WAITING_HUMAN].sort()).toEqual(['CANCELLING', 'QUEUED', 'STOPPED']);
+    expect([...SWEEP_TRANSITIONS.WAITING_HUMAN].sort()).toEqual(['CANCELLING', 'QUEUED', 'STOPPED']);
+  });
+
+  it('keeps one cancel rule: the model has no UniformCancel switch, no second table and no cancel target that depends on the status', () => {
+    expect(spec).not.toMatch(/\bUniformCancel\b/);
+    expect(spec).not.toMatch(/^UniformServiceEdges ==|^UniformSweepEdges ==|^CancelTarget\(/m);
+  });
+
+  it('ties SweeperOwned of the model to the SQL predicate the store uses to keep sweeper-owned runs out of claim', () => {
+    const modelOrigins = stringsIn(definitionOf('SweeperOwned').replace(/^.*?cancelOrigin \\in/s, '')).sort();
+    expect(definitionOf('SweeperOwned')).toMatch(/x\.status = "CANCELLING" \/\\ x\.cancelOrigin \\in \{"QUEUED", "WAITING_HUMAN"\}/);
+    expect(modelOrigins).toEqual(['QUEUED', 'WAITING_HUMAN']);
+    const storeSource = fs.readFileSync(path.resolve(import.meta.dirname, '..', 'packages', 'store', 'src', 'runtime-store.ts'), 'utf8');
+    const predicate = /status = 'CANCELLING' AND (?:\w+\.)?cancel_origin IN \(([^)]*)\)/.exec(storeSource);
+    expect(predicate, 'runtime-store.ts states the sweeper-owned predicate').not.toBeNull();
+    const sqlOrigins = [...(predicate?.[1] ?? '').matchAll(/'([A-Z_]+)'/g)].map((match) => match[1] as string).sort();
+    expect(sqlOrigins).toEqual(modelOrigins);
+    const claimable = /const CLAIMABLE = `([^`]*)`/.exec(storeSource)?.[1] ?? '';
+    expect(claimable).toMatch(/NOT \(\s*(?:\w+\.)?status = 'CANCELLING' AND (?:\w+\.)?cancel_origin IN \('QUEUED', 'WAITING_HUMAN'\)\s*\)/);
   });
 
   it('models only event kinds that the protocol defines', () => {
@@ -135,10 +155,10 @@ describe('the checked configurations against the repaired recovery design', () =
     return [constants['UnfencedEffect'] as string, constants['NoCallLock'] as string, constants['NoReapBeforeReconcile'] as string];
   };
 
-  it('sets UniformCancel to TRUE in exactly the uniformCancel configurations and FALSE in every other RunRecovery configuration', () => {
+  it('declares no UniformCancel constant in any RunRecovery configuration, since the uniform cancel is the only rule', () => {
+    expect(recoveryEntries.length).toBeGreaterThan(0);
     for (const entry of recoveryEntries) {
-      const expected = entry.config.startsWith('RunRecovery.uniformCancel') ? 'TRUE' : 'FALSE';
-      expect(constantsOf(entry.config)['UniformCancel'], entry.config).toBe(expected);
+      expect(constantsOf(entry.config), entry.config).not.toHaveProperty('UniformCancel');
     }
   });
 
