@@ -37,7 +37,7 @@ describe('the fm probe bounds what the model generates by the window it measures
   it('finishes when an unbounded constrained sample would generate until fm reports the transcript over its context size', async () => {
     const fake = await startFakeFm();
 
-    const report = await runProbe({ schemaDialect: 'guided-generation', socketPath: fake.socketPath, managedHealthRoute: true, samples: 2, vocabulary: FM_VOCABULARY });
+    const report = await runProbe({ socketPath: fake.socketPath, managedHealthRoute: true, samples: 2, vocabulary: FM_VOCABULARY });
 
     expect(report.constrained.accepted).toBe(true);
     expect(fake.routeHits).toEqual([0]);
@@ -46,7 +46,7 @@ describe('the fm probe bounds what the model generates by the window it measures
   it('sends every request whose prompt fits the window with an output bound fm honours, and prompt plus bound within the window it reports', async () => {
     const fake = await startFakeFm();
 
-    const report = await runProbe({ schemaDialect: 'guided-generation', socketPath: fake.socketPath, managedHealthRoute: true, samples: 2, vocabulary: FM_VOCABULARY }).catch(() => undefined);
+    const report = await runProbe({ socketPath: fake.socketPath, managedHealthRoute: true, samples: 2, vocabulary: FM_VOCABULARY }).catch(() => undefined);
 
     const window = report?.contextWindow.value ?? FM_WINDOW;
     const fitting = fake.requests

@@ -19,6 +19,7 @@ import type { FakeChatCompletionsServer, FakeClock } from '@momonga/testkit';
 import { START_MS, getJson, makeDir, postJson, readJson, registerCleanup, startGateway } from './gateway-helpers.ts';
 import { TARGET, collect, outputTextOf, userText } from './cc-support.ts';
 import { makeReport } from './report-fixture.ts';
+import { PROBE_METHOD_VERSION } from '../src/probe/run-probe.ts';
 
 const BINARY = '/usr/bin/fm';
 const POLL_MS = 25;
@@ -83,7 +84,7 @@ const setup = async (config: Setup = {}) => {
   const dir = makeDir();
   const socketPath = path.join(dir, 'fm.sock');
   const recordDir = path.join(dir, 'probe');
-  if (config.report !== undefined) await saveProbeRecord(recordDir, RECORD_KEY, config.report);
+  if (config.report !== undefined) await (saveProbeRecord as (...args: unknown[]) => Promise<void>)(recordDir, RECORD_KEY, config.report, { userDialects: {}, probeMethod: PROBE_METHOD_VERSION });
   const clock = createFakeClock(START_MS);
   const children: FakeFmChild[] = [];
   const spawn = vi.fn((_file: string, _args: readonly string[]) => {
@@ -161,11 +162,32 @@ describe('createManagedFmTarget endpoint', () => {
 
 describe('createManagedFmTarget probe-derived settings', () => {
   it('decides tool calling and keyword support from the probe record', async () => {
-    const report = { ...makeReport(0.5, 1), keywordSupport: { ...ALL_TRUE, pattern: false, anyOf: false } };
+    const report: ProbeReport = {
+      ...makeReport(0.5, 1),
+      keywordSupport: { ...ALL_TRUE, pattern: false, anyOf: false },
+      schemaDialect: { selected: 'explicit-keys', shape: 'union', tried: [{ id: 'json-schema-2020-12', result: 'refused' }, { id: 'explicit-keys', result: 'accepted' }] },
+    } as ProbeReport;
     const { managed } = await setup({ report });
     expect((await managed.capabilities(TARGET)).toolCalling).toBe('constrained');
     expect(managed.keywordSupport(TARGET)).toEqual({ ...ALL_TRUE, pattern: false, anyOf: false });
-    expect(await managed.capabilities(TARGET)).toEqual({ ...capabilitiesFromProbe(report, { mode: 'constrained' }), schemaDialect: 'guided-generation', allowedTools: ['envelope'] });
+    expect(await managed.capabilities(TARGET)).toEqual({ ...capabilitiesFromProbe(report, { mode: 'constrained' }), schemaDialect: 'explicit-keys', allowedTools: ['envelope'] });
+  });
+
+  it('takes the dialect id from the probe record, never from code that names fm', async () => {
+    const { managed } = await setup({ report: makeReport(0.5, 1) });
+    expect((await managed.capabilities(TARGET)).schemaDialect).toBe('json-schema-2020-12');
+    expect(managed.schemaDialect(TARGET)).toBe('json-schema-2020-12');
+  });
+
+  it('hands the recorded construct table to the adapter', async () => {
+    const constructSupport = { ref: 'accepted', typeArray: 'accepted', mixedEnum: 'refused' } as const;
+    const { managed } = await setup({ report: { ...makeReport(0.5, 1), constructSupport } as ProbeReport });
+    expect((managed as ManagedFmTarget & { constructSupport: (target: typeof TARGET) => unknown }).constructSupport(TARGET)).toEqual(constructSupport);
+  });
+
+  it('resolves an unprobed target that declares no dialect to json-schema-2020-12', async () => {
+    const { managed } = await setup();
+    expect((await managed.capabilities(TARGET)).schemaDialect).toBe('json-schema-2020-12');
   });
 
   it('exposes the tool-calling mode only through capabilities', async () => {

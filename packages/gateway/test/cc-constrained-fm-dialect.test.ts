@@ -19,9 +19,9 @@ const twoToolRequest: AdapterRequest = {
   tools: [readFileTool, listDirTool],
 };
 
-const constrainedRunOnFm = async (support: Record<ProbeKeyword, boolean>) => {
+const constrainedRunOnFm = async (support: Record<ProbeKeyword, boolean>, dialect = 'explicit-keys') => {
   const fake = await startFake({ scenario: 'tools-ok', wire: 'fm' });
-  const adapter = makeAdapter(fake, { keywordSupport: () => support, schemaDialect: () => 'guided-generation' }, 'constrained');
+  const adapter = makeAdapter(fake, { keywordSupport: () => support, schemaDialect: () => dialect }, 'constrained');
   return collect(adapter, twoToolRequest);
 };
 
@@ -40,13 +40,13 @@ describe('constrained tool calling against fm', () => {
       managedHealthRoute: true,
       samples: 2,
       vocabulary: FM_VOCABULARY,
-      schemaDialect: 'guided-generation',
     });
 
-    expect(report.keywordSupport.enum).toBe(true);
-    expect(report.keywordSupport.anyOf).toBe(true);
+    expect(report.schemaDialect.selected).toBe('explicit-keys');
+    expect(report.keywordSupport?.enum).toBe(true);
+    expect(report.keywordSupport?.anyOf).toBe(true);
 
-    const { events, error } = await constrainedRunOnFm(report.keywordSupport);
+    const { events, error } = await constrainedRunOnFm(report.keywordSupport ?? UNPROBED_FM_SUPPORT, report.schemaDialect.selected ?? 'json-schema-2020-12');
 
     expect(error).toBeUndefined();
     expect(terminalOf(events).type).toBe('response.completed');
