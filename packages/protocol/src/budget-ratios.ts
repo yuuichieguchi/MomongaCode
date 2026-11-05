@@ -14,6 +14,8 @@ export const EVICT_LOW_WATER: Ratio = { num: 1, den: 2 };
 export const COMPACTION_MIN_GAIN: Ratio = { num: 2, den: 1 };
 
 export const MAX_BUDGET_COUNT = 2 ** 33;
+
+export const ERROR_WINDOW = 20;
 export const RATIO_QUANTUM = 2 ** 20;
 
 const assertInDomain = (x: number): void => {

@@ -45,8 +45,8 @@ describe('fold: loaded instructions', () => {
       { type: 'instructions.loaded', path: '/proj/AGENTS.md', content: 'v2' },
     ]);
     expect(state.loadedInstructions).toEqual([
-      { path: '/proj/AGENTS.md', textSha256: sha256Hex('v2'), seq: 1 },
-      { path: '/proj/sub/AGENTS.md', textSha256: sha256Hex('nested'), seq: 2 },
+      { path: '/proj/AGENTS.md', textSha256: sha256Hex('v2'), seq: 1, content: 'v2' },
+      { path: '/proj/sub/AGENTS.md', textSha256: sha256Hex('nested'), seq: 2, content: 'nested' },
     ]);
   });
 });
@@ -93,7 +93,7 @@ describe('snapshot codec: steps and loadedInstructions', () => {
     const { store, runId, state } = snapshotWith({});
     const loaded = store.load(runId).snapshot?.state;
     expect(loaded?.steps).toEqual({ 1: { toolChoice: 'auto', summary: false } });
-    expect(loaded?.loadedInstructions).toEqual([{ path: '/proj/AGENTS.md', textSha256: sha256Hex('v1'), seq: 3 }]);
+    expect(loaded?.loadedInstructions).toEqual([{ path: '/proj/AGENTS.md', textSha256: sha256Hex('v1'), seq: 3, content: 'v1' }]);
     expect(loaded).toEqual(state);
   });
 

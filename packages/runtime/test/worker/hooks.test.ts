@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { STOP_HOOK_FEEDBACK_PREFIX } from '@momonga/protocol';
 import type { HooksSettings } from '@momonga/protocol';
 import { createUnsandboxed } from '@momonga/sandbox';
-import { STOP_HOOK_FEEDBACK_PREFIX } from '../../src/worker/hook-step.ts';
 import { makeEnv } from './harness.ts';
 import { assistantMessage, callsStep, textStep } from './scripts.ts';
 

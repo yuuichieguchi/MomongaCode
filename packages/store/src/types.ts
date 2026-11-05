@@ -139,6 +139,17 @@ export type ModelCallRecord =
   | { kind: 'requested'; seq: number; step: number; attempt: number; anatomy?: TokenAnatomy; prefix?: RunTracePrefix }
   | { kind: 'responded'; seq: number; step: number; attempt: number; responseId?: string; timing?: CallTiming };
 
+export type StartedCall = { callId: string; name: string; idemKey: string };
+
+export type MeterKey = { counter: string; contextWindow: number; tokenErrorRatio?: number; tokenCounting: 'exact' | 'calibrated' | 'estimated' };
+
+export type MeterRecord = {
+  runId: string;
+  seq: number;
+  event: Extract<RunEventPayload, { type: 'meter.observed' }>;
+  misses: { miss: number; uncounted: number }[];
+};
+
 export type HeartbeatResult = { kind: 'ok'; cancelRequested: boolean; status: ClaimStatus } | LeaseLost;
 export type AppendResult = { kind: 'ok'; lastSeq: number } | LeaseLost;
 export type RunMutationResult = { kind: 'ok'; run: Run } | LeaseLost | Conflict;
@@ -526,6 +537,12 @@ export type RuntimeStore = {
   readRunEventsOfTypes(runId: string, types: readonly RunEventPayload['type'][]): RunEvent[];
   readLatestRunEventBefore<T extends RunEventPayload['type']>(runId: string, type: T, beforeSeq: number): Extract<RunEvent, { type: T }> | undefined;
   readModelCallEvents(runId: string): ModelCallRecord[];
+  toolCallSeq(runId: string, callId: string): number | undefined;
+  finalTextOf(runId: string): string;
+  inFlightModelRequestOf(runId: string): { step: number; attempt: number } | undefined;
+  startedCallsOf(runId: string): StartedCall[];
+  hasNoticeCode(runId: string, code: string): boolean;
+  meterRecordOf(sessionId: string, key: MeterKey): MeterRecord | undefined;
   lastTerminalRootRuns(project: string, limit: number): Run[];
   toolCallNames(rootRunId: string): string[];
   toolOfferedNames(rootRunId: string): string[];
