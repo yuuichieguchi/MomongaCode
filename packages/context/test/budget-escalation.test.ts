@@ -43,5 +43,8 @@ describe('budget escalation of build-context', () => {
     expect(built.notices.filter((notice) => notice.code === 'recent_steps_shrunk').map((notice) => notice.message)).toEqual([
       'recent steps of the current turn were reduced from 4 to 1 because the context budget was exceeded',
     ]);
+    expect(built.notices.filter((notice) => notice.code === 'recent_steps_shrunk').map((notice) => notice.reduction)).toEqual([
+      { turn: expect.any(Number), from: 4, to: 1 },
+    ]);
   });
 });
