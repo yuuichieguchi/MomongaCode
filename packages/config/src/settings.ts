@@ -1,6 +1,6 @@
 import { defineProductSchema, transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
 import type { ProductValidator, UntrustedError } from '@momonga/foundation';
-import type { AnthropicApiVersion, CapabilitiesCore, SamplingDeclaration, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetBilling, PermissionMode } from '@momonga/protocol';
+import type { AnthropicApiVersion, CapabilitiesCore, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetBilling, PermissionMode } from '@momonga/protocol';
 import { MCP_SERVERS_FILE_SCHEMA, MCP_SERVER_SCHEMA, MODEL_ROLES, SETTINGS_SCHEMA } from './settings-schema.ts';
 
 export type PermissionsSettings = {
@@ -36,7 +36,7 @@ export type McpServerConfig = McpStdioServerConfig | McpRemoteServerConfig;
 
 export type FmToolCalling = 'auto' | 'native' | 'constrained';
 
-export type TargetCapabilitiesCore = Omit<CapabilitiesCore, 'toolCalling' | 'probedAt' | 'maxConcurrency'> & SamplingDeclaration;
+export type TargetCapabilitiesCore = Omit<CapabilitiesCore, 'toolCalling' | 'probedAt' | 'maxConcurrency'>;
 
 export type DeclaredImage = ImageCapability | { imageInput?: undefined; imageTokens?: undefined };
 

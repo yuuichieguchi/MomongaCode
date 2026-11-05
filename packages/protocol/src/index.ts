@@ -1,7 +1,5 @@
 export type {
   AdapterSampling,
-  DeclaredSamplingCapabilities,
-  SamplingDeclaration,
   AnthropicApiVersion,
   SamplingCapability,
   SamplingField,

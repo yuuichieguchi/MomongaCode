@@ -25,7 +25,6 @@ import { ClientDisconnectedError, GatewayError, isGatewayClosed, isRunCancelled 
 import { estimateInputTokens, estimateOutputTokens, estimatedUsage } from './estimate.ts';
 import { inputHasImages, resolveInput } from './input.ts';
 import type { ConnectionResponses, ResolvedInput } from './input.ts';
-import { assertSamplingAccepted, carriesSampling } from './sampling.ts';
 import { baseResource } from './resource.ts';
 import { UpstreamFailure, emptyStreamFailure, failureFrom, runWithRetry } from './retry.ts';
 import type { RetryOutcome } from './retry.ts';
@@ -552,12 +551,7 @@ async function* relaySteps(
 export async function* executeResponse(services: Services, job: ResponseJob, control: RunControl): AsyncGenerator<StreamEvent> {
   const { signal } = control;
   const resolved = resolveInput(services.store, services.codec, job.body.previous_response_id, job.clientInput, job.connection);
-  const candidates = await services.router.candidates(job.alias, { tools: (job.body.tools?.length ?? 0) > 0, images: inputHasImages(resolved.forAdapter) });
-  if (carriesSampling(job.body)) {
-    for (const target of candidates) {
-      assertSamplingAccepted(job.body, { name: target.name, kind: target.adapter.kind }, target.adapter.sampling, await services.router.capabilitiesOf(target));
-    }
-  }
+  const candidates = await services.router.candidates(job.alias, { tools: (job.body.tools?.length ?? 0) > 0, images: inputHasImages(resolved.forAdapter), sampling: job.body });
   const disarm = armDeadline(services, job.deadlineAt, control.abort);
   try {
     const outcome = await runWithRetry({

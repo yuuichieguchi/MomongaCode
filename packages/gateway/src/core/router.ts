@@ -1,10 +1,12 @@
 import type { Clock } from '@momonga/foundation';
 import { applyCapabilityOverride, imageCapability, sizingRatioFor } from '@momonga/protocol';
-import type { Capabilities, CapabilityOverride, DeclaredSamplingCapabilities, ToolCallingMode, ToolCallingState, GatewayHealth, HealthResult, ImageCapability, ProviderAdapter, TargetBilling, TargetHealth } from '@momonga/protocol';
+import type { Capabilities, CapabilityOverride, ToolCallingMode, ToolCallingState, GatewayHealth, HealthResult, ImageCapability, ProviderAdapter, TargetBilling, TargetHealth } from '@momonga/protocol';
 import { createAdmissionGate } from './admission.ts';
 import type { AdmissionGate } from './admission.ts';
 import { preconditionText } from '../precondition-text.ts';
 import { invalidRequest, notFound } from './errors.ts';
+import { carriesSampling, samplingRefusalOf } from './sampling.ts';
+import type { SamplingRefusal, SamplingRequest } from './sampling.ts';
 import { TargetBreaker } from './request-breaker.ts';
 import { guardAdapter } from './guarded-adapter.ts';
 import type { ReasoningOriginCodec } from './reasoning-origin.ts';
@@ -25,13 +27,13 @@ export type TargetRuntime = {
   lastFailure: { code: string | null; message: string } | undefined;
 };
 
-export type CandidateRequirements = { tools?: boolean; images?: boolean };
+export type CandidateRequirements = { tools?: boolean; images?: boolean; sampling?: SamplingRequest };
 
 export type Router = {
   aliases(): string[];
   hasAlias(alias: string): boolean;
   targetsOf(alias: string): TargetRuntime[];
-  capabilitiesOf(target: TargetRuntime): Promise<DeclaredSamplingCapabilities>;
+  capabilitiesOf(target: TargetRuntime): Promise<Capabilities>;
   aliasCapabilitiesOf(alias: string): Promise<Capabilities>;
   candidates(alias: string, requirements: CandidateRequirements): Promise<TargetRuntime[]>;
   narrow(alias: string, targets: readonly TargetRuntime[], requirements: CandidateRequirements): Promise<TargetRuntime[]>;
@@ -143,10 +145,10 @@ export const createRouter = (options: RouterOptions): Router => {
     return found;
   };
 
-  const capabilitiesOf = async (target: TargetRuntime): Promise<DeclaredSamplingCapabilities> => {
+  const capabilitiesOf = async (target: TargetRuntime): Promise<Capabilities> => {
     const declared = await target.adapter.capabilities({ name: target.name, model: target.model });
     if (target.capabilityOverride === undefined) return declared;
-    return { ...applyCapabilityOverride(declared, target.capabilityOverride), source: 'config', ...(declared.sampling === undefined ? {} : { sampling: declared.sampling }) };
+    return { ...applyCapabilityOverride(declared, target.capabilityOverride), source: 'config' };
   };
 
   const aliasCapabilitiesOf = async (alias: string): Promise<Capabilities> => {
@@ -174,6 +176,21 @@ export const createRouter = (options: RouterOptions): Router => {
       if (remaining.length === 0) {
         throw invalidRequest('capability_unsupported', `no target of model alias "${alias}" supports image input`, 'input');
       }
+    }
+    const { sampling } = requirements;
+    if (sampling !== undefined && carriesSampling(sampling)) {
+      const capabilities = await Promise.all(remaining.map((target) => capabilitiesOf(target)));
+      const refusals = new Map<TargetRuntime, SamplingRefusal>();
+      remaining.forEach((target, index) => {
+        const refusal = samplingRefusalOf(sampling, { name: target.name, kind: target.adapter.kind }, target.adapter.sampling, capabilities[index] as Capabilities);
+        if (refusal !== undefined) refusals.set(target, refusal);
+      });
+      const accepted = remaining.filter((target) => !refusals.has(target));
+      const [first] = refusals.values();
+      if (accepted.length === 0 && first !== undefined) {
+        throw invalidRequest('sampling_not_accepted', [...refusals.values()].map((refusal) => refusal.message).join('; '), first.field);
+      }
+      remaining = accepted;
     }
     return remaining;
   };

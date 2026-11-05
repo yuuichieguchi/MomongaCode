@@ -218,7 +218,7 @@ const createFmAdapter = async (name: string, target: Extract<ResolvedTarget, { a
     ...(target.model === undefined ? {} : { declaredModel: target.model }),
     ...(target.outputBoundField === undefined ? {} : { declaredOutputBoundField: target.outputBoundField }),
   });
-  return createChatCompletionsAdapter({ ...withBinaryGuard(managed, context.binary, files), clock });
+  return createChatCompletionsAdapter({ ...withBinaryGuard(managed, context.binary, files), sampling: { renders: [] }, clock });
 };
 
 const endpointProbeKeyOf = (name: string, target: ResolvedTarget): EndpointProbeKey => {

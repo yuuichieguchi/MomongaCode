@@ -1,4 +1,4 @@
-import type { AdapterSampling, Capabilities, DeclaredSamplingCapabilities, HealthResult, ReasoningEffort } from './capabilities.ts';
+import type { AdapterSampling, Capabilities, HealthResult, ReasoningEffort } from './capabilities.ts';
 import type { CountTokensRequest, CountTokensResult } from './gateway-api.ts';
 import type { CompactMomongaExtension, ErrorBody, FunctionTool, InputItem, PromptCacheCounts, ReasoningInputItem, StreamEvent, TextField, ToolChoice, Usage } from './open-responses.ts';
 
@@ -68,8 +68,8 @@ export type AdapterCompactResult = { summary: string; usage: Usage; cacheWriteIn
 
 export type ProviderAdapter = {
   readonly kind: string;
-  readonly sampling?: AdapterSampling;
-  capabilities(target: AdapterTarget): Promise<DeclaredSamplingCapabilities>;
+  readonly sampling: AdapterSampling;
+  capabilities(target: AdapterTarget): Promise<Capabilities>;
   create(request: AdapterRequest, ctx: AdapterContext): AsyncIterable<StreamEvent>;
   classify(error: unknown): ClassifiedError;
   health?(target: AdapterTarget): Promise<HealthResult>;

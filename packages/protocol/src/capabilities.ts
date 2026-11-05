@@ -123,10 +123,6 @@ const ANTHROPIC_VERSION_SAMPLING_BOUND: Readonly<Record<AnthropicApiVersion, rea
 
 export const anthropicVersionSamplingBound = (version: AnthropicApiVersion): readonly SamplingField[] => ANTHROPIC_VERSION_SAMPLING_BOUND[version];
 
-export type SamplingDeclaration = { sampling?: SamplingCapability };
-
-export type DeclaredSamplingCapabilities = Capabilities & SamplingDeclaration;
-
 export type AdapterSampling = {
   renders: readonly SamplingField[];
   bound?: { label: string; accepts: readonly SamplingField[] };
@@ -134,6 +130,7 @@ export type AdapterSampling = {
 
 export type CapabilitiesCore = {
   promptCache?: PromptCacheCapability;
+  sampling?: SamplingCapability;
   reasoning?: ReasoningCapability;
   contextWindow: number;
   maxOutputTokens: number;
