@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { openResponsesStream, openResponsesTextReply, openingEvents, terminalEvent } from '@momonga/testkit';
 import { userInput } from './gateway-helpers.ts';
 import { fixtureText } from './ollama-support.ts';
+import { verifiedEnvelope } from './reasoning-origin-support.ts';
 import { startOpenResponsesGateway, streamResponse, terminalOf } from './upstream-gateway-support.ts';
 
 const REASONING = 'Consider the file layout first.';
@@ -38,7 +39,9 @@ describe('open-responses reasoning (R2b)', () => {
     expect(frames.filter((frame) => frame.data.type === 'response.reasoning.delta').map((frame) => frame.data.delta).join('')).toBe(REASONING);
     const output: any[] = terminalOf(frames).response.output;
     expect(output.map((item) => item.type)).toEqual(['reasoning', 'message']);
-    expect(output[0]).toMatchObject({ type: 'reasoning', encrypted_content: ENCRYPTED, content: [{ type: 'reasoning_text', text: REASONING }] });
+    expect(output[0]).toMatchObject({ type: 'reasoning', content: [{ type: 'reasoning_text', text: REASONING }] });
+    expect(output[0].encrypted_content).not.toBe(ENCRYPTED);
+    expect(verifiedEnvelope(output[0].encrypted_content)).toMatchObject({ adapter: 'open-responses' });
   });
 
   it('passes the reasoning_summary_text deltas of a recorded Ollama /v1/responses stream through as reasoning', async () => {
@@ -67,7 +70,7 @@ describe('open-responses reasoning (R2b)', () => {
     expect(output[0].summary).toEqual([{ type: 'summary_text', text: recordedSummary }]);
   });
 
-  it('sends a reasoning item of the history upstream as the reasoning item', async () => {
+  it('leaves off the wire a hand-built reasoning item whose encrypted_content carries no gateway marker', async () => {
     const gateway = await startOpenResponsesGateway({ script: [openResponsesTextReply(['ok'])] });
     const history = {
       type: 'reasoning',
@@ -81,8 +84,8 @@ describe('open-responses reasoning (R2b)', () => {
     });
 
     const sent: any = gateway.fake.requests.at(-1)?.body;
-    expect(sent.input.map((item: any) => item.type)).toEqual(['message', 'reasoning', 'message', 'message']);
-    expect(sent.input[1]).toMatchObject({ type: 'reasoning', summary: [{ type: 'summary_text', text: 'Thought about the layout.' }], encrypted_content: ENCRYPTED });
+    expect(sent.input.map((item: any) => item.type)).toEqual(['message', 'message', 'message']);
+    expect(JSON.stringify(sent.input).includes(ENCRYPTED)).toBe(false);
   });
 
   it('sends a reasoning item the upstream produced back unchanged in the next request', async () => {

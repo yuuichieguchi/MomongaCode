@@ -4,14 +4,13 @@ import { makeEnv } from './harness.ts';
 import { functionCallItem, requestedOffering, textStep } from './scripts.ts';
 
 const USAGE = { input_tokens: 50, output_tokens: 5, total_tokens: 55 };
-const ORIGIN = { adapter: 'anthropic', model: 'claude-model-x' };
+const SIGNED_MARKER = 'eyJ2IjoxLCJhZGFwdGVyIjoiYW50aHJvcGljIn0.gateway-signed-marker';
 const REASONING = {
   type: 'reasoning',
   id: 'rs_origin_1',
   summary: [],
   content: [{ type: 'reasoning_text', text: 'plan the echo' }],
-  signature: 'anthropic-origin-signature',
-  origin: ORIGIN,
+  encrypted_content: SIGNED_MARKER,
 };
 
 const respondedWithReasoning: RunEventPayload = {
@@ -21,7 +20,7 @@ const respondedWithReasoning: RunEventPayload = {
   response: { status: 'completed', output: [REASONING, functionCallItem({ callId: 'call_o_1', name: 'Echo', args: { value: 'x' } })], usage: USAGE },
 } as unknown as RunEventPayload;
 
-describe('the reasoning origin marker survives the journal and a recovery replay (item 5)', () => {
+describe('the signed reasoning marker in encrypted_content survives the journal and a recovery replay (item 5)', () => {
   it('keeps the marker in the recorded response and sends it in the next request after a crash', async () => {
     const env = await makeEnv();
     const run = env.enqueue('Echo x');
