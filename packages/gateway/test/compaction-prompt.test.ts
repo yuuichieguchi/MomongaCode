@@ -72,7 +72,7 @@ describe('every adapter renders the same prompt', () => {
     const fake = await startFake({ scenario: 'tools-ok', script: [] });
     const adapters = {
       chat: ccAdapterFor(fake),
-      anthropic: createAnthropicAdapter({ ...shared, apiKey: async () => 'unused' }),
+      anthropic: createAnthropicAdapter({ ...shared, apiVersion: '2026-10-21', apiKey: async () => 'unused' }),
       responses: createOpenResponsesAdapter(shared),
     };
     return Object.entries(adapters).map(([name, adapter]) => [name, JSON.stringify(adapter.renderCompactWire?.(request, target, 512, EVERY_REASONING_IS_OWN))]);

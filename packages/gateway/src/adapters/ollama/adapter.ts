@@ -6,6 +6,7 @@ import { StreamFailure, UpstreamProtocolError } from '../shared/failures.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
 import { retryAfterHint, httpErrorOf } from '../shared/http-error.ts';
 import type { ErrorDetailReader } from '../shared/http-error.ts';
+import { RENDERS_EVERY_SAMPLING_FIELD } from '../shared/sampling.ts';
 import { buildOllamaBody } from './request.ts';
 import { ollamaEventsOf } from './stream.ts';
 import type { OllamaAdapter, OllamaAdapterOptions } from './types.ts';
@@ -65,6 +66,7 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
 
   return {
     kind: OLLAMA_LABEL,
+    sampling: RENDERS_EVERY_SAMPLING_FIELD,
     capabilities: (target: AdapterTarget) => options.capabilities(target),
     create,
     compact,

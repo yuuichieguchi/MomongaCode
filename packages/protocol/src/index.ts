@@ -1,4 +1,9 @@
 export type {
+  AdapterSampling,
+  AnthropicApiVersion,
+  SamplingCapability,
+  SamplingField,
+  TopPRange,
   Capabilities,
   CapabilitiesCore,
   CapabilityOverride,
@@ -74,6 +79,10 @@ export {
 } from './budget-constants.ts';
 export type { ErrorShape } from './budget-constants.ts';
 export {
+  ANTHROPIC_API_VERSIONS,
+  DEFAULT_ANTHROPIC_API_VERSION,
+  SAMPLING_FIELDS,
+  anthropicVersionSamplingBound,
   DEFAULT_OUTPUT_BOUND_FIELD,
   LOWEST_REASONING_EFFORT,
   OUTPUT_BOUND_FIELDS,

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { canonicalPath, comparableContains, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
-import { imageCapability } from '@momonga/protocol';
-import type { TargetBilling } from '@momonga/protocol';
+import { DEFAULT_ANTHROPIC_API_VERSION, anthropicVersionSamplingBound, imageCapability } from '@momonga/protocol';
+import type { AnthropicApiVersion, TargetBilling } from '@momonga/protocol';
 import { layoutOf } from './layout.ts';
 import type {
   AnthropicTarget,
@@ -105,6 +105,15 @@ const OLLAMA_CAPABILITY_DEFAULTS: CapabilityDefaults = {
 const DEFAULT_REMOTE_MAX_CONCURRENCY = 4;
 const DEFAULT_REMOTE_BILLING: TargetBilling = 'metered';
 
+const checkSamplingRange = (capabilities: DeclaredTargetCapabilities, where: string): void => {
+  const { sampling } = capabilities;
+  if (sampling?.accepts !== 'without_thinking') return;
+  const { min, max } = sampling.topP;
+  if (min > max) {
+    throw new Error(`${where}: capabilities.sampling.topP.min (${min}) must not exceed capabilities.sampling.topP.max (${max})`);
+  }
+};
+
 const resolveRemote = (
   target: RemoteTargetInput,
   defaults: CapabilityDefaults,
@@ -118,6 +127,7 @@ const resolveRemote = (
   }
   if (baseUrl !== undefined) checkBaseUrl(baseUrl, where);
   if (socketPath !== undefined) checkSocketPath(socketPath, home, where);
+  checkSamplingRange(target.capabilities, where);
   const maxConcurrency = target.maxConcurrency ?? serving.maxConcurrency;
   const { imageInput, imageTokens, ...core } = { ...defaults, ...target.capabilities, maxConcurrency };
   const capabilities = {
@@ -162,8 +172,18 @@ const checkThinkingBudgets = (target: AnthropicTarget, where: string): void => {
   }
 };
 
+const checkSamplingVersion = (target: AnthropicTarget, apiVersion: AnthropicApiVersion, where: string): void => {
+  const { sampling } = target.capabilities;
+  if (sampling === undefined || sampling.accepts === 'none') return;
+  if (anthropicVersionSamplingBound(apiVersion).length === 0) {
+    throw new Error(`${where}: capabilities.sampling declares accepts ${sampling.accepts}, but apiVersion ${apiVersion} accepts no sampling parameter; declare accepts none or set apiVersion to a version that accepts them`);
+  }
+};
+
 const resolveAnthropic = (target: AnthropicTarget, home: string, where: string, warnings: string[]): ResolvedAnthropicTarget => {
   checkThinkingBudgets(target, where);
+  const apiVersion = target.apiVersion ?? DEFAULT_ANTHROPIC_API_VERSION;
+  checkSamplingVersion(target, apiVersion, where);
   if (target.capabilities.reasoning === undefined) {
     warnings.push(`${where}: capabilities.reasoning is not declared, so no thinking form is known and the target is sent no thinking request; declare { control: "thinking", form: "adaptive" | "budget" } to enable it`);
   }
@@ -171,6 +191,7 @@ const resolveAnthropic = (target: AnthropicTarget, home: string, where: string, 
     adapter: 'anthropic',
     model: target.model,
     toolCalling: 'native',
+    apiVersion,
     ...resolveRemote(target, ANTHROPIC_CAPABILITY_DEFAULTS, home, where),
   };
 };
