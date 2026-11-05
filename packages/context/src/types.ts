@@ -78,6 +78,7 @@ export type MeterRequest = {
 
 export type MeterCount = {
   inputTokens: number;
+  freshInputTokens: number;
   inputDigest: string;
   known: number;
   uncounted: number;
@@ -165,6 +166,7 @@ export type BuildContextInput = {
   itemCap?: number;
   memoryShare?: number;
   pinnedTokens?: number;
+  toolsFrozen?: true;
   compactAt?: number;
   tools?: 'none';
   companions?: { hostOf: Readonly<Record<string, string>>; keepWithoutHost: boolean };

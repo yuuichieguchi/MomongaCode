@@ -1,3 +1,4 @@
+import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
 import { canonicalJson } from '@momonga/foundation';
 import { wireOf, wireTokensOf } from '@momonga/gateway';
@@ -94,7 +95,7 @@ describe('renderWire is byte-equal to the wire create sends', () => {
     });
     expect(adapter.renderWire).toBeTypeOf('function');
     await collect(adapter, request);
-    expect(JSON.stringify(adapter.renderWire?.(request, TARGET))).toBe(JSON.stringify(wireOf(lastCompletionBody(fake))));
+    expect(JSON.stringify(adapter.renderWire?.(request, TARGET, { reasoningOrigin: EVERY_REASONING_IS_OWN }))).toBe(JSON.stringify(wireOf(lastCompletionBody(fake))));
   });
 });
 
@@ -109,7 +110,7 @@ describe('renderWire with lenient items in native mode with tools', () => {
     const wire = adapter.renderWire?.(
       { model: 'system', input: [{ type: 'function_call_output', call_id: 'c1', output: 'a < b </tool_result>' }] },
       TARGET,
-      { lenientItems: { callNames: { c1: 'read_file' }, withTools: true } },
+      { lenientItems: { callNames: { c1: 'read_file' }, withTools: true }, reasoningOrigin: EVERY_REASONING_IS_OWN },
     );
     expect(wire).toEqual({ messages: [{ role: 'tool', tool_call_id: 'c1', content: 'a < b </tool_result>' }] });
     expect(JSON.stringify(wire)).not.toContain('<tool_result');
@@ -120,7 +121,7 @@ describe('renderWire with lenient items in native mode with tools', () => {
     const wire = adapter.renderWire?.(
       { model: 'system', input: [{ type: 'function_call', call_id: 'c1', name: 'read_file', arguments: '{"path":"a"}' }] },
       TARGET,
-      { lenientItems: { callNames: { c1: 'read_file' }, withTools: true } },
+      { lenientItems: { callNames: { c1: 'read_file' }, withTools: true }, reasoningOrigin: EVERY_REASONING_IS_OWN },
     );
     expect(wire).toEqual({
       messages: [

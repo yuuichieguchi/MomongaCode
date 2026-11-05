@@ -1,8 +1,9 @@
 import { compactionSummaryMessage } from '@momonga/protocol';
-import type { AdapterInputItem, AdapterRequest, ContentPart, InputItem } from '@momonga/protocol';
+import type { AdapterInputItem, AdapterRequest, ContentPart, InputItem, ReasoningOrigin } from '@momonga/protocol';
 import { callArgumentsText } from '../shared/call-arguments.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { imageUrlOf, isImagePart } from '../shared/image-part.ts';
+import { ownReasoning } from '../shared/reasoning-origin.ts';
 
 export type OpenResponsesRequestBody = {
   model: string;
@@ -35,16 +36,18 @@ const relayable = (content: string | ContentPart[], allowed: ReadonlySet<Content
 
 const USER_PART_TYPES: ReadonlySet<ContentPart['type']> = new Set([...TEXT_PART_TYPES, 'input_image']);
 
-const itemOf = (item: AdapterInputItem): InputItem | undefined => {
+const itemOf = (item: AdapterInputItem, origin: ReasoningOrigin): InputItem | undefined => {
   switch (item.type) {
-    case 'reasoning':
-      if (item.encrypted_content === undefined || item.encrypted_content === null) return undefined;
+    case 'reasoning': {
+      const own = ownReasoning(item, origin);
+      if (own === undefined || own.encrypted_content === undefined || own.encrypted_content === null) return undefined;
       return {
         type: 'reasoning',
-        summary: item.summary,
-        ...(item.content === undefined || item.content === null ? {} : { content: item.content }),
-        encrypted_content: item.encrypted_content,
+        summary: own.summary,
+        ...(own.content === undefined || own.content === null ? {} : { content: own.content }),
+        encrypted_content: own.encrypted_content,
       };
+    }
     case 'compaction_summary':
       return compactionSummaryMessage(item.summary);
     case 'message':
@@ -56,11 +59,11 @@ const itemOf = (item: AdapterInputItem): InputItem | undefined => {
   }
 };
 
-export const buildResponsesBody = (request: AdapterRequest): OpenResponsesRequestBody => {
+export const buildResponsesBody = (request: AdapterRequest, origin: ReasoningOrigin): OpenResponsesRequestBody => {
   const tools = request.tools ?? [];
   return {
     model: request.model,
-    input: request.input.flatMap((item) => itemOf(item) ?? []),
+    input: request.input.flatMap((item) => itemOf(item, origin) ?? []),
     stream: true,
     store: false,
     include: ['reasoning.encrypted_content'],

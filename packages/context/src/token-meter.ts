@@ -235,8 +235,15 @@ export const createTokenMeter = ({ counter, model, capabilities, observedCapacit
     };
   };
 
-  const viewOf = (inputDigest: string, chosen: Decomposition, freshUnderAt: (tokens: number) => number, underAt: (tokens: number) => number): MeterCount => ({
+  const viewOf = (
+    inputDigest: string,
+    chosen: Decomposition,
+    freshInputTokens: number,
+    freshUnderAt: (tokens: number) => number,
+    underAt: (tokens: number) => number,
+  ): MeterCount => ({
     inputTokens: chosen.inputTokens,
+    freshInputTokens,
     inputDigest,
     known: chosen.known,
     uncounted: chosen.uncounted,
@@ -295,7 +302,7 @@ export const createTokenMeter = ({ counter, model, capabilities, observedCapacit
     const chosen = useSplit ? split : freshDecomposition;
     const ownUnderAt = useSplit ? splitUnderAt : freshUnderAt;
     const underAt = frozenResolved === undefined || sent === true ? ownUnderAt : (frozenResolved.choice.underAt ?? ownUnderAt);
-    const view = viewOf(inputDigest, chosen, freshUnderAt, underAt);
+    const view = viewOf(inputDigest, chosen, freshDecomposition.inputTokens, freshUnderAt, underAt);
     if (frozen === undefined || sent === true) {
       remember(counted, inputDigest, { epoch, frozenKey, decomposition: chosen, input, tools, instructions, chain, view }, MAX_COUNTED);
     }

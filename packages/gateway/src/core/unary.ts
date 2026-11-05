@@ -23,6 +23,7 @@ import type { AttemptSpan } from './attempt-span.ts';
 import { errorTypeOf, messageOf } from './respond.ts';
 import { failureFrom, runWithRetry } from './retry.ts';
 import type { RetryOutcome } from './retry.ts';
+import { adapterContextOf, originOf } from './adapter-context.ts';
 import type { TargetRuntime } from './router.ts';
 import type { Services } from './services.ts';
 import { textOfWire } from './wire-text.ts';
@@ -110,7 +111,7 @@ const countWire = async (
   const adapterCountWire = target.adapter.countWire;
   if (adapterCountWire !== undefined) {
     const counted = await callTargets(services, [target], signal, deadlineAt, (chosen, attemptNumber, guarded) =>
-      adapterCountWire.call(chosen.adapter, wire, { signal: guarded, target: { name: chosen.name, model: chosen.model }, attempt: attemptNumber }),
+      adapterCountWire.call(chosen.adapter, wire, adapterContextOf(services, chosen, guarded, attemptNumber)),
     );
     counted.target.breaker.onSuccess();
     return counted.value;
@@ -124,7 +125,7 @@ const countWire = async (
     adapterCountTokens.call(
       chosen.adapter,
       { model: chosen.model, input: textOfWire(wire) },
-      { signal: guarded, target: { name: chosen.name, model: chosen.model }, attempt: attemptNumber },
+      adapterContextOf(services, chosen, guarded, attemptNumber),
     ),
   );
   outcome.target.breaker.onSuccess();
@@ -162,7 +163,7 @@ const countTokens = async (
         target.adapter,
         adapterRequestOf(target.model, request, resolved.forAdapter),
         { name: target.name, model: target.model },
-        lenientItems === undefined ? undefined : { lenientItems },
+        lenientItems === undefined ? { reasoningOrigin: originOf(services, target) } : { reasoningOrigin: originOf(services, target), lenientItems },
       ),
     );
     return countWire(services, target, wire, signal, deadlineAt);
@@ -189,7 +190,7 @@ const countTokens = async (
         ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
         ...(request.tools === undefined ? {} : { tools: request.tools }),
       },
-      { signal: guarded, target: { name: chosen.name, model: chosen.model }, attempt: attemptNumber },
+      adapterContextOf(services, chosen, guarded, attemptNumber),
     ),
   );
   outcome.target.breaker.onSuccess();
@@ -235,7 +236,7 @@ const compactOnce = async (
       continue;
     }
     const wire = asGatewayError(target, () =>
-      renderCompactWire.call(target.adapter, compactRequestFor(target, cap), { name: target.name, model: target.model }, cap),
+      renderCompactWire.call(target.adapter, compactRequestFor(target, cap), { name: target.name, model: target.model }, cap, originOf(services, target)),
     );
     let counted: CountTokensResult;
     try {
@@ -290,11 +291,7 @@ const compactOnce = async (
       request: { input: resolved.forAdapter, instructions: request.instructions, tools: undefined },
     });
     try {
-      const result = await compact.call(target.adapter, compactRequestFor(target, cap), {
-        signal: guarded,
-        target: { name: target.name, model: target.model },
-        attempt: attemptNumber,
-      });
+      const result = await compact.call(target.adapter, compactRequestFor(target, cap), adapterContextOf(services, target, guarded, attemptNumber));
       spans.set(target, span);
       return result;
     } catch (error) {

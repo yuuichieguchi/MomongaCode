@@ -1,3 +1,4 @@
+import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
 import { createScriptedAdapter, textResponseEvents } from '@momonga/testkit';
 import type { AdapterInputItem, AdapterRequest, ContentPart } from '@momonga/protocol';
@@ -167,13 +168,13 @@ const request = (input: AdapterInputItem[]): AdapterRequest => ({ model: 'm', in
 
 describe('chat-completions image conversion', () => {
   it('turns input_image into an image_url part and keeps the detail', () => {
-    expect(buildNativeBody(request([userImage('low')])).messages).toEqual([
+    expect(buildNativeBody(request([userImage('low')]), EVERY_REASONING_IS_OWN).messages).toEqual([
       { role: 'user', content: [{ type: 'text', text: 'see' }, { type: 'image_url', image_url: { url: PNG_URL, detail: 'low' } }] },
     ]);
   });
 
   it('merges a following text user message into the same parts message', () => {
-    const messages = buildNativeBody(request([userImage(), { type: 'message', role: 'user', content: 'and this' }])).messages;
+    const messages = buildNativeBody(request([userImage(), { type: 'message', role: 'user', content: 'and this' }]), EVERY_REASONING_IS_OWN).messages;
     expect(messages).toHaveLength(1);
     expect((messages[0]?.['content'] as unknown[]).length).toBe(3);
   });
@@ -184,7 +185,7 @@ describe('chat-completions image conversion', () => {
     { name: 'a tool result', item: { type: 'function_call_output', call_id: 'c1', output: [{ type: 'input_image', image_url: PNG_URL }] } },
     { name: 'an image without image_url', item: { type: 'message', role: 'user', content: [{ type: 'input_image' }] } },
   ])('rejects an image in $name', ({ item }) => {
-    expect(() => buildNativeBody(request([item]))).toThrow(UnsupportedInputError);
+    expect(() => buildNativeBody(request([item]), EVERY_REASONING_IS_OWN)).toThrow(UnsupportedInputError);
   });
 });
 
@@ -196,8 +197,7 @@ describe('open-responses image conversion', () => {
         { type: 'message', role: 'user', content: parts },
         { type: 'function_call', call_id: 'c1', name: 'shot', arguments: '{}' },
         { type: 'function_call_output', call_id: 'c1', output: parts },
-      ]),
-    );
+      ]), EVERY_REASONING_IS_OWN);
     expect(body.input).toEqual([
       { type: 'message', role: 'user', content: parts },
       { type: 'function_call', call_id: 'c1', name: 'shot', arguments: '{}' },
@@ -206,8 +206,8 @@ describe('open-responses image conversion', () => {
   });
 
   it('still rejects an image in an assistant message and input_file', () => {
-    expect(() => buildResponsesBody(request([{ type: 'message', role: 'assistant', content: [{ type: 'input_image', image_url: PNG_URL }] }]))).toThrow(UnsupportedInputError);
-    expect(() => buildResponsesBody(request([{ type: 'message', role: 'user', content: [{ type: 'input_file', file_url: 'https://e.com/a' }] }]))).toThrow(UnsupportedInputError);
+    expect(() => buildResponsesBody(request([{ type: 'message', role: 'assistant', content: [{ type: 'input_image', image_url: PNG_URL }] }]), EVERY_REASONING_IS_OWN)).toThrow(UnsupportedInputError);
+    expect(() => buildResponsesBody(request([{ type: 'message', role: 'user', content: [{ type: 'input_file', file_url: 'https://e.com/a' }] }]), EVERY_REASONING_IS_OWN)).toThrow(UnsupportedInputError);
   });
 });
 
@@ -215,7 +215,7 @@ describe('compaction transcript with images', () => {
   const compactRequest = (input: AdapterInputItem[]) => ({ model: 'm', input });
 
   it('stays one text message when there is no image', () => {
-    const [message] = summaryRequestOf(compactRequest([{ type: 'message', role: 'user', content: 'hi' }]), 200).input;
+    const [message] = summaryRequestOf(compactRequest([{ type: 'message', role: 'user', content: 'hi' }]), 200, EVERY_REASONING_IS_OWN).input;
     expect(typeof (message as { content: unknown }).content).toBe('string');
   });
 
@@ -226,8 +226,7 @@ describe('compaction transcript with images', () => {
         { type: 'function_call', call_id: 'c1', name: 'shot', arguments: '{}' },
         { type: 'function_call_output', call_id: 'c1', output: [{ type: 'input_image', image_url: PNG_URL }] },
       ]),
-      200,
-    ).input;
+      200, EVERY_REASONING_IS_OWN).input;
     const content = (message as { content: ContentPart[] }).content;
     expect(content.map((part) => part.type)).toEqual(['input_text', 'input_image', 'input_text', 'input_image', 'input_text']);
     expect((content[0] as { text: string }).text).toBe('<transcript>\n<item role="user">look');

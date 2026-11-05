@@ -1,3 +1,4 @@
+import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
 import type { AdapterInputItem, AdapterRequest, ContentPart } from '@momonga/protocol';
 import { UnsupportedInputError } from '../src/adapters/shared/failures.ts';
@@ -13,7 +14,7 @@ const assistant = (text: string): AdapterInputItem => ({ type: 'message', role: 
 const call = (id: string, name: string, args: string): AdapterInputItem => ({ type: 'function_call', call_id: id, name, arguments: args });
 const output = (id: string, text: string): AdapterInputItem => ({ type: 'function_call_output', call_id: id, output: text });
 
-const bodyOf = (input: AdapterInputItem[], extra: Partial<AdapterRequest> = {}) => buildMessagesBody({ model: 'm', input, ...extra }, MAX_TOKENS, { cache: undefined });
+const bodyOf = (input: AdapterInputItem[], extra: Partial<AdapterRequest> = {}) => buildMessagesBody({ model: 'm', input, ...extra }, MAX_TOKENS, { cache: undefined }, EVERY_REASONING_IS_OWN);
 
 const tool = { type: 'function', name: 'read_file', description: 'Read', parameters: { type: 'object', properties: {} } } as const;
 
@@ -175,7 +176,7 @@ describe('buildMessagesBody', () => {
 
 describe('cache breakpoints', () => {
   const cached = (input: AdapterInputItem[], extra: Partial<AdapterRequest> = {}) =>
-    buildMessagesBody({ model: 'm', input, ...extra }, MAX_TOKENS, { cache: { maxBreakpoints: 4 } });
+    buildMessagesBody({ model: 'm', input, ...extra }, MAX_TOKENS, { cache: { maxBreakpoints: 4 } }, EVERY_REASONING_IS_OWN);
   const marker = { type: 'ephemeral' };
   const secondTool = { ...tool, name: 'write_file' };
   const summary: AdapterInputItem = { type: 'compaction_summary', summary: 'earlier' };
@@ -217,7 +218,7 @@ describe('cache breakpoints', () => {
   });
 
   it('marks nothing when breakpoints are disabled', () => {
-    const body = buildMessagesBody({ model: 'm', input: [summary, user('x')], tools: [tool] }, MAX_TOKENS, { cache: undefined });
+    const body = buildMessagesBody({ model: 'm', input: [summary, user('x')], tools: [tool] }, MAX_TOKENS, { cache: undefined }, EVERY_REASONING_IS_OWN);
     expect(breakpoints(body as ReturnType<typeof cached>)).toEqual([]);
   });
 

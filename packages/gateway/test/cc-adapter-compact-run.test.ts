@@ -1,3 +1,4 @@
+import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
 import type { AdapterCompactRequest, AdapterInputItem, ToolCallingMode } from '@momonga/protocol';
 import { TARGET, completionBodies, lastCompletionBody, startFake, userText } from './cc-support.ts';
@@ -12,7 +13,7 @@ import {
   textReply,
 } from './cc-compact-support.ts';
 
-const ctx = { signal: new AbortController().signal, target: TARGET, attempt: 1 };
+const ctx = { signal: new AbortController().signal, target: TARGET, attempt: 1, reasoningOrigin: EVERY_REASONING_IS_OWN };
 
 const conversation: AdapterInputItem[] = [
   userText('Fix the parser bug'),

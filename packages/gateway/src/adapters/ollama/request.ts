@@ -1,5 +1,5 @@
 import { reasoningEffortToSend } from '@momonga/protocol';
-import type { AdapterRequest, Capabilities, FunctionTool, ReasoningCapability, ReasoningEffort } from '@momonga/protocol';
+import type { AdapterRequest, Capabilities, FunctionTool, ReasoningCapability, ReasoningEffort, ReasoningOrigin } from '@momonga/protocol';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { SYSTEM_PART_SEPARATOR, systemTextOf } from '../shared/system-text.ts';
 import { ollamaHistoryOf } from './history.ts';
@@ -44,10 +44,10 @@ const thinkOf = (effort: ReasoningEffort | undefined, reasoning: ReasoningCapabi
 
 export type OllamaBodyCapabilities = Pick<Capabilities, 'contextWindow' | 'maxOutputTokens' | 'reasoning'>;
 
-export const buildOllamaChatBody = (request: AdapterRequest, capabilities: OllamaBodyCapabilities, stream: boolean): OllamaChatBody => {
+export const buildOllamaChatBody = (request: AdapterRequest, capabilities: OllamaBodyCapabilities, stream: boolean, origin: ReasoningOrigin): OllamaChatBody => {
   requireToolChoice(request);
   const system = systemTextOf(request.instructions, request.input);
-  const messages = [...(system.length === 0 ? [] : [{ role: 'system', content: system.join(SYSTEM_PART_SEPARATOR) }]), ...ollamaHistoryOf(request.input)];
+  const messages = [...(system.length === 0 ? [] : [{ role: 'system', content: system.join(SYSTEM_PART_SEPARATOR) }]), ...ollamaHistoryOf(request.input, origin)];
   return {
     model: request.model,
     messages,
@@ -65,4 +65,4 @@ export const buildOllamaChatBody = (request: AdapterRequest, capabilities: Ollam
   };
 };
 
-export const buildOllamaBody = (request: AdapterRequest, capabilities: OllamaBodyCapabilities): OllamaChatBody => buildOllamaChatBody(request, capabilities, true);
+export const buildOllamaBody = (request: AdapterRequest, capabilities: OllamaBodyCapabilities, origin: ReasoningOrigin): OllamaChatBody => buildOllamaChatBody(request, capabilities, true, origin);
