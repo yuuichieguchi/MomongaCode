@@ -8,11 +8,11 @@ import { createGoverningFactStore } from './governing.ts';
 import { createMemoryStore } from './memories.ts';
 import { readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
-import type { ContributionMeasured, ContributionRequest, Run, TerminalContribution } from './types.ts';
+import type { ContributionMeasured, ContributionRequest, GoverningFactStore, MemoryStore, Run, TerminalContribution } from './types.ts';
 
 export const payloadStep = (payload: RunEventPayload): number => ('step' in payload ? payload.step : 0);
 
-export const PINNED_ROLES = "'system', 'developer'";
+const PINNED_ROLES = "'system', 'developer'";
 
 const PINNED_REQUEST_PAYLOAD = `(SELECT json_object(
   'type', 'model.requested',
@@ -35,10 +35,18 @@ const NO_CLOCK: Clock = {
   },
 };
 
-export type JournalReaderOptions = { unit?: () => void };
+export const JOURNAL_SCAN_RANGE_ROWS = 1000;
+
+export type JournalReaderOptions = {
+  unit?: () => void;
+  onRowsStepped?: (rows: number) => void;
+  onDecode?: (rows: number, bytes: number) => void;
+  lookups?: { memories: Pick<MemoryStore, 'get'>; governing: Pick<GoverningFactStore, 'get'> };
+};
 
 export type JournalReader = {
   measure(hook: TerminalContribution, request: ContributionRequest): ContributionMeasured;
+  eventsOfTypes(runId: string, types: readonly RunEventPayload['type'][]): RunEvent[];
 };
 
 const typePlaceholders = (types: readonly string[]): { list: string; bound: Record<string, string> } => ({
@@ -48,14 +56,15 @@ const typePlaceholders = (types: readonly string[]): { list: string; bound: Reco
 
 export const createJournalReader = (db: DatabaseSync, options: JournalReaderOptions = {}): JournalReader => {
   const unit = options.unit ?? ((): void => undefined);
-  const memories = createMemoryStore(db, NO_CLOCK);
-  const governing = createGoverningFactStore(db, NO_CLOCK);
+  const stepped = options.onRowsStepped ?? ((): void => undefined);
+  const { memories, governing } = options.lookups ?? { memories: createMemoryStore(db, NO_CLOCK), governing: createGoverningFactStore(db, NO_CLOCK) };
   const selectRun = db.prepare('SELECT * FROM runs WHERE id = :id');
   const pinnedDigests = db.prepare("SELECT seq, pinned_digest FROM events WHERE run_id = :runId AND type = 'model.requested' ORDER BY seq");
 
   const decodeEach = (rows: Iterable<Row>): RunEvent[] => {
     const events: RunEvent[] = [];
     for (const row of rows) {
+      options.onDecode?.(1, typeof row['payload_json'] === 'string' ? Buffer.byteLength(row['payload_json']) : 0);
       const [event] = decodeRunEvents([row]);
       if (event === undefined) throw new Error('a journal row did not decode to an event');
       events.push(event);
@@ -78,14 +87,31 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
     return wanted;
   };
 
-  const eventsOfTypes = (runId: string, types: readonly RunEventPayload['type'][]): RunEvent[] => {
-    const { list, bound } = typePlaceholders(types);
-    return decodeEach(db.prepare(`SELECT * FROM events WHERE run_id = :runId AND type IN (${list}) ORDER BY seq`).iterate({ runId, ...bound }));
+  const lastSeqOf = (runId: string): number => {
+    const row = selectRun.get({ id: runId });
+    if (row === undefined) throw new Error(`unknown run ${runId}`);
+    return decodeRun(row).lastSeq;
   };
+
+  function* rangedRows(runId: string, lastSeq: number, types: readonly string[], excluding: boolean): Generator<Row> {
+    const { list, bound } = typePlaceholders(types);
+    const statement = db.prepare(
+      `SELECT * FROM events WHERE run_id = :runId AND seq >= :from AND seq < :until AND type ${excluding ? 'NOT IN' : 'IN'} (${list}) ORDER BY seq`,
+    );
+    for (let from = 1; from <= lastSeq; from += JOURNAL_SCAN_RANGE_ROWS) {
+      const until = Math.min(from + JOURNAL_SCAN_RANGE_ROWS, lastSeq + 1);
+      yield* statement.iterate({ runId, from, until, ...bound });
+      stepped(until - from);
+      unit();
+    }
+  }
+
+  const eventsOfTypes = (runId: string, types: readonly RunEventPayload['type'][]): RunEvent[] =>
+    types.length === 0 ? [] : decodeEach(rangedRows(runId, lastSeqOf(runId), types, false));
 
   const hookEventsOfTypes = (runId: string, types: readonly RunEventPayload['type'][]): RunEvent[] => {
     const plain = types.filter((type) => type !== 'model.requested');
-    const events = plain.length === 0 ? [] : eventsOfTypes(runId, plain);
+    const events = eventsOfTypes(runId, plain);
     if (plain.length === types.length) return events;
     const requests = decodeEach(
       db
@@ -97,8 +123,7 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
 
   const replayRun = (run: Run, readEvents: readonly RunEvent[], visit: (state: RunState, event: RunEvent) => void, leading: readonly RunEvent[]): void => {
     const readTypes = [...new Set<string>([...readEvents.map((event) => event.type), 'model.requested'])];
-    const { list, bound } = typePlaceholders(readTypes);
-    const rest = decodeEach(db.prepare(`SELECT * FROM events WHERE run_id = :runId AND type NOT IN (${list})`).iterate({ runId: run.id, ...bound }));
+    const rest = decodeEach(rangedRows(run.id, run.lastSeq, readTypes, true));
     const unread = leading.filter((event) => !readEvents.includes(event) && event.type !== 'model.requested');
     const journal = [...readEvents.filter((event) => event.type !== 'model.requested'), ...rest, ...unread].sort((a, b) => a.seq - b.seq);
     let state = initialRunState({ runId: run.id, sessionId: run.sessionId });
@@ -131,5 +156,5 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
       return contribution === undefined ? { lastSeq: run.lastSeq } : { lastSeq: run.lastSeq, contribution };
     });
 
-  return { measure };
+  return { measure, eventsOfTypes };
 };

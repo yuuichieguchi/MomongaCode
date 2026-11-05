@@ -50,7 +50,7 @@ export type RunServiceOptions = {
   sweepIntervalMs?: number;
   dataVersionPollMs?: number;
   maxBodyBytes?: number;
-  cancelUpstream?: (runId: string) => Promise<void>;
+  cancelUpstream?: (runId: string, signal: AbortSignal) => Promise<void>;
   releaseStopped(runId: string, signal: AbortSignal): Promise<void>;
   runTrace: (runId: string) => Promise<RunTraceView | undefined>;
   runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ report: GatewayCostReportView; text: string }>;

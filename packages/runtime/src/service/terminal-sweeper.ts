@@ -5,9 +5,9 @@ export type TerminalSweeperOptions = {
   store: Pick<RuntimeStore, 'finishCancelled' | 'deadLetterExhausted'>;
   timers: ServiceTimers;
   intervalMs: number;
-  cancelUpstream?: (runId: string) => Promise<void>;
+  cancelUpstream?: (runId: string, signal: AbortSignal) => Promise<void>;
   releaseStopped(runId: string, signal: AbortSignal): Promise<void>;
-  onError: (error: unknown) => void;
+  onError: (error: unknown, runId?: string) => void;
 };
 
 export type TerminalSweeper = { sweep(): Promise<void>; close(): Promise<void> };
@@ -16,19 +16,23 @@ export const startTerminalSweeper = (options: TerminalSweeperOptions): TerminalS
   const { store, timers, intervalMs, cancelUpstream, releaseStopped, onError } = options;
   const closing = new AbortController();
   const releasing = new Set<Promise<void>>();
-  const reportRun = (error: unknown): void => onError(error);
+  const reportRun = (error: unknown, runId: string): void => onError(error, runId);
   let closed = false;
   let handle: unknown;
   let current: Promise<void> = Promise.resolve();
 
-  const afterCommit = (runId: string): void => {
-    if (cancelUpstream !== undefined) void (async () => cancelUpstream(runId))().catch(onError);
-    const tracked = (async () => releaseStopped(runId, closing.signal))()
-      .catch(onError)
+  const track = (runId: string, work: () => Promise<void>): void => {
+    const tracked = (async () => work())()
+      .catch((error: unknown) => onError(error, runId))
       .finally(() => {
         releasing.delete(tracked);
       });
     releasing.add(tracked);
+  };
+
+  const afterCommit = (runId: string): void => {
+    if (cancelUpstream !== undefined) track(runId, () => cancelUpstream(runId, closing.signal));
+    track(runId, () => releaseStopped(runId, closing.signal));
   };
 
   const sweepOnce = async (): Promise<void> => {

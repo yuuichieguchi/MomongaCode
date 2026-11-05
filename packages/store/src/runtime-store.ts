@@ -9,7 +9,7 @@ import { createBlobStore, prepareBlobDirectory } from './blobs.ts';
 import { addUsage, foldRunState, initialRunState, spendOf } from './fold.ts';
 import { decodeEvent, decodeRun, decodeRunEvents, decodeRunState, decodeSession, encodeRunState } from './codec.ts';
 import { StalePreparation } from './journal-port.ts';
-import { payloadStep } from './journal-reader.ts';
+import { createJournalReader, payloadStep } from './journal-reader.ts';
 import { StoreIdentityError, isFatalStoreError } from './fatal.ts';
 import { createIdempotencyStore } from './idempotency.ts';
 import { decodeJob, prepareJobStatements } from './jobs.ts';
@@ -395,6 +395,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const contextCharges = createContextChargeStore(db, clock);
   const reflection = createReflectionStore(db, clock, { memories, contextCharges });
   const governing = createGoverningFactStore(db, clock);
+  const journalReader = createJournalReader(db, { lookups: { memories, governing }, ...(options.onDecode === undefined ? {} : { onDecode: options.onDecode }) });
   const trust = createTrustStore(db, clock, home);
   const originOf = (cwd: string): 'trusted' | 'untrusted' => (trust.decisionFor(cwd).decision === 'trusted' ? 'trusted' : 'untrusted');
   const touched = new Map<string, { runId?: string; sessionId: string }>();
@@ -516,12 +517,6 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       approvalOps.end(approval.id, 'withdrawn');
       return approvalAnnounced(runId, approval.id) ? [cancelledEvent(approval, 'withdrawn')] : [];
     });
-
-  const eventsOfTypes = (runId: string, types: readonly RunEventPayload['type'][]): RunEvent[] => {
-    const placeholders = types.map((_type, index) => `:type${index}`).join(', ');
-    const bound = Object.fromEntries(types.map((type, index) => [`type${index}`, type]));
-    return decodeEvents(db.prepare(`SELECT * FROM events WHERE run_id = :runId AND type IN (${placeholders}) ORDER BY seq`).all({ runId, ...bound }));
-  };
 
   type Need = { runId: string; leading: readonly RunEventPayload[]; expiring: readonly string[] };
   type Prepared = Need & { measured: ContributionMeasured | undefined };
@@ -848,20 +843,6 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     if (state === undefined) return { tail: decodeEvents(sql.runEvents.all({ runId, after: 0, limit: -1 })) };
     if (state.runId !== runId) throw corrupt('snapshots', identity, `state belongs to run ${state.runId}`);
     return { snapshot: { seq, state }, tail: decodeEvents(sql.runEvents.all({ runId, after: seq, limit: -1 })) };
-  };
-
-  const replayRun = (run: Run, readEvents: readonly RunEvent[], visit: (state: RunState, event: RunEvent) => void, leading: readonly RunEvent[] = []): void => {
-    const readTypes = [...new Set<string>([...readEvents.map((event) => event.type), 'model.requested'])];
-    const placeholders = readTypes.map((_type, index) => `:type${index}`).join(', ');
-    const bound = Object.fromEntries(readTypes.map((type, index) => [`type${index}`, type]));
-    const rest = decodeRunEvents(db.prepare(`SELECT * FROM events WHERE run_id = :runId AND type NOT IN (${placeholders})`).all({ runId: run.id, ...bound }));
-    const unread = leading.filter((event) => !readEvents.includes(event) && event.type !== 'model.requested');
-    const journal = [...readEvents.filter((event) => event.type !== 'model.requested'), ...rest, ...unread].sort((a, b) => a.seq - b.seq);
-    let state = initialRunState({ runId: run.id, sessionId: run.sessionId });
-    for (const event of journal) {
-      state = foldRunState(state, event);
-      visit(state, event);
-    }
   };
 
   const foldedRun = (run: Run): RunState => {
@@ -1389,7 +1370,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     readRunEvents: (runId, afterSeq, limit) => decodeEvents(sql.runEvents.all({ runId, after: afterSeq, limit })),
 
-    readRunEventsOfTypes: eventsOfTypes,
+    readRunEventsOfTypes: (runId, types) => journalReader.eventsOfTypes(runId, types),
 
     readLatestRunEventBefore: <T extends RunEventPayload['type']>(runId: string, type: T, beforeSeq: number) => {
       const [event] = decodeEvents(

@@ -23,7 +23,6 @@ type Segment = { itemSeq: number; text: string };
 const WORD_CODE_ASCII_ONLY = /^[A-Za-z0-9_]+$/;
 const COMPOUND_ASCII_ONLY = /^[A-Za-z0-9_]+(?:[./-][A-Za-z0-9_]+)+$/;
 const NON_ASCII_ONLY = /^[^\u0000-\u007f]+$/;
-const SEGMENT_WINDOW_CHARS = 500;
 const MAX_ASCII = 0x7f;
 
 const isWordCode = (code: number): boolean => (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code === 95;
@@ -104,13 +103,25 @@ const asciiOccurrenceHolds = (text: string, start: number, identifier: string, k
   return !continuesChunk || (previous === 47 && isPath(identifier));
 };
 
-const nonAsciiOccurrenceHolds = (text: string, start: number, identifier: string): boolean => {
-  let from = start;
-  while (from > 0 && start - from < SEGMENT_WINDOW_CHARS && text.charCodeAt(from - 1) > MAX_ASCII) from -= 1;
-  let to = start + identifier.length;
-  while (to < text.length && to - start < SEGMENT_WINDOW_CHARS && text.charCodeAt(to) > MAX_ASCII) to += 1;
-  for (const { segment, index, isWordLike } of WORD_SEGMENTER.segment(text.slice(from, to))) {
-    if (index + from === start) return isWordLike === true && segment === identifier;
+const NON_ASCII_RUNS = /[^\u0000-\u007f]+/g;
+
+const nonAsciiChunkHolds = (chunk: string, identifier: string, unit: (() => void) | undefined): boolean => {
+  for (const [run] of chunk.matchAll(NON_ASCII_RUNS)) {
+    if (!run.includes(identifier)) continue;
+    let segments = 0;
+    for (const { segment, isWordLike } of WORD_SEGMENTER.segment(run)) {
+      if (isWordLike === true && segment === identifier) return true;
+      segments += 1;
+      if (segments % SEGMENTS_PER_UNIT === 0) unit?.();
+    }
+  }
+  return false;
+};
+
+const asciiChunkHolds = (text: string, from: number, identifier: string, kind: 'word' | 'compound'): boolean => {
+  const window = text.slice(from, from + CHUNK_CHARS + identifier.length - 1);
+  for (let local = window.indexOf(identifier); local >= 0 && local < CHUNK_CHARS; local = window.indexOf(identifier, local + 1)) {
+    if (asciiOccurrenceHolds(text, from + local, identifier, kind)) return true;
   }
   return false;
 };
@@ -118,13 +129,18 @@ const nonAsciiOccurrenceHolds = (text: string, start: number, identifier: string
 export const hasToken = (text: string, identifier: string, unit?: () => void): boolean => {
   const kind = WORD_CODE_ASCII_ONLY.test(identifier) ? 'word' : COMPOUND_ASCII_ONLY.test(identifier) ? 'compound' : NON_ASCII_ONLY.test(identifier) ? 'non-ascii' : undefined;
   if (kind === undefined) return false;
+  if (kind === 'non-ascii') {
+    for (let start = 0; start < text.length; ) {
+      const end = chunkEnd(text, start);
+      unit?.();
+      if (nonAsciiChunkHolds(text.slice(start, end), identifier, unit)) return true;
+      start = end;
+    }
+    return false;
+  }
   for (let from = 0; from < text.length; from += CHUNK_CHARS) {
     unit?.();
-    const window = text.slice(from, from + CHUNK_CHARS + identifier.length - 1);
-    for (let local = window.indexOf(identifier); local >= 0 && local < CHUNK_CHARS; local = window.indexOf(identifier, local + 1)) {
-      const start = from + local;
-      if (kind === 'non-ascii' ? nonAsciiOccurrenceHolds(text, start, identifier) : asciiOccurrenceHolds(text, start, identifier, kind)) return true;
-    }
+    if (asciiChunkHolds(text, from, identifier, kind)) return true;
   }
   return false;
 };

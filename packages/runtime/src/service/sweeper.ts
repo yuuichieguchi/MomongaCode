@@ -8,7 +8,7 @@ export type ApprovalSweeperOptions = {
   timers: ServiceTimers;
   intervalMs: number;
   releaseStopped(runId: string, signal: AbortSignal): Promise<void>;
-  onError: (error: unknown) => void;
+  onError: (error: unknown, runId?: string) => void;
 };
 
 export type StoppedRunReleaseOptions = {
@@ -51,7 +51,7 @@ export const startApprovalSweeper = (options: ApprovalSweeperOptions): { close()
 
   const sweepOnce = async (): Promise<void> => {
     try {
-      for (const runId of await store.expireApprovals(clock.now(), (error) => onError(error))) release(runId);
+      for (const runId of await store.expireApprovals(clock.now(), (error, runId) => onError(error, runId))) release(runId);
     } catch (error) {
       onError(error);
     }
