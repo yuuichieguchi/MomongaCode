@@ -9,7 +9,8 @@ import type {
   StreamEvent,
 } from '@momonga/protocol';
 import { DEFAULT_SCRIPTED_CAPABILITIES, responseResource } from '@momonga/testkit';
-import { ClientDisconnectedError, GatewayError, missingApiKeyError, runCancelledError } from '../src/core/errors.ts';
+import { ADAPTER_NEUTRAL_ERROR_CODES } from '@momonga/protocol';
+import { ClientDisconnectedError, GatewayError, SKIPPABLE_CODES, missingApiKeyError, runCancelledError } from '../src/core/errors.ts';
 import { GuardedAdapterError, guardAdapter } from '../src/core/guarded-adapter.ts';
 import { createRedactor } from '../src/core/redaction.ts';
 import type { TargetRuntime } from '../src/core/router.ts';
@@ -151,6 +152,18 @@ describe('guardAdapter this binding', () => {
       ['capabilities', 'classify', 'compact', 'countTokens', 'create', 'health', 'renderCompactWire', 'renderWire'].sort(),
     );
     for (const self of seen.values()) expect(self).toBe(inner);
+  });
+});
+
+describe('every neutral and skip code survives the guard unchanged (W2)', () => {
+  it.for([...ADAPTER_NEUTRAL_ERROR_CODES, ...SKIPPABLE_CODES])('keeps %s, so the redacted code classifies as the upstream code does', (code) => {
+    const guard = guardAdapter(baseAdapter({ classify: () => classifiedOf('plain', code) }), redactor);
+    expect(guard.classify(new Error('x')).error.code).toBe(code);
+  });
+
+  it('covers a non-empty set of codes', () => {
+    expect(ADAPTER_NEUTRAL_ERROR_CODES.length).toBeGreaterThan(0);
+    expect(SKIPPABLE_CODES.size).toBeGreaterThan(0);
   });
 });
 

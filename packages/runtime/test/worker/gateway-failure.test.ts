@@ -215,6 +215,38 @@ describe('worker gateway failures', () => {
     expect(env.run(run.id).status).toBe('COMPLETED');
   });
 
+  const upstreamCodedDeferral = (): ScriptStep =>
+    gatewayErrorStep({
+      status: 429,
+      type: 'too_many_requests',
+      code: 'rate_limit_error',
+      message: 'the upstream asked for a wait longer than the whole retry budget',
+      retryAfterMs: DEFERRED_RETRY_AFTER_MS,
+      deferred: true,
+    } as ConstructorParameters<typeof GatewayRequestError>[0]);
+
+  it('fails with rate_limited, not the upstream code, a deferral whose Retry-After time is past the run deadline', async () => {
+    const env = await makeEnv();
+    env.gateway.script.push(upstreamCodedDeferral(), textStep('never sent'));
+    const run = env.enqueue('Work', { deadlineAt: env.clock.now() + DEFERRED_RETRY_AFTER_MS / 2 });
+
+    expect(await env.runOnce(env.worker())).toBe('yielded');
+
+    expect(env.run(run.id)).toMatchObject({ status: 'FAILED', error: { code: 'rate_limited' } });
+  });
+
+  it('fails with rate_limited, not the upstream code, a deferral beyond the attempt limit', async () => {
+    const env = await makeEnv({ maxAttempts: 2, maxTotalAttempts: 2 });
+    env.gateway.script.push(upstreamCodedDeferral(), upstreamCodedDeferral(), textStep('never sent'));
+    const run = env.enqueue('Work');
+
+    expect(await env.runOnce(env.worker())).toBe('yielded');
+    env.clock.set(env.run(run.id).availableAt);
+    expect(await env.runOnce(env.worker('worker-2'))).toBe('yielded');
+
+    expect(env.run(run.id)).toMatchObject({ status: 'FAILED', error: { code: 'rate_limited' } });
+  });
+
   it('dead-letters the run as FAILED once the store attempt limit is exhausted by requeued hop failures', async () => {
     const env = await makeEnv({ maxAttempts: 3, maxTotalAttempts: 3 });
     env.gateway.script.push(connectionLost(), connectionLost(), connectionLost(), textStep('never sent'));
