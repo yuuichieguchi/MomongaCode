@@ -1,7 +1,7 @@
 import type { Clock } from '@momonga/foundation';
 import { applyCapabilityOverride, imageCapability, sizingRatioFor, summaryTokenCapFor } from '@momonga/protocol';
 import type { Capabilities, CapabilityOverride, FunctionTool, ToolChoice, ToolCallingMode, ToolCallingState, GatewayHealth, HealthResult, ImageCapability, ProviderAdapter, TargetBilling, TargetHealth } from '@momonga/protocol';
-import { isAllowedTools, resolveToolChoice } from './tool-choice.ts';
+import { constrainsToolChoice, resolveToolChoice } from './tool-choice.ts';
 import { UnsupportedInputError } from './unsupported-input.ts';
 import { createAdmissionGate } from './admission.ts';
 import type { AdmissionGate } from './admission.ts';
@@ -205,14 +205,14 @@ export const createRouter = (options: RouterOptions): Router => {
         if (refusal !== undefined) return { stage: REFUSAL_STAGES.sampling, error: invalidRequest('sampling_not_accepted', refusal.message, refusal.field) };
       }
       const { toolChoice } = requirements;
-      if (toolChoice !== undefined && isAllowedTools(toolChoice.tool_choice) && typeof capabilities.toolCalling === 'string') {
+      if (toolChoice !== undefined && constrainsToolChoice(toolChoice.tool_choice) && typeof capabilities.toolCalling === 'string') {
         try {
           resolveToolChoice(
             {
               model: target.model,
               input: [],
               ...(toolChoice.tools === null || toolChoice.tools === undefined ? {} : { tools: [...toolChoice.tools] }),
-              tool_choice: toolChoice.tool_choice,
+              ...(toolChoice.tool_choice === null || toolChoice.tool_choice === undefined ? {} : { tool_choice: toolChoice.tool_choice }),
             },
             capabilities.allowedTools,
             target.name,
@@ -243,7 +243,7 @@ export const createRouter = (options: RouterOptions): Router => {
       if (refusal !== undefined) throw new CandidateRefused(refusal);
       return capabilities;
     };
-    const judging = requirements.tools === true || requirements.images === true || samples || isAllowedTools(requirements.toolChoice?.tool_choice);
+    const judging = requirements.tools === true || requirements.images === true || samples || constrainsToolChoice(requirements.toolChoice?.tool_choice) || requirements.summaryCap !== undefined;
     if (!judging) return { targets: [...all], refusals: [], capabilitiesOf: capabilitiesForAttempt };
     const resolved = await Promise.all(all.map((target) => resolve(target).catch(() => undefined)));
     const refusals: Refusal[] = [];

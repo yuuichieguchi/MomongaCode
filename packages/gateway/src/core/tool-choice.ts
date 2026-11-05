@@ -16,12 +16,15 @@ export const echoedToolChoice = (choice: ToolChoice | null | undefined): Respons
   return isAllowedTools(choice) ? { ...choice, mode: allowedToolsModeOf(choice) } : choice;
 };
 
+export const constrainsToolChoice = (choice: ToolChoice | null | undefined): boolean =>
+  choice === 'required' || isAllowedTools(choice) || (typeof choice === 'object' && choice !== null && choice.type === 'function');
+
 export const NO_TOOL_CHOICE_WIRE: ToolChoiceWire = { forms: [], expressesRequired: true };
 
 const FORM_PREFERENCE: readonly AllowedToolsForm[] = ['native', 'envelope', 'single_tool', 'filter'];
 
-const refusal = (target: string, reason: string): UnsupportedInputError =>
-  new UnsupportedInputError('unsupported_tool_choice', `tool_choice of type allowed_tools cannot be sent to target "${target}": ${reason}`, 'tool_choice');
+const refusal = (target: string, reason: string, choice = 'of type allowed_tools'): UnsupportedInputError =>
+  new UnsupportedInputError('unsupported_tool_choice', `tool_choice ${choice} cannot be sent to target "${target}": ${reason}`, 'tool_choice');
 
 const rewritten = (request: AdapterRequest, toolChoice: ToolChoice, tools?: readonly FunctionTool[]): AdapterRequest => ({
   ...request,
@@ -31,6 +34,23 @@ const rewritten = (request: AdapterRequest, toolChoice: ToolChoice, tools?: read
 
 export const resolveToolChoice = (request: AdapterRequest, declared: readonly AllowedToolsForm[] | undefined, target: string, wire: ToolChoiceWire): AdapterRequest => {
   const choice = request.tool_choice;
+  if (choice === 'required') {
+    if ((request.tools ?? []).length > 0 && !wire.expressesRequired) {
+      throw refusal(target, 'the wire of this target cannot express tool_choice required', 'required');
+    }
+    return request;
+  }
+  if (typeof choice === 'object' && choice !== null && choice.type === 'function') {
+    const tools = request.tools ?? [];
+    if (tools.length > 0 && tools.every((tool) => tool.name === choice.name)) {
+      if (!wire.expressesRequired) throw refusal(target, 'the wire of this target cannot express tool_choice required', 'required');
+      return request;
+    }
+    if (tools.length > 0 && !wire.forms.some((form) => form === 'native' || form === 'envelope' || form === 'single_tool')) {
+      throw refusal(target, `the wire of this target cannot pin tool_choice to the function "${choice.name}" among ${tools.length} tools`, 'naming a function');
+    }
+    return request;
+  }
   if (!isAllowedTools(choice)) return request;
   const mode = allowedToolsModeOf(choice);
   if (mode === 'none') return rewritten(request, 'none');

@@ -42,11 +42,7 @@ const restrictedToolsOf = (tools: readonly FunctionTool[], names: readonly strin
     return tool;
   });
   if (restricted.length < tools.length && !support.const && !support.enum) {
-    throw new UnsupportedInputError(
-      'unsupported_tool_choice',
-      'this target cannot restrict the tool names in constrained output',
-      'tool_choice',
-    );
+    throw new Error('the tool_choice must be resolved against the constrained wire before the body is built');
   }
   return restricted;
 };
