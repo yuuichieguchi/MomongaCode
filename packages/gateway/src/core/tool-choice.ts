@@ -43,7 +43,7 @@ export const resolveToolChoice = (request: AdapterRequest, declared: readonly Al
   if (typeof choice === 'object' && choice !== null && choice.type === 'function') {
     const tools = request.tools ?? [];
     if (tools.length > 0 && tools.every((tool) => tool.name === choice.name)) {
-      if (!wire.expressesRequired) throw refusal(target, 'the wire of this target cannot express tool_choice required', 'required');
+      if (!wire.expressesRequired) throw refusal(target, `the wire of this target cannot require a call of the function "${choice.name}"`, 'naming a function');
       return request;
     }
     if (tools.length > 0 && !wire.forms.some((form) => form === 'native' || form === 'envelope' || form === 'single_tool')) {
