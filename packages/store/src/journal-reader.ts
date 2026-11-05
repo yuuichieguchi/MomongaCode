@@ -97,11 +97,14 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
   function* rangedRows(runId: string, lastSeq: number, types: readonly string[], excluding: boolean): Generator<Row> {
     const { list, bound } = typePlaceholders(types);
     const statement = db.prepare(
-      `SELECT * FROM events WHERE run_id = :runId AND seq >= :from AND seq < :until AND type ${excluding ? 'NOT IN' : 'IN'} (${list}) ORDER BY seq`,
+      excluding
+        ? `SELECT * FROM events WHERE run_id = :runId AND seq >= :from AND seq < :until AND type NOT IN (${list}) ORDER BY seq`
+        : `SELECT * FROM events WHERE run_id = :runId AND type IN (${list}) AND seq >= :from AND seq < :until`,
     );
     for (let from = 1; from <= lastSeq; from += JOURNAL_SCAN_RANGE_ROWS) {
       const until = Math.min(from + JOURNAL_SCAN_RANGE_ROWS, lastSeq + 1);
-      yield* statement.iterate({ runId, from, until, ...bound });
+      const rows = statement.all({ runId, from, until, ...bound });
+      yield* excluding ? rows : rows.sort((a, b) => Number(a['seq']) - Number(b['seq']));
       stepped(until - from);
       unit();
     }

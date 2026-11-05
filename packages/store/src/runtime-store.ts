@@ -203,6 +203,9 @@ const prepareStatements = (db: DatabaseSync) => ({
   jobs: prepareJobStatements(db),
   dataVersion: db.prepare('PRAGMA data_version'),
   selectRun: db.prepare('SELECT * FROM runs WHERE id = :id'),
+  leaseTokenOf: db.prepare('SELECT lease_token FROM runs WHERE id = :runId'),
+  latestEventSeq: db.prepare('SELECT seq FROM events WHERE run_id = :runId AND type = :type AND seq < :beforeSeq ORDER BY seq DESC LIMIT 1'),
+  eventAt: db.prepare('SELECT * FROM events WHERE run_id = :runId AND seq = :seq'),
   latestSessionEventTime: db.prepare('SELECT created_at FROM events WHERE session_id = :sessionId ORDER BY id DESC LIMIT 1'),
   activeRunExists: db.prepare(
     `SELECT EXISTS (SELECT 1 FROM runs WHERE session_id = :sessionId AND status NOT IN (${TERMINAL_STATUSES.map((status) => `'${status}'`).join(', ')})) AS active`,
@@ -254,7 +257,7 @@ const prepareStatements = (db: DatabaseSync) => ({
   runEvents: db.prepare('SELECT * FROM events WHERE run_id = :runId AND seq > :after ORDER BY seq LIMIT :limit'),
   modelCallEvents: db.prepare(
     `SELECT seq, step, type, model_call_json
-     FROM events WHERE run_id = :runId AND type IN ('model.requested', 'model.responded') ORDER BY seq`,
+     FROM events WHERE run_id = :runId AND type IN ('model.requested', 'model.responded')`,
   ),
   lastTerminalRootRuns: db.prepare(
     `SELECT r.* FROM runs r JOIN sessions s ON s.id = r.session_id
@@ -484,7 +487,23 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return decodeRun(row);
   };
 
+  const requestBodies = new Map<string, { leaseToken: number; event: Extract<RunEvent, { type: 'model.requested' }> }>();
+
+  const readLatestRequest = (runId: string, beforeSeq: number): Extract<RunEvent, { type: 'model.requested' }> | undefined => {
+    const latest = sql.latestEventSeq.get({ runId, type: 'model.requested', beforeSeq });
+    if (latest === undefined) return undefined;
+    const seq = Number(latest.seq);
+    const leaseToken = Number(sql.leaseTokenOf.get({ runId })?.lease_token);
+    const cached = requestBodies.get(runId);
+    if (cached !== undefined && cached.leaseToken === leaseToken && cached.event.seq === seq) return cached.event;
+    const [decoded] = decodeEvents(sql.eventAt.all({ runId, seq }));
+    if (decoded === undefined || decoded.type !== 'model.requested') throw new Error(`run ${runId} seq ${seq} is not a model.requested event`);
+    if (cached === undefined || cached.leaseToken !== leaseToken || cached.event.seq < seq) requestBodies.set(runId, { leaseToken, event: decoded });
+    return decoded;
+  };
+
   const writeRun = (run: Run): void => {
+    if (run.leaseOwner === null) requestBodies.delete(run.id);
     const result = sql.writeRun.run({
       id: run.id,
       status: run.status,
@@ -1382,13 +1401,14 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     readRunEventsOfTypes: (runId, types) => journalReader.eventsOfTypes(runId, types),
 
     readLatestRunEventBefore: <T extends RunEventPayload['type']>(runId: string, type: T, beforeSeq: number) => {
+      if (type === 'model.requested') return readLatestRequest(runId, beforeSeq) as Extract<RunEvent, { type: T }> | undefined;
       const [event] = decodeEvents(
         db.prepare('SELECT * FROM events WHERE run_id = :runId AND type = :type AND seq < :beforeSeq ORDER BY seq DESC LIMIT 1').all({ runId, type, beforeSeq }),
       );
       return event as Extract<RunEvent, { type: T }> | undefined;
     },
 
-    readModelCallEvents: (runId) => sql.modelCallEvents.all({ runId }).map(decodeModelCallRecord),
+    readModelCallEvents: (runId) => sql.modelCallEvents.all({ runId }).sort((a, b) => Number(a.seq) - Number(b.seq)).map(decodeModelCallRecord),
 
     toolCallSeq: records.toolCallSeq,
 
