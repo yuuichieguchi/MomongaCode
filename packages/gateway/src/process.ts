@@ -260,6 +260,7 @@ const createAutoChatCompletionsAdapter = async (
     },
     toolCalling: () => probed.toolCalling(),
     keywordSupport: () => probed.keywordSupport(),
+    schemaDialect: () => probed.schemaDialect(),
     capabilities: () => probed.capabilities(),
     onSummaryReasoning: (_target, hiddenReasoningTokens) => probed.raiseHeadroom(hiddenReasoningTokens),
     apiKey: readKey,

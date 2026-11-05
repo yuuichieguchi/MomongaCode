@@ -2,6 +2,7 @@ import { canonicalJson } from '@momonga/foundation';
 import type { AdapterRequest, FunctionTool } from '@momonga/protocol';
 import { buildToolsEnvelope } from '../../probe/envelope.ts';
 import type { KeywordSupport } from '../../probe/envelope.ts';
+import type { SchemaDialect } from '../../probe/schema-dialect.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { samplingOf } from './native-request.ts';
 import { SYSTEM_PART_SEPARATOR, systemTextOf } from '../shared/system-text.ts';
@@ -47,7 +48,11 @@ const pinnedToolOf = (tools: readonly FunctionTool[], name: string, support: Key
   return tool;
 };
 
-export const buildConstrainedBody = (request: AdapterRequest, support: KeywordSupport): ConstrainedBody => {
+export const buildConstrainedBody = (
+  request: AdapterRequest,
+  support: KeywordSupport,
+  dialect: SchemaDialect = 'json-schema-2020-12',
+): ConstrainedBody => {
   const tools = request.tools ?? [];
   const choice = request.tool_choice;
   const envelopeActive = tools.length > 0 && choice !== 'none';
@@ -75,6 +80,7 @@ export const buildConstrainedBody = (request: AdapterRequest, support: KeywordSu
                 envelopeTools.map((tool) => ({ name: tool.name, parameters: tool.parameters ?? { type: 'object' } })),
                 support,
                 requireToolCalls,
+                dialect,
               ),
             },
           },

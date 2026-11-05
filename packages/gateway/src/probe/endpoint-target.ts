@@ -3,6 +3,7 @@ import type { Capabilities, ToolCallingMode } from '@momonga/protocol';
 import type { UpstreamEndpoint } from '../adapters/shared/http-client.ts';
 import { PreconditionFailedError, StreamFailure, UpstreamHttpError } from '../adapters/shared/failures.ts';
 import type { KeywordSupport } from './envelope.ts';
+import type { SchemaDialect } from './schema-dialect.ts';
 import { ProbeTimeoutError, createProbeClient } from './client.ts';
 import type { ProbeEndpoint } from './client.ts';
 import { capabilitiesFromProbe, decideToolCalling, layerOf, mergeCapabilities, withImageDefault } from './decide.ts';
@@ -121,6 +122,7 @@ export type ProbedEndpointTargetOptions = {
 export type ProbedEndpointTarget = {
   toolCalling: () => ToolCallingMode;
   keywordSupport: () => KeywordSupport;
+  schemaDialect: () => SchemaDialect;
   capabilities: () => Promise<Capabilities>;
   verify: (signal: AbortSignal) => Promise<void>;
   raiseHeadroom: (hiddenReasoningTokens: number) => Promise<void>;
@@ -175,6 +177,7 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
   return {
     toolCalling: () => decideToolCalling(requireRecord().report).mode,
     keywordSupport: () => requireRecord().report.keywordSupport,
+    schemaDialect: () => declared.schemaDialect,
     verify,
     raiseHeadroom,
     capabilities: async () => {

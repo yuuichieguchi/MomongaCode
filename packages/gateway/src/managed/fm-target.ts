@@ -19,6 +19,8 @@ import type { ErrorVocabulary } from '../adapters/shared/vocabulary.ts';
 import { estimatedCountOf } from '../core/estimate.ts';
 import { capabilitiesFromProbe, layerOf, mergeCapabilities } from '../probe/decide.ts';
 import type { KeywordSupport } from '../probe/envelope.ts';
+import { FM_SCHEMA_DIALECT } from '../probe/schema-dialect.ts';
+import type { SchemaDialect } from '../probe/schema-dialect.ts';
 import { field, firstOf, parseJson } from '../probe/json.ts';
 import { loadProbeRecord, resolveToolCalling } from '../probe/record.ts';
 import type { ProbeRecordKey } from '../probe/record.ts';
@@ -48,6 +50,7 @@ export type ManagedFmTarget = {
   resolveEndpoint: (target: AdapterTarget) => Promise<ChatCompletionsEndpoint>;
   toolCalling: (target: AdapterTarget) => ToolCallingMode;
   keywordSupport: (target: AdapterTarget) => KeywordSupport;
+  schemaDialect: (target: AdapterTarget) => SchemaDialect;
   upstreamModel: (target: AdapterTarget, signal: AbortSignal) => Promise<string>;
   capabilities: (target: AdapterTarget) => Promise<Capabilities>;
   countTokens: (target: AdapterTarget, request: CountTokensRequest, signal: AbortSignal) => Promise<CountTokensResult>;
@@ -80,7 +83,7 @@ const unprobedCapabilities = (mode: ToolCallingMode): Capabilities => ({
   stopSequences: false,
   imageInput: false,
   parallelToolCalls: false,
-  schemaDialect: 'json-schema-2020-12',
+  schemaDialect: FM_SCHEMA_DIALECT,
   tokenCounting: 'estimated',
   usageReported: false,
   maxConcurrency: 1,
@@ -188,7 +191,7 @@ export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Pr
   const capabilities =
     report === null
       ? { ...unprobedCapabilities(mode), ...declaredField }
-      : mergeCapabilities({ defaults: layerOf(probedDefaults).core, declared: declaredField, probed: layerOf(capabilitiesFromProbe(report, { mode })).layer, probedAt: report.probedAt });
+      : mergeCapabilities({ defaults: layerOf(probedDefaults).core, declared: { ...declaredField, schemaDialect: FM_SCHEMA_DIALECT }, probed: layerOf(capabilitiesFromProbe(report, { mode })).layer, probedAt: report.probedAt });
   const keywordSupport = report === null ? UNPROBED_KEYWORD_SUPPORT : report.keywordSupport;
   const isGuardrail = guardrailMatcherOf(report);
   const knownModel = options.declaredModel ?? report?.modelId;
@@ -207,6 +210,7 @@ export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Pr
     resolveEndpoint: () => options.fmServe.ensureRunning(),
     toolCalling: () => mode,
     keywordSupport: () => keywordSupport,
+    schemaDialect: () => capabilities.schemaDialect,
     upstreamModel,
     capabilities: async () => capabilities,
     countTokens: async (_target, request, signal) => {

@@ -1,7 +1,10 @@
+import type { SchemaDialect } from '../../probe/schema-dialect.ts';
+
 export type UpstreamErrorKind = 'guardrail' | 'context_overflow' | 'payload_too_large' | 'unsupported' | 'failure';
 
 export type ErrorVocabulary = {
   readonly kindOf: (status: number, body: unknown) => UpstreamErrorKind;
+  readonly schemaDialect?: SchemaDialect;
 };
 
 const BAD_REQUEST_STATUS = 400;

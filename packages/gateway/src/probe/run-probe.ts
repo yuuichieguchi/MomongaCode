@@ -27,6 +27,8 @@ import { IMAGE_PROMPT, SEARCH_TOLERANCE, TINY_PNG, measureImageTokens } from './
 import type { ImageCostProbe } from './image-tokens.ts';
 import { ProbeTimeoutError, createProbeClient, systemSleep, type HttpResult, type ProbeClient, type ProbeEndpoint } from './client.ts';
 import { buildToolCallEnvelope, keywordProbeSchemas, type KeywordSupport, type ProbeTool } from './envelope.ts';
+import { FULL_KEYWORD_SUPPORT } from './lowering.ts';
+import { renderSchema, type SchemaDialect } from './schema-dialect.ts';
 import { fillerText } from './filler.ts';
 import { field, firstOf, isRecord, parseJson } from './json.ts';
 
@@ -275,19 +277,20 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
     'json_schema baseline',
   );
 
+  const dialect = vocabulary.schemaDialect ?? 'json-schema-2020-12';
   const keywordSupport = Object.fromEntries(PROBE_KEYWORDS.map((keyword) => [keyword, false])) as KeywordSupport;
   if (constrainedAccepted) {
     for (const keyword of PROBE_KEYWORDS) {
-      keywordSupport[keyword] = await probeKeyword(chat, keyword);
+      keywordSupport[keyword] = await probeKeyword(chat, keyword, dialect);
     }
   }
 
-  const native = await sampleNative(chat, samples);
+  const native = await sampleNative(chat, samples, dialect);
   const constrained = constrainedAccepted
-    ? await sampleConstrained(chat, samples, keywordSupport)
+    ? await sampleConstrained(chat, samples, keywordSupport, dialect)
     : { accepted: false, validRate: 0 };
-  const roundTripOk = native.firstValidCall === undefined ? false : await roundTrip(chat, native.firstValidCall);
-  const parallelToolCalls = native.accepted ? await sampleParallel(chat, samples) : { accepted: false, multiCallRate: 0 };
+  const roundTripOk = native.firstValidCall === undefined ? false : await roundTrip(chat, native.firstValidCall, dialect);
+  const parallelToolCalls = native.accepted ? await sampleParallel(chat, samples, dialect) : { accepted: false, multiCallRate: 0 };
 
   const tokenCalibration =
     usageReported && options.countTokens !== undefined ? await calibrate(chat, options.countTokens) : undefined;
@@ -405,11 +408,11 @@ const probeStreaming = async (client: ProbeClient, model: string, outputBound: o
   return { supported: events > 0, doneSentinel, usageInStream };
 };
 
-const probeKeyword = async (chat: Chat, keyword: ProbeKeyword): Promise<boolean> =>
+const probeKeyword = async (chat: Chat, keyword: ProbeKeyword, dialect: SchemaDialect): Promise<boolean> =>
   isAcceptedOrRejected(
     await chat({
       messages: [{ role: 'user', content: PLAIN_PROMPT }],
-      response_format: responseFormat(keywordProbeSchemas[keyword]),
+      response_format: responseFormat(renderSchema(keywordProbeSchemas[keyword], dialect, FULL_KEYWORD_SUPPORT)),
     }),
     `keyword ${keyword}`,
   );
@@ -426,13 +429,14 @@ const sampleRequest = async (chat: Chat, body: Record<string, unknown>): Promise
 const sampleNative = async (
   chat: Chat,
   samples: number,
+  dialect: SchemaDialect,
 ): Promise<{ accepted: boolean; validRate: number; firstValidCall: NativeCall | undefined }> => {
   let valid = 0;
   let firstValidCall: NativeCall | undefined;
   for (let index = 0; index < samples; index += 1) {
     const result = await sampleRequest(chat, {
       messages: [{ role: 'user', content: TOOL_PROMPT }],
-      tools: [{ type: 'function', function: { name: PROBE_TOOL.name, description: 'Get the weather', parameters: PROBE_TOOL.parameters } }],
+      tools: [nativeToolSpec(dialect)],
     });
     if (index === 0 && !isFirstSampleAccepted(result, 'native tools')) {
       return { accepted: false, validRate: 0, firstValidCall: undefined };
@@ -451,8 +455,9 @@ const sampleConstrained = async (
   chat: Chat,
   samples: number,
   support: KeywordSupport,
+  dialect: SchemaDialect,
 ): Promise<NonNullable<ProbeReport['constrained']>> => {
-  const format = responseFormat(buildToolCallEnvelope(PROBE_TOOL, support));
+  const format = responseFormat(buildToolCallEnvelope(PROBE_TOOL, support, dialect));
   let valid = 0;
   for (let index = 0; index < samples; index += 1) {
     const result = await sampleRequest(chat, {
@@ -469,7 +474,7 @@ const sampleConstrained = async (
   return { accepted: true, validRate: samples === 0 ? 0 : valid / samples };
 };
 
-const roundTrip = async (chat: Chat, call: NativeCall): Promise<boolean> => {
+const roundTrip = async (chat: Chat, call: NativeCall, dialect: SchemaDialect): Promise<boolean> => {
   const result = await chat({
     messages: [
       { role: 'user', content: TOOL_PROMPT },
@@ -480,7 +485,7 @@ const roundTrip = async (chat: Chat, call: NativeCall): Promise<boolean> => {
       },
       { role: 'tool', tool_call_id: call.id, content: 'Sunny, 24 degrees' },
     ],
-    tools: [{ type: 'function', function: { name: PROBE_TOOL.name, description: 'Get the weather', parameters: PROBE_TOOL.parameters } }],
+    tools: [nativeToolSpec(dialect)],
   });
   if (result.outcome === 'unsupported') return false;
   expectStatus(result, [200], 'native round trip');
@@ -493,19 +498,22 @@ const REASONING_BASELINE_SAMPLES = 2;
 const REASONING_REDUCTION_FACTOR = 2;
 const PROBED_REASONING_EFFORTS = ['none', 'minimal', 'low'] as const;
 
-const nativeToolSpec = { type: 'function', function: { name: PROBE_TOOL.name, description: 'Get the weather', parameters: PROBE_TOOL.parameters } };
+const nativeToolSpec = (dialect: SchemaDialect): Record<string, unknown> => ({
+  type: 'function',
+  function: { name: PROBE_TOOL.name, description: 'Get the weather', parameters: renderSchema(PROBE_TOOL.parameters, dialect, FULL_KEYWORD_SUPPORT) },
+});
 
 const toolCallCount = (body: unknown): number => {
   const calls = field(assistantMessage(body), 'tool_calls');
   return Array.isArray(calls) && calls.every((call) => field(field(call, 'function'), 'name') === PROBE_TOOL.name) ? calls.length : 0;
 };
 
-const sampleParallel = async (chat: Chat, samples: number): Promise<NonNullable<ProbeReport['parallelToolCalls']>> => {
+const sampleParallel = async (chat: Chat, samples: number, dialect: SchemaDialect): Promise<NonNullable<ProbeReport['parallelToolCalls']>> => {
   let several = 0;
   for (let index = 0; index < samples; index += 1) {
     const result = await sampleRequest(chat, {
       messages: [{ role: 'user', content: PARALLEL_TOOL_PROMPT }],
-      tools: [nativeToolSpec],
+      tools: [nativeToolSpec(dialect)],
       parallel_tool_calls: true,
     });
     if (index === 0 && !isFirstSampleAccepted(result, 'parallel tool calls')) return { accepted: false, multiCallRate: 0 };

@@ -159,7 +159,10 @@ describe('createManagedFmTarget probe-derived settings', () => {
     const { managed } = await setup({ report });
     expect(managed.toolCalling(TARGET)).toBe('constrained');
     expect(managed.keywordSupport(TARGET)).toEqual({ ...ALL_TRUE, pattern: false, anyOf: false });
-    expect(await managed.capabilities(TARGET)).toEqual(capabilitiesFromProbe(report, { mode: 'constrained' }));
+    expect(await managed.capabilities(TARGET)).toEqual({
+      ...capabilitiesFromProbe(report, { mode: 'constrained' }),
+      schemaDialect: 'guided-generation',
+    });
   });
 
   it('falls back to native tool calling, full keyword support and conservative unprobed capabilities without a record', async () => {

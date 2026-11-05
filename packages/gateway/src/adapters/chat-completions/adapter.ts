@@ -35,17 +35,7 @@ import { upstreamErrorEventBody, upstreamErrorFailure } from './upstream-reply.t
 import type { ChatCompletionsAdapter, ChatCompletionsAdapterOptions } from './types.ts';
 import { wireOf } from './wire.ts';
 import type { ChatWire } from './wire.ts';
-import type { KeywordSupport } from '../../probe/envelope.ts';
-
-const FULL_KEYWORD_SUPPORT: KeywordSupport = {
-  enum: true,
-  anyOf: true,
-  const: true,
-  pattern: true,
-  minimum: true,
-  nested: true,
-  additionalProperties: true,
-};
+import { FULL_KEYWORD_SUPPORT } from '../../probe/lowering.ts';
 
 const DONE_MARKER = '[DONE]';
 
@@ -67,10 +57,10 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
     if (mode === 'none' && hasTools) {
       throw new UnsupportedInputError('capability_unsupported', 'this target does not support tool calling', 'tools');
     }
-    if (mode === 'constrained') {
-      return buildConstrainedBody(request, options.keywordSupport?.(target) ?? FULL_KEYWORD_SUPPORT);
-    }
-    return { body: buildNativeBody(request), envelope: undefined };
+    const support = options.keywordSupport?.(target) ?? FULL_KEYWORD_SUPPORT;
+    const dialect = options.schemaDialect?.(target) ?? 'json-schema-2020-12';
+    if (mode === 'constrained') return buildConstrainedBody(request, support, dialect);
+    return { body: buildNativeBody(request, dialect, support), envelope: undefined };
   };
 
   const lenientWireOf = (request: AdapterRequest, target: AdapterTarget, lenient: LenientItems): ChatWire => {
