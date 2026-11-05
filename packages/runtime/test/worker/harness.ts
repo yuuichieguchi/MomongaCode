@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
-import { canonicalJson, EMPTY_FILE_RULES, HOST_RULE_ENFORCEMENT, sha256Hex, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { canonicalJson, EMPTY_FILE_RULES, HOST_RULE_ENFORCEMENT, openDatabase, sha256Hex, EMPTY_PROTECTED_SET } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/config';
 import type { InstructionReader } from '@momonga/context';
 import { computeFileRules } from '@momonga/policy';
@@ -14,7 +14,7 @@ import { contributionAtTerminal, createSkillsPort, createWorker } from '@momonga
 import type { AgentCatalogPort, EvidenceRun, GovernancePort, HistoryPort, MemoryPort, SkillsPort, ToolEnv, ToolRuntimePort, Worker, WorkerOptions } from '@momonga/runtime';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
-import { foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
+import { createJournalReader, foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
 import type { Claim, ContributionPreparer, Run, RuntimeStore, Session } from '@momonga/store';
 import { FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
@@ -124,6 +124,8 @@ export type EnvOptions = {
   maxAttempts?: number;
   maxTotalAttempts?: number;
   preparer?: ContributionPreparer;
+  onDecode?: (rows: number, bytes: number) => void;
+  onEncode?: (kind: string, bytes: number) => void;
 };
 
 export type BatchInput = Parameters<ToolExecutor['runBatch']>[0];
@@ -139,6 +141,19 @@ export type PortCalls = {
 export type WorkerOverrides = Partial<Omit<WorkerOptions, 'tools'>> & { tools?: Partial<ToolRuntimePort>; toolList?: () => AnyTool[] };
 
 export type Env = Awaited<ReturnType<typeof makeEnv>>;
+
+export type ContributionItems = Extract<RunEventPayload, { type: 'context.contribution' }>['items'];
+
+export const journalReaderPreparer =(dbPath: string): ContributionPreparer => ({
+  measure: async (request) => {
+    const db = openDatabase(dbPath);
+    try {
+      return createJournalReader(db).measure(contributionAtTerminal, request);
+    } finally {
+      db.close();
+    }
+  },
+});
 
 export const makeEnv = async (options: EnvOptions = {}) => {
   resetResponseIds();
@@ -157,6 +172,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   fs.mkdirSync(sessionTmpDir, { recursive: true, mode: 0o700 });
   const dbPath = path.join(stateDir, 'runtime.db');
   const clock: FakeClock = createFakeClock(START_MS);
+  const scriptedContributions = new Map<string, ContributionItems>();
   const store: RuntimeStore = openRuntimeStore({
     path: dbPath,
     home,
@@ -164,7 +180,15 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     leaseMs: LEASE_MS,
     maxAttempts: options.maxAttempts ?? 5,
     maxTotalAttempts: options.maxTotalAttempts ?? 50,
-    ...(options.preparer === undefined ? { contribution: contributionAtTerminal } : { preparer: options.preparer }),
+    preparer: options.preparer ?? {
+      measure: async (request) => {
+        const items = scriptedContributions.get(request.runId);
+        if (items === undefined) return journalReaderPreparer(dbPath).measure(request);
+        return { lastSeq: store.getRun(request.runId)?.lastSeq ?? -1, contribution: { type: 'context.contribution', items } };
+      },
+    },
+    ...(options.onDecode === undefined ? {} : { onDecode: options.onDecode }),
+    ...(options.onEncode === undefined ? {} : { onEncode: options.onEncode }),
   });
   const gateway: FakeGateway = createFakeGateway(options.capabilities ?? capabilitiesFor(100_000));
   const settings: FakeSettings = createFakeSettings({ home, project });
@@ -326,6 +350,27 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     return result.run;
   };
 
+  const cancelToEnd = async (runId: string): Promise<Run> => {
+    const requested = cancel(runId);
+    if (requested.status !== 'CANCELLING') throw new Error(`run ${runId} should become CANCELLING, got ${requested.status}`);
+    const failures: unknown[] = [];
+    const finished = await store.finishCancelled((error) => void failures.push(error));
+    if (failures.length > 0) throw failures[0];
+    if (!finished.includes(runId)) throw new Error(`the sweep did not finish run ${runId}`);
+    return run(runId);
+  };
+
+  const scriptContribution = (runId: string, items: ContributionItems): void => {
+    scriptedContributions.set(runId, items);
+  };
+
+  const deadLetterAll = async (): Promise<string[]> => {
+    const failures: unknown[] = [];
+    const ended = await store.deadLetterExhausted((error) => void failures.push(error));
+    if (failures.length > 0) throw failures[0];
+    return ended;
+  };
+
   const events = (runId: string): RunEvent[] => store.readRunEvents(runId, 0, 100_000);
 
   const ofType = <T extends RunEvent['type']>(runId: string, type: T): Extract<RunEvent, { type: T }>[] =>
@@ -408,6 +453,9 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     runOnce,
     enqueue,
     cancel,
+    cancelToEnd,
+    deadLetterAll,
+    scriptContribution,
     events,
     ofType,
     fold,

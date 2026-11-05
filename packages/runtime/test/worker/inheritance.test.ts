@@ -123,7 +123,7 @@ describe('closures for the dangling calls of run 1, per cause', () => {
     const env = await makeEnv();
     const first = env.enqueue('Write both');
     env.seed(first.id, [startedPayload(), requestedPayload(1), respondedPayload(1, [functionCallItem(writeCall(env, 'call_w_1')), functionCallItem(writeCall(env, 'call_w_2'))])], 'release');
-    expect(env.cancel(first.id).status).toBe('CANCELLED');
+    expect((await env.cancelToEnd(first.id)).status).toBe('CANCELLED');
 
     const second = await nextRun(env, 'Next task');
 
@@ -136,7 +136,7 @@ describe('closures for the dangling calls of run 1, per cause', () => {
     const first = env.enqueue('Write it');
     await env.runOnce(env.worker());
     expect(env.run(first.id).status).toBe('WAITING_HUMAN');
-    expect(env.cancel(first.id).status).toBe('CANCELLED');
+    expect((await env.cancelToEnd(first.id)).status).toBe('CANCELLED');
     const callId = env.gateway.callId('call_w_1');
 
     const second = await nextRun(env, 'Next task');
@@ -160,7 +160,7 @@ describe('closures for the dangling calls of run 1, per cause', () => {
     const env = await makeEnv();
     const first = env.enqueue('Write it');
     const claim = env.seed(first.id, [requestedPayload(1), respondedPayload(1, [functionCallItem(writeCall(env, 'call_w_1'))])], 'hold');
-    expect(env.store.transition(claim, ['RUNNING'], 'FAILED', { error: { code: 'server_error', message: 'upstream failed' } }).kind).toBe('ok');
+    expect((await env.store.transition(claim, ['RUNNING'], 'FAILED', { error: { code: 'server_error', message: 'upstream failed' } })).kind).toBe('ok');
 
     const second = await nextRun(env, 'Next task');
 
@@ -176,7 +176,7 @@ describe('closures for the dangling calls of run 1, per cause', () => {
       [requestedPayload(1), respondedPayload(1, [functionCallItem(writeCall(env, 'call_w_1'))]), toolCallPayload('call_w_1', file), { type: 'tool.started', callId: 'call_w_1', idemKey: 'k-w-1' }],
       'hold',
     );
-    expect(env.store.transition(claim, ['RUNNING'], 'FAILED', { error: { code: 'server_error', message: 'upstream failed' } }).kind).toBe('ok');
+    expect((await env.store.transition(claim, ['RUNNING'], 'FAILED', { error: { code: 'server_error', message: 'upstream failed' } })).kind).toBe('ok');
 
     const second = await nextRun(env, 'Next task');
 
@@ -191,7 +191,7 @@ describe('closures for the dangling calls of run 1, per cause', () => {
     await env.runOnce(env.worker());
     expect(env.run(first.id).status).toBe('WAITING_HUMAN');
     env.clock.advance(60_001);
-    expect(env.store.expireApprovals(env.clock.now())).toEqual([first.id]);
+    expect((await env.store.expireApprovals(env.clock.now()))).toEqual([first.id]);
     expect(env.run(first.id)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
     const callId = env.gateway.callId('call_w_1');
 

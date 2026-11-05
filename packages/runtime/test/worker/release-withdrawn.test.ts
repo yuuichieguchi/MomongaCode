@@ -62,7 +62,7 @@ describe('releasing the checkpoint of a call whose input request was withdrawn',
     const released: Array<Record<string, unknown>> = [];
     const { run, key } = await parkOnElicitation(env, released);
 
-    expect(env.cancel(run.id).status).toBe('CANCELLED');
+    expect((await env.cancelToEnd(run.id)).status).toBe('CANCELLED');
     expect(env.ofType(run.id, 'tool.elicitation.cancelled')).toEqual([expect.objectContaining({ reason: 'withdrawn' })]);
     await releaserFor(env, released)(run.id, new AbortController().signal);
 
@@ -76,7 +76,7 @@ describe('releasing the checkpoint of a call whose input request was withdrawn',
     const { run, key } = await parkOnElicitation(env, released, { approvalTtlMs: 1000 });
 
     env.clock.advance(1000);
-    expect(env.store.expireApprovals(env.clock.now())).toEqual([run.id]);
+    expect((await env.store.expireApprovals(env.clock.now()))).toEqual([run.id]);
     await releaserFor(env, released)(run.id, new AbortController().signal);
 
     expect(released).toEqual([CHECKPOINT]);

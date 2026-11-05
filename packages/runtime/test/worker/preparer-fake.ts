@@ -8,6 +8,7 @@ export type PreparerFake = {
   preparer: ContributionPreparer;
   requests: MeasureRequest[];
   failures: Error[];
+  hold(): () => void;
   bind(store: RuntimeStore): void;
 };
 
@@ -17,15 +18,27 @@ export const preparerFake = (): PreparerFake => {
   const requests: MeasureRequest[] = [];
   const failures: Error[] = [];
   let bound: RuntimeStore | undefined;
+  let gate: Promise<void> | undefined;
   return {
     requests,
     failures,
+    hold: () => {
+      let open: () => void = () => undefined;
+      gate = new Promise<void>((resolve) => {
+        open = resolve;
+      });
+      return () => {
+        gate = undefined;
+        open();
+      };
+    },
     bind: (store) => {
       bound = store;
     },
     preparer: {
       measure: async (request): Promise<ContributionMeasured> => {
         requests.push({ runId: request.runId, leading: [...request.leading] });
+        if (gate !== undefined) await gate;
         const failure = failures.shift();
         if (failure !== undefined) throw failure;
         const run = bound?.getRun(request.runId);

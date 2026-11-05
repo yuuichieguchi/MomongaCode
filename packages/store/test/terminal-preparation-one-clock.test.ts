@@ -43,14 +43,14 @@ const measuring = (): { h: Harness; measurements: Measurement[] } => {
 };
 
 describe('an approval answer that arrives after one of two approvals is due, while the clock moves past the other', () => {
-  it('measures the run once, outside the write transaction, on the time the operation read once', () => {
+  it('measures the run once, outside the write transaction, on the time the operation read once', async () => {
     const { h, measurements } = measuring();
     const waiting = awaitingApproval(h.store, [{ callId: 'a', expiresAt: FIRST_DUE_MS }, { callId: 'b', expiresAt: SECOND_DUE_MS }], 'waiting');
     const [first] = waiting.approvals;
     if (first === undefined) throw new Error('expected the first approval');
     h.clock.set(FIRST_DUE_MS + 1);
 
-    expect(h.store.resolveApproval(first.id, 'allow_once')).toMatchObject({ kind: 'approval_not_pending', status: 'expired' });
+    expect((await h.store.resolveApproval(first.id, 'allow_once'))).toMatchObject({ kind: 'approval_not_pending', status: 'expired' });
 
     expect(mustRun(h.store, waiting.runId).status).toBe('STOPPED');
     expect(measurements).toEqual([{ runId: waiting.runId, underWriteLock: false }]);

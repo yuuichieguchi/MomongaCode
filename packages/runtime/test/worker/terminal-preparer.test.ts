@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { JournalThreadError } from '@momonga/store';
-import { makeEnv, typesOf } from './harness.ts';
+import { afterMicrotasks, createFakeTimers, waitFor } from '@momonga/testkit';
+import { LEASE_MS, makeEnv, typesOf } from './harness.ts';
 import { MEASURED_ITEM, preparerFake } from './preparer-fake.ts';
 import { textStep } from './scripts.ts';
 
@@ -23,6 +24,30 @@ describe('a worker terminal awaits the contribution port', () => {
     expect(typesOf(env.events(run.id)).slice(-2)).toEqual(['context.contribution', 'run.status']);
     expect(env.ofType(run.id, 'context.contribution').map((event) => event.items)).toEqual([[MEASURED_ITEM]]);
     expect(fake.requests.map((request) => request.runId)).toEqual([run.id]);
+  });
+
+  it('P6: while the terminal awaits the preparer the heartbeat keeps the lease, so no other claim takes the run', async () => {
+    const { env, fake } = await envWithPreparer();
+    env.gateway.script.push(textStep('the final answer'));
+    const run = env.enqueue('Work');
+    const timers = createFakeTimers(env.clock);
+    const open = fake.hold();
+
+    const running = env.runOnce(env.worker('worker-1', { timers }));
+    await waitFor(() => fake.requests.length === 1, { description: 'the terminal to await the preparer' });
+    for (let elapsed = 0; elapsed < 3 * LEASE_MS; elapsed += LEASE_MS / 10) {
+      timers.advance(LEASE_MS / 10);
+      await afterMicrotasks();
+    }
+
+    const held = env.run(run.id);
+    expect(held).toMatchObject({ status: 'RUNNING', leaseOwner: 'worker-1' });
+    expect(held.leaseExpiresAt ?? 0).toBeGreaterThan(env.clock.now());
+    expect(env.store.claim('worker-2')).toBeNull();
+
+    open();
+    expect(await running).toBe('yielded');
+    expect(env.run(run.id)).toMatchObject({ status: 'COMPLETED', attempts: 1 });
   });
 
   it('a thread failure at the end of a run requeues it with one notice, writes no terminal, and the next claim finishes it without a second model call', async () => {

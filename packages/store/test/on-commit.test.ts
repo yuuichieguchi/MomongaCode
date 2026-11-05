@@ -87,7 +87,7 @@ describe('store onCommit', () => {
     expect(seen).toEqual([1]);
   });
 
-  it('fires for the dead-letter run.status appended by claim', async () => {
+  it('fires for the dead-letter run.status appended by the dead-letter sweep', async () => {
     const { calls, onCommit } = recorder();
     const { clock, store } = harness({ onCommit, maxAttempts: 1 });
     const run = enqueue(store, newSession(store).id);
@@ -97,6 +97,7 @@ describe('store onCommit', () => {
     calls.length = 0;
 
     expect(store.claim('w2')).toBeNull();
+    expect(await store.deadLetterExhausted(() => undefined)).toEqual([run.id]);
 
     expect(mustRun(store, run.id)).toMatchObject({ status: 'FAILED', deadLetter: true });
     expect(calls).toEqual([]);
