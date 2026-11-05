@@ -826,7 +826,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     };
   };
 
-  const resolveElicitationInTransaction = (elicitationId: string, responses: Record<string, ElicitationAnswerRecord>): ResolveElicitationResult => {
+  const resolveElicitationInTransaction = (elicitationId: string, responses: Record<string, ElicitationAnswerRecord>, notices: readonly string[]): ResolveElicitationResult => {
     const approval = approvalOps.store.get(elicitationId);
     if (approval === undefined) return { kind: 'not_found' };
     if (approval.kind !== 'elicitation') return { kind: 'wrong_kind' };
@@ -841,11 +841,12 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     if (run.cancelRequested) return { kind: 'run_cancelled' };
     const answered = approvalOps.markAnswered(approval.id, responses);
     const event: RunEventPayload = { type: 'tool.elicitation.resolved', inputId: approval.id, responses };
+    const events: RunEventPayload[] = [event, ...notices.map((message): RunEventPayload => ({ type: 'notice', level: 'warning', message, code: 'elicitation_validator_failed' }))];
     const settled = run.status === 'WAITING_HUMAN' && approvalOps.store.listPending(run.id).length === 0;
     if (settled) {
-      changeStatus(run, 'QUEUED', { edges: SERVICE_TRANSITIONS, availableAt: now }, [event]);
+      changeStatus(run, 'QUEUED', { edges: SERVICE_TRANSITIONS, availableAt: now }, events);
     } else {
-      writeRun({ ...appendPayloads(run, [event]), version: run.version + 1 });
+      writeRun({ ...appendPayloads(run, events), version: run.version + 1 });
     }
     return { kind: 'ok', elicitation: answered, run: requireRun(run.id) };
   };
@@ -1535,10 +1536,10 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         return { kind: 'ok', approval: requested.approval };
       }),
 
-    resolveElicitation: (elicitationId, responses) =>
+    resolveElicitation: (elicitationId, responses, notices = []) =>
       afterPreparing(
         () => prepareLateAnswer(elicitationId),
-        () => transaction<ResolveElicitationResult>(() => resolveElicitationInTransaction(elicitationId, responses)),
+        () => transaction<ResolveElicitationResult>(() => resolveElicitationInTransaction(elicitationId, responses, notices)),
       ),
 
     elicitationView: (elicitationId) => {

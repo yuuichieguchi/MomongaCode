@@ -154,7 +154,7 @@ export const reduceEvent = (transcript: Transcript, event: PublicRunEvent): Tran
       };
     }
     case 'tool.elicitation.requested': {
-      const pending: PendingElicitation = { inputId: event.inputId, callId: event.callId, server: event.server, flow: startFlow(event.requests), submitted: false };
+      const pending: PendingElicitation = { inputId: event.inputId, callId: event.callId, server: event.server, flow: startFlow(event.requests, event.server), submitted: false };
       const prompts = enqueue({ head: transcript.elicitation, queued: transcript.queuedElicitations }, pending, (other) => other.inputId === event.inputId);
       return {
         ...transcript,

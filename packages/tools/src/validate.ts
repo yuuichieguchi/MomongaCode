@@ -2,7 +2,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import type { ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import type { AnyTool } from './types.ts';
-import { compileUntrustedSchema } from './untrusted-schema.ts';
+import { SchemaValidatorFailure, compileUntrustedSchema, sha256Hex, untrustedSchemaFailure, validateUntrusted } from '@momonga/foundation';
 
 const MAX_REPORTED_ERRORS = 20;
 
@@ -11,10 +11,33 @@ addFormats.default(ajv);
 
 const compiled = new WeakMap<Record<string, unknown>, ValidateFunction>();
 
+export const schemaIdentity = (tool: { name: string; validatorIdentity?: string }): string => tool.validatorIdentity ?? tool.name;
+
+export const TOOL_VALIDATOR_FAILED_CODE = 'tool_validator_failed';
+
+export const toolRefusalKey = (tool: { name: string; validatorIdentity?: string }): string => sha256Hex(schemaIdentity(tool));
+
+export const recordedFailureOf = (tool: AnyTool): string | undefined => {
+  const identity = schemaIdentity(tool);
+  const input = untrustedSchemaFailure(identity, tool.inputSchema);
+  if (input !== undefined || tool.outputSchema === undefined) return input;
+  return untrustedSchemaFailure(identity, tool.outputSchema);
+};
+
+const assertUsable = (tool: AnyTool): void => {
+  const failure = recordedFailureOf(tool);
+  if (failure !== undefined) throw new SchemaValidatorFailure(failure);
+};
+
 export const compileInputSchema = (tool: AnyTool): ValidateFunction => {
+  if (tool.schemaMode === 'lenient') {
+    assertUsable(tool);
+    if (tool.outputSchema !== undefined) compileUntrustedSchema(tool.outputSchema);
+    return compileUntrustedSchema(tool.inputSchema);
+  }
   const cached = compiled.get(tool.inputSchema);
   if (cached !== undefined) return cached;
-  const validate = tool.schemaMode === 'lenient' ? compileUntrustedSchema(tool.inputSchema) : ajv.compile(tool.inputSchema);
+  const validate = ajv.compile(tool.inputSchema);
   compiled.set(tool.inputSchema, validate);
   return validate;
 };
@@ -54,21 +77,42 @@ const describeErrors = (toolName: string, errors: readonly ErrorObject[]): strin
   return [`Invalid input for ${toolName}:`, ...lines].join('\n');
 };
 
-export type ValidationResult = { ok: true; value: unknown } | { ok: false; message: string };
+export type ValidationResult =
+  | { ok: true; value: unknown }
+  | { ok: false; reason: 'invalid'; message: string }
+  | { ok: false; reason: 'validator-failed'; message: string; detail: string | undefined };
+
+export const unavailable = (tool: AnyTool, detail: string | undefined): Extract<ValidationResult, { ok: false }> => ({
+  ok: false,
+  reason: 'validator-failed',
+  message: `Tool ${tool.name} is unavailable for the rest of this run: its schema validator failed, so its input and output cannot be checked.`,
+  detail,
+});
 
 const parseArguments = (tool: AnyTool, rawArguments: unknown): ValidationResult => {
   if (typeof rawArguments !== 'string') return { ok: true, value: rawArguments };
   try {
     return { ok: true, value: JSON.parse(rawArguments) as unknown };
   } catch (error) {
-    return { ok: false, message: `Invalid JSON arguments for ${tool.name}: ${(error as Error).message}\nReceived: ${rawArguments}` };
+    return { ok: false, reason: 'invalid', message: `Invalid JSON arguments for ${tool.name}: ${(error as Error).message}\nReceived: ${rawArguments}` };
+  }
+};
+
+const validateLenient = (tool: AnyTool, parsed: { ok: true; value: unknown }): ValidationResult => {
+  try {
+    const verdict = validateUntrusted(schemaIdentity(tool), tool.inputSchema, parsed.value);
+    return verdict.valid ? parsed : { ok: false, reason: 'invalid', message: describeErrors(tool.name, verdict.errors) };
+  } catch (error) {
+    if (error instanceof SchemaValidatorFailure) return unavailable(tool, error.message);
+    throw error;
   }
 };
 
 export const validateToolInput = (tool: AnyTool, rawArguments: unknown): ValidationResult => {
   const parsed = parseArguments(tool, rawArguments);
   if (!parsed.ok) return parsed;
+  if (tool.schemaMode === 'lenient') return validateLenient(tool, parsed);
   const validate = compileInputSchema(tool);
   if (validate(parsed.value)) return parsed;
-  return { ok: false, message: describeErrors(tool.name, validate.errors ?? []) };
+  return { ok: false, reason: 'invalid', message: describeErrors(tool.name, validate.errors ?? []) };
 };

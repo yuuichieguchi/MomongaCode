@@ -3,7 +3,7 @@ import { canonicalJson, parseJsonOrText } from '@momonga/foundation';
 import { termsOf } from '@momonga/protocol';
 import type { PermissionOption, RunEventPayload, RunState, ToolAwait } from '@momonga/protocol';
 import type { BatchOutputFormatter, CallOutcome, DisplayContext, NeedsApprovalOutcome, NeedsInputOutcome, ResultOutcome, ToolCall, WaitingOutcome } from '@momonga/tools';
-import { validateToolInput } from '@momonga/tools';
+import { TOOL_VALIDATOR_FAILED_CODE, toolRefusalKey, validateToolInput } from '@momonga/tools';
 import type { RuntimeStore, Session } from '@momonga/store';
 import { createToolHooks } from '@momonga/tools';
 import { permissionRulesFor } from '../governance/rules.ts';
@@ -20,10 +20,13 @@ export const REJECTED_OUTPUT = 'The user rejected this tool call.';
 
 type PendingCall = RunState['pendingCalls'][string];
 
+const toolRefusedInJournal = (ctx: ClaimContext, toolKey: string): boolean =>
+  ctx.journal.state.notes.some((note) => note.code === TOOL_VALIDATOR_FAILED_CODE && note.toolKey === toolKey);
+
 const callPayload = (ctx: ClaimContext, display: DisplayContext, item: { call_id: string; name: string; arguments: string }): RunEventPayload => {
   const rawInput = parseJsonOrText(item.arguments);
   const tool = ctx.toolSet.get(item.name);
-  const validation = tool === undefined ? undefined : validateToolInput(tool, rawInput);
+  const validation = tool === undefined || toolRefusedInJournal(ctx, toolRefusalKey(tool)) ? undefined : validateToolInput(tool, rawInput);
   const input = validation?.ok === true ? validation.value : undefined;
   const locations = tool !== undefined && input !== undefined ? tool.locations?.(input, display) : undefined;
   return {
@@ -259,6 +262,8 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
         if (outcome.result.toolsLoaded !== undefined) ctx.toolLoading?.rememberLoaded(outcome.result.toolsLoaded);
         recordToolContent(spans, calls, outcome);
       },
+      toolUnavailable: (toolKey) => toolRefusedInJournal(ctx, toolKey),
+      onWarning: (message, toolKey) => journal.append([{ type: 'notice', level: 'warning', message, code: TOOL_VALIDATOR_FAILED_CODE, toolKey }]),
       onStarted: (callId, idemKey, basis) => journal.append([{ type: 'tool.started', callId, idemKey, basis }]),
       onUpdate: (callId, content) => journal.append([{ type: 'tool.updated', callId, content }]),
     });
