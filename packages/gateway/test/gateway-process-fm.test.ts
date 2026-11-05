@@ -191,5 +191,9 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
     const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
     const entry = models.body.data.find((model: { id: string }) => model.id === 'default');
     expect(entry.capabilities.source).toBe('unprobed');
+    expect(entry.capabilities.toolCalling).toBe('needs_probe');
+    expect(entry.targetCapabilities.fm.needsProbe.remedy).toBe('run `momonga gateway probe fm`');
+    expect(entry.targetCapabilities.fm.needsProbe.evidence).toContain(binarySha256);
+    expect(entry.targetCapabilities.fm.needsProbe.evidence).toContain(FAKE_OS_BUILD);
   });
 });
