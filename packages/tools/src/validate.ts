@@ -2,8 +2,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import type { ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import type { AnyTool } from './types.ts';
-import { SchemaValidatorFailure, compileUntrustedSchema, schemaIdentity, untrustedSchemaFailure } from './untrusted-schema.ts';
-import { validateUntrusted } from './validate-untrusted.ts';
+import { SchemaValidatorFailure, compileUntrustedSchema, untrustedSchemaFailure, validateUntrusted } from '@momonga/foundation';
 
 const MAX_REPORTED_ERRORS = 20;
 
@@ -11,6 +10,8 @@ const ajv = new Ajv2020.default({ strict: true, allErrors: true, coerceTypes: fa
 addFormats.default(ajv);
 
 const compiled = new WeakMap<Record<string, unknown>, ValidateFunction>();
+
+export const schemaIdentity = (tool: { name: string; validatorIdentity?: string }): string => tool.validatorIdentity ?? tool.name;
 
 export const recordedFailureOf = (tool: AnyTool): string | undefined => {
   const identity = schemaIdentity(tool);
@@ -72,12 +73,16 @@ const describeErrors = (toolName: string, errors: readonly ErrorObject[]): strin
   return [`Invalid input for ${toolName}:`, ...lines].join('\n');
 };
 
-export type ValidationResult = { ok: true; value: unknown } | { ok: false; message: string } | { ok: false; message: string; validatorFailure: string };
+export type ValidationResult =
+  | { ok: true; value: unknown }
+  | { ok: false; reason: 'invalid'; message: string }
+  | { ok: false; reason: 'validator-failed'; message: string; detail: string | undefined };
 
-const unavailable = (tool: AnyTool, validatorFailure: string): ValidationResult => ({
+export const unavailable = (tool: AnyTool, detail: string | undefined): Extract<ValidationResult, { ok: false }> => ({
   ok: false,
+  reason: 'validator-failed',
   message: `Tool ${tool.name} is unavailable for the rest of this run: its schema validator failed, so its input and output cannot be checked.`,
-  validatorFailure,
+  detail,
 });
 
 const parseArguments = (tool: AnyTool, rawArguments: unknown): ValidationResult => {
@@ -85,15 +90,14 @@ const parseArguments = (tool: AnyTool, rawArguments: unknown): ValidationResult 
   try {
     return { ok: true, value: JSON.parse(rawArguments) as unknown };
   } catch (error) {
-    return { ok: false, message: `Invalid JSON arguments for ${tool.name}: ${(error as Error).message}\nReceived: ${rawArguments}` };
+    return { ok: false, reason: 'invalid', message: `Invalid JSON arguments for ${tool.name}: ${(error as Error).message}\nReceived: ${rawArguments}` };
   }
 };
 
 const validateLenient = (tool: AnyTool, parsed: { ok: true; value: unknown }): ValidationResult => {
   try {
-    assertUsable(tool);
     const verdict = validateUntrusted(schemaIdentity(tool), tool.inputSchema, parsed.value);
-    return verdict.valid ? parsed : { ok: false, message: describeErrors(tool.name, verdict.errors) };
+    return verdict.valid ? parsed : { ok: false, reason: 'invalid', message: describeErrors(tool.name, verdict.errors) };
   } catch (error) {
     if (error instanceof SchemaValidatorFailure) return unavailable(tool, error.message);
     throw error;
@@ -106,5 +110,5 @@ export const validateToolInput = (tool: AnyTool, rawArguments: unknown): Validat
   if (tool.schemaMode === 'lenient') return validateLenient(tool, parsed);
   const validate = compileInputSchema(tool);
   if (validate(parsed.value)) return parsed;
-  return { ok: false, message: describeErrors(tool.name, validate.errors ?? []) };
+  return { ok: false, reason: 'invalid', message: describeErrors(tool.name, validate.errors ?? []) };
 };

@@ -3,7 +3,8 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import type AjvCoreModule from 'ajv/dist/core.js';
 import type { Options, ValidateFunction } from 'ajv/dist/core.js';
 import addFormats from 'ajv-formats';
-import { canonicalJson, capText, sanitizeServerText, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, sha256Hex } from './canonical-json.ts';
+import { capText, sanitizeServerText } from './untrusted-text.ts';
 
 const MAX_CACHED_VALIDATORS = 512;
 const MAX_FAILURE_MESSAGE_CHARS = 200;
@@ -115,7 +116,7 @@ export const compileUntrustedSchema = (schema: Record<string, unknown>): Validat
   try {
     entry = { validate: compileIsolated(schema) };
   } catch (error) {
-    entry = { failure: cleanFailureMessage(error instanceof Error ? error.message : String(error)), };
+    entry = { failure: cleanFailureMessage(error instanceof Error ? error.message : String(error)) };
   }
   remember(key, entry);
   return resolve(entry);
@@ -126,8 +127,6 @@ export const untrustedSchemaCacheSize = (): number => cache.size;
 const validateFailures = new Map<string, string>();
 
 const failureKeyOf = (identity: string, schema: Record<string, unknown>): string => `${identity}\u0000${keyOf(schema)}`;
-
-export const schemaIdentity = (tool: { name: string; validatorIdentity?: string }): string => tool.validatorIdentity ?? tool.name;
 
 export const recordValidateFailure = (identity: string, schema: Record<string, unknown>, message: string): void => {
   const key = failureKeyOf(identity, schema);
@@ -141,3 +140,8 @@ export const recordValidateFailure = (identity: string, schema: Record<string, u
 
 export const untrustedSchemaFailure = (identity: string, schema: Record<string, unknown>): string | undefined =>
   validateFailures.get(failureKeyOf(identity, schema));
+
+export const clearUntrustedSchemaCaches = (): void => {
+  cache.clear();
+  validateFailures.clear();
+};

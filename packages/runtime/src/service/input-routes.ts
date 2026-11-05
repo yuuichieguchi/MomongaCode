@@ -1,6 +1,6 @@
 import type { McpAuthorizationView, McpServerView } from '@momonga/protocol';
 import { McpElicitationAnswerError, parseElicitationAnswers } from '@momonga/mcp';
-import { cleanFailureMessage } from '@momonga/tools';
+import { cleanFailureMessage } from '@momonga/foundation';
 import type { RuntimeStore } from '@momonga/store';
 import { conflict, invalidRequest, notFound } from './errors.ts';
 import type { Handler, RouteRegistrar } from './app.ts';

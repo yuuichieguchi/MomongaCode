@@ -219,13 +219,19 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000), onWa
   });
   const rule = (effect: RuleEffect, text: string): PermissionRule =>
     parseRule(text, { effect, origin: 'user', source: 'user-settings', settingsRoot: project, home, cwd: project });
+  const journalCodes = new Map<string, Set<string>>();
   const input = (toolSet: ToolSet, calls: ToolCall[], extra: Partial<ExecutionBatchInput> = {}): ExecutionBatchInput => {
     runCounter += 1;
+    const runId = extra.runId ?? `run-${runCounter}`;
+    const codes = journalCodes.get(runId) ?? new Set<string>();
+    journalCodes.set(runId, codes);
     return {
       calls,
       toolSet,
-      fence: { runId: `run-${runCounter}`, workerId: 'w1', leaseToken: 1 },
-      runId: `run-${runCounter}`,
+      fence: { runId, workerId: 'w1', leaseToken: 1 },
+      runId,
+      onWarning: (_message, code) => codes.add(code),
+      toolUnavailable: (identity) => codes.has(`tool_validator_failed:${identity}`),
       step: 1,
       mode: 'default',
       rules: [],

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { compileUntrustedSchema, createToolRegistry, untrustedSchemaCacheSize } from '@momonga/tools';
+import { compileUntrustedSchema, untrustedSchemaCacheSize } from '@momonga/foundation';
+import { createToolRegistry } from '@momonga/tools';
 import { makeTool } from './harness.ts';
 
 const SHARED_ID = 'https://untrusted.example/shared';

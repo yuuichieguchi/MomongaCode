@@ -3,6 +3,7 @@ import { FIXTURE_EXTRA_TOOLS_ENV } from '@momonga/testkit';
 import { callRecords, entry, makeExecutor, makePool, makeRecordFile, modernConfig } from './mcp-harness.ts';
 
 const THROWING_OUTPUT = 'mcp__modern__output_validator_throws';
+const SAME_RUN = { runId: 'run-output-validator-failure' };
 const ENGINE_MESSAGE = 'props0 is not defined';
 
 describe('checking MCP structured output with a third-party 2020-12 output schema', () => {
@@ -14,7 +15,7 @@ describe('checking MCP structured output with a third-party 2020-12 output schem
     const warnings: string[] = [];
     const executor = makeExecutor(undefined, (message) => warnings.push(message));
 
-    const first = await executor.resultOf(set, THROWING_OUTPUT, {});
+    const first = await executor.resultOf(set, THROWING_OUTPUT, {}, SAME_RUN);
     expect(first.status).toBe('failed');
     expect(first.output).toMatch(/output could not be checked/i);
     expect(first.output).toContain(THROWING_OUTPUT);
@@ -27,7 +28,7 @@ describe('checking MCP structured output with a third-party 2020-12 output schem
     expect(notices[0]).toContain('modern');
     expect(notices[0]).toContain(ENGINE_MESSAGE);
 
-    const second = await executor.resultOf(set, THROWING_OUTPUT, {});
+    const second = await executor.resultOf(set, THROWING_OUTPUT, {}, SAME_RUN);
     expect(second.status).toBe('failed');
     expect(second.output).toMatch(/unavailable/i);
     expect(second.output).toContain(THROWING_OUTPUT);

@@ -1,11 +1,12 @@
 import type { ElicitationAnswerRecord, ElicitationRequestView } from '@momonga/protocol';
-import { cleanFailureMessage } from '@momonga/tools';
+import { cleanFailureMessage } from '@momonga/foundation';
 import { fieldsOf, parseFieldInput, validateContent } from './form.ts';
 import type { ContentValue, FormField } from './form.ts';
 
 export type ElicitationDecision = 'accept' | 'decline' | 'cancel';
 
 export type ElicitationFlow = {
+  readonly server: string | undefined;
   readonly requests: readonly ElicitationRequestView[];
   readonly index: number;
   readonly stage: 'fields' | 'decision';
@@ -18,11 +19,12 @@ export type ElicitationFlow = {
   readonly complete: boolean;
 };
 
-const enter = (requests: readonly ElicitationRequestView[], index: number, answers: ElicitationFlow['answers'], notices: readonly string[]): ElicitationFlow => {
+const enter = (server: string | undefined, requests: readonly ElicitationRequestView[], index: number, answers: ElicitationFlow['answers'], notices: readonly string[]): ElicitationFlow => {
   const request = requests[index];
   if (request === undefined) throw new RangeError(`elicitation request ${index} does not exist`);
   const fields = request.mode === 'form' ? fieldsOf(request.requestedSchema) : [];
   return {
+    server,
     requests,
     index,
     stage: fields.length === 0 ? 'decision' : 'fields',
@@ -36,7 +38,7 @@ const enter = (requests: readonly ElicitationRequestView[], index: number, answe
   };
 };
 
-export const startFlow = (requests: readonly ElicitationRequestView[]): ElicitationFlow => enter(requests, 0, {}, []);
+export const startFlow = (requests: readonly ElicitationRequestView[], server?: string): ElicitationFlow => enter(server, requests, 0, {}, []);
 
 export const currentRequest = (flow: ElicitationFlow): ElicitationRequestView => {
   const request = flow.requests[flow.index];
@@ -49,8 +51,8 @@ export const currentField = (flow: ElicitationFlow): FormField | undefined => fl
 export const enterValue = (flow: ElicitationFlow, text: string): ElicitationFlow => {
   const field = currentField(flow);
   if (flow.stage !== 'fields' || field === undefined) throw new Error('the elicitation is not asking for a field');
-  const parsed = parseFieldInput(field, text);
-  if (!parsed.ok) return 'validatorFailure' in parsed ? declined(flow, parsed.validatorFailure) : { ...flow, error: parsed.error };
+  const parsed = parseFieldInput({ server: flow.server, key: currentRequest(flow).key }, field, text);
+  if (!parsed.ok) return parsed.reason === 'validator-failed' ? declined(flow, parsed.error) : { ...flow, error: parsed.error };
   const content = parsed.value === undefined ? flow.content : { ...flow.content, [field.name]: parsed.value };
   const last = flow.fieldIndex + 1 >= flow.fields.length;
   return { ...flow, content, error: undefined, ...(last ? { stage: 'decision' as const } : { fieldIndex: flow.fieldIndex + 1 }) };
@@ -64,7 +66,7 @@ const answerFor = (flow: ElicitationFlow, decision: ElicitationDecision): Settle
   if (decision !== 'accept') return { answer: { action: decision } };
   const request = currentRequest(flow);
   if (request.mode === 'url') return { answer: { action: 'accept' } };
-  const check = validateContent(request.requestedSchema, flow.content);
+  const check = validateContent({ server: flow.server, key: request.key }, request.requestedSchema, flow.content);
   if (check.kind === 'validator-failed') return declinedBecause(request.key, check.message);
   return check.kind === 'valid' ? { answer: { action: 'accept', content: { ...flow.content } } } : check.message;
 };
@@ -79,7 +81,7 @@ const settle = (flow: ElicitationFlow, settled: Settled): ElicitationFlow => {
   const answers = { ...flow.answers, [request.key]: settled.answer };
   const notices = settled.notice === undefined ? flow.notices : [...flow.notices, settled.notice];
   if (flow.index + 1 >= flow.requests.length) return { ...flow, answers, notices, error: undefined, complete: true };
-  return enter(flow.requests, flow.index + 1, answers, notices);
+  return enter(flow.server, flow.requests, flow.index + 1, answers, notices);
 };
 
 const declined = (flow: ElicitationFlow, message: string): ElicitationFlow => settle(flow, declinedBecause(currentRequest(flow).key, message));

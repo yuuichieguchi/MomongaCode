@@ -191,3 +191,14 @@ export {
   verifyReleaseSignature,
 } from './release-signature.ts';
 export type { PlaceFile, PlacedFile, ReleaseSignatureVerdict, VerifyReleaseSignatureInput } from './release-signature.ts';
+export {
+  SchemaValidatorFailure,
+  cleanFailureMessage,
+  clearUntrustedSchemaCaches,
+  compileUntrustedSchema,
+  recordValidateFailure,
+  untrustedSchemaCacheSize,
+  untrustedSchemaFailure,
+} from './untrusted-schema.ts';
+export { validateUntrusted } from './validate-untrusted.ts';
+export type { UntrustedVerdict } from './validate-untrusted.ts';

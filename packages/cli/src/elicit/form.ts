@@ -1,5 +1,5 @@
 import { isRecord } from '@momonga/foundation';
-import { SchemaValidatorFailure, validateUntrusted } from '@momonga/tools';
+import { SchemaValidatorFailure, validateUntrusted } from '@momonga/foundation';
 
 export type ContentValue = string | number | boolean | string[];
 
@@ -17,7 +17,9 @@ export type FormField = {
   schema: Readonly<Record<string, unknown>>;
 };
 
-export type ParsedValue = { ok: true; value: ContentValue | undefined } | { ok: false; error: string } | { ok: false; error: string; validatorFailure: string };
+export type ParsedValue = { ok: true; value: ContentValue | undefined } | { ok: false; reason: 'invalid' | 'validator-failed'; error: string };
+
+export type ElicitationOrigin = { server: string | undefined; key: string };
 
 export type ContentCheck = { kind: 'valid' } | { kind: 'invalid'; message: string } | { kind: 'validator-failed'; message: string };
 
@@ -88,9 +90,9 @@ const isContentValue = (value: unknown): value is ContentValue =>
 const TRUE_WORDS = ['y', 'yes', 'true', '1'];
 const FALSE_WORDS = ['n', 'no', 'false', '0'];
 
-const checkAgainst = (schema: Readonly<Record<string, unknown>>, value: unknown, label: string): ContentCheck => {
+const checkAgainst = (origin: ElicitationOrigin, schema: Readonly<Record<string, unknown>>, value: unknown, label: string): ContentCheck => {
   try {
-    const verdict = validateUntrusted('cli-elicitation', schema, value);
+    const verdict = validateUntrusted(JSON.stringify(['cli-elicitation', origin.server, origin.key]), schema, value);
     if (verdict.valid) return { kind: 'valid' };
     return { kind: 'invalid', message: verdict.errors.map((error) => `${label}${error.instancePath} ${error.message ?? error.keyword}`).join('; ') };
   } catch (error) {
@@ -106,53 +108,53 @@ const optionOf = (field: FormField, token: string): string | undefined => {
   return field.options.find((option) => option.value === trimmed || option.label === trimmed)?.value;
 };
 
-const coerce = (field: FormField, text: string): { ok: true; value: unknown } | { ok: false; error: string } => {
+const coerce = (field: FormField, text: string): { ok: true; value: unknown } | { ok: false; reason: 'invalid'; error: string } => {
   switch (field.kind) {
     case 'string':
       return { ok: true, value: text };
     case 'number':
     case 'integer': {
       const value = Number(text);
-      if (text.trim() === '' || !Number.isFinite(value)) return { ok: false, error: `${field.name} must be a number` };
+      if (text.trim() === '' || !Number.isFinite(value)) return { ok: false, reason: 'invalid', error: `${field.name} must be a number` };
       return { ok: true, value };
     }
     case 'boolean': {
       const word = text.trim().toLowerCase();
       if (TRUE_WORDS.includes(word)) return { ok: true, value: true };
       if (FALSE_WORDS.includes(word)) return { ok: true, value: false };
-      return { ok: false, error: `${field.name} must be yes or no` };
+      return { ok: false, reason: 'invalid', error: `${field.name} must be yes or no` };
     }
     case 'choice': {
       const value = optionOf(field, text);
-      return value === undefined ? { ok: false, error: `${field.name} must be one of the listed choices` } : { ok: true, value };
+      return value === undefined ? { ok: false, reason: 'invalid', error: `${field.name} must be one of the listed choices` } : { ok: true, value };
     }
     case 'choices': {
       const picked = text.split(',').map((token) => optionOf(field, token));
-      if (picked.some((value) => value === undefined)) return { ok: false, error: `${field.name} must be a comma separated list of the listed choices` };
+      if (picked.some((value) => value === undefined)) return { ok: false, reason: 'invalid', error: `${field.name} must be a comma separated list of the listed choices` };
       return { ok: true, value: picked };
     }
     case 'json':
       try {
         return { ok: true, value: JSON.parse(text) };
       } catch (error) {
-        return { ok: false, error: `${field.name} must be JSON: ${error instanceof Error ? error.message : String(error)}` };
+        return { ok: false, reason: 'invalid', error: `${field.name} must be JSON: ${error instanceof Error ? error.message : String(error)}` };
       }
   }
 };
 
-export const parseFieldInput = (field: FormField, text: string): ParsedValue => {
+export const parseFieldInput = (origin: ElicitationOrigin, field: FormField, text: string): ParsedValue => {
   if (text === '' && field.kind !== 'string') {
-    return field.required ? { ok: false, error: `${field.name} is required` } : { ok: true, value: undefined };
+    return field.required ? { ok: false, reason: 'invalid', error: `${field.name} is required` } : { ok: true, value: undefined };
   }
   if (text === '' && !field.required) return { ok: true, value: undefined };
   const coerced = coerce(field, text);
   if (!coerced.ok) return coerced;
-  if (!isContentValue(coerced.value)) return { ok: false, error: `${field.name} must be a string, a number, a boolean or a list of strings` };
-  const check = checkAgainst(field.schema, coerced.value, field.name);
-  if (check.kind === 'validator-failed') return { ok: false, error: check.message, validatorFailure: check.message };
-  if (check.kind === 'invalid') return { ok: false, error: check.message };
+  if (!isContentValue(coerced.value)) return { ok: false, reason: 'invalid', error: `${field.name} must be a string, a number, a boolean or a list of strings` };
+  const check = checkAgainst(origin, field.schema, coerced.value, field.name);
+  if (check.kind === 'validator-failed') return { ok: false, reason: 'validator-failed', error: check.message };
+  if (check.kind === 'invalid') return { ok: false, reason: 'invalid', error: check.message };
   return { ok: true, value: coerced.value };
 };
 
-export const validateContent = (requestedSchema: Readonly<Record<string, unknown>>, content: Readonly<Record<string, ContentValue>>): ContentCheck =>
-  checkAgainst(requestedSchema, content, '');
+export const validateContent = (origin: ElicitationOrigin, requestedSchema: Readonly<Record<string, unknown>>, content: Readonly<Record<string, ContentValue>>): ContentCheck =>
+  checkAgainst(origin, requestedSchema, content, '');

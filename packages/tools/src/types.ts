@@ -26,6 +26,7 @@ export type ToolResult = {
   authorizationRequired?: { server: string };
   files?: ToolFile[];
   exitCode?: number;
+  validatorFailure?: string;
 };
 
 export type ToolPending = { status: 'pending'; awaits: ToolAwait; wakeAt?: number };

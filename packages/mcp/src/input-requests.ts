@@ -1,5 +1,5 @@
 import { isRecord } from '@momonga/foundation';
-import { SchemaValidatorFailure, validateUntrusted } from '@momonga/tools';
+import { SchemaValidatorFailure, validateUntrusted } from '@momonga/foundation';
 import { sanitizeSchema } from './schema-sanitizer.ts';
 import { capText, sanitizeServerText } from './text.ts';
 
@@ -105,7 +105,7 @@ const validateAgainst = (server: string, request: ElicitationRequest, answer: El
 export const parseElicitationAnswers = (
   requests: readonly ElicitationRequest[],
   raw: unknown,
-  options: { server: string; onValidatorFailure(request: ElicitationRequest, message: string): void } = { server: '', onValidatorFailure: () => undefined },
+  options: { server: string; onValidatorFailure(request: ElicitationRequest, message: string): void },
 ): Record<string, ElicitationAnswer> => {
   if (!isRecord(raw)) throw new McpElicitationAnswerError('', 'responses must be an object keyed by request key');
   const known = new Set(requests.map((request) => request.key));

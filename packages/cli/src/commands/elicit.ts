@@ -1,7 +1,7 @@
 import type { MomongaPaths } from '@momonga/foundation';
 import { escapeTerminalLine } from '@momonga/protocol';
 import type { ElicitationAnswerRecord } from '@momonga/protocol';
-import { cleanFailureMessage } from '@momonga/tools';
+import { cleanFailureMessage } from '@momonga/foundation';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import { describeElicitation } from '../elicit/describe.ts';
 import { fieldsOf, parseFieldInput, validateContent } from '../elicit/form.ts';
@@ -65,14 +65,15 @@ const acceptedContent = (view: ElicitationView, settings: readonly string[]): Ac
   for (const field of fields) {
     const text = values.get(field.name);
     if (text === undefined) continue;
-    const parsed = parseFieldInput(field, text);
+    const origin = { server: view.server, key: request.key };
+    const parsed = parseFieldInput(origin, field, text);
     if (!parsed.ok) {
-      if ('validatorFailure' in parsed) return declinedForValidator(view, request.key, parsed.validatorFailure);
+      if (parsed.reason === 'validator-failed') return declinedForValidator(view, request.key, parsed.error);
       throw new ElicitationUsageError(parsed.error);
     }
     if (parsed.value !== undefined) content[field.name] = parsed.value;
   }
-  const check = validateContent(request.requestedSchema, content);
+  const check = validateContent({ server: view.server, key: request.key }, request.requestedSchema, content);
   if (check.kind === 'validator-failed') return declinedForValidator(view, request.key, check.message);
   if (check.kind === 'invalid') throw new ElicitationUsageError(`the answer does not match the request: ${check.message}`);
   return { answer: { action: 'accept', content } };

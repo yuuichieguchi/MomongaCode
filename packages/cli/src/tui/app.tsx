@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent, useReducer, useRef, useState } from 'react';
 import { Box, Static, Text, useApp, useInput, usePaste, useStdout, useWindowSize } from 'ink';
 import { escapeTerminalBlock, escapeTerminalLine } from '@momonga/protocol';
 import type { Capabilities, ImageAttachment, MomongaModelEntry, PermissionMode, PermissionOption } from '@momonga/protocol';
-import { cleanFailureMessage } from '@momonga/tools';
+import { cleanFailureMessage } from '@momonga/foundation';
 import { currentField, currentRequest, decide, enterValue, leaveFields, withError } from '../elicit/flow.ts';
 import type { ElicitationDecision, ElicitationFlow } from '../elicit/flow.ts';
 import type { RunEventFrame } from '../client/runtime-client.ts';

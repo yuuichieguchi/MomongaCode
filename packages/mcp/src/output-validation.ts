@@ -1,6 +1,6 @@
 import { ProtocolError, ProtocolErrorCode } from '@modelcontextprotocol/client';
 import type { CallToolResult, Tool } from '@modelcontextprotocol/client';
-import { compileUntrustedSchema, validateUntrusted } from '@momonga/tools';
+import { compileUntrustedSchema, validateUntrusted } from '@momonga/foundation';
 import { sanitizeSchema } from './schema-sanitizer.ts';
 
 export const validateStructuredOutput = (identity: string, name: string, tool: Tool | undefined, result: CallToolResult): CallToolResult => {

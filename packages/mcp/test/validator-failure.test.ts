@@ -1,13 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FIXTURE_EXTRA_TOOLS_ENV } from '@momonga/testkit';
-import { schemaIdentity, untrustedSchemaFailure } from '@momonga/tools';
+import { untrustedSchemaFailure } from '@momonga/foundation';
+import { schemaIdentity } from '@momonga/tools';
 import type { ToolSet } from '@momonga/tools';
 import { callRecords, entry, makeExecutor, makePool, makeRecordFile, modernConfig } from './mcp-harness.ts';
 
 const validatorRuns = vi.hoisted(() => ({ count: 0 }));
 
-vi.mock('../../tools/src/untrusted-schema.ts', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../../tools/src/untrusted-schema.ts')>();
+vi.mock('../../foundation/src/untrusted-schema.ts', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../foundation/src/untrusted-schema.ts')>();
   const isThrowingSchema = (schema: Record<string, unknown>): boolean => schema['then'] === false && typeof schema['if'] === 'object';
   return {
     ...original,
@@ -27,6 +28,7 @@ const THROWING = 'mcp__modern__validator_throws';
 const IF_ANNOTATIONS = 'mcp__modern__if_annotations';
 const ENGINE_MESSAGE = 'props0 is not defined';
 const UNAVAILABLE = /unavailable/i;
+const SAME_RUN = { runId: 'run-validator-failure' };
 
 const extraTools = () => {
   const recordFile = makeRecordFile();
@@ -54,7 +56,7 @@ describe('validating MCP tool arguments with a third-party 2020-12 schema', () =
     const warnings: string[] = [];
     const executor = makeExecutor(undefined, (message) => warnings.push(message));
 
-    const first = await executor.run(set, THROWING, {});
+    const first = await executor.run(set, THROWING, {}, SAME_RUN);
     expect(first).toMatchObject({ kind: 'result', result: { status: 'failed' } });
     expect(outputOf(first)).toMatch(UNAVAILABLE);
     expect(outputOf(first)).toContain(THROWING);
@@ -70,7 +72,7 @@ describe('validating MCP tool arguments with a third-party 2020-12 schema', () =
 
     const runsAfterFirst = validatorRuns.count;
     expect(runsAfterFirst).toBe(1);
-    const second = await executor.run(set, THROWING, {});
+    const second = await executor.run(set, THROWING, {}, SAME_RUN);
     expect(second).toMatchObject({ kind: 'result', result: { status: 'failed' } });
     expect(outputOf(second)).toBe(outputOf(first));
     expect(validatorRuns.count).toBe(runsAfterFirst);

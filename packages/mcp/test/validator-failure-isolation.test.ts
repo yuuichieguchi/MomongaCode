@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { clearUntrustedSchemaCaches, untrustedSchemaFailure } from '@momonga/foundation';
+import { schemaIdentity } from '@momonga/tools';
 import { FIXTURE_EXTRA_TOOLS_ENV } from '@momonga/testkit';
 import { entry, makeExecutor, makePool, makeRecordFile, modernConfig } from './mcp-harness.ts';
 
@@ -47,7 +49,31 @@ describe('a validate-time failure of a tool whose schema another server sends id
     await executor.run(set, name, {}, sameRun);
     expect(warnings.filter((message) => message.includes(name))).toHaveLength(1);
 
-    await executor.run(set, name, {});
+    const other = await executor.run(set, name, {}, { runId: 'run-other' });
+    expect(other).toMatchObject({ kind: 'result', result: { status: 'failed' } });
     expect(warnings.filter((message) => message.includes(name))).toHaveLength(2);
+
+    const next = await pool.snapshot();
+    expect(next.get(name)).toBeUndefined();
+  });
+
+  it('refuses from the run journal after the process memory is lost, without validating again', async () => {
+    const pool = makePool([entry('zeta', withThrower())]);
+    const set = await pool.snapshot();
+    const name = 'mcp__zeta__validator_throws';
+    const tool = set.get(name);
+    if (tool === undefined) throw new Error(`${name} is not registered`);
+    const warnings: string[] = [];
+    const executor = makeExecutor(undefined, (message) => warnings.push(message));
+    const live = { runId: 'run-live' };
+
+    await executor.run(set, name, {}, live);
+    expect(untrustedSchemaFailure(schemaIdentity(tool), tool.inputSchema)).toContain(ENGINE_MESSAGE);
+
+    clearUntrustedSchemaCaches();
+    const again = await executor.run(set, name, {}, live);
+    expect(again).toMatchObject({ kind: 'result', result: { status: 'failed' } });
+    expect(untrustedSchemaFailure(schemaIdentity(tool), tool.inputSchema)).toBeUndefined();
+    expect(warnings.filter((message) => message.includes(name))).toHaveLength(1);
   });
 });

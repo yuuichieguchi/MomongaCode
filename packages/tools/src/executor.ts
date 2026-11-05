@@ -21,8 +21,8 @@ import { cancellableTimer } from './timers.ts';
 import { MINIMUM_INLINE_OUTPUT_CHARS, truncateOutput, useFormattedOutput } from './truncate.ts';
 import { ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
 import type { AnyTool, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
-import { cleanFailureMessage } from './untrusted-schema.ts';
-import { recordedFailureOf, validateToolInput } from './validate.ts';
+import { cleanFailureMessage } from '@momonga/foundation';
+import { schemaIdentity, unavailable, validateToolInput } from './validate.ts';
 import type { ValidationResult } from './validate.ts';
 
 const DEFAULT_IDEMPOTENCY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -50,7 +50,8 @@ type BatchCallbacks = {
   leaseLost?(): boolean;
   onLeaseLost?(): void;
   onOutcome?(outcome: ResultOutcome): void;
-  onWarning?(message: string): void;
+  onWarning?(message: string, code: string): void;
+  toolUnavailable?(identity: string): boolean;
   traceparentFor?(callId: string): { traceparent: string; tracestate?: string } | undefined;
   onStarted?(callId: string, idemKey: string, basis: ApprovalBasis): void | Promise<void>;
   onUpdate?(callId: string, content: ToolContent[]): void;
@@ -441,8 +442,6 @@ const settleWithin = async (pending: Promise<unknown>, ms: number): Promise<void
   }
 };
 
-const MAX_ANNOUNCED_RUNS = 256;
-
 export const createToolExecutor = (options: ToolExecutorOptions): InspectableToolExecutor => {
   if (options.maxInlineOutputChars !== undefined && options.maxInlineOutputChars < MINIMUM_INLINE_OUTPUT_CHARS) {
     throw new RangeError(`maxInlineOutputChars must be at least ${MINIMUM_INLINE_OUTPUT_CHARS}`);
@@ -470,29 +469,22 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   };
   const activeKeys = new Map<string, number>();
 
-  const announcedByRun = new Map<string, Set<string>>();
+  const isRefused = (batch: BatchCore, tool: AnyTool): boolean => tool.schemaMode === 'lenient' && batch.toolUnavailable?.(schemaIdentity(tool)) === true;
 
-  const announceValidatorFailure = (batch: BatchCore, tool: AnyTool): void => {
-    if (tool.schemaMode !== 'lenient') return;
-    const failure = recordedFailureOf(tool);
-    if (failure === undefined) return;
-    const announced = announcedByRun.get(batch.runId) ?? new Set<string>();
-    if (announced.has(tool.name)) return;
-    announced.add(tool.name);
-    announcedByRun.delete(batch.runId);
-    announcedByRun.set(batch.runId, announced);
-    if (announcedByRun.size > MAX_ANNOUNCED_RUNS) {
-      const oldest = announcedByRun.keys().next();
-      if (oldest.done !== true) announcedByRun.delete(oldest.value);
-    }
+  const announceValidatorFailure = (batch: BatchCore, tool: AnyTool, detail: string): void => {
+    const identity = schemaIdentity(tool);
+    if (batch.toolUnavailable?.(identity) === true) return;
     const origin = tool.server === undefined ? '' : ` of MCP server ${JSON.stringify(cleanFailureMessage(tool.server))}`;
-    const message = `Tool ${cleanFailureMessage(tool.name)}${origin} is unavailable for the rest of this run: its schema validator failed: ${failure}`;
+    const message = `Tool ${cleanFailureMessage(tool.name)}${origin} is unavailable for the rest of this run: its schema validator failed: ${detail}`;
     options.onWarning(message);
-    batch.onWarning?.(message);
+    batch.onWarning?.(message, `tool_validator_failed:${identity}`);
   };
 
+  const validateFor = (batch: BatchCore, tool: AnyTool, raw: unknown): ValidationResult =>
+    isRefused(batch, tool) ? unavailable(tool, undefined) : validateToolInput(tool, raw);
+
   const rejectionOf = (batch: BatchCore, tool: AnyTool, validation: Extract<ValidationResult, { ok: false }>): string => {
-    if ('validatorFailure' in validation) announceValidatorFailure(batch, tool);
+    if (validation.reason === 'validator-failed' && validation.detail !== undefined) announceValidatorFailure(batch, tool, validation.detail);
     return validation.message;
   };
 
@@ -645,7 +637,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         return failedOutcome(call.callId, `${tool.name} was not run: a PreToolUse hook stopped the run: ${reason}`);
       }
       if (verdict?.updatedInput !== undefined) {
-        const validation = validateToolInput(tool, verdict.updatedInput);
+        const validation = validateFor(batch, tool, verdict.updatedInput);
         if (!validation.ok) return failedOutcome(call.callId, `A PreToolUse hook returned an input that ${tool.name} rejects: ${rejectionOf(batch, tool, validation)}`);
         let subject: PermissionSubject;
         try {
@@ -726,7 +718,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   const hookedInputOf = (batch: BatchCore, tool: AnyTool, lookup: ToolIdempotencyLookup | undefined): { input: unknown } | { failure: string } | undefined => {
     const record = lookup?.s === 'PENDING' || lookup?.s === 'UNKNOWN' ? lookup.rec.meta['hookInput'] : undefined;
     if (record === undefined) return undefined;
-    const validation = validateToolInput(tool, record);
+    const validation = validateFor(batch, tool, record);
     return validation.ok ? { input: validation.value } : { failure: rejectionOf(batch, tool, validation) };
   };
 
@@ -750,7 +742,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       const available = (offered === undefined ? batch.toolSet.tools.map((candidate) => candidate.name) : offered.tools).join(', ');
       return outcome(failedOutcome(call.callId, `Unknown tool "${call.name}". Available tools: ${available}`));
     }
-    const validation = validateToolInput(tool, call.arguments);
+    const validation = validateFor(batch, tool, call.arguments);
     if (!validation.ok) return outcome(failedOutcome(call.callId, rejectionOf(batch, tool, validation)));
     let input = validation.value;
     const cwd = batch.session.cwd;
@@ -1143,8 +1135,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           }
           if (result.status === 'pending') return scope.waiting(result);
           scope.disarmTimer();
-          announceValidatorFailure(batch, tool);
-          const hooked = await applyPostToolHooks(batch, call, tool, target.input, result);
+          const { validatorFailure, ...settled } = result;
+          if (validatorFailure !== undefined) announceValidatorFailure(batch, tool, validatorFailure);
+          const hooked = await applyPostToolHooks(batch, call, tool, target.input, settled);
           return scope.complete(finalizeResult(hooked, tool, outputLimit, batch.runId, batch.formatOutput), reconciled);
         }
         await settleWithin(running, ABORT_SETTLE_LIMIT_MS);

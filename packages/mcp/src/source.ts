@@ -1,6 +1,6 @@
 import type { CallToolResult, Tool } from '@modelcontextprotocol/client';
-import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import { SchemaValidatorFailure, defineTool, ToolExecutionError, ToolInputRequired, TransientToolError } from '@momonga/tools';
+import { SchemaValidatorFailure, canonicalJson, sha256Hex } from '@momonga/foundation';
+import { defineTool, ToolExecutionError, ToolInputRequired, TransientToolError } from '@momonga/tools';
 import type { AnyTool, ToolListOptions, ToolResult, ToolResume, ToolSource, ToolSourceListing } from '@momonga/tools';
 import { McpUnavailableError } from './connection.ts';
 import { parseElicitationAnswer } from './input-requests.ts';
@@ -136,7 +136,7 @@ const buildTool = (
           throw new ToolInputRequired({ server, requests: error.requests, checkpoint: { ...error.checkpoint } });
         }
         if (error instanceof SchemaValidatorFailure) {
-          return { status: 'failed', output: `Tool mcp__${server}__${toolPart}: its output could not be checked because its output schema validator failed, so the output is withheld. The tool is unavailable for the rest of this run.` };
+          return { status: 'failed', output: `Tool mcp__${server}__${toolPart}: its output could not be checked because its output schema validator failed, so the output is withheld. The tool is unavailable for the rest of this run.`, validatorFailure: error.message };
         }
         const unauthorized = authorizationRequiredFor(error);
         if (unauthorized !== undefined) {
