@@ -3,7 +3,7 @@
   "unitSuiteSeconds": 215.2,
   "entries": [
     { "config": "RunRecovery", "role": "check", "expect": "holds", "args": [], "tier": "every-run", "distinctStates": 1070326, "measuredSeconds": 23.6, "budgetSeconds": 48 },
-    { "config": "RunRecovery.children", "role": "check", "expect": "holds", "args": [], "tier": "deep", "distinctStates": 62478876, "measuredSeconds": 1074.4, "budgetSeconds": 2149 },
+    { "config": "RunRecovery.children", "role": "check", "expect": "holds", "args": [], "tier": "deep", "distinctStates": 62945640, "measuredSeconds": 1481.2, "budgetSeconds": 2963 },
     { "config": "RunRecovery.childrenSmall", "role": "check", "expect": "holds", "args": [], "tier": "every-run", "distinctStates": 30452, "measuredSeconds": 2.6, "budgetSeconds": 6 },
     { "config": "RunRecovery.liveNone", "role": "check", "expect": "holds", "args": ["-lncheck", "final"], "tier": "every-run", "distinctStates": 4390, "measuredSeconds": 8.8, "budgetSeconds": 18 },
     { "config": "RunRecovery.liveSpawn", "role": "check", "expect": "holds", "args": ["-lncheck", "final"], "tier": "deep", "distinctStates": 1984616, "measuredSeconds": 4146.3, "budgetSeconds": 8293 },
