@@ -56,7 +56,8 @@ const sanitized = (error: RawError, instancePath: string): UntrustedError => ({
   params: Object.fromEntries(Object.entries(error.params).map(([name, value]) => [name, sanitizeParam(value)])),
 });
 
-const depthOf = (errors: readonly UntrustedError[]): number => Math.max(...errors.map((error) => segmentsOf(error.instancePath).length));
+const rawDepthOf = (errors: readonly RawError[]): number =>
+  Math.max(...errors.map((error) => Math.max(segmentsOf(error.instancePath).length, error.branchErrors === undefined ? 0 : rawDepthOf(error.branchErrors) + segmentsOf(error.instancePath).length)));
 
 const compareSegments = (left: string, right: string): number => {
   if (/^\d+$/.test(left) && /^\d+$/.test(right)) return Number(left) - Number(right);
@@ -177,18 +178,16 @@ export const createErrorDescriber = ({ root, rootUri, engine, registry }: { root
       const instance = valueAt(context.instance, error.instancePath);
       const outcomes = branches.flatMap((branch, index) => {
         const verdict = probeOf(branch)(instance);
-        if (verdict.valid) return [];
-        const reported = flatten(verdict.errors, { base: branch, prefix: path, instance });
-        return reported.length === 0 ? [] : [{ index, errors: reported }];
+        return verdict.valid ? [] : [{ branch, index, errors: verdict.errors }];
       });
       if (outcomes.length === 0) return [sanitized(error, path)];
       const tagged = taggedIndexes(branches, instance);
       const pool = outcomes.filter((outcome) => tagged.includes(outcome.index));
       const contenders = pool.length > 0 ? pool : outcomes;
-      const deepest = Math.max(...contenders.map((outcome) => depthOf(outcome.errors)));
-      const finalists = pool.length > 0 ? pool : contenders.filter((outcome) => depthOf(outcome.errors) === deepest);
+      const deepest = Math.max(...contenders.map((outcome) => rawDepthOf(outcome.errors)));
+      const finalists = pool.length > 0 ? pool : contenders.filter((outcome) => rawDepthOf(outcome.errors) === deepest);
       const best = finalists.reduce((winner, outcome) => (outcome.errors.length < winner.errors.length ? outcome : winner));
-      return best.errors;
+      return flatten(best.errors, { base: best.branch, prefix: path, instance });
     });
 
   return (errors, instance) => {
