@@ -268,7 +268,7 @@ describe('measuring over the journal as it stands after the transaction', () => 
 
     expect(h.store.transition(claim, ['RUNNING'], 'FAILED', { error: { code: 'input_truncated', message: 'truncated' } }, [finalResponse]).kind).toBe('ok');
 
-    expect(seen.map((events) => events.map((event) => event.type))).toEqual([[], ['model.responded']]);
+    expect(seen.map((events) => events.map((event) => event.type))).toEqual([['model.responded']]);
     expect(replayed).toContain('model.responded');
     expect(recordedItems(h.store, run.id)).toEqual([{ kind: 'memory', id: 'cited', contributed: true }]);
   });
