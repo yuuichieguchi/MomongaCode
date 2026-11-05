@@ -1,4 +1,4 @@
-import { DEFAULT_OUTPUT_BOUND_FIELD, reasoningEffortToSend } from '@momonga/protocol';
+import { DEFAULT_OUTPUT_BOUND_FIELD, acceptedReasoningEfforts, clampReasoningEffort } from '@momonga/protocol';
 import type { AdapterRequest, Capabilities } from '@momonga/protocol';
 import type { ChatRequestBody } from './native-request.ts';
 import { outputBoundFor } from './output-bound.ts';
@@ -7,13 +7,14 @@ const reasoningEffortOption = (request: AdapterRequest, capabilities: Capabiliti
   const requested = request.reasoning_effort;
   const { reasoning } = capabilities;
   if (requested === undefined || reasoning?.control !== 'reasoning_effort') return {};
-  return { reasoning_effort: reasoningEffortToSend(requested, reasoning.lowest) };
+  return { reasoning_effort: clampReasoningEffort(requested, acceptedReasoningEfforts(reasoning)) };
 };
 
 const outputBoundTokens = (request: AdapterRequest, capabilities: Capabilities): number | undefined => {
   const requested = request.max_output_tokens;
   if (requested === undefined || requested === null) return undefined;
-  const headroom = request.reasoning_effort === undefined || capabilities.reasoning?.control === 'reasoning_effort' ? 0 : (capabilities.reasoning?.headroomTokens ?? 0);
+  const { reasoning } = capabilities;
+  const headroom = request.reasoning_effort === undefined || reasoning?.control !== 'none' ? 0 : (reasoning.headroomTokens ?? 0);
   return headroom === 0 ? requested : Math.min(requested + headroom, capabilities.maxOutputTokens);
 };
 

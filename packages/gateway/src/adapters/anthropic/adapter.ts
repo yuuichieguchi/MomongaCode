@@ -90,7 +90,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
   async function* stream(request: AdapterRequest, ctx: AdapterContext, cache: CachePlan | undefined): AsyncGenerator<StreamEvent> {
     if (closed) throw new Error('the anthropic adapter is closed');
     const capabilities = await options.capabilities(ctx.target);
-    const base = buildMessagesBody(request, capabilities.maxOutputTokens, { cache }, ctx.reasoningOrigin);
+    const base = buildMessagesBody(request, capabilities.maxOutputTokens, { cache, reasoning: capabilities.reasoning }, ctx.reasoningOrigin);
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     try {
@@ -200,7 +200,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
       const usage =
         collected.usage ??
         estimatedUsage(
-          wireTokensOf(buildMessagesBody(summaryRequest, cap, { cache: undefined }, ctx.reasoningOrigin), capabilities.imageTokens),
+          wireTokensOf(buildMessagesBody(summaryRequest, cap, { cache: undefined, reasoning: capabilities.reasoning }, ctx.reasoningOrigin), capabilities.imageTokens),
           tokensForText(collected.summary),
         );
       return { summary: collected.summary, usage, ...(collected.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: collected.cacheWriteInputTokens }) };

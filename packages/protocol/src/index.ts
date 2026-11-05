@@ -8,6 +8,10 @@ export type {
   OutputBoundField,
   PromptCacheCapability,
   ReasoningCapability,
+  ThinkingAdaptiveEffort,
+  ThinkingBudgetEffort,
+  ThinkingCapability,
+  ThinkingOff,
   ReasoningEffort,
   NeedsProbe,
   ToolCallingMode,
@@ -78,7 +82,9 @@ export {
   applyCapabilityOverride,
   imageCapability,
   isReasoningEffort,
-  reasoningEffortToSend,
+  acceptedReasoningEfforts,
+  clampReasoningEffort,
+  THINKING_OFFS,
   requireStructuredOutput,
 } from './capabilities.ts';
 export type { StructuredOutputVerdict, TargetBilling } from './capabilities.ts';

@@ -37,14 +37,44 @@ export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 
 export const LOWEST_REASONING_EFFORT: ReasoningEffort = 'none';
 
+export const THINKING_OFFS = ['disabled', 'between_tools'] as const;
+export type ThinkingOff = (typeof THINKING_OFFS)[number];
+
+export type ThinkingBudgetEffort = Exclude<ReasoningEffort, 'none'>;
+export type ThinkingAdaptiveEffort = Exclude<ThinkingBudgetEffort, 'minimal'>;
+
 export type ReasoningCapability =
   | { control: 'none'; headroomTokens?: number }
-  | { control: 'reasoning_effort'; lowest: ReasoningEffort };
+  | { control: 'reasoning_effort'; lowest: ReasoningEffort }
+  | { control: 'thinking'; form: 'adaptive'; efforts: readonly ThinkingAdaptiveEffort[]; off?: ThinkingOff }
+  | { control: 'thinking'; form: 'budget'; budgets: Readonly<Partial<Record<ThinkingBudgetEffort, number>>>; off?: ThinkingOff };
+
+export type ThinkingCapability = Extract<ReasoningCapability, { control: 'thinking' }>;
 
 export const isReasoningEffort = (value: unknown): value is ReasoningEffort => REASONING_EFFORTS.some((effort) => effort === value);
 
-export const reasoningEffortToSend = (requested: ReasoningEffort, lowest: ReasoningEffort): ReasoningEffort =>
-  REASONING_EFFORTS.indexOf(requested) >= REASONING_EFFORTS.indexOf(lowest) ? requested : lowest;
+const ladderOrder = (levels: readonly ReasoningEffort[]): ReasoningEffort[] => REASONING_EFFORTS.filter((level) => levels.includes(level));
+
+export const acceptedReasoningEfforts = (capability: ReasoningCapability): ReasoningEffort[] => {
+  switch (capability.control) {
+    case 'none':
+      return [];
+    case 'reasoning_effort':
+      return REASONING_EFFORTS.slice(REASONING_EFFORTS.indexOf(capability.lowest));
+    case 'thinking': {
+      const declared = capability.form === 'adaptive' ? capability.efforts : REASONING_EFFORTS.filter((level) => capability.budgets[level as ThinkingBudgetEffort] !== undefined);
+      return ladderOrder([...(capability.off === undefined ? [] : ['none' as const]), ...declared]);
+    }
+  }
+};
+
+export const clampReasoningEffort = (requested: ReasoningEffort, accepted: readonly ReasoningEffort[]): ReasoningEffort => {
+  const ordered = ladderOrder(accepted);
+  const lowest = ordered[0];
+  if (lowest === undefined) throw new Error('clampReasoningEffort needs at least one accepted level');
+  const rank = REASONING_EFFORTS.indexOf(requested);
+  return ordered.findLast((level) => REASONING_EFFORTS.indexOf(level) <= rank) ?? lowest;
+};
 
 export type PromptCacheCapability =
   | { kind: 'breakpoints'; maxBreakpoints: number }
