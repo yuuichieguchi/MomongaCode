@@ -1,6 +1,7 @@
 import type { MomongaPaths } from '@momonga/foundation';
 import { escapeTerminalLine } from '@momonga/protocol';
 import type { ElicitationAnswerRecord } from '@momonga/protocol';
+import { cleanFailureMessage, parseOutsideJson } from '@momonga/foundation';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import { describeElicitation } from '../elicit/describe.ts';
 import { fieldsOf, parseFieldInput, validateContent } from '../elicit/form.ts';
@@ -40,14 +41,21 @@ const parseSettings = (settings: readonly string[]): Map<string, string> => {
   return values;
 };
 
-const acceptedContent = (view: ElicitationView, settings: readonly string[]): ElicitationAnswerRecord => {
+type Accepted = { answer: ElicitationAnswerRecord; notice?: string };
+
+const declinedForValidator = (view: ElicitationView, key: string, message: string): Accepted => ({
+  answer: { action: 'decline' },
+  notice: `Elicitation ${JSON.stringify(cleanFailureMessage(key))} of MCP server ${JSON.stringify(cleanFailureMessage(view.server))} was declined: its requestedSchema validator failed: ${message}`,
+});
+
+const acceptedContent = (view: ElicitationView, settings: readonly string[]): Accepted => {
   const [request] = view.requests;
   if (view.requests.length !== 1 || request === undefined) {
     throw new ElicitationUsageError(`elicitation ${view.id} has ${view.requests.length} requests; answer them together with --responses`);
   }
   if (request.mode === 'url') {
     if (settings.length > 0) throw new ElicitationUsageError('a url request takes no --set values');
-    return { action: 'accept' };
+    return { answer: { action: 'accept' } };
   }
   const fields = fieldsOf(request.requestedSchema);
   const values = parseSettings(settings);
@@ -57,19 +65,24 @@ const acceptedContent = (view: ElicitationView, settings: readonly string[]): El
   for (const field of fields) {
     const text = values.get(field.name);
     if (text === undefined) continue;
-    const parsed = parseFieldInput(field, text);
-    if (!parsed.ok) throw new ElicitationUsageError(parsed.error);
+    const origin = { server: view.server, key: request.key };
+    const parsed = parseFieldInput(origin, field, text);
+    if (!parsed.ok) {
+      if (parsed.reason === 'validator-failed') return declinedForValidator(view, request.key, parsed.error);
+      throw new ElicitationUsageError(parsed.error);
+    }
     if (parsed.value !== undefined) content[field.name] = parsed.value;
   }
-  const invalid = validateContent(request.requestedSchema, content);
-  if (invalid !== undefined) throw new ElicitationUsageError(`the answer does not match the request: ${invalid}`);
-  return { action: 'accept', content };
+  const check = validateContent({ server: view.server, key: request.key }, request.requestedSchema, content);
+  if (check.kind === 'validator-failed') return declinedForValidator(view, request.key, check.message);
+  if (check.kind === 'invalid') throw new ElicitationUsageError(`the answer does not match the request: ${check.message}`);
+  return { answer: { action: 'accept', content } };
 };
 
 const parseResponses = (text: string): Record<string, ElicitationAnswerRecord> => {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    parsed = parseOutsideJson(text);
   } catch (error) {
     throw new ElicitationUsageError(`--responses must be JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -77,14 +90,17 @@ const parseResponses = (text: string): Record<string, ElicitationAnswerRecord> =
   return parsed as Record<string, ElicitationAnswerRecord>;
 };
 
-const responsesFor = (view: ElicitationView, options: ElicitOptions): Record<string, ElicitationAnswerRecord> => {
-  if (options.responses !== undefined) return parseResponses(options.responses);
+type Responses = { responses: Record<string, ElicitationAnswerRecord>; notices: string[] };
+
+const responsesFor = (view: ElicitationView, options: ElicitOptions): Responses => {
+  if (options.responses !== undefined) return { responses: parseResponses(options.responses), notices: [] };
   if (options.decline || options.cancel) {
     const action = options.decline ? 'decline' : 'cancel';
-    return Object.fromEntries(view.requests.map((request) => [request.key, { action }]));
+    return { responses: Object.fromEntries(view.requests.map((request) => [request.key, { action }])), notices: [] };
   }
   const [request] = view.requests;
-  return Object.fromEntries([[request?.key ?? '', acceptedContent(view, options.set)]]);
+  const accepted = acceptedContent(view, options.set);
+  return { responses: Object.fromEntries([[request?.key ?? '', accepted.answer]]), notices: accepted.notice === undefined ? [] : [accepted.notice] };
 };
 
 export const pendingElicitationsOf = async (client: Pick<RuntimeClient, 'getRun' | 'childRuns' | 'elicitations'>, runId: string): Promise<ElicitationView[]> => {
@@ -115,7 +131,8 @@ export const elicit = async (ports: CliPorts, paths: MomongaPaths, inputId: stri
       return 0;
     }
     if (options.set.length > 0 && !options.accept) throw new ElicitationUsageError('--set needs --accept');
-    const responses = responsesFor(view, options);
+    const { responses, notices } = responsesFor(view, options);
+    for (const notice of notices) ports.stderr.write(`${escapeTerminalLine(`momonga: ${notice}`)}\n`);
     const [request] = view.requests;
     if (options.accept && request?.mode === 'url') await ports.openUrl(new URL(request.url), interrupt);
     const resolved = await client.resolveElicitation(view.id, responses);

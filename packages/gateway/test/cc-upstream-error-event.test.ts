@@ -47,7 +47,7 @@ const unprobedFmAdapter = async (upstream: FakeUpstreamServer) => {
     exec: countTokens,
     probeRecordDir: path.join(makeDir(), 'probe'),
     recordKey: { target: 'fm', binarySha256: 'ab'.repeat(32), osBuild: '25A100' },
-    toolCallingSetting: 'auto',
+    toolCallingSetting: 'native',
     declaredModel: 'system',
   });
   const adapter = createChatCompletionsAdapter({ ...managed, clock: createFakeClock(START_MS) });
@@ -58,7 +58,6 @@ const unprobedFmAdapter = async (upstream: FakeUpstreamServer) => {
 const genericAdapter = (upstream: FakeUpstreamServer) => {
   const adapter = createChatCompletionsAdapter({ schemaDialect: () => 'json-schema-2020-12',
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: upstream.socketPath }),
-    toolCalling: () => 'native',
     capabilities: async () => CC_CAPABILITIES,
     clock: createFakeClock(START_MS),
   });

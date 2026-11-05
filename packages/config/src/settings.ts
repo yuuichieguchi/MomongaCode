@@ -1,7 +1,6 @@
-import type { ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
-import Ajv2020 from 'ajv/dist/2020.js';
-import { transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
-import type { CapabilitiesCore, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetBilling, PermissionMode } from '@momonga/protocol';
+import { defineProductSchema, transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
+import type { ProductValidator, UntrustedError } from '@momonga/foundation';
+import type { AnthropicApiVersion, CapabilitiesCore, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetBilling, PermissionMode } from '@momonga/protocol';
 import { MCP_SERVERS_FILE_SCHEMA, MCP_SERVER_SCHEMA, MODEL_ROLES, SETTINGS_SCHEMA } from './settings-schema.ts';
 
 export type PermissionsSettings = {
@@ -95,6 +94,7 @@ export type AnthropicTarget = {
   apiKeyEnv?: string;
   apiKeySecret?: string;
   billing?: TargetBilling;
+  apiVersion?: AnthropicApiVersion;
   capabilities: RemoteTargetCapabilities;
   maxConcurrency?: number;
   admissionTimeoutMs?: number;
@@ -162,6 +162,7 @@ export type ResolvedAnthropicTarget = {
   apiKeySecret?: string;
   toolCalling: 'native';
   billing: TargetBilling;
+  apiVersion: AnthropicApiVersion;
   capabilities: TargetCapabilities & { maxConcurrency: number };
   maxConcurrency: number;
   admissionTimeoutMs: number;
@@ -258,17 +259,16 @@ export type HookGroups = NonNullable<HooksSettings[keyof HooksSettings]>;
 
 export type McpServersFile = { mcpServers?: Record<string, unknown> };
 
-const ajv = new Ajv2020.default({ strict: true, discriminator: true });
-const validateSettings: ValidateFunction<Settings> = ajv.compile<Settings>(SETTINGS_SCHEMA);
-const validateMcpServersFile: ValidateFunction<McpServersFile> = ajv.compile<McpServersFile>(MCP_SERVERS_FILE_SCHEMA);
-const validateMcpServer: ValidateFunction<McpServerConfig> = ajv.compile<McpServerConfig>(MCP_SERVER_SCHEMA);
+const validateSettings: ProductValidator<Settings> = defineProductSchema('config/settings', SETTINGS_SCHEMA);
+const validateMcpServersFile: ProductValidator<McpServersFile> = defineProductSchema('config/mcp-servers-file', MCP_SERVERS_FILE_SCHEMA);
+const validateMcpServer: ProductValidator<McpServerConfig> = defineProductSchema('config/mcp-server', MCP_SERVER_SCHEMA);
 
-const describeErrors = (errors: ErrorObject[] | null | undefined): string => {
-  const first = errors?.[0];
+const describeErrors = (errors: readonly UntrustedError[]): string => {
+  const first = errors[0];
   if (first === undefined) return '/: schema violation';
   const additional = first.keyword === 'additionalProperties' ? `/${String(first.params['additionalProperty'])}` : '';
   const pointer = `${first.instancePath}${additional}`;
-  return `${pointer === '' ? '/' : pointer}: ${first.message ?? 'schema violation'}`;
+  return `${pointer === '' ? '/' : pointer}: ${first.message}`;
 };
 
 const assertNotHttpSse = (server: unknown, source: string, name: string): void => {
@@ -281,24 +281,28 @@ export const assertSettings = (value: unknown, source: string): Settings => {
   if (isRecord(value) && isRecord(value['mcpServers'])) {
     for (const [name, server] of Object.entries(value['mcpServers'])) assertNotHttpSse(server, source, name);
   }
-  if (!validateSettings(value)) throw new Error(`${source}: invalid settings at ${describeErrors(validateSettings.errors)}`);
-  const endpoint = value.telemetry?.otlp?.endpoint;
+  const verdict = validateSettings(value);
+  if (!verdict.valid) throw new Error(`${source}: invalid settings at ${describeErrors(verdict.errors)}`);
+  const settings = verdict.value;
+  const endpoint = settings.telemetry?.otlp?.endpoint;
   if (endpoint !== undefined) {
     const problem = transportUrlProblem(endpoint);
     if (problem !== undefined) throw new Error(`${source}: ${transportUrlMessage('telemetry.otlp.endpoint', endpoint, problem)}`);
   }
-  return value;
+  return settings;
 };
 
 export const assertMcpServersFile = (value: unknown, source: string): McpServersFile => {
-  if (validateMcpServersFile(value)) return value;
-  throw new Error(`${source}: invalid MCP server file at ${describeErrors(validateMcpServersFile.errors)}`);
+  const verdict = validateMcpServersFile(value);
+  if (verdict.valid) return verdict.value;
+  throw new Error(`${source}: invalid MCP server file at ${describeErrors(verdict.errors)}`);
 };
 
 export const assertMcpServer = (value: unknown, source: string, name: string): McpServerConfig => {
   assertNotHttpSse(value, source, name);
-  if (validateMcpServer(value)) return value;
-  throw new Error(`${source}: invalid MCP server ${JSON.stringify(name)}: ${describeErrors(validateMcpServer.errors)}`);
+  const verdict = validateMcpServer(value);
+  if (verdict.valid) return verdict.value;
+  throw new Error(`${source}: invalid MCP server ${JSON.stringify(name)}: ${describeErrors(verdict.errors)}`);
 };
 
 export const KNOWN_SETTINGS_KEYS: readonly string[] = Object.keys(SETTINGS_SCHEMA.properties);

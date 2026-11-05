@@ -84,7 +84,7 @@ describe('recovery inside one turn', () => {
     const paused = env.enqueue('Fill the context', { history: 'fresh' });
     await env.runOnce(env.worker('worker-2', overrides));
     expect(env.run(paused.id).status).toBe('WAITING_HUMAN');
-    env.resolveApproval(paused.id, 'allow_once');
+    await env.resolveApproval(paused.id, 'allow_once');
     await env.runOnce(env.worker('worker-3', overrides));
     expect(env.run(paused.id).status).toBe('COMPLETED');
 

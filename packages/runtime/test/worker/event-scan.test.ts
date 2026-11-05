@@ -16,7 +16,7 @@ describe('worker event reads per claim', () => {
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
     const snapshotSeq = env.store.load(run.id).snapshot?.seq;
     if (snapshotSeq === undefined) throw new Error('expected a snapshot at the yield');
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
     env.gateway.script.push(textStep('Written.'));
     const reads: { afterSeq: number; limit: number }[] = [];
     const store: RuntimeStore = {

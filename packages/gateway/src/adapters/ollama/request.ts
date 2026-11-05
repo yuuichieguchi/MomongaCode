@@ -1,6 +1,7 @@
-import { reasoningEffortToSend } from '@momonga/protocol';
-import type { AdapterRequest, Capabilities, FunctionTool, ReasoningCapability, ReasoningEffort } from '@momonga/protocol';
-import { UnsupportedInputError } from '../shared/failures.ts';
+import { acceptedReasoningEfforts, clampReasoningEffort } from '@momonga/protocol';
+import type { ToolChoiceWire, AdapterRequest, Capabilities, FunctionTool, ReasoningCapability, ReasoningEffort, ReasoningOrigin } from '@momonga/protocol';
+import { forbidsTools } from '../../core/tool-choice.ts';
+import { carriedSamplingOf } from '../shared/sampling.ts';
 import { SYSTEM_PART_SEPARATOR, systemTextOf } from '../shared/system-text.ts';
 import { ollamaHistoryOf } from './history.ts';
 import type { OllamaMessage } from './history.ts';
@@ -10,7 +11,7 @@ export type OllamaChatBody = {
   messages: OllamaMessage[];
   stream: boolean;
   truncate: false;
-  options: { num_ctx: number; num_predict: number; temperature?: number; top_p?: number };
+  options: { num_ctx: number; num_predict: number; temperature?: number; top_p?: number; frequency_penalty?: number; presence_penalty?: number };
   tools?: unknown[];
   format?: unknown;
   think?: boolean;
@@ -25,29 +26,31 @@ const toolOf = (tool: FunctionTool): unknown => ({
   },
 });
 
-const sendsTools = (request: AdapterRequest): boolean => (request.tools ?? []).length > 0 && request.tool_choice !== 'none';
+const sendsTools = (request: AdapterRequest): boolean => (request.tools ?? []).length > 0 && !forbidsTools(request.tool_choice);
 
 const requireToolChoice = (request: AdapterRequest): void => {
   const choice = request.tool_choice;
   if (choice === undefined || choice === 'auto' || choice === 'none') return;
-  throw new UnsupportedInputError('unsupported_tool_choice', 'the Ollama adapter supports only the tool_choice values auto and none', 'tool_choice');
+  throw new Error('the tool_choice must be resolved against the Ollama wire before the body is built');
 };
+
+export const OLLAMA_TOOL_CHOICE: ToolChoiceWire = { forms: ['filter'], expressesRequired: false };
 
 const formatOf = (request: AdapterRequest): { format?: unknown } => {
   const format = request.text?.format;
-  if (format === undefined || format.type === 'text') return {};
+  if (format === undefined || format === null || format.type === 'text') return {};
   return { format: format.type === 'json_schema' ? format.schema : 'json' };
 };
 
 const thinkOf = (effort: ReasoningEffort | undefined, reasoning: ReasoningCapability | undefined): { think?: boolean } =>
-  effort === undefined || reasoning?.control !== 'reasoning_effort' ? {} : { think: reasoningEffortToSend(effort, reasoning.lowest) !== 'none' };
+  effort === undefined || reasoning?.control !== 'reasoning_effort' ? {} : { think: clampReasoningEffort(effort, acceptedReasoningEfforts(reasoning)) !== 'none' };
 
 export type OllamaBodyCapabilities = Pick<Capabilities, 'contextWindow' | 'maxOutputTokens' | 'reasoning'>;
 
-export const buildOllamaChatBody = (request: AdapterRequest, capabilities: OllamaBodyCapabilities, stream: boolean): OllamaChatBody => {
+export const buildOllamaChatBody = (request: AdapterRequest, capabilities: OllamaBodyCapabilities, stream: boolean, origin: ReasoningOrigin): OllamaChatBody => {
   requireToolChoice(request);
   const system = systemTextOf(request.instructions, request.input);
-  const messages = [...(system.length === 0 ? [] : [{ role: 'system', content: system.join(SYSTEM_PART_SEPARATOR) }]), ...ollamaHistoryOf(request.input)];
+  const messages = [...(system.length === 0 ? [] : [{ role: 'system', content: system.join(SYSTEM_PART_SEPARATOR) }]), ...ollamaHistoryOf(request.input, origin)];
   return {
     model: request.model,
     messages,
@@ -56,8 +59,7 @@ export const buildOllamaChatBody = (request: AdapterRequest, capabilities: Ollam
     options: {
       num_ctx: capabilities.contextWindow,
       num_predict: request.max_output_tokens ?? capabilities.maxOutputTokens,
-      ...(request.temperature === undefined || request.temperature === null ? {} : { temperature: request.temperature }),
-      ...(request.top_p === undefined || request.top_p === null ? {} : { top_p: request.top_p }),
+      ...carriedSamplingOf(request),
     },
     ...(sendsTools(request) ? { tools: (request.tools ?? []).map(toolOf) } : {}),
     ...formatOf(request),
@@ -65,4 +67,4 @@ export const buildOllamaChatBody = (request: AdapterRequest, capabilities: Ollam
   };
 };
 
-export const buildOllamaBody = (request: AdapterRequest, capabilities: OllamaBodyCapabilities): OllamaChatBody => buildOllamaChatBody(request, capabilities, true);
+export const buildOllamaBody = (request: AdapterRequest, capabilities: OllamaBodyCapabilities, origin: ReasoningOrigin): OllamaChatBody => buildOllamaChatBody(request, capabilities, true, origin);

@@ -1,7 +1,7 @@
 import { Client, ProtocolError, SdkError, SdkErrorCode, TRACEPARENT_META_KEY, TRACESTATE_META_KEY, isCallToolResult, isInputRequiredResult } from '@modelcontextprotocol/client';
-import type { CallToolResult, Implementation, ProtocolEra, Tool } from '@modelcontextprotocol/client';
+import type { CallToolResult, Implementation, JSONRPCMessage, ProtocolEra, Tool, Transport } from '@modelcontextprotocol/client';
 import type { McpServerConfig, McpServerScope } from '@momonga/config';
-import { CircuitBreaker, computeBackoff } from '@momonga/foundation';
+import { CircuitBreaker, JsonDepthError, checkJsonDepth, computeBackoff } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { authorizeMcpServer } from './authorize.ts';
 import { createMcpOAuthProvider } from './oauth-provider.ts';
@@ -17,6 +17,7 @@ import type { GuardedFetch } from './remote-policy.ts';
 import type { McpRemotePorts } from './remote-ports.ts';
 import { createRemoteTransport } from './remote-transport.ts';
 import type { ConnectionTransport } from './remote-transport.ts';
+import { mcpToolIdentity } from './tool-identity.ts';
 import { createSafeSchemaValidator } from './schema-validator.ts';
 import { createStdioTransport } from './stdio-transport.ts';
 import { DEFAULT_CLOSE_GRACE_MS } from './stdio-transport.ts';
@@ -40,7 +41,6 @@ const MIN_SECRET_CHARS = 8;
 const SECRET_HEADER = /auth|token|key|secret|cookie|password/i;
 const DESCRIPTIVE_HEADER = /^(accept(-charset|-encoding|-language)?|content-(type|language)|cache-control|user-agent)$/i;
 const REDACTED = '[redacted]';
-// The SDK arms a wall-clock timer per request that cannot be paused while a call is parked for the person; the call's own budget runs on the injected timers, so the SDK timer is set to the longest delay Node accepts.
 const SDK_TIMER_CEILING_MS = 2_147_483_647;
 
 export const MRTR_MAX_ROUNDS = 10;
@@ -101,6 +101,7 @@ export type McpConnectionOptions = {
   markers?: McpMarkerOptions;
   closeGraceMs?: number;
   mrtrMaxRounds?: number;
+  onNotice?: (message: string) => void;
 };
 
 export class McpUnavailableError extends Error {
@@ -133,6 +134,41 @@ const describeExit = (transport: ConnectionTransport): string | undefined => {
 };
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+const idOf = (message: JSONRPCMessage): string | number | undefined => ('id' in message ? message.id : undefined);
+
+export const boundedMessages = (transport: ConnectionTransport, server: string, onNotice: ((message: string) => void) | undefined): ConnectionTransport => {
+  const bounded = (handler: NonNullable<Transport['onmessage']>): NonNullable<Transport['onmessage']> => (message, extra) => {
+    try {
+      checkJsonDepth(message);
+    } catch (error) {
+      if (!(error instanceof JsonDepthError)) throw error;
+      const id = idOf(message);
+      if (id === undefined) {
+        onNotice?.(`MCP server "${server}" sent a notification that was dropped as too deep: ${error.message}`);
+        return;
+      }
+      const refusal = { jsonrpc: '2.0' as const, id, error: { code: -32603, message: `MCP server "${server}" sent a message that is too deep: ${error.message}` } };
+      if ('method' in message) {
+        transport.send(refusal).catch((failure: unknown) => onNotice?.(`MCP server "${server}": the depth refusal could not be sent: ${errorMessage(failure)}`));
+        return;
+      }
+      handler(refusal, extra);
+      return;
+    }
+    handler(message, extra);
+  };
+  return new Proxy(transport, {
+    get: (target, property) => {
+      const value: unknown = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+    set: (target, property, value: unknown) => {
+      Reflect.set(target, property, property === 'onmessage' && typeof value === 'function' ? bounded(value as NonNullable<Transport['onmessage']>) : value, target);
+      return true;
+    },
+  });
+};
 
 class ManagedConnection implements McpServerConnection {
   readonly name: string;
@@ -361,7 +397,7 @@ class ManagedConnection implements McpServerConnection {
         }
         throw error;
       }
-      if (!isInputRequiredResult(result)) return validateStructuredOutput(input.name, tool, result);
+      if (!isInputRequiredResult(result)) return validateStructuredOutput(mcpToolIdentity(this.name, input.name), input.name, tool, result);
       rounds += 1;
       if (rounds > maxRounds) {
         throw new SdkError(SdkErrorCode.InputRequiredRoundsExceeded, `Multi-round-trip request 'tools/call' still required input after ${maxRounds} rounds`, { rounds: maxRounds });
@@ -410,7 +446,7 @@ class ManagedConnection implements McpServerConnection {
           }),
         accept: (taskId, value) => {
           if (!isCallToolResult(value)) throw new McpTaskError(taskId, `task ${taskId} completed with a result that is not a tool result`);
-          return validateStructuredOutput(input.name, tool, value);
+          return validateStructuredOutput(mcpToolIdentity(this.name, input.name), input.name, tool, value);
         },
       });
     } finally {
@@ -593,7 +629,8 @@ class ManagedConnection implements McpServerConnection {
       this.lastError = errorMessage(error);
       throw error;
     }
-    const { transport, guarded } = opened;
+    const { guarded } = opened;
+    const transport = boundedMessages(opened.transport, this.name, this.options.onNotice);
     this.lastTransport = transport;
     this.pendingTransport = transport;
     const remote = 'url' in config;
@@ -603,7 +640,7 @@ class ManagedConnection implements McpServerConnection {
         capabilities: { elicitation: { form: {}, url: {} }, ...(remote ? { extensions: { [TASKS_EXTENSION]: {} } } : {}) },
         versionNegotiation: { mode: 'auto' },
         inputRequired: { autoFulfill: false },
-        jsonSchemaValidator: createSafeSchemaValidator(),
+        jsonSchemaValidator: createSafeSchemaValidator(this.name),
         listChanged: { tools: { autoRefresh: false, debounceMs: 0, onChanged: () => undefined } },
       },
     );

@@ -7,7 +7,7 @@ import { RECONCILE_FAILURE_PREFIX, fatalStoreError, seedStartedCalls } from './c
 import { gated, textStep } from './scripts.ts';
 import { afterMicrotasks } from '@momonga/testkit';
 
-const serverError = (): ScriptStep => ({ events: [], error: new GatewayRequestError({ status: 500, type: 'server_error', code: 'internal_error', message: 'boom' }) });
+const gatewayClosed = (): ScriptStep => ({ events: [], error: new GatewayRequestError({ status: 503, type: 'server_error', code: 'gateway_closed', message: 'the gateway is shutting down' }) });
 
 describe('worker onFatal containment', () => {
   it('a throwing onFatal hook is contained and never becomes an unhandled rejection', async () => {
@@ -89,13 +89,13 @@ describe('worker onFatal containment when the poll loop dies', () => {
 describe('worker poll loop after stop', () => {
   it('does not sweep memories after stop() was called while pollOnce was in flight', async () => {
     const env = await makeEnv();
-    env.gateway.script.push(serverError());
+    env.gateway.script.push(gatewayClosed());
     const requeued = env.enqueue('Requeued');
     const worker = env.worker('worker-1', { random: () => 0.5, idlePollMs: 10 });
     await env.runOnce(worker);
     expect(env.run(requeued.id).status).toBe('QUEUED');
     expect(worker.memorySize()).toBe(1);
-    expect(env.cancel(requeued.id).status).toBe('CANCELLED');
+    expect((await env.cancelToEnd(requeued.id)).status).toBe('CANCELLED');
 
     const blocked = gated(textStep('Finished.'));
     env.gateway.script.push(blocked);

@@ -1,4 +1,10 @@
 export type {
+  AllowedToolsForm,
+  AdapterSampling,
+  AnthropicApiVersion,
+  SamplingCapability,
+  SamplingField,
+  TopPRange,
   Capabilities,
   CapabilitiesCore,
   CapabilityOverride,
@@ -8,11 +14,17 @@ export type {
   OutputBoundField,
   PromptCacheCapability,
   ReasoningCapability,
+  ThinkingAdaptiveEffort,
+  ThinkingBudgetEffort,
+  ThinkingCapability,
+  ThinkingOff,
   ReasoningEffort,
+  NeedsProbe,
   ToolCallingMode,
+  ToolCallingState,
   ToolCallingSetting,
 } from './capabilities.ts';
-export { CALL_ROLES, COMPACTION_RESULT_EVENT, COMPACTION_ROLE, HEADER_ROLES, ROLE_HEADER, RUN_ID_HEADER, RUN_ROLE, STREAM_IDLE_HEADER } from './headers.ts';
+export { CALL_ROLES, COMPACTION_RESULT_EVENT, COMPACTION_ROLE, DEFERRED_HEADER, HEADER_ROLES, ROLE_HEADER, RUN_ID_HEADER, RUN_ROLE, STREAM_IDLE_HEADER } from './headers.ts';
 export type { CallRole } from './headers.ts';
 export type { HeaderRole } from './headers.ts';
 export {
@@ -68,6 +80,10 @@ export {
 } from './budget-constants.ts';
 export type { ErrorShape } from './budget-constants.ts';
 export {
+  ANTHROPIC_API_VERSIONS,
+  DEFAULT_ANTHROPIC_API_VERSION,
+  SAMPLING_FIELDS,
+  anthropicVersionSamplingBound,
   DEFAULT_OUTPUT_BOUND_FIELD,
   LOWEST_REASONING_EFFORT,
   OUTPUT_BOUND_FIELDS,
@@ -76,10 +92,15 @@ export {
   applyCapabilityOverride,
   imageCapability,
   isReasoningEffort,
-  reasoningEffortToSend,
+  acceptedReasoningEfforts,
+  clampReasoningEffort,
+  outputTokensFor,
+  thinkingBudgetFor,
+  THINKING_OFFS,
+  ALLOWED_TOOLS_FORMS,
   requireStructuredOutput,
 } from './capabilities.ts';
-export type { StructuredOutputVerdict, TargetBilling } from './capabilities.ts';
+export type { OutputTokenCapabilities, StructuredOutputVerdict, TargetBilling } from './capabilities.ts';
 export { OUTPUT_FORMATTERS } from './output-formatters.ts';
 export type { OutputFormatterName } from './output-formatters.ts';
 export { CACHE_MISS_CAUSES, PREFIX_EVENTS } from './prefix-events.ts';
@@ -117,9 +138,11 @@ export type {
 export { LOOP_GROUPS_KEPT } from './loop-groups.ts';
 export { findDanglingOutput, findUnpairedCalls } from './call-pairing.ts';
 export { compactionSummaryMessage, decodeCompactionSummary } from './compaction-summary.ts';
+export { decodePayloadSegment, encodePayloadSegment, joinEnvelope, splitEnvelope } from './envelope-grammar.ts';
+export type { EnvelopeSegments } from './envelope-grammar.ts';
 export { PROBE_KEYWORDS } from './probe.ts';
 export type { EndpointProbeReport, OllamaProbeReport, ProbeKeyword, ProbeReport } from './probe.ts';
-export { EVENT_TYPES, RUN_API_SCHEMAS, base64ByteLength, toPublicRunEvent } from './run-api.ts';
+export { EVENT_TYPES, RUN_API_SCHEMAS, base64ByteLength, runApiSchemaName, toPublicRunEvent } from './run-api.ts';
 export { MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES } from './run-api.ts';
 export type {
   JobView,
@@ -234,7 +257,6 @@ export {
   CLASSIFIER_VERDICTS,
   CLASSIFIER_VERDICT_SCHEMA,
   classifierAllows,
-  parseClassifierVerdict,
 } from './auto-mode.ts';
 export type { ClassifierVerdict } from './auto-mode.ts';
 export {
@@ -272,6 +294,7 @@ export type {
   PermissionOption,
   RunEvent,
   RunEventEnvelope,
+  NoticeReduction,
   RunEventPayload,
   RunState,
   RunStatus,
@@ -285,7 +308,7 @@ export type {
   ModelRejectionReason,
   UsageChargePurpose,
 } from './run-types.ts';
-export { CHAT_REASONING_FIELDS, ERROR_TYPES, OPEN_RESPONSES_STREAM_EVENT_TYPES, OPEN_RESPONSES_VERSION, TERMINAL_STREAM_EVENT_TYPES } from './open-responses.ts';
+export { CHAT_REASONING_FIELDS, carriesOutput, ERROR_TYPES, OPEN_RESPONSES_STREAM_EVENT_TYPES, OPEN_RESPONSES_VERSION, TERMINAL_STREAM_EVENT_TYPES } from './open-responses.ts';
 export type {
   Annotation,
   CompactMomongaExtension,
@@ -322,8 +345,12 @@ export type {
   ReasoningTextPart,
   RefusalPart,
   ResponseError,
+  ResponseFunctionTool,
+  ResponseReasoning,
   ResponseResource,
   ResponseStatus,
+  ResponseTextField,
+  ResponseTextFormat,
   StreamEvent,
   StreamEventType,
   SummaryTextPart,
@@ -331,6 +358,9 @@ export type {
   TextField,
   TextFormat,
   ToolChoice,
+  ToolChoiceMode,
+  AllowedToolsChoice,
+  ResponseToolChoice,
   Usage,
 } from './open-responses.ts';
 export { MOMONGA_EVENT_PREFIX } from './gateway-api.ts';
@@ -365,11 +395,14 @@ export type {
   DecodedCompactionItem,
   LenientItems,
   ProviderAdapter,
+  ReasoningOrigin,
   RenderWireOptions,
+  ToolChoiceWire,
 } from './adapter.ts';
 export { ADAPTER_NEUTRAL_ERROR_CODES } from './adapter.ts';
 export type { AdapterNeutralErrorCode } from './adapter.ts';
 export { OPEN_RESPONSES_OPENAPI } from './open-responses-spec.ts';
+export { OPEN_RESPONSES_COMPONENT_NAMES, OPEN_RESPONSES_REGISTRY_ID, OPEN_RESPONSES_REMOTE_DOCUMENTS, OPEN_RESPONSES_SCHEMA_REGISTRY, openResponsesComponentSchema, openResponsesSchemaRegistry } from './open-responses-registry.ts';
 export { SUPERVISOR_API_VERSION } from './supervisor-api.ts';
 export type {
   SupervisorChildHealth,

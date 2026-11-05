@@ -154,16 +154,39 @@ export type FunctionTool = {
   strict?: boolean;
 };
 
-export type ToolChoice = 'none' | 'auto' | 'required' | { type: 'function'; name: string };
+export type ResponseFunctionTool = {
+  type: 'function';
+  name: string;
+  description: string | null;
+  parameters: Record<string, unknown> | null;
+  strict: boolean;
+};
+
+export type ToolChoiceMode = 'auto' | 'required' | 'none';
+
+export type AllowedToolsChoice = { type: 'allowed_tools'; tools: Array<{ type: 'function'; name: string }>; mode?: ToolChoiceMode };
+
+export type ToolChoice = 'none' | 'auto' | 'required' | { type: 'function'; name: string } | AllowedToolsChoice;
+
+export type ResponseToolChoice = Exclude<ToolChoice, AllowedToolsChoice> | (AllowedToolsChoice & { mode: ToolChoiceMode });
 
 export type TextFormat =
   | { type: 'text' }
   | { type: 'json_object' }
-  | { type: 'json_schema'; name: string; description?: string; schema: Record<string, unknown>; strict?: boolean };
+  | { type: 'json_schema'; name: string; description?: string; schema: Record<string, unknown>; strict?: boolean | null };
 
-export type TextField = { format: TextFormat; verbosity?: 'low' | 'medium' | 'high' };
+export type ResponseTextFormat =
+  | { type: 'text' }
+  | { type: 'json_object' }
+  | { type: 'json_schema'; name: string; description: string | null; schema: null; strict: boolean };
+
+export type TextField = { format?: TextFormat | null; verbosity?: 'low' | 'medium' | 'high' };
+
+export type ResponseTextField = { format: ResponseTextFormat; verbosity?: 'low' | 'medium' | 'high' };
 
 export type ReasoningConfig = { effort?: string | null; summary?: string | null };
+
+export type ResponseReasoning = { effort: string | null; summary: string | null };
 
 export type Usage = {
   input_tokens: number;
@@ -173,7 +196,7 @@ export type Usage = {
   output_tokens_details: { reasoning_tokens: number };
 };
 
-export type ResponseError = { code: string; message: string; type?: ErrorType };
+export type ResponseError = { code: string; message: string; type?: ErrorType; retryAfterMs?: number };
 
 export type FailedResponseResource = ResponseResource & { error: ResponseError };
 
@@ -190,6 +213,7 @@ export type MomongaResponseExtension = {
   contextInputTokens?: number;
   cacheWriteInputTokens?: number;
   cost?: ModelCost;
+  retryable?: boolean;
 };
 
 export type ResponseResource = {
@@ -204,17 +228,17 @@ export type ResponseResource = {
   instructions: string | null;
   output: ItemField[];
   error: ResponseError | null;
-  tools: FunctionTool[];
-  tool_choice: ToolChoice;
+  tools: ResponseFunctionTool[];
+  tool_choice: ResponseToolChoice;
   truncation: 'auto' | 'disabled';
   parallel_tool_calls: boolean;
-  text: TextField;
+  text: ResponseTextField;
   top_p: number;
   presence_penalty: number;
   frequency_penalty: number;
   top_logprobs: number;
   temperature: number;
-  reasoning: ReasoningConfig | null;
+  reasoning: ResponseReasoning | null;
   usage: Usage | null;
   max_output_tokens: number | null;
   max_tool_calls: number | null;
@@ -339,7 +363,15 @@ export type StreamEvent =
       output_index: number;
       arguments: string;
     }
-  | { type: 'error'; sequence_number: number; error: ErrorBody; status?: number; retry_after_ms?: number };
+  | { type: 'error'; sequence_number: number; error: ErrorBody; status?: number; retry_after_ms?: number; deferred?: true };
+
+export const carriesOutput = (event: StreamEvent): boolean =>
+  event.type === 'response.output_text.delta' ||
+  event.type === 'response.reasoning.delta' ||
+  event.type === 'response.reasoning_summary_text.delta' ||
+  event.type === 'response.refusal.delta' ||
+  event.type === 'response.function_call_arguments.delta' ||
+  (event.type === 'response.output_item.added' && event.item.type === 'function_call');
 
 export type CompactMomongaExtension = { max_summary_tokens?: number; retains_user_request?: boolean; guideline?: string };
 

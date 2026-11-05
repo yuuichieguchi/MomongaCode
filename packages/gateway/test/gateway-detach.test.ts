@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { FAKE_DETERMINISTIC_REPLY, createScriptedAdapter, textResponseEvents, waitFor } from '@momonga/testkit';
-import { outputText, postJson, readJson, readSse, registerCleanup, sseIterator, startGateway, userInput, type SseFrame } from './gateway-helpers.ts';
-import { bigTextEvents, openRawPost } from './gateway-support.ts';
+import { FAKE_DETERMINISTIC_REPLY, createFakeClock, createScriptedAdapter, textResponseEvents, waitFor } from '@momonga/testkit';
+import { START_MS, outputText, postJson, readJson, readSse, registerCleanup, sseIterator, startGateway, userInput, type SseFrame } from './gateway-helpers.ts';
+import { bigTextEvents, createLiveSpanTelemetry, openRawPost } from './gateway-support.ts';
 import { makeAdapter, startFake } from './cc-support.ts';
 
 const events = (text: string) => textResponseEvents({ model: 'scripted-primary', chunks: [text] });
@@ -9,7 +9,19 @@ const body = { model: 'fast', input: userInput('hi') };
 const streamBody = { ...body, stream: true };
 const key = (value: string) => ({ 'idempotency-key': value });
 
-const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 50));
+const DETACHED_MAX_MS = 1_800_000;
+const JOINER_DEADLINE_MS = 60_000;
+
+type Timers = Awaited<ReturnType<typeof startGateway>>['timers'];
+const timerPending = (timers: Timers, delayMs: number): boolean => timers.pending().some((timer) => timer.delayMs === delayMs);
+const detached = (timers: Timers): Promise<void> =>
+  waitFor(() => timerPending(timers, DETACHED_MAX_MS), { description: 'the run detached from its last client', maxTurns: 20_000 });
+const rejoined = (timers: Timers): Promise<void> =>
+  waitFor(() => !timerPending(timers, DETACHED_MAX_MS), { description: 'a client rejoined the detached run', maxTurns: 20_000 });
+const joinerSubscribed = (timers: Timers, upstreamCalls: () => number): Promise<void> =>
+  waitFor(() => upstreamCalls() === 1 && timerPending(timers, JOINER_DEADLINE_MS), { description: 'the joiner subscribed to the one upstream call', maxTurns: 20_000 });
+const joinerLeft = (timers: Timers): Promise<void> =>
+  waitFor(() => !timerPending(timers, JOINER_DEADLINE_MS), { description: 'the joiner left', maxTurns: 20_000 });
 
 const drain = async (iterator: AsyncIterator<SseFrame>): Promise<SseFrame[]> => {
   const frames: SseFrame[] = [];
@@ -21,12 +33,12 @@ describe('detached keyed runs', () => {
   it('runs a keyed stream to completion exactly once after its only client disconnects, then replays it', async () => {
     const plan = events('detached');
     const primary = createScriptedAdapter({ calls: [{ events: plan, gate: { name: 'g', afterEvents: 2 } }, { events: events('second') }] });
-    const { client, socketPath } = await startGateway({ adapters: { primary } });
+    const { client, socketPath, timers } = await startGateway({ adapters: { primary } });
     registerCleanup(() => primary.release('g'));
     const raw = await openRawPost(socketPath, '/v1/responses', streamBody, { headers: key('d-1') });
     await waitFor(() => primary.calls[0]?.emitted === 2, { description: 'first two frames' });
     raw.socket.destroy();
-    await settle();
+    await detached(timers);
     expect(primary.calls[0]?.signal.aborted).toBe(false);
 
     primary.release('g');
@@ -44,12 +56,12 @@ describe('detached keyed runs', () => {
   it('runs a keyed non-stream request to completion after disconnect and replays it non-streamed', async () => {
     const plan = events('unary detached');
     const primary = createScriptedAdapter({ calls: [{ events: plan, gate: { name: 'g', afterEvents: 1 } }] });
-    const { client, socketPath } = await startGateway({ adapters: { primary } });
+    const { client, socketPath, timers } = await startGateway({ adapters: { primary } });
     registerCleanup(() => primary.release('g'));
     const raw = await openRawPost(socketPath, '/v1/responses', body, { headers: key('d-2') });
     await waitFor(() => primary.calls[0]?.emitted === 1);
     raw.socket.destroy();
-    await settle();
+    await detached(timers);
     primary.release('g');
     await waitFor(() => primary.calls[0]?.outcome !== 'pending');
     expect(primary.calls[0]?.emitted).toBe(plan.length);
@@ -63,17 +75,24 @@ describe('detached keyed runs', () => {
   it('lets a request joining a detached run receive every frame from the first one, with one upstream call', async () => {
     const plan = events('joined late');
     const primary = createScriptedAdapter({ calls: [{ events: plan, gate: { name: 'g', afterEvents: 3 } }] });
-    const { client, socketPath } = await startGateway({ adapters: { primary } });
+    const clock = createFakeClock(START_MS);
+    const live = createLiveSpanTelemetry(clock);
+    const { client, socketPath, timers } = await startGateway({ adapters: { primary }, clock, telemetry: live.telemetry });
     registerCleanup(() => primary.release('g'));
     const raw = await openRawPost(socketPath, '/v1/responses', streamBody, { headers: key('d-3') });
-    await waitFor(() => primary.calls[0]?.emitted === 3);
+    await waitFor(() => primary.calls[0]?.emitted === 3 && primary.calls[0]?.outcome === 'pending', { description: 'the adapter parked after the lifecycle events' });
     raw.socket.destroy();
-    await settle();
+    await detached(timers);
 
-    const joined = sseIterator(await postJson(client, '/v1/responses', streamBody, key('d-3')));
-    const first = await joined.next();
-    expect(first.done).not.toBe(true);
+    const joining = postJson(client, '/v1/responses', streamBody, key('d-3'));
+    await rejoined(timers);
+    expect(live.attemptSpans()).toHaveLength(1);
+    expect(live.commitEvents()).toBe(0);
     primary.release('g');
+    const joined = sseIterator(await joining);
+    const first = await joined.next();
+    expect(live.commitEvents()).toBe(1);
+    expect(first.done).not.toBe(true);
     const frames = [first.value as SseFrame, ...(await drain(joined))];
     expect(frames.map((frame) => frame.data.type)).toEqual(plan.map((event) => event.type));
     expect(frames.map((frame) => frame.data.sequence_number)).toEqual(plan.map((_, index) => index));
@@ -85,16 +104,24 @@ describe('detached keyed runs', () => {
   it('ends only the joiner when the joiner disconnects, and the leader still completes', async () => {
     const plan = events('leader survives');
     const primary = createScriptedAdapter({ calls: [{ events: plan, gate: { name: 'g', afterEvents: 2 } }] });
-    const { client, socketPath } = await startGateway({ adapters: { primary } });
+    const clock = createFakeClock(START_MS);
+    const live = createLiveSpanTelemetry(clock);
+    const { client, socketPath, timers } = await startGateway({ adapters: { primary }, clock, telemetry: live.telemetry });
     registerCleanup(() => primary.release('g'));
-    const leader = sseIterator(await postJson(client, '/v1/responses', streamBody, key('d-4')));
-    await leader.next();
-    const joiner = await openRawPost(socketPath, '/v1/responses', streamBody, { headers: key('d-4') });
-    await settle();
+    const leading = postJson(client, '/v1/responses', streamBody, key('d-4'));
+    await waitFor(() => primary.calls[0]?.emitted === 2 && primary.calls[0]?.outcome === 'pending', { description: 'the adapter parked after the opening events' });
+    const joiner = await openRawPost(socketPath, '/v1/responses', streamBody, {
+      headers: { ...key('d-4'), 'momonga-deadline-ms': String(JOINER_DEADLINE_MS) },
+    });
+    await joinerSubscribed(timers, () => primary.calls.length);
     joiner.socket.destroy();
-    await settle();
+    await joinerLeft(timers);
+    expect(live.attemptSpans()).toHaveLength(1);
+    expect(live.commitEvents()).toBe(0);
     expect(primary.calls[0]?.signal.aborted).toBe(false);
     primary.release('g');
+    const leader = sseIterator(await leading);
+    expect(live.commitEvents()).toBe(1);
     const rest = await drain(leader);
     expect(rest.at(-1)?.data.type).toBe('response.completed');
     expect(primary.calls).toHaveLength(1);
@@ -110,7 +137,7 @@ describe('detached keyed runs', () => {
     const raw = await openRawPost(socketPath, '/v1/responses', streamBody, { headers: key('d-5') });
     await waitFor(() => primary.calls[0]?.emitted === 2);
     raw.socket.destroy();
-    await settle();
+    await detached(timers);
 
     const joining = postJson(client, '/v1/responses', body, { ...key('d-5'), 'momonga-deadline-ms': '500' });
     await waitFor(() => timers.pending().some((timer) => timer.delayMs === 500), { description: 'joiner deadline timer', maxTurns: 20_000 });
@@ -210,11 +237,11 @@ describe('POST /v1/momonga/responses/cancel', () => {
 
   it('aborts a run that is detached from every client', async () => {
     const fake = await startFake({ scenario: 'tools-ok', script: [hanging()] });
-    const { client, socketPath } = await startGateway({ adapters: { fm: makeAdapter(fake) }, config: ccTargets });
+    const { client, socketPath, timers } = await startGateway({ adapters: { fm: makeAdapter(fake) }, config: ccTargets });
     const raw = await openRawPost(socketPath, '/v1/responses', streamBody, { headers: key('c-2') });
     await waitFor(() => fake.openConnections() === 1 && fake.requests.length === 1);
     raw.socket.destroy();
-    await settle();
+    await detached(timers);
     expect(fake.disconnects()).toBe(0);
     expect((await readJson(await cancel(client, 'c-2'))).body).toEqual({ cancelled: true });
     await waitFor(() => fake.disconnects() === 1, { description: 'upstream disconnected' });
@@ -243,7 +270,7 @@ describe('close() drain', () => {
     const raw = await openRawPost(first.socketPath, '/v1/responses', streamBody, { headers: key('x-1') });
     await waitFor(() => primary.calls[0]?.emitted === 2);
     raw.socket.destroy();
-    await settle();
+    await detached(first.timers);
 
     const closing = first.gateway.close();
     await waitFor(() => first.timers.pending().some((timer) => timer.delayMs === 750), { description: 'close grace timer' });
@@ -268,7 +295,7 @@ describe('close() drain', () => {
     const raw = await openRawPost(first.socketPath, '/v1/responses', streamBody, { headers: key('x-2') });
     await waitFor(() => primary.calls[0]?.emitted === 2);
     raw.socket.destroy();
-    await settle();
+    await detached(first.timers);
 
     const closing = first.gateway.close();
     await waitFor(() => first.timers.pending().some((timer) => timer.delayMs === 750), { description: 'close grace timer' });
@@ -293,7 +320,7 @@ describe('close() drain', () => {
     const raw = await openRawPost(socketPath, '/v1/responses', streamBody, { headers: key('x-3') });
     await waitFor(() => primary.calls[0]?.emitted === 1);
     raw.socket.destroy();
-    await settle();
+    await detached(timers);
     const closing = gateway.close();
     await waitFor(() => timers.pending().some((timer) => timer.delayMs === 750));
     const late = await openRawPost(socketPath, '/v1/responses', body, { headers: key('x-4') }).then(

@@ -1,6 +1,6 @@
 import { canonicalJson, createRedactor, systemClock } from '@momonga/foundation';
 import { createFsInstructionReader, createTokenMeter } from '@momonga/context';
-import type { TokenCounter } from '@momonga/context';
+import type { ContextOverflowError, TokenCounter } from '@momonga/context';
 import { COMPACTION_INSTRUCTIONS_MARKER, wireOf, wireTokensOf } from '@momonga/gateway';
 import type { ChatWire } from '@momonga/gateway';
 import { ESTIMATED_CHARACTERS_PER_TOKEN, ESTIMATED_ERROR_SHAPE, countReplyOf, marginFloorFor, summaryItemTokensFor, summaryTokenCapFor } from '@momonga/protocol';
@@ -98,6 +98,8 @@ export type DryRun = {
   readonly claims: number;
   readonly wireCounts: readonly number[];
   readonly pinned: number | undefined;
+  readonly unevictedAtEscalation: number | undefined;
+  readonly overflows: readonly LevelZeroOverflow[];
 };
 
 export type PlanAttempt = { readonly shape: FillerShape; readonly runs: readonly DryRun[]; readonly verdict: string };
@@ -326,18 +328,60 @@ export const verdictOf = (facts: AcceptanceFacts, escalates = false): string | u
   return undefined;
 };
 
-export const escalationBudgetVerdict = async (
-  facts: Pick<AcceptanceFacts, 'requestsBeforeEscalation'>,
-  wireCounts: readonly number[],
-  capabilities: Capabilities,
-): Promise<string | undefined> => {
-  const before = facts.requestsBeforeEscalation;
-  if (before === undefined || before < 3) return `(g) too few requests before the escalation (${before ?? 'none'}) to measure the growth of a step`;
-  const previous = wireCounts[before - 1] as number;
-  const growth = Math.max(0, ...wireCounts.slice(1, before).map((count, index) => count - (wireCounts[index] as number)));
-  const fitLimit = await fitLimitAfterReport(capabilities, previous);
-  if (previous + growth > fitLimit) return undefined;
-  return `(g) escalated although the request before it (${previous} tokens) plus one more step (${growth}) stays within the fit limit ${fitLimit}`;
+export type LevelZeroOverflow = { readonly inputTokens: number; readonly inputBudget: number; readonly level: number };
+
+export type EscalationEvidence = Pick<DryRun, 'facts' | 'wireCounts' | 'perturbation' | 'unevictedAtEscalation' | 'overflows'>;
+
+export const escalationBudgetVerdict = async (run: EscalationEvidence, capabilities: Capabilities): Promise<string | undefined> => {
+  const before = run.facts.requestsBeforeEscalation;
+  if (before === undefined || before < 1) return `(g1) no request before the escalation (${before ?? 'none'}) to grow from`;
+  const previous = run.wireCounts[before - 1] as number;
+  const unevicted = run.unevictedAtEscalation;
+  if (unevicted === undefined) return '(g1) the escalating step left no request whose own growth could be measured';
+  const reported = previous + run.perturbation;
+  const underAt = await underAtAfterReport(capabilities, reported);
+  const fitLimit = capacityFor(capabilities, underAt);
+  const unevictedObserved = unevicted + run.perturbation;
+  if (unevictedObserved <= fitLimit) {
+    return `(g1) escalated although the unevicted input, the request before it (${previous} tokens) plus the escalating step's own growth (${unevicted - previous}), stays within the fit limit ${fitLimit} after that request's report`;
+  }
+  const levelZero = run.overflows.filter((overflow) => overflow.level === 0);
+  if (levelZero.length !== 1) return `(g2) ${levelZero.length} level-0 ContextOverflowErrors in the dry run, expected exactly the one before the escalation`;
+  const overflow = levelZero[0] as LevelZeroOverflow;
+  if (overflow.inputTokens <= overflow.inputBudget) return `(g2) the level-0 ContextOverflowError reports ${overflow.inputTokens} tokens within its own input budget ${overflow.inputBudget}`;
+  const inputBudgetAtZero = budgetFor(capabilities, 0).I;
+  const passLoad = overflow.inputTokens + (inputBudgetAtZero - overflow.inputBudget);
+  const unevictedLoad = unevictedObserved + underAt(unevictedObserved);
+  if (overflow.inputTokens < unevictedObserved && passLoad >= unevictedLoad) {
+    return `(g2) the level-0 pass was kept although it does not lower the load: ${overflow.inputTokens}+${inputBudgetAtZero - overflow.inputBudget} against the unevicted ${unevictedObserved}+${underAt(unevictedObserved)}`;
+  }
+  if (overflow.inputTokens > unevictedObserved) return `(g2) the level-0 input of ${overflow.inputTokens} tokens is larger than the unevicted input of ${unevictedObserved}`;
+  return undefined;
+};
+
+const keyOfItem = (item: unknown): string => {
+  const record = item as Record<string, unknown>;
+  return (record['type'] === 'function_call' || record['type'] === 'function_call_output') && typeof record['call_id'] === 'string'
+    ? `${String(record['type'])}:${record['call_id']}`
+    : canonicalJson(item);
+};
+
+const unevictedAtEscalationOf = async (
+  client: ReturnType<typeof createGatewayClient>,
+  bodies: readonly unknown[],
+  before: number | undefined,
+  signal: AbortSignal,
+): Promise<number | undefined> => {
+  if (before === undefined || before < 1) return undefined;
+  const previous = bodies[before - 1] as CreateResponseBody | undefined;
+  const escalated = bodies[before] as CreateResponseBody | undefined;
+  if (previous === undefined || escalated === undefined || !Array.isArray(previous.input) || !Array.isArray(escalated.input)) return undefined;
+  const previousInput: InputItem[] = previous.input;
+  const previousKeys = new Set(previousInput.map(keyOfItem));
+  const ownGrowth = escalated.input.filter((item) => !previousKeys.has(keyOfItem(item)) && (item.type !== 'message' || item.role === 'assistant'));
+  if (ownGrowth.length === 0) return undefined;
+  const unevicted: CreateResponseBody = { ...previous, input: [...previousInput, ...ownGrowth] };
+  return (await client.countTokens(countRequestOf(unevicted), { signal })).input_tokens;
 };
 
 type DryRunInput = { readonly plan: PlanInput; readonly steps: readonly PlannedStep[]; readonly perturbation: number; readonly fillers: number };
@@ -357,6 +401,7 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
     fake.script = dryRunStepsOf(steps, plan.spec.toolCalling);
     const counts: CountTokensResult[] = [];
     const observedCounts: number[] = [];
+    const overflows: LevelZeroOverflow[] = [];
     const reportingStream = async function* (body: Parameters<GatewayPort['stream']>[0], options: Parameters<GatewayPort['stream']>[1]) {
       const counted = await client.countTokens(countRequestOf(body), { signal: options.signal });
       const reported = Math.max(0, counted.input_tokens + perturbation - REPORTED_BELOW_ESTIMATE_TOKENS);
@@ -412,6 +457,9 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
         enforcement: 'exact-paths',
       }),
       tools: { sandbox: createUnsandboxed() },
+      onContextOverflow: (error: ContextOverflowError) => {
+        overflows.push({ inputTokens: error.inputTokens, inputBudget: error.inputBudget, level: error.level });
+      },
     });
     for (let round = 0; round < DRY_RUN_MAX_CLAIMS && !TERMINAL.has(env.run(runId).status); round += 1) {
       if ((await env.runOnce(worker)) === 'idle') break;
@@ -423,13 +471,16 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
     const signal = AbortSignal.timeout(30_000);
     const wireCounts: number[] = [];
     for (const body of bodies) wireCounts.push((await client.countTokens(countRequestOf(body as CreateResponseBody), { signal })).input_tokens);
+    const facts = factsOf(journal, plan.haystack, run.status, run.stopReason);
     return {
       perturbation,
       fillers,
-      facts: factsOf(journal, plan.haystack, run.status, run.stopReason),
+      facts,
       claims: run.attempts,
       wireCounts,
       pinned: wireCounts[0] ?? counts[0]?.input_tokens,
+      unevictedAtEscalation: await unevictedAtEscalationOf(client, bodies, facts.requestsBeforeEscalation, signal),
+      overflows,
       journal,
       bodies,
       counts,
@@ -486,7 +537,7 @@ export const planScript = async (input: PlanInput, capabilities: Capabilities): 
     for (const perturbation of PERTURBATIONS) {
       const run = await dryRun({ plan: input, steps, perturbation, fillers });
       runs.push(run);
-      const budgetVerdict = input.spec.escalates === true ? await escalationBudgetVerdict(run.facts, run.wireCounts, capabilities) : undefined;
+      const budgetVerdict = input.spec.escalates === true ? await escalationBudgetVerdict(run, capabilities) : undefined;
       verdict = verdictOf(run.facts, input.spec.escalates === true) ?? singleClaimVerdict(run) ?? budgetVerdict;
       if (verdict !== undefined) {
         verdict = `perturbation ${perturbation}: ${verdict}`;

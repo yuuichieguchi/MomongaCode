@@ -8,6 +8,7 @@ import type {
   InputItem,
   MemoryView,
   MessageInputItem,
+  NoticeReduction,
   OutputFormatterName,
   TokenAnatomy,
 } from '@momonga/protocol';
@@ -77,6 +78,7 @@ export type MeterRequest = {
 
 export type MeterCount = {
   inputTokens: number;
+  freshInputTokens: number;
   inputDigest: string;
   known: number;
   uncounted: number;
@@ -164,6 +166,7 @@ export type BuildContextInput = {
   itemCap?: number;
   memoryShare?: number;
   pinnedTokens?: number;
+  toolsFrozen?: true;
   compactAt?: number;
   tools?: 'none';
   companions?: { hostOf: Readonly<Record<string, string>>; keepWithoutHost: boolean };
@@ -199,7 +202,7 @@ export type NoticeCode =
   | 'recent_turns_shrunk'
   | 'recent_steps_shrunk';
 
-export type ContextNotice = { code: NoticeCode; message: string };
+export type ContextNotice = { code: NoticeCode; message: string; reduction?: NoticeReduction };
 
 export type EvictionKind = 'omitted' | 'truncated' | 'reference';
 
@@ -211,7 +214,7 @@ export type ProtectionLevel = { keepTurns: number; keepSteps: number };
 
 export type PinnedBreakdown = { systemPrompt: number; tools: number; instructions: number; governing: number; task: number };
 
-export type CompactionPlan = { throughSeq: number; input: InputItem[]; summaryTokenCap: number; pinnedText: string };
+export type CompactionPlan = { throughSeq: number; input: InputItem[]; summaryTokenCap: number; pinnedText: string; notices: ContextNotice[] };
 
 export type CompactionBlockReason =
   | 'no_step_boundary_outside_protection'

@@ -260,8 +260,8 @@ describe('forced compaction failure decided by code', () => {
     ['a 404', gatewayError(404, 'not_found', 'not_found'), 'FAILED'],
     ['a 408', gatewayError(408, 'invalid_request', 'request_timeout'), 'QUEUED'],
     ['a 409', gatewayError(409, 'invalid_request', 'idempotency_conflict'), 'QUEUED'],
-    ['a 429', gatewayError(429, 'too_many_requests', 'too_many_requests'), 'QUEUED'],
-    ['a 502 server_error', gatewayError(502, 'server_error', 'server_error'), 'QUEUED'],
+    ['a 429 that is not a deferral', gatewayError(429, 'too_many_requests', 'too_many_requests'), 'FAILED'],
+    ['a 502 server_error after the gateway budget', gatewayError(502, 'server_error', 'server_error'), 'FAILED'],
     ['gateway_closed', gatewayError(503, 'server_error', 'gateway_closed'), 'QUEUED'],
     ['deadline_exceeded', gatewayError(0, 'transport', 'deadline_exceeded'), 'STOPPED'],
     ['gateway_unavailable', gatewayError(0, 'transport', 'gateway_unavailable'), 'QUEUED'],
@@ -269,7 +269,7 @@ describe('forced compaction failure decided by code', () => {
     ['stream_interrupted', gatewayError(0, 'transport', 'stream_interrupted'), 'QUEUED'],
     ['client_destroyed', gatewayError(0, 'transport', 'client_destroyed'), 'QUEUED'],
     ['invalid_response', gatewayError(0, 'transport', 'invalid_response'), 'QUEUED'],
-    ['a raw abort reason', 'cancel', 'QUEUED'],
+    ['a plain value thrown by non-gateway code', 'cancel', 'FAILED'],
   ] as const)('does not escalate on %s and leaves the protected zone alone', async ([, error, status]) => {
     const { env, run, attemptedAt } = await runForced(error);
 
@@ -373,15 +373,15 @@ describe('minimum room at claim', () => {
 });
 
 describe('inherited history and loop detection across compaction', () => {
-  const completeSeeded = (env: Env, task: string, payloads: readonly RunEventPayload[]): void => {
+  const completeSeeded = async (env: Env, task: string, payloads: readonly RunEventPayload[]): Promise<void> => {
     const run = env.enqueue(task);
     const claim = env.seed(run.id, payloads, 'hold');
-    expect(env.store.transition(claim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
+    expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
   };
 
   it('compacts across the task seq of an inheriting run and keeps the task once', async () => {
     const env = await makeEnv({ capabilities: W4000 });
-    completeSeeded(env, 'question one', [
+    await completeSeeded(env, 'question one', [
       { type: 'model.requested', step: 1, attempt: 1, digest: 'd1', body: { model: 'fm', input: 'seed' } },
       {
         type: 'model.responded',

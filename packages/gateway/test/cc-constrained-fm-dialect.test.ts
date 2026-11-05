@@ -21,7 +21,7 @@ const twoToolRequest: AdapterRequest = {
 
 const constrainedRunOnFm = async (support: Record<ProbeKeyword, boolean>) => {
   const fake = await startFake({ scenario: 'tools-ok', wire: 'fm' });
-  const adapter = makeAdapter(fake, { toolCalling: () => 'constrained', keywordSupport: () => support, schemaDialect: () => 'guided-generation' });
+  const adapter = makeAdapter(fake, { keywordSupport: () => support, schemaDialect: () => 'guided-generation' }, 'constrained');
   return collect(adapter, twoToolRequest);
 };
 

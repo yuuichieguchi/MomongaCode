@@ -5,6 +5,7 @@ const nameForm = {
   method: 'elicitation/create',
   params: { message: 'Name?', requestedSchema: { type: 'object', properties: { name: { type: 'string' }, age: { type: 'integer', minimum: 18 } }, required: ['name'] } },
 };
+const OPTIONS = { server: 'fx', onValidatorFailure: () => undefined };
 const link = { method: 'elicitation/create', params: { mode: 'url', message: 'Connect', url: 'https://example.test/c' } };
 
 describe('parseInputRequests', () => {
@@ -30,14 +31,14 @@ describe('parseElicitationAnswers', () => {
   const requests = parseInputRequests({ who: nameForm, link });
 
   it('accepts a form answer that matches the schema and a url consent', () => {
-    expect(parseElicitationAnswers(requests, { who: { action: 'accept', content: { name: 'Ada', age: 30 } }, link: { action: 'accept' } })).toEqual({
+    expect(parseElicitationAnswers(requests, { who: { action: 'accept', content: { name: 'Ada', age: 30 } }, link: { action: 'accept' } }, OPTIONS)).toEqual({
       who: { action: 'accept', content: { name: 'Ada', age: 30 } },
       link: { action: 'accept' },
     });
   });
 
   it('lets a person decline or cancel without content', () => {
-    expect(parseElicitationAnswers(requests, { who: { action: 'decline' }, link: { action: 'cancel' } })).toEqual({ who: { action: 'decline' }, link: { action: 'cancel' } });
+    expect(parseElicitationAnswers(requests, { who: { action: 'decline' }, link: { action: 'cancel' } }, OPTIONS)).toEqual({ who: { action: 'decline' }, link: { action: 'cancel' } });
   });
 
   it.each([
@@ -49,7 +50,7 @@ describe('parseElicitationAnswers', () => {
     ['an unknown action', { who: { action: 'maybe' }, link: { action: 'cancel' } }, 'expected accept, decline or cancel'],
     ['content on a decline', { who: { action: 'decline', content: {} }, link: { action: 'cancel' } }, 'must not carry content'],
   ])('rejects %s', (_name, answers, fragment) => {
-    expect(() => parseElicitationAnswers(requests, answers)).toThrow(McpElicitationAnswerError);
-    expect(() => parseElicitationAnswers(requests, answers)).toThrow(fragment);
+    expect(() => parseElicitationAnswers(requests, answers, OPTIONS)).toThrow(McpElicitationAnswerError);
+    expect(() => parseElicitationAnswers(requests, answers, OPTIONS)).toThrow(fragment);
   });
 });

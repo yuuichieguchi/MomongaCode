@@ -1,6 +1,7 @@
 export { computeBackoff, parseRetryAfter } from './backoff.ts';
 export type { BackoffOptions } from './backoff.ts';
 export { canonicalJson, sha256Hex } from './canonical-json.ts';
+export { capText, sanitizeServerText } from './untrusted-text.ts';
 export { CircuitBreaker } from './circuit-breaker.ts';
 export type { CircuitBreakerOptions, CircuitState } from './circuit-breaker.ts';
 export { codeDigestOf, codeDigestOfRunningProcess } from './code-digest.ts';
@@ -12,6 +13,7 @@ export type { DeadlineTiming } from './deadline.ts';
 export { describeFallbackCause } from './fallback-cause.ts';
 export type { FallbackCause } from './fallback-cause.ts';
 export { isRecord, parseJsonOrText } from './json.ts';
+export { JsonDepthError, MAX_JSON_DEPTH, checkJsonDepth, parseOutsideJson } from './json-depth.ts';
 export { MAX_REDACTED_CHARS, MIN_CREDENTIAL_CHARS, REDACTED_MARKER, createRedactor } from './redaction.ts';
 export type { Redactor, RedactorOptions } from './redaction.ts';
 export { safeSlice } from './text-slice.ts';
@@ -190,3 +192,18 @@ export {
   verifyReleaseSignature,
 } from './release-signature.ts';
 export type { PlaceFile, PlacedFile, ReleaseSignatureVerdict, VerifyReleaseSignatureInput } from './release-signature.ts';
+export {
+  SchemaValidatorFailure,
+  cleanFailureMessage,
+  clearUntrustedSchemaCaches,
+  compileUntrustedSchema,
+  recordValidateFailure,
+  untrustedSchemaCacheSize,
+  untrustedSchemaFailure,
+} from './untrusted-schema.ts';
+export type { RemoteDocuments, UntrustedError, UntrustedValidate, UntrustedVerdict } from './untrusted-schema.ts';
+export { ataEngine } from './untrusted-engine.ts';
+export type { Engine, EngineValidator, EngineVerdict, RawError } from './untrusted-engine.ts';
+export { createUntrustedBoundary, validateUntrusted } from './validate-untrusted.ts';
+export { defineProductSchema, productErrorsText, productSchemas } from './product-schema.ts';
+export type { ProductSchema, ProductValidator, ProductVerdict } from './product-schema.ts';

@@ -31,6 +31,7 @@ export type McpHttpFixtureOptions = {
   holdFirstTaskCancel?: boolean;
   expireSessionOnTaskCancel?: boolean;
   path?: string;
+  deepTools?: { outputSchemaNesting?: number; elicitationMetaNesting?: number };
 };
 
 export type RecordedHttpRequest = {
@@ -117,6 +118,23 @@ const TOOLS = [
     inputSchema: objectSchema({ region: { type: 'string', 'x-mcp-header': 'Region' } }, ['region']),
   },
 ] as const;
+
+const DEEP_PLACEHOLDER = '"__deep_value__"';
+
+export const nestedArraysJsonText = (depth: number): string => `${'['.repeat(depth)}${']'.repeat(depth)}`;
+
+export const nestedNotJsonText = (depth: number): string =>
+  depth <= 1 ? '{"type":"object"}' : `{"type":"object","not":${'{"not":'.repeat(depth - 2)}{}${'}'.repeat(depth - 2)}}`;
+
+const sendWithDeepValue = (res: http.ServerResponse, body: unknown, deepText: string): void => {
+  res.writeHead(200, { 'content-type': 'application/json' });
+  res.end(JSON.stringify(body).replace(DEEP_PLACEHOLDER, deepText));
+};
+
+const DEEP_TOOLS = [
+  { name: 'deep_result', description: 'Returns a result carrying a nested value', inputSchema: objectSchema({ nesting: { type: 'number' }, notifyNesting: { type: 'number' } }, ['nesting']) },
+  { name: 'deep_output', description: 'Declares an outputSchema nested to a chosen depth', inputSchema: objectSchema({}), outputSchema: '__deep_value__' },
+];
 
 const textResult = (text: string): Record<string, unknown> => ({ content: [{ type: 'text', text }] });
 
@@ -208,6 +226,28 @@ export const startMcpHttpFixture = async (options: McpHttpFixtureOptions): Promi
     res.writeHead(401, { 'www-authenticate': challenge, 'content-type': 'application/json' });
     res.end(JSON.stringify(rpcError(undefined, -32001, 'unauthorized')));
     return true;
+  };
+
+  const listedTools = (): readonly unknown[] => (options.deepTools === undefined ? TOOLS : [...TOOLS, ...DEEP_TOOLS]);
+
+  const sendToolList = (res: http.ServerResponse, body: unknown): void => {
+    if (options.deepTools === undefined) {
+      sendJson(res, 200, body);
+      return;
+    }
+    sendWithDeepValue(res, body, nestedNotJsonText(options.deepTools.outputSchemaNesting ?? 1));
+  };
+
+  const sendDeepResult = (res: http.ServerResponse, id: unknown, nesting: number, notifyNesting: number | undefined): void => {
+    const response = JSON.stringify(complete(id, { ...textResult('deep result'), _meta: { extra: '__deep_value__' } })).replace(DEEP_PLACEHOLDER, nestedArraysJsonText(nesting));
+    if (notifyNesting === undefined) {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(response);
+      return;
+    }
+    startSse(res);
+    res.write(`data: {"jsonrpc":"2.0","method":"notifications/message","params":{"level":"info","data":${nestedArraysJsonText(notifyNesting)}}}\n\n`);
+    res.end(`data: ${response}\n\n`);
   };
 
   const startSse = (res: http.ServerResponse): void => {
@@ -333,7 +373,8 @@ export const startMcpHttpFixture = async (options: McpHttpFixtureOptions): Promi
           sendJson(res, 200, complete(rpc.id, textResult(`hello ${name_}`)));
           return;
         }
-        sendJson(res, 200, {
+        const metaNesting = options.deepTools?.elicitationMetaNesting;
+        const elicitation = {
           jsonrpc: '2.0',
           id: rpc.id,
           result: {
@@ -345,12 +386,15 @@ export const startMcpHttpFixture = async (options: McpHttpFixtureOptions): Promi
                   mode: 'form',
                   message: 'Who are you?',
                   requestedSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
+                  ...(metaNesting === undefined ? {} : { _meta: '__deep_value__' }),
                 },
               },
             },
             requestState: 'ask',
           },
-        });
+        };
+        if (metaNesting === undefined) sendJson(res, 200, elicitation);
+        else sendWithDeepValue(res, elicitation, nestedArraysJsonText(metaNesting));
         return;
       }
       case 'mrtr_url': {
@@ -379,6 +423,10 @@ export const startMcpHttpFixture = async (options: McpHttpFixtureOptions): Promi
             inputRequests: { pick: { method: 'sampling/createMessage', params: { messages: [], maxTokens: 10 } } },
           },
         });
+        return;
+      }
+      case 'deep_result': {
+        sendDeepResult(res, rpc.id, Number(args['nesting']), typeof args['notifyNesting'] === 'number' ? args['notifyNesting'] : undefined);
         return;
       }
       case 'structured': {
@@ -503,7 +551,7 @@ export const startMcpHttpFixture = async (options: McpHttpFixtureOptions): Promi
         });
         return;
       case 'tools/list':
-        sendJson(res, 200, complete(rpc.id, { tools: TOOLS, ttlMs: 0, cacheScope: 'private' }));
+        sendToolList(res, complete(rpc.id, { tools: listedTools(), ttlMs: 0, cacheScope: 'private' }));
         return;
       case 'tools/call':
         await callTool(rpc, req, res);
@@ -568,7 +616,7 @@ export const startMcpHttpFixture = async (options: McpHttpFixtureOptions): Promi
       return;
     }
     if (rpc.method === 'tools/list') {
-      sendJson(res, 200, complete(rpc.id, { tools: TOOLS }));
+      sendToolList(res, complete(rpc.id, { tools: listedTools() }));
       return;
     }
     if (rpc.method === 'tools/call') {

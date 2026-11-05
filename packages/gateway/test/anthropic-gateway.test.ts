@@ -26,6 +26,7 @@ describe('anthropic adapter through the gateway: text', () => {
   it('streams text deltas and completes with usage that includes the cache fields', async () => {
     const gateway = await startAnthropicGateway({
       capabilities: BREAKPOINTS,
+      apiVersion: '2023-06-01',
       script: [
         anthropicStream([
           anthropicMessageStart({ input_tokens: 10, cache_creation_input_tokens: 100, cache_read_input_tokens: 50, output_tokens: 1 }),
@@ -84,7 +85,7 @@ describe('anthropic adapter through the gateway: text', () => {
     expect(textOf(terminal.response)).toBe('x');
   });
 
-  it('turns a thinking block into a reasoning item before the text, keeping its signature', async () => {
+  it('turns a thinking block into a reasoning item before the text and carries its signature only inside the signed envelope', async () => {
     const gateway = await startAnthropicGateway({
       script: [
         anthropicStream([
@@ -96,6 +97,7 @@ describe('anthropic adapter through the gateway: text', () => {
           ...anthropicTextBlock(1, ['answer']),
           ...anthropicMessageEnd('end_turn'),
         ]),
+        anthropicTextReply(['again']),
       ],
     });
     const frames = await streamResponse(gateway);
@@ -103,7 +105,12 @@ describe('anthropic adapter through the gateway: text', () => {
     expect(terminal.response.output.map((item: any) => item.type)).toEqual(['reasoning', 'message']);
     expect(textOf(terminal.response)).toBe('answer');
     expect(frames.filter((frame) => frame.data.type === 'response.reasoning.delta').map((frame) => frame.data.delta).join('')).toBe('hmm');
-    expect(JSON.stringify(terminal.response.output[0])).toContain('"sig"');
+    expect(terminal.response.output[0]).not.toHaveProperty('signature');
+    expect(JSON.stringify(terminal.response.output[0])).not.toContain('"sig"');
+    await streamResponse(gateway, { input: [...userInput('hello'), ...terminal.response.output, ...userInput('again')] });
+    const sent = gateway.fake.requests.at(-1)?.body as { messages: Array<{ content: unknown }> };
+    const thinking = sent.messages.flatMap((message) => (Array.isArray(message.content) ? message.content : [])).filter((block: any) => block.type === 'thinking');
+    expect(thinking).toEqual([{ type: 'thinking', thinking: 'hmm', signature: 'sig' }]);
   });
 });
 
@@ -299,16 +306,27 @@ describe('anthropic adapter through the gateway: failures', () => {
     expect(gateway.fake.requests).toHaveLength(2);
   });
 
-  it('surfaces the final 429 with a Retry-After header when retries are exhausted', async () => {
+  it('surfaces the final 429 with its Retry-After and no deferral when the next 7 s wait does not fit the remaining budget', async () => {
     const gateway = await startAnthropicGateway({
-      script: [anthropicErrorReply(429, 'rate_limit_error', 'slow down', { 'retry-after': '7' })],
-      config: { retry: { maxAttempts: 1, baseMs: 100, maxMs: 10_000 } },
+      script: [anthropicErrorReply(429, 'rate_limit_error', 'slow down', { 'retry-after': '7' }), anthropicErrorReply(429, 'rate_limit_error', 'slow down', { 'retry-after': '7' })],
+      config: { retry: { maxAttempts: 1, totalWaitMs: 10_000, baseMs: 100, maxMs: 10_000 } },
     });
-    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    const pending = postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi') });
+    let settled = false;
+    const settle = (): void => {
+      settled = true;
+    };
+    void pending.then(settle, settle);
+    await waitFor(() => settled || gateway.timers.pending().length > 0, { description: 'the 7 s wait or the answer' });
+    const waits = gateway.timers.pending().map((timer) => timer.delayMs);
+    gateway.timers.advance(7000);
+    const response = await readJson(await pending);
+    expect(waits).toEqual([7000]);
     expect(response.status).toBe(429);
     expect(response.headers['retry-after']).toBe('7');
+    expect(response.headers['momonga-deferred']).toBeUndefined();
     expectErrorBody(response.body, { type: 'too_many_requests', code: 'rate_limit_error' });
-    expect(response.body.error.message).toContain('slow down');
+    expect(gateway.fake.requests).toHaveLength(2);
   });
 
   it('answers an authentication failure with 401 authentication_failed and does not retry', async () => {

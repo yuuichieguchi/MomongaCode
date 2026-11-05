@@ -1,11 +1,13 @@
 import { isRecord } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import type { AdapterRequest, StreamEvent, Usage } from '@momonga/protocol';
+import { forbidsTools } from '../../core/tool-choice.ts';
 import { StreamFailure, UpstreamProtocolError } from '../shared/failures.ts';
+import { parseUpstreamJson } from '../shared/upstream-json.ts';
 import { MAX_NDJSON_LINE_BYTES, MAX_TOOL_CALLS } from '../shared/limits.ts';
 import { ResponseEmitter } from '../shared/response-emitter.ts';
 
-export type OllamaStreamOptions = { request: AdapterRequest; clock: Clock };
+export type OllamaStreamOptions = { request: AdapterRequest; clock: Clock; retryAfterMs?: number };
 
 const invalid = (what: string): UpstreamProtocolError => new UpstreamProtocolError(`the upstream sent a malformed chunk: ${what}`);
 
@@ -44,8 +46,8 @@ class OllamaStreamDriver {
   private finished = false;
 
   constructor(options: OllamaStreamOptions) {
-    this.emitter = new ResponseEmitter({ clock: options.clock, model: options.request.model, request: options.request });
-    this.toolsAllowed = options.request.tool_choice !== 'none';
+    this.emitter = new ResponseEmitter({ clock: options.clock, model: options.request.model, request: options.request, ...(options.retryAfterMs === undefined ? {} : { retryAfterMs: options.retryAfterMs }) });
+    this.toolsAllowed = !forbidsTools(options.request.tool_choice);
   }
 
   get hasStarted(): boolean {
@@ -81,12 +83,7 @@ class OllamaStreamDriver {
   }
 
   private apply(line: string): void {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      throw invalid('it is not valid JSON');
-    }
+    const parsed = parseUpstreamJson(line, invalid);
     if (!isRecord(parsed)) throw invalid('it is not a JSON object');
     if (!this.started) {
       this.started = true;

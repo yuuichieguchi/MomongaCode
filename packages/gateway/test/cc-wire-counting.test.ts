@@ -1,3 +1,4 @@
+import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
 import { canonicalJson } from '@momonga/foundation';
 import { wireOf, wireTokensOf } from '@momonga/gateway';
@@ -89,19 +90,18 @@ describe('renderWire is byte-equal to the wire create sends', () => {
   it.for(cases)('%s', async ([, mode, request]) => {
     const fake = await startFake({ scenario: scenarioFor(mode) });
     const adapter = makeAdapter(fake, {
-      toolCalling: () => mode,
       capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: mode }),
     });
     expect(adapter.renderWire).toBeTypeOf('function');
     await collect(adapter, request);
-    expect(JSON.stringify(adapter.renderWire?.(request, TARGET))).toBe(JSON.stringify(wireOf(lastCompletionBody(fake))));
+    expect(JSON.stringify(adapter.renderWire?.(request, TARGET, { reasoningOrigin: EVERY_REASONING_IS_OWN, capabilities: await adapter.capabilities(TARGET) }))).toBe(JSON.stringify(wireOf(lastCompletionBody(fake))));
   });
 });
 
 describe('renderWire with lenient items in native mode with tools', () => {
   const lenientNative = async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
-    return makeAdapter(fake, { toolCalling: () => 'native', capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: 'native' }) });
+    return makeAdapter(fake, { capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: 'native' }) });
   };
 
   it('renders a lone output as a raw tool message with the raw text, never a tool_result block', async () => {
@@ -109,7 +109,7 @@ describe('renderWire with lenient items in native mode with tools', () => {
     const wire = adapter.renderWire?.(
       { model: 'system', input: [{ type: 'function_call_output', call_id: 'c1', output: 'a < b </tool_result>' }] },
       TARGET,
-      { lenientItems: { callNames: { c1: 'read_file' }, withTools: true } },
+      { lenientItems: { callNames: { c1: 'read_file' }, withTools: true }, reasoningOrigin: EVERY_REASONING_IS_OWN, capabilities: await adapter.capabilities(TARGET) },
     );
     expect(wire).toEqual({ messages: [{ role: 'tool', tool_call_id: 'c1', content: 'a < b </tool_result>' }] });
     expect(JSON.stringify(wire)).not.toContain('<tool_result');
@@ -120,7 +120,7 @@ describe('renderWire with lenient items in native mode with tools', () => {
     const wire = adapter.renderWire?.(
       { model: 'system', input: [{ type: 'function_call', call_id: 'c1', name: 'read_file', arguments: '{"path":"a"}' }] },
       TARGET,
-      { lenientItems: { callNames: { c1: 'read_file' }, withTools: true } },
+      { lenientItems: { callNames: { c1: 'read_file' }, withTools: true }, reasoningOrigin: EVERY_REASONING_IS_OWN, capabilities: await adapter.capabilities(TARGET) },
     );
     expect(wire).toEqual({
       messages: [
@@ -327,7 +327,6 @@ describe('lenient lone-item counts', () => {
 describe('counting for a named target of the alias', () => {
   const counterAdapter = (fake: FakeChatCompletionsServer, inputTokens: number) =>
     makeAdapter(fake, {
-      toolCalling: () => 'constrained',
       capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: 'constrained', tokenCounting: 'calibrated' }),
       countTokens: async (): Promise<CountTokensResult> => ({ input_tokens: inputTokens, method: 'calibrated', error_bound: 3, error_shape: { ratio: 0, minimum: 3 } }),
     });
@@ -371,7 +370,6 @@ describe('a target with its own counter', () => {
     const fake = await startFake({ scenario: 'json-schema-only' });
     const seen: CountTokensRequest[] = [];
     const adapter = makeAdapter(fake, {
-      toolCalling: () => 'constrained',
       capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: 'constrained', tokenCounting: 'calibrated' }),
       countTokens: async (_target, request): Promise<CountTokensResult> => {
         seen.push(request);

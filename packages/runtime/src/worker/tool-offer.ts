@@ -79,6 +79,14 @@ export const offerFor = (input: ToolOfferInput): ToolOffer => {
   };
 };
 
+export type OfferedRecord = { type: 'tool.offered'; names: string[] };
+
+export const offeredRecordFor = (recorded: readonly string[] | undefined, names: readonly string[]): OfferedRecord | undefined => {
+  const known = new Set(recorded);
+  if (recorded !== undefined && names.every((name) => known.has(name))) return undefined;
+  return { type: 'tool.offered', names: [...new Set([...known, ...names])].sort() };
+};
+
 export type OfferedInBody = { tools: string[]; catalog: string[] };
 
 const catalogOfLoader = (runId: string, loader: Record<string, unknown>): string[] => {

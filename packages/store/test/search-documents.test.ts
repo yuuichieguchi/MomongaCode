@@ -14,11 +14,11 @@ const indexMatches = (dbPath: string, phrase: string): number =>
 const longOutput = (head: string, middle: string, tail: string): string => [head, 'a'.repeat(9000), middle, 'b'.repeat(9000), tail].join('\n');
 
 describe('search documents', () => {
-  it('builds one run document with the task, final text, touched paths and outcome, by code', () => {
+  it('builds one run document with the task, final text, touched paths and outcome, by code', async () => {
     const { store, dbPath, clock, dir } = harness();
     const project = projectDir(dir, 'a');
     store.trust.set(project, 'trusted');
-    const run = finishedRun(store, project, 'rename the widget parser', [
+    const run = await finishedRun(store, project, 'rename the widget parser', [
       { text: 'intermediate musing', tool: { name: 'Read', path: '/work/a/src/widget.ts', output: 'recorded tool text' } },
       { text: 'the parser is renamed' },
     ]);
@@ -34,9 +34,9 @@ describe('search documents', () => {
     expect(runDoc?.body).not.toContain('recorded tool text');
   });
 
-  it('builds one step document per step with its text, tool name, subject and seq range', () => {
+  it('builds one step document per step with its text, tool name, subject and seq range', async () => {
     const { store, dbPath } = harness();
-    const run = finishedRun(store, '/work/a', 'task', [
+    const run = await finishedRun(store, '/work/a', 'task', [
       { text: 'first step says hello', tool: { name: 'Grep', path: '/work/a/one.ts', output: 'first output' } },
       { text: 'second step says bye', tool: { name: 'Read', path: '/work/a/two.ts', output: 'second output' } },
     ]);
@@ -62,9 +62,9 @@ describe('search documents', () => {
     expect(second?.seq_to).toBeGreaterThanOrEqual(seqOf('tool.completed', 2));
   });
 
-  it('keeps only the head and tail of a long output, including a tail beyond the redactor cap', () => {
+  it('keeps only the head and tail of a long output, including a tail beyond the redactor cap', async () => {
     const { store, dbPath } = harness();
-    const run = finishedRun(store, '/work/a', 'task', [{ tool: { name: 'Read', path: '/work/a/big.log', output: longOutput('HEADMARK', 'MIDDLEMARK', 'TAILMARK') } }]);
+    const run = await finishedRun(store, '/work/a', 'task', [{ tool: { name: 'Read', path: '/work/a/big.log', output: longOutput('HEADMARK', 'MIDDLEMARK', 'TAILMARK') } }]);
     indexAll(store);
     const body = docsOf(dbPath, run.id).map((doc) => doc.body).join('\n');
     expect(body).toContain('HEADMARK');
@@ -72,23 +72,23 @@ describe('search documents', () => {
     expect(body).not.toContain('MIDDLEMARK');
   });
 
-  it('records the outcome of a failed run', () => {
+  it('records the outcome of a failed run', async () => {
     const { store, dbPath } = harness();
-    const run = finishedRun(store, '/work/a', 'task', [], 'FAILED');
+    const run = await finishedRun(store, '/work/a', 'task', [], 'FAILED');
     indexAll(store);
     expect(docsOf(dbPath, run.id).find((doc) => doc.level === 'run')?.outcome).toBe('FAILED');
   });
 
-  it('marks a run of an untrusted folder with the untrusted origin', () => {
+  it('marks a run of an untrusted folder with the untrusted origin', async () => {
     const { store, dbPath } = harness();
-    const run = finishedRun(store, '/work/a', 'task');
+    const run = await finishedRun(store, '/work/a', 'task');
     indexAll(store);
     expect(docsOf(dbPath, run.id).find((doc) => doc.level === 'run')?.origin).toBe('untrusted');
   });
 
-  it('makes a secret planted in a tool output unfindable in the bodies and in the index', () => {
+  it('makes a secret planted in a tool output unfindable in the bodies and in the index', async () => {
     const { store, dbPath } = harness();
-    const run = finishedRun(store, '/work/a', `use ${FAKE_KEY}`, [{ text: `key ${FAKE_KEY}`, tool: { name: 'Read', path: '/work/a/.env', output: `API=${FAKE_KEY}\n` } }]);
+    const run = await finishedRun(store, '/work/a', `use ${FAKE_KEY}`, [{ text: `key ${FAKE_KEY}`, tool: { name: 'Read', path: '/work/a/.env', output: `API=${FAKE_KEY}\n` } }]);
     indexAll(store);
     const bodies = docsOf(dbPath, run.id).map((doc) => doc.body);
     expect(bodies.join('\n')).toContain('[REDACTED]');
@@ -98,10 +98,10 @@ describe('search documents', () => {
     expect(store.search.query({ trusted: true, project: '/work/a' }, { query: 'abcdefghij', scope: 'project' }).anchors).toEqual([]);
   });
 
-  it('never cuts a secret before redacting it, wherever the head and tail end', () => {
+  it('never cuts a secret before redacting it, wherever the head and tail end', async () => {
     const { store, dbPath } = harness();
     const lines = Array.from({ length: 2000 }, (_, index) => `${'x'.repeat(index % 11)} ${FAKE_KEY}`);
-    const run = finishedRun(store, '/work/a', 'task', [{ tool: { name: 'Read', path: '/work/a/keys', output: lines.join('\n') } }]);
+    const run = await finishedRun(store, '/work/a', 'task', [{ tool: { name: 'Read', path: '/work/a/keys', output: lines.join('\n') } }]);
     indexAll(store);
     const body = docsOf(dbPath, run.id).map((doc) => doc.body).join('\n');
     expect(body).not.toMatch(/sk-[a-z0-9]/);
@@ -109,10 +109,10 @@ describe('search documents', () => {
     expect(body).not.toContain('456789');
   });
 
-  it('applies the credentials configured in the injected redactor', () => {
+  it('applies the credentials configured in the injected redactor', async () => {
     const { store, dbPath } = harness();
     const configured = createRedactor({ credentials: ['plain-configured-value'] });
-    const run = finishedRun(store, '/work/a', 'task', [{ tool: { name: 'Read', path: '/work/a/f', output: 'value plain-configured-value end' } }]);
+    const run = await finishedRun(store, '/work/a', 'task', [{ tool: { name: 'Read', path: '/work/a/f', output: 'value plain-configured-value end' } }]);
     store.search.indexBatch({ limit: 10, redactor: configured });
     expect(docsOf(dbPath, run.id).map((doc) => doc.body).join('\n')).not.toContain('plain-configured-value');
     expect(redactor.text('plain-configured-value')).toBe('plain-configured-value');

@@ -136,7 +136,7 @@ describe('compare --gate token, the policies and the code digests', () => {
   it('refuses two reports with the same policy on the same code', () => {
     const policy = { context: { cachePrefix: true } };
     expect(() => compareContextReports(reportWith(policy), reportWith(policy), { seed: 1, gate: 'token' })).toThrow(EvalError);
-    expect(() => compareContextReports(reportWith(), reportWith(), { seed: 1, gate: 'token' })).toThrow(/identical/);
+    expect(() => compareContextReports(reportWith(), reportWith(), { seed: 1, gate: 'token' })).toThrow(/identical policy and an identical code digest/);
   });
 
   it('treats policies that differ only in key order as identical', () => {
@@ -216,5 +216,29 @@ describe('the context report format', () => {
     expect(() => parseContextReport(retired, 'base.json')).toThrow(EvalError);
     expect(() => parseContextReport(retired, 'base.json')).toThrow(/base\.json.*momonga-eval-context-report\/1 .*momonga-eval-context-report\/2/);
     expect(() => parseContextReport(retired, 'base.json')).not.toThrow(/required property/);
+  });
+
+  it('says a version 1 report is retired and names the off-against-on pair that produces a version 2 base', () => {
+    const { policy: _policy, codeDigest: _digest, ...rest } = reportWith();
+    const retired = JSON.stringify({ ...rest, format: 'momonga-eval-context-report/1' });
+    expect(() => parseContextReport(retired, 'base.json')).toThrow(/retired/);
+    expect(() => parseContextReport(retired, 'base.json')).toThrow(/momonga eval context .*--report/);
+    expect(() => parseContextReport(retired, 'base.json')).toThrow(/--settings/);
+    expect(() => parseContextReport(retired, 'base.json')).toThrow(/momonga eval compare .*--gate token/);
+  });
+
+  it('writes version 2 today, with the policy and the code digest of the runs', () => {
+    const stored = JSON.parse(encodeContextReport(reportWith({ context: { cachePrefix: true } }, HEAD_CODE))) as Record<string, unknown>;
+    expect(stored['format']).toBe('momonga-eval-context-report/2');
+    expect(stored['policy']).toEqual({ context: { cachePrefix: true } });
+    expect(stored['codeDigest']).toBe(HEAD_CODE);
+  });
+});
+
+describe('the token gate base: one head, the policy off against on', () => {
+  it('accepts the defaults against a policy turned on, from the same code digest', () => {
+    const base = parseContextReport(encodeContextReport(reportWith({}, HEAD_CODE)), 'base.json');
+    const head = parseContextReport(encodeContextReport(reportWith({ context: { cachePrefix: true } }, HEAD_CODE)), 'head.json');
+    expect(() => compareContextReports(base, head, { seed: 1, gate: 'token' })).not.toThrow();
   });
 });

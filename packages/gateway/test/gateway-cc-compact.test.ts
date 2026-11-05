@@ -224,7 +224,7 @@ describe('summary failures, retries, breaker and fallback', () => {
     ['a reply with a call', callReply],
   ] as const)('answers compaction_invalid_reply after the attempts for %s', async ([, reply]) => {
     const fake = await startFake({ scenario: 'tools-ok', script: [reply()] });
-    const harness = await startCcGateway({ fm: ccAdapterFor(fake) }, { retry: { maxAttempts: 1 } });
+    const harness = await startCcGateway({ fm: ccAdapterFor(fake) }, { retry: { maxAttempts: 1, totalWaitMs: 1 } });
     const response = await compact(harness, {});
     expect(response.status).toBeGreaterThanOrEqual(400);
     expect(response.body.error.code).toBe('compaction_invalid_reply');
@@ -234,7 +234,7 @@ describe('summary failures, retries, breaker and fallback', () => {
   it('falls back to the next candidate after an invalid reply', async () => {
     const first = await startFake({ scenario: 'tools-ok', script: [emptyReply()] });
     const second = await startFake({ scenario: 'tools-ok', script: [textReply('from second')] });
-    const harness = await startCcGateway({ first: ccAdapterFor(first), second: ccAdapterFor(second) }, { retry: { maxAttempts: 1 } });
+    const harness = await startCcGateway({ first: ccAdapterFor(first), second: ccAdapterFor(second) }, { retry: { maxAttempts: 1, totalWaitMs: 1 } });
     const response = await compact(harness, {});
     expect(response.status).toBe(200);
     expect(summaryOfResource(response.body)).toBe('from second');
@@ -259,7 +259,7 @@ describe('summary failures, retries, breaker and fallback', () => {
     ['compaction_invalid_reply', emptyReply],
   ] as const)('keeps the breaker closed after repeated %s failures', async ([code, reply]) => {
     const fake = await startFake({ scenario: 'tools-ok', script: [reply(), reply(), reply()] });
-    const harness = await startCcGateway({ fm: ccAdapterFor(fake) }, { retry: { maxAttempts: 1 }, breaker: { failureThreshold: 2, openMs: 30_000 } });
+    const harness = await startCcGateway({ fm: ccAdapterFor(fake) }, { retry: { maxAttempts: 1, totalWaitMs: 1 }, breaker: { failureThreshold: 2, openMs: 30_000 } });
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const response = await compact(harness, { momonga: { max_summary_tokens: 64 } });
       expect(response.body.error.code).toBe(code);
@@ -300,12 +300,12 @@ describe('stream-level failures of the summary call, classified by code', () => 
     chunks: [{ delta: { role: 'assistant', content: 'part' } }, { delta: {}, finishReason: 'content_filter' }],
   });
 
-  it('retries a protocol failure, counts it against the breaker and falls back after maxAttempts', async () => {
+  it('retries a protocol failure, falls back after maxAttempts and records one failure verdict for the request on the first target', async () => {
     const first = await startFake({ scenario: 'tools-ok', script: [cutStream(), cutStream()] });
     const second = await startFake({ scenario: 'tools-ok', script: [textReply('from second')] });
     const harness = await startCcGateway(
       { first: ccAdapterFor(first), second: ccAdapterFor(second) },
-      { retry: { maxAttempts: 2, baseMs: 10, maxMs: 10 }, breaker: { failureThreshold: 2, openMs: 30_000 } },
+      { retry: { maxAttempts: 2, baseMs: 10, maxMs: 10 }, breaker: { failureThreshold: 1, openMs: 30_000 } },
     );
     const pending = compact(harness, { momonga: { max_summary_tokens: 64 } });
     await waitFor(() => completionBodies(first).length === 1 && harness.timers.pending().length > 0, { description: 'retry backoff' });
@@ -319,7 +319,7 @@ describe('stream-level failures of the summary call, classified by code', () => 
 
   it('answers upstream_protocol_error after the attempts of a single target', async () => {
     const fake = await startFake({ scenario: 'tools-ok', script: [cutStream()] });
-    const harness = await startCcGateway({ fm: ccAdapterFor(fake) }, { retry: { maxAttempts: 1 } });
+    const harness = await startCcGateway({ fm: ccAdapterFor(fake) }, { retry: { maxAttempts: 1, totalWaitMs: 1 } });
     const response = await compact(harness, { momonga: { max_summary_tokens: 64 } });
     expect(response.status).toBeGreaterThanOrEqual(500);
     expect(response.body.error.code).toBe('upstream_protocol_error');

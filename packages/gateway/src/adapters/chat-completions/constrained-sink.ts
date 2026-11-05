@@ -1,11 +1,11 @@
-import { uuidv7 } from '@momonga/foundation';
+import { MAX_JSON_DEPTH, uuidv7 } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { EnvelopeReader } from './envelope-reader.ts';
 import { MalformedOutputError, UpstreamProtocolError } from '../shared/failures.ts';
 import { IncrementalJsonParser, JsonSyntaxError } from './incremental-json.ts';
 import type { IncrementalJsonLimits } from './incremental-json.ts';
 import { MAX_TOOL_CALLS } from '../shared/limits.ts';
-import { MAX_ENVELOPE_CHARS, MAX_JSON_ATOM_CHARS, MAX_JSON_DEPTH, MAX_JSON_KEY_CHARS } from './limits.ts';
+import { MAX_ENVELOPE_CHARS, MAX_JSON_ATOM_CHARS, MAX_JSON_KEY_CHARS } from './limits.ts';
 import type { ResponseEmitter } from '../shared/response-emitter.ts';
 import type { ContentSink } from './stream-driver.ts';
 

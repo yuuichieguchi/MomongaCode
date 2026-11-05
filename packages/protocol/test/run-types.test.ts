@@ -112,6 +112,7 @@ describe('run event payloads', () => {
       | 'instructions.loaded'
       | 'skill.activated'
       | 'tool.loaded'
+      | 'tool.offered'
       | 'loop.warned'
       | 'meter.observed'
       | 'model.rejected'
@@ -345,6 +346,8 @@ describe('run event payloads', () => {
       level: 'info' | 'warning' | 'error';
       message: string;
       code?: string;
+      toolKey?: string;
+      reduction?: { turn: number; from: number; to: number };
     }>();
   });
 
@@ -354,6 +357,8 @@ describe('run event payloads', () => {
       level: 'info' | 'warning' | 'error';
       message: string;
       code?: string;
+      toolKey?: string;
+      reduction?: { turn: number; from: number; to: number };
       id: number;
       runId: string;
       sessionId: string;
@@ -407,7 +412,7 @@ describe('RunState', () => {
         }
       >;
       inFlightModelRequest?: { step: number; attempt: number; digest: string; body: unknown; requestedSeq: number };
-      notes: { level: 'info' | 'warning' | 'error'; message: string; code?: string }[];
+      notes: { level: 'info' | 'warning' | 'error'; message: string; code?: string; toolKey?: string; reduction?: { turn: number; from: number; to: number } }[];
       toolCallCounts: Record<string, number>;
       steps: Record<number, { toolChoice: string; summary: boolean }>;
       lastResponse?: { step: number; incomplete: boolean; incompleteReason?: string; refusal: boolean; callIds: string[] };
@@ -416,6 +421,7 @@ describe('RunState', () => {
       memoriesLoaded?: { id: string; status: MemoryStatus }[];
       activatedSkills: { name: string; content: string; seq: number }[];
       loadedTools: string[];
+      offeredTools?: string[];
       loopWarned?: { signature: string };
       streaming?: { step: number; attempt: number; seen: boolean; items: { itemId: string; text: string }[] };
       mode?: PermissionMode;

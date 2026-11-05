@@ -1,4 +1,5 @@
 import type { ClassifiedError, ErrorBody } from '@momonga/protocol';
+import { preconditionText } from '../../precondition-text.ts';
 import {
   CONTEXT_WINDOW_EXCEEDED,
   CompactionReplyError,
@@ -65,7 +66,11 @@ const classifyHttp = (error: UpstreamHttpError): ClassifiedError => {
     };
   }
   if (status >= 500) {
-    return { retryable: error.retryHint !== false, error: body('server_error', upstreamCode ?? 'upstream_error', error.message) };
+    return {
+      retryable: error.retryHint !== false,
+      ...(error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs }),
+      error: body('server_error', upstreamCode ?? 'upstream_error', error.message),
+    };
   }
   if (status === 413) return { retryable: false, error: body('invalid_request', 'payload_too_large', error.message) };
   if (status === 401 || status === 403) {
@@ -88,8 +93,7 @@ export const createUpstreamClassifier =
       return { retryable: error.errorType !== 'invalid_request' && error.errorType !== 'not_found' && error.code !== GUARDRAIL_VIOLATION, error: body(error.errorType, error.code, error.message) };
     }
     if (error instanceof PreconditionFailedError) {
-      const lines = [error.message, ...(error.detail === undefined ? [] : [error.detail]), ...(error.remediation === undefined ? [] : [`remedy: ${error.remediation}`])];
-      return { retryable: false, error: body('invalid_request', 'precondition_failed', lines.join('\n')) };
+      return { retryable: false, error: body('invalid_request', 'precondition_failed', preconditionText(error.message, error.detail, error.remediation)) };
     }
     if (error instanceof UnsupportedInputError) {
       return { retryable: false, error: body('invalid_request', error.code, error.message, error.param) };

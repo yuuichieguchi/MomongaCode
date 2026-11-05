@@ -16,9 +16,10 @@ export type SeaOptions = UpdateSourceInputs & {
   readonly output: string;
   readonly workDir: string;
   readonly target?: SeaTargetName;
+  readonly journalThreadModule?: string;
 };
 
-export const buildSeaUnsigned = async ({ entry, output, workDir, target = 'darwin-arm64', releaseRepo, teamId, releasePublicKey }: SeaOptions): Promise<void> => {
+export const buildSeaUnsigned = async ({ entry, output, workDir, target = 'darwin-arm64', releaseRepo, teamId, releasePublicKey, journalThreadModule }: SeaOptions): Promise<void> => {
   const nodeBinary = await ensureSeaNode(nodeCacheDir, target);
   fs.rmSync(workDir, { recursive: true, force: true });
   fs.mkdirSync(workDir, { recursive: true });
@@ -27,6 +28,7 @@ export const buildSeaUnsigned = async ({ entry, output, workDir, target = 'darwi
   await bundle({
     entry,
     outfile: main,
+    ...(journalThreadModule === undefined ? {} : { journalThreadModule }),
     ...(releaseRepo === undefined ? {} : { releaseRepo }),
     ...(teamId === undefined ? {} : { teamId }),
     ...(releasePublicKey === undefined ? {} : { releasePublicKey }),

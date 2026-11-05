@@ -1,4 +1,6 @@
-import type { AdapterInputItem, AdapterRequest, FunctionTool, ToolChoice } from '@momonga/protocol';
+import type { AdapterInputItem, AdapterRequest, FunctionTool, ReasoningOrigin, SamplingField, ToolChoice } from '@momonga/protocol';
+import { allowedToolsModeOf } from '../../core/tool-choice.ts';
+import { carriedSamplingOf } from '../shared/sampling.ts';
 import { FULL_KEYWORD_SUPPORT } from '../../probe/lowering.ts';
 import { renderParameters } from '../../probe/schema-dialect.ts';
 import type { SchemaDialect } from '../../probe/schema-dialect.ts';
@@ -20,6 +22,8 @@ export type ChatRequestBody = {
   max_completion_tokens?: number;
   temperature?: number;
   top_p?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
   prompt_cache_key?: string;
 };
 
@@ -35,20 +39,23 @@ const toolOf = (tool: FunctionTool, dialect: SchemaDialect): unknown => {
   };
 };
 
-const toolChoiceOf = (choice: ToolChoice): unknown =>
-  typeof choice === 'string' ? choice : { type: 'function', function: { name: choice.name } };
+const toolChoiceOf = (choice: ToolChoice): unknown => {
+  if (typeof choice === 'string') return choice;
+  if (choice.type === 'function') return { type: 'function', function: { name: choice.name } };
+  return {
+    type: 'allowed_tools',
+    allowed_tools: { mode: allowedToolsModeOf(choice), tools: choice.tools.map((tool) => ({ type: 'function', function: { name: tool.name } })) },
+  };
+};
 
-export const samplingOf = (request: AdapterRequest): Pick<ChatRequestBody, 'temperature' | 'top_p'> => ({
-  ...(request.temperature === undefined || request.temperature === null ? {} : { temperature: request.temperature }),
-  ...(request.top_p === undefined || request.top_p === null ? {} : { top_p: request.top_p }),
-});
+export const samplingOf = (request: AdapterRequest): Pick<ChatRequestBody, SamplingField> => carriedSamplingOf(request);
 
-export const buildNativeBody = (request: AdapterRequest, dialect: SchemaDialect): ChatRequestBody => {
+export const buildNativeBody = (request: AdapterRequest, origin: ReasoningOrigin, dialect: SchemaDialect): ChatRequestBody => {
   const messages: ChatMessage[] = [];
   const tools = request.tools ?? [];
   const system = systemTextOf(request.instructions, request.input);
   if (system.length > 0) messages.push({ role: 'system', content: system.join(SYSTEM_PART_SEPARATOR) });
-  messages.push(...(tools.length === 0 ? plainHistoryOf(request.input, { envelopeReplies: false }) : nativeHistoryOf(request.input)));
+  messages.push(...(tools.length === 0 ? plainHistoryOf(request.input, { envelopeReplies: false, origin: origin }) : nativeHistoryOf(request.input, origin)));
   return {
     model: request.model,
     messages,

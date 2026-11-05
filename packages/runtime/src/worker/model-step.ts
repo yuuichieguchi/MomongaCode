@@ -18,6 +18,7 @@ import { recordCalls, settleCalls } from './tool-step.ts';
 import { pinnedDigestOf } from './pinned-digest.ts';
 import { recordPrefix } from './prefix-record.ts';
 import { cacheControlsOf } from './cache-controls.ts';
+import { offeredRecordFor } from './tool-offer.ts';
 
 const DEADLINE_CODE = 'deadline_exceeded';
 const REFUSAL_CODES = ['guardrail_violation', 'refusal', 'content_filter'];
@@ -33,7 +34,7 @@ const limitReached = (ctx: ClaimContext): LimitReason | undefined => {
   return undefined;
 };
 
-const incompleteFailure = (reason: string | undefined, terminals: ClaimContext['terminals']): Flow => {
+const incompleteFailure = (reason: string | undefined, terminals: ClaimContext['terminals']): Promise<Flow> => {
   if (reason === 'max_output_tokens') return terminals.finish('STOPPED', { stopReason: 'max_tokens' });
   if (reason === 'content_filter') return terminals.finish('STOPPED', { stopReason: 'refusal' });
   return terminals.finish('FAILED', {
@@ -141,12 +142,13 @@ const handleResult = async (
   const { result, timing } = streamed;
   const { journal, terminals } = ctx;
   if (result.kind === 'failed') {
-    if (result.code !== null && REFUSAL_CODES.includes(result.code)) {
+    if (REFUSAL_CODES.includes(result.code)) {
       journal.append([{ type: 'notice', level: 'warning', message: `The model refused the request: ${result.message}`, code: 'model_refused' }]);
       return terminals.finish('STOPPED', { stopReason: 'refusal' });
     }
     if (result.code === DEADLINE_CODE) return terminals.finish('STOPPED', { stopReason: 'timeout' });
-    throw new GatewayFailureError(`${result.code ?? 'error'}: ${result.message}`);
+    if (result.retryable) throw new GatewayFailureError(`${result.code}: ${result.message}`);
+    return terminals.finish('FAILED', { error: { code: result.code, message: result.message } });
   }
   const { response, incomplete } = result;
   const usage = response.usage;
@@ -287,7 +289,7 @@ const streamRecovering = async (
   try {
     return { kind: 'result', streamed: await streamModel(ctx, body, modelKey(ctx.run.id, position.step, position.attempt), position) };
   } catch (error) {
-    const recovery = recoverRejectedCompaction(ctx, error, position);
+    const recovery = await recoverRejectedCompaction(ctx, error, position);
     delete ctx.control.inFlight.modelKey;
     return { kind: 'flow', flow: recovery === 'done' ? 'done' : 'continue' };
   }
@@ -368,11 +370,13 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
     stream: true,
     metadata: { run_id: ctx.run.id, step: String(step) },
   };
-  if (cancelIfInterrupted(ctx) === 'done') return 'done';
+  if ((await cancelIfInterrupted(ctx)) === 'done') return 'done';
   const position = { step, attempt: 1 };
   const prefixRecord = recordPrefix(ctx, built, summarising);
   const body: CreateResponseBody = { ...plainBody, ...cacheControlsOf(ctx, built, prefixRecord?.prefix) };
+  const requestOffered = offeredRecordFor(journal.state.offeredTools, built.tools.map((tool) => tool.name));
   journal.append([
+    ...(requestOffered === undefined ? [] : [requestOffered]),
     ...(wrapUp === undefined ? [] : [{ type: 'notice' as const, level: 'error' as const, message: wrapUp.notice, code: 'context_wrap_up' }]),
     ...(prefixRecord === undefined ? [] : prefixRecord.notices),
     {

@@ -21,7 +21,9 @@ import { cancellableTimer } from './timers.ts';
 import { MINIMUM_INLINE_OUTPUT_CHARS, truncateOutput, useFormattedOutput } from './truncate.ts';
 import { ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
 import type { AnyTool, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
-import { validateToolInput } from './validate.ts';
+import { cleanFailureMessage } from '@momonga/foundation';
+import { toolRefusalKey, unavailable, validateToolInput } from './validate.ts';
+import type { ValidationResult } from './validate.ts';
 
 const DEFAULT_IDEMPOTENCY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_MAX_INLINE_OUTPUT_CHARS = 30_000;
@@ -48,6 +50,8 @@ type BatchCallbacks = {
   leaseLost?(): boolean;
   onLeaseLost?(): void;
   onOutcome?(outcome: ResultOutcome): void;
+  onWarning?(message: string, toolKey: string): void;
+  toolUnavailable?(toolKey: string): boolean;
   traceparentFor?(callId: string): { traceparent: string; tracestate?: string } | undefined;
   onStarted?(callId: string, idemKey: string, basis: ApprovalBasis): void | Promise<void>;
   onUpdate?(callId: string, content: ToolContent[]): void;
@@ -465,6 +469,25 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   };
   const activeKeys = new Map<string, number>();
 
+  const isRefused = (batch: BatchCore, tool: AnyTool): boolean => batch.toolUnavailable?.(toolRefusalKey(tool)) === true;
+
+  const announceValidatorFailure = (batch: BatchCore, tool: AnyTool, detail: string): void => {
+    const toolKey = toolRefusalKey(tool);
+    if (batch.toolUnavailable?.(toolKey) === true) return;
+    const origin = tool.server === undefined ? '' : ` of MCP server ${JSON.stringify(cleanFailureMessage(tool.server))}`;
+    const message = `Tool ${cleanFailureMessage(tool.name)}${origin} is unavailable for the rest of this run: its schema validator failed: ${detail}`;
+    options.onWarning(message);
+    batch.onWarning?.(message, toolKey);
+  };
+
+  const validateFor = (batch: BatchCore, tool: AnyTool, raw: unknown): ValidationResult =>
+    isRefused(batch, tool) ? unavailable(tool, undefined) : validateToolInput(tool, raw);
+
+  const rejectionOf = (batch: BatchCore, tool: AnyTool, validation: Extract<ValidationResult, { ok: false }>): string => {
+    if (validation.reason === 'validator-failed' && validation.detail !== undefined) announceValidatorFailure(batch, tool, validation.detail);
+    return validation.message;
+  };
+
   const scopedBlobs = (runId: string): BlobPort => ({
     put: (data, putOptions) => blobs.put(data, { ...putOptions, runId }),
     read: ((handle: string, range: never) => blobs.read(handle, range, { runId })) as BlobPort['read'],
@@ -614,8 +637,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         return failedOutcome(call.callId, `${tool.name} was not run: a PreToolUse hook stopped the run: ${reason}`);
       }
       if (verdict?.updatedInput !== undefined) {
-        const validation = validateToolInput(tool, verdict.updatedInput);
-        if (!validation.ok) return failedOutcome(call.callId, `A PreToolUse hook returned an input that ${tool.name} rejects: ${validation.message}`);
+        const validation = validateFor(batch, tool, verdict.updatedInput);
+        if (!validation.ok) return failedOutcome(call.callId, `A PreToolUse hook returned an input that ${tool.name} rejects: ${rejectionOf(batch, tool, validation)}`);
         let subject: PermissionSubject;
         try {
           subject = tool.subject(validation.value, subjectContextOf(batch));
@@ -692,11 +715,11 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     return undefined;
   };
 
-  const hookedInputOf = (tool: AnyTool, lookup: ToolIdempotencyLookup | undefined): { input: unknown } | { failure: string } | undefined => {
+  const hookedInputOf = (batch: BatchCore, tool: AnyTool, lookup: ToolIdempotencyLookup | undefined): { input: unknown } | { failure: string } | undefined => {
     const record = lookup?.s === 'PENDING' || lookup?.s === 'UNKNOWN' ? lookup.rec.meta['hookInput'] : undefined;
     if (record === undefined) return undefined;
-    const validation = validateToolInput(tool, record);
-    return validation.ok ? { input: validation.value } : { failure: validation.message };
+    const validation = validateFor(batch, tool, record);
+    return validation.ok ? { input: validation.value } : { failure: rejectionOf(batch, tool, validation) };
   };
 
   const admit = async (call: ToolCall, batch: BatchInput, access: BatchAccess | undefined, stage: GateStage = 'enforce'): Promise<Admission> => {
@@ -719,8 +742,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       const available = (offered === undefined ? batch.toolSet.tools.map((candidate) => candidate.name) : offered.tools).join(', ');
       return outcome(failedOutcome(call.callId, `Unknown tool "${call.name}". Available tools: ${available}`));
     }
-    const validation = validateToolInput(tool, call.arguments);
-    if (!validation.ok) return outcome(failedOutcome(call.callId, validation.message));
+    const validation = validateFor(batch, tool, call.arguments);
+    if (!validation.ok) return outcome(failedOutcome(call.callId, rejectionOf(batch, tool, validation)));
     let input = validation.value;
     const cwd = batch.session.cwd;
 
@@ -732,7 +755,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       if (existing.s === 'UNKNOWN') {
         return outcome({ ...failedOutcome(call.callId, interruptedOutput(tool)), idemKey: key, reconciled: 'unknown' });
       }
-      const hooked = hookedInputOf(tool, existing);
+      const hooked = hookedInputOf(batch, tool, existing);
       if (hooked !== undefined && 'failure' in hooked) return outcome(failedOutcome(call.callId, hooked.failure));
       return { kind: 'run', plan: { kind: 'recovery', call, tool, input: hooked === undefined ? input : hooked.input, key, batch } };
     }
@@ -741,7 +764,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     const existing = idempotency.get(key);
     if (existing?.s === 'COMPLETED') return outcome(storedOutcome(existing.result));
     const recovered = existing?.s === 'PENDING' || existing?.s === 'UNKNOWN' ? existing.rec : undefined;
-    const hooked = hookedInputOf(tool, existing);
+    const hooked = hookedInputOf(batch, tool, existing);
     if (hooked !== undefined && 'failure' in hooked) return outcome(failedOutcome(call.callId, hooked.failure));
     if (hooked !== undefined) input = hooked.input;
 
@@ -1112,7 +1135,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           }
           if (result.status === 'pending') return scope.waiting(result);
           scope.disarmTimer();
-          const hooked = await applyPostToolHooks(batch, call, tool, target.input, result);
+          const { validatorFailure, ...settled } = result;
+          if (validatorFailure !== undefined) announceValidatorFailure(batch, tool, validatorFailure);
+          const hooked = await applyPostToolHooks(batch, call, tool, target.input, settled);
           return scope.complete(finalizeResult(hooked, tool, outputLimit, batch.runId, batch.formatOutput), reconciled);
         }
         await settleWithin(running, ABORT_SETTLE_LIMIT_MS);

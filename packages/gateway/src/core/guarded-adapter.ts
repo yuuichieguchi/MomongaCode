@@ -1,6 +1,8 @@
 import type { AdapterTarget, ClassifiedError, ErrorBody, HealthResult, ProviderAdapter, StreamEvent } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError } from './errors.ts';
+import { sealedEventOf } from './sealed-events.ts';
 import type { Redactor } from './redaction.ts';
+import type { ReasoningOriginCodec } from './reasoning-origin.ts';
 
 const guardBrand: unique symbol = Symbol('guardedAdapter');
 
@@ -16,19 +18,23 @@ export class GuardedAdapterError extends Error {
   }
 }
 
+const UNNAMED_FAILURE_CODE = 'upstream_error';
+
 const CODE_SHAPE = /^[A-Za-z0-9_.:-]{1,64}$/;
 const PARAM_SHAPE = /^[A-Za-z0-9_.[\]:-]{1,128}$/;
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor): GuardedAdapter => {
+export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoningOrigin: ReasoningOriginCodec): GuardedAdapter => {
   const shaped = (value: unknown, shape: RegExp): string | null =>
     typeof value === 'string' && shape.test(value) && redactor.text(value) === value ? value : null;
+
+  const namedCode = (code: unknown): string => shaped(code, CODE_SHAPE) ?? UNNAMED_FAILURE_CODE;
 
   const guardedBody = (body: ErrorBody): ErrorBody => ({
     message: redactor.text(body.message),
     type: body.type,
-    code: shaped(body.code, CODE_SHAPE),
+    code: namedCode(body.code),
     param: shaped(body.param, PARAM_SHAPE),
   });
 
@@ -39,7 +45,7 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor): Guarde
 
   const guardedGatewayError = (error: GatewayError): GatewayError => {
     const message = redactor.text(error.body.message);
-    const code = shaped(error.body.code, CODE_SHAPE);
+    const code = namedCode(error.body.code);
     const param = shaped(error.body.param, PARAM_SHAPE);
     if (message === error.body.message && code === error.body.code && param === error.body.param) return error;
     return new GatewayError({ status: error.status, type: error.body.type, code, param, headers: { ...error.headers }, message });
@@ -56,19 +62,20 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor): Guarde
     if (event.type !== 'response.failed') return event;
     const { error } = event.response;
     if (typeof error !== 'object' || error === null) return event;
-    const rebuilt: unknown = {
+    const rebuilt = {
       ...event,
       response: {
         ...event.response,
         error: {
-          code: shaped(error.code, CODE_SHAPE),
+          code: namedCode(error.code),
           type: error.type,
           message: redactor.text(error.message),
           param: 'param' in error ? shaped(error.param, PARAM_SHAPE) : null,
+          ...(error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs }),
         },
       },
     };
-    return rebuilt as StreamEvent;
+    return rebuilt as unknown as StreamEvent;
   };
 
   const converting = async <T>(step: () => Promise<T>): Promise<T> => {
@@ -87,12 +94,12 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor): Guarde
     }
   };
 
-  const guardedIterator = (source: AsyncIterator<StreamEvent>): AsyncIterator<StreamEvent> => {
+  const guardedIterator = (source: AsyncIterator<StreamEvent>, model: string): AsyncIterator<StreamEvent> => {
     const { return: sourceReturn, throw: sourceThrow } = source;
     return {
       next: async (...args) => {
         const result = await converting(() => source.next(...args));
-        return result.done === true ? result : { done: false, value: guardedEvent(result.value) };
+        return result.done === true ? result : { done: false, value: sealedEventOf(reasoningOrigin, inner.kind, model, guardedEvent(result.value)) };
       },
       return: async (value) =>
         sourceReturn === undefined ? { done: true, value } : converting(() => sourceReturn.call(source, value)),
@@ -117,10 +124,11 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor): Guarde
 
   return {
     kind: inner.kind,
+    sampling: inner.sampling,
     capabilities: (target) => converting(() => inner.capabilities(target)),
     create: (request, ctx) => {
       const source = convertingSync(() => inner.create(request, ctx));
-      return { [Symbol.asyncIterator]: () => guardedIterator(convertingSync(() => source[Symbol.asyncIterator]())) };
+      return { [Symbol.asyncIterator]: () => guardedIterator(convertingSync(() => source[Symbol.asyncIterator]()), ctx.target.model) };
     },
     classify,
     ...(countTokens === undefined ? {} : { countTokens: (request, ctx) => converting(() => countTokens.call(inner, request, ctx)) }),
@@ -129,7 +137,8 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor): Guarde
     ...(renderWire === undefined ? {} : { renderWire: (request, target, options) => convertingSync(() => renderWire.call(inner, request, target, options)) }),
     ...(renderCompactWire === undefined
       ? {}
-      : { renderCompactWire: (request, target, cap) => convertingSync(() => renderCompactWire.call(inner, request, target, cap)) }),
+      : { renderCompactWire: (request, target, cap, origin, capabilities) => convertingSync(() => renderCompactWire.call(inner, request, target, cap, origin, capabilities)) }),
+    toolChoiceWire: (capabilities, target) => inner.toolChoiceWire(capabilities, target),
     ...(health === undefined ? {} : { health: guardedHealth(health) }),
     ...(close === undefined ? {} : { close: () => close.call(inner) }),
     [guardBrand]: true,

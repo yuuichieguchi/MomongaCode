@@ -1,3 +1,4 @@
+import { contextOf } from './own-reasoning.ts';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
 import { canonicalJson } from '@momonga/foundation';
@@ -18,6 +19,7 @@ import {
   userText,
   TARGET,
 } from './cc-support.ts';
+import { CC_CAPABILITIES } from './cc-support.ts';
 
 const ALL_KEYWORDS: Record<ProbeKeyword, boolean> = {
   enum: true,
@@ -29,7 +31,7 @@ const ALL_KEYWORDS: Record<ProbeKeyword, boolean> = {
   additionalProperties: true,
 };
 
-const constrained = { toolCalling: () => 'constrained' as const };
+const constrained = { capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: 'constrained' as const }) };
 
 const contentChunks = (parts: string[]): FakeStreamChunk[] => [
   { delta: { role: 'assistant', content: '' } },
@@ -170,7 +172,7 @@ describe('constrained streaming', () => {
     });
     const controller = new AbortController();
     const adapter = makeAdapter(fake, constrained);
-    const iterator = adapter.create(toolRequest('hello'), { signal: controller.signal, target: TARGET, attempt: 1 })[Symbol.asyncIterator]();
+    const iterator = adapter.create(toolRequest('hello'), await contextOf(adapter, TARGET, controller.signal))[Symbol.asyncIterator]();
     let delta: any;
     for (;;) {
       const step = await iterator.next();

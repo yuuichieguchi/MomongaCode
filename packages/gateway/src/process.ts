@@ -218,7 +218,7 @@ const createFmAdapter = async (name: string, target: Extract<ResolvedTarget, { a
     ...(target.model === undefined ? {} : { declaredModel: target.model }),
     ...(target.outputBoundField === undefined ? {} : { declaredOutputBoundField: target.outputBoundField }),
   });
-  return createChatCompletionsAdapter({ ...withBinaryGuard(managed, context.binary, files), clock });
+  return createChatCompletionsAdapter({ ...withBinaryGuard(managed, context.binary, files), sampling: { renders: [] }, clock });
 };
 
 const endpointProbeKeyOf = (name: string, target: ResolvedTarget): EndpointProbeKey => {
@@ -258,7 +258,6 @@ const createAutoChatCompletionsAdapter = async (
       await probed.verify(signal);
       return upstream;
     },
-    toolCalling: () => probed.toolCalling(),
     keywordSupport: () => probed.keywordSupport(),
     schemaDialect: () => probed.schemaDialect(),
     capabilities: () => probed.capabilities(),
@@ -530,13 +529,13 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       };
       switch (target.adapter) {
         case 'chat-completions':
-          adapters[name] = createChatCompletionsAdapter({ ...common, toolCalling: () => mode, schemaDialect: () => target.capabilities.schemaDialect, apiKey: readKey });
+          adapters[name] = createChatCompletionsAdapter({ ...common, schemaDialect: () => target.capabilities.schemaDialect, apiKey: readKey });
           break;
         case 'open-responses':
           adapters[name] = createOpenResponsesAdapter({ ...common, apiKey: readKey });
           break;
         case 'anthropic':
-          adapters[name] = createAnthropicAdapter({ ...common, apiKey: (adapterTarget, signal) => requiredKey(readKey, adapterTarget, signal) });
+          adapters[name] = createAnthropicAdapter({ ...common, apiVersion: target.apiVersion, apiKey: (adapterTarget, signal) => requiredKey(readKey, adapterTarget, signal) });
           break;
       }
     }

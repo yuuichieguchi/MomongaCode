@@ -1,5 +1,5 @@
-import { createHmac } from 'node:crypto';
 import type { ChatCompletionsAdapter } from '@momonga/gateway';
+import { createSignedEnvelope } from '../src/core/signed-envelope.ts';
 import { applyCapabilityOverride } from '@momonga/protocol';
 import type { CapabilityOverride, ToolCallingMode } from '@momonga/protocol';
 import type { FakeChatCompletionsServer, FakeScriptedReply } from '@momonga/testkit';
@@ -77,7 +77,6 @@ export const ccAdapterFor = (
   capabilities: CapabilityOverride = {},
 ): ChatCompletionsAdapter =>
   makeAdapter(fake, {
-    toolCalling: () => toolCalling,
     capabilities: async () => applyCapabilityOverride({ ...CC_CAPABILITIES, toolCalling }, capabilities),
   });
 
@@ -97,9 +96,7 @@ export const startCcGateway = (
 };
 
 export const signedCompaction = (summary: string): { type: 'compaction'; encrypted_content: string } => {
-  const payload = Buffer.from(JSON.stringify({ v: 1, summary }), 'utf8').toString('base64url');
-  const mac = createHmac('sha256', HMAC_KEY).update(payload).digest('base64url');
-  return { type: 'compaction', encrypted_content: `${payload}.${mac}` };
+  return { type: 'compaction', encrypted_content: createSignedEnvelope(HMAC_KEY).seal({ v: 1, summary }, 'compaction') };
 };
 
 export const summaryOfResource = (resource: { output: Array<{ type: string; encrypted_content?: string }> }): string => {

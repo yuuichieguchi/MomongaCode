@@ -1,3 +1,4 @@
+import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
 import { endpointKeyOf, loadEndpointRecord, probeOllamaTarget, runProbe } from '@momonga/gateway';
 import type { AdapterRequest, Capabilities, ReasoningEffort } from '@momonga/protocol';
@@ -38,7 +39,7 @@ const askedWith = (effort: ReasoningEffort): AdapterRequest => ({
 describe('the Ollama probe report is merged into the capabilities (W2)', () => {
   it.for(['minimal', 'low', 'medium', 'high'] as const)('sends no think true at effort %s to a target whose probe found no thinking', async (effort) => {
     const target = await probedTarget(['completion', 'tools'], OLLAMA_CAPABILITIES);
-    const body = buildOllamaBody(askedWith(effort), await target.capabilities());
+    const body = buildOllamaBody(askedWith(effort), await target.capabilities(), EVERY_REASONING_IS_OWN);
     expect(body.think).not.toBe(true);
   });
 
@@ -46,7 +47,7 @@ describe('the Ollama probe report is merged into the capabilities (W2)', () => {
     const target = await probedTarget(['completion', 'tools', 'thinking'], OLLAMA_CAPABILITIES);
     const capabilities = await target.capabilities();
     expect(capabilities.reasoning).toBeDefined();
-    expect(buildOllamaBody(askedWith('high'), capabilities).think).toBe(true);
+    expect(buildOllamaBody(askedWith('high'), capabilities, EVERY_REASONING_IS_OWN).think).toBe(true);
   });
 
   it('keeps the declared image input of a target whose probe found no vision', async () => {

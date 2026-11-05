@@ -6,12 +6,15 @@ import type {
   AdapterContext,
   AdapterRequest,
   Capabilities,
+  ToolChoiceWire,
   ClassifiedError,
   ProviderAdapter,
   StreamEvent,
 } from '@momonga/protocol';
 
 import { createStoredDataChecks } from '../core/validation.ts';
+import { RENDERS_EVERY_SAMPLING_FIELD } from './shared/sampling.ts';
+import { parseUpstreamJson } from './shared/upstream-json.ts';
 
 const RECORD_FILE_MODE = 0o600;
 const RECORD_DIRECTORY_MODE = 0o700;
@@ -21,6 +24,7 @@ export type ReplayAdapterOptions = {
   mode: 'record' | 'strict';
   inner?: ProviderAdapter;
   capabilities?: Capabilities;
+  toolChoiceWire?: ToolChoiceWire;
 };
 
 type ReplayEntry = { digest: string; events: StreamEvent[] };
@@ -35,7 +39,7 @@ class ReplayMismatchError extends Error {
 const digestOf = (request: AdapterRequest): string => sha256Hex(canonicalJson(request));
 
 const parseEntry = (line: string, path: string, lineNumber: number): ReplayEntry => {
-  const parsed: unknown = JSON.parse(line);
+  const parsed: unknown = parseUpstreamJson(line, (what) => new TypeError(`${path}:${lineNumber} ${what}`));
   if (typeof parsed !== 'object' || parsed === null) throw new TypeError(`${path}:${lineNumber} is not a JSON object`);
   const { digest, events } = parsed as Record<string, unknown>;
   if (typeof digest !== 'string' || !Array.isArray(events)) {
@@ -114,10 +118,16 @@ export const createReplayAdapter = (options: ReplayAdapterOptions): ProviderAdap
 
   return {
     kind: 'replay',
+    sampling: inner?.sampling ?? RENDERS_EVERY_SAMPLING_FIELD,
     capabilities: async (target) => {
       if (inner !== undefined) return inner.capabilities(target);
       if (options.capabilities === undefined) throw new TypeError('createReplayAdapter: strict mode without an inner adapter needs a capabilities option to answer capabilities()');
       return options.capabilities;
+    },
+    toolChoiceWire: (capabilities, target) => {
+      if (inner !== undefined) return inner.toolChoiceWire(capabilities, target);
+      if (options.toolChoiceWire === undefined) throw new TypeError('createReplayAdapter: strict mode without an inner adapter needs a toolChoiceWire option to answer toolChoiceWire()');
+      return options.toolChoiceWire;
     },
     create: (request, ctx) => (inner !== undefined && mode === 'record' ? record(inner, request, ctx) : replay(request)),
     classify: (error): ClassifiedError => {

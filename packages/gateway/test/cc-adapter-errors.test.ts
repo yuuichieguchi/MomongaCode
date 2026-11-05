@@ -1,3 +1,4 @@
+import { contextOf } from './own-reasoning.ts';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ADAPTER_NEUTRAL_ERROR_CODES } from '@momonga/protocol';
@@ -123,7 +124,7 @@ describe('chat-completions error classification', () => {
     });
     const controller = new AbortController();
     const adapter = makeAdapter(fake);
-    const iterator = adapter.create(plain, { signal: controller.signal, target: TARGET, attempt: 1 })[Symbol.asyncIterator]();
+    const iterator = adapter.create(plain, await contextOf(adapter, TARGET, controller.signal))[Symbol.asyncIterator]();
     const seen: string[] = [];
     for (;;) {
       const step = await iterator.next();

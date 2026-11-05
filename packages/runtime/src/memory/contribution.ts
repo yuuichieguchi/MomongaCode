@@ -94,6 +94,9 @@ export const contributionAtTerminal: TerminalContribution = {
     if (items.length === 0) return undefined;
     const task = input.events.find((event) => event.type === 'user.message');
     if (task?.type !== 'user.message') throw new Error(`run ${input.run.id} injected context but has no user.message`);
-    return { type: 'context.contribution', items: measureContribution({ events: input.events, task: task.text, injected: items, workingStates: rendered }) };
+    return {
+      type: 'context.contribution',
+      items: measureContribution({ events: input.events, task: task.text, injected: items, workingStates: rendered, ...(input.unit === undefined ? {} : { unit: input.unit }) }),
+    };
   },
 };

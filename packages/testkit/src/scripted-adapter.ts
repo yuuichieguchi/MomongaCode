@@ -1,4 +1,4 @@
-import { applyCapabilityOverride } from '@momonga/protocol';
+import { SAMPLING_FIELDS, applyCapabilityOverride } from '@momonga/protocol';
 import type {
   AdapterCompactRequest,
   AdapterCompactResult,
@@ -151,6 +151,7 @@ export const createScriptedAdapter = (options: ScriptedAdapterOptions): Scripted
 
   const adapter: ScriptedAdapter = {
     kind: options.kind ?? 'scripted',
+    sampling: { renders: SAMPLING_FIELDS },
     calls,
     compactCalls,
     countCalls,
@@ -159,6 +160,7 @@ export const createScriptedAdapter = (options: ScriptedAdapterOptions): Scripted
       for (const wake of gateWaiters.get(gateName)?.splice(0) ?? []) wake();
     },
     capabilities: async () => applyCapabilityOverride(DEFAULT_SCRIPTED_CAPABILITIES, options.capabilities ?? {}),
+    toolChoiceWire: () => ({ forms: [], expressesRequired: true }),
     create: (request: AdapterRequest, ctx: AdapterContext) => {
       const plan = options.calls[calls.length];
       const record: RecordedAdapterCall = {
@@ -189,7 +191,11 @@ export const createScriptedAdapter = (options: ScriptedAdapterOptions): Scripted
           };
         }
         if (error.status >= 500) {
-          return { retryable: true, error: { type: 'server_error', code: 'upstream_error', message: error.message, param: null } };
+          return {
+            retryable: true,
+            ...(error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs }),
+            error: { type: 'server_error', code: 'upstream_error', message: error.message, param: null },
+          };
         }
         return { retryable: false, error: { type: 'invalid_request', code: 'upstream_rejected', message: error.message, param: null } };
       }

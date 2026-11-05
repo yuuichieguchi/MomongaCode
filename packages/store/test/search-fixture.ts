@@ -48,23 +48,23 @@ export const openRun = (store: RuntimeStore, cwd: string, task: string, steps: r
   if (claim?.runId !== run.id) throw new Error(`expected to claim ${run.id}`);
   const appended = store.append(claim, steps.flatMap((spec, index) => stepEvents(index + 1, spec)));
   if (appended.kind !== 'ok') throw new Error(`append failed: ${appended.kind}`);
-  const finish = (outcome: Outcome = 'COMPLETED'): Run => {
+  const finish = async (outcome: Outcome = 'COMPLETED'): Promise<Run> => {
     if (outcome === 'CANCELLED') {
-      const cancelling = store.transition(claim, ['RUNNING'], 'CANCELLING');
+      const cancelling = await store.transition(claim, ['RUNNING'], 'CANCELLING');
       if (cancelling.kind !== 'ok') throw new Error(`cancelling failed: ${cancelling.kind}`);
-      const cancelled = store.transition({ ...claim, status: 'CANCELLING' }, ['CANCELLING'], 'CANCELLED');
+      const cancelled = await store.transition({ ...claim, status: 'CANCELLING' }, ['CANCELLING'], 'CANCELLED');
       if (cancelled.kind !== 'ok') throw new Error(`cancel failed: ${cancelled.kind}`);
       return mustRun(store, run.id);
     }
     const patch = outcome === 'FAILED' ? { error: { code: 'fixture', message: 'fixture failure' } } : {};
-    const finished = store.transition(claim, ['RUNNING'], outcome, patch);
+    const finished = await store.transition(claim, ['RUNNING'], outcome, patch);
     if (finished.kind !== 'ok') throw new Error(`finish failed: ${finished.kind}`);
     return mustRun(store, run.id);
   };
   return { session, run, claim, finish };
 };
 
-export const finishedRun = (store: RuntimeStore, cwd: string, task: string, steps: readonly StepSpec[] = [], outcome: Outcome = 'COMPLETED'): Run => openRun(store, cwd, task, steps).finish(outcome);
+export const finishedRun = async (store: RuntimeStore, cwd: string, task: string, steps: readonly StepSpec[] = [], outcome: Outcome = 'COMPLETED'): Promise<Run> => openRun(store, cwd, task, steps).finish(outcome);
 
 export const indexAll = (store: RuntimeStore): void => {
   store.search.indexBatch({ limit: 1000, redactor });

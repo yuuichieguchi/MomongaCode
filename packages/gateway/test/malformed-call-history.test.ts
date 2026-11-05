@@ -1,3 +1,4 @@
+import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
 import { createChatCompletionsAdapter } from '@momonga/gateway';
 import type { AdapterInputItem, AdapterRequest, FunctionTool, ToolCallingMode } from '@momonga/protocol';
@@ -37,8 +38,7 @@ const chatAdapter = (mode: ToolCallingMode) =>
     resolveEndpoint: async () => {
       throw new Error('rendering a wire never reaches the upstream');
     },
-    toolCalling: () => mode,
-    capabilities: async () => CC_CAPABILITIES,
+    capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: mode }),
     clock: createFakeClock(START_MS),
   });
 
@@ -46,7 +46,7 @@ const renderChat = (mode: ToolCallingMode, request: AdapterRequest): { messages?
   const adapter = chatAdapter(mode);
   const render = adapter.renderWire;
   if (render === undefined) throw new Error('the chat-completions adapter renders no wire');
-  return render.call(adapter, request, TARGET) as { messages?: unknown[] };
+  return render.call(adapter, request, TARGET, { reasoningOrigin: EVERY_REASONING_IS_OWN, capabilities: { ...CC_CAPABILITIES, toolCalling: mode } }) as { messages?: unknown[] };
 };
 
 const parsesAsJsonObject = (text: unknown): boolean => {
@@ -93,14 +93,14 @@ describe.each(MALFORMED_ARGUMENTS)('a history holding a model call with %s', (_l
   });
 
   it('reaches an Open Responses upstream with function_call arguments that parse as a JSON object', () => {
-    const body = buildResponsesBody(requestWith(args, [WRITE_TOOL]));
+    const body = buildResponsesBody(requestWith(args, [WRITE_TOOL]), EVERY_REASONING_IS_OWN);
 
     const calls = (body.input as Array<{ type?: string; arguments?: unknown }>).filter((item) => item.type === 'function_call');
     expect(calls.map((item) => parsesAsJsonObject(item.arguments))).toEqual([true]);
   });
 
   it('reaches an Ollama upstream with tool_calls arguments that are a JSON object', () => {
-    const render = () => buildOllamaChatBody(requestWith(args, [WRITE_TOOL]), { contextWindow: 4096, maxOutputTokens: 1024 }, true);
+    const render = () => buildOllamaChatBody(requestWith(args, [WRITE_TOOL]), { contextWindow: 4096, maxOutputTokens: 1024 }, true, EVERY_REASONING_IS_OWN);
 
     expect(render).not.toThrow();
     const rendered = (render().messages as unknown[]).flatMap((message) =>
@@ -111,10 +111,10 @@ describe.each(MALFORMED_ARGUMENTS)('a history holding a model call with %s', (_l
 
   it('reaches an Anthropic upstream, for a reply and for a token count, with a tool_use input that is a JSON object', () => {
     const request = requestWith(args, [WRITE_TOOL]);
-    const render = () => buildMessagesBody(request, 4096, { cache: undefined });
+    const render = () => buildMessagesBody(request, 4096, { cache: undefined }, EVERY_REASONING_IS_OWN);
 
     expect(render).not.toThrow();
-    expect(() => buildCountTokensBody(request)).not.toThrow();
+    expect(() => buildCountTokensBody(request, EVERY_REASONING_IS_OWN)).not.toThrow();
     const inputs = render().messages.flatMap((message) =>
       (Array.isArray(message.content) ? (message.content as Array<{ type?: string; input?: unknown }>) : [])
         .filter((block) => block.type === 'tool_use')

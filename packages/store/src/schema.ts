@@ -550,6 +550,36 @@ const MODEL_CHANGE_INDEX = `
 CREATE INDEX events_model_changes ON events (session_id, id) WHERE type = 'model.changed';
 `;
 
+const TOOL_OFFERED_RECORD = `
+CREATE INDEX events_tool_offered ON events (run_id, seq) WHERE type = 'tool.offered';
+INSERT INTO events (run_id, session_id, seq, step, lease_token, created_at, type, payload_json)
+SELECT r.id, r.session_id, r.last_seq + 1, r.step, r.lease_token, r.created_at, 'tool.offered',
+  json_object('type', 'tool.offered', 'names', json((
+    SELECT json_group_array(offered.name) FROM (
+      SELECT pinned.value AS name
+        FROM json_each((SELECT s.payload_json FROM events s WHERE s.run_id = r.id AND s.type = 'run.started' ORDER BY s.seq LIMIT 1), '$.pins.token.deferred') pinned
+      UNION
+      SELECT json_extract(sent.value, '$.name')
+        FROM events q, json_each(q.payload_json, '$.body.tools') sent
+        WHERE q.run_id = r.id AND q.type = 'model.requested'
+      UNION
+      SELECT listed.value
+        FROM events q, json_each(q.payload_json, '$.body.tools') sent, json_each(sent.value, '$.parameters.properties.names.items.enum') listed
+        WHERE q.run_id = r.id AND q.type = 'model.requested' AND json_extract(sent.value, '$.name') = 'LoadTools'
+      ORDER BY 1
+    ) offered
+  )))
+FROM runs r
+WHERE EXISTS (SELECT 1 FROM events s WHERE s.run_id = r.id AND s.type = 'run.started')
+  AND NOT EXISTS (SELECT 1 FROM events o WHERE o.run_id = r.id AND o.type = 'tool.offered');
+UPDATE runs SET last_seq = last_seq + 1
+WHERE EXISTS (SELECT 1 FROM events o WHERE o.run_id = runs.id AND o.type = 'tool.offered' AND o.seq = runs.last_seq + 1);
+`;
+
+const RUN_CANCEL_ORIGIN = `
+ALTER TABLE runs ADD COLUMN cancel_origin TEXT CHECK (cancel_origin IS NULL OR cancel_origin IN ('QUEUED', 'WAITING_HUMAN', 'RUNNING', 'WAITING_TOOL'));
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -576,4 +606,6 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 15, name: 'record the candidates a reflection dropped and why', sql: REFLECTION_DROPPED_CANDIDATES },
   { version: 16, name: 'record the cache, cost and timing of a context charge', sql: CONTEXT_CHARGE_DETAIL },
   { version: 17, name: 'index the model switches of a session, so a resume reads them without scanning the events of the session', sql: MODEL_CHANGE_INDEX },
+  { version: 18, name: 'record, for each run written before the offered-names record, the tool names it offered, derived once from its pinned deferred set and its recorded requests', sql: TOOL_OFFERED_RECORD },
+  { version: 19, name: 'record the status a cancelled run had when it became CANCELLING, so a run that never ran is finished by the sweeper and not claimed', sql: RUN_CANCEL_ORIGIN },
 ];

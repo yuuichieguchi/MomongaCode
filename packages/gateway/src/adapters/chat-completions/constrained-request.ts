@@ -1,9 +1,9 @@
 import { canonicalJson } from '@momonga/foundation';
-import type { AdapterRequest, FunctionTool } from '@momonga/protocol';
+import { allowedNamesOf, allowedToolsModeOf } from '../../core/tool-choice.ts';
+import type { AdapterRequest, FunctionTool, ReasoningOrigin } from '@momonga/protocol';
 import { buildToolsEnvelope } from '../../probe/envelope.ts';
 import type { KeywordSupport } from '../../probe/lowering.ts';
 import type { SchemaDialect } from '../../probe/schema-dialect.ts';
-import { UnsupportedInputError } from '../shared/failures.ts';
 import { samplingOf } from './native-request.ts';
 import { SYSTEM_PART_SEPARATOR, systemTextOf } from '../shared/system-text.ts';
 import type { ChatRequestBody } from './native-request.ts';
@@ -35,35 +35,41 @@ export type ConstrainedBody = {
   envelope: { toolNames: ReadonlySet<string>; requireToolCalls: boolean } | undefined;
 };
 
-const pinnedToolOf = (tools: readonly FunctionTool[], name: string, support: KeywordSupport): FunctionTool => {
-  const tool = tools.find((candidate) => candidate.name === name);
-  if (tool === undefined) throw new UnsupportedInputError('unknown_tool', `tool_choice names the undeclared tool "${name}"`, 'tool_choice');
-  if (!support.const && !support.enum) {
-    throw new UnsupportedInputError(
-      'unsupported_tool_choice',
-      'this target cannot pin a function name in constrained output',
-      'tool_choice',
-    );
+const restrictedToolsOf = (tools: readonly FunctionTool[], names: readonly string[], support: KeywordSupport): FunctionTool[] => {
+  const restricted = names.map((name) => {
+    const tool = tools.find((candidate) => candidate.name === name);
+    if (tool === undefined) throw new Error(`tool_choice names the undeclared tool "${name}", which request validation refuses`);
+    return tool;
+  });
+  if (restricted.length < tools.length && !support.const && !support.enum) {
+    throw new Error('the tool_choice must be resolved against the constrained wire before the body is built');
   }
-  return tool;
+  return restricted;
 };
 
-export const buildConstrainedBody = (
-  request: AdapterRequest,
-  support: KeywordSupport,
-  dialect: SchemaDialect,
-): ConstrainedBody => {
+const restrictedNamesOf = (choice: NonNullable<AdapterRequest['tool_choice']>): string[] | undefined => {
+  if (typeof choice === 'string') return undefined;
+  return choice.type === 'function' ? [choice.name] : allowedNamesOf(choice);
+};
+
+const requiresToolCalls = (choice: AdapterRequest['tool_choice']): boolean => {
+  if (choice === undefined || choice === 'auto') return false;
+  if (typeof choice === 'string' || choice.type === 'function') return true;
+  return allowedToolsModeOf(choice) === 'required';
+};
+
+export const buildConstrainedBody = (request: AdapterRequest, support: KeywordSupport, origin: ReasoningOrigin, dialect: SchemaDialect): ConstrainedBody => {
   const tools = request.tools ?? [];
   const choice = request.tool_choice;
   const envelopeActive = tools.length > 0 && choice !== 'none';
-  const requireToolCalls = envelopeActive && choice !== undefined && choice !== 'auto';
-  const envelopeTools =
-    envelopeActive && typeof choice === 'object' ? [pinnedToolOf(tools, choice.name, support)] : tools;
+  const requireToolCalls = envelopeActive && requiresToolCalls(choice);
+  const restrictedNames = envelopeActive && choice !== undefined ? restrictedNamesOf(choice) : undefined;
+  const envelopeTools = restrictedNames === undefined ? tools : restrictedToolsOf(tools, restrictedNames, support);
   const system = systemTextOf(request.instructions, request.input);
   if (envelopeActive) system.push(PROTOCOL_PREAMBLE, toolListing(tools));
   const messages: ChatMessage[] = [];
   if (system.length > 0) messages.push({ role: 'system', content: system.join(SYSTEM_PART_SEPARATOR) });
-  messages.push(...plainHistoryOf(request.input, { envelopeReplies: envelopeActive }));
+  messages.push(...plainHistoryOf(request.input, { envelopeReplies: envelopeActive, origin: origin }));
   const body: ChatRequestBody = {
     model: request.model,
     messages,

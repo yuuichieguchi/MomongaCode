@@ -12,11 +12,15 @@ export type GatewayClient = {
 
 const oneOf = (value: unknown, allowed: readonly string[]): boolean => typeof value === 'string' && allowed.includes(value);
 
+const isToolCalling = (value: unknown): boolean =>
+  oneOf(value, ['native', 'constrained', 'none']) ||
+  (isRecord(value) && value['state'] === 'needs_probe' && typeof value['message'] === 'string' && typeof value['evidence'] === 'string' && typeof value['remedy'] === 'string');
+
 const isCapabilities = (value: unknown): value is Capabilities =>
   isRecord(value) &&
   typeof value['contextWindow'] === 'number' &&
   typeof value['maxOutputTokens'] === 'number' &&
-  oneOf(value['toolCalling'], ['native', 'constrained', 'none']) &&
+  isToolCalling(value['toolCalling']) &&
   oneOf(value['structuredOutput'], ['json_schema', 'none']) &&
   typeof value['streaming'] === 'boolean' &&
   typeof value['stopSequences'] === 'boolean' &&

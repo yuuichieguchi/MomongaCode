@@ -1,6 +1,7 @@
 import { decodeSse } from '@momonga/foundation';
 import { summaryTokenCapFor } from '@momonga/protocol';
-import type { AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, StreamEvent } from '@momonga/protocol';
+import type { ToolChoiceWire, AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
+import { resolveToolChoice } from '../../core/tool-choice.ts';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
 import { boundedSseBytes } from '../shared/body-reading.ts';
 import { createUpstreamClassifier } from '../shared/classify.ts';
@@ -8,14 +9,17 @@ import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { StreamFailure, UnsupportedInputError, UpstreamProtocolError } from '../shared/failures.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
 import { CHAT_COMPLETIONS_VOCABULARY } from '../chat-completions/vocabulary.ts';
-import { httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
+import { retryAfterHint, httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
 import { MAX_SSE_EVENT_BYTES } from '../shared/limits.ts';
 import { ResponseEmitter } from '../shared/response-emitter.ts';
+import { RENDERS_EVERY_SAMPLING_FIELD } from '../shared/sampling.ts';
 import { OPEN_RESPONSES_PATH, OPEN_RESPONSES_PROVIDER_LABEL, OPEN_RESPONSES_SUFFIX, SSE_DONE_MARKER } from './constants.ts';
 import { parseOpenResponsesEvent } from './events.ts';
 import { buildResponsesBody } from './request.ts';
 import { OpenResponsesStreamDriver } from './stream-driver.ts';
 import type { OpenResponsesAdapter, OpenResponsesAdapterOptions } from './types.ts';
+
+const OPEN_RESPONSES_TOOL_CHOICE: ToolChoiceWire = { forms: ['native', 'single_tool', 'filter'], expressesRequired: true };
 
 export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions): OpenResponsesAdapter => {
   const pool = createEndpointPool({ label: OPEN_RESPONSES_PROVIDER_LABEL, unixPath: OPEN_RESPONSES_PATH, urlSuffix: OPEN_RESPONSES_SUFFIX }, options.liveness);
@@ -25,12 +29,12 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
 
   async function* create(request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
     if (closed) throw new Error('the open-responses adapter is closed');
-    const capabilities = await options.capabilities(ctx.target);
+    const capabilities = ctx.capabilities;
     if (capabilities.toolCalling === 'none' && (request.tools ?? []).length > 0) {
       throw new UnsupportedInputError('capability_unsupported', 'this target does not support tool calling', 'tools');
     }
     const body = {
-      ...buildResponsesBody(request),
+      ...buildResponsesBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.name, OPEN_RESPONSES_TOOL_CHOICE), ctx.reasoningOrigin),
       ...(capabilities.promptCache?.kind === 'key' && request.promptCacheKey !== undefined ? { prompt_cache_key: request.promptCacheKey } : {}),
     };
     const upstream = new AbortController();
@@ -49,7 +53,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
       });
       if (response.status !== 200) throw await httpErrorOf(response, options.clock, nestedErrorDetail, CHAT_COMPLETIONS_VOCABULARY);
 
-      const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request });
+      const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request, ...retryAfterHint(response, options.clock) });
       const driver = new OpenResponsesStreamDriver(emitter);
       try {
         for await (const message of decodeSse(boundedSseBytes(response.body, MAX_SSE_EVENT_BYTES))) {
@@ -78,29 +82,31 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
   }
 
   const compact = async (request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult> => {
-    const capabilities = await options.capabilities(ctx.target);
+    const capabilities = ctx.capabilities;
     const cap = request.momonga?.max_summary_tokens ?? summaryTokenCapFor(capabilities);
-    const summaryRequest = summaryRequestOf(request, cap);
+    const summaryRequest = summaryRequestOf(request, cap, ctx.reasoningOrigin);
     for await (const event of create(summaryRequest, ctx)) {
       const collected = summaryOfTerminal(event, cap);
       if (collected === undefined) continue;
-      const usage = collected.usage ?? estimatedUsage(wireTokensOf(buildResponsesBody(summaryRequest), capabilities.imageTokens), tokensForText(collected.summary));
+      const usage = collected.usage ?? estimatedUsage(wireTokensOf(buildResponsesBody(summaryRequest, ctx.reasoningOrigin), capabilities.imageTokens), tokensForText(collected.summary));
       return { summary: collected.summary, usage };
     }
     throw new StreamFailure('upstream_protocol_error', 'model_error', 'the upstream ended without a terminal event');
   };
 
-  const renderCompactWire = (request: AdapterCompactRequest, _target: AdapterTarget, cap: number): Record<string, unknown> => {
-    const { model: _model, stream: _stream, store: _store, ...wire } = buildResponsesBody(summaryRequestOf(request, cap));
+  const renderCompactWire = (request: AdapterCompactRequest, _target: AdapterTarget, cap: number, origin: ReasoningOrigin): Record<string, unknown> => {
+    const { model: _model, stream: _stream, store: _store, ...wire } = buildResponsesBody(summaryRequestOf(request, cap, origin), origin);
     return wire;
   };
 
   return {
     kind: OPEN_RESPONSES_PROVIDER_LABEL,
+    sampling: RENDERS_EVERY_SAMPLING_FIELD,
     capabilities: (target) => options.capabilities(target),
     create,
     compact,
     renderCompactWire,
+    toolChoiceWire: () => OPEN_RESPONSES_TOOL_CHOICE,
     classify: createUpstreamClassifier(OPEN_RESPONSES_PROVIDER_LABEL),
     ...(health === undefined ? {} : { health: (target: AdapterTarget) => health(target) }),
     close: () => {

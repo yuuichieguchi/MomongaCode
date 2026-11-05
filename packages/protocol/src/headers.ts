@@ -1,4 +1,5 @@
 export const STREAM_IDLE_HEADER = 'momonga-stream-idle-ms';
+export const DEFERRED_HEADER = 'momonga-deferred';
 export const RUN_ID_HEADER = 'momonga-run-id';
 export const ROLE_HEADER = 'momonga-role';
 export const CALL_ROLES = ['run', 'compaction', 'classifier', 'reflection', 'analysis'] as const;

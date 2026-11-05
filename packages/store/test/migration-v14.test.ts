@@ -2,11 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
-import { canonicalJson, migrate } from '@momonga/foundation';
+import { canonicalJson, migrate, openDatabase } from '@momonga/foundation';
 import type { RunEvent, RunEventPayload } from '@momonga/protocol';
+import { createJournalReader } from '@momonga/store';
 import { createFakeClock } from '@momonga/testkit';
 import { MIGRATIONS } from '../src/schema.ts';
-import { START_MS, enqueue, harness, makeStoreDir, mustClaim, newSession, openStoreAt, rawDb } from './helpers.ts';
+import { START_MS, enqueue, harness, makeStoreDir, mustClaim, newSession, openStoreAt, rawDb, registerCleanup } from './helpers.ts';
 
 const requested = (step: number, pinnedDigest?: string): RunEventPayload =>
   ({ type: 'model.requested', step, attempt: 1, digest: `d${step}`, ...(pinnedDigest === undefined ? {} : { pinnedDigest }), body: { model: 'fm', input: [] } }) as RunEventPayload;
@@ -54,7 +55,7 @@ describe('an upgrade from version 13 over rows that already exist', () => {
     const db = rawDb(dbPath);
     expect(db.prepare("SELECT pinned_digest FROM events WHERE type = 'model.requested' ORDER BY seq").all().map((row) => row['pinned_digest'])).toEqual([null, null]);
     expect(db.prepare('SELECT dropped_json FROM reflection_jobs').all().map((row) => row['dropped_json'])).toEqual([null]);
-    expect(db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toMatchObject({ version: 17 });
+    expect(db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toMatchObject({ version: 19 });
   });
 
   it('still decodes an old reflection job, with no dropped candidates and the reason it had', () => {
@@ -71,19 +72,23 @@ describe('an upgrade from version 13 over rows that already exist', () => {
     });
   });
 
-  it('prepares the terminal of an old run, and the hook reads every old model request, because none of them has a digest to de-duplicate by', () => {
+  it('the journal reader measures an old run, and the hook reads every old model request, because none of them has a digest to de-duplicate by', () => {
     const seen: RunEvent[][] = [];
-    const store = openStoreAt(versionThirteen(), createFakeClock(START_MS + 10), {
-      contribution: {
+    const dbPath = versionThirteen();
+    openStoreAt(dbPath, createFakeClock(START_MS + 10));
+    const reader = openDatabase(dbPath);
+    registerCleanup(() => reader.close());
+
+    createJournalReader(reader).measure(
+      {
         eventTypes: ['model.requested'],
         measure: ({ events }) => {
           seen.push([...events]);
           return undefined;
         },
       },
-    });
-
-    store.prepareTerminal('r1');
+      { runId: 'r1', leading: [] },
+    );
 
     expect(seen).toHaveLength(1);
     const requests = (seen[0] ?? []).filter((event) => event.type === 'model.requested');

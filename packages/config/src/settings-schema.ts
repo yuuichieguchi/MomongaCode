@@ -1,5 +1,5 @@
 import { SECRET_NAME_PATTERN } from '@momonga/foundation';
-import { HOOK_COMMAND_TYPE, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, REASONING_EFFORTS, TARGET_BILLINGS } from '@momonga/protocol';
+import { ALLOWED_TOOLS_FORMS, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, REASONING_EFFORTS, TARGET_BILLINGS, THINKING_OFFS } from '@momonga/protocol';
 import type { CallRole } from '@momonga/protocol';
 
 export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const satisfies readonly CallRole[];
@@ -83,7 +83,63 @@ const KEYED_PROMPT_CACHE = promptCacheOf(['key', 'automatic', 'none']);
 
 const OLLAMA_PROMPT_CACHE = promptCacheOf(['automatic', 'none']);
 
-const targetCapabilitiesSchema = (promptCache: object, extraProperties: object = {}) =>
+const MIN_THINKING_BUDGET = 1024;
+
+const THINKING_ADAPTIVE_EFFORTS = REASONING_EFFORTS.filter((effort) => effort !== 'none' && effort !== 'minimal');
+
+const THINKING_BUDGET_EFFORTS = REASONING_EFFORTS.filter((effort) => effort !== 'none');
+
+const THINKING_OFF_SCHEMA = { enum: [...THINKING_OFFS] } as const;
+
+const THINKING_REASONING_SCHEMAS = [
+  {
+    type: 'object',
+    properties: {
+      control: { const: 'thinking' },
+      form: { const: 'adaptive' },
+      efforts: { type: 'array', items: { enum: THINKING_ADAPTIVE_EFFORTS }, minItems: 1, uniqueItems: true },
+      off: THINKING_OFF_SCHEMA,
+    },
+    required: ['control', 'form', 'efforts'],
+    additionalProperties: false,
+  },
+  {
+    type: 'object',
+    properties: {
+      control: { const: 'thinking' },
+      form: { const: 'budget' },
+      budgets: {
+        type: 'object',
+        properties: Object.fromEntries(THINKING_BUDGET_EFFORTS.map((effort) => [effort, { type: 'integer', minimum: MIN_THINKING_BUDGET }])),
+        minProperties: 1,
+        additionalProperties: false,
+      },
+      off: THINKING_OFF_SCHEMA,
+    },
+    required: ['control', 'form', 'budgets'],
+    additionalProperties: false,
+  },
+] as const;
+
+const UNIT_INTERVAL = { type: 'number', minimum: 0, maximum: 1 } as const;
+
+const SAMPLING_SCHEMA = {
+  oneOf: [
+    { type: 'object', properties: { accepts: { const: 'none' } }, required: ['accepts'], additionalProperties: false },
+    { type: 'object', properties: { accepts: { const: 'free' } }, required: ['accepts'], additionalProperties: false },
+    {
+      type: 'object',
+      properties: {
+        accepts: { const: 'without_thinking' },
+        topP: { type: 'object', properties: { min: UNIT_INTERVAL, max: UNIT_INTERVAL }, required: ['min', 'max'], additionalProperties: false },
+      },
+      required: ['accepts', 'topP'],
+      additionalProperties: false,
+    },
+  ],
+} as const;
+
+const targetCapabilitiesSchema = (promptCache: object, extraProperties: object = {}, extraReasoning: readonly object[] = []) =>
   ({
   type: 'object',
   properties: {
@@ -101,6 +157,7 @@ const targetCapabilitiesSchema = (promptCache: object, extraProperties: object =
       additionalProperties: false,
     },
     parallelToolCalls: { type: 'boolean' },
+    allowedTools: { type: 'array', items: { enum: [...ALLOWED_TOOLS_FORMS] }, minItems: 1, uniqueItems: true },
     schemaDialect: { enum: ['json-schema-2020-12', 'guided-generation'] },
     tokenCounting: { enum: ['exact', 'calibrated', 'estimated'] },
     tokenErrorRatio: { type: 'number', minimum: 0 },
@@ -119,16 +176,18 @@ const targetCapabilitiesSchema = (promptCache: object, extraProperties: object =
           required: ['control', 'lowest'],
           additionalProperties: false,
         },
+        ...extraReasoning,
       ],
     },
     promptCache: promptCache,
+    sampling: SAMPLING_SCHEMA,
     source: { enum: ['declared', 'probed', 'config', 'unprobed'] },
   },
   required: ['contextWindow', 'maxOutputTokens'],
   additionalProperties: false,
 }) as const;
 
-const ANTHROPIC_CAPABILITIES_SCHEMA = targetCapabilitiesSchema(ANTHROPIC_PROMPT_CACHE);
+const ANTHROPIC_CAPABILITIES_SCHEMA = targetCapabilitiesSchema(ANTHROPIC_PROMPT_CACHE, {}, THINKING_REASONING_SCHEMAS);
 
 const KEYED_CAPABILITIES_SCHEMA = targetCapabilitiesSchema(KEYED_PROMPT_CACHE);
 
@@ -204,6 +263,7 @@ const ANTHROPIC_TARGET_SCHEMA = {
     ...API_KEY_PROPERTIES,
     billing: BILLING_SCHEMA,
     capabilities: ANTHROPIC_CAPABILITIES_SCHEMA,
+    apiVersion: { enum: [...ANTHROPIC_API_VERSIONS] },
     maxConcurrency: POSITIVE_INTEGER,
     admissionTimeoutMs: NON_NEGATIVE_INTEGER,
   },
@@ -230,7 +290,6 @@ const OLLAMA_TARGET_SCHEMA = {
 
 const MODEL_TARGET_SCHEMA = {
   type: 'object',
-  discriminator: { propertyName: 'adapter' },
   oneOf: [FM_TARGET_SCHEMA, CHAT_COMPLETIONS_TARGET_SCHEMA, OPEN_RESPONSES_TARGET_SCHEMA, ANTHROPIC_TARGET_SCHEMA, OLLAMA_TARGET_SCHEMA],
 } as const;
 

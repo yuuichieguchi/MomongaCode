@@ -2,6 +2,7 @@ import { useEffect, useEffectEvent, useReducer, useRef, useState } from 'react';
 import { Box, Static, Text, useApp, useInput, usePaste, useStdout, useWindowSize } from 'ink';
 import { escapeTerminalBlock, escapeTerminalLine } from '@momonga/protocol';
 import type { Capabilities, ImageAttachment, MomongaModelEntry, PermissionMode, PermissionOption } from '@momonga/protocol';
+import { cleanFailureMessage } from '@momonga/foundation';
 import { currentField, currentRequest, decide, enterValue, leaveFields, withError } from '../elicit/flow.ts';
 import type { ElicitationDecision, ElicitationFlow } from '../elicit/flow.ts';
 import type { RunEventFrame } from '../client/runtime-client.ts';
@@ -558,6 +559,9 @@ export function App(props: AppProps) {
       return;
     }
     applyFlow(pending, flow, true);
+    for (const notice of flow.notices) {
+      dispatch({ kind: 'append', entry: { kind: 'notice', level: 'warning', text: escapeTerminalLine(`MCP server ${cleanFailureMessage(pending.server)}: ${notice}`) } });
+    }
     backend.resolveElicitation(pending.inputId, flow.answers).catch((error: unknown) => {
       applyFlow(pending, withError({ ...flow, complete: false, stage: 'decision' }, errorOf(error).message));
     });
@@ -599,12 +603,12 @@ export function App(props: AppProps) {
       return;
     }
     if (key.return && elicitEditorRef.current.text === '') {
-      applyFlow(pending, enterValue(flow, ''));
+      proceedFlow(pending, enterValue(flow, ''));
       return;
     }
     const outcome = applyKey(elicitEditorRef.current, { ...key, input });
     replaceElicitEditor(outcome.state);
-    if (outcome.submit !== undefined) applyFlow(pending, enterValue(flow, outcome.submit));
+    if (outcome.submit !== undefined) proceedFlow(pending, enterValue(flow, outcome.submit));
   };
 
   const cycleMode = (): void => {

@@ -4,9 +4,11 @@ import { createUpstreamClassifier } from '../shared/classify.ts';
 import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { StreamFailure, UpstreamProtocolError } from '../shared/failures.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
-import { httpErrorOf } from '../shared/http-error.ts';
+import { retryAfterHint, httpErrorOf } from '../shared/http-error.ts';
 import type { ErrorDetailReader } from '../shared/http-error.ts';
-import { buildOllamaBody } from './request.ts';
+import { resolveToolChoice } from '../../core/tool-choice.ts';
+import { RENDERS_EVERY_SAMPLING_FIELD } from '../shared/sampling.ts';
+import { OLLAMA_TOOL_CHOICE, buildOllamaBody } from './request.ts';
 import { ollamaEventsOf } from './stream.ts';
 import type { OllamaAdapter, OllamaAdapterOptions } from './types.ts';
 import { OLLAMA_VOCABULARY, ollamaErrorText } from './vocabulary.ts';
@@ -31,7 +33,8 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
 
   async function* create(request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
     if (closed) throw new Error('the ollama adapter is closed');
-    const body = buildOllamaBody(request, await options.capabilities(ctx.target));
+    const capabilities = ctx.capabilities;
+    const body = buildOllamaBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.name, OLLAMA_TOOL_CHOICE), capabilities, ctx.reasoningOrigin);
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     try {
@@ -42,7 +45,7 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
         signal,
       });
       if (response.status !== 200) throw await httpErrorOf(response, options.clock, detailReader(request.model), OLLAMA_VOCABULARY);
-      for await (const event of ollamaEventsOf(response.body, { request, clock: options.clock })) {
+      for await (const event of ollamaEventsOf(response.body, { request, clock: options.clock, ...retryAfterHint(response, options.clock) })) {
         ctx.signal.throwIfAborted();
         yield event;
       }
@@ -52,9 +55,9 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
   }
 
   const compact = async (request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult> => {
-    const capabilities = await options.capabilities(ctx.target);
+    const capabilities = ctx.capabilities;
     const cap = request.momonga?.max_summary_tokens ?? summaryTokenCapFor(capabilities);
-    for await (const event of create(summaryRequestOf(request, cap), ctx)) {
+    for await (const event of create(summaryRequestOf(request, cap, ctx.reasoningOrigin), ctx)) {
       const collected = summaryOfTerminal(event, cap);
       if (collected === undefined) continue;
       if (collected.usage === null) throw new UpstreamProtocolError('the upstream reported no usage for the summary');
@@ -65,9 +68,11 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
 
   return {
     kind: OLLAMA_LABEL,
+    sampling: RENDERS_EVERY_SAMPLING_FIELD,
     capabilities: (target: AdapterTarget) => options.capabilities(target),
     create,
     compact,
+    toolChoiceWire: () => OLLAMA_TOOL_CHOICE,
     classify: createUpstreamClassifier(OLLAMA_LABEL),
     ...(health === undefined ? {} : { health: (target: AdapterTarget) => health(target) }),
     close: () => {

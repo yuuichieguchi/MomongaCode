@@ -5,7 +5,8 @@ import { PRIMARY_TARGET, fakeCounterOf } from './fake-gateway.ts';
 import type { ScriptStep } from './fake-gateway.ts';
 import { capabilitiesFor, makeEnv, modelKey } from './harness.ts';
 import type { Env } from './harness.ts';
-import { textStep, thrownStep } from './scripts.ts';
+import { textStep } from './scripts.ts';
+import { GatewayRequestError, LeaseLostError } from '@momonga/runtime';
 import { recordingStore } from './within-turn-support.ts';
 
 const SECONDARY = 'secondary';
@@ -104,7 +105,10 @@ describe.each(CASES)('an answer replayed after a counter change, for %s', (_labe
 describe('the attempt of a resend', () => {
   it('stays the same after a claim that received no answer, so the key does not change', async () => {
     const env = await makeEnv({ capabilities: exactTarget() });
-    env.gateway.script.push(thrownStep(), textStep('Recovered.'));
+    env.gateway.script.push(
+      { events: [], error: new GatewayRequestError({ status: 0, type: 'transport', code: 'gateway_unavailable', message: 'the gateway connection was lost', provenNotSent: false }) },
+      textStep('Recovered.'),
+    );
     const run = env.enqueue('Work');
 
     expect(await env.runOnce(env.worker('worker-1'))).toBe('yielded');
@@ -146,7 +150,7 @@ describe('the charge of a rejected answer', () => {
     const { store } = recordingStore(env, (payloads: readonly RunEventPayload[]) => {
       if (!stopped && payloads.some((payload) => payload.type === 'model.rejected')) {
         stopped = true;
-        throw new Error('the worker stopped between the decision and the append');
+        throw new LeaseLostError();
       }
     });
     const run = env.enqueue('Work');

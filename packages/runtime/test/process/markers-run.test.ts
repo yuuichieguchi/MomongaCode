@@ -207,7 +207,10 @@ const seedTakenOverRun = async (context: CleanupContext, temp: RunHome, deadLett
     const lastClaimAt = clock.now();
     if (deadLetterInSeed) {
       clock.advance(LEASE_MS + 1);
-      if (store.claim('seed-final') !== null) throw new Error('the exhausted run was claimed instead of dead-lettered');
+      if (store.claim('seed-final') !== null) throw new Error('the exhausted run was claimed instead of left for the dead-letter sweep');
+      await store.deadLetterExhausted((error) => {
+        throw error;
+      });
       if (store.getRun(runId)?.deadLetter !== true) throw new Error('the seed did not dead-letter the run');
     }
     store.idempotency.begin(DEAD_LETTER_KEY, { expiresAt: clock.now() + 30 * 86_400_000, meta: { tool: 'Bash', runId } });

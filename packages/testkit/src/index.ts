@@ -194,6 +194,9 @@ export {
   HTTP_FIXTURE_MODERN_VERSION,
   HTTP_FIXTURE_RECONNECT_DELAY_MS,
   HTTP_FIXTURE_TASKS_EXTENSION,
+  nestedArraysJsonText,
+  nestedNotJsonText,
   startMcpHttpFixture,
 } from './mcp-http-fixture.ts';
 export type { FixtureNote, McpHttpFixture, McpHttpFixtureEra, McpHttpFixtureOptions, RecordedHttpRequest } from './mcp-http-fixture.ts';
+export { ENGINE_FAILURE_KEY, ENGINE_FAILURE_MESSAGE, engineFailureSchema, injectEngineFailure } from './engine-failure.ts';

@@ -92,12 +92,12 @@ describe('createRunAndEnqueue typed result', () => {
 });
 
 describe('requestCancel typed result', () => {
-  it('returns ok with changed for a QUEUED run that becomes CANCELLED', () => {
+  it('returns ok with changed for a QUEUED run that becomes CANCELLING', () => {
     const { store } = harness();
     const run = enqueue(store, newSession(store).id);
     const result = store.requestCancel(run.id);
     expect(result).toEqual({ kind: 'ok', changed: true, run: mustRun(store, run.id) });
-    expect(mustRun(store, run.id).status).toBe('CANCELLED');
+    expect(mustRun(store, run.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'QUEUED' });
   });
 
   it('returns ok with changed for a RUNNING run that becomes CANCELLING', () => {
@@ -228,7 +228,7 @@ describe('readSessionEvents', () => {
 });
 
 describe('listRuns', () => {
-  it('lists the session runs by ordinal, optionally filtered by status', () => {
+  it('lists the session runs by ordinal, optionally filtered by status', async () => {
     const { store } = harness();
     const session = newSession(store);
     const first = enqueue(store, session.id, 'one');
@@ -236,6 +236,7 @@ describe('listRuns', () => {
     const third = enqueue(store, session.id, 'three');
     enqueue(store, newSession(store).id, 'elsewhere');
     cancel(store, second.id);
+    expect(await store.finishCancelled(() => undefined)).toEqual([second.id]);
 
     expect(store.listRuns(session.id).map((run: Run) => run.id)).toEqual([first.id, second.id, third.id]);
     expect(store.listRuns(session.id, ['QUEUED']).map((run) => run.id)).toEqual([first.id, third.id]);
@@ -280,11 +281,11 @@ describe('approval views', () => {
     expect(store.approvalView('ghost')).toBeUndefined();
   });
 
-  it('drops resolved approvals from the pending views but still shows them by id', () => {
+  it('drops resolved approvals from the pending views but still shows them by id', async () => {
     const { store } = harness();
     const { runId, approvals } = awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
     const id = approvals[0]?.id ?? '';
-    store.resolveApproval(id, 'allow_once');
+    await store.resolveApproval(id, 'allow_once');
     expect(store.pendingApprovalViews(runId)).toEqual([]);
     expect(store.approvalView(id)?.status).toBe('resolved');
   });

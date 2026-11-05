@@ -190,11 +190,17 @@ describe('worker skills: activation', () => {
   });
 });
 
-describe('worker skills: oversized skill', () => {
+describe.for([false, true])('worker skills: oversized skill (observed capacity %s)', (observedCapacity) => {
+  const envWith = async (): Promise<Env> => {
+    const env = await makeEnv({ capabilities: capabilitiesFor(8000) });
+    env.settings.contextValue = { ...env.settings.contextValue, observedCapacity };
+    return env;
+  };
+
   const OVERSIZED_BODY = 'Follow this rule exactly. '.repeat(2000);
 
   it('refuses the activation with a tool failure, keeps the run going and leaves the session free of the skill', async () => {
-    const env = await makeEnv({ capabilities: capabilitiesFor(8000) });
+    const env = await envWith();
     writeSkill(projectSkills(env), 'huge', 'A skill larger than the window', OVERSIZED_BODY);
     const first = env.enqueue('Use the huge skill');
     env.gateway.script.push(activate('call_huge', 'huge'), textStep('Continuing without it.'), textStep('Next answer.'));
@@ -216,7 +222,7 @@ describe('worker skills: oversized skill', () => {
   });
 
   it('admits a skill that fits and refuses the next one that no longer fits beside it', async () => {
-    const env = await makeEnv({ capabilities: capabilitiesFor(8000) });
+    const env = await envWith();
     writeSkill(projectSkills(env), 'first', 'Fits alone', 'Follow this rule exactly. '.repeat(500));
     writeSkill(projectSkills(env), 'second', 'Fits alone but not beside the first', 'Follow this rule exactly. '.repeat(500));
     const run = env.enqueue('Use both skills');

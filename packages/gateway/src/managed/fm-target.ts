@@ -1,5 +1,6 @@
 import { canonicalJson, createUdsClient } from '@momonga/foundation';
 import { countReplyOf } from '@momonga/protocol';
+import type { AllowedToolsForm } from '@momonga/protocol';
 import type {
   AdapterTarget,
   Capabilities,
@@ -11,6 +12,7 @@ import type {
   ProbeReport,
   ToolCallingMode,
   ToolCallingSetting,
+  ToolCallingState,
 } from '@momonga/protocol';
 import type { ChatCompletionsEndpoint } from '../adapters/chat-completions/types.ts';
 import { matchesGuardrailCode } from '../adapters/chat-completions/classify.ts';
@@ -22,7 +24,8 @@ import type { KeywordSupport } from '../probe/lowering.ts';
 import { FM_SCHEMA_DIALECT } from '../probe/schema-dialect.ts';
 import type { SchemaDialect } from '../probe/schema-dialect.ts';
 import { field, firstOf, parseJson } from '../probe/json.ts';
-import { loadProbeRecord, resolveToolCalling } from '../probe/record.ts';
+import { isUnprobedAuto, loadProbeRecord, resolveToolCalling } from '../probe/record.ts';
+import { needsProbeOf } from '../probe/remedy.ts';
 import type { ProbeRecordKey } from '../probe/record.ts';
 import { LICENSE_NOT_ACCEPTED_EXIT_CODE, LICENSE_REMEDIATION, PRECONDITION_MESSAGE, outputOf } from './fm-serve.ts';
 import { PreconditionFailedError } from '../adapters/shared/failures.ts';
@@ -48,7 +51,6 @@ export type ManagedFmTargetOptions = {
 
 export type ManagedFmTarget = {
   resolveEndpoint: (target: AdapterTarget) => Promise<ChatCompletionsEndpoint>;
-  toolCalling: (target: AdapterTarget) => ToolCallingMode;
   keywordSupport: (target: AdapterTarget) => KeywordSupport;
   schemaDialect: (target: AdapterTarget) => SchemaDialect;
   upstreamModel: (target: AdapterTarget, signal: AbortSignal) => Promise<string>;
@@ -70,11 +72,13 @@ const UNPROBED_KEYWORD_SUPPORT: KeywordSupport = {
   additionalProperties: true,
 };
 
+const FM_ALLOWED_TOOLS: readonly AllowedToolsForm[] = ['envelope'];
+
 const CEIL_TOLERANCE = 1e-9;
 const UNPROBED_CONTEXT_WINDOW = 4096;
 const UNPROBED_MAX_OUTPUT_TOKENS = 1024;
 
-const unprobedCapabilities = (mode: ToolCallingMode): Capabilities => ({
+const unprobedCapabilities = (mode: ToolCallingState): Capabilities => ({
   contextWindow: UNPROBED_CONTEXT_WINDOW,
   maxOutputTokens: UNPROBED_MAX_OUTPUT_TOKENS,
   toolCalling: mode,
@@ -185,13 +189,21 @@ const listedModelId = async (socketPath: string, signal: AbortSignal): Promise<s
 
 export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Promise<ManagedFmTarget> => {
   const report = await loadProbeRecord(options.probeRecordDir, options.recordKey);
-  const { mode } = resolveToolCalling(options.toolCallingSetting, report);
-  const { parallelToolCalls: _unprobedParallel, ...probedDefaults } = unprobedCapabilities(mode);
+  const { target: targetName, binarySha256, osBuild } = options.recordKey;
+  const needsProbe = needsProbeOf(
+    targetName,
+    `the target "${targetName}" sets toolCalling to auto, but no probe record exists`,
+    `no record for the fm binary with sha256 ${binarySha256} on OS build ${osBuild}`,
+  );
+  const modeOf = (): ToolCallingMode => resolveToolCalling(options.toolCallingSetting, report, needsProbe).mode;
+  const unprobedAuto = isUnprobedAuto(options.toolCallingSetting, report);
+  const state = unprobedAuto ? needsProbe : modeOf();
+  const { parallelToolCalls: _unprobedParallel, ...probedDefaults } = unprobedCapabilities(state);
   const declaredField = options.declaredOutputBoundField === undefined ? {} : { outputBoundField: options.declaredOutputBoundField };
   const capabilities =
     report === null
-      ? { ...unprobedCapabilities(mode), ...declaredField }
-      : mergeCapabilities({ defaults: layerOf(probedDefaults).core, declared: { ...declaredField, schemaDialect: FM_SCHEMA_DIALECT }, probed: layerOf(capabilitiesFromProbe(report, { mode })).layer, probedAt: report.probedAt });
+      ? { ...unprobedCapabilities(state), ...declaredField }
+      : mergeCapabilities({ defaults: layerOf(probedDefaults).core, declared: { ...declaredField, schemaDialect: FM_SCHEMA_DIALECT }, probed: layerOf(capabilitiesFromProbe(report, { mode: modeOf() })).layer, probedAt: report.probedAt });
   const keywordSupport = report === null ? UNPROBED_KEYWORD_SUPPORT : report.keywordSupport;
   const isGuardrail = guardrailMatcherOf(report);
   const knownModel = options.declaredModel ?? report?.modelId;
@@ -208,11 +220,10 @@ export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Pr
 
   return {
     resolveEndpoint: () => options.fmServe.ensureRunning(),
-    toolCalling: () => mode,
     keywordSupport: () => keywordSupport,
     schemaDialect: () => capabilities.schemaDialect,
     upstreamModel,
-    capabilities: async () => capabilities,
+    capabilities: async () => ({ ...capabilities, allowedTools: FM_ALLOWED_TOOLS }),
     countTokens: async (_target, request, signal) => {
       const text = countedText(request);
       if (text === '') return countResultOf(0, report);

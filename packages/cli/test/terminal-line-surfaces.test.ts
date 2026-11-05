@@ -55,6 +55,26 @@ describe('a value a person did not write stays on its own line in command output
     expect(lines).toHaveLength(6);
   });
 
+  it('shows the probe remedy for a needs-probe tool calling state', () => {
+    const toolCalling = { state: 'needs_probe', message: 'm', evidence: 'e', remedy: 'run `momonga gateway probe fm`' };
+    const capabilities = {
+      contextWindow: 1,
+      maxOutputTokens: 1,
+      toolCalling,
+      structuredOutput: 'none',
+      streaming: true,
+      stopSequences: true,
+      schemaDialect: 'json-schema-2020-12',
+      tokenCounting: 'exact',
+      usageReported: true,
+      maxConcurrency: 1,
+      source: 'unprobed',
+      imageInput: false,
+    } as Capabilities;
+    const entry: MomongaModelEntry = { id: 'fast', object: 'model', targets: ['fm'], targetCounters: { fm: '0123456789abcdef' }, capabilities, targetCapabilities: {} };
+    expect(formatModels([entry])).toContain('tool calling: needs probe: run `momonga gateway probe fm`,');
+  });
+
   it('shows a daemon child held reason with a newline on the child line', () => {
     const health = {
       status: 'ok',

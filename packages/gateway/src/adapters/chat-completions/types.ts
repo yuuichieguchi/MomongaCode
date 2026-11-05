@@ -1,12 +1,12 @@
 import type { Clock } from '@momonga/foundation';
 import type {
+  AdapterSampling,
   AdapterTarget,
   Capabilities,
   CountTokensRequest,
   CountTokensResult,
   HealthResult,
   ProviderAdapter,
-  ToolCallingMode,
 } from '@momonga/protocol';
 import type { UpstreamEndpoint, UpstreamLiveness } from '../shared/http-client.ts';
 import type { KeywordSupport } from '../../probe/lowering.ts';
@@ -17,9 +17,9 @@ export type ChatCompletionsEndpoint = UpstreamEndpoint;
 
 export type ChatCompletionsAdapterOptions = {
   resolveEndpoint: (target: AdapterTarget, signal: AbortSignal) => Promise<ChatCompletionsEndpoint>;
+  sampling?: AdapterSampling;
   upstreamModel?: (target: AdapterTarget, signal: AbortSignal) => Promise<string>;
   onSummaryReasoning?: (target: AdapterTarget, hiddenReasoningTokens: number) => Promise<void>;
-  toolCalling: (target: AdapterTarget) => ToolCallingMode;
   keywordSupport?: (target: AdapterTarget) => KeywordSupport;
   schemaDialect: (target: AdapterTarget) => SchemaDialect;
   apiKey?: (target: AdapterTarget, signal: AbortSignal) => string | undefined | Promise<string | undefined>;

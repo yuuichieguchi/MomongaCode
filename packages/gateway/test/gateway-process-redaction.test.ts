@@ -296,7 +296,7 @@ const startFmStack = async (context: CleanupContext, options: FmStackOptions) =>
   writeSettings(home, {
     models: {
       aliases: { default: ['fm'], keyed: ['cc'] },
-      targets: { fm: { adapter: 'fm' }, cc: ccTarget(fake.socketPath, { apiKeyEnv: TEST_API_KEY_ENV }) },
+      targets: { fm: { adapter: 'fm', toolCalling: 'native' }, cc: ccTarget(fake.socketPath, { apiKeyEnv: TEST_API_KEY_ENV }) },
     },
   });
   const handle = await startGatewayProcess({

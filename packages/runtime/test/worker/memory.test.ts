@@ -45,7 +45,7 @@ describe('worker memory: saving', () => {
     expect(request).not.toHaveProperty('suggestedRule');
     expect(request?.options.map((option) => option.kind)).toEqual(['allow_once', 'reject_once']);
 
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
     env.gateway.script.push(textStep('Remembered.'));
     await env.runOnce(memoryWorker(env, 'worker-2'));
 
@@ -68,8 +68,8 @@ describe('worker memory: saving', () => {
     env.gateway.script.push(save('call_m_1', 'prefers tabs'));
     const first = env.enqueue('Remember this');
     await env.runOnce(memoryWorker(env, 'worker-1'));
-    expect(() => env.resolveApproval(first.id, 'allow_always')).toThrow('offers no allow_always option');
-    env.resolveApproval(first.id, 'allow_once');
+    await expect(env.resolveApproval(first.id, 'allow_always')).rejects.toThrow('offers no allow_always option');
+    await env.resolveApproval(first.id, 'allow_once');
     env.gateway.script.push(textStep('Remembered.'));
     await env.runOnce(memoryWorker(env, 'worker-2'));
     expect(env.settings.appended).toEqual([]);

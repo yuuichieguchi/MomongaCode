@@ -1,6 +1,6 @@
-import type { Capabilities, HealthResult, ReasoningEffort } from './capabilities.ts';
+import type { AdapterSampling, AllowedToolsForm, Capabilities, HealthResult, ReasoningEffort } from './capabilities.ts';
 import type { CountTokensRequest, CountTokensResult } from './gateway-api.ts';
-import type { CompactMomongaExtension, ErrorBody, FunctionTool, InputItem, PromptCacheCounts, StreamEvent, TextField, ToolChoice, Usage } from './open-responses.ts';
+import type { CompactMomongaExtension, ErrorBody, FunctionTool, InputItem, PromptCacheCounts, ReasoningInputItem, StreamEvent, TextField, ToolChoice, Usage } from './open-responses.ts';
 
 export const ADAPTER_NEUTRAL_ERROR_CODES = [
   'guardrail_violation',
@@ -18,6 +18,8 @@ export type DecodedCompactionItem = { type: 'compaction_summary'; summary: strin
 
 export type AdapterInputItem = Exclude<InputItem, { type: 'compaction' }> | DecodedCompactionItem;
 
+export type ReasoningOrigin = { own(item: ReasoningInputItem): ReasoningInputItem | undefined };
+
 export type AdapterRequest = {
   model: string;
   input: AdapterInputItem[];
@@ -28,6 +30,8 @@ export type AdapterRequest = {
   max_output_tokens?: number | null;
   temperature?: number | null;
   top_p?: number | null;
+  frequency_penalty?: number | null;
+  presence_penalty?: number | null;
   reasoning_effort?: ReasoningEffort;
   text?: TextField;
   promptCacheKey?: string;
@@ -38,6 +42,8 @@ export type AdapterContext = {
   signal: AbortSignal;
   target: AdapterTarget;
   attempt: number;
+  reasoningOrigin: ReasoningOrigin;
+  capabilities: Capabilities;
 };
 
 export type ClassifiedError = {
@@ -57,12 +63,15 @@ export type AdapterCompactRequest = {
 
 export type LenientItems = { callNames: Record<string, string>; withTools: boolean };
 
-export type RenderWireOptions = { lenientItems?: LenientItems };
+export type ToolChoiceWire = { forms: readonly AllowedToolsForm[]; expressesRequired: boolean };
+
+export type RenderWireOptions = { reasoningOrigin: ReasoningOrigin; capabilities: Capabilities; lenientItems?: LenientItems };
 
 export type AdapterCompactResult = { summary: string; usage: Usage; cacheWriteInputTokens?: number };
 
 export type ProviderAdapter = {
   readonly kind: string;
+  readonly sampling: AdapterSampling;
   capabilities(target: AdapterTarget): Promise<Capabilities>;
   create(request: AdapterRequest, ctx: AdapterContext): AsyncIterable<StreamEvent>;
   classify(error: unknown): ClassifiedError;
@@ -71,6 +80,7 @@ export type ProviderAdapter = {
   countTokens?(request: CountTokensRequest, ctx: AdapterContext): Promise<AdapterCountTokensResult>;
   countWire?(wire: Record<string, unknown>, ctx: AdapterContext): Promise<AdapterCountTokensResult>;
   compact?(request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult>;
-  renderCompactWire?(request: AdapterCompactRequest, target: AdapterTarget, cap: number): Record<string, unknown>;
-  renderWire?(request: AdapterRequest, target: AdapterTarget, options?: RenderWireOptions): Record<string, unknown>;
+  renderCompactWire?(request: AdapterCompactRequest, target: AdapterTarget, cap: number, reasoningOrigin: ReasoningOrigin, capabilities: Capabilities): Record<string, unknown>;
+  renderWire?(request: AdapterRequest, target: AdapterTarget, options: RenderWireOptions): Record<string, unknown>;
+  toolChoiceWire(capabilities: Capabilities, target: AdapterTarget): ToolChoiceWire;
 };

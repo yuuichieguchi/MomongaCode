@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { LeaseLostError } from '@momonga/runtime';
 import { canonicalJson } from '@momonga/foundation';
 import { PERMISSION_MODES } from '@momonga/protocol';
 import type { PermissionMode, RunEventPayload } from '@momonga/protocol';
@@ -17,7 +18,7 @@ const answered = async (env: Env, task: string, answer: string): Promise<string>
   return run.id;
 };
 
-const answeredWithoutRecordedMode = (env: Env, task: string, answer: string): string => {
+const answeredWithoutRecordedMode = async (env: Env, task: string, answer: string): Promise<string> => {
   const run = env.enqueue(task);
   const payloads: RunEventPayload[] = [
     { type: 'run.started', attempt: 1, now: env.clock.now(), pins: {} },
@@ -25,7 +26,7 @@ const answeredWithoutRecordedMode = (env: Env, task: string, answer: string): st
     { type: 'model.responded', step: 1, attempt: 1, response: { status: 'completed', output: [assistantMessage('msg_old', answer)], usage: USAGE } },
   ];
   const claim = env.seed(run.id, payloads, 'hold');
-  expect(env.store.transition(claim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
+  expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
   expect(env.fold(run.id).mode).toBeUndefined();
   return run.id;
 };
@@ -97,7 +98,7 @@ describe('mode_changed marker between runs', () => {
 
   it('adds no marker when the source never recorded a mode, and records the current mode', async () => {
     const env = await makeEnv();
-    answeredWithoutRecordedMode(env, 'Old run', 'Old answer.');
+    await answeredWithoutRecordedMode(env, 'Old run', 'Old answer.');
     env.setMode('plan');
     const second = await inheritOnce(env, 'New run');
     const event = inheritedEventOf(env, second);
@@ -108,7 +109,7 @@ describe('mode_changed marker between runs', () => {
 
   it('records the current mode for a run that never reaches run.started, so a later PATCH is announced exactly once (R4-3)', async () => {
     const env = await makeEnv();
-    answeredWithoutRecordedMode(env, 'Old run', 'Old answer.');
+    await answeredWithoutRecordedMode(env, 'Old run', 'Old answer.');
     env.setMode('plan');
     const second = await claimedFirstAsCancelling(env, 'Cancelled early');
     expect(inheritedEventOf(env, second).markers).toEqual([]);
@@ -159,7 +160,7 @@ describe('mode notice on recovery', () => {
       toolSet: async () => {
         if (!failed) {
           failed = true;
-          throw new Error('the tool set is unavailable');
+          throw new LeaseLostError();
         }
         return env.snapshotTools(env.toolbox.tools());
       },
@@ -167,7 +168,7 @@ describe('mode notice on recovery', () => {
     env.gateway.script.push(textStep('Answered.'));
     const second = env.enqueue('Plan it');
     await env.runOnce(env.worker('worker-1', { store: countingStore(env, calls), tools }));
-    expect(env.run(second.id).status).toBe('QUEUED');
+    expect(env.run(second.id).status).toBe('RUNNING');
     const journaled = inheritedEventOf(env, second.id);
     expect(modeMarkersOf(journaled.history)).toEqual([modeChangedText('default', 'plan')]);
 

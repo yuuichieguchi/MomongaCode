@@ -1,5 +1,5 @@
-import { isRecord } from '@momonga/foundation';
-import { compileUntrustedSchema } from '@momonga/tools';
+import { checkJsonDepth, isRecord } from '@momonga/foundation';
+import { SchemaValidatorFailure, validateUntrusted } from '@momonga/foundation';
 import { sanitizeSchema } from './schema-sanitizer.ts';
 import { capText, sanitizeServerText } from './text.ts';
 
@@ -65,6 +65,7 @@ const parseEntry = (key: string, entry: unknown): ElicitationRequest => {
 };
 
 export const parseInputRequests = (inputRequests: unknown): ElicitationRequest[] => {
+  checkJsonDepth(inputRequests);
   if (!isRecord(inputRequests)) throw new McpInputProtocolError('inputRequests is not an object');
   return Object.entries(inputRequests).map(([key, entry]) => parseEntry(key, entry));
 };
@@ -88,21 +89,25 @@ export const parseElicitationAnswer = (key: string, value: unknown): Elicitation
   return { action, content: content as Record<string, ElicitationContentValue> };
 };
 
-const validateAgainst = (request: ElicitationRequest, answer: ElicitationAnswer): void => {
+const validateAgainst = (server: string, request: ElicitationRequest, answer: ElicitationAnswer): void => {
   if (answer.action !== 'accept') return;
   if (request.mode === 'url') {
     if (answer.content !== undefined) throw new McpElicitationAnswerError(request.key, `an accepted url elicitation "${request.key}" must not carry content`);
     return;
   }
   if (answer.content === undefined) throw new McpElicitationAnswerError(request.key, `an accepted form elicitation "${request.key}" must carry content`);
-  const validate = compileUntrustedSchema(request.requestedSchema);
-  if (!validate(answer.content)) {
-    const detail = (validate.errors ?? []).map((error) => `${error.instancePath || '(root)'} ${error.message ?? error.keyword}`).join('; ');
+  const verdict = validateUntrusted(`mcp-elicitation\u0000${server}\u0000${request.key}`, request.requestedSchema, answer.content);
+  if (!verdict.valid) {
+    const detail = verdict.errors.map((error) => `${error.instancePath || '(root)'} ${error.message ?? error.keyword}`).join('; ');
     throw new McpElicitationAnswerError(request.key, `the content for "${request.key}" does not match the requested schema: ${detail}`);
   }
 };
 
-export const parseElicitationAnswers = (requests: readonly ElicitationRequest[], raw: unknown): Record<string, ElicitationAnswer> => {
+export const parseElicitationAnswers = (
+  requests: readonly ElicitationRequest[],
+  raw: unknown,
+  options: { server: string; onValidatorFailure(request: ElicitationRequest, message: string): void },
+): Record<string, ElicitationAnswer> => {
   if (!isRecord(raw)) throw new McpElicitationAnswerError('', 'responses must be an object keyed by request key');
   const known = new Set(requests.map((request) => request.key));
   for (const key of Object.keys(raw)) {
@@ -112,8 +117,14 @@ export const parseElicitationAnswers = (requests: readonly ElicitationRequest[],
   for (const request of requests) {
     if (!(request.key in raw)) throw new McpElicitationAnswerError(request.key, `no answer was given for "${request.key}"`);
     const answer = parseElicitationAnswer(request.key, raw[request.key]);
-    validateAgainst(request, answer);
-    answers[request.key] = answer;
+    try {
+      validateAgainst(options.server, request, answer);
+      answers[request.key] = answer;
+    } catch (error) {
+      if (!(error instanceof SchemaValidatorFailure)) throw error;
+      options.onValidatorFailure(request, error.message);
+      answers[request.key] = { action: 'decline' };
+    }
   }
   return answers;
 };

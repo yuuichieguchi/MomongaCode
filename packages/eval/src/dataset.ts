@@ -1,5 +1,5 @@
-import Ajv2020 from 'ajv/dist/2020.js';
-import type { ValidateFunction } from 'ajv/dist/2020.js';
+import { defineProductSchema, parseOutsideJson } from '@momonga/foundation';
+import type { ProductValidator, UntrustedError } from '@momonga/foundation';
 import { PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
 import type { PermissionMode, RunStatus, StopReason } from '@momonga/protocol';
 
@@ -113,13 +113,12 @@ export const DATASET_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-const ajv = new Ajv2020.default({ strict: true });
-const validateDataset: ValidateFunction<GoldenDataset> = ajv.compile<GoldenDataset>(DATASET_SCHEMA);
+const validateDataset: ProductValidator<GoldenDataset> = defineProductSchema('eval/dataset', DATASET_SCHEMA);
 
-export const describeFirstError = (validate: Pick<ValidateFunction, 'errors'>): string => {
-  const first = validate.errors?.[0];
+export const describeFirstError = (errors: readonly UntrustedError[]): string => {
+  const first = errors[0];
   if (first === undefined) return '/: schema violation';
-  return `${first.instancePath === '' ? '/' : first.instancePath}: ${first.message ?? 'schema violation'}`;
+  return `${first.instancePath === '' ? '/' : first.instancePath}: ${first.message}`;
 };
 
 type CasesHolder = { cases: readonly GoldenCase[] };
@@ -181,7 +180,7 @@ export const assertGoldenCases = (dataset: CasesHolder, source: string): void =>
 
 export const jsonOf = (text: string, source: string): unknown => {
   try {
-    return JSON.parse(text);
+    return parseOutsideJson(text);
   } catch (error) {
     throw new DatasetError(`${source}: not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -189,7 +188,8 @@ export const jsonOf = (text: string, source: string): unknown => {
 
 export const parseDataset = (text: string, source: string): GoldenDataset => {
   const value = jsonOf(text, source);
-  if (!validateDataset(value)) throw new DatasetError(`${source}: invalid dataset at ${describeFirstError(validateDataset)}`);
-  assertGoldenCases(value, source);
-  return value;
+  const verdict = validateDataset(value);
+  if (!verdict.valid) throw new DatasetError(`${source}: invalid dataset at ${describeFirstError(verdict.errors)}`);
+  assertGoldenCases(verdict.value, source);
+  return verdict.value;
 };

@@ -52,6 +52,8 @@ describe('subagent runs on the Run API', () => {
     const env = await startService();
     const { run, child } = await spawnChild(env);
     expect((await env.http('POST', `/v1/runs/${run.id}/cancel`)).status).toBe(202);
+    expect(env.store.getRun(child.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'QUEUED' });
+    expect(await env.store.finishCancelled(() => undefined)).toEqual(expect.arrayContaining([child.id]));
     expect((await env.getRun(child.id)).status).toBe('CANCELLED');
   });
 

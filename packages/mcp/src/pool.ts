@@ -36,8 +36,10 @@ export type McpAuthorizingPool = McpPool & {
 
 export const createMcpPool = (options: McpPoolOptions): McpAuthorizingPool => {
   const { servers, projectDir, baseEnv, clock } = options;
+  const noticesOf = new Map<string, string[]>(servers.map((entry) => [entry.name, []]));
   const connections = servers.map((entry) =>
     createManagedConnection({
+      onNotice: (message) => noticesOf.get(entry.name)?.push(message),
       name: entry.name,
       config: entry.config,
       scope: entry.scope,
@@ -63,6 +65,7 @@ export const createMcpPool = (options: McpPoolOptions): McpAuthorizingPool => {
       createMcpToolSource({
         server: connection.name,
         connection,
+        takeNotices: () => noticesOf.get(connection.name)?.splice(0) ?? [],
         ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }),
       }),
     ),

@@ -1,6 +1,7 @@
+import { contextOf } from './own-reasoning.ts';
 import { createChatCompletionsAdapter } from '@momonga/gateway';
 import type { ChatCompletionsAdapter, ChatCompletionsAdapterOptions } from '@momonga/gateway';
-import type { AdapterRequest, AdapterTarget, Capabilities, StreamEvent } from '@momonga/protocol';
+import type { AdapterRequest, AdapterTarget, Capabilities, StreamEvent, ToolCallingMode } from '@momonga/protocol';
 import { createFakeClock, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsOptions, FakeChatCompletionsServer } from '@momonga/testkit';
 import { START_MS, registerCleanup, validator } from './gateway-helpers.ts';
@@ -32,12 +33,12 @@ export const startFake = async (options: FakeChatCompletionsOptions): Promise<Fa
 export const makeAdapter = (
   fake: FakeChatCompletionsServer,
   overrides: Partial<ChatCompletionsAdapterOptions> = {},
+  mode: ToolCallingMode = 'native',
 ): ChatCompletionsAdapter => {
   const clock = createFakeClock(START_MS);
   const adapter = createChatCompletionsAdapter({
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
-    toolCalling: () => 'native',
-    capabilities: async () => CC_CAPABILITIES,
+    capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: mode }),
     schemaDialect: () => CC_CAPABILITIES.schemaDialect,
     clock,
     ...overrides,
@@ -55,7 +56,7 @@ export const collect = async (
 ): Promise<Collected> => {
   const events: StreamEvent[] = [];
   try {
-    for await (const event of adapter.create(request, { signal, target: TARGET, attempt: 1 })) events.push(event);
+    for await (const event of adapter.create(request, await contextOf(adapter, TARGET, signal))) events.push(event);
   } catch (error) {
     return { events, error };
   }

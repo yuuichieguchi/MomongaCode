@@ -14,12 +14,12 @@ import {
   textOfItem,
   workingStateCapFor,
 } from '@momonga/context';
-import type { ActivatedSkill, TokenMeter, BuildContextInput, ContextArrival, BuildContextPorts, BuiltContext, CompactionPlan, ContextEviction, LoadedGoverning, PinnedMeasure, TouchedPath } from '@momonga/context';
+import type { ActivatedSkill, TokenMeter, BuildContextInput, ContextArrival, ContextNotice, BuildContextPorts, BuiltContext, CompactionPlan, ContextEviction, LoadedGoverning, PinnedMeasure, TouchedPath } from '@momonga/context';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { resolveGoverning } from '@momonga/memory';
 import type { Session } from '@momonga/store';
 import { compactionSummaryMessage, decodeCompactionSummary, tokensForText, userMessageContent } from '@momonga/protocol';
-import type { CompactRequest, CompactResource, CompactionInputItem, ContentPart, FunctionTool, InputItem, MessageInputItem, RunEvent, RunEventPayload, RunState, SummaryFidelity } from '@momonga/protocol';
+import type { CompactRequest, CompactResource, CompactionInputItem, ContentPart, FunctionTool, InputItem, MessageInputItem, NoticeReduction, RunEvent, RunEventPayload, RunState, SummaryFidelity } from '@momonga/protocol';
 import { foldRunState } from '@momonga/store';
 import { GatewayRequestError } from '../gateway-client.ts';
 import { recallQueryOf } from '../memory/recall-query.ts';
@@ -76,7 +76,7 @@ const governingFor = (ctx: ClaimContext, session: Session, touched: readonly Tou
     ...(scan === 'live' ? { ignorePaths: true } : {}),
   });
 
-const governingKeyOf = (governing: LoadedGoverning): string => canonicalJson({ active: governing.active, conflicts: governing.conflicts });
+const governingKeyOf = (governing: { active: unknown; conflicts: unknown }): string => canonicalJson({ active: governing.active, conflicts: governing.conflicts });
 
 const EMPTY_GOVERNING: LoadedGoverning = { active: [], conflicts: [] };
 
@@ -88,7 +88,11 @@ const workingStateOf = (ctx: ClaimContext, state: RunState): string | undefined 
 const projectedWorkingStateOf = (ctx: ClaimContext, state: RunState): string | undefined =>
   state.history.length === 0 ? undefined : workingStateOf(ctx, projectCompaction(ctx, state.nextItemSeq - 1, compactionSummaryMessage(''), ''));
 
-type AdmittedFloor = { pinnedTokens: number; tools: FunctionTool[] };
+type AdmittedFloor = { pinnedTokens: number; tools: FunctionTool[]; offered: string; governing: string };
+
+type Companions = ReturnType<ClaimContext['companions']>;
+
+const offeredKeyOf = (tools: readonly FunctionTool[], companions: Companions): string => sha256Hex(canonicalJson({ tools, companions }));
 
 const admittedFloors = new WeakMap<ClaimContext, AdmittedFloor>();
 
@@ -101,13 +105,15 @@ const recordedReferencesOf = (ctx: ClaimContext): ReadonlySet<string> =>
       )
     : new Set<string>();
 
-export const contextInputOf = (
+type OfferedInput = { input: BuildContextInput; offered: string; governing: string };
+
+const offeredInputOf = (
   ctx: ClaimContext,
   wrapUp: WrapUpReason | undefined,
   level: number,
-  scan: GoverningScan = 'active',
-  trailing: readonly InputItem[] = [],
-): BuildContextInput => {
+  scan: GoverningScan,
+  trailing: readonly InputItem[],
+): OfferedInput => {
   const { options, journal } = ctx;
   const state = journal.state;
   const session = sessionOf(ctx);
@@ -115,21 +121,28 @@ export const contextInputOf = (
   const projectedWorkingState = projectedWorkingStateOf(ctx, state);
   const task = taskOf(ctx);
   const touchedPaths = touchedPathsOf(state.workingFacts.touched, session.cwd);
-  const admitted = ctx.token.observedCapacity ? admittedFloors.get(ctx) : undefined;
+  const candidates = ctx.functionTools();
+  const companions = ctx.companions();
+  const offered = offeredKeyOf(candidates, companions);
+  const governing = governingFor(ctx, session, touchedPaths, scan);
+  const governingKey = governingKeyOf(governing);
+  const recorded = admittedFloors.get(ctx);
+  const admittedTools = recorded !== undefined && (ctx.token.observedCapacity || recorded.offered === offered) ? recorded : undefined;
+  const admittedFloor = admittedTools !== undefined && admittedTools.governing === governingKey ? admittedTools : undefined;
   const rendered = ctx.token.observedCapacity ? renderedFormsOf(options.store, ctx.run.id, state.lastSeq) : undefined;
   const wrapUpItems: InputItem[] = wrapUp === undefined ? [] : [{ type: 'message', role: 'user', content: wrapUpInstructionFor(wrapUp) }];
-  return {
+  const input: BuildContextInput = {
     capabilities: ctx.capabilities,
     calibration: ctx.calibration,
     model: ctx.alias,
     sources: {
       systemPrompt: ctx.systemPrompt,
-      tools: admitted === undefined ? ctx.functionTools() : admitted.tools,
+      tools: admittedTools === undefined ? candidates : admittedTools.tools,
       task: { type: 'message', role: 'user', content: task.content },
       taskSeq: state.taskSeq,
       ...(ctx.skills.catalog === undefined ? {} : { skillCatalog: ctx.skills.catalog }),
       activatedSkills: state.activatedSkills,
-      governing: governingFor(ctx, session, touchedPaths, scan),
+      governing,
       memories: ctx.recalled.rank(recallQueryOf(task.text, touchedPaths.map((entry) => entry.path), session.cwd)),
       history: state.history
         .filter((entry) => entry.seq !== state.taskSeq)
@@ -138,7 +151,7 @@ export const contextInputOf = (
       ...(workingState === undefined ? {} : { workingState }),
       ...(projectedWorkingState === undefined ? {} : { projectedWorkingState }),
     },
-    companions: ctx.companions(),
+    companions,
     evicted: new Set(state.evicted),
     recordedReferences: recordedReferencesOf(ctx),
     ...(ctx.memoryShare === undefined ? {} : { memoryShare: ctx.memoryShare }),
@@ -157,16 +170,26 @@ export const contextInputOf = (
           ...(state.memoriesLoaded === undefined ? {} : { pinnedMemoryIds: state.memoriesLoaded.map((memory) => memory.id) }),
         }
       : {}),
+    ...(admittedTools === undefined ? {} : { toolsFrozen: true as const }),
+    ...(admittedFloor === undefined ? {} : { pinnedTokens: admittedFloor.pinnedTokens }),
     ...(ctx.token.observedCapacity
       ? {
           observedCapacity: true as const,
-          ...(admitted === undefined ? {} : { pinnedTokens: admitted.pinnedTokens }),
           ...(rendered === undefined ? {} : { forms: rendered.forms, renderedFull: rendered.renderedFull }),
         }
       : {}),
     outputFormatters: ctx.token.outputFormatters,
   };
+  return { input, offered, governing: governingKey };
 };
+
+export const contextInputOf = (
+  ctx: ClaimContext,
+  wrapUp: WrapUpReason | undefined,
+  level: number,
+  scan: GoverningScan = 'active',
+  trailing: readonly InputItem[] = [],
+): BuildContextInput => offeredInputOf(ctx, wrapUp, level, scan, trailing).input;
 
 const portsOf = (ctx: ClaimContext): BuildContextPorts => ({
   meter: ctx.meter,
@@ -185,6 +208,7 @@ export type ToolsMeasure = { measure: PinnedMeasure; floorTokens: number; kept: 
 export const measureToolsWith = async (ctx: ClaimContext, tools: readonly FunctionTool[]): Promise<ToolsMeasure> => {
   const input: BuildContextInput = { ...contextInputOf(ctx, undefined, 0) };
   delete input.pinnedTokens;
+  delete input.toolsFrozen;
   const counts: { tools: readonly FunctionTool[]; tokens: number }[] = [];
   const ports = portsOf(ctx);
   const meter: TokenMeter = {
@@ -205,7 +229,8 @@ export const measureToolsWith = async (ctx: ClaimContext, tools: readonly Functi
 export const hasAdmittedTools = (ctx: ClaimContext): boolean => ctx.token.observedCapacity && admittedFloors.has(ctx);
 
 export const rememberAdmittedTools = (ctx: ClaimContext, tools: readonly FunctionTool[], pinnedTokens: number): void => {
-  if (ctx.token.observedCapacity && admittedFloors.has(ctx)) admittedFloors.set(ctx, { pinnedTokens, tools: [...tools] });
+  const admitted = admittedFloors.get(ctx);
+  if (ctx.token.observedCapacity && admitted !== undefined) admittedFloors.set(ctx, { ...admitted, pinnedTokens, tools: [...tools] });
 };
 
 const withNewSkills = (arrivals: readonly ContextArrival[], activatedSkills: readonly ActivatedSkill[]): ContextArrival[] => [
@@ -217,6 +242,7 @@ const withNewSkills = (arrivals: readonly ContextArrival[], activatedSkills: rea
 
 export const measureLayersWith = (ctx: ClaimContext, activatedSkills: readonly ActivatedSkill[]): Promise<void> => {
   const input = contextInputOf(ctx, undefined, 0);
+  delete input.pinnedTokens;
   return measureLayers(
     {
       ...input,
@@ -228,17 +254,20 @@ export const measureLayersWith = (ctx: ClaimContext, activatedSkills: readonly A
 };
 
 const buildOnce = async (ctx: ClaimContext, wrapUp: WrapUpReason | undefined, level: number, trailing: readonly InputItem[]): Promise<BuiltContext> => {
-  const built = await buildContext(contextInputOf(ctx, wrapUp, level, 'active', trailing), portsOf(ctx));
+  const { input, offered, governing } = offeredInputOf(ctx, wrapUp, level, 'active', trailing);
+  const built = await buildContext(input, portsOf(ctx));
   if (wrapUp === undefined) {
     ctx.pinnedDigest.value ??= built.pinnedDigest;
-    if (ctx.token.observedCapacity && !admittedFloors.has(ctx)) admittedFloors.set(ctx, { pinnedTokens: built.pinnedTokens, tools: built.tools });
+    if (input.pinnedTokens === undefined) {
+      admittedFloors.set(ctx, { pinnedTokens: built.pinnedTokens, tools: built.tools, offered, governing });
+    }
   }
   return built;
 };
 
 type CompactedPayload = Extract<RunEventPayload, { type: 'context.compacted' }>;
 type CompactedEvent = Extract<RunEvent, { type: 'context.compacted' }>;
-type CompactionSource = Pick<CompactionPlan, 'throughSeq' | 'input' | 'summaryTokenCap' | 'pinnedText'>;
+type CompactionSource = Pick<CompactionPlan, 'throughSeq' | 'input' | 'summaryTokenCap' | 'pinnedText' | 'notices'>;
 
 const wholeBlobText = async (blobs: WorkerBlobs, handle: string, scope: { runId: string }): Promise<string> => {
   const { totalBytes } = await blobs.read(handle, { offset: 0, length: 0 }, scope);
@@ -353,6 +382,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
         `Compaction summary failed (${error.code}): ${error.message}${roleAlias === undefined ? '' : ` [models.roles.compaction names alias ${roleAlias}]`}; the deterministic summary was used`,
       ),
       deterministicCompaction(ctx, plan, NO_ADOPTED_GUIDELINE),
+      ...unrecordedNoticePayloads(ctx, plan.notices),
     ]);
     return;
   }
@@ -401,12 +431,13 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
     accepted
       ? { type: 'context.compacted', item, summary, replacedThroughSeq: plan.throughSeq, source: 'model', fidelity, guidelineVersion }
       : deterministicCompaction(ctx, plan, guidelineVersion, fidelity),
+    ...unrecordedNoticePayloads(ctx, plan.notices),
   ]);
 };
 
 const interrupted = (ctx: ClaimContext): boolean => ctx.control.signal.aborted || ctx.control.cancelRequested();
 
-export const cancelIfInterrupted = (ctx: ClaimContext): 'done' | undefined => {
+export const cancelIfInterrupted = async (ctx: ClaimContext): Promise<'done' | undefined> => {
   const failure = ctx.control.failure();
   if (failure !== undefined) throw failure;
   if (ctx.control.leaseLost()) ctx.control.lost();
@@ -414,14 +445,28 @@ export const cancelIfInterrupted = (ctx: ClaimContext): 'done' | undefined => {
   return interrupted(ctx) ? ctx.terminals.cancel() : undefined;
 };
 
-const recordContextFacts = (ctx: ClaimContext, built: BuiltContext): void => {
-  const known = new Set(ctx.journal.state.notes.map((note) => note.message));
+const unrecordedNoticePayloads = (ctx: ClaimContext, notices: readonly ContextNotice[]): RunEventPayload[] => {
+  const identityOf = (message: string, code: string | undefined, reduction: NoticeReduction | undefined): string =>
+    reduction === undefined ? canonicalJson(['message', message]) : canonicalJson(['reduction', code, reduction.turn, reduction.from, reduction.to]);
+  const known = new Set(ctx.journal.state.notes.map((note) => identityOf(note.message, note.code, note.reduction)));
   const payloads: RunEventPayload[] = [];
-  for (const notice of built.notices) {
-    if (known.has(notice.message)) continue;
-    known.add(notice.message);
-    payloads.push({ type: 'notice', level: 'warning', message: notice.message, code: notice.code });
+  for (const notice of notices) {
+    const identity = identityOf(notice.message, notice.code, notice.reduction);
+    if (known.has(identity)) continue;
+    known.add(identity);
+    payloads.push({
+      type: 'notice',
+      level: 'warning',
+      message: notice.message,
+      code: notice.code,
+      ...(notice.reduction === undefined ? {} : { reduction: notice.reduction }),
+    });
   }
+  return payloads;
+};
+
+const recordContextFacts = (ctx: ClaimContext, built: BuiltContext): void => {
+  const payloads = unrecordedNoticePayloads(ctx, built.notices);
   for (const instruction of built.loadedInstructions) {
     const recorded = ctx.journal.state.loadedInstructions.find((entry) => entry.path === instruction.path);
     if (recorded?.textSha256 === instruction.textSha256) continue;
@@ -468,11 +513,11 @@ const recordEvictions = (ctx: ClaimContext, evictions: readonly ContextEviction[
   );
 };
 
-export const recoverRejectedCompaction = (ctx: ClaimContext, error: unknown, position?: { step: number; attempt: number }): 'recovered' | 'done' => {
+export const recoverRejectedCompaction = async (ctx: ClaimContext, error: unknown, position?: { step: number; attempt: number }): Promise<'recovered' | 'done'> => {
   const summary = ctx.journal.state.summary;
   if (!(error instanceof GatewayRequestError) || error.code !== 'invalid_compaction' || summary?.item.type !== 'compaction') throw error;
   if (summary.summary === '') {
-    ctx.terminals.finish('FAILED', {
+    await ctx.terminals.finish('FAILED', {
       error: {
         code: 'compaction_unverifiable',
         message: 'The gateway rejected the compaction item of this run and its summary text was not recorded, so the conversation cannot be rebuilt.',
@@ -589,36 +634,37 @@ const buildNextUnguarded = async (ctx: ClaimContext, options: { wrapUp?: WrapUpR
       if (error instanceof GatewayRequestError) delete ctx.control.inFlight.compactionKey;
       if (error instanceof GatewayRequestError && error.code === 'invalid_compaction') {
         attempt.attempts -= 1;
-        return recoverRejectedCompaction(ctx, error) === 'done' ? 'done' : 'retry';
+        return (await recoverRejectedCompaction(ctx, error)) === 'done' ? 'done' : 'retry';
       }
       throw error;
     }
   };
 
-  const stop = (error: ContextOverflowError, clause: string): BuildOutcome => {
+  const stop = async (error: ContextOverflowError, clause: string): Promise<BuildOutcome> => {
     ctx.journal.append([{ type: 'notice', level: 'error', message: budgetStopNotice(ctx, error, attempt, clause), code: 'context_budget_stop' }]);
-    ctx.terminals.finish('STOPPED', { stopReason: 'budget' });
+    await ctx.terminals.finish('STOPPED', { stopReason: 'budget' });
     return { kind: 'done' };
   };
 
   for (;;) {
-    if (cancelIfInterrupted(ctx) === 'done') return { kind: 'done' };
+    if ((await cancelIfInterrupted(ctx)) === 'done') return { kind: 'done' };
     let built: BuiltContext;
     try {
       built = await buildOnce(ctx, options.wrapUp, level, trailing);
     } catch (error) {
       if (error instanceof PinnedOverflowError) {
-        ctx.terminals.finish('FAILED', { error: pinnedFailureFor(ctx, error) });
+        await ctx.terminals.finish('FAILED', { error: pinnedFailureFor(ctx, error) });
         return { kind: 'done' };
       }
       if (error instanceof GatewayRequestError && error.code === 'invalid_compaction') {
-        if (recoverRejectedCompaction(ctx, error) === 'done') return { kind: 'done' };
+        if ((await recoverRejectedCompaction(ctx, error)) === 'done') return { kind: 'done' };
         continue;
       }
       if (!(error instanceof ContextOverflowError)) throw error;
+      ctx.options.onContextOverflow?.(error);
       if (error.compaction !== undefined && ctx.autoCompact && !levelsWithCompaction.has(level)) {
         levelsWithCompaction.add(level);
-        if (cancelIfInterrupted(ctx) === 'done') return { kind: 'done' };
+        if ((await cancelIfInterrupted(ctx)) === 'done') return { kind: 'done' };
         const result = await compact(error.compaction);
         if (result === 'done') return { kind: 'done' };
         if (result === 'retry') levelsWithCompaction.delete(level);
@@ -640,12 +686,12 @@ const buildNextUnguarded = async (ctx: ClaimContext, options: { wrapUp?: WrapUpR
         }
         throw wrapUpError;
       }
-      if (cancelIfInterrupted(ctx) === 'done') return { kind: 'done' };
+      if ((await cancelIfInterrupted(ctx)) === 'done') return { kind: 'done' };
       recordContextFacts(ctx, wrapUpBuilt);
       recordEvictions(ctx, wrapUpBuilt.evictions);
       return { kind: 'built', built: wrapUpBuilt, wrapUp: { reason: 'context', notice: budgetStopNotice(ctx, error, attempt, 'a final summary was requested') } };
     }
-    if (cancelIfInterrupted(ctx) === 'done') return { kind: 'done' };
+    if ((await cancelIfInterrupted(ctx)) === 'done') return { kind: 'done' };
     if (built.compaction !== undefined && ctx.autoCompact && options.wrapUp === undefined && level === 0 && !proactiveDone) {
       proactiveDone = true;
       const result = await compact(built.compaction);

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { LeaseLostError } from '@momonga/runtime';
 import { CLASSIFIER_INSTRUCTIONS, createAutoClassifier } from '../../src/worker/auto-classifier.ts';
 import type { ClaimContext } from '../../src/worker/claim-context.ts';
 import { capabilitiesFor, makeEnv } from './harness.ts';
@@ -126,7 +127,7 @@ describe('auto mode in the worker', () => {
     env.gateway.script.push(write, textStep(verdict({ verdict: 'unsafe' })), textStep('Written.'));
     const run = env.enqueue('Write out.txt');
     await env.runOnce(env.worker());
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
     await env.runOnce(env.worker('worker-2'));
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.ofType(run.id, 'tool.permission.classified')).toHaveLength(1);
@@ -178,7 +179,7 @@ describe('auto mode classifier verdict after a crash', () => {
     let armed = true;
     const crash = (): never => {
       armed = false;
-      throw new Error('the worker process was killed');
+      throw new LeaseLostError();
     };
     return {
       ...env.executor,
@@ -196,7 +197,7 @@ describe('auto mode classifier verdict after a crash', () => {
     const run = env.enqueue('Write out.txt');
 
     await env.runOnce(env.worker('worker-1', { tools: { executor: crashOnce(env, 'after the batch') } }));
-    expect(env.run(run.id).status).toBe('QUEUED');
+    expect(env.run(run.id).status).toBe('RUNNING');
     expect(env.ofType(run.id, 'tool.permission.requested')).toEqual([]);
     env.clock.advance(120_000);
     await env.runOnce(env.worker('worker-2'));

@@ -3,6 +3,7 @@ import { TOOL_USAGE_WINDOW_RUNS } from '@momonga/memory';
 import type { RunEventPayload } from '@momonga/protocol';
 import { readRunLimits } from '../../src/worker/limits.ts';
 import { toolUsageWindowOf } from '../../src/worker/tool-usage-window.ts';
+import { TOOL_OFFERED, bodyWatchedStore } from './body-watched-store.ts';
 import { DEADLINE_MS, createdRun, makeEnv } from './harness.ts';
 import { LARGE_RUN_SETUP_TEST_TIMEOUT_MS, PAUSE_BUDGET_MS, threadCpuMillisOf } from './pause-budget.ts';
 const STEPS = readRunLimits({}).maxSteps;
@@ -45,16 +46,19 @@ const requestOf = (step: number): RunEventPayload => ({
   },
 });
 
+const offeredRecord = { type: TOOL_OFFERED, names: TOOLS.map((tool) => tool.name) } as unknown as RunEventPayload;
+
 const runEvents = (now: number): RunEventPayload[] => [
   { type: 'run.started', attempt: 1, now, pins: {}, mode: 'default' },
+  offeredRecord,
   ...Array.from({ length: STEPS }, (_unused, index) => index + 1).flatMap((step): RunEventPayload[] => [
     requestOf(step),
     { type: 'tool.call', callId: `call_${step}`, providerCallId: `call_${step}`, name: 'Tool00', kind: 'read', title: 'Tool00', rawInput: {} },
   ]),
 ];
 
-describe('the cost of the tool usage window at root run start (open item 8)', () => {
-  it('reads the request bodies of the window runs within the pause budget of run start', async () => {
+describe('the cost of the tool usage window at root run start (person item 9)', () => {
+  it('reads one offered-names record per window run, never the request bodies, within the pause budget of run start', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     let bodyBytes = 0;
     for (let index = 0; index < TOOL_USAGE_WINDOW_RUNS; index += 1) {
@@ -63,12 +67,16 @@ describe('the cost of the tool usage window at root run start (open item 8)', ()
       const events = runEvents(env.clock.now());
       bodyBytes += events.reduce((sum, event) => sum + (event.type === 'model.requested' ? Buffer.byteLength(JSON.stringify(event.body)) : 0), 0);
       const claim = env.seed(run.id, events, 'hold');
-      expect(env.store.transition(claim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
+      expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
     }
 
-    const { value: window, millis } = await threadCpuMillisOf(() => toolUsageWindowOf(env.store, env.session.cwd));
+    const { store, reads } = bodyWatchedStore(env.store);
 
-    console.info(`${TOOL_USAGE_WINDOW_RUNS} runs of ${STEPS} requests, ${bodyBytes} body bytes: tool usage window ${millis.toFixed(1)} ms of thread CPU time`);
+    const { value: window, millis } = await threadCpuMillisOf(() => toolUsageWindowOf(store, env.session.cwd));
+
+    console.info(`${TOOL_USAGE_WINDOW_RUNS} runs of ${STEPS} requests, ${bodyBytes} body bytes: tool usage window ${millis.toFixed(1)} ms of thread CPU time, ${reads.eventsReturned} events read`);
+    expect(reads.bodyReads).toEqual([]);
+    expect(reads.eventsReturned).toBeLessThanOrEqual(TOOL_USAGE_WINDOW_RUNS);
     expect(window).toHaveLength(TOOL_USAGE_WINDOW_RUNS);
     expect(window[0]).toEqual({ offered: TOOLS.map((tool) => tool.name), called: ['Tool00'] });
     expect(millis).toBeLessThan(PAUSE_BUDGET_MS);

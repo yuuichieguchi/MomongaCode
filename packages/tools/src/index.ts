@@ -38,7 +38,7 @@ export type {
   ToolIdempotencyLookup,
   ToolIdempotencyRecord,
 } from './ports.ts';
-export { createToolRegistry } from './registry.ts';
+export { createToolRegistry, extendToolSet } from './registry.ts';
 export { MINIMUM_INLINE_OUTPUT_CHARS } from './truncate.ts';
 export type { SnapshotOptions, ToolListOptions, ToolRegistry, ToolSet, ToolSource, ToolSourceListing } from './registry.ts';
 export { TOOL_TIERS, defineTool, ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
@@ -61,14 +61,13 @@ export type {
   ToolSessionState,
   ToolTier,
 } from './types.ts';
-export { validateToolInput } from './validate.ts';
+export { TOOL_VALIDATOR_FAILED_CODE, schemaIdentity, toolRefusalKey, validateToolInput } from './validate.ts';
 export type { ValidationResult } from './validate.ts';
 export { buildSandboxPolicy, createBuiltinTools } from './builtins/index.ts';
 export { readOnlyEnvironment, readOnlySandboxPolicy } from './read-only-call.ts';
 export type { SandboxPolicyOptions } from './builtins/index.ts';
 export { ShellNotFoundError, nodeShellHost, resolveBashPath } from './builtins/shell.ts';
 export type { ShellHost } from './builtins/shell.ts';
-export { compileUntrustedSchema, untrustedSchemaCacheSize } from './untrusted-schema.ts';
 export { createGlobExpander, createPolicyFilesystem, nodeGlobPorts } from './policy-filesystem.ts';
 export type { GlobChild, GlobPorts } from './policy-filesystem.ts';
 export {

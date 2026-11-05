@@ -180,11 +180,12 @@ describe('the manifest of specs/tla', () => {
       'RunRecovery.unlocked': evidenceAtMostOnce,
       'RunRecovery.reapOnly': evidenceAtMostOnce,
       'RunRecovery.noReap': { role: 'evidence', expect: { violates: 'ReconcileSeesStoppedEffect', exitCode: 12 }, args: [], tier: 'every-run' },
-    });
+      'RunRecovery.uniformCancelNoWorkers': { role: 'check', expect: 'holds', args: LIVENESS_ARGS, tier: 'every-run' },
+      'RunRecovery.uniformCancelNoSweeper': { role: 'evidence', expect: { violates: 'CancelNeedsNoWorker', exitCode: 13 }, args: LIVENESS_ARGS, tier: 'every-run' },    });
   });
 
   it('records the measured distinct states of lockOnly', () => {
-    expect(manifestOrThrow().entries.find((entry) => entry.config === 'RunRecovery.lockOnly')?.distinctStates).toBe(1065330);
+    expect(manifestOrThrow().entries.find((entry) => entry.config === 'RunRecovery.lockOnly')?.distinctStates).toBe(1071230);
   });
 
   it('derives every budget as twice the measured seconds, rounded up', () => {

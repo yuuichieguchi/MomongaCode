@@ -158,7 +158,7 @@ export class IncrementalJsonParser {
 
   private openContainer(kind: Container, events: JsonEvent[]): void {
     if (this.stack.length >= this.limits.maxDepth) {
-      throw new JsonSyntaxError(`the JSON document nests deeper than ${this.limits.maxDepth} levels`);
+      throw new JsonSyntaxError(`the JSON document exceeds the depth limit of ${this.limits.maxDepth}`);
     }
     this.stack.push(kind);
     events.push({ type: kind === 'object' ? 'object-start' : 'array-start' });

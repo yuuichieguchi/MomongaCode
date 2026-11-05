@@ -1,3 +1,4 @@
+import { EVERY_REASONING_IS_OWN, contextOf } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
 import { wireOf } from '@momonga/gateway';
 import type { AdapterCompactRequest, ToolCallingMode } from '@momonga/protocol';
@@ -25,8 +26,8 @@ describe('renderCompactWire', () => {
     expect(adapter.renderCompactWire).toBeTypeOf('function');
     await adapter.compact?.(
       { ...request, momonga: { max_summary_tokens: cap } },
-      { signal: new AbortController().signal, target: TARGET, attempt: 1 },
+      await contextOf(adapter, TARGET),
     );
-    expect(JSON.stringify(adapter.renderCompactWire?.(request, TARGET, cap))).toBe(JSON.stringify(wireOf(lastCompletionBody(fake))));
+    expect(JSON.stringify(adapter.renderCompactWire?.(request, TARGET, cap, EVERY_REASONING_IS_OWN, await adapter.capabilities(TARGET)))).toBe(JSON.stringify(wireOf(lastCompletionBody(fake))));
   });
 });
