@@ -1,6 +1,6 @@
 import { defineProductSchema, transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
 import type { ProductValidator, UntrustedError } from '@momonga/foundation';
-import type { CapabilitiesCore, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetBilling, PermissionMode } from '@momonga/protocol';
+import type { AnthropicApiVersion, CapabilitiesCore, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetBilling, PermissionMode } from '@momonga/protocol';
 import { MCP_SERVERS_FILE_SCHEMA, MCP_SERVER_SCHEMA, MODEL_ROLES, SETTINGS_SCHEMA } from './settings-schema.ts';
 
 export type PermissionsSettings = {
@@ -94,6 +94,7 @@ export type AnthropicTarget = {
   apiKeyEnv?: string;
   apiKeySecret?: string;
   billing?: TargetBilling;
+  apiVersion?: AnthropicApiVersion;
   capabilities: RemoteTargetCapabilities;
   maxConcurrency?: number;
   admissionTimeoutMs?: number;
@@ -161,6 +162,7 @@ export type ResolvedAnthropicTarget = {
   apiKeySecret?: string;
   toolCalling: 'native';
   billing: TargetBilling;
+  apiVersion: AnthropicApiVersion;
   capabilities: TargetCapabilities & { maxConcurrency: number };
   maxConcurrency: number;
   admissionTimeoutMs: number;

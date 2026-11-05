@@ -124,6 +124,7 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
 
   return {
     kind: inner.kind,
+    sampling: inner.sampling,
     capabilities: (target) => converting(() => inner.capabilities(target)),
     create: (request, ctx) => {
       const source = convertingSync(() => inner.create(request, ctx));

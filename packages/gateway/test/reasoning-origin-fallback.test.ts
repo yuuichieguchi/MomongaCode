@@ -51,6 +51,7 @@ describe('a fallback away and back on a mixed-adapter alias (item 5, decision 2(
       apiKey: async () => FAKE_API_KEY,
       capabilities: async () => REMOTE_CAPABILITIES,
       clock: createFakeClock(START_MS),
+      apiVersion: '2026-10-21',
     });
     registerCleanup(() => primary.close());
     const ollamaFake = await startFakeOllama({

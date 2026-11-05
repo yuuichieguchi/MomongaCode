@@ -26,6 +26,7 @@ describe('anthropic adapter through the gateway: text', () => {
   it('streams text deltas and completes with usage that includes the cache fields', async () => {
     const gateway = await startAnthropicGateway({
       capabilities: BREAKPOINTS,
+      apiVersion: '2023-06-01',
       script: [
         anthropicStream([
           anthropicMessageStart({ input_tokens: 10, cache_creation_input_tokens: 100, cache_read_input_tokens: 50, output_tokens: 1 }),

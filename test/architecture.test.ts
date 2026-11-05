@@ -141,7 +141,7 @@ const listSourceFiles = (dir: string): string[] => {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) return listSourceFiles(full);
-    return /\.tsx?$/.test(entry.name) ? [full] : [];
+    return /\.tsx?$/.test(entry.name) && !entry.name.endsWith('.generated.ts') ? [full] : [];
   });
 };
 
@@ -389,7 +389,7 @@ const srcFilesOf = (dir: string): string[] =>
   fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) return entry.name === 'node_modules' || entry.name === 'test' ? [] : srcFilesOf(full);
-    return /\.(ts|tsx)$/.test(entry.name) ? [full] : [];
+    return /\.(ts|tsx)$/.test(entry.name) && !entry.name.endsWith('.generated.ts') ? [full] : [];
   });
 
 const unknownWritersByFile = (): Record<string, string[]> =>

@@ -5,6 +5,8 @@ import { createAdmissionGate } from './admission.ts';
 import type { AdmissionGate } from './admission.ts';
 import { preconditionText } from '../precondition-text.ts';
 import { invalidRequest, notFound } from './errors.ts';
+import { carriesSampling, samplingRefusalOf } from './sampling.ts';
+import type { SamplingRefusal, SamplingRequest } from './sampling.ts';
 import { TargetBreaker } from './request-breaker.ts';
 import { guardAdapter } from './guarded-adapter.ts';
 import type { ReasoningOriginCodec } from './reasoning-origin.ts';
@@ -25,7 +27,7 @@ export type TargetRuntime = {
   lastFailure: { code: string | null; message: string } | undefined;
 };
 
-export type CandidateRequirements = { tools?: boolean; images?: boolean };
+export type CandidateRequirements = { tools?: boolean; images?: boolean; sampling?: SamplingRequest };
 
 export type Router = {
   aliases(): string[];
@@ -174,6 +176,21 @@ export const createRouter = (options: RouterOptions): Router => {
       if (remaining.length === 0) {
         throw invalidRequest('capability_unsupported', `no target of model alias "${alias}" supports image input`, 'input');
       }
+    }
+    const { sampling } = requirements;
+    if (sampling !== undefined && carriesSampling(sampling)) {
+      const capabilities = await Promise.all(remaining.map((target) => capabilitiesOf(target)));
+      const refusals = new Map<TargetRuntime, SamplingRefusal>();
+      remaining.forEach((target, index) => {
+        const refusal = samplingRefusalOf(sampling, { name: target.name, kind: target.adapter.kind }, target.adapter.sampling, capabilities[index] as Capabilities);
+        if (refusal !== undefined) refusals.set(target, refusal);
+      });
+      const accepted = remaining.filter((target) => !refusals.has(target));
+      const [first] = refusals.values();
+      if (accepted.length === 0 && first !== undefined) {
+        throw invalidRequest('sampling_not_accepted', [...refusals.values()].map((refusal) => refusal.message).join('; '), first.field);
+      }
+      remaining = accepted;
     }
     return remaining;
   };

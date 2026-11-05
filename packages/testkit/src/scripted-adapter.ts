@@ -1,4 +1,4 @@
-import { applyCapabilityOverride } from '@momonga/protocol';
+import { SAMPLING_FIELDS, applyCapabilityOverride } from '@momonga/protocol';
 import type {
   AdapterCompactRequest,
   AdapterCompactResult,
@@ -151,6 +151,7 @@ export const createScriptedAdapter = (options: ScriptedAdapterOptions): Scripted
 
   const adapter: ScriptedAdapter = {
     kind: options.kind ?? 'scripted',
+    sampling: { renders: SAMPLING_FIELDS },
     calls,
     compactCalls,
     countCalls,

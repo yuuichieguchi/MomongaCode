@@ -13,6 +13,7 @@ import type {
 } from '@momonga/protocol';
 
 import { createStoredDataChecks } from '../core/validation.ts';
+import { RENDERS_EVERY_SAMPLING_FIELD } from './shared/sampling.ts';
 import { parseUpstreamJson } from './shared/upstream-json.ts';
 
 const RECORD_FILE_MODE = 0o600;
@@ -117,6 +118,7 @@ export const createReplayAdapter = (options: ReplayAdapterOptions): ProviderAdap
 
   return {
     kind: 'replay',
+    sampling: inner?.sampling ?? RENDERS_EVERY_SAMPLING_FIELD,
     capabilities: async (target) => {
       if (inner !== undefined) return inner.capabilities(target);
       if (options.capabilities === undefined) throw new TypeError('createReplayAdapter: strict mode without an inner adapter needs a capabilities option to answer capabilities()');

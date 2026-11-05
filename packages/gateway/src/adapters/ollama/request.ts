@@ -2,6 +2,7 @@ import { acceptedReasoningEfforts, clampReasoningEffort } from '@momonga/protoco
 import type { ToolChoiceWire, AdapterRequest, Capabilities, FunctionTool, ReasoningCapability, ReasoningEffort, ReasoningOrigin } from '@momonga/protocol';
 import { forbidsTools } from '../../core/tool-choice.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
+import { carriedSamplingOf } from '../shared/sampling.ts';
 import { SYSTEM_PART_SEPARATOR, systemTextOf } from '../shared/system-text.ts';
 import { ollamaHistoryOf } from './history.ts';
 import type { OllamaMessage } from './history.ts';
@@ -11,7 +12,7 @@ export type OllamaChatBody = {
   messages: OllamaMessage[];
   stream: boolean;
   truncate: false;
-  options: { num_ctx: number; num_predict: number; temperature?: number; top_p?: number };
+  options: { num_ctx: number; num_predict: number; temperature?: number; top_p?: number; frequency_penalty?: number; presence_penalty?: number };
   tools?: unknown[];
   format?: unknown;
   think?: boolean;
@@ -59,8 +60,7 @@ export const buildOllamaChatBody = (request: AdapterRequest, capabilities: Ollam
     options: {
       num_ctx: capabilities.contextWindow,
       num_predict: request.max_output_tokens ?? capabilities.maxOutputTokens,
-      ...(request.temperature === undefined || request.temperature === null ? {} : { temperature: request.temperature }),
-      ...(request.top_p === undefined || request.top_p === null ? {} : { top_p: request.top_p }),
+      ...carriedSamplingOf(request),
     },
     ...(sendsTools(request) ? { tools: (request.tools ?? []).map(toolOf) } : {}),
     ...formatOf(request),

@@ -11,7 +11,7 @@ import type {
   StreamEvent,
 } from '@momonga/protocol';
 import { DEFAULT_SCRIPTED_CAPABILITIES, responseResource } from '@momonga/testkit';
-import { ADAPTER_NEUTRAL_ERROR_CODES } from '@momonga/protocol';
+import { ADAPTER_NEUTRAL_ERROR_CODES, SAMPLING_FIELDS } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, SKIPPABLE_CODES, missingApiKeyError, runCancelledError } from '../src/core/errors.ts';
 import { GuardedAdapterError, guardAdapter } from '../src/core/guarded-adapter.ts';
 import { createRedactor } from '../src/core/redaction.ts';
@@ -41,6 +41,7 @@ async function* eventsOf(events: readonly StreamEvent[]): AsyncGenerator<StreamE
 
 const baseAdapter = (overrides: Partial<ProviderAdapter> = {}): ProviderAdapter => ({
   kind: 'probe-kind',
+  sampling: { renders: SAMPLING_FIELDS },
   capabilities: async () => DEFAULT_SCRIPTED_CAPABILITIES,
   toolChoiceWire: () => ({ forms: [], expressesRequired: true }),
   create: () => eventsOf([]),
@@ -129,6 +130,7 @@ describe('guardAdapter this binding', () => {
     const inner: ProviderAdapter = {
       ...optionalImplementations(record),
       kind: 'probe-kind',
+      sampling: { renders: SAMPLING_FIELDS },
       capabilities: async function (this: unknown) {
         record('capabilities', this);
         return DEFAULT_SCRIPTED_CAPABILITIES;

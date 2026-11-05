@@ -1,6 +1,6 @@
 import { decodeSse } from '@momonga/foundation';
-import { EXACT_ERROR_SHAPE, countReplyOf, summaryTokenCapFor } from '@momonga/protocol';
-import type { ToolChoiceWire, AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterCountTokensResult, AdapterInputItem, AdapterRequest, AdapterTarget, CountTokensRequest, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
+import { EXACT_ERROR_SHAPE, anthropicVersionSamplingBound, countReplyOf, summaryTokenCapFor } from '@momonga/protocol';
+import type { ToolChoiceWire, AdapterCompactRequest, AdapterSampling, AdapterCompactResult, AdapterContext, AdapterCountTokensResult, AdapterInputItem, AdapterRequest, AdapterTarget, CountTokensRequest, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
 import { normalizeInput } from '../../core/input.ts';
 import { resolveToolChoice } from '../../core/tool-choice.ts';
@@ -19,7 +19,7 @@ import {
   ANTHROPIC_COUNT_TOKENS_SUBPATH,
   ANTHROPIC_MESSAGES_PATH,
   ANTHROPIC_PROVIDER_LABEL,
-  ANTHROPIC_VERSION,
+  ANTHROPIC_SAMPLING_FIELDS,
   MAX_PAUSE_CONTINUATIONS,
 } from './constants.ts';
 import { anthropicErrorDetail } from './errors.ts';
@@ -53,6 +53,11 @@ const ANTHROPIC_TOOL_CHOICE: ToolChoiceWire = { forms: ['single_tool', 'filter']
 export const createAnthropicAdapter = (options: AnthropicAdapterOptions): AnthropicAdapter => {
   const pool = createEndpointPool({ label: ANTHROPIC_PROVIDER_LABEL, unixPath: ANTHROPIC_MESSAGES_PATH, urlSuffix: ANTHROPIC_MESSAGES_PATH }, options.liveness);
   const { health } = options;
+  const apiVersion = options.apiVersion;
+  const sampling: AdapterSampling = {
+    renders: ANTHROPIC_SAMPLING_FIELDS,
+    bound: { label: `API version ${apiVersion}`, accepts: anthropicVersionSamplingBound(apiVersion) },
+  };
   let closing: Promise<void> | undefined;
   let closed = false;
 
@@ -60,7 +65,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
     'content-type': 'application/json',
     accept,
     'x-api-key': apiKey,
-    'anthropic-version': ANTHROPIC_VERSION,
+    'anthropic-version': apiVersion,
   });
 
   async function* readSegment(response: CompletionResponse, driver: AnthropicStreamDriver, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
@@ -221,6 +226,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
 
   return {
     kind: ANTHROPIC_PROVIDER_LABEL,
+    sampling,
     capabilities: (target) => options.capabilities(target),
     create,
     countTokens,
