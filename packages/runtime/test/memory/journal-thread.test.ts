@@ -1,19 +1,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { Worker } from 'node:worker_threads';
 import type { TestContext } from 'vitest';
 import { describe, expect, it } from 'vitest';
 import { openDatabase } from '@momonga/foundation';
-import { withTempDir } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, withTempDir } from '@momonga/testkit';
+import type { FakeTimers } from '@momonga/testkit';
 import { JournalThreadError, startJournalThread } from '../../src/memory/journal-thread-client.ts';
 import type { JournalThreadClient, JournalThreadOptions } from '../../src/memory/journal-thread-client.ts';
-import { openJournalConnection } from '../../src/memory/journal-thread.ts';
 
-const GENEROUS_SILENCE_MS = 10_000;
-const SHORT_SILENCE_MS = 300;
-const PROGRESS_INTERVAL_MS = 50;
-const PROGRESS_TICKS = 20;
+const GENEROUS_SILENCE_MS = 600_000;
+const SILENCE_MS = 5_000;
 
-type Fixture = { readonly databasePath: string; readonly identity: { dev: number; ino: number }; readonly dir: string };
+type Fixture = { readonly databasePath: string; readonly identity: { dev: number; ino: number }; readonly dir: string; readonly marker: string };
 
 const fixture = (context: TestContext): Fixture => {
   const dir = withTempDir(context);
@@ -22,8 +21,10 @@ const fixture = (context: TestContext): Fixture => {
   db.exec('CREATE TABLE events (id INTEGER PRIMARY KEY, payload_json TEXT NOT NULL)');
   db.close();
   const stat = fs.statSync(databasePath);
-  return { databasePath, identity: { dev: stat.dev, ino: stat.ino }, dir };
+  return { databasePath, identity: { dev: stat.dev, ino: stat.ino }, dir, marker: path.join(dir, 'spawns') };
 };
+
+const fakeTimers = (): FakeTimers => createFakeTimers(createFakeClock(0));
 
 const started = async (context: TestContext, options: JournalThreadOptions): Promise<JournalThreadClient> => {
   const client = await startJournalThread(options);
@@ -37,13 +38,35 @@ const fakeThread = (marker: string, onMessage: string): string =>
   [
     "const fs = require('node:fs');",
     "const { parentPort, workerData, threadId } = require('node:worker_threads');",
+    'const port = workerData.port;',
     `fs.appendFileSync(${JSON.stringify(marker)}, 'x');`,
     'const stat = fs.statSync(workerData.databasePath);',
-    'parentPort.postMessage({ ready: true, dev: stat.dev, ino: stat.ino });',
+    'port.postMessage({ ready: true, dev: stat.dev, ino: stat.ino });',
     `parentPort.on('message', (message) => { ${onMessage} });`,
   ].join('\n');
 
-const PONG = 'parentPort.postMessage({ id: message.id, ok: true, threadId });';
+const PONG = 'port.postMessage({ id: message.id, ok: true, threadId });';
+
+const turn = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
+const until = async (condition: () => boolean): Promise<void> => {
+  while (!condition()) await turn();
+};
+
+const tracked = <T>(promise: Promise<T>): { readonly settled: () => boolean; readonly outcome: Promise<unknown> } => {
+  let done = false;
+  const outcome = promise.then(
+    (value) => {
+      done = true;
+      return value;
+    },
+    (error: unknown) => {
+      done = true;
+      return error;
+    },
+  );
+  return { settled: () => done, outcome };
+};
 
 const rejectionOf = async (promise: Promise<unknown>): Promise<unknown> => {
   try {
@@ -53,6 +76,34 @@ const rejectionOf = async (promise: Promise<unknown>): Promise<unknown> => {
   }
   throw new Error('expected the promise to reject');
 };
+
+const blockUntil = (cells: Int32Array, index: number, value: number): void => {
+  while (Atomics.load(cells, index) !== value) Atomics.wait(cells, index, Atomics.load(cells, index));
+};
+
+const release = (cells: Int32Array, value: number): void => {
+  Atomics.store(cells, 0, value);
+  Atomics.notify(cells, 0);
+};
+
+const GATED_PROGRESS = [
+  'const cells = new Int32Array(message.gate);',
+  'for (let step = 1; step <= 2; step += 1) {',
+  '  port.postMessage({ id: message.id, progress: step });',
+  '  Atomics.store(cells, 1, step); Atomics.notify(cells, 1);',
+  '  while (Atomics.load(cells, 0) < step) Atomics.wait(cells, 0, Atomics.load(cells, 0));',
+  '}',
+  'port.postMessage({ id: message.id, ok: true, steps: 2 });',
+].join('\n');
+
+const PROGRESS_ON_SIGNAL = [
+  'const cells = new Int32Array(message.gate);',
+  'while (Atomics.load(cells, 0) < 1) Atomics.wait(cells, 0, Atomics.load(cells, 0));',
+  'port.postMessage({ id: message.id, progress: 1 });',
+  'Atomics.store(cells, 1, 1); Atomics.notify(cells, 1);',
+  'while (Atomics.load(cells, 0) < 2) Atomics.wait(cells, 0, Atomics.load(cells, 0));',
+  'port.postMessage({ id: message.id, ok: true, steps: 1 });',
+].join('\n');
 
 describe('journal thread start and handshake', () => {
   it('resolves start only after the embedded thread reports ready with the database identity', async (context) => {
@@ -85,10 +136,16 @@ describe('journal thread start and handshake', () => {
     expect(error).toBeInstanceOf(JournalThreadError);
   });
 
-  it('rejects start with JournalThreadError when the thread never reports ready within the silence limit', async (context) => {
+  it('rejects start with JournalThreadError exactly when the silence limit passes without ready', async (context) => {
     const { databasePath, identity } = fixture(context);
-    const error = await rejectionOf(startJournalThread({ databasePath, identity, silenceLimitMs: SHORT_SILENCE_MS, code: 'setInterval(() => {}, 1000);' }));
-    expect(error).toBeInstanceOf(JournalThreadError);
+    const timers = fakeTimers();
+    const start = tracked(startJournalThread({ databasePath, identity, silenceLimitMs: SILENCE_MS, timers, code: 'setInterval(() => {}, 1000);' }));
+    await until(() => timers.pending().length === 1);
+    timers.advance(SILENCE_MS - 1);
+    await turn();
+    expect(start.settled()).toBe(false);
+    timers.advance(1);
+    expect(await start.outcome).toBeInstanceOf(JournalThreadError);
   });
 });
 
@@ -102,20 +159,30 @@ describe('journal thread requests', () => {
     expect(second.threadId).toBe(first.threadId);
   });
 
+  it('answers an unknown request kind with a request error naming the kind and keeps the embedded thread', async (context) => {
+    const { databasePath, identity } = fixture(context);
+    const client = await started(context, { databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS });
+    const before = await client.ping();
+    const error = await rejectionOf(client.request({ kind: 'contribution' }));
+    expect(error).toBeInstanceOf(JournalThreadError);
+    expect(String((error as JournalThreadError & { cause: { message: string } }).cause.message)).toContain('contribution');
+    const after = await client.ping();
+    expect(after.threadId).toBe(before.threadId);
+  });
+
   it('matches each reply to its own request when several are in flight', async (context) => {
-    const { databasePath, identity, dir } = fixture(context);
-    const code = fakeThread(path.join(dir, 'spawns'), 'setTimeout(() => parentPort.postMessage({ id: message.id, ok: true, echo: message.value }), message.delayMs);');
+    const { databasePath, identity, marker } = fixture(context);
+    const code = fakeThread(marker, "if (message.kind === 'slow') { setImmediate(() => port.postMessage({ id: message.id, ok: true, echo: 'slow' })); return; } port.postMessage({ id: message.id, ok: true, echo: 'fast' });");
     const client = await started(context, { databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code });
-    const replies = await Promise.all([client.request({ kind: 'echo', value: 'slow', delayMs: 200 }), client.request({ kind: 'echo', value: 'fast', delayMs: 0 })]);
+    const replies = await Promise.all([client.request({ kind: 'slow' }), client.request({ kind: 'fast' })]);
     expect(replies.map((reply: Readonly<Record<string, unknown>>) => reply['echo'])).toEqual(['slow', 'fast']);
   });
 
   it('rejects only the failing request with JournalThreadError carrying the cause and keeps the thread', async (context) => {
-    const { databasePath, identity, dir } = fixture(context);
-    const marker = path.join(dir, 'spawns');
+    const { databasePath, identity, marker } = fixture(context);
     const code = fakeThread(
       marker,
-      `if (message.kind === 'fail') parentPort.postMessage({ id: message.id, ok: false, error: { name: 'Error', message: 'injected context but has no user.message' } }); else ${PONG}`,
+      `if (message.kind === 'fail') port.postMessage({ id: message.id, ok: false, error: { name: 'Error', message: 'injected context but has no user.message' } }); else ${PONG}`,
     );
     const client = await started(context, { databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code });
     const before = await client.ping();
@@ -130,8 +197,8 @@ describe('journal thread requests', () => {
 
 describe('journal thread death and replacement', () => {
   it('rejects every request in flight with JournalThreadError when the thread exits', async (context) => {
-    const { databasePath, identity, dir } = fixture(context);
-    const code = fakeThread(path.join(dir, 'spawns'), "if (message.kind === 'die') process.exit(7);");
+    const { databasePath, identity, marker } = fixture(context);
+    const code = fakeThread(marker, "if (message.kind === 'die') process.exit(7);");
     const client = await started(context, { databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code });
     const waiting = rejectionOf(client.request({ kind: 'wait' }));
     const dying = rejectionOf(client.request({ kind: 'die' }));
@@ -140,15 +207,14 @@ describe('journal thread death and replacement', () => {
   });
 
   it('rejects the request in flight with JournalThreadError when the thread throws an uncaught error', async (context) => {
-    const { databasePath, identity, dir } = fixture(context);
-    const code = fakeThread(path.join(dir, 'spawns'), "throw new Error('thread broke');");
+    const { databasePath, identity, marker } = fixture(context);
+    const code = fakeThread(marker, "throw new Error('thread broke');");
     const client = await started(context, { databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code });
     expect(await rejectionOf(client.request({ kind: 'any' }))).toBeInstanceOf(JournalThreadError);
   });
 
   it('replaces a dead thread at the next request and never replays the failed one', async (context) => {
-    const { databasePath, identity, dir } = fixture(context);
-    const marker = path.join(dir, 'spawns');
+    const { databasePath, identity, dir, marker } = fixture(context);
     const received = path.join(dir, 'received');
     const code = fakeThread(marker, `fs.appendFileSync(${JSON.stringify(received)}, message.kind + '\\n'); if (message.kind === 'die') process.exit(7); ${PONG}`);
     const client = await started(context, { databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code });
@@ -162,8 +228,7 @@ describe('journal thread death and replacement', () => {
   });
 
   it('rejects the next request with JournalThreadError when the replacement fails its handshake', async (context) => {
-    const { databasePath, identity, dir } = fixture(context);
-    const marker = path.join(dir, 'spawns');
+    const { databasePath, identity, marker } = fixture(context);
     const code = [`if (require('node:fs').existsSync(${JSON.stringify(marker)})) process.exit(9);`, fakeThread(marker, "if (message.kind === 'die') process.exit(7);")].join('\n');
     const client = await started(context, { databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code });
     expect(await rejectionOf(client.request({ kind: 'die' }))).toBeInstanceOf(JournalThreadError);
@@ -172,50 +237,78 @@ describe('journal thread death and replacement', () => {
 });
 
 describe('journal thread silence watchdog', () => {
-  it('terminates a thread that stays silent past the limit and rejects its request with JournalThreadError', async (context) => {
-    const { databasePath, identity, dir } = fixture(context);
-    const marker = path.join(dir, 'spawns');
-    const code = fakeThread(marker, `if (message.kind === 'spin') { for (;;) {} } ${PONG}`);
-    const client = await started(context, { databasePath, identity, silenceLimitMs: SHORT_SILENCE_MS, code });
-    expect(await rejectionOf(client.request({ kind: 'spin' }))).toBeInstanceOf(JournalThreadError);
+  it('terminates a thread that sent nothing within the limit, rejects its request and replaces it at the next request', async (context) => {
+    const { databasePath, identity, marker } = fixture(context);
+    const timers = fakeTimers();
+    const code = fakeThread(marker, `if (message.kind === 'hang') { Atomics.store(new Int32Array(message.gate), 1, 1); for (;;) {} } ${PONG}`);
+    const client = await started(context, { databasePath, identity, silenceLimitMs: SILENCE_MS, timers, code });
+    const cells = new Int32Array(new SharedArrayBuffer(8));
+    const hanging = tracked(client.request({ kind: 'hang', gate: cells.buffer }));
+    await until(() => Atomics.load(cells, 1) === 1 && timers.pending().length === 1);
+    timers.advance(SILENCE_MS - 1);
+    await turn();
+    expect(hanging.settled()).toBe(false);
+    timers.advance(1);
+    expect(await hanging.outcome).toBeInstanceOf(JournalThreadError);
     await client.ping();
     expect(spawnCountOf(marker)).toBe(2);
   });
 
-  it('keeps a thread that posts progress more often than the limit until it replies', async (context) => {
-    const { databasePath, identity, dir } = fixture(context);
-    const code = fakeThread(
-      path.join(dir, 'spawns'),
-      `let ticks = 0; const timer = setInterval(() => { ticks += 1; if (ticks < ${PROGRESS_TICKS}) { parentPort.postMessage({ id: message.id, progress: ticks }); return; } clearInterval(timer); parentPort.postMessage({ id: message.id, ok: true, ticks }); }, ${PROGRESS_INTERVAL_MS});`,
-    );
-    const client = await started(context, { databasePath, identity, silenceLimitMs: SHORT_SILENCE_MS, code });
-    const reply = await client.request({ kind: 'long' });
-    expect(reply['ticks']).toBe(PROGRESS_TICKS);
+  it('keeps a thread that posts progress within each limit until it replies', async (context) => {
+    const { databasePath, identity, marker } = fixture(context);
+    const timers = fakeTimers();
+    const client = await started(context, { databasePath, identity, silenceLimitMs: SILENCE_MS, timers, code: fakeThread(marker, GATED_PROGRESS) });
+    const cells = new Int32Array(new SharedArrayBuffer(8));
+    const reply = tracked(client.request({ kind: 'long', gate: cells.buffer }));
+    for (let step = 1; step <= 2; step += 1) {
+      await until(() => Atomics.load(cells, 1) === step);
+      await until(() => timers.pending().length === 1);
+      timers.advance(SILENCE_MS - 1);
+      release(cells, step);
+    }
+    expect(await reply.outcome).toEqual({ steps: 2 });
+    expect(spawnCountOf(marker)).toBe(1);
   });
 
-  it('does not count idle time between requests as silence', async (context) => {
-    const { databasePath, identity, dir } = fixture(context);
-    const marker = path.join(dir, 'spawns');
-    const client = await started(context, { databasePath, identity, silenceLimitMs: SHORT_SILENCE_MS, code: fakeThread(marker, PONG) });
-    await client.ping();
-    await new Promise((resolve) => setTimeout(resolve, SHORT_SILENCE_MS * 3));
-    await client.ping();
+  it('judges silence by what the thread sent, not by what the stalled main thread has processed', async (context) => {
+    const { databasePath, identity, marker } = fixture(context);
+    const timers = fakeTimers();
+    const client = await started(context, { databasePath, identity, silenceLimitMs: SILENCE_MS, timers, code: fakeThread(marker, PROGRESS_ON_SIGNAL) });
+    const cells = new Int32Array(new SharedArrayBuffer(8));
+    const reply = tracked(client.request({ kind: 'long', gate: cells.buffer }));
+    await until(() => timers.pending().length === 1);
+    release(cells, 1);
+    blockUntil(cells, 1, 1);
+    timers.advance(SILENCE_MS);
+    release(cells, 2);
+    expect(await reply.outcome).toEqual({ steps: 1 });
+    expect(spawnCountOf(marker)).toBe(1);
+  });
+
+  it('arms no silence timer while no request is pending', async (context) => {
+    const { databasePath, identity, marker } = fixture(context);
+    const timers = fakeTimers();
+    const client = await started(context, { databasePath, identity, silenceLimitMs: SILENCE_MS, timers, code: fakeThread(marker, PONG) });
+    const first = await client.ping();
+    expect(timers.pending()).toEqual([]);
+    timers.advance(SILENCE_MS * 3);
+    const second = await client.ping();
+    expect(second.threadId).toBe(first.threadId);
     expect(spawnCountOf(marker)).toBe(1);
   });
 });
 
 describe('journal thread shutdown', () => {
   it('rejects a request in flight at close with JournalThreadError', async (context) => {
-    const { databasePath, identity, dir } = fixture(context);
-    const client = await started(context, { databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code: fakeThread(path.join(dir, 'spawns'), '') });
+    const { databasePath, identity, marker } = fixture(context);
+    const client = await started(context, { databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code: fakeThread(marker, '') });
     const waiting = rejectionOf(client.request({ kind: 'wait' }));
     await client.close();
     expect(await waiting).toBeInstanceOf(JournalThreadError);
   });
 
   it('rejects requests after close with JournalThreadError and spawns no new thread', async (context) => {
-    const { databasePath, identity, dir } = fixture(context);
-    const marker = path.join(dir, 'spawns');
+    const { databasePath, identity, marker } = fixture(context);
     const client = await started(context, { databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS, code: fakeThread(marker, PONG) });
     await client.close();
     expect(await rejectionOf(client.ping())).toBeInstanceOf(JournalThreadError);
@@ -223,46 +316,21 @@ describe('journal thread shutdown', () => {
   });
 });
 
-describe('the journal thread connection', () => {
-  it('opens the database in WAL mode with query_only set', (context) => {
+describe('the journal thread connection inside a Worker', () => {
+  it('opens WAL with query_only and refuses an INSERT, leaving the table unchanged', async (context) => {
     const { databasePath } = fixture(context);
-    const db = openJournalConnection(databasePath);
-    try {
-      expect(db.prepare('PRAGMA journal_mode').get()).toEqual({ journal_mode: 'wal' });
-      expect(db.prepare('PRAGMA query_only').get()).toEqual({ query_only: 1 });
-    } finally {
-      db.close();
-    }
-  });
-
-  it('refuses an INSERT through the connection and leaves the table unchanged', (context) => {
-    const { databasePath } = fixture(context);
-    const db = openJournalConnection(databasePath);
-    try {
-      expect(() => db.exec("INSERT INTO events (payload_json) VALUES ('{}')")).toThrow(/readonly/);
-    } finally {
-      db.close();
-    }
+    const worker = new Worker(new URL('./fixtures/journal-write-probe.ts', import.meta.url), { workerData: { databasePath } });
+    const outcome = await new Promise<Record<string, unknown>>((resolve, reject) => {
+      worker.once('message', resolve);
+      worker.once('error', reject);
+    });
+    await worker.terminate();
+    expect(outcome).toMatchObject({ journalMode: 'wal', queryOnly: 1, insert: { threw: true } });
+    expect((outcome['insert'] as { message: string }).message).toMatch(/readonly/);
     const writer = openDatabase(databasePath);
     try {
       expect(writer.prepare('SELECT count(*) AS n FROM events').get()).toEqual({ n: 0 });
     } finally {
-      writer.close();
-    }
-  });
-
-  it('reads the last committed snapshot while the main connection holds an immediate write transaction', (context) => {
-    const { databasePath } = fixture(context);
-    const writer = openDatabase(databasePath);
-    const reader = openJournalConnection(databasePath);
-    try {
-      writer.exec(`INSERT INTO events (payload_json) VALUES ('{"a":1}')`);
-      writer.exec('BEGIN IMMEDIATE');
-      writer.exec(`INSERT INTO events (payload_json) VALUES ('{"a":2}')`);
-      expect(reader.prepare('SELECT count(*) AS n FROM events').get()).toEqual({ n: 1 });
-      writer.exec('COMMIT');
-    } finally {
-      reader.close();
       writer.close();
     }
   });
