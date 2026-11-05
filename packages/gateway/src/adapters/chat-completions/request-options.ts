@@ -13,7 +13,7 @@ const reasoningEffortOption = (request: AdapterRequest, capabilities: Capabiliti
 const outputBoundTokens = (request: AdapterRequest, capabilities: Capabilities): number | undefined => {
   const requested = request.max_output_tokens;
   if (requested === undefined || requested === null) return undefined;
-  return Math.min(outputTokensFor(capabilities, request.reasoning_effort, requested), Math.max(requested, capabilities.maxOutputTokens));
+  return outputTokensFor(capabilities, request.reasoning_effort, requested);
 };
 
 const outputBoundOption = (request: AdapterRequest, capabilities: Capabilities): Partial<ChatRequestBody> => {

@@ -82,18 +82,17 @@ export type OutputTokenCapabilities = { maxOutputTokens: number; reasoning?: Rea
 export const thinkingBudgetFor = (reasoning: ThinkingCapability, level: ReasoningEffort): number | undefined =>
   reasoning.form === 'budget' ? reasoning.budgets[level as ThinkingBudgetEffort] : undefined;
 
+const reasoningTokensFor = (reasoning: ReasoningCapability | undefined, effort: ReasoningEffort | undefined): number => {
+  if (effort === undefined || reasoning === undefined) return 0;
+  if (reasoning.control === 'none') return reasoning.headroomTokens ?? 0;
+  if (reasoning.control === 'thinking') return thinkingBudgetFor(reasoning, clampReasoningEffort(effort, acceptedReasoningEfforts(reasoning))) ?? 0;
+  return 0;
+};
+
 export const outputTokensFor = (capabilities: OutputTokenCapabilities, effort: ReasoningEffort | undefined, visibleCap: number | undefined): number => {
   const { maxOutputTokens, reasoning } = capabilities;
   if (visibleCap === undefined) return maxOutputTokens;
-  if (effort === undefined || reasoning === undefined) return visibleCap;
-  if (reasoning.control === 'none') {
-    return visibleCap + (reasoning.headroomTokens ?? 0);
-  }
-  if (reasoning.control === 'thinking') {
-    const budget = thinkingBudgetFor(reasoning, clampReasoningEffort(effort, acceptedReasoningEfforts(reasoning)));
-    return budget === undefined ? visibleCap : Math.min(maxOutputTokens, visibleCap + budget);
-  }
-  return visibleCap;
+  return Math.max(visibleCap, Math.min(maxOutputTokens, visibleCap + reasoningTokensFor(reasoning, effort)));
 };
 
 export type PromptCacheCapability =
