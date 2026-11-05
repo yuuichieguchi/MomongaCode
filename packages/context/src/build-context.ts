@@ -222,14 +222,15 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
   let arrivals: ArrivalEntry[] = candidateArrivalsOf(input, discovered);
   const layersFor = (entries: readonly ArrivalEntry[], memory: MessageInputItem | undefined): InputItem[] =>
     layerItemsOf(appendOnly, pinnedLayers, governing, memory, entries);
-  const baseFrozen = [...layersFor(arrivals, recordedMemory), ...tail];
   const baseKeys = new Set(arrivals.map((entry) => entry.key));
-  const basePorts = frozenPorts(suppliedPorts, baseFrozen);
+  const admittedArrivals = appendOnly ? arrivals : arrivals.filter((entry) => entry.layer === 'skills');
+  const toolFrozen = [...layersFor(admittedArrivals, recordedMemory), ...tail];
+  const toolPorts = frozenPorts(suppliedPorts, toolFrozen);
   const countWith = (offered: readonly FunctionTool[], over: BuildContextPorts): Promise<MeterCount> =>
     over.meter.count({ input: [...pinnedLayers, ...governing, task], tools: offered });
-  const fitsFloor = (counted: MeterCount): boolean => metering(input, basePorts, candidates).fits(counted) && counted.inputTokens <= toolFloor;
+  const fitsFloor = (counted: MeterCount): boolean => metering(input, toolPorts, candidates).fits(counted) && counted.inputTokens <= toolFloor;
   const stableFitsFloor = async (offered: readonly FunctionTool[]): Promise<boolean> =>
-    fitsFloor(await basePorts.meter.count({ input: [...pinnedLayers, ...governing], tools: offered }));
+    fitsFloor(await toolPorts.meter.count({ input: [...pinnedLayers, ...governing], tools: offered }));
   const hostOf = input.companions === undefined || input.companions.keepWithoutHost ? {} : input.companions.hostOf;
   const standsWith = (tool: FunctionTool, offered: readonly FunctionTool[]): boolean => {
     const host = hostOf[tool.name];
@@ -237,7 +238,7 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
   };
   const eligible = candidates.filter((tool) => standsWith(tool, candidates));
   const toolFloor =
-    input.pinnedTokens !== undefined ? 0 : pinnedFloorAt(observed ? await capacityOver(sized, basePorts, baseFrozen, eligible) : inputCeilingFor(sized));
+    input.pinnedTokens !== undefined ? 0 : pinnedFloorAt(observed ? await capacityOver(sized, toolPorts, toolFrozen, eligible) : inputCeilingFor(sized));
   let tools = eligible;
   let leftOut: string[] = [];
   if (input.pinnedTokens === undefined && !(await stableFitsFloor(eligible))) {
@@ -254,7 +255,7 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
       leftOut = droppedForRoom;
     }
   }
-  const { fits } = metering(input, basePorts, tools);
+  const { fits } = metering(input, toolPorts, tools);
   const notices: ContextNotice[] = [...discovered.notices, ...governingNoticesOf(sources.governing)];
   if (leftOut.length > 0) {
     notices.push({
