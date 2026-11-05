@@ -183,13 +183,41 @@ describe('open-responses relay through the gateway: terminal semantics', () => {
     expect(terminal.response.error).toMatchObject({ code: 'upstream_protocol_error', type: 'model_error' });
   });
 
-  it('relays an upstream response.failed with its code', async () => {
+  it('relays an upstream response.failed with a neutral code before any output as is, without retrying', async () => {
     const gateway = await startOpenResponsesGateway({
-      script: [openResponsesStream([...openingEvents(), terminalEvent({ kind: 'failed', code: 'server_error', message: 'the model crashed' }, [])])],
+      script: [openResponsesStream([...openingEvents(), terminalEvent({ kind: 'failed', code: 'content_filter', message: 'the model refused' }, [])])],
     });
     const terminal = terminalOf(await streamResponse(gateway));
     expect(terminal.type).toBe('response.failed');
-    expect(terminal.response.error).toMatchObject({ code: 'server_error', message: 'the model crashed', type: 'server_error' });
+    expect(terminal.response.error).toMatchObject({ code: 'content_filter', message: 'the model refused' });
+    expect(gateway.fake.requests).toHaveLength(1);
+  });
+
+  it('retries an upstream response.failed with a failure code before any output and reports its code when the budget allows no retry', async () => {
+    const gateway = await startOpenResponsesGateway({
+      script: [openResponsesStream([...openingEvents(), terminalEvent({ kind: 'failed', code: 'server_error', message: 'the model crashed' }, [])])],
+      config: { retry: { totalWaitMs: 1 } },
+    });
+    const reply = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', stream: true, input: userInput('hello') }));
+    expect(reply.status).toBe(502);
+    expect(reply.body.error).toMatchObject({ code: 'server_error', message: expect.stringContaining('the model crashed') });
+    expect(gateway.fake.requests).toHaveLength(1);
+  });
+
+  it('retries an upstream response.failed with a failure code before any output and answers from the next send', async () => {
+    const gateway = await startOpenResponsesGateway({
+      script: [
+        openResponsesStream([...openingEvents(), terminalEvent({ kind: 'failed', code: 'server_error', message: 'the model crashed' }, [])]),
+        openResponsesTextReply(['recovered']),
+      ],
+    });
+    const pending = streamResponse(gateway);
+    await waitFor(() => gateway.fake.requests.length === 1 && gateway.timers.pending().length > 0, { description: 'retry timer' });
+    gateway.timers.advance(gateway.timers.pending().at(-1)?.delayMs ?? 0);
+    const terminal = terminalOf(await pending);
+    expect(terminal.type).toBe('response.completed');
+    expect(textOf(terminal.response)).toBe('recovered');
+    expect(gateway.fake.requests).toHaveLength(2);
   });
 
   it('fails the response when the stream ends without a terminal event', async () => {
@@ -266,15 +294,27 @@ describe('open-responses relay through the gateway: failures', () => {
     expect(gateway.fake.requests).toHaveLength(2);
   });
 
-  it('surfaces the final 429 with a Retry-After header when retries are exhausted', async () => {
+  it('surfaces the final 429 with its Retry-After and no deferral when the next 7 s wait does not fit the remaining budget', async () => {
     const gateway = await startOpenResponsesGateway({
-      script: [openResponsesErrorReply(429, 'too_many_requests', 'rate_limited', 'slow down', { 'retry-after': '7' })],
-      config: { retry: { maxAttempts: 1, baseMs: 100, maxMs: 10_000 } },
+      script: [openResponsesErrorReply(429, 'too_many_requests', 'rate_limited', 'slow down', { 'retry-after': '7' }), openResponsesErrorReply(429, 'too_many_requests', 'rate_limited', 'slow down', { 'retry-after': '7' })],
+      config: { retry: { maxAttempts: 1, totalWaitMs: 10_000, baseMs: 100, maxMs: 10_000 } },
     });
-    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    const pending = postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi') });
+    let settled = false;
+    const settle = (): void => {
+      settled = true;
+    };
+    void pending.then(settle, settle);
+    await waitFor(() => settled || gateway.timers.pending().length > 0, { description: 'the 7 s wait or the answer' });
+    const waits = gateway.timers.pending().map((timer) => timer.delayMs);
+    gateway.timers.advance(7000);
+    const response = await readJson(await pending);
+    expect(waits).toEqual([7000]);
     expect(response.status).toBe(429);
     expect(response.headers['retry-after']).toBe('7');
+    expect(response.headers['momonga-deferred']).toBeUndefined();
     expectErrorBody(response.body, { type: 'too_many_requests', code: 'rate_limited' });
+    expect(gateway.fake.requests).toHaveLength(2);
   });
 
   it('answers an authentication failure with 401 authentication_failed and does not retry', async () => {

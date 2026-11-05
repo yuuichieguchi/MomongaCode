@@ -1,6 +1,8 @@
+import { parseOutsideJson } from './json-depth.ts';
+
 export const parseJsonOrText = (text: string): unknown => {
   try {
-    return JSON.parse(text);
+    return parseOutsideJson(text);
   } catch {
     return text;
   }

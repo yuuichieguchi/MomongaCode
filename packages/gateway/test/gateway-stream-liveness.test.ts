@@ -3,6 +3,7 @@ import type { StreamEvent } from '@momonga/protocol';
 import { createFakeClock, createFakeTimers, createScriptedAdapter, textResponseEvents, waitFor } from '@momonga/testkit';
 import { sseResponse } from '../src/server/sse.ts';
 import { START_MS, postJson, startGateway, userInput } from './gateway-helpers.ts';
+import { BUDGET, driveTimers } from './retry-support.ts';
 
 const IDLE_HEADER = 'momonga-stream-idle-ms';
 const request = { model: 'fast', input: userInput('hi'), stream: true };
@@ -94,7 +95,7 @@ describe('gateway stream liveness before the first upstream event', () => {
       config: {
         aliases: { fast: ['primary', 'secondary'] },
         targets: { primary: { model: 'scripted-primary' }, secondary: { model: 'scripted-secondary' } },
-        retry: { maxAttempts: 1, baseMs: 100, maxMs: 10_000 },
+        retry: { maxAttempts: 1, totalWaitMs: 1, baseMs: 100, maxMs: 10_000 },
       },
     });
 
@@ -130,20 +131,45 @@ describe('gateway stream liveness before the first upstream event', () => {
     expect(timers.pending()).toEqual([]);
   });
 
-  it('carries retry_after_ms in the error event of a rate-limited call', async () => {
-    const primary = createScriptedAdapter({ calls: [{ failure: { status: 429, message: 'slow down', retryAfterMs: 4000 } }] });
-    const { client } = await startGateway({ adapters: { primary }, config: { retry: { maxAttempts: 1, baseMs: 100, maxMs: 10_000 } } });
+  it('carries retry_after_ms and no deferral in the error event of a rate-limited call whose next wait does not fit the remaining budget', async () => {
+    const primary = createScriptedAdapter({
+      calls: [
+        { failure: { status: 429, message: 'slow down', retryAfterMs: 4000 } },
+        { failure: { status: 429, message: 'slow down again', retryAfterMs: 4000 } },
+      ],
+    });
+    const harness = await startGateway({ adapters: { primary }, config: { retry: { maxAttempts: 1, totalWaitMs: 6000, baseMs: 100, maxMs: 10_000 } } });
+    const reading = postJson(harness.client, '/v1/responses', request, { [IDLE_HEADER]: '3000' }).then((response) => drain(response.body[Symbol.asyncIterator]()));
+
+    await driveTimers(harness, [reading], (timer) => timer.delayMs === 1000);
+    const event = errorEventOf(await reading) as { deferred?: boolean };
+
+    expect(event).toMatchObject({ type: 'error', status: 429, retry_after_ms: 4000 });
+    expect(event.deferred).toBeUndefined();
+    expect(primary.calls).toHaveLength(2);
+  });
+
+  it('carries the deferral in the error event of a stream whose only target asks for longer than the whole budget', async () => {
+    const primary = createScriptedAdapter({ calls: [{ failure: { status: 429, message: 'come back later', retryAfterMs: 100_000 } }] });
+    const { client } = await startGateway({ adapters: { primary }, config: { retry: BUDGET } });
 
     const response = await postJson(client, '/v1/responses', request, { [IDLE_HEADER]: '3000' });
 
-    expect(errorEventOf(await drain(response.body[Symbol.asyncIterator]()))).toMatchObject({ type: 'error', status: 429, retry_after_ms: 4000 });
+    expect(errorEventOf(await drain(response.body[Symbol.asyncIterator]()))).toMatchObject({
+      type: 'error',
+      status: 429,
+      retry_after_ms: 100_000,
+      deferred: true,
+      error: { code: 'rate_limited' },
+    });
+    expect(primary.calls).toHaveLength(1);
   });
 
-  it('carries the remaining cooldown in the error event when every breaker is open', async () => {
-    const primary = createScriptedAdapter({ calls: [{ failure: { status: 500, message: 'down' } }] });
+  it('sends a later stream to the only target although its breaker is open, and reports that target error', async () => {
+    const primary = createScriptedAdapter({ calls: [{ failure: { status: 500, message: 'down' } }, { failure: { status: 500, message: 'still down' } }] });
     const { client } = await startGateway({
       adapters: { primary },
-      config: { retry: { maxAttempts: 1, baseMs: 100, maxMs: 10_000 }, breaker: { failureThreshold: 1, openMs: 30_000 } },
+      config: { retry: { maxAttempts: 1, totalWaitMs: 1, baseMs: 100, maxMs: 10_000 }, breaker: { failureThreshold: 1, openMs: 30_000 } },
     });
     await (await postJson(client, '/v1/responses', request, { [IDLE_HEADER]: '3000' })).text();
 
@@ -151,10 +177,10 @@ describe('gateway stream liveness before the first upstream event', () => {
 
     expect(errorEventOf(await drain(response.body[Symbol.asyncIterator]()))).toMatchObject({
       type: 'error',
-      status: 503,
-      retry_after_ms: 30_000,
-      error: { code: 'all_targets_unavailable' },
+      status: 502,
+      error: { code: 'upstream_error', message: expect.stringContaining('still down') },
     });
+    expect(primary.calls).toHaveLength(2);
   });
 });
 

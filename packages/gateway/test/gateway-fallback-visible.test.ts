@@ -7,7 +7,7 @@ import { START_MS, postJson, readJson, registerCleanup, startGateway, userInput 
 const aliasConfig = {
   aliases: { fast: ['primary', 'secondary'] },
   targets: { primary: { model: 'scripted-primary' }, secondary: { model: 'scripted-secondary' } },
-  retry: { maxAttempts: 1 },
+  retry: { maxAttempts: 1, totalWaitMs: 1 },
 };
 
 describe('a call answered by a target other than the first of its alias', () => {

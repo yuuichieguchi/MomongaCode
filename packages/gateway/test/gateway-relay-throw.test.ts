@@ -27,7 +27,7 @@ describe('a relay that throws before the response concludes', () => {
       adapters: { primary },
       clock,
       telemetry,
-      config: { retry: { maxAttempts: 1 }, breaker: { failureThreshold: 1, openMs: 30_000 } },
+      config: { retry: { maxAttempts: 1, totalWaitMs: 1 }, breaker: { failureThreshold: 1, openMs: 30_000 } },
     });
     const response = await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') });
     await response.text();

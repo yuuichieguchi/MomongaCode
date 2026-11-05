@@ -1,4 +1,4 @@
-import { isRecord } from '@momonga/foundation';
+import { JsonDepthError, isRecord, parseOutsideJson } from '@momonga/foundation';
 import { UpdateError } from './errors.ts';
 import type { UpdateErrorCode } from './errors.ts';
 import type { HttpResponse, UpdatePorts } from './ports.ts';
@@ -63,8 +63,9 @@ export const fetchLatestRelease = async (ports: Pick<UpdatePorts, 'http' | 'vers
   const body = await readText(response, signal, 'release_lookup_failed', what);
   let parsed: unknown;
   try {
-    parsed = JSON.parse(body);
+    parsed = parseOutsideJson(body);
   } catch (error) {
+    if (error instanceof JsonDepthError) throw new UpdateError('release_malformed', `the latest release response is malformed: ${error.message}`, { detail: url, cause: error });
     throw new UpdateError('release_malformed', 'the latest release response is not JSON', { detail: url, cause: error });
   }
   if (!isRecord(parsed) || typeof parsed['tag_name'] !== 'string') {

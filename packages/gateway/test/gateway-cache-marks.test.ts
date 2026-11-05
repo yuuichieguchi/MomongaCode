@@ -60,7 +60,7 @@ describe('the gateway hands the cache marks and the key of a request to the adap
       config: {
         aliases: { fast: ['primary', 'secondary'] },
         targets: { primary: { model: 'scripted-primary' }, secondary: { model: 'scripted-secondary' } },
-        retry: { maxAttempts: 1 },
+        retry: { maxAttempts: 1, totalWaitMs: 1 },
       },
     });
 

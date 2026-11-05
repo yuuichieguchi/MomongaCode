@@ -1,4 +1,4 @@
-import { defineProductSchema, sha256Hex } from '@momonga/foundation';
+import { defineProductSchema, parseOutsideJson, sha256Hex } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
 import { GUIDELINE_TEXT_PATTERN, MIN_SUMMARY_TOKENS, escapeXmlAttribute, escapeXmlText } from '@momonga/protocol';
 import type { BilledDetail } from '@momonga/protocol';
@@ -87,7 +87,7 @@ const validateCandidate: ProductValidator<{ guideline: string }> = defineProduct
 
 const jsonOrError = (text: string): { value: unknown } | { error: string } => {
   try {
-    return { value: JSON.parse(text) as unknown };
+    return { value: parseOutsideJson(text) };
   } catch (error) {
     return { error: `the reply is not JSON (${error instanceof Error ? error.message : String(error)})` };
   }

@@ -5,11 +5,13 @@ import type { RawData, WebSocket } from 'ws';
 import { RUN_ROLE } from '@momonga/protocol';
 import type { StreamEvent } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, invalidRequest, readerStalledError } from '../core/errors.ts';
+import { errorHintsOf } from './sse.ts';
 import type { ConnectionResponses } from '../core/input.ts';
 import type { ResponsesService } from '../core/responses-service.ts';
 import type { Services } from '../core/services.ts';
 import type { StoredResponse } from '../core/store.ts';
 import { isRecord } from '@momonga/foundation';
+import { parseRequestJson } from './body.ts';
 import { createInboundQueue } from './inbound-queue.ts';
 import type { InboundQueue } from './inbound-queue.ts';
 import type { RequestTracker } from './tracker.ts';
@@ -37,12 +39,13 @@ export type WebSocketTransport = {
   terminateAll(): void;
 };
 
-type ErrorEnvelope = { type: 'error'; status: number; error: { type: string; code: string; message: string; param: string | null } };
+type ErrorEnvelope = { type: 'error'; status: number; retry_after_ms?: number; deferred?: true; error: { type: string; code: string; message: string; param: string | null } };
 
 const envelopeOf = (error: GatewayError): ErrorEnvelope => ({
   type: 'error',
   status: error.status,
   error: { type: error.body.type, code: error.body.code ?? error.body.type, message: error.body.message, param: error.body.param },
+  ...errorHintsOf(error),
 });
 
 const createConnectionResponses = (): ConnectionResponses => {
@@ -59,12 +62,7 @@ const createConnectionResponses = (): ConnectionResponses => {
 };
 
 const parseCreateEvent = (text: string): Record<string, unknown> => {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (error) {
-    throw invalidRequest('invalid_json', `the WebSocket message is not valid JSON: ${(error as Error).message}`);
-  }
+  const parsed = parseRequestJson(text, 'the WebSocket message');
   if (!isRecord(parsed)) throw invalidRequest('invalid_body', 'the WebSocket message must be a JSON object');
   const { type, ...body } = parsed;
   if (type !== 'response.create') throw invalidRequest('invalid_event_type', 'the WebSocket message type must be "response.create"', 'type');

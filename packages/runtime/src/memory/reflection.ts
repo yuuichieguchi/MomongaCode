@@ -201,7 +201,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
         totalTokens: usage.total_tokens,
       };
     }
-    if (terminal.kind === 'failed') throw new Error(`the reflection call of run ${runId} failed: ${terminal.code ?? 'error'}: ${terminal.message}`);
+    if (terminal.kind === 'failed') throw new Error(`the reflection call of run ${runId} failed: ${terminal.code}: ${terminal.message}`);
     if (usage === null) throw new Error(`the reflection response of run ${runId} carries no usage`);
     const settle = (candidates: readonly SaveCandidateInput[], reason?: string): void => {
       store.reflection.complete({ runId, charge: ledger.unrecorded ?? null, candidates: [...keptFacts, ...candidates], dropped, ...(reason === undefined ? {} : { reason }) });

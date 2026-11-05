@@ -1,6 +1,6 @@
 import { createUdsClient, decodeSse, parseRetryAfter } from '@momonga/foundation';
 import type { UdsClient, UdsResponse } from '@momonga/foundation';
-import { COMPACTION_RESULT_EVENT, ERROR_TYPES, ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER } from '@momonga/protocol';
+import { COMPACTION_RESULT_EVENT, DEFERRED_HEADER, ERROR_TYPES, ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER } from '@momonga/protocol';
 import type { BilledCallsCursorView, BilledCallsPageView, GatewayCostReportView, HeaderRole } from '@momonga/protocol';
 import type {
   Capabilities,
@@ -25,6 +25,7 @@ export type GatewayRequestErrorFields = {
   param?: string;
   retryAfterMs?: number;
   provenNotSent?: boolean;
+  deferred?: boolean;
 };
 
 export class GatewayRequestError extends Error {
@@ -34,6 +35,7 @@ export class GatewayRequestError extends Error {
   readonly param?: string;
   readonly retryAfterMs?: number;
   readonly provenNotSent?: boolean;
+  readonly deferred?: boolean;
 
   constructor(fields: GatewayRequestErrorFields) {
     super(fields.message);
@@ -44,6 +46,7 @@ export class GatewayRequestError extends Error {
     if (fields.param !== undefined) this.param = fields.param;
     if (fields.retryAfterMs !== undefined) this.retryAfterMs = fields.retryAfterMs;
     if (fields.provenNotSent !== undefined) this.provenNotSent = fields.provenNotSent;
+    if (fields.deferred !== undefined) this.deferred = fields.deferred;
   }
 }
 
@@ -80,7 +83,6 @@ const DEFAULT_CANCEL_TIMEOUT_MS = 1000;
 const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 60_000;
 
 const NEVER_SENT_CODES: ReadonlySet<string> = new Set(['ENOENT', 'ECONNREFUSED']);
-const CONNECTION_LOST_CODES: ReadonlySet<string> = new Set(['ECONNRESET', 'EPIPE', 'UND_ERR_SOCKET', 'UND_ERR_CLOSED']);
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -93,6 +95,13 @@ const errorCodeOf = (error: unknown): string | undefined => {
   const record: Record<string, unknown> = error as unknown as Record<string, unknown>;
   if (typeof record['code'] === 'string') return record['code'];
   return record['cause'] === undefined ? undefined : errorCodeOf(record['cause']);
+};
+
+export const transportFailureOf = (error: unknown): GatewayRequestError | undefined => {
+  const code = errorCodeOf(error);
+  if (code === undefined) return undefined;
+  if (NEVER_SENT_CODES.has(code)) return transportError('gateway_unavailable', 'the gateway socket is unavailable', true);
+  return transportError('gateway_unavailable', 'the gateway connection was lost', false);
 };
 
 const describeError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -111,7 +120,10 @@ const sfString = (value: string): string => {
 
 const errorFromBody = (response: UdsResponse, text: string, nowMs: number): GatewayRequestError => {
   const retryAfterMs = parseRetryAfter(response.headers['retry-after'], nowMs);
-  const retry = retryAfterMs === undefined ? {} : { retryAfterMs };
+  const retry = {
+    ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
+    ...(response.headers[DEFERRED_HEADER] === 'true' ? { deferred: true } : {}),
+  };
   const fallback = (): GatewayRequestError =>
     new GatewayRequestError({
       status: response.status,
@@ -150,6 +162,7 @@ const errorFromEvent = (event: Extract<StreamEvent, { type: 'error' }>): Gateway
     message: error.message,
     ...(typeof error.param === 'string' ? { param: error.param } : {}),
     ...(event.retry_after_ms === undefined ? {} : { retryAfterMs: event.retry_after_ms }),
+    ...(event.deferred === true ? { deferred: true } : {}),
   });
 };
 
@@ -201,10 +214,7 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
         if (expired !== undefined) return expired;
         if (destroyed) return clientDestroyed();
         if (midStream) return transportError('stream_interrupted', `the gateway stream was interrupted: ${describeError(error)}`);
-        const code = errorCodeOf(error);
-        if (code !== undefined && NEVER_SENT_CODES.has(code)) return transportError('gateway_unavailable', 'the gateway socket is unavailable', true);
-        if (code !== undefined && CONNECTION_LOST_CODES.has(code)) return transportError('gateway_unavailable', 'the gateway connection was lost', false);
-        return error;
+        return transportFailureOf(error) ?? error;
       },
     };
   };

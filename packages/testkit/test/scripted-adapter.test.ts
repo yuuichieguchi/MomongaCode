@@ -61,6 +61,15 @@ describe('createScriptedAdapter', () => {
     expect(adapter.classify(new Error('boom')).error).toEqual({ type: 'model_error', code: 'adapter_error', message: 'boom', param: null });
   });
 
+  it('keeps retryAfterMs on a retryable 5xx, as the upstream classifiers do', () => {
+    const adapter = createScriptedAdapter({ calls: [] });
+    expect(adapter.classify(new ScriptedUpstreamError({ status: 503, message: 'down', retryAfterMs: 20_000 }))).toEqual({
+      retryable: true,
+      retryAfterMs: 20_000,
+      error: { type: 'server_error', code: 'upstream_error', message: 'down', param: null },
+    });
+  });
+
   it('blocks at a gate until released and aborts a gated call when its signal fires', async () => {
     const events = textResponseEvents({ model: 'm', chunks: ['a'] });
     const adapter = createScriptedAdapter({

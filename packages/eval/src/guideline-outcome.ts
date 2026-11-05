@@ -1,4 +1,4 @@
-import { canonicalJson, defineProductSchema, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, defineProductSchema, parseOutsideJson, sha256Hex } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
 import { GUIDELINE_TEXT_PATTERN } from '@momonga/protocol';
 import { GATE_CHECKS } from './context-compare.ts';
@@ -211,7 +211,7 @@ const validateOutcomeFile: ProductValidator<GuidelineOutcomeFile> = defineProduc
 export const parseOutcomeFile = (text: string): GuidelineOutcomeFile => {
   let value: unknown;
   try {
-    value = JSON.parse(text) as unknown;
+    value = parseOutsideJson(text);
   } catch (error) {
     throw new EvalError(`the outcome file is not JSON: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }

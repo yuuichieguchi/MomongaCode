@@ -1,4 +1,3 @@
-import { CircuitBreaker } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { applyCapabilityOverride, imageCapability, sizingRatioFor } from '@momonga/protocol';
 import type { Capabilities, CapabilityOverride, ToolCallingMode, ToolCallingState, GatewayHealth, HealthResult, ImageCapability, ProviderAdapter, TargetBilling, TargetHealth } from '@momonga/protocol';
@@ -6,6 +5,7 @@ import { createAdmissionGate } from './admission.ts';
 import type { AdmissionGate } from './admission.ts';
 import { preconditionText } from '../precondition-text.ts';
 import { invalidRequest, notFound } from './errors.ts';
+import { TargetBreaker } from './request-breaker.ts';
 import { guardAdapter } from './guarded-adapter.ts';
 import type { ReasoningOriginCodec } from './reasoning-origin.ts';
 import type { GuardedAdapter } from './guarded-adapter.ts';
@@ -19,7 +19,7 @@ export type TargetRuntime = {
   billing: TargetBilling;
   counter: string;
   adapter: GuardedAdapter;
-  breaker: CircuitBreaker;
+  breaker: TargetBreaker;
   gate: AdmissionGate;
   capabilityOverride: CapabilityOverride | undefined;
   lastFailure: { code: string | null; message: string } | undefined;
@@ -121,7 +121,7 @@ export const createRouter = (options: RouterOptions): Router => {
       billing: target.billing,
       counter: target.counter,
       adapter: guardAdapter(requireEntry(adapters, name, 'adapter'), options.redactor, options.reasoningOrigin),
-      breaker: new CircuitBreaker({ failureThreshold: config.breaker.failureThreshold, openMs: config.breaker.openMs, clock }),
+      breaker: new TargetBreaker({ failureThreshold: config.breaker.failureThreshold, openMs: config.breaker.openMs, clock }),
       gate: createAdmissionGate({
         targetName: name,
         maxConcurrency: target.maxConcurrency,

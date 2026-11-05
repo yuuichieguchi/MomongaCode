@@ -1,6 +1,7 @@
 import { ERROR_TYPES } from '@momonga/protocol';
 import type { ErrorType, Usage } from '@momonga/protocol';
 import { UpstreamProtocolError } from '../shared/failures.ts';
+import { parseUpstreamJson } from '../shared/upstream-json.ts';
 import { isRecord } from '@momonga/foundation';
 
 export type UpstreamItem =
@@ -149,12 +150,7 @@ const terminalOf = (type: string, response: unknown): UpstreamTerminal => {
 };
 
 export const parseOpenResponsesEvent = (data: string): OpenResponsesStreamEvent => {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(data);
-  } catch {
-    throw invalid('it is not valid JSON');
-  }
+  const parsed = parseUpstreamJson(data, invalid);
   if (!isRecord(parsed)) throw invalid('it is not a JSON object');
   const type = requiredString(parsed, 'type', 'event');
   switch (type) {

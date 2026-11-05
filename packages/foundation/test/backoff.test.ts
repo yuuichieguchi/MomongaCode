@@ -34,6 +34,27 @@ describe('computeBackoff', () => {
   });
 });
 
+describe('computeBackoff with equal jitter', () => {
+  const equal = (attempt: number, random: number) => computeBackoff({ attempt, baseMs: 500, maxMs: 8000, random: () => random, jitter: 'equal' });
+
+  it('waits half of the cap at random 0 and 3/4 of it at random 0.5', () => {
+    expect([0, 1, 2, 3, 4, 5, 9].map((attempt) => equal(attempt, 0))).toEqual([250, 500, 1000, 2000, 4000, 4000, 4000]);
+    expect([0, 1, 2, 3, 4, 5, 9].map((attempt) => equal(attempt, 0.5))).toEqual([375, 750, 1500, 3000, 6000, 6000, 6000]);
+  });
+
+  it('stays in [ceil(cap / 2), cap) for any random below 1', () => {
+    for (const attempt of [0, 1, 4, 7, 1000]) {
+      const cap = Math.min(8000, 500 * 2 ** Math.min(attempt, 1023));
+      expect(equal(attempt, 0.999_999_999)).toBeLessThan(cap);
+      expect(equal(attempt, 0)).toBeGreaterThanOrEqual(cap / 2);
+    }
+  });
+
+  it('keeps at least half of an odd cap', () => {
+    expect(computeBackoff({ attempt: 0, baseMs: 7, maxMs: 7, random: () => 0, jitter: 'equal' })).toBe(4);
+  });
+});
+
 describe('parseRetryAfter', () => {
   const now = Date.UTC(2015, 9, 21, 7, 27, 30);
 

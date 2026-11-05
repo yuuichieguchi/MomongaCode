@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { LeaseLostError } from '@momonga/runtime';
 import { canonicalJson } from '@momonga/foundation';
 import type { RuntimeStore } from '@momonga/store';
 import { foldRunState, initialRunState } from '@momonga/store';
@@ -83,7 +84,7 @@ describe('recovery of an inheriting run killed during its first model call', () 
       toolSet: async () => {
         if (!failed) {
           failed = true;
-          throw new Error('the tool set is unavailable');
+          throw new LeaseLostError();
         }
         return env.snapshotTools(env.toolbox.tools());
       },
@@ -91,7 +92,7 @@ describe('recovery of an inheriting run killed during its first model call', () 
     env.gateway.script.push(textStep('Answer.'));
     const second = env.enqueue('And again');
     await env.runOnce(env.worker('worker-a', { tools }));
-    expect(env.run(second.id).status).toBe('QUEUED');
+    expect(env.run(second.id).status).toBe('RUNNING');
     expect(env.ofType(second.id, 'model.requested')).toEqual([]);
     inheritedEventOf(env, second.id);
 
