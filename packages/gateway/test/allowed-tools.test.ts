@@ -2,7 +2,9 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
 import type { AdapterRequest, Capabilities } from '@momonga/protocol';
 import { anthropicCountTokensReply, anthropicTextReply, openResponsesTextReply } from '@momonga/testkit';
-import { postJson, readJson, readSse, startGateway, userInput } from './gateway-helpers.ts';
+import path from 'node:path';
+import { createReplayAdapter } from '@momonga/gateway';
+import { makeDir, postJson, readJson, readSse, startGateway, userInput } from './gateway-helpers.ts';
 import { CC_CAPABILITIES, collect, lastCompletionBody, makeAdapter, startFake, userText } from './cc-support.ts';
 import { OLLAMA_CAPABILITIES, chunkLine, collectOllama, doneLine, makeOllamaAdapter, startFakeOllama } from './ollama-support.ts';
 import { REMOTE_CAPABILITIES, startAnthropicGateway, startOpenResponsesGateway } from './upstream-gateway-support.ts';
@@ -518,6 +520,26 @@ describe('count what is sent on adapters that count by estimate', () => {
 
   it('open-responses with the filter form counts the allowed tools that create sends, not every tool', async () => {
     const gateway = await startOpenResponsesGateway({ capabilities: withAllowedTools(REMOTE_CAPABILITIES, ['filter']), script: [] });
+    const filtered = await readJson(await postJson(gateway.client, '/v1/momonga/count_tokens', countBody(TOOLS, TWO_AUTO)));
+    const subset = await readJson(await postJson(gateway.client, '/v1/momonga/count_tokens', countBody(SUBSET_TOOLS, 'auto')));
+    expect(filtered.status).toBe(200);
+    expect(subset.status).toBe(200);
+    expect(filtered.body.input_tokens).toBe(subset.body.input_tokens);
+  });
+});
+
+describe('a replay adapter in record mode carries the wire of the adapter it wraps', () => {
+  it('counts a filter-form subset with the tools that create sends, and both succeed', async () => {
+    const fake = await startFakeOllama({ chat: [{ kind: 'ndjson' as const, lines: [chunkLine({ content: 'ok' }), doneLine()] }] });
+    const inner = makeOllamaAdapter(fake, { capabilities: async () => withAllowedTools(OLLAMA_CAPABILITIES, ['filter']) });
+    const recorder = createReplayAdapter({ path: path.join(makeDir(), 'recording.jsonl'), mode: 'record', inner });
+    const gateway = await startGateway({
+      adapters: { local: recorder },
+      config: { aliases: { fast: ['local'] }, targets: { local: { model: 'devstral-small-2', kind: 'local' } } },
+    });
+    const created = await readJson(await postJson(gateway.client, '/v1/responses', countBody(TOOLS, TWO_AUTO)));
+    expect(created.status).toBe(200);
+    expect(listedNames(fake.chatBodies()[0])).toEqual(['alpha', 'beta']);
     const filtered = await readJson(await postJson(gateway.client, '/v1/momonga/count_tokens', countBody(TOOLS, TWO_AUTO)));
     const subset = await readJson(await postJson(gateway.client, '/v1/momonga/count_tokens', countBody(SUBSET_TOOLS, 'auto')));
     expect(filtered.status).toBe(200);

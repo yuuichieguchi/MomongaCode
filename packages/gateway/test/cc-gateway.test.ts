@@ -135,6 +135,7 @@ describe('/v1/momonga/health with adapter health', () => {
     const unhealthy: ProviderAdapter = {
       kind: scripted.kind,
       capabilities: async () => DEFAULT_SCRIPTED_CAPABILITIES,
+      toolChoiceWire: () => ({ forms: [], expressesRequired: true }),
       create: (request, ctx) => scripted.create(request, ctx),
       classify: (error) => scripted.classify(error),
       health: async (target) => {
@@ -167,6 +168,7 @@ describe('/v1/momonga/health with adapter health', () => {
     const adapter: ProviderAdapter = {
       kind: scripted.kind,
       capabilities: async () => DEFAULT_SCRIPTED_CAPABILITIES,
+      toolChoiceWire: () => ({ forms: [], expressesRequired: true }),
       create: (request, ctx) => scripted.create(request, ctx),
       classify: (error) => scripted.classify(error),
       health: async () => ({ ok: true }),
@@ -182,6 +184,7 @@ describe('/v1/momonga/health with a throwing adapter health', () => {
     const broken: ProviderAdapter = {
       kind: scripted.kind,
       capabilities: async () => DEFAULT_SCRIPTED_CAPABILITIES,
+      toolChoiceWire: () => ({ forms: [], expressesRequired: true }),
       create: (request, ctx) => scripted.create(request, ctx),
       classify: (error) => scripted.classify(error),
       health: async () => {
