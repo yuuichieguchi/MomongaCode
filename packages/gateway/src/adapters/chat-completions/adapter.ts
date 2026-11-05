@@ -13,7 +13,7 @@ import type {
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
 import { hiddenReasoningTokens } from '../../core/hidden-reasoning.ts';
 import { classifyChatCompletionsError, matchesGuardrailCode } from './classify.ts';
-import { CHAT_COMPLETIONS_VOCABULARY, verdictsOf } from './vocabulary.ts';
+import { CHAT_COMPLETIONS_VOCABULARY, withGuardrailMatcher } from './vocabulary.ts';
 import { boundedSseBytes } from '../shared/body-reading.ts';
 import { buildConstrainedBody } from './constrained-request.ts';
 import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
@@ -52,7 +52,9 @@ const DONE_MARKER = '[DONE]';
 export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOptions): ChatCompletionsAdapter => {
   const pool = createEndpointPool({ label: 'chat-completions', unixPath: CHAT_COMPLETIONS_PATH, urlSuffix: CHAT_COMPLETIONS_SUFFIX }, options.liveness);
   const { health, countTokens, isGuardrail } = options;
-  const vocabulary = options.vocabulary ?? CHAT_COMPLETIONS_VOCABULARY;
+  const baseVocabulary = options.vocabulary ?? CHAT_COMPLETIONS_VOCABULARY;
+  const guardrailMatcher = (target: AdapterTarget) => (status: number, parsed: unknown): boolean =>
+    isGuardrail === undefined ? matchesGuardrailCode(parsed) : isGuardrail(target, status, parsed);
   let closing: Promise<void> | undefined;
   let closed = false;
 
@@ -97,6 +99,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     try {
+      const vocabulary = withGuardrailMatcher(baseVocabulary, guardrailMatcher(ctx.target));
       const endpoint = await options.resolveEndpoint(ctx.target, signal);
       const apiKey = await options.apiKey?.(ctx.target, signal);
       const upstreamModel = await options.upstreamModel?.(ctx.target, signal);
@@ -114,7 +117,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
           response,
           options.clock,
           nestedErrorDetail,
-          verdictsOf(vocabulary, (status, parsed) => (isGuardrail === undefined ? matchesGuardrailCode(parsed) : isGuardrail(ctx.target, status, parsed))),
+          vocabulary,
         );
       }
 

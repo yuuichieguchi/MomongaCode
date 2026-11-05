@@ -10,7 +10,7 @@ import type {
 } from '@momonga/protocol';
 import type { UpstreamEndpoint, UpstreamLiveness } from '../shared/http-client.ts';
 import type { KeywordSupport } from '../../probe/envelope.ts';
-import type { ErrorVocabulary } from './vocabulary.ts';
+import type { ErrorVocabulary } from '../shared/vocabulary.ts';
 
 export type ChatCompletionsEndpoint = UpstreamEndpoint;
 

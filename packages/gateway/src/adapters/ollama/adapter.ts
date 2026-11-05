@@ -6,7 +6,6 @@ import { StreamFailure, UpstreamProtocolError } from '../shared/failures.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
 import { httpErrorOf } from '../shared/http-error.ts';
 import type { ErrorDetailReader } from '../shared/http-error.ts';
-import { verdictsOf } from '../chat-completions/vocabulary.ts';
 import { buildOllamaBody } from './request.ts';
 import { ollamaEventsOf } from './stream.ts';
 import type { OllamaAdapter, OllamaAdapterOptions } from './types.ts';
@@ -15,8 +14,6 @@ import { OLLAMA_VOCABULARY, ollamaErrorText } from './vocabulary.ts';
 const OLLAMA_LABEL = 'ollama';
 const OLLAMA_CHAT_PATH = '/api/chat';
 const MODEL_NOT_FOUND = /^model\b.*\bnot found\b/i;
-
-const verdicts = verdictsOf(OLLAMA_VOCABULARY, () => false);
 
 const detailReader =
   (model: string): ErrorDetailReader =>
@@ -44,7 +41,7 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
         body: JSON.stringify(body),
         signal,
       });
-      if (response.status !== 200) throw await httpErrorOf(response, options.clock, detailReader(request.model), verdicts);
+      if (response.status !== 200) throw await httpErrorOf(response, options.clock, detailReader(request.model), OLLAMA_VOCABULARY);
       for await (const event of ollamaEventsOf(response.body, { request, clock: options.clock })) {
         ctx.signal.throwIfAborted();
         yield event;
