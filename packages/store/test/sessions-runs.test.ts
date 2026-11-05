@@ -113,14 +113,14 @@ describe('createRunAndEnqueue', () => {
 });
 
 describe('event reads', () => {
-  it('pages run events by seq without gaps', () => {
+  it('pages run events by seq without gaps', async () => {
     const { store } = harness();
     const session = newSession(store);
     const run = enqueue(store, session.id);
     for (let index = 0; index < 6; index += 1) {
       const current = mustRun(store, run.id);
       const result = store.appendAsService(run.id, current.version, null, [{ type: 'notice', level: 'info', message: `n${index}` }]);
-      expect(result.kind).toBe('ok');
+      expect((await result).kind).toBe('ok');
     }
     const page1 = store.readRunEvents(run.id, 0, 3);
     const page2 = store.readRunEvents(run.id, 3, 3);

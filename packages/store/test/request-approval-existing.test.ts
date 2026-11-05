@@ -45,7 +45,7 @@ const populateV1WithLegacyApproval = (dbPath: string): void => {
 };
 
 describe('store.requestApproval with a pending approval migrated from v1 without a digest', () => {
-  it('supersedes the legacy approval, and the fold follows the new approval', () => {
+  it('supersedes the legacy approval, and the fold follows the new approval', async () => {
     const dbPath = path.join(makeStoreDir(), 'runtime.db');
     populateV1WithLegacyApproval(dbPath);
     const store = openStoreAt(dbPath, createFakeClock(START_MS + 100));
@@ -62,7 +62,7 @@ describe('store.requestApproval with a pending approval migrated from v1 without
     if (result.kind !== 'ok') throw new Error(`expected ok, got ${result.kind}`);
     expect(result.approval.id).not.toBe('appr-legacy');
     expect(store.approvals.get('appr-legacy')?.status).toBe('superseded');
-    expect(store.resolveApproval('appr-legacy', 'allow_once')).toEqual({ kind: 'approval_not_pending', status: 'superseded' });
+    expect(await store.resolveApproval('appr-legacy', 'allow_once')).toEqual({ kind: 'approval_not_pending', status: 'superseded' });
     const fresh = () => initialRunState({ runId: 'run-1', sessionId: 'sess-1' });
     const requests = store.readRunEvents('run-1', 0, 100).filter((event) => event.type === 'tool.permission.requested');
     expect(requests).toEqual([expect.objectContaining({ approvalId: result.approval.id, callId: 'call_1', subjectDigest: DIGEST })]);
@@ -71,7 +71,7 @@ describe('store.requestApproval with a pending approval migrated from v1 without
       approvalId: result.approval.id,
     });
 
-    expect(store.resolveApproval(result.approval.id, 'allow_once').kind).toBe('ok');
+    expect((await store.resolveApproval(result.approval.id, 'allow_once')).kind).toBe('ok');
     expect(store.release(claim, 'WAITING_HUMAN').kind).toBe('ok');
     expect(mustRun(store, 'run-1').status).toBe('QUEUED');
     expect(store.readRunEvents('run-1', 0, 100).reduce(foldRunState, fresh()).pendingCalls['call_1']).toMatchObject({

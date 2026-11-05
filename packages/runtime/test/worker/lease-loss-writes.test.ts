@@ -51,7 +51,7 @@ describe('worker lease fencing of approval writes', () => {
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'approved' } }]));
     const run = env.enqueue('Write the file');
     await env.runOnce(env.worker('worker-1'));
-    env.resolveApproval(run.id, 'allow_always');
+    await env.resolveApproval(run.id, 'allow_always');
     const gate = deferred<void>();
     const reached = deferred<void>();
     const firstRead = env.settings.ruleReads + 1;

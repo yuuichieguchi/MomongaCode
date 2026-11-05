@@ -55,7 +55,7 @@ const reflectInRepository = async (context: TestContext, options: { trusted: boo
     memory: async () => ({ reflection: { enabled: true }, forgetAfterDays: 90 }),
   };
   const run = enqueue(store, session.id, 'change a');
-  finishClaimed(store, [
+  await finishClaimed(store, [
     ...fileTool('w1', 'Write', { path: path.join(project, 'a.ts'), sha256: 'a'.repeat(64), access: 'write' }),
     ...bash('t1', 'npm test', 0, 'ok'),
   ]);

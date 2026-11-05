@@ -1,4 +1,5 @@
 import type { Clock, Redactor } from '@momonga/foundation';
+import type { CANCEL_ORIGINS } from './transitions.ts';
 import type {
   BilledDetail,
   CallTiming,
@@ -58,6 +59,8 @@ export type RunError = { code: string; message: string };
 
 export type HistoryMode = 'inherit' | 'fresh';
 
+export type CancelOrigin = (typeof CANCEL_ORIGINS)[number];
+
 export type Run = {
   id: string;
   sessionId: string;
@@ -85,6 +88,7 @@ export type Run = {
   parentRunId: string | null;
   parentCallId: string | null;
   origin: MemoryOrigin;
+  cancelOrigin: CancelOrigin | null;
   error?: RunError;
 };
 
@@ -502,7 +506,7 @@ export type RuntimeStore = {
   claim(workerId: string): Claim | null;
   heartbeat(claim: Claim): HeartbeatResult;
   append(claim: Claim, events: readonly RunEventPayload[]): AppendResult;
-  transition(claim: Claim, from: readonly RunStatus[], to: RunStatus, patch?: StatusPatch, preceding?: readonly RunEventPayload[]): RunMutationResult;
+  transition(claim: Claim, from: readonly RunStatus[], to: RunStatus, patch?: StatusPatch, preceding?: readonly RunEventPayload[]): Promise<RunMutationResult>;
   release(claim: Claim, to: RunStatus, availableAt?: number, options?: { refundAttempt?: boolean; awaits?: WaitTargets }): RunMutationResult;
   releaseLease(claim: Claim, options: { availableAt: number; refundAttempt?: boolean }): RunMutationResult;
   requestCancel(runId: string): RequestCancelResult;
@@ -516,12 +520,11 @@ export type RuntimeStore = {
     to: RunStatus | null,
     events: readonly RunEventPayload[],
     patch?: StatusPatch,
-  ): ServiceMutationResult;
+  ): Promise<ServiceMutationResult>;
   readRunEvents(runId: string, afterSeq: number, limit: number): RunEvent[];
   readRunEventsOfTypes(runId: string, types: readonly RunEventPayload['type'][]): RunEvent[];
   readLatestRunEventBefore<T extends RunEventPayload['type']>(runId: string, type: T, beforeSeq: number): Extract<RunEvent, { type: T }> | undefined;
   readModelCallEvents(runId: string): ModelCallRecord[];
-  prepareTerminal(runId: string): void;
   lastTerminalRootRuns(project: string, limit: number): Run[];
   toolCallNames(rootRunId: string): string[];
   toolOfferedNames(rootRunId: string): string[];
@@ -538,15 +541,17 @@ export type RuntimeStore = {
       event: { subjectDigest: string; reason: string; suggestedRule?: string };
     },
   ): RequestApprovalResult;
-  resolveApproval(approvalId: string, optionId: string): ResolveApprovalResult;
+  resolveApproval(approvalId: string, optionId: string): Promise<ResolveApprovalResult>;
   requestElicitation(
     claim: Claim,
     input: { callId: string; expiresAt: number; server: string; requests: ElicitationRequestView[] },
   ): RequestApprovalResult;
-  resolveElicitation(elicitationId: string, responses: Record<string, ElicitationAnswerRecord>, notices?: readonly string[]): ResolveElicitationResult;
+  resolveElicitation(elicitationId: string, responses: Record<string, ElicitationAnswerRecord>, notices?: readonly string[]): Promise<ResolveElicitationResult>;
   elicitationView(elicitationId: string): ElicitationView | undefined;
   pendingElicitationViews(runId: string): ElicitationView[];
-  expireApprovals(nowMs: number): string[];
+  expireApprovals(nowMs: number, onError: SweepErrorSink): Promise<string[]>;
+  finishCancelled(onError: SweepErrorSink): Promise<string[]>;
+  deadLetterExhausted(onError: SweepErrorSink): Promise<string[]>;
   terminalRunIdsWithCheckpoint(): string[];
   hasActiveRun(): boolean;
   approvalView(approvalId: string): ApprovalView | undefined;
@@ -580,7 +585,19 @@ export type RuntimeStoreOptions = {
   maxAttempts: number;
   maxTotalAttempts: number;
   onCommit?: (touched: { runId?: string; sessionId: string }[]) => void;
-  contribution?: TerminalContribution;
+  preparer?: ContributionPreparer;
+  onDecode?: (rows: number, bytes: number) => void;
+  onEncode?: (kind: string, bytes: number) => void;
+};
+
+export type SweepErrorSink = (error: unknown, runId: string) => void;
+
+export type ContributionRequest = { runId: string; leading: readonly RunEventPayload[] };
+
+export type ContributionMeasured = { lastSeq: number; contribution?: ContributionPayload };
+
+export type ContributionPreparer = {
+  measure(request: ContributionRequest, signal?: AbortSignal): Promise<ContributionMeasured>;
 };
 
 export type ContributionPayload = Extract<RunEventPayload, { type: 'context.contribution' }>;
@@ -593,6 +610,7 @@ export type TerminalContribution = {
     replay(visit: (state: RunState, event: RunEvent) => void): void;
     memories: Pick<MemoryStore, 'get'>;
     governing: Pick<GoverningFactStore, 'get'>;
+    unit?: () => void;
   }): ContributionPayload | undefined;
 };
 

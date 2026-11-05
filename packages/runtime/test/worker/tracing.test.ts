@@ -51,7 +51,7 @@ describe('worker tracing', () => {
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: path.join(env.project, 'a.txt'), content: 'a' } }]));
     const run = env.enqueue('Write');
     await env.runOnce(env.worker('worker-1'));
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
     env.gateway.script.push(textStep('Written.'));
     await env.runOnce(env.worker('worker-2'));
 

@@ -282,6 +282,7 @@ describe('close and abort (manual fake timers for every runtime timer, in-proces
     control.hangCancel = true;
     const second = await launchFake(stack, { clock: createFakeClock(START_MS + 60_000) });
     expect((await second.http('POST', `/v1/runs/${run.id}/cancel`)).status).toBeLessThan(300);
+    second.timers.advance(1000);
     await waitFor(() => control.cancels.length === 1, { description: 'the upstream cancel' });
     expect(await waitForStatus(stack.temp, run.id, ['CANCELLED', 'CANCELLING'])).toBe('CANCELLED');
     const closing = second.handle.close();

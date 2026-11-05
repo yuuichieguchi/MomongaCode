@@ -20,26 +20,26 @@ const okPage = (page: ReturnType<typeof read>) => {
 };
 
 describe('reading a recorded range', () => {
-  it('returns the events of one seq range, in order', () => {
+  it('returns the events of one seq range, in order', async () => {
     const { store } = harness();
-    const run = finishedRun(store, '/work/a', 'task', TWO_STEPS);
+    const run = await finishedRun(store, '/work/a', 'task', TWO_STEPS);
     indexAll(store);
     const page = okPage(read(store, OWN, { runId: run.id, seqFrom: 2, seqTo: 4 }));
     expect(page.events.map((event) => event.seq)).toEqual([2, 3, 4]);
     expect(page.nextSeq).toBeNull();
   });
 
-  it('returns the events of one step', () => {
+  it('returns the events of one step', async () => {
     const { store } = harness();
-    const run = finishedRun(store, '/work/a', 'task', TWO_STEPS);
+    const run = await finishedRun(store, '/work/a', 'task', TWO_STEPS);
     indexAll(store);
     const expected = store.readRunEvents(run.id, 0, 100).filter((event) => event.step === 1).map((event) => event.seq);
     expect(okPage(read(store, OWN, { runId: run.id, step: 1 })).events.map((event) => event.seq)).toEqual(expected);
   });
 
-  it('pages by the next seq until the range is exhausted', () => {
+  it('pages by the next seq until the range is exhausted', async () => {
     const { store } = harness();
-    const run = finishedRun(store, '/work/a', 'task', TWO_STEPS);
+    const run = await finishedRun(store, '/work/a', 'task', TWO_STEPS);
     indexAll(store);
     const first = okPage(read(store, OWN, { runId: run.id, seqFrom: 1, seqTo: 5, limit: 2 }));
     expect(first.events.map((event) => event.seq)).toEqual([1, 2]);
@@ -49,7 +49,7 @@ describe('reading a recorded range', () => {
     expect(second.nextSeq).toBeNull();
   });
 
-  it('redacts every recorded string, however deeply nested', () => {
+  it('redacts every recorded string, however deeply nested', async () => {
     const { store } = harness();
     const { run, claim, finish } = openRun(store, '/work/a', `task ${FAKE_KEY}`);
     const events: RunEventPayload[] = [
@@ -58,16 +58,16 @@ describe('reading a recorded range', () => {
       { type: 'model.requested', step: 1, attempt: 1, digest: 'd', body: { input: [{ text: FAKE_KEY }] } },
     ];
     store.append(claim, events);
-    finish();
+    await finish();
     const page = okPage(read(store, OWN, { runId: run.id }));
     const text = JSON.stringify(page.events);
     expect(text).not.toContain(FAKE_KEY);
     expect(text).toContain('[REDACTED]');
   });
 
-  it('keeps the handle of a large output, so the tool can point to it', () => {
+  it('keeps the handle of a large output, so the tool can point to it', async () => {
     const { store } = harness();
-    const run = finishedRun(store, '/work/a', 'task', [{ tool: { name: 'Read', path: '/work/a/big', output: 'head', handle: 'blob-handle-1' } }]);
+    const run = await finishedRun(store, '/work/a', 'task', [{ tool: { name: 'Read', path: '/work/a/big', output: 'head', handle: 'blob-handle-1' } }]);
     const completed = okPage(read(store, OWN, { runId: run.id })).events.find((event) => event.type === 'tool.completed');
     expect(completed).toMatchObject({ handle: 'blob-handle-1' });
   });
@@ -84,41 +84,41 @@ describe('reading a recorded range', () => {
 });
 
 describe('visibility on runId', () => {
-  const seeded = () => {
+  const seeded = async () => {
     const context = harness();
     const { store, dir } = context;
     const [a, b] = [projectDir(dir, 'a'), projectDir(dir, 'b')];
-    const untrustedOrigin = finishedRun(store, b, 'made before trust');
+    const untrustedOrigin = await finishedRun(store, b, 'made before trust');
     indexAll(store);
     store.trust.set(a, 'trusted');
     store.trust.set(b, 'trusted');
-    const trustedB = finishedRun(store, b, 'trusted run');
+    const trustedB = await finishedRun(store, b, 'trusted run');
     indexAll(store);
     return { ...context, own: { trusted: true, project: a } as HistoryVisibility, b, untrustedOrigin, trustedB };
   };
 
-  it("lets a trusted session read another project's trusted-origin run", () => {
-    const { store, own, b, trustedB } = seeded();
+  it("lets a trusted session read another project's trusted-origin run", async () => {
+    const { store, own, b, trustedB } = await seeded();
     expect(okPage(read(store, own, { runId: trustedB.id }))).toMatchObject({ origin: 'trusted', project: b });
   });
 
-  it("refuses a trusted session another project's untrusted-origin run", () => {
-    const { store, own, untrustedOrigin } = seeded();
+  it("refuses a trusted session another project's untrusted-origin run", async () => {
+    const { store, own, untrustedOrigin } = await seeded();
     expect(read(store, own, { runId: untrustedOrigin.id })).toEqual({ kind: 'not_visible' });
   });
 
-  it('marks an untrusted-origin run of its own project for a trusted session', () => {
-    const { store, b, untrustedOrigin } = seeded();
+  it('marks an untrusted-origin run of its own project for a trusted session', async () => {
+    const { store, b, untrustedOrigin } = await seeded();
     expect(okPage(read(store, { trusted: true, project: b }, { runId: untrustedOrigin.id })).origin).toBe('untrusted');
   });
 
-  it('refuses an untrusted session any other project, trusted origin included', () => {
-    const { store, trustedB } = seeded();
+  it('refuses an untrusted session any other project, trusted origin included', async () => {
+    const { store, trustedB } = await seeded();
     expect(read(store, { trusted: false, project: '/work/c' }, { runId: trustedB.id })).toEqual({ kind: 'not_visible' });
   });
 
-  it('answers an unknown run exactly as a hidden one, so existence does not leak', () => {
-    const { store, own } = seeded();
+  it('answers an unknown run exactly as a hidden one, so existence does not leak', async () => {
+    const { store, own } = await seeded();
     expect(read(store, own, { runId: 'no-such-run' })).toEqual({ kind: 'not_visible' });
   });
 });

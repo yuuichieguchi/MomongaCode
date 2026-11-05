@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { MessageChannel, Worker } from 'node:worker_threads';
 import type { MessagePort } from 'node:worker_threads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { openDatabase } from '../packages/foundation/src/sqlite.ts';
+import { migrateRuntimeDatabase } from '../packages/store/src/index.ts';
 import { bundle, bundleJournalThread, journalThreadModule, repoRoot, writeJournalThreadModule } from './bundle.ts';
 import { buildSea } from './sea.ts';
 import { RUNS_MACOS_ARM64_ARTIFACTS } from './support/host.ts';
@@ -22,7 +22,7 @@ const sourceModuleState = (): string | null => (fs.existsSync(journalThreadModul
 
 const freshDatabase = (root: string): { databasePath: string; dev: number; ino: number } => {
   const databasePath = path.join(root, 'runtime.db');
-  openDatabase(databasePath).close();
+  migrateRuntimeDatabase(databasePath);
   const stat = fs.statSync(databasePath);
   return { databasePath, dev: stat.dev, ino: stat.ino };
 };

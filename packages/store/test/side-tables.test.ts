@@ -79,27 +79,27 @@ describe('approvals', () => {
     expect(store.approvals.get(approval.id)).toEqual(approval);
   });
 
-  it('approves calls that share a provider id independently under their run-unique ids', () => {
+  it('approves calls that share a provider id independently under their run-unique ids', async () => {
     const { store } = harness();
     const { approvals } = awaitingApproval(store, [{ callId: 'run-call-1' }, { callId: 'run-call-2' }], 'running');
     const [first, second] = approvals;
     if (first === undefined || second === undefined) throw new Error('expected two approvals');
-    expect(store.resolveApproval(first.id, 'allow_once').kind).toBe('ok');
+    expect((await store.resolveApproval(first.id, 'allow_once')).kind).toBe('ok');
     expect(second.id).not.toBe(first.id);
-    expect(store.resolveApproval(second.id, 'reject_once')).toMatchObject({ kind: 'ok', approval: { optionId: 'reject_once' } });
+    expect(await store.resolveApproval(second.id, 'reject_once')).toMatchObject({ kind: 'ok', approval: { optionId: 'reject_once' } });
     expect(store.approvals.get(first.id)?.optionId).toBe('allow_once');
   });
 
-  it('resolves exactly once', () => {
+  it('resolves exactly once', async () => {
     const { clock, store } = harness();
     const { runId, approvals } = awaitingApproval(store, [{ callId: 'c1' }], 'running');
     const id = approvals[0]?.id ?? '';
     clock.advance(9);
-    expect(store.resolveApproval(id, 'allow_once')).toMatchObject({
+    expect(await store.resolveApproval(id, 'allow_once')).toMatchObject({
       kind: 'ok',
       approval: { id, status: 'resolved', optionId: 'allow_once', resolvedAt: START_MS + 9 },
     });
-    expect(store.resolveApproval(id, 'reject_once')).toEqual({ kind: 'approval_not_pending', status: 'resolved' });
+    expect(await store.resolveApproval(id, 'reject_once')).toEqual({ kind: 'approval_not_pending', status: 'resolved' });
     expect(store.approvals.get(id)?.optionId).toBe('allow_once');
     expect(store.approvals.listPending(runId)).toEqual([]);
   });

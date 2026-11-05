@@ -21,13 +21,14 @@ import type { Telemetry, TraceStore } from '@momonga/observability';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import type { Sandbox } from '@momonga/sandbox';
-import { isFatalStoreError, openRuntimeStore } from '@momonga/store';
+import { isFatalStoreError, migrateRuntimeDatabase, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import { ShellNotFoundError, clearCallLocks, createPolicyFilesystem, nodeShellHost, resolveBashPath } from '@momonga/tools';
 import type { ShellHost } from '@momonga/tools';
 import { createFsInstructionReader } from '@momonga/context';
 import { createGatewayClient } from '../gateway-client.ts';
-import { contributionAtTerminal } from '../memory/contribution.ts';
+import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../memory/journal-thread-limits.ts';
+import { startJournalThread } from '../memory/journal-thread-client.ts';
 import type { GatewayClient } from '../gateway-client.ts';
 import { createTracerPort } from '../tracer.ts';
 import { createRunNotifier } from '../service/notifier.ts';
@@ -362,21 +363,38 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       await reapMarkerDirectory({ dir: paths.markers.mcp, killGraceMs: MARKER_REAP_KILL_GRACE_MS, label: 'mcp', onWarning, timing: reapTiming });
     });
 
-    const { notifier, store } = await step('store', (): { notifier: RunNotifier; store: RuntimeStore } => {
+    const { notifier, store, journalThread } = await step('store', async () => {
+      migrateRuntimeDatabase(paths.databases.runtime);
+      const { dev, ino } = fs.statSync(paths.databases.runtime);
+      const startedThread = await startJournalThread({ databasePath: paths.databases.runtime, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
       const createdNotifier = createRunNotifier();
-      const opened = openRuntimeStore({
-        path: paths.databases.runtime,
-        home: canonicalHome,
-        clock,
-        leaseMs,
-        maxAttempts: STORE_MAX_ATTEMPTS,
-        maxTotalAttempts: STORE_MAX_TOTAL_ATTEMPTS,
-        onCommit: createdNotifier.onCommit,
-        contribution: contributionAtTerminal,
-      });
-      return { notifier: createdNotifier, store: opened };
+      try {
+        const opened = openRuntimeStore({
+          path: paths.databases.runtime,
+          home: canonicalHome,
+          clock,
+          leaseMs,
+          maxAttempts: STORE_MAX_ATTEMPTS,
+          maxTotalAttempts: STORE_MAX_TOTAL_ATTEMPTS,
+          onCommit: createdNotifier.onCommit,
+          preparer: startedThread,
+        });
+        return { notifier: createdNotifier, store: opened, journalThread: startedThread };
+      } catch (error) {
+        await startedThread.close();
+        throw error;
+      }
     });
-    cleanups.push({ name: 'store', run: () => store.close() });
+    cleanups.push({
+      name: 'store',
+      run: async () => {
+        try {
+          store.close();
+        } finally {
+          await journalThread.close();
+        }
+      },
+    });
 
     await step('tool-markers', async () => {
       await reapToolMarkers({ dir: paths.markers.tools, store, killGraceMs: MARKER_REAP_KILL_GRACE_MS, onWarning, timing: reapTiming });

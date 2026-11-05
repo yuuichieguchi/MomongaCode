@@ -57,7 +57,7 @@ describe('RulePropose in a delegated run', () => {
     expect(walked[0]?.options.map((option) => option.kind)).toEqual(['allow_once', 'reject_once']);
     expect(env.store.pendingApprovalViews(parent.id)).toEqual([]);
 
-    env.resolveApproval(child.id, 'allow_once');
+    await env.resolveApproval(child.id, 'allow_once');
     env.gateway.script.push(textStep('proposed'), textStep('parent done'));
     for (let turn = 0; turn < 6 && env.run(parent.id).status !== 'COMPLETED'; turn += 1) await env.runOnce(worker);
 
@@ -125,7 +125,7 @@ describe('RulePropose after a crash', () => {
     const run = env.enqueue('Add the rule');
     await env.runOnce(env.worker('w1', { governance: real }));
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
 
     const crashing: GovernancePort = {
       load: (session) => ({

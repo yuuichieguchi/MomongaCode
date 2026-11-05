@@ -26,7 +26,7 @@ describe('run.started records the permission mode', () => {
     expect(env.fold(run.id).mode).toBe('default');
 
     env.setMode('plan');
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
     expect(await env.runOnce(env.worker('worker-2'))).toBe('yielded');
 
     expect(env.ofType(run.id, 'run.started').map((event) => event.mode)).toEqual(['default', 'plan']);

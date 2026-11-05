@@ -46,12 +46,12 @@ const measuring = (): { h: Harness; measurements: Measurement[] } => {
 };
 
 describe('a terminal transition led by a model response, for a hook that reads model responses', () => {
-  it('measures the run exactly once, and never while the write transaction is open', () => {
+  it('measures the run exactly once, and never while the write transaction is open', async () => {
     const { h, measurements } = measuring();
     const run = enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
 
-    const result = h.store.transition(claim, ['RUNNING'], 'FAILED', { error: { code: 'input_truncated', message: 'truncated' } }, [responded, usageUpdated]);
+    const result = (await h.store.transition(claim, ['RUNNING'], 'FAILED', { error: { code: 'input_truncated', message: 'truncated' } }, [responded, usageUpdated]));
 
     expect(result.kind).toBe('ok');
     expect(mustRun(h.store, run.id).status).toBe('FAILED');

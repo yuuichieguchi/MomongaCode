@@ -373,15 +373,15 @@ describe('minimum room at claim', () => {
 });
 
 describe('inherited history and loop detection across compaction', () => {
-  const completeSeeded = (env: Env, task: string, payloads: readonly RunEventPayload[]): void => {
+  const completeSeeded = async (env: Env, task: string, payloads: readonly RunEventPayload[]): Promise<void> => {
     const run = env.enqueue(task);
     const claim = env.seed(run.id, payloads, 'hold');
-    expect(env.store.transition(claim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
+    expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
   };
 
   it('compacts across the task seq of an inheriting run and keeps the task once', async () => {
     const env = await makeEnv({ capabilities: W4000 });
-    completeSeeded(env, 'question one', [
+    await completeSeeded(env, 'question one', [
       { type: 'model.requested', step: 1, attempt: 1, digest: 'd1', body: { model: 'fm', input: 'seed' } },
       {
         type: 'model.responded',
