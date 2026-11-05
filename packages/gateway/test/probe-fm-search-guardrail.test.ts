@@ -52,7 +52,7 @@ describe('the fm context window search against the guardrail fm applies to a rep
     });
     servers.push(fake);
 
-    const report = await runProbe({
+    const report = await runProbe({ schemaDialect: 'guided-generation',
       socketPath: fake.socketPath,
       managedHealthRoute: true,
       samples: 2,

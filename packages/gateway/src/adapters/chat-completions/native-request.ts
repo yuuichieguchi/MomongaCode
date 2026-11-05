@@ -1,6 +1,9 @@
 import type { AdapterInputItem, AdapterRequest, FunctionTool, ReasoningOrigin, SamplingField, ToolChoice } from '@momonga/protocol';
 import { allowedToolsModeOf } from '../../core/tool-choice.ts';
 import { carriedSamplingOf } from '../shared/sampling.ts';
+import { FULL_KEYWORD_SUPPORT } from '../../probe/lowering.ts';
+import { renderParameters } from '../../probe/schema-dialect.ts';
+import type { SchemaDialect } from '../../probe/schema-dialect.ts';
 import { SYSTEM_PART_SEPARATOR, systemTextOf } from '../shared/system-text.ts';
 import { nativeHistoryOf, plainHistoryOf } from './plain-history.ts';
 import type { ChatMessage } from './plain-history.ts';
@@ -24,14 +27,17 @@ export type ChatRequestBody = {
   prompt_cache_key?: string;
 };
 
-const toolOf = (tool: FunctionTool): unknown => ({
-  type: 'function',
-  function: {
-    name: tool.name,
-    ...(tool.description === undefined || tool.description === null ? {} : { description: tool.description }),
-    ...(tool.parameters === undefined || tool.parameters === null ? {} : { parameters: tool.parameters }),
-  },
-});
+const toolOf = (tool: FunctionTool, dialect: SchemaDialect): unknown => {
+  const parameters = renderParameters(tool.parameters, dialect, FULL_KEYWORD_SUPPORT);
+  return {
+    type: 'function',
+    function: {
+      name: tool.name,
+      ...(tool.description === undefined || tool.description === null ? {} : { description: tool.description }),
+      ...(parameters === undefined ? {} : { parameters }),
+    },
+  };
+};
 
 const toolChoiceOf = (choice: ToolChoice): unknown => {
   if (typeof choice === 'string') return choice;
@@ -44,7 +50,7 @@ const toolChoiceOf = (choice: ToolChoice): unknown => {
 
 export const samplingOf = (request: AdapterRequest): Pick<ChatRequestBody, SamplingField> => carriedSamplingOf(request);
 
-export const buildNativeBody = (request: AdapterRequest, origin: ReasoningOrigin): ChatRequestBody => {
+export const buildNativeBody = (request: AdapterRequest, origin: ReasoningOrigin, dialect: SchemaDialect): ChatRequestBody => {
   const messages: ChatMessage[] = [];
   const tools = request.tools ?? [];
   const system = systemTextOf(request.instructions, request.input);
@@ -55,7 +61,7 @@ export const buildNativeBody = (request: AdapterRequest, origin: ReasoningOrigin
     messages,
     stream: true,
     stream_options: { include_usage: true },
-    ...(tools.length === 0 ? {} : { tools: tools.map(toolOf) }),
+    ...(tools.length === 0 ? {} : { tools: tools.map((tool) => toolOf(tool, dialect)) }),
     ...(tools.length === 0 || request.tool_choice === undefined ? {} : { tool_choice: toolChoiceOf(request.tool_choice) }),
     ...samplingOf(request),
   };

@@ -6,15 +6,24 @@ const TYPE_BEARING_KEYS = ['type', 'const', '$ref', 'anyOf'] as const;
 const UNION_OBJECT_KEYS_WITH_PROPERTIES = ['x-order', 'additionalProperties', 'required'] as const;
 const UNION_OBJECT_KEYS_WITHOUT_PROPERTIES = ['additionalProperties'] as const;
 
-class FmSchemaRefusal extends Error {}
+type RefusalKind = 'missing' | 'malformed';
+
+class FmSchemaRefusal extends Error {
+  readonly kind: RefusalKind;
+  constructor(kind: RefusalKind, message: string) {
+    super(message);
+    this.kind = kind;
+  }
+}
 
 const pathClause = (path: string): string => (path === '' ? '' : ` Path: ${path}.`);
 
 const dataCorrupted = (path: string, description: string): FmSchemaRefusal =>
-  new FmSchemaRefusal(`DecodingError.dataCorrupted: Data was corrupted.${pathClause(path)} Debug description: ${description}`);
+  new FmSchemaRefusal('malformed', `DecodingError.dataCorrupted: Data was corrupted.${pathClause(path)} Debug description: ${description}`);
 
 const keyNotFound = (path: string, key: string): FmSchemaRefusal =>
   new FmSchemaRefusal(
+    'missing',
     `DecodingError.keyNotFound: Key '${key}' not found in keyed decoding container.${pathClause(path)} Debug description: No value associated with key CodingKeys(stringValue: "${key}", intValue: nil) ("${key}").`,
   );
 
@@ -24,6 +33,7 @@ type Region = { kind: 'plain'; definition: string; root: boolean } | { kind: 'un
 
 const typeMismatch = (path: string, expected: string, found: string): FmSchemaRefusal =>
   new FmSchemaRefusal(
+    'malformed',
     `DecodingError.typeMismatch: Expected value of type ${expected}.${pathClause(path)} Debug description: Expected to decode ${expected} but found ${found} instead.`,
   );
 
@@ -85,12 +95,32 @@ const decodeNode = (node: unknown, path: string, region: Region): void => {
   if ('items' in node) decodeNode(node['items'], childPath(path, 'items'), childRegion(region, 'item'));
 };
 
-export const fmSchemaRefusalOf = (schemaName: string, schema: unknown): string | undefined => {
+const refusalOf = (schema: unknown, region: Region): FmSchemaRefusal | undefined => {
   try {
-    decodeNode(schema, '', { kind: 'plain', definition: schemaName, root: true });
+    decodeNode(schema, '', region);
     return undefined;
   } catch (error) {
-    if (error instanceof FmSchemaRefusal) return `Invalid response_format schema: ${error.message}`;
+    if (error instanceof FmSchemaRefusal) return error;
     throw error;
   }
+};
+
+export const fmSchemaRefusalOf = (schemaName: string, schema: unknown): string | undefined => {
+  const refusal = refusalOf(schema, { kind: 'plain', definition: schemaName, root: true });
+  return refusal === undefined ? undefined : `Invalid response_format schema: ${refusal.message}`;
+};
+
+const NATIVE_REFUSAL_TEXT: Record<RefusalKind, string> = {
+  missing: 'The data couldn’t be read because it is missing.',
+  malformed: 'The data couldn’t be read because it isn’t in the correct format.',
+};
+
+export const fmToolsRefusalOf = (tools: readonly unknown[]): string | undefined => {
+  for (const tool of tools) {
+    const fn = isRecord(tool) && isRecord(tool['function']) ? tool['function'] : {};
+    if (!('parameters' in fn)) return `Invalid JSON: ${NATIVE_REFUSAL_TEXT.missing}`;
+    const refusal = refusalOf(fn['parameters'], { kind: 'plain', definition: String(fn['name']), root: false });
+    if (refusal !== undefined) return `Invalid request: ${NATIVE_REFUSAL_TEXT[refusal.kind]}`;
+  }
+  return undefined;
 };

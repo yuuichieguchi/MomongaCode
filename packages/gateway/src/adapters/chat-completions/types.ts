@@ -9,7 +9,8 @@ import type {
   ProviderAdapter,
 } from '@momonga/protocol';
 import type { UpstreamEndpoint, UpstreamLiveness } from '../shared/http-client.ts';
-import type { KeywordSupport } from '../../probe/envelope.ts';
+import type { KeywordSupport } from '../../probe/lowering.ts';
+import type { SchemaDialect } from '../../probe/schema-dialect.ts';
 import type { ErrorVocabulary } from '../shared/vocabulary.ts';
 
 export type ChatCompletionsEndpoint = UpstreamEndpoint;
@@ -20,6 +21,7 @@ export type ChatCompletionsAdapterOptions = {
   upstreamModel?: (target: AdapterTarget, signal: AbortSignal) => Promise<string>;
   onSummaryReasoning?: (target: AdapterTarget, hiddenReasoningTokens: number) => Promise<void>;
   keywordSupport?: (target: AdapterTarget) => KeywordSupport;
+  schemaDialect: (target: AdapterTarget) => SchemaDialect;
   apiKey?: (target: AdapterTarget, signal: AbortSignal) => string | undefined | Promise<string | undefined>;
   countTokens?: (target: AdapterTarget, request: CountTokensRequest, signal: AbortSignal) => Promise<CountTokensResult>;
   capabilities: (target: AdapterTarget) => Promise<Capabilities>;

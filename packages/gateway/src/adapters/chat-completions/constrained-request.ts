@@ -2,7 +2,8 @@ import { canonicalJson } from '@momonga/foundation';
 import { allowedNamesOf, allowedToolsModeOf } from '../../core/tool-choice.ts';
 import type { AdapterRequest, FunctionTool, ReasoningOrigin } from '@momonga/protocol';
 import { buildToolsEnvelope } from '../../probe/envelope.ts';
-import type { KeywordSupport } from '../../probe/envelope.ts';
+import type { KeywordSupport } from '../../probe/lowering.ts';
+import type { SchemaDialect } from '../../probe/schema-dialect.ts';
 import { samplingOf } from './native-request.ts';
 import { SYSTEM_PART_SEPARATOR, systemTextOf } from '../shared/system-text.ts';
 import type { ChatRequestBody } from './native-request.ts';
@@ -57,7 +58,7 @@ const requiresToolCalls = (choice: AdapterRequest['tool_choice']): boolean => {
   return allowedToolsModeOf(choice) === 'required';
 };
 
-export const buildConstrainedBody = (request: AdapterRequest, support: KeywordSupport, origin: ReasoningOrigin): ConstrainedBody => {
+export const buildConstrainedBody = (request: AdapterRequest, support: KeywordSupport, origin: ReasoningOrigin, dialect: SchemaDialect): ConstrainedBody => {
   const tools = request.tools ?? [];
   const choice = request.tool_choice;
   const envelopeActive = tools.length > 0 && choice !== 'none';
@@ -85,6 +86,7 @@ export const buildConstrainedBody = (request: AdapterRequest, support: KeywordSu
                 envelopeTools.map((tool) => ({ name: tool.name, parameters: tool.parameters ?? { type: 'object' } })),
                 support,
                 requireToolCalls,
+                dialect,
               ),
             },
           },
