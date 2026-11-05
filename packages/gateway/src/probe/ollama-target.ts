@@ -45,7 +45,7 @@ export const createProbedOllamaTarget = (options: ProbedOllamaTargetOptions): Pr
   return {
     verify: memoizedVerification(verifyOnce),
     capabilities: async () => {
-      if (record === null) return { ...withImageDefault(declared), toolCalling: 'needs_probe', needsProbe, source: 'unprobed' };
+      if (record === null) return { ...withImageDefault(declared), toolCalling: needsProbe, source: 'unprobed' };
       const { report } = record;
       return mergeCapabilities({
         defaults: declaredParts.core,

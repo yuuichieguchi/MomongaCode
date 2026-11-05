@@ -192,12 +192,12 @@ export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Pr
   );
   const toolCalling = (): ToolCallingMode => resolveToolCalling(options.toolCallingSetting, report, needsProbe).mode;
   const unprobedAuto = isUnprobedAuto(options.toolCallingSetting, report);
-  const state = unprobedAuto ? 'needs_probe' : toolCalling();
+  const state = unprobedAuto ? needsProbe : toolCalling();
   const { parallelToolCalls: _unprobedParallel, ...probedDefaults } = unprobedCapabilities(state);
   const declaredField = options.declaredOutputBoundField === undefined ? {} : { outputBoundField: options.declaredOutputBoundField };
   const capabilities =
     report === null
-      ? { ...unprobedCapabilities(state), ...(unprobedAuto ? { needsProbe } : {}), ...declaredField }
+      ? { ...unprobedCapabilities(state), ...declaredField }
       : mergeCapabilities({ defaults: layerOf(probedDefaults).core, declared: declaredField, probed: layerOf(capabilitiesFromProbe(report, { mode: toolCalling() })).layer, probedAt: report.probedAt });
   const keywordSupport = report === null ? UNPROBED_KEYWORD_SUPPORT : report.keywordSupport;
   const isGuardrail = guardrailMatcherOf(report);

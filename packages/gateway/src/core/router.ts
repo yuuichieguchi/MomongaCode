@@ -1,7 +1,7 @@
 import { CircuitBreaker } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { applyCapabilityOverride, imageCapability, sizingRatioFor } from '@momonga/protocol';
-import type { Capabilities, CapabilityOverride, GatewayHealth, HealthResult, ImageCapability, ProviderAdapter, TargetBilling, TargetHealth } from '@momonga/protocol';
+import type { Capabilities, CapabilityOverride, ToolCallingMode, ToolCallingState, GatewayHealth, HealthResult, ImageCapability, ProviderAdapter, TargetBilling, TargetHealth } from '@momonga/protocol';
 import { createAdmissionGate } from './admission.ts';
 import type { AdmissionGate } from './admission.ts';
 import { preconditionText } from '../precondition-text.ts';
@@ -51,7 +51,7 @@ const requireEntry = <T>(entries: Record<string, T>, name: string, kind: string)
   return entry;
 };
 
-const TOOL_CALLING_RANK: Record<Capabilities['toolCalling'], number> = { needs_probe: -1, none: 0, constrained: 1, native: 2 };
+const TOOL_CALLING_RANK: Record<ToolCallingMode, number> = { none: 0, constrained: 1, native: 2 };
 const TOKEN_COUNTING_RANK: Record<Capabilities['tokenCounting'], number> = { estimated: 0, calibrated: 1, exact: 2 };
 
 const weakest = <T extends string>(values: readonly T[], rank: Record<T, number>): T =>
@@ -75,9 +75,13 @@ const mergedParallelToolCalls = (all: readonly Capabilities[]): Pick<Capabilitie
   return all.every((entry) => entry.parallelToolCalls === true) ? { parallelToolCalls: true } : {};
 };
 
-const mergedNeedsProbe = (all: readonly Capabilities[]): Pick<Capabilities, 'needsProbe'> => {
-  const needing = all.find((entry) => entry.needsProbe !== undefined);
-  return needing?.needsProbe === undefined ? {} : { needsProbe: needing.needsProbe };
+const mergedToolCalling = (all: readonly Capabilities[]): ToolCallingState => {
+  const modes: ToolCallingMode[] = [];
+  for (const entry of all) {
+    if (typeof entry.toolCalling !== 'string') return entry.toolCalling;
+    modes.push(entry.toolCalling);
+  }
+  return weakest(modes, TOOL_CALLING_RANK);
 };
 
 const mergeCapabilities = (all: readonly [Capabilities, ...Capabilities[]]): Capabilities => {
@@ -85,8 +89,7 @@ const mergeCapabilities = (all: readonly [Capabilities, ...Capabilities[]]): Cap
   return {
     contextWindow: Math.min(...all.map((entry) => entry.contextWindow)),
     maxOutputTokens: Math.min(...all.map((entry) => entry.maxOutputTokens)),
-    toolCalling: weakest(all.map((entry) => entry.toolCalling), TOOL_CALLING_RANK),
-    ...mergedNeedsProbe(all),
+    toolCalling: mergedToolCalling(all),
     structuredOutput: all.some((entry) => entry.structuredOutput === 'none') ? 'none' : 'json_schema',
     streaming: all.every((entry) => entry.streaming),
     stopSequences: all.every((entry) => entry.stopSequences),
@@ -155,8 +158,9 @@ export const createRouter = (options: RouterOptions): Router => {
     let remaining = [...all];
     if (requirements.tools === true) {
       const capabilities = await Promise.all(remaining.map((target) => capabilitiesOf(target)));
-      const unmeasured = capabilities.find((entry) => entry.toolCalling === 'needs_probe');
-      if (unmeasured?.needsProbe !== undefined) throw invalidRequest('precondition_failed', preconditionText(unmeasured.needsProbe.message, unmeasured.needsProbe.evidence, unmeasured.needsProbe.remedy), null, 412);
+      for (const { toolCalling } of capabilities) {
+        if (typeof toolCalling !== 'string') throw invalidRequest('precondition_failed', preconditionText(toolCalling.message, toolCalling.evidence, toolCalling.remedy), null, 412);
+      }
       remaining = remaining.filter((_, index) => (capabilities[index] as Capabilities).toolCalling !== 'none');
       if (remaining.length === 0) {
         throw invalidRequest('capability_unsupported', `no target of model alias "${alias}" supports tool calling`, 'tools');

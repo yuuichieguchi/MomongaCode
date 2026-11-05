@@ -55,9 +55,9 @@ describe.each(KINDS)('an unprobed auto %s target through the router', { timeout:
     const models = await getJson(client, '/v1/momonga/models');
 
     const entry = models.body.data.find((model: { id: string }) => model.id === 'fast');
-    expect(entry.capabilities.toolCalling).toBe('needs_probe');
-    expect(entry.targetCapabilities.local.toolCalling).toBe('needs_probe');
-    expect(entry.targetCapabilities.local.needsProbe.remedy).toBe('run `momonga gateway probe local`');
+    expect(entry.capabilities.toolCalling.state).toBe('needs_probe');
+    expect(entry.targetCapabilities.local.toolCalling.state).toBe('needs_probe');
+    expect(entry.targetCapabilities.local.toolCalling.remedy).toBe('run `momonga gateway probe local`');
   });
 
   it('refuses a request with tools with precondition_failed and the probe remedy', async () => {

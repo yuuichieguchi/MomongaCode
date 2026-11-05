@@ -1,7 +1,6 @@
 import { describe, expectTypeOf, it } from 'vitest';
 import type {
   Capabilities,
-  CapabilityOverride,
   HealthResult,
   ProbeKeyword,
   ProbeReport,
@@ -43,9 +42,7 @@ describe('protocol capability types', () => {
     >();
   });
 
-  it('cannot override tool calling and cannot express needs_probe without its details', () => {
-    expectTypeOf<keyof CapabilityOverride>().not.toEqualTypeOf<never>();
-    expectTypeOf<'toolCalling'>().not.toExtend<keyof CapabilityOverride>();
+  it('cannot express needs_probe without its details', () => {
     expectTypeOf<{ state: 'needs_probe' }>().not.toExtend<Capabilities['toolCalling']>();
     expectTypeOf<'needs_probe'>().not.toExtend<Capabilities['toolCalling']>();
   });

@@ -177,7 +177,7 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
     verify,
     raiseHeadroom,
     capabilities: async () => {
-      if (record === null) return { ...withImageDefault(declared), toolCalling: 'needs_probe', needsProbe, source: 'unprobed' };
+      if (record === null) return { ...withImageDefault(declared), toolCalling: needsProbe, source: 'unprobed' };
       const decision = decideToolCalling(record.report);
       const { toolCalling, structuredOutput, streaming, stopSequences, outputBoundField, parallelToolCalls, usageReported, reasoning, promptCache } = capabilitiesFromProbe(
         record.report,

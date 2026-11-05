@@ -8,9 +8,7 @@ import { escapedLines } from '../terminal-writer.ts';
 const yesNo = (value: boolean): string => (value ? 'yes' : 'no');
 
 const toolCallingText = (capabilities: Capabilities): string =>
-  capabilities.toolCalling === 'needs_probe' && capabilities.needsProbe !== undefined
-    ? `needs probe: ${capabilities.needsProbe.remedy}`
-    : capabilities.toolCalling;
+  typeof capabilities.toolCalling === 'string' ? capabilities.toolCalling : `needs probe: ${capabilities.toolCalling.remedy}`;
 
 const describeCapabilities = (capabilities: Capabilities): string[] => [
   `    context window: ${capabilities.contextWindow}, max output: ${capabilities.maxOutputTokens}`,
