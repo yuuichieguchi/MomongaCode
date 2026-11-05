@@ -37,8 +37,7 @@ describe('canonicalJson has no depth limit of its own', () => {
     expect(outcome).toHaveProperty('text');
     if ('text' in outcome) {
       expect(outcome.text.length).toBe(nestedText(UNBOUNDED_DEPTH).length + 2);
-      expect(outcome.text.startsWith(`[${'{"a":'.repeat(8)}`)).toBe(true);
-      expect(outcome.text.endsWith(`1${'}'.repeat(8)}]`)).toBe(true);
+      expect(outcome.text).toBe(`[${nestedText(UNBOUNDED_DEPTH)}]`);
     }
   });
 
