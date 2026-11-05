@@ -122,7 +122,7 @@ const setup = async (config: Setup = {}) => {
     exec,
     probeRecordDir: recordDir,
     recordKey: RECORD_KEY,
-    toolCallingSetting: 'auto',
+    toolCallingSetting: config.report === undefined ? 'native' : 'auto',
   });
   return { managed, spawn, socketPath, execCalls, clock };
 };
@@ -162,7 +162,7 @@ describe('createManagedFmTarget probe-derived settings', () => {
     expect(await managed.capabilities(TARGET)).toEqual(capabilitiesFromProbe(report, { mode: 'constrained' }));
   });
 
-  it('falls back to native tool calling, full keyword support and conservative unprobed capabilities without a record', async () => {
+  it('uses the declared native tool calling, full keyword support and conservative unprobed capabilities without a record', async () => {
     const { managed } = await setup();
     expect(managed.toolCalling(TARGET)).toBe('native');
     expect(managed.keywordSupport(TARGET)).toEqual(ALL_TRUE);

@@ -1,5 +1,5 @@
 import { defineTool, ToolExecutionError } from '@momonga/tools';
-import type { AnyTool, ToolSet } from '@momonga/tools';
+import type { AnyTool } from '@momonga/tools';
 import { LOAD_TOOLS_TOOL_NAME } from './tool-offer.ts';
 import type { ToolLoading } from './tool-admission.ts';
 
@@ -41,9 +41,3 @@ export const createLoadToolsTool = (loading: ToolLoading): AnyTool => {
     },
   });
 };
-
-export const withLoadTools = (toolSet: ToolSet, loader: AnyTool): ToolSet => ({
-  ...toolSet,
-  tools: [...toolSet.tools, loader],
-  get: (name) => (name === loader.name ? loader : toolSet.get(name)),
-});

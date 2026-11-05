@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import { createToolRegistry } from '@momonga/tools';
+import { createToolRegistry, extendToolSet } from '@momonga/tools';
 import type { AnyTool, ToolSource } from '@momonga/tools';
 import { makeTool } from './harness.ts';
 import { makeLayout, ruleFor } from './helpers.ts';
@@ -45,8 +45,9 @@ describe('createToolRegistry register', () => {
 
   it.each([
     ['unknown type name', { type: 'object', properties: { a: { type: 'strin' } } }],
-    ['unknown keyword under strict mode', { type: 'object', properties: {}, notAKeyword: true }],
-  ])('throws when Ajv cannot compile the schema (%s)', (_label, inputSchema) => {
+    ['unresolvable $ref', { type: 'object', properties: { a: { $ref: '#/$defs/missing' } } }],
+    ['unsupported dialect', { $schema: 'http://json-schema.org/draft-04/schema#', type: 'object' }],
+  ])('throws when the schema cannot be compiled (%s)', (_label, inputSchema) => {
     const registry = createToolRegistry();
     expect(() => registry.register(makeTool('Bad', { inputSchema }))).toThrow();
   });
@@ -219,5 +220,18 @@ describe('ToolSet forModel', () => {
       'Write',
       'Bash',
     ]);
+  });
+});
+
+describe('extendToolSet', () => {
+  it('admits a tool through the same schema check as register', async () => {
+    const registry = createToolRegistry();
+    registry.register(makeTool('One'));
+    const set = await registry.snapshot();
+    const extended = extendToolSet(set, makeTool('Two'));
+    expect(extended.get('Two')?.name).toBe('Two');
+    expect(extended.tools.map((tool) => tool.name)).toEqual(['One', 'Two']);
+    expect(() => extendToolSet(set, makeTool('Bad', { inputSchema: { type: 'object', properties: { a: { type: 'strin' } } } }))).toThrow();
+    expect(() => extendToolSet(set, makeTool('One'))).toThrow('duplicate tool name');
   });
 });

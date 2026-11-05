@@ -4,7 +4,8 @@ import { PreconditionFailedError } from '../adapters/shared/failures.ts';
 import type { OllamaEndpointRecord } from './endpoint-record.ts';
 import { layerOf, mergeCapabilities, withImageDefault } from './decide.ts';
 import type { DeclaredCapabilities } from './decide.ts';
-import { memoizedVerification, remedyOf } from './endpoint-target.ts';
+import { memoizedVerification } from './endpoint-target.ts';
+import { needsProbeOf, preconditionOf, remedyOf } from './remedy.ts';
 
 export type ProbedOllamaTargetOptions = {
   targetName: string;
@@ -23,15 +24,14 @@ export type ProbedOllamaTarget = {
 export const createProbedOllamaTarget = (options: ProbedOllamaTargetOptions): ProbedOllamaTarget => {
   const { targetName, endpoint, model, declared, record } = options;
   const declaredParts = layerOf(declared);
+  const needsProbe = needsProbeOf(
+    targetName,
+    `the ollama target "${targetName}" has no probe record`,
+    `no record for ${endpoint} and model ${model}`,
+  );
 
   const verifyOnce = async (signal: AbortSignal): Promise<void> => {
-    if (record === null) {
-      throw new PreconditionFailedError(
-        `the ollama target "${targetName}" has no probe record`,
-        `no record for ${endpoint} and model ${model}`,
-        remedyOf(targetName),
-      );
-    }
+    if (record === null) throw preconditionOf(needsProbe);
     const digest = await options.readDigest(signal);
     if (digest !== record.identity) {
       throw new PreconditionFailedError(
@@ -45,7 +45,7 @@ export const createProbedOllamaTarget = (options: ProbedOllamaTargetOptions): Pr
   return {
     verify: memoizedVerification(verifyOnce),
     capabilities: async () => {
-      if (record === null) return { ...withImageDefault(declared), source: 'unprobed' };
+      if (record === null) return { ...withImageDefault(declared), toolCalling: needsProbe, source: 'unprobed' };
       const { report } = record;
       return mergeCapabilities({
         defaults: declaredParts.core,

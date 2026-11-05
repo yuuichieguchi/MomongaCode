@@ -1,32 +1,37 @@
 import { describe, expect, it, vi } from 'vitest';
-import { FIXTURE_EXTRA_TOOLS_ENV } from '@momonga/testkit';
+import { ENGINE_FAILURE_KEY, ENGINE_FAILURE_MESSAGE, FIXTURE_EXTRA_TOOLS_ENV } from '@momonga/testkit';
 import { untrustedSchemaFailure } from '@momonga/foundation';
 import { schemaIdentity } from '@momonga/tools';
 import type { ToolSet } from '@momonga/tools';
 import { callRecords, entry, makeExecutor, makePool, makeRecordFile, modernConfig } from './mcp-harness.ts';
 
+vi.mock('../../foundation/src/untrusted-engine.ts', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../foundation/src/untrusted-engine.ts')>();
+  const { injectEngineFailure } = await import('../../testkit/src/engine-failure.ts');
+  return { ...original, ataEngine: injectEngineFailure(original.ataEngine) };
+});
+
 const validatorRuns = vi.hoisted(() => ({ count: 0 }));
 
 vi.mock('../../foundation/src/untrusted-schema.ts', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../foundation/src/untrusted-schema.ts')>();
-  const isThrowingSchema = (schema: Record<string, unknown>): boolean => schema['then'] === false && typeof schema['if'] === 'object';
+  const isThrowingSchema = (schema: Record<string, unknown>): boolean => schema[ENGINE_FAILURE_KEY] === true;
   return {
     ...original,
     compileUntrustedSchema: (schema: Record<string, unknown>) => {
       const validate = original.compileUntrustedSchema(schema);
       if (!isThrowingSchema(schema)) return validate;
-      const counted = (data: unknown) => {
+      return (data: unknown) => {
         validatorRuns.count += 1;
         return validate(data);
       };
-      return Object.defineProperty(counted, 'errors', { get: () => validate.errors });
     },
   };
 });
 
 const THROWING = 'mcp__modern__validator_throws';
 const IF_ANNOTATIONS = 'mcp__modern__if_annotations';
-const ENGINE_MESSAGE = 'props0 is not defined';
+const ENGINE_MESSAGE = ENGINE_FAILURE_MESSAGE;
 const UNAVAILABLE = /unavailable/i;
 const SAME_RUN = { runId: 'run-validator-failure' };
 

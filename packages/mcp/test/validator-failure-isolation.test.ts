@@ -1,10 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { clearUntrustedSchemaCaches, untrustedSchemaFailure } from '@momonga/foundation';
 import { schemaIdentity } from '@momonga/tools';
-import { FIXTURE_EXTRA_TOOLS_ENV } from '@momonga/testkit';
+import { ENGINE_FAILURE_MESSAGE, FIXTURE_EXTRA_TOOLS_ENV } from '@momonga/testkit';
 import { entry, makeExecutor, makePool, makeRecordFile, modernConfig } from './mcp-harness.ts';
 
-const ENGINE_MESSAGE = 'props0 is not defined';
+vi.mock('../../foundation/src/untrusted-engine.ts', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../foundation/src/untrusted-engine.ts')>();
+  const { injectEngineFailure } = await import('../../testkit/src/engine-failure.ts');
+  return { ...original, ataEngine: injectEngineFailure(original.ataEngine) };
+});
+
+const ENGINE_MESSAGE = ENGINE_FAILURE_MESSAGE;
 const withThrower = () => modernConfig(makeRecordFile(), { [FIXTURE_EXTRA_TOOLS_ENV]: 'validator_throws' });
 
 describe('a validate-time failure of a tool whose schema another server sends identically', () => {

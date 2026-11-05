@@ -327,6 +327,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
     required: ['callId', 'status', 'output'],
   },
   'tool.loaded': { properties: { names: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 } } }, required: ['names'] },
+  'tool.offered': { properties: { names: { type: 'array', items: { type: 'string', minLength: 1 } } }, required: ['names'] },
   'loop.warned': { properties: { signature: string }, required: ['signature'] },
   'model.rejected': {
     properties: { step: nonNegativeInteger, attempt: nonNegativeInteger, reason: enumOf(MODEL_REJECTION_REASONS), counter: string, meterCounter: string },
@@ -458,7 +459,13 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
     required: ['approvalId', 'effect', 'rule'],
   },
   notice: {
-    properties: { level: enumOf(['info', 'warning', 'error']), message: string, code: string, toolKey: string },
+    properties: {
+      level: enumOf(['info', 'warning', 'error']),
+      message: string,
+      code: string,
+      toolKey: string,
+      reduction: closed({ turn: nonNegativeInteger, from: nonNegativeInteger, to: nonNegativeInteger }, ['turn', 'from', 'to']),
+    },
     required: ['level', 'message'],
   },
 };

@@ -29,14 +29,14 @@ const runThroughFakeFm = async (settings: unknown, alias: string) => {
 
 describe('the model id a run sends to fm serve', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('is a model fm serve lists, for the fm target the person configured under the alias default', async () => {
-    const reply = await runThroughFakeFm({ models: { targets: { fm: { adapter: 'fm' } }, aliases: { default: ['fm'] } } }, 'default');
+    const reply = await runThroughFakeFm({ models: { targets: { fm: { adapter: 'fm', toolCalling: 'native' } }, aliases: { default: ['fm'] } } }, 'default');
     expect(reply.body.error ?? null).toBeNull();
     expect(reply.status).toBe(200);
     expect(reply.body.status).toBe('completed');
   });
 
   it('is a model fm serve lists, whatever the alias and the target are named', async () => {
-    const reply = await runThroughFakeFm({ models: { targets: { apple: { adapter: 'fm' } }, aliases: { work: ['apple'] } } }, 'work');
+    const reply = await runThroughFakeFm({ models: { targets: { apple: { adapter: 'fm', toolCalling: 'native' } }, aliases: { work: ['apple'] } } }, 'work');
     expect(reply.body.error ?? null).toBeNull();
     expect(reply.status).toBe(200);
     expect(reply.body.status).toBe('completed');

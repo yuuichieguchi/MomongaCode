@@ -1,11 +1,17 @@
-import { describe, expect, it } from 'vitest';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, FIXTURE_EXTRA_TOOLS_ENV, MCP_MODERN_SERVER_PATH, fakeUsageOfRequest } from '@momonga/testkit';
+import { describe, expect, it, vi } from 'vitest';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, ENGINE_FAILURE_MESSAGE, FIXTURE_EXTRA_TOOLS_ENV, MCP_MODERN_SERVER_PATH, fakeUsageOfRequest } from '@momonga/testkit';
 import { launchRuntime, readDb, scriptedToolCall, startStack, waitForCondition } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
 
+vi.mock('../../../foundation/src/untrusted-engine.ts', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../../foundation/src/untrusted-engine.ts')>();
+  const { injectEngineFailure } = await import('../../../testkit/src/engine-failure.ts');
+  return { ...original, ataEngine: injectEngineFailure(original.ataEngine) };
+});
+
 const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 const THROWING = 'mcp__fx__validator_throws';
-const ENGINE_MESSAGE = 'props0 is not defined';
+const ENGINE_MESSAGE = ENGINE_FAILURE_MESSAGE;
 const MCP_SETTINGS = { mcpServers: { fx: { command: process.execPath, args: [MCP_MODERN_SERVER_PATH], env: { [FIXTURE_EXTRA_TOOLS_ENV]: 'validator_throws' } } } };
 
 const finalAnswer = {
