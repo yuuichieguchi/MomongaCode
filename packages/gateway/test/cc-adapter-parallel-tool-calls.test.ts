@@ -50,7 +50,7 @@ describe('chat-completions parallel_tool_calls', () => {
     const fake = await startFake({ scenario: 'json-schema-only' });
     const adapter = makeAdapter(fake, {
       toolCalling: () => 'constrained',
-      capabilities: async () => ({ ...CC_CAPABILITIES, parallelToolCalls: false }),
+      capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: 'constrained', parallelToolCalls: false }),
     });
     await collect(adapter, withTools);
     expect('parallel_tool_calls' in lastCompletionBody(fake)).toBe(false);

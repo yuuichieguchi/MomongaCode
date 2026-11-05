@@ -1,6 +1,6 @@
 import { decodeSse } from '@momonga/foundation';
 import { summaryTokenCapFor } from '@momonga/protocol';
-import type { AdapterCompactRequest, AllowedToolsForm, Capabilities, ToolChoiceWire, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, LenientItems, ReasoningOrigin, RenderWireOptions, StreamEvent } from '@momonga/protocol';
+import type { AdapterCompactRequest, AllowedToolsForm, Capabilities, ToolCallingMode, ToolChoiceWire, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, LenientItems, ReasoningOrigin, RenderWireOptions, StreamEvent } from '@momonga/protocol';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
 import { NO_TOOL_CHOICE_WIRE, resolveToolChoice } from '../../core/tool-choice.ts';
 import { hiddenReasoningTokens } from '../../core/hidden-reasoning.ts';
@@ -11,7 +11,7 @@ import { buildConstrainedBody } from './constrained-request.ts';
 import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { createConstrainedSink } from './constrained-sink.ts';
 import type { ConstrainedPlan } from './constrained-sink.ts';
-import { StreamFailure, UnsupportedInputError } from '../shared/failures.ts';
+import { PreconditionFailedError, StreamFailure, UnsupportedInputError } from '../shared/failures.ts';
 import { RENDERS_EVERY_SAMPLING_FIELD } from '../shared/sampling.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
 import { retryAfterHint, httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
@@ -48,6 +48,11 @@ const PINNING_CONSTRAINED_TOOL_CHOICE: ToolChoiceWire = { forms: ['envelope', 's
 
 const LITERALLESS_CONSTRAINED_TOOL_CHOICE: ToolChoiceWire = { forms: ['filter'], expressesRequired: true };
 
+const modeOf = ({ toolCalling }: Capabilities): ToolCallingMode => {
+  if (typeof toolCalling !== 'string') throw new PreconditionFailedError(toolCalling.message, toolCalling.evidence, toolCalling.remedy);
+  return toolCalling;
+};
+
 export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOptions): ChatCompletionsAdapter => {
   const pool = createEndpointPool({ label: 'chat-completions', unixPath: CHAT_COMPLETIONS_PATH, urlSuffix: CHAT_COMPLETIONS_SUFFIX }, options.liveness);
   const { health, countTokens, isGuardrail } = options;
@@ -58,7 +63,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
   let closed = false;
 
   const toolChoiceWire = (capabilities: Capabilities, target: AdapterTarget): ToolChoiceWire => {
-    const mode = capabilities.toolCalling;
+    const mode = modeOf(capabilities);
     if (mode === 'none') return NO_TOOL_CHOICE_WIRE;
     if (mode === 'native') return NATIVE_TOOL_CHOICE;
     const support = options.keywordSupport?.(target) ?? FULL_KEYWORD_SUPPORT;
@@ -72,7 +77,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
     capabilities: Capabilities,
     allowedTools: readonly AllowedToolsForm[] | undefined,
   ): { body: ChatRequestBody; envelope: ConstrainedPlan | undefined } => {
-    const mode = capabilities.toolCalling;
+    const mode = modeOf(capabilities);
     const hasTools = (request.tools ?? []).length > 0;
     if (mode === 'none' && hasTools) {
       throw new UnsupportedInputError('capability_unsupported', 'this target does not support tool calling', 'tools');
@@ -85,7 +90,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
 
   const lenientWireOf = (request: AdapterRequest, target: AdapterTarget, lenient: LenientItems, origin: ReasoningOrigin, capabilities: Capabilities): ChatWire => {
     const { callNames, withTools } = lenient;
-    if (capabilities.toolCalling === 'constrained') {
+    if (modeOf(capabilities) === 'constrained') {
       return { messages: plainHistoryOf(request.input, { envelopeReplies: withTools, callNames, origin }) };
     }
     return {

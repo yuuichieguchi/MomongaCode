@@ -35,12 +35,13 @@ export const makeAdapter = (
   overrides: Partial<ChatCompletionsAdapterOptions> = {},
 ): ChatCompletionsAdapter => {
   const clock = createFakeClock(START_MS);
+  const toolCalling = overrides.toolCalling ?? (() => 'native' as const);
   const adapter = createChatCompletionsAdapter({
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
-    toolCalling: () => 'native',
-    capabilities: async () => CC_CAPABILITIES,
+    capabilities: async (target) => ({ ...CC_CAPABILITIES, toolCalling: toolCalling(target) }),
     clock,
     ...overrides,
+    toolCalling,
   });
   registerCleanup(() => adapter.close());
   return adapter;
