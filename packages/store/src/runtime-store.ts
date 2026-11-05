@@ -9,7 +9,7 @@ import { createApprovalStore } from './approvals.ts';
 import { createBlobStore, prepareBlobDirectory } from './blobs.ts';
 import { addUsage, foldRunState, initialRunState, spendOf } from './fold.ts';
 import { decodeEvent, decodeRun, decodeRunEvents, decodeRunState, decodeSession, encodeRunState } from './codec.ts';
-import { StalePreparation } from './journal-port.ts';
+import { JournalThreadError, StalePreparation } from './journal-port.ts';
 import { createJournalReader, payloadStep } from './journal-reader.ts';
 import { StoreIdentityError, isFatalStoreError } from './fatal.ts';
 import { createIdempotencyStore } from './idempotency.ts';
@@ -36,6 +36,7 @@ import type {
   Conflict,
   CancelOrigin,
   ContributionMeasured,
+  ContributionPreparer,
   CreateChildRunResult,
   CreateRunResult,
   ElicitationView,
@@ -64,6 +65,11 @@ import type {
   SweepErrorSink,
   WaitTargets,
 } from './types.ts';
+
+const journalPreparer = (preparer: ContributionPreparer | undefined, what: string): ContributionPreparer => {
+  if (preparer === undefined) throw new JournalThreadError(`the ${what} of a run is read by the journal thread, and this store has none`);
+  return preparer;
+};
 
 const isClaimStatus = (status: RunStatus): status is ClaimStatus => CLAIM_STATUSES.some((claimStatus) => claimStatus === status);
 
@@ -1615,6 +1621,12 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     guidelines: createGuidelineStore(db, clock),
     governing,
     search: createSearchStore(db),
+
+    journalFacts: {
+      verdict: async (request, signal) => journalPreparer(preparer, 'verdict').verdict(request, signal),
+      evidence: async (request, signal) => journalPreparer(preparer, 'evidence').evidence(request, signal),
+      reflectionInput: async (request, signal) => journalPreparer(preparer, 'reflection input').reflectionInput(request, signal),
+    },
 
     dataVersion: () => {
       const row = sql.dataVersion.get();

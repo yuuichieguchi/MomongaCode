@@ -20,6 +20,8 @@ import { FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, cr
 import type { FakeClock } from '@momonga/testkit';
 import { createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import type { AbandonTarget, AnyTool, ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
+import { evidenceHandler, reflectionInputHandler, verdictHandler } from '../../src/memory/journal-thread.ts';
+import type { JournalHandler } from '../../src/memory/journal-thread.ts';
 import { systemTimers } from '../../src/service/timers.ts';
 import { within } from './deferred.ts';
 import { createFakeGateway } from './fake-gateway.ts';
@@ -144,7 +146,19 @@ export type Env = Awaited<ReturnType<typeof makeEnv>>;
 
 export type ContributionItems = Extract<RunEventPayload, { type: 'context.contribution' }>['items'];
 
+const inProcessFacts = (dbPath: string, handlerFor: (reader: ReturnType<typeof createJournalReader>) => JournalHandler) => async (request: object): Promise<never> => {
+  const db = openDatabase(dbPath);
+  try {
+    return (await handlerFor(createJournalReader(db))(request as Record<string, unknown>, () => undefined)) as never;
+  } finally {
+    db.close();
+  }
+};
+
 export const journalReaderPreparer =(dbPath: string): ContributionPreparer => ({
+  verdict: inProcessFacts(dbPath, verdictHandler),
+  evidence: inProcessFacts(dbPath, evidenceHandler),
+  reflectionInput: inProcessFacts(dbPath, reflectionInputHandler),
   measure: async (request) => {
     const db = openDatabase(dbPath);
     try {
@@ -181,6 +195,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
     maxAttempts: options.maxAttempts ?? 5,
     maxTotalAttempts: options.maxTotalAttempts ?? 50,
     preparer: options.preparer ?? {
+      ...journalReaderPreparer(dbPath),
       measure: async (request) => {
         const items = scriptedContributions.get(request.runId);
         if (items === undefined) return journalReaderPreparer(dbPath).measure(request);

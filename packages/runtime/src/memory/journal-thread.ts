@@ -2,12 +2,15 @@ import fs from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { MessagePort, isMainThread, parentPort, threadId, workerData } from 'node:worker_threads';
 import { openDatabase } from '@momonga/foundation/sqlite';
+import { REPOSITORY_FACTS_EVENT_TYPES, createRepositoryFactsFold } from '@momonga/memory';
 import { createJournalReader } from '@momonga/store';
-import type { RunEventPayload } from '@momonga/protocol';
+import type { Capabilities, RunEventPayload } from '@momonga/protocol';
 import type { JournalReader } from '@momonga/store';
 import { contributionAtTerminal } from './contribution.ts';
+import { EVIDENCE_EVENT_TYPES, createEvidenceFold } from './evidence-fold.ts';
 import { JOURNAL_PROGRESS_INTERVAL_MS } from './journal-thread-limits.ts';
 import { createProgressGate } from './progress-gate.ts';
+import { REFLECTION_INPUT_EVENT_TYPES, createReflectionInputFold } from './reflection-input.ts';
 
 export const openJournalConnection = (databasePath: string): ReturnType<typeof openDatabase> => {
   const db = openDatabase(databasePath);
@@ -90,6 +93,63 @@ export const contributionHandler = (reader: JournalReader, current: { progress: 
   }
 };
 
+const textOf = (request: JournalRequest, key: string, kind: string): string => {
+  const value = request[key];
+  if (typeof value !== 'string') throw new TypeError(`a ${kind} request must carry ${key} as a string`);
+  return value;
+};
+
+const textsOf = (request: JournalRequest, key: string, kind: string): string[] => {
+  const value = request[key];
+  if (!Array.isArray(value)) throw new TypeError(`a ${kind} request must carry ${key} as a list of strings`);
+  const texts: string[] = [];
+  for (const item of value) {
+    if (typeof item !== 'string') throw new TypeError(`a ${kind} request must carry ${key} as a list of strings`);
+    texts.push(item);
+  }
+  return texts;
+};
+
+const isCapabilities = (value: unknown): value is Capabilities =>
+  typeof value === 'object' && value !== null && typeof (value as { contextWindow?: unknown }).contextWindow === 'number' && typeof (value as { maxOutputTokens?: unknown }).maxOutputTokens === 'number';
+
+type VisitingReader = Pick<JournalReader, 'visitRun'>;
+
+export const verdictHandler = (reader: VisitingReader): JournalHandler => (request) => {
+  const runId = textOf(request, 'runId', 'verdict');
+  const fold = createRepositoryFactsFold({ commands: textsOf(request, 'commands', 'verdict'), manifests: textsOf(request, 'manifests', 'verdict') });
+  const run = reader.visitRun(runId, REPOSITORY_FACTS_EVENT_TYPES, fold.add);
+  const { verified, facts } = fold.finish(run.status);
+  return { lastSeq: run.lastSeq, verified, facts };
+};
+
+export const evidenceHandler = (reader: VisitingReader): JournalHandler => (request) => {
+  const runId = textOf(request, 'runId', 'evidence');
+  const { onlyCommand } = request;
+  if (onlyCommand !== undefined && typeof onlyCommand !== 'string') throw new TypeError('an evidence request must carry onlyCommand as a string when it carries one');
+  const fold = createEvidenceFold({ paths: textsOf(request, 'paths', 'evidence'), verificationCommands: textsOf(request, 'verificationCommands', 'evidence'), onlyCommand });
+  const run = reader.visitRun(runId, EVIDENCE_EVENT_TYPES, fold.add);
+  return { lastSeq: run.lastSeq, ...fold.finish() };
+};
+
+export const reflectionInputHandler = (reader: VisitingReader): JournalHandler => (request) => {
+  const runId = textOf(request, 'runId', 'reflection_input');
+  const { capabilities } = request;
+  if (!isCapabilities(capabilities)) throw new TypeError('a reflection_input request must carry the capabilities of the reflection model');
+  const fold = createReflectionInputFold(textOf(request, 'project', 'reflection_input'), capabilities);
+  const run = reader.visitRun(runId, REFLECTION_INPUT_EVENT_TYPES, fold.add);
+  return { lastSeq: run.lastSeq, input: fold.finish() };
+};
+
+const withProgress = (current: { progress: (() => void) | undefined }, handler: JournalHandler): JournalHandler => (request, progress) => {
+  current.progress = progress;
+  try {
+    return handler(request, progress);
+  } finally {
+    current.progress = undefined;
+  }
+};
+
 const serve = (data: JournalThreadData): void => {
   if (parentPort === null) throw new Error('journal thread has no parent port');
   const before = identityOf(data.databasePath);
@@ -102,7 +162,16 @@ const serve = (data: JournalThreadData): void => {
   const current: { progress: (() => void) | undefined } = { progress: undefined };
   const gate = createProgressGate({ now: () => performance.now(), intervalMs: JOURNAL_PROGRESS_INTERVAL_MS, post: () => current.progress?.() });
   const reader = createJournalReader(db, { unit: gate.unit });
-  serveJournalReader({ ping: () => ({ threadId }), contribution: contributionHandler(reader, current) }, { incoming: parentPort, outgoing: data.port });
+  serveJournalReader(
+    {
+      ping: () => ({ threadId }),
+      contribution: contributionHandler(reader, current),
+      verdict: withProgress(current, verdictHandler(reader)),
+      evidence: withProgress(current, evidenceHandler(reader)),
+      reflection_input: withProgress(current, reflectionInputHandler(reader)),
+    },
+    { incoming: parentPort, outgoing: data.port },
+  );
   parentPort.on('close', () => db.close());
   data.port.postMessage({ ready: true, dev: after.dev, ino: after.ino });
 };

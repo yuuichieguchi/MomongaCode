@@ -14,6 +14,7 @@ import { enqueue, harness, newSession } from '../../../store/test/helpers.ts';
 import { createEvidenceRunner } from '../../src/process/evidence-run.ts';
 import { createFakeGateway } from '../worker/fake-gateway.ts';
 import { capabilitiesFor } from '../worker/harness.ts';
+import { withInProcessFacts } from './in-process-facts.ts';
 import { textStep } from '../worker/scripts.ts';
 import { bash, exported, fileTool, finishClaimed } from './reflection-fixture.ts';
 
@@ -45,7 +46,9 @@ const reflectInRepository = async (context: TestContext, options: { trusted: boo
   git('commit', '-q', '-m', 'one');
   const head = git('rev-parse', 'HEAD');
 
-  const { store, clock } = harness();
+  const opened = harness();
+  const { clock } = opened;
+  const store = withInProcessFacts(opened.store, opened.dbPath);
   store.trust.set(project, 'trusted');
   const session = newSession(store, project);
   const gateway = createFakeGateway(capabilitiesFor(100_000, { structuredOutput: 'json_schema' }));

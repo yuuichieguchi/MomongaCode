@@ -9,6 +9,7 @@ import { REQUEUE_BASE_MS } from '../../src/process/constants.ts';
 import { enqueue, harness, makeStoreDir, newSession } from '../../../store/test/helpers.ts';
 import { createFakeGateway } from '../worker/fake-gateway.ts';
 import { capabilitiesFor } from '../worker/harness.ts';
+import { withInProcessFacts } from './in-process-facts.ts';
 import { textStep } from '../worker/scripts.ts';
 import { bash, exported, fileTool, finishClaimed } from './reflection-fixture.ts';
 
@@ -45,7 +46,9 @@ const LINT_FACT = 'Run `npm run lint` to verify a change in this repository.';
 type Options = { enabled?: boolean; facts?: boolean; trusted?: boolean };
 
 const setup = ({ enabled = false, facts = true, trusted = true }: Options = {}) => {
-  const { store, clock } = harness();
+  const opened = harness();
+  const { clock } = opened;
+  const store = withInProcessFacts(opened.store, opened.dbPath);
   const project = makeStoreDir();
   if (trusted) store.trust.set(project, 'trusted');
   const session = newSession(store, project);

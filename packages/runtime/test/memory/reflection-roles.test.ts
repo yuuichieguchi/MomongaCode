@@ -7,6 +7,7 @@ import type { RuntimeStore } from '@momonga/store';
 import { enqueue, harness, makeStoreDir, mustClaim, newSession } from '../../../store/test/helpers.ts';
 import { createFakeGateway } from '../worker/fake-gateway.ts';
 import { capabilitiesFor } from '../worker/harness.ts';
+import { withInProcessFacts } from './in-process-facts.ts';
 import { textStep } from '../worker/scripts.ts';
 import { bash, exported, fileTool } from './reflection-fixture.ts';
 
@@ -40,7 +41,9 @@ const finishWithPins = async (store: RuntimeStore, pins: Record<string, unknown>
 };
 
 const setup = () => {
-  const { store, clock } = harness();
+  const opened = harness();
+  const { clock } = opened;
+  const store = withInProcessFacts(opened.store, opened.dbPath);
   const project = makeStoreDir();
   store.trust.set(project, 'trusted');
   const session = newSession(store, project);

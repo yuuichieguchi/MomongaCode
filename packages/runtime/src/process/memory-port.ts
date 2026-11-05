@@ -8,10 +8,9 @@ import type { EvidenceRun } from '../memory/evidence.ts';
 import { termsOfQuery } from '../memory/recall-query.ts';
 import { memoryViewOf } from '../memory/views.ts';
 import type { MemoryPort, SettingsPort } from '../ports.ts';
-import { readAllRunEvents } from './run-events.ts';
 
 export type MemoryPortOptions = {
-  store: Pick<RuntimeStore, 'memories' | 'readRunEvents'>;
+  store: Pick<RuntimeStore, 'memories' | 'journalFacts'>;
   settings: Pick<SettingsPort, 'trusted' | 'verification'>;
   evidenceRun: (session: Session) => EvidenceRun;
 };
@@ -41,13 +40,13 @@ export const createMemoryPort = ({ store, settings, evidenceRun }: MemoryPortOpt
     const toolPort: MemoryStorePort = {
       save: async ({ scope, text, runId, step, callId, kind, paths, supersedes, signal: bound }) => {
         replaceable(supersedes ?? [], scope);
+        const { commands: verificationCommands } = await settings.verification(session);
         const evidence = await bindMemoryEvidence({
           runId,
-          events: readAllRunEvents(store, runId),
           paths: paths ?? [],
           project: session.cwd,
           trusted,
-          verificationCommands: (await settings.verification(session)).commands,
+          journal: (resolved) => store.journalFacts.evidence({ runId, paths: resolved, verificationCommands }, bound),
           head: () => readGitHead(evidenceOptionsFor(bound)),
         });
         const saved = store.memories.save({
