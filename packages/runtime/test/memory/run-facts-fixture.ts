@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { afterEach } from 'vitest';
 import { openRuntimeStore } from '@momonga/store';
 import type { RunEvent, RunEventPayload } from '@momonga/protocol';
 import type { RuntimeStore, RuntimeStoreOptions } from '@momonga/store';
@@ -24,7 +25,13 @@ type Preparer = NonNullable<RuntimeStoreOptions['preparer']>;
 
 const METHODS = ['measure', 'verdict', 'evidence', 'reflectionInput'] as const;
 
-export type ThreadOverride = Partial<Record<(typeof METHODS)[number], (request: never) => Promise<unknown>>>;
+const closers: Array<() => Promise<void>> = [];
+
+afterEach(async () => {
+  await Promise.all(closers.splice(0).map((close) => close()));
+});
+
+export type ThreadOverride =Partial<Record<(typeof METHODS)[number], (request: never) => Promise<unknown>>>;
 
 export const lazyThread = (dbPath: () => string, override: ThreadOverride = {}) => {
   let started: Promise<RunFactsClient> | undefined;
@@ -49,8 +56,8 @@ export const lazyThread = (dbPath: () => string, override: ThreadOverride = {}) 
       },
     ]),
   );
-  registerCleanup(() => {
-    if (started !== undefined) void started.then((live) => live.close());
+  closers.push(async () => {
+    if (started !== undefined) await (await started).close();
   });
   return { preparer: forwarded as unknown as Preparer, client };
 };

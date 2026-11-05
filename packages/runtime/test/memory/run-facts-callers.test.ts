@@ -94,12 +94,21 @@ describe('MemorySave binds its evidence through the journal thread (inventory ro
     expect(rows).toBe(0);
   });
 
-  it('still refuses a path the run never read or wrote, from the thread facts', async () => {
+  it('still refuses a path the run never read or wrote, from the thread facts, decoding no journal row on the main thread', async () => {
     const env = factsStore();
     const run = await env.finished(checkedRun(env.project, 1));
     const save = await memoryTools(env);
 
-    await expect(save(run.id, ['src/never.ts'])).rejects.toThrow('src/never.ts was not read or written in this run');
+    const { value: failure, rows } = await env.decodedDuring(() =>
+      save(run.id, ['src/never.ts']).then(
+        () => undefined,
+        (error: unknown) => error,
+      ),
+    );
+
+    expect(failure).toBeInstanceOf(ToolExecutionError);
+    expect((failure as Error).message).toContain('src/never.ts was not read or written in this run');
+    expect(rows).toBe(0);
     expect(env.store.memories.list({ project: env.project })).toEqual([]);
   });
 

@@ -156,14 +156,16 @@ describe('nothing proportional to journal bytes crosses the thread boundary (P10
     return { journalBytes, verdict: serializedSize(verdict), evidence: serializedSize(evidence), reflection: serializedSize(reflection) };
   };
 
-  it('keeps the verdict, evidence and reflection_input replies the same size at 15 and 1000 steps while the journal grows more than 50-fold', async () => {
+  it('keeps the verdict and evidence replies the same size at 15 and 1000 steps, and the reflection_input reply at its window cap at 150 and 1000 steps, while the journal grows more than 50-fold', async () => {
     const small = await replies(15);
+    const middle = await replies(150);
     const large = await replies(1000);
 
     expect(large.journalBytes).toBeGreaterThan(50 * small.journalBytes);
     expect(large.verdict).toBeLessThanOrEqual(small.verdict + 16);
     expect(large.evidence).toBeLessThanOrEqual(small.evidence + 16);
-    expect(large.reflection).toBeLessThanOrEqual(small.reflection + 16);
+    expect(middle.journalBytes).toBeGreaterThan(4 * 8_000 * 4);
+    expect(large.reflection).toBeLessThanOrEqual(middle.reflection + 16);
   });
 });
 
