@@ -80,6 +80,29 @@ const nothingCounted = (inputTokens: number, known: number, uncounted: number): 
   sigmaB: noSigma,
 });
 
+const markUnclosed = (items: readonly InputItem[], unclosed: boolean[]): void => {
+  const firstCall = new Map<string, number>();
+  const lastOutput = new Map<string, number>();
+  items.forEach((item, index) => {
+    if (item.type === 'function_call' && !firstCall.has(item.call_id)) firstCall.set(item.call_id, index);
+    if (item.type === 'function_call_output') lastOutput.set(item.call_id, index);
+  });
+  for (const [callId, call] of firstCall) {
+    const output = lastOutput.get(callId);
+    if (output === undefined) continue;
+    for (let position = call + 1; position <= output; position += 1) unclosed[position] = true;
+  }
+};
+
+export const callClosedBoundary = (a: readonly InputItem[], b: readonly InputItem[], commonPrefix: number): number => {
+  const unclosed: boolean[] = [];
+  markUnclosed(a, unclosed);
+  markUnclosed(b, unclosed);
+  let position = commonPrefix;
+  while (position > 0 && unclosed[position] === true) position -= 1;
+  return position;
+};
+
 const ceilQuotient = (numerator: bigint, denominator: bigint): bigint => (numerator + denominator - 1n) / denominator;
 
 export const createTokenMeter = ({ counter, model, capabilities, observedCapacity = false }: TokenMeterOptions): TokenMeter => {
@@ -163,6 +186,7 @@ export const createTokenMeter = ({ counter, model, capabilities, observedCapacit
     if (latest === undefined || latest.chain[0] !== chain[0]) return undefined;
     let shared = 0;
     while (shared < input.length && shared < latest.itemCount && latest.chain[shared + 1] === chain[shared + 1]) shared += 1;
+    shared = callClosedBoundary(latest.input, input, shared);
     const dropped = shared === latest.itemCount ? undefined : await suffixOf(latest.input, latest.chain, shared, tools, instructions);
     const added = shared === input.length ? undefined : await suffixOf(input, chain, shared, tools, instructions);
     const restA = dropped?.tokens ?? 0;

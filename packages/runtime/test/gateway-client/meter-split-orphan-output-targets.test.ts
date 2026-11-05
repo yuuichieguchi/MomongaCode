@@ -71,6 +71,7 @@ const ollamaClient = async () => {
   const home = makeHome();
   writeTarget(home, { adapter: 'ollama', model: OLLAMA_MODEL, baseUrl: fake.origin, capabilities: { contextWindow: CONTEXT_WINDOW, maxOutputTokens: 1024 } });
   await probeOllamaTarget({
+    key: { endpoint: fake.origin, model: OLLAMA_MODEL },
     probeRecordDir: momongaPaths(home, process.platform, {}).probe,
     upstream: { kind: 'tcp', baseUrl: fake.origin },
     model: OLLAMA_MODEL,
