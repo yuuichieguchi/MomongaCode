@@ -1,7 +1,7 @@
-import Ajv2020 from 'ajv/dist/2020.js';
-import type { ValidateFunction } from 'ajv/dist/2020.js';
-import { RUN_API_SCHEMAS } from '@momonga/protocol';
-import type { AgentsResponse, ContextChargeResponse, CostBreakdownView, CostReportView, GuidelineResponse, GuidelinesResponse, JobsResponse, MemoriesResponse, MemoryResponse, McpAuthorizationView, McpServerView, PolicyGovernanceResponse, PromoteMemoryResponse, PublicRunEvent, ReflectionResponse, RuleAddResponse, RuleResponse, RulesResponse, RunHealth, RunReflectionView, RunTraceView, SkillsResponse } from '@momonga/protocol';
+import { defineProductSchema, productErrorsText } from '@momonga/foundation';
+import type { ProductValidator } from '@momonga/foundation';
+import { RUN_API_SCHEMAS, runApiSchemaName } from '@momonga/protocol';
+import type { AgentsResponse, ContextChargeResponse, CostBreakdownView, CostReportView, GuidelineResponse, GuidelinesResponse, JobsResponse, JsonSchema, MemoriesResponse, MemoryResponse, McpAuthorizationView, McpServerView, PolicyGovernanceResponse, PromoteMemoryResponse, PublicRunEvent, ReflectionResponse, RuleAddResponse, RuleResponse, RulesResponse, RunHealth, RunReflectionView, RunTraceView, SkillsResponse } from '@momonga/protocol';
 import type { ApprovalView, ElicitationView, ErrorBody, RunView, SessionView, TrustView } from './views.ts';
 
 export class ContractViolation extends Error {
@@ -11,13 +11,12 @@ export class ContractViolation extends Error {
   }
 }
 
-const ajv = new Ajv2020.default({ strict: false, allErrors: true });
-
-const guard = <T>(schema: Parameters<typeof ajv.compile>[0]): ((value: unknown, description: string) => T) => {
-  const validate: ValidateFunction<T> = ajv.compile<T>(schema);
+const guard = <T>(schema: JsonSchema): ((value: unknown, description: string) => T) => {
+  const validate: ProductValidator<T> = defineProductSchema(`run-api/${runApiSchemaName(schema)}`, schema);
   return (value, description) => {
-    if (!validate(value)) throw new ContractViolation(description, ajv.errorsText(validate.errors, { dataVar: 'body' }));
-    return value;
+    const verdict = validate(value);
+    if (!verdict.valid) throw new ContractViolation(description, productErrorsText(verdict.errors, 'body'));
+    return verdict.value;
   };
 };
 

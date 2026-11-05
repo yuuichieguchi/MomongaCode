@@ -6,18 +6,20 @@ export type { UntrustedVerdict } from './untrusted-schema.ts';
 
 type Compile = (schema: Record<string, unknown>) => UntrustedValidate;
 
+export const validateGuarded = (identity: string, schema: Record<string, unknown>, validate: UntrustedValidate, data: unknown): UntrustedVerdict => {
+  try {
+    return validate(data);
+  } catch (error) {
+    const failure = new SchemaValidatorFailure(cleanFailureMessage(error instanceof Error ? error.message : String(error)));
+    recordValidateFailure(identity, schema, failure.message);
+    throw failure;
+  }
+};
+
 const validateThrough =
   (compile: Compile) =>
-  (identity: string, schema: Record<string, unknown>, data: unknown): UntrustedVerdict => {
-    const validate = compile(schema);
-    try {
-      return validate(data);
-    } catch (error) {
-      const failure = new SchemaValidatorFailure(cleanFailureMessage(error instanceof Error ? error.message : String(error)));
-      recordValidateFailure(identity, schema, failure.message);
-      throw failure;
-    }
-  };
+  (identity: string, schema: Record<string, unknown>, data: unknown): UntrustedVerdict =>
+    validateGuarded(identity, schema, compile(schema), data);
 
 export const validateUntrusted = validateThrough((schema) => compileUntrustedSchema(schema));
 

@@ -1,11 +1,9 @@
-import Ajv2020 from 'ajv/dist/2020.js';
-import type { ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
-import { canonicalJson, isRecord } from '@momonga/foundation';
-import { MIN_SUMMARY_TOKENS, OPEN_RESPONSES_OPENAPI, tokensForText } from '@momonga/protocol';
+import { canonicalJson, defineProductSchema, isRecord } from '@momonga/foundation';
+import type { ProductValidator, UntrustedError } from '@momonga/foundation';
+import { MIN_SUMMARY_TOKENS, OPEN_RESPONSES_COMPONENT_NAMES, OPEN_RESPONSES_OPENAPI, OPEN_RESPONSES_REMOTE_DOCUMENTS, openResponsesComponentSchema, tokensForText } from '@momonga/protocol';
 import type { CompactRequest, CountTokensRequest, CreateResponseBody } from '@momonga/protocol';
 import { invalidRequest } from './errors.ts';
 
-const SPEC_ID = 'https://momonga.invalid/open-responses/2026-04-24/openapi.json';
 const REF_PREFIX = '#/components/schemas/';
 const STRUCTURAL_KEYWORDS = new Set(['anyOf', 'oneOf', 'allOf', 'if', 'then', 'else', 'not']);
 
@@ -60,12 +58,12 @@ const joinParam = (segments: readonly string[]): string | null => {
 
 type Issue = { segments: string[]; message: string };
 
-const issueOf = (errors: readonly ErrorObject[], prefix: readonly string[]): Issue => {
+const issueOf = (errors: readonly UntrustedError[], prefix: readonly string[]): Issue => {
   const first = errors.find((error) => !STRUCTURAL_KEYWORDS.has(error.keyword)) ?? errors[0];
   if (first === undefined) throw new Error('validation failed without reporting an error');
   const segments = [...prefix, ...jsonPointerSegments(first.instancePath)];
-  if (first.keyword === 'required') segments.push(String((first.params as { missingProperty: unknown }).missingProperty));
-  return { segments, message: first.message ?? 'is invalid' };
+  if (first.keyword === 'required') segments.push(String(first.params['missingProperty']));
+  return { segments, message: first.message };
 };
 
 const throwIssue = (issue: Issue): never => {
@@ -73,13 +71,19 @@ const throwIssue = (issue: Issue): never => {
   throw invalidRequest('invalid_body', `${param ?? 'request body'} ${issue.message}`, param);
 };
 
+type ComponentValidator = ProductValidator<unknown>;
+
 type SpecKit = {
-  compile(component: string): ValidateFunction;
+  compile(component: string): ComponentValidator;
   branches: ItemBranch[];
-  branchValidators: Map<string, ValidateFunction>;
-  itemField: ValidateFunction;
-  streamSchemas: Map<string, ValidateFunction>;
+  branchValidators: Map<string, ComponentValidator>;
+  itemField: ComponentValidator;
+  streamSchemas: Map<string, ComponentValidator>;
 };
+
+const componentValidators: ReadonlyMap<string, ComponentValidator> = new Map(
+  OPEN_RESPONSES_COMPONENT_NAMES.map((name) => [name, defineProductSchema(`open-responses/${name}`, openResponsesComponentSchema(name), OPEN_RESPONSES_REMOTE_DOCUMENTS)]),
+);
 
 const streamSchemaNames = (spec: SchemaObject, schemas: SchemaObject): Map<string, string> => {
   const paths = requireRecord(spec['paths'], 'paths');
@@ -107,11 +111,9 @@ const specKit = (): SpecKit => {
   if (sharedKit !== undefined) return sharedKit;
   const spec = requireRecord(OPEN_RESPONSES_OPENAPI, 'openapi');
   const schemas = requireRecord(requireRecord(spec['components'], 'components')['schemas'], 'components.schemas');
-  const ajv = new Ajv2020.default({ strict: false, allErrors: true });
-  ajv.addSchema({ $id: SPEC_ID, components: requireRecord(spec['components'], 'components') });
-  const compile = (component: string): ValidateFunction => {
-    const validate = ajv.getSchema(`${SPEC_ID}${REF_PREFIX}${component}`);
-    if (validate === undefined) throw new Error(`Ajv could not compile component ${component}`);
+  const compile = (component: string): ComponentValidator => {
+    const validate = componentValidators.get(component);
+    if (validate === undefined) throw new Error(`Open Responses spec has no component schema named ${component}`);
     return validate;
   };
   const branches = itemBranchesOf(schemas);
@@ -148,10 +150,10 @@ const selectBranch = (kit: SpecKit, item: unknown, index: number): BranchSelecti
 const itemIssue = (kit: SpecKit, item: unknown, index: number): Issue | undefined => {
   const selection = selectBranch(kit, item, index);
   if ('issue' in selection) return selection.issue;
-  const validate = kit.branchValidators.get(selection.branch.component) as ValidateFunction;
-  if (validate(item)) return undefined;
-  if (isRecord(item) && item['type'] === 'reasoning' && kit.itemField(item)) return undefined;
-  return issueOf(validate.errors ?? [], ['input', String(index)]);
+  const verdict = (kit.branchValidators.get(selection.branch.component) as ComponentValidator)(item);
+  if (verdict.valid) return undefined;
+  if (isRecord(item) && item['type'] === 'reasoning' && kit.itemField(item).valid) return undefined;
+  return issueOf(verdict.errors, ['input', String(index)]);
 };
 
 export type StoredDataChecks = {
@@ -167,8 +169,10 @@ export const createStoredDataChecks = (): StoredDataChecks => {
   const kit = specKit();
   const itemField = kit.compile('ItemField');
   const compactResource = kit.compile('CompactResource');
-  const outputIssue = (item: unknown, index: number): Issue | undefined =>
-    itemField(item) ? undefined : issueOf(itemField.errors ?? [], ['output', String(index)]);
+  const outputIssue = (item: unknown, index: number): Issue | undefined => {
+    const verdict = itemField(item);
+    return verdict.valid ? undefined : issueOf(verdict.errors, ['output', String(index)]);
+  };
   return {
     inputItems: (value) => {
       if (!Array.isArray(value)) return 'is not an array';
@@ -186,14 +190,18 @@ export const createStoredDataChecks = (): StoredDataChecks => {
       }
       return undefined;
     },
-    compactResource: (value) => (compactResource(value) ? undefined : describeIssue(issueOf(compactResource.errors ?? [], []))),
+    compactResource: (value) => {
+      const verdict = compactResource(value);
+      return verdict.valid ? undefined : describeIssue(issueOf(verdict.errors, []));
+    },
     streamEvents: (value) => {
       if (!Array.isArray(value) || value.length === 0) return 'is not a non-empty array';
       for (const [index, event] of value.entries()) {
         const type = isRecord(event) ? event['type'] : undefined;
         const validate = typeof type === 'string' ? kit.streamSchemas.get(type) : undefined;
         if (validate === undefined) return `frame ${index} has an unknown event type`;
-        if (!validate(event)) return `frame ${index} ${describeIssue(issueOf(validate.errors ?? [], []))}`;
+        const verdict = validate(event);
+        if (!verdict.valid) return `frame ${index} ${describeIssue(issueOf(verdict.errors, []))}`;
       }
       return undefined;
     },
@@ -351,9 +359,10 @@ export const createRequestValidator = (): RequestValidator => {
     });
   };
 
-  const validateWithItems = (schema: ValidateFunction, body: unknown): void => {
+  const validateWithItems = (schema: ComponentValidator, body: unknown): void => {
     const stubbed = isRecord(body) && Array.isArray(body['input']) ? { ...body, input: [] } : body;
-    if (!schema(stubbed)) throwIssue(issueOf(schema.errors ?? [], []));
+    const verdict = schema(stubbed);
+    if (!verdict.valid) throwIssue(issueOf(verdict.errors, []));
     if (isRecord(body) && Array.isArray(body['input'])) validateItems(body['input']);
   };
 
