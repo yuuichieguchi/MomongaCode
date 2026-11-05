@@ -1,4 +1,4 @@
-export type SchemaDialect = 'draft-07' | '2020-12';
+import type { SchemaDialect } from './untrusted-dialect.ts';
 
 type Resource = { readonly node: unknown; readonly anchors: Set<string> };
 type Reference = { readonly ref: string; readonly base: string };

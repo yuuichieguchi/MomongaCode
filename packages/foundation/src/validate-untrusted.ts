@@ -1,4 +1,5 @@
 import { SchemaValidatorFailure, cleanFailureMessage, compileUntrustedSchema, createUntrustedSchemaCompiler, recordValidateFailure } from './untrusted-schema.ts';
+import type { Engine } from './untrusted-engine.ts';
 import type { RemoteDocuments, UntrustedValidate, UntrustedVerdict } from './untrusted-schema.ts';
 
 export type { UntrustedVerdict } from './untrusted-schema.ts';
@@ -21,8 +22,8 @@ const validateThrough =
 export const validateUntrusted = validateThrough((schema) => compileUntrustedSchema(schema));
 
 export const createUntrustedBoundary = (
-  remotes: RemoteDocuments,
+  { remotes, engine }: { remotes: RemoteDocuments; engine: Engine },
 ): { compile: Compile; validate: (identity: string, schema: Record<string, unknown>, data: unknown) => UntrustedVerdict } => {
-  const compile = createUntrustedSchemaCompiler(remotes);
+  const compile = createUntrustedSchemaCompiler({ remotes, engine });
   return { compile, validate: validateThrough(compile) };
 };

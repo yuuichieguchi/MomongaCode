@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { clearUntrustedSchemaCaches, createUntrustedBoundary, validateUntrusted } from '@momonga/foundation';
+import { ataEngine, clearUntrustedSchemaCaches, createUntrustedBoundary, validateUntrusted } from '@momonga/foundation';
 
 const SUITE = fileURLToPath(new URL('./fixtures/json-schema-test-suite/', import.meta.url));
 const REMOTE_BASE = 'http://localhost:1234/';
@@ -34,7 +34,7 @@ const asDraft07 = (schema: unknown): unknown => {
   return { ...schema, $schema: DRAFT_07_URI };
 };
 
-const suiteBoundary = createUntrustedBoundary(new Map(Object.entries(remotes())));
+const suiteBoundary = createUntrustedBoundary({ remotes: new Map(Object.entries(remotes())), engine: ataEngine });
 
 const runGroups = (label: string, groups: readonly SuiteGroup[], prepare: (schema: unknown) => unknown): Outcome => {
   const outcome: Outcome = { total: 0, failures: [], throws: [] };

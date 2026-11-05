@@ -1,3 +1,4 @@
+import type { Engine, EngineValidator, RawError } from './untrusted-engine.ts';
 import { capText, sanitizeServerText } from './untrusted-text.ts';
 
 export type UntrustedError = {
@@ -7,102 +8,40 @@ export type UntrustedError = {
   readonly params: Readonly<Record<string, unknown>>;
 };
 
-export type RawError = {
-  readonly keyword: string;
-  readonly instancePath: string;
-  readonly schemaPath: string;
-  readonly params: Record<string, unknown>;
-  readonly message: string;
-  readonly branchErrors?: readonly RawError[];
-};
+export type ErrorDescriber = (errors: readonly RawError[], instance: unknown) => UntrustedError[];
 
-export type ErrorContext = {
-  readonly root: Record<string, unknown>;
-  readonly instance: unknown;
-  readonly errorsOf: (schema: Record<string, unknown>, instance: unknown) => readonly RawError[];
-};
+type Located = { readonly pointer: string; readonly node: unknown };
 
-const MAX_BRANCH_PROBES = 20;
-const MAX_BRANCH_DEPTH = 3;
+type Context = { readonly base: Located; readonly prefix: string; readonly instance: unknown };
+
 const MAX_MESSAGE_CHARS = 200;
 const VARIANT_KEYWORDS: ReadonlySet<string> = new Set(['anyOf', 'oneOf']);
+const KEY_ALIASES: Readonly<Record<string, string>> = { prefixItems: 'items', $defs: 'definitions' };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const escapeToken = (token: string): string => token.replaceAll('~', '~0').replaceAll('/', '~1');
 
 const unescapeToken = (token: string): string => token.replaceAll('~1', '/').replaceAll('~0', '~');
 
 const segmentsOf = (pointer: string): string[] => (pointer === '' ? [] : pointer.slice(1).split('/').map(unescapeToken));
 
-const pointerStep = (node: unknown, token: string): unknown => {
-  if (Array.isArray(node)) return /^(0|[1-9]\d*)$/.test(token) ? node[Number(token)] : undefined;
-  if (isRecord(node) && Object.hasOwn(node, token)) return node[token];
-  return undefined;
-};
-
-const resolveLocalReference = (root: Record<string, unknown>, node: unknown): unknown => {
+const childOf = (node: unknown, token: string): { key: string; value: unknown } | undefined => {
+  if (Array.isArray(node)) return /^(0|[1-9]\d*)$/.test(token) && Number(token) < node.length ? { key: token, value: node[Number(token)] } : undefined;
   if (!isRecord(node)) return undefined;
-  const ref = node['$ref'];
-  if (typeof ref !== 'string' || !ref.startsWith('#')) return undefined;
-  let target: unknown = root;
-  for (const token of segmentsOf(decodeURIComponent(ref.slice(1)))) target = pointerStep(target, token);
-  return target;
-};
-
-const stepSchema = (root: Record<string, unknown>, node: unknown, token: string): unknown => {
-  const direct = pointerStep(node, token);
-  if (direct !== undefined) return direct;
-  const followed = resolveLocalReference(root, node);
-  return followed === undefined ? undefined : pointerStep(followed, token);
-};
-
-const variantsAt = (root: Record<string, unknown>, schemaPath: string): { container: Record<string, unknown>; keyword: string; branches: unknown[] } | undefined => {
-  const tokens = segmentsOf(schemaPath.replace(/^#/, ''));
-  const keyword = tokens.pop();
-  if (keyword === undefined || !VARIANT_KEYWORDS.has(keyword)) return undefined;
-  let node: unknown = root;
-  for (const token of tokens) {
-    node = stepSchema(root, node, token);
-    if (node === undefined) return undefined;
+  for (const key of [token, KEY_ALIASES[token]]) {
+    if (key !== undefined && Object.hasOwn(node, key)) return { key, value: node[key] };
   }
-  const container = isRecord(node) && Array.isArray(node[keyword]) ? node : resolveLocalReference(root, node);
-  if (!isRecord(container)) return undefined;
-  const branches = container[keyword];
-  return Array.isArray(branches) ? { container, keyword, branches } : undefined;
+  return undefined;
 };
 
 const valueAt = (instance: unknown, instancePath: string): unknown => {
   let value = instance;
-  for (const token of segmentsOf(instancePath)) value = pointerStep(value, token);
+  for (const token of segmentsOf(instancePath)) value = childOf(value, token)?.value;
   return value;
 };
 
-const tagsOf = (root: Record<string, unknown>, branch: unknown): Map<string, readonly unknown[]> => {
-  const tags = new Map<string, readonly unknown[]>();
-  const resolved = isRecord(branch) && isRecord(branch['properties']) ? branch : resolveLocalReference(root, branch);
-  const properties = isRecord(resolved) ? resolved['properties'] : undefined;
-  if (!isRecord(properties)) return tags;
-  for (const [key, property] of Object.entries(properties)) {
-    if (!isRecord(property)) continue;
-    if (Object.hasOwn(property, 'const')) tags.set(key, [property['const']]);
-    else if (Array.isArray(property['enum'])) tags.set(key, property['enum']);
-  }
-  return tags;
-};
-
-const matchedTagBranches = (root: Record<string, unknown>, branches: readonly unknown[], instance: unknown): number[] => {
-  if (!isRecord(instance)) return [];
-  const tagged = branches.map((branch) => tagsOf(root, branch));
-  const sharedKeys = [...new Set(tagged.flatMap((tags) => [...tags.keys()]))].filter((key) => tagged.filter((tags) => tags.has(key)).length >= 2);
-  for (const key of sharedKeys) {
-    const matched = tagged.flatMap((tags, index) => ((tags.get(key) ?? []).some((value) => Object.is(value, instance[key])) ? [index] : []));
-    if (matched.length > 0) return matched;
-  }
-  return [];
-};
-
-const depthOf = (errors: readonly UntrustedError[]): number => Math.max(0, ...errors.map((error) => segmentsOf(error.instancePath).length));
-
-const isWithin = (path: string, target: string): boolean => path === target || path.startsWith(`${target}/`);
+const fragmentUri = (rootUri: string, pointer: string): string => `${rootUri}#${pointer.split('/').map(encodeURIComponent).join('/')}`;
 
 const sanitizeParam = (value: unknown): unknown => {
   if (typeof value === 'string') return sanitizeServerText(value);
@@ -110,44 +49,17 @@ const sanitizeParam = (value: unknown): unknown => {
   return value;
 };
 
-const sanitized = (error: RawError): UntrustedError => ({
-  instancePath: sanitizeServerText(error.instancePath),
+const sanitized = (error: RawError, instancePath: string): UntrustedError => ({
+  instancePath: sanitizeServerText(instancePath),
   keyword: error.keyword,
   message: capText(sanitizeServerText(error.message), MAX_MESSAGE_CHARS),
   params: Object.fromEntries(Object.entries(error.params).map(([name, value]) => [name, sanitizeParam(value)])),
 });
 
-const flatten = (errors: readonly RawError[], context: ErrorContext, depth: number, budget: { probes: number }): UntrustedError[] =>
-  errors.flatMap((error): UntrustedError[] => {
-    const variants = VARIANT_KEYWORDS.has(error.keyword) && error.branchErrors !== undefined ? variantsAt(context.root, error.schemaPath) : undefined;
-    if (variants === undefined || depth >= MAX_BRANCH_DEPTH || budget.probes + variants.branches.length > MAX_BRANCH_PROBES) {
-      return error.branchErrors === undefined ? [sanitized(error)] : flatten(error.branchErrors, context, depth + 1, budget);
-    }
-    budget.probes += variants.branches.length;
-    const candidates = variants.branches.flatMap((_branch, index) => {
-      const probe = structuredClone(context.root);
-      const located = variantsAt(probe, error.schemaPath);
-      if (located === undefined) return [];
-      located.container[located.keyword] = [structuredClone(variants.branches[index])];
-      const own = context.errorsOf(probe, context.instance).filter((candidate) => isWithin(candidate.instancePath, error.instancePath));
-      const errors = flatten(own, { ...context, root: probe }, depth + 1, budget);
-      return errors.length === 0 ? [] : [{ index, errors }];
-    });
-    if (candidates.length === 0) return error.branchErrors === undefined ? [] : flatten(error.branchErrors, context, depth + 1, budget);
-    const tagged = matchedTagBranches(context.root, variants.branches, valueAt(context.instance, error.instancePath));
-    const pool = candidates.filter((outcome) => tagged.includes(outcome.index));
-    const contenders = pool.length > 0 ? pool : candidates;
-    const deepest = Math.max(...contenders.map((outcome) => depthOf(outcome.errors)));
-    const best = contenders
-      .filter((outcome) => pool.length > 0 || depthOf(outcome.errors) === deepest)
-      .reduce((winner, outcome) => (outcome.errors.length < winner.errors.length ? outcome : winner));
-    return best.errors;
-  });
+const depthOf = (errors: readonly UntrustedError[]): number => Math.max(...errors.map((error) => segmentsOf(error.instancePath).length));
 
 const compareSegments = (left: string, right: string): number => {
-  const leftNumeric = /^\d+$/.test(left);
-  const rightNumeric = /^\d+$/.test(right);
-  if (leftNumeric && rightNumeric) return Number(left) - Number(right);
+  if (/^\d+$/.test(left) && /^\d+$/.test(right)) return Number(left) - Number(right);
   return left < right ? -1 : left > right ? 1 : 0;
 };
 
@@ -161,14 +73,127 @@ const comparePaths = (left: string, right: string): number => {
   return a.length - b.length;
 };
 
+const compareText = (left: string, right: string): number => (left < right ? -1 : left > right ? 1 : 0);
+
 const compareErrors = (left: UntrustedError, right: UntrustedError): number =>
   comparePaths(left.instancePath, right.instancePath) ||
-  (left.keyword < right.keyword ? -1 : left.keyword > right.keyword ? 1 : 0) ||
-  (left.message < right.message ? -1 : left.message > right.message ? 1 : 0) ||
-  (JSON.stringify(left.params) < JSON.stringify(right.params) ? -1 : JSON.stringify(left.params) > JSON.stringify(right.params) ? 1 : 0);
+  compareText(left.keyword, right.keyword) ||
+  compareText(left.message, right.message) ||
+  compareText(JSON.stringify(left.params), JSON.stringify(right.params));
 
-export const describeUntrustedErrors = (errors: readonly RawError[], context: ErrorContext): UntrustedError[] => {
-  const flat = flatten(errors, context, 0, { probes: 0 });
-  const unique = new Map(flat.map((error) => [JSON.stringify([error.instancePath, error.keyword, error.message, error.params]), error]));
-  return [...unique.values()].sort(compareErrors);
+export const createErrorDescriber = ({ root, rootUri, engine, registry }: { root: Record<string, unknown>; rootUri: string; engine: Engine; registry: Readonly<Record<string, object>> }): ErrorDescriber => {
+  const probes = new Map<string, EngineValidator>();
+  const probeRegistry = { ...registry, [rootUri]: root };
+
+  const probeOf = (branch: Located): EngineValidator => {
+    const cached = probes.get(branch.pointer);
+    if (cached !== undefined) return cached;
+    const compiled = engine.compile({ $ref: fragmentUri(rootUri, branch.pointer) }, probeRegistry);
+    probes.set(branch.pointer, compiled);
+    return compiled;
+  };
+
+  const referenceTarget = (at: Located): Located | undefined => {
+    if (!isRecord(at.node)) return undefined;
+    const ref = at.node['$ref'];
+    if (typeof ref !== 'string' || !ref.startsWith('#')) return undefined;
+    let pointer: string;
+    try {
+      pointer = decodeURIComponent(ref.slice(1));
+    } catch {
+      return undefined;
+    }
+    if (pointer !== '' && !pointer.startsWith('/')) return undefined;
+    let node: unknown = root;
+    for (const token of segmentsOf(pointer)) {
+      node = childOf(node, token)?.value;
+      if (node === undefined) return undefined;
+    }
+    return { pointer, node };
+  };
+
+  const stepInto = (at: Located, token: string, seen: Set<string>): Located | undefined => {
+    const direct = childOf(at.node, token);
+    if (direct !== undefined) return { pointer: `${at.pointer}/${escapeToken(direct.key)}`, node: direct.value };
+    const target = referenceTarget(at);
+    if (target === undefined || seen.has(target.pointer)) return undefined;
+    seen.add(target.pointer);
+    return stepInto(target, token, seen);
+  };
+
+  const branchesOf = (base: Located, error: RawError): Located[] | undefined => {
+    const tokens = segmentsOf(error.schemaPath.replace(/^#/, ''));
+    const keyword = tokens.pop();
+    if (keyword !== error.keyword) return undefined;
+    let at: Located | undefined = base;
+    for (const token of tokens) {
+      at = at === undefined ? undefined : stepInto(at, token, new Set());
+    }
+    const list = at === undefined ? undefined : stepInto(at, keyword, new Set());
+    if (list === undefined || !Array.isArray(list.node)) return undefined;
+    return list.node.map((node, index) => ({ pointer: `${list.pointer}/${index}`, node }));
+  };
+
+  const shapeOf = (branch: Located): Record<string, unknown> | undefined => {
+    const seen = new Set<string>();
+    let at: Located | undefined = branch;
+    while (at !== undefined && !seen.has(at.pointer)) {
+      if (isRecord(at.node) && isRecord(at.node['properties'])) return at.node;
+      seen.add(at.pointer);
+      at = referenceTarget(at);
+    }
+    return undefined;
+  };
+
+  const tagsOf = (branch: Located): Map<string, readonly unknown[]> => {
+    const tags = new Map<string, readonly unknown[]>();
+    const properties = shapeOf(branch)?.['properties'];
+    if (!isRecord(properties)) return tags;
+    for (const [key, property] of Object.entries(properties)) {
+      if (!isRecord(property)) continue;
+      if (Object.hasOwn(property, 'const')) tags.set(key, [property['const']]);
+      else if (Array.isArray(property['enum'])) tags.set(key, property['enum']);
+    }
+    return tags;
+  };
+
+  const taggedIndexes = (branches: readonly Located[], instance: unknown): number[] => {
+    if (!isRecord(instance)) return [];
+    const tagged = branches.map(tagsOf);
+    const sharedKeys = [...new Set(tagged.flatMap((tags) => [...tags.keys()]))].filter((key) => tagged.filter((tags) => tags.has(key)).length >= 2);
+    for (const key of sharedKeys) {
+      const matched = tagged.flatMap((tags, index) => ((tags.get(key) ?? []).some((value) => Object.is(value, instance[key])) ? [index] : []));
+      if (matched.length > 0) return matched;
+    }
+    return [];
+  };
+
+  const flatten = (errors: readonly RawError[], context: Context): UntrustedError[] =>
+    errors.flatMap((error): UntrustedError[] => {
+      const path = context.prefix + error.instancePath;
+      if (!VARIANT_KEYWORDS.has(error.keyword) || error.branchErrors === undefined) return [sanitized(error, path)];
+      const branches = branchesOf(context.base, error);
+      if (branches === undefined) return [sanitized(error, path)];
+      const instance = valueAt(context.instance, error.instancePath);
+      const outcomes = branches.flatMap((branch, index) => {
+        const verdict = probeOf(branch)(instance);
+        if (verdict.valid) return [];
+        const reported = flatten(verdict.errors, { base: branch, prefix: path, instance });
+        return reported.length === 0 ? [] : [{ index, errors: reported }];
+      });
+      if (outcomes.length === 0) return [sanitized(error, path)];
+      const tagged = taggedIndexes(branches, instance);
+      const pool = outcomes.filter((outcome) => tagged.includes(outcome.index));
+      const contenders = pool.length > 0 ? pool : outcomes;
+      const deepest = Math.max(...contenders.map((outcome) => depthOf(outcome.errors)));
+      const finalists = pool.length > 0 ? pool : contenders.filter((outcome) => depthOf(outcome.errors) === deepest);
+      const best = finalists.reduce((winner, outcome) => (outcome.errors.length < winner.errors.length ? outcome : winner));
+      return best.errors;
+    });
+
+  return (errors, instance) => {
+    const flat = flatten(errors, { base: { pointer: '', node: root }, prefix: '', instance });
+    const unique = new Map(flat.map((error) => [JSON.stringify([error.instancePath, error.keyword, error.message, error.params]), error]));
+    return [...unique.values()].sort(compareErrors);
+  };
 };

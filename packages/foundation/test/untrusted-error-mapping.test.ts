@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { validateUntrusted } from '@momonga/foundation';
+import { ataEngine, createUntrustedBoundary, validateUntrusted } from '@momonga/foundation';
+import type { Engine } from '@momonga/foundation';
 
 const errorsOf = (schema: Record<string, unknown>, data: unknown) => {
   const verdict = validateUntrusted('error-mapping', schema, data);
@@ -94,5 +95,53 @@ describe('the error mapping on a recursive schema', () => {
 
   it('reports the failing leaf inside a branch, with every level keeping its full anyOf', () => {
     expect(errorsOf(TREE, { kind: 'branch', kids: [{ kind: 'leaf', v: 'x' }] })).toEqual([{ instancePath: '/kids/0/v', keyword: 'type', message: 'must be number' }]);
+  });
+});
+
+describe('the work the error mapping does', () => {
+  const branch = (kind: string) => ({ type: 'object', properties: { kind: { const: kind }, data: { type: 'array', items: { type: 'string' } } }, required: ['kind', 'data'] });
+  const SCHEMA = {
+    type: 'object',
+    properties: {
+      msg: { anyOf: [branch('a'), branch('b'), branch('c'), branch('d'), branch('e')] },
+      extra: { oneOf: [{ type: 'string' }, { type: 'number' }, { type: 'boolean' }, { type: 'null' }] },
+    },
+  };
+
+  it('runs the engine once on the body and once per branch on the failing sub-instance only', () => {
+    const invoked: unknown[] = [];
+    const engine: Engine = {
+      compile: (schema, registry) => {
+        const validate = ataEngine.compile(schema, registry);
+        return (instance) => {
+          invoked.push(instance);
+          return validate(instance);
+        };
+      },
+    };
+    const validate = createUntrustedBoundary({ remotes: new Map(), engine }).compile(SCHEMA);
+    const body = { msg: { kind: 'zz', data: ['x'] }, extra: {} };
+    invoked.length = 0;
+    const verdict = validate(body);
+    expect(verdict.valid).toBe(false);
+    expect(invoked.filter((instance) => instance === body)).toHaveLength(1);
+    expect(invoked).toHaveLength(1 + 5 + 4);
+    expect(invoked.filter((instance) => instance === body.msg)).toHaveLength(5);
+    expect(invoked.filter((instance) => instance === body.extra)).toHaveLength(4);
+  });
+
+  it('always reports at least one error for an invalid verdict', () => {
+    const verdict = validateUntrusted('work', SCHEMA, { msg: 1, extra: {} });
+    expect(verdict.valid).toBe(false);
+    if (!verdict.valid) expect(verdict.errors.length).toBeGreaterThan(0);
+  });
+
+  it('maps a draft-07 schema through its original pointers', () => {
+    const schema = {
+      $schema: 'http://json-schema.org/draft-07/schema#',
+      definitions: { s: { anyOf: [{ type: 'string' }, { type: 'null' }] } },
+      properties: { model: { $ref: '#/definitions/s' } },
+    };
+    expect(errorsOf(schema, { model: 3 })).toEqual([{ instancePath: '/model', keyword: 'type', message: 'must be string' }]);
   });
 });
