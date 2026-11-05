@@ -39,7 +39,7 @@
     { "config": "PlanCredential.signIn", "role": "check", "expect": "holds", "args": [], "tier": "deep", "distinctStates": 10022, "measuredSeconds": 1.7, "budgetSeconds": 4 },
     { "config": "PlanCredential.signOut", "role": "check", "expect": "holds", "args": [], "tier": "deep", "distinctStates": 21659, "measuredSeconds": 2.01, "budgetSeconds": 5 },
     { "config": "PlanCredential.crashPoints", "role": "check", "expect": "holds", "args": [], "tier": "deep", "distinctStates": 25058, "measuredSeconds": 2.04, "budgetSeconds": 5 },
-    { "config": "PlanCredential.twoAccounts", "role": "check", "expect": "holds", "args": [], "tier": "deep", "distinctStates": 868633, "measuredSeconds": 18.17, "budgetSeconds": 37 },
+    { "config": "PlanCredential.twoAccounts", "role": "check", "expect": "holds", "args": [], "tier": "deep", "distinctStates": 3663781, "measuredSeconds": 68.95, "budgetSeconds": 138 },
     { "config": "PlanCredential.live", "role": "check", "expect": "holds", "args": ["-lncheck", "final"], "tier": "deep", "distinctStates": 4359, "measuredSeconds": 2.74, "budgetSeconds": 6 },
     { "config": "PlanCredential.deep", "role": "check", "expect": "holds", "args": [], "tier": "deep", "distinctStates": 5992894, "measuredSeconds": 88.6, "budgetSeconds": 178 },
     { "config": "PlanCredential.noMutex", "role": "evidence", "expect": { "violates": "SingleUse", "exitCode": 12 }, "args": [], "tier": "every-run", "distinctStates": 222, "measuredSeconds": 1.41, "budgetSeconds": 3 },
