@@ -23,10 +23,12 @@ export const resolveToolChoice = (request: AdapterRequest, declared: readonly Al
   if (!isAllowedTools(choice)) return request;
   const mode = allowedToolsModeOf(choice);
   if (mode === 'none') return rewritten(request, 'none');
+  const names = allowedNamesOf(choice);
+  const tools = request.tools ?? [];
+  if (tools.length > 0 && tools.every((tool) => names.includes(tool.name))) return rewritten(request, mode);
   if (declared === undefined || declared.length === 0) {
     throw refusal(target, 'the target declares no capabilities.allowedTools form, so it has no way to restrict the tool choice to a set');
   }
-  const names = allowedNamesOf(choice);
   const usable = FORM_PREFERENCE.filter((form) => declared.includes(form) && wire.forms.includes(form));
   for (const form of usable) {
     switch (form) {
@@ -40,13 +42,13 @@ export const resolveToolChoice = (request: AdapterRequest, declared: readonly Al
       }
       case 'filter':
         if (mode === 'auto' || wire.expressesRequired) {
-          return rewritten(request, mode, (request.tools ?? []).filter((tool) => names.includes(tool.name)));
+          return rewritten(request, mode, tools.filter((tool) => names.includes(tool.name)));
         }
         break;
     }
   }
   throw refusal(
     target,
-    `none of its declared capabilities.allowedTools forms (${declared.join(', ')}) can express mode ${mode} over ${names.length} of ${(request.tools ?? []).length} tools on this wire`,
+    `none of its declared capabilities.allowedTools forms (${declared.join(', ')}) can express mode ${mode} over ${names.length} of ${tools.length} tools on this wire`,
   );
 };

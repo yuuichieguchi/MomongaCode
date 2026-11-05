@@ -1,5 +1,6 @@
 import { canonicalJson, createUdsClient } from '@momonga/foundation';
 import { countReplyOf } from '@momonga/protocol';
+import type { AllowedToolsForm } from '@momonga/protocol';
 import type {
   AdapterTarget,
   Capabilities,
@@ -68,6 +69,8 @@ const UNPROBED_KEYWORD_SUPPORT: KeywordSupport = {
   nested: true,
   additionalProperties: true,
 };
+
+const FM_ALLOWED_TOOLS: readonly AllowedToolsForm[] = ['envelope'];
 
 const CEIL_TOLERANCE = 1e-9;
 const UNPROBED_CONTEXT_WINDOW = 4096;
@@ -218,7 +221,7 @@ export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Pr
     toolCalling,
     keywordSupport: () => keywordSupport,
     upstreamModel,
-    capabilities: async () => capabilities,
+    capabilities: async () => ({ ...capabilities, allowedTools: FM_ALLOWED_TOOLS }),
     countTokens: async (_target, request, signal) => {
       const text = countedText(request);
       if (text === '') return countResultOf(0, report);

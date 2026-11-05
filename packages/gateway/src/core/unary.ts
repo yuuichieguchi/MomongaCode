@@ -194,6 +194,7 @@ const countTokens = async (
         input: countable,
         ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
         ...(request.tools === undefined ? {} : { tools: request.tools }),
+        ...(request.tool_choice === undefined ? {} : { tool_choice: request.tool_choice }),
       },
       adapterContextOf(services, chosen, guarded, attemptNumber),
     ),

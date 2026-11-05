@@ -44,7 +44,7 @@ const DONE_MARKER = '[DONE]';
 
 const NATIVE_TOOL_CHOICE: ToolChoiceWire = { forms: ['native', 'single_tool', 'filter'], expressesRequired: true };
 
-const CONSTRAINED_TOOL_CHOICE: ToolChoiceWire = { forms: ['envelope', 'single_tool'], expressesRequired: true };
+const CONSTRAINED_TOOL_CHOICE: ToolChoiceWire = { forms: ['envelope', 'single_tool', 'filter'], expressesRequired: true };
 
 export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOptions): ChatCompletionsAdapter => {
   const pool = createEndpointPool({ label: 'chat-completions', unixPath: CHAT_COMPLETIONS_PATH, urlSuffix: CHAT_COMPLETIONS_SUFFIX }, options.liveness);
