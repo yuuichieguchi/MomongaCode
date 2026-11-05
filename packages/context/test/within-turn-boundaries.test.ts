@@ -162,13 +162,19 @@ describe('level contract', () => {
 });
 
 describe('pinned tokens supplied by the caller', () => {
-  it('reports a supplied value above the ceiling as a pinned overflow, not as missing room', async () => {
-    const input = inputFor(capabilities, { pinnedTokens: inputCeilingFor(capabilities) + 1 });
+  it.for([false, true])('are an admitted floor that no build re-checks against the ceiling (observed capacity %s)', async (observed) => {
+    const input = inputFor(capabilities, { pinnedTokens: inputCeilingFor(capabilities) + 1, ...(observed ? { observedCapacity: true as const } : {}) });
+    const built = await buildContext(input, harness(capabilities).ports);
+
+    expect(built.pinnedTokens).toBe(inputCeilingFor(capabilities) + 1);
+  });
+
+  it('raise a pinned overflow when the same pinned part is measured without a supplied value', async () => {
+    const input = inputFor(capabilities, { sources: sourcesWith({ systemPrompt: 'x'.repeat(4 * (inputCeilingFor(capabilities) + 1)) }) });
     const error = await buildContext(input, harness(capabilities).ports).catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(PinnedOverflowError);
     expect(error).not.toBeInstanceOf(PinnedRoomError);
-    expect((error as PinnedOverflowError).pinnedTokens).toBe(inputCeilingFor(capabilities) + 1);
   });
 });
 

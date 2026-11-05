@@ -78,6 +78,7 @@ export type MeterRequest = {
 
 export type MeterCount = {
   inputTokens: number;
+  freshInputTokens: number;
   inputDigest: string;
   known: number;
   uncounted: number;

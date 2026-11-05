@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ESTIMATED_ERROR_SHAPE, errorBoundOfShape } from '@momonga/protocol';
 import { MIN_ROOM_TOKENS, budgetFor, buildContext, inputCeilingFor, pinnedFloorFor } from '@momonga/context';
 import type { BuildContextInput, HistoryItem, TokenMeter } from '@momonga/context';
+import type { MessageInputItem } from '@momonga/protocol';
 import { HOME, PROJECT, capabilitiesFor, fakeBlobs, fakeReader, sourcesWith } from './helpers.ts';
 import { ESTIMATED, meterOf, piece, pieceCounter } from './meter-fixtures.ts';
 
@@ -22,7 +23,7 @@ const reply: HistoryItem = { seq: 1, item: { type: 'message', role: 'assistant',
 const inputWith = (history: HistoryItem[]): BuildContextInput => ({
   capabilities: sized,
   model: 'm',
-  sources: sourcesWith({ systemPrompt: `system#${systemTokens}`, task: piece('task', TASK_TOKENS), history }),
+  sources: sourcesWith({ systemPrompt: `system#${systemTokens}`, task: piece('task', TASK_TOKENS) as MessageInputItem, history }),
   evicted: new Set<string>(),
   recordedReferences: new Set<string>(),
   touchedPaths: [],

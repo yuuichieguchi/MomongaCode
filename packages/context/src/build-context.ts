@@ -97,6 +97,7 @@ type Evaluation = {
   ports: BuildContextPorts;
   ceiling: number;
   counted: MeterCount;
+  ceilingTokens: number;
   exceeds: boolean;
   leavesNoRoom: boolean;
 };
@@ -190,7 +191,10 @@ const capacityOver = async (
   return smallest;
 };
 
-const admittedFloor = (input: BuildContextInput): boolean => input.observedCapacity === true && input.pinnedTokens !== undefined;
+const admittedFloor = (input: BuildContextInput): boolean => input.pinnedTokens !== undefined;
+
+const ceilingTokensOf = (input: BuildContextInput, counted: MeterCount): number =>
+  input.observedCapacity === true ? counted.inputTokens : counted.freshInputTokens;
 
 const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContextPorts): Promise<Head> => {
   const { capabilities, sources } = input;
@@ -228,7 +232,8 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
   const toolPorts = frozenPorts(suppliedPorts, toolFrozen);
   const countWith = (offered: readonly FunctionTool[], over: BuildContextPorts): Promise<MeterCount> =>
     over.meter.count({ input: [...pinnedLayers, ...governing, task], tools: offered });
-  const fitsFloor = (counted: MeterCount): boolean => metering(input, toolPorts, candidates).fits(counted) && counted.inputTokens <= toolFloor;
+  const fitsFloor = (counted: MeterCount): boolean =>
+    metering(input, toolPorts, candidates).fits(counted) && ceilingTokensOf(input, counted) <= toolFloor;
   const stableFitsFloor = async (offered: readonly FunctionTool[]): Promise<boolean> =>
     fitsFloor(await toolPorts.meter.count({ input: [...pinnedLayers, ...governing], tools: offered }));
   const hostOf = input.companions === undefined || input.companions.keepWithoutHost ? {} : input.companions.hostOf;
@@ -268,14 +273,16 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
     const evaluationPorts = frozenPorts(suppliedPorts, frozen);
     const ceiling = observed ? await capacityOver(sized, evaluationPorts, frozen, tools) : inputCeilingFor(sized);
     const counted = await evaluationPorts.meter.count({ input: [...layerItems, task], tools });
+    const ceilingTokens = ceilingTokensOf(input, counted);
     return {
       layers: layerItems,
       frozen,
       ports: evaluationPorts,
       ceiling,
       counted,
-      exceeds: !fits(counted) || counted.inputTokens > ceiling,
-      leavesNoRoom: ceiling - counted.inputTokens < MIN_ROOM_TOKENS,
+      ceilingTokens,
+      exceeds: !fits(counted) || ceilingTokens > ceiling,
+      leavesNoRoom: ceiling - ceilingTokens < MIN_ROOM_TOKENS,
     };
   };
   const refused = (path: string): void => {
@@ -329,11 +336,11 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
         content: renderMemories(memoryCandidates.slice(0, count), memoryCandidates.length - count),
       };
       const evaluation = await evaluate(layersFor(arrivals, message));
-      const baseTokens = (await evaluation.ports.meter.count({ input: [...layersFor(arrivals, undefined), task], tools })).inputTokens;
+      const baseTokens = ceilingTokensOf(input, await evaluation.ports.meter.count({ input: [...layersFor(arrivals, undefined), task], tools }));
       const fitsBudget =
         !evaluation.exceeds &&
         !evaluation.leavesNoRoom &&
-        evaluation.counted.inputTokens - baseTokens <= memoryBudgetFor(evaluation.ceiling - baseTokens, input.memoryShare);
+        evaluation.ceilingTokens - baseTokens <= memoryBudgetFor(evaluation.ceiling - baseTokens, input.memoryShare);
       return { message, evaluation, fitsBudget };
     };
     if ((await withMemories(0)).fitsBudget) {
@@ -351,9 +358,9 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
     }
     memoriesDropped(memoryCount, memoryCandidates.length);
   }
-  const { layers, frozen, ceiling, counted, ports } = current;
+  const { layers, frozen, ceiling, counted, ceilingTokens, ports } = current;
   const pinnedCounted = input.pinnedTokens === undefined ? await countWith(tools, ports) : undefined;
-  const pinnedTokens = input.pinnedTokens ?? (pinnedCounted as MeterCount).inputTokens;
+  const pinnedTokens = input.pinnedTokens ?? ceilingTokensOf(input, pinnedCounted as MeterCount);
   const admitted = admittedFloor(input);
   if (!admitted && (pinnedTokens > ceiling || (pinnedCounted !== undefined && !fits(pinnedCounted)))) {
     throw new PinnedOverflowError({ pinnedTokens, ceiling, breakdown: await breakdownOf(ports, systemMessage, instructionMessages, governing, task, tools) });
@@ -370,7 +377,7 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
   }
   if (!admitted && current.exceeds) {
     throw new PinnedOverflowError({
-      pinnedTokens: counted.inputTokens,
+      pinnedTokens: ceilingTokens,
       ceiling,
       breakdown: await breakdownOf(ports, systemMessage, layers, governing, task, tools),
     });
@@ -379,7 +386,7 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
     throw new PinnedRoomError({
       pinnedTokens: counted.inputTokens,
       ceiling,
-      room: ceiling - counted.inputTokens,
+      room: ceiling - ceilingTokens,
       minimum: MIN_ROOM_TOKENS,
       breakdown: await breakdownOf(ports, systemMessage, layers, governing, task, tools),
     });

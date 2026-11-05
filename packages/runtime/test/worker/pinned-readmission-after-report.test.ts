@@ -108,14 +108,18 @@ describe('off mode: a fact retired mid-run, after the first request was reported
     expect(env.ofType(runId, 'notice').map((notice) => notice.code)).not.toContain('tools_dropped');
   });
 
-  it('re-admits against the pinned check when the returned tool would overflow, and leaves it out with a notice instead of failing the run', async () => {
+  it('re-admits against the pinned check when the returned tool would overflow, and fails there with the fresh count of the pinned part', async () => {
     const oversize = 'Finds files. '.repeat(120);
     const { env, runId, firstEstimate, globTokens } = await retireMidRun(oversize, SLACK);
 
     expect(ceiling - (firstEstimate + globTokens)).toBeLessThan(MIN_ROOM_TOKENS);
-    expect(env.run(runId).error).toBeUndefined();
-    expect(env.run(runId).status).toBe('COMPLETED');
-    expect(offerAt(env, 1)).not.toContain('Glob');
-    expect(env.ofType(runId, 'notice').map((notice) => notice.code)).toContain('tools_dropped');
+    const failed = env.run(runId);
+    expect(failed.status).toBe('FAILED');
+    expect(failed.error?.code).toBe('pinned_overflow');
+    expect(failed.error?.message).toContain(`but at most ${ceiling} fit`);
+    const needed = Number(/needs (\d+) tokens/.exec(failed.error?.message ?? '')?.[1]);
+    expect(needed).toBeGreaterThan(ceiling);
+    expect(needed).toBeLessThanOrEqual(firstEstimate + globTokens);
+    expect(env.gateway.streams).toHaveLength(1);
   });
 });
