@@ -34,7 +34,7 @@ const fmAdapter = async (fake: FakeChatCompletionsServer, report?: ProbeReport) 
     exec: async (): Promise<ExecResult> => ({ exitCode: 0, stdout: '5\n', stderr: '' }),
     probeRecordDir,
     recordKey: RECORD_KEY,
-    toolCallingSetting: 'auto',
+    toolCallingSetting: report === undefined ? 'native' : 'auto',
     declaredModel: 'system',
   });
   const adapter = createChatCompletionsAdapter({ ...managed, clock: createFakeClock(START_MS) });
