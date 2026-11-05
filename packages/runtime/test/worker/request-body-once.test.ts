@@ -5,12 +5,25 @@ import { callsStep, textStep } from './scripts.ts';
 const INPUT = `Write the two files. ${'Context the request body carries in full. '.repeat(400)}`;
 
 describe('within one model step the recorded request body is decoded once across its readers (row 9)', () => {
-  it('each model.requested body of a run is decoded at most once on the main thread', async () => {
+  it('the readers of the latest recorded request decode each model.requested body at most once under the claim', async () => {
     const decodedBytes: number[] = [];
+    const latestReads = { inside: false, calls: 0 };
     const env = await makeEnv({
       mode: 'bypassPermissions',
-      onDecode: (rows, bytes) => {
-        if (rows === 1) decodedBytes.push(bytes);
+      onDecode: (_rows, bytes) => {
+        if (latestReads.inside) decodedBytes.push(bytes);
+      },
+    });
+    const uncachedRead = env.store.readLatestRunEventBefore.bind(env.store);
+    Object.assign(env.store, {
+      readLatestRunEventBefore: (...args: Parameters<typeof uncachedRead>) => {
+        latestReads.inside = true;
+        latestReads.calls += 1;
+        try {
+          return uncachedRead(...args);
+        } finally {
+          latestReads.inside = false;
+        }
       },
     });
     const run = env.enqueue(INPUT);
@@ -24,6 +37,7 @@ describe('within one model step the recorded request body is decoded once across
     while ((await env.runOnce(worker)) === 'yielded');
 
     expect(env.run(run.id).status).toBe('COMPLETED');
+    expect(latestReads.calls).toBeGreaterThanOrEqual(4);
     const bodies = env
       .raw()
       .prepare("SELECT seq, payload_json FROM events WHERE run_id = :runId AND type = 'model.requested' ORDER BY seq")
