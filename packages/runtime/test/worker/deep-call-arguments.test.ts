@@ -28,7 +28,7 @@ const treeTool = (received: unknown[]): AnyTool =>
     description: 'Accepts any JSON tree.',
     kind: 'read',
     sideEffect: 'read_only',
-    inputSchema: { type: 'object', properties: { tree: {} }, required: ['tree'], additionalProperties: false },
+    inputSchema: { type: 'object', properties: { tree: { type: 'array' } }, required: ['tree'], additionalProperties: false },
     timeoutMs: 1_000,
     title: () => 'Tree',
     subject: () => ({ kind: 'none', tool: 'Tree' }),

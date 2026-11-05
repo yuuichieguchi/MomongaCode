@@ -7,7 +7,7 @@ const nestedArraysText = (depth: number): string => `${'['.repeat(depth)}${']'.r
 
 const treeArguments = (depth: number): string => `{"tree":${nestedArraysText(depth - 1)}}`;
 
-const tree = makeTool('Tree', { inputSchema: { type: 'object', properties: { tree: {} }, required: ['tree'] } });
+const tree = makeTool('Tree', { inputSchema: { type: 'object', properties: { tree: { type: 'array' } }, required: ['tree'] } });
 
 describe('validateToolInput and the one JSON depth bound', () => {
   it(`accepts arguments nested exactly ${MAX_JSON_DEPTH} deep`, () => {

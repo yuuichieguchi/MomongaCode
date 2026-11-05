@@ -5,7 +5,7 @@ import { makeTree, mcpJsonPath, projectSettingsPath, trusting, userSettingsPath,
 
 const nestedArraysText = (depth: number): string => `${'['.repeat(depth)}${']'.repeat(depth)}`;
 
-const withExtra = (depth: number): string => `{"extra":${nestedArraysText(depth - 1)}}`;
+const withExtra = (depth: number): string => `{"env":{"A":${nestedArraysText(depth - 2)}}}`;
 
 const mcpJsonText = (depth: number): string => `{"mcpServers":{"a":{"command":"x","extra":${nestedArraysText(depth - 3)}}}}`;
 
@@ -39,6 +39,7 @@ describe('settings files and the one JSON depth bound', () => {
     const file = writeText(projectSettingsPath(tree), withExtra(MAX_JSON_DEPTH));
     const failure = await failureOf(loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) }));
     expect(failure.message).toContain(file);
+    expect(failure.message).toContain('/env/A');
     expect(/depth/i.test(failure.message)).toBe(false);
   });
 });
