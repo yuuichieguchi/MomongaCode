@@ -90,7 +90,7 @@ describe('expireApprovals', () => {
     const { runId, approvals } = awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
     const lastSeq = mustRun(store, runId).lastSeq;
 
-    expect((await store.expireApprovals(EXPIRES_MS - 1))).toEqual([]);
+    expect((await store.expireApprovals(EXPIRES_MS - 1, (error: unknown) => { throw error; }))).toEqual([]);
 
     expect(mustRun(store, runId)).toMatchObject({ status: 'WAITING_HUMAN', lastSeq });
     expect(store.approvals.get(approvals[0]?.id ?? '')?.status).toBe('pending');
@@ -103,7 +103,7 @@ describe('expireApprovals', () => {
     if (due === undefined || later === undefined) throw new Error('expected two approvals');
     const before = mustRun(store, runId).lastSeq;
 
-    expect((await store.expireApprovals(EXPIRES_MS))).toEqual([runId]);
+    expect((await store.expireApprovals(EXPIRES_MS, (error: unknown) => { throw error; }))).toEqual([runId]);
 
     expect(store.approvals.get(due.id)?.status).toBe('expired');
     expect(store.approvals.get(later.id)?.status).toBe('withdrawn');
@@ -118,7 +118,7 @@ describe('expireApprovals', () => {
       ]),
     );
     expect(added[3]).toEqual({ type: 'run.status', from: 'WAITING_HUMAN', to: 'STOPPED', reason: 'approval_timeout' });
-    expect((await store.expireApprovals(EXPIRES_MS + 120_000))).toEqual([]);
+    expect((await store.expireApprovals(EXPIRES_MS + 120_000, (error: unknown) => { throw error; }))).toEqual([]);
   });
 
   it('stops a WAITING_HUMAN run whose deadline passed with timeout and withdraws its approvals', async () => {
@@ -127,8 +127,8 @@ describe('expireApprovals', () => {
     const [approval] = approvals;
     if (approval === undefined) throw new Error('expected an approval');
 
-    expect((await store.expireApprovals(DEADLINE_MS - 1))).toEqual([]);
-    expect((await store.expireApprovals(DEADLINE_MS))).toEqual([runId]);
+    expect((await store.expireApprovals(DEADLINE_MS - 1, (error: unknown) => { throw error; }))).toEqual([]);
+    expect((await store.expireApprovals(DEADLINE_MS, (error: unknown) => { throw error; }))).toEqual([runId]);
 
     expect(mustRun(store, runId)).toMatchObject({ status: 'STOPPED', stopReason: 'timeout' });
     expect(store.approvals.get(approval.id)?.status).toBe('withdrawn');
@@ -143,7 +143,7 @@ describe('expireApprovals', () => {
     const { runId, approvals } = awaitingApproval(store, [{ callId: 'call_1' }], 'running');
     const lastSeq = mustRun(store, runId).lastSeq;
 
-    expect((await store.expireApprovals(DEADLINE_MS + 1))).toEqual([]);
+    expect((await store.expireApprovals(DEADLINE_MS + 1, (error: unknown) => { throw error; }))).toEqual([]);
 
     expect(store.approvals.get(approvals[0]?.id ?? '')?.status).toBe('pending');
     expect(mustRun(store, runId)).toMatchObject({ status: 'RUNNING', lastSeq });
@@ -154,7 +154,7 @@ describe('expireApprovals', () => {
     const first = awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
     const second = awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
 
-    expect([...(await store.expireApprovals(EXPIRES_MS))].sort()).toEqual([first.runId, second.runId].sort());
+    expect([...(await store.expireApprovals(EXPIRES_MS, (error: unknown) => { throw error; }))].sort()).toEqual([first.runId, second.runId].sort());
   });
 });
 

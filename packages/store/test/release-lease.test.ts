@@ -127,18 +127,18 @@ describe('deadline sweep of QUEUED runs', () => {
     const run = enqueue(store, newSession(store).id);
     const before = mustRun(store, run.id);
 
-    expect(await store.expireApprovals(DEADLINE_MS - 1)).toEqual([]);
+    expect(await store.expireApprovals(DEADLINE_MS - 1, (error: unknown) => { throw error; })).toEqual([]);
     expect(mustRun(store, run.id).status).toBe('QUEUED');
 
     clock.set(DEADLINE_MS);
-    expect(await store.expireApprovals(DEADLINE_MS)).toEqual([run.id]);
+    expect(await store.expireApprovals(DEADLINE_MS, (error: unknown) => { throw error; })).toEqual([run.id]);
 
     expect(mustRun(store, run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'timeout', leaseOwner: null });
     expect(store.readRunEvents(run.id, before.lastSeq, 10).map(payloadOf)).toEqual([
       { type: 'run.status', from: 'QUEUED', to: 'STOPPED', reason: 'timeout' },
     ]);
     expect(store.claim('w1')).toBeNull();
-    expect(await store.expireApprovals(DEADLINE_MS + 1)).toEqual([]);
+    expect(await store.expireApprovals(DEADLINE_MS + 1, (error: unknown) => { throw error; })).toEqual([]);
   });
 
   it('stops a requeued run that waits past its deadline but leaves RUNNING runs to their worker', async () => {
@@ -149,7 +149,7 @@ describe('deadline sweep of QUEUED runs', () => {
     const running = enqueue(store, newSession(store, '/b').id);
     mustClaim(store, 'w2');
 
-    expect(await store.expireApprovals(DEADLINE_MS + 1)).toEqual([requeued.id]);
+    expect(await store.expireApprovals(DEADLINE_MS + 1, (error: unknown) => { throw error; })).toEqual([requeued.id]);
 
     expect(mustRun(store, requeued.id)).toMatchObject({ status: 'STOPPED', stopReason: 'timeout' });
     expect(mustRun(store, running.id).status).toBe('RUNNING');

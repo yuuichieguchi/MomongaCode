@@ -161,7 +161,7 @@ describe('approval expiry is an operation that awaits the preparer', () => {
     const h = withPreparer();
     const { runId } = awaitingApproval(h.store, [{ callId: 'call_1' }], 'waiting');
 
-    const pending = h.store.expireApprovals(EXPIRES_MS);
+    const pending = h.store.expireApprovals(EXPIRES_MS, (error: unknown) => { throw error; });
 
     expect(pending).toBeInstanceOf(Promise);
     expect(await pending).toEqual([runId]);

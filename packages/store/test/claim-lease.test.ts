@@ -63,7 +63,7 @@ describe('claim', () => {
     expect(store.claim('w2')).not.toBeNull();
   });
 
-  it('serializes runs within a session until the earlier one is terminal', () => {
+  it('serializes runs within a session until the earlier one is terminal', async () => {
     const { clock, store } = harness();
     const session = newSession(store);
     const r1 = enqueue(store, session.id, 'one');
@@ -75,7 +75,9 @@ describe('claim', () => {
     parkWaitingHuman(store, c1);
     expect(store.claim('w2')).toBeNull();
     const queued = mustRun(store, r1.id);
-    expect(store.appendAsService(r1.id, queued.version, 'QUEUED', []).kind).toBe('ok');
+    const requeued = store.appendAsService(r1.id, queued.version, 'QUEUED', []);
+    expect(requeued).toBeInstanceOf(Promise);
+    expect((await requeued).kind).toBe('ok');
     const again = mustClaim(store, 'w2');
     expect(again.runId).toBe(r1.id);
     expect(store.release(again, 'COMPLETED').kind).toBe('ok');
@@ -145,7 +147,7 @@ describe('claim', () => {
 });
 
 describe('attempt accounting', () => {
-  const resume = (store: RuntimeStore, runId: string, claim: Claim, via: 'WAITING_HUMAN' | 'WAITING_TOOL' | 'RUNNING') => {
+  const resume = async (store: RuntimeStore, runId: string, claim: Claim, via: 'WAITING_HUMAN' | 'WAITING_TOOL' | 'RUNNING'): Promise<void> => {
     if (via === 'RUNNING') {
       expect(store.release(claim, 'QUEUED').kind).toBe('ok');
       return;
@@ -153,18 +155,20 @@ describe('attempt accounting', () => {
     if (via === 'WAITING_HUMAN') parkWaitingHuman(store, claim);
     else expect(store.release(claim, via).kind).toBe('ok');
     const parked = mustRun(store, runId);
-    expect(store.appendAsService(runId, parked.version, 'QUEUED', []).kind).toBe('ok');
+    const pending = store.appendAsService(runId, parked.version, 'QUEUED', []);
+    expect(pending).toBeInstanceOf(Promise);
+    expect((await pending).kind).toBe('ok');
   };
 
   it.each(['WAITING_HUMAN', 'WAITING_TOOL', 'RUNNING'] as const)(
     'never dead-letters a run that voluntarily gives up its lease more often than maxAttempts (%s)',
-    (via) => {
+    async (via) => {
       const { store } = harness({ maxAttempts: 2 });
       const run = enqueue(store, newSession(store).id);
       for (let round = 1; round <= 7; round += 1) {
         const claim = mustClaim(store, 'w1');
         expect(claim.attempt).toBe(round);
-        resume(store, run.id, claim, via);
+        await resume(store, run.id, claim, via);
         expect(mustRun(store, run.id)).toMatchObject({ status: 'QUEUED', deadLetter: false, attempts: round, failedAttempts: 0 });
       }
     },

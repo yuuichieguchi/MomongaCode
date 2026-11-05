@@ -35,7 +35,7 @@ describe('store.resolveApproval', () => {
   it('2. returns approval_not_pending naming expired for an approval the sweeper expired', async () => {
     const { store } = harness();
     const { approvals } = awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
-    await store.expireApprovals(EXPIRES_MS);
+    await store.expireApprovals(EXPIRES_MS, (error: unknown) => { throw error; });
     expect(await store.resolveApproval(approvals[0]?.id ?? '', 'allow_once')).toEqual({ kind: 'approval_not_pending', status: 'expired' });
   });
 
@@ -161,7 +161,7 @@ describe('store.resolveApproval on an expired approval of a RUNNING run', () => 
     expect(store.release(claim, 'WAITING_HUMAN').kind).toBe('ok');
     expect(mustRun(store, runId).status).toBe('WAITING_HUMAN');
 
-    expect(await store.expireApprovals(clock.now())).toEqual([runId]);
+    expect(await store.expireApprovals(clock.now(), (error: unknown) => { throw error; })).toEqual([runId]);
     expect(store.approvals.get(id)?.status).toBe('expired');
     expect(mustRun(store, runId)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
   });

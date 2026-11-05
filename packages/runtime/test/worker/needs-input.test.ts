@@ -110,7 +110,7 @@ describe('worker input request', () => {
     const { run } = await ask(env, [], { approvalTtlMs: 1000 });
 
     env.clock.advance(1000);
-    expect(await env.store.expireApprovals(env.clock.now())).toEqual([run.id]);
+    expect(await env.store.expireApprovals(env.clock.now(), (error: unknown) => { throw error; })).toEqual([run.id]);
 
     expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
     expect(env.ofType(run.id, 'tool.elicitation.cancelled')).toEqual([expect.objectContaining({ reason: 'expired' })]);

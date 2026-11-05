@@ -78,7 +78,7 @@ describe('approval subject digest and supersede', () => {
     const second = request(store, claim, OPTIONS, SECOND);
     expect(store.release(claim, 'WAITING_HUMAN').kind).toBe('ok');
 
-    expect(await store.expireApprovals(EXPIRES)).toEqual([runId]);
+    expect(await store.expireApprovals(EXPIRES, (error: unknown) => { throw error; })).toEqual([runId]);
 
     expect(store.approvals.get(first.id)?.status).toBe('superseded');
     expect(store.approvals.get(second.id)?.status).toBe('expired');

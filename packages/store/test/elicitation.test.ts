@@ -63,7 +63,7 @@ describe('elicitation gates', () => {
     const { store, clock } = harness();
     const { runId, id } = asking(store);
     clock.set(EXPIRES_MS);
-    expect(await store.expireApprovals(EXPIRES_MS)).toEqual([runId]);
+    expect(await store.expireApprovals(EXPIRES_MS, (error: unknown) => { throw error; })).toEqual([runId]);
     expect(mustRun(store, runId)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
     const events = store.readRunEvents(runId, 0, 100).map(payloadOf);
     expect(events).toEqual(expect.arrayContaining([{ type: 'tool.elicitation.cancelled', inputId: id, reason: 'expired' }]));

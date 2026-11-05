@@ -12,7 +12,7 @@ const OUTPUT_CHARS = 30_000;
 const MEMORIES = 40;
 const HISTORY_IN_REQUEST = 8;
 const TOOL_COUNT = 30;
-const SIZES = [15, 50, 150] as const;
+const SIZES = [100, 150, 200] as const;
 
 const ascii = (seed: number): string =>
   Array.from({ length: Math.ceil(OUTPUT_CHARS / 2 / 52) }, (_unused, line) => `line-${String(seed * 1000 + line).padStart(7, '0')} src/module${seed}/file${line}.ts handler`).join('\n').slice(0, OUTPUT_CHARS / 2);
@@ -146,7 +146,7 @@ const terminalCounts = async (steps: number, path: Path): Promise<Counts> => {
 };
 
 describe('the loop share of a terminal transition, as counts (P9, design section 7)', () => {
-  it('decodes no journal payload on the main thread and encodes the same bytes at 15, 50 and 150 steps when the journal thread measures', async () => {
+  it('decodes no journal payload on the main thread and encodes the same bytes at 100, 150 and 200 steps, every memory cited at each size, when the journal thread measures', async () => {
     const counts: Counts[] = [];
     for (const steps of SIZES) counts.push(await terminalCounts(steps, 'thread'));
 

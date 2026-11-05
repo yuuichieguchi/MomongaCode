@@ -105,7 +105,7 @@ describe('facts that specs/tla/TerminalPrepare.tla relies on', () => {
       h.clock.advance(later + 1 - h.clock.now());
     });
 
-    expect(await h.store.expireApprovals(EXPIRES_MS)).toEqual([runId]);
+    expect(await h.store.expireApprovals(EXPIRES_MS, (error: unknown) => { throw error; })).toEqual([runId]);
 
     expect(h.fake.requests).toHaveLength(1);
     const leadingCancels = (h.fake.requests[0]?.leading ?? []).flatMap((event) => (event.type === 'tool.permission.cancelled' ? [{ approvalId: event.approvalId, reason: event.reason }] : []));

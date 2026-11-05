@@ -76,7 +76,7 @@ describe('releasing the checkpoint of a call whose input request was withdrawn',
     const { run, key } = await parkOnElicitation(env, released, { approvalTtlMs: 1000 });
 
     env.clock.advance(1000);
-    expect((await env.store.expireApprovals(env.clock.now()))).toEqual([run.id]);
+    expect((await env.store.expireApprovals(env.clock.now(), (error: unknown) => { throw error; }))).toEqual([run.id]);
     await releaserFor(env, released)(run.id, new AbortController().signal);
 
     expect(released).toEqual([CHECKPOINT]);

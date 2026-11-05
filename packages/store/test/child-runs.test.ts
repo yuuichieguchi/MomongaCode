@@ -244,10 +244,10 @@ describe('waiting for a child', () => {
     const secondApproval = parkWaitingHuman(expired.store, second.claim);
     expired.store.requestCancel(secondChild.run.id);
     expired.clock.set(secondApproval.expiresAt - 1);
-    expect(await expired.store.expireApprovals(expired.clock.now())).toEqual([]);
+    expect(await expired.store.expireApprovals(expired.clock.now(), (error: unknown) => { throw error; })).toEqual([]);
     expect(mustRun(expired.store, second.parent.id).status).toBe('WAITING_HUMAN');
     expired.clock.set(secondApproval.expiresAt);
-    expect(await expired.store.expireApprovals(expired.clock.now())).toEqual([second.parent.id]);
+    expect(await expired.store.expireApprovals(expired.clock.now(), (error: unknown) => { throw error; })).toEqual([second.parent.id]);
     expect(mustRun(expired.store, second.parent.id)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
   });
 
@@ -257,10 +257,10 @@ describe('waiting for a child', () => {
     const child = spawn(h.store, mustRun(h.store, parent.id), 'call-1');
     awaitChild(h, claim, child.run.id, START_MS + 5000);
     h.clock.set(START_MS + 4999);
-    expect(await h.store.expireApprovals(h.clock.now())).toEqual([]);
+    expect(await h.store.expireApprovals(h.clock.now(), (error: unknown) => { throw error; })).toEqual([]);
     expect(mustRun(h.store, parent.id).status).toBe('WAITING_TOOL');
     h.clock.set(START_MS + 5000);
-    expect(await h.store.expireApprovals(h.clock.now())).toEqual([parent.id]);
+    expect(await h.store.expireApprovals(h.clock.now(), (error: unknown) => { throw error; })).toEqual([parent.id]);
     expect(mustRun(h.store, parent.id).status).toBe('QUEUED');
   });
 });

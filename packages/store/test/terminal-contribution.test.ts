@@ -92,7 +92,7 @@ describe('context.contribution at every terminal transition of the store', () =>
     const h = harness({ contribution: hook });
     const run = enqueue(h.store, newSession(h.store).id);
 
-    expect((await h.store.expireApprovals(DEADLINE_MS))).toEqual([run.id]);
+    expect((await h.store.expireApprovals(DEADLINE_MS, (error: unknown) => { throw error; }))).toEqual([run.id]);
 
     expect(mustRun(h.store, run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'timeout' });
     expect(tailTypes(h.store, run.id, 2)).toEqual(['context.contribution', 'run.status:STOPPED']);
@@ -103,7 +103,7 @@ describe('context.contribution at every terminal transition of the store', () =>
     const h = harness({ contribution: hook });
     const { runId } = awaitingApproval(h.store, [{ callId: 'call_1', expiresAt: DEADLINE_MS + 60_000 }], 'waiting');
 
-    expect((await h.store.expireApprovals(DEADLINE_MS))).toEqual([runId]);
+    expect((await h.store.expireApprovals(DEADLINE_MS, (error: unknown) => { throw error; }))).toEqual([runId]);
 
     expect(tailTypes(h.store, runId, 3)).toEqual(['tool.permission.cancelled', 'context.contribution', 'run.status:STOPPED']);
     expect(mustRun(h.store, runId).stopReason).toBe('timeout');
@@ -114,7 +114,7 @@ describe('context.contribution at every terminal transition of the store', () =>
     const h = harness({ contribution: hook });
     const { runId } = awaitingApproval(h.store, [{ callId: 'call_1' }], 'waiting');
 
-    expect((await h.store.expireApprovals(EXPIRES_MS))).toEqual([runId]);
+    expect((await h.store.expireApprovals(EXPIRES_MS, (error: unknown) => { throw error; }))).toEqual([runId]);
 
     expect(mustRun(h.store, runId).stopReason).toBe('approval_timeout');
     expect(tailTypes(h.store, runId, 4)).toEqual(['tool.permission.cancelled', 'notice', 'context.contribution', 'run.status:STOPPED']);
@@ -246,15 +246,17 @@ describe('the contributed_at stamp', () => {
     expect(h.store.memories.get(unused)?.contributedAt).toBeNull();
   });
 
-  it.each(['STOPPED', 'FAILED'] as const)('leaves contributed_at empty for a run that ends %s', async (to) => {
-    const h = harness({ contribution: recording().hook });
+  it.each(['STOPPED', 'FAILED'] as const)('leaves contributed_at empty for a run that ends %s, though its terminal records the memory as contributed', async (to) => {
+    let named = '';
+    const h = harness({ contribution: { eventTypes: ['user.message'], measure: () => contributionFor(named) } });
     const run = enqueue(h.store, newSession(h.store).id);
     const id = savedMemory(h, run.id, 'call_1', 'used note');
+    named = id;
     const claim = mustClaim(h.store, 'w2');
-    expect(h.store.append(claim, [contributionFor(id)]).kind).toBe('ok');
 
     expect((await h.store.transition(claim, ['RUNNING'], to, to === 'STOPPED' ? { stopReason: 'max_steps' } : {})).kind).toBe('ok');
 
+    expect(h.store.readRunEvents(run.id, 0, 1000).flatMap((event) => (event.type === 'context.contribution' ? event.items : []))).toEqual([{ kind: 'memory', id, contributed: true }]);
     expect(h.store.memories.get(id)?.contributedAt).toBeNull();
   });
 

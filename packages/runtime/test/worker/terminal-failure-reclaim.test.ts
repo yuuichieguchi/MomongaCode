@@ -1,16 +1,17 @@
 import { describe, expect, it } from 'vitest';
+import { JournalThreadError } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import { LEASE_MS, makeEnv, typesOf } from './harness.ts';
 import { failedStep, textStep } from './scripts.ts';
 
-const failingOnce = (target: RuntimeStore, status: 'COMPLETED' | 'FAILED'): { store: RuntimeStore; failures: () => number } => {
+const failing = (target: RuntimeStore, status: 'COMPLETED' | 'FAILED', times: number): { store: RuntimeStore; failures: () => number } => {
   let failures = 0;
   const store: RuntimeStore = {
     ...target,
     transition: (claim, from, to, patch, preceding) => {
-      if (to === status && failures === 0) {
+      if (to === status && failures < times) {
         failures += 1;
-        throw new Error('the journal thread failed');
+        throw new JournalThreadError('the journal thread exited');
       }
       return target.transition(claim, from, to, patch, preceding);
     },
@@ -24,7 +25,7 @@ describe('a run whose terminal transition failed', () => {
     env.gateway.script.push(textStep('the final answer'));
     env.gateway.script.push(textStep('a second, paid answer'));
     const run = env.enqueue('Work');
-    const { store, failures } = failingOnce(env.store, 'COMPLETED');
+    const { store, failures } = failing(env.store, 'COMPLETED', 1);
 
     expect(await env.runOnce(env.worker('worker-1', { store }))).toBe('yielded');
     expect(failures()).toBe(1);
@@ -49,14 +50,14 @@ describe('a run whose terminal transition failed', () => {
     const env = await makeEnv({ maxAttempts: 1, maxTotalAttempts: 1 });
     env.gateway.script.push(failedStep('upstream_unavailable'), textStep('never sent'));
     const run = env.enqueue('Work');
-    const { store, failures } = failingOnce(env.store, 'FAILED');
+    const { store, failures } = failing(env.store, 'FAILED', Number.POSITIVE_INFINITY);
 
     const first = env.worker('worker-1', { store }).runOnce();
     await first.then(
       () => undefined,
       () => undefined,
     );
-    expect(failures()).toBe(1);
+    expect(failures()).toBeGreaterThanOrEqual(1);
     const stranded = env.run(run.id);
     expect(stranded.status).toBe('RUNNING');
     expect(stranded.leaseOwner).toBe('worker-1');

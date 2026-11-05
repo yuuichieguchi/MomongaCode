@@ -206,7 +206,7 @@ describe('inheritContext: the look-through walk', () => {
     const timedOut = createRun(store, session.id, 'Too late', { timeoutMs: 1000 });
     const third = enqueue(store, session.id, 'Now this');
     clock.advance(2000);
-    expect((await store.expireApprovals(clock.now()))).toEqual([timedOut.id]);
+    expect((await store.expireApprovals(clock.now(), (error: unknown) => { throw error; }))).toEqual([timedOut.id]);
     expect(mustRun(store, timedOut.id)).toMatchObject({ status: 'STOPPED', stopReason: 'timeout' });
     await finish(store, firstClaim, answer('hello'));
     const claim = mustClaim(store, 'w2');
@@ -285,7 +285,7 @@ describe('inheritContext: runs that were never processed', () => {
     expect(requeuedClaim.runId).toBe(requeued.id);
     expect(store.release(requeuedClaim, 'QUEUED').kind).toBe('ok');
     clock.advance(2000);
-    expect((await store.expireApprovals(clock.now()))).toEqual([requeued.id]);
+    expect((await store.expireApprovals(clock.now(), (error: unknown) => { throw error; }))).toEqual([requeued.id]);
     expect(mustRun(store, requeued.id)).toMatchObject({ status: 'STOPPED', stopReason: 'timeout', attempts: 1 });
     const claim = mustClaim(store, 'w3');
     expect(claim.runId).toBe(third.id);

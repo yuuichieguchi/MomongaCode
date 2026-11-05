@@ -97,11 +97,13 @@ describe('store onCommit', () => {
     calls.length = 0;
 
     expect(store.claim('w2')).toBeNull();
+    await settle();
+    expect(calls).toEqual([]);
+
     expect(await store.deadLetterExhausted(() => undefined)).toEqual([run.id]);
+    await settle();
 
     expect(mustRun(store, run.id)).toMatchObject({ status: 'FAILED', deadLetter: true });
-    expect(calls).toEqual([]);
-    await settle();
     expect(calls).toEqual([[{ runId: run.id, sessionId: run.sessionId }]]);
   });
 });

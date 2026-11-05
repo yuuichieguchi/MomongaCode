@@ -191,7 +191,7 @@ describe('closures for the dangling calls of run 1, per cause', () => {
     await env.runOnce(env.worker());
     expect(env.run(first.id).status).toBe('WAITING_HUMAN');
     env.clock.advance(60_001);
-    expect((await env.store.expireApprovals(env.clock.now()))).toEqual([first.id]);
+    expect((await env.store.expireApprovals(env.clock.now(), (error: unknown) => { throw error; }))).toEqual([first.id]);
     expect(env.run(first.id)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
     const callId = env.gateway.callId('call_w_1');
 
