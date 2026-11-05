@@ -1,5 +1,5 @@
 import { encodeSse } from '@momonga/foundation';
-import { COMPACTION_RESULT_EVENT } from '@momonga/protocol';
+import { COMPACTION_RESULT_EVENT, DEFERRED_HEADER } from '@momonga/protocol';
 import type { CompactResource, StreamEvent } from '@momonga/protocol';
 import { frameOf } from '../core/frame.ts';
 import { ClientDisconnectedError, GatewayError, readerStalledError } from '../core/errors.ts';
@@ -25,6 +25,7 @@ export const errorEventOf = (error: GatewayError): StreamEvent => {
     error: error.body,
     status: error.status,
     ...(Number.isFinite(retryAfterSeconds) ? { retry_after_ms: retryAfterSeconds * 1000 } : {}),
+    ...(error.headers[DEFERRED_HEADER] === 'true' ? { deferred: true as const } : {}),
   };
 };
 

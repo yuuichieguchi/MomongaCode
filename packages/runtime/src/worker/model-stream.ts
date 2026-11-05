@@ -1,15 +1,18 @@
 import { isFatalStoreError } from '@momonga/store';
 import type { BilledDetail, CallTiming, CreateResponseBody, MomongaResponseExtension, ResponseResource, StreamEvent, Usage } from '@momonga/protocol';
 import type { RunEventPayload } from '@momonga/protocol';
+import { carriesOutput } from '@momonga/protocol';
 import type { ClaimContext } from './claim-context.ts';
 import { GatewayFailureError } from './errors.ts';
+
+export { carriesOutput };
 
 const FLUSH_INTERVAL_MS = 50;
 const FLUSH_BYTES = 1024;
 
 export type ModelResult =
   | { kind: 'response'; response: ResponseResource; incomplete: boolean }
-  | { kind: 'failed'; code: string | null; message: string };
+  | { kind: 'failed'; code: string | null; message: string; retryable: boolean };
 
 type DeltaType = 'agent.message.delta' | 'agent.thought.delta';
 
@@ -81,9 +84,9 @@ export const terminalResultOf = (event: StreamEvent): ModelResult | undefined =>
     case 'response.incomplete':
       return { kind: 'response', response: event.response, incomplete: true };
     case 'response.failed':
-      return { kind: 'failed', code: event.response.error.code, message: event.response.error.message };
+      return { kind: 'failed', code: event.response.error.code, message: event.response.error.message, retryable: event.response.momonga?.retryable === true };
     case 'error':
-      return { kind: 'failed', code: event.error.code, message: event.error.message };
+      return { kind: 'failed', code: event.error.code, message: event.error.message, retryable: false };
     default:
       return undefined;
   }
@@ -96,14 +99,6 @@ export const billedDetailOf = (usage: Usage | null, extension: MomongaResponseEx
   ...(extension?.cost === undefined ? {} : { cost: extension.cost }),
   timing,
 });
-
-export const carriesOutput = (event: StreamEvent): boolean =>
-  event.type === 'response.output_text.delta' ||
-  event.type === 'response.reasoning.delta' ||
-  event.type === 'response.reasoning_summary_text.delta' ||
-  event.type === 'response.refusal.delta' ||
-  event.type === 'response.function_call_arguments.delta' ||
-  (event.type === 'response.output_item.added' && event.item.type === 'function_call');
 
 export type StreamedModel = { result: ModelResult; timing: CallTiming };
 

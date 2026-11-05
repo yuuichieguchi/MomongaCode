@@ -112,7 +112,7 @@ const countWire = async (
     const counted = await callTargets(services, [target], signal, deadlineAt, (chosen, attemptNumber, guarded) =>
       adapterCountWire.call(chosen.adapter, wire, { signal: guarded, target: { name: chosen.name, model: chosen.model }, attempt: attemptNumber }),
     );
-    counted.target.breaker.onSuccess();
+    counted.settle('success');
     return counted.value;
   }
   const adapterCountTokens = target.adapter.countTokens;
@@ -127,7 +127,7 @@ const countWire = async (
       { signal: guarded, target: { name: chosen.name, model: chosen.model }, attempt: attemptNumber },
     ),
   );
-  outcome.target.breaker.onSuccess();
+  outcome.settle('success');
   const imageTokens = imageTokensOfWire(wire, imageModel);
   if (imageTokens === 0) return outcome.value;
   const total = outcome.value.input_tokens + imageTokens;
@@ -192,7 +192,7 @@ const countTokens = async (
       { signal: guarded, target: { name: chosen.name, model: chosen.model }, attempt: attemptNumber },
     ),
   );
-  outcome.target.breaker.onSuccess();
+  outcome.settle('success');
   return outcome.value;
 };
 
@@ -303,7 +303,7 @@ const compactOnce = async (
       throw failure;
     }
   });
-  outcome.target.breaker.onSuccess();
+  outcome.settle('success');
   const resourceId = identifier(services, 'resp');
   const attempt = spans.get(outcome.target);
   if (attempt === undefined) throw new TypeError(`target "${outcome.target.name}" answered the compaction without an attempt span`);

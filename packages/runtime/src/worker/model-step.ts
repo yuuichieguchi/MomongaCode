@@ -147,7 +147,8 @@ const handleResult = async (
       return terminals.finish('STOPPED', { stopReason: 'refusal' });
     }
     if (result.code === DEADLINE_CODE) return terminals.finish('STOPPED', { stopReason: 'timeout' });
-    throw new GatewayFailureError(`${result.code ?? 'error'}: ${result.message}`);
+    if (result.retryable) throw new GatewayFailureError(`${result.code ?? 'error'}: ${result.message}`);
+    return terminals.finish('FAILED', { error: { code: result.code ?? 'error', message: result.message } });
   }
   const { response, incomplete } = result;
   const usage = response.usage;

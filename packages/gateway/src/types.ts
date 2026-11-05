@@ -18,7 +18,7 @@ export type GatewayConfig = {
     aliases: Record<string, string[]>;
     targets: Record<string, GatewayTargetConfig>;
   };
-  retry: { maxAttempts: number; baseMs: number; maxMs: number };
+  retry: { maxAttempts: number; totalWaitMs: number; baseMs: number; maxMs: number };
   breaker: { failureThreshold: number; openMs: number };
   limits: { maxBodyBytes: number; maxIdempotencyFrameBytes: number; readerStallMs: number };
   idempotency: { ttlMs: number };

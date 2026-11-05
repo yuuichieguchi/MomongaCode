@@ -64,6 +64,8 @@ export const serverError = (status: number, code: string, message: string): Gate
 
 export const gatewayClosedError = (): GatewayError => serverError(503, 'gateway_closed', 'the gateway is shutting down');
 
+export const isGatewayClosed = (error: unknown): boolean => error instanceof GatewayError && error.body.code === 'gateway_closed';
+
 export const SKIPPABLE_CODES: ReadonlySet<string> = new Set(['missing_api_key', 'authentication_failed', 'secret_unavailable', 'precondition_failed']);
 
 export const missingApiKeyError = (apiKeyEnv: string): GatewayError =>

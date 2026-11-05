@@ -190,6 +190,7 @@ export type MomongaResponseExtension = {
   contextInputTokens?: number;
   cacheWriteInputTokens?: number;
   cost?: ModelCost;
+  retryable?: boolean;
 };
 
 export type ResponseResource = {
@@ -339,7 +340,15 @@ export type StreamEvent =
       output_index: number;
       arguments: string;
     }
-  | { type: 'error'; sequence_number: number; error: ErrorBody; status?: number; retry_after_ms?: number };
+  | { type: 'error'; sequence_number: number; error: ErrorBody; status?: number; retry_after_ms?: number; deferred?: true };
+
+export const carriesOutput = (event: StreamEvent): boolean =>
+  event.type === 'response.output_text.delta' ||
+  event.type === 'response.reasoning.delta' ||
+  event.type === 'response.reasoning_summary_text.delta' ||
+  event.type === 'response.refusal.delta' ||
+  event.type === 'response.function_call_arguments.delta' ||
+  (event.type === 'response.output_item.added' && event.item.type === 'function_call');
 
 export type CompactMomongaExtension = { max_summary_tokens?: number; retains_user_request?: boolean; guideline?: string };
 

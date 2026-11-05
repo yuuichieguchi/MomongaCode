@@ -15,18 +15,18 @@ import type {
   UsageSource,
 } from '@momonga/protocol';
 import { modelCostOf } from './model-cost.ts';
-import { TERMINAL_STREAM_EVENT_TYPES, isReasoningEffort } from '@momonga/protocol';
+import { TERMINAL_STREAM_EVENT_TYPES, carriesOutput, isReasoningEffort } from '@momonga/protocol';
 import { startAttemptSpan } from './attempt-span.ts';
 import type { AttemptSpan, TraceParent } from './attempt-span.ts';
-import { applyBreakerVerdict, breakerVerdictOf } from './breaker-verdict.ts';
+import { breakerVerdictOf } from './breaker-verdict.ts';
 import type { BreakerVerdict } from './breaker-verdict.ts';
 import { armDeadline } from './deadline.ts';
-import { ClientDisconnectedError, GatewayError, isRunCancelled } from './errors.ts';
+import { ClientDisconnectedError, GatewayError, isGatewayClosed, isRunCancelled } from './errors.ts';
 import { estimateInputTokens, estimateOutputTokens, estimatedUsage } from './estimate.ts';
 import { inputHasImages, resolveInput } from './input.ts';
 import type { ConnectionResponses, ResolvedInput } from './input.ts';
 import { baseResource } from './resource.ts';
-import { UpstreamFailure, emptyStreamFailure, failureFrom, runWithRetry } from './retry.ts';
+import { UpstreamFailure, emptyStreamFailure, endedBeforeOutputFailure, failureFrom, runWithRetry } from './retry.ts';
 import type { RetryOutcome } from './retry.ts';
 import type { Release } from './admission.ts';
 import type { TargetRuntime } from './router.ts';
@@ -49,7 +49,7 @@ export type ResponseJob = {
 
 type Opened = {
   iterator: AsyncIterator<StreamEvent>;
-  first: StreamEvent;
+  held: StreamEvent[];
   release: Release;
   span: AttemptSpan;
 };
@@ -63,6 +63,7 @@ type Interruption = {
   spanType: string;
   error: unknown;
   verdict: BreakerVerdict;
+  retryable: boolean;
 };
 
 const OPENING_EVENT_TYPES: ReadonlySet<string> = new Set(['response.created', 'response.queued', 'response.in_progress']);
@@ -114,6 +115,23 @@ const thrownSpanType = (error: unknown): string => (error instanceof GatewayErro
 
 export const messageOf = (failure: unknown): string => (failure instanceof Error ? failure.message : String(failure));
 
+const failureBeforeOutput = (event: StreamEvent): UpstreamFailure | undefined => {
+  if (!TERMINAL_TYPES.has(event.type)) return undefined;
+  const terminal = event as TerminalEvent;
+  const violation = protocolViolationOf(terminal);
+  if (violation !== undefined) {
+    return new UpstreamFailure({
+      retryable: true,
+      error: { type: 'model_error', code: 'upstream_protocol_error', message: `the upstream violated the event protocol: ${violation}`, param: null },
+    });
+  }
+  if (terminal.type !== 'response.failed') return undefined;
+  const { error } = terminal.response;
+  const type = error.type ?? 'server_error';
+  if (breakerVerdictOf(type, error.code) === 'neutral') return undefined;
+  return new UpstreamFailure({ retryable: true, error: { type, code: error.code, message: error.message, param: null } });
+};
+
 const openAttempt = async (
   services: Services,
   job: ResponseJob,
@@ -146,9 +164,16 @@ const openAttempt = async (
       attempt: attemptNumber,
     });
     const iterator = stream[Symbol.asyncIterator]();
-    const first = await iterator.next();
-    if (first.done === true) throw emptyStreamFailure();
-    return { iterator, first: first.value, release, span };
+    const held: StreamEvent[] = [];
+    for (;;) {
+      const step = await iterator.next();
+      if (step.done === true) throw held.length === 0 ? emptyStreamFailure() : endedBeforeOutputFailure();
+      held.push(step.value);
+      const failure = failureBeforeOutput(step.value);
+      if (failure !== undefined) throw failure;
+      if (carriesOutput(step.value) || TERMINAL_TYPES.has(step.value.type)) break;
+    }
+    return { iterator, held, release, span };
   } catch (error) {
     release();
     const failure = failureFrom(target.adapter, error, signal);
@@ -167,6 +192,7 @@ const describeInterruption = (target: TargetRuntime, error: unknown, signal: Abo
       spanType: failure.classified.error.type,
       error: failure,
       verdict: breakerVerdictOf(failure.classified.error.type, failure.classified.error.code),
+      retryable: failure.classified.retryable,
     };
   }
   if (failure instanceof GatewayError) {
@@ -177,6 +203,7 @@ const describeInterruption = (target: TargetRuntime, error: unknown, signal: Abo
       spanType: failure.body.type,
       error: failure,
       verdict: 'neutral',
+      retryable: isGatewayClosed(failure),
     };
   }
   return {
@@ -186,6 +213,7 @@ const describeInterruption = (target: TargetRuntime, error: unknown, signal: Abo
     spanType: 'cancelled',
     error: failure,
     verdict: 'neutral',
+    retryable: false,
   };
 };
 
@@ -206,6 +234,7 @@ const protocolInterruption = (message: string): Interruption => ({
   spanType: 'model_error',
   error: new Error(message),
   verdict: 'failure',
+  retryable: true,
 });
 
 const finishReasonOf = (resource: ResponseResource): string =>
@@ -229,7 +258,7 @@ async function* relay(
   control: RunControl,
 ): AsyncGenerator<StreamEvent> {
   const progress: RelayProgress = { concluded: false, thrown: undefined };
-  const { value: opened, target } = outcome;
+  const { value: opened } = outcome;
   try {
     yield* relaySteps(services, job, resolved, outcome, control, progress);
   } catch (error) {
@@ -239,7 +268,7 @@ async function* relay(
     opened.release();
     if (!progress.concluded) {
       const { thrown } = progress;
-      applyBreakerVerdict(target.breaker, thrown === undefined ? 'neutral' : verdictOfThrown(thrown.error));
+      outcome.settle(thrown === undefined ? 'neutral' : verdictOfThrown(thrown.error));
       try {
         await opened.iterator.return?.();
       } catch (error) {
@@ -301,8 +330,29 @@ async function* relaySteps(
   try {
     yield { type: 'response.created', sequence_number: nextSequence(), response: base };
     yield { type: 'response.in_progress', sequence_number: nextSequence(), response: base };
-    let event: StreamEvent = opened.first;
+    const queue = [...opened.held];
+    let event: StreamEvent | undefined = queue.shift();
     for (;;) {
+      if (event === undefined) {
+        const pulled = await pull();
+        if (pulled.kind === 'event') {
+          event = pulled.event;
+        } else {
+          interruption =
+            pulled.kind === 'failed'
+              ? describeInterruption(target, pulled.error, signal)
+              : {
+                  code: 'stream_interrupted',
+                  message: 'the upstream stream ended before sending a terminal event',
+                  type: 'server_error',
+                  spanType: 'server_error',
+                  error: new Error('upstream stream ended without a terminal event'),
+                  verdict: 'failure',
+                  retryable: true,
+                };
+          break;
+        }
+      }
       if (TERMINAL_TYPES.has(event.type)) {
         const terminalEvent = event as TerminalEvent;
         const violation = protocolViolationOf(terminalEvent);
@@ -319,23 +369,7 @@ async function* relaySteps(
         }
         yield { ...forwarded, sequence_number: nextSequence() };
       }
-      const pulled = await pull();
-      if (pulled.kind === 'event') {
-        event = pulled.event;
-        continue;
-      }
-      interruption =
-        pulled.kind === 'failed'
-          ? describeInterruption(target, pulled.error, signal)
-          : {
-              code: 'stream_interrupted',
-              message: 'the upstream stream ended before sending a terminal event',
-              type: 'server_error',
-              spanType: 'server_error',
-              error: new Error('upstream stream ended without a terminal event'),
-              verdict: 'failure',
-            };
-      break;
+      event = queue.shift();
     }
   } finally {
     opened.release();
@@ -349,7 +383,12 @@ async function* relaySteps(
     }
   }
 
-  const momongaFor = (usageSource: UsageSource, contextInputTokens?: number, billed?: { usage: Usage; cacheWriteInputTokens: number | undefined }): MomongaResponseExtension => {
+  const momongaFor = (
+    usageSource: UsageSource,
+    contextInputTokens?: number,
+    billed?: { usage: Usage; cacheWriteInputTokens: number | undefined },
+    retryable?: boolean,
+  ): MomongaResponseExtension => {
     const cost =
       billed === undefined || services.priceTable === undefined
         ? null
@@ -372,28 +411,29 @@ async function* relaySteps(
       ...(contextInputTokens === undefined ? {} : { contextInputTokens }),
       ...(billed?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: billed.cacheWriteInputTokens }),
       ...(cost === null ? {} : { cost }),
+      ...(retryable === undefined ? {} : { retryable }),
     };
   };
   const completedAt = Math.floor(clock.now() / 1000);
 
-  const failedTerminal = (error: ResponseError, output: ItemField[]): StreamEvent => {
+  const failedTerminal = (error: ResponseError, output: ItemField[], retryable: boolean): StreamEvent => {
     const response: FailedResponseResource = {
       ...base,
       status: 'failed',
       completed_at: completedAt,
       output,
       error,
-      momonga: momongaFor('estimated'),
+      momonga: momongaFor('estimated', undefined, undefined, retryable),
     };
     return { type: 'response.failed', sequence_number: nextSequence(), response };
   };
 
   if (interruption !== undefined) {
-    applyBreakerVerdict(target.breaker, interruption.verdict);
+    outcome.settle(interruption.verdict);
     if (interruption.verdict === 'failure') target.lastFailure = { code: interruption.code, message: interruption.message };
     opened.span.fail(interruption.spanType, interruption.error, interruption.message);
     progress.concluded = true;
-    yield failedTerminal({ code: interruption.code, message: interruption.message, type: interruption.type }, orderedItems(doneItems));
+    yield failedTerminal({ code: interruption.code, message: interruption.message, type: interruption.type }, orderedItems(doneItems), interruption.retryable);
     return;
   }
 
@@ -403,10 +443,11 @@ async function* relaySteps(
 
   if (terminalEvent.type === 'response.failed') {
     const error = terminalEvent.response.error;
-    applyBreakerVerdict(target.breaker, breakerVerdictOf(error.type ?? 'server_error', error.code));
+    const verdict = breakerVerdictOf(error.type ?? 'server_error', error.code);
+    outcome.settle(verdict);
     opened.span.fail(error.type ?? 'server_error', new Error(error.message), error.message);
     progress.concluded = true;
-    yield failedTerminal({ ...error, type: error.type ?? 'server_error' }, upstreamOutput);
+    yield failedTerminal({ ...error, type: error.type ?? 'server_error' }, upstreamOutput, verdict === 'failure');
     return;
   }
 
@@ -443,10 +484,10 @@ async function* relaySteps(
 
   if (isRunCancelled(signal.reason)) {
     const cancelled = signal.reason as GatewayError;
-    target.breaker.onNeutral();
+    outcome.settle('neutral');
     opened.span.fail('cancelled', cancelled, cancelled.message);
     progress.concluded = true;
-    yield failedTerminal({ code: 'run_cancelled', message: cancelled.message, type: 'server_error' }, resource.output);
+    yield failedTerminal({ code: 'run_cancelled', message: cancelled.message, type: 'server_error' }, resource.output, false);
     return;
   }
 
@@ -482,14 +523,14 @@ async function* relaySteps(
   }
   if (commitFailure !== undefined) {
     const message = `the gateway could not persist the response: ${messageOfError(commitFailure)}`;
-    target.breaker.onNeutral();
+    outcome.settle('neutral');
     opened.span.fail('server_error', commitFailure, message);
     progress.concluded = true;
-    yield failedTerminal({ code: 'internal_error', message, type: 'server_error' }, resource.output);
+    yield failedTerminal({ code: 'internal_error', message, type: 'server_error' }, resource.output, false);
     return;
   }
   job.connection?.remember(responseId, { input: resolved.stored, output: resource.output });
-  target.breaker.onSuccess();
+  outcome.settle('success');
   opened.span.succeed({
     responseModel: target.model,
     responseId,
