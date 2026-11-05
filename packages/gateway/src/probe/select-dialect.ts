@@ -152,7 +152,7 @@ export type Legs = { responseFormat: boolean; tools: boolean };
 
 type Attempt = { result: ProbeDialectResult; detail?: string; constrainedRate?: number };
 
-type Sampled = { rate: number; refusal?: string };
+type Sampled = { rate: number; valid: number; sent: number; refusal?: string };
 
 const sampleRate = async (
   samples: number,
@@ -165,13 +165,13 @@ const sampleRate = async (
   let invalidCount = 0;
   for (let index = 0; index < samples; index += 1) {
     const reply = index === 0 && first !== undefined ? first : await send();
-    if (index === 0 && reply?.kind === 'refused') return { rate: 0, refusal: reply.detail };
-    if (index === 0 && reply?.kind === 'absent') return { rate: 0, refusal: 'the server answered with an unavailable route' };
+    if (index === 0 && reply?.kind === 'refused') return { rate: 0, valid: 0, sent: 1, refusal: reply.detail };
+    if (index === 0 && reply?.kind === 'absent') return { rate: 0, valid: 0, sent: 1, refusal: 'the server answered with an unavailable route' };
     if (valid(reply)) validCount += 1;
     else invalidCount += 1;
-    if (invalidCount > tolerated) return { rate: validCount / samples };
+    if (invalidCount > tolerated) return { rate: validCount / samples, valid: validCount, sent: index + 1 };
   }
-  return { rate: samples === 0 ? 0 : validCount / samples };
+  return { rate: samples === 0 ? 0 : validCount / samples, valid: validCount, sent: samples };
 };
 
 const tryCandidate = async (options: DialectSelectionOptions, resolved: ResolvedDialect, shape: EnvelopeShape, legs: Legs): Promise<Attempt> => {
@@ -206,12 +206,12 @@ const tryCandidate = async (options: DialectSelectionOptions, resolved: Resolved
   const neutral = await sampleRate(samples, sendNeutral, (reply) => neutralValid(reply, ledger, shape), firstNeutral);
   if (neutral.refusal !== undefined) return { result: 'refused', detail: neutral.refusal };
   if (!atLeast(neutral.rate, DEFAULT_MIN_VALID_RATE)) {
-    return { result: 'not-enforced', detail: `a neutral reply validated against the original schema in ${Math.round(neutral.rate * samples)} of ${samples} samples` };
+    return { result: 'not-enforced', detail: `a neutral reply validated against the original schema in ${neutral.valid} of ${neutral.sent} samples sent, which cannot reach the required share of ${samples}` };
   }
   const demanding = await sampleRate(samples, () => transport.request({ kind: 'demanding', schema: envelope }), (reply) => demandingValid(reply, ledger, shape));
   if (demanding.refusal !== undefined) return { result: 'refused', detail: demanding.refusal };
   if (!atLeast(demanding.rate, DEFAULT_MIN_VALID_RATE)) {
-    return { result: 'not-enforced', detail: `a reply to the demanding prompt validated against the original schema in ${Math.round(demanding.rate * samples)} of ${samples} samples`, constrainedRate: demanding.rate };
+    return { result: 'not-enforced', detail: `a reply to the demanding prompt validated against the original schema in ${demanding.valid} of ${demanding.sent} samples sent, which cannot reach the required share of ${samples}`, constrainedRate: demanding.rate };
   }
   return { result: 'accepted', constrainedRate: demanding.rate };
 };

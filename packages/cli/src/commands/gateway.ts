@@ -144,6 +144,7 @@ const probeOllama = async (ports: CliPorts, paths: MomongaPaths, name: string, t
     model: target.model,
     contextWindow: target.capabilities.contextWindow,
     signal: options.interrupt,
+    ...(options.samples === undefined ? {} : { samples: options.samples }),
   });
   ports.stdout.write(probeOllamaText(name, key.endpoint, paths.probe, report, target.capabilities.contextWindow));
   await restartDaemon(ports, paths);

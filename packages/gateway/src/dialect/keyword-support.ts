@@ -29,6 +29,6 @@ export const keywordRules = (support: KeywordSupport): DialectRule[] => {
   }
   const dropped = (['pattern', 'minimum', 'additionalProperties', 'anyOf'] as const).filter((keyword) => !support[keyword]);
   if (dropped.length > 0) rules.push({ select: [{ kinds: ['any'] }], op: 'drop', keys: dropped });
-  if (!support.nested) rules.push({ select: NESTED_OBJECTS, op: 'drop', keys: ['properties'] });
+  if (!support.nested) rules.push({ select: NESTED_OBJECTS, op: 'drop', keys: ['properties', 'patternProperties', 'required'] });
   return rules;
 };
