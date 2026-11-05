@@ -46,6 +46,16 @@ export const bundle = async ({ entry, outfile, releaseRepo, teamId, releasePubli
     target: 'node24',
     bundle: true,
     alias: { 'react-devtools-core': `${repoRoot}scripts/empty-module.ts` },
+    plugins: [
+      {
+        name: 'ata-validator-without-native-and-code-from-strings',
+        setup: (build) => {
+          const inAta = (importer: string): boolean => importer.includes('/node_modules/ata-validator/');
+          build.onResolve({ filter: /(^|\/)native-load(\.js)?$/ }, (args) => (inAta(args.importer) ? { path: `${repoRoot}scripts/ata-no-native.ts` } : undefined));
+          build.onResolve({ filter: /(^|\/)compile-fn(\.js)?$/ }, (args) => (inAta(args.importer) ? { path: `${repoRoot}scripts/ata-no-code-from-strings.ts` } : undefined));
+        },
+      },
+    ],
     banner: {
       js: [
         '#!/usr/bin/env node',

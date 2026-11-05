@@ -200,5 +200,7 @@ export {
   untrustedSchemaCacheSize,
   untrustedSchemaFailure,
 } from './untrusted-schema.ts';
-export { validateUntrusted } from './validate-untrusted.ts';
-export type { UntrustedVerdict } from './validate-untrusted.ts';
+export type { RemoteDocuments, UntrustedError, UntrustedValidate, UntrustedVerdict } from './untrusted-schema.ts';
+export { ataEngine } from './untrusted-engine.ts';
+export type { Engine, EngineValidator, EngineVerdict, RawError } from './untrusted-engine.ts';
+export { createUntrustedBoundary, validateUntrusted } from './validate-untrusted.ts';

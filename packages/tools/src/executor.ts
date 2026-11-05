@@ -469,7 +469,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   };
   const activeKeys = new Map<string, number>();
 
-  const isRefused = (batch: BatchCore, tool: AnyTool): boolean => tool.schemaMode === 'lenient' && batch.toolUnavailable?.(toolRefusalKey(tool)) === true;
+  const isRefused = (batch: BatchCore, tool: AnyTool): boolean => batch.toolUnavailable?.(toolRefusalKey(tool)) === true;
 
   const announceValidatorFailure = (batch: BatchCore, tool: AnyTool, detail: string): void => {
     const toolKey = toolRefusalKey(tool);
