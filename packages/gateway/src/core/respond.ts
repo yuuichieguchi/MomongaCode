@@ -29,6 +29,7 @@ import { baseResource } from './resource.ts';
 import { UpstreamFailure, emptyStreamFailure, failureFrom, runWithRetry } from './retry.ts';
 import type { RetryOutcome } from './retry.ts';
 import type { Release } from './admission.ts';
+import { adapterContextOf } from './adapter-context.ts';
 import type { TargetRuntime } from './router.ts';
 import type { RunControl } from './run.ts';
 import type { Services } from './services.ts';
@@ -140,11 +141,7 @@ const openAttempt = async (
     request: { input: resolved.forAdapter, instructions: job.body.instructions, tools: job.body.tools },
   });
   try {
-    const stream = target.adapter.create(adapterRequestFor(job, resolved, target), {
-      signal,
-      target: { name: target.name, model: target.model },
-      attempt: attemptNumber,
-    });
+    const stream = target.adapter.create(adapterRequestFor(job, resolved, target), adapterContextOf(services, target, signal, attemptNumber));
     const iterator = stream[Symbol.asyncIterator]();
     const first = await iterator.next();
     if (first.done === true) throw emptyStreamFailure();

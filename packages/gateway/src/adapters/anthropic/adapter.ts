@@ -1,16 +1,6 @@
 import { decodeSse } from '@momonga/foundation';
 import { EXACT_ERROR_SHAPE, countReplyOf, summaryTokenCapFor } from '@momonga/protocol';
-import type {
-  AdapterCompactRequest,
-  AdapterCompactResult,
-  AdapterContext,
-  AdapterCountTokensResult,
-  AdapterInputItem,
-  AdapterRequest,
-  AdapterTarget,
-  CountTokensRequest,
-  StreamEvent,
-} from '@momonga/protocol';
+import type { AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterCountTokensResult, AdapterInputItem, AdapterRequest, AdapterTarget, CountTokensRequest, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
 import { normalizeInput } from '../../core/input.ts';
 import { boundedSseBytes, readTextLimited } from '../shared/body-reading.ts';
@@ -100,7 +90,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
   async function* stream(request: AdapterRequest, ctx: AdapterContext, cache: CachePlan | undefined): AsyncGenerator<StreamEvent> {
     if (closed) throw new Error('the anthropic adapter is closed');
     const capabilities = await options.capabilities(ctx.target);
-    const base = buildMessagesBody(request, capabilities.maxOutputTokens, { cache });
+    const base = buildMessagesBody(request, capabilities.maxOutputTokens, { cache }, ctx.reasoningOrigin);
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     try {
@@ -173,13 +163,16 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
 
   const countTokens = (request: CountTokensRequest, ctx: AdapterContext): Promise<AdapterCountTokensResult> =>
     postCount(
-      buildCountTokensBody({
-        model: request.model,
-        input: asAdapterInput(request),
-        ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
-        ...(request.tools === undefined ? {} : { tools: request.tools }),
-        ...(request.tool_choice === undefined ? {} : { tool_choice: request.tool_choice }),
-      }),
+      buildCountTokensBody(
+        {
+          model: request.model,
+          input: asAdapterInput(request),
+          ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
+          ...(request.tools === undefined ? {} : { tools: request.tools }),
+          ...(request.tool_choice === undefined ? {} : { tool_choice: request.tool_choice }),
+        },
+        ctx.reasoningOrigin,
+      ),
       ctx,
     );
 
@@ -200,14 +193,14 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
   const compact = async (request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult> => {
     const capabilities = await options.capabilities(ctx.target);
     const cap = request.momonga?.max_summary_tokens ?? summaryTokenCapFor(capabilities);
-    const summaryRequest = summaryRequestOf(request, cap);
+    const summaryRequest = summaryRequestOf(request, cap, ctx.reasoningOrigin);
     for await (const event of stream(summaryRequest, ctx, undefined)) {
       const collected = summaryOfTerminal(event, cap);
       if (collected === undefined) continue;
       const usage =
         collected.usage ??
         estimatedUsage(
-          wireTokensOf(buildMessagesBody(summaryRequest, cap, { cache: undefined }), capabilities.imageTokens),
+          wireTokensOf(buildMessagesBody(summaryRequest, cap, { cache: undefined }, ctx.reasoningOrigin), capabilities.imageTokens),
           tokensForText(collected.summary),
         );
       return { summary: collected.summary, usage, ...(collected.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: collected.cacheWriteInputTokens }) };
@@ -215,8 +208,8 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
     throw new StreamFailure('upstream_protocol_error', 'model_error', 'the upstream ended without a terminal event');
   };
 
-  const renderCompactWire = (request: AdapterCompactRequest, _target: AdapterTarget, cap: number): Record<string, unknown> => {
-    const { model: _model, stream: _stream, max_tokens: _maxTokens, ...wire } = buildMessagesBody(summaryRequestOf(request, cap), cap, { cache: undefined });
+  const renderCompactWire = (request: AdapterCompactRequest, _target: AdapterTarget, cap: number, origin: ReasoningOrigin): Record<string, unknown> => {
+    const { model: _model, stream: _stream, max_tokens: _maxTokens, ...wire } = buildMessagesBody(summaryRequestOf(request, cap, origin), cap, { cache: undefined }, origin);
     return wire;
   };
 

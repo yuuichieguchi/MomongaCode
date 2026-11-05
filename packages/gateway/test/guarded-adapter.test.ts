@@ -1,3 +1,5 @@
+import { REASONING_ORIGIN_CODEC } from './own-reasoning.ts';
+import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
 import type {
   AdapterCompactRequest,
@@ -17,7 +19,7 @@ import { REDACTED, TEST_API_KEY, expectRedacted } from './credential-support.ts'
 
 const redactor = createRedactor({ credentials: [TEST_API_KEY] });
 const TARGET: AdapterTarget = { name: 'primary', model: 'scripted-primary' };
-const ctx = (): AdapterContext => ({ signal: new AbortController().signal, target: TARGET, attempt: 1 });
+const ctx = (): AdapterContext => ({ signal: new AbortController().signal, target: TARGET, attempt: 1, reasoningOrigin: EVERY_REASONING_IS_OWN });
 const REQUEST: AdapterRequest = { model: 'scripted-primary', input: [] };
 const COMPACT_REQUEST: AdapterCompactRequest = { model: 'scripted-primary', input: [] };
 const ECHO = `Incorrect API key provided: ${TEST_API_KEY}`;
@@ -91,18 +93,18 @@ const expectGuardedError = (error: unknown, message: string): GuardedAdapterErro
 
 describe('guardAdapter optional members (G0)', () => {
   it('leaves every optional member undefined when the inner adapter has none', () => {
-    const guard = guardAdapter(baseAdapter(), redactor);
+    const guard = guardAdapter(baseAdapter(), redactor, REASONING_ORIGIN_CODEC);
     for (const member of OPTIONAL_MEMBERS) expect(guard[member]).toBeUndefined();
   });
 
   it('defines every optional member when the inner adapter has all of them', () => {
-    const guard = guardAdapter(baseAdapter(optionalImplementations(() => undefined)), redactor);
+    const guard = guardAdapter(baseAdapter(optionalImplementations(() => undefined)), redactor, REASONING_ORIGIN_CODEC);
     for (const member of OPTIONAL_MEMBERS) expect(typeof guard[member]).toBe('function');
   });
 
   it.for(OPTIONAL_MEMBERS)('defines only %s when the inner adapter has only that member', (member) => {
     const all = optionalImplementations(() => undefined);
-    const guard = guardAdapter(baseAdapter({ [member]: all[member] }), redactor);
+    const guard = guardAdapter(baseAdapter({ [member]: all[member] }), redactor, REASONING_ORIGIN_CODEC);
     for (const other of OPTIONAL_MEMBERS) {
       if (other === member) expect(typeof guard[other]).toBe('function');
       else expect(guard[other]).toBeUndefined();
@@ -111,7 +113,7 @@ describe('guardAdapter optional members (G0)', () => {
 
   it('passes kind through and delegates close (G5)', async () => {
     let closed = 0;
-    const guard = guardAdapter(baseAdapter({ close: async () => void (closed += 1) }), redactor);
+    const guard = guardAdapter(baseAdapter({ close: async () => void (closed += 1) }), redactor, REASONING_ORIGIN_CODEC);
     expect(guard.kind).toBe('probe-kind');
     await guard.close?.();
     expect(closed).toBe(1);
@@ -138,14 +140,14 @@ describe('guardAdapter this binding', () => {
         return classifiedOf('plain');
       },
     };
-    const guard = guardAdapter(inner, redactor);
+    const guard = guardAdapter(inner, redactor, REASONING_ORIGIN_CODEC);
     await guard.capabilities.call(guard, TARGET);
     for await (const _event of guard.create.call(guard, REQUEST, ctx())) void _event;
     guard.classify.call(guard, new Error('plain'));
     await guard.countTokens?.call(guard, { model: 'fast', input: 'one' }, ctx());
-    guard.renderWire?.call(guard, REQUEST, TARGET);
+    guard.renderWire?.call(guard, REQUEST, TARGET, { reasoningOrigin: EVERY_REASONING_IS_OWN });
     await guard.compact?.call(guard, COMPACT_REQUEST, ctx());
-    guard.renderCompactWire?.call(guard, COMPACT_REQUEST, TARGET, 64);
+    guard.renderCompactWire?.call(guard, COMPACT_REQUEST, TARGET, 64, EVERY_REASONING_IS_OWN);
     await guard.health?.call(guard, TARGET);
     expect([...seen.keys()].sort()).toEqual(
       ['capabilities', 'classify', 'compact', 'countTokens', 'create', 'health', 'renderCompactWire', 'renderWire'].sort(),
@@ -156,7 +158,7 @@ describe('guardAdapter this binding', () => {
 
 describe('guardAdapter classify (G1)', () => {
   it('redacts the message and keeps type, code, param, retryable and retryAfterMs', () => {
-    const guard = guardAdapter(baseAdapter({ classify: () => classifiedOf(ECHO, 'invalid_api_key', 'input[0]') }), redactor);
+    const guard = guardAdapter(baseAdapter({ classify: () => classifiedOf(ECHO, 'invalid_api_key', 'input[0]') }), redactor, REASONING_ORIGIN_CODEC);
     expect(guard.classify(new Error('x'))).toEqual({
       retryable: false,
       retryAfterMs: 1500,
@@ -165,7 +167,7 @@ describe('guardAdapter classify (G1)', () => {
   });
 
   it('caps the classified message at 1024 characters', () => {
-    const guard = guardAdapter(baseAdapter({ classify: () => classifiedOf('z'.repeat(5000)) }), redactor);
+    const guard = guardAdapter(baseAdapter({ classify: () => classifiedOf('z'.repeat(5000)) }), redactor, REASONING_ORIGIN_CODEC);
     expect(guard.classify(new Error('x')).error.message.length).toBeLessThanOrEqual(1024);
   });
 
@@ -181,7 +183,7 @@ describe('guardAdapter classify (G1)', () => {
     { label: 'a null code', code: null, expected: null },
     { label: 'a code equal to the configured key', code: TEST_API_KEY, expected: null },
   ])('maps $label to the code shape check result', ({ code, expected }) => {
-    const guard = guardAdapter(baseAdapter({ classify: () => classifiedOf('plain', code) }), redactor);
+    const guard = guardAdapter(baseAdapter({ classify: () => classifiedOf('plain', code) }), redactor, REASONING_ORIGIN_CODEC);
     expect(guard.classify(new Error('x')).error.code).toBe(expected);
   });
 
@@ -197,7 +199,7 @@ describe('guardAdapter classify (G1)', () => {
     { label: 'a null param', param: null, expected: null },
     { label: 'a param equal to the configured key', param: TEST_API_KEY, expected: null },
   ])('maps $label to the param shape check result', ({ param, expected }) => {
-    const guard = guardAdapter(baseAdapter({ classify: () => classifiedOf('plain', 'invalid_body', param) }), redactor);
+    const guard = guardAdapter(baseAdapter({ classify: () => classifiedOf('plain', 'invalid_body', param) }), redactor, REASONING_ORIGIN_CODEC);
     expect(guard.classify(new Error('x')).error.param).toBe(expected);
   });
 
@@ -210,8 +212,7 @@ describe('guardAdapter classify (G1)', () => {
           return classifiedOf('inner');
         },
       }),
-      redactor,
-    );
+      redactor, REASONING_ORIGIN_CODEC);
     const classified = classifiedOf('already guarded');
     expect(guard.classify(new GuardedAdapterError(classified))).toBe(classified);
     expect(innerCalls).toBe(0);
@@ -236,7 +237,7 @@ describe('guardAdapter create events (G2)', () => {
     const inner = baseAdapter({
       create: () => eventsOf([failedEvent({ code: 'bad code', type: 'server_error', message: ECHO, extra: TEST_API_KEY, param: 'p'.repeat(200) })]),
     });
-    const [event] = await collect(guardAdapter(inner, redactor).create(REQUEST, ctx()));
+    const [event] = await collect(guardAdapter(inner, redactor, REASONING_ORIGIN_CODEC).create(REQUEST, ctx()));
     const error = (event as { response: { error: unknown } }).response.error;
     expect(error).toEqual({ code: null, type: 'server_error', message: REDACTED_ECHO, param: null });
   });
@@ -245,7 +246,7 @@ describe('guardAdapter create events (G2)', () => {
     const inner = baseAdapter({
       create: () => eventsOf([failedEvent({ code: 'context_length_exceeded', type: 'invalid_request', message: 'too long', param: 'input[0].encrypted_content' })]),
     });
-    const [event] = await collect(guardAdapter(inner, redactor).create(REQUEST, ctx()));
+    const [event] = await collect(guardAdapter(inner, redactor, REASONING_ORIGIN_CODEC).create(REQUEST, ctx()));
     expect((event as { response: { error: unknown } }).response.error).toEqual({
       code: 'context_length_exceeded',
       type: 'invalid_request',
@@ -265,7 +266,7 @@ describe('guardAdapter create events (G2)', () => {
           },
         ]),
     });
-    const [event] = await collect(guardAdapter(inner, redactor).create(REQUEST, ctx()));
+    const [event] = await collect(guardAdapter(inner, redactor, REASONING_ORIGIN_CODEC).create(REQUEST, ctx()));
     expect(event).toEqual({ type: 'error', sequence_number: 3, error: { message: `boom ${REDACTED}`, type: 'server_error', code: null, param: null } });
   });
 
@@ -277,7 +278,7 @@ describe('guardAdapter create events (G2)', () => {
           failedEvent({ code: TEST_API_KEY, type: 'server_error', message: 'failed', param: TEST_API_KEY }),
         ]),
     });
-    const [errorEvent, failed] = await collect(guardAdapter(inner, redactor).create(REQUEST, ctx()));
+    const [errorEvent, failed] = await collect(guardAdapter(inner, redactor, REASONING_ORIGIN_CODEC).create(REQUEST, ctx()));
     expect((errorEvent as { error: unknown }).error).toEqual({ message: 'hiccup', type: 'server_error', code: null, param: null });
     expect((failed as { response: { error: unknown } }).response.error).toEqual({ code: null, type: 'server_error', message: 'failed', param: null });
   });
@@ -291,7 +292,7 @@ describe('guardAdapter create events (G2)', () => {
       content_index: 0,
       delta: `model text ${TEST_API_KEY}`,
     };
-    const events = await collect(guardAdapter(baseAdapter({ create: () => eventsOf([delta]) }), redactor).create(REQUEST, ctx()));
+    const events = await collect(guardAdapter(baseAdapter({ create: () => eventsOf([delta]) }), redactor, REASONING_ORIGIN_CODEC).create(REQUEST, ctx()));
     expect(events).toEqual([delta]);
   });
 });
@@ -317,7 +318,7 @@ const failingIterable = (failing: IteratorFailure): AsyncIterable<StreamEvent> =
 
 describe('guardAdapter iterator wrapping', () => {
   it.for(['next', 'return', 'throw'] as const)('converts an error thrown by %s of the inner iterator into a redacted GuardedAdapterError', async (failing) => {
-    const guard = guardAdapter(baseAdapter({ create: () => failingIterable(failing) }), redactor);
+    const guard = guardAdapter(baseAdapter({ create: () => failingIterable(failing) }), redactor, REASONING_ORIGIN_CODEC);
     const iterator = guard.create(REQUEST, ctx())[Symbol.asyncIterator]();
     const error = await rejectionOf(async () => {
       if (failing === 'next') await iterator.next();
@@ -357,13 +358,13 @@ describe('guardAdapter thrown errors (G3)', () => {
     { name: 'create', call: (guard) => collect(guard.create(REQUEST, ctx())) },
     { name: 'countTokens', call: (guard) => guard.countTokens?.({ model: 'fast', input: 'one' }, ctx()) },
     { name: 'compact', call: (guard) => guard.compact?.(COMPACT_REQUEST, ctx()) },
-    { name: 'renderWire', call: (guard) => guard.renderWire?.(REQUEST, TARGET) },
-    { name: 'renderCompactWire', call: (guard) => guard.renderCompactWire?.(COMPACT_REQUEST, TARGET, 64) },
+    { name: 'renderWire', call: (guard) => guard.renderWire?.(REQUEST, TARGET, { reasoningOrigin: EVERY_REASONING_IS_OWN }) },
+    { name: 'renderCompactWire', call: (guard) => guard.renderCompactWire?.(COMPACT_REQUEST, TARGET, 64, EVERY_REASONING_IS_OWN) },
   ];
 
   it.for(callers)('$name turns an unknown error into a redacted GuardedAdapterError with no cause', async ({ call }) => {
     const original = new Error(`boom ${TEST_API_KEY}`, { cause: new Error(TEST_API_KEY) });
-    const error = await rejectionOf(() => call(guardAdapter(throwing(original), redactor)));
+    const error = await rejectionOf(() => call(guardAdapter(throwing(original), redactor, REASONING_ORIGIN_CODEC)));
     const guarded = expectGuardedError(error, `boom ${REDACTED}`);
     expect(guarded.classified).toEqual({ retryable: false, retryAfterMs: 1500, error: { type: 'invalid_request', code: 'adapter_error', message: `boom ${REDACTED}`, param: null } });
   });
@@ -377,7 +378,7 @@ describe('guardAdapter thrown errors (G3)', () => {
       headers: { 'retry-after': '2' },
       message: `bad body ${TEST_API_KEY}`,
     });
-    const error = await rejectionOf(() => call(guardAdapter(throwing(original), redactor)));
+    const error = await rejectionOf(() => call(guardAdapter(throwing(original), redactor, REASONING_ORIGIN_CODEC)));
     expect(error).toBeInstanceOf(GatewayError);
     expect(error).not.toBe(original);
     const rebuilt = error as GatewayError;
@@ -394,13 +395,13 @@ describe('guardAdapter thrown errors (G3)', () => {
     { label: 'a plain invalid_body error', make: () => new GatewayError({ status: 400, type: 'invalid_request', code: 'invalid_body', param: 'input[0]', message: 'bad body' }) },
   ])('returns $label unchanged as the same instance', async ({ make }) => {
     const original = make();
-    const error = await rejectionOf(() => guardAdapter(throwing(original), redactor).capabilities(TARGET));
+    const error = await rejectionOf(() => guardAdapter(throwing(original), redactor, REASONING_ORIGIN_CODEC).capabilities(TARGET));
     expect(error).toBe(original);
   });
 
   it('nulls a GatewayError param of 200 characters', async () => {
     const original = new GatewayError({ status: 400, type: 'invalid_request', code: 'invalid_body', param: 'p'.repeat(200), message: 'bad body' });
-    const error = (await rejectionOf(() => guardAdapter(throwing(original), redactor).capabilities(TARGET))) as GatewayError;
+    const error = (await rejectionOf(() => guardAdapter(throwing(original), redactor, REASONING_ORIGIN_CODEC).capabilities(TARGET))) as GatewayError;
     expect(error).toBeInstanceOf(GatewayError);
     expect(error.status).toBe(400);
     expect(error.body).toEqual({ type: 'invalid_request', code: 'invalid_body', param: null, message: 'bad body' });
@@ -408,7 +409,7 @@ describe('guardAdapter thrown errors (G3)', () => {
 
   it('nulls a GatewayError code and param equal to the configured key', async () => {
     const original = new GatewayError({ status: 400, type: 'invalid_request', code: TEST_API_KEY, param: TEST_API_KEY, message: 'bad body' });
-    const error = (await rejectionOf(() => guardAdapter(throwing(original), redactor).capabilities(TARGET))) as GatewayError;
+    const error = (await rejectionOf(() => guardAdapter(throwing(original), redactor, REASONING_ORIGIN_CODEC).capabilities(TARGET))) as GatewayError;
     expect(error).toBeInstanceOf(GatewayError);
     expect(error.status).toBe(400);
     expect(error.body).toEqual({ type: 'invalid_request', code: null, param: null, message: 'bad body' });
@@ -416,14 +417,14 @@ describe('guardAdapter thrown errors (G3)', () => {
 
   it('nulls a GatewayError code that fails the shape check', async () => {
     const original = new GatewayError({ status: 400, type: 'invalid_request', code: 'bad code', param: null, message: 'bad body' });
-    const error = (await rejectionOf(() => guardAdapter(throwing(original), redactor).capabilities(TARGET))) as GatewayError;
+    const error = (await rejectionOf(() => guardAdapter(throwing(original), redactor, REASONING_ORIGIN_CODEC).capabilities(TARGET))) as GatewayError;
     expect(error).toBeInstanceOf(GatewayError);
     expect(error.body.code).toBeNull();
   });
 
   it('rethrows a ClientDisconnectedError unchanged', async () => {
     const original = new ClientDisconnectedError();
-    const error = await rejectionOf(() => collect(guardAdapter(throwing(original), redactor).create(REQUEST, ctx())));
+    const error = await rejectionOf(() => collect(guardAdapter(throwing(original), redactor, REASONING_ORIGIN_CODEC).create(REQUEST, ctx())));
     expect(error).toBe(original);
   });
 });
@@ -432,8 +433,7 @@ describe('guardAdapter health (G4)', () => {
   it('redacts detail and remediation', async () => {
     const guard = guardAdapter(
       baseAdapter({ health: async () => ({ ok: false, reason: 'precondition_failed', detail: `license ${TEST_API_KEY}`, remediation: `run ${TEST_API_KEY}` }) }),
-      redactor,
-    );
+      redactor, REASONING_ORIGIN_CODEC);
     expect(await guard.health?.(TARGET)).toEqual({ ok: false, reason: 'precondition_failed', detail: `license ${REDACTED}`, remediation: `run ${REDACTED}` });
   });
 
@@ -444,13 +444,12 @@ describe('guardAdapter health (G4)', () => {
           throw new Error(`probe ${TEST_API_KEY}`);
         },
       }),
-      redactor,
-    );
+      redactor, REASONING_ORIGIN_CODEC);
     expect(await guard.health?.(TARGET)).toEqual({ ok: false, reason: 'health_check_failed', detail: `probe ${REDACTED}` });
   });
 
   it('passes a healthy result through', async () => {
-    const guard = guardAdapter(baseAdapter({ health: async () => ({ ok: true }) }), redactor);
+    const guard = guardAdapter(baseAdapter({ health: async () => ({ ok: true }) }), redactor, REASONING_ORIGIN_CODEC);
     expect(await guard.health?.(TARGET)).toEqual({ ok: true });
   });
 });

@@ -1,3 +1,4 @@
+import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -9,7 +10,7 @@ import { createScriptedAdapter, textResponseEvents } from '@momonga/testkit';
 import { makeDir, userInput } from './gateway-helpers.ts';
 
 const target = { name: 'primary', model: 'scripted-primary' };
-const ctx = () => ({ signal: new AbortController().signal, target, attempt: 1 });
+const ctx = () => ({ signal: new AbortController().signal, target, attempt: 1, reasoningOrigin: EVERY_REASONING_IS_OWN });
 const requestA: AdapterRequest = { model: 'scripted-primary', input: userInput('first') };
 const requestB: AdapterRequest = { model: 'scripted-primary', input: userInput('second') };
 const eventsA = textResponseEvents({ model: 'scripted-primary', chunks: ['alpha'] });

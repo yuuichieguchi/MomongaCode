@@ -1,5 +1,5 @@
 import { canonicalJson } from '@momonga/foundation';
-import type { AdapterRequest, FunctionTool } from '@momonga/protocol';
+import type { AdapterRequest, FunctionTool, ReasoningOrigin } from '@momonga/protocol';
 import { buildToolsEnvelope } from '../../probe/envelope.ts';
 import type { KeywordSupport } from '../../probe/envelope.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
@@ -47,7 +47,7 @@ const pinnedToolOf = (tools: readonly FunctionTool[], name: string, support: Key
   return tool;
 };
 
-export const buildConstrainedBody = (request: AdapterRequest, support: KeywordSupport): ConstrainedBody => {
+export const buildConstrainedBody = (request: AdapterRequest, support: KeywordSupport, origin: ReasoningOrigin): ConstrainedBody => {
   const tools = request.tools ?? [];
   const choice = request.tool_choice;
   const envelopeActive = tools.length > 0 && choice !== 'none';
@@ -58,7 +58,7 @@ export const buildConstrainedBody = (request: AdapterRequest, support: KeywordSu
   if (envelopeActive) system.push(PROTOCOL_PREAMBLE, toolListing(tools));
   const messages: ChatMessage[] = [];
   if (system.length > 0) messages.push({ role: 'system', content: system.join(SYSTEM_PART_SEPARATOR) });
-  messages.push(...plainHistoryOf(request.input, { envelopeReplies: envelopeActive }));
+  messages.push(...plainHistoryOf(request.input, { envelopeReplies: envelopeActive, origin: origin }));
   const body: ChatRequestBody = {
     model: request.model,
     messages,

@@ -1,3 +1,4 @@
+import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
 import type { AdapterCompactRequest, Capabilities, ReasoningCapability } from '@momonga/protocol';
 import { CC_CAPABILITIES, TARGET, collect, lastCompletionBody, makeAdapter, startFake, userText } from './cc-support.ts';
@@ -60,7 +61,7 @@ describe('chat-completions reasoning control', () => {
 });
 
 const compactRequest: AdapterCompactRequest = { model: 'system', input: [userText('a long conversation')], momonga: { max_summary_tokens: 64 } };
-const context = { signal: new AbortController().signal, target: TARGET, attempt: 1 };
+const context = { signal: new AbortController().signal, target: TARGET, attempt: 1, reasoningOrigin: EVERY_REASONING_IS_OWN };
 
 describe('chat-completions compaction summary and reasoning', () => {
   it('asks for the lowest reasoning effort the target accepts and keeps the summary cap as the visible limit', async () => {

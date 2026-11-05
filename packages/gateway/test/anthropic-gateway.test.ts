@@ -84,7 +84,7 @@ describe('anthropic adapter through the gateway: text', () => {
     expect(textOf(terminal.response)).toBe('x');
   });
 
-  it('turns a thinking block into a reasoning item before the text, keeping its signature', async () => {
+  it('turns a thinking block into a reasoning item before the text and carries its signature only inside the signed envelope', async () => {
     const gateway = await startAnthropicGateway({
       script: [
         anthropicStream([
@@ -96,6 +96,7 @@ describe('anthropic adapter through the gateway: text', () => {
           ...anthropicTextBlock(1, ['answer']),
           ...anthropicMessageEnd('end_turn'),
         ]),
+        anthropicTextReply(['again']),
       ],
     });
     const frames = await streamResponse(gateway);
@@ -103,7 +104,12 @@ describe('anthropic adapter through the gateway: text', () => {
     expect(terminal.response.output.map((item: any) => item.type)).toEqual(['reasoning', 'message']);
     expect(textOf(terminal.response)).toBe('answer');
     expect(frames.filter((frame) => frame.data.type === 'response.reasoning.delta').map((frame) => frame.data.delta).join('')).toBe('hmm');
-    expect(JSON.stringify(terminal.response.output[0])).toContain('"sig"');
+    expect(terminal.response.output[0]).not.toHaveProperty('signature');
+    expect(JSON.stringify(terminal.response.output[0])).not.toContain('"sig"');
+    await streamResponse(gateway, { input: [...userInput('hello'), ...terminal.response.output, ...userInput('again')] });
+    const sent = gateway.fake.requests.at(-1)?.body as { messages: Array<{ content: unknown }> };
+    const thinking = sent.messages.flatMap((message) => (Array.isArray(message.content) ? message.content : [])).filter((block: any) => block.type === 'thinking');
+    expect(thinking).toEqual([{ type: 'thinking', thinking: 'hmm', signature: 'sig' }]);
   });
 });
 

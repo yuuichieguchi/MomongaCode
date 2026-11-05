@@ -1,3 +1,4 @@
+import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -232,7 +233,7 @@ describe('closed adapter', () => {
     const iterator = adapter
       .create(
         { model: 'm', input: [{ type: 'message', role: 'user', content: 'x' }] },
-        { signal: new AbortController().signal, target: TARGET, attempt: 1 },
+        { signal: new AbortController().signal, target: TARGET, attempt: 1, reasoningOrigin: EVERY_REASONING_IS_OWN },
       )
       [Symbol.asyncIterator]();
     await expect(iterator.next()).rejects.toThrow(/closed/);
