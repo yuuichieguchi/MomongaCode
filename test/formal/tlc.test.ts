@@ -41,7 +41,8 @@ const holdsEntry: ManifestEntry = {
   tier: 'every-run',
   distinctStates: 3,
   measuredSeconds: 1,
-  budgetSeconds: 2,
+  measuredCpuSeconds: 1,
+  budgetCpuSeconds: 5,
 };
 
 const invariantEntry: ManifestEntry = {
@@ -75,7 +76,7 @@ const actionPropertyViolationOutput = (property: string): string =>
 
 const temporalViolationOutput =['TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)', 'Error: Temporal properties were violated.', 'Error: The following behavior constitutes a counter-example:'].join('\n');
 
-const runOf = (exitCode: number, stdout: string, stderr = ''): TlcRun => ({ pid: 4242, exitCode, signal: null, killedAtBudget: false, stdout, stderr });
+const runOf = (exitCode: number, stdout: string, stderr = ''): TlcRun => ({ pid: 4242, exitCode, signal: null, killedAtCpuBudget: false, stdout, stderr });
 
 const writeFile = (file: string, text: string): void => {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -91,6 +92,7 @@ const cfgFor = (invariant: string): string => ['SPECIFICATION Spec', '', 'INVARI
 const discoveryManifest = (configs: readonly string[]): Manifest => ({
   format: MANIFEST_FORMAT,
   unitSuiteSeconds: 100,
+  startupCpuSeconds: 3,
   entries: configs.map((config) => ({ ...holdsEntry, config })),
 });
 
@@ -187,10 +189,9 @@ describe('the manifest of specs/tla', () => {
     expect(manifestOrThrow().entries.find((entry) => entry.config === 'RunRecovery.lockOnly')?.distinctStates).toBe(1065330);
   });
 
-  it('derives every budget as twice the measured seconds, rounded up', () => {
+  it('records the measured wall seconds of every entry as a positive number', () => {
     for (const entry of manifestOrThrow().entries) {
       expect(entry.measuredSeconds, entry.config).toBeGreaterThan(0);
-      expect(entry.budgetSeconds, entry.config).toBe(Math.ceil(2 * entry.measuredSeconds));
     }
   });
 
@@ -319,7 +320,7 @@ describe('the verdict on one TLC run', () => {
   });
 
   it('fails a run killed at its budget', () => {
-    const killed: TlcRun = { ...runOf(0, ''), exitCode: null, signal: 'SIGKILL', killedAtBudget: true };
+    const killed: TlcRun = { ...runOf(0, ''), exitCode: null, signal: 'SIGKILL', killedAtCpuBudget: true };
     expect(verdictProblems(holdsEntry, killed)).not.toEqual([]);
   });
 
@@ -352,7 +353,7 @@ describe('running tlc.sh under the harness', () => {
     const script = path.join(root, 'echo-tlc.sh');
     writeFile(script, ['#!/bin/sh', 'echo "ARGS $*"', 'echo "METADIR $TLC_METADIR"', 'test -d "$TLC_METADIR" && echo "METADIR_EXISTS"', 'exit 0', ''].join('\n'));
     fs.chmodSync(script, 0o755);
-    const run = await runTlc({ script, config: 'RunRecovery.liveNone', args: LIVENESS_ARGS, budgetSeconds: 30 });
+    const run = await runTlc({ script, config: 'RunRecovery.liveNone', args: LIVENESS_ARGS, budgetCpuSeconds: 30 });
     expect(run.exitCode).toBe(0);
     const argsLine = run.stdout.split('\n').find((line) => line.startsWith('ARGS ')) ?? '';
     const argv = argsLine.slice('ARGS '.length).split(' ');
@@ -371,7 +372,7 @@ describe('running tlc.sh under the harness', () => {
     'fails a missing jar with the fetch command, never a skip',
     async () => {
       const script = sandboxWithScript(root, { 'Tiny.tla': tinySpec, 'Tiny.cfg': cfgFor('Small') }, false);
-      const run = await runTlc({ script, config: 'Tiny', args: [], budgetSeconds: 30 });
+      const run = await runTlc({ script, config: 'Tiny', args: [], budgetCpuSeconds: 30 });
       expect(run.exitCode).toBe(3);
       const problems = verdictProblems(holdsEntry, run);
       expect(problems).not.toEqual([]);
@@ -385,7 +386,7 @@ describe('running tlc.sh under the harness', () => {
     'fails a missing java with the requirement and the install hints, never a skip',
     async () => {
       const script = sandboxWithScript(root, { 'Tiny.tla': tinySpec, 'Tiny.cfg': cfgFor('Small') }, true);
-      const run = await runTlc({ script, config: 'Tiny', args: [], budgetSeconds: 30, env: { PATH: pathWithoutJava(root) } });
+      const run = await runTlc({ script, config: 'Tiny', args: [], budgetCpuSeconds: 30, env: { PATH: pathWithoutJava(root) } });
       expect(run.exitCode).toBe(5);
       const problems = verdictProblems(holdsEntry, run).join('\n');
       expect(problems).toContain('java.specification.version');
@@ -399,7 +400,7 @@ describe('running tlc.sh under the harness', () => {
     'fails a java older than 1.8 with the requirement and the install hints',
     async () => {
       const script = sandboxWithScript(root, { 'Tiny.tla': tinySpec, 'Tiny.cfg': cfgFor('Small') }, true);
-      const run = await runTlc({ script, config: 'Tiny', args: [], budgetSeconds: 30, env: { PATH: pathWithOldJava(root) } });
+      const run = await runTlc({ script, config: 'Tiny', args: [], budgetCpuSeconds: 30, env: { PATH: pathWithOldJava(root) } });
       expect(run.exitCode).toBe(5);
       const problems = verdictProblems(holdsEntry, run).join('\n');
       expect(problems).toContain('1.8');
@@ -409,19 +410,19 @@ describe('running tlc.sh under the harness', () => {
   );
 
   it(
-    'kills the script and its JVM as one process group at the budget and leaves no JVM',
+    'kills the script and its JVM as one process group at the CPU budget and leaves no JVM',
     async () => {
-      const budgetSeconds = 8;
+      const budgetCpuSeconds = 8;
       const script = sandboxWithScript(root, { 'Endless.tla': endlessSpec, 'Endless.cfg': cfgFor('Fine') }, true);
       const startedAt = Date.now();
-      const run = await runTlc({ script, config: 'Endless', args: [], budgetSeconds });
-      expect(Date.now() - startedAt).toBeLessThan(budgetSeconds * 1000 + REAP_SLACK_MS);
-      expect(run.killedAtBudget).toBe(true);
+      const run = await runTlc({ script, config: 'Endless', args: [], budgetCpuSeconds });
+      expect(Date.now() - startedAt).toBeLessThan(budgetCpuSeconds * 1000 + REAP_SLACK_MS);
+      expect(run.killedAtCpuBudget).toBe(true);
       expect(run.signal).toBe('SIGKILL');
       expect(run.stdout).toContain('TLC2 Version');
       expect(await groupGoneWithin(run.pid, REAP_SLACK_MS)).toEqual([]);
       expect(tlcMetadirsLeft()).toEqual([]);
-      expect(verdictProblems({ ...holdsEntry, config: 'Endless', budgetSeconds }, run)).not.toEqual([]);
+      expect(verdictProblems({ ...holdsEntry, config: 'Endless', budgetCpuSeconds }, run)).not.toEqual([]);
     },
     8000 + 3 * REAP_SLACK_MS,
   );
@@ -508,11 +509,11 @@ describe(`TLC over every ${selectedTier} configuration in the manifest`, () => {
     it(
       `${entry.config} ${entry.expect === 'holds' ? 'holds' : `violates ${entry.expect.violates}`}`,
       async () => {
-        const run = await runTlc({ script: tlcScript, config: entry.config, args: entry.args, budgetSeconds: entry.budgetSeconds });
+        const run = await runTlc({ script: tlcScript, config: entry.config, args: entry.args, budgetCpuSeconds: entry.budgetCpuSeconds });
         expect(verdictProblems(entry, run)).toEqual([]);
         expect(await groupGoneWithin(run.pid, REAP_SLACK_MS)).toEqual([]);
       },
-      entry.budgetSeconds * 1000 + REAP_SLACK_MS,
+      entry.budgetCpuSeconds * TLC_WORKERS * 1000,
     );
   }
 });
