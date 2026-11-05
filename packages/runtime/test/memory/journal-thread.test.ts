@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 import type { TestContext } from 'vitest';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { openDatabase } from '@momonga/foundation';
 import { createFakeClock, createFakeTimers, withTempDir } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
@@ -11,6 +11,10 @@ import type { JournalThreadClient, JournalThreadOptions } from '../../src/memory
 import { JOURNAL_THREAD_CODE } from '../../src/memory/journal-thread-code.generated.ts';
 
 const runningWorkerCount = (): number => (process.report.getReport() as unknown as { workers: unknown[] }).workers.length;
+
+const HANG_GUARD_MS = 60_000;
+
+vi.setConfig({ testTimeout: HANG_GUARD_MS });
 
 const GENEROUS_SILENCE_MS = 600_000;
 const SILENCE_MS = 5_000;

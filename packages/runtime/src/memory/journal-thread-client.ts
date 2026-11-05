@@ -54,7 +54,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 
 export const startJournalThread = async (options: JournalThreadOptions): Promise<JournalThreadClient> => {
   const { databasePath, identity, silenceLimitMs, code = JOURNAL_THREAD_CODE, timers = realTimers } = options;
-  const terminations = new Set<Promise<number>>();
+  const terminations = new Set<Promise<void>>();
+  let terminationFailure: { readonly error: unknown } | null = null;
   let current: Live | null = null;
   let nextId = 1;
   let closePromise: Promise<void> | null = null;
@@ -66,7 +67,12 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
   };
 
   const terminate = (live: Live): void => {
-    const termination: Promise<number> = live.worker.terminate().finally(() => terminations.delete(termination));
+    const termination: Promise<void> = live.worker.terminate().then(
+      () => undefined,
+      (error: unknown) => {
+        terminationFailure ??= { error };
+      },
+    ).finally(() => terminations.delete(termination));
     terminations.add(termination);
   };
 
@@ -220,6 +226,7 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
     closePromise ??= (async () => {
       if (current !== null) fail(current, new JournalThreadError('journal thread client was closed'));
       await Promise.all([...terminations]);
+      if (terminationFailure !== null) throw terminationFailure.error;
     })();
     return closePromise;
   };

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { build } from 'esbuild';
+import type { Plugin } from 'esbuild';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { REPO_PATTERN, RELEASE_PUBLIC_KEY_PATTERN, TEAM_ID_PATTERN } from '../packages/cli/src/update/source.ts';
@@ -38,6 +39,17 @@ export const updateSourceDefines = ({ releaseRepo, teamId, releasePublicKey }: U
   };
 };
 
+const bundlePlugins: Plugin[] = [
+  {
+    name: 'ata-validator-without-native-and-code-from-strings',
+    setup: (build) => {
+      const inAta = (importer: string): boolean => importer.includes('/node_modules/ata-validator/');
+      build.onResolve({ filter: /(^|\/)native-load(\.js)?$/ }, (args) => (inAta(args.importer) ? { path: `${repoRoot}scripts/ata-no-native.ts` } : undefined));
+      build.onResolve({ filter: /(^|\/)compile-fn(\.js)?$/ }, (args) => (inAta(args.importer) ? { path: `${repoRoot}scripts/ata-no-code-from-strings.ts` } : undefined));
+    },
+  },
+];
+
 export const bundleJournalThread = async (): Promise<string> => {
   const result = await build({
     entryPoints: [journalThreadEntry],
@@ -49,6 +61,7 @@ export const bundleJournalThread = async (): Promise<string> => {
     target: 'node24',
     bundle: true,
     legalComments: 'none',
+    plugins: bundlePlugins,
     logLevel: 'error',
   });
   const [output, ...rest] = result.outputFiles;
@@ -84,18 +97,11 @@ export const bundle = async ({ entry, outfile, releaseRepo, teamId, releasePubli
     bundle: true,
     alias: { 'react-devtools-core': `${repoRoot}scripts/empty-module.ts` },
     plugins: [
+      ...bundlePlugins,
       {
         name: 'journal-thread-generated-module',
         setup: (build) => {
           build.onResolve({ filter: /(^|\/)journal-thread-code\.generated(\.ts)?$/ }, () => ({ path: generatedModule }));
-        },
-      },
-      {
-        name: 'ata-validator-without-native-and-code-from-strings',
-        setup: (build) => {
-          const inAta = (importer: string): boolean => importer.includes('/node_modules/ata-validator/');
-          build.onResolve({ filter: /(^|\/)native-load(\.js)?$/ }, (args) => (inAta(args.importer) ? { path: `${repoRoot}scripts/ata-no-native.ts` } : undefined));
-          build.onResolve({ filter: /(^|\/)compile-fn(\.js)?$/ }, (args) => (inAta(args.importer) ? { path: `${repoRoot}scripts/ata-no-code-from-strings.ts` } : undefined));
         },
       },
     ],

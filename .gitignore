@@ -9,4 +9,4 @@ coverage
 *.tsbuildinfo
 .vitest/
 .cache/
-packages/runtime/src/memory/journal-thread-code.generated.ts
+*.generated.ts
