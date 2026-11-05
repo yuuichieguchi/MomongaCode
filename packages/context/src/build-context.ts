@@ -321,7 +321,6 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
     memoryCount = memoryCandidates.length;
     memoriesDropped(memoryCount, rankedMemories.length);
   } else if (memoryCandidates.length > 0) {
-    const baseTokens = current.counted.inputTokens;
     const withMemories = async (count: number): Promise<{ message: MessageInputItem; evaluation: Evaluation; fitsBudget: boolean }> => {
       const message: MessageInputItem = {
         type: 'message',
@@ -329,6 +328,7 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
         content: renderMemories(memoryCandidates.slice(0, count), memoryCandidates.length - count),
       };
       const evaluation = await evaluate(layersFor(arrivals, message));
+      const baseTokens = (await evaluation.ports.meter.count({ input: [...layersFor(arrivals, undefined), task], tools })).inputTokens;
       const fitsBudget =
         !evaluation.exceeds &&
         !evaluation.leavesNoRoom &&
