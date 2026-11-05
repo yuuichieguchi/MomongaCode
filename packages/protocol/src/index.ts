@@ -368,6 +368,7 @@ export type {
   DecodedCompactionItem,
   LenientItems,
   ProviderAdapter,
+  ReasoningOrigin,
   RenderWireOptions,
 } from './adapter.ts';
 export { ADAPTER_NEUTRAL_ERROR_CODES } from './adapter.ts';

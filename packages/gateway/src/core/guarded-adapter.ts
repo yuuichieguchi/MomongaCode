@@ -1,6 +1,8 @@
 import type { AdapterTarget, ClassifiedError, ErrorBody, HealthResult, ProviderAdapter, StreamEvent } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError } from './errors.ts';
+import { withReasoningOrigin } from './origin-adapter.ts';
 import type { Redactor } from './redaction.ts';
+import type { ReasoningOriginCodec } from './reasoning-origin.ts';
 
 const guardBrand: unique symbol = Symbol('guardedAdapter');
 
@@ -21,7 +23,8 @@ const PARAM_SHAPE = /^[A-Za-z0-9_.[\]:-]{1,128}$/;
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor): GuardedAdapter => {
+export const guardAdapter = (raw: ProviderAdapter, redactor: Redactor, reasoningOrigin?: ReasoningOriginCodec): GuardedAdapter => {
+  const inner = reasoningOrigin === undefined ? raw : withReasoningOrigin(raw, reasoningOrigin);
   const shaped = (value: unknown, shape: RegExp): string | null =>
     typeof value === 'string' && shape.test(value) && redactor.text(value) === value ? value : null;
 

@@ -42,7 +42,7 @@ export const buildNativeBody = (request: AdapterRequest): ChatRequestBody => {
   const tools = request.tools ?? [];
   const system = systemTextOf(request.instructions, request.input);
   if (system.length > 0) messages.push({ role: 'system', content: system.join(SYSTEM_PART_SEPARATOR) });
-  messages.push(...(tools.length === 0 ? plainHistoryOf(request.input, { envelopeReplies: false }) : nativeHistoryOf(request.input)));
+  messages.push(...(tools.length === 0 ? plainHistoryOf(request.input, { envelopeReplies: false, origin: request.reasoningOrigin }) : nativeHistoryOf(request.input, request.reasoningOrigin)));
   return {
     model: request.model,
     messages,

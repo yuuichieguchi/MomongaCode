@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { getRequestListener } from '@hono/node-server';
 import { listenUnix } from '@momonga/foundation';
 import { createCompactionCodec } from '../core/compaction.ts';
+import { createReasoningOriginCodec } from '../core/reasoning-origin.ts';
 import { GatewayError, gatewayClosedError } from '../core/errors.ts';
 import { createResponsesService } from '../core/responses-service.ts';
 import { createRedactor } from '../core/redaction.ts';
@@ -102,7 +103,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       clock,
       timers,
       random: options.random,
-      router: createRouter({ config: options.config, adapters: options.adapters, clock, timers, redactor }),
+      router: createRouter({ config: options.config, adapters: options.adapters, clock, timers, redactor, reasoningOrigin: createReasoningOriginCodec(options.hmacKey) }),
       store,
       codec: createCompactionCodec(options.hmacKey),
       telemetry: options.telemetry,

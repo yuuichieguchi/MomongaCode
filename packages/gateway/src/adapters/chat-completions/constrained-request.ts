@@ -58,7 +58,7 @@ export const buildConstrainedBody = (request: AdapterRequest, support: KeywordSu
   if (envelopeActive) system.push(PROTOCOL_PREAMBLE, toolListing(tools));
   const messages: ChatMessage[] = [];
   if (system.length > 0) messages.push({ role: 'system', content: system.join(SYSTEM_PART_SEPARATOR) });
-  messages.push(...plainHistoryOf(request.input, { envelopeReplies: envelopeActive }));
+  messages.push(...plainHistoryOf(request.input, { envelopeReplies: envelopeActive, origin: request.reasoningOrigin }));
   const body: ChatRequestBody = {
     model: request.model,
     messages,

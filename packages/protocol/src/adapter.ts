@@ -1,6 +1,6 @@
 import type { Capabilities, HealthResult, ReasoningEffort } from './capabilities.ts';
 import type { CountTokensRequest, CountTokensResult } from './gateway-api.ts';
-import type { CompactMomongaExtension, ErrorBody, FunctionTool, InputItem, PromptCacheCounts, StreamEvent, TextField, ToolChoice, Usage } from './open-responses.ts';
+import type { CompactMomongaExtension, ErrorBody, FunctionTool, InputItem, PromptCacheCounts, ReasoningInputItem, StreamEvent, TextField, ToolChoice, Usage } from './open-responses.ts';
 
 export const ADAPTER_NEUTRAL_ERROR_CODES = [
   'guardrail_violation',
@@ -18,6 +18,8 @@ export type DecodedCompactionItem = { type: 'compaction_summary'; summary: strin
 
 export type AdapterInputItem = Exclude<InputItem, { type: 'compaction' }> | DecodedCompactionItem;
 
+export type ReasoningOrigin = { own(item: ReasoningInputItem): ReasoningInputItem | undefined };
+
 export type AdapterRequest = {
   model: string;
   input: AdapterInputItem[];
@@ -32,6 +34,7 @@ export type AdapterRequest = {
   text?: TextField;
   promptCacheKey?: string;
   cacheMarks?: PromptCacheCounts;
+  reasoningOrigin?: ReasoningOrigin;
 };
 
 export type AdapterContext = {
@@ -53,6 +56,7 @@ export type AdapterCompactRequest = {
   input: AdapterInputItem[];
   instructions?: string | null;
   momonga?: CompactMomongaExtension;
+  reasoningOrigin?: ReasoningOrigin;
 };
 
 export type LenientItems = { callNames: Record<string, string>; withTools: boolean };

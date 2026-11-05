@@ -47,7 +47,7 @@ export type OllamaBodyCapabilities = Pick<Capabilities, 'contextWindow' | 'maxOu
 export const buildOllamaChatBody = (request: AdapterRequest, capabilities: OllamaBodyCapabilities, stream: boolean): OllamaChatBody => {
   requireToolChoice(request);
   const system = systemTextOf(request.instructions, request.input);
-  const messages = [...(system.length === 0 ? [] : [{ role: 'system', content: system.join(SYSTEM_PART_SEPARATOR) }]), ...ollamaHistoryOf(request.input)];
+  const messages = [...(system.length === 0 ? [] : [{ role: 'system', content: system.join(SYSTEM_PART_SEPARATOR) }]), ...ollamaHistoryOf(request.input, request.reasoningOrigin)];
   return {
     model: request.model,
     messages,

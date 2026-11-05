@@ -1,9 +1,10 @@
 import { LOWEST_REASONING_EFFORT, SUMMARY_ACCEPT, ceilRatio } from '@momonga/protocol';
-import type { AdapterCompactRequest, AdapterInputItem, AdapterRequest, ContentPart, InputImagePart, ResponseResource, StreamEvent } from '@momonga/protocol';
+import type { AdapterCompactRequest, AdapterInputItem, AdapterRequest, ContentPart, InputImagePart, ReasoningOrigin, ResponseResource, StreamEvent } from '@momonga/protocol';
 import { tokensForText } from '../../core/estimate.ts';
 import { CompactionReplyError, StreamFailure } from './failures.ts';
 import { hasImagePart, isImagePart } from './image-part.ts';
 import { escapeAttribute, neutralizeMarkup, reasoningTextOf, textOfContent } from './input-text.ts';
+import { ownReasoning } from './reasoning-origin.ts';
 
 export const COMPACTION_INSTRUCTIONS_MARKER =
   'You write the handoff note for a coding agent whose earlier conversation is being removed to free space.';
@@ -53,10 +54,12 @@ const piecesOfContent = (content: string | readonly ContentPart[]): Piece[] => {
   return pieces;
 };
 
-const elementOf = (item: AdapterInputItem): Piece[] | undefined => {
+const elementOf = (item: AdapterInputItem, origin: ReasoningOrigin | undefined): Piece[] | undefined => {
   switch (item.type) {
     case 'reasoning': {
-      const text = reasoningTextOf(item);
+      const own = ownReasoning(item, origin);
+      if (own === undefined) return undefined;
+      const text = reasoningTextOf(own);
       return text === '' ? undefined : [`<reasoning>${neutralizeMarkup(text)}</reasoning>`];
     }
     case 'compaction_summary':
@@ -79,9 +82,9 @@ const coalesced = (pieces: readonly Piece[]): Piece[] =>
     return merged;
   }, []);
 
-const transcriptOf = (items: readonly AdapterInputItem[]): string | ContentPart[] => {
+const transcriptOf = (items: readonly AdapterInputItem[], origin: ReasoningOrigin | undefined): string | ContentPart[] => {
   const elements = items.flatMap((item) => {
-    const element = elementOf(item);
+    const element = elementOf(item, origin);
     return element === undefined ? [] : [element];
   });
   const pieces = coalesced(['<transcript>', ...elements.flatMap((element) => ['\n', ...element]), `\n</transcript>\n${TRANSCRIPT_REQUEST}`]);
@@ -99,7 +102,7 @@ export const summaryRequestOf = (request: AdapterCompactRequest, cap: number): A
   return {
     model: request.model,
     instructions,
-    input: [{ type: 'message', role: 'user', content: transcriptOf(request.input) }],
+    input: [{ type: 'message', role: 'user', content: transcriptOf(request.input, request.reasoningOrigin) }],
     max_output_tokens: cap,
     reasoning_effort: LOWEST_REASONING_EFFORT,
   };

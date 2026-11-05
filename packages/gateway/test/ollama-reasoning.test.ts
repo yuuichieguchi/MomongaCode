@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import type { AdapterInputItem } from '@momonga/protocol';
 import { expectSpecValid, ofType, terminalOf } from './cc-support.ts';
 import { QWEN_NATIVE_THINKING, chunkLine, collectOllama, doneLine, fixtureLines, makeOllamaAdapter, startFakeOllama } from './ollama-support.ts';
@@ -44,6 +45,7 @@ describe('ollama thinking (R2b)', () => {
     await collectOllama(adapter, {
       model: 'devstral-small-2',
       tools: [readTool],
+      reasoningOrigin: EVERY_REASONING_IS_OWN,
       input: [user, ...output, { type: 'function_call_output', call_id: CALL.id, output: 'alpha' }],
     });
 

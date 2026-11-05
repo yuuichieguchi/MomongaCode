@@ -76,10 +76,10 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
   const lenientWireOf = (request: AdapterRequest, target: AdapterTarget, lenient: LenientItems): ChatWire => {
     const { callNames, withTools } = lenient;
     if (options.toolCalling(target) === 'constrained') {
-      return { messages: plainHistoryOf(request.input, { envelopeReplies: withTools, callNames }) };
+      return { messages: plainHistoryOf(request.input, { envelopeReplies: withTools, callNames, origin: request.reasoningOrigin }) };
     }
     return {
-      messages: withTools ? nativeHistoryOf(request.input) : plainHistoryOf(request.input, { envelopeReplies: false, callNames }),
+      messages: withTools ? nativeHistoryOf(request.input, request.reasoningOrigin) : plainHistoryOf(request.input, { envelopeReplies: false, callNames, origin: request.reasoningOrigin }),
     };
   };
 

@@ -32,7 +32,12 @@ class ReplayMismatchError extends Error {
   }
 }
 
-const digestOf = (request: AdapterRequest): string => sha256Hex(canonicalJson(request));
+const recordable = (request: AdapterRequest): Omit<AdapterRequest, 'reasoningOrigin'> => {
+  const { reasoningOrigin: _origin, ...data } = request;
+  return data;
+};
+
+const digestOf = (request: AdapterRequest): string => sha256Hex(canonicalJson(recordable(request)));
 
 const parseEntry = (line: string, path: string, lineNumber: number): ReplayEntry => {
   const parsed: unknown = JSON.parse(line);
@@ -70,7 +75,7 @@ const loadEntries = (path: string): ReplayEntry[] => {
     .map((line, index) => parseEntry(line, path, index + 1));
 };
 
-const appendEntry = (path: string, entry: ReplayEntry & { request: AdapterRequest }): void => {
+const appendEntry = (path: string, entry: ReplayEntry & { request: Omit<AdapterRequest, 'reasoningOrigin'> }): void => {
   const descriptor = fs.openSync(path, 'a', RECORD_FILE_MODE);
   try {
     fs.writeSync(descriptor, `${canonicalJson(entry)}\n`);
@@ -93,7 +98,7 @@ export const createReplayAdapter = (options: ReplayAdapterOptions): ProviderAdap
     for await (const event of source.create(request, ctx)) {
       events.push(event);
       if ((TERMINAL_STREAM_EVENT_TYPES as readonly string[]).includes(event.type)) {
-        appendEntry(path, { digest: digestOf(request), request, events });
+        appendEntry(path, { digest: digestOf(request), request: recordable(request), events });
       }
       yield event;
     }

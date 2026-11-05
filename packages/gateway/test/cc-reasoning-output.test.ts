@@ -4,6 +4,7 @@ import type { FakeChatCompletionsServer, FakeStreamChunk } from '@momonga/testki
 import { postJson, readSse, startGateway, userInput } from './gateway-helpers.ts';
 import { collect, expectSpecValid, lastCompletionBody, makeAdapter, ofType, outputTextOf, readFileTool, startFake, terminalOf, userText } from './cc-support.ts';
 import { fixtureText } from './ollama-support.ts';
+import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 
 const REASONING_FIELDS = ['reasoning_content', 'reasoning', 'reasoning_text'] as const;
 
@@ -78,7 +79,7 @@ describe('chat-completions reasoning output (R2b)', () => {
       const { adapter, output } = await firstTurn(fake);
 
       const history = [userText('read a.txt'), ...(output as AdapterInputItem[]), { type: 'function_call_output' as const, call_id: 'call_r1', output: 'alpha' }];
-      await collect(adapter, { model: 'system', input: history, tools: [readFileTool] });
+      await collect(adapter, { model: 'system', input: history, tools: [readFileTool], reasoningOrigin: EVERY_REASONING_IS_OWN });
 
       const messages: any[] = lastCompletionBody(fake).messages;
       const carriers = messages.filter((message) => REASONING_FIELDS.some((name) => name in message));

@@ -1,10 +1,11 @@
 import { canonicalJson } from '@momonga/foundation';
 import { CHAT_REASONING_FIELDS, compactionSummaryMessage } from '@momonga/protocol';
-import type { AdapterInputItem, ChatReasoningField } from '@momonga/protocol';
+import type { AdapterInputItem, ChatReasoningField, ReasoningOrigin } from '@momonga/protocol';
 import { callArgumentsObject, callArgumentsText } from '../shared/call-arguments.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { escapeAttribute, neutralizeMarkup, reasoningTextOf, textOfContent } from '../shared/input-text.ts';
 import type { ReasoningInput } from '../shared/input-text.ts';
+import { ownReasoning } from '../shared/reasoning-origin.ts';
 import { userContentOf } from './user-content.ts';
 import { mergeAdjacentUserMessages } from './merge-user-messages.ts';
 
@@ -29,7 +30,9 @@ type ReasoningCarrier = { field: ChatReasoningField; text: string };
 
 const isReasoningField = (value: string): value is ChatReasoningField => CHAT_REASONING_FIELDS.some((field) => field === value);
 
-const carrierOf = (item: ReasoningInput): ReasoningCarrier | undefined => {
+const carrierOf = (reasoning: ReasoningInput, origin: ReasoningOrigin | undefined): ReasoningCarrier | undefined => {
+  const item = ownReasoning(reasoning, origin);
+  if (item === undefined) return undefined;
   const field = item.reasoning_field;
   if (field === undefined || field === null) return undefined;
   if (!isReasoningField(field)) {
@@ -72,6 +75,7 @@ const createMessageList = () => {
 
 export type PlainHistoryOptions = {
   envelopeReplies: boolean;
+  origin: ReasoningOrigin | undefined;
   callNames?: Readonly<Record<string, string>>;
 };
 
@@ -87,7 +91,7 @@ export const plainHistoryOf = (input: readonly AdapterInputItem[], options: Plai
   for (const item of input) {
     if (item.type === 'reasoning') {
       flushCalls();
-      list.hold(carrierOf(item));
+      list.hold(carrierOf(item, options.origin));
       continue;
     }
     if (item.type === 'function_call') {
@@ -115,7 +119,7 @@ export const plainHistoryOf = (input: readonly AdapterInputItem[], options: Plai
   return mergeAdjacentUserMessages(list.finish());
 };
 
-export const nativeHistoryOf = (input: readonly AdapterInputItem[]): ChatMessage[] => {
+export const nativeHistoryOf = (input: readonly AdapterInputItem[], origin: ReasoningOrigin | undefined): ChatMessage[] => {
   const list = createMessageList();
   let pendingCalls: unknown[] = [];
   const flushCalls = (): void => {
@@ -126,7 +130,7 @@ export const nativeHistoryOf = (input: readonly AdapterInputItem[]): ChatMessage
   for (const item of input) {
     if (item.type === 'reasoning') {
       flushCalls();
-      list.hold(carrierOf(item));
+      list.hold(carrierOf(item, origin));
       continue;
     }
     if (item.type === 'function_call') {

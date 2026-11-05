@@ -1,9 +1,10 @@
 import { compactionSummaryMessage } from '@momonga/protocol';
-import type { AdapterInputItem, AdapterRequest, ContentPart, FunctionTool, PromptCacheCounts, ToolChoice } from '@momonga/protocol';
+import type { AdapterInputItem, AdapterRequest, ContentPart, FunctionTool, PromptCacheCounts, ReasoningOrigin, ToolChoice } from '@momonga/protocol';
 import { callArgumentsObject } from '../shared/call-arguments.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { hasImagePart, imageSourceOf } from '../shared/image-part.ts';
 import { reasoningTextOf, textOfContent } from '../shared/input-text.ts';
+import { ownReasoning } from '../shared/reasoning-origin.ts';
 
 export type CacheControl = { type: 'ephemeral' };
 type Cacheable = { cache_control?: CacheControl };
@@ -76,12 +77,14 @@ const partBlocksOf = (content: string | readonly ContentPart[]): Array<Anthropic
 
 type Converted = { role: AnthropicMessage['role']; blocks: AnthropicBlock[] };
 
-const blocksOf = (item: AdapterInputItem): Converted | undefined => {
+const blocksOf = (item: AdapterInputItem, origin: ReasoningOrigin | undefined): Converted | undefined => {
   switch (item.type) {
-    case 'reasoning':
-      return item.signature === undefined || item.signature === null
+    case 'reasoning': {
+      const own = ownReasoning(item, origin);
+      return own === undefined || own.signature === undefined || own.signature === null
         ? undefined
-        : { role: 'assistant', blocks: [{ type: 'thinking', thinking: reasoningTextOf(item), signature: item.signature }] };
+        : { role: 'assistant', blocks: [{ type: 'thinking', thinking: reasoningTextOf(own), signature: own.signature }] };
+    }
     case 'compaction_summary': {
       const summary = compactionSummaryMessage(item.summary);
       return { role: 'user', blocks: textBlocksOf(textOfContent(summary.content)) };
@@ -118,12 +121,12 @@ const stablePrefixLength = (input: readonly AdapterInputItem[]): number => {
 
 type ConvertedMessages = { messages: AnthropicMessage[]; stablePrefixEnd: AnthropicBlock | undefined; placed: Placed[] };
 
-const convertMessages = (input: readonly AdapterInputItem[]): ConvertedMessages => {
+const convertMessages = (input: readonly AdapterInputItem[], origin: ReasoningOrigin | undefined): ConvertedMessages => {
   const grouped: PlacedMessage[] = [];
   const prefixLength = stablePrefixLength(input);
   let stablePrefixEnd: AnthropicBlock | undefined;
   for (const [index, item] of input.entries()) {
-    const converted = blocksOf(item);
+    const converted = blocksOf(item, origin);
     if (converted === undefined || converted.blocks.length === 0) continue;
     if (index < prefixLength) stablePrefixEnd = converted.blocks.at(-1);
     const placed = converted.blocks.map((block): Placed => ({ block, origin: index }));
@@ -139,7 +142,7 @@ const convertMessages = (input: readonly AdapterInputItem[]): ConvertedMessages 
   };
 };
 
-export const messagesOf = (input: readonly AdapterInputItem[]): AnthropicMessage[] => convertMessages(input).messages;
+export const messagesOf = (input: readonly AdapterInputItem[], origin: ReasoningOrigin | undefined): AnthropicMessage[] => convertMessages(input, origin).messages;
 
 type PlacedSystem = { block: AnthropicTextBlock; origin: number };
 
@@ -209,7 +212,7 @@ const requestParts = (request: AdapterRequest, options: BodyOptions) => {
   const tools = (request.tools ?? []).map(toolOf);
   const placedSystem = systemPlacedOf(request.instructions, request.input);
   const system = placedSystem.map((entry) => entry.block);
-  const converted = convertMessages(request.input);
+  const converted = convertMessages(request.input, request.reasoningOrigin);
   const { cache } = options;
   if (cache?.marks !== undefined) withMarks(placedSystem, converted, { maxBreakpoints: cache.maxBreakpoints, marks: cache.marks });
   else if (cache !== undefined) withBreakpoints(tools, system, converted, cache.maxBreakpoints);

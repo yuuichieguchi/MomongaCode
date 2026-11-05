@@ -3,12 +3,13 @@ import { COMPACTION_INSTRUCTIONS_MARKER } from '@momonga/gateway';
 import type { AdapterCompactRequest, AdapterInputItem } from '@momonga/protocol';
 import { summaryRequestOf } from '../src/adapters/shared/compact.ts';
 import { userText } from './cc-support.ts';
+import { originOf, sealedReasoning } from './own-reasoning.ts';
 import { AGENT_CONTEXT_LABEL, KEEP_CLAUSE, RESTATE_CLAUSE, TRANSCRIPT_TAIL, instructionsFor } from './cc-compact-support.ts';
 
 const conversation: AdapterInputItem[] = [
   userText('Fix the parser bug'),
   { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Reading the file' }] },
-  { type: 'reasoning', summary: [{ type: 'summary_text', text: 'hidden reasoning' }] },
+  sealedReasoning('chat-completions', 'target-model', 'hidden reasoning'),
   { type: 'message', role: 'system', content: 'hidden system text' },
   { type: 'function_call', call_id: 'c1', name: 'Read', arguments: '{"path":"src/parse.ts"}' },
   { type: 'function_call_output', call_id: 'c1', output: 'export const parse = 1;' },
@@ -17,6 +18,7 @@ const conversation: AdapterInputItem[] = [
 const compactRequest = (overrides: Partial<AdapterCompactRequest> = {}): AdapterCompactRequest => ({
   model: 'system',
   input: conversation,
+  reasoningOrigin: originOf('chat-completions', 'target-model'),
   ...overrides,
 });
 
@@ -74,6 +76,17 @@ describe('summaryRequestOf', () => {
     expect(conversation.at(-1)?.type).toBe('function_call_output');
     expect(systemOf(request)).toContain(RESTATE_CLAUSE);
     expect(systemOf(request)).not.toContain(KEEP_CLAUSE);
+  });
+
+  it('keeps the reasoning of the target and leaves out the reasoning of any other origin, as every wire rendering does', () => {
+    const foreign = [
+      { type: 'reasoning' as const, summary: [{ type: 'summary_text' as const, text: 'bare reasoning' }] },
+      sealedReasoning('chat-completions', 'other-model', 'other model reasoning'),
+      sealedReasoning('anthropic', 'target-model', 'other adapter reasoning'),
+    ];
+    const transcript = transcriptOf(summaryRequestOf(compactRequest({ input: [userText('go'), ...foreign, conversation[2] as AdapterInputItem] }), 64));
+    expect(transcript).toContain('<reasoning>hidden reasoning</reasoning>');
+    for (const text of ['bare reasoning', 'other model reasoning', 'other adapter reasoning']) expect(transcript).not.toContain(text);
   });
 
   it('keeps a generic client instructions as a labelled second section after the fixed instructions', () => {
