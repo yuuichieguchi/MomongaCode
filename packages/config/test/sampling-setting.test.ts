@@ -33,12 +33,12 @@ const DECLARATIONS = [
 ];
 
 const MALFORMED: ReadonlyArray<{ label: string; sampling: unknown; fragment: string }> = [
-  { label: 'an unknown acceptance', sampling: { accepts: 'sometimes' }, fragment: 'accepts' },
-  { label: 'without_thinking with no top_p range', sampling: { accepts: 'without_thinking' }, fragment: 'topP' },
-  { label: 'a top_p range above 1', sampling: { accepts: 'without_thinking', topP: { min: 0.95, max: 1.5 } }, fragment: 'topP' },
-  { label: 'a top_p range below 0', sampling: { accepts: 'without_thinking', topP: { min: -0.1, max: 1 } }, fragment: 'topP' },
+  { label: 'an unknown acceptance', sampling: { accepts: 'sometimes' }, fragment: 'sampling' },
+  { label: 'without_thinking with no top_p range', sampling: { accepts: 'without_thinking' }, fragment: 'sampling' },
+  { label: 'a top_p range above 1', sampling: { accepts: 'without_thinking', topP: { min: 0.95, max: 1.5 } }, fragment: 'sampling' },
+  { label: 'a top_p range below 0', sampling: { accepts: 'without_thinking', topP: { min: -0.1, max: 1 } }, fragment: 'sampling' },
   { label: 'a top_p range whose min exceeds its max', sampling: { accepts: 'without_thinking', topP: { min: 0.99, max: 0.95 } }, fragment: 'topP' },
-  { label: 'a top_p range on the free acceptance', sampling: { accepts: 'free', topP: { min: 0.95, max: 1 } }, fragment: 'topP' },
+  { label: 'a top_p range on the free acceptance', sampling: { accepts: 'free', topP: { min: 0.95, max: 1 } }, fragment: 'sampling' },
 ];
 
 describe('declared sampling acceptance on the adapters that render sampling parameters', () => {
