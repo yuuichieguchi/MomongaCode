@@ -72,7 +72,12 @@ const expectServedByOk = (operation: (typeof OPERATIONS)[number], response: { st
 
 const failureOf = (response: { status: number; body: any }) => ({ status: response.status, code: response.body.error?.code, message: response.body.error?.message });
 
-const outcomeOf = (response: { status: number; body: any }) => ({
+const COUNT_PATH = '/v1/momonga/count_tokens';
+
+const referenceOperationFor = (operation: (typeof OPERATIONS)[number]): (typeof OPERATIONS)[number] =>
+  operation.path === COUNT_PATH ? (OPERATIONS.find((candidate) => candidate.name === 'create with tools') as (typeof OPERATIONS)[number]) : operation;
+
+const outcomeOf =(response: { status: number; body: any }) => ({
   ...failureOf(response),
   target: response.body.momonga?.target,
   fallbackFrom: response.body.momonga?.fallbackFrom,
@@ -88,12 +93,14 @@ describe('a candidate whose capabilities cannot be resolved is a failed attempt,
   it.for(OPERATIONS)('[rejecting, ok] with a plain Error: $name ends as the same error thrown inside the attempt does', async (operation) => {
     const reference = await okTarget();
     const referenceGateway = await gatewayOf({ rejecting: await unreachableTarget(FIRST_FAILURE), ok: reference.adapter }, ['rejecting', 'ok']);
-    const expected = outcomeOf(await send(referenceGateway.client, operation));
+    const comparedOn = referenceOperationFor(operation);
+    const summarise = comparedOn === operation ? outcomeOf : failureOf;
+    const expected = summarise(await send(referenceGateway.client, comparedOn));
     const referenceOkCalls = completionBodies(reference.fake).length;
 
     const ok = await okTarget();
     const { client } = await gatewayOf({ rejecting: await rejectingTarget(FIRST_FAILURE), ok: ok.adapter }, ['rejecting', 'ok']);
-    expect(outcomeOf(await send(client, operation))).toEqual(expected);
+    expect(summarise(await send(client, operation))).toEqual(expected);
     expect(completionBodies(ok.fake)).toHaveLength(referenceOkCalls);
   });
 
@@ -133,9 +140,9 @@ describe('a candidate whose capabilities cannot be resolved is a failed attempt,
     expect(String(response.body.error?.message)).not.toContain(SECOND_FAILURE);
   });
 
-  it.for(CREATES)('[rejecting, rejecting] $name fails as two failed attempts do', async (operation) => {
+  it.for([...CREATES, ...OPERATIONS.filter((operation) => operation.path === COUNT_PATH)])('[rejecting, rejecting] $name fails as two failed attempts do', async (operation) => {
     const referenceGateway = await gatewayOf({ first: await unreachableTarget(FIRST_FAILURE), second: await unreachableTarget(SECOND_FAILURE) }, ['first', 'second']);
-    const reference = failureOf(await send(referenceGateway.client, operation));
+    const reference = failureOf(await send(referenceGateway.client, referenceOperationFor(operation)));
     expect(reference.status).not.toBe(200);
 
     const { client } = await gatewayOf({ first: await rejectingTarget(FIRST_FAILURE), second: await rejectingTarget(SECOND_FAILURE) }, ['first', 'second']);
