@@ -80,7 +80,7 @@ describe('parseFieldInput', () => {
 
 describe('validateContent', () => {
   it('validates the whole answer against the requested schema', () => {
-    expect(validateContent(SCHEMA, { name: 'Ada' })).toBeUndefined();
-    expect(validateContent(SCHEMA, { age: 3 })).toContain("must have required property 'name'");
+    expect(validateContent(SCHEMA, { name: 'Ada' })).toEqual({ kind: 'valid' });
+    expect(validateContent(SCHEMA, { age: 3 })).toMatchObject({ kind: 'invalid', message: expect.stringContaining("must have required property 'name'") });
   });
 });

@@ -2,7 +2,8 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import type { ErrorObject, ValidateFunction } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import type { AnyTool } from './types.ts';
-import { compileUntrustedSchema } from './untrusted-schema.ts';
+import { SchemaValidatorFailure, compileUntrustedSchema, untrustedSchemaFailure } from './untrusted-schema.ts';
+import { validateUntrusted } from './validate-untrusted.ts';
 
 const MAX_REPORTED_ERRORS = 20;
 
@@ -11,10 +12,20 @@ addFormats.default(ajv);
 
 const compiled = new WeakMap<Record<string, unknown>, ValidateFunction>();
 
+const assertOutputSchemaUsable = (tool: AnyTool): void => {
+  if (tool.outputSchema === undefined) return;
+  const failure = untrustedSchemaFailure(tool.outputSchema);
+  if (failure !== undefined) throw new SchemaValidatorFailure(failure);
+};
+
 export const compileInputSchema = (tool: AnyTool): ValidateFunction => {
+  if (tool.schemaMode === 'lenient') {
+    assertOutputSchemaUsable(tool);
+    return compileUntrustedSchema(tool.inputSchema);
+  }
   const cached = compiled.get(tool.inputSchema);
   if (cached !== undefined) return cached;
-  const validate = tool.schemaMode === 'lenient' ? compileUntrustedSchema(tool.inputSchema) : ajv.compile(tool.inputSchema);
+  const validate = ajv.compile(tool.inputSchema);
   compiled.set(tool.inputSchema, validate);
   return validate;
 };
@@ -54,7 +65,13 @@ const describeErrors = (toolName: string, errors: readonly ErrorObject[]): strin
   return [`Invalid input for ${toolName}:`, ...lines].join('\n');
 };
 
-export type ValidationResult = { ok: true; value: unknown } | { ok: false; message: string };
+export type ValidationResult = { ok: true; value: unknown } | { ok: false; message: string } | { ok: false; message: string; validatorFailure: string };
+
+const unavailable = (tool: AnyTool, validatorFailure: string): ValidationResult => ({
+  ok: false,
+  message: `Tool ${tool.name} is unavailable for the rest of this run: its schema validator failed, so its input and output cannot be checked.`,
+  validatorFailure,
+});
 
 const parseArguments = (tool: AnyTool, rawArguments: unknown): ValidationResult => {
   if (typeof rawArguments !== 'string') return { ok: true, value: rawArguments };
@@ -65,9 +82,21 @@ const parseArguments = (tool: AnyTool, rawArguments: unknown): ValidationResult 
   }
 };
 
+const validateLenient = (tool: AnyTool, parsed: { ok: true; value: unknown }): ValidationResult => {
+  try {
+    assertOutputSchemaUsable(tool);
+    const verdict = validateUntrusted(tool.inputSchema, parsed.value);
+    return verdict.valid ? parsed : { ok: false, message: describeErrors(tool.name, verdict.errors) };
+  } catch (error) {
+    if (error instanceof SchemaValidatorFailure) return unavailable(tool, error.message);
+    throw error;
+  }
+};
+
 export const validateToolInput = (tool: AnyTool, rawArguments: unknown): ValidationResult => {
   const parsed = parseArguments(tool, rawArguments);
   if (!parsed.ok) return parsed;
+  if (tool.schemaMode === 'lenient') return validateLenient(tool, parsed);
   const validate = compileInputSchema(tool);
   if (validate(parsed.value)) return parsed;
   return { ok: false, message: describeErrors(tool.name, validate.errors ?? []) };

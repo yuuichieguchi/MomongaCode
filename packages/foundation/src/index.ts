@@ -1,6 +1,7 @@
 export { computeBackoff, parseRetryAfter } from './backoff.ts';
 export type { BackoffOptions } from './backoff.ts';
 export { canonicalJson, sha256Hex } from './canonical-json.ts';
+export { capText, sanitizeServerText } from './untrusted-text.ts';
 export { CircuitBreaker } from './circuit-breaker.ts';
 export type { CircuitBreakerOptions, CircuitState } from './circuit-breaker.ts';
 export { codeDigestOf, codeDigestOfRunningProcess } from './code-digest.ts';

@@ -1,5 +1,6 @@
 import type { McpAuthorizationView, McpServerView } from '@momonga/protocol';
 import { McpElicitationAnswerError, parseElicitationAnswers } from '@momonga/mcp';
+import { cleanFailureMessage } from '@momonga/tools';
 import type { RuntimeStore } from '@momonga/store';
 import { conflict, invalidRequest, notFound } from './errors.ts';
 import type { Handler, RouteRegistrar } from './app.ts';
@@ -46,13 +47,16 @@ export const registerInputRoutes = (route: RouteRegistrar, deps: InputRoutesDeps
     const view = store.elicitationView(id);
     if (view === undefined) throw notFound(`elicitation ${id} does not exist`);
     let responses;
+    const notices: string[] = [];
     try {
-      responses = parseElicitationAnswers(view.requests, body.responses);
+      responses = parseElicitationAnswers(view.requests, body.responses, (request, message) =>
+        notices.push(`Elicitation ${JSON.stringify(cleanFailureMessage(request.key))} of MCP server ${JSON.stringify(cleanFailureMessage(view.server))} was declined: its requestedSchema validator failed: ${message}`),
+      );
     } catch (error) {
       if (error instanceof McpElicitationAnswerError) throw invalidRequest(error.message, 'responses');
       throw error;
     }
-    const result = store.resolveElicitation(id, responses);
+    const result = store.resolveElicitation(id, responses, notices);
     switch (result.kind) {
       case 'not_found':
       case 'wrong_kind':

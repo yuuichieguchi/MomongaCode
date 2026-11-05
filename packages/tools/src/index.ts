@@ -68,7 +68,17 @@ export { readOnlyEnvironment, readOnlySandboxPolicy } from './read-only-call.ts'
 export type { SandboxPolicyOptions } from './builtins/index.ts';
 export { ShellNotFoundError, nodeShellHost, resolveBashPath } from './builtins/shell.ts';
 export type { ShellHost } from './builtins/shell.ts';
-export { compileUntrustedSchema, untrustedSchemaCacheSize } from './untrusted-schema.ts';
+export {
+  SchemaValidatorFailure,
+  cleanFailureMessage,
+  compileUntrustedSchema,
+  recordUntrustedSchemaFailure,
+  takeUntrustedSchemaFailureNotice,
+  untrustedSchemaCacheSize,
+  untrustedSchemaFailure,
+} from './untrusted-schema.ts';
+export { validateUntrusted } from './validate-untrusted.ts';
+export type { UntrustedVerdict } from './validate-untrusted.ts';
 export { createGlobExpander, createPolicyFilesystem, nodeGlobPorts } from './policy-filesystem.ts';
 export type { GlobChild, GlobPorts } from './policy-filesystem.ts';
 export {

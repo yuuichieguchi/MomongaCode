@@ -1,6 +1,6 @@
 import type { CallToolResult, Tool } from '@modelcontextprotocol/client';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import { defineTool, ToolExecutionError, ToolInputRequired, TransientToolError } from '@momonga/tools';
+import { SchemaValidatorFailure, defineTool, ToolExecutionError, ToolInputRequired, TransientToolError } from '@momonga/tools';
 import type { AnyTool, ToolListOptions, ToolResult, ToolResume, ToolSource, ToolSourceListing } from '@momonga/tools';
 import { McpUnavailableError } from './connection.ts';
 import { parseElicitationAnswer } from './input-requests.ts';
@@ -104,6 +104,8 @@ const buildTool = (
     sideEffect: readOnly && annotations?.destructiveHint !== true ? 'read_only' : 'write',
     subjectKind: 'mcp',
     inputSchema,
+    ...(tool.outputSchema === undefined ? {} : { outputSchema: sanitizeSchema(tool.outputSchema) }),
+    server,
     schemaMode: 'lenient',
     timeoutMs: options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
     title: () => `${sanitizeServerText(server)}: ${titleOf(tool)}`,
@@ -130,6 +132,9 @@ const buildTool = (
       } catch (error) {
         if (error instanceof McpInputSuspension) {
           throw new ToolInputRequired({ server, requests: error.requests, checkpoint: { ...error.checkpoint } });
+        }
+        if (error instanceof SchemaValidatorFailure) {
+          return { status: 'failed', output: `Tool mcp__${server}__${toolPart}: its output could not be checked because its output schema validator failed, so the output is withheld. The tool is unavailable for the rest of this run.` };
         }
         const unauthorized = authorizationRequiredFor(error);
         if (unauthorized !== undefined) {

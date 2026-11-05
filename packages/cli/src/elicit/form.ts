@@ -1,5 +1,5 @@
 import { isRecord } from '@momonga/foundation';
-import { compileRequestedSchema } from '../client/contract.ts';
+import { SchemaValidatorFailure, validateUntrusted } from '@momonga/tools';
 
 export type ContentValue = string | number | boolean | string[];
 
@@ -17,7 +17,9 @@ export type FormField = {
   schema: Readonly<Record<string, unknown>>;
 };
 
-export type ParsedValue = { ok: true; value: ContentValue | undefined } | { ok: false; error: string };
+export type ParsedValue = { ok: true; value: ContentValue | undefined } | { ok: false; error: string } | { ok: false; error: string; validatorFailure: string };
+
+export type ContentCheck = { kind: 'valid' } | { kind: 'invalid'; message: string } | { kind: 'validator-failed'; message: string };
 
 const optionsOfEnum = (schema: Record<string, unknown>): FieldOption[] | undefined => {
   const values = schema['enum'];
@@ -86,10 +88,15 @@ const isContentValue = (value: unknown): value is ContentValue =>
 const TRUE_WORDS = ['y', 'yes', 'true', '1'];
 const FALSE_WORDS = ['n', 'no', 'false', '0'];
 
-const errorsOf = (schema: Readonly<Record<string, unknown>>, value: unknown, label: string): string | undefined => {
-  const validate = compileRequestedSchema(schema);
-  if (validate(value)) return undefined;
-  return (validate.errors ?? []).map((error) => `${label}${error.instancePath} ${error.message ?? error.keyword}`).join('; ');
+const checkAgainst = (schema: Readonly<Record<string, unknown>>, value: unknown, label: string): ContentCheck => {
+  try {
+    const verdict = validateUntrusted(schema, value);
+    if (verdict.valid) return { kind: 'valid' };
+    return { kind: 'invalid', message: verdict.errors.map((error) => `${label}${error.instancePath} ${error.message ?? error.keyword}`).join('; ') };
+  } catch (error) {
+    if (error instanceof SchemaValidatorFailure) return { kind: 'validator-failed', message: error.message };
+    throw error;
+  }
 };
 
 const optionOf = (field: FormField, token: string): string | undefined => {
@@ -141,10 +148,11 @@ export const parseFieldInput = (field: FormField, text: string): ParsedValue => 
   const coerced = coerce(field, text);
   if (!coerced.ok) return coerced;
   if (!isContentValue(coerced.value)) return { ok: false, error: `${field.name} must be a string, a number, a boolean or a list of strings` };
-  const invalid = errorsOf(field.schema, coerced.value, field.name);
-  if (invalid !== undefined) return { ok: false, error: invalid };
+  const check = checkAgainst(field.schema, coerced.value, field.name);
+  if (check.kind === 'validator-failed') return { ok: false, error: check.message, validatorFailure: check.message };
+  if (check.kind === 'invalid') return { ok: false, error: check.message };
   return { ok: true, value: coerced.value };
 };
 
-export const validateContent = (requestedSchema: Readonly<Record<string, unknown>>, content: Readonly<Record<string, ContentValue>>): string | undefined =>
-  errorsOf(requestedSchema, content, '');
+export const validateContent = (requestedSchema: Readonly<Record<string, unknown>>, content: Readonly<Record<string, ContentValue>>): ContentCheck =>
+  checkAgainst(requestedSchema, content, '');

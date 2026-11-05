@@ -1,5 +1,5 @@
 import { isRecord } from '@momonga/foundation';
-import { compileUntrustedSchema } from '@momonga/tools';
+import { SchemaValidatorFailure, validateUntrusted } from '@momonga/tools';
 import { sanitizeSchema } from './schema-sanitizer.ts';
 import { capText, sanitizeServerText } from './text.ts';
 
@@ -95,14 +95,18 @@ const validateAgainst = (request: ElicitationRequest, answer: ElicitationAnswer)
     return;
   }
   if (answer.content === undefined) throw new McpElicitationAnswerError(request.key, `an accepted form elicitation "${request.key}" must carry content`);
-  const validate = compileUntrustedSchema(request.requestedSchema);
-  if (!validate(answer.content)) {
-    const detail = (validate.errors ?? []).map((error) => `${error.instancePath || '(root)'} ${error.message ?? error.keyword}`).join('; ');
+  const verdict = validateUntrusted(request.requestedSchema, answer.content);
+  if (!verdict.valid) {
+    const detail = verdict.errors.map((error) => `${error.instancePath || '(root)'} ${error.message ?? error.keyword}`).join('; ');
     throw new McpElicitationAnswerError(request.key, `the content for "${request.key}" does not match the requested schema: ${detail}`);
   }
 };
 
-export const parseElicitationAnswers = (requests: readonly ElicitationRequest[], raw: unknown): Record<string, ElicitationAnswer> => {
+export const parseElicitationAnswers = (
+  requests: readonly ElicitationRequest[],
+  raw: unknown,
+  onValidatorFailure: (request: ElicitationRequest, message: string) => void = () => undefined,
+): Record<string, ElicitationAnswer> => {
   if (!isRecord(raw)) throw new McpElicitationAnswerError('', 'responses must be an object keyed by request key');
   const known = new Set(requests.map((request) => request.key));
   for (const key of Object.keys(raw)) {
@@ -112,8 +116,14 @@ export const parseElicitationAnswers = (requests: readonly ElicitationRequest[],
   for (const request of requests) {
     if (!(request.key in raw)) throw new McpElicitationAnswerError(request.key, `no answer was given for "${request.key}"`);
     const answer = parseElicitationAnswer(request.key, raw[request.key]);
-    validateAgainst(request, answer);
-    answers[request.key] = answer;
+    try {
+      validateAgainst(request, answer);
+      answers[request.key] = answer;
+    } catch (error) {
+      if (!(error instanceof SchemaValidatorFailure)) throw error;
+      onValidatorFailure(request, error.message);
+      answers[request.key] = { action: 'decline' };
+    }
   }
   return answers;
 };

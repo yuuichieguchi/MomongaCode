@@ -259,6 +259,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
         if (outcome.result.toolsLoaded !== undefined) ctx.toolLoading?.rememberLoaded(outcome.result.toolsLoaded);
         recordToolContent(spans, calls, outcome);
       },
+      onWarning: (message) => journal.append([{ type: 'notice', level: 'warning', message, code: 'tool_validator_failed' }]),
       onStarted: (callId, idemKey, basis) => journal.append([{ type: 'tool.started', callId, idemKey, basis }]),
       onUpdate: (callId, content) => journal.append([{ type: 'tool.updated', callId, content }]),
     });

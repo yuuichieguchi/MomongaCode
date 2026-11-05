@@ -3,16 +3,26 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import type AjvCoreModule from 'ajv/dist/core.js';
 import type { Options, ValidateFunction } from 'ajv/dist/core.js';
 import addFormats from 'ajv-formats';
-import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, capText, sanitizeServerText, sha256Hex } from '@momonga/foundation';
 
 const MAX_CACHED_VALIDATORS = 512;
+const MAX_FAILURE_MESSAGE_CHARS = 200;
+
+export const cleanFailureMessage = (message: string): string => capText(sanitizeServerText(message), MAX_FAILURE_MESSAGE_CHARS);
 const DRAFT_07 = /^https?:\/\/json-schema\.org\/draft-07\/schema#?$/;
 const OPTIONS = { strict: false, logger: false, allErrors: true, coerceTypes: false, useDefaults: false, removeAdditional: false } as const;
 const ISOLATED_COMPILER_OPTIONS = { ...OPTIONS, validateSchema: false } as const;
 
 type AjvCore = AjvCoreModule.default;
 
-type CacheEntry = { validate: ValidateFunction } | { failure: string };
+type CacheEntry = { validate: ValidateFunction } | { failure: string; announced: boolean };
+
+export class SchemaValidatorFailure extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SchemaValidatorFailure';
+  }
+}
 
 type Dialect = {
   readonly checker: AjvCore;
@@ -78,6 +88,8 @@ const compileIsolated = (schema: Record<string, unknown>): ValidateFunction => {
   return dialect.createIsolatedCompiler().compile(schema);
 };
 
+const keyOf = (schema: Record<string, unknown>): string => sha256Hex(canonicalJson(schema));
+
 const remember = (key: string, entry: CacheEntry): void => {
   cache.set(key, entry);
   if (cache.size > MAX_CACHED_VALIDATORS) {
@@ -87,12 +99,12 @@ const remember = (key: string, entry: CacheEntry): void => {
 };
 
 const resolve = (entry: CacheEntry): ValidateFunction => {
-  if ('failure' in entry) throw new Error(entry.failure);
+  if ('failure' in entry) throw new SchemaValidatorFailure(entry.failure);
   return entry.validate;
 };
 
 export const compileUntrustedSchema = (schema: Record<string, unknown>): ValidateFunction => {
-  const key = sha256Hex(canonicalJson(schema));
+  const key = keyOf(schema);
   const cached = cache.get(key);
   if (cached !== undefined) {
     cache.delete(key);
@@ -103,10 +115,26 @@ export const compileUntrustedSchema = (schema: Record<string, unknown>): Validat
   try {
     entry = { validate: compileIsolated(schema) };
   } catch (error) {
-    entry = { failure: error instanceof Error ? error.message : String(error) };
+    entry = { failure: cleanFailureMessage(error instanceof Error ? error.message : String(error)), announced: false };
   }
   remember(key, entry);
   return resolve(entry);
 };
 
 export const untrustedSchemaCacheSize = (): number => cache.size;
+
+export const recordUntrustedSchemaFailure = (schema: Record<string, unknown>, message: string): void => {
+  remember(keyOf(schema), { failure: cleanFailureMessage(message), announced: false });
+};
+
+export const untrustedSchemaFailure = (schema: Record<string, unknown>): string | undefined => {
+  const entry = cache.get(keyOf(schema));
+  return entry !== undefined && 'failure' in entry ? entry.failure : undefined;
+};
+
+export const takeUntrustedSchemaFailureNotice = (schema: Record<string, unknown>): string | undefined => {
+  const entry = cache.get(keyOf(schema));
+  if (entry === undefined || !('failure' in entry) || entry.announced) return undefined;
+  entry.announced = true;
+  return entry.failure;
+};
