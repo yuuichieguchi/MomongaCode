@@ -1,4 +1,5 @@
 import type { HealthResult, ImageTokenModel, OutputBoundField, ReasoningCapability } from './capabilities.ts';
+import type { ConstructSupport } from './dialect.ts';
 
 export const PROBE_KEYWORDS = [
   'enum',
@@ -12,6 +13,12 @@ export const PROBE_KEYWORDS = [
 
 export type ProbeKeyword = (typeof PROBE_KEYWORDS)[number];
 
+export type ProbeDialectResult = 'accepted' | 'refused' | 'not-enforced' | 'unrenderable';
+
+export type ProbeDialectAttempt = { id: string; result: ProbeDialectResult; detail?: string };
+
+export type ProbeReportDialect = { selected: string | null; shape: 'union' | 'flat' | null; tried: ProbeDialectAttempt[] };
+
 export type ProbeReport = {
   probedAt: string;
   health: HealthResult;
@@ -21,7 +28,9 @@ export type ProbeReport = {
   usageReported: boolean;
   nativeTools: { accepted: boolean; validRate: number; roundTripOk: boolean };
   constrained: { accepted: boolean; validRate: number };
-  keywordSupport: Record<ProbeKeyword, boolean>;
+  keywordSupport?: Record<ProbeKeyword, boolean>;
+  constructSupport?: ConstructSupport;
+  schemaDialect: ProbeReportDialect;
   stopSequences: boolean;
   outputBoundField?: OutputBoundField | 'none';
   parallelToolCalls?: { accepted: boolean; multiCallRate: number };

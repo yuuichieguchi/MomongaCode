@@ -204,7 +204,9 @@ export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Pr
     report === null
       ? { ...unprobedCapabilities(state), ...declaredField }
       : mergeCapabilities({ defaults: layerOf(probedDefaults).core, declared: { ...declaredField, schemaDialect: FM_SCHEMA_DIALECT }, probed: layerOf(capabilitiesFromProbe(report, { mode: modeOf() })).layer, probedAt: report.probedAt });
-  const keywordSupport = report === null ? UNPROBED_KEYWORD_SUPPORT : report.keywordSupport;
+  const recordedKeywordSupport = report?.keywordSupport;
+  if (report !== null && recordedKeywordSupport === undefined) throw new Error('the fm probe record holds no keyword support');
+  const keywordSupport = recordedKeywordSupport ?? UNPROBED_KEYWORD_SUPPORT;
   const isGuardrail = guardrailMatcherOf(report);
   const knownModel = options.declaredModel ?? report?.modelId;
   let listedModel: Promise<string> | undefined;

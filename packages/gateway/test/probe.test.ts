@@ -402,9 +402,9 @@ describe('runProbe server features', () => {
 
   it('marks nested objects unsupported when rejected', async () => {
     const { report } = await probe({ scenario: 'tools-ok', unsupportedKeywords: ['nested', 'additionalProperties'] });
-    expect(report.keywordSupport.nested).toBe(false);
-    expect(report.keywordSupport.additionalProperties).toBe(false);
-    expect(report.keywordSupport.enum).toBe(true);
+    expect(report.keywordSupport?.nested).toBe(false);
+    expect(report.keywordSupport?.additionalProperties).toBe(false);
+    expect(report.keywordSupport?.enum).toBe(true);
   });
 
   it('records the guardrail error shape when the guardrail prompt triggers it', async () => {

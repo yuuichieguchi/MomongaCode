@@ -312,6 +312,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
     nativeTools: { accepted: native.accepted, validRate: native.validRate, roundTripOk },
     constrained,
     keywordSupport,
+    schemaDialect: { selected: null, shape: null, tried: [] },
     stopSequences,
     outputBoundField,
     parallelToolCalls,

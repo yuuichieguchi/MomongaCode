@@ -1,8 +1,8 @@
-import type { Capabilities } from '@momonga/protocol';
+import type { DialectId } from '@momonga/protocol';
 import { isRecord, type JsonObject } from './json.ts';
 import { literalTypeOf, lowerSchema, typeFromLiterals, type KeywordSupport } from './lowering.ts';
 
-export type SchemaDialect = Capabilities['schemaDialect'];
+export type SchemaDialect = DialectId;
 
 export const FM_SCHEMA_DIALECT: SchemaDialect = 'guided-generation';
 
@@ -88,21 +88,27 @@ type DialectRenderer = {
   readonly parametersWhenAbsent: JsonObject | undefined;
 };
 
-const RENDERERS: Record<SchemaDialect, DialectRenderer> = {
+const RENDERERS: Record<string, DialectRenderer> = {
   'json-schema-2020-12': { addRequiredKeys: (schema) => schema, parametersWhenAbsent: undefined },
   'guided-generation': { addRequiredKeys: guidedGeneration, parametersWhenAbsent: { type: 'object' } },
 };
 
-export const renderSchema = (schema: JsonObject, dialect: SchemaDialect, support: KeywordSupport): JsonObject =>
-  RENDERERS[dialect].addRequiredKeys(lowerSchema(schema, support));
+const rendererOf = (dialect: SchemaDialect): DialectRenderer => {
+  const renderer = RENDERERS[dialect];
+  if (renderer === undefined) throw new Error(`no renderer for schema dialect ${dialect}`);
+  return renderer;
+};
 
-export const renderAssembled = (schema: JsonObject, dialect: SchemaDialect): JsonObject => RENDERERS[dialect].addRequiredKeys(schema);
+export const renderSchema = (schema: JsonObject, dialect: SchemaDialect, support: KeywordSupport): JsonObject =>
+  rendererOf(dialect).addRequiredKeys(lowerSchema(schema, support));
+
+export const renderAssembled = (schema: JsonObject, dialect: SchemaDialect): JsonObject => rendererOf(dialect).addRequiredKeys(schema);
 
 export const renderParameters = (
   parameters: JsonObject | null | undefined,
   dialect: SchemaDialect,
   support: KeywordSupport,
 ): JsonObject | undefined => {
-  const source = parameters ?? RENDERERS[dialect].parametersWhenAbsent;
+  const source = parameters ?? rendererOf(dialect).parametersWhenAbsent;
   return source === undefined ? undefined : renderSchema(source, dialect, support);
 };
