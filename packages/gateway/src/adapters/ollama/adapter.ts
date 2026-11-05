@@ -1,4 +1,5 @@
 import { summaryTokenCapFor } from '@momonga/protocol';
+import { RENDERS_EVERY_SAMPLING_FIELD } from '../shared/sampling.ts';
 import type { AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, StreamEvent } from '@momonga/protocol';
 import { createUpstreamClassifier } from '../shared/classify.ts';
 import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
@@ -65,6 +66,7 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
 
   return {
     kind: OLLAMA_LABEL,
+    sampling: RENDERS_EVERY_SAMPLING_FIELD,
     capabilities: (target: AdapterTarget) => options.capabilities(target),
     create,
     compact,

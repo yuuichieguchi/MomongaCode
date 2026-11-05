@@ -115,6 +115,7 @@ export const createReplayAdapter = (options: ReplayAdapterOptions): ProviderAdap
 
   return {
     kind: 'replay',
+    ...(inner?.sampling === undefined ? {} : { sampling: inner.sampling }),
     capabilities: async (target) => {
       if (inner !== undefined) return inner.capabilities(target);
       if (options.capabilities === undefined) throw new TypeError('createReplayAdapter: strict mode without an inner adapter needs a capabilities option to answer capabilities()');

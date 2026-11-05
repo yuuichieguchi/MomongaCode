@@ -1,4 +1,5 @@
 import { decodeSse } from '@momonga/foundation';
+import { RENDERS_EVERY_SAMPLING_FIELD } from '../shared/sampling.ts';
 import { summaryTokenCapFor } from '@momonga/protocol';
 import type { AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, LenientItems, ReasoningOrigin, RenderWireOptions, StreamEvent } from '@momonga/protocol';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
@@ -181,6 +182,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
 
   return {
     kind: 'chat-completions',
+    sampling: RENDERS_EVERY_SAMPLING_FIELD,
     capabilities: (target) => options.capabilities(target),
     create,
     compact,

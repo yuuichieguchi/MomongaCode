@@ -47,6 +47,7 @@ describe('anthropic target', () => {
       apiKeySecret: 'anthropic-main',
       toolCalling: 'native',
       billing: 'metered',
+      apiVersion: '2026-10-21',
       capabilities: {
         contextWindow: 200000,
         maxOutputTokens: 8192,

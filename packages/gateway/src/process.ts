@@ -535,7 +535,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
           adapters[name] = createOpenResponsesAdapter({ ...common, apiKey: readKey });
           break;
         case 'anthropic':
-          adapters[name] = createAnthropicAdapter({ ...common, apiKey: (adapterTarget, signal) => requiredKey(readKey, adapterTarget, signal) });
+          adapters[name] = createAnthropicAdapter({ ...common, ...(target.apiVersion === undefined ? {} : { apiVersion: target.apiVersion }), apiKey: (adapterTarget, signal) => requiredKey(readKey, adapterTarget, signal) });
           break;
       }
     }

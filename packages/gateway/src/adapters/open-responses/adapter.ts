@@ -1,4 +1,5 @@
 import { decodeSse } from '@momonga/foundation';
+import { RENDERS_EVERY_SAMPLING_FIELD } from '../shared/sampling.ts';
 import { summaryTokenCapFor } from '@momonga/protocol';
 import type { AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
@@ -97,6 +98,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
 
   return {
     kind: OPEN_RESPONSES_PROVIDER_LABEL,
+    sampling: RENDERS_EVERY_SAMPLING_FIELD,
     capabilities: (target) => options.capabilities(target),
     create,
     compact,

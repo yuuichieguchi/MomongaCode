@@ -1,6 +1,6 @@
 import type { Clock } from '@momonga/foundation';
 import { applyCapabilityOverride, imageCapability, sizingRatioFor } from '@momonga/protocol';
-import type { Capabilities, CapabilityOverride, ToolCallingMode, ToolCallingState, GatewayHealth, HealthResult, ImageCapability, ProviderAdapter, TargetBilling, TargetHealth } from '@momonga/protocol';
+import type { Capabilities, CapabilityOverride, DeclaredSamplingCapabilities, ToolCallingMode, ToolCallingState, GatewayHealth, HealthResult, ImageCapability, ProviderAdapter, TargetBilling, TargetHealth } from '@momonga/protocol';
 import { createAdmissionGate } from './admission.ts';
 import type { AdmissionGate } from './admission.ts';
 import { preconditionText } from '../precondition-text.ts';
@@ -31,7 +31,7 @@ export type Router = {
   aliases(): string[];
   hasAlias(alias: string): boolean;
   targetsOf(alias: string): TargetRuntime[];
-  capabilitiesOf(target: TargetRuntime): Promise<Capabilities>;
+  capabilitiesOf(target: TargetRuntime): Promise<DeclaredSamplingCapabilities>;
   aliasCapabilitiesOf(alias: string): Promise<Capabilities>;
   candidates(alias: string, requirements: CandidateRequirements): Promise<TargetRuntime[]>;
   narrow(alias: string, targets: readonly TargetRuntime[], requirements: CandidateRequirements): Promise<TargetRuntime[]>;
@@ -143,10 +143,10 @@ export const createRouter = (options: RouterOptions): Router => {
     return found;
   };
 
-  const capabilitiesOf = async (target: TargetRuntime): Promise<Capabilities> => {
+  const capabilitiesOf = async (target: TargetRuntime): Promise<DeclaredSamplingCapabilities> => {
     const declared = await target.adapter.capabilities({ name: target.name, model: target.model });
     if (target.capabilityOverride === undefined) return declared;
-    return { ...applyCapabilityOverride(declared, target.capabilityOverride), source: 'config' };
+    return { ...applyCapabilityOverride(declared, target.capabilityOverride), source: 'config', ...(declared.sampling === undefined ? {} : { sampling: declared.sampling }) };
   };
 
   const aliasCapabilitiesOf = async (alias: string): Promise<Capabilities> => {

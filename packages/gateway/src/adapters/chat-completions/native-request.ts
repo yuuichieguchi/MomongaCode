@@ -1,4 +1,5 @@
-import type { AdapterInputItem, AdapterRequest, FunctionTool, ReasoningOrigin, ToolChoice } from '@momonga/protocol';
+import type { AdapterInputItem, AdapterRequest, FunctionTool, ReasoningOrigin, SamplingField, ToolChoice } from '@momonga/protocol';
+import { carriedSamplingOf } from '../shared/sampling.ts';
 import { SYSTEM_PART_SEPARATOR, systemTextOf } from '../shared/system-text.ts';
 import { nativeHistoryOf, plainHistoryOf } from './plain-history.ts';
 import type { ChatMessage } from './plain-history.ts';
@@ -17,6 +18,8 @@ export type ChatRequestBody = {
   max_completion_tokens?: number;
   temperature?: number;
   top_p?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
   prompt_cache_key?: string;
 };
 
@@ -32,10 +35,7 @@ const toolOf = (tool: FunctionTool): unknown => ({
 const toolChoiceOf = (choice: ToolChoice): unknown =>
   typeof choice === 'string' ? choice : { type: 'function', function: { name: choice.name } };
 
-export const samplingOf = (request: AdapterRequest): Pick<ChatRequestBody, 'temperature' | 'top_p'> => ({
-  ...(request.temperature === undefined || request.temperature === null ? {} : { temperature: request.temperature }),
-  ...(request.top_p === undefined || request.top_p === null ? {} : { top_p: request.top_p }),
-});
+export const samplingOf = (request: AdapterRequest): Pick<ChatRequestBody, SamplingField> => carriedSamplingOf(request);
 
 export const buildNativeBody = (request: AdapterRequest, origin: ReasoningOrigin): ChatRequestBody => {
   const messages: ChatMessage[] = [];
