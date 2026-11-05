@@ -5,6 +5,7 @@ import { FAKE_GUARDRAIL_ERROR } from '@momonga/testkit';
 import { makeDir } from './gateway-helpers.ts';
 import { TARGET, collect, makeAdapter, startFake, userText } from './cc-support.ts';
 import { makeReport } from './report-fixture.ts';
+import { CURRENT_DIALECTS } from './dialect-currency.ts';
 
 const RECORD_KEY: ProbeRecordKey = { target: 'fm', binarySha256: 'cd'.repeat(32), osBuild: '25A100' };
 
@@ -19,7 +20,7 @@ const idleServe: FmServe = {
 const managedWith = async (guardrail: unknown | undefined) => {
   const dir = makeDir();
   if (guardrail !== undefined) {
-    await saveProbeRecord(dir, RECORD_KEY, { ...makeReport(1, 1), guardrail: { errorShape: guardrail } });
+    await saveProbeRecord(dir, RECORD_KEY, { ...makeReport(1, 1), guardrail: { errorShape: guardrail } }, CURRENT_DIALECTS);
   }
   return createManagedFmTarget({
     fmServe: idleServe,

@@ -21,6 +21,7 @@ import {
   until,
   writeSettings,
 } from './gateway-process-helpers.ts';
+import { CURRENT_DIALECTS } from './dialect-currency.ts';
 
 const MINIMAL_NAMES = new Set(['PATH', 'HOME', 'LANG', 'TMPDIR']);
 const PRODUCTION_SPAWNED = new Set(['serve', 'count-tokens']);
@@ -160,7 +161,7 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
     const { fm, dumpFile, home } = await fakeFmSetup();
     reapServeGroups(dumpFile);
     const binarySha256 = createHash('sha256').update(fs.readFileSync(fm.binaryPath)).digest('hex');
-    await saveProbeRecord(path.join(homePaths(home).root, 'state', 'probe'), { target: 'fm', binarySha256, osBuild: FAKE_OS_BUILD }, makeReport(1, 1));
+    await saveProbeRecord(path.join(homePaths(home).root, 'state', 'probe'), { target: 'fm', binarySha256, osBuild: FAKE_OS_BUILD }, makeReport(1, 1), CURRENT_DIALECTS);
     const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });
     const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
     const entry = models.body.data.find((model: { id: string }) => model.id === 'default');
@@ -186,7 +187,7 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
     const { fm, dumpFile, home } = await fakeFmSetup();
     reapServeGroups(dumpFile);
     const binarySha256 = createHash('sha256').update(fs.readFileSync(fm.binaryPath)).digest('hex');
-    await saveProbeRecord(path.join(homePaths(home).root, 'state', 'probe'), { target: 'fm', binarySha256, osBuild: `${FAKE_OS_BUILD}x` }, makeReport(1, 1));
+    await saveProbeRecord(path.join(homePaths(home).root, 'state', 'probe'), { target: 'fm', binarySha256, osBuild: `${FAKE_OS_BUILD}x` }, makeReport(1, 1), CURRENT_DIALECTS);
     const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });
     const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
     const entry = models.body.data.find((model: { id: string }) => model.id === 'default');

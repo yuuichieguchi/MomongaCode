@@ -1,6 +1,8 @@
 import { describe, expectTypeOf, it } from 'vitest';
 import type {
   AdapterSampling,
+  ConstructSupport,
+  DialectId,
   Capabilities,
   ProviderAdapter,
   HealthResult,
@@ -30,7 +32,7 @@ describe('protocol capability types', () => {
         outputBoundField?: 'max_completion_tokens' | 'max_tokens';
         parallelToolCalls?: boolean;
         allowedTools?: readonly ('native' | 'envelope' | 'single_tool' | 'filter')[];
-        schemaDialect: 'json-schema-2020-12' | 'guided-generation';
+        schemaDialect: DialectId;
         tokenCounting: 'exact' | 'calibrated' | 'estimated';
         tokenErrorRatio?: number;
         usageReported: boolean;
@@ -87,7 +89,9 @@ describe('protocol capability types', () => {
       usageReported: boolean;
       nativeTools: { accepted: boolean; validRate: number; roundTripOk: boolean };
       constrained: { accepted: boolean; validRate: number };
-      keywordSupport: Record<ProbeKeyword, boolean>;
+      keywordSupport?: Record<ProbeKeyword, boolean>;
+      constructSupport?: ConstructSupport;
+      schemaDialect: { selected: string | null; shape: 'union' | 'flat' | null; tried: { id: string; result: 'accepted' | 'refused' | 'not-enforced' | 'unrenderable'; detail?: string }[] };
       stopSequences: boolean;
       outputBoundField?: 'max_completion_tokens' | 'max_tokens' | 'none';
       parallelToolCalls?: { accepted: boolean; multiCallRate: number };

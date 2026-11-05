@@ -11,6 +11,7 @@ import { createEndpointPool } from '../shared/http-client.ts';
 import { CHAT_COMPLETIONS_VOCABULARY } from '../chat-completions/vocabulary.ts';
 import { retryAfterHint, httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
 import { MAX_SSE_EVENT_BYTES } from '../shared/limits.ts';
+import { RenderLedger } from '../../dialect/ledger.ts';
 import { ResponseEmitter } from '../shared/response-emitter.ts';
 import { RENDERS_EVERY_SAMPLING_FIELD } from '../shared/sampling.ts';
 import { OPEN_RESPONSES_PATH, OPEN_RESPONSES_PROVIDER_LABEL, OPEN_RESPONSES_SUFFIX, SSE_DONE_MARKER } from './constants.ts';
@@ -33,8 +34,13 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
     if (capabilities.toolCalling === 'none' && (request.tools ?? []).length > 0) {
       throw new UnsupportedInputError('capability_unsupported', 'this target does not support tool calling', 'tools');
     }
+    const ledger = new RenderLedger();
     const body = {
-      ...buildResponsesBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.name, OPEN_RESPONSES_TOOL_CHOICE), ctx.reasoningOrigin),
+      ...buildResponsesBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.name, OPEN_RESPONSES_TOOL_CHOICE), ctx.reasoningOrigin, {
+        schemaDialect: capabilities.schemaDialect,
+        ledger,
+        ...(options.userDialects === undefined ? {} : { userDialects: options.userDialects }),
+      }),
       ...(capabilities.promptCache?.kind === 'key' && request.promptCacheKey !== undefined ? { prompt_cache_key: request.promptCacheKey } : {}),
     };
     const upstream = new AbortController();
@@ -53,7 +59,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
       });
       if (response.status !== 200) throw await httpErrorOf(response, options.clock, nestedErrorDetail, CHAT_COMPLETIONS_VOCABULARY);
 
-      const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request, ...retryAfterHint(response, options.clock) });
+      const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request, wraps: ledger.wraps, narrowings: ledger.narrowings, ...retryAfterHint(response, options.clock) });
       const driver = new OpenResponsesStreamDriver(emitter);
       try {
         for await (const message of decodeSse(boundedSseBytes(response.body, MAX_SSE_EVENT_BYTES))) {

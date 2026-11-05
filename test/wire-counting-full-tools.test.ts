@@ -47,6 +47,7 @@ afterEach(async () => {
 
 const adapterIn = (mode: ToolCallingMode) => {
   const adapter = createChatCompletionsAdapter({
+    schemaDialect: () => 'json-schema-2020-12',
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: '/nonexistent/never-used.sock' }),
     capabilities: async () => ({ ...CAPABILITIES, toolCalling: mode }),
     clock: createFakeClock(0),

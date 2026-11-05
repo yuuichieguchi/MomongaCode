@@ -10,6 +10,7 @@ const reportMeasuring = (outputBoundField: string | undefined) =>
     stopSequences: false,
     usageReported: true,
     maxConcurrency: 1,
+    schemaDialect: { selected: 'json-schema-2020-12', shape: 'union', tried: [] },
     ...(outputBoundField === undefined ? {} : { outputBoundField }),
   }) as unknown as Parameters<typeof probeEndpointText>[3];
 

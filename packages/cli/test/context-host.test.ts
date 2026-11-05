@@ -51,7 +51,7 @@ const declaredTarget = { adapter: 'chat-completions', model: 'm', provider: 'p',
 
 const userModels = (): UserModels => ({
   declared: { aliases: { default: ['t'], other: ['u'] }, targets: { t: declaredTarget, u: { ...declaredTarget, model: 'other' } } },
-  resolved: { aliases: { default: ['t'], other: ['u'] }, targets: { t: target(), u: target({ model: 'other' }) }, roles: {} },
+  resolved: { aliases: { default: ['t'], other: ['u'] }, targets: { t: target(), u: target({ model: 'other' }) }, dialects: {}, roles: {} },
 });
 
 const caseOf = (id: string, compaction: 'on' | 'off') => ({
