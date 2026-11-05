@@ -1,9 +1,12 @@
 import { Validator } from 'ata-validator/lite';
-import type { ValidationError } from 'ata-validator/lite';
 import { canonicalJson, sha256Hex } from './canonical-json.ts';
 import { unresolvableReference } from './schema-references.ts';
 import type { SchemaDialect } from './schema-references.ts';
+import { describeUntrustedErrors } from './untrusted-errors.ts';
+import type { RawError, UntrustedError } from './untrusted-errors.ts';
 import { capText, sanitizeServerText } from './untrusted-text.ts';
+
+export type { UntrustedError } from './untrusted-errors.ts';
 
 const MAX_CACHED_VALIDATORS = 512;
 const MAX_FAILURE_MESSAGE_CHARS = 200;
@@ -15,13 +18,6 @@ const DRAFT_07 = /^https?:\/\/json-schema\.org\/draft-07\/schema#?$/;
 const DRAFT_2020_12 = /^https:\/\/json-schema\.org\/draft\/2020-12\/schema#?$/;
 const OPTIONS = { engine: 'interpreter', useDefaults: false, assertFormat: false, coerceTypes: false, removeAdditional: false } as const;
 const META_SCHEMA_URIS = { 'draft-07': 'http://json-schema.org/draft-07/schema', '2020-12': 'https://json-schema.org/draft/2020-12/schema' } as const;
-
-export type UntrustedError = {
-  readonly instancePath: string;
-  readonly keyword: string;
-  readonly message: string;
-  readonly params: Readonly<Record<string, unknown>>;
-};
 
 export type UntrustedVerdict = { valid: true } | { valid: false; errors: readonly UntrustedError[] };
 
@@ -39,19 +35,6 @@ export class SchemaValidatorFailure extends Error {
     this.name = 'SchemaValidatorFailure';
   }
 }
-
-const sanitizeParam = (value: unknown): unknown => {
-  if (typeof value === 'string') return sanitizeServerText(value);
-  if (Array.isArray(value)) return value.map(sanitizeParam);
-  return value;
-};
-
-const describeError = (error: ValidationError): UntrustedError => ({
-  instancePath: sanitizeServerText(error.instancePath),
-  keyword: error.keyword,
-  message: cleanFailureMessage(error.message),
-  params: Object.fromEntries(Object.entries(error.params).map(([name, value]) => [name, sanitizeParam(value)])),
-});
 
 type Meta = { readonly dialect: SchemaDialect; readonly uri: string; readonly supplied: boolean };
 
@@ -97,11 +80,13 @@ const compileIsolated = (schema: Record<string, unknown>, remotes: RemoteDocumen
   assertSchemaValid(schema, meta);
   const unresolved = unresolvableReference(schema, meta.dialect, remotes);
   if (unresolved !== undefined) throw new Error(`$ref "${unresolved}" cannot be resolved`);
-  const validator = new Validator(structuredClone(schema), { ...OPTIONS, schemas: registry });
+  const root = structuredClone(schema);
+  const validator = new Validator(root, { ...OPTIONS, schemas: registry });
   validator.engine();
+  const errorsOf = (candidate: Record<string, unknown>, instance: unknown): readonly RawError[] => new Validator(candidate, { ...OPTIONS, schemas: registry }).validate(instance).errors;
   return (data) => {
     const result = validator.validate(data);
-    return result.valid ? { valid: true } : { valid: false, errors: result.errors.map(describeError) };
+    return result.valid ? { valid: true } : { valid: false, errors: describeUntrustedErrors(result.errors, { root, instance: data, errorsOf }) };
   };
 };
 
