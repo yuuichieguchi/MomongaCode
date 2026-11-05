@@ -76,6 +76,7 @@ const systemText = (body: any): string =>
 
 const expectNamedRefusal = (error: any, target: string) => {
   expect(error).toBeDefined();
+  expect(error.code).toBe('unsupported_tool_choice');
   expect(error.param).toBe('tool_choice');
   expect(String(error.message)).toContain('allowed_tools');
   expect(String(error.message)).toContain(target);
