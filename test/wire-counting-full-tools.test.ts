@@ -58,15 +58,17 @@ const adapterIn = (mode: ToolCallingMode) => {
 const countedBefore = (request: AdapterRequest): number => estimateInputTokens({ input: request.input, tools: request.tools });
 
 describe('wire counting for the full builtin tool set at fm\'s window', () => {
-  it('counts the constrained wire with the tool listing and the envelope, above the count of the input and the tools', async () => {
+  it('counts the constrained wire with the tool listing in the system message, above the count of the input and the tools', async () => {
     const request = await firstRequest();
     const tools = request.tools ?? [];
     expect(tools.map((tool) => tool.name)).toEqual(['Read', 'Glob', 'Grep', 'ReadOutput', 'Write', 'Edit', 'Bash', 'UpdatePlan', 'BashOutput', 'KillBash']);
-    const wire = adapterIn('constrained').renderWire?.(request, { name: 'fm', model: 'system' }) as { messages: Array<{ role: string; content: string }>; response_format: unknown };
+    const wire = adapterIn('constrained').renderWire?.(request, { name: 'fm', model: 'system' }) as { messages: Array<{ role: string; content: string }> };
+    expect(wire).not.toHaveProperty('response_format');
     const system = wire.messages.find((message) => message.role === 'system')?.content ?? '';
-    for (const tool of tools) expect(system).toContain(JSON.stringify(tool.description));
-    const envelope = JSON.stringify(wire.response_format);
-    for (const tool of tools) expect(envelope).toContain(JSON.stringify(tool.name));
+    for (const tool of tools) {
+      expect(system).toContain(JSON.stringify(tool.name));
+      expect(system).toContain(JSON.stringify(tool.description));
+    }
     expect(wireTokensOf(wire as never)).toBeGreaterThan(countedBefore(request));
   });
 
@@ -77,9 +79,13 @@ describe('wire counting for the full builtin tool set at fm\'s window', () => {
     expect(Math.abs(native - counted)).toBeLessThanOrEqual(Math.ceil(0.01 * counted));
   });
 
-  it('puts the constrained first request above W - R = 3072 at a 4096 window', async () => {
+  it('counts the constrained first request from its prompt parts alone, with no schema term', async () => {
     const request = await firstRequest();
-    const constrained = wireTokensOf(adapterIn('constrained').renderWire?.(request, { name: 'fm', model: 'system' }) as never);
-    expect(constrained).toBeGreaterThan(4096 - 1024);
+    const wire = adapterIn('constrained').renderWire?.(request, { name: 'fm', model: 'system' }) as { messages: unknown[] };
+    const counted = wireTokensOf(wire as never);
+    expect(counted).toBe(wireTokensOf({ messages: wire.messages } as never));
+    const schema = { type: 'json_schema', json_schema: { name: 'envelope', strict: true, schema: { type: 'object', properties: { tool: { enum: (request.tools ?? []).map((tool) => tool.name) } } } } };
+    expect(wireTokensOf({ ...wire, response_format: schema } as never)).toBe(counted);
+    expect(wireTokensOf({ ...wire, format: schema } as never)).toBe(counted);
   });
 });
