@@ -102,7 +102,7 @@ describe('person item 8, Q4: a nested AGENTS.md discovered inside a build under 
     expect(built.evictions).toEqual([]);
   });
 
-  it('a 4000-character arrival: admitted against the frozen split C, j falls to the end of F, and the final fit test evicts history that fits by the fresh count', async () => {
+  it('a 4000-character arrival: admitted against the frozen split C, j falls to slot 1 (F is the system message alone here), and the final fit test evicts history that fits by the fresh count', async () => {
     const { files, input } = nestedBuild(4000);
     const reported = await reportedMeter('cachePrefix', files);
     const frozenC = (await measurePinned(input, reported.ports)).ceiling;
@@ -135,7 +135,7 @@ describe('person item 8, Q4: a nested AGENTS.md discovered inside a build under 
     expect(boundOf(counted)).toBeLessThanOrEqual(I0);
   });
 
-  it('a 500-character arrival fits at level 0 with no eviction, but j still falls to the end of F and C falls with it', async () => {
+  it('a 500-character arrival fits at level 0 with no eviction, but j still falls to slot 1 and C falls with it', async () => {
     const { files, input } = nestedBuild(500);
     const reported = await reportedMeter('cachePrefix', files);
     const frozenC = (await measurePinned(input, reported.ports)).ceiling;
@@ -163,7 +163,7 @@ describe('person item 8, Q4: a nested AGENTS.md discovered inside a build under 
     expect(built.evictions).toEqual([]);
   });
 
-  it('an arrival already in the journal is part of the frozen items: j falls to the end of F, but admission and the fit test use one decomposition and nothing is evicted', async () => {
+  it('an arrival already in the journal is part of the frozen items: the fresh decomposition wins for both the frozen choice and the build (known 0, C the static ceiling), so nothing is evicted', async () => {
     const reported = await reportedMeter('cachePrefix');
     const input = inputWith('cachePrefix', second, { arrivals: [{ kind: 'skill', name: 'deploy', content: 's'.repeat(4000) }] });
     const frozenC = (await measurePinned(input, reported.ports)).ceiling;
