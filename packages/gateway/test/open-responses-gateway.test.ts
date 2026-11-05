@@ -13,6 +13,7 @@ import {
   usageOf,
   waitFor,
 } from '@momonga/testkit';
+import { wireTokensOf } from '@momonga/gateway';
 import { expectErrorBody, postJson, readJson, userInput } from './gateway-helpers.ts';
 import { REMOTE_CAPABILITIES, readFileTool, startOpenResponsesGateway, streamResponse, terminalOf, textOf, typesOf } from './upstream-gateway-support.ts';
 
@@ -295,5 +296,14 @@ describe('open-responses relay through the gateway: compaction', () => {
     const body = gateway.fake.requests[0]?.body as { instructions: string; input: Array<{ content: string }> };
     expect(body.instructions).toContain('handoff note');
     expect(body.input[0]?.content).toContain('<transcript>');
+  });
+
+  it('estimates the usage of a summary from the prompt parts alone when the upstream reports none', async () => {
+    const gateway = await startOpenResponsesGateway({ script: [openResponsesTextReply(['The user asked for X.'], null)] });
+    const response = await readJson(await postJson(gateway.client, '/v1/responses/compact', { model: 'fast', input: userInput('do X') }));
+    const sent = gateway.fake.requests[0]?.body as { instructions: string; input: unknown[]; max_output_tokens: number; include: string[] };
+    expect(sent.max_output_tokens).toBeGreaterThan(0);
+    const expected = wireTokensOf({ instructions: sent.instructions, input: sent.input });
+    expect(response.body.usage.input_tokens).toBe(expected);
   });
 });

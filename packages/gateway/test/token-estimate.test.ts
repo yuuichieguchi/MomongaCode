@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { estimateInputTokens, wireTokensOf } from '@momonga/gateway';
+import { PROMPT_PART_KEYS, type PromptPartKey } from '../src/core/prompt-parts.ts';
+import { textOfWire } from '../src/core/wire-text.ts';
 
 const textInput = (text: string) => [{ type: 'message' as const, role: 'user' as const, content: [{ type: 'input_text' as const, text }] }];
 
@@ -30,5 +32,45 @@ describe('token estimation by the text itself', () => {
 
   it('applies the same rule to a wire body', () => {
     expect(wireTokensOf({ messages: [{ role: 'user', content: '日本語'.repeat(100) }] })).toBeGreaterThanOrEqual(300);
+  });
+});
+
+describe('the parts of a wire that a count covers', () => {
+  const promptParts = {
+    messages: [{ role: 'user', content: 'count these words' }],
+    system: [{ type: 'text', text: 'Be terse.' }],
+    instructions: 'Answer in one line.',
+    input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'and these' }] }],
+    tools: [{ type: 'function', name: 'read_file', parameters: { type: 'object' } }],
+  };
+  const decodingFields = {
+    max_tokens: 4096,
+    thinking: { type: 'enabled', budget_tokens: 2048 },
+    text: { format: { type: 'json_schema', name: 'envelope', schema: { type: 'object', properties: { kind: { type: 'string' } } } } },
+    reasoning: { effort: 'low' },
+    response_format: { type: 'json_schema', json_schema: { name: 'envelope', schema: { type: 'object' } } },
+  };
+
+  it('estimates a wire as its prompt parts alone', () => {
+    expect(wireTokensOf({ ...promptParts, ...decodingFields })).toBe(wireTokensOf(promptParts));
+  });
+
+  it('renders every key of PROMPT_PART_KEYS into the text a counter receives, and nothing else', () => {
+    const valueOf: Record<PromptPartKey, (marker: string) => unknown> = {
+      messages: (marker) => [{ role: 'user', content: marker }],
+      system: (marker) => marker,
+      instructions: (marker) => marker,
+      input: (marker) => [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: marker }] }],
+      tools: (marker) => [{ type: 'function', name: marker }],
+    };
+    const markerOf = (key: string): string => `marker-of-${key}`;
+    const wire: Record<string, unknown> = {
+      ...Object.fromEntries(PROMPT_PART_KEYS.map((key) => [key, valueOf[key](markerOf(key))])),
+      response_format: { type: 'json_schema', name: markerOf('response_format') },
+      max_tokens: 4096,
+    };
+    const text = textOfWire(wire);
+    for (const key of PROMPT_PART_KEYS) expect(text).toContain(markerOf(key));
+    expect(text).not.toContain(markerOf('response_format'));
   });
 });
