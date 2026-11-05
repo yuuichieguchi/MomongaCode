@@ -1,4 +1,4 @@
-import Ajv2020 from 'ajv/dist/2020.js';
+import { compileUntrustedSchema } from '@momonga/foundation';
 import type { DialectDefinition, WrapRecord } from '@momonga/protocol';
 import { SchemaRenderError } from '../src/dialect/render.ts';
 import type { ResolvedDialect } from '../src/dialect/render.ts';
@@ -43,10 +43,11 @@ export type Rng = ReturnType<typeof seeded>;
 type Validator = (instance: unknown) => boolean;
 
 export const validatorOf = (schema: unknown): Validator | undefined => {
-  const ajv = new Ajv2020.default({ strict: false, allErrors: false, validateSchema: false });
+  if (typeof schema === 'boolean') return () => schema;
+  if (typeof schema !== 'object' || schema === null || Array.isArray(schema)) return undefined;
   try {
-    const compiled = ajv.compile(schema as object);
-    return (instance: unknown) => compiled(instance) === true;
+    const compiled = compileUntrustedSchema(schema as Record<string, unknown>);
+    return (instance: unknown) => compiled(instance).valid;
   } catch {
     return undefined;
   }

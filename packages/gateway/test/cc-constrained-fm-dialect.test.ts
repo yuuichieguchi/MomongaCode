@@ -43,10 +43,12 @@ describe('constrained tool calling against fm', () => {
       schemaDialect: 'guided-generation',
     });
 
-    expect(report.keywordSupport.enum).toBe(true);
-    expect(report.keywordSupport.anyOf).toBe(true);
+    const { keywordSupport } = report;
+    if (keywordSupport === undefined) throw new Error('the probe measured no keyword support');
+    expect(keywordSupport.enum).toBe(true);
+    expect(keywordSupport.anyOf).toBe(true);
 
-    const { events, error } = await constrainedRunOnFm(report.keywordSupport);
+    const { events, error } = await constrainedRunOnFm(keywordSupport);
 
     expect(error).toBeUndefined();
     expect(terminalOf(events).type).toBe('response.completed');
