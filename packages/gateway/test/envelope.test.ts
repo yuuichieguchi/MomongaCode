@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PROBE_KEYWORDS } from '@momonga/protocol';
-import { lowerSchema, type KeywordSupport } from '../src/probe/envelope.ts';
+import { lowerSchema, type KeywordSupport } from '../src/probe/lowering.ts';
 
 const supportAll = Object.fromEntries(PROBE_KEYWORDS.map((keyword) => [keyword, true])) as KeywordSupport;
 const without = (...keywords: Array<keyof KeywordSupport>): KeywordSupport => ({

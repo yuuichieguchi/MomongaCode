@@ -38,7 +38,7 @@ describe('the fm probe reads a streamed reply through the decoder every probe st
     });
     servers.push(fake);
 
-    const report = await runProbe({ socketPath: fake.socketPath, managedHealthRoute: true, samples: 2, vocabulary: FM_VOCABULARY });
+    const report = await runProbe({ schemaDialect: 'guided-generation', socketPath: fake.socketPath, managedHealthRoute: true, samples: 2, vocabulary: FM_VOCABULARY });
 
     expect(fake.routeHits[0]).toBeGreaterThan(0);
     expect(report.outputBoundField).toBe('max_completion_tokens');
@@ -50,8 +50,8 @@ describe('the fm probe reads a streamed reply through the decoder every probe st
     const unary = await startFakeChatCompletions(options);
     servers.push(streamed, unary);
 
-    const fromStream = await runProbe({ socketPath: streamed.socketPath, managedHealthRoute: true, samples: 2, vocabulary: FM_VOCABULARY });
-    const fromJson = await runProbe({ socketPath: unary.socketPath, managedHealthRoute: true, samples: 2 });
+    const fromStream = await runProbe({ schemaDialect: 'guided-generation', socketPath: streamed.socketPath, managedHealthRoute: true, samples: 2, vocabulary: FM_VOCABULARY });
+    const fromJson = await runProbe({ schemaDialect: 'guided-generation', socketPath: unary.socketPath, managedHealthRoute: true, samples: 2 });
 
     expect(fromStream.constrained).toEqual(fromJson.constrained);
     expect(fromStream.nativeTools).toEqual({ accepted: true, validRate: 0, roundTripOk: false });

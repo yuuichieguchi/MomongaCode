@@ -220,7 +220,7 @@ describe('count-tokens', () => {
 describe('closed adapter', () => {
   it('rejects create after close without resolving an endpoint', async () => {
     const resolveEndpoint = vi.fn(async () => ({ kind: 'unix' as const, socketPath: '/never.sock' }));
-    const adapter = createChatCompletionsAdapter({
+    const adapter = createChatCompletionsAdapter({ schemaDialect: () => 'json-schema-2020-12',
       resolveEndpoint,
       toolCalling: () => 'native',
       capabilities: async () => {

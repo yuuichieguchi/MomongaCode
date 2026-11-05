@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { FM_VOCABULARY, runProbe } from '@momonga/gateway';
 import type { AdapterRequest, ProbeKeyword } from '@momonga/protocol';
 import { collect, listDirTool, makeAdapter, readFileTool, startFake, terminalOf, userText } from './cc-support.ts';
 
@@ -7,16 +8,6 @@ const UNPROBED_FM_SUPPORT: Record<ProbeKeyword, boolean> = {
   anyOf: true,
   const: true,
   pattern: true,
-  minimum: true,
-  nested: true,
-  additionalProperties: true,
-};
-
-const SUPPORT_THE_PROBE_RECORDS_ON_REAL_FM: Record<ProbeKeyword, boolean> = {
-  enum: false,
-  anyOf: false,
-  const: true,
-  pattern: false,
   minimum: true,
   nested: true,
   additionalProperties: true,
@@ -42,8 +33,20 @@ describe('constrained tool calling against fm', () => {
     expect(terminalOf(events).type).toBe('response.completed');
   });
 
-  it('fm decodes the envelope built from the keyword support the probe records on fm', async () => {
-    const { events, error } = await constrainedRunOnFm(SUPPORT_THE_PROBE_RECORDS_ON_REAL_FM);
+  it('fm decodes the envelope built from the keyword support the probe measures on fm', async () => {
+    const probed = await startFake({ scenario: 'tools-ok', wire: 'fm', contextWindow: 4096, contextSizeExposure: 'none' });
+    const report = await runProbe({
+      socketPath: probed.socketPath,
+      managedHealthRoute: true,
+      samples: 2,
+      vocabulary: FM_VOCABULARY,
+      schemaDialect: 'guided-generation',
+    });
+
+    expect(report.keywordSupport.enum).toBe(true);
+    expect(report.keywordSupport.anyOf).toBe(true);
+
+    const { events, error } = await constrainedRunOnFm(report.keywordSupport);
 
     expect(error).toBeUndefined();
     expect(terminalOf(events).type).toBe('response.completed');

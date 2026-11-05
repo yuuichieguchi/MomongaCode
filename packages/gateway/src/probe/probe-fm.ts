@@ -1,3 +1,4 @@
+import { FM_SCHEMA_DIALECT } from './schema-dialect.ts';
 import { minimalChildEnv } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { ProbeReport, ToolCallingMode } from '@momonga/protocol';
@@ -52,6 +53,7 @@ export const probeManagedFm = async (options: ProbeManagedFmOptions): Promise<Pr
       socketPath: endpoint.socketPath,
       managedHealthRoute: true,
       vocabulary: FM_VOCABULARY,
+      schemaDialect: FM_SCHEMA_DIALECT,
       ...(options.model === undefined ? {} : { model: options.model }),
       countTokens: async (text) => parseCount(await execWithStdin(options.binary, ['count-tokens', '-q'], text, signal)),
       ...(options.samples === undefined ? {} : { samples: options.samples }),

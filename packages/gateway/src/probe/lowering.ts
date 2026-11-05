@@ -13,7 +13,7 @@ export const FULL_KEYWORD_SUPPORT: KeywordSupport = {
   additionalProperties: true,
 };
 
-const literalTypeOf = (value: unknown): string => {
+export const literalTypeOf = (value: unknown): string => {
   if (value === null) return 'null';
   if (typeof value === 'string') return 'string';
   if (typeof value === 'boolean') return 'boolean';

@@ -2,7 +2,7 @@ import { endpointKeyOf } from '@momonga/config';
 import type { Capabilities, ToolCallingMode } from '@momonga/protocol';
 import type { UpstreamEndpoint } from '../adapters/shared/http-client.ts';
 import { PreconditionFailedError, StreamFailure, UpstreamHttpError } from '../adapters/shared/failures.ts';
-import type { KeywordSupport } from './envelope.ts';
+import type { KeywordSupport } from './lowering.ts';
 import type { SchemaDialect } from './schema-dialect.ts';
 import { ProbeTimeoutError, createProbeClient } from './client.ts';
 import type { ProbeEndpoint } from './client.ts';

@@ -1,3 +1,4 @@
+import type { SchemaDialect } from './schema-dialect.ts';
 import type { ProbeReport, ToolCallingMode } from '@momonga/protocol';
 import type { UpstreamEndpoint } from '../adapters/shared/http-client.ts';
 import { decideToolCalling } from './decide.ts';
@@ -12,6 +13,7 @@ export type ProbeEndpointTargetOptions = {
   key: EndpointKey;
   model: string;
   apiKey: string | undefined;
+  schemaDialect: SchemaDialect;
   samples?: number;
   signal?: AbortSignal;
 };
@@ -31,6 +33,7 @@ export const probeEndpointTarget = async (options: ProbeEndpointTargetOptions): 
   const report = await runProbe({
     ...(endpoint.kind === 'unix' ? { socketPath: endpoint.socketPath } : { baseUrl: endpoint.baseUrl, ...(endpoint.headers === undefined ? {} : { headers: endpoint.headers }) }),
     model: options.model,
+    schemaDialect: options.schemaDialect,
     signal,
     ...(options.samples === undefined ? {} : { samples: options.samples }),
   });

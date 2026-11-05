@@ -30,7 +30,7 @@ const toolLessRequest = (overrides: Partial<AdapterRequest> = {}): AdapterReques
 
 describe('plain-text tool history on the native tool-less path', () => {
   it('renders earlier calls as assistant text and results as untrusted user blocks, with no tool_calls or tool role', () => {
-    const body = buildNativeBody(toolLessRequest());
+    const body = buildNativeBody(toolLessRequest(), 'json-schema-2020-12');
     expect(body.messages).toEqual([
       { role: 'system', content: 'Be terse.' },
       { role: 'user', content: 'read a' },
@@ -45,7 +45,7 @@ describe('plain-text tool history on the native tool-less path', () => {
 
   it('renders the same bytes as the constrained path without an active envelope', () => {
     const request = toolLessRequest();
-    expect(JSON.stringify(buildNativeBody(request).messages)).toBe(JSON.stringify(buildConstrainedBody(request, FULL_SUPPORT).body.messages));
+    expect(JSON.stringify(buildNativeBody(request, 'json-schema-2020-12').messages)).toBe(JSON.stringify(buildConstrainedBody(request, FULL_SUPPORT, 'json-schema-2020-12').body.messages));
   });
 
   it('groups a parallel batch into one assistant text and one block per result', () => {
@@ -59,7 +59,8 @@ describe('plain-text tool history on the native tool-less path', () => {
           { type: 'function_call_output', call_id: 'c2', output: 'B' },
         ],
       }),
-    );
+    'json-schema-2020-12',
+  );
     expect(body.messages.slice(1)).toEqual([
       { role: 'user', content: 'two files' },
       {
@@ -86,7 +87,8 @@ describe('plain-text tool history on the native tool-less path', () => {
           userText(WRAP_UP),
         ],
       }),
-    );
+    'json-schema-2020-12',
+  );
     const last = body.messages.at(-1) as { role: string; content: string };
     expect(last.role).toBe('user');
     expect(last.content).toBe(
@@ -98,7 +100,7 @@ describe('plain-text tool history on the native tool-less path', () => {
 
   it('rejects an orphan output without tools as unknown_call_id, like the constrained path', () => {
     const orphan = toolLessRequest({ input: [userText('x'), { type: 'function_call_output', call_id: 'ghost', output: 'boo' }] });
-    expect(() => buildConstrainedBody(orphan, FULL_SUPPORT)).toThrow(expect.objectContaining({ code: 'unknown_call_id' }));
-    expect(() => buildNativeBody(orphan)).toThrow(expect.objectContaining({ code: 'unknown_call_id' }));
+    expect(() => buildConstrainedBody(orphan, FULL_SUPPORT, 'json-schema-2020-12')).toThrow(expect.objectContaining({ code: 'unknown_call_id' }));
+    expect(() => buildNativeBody(orphan, 'json-schema-2020-12')).toThrow(expect.objectContaining({ code: 'unknown_call_id' }));
   });
 });

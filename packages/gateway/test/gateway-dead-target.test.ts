@@ -19,7 +19,7 @@ describe('a target that refuses connections', () => {
   it('opens its breaker after the configured number of failures and then fails at once naming the cause', async () => {
     const baseUrl = await refusedBaseUrl();
     let connectAttempts = 0;
-    const adapter = createChatCompletionsAdapter({
+    const adapter = createChatCompletionsAdapter({ schemaDialect: () => 'json-schema-2020-12',
       resolveEndpoint: async () => {
         connectAttempts += 1;
         return { kind: 'tcp', baseUrl };
@@ -71,7 +71,7 @@ describe('a target that refuses connections', () => {
     const baseUrl = await refusedBaseUrl();
     const fake = await startFake({ scenario: 'tools-ok' });
     let alive = false;
-    const adapter = createChatCompletionsAdapter({
+    const adapter = createChatCompletionsAdapter({ schemaDialect: () => 'json-schema-2020-12',
       resolveEndpoint: async () => (alive ? { kind: 'unix', socketPath: fake.socketPath } : { kind: 'tcp', baseUrl }),
       toolCalling: () => 'native',
       capabilities: async () => CC_CAPABILITIES,

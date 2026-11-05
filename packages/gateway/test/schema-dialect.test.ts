@@ -59,4 +59,44 @@ describe('guided-generation renderer', () => {
     const schema = { type: 'object', properties: { a: { enum: ['x'] } } };
     expect(renderSchema(schema, 'json-schema-2020-12', FULL_KEYWORD_SUPPORT)).toEqual(schema);
   });
+
+  it('renders an untyped node as a string and keeps its description', () => {
+    const rendered = renderSchema(
+      { type: 'object', properties: { bare: {}, described: { description: 'any value' }, list: { type: 'array', items: {} } } },
+      'guided-generation',
+      FULL_KEYWORD_SUPPORT,
+    );
+    const properties = rendered['properties'] as Record<string, unknown>;
+    expect(properties).toEqual({
+      bare: { type: 'string' },
+      described: { description: 'any value', type: 'string' },
+      list: { type: 'array', items: { type: 'string' } },
+    });
+  });
+
+  it('rewrites a mixed-type enum as an anyOf with one typed, titled enum branch per literal type', () => {
+    const rendered = renderSchema(
+      { type: 'object', properties: { v: { description: 'pick', enum: ['a', 'b', 1, 2.5, true] } } },
+      'guided-generation',
+      FULL_KEYWORD_SUPPORT,
+    );
+    expect((rendered['properties'] as Record<string, unknown>)['v']).toEqual({
+      description: 'pick',
+      anyOf: [
+        { type: 'string', enum: ['a', 'b'], title: 'v_string' },
+        { type: 'number', enum: [1, 2.5], title: 'v_number' },
+        { type: 'boolean', enum: [true], title: 'v_boolean' },
+      ],
+      title: 'v',
+    });
+  });
+
+  it('renders a schema-valued additionalProperties as true', () => {
+    const rendered = renderSchema(
+      { type: 'object', properties: { a: { type: 'string' } }, additionalProperties: { type: 'string' } },
+      'guided-generation',
+      FULL_KEYWORD_SUPPORT,
+    );
+    expect(rendered['additionalProperties']).toBe(true);
+  });
 });

@@ -26,8 +26,8 @@ import { maxOutputTokensFor } from './decide.ts';
 import { IMAGE_PROMPT, SEARCH_TOLERANCE, TINY_PNG, measureImageTokens } from './image-tokens.ts';
 import type { ImageCostProbe } from './image-tokens.ts';
 import { ProbeTimeoutError, createProbeClient, systemSleep, type HttpResult, type ProbeClient, type ProbeEndpoint } from './client.ts';
-import { buildToolCallEnvelope, keywordProbeSchemas, type KeywordSupport, type ProbeTool } from './envelope.ts';
-import { FULL_KEYWORD_SUPPORT } from './lowering.ts';
+import { buildToolCallEnvelope, keywordProbeSchemas, type ProbeTool } from './envelope.ts';
+import { FULL_KEYWORD_SUPPORT, type KeywordSupport } from './lowering.ts';
 import { renderSchema, type SchemaDialect } from './schema-dialect.ts';
 import { fillerText } from './filler.ts';
 import { field, firstOf, isRecord, parseJson } from './json.ts';
@@ -38,6 +38,7 @@ export interface ProbeOptions {
   headers?: Record<string, string>;
   managedHealthRoute?: boolean;
   vocabulary?: ErrorVocabulary;
+  schemaDialect: SchemaDialect;
   model?: string;
   samples?: number;
   countTokens?: (text: string) => Promise<number>;
@@ -277,7 +278,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
     'json_schema baseline',
   );
 
-  const dialect = vocabulary.schemaDialect ?? 'json-schema-2020-12';
+  const { schemaDialect: dialect } = options;
   const keywordSupport = Object.fromEntries(PROBE_KEYWORDS.map((keyword) => [keyword, false])) as KeywordSupport;
   if (constrainedAccepted) {
     for (const keyword of PROBE_KEYWORDS) {

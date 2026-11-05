@@ -18,7 +18,7 @@ import { FM_VOCABULARY } from '../adapters/chat-completions/vocabulary.ts';
 import type { ErrorVocabulary } from '../adapters/shared/vocabulary.ts';
 import { estimatedCountOf } from '../core/estimate.ts';
 import { capabilitiesFromProbe, layerOf, mergeCapabilities } from '../probe/decide.ts';
-import type { KeywordSupport } from '../probe/envelope.ts';
+import type { KeywordSupport } from '../probe/lowering.ts';
 import { FM_SCHEMA_DIALECT } from '../probe/schema-dialect.ts';
 import type { SchemaDialect } from '../probe/schema-dialect.ts';
 import { field, firstOf, parseJson } from '../probe/json.ts';

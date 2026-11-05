@@ -58,9 +58,9 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
       throw new UnsupportedInputError('capability_unsupported', 'this target does not support tool calling', 'tools');
     }
     const support = options.keywordSupport?.(target) ?? FULL_KEYWORD_SUPPORT;
-    const dialect = options.schemaDialect?.(target) ?? 'json-schema-2020-12';
+    const dialect = options.schemaDialect(target);
     if (mode === 'constrained') return buildConstrainedBody(request, support, dialect);
-    return { body: buildNativeBody(request, dialect, support), envelope: undefined };
+    return { body: buildNativeBody(request, dialect), envelope: undefined };
   };
 
   const lenientWireOf = (request: AdapterRequest, target: AdapterTarget, lenient: LenientItems): ChatWire => {

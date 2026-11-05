@@ -530,7 +530,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       };
       switch (target.adapter) {
         case 'chat-completions':
-          adapters[name] = createChatCompletionsAdapter({ ...common, toolCalling: () => mode, apiKey: readKey });
+          adapters[name] = createChatCompletionsAdapter({ ...common, toolCalling: () => mode, schemaDialect: () => target.capabilities.schemaDialect, apiKey: readKey });
           break;
         case 'open-responses':
           adapters[name] = createOpenResponsesAdapter({ ...common, apiKey: readKey });

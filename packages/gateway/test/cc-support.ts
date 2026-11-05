@@ -38,6 +38,7 @@ export const makeAdapter = (
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
     toolCalling: () => 'native',
     capabilities: async () => CC_CAPABILITIES,
+    schemaDialect: () => CC_CAPABILITIES.schemaDialect,
     clock,
     ...overrides,
   });

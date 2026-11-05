@@ -57,7 +57,7 @@ export type {
 } from './adapters/chat-completions/types.ts';
 export { createManagedFmTarget } from './managed/fm-target.ts';
 export type { ExecWithStdinFn, ManagedFmTarget, ManagedFmTargetOptions } from './managed/fm-target.ts';
-export type { KeywordSupport } from './probe/envelope.ts';
+export type { KeywordSupport } from './probe/lowering.ts';
 export { FM_SCHEMA_DIALECT } from './probe/schema-dialect.ts';
 export type { SchemaDialect } from './probe/schema-dialect.ts';
 export { FM_SERVE_DEFAULTS, GATEWAY_CONFIG_DEFAULTS } from './defaults.ts';

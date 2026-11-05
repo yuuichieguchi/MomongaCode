@@ -1,4 +1,3 @@
-import { FM_SCHEMA_DIALECT } from '../../probe/schema-dialect.ts';
 import { isRecord } from '@momonga/foundation';
 import { transportKindOf } from '../shared/vocabulary.ts';
 import type { ErrorVocabulary } from '../shared/vocabulary.ts';
@@ -31,7 +30,6 @@ export const CHAT_COMPLETIONS_VOCABULARY: ErrorVocabulary = {
 };
 
 export const FM_VOCABULARY: ErrorVocabulary = {
-  schemaDialect: FM_SCHEMA_DIALECT,
   kindOf: (status, body) => {
     const message = upstreamErrorText(body);
     if (message === FM_GUARDRAIL_MESSAGE) return 'guardrail';

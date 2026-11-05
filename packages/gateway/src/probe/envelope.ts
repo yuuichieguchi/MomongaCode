@@ -1,9 +1,7 @@
 import type { ProbeKeyword } from '@momonga/protocol';
 import type { JsonObject } from './json.ts';
-import { FULL_KEYWORD_SUPPORT, lowerSchema, type KeywordSupport } from './lowering.ts';
-import { renderAssembled, supportIn, type SchemaDialect } from './schema-dialect.ts';
-
-export { FULL_KEYWORD_SUPPORT, lowerSchema, type KeywordSupport };
+import { lowerSchema, type KeywordSupport } from './lowering.ts';
+import { renderAssembled, type SchemaDialect } from './schema-dialect.ts';
 
 export interface ProbeTool {
   name: string;
@@ -61,13 +59,11 @@ const envelopeAround = (calls: JsonObject, support: KeywordSupport, requireToolC
   };
 };
 
-export const buildToolCallEnvelope = (tool: ProbeTool, measured: KeywordSupport, dialect: SchemaDialect): JsonObject => {
-  const support = supportIn(dialect, measured);
-  return renderAssembled(
+export const buildToolCallEnvelope = (tool: ProbeTool, support: KeywordSupport, dialect: SchemaDialect): JsonObject =>
+  renderAssembled(
     envelopeAround({ type: 'array', minItems: 1, maxItems: 1, items: callSchema(tool, support) }, support, false),
     dialect,
   );
-};
 
 const callItemsFor = (tools: readonly ProbeTool[], support: KeywordSupport): JsonObject => {
   const [only] = tools;
@@ -83,12 +79,11 @@ const callItemsFor = (tools: readonly ProbeTool[], support: KeywordSupport): Jso
 
 export const buildToolsEnvelope = (
   tools: readonly ProbeTool[],
-  measured: KeywordSupport,
+  support: KeywordSupport,
   requireToolCalls: boolean,
   dialect: SchemaDialect,
 ): JsonObject => {
   if (tools.length === 0) throw new RangeError('buildToolsEnvelope: at least one tool is required');
-  const support = supportIn(dialect, measured);
   return renderAssembled(
     envelopeAround({ type: 'array', minItems: 1, items: callItemsFor(tools, support) }, support, requireToolCalls),
     dialect,

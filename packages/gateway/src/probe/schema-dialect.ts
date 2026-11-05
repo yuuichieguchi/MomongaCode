@@ -1,6 +1,6 @@
 import type { Capabilities } from '@momonga/protocol';
 import { isRecord, type JsonObject } from './json.ts';
-import { lowerSchema, typeFromLiterals, type KeywordSupport } from './lowering.ts';
+import { literalTypeOf, lowerSchema, typeFromLiterals, type KeywordSupport } from './lowering.ts';
 
 export type SchemaDialect = Capabilities['schemaDialect'];
 
@@ -14,11 +14,36 @@ const childPath = (path: string, segment: string): string => (path === '' ? segm
 
 const hasTypeBearingKey = (node: JsonObject): boolean => ['type', 'const', '$ref', 'anyOf'].some((key) => key in node);
 
-const inferredTypeOf = (node: JsonObject): string | string[] | undefined => {
-  if (Array.isArray(node['enum'])) return typeFromLiterals(node['enum']);
-  if (isRecord(node['properties'])) return 'object';
-  if ('items' in node) return 'array';
-  return undefined;
+const enumTypeGroups = (values: readonly unknown[]): Map<string, unknown[]> => {
+  const literalTypes = values.map(literalTypeOf);
+  const numberLike = literalTypes.includes('number');
+  const groups = new Map<string, unknown[]>();
+  values.forEach((value, index) => {
+    const literalType = literalTypes[index] as string;
+    const type = numberLike && literalType === 'integer' ? 'number' : literalType;
+    groups.set(type, [...(groups.get(type) ?? []), value]);
+  });
+  return groups;
+};
+
+const mixedEnumAsUnion = (node: JsonObject, values: readonly unknown[], path: string): JsonObject => {
+  const { enum: _values, ...rest } = node;
+  return {
+    ...rest,
+    anyOf: [...enumTypeGroups(values)].map(([type, group]) => ({ type, enum: group, title: childPath(path, type) })),
+  };
+};
+
+const typedNode = (node: JsonObject, path: string): JsonObject => {
+  if (hasTypeBearingKey(node)) return node;
+  const values = node['enum'];
+  if (Array.isArray(values)) {
+    const type = typeFromLiterals(values);
+    return typeof type === 'string' ? { ...node, type } : mixedEnumAsUnion(node, values, path);
+  }
+  if (isRecord(node['properties']) || path === '') return { ...node, type: 'object' };
+  if ('items' in node) return { ...node, type: 'array' };
+  return { ...node, type: 'string' };
 };
 
 const guideObject = (node: JsonObject, path: string): JsonObject => {
@@ -35,17 +60,18 @@ const guideObject = (node: JsonObject, path: string): JsonObject => {
   };
 };
 
+const guideUnion = (node: JsonObject, branches: readonly unknown[], path: string): JsonObject => ({
+  ...node,
+  anyOf: branches.map((branch, index) => guideNode(branch, childPath(path, String(index)), true)),
+  title: node['title'] ?? titleOf(path),
+});
+
 const guideNode = (node: unknown, path: string, directBranch: boolean): unknown => {
+  if (node === true) return guideNode({}, path, directBranch);
   if (!isRecord(node)) return node;
-  const branches = node['anyOf'];
-  if (Array.isArray(branches)) {
-    return {
-      ...node,
-      anyOf: branches.map((branch, index) => guideNode(branch, childPath(path, String(index)), true)),
-      title: node['title'] ?? titleOf(path),
-    };
-  }
-  const typed: JsonObject = hasTypeBearingKey(node) ? node : { ...node, ...(inferredTypeOf(node) === undefined ? {} : { type: inferredTypeOf(node) }) };
+  const typed = typedNode(node, path);
+  const branches = typed['anyOf'];
+  if (Array.isArray(branches)) return guideUnion(typed, branches, path);
   const shaped: JsonObject = typed['type'] === 'object' ? guideObject(typed, path) : { ...typed };
   if (shaped['type'] === 'object' && directBranch) shaped['title'] ??= titleOf(path);
   if ('items' in shaped) shaped['items'] = guideNode(shaped['items'], childPath(path, 'items'), false);
@@ -58,27 +84,17 @@ const guidedGeneration = (schema: JsonObject): JsonObject => {
 };
 
 type DialectRenderer = {
-  readonly guaranteedKeywords: Partial<KeywordSupport>;
   readonly addRequiredKeys: (schema: JsonObject) => JsonObject;
   readonly parametersWhenAbsent: JsonObject | undefined;
 };
 
 const RENDERERS: Record<SchemaDialect, DialectRenderer> = {
-  'json-schema-2020-12': { guaranteedKeywords: {}, addRequiredKeys: (schema) => schema, parametersWhenAbsent: undefined },
-  'guided-generation': {
-    guaranteedKeywords: { enum: true, anyOf: true },
-    addRequiredKeys: guidedGeneration,
-    parametersWhenAbsent: { type: 'object' },
-  },
+  'json-schema-2020-12': { addRequiredKeys: (schema) => schema, parametersWhenAbsent: undefined },
+  'guided-generation': { addRequiredKeys: guidedGeneration, parametersWhenAbsent: { type: 'object' } },
 };
 
-export const supportIn = (dialect: SchemaDialect, support: KeywordSupport): KeywordSupport => ({
-  ...support,
-  ...RENDERERS[dialect].guaranteedKeywords,
-});
-
 export const renderSchema = (schema: JsonObject, dialect: SchemaDialect, support: KeywordSupport): JsonObject =>
-  RENDERERS[dialect].addRequiredKeys(lowerSchema(schema, supportIn(dialect, support)));
+  RENDERERS[dialect].addRequiredKeys(lowerSchema(schema, support));
 
 export const renderAssembled = (schema: JsonObject, dialect: SchemaDialect): JsonObject => RENDERERS[dialect].addRequiredKeys(schema);
 

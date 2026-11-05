@@ -1,6 +1,5 @@
 import type { AdapterInputItem, AdapterRequest, FunctionTool, ToolChoice } from '@momonga/protocol';
 import { FULL_KEYWORD_SUPPORT } from '../../probe/lowering.ts';
-import type { KeywordSupport } from '../../probe/lowering.ts';
 import { renderParameters } from '../../probe/schema-dialect.ts';
 import type { SchemaDialect } from '../../probe/schema-dialect.ts';
 import { SYSTEM_PART_SEPARATOR, systemTextOf } from '../shared/system-text.ts';
@@ -24,8 +23,8 @@ export type ChatRequestBody = {
   prompt_cache_key?: string;
 };
 
-const toolOf = (tool: FunctionTool, dialect: SchemaDialect, support: KeywordSupport): unknown => {
-  const parameters = renderParameters(tool.parameters, dialect, support);
+const toolOf = (tool: FunctionTool, dialect: SchemaDialect): unknown => {
+  const parameters = renderParameters(tool.parameters, dialect, FULL_KEYWORD_SUPPORT);
   return {
     type: 'function',
     function: {
@@ -44,11 +43,7 @@ export const samplingOf = (request: AdapterRequest): Pick<ChatRequestBody, 'temp
   ...(request.top_p === undefined || request.top_p === null ? {} : { top_p: request.top_p }),
 });
 
-export const buildNativeBody = (
-  request: AdapterRequest,
-  dialect: SchemaDialect = 'json-schema-2020-12',
-  support: KeywordSupport = FULL_KEYWORD_SUPPORT,
-): ChatRequestBody => {
+export const buildNativeBody = (request: AdapterRequest, dialect: SchemaDialect): ChatRequestBody => {
   const messages: ChatMessage[] = [];
   const tools = request.tools ?? [];
   const system = systemTextOf(request.instructions, request.input);
@@ -59,7 +54,7 @@ export const buildNativeBody = (
     messages,
     stream: true,
     stream_options: { include_usage: true },
-    ...(tools.length === 0 ? {} : { tools: tools.map((tool) => toolOf(tool, dialect, support)) }),
+    ...(tools.length === 0 ? {} : { tools: tools.map((tool) => toolOf(tool, dialect)) }),
     ...(tools.length === 0 || request.tool_choice === undefined ? {} : { tool_choice: toolChoiceOf(request.tool_choice) }),
     ...samplingOf(request),
   };
