@@ -85,6 +85,16 @@ describe('RunRecovery.tla against the implementation', () => {
     expect(tableOf(name)).toEqual(codeTable(table));
   });
 
+  it('proposes (UniformCancel, O13 of the off-loop design) exactly two service rows that differ from the store: QUEUED and WAITING_HUMAN end through CANCELLING', () => {
+    const proposed = stringsIn(definitionOf('UniformServiceEdges'));
+    expect(proposed).toEqual(['QUEUED', 'CANCELLING', 'WAITING_HUMAN', 'QUEUED', 'CANCELLING', 'STOPPED']);
+    expect(SERVICE_TRANSITIONS.QUEUED).toEqual(['CANCELLED']);
+    expect([...SERVICE_TRANSITIONS.WAITING_HUMAN].sort()).toEqual(['CANCELLED', 'QUEUED', 'STOPPED']);
+    expect(stringsIn(definitionOf('UniformSweepEdges'))).toEqual(['WAITING_HUMAN', 'QUEUED', 'CANCELLING', 'STOPPED']);
+    expect(SWEEP_TRANSITIONS.QUEUED).toEqual(['STOPPED']);
+    expect(spec).toContain('CancelTarget(status) == IF ~UniformCancel');
+  });
+
   it('models only event kinds that the protocol defines', () => {
     const modelled = setOf('ModelledEvents');
     expect(modelled.filter((kind) => !(EVENT_TYPES as readonly string[]).includes(kind))).toEqual([]);
@@ -114,7 +124,7 @@ const constantsOf = (name: string): Record<string, string> => {
 const manifest = readManifest(path.join(configDir, 'manifest.json'));
 const recoveryEntries = manifest.entries.filter((entry) => entry.config.split('.')[0] === 'RunRecovery');
 const checkNames = recoveryEntries.filter((entry) => entry.role === 'check').map((entry) => entry.config);
-const evidenceNames = recoveryEntries.filter((entry) => entry.role === 'evidence').map((entry) => entry.config);
+const evidenceNames = recoveryEntries.filter((entry) => entry.role === 'evidence' && !entry.config.startsWith('RunRecovery.uniformCancel')).map((entry) => entry.config);
 const configText = (name: string): string => fs.readFileSync(path.join(configDir, `${name}.cfg`), 'utf8');
 const hasInvariantSection = (name: string): boolean => /^INVARIANTS$/m.test(configText(name));
 const lists = (name: string, invariant: string): boolean => new RegExp(`^\\s+${invariant}$`, 'm').test(configText(name));
@@ -124,6 +134,13 @@ describe('the checked configurations against the repaired recovery design', () =
     const constants = constantsOf(name);
     return [constants['UnfencedEffect'] as string, constants['NoCallLock'] as string, constants['NoReapBeforeReconcile'] as string];
   };
+
+  it('sets UniformCancel to TRUE in exactly the uniformCancel configurations and FALSE in every other RunRecovery configuration', () => {
+    for (const entry of recoveryEntries) {
+      const expected = entry.config.startsWith('RunRecovery.uniformCancel') ? 'TRUE' : 'FALSE';
+      expect(constantsOf(entry.config)['UniformCancel'], entry.config).toBe(expected);
+    }
+  });
 
   it('checks the code with all three repairs in every configuration that is not evidence', () => {
     expect(checkNames.length).toBeGreaterThan(0);

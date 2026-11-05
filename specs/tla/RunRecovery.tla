@@ -146,7 +146,8 @@ CONSTANTS
     NoCallLock,
     NoReapBeforeReconcile,
     StatusEdgesRecorded,
-    ParentCalls
+    ParentCalls,
+    UniformCancel
 
 (* StatusEdgesRecorded = FALSE drops the from and to status of the         *)
 (* run.status events. No worker action reads them; only OnlyDeclaredEdges  *)
@@ -298,6 +299,14 @@ Withdraw(S, r) ==
          IN AppendEvs([S EXCEPT !.appr[r][s] = "withdrawn"], r,
                    <<E("tool.permission.cancelled", s, "withdrawn", "")>>)
 
+UniformServiceEdges == [ServiceEdges EXCEPT !["QUEUED"] = {"CANCELLING"}, !["WAITING_HUMAN"] = {"QUEUED", "CANCELLING", "STOPPED"}]
+
+UniformSweepEdges == [SweepEdges EXCEPT !["WAITING_HUMAN"] = {"QUEUED", "CANCELLING", "STOPPED"}]
+
+SvcEdges == IF UniformCancel THEN UniformServiceEdges ELSE ServiceEdges
+
+SwpEdges == IF UniformCancel THEN UniformSweepEdges ELSE SweepEdges
+
 (* changeStatus without its cascade *)
 Base(S, r, to, lead, refund, resetFailures) ==
     LET x == S.run[r]
@@ -308,12 +317,13 @@ Base(S, r, to, lead, refund, resetFailures) ==
     IN [S3 EXCEPT !.run[r] = [@ EXCEPT
             !.status = to,
             !.cancelReq = @ \/ to = "CANCELLING" \/ to = "CANCELLED",
+            !.cancelOrigin = IF UniformCancel /\ to = "CANCELLING" THEN x.status ELSE @,
             !.failed = IF resetFailures THEN 0 ELSE @,
             !.attempts = IF refund THEN @ - 1 ELSE @,
             !.owner = IF keeps THEN @ ELSE NoOwner,
             !.live = IF keeps THEN @ ELSE FALSE]]
 
-CancelTarget(status) == IF status \in {"QUEUED", "WAITING_HUMAN"} THEN "CANCELLED" ELSE "CANCELLING"
+CancelTarget(status) == IF ~UniformCancel /\ status \in {"QUEUED", "WAITING_HUMAN"} THEN "CANCELLED" ELSE "CANCELLING"
 
 WakeParent(S) ==
     IF S.run[Parent].status = "WAITING_TOOL"
@@ -337,10 +347,12 @@ Exhausted(x) ==
     \/ x.status \in ClaimStatuses /\ x.owner # NoOwner /\ x.failed + 1 >= MaxAttempts
     \/ x.attempts + 1 > MaxTotalAttempts
 
+SweeperOwned(x) == UniformCancel /\ x.status = "CANCELLING" /\ x.cancelOrigin \in {"QUEUED", "WAITING_HUMAN"}
+
 Claimable(S, r) ==
     LET x == S.run[r]
     IN \/ x.status = "QUEUED"
-       \/ x.status \in ClaimStatuses /\ (x.owner = NoOwner \/ ~x.live)
+       \/ x.status \in ClaimStatuses /\ (x.owner = NoOwner \/ ~x.live) /\ ~SweeperOwned(x)
 
 DeadLetterOne(S, r) ==
     IF Claimable(S, r) /\ Exhausted(S.run[r])
@@ -490,7 +502,7 @@ Dropped(w) ==
 Init ==
     /\ run = [r \in Runs |->
                 [status |-> IF r = Parent THEN "QUEUED" ELSE "ABSENT",
-                 owner |-> NoOwner, token |-> 0, live |-> FALSE, cancelReq |-> FALSE,
+                 owner |-> NoOwner, token |-> 0, live |-> FALSE, cancelReq |-> FALSE, cancelOrigin |-> "",
                  attempts |-> 0, failed |-> 0, lastSeq |-> IF r = Parent THEN 1 ELSE 0]]
     /\ ev = [r \in Runs |-> IF r = Parent THEN <<E("user.message", 0, "", "")>> ELSE <<>>]
     /\ appr = [r \in Runs |-> [s \in Steps |-> "none"]]
@@ -831,7 +843,7 @@ SpawnExec(w) ==
            canComplete == idem[k] \in {"PENDING", "UNKNOWN"}
            created == [Snap EXCEPT !.run[Child] =
                            [status |-> "QUEUED", owner |-> NoOwner, token |-> 0, live |-> FALSE,
-                            cancelReq |-> FALSE, attempts |-> 0, failed |-> 0, lastSeq |-> 1],
+                            cancelReq |-> FALSE, cancelOrigin |-> "", attempts |-> 0, failed |-> 0, lastSeq |-> 1],
                        !.ev[Child] = <<E("user.message", 0, "", "")>>]
        IN \/ /\ c.status # "ABSENT" /\ c.status \in Terminal /\ canComplete
              /\ UNCHANGED <<run, ev, appr>>
@@ -924,7 +936,7 @@ Deadline(r) ==
 RequestCancel(r) ==
     /\ run[r].status \notin Terminal \cup {"CANCELLING", "ABSENT"}
     /\ LET to == CancelTarget(run[r].status)
-       IN /\ to \in ServiceEdges[run[r].status]
+       IN /\ to \in SvcEdges[run[r].status]
           /\ SetStore(Change(Snap, r, to, <<>>, FALSE, FALSE))
     /\ UNCHANGED <<idem, idemRes, eff, dl, child, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
 
@@ -939,14 +951,14 @@ Resolve(r, s, choice) ==
 
 SweepQueued(r) ==
     /\ run[r].status = "QUEUED" /\ dl[r]
-    /\ "STOPPED" \in SweepEdges["QUEUED"]
+    /\ "STOPPED" \in SwpEdges["QUEUED"]
     /\ SetStore(Change(Snap, r, "STOPPED", <<>>, FALSE, FALSE))
     /\ UNCHANGED <<idem, idemRes, eff, dl, child, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
 
 SweepHuman(r) ==
     /\ run[r].status = "WAITING_HUMAN"
     /\ PendingStep(Snap, r) # {} \/ dl[r]
-    /\ "STOPPED" \in ServiceEdges["WAITING_HUMAN"]
+    /\ "STOPPED" \in SvcEdges["WAITING_HUMAN"]
     /\ LET due == PendingStep(Snap, r)
            S0 == [Snap EXCEPT !.appr[r] = [s \in Steps |-> IF s \in due THEN "expired" ELSE @[s]]]
            lead == IF due = {} THEN <<>>
@@ -957,8 +969,14 @@ SweepHuman(r) ==
 
 SweepTool(r) ==
     /\ run[r].status = "WAITING_TOOL" /\ dl[r]
-    /\ "QUEUED" \in ServiceEdges["WAITING_TOOL"]
+    /\ "QUEUED" \in SvcEdges["WAITING_TOOL"]
     /\ SetStore(Change(Snap, r, "QUEUED", <<>>, FALSE, FALSE))
+    /\ UNCHANGED <<idem, idemRes, eff, dl, child, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
+
+FinishCancelled(r) ==
+    /\ SweeperOwned(run[r])
+    /\ (run[r].owner = NoOwner \/ ~run[r].live)
+    /\ SetStore(Change(Snap, r, "CANCELLED", <<>>, FALSE, FALSE))
     /\ UNCHANGED <<idem, idemRes, eff, dl, child, pc, wr, wt, ws, lost, wcancel, wresp, wretry, wlock, wstep, flags>>
 
 ExpireLease(r) ==
@@ -975,7 +993,7 @@ AllDone == \A r \in Runs : run[r].status \in Terminal \cup {"ABSENT"}
 
 Terminated == AllDone /\ UNCHANGED vars
 
-Next ==
+NextWithoutSweeper ==
     \/ \E w \in Workers : Claim(w) \/ ClaimNone(w) \/ Step(w) \/ HB(w) \/ Abort(w) \/ Crash(w)
     \/ \E r \in Runs : Deadline(r) \/ RequestCancel(r) \/ ExpireLease(r)
                        \/ SweepQueued(r) \/ SweepHuman(r) \/ SweepTool(r)
@@ -983,12 +1001,18 @@ Next ==
     \/ \E r \in Runs, s \in Steps, c \in {"allow", "reject"} : Resolve(r, s, c)
     \/ Terminated
 
+Next == NextWithoutSweeper \/ \E r \in Runs : FinishCancelled(r)
+
 Fairness ==
     /\ \A w \in Workers : WF_vars(Claim(w)) /\ WF_vars(ClaimNone(w)) /\ WF_vars(Step(w)) /\ WF_vars(HB(w)) /\ WF_vars(Abort(w))
     /\ \A r \in Runs : WF_vars(ExpireDead(r)) /\ WF_vars(SweepQueued(r))
-                       /\ WF_vars(SweepHuman(r)) /\ WF_vars(SweepTool(r))
+                       /\ WF_vars(SweepHuman(r)) /\ WF_vars(SweepTool(r)) /\ WF_vars(FinishCancelled(r))
 
 Spec == Init /\ [][Next]_vars /\ Fairness
+
+SpecWithoutWorkers == Init /\ [][Next]_vars /\ \A r \in Runs : WF_vars(ExpireDead(r)) /\ WF_vars(FinishCancelled(r))
+
+SpecWithoutSweeper == Init /\ [][NextWithoutSweeper]_vars /\ \A r \in Runs : WF_vars(ExpireDead(r))
 
 -----------------------------------------------------------------------------
 (* Properties *)
@@ -1051,8 +1075,8 @@ OnlyDeclaredEdges ==
         LET from == ev[r][i].x
             to == ev[r][i].y
         IN \/ to \in WorkerEdges[from]
-           \/ to \in ServiceEdges[from]
-           \/ to \in SweepEdges[from]
+           \/ to \in SvcEdges[from]
+           \/ to \in SwpEdges[from]
            \/ to \in DeadLetterEdges[from]
 
 EventsAppendOnly ==
@@ -1062,6 +1086,9 @@ Settles ==
     \A r \in Runs :
         (run[r].status \in {"QUEUED", "RUNNING", "CANCELLING"})
             ~> (run[r].status \in Terminal \cup {"WAITING_TOOL", "WAITING_HUMAN"})
+
+CancelNeedsNoWorker ==
+    \A r \in Runs : SweeperOwned(run[r]) ~> (run[r].status \in Terminal)
 
 WorkerSymmetry == Permutations(Workers)
 
