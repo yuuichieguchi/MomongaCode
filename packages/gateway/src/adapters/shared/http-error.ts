@@ -32,12 +32,20 @@ export const httpErrorOf = async (
     response.status,
     detail.code ?? null,
     message === '' ? `HTTP ${response.status}` : message,
-    parseRetryAfter(response.headers['retry-after'], clock.now()),
+    retryAfterOf(response, clock),
     kind === 'guardrail',
     shouldRetry === 'false' ? false : undefined,
     kind === 'context_overflow',
     kind === 'unsupported',
   );
+};
+
+export const retryAfterOf = (response: { headers: Record<string, string> }, clock: Clock): number | undefined =>
+  parseRetryAfter(response.headers['retry-after'], clock.now());
+
+export const retryAfterHint = (response: { headers: Record<string, string> }, clock: Clock): { retryAfterMs?: number } => {
+  const retryAfterMs = retryAfterOf(response, clock);
+  return retryAfterMs === undefined ? {} : { retryAfterMs };
 };
 
 export const nestedErrorDetail: ErrorDetailReader = (parsed) => {

@@ -41,6 +41,7 @@ export type ResponseEmitterOptions = {
   clock: Clock;
   model: string;
   request: AdapterRequest;
+  retryAfterMs?: number;
 };
 
 const newId = (prefix: string, clock: Clock): string => `${prefix}_${uuidv7(clock).replaceAll('-', '')}`;
@@ -310,7 +311,7 @@ export class ResponseEmitter {
       type: 'response.failed',
       response: {
         ...this.resource({ status: 'failed', output: this.doneItems, usage: null }),
-        error: { code, message, type: errorType },
+        error: { code, message, type: errorType, ...(this.options.retryAfterMs === undefined ? {} : { retryAfterMs: this.options.retryAfterMs }) },
       },
     });
     this.ended = true;

@@ -19,7 +19,7 @@ import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { StreamFailure, UnsupportedInputError, UpstreamProtocolError } from '../shared/failures.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
 import type { CompletionResponse } from '../shared/http-client.ts';
-import { httpErrorOf } from '../shared/http-error.ts';
+import { retryAfterHint, httpErrorOf } from '../shared/http-error.ts';
 import { HTTP_TRANSPORT_VOCABULARY } from '../shared/vocabulary.ts';
 import { MAX_SSE_EVENT_BYTES, MAX_UNARY_BODY_BYTES } from '../shared/limits.ts';
 import { ResponseEmitter } from '../shared/response-emitter.ts';
@@ -113,7 +113,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
           paused === undefined ? base : { ...base, messages: [...base.messages, { role: 'assistant', content: paused.content }] };
         const response = await pool.clientFor(endpoint).post({ headers: headersFor(apiKey, 'text/event-stream'), body: JSON.stringify(body), signal });
         if (response.status !== 200) throw await httpErrorOf(response, options.clock, anthropicErrorDetail, HTTP_TRANSPORT_VOCABULARY);
-        emitter ??= new ResponseEmitter({ clock: options.clock, model: request.model, request });
+        emitter ??= new ResponseEmitter({ clock: options.clock, model: request.model, request, ...retryAfterHint(response, options.clock) });
         const driver = new AnthropicStreamDriver(emitter, paused === undefined ? undefined : { usage: paused.usage, firstInputTokens: paused.firstInputTokens });
         yield* readSegment(response, driver, ctx);
         if (!driver.paused) return;

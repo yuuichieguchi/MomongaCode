@@ -8,7 +8,7 @@ import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { StreamFailure, UnsupportedInputError, UpstreamProtocolError } from '../shared/failures.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
 import { CHAT_COMPLETIONS_VOCABULARY } from '../chat-completions/vocabulary.ts';
-import { httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
+import { retryAfterHint, httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
 import { MAX_SSE_EVENT_BYTES } from '../shared/limits.ts';
 import { ResponseEmitter } from '../shared/response-emitter.ts';
 import { OPEN_RESPONSES_PATH, OPEN_RESPONSES_PROVIDER_LABEL, OPEN_RESPONSES_SUFFIX, SSE_DONE_MARKER } from './constants.ts';
@@ -49,7 +49,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
       });
       if (response.status !== 200) throw await httpErrorOf(response, options.clock, nestedErrorDetail, CHAT_COMPLETIONS_VOCABULARY);
 
-      const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request });
+      const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request, ...retryAfterHint(response, options.clock) });
       const driver = new OpenResponsesStreamDriver(emitter);
       try {
         for await (const message of decodeSse(boundedSseBytes(response.body, MAX_SSE_EVENT_BYTES))) {

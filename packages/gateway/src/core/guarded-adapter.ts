@@ -17,9 +17,6 @@ export class GuardedAdapterError extends Error {
 }
 
 const UNNAMED_FAILURE_CODE = 'upstream_error';
-const upstreamCodes = new WeakMap<object, string>();
-
-export const upstreamCodeOf = (event: StreamEvent & { type: 'response.failed' }): string => upstreamCodes.get(event) ?? event.response.error.code;
 
 const CODE_SHAPE = /^[A-Za-z0-9_.:-]{1,64}$/;
 const PARAM_SHAPE = /^[A-Za-z0-9_.[\]:-]{1,128}$/;
@@ -72,10 +69,10 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor): Guarde
           type: error.type,
           message: redactor.text(error.message),
           param: 'param' in error ? shaped(error.param, PARAM_SHAPE) : null,
+          ...(error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs }),
         },
       },
     };
-    upstreamCodes.set(rebuilt, error.code);
     return rebuilt as unknown as StreamEvent;
   };
 

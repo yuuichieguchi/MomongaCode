@@ -5,7 +5,7 @@ import { StreamFailure, UpstreamProtocolError } from '../shared/failures.ts';
 import { MAX_NDJSON_LINE_BYTES, MAX_TOOL_CALLS } from '../shared/limits.ts';
 import { ResponseEmitter } from '../shared/response-emitter.ts';
 
-export type OllamaStreamOptions = { request: AdapterRequest; clock: Clock };
+export type OllamaStreamOptions = { request: AdapterRequest; clock: Clock; retryAfterMs?: number };
 
 const invalid = (what: string): UpstreamProtocolError => new UpstreamProtocolError(`the upstream sent a malformed chunk: ${what}`);
 
@@ -44,7 +44,7 @@ class OllamaStreamDriver {
   private finished = false;
 
   constructor(options: OllamaStreamOptions) {
-    this.emitter = new ResponseEmitter({ clock: options.clock, model: options.request.model, request: options.request });
+    this.emitter = new ResponseEmitter({ clock: options.clock, model: options.request.model, request: options.request, ...(options.retryAfterMs === undefined ? {} : { retryAfterMs: options.retryAfterMs }) });
     this.toolsAllowed = options.request.tool_choice !== 'none';
   }
 

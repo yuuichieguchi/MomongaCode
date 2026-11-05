@@ -170,7 +170,7 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
             jitter: 'equal',
           });
           const waitMs = Math.max(backoffMs, classified.retryAfterMs ?? 0);
-          if (next !== undefined && (sends >= policy.maxAttempts || waitMs > policy.maxMs)) break;
+          if (next !== undefined && (sends >= policy.maxAttempts || waitMs > policy.maxMs || elapsedMs() + waitMs > policy.totalWaitMs)) break;
           if (elapsedMs() + waitMs > policy.totalWaitMs) exhausted();
           if (deadlineAt !== undefined && policy.clock.now() + waitMs > deadlineAt) {
             throw deadlineExceededError(`the next retry of target "${target.name}" would start after the request deadline`);

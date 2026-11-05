@@ -9,3 +9,8 @@ const NEUTRAL_CODES: ReadonlySet<string> = new Set(ADAPTER_NEUTRAL_ERROR_CODES);
 
 export const breakerVerdictOf = (type: ErrorType, code: string | null): BreakerVerdict =>
   NEUTRAL_TYPES.has(type) || (code !== null && NEUTRAL_CODES.has(code)) ? 'neutral' : 'failure';
+
+const NON_RETRYABLE_TYPES: ReadonlySet<ErrorType> = new Set(['invalid_request', 'not_found']);
+
+export const retryableFailureOf = (type: ErrorType, code: string | null): boolean =>
+  !NON_RETRYABLE_TYPES.has(type) && !(code !== null && NEUTRAL_CODES.has(code));

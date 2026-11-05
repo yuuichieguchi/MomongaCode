@@ -18,9 +18,8 @@ import { modelCostOf } from './model-cost.ts';
 import { TERMINAL_STREAM_EVENT_TYPES, carriesOutput, isReasoningEffort } from '@momonga/protocol';
 import { startAttemptSpan } from './attempt-span.ts';
 import type { AttemptSpan, TraceParent } from './attempt-span.ts';
-import { breakerVerdictOf } from './breaker-verdict.ts';
+import { breakerVerdictOf, retryableFailureOf } from './breaker-verdict.ts';
 import type { BreakerVerdict } from './breaker-verdict.ts';
-import { upstreamCodeOf } from './guarded-adapter.ts';
 import { armDeadline } from './deadline.ts';
 import { ClientDisconnectedError, GatewayError, isGatewayClosed, isRunCancelled } from './errors.ts';
 import { estimateInputTokens, estimateOutputTokens, estimatedUsage } from './estimate.ts';
@@ -129,8 +128,12 @@ const failureBeforeOutput = (event: StreamEvent): UpstreamFailure | undefined =>
   if (terminal.type !== 'response.failed') return undefined;
   const { error } = terminal.response;
   const type = error.type ?? 'server_error';
-  if (breakerVerdictOf(type, upstreamCodeOf(terminal)) === 'neutral') return undefined;
-  return new UpstreamFailure({ retryable: true, error: { type, code: error.code, message: error.message, param: null } });
+  if (!retryableFailureOf(type, error.code)) return undefined;
+  return new UpstreamFailure({
+    retryable: true,
+    ...(error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs }),
+    error: { type, code: error.code, message: error.message, param: null },
+  });
 };
 
 const openAttempt = async (
@@ -444,11 +447,12 @@ async function* relaySteps(
 
   if (terminalEvent.type === 'response.failed') {
     const error = terminalEvent.response.error;
-    const verdict = breakerVerdictOf(error.type ?? 'server_error', upstreamCodeOf(terminalEvent));
+    const failureType = error.type ?? 'server_error';
+    const verdict = breakerVerdictOf(failureType, error.code);
     outcome.settle(verdict);
     opened.span.fail(error.type ?? 'server_error', new Error(error.message), error.message);
     progress.concluded = true;
-    yield failedTerminal({ ...error, type: error.type ?? 'server_error' }, upstreamOutput, verdict === 'failure');
+    yield failedTerminal({ code: error.code, message: error.message, type: failureType }, upstreamOutput, retryableFailureOf(failureType, error.code));
     return;
   }
 

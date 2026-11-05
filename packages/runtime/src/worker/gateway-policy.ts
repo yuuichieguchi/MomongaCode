@@ -6,6 +6,7 @@ import { GatewayFailureError } from './errors.ts';
 import { GatewayRequestError } from '../gateway-client.ts';
 
 const STREAM_INTERRUPTED_REFUNDS = 3;
+const DEFERRAL_FAILURE_CODE = 'rate_limited';
 const REQUEUEABLE_HOP_STATUSES: readonly number[] = [408, 409];
 
 export const INHERITANCE_FAILURE_MESSAGE = 'The previous conversation could not be loaded. Start a new conversation (/clear) to continue.';
@@ -25,7 +26,7 @@ export const dispositionOf = (error: unknown, interruptions: number): FailureDis
   if (!(error instanceof GatewayRequestError)) return { kind: 'fail', code: 'internal_error', message: error instanceof Error ? error.message : String(error) };
   const retryAfterMs = error.retryAfterMs ?? 0;
   if (error.code === 'deadline_exceeded') return { kind: 'timeout' };
-  if (error.deferred === true) return { kind: 'defer', code: error.code, message: error.message, retryAfterMs };
+  if (error.deferred === true) return { kind: 'defer', code: DEFERRAL_FAILURE_CODE, message: error.message, retryAfterMs };
   if (error.code === 'gateway_unavailable' && error.provenNotSent === true) return { kind: 'requeue', refund: true, retryAfterMs, interrupted: false };
   if (error.status === 503 && error.code === 'gateway_closed') return { kind: 'requeue', refund: true, retryAfterMs, interrupted: false };
   if (error.code === 'stream_interrupted') return { kind: 'requeue', refund: interruptions < STREAM_INTERRUPTED_REFUNDS, retryAfterMs, interrupted: true };

@@ -122,7 +122,7 @@ Admits(r, t) ==
 MaySend(r) ==
     LET t == at[r] IN
     /\ st[r] = "active"
-    /\ left[r] > 0
+    /\ (left[r] > 0 \/ (here[r] = 0 /\ at[r] > 1))
     /\ here[r] < MaxAttempts \/ ~HasLater(r)
     /\ ~(~CanPass(r, t) /\ HasLater(r) /\ CanPass(r, t + 1))
     /\ (Variant = "cut") => CanPass(r, t)
@@ -146,7 +146,7 @@ SendError(r, e) ==
     /\ Admits(r, t)
     /\ sent' = [sent EXCEPT ![r][t] = TRUE]
     /\ last' = [last EXCEPT ![r][t] = e]
-    /\ left' = [left EXCEPT ![r] = @ - 1]
+    /\ left' = [left EXCEPT ![r] = IF @ > 0 THEN @ - 1 ELSE 0]
     /\ here' = [here EXCEPT ![r] = @ + 1]
     /\ IF Variant = "perSend"
          THEN verdicts' = [verdicts EXCEPT ![r][t] = @ + 1]
@@ -159,12 +159,12 @@ AfterError(r) ==
     /\ last[r][t] # None
     /\ here[r] > 0
     /\ \/ /\ left[r] = 0
+          /\ ~HasLater(r)
           /\ Record(r, t, VerdictOf(r, t))
           /\ st' = [st EXCEPT ![r] = "done"]
           /\ reason' = [reason EXCEPT ![r] = "budget"]
           /\ UNCHANGED <<at, here>>
-       \/ /\ left[r] > 0
-          /\ HasLater(r)
+       \/ /\ HasLater(r)
           /\ Leave(r)
           /\ UNCHANGED <<st, reason>>
     /\ UNCHANGED <<left, sent, last>>

@@ -4,7 +4,7 @@ import { createUpstreamClassifier } from '../shared/classify.ts';
 import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { StreamFailure, UpstreamProtocolError } from '../shared/failures.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
-import { httpErrorOf } from '../shared/http-error.ts';
+import { retryAfterHint, httpErrorOf } from '../shared/http-error.ts';
 import type { ErrorDetailReader } from '../shared/http-error.ts';
 import { buildOllamaBody } from './request.ts';
 import { ollamaEventsOf } from './stream.ts';
@@ -42,7 +42,7 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
         signal,
       });
       if (response.status !== 200) throw await httpErrorOf(response, options.clock, detailReader(request.model), OLLAMA_VOCABULARY);
-      for await (const event of ollamaEventsOf(response.body, { request, clock: options.clock })) {
+      for await (const event of ollamaEventsOf(response.body, { request, clock: options.clock, ...retryAfterHint(response, options.clock) })) {
         ctx.signal.throwIfAborted();
         yield event;
       }

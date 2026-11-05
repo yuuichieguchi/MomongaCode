@@ -173,7 +173,7 @@ export type Usage = {
   output_tokens_details: { reasoning_tokens: number };
 };
 
-export type ResponseError = { code: string; message: string; type?: ErrorType };
+export type ResponseError = { code: string; message: string; type?: ErrorType; retryAfterMs?: number };
 
 export type FailedResponseResource = ResponseResource & { error: ResponseError };
 
