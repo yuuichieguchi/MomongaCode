@@ -26,7 +26,7 @@ const isObject = (value: unknown): value is Json => typeof value === 'object' &&
 
 const isRecord = (value: unknown): value is Json => isObject(value) && !Array.isArray(value);
 
-const resolveUri = (base: string, reference: string): string => {
+export const resolveUri = (base: string, reference: string): string => {
   try {
     return new URL(reference, base === '' ? ENGINE_ROOT_BASE : base).href;
   } catch {
@@ -34,7 +34,7 @@ const resolveUri = (base: string, reference: string): string => {
   }
 };
 
-const splitFragment = (uri: string): [string, string] => {
+export const splitFragment = (uri: string): [string, string] => {
   const hash = uri.indexOf('#');
   return hash < 0 ? [uri, ''] : [uri.slice(0, hash), decodeURIComponent(uri.slice(hash + 1))];
 };
@@ -150,8 +150,9 @@ const indexSchemas = (root: unknown, documents: ReadonlyMap<string, unknown> | u
   return state;
 };
 
-const walkPointer = (root: unknown, pointer: string): unknown => {
-  if (pointer === '' || pointer === '/') return root;
+export const pointerTrail = (root: unknown, pointer: string): unknown[] | undefined => {
+  const trail: unknown[] = [root];
+  if (pointer === '' || pointer === '/') return trail;
   let node: unknown = root;
   for (const raw of pointer.split('/').slice(1)) {
     const part = raw.replace(/~1/g, '/').replace(/~0/g, '~');
@@ -169,34 +170,49 @@ const walkPointer = (root: unknown, pointer: string): unknown => {
     } else {
       return undefined;
     }
+    trail.push(node);
   }
-  return node;
+  return trail;
+};
+
+export const walkPointer = (root: unknown, pointer: string): unknown => pointerTrail(root, pointer)?.at(-1);
+
+export type ReferenceTables = {
+  readonly resources: Map<string, unknown>;
+  readonly anchors: Map<string, Map<string, unknown>>;
+  readonly rootBase: string;
+};
+
+export type ResolvedReference =
+  | { readonly kind: 'engine'; readonly absolute: string }
+  | { readonly kind: 'resource'; readonly resource: unknown; readonly resourceBase: string; readonly fragment: string; readonly target: unknown };
+
+const targetWithin = (resource: unknown, resourceBase: string, fragment: string, tables: ReferenceTables): unknown => {
+  if (fragment === '') return resource;
+  if (fragment.startsWith('/')) return walkPointer(resource, fragment);
+  return tables.anchors.get(resourceBase)?.get(fragment);
+};
+
+export const resolveReference = (reference: string, fromBase: string, tables: ReferenceTables): ResolvedReference => {
+  const [uri, fragment] = splitFragment(resolveUri(fromBase, reference));
+  let resource = tables.resources.get(uri);
+  let resourceBase = uri;
+  if (resource === undefined && (uri === ENGINE_ROOT_BASE || uri === '')) {
+    resource = tables.resources.get(tables.rootBase);
+    resourceBase = tables.rootBase;
+  }
+  if (resource !== undefined) return { kind: 'resource', resource, resourceBase, fragment, target: targetWithin(resource, resourceBase, fragment, tables) };
+  const [rawUri, rawFragment] = splitFragment(reference);
+  const raw = tables.resources.get(rawUri);
+  if (raw === undefined) return { kind: 'engine', absolute: resolveUri(fromBase, reference) };
+  return { kind: 'resource', resource: raw, resourceBase: rawUri, fragment: rawFragment, target: targetWithin(raw, rawUri, rawFragment, tables) };
 };
 
 export type EngineResolution = (absoluteReference: string) => boolean;
 
 const resolves = (reference: string, fromBase: string, state: State, resolvesInEngine: EngineResolution): boolean => {
-  const [uri, fragment] = splitFragment(resolveUri(fromBase, reference));
-  let resource = state.resources.get(uri);
-  let resourceBase = uri;
-  if (resource === undefined && (uri === ENGINE_ROOT_BASE || uri === '')) {
-    resource = state.resources.get(state.rootBase);
-    resourceBase = state.rootBase;
-  }
-  if (resource === undefined) {
-    const [rawUri, rawFragment] = splitFragment(reference);
-    if (state.resources.has(rawUri)) {
-      resource = state.resources.get(rawUri);
-      resourceBase = rawUri;
-      if (rawFragment === '') return resource !== undefined;
-      if (rawFragment.startsWith('/')) return walkPointer(resource, rawFragment) !== undefined;
-      return state.anchors.get(resourceBase)?.get(rawFragment) !== undefined;
-    }
-    return resolvesInEngine(resolveUri(fromBase, reference));
-  }
-  if (fragment === '') return true;
-  if (fragment.startsWith('/')) return walkPointer(resource, fragment) !== undefined;
-  return state.anchors.get(resourceBase)?.get(fragment) !== undefined;
+  const resolved = resolveReference(reference, fromBase, state);
+  return resolved.kind === 'engine' ? resolvesInEngine(resolved.absolute) : resolved.target !== undefined;
 };
 
 export const unresolvableReference = (schema: Json, dialect: SchemaDialect, remotes: ReadonlyMap<string, unknown>, resolvesInEngine: EngineResolution): string | undefined => {
