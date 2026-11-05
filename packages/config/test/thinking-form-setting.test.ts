@@ -18,10 +18,12 @@ const load = async (target: Record<string, unknown>) => {
   return loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
 };
 
-const expectRejected = async (target: Record<string, unknown>): Promise<void> => {
+const expectRejected = async (target: Record<string, unknown>, ...fragments: string[]): Promise<void> => {
   const tree = makeTree();
   writeJson(userSettingsPath(tree), { models: { targets: { remote: target } } });
-  await expect(loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) })).rejects.toThrow(userSettingsPath(tree));
+  const failure = loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+  await expect(failure).rejects.toThrow(userSettingsPath(tree));
+  for (const fragment of fragments) await expect(failure).rejects.toThrow(fragment);
 };
 
 const thinkingWarningsOf = (warnings: readonly string[]): string[] => warnings.filter((warning) => warning.includes('remote') && /thinking/i.test(warning));
@@ -53,6 +55,38 @@ describe('declared thinking form of an anthropic target', () => {
 
   it('rejects an unknown thinking form', async () => {
     await expectRejected(anthropicTarget({ control: 'thinking', form: 'guess' }));
+  });
+
+  it.for(['disabled', 'between_tools'])('accepts the off spelling %s on either form', async (off) => {
+    const adaptive = { control: 'thinking', form: 'adaptive', efforts: ['low'], off };
+    const budget = { control: 'thinking', form: 'budget', budgets: { low: 2048 }, off };
+    expect((await load(anthropicTarget(adaptive))).settings.models.targets['remote']).toMatchObject({ capabilities: { reasoning: adaptive } });
+    expect((await load(anthropicTarget(budget))).settings.models.targets['remote']).toMatchObject({ capabilities: { reasoning: budget } });
+  });
+
+  it('rejects an unknown off spelling', async () => {
+    await expectRejected(anthropicTarget({ control: 'thinking', form: 'adaptive', efforts: ['low'], off: 'never' }));
+  });
+
+  it('rejects a budget that is not below the target output maximum, naming the target', async () => {
+    await expectRejected(anthropicTarget({ control: 'thinking', form: 'budget', budgets: { low: 2048, high: CAPABILITIES.maxOutputTokens } }), 'remote');
+  });
+
+  it('refuses the thinking control on an adapter that does not render it, naming the target', async () => {
+    const chatCompletions = {
+      adapter: 'chat-completions',
+      provider: 'ollama',
+      model: 'model-a',
+      baseUrl: 'http://127.0.0.1:1234/v1',
+      capabilities: { ...CAPABILITIES, reasoning: { control: 'thinking', form: 'adaptive', efforts: ['low'] } },
+    };
+    await expectRejected(chatCompletions, 'remote');
+  });
+
+  it('a chat-completions target keeps its reasoning_effort declaration', async () => {
+    const reasoning = { control: 'reasoning_effort', lowest: 'none' };
+    const { settings } = await load({ adapter: 'chat-completions', provider: 'ollama', model: 'model-a', baseUrl: 'http://127.0.0.1:1234/v1', capabilities: { ...CAPABILITIES, reasoning } });
+    expect(settings.models.targets['remote']).toMatchObject({ capabilities: { reasoning } });
   });
 });
 
