@@ -715,6 +715,10 @@ SELECT l.session_id, l.counter, l.context_window, l.token_error_ratio, l.token_c
 FROM ranked l WHERE l.recency = 1;
 `;
 
+const TYPED_READ_INDEX = `
+CREATE INDEX events_by_run_type ON events (run_id, type, seq);
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -748,4 +752,5 @@ export const MIGRATIONS: readonly Migration[] = [
     name: 'write the facts readers need at append: call, approval and tool-name columns, the model-call detail, notice codes, the final text, the in-flight request and the started calls of a run, and the meter of a session; derived once for runs written before',
     sql: APPEND_TIME_RECORDS,
   },
+  { version: 21, name: 'index the events of a run by type and seq, so every read of a run\'s events of some types seeks to the matches without stepping over the others', sql: TYPED_READ_INDEX },
 ];
