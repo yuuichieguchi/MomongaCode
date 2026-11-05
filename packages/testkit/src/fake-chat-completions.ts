@@ -159,6 +159,9 @@ export const FM_CONTEXT_OVERFLOW_ERROR = {
 export const FM_UNSUPPORTED_GUIDE_ERROR = {
   error: { message: 'An unsupported generation guide was used.', code: '500', type: 'server_error' },
 } as const;
+export const FM_GUARDRAIL_ERROR = {
+  error: { code: '500', type: 'server_error', message: "The model's safety guardrails were triggered." },
+} as const;
 export const FAKE_GUARDRAIL_ERROR = {
   error: {
     message: 'The request was blocked by the safety guardrail.',
@@ -342,6 +345,9 @@ export const startFakeChatCompletions = async (
     return { waitForRequest: () => request, release };
   };
 
+  const guardrailFailure = (): Error =>
+    options.wire === 'fm' ? new FmStreamedError(FM_GUARDRAIL_ERROR) : new HttpFailure(400, structuredClone(FAKE_GUARDRAIL_ERROR) as unknown as Json);
+
   const nativeCompletion = (body: Json, lastText: string): CompletionOut | undefined => {
     const tools = Array.isArray(body['tools']) ? body['tools'] : [];
     const functions = tools
@@ -357,7 +363,7 @@ export const startFakeChatCompletions = async (
     const sampleIndex = nativeIndex;
     nativeIndex += 1;
     if (failNativeSamples.includes(sampleIndex)) {
-      throw new HttpFailure(400, structuredClone(FAKE_GUARDRAIL_ERROR) as unknown as Json);
+      throw guardrailFailure();
     }
     const valid = isValidAtIndex(sampleIndex, nativeValidity);
     let serialized = JSON.stringify(args);
@@ -389,7 +395,7 @@ export const startFakeChatCompletions = async (
     const sampleIndex = constrainedIndex;
     constrainedIndex += 1;
     if (failConstrainedSamples.includes(sampleIndex)) {
-      throw new HttpFailure(400, structuredClone(FAKE_GUARDRAIL_ERROR) as unknown as Json);
+      throw guardrailFailure();
     }
     const valid = isValidAtIndex(sampleIndex, constrainedValidity);
     if (valid) return { content: JSON.stringify(instance), toolCalls: [], finishReason: 'stop' };
@@ -448,7 +454,7 @@ export const startFakeChatCompletions = async (
       options.guardrailTrigger !== undefined &&
       messages.some((message) => messageText(message).includes(options.guardrailTrigger as string))
     ) {
-      throw new HttpFailure(400, structuredClone(FAKE_GUARDRAIL_ERROR) as unknown as Json);
+      throw guardrailFailure();
     }
     if (options.reasoning?.effort === 'rejected' && body['reasoning_effort'] !== undefined) {
       throw invalidRequest('Unrecognized request argument supplied: reasoning_effort', null, 'reasoning_effort');
