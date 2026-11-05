@@ -36,7 +36,7 @@ const memoryTools = async (env: Env) => {
   const save = tools.find((tool) => tool.name === 'MemorySave');
   if (save === undefined) throw new Error('the memory port offers no MemorySave');
   return (runId: string, paths: string[]) =>
-    save.execute({ text: 'a.ts parses the config', scope: 'project', paths } as never, { runId, step: 1, callId: 'call_m_1', signal: SIGNAL } as never);
+    save.execute({ text: 'a.ts parses the config', scope: 'project', paths } as never, { runId, step: 1, callId: 'call_m_1', signal: SIGNAL } as never, undefined);
 };
 
 const reflectorFor = (env: Env, gateway: ReturnType<typeof createFakeGateway>) =>
