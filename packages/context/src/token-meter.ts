@@ -80,15 +80,19 @@ const nothingCounted = (inputTokens: number, known: number, uncounted: number): 
   sigmaB: noSigma,
 });
 
-const unclosedPositions = (items: readonly InputItem[]): boolean[] => {
+type Work = { steps: number };
+
+const unclosedPositions = (items: readonly InputItem[], work: Work): boolean[] => {
   const firstCall = new Map<string, number>();
   const lastOutput = new Map<string, number>();
   items.forEach((item, index) => {
+    work.steps += 1;
     if (item.type === 'function_call' && !firstCall.has(item.call_id)) firstCall.set(item.call_id, index);
     if (item.type === 'function_call_output') lastOutput.set(item.call_id, index);
   });
   const delta = new Array<number>(items.length + 2).fill(0);
   for (const [callId, call] of firstCall) {
+    work.steps += 1;
     const output = lastOutput.get(callId);
     if (output === undefined || output <= call) continue;
     delta[call + 1] = (delta[call + 1] as number) + 1;
@@ -96,18 +100,30 @@ const unclosedPositions = (items: readonly InputItem[]): boolean[] => {
   }
   let running = 0;
   return delta.map((change) => {
+    work.steps += 1;
     running += change;
     return running > 0;
   });
 };
 
-export const callClosedBoundary = (a: readonly InputItem[], b: readonly InputItem[], commonPrefix: number): number => {
-  const unclosedInA = unclosedPositions(a);
-  const unclosedInB = unclosedPositions(b);
+export const callClosedBoundaryWithWork = (
+  a: readonly InputItem[],
+  b: readonly InputItem[],
+  commonPrefix: number,
+): { boundary: number; steps: number } => {
+  const work: Work = { steps: 0 };
+  const unclosedInA = unclosedPositions(a, work);
+  const unclosedInB = unclosedPositions(b, work);
   let position = commonPrefix;
-  while (position > 0 && (unclosedInA[position] === true || unclosedInB[position] === true)) position -= 1;
-  return position;
+  while (position > 0 && (unclosedInA[position] === true || unclosedInB[position] === true)) {
+    work.steps += 1;
+    position -= 1;
+  }
+  return { boundary: position, steps: work.steps };
 };
+
+export const callClosedBoundary = (a: readonly InputItem[], b: readonly InputItem[], commonPrefix: number): number =>
+  callClosedBoundaryWithWork(a, b, commonPrefix).boundary;
 
 const ceilQuotient = (numerator: bigint, denominator: bigint): bigint => (numerator + denominator - 1n) / denominator;
 

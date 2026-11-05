@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { InputItem } from '@momonga/protocol';
-import { callClosedBoundary } from '../src/token-meter.ts';
+import { callClosedBoundary, callClosedBoundaryWithWork } from '../src/token-meter.ts';
 
 const call = (id: string): InputItem => ({ type: 'function_call', call_id: id, name: 'tool', arguments: '{}' });
 const output = (id: string, text = 'ok'): InputItem => ({ type: 'function_call_output', call_id: id, output: text });
@@ -131,14 +131,18 @@ describe('the call-closed boundary of the meter split', () => {
     expect(callClosedBoundary(a, a, 2)).toBe(2);
   });
 
-  it('marks a large parallel batch in linear time', () => {
-    const size = 5000;
-    const ids = Array.from({ length: size }, (_, index) => `c${index}`);
-    const a = [...ids.map(call), ...ids.map((id) => output(id))];
-    const b = [...ids.map(call), ...ids.map((id, index) => (index === size - 1 ? output(id, 'new') : output(id)))];
-    const started = performance.now();
-    const j = callClosedBoundary(a, b, size * 2 - 1);
-    expect(j).toBe(0);
-    expect(performance.now() - started).toBeLessThan(500);
+  it('marks a large parallel batch in work linear in the input sizes', () => {
+    const batchOf = (size: number) => {
+      const ids = Array.from({ length: size }, (_, index) => `c${index}`);
+      const a = [...ids.map(call), ...ids.map((id) => output(id))];
+      const b = [...ids.map(call), ...ids.map((id, index) => (index === size - 1 ? output(id, 'new') : output(id)))];
+      return { a, b, prefix: size * 2 - 1 };
+    };
+    for (const size of [5000, 10000]) {
+      const { a, b, prefix } = batchOf(size);
+      const { boundary, steps } = callClosedBoundaryWithWork(a, b, prefix);
+      expect(boundary).toBe(0);
+      expect(steps).toBeLessThanOrEqual(4 * (a.length + b.length));
+    }
   });
 });
