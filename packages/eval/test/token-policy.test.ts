@@ -136,7 +136,7 @@ describe('compare --gate token, the policies and the code digests', () => {
   it('refuses two reports with the same policy on the same code', () => {
     const policy = { context: { cachePrefix: true } };
     expect(() => compareContextReports(reportWith(policy), reportWith(policy), { seed: 1, gate: 'token' })).toThrow(EvalError);
-    expect(() => compareContextReports(reportWith(), reportWith(), { seed: 1, gate: 'token' })).toThrow(/identical/);
+    expect(() => compareContextReports(reportWith(), reportWith(), { seed: 1, gate: 'token' })).toThrow(/identical policy and an identical code digest/);
   });
 
   it('treats policies that differ only in key order as identical', () => {
@@ -240,12 +240,5 @@ describe('the token gate base: one head, the policy off against on', () => {
     const base = parseContextReport(encodeContextReport(reportWith({}, HEAD_CODE)), 'base.json');
     const head = parseContextReport(encodeContextReport(reportWith({ context: { cachePrefix: true } }, HEAD_CODE)), 'head.json');
     expect(() => compareContextReports(base, head, { seed: 1, gate: 'token' })).not.toThrow();
-  });
-
-  it('refuses a pair with an identical policy and an identical code digest', () => {
-    const policy: PolicyOverlay = { context: { cachePrefix: true } };
-    expect(() => compareContextReports(reportWith(policy, HEAD_CODE), reportWith(policy, HEAD_CODE), { seed: 1, gate: 'token' })).toThrow(
-      /identical policy and an identical code digest/,
-    );
   });
 });
