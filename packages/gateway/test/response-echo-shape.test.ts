@@ -20,6 +20,23 @@ const cases: EchoCase[] = [
   },
 ];
 
+const schema = { type: 'object', properties: { a: { type: 'string' } } };
+
+cases.push(
+  {
+    name: 'a json_schema format with name and schema only',
+    request: { text: { format: { type: 'json_schema', name: 'plain', schema } } },
+    field: 'text',
+    echoed: { format: { type: 'json_schema', name: 'plain', description: null, schema: null, strict: false } },
+  },
+  {
+    name: 'a json_schema format with description and strict',
+    request: { text: { format: { type: 'json_schema', name: 'full', description: 'd', schema, strict: true } } },
+    field: 'text',
+    echoed: { format: { type: 'json_schema', name: 'full', description: 'd', schema: null, strict: true } },
+  },
+);
+
 const upstreams: Array<{ name: string; start: () => Promise<UpstreamGateway> }> = [
   { name: 'anthropic', start: () => startAnthropicGateway({ script: [anthropicTextReply(['ok'])] }) },
   { name: 'open responses', start: () => startOpenResponsesGateway({ script: [openResponsesTextReply(['ok'])] }) },
