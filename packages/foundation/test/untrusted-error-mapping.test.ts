@@ -145,3 +145,39 @@ describe('the work the error mapping does', () => {
     expect(errorsOf(schema, { model: 3 })).toEqual([{ instancePath: '/model', keyword: 'type', message: 'must be string' }]);
   });
 });
+
+describe('the work the error mapping does on a recursive schema with two branches', () => {
+  const DEPTH = 30;
+    const RECURSIVE = {
+    $ref: '#/$defs/node',
+    $defs: {
+      node: {
+        anyOf: [
+          { type: 'object', properties: { c: { $ref: '#/$defs/node' } } },
+          { type: 'object', properties: { d: { $ref: '#/$defs/node' } } },
+        ],
+      },
+    },
+  };
+
+  it('probes each branch once per level along the winning path, linear in depth times branches', () => {
+    let calls = 0;
+    const engine: Engine = {
+      compile: (schema, registry) => {
+        const validate = ataEngine.compile(schema, registry);
+        return (instance) => {
+          calls += 1;
+          return validate(instance);
+        };
+      },
+    };
+    const validate = createUntrustedBoundary({ remotes: new Map(), engine }).compile(RECURSIVE);
+    let instance: unknown = 'x';
+    for (let level = 0; level < DEPTH; level += 1) instance = { c: instance, d: 'y' };
+    calls = 0;
+    const verdict = validate(instance);
+    expect(verdict.valid).toBe(false);
+    expect(calls).toBeLessThanOrEqual(1 + 2 * (DEPTH + 1));
+    if (!verdict.valid) expect(verdict.errors.length).toBeGreaterThan(0);
+  });
+});
