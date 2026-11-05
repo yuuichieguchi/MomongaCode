@@ -112,7 +112,7 @@ describe('POST /v1/responses/compact with Idempotency-Key', () => {
     const first = compact(client, 'cp-3');
     await waitFor(() => primary.compactSignals.length === 1, { description: 'first compact call' });
     const second = postJson(client, '/v1/responses/compact', compactBody, { ...key('cp-3'), 'momonga-deadline-ms': String(JOINER_DEADLINE_MS) }).then(readJson);
-    await waitFor(() => timerPending(timers, JOINER_DEADLINE_MS), { description: 'the duplicate joined the in-flight call', maxTurns: 20_000 });
+    await waitFor(() => primary.compactSignals.length === 1 && timerPending(timers, JOINER_DEADLINE_MS), { description: 'the duplicate joined the in-flight call', maxTurns: 20_000 });
     expect(primary.compactSignals).toHaveLength(1);
     primary.release();
     const [a, b] = await Promise.all([first, second]);
@@ -325,6 +325,7 @@ describe('a cancelled keyed compaction stays tracked until it settles', () => {
     expect(closed).toBe(false);
     primary.release();
     await closing;
+    expect(closed).toBe(true);
     expect(gateway.abandonedRuns).toBe(0);
   });
 

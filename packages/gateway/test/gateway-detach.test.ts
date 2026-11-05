@@ -18,8 +18,8 @@ const detached = (timers: Timers): Promise<void> =>
   waitFor(() => timerPending(timers, DETACHED_MAX_MS), { description: 'the run detached from its last client', maxTurns: 20_000 });
 const rejoined = (timers: Timers): Promise<void> =>
   waitFor(() => !timerPending(timers, DETACHED_MAX_MS), { description: 'a client rejoined the detached run', maxTurns: 20_000 });
-const joinerSubscribed = (timers: Timers): Promise<void> =>
-  waitFor(() => timerPending(timers, JOINER_DEADLINE_MS), { description: 'the joiner subscribed', maxTurns: 20_000 });
+const joinerSubscribed = (timers: Timers, upstreamCalls: () => number): Promise<void> =>
+  waitFor(() => upstreamCalls() === 1 && timerPending(timers, JOINER_DEADLINE_MS), { description: 'the joiner subscribed to the one upstream call', maxTurns: 20_000 });
 const joinerLeft = (timers: Timers): Promise<void> =>
   waitFor(() => !timerPending(timers, JOINER_DEADLINE_MS), { description: 'the joiner left', maxTurns: 20_000 });
 
@@ -113,7 +113,7 @@ describe('detached keyed runs', () => {
     const joiner = await openRawPost(socketPath, '/v1/responses', streamBody, {
       headers: { ...key('d-4'), 'momonga-deadline-ms': String(JOINER_DEADLINE_MS) },
     });
-    await joinerSubscribed(timers);
+    await joinerSubscribed(timers, () => primary.calls.length);
     joiner.socket.destroy();
     await joinerLeft(timers);
     expect(live.attemptSpans()).toHaveLength(1);

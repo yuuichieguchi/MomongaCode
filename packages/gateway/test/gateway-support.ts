@@ -115,6 +115,7 @@ export type LiveSpanTelemetry = {
   readonly telemetry: Telemetry;
   readonly spans: LiveSpan[];
   attemptSpans(): LiveSpan[];
+  commitCountsPerAttempt(): number[];
   commitEvents(): number;
 };
 
@@ -159,6 +160,7 @@ export const createLiveSpanTelemetry = (clock: FakeClock): LiveSpanTelemetry => 
     telemetry: { ...base, tracer },
     spans,
     attemptSpans,
+    commitCountsPerAttempt: () => attemptSpans().map((span) => span.events.filter((name) => name === RESPONSE_COMMITTED_EVENT).length),
     commitEvents: () => attemptSpans().reduce((count, span) => count + span.events.filter((name) => name === RESPONSE_COMMITTED_EVENT).length, 0),
   };
 };
