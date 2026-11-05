@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalJson } from '@momonga/foundation';
+import { JsonDepthError, MAX_JSON_DEPTH, canonicalJson } from '@momonga/foundation';
 
-const NESTING_DEPTH = 3000;
+const STACK_BREAKING_DEPTH = 3000;
 
 const nested = (depth: number): unknown => {
   let value: unknown = 1;
@@ -9,23 +9,36 @@ const nested = (depth: number): unknown => {
   return value;
 };
 
-const outcomeOf = (run: () => string): { kind: 'encoded'; text: string } | { kind: 'thrown'; error: unknown } => {
+const nestedText = (depth: number): string => `${'{"a":'.repeat(depth)}1${'}'.repeat(depth)}`;
+
+const thrownBy = (run: () => unknown): unknown => {
   try {
-    return { kind: 'encoded', text: run() };
+    run();
   } catch (error) {
-    return { kind: 'thrown', error };
+    return error;
   }
+  throw new Error('expected a throw');
 };
 
-describe('canonicalJson on deeply nested values', () => {
-  it(`never overflows the stack on a value nested ${NESTING_DEPTH} deep: it encodes it or names the nesting`, () => {
-    const outcome = outcomeOf(() => canonicalJson(nested(NESTING_DEPTH)));
-    if (outcome.kind === 'encoded') {
-      expect(outcome.text).toBe(`${'{"a":'.repeat(NESTING_DEPTH)}1${'}'.repeat(NESTING_DEPTH)}`);
-      return;
-    }
-    expect(outcome.error).not.toBeInstanceOf(RangeError);
-    expect(outcome.error).toBeInstanceOf(TypeError);
-    expect((outcome.error as Error).message).toMatch(/^canonicalJson: .*(nest|depth)/i);
+describe('canonicalJson enforces the one JSON depth bound', () => {
+  it('bounds JSON depth at 128', () => {
+    expect(MAX_JSON_DEPTH).toBe(128);
+  });
+
+  it('encodes a value exactly at the bound', () => {
+    expect(canonicalJson(nested(MAX_JSON_DEPTH))).toBe(nestedText(MAX_JSON_DEPTH));
+  });
+
+  it('counts an array as one level, like an object', () => {
+    expect(canonicalJson([nested(MAX_JSON_DEPTH - 1)])).toBe(`[${nestedText(MAX_JSON_DEPTH - 1)}]`);
+    expect(thrownBy(() => canonicalJson([nested(MAX_JSON_DEPTH)]))).toBeInstanceOf(JsonDepthError);
+  });
+
+  it.each([MAX_JSON_DEPTH + 1, STACK_BREAKING_DEPTH])('throws the typed depth error at depth %i, naming the bound', (depth) => {
+    const error = thrownBy(() => canonicalJson(nested(depth)));
+    expect(error).not.toBeInstanceOf(RangeError);
+    expect(error).toBeInstanceOf(JsonDepthError);
+    expect((error as Error).message).toMatch(/depth/i);
+    expect((error as Error).message).toContain(String(MAX_JSON_DEPTH));
   });
 });
