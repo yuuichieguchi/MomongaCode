@@ -2,6 +2,9 @@ import net from 'node:net';
 import { SAMPLING_FIELDS } from '@momonga/protocol';
 import type { AdapterRequest, ProviderAdapter, StreamEvent } from '@momonga/protocol';
 import { DEFAULT_SCRIPTED_CAPABILITIES, responseResource, textResponseEvents, usageOf } from '@momonga/testkit';
+import { createTelemetry } from '@momonga/observability';
+import type { Telemetry } from '@momonga/observability';
+import type { FakeClock } from '@momonga/testkit';
 import { registerCleanup } from './gateway-helpers.ts';
 
 export type HangingAdapter = ProviderAdapter & { readonly pulled: { count: number }; readonly signals: AbortSignal[] };
@@ -104,3 +107,61 @@ export const openRawPost = async (
 
 export const openUnreadStream = (socketPath: string, body: unknown): Promise<RawStreamClient> =>
   openRawPost(socketPath, '/v1/responses', body, { paused: true });
+
+export const RESPONSE_COMMITTED_EVENT = 'momonga.response.committed';
+
+export type LiveSpan = { readonly name: string; readonly events: string[]; ended: boolean };
+
+export type LiveSpanTelemetry = {
+  readonly telemetry: Telemetry;
+  readonly spans: LiveSpan[];
+  attemptSpans(): LiveSpan[];
+  commitCountsPerAttempt(): number[];
+  commitEvents(): number;
+};
+
+const recordingSpan = <T extends object>(inner: T, live: LiveSpan): T =>
+  new Proxy(inner, {
+    get: (target, property, receiver) => {
+      const value = Reflect.get(target, property, receiver);
+      if (typeof value !== 'function') return value;
+      if (property === 'addEvent') {
+        return (name: string, ...rest: unknown[]) => {
+          live.events.push(name);
+          return value.call(target, name, ...rest);
+        };
+      }
+      if (property === 'end') {
+        return (...rest: unknown[]) => {
+          live.ended = true;
+          return value.apply(target, rest);
+        };
+      }
+      return value.bind(target);
+    },
+  });
+
+export const createLiveSpanTelemetry = (clock: FakeClock): LiveSpanTelemetry => {
+  const base = createTelemetry({ serviceName: 'momonga-gateway-test', serviceVersion: '0.0.0', clock });
+  registerCleanup(() => base.shutdown());
+  const spans: LiveSpan[] = [];
+  const tracer = new Proxy(base.tracer, {
+    get: (target, property, receiver) => {
+      const value = Reflect.get(target, property, receiver);
+      if (property !== 'startSpan' || typeof value !== 'function') return typeof value === 'function' ? value.bind(target) : value;
+      return (name: string, ...rest: unknown[]) => {
+        const live: LiveSpan = { name, events: [], ended: false };
+        spans.push(live);
+        return recordingSpan(value.call(target, name, ...rest), live);
+      };
+    },
+  });
+  const attemptSpans = (): LiveSpan[] => spans.filter((span) => span.name.startsWith('chat '));
+  return {
+    telemetry: { ...base, tracer },
+    spans,
+    attemptSpans,
+    commitCountsPerAttempt: () => attemptSpans().map((span) => span.events.filter((name) => name === RESPONSE_COMMITTED_EVENT).length),
+    commitEvents: () => attemptSpans().reduce((count, span) => count + span.events.filter((name) => name === RESPONSE_COMMITTED_EVENT).length, 0),
+  };
+};

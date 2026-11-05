@@ -176,6 +176,7 @@ const openAttempt = async (
       if (failure !== undefined) throw failure;
       if (carriesOutput(step.value) || TERMINAL_TYPES.has(step.value.type)) break;
     }
+    span.committed();
     return { iterator, held, release, span };
   } catch (error) {
     release();
