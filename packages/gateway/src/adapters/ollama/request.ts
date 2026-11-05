@@ -35,7 +35,7 @@ const requireToolChoice = (request: AdapterRequest): void => {
 
 const formatOf = (request: AdapterRequest): { format?: unknown } => {
   const format = request.text?.format;
-  if (format === undefined || format.type === 'text') return {};
+  if (format === undefined || format === null || format.type === 'text') return {};
   return { format: format.type === 'json_schema' ? format.schema : 'json' };
 };
 
