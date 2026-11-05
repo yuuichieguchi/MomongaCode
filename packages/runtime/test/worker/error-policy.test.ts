@@ -40,16 +40,24 @@ const REFUNDABLE: [string, ErrorFields][] = [
   ['503 gateway_closed', { status: 503, type: 'server_error', code: 'gateway_closed', message: 'the gateway is shutting down' }],
 ];
 
-const TRANSIENT: [string, ErrorFields][] = [
-  ['408', { status: 408, type: 'invalid_request', code: 'request_timeout', message: 'request timeout' }],
+const HOP_FAILURES: [string, ErrorFields][] = [
+  ['408 from the gateway HTTP server', { status: 408, type: 'invalid_request', code: 'http_408', message: 'the gateway answered HTTP 408' }],
   ['409 idempotency_key_in_progress', { status: 409, type: 'invalid_request', code: 'idempotency_key_in_progress', message: 'the key is in flight' }],
-  ['429', { status: 429, type: 'too_many_requests', code: 'rate_limited', message: 'slow down' }],
-  ['500', { status: 500, type: 'server_error', code: 'internal_error', message: 'boom' }],
-  ['502', { status: 502, type: 'server_error', code: 'http_502', message: 'bad gateway' }],
   ['gateway_unavailable possibly sent', { status: 0, type: 'transport', code: 'gateway_unavailable', message: 'socket reset', provenNotSent: false }],
-  ['detached_run_expired', { status: 504, type: 'server_error', code: 'detached_run_expired', message: 'the detached run expired' }],
   ['unexpected_content_type', { status: 0, type: 'transport', code: 'unexpected_content_type', message: 'not an event stream' }],
 ];
+
+const AFTER_THE_GATEWAY_BUDGET: [string, ErrorFields][] = [
+  ['429 that is not a deferral', { status: 429, type: 'too_many_requests', code: 'rate_limited', message: 'slow down' }],
+  ['500 internal_error', { status: 500, type: 'server_error', code: 'internal_error', message: 'boom' }],
+  ['502 http_502', { status: 502, type: 'server_error', code: 'http_502', message: 'bad gateway' }],
+  ['504 detached_run_expired', { status: 504, type: 'server_error', code: 'detached_run_expired', message: 'the detached run expired' }],
+];
+
+const deferral = (retryAfterMs: number): ErrorFields =>
+  ({ status: 429, type: 'too_many_requests', code: 'rate_limited', message: 'come back later', retryAfterMs, deferred: true }) as ErrorFields;
+
+const hopFailure = (): ScriptStep => thrown({ status: 0, type: 'transport', code: 'gateway_unavailable', message: 'socket reset', provenNotSent: false });
 
 describe('worker gateway error policy: fatal 4xx', () => {
   it.each(FATAL)('fails the run with the gateway code and message on %s', async (_label, fields) => {
@@ -193,8 +201,8 @@ describe('worker gateway error policy: refundable', () => {
   });
 });
 
-describe('worker gateway error policy: transient', () => {
-  it.each(TRANSIENT)('requeues with a counted attempt on %s', async (_label, fields) => {
+describe('worker gateway error policy: hop failures and deferrals requeue, everything else fails', () => {
+  it.each(HOP_FAILURES)('requeues with a counted attempt on %s', async (_label, fields) => {
     const env = await makeEnv();
     env.gateway.script.push(thrown(fields), textStep('Recovered.'));
     const run = env.enqueue('Work');
@@ -212,9 +220,31 @@ describe('worker gateway error policy: transient', () => {
     expect(env.run(run.id).status).toBe('COMPLETED');
   });
 
-  it('honours retryAfterMs when it exceeds the backoff', async () => {
+  it.each(AFTER_THE_GATEWAY_BUDGET)('fails the run on its first claim with the gateway code and message on %s', async (_label, fields) => {
     const env = await makeEnv();
-    env.gateway.script.push(thrown({ status: 429, type: 'too_many_requests', code: 'rate_limited', message: 'slow down', retryAfterMs: 120_000 }));
+    env.gateway.script.push(thrown(fields), textStep('never sent'));
+    const run = env.enqueue('Work');
+
+    await claimOnce(env, env.worker());
+
+    expect(env.run(run.id)).toMatchObject({ status: 'FAILED', error: { code: fields.code, message: fields.message } });
+    expect(env.gateway.streams).toHaveLength(1);
+  });
+
+  it('fails the run on its first claim with internal_error and the message of a plain error thrown by non-gateway code', async () => {
+    const env = await makeEnv();
+    env.gateway.script.push({ events: [], error: new Error('the parser blew up') }, textStep('never sent'));
+    const run = env.enqueue('Work');
+
+    await claimOnce(env, env.worker());
+
+    expect(env.run(run.id)).toMatchObject({ status: 'FAILED', error: { code: 'internal_error', message: 'the parser blew up' } });
+    expect(env.gateway.streams).toHaveLength(1);
+  });
+
+  it('requeues a deferral at exactly its retryAfterMs', async () => {
+    const env = await makeEnv();
+    env.gateway.script.push(thrown(deferral(120_000)));
     const run = env.enqueue('Work');
 
     await claimOnce(env, env.worker('worker-1', { random: FIXED_RANDOM }));
@@ -223,20 +253,19 @@ describe('worker gateway error policy: transient', () => {
     expect(delayOf(env, run.id)).toBe(120_000);
   });
 
-  it('stops the run with timeout instead of requeueing at or after the deadline', async () => {
+  it('fails the run with rate_limited instead of requeueing a deferral at or after the deadline', async () => {
     const env = await makeEnv();
     const run = env.enqueue('Work', { deadlineAt: env.clock.now() + 60_000 });
-    env.gateway.script.push(thrown({ status: 429, type: 'too_many_requests', code: 'rate_limited', message: 'slow down', retryAfterMs: 60_000 }));
+    env.gateway.script.push(thrown(deferral(60_000)));
 
     await claimOnce(env, env.worker('worker-1', { random: FIXED_RANDOM }));
 
-    expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'timeout' });
+    expect(env.run(run.id)).toMatchObject({ status: 'FAILED', error: { code: 'rate_limited', message: 'come back later' } });
   });
 
   it('grows the backoff with the streak and resets it after a successful model response', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
-    const failure = (): ScriptStep => thrown({ status: 500, type: 'server_error', code: 'internal_error', message: 'boom' });
-    env.gateway.script.push(failure(), failure(), callsStep([{ callId: 'call_e_1', name: 'Echo', args: { value: 'one' } }]), failure());
+    env.gateway.script.push(hopFailure(), hopFailure(), callsStep([{ callId: 'call_e_1', name: 'Echo', args: { value: 'one' } }]), hopFailure());
     const run = env.enqueue('Work');
     const worker = env.worker('worker-1', { random: FIXED_RANDOM });
 

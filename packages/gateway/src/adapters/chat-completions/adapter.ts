@@ -12,7 +12,7 @@ import { createConstrainedSink } from './constrained-sink.ts';
 import type { ConstrainedPlan } from './constrained-sink.ts';
 import { StreamFailure, UnsupportedInputError } from '../shared/failures.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
-import { httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
+import { retryAfterHint, httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
 import { MAX_SSE_EVENT_BYTES } from '../shared/limits.ts';
 import { CHAT_COMPLETIONS_PATH, CHAT_COMPLETIONS_SUFFIX } from './limits.ts';
 import { buildNativeBody } from './native-request.ts';
@@ -113,7 +113,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
         );
       }
 
-      const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request });
+      const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request, ...retryAfterHint(response, options.clock) });
       const sink = envelope === undefined ? createNativeSink(emitter) : createConstrainedSink(emitter, envelope, options.clock);
       const driver = new StreamDriver(emitter, sink);
 

@@ -217,8 +217,8 @@ describe('startGatewayProcess credentials', { timeout: REAL_PROCESS_TEST_TIMEOUT
 describe('gateway defaults', () => {
   it('pins the GatewayConfig defaults table', () => {
     expect(GATEWAY_CONFIG_DEFAULTS).toEqual({
-      retry: { maxAttempts: 3, baseMs: 500, maxMs: 8000 },
-      breaker: { failureThreshold: 5, openMs: 30_000 },
+      retry: { maxAttempts: 3, totalWaitMs: 84_000, baseMs: 500, maxMs: 8000 },
+      breaker: { failureThreshold: 2, openMs: 30_000 },
       limits: { maxBodyBytes: 32 * 1024 * 1024, maxIdempotencyFrameBytes: 64 * 1024 * 1024, readerStallMs: 30_000 },
       idempotency: { ttlMs: SEVEN_DAYS_MS },
       closeGraceMs: 10_000,

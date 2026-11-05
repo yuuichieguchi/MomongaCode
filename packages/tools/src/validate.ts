@@ -1,5 +1,5 @@
 import type { AnyTool } from './types.ts';
-import { SchemaValidatorFailure, compileUntrustedSchema, sha256Hex, untrustedSchemaFailure, validateUntrusted } from '@momonga/foundation';
+import { JsonDepthError, SchemaValidatorFailure, checkJsonDepth, compileUntrustedSchema, parseOutsideJson, sha256Hex, untrustedSchemaFailure, validateUntrusted } from '@momonga/foundation';
 import type { UntrustedError } from '@momonga/foundation';
 
 const MAX_REPORTED_ERRORS = 20;
@@ -76,11 +76,18 @@ export const unavailable = (tool: AnyTool, detail: string | undefined): Extract<
 });
 
 const parseArguments = (tool: AnyTool, rawArguments: unknown): ValidationResult => {
-  if (typeof rawArguments !== 'string') return { ok: true, value: rawArguments };
   try {
-    return { ok: true, value: JSON.parse(rawArguments) as unknown };
+    if (typeof rawArguments !== 'string') {
+      checkJsonDepth(rawArguments);
+      return { ok: true, value: rawArguments };
+    }
+    return { ok: true, value: parseOutsideJson(rawArguments) };
   } catch (error) {
-    return { ok: false, reason: 'invalid', message: `Invalid JSON arguments for ${tool.name}: ${(error as Error).message}\nReceived: ${rawArguments}` };
+    if (error instanceof JsonDepthError) return { ok: false, reason: 'invalid', message: `Invalid input for ${tool.name}: ${error.message}` };
+    if (error instanceof SyntaxError) {
+      return { ok: false, reason: 'invalid', message: `Invalid JSON arguments for ${tool.name}: ${error.message}\nReceived: ${String(rawArguments)}` };
+    }
+    throw error;
   }
 };
 

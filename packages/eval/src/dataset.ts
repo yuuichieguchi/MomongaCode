@@ -1,4 +1,4 @@
-import { defineProductSchema } from '@momonga/foundation';
+import { defineProductSchema, parseOutsideJson } from '@momonga/foundation';
 import type { ProductValidator, UntrustedError } from '@momonga/foundation';
 import { PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
 import type { PermissionMode, RunStatus, StopReason } from '@momonga/protocol';
@@ -180,7 +180,7 @@ export const assertGoldenCases = (dataset: CasesHolder, source: string): void =>
 
 export const jsonOf = (text: string, source: string): unknown => {
   try {
-    return JSON.parse(text);
+    return parseOutsideJson(text);
   } catch (error) {
     throw new DatasetError(`${source}: not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }

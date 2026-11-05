@@ -87,7 +87,7 @@ export const buildConfig = (overrides: ConfigOverrides = {}): GatewayConfig => {
   }
   return {
     models: { aliases: overrides.aliases ?? { fast: ['primary'] }, targets },
-    retry: { maxAttempts: 3, baseMs: 100, maxMs: 10_000, ...overrides.retry },
+    retry: { maxAttempts: 3, totalWaitMs: 84_000, baseMs: 100, maxMs: 10_000, ...overrides.retry },
     breaker: { failureThreshold: 5, openMs: 30_000, ...overrides.breaker },
     limits: { maxBodyBytes: 1_000_000, maxIdempotencyFrameBytes: 8_000_000, readerStallMs: 30_000, ...overrides.limits },
     idempotency: { ttlMs: 60_000, ...overrides.idempotency },
@@ -121,6 +121,7 @@ export type HarnessOptions = {
   credentials?: readonly string[];
   credentialFeed?: GatewayOptions['credentialFeed'];
   priceTable?: GatewayOptions['priceTable'];
+  random?: () => number;
 };
 
 export const startGateway = async (options: HarnessOptions): Promise<Harness> => {
@@ -130,7 +131,7 @@ export const startGateway = async (options: HarnessOptions): Promise<Harness> =>
   const socketPath = path.join(dir, 'gw.sock');
   const dbPath = path.join(dir, 'state', 'gateway.db');
   const gateway = await createGateway({
-    random: () => 0.5,
+    random: options.random ?? (() => 0.5),
     credentials: options.credentials ?? [],
     ...(options.credentialFeed === undefined ? {} : { credentialFeed: options.credentialFeed }),
     config: buildConfig(options.config),

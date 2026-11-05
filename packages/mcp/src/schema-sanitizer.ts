@@ -1,7 +1,6 @@
 import { canonicalJson } from '@momonga/foundation';
 
 export const MAX_SCHEMA_BYTES = 64 * 1024;
-export const MAX_SCHEMA_DEPTH = 64;
 
 type SchemaObject = Record<string, unknown>;
 
@@ -31,12 +30,6 @@ export class SchemaRejectedError extends Error {
   }
 }
 
-const assertDepth = (value: unknown, level: number): void => {
-  if (typeof value !== 'object' || value === null) return;
-  if (level > MAX_SCHEMA_DEPTH) throw new SchemaRejectedError(`input schema is nested deeper than ${MAX_SCHEMA_DEPTH} levels`);
-  for (const child of Array.isArray(value) ? value : Object.values(value)) assertDepth(child, level + 1);
-};
-
 const sanitizeSubschema = (value: unknown): unknown => (isObject(value) ? sanitizeObject(value) : value);
 
 const sanitizeMap = (value: unknown): unknown => {
@@ -59,7 +52,6 @@ const sanitizeObject = (schema: SchemaObject): SchemaObject => {
 };
 
 export const sanitizeSchema = (schema: SchemaObject): SchemaObject => {
-  assertDepth(schema, 1);
   const bytes = Buffer.byteLength(canonicalJson(schema));
   if (bytes > MAX_SCHEMA_BYTES) {
     throw new SchemaRejectedError(`input schema is ${Math.ceil(bytes / 1024)} KiB, over the ${MAX_SCHEMA_BYTES / 1024} KiB limit`);

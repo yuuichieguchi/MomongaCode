@@ -14,6 +14,7 @@
     "z3-solver": "5.3.3"
   },
   "devDependencies": {
-    "@momonga/context": "*"
+    "@momonga/context": "*",
+    "@momonga/gateway": "*"
   }
 }

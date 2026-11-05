@@ -1,7 +1,7 @@
 import type { MomongaPaths } from '@momonga/foundation';
 import { escapeTerminalLine } from '@momonga/protocol';
 import type { ElicitationAnswerRecord } from '@momonga/protocol';
-import { cleanFailureMessage } from '@momonga/foundation';
+import { cleanFailureMessage, parseOutsideJson } from '@momonga/foundation';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import { describeElicitation } from '../elicit/describe.ts';
 import { fieldsOf, parseFieldInput, validateContent } from '../elicit/form.ts';
@@ -82,7 +82,7 @@ const acceptedContent = (view: ElicitationView, settings: readonly string[]): Ac
 const parseResponses = (text: string): Record<string, ElicitationAnswerRecord> => {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    parsed = parseOutsideJson(text);
   } catch (error) {
     throw new ElicitationUsageError(`--responses must be JSON: ${error instanceof Error ? error.message : String(error)}`);
   }

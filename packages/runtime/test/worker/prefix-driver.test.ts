@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { GatewayRequestError } from '@momonga/runtime';
 import { canonicalJson } from '@momonga/foundation';
 import type { InputItem, RunEvent } from '@momonga/protocol';
 import { defineTool } from '@momonga/tools';
 import type { AnyTool } from '@momonga/tools';
 import { capabilitiesFor, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
-import { callsStep, failedStep, textStep } from './scripts.ts';
+import { callsStep, textStep } from './scripts.ts';
 import type { ScriptStep } from './fake-gateway.ts';
 import { WITHIN_TURN_PROMPT, bigTool } from './within-turn-support.ts';
 
@@ -49,7 +50,7 @@ const planOf = (seed: number): Plan => {
   let steps = calls;
   for (let index = 0; index < calls; index += 1) {
     if (random.int(0, 5) === 0) {
-      script.push(failedStep('upstream_unavailable', 'server_error'));
+      script.push({ events: [], error: new GatewayRequestError({ status: 503, type: 'server_error', code: 'gateway_closed', message: 'the gateway is shutting down' }) });
       description.push('requeue');
     }
     const kind = random.int(0, 5);
