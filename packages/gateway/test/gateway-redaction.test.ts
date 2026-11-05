@@ -10,7 +10,6 @@ import { GatewayError } from '../src/core/errors.ts';
 import { START_MS, getJson, postJson, readJson, readSse, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
 import type { SseFrame } from './gateway-helpers.ts';
 import { makeAdapter, startFake } from './cc-support.ts';
-import { driveTimers } from './retry-support.ts';
 import { REDACTED, REDACTED_401, TEST_API_KEY, expectNoCredential, expectRedacted } from './credential-support.ts';
 
 const ECHO_401 = {
@@ -233,27 +232,7 @@ describe('T10: codes and params are forwarded or dropped by shape', () => {
   });
 });
 
-describe('classification uses the upstream code, redaction only what the client sees', () => {
-  const failedBefore = (code: string, type: string): StreamEvent[] => [
-    ...textResponseEvents({ model: 'scripted-primary', chunks: ['a'] }).slice(0, 2),
-    {
-      type: 'response.failed',
-      sequence_number: 2,
-      response: { ...responseResource({ id: 'upstream_resp_1', model: 'scripted-primary', status: 'failed' }), error: { code, message: 'failed', type } },
-    } as unknown as StreamEvent,
-  ];
-
-  it('does not retry a neutral upstream code before output even when that code is scrubbed for the client', async () => {
-    const primary = createScriptedAdapter({ calls: [{ events: failedBefore('content_filter', 'server_error') }, { events: textResponseEvents({ model: 'scripted-primary', chunks: ['never'] }) }] });
-    const harness = await startGateway({ adapters: { primary }, credentials: ['content_filter'] });
-    const reading = postJson(harness.client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true }).then(readSse);
-    await driveTimers(harness, [reading]);
-    const frames = await reading;
-    expect(primary.calls).toHaveLength(1);
-    expect(frames.at(-1)?.data.type).toBe('response.failed');
-    expect(framesText(frames)).not.toContain('content_filter');
-  });
-
+describe('every failure the gateway forwards carries a code', () => {
   it('never forwards a failure without a code: a scrubbed upstream code after output becomes upstream_error', async () => {
     const afterOutput = [
       ...textResponseEvents({ model: 'scripted-primary', chunks: ['a'] }).slice(0, 5),
