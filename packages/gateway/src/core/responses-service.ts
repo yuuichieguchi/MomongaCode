@@ -127,6 +127,7 @@ export const createResponsesService = (services: Services, validator: RequestVal
       const job: ResponseJob = {
         alias: body.model,
         body,
+        unknownFields: validator.unknownCreateFields(rawBody),
         clientInput: normalizeInput(body.input),
         idempotency: key === undefined || digest === undefined ? undefined : { key, digest },
         deadlineAt,

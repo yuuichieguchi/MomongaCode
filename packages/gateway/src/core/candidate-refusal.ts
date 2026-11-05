@@ -1,7 +1,7 @@
 import type { GatewayError } from './errors.ts';
 import { invalidRequest } from './errors.ts';
 
-export const REFUSAL_STAGES = { tools: 0, images: 1, sampling: 2, toolChoice: 3, summaryCap: 4, inputSize: 5 } as const;
+export const REFUSAL_STAGES = { tools: 0, images: 1, sampling: 2, toolChoice: 3, summaryCap: 4, unknownFields: 5, inputSize: 6 } as const;
 
 export type Refusal = { stage: number; error: GatewayError };
 

@@ -36,6 +36,7 @@ export type AdapterRequest = {
   text?: TextField;
   promptCacheKey?: string;
   cacheMarks?: PromptCacheCounts;
+  unknownFields?: Record<string, unknown>;
 };
 
 export type AdapterContext = {
@@ -69,9 +70,12 @@ export type RenderWireOptions = { reasoningOrigin: ReasoningOrigin; capabilities
 
 export type AdapterCompactResult = { summary: string; usage: Usage; cacheWriteInputTokens?: number };
 
+export type ClientOperation = 'create' | 'compact' | 'count_tokens';
+
 export type ProviderAdapter = {
   readonly kind: string;
   readonly sampling: AdapterSampling;
+  readonly relaysClientBody: readonly ClientOperation[];
   capabilities(target: AdapterTarget): Promise<Capabilities>;
   create(request: AdapterRequest, ctx: AdapterContext): AsyncIterable<StreamEvent>;
   classify(error: unknown): ClassifiedError;

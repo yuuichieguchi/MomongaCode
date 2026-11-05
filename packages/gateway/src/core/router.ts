@@ -1,6 +1,6 @@
 import type { Clock } from '@momonga/foundation';
 import { applyCapabilityOverride, imageCapability, sizingRatioFor, summaryTokenCapFor } from '@momonga/protocol';
-import type { Capabilities, CapabilityOverride, FunctionTool, ToolChoice, ToolCallingMode, ToolCallingState, GatewayHealth, HealthResult, ImageCapability, ProviderAdapter, TargetBilling, TargetHealth } from '@momonga/protocol';
+import type { Capabilities, CapabilityOverride, ClientOperation, FunctionTool, ToolChoice, ToolCallingMode, ToolCallingState, GatewayHealth, HealthResult, ImageCapability, ProviderAdapter, TargetBilling, TargetHealth } from '@momonga/protocol';
 import { constrainsToolChoice, resolveToolChoice } from './tool-choice.ts';
 import { UnsupportedInputError } from './unsupported-input.ts';
 import { createAdmissionGate } from './admission.ts';
@@ -11,6 +11,7 @@ import { CandidateRefused, REFUSAL_STAGES, UnprobedTarget, refusalErrorOf } from
 import type { Refusal } from './candidate-refusal.ts';
 import { carriesSampling, samplingRefusalOf } from './sampling.ts';
 import type { SamplingRequest } from './sampling.ts';
+import { unknownParameterError } from './unknown-fields.ts';
 import { TargetBreaker } from './request-breaker.ts';
 import { guardAdapter } from './guarded-adapter.ts';
 import type { ReasoningOriginCodec } from './reasoning-origin.ts';
@@ -31,6 +32,8 @@ export type TargetRuntime = {
   lastFailure: { code: string | null; message: string } | undefined;
 };
 
+export type UnknownFieldsRequirement = { keys: readonly string[]; operation: ClientOperation };
+
 export type ToolChoiceRequirement = { tools: readonly FunctionTool[] | null | undefined; tool_choice: ToolChoice | null | undefined };
 
 export type CandidateRequirements = {
@@ -39,6 +42,7 @@ export type CandidateRequirements = {
   sampling?: SamplingRequest;
   toolChoice?: ToolChoiceRequirement;
   summaryCap?: number;
+  unknownFields?: UnknownFieldsRequirement;
 };
 
 export type Narrowed = { targets: TargetRuntime[]; refusals: Refusal[]; capabilitiesOf(target: TargetRuntime): Promise<Capabilities> };
@@ -234,6 +238,13 @@ export const createRouter = (options: RouterOptions): Router => {
           ),
         };
       }
+      const { unknownFields } = requirements;
+      if (unknownFields !== undefined && unknownFields.keys.length > 0 && !target.adapter.relaysClientBody.includes(unknownFields.operation)) {
+        return {
+          stage: REFUSAL_STAGES.unknownFields,
+          error: unknownParameterError(unknownFields.keys, alias, `no target of the alias relays a ${unknownFields.operation} request body upstream`),
+        };
+      }
       return undefined;
     };
     const capabilitiesForAttempt = async (target: TargetRuntime): Promise<Capabilities> => {
@@ -243,7 +254,7 @@ export const createRouter = (options: RouterOptions): Router => {
       if (refusal !== undefined) throw new CandidateRefused(refusal);
       return capabilities;
     };
-    const judging = requirements.tools === true || requirements.images === true || samples || constrainsToolChoice(requirements.toolChoice?.tool_choice) || requirements.summaryCap !== undefined;
+    const judging = requirements.tools === true || requirements.images === true || samples || constrainsToolChoice(requirements.toolChoice?.tool_choice) || requirements.summaryCap !== undefined || (requirements.unknownFields?.keys.length ?? 0) > 0;
     if (!judging) return { targets: [...all], refusals: [], capabilitiesOf: capabilitiesForAttempt };
     const resolved = await Promise.all(all.map((target) => resolve(target).catch(() => undefined)));
     const refusals: Refusal[] = [];

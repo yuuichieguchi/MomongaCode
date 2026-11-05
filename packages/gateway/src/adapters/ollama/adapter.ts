@@ -69,6 +69,7 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
   return {
     kind: OLLAMA_LABEL,
     sampling: RENDERS_EVERY_SAMPLING_FIELD,
+    relaysClientBody: [],
     capabilities: (target: AdapterTarget) => options.capabilities(target),
     create,
     compact,

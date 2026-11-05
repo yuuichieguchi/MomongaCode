@@ -30,6 +30,7 @@ import type { Narrowed, TargetRuntime } from './router.ts';
 import { CandidateRefused, REFUSAL_STAGES, UnprobedTarget } from './candidate-refusal.ts';
 import type { Refusal } from './candidate-refusal.ts';
 import type { Services } from './services.ts';
+import type { UnknownFields } from './unknown-fields.ts';
 import { resolveToolChoice } from './tool-choice.ts';
 import { textOfWire } from './wire-text.ts';
 import type { RequestValidator } from './validation.ts';
@@ -197,6 +198,7 @@ const countTokens = async (
   deadlineHeader: string | undefined,
 ): Promise<CountTokensResult> => {
   const request = validator.parseCountTokens(rawBody);
+  const unknownFields = validator.unknownCountTokensFields(rawBody);
   const deadlineAt = parseDeadlineHeader(deadlineHeader, services.clock.now());
   const aliasTargets = services.router.targetsOf(request.model);
   const named = request.momonga?.target;
@@ -210,6 +212,7 @@ const countTokens = async (
   const narrowed = await services.router.narrow(request.model, candidates, {
     images: inputHasImages(resolved.forAdapter),
     toolChoice: { tools: request.tools, tool_choice: request.tool_choice },
+    unknownFields: { keys: Object.keys(unknownFields), operation: 'count_tokens' },
   });
   const outcome = await callTargets(services, narrowed.targets, narrowed.refusals, signal, deadlineAt, (chosen, attemptNumber, guarded) =>
     countOnTarget(services, chosen, narrowed, request, resolved, guarded, attemptNumber),
@@ -222,6 +225,7 @@ export type CompactTrace = { runId: string | undefined; traceparent: string | un
 const compactOnce = async (
   services: Services,
   request: CompactRequest,
+  unknownFields: UnknownFields,
   signal: AbortSignal,
   deadlineAt: number | undefined,
   trace: CompactTrace,
@@ -231,6 +235,7 @@ const compactOnce = async (
   const narrowed = await services.router.narrow(request.model, targets, {
     images: inputHasImages(resolved.forAdapter),
     ...(request.momonga?.max_summary_tokens === undefined ? {} : { summaryCap: request.momonga.max_summary_tokens }),
+    unknownFields: { keys: Object.keys(unknownFields), operation: 'compact' },
   });
   const supporting = narrowed.targets.filter((target) => target.adapter.compact !== undefined);
   if (supporting.length === 0) {
@@ -422,6 +427,7 @@ export const createUnaryService = (services: Services, validator: RequestValidat
   ): Promise<CompactResource> => {
     if (services.closeSignal.aborted) throw gatewayClosedError();
     const request = validator.parseCompact(rawBody);
+    const unknownFields = validator.unknownCompactFields(rawBody);
     const deadlineAt = parseDeadlineHeader(deadlineHeader, services.clock.now());
     const digest = sha256Hex(canonicalJson(request));
     const running = inflight.get(key);
@@ -444,7 +450,7 @@ export const createUnaryService = (services: Services, validator: RequestValidat
       settled: false,
       promise: Promise.resolve().then(async () => {
         try {
-          const resource = await compactOnce(services, request, controller.signal, deadlineAt, trace);
+          const resource = await compactOnce(services, request, unknownFields, controller.signal, deadlineAt, trace);
           if (isRunCancelled(controller.signal.reason)) throw controller.signal.reason;
           const now = services.clock.now();
           services.store.commitCompaction({ key, digest, resource, createdAtMs: now, expiresAtMs: now + services.config.idempotency.ttlMs });
@@ -475,8 +481,9 @@ export const createUnaryService = (services: Services, validator: RequestValidat
       const key = parseIdempotencyKey(idempotencyKeyHeader);
       if (key !== undefined) return compactKeyed(rawBody, key, signal, deadlineHeader, trace);
       const request = validator.parseCompact(rawBody);
+      const unknownFields = validator.unknownCompactFields(rawBody);
       const deadlineAt = parseDeadlineHeader(deadlineHeader, services.clock.now());
-      return compactOnce(services, request, AbortSignal.any([signal, services.closeSignal]), deadlineAt, trace);
+      return compactOnce(services, request, unknownFields, AbortSignal.any([signal, services.closeSignal]), deadlineAt, trace);
     },
     cancel: (idempotencyKeyHeader) => {
       const key = parseIdempotencyKey(idempotencyKeyHeader);

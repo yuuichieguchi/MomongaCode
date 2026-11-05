@@ -206,6 +206,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
   return {
     kind: 'chat-completions',
     sampling: options.sampling ?? RENDERS_EVERY_SAMPLING_FIELD,
+    relaysClientBody: [],
     capabilities: (target) => options.capabilities(target),
     create,
     compact,
