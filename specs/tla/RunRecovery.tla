@@ -317,7 +317,7 @@ Base(S, r, to, lead, refund, resetFailures) ==
     IN [S3 EXCEPT !.run[r] = [@ EXCEPT
             !.status = to,
             !.cancelReq = @ \/ to = "CANCELLING" \/ to = "CANCELLED",
-            !.origin = IF UniformCancel /\ to = "CANCELLING" THEN x.status ELSE @,
+            !.cancelOrigin = IF UniformCancel /\ to = "CANCELLING" THEN x.status ELSE @,
             !.failed = IF resetFailures THEN 0 ELSE @,
             !.attempts = IF refund THEN @ - 1 ELSE @,
             !.owner = IF keeps THEN @ ELSE NoOwner,
@@ -347,7 +347,7 @@ Exhausted(x) ==
     \/ x.status \in ClaimStatuses /\ x.owner # NoOwner /\ x.failed + 1 >= MaxAttempts
     \/ x.attempts + 1 > MaxTotalAttempts
 
-SweeperOwned(x) == UniformCancel /\ x.status = "CANCELLING" /\ x.origin \in {"QUEUED", "WAITING_HUMAN"}
+SweeperOwned(x) == UniformCancel /\ x.status = "CANCELLING" /\ x.cancelOrigin \in {"QUEUED", "WAITING_HUMAN"}
 
 Claimable(S, r) ==
     LET x == S.run[r]
@@ -502,7 +502,7 @@ Dropped(w) ==
 Init ==
     /\ run = [r \in Runs |->
                 [status |-> IF r = Parent THEN "QUEUED" ELSE "ABSENT",
-                 owner |-> NoOwner, token |-> 0, live |-> FALSE, cancelReq |-> FALSE, origin |-> "",
+                 owner |-> NoOwner, token |-> 0, live |-> FALSE, cancelReq |-> FALSE, cancelOrigin |-> "",
                  attempts |-> 0, failed |-> 0, lastSeq |-> IF r = Parent THEN 1 ELSE 0]]
     /\ ev = [r \in Runs |-> IF r = Parent THEN <<E("user.message", 0, "", "")>> ELSE <<>>]
     /\ appr = [r \in Runs |-> [s \in Steps |-> "none"]]
@@ -843,7 +843,7 @@ SpawnExec(w) ==
            canComplete == idem[k] \in {"PENDING", "UNKNOWN"}
            created == [Snap EXCEPT !.run[Child] =
                            [status |-> "QUEUED", owner |-> NoOwner, token |-> 0, live |-> FALSE,
-                            cancelReq |-> FALSE, origin |-> "", attempts |-> 0, failed |-> 0, lastSeq |-> 1],
+                            cancelReq |-> FALSE, cancelOrigin |-> "", attempts |-> 0, failed |-> 0, lastSeq |-> 1],
                        !.ev[Child] = <<E("user.message", 0, "", "")>>]
        IN \/ /\ c.status # "ABSENT" /\ c.status \in Terminal /\ canComplete
              /\ UNCHANGED <<run, ev, appr>>
