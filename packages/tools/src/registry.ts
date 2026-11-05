@@ -108,6 +108,16 @@ const buildToolSet = (tools: readonly AnyTool[], notices: readonly string[], aut
   };
 };
 
+export const extendToolSet = (toolSet: ToolSet, tool: AnyTool): ToolSet => {
+  if (toolSet.get(tool.name) !== undefined) throw new Error(`duplicate tool name ${JSON.stringify(tool.name)}`);
+  assertRegistrable(tool);
+  return {
+    ...toolSet,
+    tools: [...toolSet.tools, tool],
+    get: (name) => (name === tool.name ? tool : toolSet.get(name)),
+  };
+};
+
 export const createToolRegistry = (): ToolRegistry => {
   const builtins: AnyTool[] = [];
   const sources: ToolSource[] = [];

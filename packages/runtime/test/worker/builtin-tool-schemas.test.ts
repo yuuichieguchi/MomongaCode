@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { HOST_RULE_ENFORCEMENT, createRedactor, validateUntrusted } from '@momonga/foundation';
 import { createAgentsPort, createChildRuns, createGovernancePort, createHistoryPort, createMemoryPort } from '@momonga/runtime';
 import { createNodeSkillFileSystem } from '@momonga/skills';
+import { createLoadToolsTool } from '../../src/worker/load-tools-tool.ts';
+import { createToolLoading } from '../../src/worker/tool-admission.ts';
 import { createBuiltinTools, createToolRegistry } from '@momonga/tools';
 import type { AnyTool, ToolSet } from '@momonga/tools';
 import { makeEnv, unavailableEvidenceRun } from './harness.ts';
@@ -43,7 +45,7 @@ const composedTools = async (): Promise<readonly AnyTool[]> => {
       }),
     }),
   );
-  return registered;
+  return [...registered, createLoadToolsTool(createToolLoading(() => { throw new Error('the lint never runs a tool'); }))];
 };
 
 describe('lint of every tool the runtime registers', () => {
@@ -65,6 +67,6 @@ describe('lint of every tool the runtime registers', () => {
       }
     }
     expect(problems).toEqual([]);
-    expect(names).toEqual(expect.arrayContaining(['activate_skill', 'Agent', 'MemorySave', 'HistorySearch', 'RulePropose']));
+    expect(names).toEqual(expect.arrayContaining(['activate_skill', 'Agent', 'MemorySave', 'HistorySearch', 'RulePropose', 'LoadTools']));
   });
 });

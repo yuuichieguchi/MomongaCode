@@ -1,7 +1,6 @@
-import Ajv2020 from 'ajv/dist/2020.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearUntrustedSchemaCaches } from '@momonga/foundation';
-import { createBuiltinTools, validateToolInput } from '@momonga/tools';
+import { validateToolInput } from '@momonga/tools';
 import { makeTool } from './harness.ts';
 
 const boundaryCalls = vi.hoisted(() => ({ identities: [] as string[] }));
@@ -45,25 +44,5 @@ describe('built-in tool input validation', () => {
   it('still rejects input that violates the schema', () => {
     const tool = makeTool('builtin_reject');
     expect(validateToolInput(tool, { value: 1 })).toMatchObject({ ok: false, reason: 'invalid' });
-  });
-});
-
-describe('lint of the built-in tool schemas', () => {
-  it('compiles every built-in input and output schema with Ajv strict mode', () => {
-    const tools = createBuiltinTools();
-    expect(tools.length).toBeGreaterThan(0);
-    const problems: string[] = [];
-    for (const tool of tools) {
-      for (const [kind, schema] of [['input', tool.inputSchema], ['output', tool.outputSchema]] as const) {
-        if (schema === undefined) continue;
-        const ajv = new Ajv2020.default({ strict: true, allErrors: true });
-        try {
-          ajv.compile(schema);
-        } catch (error) {
-          problems.push(`${tool.name} ${kind}: ${error instanceof Error ? error.message : String(error)}`);
-        }
-      }
-    }
-    expect(problems).toEqual([]);
   });
 });
