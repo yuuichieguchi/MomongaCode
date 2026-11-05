@@ -21,7 +21,7 @@ import type { BenchmarkResult, ContextModel, GuidelineCompletion, GuidelineCompl
 import { codeDigestOfRunningProcess } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { ESTIMATED_CHARACTERS_PER_TOKEN, LOWEST_REASONING_EFFORT, assistantTextOf, requireStructuredOutput, summaryTokenCapFor } from '@momonga/protocol';
-import type { Capabilities, CreateResponseBody, GuidelineView, GuidelinesResponse, StreamEvent } from '@momonga/protocol';
+import type { AliasCapabilities, CreateResponseBody, GuidelineView, GuidelinesResponse, StreamEvent } from '@momonga/protocol';
 import type { RuntimeClient } from '../client/runtime-client.ts';
 import { createGatewayClient as createCliGatewayClient } from '../client/gateway-client.ts';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
@@ -50,7 +50,7 @@ export type ContextImproveOptions = {
 
 const RECORD_WINDOW_SHARE = 4;
 
-const recordCharsFor = (capabilities: Capabilities): number =>
+const recordCharsFor = (capabilities: AliasCapabilities): number =>
   ESTIMATED_CHARACTERS_PER_TOKEN * Math.max(0, Math.floor((capabilities.contextWindow - capabilities.maxOutputTokens) / RECORD_WINDOW_SHARE));
 
 const terminalResponseOf = (events: readonly StreamEvent[]): Extract<StreamEvent, { type: 'response.completed' }>['response'] => {
@@ -68,7 +68,7 @@ const tokensOf = (transcripts: readonly Transcript[]): number =>
 
 type Completer = (request: GuidelineCompletionRequest) => Promise<GuidelineCompletion>;
 
-const completerFor = async (ports: CliPorts, paths: MomongaPaths, alias: string, capabilities: Capabilities, interrupt: AbortSignal | undefined): Promise<{ complete: Completer; close(): Promise<void> }> => {
+const completerFor = async (ports: CliPorts, paths: MomongaPaths, alias: string, capabilities: AliasCapabilities, interrupt: AbortSignal | undefined): Promise<{ complete: Completer; close(): Promise<void> }> => {
   const { RUNTIME_DEFAULTS, billedDetailOf, carriesOutput, createGatewayClient } = await import('@momonga/runtime');
   const gateway = createGatewayClient({ socketPath: paths.sockets.gateway, clock: ports.clock, version: ports.version });
   const signal = interrupt ?? new AbortController().signal;
@@ -107,10 +107,10 @@ const completerFor = async (ports: CliPorts, paths: MomongaPaths, alias: string,
 export type AnalysisModelInput = {
   roles: ModelRoles;
   alias: string;
-  capabilitiesOf: (alias: string) => Promise<Capabilities>;
+  capabilitiesOf: (alias: string) => Promise<AliasCapabilities>;
 };
 
-export const analysisModelFor = async (input: AnalysisModelInput): Promise<{ alias: string; capabilities: Capabilities }> => {
+export const analysisModelFor = async (input: AnalysisModelInput): Promise<{ alias: string; capabilities: AliasCapabilities }> => {
   const roleAlias = input.roles.analysis;
   const alias = roleAlias ?? input.alias;
   const capabilities = await input.capabilitiesOf(alias);
@@ -122,7 +122,7 @@ export const analysisModelFor = async (input: AnalysisModelInput): Promise<{ ali
 export type ImproveInputSource = {
   seed: number;
   model: ContextModel;
-  analysis: { alias: string; capabilities: Capabilities };
+  analysis: { alias: string; capabilities: AliasCapabilities };
   datasetTokens: number;
   current: ImproveInput['current'];
 };

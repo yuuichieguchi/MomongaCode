@@ -1,77 +1,18 @@
 import type { ProbeKeyword } from '@momonga/protocol';
-import { isRecord, type JsonObject } from './json.ts';
+import { resolvedOf, withKeywordSupport } from '../dialect/choice.ts';
+import type { DialectChoice } from '../dialect/choice.ts';
+import type { RenderLedger } from '../dialect/ledger.ts';
+import type { KeywordSupport } from '../dialect/keyword-support.ts';
+import { renderSchema } from '../dialect/render.ts';
+import { renderToolParameters } from '../dialect/tool-render.ts';
+import type { JsonObject } from './json.ts';
 
-export type KeywordSupport = Record<ProbeKeyword, boolean>;
+export type EnvelopeShape = 'union' | 'flat';
 
 export interface ProbeTool {
   name: string;
-  parameters: JsonObject;
+  parameters?: JsonObject | null | undefined;
 }
-
-const literalTypeOf = (value: unknown): string => {
-  if (value === null) return 'null';
-  if (typeof value === 'string') return 'string';
-  if (typeof value === 'boolean') return 'boolean';
-  if (typeof value === 'number') return Number.isInteger(value) ? 'integer' : 'number';
-  if (Array.isArray(value)) return 'array';
-  return 'object';
-};
-
-const typeFromLiterals = (values: readonly unknown[]): string | string[] => {
-  const types = new Set(values.map(literalTypeOf));
-  if (types.has('integer') && types.has('number')) types.delete('integer');
-  const unique = [...types];
-  return unique.length === 1 ? (unique[0] as string) : unique;
-};
-
-const hasProperties = (node: unknown): boolean => isRecord(node) && isRecord(node['properties']);
-
-const lowerChild = (node: unknown, support: KeywordSupport): unknown =>
-  !support.nested && hasProperties(node) ? { type: 'object' } : lowerNode(node, support);
-
-const lowerChildren = (node: unknown, support: KeywordSupport): unknown =>
-  Array.isArray(node) ? node.map((entry) => lowerChild(entry, support)) : lowerNode(node, support);
-
-const lowerNode = (node: unknown, support: KeywordSupport): unknown => {
-  if (Array.isArray(node)) return node.map((entry) => lowerNode(entry, support));
-  if (!isRecord(node)) return node;
-  const lowered: JsonObject = {};
-  for (const [key, value] of Object.entries(node)) {
-    if (key === 'pattern' && !support.pattern) continue;
-    if (key === 'minimum' && !support.minimum) continue;
-    if (key === 'additionalProperties' && !support.additionalProperties) continue;
-    if (key === 'anyOf' && !support.anyOf) continue;
-    if (key === 'enum' || key === 'const') {
-      lowered[key] = value;
-    } else if (key === 'properties' && isRecord(value)) {
-      lowered[key] = Object.fromEntries(
-        Object.entries(value).map(([name, child]) => [name, lowerChild(child, support)]),
-      );
-    } else if (key === 'items' || key === 'additionalProperties') {
-      lowered[key] = lowerChild(value, support);
-    } else if (key === 'anyOf' || key === 'oneOf' || key === 'allOf') {
-      lowered[key] = lowerChildren(value, support);
-    } else {
-      lowered[key] = lowerNode(value, support);
-    }
-  }
-  if (!support.enum && 'enum' in lowered) {
-    const values = lowered['enum'];
-    delete lowered['enum'];
-    lowered['type'] ??= typeFromLiterals(Array.isArray(values) ? values : []);
-  }
-  if (!support.const && 'const' in lowered) {
-    const value = lowered['const'];
-    delete lowered['const'];
-    lowered['type'] ??= typeFromLiterals([value]);
-  }
-  return lowered;
-};
-
-export const lowerSchema = (schema: JsonObject, support: KeywordSupport): JsonObject => {
-  const lowered = lowerNode(schema, support);
-  return isRecord(lowered) ? lowered : {};
-};
 
 const literal = (value: string, support: KeywordSupport): JsonObject => {
   if (support.const) return { const: value };
@@ -79,16 +20,18 @@ const literal = (value: string, support: KeywordSupport): JsonObject => {
   return { type: 'string' };
 };
 
-const callSchema = (tool: ProbeTool, support: KeywordSupport): JsonObject => ({
+const argumentsOf = (tool: ProbeTool, support: KeywordSupport, dialect: DialectChoice, ledger: RenderLedger | undefined): unknown => {
+  if (!support.nested) return { type: 'object' };
+  return renderToolParameters(tool, withKeywordSupport(dialect, support), ledger).schema ?? { type: 'object' };
+};
+
+const callSchema = (tool: ProbeTool, support: KeywordSupport, dialect: DialectChoice, ledger: RenderLedger | undefined): JsonObject => ({
   type: 'object',
-  properties: {
-    name: literal(tool.name, support),
-    arguments: support.nested ? lowerSchema(tool.parameters, support) : { type: 'object' },
-  },
+  properties: { name: literal(tool.name, support), arguments: argumentsOf(tool, support, dialect, ledger) },
   required: ['name', 'arguments'],
 });
 
-const envelopeAround = (calls: JsonObject, support: KeywordSupport, requireToolCalls: boolean): JsonObject => {
+const envelopeAround = (calls: JsonObject, support: KeywordSupport, requireToolCalls: boolean, shape: EnvelopeShape): JsonObject => {
   if (requireToolCalls) {
     return {
       type: 'object',
@@ -96,7 +39,7 @@ const envelopeAround = (calls: JsonObject, support: KeywordSupport, requireToolC
       required: ['kind', 'calls'],
     };
   }
-  if (!support.anyOf) {
+  if (shape === 'flat') {
     return {
       type: 'object',
       properties: {
@@ -108,7 +51,6 @@ const envelopeAround = (calls: JsonObject, support: KeywordSupport, requireToolC
     };
   }
   return {
-    type: 'object',
     anyOf: [
       {
         type: 'object',
@@ -124,13 +66,16 @@ const envelopeAround = (calls: JsonObject, support: KeywordSupport, requireToolC
   };
 };
 
-export const buildToolCallEnvelope = (tool: ProbeTool, support: KeywordSupport): JsonObject =>
-  envelopeAround({ type: 'array', minItems: 1, maxItems: 1, items: callSchema(tool, support) }, support, false);
-
-const callItemsFor = (tools: readonly ProbeTool[], support: KeywordSupport): JsonObject => {
+const callItemsFor = (
+  tools: readonly ProbeTool[],
+  support: KeywordSupport,
+  shape: EnvelopeShape,
+  dialect: DialectChoice,
+  ledger: RenderLedger | undefined,
+): JsonObject => {
   const [only] = tools;
-  if (tools.length === 1 && only !== undefined) return callSchema(only, support);
-  if (support.anyOf) return { anyOf: tools.map((tool) => callSchema(tool, support)) };
+  if (tools.length === 1 && only !== undefined) return callSchema(only, support, dialect, ledger);
+  if (shape === 'union' && support.anyOf) return { anyOf: tools.map((tool) => callSchema(tool, support, dialect, ledger)) };
   const names = tools.map((tool) => tool.name);
   return {
     type: 'object',
@@ -142,10 +87,14 @@ const callItemsFor = (tools: readonly ProbeTool[], support: KeywordSupport): Jso
 export const buildToolsEnvelope = (
   tools: readonly ProbeTool[],
   support: KeywordSupport,
-  requireToolCalls = false,
+  requireToolCalls: boolean,
+  dialect: DialectChoice,
+  shape: EnvelopeShape,
+  ledger?: RenderLedger,
 ): JsonObject => {
   if (tools.length === 0) throw new RangeError('buildToolsEnvelope: at least one tool is required');
-  return envelopeAround({ type: 'array', minItems: 1, items: callItemsFor(tools, support) }, support, requireToolCalls);
+  const assembled = envelopeAround({ type: 'array', minItems: 1, items: callItemsFor(tools, support, shape, dialect, ledger) }, support, requireToolCalls, shape);
+  return renderSchema(assembled, { kind: 'response-format' }, resolvedOf(dialect)).schema as JsonObject;
 };
 
 export const keywordProbeSchemas: Record<ProbeKeyword, JsonObject> = {

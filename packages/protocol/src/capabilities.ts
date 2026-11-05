@@ -1,3 +1,5 @@
+import type { DialectId } from './dialect.ts';
+
 export type ToolCallingMode = 'native' | 'constrained' | 'none';
 
 export type NeedsProbe = { state: 'needs_probe'; message: string; evidence: string; remedy: string };
@@ -144,7 +146,7 @@ export type CapabilitiesCore = {
   outputBoundField?: OutputBoundField;
   parallelToolCalls?: boolean;
   allowedTools?: readonly AllowedToolsForm[];
-  schemaDialect: 'json-schema-2020-12' | 'guided-generation';
+  schemaDialect: DialectId;
   tokenCounting: 'exact' | 'calibrated' | 'estimated';
   tokenErrorRatio?: number;
   usageReported: boolean;
@@ -154,6 +156,8 @@ export type CapabilitiesCore = {
 };
 
 export type Capabilities = CapabilitiesCore & ImageCapability;
+
+export type AliasCapabilities = Omit<Capabilities, 'schemaDialect'> & { schemaDialect?: DialectId };
 
 export type StructuredOutputVerdict = { ok: true } | { ok: false; reason: string };
 

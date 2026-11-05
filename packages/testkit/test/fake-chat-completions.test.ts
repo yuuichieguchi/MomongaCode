@@ -345,7 +345,7 @@ describe('universal rejections', () => {
 
   it('answers a failed native sample on the fm wire with the measured guardrail error event', async () => {
     const fake = await start({ scenario: 'tools-ok', wire: 'fm', failNativeSamples: [0] });
-    const tools = [{ type: 'function', function: { name: 'echo', parameters: { type: 'object' } } }];
+    const tools = [{ type: 'function', function: { name: 'echo', parameters: { type: 'object', properties: {} } } }];
     const response = await chat(fake.socketPath, { model: 'system', tools, messages: [{ role: 'user', content: 'call echo' }] });
     expect(response.status).toBe(200);
     expect(response.text).toContain(`event: error\ndata: ${JSON.stringify(FM_GUARDRAIL_ERROR)}`);

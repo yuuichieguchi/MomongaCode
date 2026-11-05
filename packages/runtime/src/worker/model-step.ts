@@ -246,6 +246,17 @@ const handleResult = async (
       code: 'fallback_target',
     });
   }
+  for (const narrowing of response.momonga?.schemaNarrowings ?? []) {
+    const key = JSON.stringify([answeredBy, narrowing.tool, narrowing.path]);
+    if (ctx.memory.narrowingsNoticed.has(key)) continue;
+    ctx.memory.narrowingsNoticed.add(key);
+    recorded.push({
+      type: 'notice',
+      level: 'warning',
+      message: `The tool ${narrowing.tool} was sent with its parameter at ${narrowing.path} narrowed, because the target's schema dialect cannot carry it as declared.`,
+      code: 'schema_narrowed',
+    });
+  }
   if (estimate !== undefined && answeredBy !== undefined) {
     recorded.push({
       type: 'meter.observed',
