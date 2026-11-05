@@ -7,6 +7,7 @@ import { preconditionText } from '../precondition-text.ts';
 import { invalidRequest, notFound } from './errors.ts';
 import { carriesSampling, samplingRefusalOf } from './sampling.ts';
 import type { SamplingRefusal, SamplingRequest } from './sampling.ts';
+import { unknownParameterError } from './unknown-fields.ts';
 import { TargetBreaker } from './request-breaker.ts';
 import { guardAdapter } from './guarded-adapter.ts';
 import type { ReasoningOriginCodec } from './reasoning-origin.ts';
@@ -27,7 +28,7 @@ export type TargetRuntime = {
   lastFailure: { code: string | null; message: string } | undefined;
 };
 
-export type CandidateRequirements = { tools?: boolean; images?: boolean; sampling?: SamplingRequest };
+export type CandidateRequirements = { tools?: boolean; images?: boolean; sampling?: SamplingRequest; unknownFields?: readonly string[] };
 
 export type Router = {
   aliases(): string[];
@@ -191,6 +192,11 @@ export const createRouter = (options: RouterOptions): Router => {
         throw invalidRequest('sampling_not_accepted', [...refusals.values()].map((refusal) => refusal.message).join('; '), first.field);
       }
       remaining = accepted;
+    }
+    const { unknownFields } = requirements;
+    if (unknownFields !== undefined && unknownFields.length > 0) {
+      remaining = remaining.filter((target) => target.adapter.unknownFields === 'pass');
+      if (remaining.length === 0) throw unknownParameterError(unknownFields, alias, 'no target of the alias passes unknown request fields through');
     }
     return remaining;
   };

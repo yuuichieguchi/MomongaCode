@@ -34,10 +34,12 @@ import type { TargetRuntime } from './router.ts';
 import type { RunControl } from './run.ts';
 import type { Services } from './services.ts';
 import type { CommitRequest } from './store.ts';
+import type { UnknownFields } from './unknown-fields.ts';
 
 export type ResponseJob = {
   alias: string;
   body: CreateResponseBody;
+  unknownFields: UnknownFields;
   clientInput: InputItem[];
   idempotency: { key: string; digest: string } | undefined;
   deadlineAt: number | undefined;
@@ -105,6 +107,7 @@ const adapterRequestFor = (job: ResponseJob, resolved: ResolvedInput, target: Ta
     ...(body.text === undefined || body.text === null ? {} : { text: body.text }),
     ...(body.prompt_cache_key === undefined || body.prompt_cache_key === null ? {} : { promptCacheKey: body.prompt_cache_key }),
     ...(cacheMarks === undefined ? {} : { cacheMarks }),
+    ...(Object.keys(job.unknownFields).length === 0 ? {} : { unknownFields: job.unknownFields }),
   };
 };
 
@@ -552,7 +555,7 @@ async function* relaySteps(
 export async function* executeResponse(services: Services, job: ResponseJob, control: RunControl): AsyncGenerator<StreamEvent> {
   const { signal } = control;
   const resolved = resolveInput(services.store, services.codec, job.body.previous_response_id, job.clientInput, job.connection);
-  const candidates = await services.router.candidates(job.alias, { tools: (job.body.tools?.length ?? 0) > 0, images: inputHasImages(resolved.forAdapter), sampling: job.body });
+  const candidates = await services.router.candidates(job.alias, { tools: (job.body.tools?.length ?? 0) > 0, images: inputHasImages(resolved.forAdapter), sampling: job.body, unknownFields: Object.keys(job.unknownFields) });
   const disarm = armDeadline(services, job.deadlineAt, control.abort);
   try {
     const outcome = await runWithRetry({

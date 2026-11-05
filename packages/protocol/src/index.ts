@@ -395,6 +395,7 @@ export type {
   DecodedCompactionItem,
   LenientItems,
   ProviderAdapter,
+  UnknownFieldsPolicy,
   ReasoningOrigin,
   RenderWireOptions,
   ToolChoiceWire,

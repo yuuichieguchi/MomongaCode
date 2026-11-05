@@ -227,6 +227,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
   return {
     kind: ANTHROPIC_PROVIDER_LABEL,
     sampling,
+    unknownFields: 'refuse',
     capabilities: (target) => options.capabilities(target),
     create,
     countTokens,

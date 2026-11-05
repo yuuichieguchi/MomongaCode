@@ -152,6 +152,7 @@ export const createScriptedAdapter = (options: ScriptedAdapterOptions): Scripted
   const adapter: ScriptedAdapter = {
     kind: options.kind ?? 'scripted',
     sampling: { renders: SAMPLING_FIELDS },
+    unknownFields: 'refuse',
     calls,
     compactCalls,
     countCalls,

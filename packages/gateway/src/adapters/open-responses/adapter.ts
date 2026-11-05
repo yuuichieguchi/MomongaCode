@@ -102,6 +102,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
   return {
     kind: OPEN_RESPONSES_PROVIDER_LABEL,
     sampling: RENDERS_EVERY_SAMPLING_FIELD,
+    unknownFields: 'pass',
     capabilities: (target) => options.capabilities(target),
     create,
     compact,

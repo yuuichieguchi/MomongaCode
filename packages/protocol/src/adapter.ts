@@ -36,6 +36,7 @@ export type AdapterRequest = {
   text?: TextField;
   promptCacheKey?: string;
   cacheMarks?: PromptCacheCounts;
+  unknownFields?: Record<string, unknown>;
 };
 
 export type AdapterContext = {
@@ -58,6 +59,7 @@ export type AdapterCompactRequest = {
   input: AdapterInputItem[];
   instructions?: string | null;
   momonga?: CompactMomongaExtension;
+  unknownFields?: Record<string, unknown>;
 };
 
 export type LenientItems = { callNames: Record<string, string>; withTools: boolean };
@@ -68,9 +70,12 @@ export type RenderWireOptions = { reasoningOrigin: ReasoningOrigin; lenientItems
 
 export type AdapterCompactResult = { summary: string; usage: Usage; cacheWriteInputTokens?: number };
 
+export type UnknownFieldsPolicy = 'pass' | 'refuse';
+
 export type ProviderAdapter = {
   readonly kind: string;
   readonly sampling: AdapterSampling;
+  readonly unknownFields: UnknownFieldsPolicy;
   capabilities(target: AdapterTarget): Promise<Capabilities>;
   create(request: AdapterRequest, ctx: AdapterContext): AsyncIterable<StreamEvent>;
   classify(error: unknown): ClassifiedError;

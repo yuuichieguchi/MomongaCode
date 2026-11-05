@@ -26,6 +26,7 @@ import type { RetryOutcome } from './retry.ts';
 import { adapterContextOf, originOf } from './adapter-context.ts';
 import type { TargetRuntime } from './router.ts';
 import type { Services } from './services.ts';
+import type { UnknownFields } from './unknown-fields.ts';
 import { resolveToolChoice } from './tool-choice.ts';
 import { textOfWire } from './wire-text.ts';
 import type { RequestValidator } from './validation.ts';
@@ -213,13 +214,14 @@ export type CompactTrace = { runId: string | undefined; traceparent: string | un
 const compactOnce = async (
   services: Services,
   request: CompactRequest,
+  unknownFields: UnknownFields,
   signal: AbortSignal,
   deadlineAt: number | undefined,
   trace: CompactTrace,
 ): Promise<CompactResource> => {
   const targets = services.router.targetsOf(request.model);
   const resolved = resolveInput(services.store, services.codec, request.previous_response_id, normalizeInput(request.input));
-  const eligible = await services.router.narrow(request.model, targets, { images: inputHasImages(resolved.forAdapter) });
+  const eligible = await services.router.narrow(request.model, targets, { images: inputHasImages(resolved.forAdapter), unknownFields: Object.keys(unknownFields) });
   const supporting = eligible.filter((target) => target.adapter.compact !== undefined);
   if (supporting.length === 0) {
     throw invalidRequest('capability_unsupported', `no target of model alias "${request.model}" supports compaction`, 'model');
@@ -229,6 +231,7 @@ const compactOnce = async (
     input: resolved.forAdapter,
     ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
     momonga: { ...request.momonga, max_summary_tokens: cap },
+    ...(Object.keys(unknownFields).length === 0 ? {} : { unknownFields }),
   });
   const capsByTarget = new Map<TargetRuntime, number>();
   const sized: TargetRuntime[] = [];
@@ -419,6 +422,7 @@ export const createUnaryService = (services: Services, validator: RequestValidat
   ): Promise<CompactResource> => {
     if (services.closeSignal.aborted) throw gatewayClosedError();
     const request = validator.parseCompact(rawBody);
+    const unknownFields = validator.unknownCompactFields(rawBody);
     const deadlineAt = parseDeadlineHeader(deadlineHeader, services.clock.now());
     const digest = sha256Hex(canonicalJson(request));
     const running = inflight.get(key);
@@ -441,7 +445,7 @@ export const createUnaryService = (services: Services, validator: RequestValidat
       settled: false,
       promise: Promise.resolve().then(async () => {
         try {
-          const resource = await compactOnce(services, request, controller.signal, deadlineAt, trace);
+          const resource = await compactOnce(services, request, unknownFields, controller.signal, deadlineAt, trace);
           if (isRunCancelled(controller.signal.reason)) throw controller.signal.reason;
           const now = services.clock.now();
           services.store.commitCompaction({ key, digest, resource, createdAtMs: now, expiresAtMs: now + services.config.idempotency.ttlMs });
@@ -472,8 +476,9 @@ export const createUnaryService = (services: Services, validator: RequestValidat
       const key = parseIdempotencyKey(idempotencyKeyHeader);
       if (key !== undefined) return compactKeyed(rawBody, key, signal, deadlineHeader, trace);
       const request = validator.parseCompact(rawBody);
+      const unknownFields = validator.unknownCompactFields(rawBody);
       const deadlineAt = parseDeadlineHeader(deadlineHeader, services.clock.now());
-      return compactOnce(services, request, AbortSignal.any([signal, services.closeSignal]), deadlineAt, trace);
+      return compactOnce(services, request, unknownFields, AbortSignal.any([signal, services.closeSignal]), deadlineAt, trace);
     },
     cancel: (idempotencyKeyHeader) => {
       const key = parseIdempotencyKey(idempotencyKeyHeader);

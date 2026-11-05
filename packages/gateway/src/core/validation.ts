@@ -3,6 +3,8 @@ import type { ProductValidator, UntrustedError } from '@momonga/foundation';
 import { MIN_SUMMARY_TOKENS, OPEN_RESPONSES_COMPONENT_NAMES, OPEN_RESPONSES_OPENAPI, OPEN_RESPONSES_REMOTE_DOCUMENTS, openResponsesComponentSchema, tokensForText } from '@momonga/protocol';
 import type { CompactRequest, CountTokensRequest, CreateResponseBody } from '@momonga/protocol';
 import { invalidRequest } from './errors.ts';
+import { unknownParameterError } from './unknown-fields.ts';
+import type { UnknownFields } from './unknown-fields.ts';
 
 const REF_PREFIX = '#/components/schemas/';
 const STRUCTURAL_KEYWORDS = new Set(['anyOf', 'oneOf', 'allOf', 'if', 'then', 'else', 'not']);
@@ -79,6 +81,8 @@ type SpecKit = {
   branchValidators: Map<string, ComponentValidator>;
   itemField: ComponentValidator;
   streamSchemas: Map<string, ComponentValidator>;
+  createProperties: ReadonlySet<string>;
+  compactProperties: ReadonlySet<string>;
 };
 
 const componentValidators: ReadonlyMap<string, ComponentValidator> = new Map(
@@ -105,6 +109,9 @@ const streamSchemaNames = (spec: SchemaObject, schemas: SchemaObject): Map<strin
   return names;
 };
 
+const propertyNamesOf = (schemas: SchemaObject, component: string): Set<string> =>
+  new Set(Object.keys(requireRecord(requireRecord(schemas[component], component)['properties'], `${component}.properties`)));
+
 let sharedKit: SpecKit | undefined;
 
 const specKit = (): SpecKit => {
@@ -123,6 +130,8 @@ const specKit = (): SpecKit => {
     branchValidators: new Map(branches.map((branch) => [branch.component, compile(branch.component)])),
     itemField: compile('ItemField'),
     streamSchemas: new Map([...streamSchemaNames(spec, schemas)].map(([type, component]) => [type, compile(component)])),
+    createProperties: propertyNamesOf(schemas, 'CreateResponseBody'),
+    compactProperties: propertyNamesOf(schemas, 'CompactResponseMethodPublicBody'),
   };
   return sharedKit;
 };
@@ -347,7 +356,14 @@ export type RequestValidator = {
   parseCreate(body: unknown): CreateResponseBody;
   parseCompact(body: unknown): CompactRequest;
   parseCountTokens(body: unknown): CountTokensRequest;
+  unknownCreateFields(body: unknown): UnknownFields;
+  unknownCompactFields(body: unknown): UnknownFields;
 };
+
+const COUNT_TOKENS_KEYS: ReadonlySet<string> = new Set(['model', 'input', 'instructions', 'tools', 'tool_choice', 'momonga']);
+
+const unknownFieldsOf = (body: unknown, known: ReadonlySet<string>): UnknownFields =>
+  Object.fromEntries(Object.entries(requireRecord(body, 'body')).filter(([key]) => key !== 'momonga' && !known.has(key)));
 
 const assertValidated = <T>(value: unknown): T => value as T;
 
@@ -372,6 +388,8 @@ export const createRequestValidator = (): RequestValidator => {
   };
 
   return {
+    unknownCreateFields: (body) => unknownFieldsOf(body, kit.createProperties),
+    unknownCompactFields: (body) => unknownFieldsOf(body, kit.compactProperties),
     parseCreate: (body) => {
       validateWithItems(createSchema, body);
       const record = requireRecord(body, 'body');
@@ -396,6 +414,8 @@ export const createRequestValidator = (): RequestValidator => {
       if (typeof record['model'] !== 'string' || record['model'] === '') {
         throwIssue({ segments: ['model'], message: 'is required and must be a non-empty string' });
       }
+      const unknownKeys = Object.keys(record).filter((key) => !COUNT_TOKENS_KEYS.has(key));
+      if (unknownKeys.length > 0) throw unknownParameterError(unknownKeys, record['model'] as string, 'count_tokens accepts no unknown request fields');
       const input = record['input'];
       if (typeof input !== 'string' && !Array.isArray(input)) {
         throwIssue({ segments: ['input'], message: 'is required and must be a string or an array of input items' });

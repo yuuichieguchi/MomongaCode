@@ -42,6 +42,7 @@ async function* eventsOf(events: readonly StreamEvent[]): AsyncGenerator<StreamE
 const baseAdapter = (overrides: Partial<ProviderAdapter> = {}): ProviderAdapter => ({
   kind: 'probe-kind',
   sampling: { renders: SAMPLING_FIELDS },
+  unknownFields: 'refuse',
   capabilities: async () => DEFAULT_SCRIPTED_CAPABILITIES,
   toolChoiceWire: () => ({ forms: [], expressesRequired: true }),
   create: () => eventsOf([]),
@@ -131,6 +132,7 @@ describe('guardAdapter this binding', () => {
       ...optionalImplementations(record),
       kind: 'probe-kind',
       sampling: { renders: SAMPLING_FIELDS },
+      unknownFields: 'refuse',
       capabilities: async function (this: unknown) {
         record('capabilities', this);
         return DEFAULT_SCRIPTED_CAPABILITIES;
