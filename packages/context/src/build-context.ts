@@ -241,12 +241,13 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
     const host = hostOf[tool.name];
     return host === undefined || offered.some((other) => other.name === host);
   };
+  const selectsTools = input.pinnedTokens === undefined && input.toolsFrozen !== true;
   const eligible = candidates.filter((tool) => standsWith(tool, candidates));
   const toolFloor =
-    input.pinnedTokens !== undefined ? 0 : pinnedFloorAt(observed ? await capacityOver(sized, toolPorts, toolFrozen, eligible) : inputCeilingFor(sized));
+    !selectsTools ? 0 : pinnedFloorAt(observed ? await capacityOver(sized, toolPorts, toolFrozen, eligible) : inputCeilingFor(sized));
   let tools = eligible;
   let leftOut: string[] = [];
-  if (input.pinnedTokens === undefined && !(await stableFitsFloor(eligible))) {
+  if (selectsTools && !(await stableFitsFloor(eligible))) {
     const required = requiredToolsOf(input, eligible);
     const kept: FunctionTool[] = [...required];
     const droppedForRoom: string[] = [];

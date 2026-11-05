@@ -166,6 +166,7 @@ export type BuildContextInput = {
   itemCap?: number;
   memoryShare?: number;
   pinnedTokens?: number;
+  toolsFrozen?: true;
   compactAt?: number;
   tools?: 'none';
   companions?: { hostOf: Readonly<Record<string, string>>; keepWithoutHost: boolean };

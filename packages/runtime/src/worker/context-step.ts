@@ -76,7 +76,7 @@ const governingFor = (ctx: ClaimContext, session: Session, touched: readonly Tou
     ...(scan === 'live' ? { ignorePaths: true } : {}),
   });
 
-const governingKeyOf = (governing: LoadedGoverning): string => canonicalJson({ active: governing.active, conflicts: governing.conflicts });
+const governingKeyOf = (governing: { active: unknown; conflicts: unknown }): string => canonicalJson({ active: governing.active, conflicts: governing.conflicts });
 
 const EMPTY_GOVERNING: LoadedGoverning = { active: [], conflicts: [] };
 
@@ -88,7 +88,7 @@ const workingStateOf = (ctx: ClaimContext, state: RunState): string | undefined 
 const projectedWorkingStateOf = (ctx: ClaimContext, state: RunState): string | undefined =>
   state.history.length === 0 ? undefined : workingStateOf(ctx, projectCompaction(ctx, state.nextItemSeq - 1, compactionSummaryMessage(''), ''));
 
-type AdmittedFloor = { pinnedTokens: number; tools: FunctionTool[]; offered: string };
+type AdmittedFloor = { pinnedTokens: number; tools: FunctionTool[]; offered: string; governing: string };
 
 type Companions = ReturnType<ClaimContext['companions']>;
 
@@ -105,7 +105,7 @@ const recordedReferencesOf = (ctx: ClaimContext): ReadonlySet<string> =>
       )
     : new Set<string>();
 
-type OfferedInput = { input: BuildContextInput; offered: string };
+type OfferedInput = { input: BuildContextInput; offered: string; governing: string };
 
 const offeredInputOf = (
   ctx: ClaimContext,
@@ -124,8 +124,11 @@ const offeredInputOf = (
   const candidates = ctx.functionTools();
   const companions = ctx.companions();
   const offered = offeredKeyOf(candidates, companions);
+  const governing = governingFor(ctx, session, touchedPaths, scan);
+  const governingKey = governingKeyOf(governing);
   const recorded = admittedFloors.get(ctx);
-  const admitted = recorded !== undefined && (ctx.token.observedCapacity || recorded.offered === offered) ? recorded : undefined;
+  const admittedTools = recorded !== undefined && (ctx.token.observedCapacity || recorded.offered === offered) ? recorded : undefined;
+  const admittedFloor = admittedTools !== undefined && admittedTools.governing === governingKey ? admittedTools : undefined;
   const rendered = ctx.token.observedCapacity ? renderedFormsOf(options.store, ctx.run.id, state.lastSeq) : undefined;
   const wrapUpItems: InputItem[] = wrapUp === undefined ? [] : [{ type: 'message', role: 'user', content: wrapUpInstructionFor(wrapUp) }];
   const input: BuildContextInput = {
@@ -134,12 +137,12 @@ const offeredInputOf = (
     model: ctx.alias,
     sources: {
       systemPrompt: ctx.systemPrompt,
-      tools: admitted === undefined ? candidates : admitted.tools,
+      tools: admittedTools === undefined ? candidates : admittedTools.tools,
       task: { type: 'message', role: 'user', content: task.content },
       taskSeq: state.taskSeq,
       ...(ctx.skills.catalog === undefined ? {} : { skillCatalog: ctx.skills.catalog }),
       activatedSkills: state.activatedSkills,
-      governing: governingFor(ctx, session, touchedPaths, scan),
+      governing,
       memories: ctx.recalled.rank(recallQueryOf(task.text, touchedPaths.map((entry) => entry.path), session.cwd)),
       history: state.history
         .filter((entry) => entry.seq !== state.taskSeq)
@@ -167,7 +170,8 @@ const offeredInputOf = (
           ...(state.memoriesLoaded === undefined ? {} : { pinnedMemoryIds: state.memoriesLoaded.map((memory) => memory.id) }),
         }
       : {}),
-    ...(admitted === undefined ? {} : { pinnedTokens: admitted.pinnedTokens }),
+    ...(admittedTools === undefined ? {} : { toolsFrozen: true as const }),
+    ...(admittedFloor === undefined ? {} : { pinnedTokens: admittedFloor.pinnedTokens }),
     ...(ctx.token.observedCapacity
       ? {
           observedCapacity: true as const,
@@ -176,7 +180,7 @@ const offeredInputOf = (
       : {}),
     outputFormatters: ctx.token.outputFormatters,
   };
-  return { input, offered };
+  return { input, offered, governing: governingKey };
 };
 
 export const contextInputOf = (
@@ -204,6 +208,7 @@ export type ToolsMeasure = { measure: PinnedMeasure; floorTokens: number; kept: 
 export const measureToolsWith = async (ctx: ClaimContext, tools: readonly FunctionTool[]): Promise<ToolsMeasure> => {
   const input: BuildContextInput = { ...contextInputOf(ctx, undefined, 0) };
   delete input.pinnedTokens;
+  delete input.toolsFrozen;
   const counts: { tools: readonly FunctionTool[]; tokens: number }[] = [];
   const ports = portsOf(ctx);
   const meter: TokenMeter = {
@@ -249,12 +254,12 @@ export const measureLayersWith = (ctx: ClaimContext, activatedSkills: readonly A
 };
 
 const buildOnce = async (ctx: ClaimContext, wrapUp: WrapUpReason | undefined, level: number, trailing: readonly InputItem[]): Promise<BuiltContext> => {
-  const { input, offered } = offeredInputOf(ctx, wrapUp, level, 'active', trailing);
+  const { input, offered, governing } = offeredInputOf(ctx, wrapUp, level, 'active', trailing);
   const built = await buildContext(input, portsOf(ctx));
   if (wrapUp === undefined) {
     ctx.pinnedDigest.value ??= built.pinnedDigest;
     if (input.pinnedTokens === undefined) {
-      admittedFloors.set(ctx, { pinnedTokens: built.pinnedTokens, tools: built.tools, offered });
+      admittedFloors.set(ctx, { pinnedTokens: built.pinnedTokens, tools: built.tools, offered, governing });
     }
   }
   return built;
