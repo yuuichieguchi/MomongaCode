@@ -469,11 +469,22 @@ describe('runProbe streaming and usage', () => {
 });
 
 describe('runProbe context window calibration', () => {
-  it('treats a 413 response as too large and records its body', async () => {
-    const { report } = await probe({ scenario: 'tools-ok', contextWindow: 3000, contextOverflowStatus: 413 });
-    expect(report.contextWindow.method).toBe('searched');
-    expect(Math.abs(report.contextWindow.value - 3000)).toBeLessThanOrEqual(60);
-    expect(report.contextWindow.overflowErrorShape).toEqual(FAKE_PAYLOAD_TOO_LARGE_ERROR);
+  it('fails the probe naming payload_too_large when the search meets a 413 request_too_large, instead of recording a byte limit as the window', async () => {
+    const requestTooLarge = { type: 'error', error: { type: 'request_too_large', message: 'Request exceeds the maximum allowed number of bytes.' } };
+    const fake = await startFakeChatCompletions({
+      scenario: 'tools-ok',
+      contextWindow: 100_000,
+      contextSizeExposure: 'none',
+      routes: [
+        {
+          match: (body) => (body as { max_completion_tokens?: unknown }).max_completion_tokens === 1 && JSON.stringify(body).length > 20000,
+          reply: { kind: 'error', status: 413, body: requestTooLarge },
+        },
+      ],
+    });
+    servers.push(fake);
+
+    await expect(runProbe({ socketPath: fake.socketPath, managedHealthRoute: true, samples: 2 })).rejects.toThrow(/payload_too_large.*413/);
   });
 
   it('records the first overflow response body for a context_length_exceeded 400', async () => {

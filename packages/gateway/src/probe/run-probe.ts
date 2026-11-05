@@ -82,7 +82,7 @@ const PLAIN_PROMPT = 'Say hello in one short sentence.';
 const ajv = new Ajv2020.default({ strict: false });
 const validateToolArguments = ajv.compile(PROBE_TOOL.parameters);
 
-type ProbeOutcome = 'accepted' | 'unsupported' | 'overflow' | 'failure';
+type ProbeOutcome = 'accepted' | 'unsupported' | 'overflow' | 'too_large' | 'failure';
 
 type ChatResult = HttpResult & { reply: UpstreamReply; outcome: ProbeOutcome; errorKind: UpstreamErrorKind | undefined };
 
@@ -91,7 +91,8 @@ const errorKindOf = (vocabulary: ErrorVocabulary, reply: UpstreamReply): Upstrea
 
 const outcomeOf = (status: number, reply: UpstreamReply, kind: UpstreamErrorKind | undefined): ProbeOutcome => {
   if (reply.kind === 'completion') return status === 200 ? 'accepted' : 'failure';
-  if (kind === 'context_overflow' || kind === 'payload_too_large') return 'overflow';
+  if (kind === 'context_overflow') return 'overflow';
+  if (kind === 'payload_too_large') return 'too_large';
   return kind === 'unsupported' ? 'unsupported' : 'failure';
 };
 
@@ -360,7 +361,7 @@ const imageCostProbeOf = (chat: Chat): ImageCostProbe => ({
   },
   cost: async (imageUrl) => {
     const result = await imagePromptRequest(chat, imageUrl);
-    if (result.outcome === 'unsupported' || result.outcome === 'overflow') return { rejected: true };
+    if (result.outcome === 'unsupported' || result.outcome === 'overflow' || result.outcome === 'too_large') return { rejected: true };
     if (result.outcome !== 'accepted') return failProbeStep(result, 'image token measurement');
     return { rejected: false, promptTokens: promptTokensOf(result.reply.body) };
   },

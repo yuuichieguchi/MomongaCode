@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createChatCompletionsAdapter, createManagedFmTarget, saveProbeRecord } from '@momonga/gateway';
+import { FM_VOCABULARY, createChatCompletionsAdapter, createManagedFmTarget, saveProbeRecord } from '@momonga/gateway';
 import type { ChatCompletionsAdapter, ExecResult, FmServe } from '@momonga/gateway';
 import type { HealthResult, ProbeReport } from '@momonga/protocol';
 import { FM_CONTEXT_OVERFLOW_ERROR, FM_GUARDRAIL_ERROR, createFakeClock, startFakeChatCompletions } from '@momonga/testkit';
@@ -150,5 +150,11 @@ describe('a recorded guardrail shape with a generic code never matches by its co
     const { error } = await collect(adapter, request);
 
     expect(adapter.classify(error)).toMatchObject({ retryable: false, error: { type: 'model_error', code: 'guardrail_violation' } });
+  });
+});
+
+describe('fm has no status rule that makes a 413 an overflow', () => {
+  it('reads a 413 without the overflow message as payload_too_large', () => {
+    expect(FM_VOCABULARY.kindOf(413, { error: { message: 'x' } })).toBe('payload_too_large');
   });
 });
