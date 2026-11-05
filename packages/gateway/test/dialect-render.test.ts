@@ -1,20 +1,12 @@
-import { describe, expect, expectTypeOf, it } from 'vitest';
-import type { DialectId } from '@momonga/protocol';
+import { describe, expect, it } from 'vitest';
 import { BUILTIN_DIALECTS } from '@momonga/protocol';
 import { renderSchema, SchemaRenderError } from '../src/dialect/render.ts';
 import { DialectDefinitionError, definitionOf } from '../src/dialect/resolve.ts';
-import type { SchemaDialect } from '../src/probe/schema-dialect.ts';
 import { RESPONSE_FORMAT, builtin, failureOf, toolSite, userRules } from './dialect-support.ts';
 
 const TOOL = 'search';
 
 const explicitKeys = (schema: unknown) => renderSchema(schema, toolSite(TOOL), builtin('explicit-keys'));
-
-describe('the dialect id in the gateway', () => {
-  it('re-points SchemaDialect to the open DialectId', () => {
-    expectTypeOf<SchemaDialect>().toEqualTypeOf<DialectId>();
-  });
-});
 
 describe('explicit-keys renders the keys fm was measured to need', () => {
   it('orders and closes a tool root and types an untyped enum from its values', () => {

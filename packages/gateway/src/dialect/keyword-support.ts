@@ -15,7 +15,10 @@ export const FULL_KEYWORD_SUPPORT: KeywordSupport = {
 const NESTED_OBJECTS: DialectSelect = [
   {
     kinds: ['object-with-properties'],
-    within: { below: ['properties', 'items', 'anyOf', 'allOf'], through: ['properties', 'items', 'anyOf', 'allOf'] },
+    within: {
+      below: ['properties', 'items', 'anyOf', 'allOf', 'additionalProperties'],
+      through: ['properties', 'items', 'anyOf', 'allOf', 'additionalProperties'],
+    },
   },
 ];
 

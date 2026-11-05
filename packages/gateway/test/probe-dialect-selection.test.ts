@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { runProbe } from '@momonga/gateway';
+import { FM_VOCABULARY, runProbe } from '@momonga/gateway';
 import type { ProbeReport } from '@momonga/protocol';
 import { collectAllowedNames, generateInstance, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsOptions, FakeChatCompletionsServer, FakeRoute, FakeScriptedReply } from '@momonga/testkit';
@@ -140,7 +140,7 @@ describe('selection by measurement (rule 4)', () => {
   });
 
   it('tries the built-ins in their fixed order and selects explicit-keys on the fm decoder', async () => {
-    const { report } = await probe({ scenario: 'tools-ok', wire: 'fm', contextWindow: 4096, contextSizeExposure: 'none' });
+    const { report } = await probe({ scenario: 'tools-ok', wire: 'fm', contextWindow: 4096, contextSizeExposure: 'none' }, { vocabulary: FM_VOCABULARY });
     expect(report.schemaDialect.selected).toBe('explicit-keys');
     expect(report.schemaDialect.shape).toBe('union');
     expect(triedOf(report)).toEqual([

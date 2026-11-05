@@ -87,7 +87,6 @@ export type StartGatewayProcessOptions = {
   stdout?: TextStream;
   signal?: AbortSignal;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
-  userDialects?: UserDialects;
 };
 
 export type GatewayCloseResult = {
@@ -511,7 +510,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const secretFailures = await warmSecrets(secretResolver, referencedSecrets, signal ?? new AbortController().signal);
     for (const [name, failure] of secretFailures) logger.warn(`secret ${name} is unavailable: ${failure.message}`);
     signal?.throwIfAborted();
-    const userDialects = options.userDialects ?? NO_USER_DIALECTS;
+    const userDialects = settings.models.dialects;
     const ollamaRefusals = await ollamaRefusalsOf(targets, signal ?? new AbortController().signal);
     signal?.throwIfAborted();
     for (const [name, target] of targets) {

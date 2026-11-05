@@ -2,7 +2,7 @@ import path from 'node:path';
 import { loadUserSettings, probeRecordKeyOf, upstreamEndpointOf } from '@momonga/config';
 import type { EndpointProbeKey } from '@momonga/config';
 import type { MomongaPaths } from '@momonga/foundation';
-import type { ProbeReportDialect } from '@momonga/protocol';
+import type { DialectDefinition, ProbeReportDialect } from '@momonga/protocol';
 import { ensureDaemon, stopDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { escapedLines } from '../terminal-writer.ts';
@@ -38,8 +38,8 @@ export const probeTarget = async (ports: CliPorts, paths: MomongaPaths, target: 
   const targets = settings.models.targets;
   const configured = targets[target];
   if (configured?.adapter === 'fm') return probeFm(ports, paths, target, options);
-  if (configured?.adapter === 'chat-completions') return probeChatCompletions(ports, paths, target, configured, options);
-  if (configured?.adapter === 'ollama') return probeOllama(ports, paths, target, configured, options);
+  if (configured?.adapter === 'chat-completions') return probeChatCompletions(ports, paths, target, configured, options, settings.models.dialects);
+  if (configured?.adapter === 'ollama') return probeOllama(ports, paths, target, configured, options, settings.models.dialects);
   throw new NotAProbeableTarget(target, targets);
 };
 
@@ -118,6 +118,7 @@ const probeChatCompletions = async (
   name: string,
   target: ChatCompletionsConfig,
   options: ProbeOptions,
+  userDialects: Record<string, DialectDefinition>,
 ): Promise<number> => {
   const { probeEndpointTarget } = await import('@momonga/gateway');
   const { report, toolCalling, key } = await probeEndpointTarget({
@@ -125,7 +126,8 @@ const probeChatCompletions = async (
     upstream: upstreamEndpointOf(target),
     key: endpointRecordKeyOf(name, target),
     model: target.model,
-    declaredDialect: target.capabilities.schemaDialect,
+    ...(target.capabilities.schemaDialect === undefined ? {} : { declaredDialect: target.capabilities.schemaDialect }),
+    userDialects,
     apiKey: await apiKeyOf(ports, target, options.interrupt),
     signal: options.interrupt,
     ...(options.samples === undefined ? {} : { samples: options.samples }),
@@ -135,7 +137,7 @@ const probeChatCompletions = async (
   return 0;
 };
 
-const probeOllama = async (ports: CliPorts, paths: MomongaPaths, name: string, target: OllamaConfig, options: ProbeOptions): Promise<number> => {
+const probeOllama = async (ports: CliPorts, paths: MomongaPaths, name: string, target: OllamaConfig, options: ProbeOptions, userDialects: Record<string, DialectDefinition>): Promise<number> => {
   const { probeOllamaTarget } = await import('@momonga/gateway');
   const { report, key } = await probeOllamaTarget({
     probeRecordDir: paths.probe,
@@ -143,6 +145,8 @@ const probeOllama = async (ports: CliPorts, paths: MomongaPaths, name: string, t
     key: endpointRecordKeyOf(name, target),
     model: target.model,
     contextWindow: target.capabilities.contextWindow,
+    ...(target.capabilities.schemaDialect === undefined ? {} : { declaredDialect: target.capabilities.schemaDialect }),
+    userDialects,
     signal: options.interrupt,
     ...(options.samples === undefined ? {} : { samples: options.samples }),
   });
@@ -163,6 +167,7 @@ export const probeFm = async (ports: CliPorts, paths: MomongaPaths, target: stri
     binary: options.fmBinary,
     socketPath: path.join(paths.run, FM_PROBE_SOCKET_NAME),
     env: ports.env,
+    userDialects: settings.models.dialects,
     signal: options.interrupt,
     ...(configured.model === undefined ? {} : { model: configured.model }),
     onWarning: (message) => ports.stderr.write(`${escapedLines([`momonga: ${message}`])}\n`),

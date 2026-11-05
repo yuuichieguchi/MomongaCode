@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { PROBE_KEYWORDS } from '@momonga/protocol';
-import { lowerSchema, type KeywordSupport } from '../src/probe/lowering.ts';
+import { withKeywordSupport } from '../src/dialect/choice.ts';
+import type { KeywordSupport } from '../src/dialect/keyword-support.ts';
+import { renderSchema } from '../src/dialect/render.ts';
+
+const lowerSchema = (schema: unknown, support: KeywordSupport): unknown => renderSchema(schema, { kind: 'probe' }, withKeywordSupport('json-schema-2020-12', support)).schema;
 
 const supportAll = Object.fromEntries(PROBE_KEYWORDS.map((keyword) => [keyword, true])) as KeywordSupport;
 const without = (...keywords: Array<keyof KeywordSupport>): KeywordSupport => ({
@@ -8,7 +12,7 @@ const without = (...keywords: Array<keyof KeywordSupport>): KeywordSupport => ({
   ...Object.fromEntries(keywords.map((keyword) => [keyword, false])),
 });
 
-describe('lowerSchema enum and const lowering', () => {
+describe('keyword table rules, enum and const lowering', () => {
   it('derives the type from string literals', () => {
     expect(lowerSchema({ enum: ['a', 'b'] }, without('enum'))).toEqual({ type: 'string' });
     expect(lowerSchema({ const: 'a' }, without('const'))).toEqual({ type: 'string' });
@@ -42,7 +46,7 @@ describe('lowerSchema enum and const lowering', () => {
   });
 });
 
-describe('lowerSchema nested object lowering', () => {
+describe('keyword table rules, nested object lowering', () => {
   const objectSchema = { type: 'object', properties: { inner: { type: 'string' } } };
 
   it('flattens object properties', () => {
@@ -59,10 +63,15 @@ describe('lowerSchema nested object lowering', () => {
     });
   });
 
-  it.each(['anyOf', 'oneOf', 'allOf'])('flattens object schemas inside %s branches', (keyword) => {
+  it.each(['anyOf', 'allOf'])('flattens object schemas inside %s branches', (keyword) => {
     expect(lowerSchema({ [keyword]: [objectSchema, { type: 'string' }] }, without('nested'))).toEqual({
       [keyword]: [{ type: 'object' }, { type: 'string' }],
     });
+  });
+
+  it('leaves object schemas inside oneOf branches as they are, because oneOf is a mixed position and a drop there would change what the schema accepts in both directions', () => {
+    const schema = { oneOf: [objectSchema, { type: 'string' }] };
+    expect(lowerSchema(schema, without('nested'))).toEqual(schema);
   });
 
   it('flattens an object schema under additionalProperties', () => {
