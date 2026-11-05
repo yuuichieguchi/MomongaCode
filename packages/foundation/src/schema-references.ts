@@ -26,7 +26,7 @@ const isObject = (value: unknown): value is Json => typeof value === 'object' &&
 
 const isRecord = (value: unknown): value is Json => isObject(value) && !Array.isArray(value);
 
-const resolveUri = (base: string, reference: string): string => {
+export const resolveUri = (base: string, reference: string): string => {
   try {
     return new URL(reference, base === '' ? ENGINE_ROOT_BASE : base).href;
   } catch {
@@ -34,7 +34,7 @@ const resolveUri = (base: string, reference: string): string => {
   }
 };
 
-const splitFragment = (uri: string): [string, string] => {
+export const splitFragment = (uri: string): [string, string] => {
   const hash = uri.indexOf('#');
   return hash < 0 ? [uri, ''] : [uri.slice(0, hash), decodeURIComponent(uri.slice(hash + 1))];
 };
@@ -150,7 +150,7 @@ const indexSchemas = (root: unknown, documents: ReadonlyMap<string, unknown> | u
   return state;
 };
 
-const walkPointer = (root: unknown, pointer: string): unknown => {
+export const walkPointer = (root: unknown, pointer: string): unknown => {
   if (pointer === '' || pointer === '/') return root;
   let node: unknown = root;
   for (const raw of pointer.split('/').slice(1)) {
