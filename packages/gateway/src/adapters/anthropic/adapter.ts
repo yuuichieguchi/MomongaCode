@@ -1,4 +1,4 @@
-import { decodeSse } from '@momonga/foundation';
+import { JsonDepthError, decodeSse, parseOutsideJson } from '@momonga/foundation';
 import { EXACT_ERROR_SHAPE, countReplyOf, summaryTokenCapFor } from '@momonga/protocol';
 import type { AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterCountTokensResult, AdapterInputItem, AdapterRequest, AdapterTarget, CountTokensRequest, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
@@ -34,8 +34,9 @@ type Paused = { content: Record<string, unknown>[]; usage: AnthropicUsageFields;
 const countTokensOf = (text: string): number => {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
-  } catch {
+    parsed = parseOutsideJson(text);
+  } catch (error) {
+    if (error instanceof JsonDepthError) throw new UpstreamProtocolError(`the upstream count_tokens reply is malformed: ${error.message}`);
     throw new UpstreamProtocolError('the upstream count_tokens reply is not valid JSON');
   }
   const tokens = typeof parsed === 'object' && parsed !== null ? (parsed as { input_tokens?: unknown }).input_tokens : undefined;

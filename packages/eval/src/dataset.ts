@@ -1,5 +1,6 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
+import { parseOutsideJson } from '@momonga/foundation';
 import { PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
 import type { PermissionMode, RunStatus, StopReason } from '@momonga/protocol';
 
@@ -181,7 +182,7 @@ export const assertGoldenCases = (dataset: CasesHolder, source: string): void =>
 
 export const jsonOf = (text: string, source: string): unknown => {
   try {
-    return JSON.parse(text);
+    return parseOutsideJson(text);
   } catch (error) {
     throw new DatasetError(`${source}: not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }

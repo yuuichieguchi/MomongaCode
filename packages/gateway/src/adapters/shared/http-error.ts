@@ -1,4 +1,4 @@
-import { parseRetryAfter, isRecord } from '@momonga/foundation';
+import { isRecord, parseOutsideJson, parseRetryAfter } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { readTextLimited } from './body-reading.ts';
 import { UpstreamHttpError } from './failures.ts';
@@ -20,7 +20,7 @@ export const httpErrorOf = async (
   const { text } = await readTextLimited(response.body, MAX_ERROR_BODY_BYTES);
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    parsed = parseOutsideJson(text);
   } catch (error) {
     if (!(error instanceof SyntaxError)) throw error;
   }

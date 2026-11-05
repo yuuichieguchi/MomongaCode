@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { checkJsonDepth } from './json-depth.ts';
 
 const fail = (kind: string, path: string): never => {
   throw new TypeError(`canonicalJson: cannot encode ${kind} at ${path === '' ? '<root>' : path}`);
@@ -50,6 +51,9 @@ const encode = (value: unknown, path: string, ancestors: Set<object>): string =>
   }
 };
 
-export const canonicalJson = (value: unknown): string => encode(value, '', new Set());
+export const canonicalJson = (value: unknown): string => {
+  checkJsonDepth(value);
+  return encode(value, '', new Set());
+};
 
 export const sha256Hex = (data: string | Uint8Array): string => createHash('sha256').update(data).digest('hex');

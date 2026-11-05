@@ -1,5 +1,6 @@
 import { isRecord } from '@momonga/foundation';
 import { UpstreamProtocolError } from '../shared/failures.ts';
+import { parseUpstreamJson } from '../shared/upstream-json.ts';
 
 export type AnthropicUsageFields = {
   input_tokens?: number;
@@ -89,12 +90,7 @@ const deltaOf = (value: unknown): AnthropicDelta => {
 };
 
 export const parseAnthropicEvent = (data: string): AnthropicStreamEvent => {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(data);
-  } catch {
-    throw invalid('it is not valid JSON');
-  }
+  const parsed = parseUpstreamJson(data, invalid);
   if (!isRecord(parsed)) throw invalid('it is not a JSON object');
   const type = requiredString(parsed, 'type', 'event');
   switch (type) {

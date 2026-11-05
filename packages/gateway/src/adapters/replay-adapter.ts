@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import nodePath from 'node:path';
-import { canonicalJson, modeIsPrivate, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, modeIsPrivate, parseOutsideJson, sha256Hex } from '@momonga/foundation';
 import { TERMINAL_STREAM_EVENT_TYPES } from '@momonga/protocol';
 import type {
   AdapterContext,
@@ -35,7 +35,7 @@ class ReplayMismatchError extends Error {
 const digestOf = (request: AdapterRequest): string => sha256Hex(canonicalJson(request));
 
 const parseEntry = (line: string, path: string, lineNumber: number): ReplayEntry => {
-  const parsed: unknown = JSON.parse(line);
+  const parsed: unknown = parseOutsideJson(line);
   if (typeof parsed !== 'object' || parsed === null) throw new TypeError(`${path}:${lineNumber} is not a JSON object`);
   const { digest, events } = parsed as Record<string, unknown>;
   if (typeof digest !== 'string' || !Array.isArray(events)) {

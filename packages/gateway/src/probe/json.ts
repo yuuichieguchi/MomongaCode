@@ -1,12 +1,12 @@
 export type JsonObject = Record<string, unknown>;
 
-import { isRecord } from '@momonga/foundation';
+import { isRecord, parseOutsideJson } from '@momonga/foundation';
 
 export { isRecord };
 
 export const parseJson = (text: string): unknown => {
   try {
-    return JSON.parse(text);
+    return parseOutsideJson(text);
   } catch (error) {
     if (error instanceof SyntaxError) return undefined;
     throw error;

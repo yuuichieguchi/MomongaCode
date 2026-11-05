@@ -1,7 +1,7 @@
 import { Client, ProtocolError, SdkError, SdkErrorCode, TRACEPARENT_META_KEY, TRACESTATE_META_KEY, isCallToolResult, isInputRequiredResult } from '@modelcontextprotocol/client';
 import type { CallToolResult, Implementation, ProtocolEra, Tool } from '@modelcontextprotocol/client';
 import type { McpServerConfig, McpServerScope } from '@momonga/config';
-import { CircuitBreaker, computeBackoff } from '@momonga/foundation';
+import { CircuitBreaker, checkJsonDepth, computeBackoff } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { authorizeMcpServer } from './authorize.ts';
 import { createMcpOAuthProvider } from './oauth-provider.ts';
@@ -134,6 +134,10 @@ const describeExit = (transport: ConnectionTransport): string | undefined => {
 };
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+const checkResultDepth = (result: object): void => {
+  for (const member of Object.values(result)) checkJsonDepth(member);
+};
 
 class ManagedConnection implements McpServerConnection {
   readonly name: string;
@@ -362,6 +366,7 @@ class ManagedConnection implements McpServerConnection {
         }
         throw error;
       }
+      checkResultDepth(result);
       if (!isInputRequiredResult(result)) return validateStructuredOutput(mcpToolIdentity(this.name, input.name), input.name, tool, result);
       rounds += 1;
       if (rounds > maxRounds) {
@@ -411,6 +416,7 @@ class ManagedConnection implements McpServerConnection {
           }),
         accept: (taskId, value) => {
           if (!isCallToolResult(value)) throw new McpTaskError(taskId, `task ${taskId} completed with a result that is not a tool result`);
+          checkResultDepth(value);
           return validateStructuredOutput(mcpToolIdentity(this.name, input.name), input.name, tool, value);
         },
       });

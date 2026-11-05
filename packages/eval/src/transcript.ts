@@ -1,6 +1,6 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
-import { isRecord } from '@momonga/foundation';
+import { isRecord, parseOutsideJson } from '@momonga/foundation';
 import { MEMORY_ORIGINS, REFLECTION_JOB_STATES, RUN_API_SCHEMAS, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
 import { validatePolicyOverlay } from './context-policy.ts';
 import type { PolicyOverlay } from './context-policy.ts';
@@ -180,7 +180,7 @@ export const encodeTranscript = (transcript: Transcript): string => {
 const endRecordOf = (line: string | undefined, source: string): { events: number; childEvents: number } => {
   let parsed: unknown;
   try {
-    parsed = line === undefined ? undefined : JSON.parse(line);
+    parsed = line === undefined ? undefined : parseOutsideJson(line);
   } catch {
     parsed = undefined;
   }
@@ -196,7 +196,7 @@ export const decodeTranscript = (text: string, source: string): Transcript => {
   if (headerLine === undefined) throw new TranscriptError(`${source}: empty transcript`);
   let header: unknown;
   try {
-    header = JSON.parse(headerLine);
+    header = parseOutsideJson(headerLine);
   } catch (error) {
     throw new TranscriptError(`${source}:1: not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -218,7 +218,7 @@ export const decodeTranscript = (text: string, source: string): Transcript => {
     const lineNumber = index + 2;
     let parsed: unknown;
     try {
-      parsed = JSON.parse(line);
+      parsed = parseOutsideJson(line);
     } catch (error) {
       throw new TranscriptError(`${source}:${lineNumber}: not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
     }

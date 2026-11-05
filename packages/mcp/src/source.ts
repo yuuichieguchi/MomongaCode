@@ -1,5 +1,5 @@
 import type { CallToolResult, Tool } from '@modelcontextprotocol/client';
-import { SchemaValidatorFailure, canonicalJson, sha256Hex } from '@momonga/foundation';
+import { SchemaValidatorFailure, canonicalJson, checkJsonDepth, sha256Hex } from '@momonga/foundation';
 import { defineTool, ToolExecutionError, ToolInputRequired, TransientToolError } from '@momonga/tools';
 import type { AnyTool, ToolListOptions, ToolResult, ToolResume, ToolSource, ToolSourceListing } from '@momonga/tools';
 import { McpUnavailableError } from './connection.ts';
@@ -171,6 +171,7 @@ export const createMcpToolSource = (options: McpToolSourceOptions): ToolSource =
       try {
         const toolPart = normalizeToolPart(server, tool.name);
         displayName = `mcp__${server}__${toolPart}`;
+        checkJsonDepth({ tools: [tool] });
         tools.push(buildTool(options, tool, toolPart, sanitizeSchema(tool.inputSchema)));
       } catch (error) {
         notices.push(`skipped ${JSON.stringify(displayName)}: ${error instanceof Error ? error.message : String(error)}`);

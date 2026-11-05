@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { canonicalPath, comparableContains } from '@momonga/foundation';
+import { JsonDepthError, canonicalPath, comparableContains, parseOutsideJson } from '@momonga/foundation';
 
 export type JsonFile = { found: false } | { found: true; value: unknown };
 
@@ -149,8 +149,9 @@ const rejectForbiddenKeys = (value: unknown, pointer: string, source: string): v
 export const parseJsonText = (text: string, source: string): unknown => {
   let value: unknown;
   try {
-    value = JSON.parse(text);
+    value = parseOutsideJson(text);
   } catch (error) {
+    if (error instanceof JsonDepthError) throw new Error(`${source}: ${error.message}`, { cause: error });
     const offset = new JsonSyntaxScanner(text).firstErrorOffset();
     if (offset === undefined) throw error;
     const { line, column } = lineAndColumn(text, offset);

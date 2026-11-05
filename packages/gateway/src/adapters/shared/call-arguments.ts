@@ -1,11 +1,11 @@
-import { isRecord } from '@momonga/foundation';
+import { JsonDepthError, isRecord, parseOutsideJson } from '@momonga/foundation';
 
 const parsedObjectOf = (text: string): Record<string, unknown> | undefined => {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    parsed = parseOutsideJson(text);
   } catch (error) {
-    if (error instanceof SyntaxError) return undefined;
+    if (error instanceof SyntaxError || error instanceof JsonDepthError) return undefined;
     throw error;
   }
   return isRecord(parsed) ? parsed : undefined;

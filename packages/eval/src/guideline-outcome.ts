@@ -1,5 +1,5 @@
 import Ajv2020 from 'ajv/dist/2020.js';
-import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, parseOutsideJson, sha256Hex } from '@momonga/foundation';
 import { GUIDELINE_TEXT_PATTERN } from '@momonga/protocol';
 import { GATE_CHECKS } from './context-compare.ts';
 import type { ContextComparison } from './context-compare.ts';
@@ -212,7 +212,7 @@ const validateOutcomeFile = ajv.compile<GuidelineOutcomeFile>(OUTCOME_FILE_SCHEM
 export const parseOutcomeFile = (text: string): GuidelineOutcomeFile => {
   let value: unknown;
   try {
-    value = JSON.parse(text) as unknown;
+    value = parseOutsideJson(text);
   } catch (error) {
     throw new EvalError(`the outcome file is not JSON: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }

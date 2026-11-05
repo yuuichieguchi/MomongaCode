@@ -1,3 +1,4 @@
+import { parseOutsideJson } from '@momonga/foundation';
 import { UpstreamProtocolError } from '../shared/failures.ts';
 import type { AnthropicContentBlock, AnthropicDelta } from './events.ts';
 
@@ -42,7 +43,7 @@ export class AssistantRecorder {
     this.open.delete(index);
     if (recorded.partialJson !== '') {
       try {
-        recorded.block['input'] = JSON.parse(recorded.partialJson);
+        recorded.block['input'] = parseOutsideJson(recorded.partialJson);
       } catch (error) {
         throw new UpstreamProtocolError(`the upstream streamed tool input that is not valid JSON: ${(error as Error).message}`);
       }

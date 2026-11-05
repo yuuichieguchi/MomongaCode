@@ -3,7 +3,7 @@ import type { ValidateFunction } from 'ajv/dist/2020.js';
 import { defaultContextSettings, defaultMemorySettings, defaultToolsSettings } from '@momonga/config';
 import { OUTPUT_FORMATTERS } from '@momonga/protocol';
 import type { OutputFormatterName } from '@momonga/protocol';
-import { canonicalJson } from '@momonga/foundation';
+import { canonicalJson, parseOutsideJson } from '@momonga/foundation';
 import { EvalError } from './runner.ts';
 
 export type PolicyOverlay = {
@@ -64,7 +64,7 @@ export const normalisePolicyOverlay = (overlay: PolicyOverlay): PolicyOverlay =>
 export const parsePolicyOverlay = (text: string, source: string): PolicyOverlay => {
   let value: unknown;
   try {
-    value = JSON.parse(text);
+    value = parseOutsideJson(text);
   } catch (error) {
     throw new EvalError(`${source}: not valid JSON: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }

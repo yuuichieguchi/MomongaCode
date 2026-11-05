@@ -1,3 +1,5 @@
+import { parseOutsideJson } from '../json-depth.ts';
+
 export type WindowsProcessRow = { pid: number; ppid: number; startMs: number };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -11,7 +13,7 @@ const integerField = (row: Record<string, unknown>, name: string): number => {
 export const parseJsonArray = (text: string): unknown[] => {
   const trimmed = text.trim();
   if (trimmed === '') return [];
-  const parsed: unknown = JSON.parse(trimmed);
+  const parsed: unknown = parseOutsideJson(trimmed);
   return Array.isArray(parsed) ? parsed : [parsed];
 };
 

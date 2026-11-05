@@ -1,3 +1,4 @@
+import { parseOutsideJson } from '@momonga/foundation';
 import { asciiLower, partitionTerms } from '@momonga/protocol';
 
 const INDENT = 2;
@@ -44,7 +45,7 @@ export const formatJson = (raw: string, terms: readonly string[]): string | unde
   if (LOSSY_NUMBER.test(raw)) return undefined;
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = parseOutsideJson(raw);
   } catch {
     return undefined;
   }

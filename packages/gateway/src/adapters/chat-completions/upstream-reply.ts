@@ -1,4 +1,4 @@
-import { decodeSse, isRecord } from '@momonga/foundation';
+import { decodeSse, isRecord, parseOutsideJson } from '@momonga/foundation';
 import type { SseEvent } from '@momonga/foundation';
 import { CONTEXT_WINDOW_EXCEEDED, GUARDRAIL_VIOLATION, StreamFailure, UNSUPPORTED_REQUEST } from '../shared/failures.ts';
 import { errorObjectOf, upstreamErrorText } from './vocabulary.ts';
@@ -14,7 +14,7 @@ export type UpstreamReply =
 
 const parseJson = (text: string): unknown => {
   try {
-    return JSON.parse(text);
+    return parseOutsideJson(text);
   } catch (error) {
     if (error instanceof SyntaxError) return undefined;
     throw error;

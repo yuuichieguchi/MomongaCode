@@ -1,6 +1,6 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
-import { sha256Hex } from '@momonga/foundation';
+import { parseOutsideJson, sha256Hex } from '@momonga/foundation';
 import { GUIDELINE_TEXT_PATTERN, MIN_SUMMARY_TOKENS, escapeXmlAttribute, escapeXmlText } from '@momonga/protocol';
 import type { BilledDetail } from '@momonga/protocol';
 import { describeFirstError } from './dataset.ts';
@@ -89,7 +89,7 @@ const validateCandidate: ValidateFunction<{ guideline: string }> = ajv.compile<{
 
 const jsonOrError = (text: string): { value: unknown } | { error: string } => {
   try {
-    return { value: JSON.parse(text) as unknown };
+    return { value: parseOutsideJson(text) };
   } catch (error) {
     return { error: `the reply is not JSON (${error instanceof Error ? error.message : String(error)})` };
   }

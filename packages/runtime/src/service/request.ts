@@ -1,5 +1,6 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
+import { JsonDepthError, parseOutsideJson } from '@momonga/foundation';
 import { RUN_API_SCHEMAS } from '@momonga/protocol';
 import type { ImageAttachment, PermissionMode } from '@momonga/protocol';
 import { bodyTooLarge, invalidRequest, unsupportedMediaType } from './errors.ts';
@@ -95,8 +96,9 @@ export const readJson = async (request: Request, accepted: readonly string[], ma
     throw invalidRequest('the request body is not valid UTF-8');
   }
   try {
-    return JSON.parse(text);
-  } catch {
+    return parseOutsideJson(text);
+  } catch (error) {
+    if (error instanceof JsonDepthError) throw invalidRequest(`the request body is too deep: ${error.message}`);
     throw invalidRequest('the request body is not valid JSON');
   }
 };
