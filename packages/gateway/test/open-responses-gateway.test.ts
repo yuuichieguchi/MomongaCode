@@ -183,13 +183,41 @@ describe('open-responses relay through the gateway: terminal semantics', () => {
     expect(terminal.response.error).toMatchObject({ code: 'upstream_protocol_error', type: 'model_error' });
   });
 
-  it('relays an upstream response.failed with its code', async () => {
+  it('relays an upstream response.failed with a neutral code before any output as is, without retrying', async () => {
     const gateway = await startOpenResponsesGateway({
-      script: [openResponsesStream([...openingEvents(), terminalEvent({ kind: 'failed', code: 'server_error', message: 'the model crashed' }, [])])],
+      script: [openResponsesStream([...openingEvents(), terminalEvent({ kind: 'failed', code: 'content_filter', message: 'the model refused' }, [])])],
     });
     const terminal = terminalOf(await streamResponse(gateway));
     expect(terminal.type).toBe('response.failed');
-    expect(terminal.response.error).toMatchObject({ code: 'server_error', message: 'the model crashed', type: 'server_error' });
+    expect(terminal.response.error).toMatchObject({ code: 'content_filter', message: 'the model refused' });
+    expect(gateway.fake.requests).toHaveLength(1);
+  });
+
+  it('retries an upstream response.failed with a failure code before any output and reports its code when the budget allows no retry', async () => {
+    const gateway = await startOpenResponsesGateway({
+      script: [openResponsesStream([...openingEvents(), terminalEvent({ kind: 'failed', code: 'server_error', message: 'the model crashed' }, [])])],
+      config: { retry: { totalWaitMs: 1 } },
+    });
+    const reply = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', stream: true, input: userInput('hello') }));
+    expect(reply.status).toBe(502);
+    expect(reply.body.error).toMatchObject({ code: 'server_error', message: expect.stringContaining('the model crashed') });
+    expect(gateway.fake.requests).toHaveLength(1);
+  });
+
+  it('retries an upstream response.failed with a failure code before any output and answers from the next send', async () => {
+    const gateway = await startOpenResponsesGateway({
+      script: [
+        openResponsesStream([...openingEvents(), terminalEvent({ kind: 'failed', code: 'server_error', message: 'the model crashed' }, [])]),
+        openResponsesTextReply(['recovered']),
+      ],
+    });
+    const pending = streamResponse(gateway);
+    await waitFor(() => gateway.fake.requests.length === 1 && gateway.timers.pending().length > 0, { description: 'retry timer' });
+    gateway.timers.advance(gateway.timers.pending().at(-1)?.delayMs ?? 0);
+    const terminal = terminalOf(await pending);
+    expect(terminal.type).toBe('response.completed');
+    expect(textOf(terminal.response)).toBe('recovered');
+    expect(gateway.fake.requests).toHaveLength(2);
   });
 
   it('fails the response when the stream ends without a terminal event', async () => {

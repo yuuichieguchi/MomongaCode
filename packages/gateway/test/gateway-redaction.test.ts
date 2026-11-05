@@ -10,6 +10,7 @@ import { GatewayError } from '../src/core/errors.ts';
 import { START_MS, getJson, postJson, readJson, readSse, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
 import type { SseFrame } from './gateway-helpers.ts';
 import { makeAdapter, startFake } from './cc-support.ts';
+import { driveTimers } from './retry-support.ts';
 import { REDACTED, REDACTED_401, TEST_API_KEY, expectNoCredential, expectRedacted } from './credential-support.ts';
 
 const ECHO_401 = {
@@ -212,18 +213,59 @@ describe('T10: codes and params are forwarded or dropped by shape', () => {
     { label: 'a code of 70 characters', code: 'c'.repeat(70), leaked: 'c'.repeat(70) },
     { label: 'a code that carries a space', code: 'leaky code value', leaked: 'leaky code value' },
     { label: 'a code equal to the configured key', code: TEST_API_KEY, leaked: TEST_API_KEY },
-  ])('response.failed: $label is not forwarded', async ({ code, leaked }) => {
+  ])('response.failed before output: $label is not forwarded, and the error carries the gateway code upstream_error', async ({ code, leaked }) => {
     const created = textResponseEvents({ model: 'scripted-primary', chunks: ['a'] }).slice(0, 2);
     const failed = {
       type: 'response.failed',
       sequence_number: 2,
       response: { ...responseResource({ id: 'upstream_resp_1', model: 'scripted-primary', status: 'failed' }), error: { code, message: 'failed', type: 'server_error' } },
     } as unknown as StreamEvent;
-    const { client } = await startGateway({ adapters: { primary: eventsAdapter([...created, failed]) }, credentials: [TEST_API_KEY] });
+    const { client } = await startGateway({
+      adapters: { primary: eventsAdapter([...created, failed]) },
+      credentials: [TEST_API_KEY],
+      config: { retry: { totalWaitMs: 1 } },
+    });
+    const reply = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true }));
+    expect(reply.status).toBe(502);
+    expect(reply.body.error.code).toBe('upstream_error');
+    expect(JSON.stringify(reply.body)).not.toContain(leaked);
+  });
+});
+
+describe('classification uses the upstream code, redaction only what the client sees', () => {
+  const failedBefore = (code: string, type: string): StreamEvent[] => [
+    ...textResponseEvents({ model: 'scripted-primary', chunks: ['a'] }).slice(0, 2),
+    {
+      type: 'response.failed',
+      sequence_number: 2,
+      response: { ...responseResource({ id: 'upstream_resp_1', model: 'scripted-primary', status: 'failed' }), error: { code, message: 'failed', type } },
+    } as unknown as StreamEvent,
+  ];
+
+  it('does not retry a neutral upstream code before output even when that code is scrubbed for the client', async () => {
+    const primary = createScriptedAdapter({ calls: [{ events: failedBefore('content_filter', 'server_error') }, { events: textResponseEvents({ model: 'scripted-primary', chunks: ['never'] }) }] });
+    const harness = await startGateway({ adapters: { primary }, credentials: ['content_filter'] });
+    const reading = postJson(harness.client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true }).then(readSse);
+    await driveTimers(harness, [reading]);
+    const frames = await reading;
+    expect(primary.calls).toHaveLength(1);
+    expect(frames.at(-1)?.data.type).toBe('response.failed');
+    expect(framesText(frames)).not.toContain('content_filter');
+  });
+
+  it('never forwards a failure without a code: a scrubbed upstream code after output becomes upstream_error', async () => {
+    const afterOutput = [
+      ...textResponseEvents({ model: 'scripted-primary', chunks: ['a'] }).slice(0, 5),
+      {
+        type: 'response.failed',
+        sequence_number: 5,
+        response: { ...responseResource({ id: 'upstream_resp_1', model: 'scripted-primary', status: 'failed' }), error: { code: 'leaky code value', message: 'failed', type: 'server_error' } },
+      } as unknown as StreamEvent,
+    ];
+    const { client } = await startGateway({ adapters: { primary: eventsAdapter(afterOutput) }, credentials: [TEST_API_KEY] });
     const frames = await readSse(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true }));
-    const terminal = frames.at(-1);
-    expect(terminal?.data.type).toBe('response.failed');
-    expect(framesText(frames)).not.toContain(leaked);
+    expect(frames.at(-1)?.data.type).toBe('response.failed');
+    expect(frames.at(-1)?.data.response.error.code).toBe('upstream_error');
   });
 });
 

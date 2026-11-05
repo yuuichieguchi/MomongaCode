@@ -52,7 +52,7 @@ const changingOutage = (env: Env, change: () => void): void => {
     outages += 1;
     if (outages > 1) return;
     change();
-    throw new GatewayRequestError({ status: 503, type: 'server_error', code: 'upstream_unavailable', message: 'down' });
+    throw new GatewayRequestError({ status: 503, type: 'server_error', code: 'gateway_closed', message: 'the gateway is shutting down' });
   };
 };
 

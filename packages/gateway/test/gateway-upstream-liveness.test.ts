@@ -38,11 +38,10 @@ describe('upstream liveness', () => {
     expect(reply.body.error.code).toBe('provider_unavailable');
   });
 
-  it('ends a stream whose upstream goes silent after the first events with a failed response', async () => {
+  it('answers a stream whose upstream goes silent after the opening events, before any output, with an HTTP error and no stream', async () => {
     const harness = await startSilentUpstream([openingThenSilence()]);
-    const frames = await readSse(await postJson(harness.client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true }));
-    const last = frames.at(-1)?.data;
-    expect(last.type).toBe('response.failed');
-    expect(last.response.error.code).toBe('stream_interrupted');
+    const reply = await readJson(await postJson(harness.client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true }));
+    expect(reply.status).toBe(502);
+    expect(reply.body.error.code).toBe('provider_unavailable');
   });
 });

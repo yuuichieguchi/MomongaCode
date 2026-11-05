@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ClassifiedError, ProviderAdapter } from '@momonga/protocol';
 import { ScriptedUpstreamError, createScriptedAdapter, textResponseEvents, waitFor } from '@momonga/testkit';
+import { GATEWAY_CONFIG_DEFAULTS } from '../src/defaults.ts';
 import { getJson, outputText, postJson, readJson, startGateway, userInput } from './gateway-helpers.ts';
 import { BASE_MS, MAX_MS, driveTimers, ok } from './retry-support.ts';
 
@@ -200,5 +201,19 @@ describe('one verdict per request and target', () => {
     expect(a.calls).toHaveLength(5);
     expect(b.calls).toHaveLength(2);
     expect((await getJson(harness.client, '/v1/momonga/health')).body.targets.a).toMatchObject({ breaker: 'closed' });
+  });
+});
+
+describe('the default breaker counts distinct requests', () => {
+  it('stays closed after one request gives up on the target and opens after a second distinct request gives up there', async () => {
+    const primary = createScriptedAdapter({ calls: [fail(503, 'first request'), fail(503, 'second request')] });
+    const harness = await startGateway({ adapters: { primary }, config: { retry: { maxAttempts: 1, totalWaitMs: 1 }, breaker: GATEWAY_CONFIG_DEFAULTS.breaker } });
+    const breaker = async () => (await getJson(harness.client, '/v1/momonga/health')).body.targets.primary.breaker as string;
+
+    expect((await readJson(await postJson(harness.client, '/v1/responses', body))).status).toBe(502);
+    expect(await breaker()).toBe('closed');
+    expect((await readJson(await postJson(harness.client, '/v1/responses', body))).status).toBe(502);
+    expect(await breaker()).toBe('open');
+    expect(GATEWAY_CONFIG_DEFAULTS.breaker).toEqual({ failureThreshold: 2, openMs: 30_000 });
   });
 });

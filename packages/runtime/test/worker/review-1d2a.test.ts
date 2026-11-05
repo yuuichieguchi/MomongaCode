@@ -16,7 +16,7 @@ const REQUEST_BODY = { model: 'fm', input: [{ type: 'message', role: 'user', con
 
 const requested = (): RunEventPayload => ({ type: 'model.requested', step: 1, attempt: 1, digest: bodyDigest(REQUEST_BODY), body: REQUEST_BODY });
 
-const serverError = (): ScriptStep => ({ events: [], error: new GatewayRequestError({ status: 500, type: 'server_error', code: 'internal_error', message: 'boom' }) });
+const gatewayClosed = (): ScriptStep => ({ events: [], error: new GatewayRequestError({ status: 503, type: 'server_error', code: 'gateway_closed', message: 'the gateway is shutting down' }) });
 
 const startedMarkSeed = (env: Env, runId: string): void => {
   const key = toolKey(runId, 1, 'call_m_1');
@@ -40,7 +40,7 @@ const startedMarkSeed = (env: Env, runId: string): void => {
 describe('WW1: bounded per-run memory', () => {
   it('keeps an entry only while a requeued run has a streak', async () => {
     const env = await makeEnv();
-    env.gateway.script.push(serverError(), textStep('Recovered.'));
+    env.gateway.script.push(gatewayClosed(), textStep('Recovered.'));
     const run = env.enqueue('Work');
     const worker = env.worker('worker-1', { random: FIXED_RANDOM });
 
@@ -68,7 +68,7 @@ describe('WW1: bounded per-run memory', () => {
 
   it('drops the entry of a requeued run cancelled through the service on an idle poll tick', async () => {
     const env = await makeEnv();
-    env.gateway.script.push(serverError());
+    env.gateway.script.push(gatewayClosed());
     const run = env.enqueue('Work');
     const worker = env.worker('worker-1', { random: FIXED_RANDOM, idlePollMs: 10 });
     await env.runOnce(worker);
@@ -82,7 +82,7 @@ describe('WW1: bounded per-run memory', () => {
 
   it('drops the entry of a requeued run whose deadline passed on an idle poll tick', async () => {
     const env = await makeEnv();
-    env.gateway.script.push(serverError());
+    env.gateway.script.push(gatewayClosed());
     const run = env.enqueue('Work', { deadlineAt: START_MS + 600_000 });
     const worker = env.worker('worker-1', { random: FIXED_RANDOM, idlePollMs: 10 });
     await env.runOnce(worker);
@@ -289,7 +289,7 @@ describe('WS3: refundable classes count toward the streak', () => {
 describe('WW1: sweep after each claim', () => {
   it('drops the entry of a cancelled run after the next claim without an idle tick', async () => {
     const env = await makeEnv();
-    env.gateway.script.push(serverError());
+    env.gateway.script.push(gatewayClosed());
     const failed = env.enqueue('Work');
     const worker = env.worker('worker-1', { random: FIXED_RANDOM, idlePollMs: 600_000 });
     await env.runOnce(worker);
