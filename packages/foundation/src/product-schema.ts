@@ -1,7 +1,7 @@
 import { ataEngine } from './untrusted-engine.ts';
 import { NO_REMOTE_DOCUMENTS } from './untrusted-schema.ts';
 import type { RemoteDocuments, UntrustedError, UntrustedValidate } from './untrusted-schema.ts';
-import { createUntrustedBoundary } from './validate-untrusted.ts';
+import { createUntrustedBoundary, validateGuarded } from './validate-untrusted.ts';
 
 export type ProductSchema = {
   readonly id: string;
@@ -48,7 +48,7 @@ export const defineProductSchema = <T>(id: string, schema: Record<string, unknow
   let compiled: UntrustedValidate | undefined;
   return (data) => {
     compiled ??= boundaryFor(remotes).compile(schema);
-    const verdict = compiled(data);
+    const verdict = validateGuarded(`product-schema\u0000${id}`, schema, compiled, data);
     return verdict.valid ? { valid: true, value: data as T } : { valid: false, errors: verdict.errors };
   };
 };

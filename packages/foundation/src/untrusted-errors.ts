@@ -177,15 +177,30 @@ export const createErrorDescriber = ({ root, rootUri, engine, registry }: { root
     return tags;
   };
 
-  const taggedIndexes = (branches: readonly Located[], instance: unknown): number[] => {
-    if (!isRecord(instance)) return [];
+  type Selection =
+    | { readonly kind: 'matched'; readonly indexes: readonly number[] }
+    | { readonly kind: 'unmatched'; readonly key: string; readonly allowed: readonly unknown[] }
+    | { readonly kind: 'untagged' };
+
+  const selectionOf = (branches: readonly Located[], instance: unknown): Selection => {
+    if (!isRecord(instance)) return { kind: 'untagged' };
     const tagged = branches.map(tagsOf);
     const sharedKeys = [...new Set(tagged.flatMap((tags) => [...tags.keys()]))].filter((key) => tagged.filter((tags) => tags.has(key)).length >= 2);
     for (const key of sharedKeys) {
       const matched = tagged.flatMap((tags, index) => ((tags.get(key) ?? []).some((value) => Object.is(value, instance[key])) ? [index] : []));
-      if (matched.length > 0) return matched;
+      if (matched.length > 0) return { kind: 'matched', indexes: matched };
     }
-    return [];
+    const key = sharedKeys.find((candidate) => tagged.every((tags) => tags.has(candidate)));
+    if (key === undefined) return { kind: 'untagged' };
+    const allowed = tagged.flatMap((tags) => tags.get(key) ?? []).filter((value, index, all) => all.findIndex((other) => Object.is(other, value)) === index);
+    return { kind: 'unmatched', key, allowed };
+  };
+
+  const tagError = (selection: Extract<Selection, { kind: 'unmatched' }>, path: string, instance: unknown): UntrustedError => {
+    const missing = !isRecord(instance) || instance[selection.key] === undefined;
+    const base = { instancePath: sanitizeServerText(missing ? path : `${path}/${escapeToken(selection.key)}`) };
+    if (missing) return { ...base, keyword: 'required', message: `must have required property '${sanitizeServerText(selection.key)}'`, params: { missingProperty: sanitizeServerText(selection.key) } };
+    return { ...base, keyword: 'enum', message: 'must be equal to one of the allowed values', params: { allowedValues: sanitizeParam(selection.allowed) } };
   };
 
   const flatten = (errors: readonly RawError[], context: Context): UntrustedError[] =>
@@ -200,14 +215,14 @@ export const createErrorDescriber = ({ root, rootUri, engine, registry }: { root
         return verdict.valid ? [] : [{ branch, index, errors: verdict.errors }];
       });
       if (outcomes.length === 0) return [sanitized(error, path)];
-      const tagged = taggedIndexes(branches, instance);
-      const pool = outcomes.filter((outcome) => tagged.includes(outcome.index));
+      const selection = selectionOf(branches, instance);
+      if (selection.kind === 'unmatched') return [tagError(selection, path, instance)];
+      const pool = selection.kind === 'matched' ? outcomes.filter((outcome) => selection.indexes.includes(outcome.index)) : [];
       const contenders = pool.length > 0 ? pool : outcomes;
       const deepest = Math.max(...contenders.map((outcome) => rawDepthOf(outcome.errors)));
       const finalists = pool.length > 0 ? pool : contenders.filter((outcome) => rawDepthOf(outcome.errors) === deepest);
       const best = finalists.reduce((winner, outcome) => (outcome.errors.length < winner.errors.length ? outcome : winner));
-      const reported = pool.length > 0 ? best.errors : best.errors.filter((candidate) => rawDepthOf([candidate]) === deepest);
-      return flatten(reported, { base: best.branch, prefix: path, instance });
+      return flatten(best.errors, { base: best.branch, prefix: path, instance });
     });
 
   return (errors, instance) => {

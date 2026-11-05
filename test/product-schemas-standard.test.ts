@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { ataEngine, createUntrustedBoundary } from '@momonga/foundation';
 import type { ProductSchema } from '@momonga/foundation';
 import { OPEN_RESPONSES_OPENAPI, RUN_API_SCHEMAS } from '@momonga/protocol';
@@ -24,13 +24,22 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 
 const remoteDocumentsOf = (entry: ProductSchema): unknown[] => [...entry.remotes.values()];
 
-const strictLint = (entry: ProductSchema): string | undefined => {
+const linters = new WeakMap<ProductSchema['remotes'], Ajv2020.default>();
+
+const linterFor = (remotes: ProductSchema['remotes']): Ajv2020.default => {
+  const known = linters.get(remotes);
+  if (known !== undefined) return known;
   const ajv = new Ajv2020.default({ strict: true, allErrors: true });
+  for (const [uri, document] of remotes) {
+    if (isRecord(document)) ajv.addSchema(document, typeof document['$id'] === 'string' ? undefined : uri);
+  }
+  linters.set(remotes, ajv);
+  return ajv;
+};
+
+const strictLint = (entry: ProductSchema): string | undefined => {
   try {
-    for (const [uri, document] of entry.remotes) {
-      if (isRecord(document)) ajv.addSchema(document, typeof document['$id'] === 'string' ? undefined : uri);
-    }
-    ajv.compile(entry.schema);
+    linterFor(entry.remotes).compile(entry.schema);
     return undefined;
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
@@ -43,6 +52,10 @@ const componentNames = (): string[] => {
 };
 
 describe('every product schema is standard JSON Schema 2020-12', () => {
+  beforeAll(async () => {
+    for (const entry of await schemas()) linterFor(entry.remotes);
+  });
+
   it('finds the modules that define product schemas by scanning every runtime source', () => {
     const relative = productSchemaModules().map((file) => path.relative(repositoryRoot, file));
     expect(relative.length).toBeGreaterThan(0);
