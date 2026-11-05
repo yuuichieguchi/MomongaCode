@@ -68,7 +68,7 @@ describe('worker memory: saving', () => {
     env.gateway.script.push(save('call_m_1', 'prefers tabs'));
     const first = env.enqueue('Remember this');
     await env.runOnce(memoryWorker(env, 'worker-1'));
-    await expect(await env.resolveApproval(first.id, 'allow_always')).rejects.toThrow('offers no allow_always option');
+    await expect(env.resolveApproval(first.id, 'allow_always')).rejects.toThrow('offers no allow_always option');
     await env.resolveApproval(first.id, 'allow_once');
     env.gateway.script.push(textStep('Remembered.'));
     await env.runOnce(memoryWorker(env, 'worker-2'));

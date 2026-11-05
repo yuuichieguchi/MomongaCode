@@ -39,7 +39,7 @@ const cancellingRun = async (): Promise<{ env: Env; claim: Claim; leave: ReturnT
 describe('what a worker leaving a CANCELLING run does, against RunRecovery.tla WhenCancelling', () => {
   it.each(['COMPLETED', 'STOPPED', 'FAILED'] as const)('finish(%s) ends the run as the spec says', async (to) => {
     const { env, claim, leave } = await cancellingRun();
-    leave.finish(to);
+    await leave.finish(to);
     expect(outcomeOf(env.run(claim.runId))).toBe(whenCancelling().finish);
   });
 

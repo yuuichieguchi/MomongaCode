@@ -46,9 +46,7 @@ describe('context.contribution on the terminals the worker does not reach', () =
     const id = await saveNote(env);
     const run = env.enqueue('Say hello', { history: 'fresh' });
 
-    env.cancel(run.id);
-
-    expect(env.run(run.id).status).toBe('CANCELLED');
+    expect((await env.cancelToEnd(run.id)).status).toBe('CANCELLED');
     expect(env.ofType(run.id, 'context.contribution')).toEqual([]);
     expect(env.store.memories.get(id)?.contributedAt).toBeNull();
   });

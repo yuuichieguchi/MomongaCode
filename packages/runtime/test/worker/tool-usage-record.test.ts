@@ -71,7 +71,7 @@ const eventsOf = (env: Env, runId: string): { seq: number; type: string; names?:
 describe('the tool usage window reads one offered-names record per run (person item 9, a\')', () => {
   it('takes the offered names of a run from its record, not from its request bodies', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
-    pastRun(env, [offered(['Glob', 'Read']), requested(1, ['Bash', 'Read']), called('call_a', 'Read')]);
+    await pastRun(env, [offered(['Glob', 'Read']), requested(1, ['Bash', 'Read']), called('call_a', 'Read')]);
     const { store, reads } = bodyWatchedStore(env.store);
 
     const window = toolUsageWindowOf(store, env.session.cwd);
@@ -82,8 +82,8 @@ describe('the tool usage window reads one offered-names record per run (person i
 
   it('counts offered and called names over the twenty-run window from the records alone', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
-    pastRun(env, [offered(['Bash', 'Glob', 'Grep', 'Read']), called('call_old', 'Bash')]);
-    for (let index = 0; index < TOOL_USAGE_WINDOW_RUNS; index += 1) pastRun(env, [offered(['Glob', 'Grep', 'Read']), called(`call_${index}`, 'Read')]);
+    await pastRun(env, [offered(['Bash', 'Glob', 'Grep', 'Read']), called('call_old', 'Bash')]);
+    for (let index = 0; index < TOOL_USAGE_WINDOW_RUNS; index += 1) await pastRun(env, [offered(['Glob', 'Grep', 'Read']), called(`call_${index}`, 'Read')]);
     const { store, reads } = bodyWatchedStore(env.store);
 
     const window = toolUsageWindowOf(store, env.session.cwd);

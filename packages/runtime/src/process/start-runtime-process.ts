@@ -364,28 +364,38 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       await reapMarkerDirectory({ dir: paths.markers.mcp, killGraceMs: MARKER_REAP_KILL_GRACE_MS, label: 'mcp', onWarning, timing: reapTiming });
     });
 
-    const journalThread = await step('journal-thread', async () => {
+    const { notifier, store, journalThread } = await step('store', async () => {
       openDatabase(paths.databases.runtime).close();
       const { dev, ino } = fs.statSync(paths.databases.runtime);
-      return startJournalThread({ databasePath: paths.databases.runtime, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
-    });
-    cleanups.push({ name: 'journal-thread', run: () => journalThread.close() });
-
-    const { notifier, store } = await step('store', (): { notifier: RunNotifier; store: RuntimeStore } => {
+      const startedThread = await startJournalThread({ databasePath: paths.databases.runtime, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
       const createdNotifier = createRunNotifier();
-      const opened = openRuntimeStore({
-        path: paths.databases.runtime,
-        home: canonicalHome,
-        clock,
-        leaseMs,
-        maxAttempts: STORE_MAX_ATTEMPTS,
-        maxTotalAttempts: STORE_MAX_TOTAL_ATTEMPTS,
-        onCommit: createdNotifier.onCommit,
-        preparer: journalThread,
-      });
-      return { notifier: createdNotifier, store: opened };
+      try {
+        const opened = openRuntimeStore({
+          path: paths.databases.runtime,
+          home: canonicalHome,
+          clock,
+          leaseMs,
+          maxAttempts: STORE_MAX_ATTEMPTS,
+          maxTotalAttempts: STORE_MAX_TOTAL_ATTEMPTS,
+          onCommit: createdNotifier.onCommit,
+          preparer: startedThread,
+        });
+        return { notifier: createdNotifier, store: opened, journalThread: startedThread };
+      } catch (error) {
+        await startedThread.close();
+        throw error;
+      }
     });
-    cleanups.push({ name: 'store', run: () => store.close() });
+    cleanups.push({
+      name: 'store',
+      run: async () => {
+        try {
+          store.close();
+        } finally {
+          await journalThread.close();
+        }
+      },
+    });
 
     await step('tool-markers', async () => {
       await reapToolMarkers({ dir: paths.markers.tools, store, killGraceMs: MARKER_REAP_KILL_GRACE_MS, onWarning, timing: reapTiming });

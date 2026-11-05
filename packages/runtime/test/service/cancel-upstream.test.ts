@@ -6,6 +6,7 @@ describe('cancelUpstream', () => {
     const calls: { runId: string; status: string | undefined }[] = [];
     const holder: { env?: Awaited<ReturnType<typeof startService>> } = {};
     const env = await startService({
+      sweepIntervalMs: 20,
       cancelUpstream: async (runId) => {
         calls.push({ runId, status: holder.env?.store.getRun(runId)?.status });
       },
@@ -41,6 +42,7 @@ describe('cancelUpstream', () => {
   it('reports a cancelUpstream failure to onError and still answers 202', async () => {
     const failure = new Error('the gateway refused the cancel');
     const env = await startService({
+      sweepIntervalMs: 20,
       cancelUpstream: async () => {
         throw failure;
       },
@@ -51,7 +53,7 @@ describe('cancelUpstream', () => {
     const response = await env.http('POST', `/v1/runs/${run.id}/cancel`);
 
     expect(response.status).toBe(202);
-    expect(response.json.run.status).toBe('CANCELLED');
+    expect(response.json.run.status).toBe('CANCELLING');
     await waitUntil(() => env.errors.length > 0, 3_000, 'the failure to reach onError');
     expect(env.errors).toEqual([failure]);
   });

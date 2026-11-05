@@ -98,7 +98,7 @@ describe('mode_changed marker between runs', () => {
 
   it('adds no marker when the source never recorded a mode, and records the current mode', async () => {
     const env = await makeEnv();
-    answeredWithoutRecordedMode(env, 'Old run', 'Old answer.');
+    await answeredWithoutRecordedMode(env, 'Old run', 'Old answer.');
     env.setMode('plan');
     const second = await inheritOnce(env, 'New run');
     const event = inheritedEventOf(env, second);
@@ -109,7 +109,7 @@ describe('mode_changed marker between runs', () => {
 
   it('records the current mode for a run that never reaches run.started, so a later PATCH is announced exactly once (R4-3)', async () => {
     const env = await makeEnv();
-    answeredWithoutRecordedMode(env, 'Old run', 'Old answer.');
+    await answeredWithoutRecordedMode(env, 'Old run', 'Old answer.');
     env.setMode('plan');
     const second = await claimedFirstAsCancelling(env, 'Cancelled early');
     expect(inheritedEventOf(env, second).markers).toEqual([]);

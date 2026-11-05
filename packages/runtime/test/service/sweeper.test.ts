@@ -9,6 +9,13 @@ import type { ServiceEnv } from './helpers.ts';
 
 type Sweeper = { close(): void | Promise<void> };
 
+const tick = async (timers: { advance(ms: number): void }, ms: number, step = 1000): Promise<void> => {
+  for (let elapsed = 0; elapsed < ms; elapsed += step) {
+    timers.advance(step);
+    await afterMicrotasks();
+  }
+};
+
 const startSweeper = (options: Record<string, unknown>): Sweeper => {
   const start = (runtime as Record<string, unknown>)['startApprovalSweeper'];
   if (typeof start !== 'function') throw new Error('@momonga/runtime does not export startApprovalSweeper');
@@ -39,8 +46,10 @@ describe('startApprovalSweeper', () => {
     timers.advance(1000);
     await afterMicrotasks();
     expect(calls.filter((now) => now !== START_MS)).toEqual([START_MS + 1000, START_MS + 2000]);
-    timers.advance(3000);
-    await afterMicrotasks();
+    for (let tick = 0; tick < 3; tick += 1) {
+      timers.advance(1000);
+      await afterMicrotasks();
+    }
     expect(calls.filter((now) => now !== START_MS)).toEqual([START_MS + 1000, START_MS + 2000, START_MS + 3000, START_MS + 4000, START_MS + 5000]);
     expect(errors).toEqual([failure]);
 
@@ -233,7 +242,7 @@ describe('sweeper inside the run service', () => {
     expect(env.store.release(claim, 'WAITING_HUMAN').kind).toBe('ok');
     expect((await env.getRun(run.id)).status).toBe('WAITING_HUMAN');
 
-    timers.advance(60_000);
+    await tick(timers, 60_000);
 
     expect(await env.getRun(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'timeout' });
     expect((await env.http('GET', `/v1/approvals/${approvalId}`)).json.approval.status).toBe('withdrawn');
@@ -251,7 +260,7 @@ describe('sweeper inside the run service', () => {
     const approvalId = requestManualApproval(env, claim, 'call_1', START_MS + 2000);
     const before = (await env.getRun(run.id)).lastSeq;
 
-    timers.advance(5000);
+    await tick(timers, 5000);
 
     expect((await env.getRun(run.id)).status).toBe('RUNNING');
     expect((await env.getRun(run.id)).lastSeq).toBe(before);
@@ -280,29 +289,36 @@ describe('release of runs that stop while waiting for input', () => {
     if (timers === undefined) throw new Error('fake timers missing');
     const { run } = await waitingForInput(env, START_MS + 5000);
 
-    timers.advance(5000);
+    await tick(timers, 5000);
 
     expect(await env.getRun(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
     expect(releases).toEqual([run.id]);
   });
 
-  it('releases a waiting run that the client cancels and reports a failed release without failing the cancel', async () => {
+  it('releases a waiting run that the client cancels once the sweep finished it, and reports a failed release without failing the cancel', async () => {
     const failure = new Error('the server is unreachable');
     const releases: string[] = [];
     const env = await startService({
+      fakeTimers: true,
+      sweepIntervalMs: 1000,
       releaseStopped: async (runId) => {
         releases.push(runId);
         throw failure;
       },
     });
+    const timers = env.timers;
+    if (timers === undefined) throw new Error('fake timers missing');
     const { run } = await waitingForInput(env, START_MS + 60_000);
 
     const cancelled = await env.http('POST', `/v1/runs/${run.id}/cancel`);
 
     expect(cancelled.status).toBe(202);
-    expect(cancelled.json.run.status).toBe('CANCELLED');
+    expect(cancelled.json.run.status).toBe('CANCELLING');
+    expect(releases).toEqual([]);
+    await tick(timers, 1000);
     await vi.waitFor(() => expect(env.errors).toContain(failure));
     expect(releases).toEqual([run.id]);
+    expect((await env.getRun(run.id)).status).toBe('CANCELLED');
   });
 
   it('does not release a run that is cancelled while running or that is already terminal', async () => {

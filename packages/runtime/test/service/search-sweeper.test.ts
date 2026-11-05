@@ -83,6 +83,8 @@ describe('the service', () => {
     env.store.requestCancel(run.id);
     env.timers?.advance(1000);
     await afterMicrotasks();
+    env.timers?.advance(1000);
+    await afterMicrotasks();
     const visibility = { trusted: false, project: session.cwd } as const;
     const { anchors } = env.store.search.query(visibility, { query: 'deploy notes', scope: 'project' });
     expect(anchors.map((anchor) => anchor.runId)).toEqual([run.id]);

@@ -94,6 +94,7 @@ describe('cancel', () => {
     const session = await env.createSession();
     const run = await env.createRun(session.id);
     await env.http('POST', `/v1/runs/${run.id}/cancel`);
+    expect(await env.store.finishCancelled(() => undefined)).toEqual([run.id]);
     const terminal = await env.getRun(run.id);
 
     const again = await env.http('POST', `/v1/runs/${run.id}/cancel`);

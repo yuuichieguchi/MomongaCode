@@ -230,6 +230,8 @@ describe('worker subagents', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     const [child] = env.store.listChildRuns(parent.id);
     if (child === undefined) throw new Error('missing child');
     env.cancel(parent.id);
+    expect(env.run(child.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'QUEUED' });
+    expect(await env.store.finishCancelled(() => undefined)).toEqual([child.id]);
     expect(env.run(child.id).status).toBe('CANCELLED');
     await env.runOnce(worker);
     expect(env.run(parent.id).status).toBe('CANCELLED');
