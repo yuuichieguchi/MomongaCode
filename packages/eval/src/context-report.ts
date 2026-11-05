@@ -1,6 +1,5 @@
-import Ajv2020 from 'ajv/dist/2020.js';
-import type { ValidateFunction } from 'ajv/dist/2020.js';
-import { canonicalJson, isRecord, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, defineProductSchema, isRecord, sha256Hex } from '@momonga/foundation';
+import type { ProductValidator } from '@momonga/foundation';
 import { escapeTerminalLine } from '@momonga/protocol';
 import { clusterBootstrap } from './bootstrap.ts';
 import type { Cluster } from './bootstrap.ts';
@@ -521,8 +520,7 @@ const CONTEXT_REPORT_SCHEMA = {
   ),
 } as const;
 
-const ajv = new Ajv2020.default({ strict: true });
-const validateContextReport: ValidateFunction<ContextReport> = ajv.compile<ContextReport>(CONTEXT_REPORT_SCHEMA);
+const validateContextReport: ProductValidator<ContextReport> = defineProductSchema('eval/context-report', CONTEXT_REPORT_SCHEMA);
 
 export const parseContextReport = (text: string, source: string): ContextReport => {
   const value = jsonOf(text, source);
@@ -531,8 +529,9 @@ export const parseContextReport = (text: string, source: string): ContextReport 
       `${source}: ${value['format']} reports do not record ${RETIRED_CONTEXT_REPORT_FORMATS[value['format']]}, so ${value['format']} is retired and cannot be compared as ${CONTEXT_REPORT_FORMAT}; build a ${CONTEXT_REPORT_FORMAT} base from one bundle: run \`momonga eval context <dataset> --model real --alias <alias> --report <off report>\` without --settings, then \`momonga eval context <dataset> --model real --alias <alias> --settings <policy file> --report <on report>\`, then \`momonga eval compare <off report> <on report> --gate token\``,
     );
   }
-  if (!validateContextReport(value)) throw new EvalError(`${source}: not a context report (${describeFirstError(validateContextReport)})`);
-  return value;
+  const verdict = validateContextReport(value);
+  if (!verdict.valid) throw new EvalError(`${source}: not a context report (${describeFirstError(verdict.errors)})`);
+  return verdict.value;
 };
 
 export const encodeContextReport = (report: ContextReport): string => `${JSON.stringify(report, null, 2)}\n`;

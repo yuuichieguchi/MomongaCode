@@ -1,7 +1,7 @@
-import Ajv2020 from 'ajv/dist/2020.js';
-import type { ValidateFunction } from 'ajv/dist/2020.js';
-import { RUN_API_SCHEMAS } from '@momonga/protocol';
-import type { ImageAttachment, PermissionMode } from '@momonga/protocol';
+import { defineProductSchema, productErrorsText } from '@momonga/foundation';
+import type { ProductValidator } from '@momonga/foundation';
+import { RUN_API_SCHEMAS, runApiSchemaName } from '@momonga/protocol';
+import type { ImageAttachment, JsonSchema, PermissionMode } from '@momonga/protocol';
 import { bodyTooLarge, invalidRequest, unsupportedMediaType } from './errors.ts';
 
 export type CreateSessionBody = {
@@ -43,20 +43,20 @@ type RequestSchemaName =
   | 'AdoptGuidelineRequest'
   | 'RecordContextChargeRequest';
 
-const ajv = new Ajv2020.default({ strict: false, allErrors: true });
+const requestValidator = (schema: JsonSchema): ProductValidator<unknown> => defineProductSchema(`run-api/${runApiSchemaName(schema)}`, schema);
 
-const validators: Record<RequestSchemaName, ValidateFunction> = {
-  CreateSessionRequest: ajv.compile(RUN_API_SCHEMAS.CreateSessionRequest),
-  PatchSessionRequest: ajv.compile(RUN_API_SCHEMAS.PatchSessionRequest),
-  CreateRunRequest: ajv.compile(RUN_API_SCHEMAS.CreateRunRequest),
-  ResolveApprovalRequest: ajv.compile(RUN_API_SCHEMAS.ResolveApprovalRequest),
-  ResolveElicitationRequest: ajv.compile(RUN_API_SCHEMAS.ResolveElicitationRequest),
-  PutTrustRequest: ajv.compile(RUN_API_SCHEMAS.PutTrustRequest),
-  AddRuleRequest: ajv.compile(RUN_API_SCHEMAS.AddRuleRequest),
-  PromoteMemoryRequest: ajv.compile(RUN_API_SCHEMAS.PromoteMemoryRequest),
-  AddMemoryRequest: ajv.compile(RUN_API_SCHEMAS.AddMemoryRequest),
-  AdoptGuidelineRequest: ajv.compile(RUN_API_SCHEMAS.AdoptGuidelineRequest),
-  RecordContextChargeRequest: ajv.compile(RUN_API_SCHEMAS.RecordContextChargeRequest),
+const validators: Record<RequestSchemaName, ProductValidator<unknown>> = {
+  CreateSessionRequest: requestValidator(RUN_API_SCHEMAS.CreateSessionRequest),
+  PatchSessionRequest: requestValidator(RUN_API_SCHEMAS.PatchSessionRequest),
+  CreateRunRequest: requestValidator(RUN_API_SCHEMAS.CreateRunRequest),
+  ResolveApprovalRequest: requestValidator(RUN_API_SCHEMAS.ResolveApprovalRequest),
+  ResolveElicitationRequest: requestValidator(RUN_API_SCHEMAS.ResolveElicitationRequest),
+  PutTrustRequest: requestValidator(RUN_API_SCHEMAS.PutTrustRequest),
+  AddRuleRequest: requestValidator(RUN_API_SCHEMAS.AddRuleRequest),
+  PromoteMemoryRequest: requestValidator(RUN_API_SCHEMAS.PromoteMemoryRequest),
+  AddMemoryRequest: requestValidator(RUN_API_SCHEMAS.AddMemoryRequest),
+  AdoptGuidelineRequest: requestValidator(RUN_API_SCHEMAS.AdoptGuidelineRequest),
+  RecordContextChargeRequest: requestValidator(RUN_API_SCHEMAS.RecordContextChargeRequest),
 };
 
 export const JSON_MEDIA_TYPES = ['application/json'] as const;
@@ -102,8 +102,8 @@ export const readJson = async (request: Request, accepted: readonly string[], ma
 };
 
 export const validateBody = <T>(name: RequestSchemaName, value: unknown): T => {
-  const validate = validators[name];
-  if (!validate(value)) throw invalidRequest(ajv.errorsText(validate.errors, { dataVar: 'body' }));
+  const verdict = validators[name](value);
+  if (!verdict.valid) throw invalidRequest(productErrorsText(verdict.errors, 'body'));
   return value as T;
 };
 

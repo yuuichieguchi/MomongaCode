@@ -204,3 +204,5 @@ export type { RemoteDocuments, UntrustedError, UntrustedValidate, UntrustedVerdi
 export { ataEngine } from './untrusted-engine.ts';
 export type { Engine, EngineValidator, EngineVerdict, RawError } from './untrusted-engine.ts';
 export { createUntrustedBoundary, validateUntrusted } from './validate-untrusted.ts';
+export { defineProductSchema, productErrorsText, productSchemas } from './product-schema.ts';
+export type { ProductSchema, ProductValidator, ProductVerdict } from './product-schema.ts';

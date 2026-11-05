@@ -1,13 +1,13 @@
-import Ajv2020 from 'ajv/dist/2020.js';
-import type { JSONSchemaType } from 'ajv';
+import { defineProductSchema } from '@momonga/foundation';
+import type { ProductValidator } from '@momonga/foundation';
 import { OUTPUT_BOUND_FIELDS, REASONING_EFFORTS } from '@momonga/protocol';
 import type { EndpointProbeReport, OllamaProbeReport, ProbeReport } from '@momonga/protocol';
 
 const bool = { type: 'boolean' } as const;
-const anyJson = {} as never;
+const anyJson = {} as const;
 const rate = { type: 'number', minimum: 0, maximum: 1 } as const;
 
-const reportSchema: JSONSchemaType<ProbeReport> = {
+const reportSchema = {
   type: 'object',
   required: [
     'probedAt',
@@ -31,9 +31,9 @@ const reportSchema: JSONSchemaType<ProbeReport> = {
       required: ['ok'],
       properties: {
         ok: bool,
-        reason: { type: 'string', enum: ['not_running', 'unhealthy', 'precondition_failed'], nullable: true },
-        detail: { type: 'string', nullable: true },
-        remediation: { type: 'string', nullable: true },
+        reason: { type: ['string', 'null'], enum: ['not_running', 'unhealthy', 'precondition_failed'] },
+        detail: { type: ['string', 'null'] },
+        remediation: { type: ['string', 'null'] },
       },
     },
     modelId: { type: 'string' },
@@ -76,10 +76,9 @@ const reportSchema: JSONSchemaType<ProbeReport> = {
       },
     },
     stopSequences: bool,
-    outputBoundField: { type: 'string', enum: [...OUTPUT_BOUND_FIELDS, 'none'], nullable: true },
+    outputBoundField: { type: ['string', 'null'], enum: [...OUTPUT_BOUND_FIELDS, 'none'] },
     parallelToolCalls: {
-      type: 'object',
-      nullable: true,
+      type: ['object', 'null'],
       required: ['accepted', 'multiCallRate'],
       properties: { accepted: bool, multiCallRate: rate },
     },
@@ -87,8 +86,7 @@ const reportSchema: JSONSchemaType<ProbeReport> = {
     maxConcurrency: { type: 'integer', minimum: 1 },
     imageInputAccepted: bool,
     imageTokens: {
-      type: 'object',
-      nullable: true,
+      type: ['object', 'null'],
       required: ['pixelsPerToken', 'maxTokens', 'minTokens'],
       properties: {
         pixelsPerToken: { type: 'number', exclusiveMinimum: 0 },
@@ -98,22 +96,20 @@ const reportSchema: JSONSchemaType<ProbeReport> = {
     },
     guardrail: { type: 'object', required: [], properties: { errorShape: anyJson } },
     promptCache: {
-      type: 'object',
-      nullable: true,
+      type: ['object', 'null'],
       required: ['kind'],
       properties: { kind: { type: 'string', enum: ['automatic', 'none'] } },
       additionalProperties: false,
     },
     tokenCalibration: {
-      type: 'object',
-      nullable: true,
+      type: ['object', 'null'],
       required: ['ratio', 'errorBound'],
       properties: { ratio: { type: 'number' }, errorBound: { type: 'number', minimum: 0 } },
     },
   },
-};
+} as const;
 
-const validate = new Ajv2020.default({ strict: false }).compile(reportSchema);
+const validateReport: ProductValidator<ProbeReport> = defineProductSchema('gateway/probe-report', reportSchema);
 
 const reasoningSchema = {
   oneOf: [
@@ -130,12 +126,14 @@ const reasoningSchema = {
       additionalProperties: false,
     },
   ],
+} as const;
+
+const validateReasoning: ProductValidator<unknown> = defineProductSchema('gateway/probe-reasoning', reasoningSchema);
+
+export const isProbeReport = (value: unknown): value is ProbeReport => {
+  const verdict = validateReport(value);
+  return verdict.valid && (verdict.value.reasoning === undefined || validateReasoning(verdict.value.reasoning).valid);
 };
-
-const validateReasoning = new Ajv2020.default({ strict: false }).compile(reasoningSchema);
-
-export const isProbeReport = (value: unknown): value is ProbeReport =>
-  validate(value) && ((value as ProbeReport).reasoning === undefined || validateReasoning((value as ProbeReport).reasoning));
 
 const imageTokensSchema = {
   type: 'object',
@@ -176,8 +174,8 @@ const ollamaReportSchema = {
   },
 } as const;
 
-const validateOllama = new Ajv2020.default({ strict: false }).compile(ollamaReportSchema);
+const validateOllama: ProductValidator<OllamaProbeReport> = defineProductSchema('gateway/probe-ollama-report', ollamaReportSchema);
 
-export const isOllamaProbeReport = (value: unknown): value is OllamaProbeReport => validateOllama(value);
+export const isOllamaProbeReport = (value: unknown): value is OllamaProbeReport => validateOllama(value).valid;
 
 export const isEndpointProbeReport = (value: unknown): value is EndpointProbeReport => isOllamaProbeReport(value) || isProbeReport(value);

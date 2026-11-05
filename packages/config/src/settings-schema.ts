@@ -230,7 +230,6 @@ const OLLAMA_TARGET_SCHEMA = {
 
 const MODEL_TARGET_SCHEMA = {
   type: 'object',
-  discriminator: { propertyName: 'adapter' },
   oneOf: [FM_TARGET_SCHEMA, CHAT_COMPLETIONS_TARGET_SCHEMA, OPEN_RESPONSES_TARGET_SCHEMA, ANTHROPIC_TARGET_SCHEMA, OLLAMA_TARGET_SCHEMA],
 } as const;
 
