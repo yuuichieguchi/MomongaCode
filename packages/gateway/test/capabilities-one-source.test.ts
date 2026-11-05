@@ -62,7 +62,8 @@ describe('a probe-derived override reaches the send path as it reaches the count
     expect(counted.status).toBe(200);
     const count = counting.fake.requests[0]?.body as any;
     expect(listedNames(count)).toEqual(['alpha', 'beta']);
-    expect(created.body.error).toBeUndefined();
+    expect(created.body.error).toBeNull();
+    expect(created.body.status).toBe('completed');
     expect(created.status).toBe(200);
     const sent = creating.fake.requests[0]?.body as any;
     expect(listedNames(sent)).toEqual(['alpha', 'beta']);
@@ -74,7 +75,8 @@ describe('a probe-derived override reaches the send path as it reaches the count
     const gateway = await startOpenResponsesGateway({ capabilities: withoutAllowedTools(REMOTE_CAPABILITIES), config: remoteConfig, script: [openResponsesTextReply(['ok'])] });
     await expectCountedAsSubset(gateway.client);
     const created = await readJson(await postJson(gateway.client, '/v1/responses', requestBody(TOOLS, TWO_AUTO)));
-    expect(created.body.error).toBeUndefined();
+    expect(created.body.error).toBeNull();
+    expect(created.body.status).toBe('completed');
     expect(created.status).toBe(200);
     expect(listedNames(gateway.fake.requests[0]?.body)).toEqual(['alpha', 'beta']);
   });
@@ -88,7 +90,8 @@ describe('a probe-derived override reaches the send path as it reaches the count
     });
     await expectCountedAsSubset(gateway.client);
     const created = await readJson(await postJson(gateway.client, '/v1/responses', requestBody(TOOLS, TWO_AUTO)));
-    expect(created.body.error).toBeUndefined();
+    expect(created.body.error).toBeNull();
+    expect(created.body.status).toBe('completed');
     expect(created.status).toBe(200);
     expect(listedNames(fake.chatBodies()[0])).toEqual(['alpha', 'beta']);
   });
@@ -110,7 +113,8 @@ describe('a probe-derived override reaches the send path as it reaches the count
     const { fake, gateway } = await startCcGateway('native', 'tools-ok', 'ok');
     await expectCountedAsSubset(gateway.client);
     const created = await readJson(await postJson(gateway.client, '/v1/responses', requestBody(TOOLS, TWO_AUTO)));
-    expect(created.body.error).toBeUndefined();
+    expect(created.body.error).toBeNull();
+    expect(created.body.status).toBe('completed');
     expect(created.status).toBe(200);
     expect(listedNames(completionBodies(fake)[0])).toEqual(['alpha', 'beta']);
   });
@@ -119,7 +123,8 @@ describe('a probe-derived override reaches the send path as it reaches the count
     const { fake, gateway } = await startCcGateway('constrained', 'json-schema-only', '{"kind":"final","text":"ok"}');
     await expectCountedAsSubset(gateway.client);
     const created = await readJson(await postJson(gateway.client, '/v1/responses', requestBody(TOOLS, TWO_AUTO)));
-    expect(created.body.error).toBeUndefined();
+    expect(created.body.error).toBeNull();
+    expect(created.body.status).toBe('completed');
     expect(created.status).toBe(200);
     const sent = systemText(completionBodies(fake)[0]);
     expect(sent).toContain('"name":"alpha"');
