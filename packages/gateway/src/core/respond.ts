@@ -26,7 +26,7 @@ import { estimateInputTokens, estimateOutputTokens, estimatedUsage } from './est
 import { inputHasImages, resolveInput } from './input.ts';
 import type { ConnectionResponses, ResolvedInput } from './input.ts';
 import { baseResource } from './resource.ts';
-import { UpstreamFailure, emptyStreamFailure, endedBeforeOutputFailure, failureFrom, runWithRetry } from './retry.ts';
+import { UpstreamFailure, emptyStreamFailure, failureFrom, runWithRetry } from './retry.ts';
 import type { RetryOutcome } from './retry.ts';
 import type { Release } from './admission.ts';
 import type { TargetRuntime } from './router.ts';
@@ -167,7 +167,7 @@ const openAttempt = async (
     const held: StreamEvent[] = [];
     for (;;) {
       const step = await iterator.next();
-      if (step.done === true) throw held.length === 0 ? emptyStreamFailure() : endedBeforeOutputFailure();
+      if (step.done === true) throw emptyStreamFailure();
       held.push(step.value);
       const failure = failureBeforeOutput(step.value);
       if (failure !== undefined) throw failure;

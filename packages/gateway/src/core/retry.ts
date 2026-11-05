@@ -23,13 +23,7 @@ export class UpstreamFailure extends Error {
 export const emptyStreamFailure = (): UpstreamFailure =>
   new UpstreamFailure({
     retryable: true,
-    error: { type: 'server_error', code: 'empty_upstream_stream', message: 'the upstream ended its stream before sending any event', param: null },
-  });
-
-export const endedBeforeOutputFailure = (): UpstreamFailure =>
-  new UpstreamFailure({
-    retryable: true,
-    error: { type: 'server_error', code: 'stream_interrupted', message: 'the upstream ended its stream before sending any output', param: null },
+    error: { type: 'server_error', code: 'empty_upstream_stream', message: 'the upstream ended its stream before sending any output', param: null },
   });
 
 export const failureFrom = (adapter: GuardedAdapter, error: unknown, signal: AbortSignal): unknown => {
