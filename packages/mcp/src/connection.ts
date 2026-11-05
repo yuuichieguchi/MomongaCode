@@ -135,19 +135,25 @@ const describeExit = (transport: ConnectionTransport): string | undefined => {
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-const isResponse = (message: JSONRPCMessage): boolean => 'id' in message && !('method' in message);
+const idOf = (message: JSONRPCMessage): string | number | undefined => ('id' in message ? message.id : undefined);
 
-const boundedMessages = (transport: ConnectionTransport, server: string, onNotice: ((message: string) => void) | undefined): ConnectionTransport => {
+export const boundedMessages = (transport: ConnectionTransport, server: string, onNotice: ((message: string) => void) | undefined): ConnectionTransport => {
   const bounded = (handler: NonNullable<Transport['onmessage']>): NonNullable<Transport['onmessage']> => (message, extra) => {
     try {
       checkJsonDepth(message);
     } catch (error) {
       if (!(error instanceof JsonDepthError)) throw error;
-      if (isResponse(message)) {
-        handler({ jsonrpc: '2.0', id: (message as { id: string | number }).id, error: { code: -32603, message: `MCP server "${server}" sent a response that is too deep: ${error.message}` } }, extra);
+      const id = idOf(message);
+      if (id === undefined) {
+        onNotice?.(`MCP server "${server}" sent a notification that was dropped as too deep: ${error.message}`);
         return;
       }
-      onNotice?.(`MCP server "${server}" sent a message that was dropped as too deep: ${error.message}`);
+      const refusal = { jsonrpc: '2.0' as const, id, error: { code: -32603, message: `MCP server "${server}" sent a message that is too deep: ${error.message}` } };
+      if ('method' in message) {
+        transport.send(refusal).catch((failure: unknown) => onNotice?.(`MCP server "${server}": the depth refusal could not be sent: ${errorMessage(failure)}`));
+        return;
+      }
+      handler(refusal, extra);
       return;
     }
     handler(message, extra);
