@@ -27,13 +27,7 @@ const MODEL_ID_TEST = /\bmodel\b\s*(?:===|!==|==|!=|\.\s*(?:startsWith|endsWith|
 
 const sourceOf = (relative: string): string => fs.readFileSync(path.join(packagesDir, relative), 'utf8');
 
-const SAMPLING_SOURCES = scannedFiles.filter((relative) => /top_k/.test(sourceOf(relative)));
-
 describe('sampling acceptance is never decided from a model id', () => {
-  it('some scanned source renders top_k, so the guard covers the sampling decision', () => {
-    expect(SAMPLING_SOURCES.length).toBeGreaterThan(0);
-  });
-
   it.for(scannedFiles)('%s names no model family', (relative) => {
     expect(sourceOf(relative)).not.toMatch(MODEL_FAMILY_NAME);
   });

@@ -34,19 +34,33 @@ export const readFileTool = {
 
 export type UpstreamGateway = Harness & { fake: FakeUpstreamServer };
 
+export type AnthropicApiVersion = '2026-10-21' | '2023-06-01';
+
 const singleTarget = { aliases: { fast: ['remote'] }, targets: { remote: { model: 'upstream-model', kind: 'remote' } } };
 
 export const startAnthropicGateway = async (
-  options: Omit<FakeAnthropicOptions, 'apiKey'> & { apiKey?: string; sentKey?: string; config?: ConfigOverrides; capabilities?: Capabilities; priceTable?: PriceTable },
+  options: Omit<FakeAnthropicOptions, 'apiKey'> & {
+    apiKey?: string;
+    sentKey?: string;
+    config?: ConfigOverrides;
+    capabilities?: Capabilities;
+    priceTable?: PriceTable;
+    apiVersion?: AnthropicApiVersion;
+  },
 ): Promise<UpstreamGateway> => {
   const fake = await startFakeAnthropic({ apiKey: options.apiKey ?? FAKE_API_KEY, ...options });
   registerCleanup(() => fake.close());
-  const adapter = createAnthropicAdapter({
-    resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
-    apiKey: async () => options.sentKey ?? FAKE_API_KEY,
-    capabilities: async () => options.capabilities ?? REMOTE_CAPABILITIES,
-    clock: createFakeClock(START_MS),
-  });
+  const adapter = createAnthropicAdapter(
+    Object.assign(
+      {
+        resolveEndpoint: async () => ({ kind: 'unix' as const, socketPath: fake.socketPath }),
+        apiKey: async () => options.sentKey ?? FAKE_API_KEY,
+        capabilities: async () => options.capabilities ?? REMOTE_CAPABILITIES,
+        clock: createFakeClock(START_MS),
+      },
+      options.apiVersion === undefined ? {} : { apiVersion: options.apiVersion },
+    ),
+  );
   registerCleanup(() => adapter.close());
   const harness = await startGateway({
     adapters: { remote: adapter },

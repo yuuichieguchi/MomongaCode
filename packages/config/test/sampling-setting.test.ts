@@ -12,7 +12,7 @@ const targetOf = (adapter: SamplingAdapter, sampling: unknown): Record<string, u
   const capabilities = { ...CAPABILITIES, sampling };
   switch (adapter) {
     case 'anthropic':
-      return { adapter, model: 'model-a', baseUrl: 'https://api.example.com', apiKeySecret: 'anthropic-main', capabilities };
+      return { adapter, model: 'model-a', baseUrl: 'https://api.example.com', apiKeySecret: 'anthropic-main', apiVersion: '2023-06-01', capabilities };
     case 'ollama':
       return { adapter, model: 'model-a', baseUrl: 'http://127.0.0.1:11434', capabilities };
     default:
