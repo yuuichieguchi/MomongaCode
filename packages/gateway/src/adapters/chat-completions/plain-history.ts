@@ -1,6 +1,7 @@
 import { canonicalJson } from '@momonga/foundation';
 import { CHAT_REASONING_FIELDS, compactionSummaryMessage } from '@momonga/protocol';
 import type { AdapterInputItem, ChatReasoningField } from '@momonga/protocol';
+import { callArgumentsObject, callArgumentsText } from '../shared/call-arguments.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { escapeAttribute, neutralizeMarkup, reasoningTextOf, textOfContent } from '../shared/input-text.ts';
 import type { ReasoningInput } from '../shared/input-text.ts';
@@ -22,14 +23,6 @@ export const finalReplyText = (text: string): string => canonicalJson({ kind: 'f
 export const summaryMessageOf = (summary: string): ChatMessage => {
   const { role, content } = compactionSummaryMessage(summary);
   return { role, content };
-};
-
-const parseArguments = (callId: string, text: string): unknown => {
-  try {
-    return JSON.parse(text);
-  } catch (error) {
-    throw new UnsupportedInputError('invalid_function_call_arguments', `function_call "${callId}" has arguments that are not valid JSON`, 'input', { cause: error });
-  }
 };
 
 type ReasoningCarrier = { field: ChatReasoningField; text: string };
@@ -99,7 +92,7 @@ export const plainHistoryOf = (input: readonly AdapterInputItem[], options: Plai
     }
     if (item.type === 'function_call') {
       namesByCallId.set(item.call_id, item.name);
-      pendingCalls.push({ name: item.name, arguments: parseArguments(item.call_id, item.arguments) });
+      pendingCalls.push({ name: item.name, arguments: callArgumentsObject(item.arguments) });
       continue;
     }
     flushCalls();
@@ -137,7 +130,7 @@ export const nativeHistoryOf = (input: readonly AdapterInputItem[]): ChatMessage
       continue;
     }
     if (item.type === 'function_call') {
-      pendingCalls.push({ id: item.call_id, type: 'function', function: { name: item.name, arguments: item.arguments } });
+      pendingCalls.push({ id: item.call_id, type: 'function', function: { name: item.name, arguments: callArgumentsText(item.arguments) } });
       continue;
     }
     flushCalls();

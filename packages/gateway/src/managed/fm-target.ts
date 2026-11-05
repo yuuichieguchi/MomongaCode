@@ -1,4 +1,4 @@
-import { canonicalJson } from '@momonga/foundation';
+import { canonicalJson, createUdsClient } from '@momonga/foundation';
 import { countReplyOf } from '@momonga/protocol';
 import type {
   AdapterTarget,
@@ -7,6 +7,7 @@ import type {
   CountTokensResult,
   HealthResult,
   InputItem,
+  OutputBoundField,
   ProbeReport,
   ToolCallingMode,
   ToolCallingSetting,
@@ -14,10 +15,11 @@ import type {
 import type { ChatCompletionsEndpoint } from '../adapters/chat-completions/types.ts';
 import { matchesGuardrailCode } from '../adapters/chat-completions/classify.ts';
 import { FM_VOCABULARY } from '../adapters/chat-completions/vocabulary.ts';
-import type { ErrorVocabulary } from '../adapters/chat-completions/vocabulary.ts';
+import type { ErrorVocabulary } from '../adapters/shared/vocabulary.ts';
 import { estimatedCountOf } from '../core/estimate.ts';
-import { capabilitiesFromProbe } from '../probe/decide.ts';
+import { capabilitiesFromProbe, layerOf, mergeCapabilities } from '../probe/decide.ts';
 import type { KeywordSupport } from '../probe/envelope.ts';
+import { field, firstOf, parseJson } from '../probe/json.ts';
 import { loadProbeRecord, resolveToolCalling } from '../probe/record.ts';
 import type { ProbeRecordKey } from '../probe/record.ts';
 import { LICENSE_NOT_ACCEPTED_EXIT_CODE, LICENSE_REMEDIATION, PRECONDITION_MESSAGE, outputOf } from './fm-serve.ts';
@@ -38,12 +40,15 @@ export type ManagedFmTargetOptions = {
   probeRecordDir: string;
   recordKey: ProbeRecordKey;
   toolCallingSetting: ToolCallingSetting;
+  declaredModel?: string;
+  declaredOutputBoundField?: OutputBoundField;
 };
 
 export type ManagedFmTarget = {
   resolveEndpoint: (target: AdapterTarget) => Promise<ChatCompletionsEndpoint>;
   toolCalling: (target: AdapterTarget) => ToolCallingMode;
   keywordSupport: (target: AdapterTarget) => KeywordSupport;
+  upstreamModel: (target: AdapterTarget, signal: AbortSignal) => Promise<string>;
   capabilities: (target: AdapterTarget) => Promise<Capabilities>;
   countTokens: (target: AdapterTarget, request: CountTokensRequest, signal: AbortSignal) => Promise<CountTokensResult>;
   health: (target: AdapterTarget) => Promise<HealthResult>;
@@ -140,24 +145,69 @@ const errorOf = (body: unknown): Record<string, unknown> | undefined => {
 
 const nonEmptyString = (value: unknown): string | undefined => (typeof value === 'string' && value !== '' ? value : undefined);
 
+const BARE_STATUS_CODE = /^\d{3}$/;
+const GENERIC_ERROR_CODES: ReadonlySet<string> = new Set(['invalid_request_error', 'invalid_request', 'bad_request', 'server_error', 'internal_error', 'error']);
+
+const isGenericCode = (code: string): boolean => BARE_STATUS_CODE.test(code) || GENERIC_ERROR_CODES.has(code);
+
 const guardrailMatcherOf = (report: ProbeReport | null): ((body: unknown) => boolean) => {
   const shape = errorOf(report?.guardrail.errorShape);
   const code = nonEmptyString(shape?.['code']);
-  if (code !== undefined) return (body) => errorOf(body)?.['code'] === code;
-  return matchesGuardrailCode;
+  const message = nonEmptyString(shape?.['message']);
+  const type = nonEmptyString(shape?.['type']);
+  if (code === undefined || (message === undefined && isGenericCode(code))) return matchesGuardrailCode;
+  return (body) => {
+    const error = errorOf(body);
+    return (
+      error?.['code'] === code &&
+      (message === undefined || error?.['message'] === message) &&
+      (type === undefined || error?.['type'] === type)
+    );
+  };
+};
+
+const listedModelId = async (socketPath: string, signal: AbortSignal): Promise<string> => {
+  const client = createUdsClient(socketPath);
+  try {
+    const response = await client.request({ method: 'GET', path: '/v1/models', signal });
+    const text = await response.text();
+    if (response.status !== 200) throw new Error(`fm serve answered GET /v1/models with HTTP ${response.status}: ${text.slice(0, 200)}`);
+    const id = field(firstOf(field(parseJson(text), 'data')), 'id');
+    if (typeof id !== 'string') throw new Error('fm serve lists no model id at GET /v1/models');
+    return id;
+  } finally {
+    await client.close();
+  }
 };
 
 export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Promise<ManagedFmTarget> => {
   const report = await loadProbeRecord(options.probeRecordDir, options.recordKey);
   const { mode } = resolveToolCalling(options.toolCallingSetting, report);
-  const capabilities = report === null ? unprobedCapabilities(mode) : capabilitiesFromProbe(report, { mode });
+  const { parallelToolCalls: _unprobedParallel, ...probedDefaults } = unprobedCapabilities(mode);
+  const declaredField = options.declaredOutputBoundField === undefined ? {} : { outputBoundField: options.declaredOutputBoundField };
+  const capabilities =
+    report === null
+      ? { ...unprobedCapabilities(mode), ...declaredField }
+      : mergeCapabilities({ defaults: layerOf(probedDefaults).core, declared: declaredField, probed: layerOf(capabilitiesFromProbe(report, { mode })).layer, probedAt: report.probedAt });
   const keywordSupport = report === null ? UNPROBED_KEYWORD_SUPPORT : report.keywordSupport;
   const isGuardrail = guardrailMatcherOf(report);
+  const knownModel = options.declaredModel ?? report?.modelId;
+  let listedModel: Promise<string> | undefined;
+  const upstreamModel = async (_target: AdapterTarget, signal: AbortSignal): Promise<string> => {
+    if (knownModel !== undefined) return knownModel;
+    const { socketPath } = await options.fmServe.ensureRunning();
+    listedModel ??= listedModelId(socketPath, signal).catch((error: unknown) => {
+      listedModel = undefined;
+      throw error;
+    });
+    return listedModel;
+  };
 
   return {
     resolveEndpoint: () => options.fmServe.ensureRunning(),
     toolCalling: () => mode,
     keywordSupport: () => keywordSupport,
+    upstreamModel,
     capabilities: async () => capabilities,
     countTokens: async (_target, request, signal) => {
       const text = countedText(request);

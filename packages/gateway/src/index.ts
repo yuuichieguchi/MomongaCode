@@ -45,7 +45,7 @@ export type {
 } from '@momonga/protocol';
 export { createChatCompletionsAdapter } from './adapters/chat-completions/adapter.ts';
 export { CHAT_COMPLETIONS_VOCABULARY, FM_VOCABULARY } from './adapters/chat-completions/vocabulary.ts';
-export type { ErrorVocabulary, UpstreamErrorKind } from './adapters/chat-completions/vocabulary.ts';
+export type { ErrorVocabulary, UpstreamErrorKind } from './adapters/shared/vocabulary.ts';
 export { COMPACTION_INSTRUCTIONS_MARKER } from './adapters/shared/compact.ts';
 export { wireOf } from './adapters/chat-completions/wire.ts';
 export type { ChatWire } from './adapters/chat-completions/wire.ts';

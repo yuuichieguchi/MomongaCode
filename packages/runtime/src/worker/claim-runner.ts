@@ -28,10 +28,14 @@ import { foldMeterFor, meterEventsOf } from './meter-journal.ts';
 import { aliasChainReaches } from './model-switch.ts';
 import { readPins } from './pins.ts';
 import { rolesFor } from './role-pin.ts';
-import { tokenPinFor, tokenPolicyOf } from './token-pin.ts';
+import { deferredPinFor, tokenPinFor, tokenPolicyOf } from './token-pin.ts';
 import type { RunPins } from './pins.ts';
 import { createSkillAdmission } from './skill-admission.ts';
 import { createTerminals } from './terminals.ts';
+import { createLoadToolsTool, withLoadTools } from './load-tools-tool.ts';
+import { createToolLoading } from './tool-admission.ts';
+import { offerFor } from './tool-offer.ts';
+import type { ToolOffer } from './tool-offer.ts';
 import { settleCalls } from './tool-step.ts';
 import type { WorkerOptions } from './types.ts';
 import type { TraceSpan } from '../ports.ts';
@@ -303,7 +307,10 @@ const drive = async (
           roles: rolesFor({ store: options.store, settings: options.settings, run }),
           ...(newMemoryShare === undefined ? {} : { memoryShare: newMemoryShare }),
           ...(newGuidelineVersion === undefined ? {} : { guidelineVersion: newGuidelineVersion }),
-          token: await tokenPinFor({ store: options.store, settings: options.settings, session, run }),
+          token: {
+            ...(await tokenPinFor({ store: options.store, settings: options.settings, session, run })),
+            ...(await deferredPinFor({ store: options.store, settings: options.settings, session, run })),
+          },
         }
       : readPins(recorded);
   journal.append([{ type: 'run.started', attempt: claim.attempt, now: clock.now(), pins: { ...pins }, mode: session.permissionMode }]);
@@ -354,16 +361,48 @@ const drive = async (
   const aliasCounter = counterOf(firstTarget);
   const meterEvents = meterEventsOf(options.store, session.id);
   const aliasMeterCapabilities = withCalibration(pins.capabilities, firstCapabilities);
+  const token = tokenPolicyOf(pins.token);
   const aliasMeter = createTokenMeter({
     counter: { count: (request) => control.recordingRaised(gateway.countTokens(request, { signal: control.signal })) },
     model: pins.modelAlias,
     capabilities: aliasMeterCapabilities,
+    observedCapacity: token.observedCapacity,
   });
   aliasMeter.restore(foldMeterFor(options.store, meterEvents, aliasMeterCapabilities, aliasCounter));
-  const token = tokenPolicyOf(pins.token);
-  const offerNow = (): FunctionTool[] =>
+  const factsOf = async (target: string): Promise<{ meter: TokenMeter; capabilities: Capabilities; counter: string }> => {
+    const known = targetFacts.get(target);
+    if (known !== undefined) return known;
+    const capabilities = await control.recordingRaised(gateway.capabilities(pins.modelAlias, { signal: control.signal, target }));
+    const meter = createTokenMeter({
+      counter: { count: (request) => control.recordingRaised(gateway.countTokens({ ...request, momonga: { ...request.momonga, target } }, { signal: control.signal })) },
+      model: pins.modelAlias,
+      capabilities,
+      observedCapacity: token.observedCapacity,
+    });
+    const counter = counterOf(target);
+    meter.restore(foldMeterFor(options.store, meterEvents, capabilities, counter));
+    const created = { capabilities, meter, counter };
+    targetFacts.set(target, created);
+    return created;
+  };
+  const fallbackMeters = token.observedCapacity
+    ? (await Promise.all(listing.targets.filter((target) => target !== firstTarget).map(factsOf))).map((facts) => facts.meter)
+    : [];
+  const visibleNow = (): FunctionTool[] =>
     toolSet.forModel({ mode: session.permissionMode, rules: composeRules(), conciseDescriptions: token.conciseDescriptions });
-  const claimOffer = token.cachePrefix ? offerNow() : undefined;
+  const claimVisible = token.cachePrefix ? visibleNow() : undefined;
+  const jobRunningNow = (): boolean => options.store.jobs.listForSession(session.id).some((job) => job.status === 'running');
+  const claimKeepsCompanions = token.cachePrefix ? jobRunningNow() : undefined;
+  const keepCompanionsWithoutHost = (): boolean => claimKeepsCompanions ?? jobRunningNow();
+  const loading = token.deferred === undefined ? undefined : createToolLoading(() => ctx);
+  const offerNow = (loaded: readonly string[] = journal.state.loadedTools): ToolOffer =>
+    offerFor({
+      toolSet,
+      visible: claimVisible === undefined ? visibleNow() : [...claimVisible],
+      deferred: token.deferred,
+      loaded,
+      keepCompanionsWithoutHost: keepCompanionsWithoutHost(),
+    });
   const ctx: ClaimContext = {
     options,
     claim,
@@ -374,16 +413,15 @@ const drive = async (
     ...(pins.memoryShare === undefined ? {} : { memoryShare: pins.memoryShare }),
     ...(pinnedGuideline === undefined ? {} : { guideline: pinnedGuideline }),
     limits,
-    toolSet,
+    toolSet: loading === undefined ? toolSet : withLoadTools(toolSet, createLoadToolsTool(loading)),
+    ...(loading === undefined ? {} : { toolLoading: loading }),
     skills,
     recalled,
     usedMemoryIds: new Set<string>(),
     env,
-    functionTools: () => (claimOffer === undefined ? offerNow() : [...claimOffer]),
-    companions: () => ({
-      hostOf: Object.fromEntries(toolSet.companions),
-      keepWithoutHost: options.store.jobs.listForSession(session.id).some((job) => job.status === 'running'),
-    }),
+    functionTools: () => offerNow().tools,
+    toolOffer: offerNow,
+    companions: () => ({ hostOf: Object.fromEntries(toolSet.companions), keepWithoutHost: keepCompanionsWithoutHost() }),
     systemPrompt,
     inlineLimitForReconcile: inlineOutputLimitFor(pins.capabilities),
     inlineLimitForExecution: () => {
@@ -395,23 +433,10 @@ const drive = async (
     terminals,
     agentSpan,
     meter: aliasMeter,
+    fallbackMeters,
     counter: aliasCounter,
     calibration: listing.capabilities,
-    targetFacts: async (target) => {
-      const known = targetFacts.get(target);
-      if (known !== undefined) return known;
-      const capabilities = await control.recordingRaised(gateway.capabilities(pins.modelAlias, { signal: control.signal, target }));
-      const meter = createTokenMeter({
-        counter: { count: (request) => control.recordingRaised(gateway.countTokens({ ...request, momonga: { ...request.momonga, target } }, { signal: control.signal })) },
-        model: pins.modelAlias,
-        capabilities,
-      });
-      const counter = counterOf(target);
-      meter.restore(foldMeterFor(options.store, meterEvents, capabilities, counter));
-      const created = { capabilities, meter, counter };
-      targetFacts.set(target, created);
-      return created;
-    },
+    targetFacts: factsOf,
     pinnedDigest: { value: undefined },
     memory,
     verificationCommands: (await options.settings.verification(session)).commands,

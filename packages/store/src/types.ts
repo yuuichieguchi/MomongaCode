@@ -3,6 +3,7 @@ import type {
   BilledDetail,
   CallTiming,
   TokenAnatomy,
+  RunTracePrefix,
   ElicitationAnswerRecord,
   ElicitationRequestView,
   JobStatus,
@@ -130,7 +131,7 @@ export type ResolveApprovalResult =
   | { kind: 'option_not_offered' };
 
 export type ModelCallRecord =
-  | { kind: 'requested'; seq: number; step: number; attempt: number; anatomy?: TokenAnatomy }
+  | { kind: 'requested'; seq: number; step: number; attempt: number; anatomy?: TokenAnatomy; prefix?: RunTracePrefix }
   | { kind: 'responded'; seq: number; step: number; attempt: number; responseId?: string; timing?: CallTiming };
 
 export type HeartbeatResult = { kind: 'ok'; cancelRequested: boolean; status: ClaimStatus } | LeaseLost;
@@ -522,7 +523,7 @@ export type RuntimeStore = {
   readModelCallEvents(runId: string): ModelCallRecord[];
   prepareTerminal(runId: string): void;
   lastTerminalRootRuns(project: string, limit: number): Run[];
-  toolCallNames(runId: string): string[];
+  toolCallNames(rootRunId: string): string[];
   readSessionEvents(sessionId: string, afterId: number, limit: number): (RunEvent | SessionEvent)[];
   readModelChanges(sessionId: string, afterId: number): Extract<SessionEvent, { type: 'model.changed' }>[];
   sessionMaxEventId(sessionId: string): number;

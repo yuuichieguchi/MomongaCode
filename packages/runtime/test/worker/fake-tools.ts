@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import { defineTool } from '@momonga/tools';
 import type { AnyTool, ToolContext } from '@momonga/tools';
 import { deferred } from './deferred.ts';
@@ -96,7 +97,9 @@ export const createFakeToolbox = (): FakeToolbox => {
     subject: (input) => ({ kind: 'path', tool: 'Write', paths: [String(input['file_path'])], access: 'write' }),
     execute: async (input, ctx) => {
       await record('Write', input, ctx);
-      fs.writeFileSync(String(input['file_path']), String(input['content']));
+      const target = path.resolve(ctx.session.workingDirectory, String(input['file_path']));
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, String(input['content']));
       return { status: 'completed', output: `wrote ${String(input['file_path'])}` };
     },
   });

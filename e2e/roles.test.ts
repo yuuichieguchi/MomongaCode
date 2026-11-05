@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createUdsClient } from '@momonga/foundation';
 import { ESTIMATED_CHARACTERS_PER_TOKEN } from '@momonga/protocol';
-import { isCompactionRequest, journalOfRows, ofType, summaryRoute } from './support/budget.ts';
+import type { Capabilities } from '@momonga/protocol';
+import { isCompactionRequest, journalOfRows, ofType, overflowStepRange, summaryRoute, wireTokensOfBody } from './support/budget.ts';
 import type { JournalEvent } from './support/budget.ts';
 import { titleOf } from './support/cases.ts';
 import { readDb } from './support/db.ts';
@@ -9,7 +10,7 @@ import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
-import { UPSTREAM_MODEL, UPSTREAM_TARGET, baseSettings, contextWindowOf, startStack } from './support/stack.ts';
+import { UPSTREAM_MODEL, UPSTREAM_TARGET, baseSettings, startStack } from './support/stack.ts';
 import { chatCompletions, reportedTokensOfRequest, textReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
@@ -18,7 +19,6 @@ const SUMMARY_MODEL = 'summary-model';
 const SUMMARY_ALIAS = 'cheap';
 const SUMMARY = 'The user sent several long requests about unrelated subjects. Next step: answer the latest request.';
 const LONG_REQUESTS = 3;
-const REQUEST_WINDOW_SHARE = 8;
 const SCRIPTED_OUTPUT_TOKENS = 5;
 
 type EventRow = { seq: number; type: string; payload_json: string };
@@ -61,20 +61,24 @@ const modelOf = (body: unknown): unknown => (body as { model?: unknown }).model;
 describe('roles: a compaction role alias', () => {
   it(titleOf('roles-compaction'), { timeout: 4 * E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
-    const window = contextWindowOf(home);
-    const longRequestChars = ESTIMATED_CHARACTERS_PER_TOKEN * Math.ceil(window / REQUEST_WINDOW_SHARE);
     const script = [textReply('Hello.')];
     for (let index = 0; index < LONG_REQUESTS; index += 1) script.push(textReply(`Noted ${index + 1}.`));
     const stack = await startStack({ home, sandbox: 'none', settings: roleSettings(home), script, routes: [summaryRoute(SUMMARY)] });
     const runtime = createRuntimeClient(home);
     let sessionId: string;
     const runIds: string[] = [];
+    let requestTokens = 0;
     try {
       const { session } = await runtime.createSession();
       sessionId = session.id;
       const first = (await runtime.createRun(session.id, 'Say hello')).run;
       await runToEnd(runtime, first.id);
       runIds.push(first.id);
+      const capabilities = (ofType(journalOf(home, first.id), 'run.started')[0]?.data['pins'] as { capabilities: Capabilities }).capabilities;
+      const prefix = wireTokensOfBody(chatCompletions(stack.fake)[0]?.body);
+      const range = await overflowStepRange(capabilities, prefix, LONG_REQUESTS);
+      requestTokens = range.lowest;
+      const longRequestChars = ESTIMATED_CHARACTERS_PER_TOKEN * requestTokens;
       for (let index = 0; index < LONG_REQUESTS; index += 1) {
         const long = `Request ${index + 1}. ${`filler words about unrelated subjects ${index} `.repeat(longRequestChars)}`.slice(0, longRequestChars);
         const { run } = await runtime.createRun(session.id, long);
@@ -86,7 +90,7 @@ describe('roles: a compaction role alias', () => {
     }
 
     const compactions = runIds.flatMap((runId) => ofType(journalOf(home, runId), 'context.compacted'));
-    expect(compactions.length, `each of ${LONG_REQUESTS} requests holds 1/${REQUEST_WINDOW_SHARE} of the ${window}-token window: one fits beside the prompt of the run, and together they pass the compaction threshold`).toBeGreaterThanOrEqual(1);
+    expect(compactions.length, `each of ${LONG_REQUESTS} requests holds ${requestTokens} tokens, the smallest size at which the last request stops fitting after the report of the one before it`).toBeGreaterThanOrEqual(1);
     expect(compactions.every((event) => event.data['source'] === 'model')).toBe(true);
 
     const posts = chatCompletions(stack.fake);

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ResolvedChatCompletionsTarget, UserModels } from '@momonga/config';
 import fs from 'node:fs';
 import { CONTEXT_DATASET_FORMAT, buildContextReport, expandContextDataset, parseContextDataset } from '@momonga/eval';
@@ -8,6 +8,17 @@ import type { MomongaPaths } from '@momonga/foundation';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { ContextHostError, ContextInterrupted, assertSocketsFit, caseEnvironment, liveSettingsFor, runContextLive, sweepStaleHomes, unownedHomesNotice } from '../src/eval/context-host.ts';
 import type { ContextHostEffects, ContextRuntime } from '../src/eval/context-host.ts';
+
+vi.mock('@momonga/runtime', () => {
+  throw new Error('the eval host loaded the runtime; the command supplies what the host needs from it');
+});
+
+vi.mock('@momonga/foundation', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@momonga/foundation')>()),
+  codeDigestOfRunningProcess: () => Promise.reject(new Error('the eval host computed the code digest; the command supplies it')),
+}));
+
+const CALLER_CODE_DIGEST = 'a'.repeat(64);
 
 const target = (overrides: Partial<ResolvedChatCompletionsTarget> = {}): ResolvedChatCompletionsTarget => ({
   adapter: 'chat-completions',
@@ -160,7 +171,7 @@ const harness = (behaviour: Behaviour = {}) => {
     },
     copyProbeRecord: async (target, paths) => void probeCopies.push(`${target} -> ${paths.probe}`),
     copyEndpointProbeRecord: async (probe, paths) =>
-      void endpointProbeCopies.push(`${probe.upstream.kind === 'unix' ? probe.upstream.socketPath : probe.upstream.baseUrl} ${probe.model} -> ${paths.probe}`),
+      void endpointProbeCopies.push(`${probe.endpoint} ${probe.model} -> ${paths.probe}`),
     listRoots: async () => [...roots.keys(), ...(behaviour.staleRoots ?? []).map((stale) => stale.root), ...(behaviour.unreadableRoots ?? []), ...(behaviour.legacyRoots ?? [])],
     readOwner: async (root) => {
       if (behaviour.unreadableRoots?.includes(root) === true) return 'unreadable';
@@ -224,6 +235,8 @@ const input = (extra: Partial<Parameters<typeof runContextLive>[1]> = {}): Param
   alias: 'default',
   models: userModels(),
   limits: { maxTotalTokens: 1000, defaultTimeoutMs: 60_000 },
+  reflection: { pendingBoundMs: 2000, attemptBoundMs: 9000, pollMs: 100 },
+  codeDigest: CALLER_CODE_DIGEST,
   ...extra,
 });
 
@@ -246,6 +259,15 @@ describe('a live context run with a guideline', () => {
     const baseline = harness();
     await runContextLive(baseline.effects, input());
     expect(baseline.adopted).toEqual([]);
+  });
+});
+
+describe('what a live context run takes from its caller', () => {
+  it('records the code digest its caller gives and computes nothing about the running process itself', async () => {
+    const context = harness();
+    const stored: Transcript[] = [];
+    await runContextLive(context.effects, input({ onTranscript: async (transcript) => void stored.push(transcript) }));
+    expect(stored.map((transcript) => transcript.codeDigest)).toEqual([CALLER_CODE_DIGEST, CALLER_CODE_DIGEST]);
   });
 });
 
@@ -386,7 +408,7 @@ describe('the settings, credentials and probe records of a live run', () => {
     models.resolved.targets['t'] = target({ toolCalling: 'auto' as never });
     models.declared.targets = { ...models.declared.targets, t: { ...declaredTarget, toolCalling: 'auto' } as never };
     const settings = liveSettingsFor(models, 'default');
-    expect(settings.endpointProbes).toEqual([{ upstream: { kind: 'tcp', baseUrl: 'https://upstream.invalid/v1' }, model: 'm' }]);
+    expect(settings.endpointProbes).toEqual([{ endpoint: 'https://upstream.invalid/v1', model: 'm' }]);
     expect(liveSettingsFor(userModels(), 'default').endpointProbes).toEqual([]);
   });
 
@@ -399,6 +421,18 @@ describe('the settings, credentials and probe records of a live run', () => {
     expect(context.endpointProbeCopies).toEqual([
       'https://upstream.invalid/v1 m -> /tmp/mc-xxxxxx0/.momonga/state/probe',
       'https://upstream.invalid/v1 m -> /tmp/mc-xxxxxx1/.momonga/state/probe',
+    ]);
+  });
+
+  it('copies the endpoint probe record of an ollama target into every case home', async () => {
+    const models = userModels();
+    models.resolved.targets['t'] = { ...target(), adapter: 'ollama', baseUrl: 'http://127.0.0.1:11434', model: 'qwen3' } as never;
+    models.declared.targets = { ...models.declared.targets, t: { adapter: 'ollama', model: 'qwen3', baseUrl: 'http://127.0.0.1:11434', capabilities: { contextWindow: 8192, maxOutputTokens: 1024 } } as never };
+    const context = harness();
+    await runContextLive(context.effects, input({ models }));
+    expect(context.endpointProbeCopies).toEqual([
+      'http://127.0.0.1:11434 qwen3 -> /tmp/mc-xxxxxx0/.momonga/state/probe',
+      'http://127.0.0.1:11434 qwen3 -> /tmp/mc-xxxxxx1/.momonga/state/probe',
     ]);
   });
 });

@@ -5,6 +5,8 @@ export type { FileLockPorts } from '@momonga/foundation';
 export { isCredentialEnvName, stripCredentialEnv } from './credential-env.ts';
 export { loadSettings } from './load-settings.ts';
 export { MODEL_ROLES } from './settings-schema.ts';
+export { endpointKeyOf, probeRecordKeyOf, upstreamEndpointOf } from './probe-record-key.ts';
+export type { EndpointProbeKey, ProbeRecordKey, UpstreamEndpointKeyed } from './probe-record-key.ts';
 export { credentialEnvNames, secretNames } from './models.ts';
 export type { ResolvedModels } from './models.ts';
 export { ConfigError, createUserSettingsCache, loadUserModels, loadUserSettings, userSettingsChangeKey } from './user-settings.ts';
@@ -16,7 +18,14 @@ export { COMMAND_PREFIX_SUFFIX, EDIT_TOOLS, checkRuleText, parseGovernanceRule, 
 export type { GovernanceRuleEntry, ParseRuleOptions, PathToolName, PermissionRule, RuleEffect, RuleLayer, RuleOrigin } from './rule.ts';
 export { SETTINGS_SCHEMA } from './settings-schema.ts';
 export { defaultSandboxSetting } from './settings.ts';
-export { DEFAULT_FORGET_AFTER_DAYS, DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS } from './context-settings.ts';
+export {
+  DEFAULT_FORGET_AFTER_DAYS,
+  DEFAULT_VERIFICATION_COMMANDS,
+  DEFAULT_VERIFICATION_MANIFESTS,
+  defaultContextSettings,
+  defaultMemorySettings,
+  defaultToolsSettings,
+} from './context-settings.ts';
 export type { ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from './context-settings.ts';
 export type { TrustOracle, UserLayer } from './layers.ts';
 export type {
@@ -42,6 +51,7 @@ export type {
   ResolvedModelTarget,
   ResolvedOllamaTarget,
   ResolvedOpenResponsesTarget,
+  DeclaredImage,
   TargetCapabilities,
   ContextSettings,
   ToolsSettings,

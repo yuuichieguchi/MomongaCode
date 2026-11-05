@@ -1,11 +1,14 @@
 import path from 'node:path';
 import { escapeTerminalLine } from '@momonga/protocol';
+import { probeRecordKeyOf } from '@momonga/config';
+import type { EndpointProbeKey } from '@momonga/config';
 import type { ModelsSettings, ResolvedModels, SandboxSetting, UserModels } from '@momonga/config';
 import { caseSettingsFor, expandContextDataset, liveBoundsFor, runContextDataset } from '@momonga/eval';
 import type { ContextCaseHost, ContextDataset, ExpandedCase, PolicyOverlay, Transcript, WorkspaceStep } from '@momonga/eval';
-import { codeDigestOfRunningProcess, momongaLayout, socketPathLimit } from '@momonga/foundation';
+import { momongaLayout, socketPathLimit } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { goldenRunApi } from '../client/golden-run-api.ts';
+import type { ReflectionSettle } from '../client/golden-run-api.ts';
 import type { RuntimeClient } from '../client/runtime-client.ts';
 
 export class ContextHostError extends Error {
@@ -76,7 +79,7 @@ const membersOf = (models: ResolvedModels, alias: string): string[] => {
 
 export type SecretCredential = { envName: string; secretName: string };
 
-export type EndpointProbe = { upstream: { kind: 'unix'; socketPath: string } | { kind: 'tcp'; baseUrl: string }; model: string };
+export type EndpointProbe = EndpointProbeKey;
 
 export type LiveSettings = {
   endpointProbes: EndpointProbe[];
@@ -101,17 +104,17 @@ export const liveSettingsFor = (user: UserModels, alias: string): LiveSettings =
     if (resolved === undefined) throw new ContextHostError(`the alias ${alias} names the target ${name}, which is not defined`);
     const declared = user.declared.targets?.[name];
     if (declared === undefined) throw new ContextHostError(`the target ${name} is not declared in the user settings, so it cannot be copied into a case`);
-    if (declared.adapter === 'fm') {
+    const recordKey = probeRecordKeyOf(name, resolved);
+    if (declared.adapter === 'fm' || resolved.adapter === 'fm') {
       if (!PROBE_TARGET_NAME.test(name)) throw new ContextHostError(`the fm target ${name} has a name its probe record cannot be keyed by`);
       fmTargets.push(name);
       targets[name] = declared;
       continue;
     }
-    if (resolved.adapter === 'chat-completions' && resolved.toolCalling === 'auto') {
-      const upstream = resolved.socketPath !== undefined ? ({ kind: 'unix', socketPath: resolved.socketPath } as const) : ({ kind: 'tcp', baseUrl: resolved.baseUrl as string } as const);
-      endpointProbes.push({ upstream, model: resolved.model });
+    if (recordKey?.kind === 'endpoint') {
+      endpointProbes.push(recordKey.key);
     }
-    if (resolved.adapter !== 'fm' && resolved.adapter !== 'ollama' && declared.adapter !== 'ollama' && resolved.apiKeySecret !== undefined) {
+    if (resolved.adapter !== 'ollama' && declared.adapter !== 'ollama' && resolved.apiKeySecret !== undefined) {
       const envName = `${GENERATED_KEY_PREFIX}${credentials.length}`;
       const { apiKeySecret: _secret, ...rest } = declared;
       credentials.push({ envName, secretName: resolved.apiKeySecret });
@@ -211,9 +214,11 @@ export type ContextHosts = {
 
 const BENCHMARK_GUIDELINE_REPORT = { source: 'context improve benchmark' } as const;
 
+export type ReflectionBounds = Pick<ReflectionSettle, 'pendingBoundMs' | 'attemptBoundMs' | 'pollMs'>;
+
 export const createContextHosts = (
   effects: ContextHostEffects,
-  options: { settings: LiveSettings; credentialValues: Readonly<Record<string, string>>; policy?: PolicyOverlay; guideline?: string; interrupt?: AbortSignal },
+  options: { settings: LiveSettings; credentialValues: Readonly<Record<string, string>>; reflection: ReflectionBounds; policy?: PolicyOverlay; guideline?: string; interrupt?: AbortSignal },
 ): ContextHosts => {
   const records: CaseRecord[] = [];
 
@@ -267,13 +272,10 @@ export const createContextHosts = (
     record.runtime = runtime;
     await runtime.setTrust(cwd, 'trusted');
     if (options.guideline !== undefined) await runtime.adoptGuideline({ text: options.guideline, parent: null, report: { ...BENCHMARK_GUIDELINE_REPORT } });
-    const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } = await import('@momonga/runtime');
     return {
       cwd,
       api: goldenRunApi(runtime, await effects.sessionEnv(root), {
-        pendingBoundMs: REFLECTION_PICKUP_BOUND_MS,
-        attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS,
-        pollMs: REFLECTION_POLL_MS,
+        ...options.reflection,
         now: () => effects.now(),
         wait: (milliseconds, signal) => effects.after(milliseconds, signal ?? new AbortController().signal),
         ...(options.interrupt === undefined ? {} : { signal: options.interrupt }),
@@ -341,8 +343,9 @@ export type ContextLiveInput = {
   alias: string;
   models: UserModels;
   limits: { maxTotalTokens: number; defaultTimeoutMs: number };
+  reflection: ReflectionBounds;
+  codeDigest: string;
   policy?: PolicyOverlay;
-  codeDigest?: string;
   guideline?: string;
   interrupt?: AbortSignal;
   onTranscript?(transcript: Transcript): Promise<void>;
@@ -361,18 +364,18 @@ export const runContextLive = async (effects: ContextHostEffects, input: Context
   const hosts = createContextHosts(effects, {
     settings,
     credentialValues,
+    reflection: input.reflection,
     ...(input.policy === undefined ? {} : { policy: input.policy }),
     ...(input.guideline === undefined ? {} : { guideline: input.guideline }),
     ...(interrupt === undefined ? {} : { interrupt }),
   });
   const bounds = liveBoundsFor(input.dataset, input.limits);
-  const codeDigest = input.codeDigest ?? (await codeDigestOfRunningProcess());
   const interrupted = new Promise<never>((_resolve, reject) => {
     interrupt?.addEventListener('abort', () => reject(new ContextInterrupted()), { once: true });
   });
   const running = runContextDataset(expandContextDataset(input.dataset, input.seed), {
     policy: input.policy ?? {},
-    codeDigest,
+    codeDigest: input.codeDigest,
     openCase: hosts.openCase,
     modelAlias: input.alias,
     bounds,

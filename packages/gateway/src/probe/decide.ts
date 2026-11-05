@@ -1,5 +1,5 @@
 import { MAX_BUDGET_COUNT, imageCapability } from '@momonga/protocol';
-import type { Capabilities, ImageCapability, ProbeReport, ToolCallingMode } from '@momonga/protocol';
+import type { Capabilities, CapabilitiesCore, ImageCapability, ProbeReport, ToolCallingMode } from '@momonga/protocol';
 
 export interface DecideThresholds {
   minValidRate?: number;
@@ -56,9 +56,11 @@ export const capabilitiesFromProbe = (report: ProbeReport, decision: ToolCalling
     structuredOutput: report.constrained.accepted ? 'json_schema' : 'none',
     streaming: report.streaming.supported,
     stopSequences: report.stopSequences,
+    ...(report.outputBoundField === undefined || report.outputBoundField === 'none' ? {} : { outputBoundField: report.outputBoundField }),
     ...probedImageCapability(report),
     ...parallelCallsDecision(report, thresholds),
     ...(report.reasoning === undefined ? {} : { reasoning: report.reasoning }),
+    ...(report.promptCache === undefined ? {} : { promptCache: report.promptCache }),
     schemaDialect: 'json-schema-2020-12',
     tokenCounting: report.tokenCalibration === undefined ? 'estimated' : 'calibrated',
     ...(report.tokenCalibration === undefined ? {} : { tokenErrorRatio: report.tokenCalibration.errorBound }),
@@ -67,4 +69,54 @@ export const capabilitiesFromProbe = (report: ProbeReport, decision: ToolCalling
     source: 'probed',
     probedAt: report.probedAt,
   };
+};
+
+export type CapabilityLayer = Partial<CapabilitiesCore> & { image?: ImageCapability };
+
+export type DeclaredCapabilities = CapabilitiesCore & (ImageCapability | { imageInput?: undefined; imageTokens?: undefined });
+
+export const layerOf = (declared: DeclaredCapabilities): { core: CapabilitiesCore; layer: CapabilityLayer } => {
+  const { imageInput, imageTokens, ...core } = declared;
+  return { core, layer: { ...core, ...(imageInput === undefined ? {} : { image: imageCapability(imageInput, imageTokens) }) } };
+};
+
+export const withImageDefault = (declared: DeclaredCapabilities): Capabilities => {
+  const { core, layer } = layerOf(declared);
+  return { ...core, ...(layer.image ?? imageCapability(false, undefined)) };
+};
+
+const splitByPrecedence = (layer: CapabilityLayer) => {
+  const { toolCalling, structuredOutput, streaming, stopSequences, parallelToolCalls, usageReported, reasoning, ...declaredFirst } = layer;
+  return {
+    declaredFirst,
+    probeFirst: {
+      ...(toolCalling === undefined ? {} : { toolCalling }),
+      ...(structuredOutput === undefined ? {} : { structuredOutput }),
+      ...(streaming === undefined ? {} : { streaming }),
+      ...(stopSequences === undefined ? {} : { stopSequences }),
+      ...(parallelToolCalls === undefined ? {} : { parallelToolCalls }),
+      ...(usageReported === undefined ? {} : { usageReported }),
+      ...(reasoning === undefined ? {} : { reasoning }),
+    },
+  };
+};
+
+export type CapabilityMerge = {
+  defaults: CapabilitiesCore;
+  declared: CapabilityLayer;
+  probed: CapabilityLayer;
+  probedAt: string;
+};
+
+export const mergeCapabilities = ({ defaults, declared, probed, probedAt }: CapabilityMerge): Capabilities => {
+  const fromDeclaration = splitByPrecedence(declared);
+  const fromProbe = splitByPrecedence(probed);
+  const { image, ...merged } = {
+    ...defaults,
+    ...fromProbe.declaredFirst,
+    ...fromDeclaration.probeFirst,
+    ...fromProbe.probeFirst,
+    ...fromDeclaration.declaredFirst,
+  };
+  return { ...merged, ...(image ?? imageCapability(false, undefined)), source: 'probed', probedAt };
 };

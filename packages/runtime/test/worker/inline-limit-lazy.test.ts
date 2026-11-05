@@ -3,7 +3,7 @@ import { MINIMUM_INLINE_OUTPUT_CHARS } from '@momonga/tools';
 import { inlineOutputLimitFor } from '../../src/worker/inline-limit.ts';
 import { inputTokensOf } from './fake-gateway.ts';
 import { START_MS, capabilitiesFor, makeEnv, toolKey } from './harness.ts';
-import { callsStep, functionCallItem, textStep } from './scripts.ts';
+import { callsStep, functionCallItem, requestedOffering, textStep } from './scripts.ts';
 import { gatewayError } from './within-turn-support.ts';
 
 const W4000 = capabilitiesFor(4000);
@@ -43,6 +43,7 @@ describe('inline output limit from the pinned floor', () => {
     env.seed(
       run.id,
       [
+        requestedOffering(1, ['Mark']),
         responded(1, [functionCallItem({ callId: 'call_m_1', name: 'Mark', args: { value: 'one' } })]),
         { type: 'tool.call', callId: 'call_m_1', providerCallId: 'call_m_1', name: 'Mark', kind: 'edit', title: 'Mark one', rawInput: { value: 'one' } },
         { type: 'tool.started', callId: 'call_m_1', idemKey: key },
@@ -70,7 +71,7 @@ describe('inline output limit from the pinned floor', () => {
   it('fails pinned_overflow from the lazy measurement before executing a pending call', async () => {
     const env = await makeEnv({ capabilities: W4000 });
     const run = env.enqueue('Echo it');
-    env.seed(run.id, [responded(1, [functionCallItem({ callId: 'call_e_1', name: 'Echo', args: { value: 'x' } })])], 'crash');
+    env.seed(run.id, [requestedOffering(1, ['Echo']), responded(1, [functionCallItem({ callId: 'call_e_1', name: 'Echo', args: { value: 'x' } })])], 'crash');
     env.instructions.files.set(`${env.project}/AGENTS.md`, 'r'.repeat(16_000));
 
     await env.runOnce(env.worker());

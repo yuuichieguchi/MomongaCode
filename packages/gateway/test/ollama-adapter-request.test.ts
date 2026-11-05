@@ -184,13 +184,30 @@ describe('ollama request: structured output and thinking', () => {
   });
 
   for (const effort of ['minimal', 'low', 'high'] as const) {
-    it(`sends think true for reasoning effort ${effort}`, async () => {
-      expect((await sentBody({ model: 'devstral-small-2', input: [userText('hi')], max_output_tokens: 300, reasoning_effort: effort })).think).toBe(true);
+    it(`sends no think true for reasoning effort ${effort} to a target without a reasoning capability`, async () => {
+      expect((await sentBody({ model: 'devstral-small-2', input: [userText('hi')], max_output_tokens: 300, reasoning_effort: effort })).think).not.toBe(true);
     });
   }
 
-  it('sends think false for reasoning effort none', async () => {
-    expect((await sentBody({ model: 'devstral-small-2', input: [userText('hi')], max_output_tokens: 300, reasoning_effort: 'none' })).think).toBe(false);
+  it('sends no think for reasoning effort none to a target without a reasoning capability', async () => {
+    expect('think' in (await sentBody({ model: 'devstral-small-2', input: [userText('hi')], max_output_tokens: 300, reasoning_effort: 'none' }))).toBe(false);
+  });
+
+  const thinkSentWith = async (effort: NonNullable<AdapterRequest['reasoning_effort']>): Promise<unknown> => {
+    const fake = await startFakeOllama({ chat: [textReply()] });
+    const reasoning = { control: 'reasoning_effort', lowest: 'none' } as const;
+    const adapter = makeOllamaAdapter(fake, { capabilities: async () => ({ ...OLLAMA_CAPABILITIES, reasoning }) });
+    const { error } = await collectOllama(adapter, { model: 'devstral-small-2', input: [userText('hi')], max_output_tokens: 300, reasoning_effort: effort });
+    expect(error).toBeUndefined();
+    return fake.chatBodies()[0].think;
+  };
+
+  it('sends think false for reasoning effort none to a target with the reasoning capability', async () => {
+    expect(await thinkSentWith('none')).toBe(false);
+  });
+
+  it.for(['minimal', 'low', 'high'] as const)('sends think true for reasoning effort %s to a target with the reasoning capability', async (effort) => {
+    expect(await thinkSentWith(effort)).toBe(true);
   });
 
   it('sends truncate false on every request', async () => {

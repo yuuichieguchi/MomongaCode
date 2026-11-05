@@ -1,6 +1,6 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { JSONSchemaType } from 'ajv';
-import { REASONING_EFFORTS } from '@momonga/protocol';
+import { OUTPUT_BOUND_FIELDS, REASONING_EFFORTS } from '@momonga/protocol';
 import type { EndpointProbeReport, OllamaProbeReport, ProbeReport } from '@momonga/protocol';
 
 const bool = { type: 'boolean' } as const;
@@ -76,6 +76,7 @@ const reportSchema: JSONSchemaType<ProbeReport> = {
       },
     },
     stopSequences: bool,
+    outputBoundField: { type: 'string', enum: [...OUTPUT_BOUND_FIELDS, 'none'], nullable: true },
     parallelToolCalls: {
       type: 'object',
       nullable: true,
@@ -96,6 +97,13 @@ const reportSchema: JSONSchemaType<ProbeReport> = {
       },
     },
     guardrail: { type: 'object', required: [], properties: { errorShape: anyJson } },
+    promptCache: {
+      type: 'object',
+      nullable: true,
+      required: ['kind'],
+      properties: { kind: { type: 'string', enum: ['automatic', 'none'] } },
+      additionalProperties: false,
+    },
     tokenCalibration: {
       type: 'object',
       nullable: true,
@@ -129,6 +137,17 @@ const validateReasoning = new Ajv2020.default({ strict: false }).compile(reasoni
 export const isProbeReport = (value: unknown): value is ProbeReport =>
   validate(value) && ((value as ProbeReport).reasoning === undefined || validateReasoning((value as ProbeReport).reasoning));
 
+const imageTokensSchema = {
+  type: 'object',
+  required: ['pixelsPerToken', 'maxTokens', 'minTokens'],
+  additionalProperties: false,
+  properties: {
+    pixelsPerToken: { type: 'number', exclusiveMinimum: 0 },
+    maxTokens: { type: 'integer', minimum: 1 },
+    minTokens: { type: 'integer', minimum: 1 },
+  },
+} as const;
+
 const ollamaReportSchema = {
   type: 'object',
   required: ['kind', 'probedAt', 'serverVersion', 'modelId', 'contextWindow', 'nativeTools', 'imageInputAccepted', 'thinkingSupported'],
@@ -146,7 +165,14 @@ const ollamaReportSchema = {
     },
     nativeTools: { type: 'object', required: ['accepted'], additionalProperties: false, properties: { accepted: bool } },
     imageInputAccepted: bool,
+    imageTokens: imageTokensSchema,
     thinkingSupported: bool,
+    promptCache: {
+      type: 'object',
+      required: ['kind'],
+      additionalProperties: false,
+      properties: { kind: { type: 'string', enum: ['automatic', 'none'] } },
+    },
   },
 } as const;
 

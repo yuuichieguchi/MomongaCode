@@ -8,6 +8,7 @@ import type {
   InputItem,
   MemoryView,
   MessageInputItem,
+  OutputFormatterName,
   TokenAnatomy,
 } from '@momonga/protocol';
 
@@ -70,6 +71,8 @@ export type MeterRequest = {
   input: readonly InputItem[];
   tools: readonly FunctionTool[];
   instructions?: string;
+  frozen?: readonly InputItem[];
+  sent?: true;
 };
 
 export type MeterCount = {
@@ -127,10 +130,12 @@ export type TokenMeterOptions = {
   counter: TokenCounter;
   model: string;
   capabilities: Capabilities;
+  observedCapacity?: boolean;
 };
 
 export type BuildContextPorts = {
   meter: TokenMeter;
+  fallbackMeters?: readonly TokenMeter[];
   blobs: BlobPort;
   instructions: InstructionReader;
 };
@@ -147,6 +152,7 @@ export type BuildContextInput = {
   model: string;
   sources: ContextSources;
   evicted: ReadonlySet<string>;
+  recordedReferences: ReadonlySet<string>;
   touchedPaths: readonly TouchedPath[];
   trusted: boolean;
   projectRoot: string;
@@ -168,6 +174,7 @@ export type BuildContextInput = {
   observedCapacity?: true;
   forms?: ReadonlyMap<string, number>;
   renderedFull?: ReadonlySet<string>;
+  outputFormatters?: readonly OutputFormatterName[] | undefined;
 };
 
 export type InstructionScope = 'user' | 'root' | 'nested';
@@ -217,6 +224,7 @@ export type CompactionBlock = { reason: CompactionBlockReason; message: string }
 export type PinnedMeasure = { pinnedTokens: number; ceiling: number; room: number; itemCap: number; summaryCap: number };
 
 export type ContextZones = {
+  stableEnd: number;
   arrivalsStart: number;
   arrivalsEnd: number;
   fixedEnd: number;

@@ -54,6 +54,38 @@ describe('executor: writeDenied path subjects', () => {
     expect(runs).toEqual([]);
   });
 
+  it('names the resolved form a write through a symlink was denied on, as read access and file rules do', async () => {
+    const harness = makeHarness();
+    const keychains = momongaLayout(harness.layout.home).keychains;
+    fs.mkdirSync(keychains, { recursive: true });
+    const link = path.join(harness.layout.project, 'innocent');
+    fs.symlinkSync(keychains, link);
+    const runs: string[] = [];
+    const [outcome] = await harness.executor.runBatch(
+      harness.input(await toolSetOf(pathTool('write', path.join(link, 'x'), runs)), [call('c1', 'PathTool', {}, 'allow_once')], {
+        mode: 'bypassPermissions',
+        sandboxPolicy: { ...minimalPolicyFor({ layout: harness.layout }), writeDenied: [keychains] },
+      }),
+    );
+    const reason = `${path.join(fs.realpathSync.native(keychains), 'x')} is write-protected by the sandbox policy`;
+    expect(outcome).toEqual({ callId: 'c1', kind: 'result', result: { status: 'failed', output: `Permission denied: ${reason}`, denial: { source: 'sandbox', reason } } });
+    expect(runs).toEqual([]);
+  });
+
+  it('names the requested form, relative to the working directory, when the write was denied on it', async () => {
+    const harness = makeHarness();
+    const sessions = path.join(harness.layout.project, 'sessions');
+    fs.mkdirSync(path.join(sessions, 'other'), { recursive: true });
+    const runs: string[] = [];
+    const [outcome] = await harness.executor.runBatch(
+      harness.input(await toolSetOf(pathTool('write', path.join(sessions, 'other', 'f'), runs)), [call('c1', 'PathTool', {}, 'allow_once')], {
+        mode: 'bypassPermissions',
+        sandboxPolicy: { ...minimalPolicyFor({ layout: harness.layout }), writeDenied: [sessions] },
+      }),
+    );
+    expect((outcome as { result: { output: string } }).result.output).toBe(`Permission denied: ${path.join('sessions', 'other', 'f')} is write-protected by the sandbox policy`);
+  });
+
   it('guards a writeDenied entry below a non-directory placeholder instead of throwing ENOTDIR', async () => {
     const harness = makeHarness();
     const placeholder = path.join(harness.layout.project, 'protected');

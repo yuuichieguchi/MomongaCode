@@ -285,7 +285,7 @@ const truncate = (state: RunState, event: Extract<RunEvent, { type: 'context.tru
   }
   const index = state.history.findIndex((entry) => entry.callId === event.callId && entry.item.type === 'function_call_output');
   if (index < 0) return state;
-  const history = state.history.map((entry, position) => (position === index ? { ...entry, handle: event.handle } : entry));
+  const history = state.history.map((entry, position) => (position === index ? { ...entry, handle: event.kind === 'reference' ? (entry.handle ?? event.handle) : event.handle } : entry));
   const evicted = event.kind === 'omitted' && !state.evicted.includes(event.callId) ? [...state.evicted, event.callId].sort() : state.evicted;
   return { ...state, history, evicted };
 };
@@ -306,7 +306,7 @@ const withStep = (steps: RunState['steps'], step: number, body: unknown): RunSta
 
 const withInstruction = (current: RunState['loadedInstructions'], path: string, textSha256: string, seq: number): RunState['loadedInstructions'] =>
   current.some((entry) => entry.path === path)
-    ? current.map((entry) => (entry.path === path ? { path, textSha256, seq } : entry))
+    ? current.map((entry) => (entry.path === path ? { path, textSha256, seq: entry.seq } : entry))
     : [...current, { path, textSha256, seq }];
 
 const withLoadedTools = (current: readonly string[], names: readonly string[]): string[] => [

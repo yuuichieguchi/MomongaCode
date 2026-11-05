@@ -14,7 +14,6 @@ import {
   fillerOfTokens,
   measureWindow,
   prefixProbeRoute,
-  readLinesWhereProtectedStepsExceedTheRoomButOneFewerFits,
   stepTokensToOverflowTheRoom,
 } from './support/context-window.ts';
 import { createE2eHome } from './support/home.ts';
@@ -97,17 +96,23 @@ const candidates = (): FakeRoute => ({
   },
 });
 
-const ROUTES: FakeRoute[] = [
+const stepTextOf = (text: () => string | undefined) => (): string => {
+  const value = text();
+  if (value === undefined) throw new Error('the text of a step was asked for before the window was measured');
+  return value;
+};
+
+const routesWith = (benchmarkStepText: () => string | undefined): FakeRoute[] => [
   prefixProbeRoute,
   calibrationRoute,
   { match: (body) => isCompactionRequest(body) && bodyText(body).includes(WINNER), reply: textReply(KEEPING_SUMMARY) },
   { match: isCompactionRequest, reply: textReply(PADDED_PLAIN_SUMMARY) },
   { match: (body) => bodyText(body).includes(JSON.stringify(GUIDELINE_ANALYSIS_INSTRUCTIONS).slice(1, -1)), reply: textReply(CONTRASTIVE_ANALYSIS) },
   candidates(),
-  walkRoute(FRAGILE_TASK, 'fragile.txt', true),
-  walkRoute(STURDY_TASKS[0] as string, 'first.txt', false),
-  walkRoute(STURDY_TASKS[1] as string, 'second.txt', false),
-  walkRoute(STURDY_TASKS[2] as string, 'third.txt', false),
+  walkRoute(FRAGILE_TASK, 'fragile.txt', true, stepTextOf(benchmarkStepText)),
+  walkRoute(STURDY_TASKS[0] as string, 'first.txt', false, stepTextOf(benchmarkStepText)),
+  walkRoute(STURDY_TASKS[1] as string, 'second.txt', false, stepTextOf(benchmarkStepText)),
+  walkRoute(STURDY_TASKS[2] as string, 'third.txt', false, stepTextOf(benchmarkStepText)),
 ];
 
 const walkFileText = (lines: number): string => `${WALK_LINE}\n`.repeat(lines);
@@ -146,15 +151,10 @@ describe('momonga context improve', () => {
   it(titleOf('context-improve-adopt'), { timeout: 40 * E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     let followUpStepText: string | undefined;
+    let benchmarkStepText: string | undefined;
     const fake = await startUpstream(home, {
       home,
-      routes: [
-        ...ROUTES,
-        walkRoute(FOLLOW_UP_TASK, 'follow-up.txt', false, () => {
-          if (followUpStepText === undefined) throw new Error('the text of a follow-up step was asked for before the window was measured');
-          return followUpStepText;
-        }),
-      ],
+      routes: [...routesWith(() => benchmarkStepText), walkRoute(FOLLOW_UP_TASK, 'follow-up.txt', false, stepTextOf(() => followUpStepText))],
     });
     writeSettingsFile(home, withStructuredRole(baseSettings(home, sandboxChoiceOf({ home }).kind), 'analysis', ANALYSIS_ALIAS));
     expect(
@@ -166,14 +166,19 @@ describe('momonga context improve', () => {
       'the winning guideline costs tokens in every compaction request; the summary written without it is padded by twice that measured cost, so that the guideline pays for itself the way a useful guideline does',
     ).toBeGreaterThan(0);
     const measured = await measureWindow(home, fake, 4 * E2E_RUN_COMPLETED_BOUND_MS);
-    const walkFileLines = readLinesWhereProtectedStepsExceedTheRoomButOneFewerFits(measured, measured.benchmark, DEFAULT_KEEP_RECENT_STEPS, STEPS);
-    const followUpStepTokens = stepTokensToOverflowTheRoom(measured.person, STEPS);
+    const benchmarkStepTokens = Math.ceil(measured.benchmark.gainThreshold / (STEPS - DEFAULT_KEEP_RECENT_STEPS)) - Math.ceil(measured.readFixedTokens);
+    expect(
+      benchmarkStepTokens,
+      'a step older than the protected recent steps keeps its call and an omitted-output marker (about the fixed cost of a Read) once its output is evicted, so its text only has to make up the rest of the compaction gain: the steps outside the protection are then worth a compaction at a level-0 build, and the case without compaction still fits the whole walk',
+    ).toBeGreaterThan(0);
+    benchmarkStepText = fillerOfTokens(benchmarkStepTokens);
+    const followUpStepTokens = await stepTokensToOverflowTheRoom(measured.capabilities, measured.person, STEPS);
     expect(
       compactableTokens(STEPS, DEFAULT_KEEP_RECENT_STEPS, followUpStepTokens),
       'the steps older than the protected recent steps must be worth a compaction (the gain rule of the context builder)',
     ).toBeGreaterThanOrEqual(measured.person.gainThreshold);
     followUpStepText = fillerOfTokens(followUpStepTokens);
-    const walkDataset = datasetOf(walkFileLines);
+    const walkDataset = datasetOf(STEPS + 1);
     const dataset = path.join(home.root, 'improve.json');
     fs.writeFileSync(dataset, JSON.stringify(walkDataset));
     const boundMs = BENCHMARKS * walkDataset.cases.length * E2E_RUN_COMPLETED_BOUND_MS;

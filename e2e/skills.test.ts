@@ -2,10 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createUdsClient } from '@momonga/foundation';
-import { inputCeilingFor } from '@momonga/context';
-import { ESTIMATED_CHARACTERS_PER_TOKEN, tokensForText } from '@momonga/protocol';
+import { ESTIMATED_CHARACTERS_PER_TOKEN } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
-import { isCompactionRequest, journalOfRows, ofType, summaryRoute } from './support/budget.ts';
+import { isCompactionRequest, journalOfRows, ofType, overflowStepRange, summaryRoute, wireTokensOfBody } from './support/budget.ts';
 import type { JournalEvent } from './support/budget.ts';
 import { skipCase, titleOf } from './support/cases.ts';
 import { readDb } from './support/db.ts';
@@ -22,7 +21,6 @@ const BODY_MARKER = 'PDF-SKILL-BODY-MARKER-4f7a';
 const GUIDE_MARKER = 'PDF-GUIDE-RESOURCE-MARKER-9c1e';
 const SUMMARY = 'The user asked about a pdf. The pdf skill was activated and several small files were read. Next step: report the result.';
 const LONG_REQUESTS = 3;
-const REQUESTS_PER_ROOM = LONG_REQUESTS - 1;
 const FIRST_TASK = 'Read the pdf';
 
 type EventRow = { seq: number; type: string; payload_json: string };
@@ -50,30 +48,23 @@ const statusOf = (home: E2eHome, runId: string): { status: string; stopReason: s
 
 const occurrences = (haystack: string, needle: string): number => haystack.split(needle).length - 1;
 
-type LongRequestSizing = { prefix: number; ceiling: number; room: number; requestTokens: number; requests: string[] };
+type LongRequestSizing = { prefix: number; requestTokens: number; requests: string[] };
 
 const longRequestText = (index: number, tokens: number): string => {
   const chars = ESTIMATED_CHARACTERS_PER_TOKEN * tokens;
   return `Request ${index + 1}. ${`filler words about unrelated subjects ${index} `.repeat(chars)}`.slice(0, chars);
 };
 
-const longRequestSizing = (home: E2eHome, firstRunId: string, firstRequestBody: unknown): LongRequestSizing => {
-  expect(firstRequestBody, `the first run made no model request (${JSON.stringify(statusOf(home, firstRunId))}), so the fixed prefix no longer fits the ceiling`).toBeDefined();
+const longRequestSizing = async (home: E2eHome, firstRunId: string, requestsOfFirstRun: readonly { body: unknown }[]): Promise<LongRequestSizing> => {
+  const lastRequest = requestsOfFirstRun.at(-1);
+  expect(lastRequest, `the first run made no model request (${JSON.stringify(statusOf(home, firstRunId))}), so the fixed prefix no longer fits`).toBeDefined();
   const started = ofType(journalOf(home, firstRunId), 'run.started')[0];
   const capabilities = (started?.data['pins'] as { capabilities: Capabilities }).capabilities;
-  const ceiling = inputCeilingFor(capabilities);
-  const prefix = tokensForText(JSON.stringify(firstRequestBody)) - tokensForText(FIRST_TASK);
-  const room = ceiling - prefix;
-  const premise =
-    `the ${prefix}-token fixed prefix leaves ${room} of the ${ceiling}-token ceiling; the prefix is the first request measured with tokensForText(JSON.stringify(body)), ` +
-    `the estimate the gateway applies to a chat wire, less the first task; each long request holds floor(room / (${LONG_REQUESTS} - 1)) tokens`;
-  expect(room, `the room must be positive: ${premise}`).toBeGreaterThan(0);
-  const requestTokens = Math.floor(room / REQUESTS_PER_ROOM);
+  const prefix = wireTokensOfBody(lastRequest?.body);
+  const range = await overflowStepRange(capabilities, prefix, LONG_REQUESTS);
+  const requestTokens = range.lowest;
   const requests = Array.from({ length: LONG_REQUESTS }, (_, index) => longRequestText(index, requestTokens));
-  const measured = requests.map((request) => tokensForText(request));
-  expect(Math.max(...measured), `one request fits: ${premise}`).toBeLessThan(room);
-  expect(measured.reduce((sum, tokens) => sum + tokens, 0), `all ${LONG_REQUESTS} requests exceed the room: ${premise}`).toBeGreaterThan(room);
-  return { prefix, ceiling, room, requestTokens, requests };
+  return { prefix, requestTokens, requests };
 };
 
 const runToEnd = async (runtime: RuntimeClient, runId: string): Promise<void> => {
@@ -142,7 +133,7 @@ describe('g: agent skills', () => {
       const { session } = await runtime.createSession();
       const first = (await runtime.createRun(session.id, FIRST_TASK)).run;
       await runToEnd(runtime, first.id);
-      const sizing = longRequestSizing(home, first.id, chatCompletions(stack.fake)[0]?.body);
+      const sizing = await longRequestSizing(home, first.id, chatCompletions(stack.fake));
       const later: string[] = [];
       for (const long of sizing.requests) {
         const { run } = await runtime.createRun(session.id, long);
@@ -172,7 +163,7 @@ describe('g: agent skills', () => {
       for (const runId of later) expect(ofType(journalOf(home, runId), 'skill.activated')).toEqual([]);
 
       const compactions = later.flatMap((runId) => ofType(journalOf(home, runId), 'context.compacted'));
-      expect(compactions.length, `each of ${LONG_REQUESTS} requests holds ${sizing.requestTokens} tokens, 1/${REQUESTS_PER_ROOM} of the ${sizing.room}-token room left by the ${sizing.prefix}-token prefix: together they pass the compaction threshold`).toBeGreaterThanOrEqual(1);
+      expect(compactions.length, `each of ${LONG_REQUESTS} requests holds ${sizing.requestTokens} tokens, the smallest size at which the last request stops fitting after the report of the one before it, after the ${sizing.prefix}-token request that ended the first run`).toBeGreaterThanOrEqual(1);
       const firstCompactionPost = posts.findIndex((post) => isCompactionRequest(post.body));
       expect(firstCompactionPost).toBeGreaterThan(1);
       const afterCompaction = posts.slice(firstCompactionPost + 1).filter((post) => !isCompactionRequest(post.body));

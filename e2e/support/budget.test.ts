@@ -1,9 +1,12 @@
+import fs from 'node:fs';
+import { sha256Hex } from '@momonga/foundation';
 import { describe, expect, it } from 'vitest';
-import { ESCALATION_NOTICE_PREFIX, GREP_AND_READ_BACK_CALLS, PERTURBATIONS, escalationBudgetVerdict, budgetFor, dryRun, factsOf, verdictOf, isCompactionRequest, journalOfRows, ofType, plannedSteps, summaryRoute, summaryTextOf, upstreamRepliesOf, wireTokensOfBody, acceptanceTarget } from './budget.ts';
+import { ACCEPTANCE_MAX_OUTPUT, ACCEPTANCE_WINDOW, ESCALATION_NOTICE_PREFIX, GREP_AND_READ_BACK_CALLS, PERTURBATIONS, escalationBudgetVerdict, budgetFor, dryRun, factsOf, verdictOf, isCompactionRequest, journalOfRows, ofType, plannedSteps, summaryRoute, summaryTextOf, upstreamRepliesOf, wireTokensOfBody, acceptanceTarget } from './budget.ts';
 import type { FillerShape, JournalEvent, PlanCaseSpec } from './budget.ts';
+import type { Capabilities } from '@momonga/protocol';
 import { readDb } from './db.ts';
 import { createGatewayCountClient } from './gateway-count.ts';
-import { HAYSTACK_LINE_COUNT, HAYSTACK_READ_BACK_LINE, HAYSTACK_TARGET_CHARS, grepLinesFor, grepPrefixOf, writeHaystack } from './haystack.ts';
+import { HAYSTACK_FILE_NAME, HAYSTACK_LINE_COUNT, NEEDLE, HAYSTACK_READ_BACK_LINE, HAYSTACK_TARGET_CHARS, grepLinesFor, grepPrefixOf, writeHaystack } from './haystack.ts';
 import { createE2eHome } from './home.ts';
 import type { E2eHome } from './home.ts';
 import { createRuntimeClient } from './runtime-client.ts';
@@ -54,6 +57,16 @@ describe('haystack builder', () => {
     const file = `/${'d'.repeat(400)}/haystack.txt`;
     const lines = grepLinesFor(file);
     lines.forEach((line, index) => expect(line).toBe(grepPrefixOf(file, index + 1)));
+  });
+
+  it('writes the haystack as Grep shows it from the project cwd, hashed into the handle', async () => {
+    const home = await createE2eHome();
+    const haystack = writeHaystack(home.project);
+    expect(haystack.grepLines[0]?.startsWith(grepPrefixOf(HAYSTACK_FILE_NAME, 1))).toBe(true);
+    expect(haystack.grepOutput).toHaveLength(HAYSTACK_TARGET_CHARS);
+    expect(haystack.handle).toBe(sha256Hex(haystack.grepOutput));
+    const fileLines = fs.readFileSync(haystack.file, 'utf8').split('\n').slice(0, HAYSTACK_LINE_COUNT);
+    expect(fileLines.map((text, index) => `${grepPrefixOf(HAYSTACK_FILE_NAME, index + 1).slice(0, -NEEDLE.length)}${text}`)).toEqual(haystack.grepLines);
   });
 });
 
@@ -113,19 +126,32 @@ describe('planner acceptance criteria', () => {
     });
 
     describe('the escalation has to follow from the budget', () => {
-      const sizing = { ceiling: 2300 };
+      const capabilities: Capabilities = {
+        contextWindow: ACCEPTANCE_WINDOW,
+        maxOutputTokens: ACCEPTANCE_MAX_OUTPUT,
+        imageInput: false,
+        maxConcurrency: 4,
+        schemaDialect: 'json-schema-2020-12',
+        source: 'config',
+        stopSequences: true,
+        streaming: true,
+        structuredOutput: 'none',
+        tokenCounting: 'estimated',
+        toolCalling: 'native',
+        usageReported: true,
+      };
       const facts = (requestsBeforeEscalation: number) => ({ requestsBeforeEscalation }) as Parameters<typeof escalationBudgetVerdict>[0];
 
-      it('accepts an escalation after a request whose next step would not fit the ceiling', () => {
-        expect(escalationBudgetVerdict(facts(5), [1596, 1919, 2072, 2196, 2321, 2241], sizing)).toBeUndefined();
+      it('accepts an escalation after a request whose next step would not fit', async () => {
+        expect(await escalationBudgetVerdict(facts(5), [1596, 1919, 2072, 2196, 2650, 2400], capabilities)).toBeUndefined();
       });
 
-      it('rejects an escalation that happened while the next step still fitted, as a rule moved earlier would do', () => {
-        expect(escalationBudgetVerdict(facts(3), [1000, 1100, 1200, 1300], sizing)).toMatch(/^\(g\) escalated although/);
+      it('rejects an escalation that happened while the next step still fitted, as a rule moved earlier would do', async () => {
+        expect(await escalationBudgetVerdict(facts(3), [1000, 1100, 1200, 1300], capabilities)).toMatch(/^\(g\) escalated although/);
       });
 
-      it('rejects an escalation with too few requests before it to see a growth', () => {
-        expect(escalationBudgetVerdict(facts(1), [1596, 1919], sizing)).toMatch(/^\(g\) /);
+      it('rejects an escalation with too few requests before it to see a growth', async () => {
+        expect(await escalationBudgetVerdict(facts(1), [1596, 1919], capabilities)).toMatch(/^\(g\) /);
       });
     });
 

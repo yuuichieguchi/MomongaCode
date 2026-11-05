@@ -1,7 +1,9 @@
 import Ajv2020 from 'ajv/dist/2020.js';
 import type { ValidateFunction } from 'ajv/dist/2020.js';
+import { defaultContextSettings, defaultMemorySettings, defaultToolsSettings } from '@momonga/config';
 import { OUTPUT_FORMATTERS } from '@momonga/protocol';
 import type { OutputFormatterName } from '@momonga/protocol';
+import { canonicalJson } from '@momonga/foundation';
 import { EvalError } from './runner.ts';
 
 export type PolicyOverlay = {
@@ -43,6 +45,22 @@ const describeViolation = (): string => {
   return `${pointer === '' ? '/' : pointer}: ${first.message ?? 'schema violation'}`;
 };
 
+const withoutDefaults = <T extends object>(section: T | undefined, defaults: Record<string, unknown>): T | undefined => {
+  if (section === undefined) return undefined;
+  const kept = Object.fromEntries(Object.entries(section).filter(([key, value]) => canonicalJson(value) !== canonicalJson(defaults[key])));
+  return Object.keys(kept).length === 0 ? undefined : (kept as T);
+};
+
+export const normalisePolicyOverlay = (overlay: PolicyOverlay): PolicyOverlay => {
+  const context = withoutDefaults(
+    overlay.context === undefined ? undefined : { ...overlay.context, ...(overlay.context.outputFormatters === undefined ? {} : { outputFormatters: [...overlay.context.outputFormatters].sort() }) },
+    { ...defaultContextSettings() },
+  );
+  const tools = withoutDefaults(overlay.tools, { ...defaultToolsSettings() });
+  const memory = withoutDefaults(overlay.memory, { ...defaultMemorySettings() });
+  return { ...(context === undefined ? {} : { context }), ...(tools === undefined ? {} : { tools }), ...(memory === undefined ? {} : { memory }) };
+};
+
 export const parsePolicyOverlay = (text: string, source: string): PolicyOverlay => {
   let value: unknown;
   try {
@@ -51,5 +69,5 @@ export const parsePolicyOverlay = (text: string, source: string): PolicyOverlay 
     throw new EvalError(`${source}: not valid JSON: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
   if (!validatePolicyOverlay(value)) throw new EvalError(`${source}: not a token policy overlay (${describeViolation()})`);
-  return value;
+  return normalisePolicyOverlay(value);
 };

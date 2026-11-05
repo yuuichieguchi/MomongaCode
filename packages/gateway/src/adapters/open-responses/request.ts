@@ -1,5 +1,6 @@
 import { compactionSummaryMessage } from '@momonga/protocol';
 import type { AdapterInputItem, AdapterRequest, ContentPart, InputItem } from '@momonga/protocol';
+import { callArgumentsText } from '../shared/call-arguments.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { imageUrlOf, isImagePart } from '../shared/image-part.ts';
 
@@ -8,6 +9,7 @@ export type OpenResponsesRequestBody = {
   input: InputItem[];
   stream: true;
   store: false;
+  include: ['reasoning.encrypted_content'];
   instructions?: string;
   tools?: AdapterRequest['tools'];
   tool_choice?: AdapterRequest['tool_choice'];
@@ -15,6 +17,7 @@ export type OpenResponsesRequestBody = {
   max_output_tokens?: number;
   temperature?: number;
   top_p?: number;
+  prompt_cache_key?: string;
 };
 
 const TEXT_PART_TYPES: ReadonlySet<ContentPart['type']> = new Set(['input_text', 'output_text', 'summary_text', 'refusal']);
@@ -35,19 +38,19 @@ const USER_PART_TYPES: ReadonlySet<ContentPart['type']> = new Set([...TEXT_PART_
 const itemOf = (item: AdapterInputItem): InputItem | undefined => {
   switch (item.type) {
     case 'reasoning':
+      if (item.encrypted_content === undefined || item.encrypted_content === null) return undefined;
       return {
         type: 'reasoning',
-        ...(item.id === undefined || item.id === null ? {} : { id: item.id }),
         summary: item.summary,
         ...(item.content === undefined || item.content === null ? {} : { content: item.content }),
-        ...(item.encrypted_content === undefined || item.encrypted_content === null ? {} : { encrypted_content: item.encrypted_content }),
+        encrypted_content: item.encrypted_content,
       };
     case 'compaction_summary':
       return compactionSummaryMessage(item.summary);
     case 'message':
       return { type: 'message', role: item.role, content: relayable(item.content, item.role === 'user' ? USER_PART_TYPES : TEXT_PART_TYPES) };
     case 'function_call':
-      return { type: 'function_call', call_id: item.call_id, name: item.name, arguments: item.arguments };
+      return { type: 'function_call', call_id: item.call_id, name: item.name, arguments: callArgumentsText(item.arguments) };
     case 'function_call_output':
       return { type: 'function_call_output', call_id: item.call_id, output: relayable(item.output, USER_PART_TYPES) };
   }
@@ -60,6 +63,7 @@ export const buildResponsesBody = (request: AdapterRequest): OpenResponsesReques
     input: request.input.flatMap((item) => itemOf(item) ?? []),
     stream: true,
     store: false,
+    include: ['reasoning.encrypted_content'],
     ...(request.instructions === undefined || request.instructions === null || request.instructions === '' ? {} : { instructions: request.instructions }),
     ...(tools.length === 0 ? {} : { tools }),
     ...(tools.length === 0 || request.tool_choice === undefined ? {} : { tool_choice: request.tool_choice }),

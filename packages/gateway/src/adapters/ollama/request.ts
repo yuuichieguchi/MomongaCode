@@ -1,4 +1,5 @@
-import type { AdapterRequest, Capabilities, FunctionTool, ReasoningEffort } from '@momonga/protocol';
+import { reasoningEffortToSend } from '@momonga/protocol';
+import type { AdapterRequest, Capabilities, FunctionTool, ReasoningCapability, ReasoningEffort } from '@momonga/protocol';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { SYSTEM_PART_SEPARATOR, systemTextOf } from '../shared/system-text.ts';
 import { ollamaHistoryOf } from './history.ts';
@@ -7,7 +8,7 @@ import type { OllamaMessage } from './history.ts';
 export type OllamaChatBody = {
   model: string;
   messages: OllamaMessage[];
-  stream: true;
+  stream: boolean;
   truncate: false;
   options: { num_ctx: number; num_predict: number; temperature?: number; top_p?: number };
   tools?: unknown[];
@@ -38,16 +39,19 @@ const formatOf = (request: AdapterRequest): { format?: unknown } => {
   return { format: format.type === 'json_schema' ? format.schema : 'json' };
 };
 
-const thinkOf = (effort: ReasoningEffort | undefined): { think?: boolean } => (effort === undefined ? {} : { think: effort !== 'none' });
+const thinkOf = (effort: ReasoningEffort | undefined, reasoning: ReasoningCapability | undefined): { think?: boolean } =>
+  effort === undefined || reasoning?.control !== 'reasoning_effort' ? {} : { think: reasoningEffortToSend(effort, reasoning.lowest) !== 'none' };
 
-export const buildOllamaBody = (request: AdapterRequest, capabilities: Capabilities): OllamaChatBody => {
+export type OllamaBodyCapabilities = Pick<Capabilities, 'contextWindow' | 'maxOutputTokens' | 'reasoning'>;
+
+export const buildOllamaChatBody = (request: AdapterRequest, capabilities: OllamaBodyCapabilities, stream: boolean): OllamaChatBody => {
   requireToolChoice(request);
   const system = systemTextOf(request.instructions, request.input);
   const messages = [...(system.length === 0 ? [] : [{ role: 'system', content: system.join(SYSTEM_PART_SEPARATOR) }]), ...ollamaHistoryOf(request.input)];
   return {
     model: request.model,
     messages,
-    stream: true,
+    stream,
     truncate: false,
     options: {
       num_ctx: capabilities.contextWindow,
@@ -57,6 +61,8 @@ export const buildOllamaBody = (request: AdapterRequest, capabilities: Capabilit
     },
     ...(sendsTools(request) ? { tools: (request.tools ?? []).map(toolOf) } : {}),
     ...formatOf(request),
-    ...thinkOf(request.reasoning_effort),
+    ...thinkOf(request.reasoning_effort, capabilities.reasoning),
   };
 };
+
+export const buildOllamaBody = (request: AdapterRequest, capabilities: OllamaBodyCapabilities): OllamaChatBody => buildOllamaChatBody(request, capabilities, true);

@@ -5,6 +5,7 @@ import {
   FAKE_DETERMINISTIC_REPLY,
   FAKE_GUARDRAIL_ERROR,
   FAKE_PAYLOAD_TOO_LARGE_ERROR,
+  FM_GUARDRAIL_ERROR,
   countFakeRequestTokens,
   countFakeTokens,
   fakeUsageOfRequest,
@@ -329,6 +330,25 @@ describe('universal rejections', () => {
     expect(json(response)).toEqual(FAKE_GUARDRAIL_ERROR);
     expect(FAKE_GUARDRAIL_ERROR.error.code).toBe('guardrail_violation');
     expect((await chat(fake.socketPath, { messages: [{ role: 'user', content: 'harmless' }] })).status).toBe(200);
+  });
+
+  it('answers a guardrail trigger on the fm wire as the real fm does: HTTP 200, a role chunk, then an error event with code 500 and no finish_reason', async () => {
+    const fake = await start({ scenario: 'tools-ok', wire: 'fm', guardrailTrigger: 'FORBIDDEN-TOPIC' });
+    const response = await chat(fake.socketPath, { model: 'system', messages: [{ role: 'user', content: 'tell me FORBIDDEN-TOPIC now' }] });
+    expect(response.status).toBe(200);
+    const blocks = response.text.split('\n\n').filter((block) => block !== '');
+    expect(blocks).toHaveLength(2);
+    expect(JSON.parse(blocks[0]!.replace(/^data: /, '')).choices).toEqual([{ index: 0, delta: { role: 'assistant' }, finish_reason: null }]);
+    expect(blocks[1]).toBe(`event: error\ndata: ${JSON.stringify(FM_GUARDRAIL_ERROR)}`);
+    expect(FM_GUARDRAIL_ERROR).toEqual({ error: { code: '500', type: 'server_error', message: "The model's safety guardrails were triggered." } });
+  });
+
+  it('answers a failed native sample on the fm wire with the measured guardrail error event', async () => {
+    const fake = await start({ scenario: 'tools-ok', wire: 'fm', failNativeSamples: [0] });
+    const tools = [{ type: 'function', function: { name: 'echo', parameters: { type: 'object' } } }];
+    const response = await chat(fake.socketPath, { model: 'system', tools, messages: [{ role: 'user', content: 'call echo' }] });
+    expect(response.status).toBe(200);
+    expect(response.text).toContain(`event: error\ndata: ${JSON.stringify(FM_GUARDRAIL_ERROR)}`);
   });
 
   it('rejects requests exceeding the context window with context_length_exceeded', async () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CONTEXT_DATASET_FORMAT,
+  CONTEXT_REPORT_FORMAT,
   EvalError,
   buildContextReport,
   caseSettingsFor,
@@ -41,7 +42,10 @@ const EVERY_KEY: PolicyOverlay = {
 
 describe('parsePolicyOverlay', () => {
   it('accepts every token key', () => {
-    expect(parsePolicyOverlay(JSON.stringify(EVERY_KEY), 'policy.json')).toEqual(EVERY_KEY);
+    expect(parsePolicyOverlay(JSON.stringify(EVERY_KEY), 'policy.json')).toEqual({
+      ...EVERY_KEY,
+      context: { ...EVERY_KEY.context, outputFormatters: ['grep', 'identicalOutput', 'json', 'log'] },
+    });
   });
 
   it('accepts an empty overlay', () => {
@@ -159,5 +163,58 @@ describe('compare --gate token, the policies and the code digests', () => {
 
   it('still compares identical policies on identical code under the context gate, which judges guidelines', () => {
     expect(() => compareContextReports(reportWith(), reportWith(), { seed: 1, gate: 'context' })).not.toThrow();
+  });
+});
+
+describe('policies are compared by their effect', () => {
+  it('refuses an empty overlay against one that sets deferral to its default false, on the same code', () => {
+    expect(() => compareContextReports(reportWith({}), reportWith({ tools: { deferral: false } }), { seed: 1, gate: 'token' })).toThrow(/identical/);
+  });
+
+  it('refuses an empty overlay against one that sets every key to its default, on the same code', () => {
+    const allDefaults: PolicyOverlay = {
+      context: { cachePrefix: false, outputFormatters: [], loopGuidance: false, observedCapacity: false },
+      tools: { deferral: false, conciseDescriptions: false },
+      memory: { repositoryFacts: false },
+    };
+    expect(() => compareContextReports(reportWith({}), reportWith(allDefaults), { seed: 1, gate: 'token' })).toThrow(/identical/);
+  });
+
+  it('refuses two overlays whose formatters differ only in order, on the same code', () => {
+    const left: PolicyOverlay = { context: { outputFormatters: ['log', 'json'] } };
+    const right: PolicyOverlay = { context: { outputFormatters: ['json', 'log'] } };
+    expect(() => compareContextReports(reportWith(left), reportWith(right), { seed: 1, gate: 'token' })).toThrow(/identical/);
+  });
+
+  it('still accepts an overlay that turns a key on against one that leaves it at its default', () => {
+    expect(() => compareContextReports(reportWith({ tools: { deferral: false } }), reportWith({ tools: { deferral: true } }), { seed: 1, gate: 'token' })).not.toThrow();
+  });
+
+  it('records the same policy in a report for an empty overlay and for an overlay of defaults', () => {
+    expect(reportWith({ tools: { deferral: false }, context: { outputFormatters: [] } }).policy).toEqual(reportWith({}).policy);
+  });
+
+  it('records the same policy in a report for formatters given in either order', () => {
+    expect(reportWith({ context: { outputFormatters: ['json', 'log'] } }).policy).toEqual(reportWith({ context: { outputFormatters: ['log', 'json'] } }).policy);
+  });
+
+  it('builds one report from transcripts whose overlays differ only by defaults', () => {
+    const mixed = transcripts.map((transcript, index) => ({ ...transcript, policy: index === 0 ? {} : { tools: { deferral: false } }, codeDigest: MAIN_CODE }));
+    expect(() => buildContextReport({ dataset, transcripts: mixed, model: 'real', seed: 1 })).not.toThrow();
+  });
+});
+
+describe('the context report format', () => {
+  it('is version 2, which records the policy and the code digest', () => {
+    expect(CONTEXT_REPORT_FORMAT).toBe('momonga-eval-context-report/2');
+    expect(reportWith().format).toBe('momonga-eval-context-report/2');
+  });
+
+  it('refuses a version 1 report, naming the retired format, the required one and the file, not a schema path', () => {
+    const { policy: _policy, codeDigest: _digest, ...rest } = reportWith();
+    const retired = JSON.stringify({ ...rest, format: 'momonga-eval-context-report/1' });
+    expect(() => parseContextReport(retired, 'base.json')).toThrow(EvalError);
+    expect(() => parseContextReport(retired, 'base.json')).toThrow(/base\.json.*momonga-eval-context-report\/1 .*momonga-eval-context-report\/2/);
+    expect(() => parseContextReport(retired, 'base.json')).not.toThrow(/required property/);
   });
 });

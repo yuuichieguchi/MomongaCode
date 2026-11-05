@@ -210,6 +210,7 @@ const candidateInput = (capabilities: ReturnType<typeof capabilitiesFor>): Build
   model: MODEL,
   sources: sourcesWith({ history: candidateHistory(capabilities) }),
   evicted: new Set<string>(),
+  recordedReferences: new Set<string>(),
   touchedPaths: [],
   trusted: true,
   projectRoot: PROJECT,

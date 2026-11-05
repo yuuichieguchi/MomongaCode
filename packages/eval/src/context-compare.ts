@@ -29,7 +29,7 @@ export type GateCheckName = (typeof GATE_CHECKS)[number] | 'passRate' | TokenPri
 
 export type GateCheck = { name: GateCheckName; passed: boolean; detail: string };
 
-type ReportIdentity = { dataset: string; model: ContextReport['model']; policy: PolicyOverlay; codeDigest: string };
+type ReportIdentity = { dataset: string; model: ContextReport['model']; policy: PolicyOverlay | null; codeDigest: string | null };
 
 export type ContextComparison = {
   gateName: GateName;
@@ -213,7 +213,17 @@ const tokenPrimaryOf = (baseline: ContextReport, candidate: ContextReport, pairs
 
 const identityOf = (report: ContextReport): ReportIdentity => ({ dataset: report.dataset, model: report.model, policy: report.policy, codeDigest: report.codeDigest });
 
+const assertIdentityKnown = (label: string, report: ContextReport): void => {
+  if (report.policy === null || report.codeDigest === null) {
+    throw new EvalError(
+      `the ${label} report states its policy and code digest as unknown, because its transcripts come from a daemon that does not record them (eval run --record); record it with eval context, which pins both`,
+    );
+  }
+};
+
 const assertSomethingDiffers = (baseline: ContextReport, candidate: ContextReport): void => {
+  assertIdentityKnown('baseline', baseline);
+  assertIdentityKnown('candidate', candidate);
   if (canonicalJson(baseline.policy) === canonicalJson(candidate.policy) && baseline.codeDigest === candidate.codeDigest) {
     throw new EvalError(
       'the reports record an identical policy and an identical code digest, so nothing differs between them to measure; compare a policy off against on, or the code of main against the head',

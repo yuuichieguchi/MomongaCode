@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { momongaPaths } from '@momonga/foundation';
-import { endpointIdentityOf, loadEndpointRecord, probeEndpointTarget, saveEndpointRecord } from '@momonga/gateway';
+import { endpointIdentityOf, endpointKeyOf, loadEndpointRecord, probeEndpointTarget, saveEndpointRecord } from '@momonga/gateway';
 import { tokensForText } from '@momonga/protocol';
 import type { FakeChatCompletionsOptions } from '@momonga/testkit';
 import { getJson, postJson, readJson, userInput } from './gateway-helpers.ts';
@@ -33,8 +33,7 @@ const probedSetup = async (models: () => Array<Record<string, unknown>>) => {
   });
   await probeEndpointTarget({
     probeRecordDir: momongaPaths(home, process.platform, {}).probe,
-    upstream: { kind: 'unix', socketPath: fake.socketPath },
-    model: 'qwen-fake',
+    upstream: { kind: 'unix', socketPath: fake.socketPath }, key: { endpoint: endpointKeyOf({ kind: 'unix', socketPath: fake.socketPath }), model: 'qwen-fake' }, model: 'qwen-fake',
     apiKey: undefined,
     samples: 2,
   });
@@ -89,7 +88,7 @@ describe('chat-completions target with toolCalling auto', () => {
     );
 
     expect(response.status).toBe(200);
-    expect((completions(fake)[0]?.body as { max_tokens?: number }).max_tokens).toBe(400);
+    expect((completions(fake)[0]?.body as { max_completion_tokens?: number }).max_completion_tokens).toBe(400);
   });
 
   it('refuses a record whose identity differs from what the server shows now, and says the record is stale', async () => {

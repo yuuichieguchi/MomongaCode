@@ -49,6 +49,7 @@ export type FakeOllamaOptions = {
   show?: unknown;
   tags?: () => unknown;
   completions?: readonly string[];
+  cacheProbe?: 'automatic' | 'none' | 'unreported' | 'malformed';
 };
 
 export type FakeOllama = {
@@ -57,6 +58,29 @@ export type FakeOllama = {
   chatBodies(): any[];
   closedChats(): number;
   close(): Promise<void>;
+};
+
+const isNonStreamingChat = (body: unknown): boolean => typeof body === 'object' && body !== null && (body as { stream?: unknown }).stream === false;
+
+const IMAGE_PROBE_PROMPT = 'Describe this image.';
+
+const isImageProbeChat = (body: unknown): boolean => isNonStreamingChat(body) && JSON.stringify(body).includes(IMAGE_PROBE_PROMPT);
+
+const isProbeChat = (body: unknown): boolean => isNonStreamingChat(body) && !isImageProbeChat(body);
+
+const PIXELS_PER_IMAGE_TOKEN = 750;
+const MAX_IMAGE_TOKENS = 1600;
+const IMAGE_PROBE_BASE_TOKENS = 20;
+
+const imageTokensOf = (base64: string): number => {
+  const png = Buffer.from(base64, 'base64');
+  const pixels = png.readUInt32BE(16) * png.readUInt32BE(20);
+  return Math.min(MAX_IMAGE_TOKENS, Math.max(1, Math.ceil(pixels / PIXELS_PER_IMAGE_TOKEN)));
+};
+
+const imageProbeTokens = (body: unknown): number => {
+  const messages = (body as { messages: Array<{ images?: string[] }> }).messages;
+  return IMAGE_PROBE_BASE_TOKENS + messages.flatMap((message) => message.images ?? []).reduce((sum, image) => sum + imageTokensOf(image), 0);
 };
 
 const writeLine = (response: http.ServerResponse, line: string): Promise<void> =>
@@ -106,6 +130,22 @@ export const startFakeOllama = async (options: FakeOllamaOptions = {}): Promise<
       res.end('data: [DONE]\n\n');
       return;
     }
+    if (url.pathname === '/api/chat' && req.method === 'POST' && isImageProbeChat(body)) {
+      const { prompt_eval_cached_count: _omitted, ...withoutCached } = JSON.parse(doneLine());
+      sendJson(res, 200, { ...withoutCached, prompt_eval_count: imageProbeTokens(body) });
+      return;
+    }
+    if (url.pathname === '/api/chat' && req.method === 'POST' && isProbeChat(body)) {
+      const repeated = requests.filter((request) => request.path === '/api/chat' && isProbeChat(request.body)).length > 1;
+      const behaviour = options.cacheProbe ?? 'none';
+      const { prompt_eval_cached_count: _omitted, ...withoutCached } = JSON.parse(doneLine());
+      if (behaviour === 'malformed') {
+        sendJson(res, 200, { ...withoutCached, prompt_eval_cached_count: 'many' });
+        return;
+      }
+      sendJson(res, 200, behaviour === 'unreported' ? withoutCached : { ...withoutCached, prompt_eval_cached_count: behaviour === 'automatic' && repeated ? 1500 : 0 });
+      return;
+    }
     if (url.pathname === '/api/chat' && req.method === 'POST') {
       res.on('close', () => {
         closedChats += 1;
@@ -134,7 +174,7 @@ export const startFakeOllama = async (options: FakeOllamaOptions = {}): Promise<
   return {
     origin: server.origin,
     requests,
-    chatBodies: () => requests.filter((request) => request.path === '/api/chat').map((request) => request.body),
+    chatBodies: () => requests.filter((request) => request.path === '/api/chat' && !isImageProbeChat(request.body)).map((request) => request.body),
     closedChats: () => closedChats,
     close: () => server.close(),
   };

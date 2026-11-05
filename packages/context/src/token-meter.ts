@@ -34,8 +34,11 @@ type Decomposition = {
   sigmaB: Sigma;
 };
 
+type FrozenChoice = { epoch: number; split: boolean; underAt: ((tokens: number) => number) | undefined };
+
 type Counted = {
   epoch: number;
+  frozenKey: string | undefined;
   decomposition: Decomposition;
   input: readonly InputItem[];
   tools: readonly FunctionTool[];
@@ -79,9 +82,10 @@ const nothingCounted = (inputTokens: number, known: number, uncounted: number): 
 
 const ceilQuotient = (numerator: bigint, denominator: bigint): bigint => (numerator + denominator - 1n) / denominator;
 
-export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOptions): TokenMeter => {
+export const createTokenMeter = ({ counter, model, capabilities, observedCapacity = false }: TokenMeterOptions): TokenMeter => {
   const replies = new Map<string, Reply>();
   const counted = new Map<string, Counted>();
+  const frozenChoices = new Map<string, FrozenChoice>();
   const itemTokens = new Map<string, number>();
   const baselines = new Map<string, number>();
   let misses: readonly MeterMiss[] = [];
@@ -195,25 +199,60 @@ export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOpt
     freshUnderAt,
   });
 
-  const count = async ({ input, tools, instructions }: MeterRequest): Promise<MeterCount> => {
-    const chain = digestChain({ instructions: instructions ?? null, tools }, input);
+  const candidatesOf = async (
+    chain: readonly string[],
+    input: readonly InputItem[],
+    tools: readonly FunctionTool[],
+    instructions: string | undefined,
+  ) => {
     const inputDigest = chain[input.length] as string;
-    const known = counted.get(inputDigest);
-    if (known !== undefined && known.epoch === epoch) return known.view;
-
     const fresh = await replyFor(`fresh:${inputDigest}`, requestOf(input, tools, instructions));
     const freshDecomposition: Decomposition = { ...nothingCounted(fresh.tokens, 0, fresh.tokens), restB: fresh.tokens, sigmaB: sigmaOf(fresh) };
     const window = misses;
     const freshUnderAt = underOf(freshDecomposition, window);
     const split = await splitOf(chain, input, tools, instructions, fresh);
     const splitUnderAt = split === undefined ? undefined : underOf(split, window);
-    const useSplit =
+    const splitWins =
       split !== undefined &&
       splitUnderAt !== undefined &&
       split.inputTokens + splitUnderAt(split.inputTokens) <= fresh.tokens + freshUnderAt(fresh.tokens);
+    return { inputDigest, freshDecomposition, freshUnderAt, split, splitUnderAt, splitWins };
+  };
+
+  const frozenChoiceOf = async ({ frozen, tools, instructions }: MeterRequest & { frozen: readonly InputItem[] }): Promise<{ key: string; choice: FrozenChoice }> => {
+    const chain = digestChain({ instructions: instructions ?? null, tools }, frozen);
+    const key = `${chain[0]}:${chain[frozen.length]}`;
+    if (latest === undefined || latest.chain[0] !== chain[0]) return { key, choice: { epoch, split: false, underAt: undefined } };
+    const known = frozenChoices.get(key);
+    if (known !== undefined && known.epoch === epoch) return { key, choice: known };
+    const candidates = await candidatesOf(chain, frozen, tools, instructions);
+    const choice: FrozenChoice = {
+      epoch,
+      split: candidates.splitWins,
+      underAt: candidates.splitWins && candidates.splitUnderAt !== undefined ? candidates.splitUnderAt : candidates.freshUnderAt,
+    };
+    remember(frozenChoices, key, choice, MAX_COUNTED);
+    return { key, choice };
+  };
+
+  const count = async (request: MeterRequest): Promise<MeterCount> => {
+    const { input, tools, instructions, frozen, sent } = request;
+    const chain = digestChain({ instructions: instructions ?? null, tools }, input);
+    const inputDigest = chain[input.length] as string;
+    const frozenResolved = frozen === undefined ? undefined : await frozenChoiceOf({ ...request, frozen });
+    const frozenKey = frozenResolved?.key;
+    const known = frozen === undefined || sent === true ? counted.get(inputDigest) : undefined;
+    if (known !== undefined && known.epoch === epoch && (frozenKey === undefined || known.frozenKey === frozenKey)) return known.view;
+
+    const { freshDecomposition, freshUnderAt, split, splitUnderAt, splitWins } = await candidatesOf(chain, input, tools, instructions);
+    const useSplit = split !== undefined && splitUnderAt !== undefined && (frozenResolved === undefined ? splitWins : frozenResolved.choice.split);
     const chosen = useSplit ? split : freshDecomposition;
-    const view = viewOf(inputDigest, chosen, freshUnderAt, useSplit && splitUnderAt !== undefined ? splitUnderAt : freshUnderAt);
-    remember(counted, inputDigest, { epoch, decomposition: chosen, input, tools, instructions, chain, view }, MAX_COUNTED);
+    const ownUnderAt = useSplit ? splitUnderAt : freshUnderAt;
+    const underAt = frozenResolved === undefined || sent === true ? ownUnderAt : (frozenResolved.choice.underAt ?? ownUnderAt);
+    const view = viewOf(inputDigest, chosen, freshUnderAt, underAt);
+    if (frozen === undefined || sent === true) {
+      remember(counted, inputDigest, { epoch, frozenKey, decomposition: chosen, input, tools, instructions, chain, view }, MAX_COUNTED);
+    }
     return view;
   };
 
@@ -235,7 +274,7 @@ export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOpt
     if (record === undefined) throw new Error(`token meter has no count for input digest ${inputDigest}`);
     const { decomposition } = record;
     const reported = inputTokens;
-    const kept = Math.max(decomposition.inputTokens, reported);
+    const kept = observedCapacity ? reported : Math.max(decomposition.inputTokens, reported);
     const miss = Math.max(0, reported - (decomposition.inputTokens - decomposition.overCount) - decomposition.fixedA - decomposition.sigmaB(decomposition.restB));
     latest = {
       input: record.input,
@@ -278,7 +317,7 @@ export const createTokenMeter = ({ counter, model, capabilities }: TokenMeterOpt
             inputDigest: report.observation.inputDigest,
             itemCount: report.observation.itemCount,
             reported: report.observation.reported,
-            kept: report.observation.kept,
+            kept: observedCapacity ? report.observation.reported : report.observation.kept,
           };
     epoch += 1;
   };

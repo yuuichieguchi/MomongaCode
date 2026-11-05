@@ -1,16 +1,17 @@
 import { canonicalJson, createRedactor, systemClock } from '@momonga/foundation';
-import { createFsInstructionReader } from '@momonga/context';
+import { createFsInstructionReader, createTokenMeter } from '@momonga/context';
+import type { TokenCounter } from '@momonga/context';
 import { COMPACTION_INSTRUCTIONS_MARKER, wireOf, wireTokensOf } from '@momonga/gateway';
 import type { ChatWire } from '@momonga/gateway';
-import { ESTIMATED_ERROR_BOUND_RATIO, marginFloorFor, summaryItemTokensFor, summaryTokenCapFor } from '@momonga/protocol';
-import type { Capabilities, CountTokensResult, FunctionCallItem, RunEvent } from '@momonga/protocol';
+import { ESTIMATED_CHARACTERS_PER_TOKEN, ESTIMATED_ERROR_SHAPE, countReplyOf, marginFloorFor, summaryItemTokensFor, summaryTokenCapFor } from '@momonga/protocol';
+import type { Capabilities, CountTokensResult, CreateResponseBody, FunctionCallItem, InputItem, RunEvent } from '@momonga/protocol';
 import { RUNTIME_DEFAULTS, buildSystemPrompt, createGatewayClient, createHistoryPort, createMemoryPort } from '@momonga/runtime';
 import type { GatewayPort } from '@momonga/runtime';
 import { createUnsandboxed } from '@momonga/sandbox';
 import type { FakeRoute, FakeScriptedReply } from '@momonga/testkit';
 import { usageOf } from '@momonga/testkit';
 import { createBuiltinTools } from '@momonga/tools';
-import { budgetFor, itemCapFor } from '../../packages/context/src/budget.ts';
+import { budgetFor, capacityFor, inputCeilingFor, itemCapFor } from '../../packages/context/src/budget.ts';
 import { errorBoundFor } from '../../packages/gateway/src/core/estimate.ts';
 import { makeEnv, unavailableEvidenceRun } from '../../packages/runtime/test/worker/harness.ts';
 import type { ScriptStep } from '../../packages/runtime/test/worker/fake-gateway.ts';
@@ -18,7 +19,7 @@ import { outputStep, textStep } from '../../packages/runtime/test/worker/scripts
 import { HAYSTACK_LINE_COUNT, HAYSTACK_READ_BACK_LINE, NEEDLE, writeFiller } from './haystack.ts';
 import type { Haystack } from './haystack.ts';
 import type { E2eHome } from './home.ts';
-import { E2E_MODEL_ALIAS } from './gateway-count.ts';
+import { E2E_MODEL_ALIAS, countRequestOf } from './gateway-count.ts';
 import { SESSION_PATH } from './runtime-client.ts';
 import { SUPERVISOR_APP_VERSION } from './stack.ts';
 import { envelopeFinalReply, envelopeToolCallsReply, textReply, toolCallReply, wireTokensOfRequest } from './upstream.ts';
@@ -29,11 +30,9 @@ export const ACCEPTANCE_TASK = 'Search the haystack';
 export const FINAL_TEXT = 'searched';
 export const ACCEPTANCE_WINDOW = 4096;
 export const ACCEPTANCE_MAX_OUTPUT = 1024;
-export const ITEM_ROOM_RATIO = 0.5;
 export const COMPACTION_MIN_GAIN = 2;
 export const HIGH_MARK_RATIO = 0.7;
 export const EVICT_LOW_WATER = 0.5;
-export const MIN_ITEM_CAP = 64;
 export const PERTURBATIONS: readonly number[] = [0, -2, 2];
 export const REPORTED_BELOW_ESTIMATE_TOKENS = Math.floor(marginFloorFor(ACCEPTANCE_WINDOW) / 2);
 export const SCRIPTED_OUTPUT_TOKENS = 5;
@@ -147,9 +146,9 @@ export const wireTokensOfBody = wireTokensOfRequest;
 
 export const sizingFor = (capabilities: Capabilities, pinned: number): Sizing => {
   const { W, R } = budgetFor(capabilities, 0);
-  const ceiling = Math.floor((W - R - marginFloorFor(W)) / (1 + ESTIMATED_ERROR_BOUND_RATIO));
+  const ceiling = inputCeilingFor(capabilities);
   const room = ceiling - pinned;
-  const itemCap = Math.max(MIN_ITEM_CAP, Math.min(itemCapFor(capabilities), Math.floor(ITEM_ROOM_RATIO * room)));
+  const itemCap = itemCapFor(capabilities, room);
   const summaryCap = summaryTokenCapFor(capabilities, room);
   const summaryItem = summaryItemTokensFor(summaryCap);
   const highMark = pinned + HIGH_MARK_RATIO * room;
@@ -167,6 +166,67 @@ export const sizingFor = (capabilities: Capabilities, pinned: number): Sizing =>
     lowMark: pinned + EVICT_LOW_WATER * (highMark - pinned),
     gainThreshold: COMPACTION_MIN_GAIN * summaryItem,
   };
+};
+
+const textItemOf = (tokens: number): InputItem => ({ type: 'message', role: 'user', content: 'x'.repeat(ESTIMATED_CHARACTERS_PER_TOKEN * tokens) });
+
+const estimatingCounter = (capabilities: Capabilities): TokenCounter => ({
+  count: async (request) => {
+    if (typeof request.input === 'string') throw new Error('the estimating counter counts message items, not a bare string');
+    const characters = request.input.reduce((sum, item) => sum + (item.type === 'message' && typeof item.content === 'string' ? item.content.length : 0), 0);
+    return countReplyOf(Math.ceil(characters / ESTIMATED_CHARACTERS_PER_TOKEN), capabilities.tokenCounting, ESTIMATED_ERROR_SHAPE);
+  },
+});
+
+export const underAtAfterReport = async (capabilities: Capabilities, known: number): Promise<(tokens: number) => number> => {
+  if (capabilities.tokenCounting !== 'estimated') throw new Error(`the bound after a report is derived for an estimated target, not ${capabilities.tokenCounting}`);
+  const meter = createTokenMeter({ counter: estimatingCounter(capabilities), model: E2E_MODEL_ALIAS, capabilities });
+  const first = await meter.count({ input: [textItemOf(known)], tools: [] });
+  meter.observe({ inputDigest: first.inputDigest, inputTokens: first.inputTokens });
+  const grown = await meter.count({ input: [textItemOf(known), textItemOf(1)], tools: [] });
+  if (grown.known !== known) throw new Error(`the meter did not split the build after the report: known ${grown.known}, expected ${known}`);
+  return grown.underAt;
+};
+
+export const fitLimitAfterReport = async (capabilities: Capabilities, known: number): Promise<number> =>
+  capacityFor(capabilities, await underAtAfterReport(capabilities, known));
+
+export type StepRange = { readonly lowest: number; readonly highest: number };
+
+export const overflowStepRange = async (capabilities: Capabilities, base: number, steps: number): Promise<StepRange> => {
+  if (steps < 2) throw new Error('a range needs at least two steps: one that fits and one that stops fitting');
+  const limits = new Map<number, number>();
+  const limitAfter = async (known: number): Promise<number> => {
+    const cached = limits.get(known);
+    if (cached !== undefined) return cached;
+    const limit = await fitLimitAfterReport(capabilities, known);
+    limits.set(known, limit);
+    return limit;
+  };
+  const stepsFit = async (stepTokens: number, count: number): Promise<boolean> => {
+    for (let step = 1; step <= count; step += 1) {
+      if (base + step * stepTokens > (await limitAfter(base + (step - 1) * stepTokens))) return false;
+    }
+    return true;
+  };
+  const largest = async (holds: (stepTokens: number) => Promise<boolean>): Promise<number> => {
+    let low = 0;
+    let high = budgetFor(capabilities, 0).I;
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      if (await holds(middle)) low = middle;
+      else high = middle - 1;
+    }
+    return low;
+  };
+  const range = {
+    lowest: (await largest((stepTokens) => stepsFit(stepTokens, steps))) + 1,
+    highest: await largest((stepTokens) => stepsFit(stepTokens, steps - 1)),
+  };
+  if (range.lowest > range.highest) {
+    throw new Error(`no step size makes the last of ${steps} steps stop fitting while the one before fits: ${range.lowest} to ${range.highest} (base ${base})`);
+  }
+  return range;
 };
 
 const grepCall = (haystack: Haystack): ScriptCall => ({ name: 'Grep', arguments: { pattern: NEEDLE, path: haystack.file, output_mode: 'content' } });
@@ -266,13 +326,18 @@ export const verdictOf = (facts: AcceptanceFacts, escalates = false): string | u
   return undefined;
 };
 
-export const escalationBudgetVerdict = (facts: Pick<AcceptanceFacts, 'requestsBeforeEscalation'>, wireCounts: readonly number[], sizing: Pick<Sizing, 'ceiling'>): string | undefined => {
+export const escalationBudgetVerdict = async (
+  facts: Pick<AcceptanceFacts, 'requestsBeforeEscalation'>,
+  wireCounts: readonly number[],
+  capabilities: Capabilities,
+): Promise<string | undefined> => {
   const before = facts.requestsBeforeEscalation;
   if (before === undefined || before < 3) return `(g) too few requests before the escalation (${before ?? 'none'}) to measure the growth of a step`;
   const previous = wireCounts[before - 1] as number;
   const growth = Math.max(0, ...wireCounts.slice(1, before).map((count, index) => count - (wireCounts[index] as number)));
-  if (previous + growth > sizing.ceiling) return undefined;
-  return `(g) escalated although the request before it (${previous} tokens) plus one more step (${growth}) stays within the ceiling ${sizing.ceiling}`;
+  const fitLimit = await fitLimitAfterReport(capabilities, previous);
+  if (previous + growth > fitLimit) return undefined;
+  return `(g) escalated although the request before it (${previous} tokens) plus one more step (${growth}) stays within the fit limit ${fitLimit}`;
 };
 
 type DryRunInput = { readonly plan: PlanInput; readonly steps: readonly PlannedStep[]; readonly perturbation: number; readonly fillers: number };
@@ -286,11 +351,14 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
   const client = createGatewayClient({ socketPath: plan.gatewaySocket, clock: env.clock, version: SUPERVISOR_APP_VERSION });
   try {
     const fake = env.gateway;
+    const listing = await client.model(E2E_MODEL_ALIAS, { signal: AbortSignal.timeout(30_000) });
+    fake.targetsByAlias[E2E_MODEL_ALIAS] = [...listing.targets];
+    for (const [target, counter] of Object.entries(listing.targetCounters)) fake.countersByTarget.set(target, counter);
     fake.script = dryRunStepsOf(steps, plan.spec.toolCalling);
     const counts: CountTokensResult[] = [];
     const observedCounts: number[] = [];
     const reportingStream = async function* (body: Parameters<GatewayPort['stream']>[0], options: Parameters<GatewayPort['stream']>[1]) {
-      const counted = await client.countTokens(body as Parameters<GatewayPort['countTokens']>[0], { signal: options.signal });
+      const counted = await client.countTokens(countRequestOf(body), { signal: options.signal });
       const reported = Math.max(0, counted.input_tokens + perturbation - REPORTED_BELOW_ESTIMATE_TOKENS);
       for await (const event of fake.stream(body, options)) {
         if (event.type === 'response.completed' || event.type === 'response.incomplete') {
@@ -354,7 +422,7 @@ export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput
     const bodies = ofType(journal, 'model.requested').map((event) => event.data['body']);
     const signal = AbortSignal.timeout(30_000);
     const wireCounts: number[] = [];
-    for (const body of bodies) wireCounts.push((await client.countTokens(body as Parameters<GatewayPort['countTokens']>[0], { signal })).input_tokens);
+    for (const body of bodies) wireCounts.push((await client.countTokens(countRequestOf(body as CreateResponseBody), { signal })).input_tokens);
     return {
       perturbation,
       fillers,
@@ -418,7 +486,7 @@ export const planScript = async (input: PlanInput, capabilities: Capabilities): 
     for (const perturbation of PERTURBATIONS) {
       const run = await dryRun({ plan: input, steps, perturbation, fillers });
       runs.push(run);
-      const budgetVerdict = input.spec.escalates === true && sizing !== undefined ? escalationBudgetVerdict(run.facts, run.wireCounts, sizing) : undefined;
+      const budgetVerdict = input.spec.escalates === true ? await escalationBudgetVerdict(run.facts, run.wireCounts, capabilities) : undefined;
       verdict = verdictOf(run.facts, input.spec.escalates === true) ?? singleClaimVerdict(run) ?? budgetVerdict;
       if (verdict !== undefined) {
         verdict = `perturbation ${perturbation}: ${verdict}`;

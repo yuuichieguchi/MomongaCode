@@ -5,6 +5,7 @@ import { FAILURE_MARKERS, formattingViolations } from './invariants.ts';
 import type { FormattingViolation } from './invariants.ts';
 import { formatJson } from './json.ts';
 import { formatLog } from './log.ts';
+import { HANDLE_READER_TOOL } from '../tool-output.ts';
 
 export { FAILURE_MARKERS, formattingViolations, formatGrep, formatJson, formatLog };
 export type { FormattingViolation };
@@ -12,6 +13,11 @@ export type { FormattingViolation };
 export type FormattedOutput = { output: string; formatter: 'log' | 'json' | 'grep'; version: number };
 
 export const FORMATTER_VERSIONS = { log: 1, json: 1, grep: 1 } as const;
+
+const HANDLE_PLACEHOLDER = '0'.repeat(64);
+
+export const formattedHeader = (formatter: FormattedOutput['formatter'], handle: string): string =>
+  `[formatted by ${formatter}; raw output ${handle}; read it with ${HANDLE_READER_TOOL}]`;
 
 const GREP_TOOL = 'Grep';
 const EXECUTE_KIND = 'execute';
@@ -45,6 +51,6 @@ export const formatToolOutput = (input: {
   const formatted =
     formatter === 'grep' ? formatGrep(raw) : formatter === 'json' ? formatJson(raw, input.terms.map(asciiLower)) : formatLog(raw);
   if (formatted === undefined) return undefined;
-  if (formattingViolations({ raw, formatted, handle: '' }).length > 0) return undefined;
+  if (formattingViolations({ raw, formatted, handle: '', header: formattedHeader(formatter, HANDLE_PLACEHOLDER) }).length > 0) return undefined;
   return { output: formatted, formatter, version: FORMATTER_VERSIONS[formatter] };
 };

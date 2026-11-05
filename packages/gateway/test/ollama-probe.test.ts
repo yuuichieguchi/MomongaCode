@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { loadEndpointRecord, probeOllamaTarget } from '@momonga/gateway';
+import { endpointKeyOf, loadEndpointRecord, probeOllamaTarget } from '@momonga/gateway';
 import { makeDir } from './gateway-helpers.ts';
 import { DEVSTRAL_DIGEST, OLLAMA_MODEL, QWEN_DIGEST, QWEN_MODEL, TRAINED_CONTEXT_LENGTH, startFakeOllama, tagsWithDevstralDigest } from './ollama-support.ts';
 
 const probe = (origin: string, dir: string, contextWindow: number, model = OLLAMA_MODEL) =>
-  probeOllamaTarget({ probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: origin }, model, contextWindow });
+  probeOllamaTarget({ probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: origin }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: origin }), model }, model, contextWindow });
 
 describe('the Ollama probe', () => {
   it('reads /api/version, /api/show for the model and /api/tags, and records the digest as the upstream identity', async () => {
@@ -13,7 +13,7 @@ describe('the Ollama probe', () => {
 
     const result = await probe(fake.origin, dir, 32768);
 
-    expect(fake.requests.map((request) => `${request.method} ${request.path}`).sort()).toEqual(['GET /api/tags', 'GET /api/version', 'POST /api/show']);
+    expect(fake.requests.map((request) => `${request.method} ${request.path}`).sort()).toEqual(['GET /api/tags', 'GET /api/version', ...Array.from({ length: 7 }, () => 'POST /api/chat'), 'POST /api/show']);
     expect(fake.requests.find((request) => request.path === '/api/show')?.body).toMatchObject({ model: OLLAMA_MODEL });
     expect(result.identity).toBe(DEVSTRAL_DIGEST);
     expect(result.key).toEqual({ endpoint: fake.origin, model: OLLAMA_MODEL });

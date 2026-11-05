@@ -1,10 +1,10 @@
-import { PinnedOverflowError, formatToolOutput } from '@momonga/context';
+import { PinnedOverflowError, formatToolOutput, formattedHeader } from '@momonga/context';
 import { canonicalJson, parseJsonOrText } from '@momonga/foundation';
 import { termsOf } from '@momonga/protocol';
 import type { PermissionOption, RunEventPayload, RunState, ToolAwait } from '@momonga/protocol';
 import type { BatchOutputFormatter, CallOutcome, DisplayContext, NeedsApprovalOutcome, NeedsInputOutcome, ResultOutcome, ToolCall, WaitingOutcome } from '@momonga/tools';
 import { validateToolInput } from '@momonga/tools';
-import type { Session } from '@momonga/store';
+import type { RuntimeStore, Session } from '@momonga/store';
 import { createToolHooks } from '@momonga/tools';
 import { permissionRulesFor } from '../governance/rules.ts';
 import { createAutoClassifier } from './auto-classifier.ts';
@@ -13,6 +13,8 @@ import type { TraceSpan } from '../ports.ts';
 import type { ClaimContext, Flow } from './claim-context.ts';
 import { pinnedFailureFor, taskOf } from './context-step.ts';
 import { ownEntries } from './own-entries.ts';
+import { offeredInBody } from './tool-offer.ts';
+import type { OfferedInBody } from './tool-offer.ts';
 
 export const REJECTED_OUTPUT = 'The user rejected this tool call.';
 
@@ -37,9 +39,9 @@ const callPayload = (ctx: ClaimContext, display: DisplayContext, item: { call_id
   };
 };
 
-export const recordCalls = (ctx: ClaimContext): void => {
+export const recordCalls = (ctx: ClaimContext, leading: readonly RunEventPayload[] = []): void => {
   const { pendingCalls } = ctx.journal.state;
-  const payloads: RunEventPayload[] = [];
+  const payloads: RunEventPayload[] = [...leading];
   const session = ctx.options.store.getSession(ctx.run.sessionId);
   if (session === undefined) throw new Error(`unknown session ${ctx.run.sessionId}`);
   const display = ctx.options.tools.sessionState(session);
@@ -71,6 +73,7 @@ export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
     settled,
     ...(result.plan === undefined ? [] : [{ type: 'plan.updated' as const, entries: result.plan }]),
     ...(result.skill === undefined ? [] : [{ type: 'skill.activated' as const, name: result.skill.name, content: result.skill.content }]),
+    ...(result.toolsLoaded === undefined ? [] : [{ type: 'tool.loaded' as const, names: result.toolsLoaded }]),
     ...(result.authorizationRequired === undefined
       ? []
       : [{ type: 'mcp.authorization.required' as const, callId, server: result.authorizationRequired.server }]),
@@ -81,7 +84,16 @@ const batchFormatterOf = (ctx: ClaimContext): BatchOutputFormatter | undefined =
   const enabled = ctx.token.outputFormatters;
   if (enabled.length === 0) return undefined;
   const terms = termsOf(taskOf(ctx).text);
-  return ({ output, tool }) => formatToolOutput({ output, tool, enabled, terms });
+  return ({ output, tool }) => {
+    const formatted = formatToolOutput({ output, tool, enabled, terms });
+    return formatted === undefined ? undefined : { ...formatted, header: (handle) => formattedHeader(formatted.formatter, handle) };
+  };
+};
+
+export const offeredOfRequest = (store: Pick<RuntimeStore, 'readLatestRunEventBefore'>, runId: string, lastSeq: number): OfferedInBody => {
+  const requested = store.readLatestRunEventBefore(runId, 'model.requested', lastSeq + 1);
+  if (requested === undefined || requested.type !== 'model.requested') throw new Error(`run ${runId} has tool calls but no recorded model.requested before seq ${lastSeq}`);
+  return offeredInBody(runId, requested.body);
 };
 
 const approvalOptions = (suggestedRule: string | undefined): PermissionOption[] => [
@@ -200,11 +212,13 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   const spans = new Map<string, TraceSpan>();
   const halt: { reason?: string; hookEvent?: string } = {};
   const formatOutput = batchFormatterOf(ctx);
+  const offered = offeredOfRequest(options.store, run.id, journal.state.lastSeq);
   let outcomes: CallOutcome[];
   try {
     outcomes = await options.tools.executor.runBatch({
       calls,
       toolSet: ctx.toolSet,
+      offered,
       fence: ctx.claim,
       runId: run.id,
       step,
@@ -242,6 +256,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
       },
       onOutcome: (outcome) => {
         journal.append(outcomePayloads(outcome));
+        if (outcome.result.toolsLoaded !== undefined) ctx.toolLoading?.rememberLoaded(outcome.result.toolsLoaded);
         recordToolContent(spans, calls, outcome);
       },
       onStarted: (callId, idemKey, basis) => journal.append([{ type: 'tool.started', callId, idemKey, basis }]),

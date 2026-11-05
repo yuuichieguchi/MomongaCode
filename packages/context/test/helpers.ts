@@ -56,7 +56,15 @@ export const capabilitiesFor = (contextWindow: number, overrides: CapabilityOver
 
 export const tokensOfText = (text: string): number => Math.ceil(text.length / 4);
 
-export const tokensOfItem = (item: DeepReadonly<InputItem>): number => tokensOfText(canonicalJson(item));
+const tokensOfFrozenItems = new WeakMap<object, number>();
+
+export const tokensOfItem = (item: DeepReadonly<InputItem>): number => {
+  const known = tokensOfFrozenItems.get(item);
+  if (known !== undefined) return known;
+  const tokens = tokensOfText(canonicalJson(item));
+  if (Object.isFrozen(item)) tokensOfFrozenItems.set(item, tokens);
+  return tokens;
+};
 
 export const tokensOfItems = (items: readonly DeepReadonly<InputItem>[]): number =>
   items.reduce((sum, item) => sum + tokensOfItem(item), 0);
@@ -217,6 +225,7 @@ export const inputFor = (
   model: MODEL,
   sources: sourcesWith(),
   evicted: new Set<string>(),
+  recordedReferences: new Set<string>(),
   touchedPaths: [],
   trusted: true,
   projectRoot: PROJECT,

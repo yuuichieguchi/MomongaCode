@@ -66,18 +66,22 @@ export const truncateOutput = (output: string, limit: number, blobs: BlobPort): 
 
 export type FormattedOutputResult = { output: string; truncated: boolean; handle: string };
 
-const formattedHeader = (formatter: string, handle: string): string => `[formatted by ${formatter}; raw output ${handle}; read it with ReadOutput]`;
+const HANDLE_PLACEHOLDER = '0'.repeat(HANDLE_LENGTH);
 
-const utf8Bytes = (text: string): number => new TextEncoder().encode(text).length;
-
-export const useFormattedOutput = (input: { raw: string; formatted: string; formatter: string; limit: number; blobs: BlobPort }): FormattedOutputResult | undefined => {
-  const { raw, formatted, formatter, limit, blobs } = input;
-  const sizing = `${formattedHeader(formatter, '0'.repeat(HANDLE_LENGTH))}\n${formatted}`;
-  if (utf8Bytes(sizing) >= utf8Bytes(raw)) return undefined;
-  const bodyLimit = limit - formattedHeader(formatter, '0'.repeat(HANDLE_LENGTH)).length - 1;
-  if (sizing.length > limit && bodyLimit < MINIMUM_INLINE_OUTPUT_CHARS) return undefined;
+export const useFormattedOutput = (input: {
+  raw: string;
+  formatted: string;
+  header: (handle: string) => string;
+  limit: number;
+  blobs: BlobPort;
+}): FormattedOutputResult | undefined => {
+  const { raw, formatted, header: headerFor, limit, blobs } = input;
+  const sizingHeader = headerFor(HANDLE_PLACEHOLDER);
+  const bodyLimit = limit - sizingHeader.length - 1;
+  const fitsInline = sizingHeader.length + 1 + formatted.length <= limit;
+  if (!fitsInline && bodyLimit < MINIMUM_INLINE_OUTPUT_CHARS) return undefined;
   const handle = storeText(raw, blobs);
-  const header = formattedHeader(formatter, handle);
-  if (sizing.length <= limit) return { output: `${header}\n${formatted}`, truncated: false, handle };
+  const header = headerFor(handle);
+  if (fitsInline) return { output: `${header}\n${formatted}`, truncated: false, handle };
   return { output: `${header}\n${cutWithHandle(formatted, bodyLimit, handle)}`, truncated: true, handle };
 };

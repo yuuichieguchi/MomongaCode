@@ -67,7 +67,7 @@ describe('chat-completions request mapping', () => {
     expect(JSON.stringify(messages)).not.toContain('secret reasoning');
   });
 
-  it('sends tools as chat-completions functions, max_tokens, temperature, model and streaming with usage', async () => {
+  it('sends tools as chat-completions functions, max_completion_tokens, temperature, model and streaming with usage', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     await collect(makeAdapter(fake), historyRequest());
     const body = lastCompletionBody(fake);
@@ -76,8 +76,8 @@ describe('chat-completions request mapping', () => {
       { type: 'function', function: { name: 'read_file', description: readFileTool.description, parameters: readFileTool.parameters } },
       { type: 'function', function: { name: 'list_dir', description: listDirTool.description, parameters: listDirTool.parameters } },
     ]);
-    expect(body.max_tokens).toBe(64);
-    expect(body.max_completion_tokens).toBeUndefined();
+    expect(body.max_completion_tokens).toBe(64);
+    expect(body.max_tokens).toBeUndefined();
     expect(body.temperature).toBe(0.2);
     expect(body.stream).toBe(true);
     expect(body.stream_options).toEqual({ include_usage: true });

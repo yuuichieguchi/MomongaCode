@@ -19,6 +19,7 @@ export type ProbeManagedFmOptions = {
   binary: string;
   socketPath: string;
   env: Readonly<Record<string, string | undefined>>;
+  model?: string;
   samples?: number;
   signal?: AbortSignal;
   exec?: ExecFn;
@@ -51,6 +52,7 @@ export const probeManagedFm = async (options: ProbeManagedFmOptions): Promise<Pr
       socketPath: endpoint.socketPath,
       managedHealthRoute: true,
       vocabulary: FM_VOCABULARY,
+      ...(options.model === undefined ? {} : { model: options.model }),
       countTokens: async (text) => parseCount(await execWithStdin(options.binary, ['count-tokens', '-q'], text, signal)),
       ...(options.samples === undefined ? {} : { samples: options.samples }),
       ...(options.signal === undefined ? {} : { signal: options.signal }),

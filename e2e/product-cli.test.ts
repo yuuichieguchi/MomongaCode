@@ -6,11 +6,10 @@ import { titleOf } from './support/cases.ts';
 import { OPEN_LOG_FILE_NAME, runCli, runCliWithFakes, startCli, startCliWithFakes } from './support/cli.ts';
 import type { CliResult } from './support/cli.ts';
 import type { E2eHome } from './support/home.ts';
-import { PNG_BYTES, prepareProduct, requestText, writePng, writeUserSkill } from './support/product.ts';
+import { PNG_BYTES, WINDOW_WITH_ROOM_FOR_ALL_TOOLS_AND_AN_IMAGE, prepareProduct, requestText, writePng, writeUserSkill } from './support/product.ts';
 import { chatCompletions, reportedTokensOfRequest, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, policyVerifyBoundMs, until } from './support/wait.ts';
 
-const WINDOW_WITH_ROOM_FOR_ALL_TOOLS_AND_AN_IMAGE = 32768;
 const POLICY_VERIFY_CALLS = 4;
 const POLICY_PRODUCT_PREPARATIONS = 2;
 const POLICY_VERIFY_BOUND_MS = await policyVerifyBoundMs();

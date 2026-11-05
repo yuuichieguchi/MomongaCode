@@ -1,4 +1,4 @@
-import type { HealthResult, ImageTokenModel, ReasoningCapability } from './capabilities.ts';
+import type { HealthResult, ImageTokenModel, OutputBoundField, ReasoningCapability } from './capabilities.ts';
 
 export const PROBE_KEYWORDS = [
   'enum',
@@ -23,6 +23,7 @@ export type ProbeReport = {
   constrained: { accepted: boolean; validRate: number };
   keywordSupport: Record<ProbeKeyword, boolean>;
   stopSequences: boolean;
+  outputBoundField?: OutputBoundField | 'none';
   parallelToolCalls?: { accepted: boolean; multiCallRate: number };
   reasoning?: ReasoningCapability;
   maxConcurrency: number;
@@ -30,6 +31,7 @@ export type ProbeReport = {
   imageTokens?: ImageTokenModel;
   guardrail: { errorShape?: unknown };
   tokenCalibration?: { ratio: number; errorBound: number };
+  promptCache?: { kind: 'automatic' | 'none' };
 };
 
 export type OllamaProbeReport = {
@@ -40,7 +42,9 @@ export type OllamaProbeReport = {
   contextWindow: { value: number; method: 'reported' };
   nativeTools: { accepted: boolean };
   imageInputAccepted: boolean;
+  imageTokens?: ImageTokenModel;
   thinkingSupported: boolean;
+  promptCache?: { kind: 'automatic' | 'none' };
   reasoning?: undefined;
 };
 

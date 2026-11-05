@@ -50,12 +50,12 @@ const containsWhole = (text: string, token: string): boolean => {
 
 const byteLength = (text: string): number => new TextEncoder().encode(text).length;
 
-export const formattingViolations = (input: { raw: string; formatted: string; handle: string }): FormattingViolation[] => {
-  const { raw, formatted, handle } = input;
+export const formattingViolations = (input: { raw: string; formatted: string; handle: string; header: string }): FormattingViolation[] => {
+  const { raw, formatted, handle, header } = input;
   const violations: FormattingViolation[] = [];
   const known = `${raw}\n${handle}`;
   if (checkedTokens(formatted).some((token) => !occursIn(token, known))) violations.push('T4-1');
   if (failureFactsOf(raw).some((fact) => !containsWhole(formatted, fact))) violations.push('T4-2');
-  if (byteLength(formatted) >= byteLength(raw)) violations.push('T4-3');
+  if (byteLength(`${header}\n${formatted}`) >= byteLength(raw)) violations.push('T4-3');
   return violations;
 };

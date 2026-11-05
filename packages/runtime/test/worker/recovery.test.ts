@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { usageOf } from '@momonga/testkit';
 import { within } from './deferred.ts';
 import { LEASE_MS, START_MS, makeEnv, modelKey, toolKey } from './harness.ts';
-import { assistantMessage, functionCallItem, gated, textStep } from './scripts.ts';
+import { assistantMessage, functionCallItem, gated, requestedOffering, textStep } from './scripts.ts';
 
 const responded = (step: number, output: unknown[]) => ({
   type: 'model.responded' as const,
@@ -52,6 +52,7 @@ describe('worker recovery (b2): crash during a tool with a PENDING record', () =
     env.seed(
       run.id,
       [
+        requestedOffering(1, ['Mark']),
         responded(1, [functionCallItem({ callId: 'call_m_1', name: 'Mark', args: { value: 'one' } })]),
         { type: 'tool.call', callId: 'call_m_1', providerCallId: 'call_m_1', name: 'Mark', kind: 'edit', title: 'Mark one', rawInput: { value: 'one' } },
         { type: 'tool.started', callId: 'call_m_1', idemKey: key },
@@ -81,6 +82,7 @@ describe('worker recovery of pending calls', () => {
     env.seed(
       run.id,
       [
+        requestedOffering(1, ['Echo']),
         responded(1, [functionCallItem({ callId: 'call_e_1', name: 'Echo', args: { value: 'left' } })]),
         { type: 'tool.call', callId: 'call_e_1', providerCallId: 'call_e_1', name: 'Echo', kind: 'read', title: 'Echo left', rawInput: { value: 'left' } },
       ],

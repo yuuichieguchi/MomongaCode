@@ -23,6 +23,11 @@ export const imageCapability = (imageInput: boolean, imageTokens: ImageTokenMode
   return { imageInput: true, imageTokens };
 };
 
+export const OUTPUT_BOUND_FIELDS = ['max_completion_tokens', 'max_tokens'] as const;
+export type OutputBoundField = (typeof OUTPUT_BOUND_FIELDS)[number];
+
+export const DEFAULT_OUTPUT_BOUND_FIELD: OutputBoundField = 'max_completion_tokens';
+
 export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const;
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 
@@ -52,6 +57,7 @@ export type CapabilitiesCore = {
   structuredOutput: 'json_schema' | 'none';
   streaming: boolean;
   stopSequences: boolean;
+  outputBoundField?: OutputBoundField;
   parallelToolCalls?: boolean;
   schemaDialect: 'json-schema-2020-12' | 'guided-generation';
   tokenCounting: 'exact' | 'calibrated' | 'estimated';

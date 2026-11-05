@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { FakeRoute } from '@momonga/testkit';
 import { ROOT_PREFIX } from '../packages/cli/src/eval/context-host.ts';
 import { DEFAULT_KEEP_RECENT_STEPS } from '../packages/context/src/levels.ts';
-import { summaryRoute } from './support/budget.ts';
+import { fitLimitAfterReport, summaryRoute } from './support/budget.ts';
 import { titleOf } from './support/cases.ts';
 import { runCli } from './support/cli.ts';
 import { calibrationRoute, compactableTokens, fillerOfTokens, measureWindow, prefixProbeRoute, stepTokensToOverflowTheRoom } from './support/context-window.ts';
@@ -136,13 +136,17 @@ describe('momonga eval context live', () => {
       }),
     });
     writeSettingsFile(home, baseSettings(home, sandboxChoiceOf({ home }).kind));
-    const sizing = (await measureWindow(home, fake, 4 * E2E_RUN_COMPLETED_BOUND_MS)).benchmark;
+    const measured = await measureWindow(home, fake, 4 * E2E_RUN_COMPLETED_BOUND_MS);
+    const sizing = measured.benchmark;
     expect(
       LONG_STEPS,
       'LONG_STEPS cannot be derived from the window: it only has to exceed the steps the context builder protects (DEFAULT_KEEP_RECENT_STEPS), so that some steps fall outside the protection and can be compacted',
     ).toBeGreaterThan(DEFAULT_KEEP_RECENT_STEPS);
-    const stepTokens = stepTokensToOverflowTheRoom(sizing, LONG_STEPS);
-    expect(LONG_STEPS * stepTokens, 'the walk must exceed the room of the window, so that the case without compaction cannot fit it').toBeGreaterThan(sizing.room);
+    const stepTokens = await stepTokensToOverflowTheRoom(measured.capabilities, sizing, LONG_STEPS);
+    expect(
+      sizing.pinned + LONG_STEPS * stepTokens,
+      'the walk must exceed what fits after the report of the step before it, so that the case without compaction cannot fit it',
+    ).toBeGreaterThan(await fitLimitAfterReport(measured.capabilities, sizing.pinned + (LONG_STEPS - 1) * stepTokens));
     expect(
       compactableTokens(LONG_STEPS, DEFAULT_KEEP_RECENT_STEPS, stepTokens),
       'the steps older than the protected recent steps must be worth a compaction (the gain rule of the context builder)',

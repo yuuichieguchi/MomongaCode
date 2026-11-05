@@ -7,18 +7,23 @@ import {
   FAKE_GUARDRAIL_ERROR,
   FAKE_PAYLOAD_TOO_LARGE_ERROR,
   FM_CONTEXT_OVERFLOW_ERROR,
+  FM_GUARDRAIL_ERROR,
   FM_UNSUPPORTED_GUIDE_ERROR,
   countFakeRequestTokens,
+  countFakeTokens,
   startFakeChatCompletions,
   type FakeChatCompletionsOptions,
   type FakeChatCompletionsServer,
 } from '@momonga/testkit';
+import { fillerText } from '../src/probe/filler.ts';
 import { isProbeReport } from '../src/probe/report-schema.ts';
 
 const servers: FakeChatCompletionsServer[] = [];
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => server.close()));
 });
+
+const CACHE_PROBE_WORDS = 1536;
 
 const fixedNow = () => new Date('2026-10-23T12:00:00.000Z');
 
@@ -128,16 +133,16 @@ describe('runProbe context window', () => {
 
   it('reads an overflow that fm reports as an error event in a 200 stream as a rejection through fm\'s vocabulary, and stops doubling at the first one', async () => {
     const window = 3000;
-    const searchPrompt = (count: number) => ({ messages: [{ role: 'user', content: Array.from({ length: count }, () => 'word').join(' ') }] });
+    const searchPrompt = (count: number) => ({ messages: [{ role: 'user', content: fillerText(count) }] });
     let firstRejectedSize = 64;
     while (countFakeRequestTokens(searchPrompt(firstRejectedSize)) + 1 <= window) firstRejectedSize *= 2;
 
-    const { report, fake } = await probe({ scenario: 'tools-ok', contextWindow: window, contextSizeExposure: 'none', wire: 'fm' }, { vocabulary: FM_VOCABULARY });
+    const { report, fake } = await probe({ scenario: 'tools-ok', contextWindow: window, contextSizeExposure: 'none', wire: 'fm' }, { vocabulary: FM_VOCABULARY, countTokens: async (text) => countFakeTokens(text) });
 
     const searchSizes = fake.requests
-      .filter((request) => request.path === '/v1/chat/completions' && (request.body as { max_tokens?: unknown }).max_tokens === 1)
+      .filter((request) => request.path === '/v1/chat/completions' && (request.body as { max_completion_tokens?: unknown }).max_completion_tokens === 1)
       .map((request) => (request.body as { messages?: Array<{ content?: unknown }> }).messages?.[0]?.content)
-      .filter((content): content is string => typeof content === 'string' && /^word( word)*$/.test(content))
+      .filter((content): content is string => typeof content === 'string' && content === fillerText(words(content)) && words(content) !== CACHE_PROBE_WORDS)
       .map(words);
     expect(report.contextWindow.method).toBe('searched');
     expect(Math.abs(report.contextWindow.value - window)).toBeLessThanOrEqual(window * 0.02);
@@ -230,7 +235,7 @@ describe('runProbe server features', () => {
     const { fake } = await probe({ scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600 } });
     const imagePrompts = fake.requests.filter((request) => JSON.stringify(request.body ?? '').includes('Describe this image.'));
     expect(imagePrompts.length).toBeGreaterThan(3);
-    expect(imagePrompts.every((request) => (request.body as { max_tokens?: number }).max_tokens === 1)).toBe(true);
+    expect(imagePrompts.every((request) => (request.body as { max_completion_tokens?: number }).max_completion_tokens === 1)).toBe(true);
   });
 
   it('waits for Retry-After on a 429 and repeats the request, keeping the whole probe', async () => {
@@ -410,6 +415,18 @@ describe('runProbe server features', () => {
     expect(report.guardrail.errorShape).toEqual(FAKE_GUARDRAIL_ERROR);
   });
 
+  it('records the guardrail error shape fm sends as an error event inside a 200 stream, through the same decoded error kind', async () => {
+    const { report } = await probe(
+      {
+        scenario: 'tools-ok',
+        wire: 'fm',
+        routes: [{ match: (body) => JSON.stringify(body).includes('GUARDRAIL-PROBE'), reply: { kind: 'error-event', body: FM_GUARDRAIL_ERROR } }],
+      },
+      { guardrailPrompt: 'please discuss GUARDRAIL-PROBE', vocabulary: FM_VOCABULARY },
+    );
+    expect(report.guardrail.errorShape).toEqual(FM_GUARDRAIL_ERROR);
+  });
+
   it('leaves the guardrail error shape undefined when nothing triggers', async () => {
     const { report } = await probe({ scenario: 'tools-ok' }, { guardrailPrompt: 'please discuss GUARDRAIL-PROBE' });
     expect(report.guardrail.errorShape).toBeUndefined();
@@ -452,11 +469,22 @@ describe('runProbe streaming and usage', () => {
 });
 
 describe('runProbe context window calibration', () => {
-  it('treats a 413 response as too large and records its body', async () => {
-    const { report } = await probe({ scenario: 'tools-ok', contextWindow: 3000, contextOverflowStatus: 413 });
-    expect(report.contextWindow.method).toBe('searched');
-    expect(Math.abs(report.contextWindow.value - 3000)).toBeLessThanOrEqual(60);
-    expect(report.contextWindow.overflowErrorShape).toEqual(FAKE_PAYLOAD_TOO_LARGE_ERROR);
+  it('fails the probe naming payload_too_large when the search meets a 413 request_too_large, instead of recording a byte limit as the window', async () => {
+    const requestTooLarge = { type: 'error', error: { type: 'request_too_large', message: 'Request exceeds the maximum allowed number of bytes.' } };
+    const fake = await startFakeChatCompletions({
+      scenario: 'tools-ok',
+      contextWindow: 100_000,
+      contextSizeExposure: 'none',
+      routes: [
+        {
+          match: (body) => (body as { max_completion_tokens?: unknown }).max_completion_tokens === 1 && JSON.stringify(body).length > 20000,
+          reply: { kind: 'error', status: 413, body: requestTooLarge },
+        },
+      ],
+    });
+    servers.push(fake);
+
+    await expect(runProbe({ socketPath: fake.socketPath, managedHealthRoute: true, samples: 2 })).rejects.toThrow(/payload_too_large.*413/);
   });
 
   it('records the first overflow response body for a context_length_exceeded 400', async () => {

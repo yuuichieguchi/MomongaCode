@@ -43,6 +43,9 @@ export type PtySession = {
   exit(boundMs?: number): Promise<PtyExit>;
 };
 
+export const untilRunEnds = (pty: PtySession, mode: string): Promise<void> =>
+  pty.waitFor(new RegExp(`mode: ${mode} \\(shift\\+tab\\) · tokens: [\\d.]+k?( · context: \\d+%)?\\s*$`));
+
 const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
 
 export const spawnPty = async (home: E2eHome, args: readonly string[], env: Readonly<Record<string, string>> = {}, options: { fakes?: true } = {}): Promise<PtySession> => {

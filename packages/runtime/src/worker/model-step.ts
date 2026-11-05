@@ -7,7 +7,9 @@ import { modelKey } from '../model-key.ts';
 import { GatewayFailureError } from './errors.ts';
 import { isRecord } from './json.ts';
 import { buildNext, cancelIfInterrupted, recoverRejectedCompaction } from './context-step.ts';
-import { isLoop } from './loop-detection.ts';
+import { loopSignatureOf } from './loop-detection.ts';
+import { loopGuidanceFactsOf, loopGuidanceItem } from './loop-guidance.ts';
+import type { CallResult } from './loop-guidance.ts';
 import { streamModel } from './model-stream.ts';
 import type { StreamedModel } from './model-stream.ts';
 import { summaryStopReason } from './wrap-up.ts';
@@ -15,6 +17,7 @@ import { runStopHooks } from './hook-step.ts';
 import { recordCalls, settleCalls } from './tool-step.ts';
 import { pinnedDigestOf } from './pinned-digest.ts';
 import { recordPrefix } from './prefix-record.ts';
+import { cacheControlsOf } from './cache-controls.ts';
 
 const DEADLINE_CODE = 'deadline_exceeded';
 const REFUSAL_CODES = ['guardrail_violation', 'refusal', 'content_filter'];
@@ -61,13 +64,29 @@ export const decideAfterResponse = async (ctx: ClaimContext): Promise<Flow> => {
     if ((await runStopHooks(ctx)) === 'continue') return 'continue';
     return terminals.finish('COMPLETED');
   }
-  if (isLoop(journal.state, ctx.limits.loopThreshold)) {
-    journal.append([
-      { type: 'notice', level: 'warning', message: `The model repeated the same tool call with the same results ${ctx.limits.loopThreshold} times in a row, so the run stops.`, code: 'tool_loop_detected' },
-    ]);
-    return terminals.finish('STOPPED', { stopReason: 'loop' });
+  const repeatedSignature = loopSignatureOf(journal.state, ctx.limits.loopThreshold);
+  const warning: RunEventPayload[] = [];
+  if (repeatedSignature !== undefined) {
+    const warned = ctx.token.loopGuidance && journal.state.loopWarned?.signature !== repeatedSignature;
+    if (warned) {
+      warning.push(
+        { type: 'loop.warned', signature: repeatedSignature },
+        {
+          type: 'notice',
+          level: 'warning',
+          message: `The model repeated the same tool call with the same results ${ctx.limits.loopThreshold} times in a row, so it is warned and the next identical call stops the run.`,
+          code: 'tool_loop_warned',
+        },
+      );
+    } else {
+      const repeats = ctx.token.loopGuidance ? ctx.limits.loopThreshold + 1 : ctx.limits.loopThreshold;
+      journal.append([
+        { type: 'notice', level: 'warning', message: `The model repeated the same tool call with the same results ${repeats} times in a row, so the run stops.`, code: 'tool_loop_detected' },
+      ]);
+      return terminals.finish('STOPPED', { stopReason: 'loop' });
+    }
   }
-  recordCalls(ctx);
+  recordCalls(ctx, warning);
   return settleCalls(ctx);
 };
 
@@ -91,8 +110,12 @@ const estimateFor = async (answered: MeterFacts, observation: InputObservation):
   };
 };
 
-const fallbackTargetOf = (response: ResponseResource): string | undefined =>
-  response.momonga?.fallbackCauses !== undefined && response.momonga.fallbackCauses.length > 0 ? response.momonga.target : undefined;
+type FallbackDecision = { fallback: false } | { fallback: true; target: string | undefined };
+
+const fallbackOf = (response: ResponseResource): FallbackDecision =>
+  response.momonga?.fallbackCauses !== undefined && response.momonga.fallbackCauses.length > 0
+    ? { fallback: true, target: response.momonga.target }
+    : { fallback: false };
 
 const truncationFailure = (reported: number, observation: Pick<InputEstimate, 'estimatedTokens' | 'marginTokens'>): { code: 'input_truncated'; message: string } => ({
   code: 'input_truncated',
@@ -127,11 +150,11 @@ const handleResult = async (
   }
   const { response, incomplete } = result;
   const usage = response.usage;
-  const fallbackTarget = fallbackTargetOf(response);
+  const fallbackDecision = fallbackOf(response);
   const answered =
-    observation === undefined || (response.momonga?.fallbackCauses?.length ?? 0) > 0 && fallbackTarget === undefined
+    observation === undefined || (fallbackDecision.fallback && fallbackDecision.target === undefined)
       ? undefined
-      : await meterFactsFor(ctx, fallbackTarget);
+      : await meterFactsFor(ctx, fallbackDecision.fallback ? fallbackDecision.target : undefined);
   const answerCounter = response.momonga?.counter;
   const reject = (reason: ModelRejectionReason): never => {
     journal.append([
@@ -212,7 +235,7 @@ const handleResult = async (
       totalTokens: before.totalTokens + usage.total_tokens,
     },
   ];
-  if (fallback?.fallbackCauses !== undefined && fallback.fallbackCauses.length > 0) {
+  if (fallbackDecision.fallback && fallback?.fallbackCauses !== undefined) {
     const failed = fallback.fallbackCauses.map((cause) => `${cause.target} failed (${cause.code === null ? cause.message : `${cause.code}: ${cause.message}`})`);
     recorded.push({
       type: 'notice',
@@ -226,7 +249,7 @@ const handleResult = async (
       type: 'meter.observed',
       target: answeredBy,
       counter: estimate.counter,
-      fallback: fallbackTargetOf(response) !== undefined,
+      fallback: fallbackDecision.fallback,
       ...estimate.meter.observe({ inputDigest: estimate.inputDigest, inputTokens: reported }),
     });
   }
@@ -289,17 +312,51 @@ const observationOf = (body: CreateResponseBody): InputObservation | undefined =
   return { input: body.input, tools: body.tools ?? [] };
 };
 
+const loopGuidancePending = (ctx: ClaimContext): boolean => {
+  if (!ctx.token.loopGuidance || ctx.journal.state.loopWarned === undefined) return false;
+  const { store } = ctx.options;
+  const warned = store.readRunEventsOfTypes(ctx.run.id, ['loop.warned']).at(-1);
+  if (warned === undefined) throw new Error(`run ${ctx.run.id} folded a loop warning that its journal does not hold`);
+  const responded = store.readLatestRunEventBefore(ctx.run.id, 'model.responded', ctx.journal.state.lastSeq + 1);
+  return responded === undefined || responded.seq < warned.seq;
+};
+
+const loopGuidanceTrailing = (ctx: ClaimContext): InputItem[] => {
+  if (!loopGuidancePending(ctx)) return [];
+  const { state } = ctx.journal;
+  if (state.loopWarned === undefined) throw new Error(`run ${ctx.run.id} has no loop warning to write guidance for`);
+  const statuses = new Map<string, CallResult>(
+    ctx.options.store.readRunEventsOfTypes(ctx.run.id, ['tool.completed']).flatMap((event) => (event.type === 'tool.completed' ? [[event.callId, event.status] as const] : [])),
+  );
+  const ours = new Map<string, string>(
+    state.history.flatMap((entry) => (entry.item.type === 'function_call_output' && entry.callId !== undefined ? [[entry.item.call_id, entry.callId] as const] : [])),
+  );
+  return [
+    loopGuidanceItem(
+      loopGuidanceFactsOf({
+        state,
+        signature: state.loopWarned.signature,
+        resultOf: (providerCallId) => {
+          const callId = ours.get(providerCallId);
+          return callId === undefined ? undefined : statuses.get(callId);
+        },
+        isExecute: (toolName) => ctx.toolSet.get(toolName)?.kind === 'execute',
+      }),
+    ),
+  ];
+};
+
 export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   const { journal, terminals, options } = ctx;
   if (options.clock.now() >= ctx.run.deadlineAt) return terminals.finish('STOPPED', { stopReason: 'timeout' });
   if (ctx.control.yieldRequested()) return terminals.yieldLease();
   const limit = limitReached(ctx);
-  const outcome = await buildNext(ctx, limit === undefined ? {} : { wrapUp: limit });
+  const outcome = await buildNext(ctx, { ...(limit === undefined ? {} : { wrapUp: limit }), trailing: loopGuidanceTrailing(ctx) });
   if (outcome.kind === 'done') return 'done';
   const { built, wrapUp } = outcome;
   const summarising = limit !== undefined || wrapUp !== undefined;
   const step = journal.state.step + 1;
-  const body: CreateResponseBody = {
+  const plainBody: CreateResponseBody = {
     model: ctx.alias,
     input: built.input,
     tools: built.tools,
@@ -314,6 +371,7 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
   if (cancelIfInterrupted(ctx) === 'done') return 'done';
   const position = { step, attempt: 1 };
   const prefixRecord = recordPrefix(ctx, built, summarising);
+  const body: CreateResponseBody = { ...plainBody, ...cacheControlsOf(ctx, built, prefixRecord?.prefix) };
   journal.append([
     ...(wrapUp === undefined ? [] : [{ type: 'notice' as const, level: 'error' as const, message: wrapUp.notice, code: 'context_wrap_up' }]),
     ...(prefixRecord === undefined ? [] : prefixRecord.notices),

@@ -23,6 +23,7 @@ export interface FakeChatCompletionsOptions {
   streamUsage?: boolean;
   usageReported?: boolean;
   stopSupported?: boolean;
+  outputBound?: { honours: 'max_completion_tokens' | 'max_tokens' | 'both' | 'neither' };
   maxConcurrency?: number;
   overflow?: 'reject' | 'queue';
   imageInput?: boolean;
@@ -147,6 +148,8 @@ export const JSON_SCHEMA_UNSUPPORTED_MESSAGE = "response_format type 'json_schem
 export const IMAGE_UNSUPPORTED_MESSAGE = 'image input is not supported by this model.';
 export const FAKE_DETERMINISTIC_REPLY = 'This is a deterministic reply.';
 export const FAKE_REASONING_WORD = 'step ';
+const FAKE_RUNAWAY_WORDS = 400;
+const FAKE_RUNAWAY_WORD = 'word ';
 export const FAKE_PAYLOAD_TOO_LARGE_ERROR = {
   error: { message: 'Request entity too large.', type: 'invalid_request_error', param: null, code: null },
 } as const;
@@ -156,6 +159,9 @@ export const FM_CONTEXT_OVERFLOW_ERROR = {
 export const FM_UNSUPPORTED_GUIDE_ERROR = {
   error: { message: 'An unsupported generation guide was used.', code: '500', type: 'server_error' },
 } as const;
+export const FM_GUARDRAIL_ERROR = {
+  error: { code: '500', type: 'server_error', message: "The model's safety guardrails were triggered." },
+} as const;
 export const FAKE_GUARDRAIL_ERROR = {
   error: {
     message: 'The request was blocked by the safety guardrail.',
@@ -164,6 +170,10 @@ export const FAKE_GUARDRAIL_ERROR = {
     code: 'guardrail_violation',
   },
 } as const;
+
+const fmUnknownModelError =(requested: unknown, listed: string) => ({
+  error: { code: '400', message: `Unknown model '${String(requested)}'. Available models: ${listed}`, type: 'invalid_request_error' },
+});
 
 const invalidRequest = (message: string, code: string | null = null, param: string | null = null): HttpFailure =>
   new HttpFailure(400, { error: { message, type: 'invalid_request_error', param, code } });
@@ -335,6 +345,9 @@ export const startFakeChatCompletions = async (
     return { waitForRequest: () => request, release };
   };
 
+  const guardrailFailure = (): Error =>
+    options.wire === 'fm' ? new FmStreamedError(FM_GUARDRAIL_ERROR) : new HttpFailure(400, structuredClone(FAKE_GUARDRAIL_ERROR) as unknown as Json);
+
   const nativeCompletion = (body: Json, lastText: string): CompletionOut | undefined => {
     const tools = Array.isArray(body['tools']) ? body['tools'] : [];
     const functions = tools
@@ -350,7 +363,7 @@ export const startFakeChatCompletions = async (
     const sampleIndex = nativeIndex;
     nativeIndex += 1;
     if (failNativeSamples.includes(sampleIndex)) {
-      throw new HttpFailure(400, structuredClone(FAKE_GUARDRAIL_ERROR) as unknown as Json);
+      throw guardrailFailure();
     }
     const valid = isValidAtIndex(sampleIndex, nativeValidity);
     let serialized = JSON.stringify(args);
@@ -382,7 +395,7 @@ export const startFakeChatCompletions = async (
     const sampleIndex = constrainedIndex;
     constrainedIndex += 1;
     if (failConstrainedSamples.includes(sampleIndex)) {
-      throw new HttpFailure(400, structuredClone(FAKE_GUARDRAIL_ERROR) as unknown as Json);
+      throw guardrailFailure();
     }
     const valid = isValidAtIndex(sampleIndex, constrainedValidity);
     if (valid) return { content: JSON.stringify(instance), toolCalls: [], finishReason: 'stop' };
@@ -399,6 +412,7 @@ export const startFakeChatCompletions = async (
   };
 
   const validateCompletionRequest = (body: Json): void => {
+    if (options.wire === 'fm' && body['model'] !== modelId) throw new HttpFailure(400, fmUnknownModelError(body['model'], modelId));
     const messages = Array.isArray(body['messages']) ? (body['messages'] as ChatMessage[]) : [];
     const responseFormat = isRecord(body['response_format']) ? body['response_format'] : undefined;
     if (responseFormat?.['type'] === 'json_object') throw invalidRequest(JSON_OBJECT_UNSUPPORTED_MESSAGE, null, 'response_format');
@@ -440,7 +454,7 @@ export const startFakeChatCompletions = async (
       options.guardrailTrigger !== undefined &&
       messages.some((message) => messageText(message).includes(options.guardrailTrigger as string))
     ) {
-      throw new HttpFailure(400, structuredClone(FAKE_GUARDRAIL_ERROR) as unknown as Json);
+      throw guardrailFailure();
     }
     if (options.reasoning?.effort === 'rejected' && body['reasoning_effort'] !== undefined) {
       throw invalidRequest('Unrecognized request argument supplied: reasoning_effort', null, 'reasoning_effort');
@@ -475,6 +489,20 @@ export const startFakeChatCompletions = async (
     }
   };
 
+  const boundHonoured = (body: Json): number => {
+    const honours = options.outputBound?.honours;
+    const fromMaxCompletion = honours === 'max_completion_tokens' || honours === 'both' ? body['max_completion_tokens'] : undefined;
+    const fromMax = honours === 'max_tokens' || honours === 'both' ? body['max_tokens'] : undefined;
+    const bounds = [fromMaxCompletion, fromMax].filter((bound): bound is number => typeof bound === 'number');
+    return bounds.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...bounds);
+  };
+
+  const runawayReply = (limit: number): string => {
+    let words = FAKE_RUNAWAY_WORDS;
+    while (words > 1 && countFakeTokens(FAKE_RUNAWAY_WORD.repeat(words).trimEnd()) > limit) words -= 1;
+    return FAKE_RUNAWAY_WORD.repeat(words).trimEnd();
+  };
+
   const complete = (body: Json): CompletionOut => {
     const messages = Array.isArray(body['messages']) ? (body['messages'] as ChatMessage[]) : [];
     const last = messages.at(-1);
@@ -492,6 +520,7 @@ export const startFakeChatCompletions = async (
     if (lastRole === 'tool') {
       return { content: `Tool result received: ${lastText}`, toolCalls: [], finishReason: 'stop' };
     }
+    if (options.outputBound !== undefined) return { content: runawayReply(boundHonoured(body)), toolCalls: [], finishReason: 'stop' };
     return { content: FAKE_DETERMINISTIC_REPLY, toolCalls: [], finishReason: 'stop' };
   };
 
@@ -547,7 +576,7 @@ export const startFakeChatCompletions = async (
     });
     chunk({}, out.finishReason);
     const streamOptions = isRecord(body['stream_options']) ? body['stream_options'] : {};
-    if (options.wire === 'fm' || (streamOptions['include_usage'] === true && options.streamUsage === true)) {
+    if (streamOptions['include_usage'] === true && options.streamUsage === true) {
       send({ ...base, choices: [], usage: usageFor(body, out) });
     }
     response.write('data: [DONE]\n\n');

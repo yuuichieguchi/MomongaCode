@@ -3,11 +3,9 @@ import type { RunEventPayload } from '@momonga/protocol';
 import { pinnedDigestOf } from '@momonga/runtime';
 import { foldRunState, initialRunState } from '@momonga/store';
 import { makeEnv } from './harness.ts';
+import { LARGE_RUN_SETUP_TEST_TIMEOUT_MS, PAUSE_BUDGET_MS, threadCpuMillisOf } from './pause-budget.ts';
 import { functionCallItem } from './scripts.ts';
 
-const PAUSE_BUDGET_MS = 100;
-const VITEST_DEFAULT_TEST_TIMEOUT_MS = 5_000;
-const LARGE_RUN_SETUP_TEST_TIMEOUT_MS = 24 * VITEST_DEFAULT_TEST_TIMEOUT_MS;
 const OUTPUT_CHARS = 30_000;
 const STEPS = 150;
 const MEMORIES = 40;
@@ -100,16 +98,8 @@ const terminalMillis = async (snapshotFirst: boolean, historyInRequest: number):
       expect(env.store.writeSnapshot(claim, state.lastSeq, state).kind).toBe('ok');
     }
 
-    const cpuBefore = process.threadCpuUsage();
-    const wallBefore = performance.now();
-    env.store.prepareTerminal(run.id);
-    const wallMillis = performance.now() - wallBefore;
-    const cpu = process.threadCpuUsage(cpuBefore);
-    const prepareMillis = (cpu.user + cpu.system) / 1000;
-    console.info(`prepared in ${wallMillis.toFixed(1)} ms of wall time`);
-    const started = performance.now();
-    const result = env.store.transition(claim, ['RUNNING'], 'COMPLETED');
-    const elapsed = performance.now() - started;
+    const { millis: prepareMillis } = await threadCpuMillisOf(() => env.store.prepareTerminal(run.id));
+    const { value: result, millis: elapsed } = await threadCpuMillisOf(() => env.store.transition(claim, ['RUNNING'], 'COMPLETED'));
 
     expect(result.kind).toBe('ok');
     const [contribution] = env.ofType(run.id, 'context.contribution');
@@ -122,7 +112,7 @@ const terminalMillis = async (snapshotFirst: boolean, historyInRequest: number):
 describe('the cost of the contribution hook in the terminal transition', () => {
   it('stays within the pause budget for a worker terminal over a run at the output cap, half of it Japanese', async () => {
     const { elapsed, prepareMillis, bytes } = await terminalMillis(true, HISTORY_IN_REQUEST);
-    console.info(`worker terminal over ${bytes} output bytes: prepared outside the lock in ${prepareMillis.toFixed(1)} ms, transaction ${elapsed.toFixed(1)} ms`);
+    console.info(`worker terminal over ${bytes} output bytes: prepared outside the lock in ${prepareMillis.toFixed(1)} ms, transaction ${elapsed.toFixed(1)} ms of thread CPU time`);
     expect(bytes).toBeGreaterThan(4_000_000);
     expect(elapsed).toBeLessThan(PAUSE_BUDGET_MS);
     expect(prepareMillis).toBeLessThan(PAUSE_BUDGET_MS);
@@ -130,14 +120,14 @@ describe('the cost of the contribution hook in the terminal transition', () => {
 
   it('stays within the pause budget for a terminal over a journal with no snapshot', async () => {
     const { elapsed, prepareMillis, bytes } = await terminalMillis(false, HISTORY_IN_REQUEST);
-    console.info(`terminal without a snapshot over ${bytes} output bytes: prepared outside the lock in ${prepareMillis.toFixed(1)} ms, transaction ${elapsed.toFixed(1)} ms`);
+    console.info(`terminal without a snapshot over ${bytes} output bytes: prepared outside the lock in ${prepareMillis.toFixed(1)} ms, transaction ${elapsed.toFixed(1)} ms of thread CPU time`);
     expect(elapsed).toBeLessThan(PAUSE_BUDGET_MS);
     expect(prepareMillis).toBeLessThan(PAUSE_BUDGET_MS);
   }, LARGE_RUN_SETUP_TEST_TIMEOUT_MS);
 
   it('stays within the pause budget when every recorded request is 800 KB', async () => {
     const { elapsed, prepareMillis } = await terminalMillis(false, LARGE_HISTORY_IN_REQUEST);
-    console.info(`terminal over requests of ${LARGE_HISTORY_IN_REQUEST * OUTPUT_CHARS} characters: prepared outside the lock in ${prepareMillis.toFixed(1)} ms, transaction ${elapsed.toFixed(1)} ms`);
+    console.info(`terminal over requests of ${LARGE_HISTORY_IN_REQUEST * OUTPUT_CHARS} characters: prepared outside the lock in ${prepareMillis.toFixed(1)} ms, transaction ${elapsed.toFixed(1)} ms of thread CPU time`);
     expect(elapsed).toBeLessThan(PAUSE_BUDGET_MS);
     expect(prepareMillis).toBeLessThan(PAUSE_BUDGET_MS);
   }, LARGE_RUN_SETUP_TEST_TIMEOUT_MS);

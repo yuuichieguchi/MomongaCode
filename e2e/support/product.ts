@@ -16,6 +16,8 @@ export type ProductOptions = {
 
 export type Product = { home: E2eHome; fake: FakeChatCompletionsServer };
 
+export const WINDOW_WITH_ROOM_FOR_ALL_TOOLS_AND_AN_IMAGE = 32768;
+
 const withCapabilities = (settings: Record<string, unknown>, capabilities: Record<string, unknown>): Record<string, unknown> => {
   const models = settings['models'] as { aliases: unknown; targets: Record<string, { capabilities: Record<string, unknown> }> };
   const primary = models.targets[UPSTREAM_TARGET];

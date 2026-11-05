@@ -43,7 +43,7 @@ describe('chat-completions adapter compact', () => {
   });
 
   it.for(['native', 'constrained', 'none'] as const)(
-    'sends one system and one user message, no tools or response_format, max_tokens = cap and stream for a %s target',
+    'sends one system and one user message, no tools or response_format, max_completion_tokens = cap and stream for a %s target',
     async (mode: ToolCallingMode) => {
       const fake = await startFake({ scenario: 'tools-ok', script: [textReply('The user wants the parser fixed.')] });
       const adapter = ccAdapterFor(fake, mode);
@@ -59,7 +59,7 @@ describe('chat-completions adapter compact', () => {
       expect('tools' in body).toBe(false);
       expect('tool_choice' in body).toBe(false);
       expect('response_format' in body).toBe(false);
-      expect(body.max_tokens).toBe(64);
+      expect(body.max_completion_tokens).toBe(64);
       expect(body.stream).toBe(true);
     },
   );
@@ -76,7 +76,7 @@ describe('chat-completions adapter compact', () => {
   it('falls back to the window cap of the target without momonga.max_summary_tokens', async () => {
     const fake = await startFake({ scenario: 'tools-ok', script: [textReply('note')] });
     await ccAdapterFor(fake).compact?.(compactRequest(), ctx);
-    expect(lastCompletionBody(fake).max_tokens).toBe(246);
+    expect(lastCompletionBody(fake).max_completion_tokens).toBe(246);
   });
 
   it.for([

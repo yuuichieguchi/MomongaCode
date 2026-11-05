@@ -10,12 +10,13 @@ import type {
 } from '@momonga/protocol';
 import type { UpstreamEndpoint, UpstreamLiveness } from '../shared/http-client.ts';
 import type { KeywordSupport } from '../../probe/envelope.ts';
-import type { ErrorVocabulary } from './vocabulary.ts';
+import type { ErrorVocabulary } from '../shared/vocabulary.ts';
 
 export type ChatCompletionsEndpoint = UpstreamEndpoint;
 
 export type ChatCompletionsAdapterOptions = {
   resolveEndpoint: (target: AdapterTarget, signal: AbortSignal) => Promise<ChatCompletionsEndpoint>;
+  upstreamModel?: (target: AdapterTarget, signal: AbortSignal) => Promise<string>;
   onSummaryReasoning?: (target: AdapterTarget, hiddenReasoningTokens: number) => Promise<void>;
   toolCalling: (target: AdapterTarget) => ToolCallingMode;
   keywordSupport?: (target: AdapterTarget) => KeywordSupport;

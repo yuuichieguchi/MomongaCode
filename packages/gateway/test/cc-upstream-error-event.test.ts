@@ -48,6 +48,7 @@ const unprobedFmAdapter = async (upstream: FakeUpstreamServer) => {
     probeRecordDir: path.join(makeDir(), 'probe'),
     recordKey: { target: 'fm', binarySha256: 'ab'.repeat(32), osBuild: '25A100' },
     toolCallingSetting: 'auto',
+    declaredModel: 'system',
   });
   const adapter = createChatCompletionsAdapter({ ...managed, clock: createFakeClock(START_MS) });
   registerCleanup(() => adapter.close());

@@ -4,7 +4,7 @@ EXTENDS Naturals, Sequences, FiniteSets, TLC
 CONSTANTS
     MaxSteps, MaxCalls, Keep, Deferred, MaxCompactions, MaxClaims,
     MaxArrivals, MaxGovChanges, MaxModeChanges, Caps,
-    ModeYield, OfferPerBuild, GovFirstInF, RerankMemories, RerenderPerBuild
+    ModeYield, OfferPerBuild, GovFirstInF, RerankMemories, RerenderPerBuild, RefModel
 
 VARIABLES
     hist, arrivals, gov, memo, offer, offerMode, mode, loaded, pending,
@@ -35,6 +35,22 @@ IsOut(it) == it.kind \in {"load", "work"}
 
 Unprotected(it) == IsOut(it) /\ ~it.evicted /\ it.step <= step - Keep
 
+Truncated(it) == IsOut(it) /\ it.form # 0 /\ it.size > it.form
+
+Full(it) == IsOut(it) /\ ~it.evicted /\ ~Truncated(it)
+
+Candidate(it) == IsOut(it) /\ ~it.evicted /\ it.step <= step - Keep /\ it.dupOf = 0
+
+NoGain(h, i) == h[i].size = 1 \/ \E j \in DOMAIN h : h[j].dupOf = h[i].id
+
+NextReferent(h, i) ==
+    IF h[i].kind # "work" \/ ~Full(h[i])
+        THEN 0
+        ELSE LET earlier == {j \in 1..(i - 1) : h[j].kind = "work" /\ h[j].cls = h[i].cls /\ Full(h[j])}
+             IN IF earlier = {} THEN 0 ELSE h[CHOOSE j \in earlier : \A k \in earlier : j <= k].id
+
+Refs(h) == [i \in DOMAIN h |-> IF IsOut(h[i]) THEN [h[i] EXCEPT !.dupOf = NextReferent(h, i)] ELSE h[i]]
+
 Retained(it) == it.step > step - Keep /\ it.kind # "task"
 
 EndOfF == 4 + Len(arrivals)
@@ -45,6 +61,7 @@ Render(it) ==
       [] it.kind = "resp" -> <<"resp", it.step>>
       [] it.evicted -> <<"out", it.id, "evicted">>
       [] it.dupOf # 0 -> <<"out", it.id, "ref", it.dupOf>>
+      [] Truncated(it) -> <<"out", it.id, "trunc", it.form>>
       [] OTHER -> <<"out", it.id, "full", it.form>>
 
 ToolsSlot(wrap, om, of, ld) == IF wrap THEN <<"tools", "none">> ELSE <<"tools", om, of, ld>>
@@ -68,9 +85,9 @@ CP(a, b) ==
 
 FormsAt(h) == [i \in DOMAIN h |-> IF IsOut(h[i]) /\ ~h[i].evicted /\ (RerenderPerBuild \/ h[i].form = 0) THEN [h[i] EXCEPT !.form = cap] ELSE h[i]]
 
-Task == [id |-> 0, kind |-> "task", step |-> 0, evicted |-> FALSE, dupOf |-> 0, form |-> 0]
+Task == [id |-> 0, kind |-> "task", step |-> 0, evicted |-> FALSE, dupOf |-> 0, form |-> 0, cls |-> 0, size |-> 1]
 
-Summary == [id |-> 0, kind |-> "sum", step |-> 0, evicted |-> FALSE, dupOf |-> 0, form |-> "opaque"]
+Summary == [id |-> 0, kind |-> "sum", step |-> 0, evicted |-> FALSE, dupOf |-> 0, form |-> "opaque", cls |-> 0, size |-> 1]
 
 Rec(e, k) == /\ since' = Min2(since, k) /\ evs' = evs \cup {e}
 
@@ -128,13 +145,13 @@ Build ==
     /\ alive /\ phase = "build" /\ ~wrapping /\ step < MaxSteps
     /\ ~(ModeYield /\ mode # offerMode)
     /\ \E m \in MemoChoices, o \in (IF OfferPerBuild THEN Snaps ELSE {offer}) :
-        Send(FALSE, o, IF OfferPerBuild THEN mode ELSE offerMode, m, FormsAt(hist))
+        Send(FALSE, o, IF OfferPerBuild THEN mode ELSE offerMode, m, Refs(FormsAt(hist)))
     /\ sent' = "build"
     /\ UNCHANGED <<arrivals, gov, mode, loaded, pending, claim, alive, wrapping, step, nextId, cap, loads, loadBatches, offerChanges, modeChanges, compactions>>
 
 WrapUp ==
     /\ alive /\ phase = "build"
-    /\ \E m \in MemoChoices : Send(TRUE, offer, offerMode, m, FormsAt(hist))
+    /\ \E m \in MemoChoices : Send(TRUE, offer, offerMode, m, Refs(FormsAt(hist)))
     /\ wrapping' = TRUE
     /\ sent' = "wrapup"
     /\ UNCHANGED <<arrivals, gov, mode, loaded, pending, claim, alive, step, nextId, cap, loads, loadBatches, offerChanges, modeChanges, compactions>>
@@ -146,7 +163,7 @@ Respond ==
              /\ UNCHANGED <<hist, pending, step, nextId>>
         ELSE \E c \in 1..MaxCalls : \E nl \in 0..c :
                 /\ phase' = "tools"
-                /\ hist' = Append(hist, [id |-> 0, kind |-> "resp", step |-> step + 1, evicted |-> FALSE, dupOf |-> 0, form |-> 0])
+                /\ hist' = Append(hist, [id |-> 0, kind |-> "resp", step |-> step + 1, evicted |-> FALSE, dupOf |-> 0, form |-> 0, cls |-> 0, size |-> 1])
                 /\ pending' = {[id |-> nextId + i, kind |-> IF i < nl THEN "load" ELSE "work"] : i \in 0..(c - 1)}
                 /\ nextId' = nextId + c
                 /\ step' = step + 1
@@ -154,9 +171,7 @@ Respond ==
     /\ NoRec /\ NoSend
     /\ UNCHANGED <<arrivals, gov, memo, offer, offerMode, mode, loaded, claim, lastReq, alive, wrapping, loadDirty, cap, loads, loadBatches, toolBreaks, offerChanges, modeChanges, compactions>>
 
-DupCandidates == {it.id : it \in {x \in Range(hist) : x.kind = "work" /\ ~x.evicted /\ x.dupOf = 0}}
-
-OldestDup == IF DupCandidates = {} THEN 0 ELSE CHOOSE d \in DupCandidates : \A e \in DupCandidates : d <= e
+WorkClasses == {x.cls : x \in {y \in Range(hist) : y.kind = "work"}}
 
 ToolDone ==
     /\ alive /\ phase = "tools"
@@ -165,7 +180,7 @@ ToolDone ==
         /\ phase' = IF pending \ {p} = {} THEN "build" ELSE "tools"
         /\ IF p.kind = "load"
             THEN \E t \in Deferred :
-                    /\ hist' = Append(hist, [id |-> p.id, kind |-> "load", step |-> step, evicted |-> FALSE, dupOf |-> 0, form |-> 0])
+                    /\ hist' = Refs(Append(hist, [id |-> p.id, kind |-> "load", step |-> step, evicted |-> FALSE, dupOf |-> 0, form |-> 0, cls |-> p.id, size |-> 2]))
                     /\ IF t \in Range(loaded)
                         THEN /\ UNCHANGED <<loaded, loads, loadBatches, loadDirty>>
                              /\ NoRec
@@ -174,42 +189,38 @@ ToolDone ==
                              /\ loadBatches' = loadBatches + (IF loadDirty THEN 0 ELSE 1)
                              /\ loadDirty' = TRUE
                              /\ Rec("tools_loaded", 0)
-            ELSE \E d \in {0, OldestDup} :
-                    /\ hist' = Append(hist, [id |-> p.id, kind |-> "work", step |-> step, evicted |-> FALSE, dupOf |-> d, form |-> 0])
+            ELSE \E c \in (IF RefModel THEN {p.id} \cup WorkClasses ELSE {p.id}), z \in (IF RefModel THEN 1..2 ELSE {2}) :
+                    /\ hist' = Refs(Append(hist, [id |-> p.id, kind |-> "work", step |-> step, evicted |-> FALSE, dupOf |-> 0, form |-> 0, cls |-> c, size |-> z]))
                     /\ UNCHANGED <<loaded, loads, loadBatches, loadDirty>>
                     /\ NoRec
     /\ NoSend
     /\ UNCHANGED <<arrivals, gov, memo, offer, offerMode, mode, claim, recorded, lastReq, alive, wrapping, step, nextId, cap, toolBreaks, offerChanges, modeChanges, compactions>>
 
-UnprotectedIdx == {i \in DOMAIN hist : Unprotected(hist[i])}
-
 Evict ==
     /\ alive /\ phase = "build"
-    /\ UnprotectedIdx # {}
-    /\ \E k \in 1..Cardinality(UnprotectedIdx) :
-        LET gone == {i \in UnprotectedIdx : Cardinality({j \in UnprotectedIdx : j <= i}) <= k}
-            first == CHOOSE i \in gone : \A j \in gone : i <= j
-            goneIds == {hist[i].id : i \in gone}
-        IN /\ hist' = [i \in DOMAIN hist |->
-                IF i \in gone THEN [hist[i] EXCEPT !.evicted = TRUE]
-                ELSE IF IsOut(hist[i]) /\ ~hist[i].evicted /\ i > first
-                    THEN [hist[i] EXCEPT !.form = cap, !.dupOf = IF hist[i].dupOf \in goneIds THEN 0 ELSE hist[i].dupOf]
-                ELSE IF IsOut(hist[i]) /\ hist[i].dupOf \in goneIds
-                    THEN [hist[i] EXCEPT !.dupOf = 0]
-                ELSE hist[i]]
-           /\ Rec("eviction", EndOfF + first - 1)
+    /\ LET candidates == {i \in DOMAIN hist : Candidate(hist[i])}
+       IN /\ candidates # {}
+          /\ \E skipped \in SUBSET {i \in candidates : NoGain(hist, i)} :
+                LET pool == candidates \ skipped
+                IN /\ pool # {}
+                   /\ LET first == CHOOSE i \in pool : \A j \in pool : i <= j
+                          rendered == [i \in DOMAIN hist |->
+                              IF i = first THEN [hist[i] EXCEPT !.evicted = TRUE]
+                              ELSE IF IsOut(hist[i]) /\ ~hist[i].evicted /\ i > first THEN [hist[i] EXCEPT !.form = cap]
+                              ELSE hist[i]]
+                      IN /\ hist' = [i \in DOMAIN rendered |->
+                                IF IsOut(rendered[i]) THEN [rendered[i] EXCEPT !.dupOf = NextReferent(rendered, i)] ELSE rendered[i]]
+                         /\ Rec("eviction", EndOfF + first - 1)
     /\ NoSend
     /\ UNCHANGED <<arrivals, gov, memo, offer, offerMode, mode, loaded, pending, claim, phase, recorded, lastReq, alive, wrapping, loadDirty, step, nextId, cap, loads, loadBatches, toolBreaks, offerChanges, modeChanges, compactions>>
 
 Compact ==
     /\ alive /\ phase = "build" /\ ~wrapping /\ compactions < MaxCompactions
     /\ LET kept == SelectSeq(hist, Retained)
-           keptIds == {it.id : it \in Range(kept)}
-       IN hist' = << Task, Summary >> \o [i \in DOMAIN kept |->
+       IN hist' = Refs(<< Task, Summary >> \o [i \in DOMAIN kept |->
             IF IsOut(kept[i])
-                THEN [kept[i] EXCEPT !.form = IF kept[i].evicted THEN kept[i].form ELSE cap,
-                                     !.dupOf = IF kept[i].dupOf \in keptIds THEN kept[i].dupOf ELSE 0]
-                ELSE kept[i]]
+                THEN [kept[i] EXCEPT !.form = IF kept[i].evicted THEN kept[i].form ELSE cap]
+                ELSE kept[i]])
     /\ compactions' = compactions + 1
     /\ Rec("compaction", EndOfF)
     /\ NoSend
@@ -342,14 +353,16 @@ NoProtectedEvicted ==
 OldestFirst ==
     [][compactions' = compactions =>
         \A i \in DOMAIN hist : (~hist[i].evicted /\ hist'[i].evicted) =>
-            \A j \in 1..(i - 1) : Unprotected(hist[j]) => hist'[j].evicted]_vars
+            \A j \in 1..(i - 1) : Candidate(hist[j]) => (hist'[j].evicted \/ NoGain(hist, j))]_vars
 
 ResendUnchanged ==
     [][sent' = "resend" => (lastReq' = lastReq /\ lastReq' = recorded)]_vars
 
+RefNeverEvicted == \A i \in DOMAIN hist : hist[i].evicted => hist[i].dupOf = 0
+
 RefShowsFullReferent ==
     /\ \A i \in DOMAIN hist : (IsOut(hist[i]) /\ ~hist[i].evicted /\ hist[i].dupOf # 0) =>
-        \E j \in 1..(i - 1) : hist[j].id = hist[i].dupOf /\ IsOut(hist[j]) /\ ~hist[j].evicted /\ hist[j].dupOf = 0
+        \E j \in 1..(i - 1) : hist[j].id = hist[i].dupOf /\ Full(hist[j]) /\ hist[j].dupOf = 0
     /\ \A i \in DOMAIN lastReq : (lastReq[i][1] = "out" /\ lastReq[i][3] = "ref") =>
         \E j \in 1..(i - 1) : lastReq[j][1] = "out" /\ lastReq[j][2] = lastReq[i][4] /\ lastReq[j][3] = "full"
 

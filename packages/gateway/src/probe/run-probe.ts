@@ -3,24 +3,31 @@ import { decodeSse } from '@momonga/foundation';
 import {
   ESTIMATED_ERROR_BOUND_RATIO,
   PROBE_KEYWORDS,
+  DEFAULT_OUTPUT_BOUND_FIELD,
+  OUTPUT_BOUND_FIELDS,
   SUMMARY_PROMPT_TOKENS,
   summaryInputLimitFor,
   summaryTokenCapFor,
   tokensForText,
   type ImageTokenModel,
+  type OutputBoundField,
   type ProbeKeyword,
   type ProbeReport,
 } from '@momonga/protocol';
 import { CHAT_COMPLETIONS_VOCABULARY } from '../adapters/chat-completions/vocabulary.ts';
-import type { ErrorVocabulary } from '../adapters/chat-completions/vocabulary.ts';
-import { decodeUpstreamReply } from '../adapters/chat-completions/upstream-reply.ts';
+import type { ErrorVocabulary, UpstreamErrorKind } from '../adapters/shared/vocabulary.ts';
+import { decodeUpstreamReply, upstreamErrorMessage } from '../adapters/chat-completions/upstream-reply.ts';
 import type { UpstreamReply } from '../adapters/chat-completions/upstream-reply.ts';
+import { outputBoundFor } from '../adapters/chat-completions/output-bound.ts';
 import { summaryRequestOf } from '../adapters/shared/compact.ts';
 import { hiddenReasoningTokens } from '../core/hidden-reasoning.ts';
+import { cachedCountOf } from './cached-count.ts';
 import { maxOutputTokensFor } from './decide.ts';
-import { solidPngDataUrl } from './solid-png.ts';
+import { IMAGE_PROMPT, SEARCH_TOLERANCE, TINY_PNG, measureImageTokens } from './image-tokens.ts';
+import type { ImageCostProbe } from './image-tokens.ts';
 import { ProbeTimeoutError, createProbeClient, systemSleep, type HttpResult, type ProbeClient, type ProbeEndpoint } from './client.ts';
 import { buildToolCallEnvelope, keywordProbeSchemas, type KeywordSupport, type ProbeTool } from './envelope.ts';
+import { fillerText } from './filler.ts';
 import { field, firstOf, isRecord, parseJson } from './json.ts';
 
 export interface ProbeOptions {
@@ -45,11 +52,11 @@ const CONCURRENCY_ATTEMPTS = 8;
 const SEARCH_INITIAL_WORDS = 64;
 const SEARCH_MAX_WORDS = 262144;
 const DEFAULT_STEP_TIMEOUT_MS = 120000;
-const SEARCH_TOLERANCE = 0.01;
-const IMAGE_PROMPT = 'Describe this image.';
-const IMAGE_PROBE_SMALL_SIDE = 512;
-const IMAGE_PROBE_LARGE_SIDE = 2048;
-const IMAGE_PROBE_MAX_SIDE = 8192;
+const CACHE_PROBE_WORDS = 1536;
+const OUTPUT_BOUND_PROBE_TOKENS = 16;
+const OUTPUT_BOUND_HONOURED_FACTOR = 2;
+const ONE_OUTPUT_TOKEN = 1;
+const LONG_ANSWER_PROMPT = 'Count from 1 to 300, one number per line, and write nothing else.';
 const CALIBRATION_WORD_COUNTS = [20, 80, 320] as const;
 const CONTEXT_FIELDS = [
   'context_window',
@@ -72,21 +79,20 @@ const PROBE_TOOL: ProbeTool = {
 const TOOL_PROMPT = `Please call ${PROBE_TOOL.name} for Tokyo for 3 days`;
 const SYSTEM_PROMPT = 'Answer only with JSON that matches the given schema.';
 const PLAIN_PROMPT = 'Say hello in one short sentence.';
-const TINY_PNG_SIDE = 1;
-const TINY_PNG =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
-
 const ajv = new Ajv2020.default({ strict: false });
 const validateToolArguments = ajv.compile(PROBE_TOOL.parameters);
 
-type ProbeOutcome = 'accepted' | 'unsupported' | 'overflow' | 'failure';
+type ProbeOutcome = 'accepted' | 'unsupported' | 'overflow' | 'too_large' | 'failure';
 
-type ChatResult = HttpResult & { reply: UpstreamReply; outcome: ProbeOutcome };
+type ChatResult = HttpResult & { reply: UpstreamReply; outcome: ProbeOutcome; errorKind: UpstreamErrorKind | undefined };
 
-const outcomeOf = (vocabulary: ErrorVocabulary, status: number, reply: UpstreamReply): ProbeOutcome => {
+const errorKindOf = (vocabulary: ErrorVocabulary, reply: UpstreamReply): UpstreamErrorKind | undefined =>
+  reply.kind === 'error' ? vocabulary.kindOf(reply.status, reply.body) : undefined;
+
+const outcomeOf = (status: number, reply: UpstreamReply, kind: UpstreamErrorKind | undefined): ProbeOutcome => {
   if (reply.kind === 'completion') return status === 200 ? 'accepted' : 'failure';
-  const kind = vocabulary.kindOf(status, reply.body);
   if (kind === 'context_overflow') return 'overflow';
+  if (kind === 'payload_too_large') return 'too_large';
   return kind === 'unsupported' ? 'unsupported' : 'failure';
 };
 
@@ -127,7 +133,13 @@ const retryAfterMs = (value: string | undefined, now: Date): number | undefined 
   return Number.isNaN(at) ? undefined : Math.max(0, at - now.getTime());
 };
 
-const wordsOf = (count: number): string => Array.from({ length: count }, () => 'word').join(' ');
+const estimatedCount = async (text: string): Promise<number> => tokensForText(text);
+
+
+const cachedTokensOf = (reply: UpstreamReply): number | undefined => {
+  if (reply.kind !== 'completion') return undefined;
+  return cachedCountOf(field(field(reply.usage, 'prompt_tokens_details'), 'cached_tokens'), 'usage.prompt_tokens_details.cached_tokens');
+};
 
 const toolArgumentsValid = (args: unknown): boolean => isRecord(args) && validateToolArguments(args);
 
@@ -196,29 +208,43 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
   if (typeof model !== 'string') throw new Error('Probe could not determine a model id from /v1/models');
 
   const vocabulary = options.vocabulary ?? CHAT_COMPLETIONS_VOCABULARY;
-  const post = async (body: Record<string, unknown>): Promise<ChatResult> => {
+  const send: Chat = async (body) => {
     const result = await client.post('chat', { model, ...body });
     const reply = await decodeUpstreamReply(result.status, result.text);
-    return { ...result, reply, outcome: outcomeOf(vocabulary, result.status, reply) };
+    const errorKind = errorKindOf(vocabulary, reply);
+    return { ...result, reply, errorKind, outcome: outcomeOf(result.status, reply, errorKind) };
   };
   const stepTimeoutMs = options.stepTimeoutMs ?? DEFAULT_STEP_TIMEOUT_MS;
   const sleep = options.sleep ?? systemSleep;
-  const chat: Chat = async (body) => {
-    let result = await post(body);
-    for (let retry = 0; result.status === 429 && retry < MAX_RATE_LIMIT_RETRIES; retry += 1) {
-      const waitMs = retryAfterMs(result.headers['retry-after'], now());
-      if (waitMs === undefined || waitMs > stepTimeoutMs) return result;
-      await sleep(waitMs, options.signal);
-      result = await post(body);
-    }
-    return result;
+  const retryingRateLimits =
+    (once: Chat): Chat =>
+    async (body) => {
+      let result = await once(body);
+      for (let retry = 0; result.status === 429 && retry < MAX_RATE_LIMIT_RETRIES; retry += 1) {
+        const waitMs = retryAfterMs(result.headers['retry-after'], now());
+        if (waitMs === undefined || waitMs > stepTimeoutMs) return result;
+        await sleep(waitMs, options.signal);
+        result = await once(body);
+      }
+      return result;
+    };
+
+  const outputBoundField = await measureOutputBoundField(retryingRateLimits(send));
+  const bound = { field: outputBoundField === 'none' ? DEFAULT_OUTPUT_BOUND_FIELD : outputBoundField, tokens: OUTPUT_BOUND_PROBE_TOKENS };
+  const post: Chat = (body) => {
+    const { outputTokens, ...rest } = body;
+    return send({ ...rest, ...outputBoundFor(bound.field, typeof outputTokens === 'number' ? outputTokens : bound.tokens) });
   };
+  const chat = retryingRateLimits(post);
+
+  const contextWindow = reportedContextWindow(modelsBody, healthResult.text) ?? (await searchContextWindow(chat, options.countTokens));
+  bound.tokens = maxOutputTokensFor(contextWindow.value);
 
   const plain = await chat({ messages: [{ role: 'user', content: PLAIN_PROMPT }] });
   expectStatus(plain, [200], 'plain completion');
-  const usageReported = promptTokensOf(parseJson(plain.text)) !== undefined;
+  const usageReported = promptTokensOf(plain.reply.body) !== undefined;
 
-  const streaming = await probeStreaming(client, model);
+  const streaming = await probeStreaming(client, model, outputBoundFor(bound.field, bound.tokens));
 
   const stopSequences = isAcceptedOrRejected(
     await chat({ messages: [{ role: 'user', content: PLAIN_PROMPT }], stop: ['STOP'] }),
@@ -229,13 +255,16 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
     'image input',
   );
 
-  const imageTokens = imageInputAccepted && usageReported ? await measureImageTokens(chat) : undefined;
+  const imageTokens = imageInputAccepted && usageReported ? await measureImageTokens(imageCostProbeOf(chat)) : undefined;
 
   const guardrail: ProbeReport['guardrail'] = {};
   if (options.guardrailPrompt !== undefined) {
     const result = await chat({ messages: [{ role: 'user', content: options.guardrailPrompt }] });
-    expectStatus(result, [200, 400], 'guardrail');
-    if (result.status === 400) guardrail.errorShape = parseJson(result.text);
+    if (result.reply.kind === 'error' && (result.errorKind === 'guardrail' || result.status === 400)) {
+      guardrail.errorShape = result.reply.body;
+    } else {
+      expectStatus(result, [200], 'guardrail');
+    }
   }
 
   const constrainedAccepted = isAcceptedOrRejected(
@@ -263,10 +292,9 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
   const tokenCalibration =
     usageReported && options.countTokens !== undefined ? await calibrate(chat, options.countTokens) : undefined;
 
-  const contextWindow =
-    reportedContextWindow(modelsBody, healthResult.text) ?? (await searchContextWindow(chat));
-
   const reasoning = await measureReasoning(chat, contextWindow.value);
+
+  const promptCache = await measurePromptCache(chat);
 
   const maxConcurrency = await measureConcurrency(post);
 
@@ -281,6 +309,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
     constrained,
     keywordSupport,
     stopSequences,
+    outputBoundField,
     parallelToolCalls,
     reasoning,
     maxConcurrency,
@@ -288,114 +317,73 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
     ...(imageTokens === undefined ? {} : { imageTokens }),
     guardrail,
     ...(tokenCalibration === undefined ? {} : { tokenCalibration }),
+    ...(promptCache === undefined ? {} : { promptCache }),
   };
 };
 
 type Chat = (body: Record<string, unknown>) => Promise<ChatResult>;
 
-type ImageCost = { rejected: true } | { rejected: false; promptTokens: number | undefined };
+const outputTokensOf = (result: ChatResult): number => {
+  const completionTokens = field(result.reply.kind === 'completion' ? result.reply.usage : undefined, 'completion_tokens');
+  if (typeof completionTokens === 'number') return completionTokens;
+  const content = field(assistantMessage(result.reply.body), 'content');
+  if (typeof content === 'string') return tokensForText(content);
+  return failProbeStep(result, 'output bound');
+};
 
-type MeasuredImage = { side: number; tokens: number };
+const honoursOutputBound = async (send: Chat, candidate: OutputBoundField): Promise<boolean> => {
+  const result = await send({
+    messages: [{ role: 'user', content: LONG_ANSWER_PROMPT }],
+    ...outputBoundFor(candidate, OUTPUT_BOUND_PROBE_TOKENS),
+  });
+  if (!isAcceptedOrRejected(result, `output bound ${candidate}`)) return false;
+  return outputTokensOf(result) <= OUTPUT_BOUND_PROBE_TOKENS * OUTPUT_BOUND_HONOURED_FACTOR;
+};
 
-type Measurement = MeasuredImage | 'rejected' | 'unusable';
+const measureOutputBoundField = async (send: Chat): Promise<OutputBoundField | 'none'> => {
+  for (const candidate of OUTPUT_BOUND_FIELDS) {
+    if (await honoursOutputBound(send, candidate)) return candidate;
+  }
+  return 'none';
+};
 
 const imagePromptRequest = (chat: Chat, imageUrl: string | undefined): Promise<ChatResult> => {
   const parts: unknown[] = [{ type: 'text', text: IMAGE_PROMPT }];
   if (imageUrl !== undefined) parts.push({ type: 'image_url', image_url: { url: imageUrl } });
-  return chat({ messages: [{ role: 'user', content: parts }], max_tokens: 1 });
+  return chat({ messages: [{ role: 'user', content: parts }], outputTokens: ONE_OUTPUT_TOKEN });
 };
 
-const baselinePromptTokens = async (chat: Chat): Promise<number | undefined> => {
-  const result = await imagePromptRequest(chat, undefined);
-  expectStatus(result, [200], 'image token baseline');
-  return promptTokensOf(parseJson(result.text));
+const imageCostProbeOf = (chat: Chat): ImageCostProbe => ({
+  baseline: async () => {
+    const result = await imagePromptRequest(chat, undefined);
+    expectStatus(result, [200], 'image token baseline');
+    return promptTokensOf(result.reply.body);
+  },
+  cost: async (imageUrl) => {
+    const result = await imagePromptRequest(chat, imageUrl);
+    if (result.outcome === 'unsupported' || result.outcome === 'overflow' || result.outcome === 'too_large') return { rejected: true };
+    if (result.outcome !== 'accepted') return failProbeStep(result, 'image token measurement');
+    return { rejected: false, promptTokens: promptTokensOf(result.reply.body) };
+  },
+});
+
+const measurePromptCache = async (chat: Chat): Promise<ProbeReport['promptCache']> => {
+  const request = { messages: [{ role: 'user', content: fillerText(CACHE_PROBE_WORDS) }], outputTokens: ONE_OUTPUT_TOKEN };
+  expectStatus(await chat(request), [200], 'prompt cache first request');
+  const repeated = await chat(request);
+  expectStatus(repeated, [200], 'prompt cache repeated request');
+  const cached = cachedTokensOf(repeated.reply);
+  if (cached === undefined) return undefined;
+  return { kind: cached > 0 ? 'automatic' : 'none' };
 };
 
-const imageCost = async (chat: Chat, imageUrl: string): Promise<ImageCost> => {
-  const result = await imagePromptRequest(chat, imageUrl);
-  if (result.outcome === 'unsupported' || result.outcome === 'overflow') return { rejected: true };
-  if (result.outcome !== 'accepted') return failProbeStep(result, 'image token measurement');
-  return { rejected: false, promptTokens: promptTokensOf(parseJson(result.text)) };
-};
-
-const measureUrl = async (chat: Chat, baseline: number, side: number, imageUrl: string): Promise<Measurement> => {
-  const cost = await imageCost(chat, imageUrl);
-  if (cost.rejected) return 'rejected';
-  if (cost.promptTokens === undefined || cost.promptTokens - baseline <= 0) return 'unusable';
-  return { side, tokens: cost.promptTokens - baseline };
-};
-
-const measureSide = (chat: Chat, baseline: number, side: number): Promise<Measurement> => measureUrl(chat, baseline, side, solidPngDataUrl(side));
-
-const bisectLargestAccepted = async (chat: Chat, baseline: number, accepted: MeasuredImage, rejectedFrom: number): Promise<MeasuredImage | undefined> => {
-  let largest = accepted;
-  let rejectedSide = rejectedFrom;
-  while (rejectedSide - largest.side > Math.max(1, Math.floor(largest.side * SEARCH_TOLERANCE))) {
-    const middle = Math.floor((largest.side + rejectedSide) / 2);
-    const measured = await measureSide(chat, baseline, middle);
-    if (measured === 'unusable') return undefined;
-    if (measured === 'rejected') rejectedSide = middle;
-    else largest = measured;
-  }
-  return largest;
-};
-
-type Ceiling = { largest: MeasuredImage; plateau: boolean };
-
-const findCeiling = async (chat: Chat, baseline: number, small: MeasuredImage, floorTokens: number): Promise<Ceiling | undefined> => {
-  let previous = small;
-  for (let side = IMAGE_PROBE_LARGE_SIDE; side <= IMAGE_PROBE_MAX_SIDE; side *= 2) {
-    const measured = await measureSide(chat, baseline, side);
-    if (measured === 'unusable') return undefined;
-    if (measured === 'rejected') {
-      const largest = await bisectLargestAccepted(chat, baseline, previous, side);
-      return largest === undefined ? undefined : { largest, plateau: false };
-    }
-    if (measured.tokens <= previous.tokens && previous.tokens > floorTokens) return { largest: measured, plateau: true };
-    previous = measured;
-  }
-  return { largest: previous, plateau: false };
-};
-
-const referenceBelowPlateau = async (chat: Chat, baseline: number, start: MeasuredImage, model: Pick<ImageTokenModel, 'minTokens' | 'maxTokens'>, plateau: boolean): Promise<MeasuredImage | undefined> => {
-  let candidate = start;
-  for (;;) {
-    if (candidate.tokens <= model.minTokens) return undefined;
-    if (!plateau || candidate.tokens < model.maxTokens) return candidate;
-    const side = Math.floor(candidate.side / 2);
-    if (side < 1) return undefined;
-    const measured = await measureSide(chat, baseline, side);
-    if (measured === 'rejected' || measured === 'unusable') return undefined;
-    candidate = measured;
-  }
-};
-
-const measureImageTokens = async (chat: Chat): Promise<ImageTokenModel | undefined> => {
-  const baseline = await baselinePromptTokens(chat);
-  if (baseline === undefined) return undefined;
-  const tiny = await measureUrl(chat, baseline, TINY_PNG_SIDE, TINY_PNG);
-  if (tiny === 'rejected' || tiny === 'unusable') return undefined;
-  const small = await measureSide(chat, baseline, IMAGE_PROBE_SMALL_SIDE);
-  if (small === 'unusable') return undefined;
-  const ceiling =
-    small === 'rejected'
-      ? { largest: await bisectLargestAccepted(chat, baseline, tiny, IMAGE_PROBE_SMALL_SIDE), plateau: false }
-      : await findCeiling(chat, baseline, small, tiny.tokens);
-  if (ceiling?.largest === undefined || ceiling.largest.side === tiny.side) return undefined;
-  const { largest, plateau } = ceiling;
-  const model = { minTokens: tiny.tokens, maxTokens: largest.tokens };
-  const start = small === 'rejected' ? largest : small;
-  const reference = model.minTokens === model.maxTokens ? start : await referenceBelowPlateau(chat, baseline, start, model, plateau);
-  if (reference === undefined) return undefined;
-  return { pixelsPerToken: reference.side ** 2 / reference.tokens, ...model };
-};
-
-const probeStreaming = async (client: ProbeClient, model: string): Promise<ProbeReport['streaming']> => {
+const probeStreaming = async (client: ProbeClient, model: string, outputBound: object): Promise<ProbeReport['streaming']> => {
   const { status, chunks } = await client.stream('chat', {
     model,
     messages: [{ role: 'user', content: PLAIN_PROMPT }],
     stream: true,
     stream_options: { include_usage: true },
+    ...outputBound,
   });
   if (status !== 200) {
     for await (const chunk of chunks) void chunk;
@@ -450,7 +438,7 @@ const sampleNative = async (
       return { accepted: false, validRate: 0, firstValidCall: undefined };
     }
     if (result === undefined || result.status !== 200) continue;
-    const call = nativeCallOf(parseJson(result.text));
+    const call = nativeCallOf(result.reply.body);
     if (nativeCallValid(call)) {
       valid += 1;
       firstValidCall ??= call;
@@ -476,7 +464,7 @@ const sampleConstrained = async (
     });
     if (index === 0 && !isFirstSampleAccepted(result, 'constrained samples')) return { accepted: false, validRate: 0 };
     if (result === undefined || result.status !== 200) continue;
-    if (constrainedValid(parseJson(result.text))) valid += 1;
+    if (constrainedValid(result.reply.body)) valid += 1;
   }
   return { accepted: true, validRate: samples === 0 ? 0 : valid / samples };
 };
@@ -496,7 +484,7 @@ const roundTrip = async (chat: Chat, call: NativeCall): Promise<boolean> => {
   });
   if (result.outcome === 'unsupported') return false;
   expectStatus(result, [200], 'native round trip');
-  const content = field(assistantMessage(parseJson(result.text)), 'content');
+  const content = field(assistantMessage(result.reply.body), 'content');
   return typeof content === 'string' && content.length > 0;
 };
 
@@ -522,7 +510,7 @@ const sampleParallel = async (chat: Chat, samples: number): Promise<NonNullable<
     });
     if (index === 0 && !isFirstSampleAccepted(result, 'parallel tool calls')) return { accepted: false, multiCallRate: 0 };
     if (result === undefined || result.status !== 200) continue;
-    if (toolCallCount(parseJson(result.text)) >= 2) several += 1;
+    if (toolCallCount(result.reply.body) >= 2) several += 1;
   }
   return { accepted: true, multiCallRate: samples === 0 ? 0 : several / samples };
 };
@@ -560,7 +548,7 @@ const summaryShapedBody = (contextWindow: number): Record<string, unknown> => {
       { role: 'system', content: summary.instructions },
       { role: 'user', content },
     ],
-    max_tokens: maxOutputTokens,
+    outputTokens: maxOutputTokens,
   };
 };
 
@@ -570,7 +558,7 @@ const measureReasoning = async (chat: Chat, contextWindow: number): Promise<NonN
   for (let index = 0; index < REASONING_BASELINE_SAMPLES; index += 1) {
     const result = await chat(body);
     expectStatus(result, [200], 'reasoning baseline');
-    const spent = hiddenReasoningOf(parseJson(result.text));
+    const spent = hiddenReasoningOf(result.reply.body);
     if (spent === undefined) return { control: 'none' };
     baseline.push(spent);
   }
@@ -579,7 +567,7 @@ const measureReasoning = async (chat: Chat, contextWindow: number): Promise<NonN
   for (const effort of PROBED_REASONING_EFFORTS) {
     const result = await chat({ ...body, reasoning_effort: effort });
     if (!isAcceptedOrRejected(result, 'reasoning')) continue;
-    const spent = hiddenReasoningOf(parseJson(result.text));
+    const spent = hiddenReasoningOf(result.reply.body);
     if (headroomTokens === 0 || (spent !== undefined && spent * REASONING_REDUCTION_FACTOR <= lowestBaseline)) {
       return { control: 'reasoning_effort', lowest: effort };
     }
@@ -593,10 +581,10 @@ const calibrate = async (
 ): Promise<{ ratio: number; errorBound: number }> => {
   const points: Array<{ reported: number; counted: number }> = [];
   for (const wordCount of CALIBRATION_WORD_COUNTS) {
-    const text = wordsOf(wordCount);
+    const text = fillerText(wordCount);
     const result = await chat({ messages: [{ role: 'user', content: text }] });
     expectStatus(result, [200], 'token calibration');
-    const reported = promptTokensOf(parseJson(result.text));
+    const reported = promptTokensOf(result.reply.body);
     if (reported === undefined) throw new Error('Probe token calibration: usage.prompt_tokens missing');
     const counted = await countTokens(text);
     if (!(counted > 0)) throw new Error('Probe token calibration: countTokens returned a non-positive count');
@@ -635,18 +623,25 @@ const reportedContextWindow = (modelsBody: unknown, healthText: string): ProbeRe
   return undefined;
 };
 
-const searchContextWindow = async (chat: Chat): Promise<ProbeReport['contextWindow']> => {
+const searchContextWindow = async (chat: Chat, countTokens: ProbeOptions['countTokens']): Promise<ProbeReport['contextWindow']> => {
   let overflowErrorShape: unknown;
   let overflowRecorded = false;
 
   const attempt = async (words: number): Promise<{ ok: boolean; promptTokens: number }> => {
-    const result = await chat({ messages: [{ role: 'user', content: wordsOf(words) }], max_tokens: 1 });
+    const text = fillerText(words);
+    const result = await chat({ messages: [{ role: 'user', content: text }], outputTokens: ONE_OUTPUT_TOKEN });
     const { reply } = result;
     if (reply.kind === 'completion') {
       if (result.outcome !== 'accepted') return failProbeStep(result, 'context window search');
-      return { ok: true, promptTokens: promptTokensOf({ usage: reply.usage }) ?? words };
+      const reported = promptTokensOf({ usage: reply.usage });
+      if (reported !== undefined) return { ok: true, promptTokens: reported };
+      return { ok: true, promptTokens: await (countTokens ?? estimatedCount)(text) };
     }
-    if (result.outcome !== 'overflow') return failProbeStep(result, 'context window search');
+    if (result.outcome !== 'overflow') {
+      throw new Error(
+        `Probe step "context window search" at ${words} words got an upstream error of kind ${result.errorKind ?? 'failure'} (HTTP ${result.status}): ${upstreamErrorMessage(reply.body)}`,
+      );
+    }
     if (!overflowRecorded) {
       overflowRecorded = true;
       overflowErrorShape = reply.body;

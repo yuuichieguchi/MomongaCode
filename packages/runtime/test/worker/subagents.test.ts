@@ -94,7 +94,7 @@ describe('worker subagents', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     expect(env.store.getSession(child.sessionId)?.modelAlias).toBe('fm');
   });
 
-  it('runs the child of a plan-mode parent in plan mode, so a Write it attempts is denied and nothing is written', async () => {
+  it('runs the child of a plan-mode parent in plan mode, so a Write it attempts fails as not offered and nothing is written', async () => {
     const env = await makeEnv({ mode: 'plan' });
     writeAgent(env, 'writer', 'tools: Write\n', 'You write files.');
     const worker = env.worker('w1', { agents: agentsPortOf(env) });
@@ -113,7 +113,10 @@ describe('worker subagents', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     if (child === undefined) throw new Error('the parent did not create a child run');
     expect(env.store.getSession(child.sessionId)?.permissionMode).toBe('plan');
     expect(fs.existsSync(target)).toBe(false);
-    expect(env.ofType(child.id, 'tool.completed')).toMatchObject([{ status: 'failed', denial: { source: expect.any(String) } }]);
+    const completed = env.ofType(child.id, 'tool.completed');
+    expect(completed).toMatchObject([{ status: 'failed', output: 'Tool "Write" was not offered in the request that produced this call, so it cannot run. Available tools: ' }]);
+    expect(completed[0]).not.toHaveProperty('denial');
+    expect(env.ofType(child.id, 'tool.permission.requested')).toEqual([]);
     expect(env.ofType(child.id, 'tool.started')).toEqual([]);
     expect(env.run(parent.id).status).toBe('COMPLETED');
   });

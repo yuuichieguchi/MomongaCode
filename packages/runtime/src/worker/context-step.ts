@@ -14,7 +14,7 @@ import {
   textOfItem,
   workingStateCapFor,
 } from '@momonga/context';
-import type { ActivatedSkill, BuildContextInput, ContextArrival, BuildContextPorts, BuiltContext, CompactionPlan, ContextEviction, LoadedGoverning, PinnedMeasure, TouchedPath } from '@momonga/context';
+import type { ActivatedSkill, TokenMeter, BuildContextInput, ContextArrival, BuildContextPorts, BuiltContext, CompactionPlan, ContextEviction, LoadedGoverning, PinnedMeasure, TouchedPath } from '@momonga/context';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { resolveGoverning } from '@momonga/memory';
 import type { Session } from '@momonga/store';
@@ -92,6 +92,15 @@ type AdmittedFloor = { pinnedTokens: number; tools: FunctionTool[] };
 
 const admittedFloors = new WeakMap<ClaimContext, AdmittedFloor>();
 
+const recordedReferencesOf = (ctx: ClaimContext): ReadonlySet<string> =>
+  ctx.token.outputFormatters.includes('identicalOutput')
+    ? new Set(
+        ctx.options.store
+          .readRunEventsOfTypes(ctx.run.id, ['context.truncated'])
+          .flatMap((event) => (event.type === 'context.truncated' && event.kind === 'reference' ? [event.callId] : [])),
+      )
+    : new Set<string>();
+
 export const contextInputOf = (
   ctx: ClaimContext,
   wrapUp: WrapUpReason | undefined,
@@ -131,6 +140,7 @@ export const contextInputOf = (
     },
     companions: ctx.companions(),
     evicted: new Set(state.evicted),
+    recordedReferences: recordedReferencesOf(ctx),
     ...(ctx.memoryShare === undefined ? {} : { memoryShare: ctx.memoryShare }),
     touchedPaths,
     trusted: options.settings.trusted(session),
@@ -139,7 +149,7 @@ export const contextInputOf = (
     level,
     ...(ctx.pinnedDigest.value === undefined ? {} : { expectedPinnedDigest: ctx.pinnedDigest.value }),
     ...(wrapUp === undefined ? {} : { tools: 'none' as const }),
-    ...(wrapUpItems.length + trailing.length === 0 ? {} : { trailing: [...wrapUpItems, ...trailing] }),
+    ...(wrapUpItems.length + trailing.length === 0 ? {} : { trailing: [...trailing, ...wrapUpItems] }),
     ...(ctx.token.cachePrefix
       ? {
           layout: 'cachePrefix' as const,
@@ -154,11 +164,13 @@ export const contextInputOf = (
           ...(rendered === undefined ? {} : { forms: rendered.forms, renderedFull: rendered.renderedFull }),
         }
       : {}),
+    outputFormatters: ctx.token.outputFormatters,
   };
 };
 
 const portsOf = (ctx: ClaimContext): BuildContextPorts => ({
   meter: ctx.meter,
+  fallbackMeters: ctx.fallbackMeters,
   blobs: {
     handleFor: (content) => ctx.options.blobs.handleFor(content),
     put: async (text, blobOptions) => ctx.options.blobs.put(text, { ...blobOptions, runId: ctx.run.id }),
@@ -167,6 +179,34 @@ const portsOf = (ctx: ClaimContext): BuildContextPorts => ({
 });
 
 export const measurePinnedFor = (ctx: ClaimContext): Promise<PinnedMeasure> => measurePinned(contextInputOf(ctx, undefined, 0), portsOf(ctx));
+
+export type ToolsMeasure = { measure: PinnedMeasure; floorTokens: number; kept: readonly string[] };
+
+export const measureToolsWith = async (ctx: ClaimContext, tools: readonly FunctionTool[]): Promise<ToolsMeasure> => {
+  const input: BuildContextInput = { ...contextInputOf(ctx, undefined, 0) };
+  delete input.pinnedTokens;
+  const counts: { tools: readonly FunctionTool[]; tokens: number }[] = [];
+  const ports = portsOf(ctx);
+  const meter: TokenMeter = {
+    ...ports.meter,
+    count: async (request) => {
+      const counted = await ports.meter.count(request);
+      counts.push({ tools: request.tools, tokens: counted.inputTokens });
+      return counted;
+    },
+  };
+  const measure = await measurePinned({ ...input, sources: { ...input.sources, tools: [...tools] } }, { ...ports, meter });
+  const first = counts[0];
+  const last = counts[counts.length - 1];
+  if (first === undefined || last === undefined) throw new Error('measuring the pinned floor counted nothing');
+  return { measure, floorTokens: first.tokens, kept: last.tools.map((tool) => tool.name) };
+};
+
+export const hasAdmittedTools = (ctx: ClaimContext): boolean => ctx.token.observedCapacity && admittedFloors.has(ctx);
+
+export const rememberAdmittedTools = (ctx: ClaimContext, tools: readonly FunctionTool[], pinnedTokens: number): void => {
+  if (ctx.token.observedCapacity && admittedFloors.has(ctx)) admittedFloors.set(ctx, { pinnedTokens, tools: [...tools] });
+};
 
 const withNewSkills = (arrivals: readonly ContextArrival[], activatedSkills: readonly ActivatedSkill[]): ContextArrival[] => [
   ...arrivals,
@@ -413,6 +453,7 @@ const recordEvictions = (ctx: ClaimContext, evictions: readonly ContextEviction[
     const entry = state.history.find((candidate) => candidate.callId === eviction.callId && candidate.item.type === 'function_call_output');
     if (entry === undefined) return false;
     if (eviction.kind === 'omitted') return !state.evicted.includes(eviction.callId);
+    if (eviction.kind === 'reference') return true;
     return entry.handle === undefined || (recordedForms !== undefined && recordedForms.get(eviction.callId) !== eviction.keptChars);
   });
   if (unreflected.length === 0) return;
