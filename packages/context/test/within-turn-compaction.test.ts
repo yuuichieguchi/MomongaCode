@@ -101,6 +101,19 @@ describe('forced compaction inside one turn', () => {
     expect(error.compaction?.throughSeq).toBe(10);
   });
 
+  it('carries the reduction it was planned at as structured data', async () => {
+    const history = stepsOf([930, 930, 2205, 2205, 2205, 2205]);
+    const error = await overflowOf(inputFor(capabilities, { sources: sourcesWith({ history }), level: 1 }), harness(capabilities).ports);
+
+    expect(error.compaction?.notices).toEqual([
+      {
+        code: 'recent_steps_shrunk',
+        message: 'recent steps of the current turn were reduced from 4 to 1 because the context budget was exceeded',
+        reduction: { turn: expect.any(Number), from: 4, to: 1 },
+      },
+    ]);
+  });
+
   it('reports deficit_not_closed when the summary would not close the deficit', async () => {
     const history = stepsOf([930, 930, 2470, 2470, 2470, 2470]);
     const error = await overflowOf(inputFor(capabilities, { sources: sourcesWith({ history }), level: 0 }), harness(capabilities).ports);
