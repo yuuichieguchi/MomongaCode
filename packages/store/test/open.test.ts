@@ -26,7 +26,9 @@ const EXPECTED_TABLES = [
   'memories_index_idx',
   'memory_evidence',
   'memory_replacements',
+  'meter_records',
   'reflection_jobs',
+  'run_records',
   'runs',
   'schema_migrations',
   'search_cursor',
@@ -38,6 +40,7 @@ const EXPECTED_TABLES = [
   'search_index_idx',
   'sessions',
   'snapshots',
+  'started_calls',
   'trust',
 ];
 

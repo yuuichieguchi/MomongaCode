@@ -1,5 +1,5 @@
 import { canonicalJson } from '@momonga/foundation';
-import { ceilRatio, marginFloorFor, quantizedRatioOf, errorBoundOfShape } from '@momonga/protocol';
+import { ERROR_WINDOW, ceilRatio, marginFloorFor, quantizedRatioOf, errorBoundOfShape } from '@momonga/protocol';
 import type { CountTokensMethod, CountTokensRequest, ErrorShape, FunctionTool, InputItem } from '@momonga/protocol';
 import { digestChain, itemDigest } from './digests.ts';
 import type {
@@ -14,7 +14,6 @@ import type {
   UsageObservation,
 } from './types.ts';
 
-export const ERROR_WINDOW = 20;
 const MAX_COUNTED = 1024;
 const MAX_REPLIES = 4096;
 const MAX_ITEM_COUNTS = 8192;

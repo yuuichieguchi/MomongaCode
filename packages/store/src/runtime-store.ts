@@ -4,6 +4,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
 import { TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
 import type { CallTiming, ElicitationAnswerRecord, ElicitationRequestView, PermissionMode, RunEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
+import { createAppendRecords, columnsOf } from './append-records.ts';
 import { createApprovalStore } from './approvals.ts';
 import { createBlobStore, prepareBlobDirectory } from './blobs.ts';
 import { addUsage, foldRunState, initialRunState, spendOf } from './fold.ts';
@@ -219,8 +220,8 @@ const prepareStatements = (db: DatabaseSync) => ({
   insertRun: db.prepare(RUN_INSERT_SQL),
   writeRun: db.prepare(RUN_WRITE_SQL),
   insertEvent: db.prepare(
-    `INSERT INTO events (run_id, session_id, seq, step, lease_token, created_at, type, payload_json, pinned_digest)
-     VALUES (:runId, :sessionId, :seq, :step, :leaseToken, :createdAt, :type, :payload, :pinnedDigest)`,
+    `INSERT INTO events (run_id, session_id, seq, step, lease_token, created_at, type, payload_json, pinned_digest, call_id, approval_id, tool_name, notice_code, model_call_json)
+     VALUES (:runId, :sessionId, :seq, :step, :leaseToken, :createdAt, :type, :payload, :pinnedDigest, :callId, :approvalId, :toolName, :noticeCode, :modelCallJson)`,
   ),
   dueWaitingRuns: db.prepare(
     `SELECT r.id FROM runs r
@@ -236,22 +237,17 @@ const prepareStatements = (db: DatabaseSync) => ({
      ORDER BY r.created_at, r.rowid`,
   ),
   toolCallEvent: db.prepare(
-    "SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.call' AND json_extract(payload_json, '$.callId') = :callId LIMIT 1",
+    "SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.call' AND call_id = :callId LIMIT 1",
   ),
   requestedEvent: db.prepare(
-    "SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.permission.requested' AND json_extract(payload_json, '$.approvalId') = :approvalId LIMIT 1",
+    "SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.permission.requested' AND approval_id = :approvalId LIMIT 1",
   ),
   elicitationRequestedEvent: db.prepare(
-    "SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.elicitation.requested' AND json_extract(payload_json, '$.inputId') = :approvalId LIMIT 1",
+    "SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.elicitation.requested' AND approval_id = :approvalId LIMIT 1",
   ),
   runEvents: db.prepare('SELECT * FROM events WHERE run_id = :runId AND seq > :after ORDER BY seq LIMIT :limit'),
   modelCallEvents: db.prepare(
-    `SELECT seq, step, type,
-      json_extract(payload_json, '$.attempt') AS attempt,
-      json_extract(payload_json, '$.anatomy') AS anatomy,
-      json_extract(payload_json, '$.prefix') AS prefix,
-      json_extract(payload_json, '$.response.id') AS response_id,
-      json_extract(payload_json, '$.response.timing') AS timing
+    `SELECT seq, step, type, model_call_json
      FROM events WHERE run_id = :runId AND type IN ('model.requested', 'model.responded') ORDER BY seq`,
   ),
   lastTerminalRootRuns: db.prepare(
@@ -262,7 +258,7 @@ const prepareStatements = (db: DatabaseSync) => ({
   ),
   toolCallNames: db.prepare(
     `WITH RECURSIVE tree(id) AS (SELECT :runId UNION ALL SELECT r.id FROM runs r JOIN tree t ON r.parent_run_id = t.id)
-     SELECT DISTINCT json_extract(e.payload_json, '$.name') AS name FROM events e JOIN tree t ON e.run_id = t.id WHERE e.type = 'tool.call' ORDER BY name`,
+     SELECT DISTINCT e.tool_name AS name FROM tree t CROSS JOIN events e ON e.run_id = t.id WHERE e.tool_name IS NOT NULL ORDER BY name`,
   ),
   toolOfferedNames: db.prepare(
     `WITH RECURSIVE tree(id) AS (SELECT :runId UNION ALL SELECT r.id FROM runs r JOIN tree t ON r.parent_run_id = t.id)
@@ -310,7 +306,7 @@ const prepareStatements = (db: DatabaseSync) => ({
   ),
   fence: db.prepare(FENCE_SQL),
   approvalRequested: db.prepare(
-    "SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.permission.requested' AND json_extract(payload_json, '$.approvalId') = :approvalId LIMIT 1",
+    "SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.permission.requested' AND approval_id = :approvalId LIMIT 1",
   ),
   inheritedEvent: db.prepare("SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'context.inherited' LIMIT 1"),
   inheritedEventRow: db.prepare("SELECT * FROM events WHERE run_id = :runId AND type = 'context.inherited' LIMIT 1"),
@@ -338,15 +334,19 @@ const decodeModelCallRecord = (row: Row): ModelCallRecord => {
   const identity = `seq ${seq}`;
   const reader = readerFor('events', identity, row);
   const step = reader.number('step');
-  const attempt = reader.number('attempt');
   const type = reader.string('type');
+  const detail = expectRecord('events', identity, 'model_call_json', reader.json('model_call_json'));
+  const attempt = detail['attempt'];
+  if (typeof attempt !== 'number') throw corrupt('events', identity, 'column model_call_json carries no attempt');
   if (type === 'model.requested') {
-    const anatomy = reader.nullableJson('anatomy');
-    const prefix = reader.nullableJson('prefix');
+    const anatomy = detail['anatomy'] ?? null;
+    const prefix = detail['prefix'] ?? null;
     return { kind: 'requested', seq, step, attempt, ...(anatomy === null ? {} : { anatomy: anatomy as TokenAnatomy }), ...(prefix === null ? {} : { prefix: prefix as RunTracePrefix }) };
   }
-  const timing = reader.nullableJson('timing');
-  const responseId = reader.nullableString('response_id');
+  const timing = detail['timing'] ?? null;
+  const responseIdValue = detail['responseId'] ?? null;
+  if (responseIdValue !== null && typeof responseIdValue !== 'string') throw corrupt('events', identity, 'column model_call_json carries a response id that is not a string');
+  const responseId = responseIdValue;
   return { kind: 'responded', seq, step, attempt, ...(responseId === null ? {} : { responseId }), ...(timing === null ? {} : { timing: expectRecord('events', identity, 'timing', timing) as CallTiming }) };
 };
 
@@ -401,6 +401,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const touched = new Map<string, { runId?: string; sessionId: string }>();
   const preparer = options.preparer;
   const { onDecode, onEncode } = options;
+  const records = createAppendRecords(db, onDecode === undefined ? {} : { onDecode });
 
   const recordTouch = (sessionId: string, runId: string | null): void => {
     if (options.onCommit === undefined) return;
@@ -457,7 +458,9 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       type: event.payload.type,
       payload,
       pinnedDigest: event.payload.type === 'model.requested' ? (event.payload.pinnedDigest ?? null) : null,
+      ...columnsOf(event.payload),
     });
+    if (event.runId !== null && event.seq !== null && event.step !== null) records.record({ runId: event.runId, sessionId: event.sessionId, seq: event.seq, step: event.step, payload: event.payload });
     recordTouch(event.sessionId, event.runId);
   };
 
@@ -1380,6 +1383,18 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     },
 
     readModelCallEvents: (runId) => sql.modelCallEvents.all({ runId }).map(decodeModelCallRecord),
+
+    toolCallSeq: records.toolCallSeq,
+
+    finalTextOf: records.finalTextOf,
+
+    inFlightModelRequestOf: records.inFlightModelRequestOf,
+
+    startedCallsOf: records.startedCallsOf,
+
+    hasNoticeCode: records.hasNoticeCode,
+
+    meterRecordOf: records.meterRecordOf,
 
     lastTerminalRootRuns: (project, limit) => sql.lastTerminalRootRuns.all({ project, limit }).map(decodeRun),
 

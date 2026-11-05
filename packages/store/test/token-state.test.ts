@@ -125,10 +125,10 @@ const storedSnapshot = () => {
   return { store, run, state, events, mutate, storedJson };
 };
 
-describe('snapshot state version 13', () => {
-  it('is version 13 and is written as such', () => {
-    expect(SNAPSHOT_STATE_VERSION).toBe(13);
-    expect(storedSnapshot().storedJson()['stateVersion']).toBe(13);
+describe('snapshot state version 14', () => {
+  it('is version 14 and is written as such', () => {
+    expect(SNAPSHOT_STATE_VERSION).toBe(14);
+    expect(storedSnapshot().storedJson()['stateVersion']).toBe(14);
   });
 
   it('round-trips the loaded tools, the loop warning and the arrival seqs', () => {

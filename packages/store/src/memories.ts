@@ -91,7 +91,7 @@ const indexMatch = (parameter: string): string => `memories.id IN (SELECT memory
 
 export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore => {
   const toolCallEvent = db.prepare(
-    "SELECT seq, session_id FROM events WHERE run_id = :runId AND type = 'tool.call' AND json_extract(payload_json, '$.callId') = :callId LIMIT 1",
+    "SELECT seq, session_id FROM events WHERE run_id = :runId AND type = 'tool.call' AND call_id = :callId LIMIT 1",
   );
   const insert = db.prepare(
     `INSERT INTO memories (id, scope, origin, project, text, source_session_id, source_run_id, source_step, source_call_id, source_seq, created_at, last_used_at, kind, supersedes_json)

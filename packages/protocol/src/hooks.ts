@@ -12,6 +12,8 @@ export const USER_PROMPT_HOOK_DEFAULT_TIMEOUT_SECONDS = 30;
 
 export const STOP_HOOK_MAX_CONTINUATIONS = 8;
 
+export const STOP_HOOK_FEEDBACK_PREFIX = '[Stop hook feedback]\n';
+
 export type HookCommand = { type: typeof HOOK_COMMAND_TYPE; command: string; timeout?: number };
 
 export type HookMatcherGroup = { matcher?: string; hooks: HookCommand[] };
