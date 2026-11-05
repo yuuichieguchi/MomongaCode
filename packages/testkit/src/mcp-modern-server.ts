@@ -161,6 +161,17 @@ const EXTRA_TOOLS: Record<string, Tool> = {
     inputSchema: objectSchema({}, []),
     outputSchema: { type: 'object', properties: { a: { type: 'nonsense' } } } as unknown as Tool['outputSchema'],
   },
+  reference_cycle_input: {
+    name: 'reference_cycle_input',
+    description: 'A tool whose input schema negates a reference to itself',
+    inputSchema: { type: 'object', not: { $ref: '#' } } as unknown as Tool['inputSchema'],
+  },
+  reference_cycle_output: {
+    name: 'reference_cycle_output',
+    description: 'A tool whose output schema negates a reference to itself',
+    inputSchema: objectSchema({}, []),
+    outputSchema: { type: 'object', not: { $ref: '#' } } as unknown as Tool['outputSchema'],
+  },
   if_annotations: {
     name: 'if_annotations',
     description: 'A 2020-12 schema whose if subschema evaluates every property',

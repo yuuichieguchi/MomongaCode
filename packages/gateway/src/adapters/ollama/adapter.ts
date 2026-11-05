@@ -6,7 +6,9 @@ import { StreamFailure, UpstreamProtocolError } from '../shared/failures.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
 import { retryAfterHint, httpErrorOf } from '../shared/http-error.ts';
 import type { ErrorDetailReader } from '../shared/http-error.ts';
-import { buildOllamaBody } from './request.ts';
+import { resolveToolChoice } from '../../core/tool-choice.ts';
+import { RENDERS_EVERY_SAMPLING_FIELD } from '../shared/sampling.ts';
+import { OLLAMA_TOOL_CHOICE, buildOllamaBody } from './request.ts';
 import { ollamaEventsOf } from './stream.ts';
 import type { OllamaAdapter, OllamaAdapterOptions } from './types.ts';
 import { OLLAMA_VOCABULARY, ollamaErrorText } from './vocabulary.ts';
@@ -31,7 +33,8 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
 
   async function* create(request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
     if (closed) throw new Error('the ollama adapter is closed');
-    const body = buildOllamaBody(request, await options.capabilities(ctx.target), ctx.reasoningOrigin);
+    const capabilities = await options.capabilities(ctx.target);
+    const body = buildOllamaBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.name, OLLAMA_TOOL_CHOICE), capabilities, ctx.reasoningOrigin);
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     try {
@@ -65,9 +68,11 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
 
   return {
     kind: OLLAMA_LABEL,
+    sampling: RENDERS_EVERY_SAMPLING_FIELD,
     capabilities: (target: AdapterTarget) => options.capabilities(target),
     create,
     compact,
+    toolChoiceWire: () => OLLAMA_TOOL_CHOICE,
     classify: createUpstreamClassifier(OLLAMA_LABEL),
     ...(health === undefined ? {} : { health: (target: AdapterTarget) => health(target) }),
     close: () => {

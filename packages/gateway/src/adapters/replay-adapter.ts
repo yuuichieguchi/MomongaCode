@@ -6,12 +6,14 @@ import type {
   AdapterContext,
   AdapterRequest,
   Capabilities,
+  ToolChoiceWire,
   ClassifiedError,
   ProviderAdapter,
   StreamEvent,
 } from '@momonga/protocol';
 
 import { createStoredDataChecks } from '../core/validation.ts';
+import { RENDERS_EVERY_SAMPLING_FIELD } from './shared/sampling.ts';
 import { parseUpstreamJson } from './shared/upstream-json.ts';
 
 const RECORD_FILE_MODE = 0o600;
@@ -22,6 +24,7 @@ export type ReplayAdapterOptions = {
   mode: 'record' | 'strict';
   inner?: ProviderAdapter;
   capabilities?: Capabilities;
+  toolChoiceWire?: ToolChoiceWire;
 };
 
 type ReplayEntry = { digest: string; events: StreamEvent[] };
@@ -115,10 +118,16 @@ export const createReplayAdapter = (options: ReplayAdapterOptions): ProviderAdap
 
   return {
     kind: 'replay',
+    sampling: inner?.sampling ?? RENDERS_EVERY_SAMPLING_FIELD,
     capabilities: async (target) => {
       if (inner !== undefined) return inner.capabilities(target);
       if (options.capabilities === undefined) throw new TypeError('createReplayAdapter: strict mode without an inner adapter needs a capabilities option to answer capabilities()');
       return options.capabilities;
+    },
+    toolChoiceWire: (target) => {
+      if (inner !== undefined) return inner.toolChoiceWire(target);
+      if (options.toolChoiceWire === undefined) throw new TypeError('createReplayAdapter: strict mode without an inner adapter needs a toolChoiceWire option to answer toolChoiceWire()');
+      return options.toolChoiceWire;
     },
     create: (request, ctx) => (inner !== undefined && mode === 'record' ? record(inner, request, ctx) : replay(request)),
     classify: (error): ClassifiedError => {

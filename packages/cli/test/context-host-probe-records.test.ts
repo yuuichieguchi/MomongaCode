@@ -65,7 +65,7 @@ const configurations: readonly Configuration[] = [
   ],
   [
     'anthropic',
-    { ...remote, adapter: 'anthropic', model: 'm', baseUrl: 'https://upstream.invalid', toolCalling: 'native' },
+    { ...remote, adapter: 'anthropic', model: 'm', baseUrl: 'https://upstream.invalid', toolCalling: 'native', apiVersion: '2026-10-21' },
     { adapter: 'anthropic', model: 'm', baseUrl: 'https://upstream.invalid', capabilities: declaredCapabilities },
     [],
   ],

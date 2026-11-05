@@ -173,6 +173,7 @@ const toolChoiceOf = (choice: ToolChoice | undefined, parallelToolCalls: boolean
   if (choice === undefined) return parallelToolCalls === false ? { type: 'auto', ...serial } : undefined;
   if (choice === 'auto') return { type: 'auto', ...serial };
   if (choice === 'required') return { type: 'any', ...serial };
+  if (choice.type === 'allowed_tools') throw new Error('an allowed_tools tool_choice must be resolved before the Anthropic body is built');
   return { type: 'tool', name: choice.name, ...serial };
 };
 

@@ -165,14 +165,43 @@ export const createErrorDescriber = ({ root, rootUri, engine, registry }: { root
     return undefined;
   };
 
-  const tagsOf = (branch: Located): Map<string, readonly unknown[]> => {
+  const variantsOf = (branch: Located): Located[] | undefined => {
+    const seen = new Set<string>();
+    let at: Located | undefined = branch;
+    while (at !== undefined && !seen.has(locationKey(at))) {
+      if (isRecord(at.node)) {
+        for (const keyword of VARIANT_KEYWORDS) {
+          const list = at.node[keyword];
+          if (Array.isArray(list)) {
+            const owner: Located = at;
+            return list.map((node, index) => ({ uri: owner.uri, pointer: `${owner.pointer}/${keyword}/${index}`, node }));
+          }
+        }
+      }
+      seen.add(locationKey(at));
+      at = referenceTarget(at);
+    }
+    return undefined;
+  };
+
+  const tagsOf = (branch: Located, visiting: ReadonlySet<string> = new Set()): Map<string, readonly unknown[]> => {
     const tags = new Map<string, readonly unknown[]>();
     const properties = shapeOf(branch)?.['properties'];
-    if (!isRecord(properties)) return tags;
-    for (const [key, property] of Object.entries(properties)) {
-      if (!isRecord(property)) continue;
-      if (Object.hasOwn(property, 'const')) tags.set(key, [property['const']]);
-      else if (Array.isArray(property['enum'])) tags.set(key, property['enum']);
+    if (isRecord(properties)) {
+      for (const [key, property] of Object.entries(properties)) {
+        if (!isRecord(property)) continue;
+        if (Object.hasOwn(property, 'const')) tags.set(key, [property['const']]);
+        else if (Array.isArray(property['enum'])) tags.set(key, property['enum']);
+      }
+      return tags;
+    }
+    const here = locationKey(branch);
+    const variants = visiting.has(here) ? undefined : variantsOf(branch);
+    if (variants === undefined || variants.length === 0) return tags;
+    const inner = variants.map((variant) => tagsOf(variant, new Set([...visiting, here])));
+    const [first, ...rest] = inner;
+    for (const [key, values] of first ?? []) {
+      if (rest.every((other) => other.has(key))) tags.set(key, [...values, ...rest.flatMap((other) => other.get(key) ?? [])]);
     }
     return tags;
   };
@@ -184,7 +213,7 @@ export const createErrorDescriber = ({ root, rootUri, engine, registry }: { root
 
   const selectionOf = (branches: readonly Located[], instance: unknown): Selection => {
     if (!isRecord(instance)) return { kind: 'untagged' };
-    const tagged = branches.map(tagsOf);
+    const tagged = branches.map((branch) => tagsOf(branch));
     const sharedKeys = [...new Set(tagged.flatMap((tags) => [...tags.keys()]))].filter((key) => tagged.filter((tags) => tags.has(key)).length >= 2);
     for (const key of sharedKeys) {
       const matched = tagged.flatMap((tags, index) => ((tags.get(key) ?? []).some((value) => Object.is(value, instance[key])) ? [index] : []));

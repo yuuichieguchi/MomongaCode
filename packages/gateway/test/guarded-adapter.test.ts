@@ -11,7 +11,7 @@ import type {
   StreamEvent,
 } from '@momonga/protocol';
 import { DEFAULT_SCRIPTED_CAPABILITIES, responseResource } from '@momonga/testkit';
-import { ADAPTER_NEUTRAL_ERROR_CODES } from '@momonga/protocol';
+import { ADAPTER_NEUTRAL_ERROR_CODES, SAMPLING_FIELDS } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, SKIPPABLE_CODES, missingApiKeyError, runCancelledError } from '../src/core/errors.ts';
 import { GuardedAdapterError, guardAdapter } from '../src/core/guarded-adapter.ts';
 import { createRedactor } from '../src/core/redaction.ts';
@@ -41,7 +41,9 @@ async function* eventsOf(events: readonly StreamEvent[]): AsyncGenerator<StreamE
 
 const baseAdapter = (overrides: Partial<ProviderAdapter> = {}): ProviderAdapter => ({
   kind: 'probe-kind',
+  sampling: { renders: SAMPLING_FIELDS },
   capabilities: async () => DEFAULT_SCRIPTED_CAPABILITIES,
+  toolChoiceWire: () => ({ forms: [], expressesRequired: true }),
   create: () => eventsOf([]),
   classify: (error) => classifiedOf(error instanceof Error ? error.message : String(error), 'adapter_error'),
   ...overrides,
@@ -128,9 +130,14 @@ describe('guardAdapter this binding', () => {
     const inner: ProviderAdapter = {
       ...optionalImplementations(record),
       kind: 'probe-kind',
+      sampling: { renders: SAMPLING_FIELDS },
       capabilities: async function (this: unknown) {
         record('capabilities', this);
         return DEFAULT_SCRIPTED_CAPABILITIES;
+      },
+      toolChoiceWire: function (this: unknown) {
+        record('toolChoiceWire', this);
+        return { forms: [], expressesRequired: true };
       },
       create: function (this: unknown) {
         record('create', this);
@@ -150,8 +157,9 @@ describe('guardAdapter this binding', () => {
     await guard.compact?.call(guard, COMPACT_REQUEST, ctx());
     guard.renderCompactWire?.call(guard, COMPACT_REQUEST, TARGET, 64, EVERY_REASONING_IS_OWN);
     await guard.health?.call(guard, TARGET);
+    guard.toolChoiceWire?.call(guard, TARGET);
     expect([...seen.keys()].sort()).toEqual(
-      ['capabilities', 'classify', 'compact', 'countTokens', 'create', 'health', 'renderCompactWire', 'renderWire'].sort(),
+      ['capabilities', 'classify', 'compact', 'countTokens', 'create', 'health', 'renderCompactWire', 'renderWire', 'toolChoiceWire'].sort(),
     );
     for (const self of seen.values()) expect(self).toBe(inner);
   });

@@ -1,4 +1,5 @@
 import { canonicalJson } from '@momonga/foundation';
+import { allowedNamesOf, allowedToolsModeOf } from '../../core/tool-choice.ts';
 import type { AdapterRequest, FunctionTool, ReasoningOrigin } from '@momonga/protocol';
 import { buildToolsEnvelope } from '../../probe/envelope.ts';
 import type { KeywordSupport } from '../../probe/envelope.ts';
@@ -34,26 +35,40 @@ export type ConstrainedBody = {
   envelope: { toolNames: ReadonlySet<string>; requireToolCalls: boolean } | undefined;
 };
 
-const pinnedToolOf = (tools: readonly FunctionTool[], name: string, support: KeywordSupport): FunctionTool => {
-  const tool = tools.find((candidate) => candidate.name === name);
-  if (tool === undefined) throw new UnsupportedInputError('unknown_tool', `tool_choice names the undeclared tool "${name}"`, 'tool_choice');
-  if (!support.const && !support.enum) {
+const restrictedToolsOf = (tools: readonly FunctionTool[], names: readonly string[], support: KeywordSupport): FunctionTool[] => {
+  const restricted = names.map((name) => {
+    const tool = tools.find((candidate) => candidate.name === name);
+    if (tool === undefined) throw new UnsupportedInputError('unknown_tool', `tool_choice names the undeclared tool "${name}"`, 'tool_choice');
+    return tool;
+  });
+  if (restricted.length < tools.length && !support.const && !support.enum) {
     throw new UnsupportedInputError(
       'unsupported_tool_choice',
-      'this target cannot pin a function name in constrained output',
+      'this target cannot restrict the tool names in constrained output',
       'tool_choice',
     );
   }
-  return tool;
+  return restricted;
+};
+
+const restrictedNamesOf = (choice: NonNullable<AdapterRequest['tool_choice']>): string[] | undefined => {
+  if (typeof choice === 'string') return undefined;
+  return choice.type === 'function' ? [choice.name] : allowedNamesOf(choice);
+};
+
+const requiresToolCalls = (choice: AdapterRequest['tool_choice']): boolean => {
+  if (choice === undefined || choice === 'auto') return false;
+  if (typeof choice === 'string' || choice.type === 'function') return true;
+  return allowedToolsModeOf(choice) === 'required';
 };
 
 export const buildConstrainedBody = (request: AdapterRequest, support: KeywordSupport, origin: ReasoningOrigin): ConstrainedBody => {
   const tools = request.tools ?? [];
   const choice = request.tool_choice;
   const envelopeActive = tools.length > 0 && choice !== 'none';
-  const requireToolCalls = envelopeActive && choice !== undefined && choice !== 'auto';
-  const envelopeTools =
-    envelopeActive && typeof choice === 'object' ? [pinnedToolOf(tools, choice.name, support)] : tools;
+  const requireToolCalls = envelopeActive && requiresToolCalls(choice);
+  const restrictedNames = envelopeActive && choice !== undefined ? restrictedNamesOf(choice) : undefined;
+  const envelopeTools = restrictedNames === undefined ? tools : restrictedToolsOf(tools, restrictedNames, support);
   const system = systemTextOf(request.instructions, request.input);
   if (envelopeActive) system.push(PROTOCOL_PREAMBLE, toolListing(tools));
   const messages: ChatMessage[] = [];

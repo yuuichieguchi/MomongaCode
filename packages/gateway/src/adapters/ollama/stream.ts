@@ -1,6 +1,7 @@
 import { isRecord } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import type { AdapterRequest, StreamEvent, Usage } from '@momonga/protocol';
+import { forbidsTools } from '../../core/tool-choice.ts';
 import { StreamFailure, UpstreamProtocolError } from '../shared/failures.ts';
 import { parseUpstreamJson } from '../shared/upstream-json.ts';
 import { MAX_NDJSON_LINE_BYTES, MAX_TOOL_CALLS } from '../shared/limits.ts';
@@ -46,7 +47,7 @@ class OllamaStreamDriver {
 
   constructor(options: OllamaStreamOptions) {
     this.emitter = new ResponseEmitter({ clock: options.clock, model: options.request.model, request: options.request, ...(options.retryAfterMs === undefined ? {} : { retryAfterMs: options.retryAfterMs }) });
-    this.toolsAllowed = options.request.tool_choice !== 'none';
+    this.toolsAllowed = !forbidsTools(options.request.tool_choice);
   }
 
   get hasStarted(): boolean {

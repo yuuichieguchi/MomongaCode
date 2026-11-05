@@ -1,4 +1,10 @@
 export type {
+  AllowedToolsForm,
+  AdapterSampling,
+  AnthropicApiVersion,
+  SamplingCapability,
+  SamplingField,
+  TopPRange,
   Capabilities,
   CapabilitiesCore,
   CapabilityOverride,
@@ -74,6 +80,10 @@ export {
 } from './budget-constants.ts';
 export type { ErrorShape } from './budget-constants.ts';
 export {
+  ANTHROPIC_API_VERSIONS,
+  DEFAULT_ANTHROPIC_API_VERSION,
+  SAMPLING_FIELDS,
+  anthropicVersionSamplingBound,
   DEFAULT_OUTPUT_BOUND_FIELD,
   LOWEST_REASONING_EFFORT,
   OUTPUT_BOUND_FIELDS,
@@ -87,6 +97,7 @@ export {
   outputTokensFor,
   thinkingBudgetFor,
   THINKING_OFFS,
+  ALLOWED_TOOLS_FORMS,
   requireStructuredOutput,
 } from './capabilities.ts';
 export type { OutputTokenCapabilities, StructuredOutputVerdict, TargetBilling } from './capabilities.ts';
@@ -347,6 +358,9 @@ export type {
   TextField,
   TextFormat,
   ToolChoice,
+  ToolChoiceMode,
+  AllowedToolsChoice,
+  ResponseToolChoice,
   Usage,
 } from './open-responses.ts';
 export { MOMONGA_EVENT_PREFIX } from './gateway-api.ts';
@@ -383,6 +397,7 @@ export type {
   ProviderAdapter,
   ReasoningOrigin,
   RenderWireOptions,
+  ToolChoiceWire,
 } from './adapter.ts';
 export { ADAPTER_NEUTRAL_ERROR_CODES } from './adapter.ts';
 export type { AdapterNeutralErrorCode } from './adapter.ts';

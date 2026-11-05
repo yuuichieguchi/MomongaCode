@@ -26,6 +26,7 @@ import type { RetryOutcome } from './retry.ts';
 import { adapterContextOf, originOf } from './adapter-context.ts';
 import type { TargetRuntime } from './router.ts';
 import type { Services } from './services.ts';
+import { resolveToolChoice } from './tool-choice.ts';
 import { textOfWire } from './wire-text.ts';
 import type { RequestValidator } from './validation.ts';
 
@@ -153,6 +154,11 @@ const countTokens = async (
   if (target === undefined) throw new Error(`model alias "${request.model}" has no targets`);
   const resolved = resolveInput(services.store, services.codec, undefined, normalizeInput(request.input));
   await services.router.narrow(request.model, [target], { images: inputHasImages(resolved.forAdapter) });
+  const { allowedTools } = await services.router.capabilitiesOf(target);
+  const toolChoiceWire = target.adapter.toolChoiceWire({ name: target.name, model: target.model });
+  const counted = asGatewayError(target, () =>
+    resolveToolChoice(adapterRequestOf(target.model, request, resolved.forAdapter), allowedTools, target.name, toolChoiceWire),
+  );
   const renderWire = target.adapter.renderWire;
   if (renderWire !== undefined) {
     const lenient = request.momonga?.lenient_items;
@@ -161,9 +167,13 @@ const countTokens = async (
     const wire = asGatewayError(target, () =>
       renderWire.call(
         target.adapter,
-        adapterRequestOf(target.model, request, resolved.forAdapter),
+        counted,
         { name: target.name, model: target.model },
-        lenientItems === undefined ? { reasoningOrigin: originOf(services, target) } : { reasoningOrigin: originOf(services, target), lenientItems },
+        {
+          reasoningOrigin: originOf(services, target),
+          ...(lenientItems === undefined ? {} : { lenientItems }),
+          ...(allowedTools === undefined ? {} : { allowedTools }),
+        },
       ),
     );
     return countWire(services, target, wire, signal, deadlineAt);
@@ -176,7 +186,7 @@ const countTokens = async (
   const adapterCountTokens = target.adapter.countTokens;
   if (adapterCountTokens === undefined) {
     const inputTokens = estimateInputTokens(
-      { input: resolved.forAdapter, instructions: request.instructions, tools: request.tools },
+      { input: resolved.forAdapter, instructions: request.instructions, tools: counted.tools },
       (await services.router.capabilitiesOf(target)).imageTokens,
     );
     return estimatedCountOf(inputTokens);
@@ -188,7 +198,8 @@ const countTokens = async (
         model: chosen.model,
         input: countable,
         ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
-        ...(request.tools === undefined ? {} : { tools: request.tools }),
+        ...(counted.tools === undefined ? {} : { tools: counted.tools }),
+        ...(counted.tool_choice === undefined ? {} : { tool_choice: counted.tool_choice }),
       },
       adapterContextOf(services, chosen, guarded, attemptNumber),
     ),

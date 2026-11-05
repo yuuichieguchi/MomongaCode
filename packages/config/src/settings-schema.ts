@@ -1,5 +1,5 @@
 import { SECRET_NAME_PATTERN } from '@momonga/foundation';
-import { HOOK_COMMAND_TYPE, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, REASONING_EFFORTS, TARGET_BILLINGS, THINKING_OFFS } from '@momonga/protocol';
+import { ALLOWED_TOOLS_FORMS, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, REASONING_EFFORTS, TARGET_BILLINGS, THINKING_OFFS } from '@momonga/protocol';
 import type { CallRole } from '@momonga/protocol';
 
 export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const satisfies readonly CallRole[];
@@ -121,6 +121,24 @@ const THINKING_REASONING_SCHEMAS = [
   },
 ] as const;
 
+const UNIT_INTERVAL = { type: 'number', minimum: 0, maximum: 1 } as const;
+
+const SAMPLING_SCHEMA = {
+  oneOf: [
+    { type: 'object', properties: { accepts: { const: 'none' } }, required: ['accepts'], additionalProperties: false },
+    { type: 'object', properties: { accepts: { const: 'free' } }, required: ['accepts'], additionalProperties: false },
+    {
+      type: 'object',
+      properties: {
+        accepts: { const: 'without_thinking' },
+        topP: { type: 'object', properties: { min: UNIT_INTERVAL, max: UNIT_INTERVAL }, required: ['min', 'max'], additionalProperties: false },
+      },
+      required: ['accepts', 'topP'],
+      additionalProperties: false,
+    },
+  ],
+} as const;
+
 const targetCapabilitiesSchema = (promptCache: object, extraProperties: object = {}, extraReasoning: readonly object[] = []) =>
   ({
   type: 'object',
@@ -139,6 +157,7 @@ const targetCapabilitiesSchema = (promptCache: object, extraProperties: object =
       additionalProperties: false,
     },
     parallelToolCalls: { type: 'boolean' },
+    allowedTools: { type: 'array', items: { enum: [...ALLOWED_TOOLS_FORMS] }, minItems: 1, uniqueItems: true },
     schemaDialect: { enum: ['json-schema-2020-12', 'guided-generation'] },
     tokenCounting: { enum: ['exact', 'calibrated', 'estimated'] },
     tokenErrorRatio: { type: 'number', minimum: 0 },
@@ -161,6 +180,7 @@ const targetCapabilitiesSchema = (promptCache: object, extraProperties: object =
       ],
     },
     promptCache: promptCache,
+    sampling: SAMPLING_SCHEMA,
     source: { enum: ['declared', 'probed', 'config', 'unprobed'] },
   },
   required: ['contextWindow', 'maxOutputTokens'],
@@ -243,6 +263,7 @@ const ANTHROPIC_TARGET_SCHEMA = {
     ...API_KEY_PROPERTIES,
     billing: BILLING_SCHEMA,
     capabilities: ANTHROPIC_CAPABILITIES_SCHEMA,
+    apiVersion: { enum: [...ANTHROPIC_API_VERSIONS] },
     maxConcurrency: POSITIVE_INTEGER,
     admissionTimeoutMs: NON_NEGATIVE_INTEGER,
   },

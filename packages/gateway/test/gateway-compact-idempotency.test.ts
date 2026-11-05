@@ -52,6 +52,10 @@ const createGatedCompactAdapter = (summaries: Array<string | Error>, gated = tru
 
 const compactBody = { model: 'fast', input: userInput('summarise this conversation') };
 const key = (value: string) => ({ 'idempotency-key': value });
+const DETACHED_MAX_MS = 1_800_000;
+const JOINER_DEADLINE_MS = 60_000;
+const timerPending = (timers: Awaited<ReturnType<typeof startGateway>>['timers'], delayMs: number): boolean =>
+  timers.pending().some((timer) => timer.delayMs === delayMs);
 const compact = (client: Awaited<ReturnType<typeof startGateway>>['client'], keyValue: string, payload: unknown = compactBody) =>
   postJson(client, '/v1/responses/compact', payload, key(keyValue)).then(readJson);
 
@@ -103,12 +107,12 @@ describe('POST /v1/responses/compact with Idempotency-Key', () => {
 
   it('joins a concurrent duplicate onto the one in-flight call', async () => {
     const primary = createGatedCompactAdapter(['shared summary', 'unexpected']);
-    const { client } = await startGateway({ adapters: { primary } });
+    const { client, timers } = await startGateway({ adapters: { primary } });
     registerCleanup(() => primary.release());
     const first = compact(client, 'cp-3');
     await waitFor(() => primary.compactSignals.length === 1, { description: 'first compact call' });
-    const second = compact(client, 'cp-3');
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    const second = postJson(client, '/v1/responses/compact', compactBody, { ...key('cp-3'), 'momonga-deadline-ms': String(JOINER_DEADLINE_MS) }).then(readJson);
+    await waitFor(() => primary.compactSignals.length === 1 && timerPending(timers, JOINER_DEADLINE_MS), { description: 'the duplicate joined the in-flight call', maxTurns: 20_000 });
     expect(primary.compactSignals).toHaveLength(1);
     primary.release();
     const [a, b] = await Promise.all([first, second]);
@@ -141,12 +145,12 @@ describe('POST /v1/responses/compact with Idempotency-Key', () => {
 
   it('keeps running a keyed compaction after its client disconnects and stores the result', async () => {
     const primary = createGatedCompactAdapter(['detached summary', 'unexpected']);
-    const { client, socketPath } = await startGateway({ adapters: { primary } });
+    const { client, socketPath, timers } = await startGateway({ adapters: { primary } });
     registerCleanup(() => primary.release());
     const raw = await openRawPost(socketPath, '/v1/responses/compact', compactBody, { headers: key('cp-6') });
     await waitFor(() => primary.compactSignals.length === 1, { description: 'compact call started' });
     raw.socket.destroy();
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await waitFor(() => timerPending(timers, DETACHED_MAX_MS), { description: 'the compaction detached from its client', maxTurns: 20_000 });
     expect(primary.compactSignals[0]?.aborted).toBe(false);
     primary.release();
     await waitFor(() => primary.settled.length === 1, { description: 'compact settled' });
@@ -302,7 +306,7 @@ describe('a cancelled keyed compaction stays tracked until it settles', () => {
     const raw = await openRawPost(harness.socketPath, '/v1/responses/compact', compactBody, { headers: key(keyValue) });
     await waitFor(() => primary.signals.length === 1, { description: 'compact call started' });
     raw.socket.destroy();
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await waitFor(() => timerPending(harness.timers, DETACHED_MAX_MS), { description: 'the compaction detached from its client', maxTurns: 20_000 });
     const cancelled = await readJson(
       await harness.client.request({ method: 'POST', path: '/v1/momonga/responses/cancel', headers: key(keyValue) }),
     );
@@ -318,10 +322,10 @@ describe('a cancelled keyed compaction stays tracked until it settles', () => {
       closed = true;
     });
     await waitFor(() => timers.pending().some((timer) => timer.delayMs === 750), { description: 'close grace timer' });
-    await new Promise((resolve) => setTimeout(resolve, 50));
     expect(closed).toBe(false);
     primary.release();
     await closing;
+    expect(closed).toBe(true);
     expect(gateway.abandonedRuns).toBe(0);
   });
 

@@ -2,6 +2,7 @@ import type { FakeSseFrame, FakeUpstreamReply, FakeUpstreamServer, RecordedUpstr
 import { startFakeSseUpstream } from './fake-sse-upstream.ts';
 
 export const FAKE_ANTHROPIC_VERSION = '2023-06-01';
+export const FAKE_ANTHROPIC_VERSIONS: readonly string[] = [FAKE_ANTHROPIC_VERSION, '2026-10-21'];
 export const FAKE_ANTHROPIC_PATH = '/v1/messages';
 export const FAKE_ANTHROPIC_COUNT_TOKENS_PATH = '/v1/messages/count_tokens';
 
@@ -77,7 +78,7 @@ export const startFakeAnthropic = (options: FakeAnthropicOptions): Promise<FakeU
     ...(options.socketPath === undefined ? {} : { socketPath: options.socketPath }),
     authenticate: (headers) => {
       if (headers['x-api-key'] !== options.apiKey) return anthropicErrorReply(401, 'authentication_error', 'invalid x-api-key');
-      if (headers['anthropic-version'] !== FAKE_ANTHROPIC_VERSION) {
+      if (!FAKE_ANTHROPIC_VERSIONS.includes(String(headers['anthropic-version']))) {
         return anthropicErrorReply(400, 'invalid_request_error', 'anthropic-version header is missing or unsupported');
       }
       return undefined;

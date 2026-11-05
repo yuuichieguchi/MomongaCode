@@ -101,8 +101,39 @@ export type PromptCacheCapability =
   | { kind: 'automatic' }
   | { kind: 'none' };
 
+export const ALLOWED_TOOLS_FORMS = ['native', 'envelope', 'single_tool', 'filter'] as const;
+export type AllowedToolsForm = (typeof ALLOWED_TOOLS_FORMS)[number];
+
+export const SAMPLING_FIELDS = ['temperature', 'top_p', 'frequency_penalty', 'presence_penalty'] as const;
+export type SamplingField = (typeof SAMPLING_FIELDS)[number];
+
+export type TopPRange = { min: number; max: number };
+
+export type SamplingCapability =
+  | { accepts: 'none' }
+  | { accepts: 'without_thinking'; topP: TopPRange }
+  | { accepts: 'free' };
+
+export const ANTHROPIC_API_VERSIONS = ['2026-10-21', '2023-06-01'] as const;
+export type AnthropicApiVersion = (typeof ANTHROPIC_API_VERSIONS)[number];
+
+export const DEFAULT_ANTHROPIC_API_VERSION: AnthropicApiVersion = '2026-10-21';
+
+const ANTHROPIC_VERSION_SAMPLING_BOUND: Readonly<Record<AnthropicApiVersion, readonly SamplingField[]>> = {
+  '2026-10-21': [],
+  '2023-06-01': SAMPLING_FIELDS,
+};
+
+export const anthropicVersionSamplingBound = (version: AnthropicApiVersion): readonly SamplingField[] => ANTHROPIC_VERSION_SAMPLING_BOUND[version];
+
+export type AdapterSampling = {
+  renders: readonly SamplingField[];
+  bound?: { label: string; accepts: readonly SamplingField[] };
+};
+
 export type CapabilitiesCore = {
   promptCache?: PromptCacheCapability;
+  sampling?: SamplingCapability;
   reasoning?: ReasoningCapability;
   contextWindow: number;
   maxOutputTokens: number;
@@ -112,6 +143,7 @@ export type CapabilitiesCore = {
   stopSequences: boolean;
   outputBoundField?: OutputBoundField;
   parallelToolCalls?: boolean;
+  allowedTools?: readonly AllowedToolsForm[];
   schemaDialect: 'json-schema-2020-12' | 'guided-generation';
   tokenCounting: 'exact' | 'calibrated' | 'estimated';
   tokenErrorRatio?: number;

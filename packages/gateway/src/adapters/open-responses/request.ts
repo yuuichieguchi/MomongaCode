@@ -4,6 +4,7 @@ import { callArgumentsText } from '../shared/call-arguments.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { imageUrlOf, isImagePart } from '../shared/image-part.ts';
 import { ownReasoning } from '../shared/reasoning-origin.ts';
+import { carriedSamplingOf } from '../shared/sampling.ts';
 
 export type OpenResponsesRequestBody = {
   model: string;
@@ -18,6 +19,8 @@ export type OpenResponsesRequestBody = {
   max_output_tokens?: number;
   temperature?: number;
   top_p?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
   prompt_cache_key?: string;
 };
 
@@ -72,7 +75,6 @@ export const buildResponsesBody = (request: AdapterRequest, origin: ReasoningOri
     ...(tools.length === 0 || request.tool_choice === undefined ? {} : { tool_choice: request.tool_choice }),
     ...(tools.length === 0 || request.parallel_tool_calls === undefined ? {} : { parallel_tool_calls: request.parallel_tool_calls }),
     ...(request.max_output_tokens === undefined || request.max_output_tokens === null ? {} : { max_output_tokens: request.max_output_tokens }),
-    ...(request.temperature === undefined || request.temperature === null ? {} : { temperature: request.temperature }),
-    ...(request.top_p === undefined || request.top_p === null ? {} : { top_p: request.top_p }),
+    ...carriedSamplingOf(request),
   };
 };

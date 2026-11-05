@@ -1,6 +1,8 @@
 import { acceptedReasoningEfforts, clampReasoningEffort } from '@momonga/protocol';
-import type { AdapterRequest, Capabilities, FunctionTool, ReasoningCapability, ReasoningEffort, ReasoningOrigin } from '@momonga/protocol';
+import type { ToolChoiceWire, AdapterRequest, Capabilities, FunctionTool, ReasoningCapability, ReasoningEffort, ReasoningOrigin } from '@momonga/protocol';
+import { forbidsTools } from '../../core/tool-choice.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
+import { carriedSamplingOf } from '../shared/sampling.ts';
 import { SYSTEM_PART_SEPARATOR, systemTextOf } from '../shared/system-text.ts';
 import { ollamaHistoryOf } from './history.ts';
 import type { OllamaMessage } from './history.ts';
@@ -10,7 +12,7 @@ export type OllamaChatBody = {
   messages: OllamaMessage[];
   stream: boolean;
   truncate: false;
-  options: { num_ctx: number; num_predict: number; temperature?: number; top_p?: number };
+  options: { num_ctx: number; num_predict: number; temperature?: number; top_p?: number; frequency_penalty?: number; presence_penalty?: number };
   tools?: unknown[];
   format?: unknown;
   think?: boolean;
@@ -25,13 +27,15 @@ const toolOf = (tool: FunctionTool): unknown => ({
   },
 });
 
-const sendsTools = (request: AdapterRequest): boolean => (request.tools ?? []).length > 0 && request.tool_choice !== 'none';
+const sendsTools = (request: AdapterRequest): boolean => (request.tools ?? []).length > 0 && !forbidsTools(request.tool_choice);
 
 const requireToolChoice = (request: AdapterRequest): void => {
   const choice = request.tool_choice;
   if (choice === undefined || choice === 'auto' || choice === 'none') return;
   throw new UnsupportedInputError('unsupported_tool_choice', 'the Ollama adapter supports only the tool_choice values auto and none', 'tool_choice');
 };
+
+export const OLLAMA_TOOL_CHOICE: ToolChoiceWire = { forms: ['filter'], expressesRequired: false };
 
 const formatOf = (request: AdapterRequest): { format?: unknown } => {
   const format = request.text?.format;
@@ -56,8 +60,7 @@ export const buildOllamaChatBody = (request: AdapterRequest, capabilities: Ollam
     options: {
       num_ctx: capabilities.contextWindow,
       num_predict: request.max_output_tokens ?? capabilities.maxOutputTokens,
-      ...(request.temperature === undefined || request.temperature === null ? {} : { temperature: request.temperature }),
-      ...(request.top_p === undefined || request.top_p === null ? {} : { top_p: request.top_p }),
+      ...carriedSamplingOf(request),
     },
     ...(sendsTools(request) ? { tools: (request.tools ?? []).map(toolOf) } : {}),
     ...formatOf(request),

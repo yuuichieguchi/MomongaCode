@@ -1,7 +1,8 @@
 import { decodeSse } from '@momonga/foundation';
 import { summaryTokenCapFor } from '@momonga/protocol';
-import type { AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, LenientItems, ReasoningOrigin, RenderWireOptions, StreamEvent } from '@momonga/protocol';
+import type { AdapterCompactRequest, AllowedToolsForm, ToolChoiceWire, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, LenientItems, ReasoningOrigin, RenderWireOptions, StreamEvent } from '@momonga/protocol';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
+import { NO_TOOL_CHOICE_WIRE, resolveToolChoice } from '../../core/tool-choice.ts';
 import { hiddenReasoningTokens } from '../../core/hidden-reasoning.ts';
 import { classifyChatCompletionsError, matchesGuardrailCode } from './classify.ts';
 import { CHAT_COMPLETIONS_VOCABULARY, withGuardrailMatcher } from './vocabulary.ts';
@@ -11,6 +12,7 @@ import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { createConstrainedSink } from './constrained-sink.ts';
 import type { ConstrainedPlan } from './constrained-sink.ts';
 import { StreamFailure, UnsupportedInputError } from '../shared/failures.ts';
+import { RENDERS_EVERY_SAMPLING_FIELD } from '../shared/sampling.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
 import { retryAfterHint, httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
 import { MAX_SSE_EVENT_BYTES } from '../shared/limits.ts';
@@ -40,6 +42,12 @@ const FULL_KEYWORD_SUPPORT: KeywordSupport = {
 
 const DONE_MARKER = '[DONE]';
 
+const NATIVE_TOOL_CHOICE: ToolChoiceWire = { forms: ['native', 'single_tool', 'filter'], expressesRequired: true };
+
+const PINNING_CONSTRAINED_TOOL_CHOICE: ToolChoiceWire = { forms: ['envelope', 'single_tool', 'filter'], expressesRequired: true };
+
+const LITERALLESS_CONSTRAINED_TOOL_CHOICE: ToolChoiceWire = { forms: ['filter'], expressesRequired: true };
+
 export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOptions): ChatCompletionsAdapter => {
   const pool = createEndpointPool({ label: 'chat-completions', unixPath: CHAT_COMPLETIONS_PATH, urlSuffix: CHAT_COMPLETIONS_SUFFIX }, options.liveness);
   const { health, countTokens, isGuardrail } = options;
@@ -49,10 +57,19 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
   let closing: Promise<void> | undefined;
   let closed = false;
 
+  const toolChoiceWire = (target: AdapterTarget): ToolChoiceWire => {
+    const mode = options.toolCalling(target);
+    if (mode === 'none') return NO_TOOL_CHOICE_WIRE;
+    if (mode === 'native') return NATIVE_TOOL_CHOICE;
+    const support = options.keywordSupport?.(target) ?? FULL_KEYWORD_SUPPORT;
+    return support.const || support.enum ? PINNING_CONSTRAINED_TOOL_CHOICE : LITERALLESS_CONSTRAINED_TOOL_CHOICE;
+  };
+
   const bodyFor = (
     request: AdapterRequest,
     target: AdapterTarget,
     origin: ReasoningOrigin,
+    allowedTools: readonly AllowedToolsForm[] | undefined,
   ): { body: ChatRequestBody; envelope: ConstrainedPlan | undefined } => {
     const mode = options.toolCalling(target);
     const hasTools = (request.tools ?? []).length > 0;
@@ -60,9 +77,9 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
       throw new UnsupportedInputError('capability_unsupported', 'this target does not support tool calling', 'tools');
     }
     if (mode === 'constrained') {
-      return buildConstrainedBody(request, options.keywordSupport?.(target) ?? FULL_KEYWORD_SUPPORT, origin);
+      return buildConstrainedBody(resolveToolChoice(request, allowedTools, target.name, toolChoiceWire(target)), options.keywordSupport?.(target) ?? FULL_KEYWORD_SUPPORT, origin);
     }
-    return { body: buildNativeBody(request, origin), envelope: undefined };
+    return { body: buildNativeBody(resolveToolChoice(request, allowedTools, target.name, toolChoiceWire(target)), origin), envelope: undefined };
   };
 
   const lenientWireOf = (request: AdapterRequest, target: AdapterTarget, lenient: LenientItems, origin: ReasoningOrigin): ChatWire => {
@@ -76,18 +93,19 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
   };
 
   const renderCompactWire = (request: AdapterCompactRequest, target: AdapterTarget, cap: number, origin: ReasoningOrigin): ChatWire =>
-    wireOf(bodyFor(summaryRequestOf(request, cap, origin), target, origin).body);
+    wireOf(bodyFor(summaryRequestOf(request, cap, origin), target, origin, undefined).body);
 
   const renderWire = (request: AdapterRequest, target: AdapterTarget, renderOptions: RenderWireOptions): ChatWire =>
     renderOptions.lenientItems === undefined
-      ? wireOf(bodyFor(request, target, renderOptions.reasoningOrigin).body)
+      ? wireOf(bodyFor(request, target, renderOptions.reasoningOrigin, renderOptions.allowedTools).body)
       : lenientWireOf(request, target, renderOptions.lenientItems, renderOptions.reasoningOrigin);
 
   async function* create(request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
     if (closed) throw new Error('the chat-completions adapter is closed');
-    const planned = bodyFor(request, ctx.target, ctx.reasoningOrigin);
+    const capabilities = await options.capabilities(ctx.target);
+    const planned = bodyFor(request, ctx.target, ctx.reasoningOrigin, capabilities.allowedTools);
     const { envelope } = planned;
-    const body = withCapabilityOptions(planned.body, request, await options.capabilities(ctx.target));
+    const body = withCapabilityOptions(planned.body, request, capabilities);
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     try {
@@ -181,11 +199,13 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
 
   return {
     kind: 'chat-completions',
+    sampling: options.sampling ?? RENDERS_EVERY_SAMPLING_FIELD,
     capabilities: (target) => options.capabilities(target),
     create,
     compact,
     renderWire,
     renderCompactWire,
+    toolChoiceWire,
     classify: classifyChatCompletionsError,
     ...(health === undefined ? {} : { health: (target: AdapterTarget) => health(target) }),
     ...(countTokens === undefined
