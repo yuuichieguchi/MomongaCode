@@ -190,10 +190,10 @@ describe('T10: codes and params are forwarded or dropped by shape', () => {
   });
 
   it.for([
-    { label: 'a code of 70 characters', code: 'c'.repeat(70), param: 'input[0]', expected: { code: null, param: 'input[0]' } },
+    { label: 'a code of 70 characters', code: 'c'.repeat(70), param: 'input[0]', expected: { code: 'upstream_error', param: 'input[0]' } },
     { label: 'a param of 200 characters', code: 'upstream_error', param: 'p'.repeat(200), expected: { code: 'upstream_error', param: null } },
     { label: 'a param with a space', code: 'upstream_error', param: 'input 0', expected: { code: 'upstream_error', param: null } },
-    { label: 'a code equal to the configured key', code: TEST_API_KEY, param: 'input[0]', expected: { code: null, param: 'input[0]' } },
+    { label: 'a code equal to the configured key', code: TEST_API_KEY, param: 'input[0]', expected: { code: 'upstream_error', param: 'input[0]' } },
     { label: 'a param equal to the configured key', code: 'upstream_error', param: TEST_API_KEY, expected: { code: 'upstream_error', param: null } },
     { label: 'a valid code and param', code: 'context_length_exceeded', param: 'input[0].encrypted_content', expected: { code: 'context_length_exceeded', param: 'input[0].encrypted_content' } },
   ])('error event: $label', async ({ code, param, expected }) => {

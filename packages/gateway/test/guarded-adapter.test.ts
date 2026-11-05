@@ -232,13 +232,13 @@ const collect = async (iterable: AsyncIterable<StreamEvent>): Promise<StreamEven
 };
 
 describe('guardAdapter create events (G2)', () => {
-  it('rebuilds a response.failed error with a redacted message, shape-checked code and param, and no extra fields', async () => {
+  it('rebuilds a response.failed error with a redacted message, a scrubbed code replaced by upstream_error, a shape-checked param, and no extra fields', async () => {
     const inner = baseAdapter({
       create: () => eventsOf([failedEvent({ code: 'bad code', type: 'server_error', message: ECHO, extra: TEST_API_KEY, param: 'p'.repeat(200) })]),
     });
     const [event] = await collect(guardAdapter(inner, redactor).create(REQUEST, ctx()));
     const error = (event as { response: { error: unknown } }).response.error;
-    expect(error).toEqual({ code: null, type: 'server_error', message: REDACTED_ECHO, param: null });
+    expect(error).toEqual({ code: 'upstream_error', type: 'server_error', message: REDACTED_ECHO, param: null });
   });
 
   it('keeps a valid response.failed code and param', async () => {
@@ -254,7 +254,7 @@ describe('guardAdapter create events (G2)', () => {
     });
   });
 
-  it('redacts an error event message and shape-checks its code and param', async () => {
+  it('redacts an error event message, replaces a scrubbed code by upstream_error and shape-checks its param', async () => {
     const inner = baseAdapter({
       create: () =>
         eventsOf([
@@ -266,10 +266,10 @@ describe('guardAdapter create events (G2)', () => {
         ]),
     });
     const [event] = await collect(guardAdapter(inner, redactor).create(REQUEST, ctx()));
-    expect(event).toEqual({ type: 'error', sequence_number: 3, error: { message: `boom ${REDACTED}`, type: 'server_error', code: null, param: null } });
+    expect(event).toEqual({ type: 'error', sequence_number: 3, error: { message: `boom ${REDACTED}`, type: 'server_error', code: 'upstream_error', param: null } });
   });
 
-  it('nulls a response.failed code and an error event code and param equal to the configured key', async () => {
+  it('replaces a response.failed code and an error event code equal to the configured key by upstream_error, and nulls the param', async () => {
     const inner = baseAdapter({
       create: () =>
         eventsOf([
@@ -278,8 +278,8 @@ describe('guardAdapter create events (G2)', () => {
         ]),
     });
     const [errorEvent, failed] = await collect(guardAdapter(inner, redactor).create(REQUEST, ctx()));
-    expect((errorEvent as { error: unknown }).error).toEqual({ message: 'hiccup', type: 'server_error', code: null, param: null });
-    expect((failed as { response: { error: unknown } }).response.error).toEqual({ code: null, type: 'server_error', message: 'failed', param: null });
+    expect((errorEvent as { error: unknown }).error).toEqual({ message: 'hiccup', type: 'server_error', code: 'upstream_error', param: null });
+    expect((failed as { response: { error: unknown } }).response.error).toEqual({ code: 'upstream_error', type: 'server_error', message: 'failed', param: null });
   });
 
   it('passes other events through unchanged', async () => {

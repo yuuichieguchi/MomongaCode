@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeEnv, modelKey } from './harness.ts';
 import { GatewayRequestError } from '../../src/gateway-client.ts';
-import { failedStep, textStep, thrownStep } from './scripts.ts';
+import { failedStep, textStep } from './scripts.ts';
 import type { ScriptStep } from './fake-gateway.ts';
 import { responseResource } from '@momonga/testkit';
 import type { StreamEvent } from '@momonga/protocol';
@@ -9,7 +9,7 @@ import type { StreamEvent } from '@momonga/protocol';
 const gatewayErrorStep = (fields: ConstructorParameters<typeof GatewayRequestError>[0]): ScriptStep => ({ events: [], error: new GatewayRequestError(fields) });
 
 const REQUEUED: [string, () => ScriptStep][] = [
-  ['a thrown stream error', () => thrownStep()],
+  ['a lost gateway connection, as the client reports a socket reset', () => connectionLost()],
   [
     'a gateway_unavailable proven not sent',
     () => gatewayErrorStep({ status: 503, type: 'transport', code: 'gateway_unavailable', message: 'the gateway socket refused the connection', provenNotSent: true }),
@@ -24,6 +24,18 @@ const REQUEUED: [string, () => ScriptStep][] = [
 ];
 
 const DEFERRED_RETRY_AFTER_MS = 100_000;
+
+function connectionLost(): ScriptStep {
+  return gatewayErrorStep({ status: 0, type: 'transport', code: 'gateway_unavailable', message: 'the gateway connection was lost', provenNotSent: false });
+}
+
+function streamInterrupted(): ScriptStep {
+  return gatewayErrorStep({ status: 0, type: 'transport', code: 'stream_interrupted', message: 'the gateway stream was interrupted: other side closed' });
+}
+
+function endsWithoutTerminal(): ScriptStep {
+  return { events: textStep('cut short').events.slice(0, 3) };
+}
 
 const deferredStep = (): ScriptStep =>
   gatewayErrorStep({
@@ -180,9 +192,32 @@ describe('worker gateway failures', () => {
     expect(env.gateway.streams).toHaveLength(2);
   });
 
+  it('requeues a stream interrupted mid-flight, as the client reports any error while reading the body', async () => {
+    const env = await makeEnv();
+    env.gateway.script.push(streamInterrupted(), textStep('Recovered.'));
+    const run = env.enqueue('Work');
+
+    expect(await env.runOnce(env.worker())).toBe('yielded');
+
+    expect(env.run(run.id).status).toBe('QUEUED');
+  });
+
+  it('requeues a gateway stream that ends cleanly without a terminal event, a hop failure, instead of failing it as internal_error', async () => {
+    const env = await makeEnv();
+    env.gateway.script.push(endsWithoutTerminal(), textStep('Recovered.'));
+    const run = env.enqueue('Work');
+
+    expect(await env.runOnce(env.worker())).toBe('yielded');
+
+    expect(env.run(run.id).status).toBe('QUEUED');
+    env.clock.set(env.run(run.id).availableAt);
+    expect(await env.runOnce(env.worker('worker-2'))).toBe('yielded');
+    expect(env.run(run.id).status).toBe('COMPLETED');
+  });
+
   it('dead-letters the run as FAILED once the store attempt limit is exhausted by requeued hop failures', async () => {
     const env = await makeEnv({ maxAttempts: 3, maxTotalAttempts: 3 });
-    env.gateway.script.push(thrownStep(), thrownStep(), thrownStep(), textStep('never sent'));
+    env.gateway.script.push(connectionLost(), connectionLost(), connectionLost(), textStep('never sent'));
     const run = env.enqueue('Work');
 
     for (let attempt = 1; attempt <= 2; attempt += 1) {
@@ -196,7 +231,7 @@ describe('worker gateway failures', () => {
     const final = env.run(run.id);
     expect(final.status).toBe('FAILED');
     expect(final.error?.code).toBe('max_total_attempts');
-    expect(final.error?.message).toBe(`run ${run.id} exceeded 3 total attempts; the last attempt failed with: gateway connection reset`);
+    expect(final.error?.message).toBe(`run ${run.id} exceeded 3 total attempts; the last attempt failed with: the gateway connection was lost`);
     expect(env.gateway.streams).toHaveLength(3);
     expect(new Set(env.gateway.streams.map((stream) => stream.idempotencyKey))).toEqual(new Set([modelKey(run.id, 1, 1)]));
     expect(env.gateway.script).toHaveLength(1);
