@@ -1,5 +1,6 @@
 import { canonicalJson, sha256Hex } from './canonical-json.ts';
 import { rootUriOf } from './engine-root.ts';
+import { inPlaceReferenceCycle } from './schema-reference-cycles.ts';
 import { unresolvableReference } from './schema-references.ts';
 import { META_SCHEMA_URIS, dialectOfSchema, dialectOfUri } from './untrusted-dialect.ts';
 import type { SchemaDialect } from './untrusted-dialect.ts';
@@ -83,6 +84,8 @@ const compileIsolated = (schema: Record<string, unknown>, compilation: Compilati
   };
   const unresolved = unresolvableReference(schema, meta.dialect, compilation.remotes, resolvesInEngine);
   if (unresolved !== undefined) throw new Error(`reference "${unresolved}" cannot be resolved`);
+  const cycle = inPlaceReferenceCycle(schema, meta.dialect, compilation.remotes);
+  if (cycle !== undefined) throw new Error(`SCHEMA_REFERENCE_CYCLE: reference "${cycle}" leads back to its own schema without descending into the instance`);
   const root = structuredClone(schema);
   const validate = compilation.engine.compile(root, compilation.registry);
   const rootUri = rootUriOf(root);
