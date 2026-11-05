@@ -8,6 +8,7 @@ import { startFake } from './cc-support.ts';
 import { getJson } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, homePaths, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { makeReport } from './report-fixture.ts';
+import { CURRENT_DIALECTS } from './dialect-currency.ts';
 
 const KEY_VARIABLE = 'MOMONGA_COUNTER_TEST_KEY';
 const SECRET_NAME = 'counter-test-secret';
@@ -82,7 +83,7 @@ describe('the counters a started gateway lists', { timeout: REAL_PROCESS_TEST_TI
     const launchWithRecord = async (identity: string) => {
       const home = makeHome();
       writeSettings(home, settings);
-      await saveEndpointRecord(path.join(homePaths(home).root, 'state', 'probe'), key, identity, IDENTITY_FIELDS, makeReport(1, 1));
+      await saveEndpointRecord(path.join(homePaths(home).root, 'state', 'probe'), key, identity, IDENTITY_FIELDS, makeReport(1, 1), CURRENT_DIALECTS);
       const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
       const counters = await listedCounters(handle.socketPath);
       await handle.close();

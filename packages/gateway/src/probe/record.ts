@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { NeedsProbe, ProbeReport, ToolCallingMode, ToolCallingSetting } from '@momonga/protocol';
 import { modeIsPrivate } from '@momonga/foundation';
+import { dialectsDigest } from '../dialect/candidates.ts';
+import type { DialectCurrency } from '../dialect/candidates.ts';
 import { decideToolCalling } from './decide.ts';
 import { isRecord } from './json.ts';
 import { preconditionOf } from './remedy.ts';
@@ -39,8 +41,26 @@ export const writePrivateRecord = async (dir: string, file: string, content: str
   }
 };
 
-export const saveProbeRecord = async (dir: string, key: ProbeRecordKey, report: ProbeReport): Promise<void> => {
-  await writePrivateRecord(dir, recordPath(dir, key.target), JSON.stringify({ binarySha256: key.binarySha256, osBuild: key.osBuild, report }));
+export const currentStamp = (report: Pick<ProbeReport, 'schemaDialect'>, currency: DialectCurrency): { probeMethod: number; dialectsDigest: string | undefined } => ({
+  probeMethod: currency.probeMethod,
+  dialectsDigest: dialectsDigest(report.schemaDialect, currency),
+});
+
+export const isCurrentRecord = (stored: Record<string, unknown>, currency: DialectCurrency): boolean => {
+  if (stored['probeMethod'] !== currency.probeMethod || typeof stored['dialectsDigest'] !== 'string') return false;
+  const report = stored['report'];
+  const dialect = isRecord(report) ? report['schemaDialect'] : undefined;
+  const selected = isRecord(dialect) ? dialect['selected'] : undefined;
+  if (selected !== null && typeof selected !== 'string') return false;
+  return dialectsDigest({ selected }, currency) === stored['dialectsDigest'];
+};
+
+export const saveProbeRecord = async (dir: string, key: ProbeRecordKey, report: ProbeReport, currency: DialectCurrency): Promise<void> => {
+  await writePrivateRecord(
+    dir,
+    recordPath(dir, key.target),
+    JSON.stringify({ binarySha256: key.binarySha256, osBuild: key.osBuild, ...currentStamp(report, currency), report }),
+  );
 };
 
 const corruptRecord = (file: string, key: ProbeRecordKey, problem: string, cause: unknown): Error =>
@@ -49,7 +69,7 @@ const corruptRecord = (file: string, key: ProbeRecordKey, problem: string, cause
     { cause },
   );
 
-export const loadProbeRecord = async (dir: string, key: ProbeRecordKey): Promise<ProbeReport | null> => {
+export const loadProbeRecord = async (dir: string, key: ProbeRecordKey, currency: DialectCurrency): Promise<ProbeReport | null> => {
   const file = recordPath(dir, key.target);
   const raw = await fs.promises.readFile(file, 'utf8').catch((error: NodeJS.ErrnoException) => {
     if (error.code === 'ENOENT') return undefined;
@@ -67,6 +87,7 @@ export const loadProbeRecord = async (dir: string, key: ProbeRecordKey): Promise
     throw corruptRecord(file, key, 'missing key fields', new TypeError('binarySha256 or osBuild is missing'));
   }
   if (parsed['binarySha256'] !== key.binarySha256 || parsed['osBuild'] !== key.osBuild) return null;
+  if (!isCurrentRecord(parsed, currency)) return null;
   const report = parsed['report'];
   if (!isProbeReport(report)) {
     throw corruptRecord(file, key, 'invalid report', new TypeError('report does not match the probe report schema'));

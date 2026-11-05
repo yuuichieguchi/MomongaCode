@@ -34,7 +34,7 @@ const historyWith = (args: string): AdapterInputItem[] => [
 const requestWith = (args: string, tools: FunctionTool[]): AdapterRequest => ({ model: 'm', input: historyWith(args), ...(tools.length === 0 ? {} : { tools }) });
 
 const chatAdapter = (mode: ToolCallingMode) =>
-  createChatCompletionsAdapter({
+  createChatCompletionsAdapter({ schemaDialect: () => 'json-schema-2020-12',
     resolveEndpoint: async () => {
       throw new Error('rendering a wire never reaches the upstream');
     },

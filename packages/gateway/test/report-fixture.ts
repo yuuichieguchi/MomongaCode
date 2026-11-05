@@ -23,4 +23,5 @@ export const makeReport = (nativeValidRate: number, constrainedValidRate: number
   imageInputAccepted: false,
   guardrail: {},
   tokenCalibration: { ratio: 1.1, errorBound: 0.05 },
+  schemaDialect: { selected: 'json-schema-2020-12', shape: 'union', tried: [{ id: 'json-schema-2020-12', result: 'accepted' }] },
 });

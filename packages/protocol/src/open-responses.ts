@@ -1,3 +1,4 @@
+import type { SchemaNarrowing } from './dialect.ts';
 import type { ModelCost } from './token-anatomy.ts';
 
 export const OPEN_RESPONSES_VERSION = '2026-04-24' as const;
@@ -209,6 +210,7 @@ export type MomongaResponseExtension = {
   attempts: number;
   fallbackFrom?: string[];
   fallbackCauses?: { target: string; code: string | null; message: string }[];
+  schemaNarrowings?: SchemaNarrowing[];
   usageSource: 'reported' | 'estimated';
   contextInputTokens?: number;
   cacheWriteInputTokens?: number;
@@ -251,6 +253,7 @@ export type ResponseResource = {
   momonga?: MomongaResponseExtension;
   contextInputTokens?: number;
   cacheWriteInputTokens?: number;
+  schemaNarrowings?: SchemaNarrowing[];
 };
 
 export type PromptCacheCounts = { stable: number; fixed: number; previousHistory?: number; history: number };

@@ -1,5 +1,6 @@
 import type { Clock } from '@momonga/foundation';
 import type { AdapterTarget, Capabilities, HealthResult, ProviderAdapter } from '@momonga/protocol';
+import type { UserDialects } from '../../dialect/choice.ts';
 import type { UpstreamEndpoint, UpstreamLiveness } from '../shared/http-client.ts';
 
 export type OllamaAdapterOptions = {
@@ -8,6 +9,7 @@ export type OllamaAdapterOptions = {
   health?: (target: AdapterTarget) => Promise<HealthResult>;
   clock: Clock;
   liveness?: UpstreamLiveness;
+  userDialects?: UserDialects;
 };
 
 export type OllamaAdapter = ProviderAdapter & { close(): Promise<void> };

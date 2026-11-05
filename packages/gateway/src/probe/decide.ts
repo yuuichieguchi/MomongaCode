@@ -1,5 +1,6 @@
 import { MAX_BUDGET_COUNT, imageCapability } from '@momonga/protocol';
-import type { Capabilities, CapabilitiesCore, ImageCapability, ProbeReport, ToolCallingMode } from '@momonga/protocol';
+import type { Capabilities, CapabilitiesCore, DialectId, ImageCapability, ProbeReport, ToolCallingMode } from '@momonga/protocol';
+import { resolveDialectId } from '../dialect/resolve-id.ts';
 
 export interface DecideThresholds {
   minValidRate?: number;
@@ -10,12 +11,14 @@ export interface ToolCallingDecision {
   mode: ToolCallingMode;
 }
 
+export const DEFAULT_MIN_VALID_RATE = 0.9;
+
 const EPSILON = 1e-9;
 
-const atLeast = (value: number, threshold: number): boolean => value >= threshold - EPSILON;
+export const atLeast = (value: number, threshold: number): boolean => value >= threshold - EPSILON;
 
 export const decideToolCalling = (report: ProbeReport, thresholds: DecideThresholds = {}): ToolCallingDecision => {
-  const minValidRate = thresholds.minValidRate ?? 0.9;
+  const minValidRate = thresholds.minValidRate ?? DEFAULT_MIN_VALID_RATE;
   const nativeMargin = thresholds.nativeMargin ?? 0.05;
   const native = report.nativeTools;
   const constrained = report.constrained;
@@ -39,7 +42,7 @@ const probedImageCapability = (report: ProbeReport): ImageCapability =>
 const parallelCallsDecision = (report: ProbeReport, thresholds: DecideThresholds): Pick<Capabilities, 'parallelToolCalls'> => {
   const parallel = report.parallelToolCalls;
   if (parallel === undefined || !parallel.accepted) return {};
-  return { parallelToolCalls: atLeast(parallel.multiCallRate, thresholds.minValidRate ?? 0.9) };
+  return { parallelToolCalls: atLeast(parallel.multiCallRate, thresholds.minValidRate ?? DEFAULT_MIN_VALID_RATE) };
 };
 
 export const maxOutputTokensFor = (contextWindow: number): number => Math.min(contextWindow, Math.max(256, Math.ceil(contextWindow / 4)));
@@ -61,7 +64,7 @@ export const capabilitiesFromProbe = (report: ProbeReport, decision: ToolCalling
     ...parallelCallsDecision(report, thresholds),
     ...(report.reasoning === undefined ? {} : { reasoning: report.reasoning }),
     ...(report.promptCache === undefined ? {} : { promptCache: report.promptCache }),
-    schemaDialect: 'json-schema-2020-12',
+    schemaDialect: resolveDialectId(undefined, report),
     tokenCounting: report.tokenCalibration === undefined ? 'estimated' : 'calibrated',
     ...(report.tokenCalibration === undefined ? {} : { tokenErrorRatio: report.tokenCalibration.errorBound }),
     usageReported: report.usageReported,
@@ -73,16 +76,19 @@ export const capabilitiesFromProbe = (report: ProbeReport, decision: ToolCalling
 
 export type CapabilityLayer = Partial<CapabilitiesCore> & { image?: ImageCapability };
 
-export type DeclaredCapabilities = CapabilitiesCore & (ImageCapability | { imageInput?: undefined; imageTokens?: undefined });
+export type DeclaredCore = Omit<CapabilitiesCore, 'schemaDialect'> & { schemaDialect?: DialectId };
 
-export const layerOf = (declared: DeclaredCapabilities): { core: CapabilitiesCore; layer: CapabilityLayer } => {
+export type DeclaredCapabilities = DeclaredCore & (ImageCapability | { imageInput?: undefined; imageTokens?: undefined });
+
+export const layerOf = <Declared extends DeclaredCapabilities>(declared: Declared): { core: Omit<Declared, 'imageInput' | 'imageTokens'>; layer: CapabilityLayer } => {
   const { imageInput, imageTokens, ...core } = declared;
-  return { core, layer: { ...core, ...(imageInput === undefined ? {} : { image: imageCapability(imageInput, imageTokens) }) } };
+  const { imageInput: _input, imageTokens: _tokens, ...base }: DeclaredCapabilities = declared;
+  return { core, layer: { ...base, ...(imageInput === undefined ? {} : { image: imageCapability(imageInput, imageTokens) }) } };
 };
 
-export const withImageDefault = (declared: DeclaredCapabilities): Capabilities => {
+export const withImageDefault = (declared: DeclaredCapabilities, record: Pick<ProbeReport, 'schemaDialect'> | null = null): Capabilities => {
   const { core, layer } = layerOf(declared);
-  return { ...core, ...(layer.image ?? imageCapability(false, undefined)) };
+  return { ...core, schemaDialect: resolveDialectId(core.schemaDialect, record), ...(layer.image ?? imageCapability(false, undefined)) };
 };
 
 const splitByPrecedence = (layer: CapabilityLayer) => {

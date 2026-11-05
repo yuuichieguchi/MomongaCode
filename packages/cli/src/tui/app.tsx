@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useReducer, useRef, useState } from 'react';
 import { Box, Static, Text, useApp, useInput, usePaste, useStdout, useWindowSize } from 'ink';
 import { escapeTerminalBlock, escapeTerminalLine } from '@momonga/protocol';
-import type { Capabilities, ImageAttachment, MomongaModelEntry, PermissionMode, PermissionOption } from '@momonga/protocol';
+import type { AliasCapabilities, ImageAttachment, MomongaModelEntry, PermissionMode, PermissionOption } from '@momonga/protocol';
 import { cleanFailureMessage } from '@momonga/foundation';
 import { currentField, currentRequest, decide, enterValue, leaveFields, withError } from '../elicit/flow.ts';
 import type { ElicitationDecision, ElicitationFlow } from '../elicit/flow.ts';
@@ -282,7 +282,7 @@ export function App(props: AppProps) {
   const [model, setModel] = useState<MomongaModelEntry | undefined>(undefined);
   const [alias, setAlias] = useState<string | undefined>(undefined);
   const [notices, setNotices] = useState<readonly string[]>([]);
-  const capabilities: Capabilities | undefined = model?.capabilities;
+  const capabilities: AliasCapabilities | undefined = model?.capabilities;
   const [attachments, setAttachmentsState] = useState<readonly Attachment[]>([]);
   const [elicitEditor, setElicitEditor] = useState<EditorState>(emptyEditor());
   const [epoch, setEpoch] = useState(0);
