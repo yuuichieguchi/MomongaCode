@@ -196,7 +196,7 @@ describe('worker classification of stream errors', () => {
     expect(env.ofType(run.id, 'notice').filter((notice) => notice.level === 'error')).toEqual([]);
   });
 
-  it('treats an AbortError raised without a cancel as a failure', async () => {
+  it('fails the run with internal_error on an AbortError raised without a cancel, a bug rather than a hop failure', async () => {
     const env = await makeEnv();
     const bug = new Error('a bug dressed as an abort');
     bug.name = 'AbortError';
@@ -211,7 +211,6 @@ describe('worker classification of stream errors', () => {
 
     await env.runOnce(env.worker('worker-1', { gateway }));
 
-    expect(env.run(run.id).status).toBe('QUEUED');
-    expect(env.ofType(run.id, 'notice').filter((notice) => notice.level === 'error' && notice.message.includes('a bug dressed as an abort'))).toHaveLength(1);
+    expect(env.run(run.id)).toMatchObject({ status: 'FAILED', error: { code: 'internal_error', message: 'a bug dressed as an abort' } });
   });
 });

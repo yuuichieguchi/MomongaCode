@@ -42,24 +42,30 @@ describe('Idempotency-Key', () => {
   it('gives a stream joining mid-flight the full identical event sequence from the start', async () => {
     const primary = createScriptedAdapter({ calls: [{ events: events('shared'), gate: { name: 'g', afterEvents: 2 } }] });
     const { client } = await startGateway({ adapters: { primary } });
-    const firstResponse = await postJson(client, '/v1/responses', streamBody, key('k-2'));
-    const firstIterator = sseIterator(firstResponse);
-    const firstHead: SseFrame[] = [];
-    for (let index = 0; index < 2; index += 1) {
-      const step = await firstIterator.next();
-      if (step.done !== true) firstHead.push(step.value);
-    }
-    expect(firstHead.map((frame) => frame.data.type)).toEqual(['response.created', 'response.in_progress']);
+    const firstPending = postJson(client, '/v1/responses', streamBody, key('k-2'));
+    let firstArrived = false;
+    const markArrived = (): void => {
+      firstArrived = true;
+    };
+    void firstPending.then(markArrived, markArrived);
+    await waitFor(() => primary.calls[0]?.emitted === 2, { description: 'the opening events' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const heldBeforeOutput = !firstArrived;
 
-    const secondResponse = await postJson(client, '/v1/responses', streamBody, key('k-2'));
-    expect(secondResponse.status).toBe(200);
-    const secondIterator = sseIterator(secondResponse);
-    const secondFirst = await secondIterator.next();
-    expect(secondFirst.done).not.toBe(true);
+    const secondPending = postJson(client, '/v1/responses', streamBody, key('k-2'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
     primary.release('g');
 
-    const firstAll = await drain(firstIterator, firstHead);
-    const secondAll = await drain(secondIterator, secondFirst.done === true ? [] : [secondFirst.value]);
+    const secondResponse = await secondPending;
+    expect(secondResponse.status).toBe(200);
+    const firstIterator = sseIterator(await firstPending);
+    const secondIterator = sseIterator(secondResponse);
+    const firstStep = await firstIterator.next();
+    const secondStep = await secondIterator.next();
+    expect(heldBeforeOutput).toBe(true);
+    const firstAll = await drain(firstIterator, firstStep.done === true ? [] : [firstStep.value]);
+    const secondAll = await drain(secondIterator, secondStep.done === true ? [] : [secondStep.value]);
+    expect(firstAll.slice(0, 2).map((frame) => frame.data.type)).toEqual(['response.created', 'response.in_progress']);
     expect(secondAll).toEqual(firstAll);
     expect(firstAll.at(-1)?.data.type).toBe('response.completed');
     expect(primary.calls).toHaveLength(1);

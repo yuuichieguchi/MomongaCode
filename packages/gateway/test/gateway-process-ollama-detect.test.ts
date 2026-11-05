@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, startLoopbackServer } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, startLoopbackServer } from '@momonga/testkit';
 import { outputText, postJson, readJson, userInput } from './gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, until, writeSettings } from './gateway-process-helpers.ts';
 import { RECORDED_SERVER_VERSION, startFakeOllama } from './ollama-support.ts';
 import type { FakeOllamaOptions } from './ollama-support.ts';
 
@@ -69,7 +69,7 @@ describe('decision 3: a chat-completions or open-responses target whose server i
     expect(outputText(response.body)).toBe('configured path');
   });
 
-  it('leaves the target as configured when nothing answers at start', async () => {
+  it('leaves the target as configured when nothing answers at start, and a request to it spends the whole retry budget', async () => {
     const closed = await startLoopbackServer((_req, res) => {
       res.end();
     });
@@ -77,10 +77,25 @@ describe('decision 3: a chat-completions or open-responses target whose server i
     await closed.close();
     const home = makeHome();
     writeSettings(home, { models: { aliases: { fast: ['local'] }, targets: { local: v1Target('chat-completions', origin) } } });
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const clock = createFakeClock(Date.now());
+    const timers = createFakeTimers(clock);
+    const startedAt = clock.now();
+    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, clock, timers, random: () => 0.5 });
 
-    const response = await ask(handle.socketPath);
+    const pending = ask(handle.socketPath);
+    let settled = false;
+    const settle = (): void => {
+      settled = true;
+    };
+    void pending.then(settle, settle);
+    while (!settled) {
+      await until(() => settled || timers.pending().length > 0, 'a retry timer or the answer');
+      const nextDue = timers.nextDueAt();
+      if (!settled && nextDue !== undefined) timers.advance(Math.max(0, nextDue - clock.now()));
+    }
+    const response = await pending;
 
     expect(response.body.error.code).toBe('provider_unavailable');
+    expect(clock.now() - startedAt).toBeGreaterThanOrEqual(83_625);
   });
 });

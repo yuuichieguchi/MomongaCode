@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AdapterCompactResult, AdapterContext, CountTokensResult } from '@momonga/protocol';
 import { ScriptedUpstreamError, createScriptedAdapter, waitFor } from '@momonga/testkit';
 import { expectErrorBody, postJson, readJson, startGateway, userInput } from './gateway-helpers.ts';
+import { BREAKER_OUT_OF_THE_WAY, BUDGET, DEFERRED_HEADER, driveTimers, sum } from './retry-support.ts';
 
 const compactBody = { model: 'fast', input: userInput('summarize') };
 const countBody = { model: 'fast', input: userInput('count') };
@@ -72,18 +73,18 @@ describe('momonga-deadline-ms on unary endpoints', () => {
 });
 
 describe('count_tokens uses the breaker and admission gate', () => {
-  it('opens the breaker after repeated upstream failures and then refuses without calling the adapter', async () => {
+  it('opens the breaker after a failing request, and a later request on the only target still reaches the adapter', async () => {
     const { adapter, attempts } = failing(503);
     const { client } = await startGateway({
       adapters: { primary: adapter },
-      config: { retry: { maxAttempts: 1 }, breaker: { failureThreshold: 1, openMs: 30_000 } },
+      config: { retry: { maxAttempts: 1, totalWaitMs: 1 }, breaker: { failureThreshold: 1, openMs: 30_000 } },
     });
     const first = await readJson(await postJson(client, '/v1/momonga/count_tokens', countBody));
     expect(first.status).toBe(502);
     const second = await readJson(await postJson(client, '/v1/momonga/count_tokens', countBody));
-    expect(second.status).toBe(503);
-    expectErrorBody(second.body, { type: 'server_error', code: 'all_targets_unavailable' });
-    expect(attempts.count).toBe(1);
+    expect(second.status).toBe(502);
+    expectErrorBody(second.body, { type: 'server_error', code: 'upstream_error' });
+    expect(attempts.count).toBe(2);
   });
 
   it('queues behind the target concurrency limit', async () => {
@@ -120,5 +121,42 @@ describe('count_tokens uses the breaker and admission gate', () => {
     expect((await readJson(await one)).status).toBe(200);
     expect((await readJson(await two)).status).toBe(200);
     expect(peak).toBe(1);
+  });
+});
+
+describe('the retry budget on unary endpoints', () => {
+  const EQUAL_JITTER_AT_HALF_MS = [375, 750, 1500, 3000, 6000, ...Array.from({ length: 12 }, () => 6000)];
+
+  it.each([
+    ['/v1/responses/compact', compactBody, 'compact'],
+    ['/v1/momonga/count_tokens', countBody, 'count'],
+  ] as const)('spends the whole 84 s budget on %s: 17 equal-jitter waits, 18 calls, then 502', async (path, body, kind) => {
+    const { adapter, attempts } = failing(503);
+    const harness = await startGateway({ adapters: { primary: adapter }, config: { retry: BUDGET, breaker: BREAKER_OUT_OF_THE_WAY } });
+    const pending = postJson(harness.client, path, body);
+
+    const waits = await driveTimers(harness, [pending]);
+    const response = await readJson(await pending);
+
+    expect(waits).toEqual(EQUAL_JITTER_AT_HALF_MS);
+    expect(sum(waits)).toBe(83_625);
+    expect(attempts[kind]).toBe(18);
+    expect(response.status).toBe(502);
+    expectErrorBody(response.body, { type: 'server_error', code: 'upstream_error' });
+  });
+
+  it.each([
+    ['/v1/responses/compact', compactBody, 'compact'],
+    ['/v1/momonga/count_tokens', countBody, 'count'],
+  ] as const)('returns a deferral on %s when a 429 asks for longer than the whole budget', async (path, body, kind) => {
+    const { adapter, attempts } = failing(429, 100_000);
+    const harness = await startGateway({ adapters: { primary: adapter }, config: { retry: BUDGET, breaker: BREAKER_OUT_OF_THE_WAY } });
+
+    const response = await readJson(await postJson(harness.client, path, body));
+
+    expect(response.status).toBe(429);
+    expect(response.headers['retry-after']).toBe('100');
+    expect(response.headers[DEFERRED_HEADER]).toBe('true');
+    expect(attempts[kind]).toBe(1);
   });
 });

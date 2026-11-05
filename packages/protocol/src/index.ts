@@ -18,7 +18,7 @@ export type {
   ToolCallingState,
   ToolCallingSetting,
 } from './capabilities.ts';
-export { CALL_ROLES, COMPACTION_RESULT_EVENT, COMPACTION_ROLE, HEADER_ROLES, ROLE_HEADER, RUN_ID_HEADER, RUN_ROLE, STREAM_IDLE_HEADER } from './headers.ts';
+export { CALL_ROLES, COMPACTION_RESULT_EVENT, COMPACTION_ROLE, DEFERRED_HEADER, HEADER_ROLES, ROLE_HEADER, RUN_ID_HEADER, RUN_ROLE, STREAM_IDLE_HEADER } from './headers.ts';
 export type { CallRole } from './headers.ts';
 export type { HeaderRole } from './headers.ts';
 export {
@@ -297,7 +297,7 @@ export type {
   ModelRejectionReason,
   UsageChargePurpose,
 } from './run-types.ts';
-export { CHAT_REASONING_FIELDS, ERROR_TYPES, OPEN_RESPONSES_STREAM_EVENT_TYPES, OPEN_RESPONSES_VERSION, TERMINAL_STREAM_EVENT_TYPES } from './open-responses.ts';
+export { CHAT_REASONING_FIELDS, carriesOutput, ERROR_TYPES, OPEN_RESPONSES_STREAM_EVENT_TYPES, OPEN_RESPONSES_VERSION, TERMINAL_STREAM_EVENT_TYPES } from './open-responses.ts';
 export type {
   Annotation,
   CompactMomongaExtension,

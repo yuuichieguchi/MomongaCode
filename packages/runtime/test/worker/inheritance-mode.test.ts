@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { LeaseLostError } from '@momonga/runtime';
 import { canonicalJson } from '@momonga/foundation';
 import { PERMISSION_MODES } from '@momonga/protocol';
 import type { PermissionMode, RunEventPayload } from '@momonga/protocol';
@@ -159,7 +160,7 @@ describe('mode notice on recovery', () => {
       toolSet: async () => {
         if (!failed) {
           failed = true;
-          throw new Error('the tool set is unavailable');
+          throw new LeaseLostError();
         }
         return env.snapshotTools(env.toolbox.tools());
       },
@@ -167,7 +168,7 @@ describe('mode notice on recovery', () => {
     env.gateway.script.push(textStep('Answered.'));
     const second = env.enqueue('Plan it');
     await env.runOnce(env.worker('worker-1', { store: countingStore(env, calls), tools }));
-    expect(env.run(second.id).status).toBe('QUEUED');
+    expect(env.run(second.id).status).toBe('RUNNING');
     const journaled = inheritedEventOf(env, second.id);
     expect(modeMarkersOf(journaled.history)).toEqual([modeChangedText('default', 'plan')]);
 

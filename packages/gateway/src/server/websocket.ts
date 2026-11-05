@@ -5,6 +5,7 @@ import type { RawData, WebSocket } from 'ws';
 import { RUN_ROLE } from '@momonga/protocol';
 import type { StreamEvent } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, invalidRequest, readerStalledError } from '../core/errors.ts';
+import { errorHintsOf } from './sse.ts';
 import type { ConnectionResponses } from '../core/input.ts';
 import type { ResponsesService } from '../core/responses-service.ts';
 import type { Services } from '../core/services.ts';
@@ -38,12 +39,13 @@ export type WebSocketTransport = {
   terminateAll(): void;
 };
 
-type ErrorEnvelope = { type: 'error'; status: number; error: { type: string; code: string; message: string; param: string | null } };
+type ErrorEnvelope = { type: 'error'; status: number; retry_after_ms?: number; deferred?: true; error: { type: string; code: string; message: string; param: string | null } };
 
 const envelopeOf = (error: GatewayError): ErrorEnvelope => ({
   type: 'error',
   status: error.status,
   error: { type: error.body.type, code: error.body.code ?? error.body.type, message: error.body.message, param: error.body.param },
+  ...errorHintsOf(error),
 });
 
 const createConnectionResponses = (): ConnectionResponses => {

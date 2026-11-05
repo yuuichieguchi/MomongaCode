@@ -110,13 +110,14 @@ describe('a 4xx on the wrap-up call stops the run with the original stop reason'
   });
 });
 
-describe('wrap-up dispositions that do not change', () => {
+describe('wrap-up dispositions: one rule decides what is requeued', () => {
+  const DEFERRED_429 = { status: 429, type: 'too_many_requests', code: 'rate_limited', message: 'come back later', retryAfterMs: 100_000, deferred: true } as ErrorFields;
+
   it.for([
-    { status: 429, type: 'too_many_requests', code: 'rate_limited', message: 'slow down' },
-    { status: 408, type: 'invalid_request', code: 'request_timeout', message: 'request timeout' },
+    { status: 408, type: 'invalid_request', code: 'http_408', message: 'the gateway answered HTTP 408' },
     { status: 409, type: 'invalid_request', code: 'idempotency_key_in_progress', message: 'the key is in flight' },
-    { status: 500, type: 'server_error', code: 'internal_error', message: 'boom' },
-  ] satisfies ErrorFields[])('requeues a $status on the wrap-up call as before', async (fields) => {
+    DEFERRED_429,
+  ] satisfies ErrorFields[])('requeues a $status $code on the wrap-up call', async (fields) => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Echo', args: { value: 'x' } }]), thrown(fields), textStep('Summary.'));
     const run = env.enqueue('Work', { limits: { maxSteps: 1 } });
@@ -126,14 +127,28 @@ describe('wrap-up dispositions that do not change', () => {
     expect(env.run(run.id).status).toBe('QUEUED');
   });
 
-  it('requeues a stream-time model_error failure on the wrap-up call as before', async () => {
+  it.for([
+    { status: 429, type: 'too_many_requests', code: 'rate_limited', message: 'slow down' },
+    { status: 500, type: 'server_error', code: 'internal_error', message: 'boom' },
+  ] satisfies ErrorFields[])('fails the run on a $status $code on the wrap-up call that is not a deferral', async (fields) => {
+    const env = await makeEnv();
+    env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Echo', args: { value: 'x' } }]), thrown(fields), textStep('never sent'));
+    const run = env.enqueue('Work', { limits: { maxSteps: 1 } });
+
+    await env.runOnce(env.worker());
+
+    expect(env.run(run.id)).toMatchObject({ status: 'FAILED', error: { code: fields.code, message: fields.message } });
+    expect(env.gateway.streams).toHaveLength(2);
+  });
+
+  it('fails the run on a model_error response.failed before output on the wrap-up call', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Echo', args: { value: 'x' } }]), failedStep('upstream_protocol_error', 'model_error'));
     const run = env.enqueue('Work', { limits: { maxSteps: 1 } });
 
     await env.runOnce(env.worker());
 
-    expect(env.run(run.id).status).toBe('QUEUED');
+    expect(env.run(run.id)).toMatchObject({ status: 'FAILED', error: { code: 'upstream_protocol_error' } });
   });
 
   it('still fails the run on a 400 at a normal step', async () => {

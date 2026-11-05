@@ -7,7 +7,7 @@ import path from 'node:path';
 export type FakeSseFrame = { event?: string; data: unknown };
 
 export type FakeUpstreamReply =
-  | { kind: 'stream'; frames: FakeSseFrame[]; trailer?: 'end' | 'reset' }
+  | { kind: 'stream'; frames: FakeSseFrame[]; trailer?: 'end' | 'reset'; headers?: Record<string, string> }
   | { kind: 'json'; body: unknown }
   | { kind: 'error'; status: number; body: unknown; headers?: Record<string, string> }
   | { kind: 'hang'; frames?: FakeSseFrame[] };
@@ -52,8 +52,8 @@ const write = (response: http.ServerResponse, chunk: string): Promise<void> =>
     response.write(chunk, (error) => (error === null || error === undefined ? resolve() : reject(error)));
   });
 
-const startStream = async (response: http.ServerResponse, frames: readonly FakeSseFrame[]): Promise<void> => {
-  response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
+const startStream = async (response: http.ServerResponse, frames: readonly FakeSseFrame[], headers: Record<string, string> = {}): Promise<void> => {
+  response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', ...headers });
   for (const frame of frames) await write(response, encodeFrame(frame));
 };
 
@@ -68,7 +68,7 @@ const serve = async (reply: FakeUpstreamReply, response: http.ServerResponse): P
     response.end(JSON.stringify(reply.body));
     return;
   }
-  await startStream(response, reply.frames ?? []);
+  await startStream(response, reply.frames ?? [], reply.kind === 'stream' ? reply.headers : undefined);
   if (reply.kind === 'hang') {
     await new Promise<void>((resolve) => response.once('close', () => resolve()));
     return;

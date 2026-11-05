@@ -78,7 +78,7 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
     }
     const timing = { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: clock.now() - startedAt };
     if (terminal === undefined) return asked({ alias: classifier, failure: 'the classifier stream ended without a terminal event' });
-    if (terminal.kind === 'failed') return asked({ alias: classifier, failure: `${terminal.code ?? 'error'}: ${terminal.message}` });
+    if (terminal.kind === 'failed') return asked({ alias: classifier, failure: `${terminal.code}: ${terminal.message}` });
     const { usage } = terminal.response;
     if (usage === null) throw new GatewayFailureError(`the response of the classifier ${classifier} carries no usage`);
     const spend = {

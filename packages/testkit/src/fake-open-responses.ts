@@ -181,10 +181,14 @@ export const terminalEvent = (spec: TerminalSpec, output: readonly unknown[]): E
 
 export const DONE_FRAME: FakeSseFrame = { data: '[DONE]' };
 
-export const openResponsesStream = (events: readonly EventBody[], options: { trailer?: 'end' | 'reset'; done?: boolean } = {}): FakeUpstreamReply => ({
+export const openResponsesStream = (
+  events: readonly EventBody[],
+  options: { trailer?: 'end' | 'reset'; done?: boolean; headers?: Record<string, string> } = {},
+): FakeUpstreamReply => ({
   kind: 'stream',
   frames: [...numberedFrames(events), ...(options.done === false ? [] : [DONE_FRAME])],
   ...(options.trailer === undefined ? {} : { trailer: options.trailer }),
+  ...(options.headers === undefined ? {} : { headers: options.headers }),
 });
 
 export const openResponsesTextReply = (chunks: readonly string[], usage?: Usage | null): FakeUpstreamReply => {

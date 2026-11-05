@@ -70,10 +70,19 @@ describe('detached keyed runs', () => {
     raw.socket.destroy();
     await settle();
 
-    const joined = sseIterator(await postJson(client, '/v1/responses', streamBody, key('d-3')));
-    const first = await joined.next();
-    expect(first.done).not.toBe(true);
+    const joining = postJson(client, '/v1/responses', streamBody, key('d-3'));
+    let arrived = false;
+    const markArrived = (): void => {
+      arrived = true;
+    };
+    void joining.then(markArrived, markArrived);
+    await settle();
+    const heldBeforeOutput = !arrived;
     primary.release('g');
+    const joined = sseIterator(await joining);
+    const first = await joined.next();
+    expect(heldBeforeOutput).toBe(true);
+    expect(first.done).not.toBe(true);
     const frames = [first.value as SseFrame, ...(await drain(joined))];
     expect(frames.map((frame) => frame.data.type)).toEqual(plan.map((event) => event.type));
     expect(frames.map((frame) => frame.data.sequence_number)).toEqual(plan.map((_, index) => index));
@@ -87,15 +96,23 @@ describe('detached keyed runs', () => {
     const primary = createScriptedAdapter({ calls: [{ events: plan, gate: { name: 'g', afterEvents: 2 } }] });
     const { client, socketPath } = await startGateway({ adapters: { primary } });
     registerCleanup(() => primary.release('g'));
-    const leader = sseIterator(await postJson(client, '/v1/responses', streamBody, key('d-4')));
-    await leader.next();
+    const leading = postJson(client, '/v1/responses', streamBody, key('d-4'));
+    let arrived = false;
+    const markArrived = (): void => {
+      arrived = true;
+    };
+    void leading.then(markArrived, markArrived);
+    await waitFor(() => primary.calls[0]?.emitted === 2, { description: 'the opening events' });
     const joiner = await openRawPost(socketPath, '/v1/responses', streamBody, { headers: key('d-4') });
     await settle();
     joiner.socket.destroy();
     await settle();
+    const heldBeforeOutput = !arrived;
     expect(primary.calls[0]?.signal.aborted).toBe(false);
     primary.release('g');
+    const leader = sseIterator(await leading);
     const rest = await drain(leader);
+    expect(heldBeforeOutput).toBe(true);
     expect(rest.at(-1)?.data.type).toBe('response.completed');
     expect(primary.calls).toHaveLength(1);
     expect(primary.calls[0]?.emitted).toBe(plan.length);

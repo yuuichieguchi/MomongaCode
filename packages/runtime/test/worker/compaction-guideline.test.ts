@@ -56,7 +56,7 @@ const adoptingOutage = (env: Env, text: string, parent: number | null): void => 
     outages += 1;
     if (outages > 1) return;
     env.store.guidelines.adopt({ text, parent, report: { source: 'test' } });
-    throw new GatewayRequestError({ status: 503, type: 'server_error', code: 'upstream_unavailable', message: 'down' });
+    throw new GatewayRequestError({ status: 503, type: 'server_error', code: 'gateway_closed', message: 'the gateway is shutting down' });
   };
 };
 

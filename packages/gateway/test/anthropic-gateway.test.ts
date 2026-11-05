@@ -305,16 +305,27 @@ describe('anthropic adapter through the gateway: failures', () => {
     expect(gateway.fake.requests).toHaveLength(2);
   });
 
-  it('surfaces the final 429 with a Retry-After header when retries are exhausted', async () => {
+  it('surfaces the final 429 with its Retry-After and no deferral when the next 7 s wait does not fit the remaining budget', async () => {
     const gateway = await startAnthropicGateway({
-      script: [anthropicErrorReply(429, 'rate_limit_error', 'slow down', { 'retry-after': '7' })],
-      config: { retry: { maxAttempts: 1, baseMs: 100, maxMs: 10_000 } },
+      script: [anthropicErrorReply(429, 'rate_limit_error', 'slow down', { 'retry-after': '7' }), anthropicErrorReply(429, 'rate_limit_error', 'slow down', { 'retry-after': '7' })],
+      config: { retry: { maxAttempts: 1, totalWaitMs: 10_000, baseMs: 100, maxMs: 10_000 } },
     });
-    const response = await readJson(await postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    const pending = postJson(gateway.client, '/v1/responses', { model: 'fast', input: userInput('hi') });
+    let settled = false;
+    const settle = (): void => {
+      settled = true;
+    };
+    void pending.then(settle, settle);
+    await waitFor(() => settled || gateway.timers.pending().length > 0, { description: 'the 7 s wait or the answer' });
+    const waits = gateway.timers.pending().map((timer) => timer.delayMs);
+    gateway.timers.advance(7000);
+    const response = await readJson(await pending);
+    expect(waits).toEqual([7000]);
     expect(response.status).toBe(429);
     expect(response.headers['retry-after']).toBe('7');
+    expect(response.headers['momonga-deferred']).toBeUndefined();
     expectErrorBody(response.body, { type: 'too_many_requests', code: 'rate_limit_error' });
-    expect(response.body.error.message).toContain('slow down');
+    expect(gateway.fake.requests).toHaveLength(2);
   });
 
   it('answers an authentication failure with 401 authentication_failed and does not retry', async () => {
