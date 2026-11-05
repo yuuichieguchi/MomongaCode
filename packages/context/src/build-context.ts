@@ -763,6 +763,20 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   const lastLevel = levelIndex === lastIndex;
   const { protection, protectedSlots } = rungs[levelIndex] as (typeof rungs)[number];
 
+  const protectionNotices: ContextNotice[] = [];
+  if (protection.keepTurns < requestedKeepTurns && turnCount > protection.keepTurns) {
+    protectionNotices.push({
+      code: 'recent_turns_shrunk',
+      message: 'recent turns were reduced to the current turn because the context budget was exceeded',
+    });
+  }
+  if (protection.keepSteps < requestedKeepSteps) {
+    protectionNotices.push({
+      code: 'recent_steps_shrunk',
+      message: `recent steps of the current turn were reduced from ${requestedKeepSteps} to ${protection.keepSteps} because the context budget was exceeded`,
+    });
+  }
+
   const assemble = (): InputItem[] => {
     const items = slots.map(shown);
     const taskIndex = slots.findIndex((slot) => slot.seq > sources.taskSeq);
@@ -898,6 +912,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
           input: [...summaryItems, ...compactionInput],
           summaryTokenCap: summaryCap,
           pinnedText: [...layers, task].map((item) => textOfItem(item)).join('\n'),
+          notices: protectionNotices,
         },
       };
     }
@@ -969,20 +984,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   await persistReferences();
   await persistEvictions(slots.length);
 
-  if (levelIndex > 0) {
-    if (protection.keepTurns < requestedKeepTurns && turnCount > protection.keepTurns) {
-      notices.push({
-        code: 'recent_turns_shrunk',
-        message: 'recent turns were reduced to the current turn because the context budget was exceeded',
-      });
-    }
-    if (protection.keepSteps < requestedKeepSteps) {
-      notices.push({
-        code: 'recent_steps_shrunk',
-        message: `recent steps of the current turn were reduced from ${requestedKeepSteps} to ${protection.keepSteps} because the context budget was exceeded`,
-      });
-    }
-  }
+  notices.push(...protectionNotices);
 
   const hint = levelIndex === 0 && total.inputTokens > highMark ? await compactionFor('proactive', 0) : undefined;
   const finalInput = assemble();

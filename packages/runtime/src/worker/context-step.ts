@@ -14,7 +14,7 @@ import {
   textOfItem,
   workingStateCapFor,
 } from '@momonga/context';
-import type { ActivatedSkill, TokenMeter, BuildContextInput, ContextArrival, BuildContextPorts, BuiltContext, CompactionPlan, ContextEviction, LoadedGoverning, PinnedMeasure, TouchedPath } from '@momonga/context';
+import type { ActivatedSkill, TokenMeter, BuildContextInput, ContextArrival, ContextNotice, BuildContextPorts, BuiltContext, CompactionPlan, ContextEviction, LoadedGoverning, PinnedMeasure, TouchedPath } from '@momonga/context';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { resolveGoverning } from '@momonga/memory';
 import type { Session } from '@momonga/store';
@@ -414,14 +414,19 @@ export const cancelIfInterrupted = (ctx: ClaimContext): 'done' | undefined => {
   return interrupted(ctx) ? ctx.terminals.cancel() : undefined;
 };
 
-const recordContextFacts = (ctx: ClaimContext, built: BuiltContext): void => {
+const unrecordedNoticePayloads = (ctx: ClaimContext, notices: readonly ContextNotice[]): RunEventPayload[] => {
   const known = new Set(ctx.journal.state.notes.map((note) => note.message));
   const payloads: RunEventPayload[] = [];
-  for (const notice of built.notices) {
+  for (const notice of notices) {
     if (known.has(notice.message)) continue;
     known.add(notice.message);
     payloads.push({ type: 'notice', level: 'warning', message: notice.message, code: notice.code });
   }
+  return payloads;
+};
+
+const recordContextFacts = (ctx: ClaimContext, built: BuiltContext): void => {
+  const payloads = unrecordedNoticePayloads(ctx, built.notices);
   for (const instruction of built.loadedInstructions) {
     const recorded = ctx.journal.state.loadedInstructions.find((entry) => entry.path === instruction.path);
     if (recorded?.textSha256 === instruction.textSha256) continue;
@@ -584,6 +589,8 @@ const buildNextUnguarded = async (ctx: ClaimContext, options: { wrapUp?: WrapUpR
     try {
       await compactThrough(ctx, plan);
       attempt.successes += 1;
+      const reductionNotices = unrecordedNoticePayloads(ctx, plan.notices);
+      if (reductionNotices.length > 0) ctx.journal.append(reductionNotices);
       return 'compacted';
     } catch (error) {
       if (error instanceof GatewayRequestError) delete ctx.control.inFlight.compactionKey;

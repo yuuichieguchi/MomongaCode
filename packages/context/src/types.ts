@@ -211,7 +211,7 @@ export type ProtectionLevel = { keepTurns: number; keepSteps: number };
 
 export type PinnedBreakdown = { systemPrompt: number; tools: number; instructions: number; governing: number; task: number };
 
-export type CompactionPlan = { throughSeq: number; input: InputItem[]; summaryTokenCap: number; pinnedText: string };
+export type CompactionPlan = { throughSeq: number; input: InputItem[]; summaryTokenCap: number; pinnedText: string; notices: ContextNotice[] };
 
 export type CompactionBlockReason =
   | 'no_step_boundary_outside_protection'
