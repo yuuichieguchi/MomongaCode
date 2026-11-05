@@ -198,7 +198,7 @@ const unusedSandbox: ExecutionBatchInput['sandbox'] = {
 
 let runCounter = 0;
 
-export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000)) => {
+export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000), onWarning: (message: string) => void = () => undefined) => {
   const root = makeDir();
   const home = path.join(root, 'home');
   const project = path.join(root, 'project');
@@ -214,7 +214,7 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000)) => {
     processMarkerDir: markers,
     callLockDir: callLocks,
     kernelLock: createFakeKernelLock({ inheritable: false }),
-    onWarning: () => undefined,
+    onWarning,
     readOnlyRetry: { attempts: 3, baseMs: 0, maxMs: 0 },
   });
   const rule = (effect: RuleEffect, text: string): PermissionRule =>

@@ -148,6 +148,12 @@ const EXTRA_TOOLS: Record<string, Tool> = {
     description: 'A valid 2020-12 schema whose compiled validator throws while validating',
     inputSchema: { type: 'object', if: { anyOf: [{ properties: { a: {} } }], not: {} }, then: false } as unknown as Tool['inputSchema'],
   },
+  output_validator_throws: {
+    name: 'output_validator_throws',
+    description: 'A valid 2020-12 output schema whose compiled validator throws while validating',
+    inputSchema: objectSchema({}, []),
+    outputSchema: { type: 'object', if: { anyOf: [{ properties: { a: {} } }], not: {} }, then: false } as unknown as Tool['outputSchema'],
+  },
   if_annotations: {
     name: 'if_annotations',
     description: 'A 2020-12 schema whose if subschema evaluates every property',
@@ -306,6 +312,8 @@ const createFixtureServer = (): Server => {
         return text('added later');
       case 'with_id':
         return { content: [], structuredContent: { v: String(args['v']) } };
+      case 'output_validator_throws':
+        return { content: [{ type: 'text', text: 'unchecked' }], structuredContent: { a: 'unchecked' } };
       case 'hostile_title':
       case 'hostile_text_more':
       case 'deep_64':
