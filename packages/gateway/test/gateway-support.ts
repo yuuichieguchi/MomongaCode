@@ -15,6 +15,7 @@ export const createHangingAdapter = (events: readonly StreamEvent[]): HangingAda
     pulled,
     signals,
     capabilities: async () => DEFAULT_SCRIPTED_CAPABILITIES,
+    toolChoiceWire: () => ({ forms: [], expressesRequired: true }),
     create: async function* (_request: AdapterRequest, ctx): AsyncGenerator<StreamEvent> {
       signals.push(ctx.signal);
       for (const event of events) {

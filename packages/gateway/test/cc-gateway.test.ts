@@ -136,6 +136,7 @@ describe('/v1/momonga/health with adapter health', () => {
       kind: scripted.kind,
       sampling: scripted.sampling,
       capabilities: async () => DEFAULT_SCRIPTED_CAPABILITIES,
+      toolChoiceWire: () => ({ forms: [], expressesRequired: true }),
       create: (request, ctx) => scripted.create(request, ctx),
       classify: (error) => scripted.classify(error),
       health: async (target) => {
@@ -169,6 +170,7 @@ describe('/v1/momonga/health with adapter health', () => {
       kind: scripted.kind,
       sampling: scripted.sampling,
       capabilities: async () => DEFAULT_SCRIPTED_CAPABILITIES,
+      toolChoiceWire: () => ({ forms: [], expressesRequired: true }),
       create: (request, ctx) => scripted.create(request, ctx),
       classify: (error) => scripted.classify(error),
       health: async () => ({ ok: true }),
@@ -185,6 +187,7 @@ describe('/v1/momonga/health with a throwing adapter health', () => {
       kind: scripted.kind,
       sampling: scripted.sampling,
       capabilities: async () => DEFAULT_SCRIPTED_CAPABILITIES,
+      toolChoiceWire: () => ({ forms: [], expressesRequired: true }),
       create: (request, ctx) => scripted.create(request, ctx),
       classify: (error) => scripted.classify(error),
       health: async () => {

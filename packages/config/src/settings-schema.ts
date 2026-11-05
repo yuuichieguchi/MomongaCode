@@ -1,5 +1,5 @@
 import { SECRET_NAME_PATTERN } from '@momonga/foundation';
-import { ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, REASONING_EFFORTS, TARGET_BILLINGS, THINKING_OFFS } from '@momonga/protocol';
+import { ALLOWED_TOOLS_FORMS, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, REASONING_EFFORTS, TARGET_BILLINGS, THINKING_OFFS } from '@momonga/protocol';
 import type { CallRole } from '@momonga/protocol';
 
 export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const satisfies readonly CallRole[];
@@ -157,6 +157,7 @@ const targetCapabilitiesSchema = (promptCache: object, extraProperties: object =
       additionalProperties: false,
     },
     parallelToolCalls: { type: 'boolean' },
+    allowedTools: { type: 'array', items: { enum: [...ALLOWED_TOOLS_FORMS] }, minItems: 1, uniqueItems: true },
     schemaDialect: { enum: ['json-schema-2020-12', 'guided-generation'] },
     tokenCounting: { enum: ['exact', 'calibrated', 'estimated'] },
     tokenErrorRatio: { type: 'number', minimum: 0 },

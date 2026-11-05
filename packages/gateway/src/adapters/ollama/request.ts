@@ -1,5 +1,6 @@
 import { acceptedReasoningEfforts, clampReasoningEffort } from '@momonga/protocol';
-import type { AdapterRequest, Capabilities, FunctionTool, ReasoningCapability, ReasoningEffort, ReasoningOrigin } from '@momonga/protocol';
+import type { ToolChoiceWire, AdapterRequest, Capabilities, FunctionTool, ReasoningCapability, ReasoningEffort, ReasoningOrigin } from '@momonga/protocol';
+import { forbidsTools } from '../../core/tool-choice.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { carriedSamplingOf } from '../shared/sampling.ts';
 import { SYSTEM_PART_SEPARATOR, systemTextOf } from '../shared/system-text.ts';
@@ -26,13 +27,15 @@ const toolOf = (tool: FunctionTool): unknown => ({
   },
 });
 
-const sendsTools = (request: AdapterRequest): boolean => (request.tools ?? []).length > 0 && request.tool_choice !== 'none';
+const sendsTools = (request: AdapterRequest): boolean => (request.tools ?? []).length > 0 && !forbidsTools(request.tool_choice);
 
 const requireToolChoice = (request: AdapterRequest): void => {
   const choice = request.tool_choice;
   if (choice === undefined || choice === 'auto' || choice === 'none') return;
   throw new UnsupportedInputError('unsupported_tool_choice', 'the Ollama adapter supports only the tool_choice values auto and none', 'tool_choice');
 };
+
+export const OLLAMA_TOOL_CHOICE: ToolChoiceWire = { forms: ['filter'], expressesRequired: false };
 
 const formatOf = (request: AdapterRequest): { format?: unknown } => {
   const format = request.text?.format;

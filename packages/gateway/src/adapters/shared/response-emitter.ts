@@ -15,6 +15,7 @@ import type {
   Usage,
 } from '@momonga/protocol';
 import { echoedFields } from '../../core/resource.ts';
+import { echoedToolChoice } from '../../core/tool-choice.ts';
 import { MAX_CALL_ARGUMENT_CHARS, MAX_RESPONSE_TEXT_CHARS } from './limits.ts';
 import { UpstreamProtocolError } from './failures.ts';
 
@@ -420,7 +421,7 @@ export class ResponseEmitter {
       instructions: request.instructions ?? null,
       output: [...state.output],
       error: null,
-      tool_choice: request.tool_choice ?? 'auto',
+      tool_choice: echoedToolChoice(request.tool_choice),
       truncation: 'disabled',
       parallel_tool_calls: request.parallel_tool_calls ?? false,
       top_p: request.top_p ?? 1,

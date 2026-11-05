@@ -1,6 +1,7 @@
 import { decodeSse } from '@momonga/foundation';
 import { summaryTokenCapFor } from '@momonga/protocol';
-import type { AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
+import type { ToolChoiceWire, AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
+import { resolveToolChoice } from '../../core/tool-choice.ts';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
 import { boundedSseBytes } from '../shared/body-reading.ts';
 import { createUpstreamClassifier } from '../shared/classify.ts';
@@ -18,6 +19,8 @@ import { buildResponsesBody } from './request.ts';
 import { OpenResponsesStreamDriver } from './stream-driver.ts';
 import type { OpenResponsesAdapter, OpenResponsesAdapterOptions } from './types.ts';
 
+const OPEN_RESPONSES_TOOL_CHOICE: ToolChoiceWire = { forms: ['native', 'single_tool', 'filter'], expressesRequired: true };
+
 export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions): OpenResponsesAdapter => {
   const pool = createEndpointPool({ label: OPEN_RESPONSES_PROVIDER_LABEL, unixPath: OPEN_RESPONSES_PATH, urlSuffix: OPEN_RESPONSES_SUFFIX }, options.liveness);
   const { health } = options;
@@ -31,7 +34,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
       throw new UnsupportedInputError('capability_unsupported', 'this target does not support tool calling', 'tools');
     }
     const body = {
-      ...buildResponsesBody(request, ctx.reasoningOrigin),
+      ...buildResponsesBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.name, OPEN_RESPONSES_TOOL_CHOICE), ctx.reasoningOrigin),
       ...(capabilities.promptCache?.kind === 'key' && request.promptCacheKey !== undefined ? { prompt_cache_key: request.promptCacheKey } : {}),
     };
     const upstream = new AbortController();
@@ -103,6 +106,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
     create,
     compact,
     renderCompactWire,
+    toolChoiceWire: () => OPEN_RESPONSES_TOOL_CHOICE,
     classify: createUpstreamClassifier(OPEN_RESPONSES_PROVIDER_LABEL),
     ...(health === undefined ? {} : { health: (target: AdapterTarget) => health(target) }),
     close: () => {

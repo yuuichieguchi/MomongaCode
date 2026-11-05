@@ -1,4 +1,5 @@
 import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
+import Ajv2020 from 'ajv/dist/2020.js';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -40,6 +41,10 @@ class FakeFmChild extends EventEmitter {
       }
       this.server = server;
     });
+  }
+
+  completionBodies(): any[] {
+    return (this.server?.requests ?? []).filter((request) => request.path === '/v1/chat/completions').map((request) => request.body);
   }
 
   kill(): boolean {
@@ -125,7 +130,7 @@ const setup = async (config: Setup = {}) => {
     recordKey: RECORD_KEY,
     toolCallingSetting: config.report === undefined ? 'native' : 'auto',
   });
-  return { managed, spawn, socketPath, execCalls, clock };
+  return { managed, spawn, socketPath, execCalls, clock, children };
 };
 
 const adapterFor = (managed: ManagedFmTarget, clock: FakeClock) => {
@@ -160,7 +165,33 @@ describe('createManagedFmTarget probe-derived settings', () => {
     const { managed } = await setup({ report });
     expect(managed.toolCalling(TARGET)).toBe('constrained');
     expect(managed.keywordSupport(TARGET)).toEqual({ ...ALL_TRUE, pattern: false, anyOf: false });
-    expect(await managed.capabilities(TARGET)).toEqual(capabilitiesFromProbe(report, { mode: 'constrained' }));
+    expect(await managed.capabilities(TARGET)).toEqual({ ...capabilitiesFromProbe(report, { mode: 'constrained' }), allowedTools: ['envelope'] });
+  });
+
+  it('declares the envelope as its only allowed_tools form, probed or not', async () => {
+    const probed = await setup({ report: makeReport(0.5, 1) });
+    const unprobed = await setup();
+    expect((await probed.managed.capabilities(TARGET)).allowedTools).toEqual(['envelope']);
+    expect((await unprobed.managed.capabilities(TARGET)).allowedTools).toEqual(['envelope']);
+  });
+
+  it('sends the envelope over the allowed subset to a constrained fm target', async () => {
+    const { managed, clock, children } = await setup({ report: makeReport(0.5, 1) });
+    const toolNamed = (name: string) => ({ type: 'function' as const, name, parameters: { type: 'object', properties: {}, additionalProperties: false } });
+    await collect(adapterFor(managed, clock), {
+      model: 'system',
+      input: [userText('hi')],
+      tools: [toolNamed('alpha'), toolNamed('beta'), toolNamed('gamma')],
+      tool_choice: { type: 'allowed_tools', tools: [{ type: 'function', name: 'alpha' }, { type: 'function', name: 'beta' }], mode: 'required' },
+    });
+    const bodies = children.flatMap((child) => child.completionBodies());
+    expect(bodies).toHaveLength(1);
+    const validate = new Ajv2020.default({ strict: false }).compile(bodies[0].response_format.json_schema.schema as object);
+    const callOf = (name: string) => ({ kind: 'tool_calls', calls: [{ name, arguments: {} }] });
+    expect(validate(callOf('alpha'))).toBe(true);
+    expect(validate(callOf('beta'))).toBe(true);
+    expect(validate(callOf('gamma'))).toBe(false);
+    expect(validate({ kind: 'final', text: 'done' })).toBe(false);
   });
 
   it('uses the declared native tool calling, full keyword support and conservative unprobed capabilities without a record', async () => {

@@ -1,4 +1,4 @@
-import type { AdapterSampling, Capabilities, HealthResult, ReasoningEffort } from './capabilities.ts';
+import type { AdapterSampling, AllowedToolsForm, Capabilities, HealthResult, ReasoningEffort } from './capabilities.ts';
 import type { CountTokensRequest, CountTokensResult } from './gateway-api.ts';
 import type { CompactMomongaExtension, ErrorBody, FunctionTool, InputItem, PromptCacheCounts, ReasoningInputItem, StreamEvent, TextField, ToolChoice, Usage } from './open-responses.ts';
 
@@ -62,7 +62,9 @@ export type AdapterCompactRequest = {
 
 export type LenientItems = { callNames: Record<string, string>; withTools: boolean };
 
-export type RenderWireOptions = { reasoningOrigin: ReasoningOrigin; lenientItems?: LenientItems };
+export type ToolChoiceWire = { forms: readonly AllowedToolsForm[]; expressesRequired: boolean };
+
+export type RenderWireOptions = { reasoningOrigin: ReasoningOrigin; lenientItems?: LenientItems; allowedTools?: readonly AllowedToolsForm[] };
 
 export type AdapterCompactResult = { summary: string; usage: Usage; cacheWriteInputTokens?: number };
 
@@ -79,4 +81,5 @@ export type ProviderAdapter = {
   compact?(request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult>;
   renderCompactWire?(request: AdapterCompactRequest, target: AdapterTarget, cap: number, reasoningOrigin: ReasoningOrigin): Record<string, unknown>;
   renderWire?(request: AdapterRequest, target: AdapterTarget, options: RenderWireOptions): Record<string, unknown>;
+  toolChoiceWire(target: AdapterTarget): ToolChoiceWire;
 };

@@ -101,6 +101,9 @@ export type PromptCacheCapability =
   | { kind: 'automatic' }
   | { kind: 'none' };
 
+export const ALLOWED_TOOLS_FORMS = ['native', 'envelope', 'single_tool', 'filter'] as const;
+export type AllowedToolsForm = (typeof ALLOWED_TOOLS_FORMS)[number];
+
 export const SAMPLING_FIELDS = ['temperature', 'top_p', 'frequency_penalty', 'presence_penalty'] as const;
 export type SamplingField = (typeof SAMPLING_FIELDS)[number];
 
@@ -140,6 +143,7 @@ export type CapabilitiesCore = {
   stopSequences: boolean;
   outputBoundField?: OutputBoundField;
   parallelToolCalls?: boolean;
+  allowedTools?: readonly AllowedToolsForm[];
   schemaDialect: 'json-schema-2020-12' | 'guided-generation';
   tokenCounting: 'exact' | 'calibrated' | 'estimated';
   tokenErrorRatio?: number;

@@ -160,6 +160,7 @@ export const createScriptedAdapter = (options: ScriptedAdapterOptions): Scripted
       for (const wake of gateWaiters.get(gateName)?.splice(0) ?? []) wake();
     },
     capabilities: async () => applyCapabilityOverride(DEFAULT_SCRIPTED_CAPABILITIES, options.capabilities ?? {}),
+    toolChoiceWire: () => ({ forms: [], expressesRequired: true }),
     create: (request: AdapterRequest, ctx: AdapterContext) => {
       const plan = options.calls[calls.length];
       const record: RecordedAdapterCall = {
