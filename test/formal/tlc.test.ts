@@ -194,6 +194,22 @@ describe('the manifest of specs/tla', () => {
     }
   });
 
+  it('records the JVM start-up CPU seconds under load as a positive number', () => {
+    const manifest = manifestOrThrow() as Manifest & { readonly startupCpuSeconds?: unknown };
+    expect(typeof manifest.startupCpuSeconds).toBe('number');
+    expect(manifest.startupCpuSeconds as number).toBeGreaterThan(0);
+  });
+
+  it('records measured CPU seconds and derives every CPU budget as twice them rounded up plus the start-up CPU', () => {
+    const manifest = manifestOrThrow() as Manifest & { readonly startupCpuSeconds: number };
+    for (const entry of manifest.entries as readonly (ManifestEntry & { readonly measuredCpuSeconds: number; readonly budgetCpuSeconds: number })[]) {
+      expect(typeof entry.measuredCpuSeconds, entry.config).toBe('number');
+      expect(entry.measuredCpuSeconds, entry.config).toBeGreaterThan(0);
+      expect(Number.isInteger(entry.budgetCpuSeconds), entry.config).toBe(true);
+      expect(entry.budgetCpuSeconds, entry.config).toBe(Math.ceil(2 * entry.measuredCpuSeconds) + manifest.startupCpuSeconds);
+    }
+  });
+
   it('records a positive whole number of distinct states for every configuration', () => {
     for (const entry of manifestOrThrow().entries) {
       expect(Number.isInteger(entry.distinctStates) && entry.distinctStates > 0, entry.config).toBe(true);
@@ -408,6 +424,77 @@ describe('running tlc.sh under the harness', () => {
       expect(verdictProblems({ ...holdsEntry, config: 'Endless', budgetSeconds }, run)).not.toEqual([]);
     },
     8000 + 3 * REAP_SLACK_MS,
+  );
+});
+
+type CpuRunOptions = { readonly script: string; readonly config: string; readonly args: readonly string[]; readonly budgetCpuSeconds: number };
+type CpuRun = TlcRun & { readonly killedAtCpuBudget: boolean };
+
+const runUnderCpuBudget = (options: CpuRunOptions): Promise<CpuRun> => (runTlc as unknown as (options: CpuRunOptions) => Promise<CpuRun>)(options);
+
+const CPU_BUDGET_SECONDS = 2;
+const IDLE_WALL_GUARD_MS = CPU_BUDGET_SECONDS * TLC_WORKERS * 1000;
+
+describe('the CPU budget of the harness', () => {
+  let root = '';
+
+  beforeEach(() => {
+    root = createTempRoot();
+  });
+
+  afterEach(() => {
+    removeTempRoot(root);
+  });
+
+  const standIn = (name: string, lines: readonly string[]): string => {
+    const script = path.join(root, name);
+    writeFile(script, ['#!/bin/sh', ...lines, ''].join('\n'));
+    fs.chmodSync(script, 0o755);
+    return script;
+  };
+
+  it(
+    'kills a process that burns CPU past its CPU budget as one process group and says the CPU budget was exceeded',
+    async () => {
+      const script = standIn('burn.sh', ['echo STARTED', 'while :; do :; done']);
+      const run = await runUnderCpuBudget({ script, config: 'Burn', args: [], budgetCpuSeconds: CPU_BUDGET_SECONDS });
+      expect(run.killedAtCpuBudget).toBe(true);
+      expect(run.stdout).toContain('STARTED');
+      expect(run.signal).toBe('SIGKILL');
+      expect(await groupGoneWithin(run.pid, REAP_SLACK_MS)).toEqual([]);
+    },
+    IDLE_WALL_GUARD_MS + 30000,
+  );
+
+  it(
+    'lets a process that sleeps longer than its CPU budget in wall seconds complete without a kill',
+    async () => {
+      const sleepSeconds = CPU_BUDGET_SECONDS + 2;
+      expect(sleepSeconds * 1000).toBeLessThan(IDLE_WALL_GUARD_MS);
+      const script = standIn('idle.sh', [`sleep ${sleepSeconds}`, 'echo DONE', 'exit 0']);
+      const startedAt = Date.now();
+      const run = await runUnderCpuBudget({ script, config: 'Idle', args: [], budgetCpuSeconds: CPU_BUDGET_SECONDS });
+      expect(Date.now() - startedAt).toBeGreaterThanOrEqual(sleepSeconds * 1000);
+      expect(run.killedAtCpuBudget).toBe(false);
+      expect(run.exitCode).toBe(0);
+      expect(run.signal).toBeNull();
+      expect(run.stdout).toContain('DONE');
+    },
+    IDLE_WALL_GUARD_MS + REAP_SLACK_MS,
+  );
+
+  it(
+    'counts the CPU of a child process toward the budget, not only the parent',
+    async () => {
+      const script = standIn('parent.sh', ["sh -c 'while :; do :; done' &", 'echo CHILD_STARTED', 'sleep 30', 'echo PARENT_DONE', 'exit 0']);
+      const run = await runUnderCpuBudget({ script, config: 'Parent', args: [], budgetCpuSeconds: CPU_BUDGET_SECONDS });
+      expect(run.killedAtCpuBudget).toBe(true);
+      expect(run.stdout).toContain('CHILD_STARTED');
+      expect(run.stdout).not.toContain('PARENT_DONE');
+      expect(run.signal).toBe('SIGKILL');
+      expect(await groupGoneWithin(run.pid, REAP_SLACK_MS)).toEqual([]);
+    },
+    45000,
   );
 });
 
