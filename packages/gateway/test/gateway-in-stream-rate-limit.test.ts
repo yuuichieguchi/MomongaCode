@@ -61,9 +61,10 @@ describe('a rate limit inside the stream before any output goes through classifi
   it('returns a deferral when the in-stream rate limit carries a Retry-After beyond the whole budget and no fallback exists', async () => {
     const gateway = await startOpenResponsesGateway({ script: [rateLimitedBeforeOutput({ 'retry-after': '100' })] });
 
-    const reply = await readJson(await postJson(gateway.client, '/v1/responses', streamBody));
+    const response = await postJson(gateway.client, '/v1/responses', streamBody);
+    expect({ status: response.status, contentType: response.headers['content-type'] }).toEqual({ status: 429, contentType: expect.stringMatching(/^application\/json/) });
+    const reply = await readJson(response);
 
-    expect(reply.status).toBe(429);
     expect(reply.body.error.code).toBe('rate_limited');
     expect(reply.headers['retry-after']).toBe('100');
     expect(reply.headers[DEFERRED_HEADER]).toBe('true');
