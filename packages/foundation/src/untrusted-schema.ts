@@ -34,6 +34,18 @@ type Dialect = {
 
 const cache = new Map<string, CacheEntry>();
 
+const remoteSchemas = new Map<string, unknown>();
+
+export const registerUntrustedRemoteSchemas = (remotes: Readonly<Record<string, unknown>>): void => {
+  for (const [uri, schema] of Object.entries(remotes)) remoteSchemas.set(uri, schema);
+  cache.clear();
+};
+
+const withRemotes = (instance: AjvCore): AjvCore => {
+  for (const [uri, schema] of remoteSchemas) instance.addSchema(structuredClone(schema) as Record<string, unknown>, uri);
+  return instance;
+};
+
 const withFormats = (instance: AjvCore): AjvCore => {
   addFormats.default(instance);
   return instance;
@@ -56,7 +68,7 @@ const buildDialect = (construct: (options: Options) => AjvCore): Dialect => {
     checker,
     defaultMetaKey,
     metaValidators: collectMetaValidators(checker),
-    createIsolatedCompiler: () => withFormats(construct(ISOLATED_COMPILER_OPTIONS)),
+    createIsolatedCompiler: () => withRemotes(withFormats(construct(ISOLATED_COMPILER_OPTIONS))),
   };
 };
 
@@ -144,4 +156,5 @@ export const untrustedSchemaFailure = (identity: string, schema: Record<string, 
 export const clearUntrustedSchemaCaches = (): void => {
   cache.clear();
   validateFailures.clear();
+  remoteSchemas.clear();
 };

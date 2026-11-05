@@ -197,6 +197,7 @@ export {
   clearUntrustedSchemaCaches,
   compileUntrustedSchema,
   recordValidateFailure,
+  registerUntrustedRemoteSchemas,
   untrustedSchemaCacheSize,
   untrustedSchemaFailure,
 } from './untrusted-schema.ts';
