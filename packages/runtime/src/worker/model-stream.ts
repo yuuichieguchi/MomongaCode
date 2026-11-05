@@ -3,7 +3,7 @@ import type { BilledDetail, CallTiming, CreateResponseBody, MomongaResponseExten
 import type { RunEventPayload } from '@momonga/protocol';
 import { carriesOutput } from '@momonga/protocol';
 import type { ClaimContext } from './claim-context.ts';
-import { GatewayFailureError } from './errors.ts';
+import { GatewayRequestError } from '../gateway-client.ts';
 
 export { carriesOutput };
 
@@ -151,7 +151,7 @@ export const streamModel = async (
   const failure = ctx.control.failure();
   if (failure !== undefined) throw failure;
   delete ctx.control.inFlight.modelKey;
-  if (terminal === undefined) throw new GatewayFailureError('the model stream ended without a terminal event');
+  if (terminal === undefined) throw new GatewayRequestError({ status: 0, type: 'transport', code: 'stream_interrupted', message: 'the gateway stream ended without a terminal event' });
   buffer.flush();
   return { result: terminal, timing: { ...(firstEventMs === undefined ? {} : { firstEventMs }), durationMs: clock.now() - startedAt } };
 };

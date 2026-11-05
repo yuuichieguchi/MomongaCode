@@ -83,7 +83,6 @@ const DEFAULT_CANCEL_TIMEOUT_MS = 1000;
 const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 60_000;
 
 const NEVER_SENT_CODES: ReadonlySet<string> = new Set(['ENOENT', 'ECONNREFUSED']);
-const CONNECTION_LOST_CODES: ReadonlySet<string> = new Set(['ECONNRESET', 'EPIPE', 'UND_ERR_SOCKET', 'UND_ERR_CLOSED']);
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -96,6 +95,13 @@ const errorCodeOf = (error: unknown): string | undefined => {
   const record: Record<string, unknown> = error as unknown as Record<string, unknown>;
   if (typeof record['code'] === 'string') return record['code'];
   return record['cause'] === undefined ? undefined : errorCodeOf(record['cause']);
+};
+
+export const transportFailureOf = (error: unknown): GatewayRequestError | undefined => {
+  const code = errorCodeOf(error);
+  if (code === undefined) return undefined;
+  if (NEVER_SENT_CODES.has(code)) return transportError('gateway_unavailable', 'the gateway socket is unavailable', true);
+  return transportError('gateway_unavailable', 'the gateway connection was lost', false);
 };
 
 const describeError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -208,10 +214,7 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
         if (expired !== undefined) return expired;
         if (destroyed) return clientDestroyed();
         if (midStream) return transportError('stream_interrupted', `the gateway stream was interrupted: ${describeError(error)}`);
-        const code = errorCodeOf(error);
-        if (code !== undefined && NEVER_SENT_CODES.has(code)) return transportError('gateway_unavailable', 'the gateway socket is unavailable', true);
-        if (code !== undefined && CONNECTION_LOST_CODES.has(code)) return transportError('gateway_unavailable', 'the gateway connection was lost', false);
-        return error;
+        return transportFailureOf(error) ?? error;
       },
     };
   };

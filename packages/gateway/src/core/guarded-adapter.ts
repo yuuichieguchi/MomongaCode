@@ -57,7 +57,7 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor): Guarde
   };
 
   const guardedEvent = (event: StreamEvent): StreamEvent => {
-    if (event.type === 'error') return { ...event, error: guardedBody(event.error) };
+    if (event.type === 'error') return { ...event, error: { ...guardedBody(event.error), code: guardedBody(event.error).code ?? UNNAMED_FAILURE_CODE } };
     if (event.type !== 'response.failed') return event;
     const { error } = event.response;
     if (typeof error !== 'object' || error === null) return event;
