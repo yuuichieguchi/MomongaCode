@@ -1,4 +1,8 @@
 export type ToolCallingMode = 'native' | 'constrained' | 'none';
+
+export type NeedsProbe = { state: 'needs_probe'; message: string; evidence: string; remedy: string };
+
+export type ToolCallingState = ToolCallingMode | NeedsProbe;
 export type ToolCallingSetting = 'native' | 'constrained' | 'auto';
 
 export const TARGET_BILLINGS = ['metered', 'local'] as const;
@@ -53,7 +57,7 @@ export type CapabilitiesCore = {
   reasoning?: ReasoningCapability;
   contextWindow: number;
   maxOutputTokens: number;
-  toolCalling: ToolCallingMode;
+  toolCalling: ToolCallingState;
   structuredOutput: 'json_schema' | 'none';
   streaming: boolean;
   stopSequences: boolean;

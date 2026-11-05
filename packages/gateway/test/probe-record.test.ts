@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { loadProbeRecord, resolveToolCalling, saveProbeRecord } from '@momonga/gateway';
+import { PreconditionFailedError, loadProbeRecord, resolveToolCalling, saveProbeRecord } from '@momonga/gateway';
 import { makeReport } from './report-fixture.ts';
 
 const dirs: string[] = [];
@@ -120,24 +120,34 @@ describe('probe record failure handling', () => {
   });
 });
 
+const needsProbe = { state: 'needs_probe' as const, message: 'the target "fm" sets toolCalling to auto, but no probe record exists', evidence: 'no record for the fm binary', remedy: 'run `momonga gateway probe fm`' };
+
 describe('resolveToolCalling', () => {
   it('uses explicit native from config regardless of the record', () => {
-    expect(resolveToolCalling('native', makeReport(0, 1))).toEqual({ mode: 'native', source: 'config' });
-    expect(resolveToolCalling('native', null)).toEqual({ mode: 'native', source: 'config' });
+    expect(resolveToolCalling('native', makeReport(0, 1), needsProbe)).toEqual({ mode: 'native', source: 'config' });
+    expect(resolveToolCalling('native', null, needsProbe)).toEqual({ mode: 'native', source: 'config' });
   });
 
   it('uses explicit constrained from config regardless of the record', () => {
-    expect(resolveToolCalling('constrained', makeReport(1, 0))).toEqual({ mode: 'constrained', source: 'config' });
-    expect(resolveToolCalling('constrained', null)).toEqual({ mode: 'constrained', source: 'config' });
+    expect(resolveToolCalling('constrained', makeReport(1, 0), needsProbe)).toEqual({ mode: 'constrained', source: 'config' });
+    expect(resolveToolCalling('constrained', null, needsProbe)).toEqual({ mode: 'constrained', source: 'config' });
   });
 
   it('decides from the record under auto', () => {
-    expect(resolveToolCalling('auto', makeReport(1, 1))).toEqual({ mode: 'native', source: 'probed' });
-    expect(resolveToolCalling('auto', makeReport(0.5, 0.95))).toEqual({ mode: 'constrained', source: 'probed' });
-    expect(resolveToolCalling('auto', makeReport(0.5, 0.5))).toEqual({ mode: 'none', source: 'probed' });
+    expect(resolveToolCalling('auto', makeReport(1, 1), needsProbe)).toEqual({ mode: 'native', source: 'probed' });
+    expect(resolveToolCalling('auto', makeReport(0.5, 0.95), needsProbe)).toEqual({ mode: 'constrained', source: 'probed' });
+    expect(resolveToolCalling('auto', makeReport(0.5, 0.5), needsProbe)).toEqual({ mode: 'none', source: 'probed' });
   });
 
-  it('falls back to native marked unprobed under auto without a record', () => {
-    expect(resolveToolCalling('auto', null)).toEqual({ mode: 'native', source: 'unprobed' });
+  it('fails with precondition_failed and the probe remedy under auto without a record, and resolves no mode', () => {
+    expect.assertions(4);
+    try {
+      resolveToolCalling('auto', null, needsProbe);
+    } catch (error) {
+      expect(error).toBeInstanceOf(PreconditionFailedError);
+      expect((error as PreconditionFailedError).remediation).toBe(needsProbe.remedy);
+      expect((error as PreconditionFailedError).message).toBe(needsProbe.message);
+      expect((error as PreconditionFailedError).detail).toBe(needsProbe.evidence);
+    }
   });
 });
