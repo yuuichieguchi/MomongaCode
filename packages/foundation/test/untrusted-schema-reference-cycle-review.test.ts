@@ -91,6 +91,16 @@ describe('resources embedded in a remote document that is not yet entered', () =
     expectCycleRefusal(boundary.compile, { $ref: `${EMBEDDED}#loop` }, [`${EMBEDDED}#/$defs/loop/anyOf/0/$ref`]);
   });
 
+  it('refuses with a named error a reference inside a remote document whose target the index cannot locate', () => {
+    const boundary = createUntrustedBoundary({
+      remotes: new Map([[REMOTE, { $defs: { a: { $ref: '#/$defs/missing' } } }]]),
+      engine: ataEngine,
+    });
+    const failure = failureOf(boundary.compile, { $ref: `${REMOTE}#/$defs/a` });
+    expect(failure).toBeInstanceOf(SchemaValidatorFailure);
+    expect((failure as Error).message).toContain('SCHEMA_REFERENCE_UNLOCATED');
+  });
+
   it('refuses a reference to the embedded resource itself', () => {
     const boundary = embeddedBoundary({ not: { $ref: EMBEDDED } });
     expectCycleRefusal(boundary.compile, { $ref: EMBEDDED }, [`${EMBEDDED}#/not/$ref`]);

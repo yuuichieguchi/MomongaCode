@@ -25,6 +25,7 @@ type Index = {
   readonly dynamicAnchors: Map<string, Json[]>;
   readonly documents: Map<Json, Document>;
   readonly pendingRemotes: Set<Json>;
+  readonly owners: Map<Json, Json>;
   readonly rootBase: string;
 };
 
@@ -65,22 +66,36 @@ const anchorsOf = (anchors: Map<string, Map<string, Json>>, base: string): Map<s
   return map;
 };
 
-const indexLocations = (root: Pending, index: Index): void => {
+const indexLocations = (root: Pending, index: Index, scanOnly: boolean): void => {
   const queue: Pending[] = [root];
+  const seen = new Set<Json>();
   for (let position = 0; position < queue.length; position += 1) {
     const item = queue[position]!;
-    if (!isRecord(item.node) || index.locations.has(item.node)) continue;
+    if (!isRecord(item.node) || seen.has(item.node) || index.locations.has(item.node)) continue;
     const node = item.node;
+    seen.add(node);
     let base = item.base;
+    let document = item.document;
+    let pointer = item.pointer;
     const id = node['$id'];
+    const register = (resourceBase: string): void => {
+      if (index.resources.has(resourceBase)) return;
+      index.resources.set(resourceBase, node);
+      index.owners.set(node, root.node as Json);
+    };
     if (item.resourceRoot) {
-      if (!index.resources.has(base)) index.resources.set(base, node);
+      register(base);
     } else if (typeof id === 'string') {
       if (item.draft07 && PLAIN_NAME_ID.test(id)) {
         anchorsOf(index.anchors, base).set(id.slice(1), node);
       } else {
         base = splitFragment(resolveUri(base, id))[0];
-        if (!index.resources.has(base)) index.resources.set(base, node);
+        register(base);
+        if (document !== '') {
+          document = base;
+          pointer = '';
+          index.documents.set(node, { document, draft07: item.draft07 });
+        }
       }
     }
     for (const keyword of ['$anchor', '$dynamicAnchor'] as const) {
@@ -88,14 +103,14 @@ const indexLocations = (root: Pending, index: Index): void => {
       if (typeof name === 'string') anchorsOf(index.anchors, base).set(name, node);
     }
     const dynamicName = node['$dynamicAnchor'];
-    if (typeof dynamicName === 'string') listOf(index.dynamicAnchors, dynamicName).push(node);
-    const location: Location = { node, base, pointer: item.pointer, document: item.document, draft07: item.draft07, inPlace: [] };
-    index.locations.set(node, location);
+    if (!scanOnly && typeof dynamicName === 'string') listOf(index.dynamicAnchors, dynamicName).push(node);
+    const location: Location = { node, base, pointer, document, draft07: item.draft07, inPlace: [] };
+    if (!scanOnly) index.locations.set(node, location);
     const visit = (child: unknown, segments: readonly string[], inPlace: boolean): void => {
       if (!isRecord(child)) return;
-      const pointer = `${item.pointer}${segments.map((segment) => `/${escapePointer(segment)}`).join('')}`;
-      if (inPlace) location.inPlace.push({ child, pointer });
-      queue.push({ node: child, base, pointer, document: item.document, draft07: item.draft07, resourceRoot: false });
+      const childPointer = `${pointer}${segments.map((segment) => `/${escapePointer(segment)}`).join('')}`;
+      if (inPlace) location.inPlace.push({ child, pointer: childPointer });
+      queue.push({ node: child, base, pointer: childPointer, document, draft07: item.draft07, resourceRoot: false });
     };
     const visitMap = (keyword: string, inPlace: boolean): void => {
       const map = node[keyword];
@@ -126,10 +141,12 @@ const indexLocations = (root: Pending, index: Index): void => {
 
 const enterRemote = (uri: string, index: Index): void => {
   const resource = index.resources.get(uri);
-  if (resource === undefined || !index.pendingRemotes.delete(resource)) return;
-  const entry = index.documents.get(resource);
-  if (entry === undefined) return;
-  indexLocations({ node: resource, base: resolveUri(ENGINE_ROOT_BASE, splitFragment(entry.document)[0]), pointer: '', document: entry.document, draft07: entry.draft07, resourceRoot: true }, index);
+  if (resource === undefined) return;
+  const owner = index.owners.get(resource) ?? resource;
+  if (!index.pendingRemotes.delete(owner)) return;
+  const entry = index.documents.get(owner);
+  if (entry === undefined) throw new Error(`SCHEMA_REFERENCE_UNLOCATED: remote document "${uri}" is not registered`);
+  indexLocations({ node: owner, base: resolveUri(ENGINE_ROOT_BASE, splitFragment(entry.document)[0]), pointer: '', document: entry.document, draft07: entry.draft07, resourceRoot: true }, index, false);
 };
 
 const baseAlong = (trail: readonly unknown[], start: string, draft07: boolean): string => {
@@ -145,7 +162,9 @@ const lookup = (reference: string, from: Location, index: Index): Json | undefin
   enterRemote(splitFragment(resolveUri(from.base, reference))[0], index);
   enterRemote(splitFragment(reference)[0], index);
   const resolved = resolveReference(reference, from.base, index);
-  if (resolved.kind === 'engine' || !isRecord(resolved.target)) return undefined;
+  if (resolved.kind === 'engine') return undefined;
+  if (resolved.target === undefined) throw new Error(`SCHEMA_REFERENCE_UNLOCATED: reference "${reference}" resolves for the engine but its target cannot be located`);
+  if (!isRecord(resolved.target)) return undefined;
   const target = resolved.target;
   if (index.locations.has(target)) return target;
   const entry = isRecord(resolved.resource) ? index.documents.get(resolved.resource) : undefined;
@@ -153,7 +172,7 @@ const lookup = (reference: string, from: Location, index: Index): Json | undefin
   const draft07 = entry?.draft07 ?? from.draft07;
   const trail = resolved.fragment.startsWith('/') ? pointerTrail(resolved.resource, resolved.fragment) : [resolved.resource];
   const base = trail === undefined ? resolved.resourceBase : baseAlong(trail, resolved.resourceBase, draft07);
-  indexLocations({ node: target, base, pointer: resolved.fragment.startsWith('/') ? encodedPointer(resolved.fragment) : '', document, draft07, resourceRoot: false }, index);
+  indexLocations({ node: target, base, pointer: resolved.fragment.startsWith('/') ? encodedPointer(resolved.fragment) : '', document, draft07, resourceRoot: false }, index, false);
   return target;
 };
 
@@ -187,10 +206,11 @@ export const inPlaceReferenceCycle = (schema: Json, dialect: SchemaDialect, remo
     dynamicAnchors: new Map(),
     documents: new Map(),
     pendingRemotes: new Set(),
+    owners: new Map(),
     rootBase: typeof rootId === 'string' ? resolveUri(ENGINE_ROOT_BASE, splitFragment(rootId)[0]) : ENGINE_ROOT_BASE,
   };
   index.documents.set(schema, { document: '', draft07: rootIsDraft07 });
-  indexLocations({ node: schema, base: index.rootBase, pointer: '', document: '', draft07: rootIsDraft07, resourceRoot: true }, index);
+  indexLocations({ node: schema, base: index.rootBase, pointer: '', document: '', draft07: rootIsDraft07, resourceRoot: true }, index, false);
   const starts = [...index.locations.values()];
   for (const [key, document] of remotes) {
     if (!isRecord(document)) continue;
@@ -199,6 +219,7 @@ export const inPlaceReferenceCycle = (schema: Json, dialect: SchemaDialect, remo
     const prepared = '$id' in document ? document : { ...document, $id: key };
     index.documents.set(prepared, { document: key, draft07 });
     index.pendingRemotes.add(prepared);
+    indexLocations({ node: prepared, base: resolveUri(ENGINE_ROOT_BASE, splitFragment(key)[0]), pointer: '', document: key, draft07, resourceRoot: true }, index, true);
     if (!index.resources.has(key)) index.resources.set(key, prepared);
     const declaredId = prepared['$id'];
     if (typeof declaredId === 'string' && declaredId !== '' && declaredId[0] !== '#' && !index.resources.has(declaredId)) index.resources.set(declaredId, prepared);
