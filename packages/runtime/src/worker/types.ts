@@ -1,5 +1,5 @@
 import type { Clock } from '@momonga/foundation';
-import type { InstructionReader } from '@momonga/context';
+import type { ContextOverflowError, InstructionReader } from '@momonga/context';
 import type { RuntimeStore } from '@momonga/store';
 import type { AgentsPort, GatewayPort, GovernancePort, HistoryPort, MemoryPort, SettingsPort, SkillsPort, ToolRuntimePort, TracerPort } from '../ports.ts';
 import type { ServiceTimers } from '../service/timers.ts';
@@ -45,6 +45,7 @@ export type WorkerOptions = {
   blobs: WorkerBlobs;
   instructionReader: InstructionReader;
   onError?: (error: unknown, context: WorkerErrorContext) => void;
+  onContextOverflow?: (error: ContextOverflowError) => void;
   onFatal: (error: Error) => void;
   wake?: WorkerWake;
   random: () => number;

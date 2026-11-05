@@ -792,21 +792,51 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     for (const [index, slot] of slots.entries()) {
       const state = slot.output;
       if (state === undefined || state.mode === 'omitted' || state.reference !== undefined || protectedSlots.has(index)) continue;
-      const handle = state.handle ?? blobs.handleFor(state.text);
-      const probe = withOutput(state.original, omittedMarker(state.tokens, handle));
-      const referrers = slots.flatMap((other) => (other.output?.reference?.to === state.callId ? [other.output] : []));
-      const tokensBefore = state.renderedTokens + referrers.reduce((sum, referrer) => sum + (referrer.reference as OutputReference).tokens, 0);
-      const tokensAfter = (await meter.countItem(probe, countContextFor(state.callId))) + (await referrersAfterEviction(referrers));
+      const copies = slots.flatMap((other, otherIndex) =>
+        other.output?.reference?.to === state.callId ? [{ slot: other, state: other.output, index: otherIndex }] : [],
+      );
+      const group = [{ slot, state, index }, ...copies.filter((copy) => !protectedSlots.has(copy.index))];
+      const staying = copies.filter((copy) => protectedSlots.has(copy.index)).map((copy) => copy.state);
+      const markers = new Map<OutputState, { handle: string; probe: InputItem }>();
+      for (const member of group) {
+        const handle = member.state.handle ?? blobs.handleFor(member.state.text);
+        markers.set(member.state, { handle, probe: withOutput(member.state.original, omittedMarker(member.state.tokens, handle)) });
+      }
+      let tokensBefore = state.renderedTokens + copies.reduce((sum, copy) => sum + (copy.state.reference as OutputReference).tokens, 0);
+      let tokensAfter = await referrersAfterEviction(staying);
+      for (const member of group) {
+        tokensAfter += await meter.countItem((markers.get(member.state) as { probe: InputItem }).probe, countContextFor(member.state.callId));
+      }
       if (tokensAfter >= tokensBefore) continue;
-      state.handle = handle;
-      slot.item = probe;
-      state.mode = 'omitted';
-      state.renderedTokens = await meter.countItem(slot.item, countContextFor(state.callId));
-      reports.set(state.callId, { eviction: { callId: state.callId, handle, kind: 'omitted' }, state });
-      firstEvicted = firstEvicted === undefined ? index : Math.min(firstEvicted, index);
+      for (const member of group) {
+        const { handle, probe } = markers.get(member.state) as { handle: string; probe: InputItem };
+        member.state.handle = handle;
+        member.slot.item = probe;
+        member.state.mode = 'omitted';
+        member.state.renderedTokens = await meter.countItem(probe, countContextFor(member.state.callId));
+        reports.set(member.state.callId, { eviction: { callId: member.state.callId, handle, kind: 'omitted' }, state: member.state });
+        firstEvicted = firstEvicted === undefined ? member.index : Math.min(firstEvicted, member.index);
+      }
       return true;
     }
     return false;
+  };
+
+  const passSnapshot = () => ({
+    items: slots.map((slot) => slot.item),
+    states: slots.flatMap((slot) => (slot.output === undefined ? [] : [{ state: slot.output, fields: { ...slot.output } }])),
+    reports: new Map(reports),
+    firstEvicted,
+    counted: counts.length,
+  });
+
+  const restorePass = (snapshot: ReturnType<typeof passSnapshot>): void => {
+    for (const [index, slot] of slots.entries()) slot.item = snapshot.items[index] as InputItem;
+    for (const { state, fields } of snapshot.states) Object.assign(state, fields);
+    reports.clear();
+    for (const [callId, report] of snapshot.reports) reports.set(callId, report);
+    firstEvicted = snapshot.firstEvicted;
+    counts.length = snapshot.counted;
   };
 
   const persistReferences = async (): Promise<void> => {
@@ -944,7 +974,10 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   };
   let highMark = await highMarkNow();
   const lowMark = (): number => floorTokens + floorRatio(EVICT_LOW_WATER, highMark - floorTokens);
+  const loadOf = (counted: MeterCount): number => counted.inputTokens + counted.underAt(counted.inputTokens);
   if (total.inputTokens > highMark || !fits(total)) {
+    const unevicted = total;
+    const snapshot = passSnapshot();
     if (cachePrefix) {
       while (await evictOldest()) continue;
     } else {
@@ -956,6 +989,11 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     if (cachePrefix) {
       if (firstEvicted !== undefined && (input.forms !== undefined || input.renderedFull !== undefined)) await rerenderFrom(firstEvicted);
       total = await measureAssembled();
+    }
+    const kept = fits(total) || (!fits(unevicted) && loadOf(total) < loadOf(unevicted));
+    if (!kept) {
+      restorePass(snapshot);
+      total = unevicted;
     }
     highMark = await highMarkNow();
   }

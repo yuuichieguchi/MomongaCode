@@ -661,6 +661,7 @@ const buildNextUnguarded = async (ctx: ClaimContext, options: { wrapUp?: WrapUpR
         continue;
       }
       if (!(error instanceof ContextOverflowError)) throw error;
+      ctx.options.onContextOverflow?.(error);
       if (error.compaction !== undefined && ctx.autoCompact && !levelsWithCompaction.has(level)) {
         levelsWithCompaction.add(level);
         if (cancelIfInterrupted(ctx) === 'done') return { kind: 'done' };
