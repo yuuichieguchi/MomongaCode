@@ -156,13 +156,11 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
   }
 };
 
-const REQUEUEABLE_4XX: readonly number[] = [408, 409, 429];
-
 const stopRejectedWrapUp = (options: WorkerOptions, claim: Claim, journal: Journal, terminals: Terminals, cause: unknown): boolean => {
   const inFlight = journal.state.inFlightModelRequest;
   if (inFlight === undefined || journal.state.steps[inFlight.step]?.summary !== true) return false;
   if (!(cause instanceof GatewayRequestError)) return false;
-  if (cause.status < 400 || cause.status >= 500 || REQUEUEABLE_4XX.includes(cause.status)) return false;
+  if (cause.status < 400 || cause.status >= 500 || cause.type === 'too_many_requests' || dispositionOf(cause, 0).kind !== 'fail') return false;
   const run = options.store.getRun(claim.runId);
   if (run === undefined) throw new Error(`unknown run ${claim.runId}`);
   const { maxSteps } = readRunLimits(run.limits, options.defaults);

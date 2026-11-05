@@ -12,7 +12,7 @@ const FLUSH_BYTES = 1024;
 
 export type ModelResult =
   | { kind: 'response'; response: ResponseResource; incomplete: boolean }
-  | { kind: 'failed'; code: string | null; message: string; retryable: boolean };
+  | { kind: 'failed'; code: string; message: string; retryable: boolean };
 
 type DeltaType = 'agent.message.delta' | 'agent.thought.delta';
 
@@ -85,8 +85,6 @@ export const terminalResultOf = (event: StreamEvent): ModelResult | undefined =>
       return { kind: 'response', response: event.response, incomplete: true };
     case 'response.failed':
       return { kind: 'failed', code: event.response.error.code, message: event.response.error.message, retryable: event.response.momonga?.retryable === true };
-    case 'error':
-      return { kind: 'failed', code: event.error.code, message: event.error.message, retryable: false };
     default:
       return undefined;
   }

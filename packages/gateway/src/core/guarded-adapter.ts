@@ -16,6 +16,11 @@ export class GuardedAdapterError extends Error {
   }
 }
 
+const UNNAMED_FAILURE_CODE = 'upstream_error';
+const upstreamCodes = new WeakMap<object, string>();
+
+export const upstreamCodeOf = (event: StreamEvent & { type: 'response.failed' }): string => upstreamCodes.get(event) ?? event.response.error.code;
+
 const CODE_SHAPE = /^[A-Za-z0-9_.:-]{1,64}$/;
 const PARAM_SHAPE = /^[A-Za-z0-9_.[\]:-]{1,128}$/;
 
@@ -56,19 +61,20 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor): Guarde
     if (event.type !== 'response.failed') return event;
     const { error } = event.response;
     if (typeof error !== 'object' || error === null) return event;
-    const rebuilt: unknown = {
+    const rebuilt = {
       ...event,
       response: {
         ...event.response,
         error: {
-          code: shaped(error.code, CODE_SHAPE),
+          code: shaped(error.code, CODE_SHAPE) ?? UNNAMED_FAILURE_CODE,
           type: error.type,
           message: redactor.text(error.message),
           param: 'param' in error ? shaped(error.param, PARAM_SHAPE) : null,
         },
       },
     };
-    return rebuilt as StreamEvent;
+    upstreamCodes.set(rebuilt, error.code);
+    return rebuilt as unknown as StreamEvent;
   };
 
   const converting = async <T>(step: () => Promise<T>): Promise<T> => {

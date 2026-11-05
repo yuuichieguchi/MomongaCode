@@ -142,13 +142,13 @@ const handleResult = async (
   const { result, timing } = streamed;
   const { journal, terminals } = ctx;
   if (result.kind === 'failed') {
-    if (result.code !== null && REFUSAL_CODES.includes(result.code)) {
+    if (REFUSAL_CODES.includes(result.code)) {
       journal.append([{ type: 'notice', level: 'warning', message: `The model refused the request: ${result.message}`, code: 'model_refused' }]);
       return terminals.finish('STOPPED', { stopReason: 'refusal' });
     }
     if (result.code === DEADLINE_CODE) return terminals.finish('STOPPED', { stopReason: 'timeout' });
-    if (result.retryable) throw new GatewayFailureError(`${result.code ?? 'error'}: ${result.message}`);
-    return terminals.finish('FAILED', { error: { code: result.code ?? 'error', message: result.message } });
+    if (result.retryable) throw new GatewayFailureError(`${result.code}: ${result.message}`);
+    return terminals.finish('FAILED', { error: { code: result.code, message: result.message } });
   }
   const { response, incomplete } = result;
   const usage = response.usage;

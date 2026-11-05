@@ -20,6 +20,7 @@ import { startAttemptSpan } from './attempt-span.ts';
 import type { AttemptSpan, TraceParent } from './attempt-span.ts';
 import { breakerVerdictOf } from './breaker-verdict.ts';
 import type { BreakerVerdict } from './breaker-verdict.ts';
+import { upstreamCodeOf } from './guarded-adapter.ts';
 import { armDeadline } from './deadline.ts';
 import { ClientDisconnectedError, GatewayError, isGatewayClosed, isRunCancelled } from './errors.ts';
 import { estimateInputTokens, estimateOutputTokens, estimatedUsage } from './estimate.ts';
@@ -128,7 +129,7 @@ const failureBeforeOutput = (event: StreamEvent): UpstreamFailure | undefined =>
   if (terminal.type !== 'response.failed') return undefined;
   const { error } = terminal.response;
   const type = error.type ?? 'server_error';
-  if (breakerVerdictOf(type, error.code) === 'neutral') return undefined;
+  if (breakerVerdictOf(type, upstreamCodeOf(terminal)) === 'neutral') return undefined;
   return new UpstreamFailure({ retryable: true, error: { type, code: error.code, message: error.message, param: null } });
 };
 
@@ -443,7 +444,7 @@ async function* relaySteps(
 
   if (terminalEvent.type === 'response.failed') {
     const error = terminalEvent.response.error;
-    const verdict = breakerVerdictOf(error.type ?? 'server_error', error.code);
+    const verdict = breakerVerdictOf(error.type ?? 'server_error', upstreamCodeOf(terminalEvent));
     outcome.settle(verdict);
     opened.span.fail(error.type ?? 'server_error', new Error(error.message), error.message);
     progress.concluded = true;
