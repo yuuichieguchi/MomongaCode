@@ -1,6 +1,6 @@
 import type { AdapterTarget, ClassifiedError, ErrorBody, HealthResult, ProviderAdapter, StreamEvent } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError } from './errors.ts';
-import { withReasoningOrigin } from './origin-adapter.ts';
+import { sealedEventOf } from './sealed-events.ts';
 import type { Redactor } from './redaction.ts';
 import type { ReasoningOriginCodec } from './reasoning-origin.ts';
 
@@ -23,8 +23,7 @@ const PARAM_SHAPE = /^[A-Za-z0-9_.[\]:-]{1,128}$/;
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-export const guardAdapter = (raw: ProviderAdapter, redactor: Redactor, reasoningOrigin?: ReasoningOriginCodec): GuardedAdapter => {
-  const inner = reasoningOrigin === undefined ? raw : withReasoningOrigin(raw, reasoningOrigin);
+export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoningOrigin: ReasoningOriginCodec): GuardedAdapter => {
   const shaped = (value: unknown, shape: RegExp): string | null =>
     typeof value === 'string' && shape.test(value) && redactor.text(value) === value ? value : null;
 
@@ -90,12 +89,12 @@ export const guardAdapter = (raw: ProviderAdapter, redactor: Redactor, reasoning
     }
   };
 
-  const guardedIterator = (source: AsyncIterator<StreamEvent>): AsyncIterator<StreamEvent> => {
+  const guardedIterator = (source: AsyncIterator<StreamEvent>, model: string): AsyncIterator<StreamEvent> => {
     const { return: sourceReturn, throw: sourceThrow } = source;
     return {
       next: async (...args) => {
         const result = await converting(() => source.next(...args));
-        return result.done === true ? result : { done: false, value: guardedEvent(result.value) };
+        return result.done === true ? result : { done: false, value: sealedEventOf(reasoningOrigin, inner.kind, model, guardedEvent(result.value)) };
       },
       return: async (value) =>
         sourceReturn === undefined ? { done: true, value } : converting(() => sourceReturn.call(source, value)),
@@ -123,7 +122,7 @@ export const guardAdapter = (raw: ProviderAdapter, redactor: Redactor, reasoning
     capabilities: (target) => converting(() => inner.capabilities(target)),
     create: (request, ctx) => {
       const source = convertingSync(() => inner.create(request, ctx));
-      return { [Symbol.asyncIterator]: () => guardedIterator(convertingSync(() => source[Symbol.asyncIterator]())) };
+      return { [Symbol.asyncIterator]: () => guardedIterator(convertingSync(() => source[Symbol.asyncIterator]()), ctx.target.model) };
     },
     classify,
     ...(countTokens === undefined ? {} : { countTokens: (request, ctx) => converting(() => countTokens.call(inner, request, ctx)) }),
@@ -132,7 +131,7 @@ export const guardAdapter = (raw: ProviderAdapter, redactor: Redactor, reasoning
     ...(renderWire === undefined ? {} : { renderWire: (request, target, options) => convertingSync(() => renderWire.call(inner, request, target, options)) }),
     ...(renderCompactWire === undefined
       ? {}
-      : { renderCompactWire: (request, target, cap) => convertingSync(() => renderCompactWire.call(inner, request, target, cap)) }),
+      : { renderCompactWire: (request, target, cap, origin) => convertingSync(() => renderCompactWire.call(inner, request, target, cap, origin)) }),
     ...(health === undefined ? {} : { health: guardedHealth(health) }),
     ...(close === undefined ? {} : { close: () => close.call(inner) }),
     [guardBrand]: true,

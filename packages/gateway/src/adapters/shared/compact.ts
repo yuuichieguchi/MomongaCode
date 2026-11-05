@@ -54,7 +54,7 @@ const piecesOfContent = (content: string | readonly ContentPart[]): Piece[] => {
   return pieces;
 };
 
-const elementOf = (item: AdapterInputItem, origin: ReasoningOrigin | undefined): Piece[] | undefined => {
+const elementOf = (item: AdapterInputItem, origin: ReasoningOrigin): Piece[] | undefined => {
   switch (item.type) {
     case 'reasoning': {
       const own = ownReasoning(item, origin);
@@ -82,7 +82,7 @@ const coalesced = (pieces: readonly Piece[]): Piece[] =>
     return merged;
   }, []);
 
-const transcriptOf = (items: readonly AdapterInputItem[], origin: ReasoningOrigin | undefined): string | ContentPart[] => {
+const transcriptOf = (items: readonly AdapterInputItem[], origin: ReasoningOrigin): string | ContentPart[] => {
   const elements = items.flatMap((item) => {
     const element = elementOf(item, origin);
     return element === undefined ? [] : [element];
@@ -93,7 +93,7 @@ const transcriptOf = (items: readonly AdapterInputItem[], origin: ReasoningOrigi
     : pieces.map((piece): ContentPart => (typeof piece === 'string' ? { type: 'input_text', text: piece } : piece));
 };
 
-export const summaryRequestOf = (request: AdapterCompactRequest, cap: number): AdapterRequest => {
+export const summaryRequestOf = (request: AdapterCompactRequest, cap: number, origin: ReasoningOrigin): AdapterRequest => {
   const rules = instructionsFor(cap, request.momonga?.retains_user_request === true);
   const guideline = request.momonga?.guideline;
   const fixed = guideline === undefined ? rules : `${rules}\n${guideline}`;
@@ -102,7 +102,7 @@ export const summaryRequestOf = (request: AdapterCompactRequest, cap: number): A
   return {
     model: request.model,
     instructions,
-    input: [{ type: 'message', role: 'user', content: transcriptOf(request.input, request.reasoningOrigin) }],
+    input: [{ type: 'message', role: 'user', content: transcriptOf(request.input, origin) }],
     max_output_tokens: cap,
     reasoning_effort: LOWEST_REASONING_EFFORT,
   };

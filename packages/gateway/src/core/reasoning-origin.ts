@@ -32,7 +32,7 @@ const upstreamFrom = (value: unknown): Upstream | undefined => {
   };
 };
 
-const withoutUpstream = (item: ReasoningInputItem): ReasoningInputItem => {
+const withoutUpstream = <Item extends ReasoningInputItem | ReasoningItem>(item: Item): Omit<Item, 'encrypted_content' | 'signature' | 'reasoning_field'> => {
   const { encrypted_content: _encrypted, signature: _signature, reasoning_field: _field, ...rest } = item;
   return rest;
 };
@@ -41,13 +41,13 @@ export const createReasoningOriginCodec = (key: Uint8Array): ReasoningOriginCode
   const envelope = createSignedEnvelope(key);
   return {
     seal: (adapter, model, item) => ({
-      ...item,
-      encrypted_content: envelope.seal({ v: PAYLOAD_VERSION, adapter, model, upstream: upstreamOf(item) }),
+      ...withoutUpstream(item),
+      encrypted_content: envelope.seal({ v: PAYLOAD_VERSION, adapter, model, upstream: upstreamOf(item) }, 'reasoning-origin'),
     }),
     originFor: (adapter, model) => ({
       own: (item) => {
         if (typeof item.encrypted_content !== 'string') return undefined;
-        const payload = envelope.open(item.encrypted_content);
+        const payload = envelope.open(item.encrypted_content, 'reasoning-origin');
         if (payload === undefined || payload['v'] !== PAYLOAD_VERSION || payload['adapter'] !== adapter || payload['model'] !== model) return undefined;
         const upstream = upstreamFrom(payload['upstream']);
         return upstream === undefined ? undefined : { ...withoutUpstream(item), ...upstream };

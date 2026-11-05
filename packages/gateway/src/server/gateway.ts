@@ -98,14 +98,16 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
   try {
     const redactor = createRedactor({ credentials: options.credentials });
     options.credentialFeed?.((credential) => redactor.add(credential));
+    const reasoningOrigin = createReasoningOriginCodec(options.hmacKey);
     const services: Services = {
       config: options.config,
       clock,
       timers,
       random: options.random,
-      router: createRouter({ config: options.config, adapters: options.adapters, clock, timers, redactor, reasoningOrigin: createReasoningOriginCodec(options.hmacKey) }),
+      router: createRouter({ config: options.config, adapters: options.adapters, clock, timers, redactor, reasoningOrigin }),
       store,
       codec: createCompactionCodec(options.hmacKey),
+      reasoningOrigin,
       telemetry: options.telemetry,
       priceTable: options.priceTable,
       closeSignal: closeController.signal,

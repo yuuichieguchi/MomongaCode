@@ -36,7 +36,7 @@ const relayable = (content: string | ContentPart[], allowed: ReadonlySet<Content
 
 const USER_PART_TYPES: ReadonlySet<ContentPart['type']> = new Set([...TEXT_PART_TYPES, 'input_image']);
 
-const itemOf = (item: AdapterInputItem, origin: ReasoningOrigin | undefined): InputItem | undefined => {
+const itemOf = (item: AdapterInputItem, origin: ReasoningOrigin): InputItem | undefined => {
   switch (item.type) {
     case 'reasoning': {
       const own = ownReasoning(item, origin);
@@ -59,11 +59,11 @@ const itemOf = (item: AdapterInputItem, origin: ReasoningOrigin | undefined): In
   }
 };
 
-export const buildResponsesBody = (request: AdapterRequest): OpenResponsesRequestBody => {
+export const buildResponsesBody = (request: AdapterRequest, origin: ReasoningOrigin): OpenResponsesRequestBody => {
   const tools = request.tools ?? [];
   return {
     model: request.model,
-    input: request.input.flatMap((item) => itemOf(item, request.reasoningOrigin) ?? []),
+    input: request.input.flatMap((item) => itemOf(item, origin) ?? []),
     stream: true,
     store: false,
     include: ['reasoning.encrypted_content'],

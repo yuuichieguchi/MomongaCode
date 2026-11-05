@@ -17,7 +17,7 @@ describe('compaction transcript and reasoning (R2b input rule)', () => {
     const output = terminalOf(events).response.output as AdapterInputItem[];
     expect(output.map((item) => item.type)).toEqual(['reasoning', 'message']);
 
-    const summary = summaryRequestOf({ model: 'system', input: [userText('remember the cache rule'), ...output], reasoningOrigin: EVERY_REASONING_IS_OWN }, 256);
+    const summary = summaryRequestOf({ model: 'system', input: [userText('remember the cache rule'), ...output] }, 256, EVERY_REASONING_IS_OWN);
 
     const transcript = summary.input[0];
     if (transcript?.type !== 'message') throw new Error('the summary request carries no transcript message');

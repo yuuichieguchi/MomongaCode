@@ -77,7 +77,7 @@ const partBlocksOf = (content: string | readonly ContentPart[]): Array<Anthropic
 
 type Converted = { role: AnthropicMessage['role']; blocks: AnthropicBlock[] };
 
-const blocksOf = (item: AdapterInputItem, origin: ReasoningOrigin | undefined): Converted | undefined => {
+const blocksOf = (item: AdapterInputItem, origin: ReasoningOrigin): Converted | undefined => {
   switch (item.type) {
     case 'reasoning': {
       const own = ownReasoning(item, origin);
@@ -121,7 +121,7 @@ const stablePrefixLength = (input: readonly AdapterInputItem[]): number => {
 
 type ConvertedMessages = { messages: AnthropicMessage[]; stablePrefixEnd: AnthropicBlock | undefined; placed: Placed[] };
 
-const convertMessages = (input: readonly AdapterInputItem[], origin: ReasoningOrigin | undefined): ConvertedMessages => {
+const convertMessages = (input: readonly AdapterInputItem[], origin: ReasoningOrigin): ConvertedMessages => {
   const grouped: PlacedMessage[] = [];
   const prefixLength = stablePrefixLength(input);
   let stablePrefixEnd: AnthropicBlock | undefined;
@@ -142,7 +142,7 @@ const convertMessages = (input: readonly AdapterInputItem[], origin: ReasoningOr
   };
 };
 
-export const messagesOf = (input: readonly AdapterInputItem[], origin: ReasoningOrigin | undefined): AnthropicMessage[] => convertMessages(input, origin).messages;
+export const messagesOf = (input: readonly AdapterInputItem[], origin: ReasoningOrigin): AnthropicMessage[] => convertMessages(input, origin).messages;
 
 type PlacedSystem = { block: AnthropicTextBlock; origin: number };
 
@@ -208,11 +208,11 @@ const withMarks = (system: readonly PlacedSystem[], converted: ConvertedMessages
   }
 };
 
-const requestParts = (request: AdapterRequest, options: BodyOptions) => {
+const requestParts = (request: AdapterRequest, options: BodyOptions, origin: ReasoningOrigin) => {
   const tools = (request.tools ?? []).map(toolOf);
   const placedSystem = systemPlacedOf(request.instructions, request.input);
   const system = placedSystem.map((entry) => entry.block);
-  const converted = convertMessages(request.input, request.reasoningOrigin);
+  const converted = convertMessages(request.input, origin);
   const { cache } = options;
   if (cache?.marks !== undefined) withMarks(placedSystem, converted, { maxBreakpoints: cache.maxBreakpoints, marks: cache.marks });
   else if (cache !== undefined) withBreakpoints(tools, system, converted, cache.maxBreakpoints);
@@ -220,8 +220,8 @@ const requestParts = (request: AdapterRequest, options: BodyOptions) => {
   return { tools, system, messages: converted.messages, toolChoice };
 };
 
-export const buildMessagesBody = (request: AdapterRequest, maxTokens: number, options: BodyOptions): AnthropicRequestBody => {
-  const { tools, system, messages, toolChoice } = requestParts(request, options);
+export const buildMessagesBody = (request: AdapterRequest, maxTokens: number, options: BodyOptions, origin: ReasoningOrigin): AnthropicRequestBody => {
+  const { tools, system, messages, toolChoice } = requestParts(request, options, origin);
   return {
     model: request.model,
     max_tokens: request.max_output_tokens ?? maxTokens,
@@ -235,8 +235,8 @@ export const buildMessagesBody = (request: AdapterRequest, maxTokens: number, op
   };
 };
 
-export const buildCountTokensBody = (request: AdapterRequest): AnthropicCountTokensBody => {
-  const { tools, system, messages, toolChoice } = requestParts(request, { cache: undefined });
+export const buildCountTokensBody = (request: AdapterRequest, origin: ReasoningOrigin): AnthropicCountTokensBody => {
+  const { tools, system, messages, toolChoice } = requestParts(request, { cache: undefined }, origin);
   return {
     model: request.model,
     ...(system.length === 0 ? {} : { system }),

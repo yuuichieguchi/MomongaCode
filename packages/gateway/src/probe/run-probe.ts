@@ -20,6 +20,7 @@ import { decodeUpstreamReply, upstreamErrorMessage } from '../adapters/chat-comp
 import type { UpstreamReply } from '../adapters/chat-completions/upstream-reply.ts';
 import { outputBoundFor } from '../adapters/chat-completions/output-bound.ts';
 import { summaryRequestOf } from '../adapters/shared/compact.ts';
+import { NO_REASONING_IS_OWN } from '../adapters/shared/reasoning-origin.ts';
 import { hiddenReasoningTokens } from '../core/hidden-reasoning.ts';
 import { cachedCountOf } from './cached-count.ts';
 import { maxOutputTokensFor } from './decide.ts';
@@ -541,6 +542,7 @@ const summaryShapedBody = (contextWindow: number): Record<string, unknown> => {
   const summary = summaryRequestOf(
     { model: '', input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: transcript }] }] },
     cap,
+    NO_REASONING_IS_OWN,
   );
   const content = (summary.input[0] as { content: unknown }).content;
   return {

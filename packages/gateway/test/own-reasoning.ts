@@ -9,3 +9,5 @@ export const originOf = (adapter: string, model: string): ReasoningOrigin => cre
 
 export const sealedReasoning = (adapter: string, model: string, text: string) =>
   createReasoningOriginCodec(KEY).seal(adapter, model, { type: 'reasoning', id: 'rs_t', summary: [{ type: 'summary_text', text }] });
+
+export const REASONING_ORIGIN_CODEC = createReasoningOriginCodec(KEY);

@@ -2,6 +2,7 @@ import { isRecord } from '@momonga/foundation';
 import type { OllamaProbeReport } from '@momonga/protocol';
 import type { UpstreamEndpoint } from '../adapters/shared/http-client.ts';
 import { buildOllamaChatBody } from '../adapters/ollama/request.ts';
+import { NO_REASONING_IS_OWN } from '../adapters/shared/reasoning-origin.ts';
 import { isConnectionFailure } from '../adapters/shared/classify.ts';
 import { StreamFailure, UpstreamHttpError } from '../adapters/shared/failures.ts';
 import { ProbeTimeoutError, createProbeClient } from './client.ts';
@@ -131,6 +132,7 @@ const imageCostProbeOf = (client: ProbeClient, model: string, contextWindow: num
       },
       { contextWindow, maxOutputTokens: CACHE_PROBE_OUTPUT_TOKENS },
       false,
+      NO_REASONING_IS_OWN,
     );
     return client.request('POST', CHAT_PATH, request);
   };
@@ -154,6 +156,7 @@ const measurePromptCache = async (client: ProbeClient, model: string, contextWin
     { model, input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: Array.from({ length: CACHE_PROBE_WORDS }, () => 'word').join(' ') }] }] },
     { contextWindow, maxOutputTokens: CACHE_PROBE_OUTPUT_TOKENS },
     false,
+    NO_REASONING_IS_OWN,
   );
   await jsonOf(client, 'POST', CHAT_PATH, request);
   const repeated = await jsonOf(client, 'POST', CHAT_PATH, request);

@@ -24,7 +24,7 @@ const userMessageOf = (content: string | readonly ContentPart[]): OllamaMessage 
   return { role: 'user', content: text, ...(images.length === 0 ? {} : { images }) };
 };
 
-export const ollamaHistoryOf = (input: readonly AdapterInputItem[], origin: ReasoningOrigin | undefined): OllamaMessage[] => {
+export const ollamaHistoryOf = (input: readonly AdapterInputItem[], origin: ReasoningOrigin): OllamaMessage[] => {
   const messages: OllamaMessage[] = [];
   const namesByCallId = new Map<string, string>();
   let draft: AssistantDraft | undefined;

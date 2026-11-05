@@ -30,7 +30,7 @@ type ReasoningCarrier = { field: ChatReasoningField; text: string };
 
 const isReasoningField = (value: string): value is ChatReasoningField => CHAT_REASONING_FIELDS.some((field) => field === value);
 
-const carrierOf = (reasoning: ReasoningInput, origin: ReasoningOrigin | undefined): ReasoningCarrier | undefined => {
+const carrierOf = (reasoning: ReasoningInput, origin: ReasoningOrigin): ReasoningCarrier | undefined => {
   const item = ownReasoning(reasoning, origin);
   if (item === undefined) return undefined;
   const field = item.reasoning_field;
@@ -75,7 +75,7 @@ const createMessageList = () => {
 
 export type PlainHistoryOptions = {
   envelopeReplies: boolean;
-  origin: ReasoningOrigin | undefined;
+  origin: ReasoningOrigin;
   callNames?: Readonly<Record<string, string>>;
 };
 
@@ -119,7 +119,7 @@ export const plainHistoryOf = (input: readonly AdapterInputItem[], options: Plai
   return mergeAdjacentUserMessages(list.finish());
 };
 
-export const nativeHistoryOf = (input: readonly AdapterInputItem[], origin: ReasoningOrigin | undefined): ChatMessage[] => {
+export const nativeHistoryOf = (input: readonly AdapterInputItem[], origin: ReasoningOrigin): ChatMessage[] => {
   const list = createMessageList();
   let pendingCalls: unknown[] = [];
   const flushCalls = (): void => {

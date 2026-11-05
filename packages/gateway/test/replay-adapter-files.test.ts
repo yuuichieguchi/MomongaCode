@@ -4,9 +4,10 @@ import { describe, expect, it } from 'vitest';
 import { createReplayAdapter } from '@momonga/gateway';
 import type { AdapterRequest } from '@momonga/protocol';
 import { createScriptedAdapter, textResponseEvents } from '@momonga/testkit';
+import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
 import { makeDir, userInput } from './gateway-helpers.ts';
 
-const ctx = { signal: new AbortController().signal, target: { name: 'primary', model: 'm' }, attempt: 1 };
+const ctx = { signal: new AbortController().signal, target: { name: 'primary', model: 'm' }, attempt: 1, reasoningOrigin: EVERY_REASONING_IS_OWN };
 const request: AdapterRequest = { model: 'm', input: userInput('q') };
 
 const record = async (file: string): Promise<void> => {

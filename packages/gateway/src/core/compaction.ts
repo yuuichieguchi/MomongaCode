@@ -10,9 +10,9 @@ export type CompactionCodec = {
 export const createCompactionCodec = (key: Uint8Array): CompactionCodec => {
   const envelope = createSignedEnvelope(key);
   return {
-    encode: (summary) => envelope.seal({ v: PAYLOAD_VERSION, summary }),
+    encode: (summary) => envelope.seal({ v: PAYLOAD_VERSION, summary }, 'compaction'),
     decode: (encryptedContent) => {
-      const summary = envelope.open(encryptedContent)?.['summary'];
+      const summary = envelope.open(encryptedContent, 'compaction')?.['summary'];
       return typeof summary === 'string' ? summary : undefined;
     },
   };
