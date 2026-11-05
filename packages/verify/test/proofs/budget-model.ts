@@ -136,3 +136,14 @@ export const b7Goal = (arith: ProofArith, floor: ToolFloor): ProofBool => {
     floor.itemCap.le(floorOf(arith, ITEM_ROOM, floor.room)),
   );
 };
+
+export const unboundedWindowOf = (arith: ProofArith, options: { readonly loadRule: boolean }): Window => {
+  const { ctx } = arith;
+  const W = arith.int('W');
+  const U = arith.int('U');
+  arith.given(W.ge(1), W.le(ctx.Int.val(MAX_WINDOW)), U.ge(1), U.le(ctx.Int.val(MAX_WINDOW)));
+  const margin = named(arith, 'margin', arith.max(ceilOf(arith, MARGIN, W), ctx.Int.val(MIN_MARGIN)));
+  if (options.loadRule) arith.given(W.sub(U).sub(margin).ge(ceilOf(arith, OUTPUT_RESERVE, W)));
+  const I0 = named(arith, 'I0', arith.max(ctx.Int.val(0), W.sub(U).sub(margin)));
+  return { W, maxOutput: U, R: U, margin, I0 };
+};
