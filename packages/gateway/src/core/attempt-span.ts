@@ -12,6 +12,8 @@ import type { ChatBilling, Telemetry } from '@momonga/observability';
 import type { AdapterInputItem, FunctionTool, ItemField, Usage } from '@momonga/protocol';
 import { chatRequestContentOf, chatResponseMessagesOf } from './chat-content.ts';
 
+const RESPONSE_COMMITTED_EVENT = 'momonga.response.committed';
+
 export type TraceParent = ReturnType<Telemetry['propagation']['extract']>;
 
 export type AttemptSpanInput = {
@@ -34,6 +36,7 @@ export type AttemptSpanInput = {
 export type AttemptSpan = {
   readonly startedAtMs: number;
   note(name: string, message: string): void;
+  committed(): void;
   succeed(info: {
     responseModel: string;
     responseId: string;
@@ -47,7 +50,7 @@ export type AttemptSpan = {
 };
 
 export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
-  if (input.telemetry === undefined) return { startedAtMs: input.startedAtMs, note: () => undefined, succeed: () => undefined, fail: () => undefined };
+  if (input.telemetry === undefined) return { startedAtMs: input.startedAtMs, note: () => undefined, committed: () => undefined, succeed: () => undefined, fail: () => undefined };
   const span = startChatSpan(
     input.telemetry.tracer,
     {
@@ -79,6 +82,9 @@ export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
     startedAtMs: input.startedAtMs,
     note: (name, message) => {
       if (!ended) span.addEvent(name, { message });
+    },
+    committed: () => {
+      if (!ended) span.addEvent(RESPONSE_COMMITTED_EVENT);
     },
     succeed: (info) => {
       if (ended) return;
