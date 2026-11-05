@@ -1,16 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { createRun, createSession, makeRuntimeFixture, writeProjectSettings, writeUserSettings } from '../process/helpers.ts';
+import { withInProcessFacts } from './in-process-facts.ts';
 import { bash, exported, finishClaimed } from './reflection-fixture.ts';
 
 type Fixture = Awaited<ReturnType<typeof makeRuntimeFixture>>;
 
 const verified = (f: Fixture, runId: string): Promise<boolean> =>
-  exported<(deps: unknown, runId: string) => Promise<boolean>>('isRunVerified')({ store: f.store, settings: f.composition.settings }, runId);
+  exported<(deps: unknown, runId: string) => Promise<boolean>>('isRunVerified')({ store: withInProcessFacts(f.store, f.temp.dbPath), settings: f.composition.settings }, runId);
 
-const projectCheckRun = (f: Fixture) => {
+const projectCheckRun = async (f: Fixture) => {
   const session = createSession(f.store, f.temp.project);
   const runId = createRun(f.store, session.id);
-  finishClaimed(f.store, bash('t1', 'just check', 0));
+  await finishClaimed(f.store, bash('t1', 'just check', 0));
   return runId;
 };
 
@@ -20,15 +21,15 @@ describe('isRunVerified with real settings', () => {
     writeUserSettings(f.temp.home, {});
     writeProjectSettings(f.temp.project, { verification: { commands: ['just check'] } });
     const runId = projectCheckRun(f);
-    expect(await verified(f, runId)).toBe(false);
+    expect(await verified(f, (await runId))).toBe(false);
     f.store.trust.set(f.temp.project, 'trusted');
-    expect(await verified(f, runId)).toBe(true);
+    expect(await verified(f, (await runId))).toBe(true);
   });
 
   it('honours a user verification command in any folder', async () => {
     const f = await makeRuntimeFixture();
     writeUserSettings(f.temp.home, { verification: { commands: ['just check'] } });
-    expect(await verified(f, projectCheckRun(f))).toBe(true);
+    expect(await verified(f, (await projectCheckRun(f)))).toBe(true);
   });
 });
 

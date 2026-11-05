@@ -22,8 +22,8 @@ const crashingAfterTheResponseIsRecorded = (env: Env, runId: string): RuntimeSto
       if (armed && recorded()) crash();
       return result;
     },
-    transition: (claim, from, to, patch, preceding) => {
-      const result = env.store.transition(claim, from, to, patch, preceding);
+    transition: async (claim, from, to, patch, preceding) => {
+      const result = await env.store.transition(claim, from, to, patch, preceding);
       if (armed && recorded()) crash();
       return result;
     },

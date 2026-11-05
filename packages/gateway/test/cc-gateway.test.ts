@@ -9,7 +9,6 @@ const singleTarget = { aliases: { fast: ['fm'] }, targets: { fm: { model: 'syste
 
 const startCcGateway = async (fake: FakeChatCompletionsServer, toolCalling: 'native' | 'constrained' | 'none') => {
   const adapter = makeAdapter(fake, {
-    toolCalling: () => toolCalling,
     capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling }),
   });
   return startGateway({ adapters: { fm: adapter }, config: singleTarget });
@@ -135,6 +134,7 @@ describe('/v1/momonga/health with adapter health', () => {
     const unhealthy: ProviderAdapter = {
       kind: scripted.kind,
       sampling: scripted.sampling,
+      relaysClientBody: scripted.relaysClientBody,
       capabilities: async () => DEFAULT_SCRIPTED_CAPABILITIES,
       toolChoiceWire: () => ({ forms: [], expressesRequired: true }),
       create: (request, ctx) => scripted.create(request, ctx),
@@ -169,6 +169,7 @@ describe('/v1/momonga/health with adapter health', () => {
     const adapter: ProviderAdapter = {
       kind: scripted.kind,
       sampling: scripted.sampling,
+      relaysClientBody: scripted.relaysClientBody,
       capabilities: async () => DEFAULT_SCRIPTED_CAPABILITIES,
       toolChoiceWire: () => ({ forms: [], expressesRequired: true }),
       create: (request, ctx) => scripted.create(request, ctx),
@@ -186,6 +187,7 @@ describe('/v1/momonga/health with a throwing adapter health', () => {
     const broken: ProviderAdapter = {
       kind: scripted.kind,
       sampling: scripted.sampling,
+      relaysClientBody: scripted.relaysClientBody,
       capabilities: async () => DEFAULT_SCRIPTED_CAPABILITIES,
       toolChoiceWire: () => ({ forms: [], expressesRequired: true }),
       create: (request, ctx) => scripted.create(request, ctx),

@@ -16,17 +16,20 @@ describe('a relay that throws before the response concludes', () => {
       batch: { maxQueueSize: 2048, scheduledDelayMs: 60_000, maxExportBatchSize: 512 },
     });
     registerCleanup(() => telemetry.shutdown());
-    const scripted = createScriptedAdapter({ calls: [{ events: textResponseEvents({ model: 'model-a', chunks: ['hi'], usage: null }) }] });
-    const primary = {
-      ...scripted,
-      capabilities: async (): Promise<never> => {
-        throw new Error('capabilities are unavailable');
-      },
-    };
+    const primary = createScriptedAdapter({ calls: [{ events: textResponseEvents({ model: 'model-a', chunks: ['hi'] }) }] });
+    const priceTable = new Proxy([], {
+      get: (target, property, receiver) =>
+        property === 'filter'
+          ? () => {
+              throw new Error('the price table is unavailable');
+            }
+          : Reflect.get(target, property, receiver),
+    });
     const { client } = await startGateway({
       adapters: { primary },
       clock,
       telemetry,
+      priceTable,
       config: { retry: { maxAttempts: 1, totalWaitMs: 1 }, breaker: { failureThreshold: 1, openMs: 30_000 } },
     });
     const response = await postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') });

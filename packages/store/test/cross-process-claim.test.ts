@@ -117,7 +117,7 @@ describe('claims across processes', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS },
     const before = store.readRunEvents(run.id, 0, 100).length;
     expect(store.append(stale, [{ type: 'notice', level: 'info', message: 'stale' }])).toEqual({ kind: 'lease_lost' });
     expect(store.heartbeat(stale)).toEqual({ kind: 'lease_lost' });
-    expect(store.transition(stale, ['RUNNING'], 'COMPLETED')).toEqual({ kind: 'lease_lost' });
+    expect(await store.transition(stale, ['RUNNING'], 'COMPLETED')).toEqual({ kind: 'lease_lost' });
     expect(store.release(stale, 'QUEUED')).toEqual({ kind: 'lease_lost' });
     expect(store.readRunEvents(run.id, 0, 100)).toHaveLength(before);
     expect(store.append(reclaimed!, [{ type: 'notice', level: 'info', message: 'fresh' }]).kind).toBe('ok');

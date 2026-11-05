@@ -24,7 +24,7 @@ import { decideAfterResponse, responsePending, resumeInFlight, runModelStep } fr
 import { guidelineOf, guidelineVersionFor } from './guideline-pin.ts';
 import { memoryShareFor } from './memory-share.ts';
 import { watchMode } from './mode-watch.ts';
-import { foldMeterFor, meterEventsOf } from './meter-journal.ts';
+import { foldMeterFor } from './meter-journal.ts';
 import { aliasChainReaches } from './model-switch.ts';
 import { readPins } from './pins.ts';
 import { rolesFor } from './role-pin.ts';
@@ -133,10 +133,10 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
           return;
         }
         recordUpstreamFailures(journal, failures);
-        terminals.cancel();
+        await terminals.cancel();
         return;
       }
-      requeueOrStop(options, claim, journal, terminals, memory, cause);
+      await requeueOrStop(options, claim, journal, terminals, memory, cause);
     } catch (recoveryError) {
       if (!(recoveryError instanceof LeaseLostError)) {
         escaping = true;
@@ -157,7 +157,7 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
   }
 };
 
-const stopRejectedWrapUp = (options: WorkerOptions, claim: Claim, journal: Journal, terminals: Terminals, cause: unknown): boolean => {
+const stopRejectedWrapUp = async (options: WorkerOptions, claim: Claim, journal: Journal, terminals: Terminals, cause: unknown): Promise<boolean> => {
   const inFlight = journal.state.inFlightModelRequest;
   if (inFlight === undefined || journal.state.steps[inFlight.step]?.summary !== true) return false;
   if (!(cause instanceof GatewayRequestError)) return false;
@@ -168,43 +168,43 @@ const stopRejectedWrapUp = (options: WorkerOptions, claim: Claim, journal: Journ
   journal.append([
     { type: 'notice', level: 'error', message: `The gateway rejected the final summary request (${cause.code}): ${cause.message}`, code: 'final_summary_rejected' },
   ]);
-  terminals.finish('STOPPED', { stopReason: summaryStopReason(inFlight.step, maxSteps) });
+  await terminals.finish('STOPPED', { stopReason: summaryStopReason(inFlight.step, maxSteps) });
   return true;
 };
 
-const requeueOrStop = (
+const requeueOrStop = async (
   options: WorkerOptions,
   claim: Claim,
   journal: Journal,
   terminals: Terminals,
   memory: RunMemory,
   cause: unknown,
-): void => {
-  if (stopRejectedWrapUp(options, claim, journal, terminals, cause)) return;
+): Promise<void> => {
+  if (await stopRejectedWrapUp(options, claim, journal, terminals, cause)) return;
   const disposition = dispositionOf(cause, memory.interruptions);
   if (disposition.kind === 'fail') {
-    terminals.finish('FAILED', { error: { code: disposition.code, message: disposition.message } });
+    await terminals.finish('FAILED', { error: { code: disposition.code, message: disposition.message } });
     return;
   }
   if (disposition.kind === 'timeout') {
-    terminals.finish('STOPPED', { stopReason: 'timeout' });
+    await terminals.finish('STOPPED', { stopReason: 'timeout' });
     return;
   }
   const refund = disposition.kind === 'requeue' && disposition.refund;
-  const unhonoured = (otherwise: () => void): void => {
-    if (disposition.kind === 'defer') terminals.finish('FAILED', { error: { code: disposition.code, message: disposition.message } });
-    else otherwise();
+  const unhonoured = async (otherwise: () => Promise<void>): Promise<void> => {
+    if (disposition.kind === 'defer') await terminals.finish('FAILED', { error: { code: disposition.code, message: disposition.message } });
+    else await otherwise();
   };
   const attempts = (options.store.getRun(claim.runId)?.attempts ?? 0) - (refund ? 1 : 0);
   if (attempts >= options.store.maxTotalAttempts) {
-    unhonoured(() =>
-      terminals.finish('FAILED', {
+    await unhonoured(async () => {
+      await terminals.finish('FAILED', {
         error: {
           code: 'max_total_attempts',
           message: `run ${claim.runId} exceeded ${options.store.maxTotalAttempts} total attempts; the last attempt failed with: ${describeError(cause)}`,
         },
-      }),
-    );
+      });
+    });
     return;
   }
   const now = options.clock.now();
@@ -212,7 +212,9 @@ const requeueOrStop = (
   const availableAt = now + (disposition.kind === 'defer' ? disposition.retryAfterMs : Math.max(backoff, disposition.retryAfterMs));
   const deadlineAt = options.store.getRun(claim.runId)?.deadlineAt;
   if (deadlineAt !== undefined && availableAt >= deadlineAt) {
-    unhonoured(() => terminals.finish('STOPPED', { stopReason: 'timeout' }));
+    await unhonoured(async () => {
+      await terminals.finish('STOPPED', { stopReason: 'timeout' });
+    });
     return;
   }
   if (deadlineAt !== undefined) memory.deadlineAt = deadlineAt;
@@ -267,11 +269,11 @@ const drive = async (
       return;
     }
     recordUpstreamFailures(journal, await upstream);
-    terminals.cancel();
+    await terminals.cancel();
     return;
   }
   if (clock.now() >= run.deadlineAt) {
-    terminals.finish('STOPPED', { stopReason: 'timeout' });
+    await terminals.finish('STOPPED', { stopReason: 'timeout' });
     return;
   }
 
@@ -295,7 +297,7 @@ const drive = async (
     ...(agentPin?.tools === undefined ? {} : { only: agentPin.tools }),
   });
   if (agentPin?.tools !== undefined && toolSet.tools.length === 0) {
-    terminals.finish('FAILED', {
+    await terminals.finish('FAILED', {
       error: { code: 'agent_without_tools', message: `none of the tools ${agentPin.tools.map((name) => JSON.stringify(name)).join(', ')} of subagent ${agentPin.name} exists` },
     });
     return;
@@ -338,13 +340,13 @@ const drive = async (
 
   if (recorded !== undefined) {
     if (!aliasChainReaches(options.store, { runId: run.id, sessionId: session.id, pinned: pins.modelAlias, current: session.modelAlias })) {
-      terminals.finish('FAILED', {
+      await terminals.finish('FAILED', {
         error: { code: 'pins_mismatch', message: 'the model alias changed without a recorded model switch since this run started, so it cannot be resumed' },
       });
       return;
     }
     if (pins.systemPromptDigest !== systemPromptDigest) {
-      terminals.finish('FAILED', {
+      await terminals.finish('FAILED', {
         error: { code: 'pins_mismatch', message: 'the system prompt changed since this run started, so it cannot be resumed' },
       });
       return;
@@ -369,7 +371,6 @@ const drive = async (
   const firstCapabilities = firstTarget === undefined ? undefined : listing.targetCapabilities[firstTarget];
   if (firstTarget === undefined || firstCapabilities === undefined) throw new Error(`the gateway lists no target for the model ${pins.modelAlias}`);
   const aliasCounter = counterOf(firstTarget);
-  const meterEvents = meterEventsOf(options.store, session.id);
   const aliasMeterCapabilities = withCalibration(pins.capabilities, firstCapabilities);
   const token = tokenPolicyOf(pins.token);
   const aliasMeter = createTokenMeter({
@@ -378,7 +379,7 @@ const drive = async (
     capabilities: aliasMeterCapabilities,
     observedCapacity: token.observedCapacity,
   });
-  aliasMeter.restore(foldMeterFor(options.store, meterEvents, aliasMeterCapabilities, aliasCounter));
+  aliasMeter.restore(foldMeterFor(options.store, session.id, aliasMeterCapabilities, aliasCounter));
   const factsOf = async (target: string): Promise<{ meter: TokenMeter; capabilities: Capabilities; counter: string }> => {
     const known = targetFacts.get(target);
     if (known !== undefined) return known;
@@ -390,7 +391,7 @@ const drive = async (
       observedCapacity: token.observedCapacity,
     });
     const counter = counterOf(target);
-    meter.restore(foldMeterFor(options.store, meterEvents, capabilities, counter));
+    meter.restore(foldMeterFor(options.store, session.id, capabilities, counter));
     const created = { capabilities, meter, counter };
     targetFacts.set(target, created);
     return created;
@@ -456,7 +457,7 @@ const drive = async (
 
   const governingFailure = await governingFailureAtStart(ctx);
   if (governingFailure !== undefined) {
-    terminals.finish('FAILED', { error: governingFailure });
+    await terminals.finish('FAILED', { error: governingFailure });
     return;
   }
   if ((await runStartHooks(ctx)) === 'done') return;
@@ -472,7 +473,7 @@ const drive = async (
       return;
     }
     if (control.cancelRequested()) {
-      terminals.cancel();
+      await terminals.cancel();
       return;
     }
     if (modeWatch.changed()) {

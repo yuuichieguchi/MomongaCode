@@ -1,6 +1,6 @@
 import { canonicalJson, computeBackoff, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import { isVerifiedSuccess, normalizeMemoryText, repositoryFactsOf } from '@momonga/memory';
+import { normalizeMemoryText } from '@momonga/memory';
 import { LOWEST_REASONING_EFFORT, assistantTextOf, requireStructuredOutput, summaryTokenCapFor } from '@momonga/protocol';
 import type { BilledDetail, CallTiming, CreateResponseBody, MomongaResponseExtension, ReflectionDrop, Usage } from '@momonga/protocol';
 import { memoryTextProblem } from '@momonga/tools';
@@ -9,16 +9,15 @@ import type { GatewayPort, SettingsPort } from '../ports.ts';
 import { REQUEUE_BASE_MS, REQUEUE_MAX_MS } from '../process/constants.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { readPins } from '../worker/pins.ts';
-import { readAllRunEvents } from '../process/run-events.ts';
 import { billedDetailOf, carriesOutput, terminalResultOf } from '../worker/model-stream.ts';
 import type { ModelResult } from '../worker/model-stream.ts';
 import { MemoryEvidenceError, bindMemoryEvidence, readGitHead } from './evidence.ts';
 import type { EvidenceRun } from './evidence.ts';
-import { REFLECTION_INSTRUCTIONS, reflectionInputFor } from './reflection-input.ts';
+import { REFLECTION_INSTRUCTIONS } from './reflection-input.ts';
 import { REFLECTION_REPLY_SCHEMA, parseReflectionReply } from './reflection-reply.ts';
 
 export type ReflectorOptions = {
-  store: Pick<RuntimeStore, 'reflection' | 'memories' | 'contextCharges' | 'getRun' | 'getSession' | 'readRunEvents'>;
+  store: Pick<RuntimeStore, 'reflection' | 'memories' | 'contextCharges' | 'getRun' | 'getSession' | 'readRunEventsOfTypes' | 'journalFacts'>;
   gateway: Pick<GatewayPort, 'stream' | 'capabilities'>;
   settings: Pick<SettingsPort, 'trusted' | 'verification' | 'memory'>;
   clock: Clock;
@@ -95,10 +94,9 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       store.reflection.finish(runId, declinedEarly);
       return;
     }
-    const events = readAllRunEvents(store, runId);
     const verification = await settings.verification(session);
-    const verdictInput = { status: run.status, events, commands: verification.commands, manifests: verification.manifests };
-    const verified = isVerifiedSuccess(verdictInput);
+    const verdict = await store.journalFacts.verdict({ runId, commands: verification.commands, manifests: verification.manifests }, signal);
+    const { verified } = verdict;
     const trusted = settings.trusted(session);
     const knownTexts = (): Set<string> =>
       new Set(
@@ -135,12 +133,14 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       try {
         const evidence = await bindMemoryEvidence({
           runId,
-          events,
           paths,
           project,
           trusted,
-          verificationCommands: verification.commands,
-          ...(onlyCommand === undefined ? {} : { onlyCommand }),
+          journal: (resolved) =>
+            store.journalFacts.evidence(
+              { runId, paths: resolved, verificationCommands: verification.commands, ...(onlyCommand === undefined ? {} : { onlyCommand }) },
+              signal,
+            ),
           head: readHead,
         });
         known.add(normalized);
@@ -151,7 +151,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
         return undefined;
       }
     };
-    const facts = factsOn && verified ? repositoryFactsOf(verdictInput) : [];
+    const facts = factsOn && verified ? verdict.facts : [];
     const keptFacts: SaveCandidateInput[] = [];
     for (const [ordinal, fact] of facts.entries()) {
       const screened = await screen(ordinal, fact.text, fact.kind, fact.manifestPaths, fact.command);
@@ -166,8 +166,8 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       store.reflection.finish(runId, 'the run is not a verified success');
       return;
     }
-    const started = events.find((event) => event.type === 'run.started');
-    if (started === undefined) throw new Error(`run ${runId} has no run.started event`);
+    const started = store.readRunEventsOfTypes(runId, ['run.started'])[0];
+    if (started?.type !== 'run.started') throw new Error(`run ${runId} has no run.started event`);
     const pins = readPins(started.pins);
     const alias = pins.roles.reflection ?? pins.modelAlias;
     const capabilities = await gateway.capabilities(alias, { signal });
@@ -176,10 +176,11 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       store.reflection.complete({ runId, charge: null, candidates: keptFacts, dropped, reason: structured.reason });
       return;
     }
+    const { input: recordedRun } = await store.journalFacts.reflectionInput({ runId, project, capabilities }, signal);
     const body: CreateResponseBody = {
       model: alias,
       instructions: REFLECTION_INSTRUCTIONS,
-      input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: reflectionInputFor(events, project, capabilities) }] }],
+      input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: recordedRun }] }],
       text: { format: { type: 'json_schema', name: 'memory_candidates', schema: { ...REFLECTION_REPLY_SCHEMA }, strict: true } },
       tool_choice: 'none',
       reasoning: { effort: LOWEST_REASONING_EFFORT },

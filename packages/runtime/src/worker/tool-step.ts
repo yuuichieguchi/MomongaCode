@@ -270,7 +270,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   } catch (error) {
     for (const span of spans.values()) span.end(error);
     if (error instanceof PinnedOverflowError) {
-      ctx.terminals.finish('FAILED', { error: pinnedFailureFor(ctx, error) });
+      await ctx.terminals.finish('FAILED', { error: pinnedFailureFor(ctx, error) });
       return 'done';
     }
     throw error;

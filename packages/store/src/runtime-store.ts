@@ -4,10 +4,13 @@ import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
 import { TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
 import type { CallTiming, ElicitationAnswerRecord, ElicitationRequestView, PermissionMode, RunEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
+import { createAppendRecords, columnsOf } from './append-records.ts';
 import { createApprovalStore } from './approvals.ts';
 import { createBlobStore, prepareBlobDirectory } from './blobs.ts';
 import { addUsage, foldRunState, initialRunState, spendOf } from './fold.ts';
 import { decodeEvent, decodeRun, decodeRunEvents, decodeRunState, decodeSession, encodeRunState } from './codec.ts';
+import { JournalThreadError, StalePreparation } from './journal-port.ts';
+import { createJournalReader, payloadStep } from './journal-reader.ts';
 import { StoreIdentityError, isFatalStoreError } from './fatal.ts';
 import { createIdempotencyStore } from './idempotency.ts';
 import { decodeJob, prepareJobStatements } from './jobs.ts';
@@ -22,7 +25,7 @@ import { corrupt, expectOneOf, expectRecord, isRecord, readerFor } from './rows.
 import type { Row } from './rows.ts';
 import { sameRunRequest } from './run-request.ts';
 import { MIGRATIONS } from './schema.ts';
-import { CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from './transitions.ts';
+import { CANCEL_ORIGINS, CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from './transitions.ts';
 import { createSearchStore } from './search.ts';
 import { createTrustStore } from './trust.ts';
 import type {
@@ -31,8 +34,9 @@ import type {
   Claim,
   ClaimStatus,
   Conflict,
-  ContributionPayload,
-  TerminalContribution,
+  CancelOrigin,
+  ContributionMeasured,
+  ContributionPreparer,
   CreateChildRunResult,
   CreateRunResult,
   ElicitationView,
@@ -58,8 +62,14 @@ import type {
   SetPermissionModeResult,
   SetSessionMcpServersResult,
   StatusPatch,
+  SweepErrorSink,
   WaitTargets,
 } from './types.ts';
+
+const journalPreparer = (preparer: ContributionPreparer | undefined, what: string): ContributionPreparer => {
+  if (preparer === undefined) throw new JournalThreadError(`the ${what} of a run is read by the journal thread, and this store has none`);
+  return preparer;
+};
 
 const isClaimStatus = (status: RunStatus): status is ClaimStatus => CLAIM_STATUSES.some((claimStatus) => claimStatus === status);
 
@@ -100,6 +110,7 @@ const CLAIMABLE = `
     (r.status = 'QUEUED' AND r.available_at <= :now)
     OR (r.status IN ('RUNNING', 'CANCELLING') AND r.available_at <= :now AND (r.lease_expires_at IS NULL OR r.lease_expires_at <= :now))
   )
+  AND NOT (r.status = 'CANCELLING' AND r.cancel_origin IN ('QUEUED', 'WAITING_HUMAN'))
   AND NOT EXISTS (
     SELECT 1 FROM runs earlier
     WHERE earlier.session_id = r.session_id
@@ -140,7 +151,8 @@ const RUN_WRITE_SQL = `
     step = :step,
     last_seq = :lastSeq,
     error_json = :error,
-    dead_letter = :deadLetter
+    dead_letter = :deadLetter,
+    cancel_origin = :cancelOrigin
   WHERE id = :id
 `;
 
@@ -191,6 +203,9 @@ const prepareStatements = (db: DatabaseSync) => ({
   jobs: prepareJobStatements(db),
   dataVersion: db.prepare('PRAGMA data_version'),
   selectRun: db.prepare('SELECT * FROM runs WHERE id = :id'),
+  leaseTokenOf: db.prepare('SELECT lease_token FROM runs WHERE id = :runId'),
+  latestEventSeq: db.prepare('SELECT seq FROM events WHERE run_id = :runId AND type = :type AND seq < :beforeSeq ORDER BY seq DESC LIMIT 1'),
+  eventAt: db.prepare('SELECT * FROM events WHERE run_id = :runId AND seq = :seq'),
   latestSessionEventTime: db.prepare('SELECT created_at FROM events WHERE session_id = :sessionId ORDER BY id DESC LIMIT 1'),
   activeRunExists: db.prepare(
     `SELECT EXISTS (SELECT 1 FROM runs WHERE session_id = :sessionId AND status NOT IN (${TERMINAL_STATUSES.map((status) => `'${status}'`).join(', ')})) AS active`,
@@ -214,8 +229,8 @@ const prepareStatements = (db: DatabaseSync) => ({
   insertRun: db.prepare(RUN_INSERT_SQL),
   writeRun: db.prepare(RUN_WRITE_SQL),
   insertEvent: db.prepare(
-    `INSERT INTO events (run_id, session_id, seq, step, lease_token, created_at, type, payload_json, pinned_digest)
-     VALUES (:runId, :sessionId, :seq, :step, :leaseToken, :createdAt, :type, :payload, :pinnedDigest)`,
+    `INSERT INTO events (run_id, session_id, seq, step, lease_token, created_at, type, payload_json, pinned_digest, call_id, approval_id, tool_name, notice_code, model_call_json)
+     VALUES (:runId, :sessionId, :seq, :step, :leaseToken, :createdAt, :type, :payload, :pinnedDigest, :callId, :approvalId, :toolName, :noticeCode, :modelCallJson)`,
   ),
   dueWaitingRuns: db.prepare(
     `SELECT r.id FROM runs r
@@ -231,24 +246,18 @@ const prepareStatements = (db: DatabaseSync) => ({
      ORDER BY r.created_at, r.rowid`,
   ),
   toolCallEvent: db.prepare(
-    "SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.call' AND json_extract(payload_json, '$.callId') = :callId LIMIT 1",
+    "SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.call' AND call_id = :callId LIMIT 1",
   ),
   requestedEvent: db.prepare(
-    "SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.permission.requested' AND json_extract(payload_json, '$.approvalId') = :approvalId LIMIT 1",
+    "SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.permission.requested' AND approval_id = :approvalId LIMIT 1",
   ),
   elicitationRequestedEvent: db.prepare(
-    "SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.elicitation.requested' AND json_extract(payload_json, '$.inputId') = :approvalId LIMIT 1",
+    "SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.elicitation.requested' AND approval_id = :approvalId LIMIT 1",
   ),
-  pinnedDigests: db.prepare("SELECT seq, pinned_digest FROM events WHERE run_id = :runId AND type = 'model.requested' ORDER BY seq"),
   runEvents: db.prepare('SELECT * FROM events WHERE run_id = :runId AND seq > :after ORDER BY seq LIMIT :limit'),
   modelCallEvents: db.prepare(
-    `SELECT seq, step, type,
-      json_extract(payload_json, '$.attempt') AS attempt,
-      json_extract(payload_json, '$.anatomy') AS anatomy,
-      json_extract(payload_json, '$.prefix') AS prefix,
-      json_extract(payload_json, '$.response.id') AS response_id,
-      json_extract(payload_json, '$.response.timing') AS timing
-     FROM events WHERE run_id = :runId AND type IN ('model.requested', 'model.responded') ORDER BY seq`,
+    `SELECT seq, step, type, model_call_json
+     FROM events WHERE run_id = :runId AND type IN ('model.requested', 'model.responded')`,
   ),
   lastTerminalRootRuns: db.prepare(
     `SELECT r.* FROM runs r JOIN sessions s ON s.id = r.session_id
@@ -258,7 +267,7 @@ const prepareStatements = (db: DatabaseSync) => ({
   ),
   toolCallNames: db.prepare(
     `WITH RECURSIVE tree(id) AS (SELECT :runId UNION ALL SELECT r.id FROM runs r JOIN tree t ON r.parent_run_id = t.id)
-     SELECT DISTINCT json_extract(e.payload_json, '$.name') AS name FROM events e JOIN tree t ON e.run_id = t.id WHERE e.type = 'tool.call' ORDER BY name`,
+     SELECT DISTINCT e.tool_name AS name FROM tree t CROSS JOIN events e ON e.run_id = t.id WHERE e.tool_name IS NOT NULL ORDER BY name`,
   ),
   toolOfferedNames: db.prepare(
     `WITH RECURSIVE tree(id) AS (SELECT :runId UNION ALL SELECT r.id FROM runs r JOIN tree t ON r.parent_run_id = t.id)
@@ -271,10 +280,17 @@ const prepareStatements = (db: DatabaseSync) => ({
   hasToolOffered: db.prepare("SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.offered' LIMIT 1"),
   modelChanges: db.prepare("SELECT * FROM events WHERE session_id = :sessionId AND type = 'model.changed' AND id > :after ORDER BY id"),
   sessionEvents: db.prepare('SELECT * FROM events WHERE session_id = :sessionId AND id > :after ORDER BY id LIMIT :limit'),
-  selectExhausted: db.prepare(
-    `SELECT r.* FROM runs r WHERE ${CLAIMABLE} AND ${EXHAUSTED} ${CLAIM_ORDER} LIMIT 1`,
-  ),
   listExhausted: db.prepare(`SELECT r.* FROM runs r WHERE ${CLAIMABLE} AND ${EXHAUSTED} ${CLAIM_ORDER}`),
+  exhaustedById: db.prepare(`SELECT r.* FROM runs r WHERE r.id = :id AND ${CLAIMABLE} AND ${EXHAUSTED}`),
+  listSweeperOwned: db.prepare(
+    `SELECT r.* FROM runs r
+     WHERE r.status = 'CANCELLING' AND r.cancel_origin IN ('QUEUED', 'WAITING_HUMAN') AND (r.lease_owner IS NULL OR r.lease_expires_at <= :now)
+     ORDER BY r.created_at, r.rowid`,
+  ),
+  sweeperOwnedById: db.prepare(
+    `SELECT r.* FROM runs r
+     WHERE r.id = :id AND r.status = 'CANCELLING' AND r.cancel_origin IN ('QUEUED', 'WAITING_HUMAN') AND (r.lease_owner IS NULL OR r.lease_expires_at <= :now)`,
+  ),
   claim: db.prepare(
     `UPDATE runs SET
        status = CASE WHEN status = 'QUEUED' THEN 'RUNNING' ELSE status END,
@@ -299,7 +315,7 @@ const prepareStatements = (db: DatabaseSync) => ({
   ),
   fence: db.prepare(FENCE_SQL),
   approvalRequested: db.prepare(
-    "SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.permission.requested' AND json_extract(payload_json, '$.approvalId') = :approvalId LIMIT 1",
+    "SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.permission.requested' AND approval_id = :approvalId LIMIT 1",
   ),
   inheritedEvent: db.prepare("SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'context.inherited' LIMIT 1"),
   inheritedEventRow: db.prepare("SELECT * FROM events WHERE run_id = :runId AND type = 'context.inherited' LIMIT 1"),
@@ -322,49 +338,38 @@ type StatusChange = {
   refundAttempt?: boolean;
 };
 
-const PINNED_ROLES ="'system', 'developer'";
-
-const PINNED_REQUEST_PAYLOAD = `(SELECT json_object(
-  'type', 'model.requested',
-  'step', json_extract(x.j, '$.step'),
-  'attempt', json_extract(x.j, '$.attempt'),
-  'digest', json_extract(x.j, '$.digest'),
-  'body', json_object(
-    'input', json((SELECT json_group_array(json(json_extract(x.j, t.path))) FROM json_tree(x.j, '$.body.input') AS t WHERE t.key = 'role' AND t.atom IN (${PINNED_ROLES}) AND t.path GLOB '$.body.input[[]*]' AND t.path NOT GLOB '*.*.*.*')),
-    'tools', json_extract(x.j, '$.body.tools'),
-    'tool_choice', json_extract(x.j, '$.body.tool_choice')
-  )
-) FROM (SELECT jsonb(e.payload_json) AS j) AS x)`;
-
-const HOOK_EVENT_COLUMNS = `e.id, e.run_id, e.session_id, e.seq, e.step, e.lease_token, e.created_at, e.type,
-  CASE WHEN e.type = 'model.requested' THEN ${PINNED_REQUEST_PAYLOAD} ELSE e.payload_json END AS payload_json`;
-
 const decodeModelCallRecord = (row: Row): ModelCallRecord => {
   const seq = readerFor('events', 'model call', row).number('seq');
   const identity = `seq ${seq}`;
   const reader = readerFor('events', identity, row);
   const step = reader.number('step');
-  const attempt = reader.number('attempt');
   const type = reader.string('type');
+  const detail = expectRecord('events', identity, 'model_call_json', reader.json('model_call_json'));
+  const attempt = detail['attempt'];
+  if (typeof attempt !== 'number') throw corrupt('events', identity, 'column model_call_json carries no attempt');
   if (type === 'model.requested') {
-    const anatomy = reader.nullableJson('anatomy');
-    const prefix = reader.nullableJson('prefix');
+    const anatomy = detail['anatomy'] ?? null;
+    const prefix = detail['prefix'] ?? null;
     return { kind: 'requested', seq, step, attempt, ...(anatomy === null ? {} : { anatomy: anatomy as TokenAnatomy }), ...(prefix === null ? {} : { prefix: prefix as RunTracePrefix }) };
   }
-  const timing = reader.nullableJson('timing');
-  const responseId = reader.nullableString('response_id');
+  const timing = detail['timing'] ?? null;
+  const responseIdValue = detail['responseId'] ?? null;
+  if (responseIdValue !== null && typeof responseIdValue !== 'string') throw corrupt('events', identity, 'column model_call_json carries a response id that is not a string');
+  const responseId = responseIdValue;
   return { kind: 'responded', seq, step, attempt, ...(responseId === null ? {} : { responseId }), ...(timing === null ? {} : { timing: expectRecord('events', identity, 'timing', timing) as CallTiming }) };
 };
 
-type Measured = { lastSeq: number; journaled: boolean; contribution: Pick<ContributionPayload, 'items'> | undefined };
-type Prepared = Measured & { leadingDigest: string };
-
-const digestOfLeading = (leadingEvents: readonly RunEventPayload[]): string => canonicalJson(leadingEvents);
-
-const payloadStep = (payload: RunEventPayload): number => ('step' in payload ? payload.step : 0);
-
 const assertPositiveInteger = (name: string, value: number): void => {
   if (!Number.isInteger(value) || value < 1) throw new RangeError(`openRuntimeStore: ${name} must be a positive integer, got ${value}`);
+};
+
+export const migrateRuntimeDatabase = (file: string): void => {
+  const db = openDatabase(file);
+  try {
+    migrate(db, MIGRATIONS);
+  } finally {
+    db.close();
+  }
 };
 
 export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => {
@@ -399,10 +404,13 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const contextCharges = createContextChargeStore(db, clock);
   const reflection = createReflectionStore(db, clock, { memories, contextCharges });
   const governing = createGoverningFactStore(db, clock);
+  const journalReader = createJournalReader(db, { lookups: { memories, governing }, ...(options.onDecode === undefined ? {} : { onDecode: options.onDecode }) });
   const trust = createTrustStore(db, clock, home);
   const originOf = (cwd: string): 'trusted' | 'untrusted' => (trust.decisionFor(cwd).decision === 'trusted' ? 'trusted' : 'untrusted');
   const touched = new Map<string, { runId?: string; sessionId: string }>();
-  const prepared = new Map<string, Prepared>();
+  const preparer = options.preparer;
+  const { onDecode, onEncode } = options;
+  const records = createAppendRecords(db, onDecode === undefined ? {} : { onDecode });
 
   const recordTouch = (sessionId: string, runId: string | null): void => {
     if (options.onCommit === undefined) return;
@@ -428,6 +436,16 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     }
   };
 
+  const observeDecode = (rows: readonly Row[]): void => {
+    if (onDecode === undefined) return;
+    onDecode(rows.length, rows.reduce((bytes, row) => bytes + (typeof row['payload_json'] === 'string' ? Buffer.byteLength(row['payload_json']) : 0), 0));
+  };
+
+  const decodeEvents = (rows: readonly Row[]): RunEvent[] => {
+    observeDecode(rows);
+    return decodeRunEvents(rows);
+  };
+
   const insertEvent = (event: {
     runId: string | null;
     sessionId: string;
@@ -437,6 +455,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     createdAt: number;
     payload: RunEventPayload | SessionEventPayload;
   }): void => {
+    const payload = canonicalJson(event.payload);
+    onEncode?.('event', Buffer.byteLength(payload));
     sql.insertEvent.run({
       runId: event.runId,
       sessionId: event.sessionId,
@@ -445,9 +465,11 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       leaseToken: event.leaseToken,
       createdAt: event.createdAt,
       type: event.payload.type,
-      payload: canonicalJson(event.payload),
+      payload,
       pinnedDigest: event.payload.type === 'model.requested' ? (event.payload.pinnedDigest ?? null) : null,
+      ...columnsOf(event.payload),
     });
+    if (event.runId !== null && event.seq !== null && event.step !== null) records.record({ runId: event.runId, sessionId: event.sessionId, seq: event.seq, step: event.step, payload: event.payload });
     recordTouch(event.sessionId, event.runId);
   };
 
@@ -465,7 +487,23 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return decodeRun(row);
   };
 
+  const requestBodies = new Map<string, { leaseToken: number; event: Extract<RunEvent, { type: 'model.requested' }> }>();
+
+  const readLatestRequest = (runId: string, beforeSeq: number): Extract<RunEvent, { type: 'model.requested' }> | undefined => {
+    const latest = sql.latestEventSeq.get({ runId, type: 'model.requested', beforeSeq });
+    if (latest === undefined) return undefined;
+    const seq = Number(latest.seq);
+    const leaseToken = Number(sql.leaseTokenOf.get({ runId })?.lease_token);
+    const cached = requestBodies.get(runId);
+    if (cached !== undefined && cached.leaseToken === leaseToken && cached.event.seq === seq) return cached.event;
+    const [decoded] = decodeEvents(sql.eventAt.all({ runId, seq }));
+    if (decoded === undefined || decoded.type !== 'model.requested') throw new Error(`run ${runId} seq ${seq} is not a model.requested event`);
+    if (cached === undefined || cached.leaseToken !== leaseToken || cached.event.seq < seq) requestBodies.set(runId, { leaseToken, event: decoded });
+    return decoded;
+  };
+
   const writeRun = (run: Run): void => {
+    if (run.leaseOwner === null) requestBodies.delete(run.id);
     const result = sql.writeRun.run({
       id: run.id,
       status: run.status,
@@ -483,6 +521,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       lastSeq: run.lastSeq,
       error: run.error === undefined ? null : canonicalJson(run.error),
       deadLetter: run.deadLetter ? 1 : 0,
+      cancelOrigin: run.cancelOrigin,
     });
     if (Number(result.changes) !== 1) throw new Error(`run ${run.id} could not be written`);
   };
@@ -507,129 +546,51 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return approvalAnnounced(runId, approval.id) ? [cancelledEvent(approval, 'withdrawn')] : [];
     });
 
-  const eventsOfTypes = (runId: string, types: readonly RunEventPayload['type'][]): RunEvent[] => {
-    const placeholders = types.map((_type, index) => `:type${index}`).join(', ');
-    const bound = Object.fromEntries(types.map((type, index) => [`type${index}`, type]));
-    return decodeRunEvents(db.prepare(`SELECT * FROM events WHERE run_id = :runId AND type IN (${placeholders}) ORDER BY seq`).all({ runId, ...bound }));
-  };
+  type Need = { runId: string; leading: readonly RunEventPayload[]; expiring: readonly string[] };
+  type Prepared = Need & { measured: ContributionMeasured | undefined };
 
-  const seqsOfNewPinnedLayers = (runId: string): number[] => {
-    const known = new Set<string>();
-    const wanted: number[] = [];
-    for (const row of sql.pinnedDigests.all({ runId })) {
-      const reader = readerFor('events', runId, row);
-      const digest = reader.nullableString('pinned_digest');
-      if (digest !== null && known.has(digest)) continue;
-      if (digest !== null) known.add(digest);
-      wanted.push(reader.number('seq'));
-    }
-    return wanted;
-  };
-
-  const hookEventsOfTypes = (runId: string, types: readonly RunEventPayload['type'][]): RunEvent[] => {
-    const plain = types.filter((type) => type !== 'model.requested');
-    const placeholders = plain.map((_type, index) => `:type${index}`).join(', ');
-    const bound = Object.fromEntries(plain.map((type, index) => [`type${index}`, type]));
-    const events = decodeRunEvents(db.prepare(`SELECT * FROM events WHERE run_id = :runId AND type IN (${placeholders}) ORDER BY seq`).all({ runId, ...bound }));
-    if (plain.length === types.length) return events;
-    const requests = decodeRunEvents(
-      db
-        .prepare(`SELECT ${HOOK_EVENT_COLUMNS} FROM events e WHERE e.run_id = :runId AND e.type = 'model.requested' AND e.seq IN (SELECT value FROM json_each(:seqs)) ORDER BY e.seq`)
-        .all({ runId, seqs: JSON.stringify(seqsOfNewPinnedLayers(runId)) }),
-    );
-    return [...events, ...requests].sort((a, b) => a.seq - b.seq);
-  };
-
-  const measureContribution = (hook: TerminalContribution, run: Run, leadingEvents: readonly RunEventPayload[] = []): Measured => {
-    const types: readonly RunEventPayload['type'][] = [...hook.eventTypes, 'context.contribution'];
-    const leading = leadingEvents.map(
-      (payload, index): RunEvent => ({ ...payload, id: 0, runId: run.id, sessionId: run.sessionId, seq: run.lastSeq + 1 + index, step: Math.max(run.step, payloadStep(payload)), leaseToken: run.leaseToken ?? 0, createdAt: clock.now() }),
-    );
-    const events = [...hookEventsOfTypes(run.id, types), ...leading.filter((event) => types.includes(event.type))];
-    const recorded = events.find((event): event is Extract<RunEvent, { type: 'context.contribution' }> => event.type === 'context.contribution');
-    if (recorded !== undefined) return { lastSeq: run.lastSeq, journaled: true, contribution: recorded };
-    return {
-      lastSeq: run.lastSeq,
-      journaled: false,
-      contribution: hook.measure({ run, events, replay: (visit) => replayRun(run, events, visit, leading), memories, governing }),
-    };
-  };
-
-  const prepareTerminal = (runId: string, leadingEvents: readonly RunEventPayload[] = []): void => {
-    const hook = options.contribution;
-    const row = sql.selectRun.get({ id: runId });
-    if (hook === undefined || row === undefined) return;
-    const run = decodeRun(row);
-    if (isTerminal(run.status)) return;
-    const leadingDigest = digestOfLeading(leadingEvents);
-    const existing = prepared.get(runId);
-    if (existing !== undefined && existing.lastSeq === run.lastSeq && existing.leadingDigest === leadingDigest) return;
-    prepared.set(runId, { ...measureContribution(hook, run, leadingEvents), leadingDigest });
-  };
-
-  const prepareChildren = (runId: string): void => {
-    for (const row of sql.childRuns.all({ runId })) {
-      const child = decodeRun(row);
-      if (isTerminal(child.status)) continue;
-      if (cancelTargetOf(child.status) === 'CANCELLED') prepareTerminal(child.id);
-      prepareChildren(child.id);
+  const operate = async <T>(plan: () => Need | undefined, commit: (prepared: Prepared | undefined) => T): Promise<T> => {
+    for (;;) {
+      const need = plan();
+      let prepared: Prepared | undefined;
+      if (need !== undefined) {
+        prepared = preparer === undefined ? { ...need, measured: undefined } : { ...need, measured: await preparer.measure({ runId: need.runId, leading: need.leading }) };
+      }
+      try {
+        return transaction(() => commit(prepared));
+      } catch (error) {
+        if (!(error instanceof StalePreparation) || preparer === undefined) throw error;
+      }
     }
   };
 
-  const prepareTree = (runId: string, leadingEvents: readonly RunEventPayload[] = []): void => {
-    prepareTerminal(runId, leadingEvents);
-    prepareChildren(runId);
-  };
-
-  const prepareStopping = (runId: string, nowMs: number): void => {
-    const { status } = requireRun(runId);
-    if (status === 'QUEUED') prepareTree(runId);
-    if (status === 'WAITING_HUMAN') prepareTree(runId, approvalOps.listPendingDue(runId, nowMs).flatMap((approval) => expiryEvents(runId, approval)));
-  };
-
-  const prepareLateAnswer = (approvalId: string, now: number): void => {
-    const approval = approvalOps.store.get(approvalId);
-    if (approval !== undefined && approval.status === 'pending' && approval.expiresAt <= now) prepareStopping(approval.runId, now);
-  };
-
-  const prepareExhausted = (now: number): void => {
-    for (const row of sql.listExhausted.all({ now, maxAttempts, maxTotalAttempts })) prepareTree(decodeRun(row).id);
-  };
-
-  const settleContribution = (run: Run, to: TerminalStatus, leadingEvents: readonly RunEventPayload[]): RunEventPayload[] => {
-    const hook = options.contribution;
-    if (hook === undefined) return [];
-    const ready = prepared.get(run.id);
-    prepared.delete(run.id);
-    const { journaled, contribution } =
-      ready !== undefined && ready.lastSeq === run.lastSeq && ready.leadingDigest === digestOfLeading(leadingEvents)
-        ? ready
-        : measureContribution(hook, run, leadingEvents);
-    if (contribution !== undefined && to === 'COMPLETED') {
+  const settleContribution = (run: Run, to: TerminalStatus, prepared: Prepared | undefined): RunEventPayload[] => {
+    if (preparer === undefined) return [];
+    if (prepared === undefined || prepared.runId !== run.id || prepared.measured === undefined || prepared.measured.lastSeq !== run.lastSeq) throw new StalePreparation(run.id);
+    const { contribution } = prepared.measured;
+    if (contribution === undefined) return [];
+    if (to === 'COMPLETED') {
       memories.stampContributed(
         contribution.items.filter((item) => item.kind === 'memory' && item.contributed).map((item) => item.id),
         clock.now(),
       );
     }
-    return !journaled && contribution !== undefined ? [{ type: 'context.contribution', items: contribution.items }] : [];
+    return [{ type: 'context.contribution', items: contribution.items }];
   };
 
-  const afterPreparing = <T>(prepare: () => void, operation: () => T): T => {
-    prepare();
-    try {
-      return operation();
-    } finally {
-      prepared.clear();
-    }
+  const cancelOriginOf = (status: RunStatus): CancelOrigin => {
+    const origin = CANCEL_ORIGINS.find((candidate) => candidate === status);
+    if (origin === undefined) throw new Error(`a run in status ${status} cannot become CANCELLING`);
+    return origin;
   };
 
-  const changeStatus = (run: Run, to: RunStatus, change: StatusChange, leadingEvents: readonly RunEventPayload[] = []): Run => {
+  const changeStatus = (run: Run, to: RunStatus, change: StatusChange, leadingEvents: readonly RunEventPayload[] = [], prepared?: Prepared): Run => {
     if (!change.edges[run.status].includes(to)) throw new Error(`run ${run.id} has no permitted edge ${run.status} -> ${to}`);
     const patch = change.patch ?? {};
     const reason = patch.stopReason ?? patch.error?.code;
     const statusEvent: RunEventPayload = { type: 'run.status', from: run.status, to, ...(reason === undefined ? {} : { reason }) };
     const withdrawal = isTerminal(to) || to === 'CANCELLING' ? withdrawPendingApprovals(run.id) : [];
-    const contribution = isTerminal(to) ? settleContribution(run, to, leadingEvents) : [];
+    const contribution = isTerminal(to) ? settleContribution(run, to, prepared) : [];
     const appended = appendPayloads(run, [...leadingEvents, ...withdrawal, ...contribution, statusEvent]);
     if (to === 'COMPLETED' && run.parentRunId === null) reflection.enqueue(run.id);
     const keepsLease = to === 'RUNNING' || to === 'CANCELLING';
@@ -640,6 +601,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       status: to,
       version: run.version + 1,
       cancelRequested: run.cancelRequested || to === 'CANCELLING' || to === 'CANCELLED',
+      cancelOrigin: to === 'CANCELLING' ? cancelOriginOf(run.status) : null,
       deadLetter: change.deadLetter ?? run.deadLetter,
       ...(keepsLease
         ? {
@@ -659,13 +621,11 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return requireRun(run.id);
   };
 
-  const cancelTargetOf = (status: RunStatus): RunStatus => (status === 'QUEUED' || status === 'WAITING_HUMAN' ? 'CANCELLED' : 'CANCELLING');
-
   const cancelChildren = (runId: string): void => {
     for (const row of sql.childRuns.all({ runId })) {
       const child = decodeRun(row);
       if (isTerminal(child.status) || child.status === 'CANCELLING') continue;
-      changeStatus(child, cancelTargetOf(child.status), { edges: SERVICE_TRANSITIONS });
+      changeStatus(child, 'CANCELLING', { edges: SERVICE_TRANSITIONS });
     }
   };
 
@@ -679,7 +639,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     if (child.parentRunId !== null) wakeRun(child.parentRunId);
   };
 
-  const deadLetter = (run: Run): void => {
+  const deadLetter = (run: Run, prepared: Prepared | undefined): void => {
     const overTotal = run.attempts + 1 > maxTotalAttempts;
     const error = overTotal
       ? { code: 'max_total_attempts', message: `run ${run.id} exceeded ${maxTotalAttempts} total attempts` }
@@ -689,7 +649,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       edges: DEAD_LETTER_TRANSITIONS,
       deadLetter: true,
       patch: { error },
-    });
+    }, [], prepared);
   };
 
   const fenced = (claim: LeaseFence): Run | undefined => {
@@ -707,25 +667,14 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     to: RunStatus,
     change: Omit<StatusChange, 'edges' | 'resetFailures'>,
     preceding: readonly RunEventPayload[] = [],
+    prepared?: Prepared,
   ): RunMutationResult => {
     if (!from.includes(run.status)) {
       return conflict(`run ${run.id} is ${run.status}, expected one of ${from.join(', ')}`);
     }
     if (!WORKER_TRANSITIONS[run.status].includes(to)) return conflict(`run ${run.id} cannot move from ${run.status} to ${to}`);
-    return { kind: 'ok', run: changeStatus(run, to, { ...change, edges: WORKER_TRANSITIONS, resetFailures: true }, preceding) };
+    return { kind: 'ok', run: changeStatus(run, to, { ...change, edges: WORKER_TRANSITIONS, resetFailures: true }, preceding, prepared) };
   };
-
-  const workerTransition = (
-    claim: Claim,
-    from: readonly RunStatus[],
-    to: RunStatus,
-    change: Omit<StatusChange, 'edges' | 'resetFailures'>,
-    preceding: readonly RunEventPayload[],
-  ): RunMutationResult =>
-    transaction<RunMutationResult>(() => {
-      const run = fenced(claim);
-      return run === undefined ? leaseLost : moveWorker(run, from, to, change, preceding);
-    });
 
   const expiryEvents = (runId: string, approval: Approval): RunEventPayload[] => {
     const notice: RunEventPayload = {
@@ -739,43 +688,46 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       : [notice];
   };
 
-  const expireApproval = (runId: string, approval: Approval): RunEventPayload[] => {
-    approvalOps.end(approval.id, 'expired');
-    return expiryEvents(runId, approval);
+  type StopPlan = { patch: StatusPatch; edges: StatusChange['edges']; leading: RunEventPayload[]; expiring: string[] };
+
+  const planStop = (run: Run, nowMs: number): StopPlan | undefined => {
+    if (run.status === 'QUEUED') return run.deadlineAt <= nowMs ? { patch: { stopReason: 'timeout' }, edges: SWEEP_TRANSITIONS, leading: [], expiring: [] } : undefined;
+    if (run.status !== 'WAITING_HUMAN') return undefined;
+    const due = approvalOps.listPendingDue(run.id, nowMs);
+    if (due.length > 0) {
+      return { patch: { stopReason: 'approval_timeout' }, edges: SERVICE_TRANSITIONS, leading: due.flatMap((approval) => expiryEvents(run.id, approval)), expiring: due.map((approval) => approval.id) };
+    }
+    return run.deadlineAt <= nowMs ? { patch: { stopReason: 'timeout' }, edges: SERVICE_TRANSITIONS, leading: [], expiring: [] } : undefined;
   };
 
-  const stopWaitingRun = (run: Run, nowMs: number): boolean => {
-    if (run.status === 'QUEUED' && run.deadlineAt <= nowMs) {
-      changeStatus(run, 'STOPPED', { edges: SWEEP_TRANSITIONS, patch: { stopReason: 'timeout' } });
-      return true;
-    }
+  const stopNeed = (runId: string, nowMs: number): Need | undefined => {
+    const row = sql.selectRun.get({ id: runId });
+    const stop = row === undefined ? undefined : planStop(decodeRun(row), nowMs);
+    return stop === undefined ? undefined : { runId, leading: stop.leading, expiring: stop.expiring };
+  };
+
+  const stopWaitingRun = (run: Run, nowMs: number, prepared: Prepared | undefined): boolean => {
     if (run.status === 'WAITING_TOOL') {
       if (run.availableAt > nowMs) return false;
       changeStatus(run, 'QUEUED', { edges: SERVICE_TRANSITIONS, availableAt: nowMs });
       return true;
     }
-    if (run.status !== 'WAITING_HUMAN') return false;
-    const due = approvalOps.listPendingDue(run.id, nowMs);
-    if (due.length > 0) {
-      const leading = due.flatMap((approval) => expireApproval(run.id, approval));
-      changeStatus(run, 'STOPPED', { edges: SERVICE_TRANSITIONS, patch: { stopReason: 'approval_timeout' } }, leading);
-      return true;
-    }
-    if (run.deadlineAt <= nowMs) {
-      changeStatus(run, 'STOPPED', { edges: SERVICE_TRANSITIONS, patch: { stopReason: 'timeout' } });
-      return true;
-    }
-    return false;
+    const stop = planStop(run, nowMs);
+    if (stop === undefined) return false;
+    if (prepared === undefined) throw new StalePreparation(run.id);
+    for (const approvalId of prepared.expiring) approvalOps.end(approvalId, 'expired');
+    changeStatus(run, 'STOPPED', { edges: stop.edges, patch: stop.patch }, prepared.leading, prepared);
+    return true;
   };
 
-  const resolveInTransaction = (approvalId: string, optionId: string, now: number): ResolveApprovalResult => {
+  const resolveInTransaction = (approvalId: string, optionId: string, now: number, prepared: Prepared | undefined): ResolveApprovalResult => {
     const approval = approvalOps.store.get(approvalId);
     if (approval === undefined || approval.kind !== 'permission') return { kind: 'not_found' };
     if (approval.status !== 'pending') return { kind: 'approval_not_pending', status: approval.status };
     if (!approvalAnnounced(approval.runId, approval.id)) return { kind: 'request_missing' };
     const run = requireRun(approval.runId);
     if (approval.expiresAt <= now) {
-      stopWaitingRun(run, now);
+      stopWaitingRun(run, now, prepared);
       return { kind: 'approval_not_pending', status: 'expired' };
     }
     if (run.cancelRequested) return { kind: 'run_cancelled' };
@@ -789,6 +741,11 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       writeRun({ ...appendPayloads(run, [event]), version: run.version + 1 });
     }
     return { kind: 'ok', approval: resolved, run: requireRun(run.id) };
+  };
+
+  const lateAnswerNeed = (approvalId: string, now: number): Need | undefined => {
+    const approval = approvalOps.store.get(approvalId);
+    return approval !== undefined && approval.status === 'pending' && approval.expiresAt <= now ? stopNeed(approval.runId, now) : undefined;
   };
 
   const decodeLocations = (identity: string, value: unknown): { path: string; line?: number }[] => {
@@ -845,7 +802,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     };
   };
 
-  const resolveElicitationInTransaction = (elicitationId: string, responses: Record<string, ElicitationAnswerRecord>, notices: readonly string[], now: number): ResolveElicitationResult => {
+  const resolveElicitationInTransaction = (elicitationId: string, responses: Record<string, ElicitationAnswerRecord>, notices: readonly string[], now: number, prepared: Prepared | undefined): ResolveElicitationResult => {
     const approval = approvalOps.store.get(elicitationId);
     if (approval === undefined) return { kind: 'not_found' };
     if (approval.kind !== 'elicitation') return { kind: 'wrong_kind' };
@@ -853,7 +810,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     if (!approvalAnnounced(approval.runId, approval.id)) return { kind: 'request_missing' };
     const run = requireRun(approval.runId);
     if (approval.expiresAt <= now) {
-      stopWaitingRun(run, now);
+      stopWaitingRun(run, now, prepared);
       return { kind: 'approval_not_pending', status: 'expired' };
     }
     if (run.cancelRequested) return { kind: 'run_cancelled' };
@@ -898,7 +855,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const carriedSkillsOf = (runId: string): string[] => {
     const row = sql.inheritedEventRow.get({ runId });
     if (row === undefined) return [];
-    const [event] = decodeRunEvents([row]);
+    const [event] = decodeEvents([row]);
     if (event?.type !== 'context.inherited') throw corrupt('events', runId, 'the context.inherited row does not decode to a context.inherited event');
     return (event.activatedSkills ?? []).map((skill) => skill.name);
   };
@@ -906,28 +863,14 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const loadInReadTx = (runId: string): LoadedRun => {
     requireRun(runId);
     const row: Row | undefined = sql.latestSnapshot.get({ runId });
-    if (row === undefined) return { tail: decodeRunEvents(sql.runEvents.all({ runId, after: 0, limit: -1 })) };
+    if (row === undefined) return { tail: decodeEvents(sql.runEvents.all({ runId, after: 0, limit: -1 })) };
     const identity = `${runId}@${String(row['seq'])}`;
     const reader = readerFor('snapshots', identity, row);
     const seq = reader.number('seq');
     const state = decodeRunState(identity, reader.json('state_json'));
-    if (state === undefined) return { tail: decodeRunEvents(sql.runEvents.all({ runId, after: 0, limit: -1 })) };
+    if (state === undefined) return { tail: decodeEvents(sql.runEvents.all({ runId, after: 0, limit: -1 })) };
     if (state.runId !== runId) throw corrupt('snapshots', identity, `state belongs to run ${state.runId}`);
-    return { snapshot: { seq, state }, tail: decodeRunEvents(sql.runEvents.all({ runId, after: seq, limit: -1 })) };
-  };
-
-  const replayRun = (run: Run, readEvents: readonly RunEvent[], visit: (state: RunState, event: RunEvent) => void, leading: readonly RunEvent[] = []): void => {
-    const readTypes = [...new Set<string>([...readEvents.map((event) => event.type), 'model.requested'])];
-    const placeholders = readTypes.map((_type, index) => `:type${index}`).join(', ');
-    const bound = Object.fromEntries(readTypes.map((type, index) => [`type${index}`, type]));
-    const rest = decodeRunEvents(db.prepare(`SELECT * FROM events WHERE run_id = :runId AND type NOT IN (${placeholders})`).all({ runId: run.id, ...bound }));
-    const unread = leading.filter((event) => !readEvents.includes(event) && event.type !== 'model.requested');
-    const journal = [...readEvents.filter((event) => event.type !== 'model.requested'), ...rest, ...unread].sort((a, b) => a.seq - b.seq);
-    let state = initialRunState({ runId: run.id, sessionId: run.sessionId });
-    for (const event of journal) {
-      state = foldRunState(state, event);
-      visit(state, event);
-    }
+    return { snapshot: { seq, state }, tail: decodeEvents(sql.runEvents.all({ runId, after: seq, limit: -1 })) };
   };
 
   const foldedRun = (run: Run): RunState => {
@@ -1115,6 +1058,12 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     advanceRead: (id, offset, call) => {
       sql.jobs.advance.run({ id, offset, call });
     },
+  };
+
+  const rejectContribution = (events: readonly RunEventPayload[]): void => {
+    if (events.some((event) => event.type === 'context.contribution')) {
+      throw new Error('context.contribution is written only by the terminal transition of a run, never appended');
+    }
   };
 
   const store: RuntimeStore = {
@@ -1331,20 +1280,13 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     claim: (workerId) => {
       const now = clock.now();
-      return afterPreparing(() => prepareExhausted(now), () =>
-        transaction(() => {
-          for (;;) {
-            const exhausted = sql.selectExhausted.get({ now, maxAttempts, maxTotalAttempts });
-            if (exhausted === undefined) break;
-            deadLetter(decodeRun(exhausted));
-          }
-          const row = sql.claim.get({ now, maxAttempts, maxTotalAttempts, workerId, leaseExpiresAt: now + leaseMs });
-          if (row === undefined) return null;
-          const run = decodeRun(row);
-          const status: ClaimStatus = expectOneOf('runs', run.id, 'status', CLAIM_STATUSES, run.status);
-          return { runId: run.id, sessionId: run.sessionId, workerId, leaseToken: run.leaseToken, attempt: run.attempts, status };
-        }),
-      );
+      return transaction(() => {
+        const row = sql.claim.get({ now, maxAttempts, maxTotalAttempts, workerId, leaseExpiresAt: now + leaseMs });
+        if (row === undefined) return null;
+        const run = decodeRun(row);
+        const status: ClaimStatus = expectOneOf('runs', run.id, 'status', CLAIM_STATUSES, run.status);
+        return { runId: run.id, sessionId: run.sessionId, workerId, leaseToken: run.leaseToken, attempt: run.attempts, status };
+      });
     },
 
     heartbeat: (claim) =>
@@ -1366,6 +1308,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     append: (claim, events) =>
       transaction(() => {
+        rejectContribution(events);
         const run = fenced(claim);
         if (run === undefined) return leaseLost;
         if (events.length === 0) return { kind: 'ok', lastSeq: run.lastSeq } as const;
@@ -1375,14 +1318,18 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       }),
 
     transition: (claim, from, to, patch, preceding = []) =>
-      afterPreparing(
+      operate(
         () => {
-          if (isTerminal(to)) prepareTree(claim.runId, preceding);
+          if (!isTerminal(to)) return undefined;
+          const row = sql.selectRun.get({ id: claim.runId });
+          const run = row === undefined ? undefined : decodeRun(row);
+          return run === undefined || !from.includes(run.status) ? undefined : { runId: run.id, leading: preceding, expiring: [] };
         },
-        () => workerTransition(claim, from, to, patch === undefined ? {} : { patch }, preceding),
+        (prepared) => {
+          const run = fenced(claim);
+          return run === undefined ? leaseLost : moveWorker(run, from, to, patch === undefined ? {} : { patch }, preceding, prepared);
+        },
       ),
-
-    prepareTerminal,
 
     release: (claim, to, availableAt, options) =>
       transaction<RunMutationResult>(() => {
@@ -1414,60 +1361,66 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       }),
 
     requestCancel: (runId) =>
-      afterPreparing(
+      transaction<RequestCancelResult>(() => {
+        const row = sql.selectRun.get({ id: runId });
+        if (row === undefined) return { kind: 'not_found' };
+        const run = decodeRun(row);
+        if (isTerminal(run.status) || run.status === 'CANCELLING') return { kind: 'ok', run, changed: false };
+        if (!SERVICE_TRANSITIONS[run.status].includes('CANCELLING')) throw new Error(`run ${runId} in status ${run.status} cannot be cancelled`);
+        return { kind: 'ok', run: changeStatus(run, 'CANCELLING', { edges: SERVICE_TRANSITIONS }), changed: true };
+      }),
+
+    appendAsService: async (runId, expectedVersion, to, events, patch) => {
+      rejectContribution(events);
+      return operate(
         () => {
-          const status = sql.selectRun.get({ id: runId }) === undefined ? undefined : requireRun(runId).status;
-          if (status === undefined || isTerminal(status) || status === 'CANCELLING') return;
-          if (cancelTargetOf(status) === 'CANCELLED') prepareTree(runId);
-          else prepareChildren(runId);
+          if (to === null || !isTerminal(to)) return undefined;
+          const row = sql.selectRun.get({ id: runId });
+          return row === undefined || isTerminal(decodeRun(row).status) ? undefined : { runId, leading: events, expiring: [] };
         },
-        () =>
-          transaction<RequestCancelResult>(() => {
-            const row = sql.selectRun.get({ id: runId });
-            if (row === undefined) return { kind: 'not_found' };
-            const run = decodeRun(row);
-            if (isTerminal(run.status) || run.status === 'CANCELLING') return { kind: 'ok', run, changed: false };
-            const to = cancelTargetOf(run.status);
-            if (!SERVICE_TRANSITIONS[run.status].includes(to)) throw new Error(`run ${runId} in status ${run.status} cannot be cancelled`);
-            return { kind: 'ok', run: changeStatus(run, to, { edges: SERVICE_TRANSITIONS }), changed: true };
-          }),
-      ),
-
-    appendAsService: (runId, expectedVersion, to, events, patch) =>
-      afterPreparing(
-        () => {
-          if (to !== null && isTerminal(to)) prepareTree(runId, events);
+        (prepared): ServiceMutationResult => {
+          const run = requireRun(runId);
+          if (run.version !== expectedVersion) {
+            return conflict(`run ${runId} is at version ${run.version}, expected ${expectedVersion}`);
+          }
+          if (isTerminal(run.status)) return conflict(`run ${runId} is ${run.status} and immutable`);
+          if (to === null) {
+            const appended = appendPayloads(run, events);
+            writeRun({ ...appended, version: run.version + 1 });
+            return { kind: 'ok', run: requireRun(runId) };
+          }
+          if (!SERVICE_TRANSITIONS[run.status].includes(to)) return conflict(`run ${runId} cannot move from ${run.status} to ${to}`);
+          const change: StatusChange = { edges: SERVICE_TRANSITIONS, ...(patch === undefined ? {} : { patch }) };
+          return { kind: 'ok', run: changeStatus(run, to, change, events, prepared) };
         },
-        () =>
-          transaction<ServiceMutationResult>(() => {
-            const run = requireRun(runId);
-            if (run.version !== expectedVersion) {
-              return conflict(`run ${runId} is at version ${run.version}, expected ${expectedVersion}`);
-            }
-            if (isTerminal(run.status)) return conflict(`run ${runId} is ${run.status} and immutable`);
-            if (to === null) {
-              const appended = appendPayloads(run, events);
-              writeRun({ ...appended, version: run.version + 1 });
-              return { kind: 'ok', run: requireRun(runId) };
-            }
-            if (!SERVICE_TRANSITIONS[run.status].includes(to)) return conflict(`run ${runId} cannot move from ${run.status} to ${to}`);
-            const change: StatusChange = { edges: SERVICE_TRANSITIONS, ...(patch === undefined ? {} : { patch }) };
-            return { kind: 'ok', run: changeStatus(run, to, change, events) };
-          }),
-      ),
+      );
+    },
 
-    readRunEvents: (runId, afterSeq, limit) => decodeRunEvents(sql.runEvents.all({ runId, after: afterSeq, limit })),
+    readRunEvents: (runId, afterSeq, limit) => decodeEvents(sql.runEvents.all({ runId, after: afterSeq, limit })),
 
-    readRunEventsOfTypes: eventsOfTypes,
+    readRunEventsOfTypes: (runId, types) => journalReader.eventsOfTypes(runId, types),
 
     readLatestRunEventBefore: <T extends RunEventPayload['type']>(runId: string, type: T, beforeSeq: number) => {
-      const [event] = decodeRunEvents(
+      if (type === 'model.requested') return readLatestRequest(runId, beforeSeq) as Extract<RunEvent, { type: T }> | undefined;
+      const [event] = decodeEvents(
         db.prepare('SELECT * FROM events WHERE run_id = :runId AND type = :type AND seq < :beforeSeq ORDER BY seq DESC LIMIT 1').all({ runId, type, beforeSeq }),
       );
       return event as Extract<RunEvent, { type: T }> | undefined;
     },
 
-    readModelCallEvents: (runId) => sql.modelCallEvents.all({ runId }).map(decodeModelCallRecord),
+    readModelCallEvents: (runId) => sql.modelCallEvents.all({ runId }).sort((a, b) => Number(a.seq) - Number(b.seq)).map(decodeModelCallRecord),
+
+    toolCallSeq: records.toolCallSeq,
+
+    finalTextOf: records.finalTextOf,
+
+    inFlightModelRequestOf: records.inFlightModelRequestOf,
+
+    startedCallsOf: records.startedCallsOf,
+
+    hasNoticeCode: records.hasNoticeCode,
+
+    meterRecordOf: records.meterRecordOf,
 
     lastTerminalRootRuns: (project, limit) => sql.lastTerminalRootRuns.all({ project, limit }).map(decodeRun),
 
@@ -1478,11 +1431,15 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return sql.toolOfferedNames.all({ runId }).map((row) => String(row.name));
     },
 
-    readSessionEvents: (sessionId, afterId, limit) =>
-      sql.sessionEvents.all({ sessionId, after: afterId, limit }).map(decodeEvent),
+    readSessionEvents: (sessionId, afterId, limit) => {
+      const rows = sql.sessionEvents.all({ sessionId, after: afterId, limit });
+      observeDecode(rows);
+      return rows.map(decodeEvent);
+    },
 
     readModelChanges: (sessionId, afterId) =>
       sql.modelChanges.all({ sessionId, after: afterId }).map((row) => {
+        observeDecode([row]);
         const event = decodeEvent(row);
         if (event.type !== 'model.changed') throw new Error(`event ${event.id} of session ${sessionId} is not a model.changed event`);
         return event;
@@ -1533,9 +1490,9 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     resolveApproval: (approvalId, optionId) => {
       const now = clock.now();
-      return afterPreparing(
-        () => prepareLateAnswer(approvalId, now),
-        () => transaction<ResolveApprovalResult>(() => resolveInTransaction(approvalId, optionId, now)),
+      return operate(
+        () => lateAnswerNeed(approvalId, now),
+        (prepared) => resolveInTransaction(approvalId, optionId, now, prepared),
       );
     },
 
@@ -1564,9 +1521,9 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     resolveElicitation: (elicitationId, responses, notices = []) => {
       const now = clock.now();
-      return afterPreparing(
-        () => prepareLateAnswer(elicitationId, now),
-        () => transaction<ResolveElicitationResult>(() => resolveElicitationInTransaction(elicitationId, responses, notices, now)),
+      return operate(
+        () => lateAnswerNeed(elicitationId, now),
+        (prepared) => resolveElicitationInTransaction(elicitationId, responses, notices, now, prepared),
       );
     },
 
@@ -1585,17 +1542,68 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     terminalRunIdsWithCheckpoint: () => sql.terminalRunIdsWithCheckpoint.all({}).map((row) => readerFor('runs', 'terminal', row).string('id')),
 
-    expireApprovals: (nowMs) => {
+    expireApprovals: async (nowMs, onError) => {
       const stopped: string[] = [];
       for (const row of sql.dueWaitingRuns.all({ nowMs })) {
         const runId = readerFor('runs', 'due', row).string('id');
-        const didStop = afterPreparing(
-          () => prepareStopping(runId, nowMs),
-          () => transaction(() => stopWaitingRun(requireRun(runId), nowMs)),
-        );
-        if (didStop) stopped.push(runId);
+        try {
+          const didStop = await operate(
+            () => stopNeed(runId, nowMs),
+            (prepared) => stopWaitingRun(requireRun(runId), nowMs, prepared),
+          );
+          if (didStop) stopped.push(runId);
+        } catch (error) {
+          onError(error, runId);
+        }
       }
       return stopped;
+    },
+
+    finishCancelled: async (onError) => {
+      const finished: string[] = [];
+      const now = clock.now();
+      for (const row of sql.listSweeperOwned.all({ now })) {
+        const runId = decodeRun(row).id;
+        try {
+          const didFinish = await operate(
+            () => (sql.sweeperOwnedById.get({ id: runId, now }) === undefined ? undefined : { runId, leading: [], expiring: [] }),
+            (prepared) => {
+              const current = sql.sweeperOwnedById.get({ id: runId, now });
+              if (current === undefined) return false;
+              changeStatus(decodeRun(current), 'CANCELLED', { edges: WORKER_TRANSITIONS }, [], prepared);
+              return true;
+            },
+          );
+          if (didFinish) finished.push(runId);
+        } catch (error) {
+          onError(error, runId);
+        }
+      }
+      return finished;
+    },
+
+    deadLetterExhausted: async (onError) => {
+      const ended: string[] = [];
+      const now = clock.now();
+      const exhausted = { now, maxAttempts, maxTotalAttempts };
+      for (const row of sql.listExhausted.all(exhausted)) {
+        const runId = decodeRun(row).id;
+        try {
+          const didEnd = await operate(
+            () => (sql.exhaustedById.get({ id: runId, ...exhausted }) === undefined ? undefined : { runId, leading: [], expiring: [] }),
+            (prepared) => {
+              const current = sql.exhaustedById.get({ id: runId, ...exhausted });
+              if (current === undefined) return false;
+              deadLetter(decodeRun(current), prepared);
+              return true;
+            },
+          );
+          if (didEnd) ended.push(runId);
+        } catch (error) {
+          onError(error, runId);
+        }
+      }
+      return ended;
     },
 
     approvalView: (approvalId) => {
@@ -1616,7 +1624,9 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         if (latest !== undefined && readerFor('snapshots', run.id, latest).number('seq') > seq) {
           return conflict(`run ${run.id} already has a newer snapshot than seq ${seq}`);
         }
-        sql.upsertSnapshot.run({ runId: run.id, seq, state: canonicalJson(encodeRunState(state)), createdAt: clock.now() });
+        const encoded = canonicalJson(encodeRunState(state));
+        onEncode?.('snapshot', Buffer.byteLength(encoded));
+        sql.upsertSnapshot.run({ runId: run.id, seq, state: encoded, createdAt: clock.now() });
         sql.pruneSnapshots.run({ runId: run.id, seq });
         return { kind: 'ok' } as const;
       }),
@@ -1631,6 +1641,12 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     guidelines: createGuidelineStore(db, clock),
     governing,
     search: createSearchStore(db),
+
+    journalFacts: {
+      verdict: async (request, signal) => journalPreparer(preparer, 'verdict').verdict(request, signal),
+      evidence: async (request, signal) => journalPreparer(preparer, 'evidence').evidence(request, signal),
+      reflectionInput: async (request, signal) => journalPreparer(preparer, 'reflection input').reflectionInput(request, signal),
+    },
 
     dataVersion: () => {
       const row = sql.dataVersion.get();

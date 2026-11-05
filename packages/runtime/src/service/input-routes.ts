@@ -58,7 +58,7 @@ export const registerInputRoutes = (route: RouteRegistrar, deps: InputRoutesDeps
       if (error instanceof McpElicitationAnswerError) throw invalidRequest(error.message, 'responses');
       throw error;
     }
-    const result = store.resolveElicitation(id, responses, notices);
+    const result = await store.resolveElicitation(id, responses, notices);
     switch (result.kind) {
       case 'not_found':
       case 'wrong_kind':

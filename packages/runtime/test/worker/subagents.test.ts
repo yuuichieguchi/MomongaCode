@@ -85,7 +85,7 @@ describe('worker subagents', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     expect(env.run(parent.id).status).toBe('WAITING_HUMAN');
 
     env.store.setModelAlias(env.session.id, 'other-model');
-    env.resolveApproval(parent.id, 'allow_once');
+    await env.resolveApproval(parent.id, 'allow_once');
     await env.runOnce(env.worker('w2', { agents: agentsPortOf(env, ['fm', 'other-model']) }));
 
     const [child] = env.store.listChildRuns(parent.id);
@@ -130,7 +130,7 @@ describe('worker subagents', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     await env.runOnce(worker);
     const [child] = env.store.listChildRuns(parent.id);
     if (child === undefined) throw new Error('missing child');
-    env.store.appendAsService(parent.id, env.run(parent.id).version, 'QUEUED', []);
+    await env.store.appendAsService(parent.id, env.run(parent.id).version, 'QUEUED', []);
     expect(env.run(parent.id).status).toBe('QUEUED');
 
     await env.runOnce(worker);
@@ -230,6 +230,8 @@ describe('worker subagents', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     const [child] = env.store.listChildRuns(parent.id);
     if (child === undefined) throw new Error('missing child');
     env.cancel(parent.id);
+    expect(env.run(child.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'QUEUED' });
+    expect(await env.store.finishCancelled(() => undefined)).toEqual([child.id]);
     expect(env.run(child.id).status).toBe('CANCELLED');
     await env.runOnce(worker);
     expect(env.run(parent.id).status).toBe('CANCELLED');
@@ -293,7 +295,7 @@ describe('worker subagents', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     const [child] = env.store.listChildRuns(parent.id);
     if (child === undefined) throw new Error('missing child');
     env.clock.set(parent.deadlineAt);
-    expect(env.store.expireApprovals(env.clock.now())).toContain(parent.id);
+    expect(await env.store.expireApprovals(env.clock.now(), (error: unknown) => { throw error; })).toContain(parent.id);
     await env.runOnce(worker);
     expect(env.run(parent.id)).toMatchObject({ status: 'STOPPED', stopReason: 'timeout' });
     expect(env.run(child.id)).toMatchObject({ status: 'STOPPED', stopReason: 'timeout' });

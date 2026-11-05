@@ -1,4 +1,4 @@
-import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
+import { contextOf } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
 import { waitFor } from '@momonga/testkit';
 import { expectSpecValid, ofType, outputTextOf, terminalOf, terminalsOf } from './cc-support.ts';
@@ -134,7 +134,7 @@ describe('ollama stream: cancellation', () => {
     const events: any[] = [];
     let failure: unknown;
     try {
-      for await (const event of adapter.create(request, { signal: controller.signal, target: { name: 'local', model: 'devstral-small-2' }, attempt: 1, reasoningOrigin: EVERY_REASONING_IS_OWN })) {
+      for await (const event of adapter.create(request, await contextOf(adapter, { name: 'local', model: 'devstral-small-2' }, controller.signal))) {
         events.push(event);
         if (event.type === 'response.output_text.delta') controller.abort(new Error('the client went away'));
       }

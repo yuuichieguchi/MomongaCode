@@ -1,5 +1,7 @@
 import { MessageChannel, Worker, receiveMessageOnPort } from 'node:worker_threads';
 import type { MessagePort } from 'node:worker_threads';
+import { JournalThreadError } from '@momonga/store';
+import type { ContributionMeasured, ContributionPreparer, EvidenceReply, RecordedCheck, RecordedHash, ReflectionInputReply, VerdictFact, VerdictReply } from '@momonga/store';
 import { JOURNAL_THREAD_CODE } from './journal-thread-code.generated.ts';
 
 export type JournalThreadTimers = {
@@ -17,19 +19,12 @@ export type JournalThreadOptions = {
 
 export type JournalThreadReply = Readonly<Record<string, unknown>>;
 
-export type JournalThreadClient = {
+export type JournalThreadClient = ContributionPreparer & {
   readonly identity: { readonly dev: number; readonly ino: number };
   request(request: { readonly kind: string } & Readonly<Record<string, unknown>>): Promise<JournalThreadReply>;
   ping(): Promise<{ readonly threadId: number }>;
   close(): Promise<void>;
 };
-
-export class JournalThreadError extends Error {
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options);
-    this.name = 'JournalThreadError';
-  }
-}
 
 type Pending = { readonly resolve: (reply: JournalThreadReply) => void; readonly reject: (error: JournalThreadError) => void };
 
@@ -51,6 +46,61 @@ const realTimers: JournalThreadTimers = {
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
+
+type ContributionItems = NonNullable<ContributionMeasured['contribution']>['items'];
+
+const isContributionItem = (item: unknown): boolean =>
+  isRecord(item) && typeof item['kind'] === 'string' && typeof item['id'] === 'string' && typeof item['contributed'] === 'boolean';
+
+const measuredOf = (reply: JournalThreadReply): ContributionMeasured => {
+  const { lastSeq, items } = reply;
+  if (typeof lastSeq !== 'number') throw new JournalThreadError('journal thread contribution reply carries no numeric lastSeq');
+  if (items === undefined) return { lastSeq };
+  if (!Array.isArray(items) || !items.every(isContributionItem)) throw new JournalThreadError('journal thread contribution reply carries malformed items');
+  return { lastSeq, contribution: { type: 'context.contribution', items: items as ContributionItems } };
+};
+
+const lastSeqOf = (reply: JournalThreadReply, kind: string): number => {
+  const { lastSeq } = reply;
+  if (typeof lastSeq !== 'number') throw new JournalThreadError(`journal thread ${kind} reply carries no numeric lastSeq`);
+  return lastSeq;
+};
+
+const isVerdictFact = (fact: unknown): fact is VerdictFact =>
+  isRecord(fact) &&
+  typeof fact['command'] === 'string' &&
+  typeof fact['text'] === 'string' &&
+  fact['kind'] === 'procedure' &&
+  isRecord(fact['check']) &&
+  typeof fact['check']['callId'] === 'string' &&
+  typeof fact['check']['seq'] === 'number' &&
+  Array.isArray(fact['manifestPaths']) &&
+  fact['manifestPaths'].every((entry) => typeof entry === 'string');
+
+const verdictOf = (reply: JournalThreadReply): VerdictReply => {
+  const { verified, facts } = reply;
+  if (typeof verified !== 'boolean') throw new JournalThreadError('journal thread verdict reply carries no boolean verified');
+  if (!Array.isArray(facts) || !facts.every(isVerdictFact)) throw new JournalThreadError('journal thread verdict reply carries malformed facts');
+  return { lastSeq: lastSeqOf(reply, 'verdict'), verified, facts };
+};
+
+const isRecordedHash = (entry: unknown): entry is RecordedHash => isRecord(entry) && typeof entry['sha256'] === 'string' && typeof entry['seq'] === 'number';
+
+const isRecordedCheck = (entry: unknown): entry is RecordedCheck =>
+  isRecord(entry) && typeof entry['callId'] === 'string' && typeof entry['seq'] === 'number' && typeof entry['command'] === 'string' && typeof entry['exitCode'] === 'number';
+
+const evidenceOf = (reply: JournalThreadReply): EvidenceReply => {
+  const { recorded, check } = reply;
+  if (!Array.isArray(recorded) || !recorded.every((entry) => entry === null || isRecordedHash(entry))) throw new JournalThreadError('journal thread evidence reply carries malformed recorded hashes');
+  if (check !== null && !isRecordedCheck(check)) throw new JournalThreadError('journal thread evidence reply carries a malformed check');
+  return { lastSeq: lastSeqOf(reply, 'evidence'), recorded, check };
+};
+
+const reflectionInputOf = (reply: JournalThreadReply): ReflectionInputReply => {
+  const { input } = reply;
+  if (typeof input !== 'string') throw new JournalThreadError('journal thread reflection_input reply carries no input text');
+  return { lastSeq: lastSeqOf(reply, 'reflection_input'), input };
+};
 
 export const startJournalThread = async (options: JournalThreadOptions): Promise<JournalThreadClient> => {
   const { databasePath, identity, silenceLimitMs, code = JOURNAL_THREAD_CODE, timers = realTimers } = options;
@@ -222,6 +272,19 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
     return { threadId: reportedThreadId };
   };
 
+  const measure: JournalThreadClient['measure'] = async ({ runId, leading }) => {
+    const reply = await request({ kind: 'contribution', runId, leading });
+    return measuredOf(reply);
+  };
+
+  const verdict: JournalThreadClient['verdict'] = async ({ runId, commands, manifests }) => verdictOf(await request({ kind: 'verdict', runId, commands, manifests }));
+
+  const evidence: JournalThreadClient['evidence'] = async ({ runId, paths, verificationCommands, onlyCommand }) =>
+    evidenceOf(await request({ kind: 'evidence', runId, paths, verificationCommands, ...(onlyCommand === undefined ? {} : { onlyCommand }) }));
+
+  const reflectionInput: JournalThreadClient['reflectionInput'] = async ({ runId, project, capabilities }) =>
+    reflectionInputOf(await request({ kind: 'reflection_input', runId, project, capabilities }));
+
   const close = (): Promise<void> => {
     closePromise ??= (async () => {
       if (current !== null) fail(current, new JournalThreadError('journal thread client was closed'));
@@ -232,5 +295,5 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
   };
 
   await liveThread();
-  return { identity, request, ping, close };
+  return { identity, request, ping, measure, verdict, evidence, reflectionInput, close };
 };

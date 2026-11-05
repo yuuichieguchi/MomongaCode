@@ -1,32 +1,33 @@
 import { describe, expect, it } from 'vitest';
 import type { ElicitationRequestView } from '@momonga/protocol';
-import type { Claim, ContributionPayload, Run, RuntimeStore } from '@momonga/store';
+import type { Claim, ContributionPreparer, Run, RuntimeStore } from '@momonga/store';
 import { EXPIRES_MS, awaitingApproval } from './approval-fixture.ts';
-import { LEASE_MS, callEvent, cancel, enqueue, harness, mustClaim, mustRun, newSession, rawDb } from './helpers.ts';
+import { LEASE_MS, callEvent, cancel, enqueue, harness, mustClaim, mustRun, newSession, noJournalFacts, rawDb } from './helpers.ts';
 import type { Harness } from './helpers.ts';
+import { contributionOf } from './preparer-fixture.ts';
 
 type Measurement = { runId: string; underWriteLock: boolean };
-
-const contribution: ContributionPayload = { type: 'context.contribution', items: [{ kind: 'memory', id: 'm1', contributed: true }] };
 
 const REQUESTS: ElicitationRequestView[] = [
   { key: 'who', mode: 'form', message: 'Who are you?', requestedSchema: { type: 'object', properties: { name: { type: 'string' } } } },
 ];
 
+const ignoreSweepErrors = (): void => undefined;
+
 const measuring = (options: { maxAttempts?: number } = {}): { h: Harness; measurements: Measurement[] } => {
   const measurements: Measurement[] = [];
   let probe: (() => boolean) | undefined;
-  const h = harness({
-    ...options,
-    contribution: {
-      eventTypes: ['user.message'],
-      measure: ({ run }) => {
-        if (probe === undefined) throw new Error('the write-lock probe is not ready');
-        measurements.push({ runId: run.id, underWriteLock: probe() });
-        return contribution;
-      },
+  let bound: RuntimeStore | undefined;
+  const preparer: ContributionPreparer = {
+    ...noJournalFacts,
+    measure: async ({ runId }) => {
+      if (probe === undefined || bound === undefined) throw new Error('the write-lock probe is not ready');
+      measurements.push({ runId, underWriteLock: probe() });
+      return { lastSeq: bound.getRun(runId)?.lastSeq ?? -1, contribution: contributionOf('m1') };
     },
-  });
+  };
+  const h = harness({ ...options, preparer });
+  bound = h.store;
   const db = rawDb(h.dbPath);
   db.exec('PRAGMA busy_timeout = 0');
   probe = () => {
@@ -55,8 +56,8 @@ const spawn = (store: RuntimeStore, parentRunId: string, callId: string): Run =>
   return created.run;
 };
 
-describe('measuring ahead of the write transaction on every terminal path', () => {
-  it('measures the runs that claim dead-letters, all of them, before its transaction', () => {
+describe('every terminal operation measures one run, outside the write transaction', () => {
+  it('the dead-letter sweep measures each exhausted run in its own operation, outside its transaction', async () => {
     const { h, measurements } = measuring({ maxAttempts: 1 });
     const first = enqueue(h.store, newSession(h.store).id);
     const second = enqueue(h.store, newSession(h.store).id);
@@ -65,6 +66,8 @@ describe('measuring ahead of the write transaction on every terminal path', () =
     h.clock.advance(LEASE_MS);
 
     expect(h.store.claim('w3')).toBeNull();
+    expect(measurements).toEqual([]);
+    expect((await h.store.deadLetterExhausted(ignoreSweepErrors)).sort()).toEqual([first.id, second.id].sort());
 
     expect(mustRun(h.store, first.id)).toMatchObject({ status: 'FAILED', deadLetter: true });
     expect(mustRun(h.store, second.id)).toMatchObject({ status: 'FAILED', deadLetter: true });
@@ -73,32 +76,36 @@ describe('measuring ahead of the write transaction on every terminal path', () =
     expect(contributionsOf(h.store, second.id)).toBe(1);
   });
 
-  it('measures the queued child of a run that claim dead-letters before the transaction', () => {
+  it('dead-lettering a parent moves its queued child to CANCELLING without measuring the child; the child is finished by its own operation', async () => {
     const { h, measurements } = measuring({ maxAttempts: 1 });
     const parent = enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w1');
     const child = spawn(h.store, parent.id, 'call_child');
     h.clock.advance(LEASE_MS);
 
-    expect(h.store.claim('w2')).toBeNull();
+    expect(await h.store.deadLetterExhausted(ignoreSweepErrors)).toEqual([parent.id]);
 
-    expect(mustRun(h.store, child.id).status).toBe('CANCELLED');
+    expect(mustRun(h.store, child.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'QUEUED' });
+    outsideTheTransaction(measurements, [parent.id]);
+    expect(await h.store.finishCancelled(ignoreSweepErrors)).toEqual([child.id]);
     outsideTheTransaction(measurements, [parent.id, child.id]);
   });
 
-  it('measures a run whose approval expired when a person answers late, before the transaction', () => {
+  it('a late answer to an expired approval stops the run through an awaited operation, outside the transaction', async () => {
     const { h, measurements } = measuring();
     const { runId, approvals } = awaitingApproval(h.store, [{ callId: 'call_1' }], 'waiting');
     h.clock.set(EXPIRES_MS);
 
-    expect(h.store.resolveApproval(approvals[0]?.id ?? '', 'allow_once')).toEqual({ kind: 'approval_not_pending', status: 'expired' });
+    const pending = h.store.resolveApproval(approvals[0]?.id ?? '', 'allow_once');
 
+    expect(pending).toBeInstanceOf(Promise);
+    expect(await pending).toEqual({ kind: 'approval_not_pending', status: 'expired' });
     expect(mustRun(h.store, runId)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
     outsideTheTransaction(measurements, [runId]);
     expect(contributionsOf(h.store, runId)).toBe(1);
   });
 
-  it('measures a run whose elicitation expired when a person answers late, before the transaction', () => {
+  it('a late answer to an expired elicitation stops the run through an awaited operation, outside the transaction', async () => {
     const { h, measurements } = measuring();
     const run = enqueue(h.store, newSession(h.store).id);
     const claim: Claim = mustClaim(h.store, 'w1');
@@ -108,28 +115,30 @@ describe('measuring ahead of the write transaction on every terminal path', () =
     expect(h.store.release(claim, 'WAITING_HUMAN').kind).toBe('ok');
     h.clock.set(EXPIRES_MS);
 
-    expect(h.store.resolveElicitation(requested.approval.id, {})).toEqual({ kind: 'approval_not_pending', status: 'expired' });
+    const pending = h.store.resolveElicitation(requested.approval.id, {});
 
+    expect(pending).toBeInstanceOf(Promise);
+    expect(await pending).toEqual({ kind: 'approval_not_pending', status: 'expired' });
     expect(mustRun(h.store, run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
     outsideTheTransaction(measurements, [run.id]);
   });
 
-  it('measures the grandchildren that a cancel reaches through a running child, before the transaction', () => {
+  it('a cancel that reaches grandchildren through a running child moves every descendant to CANCELLING and measures none', () => {
     const { h, measurements } = measuring();
     const parent = enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w-parent');
     const child = spawn(h.store, parent.id, 'call_child');
     mustClaim(h.store, 'w-child');
-    expect(mustRun(h.store, child.id).status).toBe('RUNNING');
     const grandchild = spawn(h.store, child.id, 'call_grandchild');
 
     expect(cancel(h.store, parent.id).status).toBe('CANCELLING');
 
-    expect(mustRun(h.store, grandchild.id).status).toBe('CANCELLED');
-    outsideTheTransaction(measurements, [grandchild.id]);
+    expect(mustRun(h.store, child.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'RUNNING' });
+    expect(mustRun(h.store, grandchild.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'QUEUED' });
+    expect(measurements).toEqual([]);
   });
 
-  it('measures the children of a child that waits for a person, before the transaction', () => {
+  it('a cancel that reaches a child waiting for a person and its queued child moves both to CANCELLING with their own origins and measures none', () => {
     const { h, measurements } = measuring();
     const parent = enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w-parent');
@@ -148,8 +157,9 @@ describe('measuring ahead of the write transaction on every terminal path', () =
 
     cancel(h.store, parent.id);
 
-    expect(mustRun(h.store, child.id).status).toBe('CANCELLED');
-    expect(mustRun(h.store, grandchild.id).status).toBe('CANCELLED');
-    outsideTheTransaction(measurements, [child.id, grandchild.id]);
+    expect(mustRun(h.store, child.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'WAITING_HUMAN' });
+    expect(mustRun(h.store, grandchild.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'QUEUED' });
+    expect(h.store.approvals.listPending(child.id)).toEqual([]);
+    expect(measurements).toEqual([]);
   });
 });

@@ -10,7 +10,7 @@ const specPath = path.resolve(import.meta.dirname, '..', 'specs', 'tla', 'RunRec
 const spec = fs.readFileSync(specPath, 'utf8');
 
 const definitionOf = (name: string): string => {
-  const start = spec.search(new RegExp(`^${name} ==`, 'm'));
+  const start = spec.search(new RegExp(`^${name}(\\([^)]*\\))? ==`, 'm'));
   if (start === -1) throw new Error(`${name} is not defined in ${specPath}`);
   const end = spec.indexOf('\n\n', start);
   return spec.slice(start, end === -1 ? undefined : end);
@@ -85,6 +85,36 @@ describe('RunRecovery.tla against the implementation', () => {
     expect(tableOf(name)).toEqual(codeTable(table));
   });
 
+  it('ends a cancel of every non-terminal status through CANCELLING, in the model and in the store (O13): no service or sweep edge leads to CANCELLED', () => {
+    expect(tableOf('ServiceEdges')['QUEUED']).toEqual(['CANCELLING']);
+    expect(tableOf('ServiceEdges')['WAITING_HUMAN']).toEqual(['CANCELLING', 'QUEUED', 'STOPPED']);
+    expect(tableOf('SweepEdges')['WAITING_HUMAN']).toEqual(['CANCELLING', 'QUEUED', 'STOPPED']);
+    for (const table of [SERVICE_TRANSITIONS, SWEEP_TRANSITIONS]) {
+      expect(Object.values(table).flat()).not.toContain('CANCELLED');
+    }
+    expect([...SERVICE_TRANSITIONS.QUEUED]).toEqual(['CANCELLING']);
+    expect([...SERVICE_TRANSITIONS.WAITING_HUMAN].sort()).toEqual(['CANCELLING', 'QUEUED', 'STOPPED']);
+    expect([...SWEEP_TRANSITIONS.WAITING_HUMAN].sort()).toEqual(['CANCELLING', 'QUEUED', 'STOPPED']);
+  });
+
+  it('keeps one cancel rule: the model has no UniformCancel switch, no second table and no cancel target that depends on the status', () => {
+    expect(spec).not.toMatch(/\bUniformCancel\b/);
+    expect(spec).not.toMatch(/^UniformServiceEdges ==|^UniformSweepEdges ==|^CancelTarget\(/m);
+  });
+
+  it('ties SweeperOwned of the model to the SQL predicate the store uses to keep sweeper-owned runs out of claim', () => {
+    const modelOrigins = stringsIn(definitionOf('SweeperOwned').replace(/^.*?cancelOrigin \\in/s, '')).sort();
+    expect(definitionOf('SweeperOwned')).toMatch(/x\.status = "CANCELLING" \/\\ x\.cancelOrigin \\in \{"QUEUED", "WAITING_HUMAN"\}/);
+    expect(modelOrigins).toEqual(['QUEUED', 'WAITING_HUMAN']);
+    const storeSource = fs.readFileSync(path.resolve(import.meta.dirname, '..', 'packages', 'store', 'src', 'runtime-store.ts'), 'utf8');
+    const predicate = /status = 'CANCELLING' AND (?:\w+\.)?cancel_origin IN \(([^)]*)\)/.exec(storeSource);
+    expect(predicate, 'runtime-store.ts states the sweeper-owned predicate').not.toBeNull();
+    const sqlOrigins = [...(predicate?.[1] ?? '').matchAll(/'([A-Z_]+)'/g)].map((match) => match[1] as string).sort();
+    expect(sqlOrigins).toEqual(modelOrigins);
+    const claimable = /const CLAIMABLE = `([^`]*)`/.exec(storeSource)?.[1] ?? '';
+    expect(claimable).toMatch(/NOT \(\s*(?:\w+\.)?status = 'CANCELLING' AND (?:\w+\.)?cancel_origin IN \('QUEUED', 'WAITING_HUMAN'\)\s*\)/);
+  });
+
   it('models only event kinds that the protocol defines', () => {
     const modelled = setOf('ModelledEvents');
     expect(modelled.filter((kind) => !(EVENT_TYPES as readonly string[]).includes(kind))).toEqual([]);
@@ -114,7 +144,7 @@ const constantsOf = (name: string): Record<string, string> => {
 const manifest = readManifest(path.join(configDir, 'manifest.json'));
 const recoveryEntries = manifest.entries.filter((entry) => entry.config.split('.')[0] === 'RunRecovery');
 const checkNames = recoveryEntries.filter((entry) => entry.role === 'check').map((entry) => entry.config);
-const evidenceNames = recoveryEntries.filter((entry) => entry.role === 'evidence').map((entry) => entry.config);
+const evidenceNames = recoveryEntries.filter((entry) => entry.role === 'evidence' && !entry.config.startsWith('RunRecovery.uniformCancel')).map((entry) => entry.config);
 const configText = (name: string): string => fs.readFileSync(path.join(configDir, `${name}.cfg`), 'utf8');
 const hasInvariantSection = (name: string): boolean => /^INVARIANTS$/m.test(configText(name));
 const lists = (name: string, invariant: string): boolean => new RegExp(`^\\s+${invariant}$`, 'm').test(configText(name));
@@ -124,6 +154,13 @@ describe('the checked configurations against the repaired recovery design', () =
     const constants = constantsOf(name);
     return [constants['UnfencedEffect'] as string, constants['NoCallLock'] as string, constants['NoReapBeforeReconcile'] as string];
   };
+
+  it('declares no UniformCancel constant in any RunRecovery configuration, since the uniform cancel is the only rule', () => {
+    expect(recoveryEntries.length).toBeGreaterThan(0);
+    for (const entry of recoveryEntries) {
+      expect(constantsOf(entry.config), entry.config).not.toHaveProperty('UniformCancel');
+    }
+  });
 
   it('checks the code with all three repairs in every configuration that is not evidence', () => {
     expect(checkNames.length).toBeGreaterThan(0);

@@ -1,7 +1,6 @@
 import { acceptedReasoningEfforts, clampReasoningEffort } from '@momonga/protocol';
 import type { ToolChoiceWire, AdapterRequest, Capabilities, FunctionTool, ReasoningCapability, ReasoningEffort, ReasoningOrigin } from '@momonga/protocol';
 import { forbidsTools } from '../../core/tool-choice.ts';
-import { UnsupportedInputError } from '../shared/failures.ts';
 import { carriedSamplingOf } from '../shared/sampling.ts';
 import { SYSTEM_PART_SEPARATOR, systemTextOf } from '../shared/system-text.ts';
 import { ollamaHistoryOf } from './history.ts';
@@ -32,7 +31,7 @@ const sendsTools = (request: AdapterRequest): boolean => (request.tools ?? []).l
 const requireToolChoice = (request: AdapterRequest): void => {
   const choice = request.tool_choice;
   if (choice === undefined || choice === 'auto' || choice === 'none') return;
-  throw new UnsupportedInputError('unsupported_tool_choice', 'the Ollama adapter supports only the tool_choice values auto and none', 'tool_choice');
+  throw new Error('the tool_choice must be resolved against the Ollama wire before the body is built');
 };
 
 export const OLLAMA_TOOL_CHOICE: ToolChoiceWire = { forms: ['filter'], expressesRequired: false };

@@ -16,9 +16,9 @@ import type { WorkerOptions } from './types.ts';
 export type Flow = 'continue' | 'done';
 
 export type Terminals = {
-  finish(to: 'COMPLETED' | 'STOPPED' | 'FAILED', patch?: StatusPatch, preceding?: readonly RunEventPayload[]): 'done';
+  finish(to: 'COMPLETED' | 'STOPPED' | 'FAILED', patch?: StatusPatch, preceding?: readonly RunEventPayload[]): Promise<'done'>;
   yieldTo(to: 'WAITING_HUMAN' | 'WAITING_TOOL' | 'QUEUED', availableAt?: number, options?: { refundAttempt?: true; awaits?: WaitTargets }): 'done';
-  cancel(): 'done';
+  cancel(): Promise<'done'>;
   yieldLease(): 'done';
 };
 

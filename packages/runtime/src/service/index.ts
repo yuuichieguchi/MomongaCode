@@ -10,5 +10,7 @@ export { startSearchSweeper } from './search-sweeper.ts';
 export type { SearchSweeperOptions } from './search-sweeper.ts';
 export { startApprovalSweeper } from './sweeper.ts';
 export type { ApprovalSweeperOptions } from './sweeper.ts';
+export { startTerminalSweeper } from './terminal-sweeper.ts';
+export type { TerminalSweeper, TerminalSweeperOptions } from './terminal-sweeper.ts';
 export { systemTimers } from './timers.ts';
 export type { ServiceTimers } from './timers.ts';

@@ -10,7 +10,7 @@ const waitForApproval = async (env: Env) => {
   const run = env.enqueue('Write the file');
   await env.runOnce(env.worker('worker-1'));
   expect(env.run(run.id).status).toBe('WAITING_HUMAN');
-  env.resolveApproval(run.id, 'allow_once');
+  await env.resolveApproval(run.id, 'allow_once');
   return run;
 };
 

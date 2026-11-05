@@ -2,6 +2,7 @@ import path from 'node:path';
 import { FILE_ACCESSES, LOOP_GROUPS_KEPT, MEMORY_ORIGINS, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
 import type { RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload } from '@momonga/protocol';
 import { hasConsistentSeqs } from './seqs.ts';
+import { CANCEL_ORIGINS } from './transitions.ts';
 import { corrupt, expectOneOf, expectRecord, expectStringRecord, isRecord, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
 import type { Run, RunError, Session, SessionMcpServers } from './types.ts';
@@ -53,6 +54,9 @@ const decodeUsage = (identity: string, value: unknown): Run['usage'] => {
   return { inputTokens, outputTokens, totalTokens };
 };
 
+const decodeCancelOrigin = (identity: string, value: string | null): Run['cancelOrigin'] =>
+  value === null ? null : expectOneOf('runs', identity, 'cancel_origin', CANCEL_ORIGINS, value);
+
 const decodeRunError = (identity: string, value: unknown): RunError => {
   const record = expectRecord('runs', identity, 'error_json', value);
   if (typeof record['code'] !== 'string' || typeof record['message'] !== 'string') {
@@ -92,6 +96,7 @@ export const decodeRun = (row: Row): Run => {
     parentRunId: reader.nullableString('parent_run_id'),
     parentCallId: reader.nullableString('parent_call_id'),
     origin: expectOneOf('runs', identity, 'origin', MEMORY_ORIGINS, reader.string('origin')),
+    cancelOrigin: decodeCancelOrigin(identity, reader.nullableString('cancel_origin')),
   };
   if (stopReason !== null) run.stopReason = expectOneOf('runs', identity, 'stop_reason', STOP_REASONS, stopReason);
   if (errorJson !== null) run.error = decodeRunError(identity, errorJson);
@@ -296,7 +301,11 @@ const isInherited = (value: unknown): boolean =>
   isRecord(value) && typeof value['fromRunId'] === 'string' && Number.isInteger(value['fromLastSeq']) && typeof value['digest'] === 'string';
 
 const isLoadedInstruction = (value: unknown): boolean =>
-  isRecord(value) && typeof value['path'] === 'string' && typeof value['textSha256'] === 'string' && Number.isInteger(value['seq']);
+  isRecord(value) && typeof value['path'] === 'string' && typeof value['textSha256'] === 'string' && Number.isInteger(value['seq']) && typeof value['content'] === 'string';
+
+const isCountMap = (value: unknown): boolean => isRecord(value) && Object.values(value).every((count) => Number.isInteger(count));
+
+const isCallResults = (value: unknown): boolean => isRecord(value) && Object.values(value).every((status) => status === 'completed' || status === 'failed');
 
 const isGoverningLoaded = (value: unknown): boolean =>
   isRecord(value) &&
@@ -371,7 +380,7 @@ const isWorkingFacts = (value: unknown): boolean =>
   isArrayOf(value['itemEvents'], (entry) => isRecord(entry) && Number.isInteger(entry['itemSeq']) && Number.isInteger(entry['eventSeq'])) &&
   (value['replacedThroughEventSeq'] === undefined || Number.isInteger(value['replacedThroughEventSeq']));
 
-export const SNAPSHOT_STATE_VERSION = 13;
+export const SNAPSHOT_STATE_VERSION = 14;
 
 export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
 
@@ -413,6 +422,13 @@ export const decodeRunState = (identity: string, value: unknown): RunState | und
     Object.values(state['steps']).every(isStep) &&
     Array.isArray(state['loadedInstructions']) &&
     state['loadedInstructions'].every(isLoadedInstruction) &&
+    isCountMap(state['hookCompletions']) &&
+    typeof state['stopHookRanSinceResponse'] === 'boolean' &&
+    Number.isInteger(state['stopHookContinuations']) &&
+    Number.isInteger(state['compactions']) &&
+    Number.isInteger(state['lastCompactionSeq']) &&
+    isCallResults(state['callResults']) &&
+    isCountMap(state['formsSinceCompaction']) &&
     (state['governingLoaded'] === undefined || isGoverningLoaded(state['governingLoaded'])) &&
     (state['memoriesLoaded'] === undefined || isArrayOf(state['memoriesLoaded'], isMemoryLoaded)) &&
     Array.isArray(state['activatedSkills']) &&

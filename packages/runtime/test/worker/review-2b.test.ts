@@ -56,7 +56,7 @@ describe('worker recovery of a not_applied call under the current policy', () =>
     expect(executed).toEqual([]);
     expect(env.store.idempotency.get(key)?.s).toBe('PENDING');
 
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
     env.gateway.script.push(textStep('Patched.'));
     await env.runOnce(env.worker('worker-2', { toolList }));
 

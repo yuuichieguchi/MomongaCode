@@ -1,12 +1,17 @@
 import type { Clock } from '@momonga/foundation';
-import { applyCapabilityOverride, imageCapability, sizingRatioFor } from '@momonga/protocol';
-import type { Capabilities, CapabilityOverride, ToolCallingMode, ToolCallingState, GatewayHealth, HealthResult, ImageCapability, ProviderAdapter, TargetBilling, TargetHealth } from '@momonga/protocol';
+import { applyCapabilityOverride, imageCapability, sizingRatioFor, summaryTokenCapFor } from '@momonga/protocol';
+import type { Capabilities, CapabilityOverride, ClientOperation, FunctionTool, ToolChoice, ToolCallingMode, ToolCallingState, GatewayHealth, HealthResult, ImageCapability, ProviderAdapter, TargetBilling, TargetHealth } from '@momonga/protocol';
+import { constrainsToolChoice, resolveToolChoice } from './tool-choice.ts';
+import { UnsupportedInputError } from './unsupported-input.ts';
 import { createAdmissionGate } from './admission.ts';
 import type { AdmissionGate } from './admission.ts';
 import { preconditionText } from '../precondition-text.ts';
 import { invalidRequest, notFound } from './errors.ts';
+import { CandidateRefused, REFUSAL_STAGES, UnprobedTarget, refusalErrorOf } from './candidate-refusal.ts';
+import type { Refusal } from './candidate-refusal.ts';
 import { carriesSampling, samplingRefusalOf } from './sampling.ts';
-import type { SamplingRefusal, SamplingRequest } from './sampling.ts';
+import type { SamplingRequest } from './sampling.ts';
+import { unknownParameterError } from './unknown-fields.ts';
 import { TargetBreaker } from './request-breaker.ts';
 import { guardAdapter } from './guarded-adapter.ts';
 import type { ReasoningOriginCodec } from './reasoning-origin.ts';
@@ -27,7 +32,20 @@ export type TargetRuntime = {
   lastFailure: { code: string | null; message: string } | undefined;
 };
 
-export type CandidateRequirements = { tools?: boolean; images?: boolean; sampling?: SamplingRequest };
+export type UnknownFieldsRequirement = { keys: readonly string[]; operation: ClientOperation };
+
+export type ToolChoiceRequirement = { tools: readonly FunctionTool[] | null | undefined; tool_choice: ToolChoice | null | undefined };
+
+export type CandidateRequirements = {
+  tools?: boolean;
+  images?: boolean;
+  sampling?: SamplingRequest;
+  toolChoice?: ToolChoiceRequirement;
+  summaryCap?: number;
+  unknownFields?: UnknownFieldsRequirement;
+};
+
+export type Narrowed = { targets: TargetRuntime[]; refusals: Refusal[]; capabilitiesOf(target: TargetRuntime): Promise<Capabilities> };
 
 export type Router = {
   aliases(): string[];
@@ -35,8 +53,8 @@ export type Router = {
   targetsOf(alias: string): TargetRuntime[];
   capabilitiesOf(target: TargetRuntime): Promise<Capabilities>;
   aliasCapabilitiesOf(alias: string): Promise<Capabilities>;
-  candidates(alias: string, requirements: CandidateRequirements): Promise<TargetRuntime[]>;
-  narrow(alias: string, targets: readonly TargetRuntime[], requirements: CandidateRequirements): Promise<TargetRuntime[]>;
+  candidates(alias: string, requirements: CandidateRequirements): Promise<Narrowed>;
+  narrow(alias: string, targets: readonly TargetRuntime[], requirements: CandidateRequirements): Promise<Narrowed>;
   health(): Promise<Pick<GatewayHealth, 'ok' | 'targets'>>;
 };
 
@@ -158,41 +176,108 @@ export const createRouter = (options: RouterOptions): Router => {
     return mergeCapabilities([first, ...rest]);
   };
 
-  const narrow = async (alias: string, all: readonly TargetRuntime[], requirements: CandidateRequirements): Promise<TargetRuntime[]> => {
-    let remaining = [...all];
-    if (requirements.tools === true) {
-      const capabilities = await Promise.all(remaining.map((target) => capabilitiesOf(target)));
-      for (const { toolCalling } of capabilities) {
-        if (typeof toolCalling !== 'string') throw invalidRequest('precondition_failed', preconditionText(toolCalling.message, toolCalling.evidence, toolCalling.remedy), null, 412);
-      }
-      remaining = remaining.filter((_, index) => (capabilities[index] as Capabilities).toolCalling !== 'none');
-      if (remaining.length === 0) {
-        throw invalidRequest('capability_unsupported', `no target of model alias "${alias}" supports tool calling`, 'tools');
-      }
-    }
-    if (requirements.images === true) {
-      const capabilities = await Promise.all(remaining.map((target) => capabilitiesOf(target)));
-      remaining = remaining.filter((_, index) => (capabilities[index] as Capabilities).imageInput);
-      if (remaining.length === 0) {
-        throw invalidRequest('capability_unsupported', `no target of model alias "${alias}" supports image input`, 'input');
-      }
-    }
-    const { sampling } = requirements;
-    if (sampling !== undefined && carriesSampling(sampling)) {
-      const capabilities = await Promise.all(remaining.map((target) => capabilitiesOf(target)));
-      const refusals = new Map<TargetRuntime, SamplingRefusal>();
-      remaining.forEach((target, index) => {
-        const refusal = samplingRefusalOf(sampling, { name: target.name, kind: target.adapter.kind }, target.adapter.sampling, capabilities[index] as Capabilities);
-        if (refusal !== undefined) refusals.set(target, refusal);
+  const narrow = async (alias: string, all: readonly TargetRuntime[], requirements: CandidateRequirements): Promise<Narrowed> => {
+    const memo = new Map<TargetRuntime, Promise<Capabilities>>();
+    const verdicts = new Map<TargetRuntime, Refusal | undefined>();
+    const resolve = (target: TargetRuntime): Promise<Capabilities> => {
+      const known = memo.get(target);
+      if (known !== undefined) return known;
+      const started = capabilitiesOf(target);
+      memo.set(target, started);
+      started.catch(() => {
+        if (memo.get(target) === started) memo.delete(target);
       });
-      const accepted = remaining.filter((target) => !refusals.has(target));
-      const [first] = refusals.values();
-      if (accepted.length === 0 && first !== undefined) {
-        throw invalidRequest('sampling_not_accepted', [...refusals.values()].map((refusal) => refusal.message).join('; '), first.field);
+      return started;
+    };
+    const { sampling } = requirements;
+    const samples = sampling !== undefined && carriesSampling(sampling);
+    const judge = (target: TargetRuntime, capabilities: Capabilities): Refusal | undefined => {
+      if (requirements.tools === true) {
+        const { toolCalling } = capabilities;
+        if (typeof toolCalling !== 'string') {
+          throw new UnprobedTarget(invalidRequest('precondition_failed', preconditionText(toolCalling.message, toolCalling.evidence, toolCalling.remedy), null, 412));
+        }
+        if (toolCalling === 'none') {
+          return { stage: REFUSAL_STAGES.tools, error: invalidRequest('capability_unsupported', `no target of model alias "${alias}" supports tool calling`, 'tools') };
+        }
       }
-      remaining = accepted;
-    }
-    return remaining;
+      if (requirements.images === true && !capabilities.imageInput) {
+        return { stage: REFUSAL_STAGES.images, error: invalidRequest('capability_unsupported', `no target of model alias "${alias}" supports image input`, 'input') };
+      }
+      if (sampling !== undefined && samples) {
+        const refusal = samplingRefusalOf(sampling, { name: target.name, kind: target.adapter.kind }, target.adapter.sampling, capabilities);
+        if (refusal !== undefined) return { stage: REFUSAL_STAGES.sampling, error: invalidRequest('sampling_not_accepted', refusal.message, refusal.field) };
+      }
+      const { toolChoice } = requirements;
+      if (toolChoice !== undefined && constrainsToolChoice(toolChoice.tool_choice) && typeof capabilities.toolCalling === 'string') {
+        try {
+          resolveToolChoice(
+            {
+              model: target.model,
+              input: [],
+              ...(toolChoice.tools === null || toolChoice.tools === undefined ? {} : { tools: [...toolChoice.tools] }),
+              ...(toolChoice.tool_choice === null || toolChoice.tool_choice === undefined ? {} : { tool_choice: toolChoice.tool_choice }),
+            },
+            capabilities.allowedTools,
+            target.name,
+            target.adapter.toolChoiceWire(capabilities, { name: target.name, model: target.model }),
+          );
+        } catch (error) {
+          if (!(error instanceof UnsupportedInputError)) throw error;
+          return { stage: REFUSAL_STAGES.toolChoice, error: invalidRequest(error.code, error.message, error.param) };
+        }
+      }
+      const { summaryCap } = requirements;
+      if (summaryCap !== undefined && Math.min(summaryTokenCapFor(capabilities), capabilities.maxOutputTokens) < summaryCap) {
+        return {
+          stage: REFUSAL_STAGES.summaryCap,
+          error: invalidRequest(
+            'invalid_summary_cap',
+            'momonga.max_summary_tokens exceeds the largest summary any target of the model alias accepts: the smaller of its summary cap and its maxOutputTokens',
+            'momonga.max_summary_tokens',
+          ),
+        };
+      }
+      const { unknownFields } = requirements;
+      if (unknownFields !== undefined && unknownFields.keys.length > 0 && !target.adapter.relaysClientBody.includes(unknownFields.operation)) {
+        return {
+          stage: REFUSAL_STAGES.unknownFields,
+          error: unknownParameterError(unknownFields.keys, alias, `no target of the alias relays a ${unknownFields.operation} request body upstream`),
+        };
+      }
+      return undefined;
+    };
+    const capabilitiesForAttempt = async (target: TargetRuntime): Promise<Capabilities> => {
+      const capabilities = await resolve(target);
+      if (!verdicts.has(target)) verdicts.set(target, judge(target, capabilities));
+      const refusal = verdicts.get(target);
+      if (refusal !== undefined) throw new CandidateRefused(refusal);
+      return capabilities;
+    };
+    const judging = requirements.tools === true || requirements.images === true || samples || constrainsToolChoice(requirements.toolChoice?.tool_choice) || requirements.summaryCap !== undefined || (requirements.unknownFields?.keys.length ?? 0) > 0;
+    if (!judging) return { targets: [...all], refusals: [], capabilitiesOf: capabilitiesForAttempt };
+    const resolved = await Promise.all(all.map((target) => resolve(target).catch(() => undefined)));
+    const refusals: Refusal[] = [];
+    const kept: TargetRuntime[] = [];
+    all.forEach((target, index) => {
+      const capabilities = resolved[index];
+      if (capabilities === undefined) {
+        kept.push(target);
+        return;
+      }
+      let refusal: Refusal | undefined;
+      try {
+        refusal = judge(target, capabilities);
+      } catch (error) {
+        if (error instanceof UnprobedTarget) throw error.error;
+        throw error;
+      }
+      verdicts.set(target, refusal);
+      if (refusal === undefined) kept.push(target);
+      else refusals.push(refusal);
+    });
+    if (kept.length === 0) throw refusalErrorOf(refusals);
+    return { targets: kept, refusals, capabilitiesOf: capabilitiesForAttempt };
   };
 
   return {

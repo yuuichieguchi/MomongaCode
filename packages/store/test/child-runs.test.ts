@@ -141,15 +141,15 @@ describe('shared budget', () => {
 });
 
 describe('cancel cascade', () => {
-  it('cancels queued children at once and signals running ones when the parent is cancelled', () => {
+  it('moves queued and running children to CANCELLING when the parent is cancelled, each with the status it had', () => {
     const h = harness();
     const { parent } = runningParent(h);
     const running = spawn(h.store, mustRun(h.store, parent.id), 'call-1');
     mustClaim(h.store, 'w-child');
     const queued = spawn(h.store, mustRun(h.store, parent.id), 'call-2');
     h.store.requestCancel(parent.id);
-    expect(mustRun(h.store, running.run.id)).toMatchObject({ status: 'CANCELLING', cancelRequested: true });
-    expect(mustRun(h.store, queued.run.id).status).toBe('CANCELLED');
+    expect(mustRun(h.store, running.run.id)).toMatchObject({ status: 'CANCELLING', cancelRequested: true, cancelOrigin: 'RUNNING' });
+    expect(mustRun(h.store, queued.run.id)).toMatchObject({ status: 'CANCELLING', cancelRequested: true, cancelOrigin: 'QUEUED' });
   });
 
   it('reaches grandchildren', () => {
@@ -159,24 +159,24 @@ describe('cancel cascade', () => {
     const grandchild = h.store.createChildRun({ parentRunId: child.run.id, parentCallId: 'g', input: 'x', pins: {}, modelAlias: 'fm' });
     if (grandchild.kind !== 'created') throw new Error('expected a grandchild');
     h.store.requestCancel(parent.id);
-    expect(mustRun(h.store, child.run.id).status).toBe('CANCELLED');
-    expect(mustRun(h.store, grandchild.run.id).status).toBe('CANCELLED');
+    expect(mustRun(h.store, child.run.id).status).toBe('CANCELLING');
+    expect(mustRun(h.store, grandchild.run.id).status).toBe('CANCELLING');
   });
 
-  it('cancels the open children when the parent ends for another reason', () => {
+  it('cancels the open children when the parent ends for another reason', async () => {
     const h = harness();
     const { parent, claim } = runningParent(h);
     const child = spawn(h.store, mustRun(h.store, parent.id), 'call-1');
-    expect(h.store.transition(claim, ['RUNNING'], 'FAILED', { error: { code: 'x', message: 'y' } }).kind).toBe('ok');
-    expect(mustRun(h.store, child.run.id).status).toBe('CANCELLED');
+    expect((await h.store.transition(claim, ['RUNNING'], 'FAILED', { error: { code: 'x', message: 'y' } })).kind).toBe('ok');
+    expect(mustRun(h.store, child.run.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'QUEUED' });
   });
 
-  it('leaves a finished child alone', () => {
+  it('leaves a finished child alone', async () => {
     const h = harness();
     const { parent } = runningParent(h);
     const child = spawn(h.store, mustRun(h.store, parent.id), 'call-1');
     const childClaim = mustClaim(h.store, 'w-child');
-    h.store.transition(childClaim, ['RUNNING'], 'COMPLETED');
+    await h.store.transition(childClaim, ['RUNNING'], 'COMPLETED');
     h.store.requestCancel(parent.id);
     expect(mustRun(h.store, child.run.id).status).toBe('COMPLETED');
   });
@@ -186,7 +186,7 @@ describe('waiting for a child', () => {
   const awaitChild = (h: ReturnType<typeof harness>, claim: ReturnType<typeof mustClaim>, childId: string, wakeAt = DEADLINE_MS) =>
     h.store.release(claim, 'WAITING_TOOL', wakeAt, { awaits: { runIds: [childId], jobIds: [] } });
 
-  it('parks the parent until the child ends and then queues it', () => {
+  it('parks the parent until the child ends and then queues it', async () => {
     const h = harness();
     const { parent, claim } = runningParent(h);
     const child = spawn(h.store, mustRun(h.store, parent.id), 'call-1');
@@ -194,24 +194,27 @@ describe('waiting for a child', () => {
     expect(mustRun(h.store, parent.id)).toMatchObject({ status: 'WAITING_TOOL', leaseOwner: null });
 
     const childClaim = mustClaim(h.store, 'w-child');
-    h.store.transition(childClaim, ['RUNNING'], 'COMPLETED');
+    await h.store.transition(childClaim, ['RUNNING'], 'COMPLETED');
     expect(mustRun(h.store, parent.id)).toMatchObject({ status: 'QUEUED', availableAt: START_MS });
   });
 
-  it('wakes the parent when the child is cancelled or fails', () => {
+  it('wakes the parent when the child is cancelled and its cancel is finished', async () => {
     const h = harness();
     const { parent, claim } = runningParent(h);
     const child = spawn(h.store, mustRun(h.store, parent.id), 'call-1');
     awaitChild(h, claim, child.run.id);
     h.store.requestCancel(child.run.id);
+    expect(mustRun(h.store, parent.id).status).toBe('WAITING_TOOL');
+    expect(await h.store.finishCancelled(() => undefined)).toEqual([child.run.id]);
     expect(mustRun(h.store, parent.id).status).toBe('QUEUED');
   });
 
-  it('queues the parent at once when the child already ended before it could park', () => {
+  it('queues the parent at once when the child already ended before it could park', async () => {
     const h = harness();
     const { parent, claim } = runningParent(h);
     const child = spawn(h.store, mustRun(h.store, parent.id), 'call-1');
     h.store.requestCancel(child.run.id);
+    expect(await h.store.finishCancelled(() => undefined)).toEqual([child.run.id]);
     expect(awaitChild(h, claim, child.run.id).kind).toBe('ok');
     expect(mustRun(h.store, parent.id).status).toBe('QUEUED');
   });
@@ -225,14 +228,14 @@ describe('waiting for a child', () => {
     expect(mustRun(h.store, parent.id).status).toBe('WAITING_HUMAN');
   });
 
-  it('leaves a parent that waits for a human only at the decision or the expiry of the approval, whatever its child did', () => {
+  it('leaves a parent that waits for a human only at the decision or the expiry of the approval, whatever its child did', async () => {
     const decided = harness();
     const first = runningParent(decided);
     const firstChild = spawn(decided.store, mustRun(decided.store, first.parent.id), 'call-1');
     const firstApproval = parkWaitingHuman(decided.store, first.claim);
     decided.store.requestCancel(firstChild.run.id);
     expect(mustRun(decided.store, first.parent.id).status).toBe('WAITING_HUMAN');
-    expect(decided.store.resolveApproval(firstApproval.id, 'allow_once').kind).toBe('ok');
+    expect((await decided.store.resolveApproval(firstApproval.id, 'allow_once')).kind).toBe('ok');
     expect(mustRun(decided.store, first.parent.id).status).toBe('QUEUED');
 
     const expired = harness();
@@ -241,23 +244,23 @@ describe('waiting for a child', () => {
     const secondApproval = parkWaitingHuman(expired.store, second.claim);
     expired.store.requestCancel(secondChild.run.id);
     expired.clock.set(secondApproval.expiresAt - 1);
-    expect(expired.store.expireApprovals(expired.clock.now())).toEqual([]);
+    expect(await expired.store.expireApprovals(expired.clock.now(), (error: unknown) => { throw error; })).toEqual([]);
     expect(mustRun(expired.store, second.parent.id).status).toBe('WAITING_HUMAN');
     expired.clock.set(secondApproval.expiresAt);
-    expect(expired.store.expireApprovals(expired.clock.now())).toEqual([second.parent.id]);
+    expect(await expired.store.expireApprovals(expired.clock.now(), (error: unknown) => { throw error; })).toEqual([second.parent.id]);
     expect(mustRun(expired.store, second.parent.id)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
   });
 
-  it('wakes a parked parent when its wake time arrives', () => {
+  it('wakes a parked parent when its wake time arrives', async () => {
     const h = harness();
     const { parent, claim } = runningParent(h);
     const child = spawn(h.store, mustRun(h.store, parent.id), 'call-1');
     awaitChild(h, claim, child.run.id, START_MS + 5000);
     h.clock.set(START_MS + 4999);
-    expect(h.store.expireApprovals(h.clock.now())).toEqual([]);
+    expect(await h.store.expireApprovals(h.clock.now(), (error: unknown) => { throw error; })).toEqual([]);
     expect(mustRun(h.store, parent.id).status).toBe('WAITING_TOOL');
     h.clock.set(START_MS + 5000);
-    expect(h.store.expireApprovals(h.clock.now())).toEqual([parent.id]);
+    expect(await h.store.expireApprovals(h.clock.now(), (error: unknown) => { throw error; })).toEqual([parent.id]);
     expect(mustRun(h.store, parent.id).status).toBe('QUEUED');
   });
 });
@@ -273,11 +276,11 @@ describe('permission inheritance', () => {
     expect(h.store.getSession(child.session.id)?.permissionMode).toBe('acceptEdits');
   });
 
-  it('leaves the sessions of finished children alone', () => {
+  it('leaves the sessions of finished children alone', async () => {
     const h = harness();
     const { session, parent } = runningParent(h);
     const child = spawn(h.store, mustRun(h.store, parent.id), 'call-1');
-    h.store.transition(mustClaim(h.store, 'w-child'), ['RUNNING'], 'COMPLETED');
+    await h.store.transition(mustClaim(h.store, 'w-child'), ['RUNNING'], 'COMPLETED');
     h.store.setPermissionMode(session.id, 'plan');
     expect(h.store.getSession(child.session.id)?.permissionMode).toBe('default');
   });

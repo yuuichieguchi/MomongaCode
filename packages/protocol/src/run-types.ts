@@ -310,7 +310,14 @@ export type RunState = {
   toolCallCounts: Record<string, number>;
   steps: Record<number, { toolChoice: string; summary: boolean }>;
   lastResponse?: { step: number; incomplete: boolean; incompleteReason?: string; refusal: boolean; callIds: string[] };
-  loadedInstructions: { path: string; textSha256: string; seq: number }[];
+  loadedInstructions: { path: string; textSha256: string; seq: number; content: string }[];
+  hookCompletions: Record<string, number>;
+  stopHookRanSinceResponse: boolean;
+  stopHookContinuations: number;
+  compactions: number;
+  lastCompactionSeq: number;
+  callResults: Record<string, 'completed' | 'failed'>;
+  formsSinceCompaction: Record<string, number>;
   governingLoaded?: { active: { id: string; textSha256: string }[]; conflicts: { target: string; ids: string[] }[] };
   memoriesLoaded?: { id: string; status: MemoryStatus }[];
   activatedSkills: ActivatedSkillEntry[];

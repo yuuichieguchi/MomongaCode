@@ -3,10 +3,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
-import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, openDatabase, sha256Hex } from '@momonga/foundation';
 import type { RunEventPayload } from '@momonga/protocol';
-import { openRuntimeStore } from '@momonga/store';
-import type { Claim, Run, RuntimeStore, RuntimeStoreOptions } from '@momonga/store';
+import { JournalThreadError, createJournalReader, openRuntimeStore } from '@momonga/store';
+import type { Claim, ContributionPreparer, Run, RuntimeStore, RuntimeStoreOptions, TerminalContribution } from '@momonga/store';
 import { createFakeClock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 
@@ -35,11 +35,28 @@ export type StoreOptions = {
   maxAttempts?: number;
   maxTotalAttempts?: number;
   onCommit?: RuntimeStoreOptions['onCommit'];
-  contribution?: RuntimeStoreOptions['contribution'];
+  contribution?: TerminalContribution;
+  preparer?: RuntimeStoreOptions['preparer'];
   home?: string;
 };
 
-export const openStoreAt = (dbPath: string, clock: FakeClock, options: StoreOptions = {}): RuntimeStore => {
+const unexercised = (): Promise<never> => Promise.reject(new JournalThreadError('this store test double answers no journal facts'));
+
+export const noJournalFacts = { verdict: unexercised, evidence: unexercised, reflectionInput: unexercised };
+
+export const hookPreparer = (hook: TerminalContribution, dbPath: string): ContributionPreparer => ({
+  ...noJournalFacts,
+  measure: async (request) => {
+    const db = openDatabase(dbPath);
+    try {
+      return createJournalReader(db).measure(hook, request);
+    } finally {
+      db.close();
+    }
+  },
+});
+
+export const openStoreAt =(dbPath: string, clock: FakeClock, options: StoreOptions = {}): RuntimeStore => {
   const store = openRuntimeStore({
     path: dbPath,
     home: options.home ?? path.dirname(dbPath),
@@ -48,7 +65,8 @@ export const openStoreAt = (dbPath: string, clock: FakeClock, options: StoreOpti
     maxAttempts: options.maxAttempts ?? 5,
     maxTotalAttempts: options.maxTotalAttempts ?? 1000,
     ...(options.onCommit === undefined ? {} : { onCommit: options.onCommit }),
-    ...(options.contribution === undefined ? {} : { contribution: options.contribution }),
+    ...(options.contribution === undefined ? {} : { preparer: hookPreparer(options.contribution, dbPath) }),
+    ...(options.preparer === undefined ? {} : { preparer: options.preparer }),
   });
   registerCleanup(() => store.close());
   return store;
@@ -95,6 +113,23 @@ export const cancel = (store: RuntimeStore, runId: string): Run => {
   const result = store.requestCancel(runId);
   if (result.kind !== 'ok') throw new Error(`expected run ${runId} to exist, got ${result.kind}`);
   return result.run;
+};
+
+export const deadLetterAll = async (store: RuntimeStore): Promise<string[]> => {
+  const failures: unknown[] = [];
+  const ended = await store.deadLetterExhausted((error) => void failures.push(error));
+  if (failures.length > 0) throw failures[0];
+  return ended;
+};
+
+export const cancelToEnd =async (store: RuntimeStore, runId: string): Promise<Run> => {
+  const requested = cancel(store, runId);
+  if (requested.status !== 'CANCELLING') throw new Error(`expected run ${runId} to become CANCELLING, got ${requested.status}`);
+  const failures: unknown[] = [];
+  const finished = await store.finishCancelled((error) => void failures.push(error));
+  if (failures.length > 0) throw failures[0];
+  if (!finished.includes(runId)) throw new Error(`expected the sweep to finish run ${runId}`);
+  return mustRun(store, runId);
 };
 
 export const ENVELOPE_KEYS = ['id', 'runId', 'sessionId', 'seq', 'step', 'leaseToken', 'createdAt'] as const;

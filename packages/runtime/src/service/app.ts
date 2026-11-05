@@ -7,7 +7,7 @@ import type { Clock } from '@momonga/foundation';
 import { AUTO_MODE_UNAVAILABLE, RUN_STATUSES } from '@momonga/protocol';
 import type { Capabilities, CostBreakdownView, GatewayCostReportView, PermissionMode, RunStatus, RunTraceView } from '@momonga/protocol';
 import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
-import { sameRunRequest } from '@momonga/store';
+import { JournalThreadError, sameRunRequest } from '@momonga/store';
 import type { ContextCharge, Run, RuntimeStore, Session } from '@momonga/store';
 import { GatewayRequestError } from '../gateway-client.ts';
 import type { AgentCatalogPort, SkillsPort } from '../ports.ts';
@@ -16,6 +16,7 @@ import {
   ApiError,
   conflict,
   configError,
+  contributionUnavailable,
   errorResponse,
   imageInputUnsupported,
   idempotencyKeyReused,
@@ -78,8 +79,6 @@ export type RunAppDeps = {
   keepAliveMs: number;
   maxBodyBytes: number;
   closeSignal: AbortSignal;
-  cancelUpstream?: (runId: string) => Promise<void>;
-  releaseStopped(runId: string, signal: AbortSignal): Promise<void>;
   runTrace: (runId: string) => Promise<RunTraceView | undefined>;
   runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ report: GatewayCostReportView; text: string }>;
   runCostBreakdown: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ breakdown: CostBreakdownView; text: string }>;
@@ -372,16 +371,8 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
 
   const cancelRun: Handler = (context) => {
     const id = context.req.param('id') ?? '';
-    const before = store.getRun(id);
     const result = store.requestCancel(id);
     if (result.kind === 'not_found') throw notFound(`run ${id} does not exist`);
-    if (deps.cancelUpstream !== undefined && before?.status === 'QUEUED' && result.changed && result.run.status === 'CANCELLED') {
-      const cancelUpstream = deps.cancelUpstream;
-      void (async () => cancelUpstream(id))().catch(deps.onError);
-    }
-    if ((before?.status === 'WAITING_HUMAN' || before?.status === 'QUEUED') && result.changed && result.run.status === 'CANCELLED') {
-      void (async () => deps.releaseStopped(id, deps.closeSignal))().catch(deps.onError);
-    }
     const settled = isTerminalStatus(result.run.status) && !result.changed;
     return json({ run: toRunView(result.run) }, settled ? 200 : 202);
   };
@@ -455,7 +446,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   const resolveApproval: Handler = async (context) => {
     const id = context.req.param('id') ?? '';
     const body = validateBody<ResolveApprovalBody>('ResolveApprovalRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
-    const result = store.resolveApproval(id, body.optionId);
+    const result = await store.resolveApproval(id, body.optionId);
     switch (result.kind) {
       case 'not_found':
         throw notFound(`approval ${id} does not exist`);
@@ -553,6 +544,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   app.notFound(() => errorResponse(notFound('no such route')));
   app.onError((error) => {
     if (error instanceof ApiError) return errorResponse(error);
+    if (error instanceof JournalThreadError) return errorResponse(contributionUnavailable(error.message));
     deps.onError(error);
     return internalErrorResponse();
   });

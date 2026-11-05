@@ -42,11 +42,11 @@ describe('worker approvals for a whole batch', () => {
     const [first, second] = requests;
     if (first === undefined || second === undefined) throw new Error('expected two permission requests');
 
-    env.resolveApproval(run.id, 'allow_once', first.approvalId);
+    await env.resolveApproval(run.id, 'allow_once', first.approvalId);
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
     expect(await env.runOnce(env.worker('worker-2'))).toBe('idle');
 
-    env.resolveApproval(run.id, 'allow_once', second.approvalId);
+    await env.resolveApproval(run.id, 'allow_once', second.approvalId);
     expect(env.run(run.id).status).toBe('QUEUED');
 
     expect(await env.runOnce(env.worker('worker-3'))).toBe('yielded');

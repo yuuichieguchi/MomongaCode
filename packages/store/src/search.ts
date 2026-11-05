@@ -86,7 +86,7 @@ export const createSearchStore = (db: DatabaseSync): SearchStore => {
   const runDocument = db.prepare("SELECT * FROM search_docs WHERE run_id = :runId AND level = 'run'");
   const runRow = db.prepare('SELECT r.id, r.origin, s.cwd AS project FROM runs r JOIN sessions s ON s.id = r.session_id WHERE r.id = :runId');
   const toolCallEvent = db.prepare(
-    "SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.call' AND json_extract(payload_json, '$.callId') = :callId LIMIT 1",
+    "SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.call' AND call_id = :callId LIMIT 1",
   );
   const rangeEvents = db.prepare(
     `SELECT *, length(payload_json) AS payload_chars FROM events WHERE run_id = :runId AND seq >= :seqFrom AND seq <= :seqTo AND (:step IS NULL OR step = :step) ORDER BY seq LIMIT :limit`,

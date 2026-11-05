@@ -258,7 +258,6 @@ const createAutoChatCompletionsAdapter = async (
       await probed.verify(signal);
       return upstream;
     },
-    toolCalling: () => probed.toolCalling(),
     keywordSupport: () => probed.keywordSupport(),
     capabilities: () => probed.capabilities(),
     onSummaryReasoning: (_target, hiddenReasoningTokens) => probed.raiseHeadroom(hiddenReasoningTokens),
@@ -529,7 +528,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       };
       switch (target.adapter) {
         case 'chat-completions':
-          adapters[name] = createChatCompletionsAdapter({ ...common, toolCalling: () => mode, apiKey: readKey });
+          adapters[name] = createChatCompletionsAdapter({ ...common, apiKey: readKey });
           break;
         case 'open-responses':
           adapters[name] = createOpenResponsesAdapter({ ...common, apiKey: readKey });

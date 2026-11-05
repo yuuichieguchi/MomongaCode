@@ -142,7 +142,7 @@ describe('draining (fake timers)', () => {
 
     const cancelled = await env.http('POST', `/v1/runs/${cancelRun.id}/cancel`);
     expect(cancelled.status).toBe(202);
-    expect(cancelled.json.run.status).toBe('CANCELLED');
+    expect(cancelled.json.run.status).toBe('CANCELLING');
 
     expect((await env.http('GET', `/v1/runs/${approvalRun.id}/approvals`)).json.approvals.map((approval: { id: string }) => approval.id)).toEqual([approvalId]);
     expect((await env.http('GET', `/v1/approvals/${approvalId}`)).status).toBe(200);

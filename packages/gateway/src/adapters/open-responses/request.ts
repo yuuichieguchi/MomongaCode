@@ -7,6 +7,7 @@ import { ownReasoning } from '../shared/reasoning-origin.ts';
 import { carriedSamplingOf } from '../shared/sampling.ts';
 
 export type OpenResponsesRequestBody = {
+  [unknownField: string]: unknown;
   model: string;
   input: InputItem[];
   stream: true;
@@ -65,6 +66,7 @@ const itemOf = (item: AdapterInputItem, origin: ReasoningOrigin): InputItem | un
 export const buildResponsesBody = (request: AdapterRequest, origin: ReasoningOrigin): OpenResponsesRequestBody => {
   const tools = request.tools ?? [];
   return {
+    ...request.unknownFields,
     model: request.model,
     input: request.input.flatMap((item) => itemOf(item, origin) ?? []),
     stream: true,

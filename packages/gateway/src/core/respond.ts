@@ -1,6 +1,7 @@
 import { uuidv7 } from '@momonga/foundation';
 import type {
   AdapterRequest,
+  Capabilities,
   CreateResponseBody,
   ErrorType,
   FailedResponseResource,
@@ -30,14 +31,17 @@ import { UpstreamFailure, emptyStreamFailure, failureFrom, runWithRetry } from '
 import type { RetryOutcome } from './retry.ts';
 import type { Release } from './admission.ts';
 import { adapterContextOf } from './adapter-context.ts';
-import type { TargetRuntime } from './router.ts';
+import type { Narrowed, TargetRuntime } from './router.ts';
+import { CandidateRefused, UnprobedTarget } from './candidate-refusal.ts';
 import type { RunControl } from './run.ts';
 import type { Services } from './services.ts';
 import type { CommitRequest } from './store.ts';
+import type { UnknownFields } from './unknown-fields.ts';
 
 export type ResponseJob = {
   alias: string;
   body: CreateResponseBody;
+  unknownFields: UnknownFields;
   clientInput: InputItem[];
   idempotency: { key: string; digest: string } | undefined;
   deadlineAt: number | undefined;
@@ -53,6 +57,7 @@ type Opened = {
   held: StreamEvent[];
   release: Release;
   span: AttemptSpan;
+  capabilities: Capabilities;
 };
 
 type Pulled = { kind: 'event'; event: StreamEvent } | { kind: 'failed'; error: unknown };
@@ -105,6 +110,7 @@ const adapterRequestFor = (job: ResponseJob, resolved: ResolvedInput, target: Ta
     ...(body.text === undefined || body.text === null ? {} : { text: body.text }),
     ...(body.prompt_cache_key === undefined || body.prompt_cache_key === null ? {} : { promptCacheKey: body.prompt_cache_key }),
     ...(cacheMarks === undefined ? {} : { cacheMarks }),
+    ...(Object.keys(job.unknownFields).length === 0 ? {} : { unknownFields: job.unknownFields }),
   };
 };
 
@@ -144,28 +150,42 @@ const openAttempt = async (
   job: ResponseJob,
   resolved: ResolvedInput,
   target: TargetRuntime,
+  narrowed: Narrowed,
   attemptNumber: number,
   signal: AbortSignal,
 ): Promise<Opened> => {
   const release = await target.gate.acquire(signal);
-  const span = startAttemptSpan({
-    telemetry: services.telemetry,
-    parent: job.parent,
-    providerName: target.provider,
-    billing: target.billing,
-    requestModel: target.model,
-    maxTokens: job.body.max_output_tokens ?? undefined,
-    stream: job.body.stream === true,
-    runId: job.runId,
-    step: job.step,
-    attempt: attemptNumber,
-    targetName: target.name,
-    role: job.role,
-    startedAtMs: services.clock.now(),
-    request: { input: resolved.forAdapter, instructions: job.body.instructions, tools: job.body.tools },
-  });
+  const startSpan = (): AttemptSpan =>
+    startAttemptSpan({
+      telemetry: services.telemetry,
+      parent: job.parent,
+      providerName: target.provider,
+      billing: target.billing,
+      requestModel: target.model,
+      maxTokens: job.body.max_output_tokens ?? undefined,
+      stream: job.body.stream === true,
+      runId: job.runId,
+      step: job.step,
+      attempt: attemptNumber,
+      targetName: target.name,
+      role: job.role,
+      startedAtMs: services.clock.now(),
+      request: { input: resolved.forAdapter, instructions: job.body.instructions, tools: job.body.tools },
+    });
+  let capabilities: Capabilities;
   try {
-    const stream = target.adapter.create(adapterRequestFor(job, resolved, target), adapterContextOf(services, target, signal, attemptNumber));
+    capabilities = await narrowed.capabilitiesOf(target);
+  } catch (error) {
+    release();
+    if (error instanceof CandidateRefused || error instanceof UnprobedTarget) throw error;
+    const failure = failureFrom(target.adapter, error, signal);
+    const failed = startSpan();
+    failed.fail(errorTypeOf(failure), failure, messageOf(failure));
+    throw failure;
+  }
+  const span = startSpan();
+  try {
+    const stream = target.adapter.create(adapterRequestFor(job, resolved, target), adapterContextOf(services, target, capabilities, signal, attemptNumber));
     const iterator = stream[Symbol.asyncIterator]();
     const held: StreamEvent[] = [];
     for (;;) {
@@ -177,7 +197,7 @@ const openAttempt = async (
       if (carriesOutput(step.value) || TERMINAL_TYPES.has(step.value.type)) break;
     }
     span.committed();
-    return { iterator, held, release, span };
+    return { iterator, held, release, span, capabilities };
   } catch (error) {
     release();
     const failure = failureFrom(target.adapter, error, signal);
@@ -462,7 +482,7 @@ async function* relaySteps(
     estimatedUsage(
       estimateInputTokens(
         { input: resolved.forAdapter, instructions: job.body.instructions, tools: job.body.tools ?? undefined },
-        (await services.router.capabilitiesOf(target)).imageTokens,
+        opened.capabilities.imageTokens,
       ),
       estimateOutputTokens(upstreamOutput),
     );
@@ -552,15 +572,22 @@ async function* relaySteps(
 export async function* executeResponse(services: Services, job: ResponseJob, control: RunControl): AsyncGenerator<StreamEvent> {
   const { signal } = control;
   const resolved = resolveInput(services.store, services.codec, job.body.previous_response_id, job.clientInput, job.connection);
-  const candidates = await services.router.candidates(job.alias, { tools: (job.body.tools?.length ?? 0) > 0, images: inputHasImages(resolved.forAdapter), sampling: job.body });
+  const narrowed = await services.router.candidates(job.alias, {
+    tools: (job.body.tools?.length ?? 0) > 0,
+    images: inputHasImages(resolved.forAdapter),
+    sampling: job.body,
+    toolChoice: { tools: job.body.tools, tool_choice: job.body.tool_choice },
+    unknownFields: { keys: Object.keys(job.unknownFields), operation: 'create' },
+  });
   const disarm = armDeadline(services, job.deadlineAt, control.abort);
   try {
     const outcome = await runWithRetry({
-      candidates,
+      candidates: narrowed.targets,
+      refusals: narrowed.refusals,
       policy: { ...services.config.retry, random: services.random, clock: services.clock, timers: services.timers },
       signal,
       deadlineAt: job.deadlineAt,
-      attempt: (target, attemptNumber) => openAttempt(services, job, resolved, target, attemptNumber, signal),
+      attempt: (target, attemptNumber) => openAttempt(services, job, resolved, target, narrowed, attemptNumber, signal),
     });
     yield* relay(services, job, resolved, outcome, control);
   } finally {

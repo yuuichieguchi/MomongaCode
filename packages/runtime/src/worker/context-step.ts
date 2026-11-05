@@ -25,7 +25,7 @@ import { GatewayRequestError } from '../gateway-client.ts';
 import { recallQueryOf } from '../memory/recall-query.ts';
 import type { WorkerBlobs } from './types.ts';
 import { arrivalsOf } from './context-arrivals.ts';
-import { FORM_EVENT_TYPES, formsSinceCompaction, renderedFormsOf } from './context-forms.ts';
+import { renderedFormsOf } from './context-forms.ts';
 import type { ClaimContext } from './claim-context.ts';
 import { touchedPathsOf } from './touched-paths.ts';
 import { wrapUpInstructionFor } from './wrap-up.ts';
@@ -129,7 +129,7 @@ const offeredInputOf = (
   const recorded = admittedFloors.get(ctx);
   const admittedTools = recorded !== undefined && (ctx.token.observedCapacity || recorded.offered === offered) ? recorded : undefined;
   const admittedFloor = admittedTools !== undefined && admittedTools.governing === governingKey ? admittedTools : undefined;
-  const rendered = ctx.token.observedCapacity ? renderedFormsOf(options.store, ctx.run.id, state.lastSeq) : undefined;
+  const rendered = ctx.token.observedCapacity ? renderedFormsOf(options.store, state) : undefined;
   const wrapUpItems: InputItem[] = wrapUp === undefined ? [] : [{ type: 'message', role: 'user', content: wrapUpInstructionFor(wrapUp) }];
   const input: BuildContextInput = {
     capabilities: ctx.capabilities,
@@ -166,7 +166,7 @@ const offeredInputOf = (
     ...(ctx.token.cachePrefix
       ? {
           layout: 'cachePrefix' as const,
-          arrivals: arrivalsOf(options.store, ctx.run.id, state),
+          arrivals: arrivalsOf(state),
           ...(state.memoriesLoaded === undefined ? {} : { pinnedMemoryIds: state.memoriesLoaded.map((memory) => memory.id) }),
         }
       : {}),
@@ -437,7 +437,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
 
 const interrupted = (ctx: ClaimContext): boolean => ctx.control.signal.aborted || ctx.control.cancelRequested();
 
-export const cancelIfInterrupted = (ctx: ClaimContext): 'done' | undefined => {
+export const cancelIfInterrupted = async (ctx: ClaimContext): Promise<'done' | undefined> => {
   const failure = ctx.control.failure();
   if (failure !== undefined) throw failure;
   if (ctx.control.leaseLost()) ctx.control.lost();
@@ -493,7 +493,7 @@ const recordContextFacts = (ctx: ClaimContext, built: BuiltContext): void => {
 
 const recordEvictions = (ctx: ClaimContext, evictions: readonly ContextEviction[]): void => {
   const state = ctx.journal.state;
-  const recordedForms = ctx.token.observedCapacity ? formsSinceCompaction(ctx.options.store.readRunEventsOfTypes(ctx.run.id, [...FORM_EVENT_TYPES])) : undefined;
+  const recordedForms = ctx.token.observedCapacity ? new Map(Object.entries(state.formsSinceCompaction)) : undefined;
   const unreflected = evictions.filter((eviction) => {
     const entry = state.history.find((candidate) => candidate.callId === eviction.callId && candidate.item.type === 'function_call_output');
     if (entry === undefined) return false;
@@ -513,11 +513,11 @@ const recordEvictions = (ctx: ClaimContext, evictions: readonly ContextEviction[
   );
 };
 
-export const recoverRejectedCompaction = (ctx: ClaimContext, error: unknown, position?: { step: number; attempt: number }): 'recovered' | 'done' => {
+export const recoverRejectedCompaction = async (ctx: ClaimContext, error: unknown, position?: { step: number; attempt: number }): Promise<'recovered' | 'done'> => {
   const summary = ctx.journal.state.summary;
   if (!(error instanceof GatewayRequestError) || error.code !== 'invalid_compaction' || summary?.item.type !== 'compaction') throw error;
   if (summary.summary === '') {
-    ctx.terminals.finish('FAILED', {
+    await ctx.terminals.finish('FAILED', {
       error: {
         code: 'compaction_unverifiable',
         message: 'The gateway rejected the compaction item of this run and its summary text was not recorded, so the conversation cannot be rebuilt.',
@@ -601,7 +601,7 @@ const budgetStopNotice = (ctx: ClaimContext, error: ContextOverflowError, attemp
   return (
     `The context needs ${error.inputTokens} tokens but at most ${error.ceiling} fit (window ${W}, output reserve ${R}, estimation margin ${W - R - error.ceiling}). ` +
     `The fixed prefix takes ${prefix}. ` +
-    `Earlier in this run: ${ctx.journal.state.evicted.length} tool outputs were replaced by handles and ${ctx.journal.countRecorded('context.compacted') - attempt.successes} compaction(s) were recorded. ` +
+    `Earlier in this run: ${ctx.journal.state.evicted.length} tool outputs were replaced by handles and ${ctx.journal.state.compactions - attempt.successes} compaction(s) were recorded. ` +
     `Final attempt: ${attempt.attempts} compaction(s) ran; no further compaction was possible because ${reason}; ` +
     `${protectionClause(error)}; ${wrapUpClause}.`
   );
@@ -634,37 +634,37 @@ const buildNextUnguarded = async (ctx: ClaimContext, options: { wrapUp?: WrapUpR
       if (error instanceof GatewayRequestError) delete ctx.control.inFlight.compactionKey;
       if (error instanceof GatewayRequestError && error.code === 'invalid_compaction') {
         attempt.attempts -= 1;
-        return recoverRejectedCompaction(ctx, error) === 'done' ? 'done' : 'retry';
+        return (await recoverRejectedCompaction(ctx, error)) === 'done' ? 'done' : 'retry';
       }
       throw error;
     }
   };
 
-  const stop = (error: ContextOverflowError, clause: string): BuildOutcome => {
+  const stop = async (error: ContextOverflowError, clause: string): Promise<BuildOutcome> => {
     ctx.journal.append([{ type: 'notice', level: 'error', message: budgetStopNotice(ctx, error, attempt, clause), code: 'context_budget_stop' }]);
-    ctx.terminals.finish('STOPPED', { stopReason: 'budget' });
+    await ctx.terminals.finish('STOPPED', { stopReason: 'budget' });
     return { kind: 'done' };
   };
 
   for (;;) {
-    if (cancelIfInterrupted(ctx) === 'done') return { kind: 'done' };
+    if ((await cancelIfInterrupted(ctx)) === 'done') return { kind: 'done' };
     let built: BuiltContext;
     try {
       built = await buildOnce(ctx, options.wrapUp, level, trailing);
     } catch (error) {
       if (error instanceof PinnedOverflowError) {
-        ctx.terminals.finish('FAILED', { error: pinnedFailureFor(ctx, error) });
+        await ctx.terminals.finish('FAILED', { error: pinnedFailureFor(ctx, error) });
         return { kind: 'done' };
       }
       if (error instanceof GatewayRequestError && error.code === 'invalid_compaction') {
-        if (recoverRejectedCompaction(ctx, error) === 'done') return { kind: 'done' };
+        if ((await recoverRejectedCompaction(ctx, error)) === 'done') return { kind: 'done' };
         continue;
       }
       if (!(error instanceof ContextOverflowError)) throw error;
       ctx.options.onContextOverflow?.(error);
       if (error.compaction !== undefined && ctx.autoCompact && !levelsWithCompaction.has(level)) {
         levelsWithCompaction.add(level);
-        if (cancelIfInterrupted(ctx) === 'done') return { kind: 'done' };
+        if ((await cancelIfInterrupted(ctx)) === 'done') return { kind: 'done' };
         const result = await compact(error.compaction);
         if (result === 'done') return { kind: 'done' };
         if (result === 'retry') levelsWithCompaction.delete(level);
@@ -686,12 +686,12 @@ const buildNextUnguarded = async (ctx: ClaimContext, options: { wrapUp?: WrapUpR
         }
         throw wrapUpError;
       }
-      if (cancelIfInterrupted(ctx) === 'done') return { kind: 'done' };
+      if ((await cancelIfInterrupted(ctx)) === 'done') return { kind: 'done' };
       recordContextFacts(ctx, wrapUpBuilt);
       recordEvictions(ctx, wrapUpBuilt.evictions);
       return { kind: 'built', built: wrapUpBuilt, wrapUp: { reason: 'context', notice: budgetStopNotice(ctx, error, attempt, 'a final summary was requested') } };
     }
-    if (cancelIfInterrupted(ctx) === 'done') return { kind: 'done' };
+    if ((await cancelIfInterrupted(ctx)) === 'done') return { kind: 'done' };
     if (built.compaction !== undefined && ctx.autoCompact && options.wrapUp === undefined && level === 0 && !proactiveDone) {
       proactiveDone = true;
       const result = await compact(built.compaction);

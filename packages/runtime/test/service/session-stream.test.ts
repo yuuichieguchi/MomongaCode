@@ -13,7 +13,7 @@ const interleaved = async () => {
   env.append(claimA, [{ type: 'notice', level: 'info', message: 'a1' }]);
   expect((await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { permissionMode: 'plan' } })).status).toBe(200);
   env.append(claimA, [{ type: 'notice', level: 'info', message: 'a2' }]);
-  expect(env.store.transition(claimA, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
+  expect((await env.store.transition(claimA, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
   const claimB = env.claimRun(runB.id, 'worker-b');
   env.append(claimB, [{ type: 'notice', level: 'info', message: 'b1' }]);
   expect((await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { permissionMode: 'acceptEdits' } })).status).toBe(200);
@@ -61,7 +61,7 @@ describe('session stream', () => {
   it('stays open after every run is terminal and delivers later session events', async () => {
     const { env, session, runB, claimB } = await interleaved();
     await env.http('POST', `/v1/runs/${runB.id}/cancel`);
-    expect(env.store.transition(claimB, ['CANCELLING'], 'CANCELLED').kind).toBe('ok');
+    expect((await env.store.transition(claimB, ['CANCELLING'], 'CANCELLED')).kind).toBe('ok');
     const stream = await env.stream(`/v1/sessions/${session.id}/events`, { idField: 'id' });
     await stream.until((event) => event.type === 'run.status' && event.runId === runB.id && event.to === 'CANCELLED');
     await waitUntil(() => env.notifier.subscriberCount() === 1, 5000, 'the session subscriber');

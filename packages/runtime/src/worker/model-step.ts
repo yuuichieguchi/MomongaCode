@@ -34,7 +34,7 @@ const limitReached = (ctx: ClaimContext): LimitReason | undefined => {
   return undefined;
 };
 
-const incompleteFailure = (reason: string | undefined, terminals: ClaimContext['terminals']): Flow => {
+const incompleteFailure = (reason: string | undefined, terminals: ClaimContext['terminals']): Promise<Flow> => {
   if (reason === 'max_output_tokens') return terminals.finish('STOPPED', { stopReason: 'max_tokens' });
   if (reason === 'content_filter') return terminals.finish('STOPPED', { stopReason: 'refusal' });
   return terminals.finish('FAILED', {
@@ -289,7 +289,7 @@ const streamRecovering = async (
   try {
     return { kind: 'result', streamed: await streamModel(ctx, body, modelKey(ctx.run.id, position.step, position.attempt), position) };
   } catch (error) {
-    const recovery = recoverRejectedCompaction(ctx, error, position);
+    const recovery = await recoverRejectedCompaction(ctx, error, position);
     delete ctx.control.inFlight.modelKey;
     return { kind: 'flow', flow: recovery === 'done' ? 'done' : 'continue' };
   }
@@ -327,9 +327,7 @@ const loopGuidanceTrailing = (ctx: ClaimContext): InputItem[] => {
   if (!loopGuidancePending(ctx)) return [];
   const { state } = ctx.journal;
   if (state.loopWarned === undefined) throw new Error(`run ${ctx.run.id} has no loop warning to write guidance for`);
-  const statuses = new Map<string, CallResult>(
-    ctx.options.store.readRunEventsOfTypes(ctx.run.id, ['tool.completed']).flatMap((event) => (event.type === 'tool.completed' ? [[event.callId, event.status] as const] : [])),
-  );
+  const statuses = new Map<string, CallResult>(Object.entries(state.callResults));
   const ours = new Map<string, string>(
     state.history.flatMap((entry) => (entry.item.type === 'function_call_output' && entry.callId !== undefined ? [[entry.item.call_id, entry.callId] as const] : [])),
   );
@@ -370,7 +368,7 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
     stream: true,
     metadata: { run_id: ctx.run.id, step: String(step) },
   };
-  if (cancelIfInterrupted(ctx) === 'done') return 'done';
+  if ((await cancelIfInterrupted(ctx)) === 'done') return 'done';
   const position = { step, attempt: 1 };
   const prefixRecord = recordPrefix(ctx, built, summarising);
   const body: CreateResponseBody = { ...plainBody, ...cacheControlsOf(ctx, built, prefixRecord?.prefix) };

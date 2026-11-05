@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { STOP_HOOK_FEEDBACK_PREFIX } from '@momonga/protocol';
 import type { HooksSettings } from '@momonga/protocol';
 import { createUnsandboxed } from '@momonga/sandbox';
-import { STOP_HOOK_FEEDBACK_PREFIX } from '../../src/worker/hook-step.ts';
 import { makeEnv } from './harness.ts';
 import { assistantMessage, callsStep, textStep } from './scripts.ts';
 
@@ -107,7 +107,7 @@ describe('worker hooks', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     await env.runOnce(workerWithProcesses(env));
     expect(env.ofType(run.id, 'hook.completed')).toMatchObject([{ outcome: 'timed_out' }]);
     expect(fs.existsSync(target)).toBe(false);
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
     await env.runOnce(workerWithProcesses(env));
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(fs.readFileSync(target, 'utf8')).toBe('x');
@@ -169,7 +169,7 @@ describe('worker hooks', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'x' } }]), textStep('written'));
     const run = env.enqueue('write it');
     await env.runOnce(workerWithProcesses(env));
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
     await env.runOnce(workerWithProcesses(env));
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(fs.readFileSync(target, 'utf8')).toBe('x');

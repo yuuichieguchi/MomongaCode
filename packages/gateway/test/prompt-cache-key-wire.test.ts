@@ -31,7 +31,7 @@ const request = (extra: Partial<AdapterRequest> = {}): AdapterRequest => ({
 
 const chatCompletionsBody = async (promptCache: PromptCacheCapability | undefined, toolCalling: 'native' | 'constrained'): Promise<Record<string, unknown>> => {
   const fake = await startFake({ scenario: 'tools-ok' });
-  const adapter = makeAdapter(fake, { toolCalling: () => toolCalling, capabilities: async () => withCache(CC_CAPABILITIES, promptCache) });
+  const adapter = makeAdapter(fake, { capabilities: async () => withCache({ ...CC_CAPABILITIES, toolCalling }, promptCache) });
   const { error } = await collect(adapter, request({ promptCacheKey: KEY, cacheMarks: MARKS }));
   expect(error).toBeUndefined();
   return lastCompletionBody(fake);

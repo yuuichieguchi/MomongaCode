@@ -95,7 +95,7 @@ describe('worker poll loop after stop', () => {
     await env.runOnce(worker);
     expect(env.run(requeued.id).status).toBe('QUEUED');
     expect(worker.memorySize()).toBe(1);
-    expect(env.cancel(requeued.id).status).toBe('CANCELLED');
+    expect((await env.cancelToEnd(requeued.id)).status).toBe('CANCELLED');
 
     const blocked = gated(textStep('Finished.'));
     env.gateway.script.push(blocked);

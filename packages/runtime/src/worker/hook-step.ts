@@ -1,4 +1,4 @@
-import { HOOK_STOPPED_CODE, STOP_HOOK_MAX_CONTINUATIONS, USER_PROMPT_BLOCKED_CODE } from '@momonga/protocol';
+import { HOOK_STOPPED_CODE, STOP_HOOK_FEEDBACK_PREFIX, STOP_HOOK_MAX_CONTINUATIONS, USER_PROMPT_BLOCKED_CODE } from '@momonga/protocol';
 import type { HookExecution, HooksSettings, RunEventPayload } from '@momonga/protocol';
 import { runSessionStart, runStop, runUserPromptSubmit, selectHookCommands } from '@momonga/tools';
 import type { HookRunContext } from '@momonga/tools';
@@ -8,7 +8,6 @@ import { permissionRulesFor } from '../governance/rules.ts';
 import type { ToolPolicy } from '../ports.ts';
 import type { ClaimContext, Flow } from './claim-context.ts';
 
-export const STOP_HOOK_FEEDBACK_PREFIX = '[Stop hook feedback]\n';
 export const HOOK_CONTEXT_PREFIX = 'hook context';
 
 const hookCompleted = (execution: HookExecution): RunEventPayload => ({ type: 'hook.completed', ...execution });
@@ -56,26 +55,15 @@ const lifecycleHooksFor = async (ctx: ClaimContext, hooks: HooksSettings): Promi
   return { context: hookRunContextFor(ctx, session, hooks, policy, (execution) => executions.push(execution)), executions, session };
 };
 
-const alreadyRan = (ctx: ClaimContext, event: HookExecution['hookEvent']): boolean =>
-  ctx.journal.countWhere((recorded) => recorded.type === 'hook.completed' && recorded.hookEvent === event) > 0;
+const alreadyRan = (ctx: ClaimContext, event: HookExecution['hookEvent']): boolean => (ctx.journal.state.hookCompletions[event] ?? 0) > 0;
 
-export const haltRun = (ctx: ClaimContext, event: string, reason: string | undefined): Flow => {
+export const haltRun = (ctx: ClaimContext, event: string, reason: string | undefined): Promise<Flow> => {
   const message = reason === undefined || reason === '' ? `a ${event} hook stopped the run` : reason;
   ctx.journal.append([{ type: 'notice', level: 'warning', message: `Stopped by a ${event} hook: ${message}`, code: 'hook_stopped' }]);
   return ctx.terminals.finish('FAILED', { error: { code: HOOK_STOPPED_CODE, message } });
 };
 
 const isSubagentRun = (ctx: ClaimContext): boolean => ctx.run.parentRunId !== null;
-
-const stopAlreadyRanForLastResponse = (ctx: ClaimContext): boolean => {
-  let ran = false;
-  ctx.journal.countWhere((recorded) => {
-    if (recorded.type === 'model.responded') ran = false;
-    else if (recorded.type === 'hook.completed' && recorded.hookEvent === 'Stop') ran = true;
-    return false;
-  });
-  return ran;
-};
 
 export const runStartHooks = async (ctx: ClaimContext): Promise<Flow> => {
   if (isSubagentRun(ctx)) return 'continue';
@@ -104,8 +92,8 @@ export const runStopHooks = async (ctx: ClaimContext): Promise<'continue' | 'all
   if (isSubagentRun(ctx)) return 'allow';
   const session = sessionOf(ctx);
   const hooks = await ctx.options.settings.hooks(session);
-  if (selectHookCommands(hooks, 'Stop', undefined).length === 0 || stopAlreadyRanForLastResponse(ctx)) return 'allow';
-  const continuations = ctx.journal.countWhere((recorded) => recorded.type === 'user.message' && recorded.text.startsWith(STOP_HOOK_FEEDBACK_PREFIX));
+  if (selectHookCommands(hooks, 'Stop', undefined).length === 0 || ctx.journal.state.stopHookRanSinceResponse) return 'allow';
+  const continuations = ctx.journal.state.stopHookContinuations;
   if (continuations >= STOP_HOOK_MAX_CONTINUATIONS) {
     ctx.journal.append([
       { type: 'notice', level: 'warning', message: `Stop hooks asked the agent to continue ${STOP_HOOK_MAX_CONTINUATIONS} times; the run stops now.`, code: 'stop_hook_continuations_exhausted' },
