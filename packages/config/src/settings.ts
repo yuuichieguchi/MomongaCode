@@ -162,7 +162,7 @@ export type ResolvedAnthropicTarget = {
   apiKeySecret?: string;
   toolCalling: 'native';
   billing: TargetBilling;
-  apiVersion?: AnthropicApiVersion;
+  apiVersion: AnthropicApiVersion;
   capabilities: TargetCapabilities & { maxConcurrency: number };
   maxConcurrency: number;
   admissionTimeoutMs: number;
