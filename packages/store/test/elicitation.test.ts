@@ -40,48 +40,48 @@ describe('elicitation gates', () => {
     expect(store.elicitationView(id)?.expiresAt).toBe(EXPIRES_MS);
   });
 
-  it('refuses to resolve an elicitation as an approval and an approval as an elicitation', () => {
+  it('refuses to resolve an elicitation as an approval and an approval as an elicitation', async () => {
     const { store } = harness();
     const { id } = asking(store);
-    expect(store.resolveApproval(id, 'allow_once')).toEqual({ kind: 'not_found' });
+    expect(await store.resolveApproval(id, 'allow_once')).toEqual({ kind: 'not_found' });
     const { approvals } = awaitingApproval(store, [{ callId: 'call_9' }], 'waiting');
-    expect(store.resolveElicitation(approvals[0]?.id ?? '', {})).toEqual({ kind: 'wrong_kind' });
+    expect(await store.resolveElicitation(approvals[0]?.id ?? '', {})).toEqual({ kind: 'wrong_kind' });
   });
 
-  it('records the answers, requeues the run and folds the answered call back to started', () => {
+  it('records the answers, requeues the run and folds the answered call back to started', async () => {
     const { store } = harness();
     const { runId, id } = asking(store);
     const responses = { who: { action: 'accept' as const, content: { name: 'Ada' } } };
-    const resolved = store.resolveElicitation(id, responses);
+    const resolved = await store.resolveElicitation(id, responses);
     expect(resolved).toMatchObject({ kind: 'ok', elicitation: { status: 'resolved', responses }, run: { status: 'QUEUED' } });
     const events = store.readRunEvents(runId, 0, 100).map(payloadOf);
     expect(events.find((event) => event['type'] === 'tool.elicitation.resolved')).toEqual({ type: 'tool.elicitation.resolved', inputId: id, responses });
-    expect(store.resolveElicitation(id, responses)).toEqual({ kind: 'approval_not_pending', status: 'resolved' });
+    expect(await store.resolveElicitation(id, responses)).toEqual({ kind: 'approval_not_pending', status: 'resolved' });
   });
 
-  it('stops the run with approval_timeout when nobody answered in time, never answering for the person', () => {
+  it('stops the run with approval_timeout when nobody answered in time, never answering for the person', async () => {
     const { store, clock } = harness();
     const { runId, id } = asking(store);
     clock.set(EXPIRES_MS);
-    expect(store.expireApprovals(EXPIRES_MS)).toEqual([runId]);
+    expect(await store.expireApprovals(EXPIRES_MS, (error: unknown) => { throw error; })).toEqual([runId]);
     expect(mustRun(store, runId)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
     const events = store.readRunEvents(runId, 0, 100).map(payloadOf);
     expect(events).toEqual(expect.arrayContaining([{ type: 'tool.elicitation.cancelled', inputId: id, reason: 'expired' }]));
     expect(events.some((event) => event['type'] === 'tool.elicitation.resolved')).toBe(false);
-    expect(store.resolveElicitation(id, {})).toEqual({ kind: 'approval_not_pending', status: 'expired' });
+    expect(await store.resolveElicitation(id, {})).toEqual({ kind: 'approval_not_pending', status: 'expired' });
   });
 
-  it('withdraws the request when the run is cancelled', () => {
+  it('withdraws the request when the run is cancelled', async () => {
     const { store } = harness();
     const { runId, id } = asking(store);
     cancel(store, runId);
     expect(store.readRunEvents(runId, 0, 100).map(payloadOf)).toEqual(expect.arrayContaining([{ type: 'tool.elicitation.cancelled', inputId: id, reason: 'withdrawn' }]));
-    expect(store.resolveElicitation(id, {})).toEqual({ kind: 'approval_not_pending', status: 'withdrawn' });
+    expect(await store.resolveElicitation(id, {})).toEqual({ kind: 'approval_not_pending', status: 'withdrawn' });
   });
 
-  it('refuses an answer for a cancelled run and for an unknown id', () => {
+  it('refuses an answer for a cancelled run and for an unknown id', async () => {
     const { store } = harness();
-    expect(store.resolveElicitation('nope', {})).toEqual({ kind: 'not_found' });
+    expect(await store.resolveElicitation('nope', {})).toEqual({ kind: 'not_found' });
   });
 });
 

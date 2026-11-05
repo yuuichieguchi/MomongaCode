@@ -2,6 +2,7 @@ import { canonicalJson, sha256Hex, uuidv7 } from '@momonga/foundation';
 import { COMPACTION_ROLE, LOWEST_REASONING_EFFORT, outputTokensFor, summaryInputLimitFor, summaryTokenCapFor } from '@momonga/protocol';
 import type {
   AdapterCompactRequest,
+  Capabilities,
   AdapterInputItem,
   AdapterRequest,
   CompactRequest,
@@ -14,9 +15,10 @@ import type {
 } from '@momonga/protocol';
 import { armDeadline, parseDeadlineHeader, withDeadline } from './deadline.ts';
 import { estimateInputTokens, estimatedCountOf, imageTokensOfWire, wireTokensOf } from './estimate.ts';
-import { ClientDisconnectedError, GatewayError, detachedRunExpiredError, gatewayErrorFromBody, gatewayClosedError, invalidRequest, isRunCancelled, runCancelledError } from './errors.ts';
+import { ClientDisconnectedError, detachedRunExpiredError, gatewayErrorFromBody, gatewayClosedError, invalidRequest, isRunCancelled, runCancelledError } from './errors.ts';
 import { parseIdempotencyKey, reusedError } from './idempotency.ts';
 import { inputHasImages, normalizeInput, resolveInput } from './input.ts';
+import type { ResolvedInput } from './input.ts';
 import { modelCostOf } from './model-cost.ts';
 import { startAttemptSpan } from './attempt-span.ts';
 import type { AttemptSpan } from './attempt-span.ts';
@@ -24,7 +26,9 @@ import { errorTypeOf, messageOf } from './respond.ts';
 import { failureFrom, runWithRetry } from './retry.ts';
 import type { RetryOutcome } from './retry.ts';
 import { adapterContextOf, originOf } from './adapter-context.ts';
-import type { TargetRuntime } from './router.ts';
+import type { Narrowed, TargetRuntime } from './router.ts';
+import { CandidateRefused, REFUSAL_STAGES, UnprobedTarget } from './candidate-refusal.ts';
+import type { Refusal } from './candidate-refusal.ts';
 import type { Services } from './services.ts';
 import type { UnknownFields } from './unknown-fields.ts';
 import { resolveToolChoice } from './tool-choice.ts';
@@ -60,6 +64,7 @@ const identifier = (services: Services, prefix: string): string => `${prefix}_${
 const callTargets = <T>(
   services: Services,
   candidates: readonly TargetRuntime[],
+  refusals: readonly Refusal[],
   signal: AbortSignal,
   deadlineAt: number | undefined,
   call: (target: TargetRuntime, attemptNumber: number, signal: AbortSignal) => Promise<T>,
@@ -67,6 +72,7 @@ const callTargets = <T>(
   withDeadline(services, deadlineAt, signal, (guarded) =>
     runWithRetry({
       candidates,
+      refusals,
       policy: { ...services.config.retry, random: services.random, clock: services.clock, timers: services.timers },
       signal: guarded,
       deadlineAt,
@@ -91,9 +97,6 @@ const adapterRequestOf = (model: string, request: CountTokensRequest, input: Ada
   ...(request.tool_choice === undefined ? {} : { tool_choice: request.tool_choice }),
 });
 
-const isTargetFailure = (error: unknown, signal: AbortSignal): error is GatewayError =>
-  error instanceof GatewayError && !signal.aborted && error.body.code !== 'deadline_exceeded';
-
 const asGatewayError = <T>(target: TargetRuntime, render: () => T): T => {
   try {
     return render();
@@ -102,63 +105,44 @@ const asGatewayError = <T>(target: TargetRuntime, render: () => T): T => {
   }
 };
 
-const countWire = async (
+type Counted = { result: CountTokensResult; contacted: boolean };
+
+const countWireOnce = async (
   services: Services,
   target: TargetRuntime,
+  capabilities: Capabilities,
   wire: Record<string, unknown>,
   signal: AbortSignal,
-  deadlineAt: number | undefined,
-): Promise<CountTokensResult> => {
-  const { imageTokens: imageModel } = await services.router.capabilitiesOf(target);
+  attemptNumber: number,
+): Promise<Counted> => {
+  const context = adapterContextOf(services, target, capabilities, signal, attemptNumber);
   const adapterCountWire = target.adapter.countWire;
-  if (adapterCountWire !== undefined) {
-    const counted = await callTargets(services, [target], signal, deadlineAt, (chosen, attemptNumber, guarded) =>
-      adapterCountWire.call(chosen.adapter, wire, adapterContextOf(services, chosen, guarded, attemptNumber)),
-    );
-    counted.settle('success');
-    return counted.value;
-  }
+  if (adapterCountWire !== undefined) return { result: await adapterCountWire.call(target.adapter, wire, context), contacted: true };
   const adapterCountTokens = target.adapter.countTokens;
-  if (adapterCountTokens === undefined) {
-    const tokens = wireTokensOf(wire, imageModel);
-    return estimatedCountOf(tokens);
-  }
-  const outcome = await callTargets(services, [target], signal, deadlineAt, (chosen, attemptNumber, guarded) =>
-    adapterCountTokens.call(
-      chosen.adapter,
-      { model: chosen.model, input: textOfWire(wire) },
-      adapterContextOf(services, chosen, guarded, attemptNumber),
-    ),
-  );
-  outcome.settle('success');
-  const imageTokens = imageTokensOfWire(wire, imageModel);
-  if (imageTokens === 0) return outcome.value;
-  const total = outcome.value.input_tokens + imageTokens;
-  return estimatedCountOf(total);
+  if (adapterCountTokens === undefined) return { result: estimatedCountOf(wireTokensOf(wire, capabilities.imageTokens)), contacted: false };
+  const counted = await adapterCountTokens.call(target.adapter, { model: target.model, input: textOfWire(wire) }, context);
+  const imageTokens = imageTokensOfWire(wire, capabilities.imageTokens);
+  return { result: imageTokens === 0 ? counted : estimatedCountOf(counted.input_tokens + imageTokens), contacted: true };
 };
 
-const countTokens = async (
+const settleCounted = (outcome: RetryOutcome<Counted>): CountTokensResult => {
+  outcome.settle(outcome.value.contacted ? 'success' : 'neutral');
+  return outcome.value.result;
+};
+
+const countOnTarget = async (
   services: Services,
-  validator: RequestValidator,
-  rawBody: unknown,
+  target: TargetRuntime,
+  narrowed: Narrowed,
+  request: CountTokensRequest,
+  resolved: ResolvedInput,
   signal: AbortSignal,
-  deadlineHeader: string | undefined,
-): Promise<CountTokensResult> => {
-  const request = validator.parseCountTokens(rawBody);
-  const deadlineAt = parseDeadlineHeader(deadlineHeader, services.clock.now());
-  const aliasTargets = services.router.targetsOf(request.model);
-  const named = request.momonga?.target;
-  const target = named === undefined ? aliasTargets[0] : aliasTargets.find((candidate) => candidate.name === named);
-  if (named !== undefined && target === undefined) {
-    throw invalidRequest('invalid_target', `target "${named}" is not a target of model alias "${request.model}"`, 'momonga.target');
-  }
-  if (target === undefined) throw new Error(`model alias "${request.model}" has no targets`);
-  const resolved = resolveInput(services.store, services.codec, undefined, normalizeInput(request.input));
-  await services.router.narrow(request.model, [target], { images: inputHasImages(resolved.forAdapter) });
-  const { allowedTools } = await services.router.capabilitiesOf(target);
-  const toolChoiceWire = target.adapter.toolChoiceWire({ name: target.name, model: target.model });
+  attemptNumber: number,
+): Promise<Counted> => {
+  const capabilities = await narrowed.capabilitiesOf(target);
+  const toolChoiceWire = target.adapter.toolChoiceWire(capabilities, { name: target.name, model: target.model });
   const counted = asGatewayError(target, () =>
-    resolveToolChoice(adapterRequestOf(target.model, request, resolved.forAdapter), allowedTools, target.name, toolChoiceWire),
+    resolveToolChoice(adapterRequestOf(target.model, request, resolved.forAdapter), capabilities.allowedTools, target.name, toolChoiceWire),
   );
   const renderWire = target.adapter.renderWire;
   if (renderWire !== undefined) {
@@ -172,41 +156,68 @@ const countTokens = async (
         { name: target.name, model: target.model },
         {
           reasoningOrigin: originOf(services, target),
+          capabilities,
           ...(lenientItems === undefined ? {} : { lenientItems }),
-          ...(allowedTools === undefined ? {} : { allowedTools }),
         },
       ),
     );
-    return countWire(services, target, wire, signal, deadlineAt);
+    return countWireOnce(services, target, capabilities, wire, signal, attemptNumber);
+  }
+  const adapterCountTokens = target.adapter.countTokens;
+  if (adapterCountTokens === undefined) {
+    const inputTokens = estimateInputTokens(
+      { input: resolved.forAdapter, instructions: request.instructions, tools: counted.tools },
+      capabilities.imageTokens,
+    );
+    return { result: estimatedCountOf(inputTokens), contacted: false };
   }
   const countable: InputItem[] = resolved.forAdapter.map((item) =>
     item.type === 'compaction_summary'
       ? { type: 'message', role: 'user', content: [{ type: 'input_text', text: item.summary }] }
       : item,
   );
-  const adapterCountTokens = target.adapter.countTokens;
-  if (adapterCountTokens === undefined) {
-    const inputTokens = estimateInputTokens(
-      { input: resolved.forAdapter, instructions: request.instructions, tools: counted.tools },
-      (await services.router.capabilitiesOf(target)).imageTokens,
-    );
-    return estimatedCountOf(inputTokens);
-  }
-  const outcome = await callTargets(services, [target], signal, deadlineAt, (chosen, attemptNumber, guarded) =>
-    adapterCountTokens.call(
-      chosen.adapter,
-      {
-        model: chosen.model,
-        input: countable,
-        ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
-        ...(counted.tools === undefined ? {} : { tools: counted.tools }),
-        ...(counted.tool_choice === undefined ? {} : { tool_choice: counted.tool_choice }),
-      },
-      adapterContextOf(services, chosen, guarded, attemptNumber),
-    ),
+  const result = await adapterCountTokens.call(
+    target.adapter,
+    {
+      model: target.model,
+      input: countable,
+      ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
+      ...(counted.tools === undefined ? {} : { tools: counted.tools }),
+      ...(counted.tool_choice === undefined ? {} : { tool_choice: counted.tool_choice }),
+    },
+    adapterContextOf(services, target, capabilities, signal, attemptNumber),
   );
-  outcome.settle('success');
-  return outcome.value;
+  return { result, contacted: true };
+};
+
+const countTokens = async (
+  services: Services,
+  validator: RequestValidator,
+  rawBody: unknown,
+  signal: AbortSignal,
+  deadlineHeader: string | undefined,
+): Promise<CountTokensResult> => {
+  const request = validator.parseCountTokens(rawBody);
+  const unknownFields = validator.unknownCountTokensFields(rawBody);
+  const deadlineAt = parseDeadlineHeader(deadlineHeader, services.clock.now());
+  const aliasTargets = services.router.targetsOf(request.model);
+  const named = request.momonga?.target;
+  const found = named === undefined ? undefined : aliasTargets.find((candidate) => candidate.name === named);
+  if (named !== undefined && found === undefined) {
+    throw invalidRequest('invalid_target', `target "${named}" is not a target of model alias "${request.model}"`, 'momonga.target');
+  }
+  const candidates = found === undefined ? aliasTargets : [found];
+  if (candidates.length === 0) throw new Error(`model alias "${request.model}" has no targets`);
+  const resolved = resolveInput(services.store, services.codec, undefined, normalizeInput(request.input));
+  const narrowed = await services.router.narrow(request.model, candidates, {
+    images: inputHasImages(resolved.forAdapter),
+    toolChoice: { tools: request.tools, tool_choice: request.tool_choice },
+    unknownFields: { keys: Object.keys(unknownFields), operation: 'count_tokens' },
+  });
+  const outcome = await callTargets(services, narrowed.targets, narrowed.refusals, signal, deadlineAt, (chosen, attemptNumber, guarded) =>
+    countOnTarget(services, chosen, narrowed, request, resolved, guarded, attemptNumber),
+  );
+  return settleCounted(outcome);
 };
 
 export type CompactTrace = { runId: string | undefined; traceparent: string | undefined; tracestate: string | undefined };
@@ -221,8 +232,12 @@ const compactOnce = async (
 ): Promise<CompactResource> => {
   const targets = services.router.targetsOf(request.model);
   const resolved = resolveInput(services.store, services.codec, request.previous_response_id, normalizeInput(request.input));
-  const eligible = await services.router.narrow(request.model, targets, { images: inputHasImages(resolved.forAdapter), unknownFields: Object.keys(unknownFields) });
-  const supporting = eligible.filter((target) => target.adapter.compact !== undefined);
+  const narrowed = await services.router.narrow(request.model, targets, {
+    images: inputHasImages(resolved.forAdapter),
+    ...(request.momonga?.max_summary_tokens === undefined ? {} : { summaryCap: request.momonga.max_summary_tokens }),
+    unknownFields: { keys: Object.keys(unknownFields), operation: 'compact' },
+  });
+  const supporting = narrowed.targets.filter((target) => target.adapter.compact !== undefined);
   if (supporting.length === 0) {
     throw invalidRequest('capability_unsupported', `no target of model alias "${request.model}" supports compaction`, 'model');
   }
@@ -231,50 +246,24 @@ const compactOnce = async (
     input: resolved.forAdapter,
     ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
     momonga: { ...request.momonga, max_summary_tokens: cap },
-    ...(Object.keys(unknownFields).length === 0 ? {} : { unknownFields }),
   });
-  const capsByTarget = new Map<TargetRuntime, number>();
-  const sized: TargetRuntime[] = [];
-  let withinCap = 0;
-  let counterFailure: GatewayError | undefined;
-  for (const target of supporting) {
-    const capabilities = await services.router.capabilitiesOf(target);
-    const maximum = Math.min(summaryTokenCapFor(capabilities), capabilities.maxOutputTokens);
-    const cap = request.momonga?.max_summary_tokens ?? maximum;
-    if (cap > maximum) continue;
-    withinCap += 1;
-    capsByTarget.set(target, cap);
+  const sizeRefusal: Refusal = {
+    stage: REFUSAL_STAGES.inputSize,
+    error: invalidRequest('compaction_input_too_large', 'the conversation to summarise does not fit the context window of any target', 'input'),
+  };
+  const capFor = (capabilities: Capabilities): number =>
+    request.momonga?.max_summary_tokens ?? Math.min(summaryTokenCapFor(capabilities), capabilities.maxOutputTokens);
+  const wireFor = (target: TargetRuntime, capabilities: Capabilities, cap: number): Record<string, unknown> | undefined => {
     const renderCompactWire = target.adapter.renderCompactWire;
-    if (renderCompactWire === undefined) {
-      sized.push(target);
-      continue;
-    }
-    const wire = asGatewayError(target, () =>
-      renderCompactWire.call(target.adapter, compactRequestFor(target, cap), { name: target.name, model: target.model }, cap, originOf(services, target)),
+    if (renderCompactWire === undefined) return undefined;
+    return asGatewayError(target, () =>
+      renderCompactWire.call(target.adapter, compactRequestFor(target, cap), { name: target.name, model: target.model }, cap, originOf(services, target), capabilities),
     );
-    let counted: CountTokensResult;
-    try {
-      counted = await countWire(services, target, wire, signal, deadlineAt);
-    } catch (error) {
-      if (!isTargetFailure(error, signal)) throw error;
-      counterFailure = error;
-      continue;
-    }
+  };
+  const fitsWindow = (capabilities: Capabilities, cap: number, counted: CountTokensResult): boolean => {
     const reasoningTokens = outputTokensFor(capabilities, LOWEST_REASONING_EFFORT, cap) - cap;
-    const limit = summaryInputLimitFor(capabilities, cap, reasoningTokens);
-    if (counted.input_tokens + counted.error_bound <= limit) sized.push(target);
-  }
-  if (sized.length === 0 && counterFailure !== undefined) throw counterFailure;
-  if (withinCap === 0) {
-    throw invalidRequest(
-      'invalid_summary_cap',
-      'momonga.max_summary_tokens exceeds the largest summary any target of the model alias accepts: the smaller of its summary cap and its maxOutputTokens',
-      'momonga.max_summary_tokens',
-    );
-  }
-  if (sized.length === 0) {
-    throw invalidRequest('compaction_input_too_large', 'the conversation to summarise does not fit the context window of any target', 'input');
-  }
+    return counted.input_tokens + counted.error_bound <= summaryInputLimitFor(capabilities, cap, reasoningTokens);
+  };
   const parent =
     services.telemetry === undefined || trace.traceparent === undefined
       ? undefined
@@ -283,12 +272,8 @@ const compactOnce = async (
           ...(trace.tracestate === undefined ? {} : { tracestate: trace.tracestate }),
         });
   const spans = new Map<TargetRuntime, AttemptSpan>();
-  const outcome = await callTargets(services, sized, signal, deadlineAt, async (target, attemptNumber, guarded) => {
-    const compact = target.adapter.compact;
-    if (compact === undefined) throw new TypeError(`target "${target.name}" lost its compact capability`);
-    const cap = capsByTarget.get(target);
-    if (cap === undefined) throw new TypeError(`target "${target.name}" has no summary cap`);
-    const span = startAttemptSpan({
+  const startSpan = (target: TargetRuntime, attemptNumber: number, cap: number | undefined): AttemptSpan =>
+    startAttemptSpan({
       telemetry: services.telemetry,
       parent,
       providerName: target.provider,
@@ -304,13 +289,33 @@ const compactOnce = async (
       startedAtMs: services.clock.now(),
       request: { input: resolved.forAdapter, instructions: request.instructions, tools: undefined },
     });
+  const failSpan = (span: AttemptSpan, failure: unknown): void => span.fail(errorTypeOf(failure), failure, messageOf(failure));
+  const outcome = await callTargets(services, supporting, narrowed.refusals, signal, deadlineAt, async (target, attemptNumber, guarded) => {
+    const compact = target.adapter.compact;
+    if (compact === undefined) throw new TypeError(`target "${target.name}" lost its compact capability`);
+    let capabilities: Capabilities;
+    let cap: number;
     try {
-      const result = await compact.call(target.adapter, compactRequestFor(target, cap), adapterContextOf(services, target, guarded, attemptNumber));
+      capabilities = await narrowed.capabilitiesOf(target);
+      cap = capFor(capabilities);
+      const wire = wireFor(target, capabilities, cap);
+      if (wire !== undefined && !fitsWindow(capabilities, cap, (await countWireOnce(services, target, capabilities, wire, guarded, attemptNumber)).result)) {
+        throw new CandidateRefused(sizeRefusal);
+      }
+    } catch (error) {
+      if (error instanceof CandidateRefused || error instanceof UnprobedTarget) throw error;
+      const failure = failureFrom(target.adapter, error, guarded);
+      failSpan(startSpan(target, attemptNumber, undefined), failure);
+      throw failure;
+    }
+    const span = startSpan(target, attemptNumber, cap);
+    try {
+      const result = await compact.call(target.adapter, compactRequestFor(target, cap), adapterContextOf(services, target, capabilities, guarded, attemptNumber));
       spans.set(target, span);
       return result;
     } catch (error) {
       const failure = failureFrom(target.adapter, error, guarded);
-      span.fail(errorTypeOf(failure), failure, messageOf(failure));
+      failSpan(span, failure);
       throw failure;
     }
   });

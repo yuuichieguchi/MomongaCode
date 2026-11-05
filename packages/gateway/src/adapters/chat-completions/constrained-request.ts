@@ -3,7 +3,6 @@ import { allowedNamesOf, allowedToolsModeOf } from '../../core/tool-choice.ts';
 import type { AdapterRequest, FunctionTool, ReasoningOrigin } from '@momonga/protocol';
 import { buildToolsEnvelope } from '../../probe/envelope.ts';
 import type { KeywordSupport } from '../../probe/envelope.ts';
-import { UnsupportedInputError } from '../shared/failures.ts';
 import { samplingOf } from './native-request.ts';
 import { SYSTEM_PART_SEPARATOR, systemTextOf } from '../shared/system-text.ts';
 import type { ChatRequestBody } from './native-request.ts';
@@ -38,15 +37,11 @@ export type ConstrainedBody = {
 const restrictedToolsOf = (tools: readonly FunctionTool[], names: readonly string[], support: KeywordSupport): FunctionTool[] => {
   const restricted = names.map((name) => {
     const tool = tools.find((candidate) => candidate.name === name);
-    if (tool === undefined) throw new UnsupportedInputError('unknown_tool', `tool_choice names the undeclared tool "${name}"`, 'tool_choice');
+    if (tool === undefined) throw new Error(`tool_choice names the undeclared tool "${name}", which request validation refuses`);
     return tool;
   });
   if (restricted.length < tools.length && !support.const && !support.enum) {
-    throw new UnsupportedInputError(
-      'unsupported_tool_choice',
-      'this target cannot restrict the tool names in constrained output',
-      'tool_choice',
-    );
+    throw new Error('the tool_choice must be resolved against the constrained wire before the body is built');
   }
   return restricted;
 };

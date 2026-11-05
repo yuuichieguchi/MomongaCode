@@ -1,4 +1,4 @@
-import { EVERY_REASONING_IS_OWN } from './own-reasoning.ts';
+import { contextOf } from './own-reasoning.ts';
 import { describe, expect, it } from 'vitest';
 import type { AdapterCompactRequest, AdapterInputItem, ToolCallingMode } from '@momonga/protocol';
 import { TARGET, completionBodies, lastCompletionBody, startFake, userText } from './cc-support.ts';
@@ -13,7 +13,6 @@ import {
   textReply,
 } from './cc-compact-support.ts';
 
-const ctx = { signal: new AbortController().signal, target: TARGET, attempt: 1, reasoningOrigin: EVERY_REASONING_IS_OWN };
 
 const conversation: AdapterInputItem[] = [
   userText('Fix the parser bug'),
@@ -34,7 +33,7 @@ describe('chat-completions adapter compact', () => {
       script: [{ kind: 'stream', chunks: [{ delta: { role: 'assistant', content: 'part' } }, { delta: {}, finishReason: 'content_filter' }] }],
     });
     const adapter = ccAdapterFor(fake);
-    const failure = await adapter.compact?.(compactRequest({ momonga: { max_summary_tokens: 64 } }), ctx).then(
+    const failure = await adapter.compact?.(compactRequest({ momonga: { max_summary_tokens: 64 } }), await contextOf(adapter, TARGET)).then(
       () => undefined,
       (error: unknown) => error,
     );
@@ -49,7 +48,7 @@ describe('chat-completions adapter compact', () => {
       const fake = await startFake({ scenario: 'tools-ok', script: [textReply('The user wants the parser fixed.')] });
       const adapter = ccAdapterFor(fake, mode);
       expect(adapter.compact).toBeTypeOf('function');
-      const result = await adapter.compact?.(compactRequest({ momonga: { max_summary_tokens: 64 } }), ctx);
+      const result = await adapter.compact?.(compactRequest({ momonga: { max_summary_tokens: 64 } }), await contextOf(adapter, TARGET));
       expect(result?.summary).toBe('The user wants the parser fixed.');
       const body = lastCompletionBody(fake);
       expect(body.messages).toHaveLength(2);
@@ -70,13 +69,15 @@ describe('chat-completions adapter compact', () => {
       scenario: 'tools-ok',
       script: [textReply('note', { prompt_tokens: 321, completion_tokens: 7, total_tokens: 328 })],
     });
-    const result = await ccAdapterFor(fake).compact?.(compactRequest({ momonga: { max_summary_tokens: 64 } }), ctx);
+    const adapter = ccAdapterFor(fake);
+    const result = await adapter.compact?.(compactRequest({ momonga: { max_summary_tokens: 64 } }), await contextOf(adapter, TARGET));
     expect(result?.usage).toMatchObject({ input_tokens: 321, output_tokens: 7, total_tokens: 328 });
   });
 
   it('falls back to the window cap of the target without momonga.max_summary_tokens', async () => {
     const fake = await startFake({ scenario: 'tools-ok', script: [textReply('note')] });
-    await ccAdapterFor(fake).compact?.(compactRequest(), ctx);
+    const adapter = ccAdapterFor(fake);
+    await adapter.compact?.(compactRequest(), await contextOf(adapter, TARGET));
     expect(lastCompletionBody(fake).max_completion_tokens).toBe(246);
   });
 
@@ -89,7 +90,7 @@ describe('chat-completions adapter compact', () => {
   ] as const)('rejects %s as %s with retryable %s', async ([, reply, code, retryable]) => {
     const fake = await startFake({ scenario: 'tools-ok', script: [reply] });
     const adapter = ccAdapterFor(fake);
-    const failure = await adapter.compact?.(compactRequest({ momonga: { max_summary_tokens: 64 } }), ctx).then(
+    const failure = await adapter.compact?.(compactRequest({ momonga: { max_summary_tokens: 64 } }), await contextOf(adapter, TARGET)).then(
       () => undefined,
       (error: unknown) => error,
     );
@@ -103,7 +104,8 @@ describe('chat-completions adapter compact', () => {
   it('accepts a reply exactly at the acceptance bound ceil(1.3 cap)', async () => {
     const atBound = 'w'.repeat(4 * 84);
     const fake = await startFake({ scenario: 'tools-ok', script: [textReply(atBound)] });
-    const result = await ccAdapterFor(fake).compact?.(compactRequest({ momonga: { max_summary_tokens: 64 } }), ctx);
+    const adapter = ccAdapterFor(fake);
+    const result = await adapter.compact?.(compactRequest({ momonga: { max_summary_tokens: 64 } }), await contextOf(adapter, TARGET));
     expect(result?.summary).toBe(atBound);
   });
 
@@ -113,7 +115,7 @@ describe('chat-completions adapter compact', () => {
       script: [{ kind: 'error', status: 500, body: { error: { message: 'boom', type: 'server_error', param: null, code: null } } }],
     });
     const adapter = ccAdapterFor(fake);
-    const failure = await adapter.compact?.(compactRequest({ momonga: { max_summary_tokens: 64 } }), ctx).then(
+    const failure = await adapter.compact?.(compactRequest({ momonga: { max_summary_tokens: 64 } }), await contextOf(adapter, TARGET)).then(
       () => undefined,
       (error: unknown) => error,
     );
@@ -128,7 +130,7 @@ describe('chat-completions adapter compact', () => {
       script: [{ kind: 'stream', chunks: [{ delta: { role: 'assistant', content: 'partial' } }], done: false }],
     });
     const adapter = ccAdapterFor(fake);
-    const failure = await adapter.compact?.(compactRequest({ momonga: { max_summary_tokens: 64 } }), ctx).then(
+    const failure = await adapter.compact?.(compactRequest({ momonga: { max_summary_tokens: 64 } }), await contextOf(adapter, TARGET)).then(
       () => undefined,
       (error: unknown) => error,
     );

@@ -155,7 +155,7 @@ describe('RulePropose in a run', () => {
     env.gateway.script.push(proposeStep());
     const run = env.enqueue('Add the rule');
     await env.runOnce(worker(env, 'worker-1'));
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
     env.gateway.script.push(textStep('Added.'));
     await env.runOnce(worker(env, 'worker-2'));
     const callId = env.gateway.callId('call_r_1');
@@ -169,7 +169,7 @@ describe('RulePropose in a run', () => {
     env.gateway.script.push(proposeStep());
     const run = env.enqueue('Add the rule');
     await env.runOnce(worker(env, 'worker-1'));
-    env.resolveApproval(run.id, 'reject_once');
+    await env.resolveApproval(run.id, 'reject_once');
     env.gateway.script.push(textStep('Fine.'));
     await env.runOnce(worker(env, 'worker-2'));
     expect(env.store.governing.list()).toEqual([]);
@@ -180,7 +180,7 @@ describe('RulePropose in a run', () => {
     env.gateway.script.push(proposeStep({ supersedes: ['absent'] }));
     const run = env.enqueue('Add the rule');
     await env.runOnce(worker(env, 'worker-1'));
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
     env.gateway.script.push(textStep('Refused.'));
     await env.runOnce(worker(env, 'worker-2'));
     expect(env.ofType(run.id, 'tool.completed')[0]?.status).toBe('failed');

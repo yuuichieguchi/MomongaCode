@@ -30,7 +30,7 @@ describe('context.contribution on the terminals the worker does not reach', () =
     const [approval] = env.store.pendingApprovalViews(run.id);
     if (approval === undefined) throw new Error('the run asked for no approval');
 
-    expect(env.store.expireApprovals(approval.expiresAt)).toEqual([run.id]);
+    expect(await env.store.expireApprovals(approval.expiresAt, (error: unknown) => { throw error; })).toEqual([run.id]);
 
     expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
     const events = env.events(run.id);
@@ -46,9 +46,7 @@ describe('context.contribution on the terminals the worker does not reach', () =
     const id = await saveNote(env);
     const run = env.enqueue('Say hello', { history: 'fresh' });
 
-    env.cancel(run.id);
-
-    expect(env.run(run.id).status).toBe('CANCELLED');
+    expect((await env.cancelToEnd(run.id)).status).toBe('CANCELLED');
     expect(env.ofType(run.id, 'context.contribution')).toEqual([]);
     expect(env.store.memories.get(id)?.contributedAt).toBeNull();
   });
@@ -58,7 +56,7 @@ describe('context.contribution on the terminals the worker does not reach', () =
     await saveNote(env);
     const run = env.enqueue('Say hello', { history: 'fresh' });
 
-    expect(env.store.expireApprovals(env.run(run.id).deadlineAt)).toEqual([run.id]);
+    expect(await env.store.expireApprovals(env.run(run.id).deadlineAt, (error: unknown) => { throw error; })).toEqual([run.id]);
 
     expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'timeout' });
     expect(env.ofType(run.id, 'context.contribution')).toEqual([]);

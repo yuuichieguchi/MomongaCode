@@ -15,7 +15,7 @@ export const createHangingAdapter = (events: readonly StreamEvent[]): HangingAda
   return {
     kind: 'hanging',
     sampling: { renders: SAMPLING_FIELDS },
-    unknownFields: 'refuse',
+    relaysClientBody: [],
     pulled,
     signals,
     capabilities: async () => DEFAULT_SCRIPTED_CAPABILITIES,

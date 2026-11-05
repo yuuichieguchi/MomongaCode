@@ -20,7 +20,7 @@ import { REDACTED, TEST_API_KEY, expectRedacted } from './credential-support.ts'
 
 const redactor = createRedactor({ credentials: [TEST_API_KEY] });
 const TARGET: AdapterTarget = { name: 'primary', model: 'scripted-primary' };
-const ctx = (): AdapterContext => ({ signal: new AbortController().signal, target: TARGET, attempt: 1, reasoningOrigin: EVERY_REASONING_IS_OWN });
+const ctx = (): AdapterContext => ({ signal: new AbortController().signal, target: TARGET, attempt: 1, reasoningOrigin: EVERY_REASONING_IS_OWN, capabilities: DEFAULT_SCRIPTED_CAPABILITIES });
 const REQUEST: AdapterRequest = { model: 'scripted-primary', input: [] };
 const COMPACT_REQUEST: AdapterCompactRequest = { model: 'scripted-primary', input: [] };
 const ECHO = `Incorrect API key provided: ${TEST_API_KEY}`;
@@ -42,7 +42,7 @@ async function* eventsOf(events: readonly StreamEvent[]): AsyncGenerator<StreamE
 const baseAdapter = (overrides: Partial<ProviderAdapter> = {}): ProviderAdapter => ({
   kind: 'probe-kind',
   sampling: { renders: SAMPLING_FIELDS },
-  unknownFields: 'refuse',
+  relaysClientBody: [],
   capabilities: async () => DEFAULT_SCRIPTED_CAPABILITIES,
   toolChoiceWire: () => ({ forms: [], expressesRequired: true }),
   create: () => eventsOf([]),
@@ -132,7 +132,7 @@ describe('guardAdapter this binding', () => {
       ...optionalImplementations(record),
       kind: 'probe-kind',
       sampling: { renders: SAMPLING_FIELDS },
-      unknownFields: 'refuse',
+      relaysClientBody: [],
       capabilities: async function (this: unknown) {
         record('capabilities', this);
         return DEFAULT_SCRIPTED_CAPABILITIES;
@@ -155,11 +155,11 @@ describe('guardAdapter this binding', () => {
     for await (const _event of guard.create.call(guard, REQUEST, ctx())) void _event;
     guard.classify.call(guard, new Error('plain'));
     await guard.countTokens?.call(guard, { model: 'fast', input: 'one' }, ctx());
-    guard.renderWire?.call(guard, REQUEST, TARGET, { reasoningOrigin: EVERY_REASONING_IS_OWN });
+    guard.renderWire?.call(guard, REQUEST, TARGET, { reasoningOrigin: EVERY_REASONING_IS_OWN, capabilities: DEFAULT_SCRIPTED_CAPABILITIES });
     await guard.compact?.call(guard, COMPACT_REQUEST, ctx());
-    guard.renderCompactWire?.call(guard, COMPACT_REQUEST, TARGET, 64, EVERY_REASONING_IS_OWN);
+    guard.renderCompactWire?.call(guard, COMPACT_REQUEST, TARGET, 64, EVERY_REASONING_IS_OWN, DEFAULT_SCRIPTED_CAPABILITIES);
     await guard.health?.call(guard, TARGET);
-    guard.toolChoiceWire?.call(guard, TARGET);
+    guard.toolChoiceWire?.call(guard, DEFAULT_SCRIPTED_CAPABILITIES, TARGET);
     expect([...seen.keys()].sort()).toEqual(
       ['capabilities', 'classify', 'compact', 'countTokens', 'create', 'health', 'renderCompactWire', 'renderWire', 'toolChoiceWire'].sort(),
     );
@@ -381,8 +381,8 @@ describe('guardAdapter thrown errors (G3)', () => {
     { name: 'create', call: (guard) => collect(guard.create(REQUEST, ctx())) },
     { name: 'countTokens', call: (guard) => guard.countTokens?.({ model: 'fast', input: 'one' }, ctx()) },
     { name: 'compact', call: (guard) => guard.compact?.(COMPACT_REQUEST, ctx()) },
-    { name: 'renderWire', call: (guard) => guard.renderWire?.(REQUEST, TARGET, { reasoningOrigin: EVERY_REASONING_IS_OWN }) },
-    { name: 'renderCompactWire', call: (guard) => guard.renderCompactWire?.(COMPACT_REQUEST, TARGET, 64, EVERY_REASONING_IS_OWN) },
+    { name: 'renderWire', call: (guard) => guard.renderWire?.(REQUEST, TARGET, { reasoningOrigin: EVERY_REASONING_IS_OWN, capabilities: DEFAULT_SCRIPTED_CAPABILITIES }) },
+    { name: 'renderCompactWire', call: (guard) => guard.renderCompactWire?.(COMPACT_REQUEST, TARGET, 64, EVERY_REASONING_IS_OWN, DEFAULT_SCRIPTED_CAPABILITIES) },
   ];
 
   it.for(callers)('$name turns an unknown error into a redacted GuardedAdapterError with no cause', async ({ call }) => {

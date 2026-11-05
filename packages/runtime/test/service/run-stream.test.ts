@@ -97,7 +97,7 @@ describe('run stream under concurrent writes', () => {
       }
       await afterMicrotasks();
     }
-    const transition = env.store.transition(claim, ['RUNNING'], 'COMPLETED');
+    const transition = await env.store.transition(claim, ['RUNNING'], 'COMPLETED');
     expect(transition.kind).toBe('ok');
     const finalSeq = (await env.getRun(run.id)).lastSeq as number;
     expect(finalSeq).toBeGreaterThanOrEqual(initial + 501);
@@ -118,7 +118,7 @@ describe('run stream termination', () => {
     const stream = await env.stream(`/v1/runs/${run.id}/events?after=${lastSeq}`);
     await waitUntil(() => env.notifier.subscriberCount() === 1, 5000, 'the subscriber to register');
 
-    expect(env.store.transition(claim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
+    expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
 
     const rest = await stream.toEnd();
     expect(rest.at(-1)).toMatchObject({ type: 'run.status', to: 'COMPLETED' });
@@ -126,7 +126,7 @@ describe('run stream termination', () => {
     await waitUntil(() => env.notifier.subscriberCount() === 0, 5000, 'the subscriber to unregister');
   });
 
-  it('ends after a dead letter appended by claim', async () => {
+  it('ends after a dead letter appended by the dead-letter sweep', async () => {
     const env = await startService({ maxAttempts: 1 });
     const session = await env.createSession();
     const run = await env.createRun(session.id);
@@ -137,6 +137,7 @@ describe('run stream termination', () => {
 
     env.clock.advance(LEASE_MS + 1);
     expect(env.store.claim('next-worker')).toBeNull();
+    expect(await env.store.deadLetterExhausted(() => undefined)).toEqual([run.id]);
 
     const after = await env.getRun(run.id);
     expect(['FAILED', 'STOPPED']).toContain(after.status);
@@ -150,6 +151,7 @@ describe('run stream termination', () => {
     const session = await env.createSession();
     const run = await env.createRun(session.id);
     await env.http('POST', `/v1/runs/${run.id}/cancel`);
+    expect(await env.store.finishCancelled(() => undefined)).toEqual([run.id]);
     const terminal = await env.getRun(run.id);
     expect(terminal.status).toBe('CANCELLED');
 

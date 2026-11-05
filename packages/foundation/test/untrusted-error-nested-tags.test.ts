@@ -43,7 +43,7 @@ describe('the error mapping sees tags through nested unions', () => {
     ]);
   });
 
-  it('(e) terminates on a $ref cycle A -> B -> oneOf[$ref A] with a deterministic message', () => {
+  it('(e) refuses a $ref cycle A -> B -> oneOf[$ref A] at load', () => {
     const schema = {
       $defs: {
         A: { $ref: '#/$defs/B' },
@@ -51,8 +51,6 @@ describe('the error mapping sees tags through nested unions', () => {
       },
       oneOf: [{ type: 'object', properties: { kind: { const: 'leaf' } }, required: ['kind'] }, { $ref: '#/$defs/A' }],
     };
-    const expected = [{ instancePath: '/kind', keyword: 'const', message: 'must be equal to constant', params: { allowedValue: 'leaf' } }];
-    expect(errorsOf(schema, { kind: 'z' })).toEqual(expected);
-    expect(errorsOf(schema, { kind: 'z' })).toEqual(expected);
+    expect(() => errorsOf(schema, { kind: 'z' })).toThrow(/SCHEMA_REFERENCE_CYCLE/);
   });
 });

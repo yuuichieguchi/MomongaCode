@@ -34,7 +34,6 @@ describe('a target that refuses connections', () => {
         connectAttempts += 1;
         return { kind: 'tcp', baseUrl };
       },
-      toolCalling: () => 'native',
       capabilities: async () => CC_CAPABILITIES,
       clock: createFakeClock(START_MS),
     });
@@ -59,7 +58,6 @@ describe('a target that refuses connections', () => {
     let alive = false;
     const adapter = createChatCompletionsAdapter({
       resolveEndpoint: async () => (alive ? { kind: 'unix', socketPath: fake.socketPath } : { kind: 'tcp', baseUrl }),
-      toolCalling: () => 'native',
       capabilities: async () => CC_CAPABILITIES,
       clock: createFakeClock(START_MS),
     });

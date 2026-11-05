@@ -54,22 +54,22 @@ describe('reflection jobs', () => {
     expect([second.id, third.id].map(aheadOf)).toEqual([0, 1]);
   });
 
-  it('is written in the terminal transition of a completed root run, in the same step as the status', () => {
+  it('is written in the terminal transition of a completed root run, in the same step as the status', async () => {
     const { store, jobs, first } = setup();
     const claim = mustClaim(store, 'w1');
     expect(jobs.get(first.id)).toBeUndefined();
-    expect(store.transition(claim, ['RUNNING'], 'COMPLETED', {}).kind).toBe('ok');
+    expect((await store.transition(claim, ['RUNNING'], 'COMPLETED', {})).kind).toBe('ok');
     expect(jobs.get(first.id)).toMatchObject({ state: 'pending', attempts: 0 });
   });
 
-  it.each(['FAILED', 'STOPPED'] as const)('is not written for a run that ended %s', (outcome) => {
+  it.each(['FAILED', 'STOPPED'] as const)('is not written for a run that ended %s', async (outcome) => {
     const { store, jobs, first } = setup();
     const claim = mustClaim(store, 'w1');
-    expect(store.transition(claim, ['RUNNING'], outcome, outcome === 'FAILED' ? { error: { code: 'x', message: 'x' } } : { stopReason: 'budget' }).kind).toBe('ok');
+    expect((await store.transition(claim, ['RUNNING'], outcome, outcome === 'FAILED' ? { error: { code: 'x', message: 'x' } } : { stopReason: 'budget' })).kind).toBe('ok');
     expect(jobs.get(first.id)).toBeUndefined();
   });
 
-  it('is not written for a child run, which belongs to the run that spawned it', () => {
+  it('is not written for a child run, which belongs to the run that spawned it', async () => {
     const { store, jobs, first } = setup();
     const parentClaim = mustClaim(store, 'w1');
     expect(store.append(parentClaim, [callEvent('c1')]).kind).toBe('ok');
@@ -77,7 +77,7 @@ describe('reflection jobs', () => {
     if (spawned.kind !== 'created') throw new Error(`expected a child run, got ${spawned.kind}`);
     const childClaim = mustClaim(store, 'w2');
     expect(childClaim.runId).toBe(spawned.run.id);
-    expect(store.transition(childClaim, ['RUNNING'], 'COMPLETED', {}).kind).toBe('ok');
+    expect((await store.transition(childClaim, ['RUNNING'], 'COMPLETED', {})).kind).toBe('ok');
     expect(jobs.get(spawned.run.id)).toBeUndefined();
   });
 

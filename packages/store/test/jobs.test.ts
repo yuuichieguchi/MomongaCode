@@ -49,10 +49,10 @@ describe('background jobs', () => {
     expect(h.store.jobs.finish('missing', { status: 'killed' })).toEqual({ kind: 'not_found' });
   });
 
-  it('records no event when no run is active', () => {
+  it('records no event when no run is active', async () => {
     const { h, session, run, claim } = setup();
     const { job } = startJob(h.store, session.id, run.id);
-    h.store.transition(claim, ['RUNNING'], 'COMPLETED');
+    await h.store.transition(claim, ['RUNNING'], 'COMPLETED');
     const before = mustRun(h.store, run.id).lastSeq;
     h.store.jobs.finish(job.id, { status: 'killed', signal: 'SIGTERM' });
     expect(mustRun(h.store, run.id).lastSeq).toBe(before);

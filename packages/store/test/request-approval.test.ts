@@ -82,12 +82,12 @@ describe('store.requestApproval', () => {
     expect(store.readRunEvents(runId, 0, 100).filter((event) => event.type === 'tool.permission.requested')).toEqual([]);
   });
 
-  it('renews the approval once the previous one for the call is resolved', () => {
+  it('renews the approval once the previous one for the call is resolved', async () => {
     const { store } = harness();
     const { runId, claim } = claimWithCall(store);
     const first = store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, expiresAt: START_MS + 60_000, event: { subjectDigest: DIGEST, reason: 'edits require approval' } });
     if (first.kind !== 'ok') throw new Error('expected the first approval');
-    expect(store.resolveApproval(first.approval.id, 'allow_once').kind).toBe('ok');
+    expect((await store.resolveApproval(first.approval.id, 'allow_once')).kind).toBe('ok');
 
     const second = store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, expiresAt: START_MS + 60_000, event: { subjectDigest: 'b'.repeat(64), reason: 'edits require approval' } });
 

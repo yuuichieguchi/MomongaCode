@@ -13,6 +13,7 @@ import {
   terminalOf,
   userText,
 } from './cc-support.ts';
+import { CC_CAPABILITIES } from './cc-support.ts';
 
 const ALL: Record<ProbeKeyword, boolean> = {
   enum: true,
@@ -24,7 +25,7 @@ const ALL: Record<ProbeKeyword, boolean> = {
   additionalProperties: true,
 };
 
-const constrained = { toolCalling: () => 'constrained' as const };
+const constrained = { capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: 'constrained' as const }) };
 const compile = (schema: unknown) => new Ajv2020.default({ strict: false }).compile(schema as object);
 const finalReply = '{"kind":"final","text":"x"}';
 const script = (content: string) => [

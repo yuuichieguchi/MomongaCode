@@ -87,6 +87,7 @@ describe('service fatal routing (fake timers)', () => {
     const fatal = sqliteError(SQLITE_IOERR, 'disk I/O error');
     const env = await startService({
       fakeTimers: true,
+      sweepIntervalMs: 1000,
       onFatal: true,
       cancelUpstream: async () => {
         throw fatal;
@@ -96,6 +97,7 @@ describe('service fatal routing (fake timers)', () => {
     const run = await env.createRun(session.id);
 
     expect((await env.http('POST', `/v1/runs/${run.id}/cancel`)).status).toBe(202);
+    env.timers?.advance(1000);
 
     await waitUntil(() => env.fatals.length > 0 || env.errors.length > 0, 3000, 'the cancelUpstream failure to be reported');
     expect(env.fatals).toEqual([fatal]);

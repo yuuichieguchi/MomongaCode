@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { START_MS, cancel, enqueue, harness, mustClaim, newSession } from './helpers.ts';
+import { START_MS, cancel, cancelToEnd, enqueue, harness, mustClaim, newSession } from './helpers.ts';
 
 describe('sessionActivity', () => {
-  it('lastActivityAt is the newest session event created_at', () => {
+  it('lastActivityAt is the newest session event created_at', async () => {
     const { clock, store } = harness();
     const session = newSession(store);
     clock.advance(100);
@@ -14,7 +14,7 @@ describe('sessionActivity', () => {
     expect(store.sessionActivity(session.id)).toEqual({ lastActivityAt: START_MS + 350, hasActiveRun: true });
   });
 
-  it('ignores events of other sessions', () => {
+  it('ignores events of other sessions', async () => {
     const { clock, store } = harness();
     const quiet = newSession(store, '/work/quiet');
     const busy = newSession(store, '/work/busy');
@@ -24,7 +24,7 @@ describe('sessionActivity', () => {
     expect(store.sessionActivity(quiet.id)).toEqual({ lastActivityAt: START_MS, hasActiveRun: false });
   });
 
-  it('falls back to the session createdAt', () => {
+  it('falls back to the session createdAt', async () => {
     const { clock, store } = harness();
     clock.advance(42);
     const session = newSession(store);
@@ -33,7 +33,7 @@ describe('sessionActivity', () => {
     expect(store.sessionActivity(session.id)).toEqual({ lastActivityAt: START_MS + 42, hasActiveRun: false });
   });
 
-  it('hasActiveRun tracks non-terminal runs', () => {
+  it('hasActiveRun tracks non-terminal runs', async () => {
     const { store } = harness();
     const session = newSession(store);
     const run = enqueue(store, session.id, 'work');
@@ -43,17 +43,17 @@ describe('sessionActivity', () => {
     expect(claim.runId).toBe(run.id);
     expect(store.sessionActivity(session.id)?.hasActiveRun).toBe(true);
 
-    const completed = store.transition(claim, ['RUNNING'], 'COMPLETED');
+    const completed = (await store.transition(claim, ['RUNNING'], 'COMPLETED'));
     if (completed.kind !== 'ok') throw new Error(`expected COMPLETED, got ${completed.kind}`);
     expect(store.sessionActivity(session.id)?.hasActiveRun).toBe(false);
 
     const queued = enqueue(store, session.id, 'again');
     expect(store.sessionActivity(session.id)?.hasActiveRun).toBe(true);
-    expect(cancel(store, queued.id).status).toBe('CANCELLED');
+    expect((await cancelToEnd(store, queued.id)).status).toBe('CANCELLED');
     expect(store.sessionActivity(session.id)?.hasActiveRun).toBe(false);
   });
 
-  it('undefined for an unknown session', () => {
+  it('undefined for an unknown session', async () => {
     const { store } = harness();
     expect(store.sessionActivity('no-such-session')).toBeUndefined();
   });

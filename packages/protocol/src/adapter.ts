@@ -44,6 +44,7 @@ export type AdapterContext = {
   target: AdapterTarget;
   attempt: number;
   reasoningOrigin: ReasoningOrigin;
+  capabilities: Capabilities;
 };
 
 export type ClassifiedError = {
@@ -59,23 +60,22 @@ export type AdapterCompactRequest = {
   input: AdapterInputItem[];
   instructions?: string | null;
   momonga?: CompactMomongaExtension;
-  unknownFields?: Record<string, unknown>;
 };
 
 export type LenientItems = { callNames: Record<string, string>; withTools: boolean };
 
 export type ToolChoiceWire = { forms: readonly AllowedToolsForm[]; expressesRequired: boolean };
 
-export type RenderWireOptions = { reasoningOrigin: ReasoningOrigin; lenientItems?: LenientItems; allowedTools?: readonly AllowedToolsForm[] };
+export type RenderWireOptions = { reasoningOrigin: ReasoningOrigin; capabilities: Capabilities; lenientItems?: LenientItems };
 
 export type AdapterCompactResult = { summary: string; usage: Usage; cacheWriteInputTokens?: number };
 
-export type UnknownFieldsPolicy = 'pass' | 'refuse';
+export type ClientOperation = 'create' | 'compact' | 'count_tokens';
 
 export type ProviderAdapter = {
   readonly kind: string;
   readonly sampling: AdapterSampling;
-  readonly unknownFields: UnknownFieldsPolicy;
+  readonly relaysClientBody: readonly ClientOperation[];
   capabilities(target: AdapterTarget): Promise<Capabilities>;
   create(request: AdapterRequest, ctx: AdapterContext): AsyncIterable<StreamEvent>;
   classify(error: unknown): ClassifiedError;
@@ -84,7 +84,7 @@ export type ProviderAdapter = {
   countTokens?(request: CountTokensRequest, ctx: AdapterContext): Promise<AdapterCountTokensResult>;
   countWire?(wire: Record<string, unknown>, ctx: AdapterContext): Promise<AdapterCountTokensResult>;
   compact?(request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult>;
-  renderCompactWire?(request: AdapterCompactRequest, target: AdapterTarget, cap: number, reasoningOrigin: ReasoningOrigin): Record<string, unknown>;
+  renderCompactWire?(request: AdapterCompactRequest, target: AdapterTarget, cap: number, reasoningOrigin: ReasoningOrigin, capabilities: Capabilities): Record<string, unknown>;
   renderWire?(request: AdapterRequest, target: AdapterTarget, options: RenderWireOptions): Record<string, unknown>;
-  toolChoiceWire(target: AdapterTarget): ToolChoiceWire;
+  toolChoiceWire(capabilities: Capabilities, target: AdapterTarget): ToolChoiceWire;
 };

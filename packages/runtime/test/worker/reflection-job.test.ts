@@ -18,8 +18,7 @@ describe('worker and the reflection job', () => {
   it('writes no row for a run that was cancelled while queued', async () => {
     const env = await makeEnv();
     const run = env.enqueue('Never started');
-    env.cancel(run.id);
-    expect(env.run(run.id).status).toBe('CANCELLED');
+    expect((await env.cancelToEnd(run.id)).status).toBe('CANCELLED');
     expect(env.store.reflection.get(run.id)).toBeUndefined();
   });
 });

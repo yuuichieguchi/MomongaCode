@@ -74,7 +74,7 @@ describe('WW1: bounded per-run memory', () => {
     await env.runOnce(worker);
     expect(worker.memorySize()).toBe(1);
 
-    expect(env.cancel(run.id).status).toBe('CANCELLED');
+    expect((await env.cancelToEnd(run.id)).status).toBe('CANCELLED');
     worker.start();
     await waitUntil(() => worker.memorySize() === 0, 3_000, 'the cancelled run to be forgotten');
     await within(worker.stop(), 3_000, 'the worker to stop');
@@ -295,7 +295,7 @@ describe('WW1: sweep after each claim', () => {
     await env.runOnce(worker);
     expect(env.run(failed.id).status).toBe('QUEUED');
     expect(worker.memorySize()).toBe(1);
-    expect(env.cancel(failed.id).status).toBe('CANCELLED');
+    expect((await env.cancelToEnd(failed.id)).status).toBe('CANCELLED');
 
     const enqueueElsewhere = (input: string) => {
       const session = env.store.createSession({ cwd: env.project, env: { PATH: '/usr/bin:/bin', LANG: 'C' }, permissionMode: 'default', modelAlias: 'fm' });

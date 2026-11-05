@@ -105,7 +105,6 @@ export const summaryRequestOf = (request: AdapterCompactRequest, cap: number, or
     input: [{ type: 'message', role: 'user', content: transcriptOf(request.input, origin) }],
     max_output_tokens: cap,
     reasoning_effort: LOWEST_REASONING_EFFORT,
-    ...(request.unknownFields === undefined ? {} : { unknownFields: request.unknownFields }),
   };
 };
 

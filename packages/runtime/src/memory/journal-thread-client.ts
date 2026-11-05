@@ -1,5 +1,7 @@
 import { MessageChannel, Worker, receiveMessageOnPort } from 'node:worker_threads';
 import type { MessagePort } from 'node:worker_threads';
+import { JournalThreadError } from '@momonga/store';
+import type { ContributionMeasured, ContributionPreparer } from '@momonga/store';
 import { JOURNAL_THREAD_CODE } from './journal-thread-code.generated.ts';
 
 export type JournalThreadTimers = {
@@ -17,19 +19,12 @@ export type JournalThreadOptions = {
 
 export type JournalThreadReply = Readonly<Record<string, unknown>>;
 
-export type JournalThreadClient = {
+export type JournalThreadClient = ContributionPreparer & {
   readonly identity: { readonly dev: number; readonly ino: number };
   request(request: { readonly kind: string } & Readonly<Record<string, unknown>>): Promise<JournalThreadReply>;
   ping(): Promise<{ readonly threadId: number }>;
   close(): Promise<void>;
 };
-
-export class JournalThreadError extends Error {
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options);
-    this.name = 'JournalThreadError';
-  }
-}
 
 type Pending = { readonly resolve: (reply: JournalThreadReply) => void; readonly reject: (error: JournalThreadError) => void };
 
@@ -51,6 +46,19 @@ const realTimers: JournalThreadTimers = {
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
+
+type ContributionItems = NonNullable<ContributionMeasured['contribution']>['items'];
+
+const isContributionItem = (item: unknown): boolean =>
+  isRecord(item) && typeof item['kind'] === 'string' && typeof item['id'] === 'string' && typeof item['contributed'] === 'boolean';
+
+const measuredOf = (reply: JournalThreadReply): ContributionMeasured => {
+  const { lastSeq, items } = reply;
+  if (typeof lastSeq !== 'number') throw new JournalThreadError('journal thread contribution reply carries no numeric lastSeq');
+  if (items === undefined) return { lastSeq };
+  if (!Array.isArray(items) || !items.every(isContributionItem)) throw new JournalThreadError('journal thread contribution reply carries malformed items');
+  return { lastSeq, contribution: { type: 'context.contribution', items: items as ContributionItems } };
+};
 
 export const startJournalThread = async (options: JournalThreadOptions): Promise<JournalThreadClient> => {
   const { databasePath, identity, silenceLimitMs, code = JOURNAL_THREAD_CODE, timers = realTimers } = options;
@@ -222,6 +230,11 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
     return { threadId: reportedThreadId };
   };
 
+  const measure: JournalThreadClient['measure'] = async ({ runId, leading }) => {
+    const reply = await request({ kind: 'contribution', runId, leading });
+    return measuredOf(reply);
+  };
+
   const close = (): Promise<void> => {
     closePromise ??= (async () => {
       if (current !== null) fail(current, new JournalThreadError('journal thread client was closed'));
@@ -232,5 +245,5 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
   };
 
   await liveThread();
-  return { identity, request, ping, close };
+  return { identity, request, ping, measure, close };
 };

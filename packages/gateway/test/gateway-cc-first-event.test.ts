@@ -8,7 +8,7 @@ const textReply = { kind: 'stream' as const, chunks: [{ delta: { role: 'assistan
 describe('chat-completions retry before any output', () => {
   it('retries when the upstream answers 200 and then ends without sending an event', async () => {
     const fake = await startFake({ scenario: 'tools-ok', script: [{ kind: 'raw-sse', events: [] }, textReply] });
-    const adapter = makeAdapter(fake, { toolCalling: () => 'native', capabilities: async () => CC_CAPABILITIES });
+    const adapter = makeAdapter(fake, { capabilities: async () => CC_CAPABILITIES });
     const { client, timers } = await startGateway({ adapters: { fm: adapter }, config: { aliases: { fast: ['fm'] }, targets: { fm: { model: 'system' } } } });
     const pending = postJson(client, '/v1/responses', { model: 'fast', input: userInput('hi') });
     await waitFor(() => timers.pending().length > 0, { description: 'retry timer' });

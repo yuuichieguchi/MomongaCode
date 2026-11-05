@@ -77,7 +77,6 @@ export const ccAdapterFor = (
   capabilities: CapabilityOverride = {},
 ): ChatCompletionsAdapter =>
   makeAdapter(fake, {
-    toolCalling: () => toolCalling,
     capabilities: async () => applyCapabilityOverride({ ...CC_CAPABILITIES, toolCalling }, capabilities),
   });
 

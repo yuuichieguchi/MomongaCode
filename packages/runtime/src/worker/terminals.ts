@@ -13,9 +13,9 @@ export type TerminalsOptions = {
 };
 
 export const createTerminals = ({ store, claim, journal, control, clock }: TerminalsOptions): Terminals => {
-  const cancel = (): 'done' => {
+  const cancel = async (): Promise<'done'> => {
     journal.snapshot();
-    const result = store.transition(claim, ['CANCELLING'], 'CANCELLED');
+    const result = await store.transition(claim, ['CANCELLING'], 'CANCELLED');
     if (result.kind === 'lease_lost') control.lost();
     if (result.kind === 'conflict') throw new Error(`run ${claim.runId} could not be cancelled: ${result.reason ?? 'conflict'}`);
     return 'done';
@@ -27,26 +27,27 @@ export const createTerminals = ({ store, claim, journal, control, clock }: Termi
     return 'done';
   };
 
-  const settle = (result: RunMutationResult, whenCancelling: () => 'done'): 'done' => {
+  const settle = (result: RunMutationResult): 'settled' | 'cancelling' => {
     if (result.kind === 'lease_lost') control.lost();
     if (result.kind === 'conflict') {
-      if (store.getRun(claim.runId)?.status === 'CANCELLING') return whenCancelling();
+      if (store.getRun(claim.runId)?.status === 'CANCELLING') return 'cancelling';
       throw new Error(`run ${claim.runId} could not change status: ${result.reason ?? 'conflict'}`);
     }
-    return 'done';
+    return 'settled';
   };
 
   return {
-    finish: (to, patch, preceding = []) => {
+    finish: async (to, patch, preceding = []) => {
       journal.snapshot();
-      return settle(store.transition(claim, ['RUNNING'], to, patch, preceding), () => {
+      if (settle(await store.transition(claim, ['RUNNING'], to, patch, preceding)) === 'cancelling') {
         if (preceding.length > 0) journal.append(preceding);
         return cancel();
-      });
+      }
+      return 'done';
     },
     yieldTo: (to, availableAt, options) => {
       journal.snapshot();
-      return settle(store.release(claim, to, availableAt, options), yieldLease);
+      return settle(store.release(claim, to, availableAt, options)) === 'cancelling' ? yieldLease() : 'done';
     },
     cancel,
     yieldLease,

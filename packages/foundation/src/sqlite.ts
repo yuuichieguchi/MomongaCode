@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { sha256Hex } from './canonical-json.ts';
 import { modeIsPrivate } from './platform/privacy.ts';
 
-const DEFAULT_BUSY_TIMEOUT_MS = 5000;
+export const DEFAULT_BUSY_TIMEOUT_MS = 5000;
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
 
