@@ -2969,6 +2969,73 @@
       "measuredSeconds": 3.48,
       "measuredCpuSeconds": 1.68,
       "budgetCpuSeconds": 7
+    },
+    {
+      "config": "DerivedRepair",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1464,
+      "measuredSeconds": 3.28,
+      "measuredCpuSeconds": 3.01,
+      "budgetCpuSeconds": 10
+    },
+    {
+      "config": "DerivedRepair.today",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoBadRead",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 9,
+      "measuredSeconds": 2.85,
+      "measuredCpuSeconds": 1.77,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "DerivedRepair.sessionPerRun",
+      "role": "evidence",
+      "expect": {
+        "violates": "Coherence",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 27,
+      "measuredSeconds": 3.27,
+      "measuredCpuSeconds": 1.83,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "DerivedRepair.staleMark",
+      "role": "evidence",
+      "expect": {
+        "violates": "Coherence",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 237,
+      "measuredSeconds": 2.96,
+      "measuredCpuSeconds": 1.94,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "DerivedRepair.advanceAtEnd",
+      "role": "evidence",
+      "expect": {
+        "violates": "Coherence",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 68,
+      "measuredSeconds": 3.03,
+      "measuredCpuSeconds": 1.82,
+      "budgetCpuSeconds": 7
     }
   ]
 }
