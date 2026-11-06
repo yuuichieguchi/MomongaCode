@@ -1,6 +1,9 @@
+import fs from 'node:fs';
+import net from 'node:net';
+import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { momongaPaths, rotatedLogPath } from '@momonga/foundation';
+import { listenUnix, momongaPaths, rotatedLogPath, setSocketBind } from '@momonga/foundation';
 
 const HOME = '/Users/alice';
 
@@ -81,25 +84,44 @@ describe('momongaPaths', () => {
     expect(momongaPaths('/home/bob', 'linux', {})).toEqual(expectedLayout('/home/bob', '/home/bob/.cache/momonga', '/home/bob/.local/share/keyrings'));
   });
 
-  it('accepts a home whose longest socket path is 103 bytes', () => {
-    const home = `/${'h'.repeat(73)}`;
-    const paths = momongaPaths(home, 'darwin', {});
-    expect(Buffer.byteLength(paths.sockets.supervisor)).toBe(103);
-  });
-
-  it('throws naming the socket path and its length when a socket path reaches 104 bytes', () => {
+  it('builds a socket path of 104 bytes without refusing it, since the limit is measured when the socket is bound', () => {
     const home = `/${'h'.repeat(74)}`;
     const socket = `${home}/.momonga/run/supervisor.sock`;
     expect(Buffer.byteLength(socket)).toBe(104);
-    expect(() => momongaPaths(home, 'darwin', {})).toThrow(socket);
-    expect(() => momongaPaths(home, 'darwin', {})).toThrow(/104/);
+    expect(momongaPaths(home, 'darwin', {}).sockets.supervisor).toBe(socket);
   });
 
-  it('counts bytes rather than characters for the socket limit', () => {
+  it('builds a socket path of 104 bytes counted in multibyte characters without refusing it', () => {
     const home = `/${'é'.repeat(37)}`;
-    expect(Buffer.byteLength(`${home}/.momonga/run/supervisor.sock`)).toBe(104);
-    expect(() => momongaPaths(home, 'darwin', {})).toThrow(/104/);
+    const socket = `${home}/.momonga/run/supervisor.sock`;
+    expect(Buffer.byteLength(socket)).toBe(104);
+    expect(momongaPaths(home, 'linux', {}).sockets.supervisor).toBe(socket);
   });
+
+  it('refuses a too-long socket path when listenUnix binds it, with the bind probe evidence', async () => {
+    const home = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-home-')));
+    try {
+      const run = momongaPaths(home, 'darwin', {}).run;
+      fs.mkdirSync(run, { recursive: true, mode: 0o700 });
+      fs.chmodSync(run, 0o700);
+      const socket = momongaPaths(home, 'darwin', {}).sockets.supervisor;
+      const limit = Buffer.byteLength(socket);
+      setSocketBind(async (candidate) => {
+        if (Buffer.byteLength(candidate) >= limit) throw Object.assign(new Error(`bind ${candidate}: EINVAL`), { code: 'EINVAL' });
+      });
+      const server = net.createServer();
+      const error = await listenUnix(server, socket).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toContain(socket);
+      expect((error as Error).message).toContain('EINVAL');
+      expect((error as Error).message).toContain(String(limit));
+      expect(server.listening).toBe(false);
+    } finally {
+      setSocketBind(undefined);
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   it('places the launcher link outside the momonga root on every platform', () => {
     expect(momongaPaths(HOME, 'darwin', {}).launcher).toBe('/Users/alice/.local/bin/momonga');
     expect(momongaPaths('/home/bob', 'linux', { XDG_CACHE_HOME: '/xdg' }).launcher).toBe('/home/bob/.local/bin/momonga');
