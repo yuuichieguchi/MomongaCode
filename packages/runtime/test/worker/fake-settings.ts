@@ -1,7 +1,7 @@
 import { DEFAULT_FORGET_AFTER_DAYS, DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS, parseRule } from '@momonga/config';
 import type { ModelRoles, PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from '@momonga/config';
 import type { HooksSettings } from '@momonga/protocol';
-import type { SettingsPort } from '@momonga/runtime';
+import type { SettingsPort, TargetFacts } from '@momonga/runtime';
 import type { Session } from '@momonga/store';
 
 export type FakeSettings = SettingsPort & {
@@ -20,6 +20,8 @@ export type FakeSettings = SettingsPort & {
   classifierAlias: string | undefined;
   rolesValue: ModelRoles;
   modelRoles: () => ModelRoles;
+  targetsValue: Record<string, TargetFacts>;
+  modelTargets: () => Record<string, TargetFacts>;
 };
 
 export const createFakeSettings = (layout: { home: string; project: string }): FakeSettings => {
@@ -40,6 +42,8 @@ export const createFakeSettings = (layout: { home: string; project: string }): F
     classifierAlias: undefined,
     rolesValue: {},
     modelRoles: () => ({ ...settings.rolesValue }),
+    targetsValue: {},
+    modelTargets: () => ({ ...settings.targetsValue }),
     hooks: async () => settings.hooksValue,
     verification: async () => settings.verificationValue,
     memory: async () => settings.memoryValue,

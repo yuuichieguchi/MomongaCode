@@ -18,7 +18,7 @@ import {
   saveContextReport,
   saveTranscript,
 } from '@momonga/eval';
-import type { ContextDataset, ContextModel, EvalReport, GateName, GoldenCase, GoldenDataset, PolicyOverlay, RecordedRun, Transcript } from '@momonga/eval';
+import type { ContextDataset, EvalReport, GateName, GoldenCase, GoldenDataset, PolicyOverlay, RecordedRun, Transcript } from '@momonga/eval';
 import { codeDigestOfRunningProcess } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { goldenRunApi } from '../client/golden-run-api.ts';
@@ -83,7 +83,6 @@ const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenData
 export type EvaluateContextOptions = {
   replay?: string;
   record?: string;
-  model?: ContextModel;
   alias?: string;
   seed?: number;
   report?: string;
@@ -97,10 +96,9 @@ const seedOfTranscripts = (transcripts: readonly Transcript[]): number | undefin
   return seeds[0];
 };
 
-const assertLiveOptions = (options: EvaluateContextOptions): { model: ContextModel; alias: string } => {
-  if (options.model === undefined) throw new EvaluateUsageError('--model fake|real is required: a transcript does not record which kind of model produced it');
+const assertLiveOptions = (options: EvaluateContextOptions): { alias: string } => {
   if (options.alias === undefined) throw new EvaluateUsageError('--alias <alias> is required for a live run: it names the model alias every session of the run is pinned to');
-  return { model: options.model, alias: options.alias };
+  return { alias: options.alias };
 };
 
 const runContextLiveCommand = async (
@@ -144,8 +142,6 @@ export const evaluateContext = async (
   }
   const policy = options.settings === undefined ? {} : parsePolicyOverlay(await ports.files.readText(path.resolve(ports.cwd, options.settings)), options.settings);
   const mode = replay === undefined ? ({ kind: 'live', ...assertLiveOptions(options) } as const) : ({ kind: 'replay', directory: replay } as const);
-  const model = mode.kind === 'live' ? mode.model : options.model;
-  if (model === undefined) throw new EvaluateUsageError('--model fake|real is required with --replay: a transcript does not record which kind of model produced it');
   const dataset = await loadContextDataset(ports.files, path.resolve(ports.cwd, datasetFile));
   let transcripts: Transcript[];
   let datasetSeed: number | undefined;
@@ -165,7 +161,6 @@ export const evaluateContext = async (
   const report = buildContextReport({
     dataset,
     transcripts,
-    model,
     seed: CONTEXT_BOOTSTRAP_SEED,
     ...(datasetSeed === undefined ? {} : { datasetSeed }),
   });

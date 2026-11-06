@@ -15,7 +15,7 @@ import type { ClaimControl } from './claim-control.ts';
 import { dispositionOf } from './gateway-policy.ts';
 import { heartbeatMsFor } from './heartbeat.ts';
 import { describeError, LeaseLostError, ShutdownError } from './errors.ts';
-import { inlineLimitForItemCap, inlineOutputLimitFor } from './inline-limit.ts';
+import { meteredOutputFit, reconcileOutputFit } from './output-fit.ts';
 import { governingFailureAtStart, measurePinnedFor } from './context-step.ts';
 import { runStartHooks } from './hook-step.ts';
 import { openJournal } from './journal.ts';
@@ -315,6 +315,7 @@ const drive = async (
           toolSetDigest: toolSet.digest,
           capabilities: await gateway.capabilities(session.modelAlias, { signal: control.signal }),
           roles: rolesFor({ store: options.store, settings: options.settings, run }),
+          targets: { ...options.settings.modelTargets() },
           ...(newMemoryShare === undefined ? {} : { memoryShare: newMemoryShare }),
           ...(newGuidelineVersion === undefined ? {} : { guidelineVersion: newGuidelineVersion }),
           token: {
@@ -361,7 +362,6 @@ const drive = async (
   const pinnedGuideline = guidelineOf(options.store, pins.guidelineVersion);
   const limits = readRunLimits(run.limits, options.defaults);
   const composeRules = await permissionRulesComposerFor(options, session);
-  let measuredInlineLimit: Promise<number> | undefined;
   const targetFacts = new Map<string, { meter: TokenMeter; capabilities: Capabilities; counter: string }>();
   const listing = await control.recordingRaised(gateway.model(pins.modelAlias, { signal: control.signal }));
   const counterOf = (target: string): string => {
@@ -445,11 +445,8 @@ const drive = async (
     windowShared: () => jobRunningNow() || childRunLive(),
     companions: () => ({ hostOf: Object.fromEntries(toolSet.companions), keepWithoutHost: keepCompanionsWithoutHost() }),
     systemPrompt,
-    inlineLimitForReconcile: inlineOutputLimitFor(pins.capabilities),
-    inlineLimitForExecution: () => {
-      measuredInlineLimit ??= measurePinnedFor(ctx).then((measured) => inlineLimitForItemCap(measured.itemCap));
-      return measuredInlineLimit;
-    },
+    outputFit: meteredOutputFit({ meter: aliasMeter, itemCap: async () => (await measurePinnedFor(ctx)).itemCap }),
+    reconcileFit: reconcileOutputFit(pins.capabilities),
     journal,
     control,
     terminals,

@@ -35,13 +35,13 @@ describe('T4-3 is decided once, on the text the model sees, header included (sec
     expect(utf8(formatted)).toBe(21);
     expect(utf8(`[formatted by log; raw output ${RAW_HANDLE}; read it with ReadOutput]\n${formatted}`)).toBe(142);
 
-    expect(formatToolOutput({ output: raw, tool: execute, enabled: ['log'], reader: 'ReadOutput', terms: [] })).toBeUndefined();
+    expect(formatToolOutput({ status: 'completed', output: raw, tool: execute, enabled: ['log'], reader: 'ReadOutput', terms: [] })).toBeUndefined();
   });
 
   it('uses a formatted output that is smaller than the raw output with its header', () => {
     const raw = ticks(200);
     expect(utf8(raw)).toBe(1009);
 
-    expect(formatToolOutput({ output: raw, tool: execute, enabled: ['log'], reader: 'ReadOutput', terms: [] })).toEqual({ output: 'start\ntick [×200]\nend', formatter: 'log', version: 1 });
+    expect(formatToolOutput({ status: 'completed', output: raw, tool: execute, enabled: ['log'], reader: 'ReadOutput', terms: [] })).toEqual({ output: 'start\ntick [×200]\nend', formatter: 'log', version: 1 });
   });
 });

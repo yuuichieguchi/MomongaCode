@@ -3,7 +3,6 @@ import path from 'node:path';
 import { loadUserModels } from '@momonga/config';
 import type { ModelRoles } from '@momonga/config';
 import {
-  GUIDELINE_CANDIDATES,
   adoptionOf,
   buildContextReport,
   datasetDigestOf,
@@ -12,12 +11,11 @@ import {
   formatImproveOutcome,
   guidelineDiff,
   improveGuideline,
-  liveBoundsFor,
   loadContextDataset,
   outcomeFileOf,
   parseOutcomeFile,
 } from '@momonga/eval';
-import type { BenchmarkResult, ContextModel, GuidelineCompletion, GuidelineCompletionRequest, ImproveInput, Transcript } from '@momonga/eval';
+import type { BenchmarkResult, GuidelineCompletion, GuidelineCompletionRequest, ImproveInput, Transcript } from '@momonga/eval';
 import { codeDigestOfRunningProcess } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { ESTIMATED_CHARACTERS_PER_TOKEN, LOWEST_REASONING_EFFORT, assistantTextOf, requireStructuredOutput, summaryTokenCapFor } from '@momonga/protocol';
@@ -41,8 +39,8 @@ export class ContextImproveError extends Error {
 
 export type ContextImproveOptions = {
   dataset: string;
-  model: ContextModel;
   alias: string;
+  tokenCap: number;
   seed: number;
   outcome: string;
   interrupt?: AbortSignal;
@@ -121,18 +119,16 @@ export const analysisModelFor = async (input: AnalysisModelInput): Promise<{ ali
 
 export type ImproveInputSource = {
   seed: number;
-  model: ContextModel;
   analysis: { alias: string; capabilities: AliasCapabilities };
-  datasetTokens: number;
+  tokenCap: number;
   current: ImproveInput['current'];
 };
 
-export const improveInputFor = ({ seed, model, analysis, datasetTokens, current }: ImproveInputSource): ImproveInput => ({
+export const improveInputFor = ({ seed, analysis, tokenCap, current }: ImproveInputSource): ImproveInput => ({
   seed,
   bootstrapSeed: CONTEXT_BOOTSTRAP_SEED,
-  model,
   alias: analysis.alias,
-  capTokens: datasetTokens * (1 + GUIDELINE_CANDIDATES),
+  tokenCap,
   current,
   recordChars: recordCharsFor(analysis.capabilities),
 });
@@ -159,7 +155,7 @@ export const contextImprove = async (
     const completer = await completerFor(ports, paths, analysis.alias, analysis.capabilities, options.interrupt);
     try {
       const outcome = await improveGuideline(
-        improveInputFor({ seed: options.seed, model: options.model, analysis, datasetTokens: liveBoundsFor(dataset, limits).datasetTokens, current }),
+        improveInputFor({ seed: options.seed, analysis, tokenCap: options.tokenCap, current }),
         {
           benchmark: async (guideline): Promise<BenchmarkResult> => {
             const transcripts = await runContextLive(hostEffects(ports), {
@@ -175,7 +171,7 @@ export const contextImprove = async (
               onUnownedHomes: (roots) => ports.stderr.write(unownedHomesNotice(roots)),
               ...(options.interrupt === undefined ? {} : { interrupt: options.interrupt }),
             });
-            const report = buildContextReport({ dataset, transcripts, model: options.model, seed: CONTEXT_BOOTSTRAP_SEED, datasetSeed: options.seed });
+            const report = buildContextReport({ dataset, transcripts, seed: CONTEXT_BOOTSTRAP_SEED, datasetSeed: options.seed });
             return { report, transcripts, tokens: tokensOf(transcripts) };
           },
           complete: completer.complete,

@@ -20,15 +20,16 @@ import type { ToolSet } from './registry.ts';
 import { cancellableTimer } from './timers.ts';
 import { observedToolFiles } from './work-tree-observer.ts';
 import type { WorkTreeMark, WorkTreeObserver } from './work-tree-observer.ts';
-import { MINIMUM_INLINE_OUTPUT_CHARS, truncateOutput, useFormattedOutput } from './truncate.ts';
 import { ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
-import type { AnyTool, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
+import type { AnyTool, OutputFit, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
 import { cleanFailureMessage } from '@momonga/foundation';
 import { toolRefusalKey, unavailable, validateToolInput } from './validate.ts';
 import type { ValidationResult } from './validate.ts';
 
 const DEFAULT_IDEMPOTENCY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const DEFAULT_MAX_INLINE_OUTPUT_CHARS = 30_000;
+const HANDLE_LENGTH = 64;
+const HANDLE_PATTERN = new RegExp(`^[0-9a-f]{${HANDLE_LENGTH}}$`);
+const OUTPUT_MEDIA_TYPE = 'text/plain; charset=utf-8';
 const DEFAULT_MAX_PARALLEL = 8;
 const DEFAULT_READ_ONLY_RETRY = { attempts: 3, baseMs: 200, maxMs: 2000 } as const;
 const ABORT_SETTLE_LIMIT_MS = 2000;
@@ -80,8 +81,8 @@ type BatchCore = BatchCallbacks & {
   session: ToolSessionState;
   deadlineAt: number;
   signal: AbortSignal;
-  inlineLimitForReconcile?: number;
-  inlineLimitForExecution?: () => Promise<number>;
+  outputFit: OutputFit;
+  reconcileFit: OutputFit;
   hooks?: ToolHooks;
   classifier?: AutoClassifier;
   onHalt?(reason: string, hookEvent: 'PreToolUse' | 'PostToolUse'): void;
@@ -142,7 +143,6 @@ export type ToolExecutorOptions = {
   blobs: BlobPort;
   clock: Clock;
   idempotencyTtlMs?: number;
-  maxInlineOutputChars?: number;
   readOnlyRetry?: { attempts: number; baseMs: number; maxMs: number };
   maxParallel?: number;
   jobs?: BackgroundJobs;
@@ -467,12 +467,8 @@ const settleWithin = async (pending: Promise<unknown>, ms: number): Promise<void
 };
 
 export const createToolExecutor = (options: ToolExecutorOptions): InspectableToolExecutor => {
-  if (options.maxInlineOutputChars !== undefined && options.maxInlineOutputChars < MINIMUM_INLINE_OUTPUT_CHARS) {
-    throw new RangeError(`maxInlineOutputChars must be at least ${MINIMUM_INLINE_OUTPUT_CHARS}`);
-  }
   const { idempotency, blobs, clock } = options;
   const ttlMs = options.idempotencyTtlMs ?? DEFAULT_IDEMPOTENCY_TTL_MS;
-  const maxInlineOutputChars = options.maxInlineOutputChars ?? DEFAULT_MAX_INLINE_OUTPUT_CHARS;
   const retry = options.readOnlyRetry ?? DEFAULT_READ_ONLY_RETRY;
   const maxParallel = options.maxParallel ?? DEFAULT_MAX_PARALLEL;
   const reconcileCapMs = options.reconcileCapMs ?? DEFAULT_RECONCILE_CAP_MS;
@@ -517,7 +513,17 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     read: ((handle: string, range: never) => blobs.read(handle, range, { runId })) as BlobPort['read'],
   });
 
-  const formattedResult = (result: ToolResult, tool: AnyTool, limit: number, runId: string, formatOutput: BatchOutputFormatter | undefined) => {
+  const storedHandle = (text: string, runId: string): string => {
+    const stored = scopedBlobs(runId).put(text, { mediaType: OUTPUT_MEDIA_TYPE });
+    if (!HANDLE_PATTERN.test(stored.handle)) {
+      throw new TypeError(`blob handle must be ${HANDLE_LENGTH} lowercase hex characters, got ${JSON.stringify(stored.handle)}`);
+    }
+    return stored.handle;
+  };
+
+  type FittedOutput = { output: string } | { output: string; truncated: boolean; handle: string };
+
+  const formattedResult = async (result: ToolResult, tool: AnyTool, fit: OutputFit, runId: string, formatOutput: BatchOutputFormatter | undefined) => {
     if (formatOutput === undefined || tool.pagesOutput === true) return undefined;
     let formatted: ReturnType<BatchOutputFormatter>;
     try {
@@ -527,24 +533,32 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       return undefined;
     }
     if (formatted === undefined) return undefined;
-    const used = useFormattedOutput({ raw: result.output, formatted: formatted.output, header: formatted.header, limit, blobs: scopedBlobs(runId) });
-    return used === undefined ? undefined : { ...used, formatted: { formatter: formatted.formatter, version: formatted.version } };
+    const handle = storedHandle(result.output, runId);
+    const text = `${formatted.header(handle)}\n${formatted.output}`;
+    const fitsInline = await fit.fits(text);
+    return {
+      output: fitsInline ? text : await fit.fit(text, handle),
+      truncated: !fitsInline,
+      handle,
+      formatted: { formatter: formatted.formatter, version: formatted.version },
+    };
   };
 
-  const finalizeResult = (
+  const fittedOutput = async (result: ToolResult, fit: OutputFit, runId: string): Promise<FittedOutput> => {
+    if (await fit.fits(result.output)) return { output: result.output };
+    const handle = storedHandle(result.output, runId);
+    return { output: await fit.fit(result.output, handle), truncated: true, handle };
+  };
+
+  const finalizeResult = async (
     result: ToolResult,
     tool: AnyTool,
-    limit: number,
+    fit: OutputFit,
     runId: string,
     formatOutput?: BatchOutputFormatter,
-  ): ResultOutcome['result'] => {
-    const formatted = formattedResult(result, tool, limit, runId, formatOutput);
-    const truncated =
-      formatted !== undefined
-        ? formatted
-        : tool.pagesOutput === true && result.output.length <= limit
-          ? { output: result.output }
-          : truncateOutput(result.output, limit, scopedBlobs(runId));
+  ): Promise<ResultOutcome['result']> => {
+    const formatted = await formattedResult(result, tool, fit, runId, formatOutput);
+    const truncated: FittedOutput = formatted ?? (await fittedOutput(result, fit, runId));
     return {
       status: result.status,
       output: truncated.output,
@@ -846,7 +860,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     release(): void;
   };
 
-  const openScope = (batch: BatchCore, call: ToolCall, tool: AnyTool, key: string, inlineLimit: number, deadlineAt: number, factsOf: () => SubjectFacts): CallScope => {
+  const openScope = (batch: BatchCore, call: ToolCall, tool: AnyTool, key: string, fit: OutputFit, deadlineAt: number, factsOf: () => SubjectFacts): CallScope => {
     const { callId } = call;
     const controller = new AbortController();
     let abortReason: AbortReason | undefined;
@@ -880,7 +894,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       step: batch.step,
       callId,
       idemKey: key,
-      outputBudgetChars: inlineLimit,
+      outputFit: fit,
       ...(tool.sideEffect === 'exec' ? { processMarker } : {}),
       ...(trace === undefined ? {} : { traceparent: trace.traceparent }),
       ...(trace?.tracestate === undefined ? {} : { tracestate: trace.tracestate }),
@@ -1021,10 +1035,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   const reconcileOnly = async (batch: RecoveryBatchInput, plan: RecoveryPlan): Promise<CallOutcome> => {
     const { call, tool, input, key } = plan;
     const { callId } = call;
-    const inlineLimit = batch.inlineLimitForReconcile ?? maxInlineOutputChars;
+    const fit = batch.reconcileFit;
     if (batch.signal.aborted) return failedOutcome(callId, `${tool.name} was cancelled`);
     const recordedFacts: { current: SubjectFacts } = { current: {} };
-    const scope = openScope(batch, call, tool, key, inlineLimit, clock.now() + reconcileCapMs + reconcileGraceMs, () => recordedFacts.current);
+    const scope = openScope(batch, call, tool, key, fit, clock.now() + reconcileCapMs + reconcileGraceMs, () => recordedFacts.current);
     try {
       const current = idempotency.get(key);
       if (current?.s === 'COMPLETED') return storedOutcome(current.result);
@@ -1035,10 +1049,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       if (resumed.kind === 'outcome') return resumed.outcome;
       const reconcileOutcome = resumed.result;
       if (reconcileOutcome.outcome === 'not_applied') {
-        return scope.complete(finalizeResult({ status: 'failed', output: cancelledOutput(tool) }, tool, inlineLimit, batch.runId), 'not_applied');
+        return scope.complete(await finalizeResult({ status: 'failed', output: cancelledOutput(tool) }, tool, fit, batch.runId), 'not_applied');
       }
       const status = reconcileOutcome.outcome === 'already_applied' ? 'completed' : 'failed';
-      return scope.complete(finalizeResult({ status, output: reconcileOutcome.output }, tool, inlineLimit, batch.runId), reconcileOutcome.outcome);
+      return scope.complete(await finalizeResult({ status, output: reconcileOutcome.output }, tool, fit, batch.runId), reconcileOutcome.outcome);
     } finally {
       scope.release();
     }
@@ -1091,18 +1105,13 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       ...(plan.basis === undefined ? {} : { basis: plan.basis }),
     };
     const { callId } = call;
-    const inlineLimit = batch.inlineLimitForReconcile ?? maxInlineOutputChars;
-    let executionLimit: Promise<number> | undefined;
-    const resolveExecutionLimit = (): Promise<number> => {
-      executionLimit ??= batch.inlineLimitForExecution === undefined ? Promise.resolve(inlineLimit) : batch.inlineLimitForExecution();
-      return executionLimit;
-    };
+    const fit = batch.reconcileFit;
     if (batch.signal.aborted) return failedOutcome(callId, `${tool.name} was cancelled`);
     if (batch.deadlineAt - clock.now() <= 0) return failedOutcome(callId, `Run deadline exceeded before ${tool.name} could start`);
 
     const facts = subjectFactsOf(gate.subject);
     const performedFacts: { current: SubjectFacts } = { current: facts };
-    const scope = openScope(batch, call, tool, key, inlineLimit, batch.deadlineAt, () => performedFacts.current);
+    const scope = openScope(batch, call, tool, key, fit, batch.deadlineAt, () => performedFacts.current);
     const toolContext: ToolContext = { ...scope.reconcileCtx, sandbox: batch.sandbox, sandboxPolicy: batch.sandboxPolicy, checkpoint: scope.checkpoint, extendToRunDeadline: scope.extendTimerToDeadline };
     const contextForBasis = (): ToolContext => (requireBasis(target) === 'read_only' ? readOnlyContextOf(toolContext) : toolContext);
 
@@ -1124,7 +1133,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         }
       }
       if (record === undefined) {
-        await resolveExecutionLimit();
+        await batch.outputFit.ready?.();
         if (tool.prepare !== undefined) {
           try {
             prepared = await tool.prepare(target.input, contextForBasis());
@@ -1152,10 +1161,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       }
 
       const execute = async (reconciled?: ReconcileResult['outcome'], resume?: ToolResume): Promise<CallOutcome> => {
-        const outputLimit = await resolveExecutionLimit();
+        await batch.outputFit.ready?.();
         if ((await scope.holdCall()) === 'aborted') return failedOutcome(callId, `${tool.name} was cancelled`);
         if (!scope.holding(scope.ledger.authorise(key))) return scope.deferred;
-        const executionCtx: ToolContext = { ...contextForBasis(), outputBudgetChars: outputLimit, ...(resume === undefined ? {} : { resume }) };
+        const executionCtx: ToolContext = { ...contextForBasis(), outputFit: batch.outputFit, ...(resume === undefined ? {} : { resume }) };
         if (tool.sideEffect === 'exec') {
           fs.rmSync(scope.processMarker, { force: true });
           fs.closeSync(fs.openSync(scope.processMarker, 'wx', 0o600));
@@ -1205,7 +1214,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           const hooked = await applyPostToolHooks(batch, call, tool, target.input, settled);
           const effects = observation === undefined || settled.detached === true ? {} : await closeWindow(batch, observation, window);
           const { detached, ...reported } = hooked;
-          return scope.complete(finalizeResult({ ...reported, ...(detached === true ? {} : facts.command === undefined ? {} : { command: facts.command }), ...effects }, tool, outputLimit, batch.runId, batch.formatOutput), reconciled);
+          return scope.complete(await finalizeResult({ ...reported, ...(detached === true ? {} : facts.command === undefined ? {} : { command: facts.command }), ...effects }, tool, batch.outputFit, batch.runId, batch.formatOutput), reconciled);
         }
         await settleWithin(running, ABORT_SETTLE_LIMIT_MS);
         const output = scope.abortReason() === 'timeout' ? timedOutOutput(tool, scope.timerMs()) : cancelledOutput(tool);
@@ -1243,7 +1252,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         return await execute('not_applied');
       }
       const status = reconcileOutcome.outcome === 'already_applied' ? 'completed' : 'failed';
-      return scope.complete(finalizeResult({ status, output: reconcileOutcome.output }, tool, inlineLimit, batch.runId), reconcileOutcome.outcome);
+      return scope.complete(await finalizeResult({ status, output: reconcileOutcome.output }, tool, fit, batch.runId), reconcileOutcome.outcome);
     } finally {
       scope.release();
     }
@@ -1294,6 +1303,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   };
 
   const prepareBatch = (given: BatchInput): { batch: BatchInput; access: BatchAccess | undefined } => {
+    if ((given.outputFit as OutputFit | undefined) === undefined || (given.reconcileFit as OutputFit | undefined) === undefined) {
+      throw new TypeError('a tool batch needs outputFit and reconcileFit: the ports that decide how much of an output the model sees');
+    }
     if (given.recoverOnly === true) return { batch: given, access: undefined };
     const expected = fileRuleFingerprint(fileRuleSpecsOf(given.rules, given.roots), given.roots, given.tmpDir ?? null);
     if (given.sandboxPolicy.fileRules.fingerprint !== expected) {

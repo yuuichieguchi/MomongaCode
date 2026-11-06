@@ -44,6 +44,7 @@ import { registerInputRoutes } from './input-routes.ts';
 import type { McpAdminPort } from './input-routes.ts';
 import { registerTrustRoutes } from './trust.ts';
 import type { ServiceTimers } from './timers.ts';
+import { answeredByOf } from './answered-by.ts';
 import { isTerminalStatus, toJobView, toAgentView, toRunView, toSessionView, toSkillView } from './views.ts';
 
 export type RunLimitDefaults = { maxSteps: number; maxTotalTokens: number; approvalTtlMs: number; loopThreshold: number };
@@ -367,6 +368,8 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     }
   };
 
+  const runAnsweredBy: Handler = (context) => json({ answeredBy: answeredByOf(store, requireRun(context.req.param('id') ?? '').id) });
+
   const getRun: Handler = (context) => json({ run: toRunView(requireRun(context.req.param('id') ?? '')) });
 
   const cancelRun: Handler = (context) => {
@@ -514,6 +517,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   route('/v1/sessions/:id/jobs', { GET: listJobs });
   route('/v1/sessions/:id/events', { GET: sessionEvents });
   route('/v1/runs/:id', { GET: getRun });
+  route('/v1/runs/:id/answered-by', { GET: runAnsweredBy });
   route('/v1/runs/:id/children', { GET: listChildRuns });
   route('/v1/runs/:id/cancel', { POST: cancelRun });
   route('/v1/runs/:id/trace', { GET: runTrace });

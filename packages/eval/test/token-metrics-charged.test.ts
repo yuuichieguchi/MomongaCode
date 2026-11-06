@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { CONTEXT_DATASET_FORMAT, buildContextReport, formatContextReport, parseContextDataset } from '@momonga/eval';
+import { CONTEXT_DATASET_FORMAT, formatContextReport, parseContextDataset } from '@momonga/eval';
 import type { Transcript } from '@momonga/eval';
 import type { RunEventPayload } from '@momonga/protocol';
 import { bash, contextCase, fidelity, recorded, summarized } from './context-fixtures.ts';
+import { buildReportAs } from './answered-fixtures.ts';
 
 const SCENARIOS = ['a', 'b', 'c', 'd'] as const;
 const CASE_IDS = SCENARIOS.flatMap((scenario) => [`${scenario}-on`, `${scenario}-off`]);
@@ -49,7 +50,7 @@ const transcripts = (charge: RunEventPayload | undefined, reflection?: Transcrip
   });
 
 const reportOf = (charge: RunEventPayload | undefined, reflection?: Transcript['reflection']) =>
-  buildContextReport({ dataset, transcripts: transcripts(charge, reflection), model: 'real', seed: 1 });
+  buildReportAs({ dataset, transcripts: transcripts(charge, reflection), model: 'real', seed: 1 });
 
 const reflectionCharge = {
   id: 1,
@@ -123,7 +124,7 @@ describe('the token metrics count the reflection charge of a run', () => {
   it('treats a run with no recorded reflection as unmeasured rather than as a run without one', () => {
     const [first, ...rest] = transcripts(undefined);
     const { reflection: _recorded, ...unrecorded } = first as Transcript;
-    const report = buildContextReport({ dataset, transcripts: [unrecorded, ...rest], model: 'real', seed: 1 });
+    const report = buildReportAs({ dataset, transcripts: [unrecorded, ...rest], model: 'real', seed: 1 });
 
     expect(report.metrics.costPerSuccess).toBeUndefined();
     expect(report.cases.find((entry) => entry.id === unrecorded.caseId)?.tokens?.unsettledReflections).toBe(1);

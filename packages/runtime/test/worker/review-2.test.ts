@@ -6,6 +6,7 @@ import type { RuntimeStore } from '@momonga/store';
 import { createToolExecutor, defineTool } from '@momonga/tools';
 import { deferred, waitUntil, within } from './deferred.ts';
 import { DEADLINE_MS, LEASE_MS, START_MS, makeEnv, toolKey, createdRun } from './harness.ts';
+import { pinnedStart } from './cancel-fixture.ts';
 import type { Env } from './harness.ts';
 import { MODEL_ALIAS, functionCallItem, requestedOffering, textStep } from './scripts.ts';
 
@@ -35,6 +36,7 @@ describe('worker cancel recovery with a hanging reconcile', () => {
     const run = env.enqueue('Stall');
     const key = toolKey(run.id, 1, 'call_s_1');
     const payloads: RunEventPayload[] = [
+      pinnedStart(),
       requestedOffering(1, ['Stall']),
       {
         type: 'model.responded',

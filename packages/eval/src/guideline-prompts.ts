@@ -6,7 +6,6 @@ import { describeFirstError } from './dataset.ts';
 import { recordOf } from './guideline-record.ts';
 import type { Transcript } from './transcript.ts';
 
-export const GUIDELINE_CANDIDATES = 5;
 
 export const GUIDELINE_ROOT_CAUSES = [
   'Missing Critical Fact',

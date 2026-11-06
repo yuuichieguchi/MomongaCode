@@ -59,29 +59,33 @@ const assertRejected = async (args: string[], pattern: RegExp) => {
 
 describe('momonga context improve', () => {
   it('guards a command with no input: --dataset is required', async () => {
-    await assertRejected(['context', 'improve', '--model', 'real', '--alias', 'opus'], /--dataset/);
+    await assertRejected(['context', 'improve', '--alias', 'opus', '--token-cap', '700', '--outcome', 'o.json'], /--dataset/);
   });
 
-  it('guards a report of unknown provenance: --model fake|real is required before the dataset is read', async () => {
-    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--alias', 'opus'], /--model/);
-  });
-
-  it('guards an invented kind: --model takes fake or real only', async () => {
-    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--model', 'gpt', '--alias', 'opus'], /--model.*fake.*real/);
+  it('guards a declared provenance: --model is no longer an option, the kind comes from the pins', async () => {
+    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--model', 'real', '--alias', 'opus', '--token-cap', '700', '--outcome', 'o.json'], /unknown option '--model'/);
   });
 
   it('guards an unchosen analysis model: --alias is required', async () => {
-    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--model', 'real'], /--alias/);
+    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--token-cap', '700', '--outcome', 'o.json'], /--alias/);
+  });
+
+  it('guards a cost nobody accepted: --token-cap is required and checked before the dataset is read', async () => {
+    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--alias', 'opus', '--outcome', 'o.json'], /--token-cap/);
+  });
+
+  it.each(['0', '-5', '1.5', 'many'])('guards an invented cap: --token-cap %s is refused before the dataset is read', async (value) => {
+    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--alias', 'opus', '--outcome', 'o.json', '--token-cap', value], /--token-cap/);
   });
 });
 
 describe('momonga context improve and adopt', () => {
   it('guards an outcome that is never written: --outcome is required, before the dataset is read', async () => {
-    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--model', 'real', '--alias', 'opus'], /--outcome/);
+    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--alias', 'opus', '--token-cap', '700'], /--outcome/);
   });
 
   it('guards a text stored unseen: improve has no --adopt', async () => {
-    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--model', 'real', '--alias', 'opus', '--outcome', 'o.json', '--adopt'], /--adopt/);
+    await assertRejected(['context', 'improve', '--dataset', 'd.json', '--alias', 'opus', '--token-cap', '700', '--outcome', 'o.json', '--adopt'], /--adopt/);
   });
 
   it('guards an adoption of nothing: adopt takes an outcome file', async () => {
@@ -102,6 +106,7 @@ describe('what a model reply puts in the text of context improve', () => {
       alias: 'opus',
       seed: 1,
       candidateCount: 1,
+      tokenCap: 700,
       current: undefined,
       baseline: { contrastiveFailures: 1, compactedScenarios: 1, tokens: 1 },
       contrastive: ['a'],
@@ -129,6 +134,7 @@ describe('adopting from an outcome file', () => {
     alias: 'opus',
     seed: 7,
     candidateCount: 5,
+    tokenCap: 700,
     current: parent,
     baseline: { contrastiveFailures: 1, compactedScenarios: 4, tokens: 10 },
     contrastive: ['a'],
@@ -196,8 +202,8 @@ describe('adopting from an outcome file', () => {
 
   it('guards a file changed after improve wrote it: nothing is asked of the daemon', async () => {
     const { client, calls } = clientAt(null);
-    const raw = JSON.parse(fileText()) as { outcome: { winner: { text: string } } };
-    raw.outcome.winner.text = 'Another text.';
+    const raw = JSON.parse(fileText()) as { winner: { text: string } };
+    raw.winner.text = 'Another text.';
     const changed = JSON.stringify(raw);
     await expect(adoptOutcome(sink().stdout, client, changed)).rejects.toThrow(/digest/);
     expect(calls).toEqual([]);
