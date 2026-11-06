@@ -60,6 +60,19 @@ export type ClaimHost = {
   forget(runId: string): void;
 };
 
+const capabilitiesOrReason = async (
+  gateway: WorkerOptions['gateway'],
+  alias: string,
+  signal: AbortSignal,
+): Promise<{ capabilities: Capabilities } | { unavailable: string }> => {
+  try {
+    return { capabilities: await gateway.capabilities(alias, { signal }) };
+  } catch (error) {
+    if (error instanceof GatewayRequestError) return { unavailable: error.message };
+    throw error;
+  }
+};
+
 const cancelUpstream = async (options: WorkerOptions, control: ClaimControl, keys: readonly string[]): Promise<string[]> => {
   const failures: string[] = [];
   const settled = Promise.all(
@@ -286,7 +299,12 @@ const drive = async (
 
   const recorded = journal.state.pins;
   const pinned = recorded === undefined ? undefined : readPins(recorded);
-  const capabilities = pinned === undefined ? await gateway.capabilities(session.modelAlias, { signal: control.signal }) : pinned.capabilities;
+  const read = pinned === undefined ? await capabilitiesOrReason(gateway, session.modelAlias, control.signal) : { capabilities: pinned.capabilities };
+  if ('unavailable' in read) {
+    await terminals.finish('FAILED', { error: { code: TARGET_NOT_READY, message: readinessText(agentReadiness({ unavailable: read.unavailable })) } });
+    return;
+  }
+  const { capabilities } = read;
   const readiness = agentReadiness(capabilities);
   if (readiness.state !== 'ready' && readiness.state !== 'no_tools') {
     await terminals.finish('FAILED', { error: { code: TARGET_NOT_READY, message: readinessText(readiness) } });
@@ -348,7 +366,6 @@ const drive = async (
   const knownNotes = new Set(journal.state.notes.map((note) => note.message));
   const toolNotices = [...skills.warnings, ...(agentSet?.warnings ?? []), ...toolSet.notices].filter((message) => !knownNotes.has(message));
   if (toolNotices.length > 0) journal.append([...new Set(toolNotices)].map((message) => ({ type: 'notice', level: 'warning', message })));
-  if (toolLess && recorded === undefined) journal.append([{ type: 'notice', level: 'warning', message: `${readiness.message} ${readiness.remedy}`, code: 'target_no_tools' }]);
   for (const server of toolSet.authorizationRequired) {
     const message = `MCP server "${server}" requires authorization before its tools can be listed`;
     if (journal.state.notes.some((note) => note.code === 'mcp_authorization_required' && note.message === message)) continue;
