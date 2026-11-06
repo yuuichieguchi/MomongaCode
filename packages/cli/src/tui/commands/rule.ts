@@ -1,7 +1,8 @@
 import { formatRuleAdded, formatRuleHistory, formatRuleList } from '../../rule/format.ts';
 import type { SlashCommand } from '../slash.ts';
+import { runShellCommand } from './shell-commands.ts';
 
-const USAGE = 'usage: /rule [list] | /rule add <target> <text> | /rule retire <id> | /rule history <id>';
+const USAGE = 'usage: /rule [list] | /rule add <target> <text> [--kind <kind>] [--deny <rule>] [--ask <rule>] [--path <glob>] [--until <date>] | /rule retire <id> | /rule history <id>';
 
 const ADD = /^add\s+(\S+)\s+(\S[\s\S]*)$/;
 
@@ -11,6 +12,10 @@ export const ruleCommand: SlashCommand = {
   description: 'list, add, retire or show the history of the standing rules of this folder',
   run: async (args, context) => {
     const text = args.trim();
+    if (/^add\s/.test(text) && /\s--\S/.test(text)) {
+      await runShellCommand('rule', text, context, false);
+      return;
+    }
     const added = ADD.exec(text);
     if (added !== null) {
       const [, target = '', ruleText = ''] = added;

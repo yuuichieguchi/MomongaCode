@@ -22,6 +22,10 @@ describe('parseSlash', () => {
   });
 });
 
+const unusedShell: SlashContext['shell'] = {
+  run: async () => 0,
+};
+
 const unusedAutoMode: SlashContext['autoMode'] = {
   check: async () => ({ measurement: 'passed' }),
   status: async () => ({ measurement: 'not_measured' }),
@@ -61,6 +65,7 @@ describe('built-in commands', () => {
       setModel: async (alias) => void models.push(alias),
       background: (_label, work) => work(new AbortController().signal),
       autoMode: unusedAutoMode,
+      shell: unusedShell,
       ...overrides,
     };
     return { context, infos, modes, models };
@@ -161,6 +166,7 @@ const contextWith = (backendOptions: FakeBackendOptions = {}) => {
     setModel: async () => undefined,
     background: (_label, work) => work(new AbortController().signal),
     autoMode: unusedAutoMode,
+    shell: unusedShell,
   };
   return { context, infos, runs, backend };
 };
@@ -227,7 +233,7 @@ describe('/memory', () => {
     const { context, infos } = contextWith();
     await memory?.run('show', context);
     await memory?.run('forget mem-1', context);
-    expect(infos).toEqual(Array(2).fill('usage: /memory [list] | /memory show <id> | /memory delete <id> (retires the memory; it stays in momonga memory history)'));
+    expect(infos).toEqual(Array(2).fill('usage: /memory [list] | /memory show <id> | /memory delete <id> (retires the memory; it stays in /memory history) | /memory add <text> | /memory history <id> | /memory review | /memory restore <id> | /memory promote <id> --skill <name>'));
   });
 });
 
@@ -237,7 +243,7 @@ describe('/memory delete', () => {
   it('says that the memory was retired and stays in the history, and describes itself as retiring', async () => {
     const { context, infos } = contextWith({ memories: [MEMORY] });
     await memory?.run('delete mem-1', context);
-    expect(infos.at(-1)).toBe('retired memory mem-1; it stays in momonga memory history');
-    expect(memory?.description).toBe('list, show or retire the memories the agent saved');
+    expect(infos.at(-1)).toBe('retired memory mem-1; it stays in /memory history');
+    expect(memory?.description).toBe('list, show, add, review, restore, promote or retire the memories of this folder and of all folders');
   });
 });

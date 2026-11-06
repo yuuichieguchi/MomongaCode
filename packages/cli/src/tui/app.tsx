@@ -25,7 +25,7 @@ import type { DiffLine } from './diff.ts';
 import { applyKey, characterEndAfter, emptyEditor } from './editor.ts';
 import type { EditorState } from './editor.ts';
 import { createSlashRegistry, parseSlash, slashCompletion } from './slash.ts';
-import type { AutoModePort, SlashCommand, SlashRegistry } from './slash.ts';
+import type { AutoModePort, ShellPort, SlashCommand, SlashRegistry } from './slash.ts';
 import { appendEntry, initialTranscript, nextMode, reduceChildEvent, reduceEvent, settledCount, withElicitationFlow } from './transcript.ts';
 import type { Entry, PendingApproval, PendingElicitation, Transcript } from './transcript.ts';
 
@@ -45,6 +45,7 @@ export type AppProps = {
   slash?: SlashRegistry;
   tasks?: BackgroundTasks;
   autoMode?: AutoModePort;
+  shell?: ShellPort;
   onExit(outcome: TuiOutcome): void;
 };
 
@@ -54,6 +55,12 @@ const unavailableAutoMode: AutoModePort = {
   },
   status() {
     return Promise.reject(new Error('the auto-mode status is not available in this interface'));
+  },
+};
+
+const unavailableShell: ShellPort = {
+  run() {
+    return Promise.reject(new Error('the shell commands are not available in this interface'));
   },
 };
 
@@ -486,6 +493,7 @@ export function App(props: AppProps) {
         return tasks.run(work);
       },
       autoMode: props.autoMode ?? unavailableAutoMode,
+      shell: props.shell ?? unavailableShell,
       setMode: async (chosen) => {
         const session = await backend.setMode(chosen);
         setModeState(session.permissionMode);

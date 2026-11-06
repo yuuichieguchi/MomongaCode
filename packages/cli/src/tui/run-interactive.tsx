@@ -8,7 +8,7 @@ import type { SessionOptions } from '../run/open-session.ts';
 import type { UpdateWiring } from '../update/background.ts';
 import { App } from './app.tsx';
 import type { TuiOutcome } from './app.tsx';
-import type { AutoModePort } from './slash.ts';
+import type { AutoModePort, ShellPort } from './slash.ts';
 import { autoModeCheck, autoModeCheckPortsOf, autoModeStatus, autoModeStatusPortsOf } from '../commands/auto-mode.ts';
 import { createTuiBackend } from './backend.ts';
 import { createBackgroundTasks } from './background-tasks.ts';
@@ -16,7 +16,7 @@ import { defaultNoticeSources } from './notices.ts';
 
 export type InteractiveOptions = SessionOptions & { prompt?: string; skill?: string; images?: readonly string[] };
 
-export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, terminal: Terminal, options: InteractiveOptions, update: UpdateWiring): Promise<number> => {
+export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, terminal: Terminal, options: InteractiveOptions, update: UpdateWiring, shell: ShellPort): Promise<number> => {
   const backend = createTuiBackend(ports, paths, options, createHistoryStore(ports.files, path.join(paths.state, 'history.jsonl')), defaultNoticeSources(ports, update));
   const tasks = createBackgroundTasks();
   const autoMode: AutoModePort = {
@@ -33,6 +33,7 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
       {...(options.images === undefined ? {} : { initialImages: options.images })}
       tasks={tasks}
       autoMode={autoMode}
+      shell={shell}
       onExit={onExit}
     />,
     { stdin: terminal.stdin, stdout: terminal.stdout, exitOnCtrlC: false },
