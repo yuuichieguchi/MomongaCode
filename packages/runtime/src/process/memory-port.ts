@@ -80,7 +80,7 @@ export const createMemoryPort = ({ store, settings, evidenceRun, evidencePorts =
           scope,
           runId,
           paths: paths ?? [],
-          project: session.cwd,
+          project: scope === 'project' ? session.cwd : null,
           trusted,
           journal: (resolved) => store.journalFacts.evidence({ runId, paths: resolved, verificationCommands }, bound),
           head: () => readGitHead(evidenceOptionsFor(bound)),

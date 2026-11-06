@@ -116,7 +116,7 @@ export type BindMemoryEvidenceInput = {
   scope: MemoryScope;
   runId: string;
   paths: readonly string[];
-  project: string;
+  project: string | null;
   trusted: boolean;
   journal(paths: readonly string[]): Promise<EvidenceReply>;
   head(): Promise<string | undefined>;
@@ -127,16 +127,18 @@ export const bindMemoryEvidence = async (input: BindMemoryEvidenceInput): Promis
     if (input.paths.length > 0) throw new MemoryEvidenceError(USER_MEMORY_PATH_REFUSAL);
     return [];
   }
-  const resolvedPaths = input.paths.map((given) => resolveToolPath(input.project, given));
+  const { project } = input;
+  if (project === null) throw new Error('a project memory is bound to a project');
+  const resolvedPaths = input.paths.map((given) => resolveToolPath(project, given));
   const facts = await input.journal(resolvedPaths);
   const bound = new Map<string, MemoryEvidence>();
   for (const [index, given] of input.paths.entries()) {
     const resolved = resolvedPaths[index];
     const recorded = facts.recorded[index];
     if (resolved === undefined || recorded === undefined) throw new Error(`the journal thread answered ${facts.recorded.length} recorded hashes for ${input.paths.length} paths`);
-    if (!lexicallyWithin(resolved, input.project)) throw new MemoryEvidenceError(`${given} is outside the project, so a note cannot be bound to it`);
+    if (!lexicallyWithin(resolved, project)) throw new MemoryEvidenceError(`${given} is outside the project, so a note cannot be bound to it`);
     if (recorded === null) throw new MemoryEvidenceError(`${given} was not read or written in this run, so a note cannot be bound to it. Read the file first.`);
-    bound.set(resolved, { kind: 'file', project: input.project, path: path.relative(input.project, resolved), sha256: recorded.sha256 });
+    bound.set(resolved, { kind: 'file', project, path: path.relative(project, resolved), sha256: recorded.sha256 });
   }
   const commit = input.trusted ? await input.head() : undefined;
   const { check } = facts;
