@@ -39,6 +39,7 @@ export const makeAdapter = (
   const adapter = createChatCompletionsAdapter({
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
     capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: mode }),
+    schemaDialect: () => CC_CAPABILITIES.schemaDialect,
     clock,
     ...overrides,
   });

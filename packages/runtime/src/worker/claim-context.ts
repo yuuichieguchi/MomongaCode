@@ -62,4 +62,4 @@ export type ClaimContext = {
   token: TokenPolicy;
 };
 
-export type RunMemory = { streak: number; interruptions: number; deadlineAt: number };
+export type RunMemory = { streak: number; interruptions: number; deadlineAt: number; narrowingsNoticed: Set<string> };

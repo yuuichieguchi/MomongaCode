@@ -1,5 +1,9 @@
-import { compactionSummaryMessage } from '@momonga/protocol';
-import type { AdapterInputItem, AdapterRequest, ContentPart, InputItem, ReasoningOrigin } from '@momonga/protocol';
+import { DEFAULT_DIALECT_ID, compactionSummaryMessage } from '@momonga/protocol';
+import type { AdapterInputItem, AdapterRequest, ContentPart, DialectId, FunctionTool, InputItem, ReasoningOrigin } from '@momonga/protocol';
+import { NO_USER_DIALECTS, resolveDialect } from '../../dialect/choice.ts';
+import type { UserDialects } from '../../dialect/choice.ts';
+import { RenderLedger } from '../../dialect/ledger.ts';
+import { renderToolParameters } from '../../dialect/tool-render.ts';
 import { callArgumentsText } from '../shared/call-arguments.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { imageUrlOf, isImagePart } from '../shared/image-part.ts';
@@ -63,8 +67,15 @@ const itemOf = (item: AdapterInputItem, origin: ReasoningOrigin): InputItem | un
   }
 };
 
-export const buildResponsesBody = (request: AdapterRequest, origin: ReasoningOrigin): OpenResponsesRequestBody => {
-  const tools = request.tools ?? [];
+export type ResponsesRendering = { schemaDialect?: DialectId; userDialects?: UserDialects; ledger?: RenderLedger };
+
+export const buildResponsesBody = (request: AdapterRequest, origin: ReasoningOrigin, rendering: ResponsesRendering = {}): OpenResponsesRequestBody => {
+  const dialect = resolveDialect(rendering.schemaDialect ?? DEFAULT_DIALECT_ID, rendering.userDialects ?? NO_USER_DIALECTS);
+  const tools = (request.tools ?? []).map((tool): FunctionTool => {
+    const { parameters: _parameters, ...rest } = tool;
+    const { schema } = renderToolParameters(tool, dialect, rendering.ledger);
+    return schema === undefined ? rest : { ...rest, parameters: schema as NonNullable<FunctionTool['parameters']> };
+  });
   return {
     ...request.unknownFields,
     model: request.model,

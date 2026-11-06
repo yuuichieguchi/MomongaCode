@@ -2,6 +2,7 @@ import { LOWEST_REASONING_EFFORT, imageCapability } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
 import { PreconditionFailedError } from '../adapters/shared/failures.ts';
 import type { OllamaEndpointRecord } from './endpoint-record.ts';
+import { resolveDialectId } from '../dialect/resolve-id.ts';
 import { layerOf, mergeCapabilities, withImageDefault } from './decide.ts';
 import type { DeclaredCapabilities } from './decide.ts';
 import { memoizedVerification } from './endpoint-target.ts';
@@ -48,7 +49,7 @@ export const createProbedOllamaTarget = (options: ProbedOllamaTargetOptions): Pr
       if (record === null) return { ...withImageDefault(declared), toolCalling: needsProbe, source: 'unprobed' };
       const { report } = record;
       return mergeCapabilities({
-        defaults: declaredParts.core,
+        defaults: { ...declaredParts.core, schemaDialect: resolveDialectId(declared.schemaDialect, report) },
         declared: declaredParts.layer,
         probed: {
           toolCalling: report.nativeTools.accepted ? 'native' : 'none',

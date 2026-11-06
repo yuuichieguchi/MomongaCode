@@ -1,16 +1,19 @@
 import { endpointKeyOf } from '@momonga/config';
-import type { Capabilities } from '@momonga/protocol';
+import type { Capabilities, ConstructSupport, DialectId } from '@momonga/protocol';
 import type { UpstreamEndpoint } from '../adapters/shared/http-client.ts';
 import { PreconditionFailedError, StreamFailure, UpstreamHttpError } from '../adapters/shared/failures.ts';
-import type { KeywordSupport } from './envelope.ts';
+import { FULL_KEYWORD_SUPPORT } from '../dialect/keyword-support.ts';
+import type { KeywordSupport } from '../dialect/keyword-support.ts';
+import { resolveDialectId } from '../dialect/resolve-id.ts';
 import { ProbeTimeoutError, createProbeClient } from './client.ts';
 import type { ProbeEndpoint } from './client.ts';
 import { capabilitiesFromProbe, decideToolCalling, layerOf, mergeCapabilities, withImageDefault } from './decide.ts';
 import type { DeclaredCapabilities } from './decide.ts';
 import { endpointIdentityOf } from './endpoint-record.ts';
 import type { EndpointRecord } from './endpoint-record.ts';
+import type { EnvelopeShape } from './envelope.ts';
 import { parseJson } from './json.ts';
-import { needsProbeOf, preconditionOf, remedyOf } from './remedy.ts';
+import { declaredDialectRefusal, needsProbeOf, preconditionOf, remedyOf } from './remedy.ts';
 
 export const IDENTITY_READ_TIMEOUT_MS = 10_000;
 
@@ -120,6 +123,9 @@ export type ProbedEndpointTargetOptions = {
 
 export type ProbedEndpointTarget = {
   keywordSupport: () => KeywordSupport;
+  schemaDialect: () => DialectId;
+  constructSupport: () => ConstructSupport | undefined;
+  envelopeShape: () => EnvelopeShape;
   capabilities: () => Promise<Capabilities>;
   verify: (signal: AbortSignal) => Promise<void>;
   raiseHeadroom: (hiddenReasoningTokens: number) => Promise<void>;
@@ -171,21 +177,25 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
   };
 
   return {
-    keywordSupport: () => requireRecord().report.keywordSupport,
+    keywordSupport: () => requireRecord().report.keywordSupport ?? FULL_KEYWORD_SUPPORT,
+    schemaDialect: () => resolveDialectId(declared.schemaDialect, record?.report ?? null),
+    constructSupport: () => record?.report.constructSupport,
+    envelopeShape: () => record?.report.schemaDialect.shape ?? 'union',
     verify,
     raiseHeadroom,
     capabilities: async () => {
       if (record === null) return { ...withImageDefault(declared), toolCalling: needsProbe, source: 'unprobed' };
+      const refusal = declaredDialectRefusal(targetName, declared.schemaDialect, record.report.schemaDialect, `the server at ${endpoint} for model ${model}`);
       const decision = decideToolCalling(record.report);
       const { toolCalling, structuredOutput, streaming, stopSequences, outputBoundField, parallelToolCalls, usageReported, reasoning, promptCache } = capabilitiesFromProbe(
         record.report,
         decision,
       );
       return mergeCapabilities({
-        defaults: declaredParts.core,
+        defaults: { ...declaredParts.core, schemaDialect: resolveDialectId(declared.schemaDialect, record.report) },
         declared: declaredParts.layer,
         probed: {
-          toolCalling,
+          toolCalling: refusal ?? toolCalling,
           structuredOutput,
           streaming,
           stopSequences,

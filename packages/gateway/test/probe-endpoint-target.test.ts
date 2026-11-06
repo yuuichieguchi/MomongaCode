@@ -4,6 +4,7 @@ import { classifyChatCompletionsError } from '../src/adapters/chat-completions/c
 import { readEndpointIdentity } from '../src/probe/endpoint-target.ts';
 import { startFake } from './cc-support.ts';
 import { makeDir } from './gateway-helpers.ts';
+import { CURRENT_DIALECTS } from './dialect-currency.ts';
 
 const MODELS = [{ id: 'qwen-fake', object: 'model', created: 1_700_000_000, owned_by: 'library' }];
 
@@ -23,7 +24,7 @@ describe('probeEndpointTarget', () => {
     expect(result.report.parallelToolCalls).toEqual({ accepted: true, multiCallRate: 1 });
     expect(result.report.reasoning).toEqual({ control: 'reasoning_effort', lowest: 'none' });
     expect(result.key).toEqual({ endpoint: `unix:${fake.socketPath}`, model: 'qwen-fake' });
-    const stored = await loadEndpointRecord(dir, result.key);
+    const stored = await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS);
     expect(stored?.report).toEqual(result.report);
     expect(stored?.identity).toBe(result.identity);
     expect(result.identity).not.toBe('');
@@ -37,7 +38,7 @@ describe('probeEndpointTarget', () => {
     const result = await probeEndpointTarget({ probeRecordDir: dir, upstream: { kind: 'unix', socketPath: fake.socketPath }, key: { endpoint: endpointKeyOf({ kind: 'unix', socketPath: fake.socketPath }), model: 'qwen-fake' }, model: 'qwen-fake', apiKey: undefined, samples: 1 });
 
     expect(result.identityFields).toEqual(['id', 'object', 'owned_by']);
-    expect((await loadEndpointRecord(dir, result.key))?.identityFields).toEqual(['id', 'object', 'owned_by']);
+    expect((await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS))?.identityFields).toEqual(['id', 'object', 'owned_by']);
   });
 
   it('keeps in the identity every field that stays put, as Ollama does with created', async () => {
@@ -47,7 +48,7 @@ describe('probeEndpointTarget', () => {
     const result = await probeEndpointTarget({ probeRecordDir: dir, upstream: { kind: 'unix', socketPath: fake.socketPath }, key: { endpoint: endpointKeyOf({ kind: 'unix', socketPath: fake.socketPath }), model: 'qwen-fake' }, model: 'qwen-fake', apiKey: undefined, samples: 1 });
 
     expect(result.identityFields).toEqual(['created', 'id', 'object', 'owned_by']);
-    expect((await loadEndpointRecord(dir, result.key))?.identity).toBe(result.identity);
+    expect((await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS))?.identity).toBe(result.identity);
   });
 
   it('reads the listing twice, the second time after the measurements', async () => {
