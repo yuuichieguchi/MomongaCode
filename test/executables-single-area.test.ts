@@ -7,12 +7,14 @@ import { brotliCompressSync } from 'node:zlib';
 
 const root = path.resolve(import.meta.dirname, '..');
 
-const executablesOf = (home: string): string => (momongaLayout(home) as unknown as { executables: string }).executables;
-
 describe('every executable the product extracts lives under <cacheBase>/executables', () => {
-  it('names the area once in the layout, directly under the cache base', () => {
-    const layout = momongaLayout('/home/user', 'linux', {});
-    expect(executablesOf('/home/user')).toBe(path.join(layout.cacheBase, 'executables'));
+  it.each([
+    { platform: 'darwin', home: '/Users/user', flavor: path.posix },
+    { platform: 'linux', home: '/home/user', flavor: path.posix },
+    { platform: 'win32', home: 'C:\\Users\\user', flavor: path.win32 },
+  ] as const)('names the area once in the $platform layout, directly under the cache base', ({ platform, home, flavor }) => {
+    const layout = momongaLayout(home, platform, {});
+    expect(layout.executables).toBe(flavor.join(layout.cacheBase, 'executables'));
   });
 
   it('extracts Z3 into <executables>/z3-<hash>, through the executablesRoot port that ripgrep uses too', async () => {
@@ -32,7 +34,7 @@ describe('every executable the product extracts lives under <cacheBase>/executab
     };
     const written: string[] = [];
     const store = new Map<string, Uint8Array>();
-    const area = executablesOf('/home/user');
+    const area = momongaLayout('/home/user', 'linux', {}).executables;
     const result = await ensureBundledZ3({
       asset: (name) => assets[name] as Uint8Array,
       executablesRoot: area,
