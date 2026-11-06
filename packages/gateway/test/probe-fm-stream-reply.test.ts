@@ -53,10 +53,9 @@ describe('the fm probe reads a streamed reply through the decoder every probe st
     const fromStream = await runProbe({ socketPath: streamed.socketPath, managedHealthRoute: true, samples: 2, vocabulary: FM_VOCABULARY });
     const fromJson = await runProbe({ socketPath: unary.socketPath, managedHealthRoute: true, samples: 2 });
 
-    expect({ nativeTools: fromStream.nativeTools, constrained: fromStream.constrained }).toEqual({
-      nativeTools: fromJson.nativeTools,
-      constrained: fromJson.constrained,
-    });
+    expect(fromStream.constrained).toEqual(fromJson.constrained);
+    expect(fromStream.nativeTools).toEqual({ accepted: true, validRate: 0, roundTripOk: false });
+    expect(fromJson.nativeTools).toEqual({ accepted: true, validRate: 1, roundTripOk: true });
     expect(fromStream.usageReported).toBe(false);
     expect(fromJson.usageReported).toBe(true);
   });

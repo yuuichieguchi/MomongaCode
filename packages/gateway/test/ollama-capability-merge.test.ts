@@ -9,6 +9,7 @@ import { createProbedEndpointTarget } from '../src/probe/endpoint-target.ts';
 import { createProbedOllamaTarget } from '../src/probe/ollama-target.ts';
 import { makeDir } from './gateway-helpers.ts';
 import { OLLAMA_CAPABILITIES, OLLAMA_MODEL, fixtureJson, startFakeOllama } from './ollama-support.ts';
+import { CURRENT_DIALECTS } from './dialect-currency.ts';
 
 const RECORDED_SHOW = fixtureJson('api-show.json');
 
@@ -18,7 +19,7 @@ const probedTarget = async (showCapabilities: readonly string[], declared: Decla
   const fake = await startFakeOllama({ show: showWith(showCapabilities), cacheProbe });
   const dir = makeDir();
   const result = await probeOllamaTarget({ probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: fake.origin }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL, contextWindow: 12288 });
-  const record = await loadEndpointRecord(dir, result.key);
+  const record = await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS);
   return createProbedOllamaTarget({
     targetName: 'local',
     endpoint: result.key.endpoint,

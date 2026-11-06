@@ -1,5 +1,6 @@
 import type { Clock } from '@momonga/foundation';
 import type { AdapterTarget, Capabilities, HealthResult, ProviderAdapter } from '@momonga/protocol';
+import type { UserDialects } from '../../dialect/choice.ts';
 import type { UpstreamEndpoint, UpstreamLiveness } from '../shared/http-client.ts';
 
 export type OpenResponsesAdapterOptions = {
@@ -9,6 +10,7 @@ export type OpenResponsesAdapterOptions = {
   health?: (target: AdapterTarget) => Promise<HealthResult>;
   clock: Clock;
   liveness?: UpstreamLiveness;
+  userDialects?: UserDialects;
 };
 
 export type OpenResponsesAdapter = ProviderAdapter & { close(): Promise<void> };

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { endpointKeyOf, loadEndpointRecord, probeOllamaTarget } from '@momonga/gateway';
 import { makeDir } from './gateway-helpers.ts';
 import { DEVSTRAL_DIGEST, OLLAMA_MODEL, QWEN_DIGEST, QWEN_MODEL, TRAINED_CONTEXT_LENGTH, startFakeOllama, tagsWithDevstralDigest } from './ollama-support.ts';
+import { CURRENT_DIALECTS } from './dialect-currency.ts';
 
 const probe = (origin: string, dir: string, contextWindow: number, model = OLLAMA_MODEL) =>
   probeOllamaTarget({ probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: origin }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: origin }), model }, model, contextWindow });
@@ -13,11 +14,12 @@ describe('the Ollama probe', () => {
 
     const result = await probe(fake.origin, dir, 32768);
 
-    expect(fake.requests.map((request) => `${request.method} ${request.path}`).sort()).toEqual(['GET /api/tags', 'GET /api/version', ...Array.from({ length: 7 }, () => 'POST /api/chat'), 'POST /api/show']);
+    const withoutDialectStep = fake.requests.filter((request) => !(request.path === '/api/chat' && request.body.format !== undefined));
+    expect(withoutDialectStep.map((request) => `${request.method} ${request.path}`).sort()).toEqual(['GET /api/tags', 'GET /api/version', ...Array.from({ length: 7 }, () => 'POST /api/chat'), 'POST /api/show']);
     expect(fake.requests.find((request) => request.path === '/api/show')?.body).toMatchObject({ model: OLLAMA_MODEL });
     expect(result.identity).toBe(DEVSTRAL_DIGEST);
     expect(result.key).toEqual({ endpoint: fake.origin, model: OLLAMA_MODEL });
-    const stored = await loadEndpointRecord(dir, result.key);
+    const stored = await loadEndpointRecord(dir, result.key, CURRENT_DIALECTS);
     expect(stored?.identity).toBe(DEVSTRAL_DIGEST);
     expect(stored?.report).toEqual(result.report);
   });
@@ -55,7 +57,7 @@ describe('the Ollama probe', () => {
     const dir = makeDir();
 
     await expect(probe(fake.origin, dir, TRAINED_CONTEXT_LENGTH + 1)).rejects.toThrow(String(TRAINED_CONTEXT_LENGTH));
-    expect(await loadEndpointRecord(dir, { endpoint: fake.origin, model: OLLAMA_MODEL })).toBeNull();
+    expect(await loadEndpointRecord(dir, { endpoint: fake.origin, model: OLLAMA_MODEL }, CURRENT_DIALECTS)).toBeNull();
   });
 
   it('records a new identity after the model is pulled again under the same tag', async () => {
@@ -69,6 +71,6 @@ describe('the Ollama probe', () => {
 
     expect(first.identity).toBe(DEVSTRAL_DIGEST);
     expect(second.identity).toBe(QWEN_DIGEST);
-    expect((await loadEndpointRecord(dir, second.key))?.identity).toBe(QWEN_DIGEST);
+    expect((await loadEndpointRecord(dir, second.key, CURRENT_DIALECTS))?.identity).toBe(QWEN_DIGEST);
   });
 });

@@ -1,5 +1,5 @@
 import type { ErrorShape } from './budget-constants.ts';
-import type { Capabilities, HealthResult } from './capabilities.ts';
+import type { AliasCapabilities, Capabilities, HealthResult } from './capabilities.ts';
 import type { FunctionTool, InputItem, ToolChoice } from './open-responses.ts';
 
 export const MOMONGA_EVENT_PREFIX = 'momonga:' as const;
@@ -88,7 +88,7 @@ export type MomongaModelEntry = {
   object: 'model';
   targets: string[];
   targetCounters: Record<string, string>;
-  capabilities: Capabilities;
+  capabilities: AliasCapabilities;
   targetCapabilities: Record<string, Capabilities>;
 };
 

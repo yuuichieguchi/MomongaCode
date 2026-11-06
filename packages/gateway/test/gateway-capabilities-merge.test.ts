@@ -33,7 +33,7 @@ const middle: Capabilities = {
   imageInput: true,
   imageTokens: IMAGE_MODEL,
   parallelToolCalls: true,
-  schemaDialect: 'guided-generation',
+  schemaDialect: 'explicit-keys',
   tokenCounting: 'calibrated',
   usageReported: true,
   maxConcurrency: 2,
@@ -92,12 +92,20 @@ describe('alias capabilities on /v1/momonga/models', () => {
       stopSequences: false,
       imageInput: false,
       parallelToolCalls: false,
-      schemaDialect: 'guided-generation',
       tokenCounting: 'calibrated',
       usageReported: false,
       maxConcurrency: 2,
       source: 'declared',
     });
+  });
+
+  it('carries the dialect id when every target of the alias agrees on it', async () => {
+    expect((await capabilitiesOf('none')).schemaDialect).toBe('json-schema-2020-12');
+    expect((await capabilitiesOf('reversed')).schemaDialect).toBe('json-schema-2020-12');
+  });
+
+  it('omits the dialect id when the targets of the alias disagree, with no marker in its place', async () => {
+    expect('schemaDialect' in (await capabilitiesOf('merged'))).toBe(false);
   });
 
   it('ranks toolCalling none below constrained and tokenCounting estimated lowest', async () => {
