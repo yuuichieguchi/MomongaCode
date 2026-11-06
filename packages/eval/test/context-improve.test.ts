@@ -433,17 +433,30 @@ describe('the token cap', () => {
     expect(formatImproveOutcome(outcome)).toContain(GUIDELINE_NO_CANDIDATE_REASON);
   });
 
-  it('guards a late stop: a candidate that passed before the cap was reached still wins nothing', async () => {
+  it('keeps a winner when the cap affords one candidate and its benchmark crosses the cap (design.md:432)', async () => {
     const { outcome, benchmarked } = await improve({
       input: { tokenCap: 100 + 10 + 50 + 100 },
       byGuideline: (guideline) => (guideline === undefined ? measured({ failingOn: ['a'] }) : { ...measured(), tokens: 400 }),
     });
+    expect(outcome.candidateCount).toBe(1);
+    expect(benchmarked).toEqual([undefined, 'candidate 0']);
+    expect(outcome.status).toBe('winner');
+    expect(outcome.reason).toBeUndefined();
+    expect(outcome.winner).toMatchObject({ index: 0, text: 'candidate 0' });
+    expect(outcome.tokens.benchmark + outcome.tokens.charged).toBeGreaterThanOrEqual(260);
+  });
+
+  it('guards a late stop: a planned candidate left unbenchmarked when the cap is reached means a candidate that passed wins nothing (design.md:432)', async () => {
+    const { outcome, benchmarked } = await improve({
+      input: { tokenCap: 100 + 2 * 10 + 2 * (100 + 10) },
+      byGuideline: (guideline) => (guideline === undefined ? measured({ failingOn: ['a'] }) : { ...measured(), tokens: 400 }),
+    });
+    expect(outcome.candidateCount).toBe(2);
+    expect(benchmarked).toEqual([undefined, 'candidate 0']);
     expect(outcome.status).toBe('stopped');
     expect(outcome.reason).toBe(GUIDELINE_CAP_REASON);
     expect(outcome.winner).toBeUndefined();
-    expect(benchmarked).toEqual([undefined, 'candidate 0']);
     expect(outcome.candidates[1]?.comparison).toBeUndefined();
-    expect(outcome.tokens.benchmark + outcome.tokens.charged).toBeGreaterThanOrEqual(260);
     expect(formatImproveOutcome(outcome)).toContain(GUIDELINE_CAP_REASON);
   });
 
