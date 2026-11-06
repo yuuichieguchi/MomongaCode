@@ -126,6 +126,12 @@ export const matchesNoProxy = (list: string, host: string, port: number): boolea
     });
 };
 
+const withoutCredentials = (url: URL, value: string): string => {
+  if (url.username === '' && url.password === '') return value;
+  const authority = value.indexOf('//') + 2;
+  return `${value.slice(0, authority)}${value.slice(value.indexOf('@', authority) + 1)}`;
+};
+
 const proxyRoute = ({ value, source }: SourcedValue): Route => {
   if (!URL.canParse(value)) {
     return { kind: 'unsupported', reason: 'malformed', display: '<unparseable proxy URL>', message: `${source} is not a valid proxy URL; ${UNSUPPORTED_TEXT}`, source };
@@ -133,8 +139,8 @@ const proxyRoute = ({ value, source }: SourcedValue): Route => {
   const url = new URL(value);
   const defaultPort = PROXY_DEFAULT_PORTS[url.protocol];
   if (defaultPort === undefined) {
-    const display = `${url.protocol}//${url.host}`;
-    return { kind: 'unsupported', reason: 'scheme', display, message: `${source} ${display}: ${UNSUPPORTED_TEXT}`, source };
+    const display = withoutCredentials(url, value);
+    return { kind: 'unsupported', reason: 'scheme', display, message: `${source} ${JSON.stringify(display)}: ${UNSUPPORTED_TEXT}`, source };
   }
   if (url.hostname === '') {
     return { kind: 'unsupported', reason: 'malformed', display: `${url.protocol}//`, message: `${source} has no proxy host; ${UNSUPPORTED_TEXT}`, source };
