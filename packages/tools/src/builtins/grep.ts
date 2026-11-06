@@ -10,7 +10,8 @@ import { extensionsForType } from './file-types.ts';
 import { regularFileProblem, statIfExists } from './files.ts';
 import { sortByMtimeThenPath } from './glob.ts';
 import { canonicalPathOf, resolvedPathOf, shownPath } from './paths.ts';
-import { reachableAllowedRoots } from './walk.ts';
+import { reachableAllowedRoots, walkFiles } from './walk.ts';
+import type { RuleBlockedEntry } from './walk.ts';
 
 type OutputMode = 'content' | 'files_with_matches' | 'count';
 
@@ -43,15 +44,35 @@ const lineNumbersWanted = (input: GrepInput): boolean => input['-n'] ?? true;
 
 const escapeGlob = (value: string): string => value.replace(/[\\[\]*?{}!]/g, '\\$&');
 
-const deniedGlobs = (access: ReadAccessMatcher, target: string, isDirectory: boolean): string[] => {
-  if (!isDirectory) return [];
-  return access.deniedWithin(target).flatMap((resolved) => {
-    const relative = `/${escapeGlob(path.relative(target, resolved).split(path.sep).join('/'))}`;
-    return access.leadsToAllowed(resolved) ? ['--glob', `!${relative}`] : ['--glob', `!${relative}`, '--glob', `!${relative}/**`];
-  });
+const exclusionOf = (target: string, excluded: string, withContents: boolean): string[] => {
+  const relative = `/${escapeGlob(path.relative(target, excluded).split(path.sep).join('/'))}`;
+  return withContents ? ['--glob', `!${relative}`, '--glob', `!${relative}/**`] : ['--glob', `!${relative}`];
 };
 
-const ripgrepArguments = (input: GrepInput, mode: OutputMode, target: string, access: ReadAccessMatcher, isDirectory: boolean, allowedRoots: readonly string[]): string[] => {
+const deniedGlobs = (access: ReadAccessMatcher, target: string, isDirectory: boolean): string[] => {
+  if (!isDirectory) return [];
+  return access.deniedWithin(target).flatMap((resolved) => exclusionOf(target, resolved, !access.leadsToAllowed(resolved)));
+};
+
+const ruleBlockedGlobs = async (access: ReadAccessMatcher, target: string, isDirectory: boolean, ctx: ToolContext): Promise<string[]> => {
+  if (!isDirectory || !access.hasReadRulesFor('Grep')) return [];
+  const blocked: RuleBlockedEntry[] = [];
+  const walk = walkFiles({
+    root: target,
+    readDenied: ctx.sandboxPolicy.readDenied,
+    readAllowed: ctx.sandboxPolicy.readAllowed,
+    fileRules: ctx.sandboxPolicy.fileRules,
+    tool: 'Grep',
+    includeSymlinkedFiles: false,
+    signal: ctx.signal,
+    onUnreadable: () => undefined,
+    onRuleBlocked: (entry) => blocked.push(entry),
+  });
+  while (!(await walk.next()).done);
+  return blocked.flatMap((entry) => exclusionOf(target, entry.absolute, entry.isDirectory));
+};
+
+const ripgrepArguments = (input: GrepInput, mode: OutputMode, target: string, access: ReadAccessMatcher, isDirectory: boolean, allowedRoots: readonly string[], ruleBlocked: readonly string[]): string[] => {
   const { before, after } = contextOf(input);
   return [
     '--no-config',
@@ -79,6 +100,7 @@ const ripgrepArguments = (input: GrepInput, mode: OutputMode, target: string, ac
     ...(input.type === undefined ? [] : [...extensionsForType(input.type).flatMap((extension) => ['--type-add', `momonga:*.${extension}`]), '--type', 'momonga']),
     ...(input.glob === undefined ? [] : ['--glob', input.glob]),
     ...deniedGlobs(access, target, isDirectory),
+    ...ruleBlocked,
     '-e',
     input.pattern,
     '--',
@@ -158,9 +180,10 @@ const searchWithRipgrep = async (
   if (isDirectory) {
     for await (const root of reachableAllowedRoots(target, '', [], { signal: ctx.signal, onUnreadable: () => undefined }, access)) allowedRoots.push(root.absolute);
   }
+  const ruleBlocked = await ruleBlockedGlobs(access, target, isDirectory, ctx);
   const policy: SandboxPolicy = { writableRoots: [], writeDenied: [], writeDeniedLiterals: [], readDenied, ...(readAllowed === undefined ? {} : { readAllowed }), network: 'deny', fileRules: ctx.sandboxPolicy.fileRules, protectedSet: EMPTY_PROTECTED_SET };
   const spawnCwd = isDirectory ? target : path.dirname(target);
-  const child = ctx.sandbox.spawn({ argv: [ripgrep, ...ripgrepArguments(input, mode, target, access, isDirectory, allowedRoots)], cwd: spawnCwd, env: ctx.env }, policy, ctx.signal);
+  const child = ctx.sandbox.spawn({ argv: [ripgrep, ...ripgrepArguments(input, mode, target, access, isDirectory, allowedRoots, ruleBlocked)], cwd: spawnCwd, env: ctx.env }, policy, ctx.signal);
   const visibleCache = new Map<string, boolean>();
   const visible = (recordPath: string): boolean => {
     let verdict = visibleCache.get(recordPath);

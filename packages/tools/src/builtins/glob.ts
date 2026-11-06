@@ -62,6 +62,7 @@ export const globTool = defineTool<GlobInput>({
       includeSymlinkedFiles: true,
       signal: ctx.signal,
       onUnreadable: () => undefined,
+      onRuleBlocked: () => undefined,
     })) {
       if (isMatch(entry.relative)) matches.push(path.join(root, entry.relative));
     }
