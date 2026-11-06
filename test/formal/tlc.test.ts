@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTempRoot, removeTempRoot } from '../../scripts/support/temp.ts';
 import { MANIFEST_FORMAT, TLC_WORKERS, discoveryProblems, readManifest, runTlc, verdictProblems } from './manifest.ts';
 import type { Manifest, ManifestEntry, TlcRun } from './manifest.ts';
+import { killGroup } from './runner.ts';
 
 const repoRoot = path.resolve(import.meta.dirname, '..', '..');
 const specDir = path.join(repoRoot, 'specs', 'tla');
@@ -529,6 +530,31 @@ describe('the CPU budget of the harness', () => {
     },
     45000,
   );
+});
+
+const zombieGroupsOf = (parentPid: number): number[] =>
+  spawnSync('ps', ['-A', '-o', 'pid=,pgid=,ppid=,stat='], { encoding: 'utf8' })
+    .stdout.split('\n')
+    .map((line) => line.trim().split(/\s+/))
+    .filter(([pid, pgid, ppid, stat]) => Number(ppid) === parentPid && pid === pgid && stat?.startsWith('Z') === true)
+    .map(([, pgid]) => Number(pgid));
+
+describe('killing a process group', () => {
+  it('treats a group whose only members are zombies as already killed', async () => {
+    const holder = spawn('sh', ['-c', 'set -m; (exit 0) & exec sleep 60'], { stdio: 'ignore' });
+    try {
+      const holderPid = holder.pid as number;
+      let groups = zombieGroupsOf(holderPid);
+      while (groups.length === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        groups = zombieGroupsOf(holderPid);
+      }
+      const [zombieGroup] = groups as [number];
+      expect(() => killGroup(zombieGroup)).not.toThrow();
+    } finally {
+      holder.kill('SIGKILL');
+    }
+  });
 });
 
 describe(`TLC over every ${selectedTier} configuration in the manifest`, () => {
