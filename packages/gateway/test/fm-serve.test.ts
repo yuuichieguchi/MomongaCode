@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Agent } from 'undici';
-import { createFmServe, type ExecResult, type FmServe, type FmServeTimers } from '@momonga/gateway';
+import { createFmServe, type ExecOptions, type ExecResult, type FmServe, type FmServeTimers } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, startFakeChatCompletions, type FakeChatCompletionsServer } from '@momonga/testkit';
 
 interface FakeChildOptions {
@@ -14,6 +14,7 @@ interface FakeChildOptions {
   healthy?: boolean;
   serve?: boolean;
   ignoreSigterm?: boolean;
+  ignoreSigkill?: boolean;
   dieOnSpawn?: boolean;
   errorOnSpawn?: Error;
 }
@@ -78,6 +79,7 @@ class FakeChild extends EventEmitter {
   kill(signal: NodeJS.Signals = 'SIGTERM'): boolean {
     this.signals.push(signal);
     if (signal === 'SIGTERM' && this.options.ignoreSigterm === true) return true;
+    if (signal === 'SIGKILL' && this.options.ignoreSigkill === true) return true;
     void this.crash(null, signal);
     return true;
   }
@@ -171,7 +173,7 @@ const okExec = async (_file: string, _args: readonly string[]): Promise<ExecResu
 
 interface SetupConfig {
   child?: FakeChildOptions | ((index: number) => FakeChildOptions);
-  exec?: (file: string, args: readonly string[]) => Promise<ExecResult>;
+  exec?: (file: string, args: readonly string[], options?: ExecOptions) => Promise<ExecResult>;
   maxRestarts?: number;
   preconditionTtlMs?: number;
   socketPath?: string;
@@ -211,7 +213,7 @@ const setup = (config: SetupConfig = {}) => {
     await server.stop();
     expect(warnings).toEqual([]);
   });
-  return { server, spawn, exec, socketPath, events, manual };
+  return { server, spawn, exec, socketPath, events, manual, warnings };
 };
 
 const failingLicense = (state: { failing: boolean }) => async (_file: string, args: readonly string[]): Promise<ExecResult> =>
@@ -228,7 +230,7 @@ describe('createFmServe preconditions', () => {
     const { server, spawn, exec: execMock } = setup({ exec });
     await expect(server.start()).rejects.toMatchObject({ name: 'PreconditionFailedError' });
     expect(spawn).not.toHaveBeenCalled();
-    expect(execMock).toHaveBeenCalledWith('/usr/bin/fm', ['license', '--status']);
+    expect(execMock).toHaveBeenCalledWith('/usr/bin/fm', ['license', '--status'], { signal: expect.any(AbortSignal) });
     const health = await server.health();
     expect(health.ok).toBe(false);
     expect(health.reason).toBe('precondition_failed');
@@ -243,7 +245,7 @@ describe('createFmServe preconditions', () => {
     const { server, spawn, exec: execMock } = setup({ exec });
     await expect(server.start()).rejects.toMatchObject({ name: 'PreconditionFailedError' });
     expect(spawn).not.toHaveBeenCalled();
-    expect(execMock).toHaveBeenCalledWith('/usr/bin/fm', ['available']);
+    expect(execMock).toHaveBeenCalledWith('/usr/bin/fm', ['available'], { signal: expect.any(AbortSignal) });
     const health = await server.health();
     expect(health.ok).toBe(false);
     expect(health.reason).toBe('precondition_failed');
@@ -334,6 +336,7 @@ describe('createFmServe start', () => {
       child: (index) => (index === 0 ? { healthy: false } : {}),
     });
     const rejected = expect(server.start()).rejects.toMatchObject({ reason: 'unhealthy' });
+    await vi.waitFor(() => expect(children[0]).toBeDefined());
     await vi.waitFor(() => expect(manual.delays()).toContain(HEALTH_MS));
     manual.fire(HEALTH_MS);
     await rejected;
@@ -351,6 +354,7 @@ describe('createFmServe start', () => {
       child: (index) => (index === 0 ? { healthy: false, ignoreSigterm: true } : {}),
     });
     const rejected = expect(server.start()).rejects.toMatchObject({ reason: 'unhealthy' });
+    await vi.waitFor(() => expect(children[0]).toBeDefined());
     await vi.waitFor(() => expect(manual.delays()).toContain(HEALTH_MS));
     manual.fire(HEALTH_MS);
     await vi.waitFor(() => expect(manual.delays()).toContain(GRACE_MS));
@@ -364,6 +368,7 @@ describe('createFmServe start', () => {
   it('rejects with unhealthy and terminates the child when it never opens the socket', async () => {
     const { server, manual } = setup({ child: { serve: false } });
     const rejected = expect(server.start()).rejects.toMatchObject({ reason: 'unhealthy' });
+    await vi.waitFor(() => expect(children[0]).toBeDefined());
     await vi.waitFor(() => expect(manual.delays()).toContain(HEALTH_MS));
     manual.fire(HEALTH_MS);
     await rejected;
@@ -546,6 +551,7 @@ describe('createFmServe restarts', () => {
     await children[0]?.crash(1, null);
     await vi.waitFor(() => expect(manual.delays()).toEqual([BACKOFF_MS]));
     manual.fire(BACKOFF_MS);
+    await vi.waitFor(() => expect(children[1]).toBeDefined());
     await vi.waitFor(() => expect(manual.delays()).toContain(HEALTH_MS));
     manual.fire(HEALTH_MS);
     await vi.waitFor(() => expect(children[1]?.signals).toEqual(['SIGTERM']));
@@ -681,6 +687,7 @@ describe('createFmServe injected timers', () => {
   it('routes the health poll and the health deadline through the injected timers', async () => {
     const { server, manual } = setup({ child: { manualServe: true } });
     const starting = server.start();
+    await vi.waitFor(() => expect(children[0]).toBeDefined());
     await vi.waitFor(() => expect(manual.scheduled).toContain(HEALTH_MS));
     await children[0]?.serveNow();
     await starting;
@@ -813,5 +820,73 @@ describe('createFmServe idle health', () => {
     await server.ensureRunning();
     await server.stop();
     expect(await server.health()).toMatchObject({ ok: false, reason: 'not_running' });
+  });
+});
+
+const hangingOn =
+  (hungCommand: string, signals: AbortSignal[]) =>
+  (_file: string, args: readonly string[], options?: ExecOptions): Promise<ExecResult> => {
+    if (args[0] !== hungCommand) return Promise.resolve({ exitCode: 0, stdout: '', stderr: '' });
+    if (options === undefined) return new Promise<ExecResult>(() => undefined);
+    signals.push(options.signal);
+    return new Promise<ExecResult>((_resolve, reject) => {
+      options.signal.addEventListener('abort', () => reject(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })));
+    });
+  };
+
+describe('createFmServe bounds each precondition command by healthTimeoutMs', () => {
+  it.each([
+    ['license', 'fm license --status'],
+    ['available', 'fm available'],
+  ])('reports fm as not ready when %s hangs, naming the command and the limit, and aborts the child', async (hungCommand, commandText) => {
+    const signals: AbortSignal[] = [];
+    const { server, spawn, manual } = setup({ exec: hangingOn(hungCommand, signals) });
+    const checking = server.health();
+    await vi.waitFor(() => expect(signals).toHaveLength(1));
+    expect(manual.delays()).toContain(HEALTH_MS);
+    expect(signals[0]?.aborted).toBe(false);
+    manual.fire(HEALTH_MS);
+    expect(await checking).toEqual({
+      ok: false,
+      reason: 'precondition_failed',
+      detail: `${commandText} did not finish within ${HEALTH_MS} ms`,
+    });
+    expect(signals[0]?.aborted).toBe(true);
+    expect(spawn).not.toHaveBeenCalled();
+    expect(manual.delays()).toEqual([]);
+  });
+
+  it('rejects start with PreconditionFailedError when fm license --status hangs past the limit', async () => {
+    const signals: AbortSignal[] = [];
+    const { server, spawn, manual } = setup({ exec: hangingOn('license', signals) });
+    const starting = expect(server.start()).rejects.toMatchObject({ name: 'PreconditionFailedError' });
+    await vi.waitFor(() => expect(signals).toHaveLength(1));
+    manual.fire(HEALTH_MS);
+    await starting;
+    expect(signals[0]?.aborted).toBe(true);
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it('clears the limit timer when the command finishes in time', async () => {
+    const { server, manual } = setup();
+    expect(await server.health()).toMatchObject({ ok: true });
+    expect(manual.delays()).toEqual([]);
+  });
+});
+
+describe('createFmServe bounds the wait after SIGKILL by stopGraceMs', () => {
+  it('reports the stop as not confirmed after a second stopGraceMs when the child ignores SIGKILL', async () => {
+    const { server, manual, warnings } = setup({ child: { ignoreSigterm: true, ignoreSigkill: true } });
+    await server.start();
+    const stopping = server.stop();
+    await vi.waitFor(() => expect(manual.delays()).toEqual([GRACE_MS]));
+    manual.fire(GRACE_MS);
+    await vi.waitFor(() => expect(children[0]?.signals).toEqual(['SIGTERM', 'SIGKILL']));
+    await vi.waitFor(() => expect(manual.delays()).toEqual([GRACE_MS]));
+    manual.fire(GRACE_MS);
+    await stopping;
+    expect(warnings).toEqual([`fm serve was not confirmed stopped: it did not exit within ${GRACE_MS} ms after SIGKILL`]);
+    warnings.splice(0);
+    expect(children[0]?.alive).toBe(true);
   });
 });
