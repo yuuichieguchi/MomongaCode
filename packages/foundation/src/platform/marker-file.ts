@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { MarkerMode } from '../marker-state.ts';
+import { EMPTY_RECORD_TEXT } from './marker-record.ts';
 import { O_EXLOCK, O_SHLOCK } from './lock-capability.ts';
 import type { LockCapabilityProbe } from './lock-capability.ts';
 import { nodeFileLockOps } from './kernel-lock.ts';
@@ -16,8 +17,8 @@ export type CreateMarkerOptions = { capability: LockCapabilityProbe; ops?: FileL
 
 const MARKER_MODE = 0o600;
 
-const createLockedFlags = (): number => fs.constants.O_RDONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | O_EXLOCK | fs.constants.O_NONBLOCK;
-const createPlainFlags = (): number => fs.constants.O_RDONLY | fs.constants.O_CREAT | fs.constants.O_EXCL;
+const createLockedFlags = (): number => fs.constants.O_RDWR | fs.constants.O_CREAT | fs.constants.O_EXCL | O_EXLOCK | fs.constants.O_NONBLOCK;
+const createPlainFlags = (): number => fs.constants.O_RDWR | fs.constants.O_CREAT | fs.constants.O_EXCL;
 const selfCheckFlags = (): number => fs.constants.O_RDONLY | O_SHLOCK | fs.constants.O_NONBLOCK;
 
 const selfCheckHolds = (ops: FileLockOps, marker: string): boolean => {
@@ -55,10 +56,22 @@ export const closeMarkerDescriptor = (fd: number): void => {
   else handle.close();
 };
 
+const openWithRecord = (ops: FileLockOps, marker: string, flags: number): number => {
+  const fd = ops.open(marker, flags, MARKER_MODE);
+  try {
+    fs.writeSync(fd, EMPTY_RECORD_TEXT);
+  } catch (error) {
+    ops.close(fd);
+    fs.rmSync(marker, { force: true });
+    throw error;
+  }
+  return fd;
+};
+
 export const createMarker = async (marker: string, { capability, ops = nodeFileLockOps }: CreateMarkerOptions): Promise<MarkerHandle> => {
   const dir = path.dirname(marker);
-  if ((await capability.of(dir)) !== 'proved') return handleOf(ops, ops.open(marker, createPlainFlags(), MARKER_MODE), 'listed');
-  const fd = ops.open(marker, createLockedFlags(), MARKER_MODE);
+  if ((await capability.of(dir)) !== 'proved') return handleOf(ops, openWithRecord(ops, marker, createPlainFlags()), 'listed');
+  const fd = openWithRecord(ops, marker, createLockedFlags());
   if (selfCheckHolds(ops, marker)) return handleOf(ops, fd, 'locked');
   capability.contradicted(dir);
   return handleOf(ops, fd, 'listed');

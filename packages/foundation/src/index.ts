@@ -94,6 +94,8 @@ export type { LockCapability, LockCapabilityOptions, LockCapabilityProbe } from 
 export { UNMEASURED_CAPABILITY } from './platform/lock-capability.ts';
 export { MARKER_MODES, MARKER_PHASES, MARKER_STATES } from './marker-state.ts';
 export type { MarkerMode, MarkerPhase, MarkerState } from './marker-state.ts';
+export { RETRY_KINDS, claimRetry, markIgnored, nodeRecordFiles, parseAttemptRecord, readAttemptRecord } from './platform/marker-record.ts';
+export type { AttemptRecord, ClaimOutcome as RetryClaim, RecordFiles, RetryKind } from './platform/marker-record.ts';
 export { closeMarkerDescriptor, createMarker } from './platform/marker-file.ts';
 export type { CreateMarkerOptions, MarkerHandle } from './platform/marker-file.ts';
 export { LOCK_DATABASE_SUFFIX, createSqliteFileLock, nodeSqliteLockOps, sqliteFileLock } from './platform/sqlite-lock.ts';

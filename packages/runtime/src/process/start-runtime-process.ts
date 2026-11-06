@@ -25,7 +25,7 @@ import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import type { Sandbox } from '@momonga/sandbox';
 import { isFatalStoreError, migrateRuntimeDatabase, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { ShellNotFoundError, clearCallLocks, createPolicyFilesystem, nodeShellHost, resolveBashPath } from '@momonga/tools';
+import { ShellNotFoundError, clearCallLocks, createMarkerOwners, createPolicyFilesystem, nodeShellHost, resolveBashPath } from '@momonga/tools';
 import type { ShellHost } from '@momonga/tools';
 import { createFsInstructionReader } from '@momonga/context';
 import { createGatewayClient } from '../gateway-client.ts';
@@ -168,6 +168,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   const onWarning = (message: string): void => logger.warn(message);
 
   const cleanups: TeardownStep[] = [];
+  const markerOwners = createMarkerOwners();
   const workers: StartedWorker[] = [];
   const periodics: Periodic[] = [];
   let workersSettled = false;
@@ -399,7 +400,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
 
     await step('tool-markers', async () => {
-      await reapToolMarkers({ dir: paths.markers.tools, store, killGraceMs: MARKER_REAP_KILL_GRACE_MS, onWarning, timing: reapTiming, signal });
+      await reapToolMarkers({ dir: paths.markers.tools, store, killGraceMs: MARKER_REAP_KILL_GRACE_MS, onWarning, timing: reapTiming, signal, event: 'startup', owners: markerOwners });
       await clearCallLocks(paths.callLocks);
     });
 
@@ -455,6 +456,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       const lockCapability = createLockCapability({ proofDir: paths.lockProof });
       const kernelLock = await resolveKernelLock(paths.callLocks, { capability: lockCapability });
       const runtime: ToolRuntime = createToolRuntime({
+        owners: markerOwners,
         lockCapability,
         kernelLock,
         paths,
@@ -508,6 +510,18 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       evidenceRunFor,
     } = ports;
     await step('background-jobs', () => toolRuntime.jobs.reconcileOrphans());
+    cleanups.push({
+      name: 'tool-markers',
+      run: async () => {
+        const stop = new AbortController();
+        const handle = timers.setTimeout(() => stop.abort(), RUNTIME_TEARDOWN_BUDGET_MS);
+        try {
+          await reapToolMarkers({ dir: paths.markers.tools, store, killGraceMs: MARKER_REAP_KILL_GRACE_MS, onWarning, timing: reapTiming, signal: stop.signal, event: 'shutdown', owners: toolRuntime.owners });
+        } finally {
+          timers.clearTimeout(handle);
+        }
+      },
+    });
     cleanups.push({ name: 'background-jobs', run: () => toolRuntime.jobs.stopAll() });
     cleanups.push({
       name: 'mcp-pools',
@@ -683,7 +697,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
                 onWarning,
                 timing: reapTiming,
                 signal: sweepStop.signal,
-                scope: { deadLetterOnly: true, skipKeys: toolRuntime.inFlightKeys() },
+                event: 'sweep',
+                owners: toolRuntime.owners,
               });
             } catch (error) {
               failures.push(error);

@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { HOOK_BLOCKING_EXIT_CODE, hookMatcherMatches, hookTimeoutMs, HOOK_MATCHER_EVENTS } from '@momonga/protocol';
 import type { HookCommand, HookEvent, HookExecution, HooksSettings, PermissionMode } from '@momonga/protocol';
@@ -9,6 +8,7 @@ import { createCapture, pumpOutput } from '../capture.ts';
 import { resolveBashPath } from '../builtins/shell.ts';
 import type { ShellHost } from '../builtins/shell.ts';
 import { createMarkerSettle, settleFinishedCommand } from '../marker-settle.ts';
+import type { MarkerOwners } from '../marker-owners.ts';
 import { cancellableTimer } from '../timers.ts';
 import { parseHookOutput } from './output.ts';
 import type { ParsedHookOutput } from './output.ts';
@@ -26,6 +26,7 @@ export type HookRunContext = {
   tmpDir?: string;
   markerDir: string;
   inspector?: ProcessInspector;
+  owners?: MarkerOwners;
   runId: string;
   session: { id: string; permissionMode: PermissionMode };
   clock: Clock;
@@ -90,8 +91,11 @@ const executeHook = async (
   let handle: Awaited<ReturnType<typeof createMarker>> | undefined;
   let settle: ReturnType<typeof createMarkerSettle> | undefined;
   let spawned = false;
+  let running = true;
+  ctx.owners?.register(path.basename(marker), { alive: () => running });
   try {
     handle = await createMarker(marker, { capability: inspector.capability ?? UNMEASURED_CAPABILITY });
+    ctx.owners?.remember(path.basename(marker), handle.mode);
     settle = createMarkerSettle({ marker, mode: handle.mode, inspector, onWarning: () => undefined });
     const child = ctx.sandbox.spawn(
       {
@@ -152,8 +156,9 @@ const executeHook = async (
     );
   } finally {
     handle?.close();
-    if (handle !== undefined && !spawned) fs.rmSync(marker, { force: true });
+    if (handle !== undefined && !spawned) await settle?.discard();
     else await settle?.remove();
+    running = false;
     timer.cancel();
     ctx.signal.removeEventListener('abort', onCancel);
   }

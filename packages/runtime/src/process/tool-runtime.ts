@@ -6,8 +6,8 @@ import { createMcpPool, inheritedEnvOf, mcpCredentialDirectory } from '@momonga/
 import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
 import type { Sandbox } from '@momonga/sandbox';
 import type { RuntimeStore } from '@momonga/store';
-import { createBuiltinTools, createGitWorkTreeObserver, createPolicyFilesystem, createToolExecutor, createToolRegistry } from '@momonga/tools';
-import type { ShellHost, ToolSet, WorkTreeObserver } from '@momonga/tools';
+import { createBuiltinTools, createGitWorkTreeObserver, createMarkerOwners, createPolicyFilesystem, createToolExecutor, createToolRegistry } from '@momonga/tools';
+import type { MarkerOwners, ShellHost, ToolSet, WorkTreeObserver } from '@momonga/tools';
 import type { PolicyHostFilesystem } from '@momonga/policy';
 import type { ToolRuntimePort } from '../ports.ts';
 import type { RunNotifier } from '../service/notifier.ts';
@@ -47,6 +47,7 @@ export type ToolRuntimeOptions = {
   mcpRemote?: McpRemotePorts;
   ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<string>;
   policyFilesystem?: PolicyHostFilesystem;
+  owners?: MarkerOwners;
 };
 
 export type ToolRuntime = {
@@ -55,7 +56,7 @@ export type ToolRuntime = {
   mcpAdmin: McpAdmin;
   sessionStates: SessionStates;
   jobs: BackgroundJobRegistry;
-  inFlightKeys(): ReadonlySet<string>;
+  owners: MarkerOwners;
 };
 
 const dedupe = (notices: readonly string[]): string[] => [...new Set(notices)];
@@ -74,8 +75,10 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   const policyFilesystem = options.policyFilesystem ?? createPolicyFilesystem();
   const lockCapability = options.lockCapability ?? createLockCapability({ proofDir: paths.lockProof });
   const inspector = createProcessInspector(process.platform, { ...hostInspectorPorts(), capability: lockCapability });
+  const owners = options.owners ?? createMarkerOwners();
   const jobs = createBackgroundJobs({
     store,
+    owners,
     clock,
     timers,
     markerDir: paths.markers.tools,
@@ -94,6 +97,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     blobs: store.blobs,
     clock,
     processMarkerDir: paths.markers.tools,
+    owners,
     callLockDir: paths.callLocks,
     ...(options.kernelLock === undefined ? {} : { kernelLock: options.kernelLock }),
     onWarning: (message) => logger.warn(message),
@@ -192,6 +196,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     sandbox,
     shellHost: options.shellHost,
     markerDir: paths.markers.tools,
+    owners,
     lockCapability,
     inspector,
     sessionState: (session) => sessionStates.get(session),
@@ -205,5 +210,5 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     },
   };
 
-  return { port, mcpPools, mcpAdmin, sessionStates, jobs, inFlightKeys: () => new Set([...executor.inFlightKeys(), ...jobs.liveKeys()]) };
+  return { port, mcpPools, mcpAdmin, sessionStates, jobs, owners };
 };

@@ -17,7 +17,7 @@ import type { AgentSet, ChildRuns } from '@momonga/agents';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { SkillSet } from '@momonga/skills';
 import type { Session } from '@momonga/store';
-import type { AnyTool, ShellHost, ToolExecutor, ToolSessionState, ToolSet, WorkTreeObserver } from '@momonga/tools';
+import type { AnyTool, MarkerOwners, ShellHost, ToolExecutor, ToolSessionState, ToolSet, WorkTreeObserver } from '@momonga/tools';
 
 export type { Clock };
 
@@ -114,6 +114,7 @@ export type ToolRuntimePort = {
   sandbox: Sandbox;
   shellHost: ShellHost;
   markerDir: string;
+  owners?: MarkerOwners;
   lockCapability?: LockCapabilityProbe;
   inspector?: ProcessInspector;
   sessionState(session: Session): ToolSessionState;

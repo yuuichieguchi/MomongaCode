@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createJsonLogger, ensureMomongaDirs, momongaLayout, reapMarkerDirectory } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { reapOrphans } from '@momonga/supervisor';
+import { createMarkerOwners } from '@momonga/tools';
 import { reapToolMarkers } from '../packages/runtime/src/process/tool-markers.ts';
 
 const O_EXLOCK = 0x20;
@@ -64,8 +65,8 @@ const recordingKill = () => {
 const sweepEverything = async (paths: MomongaPaths, kill: (target: number, signal: NodeJS.Signals | 0) => void): Promise<string[]> => {
   const warnings: string[] = [];
   const onWarning = (message: string): void => void warnings.push(message);
-  await reapToolMarkers({ dir: paths.markers.tools, store: { idempotency: { get: () => undefined }, getRun: () => undefined } as never, killGraceMs: 100, onWarning });
-  await reapToolMarkers({ dir: paths.markers.tools, store: { idempotency: { get: () => undefined }, getRun: () => undefined } as never, scope: { deadLetterOnly: true, skipKeys: new Set() }, killGraceMs: 100, onWarning });
+  await reapToolMarkers({ event: 'startup', owners: createMarkerOwners(), dir: paths.markers.tools, store: { idempotency: { get: () => undefined }, getRun: () => undefined } as never, killGraceMs: 100, onWarning });
+  await reapToolMarkers({ event: 'sweep', owners: createMarkerOwners(), dir: paths.markers.tools, store: { idempotency: { get: () => undefined }, getRun: () => undefined } as never, killGraceMs: 100, onWarning });
   for (const dir of [paths.markers.mcp, paths.markers.targets, paths.markers.daemons]) {
     await reapMarkerDirectory({ dir, killGraceMs: 100, label: 'sweep', onWarning, kill: kill as never });
   }

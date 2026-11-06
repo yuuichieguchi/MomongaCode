@@ -8,7 +8,10 @@ export interface MarkerSettle {
   state(signal: AbortSignal): Promise<MarkerState>;
   list(signal: AbortSignal): Promise<MarkerListing>;
   reap(pgid: number, signal: AbortSignal): Promise<MarkerReconcileResult>;
+  readonly mode: MarkerMode;
+  cached(): MarkerState | undefined;
   remove(): Promise<void>;
+  discard(): Promise<void>;
 }
 
 export type MarkerSettleOptions = {
@@ -21,9 +24,20 @@ export type MarkerSettleOptions = {
   onWarning(message: string): void;
 };
 
+export const removeMarkerFile = async (marker: string, onWarning: (message: string) => void): Promise<void> => {
+  try {
+    await fs.promises.rm(marker, { force: true });
+  } catch (error) {
+    onWarning(`the process marker ${marker} could not be removed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+};
+
 export const createMarkerSettle = ({ marker, mode, inspector = defaultProcessInspector(), killGraceMs, kill, timing, onWarning }: MarkerSettleOptions): MarkerSettle => {
   let cached: MarkerState | undefined;
+  const removeFile = (): Promise<void> => removeMarkerFile(marker, onWarning);
   return {
+    mode,
+    cached: () => cached,
     state: async (signal) => {
       cached ??= await inspector.markerState(marker, { signal, mode });
       return cached;
@@ -42,12 +56,9 @@ export const createMarkerSettle = ({ marker, mode, inspector = defaultProcessIns
     },
     remove: async () => {
       if (cached !== 'free') return;
-      try {
-        await fs.promises.rm(marker, { force: true });
-      } catch (error) {
-        onWarning(`the process marker ${marker} could not be removed: ${error instanceof Error ? error.message : String(error)}`);
-      }
+      await removeFile();
     },
+    discard: removeFile,
   };
 };
 
