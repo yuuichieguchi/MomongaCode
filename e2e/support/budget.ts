@@ -3,7 +3,7 @@ import { createFsInstructionReader, createTokenMeter } from '@momonga/context';
 import type { ContextOverflowError, TokenCounter } from '@momonga/context';
 import { COMPACTION_INSTRUCTIONS_MARKER, wireOf, wireTokensOf } from '@momonga/gateway';
 import type { ChatWire } from '@momonga/gateway';
-import { ESTIMATED_CHARACTERS_PER_TOKEN, ESTIMATED_ERROR_SHAPE, countReplyOf, marginFloorFor, summaryItemTokensFor, summaryTokenCapFor } from '@momonga/protocol';
+import { COMPACTION_MIN_GAIN, ESTIMATED_CHARACTERS_PER_TOKEN, ESTIMATED_ERROR_SHAPE, ceilRatio, countReplyOf, marginFloorFor, summaryItemTokensFor, summaryTokenCapFor } from '@momonga/protocol';
 import type { Capabilities, CountTokensResult, CreateResponseBody, FunctionCallItem, InputItem, RunEvent } from '@momonga/protocol';
 import { RUNTIME_DEFAULTS, buildSystemPrompt, createGatewayClient, createHistoryPort, createMemoryPort } from '@momonga/runtime';
 import type { GatewayPort } from '@momonga/runtime';
@@ -30,7 +30,6 @@ export const ACCEPTANCE_TASK = 'Search the haystack';
 export const FINAL_TEXT = 'searched';
 export const ACCEPTANCE_WINDOW = 4096;
 export const ACCEPTANCE_MAX_OUTPUT = 1024;
-export const COMPACTION_MIN_GAIN = 2;
 export const HIGH_MARK_RATIO = 0.7;
 export const EVICT_LOW_WATER = 0.5;
 export const PERTURBATIONS: readonly number[] = [0, -2, 2];
@@ -72,7 +71,6 @@ export type Sizing = {
   readonly summaryItem: number;
   readonly highMark: number;
   readonly lowMark: number;
-  readonly gainThreshold: number;
 };
 
 export type AcceptanceFacts = {
@@ -166,9 +164,10 @@ export const sizingFor = (capabilities: Capabilities, pinned: number): Sizing =>
     summaryItem,
     highMark,
     lowMark: pinned + EVICT_LOW_WATER * (highMark - pinned),
-    gainThreshold: COMPACTION_MIN_GAIN * summaryItem,
   };
 };
+
+export const gainThresholdOf = (sizing: Sizing, workingStateTokens: number): number => ceilRatio(COMPACTION_MIN_GAIN, sizing.summaryItem + workingStateTokens);
 
 const textItemOf = (tokens: number): InputItem => ({ type: 'message', role: 'user', content: 'x'.repeat(ESTIMATED_CHARACTERS_PER_TOKEN * tokens) });
 
@@ -497,7 +496,7 @@ const describeRun = (run: DryRun): string =>
   `${run.perturbation >= 0 ? '+' : ''}${run.perturbation} n=${run.fillers} claims=${run.claims} ${run.facts.status}${run.facts.stopReason === undefined ? '' : ` ${run.facts.stopReason}`} compactions=${run.facts.compactionSeqs.length} grepEviction=${run.facts.grepEvictionSeq ?? '-'} wire=[${run.wireCounts.join(', ')}]${run.facts.notices.length === 0 ? '' : ` notices=${JSON.stringify(run.facts.notices)}`}`;
 
 export const describeSizing = (sizing: Sizing): string =>
-  `P=${sizing.pinned} C=${sizing.ceiling} room=${sizing.room} itemCap=${sizing.itemCap} inline=${sizing.inlineChars} summaryCap=${sizing.summaryCap} item=${sizing.summaryItem} highMark=${sizing.highMark} lowMark=${sizing.lowMark} threshold=${sizing.gainThreshold}`;
+  `P=${sizing.pinned} C=${sizing.ceiling} room=${sizing.room} itemCap=${sizing.itemCap} inline=${sizing.inlineChars} summaryCap=${sizing.summaryCap} item=${sizing.summaryItem} highMark=${sizing.highMark} lowMark=${sizing.lowMark}`;
 
 export class NoPlanError extends Error {
   readonly attempts: readonly PlanAttempt[];
