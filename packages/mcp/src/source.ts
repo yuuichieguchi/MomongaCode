@@ -1,13 +1,14 @@
 import type { CallToolResult, Tool } from '@modelcontextprotocol/client';
 import { SchemaValidatorFailure, canonicalJson, sha256Hex } from '@momonga/foundation';
 import { defineTool, ToolExecutionError, ToolInputRequired, TransientToolError } from '@momonga/tools';
-import type { AnyTool, ToolListOptions, ToolResult, ToolResume, ToolSource, ToolSourceListing } from '@momonga/tools';
+import type { AnyTool, ToolListOptions, ToolResult, ToolResume, ToolSource, ToolSourceListing, ToolStop } from '@momonga/tools';
 import { McpUnavailableError } from './connection.ts';
 import { parseElicitationAnswer } from './input-requests.ts';
 import { authorizationRequiredFor, isTransientRemoteFailure } from './remote-errors.ts';
 import { mcpToolIdentity } from './tool-identity.ts';
 import { McpInputSuspension, parseCheckpoint } from './suspension.ts';
-import { DEFAULT_REQUEST_TIMEOUT_MS } from './tasks.ts';
+import { MCP_TOOL_IDLE_TIMEOUT_MS, MCP_TOOL_TOTAL_TIMEOUT_MS, durationText } from './call-bounds.ts';
+import { pollCeilingMs } from './tasks.ts';
 import type { McpResume } from './suspension.ts';
 import type { McpServerConnection } from './connection.ts';
 import { sanitizeSchema } from './schema-sanitizer.ts';
@@ -24,8 +25,32 @@ const DISALLOWED_NAME_CHARACTERS = /[^A-Za-z0-9_-]/g;
 export type McpToolSourceOptions = {
   server: string;
   connection: McpServerConnection;
-  requestTimeoutMs?: number;
+  toolIdleTimeoutMs?: number;
+  toolTotalTimeoutMs?: number;
   takeNotices?: () => string[];
+};
+
+type CallBounds = { idleMs: number | undefined; totalMs: number };
+
+const boundsOf = (options: McpToolSourceOptions): CallBounds => {
+  const idle = options.toolIdleTimeoutMs ?? MCP_TOOL_IDLE_TIMEOUT_MS[options.connection.transportKind];
+  return { idleMs: idle === 0 ? undefined : idle, totalMs: options.toolTotalTimeoutMs ?? MCP_TOOL_TOTAL_TIMEOUT_MS };
+};
+
+const UNKNOWN_RUN = 'The server may have run it; check before repeating it.';
+
+const stopSentence = (server: string, tool: string, stop: ToolStop): string =>
+  stop.bound === 'idle'
+    ? `MCP server "${server}" sent no response or progress for ${durationText(stop.ms)}, so the call to ${tool} was stopped. ${UNKNOWN_RUN} To wait longer, raise mcp.toolIdleTimeoutMs.`
+    : `The call to ${tool} on MCP server "${server}" reached the overall limit of ${durationText(stop.ms)} and was stopped. ${UNKNOWN_RUN}`;
+
+const cancelSentence = (cancelled: boolean): string =>
+  cancelled ? 'The task was cancelled on the server.' : 'The task could not be cancelled and may still be running on the server.';
+
+const taskIdOf = (checkpoint: Record<string, unknown> | undefined): string | undefined => {
+  if (checkpoint === undefined) return undefined;
+  const parsed = parseCheckpoint(checkpoint);
+  return parsed.kind === 'task' ? parsed.taskId : undefined;
 };
 
 const normalizeToolPart = (server: string, original: string): string => {
@@ -97,6 +122,7 @@ const buildTool = (
   inputSchema: Record<string, unknown>,
 ): AnyTool => {
   const { server, connection } = options;
+  const bounds = boundsOf(options);
   const annotations = tool.annotations;
   const readOnly = annotations?.readOnlyHint === true;
   return defineTool<Record<string, unknown>>({
@@ -109,27 +135,31 @@ const buildTool = (
     ...(tool.outputSchema === undefined ? {} : { outputSchema: sanitizeSchema(tool.outputSchema) }),
     server,
     validatorIdentity: mcpToolIdentity(server, tool.name),
-    timeoutMs: options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
+    timeoutMs: bounds.totalMs,
+    ...(bounds.idleMs === undefined ? {} : { idleTimeoutMs: bounds.idleMs }),
+    stopText: async (stop) => {
+      const sentence = connection.redact(stopSentence(server, tool.name, stop));
+      const taskId = taskIdOf(stop.checkpoint);
+      const cancelled = taskId === undefined ? undefined : connection.cancelOutcome(taskId);
+      return cancelled === undefined ? sentence : `${sentence} ${cancelSentence(await cancelled)}`;
+    },
     title: () => `${sanitizeServerText(server)}: ${titleOf(tool)}`,
     subject: () => ({ kind: 'mcp', server, tool: toolPart }),
     execute: async (input, ctx) => {
       const resume = resumeOf(ctx.resume);
       if (resume?.checkpoint.kind === 'mrtr' || resume?.checkpoint.kind === 'parked') ctx.checkpoint(undefined);
-      if (resume?.checkpoint.kind === 'task') ctx.extendToRunDeadline();
       let result: CallToolResult;
       try {
         result = await connection.callTool({
           name: tool.name,
           arguments: input,
           signal: ctx.signal,
-          timeoutMs: Math.max(1, ctx.deadlineAt - ctx.clock.now()),
+          onProgress: () => ctx.reportProgress(),
+          pollCeilingMs: pollCeilingMs(bounds.idleMs, bounds.totalMs),
           ...(ctx.traceparent === undefined ? {} : { traceparent: ctx.traceparent }),
           ...(ctx.tracestate === undefined ? {} : { tracestate: ctx.tracestate }),
           ...(resume === undefined ? {} : { resume }),
-          onCheckpoint: (checkpoint) => {
-            if (checkpoint.kind === 'task') ctx.extendToRunDeadline();
-            ctx.checkpoint({ ...checkpoint });
-          },
+          onCheckpoint: (checkpoint) => ctx.checkpoint({ ...checkpoint }),
         });
       } catch (error) {
         if (error instanceof McpInputSuspension) {

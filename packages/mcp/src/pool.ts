@@ -17,6 +17,8 @@ export type McpPoolOptions = {
   remote?: McpRemotePorts;
   random?: () => number;
   requestTimeoutMs?: number;
+  toolIdleTimeoutMs?: number;
+  toolTotalTimeoutMs?: number;
   connectTimeoutMs?: number;
   resetAfterMs?: number;
   markers?: McpMarkerOptions;
@@ -66,7 +68,8 @@ export const createMcpPool = (options: McpPoolOptions): McpAuthorizingPool => {
         server: connection.name,
         connection,
         takeNotices: () => noticesOf.get(connection.name)?.splice(0) ?? [],
-        ...(options.requestTimeoutMs === undefined ? {} : { requestTimeoutMs: options.requestTimeoutMs }),
+        ...(options.toolIdleTimeoutMs === undefined ? {} : { toolIdleTimeoutMs: options.toolIdleTimeoutMs }),
+        ...(options.toolTotalTimeoutMs === undefined ? {} : { toolTotalTimeoutMs: options.toolTotalTimeoutMs }),
       }),
     ),
     close: async () => {

@@ -52,6 +52,7 @@ export type { TrustOracle, UserLayer } from './layers.ts';
 export type {
   McpOAuthConfig,
   McpRemoteServerConfig,
+  McpCallSettings,
   McpServerConfig,
   McpStdioServerConfig,
   AnthropicTarget,

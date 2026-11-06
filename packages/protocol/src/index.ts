@@ -175,7 +175,7 @@ export { CACHE_MISS_CAUSES, PREFIX_EVENTS } from './prefix-events.ts';
 export type { CacheMissCause, PrefixEvent } from './prefix-events.ts';
 export { MIN_INDEXED_TERM_CHARS, asciiLower, partitionTerms, termsOf } from './search-terms.ts';
 export type { PartitionedTerms } from './search-terms.ts';
-export { tokensForText } from './estimate-tokens.ts';
+export { TokenTally, tokensForText } from './estimate-tokens.ts';
 export { GUIDELINE_TEXT_PATTERN, hasForbiddenGuidelineCharacter } from './guideline-text.ts';
 export { escapeTerminalBlock, escapeTerminalLine } from './terminal-text.ts';
 export {

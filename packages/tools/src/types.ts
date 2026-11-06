@@ -60,8 +60,10 @@ export type ToolContext = ReconcileContext & {
   sandboxPolicy: SandboxPolicy;
   resume?: ToolResume;
   checkpoint(state: Record<string, unknown> | undefined): void;
-  extendToRunDeadline(): void;
+  reportProgress(): void;
 };
+
+export type ToolStop = { bound: 'idle' | 'total'; ms: number; checkpoint: Record<string, unknown> | undefined };
 
 export type OutputFit = {
   fits(text: string): Promise<boolean>;
@@ -134,6 +136,8 @@ export type ToolBody<Input> = {
   server?: string;
   validatorIdentity?: string;
   timeoutMs: number | ((input: Input) => number);
+  idleTimeoutMs?: number;
+  stopText?(stop: ToolStop): Promise<string>;
   title(input: Input, ctx: DisplayContext): string;
   locations?(input: Input, ctx: DisplayContext): { path: string; line?: number }[];
   prepare?(input: Input, ctx: ToolContext): Promise<Record<string, unknown>>;

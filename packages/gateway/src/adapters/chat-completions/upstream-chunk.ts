@@ -20,6 +20,7 @@ export type UpstreamChunk = {
   toolCalls: ToolCallFragment[];
   finishReason: string | undefined;
   usage: Usage | undefined;
+  promptProgress: boolean;
 };
 
 const invalid = (what: string): UpstreamProtocolError => new UpstreamProtocolError(`the upstream sent a malformed chunk: ${what}`);
@@ -88,15 +89,16 @@ export const parseUpstreamChunk = (data: string): UpstreamChunk => {
   const parsed = parseUpstreamJson(data, invalid);
   if (!isRecord(parsed)) throw invalid('it is not a JSON object');
   const usage = usageOf(parsed['usage']);
+  const promptProgress = isRecord(parsed['prompt_progress']);
   const choices = parsed['choices'];
   if (choices === undefined) {
-    if (usage === undefined) throw invalid('it has neither choices nor usage');
-    return { content: undefined, reasoning: undefined, refusal: undefined, toolCalls: [], finishReason: undefined, usage };
+    if (usage === undefined && !promptProgress) throw invalid('it has neither choices nor usage');
+    return { content: undefined, reasoning: undefined, refusal: undefined, toolCalls: [], finishReason: undefined, usage, promptProgress };
   }
   if (!Array.isArray(choices)) throw invalid('choices must be an array');
   if (choices.length > 1) throw invalid('the upstream returned more than one choice');
   const choice: unknown = choices[0];
-  if (choice === undefined) return { content: undefined, reasoning: undefined, refusal: undefined, toolCalls: [], finishReason: undefined, usage };
+  if (choice === undefined) return { content: undefined, reasoning: undefined, refusal: undefined, toolCalls: [], finishReason: undefined, usage, promptProgress };
   if (!isRecord(choice)) throw invalid('a choice must be an object');
   const delta = choice['delta'] ?? {};
   if (!isRecord(delta)) throw invalid('delta must be an object');
@@ -109,5 +111,6 @@ export const parseUpstreamChunk = (data: string): UpstreamChunk => {
     toolCalls: Array.isArray(toolCalls) ? toolCalls.map(fragmentOf) : [],
     finishReason: optionalString(choice['finish_reason'], 'finish_reason'),
     usage,
+    promptProgress,
   };
 };

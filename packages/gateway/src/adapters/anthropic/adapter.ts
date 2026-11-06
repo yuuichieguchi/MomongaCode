@@ -9,6 +9,8 @@ import { createUpstreamClassifier } from '../shared/classify.ts';
 import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { StreamFailure, UnsupportedInputError, UpstreamProtocolError } from '../shared/failures.ts';
 import { parseUpstreamJson } from '../shared/upstream-json.ts';
+import { gatewayOutputCeilingOf, watchContent, watchedPostOf } from '../shared/content-idle.ts';
+import type { ContentWatch } from '../shared/content-idle.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
 import { jsonReplyPathOf, jsonReplyPlanOf } from '../shared/json-reply.ts';
 import type { CompletionResponse } from '../shared/http-client.ts';
@@ -71,9 +73,9 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
     'anthropic-version': apiVersion,
   });
 
-  async function* readSegment(response: CompletionResponse, driver: AnthropicStreamDriver, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
+  async function* readSegment(response: CompletionResponse, watch: ContentWatch, driver: AnthropicStreamDriver, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
     try {
-      for await (const message of decodeSse(boundedSseBytes(response.body, MAX_SSE_EVENT_BYTES))) {
+      for await (const message of decodeSse(boundedSseBytes(watch.source(response.body), MAX_SSE_EVENT_BYTES))) {
         ctx.signal.throwIfAborted();
         for (const event of driver.accept(parseAnthropicEvent(message.data))) {
           ctx.signal.throwIfAborted();
@@ -103,19 +105,24 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
     const base = buildMessagesBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.name, ANTHROPIC_TOOL_CHOICE), capabilities.maxOutputTokens, { cache, reasoning: capabilities.reasoning, dialect, ledger, jsonReply }, ctx.reasoningOrigin);
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
+    let watch: ContentWatch | undefined;
     try {
       const endpoint = await options.resolveEndpoint(ctx.target);
       const apiKey = await options.apiKey(ctx.target, signal);
       let emitter: ResponseEmitter | undefined;
       let paused: Paused | undefined;
+      const outputCeiling = gatewayOutputCeilingOf(request, capabilities);
       for (let continuation = 0; ; continuation += 1) {
         const body: AnthropicRequestBody =
           paused === undefined ? base : { ...base, messages: [...base.messages, { role: 'assistant', content: paused.content }] };
-        const response = await pool.clientFor(endpoint).post({ headers: headersFor(apiKey, 'text/event-stream'), body: JSON.stringify(body), signal });
+        const response = await pool.clientFor(endpoint).post({ headers: headersFor(apiKey, 'text/event-stream'), body: JSON.stringify(body), signal, ...watchedPostOf(options.liveness) });
         if (response.status !== 200) throw await httpErrorOf(response, options.clock, anthropicErrorDetail, HTTP_TRANSPORT_VOCABULARY);
-        emitter ??= new ResponseEmitter({ clock: options.clock, model: request.model, request, wraps: ledger.wraps, narrowings: ledger.narrowings, jsonReply: jsonReplyPathOf(jsonReply), ...retryAfterHint(response, options.clock) });
+        watch?.dispose();
+        const segmentWatch = watchContent(options.liveness);
+        watch = segmentWatch;
+        emitter ??= new ResponseEmitter({ clock: options.clock, model: request.model, request, wraps: ledger.wraps, narrowings: ledger.narrowings, jsonReply: jsonReplyPathOf(jsonReply), onOutput: () => watch?.touch(), outputCeiling, ...retryAfterHint(response, options.clock) });
         const driver = new AnthropicStreamDriver(emitter, paused === undefined ? undefined : { usage: paused.usage, firstInputTokens: paused.firstInputTokens });
-        yield* readSegment(response, driver, ctx);
+        yield* readSegment(response, segmentWatch, driver, ctx);
         if (!driver.paused) return;
         if (continuation >= MAX_PAUSE_CONTINUATIONS) {
           for (const event of driver.fail({
@@ -135,6 +142,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
         };
       }
     } finally {
+      watch?.dispose();
       upstream.abort();
     }
   }

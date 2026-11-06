@@ -19,7 +19,7 @@ import type { Layer, TrustOracle, UserLayer } from './layers.ts';
 import { EDIT_TOOLS, NEGATION_PREFIX, isPathTool, parseRule, RuleParseError } from './rule.ts';
 import type { PermissionRule, RuleEffect, RuleOrigin } from './rule.ts';
 import { assertSettings, defaultSandboxSetting } from './settings.ts';
-import type { AutoModeSettings, CredentialsSettings, McpServerConfig, PriceEntrySettings, SandboxSetting, Settings, TelemetrySettings } from './settings.ts';
+import type { AutoModeSettings, CredentialsSettings, McpCallSettings, McpServerConfig, PriceEntrySettings, SandboxSetting, Settings, TelemetrySettings } from './settings.ts';
 import type { ResolvedModels } from './models.ts';
 
 
@@ -42,6 +42,7 @@ export type ResolvedSettings = {
   disabledMcpjsonServers: string[];
   enableAllProjectMcpServers?: boolean;
   mcpServers: Record<string, McpServerConfig>;
+  mcp: McpCallSettings;
   models: ResolvedModels;
   autoUpdates: boolean;
   sandbox: SandboxSetting;
@@ -137,6 +138,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     enabledMcpjsonServers: [],
     disabledMcpjsonServers: [],
     mcpServers: {},
+    mcp: {},
     models,
     autoUpdates: true,
     sandbox: defaultSandboxSetting(),
@@ -156,6 +158,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
       disabledMcpjsonServers,
       enableAllProjectMcpServers,
       mcpServers,
+      mcp,
       autoUpdates,
       sandbox,
       telemetry,
@@ -196,6 +199,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     merged.disabledMcpjsonServers.push(...(disabledMcpjsonServers ?? []));
     if (enableAllProjectMcpServers !== undefined) merged.enableAllProjectMcpServers = enableAllProjectMcpServers;
     Object.assign(merged.mcpServers, mcpServers);
+    Object.assign(merged.mcp, mcp);
     if (autoUpdates !== undefined) merged.autoUpdates = autoUpdates;
     if (sandbox !== undefined) merged.sandbox = sandbox;
     if (telemetry !== undefined) merged.telemetry = telemetry;

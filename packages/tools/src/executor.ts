@@ -17,6 +17,8 @@ import type { ReadAccessMatcher } from './read-access.ts';
 import type { PreToolHookVerdict, ToolHooks } from './hooks/events.ts';
 import type { AutoClassifier, BackgroundJobs, BlobPort, IdempotencyPort, LeaseFence, LeasedIdempotencyPort, LeasedOutcome, ToolIdempotencyLookup, ToolIdempotencyRecord } from './ports.ts';
 import type { ToolSet } from './registry.ts';
+import { callStopOf } from './call-stop.ts';
+import type { CallStop } from './call-stop.ts';
 import { cancellableTimer } from './timers.ts';
 import { observedToolFiles } from './work-tree-observer.ts';
 import type { WorkTreeMark, WorkTreeObserver } from './work-tree-observer.ts';
@@ -843,9 +845,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     reconcileCtx: ReconcileContext;
     abortReason(): AbortReason | undefined;
     abortWith(reason: AbortReason): void;
-    armTimer(ms: number): void;
-    timerMs(): number;
-    extendTimerToDeadline(): void;
+    armTimer(bounds: { totalMs: number; idleMs: number | undefined }): void;
+    stop(): { bound: CallStop['bound']; ms: number };
+    reportProgress(): void;
     disarmTimer(): void;
     closeContext(): void;
     ledger: LeasedIdempotencyPort;
@@ -865,8 +867,20 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     let abortReason: AbortReason | undefined;
     let recordCompleted = false;
     let contextClosed = false;
-    let timer: NodeJS.Timeout | undefined;
-    let timerMs = 0;
+    let fixedTimer: NodeJS.Timeout | undefined;
+    let idleTimer: NodeJS.Timeout | undefined;
+    let bounds: { startedAt: number; totalMs: number; idleMs: number | undefined } | undefined;
+    let fired: CallStop['bound'] = 'total';
+    const expire = (bound: CallStop['bound']): void => {
+      if (abortReason !== undefined) return;
+      fired = bound;
+      abortWith('timeout');
+    };
+    const armIdle = (): void => {
+      if (bounds?.idleMs === undefined || abortReason !== undefined) return;
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => expire('idle'), bounds.idleMs);
+    };
     let heldLock: CallLock | undefined;
     let effect: Promise<unknown> | undefined;
     const leaseLost = (): boolean => batch.leaseLost?.() === true;
@@ -918,17 +932,24 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       reconcileCtx,
       abortReason: () => abortReason,
       abortWith,
-      armTimer: (ms) => {
-        timerMs = ms;
-        timer = setTimeout(() => abortWith('timeout'), ms);
+      armTimer: ({ totalMs, idleMs }) => {
+        const now = clock.now();
+        bounds = { startedAt: now, totalMs, idleMs };
+        armIdle();
+        const fixed = callStopOf({ startedAt: now, lastProgressAt: now, idleMs: undefined, totalMs, deadlineAt });
+        fixedTimer = setTimeout(() => expire(fixed.bound), Math.max(0, fixed.at - now));
       },
-      timerMs: () => timerMs,
-      extendTimerToDeadline: () => {
-        clearTimeout(timer);
-        timerMs = Math.max(0, deadlineAt - clock.now());
-        timer = setTimeout(() => abortWith('timeout'), timerMs);
+      stop: () => {
+        const startedAt = bounds?.startedAt ?? clock.now();
+        const ms = fired === 'idle' ? (bounds?.idleMs ?? 0) : fired === 'total' ? (bounds?.totalMs ?? 0) : deadlineAt - startedAt;
+        return { bound: fired, ms: Math.max(0, ms) };
       },
-      disarmTimer: () => clearTimeout(timer),
+      reportProgress: armIdle,
+      disarmTimer: () => {
+        bounds = undefined;
+        clearTimeout(idleTimer);
+        clearTimeout(fixedTimer);
+      },
       closeContext: () => {
         contextClosed = true;
       },
@@ -968,7 +989,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         return { callId, kind: 'waiting', awaits: pending.awaits, ...(pending.wakeAt === undefined ? {} : { wakeAt: pending.wakeAt }) };
       },
       release: () => {
-        clearTimeout(timer);
+        clearTimeout(idleTimer);
+        clearTimeout(fixedTimer);
         const lock = heldLock;
         heldLock = undefined;
         if (lock !== undefined) {
@@ -1118,7 +1140,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     const facts = subjectFactsOf(gate.subject);
     const performedFacts: { current: SubjectFacts } = { current: facts };
     const scope = openScope(batch, call, tool, key, fit, batch.deadlineAt, () => performedFacts.current);
-    const toolContext: ToolContext = { ...scope.reconcileCtx, sandbox: batch.sandbox, sandboxPolicy: batch.sandboxPolicy, checkpoint: scope.checkpoint, extendToRunDeadline: scope.extendTimerToDeadline };
+    const toolContext: ToolContext = { ...scope.reconcileCtx, sandbox: batch.sandbox, sandboxPolicy: batch.sandboxPolicy, checkpoint: scope.checkpoint, reportProgress: scope.reportProgress };
     const contextForBasis = (): ToolContext => (requireBasis(target) === 'read_only' ? readOnlyContextOf(toolContext) : toolContext);
 
     try {
@@ -1176,7 +1198,6 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           fs.closeSync(fs.openSync(scope.processMarker, 'wx', 0o600));
         }
         const requestedMs = typeof tool.timeoutMs === 'function' ? tool.timeoutMs(target.input) : tool.timeoutMs;
-        const timeoutMs = Math.max(0, Math.min(requestedMs, batch.deadlineAt - clock.now()));
 
         const runTool = async (): Promise<ToolResult | ToolPending | ToolInputRequired> => {
           for (let attempt = 0; ; attempt += 1) {
@@ -1201,7 +1222,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           if (scope.controller.signal.aborted) resolve();
           else scope.controller.signal.addEventListener('abort', () => resolve(), { once: true });
         });
-        scope.armTimer(timeoutMs);
+        scope.armTimer({ totalMs: requestedMs, idleMs: tool.idleTimeoutMs });
         const observation = observesCall(batch, tool) ? observationOf(batch) : undefined;
         const window = observation === undefined ? undefined : await openWindow(batch, observation);
         const running = runTool();
@@ -1301,8 +1322,13 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     return { outcome: 'unknown', output: interruptedOutput(tool) };
   };
 
-  const interruptedText = (tool: AnyTool, reason: AbortReason, ms: number, settled: ReconcileResult): string => {
-    const sentence = reason === 'timeout' ? `${tool.name} timed out after ${ms} ms` : `${tool.name} was cancelled`;
+  const interruptedText = async (tool: AnyTool, reason: AbortReason, stop: { bound: CallStop['bound']; ms: number }, record: ToolIdempotencyRecord, settled: ReconcileResult): Promise<string> => {
+    const { stopText } = tool;
+    if (reason === 'timeout' && stop.bound !== 'deadline' && stopText !== undefined) {
+      const checkpoint = record.meta['checkpoint'];
+      return stopText.call(tool, { bound: stop.bound, ms: stop.ms, checkpoint: isRecord(checkpoint) ? checkpoint : undefined });
+    }
+    const sentence = reason === 'timeout' ? `${tool.name} timed out after ${stop.ms} ms` : `${tool.name} was cancelled`;
     if (settled.outcome === 'unknown') return hasUnknownEffects(tool) ? `${sentence}. ${UNKNOWN_EFFECTS_NOTICE}` : sentence;
     return settled.output === '' ? sentence : `${sentence}. ${settled.output}`;
   };
@@ -1323,7 +1349,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     const ctx: ReconcileContext = { ...scope.reconcileCtx, signal: reconciling.signal, deadlineAt: clock.now() + reconcileCapMs + reconcileGraceMs };
     const settled = await reconcileWithin(tool, input, record, ctx, () => reconciling.abort(), scope.closeContext);
     const status = settled.outcome === 'already_applied' ? 'completed' : 'failed';
-    const output = interruptedText(tool, reason, scope.timerMs(), settled);
+    const output = await interruptedText(tool, reason, scope.stop(), record, settled);
     return scope.complete(await finalizeResult({ status, output }, tool, limits.fit, limits.runId, limits.formatOutput), settled.outcome, reason);
   };
 
