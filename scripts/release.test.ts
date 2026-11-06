@@ -24,9 +24,9 @@ if [ -n "$output" ]; then
 fi`,
   ditto: `for last; do :; done
 : > "$last"`,
-  xcrun: `printf '{"id":"fake-submission","status":"%s"}\\n' "\${STUB_NOTARY_STATUS:-Accepted}"`,
+  xcrun: `printf '{"id":"fake-submission","status":"%s"}\\n' "\${STUB_NOTARY_STATUS:-Accepted}"; i=0; while [ "$i" -lt "\${STUB_NOTARY_PADDING_LINES:-0}" ]; do echo 'padding line of a long notary log'; i=$((i + 1)); done`,
   spctl: `exit "\${STUB_SPCTL_EXIT:-0}"`,
-  codesign: `if [ "$1" = "--display" ]; then printf 'Authority=Developer ID\\nTeamIdentifier=%s\\n' "\${STUB_TEAM_ID:-PQQBSRKD72}" >&2; fi`,
+  codesign: `if [ "$1" = "--display" ]; then printf 'Authority=Developer ID\\nTeamIdentifier=%s\\n' "\${STUB_TEAM_ID:-PQQBSRKD72}" >&2; i=0; while [ "$i" -lt "\${STUB_DISPLAY_PADDING_LINES:-0}" ]; do echo 'padding line of a long codesign display' >&2; i=$((i + 1)); done; fi`,
   'ssh-keygen': `case " $* " in *" verify "*)
   signers=''
   while [ $# -gt 0 ]; do if [ "$1" = -f ]; then signers=$2; fi; shift; done
@@ -332,6 +332,27 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     expect(result.stderr).toBe('release.sh: notarization was not accepted\n');
     expect(loggedNames()).toEqual([...BUILT, 'codesign', 'codesign', 'codesign', 'ditto', 'xcrun']);
     expect(originTags()).toBe('');
+  });
+
+  it('accepts a signed binary whose codesign display is far larger than a pipe', () => {
+    commit('second change');
+    const result = release({ STUB_DISPLAY_PADDING_LINES: '40000' });
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it('accepts a notarization whose output is far larger than a pipe', () => {
+    commit('second change');
+    const result = release({ STUB_NOTARY_PADDING_LINES: '10000' });
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it('finds the previous tag among tags whose listing is far larger than a pipe', () => {
+    commit('second change');
+    const refs = Array.from({ length: 3000 }, (_, index) => `create refs/tags/v0.0.${index}-${'x'.repeat(200)} HEAD~1`).join('\n');
+    const update = spawnSync('/usr/bin/git', ['update-ref', '--stdin'], { cwd: work, encoding: 'utf8', env: gitEnv(), input: `${refs}\n` });
+    expect(update.status, update.stderr).toBe(0);
+    const result = release({ DRY_RUN: '1' });
+    expect(result.status, result.stderr).toBe(0);
   });
 
   it('stops before notarization when the signed binary carries another Team ID', () => {

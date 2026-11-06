@@ -30,7 +30,7 @@ config="$1"
 shift
 
 java_properties="$(java -XshowSettings:properties -version 2>&1 || true)"
-java_specification="$(printf '%s\n' "$java_properties" | awk -F' = ' '/java\.specification\.version/ { print $2; exit }')"
+java_specification="$(awk -F' = ' '/java\.specification\.version/ && !found { print $2; found = 1 }' <<< "$java_properties")"
 java_major="${java_specification#1.}"
 java_major="${java_major%%.*}"
 case "$java_major" in
