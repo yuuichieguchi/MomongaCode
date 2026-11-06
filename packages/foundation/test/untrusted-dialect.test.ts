@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { SchemaValidatorFailure, validateUntrusted } from '@momonga/foundation';
 
 const require = createRequire(import.meta.url);
-const ata = require(path.join(path.dirname(require.resolve('ata-validator/package.json')), 'lib', 'dialect.js')) as {
+const ata = require(path.join(path.dirname(require.resolve('@momonga/ata-validator/package.json')), 'lib', 'dialect.js')) as {
   draftCode(uri: string): number;
   DRAFT6_SCHEMAS: ReadonlySet<string>;
   V1_DIALECTS: ReadonlySet<string>;

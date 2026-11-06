@@ -12,7 +12,8 @@ const seed = Number(argument('seed', '20261105'));
 const only = argument('only', '');
 const started = Date.now();
 
-const seedOutcomes = SEEDS.map(runSeed);
+const seedOutcomes = [];
+for (const entry of SEEDS) seedOutcomes.push(await runSeed(entry));
 for (const outcome of seedOutcomes) {
   const status = outcome.failure === null && outcome.assertion === null ? 'ok' : 'COUNTEREXAMPLE';
   process.stdout.write(`seed ${status}: ${outcome.name} -> ${outcome.summary}${outcome.failure === null ? '' : ` | ${outcome.failure.kind} ${JSON.stringify(outcome.failure.instance ?? null)}`}${outcome.assertion === null ? '' : ` | ${outcome.assertion}`}\n`);
@@ -22,7 +23,7 @@ const reports: SubjectReport[] = [];
 for (const spec of SUBJECTS) {
   if (only !== '' && spec.name !== only) continue;
   const begun = Date.now();
-  const report = runSubject(spec, schemas, seed, (line) => process.stderr.write(`${line}\n`));
+  const report = await runSubject(spec, schemas, seed, (line) => process.stderr.write(`${line}\n`));
   reports.push(report);
   process.stdout.write(
     `${JSON.stringify({

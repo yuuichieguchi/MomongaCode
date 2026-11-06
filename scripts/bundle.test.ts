@@ -16,10 +16,10 @@ describe('the single-file bundle', () => {
       const outfile = path.join(scratch, 'main.js');
       await bundle({ entry: defaultEntry, outfile });
       const text = fs.readFileSync(outfile, 'utf8');
-      expect(text).toContain('node_modules/ata-validator/lib/validator-core.js');
+      expect(text).toContain('packages/ata-validator/lib/validator-core.js');
       expect(text).not.toContain('@ata-validator/native');
-      expect(text).not.toContain('node_modules/ata-validator/lib/native-load.js');
-      expect(text).not.toContain('node_modules/ata-validator/lib/compile-fn.js');
+      expect(text).not.toContain('packages/ata-validator/lib/native-load.js');
+      expect(text).not.toContain('packages/ata-validator/lib/compile-fn.js');
     },
     BUNDLE_TIMEOUT_MS,
   );

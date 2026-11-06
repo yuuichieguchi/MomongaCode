@@ -623,14 +623,17 @@ export function App(props: AppProps) {
     const flow = flowOf(pending);
     const request = currentRequest(flow);
     if (decision === 'accept' && request.mode === 'url') {
-      const next = decide(flow, decision);
-      backend.openUrl(new URL(request.url)).then(
-        () => proceedFlow(pending, next),
-        (error: unknown) => applyFlow(pending, withError(flow, `could not open the URL: ${errorOf(error).message}`)),
+      decide(flow, decision).then(
+        (next) =>
+          backend.openUrl(new URL(request.url)).then(
+            () => proceedFlow(pending, next),
+            (error: unknown) => applyFlow(pending, withError(flow, `could not open the URL: ${errorOf(error).message}`)),
+          ),
+        fail,
       );
       return;
     }
-    proceedFlow(pending, decide(flow, decision));
+    decide(flow, decision).then((next) => proceedFlow(pending, next), fail);
   };
 
   const elicitationKey = (pending: PendingElicitation, input: string, key: Parameters<Parameters<typeof useInput>[0]>[1]): void => {
@@ -654,12 +657,12 @@ export function App(props: AppProps) {
       return;
     }
     if (key.return && elicitEditorRef.current.text === '') {
-      proceedFlow(pending, enterValue(flow, ''));
+      enterValue(flow, '').then((next) => proceedFlow(pending, next), fail);
       return;
     }
     const outcome = applyKey(elicitEditorRef.current, { ...key, input });
     replaceElicitEditor(outcome.state);
-    if (outcome.submit !== undefined) proceedFlow(pending, enterValue(flow, outcome.submit));
+    if (outcome.submit !== undefined) enterValue(flow, outcome.submit).then((next) => proceedFlow(pending, next), fail);
   };
 
   const cycleMode = (): void => {

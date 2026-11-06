@@ -87,7 +87,7 @@ export const decideAfterResponse = async (ctx: ClaimContext): Promise<Flow> => {
       return terminals.finish('STOPPED', { stopReason: 'loop' });
     }
   }
-  recordCalls(ctx, warning);
+  await recordCalls(ctx, warning);
   return settleCalls(ctx);
 };
 

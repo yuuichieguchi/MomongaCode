@@ -77,9 +77,9 @@ export interface SeedOutcome {
   summary: string;
 }
 
-export const runSeed = (seed: Seed): SeedOutcome => {
+export const runSeed = async (seed: Seed): Promise<SeedOutcome> => {
   const stats = emptyStats();
-  const checked = checkCase({ schema: seed.schema, site: seed.site, definition: seed.definition, cls: seed.cls, seed: 1, perDocument: 60, forcedInstances: seed.witnesses, stats });
+  const checked = await checkCase({ schema: seed.schema, site: seed.site, definition: seed.definition, cls: seed.cls, seed: 1, perDocument: 60, forcedInstances: seed.witnesses, stats });
   const refusal = Object.keys(stats.refused)[0];
   const failure: Failure | null = checked ?? (refusal === undefined ? null : { kind: 'oracle-error', detail: `seed refused by the boundary: ${refusal}` });
   const rendered = render(seed.schema, seed.definition, seed.site);

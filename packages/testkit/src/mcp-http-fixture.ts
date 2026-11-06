@@ -100,6 +100,12 @@ const TOOLS = [
   { name: 'mrtr_url', description: 'Asks the user to open a URL', inputSchema: objectSchema({}) },
   { name: 'mrtr_sampling', description: 'Asks for sampling, which no client declared', inputSchema: objectSchema({}) },
   { name: 'structured', description: 'Returns structured content that may break its outputSchema', inputSchema: objectSchema({ valid: { type: 'boolean' } }, ['valid']), outputSchema: STRUCTURED_SCHEMA },
+  {
+    name: 'structured_pattern',
+    description: 'Returns its text as structured content under a backreference pattern',
+    inputSchema: objectSchema({ s: { type: 'string' } }, ['s']),
+    outputSchema: { type: 'object', properties: { s: { type: 'string', pattern: '^(a+)+\\1$' } }, required: ['s'] },
+  },
   { name: 'structured_task', description: 'Returns a task whose result is structured', inputSchema: objectSchema({}), outputSchema: STRUCTURED_SCHEMA },
   { name: 'bad_header_number', description: 'x-mcp-header on a number', inputSchema: objectSchema({ n: { type: 'number', 'x-mcp-header': 'N' } }) },
   { name: 'bad_header_empty', description: 'empty x-mcp-header', inputSchema: objectSchema({ s: { type: 'string', 'x-mcp-header': '' } }) },
@@ -431,6 +437,10 @@ export const startMcpHttpFixture = async (options: McpHttpFixtureOptions): Promi
       }
       case 'structured': {
         sendJson(res, 200, complete(rpc.id, { ...textResult('structured'), structuredContent: args['valid'] === true ? { n: 1 } : { n: 'one' } }));
+        return;
+      }
+      case 'structured_pattern': {
+        sendJson(res, 200, complete(rpc.id, { ...textResult('structured_pattern'), structuredContent: { s: args['s'] } }));
         return;
       }
       case 'ask_task':

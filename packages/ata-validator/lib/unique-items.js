@@ -1,0 +1,160 @@
+'use strict';
+
+function _deq(a, b) {
+  if (a === b) return true;
+  if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') return false;
+  var aa = Array.isArray(a);
+  if (aa !== Array.isArray(b)) return false;
+  var i, k, x, y;
+  if (aa) {
+    if (a.length !== b.length) return false;
+    for (i = a.length; i-- !== 0;) if (!_deq(a[i], b[i])) return false;
+    return true;
+  }
+  var ka = Object.keys(a);
+  if (ka.length !== Object.keys(b).length) return false;
+  for (i = ka.length; i-- !== 0;) {
+    k = ka[i];
+    if (!Object.prototype.hasOwnProperty.call(b, k)) return false;
+    x = a[k]; y = b[k];
+    if (x !== y && (x === null || y === null || typeof x !== 'object' || typeof y !== 'object')) return false;
+  }
+  for (i = ka.length; i-- !== 0;) {
+    k = ka[i]; x = a[k];
+    if (x !== null && typeof x === 'object' && !_deq(x, b[k])) return false;
+  }
+  return true;
+}
+
+function _uqh(x) {
+  if (x === null) return 1;
+  var t = typeof x, h, i;
+  if (t === 'boolean') return x ? 2 : 3;
+  if (t === 'number') {
+    if (x === 0) return 4;
+    h = x | 0;
+    if (h === x) return Math.imul(h, 0x9e3779b1) ^ 5;
+    var f = _uqh.f || (_uqh.f = new Float64Array(1)), w = _uqh.w || (_uqh.w = new Uint32Array(f.buffer));
+    f[0] = x;
+    return Math.imul(w[0] ^ Math.imul(w[1], 0x9e3779b1), 0x85ebca6b) ^ 5;
+  }
+  if (t === 'string') {
+    h = 0x811c9dc5 ^ x.length;
+    for (i = 0; i < x.length; i++) h = Math.imul(h ^ x.charCodeAt(i), 16777619);
+    return h;
+  }
+  if (t !== 'object') return 6;
+  if (Array.isArray(x)) {
+    h = 0x2545f491 ^ x.length;
+    for (i = 0; i < x.length; i++) h = Math.imul(h ^ _uqh(x[i]), 16777619);
+    return h;
+  }
+  var ks = Object.keys(x);
+  h = 0x6c8e9cf5 ^ ks.length;
+  for (i = 0; i < ks.length; i++) h = (h + Math.imul(_uqh(ks[i]) ^ Math.imul(_uqh(x[ks[i]]), 0x5bd1e995), 0x27d4eb2d)) | 0;
+  return h;
+}
+
+function _uqrank(x) {
+  if (x === null) return 0;
+  var t = typeof x;
+  if (t === 'boolean') return 1;
+  if (t === 'number') return 2;
+  if (t === 'string') return 3;
+  if (t !== 'object') return 6;
+  return Array.isArray(x) ? 4 : 5;
+}
+
+function _uqkeys(x, kc) {
+  var ks = kc.get(x);
+  if (ks === undefined) { ks = Object.keys(x).sort(); kc.set(x, ks); }
+  return ks;
+}
+
+function _uqcmp(a, b, kc) {
+  if (a === b) return 0;
+  var ra = _uqrank(a), rb = _uqrank(b), i, n, c;
+  if (ra !== rb) return ra < rb ? -1 : 1;
+  if (ra === 1) return (a ? 1 : 0) - (b ? 1 : 0);
+  if (ra === 2 || ra === 3) return a < b ? -1 : a > b ? 1 : 0;
+  if (ra === 4) {
+    n = a.length < b.length ? a.length : b.length;
+    for (i = 0; i < n; i++) { c = _uqcmp(a[i], b[i], kc); if (c !== 0) return c; }
+    return a.length === b.length ? 0 : a.length < b.length ? -1 : 1;
+  }
+  if (ra !== 5) return 0;
+  var ka = _uqkeys(a, kc), kb = _uqkeys(b, kc);
+  n = ka.length < kb.length ? ka.length : kb.length;
+  for (i = 0; i < n; i++) if (ka[i] !== kb[i]) return ka[i] < kb[i] ? -1 : 1;
+  if (ka.length !== kb.length) return ka.length < kb.length ? -1 : 1;
+  for (i = 0; i < n; i++) { c = _uqcmp(a[ka[i]], b[kb[i]], kc); if (c !== 0) return c; }
+  return 0;
+}
+
+function _uqsorted(v) {
+  var n = v.length, h = new Array(n), order = new Array(n), kc = new Map(), i;
+  for (i = 0; i < n; i++) { h[i] = _uqh(v[i]); order[i] = i; }
+  order.sort(function (p, q) {
+    if (h[p] !== h[q]) return h[p] < h[q] ? -1 : 1;
+    var c = _uqcmp(v[p], v[q], kc);
+    return c !== 0 ? c : p - q;
+  });
+  return { order: order, h: h, kc: kc };
+}
+
+function _uq(a) {
+  var n = a.length, i, k;
+  if (n < 2) return true;
+  if (n <= 12) {
+    for (i = 1; i < n; i++) for (k = 0; k < i; k++) if (_deq(a[i], a[k])) return false;
+    return true;
+  }
+  var v = new Array(n), prim = true;
+  for (i = 0; i < n; i++) { var x = v[i] = a[i]; if (x !== null && typeof x === 'object') prim = false; }
+  if (prim) {
+    var s = new Set();
+    for (i = 0; i < n; i++) { if (s.has(v[i])) return false; s.add(v[i]); }
+    return true;
+  }
+  var r = _uqsorted(v), o = r.order;
+  for (i = 1; i < n; i++) if (r.h[o[i]] === r.h[o[i - 1]] && _uqcmp(v[o[i]], v[o[i - 1]], r.kc) === 0) return false;
+  return true;
+}
+
+var _uqpI = 0;
+function _uqp(a) {
+  var n = a.length, i, k;
+  if (n < 2) return -1;
+  if (n <= 12) {
+    for (i = 0; i < n - 1; i++) for (k = i + 1; k < n; k++) if (_deq(a[i], a[k])) { _uqpI = i; return k; }
+    return -1;
+  }
+  var v = new Array(n), prim = true;
+  for (i = 0; i < n; i++) { var x = v[i] = a[i]; if (x !== null && typeof x === 'object') prim = false; }
+  var bi = -1, bj = -1;
+  if (prim) {
+    var m = new Map();
+    for (i = 0; i < n; i++) {
+      var p = m.get(v[i]);
+      if (p === undefined) m.set(v[i], i);
+      else if (p >= 0) { if (bi < 0 || p < bi) { bi = p; bj = i; } m.set(v[i], -1); }
+    }
+  } else {
+    var r = _uqsorted(v), o = r.order, runFirst = o[0];
+    for (i = 1; i < n; i++) {
+      if (r.h[o[i]] !== r.h[o[i - 1]] || _uqcmp(v[o[i]], v[o[i - 1]], r.kc) !== 0) { runFirst = o[i]; continue; }
+      if (o[i - 1] === runFirst && (bi < 0 || runFirst < bi)) { bi = runFirst; bj = o[i]; }
+    }
+  }
+  if (bi < 0) return -1;
+  _uqpI = bi;
+  return bj;
+}
+
+function allDistinct(a) { return _uq(a); }
+function duplicatePair(a) {
+  var j = _uqp(a);
+  return j < 0 ? null : [_uqpI, j];
+}
+
+module.exports = { allDistinct, duplicatePair, _deq, _uqh, _uq, _uqp };
