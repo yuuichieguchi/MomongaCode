@@ -20,7 +20,11 @@ export interface FmChild {
   once(event: 'error', listener: (error: Error) => void): unknown;
 }
 
-export type ExecFn = (file: string, args: readonly string[]) => Promise<ExecResult>;
+export interface ExecOptions {
+  signal: AbortSignal;
+}
+
+export type ExecFn = (file: string, args: readonly string[], options?: ExecOptions) => Promise<ExecResult>;
 export type SpawnFn = (file: string, args: readonly string[]) => FmChild;
 
 export interface FmServeTimers {
