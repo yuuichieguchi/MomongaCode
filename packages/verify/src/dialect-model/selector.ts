@@ -11,6 +11,8 @@ export interface Position {
 const hasType = (node: Record<string, unknown>, type: string): boolean =>
   node['type'] === type || (Array.isArray(node['type']) && node['type'].includes(type));
 
+const PROPERTY_DECLARING_APPLICATORS = ['anyOf', 'allOf', 'oneOf', '$ref', '$dynamicRef', 'if', 'then', 'else', 'dependentSchemas'] as const;
+
 export const matchesKind = (kind: Kind, node: Schema, position: Position): boolean => {
   const atRoot = position.edges.length === 0;
   if (kind === 'any') return true;
@@ -19,9 +21,9 @@ export const matchesKind = (kind: Kind, node: Schema, position: Position): boole
   if (!isObject(node)) return false;
   switch (kind) {
     case 'object-with-properties':
-      return (node['type'] === 'object' || 'properties' in node) && isObject(node['properties']);
+      return isObject(node['properties']);
     case 'object-without-properties':
-      return node['type'] === 'object' && !('properties' in node);
+      return node['type'] === 'object' && !('properties' in node) && !PROPERTY_DECLARING_APPLICATORS.some((keyword) => keyword in node);
     case 'any-of':
       return 'anyOf' in node;
     case 'any-of-branch':

@@ -445,8 +445,8 @@ export const applyRule = (rule: Rule, node: Schema, state: State): Schema => {
     case 'require-all': {
       if (!isObject(node['properties'])) return node;
       const existing = Array.isArray(node['required']) ? node['required'] : [];
-      const union = [...existing, ...Object.keys(node['properties']).filter((name) => !existing.includes(name))];
-      return { ...node, required: union };
+      const added = Object.keys(node['properties']).filter((name) => !existing.includes(name));
+      return added.length === 0 ? node : { ...node, required: [...existing, ...added] };
     }
     case 'declare-required':
       return declareRequired(node, state);
