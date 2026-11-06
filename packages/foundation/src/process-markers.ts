@@ -194,7 +194,7 @@ const reconcileWithin = async (recorded: { pgid: number; marker: string }, { giv
   const remaining = await holdersUntil(marker, listing, timing.now() + killGraceMs, unsettled);
   if (stop.aborted) return unknownResult('The interrupted command was sent SIGTERM; the wait for it ended with its operation before its exit could be confirmed.', true, { unsignalledPids: [...unsignalled] });
   const left = await splitByGroup(remaining, pgid, inspector, stop);
-  const stillInGroup = groupVerified && left.groupHasHolder && (await aliveVia(send, -pgid, stop));
+  const stillInGroup = left.groupHasHolder && (await aliveVia(send, -pgid, stop));
   const killTargets = [...(stillInGroup ? [-pgid] : []), ...left.outsideGroup];
   for (const pid of await signalTargets(send, killTargets, 'SIGKILL', stop)) unsignalled.add(pid);
 
