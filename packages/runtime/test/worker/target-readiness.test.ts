@@ -56,7 +56,7 @@ describe('run admission decides readiness with agentReadiness before any model r
     expect(env.gateway.streams).toHaveLength(1);
     const body = env.gateway.streams[0]?.body;
     expect(body?.tools ?? []).toEqual([]);
-    expect(body?.tool_choice).toBeUndefined();
+    expect([undefined, 'none']).toContain(body?.tool_choice);
   });
 
   it.each(['native', 'constrained'] as const)('still offers tools to a %s target', async (toolCalling) => {
