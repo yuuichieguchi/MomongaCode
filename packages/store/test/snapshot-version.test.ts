@@ -79,9 +79,9 @@ describe('snapshot state version 11', () => {
     expect(loaded.tail.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }) as RunState)).toEqual(state);
   });
 
-  it('treats a version 14 snapshot, which carried the touched list, as absent and rebuilds a state without it', () => {
+  it('treats a version 15 snapshot, the last that carried the touched list, as absent and rebuilds a state without it', () => {
     const { store, run, state, events, mutate } = storedSnapshot();
-    mutate("json_set(json_set(state_json, '$.stateVersion', 14), '$.workingFacts.touched', json('[{\"kind\":\"file\",\"path\":\"/work/a/x.ts\"}]'))");
+    mutate("json_set(json_set(state_json, '$.stateVersion', 15), '$.workingFacts.touched', json('[{\"kind\":\"file\",\"path\":\"/work/a/x.ts\"}]'))");
     const loaded = store.load(run.id);
     expect(loaded.snapshot).toBeUndefined();
     const rebuilt = loaded.tail.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }) as RunState);
