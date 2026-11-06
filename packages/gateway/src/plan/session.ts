@@ -585,7 +585,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
   const install = async (input: InstallInput): Promise<{ outcome: 'signed_in' | 'plan_disabled' } | Rejected> => {
     const account = accountOf(input.profile, input.account);
     const { tokens } = input;
-    const problem = tokenResponseProblem(tokens, { minimumLifetimeMs: defaults.marginMs, refreshRequired: typeof tokens.scope === 'string' && refreshRequiredFor(tokens.scope) });
+    const problem = tokenResponseProblem(tokens, { refreshRequired: typeof tokens.scope === 'string' && refreshRequiredFor(tokens.scope) });
     if (problem !== undefined) throw new Error(`the sign-in installed nothing: ${problem}`);
     const outcome = await store.withKey(account.key, async (entry) => {
       const raw = await entry.read();

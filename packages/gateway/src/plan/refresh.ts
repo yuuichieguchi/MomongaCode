@@ -50,13 +50,13 @@ const scopesOf = (scope: string): string[] => scope.split(' ').filter((entry) =>
 
 export const grantsScope = (scope: string, wanted: string): boolean => scopesOf(scope).includes(wanted);
 
-export const tokenResponseProblem = (body: unknown, { minimumLifetimeMs, refreshRequired }: { minimumLifetimeMs: number; refreshRequired: boolean }): string | undefined => {
+export const tokenResponseProblem = (body: unknown, { refreshRequired }: { refreshRequired: boolean }): string | undefined => {
   if (!isRecord(body)) return 'the token response is not a JSON object';
   if (typeof body['access_token'] !== 'string' || body['access_token'] === '') return 'the token response has no access token';
   if (body['token_type'] !== 'Bearer') return 'the token response is not a Bearer token';
   if (typeof body['scope'] !== 'string') return 'the token response has no granted scope';
   const expiresIn = body['expires_in'];
-  if (typeof expiresIn !== 'number' || !Number.isInteger(expiresIn) || expiresIn * 1000 <= minimumLifetimeMs) return 'the token response has no expires_in longer than its required lifetime';
+  if (typeof expiresIn !== 'number' || !Number.isInteger(expiresIn) || expiresIn <= 0) return 'the token response has no positive integer expires_in';
   if (refreshRequired && (typeof body['refresh_token'] !== 'string' || body['refresh_token'] === '')) return 'the token response has no refresh token';
   if (body['refresh_token'] !== undefined && (typeof body['refresh_token'] !== 'string' || body['refresh_token'] === '')) return 'the token response has a malformed refresh token';
   if (body['id_token'] !== undefined && typeof body['id_token'] !== 'string') return 'the token response has a malformed ID token';
@@ -98,7 +98,7 @@ export const classifyRefreshAnswer = (outcome: SendOutcome, nowMs: number): Refr
   if (outcome.kind === 'unanswered') return { kind: 'transient', resend };
   const body = parsedBody(outcome.body);
   if (outcome.status === SUCCESS_STATUS) {
-    return tokenResponseProblem(body, { minimumLifetimeMs: 0, refreshRequired: false }) === undefined ? { kind: 'adopted', tokens: body as RefreshTokens } : { kind: 'transient', resend };
+    return tokenResponseProblem(body, { refreshRequired: false }) === undefined ? { kind: 'adopted', tokens: body as RefreshTokens } : { kind: 'transient', resend };
   }
   const code = isRecord(body) && typeof body['error'] === 'string' ? body['error'] : undefined;
   const errorClass = code === undefined ? undefined : REFRESH_ERROR_CLASSES.get(code);
