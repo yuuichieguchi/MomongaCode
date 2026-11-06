@@ -41,14 +41,14 @@ describe('every executable the product extracts lives under <cacheBase>/executab
       random: () => 0.5,
       files: {
         exists: async (target) => store.has(target) || written.includes(target),
-        ensureDirectory: async () => undefined,
+        mkdir: async () => undefined,
         writeBytes: async (file, bytes) => void store.set(file, bytes),
-        readBytes: async (file) => store.get(file) as Uint8Array,
+        readFile: async (file) => store.get(file) as Uint8Array,
         rename: async (from, to) => {
           for (const [key, value] of [...store]) if (key.startsWith(from)) store.set(key.replace(from, to), value);
           written.push(to);
         },
-        removeTree: async () => undefined,
+        rm: async () => undefined,
       },
     });
     expect(path.dirname(path.dirname(result.entry))).toBe(area);
