@@ -2,8 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearUntrustedSchemaCaches } from '@momonga/foundation';
 import { validateToolInput } from '@momonga/tools';
 import { makeTool } from './harness.ts';
+import { recordedWorkers } from './worker-record.ts';
 
-const nativeSourcesRun: string[] = [];
+vi.mock('node:worker_threads', async (importOriginal) => (await import('./worker-record.ts')).recordingWorkerModule(importOriginal as never));
+vi.mock('worker_threads', async (importOriginal) => (await import('./worker-record.ts')).recordingWorkerModule(importOriginal as never));
+
+type NativeRun = { source: string; input: string };
+
+const nativeRuns: NativeRun[] = [];
 const originalExec = RegExp.prototype.exec;
 const originalTest = RegExp.prototype.test;
 
@@ -14,22 +20,28 @@ const schemaWithPattern = (pattern: string) => ({
   additionalProperties: false,
 });
 
-const nativeRunsOfSchemaPattern = (pattern: string, value: string): string[] => {
-  const tool = makeTool(`pattern_matcher_${nativeSourcesRun.length}_${pattern.length}`, { inputSchema: schemaWithPattern(pattern) });
-  expect(validateToolInput(tool, { value }).ok).toBe(false);
-  const compiledSource = new RegExp(pattern, 'u').source;
-  return nativeSourcesRun.filter((source) => source === compiledSource || source === pattern);
+let toolCount = 0;
+
+const checked = async (pattern: string, value: string) => {
+  toolCount += 1;
+  const tool = makeTool(`pattern_matcher_${toolCount}`, { inputSchema: schemaWithPattern(pattern) });
+  nativeRuns.length = 0;
+  const result = await validateToolInput(tool, { value });
+  const nativeRunsOnValue = nativeRuns.filter((run) => run.input.includes(value));
+  return { ok: result.ok, nativeRunsOnValue };
 };
 
 beforeEach(() => {
-  nativeSourcesRun.length = 0;
+  nativeRuns.length = 0;
+  recordedWorkers.started.length = 0;
+  recordedWorkers.onStart = undefined;
   clearUntrustedSchemaCaches();
   vi.spyOn(RegExp.prototype, 'exec').mockImplementation(function (this: RegExp, input: string) {
-    nativeSourcesRun.push(this.source);
+    nativeRuns.push({ source: this.source, input: String(input) });
     return originalExec.call(this, input);
   });
   vi.spyOn(RegExp.prototype, 'test').mockImplementation(function (this: RegExp, input: string) {
-    nativeSourcesRun.push(this.source);
+    nativeRuns.push({ source: this.source, input: String(input) });
     return originalTest.call(this, input);
   });
 });
@@ -38,20 +50,33 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('an untrusted schema pattern on the calling thread', () => {
-  it('is matched without the native backtracking RegExp for a nested quantifier the linear engine represents', () => {
-    expect(nativeRunsOfSchemaPattern('^(a+)+$', 'aaaab')).toEqual([]);
+describe('no native RegExp runs on the argument text on the calling thread, whatever its source', () => {
+  it.each([
+    ['a nested quantifier the linear engine represents', '^(a+)+$', 'aaaab'],
+    ['a nested quantifier around a property escape', '^(\\p{L}+)+$', 'aaaa1'],
+    ['a backreference', '^(a+)+\\1$', 'aaaab'],
+    ['a lookaround', '^(?=(a+)+$)a*$', 'aaaab'],
+  ])('for %s', async (_case, pattern, value) => {
+    const { ok, nativeRunsOnValue } = await checked(pattern, value);
+    expect(ok).toBe(false);
+    expect(nativeRunsOnValue).toEqual([]);
   });
+});
 
-  it('is matched without the native backtracking RegExp for a nested quantifier around a property escape', () => {
-    expect(nativeRunsOfSchemaPattern('^(\\p{L}+)+$', 'aaaa1')).toEqual([]);
-  });
-
-  it('is matched without the native backtracking RegExp for a backreference', () => {
-    expect(nativeRunsOfSchemaPattern('^(a+)+\\1$', 'aaaab')).toEqual([]);
-  });
-
-  it('is matched without the native backtracking RegExp for a lookaround', () => {
-    expect(nativeRunsOfSchemaPattern('^(?=(a+)+$)a*$', 'aaaab')).toEqual([]);
+describe('a property escape is matched inside the linear engine', () => {
+  it.each([
+    ['^\\p{Lu}\\p{Ll}+$', 'Hello', true],
+    ['^\\p{Lu}\\p{Ll}+$', 'hello', false],
+    ['^\\p{Script=Greek}+$', 'αβγ', true],
+    ['^\\p{Script=Greek}+$', 'αβc', false],
+    ['^\\p{L}$', '\u{1D49C}', true],
+    ['^\\p{L}$', '\u{1D49C}\u{1D49C}', false],
+    ['^\\P{N}+$', 'ab', true],
+    ['^\\P{N}+$', 'a1', false],
+  ])('%s on %j is %s, with no native run on the text and no worker', async (pattern, value, expected) => {
+    const { ok, nativeRunsOnValue } = await checked(pattern, value);
+    expect(ok).toBe(expected);
+    expect(nativeRunsOnValue).toEqual([]);
+    expect(recordedWorkers.started).toEqual([]);
   });
 });
