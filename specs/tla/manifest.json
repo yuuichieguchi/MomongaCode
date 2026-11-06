@@ -772,10 +772,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 254,
-      "measuredSeconds": 5.15,
-      "measuredCpuSeconds": 2.81,
-      "budgetCpuSeconds": 9
+      "distinctStates": 252,
+      "measuredSeconds": 3.18,
+      "measuredCpuSeconds": 3.03,
+      "budgetCpuSeconds": 10
     },
     {
       "config": "PlanCredential.eraseOnTransient",
@@ -787,9 +787,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 19,
-      "measuredSeconds": 4.73,
-      "measuredCpuSeconds": 2.29,
-      "budgetCpuSeconds": 8
+      "measuredSeconds": 3.39,
+      "measuredCpuSeconds": 2.6,
+      "budgetCpuSeconds": 9
     },
     {
       "config": "PlanCredential.forgetBeforePersist",
@@ -801,9 +801,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 23,
-      "measuredSeconds": 4.47,
-      "measuredCpuSeconds": 2.33,
-      "budgetCpuSeconds": 8
+      "measuredSeconds": 3.21,
+      "measuredCpuSeconds": 2.61,
+      "budgetCpuSeconds": 9
     },
     {
       "config": "PlanCredential.signOutNoWait",
@@ -814,9 +814,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 252,
-      "measuredSeconds": 3.95,
-      "measuredCpuSeconds": 2.51,
+      "distinctStates": 273,
+      "measuredSeconds": 3.48,
+      "measuredCpuSeconds": 2.72,
       "budgetCpuSeconds": 9
     },
     {
@@ -828,9 +828,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 110,
-      "measuredSeconds": 4.25,
-      "measuredCpuSeconds": 2.74,
+      "distinctStates": 127,
+      "measuredSeconds": 3.2,
+      "measuredCpuSeconds": 2.58,
       "budgetCpuSeconds": 9
     },
     {
@@ -842,10 +842,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 159,
-      "measuredSeconds": 2.66,
-      "measuredCpuSeconds": 2.43,
-      "budgetCpuSeconds": 8
+      "distinctStates": 150,
+      "measuredSeconds": 3.1,
+      "measuredCpuSeconds": 2.53,
+      "budgetCpuSeconds": 9
     },
     {
       "config": "PlanCredential.mutexOnly",
@@ -854,9 +854,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 1378,
-      "measuredSeconds": 2.58,
-      "measuredCpuSeconds": 3.65,
-      "budgetCpuSeconds": 11
+      "measuredSeconds": 3.43,
+      "measuredCpuSeconds": 3.38,
+      "budgetCpuSeconds": 10
     },
     {
       "config": "PlanCredential.noIntent",
@@ -865,9 +865,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 889,
-      "measuredSeconds": 2.51,
-      "measuredCpuSeconds": 3.53,
-      "budgetCpuSeconds": 11
+      "measuredSeconds": 3.7,
+      "measuredCpuSeconds": 2.96,
+      "budgetCpuSeconds": 9
     },
     {
       "config": "PlanCredential.noIntentCause",
@@ -879,9 +879,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 360,
-      "measuredSeconds": 2.97,
-      "measuredCpuSeconds": 3.09,
-      "budgetCpuSeconds": 10
+      "measuredSeconds": 5.89,
+      "measuredCpuSeconds": 2.67,
+      "budgetCpuSeconds": 9
     },
     {
       "config": "PlanCredential.signOutAfterLoss",
@@ -892,10 +892,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 187,
-      "measuredSeconds": 2.78,
-      "measuredCpuSeconds": 2.8,
-      "budgetCpuSeconds": 9
+      "distinctStates": 186,
+      "measuredSeconds": 3.61,
+      "measuredCpuSeconds": 3.04,
+      "budgetCpuSeconds": 10
     },
     {
       "config": "PlanCredential.pinIdentityOff",
@@ -906,10 +906,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 23,
-      "measuredSeconds": 3.06,
-      "measuredCpuSeconds": 2.63,
-      "budgetCpuSeconds": 9
+      "distinctStates": 19,
+      "measuredSeconds": 3.88,
+      "measuredCpuSeconds": 2.48,
+      "budgetCpuSeconds": 8
     },
     {
       "config": "PlanCredential.crossAccount",
@@ -920,10 +920,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 62,
-      "measuredSeconds": 2.53,
-      "measuredCpuSeconds": 2.4,
-      "budgetCpuSeconds": 8
+      "distinctStates": 57,
+      "measuredSeconds": 4.67,
+      "measuredCpuSeconds": 2.69,
+      "budgetCpuSeconds": 9
     },
     {
       "config": "PlanSignIn",
@@ -1090,10 +1090,10 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 80508,
-      "measuredSeconds": 9.82,
-      "measuredCpuSeconds": 9.23,
-      "budgetCpuSeconds": 22
+      "distinctStates": 28746,
+      "measuredSeconds": 4.89,
+      "measuredCpuSeconds": 6.12,
+      "budgetCpuSeconds": 16
     },
     {
       "config": "PlanCredential.refreshWhileUnwritable",
@@ -1105,8 +1105,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 327,
-      "measuredSeconds": 4.05,
-      "measuredCpuSeconds": 2.98,
+      "measuredSeconds": 3.51,
+      "measuredCpuSeconds": 2.93,
       "budgetCpuSeconds": 9
     },
     {
@@ -1118,10 +1118,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 11,
-      "measuredSeconds": 4.62,
-      "measuredCpuSeconds": 2.27,
-      "budgetCpuSeconds": 8
+      "distinctStates": 13,
+      "measuredSeconds": 3.7,
+      "measuredCpuSeconds": 2.63,
+      "budgetCpuSeconds": 9
     },
     {
       "config": "PlanCredential.weakTransientShort",
@@ -1132,10 +1132,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 239,
-      "measuredSeconds": 4.91,
-      "measuredCpuSeconds": 2.62,
-      "budgetCpuSeconds": 9
+      "distinctStates": 222,
+      "measuredSeconds": 5.15,
+      "measuredCpuSeconds": 3.1,
+      "budgetCpuSeconds": 10
     },
     {
       "config": "PlanCredential.weakRejectShort",
@@ -1146,9 +1146,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 282,
-      "measuredSeconds": 6.29,
-      "measuredCpuSeconds": 2.68,
+      "distinctStates": 283,
+      "measuredSeconds": 3.36,
+      "measuredCpuSeconds": 2.94,
       "budgetCpuSeconds": 9
     },
     {
@@ -1161,9 +1161,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 359,
-      "measuredSeconds": 7.82,
-      "measuredCpuSeconds": 2.74,
-      "budgetCpuSeconds": 9
+      "measuredSeconds": 4.26,
+      "measuredCpuSeconds": 3.34,
+      "budgetCpuSeconds": 10
     },
     {
       "config": "PlanCredential.weakSignInKept",
@@ -1174,9 +1174,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 111,
-      "measuredSeconds": 7.19,
-      "measuredCpuSeconds": 2.57,
+      "distinctStates": 119,
+      "measuredSeconds": 3.81,
+      "measuredCpuSeconds": 2.68,
       "budgetCpuSeconds": 9
     },
     {
@@ -1188,10 +1188,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 115,
-      "measuredSeconds": 3.38,
-      "measuredCpuSeconds": 2.38,
-      "budgetCpuSeconds": 8
+      "distinctStates": 118,
+      "measuredSeconds": 3.56,
+      "measuredCpuSeconds": 2.73,
+      "budgetCpuSeconds": 9
     },
     {
       "config": "PlanCredential.weakUnansweredRotated",
@@ -1202,10 +1202,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 122,
-      "measuredSeconds": 3.29,
-      "measuredCpuSeconds": 2.66,
-      "budgetCpuSeconds": 9
+      "distinctStates": 120,
+      "measuredSeconds": 4.05,
+      "measuredCpuSeconds": 2.41,
+      "budgetCpuSeconds": 8
     },
     {
       "config": "PlanCredential.weakAdoptShort",
@@ -1260,9 +1260,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 67,
-      "measuredSeconds": 5.8,
-      "measuredCpuSeconds": 2.29,
+      "distinctStates": 72,
+      "measuredSeconds": 3.42,
+      "measuredCpuSeconds": 2.5,
       "budgetCpuSeconds": 8
     },
     {
@@ -3147,6 +3147,17 @@
       "measuredSeconds": 3.48,
       "measuredCpuSeconds": 1.68,
       "budgetCpuSeconds": 7
+    },
+    {
+      "config": "PlanCredential.persistDeterministicWide",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 80508,
+      "measuredSeconds": 6.42,
+      "measuredCpuSeconds": 9.04,
+      "budgetCpuSeconds": 22
     }
   ]
 }
