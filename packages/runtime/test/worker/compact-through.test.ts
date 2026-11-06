@@ -18,21 +18,44 @@ const withBlob: RunState['history'] = [
   { seq: 3, item: { type: 'function_call_output', call_id: 'c1', output: 'head [truncated]' }, callId: 'c1', handle: BLOB },
 ];
 
-const contextFor = (options: { failAppendOnce?: boolean; summaryText?: string; history?: RunState['history']; failCompaction?: boolean; notes?: RunState['notes'] } = {}) => {
+type FidelityAsked = { runId: string; throughEventSeq: number; cwd: string; tokens: { token: string; claim: string }[] };
+
+type ContextOptions = {
+  failAppendOnce?: boolean;
+  summaryText?: string;
+  history?: RunState['history'];
+  failCompaction?: boolean;
+  notes?: RunState['notes'];
+  attested?: (tokens: string[]) => string[];
+  unreadable?: { handle: string; reason: string }[];
+};
+
+const contextFor = (options: ContextOptions = {}) => {
   const appended: RunEventPayload[] = [];
   const batches: RunEventPayload[][] = [];
   const requests: { request: CompactRequest; idempotencyKey: string }[] = [];
   const produced = new Map<string, CompactResource>();
-  const readScopes: unknown[] = [];
+  const blobReads = { count: 0 };
+  const asked: FidelityAsked[] = [];
   let appendFailures = options.failAppendOnce === true ? 1 : 0;
   let tick = 0;
   const ctx = {
     options: {
       clock: { now: () => (tick += 40) },
       blobs: {
-        read: async (handle: string, _range: unknown, scope: unknown) => {
-          readScopes.push(scope);
+        read: async (handle: string) => {
+          blobReads.count += 1;
           throw Object.assign(new Error(`unknown blob ${handle}`), { code: 'BLOB_NOT_FOUND' });
+        },
+      },
+      store: {
+        getSession: () => ({ id: 'session_compact', cwd: '/proj' }),
+        journalFacts: {
+          fidelity: async (request: FidelityAsked) => {
+            asked.push(structuredClone(request));
+            const tokens = request.tokens.map((entry) => entry.token);
+            return { lastSeq: request.throughEventSeq, attested: (options.attested ?? ((all: string[]) => all))(tokens), unreadable: options.unreadable ?? [] };
+          },
         },
       },
       gateway: {
@@ -59,11 +82,12 @@ const contextFor = (options: { failAppendOnce?: boolean; summaryText?: string; h
         },
       },
     },
-    run: { id: 'run_compact', deadlineAt: 2_000_000_000_000 },
+    run: { id: 'run_compact', sessionId: 'session_compact', deadlineAt: 2_000_000_000_000 },
     alias: 'fm',
     roles: {},
     capabilities: capabilitiesFor(40_000),
     verificationCommands: [],
+    readers: () => ({}),
     systemPrompt: 'You are the compact-through test agent.',
     journal: {
       state: {
@@ -88,7 +112,7 @@ const contextFor = (options: { failAppendOnce?: boolean; summaryText?: string; h
     },
     agentSpan: { traceparent: undefined },
   } as unknown as ClaimContext;
-  return { ctx, appended, batches, requests, produced, readScopes };
+  return { ctx, appended, batches, requests, produced, blobReads, asked };
 };
 
 const keyOf = (request: CompactRequest): string => sha256Hex(canonicalJson(['run_compact', 'compact', sha256Hex(canonicalJson(request))]));
@@ -132,30 +156,31 @@ describe('compactThrough', () => {
     expect(requests[1]?.idempotencyKey).toBe(keyOf(requests[1]?.request as CompactRequest));
   });
 
-  it('accepts a summary that keeps a handle the model saw only in the rendered input', async () => {
+  it('accepts a summary whose tokens the record attests, and sends the thread the claims only', async () => {
     const handle = 'ab12'.repeat(16);
-    const { ctx, appended } = contextFor({ summaryText: `STATE:\n${handle}` });
-    const rendered: InputItem[] = [
-      TASK,
-      { type: 'function_call', call_id: 'c1', name: 'Read', arguments: '{}' },
-      { type: 'function_call_output', call_id: 'c1', output: `[tool output omitted: 900 tokens; stored as ${handle}; read it with ReadOutput]` },
-    ];
+    const { ctx, appended, asked } = contextFor({ summaryText: `STATE:\n${handle}` });
 
-    await compactThrough(ctx, { throughSeq: 3, input: rendered, summaryTokenCap: 240, pinnedText, notices: [] });
+    await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText, notices: [] });
 
+    expect(asked).toEqual([{ runId: 'run_compact', throughEventSeq: expect.any(Number), cwd: '/proj', tokens: [{ token: handle, claim: 'executed' }] }]);
     expect(appended.at(-1)).toMatchObject({ type: 'context.compacted', source: 'model', fidelity: { fabricated: [] } });
   });
 
-  it('replaces a summary that names a handle the model never saw', async () => {
-    const { ctx, appended } = contextFor({ summaryText: `STATE:\n${'cd34'.repeat(16)}` });
+  it('replaces a summary whose token the record does not attest', async () => {
+    const { ctx, appended } = contextFor({ summaryText: `STATE:\n${'cd34'.repeat(16)}`, attested: () => [] });
 
     await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText, notices: [] });
 
     expect(appended.at(-1)).toMatchObject({ type: 'context.compacted', source: 'deterministic', fidelity: { fabricated: ['cd34'.repeat(16)] } });
   });
 
-  it('goes on when a recorded blob is unreadable, leaves the token it held unverifiable, and says so', async () => {
-    const { ctx, appended } = contextFor({ summaryText: `STATE:\n\`src/only/in-blob.ts\``, history: withBlob });
+  it('goes on when the thread could not read a recorded blob, leaves the token it held unattested, and says so', async () => {
+    const { ctx, appended } = contextFor({
+      summaryText: `STATE:\n\`src/only/in-blob.ts\``,
+      history: withBlob,
+      attested: () => [],
+      unreadable: [{ handle: BLOB, reason: `unknown blob ${BLOB}` }],
+    });
 
     await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText, notices: [] });
 
@@ -164,16 +189,16 @@ describe('compactThrough', () => {
     expect(notice).toMatchObject({ level: 'warning', message: expect.stringContaining(BLOB) });
   });
 
-  it('reads a recorded blob scoped to the run being compacted', async () => {
-    const { ctx, readScopes } = contextFor({ summaryText: 'STATE:\nnothing to name', history: withBlob });
+  it('reads no blob on the loop even when the replaced range holds a handled output', async () => {
+    const { ctx, blobReads } = contextFor({ summaryText: 'STATE:\nnothing to name', history: withBlob });
 
     await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText, notices: [] });
 
-    expect(readScopes).toEqual([{ runId: 'run_compact' }]);
+    expect(blobReads.count).toBe(0);
   });
 
-  it('keeps a model summary whose tokens are all found in readable text, and still says the blob was unreadable', async () => {
-    const { ctx, appended } = contextFor({ summaryText: 'STATE:\nnothing to name', history: withBlob });
+  it('keeps a model summary whose tokens are all attested, and still says the blob was unreadable', async () => {
+    const { ctx, appended } = contextFor({ summaryText: 'STATE:\nnothing to name', history: withBlob, unreadable: [{ handle: BLOB, reason: `unknown blob ${BLOB}` }] });
 
     await compactThrough(ctx, { throughSeq: 3, input, summaryTokenCap: 240, pinnedText, notices: [] });
 

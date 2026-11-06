@@ -40,6 +40,8 @@ export type ClaimContext = {
   functionTools(): FunctionTool[];
   toolOffer(loaded?: readonly string[]): ToolOffer;
   toolLoading?: ToolLoading;
+  readers(): Readonly<Record<string, string>>;
+  windowShared(): boolean;
   companions(): { hostOf: Readonly<Record<string, string>>; keepWithoutHost: boolean };
   systemPrompt: string;
   inlineLimitForReconcile: number;

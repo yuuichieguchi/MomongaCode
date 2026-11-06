@@ -4,6 +4,7 @@ import type {
   BilledDetail,
   Capabilities,
   CallTiming,
+  ClaimedToken,
   TokenAnatomy,
   RunTracePrefix,
   ElicitationAnswerRecord,
@@ -639,10 +640,15 @@ export type ReflectionInputRequest = { runId: string; project: string; capabilit
 
 export type ReflectionInputReply = { lastSeq: number; input: string };
 
+export type FidelityRequest = { runId: string; throughEventSeq: number; cwd: string; tokens: readonly ClaimedToken[] };
+
+export type FidelityReply = { lastSeq: number; attested: string[]; unreadable: { handle: string; reason: string }[] };
+
 export type JournalFacts = {
   verdict(request: VerdictRequest, signal?: AbortSignal): Promise<VerdictReply>;
   evidence(request: EvidenceRequest, signal?: AbortSignal): Promise<EvidenceReply>;
   reflectionInput(request: ReflectionInputRequest, signal?: AbortSignal): Promise<ReflectionInputReply>;
+  fidelity(request: FidelityRequest, signal?: AbortSignal): Promise<FidelityReply>;
 };
 
 export type ContributionPreparer = JournalFacts & {

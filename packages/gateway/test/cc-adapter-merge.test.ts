@@ -7,7 +7,7 @@ import { buildNativeBody } from '../src/adapters/chat-completions/native-request
 import { buildConstrainedBody } from '../src/adapters/chat-completions/constrained-request.ts';
 import type { ChatMessage } from '../src/adapters/chat-completions/plain-history.ts';
 import { START_MS, postJson, readJson, readSse, startGateway } from './gateway-helpers.ts';
-import { CC_CAPABILITIES, completionBodies, lastCompletionBody, makeAdapter, readFileTool, startFake, userText } from './cc-support.ts';
+import { CC_CAPABILITIES, completionBodies, lastCompletionBody, makeAdapter, readFileTool, startFake, userText, MODEL_FRAMING } from './cc-support.ts';
 
 const supportOf = (value: boolean): Record<ProbeKeyword, boolean> =>
   Object.fromEntries(PROBE_KEYWORDS.map((keyword) => [keyword, value])) as Record<ProbeKeyword, boolean>;
@@ -20,7 +20,7 @@ const deepFreeze = <T>(value: T): T => {
   return value;
 };
 
-const SUMMARY_MESSAGE = '<conversation_summary>\nearlier work\n</conversation_summary>';
+const SUMMARY_MESSAGE = `<conversation_summary>\n${MODEL_FRAMING}\nearlier work\n</conversation_summary>`;
 
 describe('mergeAdjacentUserMessages', () => {
   it('uses a blank line as the separator', () => {

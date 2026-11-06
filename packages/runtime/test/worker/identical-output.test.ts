@@ -11,7 +11,7 @@ const GREP_RAW = [
   'test/main.test.ts:5:  return null;',
 ].join('\n');
 
-const REFERENCE = /^\[identical to the output of call (\S+); stored as ([0-9a-f]{64}); read it with ReadOutput\]$/;
+const REFERENCE = /^\[identical to the output of call (\S+); stored as ([0-9a-f]{64})\]$/;
 
 const grepTool = defineTool<Record<string, unknown>>({
   name: 'Grep',

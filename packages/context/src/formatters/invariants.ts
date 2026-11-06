@@ -1,4 +1,5 @@
-import { checkedTokens, occursIn } from '../summary-fidelity.ts';
+import { tokenMatcherOf } from '@momonga/protocol';
+import { checkedTokens } from '../summary-fidelity.ts';
 
 export const FAILURE_MARKERS = [
   'FAILED',
@@ -54,7 +55,7 @@ export const formattingViolations = (input: { raw: string; formatted: string; ha
   const { raw, formatted, handle, header } = input;
   const violations: FormattingViolation[] = [];
   const known = `${raw}\n${handle}`;
-  if (checkedTokens(formatted).some((token) => !occursIn(token, known))) violations.push('T4-1');
+  if (checkedTokens(formatted).some((token) => !tokenMatcherOf(token, '').matches(known, true))) violations.push('T4-1');
   if (failureFactsOf(raw).some((fact) => !containsWhole(formatted, fact))) violations.push('T4-2');
   if (byteLength(`${header}\n${formatted}`) >= byteLength(raw)) violations.push('T4-3');
   return violations;

@@ -48,7 +48,7 @@ describe('worker snapshots', () => {
     const row = db.prepare('SELECT state_json FROM snapshots WHERE run_id = ? ORDER BY seq DESC LIMIT 1').get(run.id) as { state_json: string } | undefined;
     expect(row).toBeDefined();
     const stored = JSON.parse(row!.state_json) as Record<string, unknown>;
-    expect(stored['stateVersion']).toBe(14);
+    expect(stored['stateVersion']).toBe(15);
     expect(stored['loopGroups']).toEqual([]);
     expect(stored['workingFacts']).toMatchObject({ written: [], commands: [], messages: [] });
     expect(stored['mode']).toBe('acceptEdits');

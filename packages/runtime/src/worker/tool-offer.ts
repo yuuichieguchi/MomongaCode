@@ -12,6 +12,7 @@ export type ToolOfferInput = {
   deferred: readonly string[] | undefined;
   loaded: readonly string[];
   keepCompanionsWithoutHost: boolean;
+  required: ReadonlySet<string>;
 };
 
 const LOADER_DESCRIPTION = 'Loads the full definitions of the tools in this catalog, one per line. Load a tool before you call it; a loaded tool stays available for the rest of the run.';
@@ -32,14 +33,14 @@ const loaderDefinitionOf = (catalog: readonly FunctionTool[]): FunctionTool => (
 });
 
 export const offerFor = (input: ToolOfferInput): ToolOffer => {
-  const { toolSet, visible, deferred, loaded, keepCompanionsWithoutHost } = input;
+  const { toolSet, visible, deferred, loaded, keepCompanionsWithoutHost, required } = input;
   if (deferred === undefined) return { tools: [...visible], catalog: [] };
   const definitionOf = new Map(visible.map((definition) => [definition.name, definition]));
   const pinned = [...new Set(deferred)];
   const catalogDefinitions = pinned.flatMap((name) => {
     const definition = definitionOf.get(name);
     if (definition === undefined || name === LOAD_TOOLS_TOOL_NAME) return [];
-    if (toolSet.get(name)?.tier === 'essential' || toolSet.companions.has(name)) return [];
+    if (toolSet.get(name)?.tier === 'essential' || toolSet.companions.has(name) || required.has(name)) return [];
     return catalogLineOf(definition).length < JSON.stringify(definition).length ? [definition] : [];
   });
   const catalog = catalogDefinitions.map((definition) => definition.name);

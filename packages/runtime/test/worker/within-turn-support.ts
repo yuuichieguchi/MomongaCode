@@ -50,7 +50,7 @@ export const outputTextFor = (items: readonly InputItem[], callId: string): stri
   return found?.type === 'function_call_output' && typeof found.output === 'string' ? found.output : undefined;
 };
 
-export const OMITTED = /^\[tool output omitted: \d+ tokens; stored as [0-9a-f]{64}; read it with ReadOutput\]$/;
+export const OMITTED = /^\[tool output omitted: \d+ tokens; stored as [0-9a-f]{64}\]$/;
 
 export type AppendRecorder = { store: RuntimeStore; appends: RunEventPayload[][] };
 

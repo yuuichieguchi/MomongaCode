@@ -90,7 +90,7 @@ const blocksOf = (item: AdapterInputItem, origin: ReasoningOrigin): Converted | 
         : { role: 'assistant', blocks: [{ type: 'thinking', thinking: reasoningTextOf(own), signature: own.signature }] };
     }
     case 'compaction_summary': {
-      const summary = compactionSummaryMessage(item.summary);
+      const summary = compactionSummaryMessage(item.summary, 'model');
       return { role: 'user', blocks: textBlocksOf(textOfContent(summary.content)) };
     }
     case 'function_call':

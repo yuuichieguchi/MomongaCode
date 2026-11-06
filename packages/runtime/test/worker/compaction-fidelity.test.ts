@@ -4,6 +4,8 @@ import { DETERMINISTIC_SUMMARY_TEXT, compactionSummaryMessage } from '@momonga/p
 import type { RunEventPayload } from '@momonga/protocol';
 import { GatewayRequestError } from '@momonga/runtime';
 import { fixtureCompactionItem } from '@momonga/testkit';
+import { defineTool } from '@momonga/tools';
+import type { AnyTool } from '@momonga/tools';
 import { capabilitiesFor, makeEnv, textOf } from './harness.ts';
 import type { Env } from './harness.ts';
 import { assistantMessage, textStep } from './scripts.ts';
@@ -48,9 +50,23 @@ const prepare = async (payloads: RunEventPayload[] = conversation()) => {
   return { env, run };
 };
 
+const historyRead: AnyTool = defineTool<Record<string, unknown>>({
+  name: 'HistoryRead',
+  description: 'Reads the recorded events of a run in a seq range.',
+  tier: 'optional',
+  reads: 'history_range',
+  kind: 'read',
+  sideEffect: 'read_only',
+  subject: () => ({ kind: 'none', tool: 'HistoryRead' }),
+  inputSchema: { type: 'object', properties: { seqFrom: { type: 'integer' }, seqTo: { type: 'integer' } }, additionalProperties: false },
+  timeoutMs: 1_000,
+  title: () => 'HistoryRead',
+  execute: async () => ({ status: 'completed' as const, output: 'events' }),
+} as never);
+
 const runToEnd = async (env: Env, finalText = 'Done.') => {
   env.gateway.script.push(textStep(finalText));
-  expect(await env.runOnce(env.worker())).toBe('yielded');
+  expect(await env.runOnce(env.worker('worker-1', { toolList: () => [historyRead] }))).toBe('yielded');
 };
 
 const onlyCompaction = (env: Env, runId: string) => {

@@ -47,7 +47,7 @@ export type JournalReaderOptions = {
 export type JournalReader = {
   measure(hook: TerminalContribution, request: ContributionRequest): ContributionMeasured;
   eventsOfTypes(runId: string, types: readonly RunEventPayload['type'][]): RunEvent[];
-  visitRun(runId: string, types: readonly RunEventPayload['type'][], visit: (event: RunEvent) => void): Run;
+  visitRun(runId: string, types: readonly RunEventPayload['type'][], visit: (event: RunEvent) => void, throughSeq?: number): Run;
 };
 
 const typePlaceholders = (types: readonly string[]): { list: string; bound: Record<string, string> } => ({
@@ -113,13 +113,13 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
   const eventsOfTypes = (runId: string, types: readonly RunEventPayload['type'][]): RunEvent[] =>
     types.length === 0 ? [] : decodeEach(rangedRows(runId, lastSeqOf(runId), types, false));
 
-  const visitRun = (runId: string, types: readonly RunEventPayload['type'][], visit: (event: RunEvent) => void): Run =>
+  const visitRun = (runId: string, types: readonly RunEventPayload['type'][], visit: (event: RunEvent) => void, throughSeq?: number): Run =>
     readTx(db, () => {
       const row = selectRun.get({ id: runId });
       if (row === undefined) throw new Error(`unknown run ${runId}`);
       const run = decodeRun(row);
       if (types.length === 0) return run;
-      for (const eventRow of rangedRows(runId, run.lastSeq, types, false)) {
+      for (const eventRow of rangedRows(runId, throughSeq === undefined ? run.lastSeq : Math.min(run.lastSeq, throughSeq), types, false)) {
         options.onDecode?.(1, typeof eventRow['payload_json'] === 'string' ? Buffer.byteLength(eventRow['payload_json']) : 0);
         const [event] = decodeRunEvents([eventRow]);
         if (event === undefined) throw new Error('a journal row did not decode to an event');
