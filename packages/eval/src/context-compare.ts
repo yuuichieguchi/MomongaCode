@@ -1,4 +1,4 @@
-import { escapeTerminalLine } from '@momonga/protocol';
+import { escapeTerminalLine, modelKindOf } from '@momonga/protocol';
 import { MINIMUM_PAIRS, pairedBootstrap, pairedRatioBootstrap } from './bootstrap.ts';
 import type { ClusterPair } from './bootstrap.ts';
 import type { BootstrapInterval, Cluster } from './bootstrap.ts';
@@ -6,8 +6,9 @@ import { canonicalJson } from '@momonga/foundation';
 import type { PolicyOverlay } from './context-policy.ts';
 import { QUALITY_METRICS } from './context-quality.ts';
 import type { QualityMetric, QualityMetricName } from './context-quality.ts';
-import { describeClustered, modelKindOf } from './context-report.ts';
+import { describeClustered } from './context-report.ts';
 import type { ClusteredProportion, ContextCaseReport, ContextReport } from './context-report.ts';
+import type { Answerer } from './transcript.ts';
 import { percent } from './report.ts';
 import { EvalError } from './runner.ts';
 
@@ -23,20 +24,23 @@ export const GATE_CHECKS = [
   ...QUALITY_METRICS.map((metric) => metric.name),
 ] as const;
 
-export const GATE_NAMES = ['context', 'token'] as const;
+export const CONTEXT_GATE_NAMES = ['context', 'token'] as const;
+export type ContextGateName = (typeof CONTEXT_GATE_NAMES)[number];
+
+export const GATE_NAMES = [...CONTEXT_GATE_NAMES, 'reliability'] as const;
 export type GateName = (typeof GATE_NAMES)[number];
 
 export const TOKEN_PRIMARY_METRICS = ['costPerSuccess', 'uncachedInputPerSuccess'] as const;
 export type TokenPrimaryMetric = (typeof TOKEN_PRIMARY_METRICS)[number];
 
-export type GateCheckName = (typeof GATE_CHECKS)[number] | 'passRate' | TokenPrimaryMetric | QualityMetricName;
+export type GateCheckName = (typeof GATE_CHECKS)[number] | 'passRate' | TokenPrimaryMetric | QualityMetricName | 'completionRate' | 'recoveryRate' | 'witnessedDuplicates';
 
 export type GateCheck = { name: GateCheckName; passed: boolean; detail: string };
 
 type ReportIdentity = { dataset: string; model: ContextReport['model']; policy: PolicyOverlay | null; codeDigest: string | null };
 
 export type ContextComparison = {
-  gateName: GateName;
+  gateName: ContextGateName;
   baseline: ReportIdentity;
   candidate: ReportIdentity;
   contrastiveFailures: { baseline: number; candidate: number; n: number };
@@ -73,10 +77,10 @@ const lossRateOf = (entry: ContextCaseReport): number => entry.lossSignals / ent
 
 const intervalOf = (differences: readonly number[], seed: number): BootstrapInterval | undefined => (differences.length === 0 ? undefined : pairedBootstrap(differences, { seed }));
 
-const describeInterval = (interval: BootstrapInterval, digits: number): string =>
+export const describeInterval = (interval: BootstrapInterval, digits: number): string =>
   `${interval.mean.toFixed(digits)} (95% bootstrap ${interval.low.toFixed(digits)}..${interval.high.toFixed(digits)}), n=${interval.n}`;
 
-const NO_MEASURE = 'no measure';
+export const NO_MEASURE = 'no measure';
 
 const pairedCheck = (name: GateCheckName, pairCount: number, interval: BootstrapInterval | undefined, digits: number): GateCheck => {
   if (interval === undefined) return { name, passed: false, detail: `${NO_MEASURE}: no on case compacted in both reports` };
@@ -128,9 +132,11 @@ type Terms = {
 
 type Term = (terms: Terms) => GateCheck;
 
-const identitiesOf = (report: ContextReport): string => report.answeredBy.map((answerer) => `${answerer.target} (${answerer.adapter} ${answerer.upstreamModel}, ${answerer.answers})`).join(', ');
+export type Answering = { answeredBy: readonly Answerer[]; unrecordedAnswers: number };
 
-const answerProblemsOf = (label: string, report: ContextReport): string[] => {
+const identitiesOf = (report: Answering): string => report.answeredBy.map((answerer) => `${answerer.target} (${answerer.adapter} ${answerer.upstreamModel}, ${answerer.answers})`).join(', ');
+
+const answerProblemsOf = (label: string, report: Answering): string[] => {
   const kind = modelKindOf(report.answeredBy, report.unrecordedAnswers);
   const named = (answers: 'script' | 'unknown'): string => report.answeredBy.filter((answerer) => answerer.answers === answers).map((answerer) => answerer.target).join(', ');
   if (kind === 'fake') return [`the ${label} was answered by scripted target(s) ${named('script')}, and a scripted model proves only that the machinery works`];
@@ -143,8 +149,8 @@ const answerProblemsOf = (label: string, report: ContextReport): string[] => {
   return problems;
 };
 
-const realModelTerm: Term = ({ baseline, candidate }) => {
-  const problems = [...answerProblemsOf('baseline', baseline), ...answerProblemsOf('candidate', candidate)];
+export const answererTerm = (baseline: Answering, candidate: Answering, requireModel: boolean): GateCheck => {
+  const problems = requireModel ? [...answerProblemsOf('baseline', baseline), ...answerProblemsOf('candidate', candidate)] : [];
   const before = identitiesOf(baseline);
   const after = identitiesOf(candidate);
   if (problems.length === 0 && before !== after) {
@@ -153,9 +159,14 @@ const realModelTerm: Term = ({ baseline, candidate }) => {
   return {
     name: 'real_model',
     passed: problems.length === 0,
-    detail: problems.length === 0 ? `baseline and candidate were both answered by ${before}, declared as models by the pinned provenance of the targets` : problems.join('; '),
+    detail:
+      problems.length === 0
+        ? `baseline and candidate were both answered by ${before}${requireModel ? ', declared as models by the pinned provenance of the targets' : ''}`
+        : problems.join('; '),
   };
 };
+
+const realModelTerm: Term = ({ baseline, candidate }) => answererTerm(baseline, candidate, true);
 
 const direction = (metric: QualityMetric): string => (metric.direction === 'higher' ? 'below' : 'above');
 
@@ -223,7 +234,7 @@ const primaryTerm: Term = ({ pairs, primary }) => {
 
 const QUALITY_TERMS: readonly Term[] = QUALITY_METRICS.map(qualityTerm);
 
-const GATE_TERMS: Record<GateName, readonly Term[]> = {
+const GATE_TERMS: Record<ContextGateName, readonly Term[]> = {
   context: [realModelTerm, contrastiveTerm, fabricationTerm, lossTerm, tokensTerm, offCasesTerm, overallTerm, unclassifiedTerm, ...QUALITY_TERMS],
   token: [realModelTerm, passRateTerm, primaryTerm, lossTerm, fabricationTerm, ...QUALITY_TERMS],
 };
@@ -288,7 +299,7 @@ const assertSomethingDiffers = (baseline: ContextReport, candidate: ContextRepor
 export const compareContextReports = (
   baseline: ContextReport,
   candidate: ContextReport,
-  options: { seed: number; gate?: GateName },
+  options: { seed: number; gate?: ContextGateName },
 ): ContextComparison => {
   const gateName = options.gate ?? 'context';
   if (gateName === 'token') assertSomethingDiffers(baseline, candidate);
@@ -326,7 +337,7 @@ const describeDifference = (name: string, interval: BootstrapInterval | undefine
 
 const describeFabrication = (value: ClusteredProportion | undefined): string => (value === undefined ? 'n/a' : describeClustered(value));
 
-const gateLines = (comparison: ContextComparison): string[] => [
+export const gateLines = (comparison: { gate: ContextComparison['gate'] }): string[] => [
   `gate: ${comparison.gate.passed ? 'PASS' : 'FAIL'}`,
   ...comparison.gate.checks.map((check) => `  ${check.passed ? 'ok  ' : 'FAIL'} ${check.name}: ${check.detail}`),
 ];

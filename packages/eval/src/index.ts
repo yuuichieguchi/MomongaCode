@@ -72,8 +72,8 @@ export {
   parseContextReport,
 } from './context-report.ts';
 export type { BuildContextReportInput, ClusteredProportion, ContextCaseReport, ContextMetrics, ContextModel, ContextReport, ModelDependentMetric, StoppedRun } from './context-report.ts';
-export { GATE_CHECKS, GATE_NAMES, TOKEN_PRIMARY_METRICS, compareContextReports, formatContextComparison } from './context-compare.ts';
-export type { ContextComparison, GateCheck, GateCheckName, GateName, TokenPrimaryMetric } from './context-compare.ts';
+export { CONTEXT_GATE_NAMES, GATE_CHECKS, GATE_NAMES, TOKEN_PRIMARY_METRICS, compareContextReports, formatContextComparison } from './context-compare.ts';
+export type { ContextComparison, ContextGateName, GateCheck, GateCheckName, GateName, TokenPrimaryMetric } from './context-compare.ts';
 export type { RatioMetric } from './token-metrics.ts';
 export { contrastiveCasesOf } from './context-report.ts';
 export type { ContrastiveCase } from './context-report.ts';
@@ -123,3 +123,5 @@ export { BENCH_PROBLEMS, gradeTrial, validateBenchmark } from './bench-grade.ts'
 export type { BenchProblem, CheckResult, GradeInput, TaskValidation, TrialGrade, Validation, WorkspaceProbe } from './bench-grade.ts';
 export { buildBenchmarkReport, suiteDigestOf } from './bench-report.ts';
 export type { BenchmarkTrial, BuildBenchmarkReportInput } from './bench-report.ts';
+export { compareReliability, formatReliabilityComparison } from './reliability-compare.ts';
+export type { ReliabilityComparison } from './reliability-compare.ts';

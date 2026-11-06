@@ -5,8 +5,10 @@ import {
   GATE_NAMES,
   buildContextReport,
   compareContextReports,
+  compareReliability,
   formatContextComparison,
   formatContextReport,
+  formatReliabilityComparison,
   formatReport,
   loadContextDataset,
   loadContextReport,
@@ -19,6 +21,8 @@ import {
   saveTranscript,
 } from '@momonga/eval';
 import type { ContextDataset, EvalReport, GateName, GoldenCase, GoldenDataset, PolicyOverlay, RecordedRun, Transcript } from '@momonga/eval';
+import { decodeReliabilityReport } from '@momonga/reliability';
+import type { ReliabilityReport } from '@momonga/reliability';
 import { codeDigestOfRunningProcess } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { goldenRunApi } from '../client/golden-run-api.ts';
@@ -175,8 +179,18 @@ const gateOf = (name: string): GateName => {
   return known;
 };
 
+const loadReliabilityReport = async (ports: CliPorts, file: string): Promise<ReliabilityReport> => decodeReliabilityReport(await ports.files.readText(path.resolve(ports.cwd, file)));
+
+const compareReliabilityFiles = async (ports: CliPorts, baselineFile: string, candidateFile: string): Promise<number> => {
+  const [baseline, candidate] = await Promise.all([loadReliabilityReport(ports, baselineFile), loadReliabilityReport(ports, candidateFile)]);
+  const comparison = compareReliability(baseline, candidate, { seed: CONTEXT_BOOTSTRAP_SEED });
+  ports.stdout.write(`${formatReliabilityComparison(comparison)}\n`);
+  return comparison.gate.passed ? 0 : 1;
+};
+
 export const compareContext = async (ports: CliPorts, baselineFile: string, candidateFile: string, gate: string): Promise<number> => {
   const gateName = gateOf(gate);
+  if (gateName === 'reliability') return compareReliabilityFiles(ports, baselineFile, candidateFile);
   const [baseline, candidate] = await Promise.all([
     loadContextReport(ports.files, path.resolve(ports.cwd, baselineFile)),
     loadContextReport(ports.files, path.resolve(ports.cwd, candidateFile)),
