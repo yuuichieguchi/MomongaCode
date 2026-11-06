@@ -17,8 +17,9 @@ type Entry = PendingTimer & { callback: () => void };
 const NODE_TIMEOUT_MAX_MS = 2_147_483_647;
 
 const nodeTimerDelay = (ms: unknown): number => {
-  const delay = Math.trunc(Number(ms));
-  return delay >= 1 && delay <= NODE_TIMEOUT_MAX_MS ? delay : 1;
+  const coerced = Number(ms) * 1;
+  const clamped = coerced >= 1 && coerced <= NODE_TIMEOUT_MAX_MS ? coerced : 1;
+  return Math.trunc(clamped);
 };
 
 export const createFakeTimers = (clock: FakeClock): FakeTimers => {

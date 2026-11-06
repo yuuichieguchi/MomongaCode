@@ -97,10 +97,10 @@ describe('createFakeTimers', () => {
     expect(timers.pending()).toEqual([]);
   });
 
-  it.each([2 ** 31, Number.NaN, -5, 0.5, Number.POSITIVE_INFINITY])('arms a delay of %s due at now + 1, as Node does', (ms) => {
+  it.each([2 ** 31, 2_147_483_647.5, Number.NaN, undefined, -5, 0.5, Number.POSITIVE_INFINITY])('arms a delay of %s due at now + 1, as Node does', (ms) => {
     const clock = createFakeClock(1000);
     const timers = createFakeTimers(clock);
-    timers.setTimeout(() => undefined, ms);
+    timers.setTimeout(() => undefined, ms as number);
     expect(timers.pending()).toEqual([{ id: 1, delayMs: 1, dueAt: 1001 }]);
   });
 
