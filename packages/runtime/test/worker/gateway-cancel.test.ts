@@ -131,23 +131,22 @@ describe('worker gateway cancel wiring', () => {
     expect(notices[0]?.message).toContain('connect ENOENT');
   });
 
-  it('bounds the upstream cancel with a timeout signal and still reaches CANCELLED', async () => {
+  it('leaves the bound of the upstream cancel to the gateway client and aborts it only with the claim', async () => {
     const env = await makeEnv();
     const run = env.enqueue('Work');
     seedInFlightRequest(env, run.id);
     env.cancel(run.id);
+    const abortedAtSettle: boolean[] = [];
     env.gateway.cancelHook = async (_key, signal) => {
-      await untilAborted(signal);
-      if (signal === undefined) throw new Error('the upstream cancel received no signal');
-      throw signal.reason;
+      await new Promise<void>((resolve) => setTimeout(resolve, 1_500));
+      abortedAtSettle.push(signal?.aborted ?? true);
     };
 
-    const startedAt = Date.now();
-    await within(env.runOnce(env.worker()), 5_000, 'the cancel to settle');
+    await within(env.runOnce(env.worker()), 10_000, 'the cancel to settle');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
-    expect(env.gateway.cancels[0]?.signal?.aborted).toBe(true);
-    expect(Date.now() - startedAt).toBeLessThan(3_000);
+    expect(abortedAtSettle).toEqual([false]);
+    expect(env.ofType(run.id, 'notice')).toHaveLength(0);
   });
 
   it('does not cancel upstream after a fatal gateway failure', async () => {

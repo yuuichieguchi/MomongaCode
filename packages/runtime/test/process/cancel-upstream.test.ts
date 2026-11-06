@@ -1,3 +1,4 @@
+import { getEventListeners } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
@@ -76,6 +77,17 @@ describe('createCancelUpstream (fake timers, fake store and fake gateway client)
 
     expect(store.loads).toEqual([RUN_ID]);
     expect(gateway.calls).toEqual([]);
+  });
+
+  it('holds nothing on the caller signal once a cancel has settled', async () => {
+    const gateway = fakeGateway();
+    const store = fakeStore({ [RUN_ID]: { tail: [requested(1, 1, 1)] } });
+    const tracker = createCancelUpstream({ store, gatewayClient: gateway, timers: fakeTime().timers });
+    const caller = new AbortController();
+
+    for (let index = 0; index < 20; index += 1) await tracker.cancel(RUN_ID, caller.signal);
+
+    expect(getEventListeners(caller.signal, 'abort')).toHaveLength(0);
   });
 
   it('cancels the in-flight request with the modelKey of its step and attempt', async () => {

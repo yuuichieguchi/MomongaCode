@@ -1,5 +1,5 @@
 import type { Clock } from '@momonga/foundation';
-import { MOMONGA_REQUEST_FIELDS, applyCapabilityOverride, imageCapability, sizingRatioFor, summaryTokenCapFor } from '@momonga/protocol';
+import { MOMONGA_REQUEST_FIELDS, PRECONDITION_FAILED_CODE, applyCapabilityOverride, imageCapability, sizingRatioFor, summaryTokenCapFor } from '@momonga/protocol';
 import type { AliasCapabilities, Capabilities, CapabilityOverride, ClientOperation, FunctionTool, ToolChoice, ToolCallingMode, ToolCallingState, GatewayHealth, HealthResult, ImageCapability, ProviderAdapter, TargetBilling, TargetHealth } from '@momonga/protocol';
 import { constrainsToolChoice, resolveToolChoice } from './tool-choice.ts';
 import { UnsupportedInputError } from './unsupported-input.ts';
@@ -200,7 +200,7 @@ export const createRouter = (options: RouterOptions): Router => {
       if (requirements.tools === true) {
         const { toolCalling } = capabilities;
         if (typeof toolCalling !== 'string') {
-          throw new UnprobedTarget(invalidRequest('precondition_failed', preconditionText(toolCalling.message, toolCalling.evidence, toolCalling.remedy), null, 412));
+          throw new UnprobedTarget(invalidRequest(PRECONDITION_FAILED_CODE, preconditionText(toolCalling.message, toolCalling.evidence, toolCalling.remedy), null, 412));
         }
         if (toolCalling === 'none') {
           return { stage: REFUSAL_STAGES.tools, error: invalidRequest('capability_unsupported', `no target of model alias "${alias}" supports tool calling`, 'tools') };

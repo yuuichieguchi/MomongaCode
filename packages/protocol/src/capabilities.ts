@@ -162,13 +162,6 @@ export type Capabilities = CapabilitiesCore & ImageCapability;
 
 export type AliasCapabilities = Omit<Capabilities, 'schemaDialect'> & { schemaDialect?: DialectId };
 
-export type StructuredOutputVerdict = { ok: true } | { ok: false; reason: string };
-
-export const requireStructuredOutput = (capabilities: Pick<Capabilities, 'structuredOutput'>, setting: string, alias: string): StructuredOutputVerdict =>
-  capabilities.structuredOutput === 'json_schema'
-    ? { ok: true }
-    : { ok: false, reason: `${setting} names alias ${alias}, which has no structured output to hold the reply schema` };
-
 export type CapabilityOverride = Partial<CapabilitiesCore> & { imageInput?: boolean; imageTokens?: ImageTokenModel | undefined };
 
 export const applyCapabilityOverride = (declared: Capabilities, override: CapabilityOverride): Capabilities => {
@@ -185,3 +178,5 @@ export type HealthResult = {
   detail?: string;
   remediation?: string;
 };
+
+export const PRECONDITION_FAILED_CODE = 'precondition_failed';

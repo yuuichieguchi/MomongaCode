@@ -631,11 +631,12 @@ describe('momonga update: builds that cannot update', () => {
     await expectRejected(key, 'invalid_update_source');
   });
 
-  it('has no release asset for Windows or other architectures', async (context) => {
-    const windows = await setupUpdate(context, { platform: 'win32', arch: 'x64' });
-    const error = await expectRejected(windows, 'unsupported_platform');
-    expect(error.message).toBe('self-update has no release asset for win32/x64');
+  it('names the Windows executable that the release ships, and has no asset for other architectures', async (context) => {
+    expect(assetNameFor('win32', 'x64')).toBe('momonga-win-x64.exe');
     const intel = await setupUpdate(context, { ...darwin, arch: 'x64' });
     await expectRejected(intel, 'unsupported_platform');
+    const arm = await setupUpdate(context, { platform: 'win32', arch: 'arm64' });
+    const error = await expectRejected(arm, 'unsupported_platform');
+    expect(error.message).toBe('self-update has no release asset for win32/arm64');
   });
 });

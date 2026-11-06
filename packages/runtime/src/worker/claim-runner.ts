@@ -60,20 +60,14 @@ export type ClaimHost = {
   forget(runId: string): void;
 };
 
-const CANCEL_UPSTREAM_TIMEOUT_MS = 1000;
-
 const cancelUpstream = async (options: WorkerOptions, control: ClaimControl, keys: readonly string[]): Promise<string[]> => {
   const failures: string[] = [];
   const settled = Promise.all(
     keys.map(async (key) => {
-      const timeout = new AbortController();
-      const timer = options.timers.setTimeout(() => timeout.abort(new Error(`the upstream cancel exceeded ${CANCEL_UPSTREAM_TIMEOUT_MS} ms`)), CANCEL_UPSTREAM_TIMEOUT_MS);
       try {
-        await options.gateway.cancel(key, { signal: timeout.signal });
+        await options.gateway.cancel(key, { signal: control.recoverySignal });
       } catch (error) {
         failures.push(describeError(error));
-      } finally {
-        options.timers.clearTimeout(timer);
       }
     }),
   );

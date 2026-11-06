@@ -1,4 +1,4 @@
-import { RELEASE_CHECKSUMS_ASSET, RELEASE_PUBLIC_KEY_PATTERN } from '@momonga/foundation';
+import { RELEASE_ASSETS, RELEASE_CHECKSUMS_ASSET, RELEASE_PUBLIC_KEY_PATTERN, releaseTargetOf } from '@momonga/foundation';
 import { UpdateError } from './errors.ts';
 
 export type BuildUpdateInputs = { repo: string | undefined; teamId: string | undefined; publicKey: string | undefined };
@@ -17,20 +17,14 @@ export { RELEASE_PUBLIC_KEY_PATTERN };
 
 export const CHECKSUMS_ASSET = RELEASE_CHECKSUMS_ASSET;
 
-const ASSET_BY_TARGET: Readonly<Record<string, string>> = {
-  'darwin-arm64': 'momonga-darwin-arm64',
-  'linux-x64': 'momonga-linux-x64',
-  'linux-arm64': 'momonga-linux-arm64',
-};
-
 export const assetNameFor = (platform: NodeJS.Platform, arch: string): string => {
-  const asset = ASSET_BY_TARGET[`${platform}-${arch}`];
-  if (asset === undefined) {
+  const target = releaseTargetOf(platform, arch);
+  if (target === undefined) {
     throw new UpdateError('unsupported_platform', `self-update has no release asset for ${platform}/${arch}`, {
       remediation: 'reinstall with the install script for this platform',
     });
   }
-  return asset;
+  return RELEASE_ASSETS[target];
 };
 
 export const resolveUpdateSource = (inputs: BuildUpdateInputs, endpoints: UpdateEndpoints, platform: NodeJS.Platform): UpdateSource => {

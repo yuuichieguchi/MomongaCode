@@ -1,5 +1,6 @@
 import { escapeTerminalLine } from '@momonga/protocol';
 import { MINIMUM_PAIRS, pairedBootstrap, pairedRatioBootstrap } from './bootstrap.ts';
+import type { ClusterPair } from './bootstrap.ts';
 import type { BootstrapInterval, Cluster } from './bootstrap.ts';
 import { canonicalJson } from '@momonga/foundation';
 import type { PolicyOverlay } from './context-policy.ts';
@@ -227,6 +228,23 @@ const GATE_TERMS: Record<GateName, readonly Term[]> = {
   token: [realModelTerm, passRateTerm, primaryTerm, lossTerm, fabricationTerm, ...QUALITY_TERMS],
 };
 
+const perSuccessPairsOf = (pairs: readonly CasePair[], numeratorOf: (entry: ContextCaseReport) => number | undefined): ClusterPair[] | undefined => {
+  const clusters = pairs.map((pair) => {
+    const pick = (entry: ContextCaseReport): Cluster | undefined => {
+      const numerator = numeratorOf(entry);
+      return numerator === undefined ? undefined : { numerator, denominator: entry.passedRuns };
+    };
+    return { baseline: pick(pair.baseline), candidate: pick(pair.candidate) };
+  });
+  const complete = clusters.flatMap((pair) => (pair.baseline === undefined || pair.candidate === undefined ? [] : [{ baseline: pair.baseline, candidate: pair.candidate }]));
+  return complete.length === clusters.length ? complete : undefined;
+};
+
+const perSuccessIntervalOf = (pairs: readonly CasePair[], numeratorOf: (entry: ContextCaseReport) => number | undefined, seed: number): BootstrapInterval | undefined => {
+  const complete = perSuccessPairsOf(pairs, numeratorOf);
+  return complete === undefined || complete.length === 0 ? undefined : pairedRatioBootstrap(complete, { seed });
+};
+
 const sideNames = ['baseline', 'candidate'] as const;
 
 const tokenPrimaryOf = (baseline: ContextReport, candidate: ContextReport, pairs: readonly CasePair[], seed: number): Terms['primary'] => {
@@ -240,16 +258,8 @@ const tokenPrimaryOf = (baseline: ContextReport, candidate: ContextReport, pairs
       : costMissing.length > 0
         ? `cost per success is not measured in the ${costMissing.join(' and the ')} (a call carries no price, or no run succeeded)`
         : `the total cost of the ${costFree.join(' and the ')} is 0, which a cost per success cannot rank`;
-  const clusters = pairs.map((pair) => {
-    const pick = (entry: ContextCaseReport): Cluster | undefined => {
-      const totals = entry.tokens;
-      const numerator = metric === 'costPerSuccess' ? totals?.cost : totals?.uncachedInputTokens;
-      return numerator === undefined ? undefined : { numerator, denominator: entry.passedRuns };
-    };
-    return { baseline: pick(pair.baseline), candidate: pick(pair.candidate) };
-  });
-  const complete = clusters.flatMap((pair) => (pair.baseline === undefined || pair.candidate === undefined ? [] : [{ baseline: pair.baseline, candidate: pair.candidate }]));
-  const measured = complete.length === clusters.length && baseline.metrics[metric] !== undefined && candidate.metrics[metric] !== undefined;
+  const complete = perSuccessPairsOf(pairs, (entry) => (metric === 'costPerSuccess' ? entry.tokens?.cost : entry.tokens?.uncachedInputTokens));
+  const measured = complete !== undefined && baseline.metrics[metric] !== undefined && candidate.metrics[metric] !== undefined;
   const unsettled = pairs.reduce((sum, pair) => sum + (pair.baseline.tokens?.unsettledReflections ?? 0) + (pair.candidate.tokens?.unsettledReflections ?? 0), 0);
   const reflectionNote = unsettled === 0 ? undefined : `${unsettled} run(s) have a reflection that is pending, running past its bound or not recorded, so their token cost is not final`;
   return { metric, interval: measured ? pairedRatioBootstrap(complete, { seed }) : undefined, why: [why, reflectionNote].filter((part) => part !== undefined).join('; ') || undefined };
@@ -288,10 +298,7 @@ export const compareContextReports = (
     compacted.map((pair) => lossRateOf(pair.candidate) - lossRateOf(pair.baseline)),
     options.seed,
   );
-  const tokens = intervalOf(
-    compacted.map((pair) => pair.candidate.totalTokens - pair.baseline.totalTokens),
-    options.seed,
-  );
+  const tokens = perSuccessIntervalOf(compacted, (entry) => entry.totalTokens, options.seed);
   const passRate = intervalOf(
     pairs.map((pair) => pair.candidate.passRate.rate - pair.baseline.passRate.rate),
     options.seed,

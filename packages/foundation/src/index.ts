@@ -15,6 +15,8 @@ export { describeFallbackCause } from './fallback-cause.ts';
 export type { FallbackCause } from './fallback-cause.ts';
 export { isRecord, parseJsonOrText } from './json.ts';
 export { JsonDepthError, MAX_JSON_DEPTH, checkJsonDepth, parseOutsideJson } from './json-depth.ts';
+export { describeFirstError, jsonReplyInstructions, readJsonReply } from './json-reply.ts';
+export type { JsonReplyInput, JsonReplyPath, JsonReplyRead } from './json-reply.ts';
 export { MAX_REDACTED_CHARS, MIN_CREDENTIAL_CHARS, REDACTED_MARKER, createRedactor } from './redaction.ts';
 export type { Redactor, RedactorOptions } from './redaction.ts';
 export { safeSlice } from './text-slice.ts';
@@ -193,6 +195,8 @@ export {
   SIGNATURE_REJECTED_EXIT_CODE,
   verifyReleaseSignature,
 } from './release-signature.ts';
+export { RELEASE_ASSETS, releaseTargetOf } from './release-assets.ts';
+export type { ReleaseTargetName } from './release-assets.ts';
 export type { PlaceFile, PlacedFile, ReleaseSignatureVerdict, VerifyReleaseSignatureInput } from './release-signature.ts';
 export {
   SchemaValidatorFailure,

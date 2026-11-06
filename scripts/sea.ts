@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
+import { releaseTargetOf } from '@momonga/foundation';
 import { bundle, defaultEntry, repoRoot } from './bundle.ts';
 import type { UpdateSourceInputs } from './bundle.ts';
 import { SEA_TARGETS, ensureSeaNode, isSeaTargetName } from './node-runtime.ts';
@@ -54,8 +55,8 @@ export const buildSeaUnsigned = async ({ entry, output, workDir, target = 'darwi
 };
 
 export const hostSeaTarget = (platform: NodeJS.Platform = process.platform, arch: string = process.arch): SeaTargetName => {
-  const name = `${platform === 'win32' ? 'win' : platform}-${arch}`;
-  if (!isSeaTargetName(name)) throw new Error(`no pinned node runtime for the build host ${platform}/${arch}`);
+  const name = releaseTargetOf(platform, arch);
+  if (name === undefined) throw new Error(`no pinned node runtime for the build host ${platform}/${arch}`);
   return name;
 };
 

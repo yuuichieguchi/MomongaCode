@@ -91,21 +91,21 @@ const missCausesOf = (calls: readonly BreakdownCall[]): CacheMissCause[] => {
   for (const runId of runIds) {
     const ordered = calls.filter((call) => call.runId === runId).toSorted((left, right) => left.at.getTime() - right.at.getTime());
     let previousMain: BreakdownCall | undefined;
-    let sideSincePreviousMain = false;
+    let sideTargetsSincePreviousMain = new Set<string>();
     for (const call of ordered) {
       if (!isMain(call)) {
-        sideSincePreviousMain = true;
+        if (call.target !== undefined) sideTargetsSincePreviousMain.add(call.target);
         continue;
       }
       if (call.usage.cachedInputTokens === 0) {
         const [recorded] = breakCausesOf(call.prefix);
         if (recorded !== undefined) misses.push(recorded);
         else if (previousMain !== undefined && previousMain.target !== undefined && call.target !== undefined && previousMain.target !== call.target) misses.push('target_changed');
-        else if (previousMain !== undefined && sideSincePreviousMain) misses.push('side_call');
+        else if (previousMain !== undefined && call.target !== undefined && sideTargetsSincePreviousMain.has(call.target)) misses.push('side_call');
         else misses.push('unexplained');
       }
       previousMain = call;
-      sideSincePreviousMain = false;
+      sideTargetsSincePreviousMain = new Set();
     }
   }
   return misses;

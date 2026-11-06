@@ -3,7 +3,10 @@ import type { AdapterInputItem, AdapterRequest, ContentPart, DialectId, Function
 import { NO_USER_DIALECTS, resolveDialect } from '../../dialect/choice.ts';
 import type { UserDialects } from '../../dialect/choice.ts';
 import { RenderLedger } from '../../dialect/ledger.ts';
+import type { ResolvedDialect } from '../../dialect/render.ts';
 import { renderToolParameters } from '../../dialect/tool-render.ts';
+import { jsonReplyFormatOf } from '../shared/json-reply.ts';
+import type { JsonReplyPlan } from '../shared/json-reply.ts';
 import { callArgumentsText } from '../shared/call-arguments.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { imageUrlOf, isImagePart } from '../shared/image-part.ts';
@@ -67,7 +70,12 @@ const itemOf = (item: AdapterInputItem, origin: ReasoningOrigin): InputItem | un
   }
 };
 
-export type ResponsesRendering = { schemaDialect?: DialectId; userDialects?: UserDialects; ledger?: RenderLedger };
+export type ResponsesRendering = { schemaDialect?: DialectId; userDialects?: UserDialects; ledger?: RenderLedger; jsonReply?: JsonReplyPlan | undefined };
+
+const textFieldOf = (plan: JsonReplyPlan | undefined, dialect: ResolvedDialect): { text?: { format: unknown } } => {
+  const format = jsonReplyFormatOf(plan, dialect);
+  return format === undefined ? {} : { text: { format: { type: 'json_schema', ...format } } };
+};
 
 export const buildResponsesBody = (request: AdapterRequest, origin: ReasoningOrigin, rendering: ResponsesRendering = {}): OpenResponsesRequestBody => {
   const dialect = resolveDialect(rendering.schemaDialect ?? DEFAULT_DIALECT_ID, rendering.userDialects ?? NO_USER_DIALECTS);
@@ -88,6 +96,7 @@ export const buildResponsesBody = (request: AdapterRequest, origin: ReasoningOri
     ...(tools.length === 0 || request.tool_choice === undefined ? {} : { tool_choice: request.tool_choice }),
     ...(tools.length === 0 || request.parallel_tool_calls === undefined ? {} : { parallel_tool_calls: request.parallel_tool_calls }),
     ...(request.max_output_tokens === undefined || request.max_output_tokens === null ? {} : { max_output_tokens: request.max_output_tokens }),
+    ...textFieldOf(rendering.jsonReply, dialect),
     ...carriedSamplingOf(request),
   };
 };

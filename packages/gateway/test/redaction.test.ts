@@ -31,7 +31,6 @@ const maskedCases: Case[] = [
   { name: 'unknown prefix masked with stars', input: 'abc1****wxyz', expected: REDACTED },
   { name: 'stars then suffix', input: '****abcd', expected: REDACTED },
   { name: 'two mask groups', input: 'ab****cd****ef', expected: REDACTED },
-  { name: 'stars around a word', input: '***bold***', expected: REDACTED },
   { name: 'a 70-letter prefix before the mask', input: `${'a'.repeat(70)}****wxyz`, expected: REDACTED },
   { name: 'suffix with a dash and a digit', input: `${SK}proj-****Ab-9`, expected: REDACTED },
   {
@@ -67,8 +66,6 @@ const acceptedCases: Case[] = [
   { name: 'sk-learn followed by dots in prose', input: 'sk-learn... docs', expected: `${REDACTED} docs` },
   { name: 'hf_hub followed by dots', input: 'hf_hub...', expected: REDACTED },
   { name: 'sk-learn followed by an ellipsis', input: 'sk-learn…', expected: REDACTED },
-  { name: 'three stars', input: '***', expected: REDACTED },
-  { name: 'five stars', input: '*****', expected: REDACTED },
 ];
 
 const keptTexts: string[] = [
@@ -87,6 +84,10 @@ const keptTexts: string[] = [
   'Loading...done',
   'wait...',
   '**bold**',
+  '***bold***',
+  '***',
+  '*****',
+  'char ***argv',
   'abcd...wxyz',
   'Incorrect API key provided: AbCd…0123',
   `already ${REDACTED} here`,

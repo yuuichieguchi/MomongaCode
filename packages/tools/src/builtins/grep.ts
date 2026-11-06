@@ -61,7 +61,7 @@ const escapeGlob = (value: string): string => value.replace(/[\\[\]*?{}!]/g, '\\
 const deniedGlobs = (access: ReadAccessMatcher, target: string, isDirectory: boolean): string[] => {
   if (!isDirectory) return [];
   return access.deniedWithin(target).flatMap((resolved) => {
-    const relative = escapeGlob(path.relative(target, resolved));
+    const relative = `/${escapeGlob(path.relative(target, resolved).split(path.sep).join('/'))}`;
     return access.leadsToAllowed(resolved) ? ['--glob', `!${relative}`] : ['--glob', `!${relative}`, '--glob', `!${relative}/**`];
   });
 };

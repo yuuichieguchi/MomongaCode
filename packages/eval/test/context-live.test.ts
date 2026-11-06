@@ -20,7 +20,7 @@ import {
   parseContextReport,
   runContextDataset,
 } from '@momonga/eval';
-import type { EvalRunApi, Transcript } from '@momonga/eval';
+import type { ContextCaseHost, EvalRunApi, ExpandedCase, Transcript } from '@momonga/eval';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { publicEventsOf } from './fixtures.ts';
 import { RECORDED_IDENTITY } from './fixtures.ts';
@@ -156,6 +156,30 @@ describe('runContextDataset', () => {
     const context = harness();
     await runContextDataset(expandContextDataset(datasetOf(pair('a')), 1), context.ports);
     expect(context.log).toEqual(['open a-on', 'run work on a', 'close a-on', 'open a-off', 'run work on a', 'close a-off']);
+  });
+
+  it('reports both errors when a case fails and its host cannot be closed', async () => {
+    const context = harness();
+    const caseError = new Error('session refused');
+    const closeError = new Error('home not released');
+    const openCase = async (entry: ExpandedCase): Promise<ContextCaseHost> => {
+      const host = await context.ports.openCase(entry);
+      return { ...host, api: { ...host.api, createSession: async () => Promise.reject(caseError) }, close: async () => Promise.reject(closeError) };
+    };
+    const failure = await runContextDataset(expandContextDataset(datasetOf(pair('a')), 1), { ...context.ports, openCase }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).errors).toEqual([caseError, closeError]);
+  });
+
+  it('keeps the case error alone when the host closes cleanly', async () => {
+    const context = harness();
+    const caseError = new Error('session refused');
+    const openCase = async (entry: ExpandedCase): Promise<ContextCaseHost> => {
+      const host = await context.ports.openCase(entry);
+      return { ...host, api: { ...host.api, createSession: async () => Promise.reject(caseError) } };
+    };
+    const failure = await runContextDataset(expandContextDataset(datasetOf(pair('a')), 1), { ...context.ports, openCase }).catch((error: unknown) => error);
+    expect(failure).toBe(caseError);
   });
 
   it('pins the alias on every session', async () => {

@@ -114,18 +114,15 @@ describe('the reflection role', () => {
     expect(env.gateway.streams.map((stream) => stream.body.model)).toEqual(['fm']);
   });
 
-  it('guards a reply that cannot be held to the schema: a reflection role without structured output makes no call and ends the job naming the role and the capability', async () => {
+  it('guards a role that is refused for a capability it does not need: a reflection role without structured output is called like any other', async () => {
     const env = setup();
     env.gateway.capabilitiesByAlias['plain'] = capabilitiesFor(100_000, { structuredOutput: 'none' });
     const run = env.finishedRun({ reflection: 'plain' });
-    env.gateway.script.push(textStep(REPLY));
+    env.gateway.script.push(textStep(REPLY, { usage: usageOf(100, 20) }));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
-    expect(env.gateway.streams).toHaveLength(0);
+    expect(env.gateway.streams.map((stream) => stream.body.model)).toEqual(['plain']);
     const job = env.api.reflection.get((await run).id);
     expect(job?.state).toBe('done');
-    expect(job?.lastError).toContain('models.roles.reflection');
-    expect(job?.lastError).toContain('plain');
-    expect(job?.lastError).toContain('structured output');
-    expect(env.api.contextCharges.list()).toEqual([]);
+    expect(env.api.contextCharges.list()).toMatchObject([{ purpose: 'reflection', model: 'plain' }]);
   });
 });
