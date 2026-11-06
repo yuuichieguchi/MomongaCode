@@ -7,7 +7,7 @@ export type NeedsProbe = { state: 'needs_probe'; message: string; evidence: stri
 export type ToolCallingState = ToolCallingMode | NeedsProbe;
 export type ToolCallingSetting = 'native' | 'constrained' | 'auto';
 
-export const TARGET_BILLINGS = ['metered', 'local'] as const;
+export const TARGET_BILLINGS = ['metered', 'local', 'plan'] as const;
 export type TargetBilling = (typeof TARGET_BILLINGS)[number];
 
 export const TARGET_ANSWERS = ['model', 'script'] as const;
@@ -36,6 +36,41 @@ export const OUTPUT_BOUND_FIELDS = ['max_completion_tokens', 'max_tokens'] as co
 export type OutputBoundField = (typeof OUTPUT_BOUND_FIELDS)[number];
 
 export const DEFAULT_OUTPUT_BOUND_FIELD: OutputBoundField = 'max_completion_tokens';
+
+export const RESPONSES_OUTPUT_BOUNDS = ['max_output_tokens', 'none'] as const;
+
+export const OUTPUT_BOUNDS = [...OUTPUT_BOUND_FIELDS, ...RESPONSES_OUTPUT_BOUNDS] as const;
+export type OutputBound = (typeof OUTPUT_BOUNDS)[number];
+
+export const DEFAULT_RESPONSES_OUTPUT_BOUND: OutputBound = 'max_output_tokens';
+
+export const SYSTEM_ROLES = ['system', 'developer'] as const;
+export type SystemRole = (typeof SYSTEM_ROLES)[number];
+
+export const DEFAULT_SYSTEM_ROLE: SystemRole = 'system';
+
+export const TOOL_PLACEMENTS = ['top_level', 'additional_tools'] as const;
+export type ToolPlacement = (typeof TOOL_PLACEMENTS)[number];
+
+export const DEFAULT_TOOL_PLACEMENT: ToolPlacement = 'top_level';
+
+export const INPUT_CONTENT_KINDS = ['text', 'image', 'file', 'audio', 'video'] as const;
+export type InputContentKind = (typeof INPUT_CONTENT_KINDS)[number];
+
+export const REQUEST_TOOL_KINDS = [
+  'function',
+  'custom',
+  'programmatic_tool_calling',
+  'image_generation',
+  'file_search',
+  'code_interpreter',
+  'computer_use',
+  'mcp',
+  'tool_search',
+] as const;
+export type RequestToolKind = (typeof REQUEST_TOOL_KINDS)[number];
+
+export type InputKinds = { content: readonly InputContentKind[]; tools: readonly RequestToolKind[] };
 
 export const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const;
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
@@ -136,6 +171,10 @@ export type AdapterSampling = {
   bound?: { label: string; accepts: readonly SamplingField[] };
 };
 
+export type AdapterOutputBound = { renders: readonly OutputBound[] };
+
+export type AdapterToolPlacement = { renders: readonly ToolPlacement[] };
+
 export type CapabilitiesCore = {
   promptCache?: PromptCacheCapability;
   sampling?: SamplingCapability;
@@ -146,7 +185,10 @@ export type CapabilitiesCore = {
   structuredOutput: 'json_schema' | 'none';
   streaming: boolean;
   stopSequences: boolean;
-  outputBoundField?: OutputBoundField;
+  outputBoundField?: OutputBound;
+  systemRole?: SystemRole;
+  toolPlacement?: ToolPlacement;
+  inputKinds?: InputKinds;
   parallelToolCalls?: boolean;
   allowedTools?: readonly AllowedToolsForm[];
   schemaDialect: DialectId;
@@ -160,7 +202,7 @@ export type CapabilitiesCore = {
 
 export type Capabilities = CapabilitiesCore & ImageCapability;
 
-export type AliasCapabilities = Omit<Capabilities, 'schemaDialect'> & { schemaDialect?: DialectId };
+export type AliasCapabilities = Omit<Capabilities, 'schemaDialect'> & { schemaDialect?: DialectId; unboundedOutputTokens?: number };
 
 export type StructuredOutputVerdict = { ok: true } | { ok: false; reason: string };
 
@@ -181,7 +223,7 @@ export const applyCapabilityOverride = (declared: Capabilities, override: Capabi
 
 export type HealthResult = {
   ok: boolean;
-  reason?: 'not_running' | 'unhealthy' | 'precondition_failed' | 'health_check_failed';
+  reason?: 'not_running' | 'unhealthy' | 'precondition_failed' | 'health_check_failed' | 'sign_in_required' | 'store_unreadable' | 'store_unwritable' | 'capabilities_unknown';
   detail?: string;
   remediation?: string;
 };

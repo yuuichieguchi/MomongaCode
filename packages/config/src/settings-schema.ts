@@ -1,5 +1,5 @@
 import { SECRET_NAME_PATTERN } from '@momonga/foundation';
-import { ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, REASONING_EFFORTS, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS } from '@momonga/protocol';
+import { ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, INPUT_CONTENT_KINDS, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, REASONING_EFFORTS, REQUEST_TOOL_KINDS, RESPONSES_OUTPUT_BOUNDS, SYSTEM_ROLES, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS, TOOL_PLACEMENTS } from '@momonga/protocol';
 import type { CallRole } from '@momonga/protocol';
 
 export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const satisfies readonly CallRole[];
@@ -52,6 +52,23 @@ const POSITIVE_INTEGER = { type: 'integer', minimum: 1 } as const;
 const NON_NEGATIVE_INTEGER = { type: 'integer', minimum: 0 } as const;
 
 const OUTPUT_BOUND_FIELD_SCHEMA = { enum: [...OUTPUT_BOUND_FIELDS] } as const;
+
+const RESPONSES_OUTPUT_BOUND_SCHEMA = { enum: [...RESPONSES_OUTPUT_BOUNDS] } as const;
+
+const ROUTE_CARRIAGE_PROPERTIES = {
+  outputBoundField: RESPONSES_OUTPUT_BOUND_SCHEMA,
+  systemRole: { enum: [...SYSTEM_ROLES] },
+  toolPlacement: { enum: [...TOOL_PLACEMENTS] },
+  inputKinds: {
+    type: 'object',
+    properties: {
+      content: { type: 'array', items: { enum: [...INPUT_CONTENT_KINDS] }, uniqueItems: true },
+      tools: { type: 'array', items: { enum: [...REQUEST_TOOL_KINDS] }, uniqueItems: true },
+    },
+    required: ['content', 'tools'],
+    additionalProperties: false,
+  },
+} as const;
 
 const ANSWERS_SCHEMA = { enum: [...TARGET_ANSWERS] } as const;
 
@@ -142,7 +159,7 @@ const SAMPLING_SCHEMA = {
   ],
 } as const;
 
-const targetCapabilitiesSchema = (promptCache: object, extraProperties: object = {}, extraReasoning: readonly object[] = []) =>
+const targetCapabilitiesSchema = (promptCache: object, extraProperties: object = {}, extraReasoning: readonly object[] = [], required: readonly string[] = ['contextWindow', 'maxOutputTokens']) =>
   ({
   type: 'object',
   properties: {
@@ -186,13 +203,15 @@ const targetCapabilitiesSchema = (promptCache: object, extraProperties: object =
     sampling: SAMPLING_SCHEMA,
     source: { enum: ['declared', 'probed', 'config', 'unprobed'] },
   },
-  required: ['contextWindow', 'maxOutputTokens'],
+  required: [...required],
   additionalProperties: false,
 }) as const;
 
 const ANTHROPIC_CAPABILITIES_SCHEMA = targetCapabilitiesSchema(ANTHROPIC_PROMPT_CACHE, {}, THINKING_REASONING_SCHEMAS);
 
-const KEYED_CAPABILITIES_SCHEMA = targetCapabilitiesSchema(KEYED_PROMPT_CACHE);
+const KEYED_CAPABILITIES_SCHEMA = targetCapabilitiesSchema(KEYED_PROMPT_CACHE, ROUTE_CARRIAGE_PROPERTIES);
+
+const PLAN_CAPABILITIES_SCHEMA = targetCapabilitiesSchema(KEYED_PROMPT_CACHE, ROUTE_CARRIAGE_PROPERTIES, [], []);
 
 const CHAT_COMPLETIONS_CAPABILITIES_SCHEMA = targetCapabilitiesSchema(KEYED_PROMPT_CACHE, { outputBoundField: OUTPUT_BOUND_FIELD_SCHEMA });
 
@@ -259,6 +278,37 @@ const OPEN_RESPONSES_TARGET_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+const PLAN_REFERENCE_SCHEMA = {
+  type: 'object',
+  properties: {
+    profile: { type: 'string', minLength: 1 },
+    account: { type: 'string', pattern: SECRET_NAME_PATTERN },
+  },
+  required: ['profile'],
+  additionalProperties: false,
+} as const;
+
+const PLAN_OPEN_RESPONSES_TARGET_SCHEMA = {
+  type: 'object',
+  properties: {
+    adapter: { const: 'open-responses' },
+    answers: ANSWERS_SCHEMA,
+    model: { type: 'string', minLength: 1 },
+    baseUrl: { type: 'string', minLength: 1 },
+    socketPath: { type: 'string', minLength: 1 },
+    ...API_KEY_PROPERTIES,
+    plan: PLAN_REFERENCE_SCHEMA,
+    provider: { type: 'string', pattern: PROVIDER_NAME_PATTERN },
+    toolCalling: { enum: ['native', 'none'] },
+    billing: BILLING_SCHEMA,
+    capabilities: PLAN_CAPABILITIES_SCHEMA,
+    maxConcurrency: POSITIVE_INTEGER,
+    admissionTimeoutMs: NON_NEGATIVE_INTEGER,
+  },
+  required: ['adapter', 'model', 'plan'],
+  additionalProperties: false,
+} as const;
+
 const ANTHROPIC_TARGET_SCHEMA = {
   type: 'object',
   properties: {
@@ -298,7 +348,7 @@ const OLLAMA_TARGET_SCHEMA = {
 
 const MODEL_TARGET_SCHEMA = {
   type: 'object',
-  oneOf: [FM_TARGET_SCHEMA, CHAT_COMPLETIONS_TARGET_SCHEMA, OPEN_RESPONSES_TARGET_SCHEMA, ANTHROPIC_TARGET_SCHEMA, OLLAMA_TARGET_SCHEMA],
+  oneOf: [FM_TARGET_SCHEMA, CHAT_COMPLETIONS_TARGET_SCHEMA, OPEN_RESPONSES_TARGET_SCHEMA, PLAN_OPEN_RESPONSES_TARGET_SCHEMA, ANTHROPIC_TARGET_SCHEMA, OLLAMA_TARGET_SCHEMA],
 } as const;
 
 const HOOK_COMMAND_SCHEMA = {
@@ -366,6 +416,19 @@ export const SETTINGS_SCHEMA = {
           additionalProperties: MODEL_TARGET_SCHEMA,
         },
         dialects: { type: 'object', additionalProperties: DIALECT_DEFINITION_SCHEMA },
+        billingChanges: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              from: BILLING_SCHEMA,
+              to: BILLING_SCHEMA,
+              alias: { type: 'string', minLength: 1 },
+            },
+            required: ['from', 'to'],
+            additionalProperties: false,
+          },
+        },
         roles: {
           type: 'object',
           properties: Object.fromEntries(MODEL_ROLES.map((role) => [role, { type: 'string', minLength: 1 }])),
@@ -404,6 +467,7 @@ export const SETTINGS_SCHEMA = {
         outputFormatters: { type: 'array', items: { enum: [...OUTPUT_FORMATTERS] } },
         loopGuidance: { type: 'boolean' },
         observedCapacity: { type: 'boolean' },
+        unboundedOutputReserve: { type: 'boolean' },
       },
       additionalProperties: false,
     },

@@ -9,7 +9,7 @@ import type { TokenPin } from '../../src/worker/token-pin.ts';
 import { capabilitiesFor, makeEnv } from './harness.ts';
 import { textStep } from './scripts.ts';
 
-const OFF_CONTEXT: ResolvedContextSettings = { adaptiveBudget: false, autoCompact: true, cachePrefix: false, outputFormatters: [], loopGuidance: false, observedCapacity: false };
+const OFF_CONTEXT: ResolvedContextSettings = { adaptiveBudget: false, autoCompact: true, cachePrefix: false, outputFormatters: [], loopGuidance: false, observedCapacity: false, unboundedOutputReserve: false };
 const OFF_TOOLS: ResolvedToolsSettings = { deferral: false, conciseDescriptions: false };
 
 const settingsOf = (context: ResolvedContextSettings, tools: ResolvedToolsSettings) => ({

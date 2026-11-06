@@ -18,7 +18,10 @@ const outputBoundTokens = (request: AdapterRequest, capabilities: Capabilities):
 
 const outputBoundOption = (request: AdapterRequest, capabilities: Capabilities): Partial<ChatRequestBody> => {
   const tokens = outputBoundTokens(request, capabilities);
-  return tokens === undefined ? {} : outputBoundFor(capabilities.outputBoundField ?? DEFAULT_OUTPUT_BOUND_FIELD, tokens);
+  const field = capabilities.outputBoundField ?? DEFAULT_OUTPUT_BOUND_FIELD;
+  if (tokens === undefined || field === 'none') return {};
+  if (field === 'max_output_tokens') throw new Error('chat-completions cannot carry an output bound as max_output_tokens');
+  return outputBoundFor(field, tokens);
 };
 
 export const withCapabilityOptions = (body: ChatRequestBody, request: AdapterRequest, capabilities: Capabilities): ChatRequestBody => {

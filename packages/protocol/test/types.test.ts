@@ -29,7 +29,13 @@ describe('protocol capability types', () => {
         structuredOutput: 'json_schema' | 'none';
         streaming: boolean;
         stopSequences: boolean;
-        outputBoundField?: 'max_completion_tokens' | 'max_tokens';
+        outputBoundField?: 'max_completion_tokens' | 'max_tokens' | 'max_output_tokens' | 'none';
+        systemRole?: 'system' | 'developer';
+        toolPlacement?: 'top_level' | 'additional_tools';
+        inputKinds?: {
+          content: readonly ('text' | 'image' | 'file' | 'audio' | 'video')[];
+          tools: readonly ('function' | 'custom' | 'programmatic_tool_calling' | 'image_generation' | 'file_search' | 'code_interpreter' | 'computer_use' | 'mcp' | 'tool_search')[];
+        };
         parallelToolCalls?: boolean;
         allowedTools?: readonly ('native' | 'envelope' | 'single_tool' | 'filter')[];
         schemaDialect: DialectId;
@@ -70,7 +76,7 @@ describe('protocol capability types', () => {
   it('defines HealthResult', () => {
     expectTypeOf<HealthResult>().toEqualTypeOf<{
       ok: boolean;
-      reason?: 'not_running' | 'unhealthy' | 'precondition_failed' | 'health_check_failed';
+      reason?: 'not_running' | 'unhealthy' | 'precondition_failed' | 'health_check_failed' | 'sign_in_required' | 'store_unreadable' | 'store_unwritable' | 'capabilities_unknown';
       detail?: string;
       remediation?: string;
     }>();

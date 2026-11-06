@@ -1,11 +1,13 @@
 import path from 'node:path';
 import { canonicalPath, comparableContains, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
-import { DEFAULT_ANTHROPIC_API_VERSION, anthropicVersionSamplingBound, imageCapability } from '@momonga/protocol';
+import { DEFAULT_ANTHROPIC_API_VERSION, OUTPUT_RESERVE, anthropicVersionSamplingBound, ceilRatio, imageCapability, marginFloorFor } from '@momonga/protocol';
 import type { AnthropicApiVersion, DialectDefinition, TargetBilling } from '@momonga/protocol';
 import { checkTargetDialects, resolveDialects } from './dialects.ts';
 import { layoutOf } from './layout.ts';
+import { PLAN_PROFILES } from './plan-profiles.ts';
 import type {
   AnthropicTarget,
+  BillingChange,
   ChatCompletionsTarget,
   FmTarget,
   ModelAlias,
@@ -15,12 +17,15 @@ import type {
   ModelsSettings,
   OllamaTarget,
   OpenResponsesTarget,
+  PlanOpenResponsesTarget,
+  PlanReference,
   ResolvedAnthropicTarget,
   ResolvedChatCompletionsTarget,
   ResolvedFmTarget,
   ResolvedModelTarget,
   ResolvedOllamaTarget,
   ResolvedOpenResponsesTarget,
+  ResolvedPlanTarget,
   DeclaredTargetCapabilities,
   TargetCapabilities,
   TargetCapabilitiesCore,
@@ -31,6 +36,7 @@ export type ResolvedModels = {
   targets: Record<string, ResolvedModelTarget>;
   dialects: Record<string, DialectDefinition>;
   roles: ModelRoles;
+  billingChanges: BillingChange[];
 };
 
 export type ResolveModelsOptions = { source: string; home: string; warnings: string[] };
@@ -106,7 +112,7 @@ const OLLAMA_CAPABILITY_DEFAULTS: CapabilityDefaults = {
 const DEFAULT_REMOTE_MAX_CONCURRENCY = 4;
 const DEFAULT_REMOTE_BILLING: TargetBilling = 'metered';
 
-const checkSamplingRange = (capabilities: DeclaredTargetCapabilities, where: string): void => {
+const checkSamplingRange = (capabilities: Pick<TargetCapabilitiesCore, 'sampling'>, where: string): void => {
   const { sampling } = capabilities;
   if (sampling?.accepts !== 'without_thinking') return;
   const { min, max } = sampling.topP;
@@ -163,6 +169,48 @@ const resolveOpenResponses = (target: OpenResponsesTarget, home: string, where: 
   ...resolveRemote(target, OPEN_RESPONSES_CAPABILITY_DEFAULTS, home, where),
 });
 
+const resolvePlan = (target: PlanOpenResponsesTarget, where: string): ResolvedPlanTarget => {
+  const { profile: profileId } = target.plan;
+  if (!Object.hasOwn(PLAN_PROFILES, profileId)) {
+    const known = Object.keys(PLAN_PROFILES).map((id) => JSON.stringify(id)).join(', ');
+    throw new Error(`${where}: plan.profile ${JSON.stringify(profileId)} is not a shipped plan profile; the shipped profiles are ${known}`);
+  }
+  const profile = PLAN_PROFILES[profileId] as NonNullable<(typeof PLAN_PROFILES)[string]>;
+  for (const key of ['apiKeyEnv', 'apiKeySecret'] as const) {
+    if (target[key] !== undefined) throw new Error(`${where}: plan cannot be combined with ${key}; a plan target takes its credential from the signed-in account`);
+  }
+  if (target.socketPath !== undefined) {
+    throw new Error(`${where}: plan cannot be combined with socketPath; a plan target sends its bearer only to ${profile.oauth.resource}`);
+  }
+  const baseUrl = target.baseUrl ?? profile.targetDefaults.baseUrl;
+  checkBaseUrl(baseUrl, where);
+  const resourceOrigin = new URL(profile.oauth.resource).origin;
+  const baseOrigin = new URL(baseUrl).origin;
+  if (baseOrigin !== resourceOrigin) {
+    throw new Error(`${where}: baseUrl ${baseUrl} has origin ${baseOrigin}, but plan profile ${profile.id} sends its bearer only to origin ${resourceOrigin}`);
+  }
+  const declared = target.capabilities ?? {};
+  checkSamplingRange(declared, where);
+  const maxConcurrency = target.maxConcurrency ?? DEFAULT_REMOTE_MAX_CONCURRENCY;
+  const { imageInput, imageTokens, ...core } = { ...OPEN_RESPONSES_CAPABILITY_DEFAULTS, ...profile.targetDefaults.capabilities, ...declared, maxConcurrency };
+  return {
+    adapter: 'open-responses',
+    ...(target.answers === undefined ? {} : { answers: target.answers }),
+    model: target.model,
+    baseUrl,
+    provider: target.provider ?? profile.id,
+    plan: target.plan,
+    toolCalling: target.toolCalling ?? 'native',
+    billing: target.billing ?? profile.targetDefaults.billing,
+    capabilities: {
+      ...core,
+      ...(imageInput === undefined && imageTokens === undefined ? {} : imageCapability(imageInput ?? false, imageTokens, `${where}: `)),
+    },
+    maxConcurrency,
+    admissionTimeoutMs: target.admissionTimeoutMs ?? 30000,
+  };
+};
+
 const checkThinkingBudgets = (target: AnthropicTarget, where: string): void => {
   const { reasoning, maxOutputTokens } = target.capabilities;
   if (reasoning?.control !== 'thinking' || reasoning.form !== 'budget') return;
@@ -215,11 +263,75 @@ const resolveAdapter = (target: ModelTarget, home: string, where: string, warnin
     case 'chat-completions':
       return resolveChatCompletions(target, home, where);
     case 'open-responses':
-      return resolveOpenResponses(target, home, where);
+      return 'plan' in target ? resolvePlan(target, where) : resolveOpenResponses(target, home, where);
     case 'anthropic':
       return resolveAnthropic(target, home, where, warnings);
     case 'ollama':
       return resolveOllama(target, home, where);
+  }
+};
+
+const membersOf = (alias: ModelAlias): string[] => [alias].flat();
+
+const billingOf = (target: ResolvedModelTarget): TargetBilling => target.billing;
+
+const checkUnboundedAliases = (aliases: Record<string, ModelAlias>, targets: Record<string, ResolvedModelTarget>, source: string): void => {
+  for (const [name, alias] of Object.entries(aliases)) {
+    const members = membersOf(alias).map((member) => targets[member] as ResolvedModelTarget);
+    const unbounded = members.some((member) => member.adapter !== 'fm' && member.capabilities.outputBoundField === 'none');
+    if (!unbounded) continue;
+    const windows: number[] = [];
+    const outputs: number[] = [];
+    for (const member of members) {
+      const capabilities = member.adapter === 'fm' ? undefined : member.capabilities;
+      if (capabilities?.contextWindow === undefined || capabilities.maxOutputTokens === undefined) break;
+      windows.push(capabilities.contextWindow);
+      outputs.push(capabilities.maxOutputTokens);
+    }
+    if (windows.length !== members.length) continue;
+    const minWindow = Math.min(...windows);
+    const unboundedOutputTokens = Math.max(...outputs);
+    const margin = marginFloorFor(minWindow);
+    const required = ceilRatio(OUTPUT_RESERVE, minWindow);
+    const room = minWindow - unboundedOutputTokens - margin;
+    if (room < required) {
+      throw new Error(
+        `${source}: models.aliases.${name} holds a target that carries no output bound (outputBoundField none), so any member can emit up to ${unboundedOutputTokens} tokens; with the smallest context window ${minWindow} and a margin of ${margin}, ${room} tokens are left for input, which is below the ${required} (a quarter of the window) that input needs`,
+      );
+    }
+  }
+};
+
+const checkBillingChanges = (changes: readonly BillingChange[], aliases: Record<string, ModelAlias>, source: string): void => {
+  changes.forEach((change, index) => {
+    const where = `${source}: models.billingChanges[${index}]`;
+    if (change.from === change.to) throw new Error(`${where}: from and to are both ${JSON.stringify(change.from)}; a change of billing kind needs two different kinds`);
+    if (change.alias !== undefined && !Object.hasOwn(aliases, change.alias)) {
+      throw new Error(`${where}: alias ${JSON.stringify(change.alias)} is not defined in models.aliases`);
+    }
+  });
+};
+
+const warnUnallowedBillingChanges = (
+  changes: readonly BillingChange[],
+  aliases: Record<string, ModelAlias>,
+  targets: Record<string, ResolvedModelTarget>,
+  source: string,
+  warnings: string[],
+): void => {
+  for (const [name, alias] of Object.entries(aliases)) {
+    const members = membersOf(alias);
+    for (let index = 0; index + 1 < members.length; index += 1) {
+      const current = members[index] as string;
+      const next = members[index + 1] as string;
+      const from = billingOf(targets[current] as ResolvedModelTarget);
+      const to = billingOf(targets[next] as ResolvedModelTarget);
+      if (from === to) continue;
+      if (changes.some((change) => change.from === from && change.to === to && (change.alias === undefined || change.alias === name))) continue;
+      warnings.push(
+        `${source}: models.aliases.${name}: target ${JSON.stringify(current)} (${from}) is followed by ${JSON.stringify(next)} (${to}), and models.billingChanges allows no change from ${from} to ${to} for this alias, so a request never falls from one to the other; add { "from": "${from}", "to": "${to}" } to models.billingChanges to allow it`,
+      );
+    }
   }
 };
 
@@ -256,7 +368,11 @@ export const resolveModels = (models: ModelsSettings | undefined, { source, home
     }
     roles[role as ModelRole] = alias;
   }
-  return { aliases, targets, dialects, roles };
+  const billingChanges = [...(models?.billingChanges ?? [])];
+  checkBillingChanges(billingChanges, aliases, source);
+  checkUnboundedAliases(aliases, targets, source);
+  warnUnallowedBillingChanges(billingChanges, aliases, targets, source, warnings);
+  return { aliases, targets, dialects, roles, billingChanges };
 };
 
 type ResolvedTargets = { models: { targets: Record<string, ResolvedModelTarget> } };
@@ -275,4 +391,13 @@ export const secretNames = (settings: ResolvedTargets): string[] => {
     if (target.adapter !== 'fm' && target.adapter !== 'ollama' && target.apiKeySecret !== undefined) names.add(target.apiKeySecret);
   }
   return [...names].sort();
+};
+
+export const planAccountNames = (settings: ResolvedTargets): PlanReference[] => {
+  const seen = new Map<string, PlanReference>();
+  for (const target of Object.values(settings.models.targets)) {
+    if (target.adapter === 'fm' || !('plan' in target) || target.plan.account === undefined) continue;
+    seen.set(JSON.stringify([target.plan.profile, target.plan.account]), target.plan);
+  }
+  return [...seen.values()].sort((a, b) => a.profile.localeCompare(b.profile) || (a.account as string).localeCompare(b.account as string));
 };
