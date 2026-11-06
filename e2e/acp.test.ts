@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { PromptRequest, RequestError, SessionNotification } from '@agentclientprotocol/sdk';
+import { envelopeOf } from '@momonga/protocol';
 import { MCP_MODERN_SERVER_PATH, startMcpHttpFixture } from '@momonga/testkit';
 import type { FakeScriptedReply } from '@momonga/testkit';
 import cliPackage from '../packages/cli/package.json' with { type: 'json' };
@@ -18,6 +19,7 @@ import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './suppor
 const ORIGINAL = 'greeting = "hello"\n';
 const EDITED = 'greeting = "hello, momonga"\n';
 const FINAL_TEXT = 'Updated the greeting in config.toml.';
+const REJECTED_OUTPUT = 'The user rejected this tool call.';
 const SKILL_BODY_MARKER = 'PDF-SKILL-BODY-MARKER-4f7a';
 const CONTEXT_WINDOW = 8192;
 
@@ -155,9 +157,10 @@ describe('acp: momonga acp', () => {
     expect(acp.permissionRequests).toHaveLength(2);
     const failed = updatesOf(acp.updates, 'tool_call_update').filter((update) => 'status' in update && update.status === 'failed');
     expect(failed).toHaveLength(1);
+    expect(failed[0]).toMatchObject({ content: [{ type: 'content', content: { type: 'text', text: REJECTED_OUTPUT } }], rawOutput: REJECTED_OUTPUT });
     const lastCall = messagesOf(chatCompletions(fake).at(-1)).at(-1);
     expect(lastCall?.role).toBe('tool');
-    expect(lastCall?.content).toBe('The user rejected this tool call.');
+    expect(lastCall?.content).toBe(envelopeOf({ content: REJECTED_OUTPUT, callId: String(lastCall?.tool_call_id), tool: 'Edit' }));
     expect(await acp.finish()).toEqual({ code: 0, signal: null });
   });
 

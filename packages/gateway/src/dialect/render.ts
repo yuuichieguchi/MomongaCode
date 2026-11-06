@@ -27,6 +27,7 @@ export const renderSchema = (schema: unknown, site: RenderSite, resolved: Resolv
   const { index, segments } = analyzeReferences(root);
   const state: RenderState = {
     site,
+    document: root,
     rules: resolved.definition.rules,
     refs: index,
     refSegments: segments,
@@ -36,7 +37,7 @@ export const renderSchema = (schema: unknown, site: RenderSite, resolved: Resolv
     narrowings: new Map(),
     wraps: [],
   };
-  const context: NodeContext = { origin: '', labelPath: 'root', steps: [], position: 'positive', isRoot: true, absent, via: undefined, inPlace: [], refUneval: false };
+  const context: NodeContext = { origin: '', labelPath: 'root', steps: [], position: 'positive', isRoot: true, absent, via: undefined, location: '', inPlace: [] };
   const rendered = visit(state, root, context, true);
   const untouched = absent && isRecord(rendered) && Object.keys(rendered).length === 0;
   return {
