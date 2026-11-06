@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { FAILURE_MARKERS } from '@momonga/context';
 import type { ResultOutcome } from '@momonga/tools';
 import { outcomePayloads } from '../../src/worker/tool-step.ts';
 import { makeEnv } from './harness.ts';
@@ -7,9 +6,10 @@ import { callsStep, textStep } from './scripts.ts';
 
 const logRaw = (): string =>
   [
+    ...Array.from({ length: 60 }, () => 'warning: unused import'),
     ...Array.from({ length: 400 }, (_unused, index) => `compiled module ${index + 1}`),
     '',
-    `${FAILURE_MARKERS[0] as string} src/math.test.ts:42 sum_handles_overflow expected 7 got 9`,
+    'the widget count drifted to 9 in src/math.ts:42',
     '',
     ...Array.from({ length: 400 }, (_unused, index) => `linked chunk ${index + 1}`),
   ].join('\n');
@@ -32,8 +32,9 @@ describe('the batch formatter of the tool step', () => {
     const batch = await runEcho(['log']);
     const formatted = batch?.formatOutput?.({ output: logRaw(), status: 'failed', tool: { name: 'Bash', kind: 'execute' } });
     expect(formatted?.formatter).toBe('log');
-    expect(formatted?.output).toContain('src/math.test.ts:42 sum_handles_overflow');
-    expect(formatted?.output).not.toContain('compiled module 200\n');
+    expect(formatted?.output).toContain('the widget count drifted to 9 in src/math.ts:42');
+    expect(formatted?.output).toContain('compiled module 200\n');
+    expect(formatted?.output.startsWith('warning: unused import [×60]\ncompiled module 1\n')).toBe(true);
   });
 
   it('passes the terms of the task text to the json formatter', async () => {

@@ -1,3 +1,4 @@
+import { pageToFit } from '../paging.ts';
 import { defineTool, ToolExecutionError, ToolInputError } from '../types.ts';
 import type { AnyTool } from '../types.ts';
 import { HISTORY_QUERY_MAX_CHARS, HISTORY_READ_TOOL_NAME, HISTORY_SEARCH_TOOL_NAME, HISTORY_TOOL_TIMEOUT_MS } from './constants.ts';
@@ -50,7 +51,7 @@ export const createHistoryTools = ({ port, trusted, project }: HistoryToolsOptio
     },
     execute: async (input, ctx) => {
       const result = await port.search({ query: input.query, scope: input.scope ?? 'project' });
-      return { status: 'completed', output: renderSearch(result, ctx.outputBudgetChars) };
+      return { status: 'completed', output: await pageToFit(ctx.outputFit, (budget) => renderSearch(result, budget)) };
     },
   });
 
@@ -97,16 +98,21 @@ export const createHistoryTools = ({ port, trusted, project }: HistoryToolsOptio
       if (page === null) throw new ToolExecutionError(`no recorded run ${runId} is visible`);
       const offset = input.offset ?? 0;
       if (offset > 0 && page.events[0]?.seq !== input.seqFrom) throw new ToolExecutionError(`no recorded event at seq ${String(input.seqFrom)} to continue from`);
-      const { output } = renderRead({
-        page,
-        denied: await port.readDenial(page.project),
-        redact: (text) => port.redact(text),
-        ownRun: page.runId === ctx.runId,
-        offset,
-        offsetSeq: input.seqFrom,
-        budgetChars: ctx.outputBudgetChars,
-        continuation: continuationFor(input, page.runId),
-      });
+      const denied = await port.readDenial(page.project);
+      const output = await pageToFit(
+        ctx.outputFit,
+        (budget) =>
+          renderRead({
+            page,
+            denied,
+            redact: (text) => port.redact(text),
+            ownRun: page.runId === ctx.runId,
+            offset,
+            offsetSeq: input.seqFrom,
+            budgetChars: budget,
+            continuation: continuationFor(input, page.runId),
+          }).output,
+      );
       return { status: 'completed', output };
     },
   });

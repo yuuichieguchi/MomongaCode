@@ -1,4 +1,4 @@
-import { textResponseEvents, waitFor } from '@momonga/testkit';
+import { driveFakeTime, textResponseEvents } from '@momonga/testkit';
 import type { PendingTimer } from '@momonga/testkit';
 import type { Harness } from './gateway-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
@@ -30,6 +30,7 @@ export const driveTimers = async (
   harness: Pick<Harness, 'timers' | 'clock'>,
   pending: readonly Promise<unknown>[],
   ignored: (timer: PendingTimer) => boolean = () => false,
+  horizonMs: number = TOTAL_WAIT_MS,
 ): Promise<number[]> => {
   const settled = pending.map(() => false);
   pending.forEach((promise, index) => {
@@ -39,24 +40,26 @@ export const driveTimers = async (
     void promise.then(mark, mark);
   });
   const unsettled = (): number => settled.filter((done) => !done).length;
-  const watched = (): PendingTimer[] => harness.timers.pending().filter((timer) => !ignored(timer));
+  const considered = (timer: PendingTimer): boolean => !ignored(timer);
+  const watched = (): PendingTimer[] => harness.timers.pending().filter(considered);
   const keyOf = (): string => watched().map((timer) => timer.id).join(',');
   const seen = new Set<number>();
   const delays: number[] = [];
   let lastKey = '';
-  for (;;) {
-    await waitFor(() => unsettled() === 0 || (watched().length >= unsettled() && keyOf() !== lastKey), {
-      description: `a timer for each of ${unsettled()} pending requests, or every answer`,
-    });
-    if (unsettled() === 0) return delays;
-    const timers = watched();
-    for (const timer of timers) {
-      if (seen.has(timer.id)) continue;
-      seen.add(timer.id);
-      delays.push(timer.delayMs);
-    }
-    lastKey = keyOf();
-    const nextDue = Math.min(...timers.map((timer) => timer.dueAt));
-    harness.timers.advance(Math.max(0, nextDue - harness.clock.now()));
-  }
+  await driveFakeTime(harness.timers, {
+    done: () => unsettled() === 0,
+    horizonAt: harness.clock.now() + horizonMs,
+    description: `every answer of ${pending.length} pending requests`,
+    ready: () => watched().length >= unsettled() && keyOf() !== lastKey,
+    considered,
+    beforeAdvance: () => {
+      for (const timer of watched()) {
+        if (seen.has(timer.id)) continue;
+        seen.add(timer.id);
+        delays.push(timer.delayMs);
+      }
+      lastKey = keyOf();
+    },
+  });
+  return delays;
 };

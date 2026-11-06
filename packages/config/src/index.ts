@@ -17,7 +17,7 @@ export type { LoadMcpServersOptions, LoadMcpServersResult, McpServerEntry, McpSe
 export { COMMAND_PREFIX_SUFFIX, EDIT_TOOLS, checkRuleText, parseGovernanceRule, PATH_TOOLS, PATH_TOOL_RULES, hasBalancedParentheses, isPathTool, parseRule, RuleParseError } from './rule.ts';
 export type { GovernanceRuleEntry, ParseRuleOptions, PathToolName, PermissionRule, RuleEffect, RuleLayer, RuleOrigin } from './rule.ts';
 export { SETTINGS_SCHEMA } from './settings-schema.ts';
-export { defaultSandboxSetting } from './settings.ts';
+export { DEFAULT_CONTENT_RETENTION_DAYS, defaultSandboxSetting, resolveTelemetrySettings } from './settings.ts';
 export {
   DEFAULT_FORGET_AFTER_DAYS,
   DEFAULT_VERIFICATION_COMMANDS,
@@ -62,5 +62,6 @@ export type {
   PermissionsSettings,
   Settings,
   PriceEntrySettings,
+  ResolvedTelemetrySettings,
   TelemetrySettings,
 } from './settings.ts';

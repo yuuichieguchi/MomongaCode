@@ -1,8 +1,9 @@
 import fs from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
-import { CONTEXT_DATASET_FORMAT, DatasetError, bindingRuleIds, buildContextReport, expandContextDataset, noiseTurnsFor, parseContextDataset, parseDataset, rulesOf } from '@momonga/eval';
+import { CONTEXT_DATASET_FORMAT, DatasetError, bindingRuleIds, expandContextDataset, noiseTurnsFor, parseContextDataset, parseDataset, rulesOf } from '@momonga/eval';
 import type { ContextCase, Transcript } from '@momonga/eval';
 import { answer, contextCase, fidelity, governing, read, recorded, summarized } from './context-fixtures.ts';
+import { buildReportAs } from './answered-fixtures.ts';
 
 const pair = (scenario: string, overrides: Record<string, unknown> = {}) => [
   { ...contextCase(`${scenario}-on`, scenario, 'on'), ...overrides },
@@ -26,20 +27,21 @@ describe('parseContextDataset', () => {
       revisionDepth: 1,
       noise: { level: 6, topics: ['dataframes'] },
       workspace: [{ beforeRun: 1, write: { 'a.ts': 'new' }, remove: ['b.ts'] }],
-      gold: [{ seqFrom: 2, seqTo: 5 }],
+      gold: [{ anchor: 'NEEDLE-1', in: 'tool.completed' }],
     });
     const dataset = parse([on, off]);
     expect(dataset.cases.map((entry) => [entry.id, entry.compaction, entry.scenario])).toEqual([['s-on', 'on', 's'], ['s-off', 'off', 's']]);
     expect(dataset.cases[0]?.workspace).toEqual([{ beforeRun: 1, write: { 'a.ts': 'new' }, remove: ['b.ts'] }]);
-    expect(dataset.cases[0]?.gold).toEqual([{ seqFrom: 2, seqTo: 5 }]);
+    expect(dataset.cases[0]?.gold).toEqual([{ anchor: 'NEEDLE-1', in: 'tool.completed' }]);
   });
 
   it.each([
     ['an unknown compaction value', [{ ...pair('s')[0], compaction: 'auto' }, pair('s')[1]], /invalid dataset at \/cases\/0\/compaction/],
     ['a negative noise level', pair('s', { noise: { level: -1, topics: ['t'] } }), /invalid dataset at \/cases\/0\/noise\/level/],
     ['noise without topics', pair('s', { noise: { level: 1, topics: [] } }), /invalid dataset at \/cases\/0\/noise\/topics/],
-    ['a gold range that runs backwards', pair('s', { gold: [{ seqFrom: 5, seqTo: 2 }] }), /gold range/],
-    ['a gold seq below 1', pair('s', { gold: [{ seqFrom: 0, seqTo: 2 }] }), /invalid dataset at \/cases\/0\/gold\/0\/seqFrom/],
+    ['a gold seq range, which a live run cannot fix in advance', pair('s', { gold: [{ seqFrom: 2, seqTo: 5 }] }), /invalid dataset at \/cases\/0\/gold\/0/],
+    ['a gold anchor with no text', pair('s', { gold: [{ anchor: '', in: 'tool.completed' }] }), /invalid dataset at \/cases\/0\/gold\/0\/anchor/],
+    ['a gold anchor in an event kind that cannot carry it', pair('s', { gold: [{ anchor: 'NEEDLE-1', in: 'model.requested' }] }), /invalid dataset at \/cases\/0\/gold\/0\/in/],
     ['duplicate rule ids', pair('s', { rules: [rule('a'), rule('a', [], 'x')] }), /duplicate rule id a/],
     ['a rule superseding an unknown id', pair('s', { rules: [rule('a', ['ghost'])], revisionDepth: 1 }), /unknown rule ghost/],
     ['a rule superseding across targets', pair('s', { rules: [rule('a'), rule('b', ['a'], 'other')], revisionDepth: 1 }), /different target/],
@@ -88,29 +90,43 @@ describe('noiseTurnsFor', () => {
 });
 
 describe('the starter dataset', () => {
-  const load = async () => parseContextDataset(await fs.readFile(new URL('../datasets/context.json', import.meta.url), 'utf8'), 'context.json');
+  const loadAll = async () => parseContextDataset(await fs.readFile(new URL('../datasets/context.json', import.meta.url), 'utf8'), 'context.json');
 
-  it('pairs three pinned coding scenarios and, after them, the scenarios that use a generated revision chain and a second stale memory', async () => {
-    const dataset = await load();
-    expect(dataset.cases).toHaveLength(12);
+  const ORIGINAL_SCENARIOS = ['rename-module', 'revised-test-runner', 'file-changed-between-runs', 'lint-chain', 'report-chain', 'stale-retries'];
+
+  const load = async () => {
+    const dataset = await loadAll();
+    return { ...dataset, cases: dataset.cases.filter((entry) => ORIGINAL_SCENARIOS.includes(entry.scenario)) };
+  };
+
+  it('pairs three pinned coding scenarios and, after them, the scenarios that use a generated revision chain and a second stale memory, then retrieval, governance and stale-memory scenarios that measure every quality metric', async () => {
+    const dataset = await loadAll();
+    expect(dataset.cases).toHaveLength(36);
     expect([...new Set(dataset.cases.map((entry) => entry.scenario))]).toEqual([
-      'rename-module',
-      'revised-test-runner',
-      'file-changed-between-runs',
-      'lint-chain',
-      'report-chain',
-      'stale-retries',
+      ...ORIGINAL_SCENARIOS,
+      'history-earlier-run',
+      'history-replaced-range',
+      'history-with-topical-noise',
+      'history-two-needles',
+      'history-no-answer',
+      'rule-expired',
+      'rule-out-of-scope-path',
+      'rule-conflicting-pair',
+      'rule-many-unrelated',
+      'rule-dissimilar-to-task',
+      'memory-file-deleted',
+      'memory-superseded-by-newer',
     ]);
   });
 
   it('generates revision chains of depth 1 and 3 from revisionChain, and plays noise in every pair that asks for it', async () => {
-    const dataset = await load();
+    const dataset = await loadAll();
     const expanded = expandContextDataset(dataset, 5).cases;
     const chain = (id: string) => expanded.find((entry) => entry.id === id)!;
     expect(chain('lint-chain-on').rules.map((rule) => rule.id)).toEqual(['lint-0', 'lint-1']);
     expect(chain('report-chain-off').rules.map((rule) => rule.id)).toEqual(['format-0', 'format-1', 'format-2', 'format-3']);
     expect(bindingRuleIds(chain('report-chain-on').rules)).toEqual(['format-3']);
-    expect(expanded.map((entry) => entry.noiseTurns.length)).toEqual([12, 12, 25, 25, 0, 0, 8, 8, 16, 16, 4, 4]);
+    expect(expanded.map((entry) => entry.noiseTurns.length)).toEqual([12, 12, 25, 25, 0, 0, 8, 8, 16, 16, 4, 4, 6, 6, 20, 20, 20, 20, 8, 8, 6, 6, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 4, 4, 4, 4]);
     expect(chain('stale-retries-on').memories).toEqual([{ text: 'RETRIES in flags.ts is 3.', paths: ['flags.ts'] }]);
     expect(chain('lint-chain-on').noiseTurns).toEqual(chain('lint-chain-off').noiseTurns);
   });
@@ -150,7 +166,7 @@ describe('the starter dataset', () => {
         return recorded(entry.id, runIndex, payloads, { totalTokens: 50, modelAlias: 'alias-1' });
       }),
     );
-    return buildContextReport({ dataset, transcripts, model: 'fake', seed: 1 });
+    return buildReportAs({ dataset, transcripts, model: 'fake', seed: 1 });
   };
 
   it('replays end to end: the right answers pass every case, compaction and governance included', async () => {

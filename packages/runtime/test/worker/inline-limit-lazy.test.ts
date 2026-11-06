@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { MINIMUM_INLINE_OUTPUT_CHARS } from '@momonga/tools';
-import { inlineOutputLimitFor } from '../../src/worker/inline-limit.ts';
-import { inputTokensOf } from './fake-gateway.ts';
+import { defineTool } from '@momonga/tools';
+import { itemCapFor } from '@momonga/context';
+import { canonicalJson } from '@momonga/foundation';
+import { tokensForText } from '@momonga/protocol';
+import { inputTokensOf, tokensOfText } from './fake-gateway.ts';
 import { START_MS, capabilitiesFor, makeEnv, toolKey } from './harness.ts';
 import { callsStep, functionCallItem, requestedOffering, textStep } from './scripts.ts';
 import { gatewayError } from './within-turn-support.ts';
@@ -15,28 +17,76 @@ const responded = (step: number, output: unknown[]) => ({
   response: { status: 'completed' as const, output, usage: { input_tokens: 50, output_tokens: 5, total_tokens: 55 } },
 });
 
-describe('inline output limit from the pinned floor', () => {
-  it('gives executed tools three characters per pinned-floor item-cap token, root AGENTS.md included', async () => {
+const seenFits: unknown[] = [];
+
+const dumpTool = defineTool<Record<string, unknown>>({
+  name: 'Dump',
+  description: 'Print a long listing',
+  kind: 'read',
+  sideEffect: 'read_only',
+  inputSchema: { type: 'object', properties: { value: { type: 'string' } }, required: ['value'], additionalProperties: false },
+  timeoutMs: 60_000,
+  title: () => 'Dump',
+  subject: () => ({ kind: 'none', tool: 'Dump' }),
+  execute: async (_input, ctx) => {
+    seenFits.push(ctx.outputFit);
+    return { status: 'completed', output: Array.from({ length: 800 }, (_unused, index) => `row ${index} of a wide listing`).join('\n') };
+  },
+});
+
+const journaledTokens = (output: string): number => tokensOfText(canonicalJson({ type: 'function_call_output', call_id: 'output-fit', output }));
+
+const longestFitting = async (fits: (text: string) => Promise<boolean>, tokensOf: (text: string) => number, cap: number): Promise<string> => {
+  let low = 1;
+  let high = 8 * cap;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (tokensOf('a'.repeat(middle)) <= cap) low = middle;
+    else high = middle - 1;
+  }
+  const text = 'a'.repeat(low);
+  expect(tokensOf(text)).toBeLessThanOrEqual(cap);
+  expect(await fits(text)).toBe(true);
+  expect(await fits(`${text}aaaa`)).toBe(false);
+  return text;
+};
+
+describe('output fit from the pinned floor', () => {
+  it('journals an output of at most the pinned-floor item cap in meter tokens, root AGENTS.md included', async () => {
     const env = await makeEnv({ capabilities: W4000 });
-    env.instructions.files.set(`${env.project}/AGENTS.md`, 'r'.repeat(5600));
-    env.gateway.script.push(callsStep([{ callId: 'e1', name: 'Echo', args: { value: 'x' } }]), textStep('done'));
+    env.instructions.files.set(`${env.project}/AGENTS.md`, 'r'.repeat(4800));
+    env.gateway.script.push(callsStep([{ callId: 'e1', name: 'Dump', args: { value: 'x' } }]), textStep('done'));
+    const run = env.enqueue('Dump once');
+
+    await env.runOnce(env.worker('worker-1', { toolList: () => [...env.toolbox.tools(), dumpTool] }));
+
+    expect(env.run(run.id)).toMatchObject({ status: 'COMPLETED' });
+    const pinnedTokens = inputTokensOf(env.gateway.streams[0]?.body ?? { model: 'fm' });
+    const itemCap = Math.max(64, Math.min(730, Math.floor((2920 - pinnedTokens) / 2)));
+    expect(itemCap).toBeLessThan(itemCapFor(W4000));
+    const [completed] = env.ofType(run.id, 'tool.completed');
+    expect(completed?.truncated).toBe(true);
+    expect(journaledTokens(completed?.output ?? '')).toBeLessThanOrEqual(itemCap);
+    expect(journaledTokens(completed?.output ?? '')).toBeGreaterThan(itemCap / 2);
+    expect(completed?.output).toContain(completed?.handle);
+    const [batch] = env.batches;
+    expect(typeof batch?.outputFit.ready).toBe('function');
+    expect(seenFits).toEqual([batch?.outputFit]);
+  });
+
+  it('keeps an output that fits the item cap as it is, with no handle', async () => {
+    const env = await makeEnv({ capabilities: W4000 });
+    env.gateway.script.push(callsStep([{ callId: 'e1', name: 'Echo', args: { value: 'small' } }]), textStep('done'));
     const run = env.enqueue('Echo once');
 
     await env.runOnce(env.worker());
 
-    expect(env.run(run.id).status).toBe('COMPLETED');
-    const pinnedTokens = inputTokensOf(env.gateway.streams[0]?.body ?? { model: 'fm' });
-    const itemCap = Math.max(64, Math.min(730, Math.floor((2920 - pinnedTokens) / 2)));
-    const expected = Math.max(MINIMUM_INLINE_OUTPUT_CHARS, Math.min(30_000, 3 * itemCap));
-    expect(expected).toBeLessThan(inlineOutputLimitFor(W4000));
-    expect(env.toolbox.executions.map((execution) => execution.outputBudgetChars)).toEqual([expected]);
-    const [batch] = env.batches;
-    expect(batch?.inlineLimitForReconcile).toBe(inlineOutputLimitFor(W4000));
-    expect(typeof batch?.inlineLimitForExecution).toBe('function');
-    expect(await batch?.inlineLimitForExecution?.()).toBe(expected);
+    const [completed] = env.ofType(run.id, 'tool.completed');
+    expect(completed?.output).toBe('echo:small');
+    expect(completed?.truncated).toBeUndefined();
   });
 
-  it('reconciles a started call of a recovered claim with the capability-only limit and no count_tokens call', async () => {
+  it('reconciles a started call of a recovered claim with the capability-only item cap and no count_tokens call', async () => {
     const env = await makeEnv({ capabilities: W4000 });
     const run = env.enqueue('Mark it');
     const key = toolKey(run.id, 1, 'call_m_1');
@@ -65,7 +115,9 @@ describe('inline output limit from the pinned floor', () => {
     expect(countsBeforeReconcile).toEqual([]);
     expect(env.ofType(run.id, 'tool.reconciled')).toEqual([expect.objectContaining({ callId: 'call_m_1', outcome: 'already_applied' })]);
     expect(env.run(run.id).status).toBe('COMPLETED');
-    expect(env.batches[0]?.inlineLimitForReconcile).toBe(inlineOutputLimitFor(W4000));
+    const reconcileFit = env.batches[0]?.reconcileFit;
+    if (reconcileFit === undefined) throw new Error('expected a reconcile fit');
+    await longestFitting((text) => reconcileFit.fits(text), tokensForText, itemCapFor(W4000));
   });
 
   it('fails pinned_overflow from the lazy measurement before executing a pending call', async () => {

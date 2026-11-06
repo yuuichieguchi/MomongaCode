@@ -106,6 +106,7 @@ export const decodeRun = (row: Row): Run => {
 const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   'user.message': true,
   'run.started': true,
+  'attempt.failed': true,
   'run.status': true,
   'model.requested': true,
   'model.responded': true,

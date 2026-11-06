@@ -1,11 +1,10 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { HOST_RULE_ENFORCEMENT, createRedactor } from '@momonga/foundation';
+import { HOST_RULE_ENFORCEMENT, createRedactor, truncationMarker } from '@momonga/foundation';
 import { parseRule } from '@momonga/policy';
 import type { RunEvent } from '@momonga/protocol';
 import { HISTORY_QUERY_MAX_CHARS, HISTORY_READ_TOOL_NAME, HISTORY_SEARCH_TOOL_NAME, TOOL_TIERS, createHistoryTools, createReadDenial } from '@momonga/tools';
 import type { BlobPort, HistoryAnchor, HistoryReadPage, HistoryReadRequest, HistorySearchRequest, HistorySearchResult, HistoryStorePort, ReadDenial } from '@momonga/tools';
-import { truncateOutput } from '../../src/truncate.ts';
 import { call, makeHarness, makeTool, toolSetOf } from '../harness.ts';
 
 const OWN_RUN = 'run-1';
@@ -205,7 +204,7 @@ describe('HistorySearch output', () => {
   it('drops trailing results that do not fit the output budget and says how many', async () => {
     const anchors = Array.from({ length: 6 }, (_, index) => anchor({ runId: `run-${index}`, snippet: 'x'.repeat(150) }));
     const { port } = fakePort({ found: grouped(anchors) });
-    const output = outputOf(await run(makeHarness({ maxInlineOutputChars: 900 }), port, HISTORY_SEARCH_TOOL_NAME, { query: 'needle' }));
+    const output = outputOf(await run(makeHarness({ outputLimitChars: 900 }), port, HISTORY_SEARCH_TOOL_NAME, { query: 'needle' }));
     expect(output.length).toBeLessThanOrEqual(900);
     expect(output).toContain('run-0');
     expect(output).not.toContain('run-5');
@@ -321,8 +320,7 @@ describe('HistoryRead output', () => {
 
   it('strips the blob handle and the real truncation marker from the output and the input of another run', async () => {
     const handle = 'ab'.repeat(32);
-    const blobs = { put: () => ({ handle }) } as unknown as BlobPort;
-    const truncated = truncateOutput('line of output\n'.repeat(400), 600, blobs);
+    const truncated = { output: ['line of output', truncationMarker(1200, handle, 'ReadOutput'), 'line of output'].join('\n') };
     expect(truncated.output).toContain(handle);
     const events = [
       eventOf(1, { type: 'tool.call', callId: 'r', providerCallId: 'r', name: 'ReadOutput', kind: 'read', title: 'ReadOutput', rawInput: { handle } }),
@@ -350,7 +348,7 @@ describe('HistoryRead output', () => {
     let shown = '';
     let args: Record<string, unknown> = {};
     for (let pages = 0; pages < 20; pages += 1) {
-      const output = outputOf(await run(makeHarness({ maxInlineOutputChars: 1500 }), port, HISTORY_READ_TOOL_NAME, args));
+      const output = outputOf(await run(makeHarness({ outputLimitChars: 1500 }), port, HISTORY_READ_TOOL_NAME, args));
       expect(output.length).toBeLessThanOrEqual(1500);
       const body = output.slice(output.indexOf('<recorded_history>\n') + '<recorded_history>\n'.length, output.indexOf('\n</recorded_history>'));
       shown += args['offset'] === undefined ? body : body.slice('[3] '.length);

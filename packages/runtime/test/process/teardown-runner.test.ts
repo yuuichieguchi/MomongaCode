@@ -78,8 +78,8 @@ describe('runTeardown (fake timers, fake steps)', () => {
     await afterMicrotasks();
 
     expect(started).toEqual(['service', 'mcp-pools']);
-    expect(h.timers.pending().map((timer) => timer.delayMs)).toEqual([0]);
-    h.timers.advance(0);
+    expect(h.timers.pending().map((timer) => timer.delayMs)).toEqual([1]);
+    h.timers.advance(1);
     await afterMicrotasks();
     expect(h.result()).toEqual(['service', 'mcp-pools']);
   });
@@ -140,9 +140,9 @@ describe('runTeardown (fake timers, fake steps)', () => {
     await afterMicrotasks();
     h.timers.advance(10_000);
     await afterMicrotasks();
-    h.timers.advance(0);
+    h.timers.advance(1);
     await afterMicrotasks();
-    h.timers.advance(0);
+    h.timers.advance(1);
     await afterMicrotasks();
 
     expect(h.result()).toEqual(['workers', 'mcp-pools', 'telemetry']);

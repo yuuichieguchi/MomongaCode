@@ -144,3 +144,19 @@ describe('the reflection of a run in the golden run api', () => {
     expect(reads()).toBe(0);
   });
 });
+
+describe('what answered a run in the golden run api', () => {
+  it('takes it from the runtime, which derived it from the pins of the run', async () => {
+    const answered = [{ target: 'opus', adapter: 'anthropic', upstreamModel: 'claude-opus', answers: 'model' as const }];
+    const asked: string[] = [];
+    const client = {
+      runAnsweredBy: async (runId: string) => {
+        asked.push(runId);
+        return { answeredBy: answered };
+      },
+    };
+    const api = goldenRunApi(client as never, undefined, { pendingBoundMs: 1, attemptBoundMs: 1, pollMs: 1, now: () => 0, wait: async () => undefined });
+    expect(await api.answeredBy('run-9')).toEqual(answered);
+    expect(asked).toEqual(['run-9']);
+  });
+});

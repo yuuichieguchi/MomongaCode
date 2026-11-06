@@ -2,13 +2,13 @@ import { parseOutsideJson } from '@momonga/foundation';
 import { asciiLower } from '@momonga/protocol';
 import type { OutputFormatterName } from '@momonga/protocol';
 import { formatGrep } from './grep.ts';
-import { FAILURE_MARKERS, formattingViolations } from './invariants.ts';
+import { formattingViolations } from './invariants.ts';
 import type { FormattingViolation } from './invariants.ts';
 import { formatJson } from './json.ts';
 import { formatLog } from './log.ts';
 import { readClauseOf } from '../tool-output.ts';
 
-export { FAILURE_MARKERS, formattingViolations, formatGrep, formatJson, formatLog };
+export { formattingViolations, formatGrep, formatJson, formatLog };
 export type { FormattingViolation };
 
 export type FormattedOutput = { output: string; formatter: 'log' | 'json' | 'grep'; version: number };
@@ -32,16 +32,22 @@ const parsesAsJson = (output: string): boolean => {
   }
 };
 
-const selectedFormatter = (input: { output: string; tool: { name: string; kind: string }; enabled: readonly OutputFormatterName[] }): FormattedOutput['formatter'] | undefined => {
-  const { output, tool, enabled } = input;
+const selectedFormatter = (input: {
+  output: string;
+  status: 'completed' | 'failed';
+  tool: { name: string; kind: string };
+  enabled: readonly OutputFormatterName[];
+}): FormattedOutput['formatter'] | undefined => {
+  const { output, status, tool, enabled } = input;
   if (tool.name === GREP_TOOL && enabled.includes('grep')) return 'grep';
-  if (enabled.includes('json') && parsesAsJson(output)) return 'json';
+  if (enabled.includes('json') && status === 'completed' && parsesAsJson(output)) return 'json';
   if (enabled.includes('log') && tool.kind === EXECUTE_KIND) return 'log';
   return undefined;
 };
 
 export const formatToolOutput = (input: {
   output: string;
+  status: 'completed' | 'failed';
   tool: { name: string; kind: string };
   enabled: readonly OutputFormatterName[];
   terms: readonly string[];
@@ -53,6 +59,6 @@ export const formatToolOutput = (input: {
   const formatted =
     formatter === 'grep' ? formatGrep(raw) : formatter === 'json' ? formatJson(raw, input.terms.map(asciiLower)) : formatLog(raw);
   if (formatted === undefined) return undefined;
-  if (formattingViolations({ raw, formatted, handle: '', header: formattedHeader(formatter, HANDLE_PLACEHOLDER, input.reader) }).length > 0) return undefined;
+  if (formattingViolations({ raw, formatted, handle: '', header: formattedHeader(formatter, HANDLE_PLACEHOLDER, input.reader), formatter }).length > 0) return undefined;
   return { output: formatted, formatter, version: FORMATTER_VERSIONS[formatter] };
 };

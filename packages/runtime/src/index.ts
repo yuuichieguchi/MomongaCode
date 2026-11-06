@@ -20,6 +20,7 @@ export type {
   RecallCapacity,
   RecallRequest,
   SettingsPort,
+  TargetFacts,
   SkillsPort,
   ToolEnv,
   ToolPolicy,

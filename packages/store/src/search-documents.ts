@@ -1,4 +1,4 @@
-import { HISTORY_OUTPUT_HEAD_CHARS, HISTORY_OUTPUT_TAIL_CHARS, safeSlice } from '@momonga/foundation';
+import { HISTORY_OUTPUT_HEAD_CHARS, HISTORY_OUTPUT_TAIL_CHARS, keepingHeadAndTail } from '@momonga/foundation';
 import type { Redactor } from '@momonga/foundation';
 import { TERMINAL_STATUSES, assistantTextOf } from '@momonga/protocol';
 import { isRecord } from './rows.ts';
@@ -18,11 +18,7 @@ const OUTCOME_LABEL_CHARS = Math.max(...TERMINAL_STATUSES.map((status) => status
 
 export const INDEXED_PAYLOAD_TYPES = ['user.message', 'model.responded', 'tool.call', 'tool.completed'] as const;
 
-const ELISION ='\n…\n';
-const headAndTail = (text: string): string =>
-  text.length <= HISTORY_OUTPUT_HEAD_CHARS + HISTORY_OUTPUT_TAIL_CHARS
-    ? text
-    : `${safeSlice(text, 0, HISTORY_OUTPUT_HEAD_CHARS)}${ELISION}${safeSlice(text, text.length - HISTORY_OUTPUT_TAIL_CHARS, text.length)}`;
+const headAndTail = (text: string): string => keepingHeadAndTail(text, HISTORY_OUTPUT_HEAD_CHARS, HISTORY_OUTPUT_TAIL_CHARS);
 
 const stringField = (record: Record<string, unknown>, key: string): string | undefined => {
   const value = record[key];

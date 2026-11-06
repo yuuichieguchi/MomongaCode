@@ -3,7 +3,6 @@ import {
   CONTEXT_DATASET_FORMAT,
   CONTEXT_REPORT_FORMAT,
   EvalError,
-  buildContextReport,
   caseSettingsFor,
   compareContextReports,
   encodeContextReport,
@@ -14,6 +13,7 @@ import {
 } from '@momonga/eval';
 import type { PolicyOverlay, Transcript } from '@momonga/eval';
 import { contextCase, recorded } from './context-fixtures.ts';
+import { buildReportAs } from './answered-fixtures.ts';
 
 const SCENARIOS = ['a', 'b'] as const;
 
@@ -32,7 +32,7 @@ const MAIN_CODE = 'a'.repeat(64);
 const HEAD_CODE = 'b'.repeat(64);
 
 const reportWith = (policy: PolicyOverlay = {}, codeDigest = MAIN_CODE) =>
-  buildContextReport({ dataset, transcripts: transcripts.map((transcript) => ({ ...transcript, policy, codeDigest })), model: 'real', seed: 1 });
+  buildReportAs({ dataset, transcripts: transcripts.map((transcript) => ({ ...transcript, policy, codeDigest })), model: 'real', seed: 1 });
 
 const EVERY_KEY: PolicyOverlay = {
   context: { cachePrefix: true, outputFormatters: ['log', 'json', 'grep', 'identicalOutput'], loopGuidance: true, observedCapacity: true },
@@ -200,25 +200,25 @@ describe('policies are compared by their effect', () => {
 
   it('builds one report from transcripts whose overlays differ only by defaults', () => {
     const mixed = transcripts.map((transcript, index) => ({ ...transcript, policy: index === 0 ? {} : { tools: { deferral: false } }, codeDigest: MAIN_CODE }));
-    expect(() => buildContextReport({ dataset, transcripts: mixed, model: 'real', seed: 1 })).not.toThrow();
+    expect(() => buildReportAs({ dataset, transcripts: mixed, model: 'real', seed: 1 })).not.toThrow();
   });
 });
 
 describe('the context report format', () => {
-  it('is version 2, which records the policy and the code digest', () => {
-    expect(CONTEXT_REPORT_FORMAT).toBe('momonga-eval-context-report/2');
-    expect(reportWith().format).toBe('momonga-eval-context-report/2');
+  it('is version 3, which records the policy, the code digest and what answered', () => {
+    expect(CONTEXT_REPORT_FORMAT).toBe('momonga-eval-context-report/3');
+    expect(reportWith().format).toBe('momonga-eval-context-report/3');
   });
 
   it('refuses a version 1 report, naming the retired format, the required one and the file, not a schema path', () => {
     const { policy: _policy, codeDigest: _digest, ...rest } = reportWith();
     const retired = JSON.stringify({ ...rest, format: 'momonga-eval-context-report/1' });
     expect(() => parseContextReport(retired, 'base.json')).toThrow(EvalError);
-    expect(() => parseContextReport(retired, 'base.json')).toThrow(/base\.json.*momonga-eval-context-report\/1 .*momonga-eval-context-report\/2/);
+    expect(() => parseContextReport(retired, 'base.json')).toThrow(/base\.json.*momonga-eval-context-report\/1 .*momonga-eval-context-report\/3/);
     expect(() => parseContextReport(retired, 'base.json')).not.toThrow(/required property/);
   });
 
-  it('says a version 1 report is retired and names the off-against-on pair that produces a version 2 base', () => {
+  it('says a version 1 report is retired and names the off-against-on pair that produces a version 3 base', () => {
     const { policy: _policy, codeDigest: _digest, ...rest } = reportWith();
     const retired = JSON.stringify({ ...rest, format: 'momonga-eval-context-report/1' });
     expect(() => parseContextReport(retired, 'base.json')).toThrow(/retired/);
@@ -227,9 +227,9 @@ describe('the context report format', () => {
     expect(() => parseContextReport(retired, 'base.json')).toThrow(/momonga eval compare .*--gate token/);
   });
 
-  it('writes version 2 today, with the policy and the code digest of the runs', () => {
+  it('writes version 3 today, with the policy and the code digest of the runs', () => {
     const stored = JSON.parse(encodeContextReport(reportWith({ context: { cachePrefix: true } }, HEAD_CODE))) as Record<string, unknown>;
-    expect(stored['format']).toBe('momonga-eval-context-report/2');
+    expect(stored['format']).toBe('momonga-eval-context-report/3');
     expect(stored['policy']).toEqual({ context: { cachePrefix: true } });
     expect(stored['codeDigest']).toBe(HEAD_CODE);
   });

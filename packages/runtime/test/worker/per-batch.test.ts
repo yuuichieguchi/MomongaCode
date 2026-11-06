@@ -1,6 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { itemCapFor, inputCeilingFor } from '@momonga/context';
+import { canonicalJson } from '@momonga/foundation';
+import { inputTokensOf, tokensOfText } from './fake-gateway.ts';
 import { capabilitiesFor, makeEnv } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 
@@ -47,19 +50,29 @@ describe('worker re-reads session mode and rules for every batch', () => {
   });
 });
 
-describe('worker inline output limit per batch', () => {
-  it.each([
-    [4000, 2190],
-    [8000, 4380],
-    [100_000, 30_000],
-  ])('derives the inline limit from a %i token window as %i characters', async (contextWindow, expected) => {
-    const env = await makeEnv({ capabilities: capabilitiesFor(contextWindow) });
+describe('worker output fit per batch', () => {
+  it.each([4000, 8000, 100_000])('derives the item cap of a %i token window from the pinned floor and the window', async (contextWindow) => {
+    const capabilities = capabilitiesFor(contextWindow);
+    const env = await makeEnv({ capabilities });
     env.gateway.script.push(callsStep([{ callId: 'call_p_1', name: 'Probe', args: { value: 'budget' } }]), textStep('Probed.'));
     const run = env.enqueue('Probe');
 
     await env.runOnce(env.worker());
 
     expect(env.run(run.id).status).toBe('COMPLETED');
-    expect(env.toolbox.executions.map((execution) => execution.outputBudgetChars)).toEqual([expected]);
+    const [execution] = env.toolbox.executions;
+    if (execution === undefined) throw new Error('expected the Probe execution');
+    const pinnedTokens = inputTokensOf(env.gateway.streams[0]?.body ?? { model: 'fm' });
+    const itemCap = itemCapFor(capabilities, inputCeilingFor(capabilities) - pinnedTokens);
+    const tokensOf = (output: string): number => tokensOfText(canonicalJson({ type: 'function_call_output', call_id: 'output-fit', output }));
+    let low = 1;
+    let high = 8 * itemCap;
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      if (tokensOf('a'.repeat(middle)) <= itemCap) low = middle;
+      else high = middle - 1;
+    }
+    expect(await execution.outputFit.fits('a'.repeat(low))).toBe(true);
+    expect(await execution.outputFit.fits('a'.repeat(low + 4))).toBe(false);
   });
 });

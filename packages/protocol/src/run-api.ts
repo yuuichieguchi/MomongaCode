@@ -7,10 +7,12 @@ import type { PrefixEvent } from './prefix-events.ts';
 import { MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES, REFLECTION_DROP_CAUSES, REFLECTION_JOB_STATES, VALIDITY_CLOSERS } from './memory.ts';
 import type { ContextChargePurpose, SummaryFidelity, SummarySource } from './context-record.ts';
 import { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES } from './permission-denial.ts';
+import { RECOVERY_CAUSES, RECOVERY_OUTCOMES, REPORT_PAGE_ROWS } from './reliability.ts';
 import { FILE_ACCESSES } from './working-facts.ts';
 import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
 import type { ImageMediaType, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent } from './run-types.ts';
 import type { ReflectionJobView } from './memory.ts';
+import type { RunRecovery } from './reliability.ts';
 import type { BilledDetail, TokenAnatomy } from './token-anatomy.ts';
 
 const DRAFT_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
@@ -182,9 +184,69 @@ const billedDetail = closed(
   [],
 );
 
+const recoveryEpisodeView = closed(
+  {
+    ordinal: nonNegativeInteger,
+    cause: enumOf(RECOVERY_CAUSES),
+    failedAt: integer,
+    progressAt: nullable(integer),
+    outcome: enumOf(RECOVERY_OUTCOMES),
+    startedSeq: nonNegativeInteger,
+    progressSeq: nullable(nonNegativeInteger),
+  },
+  ['ordinal', 'cause', 'failedAt', 'progressAt', 'outcome', 'startedSeq', 'progressSeq'],
+);
+
+const runFactsBasis = closed(
+  { readOnly: nonNegativeInteger, rule: nonNegativeInteger, mode: nonNegativeInteger, hook: nonNegativeInteger, classifier: nonNegativeInteger, person: nonNegativeInteger },
+  ['readOnly', 'rule', 'mode', 'hook', 'classifier', 'person'],
+);
+
+const runFactsViewProperties: Record<string, JsonSchema> = {
+  runId: string,
+  rootRunId: string,
+  sessionId: string,
+  definitionsVersion: nonNegativeInteger,
+  modelAlias: string,
+  mode: permissionMode,
+  agent: string,
+  origin: string,
+  status: enumOf(RUN_STATUSES),
+  stopReason: enumOf(STOP_REASONS),
+  createdAt: integer,
+  endedAt: integer,
+  elapsedMs: integer,
+  humanWaitMs: nonNegativeInteger,
+  tokensTotal: nonNegativeInteger,
+  steps: nonNegativeInteger,
+  limits: closed({ maxSteps: nonNegativeInteger, maxTotalTokens: nonNegativeInteger }, []),
+  deadlineAt: integer,
+  asked: nonNegativeInteger,
+  elicited: nonNegativeInteger,
+  authorizationRequired: nonNegativeInteger,
+  sideEffectingCalls: nonNegativeInteger,
+  repeatedStarts: nonNegativeInteger,
+  reconciledAlreadyApplied: nonNegativeInteger,
+  reconciledNotApplied: nonNegativeInteger,
+  reconciledUnknown: nonNegativeInteger,
+  basis: runFactsBasis,
+  declared: boolean,
+  met: boolean,
+  recoveries: { type: 'array', items: recoveryEpisodeView },
+};
+
+const runFactsView = closed(
+  runFactsViewProperties,
+  Object.keys(runFactsViewProperties).filter((key) => key !== 'stopReason' && key !== 'deadlineAt'),
+);
+
 const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { properties: Record<string, JsonSchema>; required: readonly string[] }> = {
   'user.message': { properties: { text: string, images: { type: 'array', items: imageSummary } }, required: ['text'] },
-  'run.started': { properties: { attempt: integer }, required: ['attempt'] },
+  'run.started': {
+    properties: { attempt: integer, recovery: closed({ cause: enumOf(RECOVERY_CAUSES), failedAt: integer }, ['cause', 'failedAt']) },
+    required: ['attempt'],
+  },
+  'attempt.failed': { properties: { attempt: integer, code: string }, required: ['attempt', 'code'] },
   'run.status': {
     properties: { from: enumOf(RUN_STATUSES), to: enumOf(RUN_STATUSES), reason: string },
     required: ['from', 'to'],
@@ -903,6 +965,8 @@ export type ContextChargeView = {
   detail?: BilledDetail;
 };
 
+export type AnsweredByView = { target: string; adapter: string; upstreamModel: string; answers: 'model' | 'script' | 'unknown' };
+export type RunAnsweredByView = { answeredBy: AnsweredByView[] };
 export type RunReflectionView = { job: ReflectionJobView | null; charges: ContextChargeView[]; queuedAhead: number };
 
 export type ContextChargesView = { charges: ContextChargeView[]; totalTokens: number };
@@ -1198,6 +1262,17 @@ export const RUN_API_SCHEMAS = {
   MemoriesResponse: root(closed({ memories: { type: 'array', items: memoryView }, next: nullable(string) }, ['memories'])),
   MemoryResponse: root(closed({ memory: memoryView }, ['memory'])),
   ReflectionResponse: root(closed({ job: nullable(reflectionJobView) }, ['job'])),
+  RunAnsweredBy: root(
+    closed(
+      {
+        answeredBy: {
+          type: 'array',
+          items: closed({ target: string, adapter: { type: 'string' }, upstreamModel: { type: 'string' }, answers: { enum: ['model', 'script', 'unknown'] } }, ['target', 'adapter', 'upstreamModel', 'answers']),
+        },
+      },
+      ['answeredBy'],
+    ),
+  ),
   RunReflection: root(closed({ job: nullable(reflectionJobView), charges: { type: 'array', items: contextChargeView }, queuedAhead: nonNegativeInteger }, ['job', 'charges', 'queuedAhead'])),
   PromoteMemoryRequest: root(closed({ skill: string }, ['skill'])),
   PromoteMemoryResponse: root(closed({ path: string }, ['path'])),
@@ -1265,6 +1340,7 @@ export const RUN_API_SCHEMAS = {
     closed({ error: closed({ type: string, code: string, message: string, param: string }, ['type', 'code', 'message']) }, ['error']),
   ),
   PublicRunEvent: root({ type: 'object', oneOf: EVENT_TYPES.map(publicEventVariant) }),
+  ReportPage: root(closed({ rows: { type: 'array', items: runFactsView, maxItems: REPORT_PAGE_ROWS }, nextCursor: nullable(string) }, ['rows', 'nextCursor'])),
 } as const satisfies Record<string, JsonSchema>;
 
 type ReducedEventType =
@@ -1281,7 +1357,7 @@ type PublicPayload =
   | Exclude<RunEventPayload, { type: ReducedEventType }>
   | { type: 'user.message'; text: string; images?: { mediaType: ImageMediaType; byteLength: number }[] }
   | { type: 'model.requested'; step: number; attempt: number; digest: string; anatomy?: TokenAnatomy; prefix?: Extract<RunEventPayload, { type: 'model.requested' }>['prefix'] }
-  | { type: 'run.started'; attempt: number }
+  | { type: 'run.started'; attempt: number; recovery?: RunRecovery }
   | { type: 'context.compacted'; summary: string; replacedThroughSeq: number; source?: SummarySource; fidelity?: SummaryFidelity; guidelineVersion?: number }
   | { type: 'context.compaction_rejected'; step?: number; attempt?: number }
   | {
@@ -1328,7 +1404,7 @@ export const toPublicRunEvent = (event: RunEvent | SessionEvent): PublicRunEvent
         ...(event.prefix === undefined ? {} : { prefix: event.prefix }),
       };
     case 'run.started':
-      return { ...envelope, type: event.type, attempt: event.attempt };
+      return { ...envelope, type: event.type, attempt: event.attempt, ...(event.recovery === undefined ? {} : { recovery: event.recovery }) };
     case 'context.compacted':
       return {
         ...envelope,
