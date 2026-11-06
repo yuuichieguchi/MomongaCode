@@ -254,6 +254,20 @@ const resolveOllama = (target: OllamaTarget, home: string, where: string): Resol
   ...resolveRemote(target, OLLAMA_CAPABILITY_DEFAULTS, home, where, LOCAL_SERVER_DEFAULTS),
 });
 
+const NATIVE_JSON_ONLY_FORM: Record<Exclude<ModelTarget['adapter'], 'fm'>, boolean> = {
+  'chat-completions': true,
+  'open-responses': true,
+  ollama: true,
+  anthropic: false,
+};
+
+const checkJsonMode = (name: string, target: ModelTarget, source: string): void => {
+  if (target.adapter === 'fm' || target.capabilities?.jsonMode !== 'json_object' || NATIVE_JSON_ONLY_FORM[target.adapter]) return;
+  throw new Error(
+    `${source}: models.targets.${name}: target ${JSON.stringify(name)} declares capabilities.jsonMode json_object, but its adapter ${target.adapter} has no JSON-only request form; declare jsonMode none or remove it`,
+  );
+};
+
 const resolveTarget = (target: ModelTarget, home: string, where: string, warnings: string[]): ResolvedModelTarget => ({
   ...resolveAdapter(target, home, where, warnings),
   ...(target.answers === undefined ? {} : { answers: target.answers }),
@@ -345,6 +359,7 @@ export const resolveModels = (models: ModelsSettings | undefined, { source, home
   for (const [name, target] of configured) {
     const where = `${source}: models.targets.${name}`;
     if (name === UNKNOWN_ANSWERER) throw new Error(`${where} is reserved: ${JSON.stringify(UNKNOWN_ANSWERER)} is the name a run records for a paid answer whose target is unknown; rename the target`);
+    checkJsonMode(name, target, source);
     targets[name] = resolveTarget(target, home, where, warnings);
   }
   checkTargetDialects(targets, dialects, source);
