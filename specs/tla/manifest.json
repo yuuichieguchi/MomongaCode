@@ -2748,6 +2748,255 @@
       "measuredSeconds": 1.61,
       "measuredCpuSeconds": 2.1,
       "budgetCpuSeconds": 8
+    },
+    {
+      "config": "SettingsHealth",
+      "role": "check",
+      "expect": "holds",
+      "args": [
+        "-lncheck",
+        "final"
+      ],
+      "tier": "every-run",
+      "distinctStates": 17858,
+      "measuredSeconds": 17.17,
+      "measuredCpuSeconds": 4.83,
+      "budgetCpuSeconds": 13
+    },
+    {
+      "config": "SettingsHealth.today",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoRunFails",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 165,
+      "measuredSeconds": 2.2,
+      "measuredCpuSeconds": 1.67,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "SettingsHealth.todaySweep",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoReaderThrows",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 15,
+      "measuredSeconds": 2.72,
+      "measuredCpuSeconds": 1.61,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "SettingsHealth.admitFromCache",
+      "role": "evidence",
+      "expect": {
+        "violates": "AdmittedOnlyWhenValid",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 14,
+      "measuredSeconds": 2.45,
+      "measuredCpuSeconds": 1.6,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "SettingsHealth.unnamed",
+      "role": "evidence",
+      "expect": {
+        "violates": "RefusalNamesFile",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 14,
+      "measuredSeconds": 2.55,
+      "measuredCpuSeconds": 1.5,
+      "budgetCpuSeconds": 6
+    },
+    {
+      "config": "SettingsHealth.staleCopy",
+      "role": "evidence",
+      "expect": {
+        "violates": "ReadsCurrent",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 22,
+      "measuredSeconds": 4.42,
+      "measuredCpuSeconds": 1.69,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "SettingsHealth.startBroken",
+      "role": "evidence",
+      "expect": {
+        "violates": "StartReadValid",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 77,
+      "measuredSeconds": 5.8,
+      "measuredCpuSeconds": 1.68,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "SettingsHealth.restartUnkept",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoRunFails",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1450,
+      "measuredSeconds": 6.07,
+      "measuredCpuSeconds": 2.23,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "AutoProbe",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 59354,
+      "measuredSeconds": 3.83,
+      "measuredCpuSeconds": 3.31,
+      "budgetCpuSeconds": 10
+    },
+    {
+      "config": "AutoProbe.twoProbes",
+      "role": "evidence",
+      "expect": {
+        "violates": "SingleProbePerKey",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 9,
+      "measuredSeconds": 2.48,
+      "measuredCpuSeconds": 1.49,
+      "budgetCpuSeconds": 6
+    },
+    {
+      "config": "AutoProbe.processLock",
+      "role": "evidence",
+      "expect": {
+        "violates": "SingleProbePerKey",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 12,
+      "measuredSeconds": 1.9,
+      "measuredCpuSeconds": 1.58,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "AutoProbe.guess",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoGuessedAnswer",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 3,
+      "measuredSeconds": 2.7,
+      "measuredCpuSeconds": 1.58,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "AutoProbe.reject412",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoRecordGets503",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 3,
+      "measuredSeconds": 3.35,
+      "measuredCpuSeconds": 1.69,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "AutoProbe.cachedRecord",
+      "role": "evidence",
+      "expect": {
+        "violates": "RecordSeenAtOnce",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 51,
+      "measuredSeconds": 3.38,
+      "measuredCpuSeconds": 1.61,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "AutoProbe.failWrites",
+      "role": "evidence",
+      "expect": {
+        "violates": "FailedWritesNothing",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 13,
+      "measuredSeconds": 4.71,
+      "measuredCpuSeconds": 1.71,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "AutoProbe.keyAtStart",
+      "role": "evidence",
+      "expect": {
+        "violates": "RecordMatchesKey",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 189,
+      "measuredSeconds": 4.94,
+      "measuredCpuSeconds": 1.75,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "AutoProbe.keyAtStartAsk",
+      "role": "evidence",
+      "expect": {
+        "violates": "RetryAfterIsHonest",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 23,
+      "measuredSeconds": 3.67,
+      "measuredCpuSeconds": 1.77,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "AutoProbe.noTaintCheck",
+      "role": "evidence",
+      "expect": {
+        "violates": "RecordIsClean",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 64,
+      "measuredSeconds": 3.48,
+      "measuredCpuSeconds": 1.68,
+      "budgetCpuSeconds": 7
     }
   ]
 }

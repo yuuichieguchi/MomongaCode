@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { START_MS, harness, makeStoreDir, openStoreAt } from './helpers.ts';
-import { EXPIRES_MS, OPTIONS, awaitingApproval, requestFor } from './approval-fixture.ts';
+import { OPTIONS, awaitingApproval, requestFor } from './approval-fixture.ts';
 
 const fileMode = (file: string) => fs.statSync(file).mode & 0o777;
 const sha256 = (data: string) => createHash('sha256').update(data, 'utf8').digest('hex');
@@ -72,8 +72,9 @@ describe('approvals', () => {
     const { runId, claim, approvals } = awaitingApproval(store, [{ callId: 'c1' }], 'running');
     const [approval] = approvals;
     if (approval === undefined) throw new Error('expected an approval');
-    expect(approval).toMatchObject({ runId, callId: 'c1', status: 'pending', options: OPTIONS, expiresAt: EXPIRES_MS, createdAt: START_MS });
-    const again = requestFor(store, claim, 'c1', START_MS + 99_000);
+    expect(approval).toMatchObject({ runId, callId: 'c1', status: 'pending', options: OPTIONS, createdAt: START_MS });
+    expect(approval).not.toHaveProperty('expiresAt');
+    const again = requestFor(store, claim, 'c1');
     expect(again.id).toBe(approval.id);
     expect(store.approvals.listPending(runId).map((item) => item.id)).toEqual([approval.id]);
     expect(store.approvals.get(approval.id)).toEqual(approval);

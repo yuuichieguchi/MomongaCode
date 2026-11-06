@@ -19,7 +19,6 @@ describe('lines that show text a person did not write', () => {
       callId: 'c1',
       status: 'pending',
       options,
-      expiresAt: 2,
       createdAt: 1,
       reason: HOSTILE,
       toolCall: { callId: 'c1', name: 'Write', title: HOSTILE, kind: 'edit' },

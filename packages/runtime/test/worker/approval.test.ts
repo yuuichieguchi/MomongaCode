@@ -1,12 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { START_MS, makeEnv } from './harness.ts';
+import { makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 
 const REJECTED = 'The user rejected this tool call.';
-const DEFAULT_TTL_MS = 30 * 60 * 1000;
 
 const askToWrite = async (env: Env, target = path.join(env.project, 'out.txt'), limits: Record<string, unknown> = {}) => {
   env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: target, content: 'approved' } }]));
@@ -37,7 +36,8 @@ describe('worker approval request', () => {
 
     const pending = env.store.approvals.listPending(run.id);
     expect(pending).toHaveLength(1);
-    expect(pending[0]).toMatchObject({ id: request.approvalId, callId: env.gateway.callId('call_w_1'), expiresAt: START_MS + DEFAULT_TTL_MS });
+    expect(pending[0]).toMatchObject({ id: request.approvalId, callId: env.gateway.callId('call_w_1') });
+    expect(pending[0]).not.toHaveProperty('expiresAt');
     expect(pending[0]?.options).toEqual(request.options);
 
     expect(env.fold(run.id).pendingCalls[env.gateway.callId('call_w_1')]).toMatchObject({ status: 'awaiting_approval', suggestedRule: `Write(/${target})` });
@@ -76,10 +76,13 @@ describe('worker approval request', () => {
     expect(fs.existsSync(outside)).toBe(false);
   });
 
-  it('uses approvalTtlMs from run.limits for the approval expiry', async () => {
+  it('gives the approval no expiry even when run.limits sets approvalTtlMs', async () => {
     const env = await makeEnv();
-    const { run } = await askToWrite(env, undefined, { approvalTtlMs: 123_000 });
-    expect(env.store.approvals.listPending(run.id)[0]?.expiresAt).toBe(START_MS + 123_000);
+    const { run } = await askToWrite(env, undefined, { approvalTtlMs: 1000 });
+    expect(env.store.approvals.listPending(run.id)[0]).not.toHaveProperty('expiresAt');
+    env.clock.advance(1000);
+    expect(await env.store.expireApprovals(env.clock.now(), (error: unknown) => { throw error; })).toEqual([]);
+    expect(env.run(run.id).status).toBe('WAITING_HUMAN');
   });
 });
 

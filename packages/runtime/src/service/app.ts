@@ -75,6 +75,7 @@ export type RunAppDeps = {
   modelAliases: () => Promise<readonly string[]>;
   modelCapabilities: (alias: string, signal: AbortSignal) => Promise<Capabilities>;
   sessionCreateSettings: (cwd: string) => Promise<SessionCreateSettings>;
+  sessionReadSettings: (cwd: string) => Promise<SessionCreateSettings>;
   skills: SkillsPort;
   agents: AgentCatalogPort;
   evidenceRun: (project: string) => EvidenceRun;
@@ -191,19 +192,23 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     }
   };
 
-  const sessionSettingsOf = async (cwd: string): Promise<SessionCreateSettings> => {
+  const settingsThrough = async (load: (cwd: string) => Promise<SessionCreateSettings>, cwd: string): Promise<SessionCreateSettings> => {
     try {
-      return await deps.sessionCreateSettings(cwd);
+      return await load(cwd);
     } catch (error) {
       if (error instanceof ConfigError) throw configError(error.message);
       throw error;
     }
   };
 
+  const sessionSettingsOf = (cwd: string): Promise<SessionCreateSettings> => settingsThrough(deps.sessionCreateSettings, cwd);
+
+  const sessionReadSettingsOf = (cwd: string): Promise<SessionCreateSettings> => settingsThrough(deps.sessionReadSettings, cwd);
+
   const sessionViewOf = async (session: Session, loaded?: SessionCreateSettings) => {
     const view = toSessionView(store, session);
     if (session.permissionMode !== 'auto') return view;
-    const settings = loaded ?? (await sessionSettingsOf(session.cwd));
+    const settings = loaded ?? (await sessionReadSettingsOf(session.cwd));
     if (settings.autoModeClassifier === undefined || settings.autoModeKey === undefined) return view;
     const autoClassifier = await readAutoClassifierView({ alias: settings.autoModeClassifier, key: settings.autoModeKey, directory: autoFitDirectoryOf(deps.home) });
     return { ...view, autoClassifier };
@@ -266,7 +271,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     requireRootSession(session);
     const body = validateBody<PatchSessionBody>('PatchSessionRequest', await readJson(context.req.raw, PATCH_MEDIA_TYPES, deps.maxBodyBytes));
     if (body.permissionMode !== undefined) {
-      const settings = await sessionSettingsOf(session.cwd);
+      const settings = await sessionReadSettingsOf(session.cwd);
       checkModeAllowed(body.permissionMode, session.bypassAllowed, settings.autoModeClassifier, await gatewayAliases());
     }
     if (body.modelAlias !== undefined && !(await gatewayAliases()).includes(body.modelAlias)) throw invalidRequest(`unknown model alias ${body.modelAlias}`, 'modelAlias');
@@ -340,6 +345,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     if (drained !== undefined) return drained;
     const replayed = replay();
     if (replayed !== undefined) return replayed;
+    await sessionSettingsOf(session.cwd);
     const skill = body.skill === undefined ? undefined : await activationOf(session, body.skill);
     if (body.images !== undefined && body.images.length > 0) {
       let capabilities: Capabilities;

@@ -63,6 +63,18 @@ const setup = (context: CleanupContext, options: SetupOptions = {}) => {
     get: () => {
       throw new Error('get() must not be used by the supervisor');
     },
+    read: () => {
+      throw new Error('read() must not be used by the supervisor');
+    },
+    kept: {
+      recall: () => {
+        throw new Error('the kept copy must not be read by the supervisor');
+      },
+      remember: () => undefined,
+      report: () => {
+        throw new Error('the kept copy must not be reported by the supervisor');
+      },
+    },
     snapshot: () => {
       snapshotCalls += 1;
       calls.push('snapshot');
