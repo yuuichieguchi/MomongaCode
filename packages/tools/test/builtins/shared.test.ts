@@ -75,7 +75,6 @@ describe('createBuiltinTools', () => {
     expect(timeoutOf({ command: 'x' })).toBe(120_000);
     expect(timeoutOf({ command: 'x', timeout: 5000 })).toBe(5000);
     expect(timeoutOf({ command: 'x', timeout: 600_000 })).toBe(600_000);
-    expect(timeoutOf({ command: 'x', timeout: 7_200_000 })).toBe(600_000);
     expect(timeoutOf({ command: 'x', timeout: 7_200_000, run_in_background: true })).toBe(120_000);
   });
 

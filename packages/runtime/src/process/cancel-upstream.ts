@@ -14,11 +14,23 @@ export type CancelUpstreamOptions = {
   timers: ServiceTimers;
 };
 
-const abortionOf = (signal: AbortSignal): Promise<never> =>
-  new Promise<never>((_resolve, reject) => {
-    if (signal.aborted) reject(signal.reason);
-    else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+const abortionOf = (signal: AbortSignal): { aborted: Promise<never>; dispose(): void } => {
+  let onAbort: (() => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    onAbort = () => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
   });
+  return {
+    aborted,
+    dispose: () => {
+      if (onAbort !== undefined) signal.removeEventListener('abort', onAbort);
+    },
+  };
+};
 
 export const createCancelUpstream = ({ store, gatewayClient, timers }: CancelUpstreamOptions): CancelUpstreamTracker => {
   const controller = new AbortController();
@@ -41,7 +53,9 @@ export const createCancelUpstream = ({ store, gatewayClient, timers }: CancelUps
       );
       const entry = tracked.finally(() => void calls.delete(entry));
       calls.add(entry);
-      return signal === undefined ? call : Promise.race([call, abortionOf(signal)]);
+      if (signal === undefined) return call;
+      const abortion = abortionOf(signal);
+      return Promise.race([call, abortion.aborted]).finally(abortion.dispose);
     },
     settle: async (ms) => {
       let handle: unknown;

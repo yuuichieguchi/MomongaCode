@@ -7,6 +7,7 @@ import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { HAS_REAL_SANDBOX, keyFor, noneSandbox } from '../helpers.ts';
 import { approvalOf, isAlive, makeBuiltins, onCleanup, resultOf, trackGroup, trackPid, waitFor } from './fixtures.ts';
 import type { Builtins } from './fixtures.ts';
+import { bashTool, MAX_BACKGROUND_TIMEOUT_MS, MAX_TIMEOUT_MS } from '../../src/builtins/bash.ts';
 
 const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 
@@ -123,6 +124,13 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     fs.mkdirSync(path.join(tools.layout.project, 'sub'));
     resultOf(await bash(tools, 'cd sub; kill -9 $$'));
     expect(tools.session.cwd).toBe(tools.layout.project);
+  });
+
+  it('says the cwd could not be determined when the command replaces the shell', PROCESS_TIMEOUT, async () => {
+    const tools = await makeBuiltins({ realSandbox: true });
+    const result = resultOf(await bash(tools, 'mkdir -p sub && cd sub && exec true'));
+    expect(tools.session.cwd).toBe(tools.layout.project);
+    expect(result.output).toContain('Shell cwd could not be determined and stays at .');
   });
 
   it('does not let a fake marker printed by the command change the cwd', PROCESS_TIMEOUT, async () => {
@@ -379,6 +387,21 @@ describe('Bash admission and metadata', () => {
     const tools = await makeBuiltins();
     const outcome = approvalOf(await tools.run('Bash', { command: 'make test' }));
     expect(outcome.suggestedRule).toBeDefined();
+  });
+
+  it('refuses a foreground timeout above the maximum and names the limit', async () => {
+    const tools = await makeBuiltins();
+    const result = resultOf(await tools.run('Bash', { command: 'true', timeout: 1_800_000 }, { mode: 'bypassPermissions' }));
+    expect(result.status).toBe('failed');
+    expect(result.output).toContain('600000');
+  });
+
+  it('states in the schema the same limits as in the description', () => {
+    const tool = bashTool;
+    const properties = tool.inputSchema['properties'] as Record<string, { description: string }>;
+    expect(properties['timeout']?.description).toContain(String(MAX_TIMEOUT_MS));
+    expect(properties['timeout']?.description).toContain(String(MAX_BACKGROUND_TIMEOUT_MS));
+    expect(tool.description).toContain(String(MAX_TIMEOUT_MS));
   });
 
   it.each([0, 600_001, 1.5])('rejects timeout %s', async (timeout) => {
