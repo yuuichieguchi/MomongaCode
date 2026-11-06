@@ -166,6 +166,7 @@ const mergeStats = (target: CheckStats, source: CheckStats): void => {
   target.unverifiable += source.unverifiable;
   target.crossCheckDisagreements += source.crossCheckDisagreements;
   target.crossCheckCrashes += source.crossCheckCrashes;
+  for (const [name, count] of Object.entries(source.crossCheckExplained)) target.crossCheckExplained[name] = (target.crossCheckExplained[name] ?? 0) + count;
   for (const sample of source.crossCheckSamples) if (target.crossCheckSamples.length < 8) target.crossCheckSamples.push(sample);
   for (const [reason, count] of Object.entries(source.refused)) target.refused[reason] = (target.refused[reason] ?? 0) + count;
   for (const [reason, example] of Object.entries(source.refusedExamples)) if (target.refusedExamples[reason] === undefined) target.refusedExamples[reason] = example;

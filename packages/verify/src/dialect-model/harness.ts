@@ -43,6 +43,7 @@ export interface CheckStats {
   refusedExamples: Record<string, string>;
   crossCheckDisagreements: number;
   crossCheckCrashes: number;
+  crossCheckExplained: Record<string, number>;
   crossCheckSamples: string[];
 }
 
@@ -60,6 +61,7 @@ export const emptyStats = (): CheckStats => ({
   refusedExamples: {},
   crossCheckDisagreements: 0,
   crossCheckCrashes: 0,
+  crossCheckExplained: {},
   crossCheckSamples: [],
 });
 
@@ -113,6 +115,7 @@ const validators = new Validators();
 
 export interface CrossCheck {
   compile(schema: Schema): ((value: Json) => boolean | null) | null;
+  explain?(schema: Schema, instance: Json): string | undefined;
 }
 
 export interface CaseInput {
@@ -174,13 +177,18 @@ const noteRefusal = (stats: CheckStats, refusal: Refused): void => {
 
 const MAX_CROSS_CHECK_SAMPLES = 8;
 
-const noteCrossCheck = (stats: CheckStats, verdictOf: ((value: Json) => boolean | null) | null, side: string, schema: Schema, instance: Json, product: boolean): void => {
+const noteCrossCheck = (stats: CheckStats, crossCheck: CrossCheck, verdictOf: ((value: Json) => boolean | null) | null, side: string, schema: Schema, instance: Json, product: boolean): void => {
   const verdict = verdictOf === null ? null : verdictOf(instance);
   if (verdict === null) {
     stats.crossCheckCrashes += 1;
     return;
   }
   if (verdict === product) return;
+  const explanation = crossCheck.explain?.(schema, instance);
+  if (explanation !== undefined) {
+    stats.crossCheckExplained[explanation] = (stats.crossCheckExplained[explanation] ?? 0) + 1;
+    return;
+  }
   stats.crossCheckDisagreements += 1;
   if (stats.crossCheckSamples.length < MAX_CROSS_CHECK_SAMPLES) stats.crossCheckSamples.push(JSON.stringify({ side, schema: schema ?? null, instance, product, crossCheck: verdict }));
 };
@@ -261,8 +269,8 @@ const checkCaseUnguarded = (input: CaseInput): Failure | null => {
       if (inRendered) stats.validRendered += 1;
     }
     if (stats !== undefined && input.crossCheck !== undefined) {
-      noteCrossCheck(stats, crossOriginal, 'original', original, instance, inOriginal);
-      noteCrossCheck(stats, crossRendered, 'rendered', rendered, instance, inRendered);
+      noteCrossCheck(stats, input.crossCheck, crossOriginal, 'original', original, instance, inOriginal);
+      noteCrossCheck(stats, input.crossCheck, crossRendered, 'rendered', rendered, instance, inRendered);
     }
     if (inRendered && !inOriginal && cls !== 'W') return { kind: 'rendered-accepts-more', instance, detail: 'valid under rendered, invalid under original' };
     if (inOriginal && !inRendered && (cls === 'P' || cls === 'W')) return { kind: 'rendered-rejects-more', instance, detail: 'valid under original, invalid under rendered' };
