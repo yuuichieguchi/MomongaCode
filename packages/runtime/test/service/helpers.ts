@@ -16,6 +16,7 @@ import * as runtime from '@momonga/runtime';
 import type { EvidenceRun, ToolRuntimePort, Worker, WorkerOptions } from '@momonga/runtime';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
+import { journalReaderPreparer } from '../worker/harness.ts';
 import type { Claim, RuntimeStore, Session } from '@momonga/store';
 import { FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
@@ -452,6 +453,7 @@ export const openStore = (dbPath: string, clock: FakeClock, extra: { notifier?: 
     leaseMs: LEASE_MS,
     maxAttempts: extra.maxAttempts ?? 5,
     maxTotalAttempts: 50,
+    preparer: journalReaderPreparer(dbPath),
     ...(extra.notifier === undefined ? {} : { onCommit: (touched: { runId?: string; sessionId: string }[]) => extra.notifier?.onCommit(touched) }),
   } as Parameters<typeof openRuntimeStore>[0]);
   onCleanup(() => store.close());

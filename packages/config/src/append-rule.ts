@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createKeyedSerializer, isRecord, withFileLock, writeFileAtomically } from '@momonga/foundation';
+import { createKeyedSerializer, isRecord, nodeFileSystem, systemRandom, withFileLock, writeFileAtomically } from '@momonga/foundation';
 import type { FileLockPorts } from '@momonga/foundation';
 import { settingsLockPath } from './file-lock.ts';
 import { layoutOf } from './layout.ts';
@@ -52,7 +52,7 @@ export const appendPermissionRule = async ({ home, projectDir, rule, effect, por
         document = read.value;
       }
       if (!addRule(document, file, stored, effect)) return;
-      await writeFileAtomically(file, `${JSON.stringify(document, null, 2)}\n`, { mode: SETTINGS_FILE_MODE, randomHex: ports.randomHex });
+      await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: ports.randomHex }, file, `${JSON.stringify(document, null, 2)}\n`, { mode: SETTINGS_FILE_MODE });
     }, { ports, ...(lockTimeoutMs === undefined ? {} : { timeoutMs: lockTimeoutMs }) }),
   );
 };

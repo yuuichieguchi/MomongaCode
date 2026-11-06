@@ -1,4 +1,4 @@
-import { canonicalJson, computeBackoff, readJsonReply, sha256Hex } from '@momonga/foundation';
+import { computeBackoff, readJsonReply } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { normalizeMemoryText } from '@momonga/memory';
 import { LOWEST_REASONING_EFFORT, jsonReplyOf, summaryTokenCapFor } from '@momonga/protocol';
@@ -6,12 +6,13 @@ import type { BilledDetail, CallTiming, CreateResponseBody, MomongaResponseExten
 import { memoryTextProblem } from '@momonga/tools';
 import type { ContextChargeInput, RuntimeStore, SaveCandidateInput } from '@momonga/store';
 import type { GatewayPort, SettingsPort } from '../ports.ts';
+import { requestKey } from '../model-key.ts';
 import { REQUEUE_BASE_MS, REQUEUE_MAX_MS } from '../process/constants.ts';
 import type { ServiceTimers } from '../service/timers.ts';
 import { readPins } from '../worker/pins.ts';
 import { billedDetailOf, carriesOutput, terminalResultOf } from '../worker/model-stream.ts';
 import type { ModelResult } from '../worker/model-stream.ts';
-import { MemoryEvidenceError, bindMemoryEvidence, readGitHead } from './evidence.ts';
+import { MemoryEvidenceError, bindMemoryEvidence, readGitHead, runFactsOf } from './evidence.ts';
 import type { EvidenceRun } from './evidence.ts';
 import { REFLECTION_INSTRUCTIONS } from './reflection-input.ts';
 import { REFLECTION_REPLY_SCHEMA, validateReflectionReply } from './reflection-reply.ts';
@@ -58,7 +59,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     let firstEventMs: number | undefined;
     const startedAt = clock.now();
     const events = gateway.stream(body, {
-      idempotencyKey: sha256Hex(canonicalJson([runId, 'reflect'])),
+      idempotencyKey: requestKey(runId, 'reflect', body),
       deadlineAt: clock.now() + options.attemptTimeoutMs,
       signal,
       role: 'reflection',
@@ -132,14 +133,17 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       }
       try {
         const evidence = await bindMemoryEvidence({
-          runId,
+          scope: 'project',
           paths,
           project,
           trusted,
-          journal: (resolved) =>
-            store.journalFacts.evidence(
+          facts: async (resolved) =>
+            runFactsOf(
+              runId,
+              await store.journalFacts.evidence(
               { runId, paths: resolved, verificationCommands: verification.commands, ...(onlyCommand === undefined ? {} : { onlyCommand }) },
-              signal,
+                signal,
+              ),
             ),
           head: readHead,
         });

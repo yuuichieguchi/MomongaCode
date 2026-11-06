@@ -19,6 +19,7 @@
     "@momonga/observability": "*",
     "@momonga/policy": "*",
     "@momonga/protocol": "*",
+    "@momonga/reliability": "*",
     "@momonga/sandbox": "*",
     "@momonga/skills": "*",
     "@momonga/store": "*",

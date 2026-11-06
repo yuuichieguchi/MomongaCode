@@ -51,38 +51,38 @@ const failedOutput = async (args: unknown): Promise<string> => {
 };
 
 describe('validation messages', () => {
-  it('returns ok with the parsed value for valid object arguments', () => {
-    expect(validateToolInput(makeTool('Edit', { inputSchema: EDIT_SCHEMA }), { old_string: 'x', edits: [{ mode: 'a' }] })).toEqual({
+  it('returns ok with the parsed value for valid object arguments', async () => {
+    expect(await validateToolInput(makeTool('Edit', { inputSchema: EDIT_SCHEMA }), { old_string: 'x', edits: [{ mode: 'a' }] })).toEqual({
       ok: true,
       value: { old_string: 'x', edits: [{ mode: 'a' }] },
     });
   });
 
-  it('parses valid JSON string arguments into the value', () => {
-    expect(validateToolInput(makeTool('Edit', { inputSchema: EDIT_SCHEMA }), '{"old_string":"x","replace_all":true}')).toEqual({
+  it('parses valid JSON string arguments into the value', async () => {
+    expect(await validateToolInput(makeTool('Edit', { inputSchema: EDIT_SCHEMA }), '{"old_string":"x","replace_all":true}')).toEqual({
       ok: true,
       value: { old_string: 'x', replace_all: true },
     });
   });
 
-  it('returns the model-facing message for invalid input', () => {
-    expect(validateToolInput(makeTool('Edit', { inputSchema: EDIT_SCHEMA }), { old_string: 'x', foo: 1 })).toEqual({
+  it('returns the model-facing message for invalid input', async () => {
+    expect(await validateToolInput(makeTool('Edit', { inputSchema: EDIT_SCHEMA }), { old_string: 'x', foo: 1 })).toEqual({
       ok: false,
       reason: 'invalid',
       message: 'Invalid input for Edit:\n- (root): unknown property "foo"',
     });
   });
 
-  it('returns the JSON parse message for unparsable strings', () => {
-    const result = validateToolInput(makeTool('Edit', { inputSchema: EDIT_SCHEMA }), '{"old_string":');
+  it('returns the JSON parse message for unparsable strings', async () => {
+    const result = await validateToolInput(makeTool('Edit', { inputSchema: EDIT_SCHEMA }), '{"old_string":');
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.message.startsWith('Invalid JSON arguments for Edit: ')).toBe(true);
   });
 
-  it('quotes the full received text after the parse message', () => {
+  it('quotes the full received text after the parse message', async () => {
     const received = `{"old_string":"${'x'.repeat(400)}\n"`;
-    const result = validateToolInput(makeTool('Edit', { inputSchema: EDIT_SCHEMA }), received);
+    const result = await validateToolInput(makeTool('Edit', { inputSchema: EDIT_SCHEMA }), received);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.message.endsWith(`\nReceived: ${received}`)).toBe(true);

@@ -35,7 +35,7 @@ const wrapped = (env: Env) => {
       ...env.store.journalFacts,
       fidelity: async (request: FidelityRequest) => {
         requests.push(structuredClone(request));
-        return { lastSeq: request.throughEventSeq, attested: request.tokens.map((entry) => entry.token), unreadable: [] };
+        return { lastSeq: request.throughEventSeq, attested: request.tokens.map((entry) => entry.token), unreadable: [], checkedThrough: request.throughEventSeq, verdicts: [] };
       },
     },
   } as unknown as RuntimeStore;

@@ -107,13 +107,13 @@ export const nodeContextEffects = (ports: CliPorts): ContextHostEffects => ({
   listRoots: () => listEvalRoots(shortTempBase(ports.platform), ports.platform === 'win32' ? undefined : process.getuid?.()),
   readOwner: (root) => readEvalOwner(ports.files, root),
   sessionEnv: (root) => environmentSnapshot({ home: ports.home, env: caseEnvironment(ports.env, root, ports.platform) }),
-  makeRoot: () => ports.files.makeTempDirectory(ROOT_PREFIX, shortTempBase(ports.platform)),
+  makeRoot: () => ports.files.mkdtemp(path.join(shortTempBase(ports.platform), ROOT_PREFIX)),
   prepare: (paths) => ensureMomongaDirs(paths),
   writeFile: async (file, text) => {
-    await ports.files.ensureDirectory(path.dirname(file));
+    await ports.files.mkdir(path.dirname(file));
     await ports.files.writeText(file, text);
   },
-  makeDirectory: (directory) => ports.files.ensureDirectory(directory),
+  makeDirectory: (directory) => ports.files.mkdir(directory),
   canonical: (directory) => fs.realpath(directory),
   startDaemon: async (root, paths, env) => (await ensureDaemon({ ...ports, home: root, env }, paths, { lifeline: true })).pid,
   daemonHolder: async (paths) => {
@@ -127,7 +127,7 @@ export const nodeContextEffects = (ports: CliPorts): ContextHostEffects => ({
     signalProcess(pid, 'SIGKILL', false);
     if (!(await gone(ports, pid, KILL_WAIT_MS))) throw new Error(`the daemon with pid ${pid} did not stop after SIGTERM and SIGKILL`);
   },
-  remove: (directory) => ports.files.removeTree(directory),
+  remove: (directory) => ports.files.rm(directory, { recursive: true }),
   connect: (paths) => connectRuntime(paths),
   applyStep: (cwd, step) => applyWorkspaceStep(cwd, step),
   now: () => ports.clock.now(),

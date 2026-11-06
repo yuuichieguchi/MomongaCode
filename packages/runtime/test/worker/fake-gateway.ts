@@ -326,6 +326,7 @@ export const createFakeGateway = (capabilities: Capabilities): FakeGateway => {
         output: [item],
         created_at: 1_800_000_000,
         usage: usageOf(10, 5),
+        momonga: { target: targetsOf(request.model)[0] ?? PRIMARY_TARGET },
       };
       return resource;
     },

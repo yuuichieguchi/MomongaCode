@@ -9,6 +9,7 @@ export type FakeTimers = {
   advance(ms: number): void;
   pending(): PendingTimer[];
   now(): number;
+  monotonicMs(): number;
   nextDueAt(): number | undefined;
 };
 
@@ -54,6 +55,7 @@ export const createFakeTimers = (clock: FakeClock): FakeTimers => {
       clock.set(target);
     },
     now: () => clock.now(),
+    monotonicMs: () => clock.now(),
     nextDueAt: () => earliestDue(Number.POSITIVE_INFINITY)?.dueAt,
     pending: () =>
       [...entries.values()].sort((a, b) => a.id - b.id).map(({ id, delayMs, dueAt }) => ({ id, delayMs, dueAt })),

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Ajv2020 from 'ajv/dist/2020.js';
 import { describe, expect, it } from 'vitest';
-import { HOST_RULE_ENFORCEMENT, createRedactor, validateUntrusted } from '@momonga/foundation';
+import { createRedactor, validateUntrusted, ruleEnforcementOf } from '@momonga/foundation';
 import { createAgentsPort, createChildRuns, createGovernancePort, createHistoryPort, createMemoryPort } from '@momonga/runtime';
 import { createNodeSkillFileSystem } from '@momonga/skills';
 import { createBuiltinTools, createToolRegistry } from '@momonga/tools';
@@ -40,7 +40,7 @@ const offeredTools = async (): Promise<readonly AnyTool[]> => {
         },
       },
       memories: createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: unavailableEvidenceRun }),
-      history: createHistoryPort({ store: env.store, settings: env.settings, clock: env.clock, home: env.home, redactor: createRedactor({ credentials: [] }), enforcement: HOST_RULE_ENFORCEMENT }),
+      history: createHistoryPort({ store: env.store, settings: env.settings, clock: env.clock, home: env.home, redactor: createRedactor({ credentials: [] }), enforcement: ruleEnforcementOf('none') }),
       governance: createGovernancePort({ store: env.store, settings: env.settings }),
       agents: createAgentsPort({
         home: env.home,

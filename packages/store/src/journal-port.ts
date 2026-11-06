@@ -14,3 +14,10 @@ export class JournalThreadError extends Error {
     this.name = 'JournalThreadError';
   }
 }
+
+export class FactsRefusedError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'FactsRefusedError';
+  }
+}

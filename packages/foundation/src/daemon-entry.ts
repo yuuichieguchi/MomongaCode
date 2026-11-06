@@ -369,22 +369,56 @@ const flushed = (stream: NodeJS.WriteStream): Promise<void> =>
     stream.write('', () => resolve());
   });
 
+type StandardStream = 'stdout' | 'stderr';
+
+const BROKEN_PIPE = 'EPIPE';
+
 export const nodeEntryIo = (host: NodeJS.Process = process): EntryIo => {
-  host.stdout.on('error', noop);
-  host.stderr.on('error', noop);
-  let lastWriteFailureAt: number | undefined;
+  const openLogFiles = new Set<RotatingLogFile>();
+  const closedStreams = new Set<StandardStream>();
+  const lastReportAt = new Map<string, number>();
+  const withinInterval = (key: string, now: number): boolean => {
+    const last = lastReportAt.get(key);
+    if (last !== undefined && now - last < WRITE_FAILURE_INTERVAL_MS) return true;
+    lastReportAt.set(key, now);
+    return false;
+  };
+  const recordLine = (now: number, level: 'warn' | 'error', msg: string, fields: Readonly<Record<string, unknown>>): string =>
+    `${JSON.stringify({ ts: new Date(now).toISOString(), level, pid: host.pid, msg, ...fields })}\n`;
+  const writeToStderr = (line: string): void => {
+    if (!closedStreams.has('stderr')) host.stderr.write(line);
+  };
   const reportWriteFailure = (error: Error): void => {
     const now = Date.now();
-    if (lastWriteFailureAt !== undefined && now - lastWriteFailureAt < WRITE_FAILURE_INTERVAL_MS) return;
-    lastWriteFailureAt = now;
-    host.stderr.write(`${JSON.stringify({ ts: new Date(now).toISOString(), level: 'error', pid: host.pid, msg: 'logs.write_failed', err: { name: error.name, message: error.message } })}\n`);
+    if (withinInterval('log', now)) return;
+    writeToStderr(recordLine(now, 'error', 'logs.write_failed', { err: { name: error.name, message: error.message } }));
   };
+  const recordStreamFailure = (stream: StandardStream, line: string): void => {
+    for (const file of openLogFiles) file.write(line);
+    if (stream !== 'stderr') writeToStderr(line);
+  };
+  const onStreamError = (stream: StandardStream, error: NodeJS.ErrnoException): void => {
+    const now = Date.now();
+    if (error.code === BROKEN_PIPE) {
+      if (closedStreams.has(stream)) return;
+      closedStreams.add(stream);
+      recordStreamFailure(stream, recordLine(now, 'warn', 'stdio.closed', { stream, code: error.code }));
+      return;
+    }
+    if (withinInterval(`${stream}:${String(error.code)}`, now)) return;
+    recordStreamFailure(stream, recordLine(now, 'error', 'logs.write_failed', { stream, code: error.code, message: error.message }));
+  };
+  host.stdout.on('error', (error: NodeJS.ErrnoException) => onStreamError('stdout', error));
+  host.stderr.on('error', (error: NodeJS.ErrnoException) => onStreamError('stderr', error));
+  const guarded = (stream: StandardStream, target: NodeJS.WriteStream): TextStream => ({
+    write: (chunk) => (closedStreams.has(stream) ? true : target.write(chunk)),
+  });
   return {
     argv: host.argv.slice(2),
     env: host.env,
     home: host.env['HOME'] ?? os.homedir(),
-    stdout: host.stdout,
-    stderr: host.stderr,
+    stdout: guarded('stdout', host.stdout),
+    stderr: guarded('stderr', host.stderr),
     clock: systemClock,
     timers: { setTimeout: (callback, ms) => setTimeout(callback, ms), clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout) },
     onSignal: (signal, handler) => {
@@ -408,7 +442,20 @@ export const nodeEntryIo = (host: NodeJS.Process = process): EntryIo => {
       const hold = setInterval(noop, HOLD_OPEN_INTERVAL_MS);
       return () => clearInterval(hold);
     },
-    logFile: (path) => createRotatingLogFile({ path, maxBytes: LOG_MAX_BYTES, keep: LOG_KEEP, mode: 0o600, onWriteFailure: reportWriteFailure }),
+    logFile: (path) => {
+      const file = createRotatingLogFile({ path, maxBytes: LOG_MAX_BYTES, keep: LOG_KEEP, mode: 0o600, onWriteFailure: reportWriteFailure });
+      openLogFiles.add(file);
+      return {
+        write: (line) => file.write(line),
+        close: () => {
+          openLogFiles.delete(file);
+          file.close();
+        },
+        get droppedLines() {
+          return file.droppedLines;
+        },
+      };
+    },
     exit: (code) => {
       host.exitCode = code;
       const timeout = Promise.withResolvers<void>();

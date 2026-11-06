@@ -1,10 +1,9 @@
 import { Agent, request } from 'undici';
 import { createUdsClient } from '@momonga/foundation';
-import { UPSTREAM_LIVENESS_DEFAULTS } from '../../defaults.ts';
 
 export type UpstreamEndpoint = { kind: 'unix'; socketPath: string } | { kind: 'tcp'; baseUrl: string };
 
-export type UpstreamLiveness = { headersTimeoutMs: number; bodyTimeoutMs: number };
+export type UpstreamLiveness = { headersTimeoutMs: number; idleTimeoutMs: number };
 
 export type EndpointRoute = { label: string; unixPath: string; urlSuffix: string };
 
@@ -35,18 +34,18 @@ const lowercased = (headers: Record<string, string | string[] | undefined>): Rec
   return result;
 };
 
-const unixClient = (socketPath: string, route: EndpointRoute, liveness: UpstreamLiveness): EndpointClient => {
-  const client = createUdsClient(socketPath, liveness);
+const unixClient = (socketPath: string, route: EndpointRoute, liveness: UpstreamLiveness | undefined): EndpointClient => {
+  const client = createUdsClient(socketPath, liveness === undefined ? {} : { headersTimeoutMs: liveness.headersTimeoutMs, bodyTimeoutMs: liveness.idleTimeoutMs });
   return {
     post: ({ subpath, ...options }) => client.request({ method: 'POST', path: `${route.unixPath}${subpath ?? ''}`, ...options }),
     close: () => client.close(),
   };
 };
 
-const tcpClient = (baseUrl: string, route: EndpointRoute, liveness: UpstreamLiveness): EndpointClient => {
+const tcpClient = (baseUrl: string, route: EndpointRoute, liveness: UpstreamLiveness | undefined): EndpointClient => {
   const base = new URL(baseUrl);
   const urlFor = (subpath: string | undefined): URL => new URL(`${base.pathname.replace(/\/+$/, '')}${route.urlSuffix}${subpath ?? ''}`, base.origin);
-  const agent = new Agent({ headersTimeout: liveness.headersTimeoutMs, bodyTimeout: liveness.bodyTimeoutMs });
+  const agent = new Agent(liveness === undefined ? {} : { headersTimeout: liveness.headersTimeoutMs, bodyTimeout: liveness.idleTimeoutMs });
   let closing: Promise<void> | undefined;
   return {
     post: async (options) => {
@@ -74,7 +73,7 @@ export type EndpointPool = {
   close(): Promise<void>;
 };
 
-export const createEndpointPool = (route: EndpointRoute, liveness: UpstreamLiveness = UPSTREAM_LIVENESS_DEFAULTS): EndpointPool => {
+export const createEndpointPool = (route: EndpointRoute, liveness: UpstreamLiveness | undefined): EndpointPool => {
   const clients = new Map<string, EndpointClient>();
   let closed = false;
   return {

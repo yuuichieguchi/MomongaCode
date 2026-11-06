@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { envelopeOf } from '@momonga/protocol';
 import type { FakeRoute } from '@momonga/testkit';
 import { ROOT_PREFIX } from '../packages/cli/src/eval/context-host.ts';
+import { SHORT_TEMP_BASE } from '../packages/cli/src/eval/context-effects.ts';
 import { DEFAULT_KEEP_RECENT_STEPS } from '../packages/context/src/levels.ts';
 import { fitLimitAfterReport, summaryRoute } from './support/budget.ts';
 import { titleOf } from './support/cases.ts';
@@ -158,7 +160,7 @@ describe('momonga eval context live', () => {
     const liveFile = path.join(home.root, 'live.json');
     const replayFile = path.join(home.root, 'replay.json');
 
-    const live = await runCli(home, ['eval', 'context', dataset, '--model', 'fake', '--alias', 'default', '--seed', '7', '--record', recordings, '--report', liveFile], {
+    const live = await runCli(home, ['eval', 'context', dataset, '--alias', 'default', '--seed', '7', '--record', recordings, '--report', liveFile], {
       boundMs: DATASET.cases.length * E2E_RUN_COMPLETED_BOUND_MS,
     });
 
@@ -175,12 +177,18 @@ describe('momonga eval context live', () => {
     expect(byId.get('shell-off')).toMatchObject({ runs: 1, passedRuns: 1 });
     const homesSeen = chatCompletions(fake)
       .filter((request) => asks(request.body, SHELL_TASK))
-      .flatMap((request) => messagesOf(request).filter((message) => message.role === 'tool').map((message) => ({ output: String(message.content), workspace: workspaceOf(request.body) })));
+      .flatMap((request) =>
+        messagesOf(request)
+          .filter((message) => message.role === 'tool')
+          .map((message) => ({ output: String(message.content), callId: String(message.tool_call_id), workspace: workspaceOf(request.body) })),
+      );
     expect(homesSeen).toHaveLength(2);
     for (const seen of homesSeen) {
-      expect(seen.output).not.toBe(home.home);
-      expect(path.basename(seen.output).startsWith(ROOT_PREFIX)).toBe(true);
-      expect(seen.workspace.endsWith(`${path.basename(seen.output)}/w`)).toBe(true);
+      const caseHome = path.join(SHORT_TEMP_BASE, path.basename(path.dirname(seen.workspace)));
+      expect(path.basename(seen.workspace)).toBe('w');
+      expect(path.basename(caseHome).startsWith(ROOT_PREFIX)).toBe(true);
+      expect(caseHome).not.toBe(home.home);
+      expect(seen.output).toBe(envelopeOf({ content: caseHome, callId: seen.callId, tool: 'Bash' }));
     }
     expect(byId.get('long-on')?.compactions).toBeGreaterThanOrEqual(1);
     expect(byId.get('long-on')?.passedRuns).toBe(1);
@@ -201,10 +209,10 @@ describe('momonga eval context live', () => {
     const names = fs.readdirSync(recordings).sort();
     expect(names).toHaveLength(10);
     const header = JSON.parse(fs.readFileSync(path.join(recordings, 'long-on.0.transcript.jsonl'), 'utf8').split('\n')[0] ?? '{}');
-    expect(header).toMatchObject({ format: 'momonga-transcript/4', policy: {}, datasetSeed: 7, run: { modelAlias: 'default' } });
+    expect(header).toMatchObject({ format: 'momonga-transcript/6', policy: {}, datasetSeed: 7, run: { modelAlias: 'default' } });
 
     const callsBefore = chatCompletions(fake).length;
-    const replayed = await runCli(home, ['eval', 'context', dataset, '--replay', recordings, '--model', 'fake', '--report', replayFile]);
+    const replayed = await runCli(home, ['eval', 'context', dataset, '--replay', recordings, '--report', replayFile]);
     expect(replayed.code).toBe(1);
     expect(JSON.parse(fs.readFileSync(replayFile, 'utf8'))).toEqual(report);
     expect(chatCompletions(fake)).toHaveLength(callsBefore);

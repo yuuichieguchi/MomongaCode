@@ -9,7 +9,7 @@ import { capabilitiesFor } from './harness.ts';
 
 const SYSTEM_PROMPT = 'You are the claim test agent.';
 const TASK_TEXT = 'Do the work.';
-const ECHO_TOOL: FunctionTool = { type: 'function', name: 'Echo', description: 'Echo a value', parameters: { type: 'object', properties: {} } };
+const ECHO_TOOL: FunctionTool = { type: 'function', name: 'Echo', description: 'Echo a value', parameters: { type: 'object', properties: {} }, fitRank: 0 } as FunctionTool;
 
 const tokensOf = (value: unknown): number => Math.ceil(canonicalJson(value).length / 4);
 

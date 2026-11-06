@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { HOST_FLAVOUR, HOST_RULE_ENFORCEMENT, compileFileRuleSet, resolveCanonicalPath, volumeIsCaseInsensitive, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { HOST_FLAVOUR, compileFileRuleSet, resolveCanonicalPath, volumeIsCaseInsensitive, EMPTY_PROTECTED_SET, ruleEnforcementOf } from '@momonga/foundation';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
@@ -240,7 +240,7 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000), onWa
       env: {},
       session: { cwd: project, workingDirectory: project, readLedger: new Map() },
       sandbox: unusedSandbox,
-      sandboxPolicy: { writableRoots: [project], writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: compileFileRuleSet([], [project], null, resolveCanonicalPath, volumeIsCaseInsensitive, HOST_FLAVOUR, HOST_RULE_ENFORCEMENT), readDenied: [], network: 'deny' },
+      sandboxPolicy: { writableRoots: [project], writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: compileFileRuleSet([], [project], null, resolveCanonicalPath, volumeIsCaseInsensitive, HOST_FLAVOUR, ruleEnforcementOf('none')), readDenied: [], network: 'deny' },
       deadlineAt: clock.now() + 600_000,
       outputFit: UNBOUNDED_OUTPUT_FIT,
       reconcileFit: UNBOUNDED_OUTPUT_FIT,

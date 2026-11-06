@@ -48,7 +48,7 @@ const declinedForValidator = (view: ElicitationView, key: string, message: strin
   notice: `Elicitation ${JSON.stringify(cleanFailureMessage(key))} of MCP server ${JSON.stringify(cleanFailureMessage(view.server))} was declined: its requestedSchema validator failed: ${message}`,
 });
 
-const acceptedContent = (view: ElicitationView, settings: readonly string[]): Accepted => {
+const acceptedContent = async (view: ElicitationView, settings: readonly string[], signal: AbortSignal): Promise<Accepted> => {
   const [request] = view.requests;
   if (view.requests.length !== 1 || request === undefined) {
     throw new ElicitationUsageError(`elicitation ${view.id} has ${view.requests.length} requests; answer them together with --responses`);
@@ -66,14 +66,14 @@ const acceptedContent = (view: ElicitationView, settings: readonly string[]): Ac
     const text = values.get(field.name);
     if (text === undefined) continue;
     const origin = { server: view.server, key: request.key };
-    const parsed = parseFieldInput(origin, field, text);
+    const parsed = await parseFieldInput(origin, field, text, signal);
     if (!parsed.ok) {
       if (parsed.reason === 'validator-failed') return declinedForValidator(view, request.key, parsed.error);
       throw new ElicitationUsageError(parsed.error);
     }
     if (parsed.value !== undefined) content[field.name] = parsed.value;
   }
-  const check = validateContent({ server: view.server, key: request.key }, request.requestedSchema, content);
+  const check = await validateContent({ server: view.server, key: request.key }, request.requestedSchema, content, signal);
   if (check.kind === 'validator-failed') return declinedForValidator(view, request.key, check.message);
   if (check.kind === 'invalid') throw new ElicitationUsageError(`the answer does not match the request: ${check.message}`);
   return { answer: { action: 'accept', content } };
@@ -92,14 +92,14 @@ const parseResponses = (text: string): Record<string, ElicitationAnswerRecord> =
 
 type Responses = { responses: Record<string, ElicitationAnswerRecord>; notices: string[] };
 
-const responsesFor = (view: ElicitationView, options: ElicitOptions): Responses => {
+const responsesFor = async (view: ElicitationView, options: ElicitOptions, signal: AbortSignal): Promise<Responses> => {
   if (options.responses !== undefined) return { responses: parseResponses(options.responses), notices: [] };
   if (options.decline || options.cancel) {
     const action = options.decline ? 'decline' : 'cancel';
     return { responses: Object.fromEntries(view.requests.map((request) => [request.key, { action }])), notices: [] };
   }
   const [request] = view.requests;
-  const accepted = acceptedContent(view, options.set);
+  const accepted = await acceptedContent(view, options.set, signal);
   return { responses: Object.fromEntries([[request?.key ?? '', accepted.answer]]), notices: accepted.notice === undefined ? [] : [accepted.notice] };
 };
 
@@ -131,7 +131,7 @@ export const elicit = async (ports: CliPorts, paths: MomongaPaths, inputId: stri
       return 0;
     }
     if (options.set.length > 0 && !options.accept) throw new ElicitationUsageError('--set needs --accept');
-    const { responses, notices } = responsesFor(view, options);
+    const { responses, notices } = await responsesFor(view, options, interrupt);
     for (const notice of notices) ports.stderr.write(`${escapeTerminalLine(`momonga: ${notice}`)}\n`);
     const [request] = view.requests;
     if (options.accept && request?.mode === 'url') await ports.openUrl(new URL(request.url), interrupt);

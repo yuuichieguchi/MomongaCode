@@ -1,6 +1,9 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createUserSettingsCache } from '@momonga/config';
-import { MINIMAL_CHILD_PATH } from '@momonga/foundation';
+import { MINIMAL_CHILD_PATH, SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV } from '@momonga/foundation';
 import { waitFor } from '@momonga/testkit';
 import { COLLIDING_CREDENTIAL_DETAIL, definedEnv, gatewayEnv, runtimeEnv } from '../src/child-env.ts';
 import type { CredentialSettings } from '../src/child-env.ts';
@@ -85,6 +88,56 @@ describe('gatewayEnv', () => {
 
   it('gateway HOME comes from the canonical home when the env lacks it', () => {
     expect(gatewayEnv({ PATH: '/bin', LANG: 'C' }, declaring(), '/canonical/home')).toEqual({ PATH: MINIMAL_CHILD_PATH, HOME: '/canonical/home', LANG: 'C' });
+  });
+});
+
+const referencingSecret = (): CredentialSettings =>
+  ({
+    models: { targets: { claude: { adapter: 'anthropic', model: 'm', apiKeySecret: 'anthropic-main' } } },
+  }) as unknown as CredentialSettings;
+
+const binWith = (program: string): string => {
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-sup-bin-')));
+  fs.writeFileSync(path.join(dir, program), '#!/bin/sh\nexit 97\n', { mode: 0o755 });
+  return dir;
+};
+
+describe('gatewayEnv secret store discovery', () => {
+  it('passes the secret-tool found on the user PATH and the D-Bus address, with the minimal PATH', () => {
+    const bin = binWith('secret-tool');
+    try {
+      const bus = 'unix:path=/nonexistent/momonga-test-bus';
+      const env = gatewayEnv({ PATH: bin, HOME: '/home/u', DBUS_SESSION_BUS_ADDRESS: bus, XDG_RUNTIME_DIR: '/run/user/1000' }, referencingSecret(), '/home/u');
+      expect(env[SECRET_BACKEND_ENV]).toBe('secret-service');
+      expect(env[SECRET_PROGRAM_ENV]).toBe(path.join(bin, 'secret-tool'));
+      expect(env['DBUS_SESSION_BUS_ADDRESS']).toBe(bus);
+      expect(env['XDG_RUNTIME_DIR']).toBeUndefined();
+      expect(env['PATH']).toBe(MINIMAL_CHILD_PATH);
+    } finally {
+      fs.rmSync(bin, { recursive: true, force: true });
+    }
+  });
+
+  it('passes no D-Bus address when the chosen store does not declare it', () => {
+    const bin = binWith('security');
+    try {
+      const env = gatewayEnv({ PATH: bin, HOME: '/home/u', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/x' }, referencingSecret(), '/home/u');
+      expect(env[SECRET_BACKEND_ENV]).toBe('keychain');
+      expect(env[SECRET_PROGRAM_ENV]).toBe(path.join(bin, 'security'));
+      expect(env['DBUS_SESSION_BUS_ADDRESS']).toBeUndefined();
+    } finally {
+      fs.rmSync(bin, { recursive: true, force: true });
+    }
+  });
+
+  it('chooses no store when no target references a secret', () => {
+    const bin = binWith('security');
+    try {
+      const env = gatewayEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), '/home/u');
+      expect(env[SECRET_BACKEND_ENV]).toBeUndefined();
+    } finally {
+      fs.rmSync(bin, { recursive: true, force: true });
+    }
   });
 });
 

@@ -153,12 +153,13 @@ describe.each([chatCompletions, anthropic, openResponses, ollama])('JSON reply o
     expect(terminalOf(sent.events)['jsonReply']).toBe('enforced');
   });
 
-  it('refuses a json_object format on either path instead of dropping it, sending nothing', async () => {
+  it('accepts a json_object format on either path instead of refusing it', async () => {
     for (const structuredOutput of ['json_schema', 'none'] as const) {
       const request: AdapterRequest = { ...plain(), text: { format: { type: 'json_object' } } };
       const sent = await surface.send(withOutput(surface.base, structuredOutput), request);
-      expect(sent.error).toMatchObject({ code: 'unsupported_input' });
-      expect(sent.wire).toBeUndefined();
+      expect(sent.error).toBeUndefined();
+      expect(sent.wire).toBeDefined();
+      expect(terminalOf(sent.events)['jsonReply']).toBe('prompt');
     }
   });
 

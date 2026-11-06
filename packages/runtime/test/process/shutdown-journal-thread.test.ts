@@ -26,6 +26,10 @@ vi.mock('../../src/memory/journal-thread-client.ts', async () => {
         identity: options.identity,
         ping: async () => ({ threadId: 1 }),
         request: async () => ({}),
+        inheritPlan: async () => ({ kind: 'none' }),
+        inheritedWindow: async () => {
+          throw new JournalThreadError('a first run of a fresh session has no inherited window');
+        },
         measure: (request: { runId: string }) =>
           new Promise((_resolve, reject) => {
             control.held.push({

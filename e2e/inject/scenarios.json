@@ -1,0 +1,465 @@
+{
+  "format": "momonga-inject/1",
+  "name": "momonga-inject",
+  "scenarios": [
+    {
+      "id": "kill-at-step",
+      "fault": "kill_at_step",
+      "requires": "any",
+      "trials": 3,
+      "task": {
+        "prompt": "Run the six steps in order.",
+        "steps": [
+          {
+            "call": {
+              "name": "Bash",
+              "input": {
+                "command": "echo step-1 >> {ledger}"
+              }
+            }
+          },
+          {
+            "call": {
+              "name": "Bash",
+              "input": {
+                "command": "echo step-2 >> {ledger}"
+              }
+            }
+          },
+          {
+            "call": {
+              "name": "Bash",
+              "input": {
+                "command": "echo step-3 >> {ledger}"
+              }
+            }
+          },
+          {
+            "call": {
+              "name": "Bash",
+              "input": {
+                "command": "echo step-4 >> {ledger}"
+              }
+            }
+          },
+          {
+            "call": {
+              "name": "Bash",
+              "input": {
+                "command": "echo step-5 >> {ledger}"
+              }
+            }
+          },
+          {
+            "call": {
+              "name": "Bash",
+              "input": {
+                "command": "echo step-6 >> {ledger}"
+              }
+            }
+          },
+          {
+            "text": "done"
+          }
+        ]
+      },
+      "effect": "step",
+      "params": {
+        "points": [
+          "model.requested",
+          "tool.started"
+        ]
+      },
+      "expect": {
+        "status": "COMPLETED",
+        "minEpisodes": 1
+      },
+      "pointExpect": {
+        "model.requested": {
+          "episodeOutcomes": [
+            "recovered"
+          ],
+          "reconciled": []
+        },
+        "tool.started": {
+          "episodeOutcomes": [
+            "unknown_effect"
+          ],
+          "reconciled": [
+            "unknown"
+          ]
+        }
+      }
+    },
+    {
+      "id": "kill-after-effect",
+      "fault": "kill_after_effect",
+      "requires": "any",
+      "trials": 3,
+      "task": {
+        "prompt": "Run the command, then report.",
+        "steps": [
+          {
+            "call": {
+              "name": "Bash",
+              "input": {
+                "command": "echo effect-1 >> {ledger}; sleep 600"
+              }
+            }
+          },
+          {
+            "text": "done"
+          }
+        ]
+      },
+      "effect": "effect",
+      "expect": {
+        "status": "COMPLETED",
+        "episodeOutcomes": [
+          "unknown_effect"
+        ],
+        "minEpisodes": 1,
+        "reconciled": [
+          "unknown"
+        ]
+      }
+    },
+    {
+      "id": "network-down",
+      "fault": "network_down",
+      "requires": "any",
+      "trials": 3,
+      "task": {
+        "prompt": "Run the command, then report.",
+        "steps": [
+          {
+            "call": {
+              "name": "Bash",
+              "input": {
+                "command": "echo effect-1 >> {ledger}"
+              }
+            }
+          },
+          {
+            "text": "done"
+          }
+        ]
+      },
+      "effect": "effect",
+      "expect": {
+        "status": "COMPLETED",
+        "episodeOutcomes": [
+          "recovered"
+        ],
+        "minEpisodes": 1,
+        "attemptFailed": true
+      }
+    },
+    {
+      "id": "upstream-stall",
+      "fault": "upstream_stall",
+      "requires": "any",
+      "trials": 3,
+      "task": {
+        "prompt": "Run the command, then report.",
+        "steps": [
+          {
+            "call": {
+              "name": "Bash",
+              "input": {
+                "command": "echo effect-1 >> {ledger}"
+              }
+            }
+          },
+          {
+            "text": "done"
+          }
+        ]
+      },
+      "effect": "effect",
+      "params": {
+        "timeoutMs": 10000
+      },
+      "expect": {
+        "status": "STOPPED",
+        "stopReason": "timeout"
+      }
+    },
+    {
+      "id": "disk-full",
+      "fault": "disk_full",
+      "requires": "linux-container",
+      "trials": 3,
+      "task": {
+        "prompt": "Run the command, then report.",
+        "steps": [
+          {
+            "call": {
+              "name": "Bash",
+              "input": {
+                "command": "echo effect-1 >> {ledger}"
+              }
+            }
+          },
+          {
+            "text": "done"
+          }
+        ]
+      },
+      "effect": "effect",
+      "expect": {
+        "status": "COMPLETED"
+      }
+    },
+    {
+      "id": "rate-limit-inside",
+      "fault": "rate_limit",
+      "requires": "any",
+      "trials": 3,
+      "task": {
+        "prompt": "Run the command, then report.",
+        "steps": [
+          {
+            "call": {
+              "name": "Bash",
+              "input": {
+                "command": "echo effect-1 >> {ledger}"
+              }
+            }
+          },
+          {
+            "text": "done"
+          }
+        ]
+      },
+      "effect": "effect",
+      "params": {
+        "retryAfterWindow": "inside"
+      },
+      "expect": {
+        "status": "COMPLETED"
+      }
+    },
+    {
+      "id": "rate-limit-beyond",
+      "fault": "rate_limit",
+      "requires": "any",
+      "trials": 3,
+      "task": {
+        "prompt": "Run the command, then report.",
+        "steps": [
+          {
+            "call": {
+              "name": "Bash",
+              "input": {
+                "command": "echo effect-1 >> {ledger}"
+              }
+            }
+          },
+          {
+            "text": "done"
+          }
+        ]
+      },
+      "effect": "effect",
+      "params": {
+        "retryAfterWindow": "beyond"
+      },
+      "expect": {
+        "status": "COMPLETED",
+        "episodeOutcomes": [
+          "recovered"
+        ],
+        "minEpisodes": 1,
+        "attemptFailed": true
+      }
+    },
+    {
+      "id": "duplicate-start",
+      "fault": "duplicate_start",
+      "requires": "any",
+      "trials": 3,
+      "task": {
+        "prompt": "Run the command, then report.",
+        "steps": [
+          {
+            "call": {
+              "name": "Bash",
+              "input": {
+                "command": "echo effect-1 >> {ledger}"
+              }
+            }
+          },
+          {
+            "text": "done"
+          }
+        ]
+      },
+      "effect": "effect",
+      "expect": {
+        "status": "COMPLETED"
+      }
+    },
+    {
+      "id": "concurrent-workers",
+      "fault": "concurrent_workers",
+      "requires": "any",
+      "trials": 3,
+      "task": {
+        "prompt": "Run the command, then report.",
+        "steps": [
+          {
+            "call": {
+              "name": "Bash",
+              "input": {
+                "command": "echo effect-1 >> {ledger}"
+              }
+            }
+          },
+          {
+            "text": "done"
+          }
+        ]
+      },
+      "effect": "effect",
+      "params": {
+        "workerCount": 2
+      },
+      "expect": {
+        "status": "COMPLETED",
+        "runStarted": 1
+      }
+    },
+    {
+      "id": "budget-reached",
+      "fault": "budget",
+      "requires": "any",
+      "trials": 3,
+      "task": {
+        "prompt": "Run the command, then report.",
+        "steps": [
+          {
+            "call": {
+              "name": "Bash",
+              "input": {
+                "command": "echo effect-1 >> {ledger}"
+              }
+            }
+          },
+          {
+            "text": "done"
+          }
+        ]
+      },
+      "effect": "effect",
+      "params": {
+        "maxTotalTokens": 1
+      },
+      "expect": {
+        "status": "STOPPED",
+        "stopReason": "budget",
+        "budgetStops": 1
+      }
+    },
+    {
+      "id": "external-state-applied",
+      "fault": "external_state_changed",
+      "requires": "any",
+      "trials": 3,
+      "task": {
+        "prompt": "Write the file, then run the command.",
+        "steps": [
+          {
+            "call": {
+              "name": "Write",
+              "input": {
+                "file_path": "{project}/target.txt",
+                "content": "written\n"
+              }
+            }
+          },
+          {
+            "call": {
+              "name": "Bash",
+              "input": {
+                "command": "echo effect-1 >> {ledger}"
+              }
+            }
+          },
+          {
+            "text": "done"
+          }
+        ]
+      },
+      "effect": "effect",
+      "params": {
+        "change": "applied"
+      },
+      "expect": {
+        "status": "COMPLETED",
+        "episodeOutcomes": [
+          "recovered"
+        ],
+        "minEpisodes": 1,
+        "reconciled": [
+          "already_applied"
+        ],
+        "files": [
+          {
+            "path": "{project}/target.txt",
+            "content": "written\n"
+          }
+        ]
+      }
+    },
+    {
+      "id": "external-state-removed",
+      "fault": "external_state_changed",
+      "requires": "any",
+      "trials": 3,
+      "task": {
+        "prompt": "Write the file, then run the command.",
+        "steps": [
+          {
+            "call": {
+              "name": "Write",
+              "input": {
+                "file_path": "{project}/target.txt",
+                "content": "written\n"
+              }
+            }
+          },
+          {
+            "call": {
+              "name": "Bash",
+              "input": {
+                "command": "echo effect-1 >> {ledger}"
+              }
+            }
+          },
+          {
+            "text": "done"
+          }
+        ]
+      },
+      "effect": "effect",
+      "params": {
+        "change": "removed"
+      },
+      "expect": {
+        "status": "COMPLETED",
+        "episodeOutcomes": [
+          "recovered"
+        ],
+        "minEpisodes": 1,
+        "reconciled": [],
+        "files": [
+          {
+            "path": "{project}/target.txt",
+            "content": "written\n"
+          }
+        ]
+      }
+    }
+  ]
+}

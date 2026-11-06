@@ -9,6 +9,7 @@ const root = path.resolve(import.meta.dirname, '..');
 const packagesDir = path.join(root, 'packages');
 
 const ALL_PACKAGES = [
+  'ata-validator',
   'protocol',
   'foundation',
   'config',
@@ -43,8 +44,9 @@ const rule = (staticDeps: readonly string[], dynamicDeps: readonly string[] = []
 });
 
 const MATRIX: Record<string, PackageRule> = {
+  'ata-validator': rule([]),
   protocol: rule([]),
-  foundation: rule([]),
+  foundation: rule(['ata-validator']),
   config: rule(['protocol', 'foundation']),
   store: rule(['protocol', 'foundation']),
   observability: rule(['protocol', 'foundation']),

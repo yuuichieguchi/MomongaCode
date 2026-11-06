@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { HOST_RULE_ENFORCEMENT, momongaPaths } from '@momonga/foundation';
+import { momongaPaths, ruleEnforcementOf } from '@momonga/foundation';
 import { SandboxPolicyError } from '@momonga/sandbox';
 import type { Sandbox } from '@momonga/sandbox';
 import { fakePolicyFilesystem, withTempDir } from '@momonga/testkit';
@@ -128,7 +128,7 @@ describe('reading memories when the evidence process cannot start', () => {
       const sandbox = failingSandbox(make());
       const env = await startService({
         fakeTimers: true,
-        evidenceRun: createEvidenceRunner({ paths: momongaPaths(home), home, fs: fakePolicyFilesystem(), sandbox, env: {}, enforcement: HOST_RULE_ENFORCEMENT }),
+        evidenceRun: createEvidenceRunner({ paths: momongaPaths(home), home, fs: fakePolicyFilesystem(), sandbox, env: {}, enforcement: ruleEnforcementOf('none') }),
       });
       const { session, run } = await seedCalls(env);
       expect((await env.http('PUT', '/v1/trust', { body: { path: session.cwd, decision: 'trusted' } })).status).toBe(200);
@@ -169,7 +169,7 @@ describe('reading memories when the evidence process cannot start', () => {
     };
     const env = await startService({
       fakeTimers: true,
-      evidenceRun: createEvidenceRunner({ paths: momongaPaths(home), home, fs: fakePolicyFilesystem(), sandbox, env: {}, enforcement: HOST_RULE_ENFORCEMENT }),
+      evidenceRun: createEvidenceRunner({ paths: momongaPaths(home), home, fs: fakePolicyFilesystem(), sandbox, env: {}, enforcement: ruleEnforcementOf('none') }),
     });
     const { session, run } = await seedCalls(env);
     expect((await env.http('PUT', '/v1/trust', { body: { path: session.cwd, decision: 'trusted' } })).status).toBe(200);

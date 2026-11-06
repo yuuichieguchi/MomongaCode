@@ -1,7 +1,8 @@
 import { expect } from 'vitest';
 import { canonicalJson } from '@momonga/foundation';
-import type { InputItem, PermissionMode, RunEvent, RunEventPayload } from '@momonga/protocol';
+import type { InheritedCopyPayload, InputItem, PermissionMode, RunEvent, RunEventPayload } from '@momonga/protocol';
 import type { Run } from '@momonga/store';
+import { FLOOR_TOKENS, UNBOUNDED_WINDOW, withReader } from '../../../store/test/support/reference.ts';
 import { textOf } from './harness.ts';
 import type { Env } from './harness.ts';
 
@@ -41,7 +42,7 @@ export const modeChangedText = (from: PermissionMode, to: PermissionMode): strin
 
 export const MODE_CHANGED_PREFIX = '[The permission mode changed from ';
 
-export type InheritedPayload = Extract<RunEventPayload, { type: 'context.inherited' }>;
+export type InheritedPayload = InheritedCopyPayload;
 
 export type Turn = readonly (string | undefined)[];
 
@@ -72,6 +73,12 @@ export const inheritedEventOf = (env: Env, runId: string): RunEvent & InheritedP
   const found = env.events(runId).filter((event) => event.type === 'context.inherited');
   expect(found, `context.inherited of run ${runId}`).toHaveLength(1);
   return found[0] as unknown as RunEvent & InheritedPayload;
+};
+
+export const resolvedInheritedOf = (env: Env, runId: string): RunEvent & InheritedPayload => {
+  const reference = inheritedEventOf(env, runId);
+  const window = withReader(env.dbPath, (reader) => reader.readInheritedWindow({ runId, windowTokens: UNBOUNDED_WINDOW, floorTokens: FLOOR_TOKENS }));
+  return { ...reference, history: window.entries, evicted: window.evicted, ...(window.summary === undefined ? {} : { summary: window.summary }) } as unknown as RunEvent & InheritedPayload;
 };
 
 export const modeMarkersOf = (history: readonly { item: InputItem }[]): string[] =>

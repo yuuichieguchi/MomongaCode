@@ -27,6 +27,7 @@ describe('protocol capability types', () => {
         maxOutputTokens: number;
         toolCalling: ToolCallingMode | { state: 'needs_probe'; message: string; evidence: string; remedy: string };
         structuredOutput: 'json_schema' | 'none';
+        jsonMode?: 'json_object' | 'none';
         streaming: boolean;
         stopSequences: boolean;
         outputBoundField?: 'max_completion_tokens' | 'max_tokens' | 'max_output_tokens' | 'none';
@@ -108,6 +109,7 @@ describe('protocol capability types', () => {
       guardrail: { errorShape?: unknown };
       tokenCalibration?: { ratio: number; errorBound: number };
       promptCache?: { kind: 'automatic' | 'none' };
+      jsonMode?: 'accepted' | 'refused' | 'unmeasured';
     }>();
   });
 });

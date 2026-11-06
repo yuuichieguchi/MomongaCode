@@ -1,4 +1,4 @@
-import { execFile, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -43,11 +43,19 @@ export const treeCpuSeconds = async (rootPid: number): Promise<number> => {
 
 const liveGroups = new Set<number>();
 
-const killGroup = (pgid: number): void => {
+const liveMembersOf = (pgid: number): number[] =>
+  execFileSync('ps', ['-A', '-o', 'pid=,pgid=,stat='], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+    .split('\n')
+    .map((line) => line.trim().split(/\s+/))
+    .filter(([, group, stat]) => Number(group) === pgid && stat !== undefined && !stat.startsWith('Z'))
+    .map(([pid]) => Number(pid));
+
+export const killGroup = (pgid: number): void => {
   try {
     process.kill(-pgid, 'SIGKILL');
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return;
+    if (liveMembersOf(pgid).length > 0) throw error;
   }
 };
 

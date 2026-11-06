@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { HOST_RULE_ENFORCEMENT, protectedSetFor } from '@momonga/foundation';
+import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import { hostFilesystemOf } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import type { PropertyId, PropertyResult, VerificationReport } from '../src/index.ts';
@@ -133,7 +133,7 @@ describe('round 2, finding 9: a query the solver cannot decide never leaves a pr
         fs: hostFilesystemOf(fileSystem),
         secretLocations: [sshLocation(layout)],
         exemptDirectory: null,
-        enforcement: HOST_RULE_ENFORCEMENT,
+        enforcement: ruleEnforcementOf('none'),
         budgetMs: 120_000,
       });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DAEMON_PROCESS_TEST_TIMEOUT_MS, ENGINE_FAILURE_MESSAGE, FIXTURE_EXTRA_TOOLS_ENV, MCP_MODERN_SERVER_PATH, fakeUsageOfRequest } from '@momonga/testkit';
-import { launchRuntime, readDb, scriptedToolCall, startStack, waitForCondition } from './run-helpers.ts';
+import { launchRuntime, modelSettings, prepareStack, readDb, scriptedToolCall, startGateway, waitForCondition } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
 
 vi.mock('../../../foundation/src/untrusted-engine.ts', async (importOriginal) => {
@@ -10,6 +10,7 @@ vi.mock('../../../foundation/src/untrusted-engine.ts', async (importOriginal) =>
 });
 
 const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
+const WINDOW_HOLDING_EVERY_TOOL = 65_536;
 const THROWING = 'mcp__fx__validator_throws';
 const ENGINE_MESSAGE = ENGINE_FAILURE_MESSAGE;
 const MCP_SETTINGS = { mcpServers: { fx: { command: process.execPath, args: [MCP_MODERN_SERVER_PATH], env: { [FIXTURE_EXTRA_TOOLS_ENV]: 'validator_throws' } } } };
@@ -38,7 +39,9 @@ const offeredToolNames = (body: any): string[] => (Array.isArray(body?.tools) ? 
 
 describe('a run whose MCP tool validator throws while validating (system timers, in-process gateway)', () => {
   it('answers both calls with the unavailable tool error, keeps the offered tool set and completes on its first attempt', PROCESS_TIMEOUT, async () => {
-    const stack = await startStack({ script: [scriptedToolCall(THROWING, {}, 'call_1'), scriptedToolCall(THROWING, {}, 'call_2'), finalAnswer] }, MCP_SETTINGS);
+    const stack = await prepareStack({ script: [scriptedToolCall(THROWING, {}, 'call_1'), scriptedToolCall(THROWING, {}, 'call_2'), finalAnswer], contextWindow: WINDOW_HOLDING_EVERY_TOOL });
+    stack.settings({ ...modelSettings(stack.fake.socketPath, WINDOW_HOLDING_EVERY_TOOL), ...MCP_SETTINGS });
+    await startGateway(stack.temp);
     const launched = await launchRuntime(stack.temp);
     const session = await launched.createSession({ permissionMode: 'bypassPermissions', bypassAllowed: true });
     const run = await launched.createRun(session.id, { input: 'Use the tool twice' });

@@ -32,8 +32,8 @@ const blobText = (page: number, totalBytes: number): string => {
   return `${head}${middle}${'c'.repeat(Math.max(0, totalBytes - head.length - middle.length))}`;
 };
 
-const withoutLastSeq = (reply: FidelityReply): Omit<FidelityReply, 'lastSeq'> => {
-  const { lastSeq: _lastSeq, ...rest } = reply;
+const withoutLastSeq = (reply: FidelityReply): Omit<FidelityReply, 'lastSeq' | 'checkedThrough'> => {
+  const { lastSeq: _lastSeq, checkedThrough: _checkedThrough, ...rest } = reply;
   return rest;
 };
 

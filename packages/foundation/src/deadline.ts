@@ -1,18 +1,7 @@
-export interface DeadlineTiming {
-  now(): number;
-  setTimeout(callback: () => void, ms: number): unknown;
-  clearTimeout(handle: unknown): void;
-}
+import { systemTiming } from './system-timing.ts';
+import type { Timing } from './timing.ts';
 
-export const realDeadlineTiming: DeadlineTiming = {
-  now: () => Date.now(),
-  setTimeout: (callback, ms) => {
-    const timer = setTimeout(callback, ms);
-    timer.unref();
-    return timer;
-  },
-  clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout),
-};
+export type DeadlineTiming = Pick<Timing, 'now' | 'setTimeout' | 'clearTimeout'>;
 
 export class Deadline {
   readonly signal: AbortSignal;
@@ -43,7 +32,7 @@ export class Deadline {
     parent?.addEventListener('abort', this.onParentAbort, { once: true });
   }
 
-  static after(ms: number, timing: DeadlineTiming = realDeadlineTiming): Deadline {
+  static after(ms: number, timing: DeadlineTiming = systemTiming): Deadline {
     return new Deadline(ms, undefined, timing);
   }
 

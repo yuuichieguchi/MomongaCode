@@ -60,7 +60,6 @@ export { QUALITY_METRICS } from './context-quality.ts';
 export type { QualityCell, QualityCells, QualityMetric, QualityMetricName } from './context-quality.ts';
 export {
   CONTEXT_MODELS,
-  modelKindOf,
   CONTEXT_REPORT_FORMAT,
   DEFAULT_DATASET_SEED,
   MAX_DATASET_SEED,
@@ -73,8 +72,8 @@ export {
   parseContextReport,
 } from './context-report.ts';
 export type { BuildContextReportInput, ClusteredProportion, ContextCaseReport, ContextMetrics, ContextModel, ContextReport, ModelDependentMetric, StoppedRun } from './context-report.ts';
-export { GATE_CHECKS, GATE_NAMES, TOKEN_PRIMARY_METRICS, compareContextReports, formatContextComparison } from './context-compare.ts';
-export type { ContextComparison, GateCheck, GateCheckName, GateName, TokenPrimaryMetric } from './context-compare.ts';
+export { CONTEXT_GATE_NAMES, GATE_CHECKS, GATE_NAMES, TOKEN_PRIMARY_METRICS, compareContextReports, formatContextComparison } from './context-compare.ts';
+export type { ContextComparison, ContextGateName, GateCheck, GateCheckName, GateName, TokenPrimaryMetric } from './context-compare.ts';
 export type { RatioMetric } from './token-metrics.ts';
 export { contrastiveCasesOf } from './context-report.ts';
 export type { ContrastiveCase } from './context-report.ts';
@@ -115,5 +114,18 @@ export type {
 } from './context-improve.ts';
 export { ANSWER_KINDS, TRANSCRIPT_FORMAT, TranscriptError, decodeTranscript, encodeTranscript, parsePublicRunEvent } from './transcript.ts';
 export type { AnswerKind, Answerer, RecordedRun, Transcript, TranscriptChild, TranscriptReflection, TranscriptRun } from './transcript.ts';
+export { modelKindOf } from '@momonga/protocol';
 export { loadContextDataset, loadContextReport, loadDataset, loadTranscripts, nodeEvalFiles, saveContextReport, saveTranscript, transcriptFileName } from './files.ts';
 export type { EvalFiles } from './files.ts';
+export { BENCH_DEFAULT_RUNS, BENCH_DIFFICULTIES, BENCH_FORMAT, BENCH_SCHEMA, BENCH_TASK_TYPES, EVIDENCE_KINDS, parseBenchmark, treeDigest } from './bench.ts';
+export type { BenchDifficulty, BenchTask, BenchTaskType, Benchmark, OracleCheck } from './bench.ts';
+export { BENCH_PROBLEMS, gradeTrial, validateBenchmark } from './bench-grade.ts';
+export type { BenchProblem, CheckResult, GradeInput, TaskValidation, TrialGrade, Validation, WorkspaceProbe } from './bench-grade.ts';
+export { buildBenchmarkReport, suiteDigestOf } from './bench-report.ts';
+export type { BenchmarkTrial, BuildBenchmarkReportInput } from './bench-report.ts';
+export { EPISODE_OUTCOMES, INJECTION_FAULTS, INJECT_FORMAT, INJECT_SCHEMA, POINT_EVENT_TYPES, RECONCILE_OUTCOMES, parseInjectionScenarios } from './inject.ts';
+export type { InjectionExpect, InjectionFault, InjectionParams, InjectionScenario, InjectionScenarios, InjectionStep } from './inject.ts';
+export { buildInjectionReport } from './inject-report.ts';
+export type { BuildInjectionReportInput, InjectionTrial } from './inject-report.ts';
+export { compareReliability, formatReliabilityComparison } from './reliability-compare.ts';
+export type { ReliabilityComparison } from './reliability-compare.ts';

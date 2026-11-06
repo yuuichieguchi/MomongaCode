@@ -1,5 +1,6 @@
 import type { Clock, Redactor } from '@momonga/foundation';
 import type { CANCEL_ORIGINS } from './transitions.ts';
+import type { InheritPlanReply, InheritPlanRequest, InheritedWindowReply, InheritedWindowRequest } from './inherit-reference.ts';
 import type {
   BilledDetail,
   Capabilities,
@@ -30,6 +31,8 @@ import type {
   MemoryState,
   MemoryStatus,
   ReflectionDrop,
+  ReportPage, RunCallView,
+  RunFactsView,
   ReflectionJobState,
   StopReason,
   ToolKind,
@@ -454,6 +457,23 @@ export type HistoryReadResult =
   | { kind: 'ok'; runId: string; project: string; origin: MemoryOrigin; events: RunEvent[]; callPaths: Record<string, string[]>; nextSeq: number | null }
   | { kind: 'not_visible' };
 
+export type FactsCursor = { definitionsVersion: number; afterEventId: number };
+
+export type FactsBatch = { runIds: string[]; throughEventId: number };
+
+export type FactsCommit = { rows: readonly RunFactsView[]; calls: readonly RunCallView[]; unavailable: readonly string[]; throughEventId: number };
+
+export type StoredFacts = { kind: 'facts'; facts: RunFactsView } | { kind: 'unavailable' };
+
+export type RunFactsStore = {
+  cursor(): FactsCursor;
+  nextBatch(limit: number): FactsBatch;
+  commit(batch: FactsCommit): void;
+  get(runId: string): StoredFacts | undefined;
+  page(after: string, limit: number): ReportPage;
+  calls(after: { runId: string; callId: string } | null, limit: number): RunCallView[];
+};
+
 export type SearchStore = {
   indexBatch(options: { limit: number; redactor: Redactor; maxChars?: number }): { runs: number };
   visibleProjects(visibility: HistoryVisibility, scope: HistoryScope): string[];
@@ -567,6 +587,8 @@ export type RuntimeStore = {
   startedCallsOf(runId: string): StartedCall[];
   hasNoticeCode(runId: string, code: string): boolean;
   meterRecordOf(sessionId: string, key: MeterKey): MeterRecord | undefined;
+  answeringTargetsOf(runId: string): string[];
+  recordFidelityVerdicts(runId: string, cwd: string, reply: Pick<FidelityReply, 'checkedThrough' | 'verdicts'>): void;
   lastTerminalRootRuns(project: string, limit: number): Run[];
   toolCallNames(rootRunId: string): string[];
   toolOfferedNames(rootRunId: string): string[];
@@ -599,7 +621,7 @@ export type RuntimeStore = {
   approvalView(approvalId: string): ApprovalView | undefined;
   pendingApprovalViews(runId: string): ApprovalView[];
   writeSnapshot(claim: Claim, seq: number, state: RunState): SnapshotResult;
-  inheritContext(claim: Claim, options: { mode: PermissionMode }): InheritContextResult;
+  inheritContext(claim: Claim, options: { mode: PermissionMode; facts?: Pick<JournalFacts, 'inheritPlan'> }): Promise<InheritContextResult>;
   dataVersion(): number;
   createChildRun(input: ChildRunInput): CreateChildRunResult;
   listChildRuns(runId: string): Run[];
@@ -617,6 +639,7 @@ export type RuntimeStore = {
   guidelines: GuidelineStore;
   governing: GoverningFactStore;
   search: SearchStore;
+  runFacts: RunFactsStore;
   readonly journalFacts: JournalFacts;
   close(): void;
 };
@@ -666,9 +689,33 @@ export type ReflectionInputReply = { lastSeq: number; input: string };
 
 export type FidelityRequest = { runId: string; throughEventSeq: number; cwd: string; tokens: readonly ClaimedToken[] };
 
-export type FidelityReply = { lastSeq: number; attested: string[]; unreadable: { handle: string; reason: string }[] };
+export const VERDICT_RANKS = ['none', 'stated', 'executed'] as const;
+
+export type VerdictRank = (typeof VERDICT_RANKS)[number];
+
+export type FidelityVerdict = {
+  token: string;
+  inh: VerdictRank;
+  inhDeps: string[];
+  taskStated: boolean;
+  statedAt: number | null;
+  executedAt: number | null;
+  ownDeps: string[];
+};
+
+export type FidelityVerdictRow = FidelityVerdict & { checkedThrough: number };
+
+export type FidelityReply = {
+  lastSeq: number;
+  attested: string[];
+  unreadable: { handle: string; reason: string }[];
+  checkedThrough: number;
+  verdicts: FidelityVerdict[];
+};
 
 export type JournalFacts = {
+  inheritPlan(request: InheritPlanRequest, signal?: AbortSignal): Promise<InheritPlanReply>;
+  inheritedWindow(request: InheritedWindowRequest, signal?: AbortSignal): Promise<InheritedWindowReply>;
   verdict(request: VerdictRequest, signal?: AbortSignal): Promise<VerdictReply>;
   evidence(request: EvidenceRequest, signal?: AbortSignal): Promise<EvidenceReply>;
   reflectionInput(request: ReflectionInputRequest, signal?: AbortSignal): Promise<ReflectionInputReply>;

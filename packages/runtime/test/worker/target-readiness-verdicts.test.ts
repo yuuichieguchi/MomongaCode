@@ -14,7 +14,7 @@ const runToEnd = async (env: Env, runId: string): Promise<void> => {
 
 const DESIGN_R3 = 'a notice at session start: "This model cannot call tools. MomongaCode will answer without reading or changing files."';
 
-const DESIGN_R1_UNAVAILABLE = 'target unreachable or a precondition failure at `capabilities()` | `unavailable` (carries the gateway\'s reason)';
+const DESIGN_R1_UNAVAILABLE = 'a precondition failure at `capabilities()`: the target refused definitely, for example a model that does not exist | `unavailable` (carries the gateway\'s reason)';
 
 describe(`the session-start surface owns the no-tools notice (design R3: ${DESIGN_R3})`, () => {
   it('a tool-less run journals no no-tools notice of its own, so no surface shows the verdict twice', async () => {
@@ -30,7 +30,7 @@ describe(`the session-start surface owns the no-tools notice (design R3: ${DESIG
   });
 });
 
-describe(`admission reads a failed capabilities() as unavailable (design R1: ${DESIGN_R1_UNAVAILABLE})`, () => {
+describe(`admission reads a definite refusal at capabilities() as unavailable (design R1: ${DESIGN_R1_UNAVAILABLE})`, () => {
   it('ends the run FAILED target_not_ready with the unavailable verdict message and remedy, and sends nothing', async () => {
     const reason = 'the target "local" is not ready: its endpoint answered 412 to the capability read';
     const env = await makeEnv();

@@ -1,15 +1,23 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import { emptyWorkingFacts, findDanglingOutput, findUnpairedCalls, inheritedWorkingFacts } from '@momonga/protocol';
+import { emptyWorkingFacts, findDanglingOutput, findUnpairedCalls, inheritedWorkingFacts, isInheritedReference } from '@momonga/protocol';
 import { hasConsistentSeqs } from './seqs.ts';
-import type { InputItem, PermissionMode, RunEventPayload, RunState, StopReason, TerminalStatus } from '@momonga/protocol';
+import type { InheritedCopyPayload, InheritedReferencePayload, InheritedSynthesisEntry, InheritedViaLink, InputItem, PermissionMode, RunEventPayload, RunState, StopReason, TerminalStatus } from '@momonga/protocol';
 
-export type InheritedPayload = Extract<RunEventPayload, { type: 'context.inherited' }>;
+export type InheritedPayload = InheritedCopyPayload;
+
+export type ReferencePayload = InheritedReferencePayload;
+
+export type UnsignedReference = Omit<InheritedReferencePayload, 'digest'>;
+
+export const isReferenceInherited = isInheritedReference;
 
 export type InheritanceOutcome = { status: TerminalStatus; stopReason?: StopReason; errorCode?: string; carriedSkills?: readonly string[] };
 
 export type InheritanceKind = { kind: 'final'; currentMode: PermissionMode } | { kind: 'intermediate' };
 
-export type InheritanceErrorCode = 'previous_run_unreadable' | 'previous_run_inconsistent';
+export const INHERITANCE_ERROR_CODES = ['previous_run_unreadable', 'previous_run_inconsistent'] as const;
+
+export type InheritanceErrorCode = (typeof INHERITANCE_ERROR_CODES)[number];
 
 export class InheritanceError extends Error {
   readonly code: InheritanceErrorCode;
@@ -84,7 +92,7 @@ const userMarker = (text: string): InputItem => ({ type: 'message', role: 'user'
 const inconsistent = (previous: RunState, detail: string): InheritanceError =>
   new InheritanceError('previous_run_inconsistent', `run ${previous.runId}: ${detail}`);
 
-const digestOf = (payload: Pick<InheritedPayload, 'history' | 'nextItemSeq' | 'summary' | 'evicted' | 'mode' | 'activatedSkills' | 'workingFacts'>): string =>
+export const copyDigestOf = (payload: Pick<InheritedPayload, 'history' | 'nextItemSeq' | 'summary' | 'evicted' | 'mode' | 'activatedSkills' | 'workingFacts'>): string =>
   sha256Hex(
     canonicalJson({
       history: payload.history,
@@ -111,12 +119,32 @@ const assertPaired = (previous: RunState, history: readonly HistoryEntry[]): voi
   if (dangling !== undefined) throw inconsistent(previous, `output of call ${dangling.callId} at seq ${dangling.seq} has no call`);
 };
 
-export const projectInheritance = (previous: RunState, outcome: InheritanceOutcome, kind: InheritanceKind): InheritedPayload => {
+type Projection = {
+  history: HistoryEntry[];
+  retracted: boolean;
+  omitSeqs: number[];
+  synthesised: InheritedSynthesisEntry[];
+  closures: InheritedPayload['closures'];
+  markers: InheritedPayload['markers'];
+  partial: InheritedPayload['partial'];
+  nextItemSeq: number;
+  mode: PermissionMode | undefined;
+  activatedSkills: InheritedPayload['activatedSkills'];
+};
+
+const lastResponseStart = (previous: RunState, history: readonly HistoryEntry[]): number => {
+  const calls = previous.lastResponse?.callIds ?? [];
+  const start = history.findIndex((entry) => entry.item.type === 'function_call' && calls.includes(entry.item.call_id));
+  return start < 0 ? history.length : start;
+};
+
+const projectionOf = (previous: RunState, outcome: InheritanceOutcome, kind: InheritanceKind, pairing: 'whole' | 'last_response'): Projection => {
   const retracted = retractsTask(previous, outcome);
   const dropped = outcome.status === 'FAILED' && outcome.errorCode === 'pinned_overflow' && previous.step === 0;
   if (dropped && outcome.carriedSkills === undefined) throw inconsistent(previous, 'the skills carried into a step-0 pinned_overflow run are not known');
-  const activatedSkills = dropped ? previous.activatedSkills.filter((skill) => outcome.carriedSkills?.includes(skill.name) === true) : previous.activatedSkills;
+  const carriedSkills = dropped ? previous.activatedSkills.filter((skill) => outcome.carriedSkills?.includes(skill.name) === true) : previous.activatedSkills;
   const history: HistoryEntry[] = previous.history.filter((entry) => !retracted || entry.seq !== previous.taskSeq).map((entry) => ({ ...entry }));
+  const synthesised: InheritedSynthesisEntry[] = [];
   const closures: InheritedPayload['closures'] = [];
   const markers: InheritedPayload['markers'] = [];
   let nextItemSeq = previous.nextItemSeq;
@@ -126,6 +154,7 @@ export const projectInheritance = (previous: RunState, outcome: InheritanceOutco
     const seq = nextItemSeq;
     nextItemSeq += 1;
     history.push({ seq, item: userMarker(text) });
+    synthesised.push({ seq, item: userMarker(text) });
     markers.push({ seq, kind: markerKind });
   };
 
@@ -133,30 +162,33 @@ export const projectInheritance = (previous: RunState, outcome: InheritanceOutco
     const index = history.findIndex((entry) => entry.seq === previous.taskSeq);
     if (index < 0) throw inconsistent(previous, `the task at seq ${previous.taskSeq} is missing from a step-0 history`);
     history[index] = { seq: previous.taskSeq, item: userMarker(MARKER_TEXT.dropped) };
+    synthesised.push({ seq: previous.taskSeq, item: userMarker(MARKER_TEXT.dropped) });
     markers.push({ seq: previous.taskSeq, kind: 'dropped' });
   }
 
-  assertPaired(previous, history);
-  for (const { callId } of findUnpairedCalls(history)) {
+  const pairedFrom = pairing === 'whole' ? 0 : lastResponseStart(previous, history);
+  assertPaired(previous, history.slice(pairedFrom));
+  for (const { callId } of findUnpairedCalls(history.slice(pairedFrom))) {
     const started = previous.pendingCalls[callId]?.status === 'started';
     const seq = nextItemSeq;
     nextItemSeq += 1;
-    history.push({
+    const entry = {
       seq,
-      item: { type: 'function_call_output', call_id: callId, output: started ? startedText(outcome) : notExecutedText(outcome) },
+      item: { type: 'function_call_output' as const, call_id: callId, output: started ? startedText(outcome) : notExecutedText(outcome) },
       callId,
-    });
+    };
+    history.push(entry);
+    synthesised.push({ ...entry, item: { ...entry.item } });
     closures.push({ callId, seq, effect: started ? 'unknown' : 'not_executed', announced: previous.pendingCalls[callId] !== undefined });
   }
-  if (findUnpairedCalls(history).length > 0) throw inconsistent(previous, 'a call is still without an output after closing');
+  if (findUnpairedCalls(history.slice(pairedFrom)).length > 0) throw inconsistent(previous, 'a call is still without an output after closing');
 
   const text = partialText(previous);
   if (text !== '') {
     partial = { seq: nextItemSeq };
-    history.push({
-      seq: nextItemSeq,
-      item: { type: 'message', role: 'assistant', status: 'incomplete', content: [{ type: 'output_text', text, annotations: [] }] },
-    });
+    const item: InputItem = { type: 'message', role: 'assistant', status: 'incomplete', content: [{ type: 'output_text', text, annotations: [] }] };
+    history.push({ seq: nextItemSeq, item });
+    synthesised.push({ seq: nextItemSeq, item });
     nextItemSeq += 1;
   }
 
@@ -171,6 +203,23 @@ export const projectInheritance = (previous: RunState, outcome: InheritanceOutco
     addMarker('mode_changed', modeChangedText(previous.mode, kind.currentMode));
   }
 
+  const omitSeqs = retracted || dropped ? [previous.taskSeq] : [];
+  return {
+    history,
+    retracted,
+    omitSeqs,
+    synthesised,
+    closures,
+    markers,
+    partial,
+    nextItemSeq,
+    mode,
+    activatedSkills: carriedSkills.length === 0 ? undefined : carriedSkills.map(({ name, content }) => ({ name, content })),
+  };
+};
+
+export const projectInheritance = (previous: RunState, outcome: InheritanceOutcome, kind: InheritanceKind): InheritedPayload => {
+  const { history, retracted, closures, markers, partial, nextItemSeq, mode, activatedSkills } = projectionOf(previous, outcome, kind, 'whole');
   const unsigned: Omit<InheritedPayload, 'digest'> = {
     type: 'context.inherited',
     fromRunId: previous.runId,
@@ -185,10 +234,74 @@ export const projectInheritance = (previous: RunState, outcome: InheritanceOutco
     markers,
     ...(previous.mode === undefined ? {} : { fromMode: previous.mode }),
     ...(mode === undefined ? {} : { mode }),
-    ...(activatedSkills.length === 0 ? {} : { activatedSkills: activatedSkills.map(({ name, content }) => ({ name, content })) }),
+    ...(activatedSkills === undefined ? {} : { activatedSkills }),
   };
-  return { ...unsigned, digest: digestOf(unsigned) };
+  return { ...unsigned, digest: copyDigestOf(unsigned) };
 };
+
+export type ReferenceSource = {
+  fromRunId: string;
+  fromLastSeq: number;
+  fromNextItemSeq: number;
+  compaction?: { runId: string; eventSeq: number };
+  via: InheritedViaLink[];
+  itemCount: number;
+};
+
+export type ReferenceProjection = { unsigned: UnsignedReference; link: Omit<InheritedViaLink, 'runId' | 'lastSeq'> };
+
+export const projectReference = (previous: RunState, outcome: InheritanceOutcome, kind: InheritanceKind, source: ReferenceSource): ReferenceProjection => {
+  const { retracted, omitSeqs, synthesised, closures, markers, partial, nextItemSeq, mode, activatedSkills } = projectionOf(previous, outcome, kind, 'last_response');
+  const unsigned: UnsignedReference = {
+    type: 'context.inherited',
+    form: 'reference',
+    fromRunId: source.fromRunId,
+    fromLastSeq: source.fromLastSeq,
+    nextItemSeq,
+    fromNextItemSeq: source.fromNextItemSeq,
+    ...(source.compaction === undefined ? {} : { compaction: source.compaction }),
+    omitSeqs,
+    synthesised,
+    via: source.via,
+    itemCount: source.itemCount,
+    workingFacts: inheritedWorkingFacts(previous.workingFacts, !retracted),
+    closures,
+    ...(partial === undefined ? {} : { partial }),
+    markers,
+    ...(previous.mode === undefined ? {} : { fromMode: previous.mode }),
+    ...(mode === undefined ? {} : { mode }),
+    ...(activatedSkills === undefined ? {} : { activatedSkills }),
+  };
+  return { unsigned, link: { nextItemSeq, omitSeqs, synthesised } };
+};
+
+const REFERENCE_FIELDS = [
+  'type',
+  'form',
+  'fromRunId',
+  'fromLastSeq',
+  'nextItemSeq',
+  'fromNextItemSeq',
+  'compaction',
+  'omitSeqs',
+  'synthesised',
+  'via',
+  'itemCount',
+  'workingFacts',
+  'closures',
+  'partial',
+  'markers',
+  'fromMode',
+  'mode',
+  'activatedSkills',
+] as const satisfies readonly (keyof UnsignedReference)[];
+
+export const referenceDigest = (unsigned: UnsignedReference): string =>
+  sha256Hex(canonicalJson(Object.fromEntries(REFERENCE_FIELDS.flatMap((field) => (unsigned[field] === undefined ? [] : [[field, unsigned[field]]])))));
+
+export const referencePayload = (reference: InheritedReferencePayload): RunEventPayload => reference;
+
+export const signReference = (unsigned: UnsignedReference): InheritedReferencePayload => ({ ...unsigned, digest: referenceDigest(unsigned) });
 
 export const applyInheritance = (state: RunState, payload: InheritedPayload): RunState => {
   const task = state.history[0];
@@ -202,7 +315,7 @@ export const applyInheritance = (state: RunState, payload: InheritedPayload): Ru
   ) {
     throw new Error(`run ${state.runId}: context.inherited must follow the task of a run that has not started and has not inherited`);
   }
-  if (digestOf(payload) !== payload.digest) {
+  if (copyDigestOf(payload) !== payload.digest) {
     throw new Error(`run ${state.runId}: context.inherited digest does not match its content`);
   }
   const history = [...payload.history, { ...task, seq: payload.nextItemSeq }];
@@ -230,4 +343,57 @@ export const applyInheritance = (state: RunState, payload: InheritedPayload): Ru
     ...(payload.summary === undefined ? {} : { summary: payload.summary }),
     ...(payload.mode === undefined ? {} : { mode: payload.mode }),
   };
+};
+
+type RebasedShape = Pick<InheritedReferencePayload, 'nextItemSeq' | 'workingFacts' | 'activatedSkills' | 'mode'>;
+
+export const rebaseOntoReference = (state: RunState, shape: RebasedShape, inherited: NonNullable<RunState['inherited']>): RunState => {
+  const task = state.history[0];
+  if (
+    state.inherited !== undefined ||
+    state.history.length !== 1 ||
+    task === undefined ||
+    task.seq !== 1 ||
+    state.taskSeq !== 1 ||
+    state.step !== 0
+  ) {
+    throw new Error(`run ${state.runId}: context.inherited must follow the task of a run that has not started and has not inherited`);
+  }
+  const { summary: _summary, mode: _mode, ...rest } = state;
+  const carried = shape.activatedSkills ?? [];
+  return {
+    ...rest,
+    activatedSkills: [
+      ...carried.map((skill) => ({ ...skill, seq: state.lastSeq + 1 })),
+      ...state.activatedSkills.filter((skill) => !carried.some((entry) => entry.name === skill.name)),
+    ],
+    history: [{ ...task, seq: shape.nextItemSeq }],
+    workingFacts: {
+      ...(shape.workingFacts ?? emptyWorkingFacts()),
+      ...(state.workingFacts.taskText === undefined ? {} : { taskText: state.workingFacts.taskText }),
+      itemEvents: state.workingFacts.itemEvents.map((entry) => ({ itemSeq: shape.nextItemSeq, eventSeq: entry.eventSeq })),
+    },
+    nextItemSeq: shape.nextItemSeq + 1,
+    taskSeq: shape.nextItemSeq,
+    evicted: [],
+    inherited,
+    ...(shape.mode === undefined ? {} : { mode: shape.mode }),
+  };
+};
+
+export const inheritedScalarsOf = (payload: InheritedReferencePayload): NonNullable<RunState['inherited']> => ({
+  fromRunId: payload.fromRunId,
+  fromLastSeq: payload.fromLastSeq,
+  digest: payload.digest,
+  form: 'reference',
+  fromNextItemSeq: payload.fromNextItemSeq,
+  ...(payload.compaction === undefined ? {} : { compaction: payload.compaction }),
+  itemCount: payload.itemCount,
+});
+
+export const applyReferenceInheritance = (state: RunState, payload: InheritedReferencePayload): RunState => {
+  if (referenceDigest(payload) !== payload.digest) {
+    throw new Error(`run ${state.runId}: context.inherited digest does not match its content`);
+  }
+  return rebaseOntoReference(state, payload, inheritedScalarsOf(payload));
 };

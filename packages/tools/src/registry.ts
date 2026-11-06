@@ -2,7 +2,7 @@ import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { modelVisibleTools } from '@momonga/policy';
 import type { PermissionRule } from '@momonga/policy';
 import { MAX_TOOL_NAME_CHARS } from '@momonga/protocol';
-import type { FunctionTool, PermissionMode, ReferenceKind } from '@momonga/protocol';
+import type { FitRankedFunctionTool, PermissionMode, ReferenceKind } from '@momonga/protocol';
 import { compileToolSchemas } from './validate.ts';
 import { TOOL_TIERS } from './types.ts';
 import type { AnyTool } from './types.ts';
@@ -29,7 +29,7 @@ export type ToolSet = {
   get(name: string): AnyTool | undefined;
   readonly companions: ReadonlyMap<string, string>;
   readerOf(kind: ReferenceKind): string | undefined;
-  forModel(options: { mode: PermissionMode; rules: PermissionRule[]; conciseDescriptions?: boolean }): FunctionTool[];
+  forModel(options: { mode: PermissionMode; rules: PermissionRule[]; conciseDescriptions?: boolean }): FitRankedFunctionTool[];
 };
 
 export type ToolRegistry = {
@@ -80,8 +80,44 @@ const conciseSchemaOf = (tool: AnyTool): Record<string, unknown> => {
 
 const tierRankOf = (tool: AnyTool): number => TOOL_TIERS.indexOf(tool.tier ?? 'common');
 
+const compareNames = (left: string, right: string): number => {
+  const leftPoints = [...left].map((character) => character.codePointAt(0)!);
+  const rightPoints = [...right].map((character) => character.codePointAt(0)!);
+  for (let index = 0; index < Math.min(leftPoints.length, rightPoints.length); index += 1) {
+    const difference = leftPoints[index]! - rightPoints[index]!;
+    if (difference !== 0) return difference;
+  }
+  return leftPoints.length - rightPoints.length;
+};
+
+type PlacedTool = { tool: AnyTool; tier: number; chain: readonly string[] };
+
+const placementsOf = (tools: readonly AnyTool[]): PlacedTool[] => {
+  const byName = new Map(tools.map((tool) => [tool.name, tool]));
+  const placementOf = (tool: AnyTool, seen: ReadonlySet<string>): { tier: number; chain: string[] } => {
+    const host = tool.companionOf === undefined ? undefined : byName.get(tool.companionOf);
+    if (host === undefined || seen.has(host.name)) return { tier: tierRankOf(tool), chain: [tool.name] };
+    const placed = placementOf(host, new Set([...seen, tool.name]));
+    return { tier: placed.tier, chain: [...placed.chain, tool.name] };
+  };
+  return tools.map((tool) => ({ tool, ...placementOf(tool, new Set<string>()) }));
+};
+
+const comparePlacements = (left: PlacedTool, right: PlacedTool): number => {
+  if (left.tier !== right.tier) return left.tier - right.tier;
+  for (let index = 0; index < Math.min(left.chain.length, right.chain.length); index += 1) {
+    const difference = compareNames(left.chain[index]!, right.chain[index]!);
+    if (difference !== 0) return difference;
+  }
+  return left.chain.length - right.chain.length;
+};
+
+const placedInFitOrder = (tools: readonly AnyTool[]): PlacedTool[] => placementsOf(tools).sort(comparePlacements);
+
 const buildToolSet = (tools: readonly AnyTool[], notices: readonly string[], authorizationRequired: readonly string[]): ToolSet => {
-  const frozenTools = Object.freeze([...tools].sort((left, right) => tierRankOf(left) - tierRankOf(right)));
+  const placed = placedInFitOrder(tools);
+  const frozenTools = Object.freeze(placed.map(({ tool }) => tool));
+  const tierOf = new Map(placed.map(({ tool, tier }) => [tool.name, TOOL_TIERS[tier]!]));
   const frozenNotices = Object.freeze([...notices]);
   const byName = new Map(frozenTools.map((tool) => [tool.name, tool]));
   return {
@@ -97,7 +133,7 @@ const buildToolSet = (tools: readonly AnyTool[], notices: readonly string[], aut
       const concise = conciseDescriptions === true;
       return frozenTools
         .filter((tool) => visible.has(tool.name))
-        .map((tool) => {
+        .map((tool, index) => {
           const useConcise = concise && hasConciseVariant(tool);
           return {
             type: 'function',
@@ -105,6 +141,8 @@ const buildToolSet = (tools: readonly AnyTool[], notices: readonly string[], aut
             description: useConcise ? conciseDescriptionOf(tool) : tool.description,
             parameters: useConcise ? conciseSchemaOf(tool) : tool.inputSchema,
             strict: false,
+            fitRank: index,
+            fitTier: tierOf.get(tool.name)!,
           };
         });
     },
@@ -114,11 +152,8 @@ const buildToolSet = (tools: readonly AnyTool[], notices: readonly string[], aut
 export const extendToolSet = (toolSet: ToolSet, tool: AnyTool): ToolSet => {
   if (toolSet.get(tool.name) !== undefined) throw new Error(`duplicate tool name ${JSON.stringify(tool.name)}`);
   assertRegistrable(tool);
-  return {
-    ...toolSet,
-    tools: [...toolSet.tools, tool],
-    get: (name) => (name === tool.name ? tool : toolSet.get(name)),
-  };
+  const rebuilt = buildToolSet([...toolSet.tools, tool], toolSet.notices, toolSet.authorizationRequired);
+  return { ...rebuilt, digest: toolSet.digest };
 };
 
 export const createToolRegistry = (): ToolRegistry => {

@@ -1,7 +1,7 @@
 import { QUALITY_METRICS, buildContextReport } from '@momonga/eval';
 import type { ContextReport, Transcript } from '@momonga/eval';
 
-export type Answerer = { target: string; adapter: string; upstreamModel: string; answers: 'model' | 'script' | 'unknown' };
+export type Answerer = { target: string; adapter?: string; upstreamModel?: string; answers: 'model' | 'script' | 'unknown' };
 
 export const REAL_TARGET: Answerer = { target: 'opus', adapter: 'anthropic', upstreamModel: 'claude-opus', answers: 'model' };
 
@@ -10,6 +10,8 @@ export const OTHER_REAL_TARGET: Answerer = { target: 'sonnet', adapter: 'anthrop
 export const SCRIPTED_TARGET: Answerer = { target: 'scripted', adapter: 'chat-completions', upstreamModel: 'fake-model', answers: 'script' };
 
 export const UNDECLARED_TARGET: Answerer = { target: 'local-llama', adapter: 'ollama', upstreamModel: 'llama3', answers: 'unknown' };
+
+export const UNKNOWN_ANSWERER: Answerer = { target: 'unknown', answers: 'unknown' };
 
 export const answeredBy = (transcript: Transcript, ...answerers: Answerer[]): Transcript => ({ ...transcript, answeredBy: answerers }) as Transcript;
 

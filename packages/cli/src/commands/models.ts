@@ -16,6 +16,7 @@ const toolCallingText = (capabilities: AliasCapabilities): string => {
 const describeCapabilities = (capabilities: AliasCapabilities): string[] => [
   `    context window: ${capabilities.contextWindow}, max output: ${capabilities.maxOutputTokens}`,
   `    tool calling: ${toolCallingText(capabilities)}, parallel tool calls: ${capabilities.parallelToolCalls === undefined ? 'unknown' : yesNo(capabilities.parallelToolCalls)}, structured output: ${capabilities.structuredOutput}`,
+  `    JSON-only mode: ${capabilities.jsonMode ?? 'not measured'}`,
   `    image input: ${yesNo(capabilities.imageInput)}, streaming: ${yesNo(capabilities.streaming)}, stop sequences: ${yesNo(capabilities.stopSequences)}`,
   `    token counting: ${capabilities.tokenCounting}, usage reported: ${yesNo(capabilities.usageReported)}, max concurrency: ${capabilities.maxConcurrency}`,
   `    ${capabilities.schemaDialect === undefined ? '' : `schema dialect: ${capabilities.schemaDialect}, `}source: ${capabilities.source}${capabilities.probedAt === undefined ? '' : ` (probed ${capabilities.probedAt})`}`,

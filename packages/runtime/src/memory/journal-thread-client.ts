@@ -1,7 +1,21 @@
 import { MessageChannel, Worker, receiveMessageOnPort } from 'node:worker_threads';
 import type { MessagePort } from 'node:worker_threads';
-import { JournalThreadError, blobDirectoryOf } from '@momonga/store';
-import type { ContributionMeasured, ContributionPreparer, EvidenceReply, FidelityReply, RecordedCheck, RecordedHash, ReflectionInputReply, VerdictFact, VerdictReply } from '@momonga/store';
+import type { RunCallView, RunFactsRecord, RunFactsView } from '@momonga/protocol';
+import { FactsRefusedError, InheritanceError, JournalThreadError, blobDirectoryOf } from '@momonga/store';
+import type {
+  ContributionMeasured,
+  ContributionPreparer,
+  EvidenceReply,
+  FidelityReply,
+  InheritPlanReply,
+  InheritedWindowReply,
+  RecordedCheck,
+  RecordedHash,
+  ReflectionInputReply,
+  VerdictFact,
+  VerdictReply,
+} from '@momonga/store';
+import { INHERITANCE_ERROR_CODES, VERDICT_RANKS } from '@momonga/store';
 import { JOURNAL_THREAD_CODE } from './journal-thread-code.generated.ts';
 
 export type JournalThreadTimers = {
@@ -23,10 +37,11 @@ export type JournalThreadClient = ContributionPreparer & {
   readonly identity: { readonly dev: number; readonly ino: number };
   request(request: { readonly kind: string } & Readonly<Record<string, unknown>>): Promise<JournalThreadReply>;
   ping(): Promise<{ readonly threadId: number }>;
+  runFacts(runId: string): Promise<RunFactsRecord>;
   close(): Promise<void>;
 };
 
-type Pending = { readonly resolve: (reply: JournalThreadReply) => void; readonly reject: (error: JournalThreadError) => void };
+type Pending = { readonly resolve: (reply: JournalThreadReply) => void; readonly reject: (error: Error) => void };
 
 type Live = {
   readonly worker: Worker;
@@ -102,13 +117,74 @@ const reflectionInputOf = (reply: JournalThreadReply): ReflectionInputReply => {
   return { lastSeq: lastSeqOf(reply, 'reflection_input'), input };
 };
 
+const isInheritanceCode = (code: unknown): code is (typeof INHERITANCE_ERROR_CODES)[number] => INHERITANCE_ERROR_CODES.some((candidate) => candidate === code);
+
+const asInheritanceError = (error: unknown): unknown => {
+  if (!(error instanceof JournalThreadError) || !isRecord(error.cause) || error.cause['name'] !== 'InheritanceError') return error;
+  const { code, message } = error.cause;
+  return isInheritanceCode(code) ? new InheritanceError(code, String(message)) : error;
+};
+
+const isWalked = (entry: unknown): boolean => isRecord(entry) && typeof entry['runId'] === 'string' && typeof entry['lastSeq'] === 'number' && typeof entry['status'] === 'string';
+
+const inheritPlanOf = (reply: JournalThreadReply): InheritPlanReply => {
+  const { kind, payload, walked, reason } = reply;
+  if (kind === 'none' || kind === 'already') return { kind };
+  if (kind === 'conflict') {
+    if (typeof reason !== 'string') throw new JournalThreadError('journal thread inherit_plan reply carries a conflict without a reason');
+    return { kind, reason };
+  }
+  if (kind !== 'ready' || !isRecord(payload) || payload['form'] !== 'reference' || !Array.isArray(walked) || !walked.every(isWalked)) {
+    throw new JournalThreadError('journal thread inherit_plan reply is malformed');
+  }
+  return { kind, payload, walked } as InheritPlanReply;
+};
+
+const isWindowEntry = (entry: unknown): boolean => isRecord(entry) && typeof entry['seq'] === 'number' && (isRecord(entry['item']) || (typeof entry['callId'] === 'string' && typeof entry['handle'] === 'string' && typeof entry['tokens'] === 'number'));
+
+const inheritedWindowOf = (reply: JournalThreadReply): InheritedWindowReply => {
+  const { entries, evicted, omittedOlder, summary } = reply;
+  if (!Array.isArray(entries) || !entries.every(isWindowEntry)) throw new JournalThreadError('journal thread inherited_window reply carries malformed entries');
+  if (!Array.isArray(evicted) || !evicted.every((callId) => typeof callId === 'string')) throw new JournalThreadError('journal thread inherited_window reply carries malformed evicted ids');
+  if (typeof omittedOlder !== 'boolean') throw new JournalThreadError('journal thread inherited_window reply carries no boolean omittedOlder');
+  if (summary !== undefined && !(isRecord(summary) && typeof summary['summary'] === 'string' && typeof summary['replacedThroughSeq'] === 'number' && isRecord(summary['item']))) {
+    throw new JournalThreadError('journal thread inherited_window reply carries a malformed summary');
+  }
+  return { lastSeq: lastSeqOf(reply, 'inherited_window'), ...(summary === undefined ? {} : { summary }), entries, evicted, omittedOlder } as InheritedWindowReply;
+};
+
 const isUnreadable = (entry: unknown): entry is FidelityReply['unreadable'][number] => isRecord(entry) && typeof entry['handle'] === 'string' && typeof entry['reason'] === 'string';
 
+const isHandles = (value: unknown): value is string[] => Array.isArray(value) && value.every((handle) => typeof handle === 'string');
+
+const isVerdict = (entry: unknown): entry is FidelityReply['verdicts'][number] =>
+  isRecord(entry) &&
+  typeof entry['token'] === 'string' &&
+  VERDICT_RANKS.some((rank) => rank === entry['inh']) &&
+  isHandles(entry['inhDeps']) &&
+  typeof entry['taskStated'] === 'boolean' &&
+  (entry['statedAt'] === null || typeof entry['statedAt'] === 'number') &&
+  (entry['executedAt'] === null || typeof entry['executedAt'] === 'number') &&
+  isHandles(entry['ownDeps']);
+
 const fidelityOf = (reply: JournalThreadReply): FidelityReply => {
-  const { attested, unreadable } = reply;
+  const { attested, unreadable, checkedThrough, verdicts } = reply;
+  if (typeof checkedThrough !== 'number') throw new JournalThreadError('journal thread fidelity reply carries no checkedThrough');
+  if (!Array.isArray(verdicts) || !verdicts.every(isVerdict)) throw new JournalThreadError('journal thread fidelity reply carries malformed verdicts');
   if (!Array.isArray(attested) || !attested.every((token) => typeof token === 'string')) throw new JournalThreadError('journal thread fidelity reply carries malformed attested tokens');
   if (!Array.isArray(unreadable) || !unreadable.every(isUnreadable)) throw new JournalThreadError('journal thread fidelity reply carries malformed unreadable blobs');
-  return { lastSeq: lastSeqOf(reply, 'fidelity'), attested, unreadable };
+  return { lastSeq: lastSeqOf(reply, 'fidelity'), attested, unreadable, checkedThrough, verdicts };
+};
+
+const runFactsOf = (reply: JournalThreadReply, runId: string): RunFactsRecord => {
+  const { facts, calls } = reply;
+  if (!isRecord(facts) || facts['runId'] !== runId || typeof facts['definitionsVersion'] !== 'number' || !Array.isArray(facts['recoveries'])) {
+    throw new JournalThreadError(`journal thread runFacts reply carries malformed facts for run ${runId}`);
+  }
+  if (!Array.isArray(calls) || !calls.every((call) => isRecord(call) && call['runId'] === runId && typeof call['callId'] === 'string' && typeof call['asked'] === 'boolean')) {
+    throw new JournalThreadError(`journal thread runFacts reply carries malformed call rows for run ${runId}`);
+  }
+  return { facts: facts as RunFactsView, calls: calls as RunCallView[] };
 };
 
 export const startJournalThread = async (options: JournalThreadOptions): Promise<JournalThreadClient> => {
@@ -198,7 +274,12 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
     const cause = message['error'];
     const name = isRecord(cause) ? String(cause['name']) : 'Error';
     const text = isRecord(cause) ? String(cause['message']) : String(cause);
-    request.reject(new JournalThreadError(`journal thread request failed: ${text}`, { cause: { name, message: text } }));
+    if (isRecord(cause) && cause['refusal'] === true) {
+      request.reject(new FactsRefusedError(text, { cause: { name, message: text } }));
+      return;
+    }
+    const code = isRecord(cause) && typeof cause['code'] === 'string' ? cause['code'] : undefined;
+    request.reject(new JournalThreadError(`journal thread request failed: ${text}`, { cause: { name, message: text, ...(code === undefined ? {} : { code }) } }));
   };
 
   const drain = (live: Live): boolean => {
@@ -294,8 +375,26 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
   const reflectionInput: JournalThreadClient['reflectionInput'] = async ({ runId, project, capabilities }) =>
     reflectionInputOf(await request({ kind: 'reflection_input', runId, project, capabilities }));
 
+  const inheritPlan: JournalThreadClient['inheritPlan'] = async ({ runId, mode }) => {
+    try {
+      return inheritPlanOf(await request({ kind: 'inherit_plan', runId, mode }));
+    } catch (error) {
+      throw asInheritanceError(error);
+    }
+  };
+
+  const inheritedWindow: JournalThreadClient['inheritedWindow'] = async ({ runId, windowTokens, floorTokens }) => {
+    try {
+      return inheritedWindowOf(await request({ kind: 'inherited_window', runId, windowTokens, floorTokens }));
+    } catch (error) {
+      throw asInheritanceError(error);
+    }
+  };
+
   const fidelity: JournalThreadClient['fidelity'] = async ({ runId, throughEventSeq, cwd, tokens }) =>
     fidelityOf(await request({ kind: 'fidelity', runId, throughEventSeq, cwd, tokens }));
+
+  const runFacts: JournalThreadClient['runFacts'] = async (runId) => runFactsOf(await request({ kind: 'runFacts', runId }), runId);
 
   const close = (): Promise<void> => {
     closePromise ??= (async () => {
@@ -307,5 +406,5 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
   };
 
   await liveThread();
-  return { identity, request, ping, measure, verdict, evidence, reflectionInput, fidelity, close };
+  return { identity, request, ping, runFacts, measure, verdict, evidence, reflectionInput, fidelity, inheritPlan, inheritedWindow, close };
 };

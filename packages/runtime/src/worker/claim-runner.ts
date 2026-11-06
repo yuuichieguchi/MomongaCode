@@ -1,7 +1,7 @@
 import { agentSystemPrompt, readAgentPin } from '@momonga/agents';
 import { permissionRulesComposerFor } from '../governance/rules.ts';
 import { signalUntil } from '../memory/deadline-signal.ts';
-import { createTokenMeter, readerNamesOf, withCalibration } from '@momonga/context';
+import { createTokenMeter, inheritanceWindowFor, readerNamesOf, withCalibration } from '@momonga/context';
 import type { TokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex } from '@momonga/foundation';
 import { REFERENCE_KINDS, RUN_STATUSES, TARGET_NOT_READY, TERMINAL_STATUSES, agentReadiness, readinessText } from '@momonga/protocol';
@@ -12,7 +12,7 @@ import type { ClaimContext, Flow, RunMemory, Terminals } from './claim-context.t
 import { reconcileStartedCalls, releaseWaitingOnCancel } from './cancel-recovery.ts';
 import { startClaimControl } from './claim-control.ts';
 import type { ClaimControl } from './claim-control.ts';
-import { dispositionOf } from './gateway-policy.ts';
+import { dispositionOf, observedCodeOf } from './gateway-policy.ts';
 import { heartbeatMsFor } from './heartbeat.ts';
 import { describeError, LeaseLostError, ShutdownError } from './errors.ts';
 import { meteredOutputFit, reconcileOutputFit } from './output-fit.ts';
@@ -246,6 +246,7 @@ const requeueOrStop = async (
   }
   memory.streak += 1;
   if (disposition.kind === 'requeue' && disposition.interrupted) memory.interruptions += 1;
+  journal.append([{ type: 'attempt.failed', attempt: claim.leaseToken, code: observedCodeOf(cause), retryAt: availableAt, limit: options.store.maxTotalAttempts }]);
   terminals.yieldTo('QUEUED', availableAt, refund ? { refundAttempt: true } : undefined);
 };
 
@@ -264,7 +265,7 @@ const drive = async (
   const session = store.getSession(run.sessionId);
   if (session === undefined) throw new Error(`unknown session ${run.sessionId}`);
   if (journal.state.inherited === undefined) {
-    const inherited = store.inheritContext(claim, { mode: session.permissionMode });
+    const inherited = await store.inheritContext(claim, { mode: session.permissionMode, facts: store.journalFacts });
     if (inherited.kind === 'lease_lost') control.lost();
     if (inherited.kind === 'conflict') throw new Error(`the context of run ${run.id} could not be inherited: ${inherited.reason ?? 'conflict'}`);
     if (inherited.kind !== 'none') journal.sync();
@@ -408,6 +409,15 @@ const drive = async (
   if (firstTarget === undefined || firstCapabilities === undefined) throw new Error(`the gateway lists no target for the model ${pins.modelAlias}`);
   const aliasCounter = counterOf(firstTarget);
   const aliasMeterCapabilities = withCalibration(pins.capabilities, firstCapabilities);
+  if (journal.needsWindow()) {
+    const targetCapabilitiesOf = (target: string): Capabilities => {
+      const capabilities = listing.targetCapabilities[target];
+      if (capabilities === undefined) throw new Error(`the gateway lists no capabilities for the target ${target} of the model ${pins.modelAlias}`);
+      return capabilities;
+    };
+    const windowTargets = [aliasMeterCapabilities, ...listing.targets.slice(1).map(targetCapabilitiesOf)];
+    journal.installWindow(await store.journalFacts.inheritedWindow({ runId: run.id, ...inheritanceWindowFor(windowTargets) }, control.signal));
+  }
   const token = tokenPolicyOf(pins.token);
   const aliasMeter = createTokenMeter({
     counter: { count: (request) => control.recordingRaised(gateway.countTokens(request, { signal: control.signal })) },
@@ -435,8 +445,10 @@ const drive = async (
   const fallbackMeters = token.observedCapacity
     ? (await Promise.all(listing.targets.filter((target) => target !== firstTarget).map(factsOf))).map((facts) => facts.meter)
     : [];
+  const loading = token.deferred === undefined ? undefined : createToolLoading(() => ctx);
+  const offeredSet = loading === undefined ? toolSet : extendToolSet(toolSet, createLoadToolsTool(loading));
   const visibleNow = (): FunctionTool[] =>
-    toolLess ? [] : toolSet.forModel({ mode: session.permissionMode, rules: composeRules(), conciseDescriptions: token.conciseDescriptions });
+    toolLess ? [] : offeredSet.forModel({ mode: session.permissionMode, rules: composeRules(), conciseDescriptions: token.conciseDescriptions });
   const claimVisible = token.cachePrefix ? visibleNow() : undefined;
   const jobRunningNow = (): boolean => options.store.jobs.listForSession(session.id).some((job) => job.status === 'running');
   const childRunLive = (): boolean => options.store.listRuns(session.id, LIVE_RUN_STATUSES).some((live) => live.parentRunId !== null && live.id !== run.id);
@@ -447,10 +459,9 @@ const drive = async (
       const name = toolSet.readerOf(kind);
       return name === undefined ? [] : [[kind, name] as const];
     }));
-  const loading = token.deferred === undefined ? undefined : createToolLoading(() => ctx);
   const offerNow = (loaded: readonly string[] = journal.state.loadedTools): ToolOffer =>
     offerFor({
-      toolSet,
+      toolSet: offeredSet,
       visible: claimVisible === undefined ? visibleNow() : [...claimVisible],
       deferred: token.deferred,
       loaded,
@@ -468,7 +479,7 @@ const drive = async (
     ...(pins.memoryShare === undefined ? {} : { memoryShare: pins.memoryShare }),
     ...(pinnedGuideline === undefined ? {} : { guideline: pinnedGuideline }),
     limits,
-    toolSet: loading === undefined ? toolSet : extendToolSet(toolSet, createLoadToolsTool(loading)),
+    toolSet: offeredSet,
     ...(loading === undefined ? {} : { toolLoading: loading }),
     skills,
     recalled,

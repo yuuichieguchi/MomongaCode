@@ -1,10 +1,15 @@
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { ClaimOutcome, HeldKernelLock, KernelLockMechanism } from './kernel-lock.ts';
 import { lstatIdentity, sameFile } from './file-identity.ts';
 import type { LockFileIdentity } from './file-identity.ts';
 import { readHolderFile, readHolderFileSync, writeHolderFile } from './holder-file.ts';
 import { noFollowFlag } from './privacy.ts';
+import { createCapabilityProbe, unmeasuredBecause } from '../capability-probe.ts';
+import type { CapabilityResult } from '../capability-probe.ts';
+import { systemRandom } from '../system-random.ts';
 
 export const LOCK_DATABASE_SUFFIX = '.sqlite';
 
@@ -26,6 +31,56 @@ export type SqliteLockOps = {
   removesOpenFiles: boolean;
 };
 
+export type UnlinkOpenProbePorts = {
+  createExclusive(file: string): number;
+  unlink(file: string): void;
+  close(descriptor: number): void;
+};
+
+const UNLINK_OPEN_REFUSED = new Set(['EBUSY', 'EPERM']);
+
+export const probeRemovesOpenFiles = (directory: string, ports: UnlinkOpenProbePorts): CapabilityResult<boolean> => {
+  const file = path.join(directory, `.momonga-unlink-probe-${process.pid}-${systemRandom.hex(6)}`);
+  let descriptor: number;
+  try {
+    descriptor = ports.createExclusive(file);
+  } catch (error) {
+    return { kind: 'unmeasured', evidence: `the unlink-open probe file could not be created in ${directory}: ${unmeasuredBecause(error).evidence}` };
+  }
+  let outcome: CapabilityResult<boolean>;
+  try {
+    ports.unlink(file);
+    outcome = { kind: 'supported', value: true, evidence: `${directory} lets an open file be unlinked` };
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    outcome =
+      code !== undefined && UNLINK_OPEN_REFUSED.has(code)
+        ? { kind: 'unsupported', evidence: `${directory} refuses to unlink an open file (${code})` }
+        : { kind: 'unmeasured', evidence: `unlinking an open probe file in ${directory} failed without answering the question: ${unmeasuredBecause(error).evidence}` };
+  } finally {
+    ports.close(descriptor);
+  }
+  if (outcome.kind !== 'supported') ports.unlink(file);
+  return outcome;
+};
+
+const nodeUnlinkOpenPorts: UnlinkOpenProbePorts = {
+  createExclusive: (file) => fs.openSync(file, fs.constants.O_RDWR | fs.constants.O_CREAT | fs.constants.O_EXCL, 0o600),
+  unlink: (file) => fs.unlinkSync(file),
+  close: (descriptor) => fs.closeSync(descriptor),
+};
+
+const removesOpenFilesIn = createCapabilityProbe<string, boolean>(
+  (directory) => directory,
+  (directory) => probeRemovesOpenFiles(directory, nodeUnlinkOpenPorts),
+);
+
+const removesOpenFilesOnThisHost = (): boolean => {
+  const result = removesOpenFilesIn(os.tmpdir());
+  if (result.kind === 'unmeasured') throw new Error(`whether this host unlinks open files could not be measured: ${result.evidence}`);
+  return result.kind === 'supported';
+};
+
 export const nodeSqliteLockOps: SqliteLockOps = {
   open: (databasePath) => new DatabaseSync(databasePath, { timeout: 0 }),
   lstat: lstatIdentity,
@@ -37,7 +92,9 @@ export const nodeSqliteLockOps: SqliteLockOps = {
     }
   },
   remove: (file) => fs.rmSync(file, { force: true }),
-  removesOpenFiles: process.platform !== 'win32',
+  get removesOpenFiles(): boolean {
+    return removesOpenFilesOnThisHost();
+  },
 };
 
 const FILE_IN_USE = 'EBUSY';

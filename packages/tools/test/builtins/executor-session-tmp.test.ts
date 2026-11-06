@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { momongaLayout, EMPTY_PROTECTED_SET, HOST_RULE_ENFORCEMENT } from '@momonga/foundation';
+import { momongaLayout, EMPTY_PROTECTED_SET, ruleEnforcementOf } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
 import { makeBuiltins, resultOf } from './fixtures.ts';
@@ -21,7 +21,7 @@ const fixture = async () => {
     ...ACCEPT,
     roots: [project],
     tmpDir,
-    sandboxPolicy: buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: computeFileRules([], [project], tmpDir, HOST_RULE_ENFORCEMENT), roots: [project], home, tmpDir, sessionsTmpRoot: sessions }),
+    sandboxPolicy: buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: computeFileRules([], [project], tmpDir, ruleEnforcementOf('none')), roots: [project], home, tmpDir, sessionsTmpRoot: sessions }),
   };
   return { tools, sessions, tmpDir, sibling, extra };
 };

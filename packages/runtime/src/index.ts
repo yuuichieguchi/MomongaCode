@@ -36,6 +36,7 @@ export {
   createRunService,
   startApprovalSweeper,
   startMemorySweeper,
+  startFactsSweeper,
   startSearchSweeper,
   startTerminalSweeper,
 } from './service/index.ts';
@@ -78,7 +79,7 @@ export { createGovernancePort } from './governance/governance-port.ts';
 export type { GovernancePortOptions } from './governance/governance-port.ts';
 export { enforcedFactsFor, governanceRulesOf, permissionRulesFor, ruleParses } from './governance/rules.ts';
 export type { PermissionRuleSources } from './governance/rules.ts';
-export { MemoryEvidenceError, bindMemoryEvidence, createEvidencePorts, readGitHead } from './memory/evidence.ts';
+export { MemoryEvidenceError, bindMemoryEvidence, createEvidencePorts, readGitHead, runFactsOf } from './memory/evidence.ts';
 export type { BindMemoryEvidenceInput, EvidenceCommand, EvidenceCommandResult, EvidencePortsOptions, EvidenceRun } from './memory/evidence.ts';
 export { createReflector } from './memory/reflection.ts';
 export type { Reflector, ReflectorOptions, ReflectorTurn } from './memory/reflection.ts';

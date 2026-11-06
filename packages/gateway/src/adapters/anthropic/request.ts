@@ -6,7 +6,7 @@ import type { RenderLedger } from '../../dialect/ledger.ts';
 import type { ResolvedDialect } from '../../dialect/render.ts';
 import { renderToolParameters } from '../../dialect/tool-render.ts';
 import { callArgumentsObject } from '../shared/call-arguments.ts';
-import { jsonReplyFormatOf } from '../shared/json-reply.ts';
+import { isJsonOnlyEnforced, jsonReplyFormatOf } from '../shared/json-reply.ts';
 import type { JsonReplyPlan } from '../shared/json-reply.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { hasImagePart, imageSourceOf } from '../shared/image-part.ts';
@@ -255,6 +255,9 @@ const thinkingPlanOf = (effort: AdapterRequest['reasoning_effort'], reasoning: R
 };
 
 const outputConfigOf = (effort: ThinkingPlan['outputConfig'], options: BodyOptions): { output_config?: NonNullable<AnthropicRequestBody['output_config']> } => {
+  if (isJsonOnlyEnforced(options.jsonReply)) {
+    throw new UnsupportedInputError('unsupported_input', 'the target declares capabilities.jsonMode json_object, but the Anthropic Messages API has no JSON-only form; declare jsonMode none', 'text');
+  }
   const format = jsonReplyFormatOf(options.jsonReply, resolvedOf(options.dialect ?? DEFAULT_DIALECT_ID));
   if (effort === undefined && format === undefined) return {};
   return { output_config: { ...effort, ...(format === undefined ? {} : { format: { type: 'json_schema', schema: format.schema } }) } };

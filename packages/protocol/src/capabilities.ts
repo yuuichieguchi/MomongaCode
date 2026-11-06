@@ -11,6 +11,7 @@ export const TARGET_BILLINGS = ['metered', 'local', 'plan'] as const;
 export type TargetBilling = (typeof TARGET_BILLINGS)[number];
 
 export const TARGET_ANSWERS = ['model', 'script'] as const;
+export const UNKNOWN_ANSWERER = 'unknown' as const;
 export type TargetAnswers = (typeof TARGET_ANSWERS)[number];
 
 export type ImageTokenModel = { pixelsPerToken: number; maxTokens: number; minTokens: number };
@@ -175,6 +176,10 @@ export type AdapterOutputBound = { renders: readonly OutputBound[] };
 
 export type AdapterToolPlacement = { renders: readonly ToolPlacement[] };
 
+export const JSON_MODES = ['json_object', 'none'] as const;
+
+export type JsonMode = (typeof JSON_MODES)[number];
+
 export type CapabilitiesCore = {
   promptCache?: PromptCacheCapability;
   sampling?: SamplingCapability;
@@ -183,6 +188,7 @@ export type CapabilitiesCore = {
   maxOutputTokens: number;
   toolCalling: ToolCallingState;
   structuredOutput: 'json_schema' | 'none';
+  jsonMode?: JsonMode;
   streaming: boolean;
   stopSequences: boolean;
   outputBoundField?: OutputBound;

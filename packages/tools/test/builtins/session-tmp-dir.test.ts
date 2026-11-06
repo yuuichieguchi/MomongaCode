@@ -2,10 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
-import { momongaLayout, EMPTY_PROTECTED_SET, HOST_RULE_ENFORCEMENT } from '@momonga/foundation';
+import { momongaLayout, EMPTY_PROTECTED_SET, ruleEnforcementOf } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
-import { HAS_REAL_SANDBOX } from '../helpers.ts';
+import { HAS_REAL_SANDBOX, HOST_SANDBOX_KIND } from '../helpers.ts';
 import { makeBuiltins, resultOf } from './fixtures.ts';
 import type { RunExtra } from './fixtures.ts';
 
@@ -23,7 +23,7 @@ const fixture = async () => {
   const extra: RunExtra = {
     roots: [project],
     tmpDir,
-    sandboxPolicy: buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: computeFileRules([], [project], tmpDir, HOST_RULE_ENFORCEMENT), roots: [project], home, tmpDir, sessionsTmpRoot: sessions }),
+    sandboxPolicy: buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: computeFileRules([], [project], tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND)), roots: [project], home, tmpDir, sessionsTmpRoot: sessions }),
   };
   return { tools, sessions, tmpDir, sibling, marker, extra };
 };

@@ -12,6 +12,8 @@ import type { BuildUpdateInputs, UpdateEndpoints, UpdateSource } from './source.
 
 export const CANDIDATE_CHECK_TIMEOUT_MS = 30_000;
 
+export const DAEMON_RESTART_REMEDIATION = 'run `momonga daemon start`';
+
 export type UpdateTarget = { source: UpdateSource; asset: string };
 
 export const resolveUpdateTarget = (ports: Pick<UpdatePorts, 'self' | 'platform' | 'arch'>, inputs: BuildUpdateInputs, endpoints: UpdateEndpoints): UpdateTarget => {
@@ -180,16 +182,18 @@ const abandon = async (ports: UpdatePorts, staged: StagedFile, original: unknown
   throw original;
 };
 
-export type InstallOptions = { restartDaemon: boolean; signal: AbortSignal };
+export type InstallOptions = { signal: AbortSignal };
 
-export type InstallResult = { from: string; to: string; target: string; daemonRestarted: boolean };
+export type DaemonRestart = { kind: 'not_running' } | { kind: 'restarted' } | { kind: 'failed'; error: unknown };
+
+export type InstallResult = { from: string; to: string; target: string; restart: DaemonRestart };
 
 const restartDaemon = async (ports: UpdatePorts, target: string, signal: AbortSignal): Promise<void> => {
   const result = await ports.run(target, ['daemon', 'start'], { env: ports.env, timeoutMs: await ports.daemon.restartBoundMs(), signal });
   if (result.exitCode !== 0) {
     throw new UpdateError('daemon_restart_failed', `the update was installed but the new daemon did not start (exit code ${result.exitCode})`, {
       detail: `${result.stdout}${result.stderr}`.trim(),
-      remediation: 'run `momonga daemon start`',
+      remediation: DAEMON_RESTART_REMEDIATION,
     });
   }
 };
@@ -198,7 +202,7 @@ export const installLocked = async (ports: UpdatePorts, update: UpdateTarget, re
   const { signal } = options;
   const target = await ports.fs.realpath(ports.self.execPath);
   const directory = path.dirname(target);
-  const daemonWasRunning = options.restartDaemon && (await ports.daemon.running());
+  const daemonWasRunning = await ports.daemon.running();
   await inDirectory(directory, () => ports.fs.removeLeftovers(directory));
   const expected = await expectedChecksum(ports, update, release, directory, signal);
   const staged = await inDirectory(directory, async () => ports.fs.stage(directory, await ports.fs.modeOf(target)));
@@ -216,8 +220,16 @@ export const installLocked = async (ports: UpdatePorts, update: UpdateTarget, re
   } catch (error) {
     return abandon(ports, staged, error);
   }
-  if (daemonWasRunning) await restartDaemon(ports, target, signal);
-  return { from: ports.version, to: release.version.text, target, daemonRestarted: daemonWasRunning };
+  return { from: ports.version, to: release.version.text, target, restart: daemonWasRunning ? await restartRunningDaemon(ports, target, signal) : { kind: 'not_running' } };
+};
+
+const restartRunningDaemon = async (ports: UpdatePorts, target: string, signal: AbortSignal): Promise<DaemonRestart> => {
+  try {
+    await restartDaemon(ports, target, signal);
+    return { kind: 'restarted' };
+  } catch (error) {
+    return { kind: 'failed', error };
+  }
 };
 
 export const installRelease = async (ports: UpdatePorts, update: UpdateTarget, release: Release, options: InstallOptions): Promise<InstallResult> => {

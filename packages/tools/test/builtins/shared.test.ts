@@ -10,7 +10,7 @@ import { makeLayout, ruleFor } from '../helpers.ts';
 import { makeBuiltins } from './fixtures.ts';
 
 const NAMES = ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash', 'BashOutput', 'KillBash', 'ReadOutput', 'UpdatePlan'];
-const OFFERED = ['Read', 'Glob', 'Grep', 'ReadOutput', 'Write', 'Edit', 'Bash', 'UpdatePlan', 'BashOutput', 'KillBash'];
+const OFFERED = ['Glob', 'Grep', 'Read', 'ReadOutput', 'Bash', 'BashOutput', 'KillBash', 'Edit', 'UpdatePlan', 'Write'];
 
 type Definition = ToolDefinition<Record<string, unknown>>;
 

@@ -32,6 +32,7 @@ import { MEMORY_QUERY_MAX_CHARS } from '@momonga/tools';
 import { arrivalsOf } from './context-arrivals.ts';
 import { renderedFormsOf } from './context-forms.ts';
 import type { ClaimContext } from './claim-context.ts';
+import { requestKey } from '../model-key.ts';
 import { wrapUpInstructionFor } from './wrap-up.ts';
 import type { WrapUpReason } from './wrap-up.ts';
 
@@ -185,7 +186,12 @@ const offeredInputOf = (
       ...(matchCap === undefined ? {} : { memoryMatchCap: matchCap }),
       history: state.history
         .filter((entry) => entry.seq !== state.taskSeq)
-        .map((entry) => ({ seq: entry.seq, item: entry.item, ...(entry.handle === undefined ? {} : { handle: entry.handle }) })),
+        .map((entry) => ({
+          seq: entry.seq,
+          item: entry.item,
+          ...(entry.handle === undefined ? {} : { handle: entry.handle }),
+          ...(entry.omittedTokens === undefined ? {} : { omittedTokens: entry.omittedTokens }),
+        })),
       ...(state.summary === undefined ? {} : { summary: { item: state.summary.item, replacedThroughSeq: state.summary.replacedThroughSeq } }),
       ...(workingState === undefined ? {} : { workingState }),
       ...(projectedWorkingState === undefined ? {} : { projectedWorkingState }),
@@ -298,6 +304,13 @@ export const measureLayersWith = async (ctx: ClaimContext, activatedSkills: read
   );
 };
 
+const rankedAmong = (ranked: readonly FunctionTool[], kept: readonly FunctionTool[]): FunctionTool[] =>
+  kept.map((tool) => {
+    const candidate = ranked.find((offered) => offered.name === tool.name);
+    if (candidate === undefined) throw new Error(`the built context holds ${JSON.stringify(tool.name)}, which was not among the offered tools`);
+    return candidate;
+  });
+
 const buildOnce = async (ctx: ClaimContext, wrapUp: WrapUpReason | undefined, level: number, trailing: readonly InputItem[]): Promise<BuiltContext> => {
   await advanceTouched(ctx);
   await prepareRecall(ctx);
@@ -306,7 +319,7 @@ const buildOnce = async (ctx: ClaimContext, wrapUp: WrapUpReason | undefined, le
   if (wrapUp === undefined) {
     ctx.pinnedDigest.value ??= built.pinnedDigest;
     if (input.pinnedTokens === undefined) {
-      admittedFloors.set(ctx, { pinnedTokens: built.pinnedTokens, tools: built.tools, offered, governing, kinds });
+      admittedFloors.set(ctx, { pinnedTokens: built.pinnedTokens, tools: rankedAmong(input.sources.tools, built.tools), offered, governing, kinds });
     }
     if (joined.length > 0) ctx.journal.append([{ type: 'tool.loaded', names: joined }]);
   }
@@ -358,7 +371,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
     momonga: { max_summary_tokens: plan.summaryTokenCap, retains_user_request: true, ...(ctx.guideline === undefined ? {} : { guideline: ctx.guideline.text }) },
   };
   const guidelineVersion = ctx.guideline?.version ?? NO_ADOPTED_GUIDELINE;
-  const idempotencyKey = sha256Hex(canonicalJson([ctx.run.id, 'compact', sha256Hex(canonicalJson(request))]));
+  const idempotencyKey = requestKey(ctx.run.id, 'compact', request);
   ctx.control.inFlight.compactionKey = idempotencyKey;
   let resource: CompactResource;
   const startedAt = options.clock.now();
@@ -401,6 +414,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
     },
     ctx.control.signal,
   );
+  options.store.recordFidelityVerdicts(ctx.run.id, sessionOf(ctx).cwd, recorded);
   const fidelity = checkSummary(summary, {
     attested: recorded.attested,
     pinned: plan.pinnedText,
@@ -418,6 +432,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
     ...(resource.momonga?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: resource.momonga.cacheWriteInputTokens }),
     ...(resource.momonga?.cost === undefined ? {} : { cost: resource.momonga.cost }),
     timing: { durationMs: options.clock.now() - startedAt },
+    ...(resource.momonga === undefined ? {} : { target: resource.momonga.target }),
   };
   const unreadableNotices =
     recorded.unreadable.length === 0
@@ -511,6 +526,7 @@ const recordEvictions = (ctx: ClaimContext, evictions: readonly ContextEviction[
       handle: eviction.handle,
       kind: eviction.kind,
       ...(eviction.keptChars === undefined ? {} : { keptChars: eviction.keptChars }),
+      ...(eviction.kind === 'omitted' && eviction.tokens !== undefined ? { tokens: eviction.tokens } : {}),
     })),
   );
 };
@@ -605,7 +621,8 @@ const budgetStopNotice = (ctx: ClaimContext, error: ContextOverflowError, attemp
     `The fixed prefix takes ${prefix}. ` +
     `Earlier in this run: ${ctx.journal.state.evicted.length} tool outputs were replaced by handles and ${ctx.journal.state.compactions - attempt.successes} compaction(s) were recorded. ` +
     `Final attempt: ${attempt.attempts} compaction(s) ran; no further compaction was possible because ${reason}; ` +
-    `${protectionClause(error)}; ${wrapUpClause}.`
+    `${protectionClause(error)}; ${wrapUpClause}.` +
+    (ctx.journal.windowOmitted ? ' Older inherited items were not read, so the token counts and the number of replaced outputs in this notice are lower bounds.' : '')
   );
 };
 

@@ -1,6 +1,7 @@
 import { canonicalJson, defineProductSchema, isRecord, sha256Hex } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
-import { escapeTerminalLine } from '@momonga/protocol';
+import { MODEL_KINDS, escapeTerminalLine, modelKindOf } from '@momonga/protocol';
+import type { ModelKind } from '@momonga/protocol';
 import { clusterBootstrap } from './bootstrap.ts';
 import type { Cluster } from './bootstrap.ts';
 import { COMPACTION_SETTINGS, expandContextDataset } from './context-dataset.ts';
@@ -20,20 +21,15 @@ import { caseTotalsOf, tokenFactsOf, tokenMetricsOf } from './token-metrics.ts';
 import type { CaseTokenTotals, RatioMetric, TokenFacts } from './token-metrics.ts';
 import type { Answerer, Transcript } from './transcript.ts';
 
-export const CONTEXT_REPORT_FORMAT = 'momonga-eval-context-report/3';
+export const CONTEXT_REPORT_FORMAT = 'momonga-eval-context-report/4';
 const RETIRED_CONTEXT_REPORT_FORMATS: Readonly<Record<string, string>> = {
   'momonga-eval-context-report/1': 'the policy and the code digest of the runs',
   'momonga-eval-context-report/2': 'the targets that answered the runs and whether each is a model or a script',
+  'momonga-eval-context-report/3': 'an answerer whose adapter and model are unknown (a paid answer that recorded no answering target)',
 };
 
-export const CONTEXT_MODELS = ['fake', 'real', 'unknown'] as const;
-export type ContextModel = (typeof CONTEXT_MODELS)[number];
-
-export const modelKindOf = (answeredBy: readonly Answerer[], unrecordedAnswers: number): ContextModel => {
-  if (answeredBy.some((answerer) => answerer.answers === 'script')) return 'fake';
-  if (unrecordedAnswers > 0 || answeredBy.length === 0 || answeredBy.some((answerer) => answerer.answers === 'unknown')) return 'unknown';
-  return 'real';
-};
+export const CONTEXT_MODELS = MODEL_KINDS;
+export type ContextModel = ModelKind;
 
 export const MODEL_DEPENDENT_METRICS = [
   'cacheHitRatio',
@@ -309,13 +305,15 @@ const identityOf = (transcripts: readonly Transcript[]): { policy: PolicyOverlay
   return first;
 };
 
-const answeredKey = (answerer: Answerer): string => canonicalJson([answerer.target, answerer.adapter, answerer.upstreamModel, answerer.answers]);
+const answeredKey = (answerer: Answerer): string => canonicalJson(answerer);
 
-const answeredByOf = (transcripts: readonly Transcript[]): Answerer[] => {
+export const uniqueAnswerers = (answerers: readonly Answerer[]): Answerer[] => {
   const unique = new Map<string, Answerer>();
-  for (const answerer of transcripts.flatMap((transcript) => transcript.answeredBy ?? [])) unique.set(answeredKey(answerer), answerer);
+  for (const answerer of answerers) unique.set(answeredKey(answerer), answerer);
   return [...unique].sort(([left], [right]) => (left < right ? -1 : 1)).map(([, answerer]) => answerer);
 };
+
+const answeredByOf = (transcripts: readonly Transcript[]): Answerer[] => uniqueAnswerers(transcripts.flatMap((transcript) => transcript.answeredBy ?? []));
 
 export const buildContextReport = (input: BuildContextReportInput): ContextReport => {
   const datasetSeed = input.datasetSeed ?? DEFAULT_DATASET_SEED;
@@ -488,7 +486,7 @@ const CONTEXT_REPORT_SCHEMA = {
         type: 'array',
         items: closed(
           { target: { type: 'string', minLength: 1 }, adapter: { type: 'string' }, upstreamModel: { type: 'string' }, answers: { enum: ['model', 'script', 'unknown'] } },
-          ['target', 'adapter', 'upstreamModel', 'answers'],
+          ['target', 'answers'],
         ),
       },
       unrecordedAnswers: count,

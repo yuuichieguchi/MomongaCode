@@ -1,6 +1,7 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { SECRET_TOOL_BINARY, SECURITY_BINARY, KEYCHAIN_SERVICE, createJsonLogger, createUdsClient, systemClock } from '@momonga/foundation';
+import { SECRET_TOOL_BINARY, SECURITY_BINARY, KEYCHAIN_SERVICE, createJsonLogger, secretStoreEnvFor, createUdsClient, systemClock } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
@@ -23,18 +24,55 @@ const SECRET = 'sk-ant-api03-stored-in-keychain-0001';
 const SECRET_NAME = 'anthropic-main';
 const CAPABILITIES = { contextWindow: 200000, maxOutputTokens: 8192 };
 
-const HOST_STORE =
-  process.platform === 'darwin'
-    ? {
-        lookup: { file: SECURITY_BINARY, args: ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', SECRET_NAME, '-w'] },
-        missingExit: 44,
-        storeCommand: `security add-generic-password -s ${KEYCHAIN_SERVICE} -a ${SECRET_NAME} -w`,
-      }
-    : {
-        lookup: { file: SECRET_TOOL_BINARY, args: ['lookup', 'service', KEYCHAIN_SERVICE, 'account', SECRET_NAME] },
-        missingExit: 1,
-        storeCommand: `secret-tool store --label=${KEYCHAIN_SERVICE} service ${KEYCHAIN_SERVICE} account ${SECRET_NAME}`,
-      };
+type HostStore = {
+  label: string;
+  program: string;
+  canonicalBinary: string;
+  lookupArgs: readonly string[];
+  missingExit: number;
+  storeCommand: string;
+  extraEnv: Record<string, string>;
+};
+
+const HOST_STORES: readonly HostStore[] = [
+  {
+    label: 'Keychain',
+    program: 'security',
+    canonicalBinary: SECURITY_BINARY,
+    lookupArgs: ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', SECRET_NAME, '-w'],
+    missingExit: 44,
+    storeCommand: `security add-generic-password -s ${KEYCHAIN_SERVICE} -a ${SECRET_NAME} -w`,
+    extraEnv: {},
+  },
+  {
+    label: 'Secret Service',
+    program: 'secret-tool',
+    canonicalBinary: SECRET_TOOL_BINARY,
+    lookupArgs: ['lookup', 'service', KEYCHAIN_SERVICE, 'account', SECRET_NAME],
+    missingExit: 1,
+    storeCommand: `secret-tool store --label=${KEYCHAIN_SERVICE} service ${KEYCHAIN_SERVICE} account ${SECRET_NAME}`,
+    extraEnv: { DBUS_SESSION_BUS_ADDRESS: 'unix:path=/nonexistent/momonga-test-bus' },
+  },
+];
+
+type HostPath = { env: Record<string, string>; programPath: string };
+
+const fakeHostPath = (context: CleanupContext, store: HostStore): HostPath => {
+  const bin = withTempDir(context);
+  const programPath = path.join(bin, store.program);
+  fs.writeFileSync(programPath, '#!/bin/sh\nexit 97\n', { mode: 0o755 });
+  return { env: secretStoreEnvFor({ PATH: bin, ...store.extraEnv }), programPath };
+};
+
+const portOnFakePath = (inner: FakeSecurityPort, store: HostStore, host: HostPath): FakeSecurityPort => {
+  const calls: FakeSecurityPort['calls'] = [];
+  const port = async (file: string, args: readonly string[], stdin: string, signal: AbortSignal) => {
+    calls.push({ file, args, stdin });
+    if (file !== host.programPath) throw new Error(`the gateway ran ${file}, not the fake ${store.program} on PATH at ${host.programPath}`);
+    return inner(store.canonicalBinary, args, stdin, signal);
+  };
+  return Object.assign(port, { calls });
+};
 
 type Stack = {
   home: string;
@@ -43,11 +81,13 @@ type Stack = {
   anthropic: FakeUpstreamServer;
   openResponses: FakeUpstreamServer;
   security: FakeSecurityPort;
+  programPath: string;
   logText(): string;
 };
 
 const startStack = async (
   context: CleanupContext,
+  store: HostStore,
   options: { secrets: Record<string, string>; anthropicScript: FakeUpstreamReply[]; aliasOrder?: string[]; env?: Record<string, string> },
 ): Promise<Stack> => {
   const anthropic = await startFakeAnthropic({ apiKey: SECRET, script: options.anthropicScript });
@@ -64,11 +104,12 @@ const startStack = async (
       },
     },
   });
-  const security = createFakeSecurityPort(() => options.secrets);
+  const host = fakeHostPath(context, store);
+  const security = portOnFakePath(createFakeSecurityPort(() => options.secrets), store, host);
   const lines: string[] = [];
   const handle = await startGatewayProcess({
     home,
-    env: baseEnv(home, options.env),
+    env: baseEnv(home, { ...host.env, ...options.env }),
     version: PROCESS_VERSION,
     execWithStdin: security,
     logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: { write: (chunk: string) => (lines.push(chunk), true) }, level: 'debug' }),
@@ -79,7 +120,7 @@ const startStack = async (
   });
   const client = createUdsClient(handle.socketPath);
   registerCleanup(context, () => client.close());
-  return { home, client, handle, anthropic, openResponses, security, logText: () => lines.join('') };
+  return { home, client, handle, anthropic, openResponses, security, programPath: host.programPath, logText: () => lines.join('') };
 };
 
 const post = async (client: UdsClient, payload: unknown): Promise<{ status: number; text: string }> => {
@@ -94,26 +135,26 @@ const post = async (client: UdsClient, payload: unknown): Promise<{ status: numb
 
 const request = { model: 'fast', input: userInput('hi') };
 
-describe('stored secrets in the gateway process', () => {
+describe.each(HOST_STORES)('stored secrets in the gateway process, $label found on PATH', (store) => {
   it('resolves the referenced secret through the injected process port and sends it as the Anthropic key', async (context) => {
-    const stack = await startStack(context, { secrets: { [SECRET_NAME]: SECRET, unreferenced: 'never-read-0000000000' }, anthropicScript: [anthropicTextReply(['hello'])] });
+    const stack = await startStack(context, store, { secrets: { [SECRET_NAME]: SECRET, unreferenced: 'never-read-0000000000' }, anthropicScript: [anthropicTextReply(['hello'])] });
     const response = await post(stack.client, request);
     expect(response.status).toBe(200);
     expect(JSON.parse(response.text).status).toBe('completed');
     expect(stack.anthropic.requests[0]?.headers['x-api-key']).toBe(SECRET);
-    expect(stack.security.calls).toEqual([{ ...HOST_STORE.lookup, stdin: '' }]);
+    expect(stack.security.calls).toEqual([{ file: stack.programPath, args: store.lookupArgs, stdin: '' }]);
     expect(fs.readFileSync(homePaths(stack.home).settings, 'utf8')).not.toContain(SECRET);
   });
 
   it('reads each referenced secret once at startup, not per request', async (context) => {
-    const stack = await startStack(context, { secrets: { [SECRET_NAME]: SECRET }, anthropicScript: [anthropicTextReply(['a']), anthropicTextReply(['b'])] });
+    const stack = await startStack(context, store, { secrets: { [SECRET_NAME]: SECRET }, anthropicScript: [anthropicTextReply(['a']), anthropicTextReply(['b'])] });
     await post(stack.client, request);
     await post(stack.client, request);
     expect(stack.security.calls).toHaveLength(1);
   });
 
   it('redacts the resolved secret from upstream error text', async (context) => {
-    const stack = await startStack(context, {
+    const stack = await startStack(context, store, {
       secrets: { [SECRET_NAME]: SECRET },
       anthropicScript: [anthropicErrorReply(400, 'invalid_request_error', `bad request, key ${SECRET} was echoed`)],
     });
@@ -125,13 +166,13 @@ describe('stored secrets in the gateway process', () => {
   });
 
   it('fails the request with a typed secret_unavailable error when the secret is missing, and does not call the upstream', async (context) => {
-    const stack = await startStack(context, { secrets: {}, anthropicScript: [anthropicTextReply(['unreachable'])] });
+    const stack = await startStack(context, store, { secrets: {}, anthropicScript: [anthropicTextReply(['unreachable'])] });
     const response = await post(stack.client, request);
     expect(response.status).toBe(401);
     const error = JSON.parse(response.text).error;
     expect(error).toMatchObject({ type: 'invalid_request', code: 'secret_unavailable', param: SECRET_NAME });
-    expect(error.message).toContain(`exit ${HOST_STORE.missingExit}`);
-    expect(error.message).toContain(HOST_STORE.storeCommand);
+    expect(error.message).toContain(`exit ${store.missingExit}`);
+    expect(error.message).toContain(store.storeCommand);
     expect(error.message).toContain('reads a missing secret again on the next request');
     expect(stack.anthropic.requests).toEqual([]);
     expect(stack.logText()).toContain(`secret ${SECRET_NAME} is unavailable`);
@@ -139,7 +180,7 @@ describe('stored secrets in the gateway process', () => {
 
   it('reads a secret that was added after start on the next request, then stops reading it', async (context) => {
     const secrets: Record<string, string> = {};
-    const stack = await startStack(context, { secrets, anthropicScript: [anthropicTextReply(['a']), anthropicTextReply(['b'])] });
+    const stack = await startStack(context, store, { secrets, anthropicScript: [anthropicTextReply(['a']), anthropicTextReply(['b'])] });
     expect((await post(stack.client, request)).status).toBe(401);
     expect(stack.security.calls).toHaveLength(2);
     secrets[SECRET_NAME] = SECRET;
@@ -153,7 +194,7 @@ describe('stored secrets in the gateway process', () => {
 
   it('redacts a secret that was resolved after start from upstream error text', async (context) => {
     const secrets: Record<string, string> = {};
-    const stack = await startStack(context, {
+    const stack = await startStack(context, store, {
       secrets,
       anthropicScript: [anthropicErrorReply(400, 'invalid_request_error', `bad request, key ${SECRET} was echoed`)],
     });
@@ -167,7 +208,7 @@ describe('stored secrets in the gateway process', () => {
   });
 
   it('falls through to the next target of the alias when a target secret is unavailable', async (context) => {
-    const stack = await startStack(context, { secrets: {}, anthropicScript: [], aliasOrder: ['claude', 'local'] });
+    const stack = await startStack(context, store, { secrets: {}, anthropicScript: [], aliasOrder: ['claude', 'local'] });
     const response = await post(stack.client, request);
     expect(response.status).toBe(200);
     const resource = JSON.parse(response.text);
@@ -188,7 +229,7 @@ describe('stored secrets in the gateway process', () => {
     await expect(
       startGatewayProcess({
         home,
-        env: baseEnv(home),
+        env: baseEnv(home, fakeHostPath(context, store).env),
         version: PROCESS_VERSION,
         execWithStdin: async () => {
           throw new Error('spawn security ENOENT');
@@ -206,10 +247,10 @@ describe('stored secrets in the gateway process', () => {
       models: { aliases: { fast: ['local'] }, targets: { local: { adapter: 'open-responses', provider: 'fake', model: 'm', socketPath: openResponses.socketPath, capabilities: CAPABILITIES } } },
     });
     const security = createFakeSecurityPort(() => ({}));
-    const handle = await startGatewayProcess({ home, env: baseEnv(home), version: PROCESS_VERSION, execWithStdin: security, stdout: { write: () => true } });
+    const handle = await startGatewayProcess({ home, env: baseEnv(home, fakeHostPath(context, store).env), version: PROCESS_VERSION, execWithStdin: security, stdout: { write: () => true } });
     registerCleanup(context, async () => {
-    await handle.close();
-  });
+      await handle.close();
+    });
     expect(security.calls).toEqual([]);
   });
 });

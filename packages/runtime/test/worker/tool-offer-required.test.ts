@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FunctionTool } from '@momonga/protocol';
-import { createToolRegistry, defineTool } from '@momonga/tools';
+import { createToolRegistry, defineTool, extendToolSet } from '@momonga/tools';
 import type { AnyTool, ToolSet } from '@momonga/tools';
 import { LOAD_TOOLS_TOOL_NAME, offerFor } from '../../src/worker/tool-offer.ts';
 import type { ToolOfferInput } from '../../src/worker/tool-offer.ts';
@@ -28,7 +28,7 @@ const TOOLS = [
 const toolSet = async (): Promise<ToolSet> => {
   const registry = createToolRegistry();
   for (const tool of TOOLS) registry.register(tool);
-  return registry.snapshot();
+  return extendToolSet(await registry.snapshot(), readOnly(LOAD_TOOLS_TOOL_NAME, 'Loads tools.', 'essential'));
 };
 
 const namesOf = (tools: readonly FunctionTool[]): string[] => tools.map((tool) => tool.name);

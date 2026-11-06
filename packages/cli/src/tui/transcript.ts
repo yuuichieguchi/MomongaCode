@@ -6,6 +6,8 @@ import { selectableModes } from '../modes.ts';
 import type { ModeAvailability } from '../modes.ts';
 import { classificationLevel, describeClassification, describeHook, hookLevel } from '../policy-messages.ts';
 import type { ElicitationFlow } from '../elicit/flow.ts';
+import { describeRetryWait } from '../retry-wait.ts';
+import type { AttemptFailed } from '../retry-wait.ts';
 import { asChildEvent } from '../run/child-events.ts';
 import { isTerminalStatus } from '../run/follow.ts';
 
@@ -32,6 +34,7 @@ export type Transcript = {
   runId: string | undefined;
   runStatus: RunStatus | undefined;
   waiting: string | undefined;
+  lastFailure: AttemptFailed | undefined;
   approval: PendingApproval | undefined;
   queuedApprovals: readonly PendingApproval[];
   elicitation: PendingElicitation | undefined;
@@ -47,6 +50,7 @@ export const initialTranscript: Transcript = {
   runId: undefined,
   runStatus: undefined,
   waiting: undefined,
+  lastFailure: undefined,
   approval: undefined,
   queuedApprovals: [],
   elicitation: undefined,
@@ -223,7 +227,13 @@ export const reduceEvent = (transcript: Transcript, event: PublicRunEvent): Tran
       return appendEntry(transcript, { kind: 'info', text: `tools loaded: ${event.names.join(', ')}` });
     case 'tool.waiting':
       return { ...transcript, waiting: event.awaits.kind === 'run' ? `subagent ${event.awaits.agent}` : `job ${event.awaits.jobId}` };
+    case 'attempt.failed':
+      return { ...transcript, lastFailure: event };
     case 'run.status': {
+      if (event.to === 'QUEUED' && transcript.lastFailure !== undefined) {
+        const text = describeRetryWait(transcript.lastFailure);
+        return appendEntry({ ...transcript, runStatus: event.to, waiting: text }, { kind: 'notice', level: 'info', text });
+      }
       const base = { ...transcript, runStatus: event.to, waiting: event.to === 'WAITING_TOOL' ? transcript.waiting : undefined };
       if (!isTerminalStatus(event.to)) return base;
       return {

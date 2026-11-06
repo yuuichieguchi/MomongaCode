@@ -19,9 +19,8 @@ const LOADER_DESCRIPTION = 'Loads the full definitions of the tools in this cata
 
 const catalogLineOf = (definition: FunctionTool): string => `${definition.name}: ${(definition.description ?? '').split('\n')[0]}`;
 
-const loaderDefinitionOf = (catalog: readonly FunctionTool[]): FunctionTool => ({
-  type: 'function',
-  name: LOAD_TOOLS_TOOL_NAME,
+const loaderDefinitionOf = (offered: FunctionTool, catalog: readonly FunctionTool[]): FunctionTool => ({
+  ...offered,
   description: [LOADER_DESCRIPTION, ...catalog.map(catalogLineOf)].join('\n'),
   parameters: {
     type: 'object',
@@ -33,8 +32,10 @@ const loaderDefinitionOf = (catalog: readonly FunctionTool[]): FunctionTool => (
 });
 
 export const offerFor = (input: ToolOfferInput): ToolOffer => {
-  const { toolSet, visible, deferred, loaded, keepCompanionsWithoutHost, required } = input;
-  if (deferred === undefined) return { tools: [...visible], catalog: [] };
+  const { toolSet, deferred, loaded, keepCompanionsWithoutHost, required } = input;
+  if (deferred === undefined) return { tools: [...input.visible], catalog: [] };
+  const offeredLoader = input.visible.find((definition) => definition.name === LOAD_TOOLS_TOOL_NAME);
+  const visible = input.visible.filter((definition) => definition.name !== LOAD_TOOLS_TOOL_NAME);
   const definitionOf = new Map(visible.map((definition) => [definition.name, definition]));
   const pinned = [...new Set(deferred)];
   const catalogDefinitions = pinned.flatMap((name) => {
@@ -45,6 +46,7 @@ export const offerFor = (input: ToolOfferInput): ToolOffer => {
   });
   const catalog = catalogDefinitions.map((definition) => definition.name);
   if (catalog.length === 0) return { tools: [...visible], catalog: [] };
+  if (offeredLoader === undefined) throw new Error(`${LOAD_TOOLS_TOOL_NAME} is not among the tools visible to the model, so the catalog cannot be loaded`);
   const inCatalog = new Set(catalog);
   const loadedInCatalog = [...new Set(loaded)].filter((name) => inCatalog.has(name));
   const loadedSet = new Set(loadedInCatalog);
@@ -74,8 +76,11 @@ export const offerFor = (input: ToolOfferInput): ToolOffer => {
       ...standing.filter((definition) => anchorOf(definition.name) === host),
     ];
   };
+  const firstList = input.visible.flatMap((definition) =>
+    definition.name === LOAD_TOOLS_TOOL_NAME ? [loaderDefinitionOf(offeredLoader, catalogDefinitions)] : inPlace.includes(definition) ? [definition] : [],
+  );
   return {
-    tools: [...inPlace, loaderDefinitionOf(catalogDefinitions), ...loadedInCatalog.flatMap(afterLoad)],
+    tools: [...firstList, ...loadedInCatalog.flatMap(afterLoad)],
     catalog,
   };
 };
