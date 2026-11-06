@@ -6,7 +6,7 @@ import path from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { isSea } from 'node:sea';
 import { nodeEvalFiles } from '@momonga/eval';
-import { LIFELINE_FD, createExecWithStdin, createBrowserOpener, createPlatformSecretStore, systemClock } from '@momonga/foundation';
+import { LIFELINE_FD, createExecWithStdin, createBrowserOpener, createPlatformSecretStore, nodeFileSystem, systemClock } from '@momonga/foundation';
 import type { BrowserRunPort } from '@momonga/foundation';
 import type { CliClock, CliFiles, CliPorts, SelfExecutable, SpawnDetached } from './ports.ts';
 
@@ -40,10 +40,11 @@ export const nodeClock: CliClock = { now: () => systemClock.now(), sleep };
 
 export const nodeFiles: CliFiles = {
   ...nodeEvalFiles,
-  readBytes: (file) => fs.readFile(file),
-  ensureDirectory: async (directory) => void (await fs.mkdir(directory, { recursive: true })),
-  makeTempDirectory: (prefix, base) => fs.mkdtemp(path.join(base ?? os.tmpdir(), prefix)),
-  removeTree: (directory) => fs.rm(directory, { recursive: true, force: true }),
+  readFile: nodeFileSystem.readFile,
+  mkdir: nodeFileSystem.mkdir,
+  mkdtemp: nodeFileSystem.mkdtemp,
+  rm: nodeFileSystem.rm,
+  rename: nodeFileSystem.rename,
   readTextIfPresent: async (file) => {
     try {
       return await fs.readFile(file, 'utf8');
@@ -56,7 +57,6 @@ export const nodeFiles: CliFiles = {
     await fs.mkdir(path.dirname(file), { recursive: true, mode: modes.directory });
     await fs.appendFile(file, text, { mode: modes.file });
   },
-  rename: (from, to) => fs.rename(from, to),
 };
 
 export const nodeSpawnDetached: SpawnDetached = (spec) => {
