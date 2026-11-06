@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { defineProductSchema, transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
 import type { AnthropicApiVersion, CapabilitiesCore, DialectDefinition, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetAnswers, TargetBilling, PermissionMode } from '@momonga/protocol';
@@ -308,6 +309,8 @@ export type ToolsSettings = { deferral?: boolean; conciseDescriptions?: boolean 
 
 export type CredentialsSettings = { env?: string[]; keep?: string[]; valuePatterns?: string[] };
 
+export type NetworkSettings = { httpProxy?: string; httpsProxy?: string; noProxy?: string; extraCaFiles?: string[]; environment?: boolean };
+
 export type Settings = {
   permissions?: PermissionsSettings;
   env?: Record<string, string>;
@@ -322,6 +325,7 @@ export type Settings = {
   autoUpdates?: boolean;
   sandbox?: SandboxSetting;
   telemetry?: TelemetrySettings;
+  network?: NetworkSettings;
   pricing?: PriceEntrySettings[];
   memory?: MemorySettings;
   verification?: VerificationSettings;
@@ -372,6 +376,9 @@ export const assertSettings = (value: unknown, source: string): Settings => {
     } catch (error) {
       throw new Error(`${source}: invalid settings at /credentials/valuePatterns/${index}: not a regular expression`, { cause: error });
     }
+  });
+  (settings.network?.extraCaFiles ?? []).forEach((file, index) => {
+    if (!path.isAbsolute(file)) throw new Error(`${source}: invalid settings at /network/extraCaFiles/${index}: not an absolute path`);
   });
   const endpoint = settings.telemetry?.otlp?.endpoint;
   if (endpoint !== undefined) {
