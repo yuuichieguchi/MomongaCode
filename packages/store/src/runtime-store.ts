@@ -421,6 +421,17 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const verdicts = createVerdictWriter(db);
   const decodeContext = decodeContextOf(db);
   const derived = createDerivedRepair(db, records, decodeContext);
+  const selectLastSeq = db.prepare('SELECT last_seq FROM runs WHERE id = :runId');
+  const repairDerived = (runId: string): void => {
+    for (;;) {
+      const caughtUp = transaction(() => {
+        const row = selectLastSeq.get({ runId });
+        if (row === undefined) throw new Error(`unknown run ${runId}`);
+        return derived.repairPage(runId, readerFor('runs', runId, row).number('last_seq'));
+      });
+      if (caughtUp) return;
+    }
+  };
 
   const recordTouch = (sessionId: string, runId: string | null): void => {
     if (options.onCommit === undefined) return;
@@ -1234,18 +1245,19 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     claim: (workerId) => {
       const now = clock.now();
-      return transaction(() => {
+      const claim = transaction(() => {
         const candidate = sql.claimTakeover.get({ now, maxAttempts, maxTotalAttempts });
         const row = sql.claim.get({ now, maxAttempts, maxTotalAttempts, workerId, leaseExpiresAt: now + leaseMs });
         if (row === undefined) return null;
         const claimed = decodeRun(row);
-        derived.catchUp(claimed.id, claimed.lastSeq);
         const takenFrom = candidate === undefined ? null : readerFor('runs', claimed.id, candidate).nullableNumber('taken_from');
         const run = takenFrom === null ? claimed : appendPayloads(claimed, [{ type: 'attempt.lost', lastLiveAt: takenFrom - leaseMs }]);
         if (takenFrom !== null) writeRun(run);
         const status: ClaimStatus = expectOneOf('runs', run.id, 'status', CLAIM_STATUSES, run.status);
         return { runId: run.id, sessionId: run.sessionId, workerId, leaseToken: run.leaseToken, attempt: run.attempts, status };
       });
+      if (claim !== null) repairDerived(claim.runId);
+      return claim;
     },
 
     heartbeat: (claim) =>
@@ -1265,8 +1277,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         };
       }),
 
-    append: (claim, events) =>
-      transaction(() => {
+    append: (claim, events) => {
+      const result = transaction(() => {
         rejectContribution(events);
         const run = fenced(claim);
         if (run === undefined) return leaseLost;
@@ -1274,7 +1286,10 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         const next = appendPayloads(run, events);
         writeRun(next);
         return { kind: 'ok', lastSeq: next.lastSeq } as const;
-      }),
+      });
+      if (result.kind === 'ok') repairDerived(claim.runId);
+      return result;
+    },
 
     transition: (claim, from, to, patch, preceding = []) =>
       operate(

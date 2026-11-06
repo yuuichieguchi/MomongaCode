@@ -16,7 +16,7 @@ export const REPAIR_PAGE_EVENTS = 500;
 
 export type DerivedRepair = {
   recordAppended(event: RecordedEvent): void;
-  catchUp(runId: string, throughSeq: number): void;
+  repairPage(runId: string, throughSeq: number): boolean;
 };
 
 const isRecordDerivation = (derivation: Derivation): derivation is RecordDerivation => derivation !== PINNED_DIGEST_DERIVATION;
@@ -26,6 +26,10 @@ export const createDerivedRepair = (db: DatabaseSync, records: AppendRecords, de
     watermarks: db.prepare('SELECT derivation, through_seq FROM derived_through WHERE run_id = :runId'),
     advance: db.prepare(
       `INSERT INTO derived_through (run_id, derivation, through_seq) VALUES (:runId, :derivation, :seq)
+       ON CONFLICT (run_id, derivation) DO UPDATE SET through_seq = excluded.through_seq`,
+    ),
+    advanceAll: db.prepare(
+      `INSERT INTO derived_through (run_id, derivation, through_seq) VALUES ${DERIVATIONS.map((derivation) => `(:runId, ${derivation}, :seq)`).join(', ')}
        ON CONFLICT (run_id, derivation) DO UPDATE SET through_seq = excluded.through_seq`,
     ),
     tail: db.prepare('SELECT * FROM events WHERE run_id = :runId AND seq > :after AND seq <= :through ORDER BY seq LIMIT :limit'),
@@ -55,29 +59,28 @@ export const createDerivedRepair = (db: DatabaseSync, records: AppendRecords, de
     if (isRecordDerivation(derivation)) records.recordFor(derivation, { eventId: event.id, runId: event.runId, sessionId: event.sessionId, seq: event.seq, step: event.step, payload: event });
   };
 
-  const catchUp = (runId: string, throughSeq: number): void => {
+  const repairPage = (runId: string, throughSeq: number): boolean => {
     const marks = watermarksOf(runId);
+    let caughtUp = true;
     for (const derivation of DERIVATIONS) {
-      let after = marks.get(derivation) ?? 0;
-      while (after < throughSeq) {
-        const rows = sql.tail.all({ runId, after, through: throughSeq, limit: REPAIR_PAGE_EVENTS });
-        for (const event of decodeRunEvents(rows, decodeContext)) apply(derivation, event);
-        const last = rows.at(-1);
-        after = last === undefined ? throughSeq : readerFor('events', runId, last).number('seq');
-      }
-      if ((marks.get(derivation) ?? 0) < throughSeq) sql.advance.run({ runId, derivation, seq: throughSeq });
+      const after = marks.get(derivation) ?? 0;
+      if (after >= throughSeq) continue;
+      const rows = sql.tail.all({ runId, after, through: throughSeq, limit: REPAIR_PAGE_EVENTS });
+      for (const event of decodeRunEvents(rows, decodeContext)) apply(derivation, event);
+      const last = rows.at(-1);
+      const reached = last === undefined || rows.length < REPAIR_PAGE_EVENTS ? throughSeq : readerFor('events', runId, last).number('seq');
+      sql.advance.run({ runId, derivation, seq: reached });
+      if (reached < throughSeq) caughtUp = false;
     }
+    return caughtUp;
   };
 
   const recordAppended = (event: RecordedEvent): void => {
     const marks = watermarksOf(event.runId);
-    if (DERIVATIONS.some((derivation) => (marks.get(derivation) ?? 0) !== event.seq - 1)) {
-      catchUp(event.runId, event.seq);
-      return;
-    }
+    if (DERIVATIONS.some((derivation) => (marks.get(derivation) ?? 0) !== event.seq - 1)) return;
     records.record(event);
-    for (const derivation of DERIVATIONS) sql.advance.run({ runId: event.runId, derivation, seq: event.seq });
+    sql.advanceAll.run({ runId: event.runId, seq: event.seq });
   };
 
-  return { recordAppended, catchUp };
+  return { recordAppended, repairPage };
 };
