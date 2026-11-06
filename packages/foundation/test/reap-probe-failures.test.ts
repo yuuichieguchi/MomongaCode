@@ -54,7 +54,7 @@ const inspectorReporting = (processes: readonly UninspectableProcess[]): Process
     return { kind: 'value', value: [] };
   },
   groupsOf: async () => ({ kind: 'value', value: new Map() }),
-  markerState: async () => 'held',
+  markerState: async () => (processes.length > 0 ? 'held' : 'free'),
 });
 
 const aliveRegistry = () => createUninspectableRegistry({ isAlive: () => true });

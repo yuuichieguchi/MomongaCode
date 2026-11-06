@@ -1,7 +1,8 @@
 import type { CommandRunner } from './command-runner.ts';
 import { failureOfError, probeFailed } from './inspector-types.ts';
 import { withListedState } from './marker-state.ts';
-import type { ProbeFailure, ProbeOptions, ProbeResult, ProcessInspector } from './inspector-types.ts';
+import type { GroupProbeOptions } from './group-port.ts';
+import type { ProbeFailure, ProbeResult, ProcessInspector } from './inspector-types.ts';
 import type { GroupLedger } from './windows-parsers.ts';
 import { groupMembers, groupOfPid, parsePidList, parseProcessTable, parseStartTimeMs } from './windows-parsers.ts';
 import { PROCESS_TABLE_SCRIPT, holdersScript, powershellArgs, powershellPath, startTimeScript, taskkillPath } from './windows-scripts.ts';
@@ -76,14 +77,14 @@ export type WindowsGroupPorts = { run: CommandRunner; env: Readonly<Record<strin
 export const TASKKILL_NOT_FOUND_EXIT_CODE = 128;
 
 export type GroupControl = {
-  members(root: number, options: ProbeOptions): Promise<number[]>;
-  terminate(root: number, options: ProbeOptions): Promise<void>;
+  members(root: number, options: GroupProbeOptions): Promise<number[]>;
+  terminate(root: number, options: GroupProbeOptions): Promise<void>;
 };
 
 export const createWindowsGroupControl = ({ run, env }: WindowsGroupPorts): GroupControl => {
   const ledgers = new Map<number, GroupLedger>();
-  const members = async (root: number, { signal }: ProbeOptions): Promise<number[]> => {
-    const result = await run(powershellPath(env), powershellArgs(PROCESS_TABLE_SCRIPT), { env: probeEnv(env), signal });
+  const members = async (root: number, options: GroupProbeOptions): Promise<number[]> => {
+    const result = await run(powershellPath(env), powershellArgs(PROCESS_TABLE_SCRIPT), { env: probeEnv(env), signal: options.signal });
     if (result.exitCode !== 0) throw new Error(`powershell exited with ${result.exitCode}: ${result.stderr.trim()}`);
     const rows = parseProcessTable(result.stdout);
     const ledger = ledgers.get(root) ?? new Map();

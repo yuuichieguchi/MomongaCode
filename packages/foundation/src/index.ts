@@ -89,7 +89,7 @@ export type {
 } from './process-lock.ts';
 export { bsdFileLock, createFileLock, nodeFileLockOps, resolveKernelLock, writeHolderOrRelease } from './platform/kernel-lock.ts';
 export { createKernelLockMechanism, hostKernelLock } from './platform/host-kernel-lock.ts';
-export { createLockCapability } from './platform/lock-capability.ts';
+export { createLockCapability, hostLockCapability } from './platform/lock-capability.ts';
 export type { LockCapability, LockCapabilityOptions, LockCapabilityProbe } from './platform/lock-capability.ts';
 export { UNMEASURED_CAPABILITY } from './platform/lock-capability.ts';
 export { MARKER_MODES, MARKER_PHASES, MARKER_STATES } from './marker-state.ts';
@@ -215,7 +215,7 @@ export { UnsupportedPlatformError, createProcessInspector, defaultProcessInspect
 export type { InspectorPorts } from './platform/process-inspector.ts';
 export { createAsyncSignalSender, createProcessGroupPort, hostAsyncSignalSender, hostProcessGroupPort, hostSignalSender, posixGroupPort } from './platform/group-port.ts';
 export type { AsyncSignalSender, ProcessGroupPort } from './platform/group-port.ts';
-export { deadlineSignal, hostProbeTiming } from './platform/probe-timing.ts';
+export { deadlineSignal, hostProbeTiming, operationSignal } from './platform/probe-timing.ts';
 export type { ProbeTiming } from './platform/probe-timing.ts';
 export { nodeProcFs } from './platform/procfs.ts';
 export type { FileIdentity, ProcFs } from './platform/procfs.ts';

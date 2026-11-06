@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import type { ExecFileException } from 'node:child_process';
 
-export type CommandOptions = { env: Readonly<Record<string, string>>; timeoutMs?: number; input?: string; signal?: AbortSignal };
+export type CommandOptions = { env: Readonly<Record<string, string>>; timeoutMs?: number; input?: string; signal?: AbortSignal | undefined };
 
 export type CommandResult = { exitCode: number; stdout: string; stderr: string };
 

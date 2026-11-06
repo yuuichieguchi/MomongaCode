@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { findHolders, reapMarkedProcesses, reportUninspectableOnce } from '@momonga/foundation';
+import { findHolders, operationSignal, reapMarkedProcesses, reportUninspectableOnce } from '@momonga/foundation';
 import type { ReapTiming, UninspectableRegistry } from '@momonga/foundation';
 import { TERMINAL_STATUSES } from '@momonga/protocol';
 import type { IdempotencyLookup, RuntimeStore } from '@momonga/store';
@@ -24,7 +24,7 @@ export type ReapToolMarkersOptions = {
   killGraceMs: number;
   onWarning(message: string): void;
   timing?: ReapTiming;
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
   reap?: typeof reapMarkedProcesses;
   files?: RuntimeFiles;
   uninspectable?: UninspectableRegistry;
@@ -36,12 +36,21 @@ export const reapToolMarkers = async ({
   killGraceMs,
   onWarning,
   timing,
-  signal = new AbortController().signal,
+  signal: given,
   reap = reapMarkedProcesses,
   scope = 'all',
   files = nodeRuntimeFiles,
   uninspectable,
 }: ReapToolMarkersOptions): Promise<void> => {
+  const operation = operationSignal(given);
+  try {
+    await sweep();
+  } finally {
+    operation.end();
+  }
+
+  async function sweep(): Promise<void> {
+  const { signal } = operation;
   let names: string[];
   try {
     names = await files.readdir(dir);
@@ -113,7 +122,7 @@ export const reapToolMarkers = async ({
 
   const outcomes = await Promise.allSettled(
     plans.map(({ marker, pgid }) =>
-      reap({ marker, ...(pgid === undefined ? {} : { pgid }), killGraceMs, label: 'tool', onWarning, ...(timing === undefined ? {} : { timing }), ...(uninspectable === undefined ? {} : { uninspectable }) }),
+      reap({ marker, ...(pgid === undefined ? {} : { pgid }), killGraceMs, label: 'tool', onWarning, signal, ...(timing === undefined ? {} : { timing }), ...(uninspectable === undefined ? {} : { uninspectable }) }),
     ),
   );
   outcomes.forEach((outcome, index) => {
@@ -121,4 +130,5 @@ export const reapToolMarkers = async ({
     if (outcome.status === 'rejected') onWarning(`tool marker ${plan?.marker} could not be reaped: ${asError(outcome.reason).message}`);
     else if (plan?.terminalRunId !== undefined) onWarning(`tool marker ${plan.marker}: run ${plan.terminalRunId} is terminal, so its holder was reaped`);
   });
+  }
 };

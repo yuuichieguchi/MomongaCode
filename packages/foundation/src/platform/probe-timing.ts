@@ -21,3 +21,10 @@ export const deadlineSignal = (timing: Pick<ProbeTiming, 'sleep' | 'unrefSleep'>
   void wait.call(timing, ms).then(() => controller.abort(new Error(`the deadline of ${ms} ms passed`)));
   return controller.signal;
 };
+
+export type OperationSignal = { signal: AbortSignal; end(): void };
+
+export const operationSignal = (given: AbortSignal | undefined): OperationSignal => {
+  const own = new AbortController();
+  return { signal: given === undefined ? own.signal : given, end: () => own.abort() };
+};

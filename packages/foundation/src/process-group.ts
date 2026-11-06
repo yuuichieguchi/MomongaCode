@@ -1,7 +1,6 @@
 import { hostProcessGroupPort } from './platform/group-port.ts';
 import type { ProcessGroupPort } from './platform/group-port.ts';
 import type { GroupMembersReader } from './platform/group-members.ts';
-import type { ProbeOptions } from './platform/inspector-types.ts';
 
 const POLL_INTERVAL_MS = 10;
 const MIN_KILL_WAIT_MS = 1000;
@@ -27,12 +26,8 @@ export interface TerminateGroupOptions {
   termDeadline?: number;
   port?: ProcessGroupPort;
   timing?: GroupTiming;
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }
-
-const NEVER_ABORTED = new AbortController().signal;
-
-const optionsOf = (signal: AbortSignal | undefined): ProbeOptions => ({ signal: signal ?? NEVER_ABORTED });
 
 function assertSignalableGroup(pgid: number): void {
   if (!Number.isInteger(pgid) || pgid <= 1) throw new Error(`refusing to signal process group ${pgid}`);
@@ -40,7 +35,7 @@ function assertSignalableGroup(pgid: number): void {
 
 export async function signalGroup(pgid: number, signal: NodeJS.Signals, port: ProcessGroupPort = hostProcessGroupPort(), stop?: AbortSignal): Promise<void> {
   assertSignalableGroup(pgid);
-  await port.signal(pgid, signal, optionsOf(stop));
+  await port.signal(pgid, signal, { signal: stop });
 }
 
 export type ProcessSignalSender = (pid: number, signal: NodeJS.Signals) => void;
@@ -63,7 +58,7 @@ export function signalGroupExceptLeader(pgid: number, signal: NodeJS.Signals, me
 
 export async function groupAlive(pgid: number, port: ProcessGroupPort = hostProcessGroupPort(), stop?: AbortSignal): Promise<boolean> {
   assertSignalableGroup(pgid);
-  return port.alive(pgid, optionsOf(stop));
+  return port.alive(pgid, { signal: stop });
 }
 
 export async function waitForGroupGone(
@@ -84,7 +79,7 @@ export interface ForceKillGroupOptions {
   deadline: number;
   port?: ProcessGroupPort;
   timing?: GroupTiming;
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }
 
 export async function forceKillGroup(pgid: number, { deadline, port = hostProcessGroupPort(), timing = realGroupTiming, signal }: ForceKillGroupOptions): Promise<boolean> {
@@ -107,7 +102,7 @@ export async function terminateGroup(pgid: number, options: TerminateGroupOption
     await signalGroup(pgid, 'SIGTERM', port, signal);
   }
   if (await waitForGroupGone(pgid, termDeadline, port, timing, signal)) return 'terminated';
-  if (!(await forceKillGroup(pgid, { deadline: timing.now() + killWaitMs(options.graceMs), port, timing, ...(signal === undefined ? {} : { signal }) }))) {
+  if (!(await forceKillGroup(pgid, { deadline: timing.now() + killWaitMs(options.graceMs), port, timing, signal }))) {
     throw new Error(`process group ${pgid} did not terminate after SIGKILL`);
   }
   return 'killed';

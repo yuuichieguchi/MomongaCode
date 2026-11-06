@@ -9,11 +9,19 @@ export type BaseInspector = Omit<ProcessInspector, 'markerState'>;
 
 const sharedProbeFlags = (): number => fs.constants.O_RDONLY | O_SHLOCK | fs.constants.O_NONBLOCK;
 
-const abortedState = (signal: AbortSignal): Promise<'unknown'> =>
-  new Promise((resolve) => {
-    if (signal.aborted) resolve('unknown');
-    else signal.addEventListener('abort', () => resolve('unknown'), { once: true });
+const raceAbort = async <T>(pending: Promise<T>, signal: AbortSignal): Promise<T | 'unknown'> => {
+  let release: () => void = () => undefined;
+  const aborted = new Promise<'unknown'>((resolve) => {
+    release = () => resolve('unknown');
+    if (signal.aborted) release();
+    else signal.addEventListener('abort', release, { once: true });
   });
+  try {
+    return await Promise.race([pending, aborted]);
+  } finally {
+    signal.removeEventListener('abort', release);
+  }
+};
 
 const lockState = async (marker: string): Promise<MarkerState> => {
   let handle: fs.promises.FileHandle;
@@ -62,9 +70,9 @@ export const withMarkerState = (base: ProcessInspector, capability: LockCapabili
     capability,
     markerState: async (marker, { signal, mode }: MarkerStateOptions): Promise<MarkerState> => {
       if (signal.aborted) return 'unknown';
-      const proved = (await Promise.race([capability.of(path.dirname(marker)), abortedState(signal)])) === 'proved';
+      const proved = (await raceAbort(capability.of(path.dirname(marker)), signal)) === 'proved';
       if (signal.aborted) return 'unknown';
-      if (proved && mode !== 'listed') return Promise.race([viaLock(marker), abortedState(signal)]);
+      if (proved && mode !== 'listed') return raceAbort(viaLock(marker), signal);
       return base.markerState(marker, { signal });
     },
   };

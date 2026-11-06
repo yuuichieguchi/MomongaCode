@@ -1014,7 +1014,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     };
   };
 
-  const reapEarlierAttempt = async (key: string, pgid: number | undefined): Promise<NonNullable<ReconcileContext['earlierAttempt']>> => {
+  const reapEarlierAttempt = async (key: string, pgid: number | undefined, signal: AbortSignal): Promise<NonNullable<ReconcileContext['earlierAttempt']>> => {
     const marker = path.join(options.processMarkerDir, key);
     let reaped: ReapReport;
     try {
@@ -1025,6 +1025,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         label: 'tool',
         onWarning: options.onWarning,
         timing: reapTiming,
+        signal,
         ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
         ...(options.reap?.inspector === undefined ? {} : { inspector: options.reap.inspector }),
         ...(options.reap?.uninspectable === undefined ? {} : { uninspectable: options.reap.uninspectable }),
@@ -1037,7 +1038,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       );
     }
     if (!reaped.removed) {
-      if (reaped.uninspectable.length > 0) {
+      if (reaped.uninspectable.length > 0 || signal.aborted) {
         throw new EarlierAttemptNotStoppedError(
           `a process holding the marker of the earlier attempt of call ${key} could not be inspected, so it could not be verified as stopped: ${reaped.uninspectable.map(({ pid, command }) => `${pid} (${command})`).join(', ')}`,
           'unverifiable',
@@ -1053,7 +1054,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   const reconcileAsHolder = async (scope: CallScope, callId: string, tool: AnyTool, input: unknown, record: ToolIdempotencyRecord): Promise<Resumed> => {
     if ((await scope.holdCall()) === 'aborted') return { kind: 'outcome', outcome: failedOutcome(callId, `${tool.name} was cancelled`) };
     if (!scope.holding(scope.ledger.authorise(record.key))) return { kind: 'outcome', outcome: scope.deferred };
-    const earlierAttempt = await reapEarlierAttempt(record.key, record.pgid);
+    const earlierAttempt = await reapEarlierAttempt(record.key, record.pgid, scope.controller.signal);
     try {
       const ctx: ReconcileContext = { ...scope.reconcileCtx, earlierAttempt };
       return { kind: 'reconciled', result: await reconcileWithin(tool, input, record, ctx, () => scope.abortWith('timeout'), scope.closeContext) };
@@ -1510,7 +1511,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     const lock = await callLocks.acquire(key, signal);
     if (lock === 'aborted') throw signal.reason;
     try {
-      await reapEarlierAttempt(key, pgid);
+      await reapEarlierAttempt(key, pgid, signal);
     } finally {
       releaseCallLock(lock);
     }

@@ -1,12 +1,13 @@
 import { nodeCommandRunner } from './command-runner.ts';
 import type { CommandRunner } from './command-runner.ts';
 import type { SignalSender } from '../process-alive.ts';
-import type { ProbeOptions } from './inspector-types.ts';
 import { createWindowsGroupControl } from './windows-inspector.ts';
 
+export type GroupProbeOptions = { signal: AbortSignal | undefined };
+
 export interface ProcessGroupPort {
-  signal(pgid: number, signal: NodeJS.Signals, options: ProbeOptions): Promise<void>;
-  alive(pgid: number, options: ProbeOptions): Promise<boolean>;
+  signal(pgid: number, signal: NodeJS.Signals, options: GroupProbeOptions): Promise<void>;
+  alive(pgid: number, options: GroupProbeOptions): Promise<boolean>;
 }
 
 const tolerated = (error: unknown): 'gone' | 'denied' | 'other' => {
@@ -56,7 +57,7 @@ export const hostProcessGroupPort = (): ProcessGroupPort => {
 
 export const hostSignalSender: SignalSender = (target, signal) => void process.kill(target, signal);
 
-export type AsyncSignalSender = (target: number, signal: NodeJS.Signals | 0, options: ProbeOptions) => Promise<void>;
+export type AsyncSignalSender = (target: number, signal: NodeJS.Signals | 0, options: GroupProbeOptions) => Promise<void>;
 
 const noSuchProcess = (): NodeJS.ErrnoException => Object.assign(new Error('no such process group'), { code: 'ESRCH' });
 

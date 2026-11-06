@@ -293,7 +293,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   try {
     const paths = await step('dirs', async () => {
       const resolved = momongaPaths(canonicalHome, process.platform, {});
-      await ensureMomongaDirs(resolved);
+      await ensureMomongaDirs(resolved, { signal });
       return resolved;
     });
 
@@ -362,7 +362,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
 
     await step('mcp-markers', async () => {
-      await reapMarkerDirectory({ dir: paths.markers.mcp, killGraceMs: MARKER_REAP_KILL_GRACE_MS, label: 'mcp', onWarning, timing: reapTiming });
+      await reapMarkerDirectory({ dir: paths.markers.mcp, killGraceMs: MARKER_REAP_KILL_GRACE_MS, label: 'mcp', onWarning, timing: reapTiming, signal });
     });
 
     const { notifier, store, journalThread } = await step('store', async () => {
@@ -399,7 +399,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
 
     await step('tool-markers', async () => {
-      await reapToolMarkers({ dir: paths.markers.tools, store, killGraceMs: MARKER_REAP_KILL_GRACE_MS, onWarning, timing: reapTiming, ...(signal === undefined ? {} : { signal }) });
+      await reapToolMarkers({ dir: paths.markers.tools, store, killGraceMs: MARKER_REAP_KILL_GRACE_MS, onWarning, timing: reapTiming, signal });
       await clearCallLocks(paths.callLocks);
     });
 
@@ -643,6 +643,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         reflect: (sweepSignal) => reflector.runOne(sweepSignal),
         onError: report,
       });
+      const sweepStop = new AbortController();
       periodics.push(
         startPeriodic({ intervalMs: IDEMPOTENCY_PURGE_MS, run: () => {
             store.idempotency.purgeExpired(clock.now());
@@ -681,7 +682,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
                 killGraceMs: MARKER_REAP_KILL_GRACE_MS,
                 onWarning,
                 timing: reapTiming,
-                ...(signal === undefined ? {} : { signal }),
+                signal: sweepStop.signal,
                 scope: { deadLetterOnly: true, skipKeys: toolRuntime.inFlightKeys() },
               });
             } catch (error) {
@@ -696,7 +697,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       );
       cleanups.push({
         name: 'timers',
-        run: async () => void (await Promise.all([memorySweeper.close(), ...periodics.map((periodic) => periodic.stop())])),
+        run: async () => {
+          sweepStop.abort();
+          await Promise.all([memorySweeper.close(), ...periodics.map((periodic) => periodic.stop())]);
+        },
       });
     });
 

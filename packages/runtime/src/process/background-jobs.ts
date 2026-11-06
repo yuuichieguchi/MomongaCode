@@ -63,7 +63,9 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
   const { store, clock, timers, markerDir, markerFiles, killGraceMs, reapTiming, onWarning, report } = options;
   const probes: ProcessProbes = { findHolders, reconcileProcessGroup, reapMarkedProcesses, ...options.probes };
   const live = new Map<string, LiveJob>();
-  const lifecycle = options.signal ?? new AbortController().signal;
+  const lifecycleStop = new AbortController();
+  options.signal?.addEventListener('abort', () => lifecycleStop.abort(), { once: true });
+  const lifecycle = lifecycleStop.signal;
 
   const authorize = (runId: string, jobId: string): Job => {
     const run = store.getRun(runId);
