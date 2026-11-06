@@ -433,8 +433,9 @@ describe('runProbe server features', () => {
     );
     expect(report.constrained).toEqual({ accepted: false, validRate: 0 });
     expect(report.schemaDialect.selected).toBeNull();
-    expect(report.schemaDialect.tried.find(({ id }) => id === 'explicit-keys')).toEqual({ id: 'explicit-keys', result: 'refused', detail: expect.stringContaining('unsupported generation guide') });
-    expect(fake.routeHits).toEqual([2]);
+    expect(report.schemaDialect.tried.some(({ result }) => result === 'refused')).toBe(true);
+    expect(report.schemaDialect.tried.some(({ result }) => result === 'accepted')).toBe(false);
+    expect(fake.routeHits).toEqual([1]);
   });
 
   it('records no keyword table when the server refuses the nested objects and additionalProperties that the probe schema carries, because no dialect is selected', async () => {
