@@ -26,9 +26,9 @@ const optionalString = (container: Record<string, unknown>, key: string, what: s
 };
 
 const count = (container: Record<string, unknown>, key: string): number => {
-  const value = container[key];
+  const value = container[key] === undefined ? 0 : container[key];
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
-    throw new UpstreamProtocolError(`the upstream's done chunk lacks ${key} as a non-negative integer`);
+    throw new UpstreamProtocolError(`the upstream's done chunk has a ${key} that is not a non-negative integer`);
   }
   return value;
 };
@@ -36,7 +36,7 @@ const count = (container: Record<string, unknown>, key: string): number => {
 const usageOf = (done: Record<string, unknown>): Usage => {
   const input = count(done, 'prompt_eval_count');
   const output = count(done, 'eval_count');
-  const cached = done['prompt_eval_cached_count'] === undefined ? 0 : count(done, 'prompt_eval_cached_count');
+  const cached = count(done, 'prompt_eval_cached_count');
   return {
     input_tokens: input,
     output_tokens: output,

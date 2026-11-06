@@ -53,3 +53,19 @@ export const createConstrainedSink = (emitter: ResponseEmitter, plan: Constraine
     },
   };
 };
+
+const IGNORED_HANDLERS = { finalTextStarted: (): void => undefined, finalTextDelta: (): void => undefined, toolCall: (): void => undefined };
+
+export const isAcceptedEnvelope = (content: string, plan: ConstrainedPlan): boolean => {
+  const parser = new IncrementalJsonParser(LIMITS);
+  const reader = new EnvelopeReader(plan.toolNames, IGNORED_HANDLERS, plan.requireToolCalls);
+  try {
+    for (const event of parser.push(content)) reader.accept(event);
+    for (const event of parser.end()) reader.accept(event);
+    reader.finish();
+    return true;
+  } catch (error) {
+    if (error instanceof JsonSyntaxError || error instanceof MalformedOutputError) return false;
+    throw error;
+  }
+};

@@ -46,12 +46,14 @@ export type ExecWithStdinFn = (
   signal: AbortSignal,
 ) => Promise<ExecResult>;
 
+export type UnmeasuredRecordKey = { target: string; unmeasured: string };
+
 export type ManagedFmTargetOptions = {
   fmServe: FmServe;
   binary: string;
   exec: ExecWithStdinFn;
   probeRecordDir: string;
-  recordKey: ProbeRecordKey;
+  recordKey: ProbeRecordKey | UnmeasuredRecordKey;
   toolCallingSetting: ToolCallingSetting;
   declaredModel?: string;
   declaredOutputBoundField?: OutputBoundField;
@@ -195,23 +197,28 @@ const probedLayerOf = (report: ProbeReport, refusal: NeedsProbe | undefined, mod
 };
 
 export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Promise<ManagedFmTarget> => {
-  const report = await loadProbeRecord(options.probeRecordDir, options.recordKey, {
+  const { recordKey } = options;
+  const identityText =
+    'unmeasured' in recordKey
+      ? `the fm binary, whose identity could not be measured (${recordKey.unmeasured})`
+      : `the fm binary with sha256 ${recordKey.binarySha256} on OS build ${recordKey.osBuild}`;
+  const report = 'unmeasured' in recordKey ? null : await loadProbeRecord(options.probeRecordDir, recordKey, {
     userDialects: options.userDialects ?? NO_USER_DIALECTS,
     probeMethod: PROBE_METHOD_VERSION,
     ...(options.declaredDialect === undefined ? {} : { declaredDialect: options.declaredDialect }),
   });
   const schemaDialect = resolveDialectId(options.declaredDialect, report);
-  const { target: targetName, binarySha256, osBuild } = options.recordKey;
+  const targetName = recordKey.target;
   const needsProbe = needsProbeOf(
     targetName,
     `the target "${targetName}" sets toolCalling to auto, but no probe record exists`,
-    `no record for the fm binary with sha256 ${binarySha256} on OS build ${osBuild}`,
+    `no record for ${identityText}`,
   );
   const modeOf = (): ToolCallingMode => resolveToolCalling(options.toolCallingSetting, report, needsProbe).mode;
   const unprobedAuto = isUnprobedAuto(options.toolCallingSetting, report);
   const refusedDeclaration =
     options.toolCallingSetting === 'auto' && report !== null
-      ? declaredDialectRefusal(targetName, options.declaredDialect, report.schemaDialect, `the fm binary with sha256 ${binarySha256} on OS build ${osBuild}`)
+      ? declaredDialectRefusal(targetName, options.declaredDialect, report.schemaDialect, identityText)
       : undefined;
   const state = unprobedAuto ? needsProbe : (refusedDeclaration ?? modeOf());
   const { parallelToolCalls: _unprobedParallel, ...probedDefaults } = unprobedCapabilities(state, schemaDialect);

@@ -38,7 +38,7 @@ import { chatTransport, probeConstructs, probeKeywords, selectDialect } from './
 import { assistantMessage, errorKindOf, expectStatus, failProbeStep, isAcceptedOrRejected, isFirstSampleAccepted, outcomeOf, promptTokensOf, sampleRequest } from './probe-chat.ts';
 import type { Chat, ChatResult, ProbeOutcome } from './probe-chat.ts';
 import { fillerText } from './filler.ts';
-import { field, firstOf, isRecord, parseJson } from './json.ts';
+import { field, firstOf, isRecord, listedEntryOf, parseJson } from './json.ts';
 
 export interface ProbeOptions {
   socketPath?: string;
@@ -192,7 +192,7 @@ const probeWith = async (client: ProbeClient, options: ProbeOptions): Promise<Pr
   };
   const chat = retryingRateLimits(post);
 
-  const contextWindow = reportedContextWindow(modelsBody, healthResult.text) ?? (await searchContextWindow(chat, options.countTokens));
+  const contextWindow = reportedContextWindow(modelsBody, model, healthResult.text) ?? (await searchContextWindow(chat, options.countTokens));
   bound.tokens = maxOutputTokensFor(contextWindow.value);
 
   const plain = await chat({ messages: [{ role: 'user', content: PLAIN_PROMPT }] });
@@ -527,8 +527,8 @@ const findContextValue = (source: unknown): number | undefined => {
   return undefined;
 };
 
-const reportedContextWindow = (modelsBody: unknown, healthText: string): ProbeReport['contextWindow'] | undefined => {
-  for (const source of [firstOf(field(modelsBody, 'data')), parseJson(healthText)]) {
+const reportedContextWindow = (modelsBody: unknown, model: string, healthText: string): ProbeReport['contextWindow'] | undefined => {
+  for (const source of [listedEntryOf(modelsBody, model), parseJson(healthText)]) {
     const value = findContextValue(source);
     if (value !== undefined) return { value, method: 'reported' };
   }

@@ -137,6 +137,22 @@ describe('runProbe context window', () => {
     expect(report.contextWindow).toEqual({ value: 8192, method: 'reported' });
   });
 
+  it('reads context_window from the entry of the probed model, not from the first entry', async () => {
+    const { report } = await probe(
+      { scenario: 'tools-ok', contextWindow: 8192, models: [{ id: 'a', context_window: 131072 }, { id: 'b', context_window: 8192 }] },
+      { model: 'b' },
+    );
+    expect(report.contextWindow).toEqual({ value: 8192, method: 'reported' });
+  });
+
+  it('does not take another model\'s window when the probed model is not listed', async () => {
+    const { report } = await probe(
+      { scenario: 'tools-ok', contextWindow: 3000, modelId: 'b', models: [{ id: 'a', context_window: 131072 }] },
+      { model: 'b' },
+    );
+    expect(report.contextWindow.method).toBe('searched');
+  });
+
   it('reads context_window from /health', async () => {
     const { report } = await probe({ scenario: 'tools-ok', contextWindow: 6000, contextSizeExposure: 'health' });
     expect(report.contextWindow).toEqual({ value: 6000, method: 'reported' });
@@ -241,10 +257,12 @@ describe('runProbe server features', () => {
     expect(report.imageTokens?.pixelsPerToken).toBeLessThan(336);
   });
 
-  it('reports no image token model when every size below the plateau costs the floor', async () => {
+  it('measures the point where the cost leaves the floor when every size below the plateau costs the floor', async () => {
     const { report } = await probe({ scenario: 'tools-ok', imageInput: true, imageTokens: { pixelsPerToken: 100_000, maxTokens: 100, minTokens: 50 } });
     expect(report.imageInputAccepted).toBe(true);
-    expect(report.imageTokens).toBeUndefined();
+    expect(report.imageTokens).toMatchObject({ minTokens: 56, maxTokens: 106 });
+    expect(report.imageTokens?.pixelsPerToken).toBeGreaterThan(90_000);
+    expect(report.imageTokens?.pixelsPerToken).toBeLessThan(110_000);
     expect(isProbeReport(report)).toBe(true);
   });
 
@@ -415,8 +433,9 @@ describe('runProbe server features', () => {
     );
     expect(report.constrained).toEqual({ accepted: false, validRate: 0 });
     expect(report.schemaDialect.selected).toBeNull();
-    expect(report.schemaDialect.tried.find(({ id }) => id === 'explicit-keys')).toEqual({ id: 'explicit-keys', result: 'refused', detail: expect.stringContaining('unsupported generation guide') });
-    expect(fake.routeHits).toEqual([2]);
+    expect(report.schemaDialect.tried.some(({ result }) => result === 'refused')).toBe(true);
+    expect(report.schemaDialect.tried.some(({ result }) => result === 'accepted')).toBe(false);
+    expect(fake.routeHits).toEqual([1]);
   });
 
   it('records no keyword table when the server refuses the nested objects and additionalProperties that the probe schema carries, because no dialect is selected', async () => {

@@ -10,7 +10,6 @@ const TINY_PNG_SIDE = 1;
 export const TINY_PNG =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
-
 type ImageCost = { rejected: true } | { rejected: false; promptTokens: number | undefined };
 
 type MeasuredImage = { side: number; tokens: number };
@@ -61,11 +60,35 @@ const findCeiling = async (probe: ImageCostProbe, baseline: number, small: Measu
   return { largest: previous, plateau: false };
 };
 
-const referenceBelowPlateau = async (probe: ImageCostProbe, baseline: number, start: MeasuredImage, model: Pick<ImageTokenModel, 'minTokens' | 'maxTokens'>, plateau: boolean): Promise<MeasuredImage | undefined> => {
+const smallestAtTop = async (probe: ImageCostProbe, baseline: number, below: MeasuredImage, top: MeasuredImage, maxTokens: number): Promise<MeasuredImage | undefined> => {
+  let low = below;
+  let high = top;
+  while (high.side - low.side > Math.max(1, Math.floor(low.side * SEARCH_TOLERANCE))) {
+    const middle = Math.floor((low.side + high.side) / 2);
+    const measured = await measureSide(probe, baseline, middle);
+    if (measured === 'rejected' || measured === 'unusable') return undefined;
+    if (measured.tokens >= maxTokens) high = measured;
+    else low = measured;
+  }
+  return high;
+};
+
+const referencePoint = async (
+  probe: ImageCostProbe,
+  baseline: number,
+  start: MeasuredImage,
+  largest: MeasuredImage,
+  model: Pick<ImageTokenModel, 'minTokens' | 'maxTokens'>,
+  plateau: boolean,
+): Promise<MeasuredImage | undefined> => {
   let candidate = start;
+  let top = largest;
   for (;;) {
-    if (candidate.tokens <= model.minTokens) return undefined;
+    if (candidate.tokens <= model.minTokens) {
+      return plateau ? smallestAtTop(probe, baseline, candidate, top, model.maxTokens) : largest;
+    }
     if (!plateau || candidate.tokens < model.maxTokens) return candidate;
+    top = candidate;
     const side = Math.floor(candidate.side / 2);
     if (side < 1) return undefined;
     const measured = await measureSide(probe, baseline, side);
@@ -87,9 +110,10 @@ export const measureImageTokens = async (probe: ImageCostProbe): Promise<ImageTo
       : await findCeiling(probe, baseline, small, tiny.tokens);
   if (ceiling?.largest === undefined || ceiling.largest.side === tiny.side) return undefined;
   const { largest, plateau } = ceiling;
+  if (largest.tokens < tiny.tokens) return undefined;
   const model = { minTokens: tiny.tokens, maxTokens: largest.tokens };
   const start = small === 'rejected' ? largest : small;
-  const reference = model.minTokens === model.maxTokens ? start : await referenceBelowPlateau(probe, baseline, start, model, plateau);
+  const reference = model.minTokens === model.maxTokens ? start : await referencePoint(probe, baseline, start, largest, model, plateau);
   if (reference === undefined) return undefined;
   return { pixelsPerToken: reference.side ** 2 / reference.tokens, ...model };
 };

@@ -71,6 +71,17 @@ describe('probeEndpointTarget', () => {
     expect(chatBodies.every((body) => body.model === 'qwen-fake')).toBe(true);
   });
 
+  it('refuses to probe a model the server does not list and saves no record', async () => {
+    const fake = await startFake({ scenario: 'tools-ok', modelId: 'qwen-fake', models: [{ id: 'other', object: 'model' }] });
+    const dir = makeDir();
+    const key = { endpoint: endpointKeyOf({ kind: 'unix', socketPath: fake.socketPath }), model: 'qwen-fake' };
+
+    await expect(
+      probeEndpointTarget({ probeRecordDir: dir, upstream: { kind: 'unix', socketPath: fake.socketPath }, key, model: 'qwen-fake', apiKey: undefined, samples: 1 }),
+    ).rejects.toThrow(/does not list/);
+    expect(await loadEndpointRecord(dir, key, CURRENT_DIALECTS)).toBeNull();
+  });
+
   it('never asks a chat-completions target for /health, whatever the transport', async () => {
     const fake = await startFake({ scenario: 'tools-ok', modelId: 'qwen-fake', models: MODELS });
 
@@ -90,6 +101,12 @@ describe('probeEndpointTarget', () => {
 });
 
 describe('readEndpointIdentity failures', () => {
+  it('refuses when the server does not list the model, never answering with an empty identity', async () => {
+    const fake = await startFake({ scenario: 'tools-ok', models: [{ id: 'other' }] });
+
+    await expect(readEndpointIdentity({ kind: 'unix', socketPath: fake.socketPath }, 'qwen-fake', [], new AbortController().signal)).rejects.toThrow(/does not list/);
+  });
+
   it('classifies a listing that does not answer within the bound as an unreachable provider', async () => {
     const fake = await startFake({ scenario: 'tools-ok', modelsReply: { kind: 'hang' } });
 

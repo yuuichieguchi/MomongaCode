@@ -2,6 +2,7 @@ import { defineProductSchema } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
 import { PROBE_KEYWORDS } from '@momonga/protocol';
 import type { ConstructResult, ConstructSupport, DialectId, ProbeDialectAttempt, ProbeDialectResult, ProbeKeyword, ProbeReportDialect } from '@momonga/protocol';
+import { isAcceptedEnvelope } from '../adapters/chat-completions/constrained-sink.ts';
 import { upstreamErrorMessage } from '../adapters/chat-completions/upstream-reply.ts';
 import { candidateIds } from '../dialect/candidates.ts';
 import { resolveDialect } from '../dialect/choice.ts';
@@ -18,6 +19,7 @@ import {
   CONSTRUCT_TOOLS,
   DEMANDING_PROMPT,
   FORECAST_TOOL,
+  SELECTION_TOOLS,
   NEUTRAL_PROMPT,
   SELECTION_SYSTEM_PROMPT,
   originalEnvelope,
@@ -127,8 +129,10 @@ const argumentsInverted = (call: unknown, ledger: RenderLedger): unknown => {
   return { ...call, arguments: parseJson(invertReply(record, JSON.stringify(call['arguments']))) };
 };
 
+const SELECTION_PLAN = { toolNames: new Set(SELECTION_TOOLS.map((tool) => tool.name)), requireToolCalls: false };
+
 const replyEnvelope = (reply: SelectionReply | undefined, ledger: RenderLedger): Record<string, unknown> | undefined => {
-  if (reply?.kind !== 'ok' || reply.content === undefined) return undefined;
+  if (reply?.kind !== 'ok' || reply.content === undefined || !isAcceptedEnvelope(reply.content, SELECTION_PLAN)) return undefined;
   const envelope = parseJson(reply.content);
   if (!isRecord(envelope)) return undefined;
   const calls = envelope['calls'];

@@ -3,7 +3,7 @@ import { NO_USER_DIALECTS } from '../dialect/choice.ts';
 import type { UserDialects } from '../dialect/choice.ts';
 import type { UpstreamEndpoint } from '../adapters/shared/http-client.ts';
 import { decideToolCalling } from './decide.ts';
-import { endpointIdentityOf, saveEndpointRecord, stableIdentityFieldsOf } from './endpoint-record.ts';
+import { endpointIdentityOf, requireListedEntry, saveEndpointRecord, stableIdentityFieldsOf } from './endpoint-record.ts';
 import type { EndpointKey } from './endpoint-record.ts';
 import { probeEndpointOf, readModelsListing } from './endpoint-target.ts';
 import { PROBE_METHOD_VERSION, runProbe } from './run-probe.ts';
@@ -32,6 +32,7 @@ export const probeEndpointTarget = async (options: ProbeEndpointTargetOptions): 
   const signal = options.signal ?? new AbortController().signal;
   const endpoint = probeEndpointOf(options.upstream, options.apiKey);
   const firstListing = await readModelsListing(endpoint, signal);
+  requireListedEntry(firstListing, options.model);
   const report = await runProbe({
     ...(endpoint.kind === 'unix' ? { socketPath: endpoint.socketPath } : { baseUrl: endpoint.baseUrl, ...(endpoint.headers === undefined ? {} : { headers: endpoint.headers }) }),
     model: options.model,
