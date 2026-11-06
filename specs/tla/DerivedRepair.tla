@@ -1,7 +1,7 @@
 ---------------------------- MODULE DerivedRepair ----------------------------
 EXTENDS Naturals, Sequences, FiniteSets, TLC
 
-CONSTANTS Derivs, DsUnit, MaxEvents, Pre, PageSize, ReadRule, Repair, Reps
+CONSTANTS Derivs, DsUnit, DsKind, MaxEvents, Pre, PageSize, ReadRule, Repair, Reps
 
 Runs == {"r1", "r2"}
 Gens == {"O", "N"}
@@ -9,16 +9,17 @@ Big == MaxEvents + 1
 
 ASSUME Derivs \subseteq {"dn", "ds"}
 ASSUME DsUnit \in {"run", "session"}
-ASSUME ReadRule \in {"today", "tail"}
+ASSUME DsKind \in {"seq", "set"}
+ASSUME ReadRule \in {"today", "tail", "separate"}
 ASSUME Repair \in {"pageTx", "staleMark", "advanceAtEnd"}
 ASSUME Pre \in 0..MaxEvents /\ PageSize \in 1..MaxEvents
 
 ValScope(d) == IF d = "dn" THEN "run" ELSE "session"
 WmUnit(d) == IF d = "dn" THEN "run" ELSE DsUnit
 
-VARIABLES log, owner, done, wm, val, readBad, cap
+VARIABLES log, owner, done, wm, val, readBad, cap, rd
 
-vars == <<log, owner, done, wm, val, readBad, cap>>
+vars == <<log, owner, done, wm, val, readBad, cap, rd>>
 
 Min(a, b) == IF a < b THEN a ELSE b
 Max(a, b) == IF a > b THEN a ELSE b
@@ -40,10 +41,15 @@ PendingSet(L, d, k, after, hi) ==
 Take(L, d, k, after, hi, n) ==
     LET s == Sorted(PendingSet(L, d, k, after, hi)) IN SubSeq(s, 1, Min(n, Len(s)))
 
+SeqToSet(q) == {q[j] : j \in 1..Len(q)}
+
+Ins(d, q, id) ==
+    IF d = "ds" /\ DsKind = "set" THEN Sorted(SeqToSet(q) \cup {id}) ELSE Append(q, id)
+
 RECURSIVE ApplyAll(_, _, _, _)
 ApplyAll(L, d, v, s) ==
     IF s = <<>> THEN v
-    ELSE ApplyAll(L, d, [v EXCEPT ![VKey(L, d, Head(s))] = Append(@, Head(s))], Tail(s))
+    ELSE ApplyAll(L, d, [v EXCEPT ![VKey(L, d, Head(s))] = Ins(d, @, Head(s))], Tail(s))
 
 NewD(L, d, k, after, hi, n) ==
     LET ids == Take(L, d, k, after, hi, n)
@@ -62,6 +68,8 @@ PendingAcross(d, vk) ==
 
 NoCap == [on |-> FALSE, d |-> "dn", k |-> "r1", at |-> 0]
 
+NoRd == [on |-> FALSE, d |-> "dn", vk |-> "r1"]
+
 Init ==
     /\ log = [i \in 1..Pre |-> [run |-> "r1", seq |-> i]]
     /\ owner = [r \in Runs |-> IF r = "r1" THEN "O" ELSE "N"]
@@ -70,6 +78,7 @@ Init ==
     /\ val = [d \in Derivs |-> [k \in WmKeys |-> <<>>]]
     /\ readBad = FALSE
     /\ cap = [p \in Reps |-> NoCap]
+    /\ rd = [p \in Reps |-> NoRd]
 
 CountOf(r) == Cardinality({i \in 1..Len(log) : log[i].run = r})
 
@@ -78,22 +87,22 @@ NewEvent(r) == [run |-> r, seq |-> CountOf(r) + 1]
 AppendO(r) ==
     /\ owner[r] = "O" /\ ~done[r] /\ Len(log) < MaxEvents
     /\ log' = Append(log, NewEvent(r))
-    /\ UNCHANGED <<owner, done, wm, val, readBad, cap>>
+    /\ UNCHANGED <<owner, done, wm, val, readBad, cap, rd>>
 
 AppendN(r) ==
     /\ ~done[r] /\ Len(log) < MaxEvents
     /\ LET L2 == Append(log, NewEvent(r))
            i == Len(L2)
-           upd(d) == NewD(L2, d, KeyOf(L2, d, i), wm[d][KeyOf(L2, d, i)], PosOf(L2, d, i), Big)
+           ok == \A d \in Derivs : wm[d][KeyOf(L2, d, i)] = PosOf(L2, d, i) - 1
        IN /\ log' = L2
-          /\ wm' = [d \in Derivs |-> [wm[d] EXCEPT ![KeyOf(L2, d, i)] = upd(d).w]]
-          /\ val' = [d \in Derivs |-> upd(d).v]
-    /\ UNCHANGED <<owner, done, readBad, cap>>
+          /\ wm' = [d \in Derivs |-> IF ok THEN [wm[d] EXCEPT ![KeyOf(L2, d, i)] = PosOf(L2, d, i)] ELSE wm[d]]
+          /\ val' = [d \in Derivs |-> IF ok THEN ApplyAll(L2, d, val[d], <<i>>) ELSE val[d]]
+    /\ UNCHANGED <<owner, done, readBad, cap, rd>>
 
 Finish(r) ==
     /\ ~done[r]
     /\ done' = [done EXCEPT ![r] = TRUE]
-    /\ UNCHANGED <<log, owner, wm, val, readBad, cap>>
+    /\ UNCHANGED <<log, owner, wm, val, readBad, cap, rd>>
 
 CatchUpRun(r) ==
     LET upd(d) == NewD(log, d, KeysFor(d, r), wm[d][KeysFor(d, r)], Big, Big)
@@ -103,23 +112,58 @@ CatchUpRun(r) ==
 Claim(r) ==
     /\ owner[r] = "O" /\ ~done[r]
     /\ owner' = [owner EXCEPT ![r] = "N"]
-    /\ CatchUpRun(r)
-    /\ UNCHANGED <<log, done, readBad, cap>>
+    /\ UNCHANGED <<log, done, wm, val, readBad, cap, rd>>
+
+MergeTail(v, d, vk) ==
+    IF d = "ds" /\ DsKind = "set"
+        THEN Sorted(SeqToSet(v[d][vk]) \cup PendingAcross(d, vk))
+        ELSE v[d][vk] \o Sorted(PendingAcross(d, vk))
 
 ReadResult(v, d, vk) ==
-    IF ReadRule = "tail" THEN v[d][vk] \o Sorted(PendingAcross(d, vk)) ELSE v[d][vk]
+    IF ReadRule = "tail" THEN MergeTail(v, d, vk) ELSE v[d][vk]
+
+RelKeys(d, vk) ==
+    IF WmUnit(d) = "session" THEN {"s"} ELSE IF ValScope(d) = "run" THEN {vk} ELSE Runs
+
+Clear(d, vk) == \A k \in RelKeys(d, vk) : PendingSet(log, d, k, wm[d][k], Big) = {}
 
 ReadStream(r, d) ==
-    /\ d \in Derivs /\ ValScope(d) = "run"
+    /\ ReadRule = "today" /\ d \in Derivs /\ ValScope(d) = "run"
     /\ IF ReadRule = "today"
           THEN CatchUpRun(r)
           ELSE UNCHANGED <<wm, val>>
     /\ readBad' = (readBad \/ ReadResult(val', d, r) # Truth(d, r))
-    /\ UNCHANGED <<log, owner, done, cap>>
+    /\ UNCHANGED <<log, owner, done, cap, rd>>
 
 ReadOther(d, vk) ==
-    /\ d \in Derivs /\ vk \in ValKeysOf(d)
+    /\ ReadRule # "separate" /\ d \in Derivs /\ vk \in ValKeysOf(d)
     /\ readBad' = (readBad \/ ReadResult(val, d, vk) # Truth(d, vk))
+    /\ UNCHANGED <<log, owner, done, wm, val, cap, rd>>
+
+WRead(d, vk) ==
+    /\ ReadRule = "tail" /\ Repair = "pageTx"
+    /\ d \in Derivs /\ vk \in ValKeysOf(d)
+    /\ \E k \in RelKeys(d, vk) :
+        /\ PendingSet(log, d, k, wm[d][k], Big) # {} \/ Clear(d, vk)
+        /\ LET u == NewD(log, d, k, wm[d][k], Big, PageSize)
+               w2 == [wm EXCEPT ![d][k] = u.w]
+               v2 == [val EXCEPT ![d] = u.v]
+               clear2 == \A k2 \in RelKeys(d, vk) : PendingSet(log, d, k2, w2[d][k2], Big) = {}
+           IN /\ wm' = w2
+              /\ val' = v2
+              /\ readBad' = (readBad \/ (clear2 /\ v2[d][vk] # Truth(d, vk)))
+    /\ UNCHANGED <<log, owner, done, cap, rd>>
+
+Sep1(p, d, vk) ==
+    /\ ReadRule = "separate" /\ ~rd[p].on
+    /\ d \in Derivs /\ vk \in ValKeysOf(d) /\ Clear(d, vk)
+    /\ rd' = [rd EXCEPT ![p] = [on |-> TRUE, d |-> d, vk |-> vk]]
+    /\ UNCHANGED <<log, owner, done, wm, val, readBad, cap>>
+
+Sep2(p) ==
+    /\ rd[p].on
+    /\ readBad' = (readBad \/ val[rd[p].d][rd[p].vk] # Truth(rd[p].d, rd[p].vk))
+    /\ rd' = [rd EXCEPT ![p] = NoRd]
     /\ UNCHANGED <<log, owner, done, wm, val, cap>>
 
 RepairPage(d, k) ==
@@ -128,13 +172,13 @@ RepairPage(d, k) ==
     /\ LET u == NewD(log, d, k, wm[d][k], Big, PageSize)
        IN /\ wm' = [wm EXCEPT ![d][k] = u.w]
           /\ val' = [val EXCEPT ![d] = u.v]
-    /\ UNCHANGED <<log, owner, done, readBad, cap>>
+    /\ UNCHANGED <<log, owner, done, readBad, cap, rd>>
 
 RepStart(p, d, k) ==
     /\ Repair # "pageTx"
     /\ ~cap[p].on /\ d \in Derivs /\ k \in WmKeys
     /\ cap' = [cap EXCEPT ![p] = [on |-> TRUE, d |-> d, k |-> k, at |-> wm[d][k]]]
-    /\ UNCHANGED <<log, owner, done, wm, val, readBad>>
+    /\ UNCHANGED <<log, owner, done, wm, val, readBad, rd>>
 
 RepStep(p) ==
     /\ cap[p].on
@@ -147,17 +191,19 @@ RepStep(p) ==
        IN /\ val' = [val EXCEPT ![c.d] = ApplyAll(log, c.d, val[c.d], ids)]
           /\ wm' = [wm EXCEPT ![c.d][c.k] = IF ids = <<>> THEN wm[c.d][c.k] ELSE newW]
           /\ cap' = [cap EXCEPT ![p] = IF ids = <<>> THEN NoCap ELSE [c EXCEPT !.at = nat]]
-    /\ UNCHANGED <<log, owner, done, readBad>>
+    /\ UNCHANGED <<log, owner, done, readBad, rd>>
 
 RepCrash(p) ==
     /\ cap[p].on
     /\ cap' = [cap EXCEPT ![p] = NoCap]
-    /\ UNCHANGED <<log, owner, done, wm, val, readBad>>
+    /\ UNCHANGED <<log, owner, done, wm, val, readBad, rd>>
 
 Next ==
     \/ \E r \in Runs : AppendO(r) \/ AppendN(r) \/ Finish(r) \/ Claim(r)
     \/ \E r \in Runs, d \in Derivs : ReadStream(r, d)
-    \/ \E d \in Derivs, vk \in WmKeys : ReadOther(d, vk)
+    \/ \E d \in Derivs, vk \in WmKeys : ReadOther(d, vk) \/ WRead(d, vk)
+    \/ \E p \in Reps : Sep2(p)
+    \/ \E p \in Reps, d \in Derivs, vk \in WmKeys : Sep1(p, d, vk)
     \/ \E d \in Derivs, k \in WmKeys : RepairPage(d, k)
     \/ \E p \in Reps : RepStep(p) \/ RepCrash(p)
     \/ \E p \in Reps, d \in Derivs, k \in WmKeys : RepStart(p, d, k)

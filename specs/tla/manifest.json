@@ -2976,10 +2976,21 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1464,
-      "measuredSeconds": 3.28,
-      "measuredCpuSeconds": 3.01,
-      "budgetCpuSeconds": 10
+      "distinctStates": 5472,
+      "measuredSeconds": 2.6,
+      "measuredCpuSeconds": 5.76,
+      "budgetCpuSeconds": 15
+    },
+    {
+      "config": "DerivedRepair.sessionWatermark",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 18168,
+      "measuredSeconds": 6.02,
+      "measuredCpuSeconds": 11.38,
+      "budgetCpuSeconds": 26
     },
     {
       "config": "DerivedRepair.today",
@@ -2990,9 +3001,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 9,
-      "measuredSeconds": 2.85,
-      "measuredCpuSeconds": 1.77,
+      "distinctStates": 31,
+      "measuredSeconds": 1.7,
+      "measuredCpuSeconds": 1.91,
       "budgetCpuSeconds": 7
     },
     {
@@ -3004,10 +3015,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 27,
-      "measuredSeconds": 3.27,
-      "measuredCpuSeconds": 1.83,
-      "budgetCpuSeconds": 7
+      "distinctStates": 61,
+      "measuredSeconds": 1.72,
+      "measuredCpuSeconds": 2.02,
+      "budgetCpuSeconds": 8
     },
     {
       "config": "DerivedRepair.staleMark",
@@ -3018,10 +3029,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 237,
-      "measuredSeconds": 2.96,
-      "measuredCpuSeconds": 1.94,
-      "budgetCpuSeconds": 7
+      "distinctStates": 335,
+      "measuredSeconds": 1.66,
+      "measuredCpuSeconds": 2.18,
+      "budgetCpuSeconds": 8
     },
     {
       "config": "DerivedRepair.advanceAtEnd",
@@ -3032,10 +3043,24 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 68,
-      "measuredSeconds": 3.03,
-      "measuredCpuSeconds": 1.82,
+      "distinctStates": 107,
+      "measuredSeconds": 1.61,
+      "measuredCpuSeconds": 1.93,
       "budgetCpuSeconds": 7
+    },
+    {
+      "config": "DerivedRepair.readAfterRepair",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoBadRead",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 684,
+      "measuredSeconds": 1.74,
+      "measuredCpuSeconds": 2.44,
+      "budgetCpuSeconds": 8
     }
   ]
 }
