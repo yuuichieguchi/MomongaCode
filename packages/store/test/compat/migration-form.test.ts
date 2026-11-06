@@ -35,6 +35,10 @@ describe('the static form check of a migration (H7, 11.2 rules 2 to 4)', () => {
     expect(migrationFormViolations(sql)).toEqual([]);
   });
 
+  it('splits a trigger written on one line from the statements after it', () => {
+    expect(migrationFormViolations('CREATE TRIGGER things_touch AFTER INSERT ON things BEGIN INSERT INTO touched (id) VALUES (NEW.id); END;\nDROP TABLE old_things;').join('\n')).toMatch(/drop/i);
+  });
+
   it('finds the banned forms in the release-1 migrations that have them', () => {
     expect(migrationFormViolations(sqlOf(2)).join('\n')).toMatch(/drop/i);
     expect(migrationFormViolations(sqlOf(19)).join('\n')).toMatch(/tighten/i);
