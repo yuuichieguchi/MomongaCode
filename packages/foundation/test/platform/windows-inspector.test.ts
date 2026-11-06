@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import type { WindowsProcessRow } from '../../src/platform/windows-parsers.ts';
 import type { CommandResult, SyncCommandRunner } from '../../src/platform/command-runner.ts';
 import { createProcessGroupPort, createSignalSender } from '../../src/platform/group-port.ts';
 import { createWindowsGroupControl, createWindowsInspector } from '../../src/platform/windows-inspector.ts';
-import { descendantsOf, groupMembers, groupOfPid, parsePidList, parseProcessTable, parseStartTimeMs } from '../../src/platform/windows-parsers.ts';
+import { groupMembers, groupOfPid, parsePidList, parseProcessTable, parseStartTimeMs } from '../../src/platform/windows-parsers.ts';
 import { holdersScript, powershellLiteral, startTimeScript } from '../../src/platform/windows-scripts.ts';
 
 const ENV = { SystemRoot: 'C:\\Windows', TEMP: 'C:\\Temp' };
@@ -46,21 +47,66 @@ describe('windows process trees', () => {
   const rows = parseProcessTable(TABLE);
 
   it('collects descendants by parent pid and ignores children older than their parent (reused pid)', () => {
-    expect(descendantsOf(rows, 100).map((row) => row.pid)).toEqual([200, 300]);
+    expect(groupMembers(rows, 100, new Map())).toEqual([100, 200, 300]);
   });
 
-  it('keeps orphans of a dead root', () => {
-    expect(groupMembers(rows, 999)).toEqual([400]);
+  it('claims no process through a root that was never observed, because a stale parent pid is not evidence', () => {
+    expect(groupMembers(rows, 999, new Map())).toEqual([]);
+    expect(groupMembers([{ pid: 50, ppid: 7, startMs: 1000 }], 7, new Map())).toEqual([]);
+  });
+
+  it('keeps the orphans of a root observed alive and bounds them by its start time', () => {
+    const ledger = new Map<number, number>();
+    const alive: WindowsProcessRow[] = [
+      { pid: 7, ppid: 1, startMs: 5000 },
+      { pid: 8, ppid: 7, startMs: 5100 },
+    ];
+    expect(groupMembers(alive, 7, ledger)).toEqual([7, 8]);
+    const afterRootExit: WindowsProcessRow[] = [
+      { pid: 8, ppid: 7, startMs: 5100 },
+      { pid: 50, ppid: 7, startMs: 1000 },
+      { pid: 60, ppid: 7, startMs: 9000 },
+    ];
+    expect(groupMembers(afterRootExit, 7, ledger)).toEqual([8, 60]);
+  });
+
+  it('keeps the children of an intermediate process that exited after it was observed', () => {
+    const ledger = new Map<number, number>();
+    const first: WindowsProcessRow[] = [
+      { pid: 7, ppid: 1, startMs: 5000 },
+      { pid: 8, ppid: 7, startMs: 5100 },
+      { pid: 9, ppid: 8, startMs: 5200 },
+    ];
+    expect(groupMembers(first, 7, ledger)).toEqual([7, 8, 9]);
+    const intermediateGone: WindowsProcessRow[] = [
+      { pid: 7, ppid: 1, startMs: 5000 },
+      { pid: 9, ppid: 8, startMs: 5200 },
+      { pid: 10, ppid: 8, startMs: 5300 },
+    ];
+    expect(groupMembers(intermediateGone, 7, ledger)).toEqual([7, 9, 10]);
+  });
+
+  it('forgets the group when no member is left, so a reused pid starts a new group', () => {
+    const ledger = new Map<number, number>();
+    expect(groupMembers([{ pid: 7, ppid: 1, startMs: 5000 }], 7, ledger)).toEqual([7]);
+    expect(groupMembers([], 7, ledger)).toEqual([]);
+    expect(groupMembers([{ pid: 50, ppid: 7, startMs: 9000 }], 7, ledger)).toEqual([]);
+  });
+
+  it('starts a new group when the root pid now belongs to a different process', () => {
+    const ledger = new Map<number, number>();
+    groupMembers([{ pid: 7, ppid: 1, startMs: 5000 }, { pid: 8, ppid: 7, startMs: 5100 }], 7, ledger);
+    expect(groupMembers([{ pid: 7, ppid: 1, startMs: 9000 }, { pid: 8, ppid: 7, startMs: 5100 }], 7, ledger)).toEqual([7]);
   });
 
   it('includes the root when it is alive', () => {
-    expect(groupMembers(rows, 200)).toEqual([200, 300]);
+    expect(groupMembers(rows, 200, new Map())).toEqual([200, 300]);
   });
 
   it('assigns a pid to the candidate group that contains it, otherwise to itself', () => {
     expect(groupOfPid(rows, 300, [100])).toBe(100);
     expect(groupOfPid(rows, 300, [999])).toBe(300);
-    expect(groupOfPid(rows, 400, [100, 999])).toBe(999);
+    expect(groupOfPid(rows, 400, [100, 999])).toBe(400);
   });
 });
 
@@ -174,7 +220,7 @@ describe('windows process group port and signal sender', () => {
   it('reports a tree as alive while the root or a descendant has a row', () => {
     const port = createProcessGroupPort('win32', { run: syncRunner(TABLE, []), env: ENV });
     expect(port.alive(100)).toBe(true);
-    expect(port.alive(999)).toBe(true);
+    expect(port.alive(999)).toBe(false);
     expect(port.alive(7777)).toBe(false);
   });
 
@@ -188,5 +234,26 @@ describe('windows process group port and signal sender', () => {
     send(-100, 0);
     expect(() => send(-5, 0)).toThrowError(expect.objectContaining({ code: 'ESRCH' }));
     expect(calls).toEqual(['signal 100 SIGTERM']);
+  });
+});
+
+describe('windows group control keeps what it observed between probes', () => {
+  const rowsOf = (table: unknown[]): SyncCommandRunner => () => ({ exitCode: 0, stdout: JSON.stringify(table), stderr: '' });
+
+  it('still reports a member after the root and its intermediate exit', () => {
+    let table: unknown[] = [
+      { pid: 7, ppid: 1, startMs: 5000 },
+      { pid: 8, ppid: 7, startMs: 5100 },
+      { pid: 9, ppid: 8, startMs: 5200 },
+    ];
+    const control = createWindowsGroupControl({ run: () => ({ exitCode: 0, stdout: JSON.stringify(table), stderr: '' }), env: ENV });
+    expect(control.members(7)).toEqual([7, 8, 9]);
+    table = [{ pid: 9, ppid: 8, startMs: 5200 }];
+    expect(control.members(7)).toEqual([9]);
+  });
+
+  it('does not report the orphans of an earlier process that had the same pid', () => {
+    const control = createWindowsGroupControl({ run: rowsOf([{ pid: 50, ppid: 7, startMs: 1000 }]), env: ENV });
+    expect(control.members(7)).toEqual([]);
   });
 });
