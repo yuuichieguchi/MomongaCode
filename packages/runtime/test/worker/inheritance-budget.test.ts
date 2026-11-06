@@ -85,7 +85,7 @@ describe('compaction of inherited history', () => {
     env.gateway.script.push(textStep('Compacted answer.'));
     const second = env.enqueue('question four');
 
-    expect((await settledWith(env, second.id)).status).toBe('COMPLETED');
+    expect(await settledWith(env, second.id)).toMatchObject({ status: 'COMPLETED', error: undefined });
 
     expect(env.gateway.compacts).toHaveLength(1);
     const [compact] = env.gateway.compacts;

@@ -395,7 +395,7 @@ describe('inherited history and loop detection across compaction', () => {
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
 
-    expect(env.run(second.id).status).toBe('COMPLETED');
+    expect(env.run(second.id)).toMatchObject({ status: 'COMPLETED', error: undefined });
     expect(env.gateway.compacts).toHaveLength(1);
     const compactInput = env.gateway.compacts[0]?.request.input as InputItem[];
     expect(compactInput[0]).toMatchObject({ type: 'message', role: 'user' });

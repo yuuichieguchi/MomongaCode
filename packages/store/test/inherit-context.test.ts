@@ -430,13 +430,16 @@ describe('inheritContext: predecessors that ended badly', () => {
     expect(store.readRunEvents(second.id, 0, 100)).toHaveLength(1);
   });
 
-  it('throws previous_run_unreadable for a corrupt predecessor snapshot', async () => {
+  it('inherits by reference from the events when the predecessor snapshot is corrupt, because the planner folds the source events and reads no snapshot (13.4)', async () => {
     const { store, dbPath, session, first } = await completedPredecessor();
     const db = writable(dbPath);
     db.prepare(`INSERT INTO snapshots (run_id, seq, state_json, created_at) VALUES (?, 1, '{"stateVersion":${SNAPSHOT_STATE_VERSION},"runId":7}', 0)`).run(first.id);
-    enqueue(store, session.id, 'And again');
+    const second = enqueue(store, session.id, 'And again');
     const claim = mustClaim(store, 'w1');
-    expect(await thrown(() => store.inheritContext(claim, { mode: 'default' }))).toEqual(inheritanceError('previous_run_unreadable'));
+    expect(await store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'inherited' });
+    const inherited = store.readRunEvents(second.id, 0, 100).filter((event) => event.type === 'context.inherited');
+    expect(inherited).toHaveLength(1);
+    expect(inherited[0]).toMatchObject({ form: 'reference', fromRunId: first.id, fromLastSeq: mustRun(store, first.id).lastSeq });
   });
 
   it('throws previous_run_unreadable when the predecessor journal does not fold', async () => {

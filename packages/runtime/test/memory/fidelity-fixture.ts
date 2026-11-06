@@ -26,6 +26,15 @@ export const startedCall = (callId: string, rawInput: Record<string, unknown>, o
     { type: 'tool.completed', callId, status: 'completed', output, ...extra },
   ] as RunEventPayload[];
 
+export const unfinishedCall = (callId: string, rawInput: Record<string, unknown>): RunEventPayload[] =>
+  [
+    { type: 'tool.call', callId, providerCallId: callId, name: 'Sh', kind: 'other', title: callId, rawInput },
+    { type: 'tool.started', callId, idemKey: `key-${callId}`, basis: 'read_only' },
+  ] as RunEventPayload[];
+
+export const reconciledCall = (callId: string, rawInput: Record<string, unknown>, outcome: 'already_applied' | 'not_applied' | 'unknown', output: string): RunEventPayload[] =>
+  [...unfinishedCall(callId, rawInput), { type: 'tool.reconciled', callId, outcome, output }] as RunEventPayload[];
+
 export const deniedCall = (callId: string, rawInput: Record<string, unknown>): RunEventPayload[] =>
   [
     { type: 'tool.call', callId, providerCallId: callId, name: 'Sh', kind: 'other', title: callId, rawInput },
