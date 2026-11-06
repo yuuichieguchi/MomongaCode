@@ -1,4 +1,4 @@
-import { UnsupportedPlatformError } from './platform/process-inspector.ts';
+import { findProgramOnPath } from './program-search.ts';
 import { powershellArgs, powershellPath } from './platform/windows-scripts.ts';
 
 export const SECRET_NAME_PATTERN = '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$';
@@ -105,25 +105,25 @@ const createCommandSecretStore = (
 export const keychainWriteCommand = (name: string, value: string): string =>
   `add-generic-password -U -s ${KEYCHAIN_SERVICE} -a ${name} -X ${Buffer.from(value, 'utf8').toString('hex')}\n`;
 
-export const createKeychainSecretStore = (run: SecretProcessPort): SecretStore =>
+export const createKeychainSecretStore = (run: SecretProcessPort, security: string = SECURITY_BINARY): SecretStore =>
   createCommandSecretStore(run, {
     read: (name) => ({
-      file: SECURITY_BINARY,
+      file: security,
       args: ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', name, '-w'],
       backend: KEYCHAIN_BACKEND,
     }),
-    write: (name, value) => ({ file: SECURITY_BINARY, args: ['-i'], stdin: keychainWriteCommand(name, value), backend: KEYCHAIN_BACKEND }),
+    write: (name, value) => ({ file: security, args: ['-i'], stdin: keychainWriteCommand(name, value), backend: KEYCHAIN_BACKEND }),
   });
 
-export const createSecretServiceStore = (run: SecretProcessPort): SecretStore =>
+export const createSecretServiceStore = (run: SecretProcessPort, secretTool: string = SECRET_TOOL_BINARY): SecretStore =>
   createCommandSecretStore(run, {
     read: (name) => ({
-      file: SECRET_TOOL_BINARY,
+      file: secretTool,
       args: ['lookup', 'service', KEYCHAIN_SERVICE, 'account', name],
       backend: SECRET_SERVICE_BACKEND,
     }),
     write: (name, value) => ({
-      file: SECRET_TOOL_BINARY,
+      file: secretTool,
       args: ['store', `--label=${KEYCHAIN_SERVICE}`, 'service', KEYCHAIN_SERVICE, 'account', name],
       stdin: value,
       backend: SECRET_SERVICE_BACKEND,
@@ -212,19 +212,22 @@ export const createCredentialManagerStore = (run: SecretProcessPort, powershell:
     }),
   });
 
-export const createPlatformSecretStore = (
-  platform: NodeJS.Platform,
-  run: SecretProcessPort,
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): SecretStore => {
-  switch (platform) {
-    case 'darwin':
-      return createKeychainSecretStore(run);
-    case 'linux':
-      return createSecretServiceStore(run);
-    case 'win32':
-      return createCredentialManagerStore(run, { file: powershellPath(env), args: powershellArgs });
-    default:
-      throw new UnsupportedPlatformError(platform, 'secret storage');
-  }
+const chooseSecretStore = (run: SecretProcessPort, env: Readonly<Record<string, string | undefined>>): SecretStore => {
+  const security = findProgramOnPath('security', env);
+  if (security !== undefined) return createKeychainSecretStore(run, security);
+  const secretTool = findProgramOnPath('secret-tool', env);
+  const busAddress = env['DBUS_SESSION_BUS_ADDRESS'];
+  const hasSession = busAddress !== undefined && busAddress !== '';
+  if (secretTool !== undefined && hasSession) return createSecretServiceStore(run, secretTool);
+  if (findProgramOnPath('cmdkey', env) !== undefined) return createCredentialManagerStore(run, { file: powershellPath(env), args: powershellArgs });
+  const secretServiceState =
+    secretTool === undefined ? 'secret-tool (Secret Service) is not on PATH' : `secret-tool (Secret Service) is on PATH at ${secretTool}, but no D-Bus session is set (DBUS_SESSION_BUS_ADDRESS is empty)`;
+  throw new Error(
+    `no secret store was found on this host: security (Keychain) is not on PATH; ${secretServiceState}; cmdkey (Credential Manager) is not on PATH`,
+  );
 };
+
+export const createPlatformSecretStore = (run: SecretProcessPort, env: Readonly<Record<string, string | undefined>>): SecretStore => ({
+  read: async (name, signal) => chooseSecretStore(run, env).read(name, signal),
+  write: async (name, value, signal) => chooseSecretStore(run, env).write(name, value, signal),
+});

@@ -526,7 +526,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const counters: Record<string, string> = {};
     const referencedSecrets = secretNames(settings);
     const secretStore =
-      options.secretStore ?? createPlatformSecretStore(process.platform, options.execWithStdin ?? createExecWithStdin(childEnv), childEnv);
+      options.secretStore ?? createPlatformSecretStore(options.execWithStdin ?? createExecWithStdin(childEnv), childEnv);
     const secretResolver = createSecretResolver(secretStore);
     const secretFailures = await warmSecrets(secretResolver, referencedSecrets, signal ?? new AbortController().signal);
     for (const [name, failure] of secretFailures) logger.warn(`secret ${name} is unavailable: ${failure.message}`);

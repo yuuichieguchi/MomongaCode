@@ -73,10 +73,14 @@ const bindThenClose: SocketBind = (socketPath) =>
     });
   });
 
-const nodeSocketPathProbe = createSocketPathProbe(bindThenClose);
+let socketPathProbe = createSocketPathProbe(bindThenClose);
+
+export const setSocketBind = (bind: SocketBind | undefined): void => {
+  socketPathProbe = createSocketPathProbe(bind ?? bindThenClose);
+};
 
 export const assertUnixSocketPathFits = async (socketPath: string): Promise<void> => {
-  const result = await nodeSocketPathProbe(socketPath);
+  const result = await socketPathProbe(socketPath);
   if (result.kind === 'supported') return;
   throw new Error(`Unix socket path ${socketPath}: ${result.evidence}`);
 };
