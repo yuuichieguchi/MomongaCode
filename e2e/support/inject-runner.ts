@@ -30,6 +30,7 @@ export type InjectionHost = { linuxContainer: boolean };
 export const INJECTION_REPORT_ENV = 'MOMONGA_INJECTION_REPORT';
 
 const SCENARIOS_FILE = path.join(import.meta.dirname, '..', 'inject', 'scenarios.json');
+const HELD_COMMAND_SECONDS = 600;
 const COMPETING_SUPERVISOR_EXIT = 75;
 const GATEWAY_RETRY = GATEWAY_CONFIG_DEFAULTS.retry;
 const GATEWAY_WINDOW_BOUND_MS = GATEWAY_RETRY.totalWaitMs + E2E_MARGIN_MS;
@@ -84,10 +85,20 @@ const expandTemplates = (value: unknown, env: TrialEnv): unknown => {
   return value;
 };
 
-const scriptOf = (env: TrialEnv): FakeScriptedReply[] =>
-  env.scenario.task.steps.map((step, index) =>
-    'text' in step ? textReply(step.text) : toolCallReply(step.call.name, expandTemplates(step.call.input, env) as Record<string, unknown>, `call_${index + 1}`),
-  );
+const heldByPoint = (env: TrialEnv, input: Record<string, unknown>, callNumber: number): Record<string, unknown> =>
+  env.point?.type === 'tool.started' && env.point.occurrence === callNumber && typeof input['command'] === 'string'
+    ? { ...input, command: `sleep ${HELD_COMMAND_SECONDS}; ${input['command']}` }
+    : input;
+
+const scriptOf = (env: TrialEnv): FakeScriptedReply[] => {
+  let callNumber = 0;
+  return env.scenario.task.steps.map((step, index) => {
+    if ('text' in step) return textReply(step.text);
+    callNumber += 1;
+    const input = heldByPoint(env, expandTemplates(step.call.input, env) as Record<string, unknown>, callNumber);
+    return toolCallReply(step.call.name, input, `call_${index + 1}`);
+  });
+};
 
 const ledgerLines = (env: TrialEnv): string[] => fs.readFileSync(env.ledgerFile, 'utf8').split('\n').filter((line) => line !== '');
 
@@ -389,7 +400,7 @@ const runTrial = async (scenario: InjectionScenario, point: Point | undefined, r
     await fault.afterTerminal?.(env, frames);
     const facts = await factsOf(runtime, runId);
     const answeredBy = await runtime.answeredBy(runId);
-    const violations = violationsOf(scenario.expect, { frames, facts }, env);
+    const violations = violationsOf({ ...scenario.expect, ...(point === undefined ? {} : scenario.pointExpect?.[point.type]) }, { frames, facts }, env);
     if (violations.length > 0) throw new Error(`scenario ${resultId} (run ${runId}): ${violations.join('; ')}`);
     const witness = witnessOf(env);
     return {

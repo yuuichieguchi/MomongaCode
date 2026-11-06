@@ -60,12 +60,29 @@ export type InjectionScenario = {
   effect?: string;
   params?: InjectionParams;
   expect: InjectionExpect;
+  pointExpect?: Partial<Record<(typeof POINT_EVENT_TYPES)[number], Partial<InjectionExpect>>>;
 };
 
 export type InjectionScenarios = { format: typeof INJECT_FORMAT; name: string; scenarios: InjectionScenario[] };
 
 const text = { type: 'string', minLength: 1 } as const;
 const count = { type: 'integer', minimum: 1 } as const;
+
+const EXPECT_PROPERTIES = {
+  status: { enum: [...RUN_STATUSES] },
+  stopReason: { enum: [...STOP_REASONS] },
+  episodeOutcomes: { type: 'array', minItems: 1, items: { enum: [...EPISODE_OUTCOMES] } },
+  minEpisodes: { type: 'integer', minimum: 0 },
+  reconciled: { type: 'array', items: { enum: [...RECONCILE_OUTCOMES] } },
+  files: {
+    type: 'array',
+    minItems: 1,
+    items: { type: 'object', properties: { path: text, content: { type: 'string' } }, required: ['path', 'content'], additionalProperties: false },
+  },
+  attemptFailed: { type: 'boolean' },
+  budgetStops: { type: 'integer', minimum: 0 },
+  runStarted: count,
+} as const;
 
 export const INJECT_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
@@ -121,24 +138,10 @@ export const INJECT_SCHEMA = {
             },
             additionalProperties: false,
           },
-          expect: {
+          expect: { type: 'object', properties: EXPECT_PROPERTIES, required: ['status'], additionalProperties: false },
+          pointExpect: {
             type: 'object',
-            properties: {
-              status: { enum: [...RUN_STATUSES] },
-              stopReason: { enum: [...STOP_REASONS] },
-              episodeOutcomes: { type: 'array', minItems: 1, items: { enum: [...EPISODE_OUTCOMES] } },
-              minEpisodes: { type: 'integer', minimum: 0 },
-              reconciled: { type: 'array', items: { enum: [...RECONCILE_OUTCOMES] } },
-              files: {
-                type: 'array',
-                minItems: 1,
-                items: { type: 'object', properties: { path: text, content: { type: 'string' } }, required: ['path', 'content'], additionalProperties: false },
-              },
-              attemptFailed: { type: 'boolean' },
-              budgetStops: { type: 'integer', minimum: 0 },
-              runStarted: count,
-            },
-            required: ['status'],
+            properties: Object.fromEntries(POINT_EVENT_TYPES.map((type) => [type, { type: 'object', properties: EXPECT_PROPERTIES, additionalProperties: false }])),
             additionalProperties: false,
           },
         },

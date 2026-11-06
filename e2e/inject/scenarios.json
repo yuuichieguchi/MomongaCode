@@ -72,10 +72,23 @@
       },
       "expect": {
         "status": "COMPLETED",
-        "episodeOutcomes": [
-          "recovered"
-        ],
         "minEpisodes": 1
+      },
+      "pointExpect": {
+        "model.requested": {
+          "episodeOutcomes": [
+            "recovered"
+          ],
+          "reconciled": []
+        },
+        "tool.started": {
+          "episodeOutcomes": [
+            "unknown_effect"
+          ],
+          "reconciled": [
+            "unknown"
+          ]
+        }
       }
     },
     {
