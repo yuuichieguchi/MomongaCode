@@ -208,7 +208,6 @@ export const improveGuideline = async (input: ImproveInput, ports: ImprovePorts)
     candidate.contrastiveFailures = measured.report.metrics.contrastiveFailures.count;
     candidate.comparison = compareContextReports(first.report, measured.report, { seed: input.bootstrapSeed });
   }
-  if (reached()) return stopped();
 
   const winner = bestWinner(candidates, input.current?.version ?? null);
   return winner === undefined ? outcome('no_winner') : outcome('winner', { winner });
