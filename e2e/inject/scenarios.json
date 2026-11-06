@@ -199,7 +199,7 @@
       }
     },
     {
-      "id": "rate-limit",
+      "id": "rate-limit-inside",
       "fault": "rate_limit",
       "requires": "any",
       "trials": 3,
@@ -221,10 +221,44 @@
       },
       "effect": "effect",
       "params": {
-        "retryAfter": "1"
+        "retryAfterWindow": "inside"
       },
       "expect": {
         "status": "COMPLETED"
+      }
+    },
+    {
+      "id": "rate-limit-beyond",
+      "fault": "rate_limit",
+      "requires": "any",
+      "trials": 3,
+      "task": {
+        "prompt": "Run the command, then report.",
+        "steps": [
+          {
+            "call": {
+              "name": "Bash",
+              "input": {
+                "command": "echo effect-1 >> {ledger}"
+              }
+            }
+          },
+          {
+            "text": "done"
+          }
+        ]
+      },
+      "effect": "effect",
+      "params": {
+        "retryAfterWindow": "beyond"
+      },
+      "expect": {
+        "status": "COMPLETED",
+        "episodeOutcomes": [
+          "recovered"
+        ],
+        "minEpisodes": 1,
+        "attemptFailed": true
       }
     },
     {

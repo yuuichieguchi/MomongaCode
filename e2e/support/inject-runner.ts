@@ -8,6 +8,7 @@ import { REPORT_PAGE_ROWS, TERMINAL_STATUSES } from '@momonga/protocol';
 import type { AnsweredByView, RunFactsView } from '@momonga/protocol';
 import { encodeReliabilityReport } from '@momonga/reliability';
 import type { ReliabilityReport } from '@momonga/reliability';
+import { GATEWAY_CONFIG_DEFAULTS } from '@momonga/gateway';
 import { startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeResponseHold, FakeScriptedReply } from '@momonga/testkit';
 import { createE2eHome, disposeAll, registerE2eCleanup } from './home.ts';
@@ -30,6 +31,8 @@ export const INJECTION_REPORT_ENV = 'MOMONGA_INJECTION_REPORT';
 
 const SCENARIOS_FILE = path.join(import.meta.dirname, '..', 'inject', 'scenarios.json');
 const COMPETING_SUPERVISOR_EXIT = 75;
+const GATEWAY_RETRY = GATEWAY_CONFIG_DEFAULTS.retry;
+const GATEWAY_WINDOW_BOUND_MS = GATEWAY_RETRY.totalWaitMs + E2E_MARGIN_MS;
 const SMALL_FILESYSTEM_MAX_BYTES = 256 * 1024 * 1024;
 const FILL_CHUNK_BYTES = 1024 * 1024;
 const LEDGER_DIRECTORY_NAME = 'ledger';
@@ -67,7 +70,7 @@ type Fault = {
   runBody?(env: TrialEnv): Record<string, unknown>;
   inject?(env: TrialEnv): Promise<void>;
   afterTerminal?(env: TrialEnv, frames: readonly Frame[]): Promise<void>;
-  extraBoundMs?: number;
+  extraBoundMs?(env: TrialEnv): number;
 };
 
 type Frame = { readonly data: { readonly type: string } & Readonly<Record<string, unknown>> };
@@ -108,8 +111,8 @@ const killRuntime = async (env: TrialEnv): Promise<void> => {
   process.kill(pid, 'SIGKILL');
 };
 
-const untilFrames = (env: TrialEnv, type: string, occurrence: number, description: string): Promise<true> =>
-  until(() => framesOfType((env.stream as RunEventStream).frames(), type).length >= occurrence, { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description });
+const untilFrames = (env: TrialEnv, type: string, occurrence: number, description: string, extraBoundMs = 0): Promise<true> =>
+  until(() => framesOfType((env.stream as RunEventStream).frames(), type).length >= occurrence, { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS + extraBoundMs, description });
 
 const untilLedger = (env: TrialEnv, key: string): Promise<true> =>
   until(() => ledgerLines(env).includes(key), { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: `the ledger to hold ${key}` });
@@ -135,6 +138,9 @@ const upstreamBack = async (env: TrialEnv): Promise<void> => {
 };
 
 const chatRequestsOf = (env: TrialEnv) => (env.fake as FakeChatCompletionsServer).requests.filter((request) => request.path === '/v1/chat/completions');
+
+const retryAfterSecondsOf = (window: 'inside' | 'beyond'): string =>
+  String(window === 'inside' ? Math.ceil(GATEWAY_RETRY.baseMs / 1000) : Math.floor(GATEWAY_RETRY.totalWaitMs / 1000) + 1);
 
 const FAULTS: Record<InjectionScenario['fault'], Fault> = {
   kill_at_step: {
@@ -162,13 +168,12 @@ const FAULTS: Record<InjectionScenario['fault'], Fault> = {
     },
   },
   network_down: {
-    upstreamScript: (_env, script) => [{ kind: 'hang', chunks: [{ delta: { role: 'assistant', content: 'cut' } }] }, ...script],
+    beforeRun: upstreamDown,
     inject: async (env) => {
-      await until(() => chatRequestsOf(env).length > 0, { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the upstream to receive the request it will cut' });
-      await upstreamDown(env);
-      await untilFrames(env, 'attempt.failed', 1, 'attempt.failed after the upstream cut the response');
+      await untilFrames(env, 'attempt.failed', 1, 'attempt.failed after the upstream refused connections for longer than the gateway retry window', GATEWAY_WINDOW_BOUND_MS);
       await upstreamBack(env);
     },
+    extraBoundMs: () => GATEWAY_WINDOW_BOUND_MS,
   },
   upstream_stall: {
     upstreamScript: (_env, script) => [{ kind: 'hang', chunks: [{ delta: { role: 'assistant', content: 'stalled' } }] }, ...script],
@@ -200,10 +205,11 @@ const FAULTS: Record<InjectionScenario['fault'], Fault> = {
         kind: 'error',
         status: 429,
         body: { error: { message: 'rate limited', type: 'rate_limit_error', param: null, code: 'rate_limit_exceeded' } },
-        headers: { 'retry-after': env.scenario.params?.retryAfter as string },
+        headers: { 'retry-after': retryAfterSecondsOf(env.scenario.params?.retryAfterWindow as 'inside' | 'beyond') },
       },
       ...script,
     ],
+    extraBoundMs: (env) => (env.scenario.params?.retryAfterWindow === 'beyond' ? GATEWAY_WINDOW_BOUND_MS + GATEWAY_RETRY.maxMs : 0),
     afterTerminal: async (env) => {
       if (chatRequestsOf(env).length < 2) throw new Error(`scenario ${env.scenario.id}: the upstream received fewer than two requests, so the rate limit was not injected and retried`);
     },
@@ -234,7 +240,7 @@ const FAULTS: Record<InjectionScenario['fault'], Fault> = {
       if (refusal.code !== COMPETING_SUPERVISOR_EXIT) throw new Error(`scenario ${env.scenario.id}: the competing supervisor exited with ${JSON.stringify(refusal)}, not ${COMPETING_SUPERVISOR_EXIT}`);
       await spawnSupervisor({ home: env.home, stackNumber: 3, deps }).ready(bound);
     },
-    extraBoundMs: E2E_SUPERVISOR_CLOSE_BOUND_MS + E2E_READY_DEADLINE_MS,
+    extraBoundMs: () => E2E_SUPERVISOR_CLOSE_BOUND_MS + E2E_READY_DEADLINE_MS,
   },
   concurrent_workers: {
     stackOptions: (env) => ({ deps: { ...DEFAULT_E2E_DEPS, runtime: { ...DEFAULT_E2E_DEPS.runtime, workerCount: env.scenario.params?.workerCount as number } } }),
@@ -368,7 +374,7 @@ const runTrial = async (scenario: InjectionScenario, point: Point | undefined, r
     const runtime = env.runtime;
     const runId = env.runId;
     await until(async () => (TERMINAL_STATUSES as readonly string[]).includes((await runtime.getRun(runId)).run.status), {
-      deadlineMs: E2E_RUN_COMPLETED_BOUND_MS + (fault.extraBoundMs ?? 0),
+      deadlineMs: E2E_RUN_COMPLETED_BOUND_MS + (fault.extraBoundMs?.(env) ?? 0),
       description: `run ${runId} to end`,
     });
     const replay = runtime.events(runId);
