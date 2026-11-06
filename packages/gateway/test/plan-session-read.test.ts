@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ACCESS_LIFETIME_MS, MARGIN_MS, PROFILE_ID, SKEW_MS, START_MS, editRecord, planError, recordFileOf, signedIn, startHarness } from './plan-support.ts';
+import { ACCESS_LIFETIME_MS, MARGIN_MS, PROFILE_ID, SKEW_MS, START_MS, editRecord, planError, recordFileOf, profileFor, signedIn, startHarness } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
 
 const harnesses: Harness[] = [];
@@ -9,8 +9,16 @@ afterEach(async () => {
   await Promise.all(harnesses.splice(0).map((h) => h.close()));
 });
 
+const PROFILE_SIGN_IN_REQUIRED = 'Not signed in to the profile under test';
+
+const withOwnSentence = (auth: Parameters<typeof profileFor>[0]) => {
+  const shipped = profileFor(auth);
+  const messages = { ...shipped.messages, signInRequiredMessage: PROFILE_SIGN_IN_REQUIRED };
+  return { ...shipped, messages };
+};
+
 const harness = async (): Promise<Harness> => {
-  const h = await startHarness();
+  const h = await startHarness({ profile: withOwnSentence });
   harnesses.push(h);
   return h;
 };
@@ -83,7 +91,7 @@ describe('read: the bearer, the refresh margin M = 121 s and the skew S = 60 s',
 });
 
 describe('read: the state decides the failure, and no failure is skippable', () => {
-  it.each(['needs_sign_in', 'signing_out', 'registered'])('state %s fails with sign_in_required and sends nothing', async (state) => {
+  it.each(['signing_out', 'registered'])('state %s fails with sign_in_required, the not-signed-in sentence, and sends nothing', async (state) => {
     const h = await harness();
     await signedIn(h, 'work');
     await editRecord(h, 'work', (record) => ({ ...record, state }));
@@ -93,13 +101,29 @@ describe('read: the state decides the failure, and no failure is skippable', () 
     const failure = await planError(pinned(h, 'work').read(new AbortController().signal));
     expect(failure.code).toBe('sign_in_required');
     expect(failure.retryable).toBe(false);
+    expect(failure.message).toContain(PROFILE_SIGN_IN_REQUIRED);
+    expect(failure.message).not.toContain('ChatGPT sign-in expired');
     expect(h.auth.calls.tokenRefreshToken).toBe(refreshesBefore);
   });
 
-  it('an account with no record fails with sign_in_required', async () => {
+  it('an account with no record fails with sign_in_required and the not-signed-in sentence', async () => {
     const h = await harness();
     const failure = await planError(pinned(h, 'nobody').read(new AbortController().signal));
     expect(failure).toMatchObject({ code: 'sign_in_required', retryable: false });
+    expect(failure.message).toContain(PROFILE_SIGN_IN_REQUIRED);
+  });
+
+  it('state needs_sign_in fails with sign_in_required and the expired sentence, and sends nothing', async () => {
+    const h = await harness();
+    await signedIn(h, 'work');
+    await editRecord(h, 'work', (record) => ({ ...record, state: 'needs_sign_in', cause: 'refresh_token_expired' }));
+    await h.reopen();
+    const refreshesBefore = h.auth.calls.tokenRefreshToken;
+    const failure = await planError(pinned(h, 'work').read(new AbortController().signal));
+    expect(failure).toMatchObject({ code: 'sign_in_required', retryable: false });
+    expect(failure.message).toContain('ChatGPT sign-in expired');
+    expect(failure.message).not.toContain(PROFILE_SIGN_IN_REQUIRED);
+    expect(h.auth.calls.tokenRefreshToken).toBe(refreshesBefore);
   });
 
   it('a lost session carries the profile sentence for an expired sign-in', async () => {

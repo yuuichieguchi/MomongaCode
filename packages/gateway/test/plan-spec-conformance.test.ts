@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { AUTHORIZATION_WAIT_MS } from '@momonga/foundation';
 import { PLAN_ACCOUNT_STATES } from '@momonga/protocol';
 import { GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS } from '../src/defaults.ts';
-import { PLAN_CONFIGURATION_REFRESH_CODES, PLAN_REFRESH_INTERRUPTED_CAUSE, PLAN_TERMINAL_REFRESH_CODES } from '../src/plan/refresh.ts';
+import { PLAN_CONFIGURATION_REFRESH_CODES, PLAN_TERMINAL_REFRESH_CODES } from '../src/plan/refresh.ts';
 
 const root = path.resolve(import.meta.dirname, '..', '..', '..');
 const constants = JSON.parse(fs.readFileSync(path.join(root, 'packages', 'protocol', 'src', 'plan-constants.json'), 'utf8')) as {
@@ -23,11 +23,6 @@ describe('the session engine against plan-constants.json, the JSON PlanCredentia
 
   it('classifies exactly the configuration codes of the constants as configuration', () => {
     expect([...PLAN_CONFIGURATION_REFRESH_CODES].sort()).toEqual([...constants.configurationCodes].sort());
-  });
-
-  it('records the lost-rotation cause the constants name (CauseAttributed)', () => {
-    expect(constants.causes).toContain(PLAN_REFRESH_INTERRUPTED_CAUSE);
-    expect(PLAN_REFRESH_INTERRUPTED_CAUSE).toBe('refresh_interrupted');
   });
 
   it('uses the account states of the constants', () => {

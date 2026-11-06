@@ -67,7 +67,7 @@ describe('startup of the session engine', () => {
     expect(h.auth.records.find((record) => record.path.endsWith('/revoke'))?.form['token']).toBe(signIn.tokens.refresh_token);
   });
 
-  it('a record with pendingRefresh is marked ambiguous: its terminal answer is attributed to refresh_interrupted', async () => {
+  it('a record with pendingRefresh is marked ambiguous: its terminal answer keeps the server code and sets interrupted', async () => {
     const h = await harness();
     await signedIn(h, 'work');
     const installed = await readRecord(h, 'work');
@@ -76,6 +76,7 @@ describe('startup of the session engine', () => {
     h.auth.scriptToken('refresh_token', [{ kind: 'error', code: 'invalid_grant' }]);
     const source = h.sessions.authSource({ profile: PROFILE_ID, account: 'work' });
     await source.rejected(installed?.['generation'] as number, new AbortController().signal);
-    expect(source.status()).toMatchObject({ state: 'needs_sign_in', cause: 'refresh_interrupted' });
+    expect(source.status()).toMatchObject({ state: 'needs_sign_in', cause: 'invalid_grant' });
+    expect(await readRecord(h, 'work')).toMatchObject({ state: 'needs_sign_in', cause: 'invalid_grant', interrupted: true });
   });
 });

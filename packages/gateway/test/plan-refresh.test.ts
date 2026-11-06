@@ -101,6 +101,7 @@ describe('terminal refresh answers (F9, I-C6, I-C7)', () => {
     expect((await planError(readWork(h))).code).toBe('sign_in_required');
     const after = await readRecord(h, 'work');
     expect(after).toMatchObject({ state: 'needs_sign_in', cause: code });
+    expect(after?.['interrupted']).toBeUndefined();
     expect(after?.['access_token']).toBeUndefined();
     expect(after?.['refresh_token']).toBeUndefined();
     for (const field of REGISTRATION_FIELDS) expect(after?.[field], field).toEqual(before?.[field]);
@@ -120,7 +121,7 @@ describe('terminal refresh answers (F9, I-C6, I-C7)', () => {
     expect(await readRecord(h, 'work')).toMatchObject({ state: 'needs_sign_in', cause: 'refresh_token_invalidated' });
   });
 
-  it('a terminal answer to a refresh whose intent survived a restart is attributed to refresh_interrupted', async () => {
+  it('a terminal answer to a refresh whose intent survived a restart keeps the server code as cause and sets interrupted', async () => {
     const h = await harness();
     const signIn = await signedIn(h, 'work');
     const installed = await readRecord(h, 'work');
@@ -130,8 +131,18 @@ describe('terminal refresh answers (F9, I-C6, I-C7)', () => {
     const refreshesBefore = h.auth.calls.tokenRefreshToken;
     toRefreshWindow(h, START_MS);
     expect((await planError(readWork(h))).code).toBe('sign_in_required');
-    expect(await readRecord(h, 'work')).toMatchObject({ state: 'needs_sign_in', cause: 'refresh_interrupted', client_id: signIn.clientId });
+    expect(await readRecord(h, 'work')).toMatchObject({ state: 'needs_sign_in', cause: 'refresh_token_reused', interrupted: true, client_id: signIn.clientId });
     expect(h.auth.calls.tokenRefreshToken - refreshesBefore).toBe(1);
+  });
+
+  it('a terminal answer after a send of the same token went unanswered in this refresh sets interrupted', async () => {
+    const h = await harness();
+    await signedIn(h, 'work');
+    h.auth.scriptToken('refresh_token', [{ kind: 'lose_response' }]);
+    toRefreshWindow(h, START_MS);
+    expect((await planError(readWork(h))).code).toBe('sign_in_required');
+    expect(h.auth.calls.tokenRefreshToken).toBe(2);
+    expect(await readRecord(h, 'work')).toMatchObject({ state: 'needs_sign_in', cause: 'refresh_token_reused', interrupted: true });
   });
 
   it('invalid_client keeps everything, sets needs_sign_in with cause invalid_client and gives the registration sentence', async () => {
@@ -171,18 +182,49 @@ describe('transient refresh answers keep everything (I-C6) and are retried at mo
     expect(after).toMatchObject({ state: 'active', refresh_token: signIn.tokens.refresh_token, access_token: signIn.tokens.access_token });
   });
 
-  it.each([
-    ['a 200 without a replacement refresh token', { kind: 'no_replacement_refresh_token' } as const],
-    ['a 200 with expires_in equal to M', { kind: 'expires_in', seconds: 121 } as const],
-  ])('%s is not adopted, is never resent, and keeps the saved tokens', async (_name, step) => {
+  it('a 200 without a replacement refresh token adopts the access token and keeps the old refresh token (RFC 6749 section 6)', async () => {
     const h = await harness();
     const signIn = await signedIn(h, 'work');
-    h.auth.scriptToken('refresh_token', [step]);
+    const before = await readRecord(h, 'work');
+    h.auth.scriptToken('refresh_token', [{ kind: 'no_replacement_refresh_token' }]);
     toRefreshWindow(h, START_MS);
     const read = await readWork(h);
-    expect(read.bearer).toBe(signIn.tokens.access_token);
+    expect(read.bearer).not.toBe(signIn.tokens.access_token);
     expect(h.auth.calls.tokenRefreshToken).toBe(1);
-    expect(await readRecord(h, 'work')).toMatchObject({ state: 'active', refresh_token: signIn.tokens.refresh_token, access_token: signIn.tokens.access_token });
+    expect(await readRecord(h, 'work')).toMatchObject({
+      state: 'active',
+      access_token: read.bearer,
+      refresh_token: signIn.tokens.refresh_token,
+      generation: (before?.['generation'] as number) + 1,
+    });
+  });
+
+  it('a 200 with expires_in equal to M is adopted, its replacement stored in the same write', async () => {
+    const h = await harness();
+    const signIn = await signedIn(h, 'work');
+    h.auth.scriptToken('refresh_token', [{ kind: 'expires_in', seconds: 121 }]);
+    toRefreshWindow(h, START_MS);
+    const read = await readWork(h);
+    expect(read.bearer).not.toBe(signIn.tokens.access_token);
+    expect(h.auth.calls.tokenRefreshToken).toBe(1);
+    const after = await readRecord(h, 'work');
+    expect(after).toMatchObject({ state: 'active', access_token: read.bearer });
+    expect(after?.['refresh_token']).not.toBe(signIn.tokens.refresh_token);
+    expect(h.auth.issuedSecrets()).toContain(after?.['refresh_token']);
+    expect(await rawRecord(h, 'work')).not.toContain(signIn.tokens.refresh_token);
+  });
+
+  it('never sends a refresh token again once a 200 carried its replacement (SingleUseServer)', async () => {
+    const h = await harness();
+    const signIn = await signedIn(h, 'work');
+    const source = h.sessions.authSource({ profile: PROFILE_ID, account: 'work' });
+    toRefreshWindow(h, START_MS);
+    const first = await source.read(new AbortController().signal);
+    expect(await source.rejected(first.generation, new AbortController().signal)).toBe('renewed');
+    const sent = h.auth.records.filter((record) => record.form['grant_type'] === 'refresh_token').map((record) => record.form['refresh_token']);
+    expect(sent).toHaveLength(2);
+    expect(sent.filter((token) => token === signIn.tokens.refresh_token)).toHaveLength(1);
+    expect(new Set(sent).size).toBe(2);
   });
 
   it('a 200 with expires_in of M + 1 s is adopted', async () => {
