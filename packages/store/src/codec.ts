@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { FILE_ACCESSES, LOOP_GROUPS_KEPT, MEMORY_ORIGINS, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
 import type { RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload } from '@momonga/protocol';
+import { InheritanceError } from './inherit.ts';
 import { hasConsistentSeqs } from './seqs.ts';
 import { CANCEL_ORIGINS } from './transitions.ts';
 import { corrupt, expectOneOf, expectRecord, expectStringRecord, isRecord, readerFor } from './rows.ts';
@@ -107,6 +108,7 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   'user.message': true,
   'run.started': true,
   'attempt.failed': true,
+  'attempt.lost': true,
   'run.status': true,
   'model.requested': true,
   'model.responded': true,
@@ -176,10 +178,30 @@ const assertToolFacts = (identity: string, payload: Record<string, unknown>): vo
   }
 };
 
+const REFERENCE_NUMBERS = ['fromLastSeq', 'nextItemSeq', 'fromNextItemSeq', 'itemCount'] as const;
+
+const REFERENCE_LISTS = ['omitSeqs', 'synthesised', 'via'] as const;
+
+const assertInheritedForm = (identity: string, payload: Record<string, unknown>): void => {
+  const refuse = (detail: string): never => {
+    throw new InheritanceError('previous_run_inconsistent', `event ${identity}: context.inherited ${detail}`);
+  };
+  if (payload['form'] === undefined) {
+    if (!Array.isArray(payload['history'])) refuse('has neither form "reference" nor a history');
+    return;
+  }
+  if (payload['form'] !== 'reference') refuse(`has the unknown form ${JSON.stringify(payload['form'])}`);
+  if (payload['history'] !== undefined) refuse('is a reference and carries a history');
+  if (typeof payload['fromRunId'] !== 'string' || typeof payload['digest'] !== 'string') refuse('is a reference without fromRunId and digest');
+  for (const key of REFERENCE_NUMBERS) if (!Number.isInteger(payload[key])) refuse(`is a reference without the number ${key}`);
+  for (const key of REFERENCE_LISTS) if (!Array.isArray(payload[key])) refuse(`is a reference without the list ${key}`);
+};
+
 const decodeRunEvent = (row: Row, identity: string, type: string, payload: Record<string, unknown>): RunEvent => {
   const reader = readerFor('events', identity, row);
   if (!Object.hasOwn(EVENT_TYPES, type)) throw corrupt('events', identity, `column type has unknown event type "${type}"`);
   if (type === 'tool.completed' || type === 'tool.reconciled') assertToolFacts(identity, payload);
+  if (type === 'context.inherited') assertInheritedForm(identity, payload);
   const envelope = {
     id: reader.number('id'),
     runId: reader.string('run_id'),
@@ -306,8 +328,22 @@ const isStreaming = (value: unknown): boolean =>
   Array.isArray(value['items']) &&
   value['items'].every((item: unknown) => isRecord(item) && typeof item['itemId'] === 'string' && typeof item['text'] === 'string');
 
+const isCompactionPointer = (value: unknown): boolean => isRecord(value) && typeof value['runId'] === 'string' && Number.isInteger(value['eventSeq']);
+
 const isInherited = (value: unknown): boolean =>
-  isRecord(value) && typeof value['fromRunId'] === 'string' && Number.isInteger(value['fromLastSeq']) && typeof value['digest'] === 'string';
+  isRecord(value) &&
+  typeof value['fromRunId'] === 'string' &&
+  Number.isInteger(value['fromLastSeq']) &&
+  typeof value['digest'] === 'string' &&
+  (value['form'] === undefined || value['form'] === 'reference') &&
+  (value['fromNextItemSeq'] === undefined || Number.isInteger(value['fromNextItemSeq'])) &&
+  (value['itemCount'] === undefined || Number.isInteger(value['itemCount'])) &&
+  (value['compaction'] === undefined || isCompactionPointer(value['compaction']));
+
+const TRUNCATION_KINDS: readonly unknown[] = ['omitted', 'truncated', 'reference'];
+
+const isInheritedTruncation = (value: unknown): boolean =>
+  isRecord(value) && typeof value['callId'] === 'string' && typeof value['handle'] === 'string' && TRUNCATION_KINDS.includes(value['kind']);
 
 const isLoadedInstruction = (value: unknown): boolean =>
   isRecord(value) && typeof value['path'] === 'string' && typeof value['textSha256'] === 'string' && Number.isInteger(value['seq']) && typeof value['content'] === 'string';
@@ -388,7 +424,7 @@ const isWorkingFacts = (value: unknown): boolean =>
   isArrayOf(value['itemEvents'], (entry) => isRecord(entry) && Number.isInteger(entry['itemSeq']) && Number.isInteger(entry['eventSeq'])) &&
   (value['replacedThroughEventSeq'] === undefined || Number.isInteger(value['replacedThroughEventSeq']));
 
-export const SNAPSHOT_STATE_VERSION = 16;
+export const SNAPSHOT_STATE_VERSION = 17;
 
 export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
 
@@ -451,7 +487,10 @@ export const decodeRunState = (identity: string, value: unknown): RunState | und
     state['loopGroups'].length <= LOOP_GROUPS_KEPT &&
     state['loopGroups'].every(isLoopGroup) &&
     (state['loopOpen'] === undefined || isLoopOpen(state['loopOpen'])) &&
-    (state['inherited'] === undefined || isInherited(state['inherited']));
+    (state['inherited'] === undefined || isInherited(state['inherited'])) &&
+    (state['ownCompactionEventSeq'] === undefined || Number.isInteger(state['ownCompactionEventSeq'])) &&
+    (state['inheritedSummaryItem'] === undefined || isSummaryItem(state['inheritedSummaryItem'])) &&
+    (state['inheritedTruncations'] === undefined || isArrayOf(state['inheritedTruncations'], isInheritedTruncation));
   if (!valid) throw corrupt('snapshots', identity, 'column state_json does not hold a RunState');
   return state as RunState;
 };

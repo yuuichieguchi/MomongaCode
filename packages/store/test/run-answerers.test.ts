@@ -118,7 +118,7 @@ describe('run_answerers, the per-run record of the targets that answered, writte
 });
 
 describe('the migration that adds run_answerers fills it once for runs written before', () => {
-  const before = MIGRATIONS.filter((migration) => !JSON.stringify(migration).includes('run_answerers'));
+  const before = MIGRATIONS.slice(0, MIGRATIONS.findIndex((migration) => JSON.stringify(migration).includes('run_answerers')));
 
   const legacyDatabase = (runs: Record<string, RunEventPayload[]>): string => {
     const dbPath = path.join(makeStoreDir(), 'runtime.db');

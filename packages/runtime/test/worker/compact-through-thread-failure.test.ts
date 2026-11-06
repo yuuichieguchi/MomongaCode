@@ -39,7 +39,7 @@ describe('a journal thread failure during the fidelity check', () => {
             failures += 1;
             throw new JournalThreadError('the journal thread exited');
           }
-          return { lastSeq: request.throughEventSeq, attested: request.tokens.map((entry) => entry.token), unreadable: [] };
+          return { lastSeq: request.throughEventSeq, attested: request.tokens.map((entry) => entry.token), unreadable: [], checkedThrough: request.throughEventSeq, verdicts: [] };
         },
       },
     } as unknown as RuntimeStore;

@@ -254,8 +254,8 @@ describe('multi-turn sessions', () => {
       ]);
       expect(messages.some((message, index) => index > 0 && message.role === 'user' && messages[index - 1]?.role === 'user')).toBe(false);
       const [row] = eventRows(home, second.id, ['context.inherited']);
-      const inherited = JSON.parse(row!.payload_json) as { history: { item: { role?: string; status?: string; content?: unknown } }[]; partial?: { seq: number } };
-      const partial = inherited.history.find((entry) => entry.item.role === 'assistant');
+      const inherited = JSON.parse(row!.payload_json) as { synthesised: { item: { role?: string; status?: string; content?: unknown } }[]; partial?: { seq: number } };
+      const partial = inherited.synthesised.find((entry) => entry.item.role === 'assistant');
       expect(partial?.item.status).toBe('incomplete');
       expect(contentText(partial?.item.content)).toBe(streamed);
       expect(inherited.partial).toEqual({ seq: 2 });

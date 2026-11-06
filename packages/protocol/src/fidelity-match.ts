@@ -1,5 +1,9 @@
 export const FIDELITY_CLAIMS = ['executed', 'any'] as const;
 
+export const FIDELITY_FOLD_VERSION = 1;
+
+export const FIDELITY_FOLD_BEHAVIOUR_DIGESTS: Readonly<Record<number, string>> = { 1: '3fb0c911d8fe3019c192ecad36dcab8959747f1f2476955d5063e84d2e55faf8' };
+
 export type FidelityClaim = (typeof FIDELITY_CLAIMS)[number];
 
 export type ClaimedToken = { readonly token: string; readonly claim: FidelityClaim };

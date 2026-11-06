@@ -1,4 +1,3 @@
-import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,6 +9,7 @@ import { readHolderFile, readHolderFileSync, writeHolderFile } from './holder-fi
 import { noFollowFlag } from './privacy.ts';
 import { createCapabilityProbe, unmeasuredBecause } from '../capability-probe.ts';
 import type { CapabilityResult } from '../capability-probe.ts';
+import { systemRandom } from '../system-random.ts';
 
 export const LOCK_DATABASE_SUFFIX = '.sqlite';
 
@@ -40,7 +40,7 @@ export type UnlinkOpenProbePorts = {
 const UNLINK_OPEN_REFUSED = new Set(['EBUSY', 'EPERM']);
 
 export const probeRemovesOpenFiles = (directory: string, ports: UnlinkOpenProbePorts): CapabilityResult<boolean> => {
-  const file = path.join(directory, `.momonga-unlink-probe-${process.pid}-${randomBytes(6).toString('hex')}`);
+  const file = path.join(directory, `.momonga-unlink-probe-${process.pid}-${systemRandom.hex(6)}`);
   let descriptor: number;
   try {
     descriptor = ports.createExclusive(file);

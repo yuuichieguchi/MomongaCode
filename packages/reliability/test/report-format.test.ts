@@ -10,7 +10,7 @@ import {
   formatReliabilityReport,
 } from '@momonga/reliability';
 import type { RunFacts } from '@momonga/reliability';
-import { T0, eventsOf, runInfo, started, terminal } from './streams.ts';
+import { T0, attemptLost, eventsOf, modelResponded, reconciled, runInfo, started, status, terminal, toolCall, toolStarted } from './streams.ts';
 
 const task = (index: number, declared: boolean, met: boolean): RunFacts => {
   const runId = `r${index}`;
@@ -88,6 +88,44 @@ describe('formatReliabilityReport', () => {
   });
 });
 
+const stoppedEpisode = (runId: string): RunFacts =>
+  foldFacts(
+    eventsOf(runId, [
+      [T0, started(1)],
+      [T0 + 100, attemptLost(T0 + 50)],
+      [T0 + 110, status('RUNNING', 'STOPPED')],
+    ]),
+    runInfo({ runId, status: 'STOPPED', stopReason: 'timeout' }),
+  );
+
+const unknownEpisode = (runId: string): RunFacts =>
+  foldFacts(
+    eventsOf(runId, [
+      [T0, started(1)],
+      [T0 + 10, toolCall('c1', 'write')],
+      [T0 + 20, toolStarted('c1')],
+      [T0 + 100, attemptLost(T0 + 50)],
+      [T0 + 110, started(2)],
+      [T0 + 120, reconciled('c1', 'unknown')],
+      [T0 + 130, modelResponded(1)],
+      [T0 + 140, terminal('COMPLETED')],
+    ]),
+    runInfo({ runId }),
+  );
+
+describe('the Recovery Success Rate line (decisions 19 and 36)', () => {
+  it('prints unknown_effect and stopped as their own counts beside the rate, outside its numerator and, for stopped, its denominator', () => {
+    const line = lineWith(formatReliabilityReport(reportOf([stoppedEpisode('s1'), stoppedEpisode('s2'), unknownEpisode('u1')])), 'Recovery Success Rate');
+    expect(line).toBe('Recovery Success Rate: 0/1; unknown_effect 1; failed 0; stopped 2');
+  });
+
+  it('round-trips the stopped count through momonga-reliability/1', () => {
+    const report = reportOf([stoppedEpisode('s1')]);
+    expect(report.total.recovery).toEqual({ k: 0, n: 0, unknownEffect: 0, failed: 0, stopped: 1 });
+    expect(decodeReliabilityReport(encodeReliabilityReport(report))).toEqual(report);
+  });
+});
+
 describe('momonga-reliability/1', () => {
   it('round-trips a report through encode and decode', () => {
     const report = reportOf(tasks(12, 28, 5));
@@ -99,5 +137,15 @@ describe('momonga-reliability/1', () => {
     const encoded = JSON.parse(encodeReliabilityReport(reportOf(tasks(1, 0, 0)))) as Record<string, unknown>;
     expect(() => decodeReliabilityReport(JSON.stringify({ ...encoded, format: 'momonga-reliability/0' }))).toThrow('momonga-reliability/0');
     expect(() => decodeReliabilityReport(JSON.stringify({ ...encoded, format: 'momonga-eval/1' }))).toThrow('momonga-eval/1');
+  });
+});
+
+describe('decision 55: facts_unavailable in the population line', () => {
+  it('prints the unavailable roots beside the buckets and counts them as resolved in the coverage', () => {
+    const report = buildReliabilityReport({ kind: 'real', aggregate: aggregate(tasks(2, 0, 0), { groupBy: 'model', unavailableRoots: ['ghost'] }) });
+    expect(formatReliabilityReport(report)).toContain(
+      'Population: 3 terminal root tasks; counted 2; cancelled 0 (excluded); pending facts 0 (excluded); facts unavailable 1 (excluded); facts coverage 3/3',
+    );
+    expect(decodeReliabilityReport(encodeReliabilityReport(report))).toEqual(report);
   });
 });

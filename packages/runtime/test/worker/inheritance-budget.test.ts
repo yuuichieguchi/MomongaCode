@@ -7,7 +7,7 @@ import { fixtureCompactionContent } from '@momonga/testkit';
 import { capabilitiesFor, compactKey, makeEnv, textOf } from './harness.ts';
 import type { Env } from './harness.ts';
 import { MODEL_ALIAS, assistantMessage, callsStep, functionCallItem, textStep } from './scripts.ts';
-import { MARKER_TEXT, firstConversation, firstRequestInput, inheritedEventOf, settle } from './inheritance-support.ts';
+import { MARKER_TEXT, firstConversation, firstRequestInput, resolvedInheritedOf as inheritedEventOf, settle } from './inheritance-support.ts';
 
 const USAGE = { input_tokens: 50, output_tokens: 5, total_tokens: 55 };
 const NO_TOOLS = { toolList: () => [] };
@@ -85,7 +85,9 @@ describe('compaction of inherited history', () => {
     env.gateway.script.push(textStep('Compacted answer.'));
     const second = env.enqueue('question four');
 
-    expect((await settledWith(env, second.id)).status).toBe('COMPLETED');
+    const settled = await settledWith(env, second.id);
+    expect({ status: settled.status, error: settled.error }).toEqual({ status: 'COMPLETED', error: undefined });
+    expect(settled).not.toHaveProperty('error');
 
     expect(env.gateway.compacts).toHaveLength(1);
     const [compact] = env.gateway.compacts;

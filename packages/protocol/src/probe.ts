@@ -19,6 +19,10 @@ export type ProbeDialectAttempt = { id: string; result: ProbeDialectResult; deta
 
 export type ProbeReportDialect = { selected: string | null; shape: 'union' | 'flat' | null; tried: ProbeDialectAttempt[] };
 
+export const JSON_MODE_PROBE_STATES = ['accepted', 'refused', 'unmeasured'] as const;
+
+export type JsonModeProbeState = (typeof JSON_MODE_PROBE_STATES)[number];
+
 export type ProbeReport = {
   probedAt: string;
   health: HealthResult;
@@ -41,6 +45,7 @@ export type ProbeReport = {
   guardrail: { errorShape?: unknown };
   tokenCalibration?: { ratio: number; errorBound: number };
   promptCache?: { kind: 'automatic' | 'none' };
+  jsonMode?: JsonModeProbeState;
 };
 
 export type OllamaProbeReport = {
@@ -55,6 +60,7 @@ export type OllamaProbeReport = {
   thinkingSupported: boolean;
   schemaDialect: ProbeReportDialect;
   promptCache?: { kind: 'automatic' | 'none' };
+  jsonMode?: JsonModeProbeState;
   reasoning?: undefined;
 };
 

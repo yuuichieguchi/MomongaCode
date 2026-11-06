@@ -12,9 +12,9 @@ const envOption = (env: ChildEnv | undefined): { env?: Record<string, string> } 
 
 export const createExecFn =
   (env: ChildEnv | undefined): ExecFn =>
-  (file, args) =>
+  (file, args, options) =>
     new Promise((resolve, reject) => {
-      execFile(file, [...args], envOption(env), (error, stdout, stderr) => {
+      execFile(file, [...args], { ...envOption(env), ...(options === undefined ? {} : { signal: options.signal }) }, (error, stdout, stderr) => {
         if (error === null) {
           resolve({ exitCode: 0, stdout, stderr });
           return;

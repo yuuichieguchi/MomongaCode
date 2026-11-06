@@ -5,7 +5,6 @@ import type { PrefixEvent } from './prefix-events.ts';
 import type { MemoryStatus } from './memory.ts';
 import type { CompactionInputItem, InputItem, MessageInputItem } from './open-responses.ts';
 import type { ApprovalBasis, PermissionDenial } from './permission-denial.ts';
-import type { RunRecovery } from './reliability.ts';
 import type { CallTiming, ModelCost, TokenAnatomy } from './token-anatomy.ts';
 
 export const RUN_STATUSES = [
@@ -96,10 +95,30 @@ export type JobStatus = (typeof JOB_STATUSES)[number];
 
 export type ToolAwait = { kind: 'run'; runId: string; sessionId: string; agent: string } | { kind: 'job'; jobId: string };
 
+export type InheritedCopyPayload = {
+  type: 'context.inherited';
+  form?: undefined;
+  fromRunId: string;
+  fromLastSeq: number;
+  history: { seq: number; item: InputItem; callId?: string; handle?: string }[];
+  nextItemSeq: number;
+  summary?: { item: CompactionInputItem | MessageInputItem; summary: string; replacedThroughSeq: number };
+  workingFacts?: WorkingFacts;
+  evicted: string[];
+  closures: { callId: string; seq: number; effect: 'not_executed' | 'unknown'; announced: boolean }[];
+  partial?: { seq: number };
+  markers: { seq: number; kind: 'interrupted' | 'unprocessed' | 'dropped' | 'mode_changed' }[];
+  fromMode?: PermissionMode;
+  mode?: PermissionMode;
+  activatedSkills?: ActivatedSkillRecord[];
+  digest: string;
+};
+
 export type RunEventPayload =
   | { type: 'user.message'; text: string; images?: ImageAttachment[] }
-  | { type: 'run.started'; attempt: number; now: number; pins: Record<string, unknown>; mode?: PermissionMode; recovery?: RunRecovery }
-  | { type: 'attempt.failed'; attempt: number; code: string }
+  | { type: 'run.started'; attempt: number; now: number; pins: Record<string, unknown>; mode?: PermissionMode }
+  | { type: 'attempt.failed'; attempt: number; code: string; retryAt: number; limit: number }
+  | { type: 'attempt.lost'; lastLiveAt: number }
   | { type: 'run.status'; from: RunStatus; to: RunStatus; reason?: string }
   | {
       type: 'model.requested';
@@ -234,24 +253,9 @@ export type RunEventPayload =
   | { type: 'context.memories_loaded'; memories: { id: string; status: MemoryStatus }[] }
   | { type: 'context.contribution'; items: { kind: ContributionKind; id: string; contributed: boolean }[] }
   | { type: 'context.compaction_rejected'; step?: number; attempt?: number; item: MessageInputItem }
-  | {
-      type: 'context.inherited';
-      fromRunId: string;
-      fromLastSeq: number;
-      history: { seq: number; item: InputItem; callId?: string; handle?: string }[];
-      nextItemSeq: number;
-      summary?: { item: CompactionInputItem | MessageInputItem; summary: string; replacedThroughSeq: number };
-      workingFacts?: WorkingFacts;
-      evicted: string[];
-      closures: { callId: string; seq: number; effect: 'not_executed' | 'unknown'; announced: boolean }[];
-      partial?: { seq: number };
-      markers: { seq: number; kind: 'interrupted' | 'unprocessed' | 'dropped' | 'mode_changed' }[];
-      fromMode?: PermissionMode;
-      mode?: PermissionMode;
-      activatedSkills?: ActivatedSkillRecord[];
-      digest: string;
-    }
-  | { type: 'context.truncated'; callId: string; handle: string; kind: 'omitted' | 'truncated' | 'reference'; keptChars?: number }
+  | InheritedCopyPayload
+  | InheritedReferencePayload
+  | { type: 'context.truncated'; callId: string; handle: string; kind: 'omitted' | 'truncated' | 'reference'; keptChars?: number; tokens?: number }
   | { type: 'instructions.loaded'; path: string; content: string }
   | { type: 'skill.activated'; name: string; content: string }
   | { type: 'approval.rule.persisted'; approvalId: string; effect: 'allow' | 'deny'; rule: string }
@@ -262,6 +266,34 @@ export type SessionEventPayload =
   | { type: 'model.changed'; modelAlias: string; previousModelAlias: string };
 
 export type SessionEvent = SessionEventPayload & { id: number; sessionId: string; createdAt: number };
+
+export type InheritedSynthesisEntry = { seq: number; item: InputItem; callId?: string };
+
+export type InheritedViaLink = { runId: string; lastSeq: number; nextItemSeq: number; omitSeqs: number[]; synthesised: InheritedSynthesisEntry[] };
+
+export type InheritedReferencePayload = {
+  type: 'context.inherited';
+  form: 'reference';
+  fromRunId: string;
+  fromLastSeq: number;
+  nextItemSeq: number;
+  fromNextItemSeq: number;
+  compaction?: { runId: string; eventSeq: number };
+  omitSeqs: number[];
+  synthesised: InheritedSynthesisEntry[];
+  via: InheritedViaLink[];
+  itemCount: number;
+  workingFacts?: WorkingFacts;
+  closures: { callId: string; seq: number; effect: 'not_executed' | 'unknown'; announced: boolean }[];
+  partial?: { seq: number };
+  markers: { seq: number; kind: 'interrupted' | 'unprocessed' | 'dropped' | 'mode_changed' }[];
+  fromMode?: PermissionMode;
+  mode?: PermissionMode;
+  activatedSkills?: ActivatedSkillRecord[];
+  digest: string;
+};
+
+export const isInheritedReference = (payload: InheritedCopyPayload | InheritedReferencePayload): payload is InheritedReferencePayload => payload.form === 'reference';
 
 export type RunEventEnvelope = {
   id: number;
@@ -287,7 +319,7 @@ export type RunState = {
   step: number;
   attempt: number;
   usage: { inputTokens: number; outputTokens: number; totalTokens: number };
-  history: { seq: number; item: InputItem; callId?: string; handle?: string }[];
+  history: { seq: number; item: InputItem; callId?: string; handle?: string; omittedTokens?: number }[];
   nextItemSeq: number;
   summary?: { item: CompactionInputItem | MessageInputItem; summary: string; replacedThroughSeq: number };
   workingFacts: WorkingFacts;
@@ -336,6 +368,17 @@ export type RunState = {
   taskSeq: number;
   loopGroups: { signature: string; outputSignature?: string }[];
   loopOpen?: { calls: [string, unknown][]; callIds: string[]; outputs: Record<string, string> };
-  inherited?: { fromRunId: string; fromLastSeq: number; digest: string };
+  inherited?: {
+    fromRunId: string;
+    fromLastSeq: number;
+    digest: string;
+    form?: 'reference';
+    fromNextItemSeq?: number;
+    compaction?: { runId: string; eventSeq: number };
+    itemCount?: number;
+  };
+  ownCompactionEventSeq?: number;
+  inheritedSummaryItem?: MessageInputItem;
+  inheritedTruncations?: { callId: string; handle: string; kind: 'omitted' | 'truncated' | 'reference' }[];
   lastSeq: number;
 };

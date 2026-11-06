@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import { getRawAsset, isSea } from 'node:sea';
+import { nodeFileSystem } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { CliPorts } from '../ports.ts';
 
@@ -32,11 +33,11 @@ export const nodePolicyVerifyHost = (ports: Pick<CliPorts, 'random'>, paths: Pic
             throw error;
           }
         },
-        ensureDirectory: async (directory) => void (await fs.mkdir(directory, { recursive: true })),
         writeBytes: (file, bytes) => fs.writeFile(file, bytes, { mode: 0o600 }),
-        readBytes: (file) => fs.readFile(file),
-        rename: (from, to) => fs.rename(from, to),
-        removeTree: (directory) => fs.rm(directory, { recursive: true, force: true }),
+        readFile: nodeFileSystem.readFile,
+        mkdir: nodeFileSystem.mkdir,
+        rm: nodeFileSystem.rm,
+        rename: nodeFileSystem.rename,
       },
     });
     return verifier.openZ3(bundled);

@@ -81,14 +81,14 @@ describe('explicit skill activation at run creation', () => {
 
 describe('skill inheritance across runs of a session', () => {
   it('carries the activated skills into the next run and keeps the next run explicit activation', async () => {
-    const { store } = harness({ leaseMs: 10 * TIMEOUT_MS });
+    const { store } = harness({ leaseMs: 10 * TIMEOUT_MS, inheritance: true });
     const session = newSession(store);
     createRun(store, session.id, { name: 'pdf', content: 'pdf body' });
     await finish(store, mustClaim(store, 'w1'));
 
     const second = createRun(store, session.id, { name: 'review', content: 'review body' });
     const claim = mustClaim(store, 'w1');
-    expect(store.inheritContext(claim, { mode: 'default' }).kind).not.toBe('conflict');
+    expect((await store.inheritContext(claim, { mode: 'default' })).kind).not.toBe('conflict');
 
     const events = store.readRunEvents(second.id, 0, 100);
     const inherited = events.find((event) => event.type === 'context.inherited');
@@ -101,23 +101,23 @@ describe('skill inheritance across runs of a session', () => {
   });
 
   it('keeps one copy when the next run activates a skill that was inherited', async () => {
-    const { store } = harness({ leaseMs: 10 * TIMEOUT_MS });
+    const { store } = harness({ leaseMs: 10 * TIMEOUT_MS, inheritance: true });
     const session = newSession(store);
     createRun(store, session.id, { name: 'pdf', content: 'pdf body' });
     await finish(store, mustClaim(store, 'w1'));
     const second = createRun(store, session.id, { name: 'pdf', content: 'changed body' });
-    store.inheritContext(mustClaim(store, 'w1'), { mode: 'default' });
+    await store.inheritContext(mustClaim(store, 'w1'), { mode: 'default' });
     const state = store.readRunEvents(second.id, 0, 100).reduce(foldRunState, initialRunState({ runId: second.id, sessionId: second.sessionId }));
     expect(state.activatedSkills).toEqual([{ name: 'pdf', content: 'pdf body', seq: 3 }]);
   });
 
   it('does not add the field when no skill was activated', async () => {
-    const { store } = harness({ leaseMs: 10 * TIMEOUT_MS });
+    const { store } = harness({ leaseMs: 10 * TIMEOUT_MS, inheritance: true });
     const session = newSession(store);
     createRun(store, session.id);
     await finish(store, mustClaim(store, 'w1'));
     const second = createRun(store, session.id);
-    store.inheritContext(mustClaim(store, 'w1'), { mode: 'default' });
+    await store.inheritContext(mustClaim(store, 'w1'), { mode: 'default' });
     const inherited = store.readRunEvents(second.id, 0, 100).find((event) => event.type === 'context.inherited');
     expect(inherited).toBeDefined();
     expect(inherited).not.toHaveProperty('activatedSkills');

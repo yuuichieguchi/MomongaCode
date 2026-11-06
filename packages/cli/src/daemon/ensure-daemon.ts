@@ -100,10 +100,11 @@ const isStrictlyNewerThan = (clientVersion: string, daemonVersion: string): bool
   return client !== undefined && daemon !== undefined && compareVersions(client, daemon) === 1;
 };
 
-const versionMismatchMessage = (ports: DaemonPorts, health: SupervisorHealth): string =>
-  isStrictlyNewerThan(ports.version, health.version)
-    ? `the daemon (pid ${health.pid}) runs version ${health.version}, not ${ports.version}; run \`momonga daemon stop\``
-    : `the daemon (pid ${health.pid}) runs version ${health.version}, not ${ports.version}, and it may be in use by newer clients; update or restart this CLI`;
+const versionMismatchMessage = (ports: DaemonPorts, health: SupervisorHealth): string => {
+  if (isStrictlyNewerThan(ports.version, health.version)) return `the daemon (pid ${health.pid}) runs version ${health.version}, not ${ports.version}; run \`momonga daemon stop\``;
+  if (isStrictlyNewerThan(health.version, ports.version)) return `momonga was updated to ${health.version}; reopen this session (the daemon, pid ${health.pid}, runs version ${health.version}, not ${ports.version})`;
+  return `the daemon (pid ${health.pid}) runs version ${health.version}, not ${ports.version}, and it may be in use by newer clients; update or restart this CLI`;
+};
 
 const awaitReady = async (ports: DaemonPorts, paths: MomongaPaths, client: SupervisorClient, readyMs: number, signal?: AbortSignal, spawned?: SpawnedSupervisor): Promise<SupervisorHealth> =>
   pollUntil(

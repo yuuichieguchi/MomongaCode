@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import type { AtomicWriteFileSystem, AtomicWriteFileSystemSync } from './atomic-file.ts';
+import type { AtomicWriteFileSystem, AtomicWriteFileSystemSync, FileContent } from './atomic-file.ts';
 import { noFollowFlag } from './platform/privacy.ts';
 
 export const OPEN_FLAGS = {
@@ -12,6 +12,26 @@ export const OPEN_FLAGS = {
 
 export type DirectoryIdentity = { dev: bigint; ino: bigint };
 
+export type AccessCheck = 'exists' | 'execute';
+
+export type RemoveOptions = { readonly recursive: boolean };
+
+export interface FileSystem extends AtomicWriteFileSystem {
+  rm(file: string, options?: RemoveOptions): Promise<void>;
+  stat(file: string): Promise<fs.Stats>;
+  readdir(directory: string): Promise<string[]>;
+  readdirEntries(directory: string): Promise<fs.Dirent[]>;
+  readFile(file: string): Promise<Uint8Array>;
+  readTextFile(file: string): Promise<string>;
+  mkdir(directory: string): Promise<void>;
+  writeFile(file: string, content: FileContent): Promise<void>;
+  access(file: string): Promise<void>;
+  cp(from: string, to: string): Promise<void>;
+  mkdtemp(prefix: string): Promise<string>;
+  openThenClose(file: string, flags: number): Promise<void>;
+  writeByteAt(file: string, position: number, byte: string): Promise<void>;
+}
+
 export interface FileSystemSync extends AtomicWriteFileSystemSync<number> {
   openReadNoFollowSync(file: string): number;
   openDescriptorSync(file: string, flags: number, mode?: number): number;
@@ -22,14 +42,11 @@ export interface FileSystemSync extends AtomicWriteFileSystemSync<number> {
   mkdirSync(directory: string, mode: number): void;
   readFileSync(handle: number): Uint8Array;
   readdirSync(directory: string): string[];
+  statSync(file: string): fs.Stats;
+  accessSync(file: string, check: AccessCheck): void;
 }
 
-export interface FileSystem extends AtomicWriteFileSystem {
-  readText(file: string): Promise<string>;
-  readdir(directory: string): Promise<string[]>;
-  openThenClose(file: string, flags: number): Promise<void>;
-  writeByteAt(file: string, position: number, byte: string): Promise<void>;
-}
+const accessMode = (check: AccessCheck): number => (check === 'execute' ? fs.constants.X_OK : fs.constants.F_OK);
 
 export const nodeFileSystem: FileSystem = {
   open: async (file, flags, mode) => {
@@ -42,9 +59,17 @@ export const nodeFileSystem: FileSystem = {
   },
   rename: (from, to) => fs.promises.rename(from, to),
   link: (from, to) => fs.promises.link(from, to),
-  rm: (file) => fs.promises.rm(file, { force: true }),
-  readText: (file) => fs.promises.readFile(file, 'utf8'),
+  rm: (file, options) => fs.promises.rm(file, { force: true, recursive: options?.recursive === true }),
+  stat: (file) => fs.promises.stat(file),
   readdir: (directory) => fs.promises.readdir(directory),
+  readdirEntries: (directory) => fs.promises.readdir(directory, { withFileTypes: true }),
+  readFile: async (file) => new Uint8Array(await fs.promises.readFile(file)),
+  readTextFile: (file) => fs.promises.readFile(file, 'utf8'),
+  mkdir: async (directory) => void (await fs.promises.mkdir(directory, { recursive: true })),
+  writeFile: (file, content) => fs.promises.writeFile(file, content),
+  access: (file) => fs.promises.access(file),
+  cp: (from, to) => fs.promises.cp(from, to, { recursive: true, force: true }),
+  mkdtemp: (prefix) => fs.promises.mkdtemp(prefix),
   openThenClose: async (file, flags) => {
     const handle = await fs.promises.open(file, flags);
     await handle.close();
@@ -77,6 +102,8 @@ export const nodeFileSystemSync: FileSystemSync = {
   mkdirSync: (directory, mode) => void fs.mkdirSync(directory, { mode }),
   readFileSync: (handle) => new Uint8Array(fs.readFileSync(handle)),
   readdirSync: (directory) => fs.readdirSync(directory),
+  statSync: (file) => fs.statSync(file),
+  accessSync: (file, check) => fs.accessSync(file, accessMode(check)),
   renameSync: (from, to) => fs.renameSync(from, to),
   linkSync: (from, to) => fs.linkSync(from, to),
   rmSync: (file) => fs.rmSync(file, { force: true }),

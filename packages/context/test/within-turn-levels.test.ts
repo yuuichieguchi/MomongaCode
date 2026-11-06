@@ -35,8 +35,8 @@ describe('protection levels inside the current turn', () => {
     const built = await buildContext(inputFor(capabilities, { sources: sourcesWith({ history: sixLargeOutputs() }), level: 0 }), ports);
 
     expect(built.evictions).toEqual([
-      { callId: 'c0', handle: handleOf('a'.repeat(2400)), kind: 'omitted' },
-      { callId: 'c1', handle: handleOf('b'.repeat(2400)), kind: 'omitted' },
+      { callId: 'c0', handle: handleOf('a'.repeat(2400)), kind: 'omitted', tokens: expect.any(Number) },
+      { callId: 'c1', handle: handleOf('b'.repeat(2400)), kind: 'omitted', tokens: expect.any(Number) },
     ]);
     expect(built.inputTokens).toBe(2695);
     expect(blobs.puts.map((put) => put.text)).toEqual(['a'.repeat(2400), 'b'.repeat(2400)]);
@@ -113,7 +113,7 @@ describe('step labelling', () => {
     ];
     const built = await buildContext(inputFor(small, { sources: sourcesWith({ history }), level: 1 }), harness(small).ports);
 
-    expect(built.evictions).toEqual([{ callId: 'c0', handle: handleOf('a'.repeat(2000)), kind: 'omitted' }]);
+    expect(built.evictions).toEqual([{ callId: 'c0', handle: handleOf('a'.repeat(2000)), kind: 'omitted', tokens: expect.any(Number) }]);
     expect(outputTextOf(built.input, 'c1')).toBe('b'.repeat(2000));
     expect(outputTextOf(built.input, 'c2')).toBe('c'.repeat(2000));
   });

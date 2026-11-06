@@ -4,6 +4,7 @@ import { VERIFY_BUDGET_MS } from '../../packages/cli/src/commands/policy.ts';
 import { daemonReadyBoundMs } from '../../packages/cli/src/daemon/ensure-daemon.ts';
 import { reflectionAttemptsBoundMs } from '../../packages/runtime/src/memory/reflection-bound.ts';
 import { RUNTIME_DEFAULTS } from '../../packages/runtime/src/process/defaults.ts';
+import { SWEEP_INTERVAL_MS } from '../../packages/runtime/src/service/service.ts';
 import { CANCEL_UPSTREAM_SETTLE_MS, GATEWAY_CANCEL_TIMEOUT_MS, SANDBOX_KILL_GRACE_MS } from '../../packages/runtime/src/process/constants.ts';
 
 export const E2E_REFLECTION_ATTEMPTS_BOUND_MS = reflectionAttemptsBoundMs(RUNTIME_DEFAULTS.runTimeoutMs);
@@ -25,6 +26,7 @@ export const E2E_ORPHAN_CLOSE_BOUND_MS = Math.max(runtimeMaxCloseMs(E2E_DRAIN_TI
 export const E2E_SUPERVISOR_CLOSE_BOUND_MS = supervisorMaxCloseMs(E2E_DRAIN_TIMEOUT_MS) + ENTRY_HARD_EXIT_MARGIN_MS + E2E_MARGIN_MS;
 export const E2E_REAP_CLOSE_BOUND_MS = SHUTDOWN_RELEASE_BOUND_MS + E2E_MARGIN_MS;
 export const E2E_CANCEL_TERM_BOUND_MS = E2E_MARGIN_MS;
+export const E2E_CANCEL_SWEEP_BOUND_MS = SWEEP_INTERVAL_MS + E2E_MARGIN_MS;
 export const E2E_CANCEL_KILL_BOUND_MS = SANDBOX_KILL_GRACE_MS + E2E_MARGIN_MS;
 export const E2E_CANCEL_STREAM_BOUND_MS = GATEWAY_CANCEL_TIMEOUT_MS + CANCEL_UPSTREAM_SETTLE_MS + E2E_MARGIN_MS;
 export const E2E_RESTART_POLICY = { baseMs: E2E_RESTART_BACKOFF_MS, maxMs: E2E_RESTART_BACKOFF_MS, minMs: E2E_RESTART_BACKOFF_MS } as const;

@@ -460,6 +460,6 @@ describe('fencing across connections', () => {
     expect(mustRun(workerB, run.id)).toEqual(before);
     expect(rawDb(dbPath).prepare('SELECT COUNT(*) AS n FROM events').get()).toEqual(eventsBefore);
     expect(rawDb(dbPath).prepare('SELECT COUNT(*) AS n FROM snapshots').get()).toEqual({ n: 0 });
-    expect(workerB.append(claimB, [{ type: 'notice', level: 'info', message: 'from B' }])).toEqual({ kind: 'ok', lastSeq: 3 });
+    expect(workerB.append(claimB, [{ type: 'notice', level: 'info', message: 'from B' }])).toEqual({ kind: 'ok', lastSeq: 4 });
   });
 });

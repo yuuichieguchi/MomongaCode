@@ -11,6 +11,8 @@ import { escapedLines } from '../terminal-writer.ts';
 import { describeElicitation } from '../elicit/describe.ts';
 import { readImageAttachment } from '../images.ts';
 import { mcpAuthorizationNotice } from '../mcp/messages.ts';
+import { describeRetryWait } from '../retry-wait.ts';
+import type { AttemptFailed } from '../retry-wait.ts';
 import { describeClassification, describeDenial, describeHook, describeRunError } from '../policy-messages.ts';
 import { asChildEvent } from './child-events.ts';
 import { followRun } from './follow.ts';
@@ -94,6 +96,7 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
   const titles = new Map<string, string>();
   let lastItem: string | undefined;
   let needsNewline = false;
+  let lastFailure: AttemptFailed | undefined;
 
   const note = (lines: readonly string[]): void => {
     ports.stderr.write(noteText(lines));
@@ -136,6 +139,12 @@ export const createFrameSink = (ports: Pick<CliPorts, 'stdout' | 'stderr'>, form
         break;
       case 'notice':
         note([`momonga: ${event.level}: ${event.message}`]);
+        break;
+      case 'attempt.failed':
+        lastFailure = event;
+        break;
+      case 'run.status':
+        if (event.to === 'QUEUED' && lastFailure !== undefined) note([`momonga: ${describeRetryWait(lastFailure)}`]);
         break;
       default:
         break;

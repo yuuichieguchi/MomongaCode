@@ -10,6 +10,7 @@
     "@momonga/config": "*",
     "@momonga/foundation": "*",
     "@momonga/memory": "*",
-    "@momonga/protocol": "*"
+    "@momonga/protocol": "*",
+    "@momonga/reliability": "*"
   }
 }

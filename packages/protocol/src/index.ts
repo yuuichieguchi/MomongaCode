@@ -122,12 +122,13 @@ export {
   PRECONDITION_FAILED_CODE,
   NO_MODEL_TARGET,
   TARGET_NOT_READY,
+  JSON_MODES,
   agentReadiness,
   isToolCallingState,
   readinessRemedyOf,
   readinessText,
 } from './capabilities.ts';
-export type { OutputTokenCapabilities, Readiness, ReadinessInput, TargetAnswers, TargetBilling } from './capabilities.ts';
+export type { JsonMode, OutputTokenCapabilities, Readiness, ReadinessInput, TargetAnswers, TargetBilling } from './capabilities.ts';
 export { LOCAL_SERVER_CANDIDATES, LOCAL_SERVER_SHAPES } from './local-servers.ts';
 export type { DetectedLocalServer, LocalServerShape, LocalServerToolSupport } from './local-servers.ts';
 export {
@@ -206,7 +207,7 @@ export { LOOP_GROUPS_KEPT } from './loop-groups.ts';
 export { findDanglingOutput, findUnpairedCalls } from './call-pairing.ts';
 export { DETERMINISTIC_SUMMARY_TEXT, SUMMARY_FRAMING, compactionSummaryMessage, decodeCompactionSummary } from './compaction-summary.ts';
 export type { SummaryOrigin } from './compaction-summary.ts';
-export { FIDELITY_CLAIMS, isPathLikeToken, reducedPathToken, tokenMatcherOf } from './fidelity-match.ts';
+export { FIDELITY_CLAIMS, FIDELITY_FOLD_BEHAVIOUR_DIGESTS, FIDELITY_FOLD_VERSION, isPathLikeToken, reducedPathToken, tokenMatcherOf } from './fidelity-match.ts';
 export type { ClaimedToken, FidelityClaim, TokenMatcher } from './fidelity-match.ts';
 export { MAX_TOOL_NAME_CHARS, REFERENCE_KINDS } from './reference-kinds.ts';
 export type { ReferenceKind } from './reference-kinds.ts';
@@ -214,8 +215,8 @@ export { RECORDED_DATA_MARKER, recordedDataMessage } from './recorded-data.ts';
 export type { RecordedData } from './recorded-data.ts';
 export { decodePayloadSegment, encodePayloadSegment, joinEnvelope, splitEnvelope } from './envelope-grammar.ts';
 export type { EnvelopeSegments } from './envelope-grammar.ts';
-export { PROBE_KEYWORDS } from './probe.ts';
-export type { EndpointProbeReport, OllamaProbeReport, ProbeDialectAttempt, ProbeDialectResult, ProbeKeyword, ProbeReport, ProbeReportDialect } from './probe.ts';
+export { JSON_MODE_PROBE_STATES, PROBE_KEYWORDS } from './probe.ts';
+export type { EndpointProbeReport, JsonModeProbeState, OllamaProbeReport, ProbeDialectAttempt, ProbeDialectResult, ProbeKeyword, ProbeReport, ProbeReportDialect } from './probe.ts';
 export {
   DIALECT_DEFINITION_SCHEMA,
   DIALECT_ID_PATTERN,
@@ -249,24 +250,29 @@ export {
   FACTS_SWEEP_BATCH_RUNS,
   INDICATOR_DEFINITIONS_VERSION,
   MIN_RATE_POPULATION,
+  MAIN_AGENT,
   RECOVERY_CAUSES,
   RECOVERY_OUTCOMES,
   RELIABILITY_FORMAT,
   REPORT_PAGE_ROWS,
+  REVIEW_SAMPLE_SIZE,
 } from './reliability.ts';
 export type {
   RecoveryCause,
   RecoveryEpisodeView,
   RecoveryOutcome,
   ReportPage,
+  RunCallView,
   RunFactsBasis,
+  RunFactsRecord,
   RunFactsLimits,
   RunFactsView,
-  RunRecovery,
+  UnavailableRunView,
 } from './reliability.ts';
 export { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, MOMONGA_EVENTS, MOMONGA_REQUEST_FIELDS, MOMONGA_SPAN_NOTES } from './trace-attributes.ts';
 export { EVENT_TYPES, RUN_API_SCHEMAS, base64ByteLength, runApiSchemaName, toPublicRunEvent } from './run-api.ts';
-export { MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES } from './run-api.ts';
+export { MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES, MODEL_KINDS, modelKindOf } from './run-api.ts';
+export type { ModelKind } from './run-api.ts';
 export type {
   JobView,
   JobsResponse,
@@ -414,7 +420,7 @@ export {
 export type { HookCommand, HookEvent, HookExecution, HookMatcherGroup, HookOutcome, HookPreToolDecision, HooksSettings } from './hooks.ts';
 export { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES, permissionDeniedOutput } from './permission-denial.ts';
 export type { ApprovalBasis, PermissionDenial, PermissionDenialSource } from './permission-denial.ts';
-export { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
+export { APPROVAL_STATUSES, isInheritedReference, IMAGE_MEDIA_TYPES, JOB_STATUSES, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
 export type {
   ActivatedSkillEntry,
   ActivatedSkillRecord,
@@ -431,6 +437,10 @@ export type {
   RunEvent,
   RunEventEnvelope,
   NoticeReduction,
+  InheritedCopyPayload,
+  InheritedReferencePayload,
+  InheritedSynthesisEntry,
+  InheritedViaLink,
   RunEventPayload,
   RunState,
   RunStatus,

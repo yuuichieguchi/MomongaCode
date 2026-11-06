@@ -16,6 +16,7 @@
   "devDependencies": {
     "@momonga/context": "*",
     "@momonga/gateway": "*",
+    "@momonga/reliability": "*",
     "@momonga/sandbox": "*",
     "@momonga/supervisor": "*",
     "@momonga/tools": "*"

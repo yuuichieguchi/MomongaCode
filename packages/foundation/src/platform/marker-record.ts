@@ -30,7 +30,7 @@ export type RecordFiles = {
 };
 
 export const nodeRecordFiles: RecordFiles = {
-  read: (file) => nodeFileSystem.readText(file),
+  read: (file) => nodeFileSystem.readTextFile(file),
   writeByte: (file, position, byte) => nodeFileSystem.writeByteAt(file, position, byte),
 };
 

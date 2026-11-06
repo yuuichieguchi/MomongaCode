@@ -98,7 +98,7 @@ describe('eviction of stale tool outputs', () => {
     expect(match?.[2]).toBe(handleOf(OLD_TEXT('a')));
     expect(blobs.puts[0]?.text).toBe(OLD_TEXT('a'));
     expect(typeof blobs.puts[0]?.mediaType).toBe('string');
-    expect(result.evictions[0]).toEqual({ callId: 'c1', handle: handleOf(OLD_TEXT('a')), kind: 'omitted' });
+    expect(result.evictions[0]).toEqual({ callId: 'c1', handle: handleOf(OLD_TEXT('a')), kind: 'omitted', tokens: expect.any(Number) });
   });
 
   it('reuses an existing handle instead of putting the output again', async () => {
@@ -108,7 +108,7 @@ describe('eviction of stale tool outputs', () => {
       inputFor(capabilities, { sources: sourcesWith({ history: evictionHistory() }), keepRecentTurns: 1 }),
       ports,
     );
-    expect(result.evictions[1]).toEqual({ callId: 'c2', handle: 'pre-c2', kind: 'omitted' });
+    expect(result.evictions[1]).toEqual({ callId: 'c2', handle: 'pre-c2', kind: 'omitted', tokens: expect.any(Number) });
     expect(omittedMarker.exec(outputTextOf(result.input, 'c2') ?? '')?.[2]).toBe('pre-c2');
     expect(blobs.puts.some((put) => put.text === OLD_TEXT('b'))).toBe(false);
   });

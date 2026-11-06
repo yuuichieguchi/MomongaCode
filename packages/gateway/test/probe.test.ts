@@ -44,13 +44,13 @@ const WINDOW_HOLDING_THE_LARGEST_IMAGE = 200_000;
 const words = (text: string): number => text.split(/\s+/).filter((word) => word.length > 0).length;
 
 describe('runProbe basics', () => {
-  it('reports health, model id, probedAt and never sends json_object', async () => {
+  it('reports health, model id, probedAt and sends json_object only in the one JSON-only mode step', async () => {
     const { report, fake } = await probe({ scenario: 'tools-ok', modelId: 'apple-fm' });
     expect(report.health).toEqual({ ok: true });
     expect(report.modelId).toBe('apple-fm');
     expect(report.probedAt).toBe('2026-10-23T12:00:00.000Z');
     const formats = fake.requests.map((request) => (request.body as { response_format?: { type?: string } } | undefined)?.response_format?.type);
-    expect(formats).not.toContain('json_object');
+    expect(formats.filter((format) => format === 'json_object')).toHaveLength(1);
   });
 
   it('uses the given model in chat requests', async () => {

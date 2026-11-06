@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { brotliDecompressSync } from 'node:zlib';
 import { sha256Hex } from '@momonga/foundation';
+import type { FileSystem } from '@momonga/foundation';
 
 export const Z3_MANIFEST_ASSET = 'z3-manifest.json';
 export const Z3_API_FILE = 'z3-api.cjs';
@@ -14,13 +15,9 @@ export type Z3Manifest = {
   wasm: { asset: string; sha256: string };
 };
 
-export type DistributionFiles = {
+export type DistributionFiles = Pick<FileSystem, 'readFile' | 'mkdir' | 'rm' | 'rename'> & {
   exists(target: string): Promise<boolean>;
-  ensureDirectory(directory: string): Promise<void>;
   writeBytes(file: string, bytes: Uint8Array): Promise<void>;
-  readBytes(file: string): Promise<Uint8Array>;
-  rename(from: string, to: string): Promise<void>;
-  removeTree(directory: string): Promise<void>;
 };
 
 export type DistributionPorts = {
@@ -66,17 +63,17 @@ const verifiedAsset = (ports: DistributionPorts, name: string, sha256: string): 
 
 const extract = async (ports: DistributionPorts, manifest: Z3Manifest, directory: string): Promise<void> => {
   const partial = `${directory}.partial-${Math.floor(ports.random() * 0xffffffff).toString(16)}`;
-  await ports.files.ensureDirectory(partial);
+  await ports.files.mkdir(partial);
   try {
     for (const file of manifest.files) await ports.files.writeBytes(path.join(partial, file.name), verifiedAsset(ports, file.name, file.sha256));
   } catch (error) {
-    await ports.files.removeTree(partial);
+    await ports.files.rm(partial, { recursive: true });
     throw error;
   }
   try {
     await ports.files.rename(partial, directory);
   } catch (error) {
-    await ports.files.removeTree(partial);
+    await ports.files.rm(partial, { recursive: true });
     if (!(await ports.files.exists(directory))) throw error;
   }
 };
@@ -86,7 +83,7 @@ export const ensureBundledZ3 = async (ports: DistributionPorts): Promise<Bundled
   const directory = path.join(ports.cacheBase, `z3-${manifest.contentHash.slice(0, 16)}`);
   if (!(await ports.files.exists(directory))) await extract(ports, manifest, directory);
   for (const file of manifest.files) {
-    const bytes = await ports.files.readBytes(path.join(directory, file.name));
+    const bytes = await ports.files.readFile(path.join(directory, file.name));
     if (sha256Hex(bytes) !== file.sha256) throw new Z3DistributionError(`${path.join(directory, file.name)} does not match the embedded Z3 distribution; delete ${directory} so that it is extracted again`);
   }
   const wasmBinary = brotliDecompressSync(ports.asset(manifest.wasm.asset));

@@ -37,7 +37,8 @@ export const runUpdate = async (wiring: UpdateWiring, stdout: Sink, options: Upd
       remediation: 'install an older version explicitly with the install script (MOMONGA_VERSION)',
     });
   }
-  const result = await installRelease(ports, target, check.latest, { restartDaemon: true, signal: options.interrupt });
-  stdout.write(installedText(result));
+  const result = await installRelease(ports, target, check.latest, { signal: options.interrupt });
+  if (result.restart.kind === 'failed') throw result.restart.error;
+  stdout.write(installedText({ from: result.from, to: result.to, target: result.target, daemonRestarted: result.restart.kind === 'restarted' }));
   return 0;
 };

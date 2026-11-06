@@ -17,7 +17,7 @@ describe('readImageAttachment', () => {
   it('resolves the path against the working directory and returns the base64 payload with the sniffed media type', async () => {
     const asked: string[] = [];
     const files = {
-      readBytes: async (file: string) => {
+      readFile: async (file: string) => {
         asked.push(file);
         return PNG;
       },
@@ -29,14 +29,14 @@ describe('readImageAttachment', () => {
   });
 
   it('refuses a file that is not an image even when its name says so', async () => {
-    const files = { readBytes: async () => Uint8Array.from(Buffer.from('not an image')) };
+    const files = { readFile: async () => Uint8Array.from(Buffer.from('not an image')) };
     await expect(readImageAttachment(files, '/work', 'fake.png')).rejects.toBeInstanceOf(UnsupportedImage);
   });
 
   it('propagates a read failure', async () => {
     const failure = new Error('ENOENT');
     const files = {
-      readBytes: async (): Promise<Uint8Array> => {
+      readFile: async (): Promise<Uint8Array> => {
         throw failure;
       },
     };

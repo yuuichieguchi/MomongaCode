@@ -187,7 +187,7 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
       if (record === null) return { ...withImageDefault(declared), toolCalling: needsProbe, source: 'unprobed' };
       const refusal = declaredDialectRefusal(targetName, declared.schemaDialect, record.report.schemaDialect, `the server at ${endpoint} for model ${model}`);
       const decision = decideToolCalling(record.report);
-      const { toolCalling, structuredOutput, streaming, stopSequences, outputBoundField, parallelToolCalls, usageReported, reasoning, promptCache } = capabilitiesFromProbe(
+      const { toolCalling, structuredOutput, jsonMode, streaming, stopSequences, outputBoundField, parallelToolCalls, usageReported, reasoning, promptCache } = capabilitiesFromProbe(
         record.report,
         decision,
       );
@@ -204,6 +204,7 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
           ...(parallelToolCalls === undefined ? {} : { parallelToolCalls }),
           ...(reasoning === undefined ? {} : { reasoning }),
           ...(promptCache === undefined ? {} : { promptCache }),
+          ...(jsonMode === undefined ? {} : { jsonMode }),
         },
         probedAt: record.report.probedAt,
       });

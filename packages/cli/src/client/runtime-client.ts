@@ -1,7 +1,7 @@
 import type { McpServerConfig } from '@momonga/config';
 import { createUdsClient, decodeSse, isRecord } from '@momonga/foundation';
 import type { UdsResponse } from '@momonga/foundation';
-import type { AddMemoryRequest, AddRuleRequest, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
+import type { AddMemoryRequest, AddRuleRequest, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, ReportPage, RunTraceView, SkillsResponse } from '@momonga/protocol';
 import {
   ContractViolation,
   checkAgents,
@@ -22,6 +22,7 @@ import {
   checkPolicyGovernance,
   checkPromoted,
   checkReflection,
+  checkReportPage,
   checkRunAnsweredBy,
   checkRunReflection,
   checkRule,
@@ -144,6 +145,7 @@ export type RuntimeClient = {
   adoptGuideline(request: AdoptGuidelineRequest): Promise<GuidelineView>;
   rollbackGuideline(version: number): Promise<GuidelineView>;
   recordContextCharge(request: RecordContextChargeRequest): Promise<ContextChargeView>;
+  reportFacts(request: { cursor: string | null; limit: number }): Promise<ReportPage>;
   cost(filter?: CostFilter): Promise<CostReportView>;
   costText(filter?: CostFilter): Promise<string>;
   costBreakdown(filter?: CostFilter): Promise<CostBreakdownView>;
@@ -525,6 +527,13 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     return checkContextCharge(body, 'POST /v1/context-charges').charge;
   };
 
+  const reportFacts = async (request: { cursor: string | null; limit: number }): Promise<ReportPage> => {
+    const query = new URLSearchParams({ limit: String(request.limit), ...(request.cursor === null ? {} : { cursor: request.cursor }) });
+    const path = `/v1/report/facts?${query.toString()}`;
+    const { body } = await send('GET', path, [200]);
+    return checkReportPage(body, `GET ${path}`);
+  };
+
   const cost = async (filter: CostFilter = {}): Promise<CostReportView> => {
     const path = costPath(filter, 'json');
     const { body } = await send('GET', path, [200]);
@@ -632,6 +641,7 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     adoptGuideline,
     rollbackGuideline,
     recordContextCharge,
+    reportFacts,
     cost,
     costText,
     costBreakdown,
