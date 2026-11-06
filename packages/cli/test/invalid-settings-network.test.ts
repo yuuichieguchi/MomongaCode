@@ -13,7 +13,7 @@ let home = '';
 let settingsFile = '';
 
 beforeAll(() => {
-  home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-invalid-settings-')));
+  home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mis-')));
   fs.mkdirSync(path.join(home, '.momonga'), { recursive: true, mode: 0o700 });
   settingsFile = path.join(home, '.momonga', 'settings.json');
   fs.writeFileSync(settingsFile, '{ "network": ', { mode: 0o600 });
