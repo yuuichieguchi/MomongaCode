@@ -72,6 +72,11 @@ export const bash = (callId: string, command: string, status: 'completed' | 'fai
   { type: 'tool.completed', callId, status, output: '' },
 ];
 
+const started = (callId: string): RunEventPayload => ({ type: 'tool.started', callId, idemKey: `key-${callId}` });
+
+export const ran = (calls: readonly RunEventPayload[]): RunEventPayload[] =>
+  calls.flatMap((event) => (event.type === 'tool.call' ? [event, started(event.callId)] : [event]));
+
 export const historyRead = (callId: string, seqFrom: number, seqTo: number): RunEventPayload[] => [
   call(callId, 'HistoryRead', { seqFrom, seqTo }),
   { type: 'tool.completed', callId, status: 'completed', output: '' },

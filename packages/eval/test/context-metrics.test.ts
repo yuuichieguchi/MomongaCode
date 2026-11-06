@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { bindingRuleIds, compactionFactsOf, governanceOf, lossSignalsOf, recalledOf, retrievalOf } from '@momonga/eval';
 import type { ContextRule } from '@momonga/eval';
-import { bash, compacted, denied, deniedHistoryRead, failedHistoryRead, fidelity, governing, historyRead, marked, memories, padding, read, summarized } from './context-fixtures.ts';
+import { bash, compacted, denied, deniedHistoryRead, failedHistoryRead, fidelity, governing, historyRead, marked, memories, padding, ran, read, summarized } from './context-fixtures.ts';
 import { publicEventsOf } from './fixtures.ts';
 
 const rule = (id: string, overrides: Partial<ContextRule> = {}): ContextRule => ({
@@ -167,13 +167,13 @@ describe('compactionFactsOf', () => {
 describe('lossSignalsOf', () => {
   it('finds each of the four signals after a compaction at seq 6', () => {
     const events = publicEventsOf([
-      ...read('r1', '/p/a.ts', 'same'),
-      ...bash('b1', 'npm test', 'failed'),
+      ...ran(read('r1', '/p/a.ts', 'same')),
+      ...ran(bash('b1', 'npm test', 'failed')),
       ...denied('d1', 'rm -rf x'),
       compacted(6, 'model'),
       ...historyRead('h2', 2, 4),
-      ...read('r2', '/p/a.ts', 'same'),
-      ...bash('b2', 'npm test', 'failed'),
+      ...ran(read('r2', '/p/a.ts', 'same')),
+      ...ran(bash('b2', 'npm test', 'failed')),
       ...denied('d2', 'rm -rf x'),
     ]);
     expect(lossSignalsOf(events).map(({ kind, callId }) => [kind, callId])).toEqual([
@@ -185,12 +185,12 @@ describe('lossSignalsOf', () => {
   });
 
   it('finds nothing in the same calls without a compaction', () => {
-    const events = publicEventsOf([...read('r1', '/p/a.ts', 'same'), ...read('r2', '/p/a.ts', 'same'), ...bash('b1', 'npm test', 'failed'), ...bash('b2', 'npm test', 'failed')]);
+    const events = publicEventsOf([...ran(read('r1', '/p/a.ts', 'same')), ...ran(read('r2', '/p/a.ts', 'same')), ...ran(bash('b1', 'npm test', 'failed')), ...ran(bash('b2', 'npm test', 'failed'))]);
     expect(lossSignalsOf(events)).toEqual([]);
   });
 
   it('does not call a reread of changed content a rediscovery', () => {
-    const events = publicEventsOf([...read('r1', '/p/a.ts', 'old'), compacted(2, 'model'), ...read('r2', '/p/a.ts', 'new')]);
+    const events = publicEventsOf([...ran(read('r1', '/p/a.ts', 'old')), compacted(2, 'model'), ...ran(read('r2', '/p/a.ts', 'new'))]);
     expect(lossSignalsOf(events)).toEqual([]);
   });
 
@@ -205,12 +205,12 @@ describe('lossSignalsOf', () => {
   });
 
   it('does not count a command that succeeds after the compaction, nor one that failed only after it', () => {
-    const events = publicEventsOf([...bash('b1', 'npm test', 'failed'), compacted(2, 'model'), ...bash('b2', 'npm test', 'completed'), ...bash('b3', 'npm run lint', 'failed')]);
+    const events = publicEventsOf([...ran(bash('b1', 'npm test', 'failed')), compacted(2, 'model'), ...ran(bash('b2', 'npm test', 'completed')), ...ran(bash('b3', 'npm run lint', 'failed'))]);
     expect(lossSignalsOf(events)).toEqual([]);
   });
 
   it('does not treat an ordinary failure as drift from a denial', () => {
-    const events = publicEventsOf([...denied('d1', 'rm -rf x'), compacted(2, 'model'), ...bash('b1', 'rm -rf y', 'failed')]);
+    const events = publicEventsOf([...denied('d1', 'rm -rf x'), compacted(2, 'model'), ...ran(bash('b1', 'rm -rf y', 'failed'))]);
     expect(lossSignalsOf(events)).toEqual([]);
   });
 });

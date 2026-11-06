@@ -3,22 +3,22 @@ import type { MemoryRecord, MemoryScope, MemoryView } from '@momonga/protocol';
 import { inputCeilingFor, memoryBudgetFor } from '@momonga/context';
 import { recallOrder } from '@momonga/memory';
 import { MEMORY_MATCH_LIMIT } from '@momonga/store';
-import type { MemoryVisibility, RecallCursor, RuntimeStore, Session } from '@momonga/store';
+import type { MemoryVisibility, RecallCursor, RuntimeStore } from '@momonga/store';
 import { ToolExecutionError, createMemoryTools } from '@momonga/tools';
 import type { MemoryStorePort } from '@momonga/tools';
 import { bindMemoryEvidence, createEvidencePorts, readGitHead } from '../memory/evidence.ts';
 import type { EvidencePortsOptions, EvidenceRun } from '../memory/evidence.ts';
-import type { EvidencePorts, MemoryStatusContext } from '@momonga/memory';
+import type { EvidencePorts } from '@momonga/memory';
 import { termsOfQuery } from '../memory/recall-query.ts';
 import { withValidity } from '../memory/validity-view.ts';
-import { observedViewOf } from '../memory/views.ts';
+import { createRecordViews } from '../memory/views.ts';
 import type { MemoryPort, RecallCapacity, SettingsPort } from '../ports.ts';
 import { MEMORY_PAGE_ROWS } from './constants.ts';
 
 export type MemoryPortOptions = {
-  store: Pick<RuntimeStore, 'memories' | 'journalFacts'>;
+  store: Pick<RuntimeStore, 'memories' | 'journalFacts' | 'trust'>;
   settings: Pick<SettingsPort, 'trusted' | 'verification'>;
-  evidenceRun: (session: Session) => EvidenceRun;
+  evidenceRun: (project: string) => EvidenceRun;
   evidencePorts?: (options: EvidencePortsOptions) => EvidencePorts;
 };
 
@@ -34,28 +34,24 @@ export const createMemoryPort = ({ store, settings, evidenceRun, evidencePorts =
   load: async (session, signal) => {
     const trusted = settings.trusted(session);
     const visibility: MemoryVisibility = trusted ? { trusted: true, project: session.cwd } : { trusted: false };
-    const run = evidenceRun(session);
+    const run = evidenceRun(session.cwd);
+    const recordViews = createRecordViews({ store, evidenceRun, evidencePorts });
     const evidenceOptionsFor = (bound: AbortSignal) => ({ project: session.cwd, trusted, run, signal: bound });
     const through = store.memories.watermark();
     const checked = new Map<string, MemoryView>();
-    const contexts = new WeakMap<AbortSignal, MemoryStatusContext>();
-    const contextFor = (bound: AbortSignal): MemoryStatusContext => {
-      const known = contexts.get(bound);
-      if (known !== undefined) return known;
-      const created = { project: session.cwd, trusted, ports: evidencePorts(evidenceOptionsFor(bound)) };
-      contexts.set(bound, created);
-      return created;
-    };
+    const readings = new WeakMap<AbortSignal, ReturnType<typeof recordViews.reading>>();
     const viewsOf = async (records: readonly MemoryRecord[], bound: AbortSignal): Promise<MemoryView[]> => {
-      const context = contextFor(bound);
+      const known = readings.get(bound);
+      const reading = known ?? recordViews.reading(bound);
+      readings.set(bound, reading);
       const views: MemoryView[] = [];
       for (const record of records) {
-        const known = checked.get(record.id);
-        if (known !== undefined) {
-          views.push(known);
+        const seen = checked.get(record.id);
+        if (seen !== undefined) {
+          views.push(seen);
           continue;
         }
-        const view = await observedViewOf(store, record, context);
+        const view = await reading.viewOf(record);
         checked.set(record.id, view);
         views.push(view);
       }
