@@ -24,16 +24,11 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 
 const remoteDocumentsOf = (entry: ProductSchema): unknown[] => [...entry.remotes.values()];
 
-const linters = new WeakMap<ProductSchema['remotes'], Ajv2020.default>();
-
 const linterFor = (remotes: ProductSchema['remotes']): Ajv2020.default => {
-  const known = linters.get(remotes);
-  if (known !== undefined) return known;
   const ajv = new Ajv2020.default({ strict: true, allErrors: true });
   for (const [uri, document] of remotes) {
     if (isRecord(document)) ajv.addSchema(document, typeof document['$id'] === 'string' ? undefined : uri);
   }
-  linters.set(remotes, ajv);
   return ajv;
 };
 
@@ -53,7 +48,7 @@ const componentNames = (): string[] => {
 
 describe('every product schema is standard JSON Schema 2020-12', () => {
   beforeAll(async () => {
-    for (const entry of await schemas()) linterFor(entry.remotes);
+    await schemas();
   });
 
   it('finds the modules that define product schemas by scanning every runtime source', () => {
