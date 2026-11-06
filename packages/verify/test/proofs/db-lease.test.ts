@@ -27,16 +27,21 @@ describe('HB8: the database wait and the lease, the lock wait and the previous c
   });
 
   it(
-    'L1 proves busy = heartbeat(leaseMs) never exceeds a heartbeat and leaves a whole heartbeat interval of the lease unused, for every leaseMs >= 3',
+    'L1 proves busy = min(5000, heartbeat(leaseMs)) never exceeds a heartbeat or 5000 ms, leaves a whole heartbeat interval of the lease unused, and is 5000 ms at the default lease, for every leaseMs >= 3',
     async () => {
       const arith = proofArith(z3.engine().api, 'L1');
       const lease = arith.int('leaseMs');
       arith.given(lease.ge(3));
       const heartbeat = arith.floorDiv(lease, HEARTBEAT_DIVISOR);
-      const busy = heartbeat;
+      const busy = arith.min(arith.ctx.Int.val(BigInt(DEFAULT_BUSY_TIMEOUT_MS)), heartbeat);
       const { ctx } = arith;
       expect(await satisfiable(arith)).toBe(true);
-      const goal = ctx.And(busy.le(heartbeat), heartbeat.add(busy).le(lease.sub(heartbeat)));
+      const goal = ctx.And(
+        busy.le(heartbeat),
+        busy.le(DEFAULT_BUSY_TIMEOUT_MS),
+        heartbeat.add(busy).le(lease.sub(heartbeat)),
+        ctx.Implies(lease.eq(DEFAULT_LEASE_MS), busy.eq(DEFAULT_BUSY_TIMEOUT_MS)),
+      );
       expect(await prove(arith, goal)).toEqual({ status: 'proved' });
     },
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,

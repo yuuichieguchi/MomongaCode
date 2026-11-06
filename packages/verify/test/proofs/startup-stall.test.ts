@@ -52,6 +52,42 @@ describe('HB8: the start-up stall limit re-armed by progress', () => {
   );
 
   it(
+    'S4 proves I-L4: with the stall timer suspended inside a declared blocking step and re-armed by the left-step message, no stall expiry fires in [enter, left) and none fires before left + stall, however long the step, for every stall >= 1',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'S4');
+      const stall = arith.int('stall');
+      const enter = arith.int('enter');
+      const left = arith.int('left');
+      const fireAt = arith.int('fireAt');
+      arith.given(stall.ge(1), enter.ge(0), left.gt(enter), fireAt.ge(enter));
+      const { ctx } = arith;
+      const armedAt = ctx.If(fireAt.ge(left), left, enter);
+      const inside = ctx.And(fireAt.ge(enter), fireAt.lt(left));
+      arith.given(fireAt.ge(armedAt.add(stall)), ctx.Not(inside));
+      expect(await satisfiable(arith)).toBe(true);
+      expect(await prove(arith, ctx.And(ctx.Or(fireAt.lt(enter), fireAt.ge(left)), fireAt.ge(left.add(stall))))).toEqual({ status: 'proved' });
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'S4w refutes I-L4 for a stall timer that is only re-armed by the enter message and not suspended, with a step longer than the stall limit as the counter-example',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'S4w');
+      const stall = arith.int('stall');
+      const enter = arith.int('enter');
+      const left = arith.int('left');
+      const fireAt = arith.int('fireAt');
+      arith.given(stall.ge(1), enter.ge(0), left.gt(enter), fireAt.ge(enter.add(stall)), fireAt.lt(left));
+      const { ctx } = arith;
+      expect(await satisfiable(arith)).toBe(true);
+      const model = await expectRefuted(arith, ctx.Not(ctx.And(fireAt.ge(enter), fireAt.lt(left))));
+      expect(BigInt(model.left as string) - BigInt(model.enter as string)).toBeGreaterThan(BigInt(model.stall as string));
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
     'S3 shows it is satisfiable that four steps each reported within the stall limit take longer than the stall limit in total',
     async () => {
       const arith = proofArith(z3.engine().api, 'S3');

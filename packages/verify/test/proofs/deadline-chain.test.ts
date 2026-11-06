@@ -84,6 +84,38 @@ describe('HB1 and HB4: the deadline chain', () => {
   );
 
   it(
+    'C4 proves that with the wall-skew rule a call timeout that fires with wallRemaining <= 0 is run-deadline, so the two causes stay exclusive and total and every call-timeout leaves both clocks strictly more than 0 ms',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'C4');
+      const requested = arith.int('requested');
+      const remaining = arith.int('remaining');
+      const wallRemaining = arith.int('wallRemaining');
+      arith.given(requested.ge(0), remaining.ge(0));
+      const { ctx } = arith;
+      const callTimeout = ctx.And(requested.lt(remaining), wallRemaining.gt(0));
+      const runDeadline = ctx.Not(callTimeout);
+      expect(await satisfiable(arith)).toBe(true);
+      expect(await prove(arith, ctx.And(ctx.Or(callTimeout, runDeadline), ctx.Not(ctx.And(callTimeout, runDeadline))))).toEqual({ status: 'proved' });
+      expect(await prove(arith, ctx.Implies(callTimeout, ctx.And(remaining.sub(requested).gt(0), wallRemaining.gt(0))))).toEqual({ status: 'proved' });
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'C4w refutes that a call-timeout decided by requested < remaining alone leaves the wall clock more than 0 ms, with a suspend that moved the wall clock past the deadline as the counter-example',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'C4w');
+      const requested = arith.int('requested');
+      const remaining = arith.int('remaining');
+      const wallRemaining = arith.int('wallRemaining');
+      arith.given(requested.ge(0), remaining.ge(0));
+      const model = await expectRefuted(arith, arith.ctx.Implies(requested.lt(remaining), wallRemaining.gt(0)));
+      expect(BigInt(model.wallRemaining as string)).toBeLessThanOrEqual(0n);
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
     'C3w refutes that a remaining time read from the wall clock equals the monotonic remaining time after a wall step, which is today Deadline.remainingMs against its timer',
     async () => {
       const arith = proofArith(z3.engine().api, 'C3w');

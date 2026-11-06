@@ -68,6 +68,42 @@ describe('HB2: the bound of stopping a process group', () => {
   );
 
   it(
+    'K1r proves that when each iteration races its liveness probe against the phase deadline, the two phases end within 2 g + 2 p for every probe duration, however long',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'K1r');
+      const grace = arith.int('g');
+      const poll = arith.int('p');
+      arith.given(grace.ge(0), poll.gt(0));
+      const finishes = ['finishTerm', 'finishKill'].map((name) => arith.int(name));
+      const probeDurations = ['probeTerm', 'probeKill'].map((name) => arith.int(name));
+      const { ctx } = arith;
+      for (const [index, finish] of finishes.entries()) arith.given(probeDurations[index]!.ge(0), finish.ge(grace.add(probeDurations[index]!)));
+      const ends = finishes.map((finish) => arith.min(finish, grace.add(poll).sub(1)));
+      expect(await satisfiable(arith)).toBe(true);
+      expect(await prove(arith, ctx.And(ends[0]!.le(grace.add(poll)), ends[1]!.le(grace.add(poll)), ends[0]!.add(ends[1]!).le(grace.mul(2).add(poll.mul(2)))))).toEqual({ status: 'proved' });
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'K1rw refutes the same bound when the loop waits for each probe to settle, with a probe longer than 2 g + 2 p as the counter-example',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'K1rw');
+      const grace = arith.int('g');
+      const poll = arith.int('p');
+      arith.given(grace.ge(0), poll.gt(0));
+      const probeTerm = arith.int('probeTerm');
+      const probeKill = arith.int('probeKill');
+      arith.given(probeTerm.ge(0), probeKill.ge(0));
+      const total = grace.add(probeTerm).add(grace).add(probeKill);
+      expect(await satisfiable(arith)).toBe(true);
+      const model = await expectRefuted(arith, total.le(grace.mul(2).add(poll.mul(2))));
+      expect(BigInt(model.probeTerm as string) + BigInt(model.probeKill as string)).toBeGreaterThan(2n * BigInt(model.p as string));
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
     'K2 proves that with p = 25 the stop bound 2 g + 2 p is 2050 ms for g = 1000',
     async () => {
       const arith = proofArith(z3.engine().api, 'K2');
