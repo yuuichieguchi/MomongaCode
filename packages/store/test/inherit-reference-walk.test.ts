@@ -85,12 +85,12 @@ describe('R4: the records read never change', () => {
     expect(offending).toEqual([]);
   });
 
-  it('the only UPDATE of events is the migration backfill of derived columns, which never writes payload_json', () => {
-    const updates = storeSources().flatMap((file) => fs.readFileSync(file, 'utf8').split('\n').filter((line) => /UPDATE\s+events\b/i.test(line)).map((line) => ({ file: path.basename(file), line: line.trim() })));
+  it('the only UPDATEs of events are the migration backfill and the repair of empty derived columns (H7, 11.5), which never write payload_json', () => {
+    const updates = storeSources().flatMap((file) => fs.readFileSync(file, 'utf8').split('\n').filter((line) => /UPDATE\s+events\b/i.test(line)).map((line) => ({ file: path.basename(file), line: line.trim().replace(/^(?:\w+:\s*db\.prepare\()?['"`]?/, '') })));
     expect(updates.length).toBeGreaterThan(0);
-    expect(updates.filter((update) => update.file !== 'schema.ts')).toEqual([]);
+    expect(updates.filter((update) => update.file !== 'schema.ts' && update.file !== 'derived-repair.ts')).toEqual([]);
     expect(updates.filter((update) => /payload_json\s*=/.test(update.line.replace(/^UPDATE\s+events\s+SET\s+/i, '')))).toEqual([]);
-    expect(updates.map((update) => update.line.match(/^UPDATE\s+events\s+SET\s+(\w+)/i)?.[1]).filter((column) => column !== undefined && !['call_id', 'approval_id', 'tool_name', 'notice_code', 'model_call_json'].includes(column))).toEqual([]);
+    expect(updates.map((update) => update.line.match(/^UPDATE\s+events\s+SET\s+(\w+)/i)?.[1]).filter((column) => column !== undefined && !['call_id', 'approval_id', 'tool_name', 'notice_code', 'model_call_json', 'pinned_digest'].includes(column))).toEqual([]);
   });
 
   it('the events table refuses UPDATE and DELETE by trigger', async () => {

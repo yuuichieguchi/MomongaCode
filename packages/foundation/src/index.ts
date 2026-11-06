@@ -23,7 +23,7 @@ export type { Redactor, RedactorOptions } from './redaction.ts';
 export { safeSlice } from './text-slice.ts';
 export { HISTORY_OUTPUT_HEAD_CHARS, HISTORY_OUTPUT_TAIL_CHARS, cutToChars, keepingHeadAndTail } from './history-output.ts';
 export { OUTPUT_READER_TOOL, TRUNCATION_MARKER_SOURCE, truncationMarker } from './output-marker.ts';
-export { immediateTx, joinedTx, migrate, openDatabase, readTx } from './sqlite.ts';
+export { highestAppliedMigration, immediateTx, joinedTx, migrate, openDatabase, readTx } from './sqlite.ts';
 export type { MigrateResult, Migration, OpenDatabaseOptions } from './sqlite.ts';
 export { SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS, decodeSse, encodeSse } from './sse.ts';
 export { createBrowserOpener, openCommandFor } from './open-browser.ts';

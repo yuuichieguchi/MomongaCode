@@ -2,7 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { readTx } from '@momonga/foundation/sqlite';
 import { ESTIMATED_CHARACTERS_PER_TOKEN, ESTIMATED_ERROR, TERMINAL_STATUSES, floorRatio, userMessageContent } from '@momonga/protocol';
 import type { ContentPart, InheritedReferencePayload, InheritedViaLink, InputItem, PermissionMode, RunEvent, RunState, RunStatus, TerminalStatus } from '@momonga/protocol';
-import { decodeRun, decodeRunEvents } from './codec.ts';
+import { decodeContextOf, decodeRun, decodeRunEvents } from './codec.ts';
 import { isFatalStoreError } from './fatal.ts';
 import { foldRunState, initialRunState } from './fold.ts';
 import { InheritanceError, isReferenceInherited, projectReference, rebaseOntoReference, referenceDigest, retractsTask, signReference } from './inherit.ts';
@@ -173,11 +173,18 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
   const walker = createRecordWalker(db, { unit, stepped, ...(hooks.onDecode === undefined ? {} : { onDecode: hooks.onDecode }) });
   const foldRows = db.prepare(`SELECT ${FOLD_EVENT_COLUMNS} FROM events e WHERE e.run_id = :runId AND e.seq >= :from AND e.seq < :until ORDER BY e.seq`);
 
-  const decode = (row: Row): RunEvent => {
+  const decodeContext = decodeContextOf(db);
+
+  const decodeKnown = (row: Row): RunEvent[] => {
     hooks.onDecode?.(1, typeof row['payload_json'] === 'string' ? Buffer.byteLength(row['payload_json']) : 0);
-    const [event] = decodeRunEvents([row]);
-    if (event === undefined) throw new Error('a journal row did not decode to an event');
+    const events = decodeRunEvents([row], decodeContext);
     unit();
+    return events;
+  };
+
+  const decode = (row: Row): RunEvent => {
+    const [event] = decodeKnown(row);
+    if (event === undefined) throw new Error('a row of a requested known type did not decode to an event');
     return event;
   };
 
@@ -507,8 +514,7 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
       const rows = foldRows.all({ runId: run.id, from, until });
       stepped(until - from);
       unit();
-      for (const row of rows) {
-        const event = decode(row);
+      for (const event of rows.flatMap(decodeKnown)) {
         if (event.type === 'context.inherited') {
           carriedSkills = (event.activatedSkills ?? []).map((skill) => skill.name);
           if (!isReferenceInherited(event)) oldSummaryEventSeq = event.summary === undefined ? undefined : event.seq;

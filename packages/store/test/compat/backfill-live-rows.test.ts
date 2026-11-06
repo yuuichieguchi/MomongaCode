@@ -17,11 +17,12 @@ const withLiveRun = (through: number): DatabaseSync => {
   db.prepare('INSERT INTO sessions (id, cwd, env_json, permission_mode, model_alias, created_at) VALUES (?, ?, ?, ?, ?, ?)').run('s1', '/work/a', '{}', 'default', 'fm', START_MS);
   db.prepare(
     `INSERT INTO runs (id, session_id, ordinal, status, version, lease_owner, lease_token, lease_expires_at, available_at, attempts, failed_attempts, cancel_requested, deadline_at, limits_json, usage_json, step, last_seq, pins, dead_letter, created_at)
-     VALUES (?, 's1', 1, 'RUNNING', 1, 'w1', 1, ?, ?, 1, 0, 0, ?, '{}', '{"inputTokens":0,"outputTokens":0,"totalTokens":0}', 1, 2, '{}', 0, ?)`,
+     VALUES (?, 's1', 1, 'RUNNING', 1, 'w1', 1, ?, ?, 1, 0, 0, ?, '{}', '{"inputTokens":0,"outputTokens":0,"totalTokens":0}', 1, 3, '{}', 0, ?)`,
   ).run(LIVE_RUN, START_MS + 1_000_000, START_MS, START_MS + 3_600_000, START_MS);
   const insertEvent = db.prepare('INSERT INTO events (run_id, session_id, seq, step, lease_token, created_at, type, payload_json) VALUES (?, ?, ?, ?, 1, ?, ?, ?)');
-  insertEvent.run(LIVE_RUN, 's1', 1, 0, START_MS, 'user.message', '{"text":"hi","type":"user.message"}');
-  insertEvent.run(LIVE_RUN, 's1', 2, 1, START_MS, 'model.requested', '{"attempt":1,"body":{"input":[],"model":"fm","tools":[]},"digest":"d1","step":1,"type":"model.requested"}');
+  insertEvent.run(LIVE_RUN, 's1', 1, 0, START_MS, 'run.started', `{"attempt":1,"mode":"default","now":${START_MS},"pins":{},"type":"run.started"}`);
+  insertEvent.run(LIVE_RUN, 's1', 2, 0, START_MS, 'user.message', '{"text":"hi","type":"user.message"}');
+  insertEvent.run(LIVE_RUN, 's1', 3, 1, START_MS, 'model.requested', '{"attempt":1,"body":{"input":[],"model":"fm","tools":[]},"digest":"d1","step":1,"type":"model.requested"}');
   return db;
 };
 

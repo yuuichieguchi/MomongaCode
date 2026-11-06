@@ -13,6 +13,7 @@ const EXPECTED_TABLES = [
   'blobs',
   'compaction_guidelines',
   'context_charges',
+  'derived_through',
   'events',
   'facts_cursor',
   'fidelity_verdicts',
@@ -50,6 +51,7 @@ const EXPECTED_TABLES = [
   'sessions',
   'snapshots',
   'started_calls',
+  'store_compat',
   'trust',
 ];
 

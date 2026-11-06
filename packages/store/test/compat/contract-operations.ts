@@ -1,64 +1,9 @@
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { expect } from 'vitest';
-import type { ElicitationRequestView, PermissionOption, RunEventPayload } from '@momonga/protocol';
-import { openRuntimeStore } from '@momonga/store';
-import type { Claim, Run, RuntimeStore } from '@momonga/store';
-import { createFakeClock } from '@momonga/testkit';
-import type { FakeClock } from '@momonga/testkit';
+import { OPTIONS, REQUESTS, call, claimOf, enqueue, ok } from './contract-writer.ts';
+import type { ContractStore } from './contract-writer.ts';
 
-export const CONTRACT_START_MS = 1_900_000_000_000;
-const LEASE_MS = 1000;
-const TIMEOUT_MS = 3_600_000;
-const OPTIONS: PermissionOption[] = [
-  { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
-  { optionId: 'reject_once', name: 'Reject', kind: 'reject_once' },
-];
-const REQUESTS: ElicitationRequestView[] = [{ key: 'who', mode: 'form', message: 'Who are you?', requestedSchema: { type: 'object', properties: { name: { type: 'string' } } } }];
-
-export type ContractStore = { store: RuntimeStore; clock: FakeClock; dbPath: string; close(): void };
-
-export const openContractStore = (dbPath: string, clock: FakeClock = createFakeClock(CONTRACT_START_MS)): ContractStore => {
-  const store = openRuntimeStore({ path: dbPath, home: path.dirname(dbPath), clock, leaseMs: LEASE_MS, maxAttempts: 5, maxTotalAttempts: 1000 });
-  return { store, clock, dbPath, close: () => store.close() };
-};
-
-export const copyTemplate = (template: string): { dbPath: string; remove(): void } => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-compat-'));
-  fs.chmodSync(dir, 0o700);
-  const dbPath = path.join(dir, 'runtime.db');
-  fs.copyFileSync(template, dbPath);
-  fs.chmodSync(dbPath, 0o600);
-  return { dbPath, remove: () => fs.rmSync(dir, { recursive: true, force: true }) };
-};
-
-const call = (callId: string): RunEventPayload => ({ type: 'tool.call', callId, providerCallId: callId, name: 'Write', kind: 'edit', title: callId, rawInput: { file_path: `/work/contract/${callId}.txt` }, locations: [{ path: `/work/contract/${callId}.txt` }] });
-
-const enqueue = (store: RuntimeStore, sessionId: string, input: string): Run => {
-  const result = store.createRunAndEnqueue(sessionId, { input, timeoutMs: TIMEOUT_MS, limits: { maxSteps: 10 }, pins: { model: 'fm' } });
-  if (result.kind !== 'created') throw new Error(`expected a run, got ${result.kind}`);
-  return result.run;
-};
-
-const claimOf = (store: RuntimeStore, runId: string, workerId: string): Claim => {
-  const claim = store.claim(workerId);
-  if (claim === null || claim.runId !== runId) throw new Error(`expected ${workerId} to claim run ${runId}`);
-  return claim;
-};
-
-const ok = <T extends { kind: string }>(result: T, label: string): T => {
-  if (result.kind !== 'ok') throw new Error(`${label}: expected ok, got ${result.kind}`);
-  return result;
-};
-
-export const writeContractRows = (store: RuntimeStore, tag: string): void => {
-  const session = store.createSession({ cwd: '/work/contract', env: { PATH: '/usr/bin' }, permissionMode: 'default', modelAlias: 'fm' });
-  const run = enqueue(store, session.id, `written by ${tag}`);
-  const claim = claimOf(store, run.id, `writer-${tag}`);
-  ok(store.append(claim, [call(`${tag}-c1`), { type: 'notice', level: 'info', message: `written by ${tag}`, code: 'contract.writer' }]), 'append');
-  ok(store.release(claim, 'COMPLETED'), 'release');
-};
+export { buildCompatTemplate, copyTemplate, openContractStore, writeContractRows } from './contract-writer.ts';
+export type { ContractStore } from './contract-writer.ts';
 
 export type ContractOperation = { name: string; run(contract: ContractStore): Promise<void> | void };
 
@@ -131,7 +76,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
       const run = enqueue(store, session.id, 'contractneedle');
       const claim = claimOf(store, run.id, 'memory-worker');
       ok(store.append(claim, [call('mem-1')]), 'append');
-      store.memories.save({ origin: 'trusted', scope: 'project', project: '/work/contract', text: 'contract memory', runId: run.id, step: claim.step ?? 0, callId: 'mem-1' });
+      store.memories.save({ origin: 'trusted', scope: 'project', project: '/work/contract', text: 'contract memory', runId: run.id, step: 1, callId: 'mem-1' });
       expect(store.memories.list().length).toBeGreaterThan(0);
       store.search.query({ trusted: true, project: '/work/contract' }, { query: 'contractneedle', scope: 'project' });
       store.recordFidelityVerdicts(run.id, '/work/contract', { checkedThrough: 1, verdicts: [{ token: 'make', inh: 'none', inhDeps: [], taskStated: false, statedAt: null, executedAt: null, ownDeps: [] }] });
@@ -139,11 +84,3 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   },
 ];
 
-export const buildCompatTemplate = (file: string, tag: string): void => {
-  const contract = openContractStore(file);
-  try {
-    writeContractRows(contract.store, tag);
-  } finally {
-    contract.close();
-  }
-};

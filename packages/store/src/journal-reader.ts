@@ -2,7 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { readTx } from '@momonga/foundation/sqlite';
 import type { Clock } from '@momonga/foundation';
 import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
-import { decodeRun, decodeRunEvents } from './codec.ts';
+import { decodeContextOf, decodeRun, decodeRunEvents } from './codec.ts';
 import { foldRunState, initialRunState } from './fold.ts';
 import { createGoverningFactStore } from './governing.ts';
 import { copyDigestOf, isReferenceInherited } from './inherit.ts';
@@ -74,6 +74,7 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
   const stepped = options.onRowsStepped ?? ((): void => undefined);
   const { memories, governing } = options.lookups ?? { memories: createMemoryStore(db, NO_CLOCK), governing: createGoverningFactStore(db, NO_CLOCK) };
   const selectRun = db.prepare('SELECT * FROM runs WHERE id = :id');
+  const decodeContext = decodeContextOf(db);
   const reference = createReferenceReader(db, { unit, stepped, ...(options.onDecode === undefined ? {} : { onDecode: options.onDecode }), ...(options.onHop === undefined ? {} : { onHop: options.onHop }) });
   const pinnedDigests = db.prepare("SELECT seq, pinned_digest FROM events WHERE run_id = :runId AND type = 'model.requested' ORDER BY seq");
 
@@ -81,9 +82,7 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
     const events: RunEvent[] = [];
     for (const row of rows) {
       options.onDecode?.(1, typeof row['payload_json'] === 'string' ? Buffer.byteLength(row['payload_json']) : 0);
-      const [event] = decodeRunEvents([row]);
-      if (event === undefined) throw new Error('a journal row did not decode to an event');
-      events.push(event);
+      events.push(...decodeRunEvents([row], decodeContext));
       unit();
     }
     return events;
@@ -136,9 +135,7 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
       if (types.length === 0) return run;
       for (const eventRow of rangedRows(runId, throughSeq === undefined ? run.lastSeq : Math.min(run.lastSeq, throughSeq), types, false)) {
         options.onDecode?.(1, typeof eventRow['payload_json'] === 'string' ? Buffer.byteLength(eventRow['payload_json']) : 0);
-        const [event] = decodeRunEvents([eventRow]);
-        if (event === undefined) throw new Error('a journal row did not decode to an event');
-        visit(event);
+        for (const event of decodeRunEvents([eventRow], decodeContext)) visit(event);
         unit();
       }
       return run;

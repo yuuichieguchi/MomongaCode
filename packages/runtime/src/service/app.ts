@@ -504,10 +504,10 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const source: EventSource = {
       read: (after, limit) => {
         const current = requireRun(run.id);
-        return { events: store.readRunEvents(run.id, after, limit), endsAt: isTerminalStatus(current.status) ? current.lastSeq : undefined };
+        return { events: store.readRunEventStream(run.id, after, limit), endsAt: isTerminalStatus(current.status) ? current.lastSeq : undefined };
       },
       cursorOf: (event) => {
-        if (!('seq' in event)) throw new Error(`run ${run.id} stream read a session event`);
+        if (!('seq' in event) || event.seq === null) throw new Error(`run ${run.id} stream read a session event`);
         return event.seq;
       },
     };
@@ -518,7 +518,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const session = requireSession(context.req.param('id') ?? '');
     const cursor = parseCursor(context.req.raw, store.sessionMaxEventId(session.id));
     const source: EventSource = {
-      read: (after, limit) => ({ events: store.readSessionEvents(session.id, after, limit), endsAt: undefined }),
+      read: (after, limit) => ({ events: store.readSessionEventStream(session.id, after, limit), endsAt: undefined }),
       cursorOf: (event) => event.id,
     };
     return streamOf(context, source, cursor, (wake) => notifier.watchSession(session.id, wake));

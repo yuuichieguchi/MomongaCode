@@ -913,6 +913,39 @@ CREATE TRIGGER fidelity_verdicts_session_delete AFTER DELETE ON sessions BEGIN
 END;
 `;
 
+const STORE_COMPATIBILITY = `
+CREATE TABLE store_compat (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  min_reader INTEGER NOT NULL,
+  min_reader_release TEXT NOT NULL
+);
+
+CREATE TABLE derived_through (
+  run_id TEXT NOT NULL REFERENCES runs (id),
+  derivation INTEGER NOT NULL,
+  through_seq INTEGER NOT NULL,
+  PRIMARY KEY (run_id, derivation)
+) WITHOUT ROWID;
+INSERT INTO derived_through (run_id, derivation, through_seq)
+  SELECT r.id, d.derivation, r.last_seq FROM runs r, (SELECT 14 AS derivation UNION ALL SELECT 20 UNION ALL SELECT 23 UNION ALL SELECT 24) d;
+
+DROP TRIGGER events_reject_update;
+CREATE TRIGGER events_reject_update BEFORE UPDATE ON events
+WHEN NOT (
+  NEW.id IS OLD.id AND NEW.run_id IS OLD.run_id AND NEW.session_id IS OLD.session_id AND NEW.seq IS OLD.seq AND NEW.step IS OLD.step
+  AND NEW.lease_token IS OLD.lease_token AND NEW.created_at IS OLD.created_at AND NEW.type IS OLD.type AND NEW.payload_json IS OLD.payload_json
+  AND (OLD.pinned_digest IS NULL OR NEW.pinned_digest IS OLD.pinned_digest)
+  AND (OLD.call_id IS NULL OR NEW.call_id IS OLD.call_id)
+  AND (OLD.approval_id IS NULL OR NEW.approval_id IS OLD.approval_id)
+  AND (OLD.tool_name IS NULL OR NEW.tool_name IS OLD.tool_name)
+  AND (OLD.notice_code IS NULL OR NEW.notice_code IS OLD.notice_code)
+  AND (OLD.model_call_json IS NULL OR NEW.model_call_json IS OLD.model_call_json)
+)
+BEGIN
+  SELECT RAISE(ABORT, 'events are append-only: UPDATE is not allowed');
+END;
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -968,4 +1001,9 @@ export const MIGRATIONS: readonly Migration[] = [
     sql: RUN_FACTS_RECORD,
   },
   { version: 26, name: 'memoise the attestation verdicts of the summary fidelity check per run, cwd, fold version and token', sql: FIDELITY_VERDICTS_MEMO },
+  {
+    version: 27,
+    name: 'let a previous release run beside this one: a reader floor in store_compat, a watermark per run and derivation of the records filled at append, and an events trigger that lets only an empty derived column be filled',
+    sql: STORE_COMPATIBILITY,
+  },
 ];

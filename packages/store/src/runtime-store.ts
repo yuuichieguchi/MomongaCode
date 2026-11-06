@@ -3,13 +3,14 @@ import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
 import { FIDELITY_FOLD_VERSION, TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
-import type { CallTiming, ElicitationAnswerRecord, ElicitationRequestView, PermissionMode, RunEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
+import type { CallTiming, ElicitationAnswerRecord, ElicitationRequestView, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
 import { createAppendRecords, columnsOf } from './append-records.ts';
 import { createVerdictWriter } from './fidelity-verdicts.ts';
 import { createApprovalStore } from './approvals.ts';
 import { blobDirectoryOf, createBlobStore, prepareBlobDirectory } from './blobs.ts';
 import { addUsage, foldRunState, initialRunState, spendOf } from './fold.ts';
-import { decodeEvent, decodeRun, decodeRunEvents, decodeRunState, decodeSession, encodeRunState } from './codec.ts';
+import { decodeContextOf, decodeKnownEvent, decodeRun, decodeRunEvents, decodeRunState, decodeSession, decodeStoredEvent, encodeRunState } from './codec.ts';
+import { createDerivedRepair } from './derived-repair.ts';
 import { JournalThreadError, StalePreparation } from './journal-port.ts';
 import { createJournalReader, payloadStep } from './journal-reader.ts';
 import { StoreIdentityError, isFatalStoreError } from './fatal.ts';
@@ -396,7 +397,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   try {
     identity = fs.statSync(options.path);
     migrate(db, MIGRATIONS);
-    db.prepare('DELETE FROM fidelity_verdicts WHERE fold_version <> :current').run({ current: FIDELITY_FOLD_VERSION });
+    db.prepare('DELETE FROM fidelity_verdicts WHERE fold_version < :current').run({ current: FIDELITY_FOLD_VERSION });
     blobDirectory = blobDirectoryOf(options.path);
     prepareBlobDirectory(blobDirectory);
     statements = prepareStatements(db);
@@ -418,6 +419,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const { onDecode, onEncode } = options;
   const records = createAppendRecords(db, onDecode === undefined ? {} : { onDecode });
   const verdicts = createVerdictWriter(db);
+  const decodeContext = decodeContextOf(db);
+  const derived = createDerivedRepair(db, records, decodeContext);
 
   const recordTouch = (sessionId: string, runId: string | null): void => {
     if (options.onCommit === undefined) return;
@@ -450,7 +453,17 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
   const decodeEvents = (rows: readonly Row[]): RunEvent[] => {
     observeDecode(rows);
-    return decodeRunEvents(rows);
+    return decodeRunEvents(rows, decodeContext);
+  };
+
+  const decodeKnownEvents = (rows: readonly Row[]): (RunEvent | SessionEvent)[] => {
+    observeDecode(rows);
+    return rows.flatMap((row) => decodeKnownEvent(row, decodeContext) ?? []);
+  };
+
+  const decodeStreamEvents = (rows: readonly Row[]): (RunEvent | SessionEvent | OpaqueEvent)[] => {
+    observeDecode(rows);
+    return rows.map((row) => decodeStoredEvent(row, decodeContext));
   };
 
   const insertEvent = (event: {
@@ -476,7 +489,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       pinnedDigest: event.payload.type === 'model.requested' ? (event.payload.pinnedDigest ?? null) : null,
       ...columnsOf(event.payload),
     });
-    if (event.runId !== null && event.seq !== null && event.step !== null) records.record({ eventId: Number(inserted.lastInsertRowid), runId: event.runId, sessionId: event.sessionId, seq: event.seq, step: event.step, payload: event.payload });
+    if (event.runId !== null && event.seq !== null && event.step !== null) derived.recordAppended({ eventId: Number(inserted.lastInsertRowid), runId: event.runId, sessionId: event.sessionId, seq: event.seq, step: event.step, payload: event.payload });
     recordTouch(event.sessionId, event.runId);
   };
 
@@ -1214,6 +1227,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         const row = sql.claim.get({ now, maxAttempts, maxTotalAttempts, workerId, leaseExpiresAt: now + leaseMs });
         if (row === undefined) return null;
         const claimed = decodeRun(row);
+        derived.catchUp(claimed.id, claimed.lastSeq);
         const takenFrom = candidate === undefined ? null : readerFor('runs', claimed.id, candidate).nullableNumber('taken_from');
         const run = takenFrom === null ? claimed : appendPayloads(claimed, [{ type: 'attempt.lost', lastLiveAt: takenFrom - leaseMs }]);
         if (takenFrom !== null) writeRun(run);
@@ -1368,17 +1382,17 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return sql.toolOfferedNames.all({ runId }).map((row) => String(row.name));
     },
 
-    readSessionEvents: (sessionId, afterId, limit) => {
-      const rows = sql.sessionEvents.all({ sessionId, after: afterId, limit });
-      observeDecode(rows);
-      return rows.map(decodeEvent);
-    },
+    readSessionEvents: (sessionId, afterId, limit) => decodeKnownEvents(sql.sessionEvents.all({ sessionId, after: afterId, limit })),
+
+    readRunEventStream: (runId, afterSeq, limit) => decodeStreamEvents(sql.runEvents.all({ runId, after: afterSeq, limit })),
+
+    readSessionEventStream: (sessionId, afterId, limit) => decodeStreamEvents(sql.sessionEvents.all({ sessionId, after: afterId, limit })),
 
     readModelChanges: (sessionId, afterId) =>
       sql.modelChanges.all({ sessionId, after: afterId }).map((row) => {
         observeDecode([row]);
-        const event = decodeEvent(row);
-        if (event.type !== 'model.changed') throw new Error(`event ${event.id} of session ${sessionId} is not a model.changed event`);
+        const event = decodeKnownEvent(row, decodeContext);
+        if (event === undefined || event.type !== 'model.changed') throw new Error(`event ${String(row['id'])} of session ${sessionId} is not a model.changed event`);
         return event;
       }),
 

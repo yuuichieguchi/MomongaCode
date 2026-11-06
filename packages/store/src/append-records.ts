@@ -60,8 +60,17 @@ export const lastTextOf = (output: readonly unknown[]): string | undefined => {
 
 export type RecordedEvent = { eventId: number; runId: string; sessionId: string; seq: number; step: number; payload: RunEventPayload | SessionEventPayload };
 
+export const APPEND_TIME_RECORDS_DERIVATION = 20;
+export const SESSION_TOUCHED_DERIVATION = 23;
+export const RUN_ANSWERERS_DERIVATION = 24;
+
+export const RECORD_DERIVATIONS = [RUN_ANSWERERS_DERIVATION, SESSION_TOUCHED_DERIVATION, APPEND_TIME_RECORDS_DERIVATION] as const;
+
+export type RecordDerivation = (typeof RECORD_DERIVATIONS)[number];
+
 export type AppendRecords = {
   record(event: RecordedEvent): void;
+  recordFor(derivation: RecordDerivation, event: RecordedEvent): void;
   toolCallSeq(runId: string, callId: string): number | undefined;
   finalTextOf(runId: string): string;
   inFlightModelRequestOf(runId: string): { step: number; attempt: number } | undefined;
@@ -174,14 +183,19 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
       return { path: reader.string('path'), firstEventId: reader.number('first_event_id') };
     });
 
-  const record = (event: RecordedEvent): void => {
+  const recordAnswerer = (event: RecordedEvent): void => {
+    const answerer = answerTargetOf(event.payload);
+    if (answerer !== undefined) sql.insertAnswerer.run({ runId: event.runId, target: answerer });
+  };
+
+  const recordTouched = (event: RecordedEvent): void => {
+    if (event.payload.type !== 'tool.call') return;
+    for (const path of locationPathsOf(event.payload)) sql.insertTouched.run({ sessionId: event.sessionId, path, eventId: event.eventId });
+  };
+
+  const recordRunFacts = (event: RecordedEvent): void => {
     const { runId, payload } = event;
-    const answerer = answerTargetOf(payload);
-    if (answerer !== undefined) sql.insertAnswerer.run({ runId, target: answerer });
     switch (payload.type) {
-      case 'tool.call':
-        for (const path of locationPathsOf(payload)) sql.insertTouched.run({ sessionId: event.sessionId, path, eventId: event.eventId });
-        return;
       case 'model.requested':
         sql.setInFlight.run({ runId, step: event.step, attempt: payload.attempt });
         return;
@@ -221,8 +235,21 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
     }
   };
 
+  const RECORDERS: Record<RecordDerivation, (event: RecordedEvent) => void> = {
+    [APPEND_TIME_RECORDS_DERIVATION]: recordRunFacts,
+    [SESSION_TOUCHED_DERIVATION]: recordTouched,
+    [RUN_ANSWERERS_DERIVATION]: recordAnswerer,
+  };
+
+  const recordFor = (derivation: RecordDerivation, event: RecordedEvent): void => RECORDERS[derivation](event);
+
+  const record = (event: RecordedEvent): void => {
+    for (const derivation of RECORD_DERIVATIONS) recordFor(derivation, event);
+  };
+
   return {
     record,
+    recordFor,
     toolCallSeq: (runId, callId) => {
       const row: Row | undefined = sql.toolCallSeq.get({ runId, callId });
       return row === undefined ? undefined : readerFor('events', `${runId}/${callId}`, row).number('seq');

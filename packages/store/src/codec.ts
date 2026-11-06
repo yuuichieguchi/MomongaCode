@@ -1,7 +1,10 @@
 import path from 'node:path';
+import type { DatabaseSync } from 'node:sqlite';
+import { highestAppliedMigration } from '@momonga/foundation';
 import { FILE_ACCESSES, LOOP_GROUPS_KEPT, MEMORY_ORIGINS, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
-import type { RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload } from '@momonga/protocol';
+import type { OpaqueEvent, RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload } from '@momonga/protocol';
 import { InheritanceError } from './inherit.ts';
+import { MIGRATIONS } from './schema.ts';
 import { hasConsistentSeqs } from './seqs.ts';
 import { CANCEL_ORIGINS } from './transitions.ts';
 import { corrupt, expectOneOf, expectRecord, expectStringRecord, isRecord, readerFor } from './rows.ts';
@@ -199,7 +202,6 @@ const assertInheritedForm = (identity: string, payload: Record<string, unknown>)
 
 const decodeRunEvent = (row: Row, identity: string, type: string, payload: Record<string, unknown>): RunEvent => {
   const reader = readerFor('events', identity, row);
-  if (!Object.hasOwn(EVENT_TYPES, type)) throw corrupt('events', identity, `column type has unknown event type "${type}"`);
   if (type === 'tool.completed' || type === 'tool.reconciled') assertToolFacts(identity, payload);
   if (type === 'context.inherited') assertInheritedForm(identity, payload);
   const envelope = {
@@ -216,9 +218,6 @@ const decodeRunEvent = (row: Row, identity: string, type: string, payload: Recor
 
 const decodeSessionEvent = (row: Row, identity: string, type: string, payload: Record<string, unknown>): SessionEvent => {
   const reader = readerFor('events', identity, row);
-  if (!Object.hasOwn(SESSION_EVENT_TYPES, type)) {
-    throw corrupt('events', identity, `column run_id is NULL but type "${type}" is not a session event type`);
-  }
   const envelope = { id: reader.number('id'), sessionId: reader.string('session_id'), createdAt: reader.number('created_at') };
   if (type === 'model.changed') {
     const { modelAlias, previousModelAlias } = payload;
@@ -232,20 +231,60 @@ const decodeSessionEvent = (row: Row, identity: string, type: string, payload: R
   return { type: 'mode.changed', mode: expectOneOf('events', identity, 'payload_json', PERMISSION_MODES, mode), ...envelope };
 };
 
-export const decodeEvent = (row: Row): RunEvent | SessionEvent => {
+export type DecodeContext = { databaseIsNewer(): boolean };
+
+export const decodeContextOf = (db: DatabaseSync): DecodeContext => ({ databaseIsNewer: () => highestAppliedMigration(db) > MIGRATIONS.length });
+
+const opaqueEventOf = (row: Row, identity: string, type: string, payload: Record<string, unknown>): OpaqueEvent => {
+  const reader = readerFor('events', identity, row);
+  return {
+    opaque: true,
+    type,
+    id: reader.number('id'),
+    runId: reader.nullableString('run_id'),
+    sessionId: reader.string('session_id'),
+    seq: reader.nullableNumber('seq'),
+    step: reader.nullableNumber('step'),
+    createdAt: reader.number('created_at'),
+    payload,
+  };
+};
+
+export const decodeStoredEvent = (row: Row, context: DecodeContext): RunEvent | SessionEvent | OpaqueEvent => {
   const identity = identityOf(row);
   const reader = readerFor('events', identity, row);
   const type = reader.string('type');
   const payload = expectRecord('events', identity, 'payload_json', reader.json('payload_json'));
   if (payload['type'] !== type) throw corrupt('events', identity, `payload_json type does not match column type "${type}"`);
-  return reader.nullableString('run_id') === null ? decodeSessionEvent(row, identity, type, payload) : decodeRunEvent(row, identity, type, payload);
+  const sessionScoped = reader.nullableString('run_id') === null;
+  if (!Object.hasOwn(sessionScoped ? SESSION_EVENT_TYPES : EVENT_TYPES, type)) {
+    if (context.databaseIsNewer()) return opaqueEventOf(row, identity, type, payload);
+    throw corrupt('events', identity, sessionScoped ? `column run_id is NULL but type "${type}" is not a session event type` : `column type has unknown event type "${type}"`);
+  }
+  return sessionScoped ? decodeSessionEvent(row, identity, type, payload) : decodeRunEvent(row, identity, type, payload);
 };
 
-export const decodeRunEvents = (rows: readonly Row[]): RunEvent[] =>
-  rows.map((row) => {
-    const event = decodeEvent(row);
+export const isOpaqueEvent = (event: RunEvent | SessionEvent | OpaqueEvent): event is OpaqueEvent => 'opaque' in event;
+
+export const DATABASE_NOT_NEWER: DecodeContext = { databaseIsNewer: () => false };
+
+export const decodeKnownEvent = (row: Row, context: DecodeContext): RunEvent | SessionEvent | undefined => {
+  const event = decodeStoredEvent(row, context);
+  return isOpaqueEvent(event) ? undefined : event;
+};
+
+export const decodeEvent = (row: Row): RunEvent | SessionEvent => {
+  const event = decodeStoredEvent(row, DATABASE_NOT_NEWER);
+  if (isOpaqueEvent(event)) throw corrupt('events', identityOf(row), `decoded the unknown event type "${event.type}" without a database`);
+  return event;
+};
+
+export const decodeRunEvents = (rows: readonly Row[], context: DecodeContext = DATABASE_NOT_NEWER): RunEvent[] =>
+  rows.flatMap((row) => {
+    const event = decodeKnownEvent(row, context);
+    if (event === undefined) return [];
     if (!('runId' in event)) throw corrupt('events', identityOf(row), 'a run event query returned a session event');
-    return event;
+    return [event];
   });
 
 const PERMISSION_KINDS = ['allow_once', 'allow_always', 'reject_once', 'reject_always'] as const;

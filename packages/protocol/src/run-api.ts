@@ -573,6 +573,22 @@ const publicEventVariant = (type: keyof typeof PAYLOAD_SCHEMAS): JsonSchema => {
 
 export const EVENT_TYPES = Object.keys(PAYLOAD_SCHEMAS) as (keyof typeof PAYLOAD_SCHEMAS)[];
 
+const publicOpaqueVariant = (): JsonSchema =>
+  closed(
+    {
+      opaque: { const: true },
+      id: integer,
+      runId: string,
+      sessionId: string,
+      seq: integer,
+      step: nonNegativeInteger,
+      createdAt: integer,
+      type: { type: 'string', not: { enum: EVENT_TYPES } },
+      payload: { type: 'object' },
+    },
+    ['opaque', 'id', 'sessionId', 'createdAt', 'type', 'payload'],
+  );
+
 const trustView = closed(
   { path: string, decision: { anyOf: [enumOf(['trusted', 'untrusted']), { type: 'null' }] }, inheritedFrom: string },
   ['path', 'decision'],
@@ -1376,7 +1392,7 @@ export const RUN_API_SCHEMAS = {
   ErrorBody: root(
     closed({ error: closed({ type: string, code: string, message: string, param: string }, ['type', 'code', 'message']) }, ['error']),
   ),
-  PublicRunEvent: root({ type: 'object', oneOf: EVENT_TYPES.map(publicEventVariant) }),
+  PublicRunEvent: root({ type: 'object', oneOf: [...EVENT_TYPES.map(publicEventVariant), publicOpaqueVariant()] }),
   ReportPage: root(
     closed(
       {
@@ -1433,7 +1449,44 @@ const inheritedCountsOf = (event: Extract<RunEvent, { type: 'context.inherited' 
   return { itemCount: history.length, ...(summary === undefined ? {} : { summaryThroughSeq: summary.replacedThroughSeq }) };
 };
 
-export const toPublicRunEvent = (event: RunEvent | SessionEvent): PublicRunEvent => {
+export type OpaqueEvent = {
+  opaque: true;
+  type: string;
+  id: number;
+  runId: string | null;
+  sessionId: string;
+  seq: number | null;
+  step: number | null;
+  createdAt: number;
+  payload: Record<string, unknown>;
+};
+
+export type PublicOpaqueEvent = {
+  opaque: true;
+  type: string;
+  id: number;
+  runId?: string;
+  sessionId: string;
+  seq?: number;
+  step?: number;
+  createdAt: number;
+  payload: Record<string, unknown>;
+};
+
+const toPublicOpaqueEvent = (event: OpaqueEvent): PublicOpaqueEvent => {
+  const { opaque, type, id, runId, sessionId, seq, step, createdAt, payload } = event;
+  return { opaque, type, id, ...(runId === null ? {} : { runId }), sessionId, ...(seq === null ? {} : { seq }), ...(step === null ? {} : { step }), createdAt, payload };
+};
+
+export type PublicEventOf<E extends RunEvent | SessionEvent | OpaqueEvent> = E extends OpaqueEvent ? PublicOpaqueEvent : PublicRunEvent;
+
+export const toPublicRunEvent = <E extends RunEvent | SessionEvent | OpaqueEvent>(event: E): PublicEventOf<E> => {
+  const stored: RunEvent | SessionEvent | OpaqueEvent = event;
+  const visible = 'opaque' in stored ? toPublicOpaqueEvent(stored) : toPublicKnownEvent(stored);
+  return visible as PublicEventOf<E>;
+};
+
+const toPublicKnownEvent = (event: RunEvent | SessionEvent): PublicRunEvent => {
   if (!('runId' in event)) return event;
   const { id, runId, sessionId, seq, step, createdAt } = event;
   const envelope = { id, runId, sessionId, seq, step, createdAt };

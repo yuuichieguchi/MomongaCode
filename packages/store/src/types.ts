@@ -18,6 +18,7 @@ import type {
   RunEventPayload,
   RunState,
   RunStatus,
+  OpaqueEvent,
   SessionEvent,
   ContextChargePurpose,
   GoverningEnforcement,
@@ -593,6 +594,8 @@ export type RuntimeStore = {
   toolCallNames(rootRunId: string): string[];
   toolOfferedNames(rootRunId: string): string[];
   readSessionEvents(sessionId: string, afterId: number, limit: number): (RunEvent | SessionEvent)[];
+  readRunEventStream(runId: string, afterSeq: number, limit: number): (RunEvent | SessionEvent | OpaqueEvent)[];
+  readSessionEventStream(sessionId: string, afterId: number, limit: number): (RunEvent | SessionEvent | OpaqueEvent)[];
   readModelChanges(sessionId: string, afterId: number): Extract<SessionEvent, { type: 'model.changed' }>[];
   sessionMaxEventId(sessionId: string): number;
   load(runId: string): LoadedRun;

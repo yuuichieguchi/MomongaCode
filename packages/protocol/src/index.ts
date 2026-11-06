@@ -297,6 +297,8 @@ export type {
   McpAuthState,
   McpAuthorizationView,
   McpServerView,
+  OpaqueEvent,
+  PublicOpaqueEvent,
   PublicRunEvent,
   RunHealth,
   RunTraceCall,
