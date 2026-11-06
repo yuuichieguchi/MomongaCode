@@ -1,4 +1,4 @@
-import { Validator } from 'ata-validator/lite';
+import { Validator } from '@momonga/ata-validator/lite';
 
 export type RawError = {
   readonly keyword: string;
