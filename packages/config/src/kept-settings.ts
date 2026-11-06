@@ -16,7 +16,7 @@ export type KeptSettings = {
   report(file: string, problem: KeptProblem): string;
 };
 
-export type KeptProblem = { kind: 'invalid'; error: ConfigError; identity: string } | { kind: 'unkept'; reason: string };
+export type KeptProblem = { kind: 'invalid'; error: ConfigError; identity: string } | { kind: 'unkept'; reason: string } | { kind: 'unusable'; reason: string };
 
 export type KeptRecords = {
   load(file: string): JsonFile | undefined;
@@ -55,7 +55,7 @@ export const diskKeptRecords = (fileSystem: FileSystemSync, directory: string): 
       } catch (error) {
         throw new UnreadableKeptCopyError(error instanceof Error ? error.message : String(error), { cause: error });
       }
-      if (!isRecord(record) || record['file'] !== file || !isJsonFile(record['read'])) throw new Error(`${recordOf(file)} is not a kept copy of ${file}`);
+      if (!isRecord(record) || record['file'] !== file || !isJsonFile(record['read'])) throw new UnreadableKeptCopyError(`${recordOf(file)}: not a kept copy of ${file}`);
       return record['read'];
     },
     save: (file, read) => {
@@ -68,7 +68,11 @@ export const diskKeptRecords = (fileSystem: FileSystemSync, directory: string): 
 export const noKeptRecords: KeptRecords = { load: () => undefined, save: () => undefined };
 
 const lineOf = (file: string, problem: KeptProblem): string =>
-  problem.kind === 'invalid' ? `settings file is invalid: ${problem.error.message}` : `could not keep the last good copy of ${file}: ${problem.reason}`;
+  problem.kind === 'invalid'
+    ? `settings file is invalid: ${problem.error.message}`
+    : problem.kind === 'unkept'
+      ? `could not keep the last good copy of ${file}: ${problem.reason}`
+      : `the last good copy of ${file} is unusable and was ignored: ${problem.reason}`;
 
 const keyOf = (problem: KeptProblem): string =>
   problem.kind === 'invalid' ? `${problem.identity}\u0000${problem.error.message}` : problem.reason;
@@ -97,6 +101,7 @@ export function createKeptSettings({ records, onWarning }: KeptSettingsOptions):
       return;
     }
     reported.delete(slotOf(file, 'unkept'));
+    reported.delete(slotOf(file, 'unusable'));
   };
 
   const loaded = (file: string): JsonFile | undefined => {
@@ -104,7 +109,7 @@ export function createKeptSettings({ records, onWarning }: KeptSettingsOptions):
       return records.load(file);
     } catch (error) {
       if (!(error instanceof UnreadableKeptCopyError)) throw error;
-      report(file, { kind: 'unkept', reason: error.message });
+      report(file, { kind: 'unusable', reason: error.message });
       return undefined;
     }
   };
