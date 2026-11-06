@@ -12,6 +12,7 @@ import {
   startFake,
   terminalOf,
   userText,
+  MODEL_FRAMING,
 } from './cc-support.ts';
 import { CC_CAPABILITIES } from './cc-support.ts';
 
@@ -191,14 +192,14 @@ describe('compaction summaries', () => {
     expect(messages.map((message) => [message.role, message.content])).toEqual([
       ['user', 'A'],
       ['assistant', 'B'],
-      ['user', '<conversation_summary>\nearlier\n</conversation_summary>\n\nC'],
+      ['user', `<conversation_summary>\n${MODEL_FRAMING}\nearlier\n</conversation_summary>\n\nC`],
     ]);
   });
 
   it('stay at their own position in constrained mode', async () => {
     const messages = await sentMessages({ ...inline, tools: [readFileTool] });
     expect(messages.map((message) => message.role)).toEqual(['system', 'user', 'assistant', 'user']);
-    expect(messages[3]).toEqual({ role: 'user', content: '<conversation_summary>\nearlier\n</conversation_summary>\n\nC' });
+    expect(messages[3]).toEqual({ role: 'user', content: `<conversation_summary>\n${MODEL_FRAMING}\nearlier\n</conversation_summary>\n\nC` });
   });
 
   it('are sent the same way in constrained mode', async () => {

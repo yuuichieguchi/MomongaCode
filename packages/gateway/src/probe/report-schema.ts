@@ -7,6 +7,31 @@ const bool = { type: 'boolean' } as const;
 const anyJson = {} as const;
 const rate = { type: 'number', minimum: 0, maximum: 1 } as const;
 
+const dialectReportSchema = {
+  type: 'object',
+  required: ['selected', 'shape', 'tried'],
+  additionalProperties: false,
+  properties: {
+    selected: { type: ['string', 'null'], minLength: 1 },
+    shape: { type: ['string', 'null'], enum: ['union', 'flat', null] },
+    tried: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['id', 'result'],
+        additionalProperties: false,
+        properties: {
+          id: { type: 'string', minLength: 1 },
+          result: { type: 'string', enum: ['accepted', 'refused', 'not-enforced', 'unrenderable'] },
+          detail: { type: 'string' },
+        },
+      },
+    },
+  },
+} as const;
+
+const constructResult = { type: 'string', enum: ['accepted', 'refused', 'unrenderable'] } as const;
+
 const reportSchema = {
   type: 'object',
   required: [
@@ -18,7 +43,7 @@ const reportSchema = {
     'usageReported',
     'nativeTools',
     'constrained',
-    'keywordSupport',
+    'schemaDialect',
     'stopSequences',
     'maxConcurrency',
     'imageInputAccepted',
@@ -75,6 +100,13 @@ const reportSchema = {
         additionalProperties: bool,
       },
     },
+    constructSupport: {
+      type: 'object',
+      required: ['ref', 'typeArray', 'mixedEnum'],
+      additionalProperties: false,
+      properties: { ref: constructResult, typeArray: constructResult, mixedEnum: constructResult },
+    },
+    schemaDialect: dialectReportSchema,
     stopSequences: bool,
     outputBoundField: { type: ['string', 'null'], enum: [...OUTPUT_BOUND_FIELDS, 'none'] },
     parallelToolCalls: {
@@ -148,7 +180,7 @@ const imageTokensSchema = {
 
 const ollamaReportSchema = {
   type: 'object',
-  required: ['kind', 'probedAt', 'serverVersion', 'modelId', 'contextWindow', 'nativeTools', 'imageInputAccepted', 'thinkingSupported'],
+  required: ['kind', 'probedAt', 'serverVersion', 'modelId', 'contextWindow', 'nativeTools', 'imageInputAccepted', 'thinkingSupported', 'schemaDialect'],
   additionalProperties: false,
   properties: {
     kind: { type: 'string', const: 'ollama' },
@@ -165,6 +197,7 @@ const ollamaReportSchema = {
     imageInputAccepted: bool,
     imageTokens: imageTokensSchema,
     thinkingSupported: bool,
+    schemaDialect: dialectReportSchema,
     promptCache: {
       type: 'object',
       required: ['kind'],

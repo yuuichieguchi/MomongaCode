@@ -1,7 +1,7 @@
 import type { McpServerConfig } from '@momonga/config';
 import { createUdsClient, decodeSse, isRecord } from '@momonga/foundation';
 import type { UdsResponse } from '@momonga/foundation';
-import type { AddMemoryRequest, AddRuleRequest, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunReflectionView, RuleAddResponse, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
+import type { AddMemoryRequest, AddRuleRequest, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
 import {
   ContractViolation,
   checkAgents,
@@ -22,6 +22,7 @@ import {
   checkPolicyGovernance,
   checkPromoted,
   checkReflection,
+  checkRunAnsweredBy,
   checkRunReflection,
   checkRule,
   checkRuleAdd,
@@ -124,6 +125,7 @@ export type RuntimeClient = {
   memories(filter?: MemoryFilter): Promise<MemoryView[]>;
   lastReflection(project: string): Promise<ReflectionJobView | null>;
   runReflection(runId: string): Promise<RunReflectionView>;
+  runAnsweredBy(runId: string): Promise<RunAnsweredByView>;
   memory(id: string): Promise<MemoryView>;
   addMemory(request: AddMemoryRequest): Promise<MemoryView>;
   deleteMemory(id: string): Promise<void>;
@@ -392,8 +394,9 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     await send('DELETE', authorizationPath(sessionId, server), [204]);
   };
 
-  const memoriesQueryOf = (filter: MemoryFilter): string => {
+  const memoriesQueryOf = (filter: MemoryFilter, after?: string): string => {
     const query = new URLSearchParams();
+    if (after !== undefined) query.set('after', after);
     if (filter.scope !== undefined) query.set('scope', filter.scope);
     if (filter.state !== undefined) query.set('state', filter.state);
     if (filter.project !== undefined) query.set('project', filter.project);
@@ -402,15 +405,28 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
   };
 
   const memories = async (filter: MemoryFilter = {}): Promise<MemoryView[]> => {
-    const path = `/v1/memories${memoriesQueryOf(filter)}`;
-    const { body } = await send('GET', path, [200]);
-    return checkMemories(body, `GET ${path}`).memories;
+    const found: MemoryView[] = [];
+    let after: string | undefined;
+    do {
+      const path = `/v1/memories${memoriesQueryOf(filter, after)}`;
+      const { body } = await send('GET', path, [200]);
+      const page = checkMemories(body, `GET ${path}`);
+      found.push(...page.memories);
+      after = page.next ?? undefined;
+    } while (after !== undefined);
+    return found;
   };
 
   const lastReflection = async (project: string): Promise<ReflectionJobView | null> => {
     const path = `/v1/reflection?project=${encodeURIComponent(project)}`;
     const { body } = await send('GET', path, [200]);
     return checkReflection(body, `GET ${path}`).job;
+  };
+
+  const runAnsweredBy = async (runId: string): Promise<RunAnsweredByView> => {
+    const path = `/v1/runs/${encodeURIComponent(runId)}/answered-by`;
+    const { body } = await send('GET', path, [200]);
+    return checkRunAnsweredBy(body, `GET ${path}`);
   };
 
   const runReflection = async (runId: string): Promise<RunReflectionView> => {
@@ -592,6 +608,7 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     memories,
     lastReflection,
     runReflection,
+    runAnsweredBy,
     memory,
     addMemory,
     deleteMemory,

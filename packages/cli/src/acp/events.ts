@@ -202,6 +202,7 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
     case 'model.rejected':
     case 'approval.rule.persisted':
     case 'job.finished':
+    case 'attempt.failed':
     case 'usage.charged':
     case 'context.governing_loaded':
     case 'context.memories_loaded':

@@ -25,7 +25,7 @@ const memoryOf = (index: number): MemoryView => ({
   text: `Note number ${index}: prefer small commits and keep every change reviewable in one sitting.`,
   source: { kind: 'tool', sessionId: 's1', runId: `run-${index}`, step: index, callId: `c${index}`, seq: index + 3 },
   createdAt: Date.UTC(2026, 10, 1, 0, 0, index),
-  lastUsedAt: Date.UTC(2026, 10, 2, 0, 0, index),
+  keptAt: Date.UTC(2026, 10, 2, 0, 0, index),
   kind: 'fact',
   state: 'active',
   duplicateOf: null,

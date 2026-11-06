@@ -1,6 +1,6 @@
 import type { Clock } from '@momonga/foundation';
-import { applyCapabilityOverride, imageCapability, sizingRatioFor, summaryTokenCapFor } from '@momonga/protocol';
-import type { Capabilities, CapabilityOverride, ClientOperation, FunctionTool, ToolChoice, ToolCallingMode, ToolCallingState, GatewayHealth, HealthResult, ImageCapability, ProviderAdapter, TargetBilling, TargetHealth } from '@momonga/protocol';
+import { MOMONGA_REQUEST_FIELDS, applyCapabilityOverride, imageCapability, sizingRatioFor, summaryTokenCapFor } from '@momonga/protocol';
+import type { AliasCapabilities, Capabilities, CapabilityOverride, ClientOperation, FunctionTool, ToolChoice, ToolCallingMode, ToolCallingState, GatewayHealth, HealthResult, ImageCapability, ProviderAdapter, TargetBilling, TargetHealth } from '@momonga/protocol';
 import { constrainsToolChoice, resolveToolChoice } from './tool-choice.ts';
 import { UnsupportedInputError } from './unsupported-input.ts';
 import { createAdmissionGate } from './admission.ts';
@@ -52,7 +52,7 @@ export type Router = {
   hasAlias(alias: string): boolean;
   targetsOf(alias: string): TargetRuntime[];
   capabilitiesOf(target: TargetRuntime): Promise<Capabilities>;
-  aliasCapabilitiesOf(alias: string): Promise<Capabilities>;
+  aliasCapabilitiesOf(alias: string): Promise<AliasCapabilities>;
   candidates(alias: string, requirements: CandidateRequirements): Promise<Narrowed>;
   narrow(alias: string, targets: readonly TargetRuntime[], requirements: CandidateRequirements): Promise<Narrowed>;
   health(): Promise<Pick<GatewayHealth, 'ok' | 'targets'>>;
@@ -106,7 +106,12 @@ const mergedToolCalling = (all: readonly Capabilities[]): ToolCallingState => {
   return weakest(modes, TOOL_CALLING_RANK);
 };
 
-const mergeCapabilities = (all: readonly [Capabilities, ...Capabilities[]]): Capabilities => {
+const mergedSchemaDialect = (all: readonly [Capabilities, ...Capabilities[]]): Pick<AliasCapabilities, 'schemaDialect'> => {
+  const [first] = all;
+  return all.every((entry) => entry.schemaDialect === first.schemaDialect) ? { schemaDialect: first.schemaDialect } : {};
+};
+
+const mergeCapabilities = (all: readonly [Capabilities, ...Capabilities[]]): AliasCapabilities => {
   const [first] = all;
   return {
     contextWindow: Math.min(...all.map((entry) => entry.contextWindow)),
@@ -117,7 +122,7 @@ const mergeCapabilities = (all: readonly [Capabilities, ...Capabilities[]]): Cap
     stopSequences: all.every((entry) => entry.stopSequences),
     ...mergedImageCapability(all),
     ...mergedParallelToolCalls(all),
-    schemaDialect: all.some((entry) => entry.schemaDialect === 'guided-generation') ? 'guided-generation' : 'json-schema-2020-12',
+    ...mergedSchemaDialect(all),
     tokenCounting: weakest(all.map((entry) => entry.tokenCounting), TOKEN_COUNTING_RANK),
     ...mergedErrorRatio(all),
     usageReported: all.every((entry) => entry.usageReported),
@@ -169,7 +174,7 @@ export const createRouter = (options: RouterOptions): Router => {
     return { ...applyCapabilityOverride(declared, target.capabilityOverride), source: 'config' };
   };
 
-  const aliasCapabilitiesOf = async (alias: string): Promise<Capabilities> => {
+  const aliasCapabilitiesOf = async (alias: string): Promise<AliasCapabilities> => {
     const all = await Promise.all(targetsOf(alias).map((target) => capabilitiesOf(target)));
     const [first, ...rest] = all;
     if (first === undefined) throw new Error(`model alias "${alias}" has no targets`);
@@ -233,8 +238,8 @@ export const createRouter = (options: RouterOptions): Router => {
           stage: REFUSAL_STAGES.summaryCap,
           error: invalidRequest(
             'invalid_summary_cap',
-            'momonga.max_summary_tokens exceeds the largest summary any target of the model alias accepts: the smaller of its summary cap and its maxOutputTokens',
-            'momonga.max_summary_tokens',
+            `${MOMONGA_REQUEST_FIELDS.maxSummaryTokens} exceeds the largest summary any target of the model alias accepts: the smaller of its summary cap and its maxOutputTokens`,
+            MOMONGA_REQUEST_FIELDS.maxSummaryTokens,
           ),
         };
       }

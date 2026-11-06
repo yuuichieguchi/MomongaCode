@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { CONTEXT_DATASET_FORMAT, EvalError, TranscriptError, buildContextReport, decodeTranscript, encodeTranscript, parseContextDataset } from '@momonga/eval';
+import { CONTEXT_DATASET_FORMAT, EvalError, TranscriptError, decodeTranscript, encodeTranscript, parseContextDataset } from '@momonga/eval';
 import type { PolicyOverlay, Transcript } from '@momonga/eval';
 import { contextCase, recorded } from './context-fixtures.ts';
+import { buildReportAs } from './answered-fixtures.ts';
 
 const ON: PolicyOverlay = { context: { cachePrefix: true, observedCapacity: true } };
 const HEAD_CODE = 'b'.repeat(64);
@@ -44,20 +45,20 @@ describe('a transcript records the identity of the run it measured', () => {
 
 describe('a report takes its identity from its transcripts', () => {
   it('records the policy and the code digest that every transcript carries', () => {
-    const report = buildContextReport({ dataset, transcripts: transcriptsOf(() => ({ policy: ON, codeDigest: HEAD_CODE })), model: 'real', seed: 1 });
+    const report = buildReportAs({ dataset, transcripts: transcriptsOf(() => ({ policy: ON, codeDigest: HEAD_CODE })), model: 'real', seed: 1 });
     expect(report.policy).toEqual(ON);
     expect(report.codeDigest).toBe(HEAD_CODE);
   });
 
   it('refuses transcripts that record different code digests', () => {
     const transcripts = transcriptsOf((index) => ({ policy: ON, codeDigest: index === 0 ? MAIN_CODE : HEAD_CODE }));
-    expect(() => buildContextReport({ dataset, transcripts, model: 'real', seed: 1 })).toThrow(EvalError);
-    expect(() => buildContextReport({ dataset, transcripts, model: 'real', seed: 1 })).toThrow(/codeDigest/);
+    expect(() => buildReportAs({ dataset, transcripts, model: 'real', seed: 1 })).toThrow(EvalError);
+    expect(() => buildReportAs({ dataset, transcripts, model: 'real', seed: 1 })).toThrow(/codeDigest/);
   });
 
   it('refuses transcripts that record different policies', () => {
     const transcripts = transcriptsOf((index) => ({ policy: index === 0 ? {} : ON, codeDigest: HEAD_CODE }));
-    expect(() => buildContextReport({ dataset, transcripts, model: 'real', seed: 1 })).toThrow(EvalError);
-    expect(() => buildContextReport({ dataset, transcripts, model: 'real', seed: 1 })).toThrow(/policy/);
+    expect(() => buildReportAs({ dataset, transcripts, model: 'real', seed: 1 })).toThrow(EvalError);
+    expect(() => buildReportAs({ dataset, transcripts, model: 'real', seed: 1 })).toThrow(/policy/);
   });
 });

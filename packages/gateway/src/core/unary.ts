@@ -1,5 +1,5 @@
 import { canonicalJson, sha256Hex, uuidv7 } from '@momonga/foundation';
-import { COMPACTION_ROLE, LOWEST_REASONING_EFFORT, outputTokensFor, summaryInputLimitFor, summaryTokenCapFor } from '@momonga/protocol';
+import { COMPACTION_ROLE, LOWEST_REASONING_EFFORT, MOMONGA_REQUEST_FIELDS, outputTokensFor, summaryInputLimitFor, summaryTokenCapFor } from '@momonga/protocol';
 import type {
   AdapterCompactRequest,
   Capabilities,
@@ -204,7 +204,7 @@ const countTokens = async (
   const named = request.momonga?.target;
   const found = named === undefined ? undefined : aliasTargets.find((candidate) => candidate.name === named);
   if (named !== undefined && found === undefined) {
-    throw invalidRequest('invalid_target', `target "${named}" is not a target of model alias "${request.model}"`, 'momonga.target');
+    throw invalidRequest('invalid_target', `target "${named}" is not a target of model alias "${request.model}"`, MOMONGA_REQUEST_FIELDS.target);
   }
   const candidates = found === undefined ? aliasTargets : [found];
   if (candidates.length === 0) throw new Error(`model alias "${request.model}" has no targets`);

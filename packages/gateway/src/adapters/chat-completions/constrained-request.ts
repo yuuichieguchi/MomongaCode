@@ -1,8 +1,11 @@
 import { canonicalJson } from '@momonga/foundation';
 import { allowedNamesOf, allowedToolsModeOf } from '../../core/tool-choice.ts';
 import type { AdapterRequest, FunctionTool, ReasoningOrigin } from '@momonga/protocol';
+import type { DialectChoice } from '../../dialect/choice.ts';
+import { RenderLedger } from '../../dialect/ledger.ts';
+import type { KeywordSupport } from '../../dialect/keyword-support.ts';
 import { buildToolsEnvelope } from '../../probe/envelope.ts';
-import type { KeywordSupport } from '../../probe/envelope.ts';
+import type { EnvelopeShape } from '../../probe/envelope.ts';
 import { samplingOf } from './native-request.ts';
 import { SYSTEM_PART_SEPARATOR, systemTextOf } from '../shared/system-text.ts';
 import type { ChatRequestBody } from './native-request.ts';
@@ -32,6 +35,7 @@ const toolListing = (tools: readonly FunctionTool[]): string =>
 export type ConstrainedBody = {
   body: ChatRequestBody;
   envelope: { toolNames: ReadonlySet<string>; requireToolCalls: boolean } | undefined;
+  ledger: RenderLedger;
 };
 
 const restrictedToolsOf = (tools: readonly FunctionTool[], names: readonly string[], support: KeywordSupport): FunctionTool[] => {
@@ -57,7 +61,8 @@ const requiresToolCalls = (choice: AdapterRequest['tool_choice']): boolean => {
   return allowedToolsModeOf(choice) === 'required';
 };
 
-export const buildConstrainedBody = (request: AdapterRequest, support: KeywordSupport, origin: ReasoningOrigin): ConstrainedBody => {
+export const buildConstrainedBody = (request: AdapterRequest, support: KeywordSupport, origin: ReasoningOrigin, dialect: DialectChoice, shape: EnvelopeShape = 'union'): ConstrainedBody => {
+  const ledger = new RenderLedger();
   const tools = request.tools ?? [];
   const choice = request.tool_choice;
   const envelopeActive = tools.length > 0 && choice !== 'none';
@@ -82,9 +87,12 @@ export const buildConstrainedBody = (request: AdapterRequest, support: KeywordSu
               name: ENVELOPE_SCHEMA_NAME,
               strict: true,
               schema: buildToolsEnvelope(
-                envelopeTools.map((tool) => ({ name: tool.name, parameters: tool.parameters ?? { type: 'object' } })),
+                envelopeTools.map((tool) => ({ name: tool.name, parameters: tool.parameters })),
                 support,
                 requireToolCalls,
+                dialect,
+                shape,
+                ledger,
               ),
             },
           },
@@ -95,5 +103,6 @@ export const buildConstrainedBody = (request: AdapterRequest, support: KeywordSu
   return {
     body,
     envelope: envelopeActive ? { toolNames: new Set(envelopeTools.map((tool) => tool.name)), requireToolCalls } : undefined,
+    ledger,
   };
 };

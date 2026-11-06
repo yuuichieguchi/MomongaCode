@@ -2,8 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { EndpointProbeReport, OllamaProbeReport, ProbeReport } from '@momonga/protocol';
+import type { DialectCurrency } from '../dialect/candidates.ts';
 import { field, isRecord } from './json.ts';
-import { writePrivateRecord } from './record.ts';
+import { currentStamp, isCurrentRecord, writePrivateRecord } from './record.ts';
 import { isEndpointProbeReport } from './report-schema.ts';
 
 export type EndpointKey = { endpoint: string; model: string };
@@ -50,18 +51,19 @@ export const saveEndpointRecord = async (
   identity: string,
   identityFields: readonly string[],
   report: EndpointProbeReport,
+  currency: DialectCurrency,
 ): Promise<void> => {
   await writePrivateRecord(
     dir,
     fileOf(dir, key),
-    JSON.stringify({ endpoint: key.endpoint, model: key.model, identity, identityFields, report }),
+    JSON.stringify({ endpoint: key.endpoint, model: key.model, identity, identityFields, ...currentStamp(report, currency), report }),
   );
 };
 
 const unusable = (file: string, problem: string): Error =>
   new Error(`Probe record ${file} is unusable (${problem}). Delete it or re-run \`momonga gateway probe\` for the target.`);
 
-export const loadEndpointRecord = async (dir: string, key: EndpointKey): Promise<StoredEndpointRecord | null> => {
+export const loadEndpointRecord = async (dir: string, key: EndpointKey, currency: DialectCurrency): Promise<StoredEndpointRecord | null> => {
   const file = fileOf(dir, key);
   const raw = await fs.promises.readFile(file, 'utf8').catch((error: NodeJS.ErrnoException) => {
     if (error.code === 'ENOENT') return undefined;
@@ -76,6 +78,7 @@ export const loadEndpointRecord = async (dir: string, key: EndpointKey): Promise
   }
   if (!isRecord(parsed) || typeof parsed['identity'] !== 'string') throw unusable(file, 'missing key fields');
   if (parsed['endpoint'] !== key.endpoint || parsed['model'] !== key.model) throw unusable(file, 'it belongs to another endpoint or model');
+  if (!isCurrentRecord(parsed, currency)) return null;
   const identityFields = parsed['identityFields'];
   if (!Array.isArray(identityFields) || !identityFields.every((name): name is string => typeof name === 'string')) {
     throw unusable(file, 'identityFields is not a list of field names');

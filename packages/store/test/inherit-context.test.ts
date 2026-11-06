@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import type { PermissionMode, RunEvent, RunEventPayload } from '@momonga/protocol';
 import { foldRunState, initialRunState, isFatalStoreError } from '@momonga/store';
+import { SNAPSHOT_STATE_VERSION } from '../src/codec.ts';
 import type { Claim, Run, RuntimeStore } from '@momonga/store';
 import { LEASE_MS, START_MS, TIMEOUT_MS, cancel, cancelToEnd, deadLetterAll, enqueue, harness, mustClaim, mustRun, newSession, payloadOf, rawDb } from './helpers.ts';
 import type { Harness, StoreOptions } from './helpers.ts';
@@ -105,13 +106,13 @@ describe('inheritContext: the happy path', () => {
       fromLastSeq: mustRun(store, first.id).lastSeq,
       history,
       nextItemSeq: 3,
-      workingFacts: { written: [], touched: [], commands: [], messages: [{ text: 'Say hello', seq: 0 }], itemEvents: [] },
+      workingFacts: { written: [], commands: [], messages: [{ text: 'Say hello', seq: 0 }], itemEvents: [] },
       evicted: [],
       closures: [],
       markers: [],
       fromMode: 'default',
       mode: 'default',
-      digest: inheritedDigest({ history, nextItemSeq: 3, evicted: [], mode: 'default', workingFacts: { written: [], touched: [], commands: [], messages: [{ text: 'Say hello', seq: 0 }], itemEvents: [] } }),
+      digest: inheritedDigest({ history, nextItemSeq: 3, evicted: [], mode: 'default', workingFacts: { written: [], commands: [], messages: [{ text: 'Say hello', seq: 0 }], itemEvents: [] } }),
     });
     expect(mustRun(store, second.id).lastSeq).toBe(2);
     const state = events.reduce(foldRunState, initialRunState({ runId: second.id, sessionId: session.id }));
@@ -419,7 +420,7 @@ describe('inheritContext: predecessors that ended badly', () => {
   it('throws previous_run_unreadable for a corrupt predecessor snapshot', async () => {
     const { store, dbPath, session, first } = await completedPredecessor();
     const db = writable(dbPath);
-    db.prepare(`INSERT INTO snapshots (run_id, seq, state_json, created_at) VALUES (?, 1, '{"stateVersion":14,"runId":7}', 0)`).run(first.id);
+    db.prepare(`INSERT INTO snapshots (run_id, seq, state_json, created_at) VALUES (?, 1, '{"stateVersion":${SNAPSHOT_STATE_VERSION},"runId":7}', 0)`).run(first.id);
     enqueue(store, session.id, 'And again');
     const claim = mustClaim(store, 'w1');
     expect(thrown(() => store.inheritContext(claim, { mode: 'default' }))).toEqual(inheritanceError('previous_run_unreadable'));

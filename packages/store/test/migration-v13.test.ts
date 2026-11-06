@@ -29,7 +29,7 @@ const insertMemory = (db: DatabaseSync, id: string, text: string, verb: Verb = '
     source_call_id: `call-${id}`,
     source_seq: 1,
     created_at: START_MS,
-    last_used_at: START_MS + 1,
+    [db.prepare("SELECT name FROM pragma_table_info('memories') WHERE name = 'kept_at'").get() === undefined ? 'last_used_at' : 'kept_at']: START_MS + 1,
   };
   insertRow(db, 'memories', fields, verb);
 };
@@ -109,7 +109,7 @@ const memoryIds = (db: DatabaseSync, term: string): string[] =>
 
 describe('migration v13', () => {
   it('is followed only by the pinned-digest column, the migration that records dropped reflection candidates, the one that records the detail of a context charge and the model-change index (upgrades over existing rows are tested in migration-v14.test.ts)', () => {
-    expect(MIGRATIONS.map((migration) => migration.version).slice(12)).toEqual([13, 14, 15, 16, 17, 18, 19, 20, 21]);
+    expect(MIGRATIONS.map((migration) => migration.version).slice(12)).toEqual([13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]);
   });
 
   it('preserves an existing memory and gives it the defaults of the new columns', () => {
@@ -126,7 +126,7 @@ describe('migration v13', () => {
       source_call_id: 'call-m-old',
       source_seq: 1,
       created_at: START_MS,
-      last_used_at: START_MS + 1,
+      kept_at: START_MS + 1,
       kind: 'fact',
       state: 'active',
       duplicate_of: null,
@@ -134,6 +134,7 @@ describe('migration v13', () => {
       retired_at: null,
       contributed_at: null,
       source_kind: 'tool',
+      observed_status: null,
     });
   });
 
@@ -240,21 +241,20 @@ describe('memories index', () => {
     expect(memoryIds(migratedDb(), 'requirements')).toEqual(['m-old']);
   });
 
-  it('follows insert, update and delete of memories', () => {
+  it('follows insert and update of memories, and a delete is refused', () => {
     const db = migratedDb();
     insertMemory(db, 'm-new', 'the trigram tokenizer is used');
     expect(memoryIds(db, 'igram')).toEqual(['m-new']);
     db.prepare("UPDATE memories SET text = 'the sweeper runs' WHERE id = 'm-new'").run();
     expect(memoryIds(db, 'igram')).toEqual([]);
     expect(memoryIds(db, 'sweeper')).toEqual(['m-new']);
-    db.prepare("DELETE FROM memories WHERE id = 'm-new'").run();
-    expect(memoryIds(db, 'sweeper')).toEqual([]);
+    expect(() => db.prepare("DELETE FROM memories WHERE id = 'm-new'").run()).toThrow(/memories are retired, not deleted/);
+    expect(memoryIds(db, 'sweeper')).toEqual(['m-new']);
   });
 
   it('survives VACUUM, because it is keyed by memory id', () => {
     const db = migratedDb();
     insertMemory(db, 'm-new', 'the trigram tokenizer is used');
-    db.prepare("DELETE FROM memories WHERE id = 'm-old'").run();
     db.exec('VACUUM');
     expect(memoryIds(db, 'igram')).toEqual(['m-new']);
   });
@@ -344,9 +344,9 @@ describe('memory columns', () => {
     const db = migratedDb();
     db.prepare('UPDATE memories SET retired_at = 5').run();
     expect(() => db.prepare('UPDATE memories SET retired_at = 6').run()).toThrow(/retired_at/);
-    db.prepare('UPDATE memories SET last_used_at = 7, contributed_at = 8').run();
-    const row = db.prepare('SELECT retired_at, last_used_at, contributed_at FROM memories').get();
-    expect({ ...row }).toEqual({ retired_at: 5, last_used_at: 7, contributed_at: 8 });
+    db.prepare('UPDATE memories SET kept_at = 7, contributed_at = 8').run();
+    const row = db.prepare('SELECT retired_at, kept_at, contributed_at FROM memories').get();
+    expect({ ...row }).toEqual({ retired_at: 5, kept_at: 7, contributed_at: 8 });
   });
 });
 
@@ -374,11 +374,11 @@ describe('memory evidence', () => {
     expect(() => insertEvidence(migratedDb(), { memory_id: 'absent', kind: 'commit', sha: 'bb' })).toThrow(/FOREIGN KEY/);
   });
 
-  it('goes with its memory when the user deletes it', () => {
+  it('stays with its memory, because a memory row is never deleted', () => {
     const db = migratedDb();
     insertEvidence(db, { kind: 'commit', sha: 'bb' });
-    db.prepare("DELETE FROM memories WHERE id = 'm-old'").run();
-    expect(db.prepare('SELECT count(*) AS n FROM memory_evidence').get()?.['n']).toBe(0);
+    expect(() => db.prepare("DELETE FROM memories WHERE id = 'm-old'").run()).toThrow(/memories are retired, not deleted/);
+    expect(db.prepare('SELECT count(*) AS n FROM memory_evidence').get()?.['n']).toBe(1);
   });
 });
 
@@ -459,7 +459,7 @@ describe('INSERT OR REPLACE cannot rewrite a row', () => {
     const second = (verb: string) =>
       db
         .prepare(
-          `${verb} INTO memories (id, scope, origin, project, text, source_session_id, source_run_id, source_step, source_call_id, source_seq, created_at, last_used_at)
+          `${verb} INTO memories (id, scope, origin, project, text, source_session_id, source_run_id, source_step, source_call_id, source_seq, created_at, kept_at)
            VALUES ('m-second', 'user', 'trusted', NULL, 'again', 's1', 'run-m-old', 1, 'call-m-old', 1, 1, 1)`,
         )
         .run();
@@ -550,7 +550,7 @@ describe('memory command source', () => {
     project: null,
     text: `text ${id}`,
     created_at: START_MS,
-    last_used_at: START_MS,
+    kept_at: START_MS,
     source_kind: 'command',
     ...overrides,
   });

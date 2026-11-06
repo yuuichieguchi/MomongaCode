@@ -1,5 +1,5 @@
 import { SECRET_NAME_PATTERN } from '@momonga/foundation';
-import { ALLOWED_TOOLS_FORMS, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, REASONING_EFFORTS, TARGET_BILLINGS, THINKING_OFFS } from '@momonga/protocol';
+import { ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, REASONING_EFFORTS, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS } from '@momonga/protocol';
 import type { CallRole } from '@momonga/protocol';
 
 export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const satisfies readonly CallRole[];
@@ -53,10 +53,13 @@ const NON_NEGATIVE_INTEGER = { type: 'integer', minimum: 0 } as const;
 
 const OUTPUT_BOUND_FIELD_SCHEMA = { enum: [...OUTPUT_BOUND_FIELDS] } as const;
 
+const ANSWERS_SCHEMA = { enum: [...TARGET_ANSWERS] } as const;
+
 const FM_TARGET_SCHEMA = {
   type: 'object',
   properties: {
     adapter: { const: 'fm' },
+    answers: ANSWERS_SCHEMA,
     model: { type: 'string', minLength: 1 },
     toolCalling: { enum: ['auto', 'native', 'constrained'] },
     outputBoundField: OUTPUT_BOUND_FIELD_SCHEMA,
@@ -158,7 +161,7 @@ const targetCapabilitiesSchema = (promptCache: object, extraProperties: object =
     },
     parallelToolCalls: { type: 'boolean' },
     allowedTools: { type: 'array', items: { enum: [...ALLOWED_TOOLS_FORMS] }, minItems: 1, uniqueItems: true },
-    schemaDialect: { enum: ['json-schema-2020-12', 'guided-generation'] },
+    schemaDialect: { type: 'string', minLength: 1 },
     tokenCounting: { enum: ['exact', 'calibrated', 'estimated'] },
     tokenErrorRatio: { type: 'number', minimum: 0 },
     usageReported: { type: 'boolean' },
@@ -197,6 +200,7 @@ const OLLAMA_CAPABILITIES_SCHEMA = targetCapabilitiesSchema(OLLAMA_PROMPT_CACHE)
 
 const BILLING_SCHEMA = { enum: [...TARGET_BILLINGS] } as const;
 
+
 const API_KEY_PROPERTIES = {
   apiKeyEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
   apiKeySecret: { type: 'string', pattern: SECRET_NAME_PATTERN },
@@ -217,6 +221,7 @@ const CHAT_COMPLETIONS_TARGET_SCHEMA = {
   type: 'object',
   properties: {
     adapter: { const: 'chat-completions' },
+    answers: ANSWERS_SCHEMA,
     model: { type: 'string', minLength: 1 },
     baseUrl: { type: 'string', minLength: 1 },
     socketPath: { type: 'string', minLength: 1 },
@@ -237,6 +242,7 @@ const OPEN_RESPONSES_TARGET_SCHEMA = {
   type: 'object',
   properties: {
     adapter: { const: 'open-responses' },
+    answers: ANSWERS_SCHEMA,
     model: { type: 'string', minLength: 1 },
     baseUrl: { type: 'string', minLength: 1 },
     socketPath: { type: 'string', minLength: 1 },
@@ -257,6 +263,7 @@ const ANTHROPIC_TARGET_SCHEMA = {
   type: 'object',
   properties: {
     adapter: { const: 'anthropic' },
+    answers: ANSWERS_SCHEMA,
     model: { type: 'string', minLength: 1 },
     baseUrl: { type: 'string', minLength: 1 },
     socketPath: { type: 'string', minLength: 1 },
@@ -276,6 +283,7 @@ const OLLAMA_TARGET_SCHEMA = {
   type: 'object',
   properties: {
     adapter: { const: 'ollama' },
+    answers: ANSWERS_SCHEMA,
     model: { type: 'string', minLength: 1 },
     baseUrl: { type: 'string', minLength: 1 },
     socketPath: { type: 'string', minLength: 1 },
@@ -352,6 +360,7 @@ export const SETTINGS_SCHEMA = {
           propertyNames: { pattern: TARGET_NAME_PATTERN },
           additionalProperties: MODEL_TARGET_SCHEMA,
         },
+        dialects: { type: 'object', additionalProperties: DIALECT_DEFINITION_SCHEMA },
         roles: {
           type: 'object',
           properties: Object.fromEntries(MODEL_ROLES.map((role) => [role, { type: 'string', minLength: 1 }])),
@@ -431,6 +440,7 @@ export const SETTINGS_SCHEMA = {
           additionalProperties: false,
         },
         captureMessageContent: { type: 'boolean' },
+        contentRetentionDays: POSITIVE_INTEGER,
       },
       additionalProperties: false,
     },

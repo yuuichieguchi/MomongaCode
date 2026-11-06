@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { PreconditionFailedError, loadProbeRecord, resolveToolCalling, saveProbeRecord } from '@momonga/gateway';
 import { makeReport } from './report-fixture.ts';
+import { CURRENT_DIALECTS } from './dialect-currency.ts';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -23,50 +24,50 @@ describe('probe records', () => {
   it('writes <dir>/<target>.json with mode 0600 and loads it back', async () => {
     const dir = makeDir();
     const report = makeReport(0.95, 1);
-    await saveProbeRecord(dir, key, report);
+    await saveProbeRecord(dir, key, report, CURRENT_DIALECTS);
     const file = path.join(dir, 'fm.json');
     expect(fs.statSync(file).mode & 0o777).toBe(0o600);
-    expect(await loadProbeRecord(dir, key)).toEqual(report);
+    expect(await loadProbeRecord(dir, key, CURRENT_DIALECTS)).toEqual(report);
   });
 
   it('creates the directory when it does not exist', async () => {
     const dir = path.join(makeDir(), 'probes');
-    await saveProbeRecord(dir, key, makeReport(1, 1));
+    await saveProbeRecord(dir, key, makeReport(1, 1), CURRENT_DIALECTS);
     expect(fs.statSync(path.join(dir, 'fm.json')).isFile()).toBe(true);
   });
 
   it('returns null when the record is missing', async () => {
-    expect(await loadProbeRecord(makeDir(), key)).toBeNull();
+    expect(await loadProbeRecord(makeDir(), key, CURRENT_DIALECTS)).toBeNull();
   });
 
   it('returns null when the binary hash differs', async () => {
     const dir = makeDir();
-    await saveProbeRecord(dir, key, makeReport(1, 1));
-    expect(await loadProbeRecord(dir, { ...key, binarySha256: 'b'.repeat(64) })).toBeNull();
+    await saveProbeRecord(dir, key, makeReport(1, 1), CURRENT_DIALECTS);
+    expect(await loadProbeRecord(dir, { ...key, binarySha256: 'b'.repeat(64) }, CURRENT_DIALECTS)).toBeNull();
   });
 
   it('returns null when the OS build differs', async () => {
     const dir = makeDir();
-    await saveProbeRecord(dir, key, makeReport(1, 1));
-    expect(await loadProbeRecord(dir, { ...key, osBuild: '27A200' })).toBeNull();
+    await saveProbeRecord(dir, key, makeReport(1, 1), CURRENT_DIALECTS);
+    expect(await loadProbeRecord(dir, { ...key, osBuild: '27A200' }, CURRENT_DIALECTS)).toBeNull();
   });
 
   it('keeps records of different targets apart', async () => {
     const dir = makeDir();
     const fmReport = makeReport(1, 1);
     const otherReport = makeReport(0, 1);
-    await saveProbeRecord(dir, key, fmReport);
-    await saveProbeRecord(dir, { ...key, target: 'other' }, otherReport);
-    expect(await loadProbeRecord(dir, key)).toEqual(fmReport);
-    expect(await loadProbeRecord(dir, { ...key, target: 'other' })).toEqual(otherReport);
+    await saveProbeRecord(dir, key, fmReport, CURRENT_DIALECTS);
+    await saveProbeRecord(dir, { ...key, target: 'other' }, otherReport, CURRENT_DIALECTS);
+    expect(await loadProbeRecord(dir, key, CURRENT_DIALECTS)).toEqual(fmReport);
+    expect(await loadProbeRecord(dir, { ...key, target: 'other' }, CURRENT_DIALECTS)).toEqual(otherReport);
   });
 
   it('overwrites an existing record for the same target', async () => {
     const dir = makeDir();
-    await saveProbeRecord(dir, key, makeReport(1, 1));
+    await saveProbeRecord(dir, key, makeReport(1, 1), CURRENT_DIALECTS);
     const newer = makeReport(0.5, 0.95);
-    await saveProbeRecord(dir, key, newer);
-    expect(await loadProbeRecord(dir, key)).toEqual(newer);
+    await saveProbeRecord(dir, key, newer, CURRENT_DIALECTS);
+    expect(await loadProbeRecord(dir, key, CURRENT_DIALECTS)).toEqual(newer);
     expect(fs.statSync(path.join(dir, 'fm.json')).mode & 0o777).toBe(0o600);
   });
 });
@@ -77,7 +78,7 @@ describe('probe record failure handling', () => {
   it('names the file, the remediation and the original error when the record is not JSON', async () => {
     const dir = makeDir();
     fs.writeFileSync(recordFile(dir), '{"binarySha256": ');
-    const error = await loadProbeRecord(dir, key).catch((e: unknown) => e);
+    const error = await loadProbeRecord(dir, key, CURRENT_DIALECTS).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(Error);
     const message = (error as Error).message;
     expect(message).toContain(recordFile(dir));
@@ -88,11 +89,10 @@ describe('probe record failure handling', () => {
 
   it('names the file and the remediation when the report does not match the schema', async () => {
     const dir = makeDir();
-    fs.writeFileSync(
-      recordFile(dir),
-      JSON.stringify({ binarySha256: key.binarySha256, osBuild: key.osBuild, report: { probedAt: 'now' } }),
-    );
-    const error = await loadProbeRecord(dir, key).catch((e: unknown) => e);
+    await saveProbeRecord(dir, key, makeReport(1, 1), CURRENT_DIALECTS);
+    const stored = JSON.parse(fs.readFileSync(recordFile(dir), 'utf8'));
+    fs.writeFileSync(recordFile(dir), JSON.stringify({ ...stored, report: { probedAt: 'now', schemaDialect: stored.report.schemaDialect } }));
+    const error = await loadProbeRecord(dir, key, CURRENT_DIALECTS).catch((e: unknown) => e);
     expect((error as Error).message).toContain(recordFile(dir));
     expect((error as Error).message).toContain('momonga gateway probe fm');
     expect((error as Error).cause).toBeInstanceOf(Error);
@@ -101,13 +101,13 @@ describe('probe record failure handling', () => {
   it('names the file when the record lacks its key fields', async () => {
     const dir = makeDir();
     fs.writeFileSync(recordFile(dir), JSON.stringify({ report: makeReport(1, 1) }));
-    await expect(loadProbeRecord(dir, key)).rejects.toThrow(recordFile(dir));
+    await expect(loadProbeRecord(dir, key, CURRENT_DIALECTS)).rejects.toThrow(recordFile(dir));
   });
 
   it('tightens the permissions of an existing directory to 0700', async () => {
     const dir = makeDir();
     fs.chmodSync(dir, 0o755);
-    await saveProbeRecord(dir, key, makeReport(1, 1));
+    await saveProbeRecord(dir, key, makeReport(1, 1), CURRENT_DIALECTS);
     expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
   });
 
@@ -115,7 +115,7 @@ describe('probe record failure handling', () => {
     const dir = makeDir();
     fs.mkdirSync(recordFile(dir));
     fs.writeFileSync(path.join(recordFile(dir), 'occupant'), 'x');
-    await expect(saveProbeRecord(dir, key, makeReport(1, 1))).rejects.toThrow();
+    await expect(saveProbeRecord(dir, key, makeReport(1, 1), CURRENT_DIALECTS)).rejects.toThrow();
     expect(fs.readdirSync(dir)).toEqual(['fm.json']);
   });
 });

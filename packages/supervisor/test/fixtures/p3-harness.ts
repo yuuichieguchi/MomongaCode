@@ -5,7 +5,7 @@ import { PassThrough } from 'node:stream';
 import { createJsonLogger, momongaPaths } from '@momonga/foundation';
 import type { JsonLogger, MomongaPaths, TextStream } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { createFakeClock, createFakeTimers, createRealWorkScope, quiesce, registerCleanup, settleRealWork, waitFor, waitForRealWork, withTempDir } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, createRealWorkScope, driveFakeTime, quiesce, registerCleanup, settleRealWork, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, FakeClock, FakeTimers, JsonLine, RealWorkScope } from '@momonga/testkit';
 
 export { createRealWorkScope, quiesce };
@@ -348,12 +348,16 @@ const advanceToDue = (timers: FakeTimers, due: number): void => {
 
 export const pump = async (timers: FakeTimers, realWork: RealWorkScope, ms: number): Promise<void> => {
   const target = timers.now() + ms;
-  for (;;) {
-    await settleRealWork(realWork, () => false, 'fake time to pump');
-    const due = timers.nextDueAt();
-    if (due === undefined || due > target) break;
-    advanceToDue(timers, due);
-  }
+  await driveFakeTime(timers, {
+    done: () => {
+      const due = timers.nextDueAt();
+      return due === undefined || due > target;
+    },
+    horizonAt: target,
+    description: 'fake time to pump',
+    settle: () => settleRealWork(realWork, () => false, 'fake time to pump'),
+    detail: () => realWork.describe(),
+  });
   advanceToDue(timers, target);
   await settleRealWork(realWork, () => false, 'fake time pumped');
 };
@@ -366,18 +370,14 @@ export const pumpUntil = async (
   const { realWork } = options;
   const maxMs = options.maxMs ?? 600_000;
   const description = options.description ?? 'condition';
-  const startedAt = timers.now();
-  for (;;) {
-    await settleRealWork(realWork, predicate, description);
-    if (predicate()) return;
-    const due = timers.nextDueAt();
-    if (due === undefined) {
-      await waitForRealWork(realWork, () => predicate() || timers.nextDueAt() !== undefined || realWork.inFlight(), `${description} or a pending fake timer`);
-      continue;
-    }
-    if (due - startedAt > maxMs) throw new Error(`pumpUntil: ${description} not met within ${maxMs} fake ms`);
-    advanceToDue(timers, due);
-  }
+  await driveFakeTime(timers, {
+    done: predicate,
+    horizonAt: timers.now() + maxMs,
+    description,
+    settle: () => settleRealWork(realWork, predicate, description),
+    quiet: () => !realWork.inFlight(),
+    detail: () => realWork.describe(),
+  });
 };
 
 export const settledFlag = <T>(promise: Promise<T>): { settled(): boolean; value(): T | undefined; promise: Promise<T> } => {

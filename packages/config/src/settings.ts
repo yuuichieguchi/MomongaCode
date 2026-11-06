@@ -1,6 +1,6 @@
 import { defineProductSchema, transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
 import type { ProductValidator, UntrustedError } from '@momonga/foundation';
-import type { AnthropicApiVersion, CapabilitiesCore, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetBilling, PermissionMode } from '@momonga/protocol';
+import type { AnthropicApiVersion, CapabilitiesCore, DialectDefinition, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetAnswers, TargetBilling, PermissionMode } from '@momonga/protocol';
 import { MCP_SERVERS_FILE_SCHEMA, MCP_SERVER_SCHEMA, MODEL_ROLES, SETTINGS_SCHEMA } from './settings-schema.ts';
 
 export type PermissionsSettings = {
@@ -36,7 +36,7 @@ export type McpServerConfig = McpStdioServerConfig | McpRemoteServerConfig;
 
 export type FmToolCalling = 'auto' | 'native' | 'constrained';
 
-export type TargetCapabilitiesCore = Omit<CapabilitiesCore, 'toolCalling' | 'probedAt' | 'maxConcurrency'>;
+export type TargetCapabilitiesCore = Omit<CapabilitiesCore, 'toolCalling' | 'probedAt' | 'maxConcurrency' | 'schemaDialect'> & Partial<Pick<CapabilitiesCore, 'schemaDialect'>>;
 
 export type DeclaredImage = ImageCapability | { imageInput?: undefined; imageTokens?: undefined };
 
@@ -47,6 +47,7 @@ export type DeclaredTargetCapabilities = Pick<TargetCapabilitiesCore, 'contextWi
 
 export type FmTarget = {
   adapter: 'fm';
+  answers?: TargetAnswers;
   model?: string;
   outputBoundField?: OutputBoundField;
   toolCalling?: FmToolCalling;
@@ -56,6 +57,7 @@ export type FmTarget = {
 
 export type ChatCompletionsTarget = {
   adapter: 'chat-completions';
+  answers?: TargetAnswers;
   model: string;
   baseUrl?: string;
   socketPath?: string;
@@ -73,6 +75,7 @@ export type RemoteTargetCapabilities = DeclaredTargetCapabilities;
 
 export type OpenResponsesTarget = {
   adapter: 'open-responses';
+  answers?: TargetAnswers;
   model: string;
   baseUrl?: string;
   socketPath?: string;
@@ -88,6 +91,7 @@ export type OpenResponsesTarget = {
 
 export type AnthropicTarget = {
   adapter: 'anthropic';
+  answers?: TargetAnswers;
   model: string;
   baseUrl?: string;
   socketPath?: string;
@@ -102,6 +106,7 @@ export type AnthropicTarget = {
 
 export type OllamaTarget = {
   adapter: 'ollama';
+  answers?: TargetAnswers;
   model: string;
   baseUrl?: string;
   socketPath?: string;
@@ -115,6 +120,7 @@ export type ModelTarget = FmTarget | ChatCompletionsTarget | OpenResponsesTarget
 
 export type ResolvedFmTarget = {
   adapter: 'fm';
+  answers?: TargetAnswers;
   model?: string;
   outputBoundField?: OutputBoundField;
   toolCalling: FmToolCalling;
@@ -125,6 +131,7 @@ export type ResolvedFmTarget = {
 
 export type ResolvedChatCompletionsTarget = {
   adapter: 'chat-completions';
+  answers?: TargetAnswers;
   model: string;
   baseUrl?: string;
   socketPath?: string;
@@ -140,6 +147,7 @@ export type ResolvedChatCompletionsTarget = {
 
 export type ResolvedOpenResponsesTarget = {
   adapter: 'open-responses';
+  answers?: TargetAnswers;
   model: string;
   baseUrl?: string;
   socketPath?: string;
@@ -155,6 +163,7 @@ export type ResolvedOpenResponsesTarget = {
 
 export type ResolvedAnthropicTarget = {
   adapter: 'anthropic';
+  answers?: TargetAnswers;
   model: string;
   baseUrl?: string;
   socketPath?: string;
@@ -170,6 +179,7 @@ export type ResolvedAnthropicTarget = {
 
 export type ResolvedOllamaTarget = {
   adapter: 'ollama';
+  answers?: TargetAnswers;
   model: string;
   baseUrl?: string;
   socketPath?: string;
@@ -195,6 +205,7 @@ export type ModelRoles = Partial<Record<ModelRole, string>>;
 export type ModelsSettings = {
   aliases?: Record<string, ModelAlias>;
   targets?: Record<string, ModelTarget>;
+  dialects?: Record<string, DialectDefinition>;
   roles?: ModelRoles;
 };
 
@@ -205,7 +216,16 @@ export const defaultSandboxSetting = (platform: NodeJS.Platform = process.platfo
 
 export type OtlpSettings = { endpoint: string; headers?: Record<string, string> };
 
-export type TelemetrySettings = { otlp?: OtlpSettings; captureMessageContent?: boolean };
+export type TelemetrySettings = { otlp?: OtlpSettings; captureMessageContent?: boolean; contentRetentionDays?: number };
+
+export type ResolvedTelemetrySettings = { captureMessageContent: boolean; contentRetentionDays: number };
+
+export const DEFAULT_CONTENT_RETENTION_DAYS = 30;
+
+export const resolveTelemetrySettings = (settings: TelemetrySettings | undefined): ResolvedTelemetrySettings => ({
+  captureMessageContent: settings?.captureMessageContent === true,
+  contentRetentionDays: settings?.contentRetentionDays ?? DEFAULT_CONTENT_RETENTION_DAYS,
+});
 
 export type PriceEntrySettings = {
   provider: string;

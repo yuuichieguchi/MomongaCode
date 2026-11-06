@@ -136,7 +136,7 @@ describe('a value a person did not write stays on its own line in command output
       text: `note\tone\nstatus: forged\n${FORGED}`,
       source: { kind: 'command', at: 0 },
       createdAt: 0,
-      lastUsedAt: 0,
+      keptAt: 0,
       kind: 'procedure',
       status: 'unbound',
       evidence: [],
@@ -158,19 +158,20 @@ describe('a value a person did not write stays on its own line in command output
     stopSequences: true,
     usageReported: true,
     maxConcurrency: 2,
+    schemaDialect: { selected: 'json-schema-2020-12', shape: 'union', tried: [] },
   } as unknown as Parameters<typeof probeEndpointText>[3];
 
   it('shows a probed endpoint target name, model id, endpoint and record path with a newline on their line', () => {
     const lines = probeEndpointText(`t ${FORGED}`, `http://e ${FORGED}`, `/r ${FORGED}`, probeReport, 'native').split('\n');
     expect(lines[0]).toBe(`probed t ${SHOWN}: model m ${SHOWN} at http://e ${SHOWN}, context window 8 (listed)`);
     expect(lines.at(-2)).toBe(`  recorded in /r ${SHOWN}`);
-    expect(lines).toHaveLength(8);
+    expect(lines).toHaveLength(9);
   });
 
   it('shows a probed fm target name and model id with a newline on the probe line', () => {
     const lines = probeFmText(`t ${FORGED}`, '/r', probeReport, 'native').split('\n');
     expect(lines[0]).toBe(`probed t ${SHOWN}: model m ${SHOWN}, context window 8 (listed)`);
-    expect(lines).toHaveLength(5);
+    expect(lines).toHaveLength(6);
   });
 
   it('shows a release tag and version from GitHub with a newline on the update line', () => {

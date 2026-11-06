@@ -1,3 +1,4 @@
+export { MEMORY_MATCH_LIMIT, MEMORY_SCAN_LIMIT } from './memory-constants.ts';
 export { foldRunState, initialRunState } from './fold.ts';
 export { InheritanceError, applyInheritance, projectInheritance } from './inherit.ts';
 export type { InheritanceErrorCode, InheritanceKind, InheritanceOutcome, InheritedPayload } from './inherit.ts';
@@ -8,6 +9,7 @@ export { CANCEL_ORIGINS, CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSI
 export { migrateRuntimeDatabase, openRuntimeStore } from './runtime-store.ts';
 export { JournalThreadError, StalePreparation } from './journal-port.ts';
 export { JOURNAL_SCAN_RANGE_ROWS, createJournalReader } from './journal-reader.ts';
+export { blobDirectoryOf, createBlobStore } from './blobs.ts';
 export type { JournalReader, JournalReaderOptions } from './journal-reader.ts';
 export { GuidelineConflictError, GuidelineTextError } from './guidelines.ts';
 export {
@@ -77,8 +79,15 @@ export type {
   ContextChargeStore,
   MemoryChange,
   MemoryInclude,
+  MemoryListCursor,
+  MemoryListFilter,
+  MemoryObservation,
   MemoryRecord,
   MemoryStore,
+  RecallCursor,
+  SessionTouched,
+  SessionTouchedStore,
+  RecallPage,
   ReflectionCompletion,
   ReflectionJob,
   ReflectionStore,
@@ -114,6 +123,8 @@ export type {
   ContributionPreparer,
   EvidenceReply,
   EvidenceRequest,
+  FidelityReply,
+  FidelityRequest,
   JournalFacts,
   RecordedCheck,
   RecordedHash,

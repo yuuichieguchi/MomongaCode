@@ -1,4 +1,6 @@
 export { createBodyQueue } from './body-queue.ts';
+export { BODY_PURGE_INTERVAL_MS, startBodyPurge } from './body-purge.ts';
+export type { BodyPurge, BodyPurgeOptions, BodyPurgeTimers } from './body-purge.ts';
 export type { BodyQueue, BodyQueueLimits } from './body-queue.ts';
 export { installOtelErrorHandler } from './errors.ts';
 export { buildCostBreakdown, formatCostBreakdown } from './cost-breakdown.ts';
@@ -10,7 +12,7 @@ export type { CallBilling, CostInput, CostUsage, PriceCallInput, PriceEntry, Pri
 export { buildCostReport, formatCostReport } from './cost-report.ts';
 export type { CostReport, CostReportOptions, CostTotals, CostedRun, RoleCost, RunCost, SessionCost } from './cost-report.ts';
 export type { ClockedSpan, ClockedTracer } from './clocked-tracer.ts';
-export { GENAI_CONTENT_SEMCONV, GENAI_SEMCONV } from './semconv.ts';
+export { GENAI_CONTENT_SEMCONV, GENAI_SEMCONV, MOMONGA_ATTRIBUTES } from './semconv.ts';
 export {
   recordChatFailure,
   recordChatRequestContent,
@@ -41,16 +43,16 @@ export type { ChatResult, RunSummary } from './summary.ts';
 export { closeTelemetry, contextOf, createTelemetry, traceparentOf } from './telemetry.ts';
 export type {
   BatchOptions,
-  BodyCaptureOptions,
-  CapturedBody,
+  ContentQueueOptions,
   Telemetry,
   TelemetryOptions,
   TracePropagation,
 } from './telemetry.ts';
 export { createTraceStoreExporter } from './trace-exporter.ts';
+export type { BodyCapture } from './trace-exporter.ts';
 export { OTLP_EXPORTS_PER_TEARDOWN, OTLP_EXPORT_TIMEOUT_MS, OTLP_TEARDOWN_SHARE, createOtlpTraceExporter, exportersFor, otlpTracesUrl } from './otlp.ts';
 export type { OtlpExporterOptions, OtlpExporterSettings } from './otlp.ts';
-export { openTraceStore } from './trace-store.ts';
+export { BODY_KINDS, openTraceStore } from './trace-store.ts';
 export type {
   BodyKind,
   BodyRecord,

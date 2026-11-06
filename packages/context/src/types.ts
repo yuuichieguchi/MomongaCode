@@ -36,6 +36,8 @@ export type ContextGoverning = {
   conflicts: readonly { target: string; ids: readonly string[] }[];
 };
 
+export type ReferenceReaders = Readonly<Record<string, string>>;
+
 export type ContextSources = {
   systemPrompt: string;
   tools: readonly FunctionTool[];
@@ -45,9 +47,12 @@ export type ContextSources = {
   activatedSkills: readonly ActivatedSkill[];
   governing?: ContextGoverning;
   memories?: readonly DeepReadonly<MemoryView>[];
+  moreMemories?: boolean;
+  memoryMatchCap?: number;
   history: readonly HistoryItem[];
   summary?: ContextSummary;
-  workingState?: string;
+  readers: ReferenceReaders;
+  workingState?: (readers: ReferenceReaders) => string;
   projectedWorkingState?: string;
 };
 

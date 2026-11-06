@@ -1,7 +1,7 @@
 import { MessageChannel, Worker, receiveMessageOnPort } from 'node:worker_threads';
 import type { MessagePort } from 'node:worker_threads';
-import { JournalThreadError } from '@momonga/store';
-import type { ContributionMeasured, ContributionPreparer, EvidenceReply, RecordedCheck, RecordedHash, ReflectionInputReply, VerdictFact, VerdictReply } from '@momonga/store';
+import { JournalThreadError, blobDirectoryOf } from '@momonga/store';
+import type { ContributionMeasured, ContributionPreparer, EvidenceReply, FidelityReply, RecordedCheck, RecordedHash, ReflectionInputReply, VerdictFact, VerdictReply } from '@momonga/store';
 import { JOURNAL_THREAD_CODE } from './journal-thread-code.generated.ts';
 
 export type JournalThreadTimers = {
@@ -100,6 +100,15 @@ const reflectionInputOf = (reply: JournalThreadReply): ReflectionInputReply => {
   const { input } = reply;
   if (typeof input !== 'string') throw new JournalThreadError('journal thread reflection_input reply carries no input text');
   return { lastSeq: lastSeqOf(reply, 'reflection_input'), input };
+};
+
+const isUnreadable = (entry: unknown): entry is FidelityReply['unreadable'][number] => isRecord(entry) && typeof entry['handle'] === 'string' && typeof entry['reason'] === 'string';
+
+const fidelityOf = (reply: JournalThreadReply): FidelityReply => {
+  const { attested, unreadable } = reply;
+  if (!Array.isArray(attested) || !attested.every((token) => typeof token === 'string')) throw new JournalThreadError('journal thread fidelity reply carries malformed attested tokens');
+  if (!Array.isArray(unreadable) || !unreadable.every(isUnreadable)) throw new JournalThreadError('journal thread fidelity reply carries malformed unreadable blobs');
+  return { lastSeq: lastSeqOf(reply, 'fidelity'), attested, unreadable };
 };
 
 export const startJournalThread = async (options: JournalThreadOptions): Promise<JournalThreadClient> => {
@@ -216,7 +225,7 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
     const { port1, port2 } = new MessageChannel();
     let worker: Worker;
     try {
-      worker = new Worker(code, { eval: true, workerData: { databasePath, port: port2 }, transferList: [port2] });
+      worker = new Worker(code, { eval: true, workerData: { databasePath, blobsDir: blobDirectoryOf(databasePath), port: port2 }, transferList: [port2] });
     } catch (error) {
       port1.close();
       port2.close();
@@ -285,6 +294,9 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
   const reflectionInput: JournalThreadClient['reflectionInput'] = async ({ runId, project, capabilities }) =>
     reflectionInputOf(await request({ kind: 'reflection_input', runId, project, capabilities }));
 
+  const fidelity: JournalThreadClient['fidelity'] = async ({ runId, throughEventSeq, cwd, tokens }) =>
+    fidelityOf(await request({ kind: 'fidelity', runId, throughEventSeq, cwd, tokens }));
+
   const close = (): Promise<void> => {
     closePromise ??= (async () => {
       if (current !== null) fail(current, new JournalThreadError('journal thread client was closed'));
@@ -295,5 +307,5 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
   };
 
   await liveThread();
-  return { identity, request, ping, measure, verdict, evidence, reflectionInput, close };
+  return { identity, request, ping, measure, verdict, evidence, reflectionInput, fidelity, close };
 };

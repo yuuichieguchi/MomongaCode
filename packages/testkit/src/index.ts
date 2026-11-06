@@ -29,6 +29,7 @@ export type {
   FakeStreamChunk,
   RecordedRequest,
 } from './fake-chat-completions.ts';
+export { inlinedSubsetRefusalOf, strictClosedRefusalOf } from './dialect-checkers.ts';
 export { generateInstance, collectAllowedNames, findUsedKeywords } from './schema-instance.ts';
 export type { JsonSchema, InstancePreferences } from './schema-instance.ts';
 export { LOCK_HOLDER_MAIN, startLockHolder } from './lock-holder.ts';
@@ -60,6 +61,8 @@ export {
 export type { RecordedRun } from './run-event-fixtures.ts';
 export { drivenReapTiming, fakeReapTiming } from './fake-reap-timing.ts';
 export { createFakeTimers } from './fake-timers.ts';
+export { DEFAULT_DRIVE_MAX_STEPS, driveFakeTime } from './drive-fake-time.ts';
+export type { DriveFakeTimeOptions } from './drive-fake-time.ts';
 export type { FakeTimers, PendingTimer } from './fake-timers.ts';
 export { afterMicrotasks, waitFor } from './wait-for.ts';
 export { createRealWorkScope, quiesce, settleRealWork, waitForRealWork } from './real-work.ts';
@@ -132,6 +135,7 @@ export type { FakeEntryIo, FakeEntryIoOptions, JsonLine } from './fake-entry-io.
 export { DAEMON_BIN_EXIT_DEADLINE_MS, DAEMON_BIN_READY_DEADLINE_MS, readJsonLinesFile, startDaemonBin } from './daemon-bin.ts';
 export type { DaemonBin } from './daemon-bin.ts';
 export { APPLE_PROGRAMS, FAKE_LEASE, TEST_SEARCH_PATH, fakePolicyFilesystem, hostFilesystemOf, isWritableFor, protectedSetWith } from './fake-policy-filesystem.ts';
+export { UNBOUNDED_OUTPUT_FIT } from './fake-output-fit.ts';
 export type { FakeGlobDeadline, FakeGlobExpansion, FakePolicyFilesystem, FakePolicyFilesystemLayout, FakeProgramResolution, FakeResolveCall, HostOf, RecordingPolicyFilesystem } from './fake-policy-filesystem.ts';
 export { OTLP_SPAN_KIND, decodeOtlpSpans, otlpAttributes, startOtlpCollector } from './otlp-collector.ts';
 export type { CollectedOtlpRequest, DecodedOtlpSpan, OtlpCollector, OtlpCollectorResponse } from './otlp-collector.ts';

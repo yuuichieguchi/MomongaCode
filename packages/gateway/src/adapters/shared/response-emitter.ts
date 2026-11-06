@@ -11,11 +11,14 @@ import type {
   ContentPart,
   ReasoningItem,
   ResponseResource,
+  SchemaNarrowing,
   StreamEvent,
   Usage,
+  WrapRecord,
 } from '@momonga/protocol';
 import { echoedFields } from '../../core/resource.ts';
 import { echoedToolChoice } from '../../core/tool-choice.ts';
+import { invertReply } from '../../dialect/unwrap.ts';
 import { MAX_CALL_ARGUMENT_CHARS, MAX_RESPONSE_TEXT_CHARS } from './limits.ts';
 import { UpstreamProtocolError } from './failures.ts';
 
@@ -43,12 +46,17 @@ export type ResponseEmitterOptions = {
   model: string;
   request: AdapterRequest;
   retryAfterMs?: number;
+  wraps?: ReadonlyMap<string, WrapRecord>;
+  narrowings?: readonly SchemaNarrowing[];
 };
 
 const newId = (prefix: string, clock: Clock): string => `${prefix}_${uuidv7(clock).replaceAll('-', '')}`;
 
 const contextHint = (contextInputTokens: number | undefined): { contextInputTokens?: number } =>
   contextInputTokens === undefined ? {} : { contextInputTokens };
+
+const narrowingsHint = (narrowings: readonly SchemaNarrowing[] | undefined): { schemaNarrowings?: SchemaNarrowing[] } =>
+  narrowings === undefined || narrowings.length === 0 ? {} : { schemaNarrowings: [...narrowings] };
 
 const cacheWriteHint = (cacheWriteInputTokens: number | undefined): { cacheWriteInputTokens?: number } =>
   cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens };
@@ -183,6 +191,7 @@ export class ResponseEmitter {
       throw new UpstreamProtocolError(`the arguments of tool call "${call.name}" exceed ${MAX_CALL_ARGUMENT_CHARS} characters`);
     }
     call.args += delta;
+    if (this.options.wraps?.has(call.name) === true) return;
     this.emit({ type: 'response.function_call_arguments.delta', item_id: call.id, output_index: call.outputIndex, delta });
   }
 
@@ -287,6 +296,7 @@ export class ResponseEmitter {
         ...this.resource({ status: 'completed', output: this.doneItems, usage: usage ?? null }),
         ...contextHint(contextInputTokens),
         ...cacheWriteHint(cacheWriteInputTokens),
+        ...narrowingsHint(this.options.narrowings),
       },
     });
     this.ended = true;
@@ -301,6 +311,7 @@ export class ResponseEmitter {
         incomplete_details: { reason },
         ...contextHint(contextInputTokens),
         ...cacheWriteHint(cacheWriteInputTokens),
+        ...narrowingsHint(this.options.narrowings),
       },
     });
     this.ended = true;
@@ -343,6 +354,11 @@ export class ResponseEmitter {
       return;
     }
     if (item.kind === 'call') {
+      const record = this.options.wraps?.get(item.name);
+      if (record !== undefined) {
+        item.args = invertReply(record, item.args);
+        if (item.args !== '') this.emit({ type: 'response.function_call_arguments.delta', item_id: item.id, output_index: item.outputIndex, delta: item.args });
+      }
       this.emit({ type: 'response.function_call_arguments.done', item_id: item.id, output_index: item.outputIndex, arguments: item.args });
       const done = this.callItem(item, status);
       this.doneItems.push(done);

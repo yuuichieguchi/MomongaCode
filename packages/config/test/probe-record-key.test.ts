@@ -10,7 +10,6 @@ const capabilities = {
   stopSequences: true,
   imageInput: false,
   parallelToolCalls: false,
-  schemaDialect: 'json-schema-2020-12',
   tokenCounting: 'estimated',
   usageReported: true,
   source: 'config',
@@ -30,6 +29,7 @@ const configurations: ReadonlyArray<readonly [string, ResolvedModelTarget, Retur
   ['anthropic', { ...remote, adapter: 'anthropic', model: 'm', baseUrl: 'https://upstream.invalid', toolCalling: 'native', apiVersion: '2026-10-21' }, undefined],
   ['ollama over tcp', { ...remote, adapter: 'ollama', model: 'qwen3', baseUrl: 'http://127.0.0.1:11434' }, { kind: 'endpoint', key: { endpoint: 'http://127.0.0.1:11434', model: 'qwen3' } }],
   ['ollama over a socket', { ...remote, adapter: 'ollama', model: 'qwen3', socketPath: '/s/ollama.sock' }, { kind: 'endpoint', key: { endpoint: 'unix:/s/ollama.sock', model: 'qwen3' } }],
+  ['ollama declaring a user dialect', { ...remote, capabilities: { ...capabilities, schemaDialect: 'ordered-subset' }, adapter: 'ollama', model: 'qwen3', socketPath: '/s/ollama.sock' }, { kind: 'endpoint', key: { endpoint: 'unix:/s/ollama.sock', model: 'qwen3' } }],
 ];
 
 describe('the probe record the gateway reads for a target', () => {

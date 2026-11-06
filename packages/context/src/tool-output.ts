@@ -1,3 +1,4 @@
+import { TRUNCATION_MARKER_SOURCE, truncationMarker } from '@momonga/foundation';
 import type { FunctionCallOutputInputItem } from '@momonga/protocol';
 
 const HIGH_SURROGATE_START = 0xd800;
@@ -10,13 +11,12 @@ export const outputTextOf = (output: FunctionCallOutputInputItem['output']): str
     ? output
     : output.map((part) => ('text' in part ? part.text : 'refusal' in part ? part.refusal : '')).join('\n');
 
-export const HANDLE_READER_TOOL = 'ReadOutput';
+export const readClauseOf = (reader: string | undefined): string => (reader === undefined ? '' : `; read it with ${reader}`);
 
-export const omittedMarker = (tokens: number, handle: string): string =>
-  `[tool output omitted: ${tokens} tokens; stored as ${handle}; read it with ${HANDLE_READER_TOOL}]`;
+export const omittedMarker = (tokens: number, handle: string, reader: string | undefined): string =>
+  `[tool output omitted: ${tokens} tokens; stored as ${handle}${readClauseOf(reader)}]`;
 
-export const truncatedMarker = (tokens: number, handle: string): string =>
-  `[… ${tokens} tokens omitted; full output stored as ${handle}; read it with ${HANDLE_READER_TOOL} …]`;
+export const truncatedMarker = truncationMarker;
 
 export const withOutput = (item: FunctionCallOutputInputItem, output: string): FunctionCallOutputInputItem => ({
   ...item,
@@ -37,7 +37,42 @@ const tailOf = (text: string, length: number): string => {
   return first >= LOW_SURROGATE_START && first <= LOW_SURROGATE_END ? tail.slice(1) : tail;
 };
 
-export const headAndTail = (text: string, keptChars: number, marker: string): string =>
-  [headOf(text, Math.ceil(keptChars / 2)), marker, tailOf(text, Math.floor(keptChars / 2))]
+const MARKER_LINE = new RegExp(`^${TRUNCATION_MARKER_SOURCE}$`, 'm');
+
+export type TokenCount = (text: string) => number | Promise<number>;
+
+type CutSource = { head: string; tail: string; available: number; tokens: number | undefined };
+
+const cutSourceOf = (text: string): CutSource => {
+  const match = MARKER_LINE.exec(text);
+  if (match === null) return { head: text, tail: text, available: text.length, tokens: undefined };
+  const end = match.index + match[0].length;
+  const head = match.index === 0 ? '' : text.slice(0, match.index - 1);
+  const tail = end === text.length ? '' : text.slice(end + 1);
+  return { head, tail, available: head.length + tail.length, tokens: Number(match[1]) };
+};
+
+export const cutChars = (text: string, keptChars: number, handle: string, tokens: number, reader: string | undefined): string => {
+  const source = cutSourceOf(text);
+  return [headOf(source.head, Math.ceil(keptChars / 2)), truncatedMarker(source.tokens ?? tokens, handle, reader), tailOf(source.tail, Math.floor(keptChars / 2))]
     .filter((part) => part !== '')
     .join('\n');
+};
+
+export type FitInput = { text: string; cap: number; handle: string; reader: string | undefined; count: TokenCount; onCut?: (keptChars: number) => void };
+
+export const fitToTokens = async (input: FitInput): Promise<string> => {
+  const { text, cap, handle, reader, count, onCut } = input;
+  const total = await count(text);
+  if (total <= cap) return text;
+  let keptChars = Math.floor((cutSourceOf(text).available * cap) / total);
+  for (;;) {
+    const cut = cutChars(text, keptChars, handle, total, reader);
+    const tokens = await count(cut);
+    if (tokens <= cap || keptChars === 0) {
+      onCut?.(keptChars);
+      return cut;
+    }
+    keptChars = Math.max(0, Math.min(keptChars - 1, Math.floor((keptChars * cap) / tokens)));
+  }
+};

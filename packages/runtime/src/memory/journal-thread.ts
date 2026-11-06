@@ -3,12 +3,15 @@ import { performance } from 'node:perf_hooks';
 import { MessagePort, isMainThread, parentPort, threadId, workerData } from 'node:worker_threads';
 import { openDatabase } from '@momonga/foundation/sqlite';
 import { REPOSITORY_FACTS_EVENT_TYPES, createRepositoryFactsFold } from '@momonga/memory';
-import { createJournalReader } from '@momonga/store';
-import type { Capabilities, RunEventPayload } from '@momonga/protocol';
-import type { JournalReader } from '@momonga/store';
+import { createBlobStore, createJournalReader } from '@momonga/store';
+import { FIDELITY_CLAIMS } from '@momonga/protocol';
+import type { Capabilities, ClaimedToken, RunEventPayload } from '@momonga/protocol';
+import type { BlobStore, JournalReader } from '@momonga/store';
 import { contributionAtTerminal } from './contribution.ts';
 import { EVIDENCE_EVENT_TYPES, createEvidenceFold } from './evidence-fold.ts';
-import { JOURNAL_PROGRESS_INTERVAL_MS } from './journal-thread-limits.ts';
+import { FIDELITY_EVENT_TYPES, createFidelityFold } from './fidelity-fold.ts';
+import type { FidelityFold } from './fidelity-fold.ts';
+import { FIDELITY_SCAN_PAGE_BYTES, JOURNAL_PROGRESS_INTERVAL_MS } from './journal-thread-limits.ts';
 import { createProgressGate } from './progress-gate.ts';
 import { REFLECTION_INPUT_EVENT_TYPES, createReflectionInputFold } from './reflection-input.ts';
 
@@ -64,10 +67,12 @@ export const serveJournalReader = (handlers: Readonly<Record<string, JournalHand
   });
 };
 
-type JournalThreadData = { readonly databasePath: string; readonly port: MessagePort };
+type JournalThreadData = { readonly databasePath: string; readonly blobsDir: string; readonly port: MessagePort };
 
 const isJournalThreadData = (value: unknown): value is JournalThreadData =>
-  typeof value === 'object' && value !== null && typeof (value as { databasePath?: unknown }).databasePath === 'string' && (value as { port?: unknown }).port instanceof MessagePort;
+  typeof value === 'object' && value !== null && typeof (value as { databasePath?: unknown }).databasePath === 'string' &&
+  typeof (value as { blobsDir?: unknown }).blobsDir === 'string' &&
+  (value as { port?: unknown }).port instanceof MessagePort;
 
 const identityOf = (databasePath: string): { readonly dev: number; readonly ino: number } => {
   const { dev, ino } = fs.statSync(databasePath);
@@ -141,6 +146,74 @@ export const reflectionInputHandler = (reader: VisitingReader): JournalHandler =
   return { lastSeq: run.lastSeq, input: fold.finish() };
 };
 
+const claimedTokensOf = (request: JournalRequest): ClaimedToken[] => {
+  const { tokens } = request;
+  if (!Array.isArray(tokens)) throw new TypeError('a fidelity request must carry tokens as a list');
+  return tokens.map((entry: unknown): ClaimedToken => {
+    const { token, claim } = (entry ?? {}) as { token?: unknown; claim?: unknown };
+    if (typeof token !== 'string' || !FIDELITY_CLAIMS.some((known) => known === claim)) {
+      throw new TypeError('a fidelity request must carry each token as a string with the claim executed or any');
+    }
+    return { token, claim: claim as ClaimedToken['claim'] };
+  });
+};
+
+const throughOf = (request: JournalRequest): number => {
+  const { throughEventSeq } = request;
+  if (typeof throughEventSeq !== 'number' || !Number.isInteger(throughEventSeq) || throughEventSeq < 0) {
+    throw new TypeError('a fidelity request must carry throughEventSeq as a non-negative integer');
+  }
+  return throughEventSeq;
+};
+
+type BlobPages = Pick<BlobStore, 'read'>;
+
+type FidelityPorts = {
+  reader: VisitingReader;
+  blobs: BlobPages;
+  current: { progress: (() => void) | undefined };
+  gateFor(post: () => void): { unit(): void };
+};
+
+const scanBlob = async (blobs: BlobPages, handle: string, fold: FidelityFold, unit: () => void): Promise<void> => {
+  let offset = 0;
+  let carry = '';
+  for (let totalBytes = Number.POSITIVE_INFINITY; offset < totalBytes && fold.unresolved > 0; ) {
+    const page = await blobs.read(handle, { offset, length: FIDELITY_SCAN_PAGE_BYTES });
+    totalBytes = page.totalBytes;
+    if (page.length === 0) throw new Error(`blob ${handle} returned no bytes at offset ${offset} of ${totalBytes}`);
+    offset = page.offset + page.length;
+    const text = `${carry}${page.text}`;
+    fold.scan(text, offset >= totalBytes);
+    carry = text.slice(Math.max(0, text.length - fold.span));
+    unit();
+  }
+};
+
+export const fidelityHandler = ({ reader, blobs, current, gateFor }: FidelityPorts): JournalHandler => async (request, progress) => {
+  const runId = textOf(request, 'runId', 'fidelity');
+  const fold = createFidelityFold(claimedTokensOf(request), textOf(request, 'cwd', 'fidelity'));
+  current.progress = progress;
+  let run: ReturnType<VisitingReader['visitRun']>;
+  try {
+    run = reader.visitRun(runId, FIDELITY_EVENT_TYPES, fold.add, throughOf(request));
+  } finally {
+    current.progress = undefined;
+  }
+  fold.finish();
+  const gate = gateFor(progress);
+  const unreadable: { handle: string; reason: string }[] = [];
+  for (const handle of fold.handles) {
+    if (fold.unresolved === 0) break;
+    try {
+      await scanBlob(blobs, handle, fold, gate.unit);
+    } catch (error) {
+      unreadable.push({ handle, reason: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return { lastSeq: run.lastSeq, attested: fold.attested(), unreadable };
+};
+
 const withProgress = (current: { progress: (() => void) | undefined }, handler: JournalHandler): JournalHandler => (request, progress) => {
   current.progress = progress;
   try {
@@ -148,6 +221,12 @@ const withProgress = (current: { progress: (() => void) | undefined }, handler: 
   } finally {
     current.progress = undefined;
   }
+};
+
+const UNUSED_CLOCK = {
+  now: (): number => {
+    throw new Error('the journal thread reads and has no clock');
+  },
 };
 
 const serve = (data: JournalThreadData): void => {
@@ -162,6 +241,7 @@ const serve = (data: JournalThreadData): void => {
   const current: { progress: (() => void) | undefined } = { progress: undefined };
   const gate = createProgressGate({ now: () => performance.now(), intervalMs: JOURNAL_PROGRESS_INTERVAL_MS, post: () => current.progress?.() });
   const reader = createJournalReader(db, { unit: gate.unit });
+  const blobs = createBlobStore(db, UNUSED_CLOCK, data.blobsDir);
   serveJournalReader(
     {
       ping: () => ({ threadId }),
@@ -169,6 +249,7 @@ const serve = (data: JournalThreadData): void => {
       verdict: withProgress(current, verdictHandler(reader)),
       evidence: withProgress(current, evidenceHandler(reader)),
       reflection_input: withProgress(current, reflectionInputHandler(reader)),
+      fidelity: fidelityHandler({ reader, blobs, current, gateFor: (post) => createProgressGate({ now: () => performance.now(), intervalMs: JOURNAL_PROGRESS_INTERVAL_MS, post }) }),
     },
     { incoming: parentPort, outgoing: data.port },
   );

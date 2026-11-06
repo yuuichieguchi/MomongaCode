@@ -4,7 +4,8 @@ import { ERROR_WINDOW, assistantTextOf } from '@momonga/protocol';
 import type { RunEventPayload, SessionEventPayload } from '@momonga/protocol';
 import { corrupt, expectRecord, isRecord, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
-import type { MeterKey, MeterRecord, StartedCall } from './types.ts';
+import { locationPathsOf } from './search-documents.ts';
+import type { MeterKey, MeterRecord, SessionTouched, StartedCall } from './types.ts';
 
 export type EventColumns = {
   callId: string | null;
@@ -57,7 +58,7 @@ export const lastTextOf = (output: readonly unknown[]): string | undefined => {
   return undefined;
 };
 
-export type RecordedEvent = { runId: string; sessionId: string; seq: number; step: number; payload: RunEventPayload | SessionEventPayload };
+export type RecordedEvent = { eventId: number; runId: string; sessionId: string; seq: number; step: number; payload: RunEventPayload | SessionEventPayload };
 
 export type AppendRecords = {
   record(event: RecordedEvent): void;
@@ -67,6 +68,8 @@ export type AppendRecords = {
   startedCallsOf(runId: string): StartedCall[];
   hasNoticeCode(runId: string, code: string): boolean;
   meterRecordOf(sessionId: string, key: MeterKey): MeterRecord | undefined;
+  touchedAfter(sessionId: string, afterEventId: number, limit: number, afterPath?: string): SessionTouched[];
+  touchedNewest(sessionId: string, limit: number): SessionTouched[];
 };
 
 const missesOf = (identity: string, parsed: unknown): { miss: number; uncounted: number }[] => {
@@ -98,6 +101,14 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
     ),
     finishCall: db.prepare('DELETE FROM started_calls WHERE run_id = :runId AND call_id = :callId'),
     startedCalls: db.prepare('SELECT call_id, name, idem_key FROM started_calls WHERE run_id = :runId ORDER BY call_seq'),
+    insertTouched: db.prepare('INSERT OR IGNORE INTO session_touched (session_id, path, first_event_id) VALUES (:sessionId, :path, :eventId)'),
+    touchedAfter: db.prepare(
+      'SELECT path, first_event_id FROM session_touched WHERE session_id = :sessionId AND first_event_id > :after ORDER BY first_event_id, path LIMIT :limit',
+    ),
+    touchedAfterPath: db.prepare(
+      'SELECT path, first_event_id FROM session_touched WHERE session_id = :sessionId AND (first_event_id, path) > (:after, :afterPath) ORDER BY first_event_id, path LIMIT :limit',
+    ),
+    touchedNewest: db.prepare('SELECT path, first_event_id FROM session_touched WHERE session_id = :sessionId ORDER BY first_event_id DESC, path DESC LIMIT :limit'),
     noticeCode: db.prepare("SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'notice' AND notice_code = :code LIMIT 1"),
     meterRecord: db.prepare(
       `SELECT run_id, seq, event_json, misses_json FROM meter_records
@@ -143,9 +154,18 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
     (existing === undefined ? sql.insertMeter : sql.updateMeter).run(row);
   };
 
+  const touchedOf = (rows: readonly Row[], sessionId: string): SessionTouched[] =>
+    rows.map((row) => {
+      const reader = readerFor('session_touched', sessionId, row);
+      return { path: reader.string('path'), firstEventId: reader.number('first_event_id') };
+    });
+
   const record = (event: RecordedEvent): void => {
     const { runId, payload } = event;
     switch (payload.type) {
+      case 'tool.call':
+        for (const path of locationPathsOf(payload)) sql.insertTouched.run({ sessionId: event.sessionId, path, eventId: event.eventId });
+        return;
       case 'model.requested':
         sql.setInFlight.run({ runId, step: event.step, attempt: payload.attempt });
         return;
@@ -204,6 +224,9 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
         return { callId: reader.string('call_id'), name: reader.string('name'), idemKey: reader.string('idem_key') };
       }),
     hasNoticeCode: (runId, code) => sql.noticeCode.get({ runId, code }) !== undefined,
+    touchedAfter: (sessionId, afterEventId, limit, afterPath) =>
+      touchedOf(afterPath === undefined ? sql.touchedAfter.all({ sessionId, after: afterEventId, limit }) : sql.touchedAfterPath.all({ sessionId, after: afterEventId, afterPath, limit }), sessionId),
+    touchedNewest: (sessionId, limit) => touchedOf(sql.touchedNewest.all({ sessionId, limit }), sessionId),
     meterRecordOf: (sessionId, key) => {
       const row: Row | undefined = sql.meterRecord.get({ sessionId, counter: key.counter, contextWindow: key.contextWindow, tokenErrorRatio: key.tokenErrorRatio ?? null, tokenCounting: key.tokenCounting });
       if (row === undefined) return undefined;

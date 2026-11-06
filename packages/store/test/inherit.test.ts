@@ -79,7 +79,7 @@ describe('projectInheritance: a completed conversation', () => {
         { seq: 2, item: assistantItem('m1', 'hello') },
       ],
       nextItemSeq: 3,
-      workingFacts: { written: [], touched: [], commands: [], messages: [{ text: 'Say hello', seq: 0 }], itemEvents: [] },
+      workingFacts: { written: [], commands: [], messages: [{ text: 'Say hello', seq: 0 }], itemEvents: [] },
       evicted: [],
       closures: [],
       markers: [],
@@ -90,7 +90,7 @@ describe('projectInheritance: a completed conversation', () => {
         nextItemSeq: 3,
         evicted: [],
         mode: 'default',
-        workingFacts: { written: [], touched: [], commands: [], messages: [{ text: 'Say hello', seq: 0 }], itemEvents: [] },
+        workingFacts: { written: [], commands: [], messages: [{ text: 'Say hello', seq: 0 }], itemEvents: [] },
       }),
     });
     expectWellFormed(payload);
@@ -114,7 +114,6 @@ describe('projectInheritance: a completed conversation', () => {
       ...answered('default'),
       workingFacts: {
         written: [{ path: '/p/a.ts', sha256: 'a'.repeat(64), seq: 12 }],
-        touched: [{ kind: 'file' as const, path: '/p/a.ts' }],
         commands: [{ command: 'make lint', failed: true, exitCode: 2, seq: 14 }],
         messages: [{ text: 'use two spaces', seq: 9 }],
         plan: { seq: 11, entries: [{ content: 'open step', priority: 'high' as const, status: 'pending' as const }] },
@@ -125,13 +124,31 @@ describe('projectInheritance: a completed conversation', () => {
     const payload = project(state, { status: 'COMPLETED' });
     expect(payload.workingFacts).toEqual({
       written: [{ path: '/p/a.ts', sha256: 'a'.repeat(64), seq: 0 }],
-      touched: [{ kind: 'file', path: '/p/a.ts' }],
       commands: [{ command: 'make lint', failed: true, exitCode: 2, seq: 0 }],
       messages: [{ text: 'use two spaces', seq: 0 }],
       plan: { seq: 0, entries: [{ content: 'open step', priority: 'high', status: 'pending' }] },
       itemEvents: [],
     });
     expectWellFormed(payload);
+  });
+
+  it('context.inherited carries no touched list', () => {
+    const readItem = (index: number) => ({
+      type: 'function_call' as const,
+      id: `fc_r${index}`,
+      call_id: `r${index}`,
+      name: 'Read',
+      arguments: JSON.stringify({ file_path: `/work/a/src/file-${String(index).padStart(5, '0')}.ts` }),
+      status: 'completed' as const,
+    });
+    const sizes = [1, 10, 100, 1000].map((count) => {
+      const state = foldOf([task('Read them'), ...claimed('default'), requested(1), responded(1, Array.from({ length: count }, (_unused, index) => readItem(index))), ended('COMPLETED')]);
+      expect(state.workingFacts).not.toHaveProperty('touched');
+      const payload = project(state, { status: 'COMPLETED' });
+      expect(payload.workingFacts).not.toHaveProperty('touched');
+      return canonicalJson(payload.workingFacts).length;
+    });
+    expect(new Set(sizes).size).toBe(1);
   });
 
   it('carries the summary, the evicted ids and the output handles', () => {

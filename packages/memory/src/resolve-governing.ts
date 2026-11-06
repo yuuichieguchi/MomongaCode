@@ -16,16 +16,20 @@ export type GoverningResolution = { active: GoverningFactView[]; conflicts: Gove
 export const scopeKeyOf = (scope: GoverningFactView['scope']): string =>
   scope.level === 'user' ? 'user' : `project\0${scope.project}\0${[...new Set(scope.paths)].sort().join('\0')}`;
 
-const isLive = (fact: GoverningFactView, now: number): boolean =>
+export const isLiveFact = (fact: GoverningFactView, now: number): boolean =>
   fact.validFrom <= now && fact.retiredAt === null && (fact.validUntil === null || fact.validUntil > now);
 
-const touchesAny = (project: string, globs: readonly string[], touchedPaths: readonly string[]): boolean => {
+export type PathScopeMatcher = (touched: string) => boolean;
+
+export const pathScopeMatcherOf = (project: string, globs: readonly string[]): PathScopeMatcher => {
   const matches = picomatch([...globs], { dot: true });
-  return touchedPaths.some((touched) => {
+  return (touched) => {
     const relative = path.relative(project, touched);
     return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative) && matches(relative.split(path.sep).join('/'));
-  });
+  };
 };
+
+const touchesAny = (project: string, globs: readonly string[], touchedPaths: readonly string[]): boolean => touchedPaths.some(pathScopeMatcherOf(project, globs));
 
 const inScope = (fact: GoverningFactView, options: ResolveGoverningOptions): boolean => {
   const { scope } = fact;
@@ -48,7 +52,7 @@ export const resolveGoverning = (facts: readonly GoverningFactView[], options: R
   const conflicts: GoverningConflict[] = [];
   for (const members of groups.values()) {
     const replaced = new Set(members.filter((member) => member.validFrom <= options.now).flatMap((member) => member.supersedes));
-    const kept = members.filter((member) => isLive(member, options.now) && !replaced.has(member.id)).sort(byStart);
+    const kept = members.filter((member) => isLiveFact(member, options.now) && !replaced.has(member.id)).sort(byStart);
     active.push(...kept);
     const [first] = kept;
     if (kept.length >= 2 && first !== undefined) conflicts.push({ target: first.target, ids: kept.map((member) => member.id).sort() });

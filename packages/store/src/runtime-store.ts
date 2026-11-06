@@ -6,7 +6,7 @@ import { TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
 import type { CallTiming, ElicitationAnswerRecord, ElicitationRequestView, PermissionMode, RunEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
 import { createAppendRecords, columnsOf } from './append-records.ts';
 import { createApprovalStore } from './approvals.ts';
-import { createBlobStore, prepareBlobDirectory } from './blobs.ts';
+import { blobDirectoryOf, createBlobStore, prepareBlobDirectory } from './blobs.ts';
 import { addUsage, foldRunState, initialRunState, spendOf } from './fold.ts';
 import { decodeEvent, decodeRun, decodeRunEvents, decodeRunState, decodeSession, encodeRunState } from './codec.ts';
 import { JournalThreadError, StalePreparation } from './journal-port.ts';
@@ -391,7 +391,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   try {
     identity = fs.statSync(options.path);
     migrate(db, MIGRATIONS);
-    blobDirectory = path.join(path.dirname(options.path), 'blobs');
+    blobDirectory = blobDirectoryOf(options.path);
     prepareBlobDirectory(blobDirectory);
     statements = prepareStatements(db);
   } catch (error) {
@@ -457,7 +457,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   }): void => {
     const payload = canonicalJson(event.payload);
     onEncode?.('event', Buffer.byteLength(payload));
-    sql.insertEvent.run({
+    const inserted = sql.insertEvent.run({
       runId: event.runId,
       sessionId: event.sessionId,
       seq: event.seq,
@@ -469,7 +469,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       pinnedDigest: event.payload.type === 'model.requested' ? (event.payload.pinnedDigest ?? null) : null,
       ...columnsOf(event.payload),
     });
-    if (event.runId !== null && event.seq !== null && event.step !== null) records.record({ runId: event.runId, sessionId: event.sessionId, seq: event.seq, step: event.step, payload: event.payload });
+    if (event.runId !== null && event.seq !== null && event.step !== null) records.record({ eventId: Number(inserted.lastInsertRowid), runId: event.runId, sessionId: event.sessionId, seq: event.seq, step: event.step, payload: event.payload });
     recordTouch(event.sessionId, event.runId);
   };
 
@@ -1636,6 +1636,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     blobs: createBlobStore(db, clock, blobDirectory),
     trust,
     memories,
+    sessionTouched: { after: records.touchedAfter, newest: records.touchedNewest },
     reflection,
     contextCharges,
     guidelines: createGuidelineStore(db, clock),
@@ -1646,6 +1647,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       verdict: async (request, signal) => journalPreparer(preparer, 'verdict').verdict(request, signal),
       evidence: async (request, signal) => journalPreparer(preparer, 'evidence').evidence(request, signal),
       reflectionInput: async (request, signal) => journalPreparer(preparer, 'reflection input').reflectionInput(request, signal),
+      fidelity: async (request, signal) => journalPreparer(preparer, 'fidelity check').fidelity(request, signal),
     },
 
     dataVersion: () => {

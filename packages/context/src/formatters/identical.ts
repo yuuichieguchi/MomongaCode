@@ -1,7 +1,7 @@
-import { HANDLE_READER_TOOL } from '../tool-output.ts';
+import { readClauseOf } from '../tool-output.ts';
 
-export const identicalMarker = (referentCallId: string, handle: string): string =>
-  `[identical to the output of call ${referentCallId}; stored as ${handle}; read it with ${HANDLE_READER_TOOL}]`;
+export const identicalMarker = (referentCallId: string, handle: string, reader: string | undefined): string =>
+  `[identical to the output of call ${referentCallId}; stored as ${handle}${readClauseOf(reader)}]`;
 
 export type IdenticalCandidate = { callId: string; text: string; full: boolean };
 

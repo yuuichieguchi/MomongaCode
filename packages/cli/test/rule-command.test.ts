@@ -32,7 +32,7 @@ const MEMORY: MemoryView = {
   text: 'note',
   source: { kind: 'tool', sessionId: 's', runId: 'r', step: 1, callId: 'c', seq: 1 },
   createdAt: 0,
-  lastUsedAt: 0,
+  keptAt: 0,
   kind: 'fact',
   state: 'active',
   duplicateOf: null,

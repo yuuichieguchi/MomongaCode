@@ -28,9 +28,11 @@ export const createEvidenceFold = ({ paths, verificationCommands, onlyCommand }:
     if (event.type !== 'tool.completed') return;
     const files = event.files ?? [];
     for (const file of files) {
-      if (bound.has(file.path)) recorded.set(file.path, { sha256: file.sha256, seq: event.seq });
+      if (!bound.has(file.path)) continue;
+      if (file.sha256 === undefined) recorded.delete(file.path);
+      else recorded.set(file.path, { sha256: file.sha256, seq: event.seq });
     }
-    if (files.some((file) => file.access === 'write' && bound.has(file.path))) {
+    if (files.some((file) => file.access !== 'read' && bound.has(file.path))) {
       latest = null;
       return;
     }

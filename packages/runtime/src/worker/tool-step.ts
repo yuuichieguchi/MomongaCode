@@ -1,4 +1,4 @@
-import { PinnedOverflowError, formatToolOutput, formattedHeader } from '@momonga/context';
+import { PinnedOverflowError, formatToolOutput, formattedHeader, readersOffered } from '@momonga/context';
 import { canonicalJson, parseJsonOrText } from '@momonga/foundation';
 import { termsOf } from '@momonga/protocol';
 import type { PermissionOption, RunEventPayload, RunState, ToolAwait } from '@momonga/protocol';
@@ -69,9 +69,19 @@ export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
           ...(result.formatted === undefined ? {} : { formatted: result.formatted }),
           ...(result.denial === undefined ? {} : { denial: result.denial }),
           ...(result.files === undefined ? {} : { files: result.files }),
+          ...(result.command === undefined ? {} : { command: result.command }),
+          ...(result.windowShared === undefined ? {} : { windowShared: result.windowShared }),
+          ...(result.memories === undefined ? {} : { memories: result.memories }),
           ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
         }
-      : { type: 'tool.reconciled', callId, outcome: outcome.reconciled, output: result.output };
+      : {
+          type: 'tool.reconciled',
+          callId,
+          outcome: outcome.reconciled,
+          output: result.output,
+          ...(result.files === undefined ? {} : { files: result.files }),
+          ...(result.command === undefined ? {} : { command: result.command }),
+        };
   return [
     settled,
     ...(result.plan === undefined ? [] : [{ type: 'plan.updated' as const, entries: result.plan }]),
@@ -87,9 +97,10 @@ const batchFormatterOf = (ctx: ClaimContext): BatchOutputFormatter | undefined =
   const enabled = ctx.token.outputFormatters;
   if (enabled.length === 0) return undefined;
   const terms = termsOf(taskOf(ctx).text);
-  return ({ output, tool }) => {
-    const formatted = formatToolOutput({ output, tool, enabled, terms });
-    return formatted === undefined ? undefined : { ...formatted, header: (handle) => formattedHeader(formatted.formatter, handle) };
+  return ({ output, status, tool }) => {
+    const reader = readersOffered(ctx.readers(), ctx.functionTools())['output_handle'];
+    const formatted = formatToolOutput({ output, status, tool, enabled, terms, reader });
+    return formatted === undefined ? undefined : { ...formatted, header: (handle) => formattedHeader(formatted.formatter, handle, reader) };
   };
 };
 
@@ -235,6 +246,8 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
       session: options.tools.sessionState(session),
       sandbox: options.tools.sandbox,
       sandboxPolicy: policy.sandboxPolicy,
+      workTreeObserver: options.tools.workTreeObserver(session, options.settings.trusted(session)),
+      windowShared: ctx.windowShared,
       deadlineAt: run.deadlineAt,
       signal: ctx.control.signal,
       ...(toolHooks === undefined ? {} : { hooks: toolHooks }),
@@ -246,8 +259,8 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
       },
       leaseLost: () => ctx.control.leaseLost() || ctx.control.shuttingDown(),
       onLeaseLost: ctx.control.noteLeaseLost,
-      inlineLimitForReconcile: ctx.inlineLimitForReconcile,
-      inlineLimitForExecution: ctx.inlineLimitForExecution,
+      outputFit: ctx.outputFit,
+      reconcileFit: ctx.reconcileFit,
       traceparentFor: (callId) => {
         const existing = spans.get(callId);
         if (existing !== undefined) return { traceparent: existing.traceparent };

@@ -1,17 +1,29 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalJson, resolveCanonicalPath, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, resolveCanonicalPath, sha256Hex, truncationMarker } from '@momonga/foundation';
 import { absoluteFrom } from '@momonga/policy';
 import { FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf } from '@momonga/testkit';
 import type { PermissionSubject } from '@momonga/policy';
 import { createToolExecutor, createToolRegistry, defineTool, validateToolInput } from '@momonga/tools';
-import type { AnyTool, ExecutionBatchInput, SideEffectBinding, ToolBody, ToolCall, ToolContext, ToolDefinition, ToolExecutorOptions, ToolSet } from '@momonga/tools';
+import type { AnyTool, ExecutionBatchInput, OutputFit, SideEffectBinding, ToolBody, ToolCall, ToolContext, ToolDefinition, ToolExecutorOptions, ToolSet, WorkTreeObserver } from '@momonga/tools';
 import type { PermissionRule } from '@momonga/policy';
 import type { PermissionMode, SideEffect } from '@momonga/protocol';
 import { fakeSandbox, makeBlobs, makeClock, makeIdempotency, makeLayout, minimalPolicyFor } from './helpers.ts';
 import type { Layout } from './helpers.ts';
 
 export type Input = Record<string, unknown>;
+
+export const DEFAULT_OUTPUT_LIMIT_CHARS = 30_000;
+
+export const charFit = (limit: number): OutputFit => ({
+  fits: async (text) => text.length <= limit,
+  fit: async (text, handle) => {
+    if (text.length <= limit) return text;
+    const marker = truncationMarker(text.length, handle, 'ReadOutput');
+    const kept = Math.max(0, limit - marker.length - 2);
+    return [text.slice(0, Math.ceil(kept / 2)), marker, text.slice(text.length - Math.floor(kept / 2))].filter((part) => part !== '').join('\n');
+  },
+});
 
 export const OPEN_SCHEMA = { type: 'object', properties: { value: { type: 'string' } }, additionalProperties: false } as const;
 
@@ -42,14 +54,15 @@ export const toolSetOf = async (...tools: AnyTool[]): Promise<ToolSet> => {
 export type Harness = ReturnType<typeof makeHarness>;
 
 export type HarnessOptions = {
-  maxInlineOutputChars?: number;
+  outputLimitChars?: number;
   maxParallel?: number;
   idempotencyTtlMs?: number;
   attempts?: number;
-  executor?: Partial<ToolExecutorOptions>;
+  executor?: Partial<ToolExecutorOptions> & { workTreeObserver?: WorkTreeObserver };
 };
 
 export const makeHarness = (options: HarnessOptions = {}) => {
+  const { workTreeObserver, ...executorOptions } = options.executor ?? {};
   const layout: Layout = makeLayout();
   const clock = makeClock();
   const idempotency = makeIdempotency(clock);
@@ -71,12 +84,11 @@ export const makeHarness = (options: HarnessOptions = {}) => {
       warnings.push(message);
     },
     ...(options.idempotencyTtlMs === undefined ? {} : { idempotencyTtlMs: options.idempotencyTtlMs }),
-    ...(options.maxInlineOutputChars === undefined ? {} : { maxInlineOutputChars: options.maxInlineOutputChars }),
     ...(options.maxParallel === undefined ? {} : { maxParallel: options.maxParallel }),
     readOnlyRetry: { attempts: options.attempts ?? 3, baseMs: 0, maxMs: 0 },
     fs: hostFilesystemOf(fakePolicyFilesystem()),
     ...FAKE_LEASE,
-    ...options.executor,
+    ...executorOptions,
   });
   const session = { cwd: layout.project, workingDirectory: layout.project, readLedger: new Map<string, { sha256: string; mtimeMs: number }>() };
   const started: string[] = [];
@@ -101,10 +113,13 @@ export const makeHarness = (options: HarnessOptions = {}) => {
     session,
     sandbox: fakeSandbox,
     deadlineAt: clock.now() + 600_000,
+    outputFit: charFit(options.outputLimitChars ?? DEFAULT_OUTPUT_LIMIT_CHARS),
+    reconcileFit: charFit(options.outputLimitChars ?? DEFAULT_OUTPUT_LIMIT_CHARS),
     signal: new AbortController().signal,
     onStarted: (callId: string) => {
       started.push(callId);
     },
+    ...(workTreeObserver === undefined ? {} : { workTreeObserver }),
     ...extra,
     };
     if (extra.sandboxPolicy !== undefined) return batch as unknown as ExecutionBatchInput;

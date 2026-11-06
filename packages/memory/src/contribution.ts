@@ -182,6 +182,13 @@ const withoutInjectedBlocks = (layer: string, injected: readonly InjectedItem[],
     return rest;
   }, layer);
 
+const withoutSearchedNotes = (output: string, ids: readonly string[], injected: readonly InjectedItem[], unit: (() => void) | undefined): string =>
+  ids.reduce((rest, id) => {
+    unit?.();
+    const note = injected.find((item) => item.kind === 'memory' && item.id === id);
+    return note === undefined ? rest : rest.replace(new RegExp(`(^|\\n)\\[${regexSource(id)}\\] \\([^\\n]*\\) ${regexSource(note.text)}(?=\\n|$)`, 'g'), '$1');
+  }, output);
+
 const ownerOf = (item: InjectedItem): string => (item.kind === 'summary' ? item.id : item.kind === 'working_state' ? item.kind : '');
 
 type OnScreen = { owner: string; text: string };
@@ -242,6 +249,8 @@ export const measureContribution = ({
         retain(event.text);
         break;
       case 'tool.completed':
+        retain(event.memories === undefined ? event.output : withoutSearchedNotes(event.output, event.memories, injected, unit));
+        break;
       case 'tool.reconciled':
         retain(event.output);
         break;

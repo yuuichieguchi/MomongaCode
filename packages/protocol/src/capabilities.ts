@@ -1,3 +1,5 @@
+import type { DialectId } from './dialect.ts';
+
 export type ToolCallingMode = 'native' | 'constrained' | 'none';
 
 export type NeedsProbe = { state: 'needs_probe'; message: string; evidence: string; remedy: string };
@@ -7,6 +9,9 @@ export type ToolCallingSetting = 'native' | 'constrained' | 'auto';
 
 export const TARGET_BILLINGS = ['metered', 'local'] as const;
 export type TargetBilling = (typeof TARGET_BILLINGS)[number];
+
+export const TARGET_ANSWERS = ['model', 'script'] as const;
+export type TargetAnswers = (typeof TARGET_ANSWERS)[number];
 
 export type ImageTokenModel = { pixelsPerToken: number; maxTokens: number; minTokens: number };
 
@@ -144,7 +149,7 @@ export type CapabilitiesCore = {
   outputBoundField?: OutputBoundField;
   parallelToolCalls?: boolean;
   allowedTools?: readonly AllowedToolsForm[];
-  schemaDialect: 'json-schema-2020-12' | 'guided-generation';
+  schemaDialect: DialectId;
   tokenCounting: 'exact' | 'calibrated' | 'estimated';
   tokenErrorRatio?: number;
   usageReported: boolean;
@@ -154,6 +159,8 @@ export type CapabilitiesCore = {
 };
 
 export type Capabilities = CapabilitiesCore & ImageCapability;
+
+export type AliasCapabilities = Omit<Capabilities, 'schemaDialect'> & { schemaDialect?: DialectId };
 
 export type StructuredOutputVerdict = { ok: true } | { ok: false; reason: string };
 

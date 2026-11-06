@@ -23,10 +23,11 @@ import type { DiscoveredInstructions, LoadedInstructionFile } from './instructio
 import { DEFAULT_KEEP_RECENT_STEPS, DEFAULT_KEEP_RECENT_TURNS, positiveInteger, protectionRungsOf, retainedHistoryOf, shapeOf } from './levels.ts';
 import { textOfItem } from './item-text.ts';
 import { renderMemories } from './memory.ts';
+import { readerNamesOf, readersOffered } from './references.ts';
 import { workingStateMessage } from './working-state.ts';
 import { heldSkillOf, pointToHeldSkill } from './skill-output.ts';
 import { identicalMarker, identicalReferents } from './formatters/identical.ts';
-import { HANDLE_READER_TOOL, headAndTail, omittedMarker, outputTextOf, truncatedMarker, withOutput } from './tool-output.ts';
+import { cutChars, fitToTokens, omittedMarker, outputTextOf, withOutput } from './tool-output.ts';
 import type {
   BuildContextInput,
   BuildContextPorts,
@@ -123,12 +124,10 @@ export const maxInputFor = ({ ceiling, inputBudget, errorBoundAt }: MaxInputBoun
 
 const candidateToolsOf = (input: BuildContextInput): FunctionTool[] => (input.tools === 'none' ? [] : [...input.sources.tools]);
 
-const holdsHandles = (input: BuildContextInput): boolean =>
-  input.evicted.size > 0 ||
-  retainedHistoryOf(input.sources.history, input.sources.summary).some((entry) => entry.handle !== undefined || entry.item.type === 'function_call_output');
-
-const requiredToolsOf = (input: BuildContextInput, candidates: readonly FunctionTool[]): FunctionTool[] =>
-  holdsHandles(input) ? candidates.filter((tool) => tool.name === HANDLE_READER_TOOL) : [];
+const requiredToolsOf = (input: BuildContextInput, candidates: readonly FunctionTool[]): FunctionTool[] => {
+  const names = new Set(readerNamesOf(input.sources.readers, input));
+  return candidates.filter((tool) => names.has(tool.name));
+};
 
 const hostsFirst = (tools: readonly FunctionTool[], hostOf: Readonly<Record<string, string>>): FunctionTool[] => {
   const depthOf = (name: string, seen: ReadonlySet<string>): number => {
@@ -318,14 +317,19 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
       : input.pinnedMemoryIds.flatMap((id) => rankedMemories.filter((memory) => memory.id === id));
   let memoryMessage = recordedMemory;
   let memoryCount = 0;
+  const moreMemories = sources.moreMemories === true;
   const memoriesDropped = (kept: number, total: number): void => {
     if (kept < total) {
       notices.push({
         code: 'memories_dropped',
-        message: `${total - kept} of ${total} saved memories were left out of the context because of its budget`,
+        message: `${moreMemories ? 'at least ' : ''}${total - kept} of ${total} saved memories were left out of the context because of its budget`,
       });
+    } else if (moreMemories) {
+      notices.push({ code: 'memories_dropped', message: 'more saved memories exist than were read for the context, so some were left out because of its budget' });
     }
   };
+  const omittedOf = (kept: number, total: number): number => Math.max(moreMemories ? 1 : 0, total - kept);
+  const renderingOptions = { atLeast: moreMemories, matchCap: sources.memoryMatchCap };
   if (input.pinnedMemoryIds !== undefined && rankedMemories.length > 0) {
     memoryCount = memoryCandidates.length;
     memoriesDropped(memoryCount, rankedMemories.length);
@@ -334,7 +338,7 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
       const message: MessageInputItem = {
         type: 'message',
         role: 'user',
-        content: renderMemories(memoryCandidates.slice(0, count), memoryCandidates.length - count),
+        content: renderMemories(memoryCandidates.slice(0, count), omittedOf(count, memoryCandidates.length), renderingOptions),
       };
       const evaluation = await evaluate(layersFor(arrivals, message));
       const baseTokens = ceilingTokensOf(input, await evaluation.ports.meter.count({ input: [...layersFor(arrivals, undefined), task], tools }));
@@ -464,7 +468,12 @@ const pinnedMemoryMessageOf = (input: BuildContextInput): MessageInputItem | und
   const ranked = input.sources.memories ?? [];
   if (input.pinnedMemoryIds === undefined || ranked.length === 0) return undefined;
   const chosen = input.pinnedMemoryIds.flatMap((id) => ranked.filter((memory) => memory.id === id));
-  return { type: 'message', role: 'user', content: renderMemories(chosen, ranked.length - chosen.length) };
+  const more = input.sources.moreMemories === true;
+  return {
+    type: 'message',
+    role: 'user',
+    content: renderMemories(chosen, Math.max(more ? 1 : 0, ranked.length - chosen.length), { atLeast: more, matchCap: input.sources.memoryMatchCap }),
+  };
 };
 
 const historyItemsOf = (sources: BuildContextInput['sources']) =>
@@ -482,6 +491,7 @@ type FrozenSlot = { item: InputItem; output?: { callId: string; text: string; fu
 
 const frozenTailOf = async (input: BuildContextInput, ports: BuildContextPorts, task: InputItem): Promise<InputItem[]> => {
   const { sources, evicted, forms, renderedFull } = input;
+  const reader = sources.readers['output_handle'];
   const entries = historyItemsOf(sources);
   const callNames = new Map<string, string>();
   for (const entry of entries) if (entry.item.type === 'function_call') callNames.set(entry.item.call_id, entry.item.name);
@@ -503,10 +513,10 @@ const frozenTailOf = async (input: BuildContextInput, ports: BuildContextPorts, 
     const kept = forms?.get(callId);
     if (evicted.has(callId)) {
       const tokens = await ports.meter.countItem(original, countContextFor(callId));
-      slots.push({ item: withOutput(original, omittedMarker(tokens, handle)), output: { callId, text, full: false, original } });
+      slots.push({ item: withOutput(original, omittedMarker(tokens, handle, reader)), output: { callId, text, full: false, original } });
     } else if (kept !== undefined) {
       const tokens = await ports.meter.countItem(original, countContextFor(callId));
-      slots.push({ item: withOutput(original, headAndTail(text, kept, truncatedMarker(tokens, handle))), output: { callId, text, full: false, original } });
+      slots.push({ item: withOutput(original, cutChars(text, kept, handle, tokens, reader)), output: { callId, text, full: false, original } });
     } else if (renderedFull?.has(callId) === true) {
       slots.push({ item: original, output: { callId, text, full: true, original } });
     } else {
@@ -519,7 +529,7 @@ const frozenTailOf = async (input: BuildContextInput, ports: BuildContextPorts, 
     const referents = identicalReferents(outputs.map(({ callId, text, full }) => ({ callId, text, full })));
     for (const { index, callId, text, original } of outputs) {
       const referent = referents.get(callId);
-      if (referent !== undefined) (slots[index] as FrozenSlot).item = withOutput(original, identicalMarker(referent, ports.blobs.handleFor(text)));
+      if (referent !== undefined) (slots[index] as FrozenSlot).item = withOutput(original, identicalMarker(referent, ports.blobs.handleFor(text), reader));
     }
   }
   const items = slots.map((slot) => slot.item);
@@ -568,6 +578,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   const requestedLevel = input.level ?? 0;
   if (!Number.isInteger(requestedLevel) || requestedLevel < 0) throw new RangeError(`level must be a non-negative integer, received ${requestedLevel}`);
 
+  const reader = sources.readers['output_handle'];
   const head = await measureHead(input, ports);
   ports = frozenPorts(ports, head.frozen);
   const { tools, budgetOf, fits, countInput } = metering(input, ports, head.tools);
@@ -581,7 +592,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
 
   const summaryItems: InputItem[] = sources.summary === undefined ? [] : [frozenItem(sources.summary.item)];
   const workingStateItems: InputItem[] =
-    sources.summary === undefined || sources.workingState === undefined ? [] : [workingStateMessage(sources.workingState)];
+    sources.summary === undefined || sources.workingState === undefined ? [] : [workingStateMessage(sources.workingState(readersOffered(sources.readers, tools)))];
   const prefixDigest = chainTail(digestChain({ scope: 'prefix', tools }, [...layers, ...summaryItems]));
 
   const roomLeft = ceiling - floorTokens;
@@ -609,21 +620,17 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   };
 
   const renderKept = async (state: OutputState, handle: string, kept: number): Promise<InputItem> => {
-    const rendered = withOutput(state.original, headAndTail(state.text, kept, truncatedMarker(state.tokens, handle)));
+    const rendered = withOutput(state.original, cutChars(state.text, kept, handle, state.tokens, reader));
     state.renderedTokens = await meter.countItem(rendered, countContextFor(state.callId));
     state.keptChars = kept;
     return rendered;
   };
 
   const truncation = async (state: OutputState, handle: string): Promise<{ rendered: InputItem; tokens: number; kept: number }> => {
-    const marker = truncatedMarker(state.tokens, handle);
-    let kept = Math.floor((state.text.length * itemCap) / state.tokens);
-    for (;;) {
-      const rendered = withOutput(state.original, headAndTail(state.text, kept, marker));
-      const tokens = await meter.countItem(rendered, countContextFor(state.callId));
-      if (tokens <= itemCap || kept === 0) return { rendered, tokens, kept };
-      kept = Math.max(0, Math.min(kept - 1, Math.floor((kept * itemCap) / tokens)));
-    }
+    const count = (text: string): Promise<number> => meter.countItem(withOutput(state.original, text), countContextFor(state.callId));
+    let kept = state.text.length;
+    const text = await fitToTokens({ text: state.text, cap: itemCap, handle, reader, count, onCut: (keptChars) => void (kept = keptChars) });
+    return { rendered: withOutput(state.original, text), tokens: await count(text), kept };
   };
 
   const truncate = async (state: OutputState, handle: string): Promise<InputItem> => {
@@ -644,7 +651,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
         continue;
       }
       if (state.reference?.to === referent) continue;
-      const item = withOutput(state.original, identicalMarker(referent, blobs.handleFor(state.text)));
+      const item = withOutput(state.original, identicalMarker(referent, blobs.handleFor(state.text), reader));
       state.reference = { to: referent, item, tokens: await meter.countItem(item, countContextFor(state.callId)) };
     }
   };
@@ -664,7 +671,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
         referent = referrer.callId;
         tokens += referrer.tokens;
       } else {
-        const item = withOutput(referrer.original, identicalMarker(referent, blobs.handleFor(referrer.text)));
+        const item = withOutput(referrer.original, identicalMarker(referent, blobs.handleFor(referrer.text), reader));
         tokens += await meter.countItem(item, countContextFor(referrer.callId));
       }
     }
@@ -741,7 +748,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
       if (evicted.has(state.callId)) {
         const created = await ensureHandle(state);
         const handle = state.handle as string;
-        slot.item = withOutput(original, omittedMarker(tokens, handle));
+        slot.item = withOutput(original, omittedMarker(tokens, handle, reader));
         state.mode = 'omitted';
         state.renderedTokens = await meter.countItem(slot.item, countContextFor(state.callId));
         if (created) reports.set(state.callId, { eviction: { callId: state.callId, handle, kind: 'omitted' }, state });
@@ -800,7 +807,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
       const markers = new Map<OutputState, { handle: string; probe: InputItem }>();
       for (const member of group) {
         const handle = member.state.handle ?? blobs.handleFor(member.state.text);
-        markers.set(member.state, { handle, probe: withOutput(member.state.original, omittedMarker(member.state.tokens, handle)) });
+        markers.set(member.state, { handle, probe: withOutput(member.state.original, omittedMarker(member.state.tokens, handle, reader)) });
       }
       let tokensBefore = state.renderedTokens + copies.reduce((sum, copy) => sum + (copy.state.reference as OutputReference).tokens, 0);
       let tokensAfter = await referrersAfterEviction(staying);

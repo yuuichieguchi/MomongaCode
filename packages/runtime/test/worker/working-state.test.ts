@@ -9,6 +9,7 @@ import { capabilitiesFor, makeEnv } from './harness.ts';
 const IDS = { runId: 'run-ws', sessionId: 'session-ws' };
 const USAGE = { input_tokens: 1, output_tokens: 1, total_tokens: 2 };
 const LARGE_CAP = 4096;
+const READERS = { history_range: 'HistoryRead' } as const;
 
 const tokensOf = (text: string): number => Math.ceil(text.length / 4);
 
@@ -41,7 +42,7 @@ const write = (id: string, path: string, content: string): RunEventPayload[] =>
 const edit = (id: string, path: string, updated: string): RunEventPayload[] =>
   tool(id, 'Edit', { file_path: path, old_string: 'a', new_string: 'b' }, 'completed', `Updated ${path}`, written(path, updated));
 const bash = (id: string, command: string, code: number): RunEventPayload[] =>
-  tool(id, 'Bash', { command }, code === 0 ? 'completed' : 'failed', code === 0 ? 'ok' : 'boom', { exitCode: code });
+  tool(id, 'Bash', { command }, code === 0 ? 'completed' : 'failed', code === 0 ? 'ok' : 'boom', { command, exitCode: code, files: [] });
 
 const TASK: RunEventPayload = { type: 'user.message', text: 'the original task' };
 
@@ -54,14 +55,14 @@ const compactedThrough = (replacedThroughSeq: number): RunEventPayload => ({
 });
 
 const render = (state: RunState, options: { cap?: number; verificationCommands?: readonly string[] } = {}): string => {
-  const text = renderWorkingState(state, { capTokens: options.cap ?? LARGE_CAP, tokensOf, verificationCommands: options.verificationCommands ?? ['npm test'] });
+  const text = renderWorkingState(state, { capTokens: options.cap ?? LARGE_CAP, tokensOf, verificationCommands: options.verificationCommands ?? ['npm test'], readers: READERS });
   if (text === undefined) throw new Error('no working state rendered');
   return text;
 };
 
 describe('entries', () => {
   it('renders nothing before a summary exists', () => {
-    expect(renderWorkingState(fold([TASK]), { capTokens: LARGE_CAP, tokensOf, verificationCommands: [] })).toBeUndefined();
+    expect(renderWorkingState(fold([TASK]), { capTokens: LARGE_CAP, tokensOf, verificationCommands: [], readers: READERS })).toBeUndefined();
   });
 
   it('lists a written file with the hash of the content recorded in the Write input', () => {
@@ -88,20 +89,25 @@ describe('entries', () => {
     expect(text).not.toContain('/p/no.ts');
   });
 
-  it('states the hash as unknown for a write recorded without file facts', () => {
-    const text = render(fold([TASK, ...tool('w', 'Write', { file_path: '/p/old.ts', content: 'x' }, 'completed', 'Created /p/old.ts'), compactedThrough(1)]));
+  it('states the hash as unknown for a written file the observer could not hash', () => {
+    const text = render(fold([TASK, ...tool('w', 'Sh', { script: 'gen' }, 'completed', 'ran', { command: 'gen', exitCode: 0, files: [{ path: '/p/old.ts', access: 'write' }] }), compactedThrough(1)]));
     expect(text).toContain('/p/old.ts, sha256 unknown');
     expect(text).not.toMatch(/[0-9a-f]{64}/);
   });
 
+  it('lists no file for a write whose event carries no files, whatever the arguments say', () => {
+    const text = render(fold([TASK, ...tool('w', 'Write', { file_path: '/p/old.ts', content: 'x' }, 'completed', 'Created /p/old.ts'), compactedThrough(1)]));
+    expect(text).not.toContain('/p/old.ts');
+  });
+
   it('states the exit code as unknown for a command recorded without one', () => {
-    const text = render(fold([TASK, ...tool('b', 'Bash', { command: 'make lint' }, 'failed', 'boom\n[exit code 2]'), compactedThrough(1)]));
+    const text = render(fold([TASK, ...tool('b', 'Bash', { command: 'make lint' }, 'failed', 'boom\n[exit code 2]', { command: 'make lint', files: [] }), compactedThrough(1)]));
     expect(text).toMatch(/failed[^\n]*`make lint`[^\n]*exit code unknown/);
     expect(text).not.toMatch(/exit code 2/);
   });
 
   it('takes no command from a call that was denied or rejected', () => {
-    const denied = tool('d', 'Bash', { command: 'rm -rf /' }, 'failed', 'Permission denied: rule', { denial: { source: 'rule', reason: 'rule' } });
+    const denied = tool('d', 'Bash', { command: 'rm -rf /' }, 'failed', 'Permission denied: rule', { command: 'rm -rf /', files: [], denial: { source: 'rule', reason: 'rule' } });
     const rejected: RunEventPayload[] = [
       ...toolCall('r', 'Bash', { command: 'make deploy' }),
       {
@@ -113,7 +119,7 @@ describe('entries', () => {
         reason: 'shell commands require approval',
       },
       { type: 'tool.permission.resolved', approvalId: 'approval-r', optionId: 'reject_once' },
-      { type: 'tool.completed', callId: 'r', status: 'failed', output: 'The user rejected this tool call.' },
+      { type: 'tool.completed', callId: 'r', status: 'failed', output: 'The user rejected this tool call.', command: 'make deploy', files: [] },
     ];
     const text = render(fold([TASK, ...denied, ...rejected, compactedThrough(1)]));
     expect(text).not.toContain('rm -rf');
@@ -219,28 +225,30 @@ describe('the cap', () => {
 });
 
 describe('reconciled calls', () => {
-  const reconciled = (id: string, name: string, rawInput: unknown, outcome: 'already_applied' | 'not_applied' | 'unknown'): RunEventPayload[] => [
+  const reconciled = (id: string, name: string, rawInput: unknown, outcome: 'already_applied' | 'not_applied' | 'unknown', facts: Record<string, unknown> = {}): RunEventPayload[] => [
     ...toolCall(id, name, rawInput),
-    { type: 'tool.reconciled', callId: id, outcome, output: 'recovered' },
+    { type: 'tool.reconciled', callId: id, outcome, output: 'recovered', ...facts } as RunEventPayload,
   ];
 
+  const pathFacts = (path: string): Record<string, unknown> => ({ files: [{ path, access: 'write' }] });
+
   it('lists a write the recovery found already applied, with the outcome and an unknown hash', () => {
-    const text = render(fold([TASK, ...reconciled('w', 'Write', { file_path: '/p/a.ts', content: 'x' }, 'already_applied'), compactedThrough(1)]));
+    const text = render(fold([TASK, ...reconciled('w', 'Write', { file_path: '/p/a.ts', content: 'x' }, 'already_applied', pathFacts('/p/a.ts')), compactedThrough(1)]));
     expect(text).toMatch(/reconciled: already_applied[^\n]*\/p\/a\.ts[^\n]*sha256 unknown/);
   });
 
   it('lists a write whose effect is unknown with that outcome', () => {
-    const text = render(fold([TASK, ...reconciled('w', 'Edit', { file_path: '/p/a.ts', old_string: 'a', new_string: 'b' }, 'unknown'), compactedThrough(1)]));
+    const text = render(fold([TASK, ...reconciled('w', 'Edit', { file_path: '/p/a.ts', old_string: 'a', new_string: 'b' }, 'unknown', pathFacts('/p/a.ts')), compactedThrough(1)]));
     expect(text).toMatch(/reconciled: unknown[^\n]*\/p\/a\.ts/);
   });
 
   it('lists nothing for a write that was not applied', () => {
-    const text = render(fold([TASK, ...reconciled('w', 'Write', { file_path: '/p/a.ts', content: 'x' }, 'not_applied'), compactedThrough(1)]));
+    const text = render(fold([TASK, ...reconciled('w', 'Write', { file_path: '/p/a.ts', content: 'x' }, 'not_applied', pathFacts('/p/a.ts')), compactedThrough(1)]));
     expect(text).not.toContain('/p/a.ts');
   });
 
   it('lists a reconciled command with its outcome, neither as a success nor as a failure', () => {
-    const text = render(fold([TASK, ...reconciled('b', 'Bash', { command: 'make lint' }, 'unknown'), compactedThrough(1)]));
+    const text = render(fold([TASK, ...reconciled('b', 'Bash', { command: 'make lint' }, 'unknown', { command: 'make lint' }), compactedThrough(1)]));
     expect(text).toMatch(/reconciled: unknown[^\n]*`make lint`/);
     expect(text).not.toMatch(/command failed/);
   });
@@ -274,7 +282,7 @@ describe('inherited history', () => {
     ...fold([TASK, compactedThrough(1)]),
     taskSeq: 3,
     inherited: { fromRunId: 'run-parent', fromLastSeq: 12, digest: 'digest' },
-    workingFacts: { written: [], touched: [], commands: [], messages: [], itemEvents: [], ...workingFacts },
+    workingFacts: { written: [], commands: [], messages: [], itemEvents: [], ...workingFacts },
   });
 
   it('names the journal of the parent run when inherited items were replaced', () => {
@@ -302,7 +310,6 @@ describe('the smallest cap', () => {
       inherited: { fromRunId: '01a3185c-5000-745f-8ed8-f61784e21274', fromLastSeq: widest, digest: 'digest' },
       workingFacts: {
         written: [],
-        touched: [],
         commands: [],
         messages: [
           { text: 'x'.repeat(200), seq: 0 },
@@ -314,10 +321,11 @@ describe('the smallest cap', () => {
     };
     const capTokens = workingStateCapFor(capabilitiesFor(1024));
 
-    const text = renderWorkingState(state, { capTokens, tokensOf: tokensForText, verificationCommands: [] });
+    const text = renderWorkingState(state, { capTokens, tokensOf: tokensForText, verificationCommands: [], readers: READERS });
 
     expect(text).toContain('inherited replaced: HistoryRead runId: 01a3185c-5000-745f-8ed8-f61784e21274');
-    expect(text).toContain(`omitted 2 older entries: seq ${widest}-${widest}, 1 inherited`);
+    expect(text).toContain('omitted 1 older entry: 1 inherited');
+    expect(text).toContain(`[cut: seq ${widest}]`);
     expect(tokensForText(text ?? '')).toBeLessThanOrEqual(capTokens);
   });
 });
@@ -331,7 +339,6 @@ describe('mandatory lines wider than the cap', () => {
       inherited: { fromRunId: '01a3185c-5000-745f-8ed8-f61784e21274', fromLastSeq: widest, digest: 'digest' },
       workingFacts: {
         written: [],
-        touched: [],
         commands: [],
         messages: [{ text: 'kept only if it fits', seq: widest }],
         itemEvents: [],
@@ -340,7 +347,7 @@ describe('mandatory lines wider than the cap', () => {
     };
     const capTokens = 20;
 
-    const text = renderWorkingState(state, { capTokens, tokensOf: tokensForText, verificationCommands: [] }) ?? '';
+    const text = renderWorkingState(state, { capTokens, tokensOf: tokensForText, verificationCommands: [], readers: READERS }) ?? '';
 
     expect(text).toContain(`seqTo: ${widest}`);
     expect(text).toContain('omitted 1 older entry');

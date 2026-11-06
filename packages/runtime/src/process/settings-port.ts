@@ -62,6 +62,13 @@ export const createSettingsComposition = ({ home, cache, store }: SettingsCompos
     tools: async (session) => (await loadSessionSettings(session.cwd, takeUserSnapshot())).settings.tools,
     autoModeClassifier: () => takeUserSnapshot().settings.autoMode?.classifier,
     modelRoles: () => takeUserSnapshot().settings.models.roles,
+    modelTargets: () =>
+      Object.fromEntries(
+        Object.entries(takeUserSnapshot().settings.models.targets).map(([name, target]) => [
+          name,
+          { adapter: target.adapter, model: target.model ?? target.adapter, ...(target.answers === undefined ? {} : { answers: target.answers }) },
+        ]),
+      ),
     appendRule: (session, { effect, rule }) => appendPermissionRule({ ports: systemFileLockPorts, home, projectDir: session.cwd, rule, effect }),
     trusted: (session) => store.trust.decisionFor(session.cwd).decision === 'trusted',
   };

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { credentialEnvNames, loadUserSettings, probeRecordKeyOf, secretNames, upstreamEndpointOf } from '@momonga/config';
+import { credentialEnvNames, loadUserSettings, probeRecordKeyOf, resolveTelemetrySettings, secretNames, upstreamEndpointOf } from '@momonga/config';
 import {
   acquireProcessLock,
   SecretEmptyError,
@@ -26,9 +26,15 @@ import {
   exportersFor,
   openTraceStore,
   pageBilledCalls,
+  startBodyPurge,
 } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
-import type { AdapterTarget, Capabilities, ProviderAdapter, ToolCallingMode } from '@momonga/protocol';
+import type { AdapterTarget, Capabilities, DialectId, ProviderAdapter, ToolCallingMode } from '@momonga/protocol';
+import { NO_USER_DIALECTS } from './dialect/choice.ts';
+import type { UserDialects } from './dialect/choice.ts';
+import type { DialectCurrency } from './dialect/candidates.ts';
+import { resolveDialectId } from './dialect/resolve-id.ts';
+import { PROBE_METHOD_VERSION } from './probe/run-probe.ts';
 import { chatRecordOf, loadEndpointRecord, ollamaRecordOf, saveEndpointRecord } from './probe/endpoint-record.ts';
 import type { DeclaredCapabilities } from './probe/decide.ts';
 import { withImageDefault } from './probe/decide.ts';
@@ -100,6 +106,8 @@ export type GatewayProcess = {
 };
 
 type Phase = 'starting' | 'running' | 'closing' | 'closed';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const toError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
@@ -207,7 +215,7 @@ type FmContext = {
   binarySha256: string;
 };
 
-const createFmAdapter = async (name: string, target: Extract<ResolvedTarget, { adapter: 'fm' }>, context: FmContext, clock: Clock, files: ProcessFilePorts) => {
+const createFmAdapter = async (name: string, target: Extract<ResolvedTarget, { adapter: 'fm' }>, context: FmContext, clock: Clock, files: ProcessFilePorts, userDialects: UserDialects) => {
   const managed = await createManagedFmTarget({
     fmServe: context.fmServe,
     binary: context.binary,
@@ -215,11 +223,18 @@ const createFmAdapter = async (name: string, target: Extract<ResolvedTarget, { a
     probeRecordDir: context.paths.probe,
     recordKey: { target: name, binarySha256: context.binarySha256, osBuild: context.osBuild },
     toolCallingSetting: target.toolCalling,
+    userDialects,
     ...(target.model === undefined ? {} : { declaredModel: target.model }),
     ...(target.outputBoundField === undefined ? {} : { declaredOutputBoundField: target.outputBoundField }),
   });
-  return createChatCompletionsAdapter({ ...withBinaryGuard(managed, context.binary, files), sampling: { renders: [] }, clock });
+  return createChatCompletionsAdapter({ ...withBinaryGuard(managed, context.binary, files), sampling: { renders: [] }, clock, userDialects });
 };
+
+const dialectCurrencyOf = (declaredDialect: DialectId | undefined, userDialects: UserDialects = NO_USER_DIALECTS): DialectCurrency => ({
+  userDialects,
+  probeMethod: PROBE_METHOD_VERSION,
+  ...(declaredDialect === undefined ? {} : { declaredDialect }),
+});
 
 const endpointProbeKeyOf = (name: string, target: ResolvedTarget): EndpointProbeKey => {
   const key = probeRecordKeyOf(name, target);
@@ -234,11 +249,12 @@ const createAutoChatCompletionsAdapter = async (
   probeRecordDir: string,
   clock: Clock,
   refusal: PreconditionFailedError | undefined,
+  userDialects: UserDialects,
 ) => {
   const upstream = upstreamEndpointOf(target);
   const key = endpointProbeKeyOf(name, target);
   const { endpoint } = key;
-  const loaded = chatRecordOf(await loadEndpointRecord(probeRecordDir, key), key);
+  const loaded = chatRecordOf(await loadEndpointRecord(probeRecordDir, key, dialectCurrencyOf(target.capabilities.schemaDialect, userDialects)), key);
   const probed = createProbedEndpointTarget({
     targetName: name,
     endpoint,
@@ -250,7 +266,7 @@ const createAutoChatCompletionsAdapter = async (
       return readEndpointIdentity(probeEndpointOf(upstream, apiKey), target.model, fields, signal);
     },
     saveRecord: (record) =>
-      saveEndpointRecord(probeRecordDir, key, record.identity, record.identityFields, record.report),
+      saveEndpointRecord(probeRecordDir, key, record.identity, record.identityFields, record.report, dialectCurrencyOf(target.capabilities.schemaDialect, userDialects)),
   });
   const adapter = createChatCompletionsAdapter({
     resolveEndpoint: async (_target, signal) => {
@@ -259,19 +275,23 @@ const createAutoChatCompletionsAdapter = async (
       return upstream;
     },
     keywordSupport: () => probed.keywordSupport(),
+    schemaDialect: () => probed.schemaDialect(),
+    constructSupport: () => probed.constructSupport(),
+    envelopeShape: () => probed.envelopeShape(),
     capabilities: () => probed.capabilities(),
     onSummaryReasoning: (_target, hiddenReasoningTokens) => probed.raiseHeadroom(hiddenReasoningTokens),
     apiKey: readKey,
     clock,
+    userDialects,
   });
   return { adapter, upstreamIdentity: loaded?.identity };
 };
 
-const createProbedOllamaAdapter = async (name: string, target: Extract<RemoteTarget, { adapter: 'ollama' }>, probeRecordDir: string, clock: Clock) => {
+const createProbedOllamaAdapter = async (name: string, target: Extract<RemoteTarget, { adapter: 'ollama' }>, probeRecordDir: string, clock: Clock, userDialects: UserDialects) => {
   const upstream = upstreamEndpointOf(target);
   const key = endpointProbeKeyOf(name, target);
   const { endpoint } = key;
-  const loaded = ollamaRecordOf(await loadEndpointRecord(probeRecordDir, key), key);
+  const loaded = ollamaRecordOf(await loadEndpointRecord(probeRecordDir, key, dialectCurrencyOf(target.capabilities.schemaDialect, userDialects)), key);
   const probed = createProbedOllamaTarget({
     targetName: name,
     endpoint,
@@ -287,6 +307,7 @@ const createProbedOllamaAdapter = async (name: string, target: Extract<RemoteTar
     },
     capabilities: () => probed.capabilities(),
     clock,
+    userDialects,
   });
   return { adapter, upstreamIdentity: loaded?.identity };
 };
@@ -440,15 +461,25 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     });
     const priceTable = definePriceTable(settings.pricing === undefined ? [] : settings.pricing);
     const traceStore: TraceStore = openTraceStore({ path: paths.traces.gateway, clock });
+    const telemetrySettings = resolveTelemetrySettings(settings.telemetry);
+    const contentRetentionMs = telemetrySettings.contentRetentionDays * DAY_MS;
     const telemetry: Telemetry = createTelemetry({
       serviceName: 'momonga-gateway',
       serviceVersion: options.version,
       clock,
       store: traceStore,
       exporters: exportersFor(settings.telemetry),
-      captureMessageContent: settings.telemetry?.captureMessageContent === true,
+      captureMessageContent: telemetrySettings.captureMessageContent,
+      contentRetentionMs,
     });
     cleanups.push(() => closeTelemetry(telemetry, traceStore));
+    const bodyPurge = startBodyPurge({
+      store: traceStore,
+      timers,
+      report: (error) => logger.error('trace body purge failed', { err: toError(error) }),
+      legacyRetentionMs: contentRetentionMs,
+    });
+    cleanups.push(() => bodyPurge.stop());
 
     signal?.throwIfAborted();
     const childEnv = minimalChildEnv(options.env);
@@ -492,18 +523,19 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const secretFailures = await warmSecrets(secretResolver, referencedSecrets, signal ?? new AbortController().signal);
     for (const [name, failure] of secretFailures) logger.warn(`secret ${name} is unavailable: ${failure.message}`);
     signal?.throwIfAborted();
+    const userDialects = settings.models.dialects;
     const ollamaRefusals = await ollamaRefusalsOf(targets, signal ?? new AbortController().signal);
     signal?.throwIfAborted();
     for (const [name, target] of targets) {
       signal?.throwIfAborted();
       if (target.adapter === 'fm') {
         if (fmContext === undefined) throw new Error('fm context is missing for an fm target');
-        adapters[name] = await createFmAdapter(name, target, fmContext, clock, files);
+        adapters[name] = await createFmAdapter(name, target, fmContext, clock, files, userDialects);
         counters[name] = targetCounterOf({ target, codeDigest, fm: { binarySha256: fmContext.binarySha256, osBuild: fmContext.osBuild } });
         continue;
       }
       if (target.adapter === 'ollama') {
-        const probed = await createProbedOllamaAdapter(name, target, paths.probe, clock);
+        const probed = await createProbedOllamaAdapter(name, target, paths.probe, clock, userDialects);
         adapters[name] = probed.adapter;
         counters[name] = targetCounterOf({ target, codeDigest, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) });
         continue;
@@ -511,7 +543,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       const readKey = apiKeyReader(options.env, secretResolver, target);
       const refusal = ollamaRefusals.get(name);
       if (target.adapter === 'chat-completions' && target.toolCalling === 'auto') {
-        const probed = await createAutoChatCompletionsAdapter(name, target, readKey, paths.probe, clock, refusal);
+        const probed = await createAutoChatCompletionsAdapter(name, target, readKey, paths.probe, clock, refusal, userDialects);
         adapters[name] = probed.adapter;
         counters[name] = targetCounterOf({ target, codeDigest, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) });
         continue;
@@ -525,10 +557,11 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         },
         capabilities: async () => capabilitiesOf(target, mode),
         clock,
+        userDialects,
       };
       switch (target.adapter) {
         case 'chat-completions':
-          adapters[name] = createChatCompletionsAdapter({ ...common, apiKey: readKey });
+          adapters[name] = createChatCompletionsAdapter({ ...common, schemaDialect: () => resolveDialectId(target.capabilities.schemaDialect, null), apiKey: readKey });
           break;
         case 'open-responses':
           adapters[name] = createOpenResponsesAdapter({ ...common, apiKey: readKey });

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ROOT_CONTEXT, trace } from '@opentelemetry/api';
 import {
+  GENAI_CONTENT_SEMCONV,
   GENAI_SEMCONV,
   OTLP_EXPORTS_PER_TEARDOWN,
   OTLP_EXPORT_TIMEOUT_MS,
@@ -10,6 +11,7 @@ import {
   installOtelErrorHandler,
   otlpTracesUrl,
   recordChatResponse,
+  recordError,
   startAgentSpan,
   startChatSpan,
   startToolSpan,
@@ -127,27 +129,38 @@ describe('OTLP export of GenAI spans to a loopback collector', () => {
     expect(collector.requests[0]?.headers['x-team']).toBe('eval');
   });
 
-  it('never exports message content: captured bodies, tool arguments and results stay out of the payload', async () => {
+  it('exports no message content when capture is off: no content attribute and no recorded text reaches the payload', async () => {
     const collector = await startOtlpCollector();
     registerCleanup(() => collector.close());
-    const h = harness({
-      bodies: { enabled: true, retentionMs: 60_000 },
-      exporters: [createOtlpTraceExporter({ endpoint: collector.endpoint })],
-    });
-    const { chat, tool } = recordRun(h);
-    h.telemetry.recordBody(chat, { kind: 'input', content: `prompt ${SENTINEL}` });
-    h.telemetry.recordBody(chat, { kind: 'output', content: `answer ${SENTINEL}` });
-    h.telemetry.recordBody(tool, { kind: 'tool_arguments', content: `{"file_path":"${SENTINEL}"}` });
-    h.telemetry.recordBody(tool, { kind: 'tool_result', content: SENTINEL });
+    const h = harness({ exporters: [createOtlpTraceExporter({ endpoint: collector.endpoint })] });
+    const { chat } = recordRun(h);
+    recordError(chat, new Error(SENTINEL), 'provider_error');
     await h.telemetry.forceFlush();
 
     expect(collector.requests).toHaveLength(1);
-    const raw = collector.requests[0]?.raw ?? '';
-    expect(raw).not.toContain(SENTINEL);
+    expect(collector.requests[0]?.raw ?? '').not.toContain(SENTINEL);
     const keys = decodeOtlpSpans(collector.requests).flatMap((span) => Object.keys(span.attributes));
-    for (const optIn of ['gen_ai.input.messages', 'gen_ai.output.messages', 'gen_ai.system_instructions', 'gen_ai.tool.definitions', 'gen_ai.tool.call.arguments', 'gen_ai.tool.call.result']) {
-      expect(keys).not.toContain(optIn);
-    }
+    for (const optIn of Object.values(GENAI_CONTENT_SEMCONV)) expect(keys).not.toContain(optIn);
+  });
+
+  it('exports the six content attributes only when capture is on, while the store keeps them as bodies and never as attributes', async () => {
+    const collector = await startOtlpCollector();
+    registerCleanup(() => collector.close());
+    const h = harness({
+      content: { retentionMs: 60_000 },
+      exporters: [createOtlpTraceExporter({ endpoint: collector.endpoint })],
+    });
+    const chat = startChatSpan(h.telemetry.tracer, { providerName: 'openai', billing: 'metered', requestModel: 'model-x', stream: false, runId: RUN_ID, step: 1, attempt: 1 });
+    for (const key of Object.values(GENAI_CONTENT_SEMCONV)) chat.setAttribute(key, `${key} ${SENTINEL}`);
+    chat.end(h.clock.now());
+    await h.telemetry.forceFlush();
+
+    expect(collector.requests).toHaveLength(1);
+    const [exported] = decodeOtlpSpans(collector.requests);
+    for (const key of Object.values(GENAI_CONTENT_SEMCONV)) expect(exported?.attributes[key]).toBe(`${key} ${SENTINEL}`);
+    const [stored] = h.store.spansForRun(RUN_ID);
+    expect(JSON.stringify(stored)).not.toContain(SENTINEL);
+    expect(h.store.bodiesForSpan(chat.spanContext().spanId).map((body) => body.kind).sort()).toEqual(Object.values(GENAI_CONTENT_SEMCONV).sort());
   });
 });
 

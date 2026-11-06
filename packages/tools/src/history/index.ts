@@ -6,6 +6,7 @@ export type {
   HistoryScope,
   HistorySearchRequest,
   HistorySearchResult,
+  HistorySession,
   HistoryStepHit,
   HistoryStorePort,
   HistoryToolsOptions,

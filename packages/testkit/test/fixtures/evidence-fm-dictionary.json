@@ -1,0 +1,55 @@
+{
+  "measuredAt": "2026-11-05T02:01:18.829Z",
+  "schema": {
+    "title": "root",
+    "type": "object",
+    "x-order": [
+      "m"
+    ],
+    "additionalProperties": false,
+    "required": [
+      "m"
+    ],
+    "properties": {
+      "m": {
+        "type": "object",
+        "properties": {},
+        "x-order": [],
+        "additionalProperties": true,
+        "required": []
+      }
+    }
+  },
+  "out": [
+    {
+      "prompt": "Set m to an object with exactly the keys color=red and size=big.",
+      "status": 200,
+      "content": "{\"m\": {}}"
+    },
+    {
+      "prompt": "Set m to an object with exactly the keys color=red and size=big.",
+      "status": 200,
+      "content": "{\"m\": {}}"
+    },
+    {
+      "prompt": "Set m to an object with exactly the keys color=red and size=big.",
+      "status": 200,
+      "content": "{\"m\": {}}"
+    },
+    {
+      "prompt": "Put the pair city=Tokyo and country=Japan inside m.",
+      "status": 200,
+      "content": "{\"m\": {}}"
+    },
+    {
+      "prompt": "Put the pair city=Tokyo and country=Japan inside m.",
+      "status": 200,
+      "content": "{\"m\": {}}"
+    },
+    {
+      "prompt": "Put the pair city=Tokyo and country=Japan inside m.",
+      "status": 200,
+      "content": "{\"m\": {}}"
+    }
+  ]
+}

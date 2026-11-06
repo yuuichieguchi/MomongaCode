@@ -9,10 +9,9 @@ import {
 } from '@momonga/observability';
 import type { FallbackCause } from '@momonga/foundation';
 import type { ChatBilling, Telemetry } from '@momonga/observability';
+import { MOMONGA_EVENTS } from '@momonga/protocol';
 import type { AdapterInputItem, FunctionTool, ItemField, Usage } from '@momonga/protocol';
 import { chatRequestContentOf, chatResponseMessagesOf } from './chat-content.ts';
-
-const RESPONSE_COMMITTED_EVENT = 'momonga.response.committed';
 
 export type TraceParent = ReturnType<Telemetry['propagation']['extract']>;
 
@@ -84,7 +83,7 @@ export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
       if (!ended) span.addEvent(name, { message });
     },
     committed: () => {
-      if (!ended) span.addEvent(RESPONSE_COMMITTED_EVENT);
+      if (!ended) span.addEvent(MOMONGA_EVENTS.responseCommitted);
     },
     succeed: (info) => {
       if (ended) return;

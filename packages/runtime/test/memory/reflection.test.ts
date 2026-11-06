@@ -8,7 +8,7 @@ import { createFakeTimers, usageOf } from '@momonga/testkit';
 import type { RuntimeStore } from '@momonga/store';
 import { MEMORY_TEXT_MAX_CHARS, createMemoryTools } from '@momonga/tools';
 import { REQUEUE_BASE_MS, REQUEUE_MAX_MS } from '../../src/process/constants.ts';
-import { enqueue, harness, makeStoreDir, newSession, rawDb } from '../../../store/test/helpers.ts';
+import { enqueue, harness, makeStoreDir, newSession, rawDb, recalled } from '../../../store/test/helpers.ts';
 import { createFakeGateway } from '../worker/fake-gateway.ts';
 import type { ScriptStep } from '../worker/fake-gateway.ts';
 import { capabilitiesFor } from '../worker/harness.ts';
@@ -650,7 +650,7 @@ describe('candidates of a reflection', () => {
     const env = setup();
     await reflected(env, CANDIDATE_REPLY(['src/a.ts']));
     expect(env.api.memories.candidates()).toHaveLength(1);
-    expect(env.store.memories.recall({ trusted: true, project: env.project })).toEqual([]);
+    expect(recalled(env.store, { trusted: true, project: env.project })).toEqual([]);
   });
 
   it('drops a candidate that binds a path outside the journal and keeps its honest sibling', async () => {
@@ -680,7 +680,7 @@ describe('candidates of a reflection', () => {
     const reply = JSON.stringify({ candidates: [{ text: 'the audit log is obsolete', kind: 'fact', paths: [], supersedes: [victim.id] }] });
     await reflected(env, reply, events);
     expect(env.api.memories.candidates()).toEqual([]);
-    expect(env.store.memories.recall({ trusted: true, project: env.project }).map((memory) => memory.id)).toEqual([victim.id]);
+    expect(recalled(env.store, { trusted: true, project: env.project }).map((memory) => memory.id)).toEqual([victim.id]);
     expect(env.store.memories.get(victim.id)?.supersededBy).toEqual([]);
   });
 

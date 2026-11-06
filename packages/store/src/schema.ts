@@ -719,6 +719,57 @@ const TYPED_READ_INDEX = `
 CREATE INDEX events_by_run_type ON events (run_id, type, seq);
 `;
 
+const MEMORY_RECORD_OF_FINDINGS = `
+ALTER TABLE memories RENAME COLUMN last_used_at TO kept_at;
+DROP INDEX memories_by_recency;
+ALTER TABLE memories ADD COLUMN observed_status TEXT CHECK (observed_status IS NULL OR observed_status IN ('verified', 'unbound', 'unverifiable', 'stale'));
+
+CREATE TRIGGER memories_reject_delete BEFORE DELETE ON memories BEGIN
+  SELECT RAISE(ABORT, 'memories are retired, not deleted');
+END;
+
+CREATE TABLE memory_observations (
+  memory_id TEXT NOT NULL REFERENCES memories (id),
+  ordinal INTEGER NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('verified', 'unbound', 'unverifiable', 'stale')),
+  observed_at INTEGER NOT NULL,
+  PRIMARY KEY (memory_id, ordinal)
+) WITHOUT ROWID;
+CREATE TRIGGER memory_observations_reject_update BEFORE UPDATE ON memory_observations BEGIN
+  SELECT RAISE(ABORT, 'memory_observations is an append-only record: UPDATE is not allowed');
+END;
+CREATE TRIGGER memory_observations_reject_delete BEFORE DELETE ON memory_observations BEGIN
+  SELECT RAISE(ABORT, 'memory_observations is an append-only record: DELETE is not allowed');
+END;
+CREATE TRIGGER memory_observations_index AFTER INSERT ON memory_observations BEGIN
+  UPDATE memories SET observed_status = NEW.status WHERE id = NEW.memory_id;
+END;
+
+CREATE INDEX memories_by_recall ON memories (
+  (CASE WHEN scope = 'user' THEN 'user:' || origin ELSE 'project:' || project END),
+  (CASE observed_status WHEN 'verified' THEN 0 WHEN 'unbound' THEN 1 WHEN 'unverifiable' THEN 2 WHEN 'stale' THEN 3 ELSE 4 END),
+  (-COALESCE(contributed_at, -1)),
+  (-kept_at),
+  id
+) WHERE state = 'active' AND retired_at IS NULL;
+`;
+
+const SESSION_TOUCHED_RECORD = `
+CREATE TABLE session_touched (
+  session_id TEXT NOT NULL REFERENCES sessions (id),
+  path TEXT NOT NULL,
+  first_event_id INTEGER NOT NULL,
+  PRIMARY KEY (session_id, path)
+) WITHOUT ROWID;
+CREATE INDEX session_touched_by_first_event ON session_touched (session_id, first_event_id, path);
+
+INSERT OR IGNORE INTO session_touched (session_id, path, first_event_id)
+SELECT e.session_id, json_extract(l.value, '$.path'), MIN(e.id)
+FROM events e, json_each(e.payload_json, '$.locations') l
+WHERE e.type = 'tool.call' AND json_type(l.value, '$.path') = 'text'
+GROUP BY e.session_id, json_extract(l.value, '$.path');
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -753,4 +804,14 @@ export const MIGRATIONS: readonly Migration[] = [
     sql: APPEND_TIME_RECORDS,
   },
   { version: 21, name: 'index the events of a run by type and seq, so every read of a run\'s events of some types seeks to the matches without stepping over the others', sql: TYPED_READ_INDEX },
+  {
+    version: 22,
+    name: 'record each evidence check of a memory as an append-only finding indexed by its newest value, rename the last-used time to the time a person kept the note, order recall by an index, and refuse to delete a memory row',
+    sql: MEMORY_RECORD_OF_FINDINGS,
+  },
+  {
+    version: 23,
+    name: 'record the locations the tool calls of a session declared, once per path and in the order first seen, derived once for sessions written before',
+    sql: SESSION_TOUCHED_RECORD,
+  },
 ];
