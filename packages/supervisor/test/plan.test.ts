@@ -33,6 +33,24 @@ describe('digestsOf', () => {
   });
 });
 
+describe('the network digest', () => {
+  const networked = (network?: unknown): Parameters<typeof digestsOf>[0] =>
+    ({ models: modelsA, sandbox: 'seatbelt', ...(network === undefined ? {} : { network }) }) as unknown as Parameters<typeof digestsOf>[0];
+
+  it('digests the network section and treats its absence as null', () => {
+    const network = { httpsProxy: 'http://proxy.corp:3128' };
+    expect(digestsOf(networked(network))).toMatchObject({ network: sha256Hex(canonicalJson(network)) });
+    expect(digestsOf(networked())).toMatchObject({ network: sha256Hex(canonicalJson(null)) });
+  });
+
+  it('a network change restarts the runtime and the gateway, because both make outbound requests', () => {
+    const applied = digestsOf(networked({ httpsProxy: 'http://proxy.corp:3128' }));
+    const current = digestsOf(networked({ httpsProxy: 'http://proxy.corp:8080' }));
+    const gateway = { models: applied.models, telemetry: applied.telemetry, network: (applied as Record<string, string>)['network'] };
+    expect(planRoles(current, { runtime: applied, gateway } as Parameters<typeof planRoles>[1])).toEqual(['runtime', 'gateway']);
+  });
+});
+
 describe('planRoles', () => {
   const a = { sandbox: 's1', models: 'm1', telemetry: 't1' };
   const g = { models: 'm1', telemetry: 't1' };

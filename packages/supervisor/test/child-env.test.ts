@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createUserSettingsCache } from '@momonga/config';
-import { MINIMAL_CHILD_PATH, SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV } from '@momonga/foundation';
+import { MINIMAL_CHILD_PATH, NETWORK_ENV_NAMES, SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV } from '@momonga/foundation';
 import { waitFor } from '@momonga/testkit';
 import { COLLIDING_CREDENTIAL_DETAIL, definedEnv, gatewayEnv, runtimeEnv } from '../src/child-env.ts';
 import type { CredentialSettings } from '../src/child-env.ts';
@@ -64,6 +64,12 @@ describe('gatewayEnv', () => {
     expect(env).not.toHaveProperty('HTTPS_PROXY');
     expect(env).not.toHaveProperty('HTTP_PROXY');
     expect(env).not.toHaveProperty('SSL_CERT_FILE');
+  });
+
+  it('gatewayEnv hands the gateway every network variable the resolver reads', () => {
+    const source = Object.fromEntries(NETWORK_ENV_NAMES.map((name) => [name, `value-of-${name}`]));
+    const env = gatewayEnv({ PATH: '/bin', HOME: '/h', ...source }, declaring(), '/h');
+    for (const name of NETWORK_ENV_NAMES) expect(env[name]).toBe(`value-of-${name}`);
   });
 
   it('gateway env skips colliding declared names', () => {
