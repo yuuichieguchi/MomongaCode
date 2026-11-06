@@ -38,10 +38,10 @@ describe('upstream liveness from models.headersTimeoutMs and models.idleTimeoutM
     expect(reply.body.error.code).toBe('provider_unavailable');
   });
 
-  it('answers a stream whose upstream goes silent past models.idleTimeoutMs after the opening events, before any output, with an HTTP error and no stream', async () => {
+  it('answers a stream whose upstream goes silent past models.idleTimeoutMs after the opening events, before any output, with an HTTP error and no stream: opening events are not content', async () => {
     const harness = await startSilentUpstream([openingThenSilence()]);
     const reply = await readJson(await postJson(harness.client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true }));
     expect(reply.status).toBe(502);
-    expect(reply.body.error.code).toBe('provider_unavailable');
+    expect(reply.body.error.code).toBe('upstream_idle_timeout');
   });
 });

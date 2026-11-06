@@ -164,9 +164,10 @@ describe.each<Transport>(['tcp', 'unix'])('the upstream liveness bounds from mod
     expectEnded(reply);
   });
 
-  it('keeps a stream alive while SSE comments keep arriving within the idle bound, past the bound in total', async () => {
-    const { reply } = await askThrough(transport, ['commentsPastTheBound'], settingsLiveness(0, BOUND_MS));
-    expectAnswered(reply);
+  it('ends a stream that sends only SSE comments past the idle bound: a keep-alive is not content (R-G1a)', async () => {
+    const { reply } = await askThrough(transport, ['commentsPastTheBound', 'commentsPastTheBound'], settingsLiveness(0, BOUND_MS));
+    expect(reply.status).toBe(502);
+    expect(reply.body.error.code).toBe('upstream_idle_timeout');
   });
 
   it('completes a request whose headers arrive late when the headers bound is 0', async () => {

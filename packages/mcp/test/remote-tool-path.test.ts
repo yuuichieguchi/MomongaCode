@@ -4,13 +4,13 @@ import { createToolRegistry } from '@momonga/tools';
 import { makeExecutor } from './mcp-harness.ts';
 import { makeRemoteConnection, startHttpFixture } from './remote-harness.ts';
 
-const SMALL_TOOL_TIMEOUT_MS = 300;
+const SMALL_IDLE_TIMEOUT_MS = 300;
 
-const setup = async (era: 'modern' | 'legacy' = 'modern', requestTimeoutMs?: number) => {
+const setup = async (era: 'modern' | 'legacy' = 'modern', toolIdleTimeoutMs?: number) => {
   const fixture = await startHttpFixture({ era });
   const { connection } = makeRemoteConnection({ fixture });
   const registry = createToolRegistry();
-  registry.addSource(createMcpToolSource({ server: 'remote', connection, ...(requestTimeoutMs === undefined ? {} : { requestTimeoutMs }) }));
+  registry.addSource(createMcpToolSource({ server: 'remote', connection, ...(toolIdleTimeoutMs === undefined ? {} : { toolIdleTimeoutMs }) }));
   const harness = makeExecutor();
   const toolSet = await registry.snapshot();
   return { fixture, connection, harness, toolSet };
@@ -49,21 +49,21 @@ describe.each(['modern', 'legacy'] as const)('a remote tool through the executor
     expect(callsOf(fixture, 'echo')).toHaveLength(0);
   });
 
-  it('aborts a slow call at the tool timeout and closes its stream or cancels it', async () => {
-    const { toolSet, harness, fixture } = await setup(era, SMALL_TOOL_TIMEOUT_MS);
+  it('aborts a slow call without progress at the idle window and closes its stream or cancels it', async () => {
+    const { toolSet, harness, fixture } = await setup(era, SMALL_IDLE_TIMEOUT_MS);
     const result = await harness.resultOf(toolSet, 'mcp__remote__slow', {});
     expect(result.status).toBe('failed');
-    expect(result.output).toMatch(/timed out/i);
+    expect(result.output).toMatch(/^MCP server "remote" sent no response or progress for 300 ms, so the call to slow was stopped\./);
     await fixture.until(() => fixture.notes.some((note) => note.type === (era === 'modern' ? 'aborted' : 'cancelled')));
   });
 });
 
 describe('a task through the executor', () => {
-  it('outlives the tool timeout and finishes when the server completes it', async () => {
+  it('finishes through the executor when the server completes it within the idle window', async () => {
     const fixture = await startHttpFixture({ era: 'modern', taskPollIntervalMs: 1 });
     const { connection } = makeRemoteConnection({ fixture });
     const registry = createToolRegistry();
-    registry.addSource(createMcpToolSource({ server: 'remote', connection, requestTimeoutMs: 20 }));
+    registry.addSource(createMcpToolSource({ server: 'remote', connection }));
     const toolSet = await registry.snapshot();
     const running = makeExecutor().resultOf(toolSet, 'mcp__remote__long_task', {});
     await fixture.until(() => fixture.rpcRecords('tasks/get').length >= 2);

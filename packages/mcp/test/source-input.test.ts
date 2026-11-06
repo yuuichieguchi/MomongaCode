@@ -10,7 +10,7 @@ const ctxOf = (overrides: Partial<ToolContext>, checkpoints: Array<Record<string
     deadlineAt: 2_000_000,
     clock: { now: () => 1_000_000 },
     checkpoint: (state: Record<string, unknown> | undefined) => void checkpoints.push(state),
-    extendToRunDeadline: () => undefined,
+    reportProgress: () => undefined,
     ...overrides,
   }) as unknown as ToolContext;
 
