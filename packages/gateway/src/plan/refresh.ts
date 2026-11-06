@@ -110,7 +110,7 @@ export const classifyRefreshAnswer = (outcome: SendOutcome, nowMs: number): Refr
 export const sendWasInterrupted = ({ intentLoaded, unansweredBefore }: { intentLoaded: boolean; unansweredBefore: boolean }): boolean => intentLoaded || unansweredBefore;
 
 export type RefreshEnd =
-  | { kind: 'adopted'; tokens: RefreshTokens }
+  | { kind: 'adopted'; tokens: RefreshTokens; unansweredBefore: boolean }
   | { kind: 'terminal'; code: string; unansweredBefore: boolean }
   | { kind: 'configuration'; code: string }
   | { kind: 'transient' };
@@ -136,7 +136,7 @@ export const sendRefresh = async (request: RefreshRequest): Promise<RefreshEnd> 
       request.attemptTimeoutMs,
     );
     const answer = classifyRefreshAnswer(outcome, request.clock.now());
-    if (answer.kind === 'terminal') return { ...answer, unansweredBefore };
+    if (answer.kind === 'terminal' || answer.kind === 'adopted') return { ...answer, unansweredBefore };
     if (answer.kind !== 'transient') return answer;
     unansweredBefore ||= outcome.kind === 'unanswered';
     if (!answer.resend || attempt + 1 >= request.attempts) return { kind: 'transient' };

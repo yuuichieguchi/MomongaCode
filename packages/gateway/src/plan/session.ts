@@ -423,8 +423,11 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     }
     const { tokens } = end;
     const scope = tokens.scope;
+    const replaced = tokens.refresh_token !== undefined && tokens.refresh_token !== record.refresh_token;
+    const intentKept = !replaced && sendWasInterrupted({ intentLoaded: account.interrupted, unansweredBefore: end.unansweredBefore });
     const next: PlanRecord = {
       ...withoutPending(record),
+      ...(intentKept ? optional('pendingRefresh', record.pendingRefresh) : {}),
       state: grantsScope(scope, account.profile.oauth.requiredScope) ? 'active' : 'plan_disabled',
       access_token: tokens.access_token,
       ...optional('refresh_token', tokens.refresh_token ?? record.refresh_token),
@@ -435,7 +438,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       generation: (record.generation ?? 0) + 1,
     };
     await persistAfterSend(account, entry, next);
-    account.interrupted = false;
+    account.interrupted = intentKept;
     feedSecrets(tokens.access_token, tokens.refresh_token, tokens.id_token);
   };
 
