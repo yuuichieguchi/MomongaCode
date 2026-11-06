@@ -37,6 +37,7 @@ export interface State {
   site: Site;
   edges: string[];
   pointer: string[];
+  label: string[];
   position: Position;
   ancestors: Ancestor[];
   holder: { value: Schema };
@@ -197,7 +198,7 @@ export const dropClosure = (node: JsonObject, keys: readonly string[]): string[]
 
 export const allowedDropKeys = (keys: readonly string[]): Set<string> => {
   const allowed = new Set<string>();
-  const queue = keys.includes('minContains') ? [...keys, 'contains'] : [...keys];
+  const queue = [...keys];
   while (queue.length > 0) {
     const key = queue.pop() as string;
     if (allowed.has(key)) continue;
@@ -438,7 +439,7 @@ export const applyRule = (rule: Rule, node: Schema, state: State): Schema => {
       return ensureKey(node, rule, state);
     case 'label': {
       if (Object.hasOwn(node, rule.key)) return node;
-      const label = ['root', ...state.pointer.filter((segment) => segment !== 'properties')].join('_');
+      const label = ['root', ...state.label].join('_');
       return { ...node, [rule.key]: label };
     }
     case 'property-order':

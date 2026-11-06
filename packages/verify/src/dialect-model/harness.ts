@@ -170,10 +170,11 @@ export const isDeletionOf = (original: Json | undefined, output: Json | undefine
     return original.length === output.length && original.every((entry, index) => isDeletionOf(entry, output[index], allowed));
   }
   if (isObject(original) && isObject(output)) {
+    const removable = allowed.has('minContains') && original['minContains'] === 0 ? new Set([...allowed, ...allowedDropKeys(['contains'])]) : allowed;
     for (const key of Object.keys(output)) {
       if (!Object.hasOwn(original, key) || !isDeletionOf(original[key], output[key], allowed)) return false;
     }
-    return Object.keys(original).every((key) => Object.hasOwn(output, key) || allowed.has(key));
+    return Object.keys(original).every((key) => Object.hasOwn(output, key) || removable.has(key));
   }
   return false;
 };

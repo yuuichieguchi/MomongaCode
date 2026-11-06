@@ -43,6 +43,8 @@ export const childSlots = (node: JsonObject): ChildSlot[] => {
   return slots;
 };
 
+export const labelStep = (slot: ChildSlot): string => (slot.edge === 'properties' ? String(slot.key) : slot.segments.join('_'));
+
 export const slotValue = (slot: ChildSlot): Json =>
   Array.isArray(slot.holder) ? (slot.holder[slot.key as number] as Json) : (slot.holder[slot.key as string] as Json);
 

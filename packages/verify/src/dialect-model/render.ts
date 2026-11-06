@@ -2,7 +2,7 @@ import { classOf, resolveRules, type Definition, type Rule } from './definition.
 import { clone, deepEqual, isObject, parsePointer, type Json, type JsonObject, type Schema } from './json.ts';
 import { applyRule, RenderFailure, type FailureReason, type Position, type State } from './primitives.ts';
 import { selects, type Site } from './selector.ts';
-import { childSlots, collectReferenceSegments, NODE_EDGES, setSlot, slotValue } from './walk.ts';
+import { childSlots, collectReferenceSegments, labelStep, NODE_EDGES, setSlot, slotValue } from './walk.ts';
 
 export type Rendered = { ok: true; schema: Schema } | { ok: false; reason: FailureReason; path: string; detail: string; node: Schema };
 
@@ -96,6 +96,7 @@ const visit = (rules: readonly Rule[], read: () => Schema, write: (value: Schema
       site: state.site,
       edges: [...state.edges, slot.edge],
       pointer: [...state.pointer, ...slot.segments],
+      label: [...state.label, labelStep(slot)],
       position:
         slot.edge === '$defs' || slot.edge === 'definitions'
           ? (definitionPositions(state.holder.value).get(JSON.stringify([...state.pointer, ...slot.segments])) ?? 'P')
@@ -111,7 +112,7 @@ const visit = (rules: readonly Rule[], read: () => Schema, write: (value: Schema
 export const render = (input: Schema | null, definition: Definition, site: Site): Rendered => {
   const rules = resolveRules(definition);
   const holder: { value: Schema } = { value: input === null ? undefined : clone(input) };
-  const state: State = { site, edges: [], pointer: [], position: 'P', pendingDrops: [], ancestors: [], holder };
+  const state: State = { site, edges: [], pointer: [], label: [], position: 'P', pendingDrops: [], ancestors: [], holder };
   try {
     visit(rules, () => holder.value, (value) => {
       holder.value = value;
