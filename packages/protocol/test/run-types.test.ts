@@ -132,7 +132,7 @@ describe('run event payloads', () => {
       pins: Record<string, unknown>;
       mode?: PermissionMode;
     }>();
-    expectTypeOf<Payload<'attempt.failed'>>().toEqualTypeOf<{ type: 'attempt.failed'; attempt: number; code: string }>();
+    expectTypeOf<Payload<'attempt.failed'>>().toEqualTypeOf<{ type: 'attempt.failed'; attempt: number; code: string; retryAt: number; limit: number }>();
     expectTypeOf<Payload<'attempt.lost'>>().toEqualTypeOf<{ type: 'attempt.lost'; lastLiveAt: number }>();
     expectTypeOf<Payload<'run.status'>>().toEqualTypeOf<{
       type: 'run.status';

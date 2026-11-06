@@ -40,18 +40,25 @@ describe('attempt.failed', () => {
     expect(EVENT_TYPES).toContain('attempt.failed');
   });
 
-  it('is public with the attempt and the disposition code only', () => {
-    const failed = { ...ENVELOPE, type: 'attempt.failed', attempt: 2, code: 'gateway_unavailable' };
+  it('is public with the attempt, the disposition code, the retry instant and the attempt limit only', () => {
+    const failed = { ...ENVELOPE, type: 'attempt.failed', attempt: 2, code: 'gateway_unavailable', retryAt: 1_800_000_030_000, limit: 20 };
     expect(accepts('PublicRunEvent', failed)).toBe(true);
-    expect(accepts('PublicRunEvent', { ...ENVELOPE, type: 'attempt.failed', attempt: 2 })).toBe(false);
-    expect(accepts('PublicRunEvent', { ...ENVELOPE, type: 'attempt.failed', code: 'gateway_unavailable' })).toBe(false);
+    const { retryAt: _retryAt, ...withoutRetryAt } = failed;
+    const { limit: _limit, ...withoutLimit } = failed;
+    const { attempt: _attempt, ...withoutAttempt } = failed;
+    expect(accepts('PublicRunEvent', withoutAttempt)).toBe(false);
+    expect(accepts('PublicRunEvent', withoutRetryAt)).toBe(false);
+    expect(accepts('PublicRunEvent', withoutLimit)).toBe(false);
+    expect(accepts('PublicRunEvent', { ...failed, retryAt: 'soon' })).toBe(false);
+    expect(accepts('PublicRunEvent', { ...failed, limit: 2.5 })).toBe(false);
+    expect(accepts('PublicRunEvent', { ...ENVELOPE, type: 'attempt.failed', attempt: 2, retryAt: 1_800_000_030_000, limit: 20 })).toBe(false);
     expect(accepts('PublicRunEvent', { ...failed, message: 'connection refused by 10.0.0.1' })).toBe(false);
   });
 
-  it('round-trips through the public projection without the lease token', () => {
-    const event = { ...ENVELOPE, leaseToken: 4, type: 'attempt.failed', attempt: 3, code: 'stream_interrupted' } as RunEvent;
+  it('projects to the public event without the lease token, keeping the retry instant and the limit', () => {
+    const event = { ...ENVELOPE, leaseToken: 4, type: 'attempt.failed', attempt: 3, code: 'stream_interrupted', retryAt: 1_800_000_060_000, limit: 20 } as RunEvent;
     const projected = toPublicRunEvent(event);
-    expect(projected).toEqual({ ...ENVELOPE, type: 'attempt.failed', attempt: 3, code: 'stream_interrupted' });
+    expect(projected).toEqual({ ...ENVELOPE, type: 'attempt.failed', attempt: 3, code: 'stream_interrupted', retryAt: 1_800_000_060_000, limit: 20 });
     expect(accepts('PublicRunEvent', projected)).toBe(true);
   });
 });

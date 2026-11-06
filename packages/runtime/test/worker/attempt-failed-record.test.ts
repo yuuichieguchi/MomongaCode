@@ -45,7 +45,7 @@ const precedingEachRequeue = (env: Env, runId: string): string[] => {
 };
 
 describe('the failing worker records attempt.failed before it yields to QUEUED (RunRecord FailedBeforeYield)', () => {
-  it.each(REQUEUED)('after %s, attempt.failed {attempt, code} is the event immediately before RUNNING -> QUEUED', async (_label, failure, code) => {
+  it.each(REQUEUED)('after %s, attempt.failed {attempt, code, retryAt, limit} is the event immediately before RUNNING -> QUEUED', async (_label, failure, code) => {
     const env = await makeEnv();
     env.gateway.script.push(failure(), textStep('Recovered.'));
     const run = env.enqueue('Work');
@@ -55,7 +55,7 @@ describe('the failing worker records attempt.failed before it yields to QUEUED (
     expect(env.run(run.id).status).toBe('QUEUED');
     expect(failureRecords(env, run.id)).toEqual([expect.objectContaining({ type: FAILED, attempt: 1, code })]);
     expect(precedingEachRequeue(env, run.id)).toEqual([FAILED]);
-    expect(Object.keys(failureRecords(env, run.id)[0] ?? {}).filter((key) => !['id', 'runId', 'sessionId', 'seq', 'step', 'leaseToken', 'createdAt'].includes(key)).sort()).toEqual(['attempt', 'code', 'type']);
+    expect(Object.keys(failureRecords(env, run.id)[0] ?? {}).filter((key) => !['id', 'runId', 'sessionId', 'seq', 'step', 'leaseToken', 'createdAt'].includes(key)).sort()).toEqual(['attempt', 'code', 'limit', 'retryAt', 'type']);
   });
 
   it('a second failure on the next claim records the attempt of that claim, once per attempt', async () => {
