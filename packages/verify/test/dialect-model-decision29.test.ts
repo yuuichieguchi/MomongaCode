@@ -10,8 +10,8 @@ const dropMinContains: Definition = { rules: [{ select: [{ kinds: ['any'] }], op
 
 const productDroppingContainsToo: NonNullable<CaseInput['renderer']> = () => ({ ok: true, schema: { type: 'array' } });
 
-const oracleVerdict = (minContains: number) =>
-  checkCase({
+const oracleVerdict = async (minContains: number) =>
+  await checkCase({
     schema: { type: 'array', contains: { type: 'string' }, minContains },
     site: 'response-format',
     definition: dropMinContains,
@@ -22,12 +22,12 @@ const oracleVerdict = (minContains: number) =>
   });
 
 describe('decision 29 rule 1: the drop oracle drops contains only with minContains 0', () => {
-  it.each([1, 2])('rejects dropping contains together with minContains %i', (minContains) => {
-    expect(oracleVerdict(minContains)?.kind).toBe('drop-changed-more-than-keys');
+  it.each([1, 2])('rejects dropping contains together with minContains %i', async (minContains) => {
+    expect((await oracleVerdict(minContains))?.kind).toBe('drop-changed-more-than-keys');
   });
 
-  it('accepts dropping contains together with minContains 0', () => {
-    expect(oracleVerdict(0)).toBeNull();
+  it('accepts dropping contains together with minContains 0', async () => {
+    expect(await oracleVerdict(0)).toBeNull();
   });
 });
 
@@ -45,21 +45,21 @@ const modelRender = (schema: Json): Json | undefined => {
 };
 
 describe('decision 29: the model labels a property named like a keyword as the product does', () => {
-  it('labels a root property named properties', () => {
+  it('labels a root property named properties', async () => {
     const schema: Json = { type: 'object', properties: { properties: { type: 'string' } } };
     const model = modelRender(schema) as { properties: { properties: { title: string } } };
     expect(model.properties.properties.title).toBe('root_properties');
     expect(model).toEqual(productRender(schema));
   });
 
-  it('labels a nested property named properties', () => {
+  it('labels a nested property named properties', async () => {
     const schema: Json = { type: 'object', properties: { a: { type: 'object', properties: { properties: { type: 'string' } } } } };
     const model = modelRender(schema) as { properties: { a: { properties: { properties: { title: string } } } } };
     expect(model.properties.a.properties.properties.title).toBe('root_a_properties');
     expect(model).toEqual(productRender(schema));
   });
 
-  it('labels a property named anyOf', () => {
+  it('labels a property named anyOf', async () => {
     const schema: Json = { type: 'object', properties: { anyOf: { type: 'string' } } };
     const model = modelRender(schema) as { properties: { anyOf: { title: string } } };
     expect(model.properties.anyOf.title).toBe('root_anyOf');

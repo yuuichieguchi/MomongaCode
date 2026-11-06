@@ -91,7 +91,7 @@ const causeTag = (schema: unknown): string => {
   return [...found].sort().join('+');
 };
 
-export const runSubject = (spec: SubjectSpec, schemas: number, seed: number, log: (line: string) => void, renderer?: CaseInput['renderer'], crossCheck?: CrossCheck): SubjectReport => {
+export const runSubject = async (spec: SubjectSpec, schemas: number, seed: number, log: (line: string) => void, renderer?: CaseInput['renderer'], crossCheck?: CrossCheck): Promise<SubjectReport> => {
   const stats = emptyStats();
   const clusters = new Map<string, Cluster>();
   const baseSeed = (hashString(spec.name) ^ Math.imul(seed, 2654435761)) >>> 0;
@@ -129,7 +129,7 @@ export const runSubject = (spec: SubjectSpec, schemas: number, seed: number, log
         ...(crossCheck === undefined ? {} : { crossCheck }),
       };
       const sink = emptyStats();
-      const failure = checkCase({ ...input, stats: sink });
+      const failure = await checkCase({ ...input, stats: sink });
       mergeStats(stats, sink);
       if (failure === null) continue;
       if (failure.kind === 'oracle-error') {
@@ -143,7 +143,7 @@ export const runSubject = (spec: SubjectSpec, schemas: number, seed: number, log
       cluster.count += 1;
       if (cluster.minimised < MINIMISE_PER_SIGNATURE) {
         cluster.minimised += 1;
-        const shrunk = minimise(input, failure);
+        const shrunk = await minimise(input, failure);
         const tag = causeTag(shrunk.schema);
         const known = cluster.causes.find((entry) => entry.tag === tag);
         if (known === undefined) cluster.causes.push({ tag, count: 1, example: describeMinimised(shrunk) });

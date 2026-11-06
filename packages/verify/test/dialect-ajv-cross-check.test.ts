@@ -121,7 +121,7 @@ class AjvCrossCheck implements CrossCheck {
 }
 
 describe('dialect model: the four documented Ajv defects are still Ajv defects', () => {
-  it.each(AJV_DEFECTS.map((defect) => [defect.name, defect] as const))('%s', (_name, defect) => {
+  it.each(AJV_DEFECTS.map((defect) => [defect.name, defect] as const))('%s', async (_name, defect) => {
     const { schema, instance } = defect.witness;
     expect(validateUntrusted('ajv-defect-witness', schema as Record<string, unknown>, instance).valid).toBe(false);
     expect(newAjv().compile(schema as never)(instance)).toBe(true);
@@ -133,8 +133,8 @@ describe('dialect model: the reference model agrees with Ajv, an engine the prod
   const crossCheck = new AjvCrossCheck();
   it.each(SUBJECTS.map((spec) => [spec.name, spec] as const))(
     '%s has no disagreement outside the four documented Ajv defects and no crash',
-    (name, spec) => {
-      const report = runSubject(spec, SCHEMAS_PER_SUBJECT, 20261105, () => undefined, undefined, crossCheck);
+    async (name, spec) => {
+      const report = await runSubject(spec, SCHEMAS_PER_SUBJECT, 20261105, () => undefined, undefined, crossCheck);
       const counts = { disagreements: report.stats.crossCheckDisagreements, crashes: report.stats.crossCheckCrashes };
       process.stdout.write(`ajvCrossCheck ${name} ${JSON.stringify({ ...counts, explained: report.stats.crossCheckExplained })}\n`);
       expect({ ...counts, samples: report.stats.crossCheckSamples }).toEqual({ disagreements: 0, crashes: 0, samples: [] });

@@ -1,5 +1,5 @@
 import { checkJsonDepth, isRecord } from '@momonga/foundation';
-import { SchemaValidatorFailure, validateUntrusted } from '@momonga/foundation';
+import { SchemaValidatorFailure, checkWithPatterns, patternRefusal, validateUntrusted } from '@momonga/foundation';
 import { sanitizeSchema } from './schema-sanitizer.ts';
 import { capText, sanitizeServerText } from './text.ts';
 
@@ -89,25 +89,29 @@ export const parseElicitationAnswer = (key: string, value: unknown): Elicitation
   return { action, content: content as Record<string, ElicitationContentValue> };
 };
 
-const validateAgainst = (server: string, request: ElicitationRequest, answer: ElicitationAnswer): void => {
+const validateAgainst = async (server: string, request: ElicitationRequest, answer: ElicitationAnswer, signal: AbortSignal | undefined): Promise<void> => {
   if (answer.action !== 'accept') return;
   if (request.mode === 'url') {
     if (answer.content !== undefined) throw new McpElicitationAnswerError(request.key, `an accepted url elicitation "${request.key}" must not carry content`);
     return;
   }
   if (answer.content === undefined) throw new McpElicitationAnswerError(request.key, `an accepted form elicitation "${request.key}" must carry content`);
-  const verdict = validateUntrusted(`mcp-elicitation\u0000${server}\u0000${request.key}`, request.requestedSchema, answer.content);
+  const { content } = answer;
+  const checked = await checkWithPatterns(() => validateUntrusted(`mcp-elicitation\u0000${server}\u0000${request.key}`, request.requestedSchema, content), signal === undefined ? {} : { signal });
+  if (checked.kind === 'stopped') throw (signal as AbortSignal).reason;
+  if (checked.kind === 'not-checked') throw new McpElicitationAnswerError(request.key, patternRefusal(`content for "${request.key}"`, content, checked));
+  const verdict = checked.value;
   if (!verdict.valid) {
     const detail = verdict.errors.map((error) => `${error.instancePath || '(root)'} ${error.message ?? error.keyword}`).join('; ');
     throw new McpElicitationAnswerError(request.key, `the content for "${request.key}" does not match the requested schema: ${detail}`);
   }
 };
 
-export const parseElicitationAnswers = (
+export const parseElicitationAnswers = async (
   requests: readonly ElicitationRequest[],
   raw: unknown,
-  options: { server: string; onValidatorFailure(request: ElicitationRequest, message: string): void },
-): Record<string, ElicitationAnswer> => {
+  options: { server: string; signal?: AbortSignal; onValidatorFailure(request: ElicitationRequest, message: string): void },
+): Promise<Record<string, ElicitationAnswer>> => {
   if (!isRecord(raw)) throw new McpElicitationAnswerError('', 'responses must be an object keyed by request key');
   const known = new Set(requests.map((request) => request.key));
   for (const key of Object.keys(raw)) {
@@ -118,7 +122,7 @@ export const parseElicitationAnswers = (
     if (!(request.key in raw)) throw new McpElicitationAnswerError(request.key, `no answer was given for "${request.key}"`);
     const answer = parseElicitationAnswer(request.key, raw[request.key]);
     try {
-      validateAgainst(options.server, request, answer);
+      await validateAgainst(options.server, request, answer, options.signal);
       answers[request.key] = answer;
     } catch (error) {
       if (!(error instanceof SchemaValidatorFailure)) throw error;

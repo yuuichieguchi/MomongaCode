@@ -397,7 +397,7 @@ class ManagedConnection implements McpServerConnection {
         }
         throw error;
       }
-      if (!isInputRequiredResult(result)) return validateStructuredOutput(mcpToolIdentity(this.name, input.name), input.name, tool, result);
+      if (!isInputRequiredResult(result)) return await validateStructuredOutput(mcpToolIdentity(this.name, input.name), input.name, tool, result, stop);
       rounds += 1;
       if (rounds > maxRounds) {
         throw new SdkError(SdkErrorCode.InputRequiredRoundsExceeded, `Multi-round-trip request 'tools/call' still required input after ${maxRounds} rounds`, { rounds: maxRounds });
@@ -444,9 +444,9 @@ class ManagedConnection implements McpServerConnection {
           void outcome.catch((error: unknown) => {
             this.lastError = `tasks/cancel for an aborted call failed: ${errorMessage(error)}`;
           }),
-        accept: (taskId, value) => {
+        accept: async (taskId, value) => {
           if (!isCallToolResult(value)) throw new McpTaskError(taskId, `task ${taskId} completed with a result that is not a tool result`);
-          return validateStructuredOutput(mcpToolIdentity(this.name, input.name), input.name, tool, value);
+          return validateStructuredOutput(mcpToolIdentity(this.name, input.name), input.name, tool, value, stop.signal);
         },
       });
     } finally {
@@ -640,7 +640,7 @@ class ManagedConnection implements McpServerConnection {
         capabilities: { elicitation: { form: {}, url: {} }, ...(remote ? { extensions: { [TASKS_EXTENSION]: {} } } : {}) },
         versionNegotiation: { mode: 'auto' },
         inputRequired: { autoFulfill: false },
-        jsonSchemaValidator: createSafeSchemaValidator(this.name),
+        jsonSchemaValidator: createSafeSchemaValidator(),
         listChanged: { tools: { autoRefresh: false, debounceMs: 0, onChanged: () => undefined } },
       },
     );

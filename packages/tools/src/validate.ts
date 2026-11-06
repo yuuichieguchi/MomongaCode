@@ -1,5 +1,5 @@
 import type { AnyTool } from './types.ts';
-import { JsonDepthError, SchemaValidatorFailure, checkJsonDepth, checkWithPatterns, compileUntrustedSchema, parseOutsideJson, sha256Hex, untrustedSchemaFailure, validateUntrusted } from '@momonga/foundation';
+import { JsonDepthError, SchemaValidatorFailure, checkJsonDepth, checkWithPatterns, compileUntrustedSchema, parseOutsideJson, patternRefusal, renderInstancePath, sha256Hex, untrustedSchemaFailure, validateUntrusted } from '@momonga/foundation';
 import type { UntrustedError } from '@momonga/foundation';
 
 const MAX_REPORTED_ERRORS = 20;
@@ -30,15 +30,7 @@ export const compileToolSchemas = (tool: AnyTool): void => {
 
 const unescapePointerSegment = (segment: string): string => segment.replaceAll('~1', '/').replaceAll('~0', '~');
 
-const renderPath = (segments: readonly string[]): string => {
-  if (segments.length === 0) return '(root)';
-  return segments
-    .map((segment, index) => {
-      if (/^\d+$/.test(segment)) return `[${segment}]`;
-      return index === 0 ? segment : `.${segment}`;
-    })
-    .join('');
-};
+const renderPath = renderInstancePath;
 
 const pathSegments = (instancePath: string): string[] =>
   instancePath === '' ? [] : instancePath.slice(1).split('/').map(unescapePointerSegment);
@@ -95,23 +87,6 @@ const parseArguments = (tool: AnyTool, rawArguments: unknown): ValidationResult 
   }
 };
 
-const fieldOf = (value: unknown, text: string, segments: readonly string[]): readonly string[] | undefined => {
-  if (value === text) return segments;
-  if (typeof value !== 'object' || value === null) return undefined;
-  const entries: [string, unknown][] = Array.isArray(value) ? value.map((item, index) => [String(index), item]) : Object.entries(value);
-  for (const [key, item] of entries) {
-    if (!Array.isArray(value) && key === text) return [...segments, key];
-    const found = fieldOf(item, text, [...segments, key]);
-    if (found !== undefined) return found;
-  }
-  return undefined;
-};
-
-const secondsText = (limitMs: number): string => {
-  const seconds = limitMs / 1000;
-  return `${seconds} ${seconds === 1 ? 'second' : 'seconds'}`;
-};
-
 export const validateToolInput = async (tool: AnyTool, rawArguments: unknown, options: ValidationOptions = {}): Promise<ValidationResult> => {
   const parsed = parseArguments(tool, rawArguments);
   if (!parsed.ok) return parsed;
@@ -119,13 +94,7 @@ export const validateToolInput = async (tool: AnyTool, rawArguments: unknown, op
     const checked = await checkWithPatterns(() => validateUntrusted(schemaIdentity(tool), tool.inputSchema, parsed.value), options);
     if (checked.kind === 'stopped') return { ok: false, reason: 'stopped', message: `${tool.name} was cancelled` };
     if (checked.kind === 'not-checked') {
-      const field = fieldOf(parsed.value, checked.input, []);
-      if (field === undefined) throw new Error(`the text a pattern of ${tool.name} was matched against is not in its arguments`);
-      return {
-        ok: false,
-        reason: 'not-checked',
-        message: `The arguments of ${tool.name} could not be checked against its schema within ${secondsText(checked.limitMs)}: the pattern of ${renderPath(field)} is too costly to match.`,
-      };
+      return { ok: false, reason: 'not-checked', message: patternRefusal(`arguments of ${tool.name}`, parsed.value, checked) };
     }
     const verdict = checked.value;
     return verdict.valid ? parsed : { ok: false, reason: 'invalid', message: describeErrors(tool.name, verdict.errors) };

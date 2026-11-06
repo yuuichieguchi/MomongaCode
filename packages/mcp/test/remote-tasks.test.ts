@@ -49,7 +49,7 @@ const settleOptions = (overrides: SettleOverrides) => ({
   clock: { now: overrides.now ?? (() => TASK_START_MS) },
   signal: overrides.signal ?? new AbortController().signal,
   onCheckpoint: () => undefined,
-  accept: () => accepted,
+  accept: async () => accepted,
   trackCancel: overrides.trackCancel ?? ((outcome: Promise<void>) => void outcome.catch(() => undefined)),
 });
 const pastItsTtl = {

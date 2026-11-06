@@ -1,5 +1,5 @@
 import { isRecord, parseOutsideJson } from '@momonga/foundation';
-import { SchemaValidatorFailure, validateUntrusted } from '@momonga/foundation';
+import { SchemaValidatorFailure, checkWithPatterns, patternRefusal, validateUntrusted } from '@momonga/foundation';
 
 export type ContentValue = string | number | boolean | string[];
 
@@ -90,9 +90,12 @@ const isContentValue = (value: unknown): value is ContentValue =>
 const TRUE_WORDS = ['y', 'yes', 'true', '1'];
 const FALSE_WORDS = ['n', 'no', 'false', '0'];
 
-const checkAgainst = (origin: ElicitationOrigin, schema: Readonly<Record<string, unknown>>, value: unknown, label: string): ContentCheck => {
+const checkAgainst = async (origin: ElicitationOrigin, schema: Readonly<Record<string, unknown>>, value: unknown, label: string, signal: AbortSignal | undefined): Promise<ContentCheck> => {
   try {
-    const verdict = validateUntrusted(JSON.stringify(['cli-elicitation', origin.server, origin.key]), schema, value);
+    const checked = await checkWithPatterns(() => validateUntrusted(JSON.stringify(['cli-elicitation', origin.server, origin.key]), schema, value), signal === undefined ? {} : { signal });
+    if (checked.kind === 'stopped') throw (signal as AbortSignal).reason;
+    if (checked.kind === 'not-checked') return { kind: 'invalid', message: patternRefusal(label === '' ? 'answer' : `value of ${label}`, value, checked) };
+    const verdict = checked.value;
     if (verdict.valid) return { kind: 'valid' };
     return { kind: 'invalid', message: verdict.errors.map((error) => `${label}${error.instancePath} ${error.message ?? error.keyword}`).join('; ') };
   } catch (error) {
@@ -142,7 +145,7 @@ const coerce = (field: FormField, text: string): { ok: true; value: unknown } | 
   }
 };
 
-export const parseFieldInput = (origin: ElicitationOrigin, field: FormField, text: string): ParsedValue => {
+export const parseFieldInput = async (origin: ElicitationOrigin, field: FormField, text: string, signal?: AbortSignal): Promise<ParsedValue> => {
   if (text === '' && field.kind !== 'string') {
     return field.required ? { ok: false, reason: 'invalid', error: `${field.name} is required` } : { ok: true, value: undefined };
   }
@@ -150,11 +153,15 @@ export const parseFieldInput = (origin: ElicitationOrigin, field: FormField, tex
   const coerced = coerce(field, text);
   if (!coerced.ok) return coerced;
   if (!isContentValue(coerced.value)) return { ok: false, reason: 'invalid', error: `${field.name} must be a string, a number, a boolean or a list of strings` };
-  const check = checkAgainst(origin, field.schema, coerced.value, field.name);
+  const check = await checkAgainst(origin, field.schema, coerced.value, field.name, signal);
   if (check.kind === 'validator-failed') return { ok: false, reason: 'validator-failed', error: check.message };
   if (check.kind === 'invalid') return { ok: false, reason: 'invalid', error: check.message };
   return { ok: true, value: coerced.value };
 };
 
-export const validateContent = (origin: ElicitationOrigin, requestedSchema: Readonly<Record<string, unknown>>, content: Readonly<Record<string, ContentValue>>): ContentCheck =>
-  checkAgainst(origin, requestedSchema, content, '');
+export const validateContent = async (
+  origin: ElicitationOrigin,
+  requestedSchema: Readonly<Record<string, unknown>>,
+  content: Readonly<Record<string, ContentValue>>,
+  signal?: AbortSignal,
+): Promise<ContentCheck> => checkAgainst(origin, requestedSchema, content, '', signal);

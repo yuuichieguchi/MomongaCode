@@ -1,4 +1,4 @@
-import { SchemaValidatorFailure, compileUntrustedSchema, validateUntrusted } from '@momonga/foundation';
+import { SchemaValidatorFailure, checkWithPatterns, compileUntrustedSchema, patternRefusal, validateUntrusted } from '@momonga/foundation';
 import { resolveRules, type Definition } from './definition.ts';
 import { instancesFor } from './instance-gen.ts';
 import { clone, deepEqual, exact, isObject, type Json, type JsonObject, type Schema } from './json.ts';
@@ -91,7 +91,7 @@ const asRecord = (schema: Schema): Record<string, unknown> => {
 const IDENTITY = 'dialect-gate';
 
 class Validators {
-  compile(schema: Schema): (value: Json) => boolean {
+  compile(schema: Schema): (value: Json) => Promise<boolean> {
     const root = asRecord(schema);
     try {
       compileUntrustedSchema(root);
@@ -101,12 +101,15 @@ class Validators {
       if (reason !== undefined) throw new Refused(reason, message);
       throw new OracleError(`compile: ${message.split('\n')[0] ?? 'failed'}`);
     }
-    return (value) => {
+    return async (value) => {
+      let checked;
       try {
-        return validateUntrusted(IDENTITY, root, value).valid;
+        checked = await checkWithPatterns(() => validateUntrusted(IDENTITY, root, value));
       } catch (error) {
         throw new OracleError(`validate: ${error instanceof Error ? error.message.split('\n')[0] ?? 'failed' : String(error)}`);
       }
+      if (checked.kind !== 'checked') throw new OracleError(`validate: ${checked.kind === 'not-checked' ? patternRefusal('instance', value, checked) : 'the check was stopped'}`);
+      return checked.value.valid;
     };
   }
 }
@@ -193,7 +196,7 @@ const noteCrossCheck = (stats: CheckStats, crossCheck: CrossCheck, verdictOf: ((
   if (stats.crossCheckSamples.length < MAX_CROSS_CHECK_SAMPLES) stats.crossCheckSamples.push(JSON.stringify({ side, schema: schema ?? null, instance, product, crossCheck: verdict }));
 };
 
-const checkCaseUnguarded = (input: CaseInput): Failure | null => {
+const checkCaseUnguarded = async (input: CaseInput): Promise<Failure | null> => {
   const { schema, site, definition, cls, stats } = input;
   const renderer = input.renderer ?? render;
   const snapshot = clone(schema);
@@ -211,7 +214,7 @@ const checkCaseUnguarded = (input: CaseInput): Failure | null => {
         if (stats !== undefined) stats.unverifiable += 1;
         return null;
       }
-      let validNode: (value: Json) => boolean;
+      let validNode: (value: Json) => Promise<boolean>;
       try {
         validNode = validators.compile(standalone);
       } catch (error) {
@@ -224,7 +227,13 @@ const checkCaseUnguarded = (input: CaseInput): Failure | null => {
       }
       const probes = [...instancesFor(standalone, standalone, rng, input.perDocument), ...(input.forcedInstances ?? [])];
       if (stats !== undefined) stats.instances += probes.length;
-      const witness = probes.find((probe) => validNode(probe));
+      let witness: Json | undefined;
+      for (const probe of probes) {
+        if (await validNode(probe)) {
+          witness = probe;
+          break;
+        }
+      }
       if (witness !== undefined) return { kind: 'false-unsatisfiable', reason: 'unsatisfiable', path: first.path, instance: witness, detail: first.detail };
       return null;
     }
@@ -240,7 +249,7 @@ const checkCaseUnguarded = (input: CaseInput): Failure | null => {
     if (stats !== undefined) stats.unchanged += 1;
     return null;
   }
-  let validOriginal: (value: Json) => boolean;
+  let validOriginal: (value: Json) => Promise<boolean>;
   try {
     validOriginal = validators.compile(original);
   } catch (error) {
@@ -250,7 +259,7 @@ const checkCaseUnguarded = (input: CaseInput): Failure | null => {
     }
     throw error;
   }
-  let validRendered: (value: Json) => boolean;
+  let validRendered: (value: Json) => Promise<boolean>;
   try {
     validRendered = validators.compile(rendered);
   } catch (error) {
@@ -261,8 +270,8 @@ const checkCaseUnguarded = (input: CaseInput): Failure | null => {
   const crossRendered = input.crossCheck?.compile(rendered) ?? null;
   const instances = [...instancesFor(original, rendered, rng, input.perDocument), ...(input.forcedInstances ?? [])];
   for (const instance of instances) {
-    const inOriginal = validOriginal(instance);
-    const inRendered = validRendered(instance);
+    const inOriginal = await validOriginal(instance);
+    const inRendered = await validRendered(instance);
     if (stats !== undefined) {
       stats.instances += 1;
       if (inOriginal) stats.validOriginal += 1;
@@ -278,9 +287,9 @@ const checkCaseUnguarded = (input: CaseInput): Failure | null => {
   return null;
 };
 
-export const checkCase = (input: CaseInput): Failure | null => {
+export const checkCase = async (input: CaseInput): Promise<Failure | null> => {
   try {
-    return checkCaseUnguarded(input);
+    return await checkCaseUnguarded(input);
   } catch (error) {
     if (error instanceof OracleError) return { kind: 'oracle-error', detail: error.message };
     throw error;
@@ -352,15 +361,15 @@ export interface Minimised {
 const MAX_SHRINK_EVALUATIONS = 4000;
 const SHRINK_BUDGET_MS = 6000;
 
-const tryCheck = (input: CaseInput): Failure | null | 'invalid' => {
+const tryCheck = async (input: CaseInput): Promise<Failure | null | 'invalid'> => {
   try {
-    return checkCase(input);
+    return await checkCase(input);
   } catch {
     return 'invalid';
   }
 };
 
-export const minimise = (input: CaseInput, failure: Failure): Minimised => {
+export const minimise = async (input: CaseInput, failure: Failure): Promise<Minimised> => {
   let current = input.schema;
   let currentFailure = failure;
   let evaluations = 0;
@@ -374,7 +383,7 @@ export const minimise = (input: CaseInput, failure: Failure): Minimised => {
         evaluations += 1;
         if (evaluations >= MAX_SHRINK_EVALUATIONS || Date.now() >= deadline) break;
         const forced = currentFailure.instance === undefined ? [] : [currentFailure.instance];
-        const result = tryCheck({ ...base, schema: candidate, forcedInstances: forced });
+        const result = await tryCheck({ ...base, schema: candidate, forcedInstances: forced });
         if (result !== 'invalid' && result !== null && sameFailure(result, failure)) {
           current = candidate;
           currentFailure = result;
@@ -391,7 +400,7 @@ export const minimise = (input: CaseInput, failure: Failure): Minimised => {
     while (progressed) {
       progressed = false;
       for (const candidate of instanceCandidates(instance)) {
-        if (instanceFails(current, input.site, input.definition, failure.kind, candidate, input.renderer ?? render)) {
+        if (await instanceFails(current, input.site, input.definition, failure.kind, candidate, input.renderer ?? render)) {
           instance = candidate;
           reduced = { ...reduced, instance: candidate };
           progressed = true;
@@ -404,13 +413,13 @@ export const minimise = (input: CaseInput, failure: Failure): Minimised => {
   return { schema: current, site: input.site, definition: input.definition, cls: input.cls, failure: reduced, rendered };
 };
 
-const instanceFails = (schema: Json, site: Site, definition: Definition, kind: FailureKind, instance: Json, renderer: NonNullable<CaseInput['renderer']>): boolean => {
+const instanceFails = async (schema: Json, site: Site, definition: Definition, kind: FailureKind, instance: Json, renderer: NonNullable<CaseInput['renderer']>): Promise<boolean> => {
   const result = renderer(schema, definition, site);
   const validOriginal = validators.compile(schema);
-  if (!result.ok) return kind === 'false-unsatisfiable' && validOriginal(instance);
+  if (!result.ok) return kind === 'false-unsatisfiable' && (await validOriginal(instance));
   const validRendered = validators.compile(result.schema);
-  if (kind === 'rendered-accepts-more') return validRendered(instance) && !validOriginal(instance);
-  if (kind === 'rendered-rejects-more') return validOriginal(instance) && !validRendered(instance);
+  if (kind === 'rendered-accepts-more') return (await validRendered(instance)) && !(await validOriginal(instance));
+  if (kind === 'rendered-rejects-more') return (await validOriginal(instance)) && !(await validRendered(instance));
   return false;
 };
 

@@ -216,13 +216,13 @@ describe('MCP result mapping', () => {
     expect(callRecords(recordFile, 'content_kinds')).toHaveLength(1);
   });
 
-  it('returns catastrophic_output promptly because server output-schema regexes never run', async () => {
+  it('refuses catastrophic_output promptly because its nested-quantifier pattern runs in the linear engine', async () => {
     const { set } = await modernSet();
     const startedAt = performance.now();
     const result = await makeExecutor().resultOf(set, 'mcp__modern__catastrophic_output', {});
     expect(performance.now() - startedAt).toBeLessThan(2000);
-    expect(result.status).toBe('completed');
-    expect(result.output).toBe(`{"value":"${'a'.repeat(36)}!"}`);
+    expect(result.status).toBe('failed');
+    expect(result.output).toContain("Structured content does not match the tool's output schema");
   });
 });
 
