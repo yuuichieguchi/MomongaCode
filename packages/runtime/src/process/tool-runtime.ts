@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
-import { canonicalJson, createFileCredentialStore, createLockCapability, createProcessInspector, ensureSessionTmpDir as defaultEnsureSessionTmpDir, hostInspectorPorts, ruleEnforcementOf, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, createFileCredentialStore, createLockCapability, hostProcessInspector, ensureSessionTmpDir as defaultEnsureSessionTmpDir, hostInspectorPorts, ruleEnforcementOf, sha256Hex } from '@momonga/foundation';
 import type { Clock, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, ReapTiming, RuleEnforcement } from '@momonga/foundation';
 import { createMcpPool, inheritedEnvOf, mcpCredentialDirectory } from '@momonga/mcp';
 import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
@@ -74,7 +74,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
 
   const policyFilesystem = options.policyFilesystem ?? createPolicyFilesystem();
   const lockCapability = options.lockCapability ?? createLockCapability({ proofDir: paths.lockProof });
-  const inspector = createProcessInspector(process.platform, { ...hostInspectorPorts(), capability: lockCapability });
+  const inspector = hostProcessInspector({ ...hostInspectorPorts(), capability: lockCapability });
   const owners = options.owners ?? createMarkerOwners();
   const jobs = createBackgroundJobs({
     store,

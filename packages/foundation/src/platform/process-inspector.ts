@@ -48,9 +48,11 @@ export const createProcessInspector = (platform: NodeJS.Platform, ports: Inspect
   }
 };
 
+export const hostProcessInspector = (ports: InspectorPorts): ProcessInspector => createProcessInspector(process.platform, ports);
+
 let hostInspector: ProcessInspector | undefined;
 
 export const defaultProcessInspector = (): ProcessInspector => {
-  hostInspector ??= createProcessInspector(process.platform, hostInspectorPorts());
+  hostInspector ??= hostProcessInspector(hostInspectorPorts());
   return hostInspector;
 };
