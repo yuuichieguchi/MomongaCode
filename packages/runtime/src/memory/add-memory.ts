@@ -2,9 +2,9 @@ import { lexicallyWithin } from '@momonga/foundation';
 import { EvidenceOutsideRootError, EvidenceUnreadableError } from '@momonga/memory';
 import type { AddMemoryRequest, MemoryEvidence } from '@momonga/protocol';
 import { MEMORY_TEXT_MAX_CHARS, memoryTextProblem } from '@momonga/tools';
-import type { AddMemoryByCommandInput, EvidenceReply } from '@momonga/store';
+import type { AddMemoryByCommandInput } from '@momonga/store';
 import { MemoryEvidenceError, USER_MEMORY_PATH_REFUSAL, bindMemoryEvidence, createEvidencePorts, readGitHead } from './evidence.ts';
-import type { EvidenceRun } from './evidence.ts';
+import type { BoundFacts, EvidenceRun } from './evidence.ts';
 
 export class MemoryAddRefusal extends Error {
   readonly param: string | undefined;
@@ -22,7 +22,7 @@ export type MemoryAddContext = {
   signal: AbortSignal;
 };
 
-const hashedBy = (project: string, given: readonly string[], ports: ReturnType<typeof createEvidencePorts>) => async (resolved: readonly string[]): Promise<EvidenceReply> => {
+const hashedBy = (project: string, given: readonly string[], ports: ReturnType<typeof createEvidencePorts>) => async (resolved: readonly string[]): Promise<BoundFacts> => {
   const recorded = await Promise.all(
     resolved.map(async (target, index) => {
       if (!lexicallyWithin(target, project)) return null;
@@ -36,10 +36,10 @@ const hashedBy = (project: string, given: readonly string[], ports: ReturnType<t
         throw error;
       }
       if (sha256 === undefined) throw new MemoryAddRefusal(`${name} does not exist in the project or is not a regular file, so a memory cannot be bound to it`, 'paths');
-      return { seq: 0, sha256 };
+      return { sha256 };
     }),
   );
-  return { lastSeq: 0, recorded, check: null };
+  return { recorded, check: null };
 };
 
 export const prepareCommandMemory = async (request: AddMemoryRequest, context: MemoryAddContext): Promise<AddMemoryByCommandInput> => {
@@ -65,11 +65,10 @@ export const prepareCommandMemory = async (request: AddMemoryRequest, context: M
   try {
     evidence = await bindMemoryEvidence({
       scope: request.scope,
-      runId: '',
       paths,
       project,
       trusted: true,
-      journal: (resolved) => {
+      facts: (resolved) => {
         if (project === null || ports === undefined) throw new Error('a user memory has no journal to ask');
         return hashedBy(project, paths, ports)(resolved);
       },

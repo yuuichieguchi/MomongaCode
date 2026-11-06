@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { EvidenceOutsideRootError, EvidenceUnreadableError } from '@momonga/memory';
 import type { RunEvent, ToolFile } from '@momonga/protocol';
-import { MemoryEvidenceError, bindMemoryEvidence, createEvidencePorts, readGitHead } from '@momonga/runtime';
+import { MemoryEvidenceError, bindMemoryEvidence, createEvidencePorts, readGitHead, runFactsOf } from '@momonga/runtime';
 import type { EvidenceCommand } from '@momonga/runtime';
 import { createEvidenceFold } from '../../src/memory/evidence-fold.ts';
 
@@ -28,14 +28,13 @@ const fileOf = (target: string, access: ToolFile['access'], sha256 = HASH): Tool
 const binding = (events: RunEvent[], paths: string[], overrides: { trusted?: boolean; head?: string | undefined } = {}) =>
   bindMemoryEvidence({
     scope: 'project',
-    runId: 'r1',
     paths,
     project: PROJECT,
     trusted: overrides.trusted ?? true,
-    journal: async (resolved) => {
+    facts: async (resolved) => {
       const fold = createEvidenceFold({ paths: resolved, verificationCommands: ['npm test'] });
       for (const event of events) fold.add(event);
-      return { lastSeq: events.length, ...fold.finish() };
+      return runFactsOf('r1', { lastSeq: events.length, ...fold.finish() });
     },
     head: async () => ('head' in overrides ? overrides.head : HEAD),
   });

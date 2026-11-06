@@ -11,7 +11,7 @@ import type { ServiceTimers } from '../service/timers.ts';
 import { readPins } from '../worker/pins.ts';
 import { billedDetailOf, carriesOutput, terminalResultOf } from '../worker/model-stream.ts';
 import type { ModelResult } from '../worker/model-stream.ts';
-import { MemoryEvidenceError, bindMemoryEvidence, readGitHead } from './evidence.ts';
+import { MemoryEvidenceError, bindMemoryEvidence, readGitHead, runFactsOf } from './evidence.ts';
 import type { EvidenceRun } from './evidence.ts';
 import { REFLECTION_INSTRUCTIONS } from './reflection-input.ts';
 import { REFLECTION_REPLY_SCHEMA, validateReflectionReply } from './reflection-reply.ts';
@@ -133,14 +133,16 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       try {
         const evidence = await bindMemoryEvidence({
           scope: 'project',
-          runId,
           paths,
           project,
           trusted,
-          journal: (resolved) =>
-            store.journalFacts.evidence(
+          facts: async (resolved) =>
+            runFactsOf(
+              runId,
+              await store.journalFacts.evidence(
               { runId, paths: resolved, verificationCommands: verification.commands, ...(onlyCommand === undefined ? {} : { onlyCommand }) },
-              signal,
+                signal,
+              ),
             ),
           head: readHead,
         });

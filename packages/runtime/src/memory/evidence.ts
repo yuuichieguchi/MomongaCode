@@ -112,13 +112,21 @@ export const readGitHead = async ({ project, trusted, run, signal }: EvidencePor
 
 export const USER_MEMORY_PATH_REFUSAL = 'a user memory belongs to no project, so it cannot be bound to a path';
 
+type CheckEvidence = Extract<MemoryEvidence, { kind: 'check' }>;
+
+export type BoundFacts = { recorded: ({ sha256: string } | null)[]; check: CheckEvidence | null };
+
+export const runFactsOf = (runId: string, reply: EvidenceReply): BoundFacts => ({
+  recorded: reply.recorded,
+  check: reply.check === null ? null : { kind: 'check', runId, ...reply.check },
+});
+
 export type BindMemoryEvidenceInput = {
   scope: MemoryScope;
-  runId: string;
   paths: readonly string[];
   project: string | null;
   trusted: boolean;
-  journal(paths: readonly string[]): Promise<EvidenceReply>;
+  facts(paths: readonly string[]): Promise<BoundFacts>;
   head(): Promise<string | undefined>;
 };
 
@@ -130,7 +138,7 @@ export const bindMemoryEvidence = async (input: BindMemoryEvidenceInput): Promis
   const { project } = input;
   if (project === null) throw new Error('a project memory is bound to a project');
   const resolvedPaths = input.paths.map((given) => resolveToolPath(project, given));
-  const facts = await input.journal(resolvedPaths);
+  const facts = await input.facts(resolvedPaths);
   const bound = new Map<string, MemoryEvidence>();
   for (const [index, given] of input.paths.entries()) {
     const resolved = resolvedPaths[index];
@@ -145,6 +153,6 @@ export const bindMemoryEvidence = async (input: BindMemoryEvidenceInput): Promis
   return [
     ...bound.values(),
     ...(commit === undefined ? [] : [{ kind: 'commit' as const, sha: commit }]),
-    ...(check === null ? [] : [{ kind: 'check' as const, runId: input.runId, ...check }]),
+    ...(check === null ? [] : [check]),
   ];
 };

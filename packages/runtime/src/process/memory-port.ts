@@ -6,7 +6,7 @@ import { MEMORY_MATCH_LIMIT } from '@momonga/store';
 import type { MemoryVisibility, RecallCursor, RuntimeStore } from '@momonga/store';
 import { ToolExecutionError, createMemoryTools } from '@momonga/tools';
 import type { MemoryStorePort } from '@momonga/tools';
-import { bindMemoryEvidence, createEvidencePorts, readGitHead } from '../memory/evidence.ts';
+import { bindMemoryEvidence, createEvidencePorts, readGitHead, runFactsOf } from '../memory/evidence.ts';
 import type { EvidencePortsOptions, EvidenceRun } from '../memory/evidence.ts';
 import type { EvidencePorts } from '@momonga/memory';
 import { termsOfQuery } from '../memory/recall-query.ts';
@@ -78,11 +78,10 @@ export const createMemoryPort = ({ store, settings, evidenceRun, evidencePorts =
         const { commands: verificationCommands } = await settings.verification(session);
         const evidence = await bindMemoryEvidence({
           scope,
-          runId,
           paths: paths ?? [],
           project: scope === 'project' ? session.cwd : null,
           trusted,
-          journal: (resolved) => store.journalFacts.evidence({ runId, paths: resolved, verificationCommands }, bound),
+          facts: async (resolved) => runFactsOf(runId, await store.journalFacts.evidence({ runId, paths: resolved, verificationCommands }, bound)),
           head: () => readGitHead(evidenceOptionsFor(bound)),
         });
         const saved = store.memories.save({
