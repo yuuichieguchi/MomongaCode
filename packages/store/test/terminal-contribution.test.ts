@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RunEvent, RunEventPayload } from '@momonga/protocol';
 import type { ContributionPayload, RuntimeStore, TerminalContribution } from '@momonga/store';
-import { EXPIRES_MS, awaitingApproval } from './approval-fixture.ts';
+import { EXPIRES_MS, awaitingApproval, awaitingInput } from './approval-fixture.ts';
 import { DEADLINE_MS, LEASE_MS, START_MS, callEvent, cancel, enqueue, harness, mustClaim, mustRun, newSession, noJournalFacts, payloadOf } from './helpers.ts';
 import type { Harness } from './helpers.ts';
 import { fakePreparer } from './preparer-fixture.ts';
@@ -101,7 +101,7 @@ describe('context.contribution at every terminal transition of the store', () =>
   it('precedes the status when the deadline stops a run that waits for a person', async () => {
     const { hook } = recording();
     const h = harness({ contribution: hook });
-    const { runId } = awaitingApproval(h.store, [{ callId: 'call_1', expiresAt: DEADLINE_MS + 60_000 }], 'waiting');
+    const { runId } = awaitingApproval(h.store, [{ callId: 'call_1' }], 'waiting');
 
     expect((await h.store.expireApprovals(DEADLINE_MS, (error: unknown) => { throw error; }))).toEqual([runId]);
 
@@ -109,15 +109,15 @@ describe('context.contribution at every terminal transition of the store', () =>
     expect(mustRun(h.store, runId).stopReason).toBe('timeout');
   });
 
-  it('precedes the status when an approval timeout stops the run', async () => {
+  it('precedes the status when an expired request for input stops the run', async () => {
     const { hook } = recording();
     const h = harness({ contribution: hook });
-    const { runId } = awaitingApproval(h.store, [{ callId: 'call_1' }], 'waiting');
+    const { runId } = awaitingInput(h.store, [{ callId: 'call_1' }], 'waiting');
 
     expect((await h.store.expireApprovals(EXPIRES_MS, (error: unknown) => { throw error; }))).toEqual([runId]);
 
     expect(mustRun(h.store, runId).stopReason).toBe('approval_timeout');
-    expect(tailTypes(h.store, runId, 4)).toEqual(['tool.permission.cancelled', 'notice', 'context.contribution', 'run.status:STOPPED']);
+    expect(tailTypes(h.store, runId, 4)).toEqual(['tool.elicitation.cancelled', 'notice', 'context.contribution', 'run.status:STOPPED']);
   });
 
   it('precedes the status when the dead-letter sweep ends the run', async () => {

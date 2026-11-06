@@ -5,8 +5,8 @@ import { START_MS, makeEnv } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 import { waitFor } from '@momonga/testkit';
 
-describe('worker approval expiry', () => {
-  it('caps the approval expiry at the run deadline', async () => {
+describe('worker approval wait', () => {
+  it('gives the approval no expiry of its own, so the run deadline ends the wait', async () => {
     const env = await makeEnv();
     const deadlineAt = START_MS + 60_000;
     env.gateway.script.push(callsStep([{ callId: 'call_w_1', name: 'Write', args: { file_path: `${env.project}/out.txt`, content: 'x' } }]));
@@ -15,7 +15,12 @@ describe('worker approval expiry', () => {
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
-    expect(env.store.approvals.listPending(run.id).map((approval) => approval.expiresAt)).toEqual([deadlineAt]);
+    const [approval] = env.store.approvals.listPending(run.id);
+    expect(approval).toBeDefined();
+    expect(approval).not.toHaveProperty('expiresAt');
+    expect(await env.store.expireApprovals(deadlineAt - 1, (error: unknown) => { throw error; })).toEqual([]);
+    expect(await env.store.expireApprovals(deadlineAt, (error: unknown) => { throw error; })).toEqual([run.id]);
+    expect(env.run(run.id)).toMatchObject({ status: 'STOPPED', stopReason: 'timeout' });
   });
 });
 
