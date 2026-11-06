@@ -87,3 +87,77 @@ fi
 chmod 755 "$staging/$ASSET_NAME"
 mv -f "$staging/$ASSET_NAME" "$target"
 printf 'installed momonga to %s\n' "$target"
+
+readonly BEGIN_MARKER="# >>> momonga installer >>>"
+readonly END_MARKER="# <<< momonga installer <<<"
+
+shell_name="$(basename "${SHELL:-sh}")"
+case "$shell_name" in
+  zsh)
+    rc_file="${ZDOTDIR:-$HOME}/.zshrc"
+    ;;
+  bash)
+    rc_file="$HOME/.bashrc"
+    for candidate in .bashrc .bash_profile .profile; do
+      if [ -e "$HOME/$candidate" ]; then
+        rc_file="$HOME/$candidate"
+        break
+      fi
+    done
+    ;;
+  fish)
+    rc_file="$HOME/.config/fish/config.fish"
+    ;;
+  *)
+    rc_file="$HOME/.profile"
+    ;;
+esac
+
+if [ "$shell_name" = "fish" ]; then
+  path_line="fish_add_path $bin_dir"
+else
+  path_line="export PATH=\"$bin_dir:\$PATH\""
+fi
+
+case ":$PATH:" in
+  *":$bin_dir:"*) exit 0 ;;
+esac
+
+if [ "${MOMONGA_MODIFY_PATH:-1}" = "0" ]; then
+  printf '%s is not on your PATH. To use momonga in this shell, run:\n\n  %s\n' "$bin_dir" "$path_line"
+  exit 0
+fi
+
+current_line=""
+has_block=0
+if [ -f "$rc_file" ]; then
+  current_line="$(awk -v begin="$BEGIN_MARKER" -v end="$END_MARKER" '
+    $0 == begin { inside = 1; found = 1; next }
+    $0 == end { inside = 0; next }
+    inside { print; exit }
+  ' "$rc_file")"
+  if grep -qxF -- "$BEGIN_MARKER" "$rc_file"; then has_block=1; fi
+fi
+
+if [ "$has_block" = "1" ] && [ "$current_line" = "$path_line" ]; then
+  printf 'PATH is already configured in %s\n' "$rc_file"
+elif [ "$has_block" = "1" ]; then
+  rewritten="$(mktemp "$bin_dir/.momonga-rc.XXXXXX")"
+  PATH_LINE="$path_line" awk -v begin="$BEGIN_MARKER" -v end="$END_MARKER" '
+    $0 == begin { print; print ENVIRON["PATH_LINE"]; inside = 1; next }
+    $0 == end { inside = 0 }
+    !inside { print }
+  ' "$rc_file" > "$rewritten"
+  cat "$rewritten" > "$rc_file"
+  rm -f "$rewritten"
+  printf 'PATH line updated in %s\n' "$rc_file"
+else
+  mkdir -p "$(dirname "$rc_file")"
+  if [ -s "$rc_file" ]; then
+    if [ -n "$(tail -c 1 "$rc_file")" ]; then printf '\n' >> "$rc_file"; fi
+    printf '\n' >> "$rc_file"
+  fi
+  printf '%s\n%s\n%s\n' "$BEGIN_MARKER" "$path_line" "$END_MARKER" >> "$rc_file"
+  printf 'PATH line added to %s\n' "$rc_file"
+fi
+printf 'To use momonga in this shell now, run:\n\n  %s\n' "$path_line"
