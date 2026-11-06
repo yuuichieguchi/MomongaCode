@@ -33,7 +33,8 @@
 (*                          and no worker crash or stall                   *)
 (*   InheritRef.live        check: UseEventually under LiveSpec            *)
 (*   InheritRef.copyOnInherit, .readsLatest, .noAlreadyCheck,              *)
-(*   .noWalkedCheck, .readAppends: evidence, each violates one property    *)
+(*   .noWalkedCheck, .readAppends, .recordCuts: evidence, each violates    *)
+(*                          one property                                   *)
 (*                                                                         *)
 (* Variants (constants), each one removes one rule of the design:          *)
 (*   CopyOnInherit  the new event carries the items                        *)
@@ -42,6 +43,7 @@
 (*                  existing reference                                     *)
 (*   NoWalkedCheck  the commit does not compare the predecessor's lastSeq  *)
 (*   ReadAppends    the read writes a record                               *)
+(*   RecordCuts     the record read walks with the compaction floor        *)
 (***************************************************************************)
 EXTENDS Naturals, Sequences, FiniteSets
 
@@ -56,7 +58,8 @@ CONSTANTS
     ReadsLatest,
     NoAlreadyCheck,
     NoWalkedCheck,
-    ReadAppends
+    ReadAppends,
+    RecordCuts
 
 Runs == IF Chain THEN {"A", "B", "C"} ELSE {"A", "C"}
 Children == Runs \ {"A"}
@@ -80,6 +83,7 @@ VARIABLES
     wtok,
     plan,
     win,
+    rec,
     wcr,
     dcr,
     stalls,
@@ -87,7 +91,7 @@ VARIABLES
     staleRef,
     readWrote
 
-vars == <<ev, st, nsvc, lease, tok, pc, wtok, plan, win, wcr, dcr, stalls, builds, staleRef, readWrote>>
+vars == <<ev, st, nsvc, lease, tok, pc, wtok, plan, win, rec, wcr, dcr, stalls, builds, staleRef, readWrote>>
 
 ItemEv == [k |-> "i"]
 CompEv(t) == [k |-> "c", through |-> t]
@@ -130,6 +134,16 @@ OldHist(r, u) ==
             ELSE IF e.k = "ref" THEN OldHist(e.from, e.last)
             ELSE prev
 
+RECURSIVE RecordOf(_, _)
+RecordOf(r, u) ==
+    IF u = 0 THEN <<>>
+    ELSE LET prev == RecordOf(r, u - 1)
+             e == ev[r][u]
+         IN IF e.k = "i" THEN Append(prev, <<Base(r) + ItemsIn(r, u), <<r, u>>>>)
+            ELSE IF e.k = "ref" /\ e.form = "legacy" THEN e.carried
+            ELSE IF e.k = "ref" THEN RecordOf(e.from, e.last)
+            ELSE prev
+
 RECURSIVE Resolve(_, _)
 Resolve(r, u) ==
     IF u < 1 \/ ~HasRef(r) THEN [p |-> OwnPairs(r, u), runs |-> {r}]
@@ -167,6 +181,7 @@ TypeOK ==
     /\ stalls \in 0..MaxStalls
     /\ \A s \in Slots : plan[s] = NoPlan \/ (plan[s].last \in Nat /\ plan[s].next \in Nat)
     /\ \A s \in Slots : win[s] = NoWin \/ \A i \in 1..Len(win[s]) : win[s][i][1] \in Nat
+    /\ \A s \in Slots : rec[s] = NoWin \/ \A i \in 1..Len(rec[s]) : rec[s][i][1] \in Nat
     /\ \A r \in Children : \A b \in builds[r] : b # NoWin
     /\ staleRef \in BOOLEAN
     /\ readWrote \in BOOLEAN
@@ -182,6 +197,7 @@ Init ==
     /\ wtok = [s \in Slots |-> 0]
     /\ plan = [s \in Slots |-> NoPlan]
     /\ win = [s \in Slots |-> NoWin]
+    /\ rec = [s \in Slots |-> NoWin]
     /\ wcr = 0
     /\ dcr = 0
     /\ stalls = 0
@@ -194,7 +210,7 @@ ServiceAppend(r) ==
     /\ nsvc < MaxService
     /\ nsvc' = nsvc + 1
     /\ ev' = [ev EXCEPT ![r] = Append(@, ItemEv)]
-    /\ UNCHANGED <<st, lease, tok, pc, wtok, plan, win, wcr, dcr, stalls, builds, staleRef, readWrote>>
+    /\ UNCHANGED <<st, lease, tok, pc, wtok, plan, win, rec, wcr, dcr, stalls, builds, staleRef, readWrote>>
 
 Claim(s) ==
     LET r == s[1]
@@ -207,6 +223,7 @@ Claim(s) ==
        /\ pc' = [pc EXCEPT ![s] = "idle"]
        /\ plan' = [plan EXCEPT ![s] = NoPlan]
        /\ win' = [win EXCEPT ![s] = NoWin]
+       /\ rec' = [rec EXCEPT ![s] = NoWin]
        /\ UNCHANGED <<ev, st, nsvc, wcr, dcr, stalls, builds, staleRef, readWrote>>
 
 Plan(s) ==
@@ -222,7 +239,7 @@ Plan(s) ==
                   /\ pc' = [pc EXCEPT ![s] = "planned"]
                   /\ plan' = [plan EXCEPT ![s] = [last |-> last, next |-> NextPos(q, last), comp |-> ptr, copy |-> OldHist(q, last), through |-> FloorOf(ptr)]]
                   /\ UNCHANGED <<ev, readWrote>>
-       /\ UNCHANGED <<st, nsvc, lease, tok, wtok, win, wcr, dcr, stalls, builds, staleRef>>
+       /\ UNCHANGED <<st, nsvc, lease, tok, wtok, win, rec, wcr, dcr, stalls, builds, staleRef>>
 
 CommitRef(s) ==
     LET r == s[1]
@@ -260,7 +277,7 @@ CommitRef(s) ==
              /\ \/ write("reference")
                 \/ /\ legacy
                    /\ write("legacy")
-       /\ UNCHANGED <<nsvc, lease, tok, wtok, plan, win, wcr, dcr, stalls, builds, readWrote>>
+       /\ UNCHANGED <<nsvc, lease, tok, wtok, plan, win, rec, wcr, dcr, stalls, builds, readWrote>>
 
 Read(s) ==
     LET r == s[1]
@@ -272,7 +289,16 @@ Read(s) ==
              THEN ev' = [ev EXCEPT ![r] = Append(@, [k |-> "r"])]
              ELSE ev' = ev
        /\ readWrote' = (readWrote \/ ev' # ev)
-       /\ UNCHANGED <<st, nsvc, lease, tok, wtok, plan, wcr, dcr, stalls, builds, staleRef>>
+       /\ UNCHANGED <<st, nsvc, lease, tok, wtok, plan, rec, wcr, dcr, stalls, builds, staleRef>>
+
+ReadRecord(s) ==
+    LET r == s[1]
+        f == ev[r][1]
+    IN /\ pc[s] \in {"committed", "read", "used"}
+       /\ HasRef(r)
+       /\ rec[s] = NoWin
+       /\ rec' = [rec EXCEPT ![s] = IF RecordCuts THEN OldHist(f.from, f.last) ELSE Resolve(f.from, f.last).p]
+       /\ UNCHANGED <<ev, st, nsvc, lease, tok, pc, wtok, plan, win, wcr, dcr, stalls, builds, staleRef, readWrote>>
 
 Use(s) ==
     LET r == s[1]
@@ -281,8 +307,10 @@ Use(s) ==
              THEN /\ pc' = [pc EXCEPT ![s] = "used"]
                   /\ builds' = [builds EXCEPT ![r] = @ \cup {win[s]}]
                   /\ win' = win
+                  /\ rec' = rec
              ELSE /\ pc' = [pc EXCEPT ![s] = "lost"]
                   /\ win' = [win EXCEPT ![s] = NoWin]
+                  /\ rec' = [rec EXCEPT ![s] = NoWin]
                   /\ UNCHANGED builds
        /\ UNCHANGED <<ev, st, nsvc, lease, tok, wtok, plan, wcr, dcr, stalls, staleRef, readWrote>>
 
@@ -291,6 +319,7 @@ Retire(s) ==
     /\ ~Fenced(s)
     /\ pc' = [pc EXCEPT ![s] = "lost"]
     /\ win' = [win EXCEPT ![s] = NoWin]
+    /\ rec' = [rec EXCEPT ![s] = NoWin]
     /\ UNCHANGED <<ev, st, nsvc, lease, tok, wtok, plan, wcr, dcr, stalls, builds, staleRef, readWrote>>
 
 Finish(s) ==
@@ -305,7 +334,7 @@ Finish(s) ==
           \/ \E t \in (floor + 1)..top : ev' = [ev EXCEPT ![r] = Append(@, CompEv(t))]
        /\ st' = [st EXCEPT ![r] = "terminal"]
        /\ lease' = [lease EXCEPT ![r] = "free"]
-       /\ UNCHANGED <<nsvc, tok, pc, wtok, plan, win, wcr, dcr, stalls, builds, staleRef, readWrote>>
+       /\ UNCHANGED <<nsvc, tok, pc, wtok, plan, win, rec, wcr, dcr, stalls, builds, staleRef, readWrote>>
 
 WorkerCrash(s) ==
     /\ wcr < MaxWorkerCrashes
@@ -315,6 +344,7 @@ WorkerCrash(s) ==
     /\ pc' = [pc EXCEPT ![s] = "dead"]
     /\ plan' = [plan EXCEPT ![s] = NoPlan]
     /\ win' = [win EXCEPT ![s] = NoWin]
+    /\ rec' = [rec EXCEPT ![s] = NoWin]
     /\ UNCHANGED <<ev, st, nsvc, lease, tok, wtok, dcr, stalls, builds, staleRef, readWrote>>
 
 DaemonCrash ==
@@ -323,6 +353,7 @@ DaemonCrash ==
     /\ pc' = [s \in Slots |-> IF pc[s] \in Live /\ st[s[1]] # "terminal" THEN "dead" ELSE pc[s]]
     /\ plan' = [s \in Slots |-> IF pc[s] \in Live /\ st[s[1]] # "terminal" THEN NoPlan ELSE plan[s]]
     /\ win' = [s \in Slots |-> IF pc[s] \in Live /\ st[s[1]] # "terminal" THEN NoWin ELSE win[s]]
+    /\ rec' = [s \in Slots |-> IF pc[s] \in Live /\ st[s[1]] # "terminal" THEN NoWin ELSE rec[s]]
     /\ UNCHANGED <<ev, st, nsvc, lease, tok, wtok, wcr, stalls, builds, staleRef, readWrote>>
 
 ExpireHolderGone(r) ==
@@ -330,7 +361,7 @@ ExpireHolderGone(r) ==
     /\ lease[r] = "held"
     /\ ~HolderAlive(r)
     /\ lease' = [lease EXCEPT ![r] = "free"]
-    /\ UNCHANGED <<ev, st, nsvc, tok, pc, wtok, plan, win, wcr, dcr, stalls, builds, staleRef, readWrote>>
+    /\ UNCHANGED <<ev, st, nsvc, tok, pc, wtok, plan, win, rec, wcr, dcr, stalls, builds, staleRef, readWrote>>
 
 ExpireStall(r) ==
     /\ st[r] # "terminal"
@@ -339,7 +370,7 @@ ExpireStall(r) ==
     /\ stalls < MaxStalls
     /\ stalls' = stalls + 1
     /\ lease' = [lease EXCEPT ![r] = "free"]
-    /\ UNCHANGED <<ev, st, nsvc, tok, pc, wtok, plan, win, wcr, dcr, builds, staleRef, readWrote>>
+    /\ UNCHANGED <<ev, st, nsvc, tok, pc, wtok, plan, win, rec, wcr, dcr, builds, staleRef, readWrote>>
 
 Stutter == UNCHANGED vars
 
@@ -353,6 +384,7 @@ Next ==
         \/ Plan(s)
         \/ CommitRef(s)
         \/ Read(s)
+        \/ ReadRecord(s)
         \/ Use(s)
         \/ Retire(s)
         \/ Finish(s)
@@ -402,6 +434,11 @@ StopsAtOldShape ==
     \A p \in Children :
         (HasRef(p) /\ ev[p][1].form = "legacy") =>
             \A q \in Children : (p \in Resolve(q, Len(ev[q])).runs => Src(p) \notin Resolve(q, Len(ev[q])).runs)
+
+RecordIsChainConcat ==
+    \A s \in Slots : rec[s] # NoWin => rec[s] = RecordOf(Src(s[1]), ev[s[1]][1].last)
+
+RecordIsVolatile == \A s \in Slots : pc[s] \in {"none", "dead", "lost"} => rec[s] = NoWin
 
 UseEventually == <>(builds["C"] # {})
 
