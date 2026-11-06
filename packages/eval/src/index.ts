@@ -117,3 +117,7 @@ export { ANSWER_KINDS, TRANSCRIPT_FORMAT, TranscriptError, decodeTranscript, enc
 export type { AnswerKind, Answerer, RecordedRun, Transcript, TranscriptChild, TranscriptReflection, TranscriptRun } from './transcript.ts';
 export { loadContextDataset, loadContextReport, loadDataset, loadTranscripts, nodeEvalFiles, saveContextReport, saveTranscript, transcriptFileName } from './files.ts';
 export type { EvalFiles } from './files.ts';
+export { BENCH_DEFAULT_RUNS, BENCH_DIFFICULTIES, BENCH_FORMAT, BENCH_SCHEMA, BENCH_TASK_TYPES, EVIDENCE_KINDS, parseBenchmark, treeDigest } from './bench.ts';
+export type { BenchDifficulty, BenchTask, BenchTaskType, Benchmark, OracleCheck } from './bench.ts';
+export { BENCH_PROBLEMS, gradeTrial, validateBenchmark } from './bench-grade.ts';
+export type { BenchProblem, CheckResult, GradeInput, TaskValidation, TrialGrade, Validation, WorkspaceProbe } from './bench-grade.ts';
