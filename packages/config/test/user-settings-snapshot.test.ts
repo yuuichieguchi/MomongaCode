@@ -48,7 +48,7 @@ describe('UserSettingsCache.snapshot', () => {
     expect(snapshot.user.layer?.source).toBe(file);
     expect(snapshot.user.layer?.origin).toBe('user');
     expect(snapshot.user.layer?.settings).toEqual({ env: { TZ: 'user' }, autoUpdates: false });
-    expect(snapshot.user.models.targets['fm']).toMatchObject({ adapter: 'fm' });
+    expect(snapshot.user.models.targets).toEqual({});
     expect(snapshot.user.warnings).toEqual([]);
   });
 
