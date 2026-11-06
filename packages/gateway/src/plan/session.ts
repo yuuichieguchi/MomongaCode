@@ -193,6 +193,7 @@ const registrationOf = (record: PlanRecord): PlanRecord => ({
   welcomeShown: record.welcomeShown,
   ...optional('subject', record.subject),
   ...optional('email', record.email),
+  ...optional('generation', record.generation),
 });
 
 const withoutTokens = (record: PlanRecord, cause: string): PlanRecord => {
