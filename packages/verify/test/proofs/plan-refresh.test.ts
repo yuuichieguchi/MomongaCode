@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { GATEWAY_CONFIG_DEFAULTS } from '@momonga/gateway';
+import { GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS } from '@momonga/gateway';
 import { proofArith } from '../../src/proofs/arith.ts';
 import type { ProofArith, ProofInt } from '../../src/proofs/arith.ts';
 import { expectRefuted, prove } from '../../src/proofs/prove.ts';
@@ -12,18 +12,7 @@ type RetryDefaults = { totalWaitMs: number; baseMs: number; maxMs: number; maxAt
 
 const retry = (): RetryDefaults => GATEWAY_CONFIG_DEFAULTS.retry as unknown as RetryDefaults;
 
-const PLAN = {
-  accessLifetimeMs: 3_600_000,
-  attemptTimeoutMs: 15_000,
-  revocationTimeoutMs: 10_000,
-  skewMs: 60_000,
-  refreshBudgetMs: 61_000,
-  marginMs: 121_000,
-  authorizationWaitMs: 300_000,
-  attemptTtlMs: 315_000,
-  revocationBudgetMs: 31_500,
-  persistRetryMs: 30_000,
-} as const;
+const PLAN = PLAN_SESSION_DEFAULTS;
 
 const backoffSumMs = (attempts: number, baseMs: number, maxMs: number): number => {
   let total = 0;
