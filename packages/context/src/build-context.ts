@@ -516,6 +516,7 @@ const historyItemsOf = (sources: BuildContextInput['sources']) =>
       item: pointToHeldSkill(item, sources.activatedSkills),
       pointer: held,
       ...(entry.handle === undefined || held ? {} : { handle: entry.handle }),
+      ...(entry.omittedTokens === undefined ? {} : { omittedTokens: entry.omittedTokens }),
     };
   });
 
@@ -548,7 +549,7 @@ const frozenTailOf = async (input: BuildContextInput, ports: BuildContextPorts, 
     const kept = forms?.get(callId);
     const render = outputRenderOf(original, callNames.get(callId), harnessTools, entry.pointer);
     if (evicted.has(callId)) {
-      const tokens = await ports.meter.countItem(render.full, countContextFor(callId));
+      const tokens = entry.omittedTokens ?? (await ports.meter.countItem(render.full, countContextFor(callId)));
       slots.push({ item: withOutput(original, omittedMarker(tokens, handle, reader)), output: { callId, text, full: false, original } });
     } else if (kept !== undefined) {
       const tokens = await ports.meter.countItem(render.full, countContextFor(callId));
@@ -769,7 +770,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
       const text = outputTextOf(original.output);
       const render = outputRenderOf(original, callNames.get(original.call_id), harnessTools, entry.pointer);
       slot.item = render.full;
-      const tokens = await meter.countItem(render.full, countContextFor(original.call_id));
+      const tokens = entry.omittedTokens ?? (await meter.countItem(render.full, countContextFor(original.call_id)));
       const state: OutputState = {
         original,
         render,
@@ -791,7 +792,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
         slot.item = withOutput(original, omittedMarker(tokens, handle, reader));
         state.mode = 'omitted';
         state.renderedTokens = await meter.countItem(slot.item, countContextFor(state.callId));
-        if (created) reports.set(state.callId, { eviction: { callId: state.callId, handle, kind: 'omitted' }, state });
+        if (created) reports.set(state.callId, { eviction: { callId: state.callId, handle, kind: 'omitted', tokens: state.tokens }, state });
       } else if (frozenKept !== undefined) {
         await ensureHandle(state);
         slot.item = await renderKept(state, state.handle as string, frozenKept);
@@ -861,7 +862,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
         member.slot.item = probe;
         member.state.mode = 'omitted';
         member.state.renderedTokens = await meter.countItem(probe, countContextFor(member.state.callId));
-        reports.set(member.state.callId, { eviction: { callId: member.state.callId, handle, kind: 'omitted' }, state: member.state });
+        reports.set(member.state.callId, { eviction: { callId: member.state.callId, handle, kind: 'omitted', tokens: member.state.tokens }, state: member.state });
         firstEvicted = firstEvicted === undefined ? member.index : Math.min(firstEvicted, member.index);
       }
       return true;

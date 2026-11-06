@@ -63,7 +63,7 @@ export type { Random } from './random.ts';
 export { systemTiming } from './system-timing.ts';
 export { systemRandom } from './system-random.ts';
 export { nodeFileSystem, nodeFileSystemSync } from './node-file-system.ts';
-export type { FileSystemSync } from './node-file-system.ts';
+export type { AccessCheck, FileSystem, FileSystemSync, RemoveOptions } from './node-file-system.ts';
 export { forceKillGroup, groupAlive, groupTerminationBoundMs, realGroupTiming, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from './process-group.ts';
 export type { ForceKillGroupOptions, GroupTiming, ProcessSignalSender, TerminateGroupOptions, TerminateOutcome } from './process-group.ts';
 export { procGroupMembers } from './platform/group-members.ts';
@@ -99,7 +99,7 @@ export type { ClaimWithinOutcome, ClaimWithinRequest } from './platform/claim-wi
 export type { ClaimOutcome, FileLockOps, HeldKernelLock, InheritedLockRequest, KernelLockMechanism } from './platform/kernel-lock.ts';
 export { judgeProcessIdentity } from './process-identity.ts';
 export type { ProcessIdentity } from './process-identity.ts';
-export { SessionTmpDirError, adapterSocketPath, ensureMomongaDirs, ensureSessionTmpDir, momongaLayout, momongaPaths, rotatedLogPath } from './momonga-paths.ts';
+export { MomongaDirectoryError, SessionTmpDirError, adapterSocketPath, ensureMomongaDirs, ensureSessionTmpDir, momongaLayout, momongaPaths, rotatedLogPath } from './momonga-paths.ts';
 export type { MomongaPaths } from './momonga-paths.ts';
 export { createExecWithStdin } from './exec-with-stdin.ts';
 export { createSecretKeyFile, secretKeyFile } from './secret-key-file.ts';
@@ -129,6 +129,8 @@ export type { SecretProcessPort, SecretProcessResult, SecretStore } from './secr
 export type { SecretKeyFile, SecretKeyFileOptions } from './secret-key-file.ts';
 export { isLoopbackHost, redactedUrl, transportUrlMessage, transportUrlProblem } from './loopback.ts';
 export type { TransportUrlProblem } from './loopback.ts';
+export { matchesNoProxy, NETWORK_ENV_NAMES, routeOf } from './network-route.ts';
+export type { Destination, NetworkConfig, NetworkEnvName, NetworkSettingKey, NetworkSource, Route, SourcedValue, UnsupportedProxyReason } from './network-route.ts';
 export {
   EXIT_ALREADY_RUNNING,
   EXIT_VERSION_MISMATCH,
@@ -179,7 +181,7 @@ export { createUninspectableRegistry } from './uninspectable-registry.ts';
 export type { UninspectableRegistry, UninspectableRegistryPorts } from './uninspectable-registry.ts';
 export { isProcessAlive } from './process-alive.ts';
 export type { SignalSender } from './process-alive.ts';
-export { LINUX_SOCKET_PATH_LIMIT, PIPE_NAME_LIMIT, SOCKET_PATH_LIMIT, assertSocketPathLength, assertUnixSocketPathFits, createSocketPathProbe, isPipePath, setSocketBind, pipePathFor, socketPathLimit } from './socket-path.ts';
+export { LINUX_SOCKET_PATH_LIMIT, PIPE_NAME_LIMIT, SOCKET_PATH_LIMIT, SocketPathUnsupportedError, assertSocketPathLength, assertUnixSocketPathFits, createSocketPathProbe, isPipePath, setSocketBind, pipePathFor, socketPathLimit } from './socket-path.ts';
 export { MAX_SYMLINK_HOPS, canonicalDirectory, canonicalPath, comparableContains, comparableFromParts, comparablePath, containsByComponents, locateThroughFiles, caseSensitivityOf, setCaseSensitivityProbe, volumeIsCaseInsensitive, walkPath } from './path-compare.ts';
 export type { SocketBind } from './socket-path.ts';
 export { createAsyncCapabilityProbe, createCapabilityProbe, unmeasuredBecause } from './capability-probe.ts';

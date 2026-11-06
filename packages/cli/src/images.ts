@@ -21,9 +21,9 @@ export const mediaTypeOf = (bytes: Uint8Array): ImageMediaType | undefined => {
   return undefined;
 };
 
-export const readImageAttachment = async (files: Pick<CliFiles, 'readBytes'>, cwd: string, file: string): Promise<ImageAttachment> => {
+export const readImageAttachment = async (files: Pick<CliFiles, 'readFile'>, cwd: string, file: string): Promise<ImageAttachment> => {
   const resolved = path.resolve(cwd, file);
-  const bytes = await files.readBytes(resolved);
+  const bytes = await files.readFile(resolved);
   const mediaType = mediaTypeOf(bytes);
   if (mediaType === undefined) throw new UnsupportedImage(resolved);
   return { mediaType, data: Buffer.from(bytes).toString('base64') };

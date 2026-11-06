@@ -191,8 +191,8 @@ describe('identicalOutput under eviction pressure', () => {
 
     expect(omittedIds(result.evictions)).toEqual(['c1', copy, 'f1', 'f2']);
     expect(result.evictions.filter((eviction) => eviction.callId === 'c1' || eviction.callId === copy)).toEqual([
-      { callId: 'c1', handle: handleOf(BIG), kind: 'omitted' },
-      { callId: copy, handle: handleOf(BIG), kind: 'omitted' },
+      { callId: 'c1', handle: handleOf(BIG), kind: 'omitted', tokens: expect.any(Number) },
+      { callId: copy, handle: handleOf(BIG), kind: 'omitted', tokens: expect.any(Number) },
     ]);
     expect(outputTextOf(result.input, 'c1')).toBe(omittedMarkerOf('c1'));
     expect(outputTextOf(result.input, copy)).toBe(omittedMarkerOf(copy));

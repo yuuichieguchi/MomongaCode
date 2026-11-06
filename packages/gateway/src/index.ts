@@ -16,6 +16,7 @@ export { FmServeError, createFmServe } from './managed/fm-serve.ts';
 export { PreconditionFailedError } from './adapters/shared/failures.ts';
 export type {
   ExecFn,
+  ExecOptions,
   ExecResult,
   FmChild,
   FmServe,

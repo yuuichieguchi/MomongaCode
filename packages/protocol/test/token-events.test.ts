@@ -97,4 +97,10 @@ describe('context.truncated of kind reference', () => {
     }
     expect(accepts({ ...RUN_ENVELOPE, type: 'context.truncated', callId: 'c1', handle: 'h'.repeat(64), kind: 'linked' })).toBe(false);
   });
+
+  it('serves an omission with the tokens it took from the window as a public event', () => {
+    const omission: RunEvent = { ...RUN_ENVELOPE, leaseToken: 1, type: 'context.truncated', callId: 'c1', handle: 'h'.repeat(64), kind: 'omitted', tokens: 331 };
+    expect(accepts(toPublicRunEvent(omission))).toBe(true);
+    expect(accepts({ ...RUN_ENVELOPE, type: 'context.truncated', callId: 'c1', handle: 'h'.repeat(64), kind: 'omitted', tokens: -1 })).toBe(false);
+  });
 });

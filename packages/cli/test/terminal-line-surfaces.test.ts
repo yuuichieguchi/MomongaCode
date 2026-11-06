@@ -52,7 +52,7 @@ describe('a value a person did not write stays on its own line in command output
     const entry: MomongaModelEntry = { id: `fast ${FORGED}`, object: 'model', targets: [`t ${FORGED}`], targetCounters: { [`t ${FORGED}`]: '0123456789abcdef' }, capabilities, targetCapabilities: {} };
     const lines = formatModels([entry]).split('\n');
     expect(lines[0]).toBe(`fast ${SHOWN}  -> t ${SHOWN}`);
-    expect(lines).toHaveLength(6);
+    expect(lines).toHaveLength(7);
   });
 
   it('shows the probe remedy for a needs-probe tool calling state', () => {

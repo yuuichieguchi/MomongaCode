@@ -4,6 +4,7 @@ import { PreconditionFailedError } from '../adapters/shared/failures.ts';
 import type { OllamaEndpointRecord } from './endpoint-record.ts';
 import { resolveDialectId } from '../dialect/resolve-id.ts';
 import { layerOf, mergeCapabilities, withImageDefault } from './decide.ts';
+import { jsonModeCapabilityOf } from './json-mode.ts';
 import type { DeclaredCapabilities } from './decide.ts';
 import { memoizedVerification } from './endpoint-target.ts';
 import { needsProbeOf, preconditionOf, remedyOf } from './remedy.ts';
@@ -56,6 +57,7 @@ export const createProbedOllamaTarget = (options: ProbedOllamaTargetOptions): Pr
           image: report.imageInputAccepted && report.imageTokens !== undefined ? imageCapability(true, report.imageTokens) : imageCapability(false, undefined),
           reasoning: report.thinkingSupported ? { control: 'reasoning_effort', lowest: LOWEST_REASONING_EFFORT } : { control: 'none' },
           ...(report.promptCache === undefined ? {} : { promptCache: report.promptCache }),
+          ...jsonModeCapabilityOf(report.jsonMode),
         },
         probedAt: report.probedAt,
       });

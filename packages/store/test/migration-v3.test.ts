@@ -61,7 +61,7 @@ const migrated = () => {
 describe('migration v3 on a populated v2 database', () => {
   it('records the third migration', () => {
     const { dbPath } = migrated();
-    expect(rawDb(dbPath).prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => Number(row['version']))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]);
+    expect(rawDb(dbPath).prepare('SELECT version FROM schema_migrations ORDER BY version').all().map((row) => Number(row['version']))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27]);
   });
 
   it('keeps sessions, runs, events and approvals', () => {
@@ -121,7 +121,7 @@ describe('migration v3 on a populated v2 database', () => {
           `INSERT INTO approvals (id, run_id, call_id, status, options_json, option_id, expires_at, created_at, resolved_at)
            VALUES ('appr-dup', 'run-1', 'call_2', 'pending', ?, NULL, ?, ?, NULL)`,
         )
-        .run(OPTIONS_JSON, START_MS + 60_000, START_MS),
+        .run(OPTIONS_JSON, null, START_MS),
     ).toThrow(/UNIQUE/);
   });
 

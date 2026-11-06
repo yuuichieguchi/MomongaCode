@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createUserSettingsCache } from '@momonga/config';
+import { createUserSettingsCache, noKeptRecords } from '@momonga/config';
 import { MINIMAL_CHILD_PATH, SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV } from '@momonga/foundation';
 import { waitFor } from '@momonga/testkit';
 import { COLLIDING_CREDENTIAL_DETAIL, definedEnv, gatewayEnv, runtimeEnv } from '../src/child-env.ts';
@@ -21,7 +21,7 @@ const declaring = (...names: string[]): CredentialSettings =>
 const TOKEN_LIKE = 'sk-' + 'placeholder-value';
 
 const configErrorMessage = (home: string): string => {
-  const snapshot = createUserSettingsCache({ home, onWarning: () => undefined }).snapshot();
+  const snapshot = createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: noKeptRecords }).snapshot();
   if (!('error' in snapshot)) throw new Error('expected the settings file to be invalid');
   return snapshot.error.message;
 };

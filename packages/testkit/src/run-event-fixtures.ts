@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { compactionSummaryMessage } from '@momonga/protocol';
-import type { RunEvent, RunEventPayload } from '@momonga/protocol';
+import type { InheritedCopyPayload, RunEvent, RunEventPayload } from '@momonga/protocol';
 
 export type RecordedRun = {
   name: string;
@@ -272,7 +272,7 @@ export const evictionAndRejectionRun: RecordedRun = {
   ],
 };
 
-type InheritedPayload = Extract<RunEventPayload, { type: 'context.inherited' }>;
+type InheritedPayload = InheritedCopyPayload;
 
 const inheritedHistory: InheritedPayload['history'] = [
   { seq: 1, item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'read a.txt' }] } },

@@ -4,8 +4,10 @@ import type { PermissionMode, RunEvent, RunEventPayload } from '@momonga/protoco
 import { foldRunState, initialRunState, isFatalStoreError } from '@momonga/store';
 import { SNAPSHOT_STATE_VERSION } from '../src/codec.ts';
 import type { Claim, Run, RuntimeStore } from '@momonga/store';
-import { LEASE_MS, START_MS, TIMEOUT_MS, cancel, cancelToEnd, deadLetterAll, enqueue, harness, mustClaim, mustRun, newSession, payloadOf, rawDb } from './helpers.ts';
+import { LEASE_MS, START_MS, TIMEOUT_MS, cancel, cancelToEnd, dbPathOf, deadLetterAll, enqueue, harness as plainHarness, mustClaim, mustRun, newSession, payloadOf, rawDb } from './helpers.ts';
 import type { Harness, StoreOptions } from './helpers.ts';
+import { FLOOR_TOKENS, UNBOUNDED_WINDOW, withReader } from './support/reference.ts';
+import type { ReferenceEvent } from './support/reference.ts';
 import {
   CLOSURE_TEXT,
   MARKER_TEXT,
@@ -21,6 +23,8 @@ import {
 import type { InheritedEvent } from './inherit-fixtures.ts';
 
 const LONG_LEASE_MS = 10 * TIMEOUT_MS;
+
+const harness = (options: StoreOptions = {}): Harness => plainHarness({ ...options, inheritance: true });
 const USAGE = { input_tokens: 10, output_tokens: 2, total_tokens: 12 };
 
 const answer = (text: string, mode: PermissionMode = 'default'): RunEventPayload[] => [
@@ -51,15 +55,17 @@ const createRun = (store: RuntimeStore, sessionId: string, input: string, extra:
   return result.run;
 };
 
-const inheritedOf = (store: RuntimeStore, runId: string): RunEvent & InheritedEvent => {
+const inheritedOf = (store: RuntimeStore, runId: string): RunEvent & InheritedEvent & { via: ReferenceEvent['via']; omitSeqs: number[] } => {
   const found = store.readRunEvents(runId, 0, 1000).filter((event) => event.type === 'context.inherited');
   expect(found).toHaveLength(1);
-  return found[0] as RunEvent & InheritedEvent;
+  const reference = found[0] as unknown as RunEvent & ReferenceEvent;
+  const window = withReader(dbPathOf(store), (reader) => reader.readInheritedWindow({ runId, windowTokens: UNBOUNDED_WINDOW, floorTokens: FLOOR_TOKENS }));
+  return { ...reference, history: window.entries, evicted: window.evicted, ...(window.summary === undefined ? {} : { summary: window.summary }) } as unknown as RunEvent & InheritedEvent & { via: ReferenceEvent['via']; omitSeqs: number[] };
 };
 
-const thrown = (action: () => unknown): unknown => {
+const thrown = async (action: () => Promise<unknown>): Promise<unknown> => {
   try {
-    action();
+    await action();
   } catch (error) {
     return error;
   }
@@ -89,7 +95,7 @@ describe('inheritContext: the happy path', () => {
     const claim = mustClaim(store, 'w1');
     expect(claim.runId).toBe(second.id);
 
-    expect(store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'inherited' });
+    expect(await store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'inherited' });
 
     const events = store.readRunEvents(second.id, 0, 100);
     expect(events.map((event) => [event.seq, event.type])).toEqual([
@@ -100,30 +106,36 @@ describe('inheritContext: the happy path', () => {
       { seq: 1, item: taskItem('Say hello') },
       { seq: 2, item: assistantItem('m-hello', 'hello') },
     ];
-    expect(payloadOf(events[1]!)).toEqual({
+    const reference = payloadOf(events[1]!) as unknown as ReferenceEvent;
+    expect(reference).toMatchObject({
       type: 'context.inherited',
+      form: 'reference',
       fromRunId: first.id,
       fromLastSeq: mustRun(store, first.id).lastSeq,
-      history,
+      fromNextItemSeq: 3,
       nextItemSeq: 3,
+      itemCount: 2,
+      omitSeqs: [],
+      synthesised: [],
+      via: [],
       workingFacts: { written: [], commands: [], messages: [{ text: 'Say hello', seq: 0 }], itemEvents: [] },
-      evicted: [],
       closures: [],
       markers: [],
       fromMode: 'default',
       mode: 'default',
-      digest: inheritedDigest({ history, nextItemSeq: 3, evicted: [], mode: 'default', workingFacts: { written: [], commands: [], messages: [{ text: 'Say hello', seq: 0 }], itemEvents: [] } }),
     });
+    expect(reference).not.toHaveProperty('history');
+    expect(inheritedOf(store, second.id).history).toEqual(history);
     expect(mustRun(store, second.id).lastSeq).toBe(2);
     const state = events.reduce(foldRunState, initialRunState({ runId: second.id, sessionId: session.id }));
-    expect(state.history).toEqual([...history, { seq: 3, item: taskItem('And again') }]);
+    expect(state.history).toEqual([{ seq: 3, item: taskItem('And again') }]);
     expect(state.taskSeq).toBe(3);
   });
 
   it('records the mode passed by the Worker and announces a change from the predecessor mode', async () => {
     const { store, session } = await completedPredecessor();
     const second = enqueue(store, session.id, 'And again');
-    expect(store.inheritContext(mustClaim(store, 'w1'), { mode: 'plan' })).toEqual({ kind: 'inherited' });
+    expect(await store.inheritContext(mustClaim(store, 'w1'), { mode: 'plan' })).toEqual({ kind: 'inherited' });
     const event = inheritedOf(store, second.id);
     expect(event.history.at(-1)).toEqual(markerEntry(3, modeChangedText('default', 'plan')));
     expect(event.markers).toEqual([{ seq: 3, kind: 'mode_changed' }]);
@@ -135,8 +147,8 @@ describe('inheritContext: the happy path', () => {
     const { store, session } = await completedPredecessor();
     const second = enqueue(store, session.id, 'And again');
     const claim = mustClaim(store, 'w1');
-    expect(store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'inherited' });
-    expect(store.inheritContext(claim, { mode: 'plan' })).toEqual({ kind: 'already' });
+    expect(await store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'inherited' });
+    expect(await store.inheritContext(claim, { mode: 'plan' })).toEqual({ kind: 'already' });
     expect(store.readRunEvents(second.id, 0, 100)).toHaveLength(2);
   });
 
@@ -145,11 +157,11 @@ describe('inheritContext: the happy path', () => {
     const session = newSession(store);
     const first = enqueue(store, session.id, 'Say hello');
     const firstClaim = mustClaim(store, 'w1');
-    expect(store.inheritContext(firstClaim, { mode: 'default' })).toEqual({ kind: 'none' });
+    expect(await store.inheritContext(firstClaim, { mode: 'default' })).toEqual({ kind: 'none' });
     expect(store.readRunEvents(first.id, 0, 100).map((event) => event.type)).toEqual(['user.message']);
     await finish(store, firstClaim, answer('hello'));
     const fresh = createRun(store, session.id, 'Start over', { history: 'fresh' });
-    expect(store.inheritContext(mustClaim(store, 'w1'), { mode: 'default' })).toEqual({ kind: 'none' });
+    expect(await store.inheritContext(mustClaim(store, 'w1'), { mode: 'default' })).toEqual({ kind: 'none' });
     expect(store.readRunEvents(fresh.id, 0, 100).map((event) => event.type)).toEqual(['user.message']);
   });
 
@@ -157,7 +169,7 @@ describe('inheritContext: the happy path', () => {
     const { store, session } = await completedPredecessor();
     const second = enqueue(store, session.id, 'And again');
     const claim = mustClaim(store, 'w1');
-    expect(store.inheritContext({ ...claim, leaseToken: claim.leaseToken + 1 }, { mode: 'default' })).toEqual({ kind: 'lease_lost' });
+    expect(await store.inheritContext({ ...claim, leaseToken: claim.leaseToken + 1 }, { mode: 'default' })).toEqual({ kind: 'lease_lost' });
     expect(store.readRunEvents(second.id, 0, 100)).toHaveLength(1);
   });
 
@@ -166,7 +178,7 @@ describe('inheritContext: the happy path', () => {
     const second = enqueue(store, session.id, 'And again');
     const claim = mustClaim(store, 'w1');
     writable(dbPath).prepare("UPDATE runs SET status = 'RUNNING' WHERE id = ?").run(first.id);
-    expect(store.inheritContext(claim, { mode: 'default' })).toMatchObject({ kind: 'conflict' });
+    expect(await store.inheritContext(claim, { mode: 'default' })).toMatchObject({ kind: 'conflict' });
     expect(store.readRunEvents(second.id, 0, 100)).toHaveLength(1);
   });
 });
@@ -191,7 +203,7 @@ describe('inheritContext: the look-through walk', () => {
     const claim = mustClaim(store, 'w2');
     expect(claim.runId).toBe(third.id);
 
-    expect(store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'inherited' });
+    expect(await store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'inherited' });
 
     const event = inheritedOf(store, third.id);
     expect(event.fromRunId).toBe(first.id);
@@ -203,7 +215,7 @@ describe('inheritContext: the look-through walk', () => {
   });
 
   it('keeps the task of a run that timed out in the queue, followed by the unprocessed marker', async () => {
-    const { store, clock, session, firstClaim } = runningPredecessor();
+    const { store, clock, session, first, firstClaim } = runningPredecessor();
     const timedOut = createRun(store, session.id, 'Too late', { timeoutMs: 1000 });
     const third = enqueue(store, session.id, 'Now this');
     clock.advance(2000);
@@ -213,10 +225,11 @@ describe('inheritContext: the look-through walk', () => {
     const claim = mustClaim(store, 'w2');
     expect(claim.runId).toBe(third.id);
 
-    expect(store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'inherited' });
+    expect(await store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'inherited' });
 
     const event = inheritedOf(store, third.id);
-    expect(event.fromRunId).toBe(timedOut.id);
+    expect(event.fromRunId).toBe(first.id);
+    expect(event.via.map((link) => link.runId)).toEqual([timedOut.id]);
     expect(event.history).toEqual([
       { seq: 1, item: taskItem('Say hello') },
       { seq: 2, item: assistantItem('m-hello', 'hello') },
@@ -238,7 +251,7 @@ describe('inheritContext: the look-through walk', () => {
     await finish(store, firstClaim, answer('hello'));
     const claim = mustClaim(store, 'w2');
     expect(claim.runId).toBe(fourth.id);
-    expect(store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'inherited' });
+    expect(await store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'inherited' });
     const event = inheritedOf(store, fourth.id);
     expect(event.fromRunId).toBe(first.id);
     expect(event.fromLastSeq).toBe(mustRun(store, first.id).lastSeq);
@@ -263,7 +276,7 @@ describe('inheritContext: the look-through walk', () => {
       END;
     `);
 
-    expect(store.inheritContext(claim, { mode: 'default' })).toMatchObject({ kind: 'conflict' });
+    expect(await store.inheritContext(claim, { mode: 'default' })).toMatchObject({ kind: 'conflict' });
 
     expect(store.readRunEvents(third.id, 0, 100).map((event) => event.type)).toEqual(['user.message']);
     expect(mustRun(store, third.id)).toMatchObject({ status: 'RUNNING', lastSeq: before.lastSeq, leaseToken: claim.leaseToken, leaseOwner: 'w2' });
@@ -291,7 +304,7 @@ describe('inheritContext: runs that were never processed', () => {
     const claim = mustClaim(store, 'w3');
     expect(claim.runId).toBe(third.id);
 
-    expect(store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'inherited' });
+    expect(await store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'inherited' });
 
     const event = inheritedOf(store, third.id);
     expect(event.history.slice(-2)).toEqual([{ seq: 3, item: taskItem('Too late') }, markerEntry(4, MARKER_TEXT.unprocessed)]);
@@ -307,7 +320,7 @@ describe('inheritContext: runs that were never processed', () => {
     const claim = mustClaim(store, 'w1');
     expect(claim.runId).toBe(second.id);
 
-    expect(store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'inherited' });
+    expect(await store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'inherited' });
 
     const event = inheritedOf(store, second.id);
     expect(event.fromRunId).toBe(first.id);
@@ -324,7 +337,7 @@ describe('inheritContext: runs that were never processed', () => {
     const claim = mustClaim(store, 'w1');
     expect(claim.runId).toBe(next.id);
 
-    expect(store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'inherited' });
+    expect(await store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'inherited' });
 
     const event = inheritedOf(store, next.id);
     expect(event.fromRunId).toBe(fresh.id);
@@ -336,14 +349,14 @@ describe('inheritContext: runs that were never processed', () => {
     const { store, session, first } = await completedPredecessor();
     const second = enqueue(store, session.id, 'Cancelled early');
     const secondClaim = mustClaim(store, 'w1');
-    expect(store.inheritContext(secondClaim, { mode: 'default' })).toEqual({ kind: 'inherited' });
+    expect(await store.inheritContext(secondClaim, { mode: 'default' })).toEqual({ kind: 'inherited' });
     expect(store.requestCancel(second.id)).toMatchObject({ kind: 'ok', run: { status: 'CANCELLING' } });
     expect((await store.transition(secondClaim, ['CANCELLING'], 'CANCELLED')).kind).toBe('ok');
     const third = enqueue(store, session.id, 'Third');
     const claim = mustClaim(store, 'w1');
     expect(claim.runId).toBe(third.id);
 
-    expect(store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'inherited' });
+    expect(await store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'inherited' });
 
     const event = inheritedOf(store, third.id);
     expect(event.fromRunId).toBe(second.id);
@@ -369,7 +382,7 @@ describe('inheritContext: the write phase rechecks', () => {
       END;
     `);
 
-    expect(store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'already' });
+    expect(await store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'already' });
 
     const rows = rawDb(dbPath).prepare("SELECT COUNT(*) AS n FROM events WHERE run_id = ? AND type = 'context.inherited'").get(second.id);
     expect(rows?.['n']).toBe(1);
@@ -398,7 +411,7 @@ describe('inheritContext: predecessors that ended badly', () => {
     expect(claim.runId).toBe(second.id);
     expect(mustRun(store, first.id)).toMatchObject({ status: 'FAILED', deadLetter: true });
 
-    expect(store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'inherited' });
+    expect(await store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'inherited' });
 
     const event = inheritedOf(store, second.id);
     expect(event.history).toEqual([{ seq: 1, item: taskItem('Write it') }, { seq: 2, item: callItem('c1') }, closureEntry(3, 'c1', CLOSURE_TEXT.failed)]);
@@ -413,17 +426,20 @@ describe('inheritContext: predecessors that ended badly', () => {
     db.exec('DROP TRIGGER events_reject_update');
     db.prepare(`UPDATE events SET type = 'made.up', payload_json = '{"type":"made.up"}' WHERE run_id = ? AND seq = 2`).run(first.id);
 
-    expect(thrown(() => store.inheritContext(claim, { mode: 'default' }))).toEqual(inheritanceError('previous_run_unreadable'));
+    expect(await thrown(() => store.inheritContext(claim, { mode: 'default' }))).toEqual(inheritanceError('previous_run_unreadable'));
     expect(store.readRunEvents(second.id, 0, 100)).toHaveLength(1);
   });
 
-  it('throws previous_run_unreadable for a corrupt predecessor snapshot', async () => {
+  it('inherits by reference from the events when the predecessor snapshot is corrupt, because the planner folds the source events and reads no snapshot (13.4)', async () => {
     const { store, dbPath, session, first } = await completedPredecessor();
     const db = writable(dbPath);
     db.prepare(`INSERT INTO snapshots (run_id, seq, state_json, created_at) VALUES (?, 1, '{"stateVersion":${SNAPSHOT_STATE_VERSION},"runId":7}', 0)`).run(first.id);
-    enqueue(store, session.id, 'And again');
+    const second = enqueue(store, session.id, 'And again');
     const claim = mustClaim(store, 'w1');
-    expect(thrown(() => store.inheritContext(claim, { mode: 'default' }))).toEqual(inheritanceError('previous_run_unreadable'));
+    expect(await store.inheritContext(claim, { mode: 'default' })).toEqual({ kind: 'inherited' });
+    const inherited = store.readRunEvents(second.id, 0, 100).filter((event) => event.type === 'context.inherited');
+    expect(inherited).toHaveLength(1);
+    expect(inherited[0]).toMatchObject({ form: 'reference', fromRunId: first.id, fromLastSeq: mustRun(store, first.id).lastSeq });
   });
 
   it('throws previous_run_unreadable when the predecessor journal does not fold', async () => {
@@ -437,7 +453,7 @@ describe('inheritContext: predecessors that ended badly', () => {
     db.prepare('UPDATE runs SET last_seq = ? WHERE id = ?').run(lastSeq + 1, first.id);
     enqueue(store, session.id, 'And again');
     const claim = mustClaim(store, 'w1');
-    expect(thrown(() => store.inheritContext(claim, { mode: 'default' }))).toEqual(inheritanceError('previous_run_unreadable'));
+    expect(await thrown(() => store.inheritContext(claim, { mode: 'default' }))).toEqual(inheritanceError('previous_run_unreadable'));
   });
 
   it.each<[string, (ids: { second: string; other: string; first: string }) => string]>([
@@ -454,7 +470,7 @@ describe('inheritContext: predecessors that ended badly', () => {
     expect(claim.runId).toBe(second.id);
     writable(dbPath).exec(plant({ second: second.id, other: other.id, first: first.id }));
 
-    expect(thrown(() => store.inheritContext(claim, { mode: 'default' }))).toEqual(inheritanceError('previous_run_inconsistent'));
+    expect(await thrown(() => store.inheritContext(claim, { mode: 'default' }))).toEqual(inheritanceError('previous_run_inconsistent'));
     expect(store.readRunEvents(second.id, 0, 100)).toHaveLength(1);
   });
 
@@ -471,7 +487,7 @@ describe('inheritContext: predecessors that ended badly', () => {
     } finally {
       raw.close();
     }
-    const error = thrown(() => store.inheritContext(claim, { mode: 'default' }));
+    const error = await thrown(() => store.inheritContext(claim, { mode: 'default' }));
     expect(isFatalStoreError(error)).toBe(true);
     expect((error as Error).name).not.toBe('InheritanceError');
   });

@@ -25,6 +25,7 @@ export type HistoryItem = {
   seq: number;
   item: DeepReadonly<InputItem>;
   handle?: string;
+  omittedTokens?: number;
 };
 
 export type ActivatedSkill = { name: string; content: string };
@@ -212,7 +213,7 @@ export type ContextNotice = { code: NoticeCode; message: string; reduction?: Not
 
 export type EvictionKind = 'omitted' | 'truncated' | 'reference';
 
-export type ContextEviction = { callId: string; handle: string; kind: EvictionKind; keptChars?: number };
+export type ContextEviction = { callId: string; handle: string; kind: EvictionKind; keptChars?: number; tokens?: number };
 
 export type ContextBudget = { W: number; R: number; I: number; margin: number };
 

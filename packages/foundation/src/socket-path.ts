@@ -1,9 +1,10 @@
-import { createHash, randomBytes } from 'node:crypto';
-import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import net from 'node:net';
 import path from 'node:path';
 import { createAsyncCapabilityProbe } from './capability-probe.ts';
 import type { CapabilityResult } from './capability-probe.ts';
+import { nodeFileSystemSync } from './node-file-system.ts';
+import { systemRandom } from './system-random.ts';
 
 export const SOCKET_PATH_LIMIT = 104;
 export const LINUX_SOCKET_PATH_LIMIT = 108;
@@ -34,7 +35,7 @@ const PATH_TOO_LONG_ERRNO = new Set(['ENAMETOOLONG', 'EINVAL']);
 const probePathOfLength = (directory: string, byteLength: number): string => {
   const prefix = path.join(directory, 'x');
   const nameLength = byteLength - Buffer.byteLength(prefix) + 1;
-  const name = randomBytes(Math.ceil(nameLength / 2)).toString('hex').slice(0, nameLength);
+  const name = systemRandom.hex(Math.ceil(nameLength / 2)).slice(0, nameLength);
   return path.join(directory, name);
 };
 
@@ -51,7 +52,7 @@ export const createSocketPathProbe = (bind: SocketBind): ((socketPath: string) =
         if (code !== undefined && PATH_TOO_LONG_ERRNO.has(code)) {
           return {
             kind: 'unsupported',
-            evidence: `the kernel refused to bind a Unix socket path of ${byteLength} bytes in ${directory} (${code}); the path must be shorter. Use a shorter path.`,
+            evidence: `the kernel refused to bind a Unix socket path of ${byteLength} bytes in ${directory} (${code}); the path must be shorter than ${byteLength} bytes. Use a shorter path.`,
           };
         }
         return { kind: 'unmeasured', evidence: `a Unix socket path of ${byteLength} bytes in ${directory} could not be tested: ${code ?? (error as Error).message}` };
@@ -66,7 +67,7 @@ const bindThenClose: SocketBind = (socketPath) =>
     server.once('error', reject);
     server.listen(socketPath, () => {
       server.close((closeError) => {
-        fs.rmSync(socketPath, { force: true });
+        nodeFileSystemSync.rmSync(socketPath);
         if (closeError === undefined) resolve();
         else reject(closeError);
       });
@@ -79,8 +80,19 @@ export const setSocketBind = (bind: SocketBind | undefined): void => {
   socketPathProbe = createSocketPathProbe(bind ?? bindThenClose);
 };
 
-export const assertUnixSocketPathFits = async (socketPath: string): Promise<void> => {
+export class SocketPathUnsupportedError extends Error {}
+
+const measureUnixSocketPath = async (socketPath: string): Promise<CapabilityResult<number>> => {
   const result = await socketPathProbe(socketPath);
-  if (result.kind === 'supported') return;
-  throw new Error(`Unix socket path ${socketPath}: ${result.evidence}`);
+  if (result.kind === 'unsupported') throw new SocketPathUnsupportedError(`Unix socket path ${socketPath}: ${result.evidence}`);
+  return result;
+};
+
+export const refuseUnbindableUnixSocketPath = async (socketPath: string): Promise<void> => {
+  await measureUnixSocketPath(socketPath);
+};
+
+export const assertUnixSocketPathFits = async (socketPath: string): Promise<void> => {
+  const result = await measureUnixSocketPath(socketPath);
+  if (result.kind === 'unmeasured') throw new Error(`Unix socket path ${socketPath}: ${result.evidence}`);
 };

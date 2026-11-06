@@ -1,5 +1,6 @@
 import type { Clock, Redactor } from '@momonga/foundation';
 import type { CANCEL_ORIGINS } from './transitions.ts';
+import type { InheritPlanReply, InheritPlanRequest, InheritedWindowReply, InheritedWindowRequest } from './inherit-reference.ts';
 import type {
   BilledDetail,
   Capabilities,
@@ -215,22 +216,22 @@ export type IdempotencyStore = {
   purgeExpired(nowMs: number): number;
 };
 
-export type Approval = {
+type ApprovalRecord = {
   id: string;
   runId: string;
   callId: string;
-  kind: 'permission' | 'elicitation';
   status: 'pending' | 'resolved' | 'superseded' | 'expired' | 'withdrawn';
   options: PermissionOption[];
   server?: string;
   requests?: ElicitationRequestView[];
   responses?: Record<string, ElicitationAnswerRecord>;
-  expiresAt: number;
   createdAt: number;
   optionId?: string;
   resolvedAt?: number;
   subjectDigest?: string;
 };
+
+export type Approval = (ApprovalRecord & { kind: 'permission' }) | (ApprovalRecord & { kind: 'elicitation'; expiresAt: number });
 
 export type ApprovalView = {
   id: string;
@@ -238,7 +239,6 @@ export type ApprovalView = {
   callId: string;
   status: Approval['status'];
   options: PermissionOption[];
-  expiresAt: number;
   createdAt: number;
   suggestedRule?: string;
   reason: string;
@@ -587,6 +587,7 @@ export type RuntimeStore = {
   hasNoticeCode(runId: string, code: string): boolean;
   meterRecordOf(sessionId: string, key: MeterKey): MeterRecord | undefined;
   answeringTargetsOf(runId: string): string[];
+  recordFidelityVerdicts(runId: string, cwd: string, reply: Pick<FidelityReply, 'checkedThrough' | 'verdicts'>): void;
   lastTerminalRootRuns(project: string, limit: number): Run[];
   toolCallNames(rootRunId: string): string[];
   toolOfferedNames(rootRunId: string): string[];
@@ -599,7 +600,6 @@ export type RuntimeStore = {
     input: {
       callId: string;
       options: PermissionOption[];
-      expiresAt: number;
       event: { subjectDigest: string; reason: string; suggestedRule?: string };
     },
   ): RequestApprovalResult;
@@ -619,7 +619,7 @@ export type RuntimeStore = {
   approvalView(approvalId: string): ApprovalView | undefined;
   pendingApprovalViews(runId: string): ApprovalView[];
   writeSnapshot(claim: Claim, seq: number, state: RunState): SnapshotResult;
-  inheritContext(claim: Claim, options: { mode: PermissionMode }): InheritContextResult;
+  inheritContext(claim: Claim, options: { mode: PermissionMode; facts?: Pick<JournalFacts, 'inheritPlan'> }): Promise<InheritContextResult>;
   dataVersion(): number;
   createChildRun(input: ChildRunInput): CreateChildRunResult;
   listChildRuns(runId: string): Run[];
@@ -687,9 +687,33 @@ export type ReflectionInputReply = { lastSeq: number; input: string };
 
 export type FidelityRequest = { runId: string; throughEventSeq: number; cwd: string; tokens: readonly ClaimedToken[] };
 
-export type FidelityReply = { lastSeq: number; attested: string[]; unreadable: { handle: string; reason: string }[] };
+export const VERDICT_RANKS = ['none', 'stated', 'executed'] as const;
+
+export type VerdictRank = (typeof VERDICT_RANKS)[number];
+
+export type FidelityVerdict = {
+  token: string;
+  inh: VerdictRank;
+  inhDeps: string[];
+  taskStated: boolean;
+  statedAt: number | null;
+  executedAt: number | null;
+  ownDeps: string[];
+};
+
+export type FidelityVerdictRow = FidelityVerdict & { checkedThrough: number };
+
+export type FidelityReply = {
+  lastSeq: number;
+  attested: string[];
+  unreadable: { handle: string; reason: string }[];
+  checkedThrough: number;
+  verdicts: FidelityVerdict[];
+};
 
 export type JournalFacts = {
+  inheritPlan(request: InheritPlanRequest, signal?: AbortSignal): Promise<InheritPlanReply>;
+  inheritedWindow(request: InheritedWindowRequest, signal?: AbortSignal): Promise<InheritedWindowReply>;
   verdict(request: VerdictRequest, signal?: AbortSignal): Promise<VerdictReply>;
   evidence(request: EvidenceRequest, signal?: AbortSignal): Promise<EvidenceReply>;
   reflectionInput(request: ReflectionInputRequest, signal?: AbortSignal): Promise<ReflectionInputReply>;

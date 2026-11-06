@@ -7,7 +7,7 @@ import type { RuntimeStore } from '@momonga/store';
 import { makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { MODEL_ALIAS, assistantMessage, textStep } from './scripts.ts';
-import { envNeutralJson, firstConversation, firstRequestInput, inheritedEventOf, modeChangedText, modeMarkersOf, settle } from './inheritance-support.ts';
+import { envNeutralJson, firstConversation, firstRequestInput, resolvedInheritedOf as inheritedEventOf, modeChangedText, modeMarkersOf, settle } from './inheritance-support.ts';
 
 const USAGE = { input_tokens: 50, output_tokens: 5, total_tokens: 55 };
 

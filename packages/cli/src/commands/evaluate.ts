@@ -1,3 +1,4 @@
+import os from 'node:os';
 import path from 'node:path';
 import { loadUserModels } from '@momonga/config';
 import {
@@ -48,7 +49,7 @@ const WORKSPACE_PREFIX = 'momonga-eval-';
 const populate = async (ports: CliPorts, directory: string, golden: GoldenCase): Promise<void> => {
   for (const [name, content] of Object.entries(golden.files ?? {})) {
     const file = path.join(directory, name);
-    await ports.files.ensureDirectory(path.dirname(file));
+    await ports.files.mkdir(path.dirname(file));
     await ports.files.writeText(file, content);
   }
 };
@@ -67,11 +68,11 @@ const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenData
     ...(interrupt === undefined ? {} : { signal: interrupt }),
   });
   const workspaces: string[] = [];
-  if (record !== undefined) await ports.files.ensureDirectory(record);
+  if (record !== undefined) await ports.files.mkdir(record);
   try {
     return await runDataset(dataset, {
       open: async (golden) => {
-        const cwd = await ports.files.makeTempDirectory(WORKSPACE_PREFIX);
+        const cwd = await ports.files.mkdtemp(path.join(os.tmpdir(), WORKSPACE_PREFIX));
         workspaces.push(cwd);
         await populate(ports, cwd, golden);
         return { api, workspace: { cwd, env }, close: async () => undefined };
@@ -79,7 +80,7 @@ const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenData
       ...(record === undefined ? {} : { onTranscript: async (run: RecordedRun) => void (await saveTranscript(ports.files, record, { ...run, policy: null, codeDigest: null })) }),
     });
   } finally {
-    await Promise.all(workspaces.map((directory) => ports.files.removeTree(directory)));
+    await Promise.all(workspaces.map((directory) => ports.files.rm(directory, { recursive: true })));
     await client.close();
   }
 };
@@ -112,7 +113,7 @@ const runContextLiveCommand = async (
   options: { alias: string; seed: number; policy: PolicyOverlay; record: string | undefined; interrupt: AbortSignal | undefined },
 ): Promise<Transcript[]> => {
   const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS, RUNTIME_DEFAULTS } = await import('@momonga/runtime');
-  if (options.record !== undefined) await ports.files.ensureDirectory(options.record);
+  if (options.record !== undefined) await ports.files.mkdir(options.record);
   const { record } = options;
   return runContextLive(hostEffects(ports), {
     dataset,

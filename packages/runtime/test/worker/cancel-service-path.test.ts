@@ -26,7 +26,7 @@ const recordingSweeper = async (env: Env) => {
 const envWithPreparer = async () => {
   const fake = preparerFake();
   const env = await makeEnv({ preparer: fake.preparer });
-  fake.bind(env.store);
+  fake.bind(env.store, env.dbPath);
   return env;
 };
 

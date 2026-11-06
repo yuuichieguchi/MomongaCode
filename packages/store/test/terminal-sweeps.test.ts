@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { JournalThreadError } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { awaitingApproval } from './approval-fixture.ts';
+import { EXPIRES_MS, awaitingApproval, awaitingInput } from './approval-fixture.ts';
 import { LEASE_MS, enqueue, harness, mustClaim, mustRun, newSession } from './helpers.ts';
 import { contributionOf, fakePreparer } from './preparer-fixture.ts';
 import type { Reply } from './preparer-fixture.ts';
@@ -23,14 +23,14 @@ const reporter = () => {
   return { reported, onError: (error: unknown, runId: string) => void reported.push({ error, runId }) };
 };
 
-describe('approval expiry reports a failing run and expires the others of the same sweep', () => {
+describe('the expiry of requests for input reports a failing run and expires the others of the same sweep', () => {
   it('hands one failing run to onError with its id, leaves it waiting unchanged, stops the other run, and stops the failed one at the next sweep', async () => {
     const failure = new JournalThreadError('the journal thread exited');
     const h = withPreparer([{ kind: 'fail', error: failure }]);
-    const first = awaitingApproval(h.store, [{ callId: 'call_1' }], 'waiting');
-    const second = awaitingApproval(h.store, [{ callId: 'call_2' }], 'waiting');
+    const first = awaitingInput(h.store, [{ callId: 'call_1' }], 'waiting');
+    const second = awaitingInput(h.store, [{ callId: 'call_2' }], 'waiting');
     const { reported, onError } = reporter();
-    const expiresAt = Math.max(...[...first.approvals, ...second.approvals].map((approval) => approval.expiresAt));
+    const expiresAt = EXPIRES_MS;
 
     const stopped = await h.store.expireApprovals(expiresAt, onError);
 

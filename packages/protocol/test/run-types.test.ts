@@ -8,6 +8,8 @@ import type {
   ElicitationAnswerRecord,
   ElicitationRequestView,
   ImageAttachment,
+  InheritedCopyPayload,
+  InheritedReferencePayload,
   InputItem,
   MemoryStatus,
   MessageInputItem,
@@ -307,8 +309,10 @@ describe('run event payloads', () => {
       attempt?: number;
       item: MessageInputItem;
     }>();
-    expectTypeOf<Payload<'context.inherited'>>().toEqualTypeOf<{
+    expectTypeOf<Payload<'context.inherited'>>().toEqualTypeOf<InheritedCopyPayload | InheritedReferencePayload>();
+    expectTypeOf<InheritedCopyPayload>().toEqualTypeOf<{
       type: 'context.inherited';
+      form?: undefined;
       fromRunId: string;
       fromLastSeq: number;
       history: { seq: number; item: InputItem; callId?: string; handle?: string }[];
@@ -330,6 +334,7 @@ describe('run event payloads', () => {
       handle: string;
       kind: 'omitted' | 'truncated' | 'reference';
       keptChars?: number;
+      tokens?: number;
     }>();
     expectTypeOf<Payload<'instructions.loaded'>>().toEqualTypeOf<{ type: 'instructions.loaded'; path: string; content: string }>();
     expectTypeOf<Payload<'skill.activated'>>().toEqualTypeOf<{ type: 'skill.activated'; name: string; content: string }>();
@@ -391,7 +396,7 @@ describe('RunState', () => {
       step: number;
       attempt: number;
       usage: { inputTokens: number; outputTokens: number; totalTokens: number };
-      history: { seq: number; item: InputItem; callId?: string; handle?: string }[];
+      history: { seq: number; item: InputItem; callId?: string; handle?: string; omittedTokens?: number }[];
       nextItemSeq: number;
       summary?: { item: CompactionInputItem | MessageInputItem; summary: string; replacedThroughSeq: number };
       workingFacts: WorkingFacts;
@@ -446,7 +451,18 @@ describe('RunState', () => {
       loopGroups: { signature: string; outputSignature?: string }[];
       loopOpen?: { calls: [string, unknown][]; callIds: string[]; outputs: Record<string, string> };
       taskSeq: number;
-      inherited?: { fromRunId: string; fromLastSeq: number; digest: string };
+      inherited?: {
+        fromRunId: string;
+        fromLastSeq: number;
+        digest: string;
+        form?: 'reference';
+        fromNextItemSeq?: number;
+        compaction?: { runId: string; eventSeq: number };
+        itemCount?: number;
+      };
+      ownCompactionEventSeq?: number;
+      inheritedSummaryItem?: MessageInputItem;
+      inheritedTruncations?: { callId: string; handle: string; kind: 'omitted' | 'truncated' | 'reference' }[];
       lastSeq: number;
     }>();
   });

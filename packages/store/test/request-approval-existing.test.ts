@@ -57,7 +57,7 @@ describe('store.requestApproval with a pending approval migrated from v1 without
     ]);
     if (appended.kind !== 'ok') throw new Error('expected the append to succeed');
 
-    const result = store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, expiresAt: START_MS + 60_000, event: { subjectDigest: DIGEST, reason: 'edits require approval' } });
+    const result = store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, event: { subjectDigest: DIGEST, reason: 'edits require approval' } });
 
     if (result.kind !== 'ok') throw new Error(`expected ok, got ${result.kind}`);
     expect(result.approval.id).not.toBe('appr-legacy');
