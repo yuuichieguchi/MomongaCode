@@ -74,13 +74,14 @@ describe('the memo of attestation verdicts (decision 40 B, 13.12b)', () => {
     expect(rowsOf(h, run.id)).toEqual([]);
   });
 
-  it('keeps the same raw path under two cwds in two rows with their own verdicts', async () => {
+  it('keeps the same raw path under two cwds in two rows with their own verdicts, because the path reduces by the cwd', async () => {
     const h = referenceHarness();
     const b = chainBuilder(h);
-    const run = await answeredRun(h, b, 'root', (claim) => b.tool(claim), { fresh: true });
+    const run = await answeredRun(h, b, 'root', (claim) => b.append(claim, callEvents('c9', { file_path: 'sub/x.txt' }, {})), { fresh: true });
     const write = eventsOf(h.store, run.id).find((event) => event.type === 'tool.completed');
-    await checked(h, { runId: run.id, cwd: '/work/a', tokens: [{ token: 'x.txt', claim: 'executed' }] });
-    await checked(h, { runId: run.id, cwd: '/work/b', tokens: [{ token: 'x.txt', claim: 'executed' }] });
+    const token = { token: '/work/a/sub/x.txt', claim: 'executed' as const };
+    await checked(h, { runId: run.id, cwd: '/work/a', tokens: [token] });
+    await checked(h, { runId: run.id, cwd: '/work/b', tokens: [token] });
     expect(rowsOf(h, run.id).map((row) => [row.cwd, row.executed_at])).toEqual([
       ['/work/a', write?.seq],
       ['/work/b', null],

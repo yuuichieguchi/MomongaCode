@@ -231,7 +231,7 @@ describe('R2 on fixed journals: every shape 13.7 lists', () => {
     await answeredRun(h, b, 'two', (claim) => b.evict(claim, callId, 750));
     const child = await inheritingChild(h, b);
     assertEquivalent(h, child, 'default', 'cross-run truncation');
-    expect(windowOf(h, child.id).entries).toContainEqual({ seq: 3, callId, handle: `h-${callId}`, tokens: 750 });
+    expect(windowOf(h, child.id).entries).toContainEqual({ seq: 3, callId, handle: h.store.blobs.handleFor(`out ${callId} ${'o'.repeat(3000)}`), tokens: 750 });
   });
 
   it('an old-shape source ends the walk at its event and is read as one row', async () => {

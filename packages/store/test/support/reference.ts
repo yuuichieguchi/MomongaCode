@@ -238,6 +238,7 @@ export const chainBuilder = (h: ReferenceHarness) => {
   let calls = 0;
   let steps = 0;
   let messages = 0;
+  const outputs = new Map<string, string>();
 
   const createRun = (input: string, options: { history?: 'inherit' | 'fresh'; timeoutMs?: number } = {}): Run => {
     const result = h.store.createRunAndEnqueue(h.sessionId, {
@@ -276,6 +277,7 @@ export const chainBuilder = (h: ReferenceHarness) => {
     calls += 1;
     const callId = `c${calls}`;
     const output = `out ${callId} ${'o'.repeat(options.outputChars ?? 40)}`;
+    outputs.set(callId, output);
     append(claim, [
       requested(step),
       responded(step, [callItem(callId)]),
@@ -288,7 +290,11 @@ export const chainBuilder = (h: ReferenceHarness) => {
   };
 
   const evict = (claim: Claim, callId: string, tokens?: number): void => {
-    append(claim, [{ type: 'context.truncated', callId, handle: `h-${callId}`, kind: 'omitted', ...(tokens === undefined ? {} : { tokens }) } as RunEventPayload]);
+    const inherited = oracleState(h.store, claim.runId).history.find((entry) => entry.item.type === 'function_call_output' && entry.item.call_id === callId)?.item;
+    const output = outputs.get(callId) ?? (inherited?.type === 'function_call_output' && typeof inherited.output === 'string' ? inherited.output : undefined);
+    if (output === undefined) throw new Error(`no output is known for call ${callId}`);
+    const { handle } = h.store.blobs.put(output, { mediaType: 'text/plain' } as never);
+    append(claim, [{ type: 'context.truncated', callId, handle, kind: 'omitted', ...(tokens === undefined ? {} : { tokens }) } as RunEventPayload]);
   };
 
   const openCall = (claim: Claim, started: boolean): string => {

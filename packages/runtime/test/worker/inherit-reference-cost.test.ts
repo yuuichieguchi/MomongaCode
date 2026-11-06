@@ -107,7 +107,7 @@ describe('R6: what crosses the thread boundary is bounded by W and the item boun
     await b.inherit(b.claimNext(child.id), 'default');
     const client = await threadOn(h.dbPath);
     const reply = await client.inheritedWindow({ runId: child.id, windowTokens: 100_000, floorTokens: 1 });
-    expect(reply.entries).toContainEqual({ seq: 3, callId, handle: `h-${callId}`, tokens: Math.ceil((`out ${callId} `.length + 30_000) / 4) });
+    expect(reply.entries).toContainEqual({ seq: 3, callId, handle: h.store.blobs.handleFor(`out ${callId} ${'o'.repeat(30_000)}`), tokens: Math.ceil((`out ${callId} `.length + 30_000) / 4) });
     expect(serializedSize(reply)).toBeLessThan(4_000);
     expect(reply.evicted).toEqual([callId]);
   });

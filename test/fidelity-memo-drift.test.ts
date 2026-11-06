@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import * as protocol from '@momonga/protocol';
 import { FIDELITY_FOLD_VERSION } from '@momonga/protocol';
 import type { RunEvent } from '@momonga/protocol';
 import { createFidelityFold } from '../packages/runtime/src/memory/fidelity-fold.ts';
@@ -80,5 +82,15 @@ describe('the fidelity fold and the models of specs/tla/FidelityMemo.tla cannot 
 
   it('FIDELITY_FOLD_VERSION is bumped whenever the table above changes', () => {
     expect(FIDELITY_FOLD_VERSION).toBe(1);
+  });
+
+  it('the digest of the behaviour table is recorded for the current FIDELITY_FOLD_VERSION, so a behaviour change without a new version fails', () => {
+    const digests = (protocol as unknown as Record<string, unknown>)['FIDELITY_FOLD_BEHAVIOUR_DIGESTS'] as Readonly<Record<number, string>> | undefined;
+    expect(digests).toBeDefined();
+    const recorded = digests ?? {};
+    const versions = Object.keys(recorded).map(Number);
+    expect(Math.max(...versions)).toBe(FIDELITY_FOLD_VERSION);
+    expect(new Set(Object.values(recorded)).size).toBe(versions.length);
+    expect(recorded[FIDELITY_FOLD_VERSION]).toBe(sha256Hex(canonicalJson(behaviourNow())));
   });
 });
