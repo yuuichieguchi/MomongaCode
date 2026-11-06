@@ -76,6 +76,7 @@ function contextOk(cps, index) {
 }
 
 function uLabelOk(label) {
+  if (label.length > MAX_LABEL_UNITS) return false;
   const cps = Array.from(label, (character) => character.codePointAt(0));
   if (cps.length === 0 || label !== label.normalize('NFC')) return false;
   if (MARK.test(String.fromCodePoint(cps[0]))) return false;
@@ -97,6 +98,10 @@ const DAMP = 700;
 const INITIAL_BIAS = 72;
 const INITIAL_N = 128;
 const MAX_INT = 0x7fffffff;
+const MAX_LABEL_OCTETS = 63;
+const MAX_NAME_OCTETS = 253;
+const MAX_LABEL_UNITS = 2 * MAX_LABEL_OCTETS;
+const MAX_MAPPED_UNITS = 2 * MAX_NAME_OCTETS;
 
 function adapt(delta, points, first) {
   let k = 0;
@@ -139,20 +144,24 @@ function punycodeDecode(input) {
     if (n > 0x10ffff || (n >= 0xd800 && n <= 0xdfff)) return null;
     output.splice(i++, 0, n);
   }
-  return String.fromCodePoint(...output);
+  let text = '';
+  for (const cp of output) text += String.fromCodePoint(cp);
+  return text;
 }
 
 function punycodeEncode(label) {
   const cps = Array.from(label, (character) => character.codePointAt(0));
   const basic = cps.filter((cp) => cp < 0x80);
-  let output = String.fromCharCode(...basic);
+  let output = '';
+  for (const cp of basic) output += String.fromCharCode(cp);
   let handled = basic.length;
   if (basic.length > 0) output += '-';
   let n = INITIAL_N;
   let delta = 0;
   let bias = INITIAL_BIAS;
   while (handled < cps.length) {
-    const next = Math.min(...cps.filter((cp) => cp >= n));
+    let next = MAX_INT;
+    for (const cp of cps) if (cp >= n && cp < next) next = cp;
     delta += (next - n) * (handled + 1);
     n = next;
     for (const cp of cps) {
@@ -180,6 +189,7 @@ const ACE_PREFIX = /^xn--/i;
 const ASCII_ONLY = /^[\x00-\x7f]*$/;
 
 function uLabelOfALabel(label) {
+  if (label.length > MAX_LABEL_OCTETS) return null;
   const body = label.slice(4);
   const decoded = punycodeDecode(body);
   if (decoded === null || ASCII_ONLY.test(decoded) || !uLabelOk(decoded)) return null;
@@ -219,6 +229,7 @@ function bidiDomainOk(labels) {
 }
 
 function aceLength(uLabel) {
+  if (uLabel.length > MAX_LABEL_UNITS) return MAX_LABEL_OCTETS + 1;
   return ASCII_ONLY.test(uLabel) ? uLabel.length : 4 + punycodeEncode(uLabel).length;
 }
 
@@ -249,14 +260,16 @@ const IGNORABLE_CODE_POINT = /^\p{Default_Ignorable_Code_Point}$/u;
 function mapDomain(text) {
   let mapped = '';
   for (const character of text.replace(SEPARATORS, '.')) {
+    if (mapped.length > MAX_MAPPED_UNITS) return null;
     if (character !== '\u200c' && character !== '\u200d' && IGNORABLE_CODE_POINT.test(character)) continue;
     mapped += character.normalize('NFKC').toLowerCase();
   }
-  return mapped.normalize('NFC');
+  return mapped.length > MAX_MAPPED_UNITS ? null : mapped.normalize('NFC');
 }
 
 function idnHostname(text) {
   const mapped = mapDomain(text);
+  if (mapped === null) return false;
   const labels = mapped.split('.');
   const unicode = [];
   for (const label of labels) {
@@ -271,7 +284,7 @@ function idnHostname(text) {
     if (length > 63) return false;
     total += length;
   }
-  return total <= 253;
+  return total <= MAX_NAME_OCTETS;
 }
 
 module.exports = { idnHostname, hostnameLabelsOk, derivedProperty, inRanges };
