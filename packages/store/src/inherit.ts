@@ -370,7 +370,6 @@ export const rebaseOntoReference = (state: RunState, shape: RebasedShape, inheri
     history: [{ ...task, seq: shape.nextItemSeq }],
     workingFacts: {
       ...(shape.workingFacts ?? emptyWorkingFacts()),
-      touched: shape.workingFacts?.touched ?? [],
       ...(state.workingFacts.taskText === undefined ? {} : { taskText: state.workingFacts.taskText }),
       itemEvents: state.workingFacts.itemEvents.map((entry) => ({ itemSeq: shape.nextItemSeq, eventSeq: entry.eventSeq })),
     },

@@ -142,7 +142,7 @@ describe('the fold of the new shape (13.2)', () => {
     synthesised: [markerEntry(4, MARKER_TEXT.ended)],
     via: [],
     itemCount: 4,
-    workingFacts: { written: [], touched: [], commands: [], messages: [{ text: 'Say hello', seq: 0 }], itemEvents: [] },
+    workingFacts: { written: [], commands: [], messages: [{ text: 'Say hello', seq: 0 }], itemEvents: [] },
     closures: [],
     markers: [{ seq: 4, kind: 'interrupted' }],
     fromMode: 'default',
