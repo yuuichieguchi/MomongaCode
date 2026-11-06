@@ -39,6 +39,8 @@ export { COMMAND_PREFIX_SUFFIX, EDIT_TOOLS, checkRuleText, parseGovernanceRule, 
 export type { GovernanceRuleEntry, ParseRuleOptions, PathToolName, PermissionRule, RuleEffect, RuleLayer, RuleOrigin } from './rule.ts';
 export { SETTINGS_SCHEMA } from './settings-schema.ts';
 export { DEFAULT_CONTENT_RETENTION_DAYS, defaultSandboxSetting, resolveTelemetrySettings } from './settings.ts';
+export { resolveNetwork } from './network.ts';
+export type { NetworkEnvironment } from './network.ts';
 export {
   DEFAULT_FORGET_AFTER_DAYS,
   DEFAULT_VERIFICATION_COMMANDS,
@@ -89,4 +91,5 @@ export type {
   PriceEntrySettings,
   ResolvedTelemetrySettings,
   TelemetrySettings,
+  NetworkSettings,
 } from './settings.ts';

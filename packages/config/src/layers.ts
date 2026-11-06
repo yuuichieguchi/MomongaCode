@@ -84,6 +84,11 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
     delete restricted.telemetry;
   }
 
+  if (settings.network !== undefined) {
+    warnings.push(`${source}: network is only honored in user settings; discarded`);
+    delete restricted.network;
+  }
+
   if (settings.pricing !== undefined) {
     warnings.push(`${source}: pricing is only honored in user settings; discarded`);
     delete restricted.pricing;
