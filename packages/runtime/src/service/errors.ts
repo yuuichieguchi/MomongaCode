@@ -1,3 +1,5 @@
+import { TARGET_NOT_READY } from '@momonga/protocol';
+
 export type ApiErrorInit = {
   status: number;
   type: string;
@@ -47,6 +49,8 @@ export const conflict = (
   message: string,
 ): ApiError =>
   new ApiError({ status: 409, type: 'conflict', code, message });
+
+export const targetNotReady = (message: string): ApiError => new ApiError({ status: 409, type: 'conflict', code: TARGET_NOT_READY, message });
 
 export const bodyTooLarge = (maxBytes: number): ApiError =>
   new ApiError({ status: 413, type: 'invalid_request', code: 'body_too_large', message: `the request body exceeds the limit of ${maxBytes} bytes` });

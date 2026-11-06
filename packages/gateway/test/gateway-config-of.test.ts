@@ -66,8 +66,7 @@ describe('gatewayConfigOf provider names', () => {
     });
   });
 
-  it('names the implicit default target apple', async () => {
-    const targets = await targetsFor({});
-    expect(Object.values(targets).map((target) => target.provider)).toEqual(['apple']);
+  it('creates no implicit target', async () => {
+    expect(await targetsFor({})).toEqual({});
   });
 });

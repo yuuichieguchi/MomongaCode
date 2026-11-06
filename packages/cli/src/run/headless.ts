@@ -1,5 +1,7 @@
 import type { MomongaPaths } from '@momonga/foundation';
+import { TARGET_NOT_READY } from '@momonga/protocol';
 import type { PermissionMode, PublicRunEvent } from '@momonga/protocol';
+import { RunApiError } from '../client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView } from '../client/views.ts';
 import { daemonReadyBoundMs, restoreDaemon } from '../daemon/ensure-daemon.ts';
@@ -227,8 +229,30 @@ const openInterruptibleSession = async (ports: CliPorts, paths: MomongaPaths, op
   }
 };
 
+export type RefusedResult = { type: 'result'; subtype: 'error'; is_error: true; result: ''; error: { code: string; message: string } };
+
+export const noTargetLines = (reason: string, paths: Pick<MomongaPaths, 'settingsFile'>): string[] => [
+  `momonga: ${reason}`,
+  `  declare a target in ${paths.settingsFile} (models.targets and models.aliases), or run \`momonga models detect\` to find a local model server`,
+];
+
+const refuse = (ports: CliPorts, paths: MomongaPaths, format: OutputFormat, error: RunApiError): number => {
+  ports.stderr.write(`${escapedLines(noTargetLines(error.reason, paths))}\n`);
+  if (format !== 'text') {
+    const refused: RefusedResult = { type: 'result', subtype: 'error', is_error: true, result: '', error: { code: TARGET_NOT_READY, message: error.reason } };
+    ports.stdout.write(`${JSON.stringify(refused)}\n`);
+  }
+  return EXIT_RUN_FAILED;
+};
+
 export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options: HeadlessOptions): Promise<number> => {
-  const session = await openInterruptibleSession(ports, paths, options);
+  let session: CliSession | undefined;
+  try {
+    session = await openInterruptibleSession(ports, paths, options);
+  } catch (error) {
+    if (error instanceof RunApiError && error.code === TARGET_NOT_READY) return refuse(ports, paths, options.format, error);
+    throw error;
+  }
   if (session === undefined) return EXIT_CANCELLED;
   try {
     const sessionId = session.created.session.id;

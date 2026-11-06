@@ -250,13 +250,15 @@ const NO_TOOLS_REMEDY = 'For coding work, choose another model with /model; /mod
 
 const UNAVAILABLE_REMEDY = 'Choose a model with /model, or set one up with /models detect.';
 
-export const agentReadiness = (input: ReadinessInput): Readiness => {
+export function agentReadiness(input: { unavailable: string }): Extract<Readiness, { state: 'unavailable' }>;
+export function agentReadiness(input: ReadinessInput): Readiness;
+export function agentReadiness(input: ReadinessInput): Readiness {
   if (input.unavailable !== undefined) return { state: 'unavailable', message: input.unavailable, remedy: UNAVAILABLE_REMEDY };
   const { toolCalling } = input;
   if (typeof toolCalling !== 'string') {
     return { state: 'needs_probe', message: toolCalling.message, evidence: toolCalling.evidence, remedy: toolCalling.remedy };
   }
   return toolCalling === 'none' ? { state: 'no_tools', message: NO_TOOLS_MESSAGE, remedy: NO_TOOLS_REMEDY } : { state: 'ready' };
-};
+}
 
 export const readinessText = (readiness: Exclude<Readiness, { state: 'ready' }>): string => [readiness.message, readiness.remedy].join('\n');
