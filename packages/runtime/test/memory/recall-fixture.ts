@@ -62,8 +62,10 @@ const copyNotes = (dbPath: string, templateId: string, copies: number, text: (in
   db.prepare('WITH RECURSIVE c(k) AS (SELECT 1 UNION ALL SELECT k + 1 FROM c WHERE k < ?) INSERT INTO copy_numbers SELECT k FROM c').run(copies);
   db.prepare('CREATE TEMP TABLE note_copies AS SELECT memories.*, copy_numbers.k AS copy_k FROM memories, copy_numbers WHERE memories.id = ?').run(templateId);
   db.exec("UPDATE note_copies SET id = printf('%s-%08d', id, copy_k)");
+  db.exec('CREATE INDEX note_copies_by_k ON note_copies (copy_k)');
   const setText = db.prepare('UPDATE note_copies SET text = ? WHERE copy_k = ?');
   for (let index = 1; index <= copies; index += 1) setText.run(text(index), index);
+  db.exec('DROP INDEX note_copies_by_k');
   db.exec('ALTER TABLE note_copies DROP COLUMN copy_k');
   db.exec('INSERT INTO memories SELECT * FROM note_copies');
   db.prepare('CREATE TEMP TABLE evidence_copies AS SELECT memory_evidence.*, copy_numbers.k AS copy_k FROM memory_evidence, copy_numbers WHERE memory_evidence.memory_id = ?').run(templateId);
