@@ -6,7 +6,7 @@ import type { Readable, Stream, Writable } from 'node:stream';
 import { deserializeMessage, serializeMessage, type JSONRPCMessage, type Transport } from '@modelcontextprotocol/client';
 import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
 import type { McpStdioServerConfig } from '@momonga/config';
-import { deadlineSignal, groupTerminationBoundMs, hostProbeTiming, reapMarkedProcesses, terminateGroup, type TerminateOutcome } from '@momonga/foundation';
+import { Deadline, groupTerminationBoundMs, reapMarkedProcesses, systemTiming, terminateGroup, type DeadlineTiming, type TerminateOutcome } from '@momonga/foundation';
 
 const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 const STDERR_TAIL_BYTES = 64 * 1024;
@@ -23,6 +23,7 @@ export interface StdioTransportOptions {
   closeGraceMs?: number;
   markers?: McpMarkerOptions;
   terminate?: (pgid: number, options: { graceMs: number; signal?: AbortSignal }) => Promise<TerminateOutcome>;
+  timing?: DeadlineTiming;
 }
 
 export interface StdioTransportExit {
@@ -214,7 +215,8 @@ class StdioTransportImpl implements StdioTransport {
     try {
       const child = this.child;
       if (child !== undefined && child.pid !== undefined) {
-        const closeStop = deadlineSignal(hostProbeTiming, groupTerminationBoundMs(this.closeGraceMs));
+        const stopBound = Deadline.after(groupTerminationBoundMs(this.closeGraceMs), this.options.timing ?? systemTiming);
+        const closeStop = stopBound.signal;
         child.stdin.end();
         await this.raceTimeout(this.exited);
         let terminateFailure: { error: unknown } | undefined;
