@@ -76,8 +76,11 @@ export const offerFor = (input: ToolOfferInput): ToolOffer => {
       ...standing.filter((definition) => anchorOf(definition.name) === host),
     ];
   };
+  const firstList = input.visible.flatMap((definition) =>
+    definition.name === LOAD_TOOLS_TOOL_NAME ? [loaderDefinitionOf(offeredLoader, catalogDefinitions)] : inPlace.includes(definition) ? [definition] : [],
+  );
   return {
-    tools: [...inPlace, loaderDefinitionOf(offeredLoader, catalogDefinitions), ...loadedInCatalog.flatMap(afterLoad)],
+    tools: [...firstList, ...loadedInCatalog.flatMap(afterLoad)],
     catalog,
   };
 };

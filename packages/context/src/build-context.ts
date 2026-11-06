@@ -287,7 +287,7 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
       }
     }
     if (kept.length > 0 || (await stableFitsFloor(kept))) {
-      tools = inFitOrder.filter((tool) => kept.includes(tool));
+      tools = eligible.filter((tool) => kept.includes(tool));
       leftOut = groupedByTier(droppedForRoom, droppedTiers);
     }
   }
