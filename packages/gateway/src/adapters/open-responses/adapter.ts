@@ -8,6 +8,7 @@ import { createUpstreamClassifier } from '../shared/classify.ts';
 import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { StreamFailure, UnsupportedInputError, UpstreamProtocolError } from '../shared/failures.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
+import { jsonReplyPathOf, jsonReplyPlanOf } from '../shared/json-reply.ts';
 import { CHAT_COMPLETIONS_VOCABULARY } from '../chat-completions/vocabulary.ts';
 import { retryAfterHint, httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
 import { MAX_SSE_EVENT_BYTES } from '../shared/limits.ts';
@@ -35,10 +36,12 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
       throw new UnsupportedInputError('capability_unsupported', 'this target does not support tool calling', 'tools');
     }
     const ledger = new RenderLedger();
+    const jsonReply = jsonReplyPlanOf(request, capabilities);
     const body = {
       ...buildResponsesBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.name, OPEN_RESPONSES_TOOL_CHOICE), ctx.reasoningOrigin, {
         schemaDialect: capabilities.schemaDialect,
         ledger,
+        jsonReply,
         ...(options.userDialects === undefined ? {} : { userDialects: options.userDialects }),
       }),
       ...(capabilities.promptCache?.kind === 'key' && request.promptCacheKey !== undefined ? { prompt_cache_key: request.promptCacheKey } : {}),
@@ -59,7 +62,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
       });
       if (response.status !== 200) throw await httpErrorOf(response, options.clock, nestedErrorDetail, CHAT_COMPLETIONS_VOCABULARY);
 
-      const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request, wraps: ledger.wraps, narrowings: ledger.narrowings, ...retryAfterHint(response, options.clock) });
+      const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request, wraps: ledger.wraps, narrowings: ledger.narrowings, jsonReply: jsonReplyPathOf(jsonReply), ...retryAfterHint(response, options.clock) });
       const driver = new OpenResponsesStreamDriver(emitter);
       try {
         for await (const message of decodeSse(boundedSseBytes(response.body, MAX_SSE_EVENT_BYTES))) {

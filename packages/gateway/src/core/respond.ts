@@ -11,6 +11,7 @@ import type {
   PromptCacheCounts,
   ResponseError,
   ResponseResource,
+  JsonReplyPath,
   SchemaNarrowing,
   StreamEvent,
   Usage,
@@ -414,6 +415,7 @@ async function* relaySteps(
     billed?: { usage: Usage; cacheWriteInputTokens: number | undefined },
     retryable?: boolean,
     schemaNarrowings?: SchemaNarrowing[],
+    jsonReply?: JsonReplyPath,
   ): MomongaResponseExtension => {
     const cost =
       billed === undefined || services.priceTable === undefined
@@ -434,6 +436,7 @@ async function* relaySteps(
       attempts,
       ...(fallbackFrom.length === 0 ? {} : { fallbackFrom, fallbackCauses }),
       ...(schemaNarrowings === undefined ? {} : { schemaNarrowings }),
+      ...(jsonReply === undefined ? {} : { jsonReply }),
       usageSource,
       ...(contextInputTokens === undefined ? {} : { contextInputTokens }),
       ...(billed?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: billed.cacheWriteInputTokens }),
@@ -504,6 +507,7 @@ async function* relaySteps(
       reported === null ? undefined : { usage: reported, cacheWriteInputTokens: upstream.cacheWriteInputTokens },
       undefined,
       upstream.schemaNarrowings,
+      upstream.jsonReply,
     ),
   };
   const terminal: StreamEvent = {

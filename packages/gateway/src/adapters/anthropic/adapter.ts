@@ -10,6 +10,7 @@ import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { StreamFailure, UnsupportedInputError, UpstreamProtocolError } from '../shared/failures.ts';
 import { parseUpstreamJson } from '../shared/upstream-json.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
+import { jsonReplyPathOf, jsonReplyPlanOf } from '../shared/json-reply.ts';
 import type { CompletionResponse } from '../shared/http-client.ts';
 import { retryAfterHint, httpErrorOf } from '../shared/http-error.ts';
 import { HTTP_TRANSPORT_VOCABULARY } from '../shared/vocabulary.ts';
@@ -98,7 +99,8 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
     const capabilities = ctx.capabilities;
     const ledger = new RenderLedger();
     const dialect = resolveDialect(capabilities.schemaDialect, options.userDialects ?? NO_USER_DIALECTS);
-    const base = buildMessagesBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.name, ANTHROPIC_TOOL_CHOICE), capabilities.maxOutputTokens, { cache, reasoning: capabilities.reasoning, dialect, ledger }, ctx.reasoningOrigin);
+    const jsonReply = jsonReplyPlanOf(request, capabilities);
+    const base = buildMessagesBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.name, ANTHROPIC_TOOL_CHOICE), capabilities.maxOutputTokens, { cache, reasoning: capabilities.reasoning, dialect, ledger, jsonReply }, ctx.reasoningOrigin);
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     try {
@@ -111,7 +113,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
           paused === undefined ? base : { ...base, messages: [...base.messages, { role: 'assistant', content: paused.content }] };
         const response = await pool.clientFor(endpoint).post({ headers: headersFor(apiKey, 'text/event-stream'), body: JSON.stringify(body), signal });
         if (response.status !== 200) throw await httpErrorOf(response, options.clock, anthropicErrorDetail, HTTP_TRANSPORT_VOCABULARY);
-        emitter ??= new ResponseEmitter({ clock: options.clock, model: request.model, request, wraps: ledger.wraps, narrowings: ledger.narrowings, ...retryAfterHint(response, options.clock) });
+        emitter ??= new ResponseEmitter({ clock: options.clock, model: request.model, request, wraps: ledger.wraps, narrowings: ledger.narrowings, jsonReply: jsonReplyPathOf(jsonReply), ...retryAfterHint(response, options.clock) });
         const driver = new AnthropicStreamDriver(emitter, paused === undefined ? undefined : { usage: paused.usage, firstInputTokens: paused.firstInputTokens });
         yield* readSegment(response, driver, ctx);
         if (!driver.paused) return;

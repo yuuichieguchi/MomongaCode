@@ -1,5 +1,5 @@
-import { defineProductSchema, parseOutsideJson } from '@momonga/foundation';
-import type { ProductValidator, UntrustedError } from '@momonga/foundation';
+import { defineProductSchema, describeFirstError, parseOutsideJson } from '@momonga/foundation';
+import type { ProductValidator } from '@momonga/foundation';
 import { PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
 import type { PermissionMode, RunStatus, StopReason } from '@momonga/protocol';
 
@@ -115,11 +115,7 @@ export const DATASET_SCHEMA = {
 
 const validateDataset: ProductValidator<GoldenDataset> = defineProductSchema('eval/dataset', DATASET_SCHEMA);
 
-export const describeFirstError = (errors: readonly UntrustedError[]): string => {
-  const first = errors[0];
-  if (first === undefined) return '/: schema violation';
-  return `${first.instancePath === '' ? '/' : first.instancePath}: ${first.message}`;
-};
+export { describeFirstError };
 
 type CasesHolder = { cases: readonly GoldenCase[] };
 

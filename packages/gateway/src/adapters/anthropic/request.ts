@@ -6,6 +6,8 @@ import type { RenderLedger } from '../../dialect/ledger.ts';
 import type { ResolvedDialect } from '../../dialect/render.ts';
 import { renderToolParameters } from '../../dialect/tool-render.ts';
 import { callArgumentsObject } from '../shared/call-arguments.ts';
+import { jsonReplyFormatOf } from '../shared/json-reply.ts';
+import type { JsonReplyPlan } from '../shared/json-reply.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { hasImagePart, imageSourceOf } from '../shared/image-part.ts';
 import { reasoningTextOf, textOfContent } from '../shared/input-text.ts';
@@ -50,7 +52,7 @@ export type AnthropicRequestBody = {
   temperature?: number;
   top_p?: number;
   thinking?: AnthropicThinking;
-  output_config?: { effort: ThinkingAdaptiveEffort };
+  output_config?: { effort?: ThinkingAdaptiveEffort; format?: { type: 'json_schema'; schema: unknown } };
 };
 
 export type AnthropicThinking = { type: 'adaptive' } | { type: 'enabled'; budget_tokens: number } | { type: ThinkingOff };
@@ -59,7 +61,13 @@ export type AnthropicCountTokensBody = Pick<AnthropicRequestBody, 'model' | 'sys
 
 export type CachePlan = { maxBreakpoints: number; marks?: PromptCacheCounts };
 
-export type BodyOptions = { cache: CachePlan | undefined; reasoning?: ReasoningCapability | undefined; dialect?: DialectChoice; ledger?: RenderLedger };
+export type BodyOptions = {
+  cache: CachePlan | undefined;
+  reasoning?: ReasoningCapability | undefined;
+  dialect?: DialectChoice;
+  ledger?: RenderLedger;
+  jsonReply?: JsonReplyPlan | undefined;
+};
 
 const EPHEMERAL: CacheControl = { type: 'ephemeral' };
 const EMPTY_OBJECT_SCHEMA = { type: 'object', properties: {} } as const;
@@ -246,6 +254,12 @@ const thinkingPlanOf = (effort: AdapterRequest['reasoning_effort'], reasoning: R
   return { maxTokens, thinking: { type: 'enabled', budget_tokens: Math.max(MIN_BUDGET_TOKENS, Math.min(declared, maxTokens - visibleCap)) } };
 };
 
+const outputConfigOf = (effort: ThinkingPlan['outputConfig'], options: BodyOptions): { output_config?: NonNullable<AnthropicRequestBody['output_config']> } => {
+  const format = jsonReplyFormatOf(options.jsonReply, resolvedOf(options.dialect ?? DEFAULT_DIALECT_ID));
+  if (effort === undefined && format === undefined) return {};
+  return { output_config: { ...effort, ...(format === undefined ? {} : { format: { type: 'json_schema', schema: format.schema } }) } };
+};
+
 export const buildMessagesBody = (request: AdapterRequest, maxTokens: number, options: BodyOptions, origin: ReasoningOrigin): AnthropicRequestBody => {
   const { tools, system, messages, toolChoice } = requestParts(request, options, origin);
   const plan = thinkingPlanOf(request.reasoning_effort, options.reasoning, request.max_output_tokens ?? undefined, maxTokens);
@@ -260,7 +274,7 @@ export const buildMessagesBody = (request: AdapterRequest, maxTokens: number, op
     ...(request.temperature === undefined || request.temperature === null ? {} : { temperature: request.temperature }),
     ...(request.top_p === undefined || request.top_p === null ? {} : { top_p: request.top_p }),
     ...(plan.thinking === undefined ? {} : { thinking: plan.thinking }),
-    ...(plan.outputConfig === undefined ? {} : { output_config: plan.outputConfig }),
+    ...outputConfigOf(plan.outputConfig, options),
   };
 };
 

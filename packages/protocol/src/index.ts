@@ -101,10 +101,9 @@ export {
   thinkingBudgetFor,
   THINKING_OFFS,
   ALLOWED_TOOLS_FORMS,
-  requireStructuredOutput,
   PRECONDITION_FAILED_CODE,
 } from './capabilities.ts';
-export type { OutputTokenCapabilities, StructuredOutputVerdict, TargetAnswers, TargetBilling } from './capabilities.ts';
+export type { OutputTokenCapabilities, TargetAnswers, TargetBilling } from './capabilities.ts';
 export { OUTPUT_FORMATTERS } from './output-formatters.ts';
 export type { OutputFormatterName } from './output-formatters.ts';
 export { CACHE_MISS_CAUSES, PREFIX_EVENTS } from './prefix-events.ts';
@@ -243,7 +242,7 @@ export type {
   AgentsResponse,
   SkillsResponse,
 } from './run-api.ts';
-export { assistantTextOf } from './assistant-text.ts';
+export { assistantTextOf, jsonReplyOf } from './assistant-text.ts';
 export { ANATOMY_FLAT_LAYERS, ANATOMY_HISTORY_LAYERS, anatomyLayerEntries } from './token-anatomy.ts';
 export type {
   BilledDetail,
@@ -455,7 +454,7 @@ export type {
   UsageSource,
   UsageTotals,
 } from './gateway-api.ts';
-export type { MomongaResponseExtension } from './open-responses.ts';
+export type { JsonReplyPath, MomongaResponseExtension } from './open-responses.ts';
 export type {
   AdapterCompactRequest,
   AdapterCompactResult,
