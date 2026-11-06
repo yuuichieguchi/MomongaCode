@@ -6,9 +6,10 @@ import type { GroupKey, Indicators, RunFacts, RunInfo } from '@momonga/reliabili
 import {
   T0,
   attemptFailed,
+  attemptLost,
   eventsOf,
   messageDelta,
-  modelRequested,
+  modelResponded,
   permissionClassifiedAllow,
   permissionRequested,
   reconciled,
@@ -49,7 +50,7 @@ type RunTruth = {
   repeated: boolean;
   prevented: number;
   unknown: number;
-  failedByEpisode: boolean;
+  endedBy: RunStatus | undefined;
 };
 
 type TaskTruth = {
@@ -79,7 +80,7 @@ const generateRun = (random: () => number, startAt: number, declared: boolean, m
     timed.push([t, payload]);
     return t;
   };
-  const truth: RunTruth = { episodes: [], asked: false, sideEffecting: false, repeated: false, prevented: 0, unknown: 0, failedByEpisode: false };
+  const truth: RunTruth = { episodes: [], asked: false, sideEffecting: false, repeated: false, prevented: 0, unknown: 0, endedBy: undefined };
   timed.push([startAt, started(1, { declared, modelAlias, mode })]);
   if (random() < 0.5) push(messageDelta(`assistant says ${Math.floor(random() * 1e6)}`));
   if (random() < 0.3) push(thoughtDelta(`thinking ${Math.floor(random() * 1e6)}`));
@@ -105,47 +106,53 @@ const generateRun = (random: () => number, startAt: number, declared: boolean, m
     else push(toolCompleted(callId));
   }
   let attempt = 1;
-  const crashes = random() < 0.5 ? 0 : 1 + Math.floor(random() * 2);
-  for (let crash = 0; crash < crashes && !truth.failedByEpisode; crash += 1) {
+  const crashes = random() < 0.5 ? 0 : 1 + Math.floor(random() * 3);
+  let chainSkew: boolean | undefined;
+  for (let crash = 0; crash < crashes && truth.endedBy === undefined; crash += 1) {
     const last = crash === crashes - 1;
-    let failedAt: number;
-    let cause: 'worker_failure' | 'process_lost';
+    let skew = false;
     if (random() < 0.5) {
-      failedAt = push(attemptFailed(attempt, 'gateway_unavailable'));
+      push(attemptFailed(attempt, 'gateway_unavailable'));
       push(status('RUNNING', 'QUEUED'));
-      cause = 'worker_failure';
     } else {
-      failedAt = t + 5;
-      cause = 'process_lost';
+      skew = random() < 0.15;
+      push(attemptLost(skew ? t + 100_000 : t + 5));
     }
-    const skew = random() < 0.15;
-    if (skew) failedAt = t + 100_000;
+    if (chainSkew === undefined) chainSkew = skew;
     attempt += 1;
-    push(started(attempt, { recovery: { cause, failedAt }, declared, modelAlias, mode }));
-    if (!last && random() < 0.5) {
-      truth.episodes.push({ outcome: 'failed', skew: false });
-      continue;
-    }
-    if (random() < 0.15) {
+    push(started(attempt, { declared, modelAlias, mode }));
+    if (!last && random() < 0.5) continue;
+    const ending = random();
+    if (ending < 0.1) {
       push(terminal('FAILED'));
       truth.episodes.push({ outcome: 'failed', skew: false });
-      truth.failedByEpisode = true;
+      truth.endedBy = 'FAILED';
       break;
     }
-    let anyUnknown = false;
-    for (const callId of open.splice(0)) {
-      const outcome = pick(random, ['already_applied', 'not_applied', 'unknown'] as const);
-      if (outcome === 'already_applied') truth.prevented += 1;
-      if (outcome === 'unknown') {
-        truth.unknown += 1;
-        anyUnknown = true;
-      }
-      push(reconciled(callId, outcome));
+    if (ending < 0.2) {
+      const stoppedAs = pick(random, ['STOPPED', 'CANCELLED'] as const);
+      push(terminal(stoppedAs));
+      truth.episodes.push({ outcome: 'stopped', skew: false });
+      truth.endedBy = stoppedAs;
+      break;
     }
-    push(modelRequested(attempt));
-    truth.episodes.push({ outcome: anyUnknown ? 'unknown_effect' : 'recovered', skew: !anyUnknown && skew });
+    let outcome: Outcome = 'recovered';
+    const openCall = open.splice(0)[0];
+    if (openCall === undefined) push(modelResponded(attempt));
+    else {
+      const reconcile = pick(random, ['already_applied', 'not_applied', 'unknown'] as const);
+      if (reconcile === 'already_applied') truth.prevented += 1;
+      if (reconcile === 'unknown') {
+        truth.unknown += 1;
+        outcome = 'unknown_effect';
+      }
+      push(reconciled(openCall, reconcile));
+      push(modelResponded(attempt));
+    }
+    truth.episodes.push({ outcome, skew: outcome === 'recovered' && chainSkew });
+    chainSkew = undefined;
   }
-  if (!truth.failedByEpisode && random() < 0.3) {
+  if (truth.endedBy === undefined && random() < 0.3) {
     push(status('RUNNING', 'WAITING_HUMAN'));
     push(status('WAITING_HUMAN', 'RUNNING'));
   }
@@ -168,12 +175,12 @@ const generate = (seed: number): Generated => {
     const root = generateRun(random, startAt, declared, modelAlias, mode);
     let finalStatus: RunStatus;
     let stopReason: RunInfo['stopReason'];
-    if (root.truth.failedByEpisode) finalStatus = 'FAILED';
+    if (root.truth.endedBy !== undefined) finalStatus = root.truth.endedBy;
     else {
       finalStatus = pick(random, ['COMPLETED', 'COMPLETED', 'COMPLETED', 'FAILED', 'STOPPED', 'CANCELLED'] as const);
-      if (finalStatus === 'STOPPED' && random() < 0.7) stopReason = 'budget';
       root.push(terminal(finalStatus));
     }
+    if (finalStatus === 'STOPPED' && random() < 0.7) stopReason = 'budget';
     const endAt = root.end();
     const dimension = pick(random, ['none', 'tokens', 'steps', 'deadline'] as const);
     let limits: RunInfo['limits'] = {};
@@ -213,8 +220,8 @@ const generate = (seed: number): Generated => {
     if (random() < 0.3) {
       const childId = `${rootId}-child`;
       const child = generateRun(random, startAt + 1, false, modelAlias, mode);
-      const childStatus: RunStatus = child.truth.failedByEpisode ? 'FAILED' : 'COMPLETED';
-      if (!child.truth.failedByEpisode) child.push(terminal('COMPLETED'));
+      const childStatus: RunStatus = child.truth.endedBy ?? 'COMPLETED';
+      if (child.truth.endedBy === undefined) child.push(terminal('COMPLETED'));
       const childInfo = runInfo({ ...shared, runId: childId, createdAt: startAt + 1, status: childStatus, limits: {}, step: 1, tokensTotal: 0 });
       const childEvents = eventsOf(childId, child.timed);
       streams.set(childId, { events: childEvents, info: childInfo });
@@ -259,6 +266,7 @@ const COUNT_PATHS: ((indicators: Indicators) => number)[] = [
   (i) => i.recovery.n,
   (i) => i.recovery.unknownEffect,
   (i) => i.recovery.failed,
+  (i) => i.recovery.stopped,
   (i) => i.recoveryTime.n,
   (i) => i.recoveryTime.clockSkew,
   (i) => i.duplicates.journal.k,
@@ -305,6 +313,7 @@ describe('properties of foldFacts and aggregate on generated streams', () => {
         expect(total.duplicates.journal.n, message).toBeLessThanOrEqual(total.buckets.counted);
         expect(total.overrun.n, message).toBeLessThanOrEqual(total.buckets.counted);
         expect(total.recovery.k + total.recovery.unknownEffect + total.recovery.failed, message).toBe(total.recovery.n);
+        expect(total.recovery.stopped, message).toBeGreaterThanOrEqual(0);
         for (const path of COUNT_PATHS) {
           const summed = Object.values(groups).reduce((sum, group) => sum + path(group), 0);
           expect(summed, `${message} ${path.toString()}`).toBe(path(total));
@@ -367,13 +376,17 @@ describe('properties of foldFacts and aggregate on generated streams', () => {
     }
   });
 
-  it('P5 episodes: one per run.started carrying recovery, each with exactly one outcome, and the outcomes add up', () => {
+  it('P5 episodes: one per chain of failure records, each with exactly one of four outcomes, and recovered + unknown_effect + failed + stopped = episodes', () => {
+    let stoppedSeen = 0;
+    let mergedSeen = 0;
     for (const seed of SEEDS) {
       const generated = generate(seed);
       for (const row of generated.rows) {
         const stream = generated.streams.get(row.runId);
-        const withRecovery = (stream?.events ?? []).filter((event) => event.type === 'run.started' && 'recovery' in event && event.recovery !== undefined);
-        expect(row.recoveries, `seed ${seed} run ${row.runId}`).toHaveLength(withRecovery.length);
+        const records = (stream?.events ?? []).filter((event) => (event.type as string) === 'attempt.failed' || (event.type as string) === 'attempt.lost');
+        expect(row.recoveries.length, `seed ${seed} run ${row.runId}`).toBeLessThanOrEqual(records.length);
+        if (records.length > row.recoveries.length) mergedSeen += 1;
+        expect(row.recoveries.map((episode) => episode.ordinal), `seed ${seed} run ${row.runId}`).toEqual(row.recoveries.map((_, index) => index + 1));
         for (const episode of row.recoveries) expect(RECOVERY_OUTCOMES, `seed ${seed} run ${row.runId}`).toContain(episode.outcome);
       }
       for (const task of generated.tasks) {
@@ -385,13 +398,19 @@ describe('properties of foldFacts and aggregate on generated streams', () => {
       }
       const episodes = countedTasks(generated).flatMap((task) => task.runs.flatMap((run) => run.episodes));
       const { recovery } = indicatorsOf(aggregate(generated.rows, { groupBy: 'model' })).total;
+      const count = (outcome: Outcome): number => episodes.filter((episode) => episode.outcome === outcome).length;
+      stoppedSeen += count('stopped');
       expect(recovery, `seed ${seed}`).toEqual({
-        k: episodes.filter((episode) => episode.outcome === 'recovered').length,
-        n: episodes.length,
-        unknownEffect: episodes.filter((episode) => episode.outcome === 'unknown_effect').length,
-        failed: episodes.filter((episode) => episode.outcome === 'failed').length,
+        k: count('recovered'),
+        n: episodes.length - count('stopped'),
+        unknownEffect: count('unknown_effect'),
+        failed: count('failed'),
+        stopped: count('stopped'),
       });
+      expect(recovery.k + recovery.unknownEffect + recovery.failed + recovery.stopped, `seed ${seed}`).toBe(episodes.length);
     }
+    expect(stoppedSeen).toBeGreaterThan(0);
+    expect(mergedSeen).toBeGreaterThan(0);
   });
 
   it('P6 time: a recovered episode with progress before failedAt is clock_skew and out of the mean', () => {

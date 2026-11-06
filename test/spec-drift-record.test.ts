@@ -8,7 +8,6 @@ const root = path.resolve(import.meta.dirname, '..');
 const spec = fs.readFileSync(path.join(root, 'specs', 'tla', 'RunRecord.tla'), 'utf8');
 const storeSource = fs.readFileSync(path.join(root, 'packages', 'store', 'src', 'runtime-store.ts'), 'utf8');
 
-const NOT_YET_IN_PROTOCOL = ['attempt.lost'];
 const WAITING_STATUSES = ['WAITING_HUMAN', 'WAITING_TOOL'];
 
 const definitionOf = (name: string): string => {
@@ -44,10 +43,11 @@ describe('RunRecord.tla against the implementation', () => {
     expect(pairs.filter(([from, to]) => !inSomeTable(from, to))).toEqual([]);
   });
 
-  it('maps every event kind of the model to a protocol event type, and only attempt.lost is not defined yet', () => {
+  it('maps every event kind of the model to a protocol event type', () => {
     const mapped = stringsIn(definitionOf('ProtocolEvent'));
     const known: readonly string[] = EVENT_TYPES;
-    expect(mapped.filter((type) => !known.includes(type)).sort()).toEqual(NOT_YET_IN_PROTOCOL);
+    expect(mapped).toContain('attempt.lost');
+    expect(mapped.filter((type) => !known.includes(type))).toEqual([]);
   });
 
   it('ties Takeover of the model to the SQL predicate of the store and to the claim statement that counts a failed attempt', () => {
