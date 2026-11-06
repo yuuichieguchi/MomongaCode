@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { GUIDELINE_ANALYSIS_INSTRUCTIONS, GUIDELINE_CANDIDATE_INSTRUCTIONS } from '@momonga/eval';
+import { GUIDELINE_ANALYSIS_INSTRUCTIONS, GUIDELINE_CANDIDATE_INSTRUCTIONS, GUIDELINE_CAP_REASON } from '@momonga/eval';
 import type { FakeRoute } from '@momonga/testkit';
 import { DEFAULT_KEEP_RECENT_STEPS } from '../packages/context/src/levels.ts';
 import { isCompactionRequest } from './support/budget.ts';
@@ -17,7 +17,7 @@ import {
   stepTokensToOverflowTheRoom,
 } from './support/context-window.ts';
 import { createE2eHome } from './support/home.ts';
-import { baseSettings, sandboxChoiceOf, startUpstream, withStructuredRole, writeSettingsFile } from './support/stack.ts';
+import { baseSettings, sandboxChoiceOf, settingsWithTarget, startUpstream, withStructuredRole, writeSettingsFile } from './support/stack.ts';
 import { SCRIPTED_USAGE, chatCompletions, reportedTokensOfRequest, textReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
@@ -87,12 +87,19 @@ const walkRoute = (task: string, file: string, fragile: boolean, stepText?: () =
   };
 };
 
-const candidates = (): FakeRoute => ({
+const candidates = (candidateCallTokens: () => number | undefined): FakeRoute => ({
   match: (body) => bodyText(body).includes(JSON.stringify(GUIDELINE_CANDIDATE_INSTRUCTIONS).slice(1, -1)),
   reply: (body) => {
     const drawn = Number(/This is candidate (\d+) of/.exec(bodyText(body))?.[1]);
     if (!Number.isInteger(drawn)) throw new Error('the candidate request does not say which candidate it is');
-    return textReply(JSON.stringify({ guideline: drawn === 1 ? WINNER : `${LOSER} Variant ${drawn}.` }));
+    const total = candidateCallTokens();
+    if (total === undefined) throw new Error('a candidate was asked for before the baseline benchmark was measured');
+    const promptTokens = reportedTokensOfRequest(body);
+    if (total <= promptTokens) throw new Error(`a candidate call of ${total} tokens cannot hold its ${promptTokens} prompt tokens`);
+    return {
+      ...textReply(JSON.stringify({ guideline: drawn === WINNER_INDEX ? WINNER : `${LOSER} Variant ${drawn}.` })),
+      usage: { prompt_tokens: promptTokens, completion_tokens: total - promptTokens, total_tokens: total },
+    };
   },
 });
 
@@ -102,13 +109,13 @@ const stepTextOf = (text: () => string | undefined) => (): string => {
   return value;
 };
 
-const routesWith = (benchmarkStepText: () => string | undefined): FakeRoute[] => [
+const routesWith = (benchmarkStepText: () => string | undefined, candidateCallTokens: () => number | undefined): FakeRoute[] => [
   prefixProbeRoute,
   calibrationRoute,
   { match: (body) => isCompactionRequest(body) && bodyText(body).includes(WINNER), reply: textReply(KEEPING_SUMMARY) },
   { match: isCompactionRequest, reply: textReply(PADDED_PLAIN_SUMMARY) },
   { match: (body) => bodyText(body).includes(JSON.stringify(GUIDELINE_ANALYSIS_INSTRUCTIONS).slice(1, -1)), reply: textReply(CONTRASTIVE_ANALYSIS) },
-  candidates(),
+  candidates(candidateCallTokens),
   walkRoute(FRAGILE_TASK, 'fragile.txt', true, stepTextOf(benchmarkStepText)),
   walkRoute(STURDY_TASKS[0] as string, 'first.txt', false, stepTextOf(benchmarkStepText)),
   walkRoute(STURDY_TASKS[1] as string, 'second.txt', false, stepTextOf(benchmarkStepText)),
@@ -145,18 +152,23 @@ const datasetOf = (lines: number) => ({
   ],
 });
 
-const BENCHMARKS = 1 + 5;
+const CANDIDATES = 2;
+const WINNER_INDEX = CANDIDATES - 1;
+const BENCHMARKS = 1 + CANDIDATES;
 
 describe('momonga context improve', () => {
   it(titleOf('context-improve-adopt'), { timeout: 40 * E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     let followUpStepText: string | undefined;
     let benchmarkStepText: string | undefined;
+    let candidateCallTokens: number | undefined;
     const fake = await startUpstream(home, {
       home,
-      routes: [...routesWith(() => benchmarkStepText), walkRoute(FOLLOW_UP_TASK, 'follow-up.txt', false, stepTextOf(() => followUpStepText))],
+      routes: [...routesWith(() => benchmarkStepText, () => candidateCallTokens), walkRoute(FOLLOW_UP_TASK, 'follow-up.txt', false, stepTextOf(() => followUpStepText))],
     });
-    writeSettingsFile(home, withStructuredRole(baseSettings(home, sandboxChoiceOf({ home }).kind), 'analysis', ANALYSIS_ALIAS));
+    const settingsAnsweredBy = (answers: 'model' | 'script'): Record<string, unknown> =>
+      withStructuredRole(settingsWithTarget(baseSettings(home, sandboxChoiceOf({ home }).kind), { answers }), 'analysis', ANALYSIS_ALIAS);
+    writeSettingsFile(home, settingsAnsweredBy('script'));
     expect(
       STEPS,
       'STEPS cannot be derived from the window: it only has to exceed the steps the context builder protects (DEFAULT_KEEP_RECENT_STEPS), so that some steps fall outside the protection and can be compacted',
@@ -183,42 +195,86 @@ describe('momonga context improve', () => {
     fs.writeFileSync(dataset, JSON.stringify(walkDataset));
     const boundMs = BENCHMARKS * walkDataset.cases.length * E2E_RUN_COMPLETED_BOUND_MS;
     const options = { boundMs, cwd: home.project };
-    const fakeOutcome = path.join(home.root, 'fake-outcome.json');
+    const baselineOutcome = path.join(home.root, 'baseline-outcome.json');
+    const analysisOutcome = path.join(home.root, 'analysis-outcome.json');
     const realOutcome = path.join(home.root, 'real-outcome.json');
-    const improveArgs = (model: 'fake' | 'real', outcome: string): string[] => ['context', 'improve', '--dataset', dataset, '--alias', 'default', '--seed', '7', '--outcome', outcome];
+    const improveArgs = (tokenCap: number, outcome: string): string[] => ['context', 'improve', '--dataset', dataset, '--alias', 'default', '--token-cap', String(tokenCap), '--seed', '7', '--outcome', outcome];
+    type WrittenOutcome = {
+      digest: string;
+      outcome: {
+        status: string;
+        reason?: string;
+        alias: string;
+        tokenCap: number;
+        tokens: { benchmark: number; charged: number };
+        derivation?: { affordable: number };
+        winner?: { text: string; parent: number | null };
+        parent: number | null;
+        dataset: { digest: string };
+        candidates: unknown[];
+        report: unknown;
+      };
+    };
+    const readOutcome = (file: string): WrittenOutcome => JSON.parse(fs.readFileSync(file, 'utf8')) as WrittenOutcome;
 
-    const removedFlag = await runCli(home, [...improveArgs('real', realOutcome), '--adopt'], options);
+    const removedFlag = await runCli(home, [...improveArgs(1, realOutcome), '--adopt'], options);
     expect(removedFlag.code).not.toBe(0);
     expect(removedFlag.stderr).toContain("unknown option '--adopt'");
 
-    const declaredFake = await runCli(home, improveArgs('fake', fakeOutcome), options);
-    expect(declaredFake.code).not.toBe(0);
-    expect(declaredFake.stdout).toContain('model: fake');
-    expect(declaredFake.stdout).toMatch(/nothing was adopted/i);
-    expect(JSON.parse(fs.readFileSync(fakeOutcome, 'utf8')).outcome.winner).toBeUndefined();
-    const nothingToAdopt = await runCli(home, ['context', 'guideline', 'adopt', fakeOutcome], options);
+    const stoppedAfterBaseline = await runCli(home, improveArgs(1, baselineOutcome), options);
+    expect(stoppedAfterBaseline.code).not.toBe(0);
+    expect(stoppedAfterBaseline.stdout).toContain('model: fake');
+    expect(stoppedAfterBaseline.stdout).toContain(GUIDELINE_CAP_REASON);
+    expect(stoppedAfterBaseline.stdout).toMatch(/nothing was adopted/i);
+    const afterBaseline = readOutcome(baselineOutcome).outcome;
+    expect(afterBaseline).toMatchObject({ status: 'stopped', reason: GUIDELINE_CAP_REASON, tokenCap: 1, tokens: { charged: 0 } });
+    expect(afterBaseline.winner).toBeUndefined();
+    const baselineTokens = afterBaseline.tokens.benchmark;
+    expect(baselineTokens).toBeGreaterThan(0);
+    const nothingToAdopt = await runCli(home, ['context', 'guideline', 'adopt', baselineOutcome], options);
     expect(nothingToAdopt.code).not.toBe(0);
     expect(nothingToAdopt.stderr).toMatch(/no winner/);
     const none = await runCli(home, ['context', 'guideline', 'list'], options);
     expect(none.stdout).not.toContain(WINNER);
 
-    const improved = await runCli(home, improveArgs('real', realOutcome), options);
+    const stoppedAfterAnalysis = await runCli(home, improveArgs(baselineTokens + 1, analysisOutcome), options);
+    expect(stoppedAfterAnalysis.code).not.toBe(0);
+    const afterAnalysis = readOutcome(analysisOutcome).outcome;
+    expect(afterAnalysis).toMatchObject({ status: 'stopped', reason: GUIDELINE_CAP_REASON, tokens: { benchmark: baselineTokens } });
+    expect(afterAnalysis.candidates).toEqual([]);
+    const analysisTokens = afterAnalysis.tokens.charged;
+    expect(analysisTokens).toBeGreaterThan(0);
+
+    const candidateRunTokens = baselineTokens + analysisTokens;
+    const slack = Math.floor(baselineTokens / 2);
+    const tokenCap = baselineTokens + analysisTokens + CANDIDATES * candidateRunTokens + slack;
+    candidateCallTokens = Math.floor(baselineTokens / 2);
+    expect(
+      slack,
+      'the cap affords exactly CANDIDATES candidate runs with less than one run to spare; the spare half run absorbs a baseline that differs by a few tokens between runs and the extra tokens a losing guideline adds to each compaction request, so every planned candidate is benchmarked, and the last benchmark, a whole dataset, carries the sum past the cap (decision 31)',
+    ).toBeLessThan(candidateRunTokens);
+    writeSettingsFile(home, settingsAnsweredBy('model'));
+    const improved = await runCli(home, improveArgs(tokenCap, realOutcome), options);
     expect(improved.code).toBe(0);
     expect(improved.stdout).toContain('model: real');
-    expect(improved.stdout).toMatch(/declared by the operator/);
+    expect(improved.stdout).toMatch(/derived from the pinned provenance of the targets that answered the benchmark/);
     expect(improved.stdout).toContain(`the analysis and candidate calls used the alias ${ANALYSIS_ALIAS}`);
+    expect(improved.stdout).toContain(`token cap ${tokenCap}, K=${CANDIDATES} distinct candidates (the cap affords ${CANDIDATES}:`);
     expect(improved.stdout).toContain('gate: PASS');
     expect(improved.stdout).toContain(`text of the winner:\n  ${WINNER}`);
     expect(improved.stdout).toContain(`+ ${WINNER}`);
     expect(improved.stdout).toMatch(/nothing was adopted/i);
     expect(improved.stdout).not.toContain('adopted version');
+    expect(improved.stdout).not.toContain(GUIDELINE_CAP_REASON);
     expect((await runCli(home, ['context', 'guideline', 'list'], options)).stdout).not.toContain(WINNER);
-    const written = JSON.parse(fs.readFileSync(realOutcome, 'utf8')) as { digest: string; outcome: { alias: string; winner: { text: string; parent: number | null }; parent: number | null; dataset: { digest: string }; candidates: unknown[]; report: unknown } };
-    expect(written.outcome.alias).toBe(ANALYSIS_ALIAS);
+    const written = readOutcome(realOutcome);
+    expect(written.outcome).toMatchObject({ status: 'winner', alias: ANALYSIS_ALIAS, tokenCap, derivation: { affordable: CANDIDATES } });
+    expect(written.outcome.reason).toBeUndefined();
+    expect(written.outcome.tokens.benchmark + written.outcome.tokens.charged).toBeGreaterThanOrEqual(tokenCap);
     expect(written.outcome.winner).toMatchObject({ text: WINNER, parent: null });
     expect(written.outcome.parent).toBeNull();
     expect(written.outcome.dataset.digest).toMatch(/^[0-9a-f]{64}$/);
-    expect(written.outcome.candidates).toHaveLength(5);
+    expect(written.outcome.candidates).toHaveLength(CANDIDATES);
     expect(written.digest).toMatch(/^[0-9a-f]{64}$/);
 
     const tamperedOutcome = path.join(home.root, 'tampered-outcome.json');
