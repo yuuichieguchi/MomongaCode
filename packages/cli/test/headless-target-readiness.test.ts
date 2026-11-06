@@ -21,7 +21,7 @@ const fakeClient = {
   streamEvents: async function* () {
     yield frameOf('run-1', 1, { type: 'agent.message.delta', step: 1, attempt: 0, itemId: 'm1', text: 'A plain answer.' });
   },
-  getRun: async () => runView({ id: 'run-1', status: 'COMPLETED', result: 'A plain answer.' }),
+  getRun: async () => runView({ id: 'run-1', status: 'COMPLETED' }),
   childRuns: async () => [],
   cancel: async () => ({ status: 202, run: runView({ status: 'CANCELLED' }) }),
   close: async () => undefined,
