@@ -22,7 +22,7 @@ const totalOf = (rows: readonly RunFacts[]) => indicatorsOf(aggregate(rows, { gr
 
 
 describe('X2: a call open at the failure that is neither reconciled nor completed before progress makes the episode unknown_effect', () => {
-  it('progress by a model response with the call still open is unknown_effect, not recovered', () => {
+  it('a model response with the call still open does not close the episode (decision 53); the end of the run does, as unknown_effect', () => {
     const facts = fold('r1', [
       [T0, started(1)],
       [T0 + 1000, toolCall('c1', 'write')],
@@ -32,7 +32,7 @@ describe('X2: a call open at the failure that is neither reconciled nor complete
       [T0 + 5200, modelResponded(2)],
       [T0 + 6000, terminal('COMPLETED')],
     ]);
-    expect(facts.recoveries).toEqual([expect.objectContaining({ outcome: 'unknown_effect', progressAt: T0 + 5200 })]);
+    expect(facts.recoveries).toEqual([expect.objectContaining({ outcome: 'unknown_effect', progressAt: T0 + 6000 })]);
     const total = totalOf([facts]);
     expect(total.recovery).toEqual({ k: 0, n: 1, unknownEffect: 1, failed: 0, stopped: 0 });
     expect(total.recoveryTime).toEqual({ n: 0, meanMs: null, medianMs: null, clockSkew: 0 });

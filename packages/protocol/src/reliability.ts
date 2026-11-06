@@ -1,7 +1,9 @@
-import type { PermissionMode, RunStatus, StopReason } from './run-types.ts';
+import type { ApprovalBasis } from './permission-denial.ts';
+import type { PermissionMode, RunStatus, SideEffect, StopReason } from './run-types.ts';
 
 export const RELIABILITY_FORMAT = 'momonga-reliability/1';
 export const MIN_RATE_POPULATION = 35;
+export const REVIEW_SAMPLE_SIZE = 73;
 export const REPORT_PAGE_ROWS = 500;
 export const FACTS_SWEEP_BATCH_RUNS = 3;
 export const INDICATOR_DEFINITIONS_VERSION = 1;
@@ -61,4 +63,10 @@ export type RunFactsView = {
   recoveries: RecoveryEpisodeView[];
 };
 
-export type ReportPage = { rows: RunFactsView[]; nextCursor: string | null };
+export type RunCallView = { runId: string; callId: string; basis: ApprovalBasis | null; sideEffect: SideEffect | null; asked: boolean };
+
+export type RunFactsRecord = { facts: RunFactsView; calls: RunCallView[] };
+
+export type UnavailableRunView = { runId: string; rootRunId: string };
+
+export type ReportPage = { rows: RunFactsView[]; unavailable: UnavailableRunView[]; nextCursor: string | null };

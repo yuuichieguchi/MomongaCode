@@ -1,15 +1,17 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { immediateTx } from '@momonga/foundation';
 import {
+  APPROVAL_BASES,
   INDICATOR_DEFINITIONS_VERSION,
   PERMISSION_MODES,
   RECOVERY_CAUSES,
   RECOVERY_OUTCOMES,
   RUN_STATUSES,
+  SIDE_EFFECTS,
   STOP_REASONS,
   TERMINAL_STATUSES,
 } from '@momonga/protocol';
-import type { RecoveryEpisodeView, ReportPage, RunFactsView } from '@momonga/protocol';
+import type { RecoveryEpisodeView, ReportPage, RunCallView, RunFactsView } from '@momonga/protocol';
 import { expectOneOf, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
 import type { FactsBatch, FactsCommit, FactsCursor, RunFactsStore, StoredFacts } from './types.ts';
@@ -29,6 +31,20 @@ const episodeOf = (row: Row): RecoveryEpisodeView => {
     outcome: expectOneOf('run_recoveries', identity, 'outcome', RECOVERY_OUTCOMES, reader.string('outcome')),
     startedSeq: reader.number('started_seq'),
     progressSeq: reader.nullableNumber('progress_seq'),
+  };
+};
+
+const callOf = (row: Row): RunCallView => {
+  const identity = `${String(row['run_id'])}/${String(row['call_id'])}`;
+  const reader = readerFor('run_calls', identity, row);
+  const basis = reader.nullableString('basis');
+  const sideEffect = reader.nullableString('side_effect');
+  return {
+    runId: reader.string('run_id'),
+    callId: reader.string('call_id'),
+    basis: basis === null ? null : expectOneOf('run_calls', identity, 'basis', APPROVAL_BASES, basis),
+    sideEffect: sideEffect === null ? null : expectOneOf('run_calls', identity, 'side_effect', SIDE_EFFECTS, sideEffect),
+    asked: reader.flag('asked'),
   };
 };
 
@@ -110,10 +126,23 @@ export const createRunFactsStore = (db: DatabaseSync): RunFactsStore => {
        :basisReadOnly, :basisRule, :basisMode, :basisHook, :basisClassifier, :basisPerson, :declared, :met
      )`,
   );
-  const upsertUnavailable = db.prepare('INSERT OR REPLACE INTO run_facts (run_id, unavailable, definitions_version) VALUES (:runId, 1, :version)');
+  const upsertUnavailable = db.prepare(
+    `INSERT OR REPLACE INTO run_facts (run_id, unavailable, definitions_version, root_run_id) VALUES (
+       :runId, 1, :version,
+       (WITH RECURSIVE up (id, parent) AS (
+          SELECT id, parent_run_id FROM runs WHERE id = :runId
+          UNION ALL
+          SELECT r.id, r.parent_run_id FROM runs r JOIN up ON r.id = up.parent
+        ) SELECT id FROM up WHERE parent IS NULL)
+     )`,
+  );
+  const deleteCalls = db.prepare('DELETE FROM run_calls WHERE run_id = :runId');
+  const insertCall = db.prepare('INSERT INTO run_calls (run_id, call_id, basis, side_effect, asked) VALUES (:runId, :callId, :basis, :sideEffect, :asked)');
+  const firstCalls = db.prepare('SELECT * FROM run_calls ORDER BY run_id, call_id LIMIT :limit');
+  const nextCalls = db.prepare('SELECT * FROM run_calls WHERE run_id > :runId OR (run_id = :runId AND call_id > :callId) ORDER BY run_id, call_id LIMIT :limit');
   const factsRow = db.prepare('SELECT * FROM run_facts WHERE run_id = :runId');
   const recoveriesOf = db.prepare('SELECT * FROM run_recoveries WHERE run_id = :runId ORDER BY ordinal');
-  const pageRows = db.prepare('SELECT * FROM run_facts WHERE unavailable = 0 AND run_id > :after ORDER BY run_id LIMIT :limit');
+  const pageRows = db.prepare('SELECT * FROM run_facts WHERE run_id > :after ORDER BY run_id LIMIT :limit');
   const pageRecoveries = db.prepare('SELECT * FROM run_recoveries WHERE run_id > :after AND run_id <= :last ORDER BY run_id, ordinal');
 
   const cursor = (): FactsCursor => {
@@ -192,10 +221,17 @@ export const createRunFactsStore = (db: DatabaseSync): RunFactsStore => {
 
     commit: (batch: FactsCommit): void => {
       immediateTx(db, () => {
-        for (const facts of batch.rows) storeFacts(facts);
+        for (const facts of batch.rows) {
+          storeFacts(facts);
+          deleteCalls.run({ runId: facts.runId });
+        }
         for (const runId of batch.unavailable) {
+          deleteCalls.run({ runId });
           deleteRecoveries.run({ runId });
           upsertUnavailable.run({ runId, version: INDICATOR_DEFINITIONS_VERSION });
+        }
+        for (const call of batch.calls) {
+          insertCall.run({ runId: call.runId, callId: call.callId, basis: call.basis, sideEffect: call.sideEffect, asked: call.asked ? 1 : 0 });
         }
         writeCursor.run({ version: INDICATOR_DEFINITIONS_VERSION, eventId: batch.throughEventId });
       });
@@ -212,17 +248,26 @@ export const createRunFactsStore = (db: DatabaseSync): RunFactsStore => {
       const rows = pageRows.all({ after, limit: limit + 1 });
       const shown = rows.slice(0, limit);
       const last = shown.at(-1);
-      if (last === undefined) return { rows: [], nextCursor: null };
+      if (last === undefined) return { rows: [], unavailable: [], nextCursor: null };
       const lastId = readerFor('run_facts', 'page', last).string('run_id');
       const episodes = new Map<string, RecoveryEpisodeView[]>();
       for (const row of pageRecoveries.all({ after, last: lastId })) {
         const runId = readerFor('run_recoveries', 'page', row).string('run_id');
         episodes.set(runId, [...(episodes.get(runId) ?? []), episodeOf(row)]);
       }
+      const available = shown.filter((row) => !readerFor('run_facts', 'page', row).flag('unavailable'));
+      const unavailable = shown.filter((row) => readerFor('run_facts', 'page', row).flag('unavailable'));
       return {
-        rows: shown.map((row) => factsOf(row, episodes.get(readerFor('run_facts', 'page', row).string('run_id')) ?? [])),
+        rows: available.map((row) => factsOf(row, episodes.get(readerFor('run_facts', 'page', row).string('run_id')) ?? [])),
+        unavailable: unavailable.map((row) => {
+          const reader = readerFor('run_facts', 'page', row);
+          return { runId: reader.string('run_id'), rootRunId: reader.string('root_run_id') };
+        }),
         nextCursor: rows.length > limit ? lastId : null,
       };
     },
+
+    calls: (after, limit): RunCallView[] =>
+      (after === null ? firstCalls.all({ limit }) : nextCalls.all({ runId: after.runId, callId: after.callId, limit })).map(callOf),
   };
 };

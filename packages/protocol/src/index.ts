@@ -245,15 +245,19 @@ export {
   RECOVERY_OUTCOMES,
   RELIABILITY_FORMAT,
   REPORT_PAGE_ROWS,
+  REVIEW_SAMPLE_SIZE,
 } from './reliability.ts';
 export type {
   RecoveryCause,
   RecoveryEpisodeView,
   RecoveryOutcome,
   ReportPage,
+  RunCallView,
   RunFactsBasis,
+  RunFactsRecord,
   RunFactsLimits,
   RunFactsView,
+  UnavailableRunView,
 } from './reliability.ts';
 export { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, MOMONGA_EVENTS, MOMONGA_REQUEST_FIELDS, MOMONGA_SPAN_NOTES } from './trace-attributes.ts';
 export { EVENT_TYPES, RUN_API_SCHEMAS, base64ByteLength, runApiSchemaName, toPublicRunEvent } from './run-api.ts';

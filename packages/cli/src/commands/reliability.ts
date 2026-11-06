@@ -16,7 +16,7 @@ const aggregateAllPages = async (client: FactsPages, groupBy: GroupKey): Promise
   let cursor: string | null = null;
   do {
     const page: ReportPage = await client.reportFacts({ cursor, limit: REPORT_PAGE_ROWS });
-    total = merge(total, aggregate(page.rows, { groupBy }));
+    total = merge(total, aggregate(page.rows, { groupBy, unavailableRoots: page.unavailable.map((run) => run.rootRunId) }));
     cursor = page.nextCursor;
   } while (cursor !== null);
   return total;

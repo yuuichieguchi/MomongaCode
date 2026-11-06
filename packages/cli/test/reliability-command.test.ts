@@ -81,7 +81,7 @@ describe('momonga reliability', () => {
     const { reliabilityText } = await reliabilityCommand();
     const text = await reliabilityText(pagedClient(ROWS, 2).client, { groupBy: 'model', explain: false });
     const lines = text.split('\n');
-    expect(lines).toContain('Population: 3 terminal root tasks; counted 2; cancelled 1 (excluded); pending facts 0 (excluded); facts coverage 3/3');
+    expect(lines).toContain('Population: 3 terminal root tasks; counted 2; cancelled 1 (excluded); pending facts 0 (excluded); facts unavailable 0 (excluded); facts coverage 3/3');
     expect(lines).toContain('Task Completion Rate: 1/2 (0 tasks without a declared condition are not in the denominator)');
     expect(lines).toContain('Recovery Success Rate: 1/1; unknown_effect 0; failed 0; stopped 0');
     expect(lines).toContain('Mean Recovery Time: n=1, mean 3000 ms, median 3000 ms; clock_skew 0');

@@ -86,19 +86,20 @@ export const createFactsFold = (): FactsFold => {
     pending = { ordinal, cause, failedAt, startedSeq: event.seq, awaiting: new Set(openCalls), unknownReconciled: false };
   };
 
-  const progress = (event: RunEvent): void => {
+  const closeAt = (event: RunEvent): void => {
     if (pending === undefined) return;
     const settled = pending.awaiting.size === 0 && !pending.unknownReconciled;
     resolve(pending, settled ? 'recovered' : 'unknown_effect', { at: event.createdAt, seq: event.seq });
   };
 
-  const settle = (callId: string): boolean => {
-    openCalls.delete(callId);
-    return pending?.awaiting.delete(callId) === true;
+  const progress = (event: RunEvent): void => {
+    if (pending === undefined || pending.awaiting.size > 0) return;
+    closeAt(event);
   };
 
-  const progressUnlessAwaiting = (event: RunEvent, wasAwaited: boolean): void => {
-    if (!wasAwaited || pending?.awaiting.size === 0) progress(event);
+  const settle = (callId: string): void => {
+    openCalls.delete(callId);
+    pending?.awaiting.delete(callId);
   };
 
   const add = (event: RunEvent): void => {
@@ -123,7 +124,7 @@ export const createFactsFold = (): FactsFold => {
           endedAt ??= event.createdAt;
           if (pending !== undefined) {
             if (event.to === 'FAILED') resolve(pending, 'failed', undefined);
-            else if (event.to === 'COMPLETED') progress(event);
+            else if (event.to === 'COMPLETED') closeAt(event);
             else resolve(pending, 'stopped', undefined);
           }
         }
@@ -143,7 +144,8 @@ export const createFactsFold = (): FactsFold => {
         break;
       }
       case 'tool.completed':
-        progressUnlessAwaiting(event, settle(event.callId));
+        settle(event.callId);
+        progress(event);
         break;
       case 'tool.reconciled': {
         if (event.outcome === 'already_applied') reconciledAlreadyApplied += 1;
@@ -154,7 +156,8 @@ export const createFactsFold = (): FactsFold => {
           reconciledUnknown += 1;
           if (pending?.awaiting.has(event.callId) === true) pending.unknownReconciled = true;
         }
-        progressUnlessAwaiting(event, settle(event.callId));
+        settle(event.callId);
+        progress(event);
         break;
       }
       case 'tool.permission.requested':

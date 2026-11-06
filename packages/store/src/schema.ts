@@ -844,6 +844,15 @@ CREATE TABLE run_recoveries (
   PRIMARY KEY (run_id, ordinal)
 ) WITHOUT ROWID;
 
+CREATE TABLE run_calls (
+  run_id TEXT NOT NULL REFERENCES runs (id),
+  call_id TEXT NOT NULL,
+  basis TEXT CHECK (basis IS NULL OR basis IN ('read_only', 'rule', 'mode', 'hook', 'classifier', 'person')),
+  side_effect TEXT CHECK (side_effect IS NULL OR side_effect IN ('read_only', 'write', 'exec')),
+  asked INTEGER NOT NULL CHECK (asked IN (0, 1)),
+  PRIMARY KEY (run_id, call_id)
+) WITHOUT ROWID;
+
 CREATE TABLE facts_cursor (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   definitions_version INTEGER NOT NULL,

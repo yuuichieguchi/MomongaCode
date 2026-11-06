@@ -1,6 +1,6 @@
 import { MessageChannel, Worker, receiveMessageOnPort } from 'node:worker_threads';
 import type { MessagePort } from 'node:worker_threads';
-import type { RunFactsView } from '@momonga/protocol';
+import type { RunCallView, RunFactsRecord, RunFactsView } from '@momonga/protocol';
 import { FactsRefusedError, JournalThreadError, blobDirectoryOf } from '@momonga/store';
 import type { ContributionMeasured, ContributionPreparer, EvidenceReply, FidelityReply, RecordedCheck, RecordedHash, ReflectionInputReply, VerdictFact, VerdictReply } from '@momonga/store';
 import { JOURNAL_THREAD_CODE } from './journal-thread-code.generated.ts';
@@ -24,7 +24,7 @@ export type JournalThreadClient = ContributionPreparer & {
   readonly identity: { readonly dev: number; readonly ino: number };
   request(request: { readonly kind: string } & Readonly<Record<string, unknown>>): Promise<JournalThreadReply>;
   ping(): Promise<{ readonly threadId: number }>;
-  runFacts(runId: string): Promise<RunFactsView>;
+  runFacts(runId: string): Promise<RunFactsRecord>;
   close(): Promise<void>;
 };
 
@@ -113,12 +113,15 @@ const fidelityOf = (reply: JournalThreadReply): FidelityReply => {
   return { lastSeq: lastSeqOf(reply, 'fidelity'), attested, unreadable };
 };
 
-const runFactsOf = (reply: JournalThreadReply, runId: string): RunFactsView => {
-  const { facts } = reply;
+const runFactsOf = (reply: JournalThreadReply, runId: string): RunFactsRecord => {
+  const { facts, calls } = reply;
   if (!isRecord(facts) || facts['runId'] !== runId || typeof facts['definitionsVersion'] !== 'number' || !Array.isArray(facts['recoveries'])) {
     throw new JournalThreadError(`journal thread runFacts reply carries malformed facts for run ${runId}`);
   }
-  return facts as RunFactsView;
+  if (!Array.isArray(calls) || !calls.every((call) => isRecord(call) && call['runId'] === runId && typeof call['callId'] === 'string' && typeof call['asked'] === 'boolean')) {
+    throw new JournalThreadError(`journal thread runFacts reply carries malformed call rows for run ${runId}`);
+  }
+  return { facts: facts as RunFactsView, calls: calls as RunCallView[] };
 };
 
 export const startJournalThread = async (options: JournalThreadOptions): Promise<JournalThreadClient> => {

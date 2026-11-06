@@ -30,7 +30,7 @@ import type {
   MemoryState,
   MemoryStatus,
   ReflectionDrop,
-  ReportPage,
+  ReportPage, RunCallView,
   RunFactsView,
   ReflectionJobState,
   StopReason,
@@ -460,7 +460,7 @@ export type FactsCursor = { definitionsVersion: number; afterEventId: number };
 
 export type FactsBatch = { runIds: string[]; throughEventId: number };
 
-export type FactsCommit = { rows: readonly RunFactsView[]; unavailable: readonly string[]; throughEventId: number };
+export type FactsCommit = { rows: readonly RunFactsView[]; calls: readonly RunCallView[]; unavailable: readonly string[]; throughEventId: number };
 
 export type StoredFacts = { kind: 'facts'; facts: RunFactsView } | { kind: 'unavailable' };
 
@@ -470,6 +470,7 @@ export type RunFactsStore = {
   commit(batch: FactsCommit): void;
   get(runId: string): StoredFacts | undefined;
   page(after: string, limit: number): ReportPage;
+  calls(after: { runId: string; callId: string } | null, limit: number): RunCallView[];
 };
 
 export type SearchStore = {

@@ -31,6 +31,7 @@ const EXPECTED_TABLES = [
   'meter_records',
   'permission_reviews',
   'reflection_jobs',
+  'run_calls',
   'run_facts',
   'run_records',
   'run_recoveries',

@@ -18,9 +18,9 @@ type TaskPartial = {
   clockSkew: number;
 };
 
-export type Aggregate = { groupBy: GroupKey; tasks: ReadonlyMap<string, TaskPartial> };
+export type Aggregate = { groupBy: GroupKey; tasks: ReadonlyMap<string, TaskPartial>; unavailableRoots: ReadonlySet<string> };
 
-export type AggregateOptions = { groupBy: GroupKey };
+export type AggregateOptions = { groupBy: GroupKey; unavailableRoots?: readonly string[] };
 
 const partialOf = (row: RunFacts): TaskPartial => {
   const durations: number[] = [];
@@ -92,7 +92,7 @@ const addRows = (tasks: Map<string, TaskPartial>, rows: readonly RunFacts[]): vo
 export const aggregate = (rows: readonly RunFacts[], options: AggregateOptions): Aggregate => {
   const tasks = new Map<string, TaskPartial>();
   addRows(tasks, rows);
-  return { groupBy: options.groupBy, tasks };
+  return { groupBy: options.groupBy, tasks, unavailableRoots: new Set(options.unavailableRoots) };
 };
 
 export const merge = (left: Aggregate, right: Aggregate): Aggregate => {
@@ -102,7 +102,7 @@ export const merge = (left: Aggregate, right: Aggregate): Aggregate => {
     const existing = tasks.get(rootRunId);
     tasks.set(rootRunId, existing === undefined ? partial : combine(existing, partial));
   }
-  return { groupBy: left.groupBy, tasks };
+  return { groupBy: left.groupBy, tasks, unavailableRoots: new Set([...left.unavailableRoots, ...right.unavailableRoots]) };
 };
 
 const DAY_MS = 86_400_000;
@@ -134,6 +134,7 @@ type Accumulator = {
   counted: number;
   cancelled: number;
   pendingFacts: number;
+  factsUnavailable: number;
   completionK: number;
   completionN: number;
   undeclared: number;
@@ -160,6 +161,7 @@ const emptyAccumulator = (): Accumulator => ({
   counted: 0,
   cancelled: 0,
   pendingFacts: 0,
+  factsUnavailable: 0,
   completionK: 0,
   completionN: 0,
   undeclared: 0,
@@ -278,7 +280,7 @@ const finish = (accumulator: Accumulator): Indicators => {
   const durationSum = sorted.reduce((sum, value) => sum + value, 0);
   const episodes = accumulator.recovered + accumulator.unknownEffect + accumulator.failedEpisodes;
   return {
-    buckets: { counted: accumulator.counted, cancelled: accumulator.cancelled, pendingFacts: accumulator.pendingFacts },
+    buckets: { counted: accumulator.counted, cancelled: accumulator.cancelled, pendingFacts: accumulator.pendingFacts, factsUnavailable: accumulator.factsUnavailable },
     completion: { k: accumulator.completionK, n: accumulator.completionN, undeclared: accumulator.undeclared },
     recovery: {
       k: accumulator.recovered,
@@ -304,19 +306,30 @@ const finish = (accumulator: Accumulator): Indicators => {
   };
 };
 
+const place = (accumulator: Accumulator, rootRunId: string, task: TaskPartial, unavailable: boolean, marks?: Marks): void => {
+  if (!unavailable) {
+    accumulate(accumulator, task, marks);
+    return;
+  }
+  accumulator.factsUnavailable += 1;
+  markOf(marks, 'facts unavailable', rootRunId);
+};
+
 export const indicatorsOf = (aggregated: Aggregate): IndicatorGroups => {
   const total = emptyAccumulator();
   const groups = new Map<string, Accumulator>();
-  for (const task of aggregated.tasks.values()) {
-    accumulate(total, task);
+  for (const [rootRunId, task] of aggregated.tasks) {
+    const unavailable = aggregated.unavailableRoots.has(rootRunId);
+    place(total, rootRunId, task, unavailable);
     const key = groupOf(task.root ?? task.earliest, aggregated.groupBy);
     let group = groups.get(key);
     if (group === undefined) {
       group = emptyAccumulator();
       groups.set(key, group);
     }
-    accumulate(group, task);
+    place(group, rootRunId, task, unavailable);
   }
+  for (const rootRunId of aggregated.unavailableRoots) if (!aggregated.tasks.has(rootRunId)) total.factsUnavailable += 1;
   return {
     total: finish(total),
     groups: Object.fromEntries([...groups.entries()].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)).map(([key, group]) => [key, finish(group)])),
@@ -326,7 +339,8 @@ export const indicatorsOf = (aggregated: Aggregate): IndicatorGroups => {
 export const explainOf = (aggregated: Aggregate): Marks => {
   const marks: Marks = new Map();
   const scratch = emptyAccumulator();
-  for (const task of aggregated.tasks.values()) accumulate(scratch, task, marks);
+  for (const [rootRunId, task] of aggregated.tasks) place(scratch, rootRunId, task, aggregated.unavailableRoots.has(rootRunId), marks);
+  for (const rootRunId of aggregated.unavailableRoots) if (!aggregated.tasks.has(rootRunId)) markOf(marks, 'facts unavailable', rootRunId);
   for (const ids of marks.values()) ids.sort();
   return new Map([...marks.entries()].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)));
 };

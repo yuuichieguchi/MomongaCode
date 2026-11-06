@@ -5,7 +5,7 @@ import { openDatabase } from '@momonga/foundation/sqlite';
 import { REPOSITORY_FACTS_EVENT_TYPES, createRepositoryFactsFold } from '@momonga/memory';
 import { FactsRefusedError, createBlobStore, createJournalReader } from '@momonga/store';
 import { FIDELITY_CLAIMS, MAIN_AGENT, PERMISSION_MODES } from '@momonga/protocol';
-import { FACTS_EVENT_TYPES, createFactsFold } from '@momonga/reliability';
+import { FACTS_EVENT_TYPES, createCallsFold, createFactsFold } from '@momonga/reliability';
 import type { Capabilities, ClaimedToken, PermissionMode, RunEvent, RunEventPayload, RunFactsLimits } from '@momonga/protocol';
 import type { DatabaseSync } from 'node:sqlite';
 import type { BlobStore, JournalReader } from '@momonga/store';
@@ -199,11 +199,13 @@ export const runFactsHandler = (db: DatabaseSync, reader: VisitingReader): Journ
   return (request) => {
     const runId = textOf(request, 'runId', 'runFacts');
     const fold = createFactsFold();
+    const callsFold = createCallsFold(runId);
     let started: ReturnType<typeof startOf> | undefined;
     const run = reader.visitRun(runId, FACTS_EVENT_TYPES, (event) => {
       refusingFold(() => {
         if (event.type === 'run.started') started ??= startOf(event);
         fold.add(event);
+        callsFold.add(event);
       });
     });
     if (started === undefined) throw new FactsRefusedError(`run ${runId}: facts need the run.started event and the journal has none`);
@@ -231,7 +233,7 @@ export const runFactsHandler = (db: DatabaseSync, reader: VisitingReader): Journ
         origin: run.origin,
       });
     });
-    return { lastSeq: run.lastSeq, facts };
+    return { lastSeq: run.lastSeq, facts, calls: callsFold.finish() };
   };
 };
 

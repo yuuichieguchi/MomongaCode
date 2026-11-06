@@ -1366,7 +1366,16 @@ export const RUN_API_SCHEMAS = {
     closed({ error: closed({ type: string, code: string, message: string, param: string }, ['type', 'code', 'message']) }, ['error']),
   ),
   PublicRunEvent: root({ type: 'object', oneOf: EVENT_TYPES.map(publicEventVariant) }),
-  ReportPage: root(closed({ rows: { type: 'array', items: runFactsView, maxItems: REPORT_PAGE_ROWS }, nextCursor: nullable(string) }, ['rows', 'nextCursor'])),
+  ReportPage: root(
+    closed(
+      {
+        rows: { type: 'array', items: runFactsView, maxItems: REPORT_PAGE_ROWS },
+        unavailable: { type: 'array', items: closed({ runId: string, rootRunId: string }, ['runId', 'rootRunId']), maxItems: REPORT_PAGE_ROWS },
+        nextCursor: nullable(string),
+      },
+      ['rows', 'unavailable', 'nextCursor'],
+    ),
+  ),
 } as const satisfies Record<string, JsonSchema>;
 
 type ReducedEventType =

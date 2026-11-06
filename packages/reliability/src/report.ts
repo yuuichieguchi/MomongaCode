@@ -89,8 +89,8 @@ const indicatorLines = (indicators: Indicators): string[] => {
 };
 
 const populationLine = ({ buckets }: Indicators): string => {
-  const roots = buckets.counted + buckets.cancelled + buckets.pendingFacts;
-  return `Population: ${roots} terminal root tasks; counted ${buckets.counted}; cancelled ${buckets.cancelled} (excluded); pending facts ${buckets.pendingFacts} (excluded); facts coverage ${buckets.counted + buckets.cancelled}/${roots}`;
+  const roots = buckets.counted + buckets.cancelled + buckets.pendingFacts + buckets.factsUnavailable;
+  return `Population: ${roots} terminal root tasks; counted ${buckets.counted}; cancelled ${buckets.cancelled} (excluded); pending facts ${buckets.pendingFacts} (excluded); facts unavailable ${buckets.factsUnavailable} (excluded); facts coverage ${buckets.counted + buckets.cancelled + buckets.factsUnavailable}/${roots}`;
 };
 
 const harnessLines = (harness: Harness | null): string[] =>
