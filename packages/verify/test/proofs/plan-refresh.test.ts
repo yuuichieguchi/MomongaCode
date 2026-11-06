@@ -17,8 +17,8 @@ const PLAN = {
   attemptTimeoutMs: 15_000,
   revocationTimeoutMs: 10_000,
   skewMs: 60_000,
-  refreshBudgetMs: 60_000,
-  marginMs: 120_000,
+  refreshBudgetMs: 61_000,
+  marginMs: 121_000,
   authorizationWaitMs: 300_000,
   attemptTtlMs: 315_000,
   revocationBudgetMs: 31_500,
@@ -66,45 +66,12 @@ describe('the plan credential numbers of design-chatgpt-plan.md section 6', () =
     expect(authorizationWaitMs()).toBe(PLAN.authorizationWaitMs);
   });
 
-  it(
-    'P1 proves the refresh budget B covers every attempt timeout and the backoff between attempts',
-    async () => {
-      const arith = proofArith(z3.engine().api, 'P1');
-      const attempts = constant(arith, 'attempts', retry().maxAttempts);
-      const timeout = constant(arith, 'T_a', PLAN.attemptTimeoutMs);
-      const budget = constant(arith, 'B', PLAN.refreshBudgetMs);
-      const waits = backoffSum(arith, retry().maxAttempts);
-      const worst = arith.int('worst');
-      arith.given(worst.eq(attempts.mul(timeout).add(waits)));
-      expect(await hypothesesSatisfiable(arith)).toBe(true);
-      expect(await prove(arith, arith.ctx.And(worst.eq(arith.ctx.Int.val(46_500n)), worst.le(budget)))).toEqual({ status: 'proved' });
-    },
-    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
-  );
-
-  it(
-    'P1w refutes it for an attempt timeout of 20 s, so T_a = 15 s is below the largest timeout the budget admits (19.5 s)',
-    async () => {
-      const arith = proofArith(z3.engine().api, 'P1w');
-      const attempts = constant(arith, 'attempts', retry().maxAttempts);
-      const timeout = constant(arith, 'T_a', 20_000);
-      const budget = constant(arith, 'B', PLAN.refreshBudgetMs);
-      const waits = backoffSum(arith, retry().maxAttempts);
-      expect(await hypothesesSatisfiable(arith)).toBe(true);
-      await expectRefuted(arith, attempts.mul(timeout).add(waits).le(budget));
-      const largest = arith.int('largest');
-      arith.given(largest.mul(attempts).add(waits).le(budget), largest.add(1).mul(attempts).add(waits).gt(budget));
-      expect(await prove(arith, largest.eq(arith.ctx.Int.val(19_500n)))).toEqual({ status: 'proved' });
-    },
-    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
-  );
-
-  const retryAfterArith = (name: string, capMs: number) => {
+  const waitCapArith = (name: string, budgetMs: number, capMs: number) => {
     const arith = proofArith(z3.engine().api, name);
     const attempts = constant(arith, 'attempts', retry().maxAttempts);
     const timeout = constant(arith, 'T_a', PLAN.attemptTimeoutMs);
-    const budget = constant(arith, 'B', PLAN.refreshBudgetMs);
-    const cap = constant(arith, 'retryAfterCap', capMs);
+    const budget = constant(arith, 'B', budgetMs);
+    const cap = constant(arith, 'C', capMs);
     const { baseMs, maxMs } = retry();
     const ceiling = arith.ctx.Int.val(BigInt(maxMs));
     let waited: ProofInt = arith.ctx.Int.val(0n);
@@ -112,36 +79,58 @@ describe('the plan credential numbers of design-chatgpt-plan.md section 6', () =
       const backoff = arith.min(arith.ctx.Int.val(BigInt(baseMs * 2 ** index)), ceiling);
       const retryAfter = arith.int(`retryAfter${index}`);
       arith.given(retryAfter.ge(0));
-      const honoured = arith.min(retryAfter, cap);
       const wait = arith.int(`wait${index}`);
-      arith.given(wait.eq(arith.max(backoff, honoured)));
+      arith.given(wait.eq(arith.max(backoff, arith.min(retryAfter, cap))));
       waited = waited.add(wait);
     }
     return { arith, attempts, timeout, budget, cap, waited };
   };
 
   it(
-    'P1r proves the refresh budget B covers every attempt timeout and every wait when a Retry-After is honoured up to a cap of 7.5 s, whatever the server sends, and 7.5 s is the largest such cap',
+    'P1 proves that with the Retry-After cap C = retry.maxMs = 8 s every wait of nextWait is at most C, so a refresh lasts at most attempts x T_a + (attempts - 1) x C, and that this is exactly B = 61 s: B is derived, not chosen',
     async () => {
-      const { arith, attempts, timeout, budget, waited } = retryAfterArith('P1r', 7_500);
+      const { arith, attempts, timeout, budget, cap, waited } = waitCapArith('P1', PLAN.refreshBudgetMs, retry().maxMs);
+      const worst = arith.int('worst');
+      arith.given(worst.eq(attempts.mul(timeout).add(cap.mul(attempts.sub(1)))));
       expect(await hypothesesSatisfiable(arith)).toBe(true);
-      expect(await prove(arith, attempts.mul(timeout).add(waited).le(budget))).toEqual({ status: 'proved' });
-      const largest = arith.int('largestCap');
-      arith.given(largest.mul(retry().maxAttempts - 1).add(attempts.mul(timeout)).le(budget), largest.add(1).mul(retry().maxAttempts - 1).add(attempts.mul(timeout)).gt(budget));
-      expect(await prove(arith, largest.eq(arith.ctx.Int.val(7_500n)))).toEqual({ status: 'proved' });
+      expect(await prove(arith, arith.ctx.And(cap.eq(arith.ctx.Int.val(BigInt(retry().maxMs))), waited.le(cap.mul(attempts.sub(1))), attempts.mul(timeout).add(waited).le(budget), worst.eq(budget), budget.eq(arith.ctx.Int.val(61_000n))))).toEqual({ status: 'proved' });
     },
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );
 
   it(
-    'P1rw refutes it for a cap equal to the retry policy maximum of 8 s, and for a Retry-After honoured without a cap',
+    'P1b refutes B = 60 s, the value of revision 3: with the cap at retry.maxMs, a refresh can last 61 s',
     async () => {
-      const capped = retryAfterArith('P1rw', retry().maxMs);
-      expect(await hypothesesSatisfiable(capped.arith)).toBe(true);
-      await expectRefuted(capped.arith, capped.attempts.mul(capped.timeout).add(capped.waited).le(capped.budget));
-      const unbounded = retryAfterArith('P1ru', 3_600_000);
-      expect(await hypothesesSatisfiable(unbounded.arith)).toBe(true);
-      await expectRefuted(unbounded.arith, unbounded.attempts.mul(unbounded.timeout).add(unbounded.waited).le(unbounded.budget));
+      const { arith, attempts, timeout, budget, waited } = waitCapArith('P1b', 60_000, retry().maxMs);
+      expect(await hypothesesSatisfiable(arith)).toBe(true);
+      await expectRefuted(arith, attempts.mul(timeout).add(waited).le(budget));
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'P1w refutes it for an attempt timeout of 20 s, so T_a = 15 s is the largest timeout the budget admits',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'P1w');
+      const attempts = constant(arith, 'attempts', retry().maxAttempts);
+      const timeout = constant(arith, 'T_a', 20_000);
+      const budget = constant(arith, 'B', PLAN.refreshBudgetMs);
+      const cap = constant(arith, 'C', retry().maxMs);
+      expect(await hypothesesSatisfiable(arith)).toBe(true);
+      await expectRefuted(arith, attempts.mul(timeout).add(cap.mul(attempts.sub(1))).le(budget));
+      const largest = arith.int('largest');
+      arith.given(largest.mul(attempts).add(cap.mul(attempts.sub(1))).le(budget), largest.add(1).mul(attempts).add(cap.mul(attempts.sub(1))).gt(budget));
+      expect(await prove(arith, largest.eq(arith.ctx.Int.val(15_000n)))).toEqual({ status: 'proved' });
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'P1u refutes B for a Retry-After honoured without a cap',
+    async () => {
+      const { arith, attempts, timeout, budget, waited } = waitCapArith('P1u', PLAN.refreshBudgetMs, 3_600_000);
+      expect(await hypothesesSatisfiable(arith)).toBe(true);
+      await expectRefuted(arith, attempts.mul(timeout).add(waited).le(budget));
     },
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );
@@ -187,26 +176,47 @@ describe('the plan credential numbers of design-chatgpt-plan.md section 6', () =
       const period = arith.int('period');
       arith.given(period.eq(lifetime.sub(margin)));
       expect(await hypothesesSatisfiable(arith)).toBe(true);
-      expect(await prove(arith, arith.ctx.And(margin.lt(lifetime), period.gt(budget), period.eq(arith.ctx.Int.val(3_480_000n))))).toEqual({ status: 'proved' });
+      expect(await prove(arith, arith.ctx.And(margin.lt(lifetime), period.gt(budget), period.eq(arith.ctx.Int.val(3_479_000n))))).toEqual({ status: 'proved' });
     },
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );
 
   it(
-    'P4 proves two lazy refreshes of one account start at least L - M apart: the token a refresh issues expires L after the response, and a lazy refresh starts only when at most M remains',
+    'P4 proves that with the adoption rule expires_in > M, two lazy refreshes of one account start at least expires_in - M apart (3479 s for expires_in = 3600 s): the adopted token expires expires_in after the response, and a lazy refresh starts only when at most M remains',
     async () => {
       const arith = proofArith(z3.engine().api, 'P4');
       const lifetime = constant(arith, 'L', PLAN.accessLifetimeMs);
       const budget = constant(arith, 'B', PLAN.refreshBudgetMs);
       const margin = constant(arith, 'M', PLAN.marginMs);
+      const expiresIn = arith.int('expiresIn');
       const firstStart = arith.int('firstStart');
       const firstEnd = arith.int('firstEnd');
       const expiresAt = arith.int('expiresAt');
       const secondStart = arith.int('secondStart');
-      arith.given(firstEnd.ge(firstStart), firstEnd.le(firstStart.add(budget)), expiresAt.eq(firstEnd.add(lifetime)));
+      arith.given(expiresIn.gt(margin), expiresIn.le(lifetime));
+      arith.given(firstEnd.ge(firstStart), firstEnd.le(firstStart.add(budget)), expiresAt.eq(firstEnd.add(expiresIn)));
       arith.given(secondStart.ge(firstEnd), expiresAt.sub(secondStart).le(margin));
       expect(await hypothesesSatisfiable(arith)).toBe(true);
-      expect(await prove(arith, secondStart.sub(firstStart).ge(lifetime.sub(margin)))).toEqual({ status: 'proved' });
+      expect(await prove(arith, secondStart.sub(firstStart).ge(expiresIn.sub(margin)))).toEqual({ status: 'proved' });
+      arith.given(expiresIn.eq(lifetime));
+      expect(await prove(arith, secondStart.sub(firstStart).ge(arith.ctx.Int.val(3_479_000n)))).toEqual({ status: 'proved' });
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'P4w refutes the same spacing when a response with expires_in <= M is adopted: the next lazy refresh can start at once',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'P4w');
+      const margin = constant(arith, 'M', PLAN.marginMs);
+      const expiresIn = arith.int('expiresIn');
+      const firstEnd = arith.int('firstEnd');
+      const expiresAt = arith.int('expiresAt');
+      const secondStart = arith.int('secondStart');
+      arith.given(expiresIn.gt(0), expiresIn.le(margin), expiresAt.eq(firstEnd.add(expiresIn)));
+      arith.given(secondStart.ge(firstEnd), expiresAt.sub(secondStart).le(margin));
+      expect(await hypothesesSatisfiable(arith)).toBe(true);
+      await expectRefuted(arith, secondStart.sub(firstEnd).ge(1));
     },
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );
@@ -228,71 +238,6 @@ describe('the plan credential numbers of design-chatgpt-plan.md section 6', () =
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );
 
-  const scheduleArith = (name: string) => {
-    const arith = proofArith(z3.engine().api, name);
-    const skew = constant(arith, 'S', PLAN.skewMs);
-    const margin = constant(arith, 'M', PLAN.marginMs);
-    const expiresAt = arith.int('expiresAt');
-    const earliest = arith.int('earliestRefreshAt');
-    const defaultTime = expiresAt.sub(margin);
-    const latest = expiresAt.sub(skew);
-    const candidate = arith.max(defaultTime, earliest);
-    return { arith, skew, expiresAt, earliest, defaultTime, latest, candidate };
-  };
-
-  it(
-    'P5 proves the scheduled time with any earliest_refresh_at lies in [expiresAt - M, expiresAt - S], and equals expiresAt - M when the field is ignored',
-    async () => {
-      const { arith, defaultTime, latest, candidate, earliest } = scheduleArith('P5');
-      const { ctx } = arith;
-      const scheduled = arith.int('scheduled');
-      const ignored = arith.int('ignored');
-      arith.given(
-        ignored.eq(ctx.If(candidate.le(latest), ctx.Int.val(0), ctx.Int.val(1)) as ProofInt),
-        scheduled.eq(ctx.If(candidate.le(latest), candidate, defaultTime) as ProofInt),
-      );
-      expect(await hypothesesSatisfiable(arith)).toBe(true);
-      expect(await prove(arith, ctx.And(scheduled.ge(defaultTime), scheduled.le(latest), ctx.Implies(ignored.eq(1), scheduled.eq(defaultTime)), ctx.Implies(earliest.le(defaultTime), scheduled.eq(defaultTime))))).toEqual({
-        status: 'proved',
-      });
-    },
-    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
-  );
-
-  it(
-    'P5w refutes scheduled <= expiresAt - S when the closed-window rule is dropped and max(expiresAt - M, earliest_refresh_at) is used as is',
-    async () => {
-      const { arith, latest, candidate } = scheduleArith('P5w');
-      expect(await hypothesesSatisfiable(arith)).toBe(true);
-      await expectRefuted(arith, candidate.le(latest));
-    },
-    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
-  );
-
-  it(
-    'P5x shows the margin guarantee of P2 does not extend to an earliest_refresh_at inside the window: a refresh scheduled there and taking B can end with less than S left',
-    async () => {
-      const { arith, skew, expiresAt, latest, candidate } = scheduleArith('P5x');
-      const budget = constant(arith, 'B', PLAN.refreshBudgetMs);
-      arith.given(candidate.le(latest));
-      expect(await hypothesesSatisfiable(arith)).toBe(true);
-      await expectRefuted(arith, expiresAt.sub(candidate.add(budget)).ge(skew));
-    },
-    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
-  );
-
-  it(
-    'P5y proves the guarantee of P2 holds for every earliest_refresh_at not later than expiresAt - M',
-    async () => {
-      const { arith, skew, expiresAt, earliest, defaultTime, candidate } = scheduleArith('P5y');
-      const budget = constant(arith, 'B', PLAN.refreshBudgetMs);
-      arith.given(earliest.le(defaultTime));
-      expect(await hypothesesSatisfiable(arith)).toBe(true);
-      expect(await prove(arith, expiresAt.sub(candidate.add(budget)).ge(skew))).toEqual({ status: 'proved' });
-    },
-    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
-  );
-
   it(
     'P6 proves the revocation budget 31.5 s equals attempts x T_rev plus the backoff between attempts, and the sign-out wait is at most B plus that budget',
     async () => {
@@ -305,7 +250,7 @@ describe('the plan credential numbers of design-chatgpt-plan.md section 6', () =
       const signOutWait = arith.int('signOutWait');
       arith.given(signOutWait.eq(refreshBudget.add(budget)));
       expect(await hypothesesSatisfiable(arith)).toBe(true);
-      expect(await prove(arith, arith.ctx.And(budget.eq(attempts.mul(timeout).add(waits)), signOutWait.eq(arith.ctx.Int.val(91_500n))))).toEqual({ status: 'proved' });
+      expect(await prove(arith, arith.ctx.And(budget.eq(attempts.mul(timeout).add(waits)), signOutWait.eq(arith.ctx.Int.val(92_500n))))).toEqual({ status: 'proved' });
     },
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );
