@@ -7,6 +7,7 @@ import { GatewayFailureError } from './errors.ts';
 import { GatewayRequestError } from '../gateway-client.ts';
 
 const STREAM_INTERRUPTED_REFUNDS = 3;
+const PROVIDER_UNAVAILABLE_CODE = 'provider_unavailable';
 const DEFERRAL_FAILURE_CODE = 'rate_limited';
 const GATEWAY_FAILURE_CODE = 'gateway_failure';
 const JOURNAL_THREAD_FAILURE_CODE = 'journal_thread_error';
@@ -40,6 +41,6 @@ export const dispositionOf = (error: unknown, interruptions: number): FailureDis
   if (error.code === 'gateway_unavailable' && error.provenNotSent === true) return { kind: 'requeue', refund: true, retryAfterMs, interrupted: false };
   if (error.status === 503 && error.code === 'gateway_closed') return { kind: 'requeue', refund: true, retryAfterMs, interrupted: false };
   if (error.code === 'stream_interrupted') return { kind: 'requeue', refund: interruptions < STREAM_INTERRUPTED_REFUNDS, retryAfterMs, interrupted: true };
-  if (error.type === 'transport' || TRANSIENT_REQUEST_STATUSES.includes(error.status)) return { kind: 'requeue', refund: false, retryAfterMs, interrupted: false };
+  if (error.type === 'transport' || error.code === PROVIDER_UNAVAILABLE_CODE || TRANSIENT_REQUEST_STATUSES.includes(error.status)) return { kind: 'requeue', refund: false, retryAfterMs, interrupted: false };
   return { kind: 'fail', code: error.code, message: error.message };
 };
