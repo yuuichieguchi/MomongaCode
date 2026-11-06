@@ -64,6 +64,30 @@ describe('decision 52: the order of the tools shown to the model', () => {
     expect(thirdTurn).toEqual(['Read', 'Delta', 'Gamma', 'Beta', 'Alpha']);
   });
 
+  it('shows the first list under deferral, the loader included, in comparator order', async () => {
+    const set = await deferringSet();
+    expect(await keptAt(offerOf(set, ['Alpha', 'Beta'], []), 128_000)).toEqual([LOAD_TOOLS_TOOL_NAME, 'Read', 'Delta', 'Gamma']);
+  });
+
+  it('shows the first list under deferral, the loader included, in comparator order when a tool is dropped', async () => {
+    const set = await deferringSet();
+    const offered = offerOf(set, ['Alpha', 'Beta'], []);
+    const window = await windowKeeping(offered, [LOAD_TOOLS_TOOL_NAME, 'Read', 'Delta']);
+    expect(await keptAt(offered, window)).toEqual([LOAD_TOOLS_TOOL_NAME, 'Read', 'Delta']);
+  });
+
+  it('appends loaded definitions after the whole first list, the loader included, in load order', async () => {
+    const set = await deferringSet();
+    expect(await keptAt(offerOf(set, ['Alpha', 'Beta'], ['Beta', 'Alpha']), 128_000)).toEqual([LOAD_TOOLS_TOOL_NAME, 'Read', 'Delta', 'Gamma', 'Beta', 'Alpha']);
+  });
+
+  it('keeps the whole offered order, the loader included, when a drop happens with loaded tools', async () => {
+    const set = await deferringSet();
+    const offered = offerOf(set, ['Alpha', 'Beta'], ['Beta', 'Alpha']);
+    const window = await windowKeeping(offered, [LOAD_TOOLS_TOOL_NAME, 'Read', 'Alpha', 'Beta', 'Delta']);
+    expect(await keptAt(offered, window)).toEqual([LOAD_TOOLS_TOOL_NAME, 'Read', 'Delta', 'Beta', 'Alpha']);
+  });
+
   it('drops the tools last in comparator order when loaded tools are offered', async () => {
     const set = await deferringSet();
     const offered = offerOf(set, ['Alpha', 'Beta'], ['Beta', 'Alpha']);

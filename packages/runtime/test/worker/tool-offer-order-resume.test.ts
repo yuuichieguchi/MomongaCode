@@ -39,6 +39,7 @@ describe('decision 52 across a resume whose build drops a tool', () => {
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
     const beforeResume = env.ofType(run.id, 'model.requested').map((event) => withoutLoader(namesOf(event.body)));
     expect(beforeResume).toEqual([['Echo'], ['Echo', 'Counter', 'Write']]);
+    expect(env.ofType(run.id, 'model.requested').map((event) => namesOf(event.body))).toEqual([[LOADER, 'Echo'], [LOADER, 'Echo', 'Counter', 'Write']]);
     const digestsBefore = pinnedDigestsOf(env, run.id);
 
     await env.resolveApproval(run.id, 'allow_once');
@@ -51,6 +52,7 @@ describe('decision 52 across a resume whose build drops a tool', () => {
     expect(resumed).not.toContain('Write');
     expect(env.ofType(run.id, 'notice').map((notice) => notice.code)).toContain('tools_dropped');
     expect(withoutLoader(resumed)).toEqual(['Echo', 'Counter']);
+    expect(resumed).toEqual([LOADER, 'Echo', 'Counter']);
     expect(new Set(pinnedDigestsOf(env, run.id))).toEqual(new Set(digestsBefore));
     expect(env.ofType(run.id, 'notice').filter((notice) => notice.code === 'tools_changed')).toEqual([]);
   });

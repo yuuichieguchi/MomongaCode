@@ -92,7 +92,7 @@ describe('the offer under a pinned deferred set (5.1, 5.2)', () => {
     const { requests } = await runDeferred(env, [textStep('Done.')]);
     const lines = (loaderOf(requests[0]?.body)?.description ?? '').split('\n');
 
-    expect(namesOf(requests[0]?.body)).toEqual(['Echo', LOADER]);
+    expect(namesOf(requests[0]?.body)).toEqual([LOADER, 'Echo']);
     expect(enumOf(requests[0]?.body)).toEqual(['Counter', 'Write']);
     expect(lines).toContain('Counter: Return an increasing count');
     expect(lines).toContain('Write: Write a file');
@@ -116,8 +116,8 @@ describe('LoadTools adds the definitions from the next request (5.2, Q7)', () =>
 
     expect(env.ofType(run.id, 'tool.loaded').map((event) => event.names)).toEqual([['Write']]);
     expect(completedOf(env, run.id, LOADER, 0)?.status).toBe('completed');
-    expect(namesOf(requests[0]?.body)).toEqual(['Echo', LOADER]);
-    expect(namesOf(requests[1]?.body)).toEqual(['Echo', LOADER, 'Write']);
+    expect(namesOf(requests[0]?.body)).toEqual([LOADER, 'Echo']);
+    expect(namesOf(requests[1]?.body)).toEqual([LOADER, 'Echo', 'Write']);
     expect(write?.description).toBe('Write a file');
     expect(new Set(Object.keys((write?.parameters as { properties: Record<string, unknown> }).properties))).toEqual(new Set(['file_path', 'content']));
     expect(env.fold(run.id).loadedTools).toEqual(['Write']);
@@ -151,7 +151,7 @@ describe('LoadTools adds the definitions from the next request (5.2, Q7)', () =>
 
     expect(requests).toHaveLength(3);
     expect([...namesOf(requests[1]?.body)].sort()).toEqual(['Counter', 'Echo', LOADER, 'Write']);
-    expect(namesOf(requests[1]?.body).slice(0, 2)).toEqual(['Echo', LOADER]);
+    expect(namesOf(requests[1]?.body).slice(0, 2)).toEqual([LOADER, 'Echo']);
     expect(toolsOf(requests[2]?.body)).toEqual(toolsOf(requests[1]?.body));
     expect(requests[2]?.prefix).toMatchObject({ toolsChanged: false });
     expect(env.ofType(run.id, 'tool.loaded').flatMap((event) => event.names).sort()).toEqual(['Counter', 'Write']);
@@ -188,7 +188,7 @@ describe('LoadTools adds the definitions from the next request (5.2, Q7)', () =>
     expect(refused?.output).toContain('Big');
     expect(refused?.output).toMatch(/\d+ tokens/);
     expect(env.ofType(run.id, 'tool.loaded')).toEqual([]);
-    expect(namesOf(requests[1]?.body)).toEqual(['Echo', LOADER]);
+    expect(namesOf(requests[1]?.body)).toEqual([LOADER, 'Echo']);
   });
 });
 
@@ -233,7 +233,7 @@ describe('a pinned deferred tool counts as offered in the usage window (open ite
     const window = toolUsageWindowOf(env.store, env.project);
     const second = await runDeferred(env, [textStep('Done.')]);
 
-    expect(namesOf(first.requests[0]?.body)).toEqual(['Echo', LOADER]);
+    expect(namesOf(first.requests[0]?.body)).toEqual([LOADER, 'Echo']);
     expect(window[0]?.offered).toEqual(expect.arrayContaining(['Counter', 'Echo', 'Write']));
     expect(window[0]?.called).toEqual([]);
     expect(tokenPinOf(env, second.run.id)).toEqual({ deferred: ['Counter', 'Write'] });
