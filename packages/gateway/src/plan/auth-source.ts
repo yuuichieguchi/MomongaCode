@@ -44,9 +44,8 @@ const INVALID_CLIENT_CAUSE = 'invalid_client';
 const SIGN_IN_STATES: ReadonlySet<PlanAccountState> = new Set<PlanAccountState>(['needs_sign_in', 'signing_out', 'registered']);
 
 export const signInRequiredMessage = (profile: PlanProfile, record: PlanRecord | undefined): string => {
-  if (record?.cause === INVALID_CLIENT_CAUSE) return REGISTRATION_INVALID_MESSAGE;
-  if (record?.cause !== undefined) return profile.messages.signInExpiredMessage;
-  return `Not signed in to ${profile.displayName}`;
+  if (record?.state !== 'needs_sign_in') return profile.messages.signInRequiredMessage;
+  return record.cause === INVALID_CLIENT_CAUSE ? REGISTRATION_INVALID_MESSAGE : profile.messages.signInExpiredMessage;
 };
 
 export const activePause = (record: PlanRecord, nowMs: number): PlanPause | undefined => {

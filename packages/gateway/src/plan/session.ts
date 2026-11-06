@@ -21,7 +21,7 @@ import {
 } from './auth-source.ts';
 import type { AccountView, AuthSource, PlanPause, PlanRead } from './auth-source.ts';
 import { ensureHostIdentity } from './host-identity.ts';
-import { grantsScope, refreshRequiredFor, sendRefresh, terminalCause, tokenResponseProblem } from './refresh.ts';
+import { grantsScope, refreshRequiredFor, sendRefresh, sendWasInterrupted, tokenResponseProblem } from './refresh.ts';
 import type { PlanFetch, PlanSleep, PlanTokenResponse, RefreshEnd } from './refresh.ts';
 import { revokeRefreshToken } from './revoke.ts';
 import type { RevocationAnswer } from './revoke.ts';
@@ -55,6 +55,7 @@ export type PlanRecord = {
   generation?: number;
   pendingRefresh?: { generation: number; startedAt: number };
   cause?: string;
+  interrupted?: boolean;
   paused?: PlanPause;
 };
 
@@ -127,6 +128,13 @@ const numberField = (source: Record<string, unknown>, name: string): number | un
   return value;
 };
 
+const booleanField = (source: Record<string, unknown>, name: string): boolean | undefined => {
+  const value = source[name];
+  if (value === undefined) return undefined;
+  if (typeof value !== 'boolean') throw new Error(`the plan record field ${name} is not a boolean`);
+  return value;
+};
+
 const requiredString = (source: Record<string, unknown>, name: string): string => {
   const value = stringField(source, name);
   if (value === undefined) throw new Error(`the plan record has no ${name}`);
@@ -177,6 +185,7 @@ const parseRecord = (text: string): PlanRecord => {
     ...optional('generation', numberField(value, 'generation')),
     ...optional('pendingRefresh', parsePending(value['pendingRefresh'])),
     ...optional('cause', stringField(value, 'cause')),
+    ...optional('interrupted', booleanField(value, 'interrupted')),
     ...optional('paused', parsePause(value['paused'])),
   };
 };
@@ -196,13 +205,13 @@ const registrationOf = (record: PlanRecord): PlanRecord => ({
   ...optional('generation', record.generation),
 });
 
-const withoutTokens = (record: PlanRecord, cause: string): PlanRecord => {
-  const { access_token: _access, refresh_token: _refresh, expiresAt: _expires, pendingRefresh: _pending, ...kept } = record;
-  return { ...kept, state: 'needs_sign_in', cause };
+const withoutTokens = (record: PlanRecord, cause: string, interrupted: boolean): PlanRecord => {
+  const { access_token: _access, refresh_token: _refresh, expiresAt: _expires, pendingRefresh: _pending, interrupted: _interrupted, ...kept } = record;
+  return { ...kept, state: 'needs_sign_in', cause, ...(interrupted ? { interrupted: true } : {}) };
 };
 
 const withoutPending = (record: PlanRecord): PlanRecord => {
-  const { pendingRefresh: _pending, ...kept } = record;
+  const { pendingRefresh: _pending, cause: _cause, interrupted: _interrupted, ...kept } = record;
   return kept;
 };
 
@@ -408,7 +417,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       return;
     }
     if (end.kind === 'terminal') {
-      await persistAfterSend(account, entry, withoutTokens(record, terminalCause({ code: end.code, interrupted: account.interrupted })));
+      await persistAfterSend(account, entry, withoutTokens(record, end.code, sendWasInterrupted({ intentLoaded: account.interrupted, unansweredBefore: end.unansweredBefore })));
       account.interrupted = false;
       return;
     }
@@ -418,7 +427,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       ...withoutPending(record),
       state: grantsScope(scope, account.profile.oauth.requiredScope) ? 'active' : 'plan_disabled',
       access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
+      ...optional('refresh_token', tokens.refresh_token ?? record.refresh_token),
       ...optional('id_token', tokens.id_token ?? record.id_token),
       expiresAt: clock.now() + tokens.expires_in * 1000,
       scope,
@@ -452,7 +461,6 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
         form: { grant_type: 'refresh_token', client_id: record.client_id, refresh_token: refreshToken, resource: account.profile.oauth.resource },
         attempts: retry.maxAttempts,
         attemptTimeoutMs: defaults.attemptTimeoutMs,
-        marginMs: defaults.marginMs,
         waitPolicy,
       });
       await applyRefreshEnd(account, entry, intent, end);
@@ -577,7 +585,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
   const install = async (input: InstallInput): Promise<{ outcome: 'signed_in' | 'plan_disabled' } | Rejected> => {
     const account = accountOf(input.profile, input.account);
     const { tokens } = input;
-    const problem = tokenResponseProblem(tokens, { marginMs: defaults.marginMs, refreshRequired: typeof tokens.scope === 'string' && refreshRequiredFor(tokens.scope) });
+    const problem = tokenResponseProblem(tokens, { minimumLifetimeMs: defaults.marginMs, refreshRequired: typeof tokens.scope === 'string' && refreshRequiredFor(tokens.scope) });
     if (problem !== undefined) throw new Error(`the sign-in installed nothing: ${problem}`);
     const outcome = await store.withKey(account.key, async (entry) => {
       const raw = await entry.read();

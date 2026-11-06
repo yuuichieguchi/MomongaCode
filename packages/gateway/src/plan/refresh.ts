@@ -21,8 +21,6 @@ export const PLAN_TERMINAL_REFRESH_CODES = ['invalid_grant', 'invalid_refresh_to
 
 export const PLAN_CONFIGURATION_REFRESH_CODES = ['invalid_client'] as const;
 
-export const PLAN_REFRESH_INTERRUPTED_CAUSE = 'refresh_interrupted';
-
 export type SendOutcome = { kind: 'answered'; status: number; headers: Headers; body: string } | { kind: 'unanswered' };
 
 export type BoundedSendPorts = { fetch: PlanFetch; sleep: PlanSleep };
@@ -52,14 +50,15 @@ const scopesOf = (scope: string): string[] => scope.split(' ').filter((entry) =>
 
 export const grantsScope = (scope: string, wanted: string): boolean => scopesOf(scope).includes(wanted);
 
-export const tokenResponseProblem = (body: unknown, { marginMs, refreshRequired }: { marginMs: number; refreshRequired: boolean }): string | undefined => {
+export const tokenResponseProblem = (body: unknown, { minimumLifetimeMs, refreshRequired }: { minimumLifetimeMs: number; refreshRequired: boolean }): string | undefined => {
   if (!isRecord(body)) return 'the token response is not a JSON object';
   if (typeof body['access_token'] !== 'string' || body['access_token'] === '') return 'the token response has no access token';
   if (body['token_type'] !== 'Bearer') return 'the token response is not a Bearer token';
   if (typeof body['scope'] !== 'string') return 'the token response has no granted scope';
   const expiresIn = body['expires_in'];
-  if (typeof expiresIn !== 'number' || !Number.isInteger(expiresIn) || expiresIn * 1000 <= marginMs) return 'the token response has no expires_in longer than the refresh margin';
+  if (typeof expiresIn !== 'number' || !Number.isInteger(expiresIn) || expiresIn * 1000 <= minimumLifetimeMs) return 'the token response has no expires_in longer than its required lifetime';
   if (refreshRequired && (typeof body['refresh_token'] !== 'string' || body['refresh_token'] === '')) return 'the token response has no refresh token';
+  if (body['refresh_token'] !== undefined && (typeof body['refresh_token'] !== 'string' || body['refresh_token'] === '')) return 'the token response has a malformed refresh token';
   if (body['id_token'] !== undefined && typeof body['id_token'] !== 'string') return 'the token response has a malformed ID token';
   if (body['earliest_refresh_at'] !== undefined && typeof body['earliest_refresh_at'] !== 'string') return 'the token response has a malformed earliest_refresh_at';
   return undefined;
@@ -67,8 +66,10 @@ export const tokenResponseProblem = (body: unknown, { marginMs, refreshRequired 
 
 export const refreshRequiredFor = (scope: string): boolean => grantsScope(scope, 'offline_access');
 
+export type RefreshTokens = Omit<PlanTokenResponse, 'refresh_token'> & { refresh_token?: string };
+
 export type RefreshAnswer =
-  | { kind: 'adopted'; tokens: PlanTokenResponse }
+  | { kind: 'adopted'; tokens: RefreshTokens }
   | { kind: 'terminal'; code: string }
   | { kind: 'configuration'; code: string }
   | { kind: 'transient'; resend: boolean; retryAfterMs?: number };
@@ -92,12 +93,12 @@ const parsedBody = (text: string): unknown => {
   }
 };
 
-export const classifyRefreshAnswer = (outcome: SendOutcome, { marginMs, nowMs }: { marginMs: number; nowMs: number }): RefreshAnswer => {
+export const classifyRefreshAnswer = (outcome: SendOutcome, nowMs: number): RefreshAnswer => {
   const resend = !answeredForResend(outcome);
   if (outcome.kind === 'unanswered') return { kind: 'transient', resend };
   const body = parsedBody(outcome.body);
   if (outcome.status === SUCCESS_STATUS) {
-    return tokenResponseProblem(body, { marginMs, refreshRequired: true }) === undefined ? { kind: 'adopted', tokens: body as PlanTokenResponse } : { kind: 'transient', resend };
+    return tokenResponseProblem(body, { minimumLifetimeMs: 0, refreshRequired: false }) === undefined ? { kind: 'adopted', tokens: body as RefreshTokens } : { kind: 'transient', resend };
   }
   const code = isRecord(body) && typeof body['error'] === 'string' ? body['error'] : undefined;
   const errorClass = code === undefined ? undefined : REFRESH_ERROR_CLASSES.get(code);
@@ -106,9 +107,13 @@ export const classifyRefreshAnswer = (outcome: SendOutcome, { marginMs, nowMs }:
   return { kind: 'transient', resend, ...(retryAfterMs === undefined ? {} : { retryAfterMs }) };
 };
 
-export const terminalCause = ({ code, interrupted }: { code: string; interrupted: boolean }): string => (interrupted ? PLAN_REFRESH_INTERRUPTED_CAUSE : code);
+export const sendWasInterrupted = ({ intentLoaded, unansweredBefore }: { intentLoaded: boolean; unansweredBefore: boolean }): boolean => intentLoaded || unansweredBefore;
 
-export type RefreshEnd = { kind: 'adopted'; tokens: PlanTokenResponse } | { kind: 'terminal'; code: string } | { kind: 'configuration'; code: string } | { kind: 'transient' };
+export type RefreshEnd =
+  | { kind: 'adopted'; tokens: RefreshTokens }
+  | { kind: 'terminal'; code: string; unansweredBefore: boolean }
+  | { kind: 'configuration'; code: string }
+  | { kind: 'transient' };
 
 export type RefreshRequest = {
   ports: BoundedSendPorts;
@@ -117,12 +122,12 @@ export type RefreshRequest = {
   form: Record<string, string>;
   attempts: number;
   attemptTimeoutMs: number;
-  marginMs: number;
   waitPolicy: WaitPolicy;
 };
 
 export const sendRefresh = async (request: RefreshRequest): Promise<RefreshEnd> => {
   const startedAt = request.clock.now();
+  let unansweredBefore = false;
   for (let attempt = 0; attempt < request.attempts; attempt += 1) {
     const outcome = await boundedSend(
       request.ports,
@@ -130,8 +135,10 @@ export const sendRefresh = async (request: RefreshRequest): Promise<RefreshEnd> 
       { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' }, body: new URLSearchParams(request.form).toString() },
       request.attemptTimeoutMs,
     );
-    const answer = classifyRefreshAnswer(outcome, { marginMs: request.marginMs, nowMs: request.clock.now() });
+    const answer = classifyRefreshAnswer(outcome, request.clock.now());
+    if (answer.kind === 'terminal') return { ...answer, unansweredBefore };
     if (answer.kind !== 'transient') return answer;
+    unansweredBefore ||= outcome.kind === 'unanswered';
     if (!answer.resend || attempt + 1 >= request.attempts) return { kind: 'transient' };
     const decision = nextWait({
       attempt,
