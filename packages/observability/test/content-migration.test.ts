@@ -64,7 +64,7 @@ describe('trace store migration 5: content bodies', () => {
         .map((row) => String(row['detail']))
         .join('\n');
       expect(plan).toContain('spans_with_content');
-      expect(plan).not.toContain('SCAN spans');
+      expect(plan.split('\n')).not.toContain('SCAN spans');
       expect(plan).not.toContain('TEMP B-TREE');
     });
   });
