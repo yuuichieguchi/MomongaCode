@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { brotliDecompressSync } from 'node:zlib';
 import { sha256Hex } from '@momonga/foundation';
+import type { FileSystem } from '@momonga/foundation';
 
 export const RIPGREP_MANIFEST_ASSET = 'ripgrep-manifest.json';
 export const RIPGREP_BINARY_ASSET = 'ripgrep.br';
@@ -10,6 +11,7 @@ export const RIPGREP_STAGED_PREFIX = 'rg.partial-';
 export const RIPGREP_REPLACEMENT = 'replaceFile';
 export const RIPGREP_RESOLUTION_STEPS = ['start', 'hash', 'decompress', 'rename', 'rehash', 'checked', 'staged'] as const;
 export const RIPGREP_EXECUTABLE_MODE = 0o700;
+export const RIPGREP_DIRECTORY_MODE = 0o700;
 
 export type RipgrepResolutionStep = (typeof RIPGREP_RESOLUTION_STEPS)[number];
 
@@ -22,15 +24,7 @@ export type RipgrepManifest = {
 
 export type RipgrepEntryKind = 'file' | 'directory' | 'symlink' | 'other' | 'absent';
 
-export type RipgrepDistributionFiles = {
-  kind(target: string): Promise<RipgrepEntryKind>;
-  ensureDirectory(directory: string): Promise<void>;
-  writeBytes(file: string, bytes: Uint8Array, mode: number): Promise<void>;
-  readBytes(file: string): Promise<Uint8Array>;
-  rename(from: string, to: string): Promise<void>;
-  remove(file: string): Promise<void>;
-  list(directory: string): Promise<string[]>;
-};
+export type RipgrepDistributionFiles = Pick<FileSystem, 'lstat' | 'mkdir' | 'open' | 'readFile' | 'rename' | 'rm' | 'readdir'>;
 
 export type RipgrepDistributionPorts = {
   asset(name: string): Uint8Array;
@@ -102,6 +96,29 @@ export const stagedOwnerOf = (name: string): string | undefined => {
 
 const errnoOf = (error: unknown): string | undefined => (error as NodeJS.ErrnoException | undefined)?.code;
 
+const kindOf = async (files: RipgrepDistributionFiles, target: string): Promise<RipgrepEntryKind> => {
+  let stat: Awaited<ReturnType<RipgrepDistributionFiles['lstat']>>;
+  try {
+    stat = await files.lstat(target);
+  } catch (error) {
+    if (errnoOf(error) === 'ENOENT') return 'absent';
+    throw error;
+  }
+  if (stat.isFile()) return 'file';
+  if (stat.isDirectory()) return 'directory';
+  if (stat.isSymbolicLink()) return 'symlink';
+  return 'other';
+};
+
+const writeExclusive = async (files: RipgrepDistributionFiles, file: string, bytes: Uint8Array, mode: number): Promise<void> => {
+  const handle = await files.open(file, 'wx', mode);
+  try {
+    await handle.writeFile(bytes);
+  } finally {
+    await handle.close();
+  }
+};
+
 type Resolution = {
   readonly ports: RipgrepDistributionPorts;
   readonly manifest: RipgrepManifest;
@@ -118,14 +135,14 @@ type ResolutionState =
 const NO_RELEASE = async (): Promise<void> => undefined;
 
 const sweepStaleStaged = async ({ ports, directory }: Resolution): Promise<void> => {
-  for (const name of await ports.files.list(directory)) {
+  for (const name of await ports.files.readdir(directory)) {
     const owner = stagedOwnerOf(name);
     if (owner === undefined) continue;
-    if (!(await ports.isOwnerRunning(owner))) await ports.files.remove(path.join(directory, name));
+    if (!(await ports.isOwnerRunning(owner))) await ports.files.rm(path.join(directory, name));
   }
 };
 
-const matches = async (resolution: Resolution, file: string): Promise<boolean> => sha256Hex(await resolution.ports.files.readBytes(file)) === resolution.manifest.binary.sha256;
+const matches = async (resolution: Resolution, file: string): Promise<boolean> => sha256Hex(await resolution.ports.files.readFile(file)) === resolution.manifest.binary.sha256;
 
 const verifiedEmbedded = (resolution: Resolution): { binary: Uint8Array; notices: Uint8Array } => {
   const { ports, manifest } = resolution;
@@ -144,9 +161,9 @@ const stagedName = (ports: RipgrepDistributionPorts, suffix: string): string =>
 const writeStaged = async (resolution: Resolution, bytes: Uint8Array, suffix: string): Promise<string> => {
   const file = path.join(resolution.directory, stagedName(resolution.ports, suffix));
   try {
-    await resolution.ports.files.writeBytes(file, bytes, RIPGREP_EXECUTABLE_MODE);
+    await writeExclusive(resolution.ports.files, file, bytes, RIPGREP_EXECUTABLE_MODE);
   } catch (error) {
-    await resolution.ports.files.remove(file);
+    await resolution.ports.files.rm(file);
     throw error;
   }
   return file;
@@ -157,7 +174,7 @@ const placeNotice = async (resolution: Resolution, notices: Uint8Array): Promise
   try {
     await resolution.ports.files.rename(staged, path.join(resolution.directory, RIPGREP_NOTICE_FILE));
   } catch (error) {
-    await resolution.ports.files.remove(staged);
+    await resolution.ports.files.rm(staged);
     throw error;
   }
 };
@@ -166,9 +183,9 @@ const nextState = async (state: ResolutionState, resolution: Resolution): Promis
   const { ports, final } = resolution;
   switch (state.step) {
     case 'start': {
-      await ports.files.ensureDirectory(resolution.directory);
+      await ports.files.mkdir(resolution.directory, RIPGREP_DIRECTORY_MODE);
       await sweepStaleStaged(resolution);
-      const kind = await ports.files.kind(final);
+      const kind = await kindOf(ports.files, final);
       if (kind === 'absent') return { step: 'decompress' };
       if (kind !== 'file') throw new RipgrepDistributionError(`${final} is not a regular file; remove it so that the embedded ripgrep is extracted again`);
       return { step: 'hash' };
@@ -181,7 +198,7 @@ const nextState = async (state: ResolutionState, resolution: Resolution): Promis
       try {
         await placeNotice(resolution, notices);
       } catch (error) {
-        await ports.files.remove(staged);
+        await ports.files.rm(staged);
         throw error;
       }
       return { step: 'rename', staged };
@@ -192,7 +209,7 @@ const nextState = async (state: ResolutionState, resolution: Resolution): Promis
       } catch (error) {
         const code = errnoOf(error);
         if (code !== undefined && IN_USE_RENAME_CODES.includes(code) && (await matches(resolution, state.staged))) return { step: 'staged', staged: state.staged };
-        await ports.files.remove(state.staged);
+        await ports.files.rm(state.staged);
         throw error;
       }
       return { step: 'rehash' };
@@ -203,7 +220,7 @@ const nextState = async (state: ResolutionState, resolution: Resolution): Promis
       return { path: final, version: resolution.manifest.version, release: NO_RELEASE };
     case 'staged': {
       const { staged } = state;
-      return { path: staged, version: resolution.manifest.version, release: () => ports.files.remove(staged) };
+      return { path: staged, version: resolution.manifest.version, release: () => ports.files.rm(staged) };
     }
   }
 };

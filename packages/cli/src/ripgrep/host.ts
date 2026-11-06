@@ -1,39 +1,12 @@
 import { randomBytes } from 'node:crypto';
-import fs from 'node:fs/promises';
 import { getAssetKeys, getRawAsset, isSea } from 'node:sea';
-import { ProbeFailedError, defaultProcessInspector } from '@momonga/foundation';
+import { ProbeFailedError, defaultProcessInspector, nodeFileSystem } from '@momonga/foundation';
 import type { ProcessInspector } from '@momonga/foundation';
 
 type RuntimeEntry = typeof import('@momonga/runtime/entry');
-type RipgrepDistributionFiles = import('@momonga/runtime/entry').RipgrepDistributionFiles;
-type RipgrepEntryKind = import('@momonga/runtime/entry').RipgrepEntryKind;
 type BundledRipgrepSource = NonNullable<Parameters<RuntimeEntry['runRuntimeEntry']>[1]['bundledRipgrep']>;
 
-
 const OWNER_SEPARATOR = '.';
-
-const kindOf = async (target: string): Promise<RipgrepEntryKind> => {
-  try {
-    const stat = await fs.lstat(target);
-    if (stat.isFile()) return 'file';
-    if (stat.isDirectory()) return 'directory';
-    if (stat.isSymbolicLink()) return 'symlink';
-    return 'other';
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'absent';
-    throw error;
-  }
-};
-
-export const nodeRipgrepFiles: RipgrepDistributionFiles = {
-  kind: kindOf,
-  ensureDirectory: async (directory) => void (await fs.mkdir(directory, { recursive: true, mode: 0o700 })),
-  writeBytes: (file, bytes, mode) => fs.writeFile(file, bytes, { mode, flag: 'wx' }),
-  readBytes: (file) => fs.readFile(file),
-  rename: (from, to) => fs.rename(from, to),
-  remove: (file) => fs.rm(file, { force: true }),
-  list: (directory) => fs.readdir(directory),
-};
 
 export const ownerIdOf = (pid: number, startTime: number): string => `${pid}${OWNER_SEPARATOR}${startTime}`;
 
@@ -79,6 +52,6 @@ export const embeddedRipgrepSource = ({ RIPGREP_MANIFEST_ASSET, ensureBundledRip
       random: randomFraction,
       ownerId: await ownerId(),
       isOwnerRunning: isOwnerRunningWith(inspector),
-      files: nodeRipgrepFiles,
+      files: nodeFileSystem,
     });
 };

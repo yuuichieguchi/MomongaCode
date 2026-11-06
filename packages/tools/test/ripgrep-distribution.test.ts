@@ -1,3 +1,4 @@
+import type fs from 'node:fs';
 import path from 'node:path';
 import { brotliCompressSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
@@ -29,48 +30,72 @@ const FINAL = path.join(DIRECTORY, 'rg');
 
 type Entry = { kind: 'file'; bytes: Uint8Array; mode: number } | { kind: 'directory' } | { kind: 'symlink' };
 
+const errno = (message: string, code: string): Error => Object.assign(new Error(message), { code });
+
+const statsOf = (entry: Entry): fs.Stats =>
+  ({ isFile: () => entry.kind === 'file', isDirectory: () => entry.kind === 'directory', isSymbolicLink: () => entry.kind === 'symlink' }) as fs.Stats;
+
 const makeFiles = () => {
   const entries = new Map<string, Entry>();
+  const directoryModes = new Map<string, number | undefined>();
   const busy = new Set<string>();
   const failWrites = { next: false };
   const counts = { writes: 0, reads: new Map<string, number>(), renames: 0, removes: 0 };
+  const opened: string[] = [];
   const mkdirs = (directory: string): void => {
     for (let current = directory; current !== path.dirname(current); current = path.dirname(current)) if (!entries.has(current)) entries.set(current, { kind: 'directory' });
   };
   const files: RipgrepDistributionPorts['files'] = {
-    kind: async (target) => entries.get(target)?.kind ?? 'absent',
-    ensureDirectory: async (directory) => mkdirs(directory),
-    writeBytes: async (file, bytes, mode) => {
-      if (failWrites.next) {
-        failWrites.next = false;
-        throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
-      }
-      counts.writes += 1;
-      entries.set(file, { kind: 'file', bytes: new Uint8Array(bytes), mode });
+    lstat: async (target) => {
+      const entry = entries.get(target);
+      if (entry === undefined) throw errno('missing', 'ENOENT');
+      return statsOf(entry);
     },
-    readBytes: async (file) => {
+    mkdir: async (directory, mode) => {
+      directoryModes.set(directory, mode);
+      mkdirs(directory);
+    },
+    open: async (file, flags, mode) => {
+      if (flags !== 'wx') throw new Error(`the fake opens only with wx, not ${flags}`);
+      if (entries.has(file)) throw errno('exists', 'EEXIST');
+      opened.push(file);
+      entries.set(file, { kind: 'file', bytes: new Uint8Array(), mode: mode as number });
+      return {
+        writeFile: async (content) => {
+          if (failWrites.next) {
+            failWrites.next = false;
+            throw errno('disk full', 'ENOSPC');
+          }
+          counts.writes += 1;
+          entries.set(file, { kind: 'file', bytes: typeof content === 'string' ? new TextEncoder().encode(content) : new Uint8Array(content), mode: mode as number });
+        },
+        sync: async () => undefined,
+        close: async () => undefined,
+      };
+    },
+    readFile: async (file) => {
       counts.reads.set(file, (counts.reads.get(file) ?? 0) + 1);
       const entry = entries.get(file);
-      if (entry?.kind !== 'file') throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+      if (entry?.kind !== 'file') throw errno('missing', 'ENOENT');
       return entry.bytes;
     },
     rename: async (from, to) => {
       counts.renames += 1;
-      if (busy.has(to)) throw Object.assign(new Error('busy'), { code: 'EBUSY' });
+      if (busy.has(to)) throw errno('busy', 'EBUSY');
       const entry = entries.get(from);
-      if (entry === undefined) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+      if (entry === undefined) throw errno('missing', 'ENOENT');
       const existing = entries.get(to);
-      if (existing?.kind === 'directory') throw Object.assign(new Error('not empty'), { code: 'ENOTEMPTY' });
+      if (existing?.kind === 'directory') throw errno('not empty', 'ENOTEMPTY');
       entries.delete(from);
       entries.set(to, entry);
     },
-    remove: async (file) => {
+    rm: async (file) => {
       counts.removes += 1;
       entries.delete(file);
     },
-    list: async (directory) => [...entries.keys()].filter((key) => path.dirname(key) === directory).map((key) => path.basename(key)),
+    readdir: async (directory) => [...entries.keys()].filter((key) => path.dirname(key) === directory).map((key) => path.basename(key)),
   };
-  return { entries, busy, failWrites, counts, files };
+  return { entries, directoryModes, busy, failWrites, counts, opened, files };
 };
 
 type Fixture = ReturnType<typeof makeFiles>;
@@ -129,6 +154,7 @@ describe('ensureBundledRipgrep', () => {
     expect(resolved.version).toBe(VERSION);
     expect(text(fixture.entries.get(FINAL))).toBe('#!rg-binary-bytes');
     expect(fixture.entries.get(FINAL)).toMatchObject({ mode: 0o700 });
+    expect(fixture.directoryModes.get(DIRECTORY)).toBe(0o700);
     expect(text(fixture.entries.get(path.join(DIRECTORY, 'NOTICE.txt')))).toBe('COPYING\nUNLICENSE\nLICENSE-MIT\n');
     await resolved.release();
     expect(stagedNames(fixture)).toEqual([]);
@@ -136,13 +162,8 @@ describe('ensureBundledRipgrep', () => {
 
   it('writes the binary through a staged file inside the directory and renames it over rg', async () => {
     const fixture = makeFiles();
-    const written: string[] = [];
-    const original = fixture.files.writeBytes;
-    fixture.files.writeBytes = async (file, bytes, mode) => {
-      written.push(path.basename(file));
-      await original(file, bytes, mode);
-    };
     await ensureBundledRipgrep(portsOf(fixture));
+    const written = fixture.opened.map((file) => path.basename(file));
     expect(written.some((name) => name.startsWith('rg.partial-self-'))).toBe(true);
     expect(written).not.toContain('rg');
   });

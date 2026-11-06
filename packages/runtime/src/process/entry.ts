@@ -47,4 +47,3 @@ export const runRuntimeEntry = (io: EntryIo, deps: RuntimeEntryDeps): Promise<nu
   });
 
 export { RIPGREP_MANIFEST_ASSET, ensureBundledRipgrep } from '@momonga/tools';
-export type { RipgrepDistributionFiles, RipgrepEntryKind } from '@momonga/tools';

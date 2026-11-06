@@ -9,11 +9,12 @@ export type RemoveOptions = { readonly recursive: boolean };
 export interface FileSystem extends AtomicWriteFileSystem {
   rm(file: string, options?: RemoveOptions): Promise<void>;
   stat(file: string): Promise<fs.Stats>;
+  lstat(file: string): Promise<fs.Stats>;
   readdir(directory: string): Promise<string[]>;
   readdirEntries(directory: string): Promise<fs.Dirent[]>;
   readFile(file: string): Promise<Uint8Array>;
   readTextFile(file: string): Promise<string>;
-  mkdir(directory: string): Promise<void>;
+  mkdir(directory: string, mode?: number): Promise<void>;
   writeFile(file: string, content: FileContent): Promise<void>;
   access(file: string): Promise<void>;
   cp(from: string, to: string): Promise<void>;
@@ -45,11 +46,12 @@ export const nodeFileSystem: FileSystem = {
   link: (from, to) => fs.promises.link(from, to),
   rm: (file, options) => fs.promises.rm(file, { force: true, recursive: options?.recursive === true }),
   stat: (file) => fs.promises.stat(file),
+  lstat: (file) => fs.promises.lstat(file),
   readdir: (directory) => fs.promises.readdir(directory),
   readdirEntries: (directory) => fs.promises.readdir(directory, { withFileTypes: true }),
   readFile: async (file) => new Uint8Array(await fs.promises.readFile(file)),
   readTextFile: (file) => fs.promises.readFile(file, 'utf8'),
-  mkdir: async (directory) => void (await fs.promises.mkdir(directory, { recursive: true })),
+  mkdir: async (directory, mode) => void (await fs.promises.mkdir(directory, mode === undefined ? { recursive: true } : { recursive: true, mode })),
   writeFile: (file, content) => fs.promises.writeFile(file, content),
   access: (file) => fs.promises.access(file),
   cp: (from, to) => fs.promises.cp(from, to, { recursive: true, force: true }),
