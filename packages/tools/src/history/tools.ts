@@ -57,6 +57,7 @@ export const createHistoryTools = ({ port, trusted, project }: HistoryToolsOptio
   const read = defineTool<ReadInput>({
     name: HISTORY_READ_TOOL_NAME,
     tier: 'optional',
+    reads: 'history_range',
     description:
       'Reads the recorded events of one run, redacted, for a step or a seq range. Without runId it reads the current run, including ranges that context compaction replaced. A long range is paged: follow the instruction at the end of the output with seqFrom and offset.',
     conciseDescription:

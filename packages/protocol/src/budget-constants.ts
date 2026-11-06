@@ -12,6 +12,9 @@ import {
 } from './budget-ratios.ts';
 import type { Ratio } from './budget-ratios.ts';
 import type { Capabilities } from './capabilities.ts';
+import { ESTIMATED_CHARACTERS_PER_TOKEN } from './characters-per-token.ts';
+import { compactionSummaryMessage } from './compaction-summary.ts';
+import { tokensForText } from './estimate-tokens.ts';
 import type { CountTokensMethod, CountTokensResult } from './gateway-api.ts';
 
 export const MARGIN_RATIO = MARGIN.num / MARGIN.den;
@@ -22,10 +25,13 @@ export const MIN_MARGIN = 32;
 export const ESTIMATED_ERROR_BOUND_RATIO = ESTIMATED_ERROR.num / ESTIMATED_ERROR.den;
 export const MIN_SUMMARY_TOKENS = 64;
 export const MAX_SUMMARY_TOKENS = 4096;
-export const SUMMARY_ITEM_OVERHEAD = 20;
-export const SUMMARY_PROMPT_TOKENS = 395;
-export const COMPACTION_INSTRUCTIONS_VERSION = 2;
-export const ESTIMATED_CHARACTERS_PER_TOKEN = 4;
+export const SUMMARY_ITEM_OVERHEAD = Math.max(
+  tokensForText(String(compactionSummaryMessage('', 'model').content)),
+  tokensForText(String(compactionSummaryMessage('', 'code').content)),
+);
+export const SUMMARY_PROMPT_TOKENS = 426;
+export const COMPACTION_INSTRUCTIONS_VERSION = 3;
+export { ESTIMATED_CHARACTERS_PER_TOKEN };
 export const MAX_COMPACTION_GUIDELINE_CHARS = ESTIMATED_CHARACTERS_PER_TOKEN * MIN_SUMMARY_TOKENS;
 export const WORKING_STATE_SUMMARY_RATIO = 0.5;
 export const MAX_JOURNAL_SEQ_DIGITS = 7;

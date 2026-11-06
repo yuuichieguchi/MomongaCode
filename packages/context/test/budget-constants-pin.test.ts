@@ -28,14 +28,14 @@ describe('budget constants are pinned by literal values', () => {
     expect(SUMMARY_WINDOW_RATIO).toBe(0.06);
     expect(SUMMARY_ROOM_RATIO).toBe(0.3);
     expect(SUMMARY_ACCEPT_RATIO).toBe(1.3);
-    expect(SUMMARY_ITEM_OVERHEAD).toBe(20);
-    expect(SUMMARY_PROMPT_TOKENS).toBe(395);
+    expect(SUMMARY_ITEM_OVERHEAD).toBe(69);
+    expect(SUMMARY_PROMPT_TOKENS).toBe(426);
   });
 
   it.for([
-    [113, 167],
-    [189, 266],
-    [246, 340],
+    [113, 216],
+    [189, 315],
+    [246, 389],
   ] as const)('summaryItemTokensFor(%i) is %i', ([cap, tokens]) => {
     expect(summaryItemTokensFor(cap)).toBe(tokens);
   });

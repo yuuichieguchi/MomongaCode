@@ -41,8 +41,8 @@ describe('forced compaction deficit boundary', () => {
   };
 
   it.for([
-    { lastStepChars: 2666, slack: 0 },
-    { lastStepChars: 2669, slack: 0 },
+    { lastStepChars: 2470, slack: 0 },
+    { lastStepChars: 2473, slack: 0 },
   ])('accepts the cut when the region minus the summary item equals the deficit exactly ($lastStepChars)', async ({ lastStepChars, slack }) => {
     const { history, input } = forcedInput(lastStepChars);
     const error = await overflowOf(input, harness(capabilities).ports);
@@ -55,7 +55,7 @@ describe('forced compaction deficit boundary', () => {
   });
 
   it('blocks the cut with deficit_not_closed when the deficit is one token larger than the region minus the summary item', async () => {
-    const { history, input } = forcedInput(2670);
+    const { history, input } = forcedInput(2474);
     const error = await overflowOf(input, harness(capabilities).ports);
     const deficit = error.inputTokens - error.ceiling;
     const region = tokensOfItems(itemsThrough(history, 4));
@@ -73,7 +73,7 @@ describe('proactive compaction gain boundary', () => {
   };
 
   it('hints a compaction when the region is exactly twice the summary item', async () => {
-    const { history, input } = proactiveInput(1399);
+    const { history, input } = proactiveInput(1791);
     const built = await buildContext(input, harness(capabilities).ports);
 
     expect(tokensOfItems(itemsThrough(history, 4))).toBe(2 * (await summaryItemOf(input)));
@@ -81,7 +81,7 @@ describe('proactive compaction gain boundary', () => {
   });
 
   it('gives no hint when the region is one token below twice the summary item', async () => {
-    const { history, input } = proactiveInput(1395);
+    const { history, input } = proactiveInput(1787);
     const built = await buildContext(input, harness(capabilities).ports);
 
     expect(tokensOfItems(itemsThrough(history, 4))).toBe(2 * (await summaryItemOf(input)) - 1);

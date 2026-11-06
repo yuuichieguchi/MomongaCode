@@ -62,7 +62,7 @@ describe('the offer without deferral', () => {
     const toolSet = await toolSetOf(UNIVERSE);
     const visible = toolSet.forModel({ mode: 'default', rules: [] });
 
-    const offer = offerFor({ toolSet, visible, deferred: undefined, loaded: [], keepCompanionsWithoutHost: false });
+    const offer = offerFor({ toolSet, visible, deferred: undefined, loaded: [], keepCompanionsWithoutHost: false, required: new Set<string>() });
 
     expect(offer.tools).toEqual(visible);
     expect(offer.catalog).toEqual([]);
@@ -72,7 +72,7 @@ describe('the offer without deferral', () => {
     const toolSet = await toolSetOf(UNIVERSE);
     const visible = toolSet.forModel({ mode: 'default', rules: [] });
 
-    const offer = offerFor({ toolSet, visible, deferred: [], loaded: [], keepCompanionsWithoutHost: false });
+    const offer = offerFor({ toolSet, visible, deferred: [], loaded: [], keepCompanionsWithoutHost: false, required: new Set<string>() });
 
     expect(offer.tools).toEqual(visible);
     expect(offer.catalog).toEqual([]);
@@ -84,7 +84,7 @@ describe('the deferred tools and the loader (T3, 5.1 and 5.2)', () => {
     const toolSet = await toolSetOf(UNIVERSE);
     const visible = toolSet.forModel({ mode: 'default', rules: [] });
 
-    const offer = offerFor({ toolSet, visible, deferred: ['Beta', 'Gamma'], loaded: [], keepCompanionsWithoutHost: false });
+    const offer = offerFor({ toolSet, visible, deferred: ['Beta', 'Gamma'], loaded: [], keepCompanionsWithoutHost: false, required: new Set<string>() });
 
     expect(namesOf(offer.tools)).toEqual(['ReadOutput', 'Alpha', LOAD_TOOLS_TOOL_NAME]);
     expect(offer.catalog).toEqual(['Beta', 'Gamma']);
@@ -95,7 +95,7 @@ describe('the deferred tools and the loader (T3, 5.1 and 5.2)', () => {
     const toolSet = await toolSetOf(UNIVERSE);
     const visible = toolSet.forModel({ mode: 'default', rules: [] });
 
-    const offer = offerFor({ toolSet, visible, deferred: ['Alpha', 'Beta'], loaded: [], keepCompanionsWithoutHost: false });
+    const offer = offerFor({ toolSet, visible, deferred: ['Alpha', 'Beta'], loaded: [], keepCompanionsWithoutHost: false, required: new Set<string>() });
     const loader = loaderOf(offer.tools);
 
     expect(loader?.type).toBe('function');
@@ -108,7 +108,7 @@ describe('the deferred tools and the loader (T3, 5.1 and 5.2)', () => {
     const toolSet = await toolSetOf(UNIVERSE);
     const visible = toolSet.forModel({ mode: 'default', rules: [] });
 
-    const offer = offerFor({ toolSet, visible, deferred: ['Alpha', 'Beta'], loaded: [], keepCompanionsWithoutHost: false });
+    const offer = offerFor({ toolSet, visible, deferred: ['Alpha', 'Beta'], loaded: [], keepCompanionsWithoutHost: false, required: new Set<string>() });
     const lines = (loaderOf(offer.tools)?.description ?? '').split('\n');
 
     expect(lines).toContain('Alpha: Reads the alpha.');
@@ -122,7 +122,7 @@ describe('the deferred tools and the loader (T3, 5.1 and 5.2)', () => {
     const visible = toolSet.forModel({ mode: 'default', rules: [] });
     const definitionOf = (name: string) => visible.find((tool) => tool.name === name);
 
-    const offer = offerFor({ toolSet, visible, deferred: ['Beta', 'Gamma'], loaded: ['Gamma', 'Beta'], keepCompanionsWithoutHost: false });
+    const offer = offerFor({ toolSet, visible, deferred: ['Beta', 'Gamma'], loaded: ['Gamma', 'Beta'], keepCompanionsWithoutHost: false, required: new Set<string>() });
 
     expect(namesOf(offer.tools)).toEqual(['ReadOutput', 'Alpha', LOAD_TOOLS_TOOL_NAME, 'Gamma', 'Beta']);
     expect(offer.tools[3]).toEqual(definitionOf('Gamma'));
@@ -135,7 +135,7 @@ describe('the deferred tools and the loader (T3, 5.1 and 5.2)', () => {
     const toolSet = await toolSetOf([ALPHA, BETA, READ_OUTPUT]);
     const visible = toolSet.forModel({ mode: 'default', rules: [] });
 
-    const offer = offerFor({ toolSet, visible, deferred: ['Beta', 'Gamma'], loaded: ['Gamma'], keepCompanionsWithoutHost: false });
+    const offer = offerFor({ toolSet, visible, deferred: ['Beta', 'Gamma'], loaded: ['Gamma'], keepCompanionsWithoutHost: false, required: new Set<string>() });
 
     expect(namesOf(offer.tools)).toEqual(['ReadOutput', 'Alpha', LOAD_TOOLS_TOOL_NAME]);
     expect(offer.catalog).toEqual(['Beta']);
@@ -147,7 +147,7 @@ describe('what is never deferred (5.4)', () => {
     const toolSet = await toolSetOf(UNIVERSE);
     const visible = toolSet.forModel({ mode: 'default', rules: [] });
 
-    const offer = offerFor({ toolSet, visible, deferred: ['ReadOutput'], loaded: [], keepCompanionsWithoutHost: false });
+    const offer = offerFor({ toolSet, visible, deferred: ['ReadOutput'], loaded: [], keepCompanionsWithoutHost: false, required: new Set<string>() });
 
     expect(namesOf(offer.tools)).toEqual(namesOf(visible));
     expect(offer.catalog).toEqual([]);
@@ -157,7 +157,7 @@ describe('what is never deferred (5.4)', () => {
     const toolSet = await toolSetOf(UNIVERSE);
     const visible = toolSet.forModel({ mode: 'default', rules: [] });
 
-    const offer = offerFor({ toolSet, visible, deferred: [LOAD_TOOLS_TOOL_NAME, 'Gamma'], loaded: [], keepCompanionsWithoutHost: false });
+    const offer = offerFor({ toolSet, visible, deferred: [LOAD_TOOLS_TOOL_NAME, 'Gamma'], loaded: [], keepCompanionsWithoutHost: false, required: new Set<string>() });
 
     expect(offer.catalog).toEqual(['Gamma']);
     expect(namesOf(offer.tools).filter((name) => name === LOAD_TOOLS_TOOL_NAME)).toHaveLength(1);
@@ -167,7 +167,7 @@ describe('what is never deferred (5.4)', () => {
     const toolSet = await toolSetOf(UNIVERSE);
     const visible = toolSet.forModel({ mode: 'plan', rules: [] });
 
-    const offer = offerFor({ toolSet, visible, deferred: ['Beta', 'Gamma'], loaded: ['Beta'], keepCompanionsWithoutHost: false });
+    const offer = offerFor({ toolSet, visible, deferred: ['Beta', 'Gamma'], loaded: ['Beta'], keepCompanionsWithoutHost: false, required: new Set<string>() });
 
     expect(namesOf(offer.tools)).toEqual(['ReadOutput', 'Alpha', LOAD_TOOLS_TOOL_NAME]);
     expect(offer.catalog).toEqual(['Gamma']);
@@ -178,7 +178,7 @@ describe('a companion follows its host (5.4)', () => {
   const companionCase = async (deferred: readonly string[], loaded: readonly string[], keepCompanionsWithoutHost: boolean) => {
     const toolSet = await toolSetOf([ALPHA, HOST, SIDE]);
     const visible = toolSet.forModel({ mode: 'default', rules: [] });
-    return offerFor({ toolSet, visible, deferred, loaded, keepCompanionsWithoutHost });
+    return offerFor({ toolSet, visible, deferred, loaded, keepCompanionsWithoutHost, required: new Set<string>() });
   };
 
   it('is withheld with a deferred host and is not in the catalog itself', async () => {
@@ -224,7 +224,7 @@ describe('T3-3 for child runs, by exhaustive enumeration', () => {
           const visibleNames = new Set(namesOf(visible));
           const expectedCatalog = sorted(parentDeferred.filter((name) => visibleNames.has(name) && !ESSENTIAL.has(name)));
           for (const loaded of subsetsOf(NAMES)) {
-            const offer = offerFor({ toolSet, visible, deferred: sorted(parentDeferred), loaded, keepCompanionsWithoutHost: false });
+            const offer = offerFor({ toolSet, visible, deferred: sorted(parentDeferred), loaded, keepCompanionsWithoutHost: false, required: new Set<string>() });
             const offered = namesOf(offer.tools);
             const label = JSON.stringify({ parentDeferred, agentTools, mode, loaded });
 

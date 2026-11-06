@@ -5,7 +5,7 @@ import { absoluteFrom } from '@momonga/policy';
 import { FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf } from '@momonga/testkit';
 import type { PermissionSubject } from '@momonga/policy';
 import { createToolExecutor, createToolRegistry, defineTool, validateToolInput } from '@momonga/tools';
-import type { AnyTool, ExecutionBatchInput, SideEffectBinding, ToolBody, ToolCall, ToolContext, ToolDefinition, ToolExecutorOptions, ToolSet } from '@momonga/tools';
+import type { AnyTool, ExecutionBatchInput, SideEffectBinding, ToolBody, ToolCall, ToolContext, ToolDefinition, ToolExecutorOptions, ToolSet, WorkTreeObserver } from '@momonga/tools';
 import type { PermissionRule } from '@momonga/policy';
 import type { PermissionMode, SideEffect } from '@momonga/protocol';
 import { fakeSandbox, makeBlobs, makeClock, makeIdempotency, makeLayout, minimalPolicyFor } from './helpers.ts';
@@ -46,10 +46,11 @@ export type HarnessOptions = {
   maxParallel?: number;
   idempotencyTtlMs?: number;
   attempts?: number;
-  executor?: Partial<ToolExecutorOptions>;
+  executor?: Partial<ToolExecutorOptions> & { workTreeObserver?: WorkTreeObserver };
 };
 
 export const makeHarness = (options: HarnessOptions = {}) => {
+  const { workTreeObserver, ...executorOptions } = options.executor ?? {};
   const layout: Layout = makeLayout();
   const clock = makeClock();
   const idempotency = makeIdempotency(clock);
@@ -76,7 +77,7 @@ export const makeHarness = (options: HarnessOptions = {}) => {
     readOnlyRetry: { attempts: options.attempts ?? 3, baseMs: 0, maxMs: 0 },
     fs: hostFilesystemOf(fakePolicyFilesystem()),
     ...FAKE_LEASE,
-    ...options.executor,
+    ...executorOptions,
   });
   const session = { cwd: layout.project, workingDirectory: layout.project, readLedger: new Map<string, { sha256: string; mtimeMs: number }>() };
   const started: string[] = [];
@@ -105,6 +106,7 @@ export const makeHarness = (options: HarnessOptions = {}) => {
     onStarted: (callId: string) => {
       started.push(callId);
     },
+    ...(workTreeObserver === undefined ? {} : { workTreeObserver }),
     ...extra,
     };
     if (extra.sandboxPolicy !== undefined) return batch as unknown as ExecutionBatchInput;

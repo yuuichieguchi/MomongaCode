@@ -6,8 +6,8 @@ import { createFileCredentialStore, createMcpPool, inheritedEnvOf, mcpCredential
 import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
 import type { Sandbox } from '@momonga/sandbox';
 import type { RuntimeStore } from '@momonga/store';
-import { createBuiltinTools, createPolicyFilesystem, createToolExecutor, createToolRegistry } from '@momonga/tools';
-import type { ShellHost, ToolSet } from '@momonga/tools';
+import { createBuiltinTools, createGitWorkTreeObserver, createPolicyFilesystem, createToolExecutor, createToolRegistry } from '@momonga/tools';
+import type { ShellHost, ToolSet, WorkTreeObserver } from '@momonga/tools';
 import type { PolicyHostFilesystem } from '@momonga/policy';
 import type { ToolRuntimePort } from '../ports.ts';
 import type { RunNotifier } from '../service/notifier.ts';
@@ -175,6 +175,8 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     return registry.snapshot({ signal });
   };
 
+  const observers = new Map<string, WorkTreeObserver>();
+
   const port: ToolRuntimePort = {
     envFor: settings.envFor,
     toolSet,
@@ -186,6 +188,14 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     shellHost: options.shellHost,
     markerDir: paths.markers.tools,
     sessionState: (session) => sessionStates.get(session),
+    workTreeObserver: (session, trusted) => {
+      const key = `${trusted ? 'trusted' : 'untrusted'}\n${session.cwd}`;
+      const known = observers.get(key);
+      if (known !== undefined) return known;
+      const created = createGitWorkTreeObserver({ storeDir: path.join(paths.state, 'observer', sha256Hex(session.cwd)), workTree: session.cwd, trusted });
+      observers.set(key, created);
+      return created;
+    },
   };
 
   return { port, mcpPools, mcpAdmin, sessionStates, jobs, inFlightKeys: () => new Set([...executor.inFlightKeys(), ...jobs.liveKeys()]) };

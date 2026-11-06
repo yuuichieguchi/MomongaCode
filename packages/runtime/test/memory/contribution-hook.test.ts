@@ -23,15 +23,24 @@ const user = (text = 'Fix it'): RunEventPayload => ({ type: 'user.message', text
 
 const compactedThrough = (replacedThroughSeq: number): RunEventPayload => ({ type: 'context.compacted', item: { type: 'message', role: 'user', content: 's' }, summary: 'nothing', replacedThroughSeq });
 
-const toolRun = (callId: string, name: string, args: Record<string, unknown>, output: string, status: 'completed' | 'failed' = 'completed'): RunEventPayload[] => [
+const toolRun = (
+  callId: string,
+  name: string,
+  args: Record<string, unknown>,
+  output: string,
+  status: 'completed' | 'failed' = 'completed',
+  facts: Record<string, unknown> = {},
+): RunEventPayload[] => [
   { type: 'model.responded', step: 1, attempt: 1, response: { status: 'completed', output: [functionCallItem({ callId, name, args })], usage } } as RunEventPayload,
   { type: 'tool.call', callId, providerCallId: callId, name, kind: 'other', title: name, rawInput: args },
-  { type: 'tool.completed', callId, status, output, ...(status === 'failed' ? { exitCode: 1 } : {}) },
+  { type: 'tool.completed', callId, status, output, ...(status === 'failed' ? { exitCode: 1 } : {}), ...facts } as RunEventPayload,
 ];
 
-const wrote = (callId: string, path: string): RunEventPayload[] => toolRun(callId, 'Write', { file_path: path, content: 'x' }, 'done');
-
 const SHA256 = 'a'.repeat(64);
+
+const writeFacts = (path: string): Record<string, unknown> => ({ files: [{ path, sha256: SHA256, access: 'write' }] });
+
+const wrote = (callId: string, path: string): RunEventPayload[] => toolRun(callId, 'Write', { file_path: path, content: 'x' }, 'done', 'completed', writeFacts(path));
 
 const wroteMany = (callId: string, paths: readonly string[]): RunEventPayload[] => {
   const [responded, call, completed] = toolRun(callId, 'MultiWrite', { count: paths.length }, 'done');
@@ -65,13 +74,13 @@ const workingStateOf = (result: ReturnType<typeof measure>): unknown => result?.
 
 describe('working state at terminal', () => {
   it('credits the working state when a step after the compaction names a written path whose record was replaced', () => {
-    const result = measure([user(), ...toolRun('c0', 'Write', { file_path: 'src/launcher/zorp.ts', content: 'x' }, 'wrote src/launcher/zorp.ts'), compactedThrough(3), said('Editing src/launcher/zorp.ts again')]);
+    const result = measure([user(), ...toolRun('c0', 'Write', { file_path: 'src/launcher/zorp.ts', content: 'x' }, 'wrote src/launcher/zorp.ts', 'completed', writeFacts('src/launcher/zorp.ts')), compactedThrough(3), said('Editing src/launcher/zorp.ts again')]);
     expect(result?.items).toContainEqual({ kind: 'working_state', id: 'working-state', contributed: true });
     expect(result?.items).toContainEqual({ kind: 'summary', id: 'summary-5', contributed: false });
   });
 
   it('credits the working state for a failed command named again', () => {
-    const result = measure([user(), ...toolRun('c0', 'Bash', { command: 'npm run buildZorp' }, 'npm run buildZorp failed', 'failed'), compactedThrough(3), said('Retry buildZorp')]);
+    const result = measure([user(), ...toolRun('c0', 'Bash', { command: 'npm run buildZorp' }, 'npm run buildZorp failed', 'failed', { command: 'npm run buildZorp', files: [] }), compactedThrough(3), said('Retry buildZorp')]);
     expect(result?.items).toContainEqual({ kind: 'working_state', id: 'working-state', contributed: true });
   });
 

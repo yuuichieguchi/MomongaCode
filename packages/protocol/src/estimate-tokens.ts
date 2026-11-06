@@ -1,4 +1,4 @@
-import { ESTIMATED_CHARACTERS_PER_TOKEN } from './budget-constants.ts';
+import { ESTIMATED_CHARACTERS_PER_TOKEN } from './characters-per-token.ts';
 
 const ALPHABETIC_CHARACTERS_PER_TOKEN = 2;
 const ALPHABETIC_CHARACTER = /[\p{Script=Cyrillic}\p{Script=Greek}\p{Script=Armenian}\p{Script=Georgian}\p{Script=Hebrew}\p{Script=Arabic}\p{Script=Syriac}\p{Script=Thaana}]/u;

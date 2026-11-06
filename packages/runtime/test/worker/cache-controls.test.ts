@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { defineTool } from '@momonga/tools';
+import type { AnyTool } from '@momonga/tools';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { CreateResponseBody, InputItem, PromptCacheCounts, RunEventPayload } from '@momonga/protocol';
 import { capabilitiesFor, makeEnv } from './harness.ts';
@@ -6,6 +8,20 @@ import type { Env } from './harness.ts';
 import { assistantMessage, callsStep, textStep } from './scripts.ts';
 
 const ROOT_RULE = 'Indent with tabs in this project.';
+
+const readTool = (): AnyTool =>
+  defineTool<{ file_path: string }>({
+    name: 'Read',
+    description: 'Reads a file',
+    kind: 'read',
+    sideEffect: 'read_only',
+    inputSchema: { type: 'object', properties: { file_path: { type: 'string' } }, required: ['file_path'], additionalProperties: false },
+    timeoutMs: 1_000,
+    title: () => 'Read',
+    locations: (input) => [{ path: input.file_path }],
+    subject: () => ({ kind: 'none', tool: 'Read' }),
+    execute: async () => ({ status: 'completed', output: 'contents' }),
+  });
 
 type CachedBody = CreateResponseBody & { momonga?: { cache?: PromptCacheCounts } };
 
@@ -234,7 +250,7 @@ describe.for([false, true])('a new arrival ends the epoch (4.5), cachePrefix %s'
     env.gateway.script.push(callsStep([{ callId: 'c1', name: 'Read', args: { file_path: `${env.project}/src/a.ts` } }]), textStep('Done.'));
     const run = env.enqueue('Read a file');
 
-    await env.runOnce(env.worker());
+    await env.runOnce(env.worker('worker-1', { toolList: () => [readTool()] }));
 
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.ofType(run.id, 'instructions.loaded')).toHaveLength(2);
