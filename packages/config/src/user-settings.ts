@@ -105,7 +105,7 @@ export const createUserSettingsCache = ({ home, onWarning, keptRecords }: UserSe
   const failWith = (error: ConfigError, key: string | undefined): void => {
     latest = { error };
     failedKey = key ?? '';
-    if (keptCopy() !== undefined) kept.report(file, error, failedKey);
+    if (keptCopy() !== undefined) kept.report(file, { kind: 'invalid', error, identity: failedKey });
   };
 
   const refresh = (): UserSettingsSnapshot => {
@@ -146,7 +146,7 @@ export const createUserSettingsCache = ({ home, onWarning, keptRecords }: UserSe
     }
     if (!('error' in snapshot)) return snapshot;
     const copy = keptOrThrow('read', keptCopy(), snapshot.error);
-    const notice = kept.report(file, snapshot.error, failedKey);
+    const notice = kept.report(file, { kind: 'invalid', error: snapshot.error, identity: failedKey });
     return { settings: copy.settings, user: { ...copy.user, warnings: [...copy.user.warnings, notice] } };
   };
 

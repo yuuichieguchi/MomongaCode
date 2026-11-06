@@ -13,8 +13,10 @@ const KEPT_FILE_MODE = 0o600;
 export type KeptSettings = {
   recall(file: string): Kept<JsonFile>;
   remember(file: string, read: JsonFile): void;
-  report(file: string, error: ConfigError, identity: string): string;
+  report(file: string, problem: KeptProblem): string;
 };
+
+export type KeptProblem = { kind: 'invalid'; error: ConfigError; identity: string } | { kind: 'unkept'; reason: string };
 
 export type KeptRecords = {
   load(file: string): JsonFile | undefined;
@@ -58,22 +60,36 @@ export const diskKeptRecords = (fileSystem: FileSystemSync, directory: string): 
 
 export const noKeptRecords: KeptRecords = { load: () => undefined, save: () => undefined };
 
+const lineOf = (file: string, problem: KeptProblem): string =>
+  problem.kind === 'invalid' ? `settings file is invalid: ${problem.error.message}` : `could not keep the last good copy of ${file}: ${problem.reason}`;
+
+const keyOf = (problem: KeptProblem): string =>
+  problem.kind === 'invalid' ? `${problem.identity}\u0000${problem.error.message}` : problem.reason;
+
 export function createKeptSettings({ records, onWarning }: KeptSettingsOptions): KeptSettings {
   const copies = new Map<string, JsonFile>();
-  const warned = new Map<string, string>();
-  const unkept = new Map<string, string>();
+  const reported = new Map<string, string>();
+  const slotOf = (file: string, kind: KeptProblem['kind']): string => `${kind}\u0000${file}`;
+
+  const report = (file: string, problem: KeptProblem): string => {
+    const line = lineOf(file, problem);
+    const slot = slotOf(file, problem.kind);
+    const key = keyOf(problem);
+    if (reported.get(slot) !== key) {
+      reported.set(slot, key);
+      onWarning(line);
+    }
+    return line;
+  };
 
   const saved = (file: string, read: JsonFile): void => {
     try {
       records.save(file, read);
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      if (unkept.get(file) === reason) return;
-      unkept.set(file, reason);
-      onWarning(`could not keep the last good copy of ${file}: ${reason}`);
+      report(file, { kind: 'unkept', reason: error instanceof Error ? error.message : String(error) });
       return;
     }
-    unkept.delete(file);
+    reported.delete(slotOf(file, 'unkept'));
   };
 
   return {
@@ -84,20 +100,12 @@ export function createKeptSettings({ records, onWarning }: KeptSettingsOptions):
       return { value: known };
     },
     remember: (file, read) => {
-      warned.delete(file);
+      reported.delete(slotOf(file, 'invalid'));
       const known = copies.get(file);
       if (known !== undefined && canonicalJson(known) === canonicalJson(read)) return;
       copies.set(file, read);
       saved(file, read);
     },
-    report: (file, error, identity) => {
-      const notice = `settings file is invalid: ${error.message}`;
-      const key = `${identity}\u0000${error.message}`;
-      if (warned.get(file) !== key) {
-        warned.set(file, key);
-        onWarning(notice);
-      }
-      return notice;
-    },
+    report,
   };
 }

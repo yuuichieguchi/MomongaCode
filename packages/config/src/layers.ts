@@ -159,7 +159,7 @@ const readLayer = async (
     const failure = isTransientErrno(error) ? error : toConfigError(error);
     if (kept === undefined) throw failure;
     const copy = keptOrThrow(kept.use, kept.store.recall(file), failure);
-    if (failure instanceof ConfigError) warnings.push(kept.store.report(file, failure, ''));
+    if (failure instanceof ConfigError) warnings.push(kept.store.report(file, { kind: 'invalid', error: failure, identity: '' }));
     return buildLayer(copy, file, origin, root, root, true, warnings);
   }
 };
