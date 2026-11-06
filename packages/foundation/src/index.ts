@@ -30,6 +30,14 @@ export type { UdsClient, UdsClientOptions, UdsRequestOptions, UdsResponse } from
 export { uuidv7 } from './uuidv7.ts';
 export { DEFAULT_LOCK_TIMEOUT_MS, createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
 export type { FileLockOptions, FileLockPorts, KeyedSerializer } from './file-lock.ts';
+export { createFileCredentialStore, createMemoryCredentialStore } from './credential-store.ts';
+export type { CredentialStore, FileCredentialStoreOptions } from './credential-store.ts';
+export { OAuthAuthorizationError } from './oauth-authorization-error.ts';
+export type { AuthorizationFailure } from './oauth-authorization-error.ts';
+export { createOAuthProvider } from './oauth-provider.ts';
+export type { OAuthProvider, OAuthProviderOptions } from './oauth-provider.ts';
+export { startLoopbackRedirect } from './loopback-redirect.ts';
+export type { LoopbackRedirect, LoopbackRedirectOptions } from './loopback-redirect.ts';
 export { syncDirectory, syncDirectorySync, writeFileAtomically } from './atomic-file.ts';
 export type { AtomicWriteOptions } from './atomic-file.ts';
 export { forceKillGroup, groupAlive, groupTerminationBoundMs, realGroupTiming, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from './process-group.ts';

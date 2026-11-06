@@ -1,6 +1,7 @@
 import { createFakeClock, createFakeTimers, startMcpHttpFixture, startMcpOauthFixture } from '@momonga/testkit';
 import type { FakeClock, FakeTimers, McpHttpFixture, McpHttpFixtureOptions, McpOauthFixture } from '@momonga/testkit';
-import { createManagedConnection, createMemoryCredentialStore } from '@momonga/mcp';
+import { createManagedConnection } from '@momonga/mcp';
+import { createMemoryCredentialStore } from '@momonga/foundation';
 import type { HostResolver, McpConnectionOptions, McpCredentialStore, McpRemotePorts, McpTimers } from '@momonga/mcp';
 import type { McpServerScope } from '@momonga/config';
 import { BASE_ENV, makeDir, onCleanup } from './mcp-harness.ts';

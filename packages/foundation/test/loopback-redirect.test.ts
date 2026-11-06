@@ -1,11 +1,37 @@
 import http from 'node:http';
-import { describe, expect, it } from 'vitest';
-import { createFakeClock } from '@momonga/testkit';
-import { McpAuthorizationError, startLoopbackRedirect } from '@momonga/mcp';
-import { onCleanup } from './mcp-harness.ts';
-import { observedTimers } from './remote-harness.ts';
+import { afterEach, describe, expect, it } from 'vitest';
+import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import type { FakeTimers } from '@momonga/testkit';
+import { OAuthAuthorizationError, startLoopbackRedirect } from '@momonga/foundation';
 
 const WAIT_MS = 5000;
+
+const cleanups: Array<() => Promise<void> | void> = [];
+afterEach(async () => {
+  for (const cleanup of cleanups.splice(0)) await cleanup();
+});
+const onCleanup = (cleanup: () => Promise<void> | void): void => {
+  cleanups.push(cleanup);
+};
+
+type ObservedTimers = FakeTimers & { nextScheduled(match?: (ms: number) => boolean): Promise<void> };
+
+const observedTimers = (clock: ReturnType<typeof createFakeClock>): ObservedTimers => {
+  const fake = createFakeTimers(clock);
+  const waiters: Array<{ match: (ms: number) => boolean; resolve: () => void }> = [];
+  return {
+    ...fake,
+    setTimeout: (callback, ms) => {
+      const handle = fake.setTimeout(callback, ms);
+      for (const waiter of waiters.filter((entry) => entry.match(ms))) {
+        waiters.splice(waiters.indexOf(waiter), 1);
+        waiter.resolve();
+      }
+      return handle;
+    },
+    nextScheduled: (match = () => true) => new Promise<void>((resolve) => waiters.push({ match, resolve })),
+  };
+};
 
 const start = async () => {
   const timers = observedTimers(createFakeClock(1_000_000));
@@ -62,7 +88,7 @@ describe('loopback redirect listener', () => {
     const armed = timers.nextScheduled((ms) => ms === WAIT_MS);
     const outcome = redirect.callback({ state: 's', signal: new AbortController().signal, timeoutMs: WAIT_MS }).then(
       () => undefined,
-      (error: unknown) => error as McpAuthorizationError,
+      (error: unknown) => error as OAuthAuthorizationError,
     );
     await armed;
     timers.advance(WAIT_MS);

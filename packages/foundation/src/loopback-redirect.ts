@@ -1,7 +1,7 @@
 import http from 'node:http';
 import type { AddressInfo, Socket } from 'node:net';
-import { McpAuthorizationError } from './remote-errors.ts';
-import type { McpTimers } from './timers.ts';
+import type { DeadlineTiming } from './deadline.ts';
+import { OAuthAuthorizationError } from './oauth-authorization-error.ts';
 
 export const LOOPBACK_REDIRECT_HOST = '127.0.0.1';
 export const LOOPBACK_REDIRECT_PATH = '/callback';
@@ -12,7 +12,7 @@ export type LoopbackRedirect = {
   close(): Promise<void>;
 };
 
-export type LoopbackRedirectOptions = { port: number; timers: McpTimers };
+export type LoopbackRedirectOptions = { port: number; timers: Pick<DeadlineTiming, 'setTimeout' | 'clearTimeout'> };
 
 const COMPLETION_PAGE = '<!doctype html><title>MomongaCode</title><p>Authorization finished. You can close this window.</p>';
 
@@ -53,7 +53,7 @@ export const startLoopbackRedirect = async ({ port, timers }: LoopbackRedirectOp
         signal.throwIfAborted();
         expectedState = state;
         const timer = timers.setTimeout(() => {
-          finish(() => reject(new McpAuthorizationError('timed_out', 'authorization was not completed in the browser in time')));
+          finish(() => reject(new OAuthAuthorizationError('timed_out', 'authorization was not completed in the browser in time')));
         }, timeoutMs);
         const onAbort = (): void => finish(() => reject(signal.reason));
         function finish(settle: () => void): void {

@@ -1,9 +1,9 @@
 import { auth, extractWWWAuthenticateParams, validateAuthorizationResponseIssuer } from '@modelcontextprotocol/client';
 import type { FetchLike } from '@modelcontextprotocol/client';
 import type { McpServerScope } from '@momonga/config';
-import type { McpCredentialStore } from './credential-store.ts';
-import { startLoopbackRedirect } from './loopback-redirect.ts';
-import { createMcpOAuthProvider } from './oauth-provider.ts';
+import type { McpCredentialStore } from './mcp-oauth.ts';
+import { startLoopbackRedirect } from '@momonga/foundation';
+import { createMcpOAuthProvider } from './mcp-oauth.ts';
 import { McpAuthorizationError } from './remote-errors.ts';
 import { sanitizeServerText, capText } from './text.ts';
 import type { McpTimers } from './timers.ts';
