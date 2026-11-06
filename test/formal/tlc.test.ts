@@ -153,6 +153,24 @@ const pathWithOldJava = (root: string): string => {
   return `${bin}:/usr/bin:/bin`;
 };
 
+const pathWithChattyJava = (root: string): string => {
+  const bin = path.join(root, 'chatty-java-bin');
+  writeFile(
+    path.join(bin, 'java'),
+    [
+      '#!/bin/sh',
+      'echo "Property settings:" >&2',
+      'echo "    java.specification.version = 17" >&2',
+      'i=0',
+      'while [ "$i" -lt 30000 ]; do echo "    other.property.$i = 0123456789012345678901234567890123456789" >&2; i=$((i + 1)); done',
+      'exit 0',
+      '',
+    ].join('\n'),
+  );
+  fs.chmodSync(path.join(bin, 'java'), 0o755);
+  return `${bin}:/usr/bin:/bin`;
+};
+
 describe('the manifest of specs/tla', () => {
   it('is readable and declares its format', () => {
     expect(manifestOrThrow().format).toBe('momonga-tla-manifest/1');
@@ -406,6 +424,16 @@ describe('running tlc.sh under the harness', () => {
       const problems = verdictProblems(holdsEntry, run).join('\n');
       expect(problems).toContain('1.8');
       expect(problems).toContain('openjdk-17-jre-headless');
+    },
+    30000 + REAP_SLACK_MS,
+  );
+
+  it(
+    'reads a java whose settings list is far larger than a pipe without dying of SIGPIPE',
+    async () => {
+      const script = sandboxWithScript(root, { 'Tiny.tla': tinySpec, 'Tiny.cfg': cfgFor('Small') }, false);
+      const run = await runTlc({ script, config: 'Tiny', args: [], budgetCpuSeconds: 30, env: { PATH: pathWithChattyJava(root) } });
+      expect(run.exitCode).toBe(3);
     },
     30000 + REAP_SLACK_MS,
   );
