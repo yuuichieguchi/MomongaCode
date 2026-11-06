@@ -512,7 +512,7 @@ export const serviceOptions = (
       report: {
         runs: [],
         sessions: [],
-        total: { calls: 0, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 0, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, amount: 0, currency: 'USD', priceVersions: [] },
+        total: { calls: 0, localCalls: 0, unpricedCalls: 0, unknownBillingCalls: 0, planCalls: 0, planInputTokens: 0, planOutputTokens: 0, inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, amount: 0, currency: 'USD', priceVersions: [] },
       },
       text: 'cost report',
     })),

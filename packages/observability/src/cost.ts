@@ -89,7 +89,11 @@ export const amountOfUnits = (units: bigint): number => toAmount(units);
 
 export const LOCAL_PRICE_VERSION = 'local';
 
-export type CallBilling = 'metered' | 'local' | typeof UNKNOWN_BILLING;
+export const PLAN_UNPRICED_REASON = 'plan';
+
+export const PLAN_USAGE_LABEL = 'plan usage, no per-token price';
+
+export type CallBilling = 'metered' | 'local' | 'plan' | typeof UNKNOWN_BILLING;
 
 export type PriceCallInput = CostInput & { billing: CallBilling };
 
@@ -109,6 +113,7 @@ export const priceCall = (input: PriceCallInput): PricedCall => {
   }
   if (billing === UNKNOWN_BILLING) return { kind: 'unpriced', reason: 'the billing of the target is unknown' };
   if (billing === 'local') return { kind: 'priced', units: 0n, currency: 'USD', priceVersion: LOCAL_PRICE_VERSION };
+  if (billing === 'plan') return { kind: 'unpriced', reason: PLAN_UNPRICED_REASON };
   if (Number.isNaN(input.at.getTime())) return { kind: 'unpriced', reason: 'the time of the call is not a valid date' };
   const entry = findPriceEntry(input.table, input.provider, input.model, input.at.getTime());
   if (entry === undefined) return { kind: 'unpriced', reason: 'no price entry' };

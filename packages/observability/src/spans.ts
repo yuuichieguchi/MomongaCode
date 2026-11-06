@@ -15,7 +15,7 @@ export type AgentSpanInput = {
   attempt?: number;
 };
 
-export type ChatBilling = 'metered' | 'local';
+export type ChatBilling = 'metered' | 'local' | 'plan';
 
 export type ChatSpanInput = {
   providerName: string;
