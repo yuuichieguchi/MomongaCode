@@ -1,4 +1,5 @@
 export { computeBackoff, parseRetryAfter } from './backoff.ts';
+export { TRANSIENT_REQUEST_STATUSES, isRetryableHttp, parseShouldRetry } from './http-retry.ts';
 export type { BackoffOptions } from './backoff.ts';
 export { canonicalJson, sha256Hex } from './canonical-json.ts';
 export { capText, sanitizeServerText } from './untrusted-text.ts';

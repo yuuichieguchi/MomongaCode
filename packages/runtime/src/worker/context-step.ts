@@ -19,7 +19,7 @@ import {
   workingStateCapFor,
 } from '@momonga/context';
 import type { ActivatedSkill, ReferenceReaders, TokenMeter, BuildContextInput, ContextArrival, ContextNotice, BuildContextPorts, BuiltContext, CompactionPlan, ContextEviction, LoadedGoverning, PinnedMeasure } from '@momonga/context';
-import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import { TRANSIENT_REQUEST_STATUSES, canonicalJson, sha256Hex } from '@momonga/foundation';
 import { resolveGoverning } from '@momonga/memory';
 import type { Session } from '@momonga/store';
 import { outputOriginOf } from '@momonga/tools';
@@ -48,7 +48,7 @@ const ESCALATING_CODES: readonly string[] = [
   'guardrail_violation',
   'refusal',
 ];
-const NON_ESCALATING_4XX: readonly number[] = [401, 403, 404, 408, 409, 429];
+const NON_ESCALATING_4XX: readonly number[] = [401, 403, 404, ...TRANSIENT_REQUEST_STATUSES, 429];
 const NO_ADOPTED_GUIDELINE = 0;
 const MAX_NAMED_TOKENS = 5;
 const AUTO_COMPACT_OFF_REASON = 'compaction is off (context.autoCompact is false)';
