@@ -37,12 +37,46 @@ export type StoreOptions = {
   onCommit?: RuntimeStoreOptions['onCommit'];
   contribution?: TerminalContribution;
   preparer?: RuntimeStoreOptions['preparer'];
+  inheritance?: boolean;
   home?: string;
 };
 
 const unexercised = (): Promise<never> => Promise.reject(new JournalThreadError('this store test double answers no journal facts'));
 
-export const noJournalFacts = { verdict: unexercised, evidence: unexercised, reflectionInput: unexercised };
+export const noJournalFacts = { inheritPlan: unexercised, inheritedWindow: unexercised, verdict: unexercised, evidence: unexercised, reflectionInput: unexercised };
+
+const readerReply = <T,>(dbPath: string, read: (reader: ReturnType<typeof createJournalReader>) => T): T => {
+  const db = openDatabase(dbPath);
+  try {
+    return read(createJournalReader(db));
+  } finally {
+    db.close();
+  }
+};
+
+export const inheritancePreparer = (dbPath: string): ContributionPreparer => ({
+  ...noJournalFacts,
+  inheritPlan: async (request) => readerReply(dbPath, (reader) => reader.planInheritance(request)),
+  inheritedWindow: async (request) => readerReply(dbPath, (reader) => reader.readInheritedWindow(request)),
+  measure: async ({ runId }) => {
+    const db = openDatabase(dbPath);
+    try {
+      const row = db.prepare('SELECT last_seq FROM runs WHERE id = ?').get(runId) as { last_seq: number } | undefined;
+      if (row === undefined) throw new JournalThreadError(`unknown run ${runId}`);
+      return { lastSeq: row.last_seq };
+    } finally {
+      db.close();
+    }
+  },
+});
+
+const databasePaths = new WeakMap<RuntimeStore, string>();
+
+export const dbPathOf = (store: RuntimeStore): string => {
+  const found = databasePaths.get(store);
+  if (found === undefined) throw new Error('this store was not opened by openStoreAt');
+  return found;
+};
 
 export const hookPreparer = (hook: TerminalContribution, dbPath: string): ContributionPreparer => ({
   ...noJournalFacts,
@@ -66,8 +100,10 @@ export const openStoreAt =(dbPath: string, clock: FakeClock, options: StoreOptio
     maxTotalAttempts: options.maxTotalAttempts ?? 1000,
     ...(options.onCommit === undefined ? {} : { onCommit: options.onCommit }),
     ...(options.contribution === undefined ? {} : { preparer: hookPreparer(options.contribution, dbPath) }),
+    ...(options.inheritance === true ? { preparer: inheritancePreparer(dbPath) } : {}),
     ...(options.preparer === undefined ? {} : { preparer: options.preparer }),
   });
+  databasePaths.set(store, dbPath);
   registerCleanup(() => store.close());
   return store;
 };

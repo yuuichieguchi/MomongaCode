@@ -15,7 +15,7 @@ import {
   withWritten,
 } from '@momonga/protocol';
 import type { InputItem, RunEvent, RunEventPayload, RunState, StopReason, WorkingFacts } from '@momonga/protocol';
-import { applyInheritance } from './inherit.ts';
+import { applyInheritance, applyReferenceInheritance, isReferenceInherited } from './inherit.ts';
 import { isRecord } from './rows.ts';
 import { touchedTargetOf } from './touched.ts';
 
@@ -125,6 +125,21 @@ const withTouchedItems = (facts: WorkingFacts, items: readonly { item: InputItem
     const target = touchedTargetOf(item);
     return target === undefined ? folded : withTouched(folded, target);
   }, facts);
+
+const responseItemsOf = (event: Extract<RunEventPayload, { type: 'model.responded' }>): InputItem[] => event.response.output as InputItem[];
+
+export const itemCountOf = (event: RunEventPayload): number => {
+  switch (event.type) {
+    case 'user.message':
+    case 'tool.completed':
+    case 'tool.reconciled':
+      return 1;
+    case 'model.responded':
+      return responseItemsOf(event).length;
+    default:
+      return 0;
+  }
+};
 
 const appendItems = (state: RunState, items: readonly { item: InputItem; callId?: string }[], eventSeq: number, handle?: string): RunState =>
   items.reduce<RunState>((folded, { item }) => withLoopItem(folded, item), {
@@ -255,14 +270,21 @@ const withDelta = (state: RunState, event: { step: number; attempt: number; item
 };
 
 const rejectCompaction = (state: RunState, event: Extract<RunEvent, { type: 'context.compaction_rejected' }>): RunState => {
-  if (state.summary === undefined) throw new Error(`run ${state.runId}: ${event.type} arrives without a summary`);
-  if (state.summary.item.type !== 'compaction') throw new Error(`run ${state.runId}: ${event.type} arrives for a summary that is already a message`);
-  const replaced = { ...state, summary: { ...state.summary, item: event.item } };
+  const replaced = withRejectedSummary(state, event);
   if (event.attempt === undefined) return replaced;
   const inFlight = replaced.inFlightModelRequest;
   if (inFlight === undefined || inFlight.step !== event.step || inFlight.attempt !== event.attempt) return replaced;
   const { [event.step]: _abandoned, ...steps } = replaced.steps;
   return { ...withoutInFlight(replaced), steps };
+};
+
+const withRejectedSummary = (state: RunState, event: Extract<RunEvent, { type: 'context.compaction_rejected' }>): RunState => {
+  if (state.summary === undefined) {
+    if (state.inherited?.form !== 'reference') throw new Error(`run ${state.runId}: ${event.type} arrives without a summary`);
+    return { ...state, inheritedSummaryItem: event.item };
+  }
+  if (state.summary.item.type !== 'compaction') throw new Error(`run ${state.runId}: ${event.type} arrives for a summary that is already a message`);
+  return { ...state, summary: { ...state.summary, item: event.item } };
 };
 
 const compact = (state: RunState, event: Extract<RunEvent, { type: 'context.compacted' }>): RunState => {
@@ -284,9 +306,16 @@ const compact = (state: RunState, event: Extract<RunEvent, { type: 'context.comp
 const isInheritedOutput = (state: RunState, callId: string): boolean =>
   state.history.some((entry) => entry.callId === callId && entry.item.type === 'function_call_output' && entry.seq < state.taskSeq);
 
+const truncateInherited = (state: RunState, event: Extract<RunEvent, { type: 'context.truncated' }>): RunState => ({
+  ...state,
+  evicted: event.kind === 'omitted' && !state.evicted.includes(event.callId) ? [...state.evicted, event.callId].sort() : state.evicted,
+  inheritedTruncations: [...(state.inheritedTruncations ?? []), { callId: event.callId, handle: event.handle, kind: event.kind }],
+});
+
 const truncate = (state: RunState, event: Extract<RunEvent, { type: 'context.truncated' }>): RunState => {
   const call = state.pendingCalls[event.callId];
   if (call === undefined) {
+    if (state.inherited?.form === 'reference') return truncateInherited(state, event);
     if (!isInheritedOutput(state, event.callId)) throw new Error(`run ${state.runId}: ${event.type} refers to unknown tool call ${event.callId}`);
   } else if (call.status !== 'completed' && call.status !== 'reconciled') {
     throw new Error(`run ${state.runId}: ${event.type} refers to tool call ${event.callId} that has not finished (${call.status})`);
@@ -388,7 +417,7 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       return {
         ...appendItems(
           base,
-          (event.response.output as InputItem[]).map((item) => ({ item })),
+          responseItemsOf(event).map((item) => ({ item })),
           event.seq,
         ),
         lastResponse: {
@@ -490,11 +519,11 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
     case 'tool.reconciled':
       return reconcileCall(state, event);
     case 'context.compacted':
-      return withCompactionRecorded(compact(state, event), event, true);
+      return { ...withCompactionRecorded(compact(state, event), event, true), ownCompactionEventSeq: event.seq };
     case 'context.compaction_rejected':
       return withCompactionRecorded(rejectCompaction(state, event), event, false);
     case 'context.inherited':
-      return applyInheritance(state, event);
+      return isReferenceInherited(event) ? applyReferenceInheritance(state, event) : applyInheritance(state, event);
     case 'context.truncated':
       return withForm(truncate(state, event), event);
     case 'notice':

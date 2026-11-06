@@ -1,6 +1,7 @@
-import { ITEM_CAP, LOWEST_REASONING_EFFORT, ITEM_ROOM, MIN_SUMMARY_TOKENS, ceilRatio, floorRatio, marginFloorFor, outputReserveFor, outputTokensFor, sizingFractionFor, summaryItemTokensFor } from '@momonga/protocol';
+import { ITEM_CAP, LOWEST_REASONING_EFFORT, ITEM_ROOM, MIN_SUMMARY_TOKENS, ceilRatio, floorRatio, marginFloorFor, outputReserveFor, outputTokensFor, sizingFractionFor, summaryItemTokensFor, tokensForText } from '@momonga/protocol';
 import type { Ratio } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
+import { omittedMarker } from './tool-output.ts';
 import type { Calibration, ContextBudget } from './types.ts';
 import { WORKING_STATE_MESSAGE_MIN_TOKENS } from './working-state.ts';
 
@@ -56,3 +57,14 @@ export const memoryBudgetFor = (room: number, share: number = DEFAULT_MEMORY_ROO
 export const pinnedFloorAt = (ceiling: number): number => ceiling - Math.max(MIN_ROOM_TOKENS, ceilRatio(ITEM_CAP, ceiling));
 
 export const pinnedFloorFor = (capabilities: Capabilities): number => pinnedFloorAt(inputCeilingFor(capabilities));
+
+export type InheritanceWindow = { windowTokens: number; floorTokens: number };
+
+export const inheritanceWindowFor = (targets: readonly Capabilities[]): InheritanceWindow => {
+  if (targets.length === 0) throw new RangeError('an inheritance window needs at least one target');
+  const markerTokens = tokensForText(omittedMarker(0, ''));
+  return {
+    windowTokens: Math.max(...targets.map((capabilities) => inputCeilingFor(capabilities) + summaryInputCeilingFor(capabilities))),
+    floorTokens: Math.min(...targets.map((capabilities) => Math.max(1, discountedFloor(sizingFractionFor(capabilities), markerTokens)))),
+  };
+};

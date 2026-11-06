@@ -1,7 +1,19 @@
 import { MessageChannel, Worker, receiveMessageOnPort } from 'node:worker_threads';
 import type { MessagePort } from 'node:worker_threads';
-import { JournalThreadError } from '@momonga/store';
-import type { ContributionMeasured, ContributionPreparer, EvidenceReply, RecordedCheck, RecordedHash, ReflectionInputReply, VerdictFact, VerdictReply } from '@momonga/store';
+import { InheritanceError, JournalThreadError } from '@momonga/store';
+import type {
+  ContributionMeasured,
+  ContributionPreparer,
+  EvidenceReply,
+  InheritPlanReply,
+  InheritedWindowReply,
+  RecordedCheck,
+  RecordedHash,
+  ReflectionInputReply,
+  VerdictFact,
+  VerdictReply,
+} from '@momonga/store';
+import { INHERITANCE_ERROR_CODES } from '@momonga/store';
 import { JOURNAL_THREAD_CODE } from './journal-thread-code.generated.ts';
 
 export type JournalThreadTimers = {
@@ -102,6 +114,42 @@ const reflectionInputOf = (reply: JournalThreadReply): ReflectionInputReply => {
   return { lastSeq: lastSeqOf(reply, 'reflection_input'), input };
 };
 
+const isInheritanceCode = (code: unknown): code is (typeof INHERITANCE_ERROR_CODES)[number] => INHERITANCE_ERROR_CODES.some((candidate) => candidate === code);
+
+const asInheritanceError = (error: unknown): unknown => {
+  if (!(error instanceof JournalThreadError) || !isRecord(error.cause) || error.cause['name'] !== 'InheritanceError') return error;
+  const { code, message } = error.cause;
+  return isInheritanceCode(code) ? new InheritanceError(code, String(message)) : error;
+};
+
+const isWalked = (entry: unknown): boolean => isRecord(entry) && typeof entry['runId'] === 'string' && typeof entry['lastSeq'] === 'number' && typeof entry['status'] === 'string';
+
+const inheritPlanOf = (reply: JournalThreadReply): InheritPlanReply => {
+  const { kind, payload, walked, reason } = reply;
+  if (kind === 'none' || kind === 'already') return { kind };
+  if (kind === 'conflict') {
+    if (typeof reason !== 'string') throw new JournalThreadError('journal thread inherit_plan reply carries a conflict without a reason');
+    return { kind, reason };
+  }
+  if (kind !== 'ready' || !isRecord(payload) || payload['form'] !== 'reference' || !Array.isArray(walked) || !walked.every(isWalked)) {
+    throw new JournalThreadError('journal thread inherit_plan reply is malformed');
+  }
+  return { kind, payload, walked } as InheritPlanReply;
+};
+
+const isWindowEntry = (entry: unknown): boolean => isRecord(entry) && typeof entry['seq'] === 'number' && (isRecord(entry['item']) || (typeof entry['callId'] === 'string' && typeof entry['handle'] === 'string' && typeof entry['tokens'] === 'number'));
+
+const inheritedWindowOf = (reply: JournalThreadReply): InheritedWindowReply => {
+  const { entries, evicted, omittedOlder, summary } = reply;
+  if (!Array.isArray(entries) || !entries.every(isWindowEntry)) throw new JournalThreadError('journal thread inherited_window reply carries malformed entries');
+  if (!Array.isArray(evicted) || !evicted.every((callId) => typeof callId === 'string')) throw new JournalThreadError('journal thread inherited_window reply carries malformed evicted ids');
+  if (typeof omittedOlder !== 'boolean') throw new JournalThreadError('journal thread inherited_window reply carries no boolean omittedOlder');
+  if (summary !== undefined && !(isRecord(summary) && typeof summary['summary'] === 'string' && typeof summary['replacedThroughSeq'] === 'number' && isRecord(summary['item']))) {
+    throw new JournalThreadError('journal thread inherited_window reply carries a malformed summary');
+  }
+  return { lastSeq: lastSeqOf(reply, 'inherited_window'), ...(summary === undefined ? {} : { summary }), entries, evicted, omittedOlder } as InheritedWindowReply;
+};
+
 export const startJournalThread = async (options: JournalThreadOptions): Promise<JournalThreadClient> => {
   const { databasePath, identity, silenceLimitMs, code = JOURNAL_THREAD_CODE, timers = realTimers } = options;
   const terminations = new Set<Promise<void>>();
@@ -189,7 +237,8 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
     const cause = message['error'];
     const name = isRecord(cause) ? String(cause['name']) : 'Error';
     const text = isRecord(cause) ? String(cause['message']) : String(cause);
-    request.reject(new JournalThreadError(`journal thread request failed: ${text}`, { cause: { name, message: text } }));
+    const code = isRecord(cause) && typeof cause['code'] === 'string' ? cause['code'] : undefined;
+    request.reject(new JournalThreadError(`journal thread request failed: ${text}`, { cause: { name, message: text, ...(code === undefined ? {} : { code }) } }));
   };
 
   const drain = (live: Live): boolean => {
@@ -285,6 +334,22 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
   const reflectionInput: JournalThreadClient['reflectionInput'] = async ({ runId, project, capabilities }) =>
     reflectionInputOf(await request({ kind: 'reflection_input', runId, project, capabilities }));
 
+  const inheritPlan: JournalThreadClient['inheritPlan'] = async ({ runId, mode }) => {
+    try {
+      return inheritPlanOf(await request({ kind: 'inherit_plan', runId, mode }));
+    } catch (error) {
+      throw asInheritanceError(error);
+    }
+  };
+
+  const inheritedWindow: JournalThreadClient['inheritedWindow'] = async ({ runId, windowTokens, floorTokens }) => {
+    try {
+      return inheritedWindowOf(await request({ kind: 'inherited_window', runId, windowTokens, floorTokens }));
+    } catch (error) {
+      throw asInheritanceError(error);
+    }
+  };
+
   const close = (): Promise<void> => {
     closePromise ??= (async () => {
       if (current !== null) fail(current, new JournalThreadError('journal thread client was closed'));
@@ -295,5 +360,5 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
   };
 
   await liveThread();
-  return { identity, request, ping, measure, verdict, evidence, reflectionInput, close };
+  return { identity, request, ping, measure, verdict, evidence, reflectionInput, inheritPlan, inheritedWindow, close };
 };

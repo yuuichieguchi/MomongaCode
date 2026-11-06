@@ -4,7 +4,8 @@ import { MessagePort, isMainThread, parentPort, threadId, workerData } from 'nod
 import { openDatabase } from '@momonga/foundation/sqlite';
 import { REPOSITORY_FACTS_EVENT_TYPES, createRepositoryFactsFold } from '@momonga/memory';
 import { createJournalReader } from '@momonga/store';
-import type { Capabilities, RunEventPayload } from '@momonga/protocol';
+import { PERMISSION_MODES } from '@momonga/protocol';
+import type { Capabilities, PermissionMode, RunEventPayload } from '@momonga/protocol';
 import type { JournalReader } from '@momonga/store';
 import { contributionAtTerminal } from './contribution.ts';
 import { EVIDENCE_EVENT_TYPES, createEvidenceFold } from './evidence-fold.ts';
@@ -38,8 +39,13 @@ const requestOf = (message: unknown): { readonly id: number; readonly kind: stri
   return { id: request.id, kind: request.kind, request: request as JournalRequest };
 };
 
-const errorOf = (error: unknown): { name: string; message: string } =>
-  error instanceof Error ? { name: error.name, message: error.message } : { name: 'Error', message: String(error) };
+const codeOf = (error: Error & { code?: unknown }): string | undefined => (typeof error.code === 'string' ? error.code : undefined);
+
+const errorOf = (error: unknown): { name: string; message: string; code?: string } => {
+  if (!(error instanceof Error)) return { name: 'Error', message: String(error) };
+  const code = codeOf(error);
+  return { name: error.name, message: error.message, ...(code === undefined ? {} : { code }) };
+};
 
 export const serveJournalReader = (handlers: Readonly<Record<string, JournalHandler>>, { incoming, outgoing }: JournalChannel): void => {
   incoming.on('message', (message: unknown) => {
@@ -141,6 +147,32 @@ export const reflectionInputHandler = (reader: VisitingReader): JournalHandler =
   return { lastSeq: run.lastSeq, input: fold.finish() };
 };
 
+const numberOf = (request: JournalRequest, key: string, kind: string): number => {
+  const value = request[key];
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw new TypeError(`a ${kind} request must carry ${key} as a number`);
+  return value;
+};
+
+const modeOf = (value: unknown, kind: string): PermissionMode => {
+  const mode = PERMISSION_MODES.find((candidate) => candidate === value);
+  if (mode === undefined) throw new TypeError(`a ${kind} request must carry a permission mode`);
+  return mode;
+};
+
+type PlanningReader = Pick<JournalReader, 'planInheritance'>;
+
+type WindowReader = Pick<JournalReader, 'readInheritedWindow'>;
+
+export const inheritPlanHandler = (reader: PlanningReader): JournalHandler => (request) =>
+  reader.planInheritance({ runId: textOf(request, 'runId', 'inherit_plan'), mode: modeOf(request['mode'], 'inherit_plan') });
+
+export const inheritedWindowHandler = (reader: WindowReader): JournalHandler => (request) =>
+  reader.readInheritedWindow({
+    runId: textOf(request, 'runId', 'inherited_window'),
+    windowTokens: numberOf(request, 'windowTokens', 'inherited_window'),
+    floorTokens: numberOf(request, 'floorTokens', 'inherited_window'),
+  });
+
 const withProgress = (current: { progress: (() => void) | undefined }, handler: JournalHandler): JournalHandler => (request, progress) => {
   current.progress = progress;
   try {
@@ -169,6 +201,8 @@ const serve = (data: JournalThreadData): void => {
       verdict: withProgress(current, verdictHandler(reader)),
       evidence: withProgress(current, evidenceHandler(reader)),
       reflection_input: withProgress(current, reflectionInputHandler(reader)),
+      inherit_plan: withProgress(current, inheritPlanHandler(reader)),
+      inherited_window: withProgress(current, inheritedWindowHandler(reader)),
     },
     { incoming: parentPort, outgoing: data.port },
   );

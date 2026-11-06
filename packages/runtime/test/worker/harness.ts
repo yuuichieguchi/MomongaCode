@@ -20,7 +20,7 @@ import { FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, cr
 import type { FakeClock } from '@momonga/testkit';
 import { createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import type { AbandonTarget, AnyTool, ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
-import { evidenceHandler, reflectionInputHandler, verdictHandler } from '../../src/memory/journal-thread.ts';
+import { evidenceHandler, inheritPlanHandler, inheritedWindowHandler, reflectionInputHandler, verdictHandler } from '../../src/memory/journal-thread.ts';
 import type { JournalHandler } from '../../src/memory/journal-thread.ts';
 import { systemTimers } from '../../src/service/timers.ts';
 import { within } from './deferred.ts';
@@ -156,6 +156,8 @@ const inProcessFacts = (dbPath: string, handlerFor: (reader: ReturnType<typeof c
 };
 
 export const journalReaderPreparer =(dbPath: string): ContributionPreparer => ({
+  inheritPlan: inProcessFacts(dbPath, inheritPlanHandler),
+  inheritedWindow: inProcessFacts(dbPath, inheritedWindowHandler),
   verdict: inProcessFacts(dbPath, verdictHandler),
   evidence: inProcessFacts(dbPath, evidenceHandler),
   reflectionInput: inProcessFacts(dbPath, reflectionInputHandler),

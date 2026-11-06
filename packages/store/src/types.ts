@@ -1,5 +1,6 @@
 import type { Clock, Redactor } from '@momonga/foundation';
 import type { CANCEL_ORIGINS } from './transitions.ts';
+import type { InheritPlanReply, InheritPlanRequest, InheritedWindowReply, InheritedWindowRequest } from './inherit-reference.ts';
 import type {
   BilledDetail,
   Capabilities,
@@ -575,7 +576,7 @@ export type RuntimeStore = {
   approvalView(approvalId: string): ApprovalView | undefined;
   pendingApprovalViews(runId: string): ApprovalView[];
   writeSnapshot(claim: Claim, seq: number, state: RunState): SnapshotResult;
-  inheritContext(claim: Claim, options: { mode: PermissionMode }): InheritContextResult;
+  inheritContext(claim: Claim, options: { mode: PermissionMode; facts?: Pick<JournalFacts, 'inheritPlan'> }): Promise<InheritContextResult>;
   dataVersion(): number;
   createChildRun(input: ChildRunInput): CreateChildRunResult;
   listChildRuns(runId: string): Run[];
@@ -640,6 +641,8 @@ export type ReflectionInputRequest = { runId: string; project: string; capabilit
 export type ReflectionInputReply = { lastSeq: number; input: string };
 
 export type JournalFacts = {
+  inheritPlan(request: InheritPlanRequest, signal?: AbortSignal): Promise<InheritPlanReply>;
+  inheritedWindow(request: InheritedWindowRequest, signal?: AbortSignal): Promise<InheritedWindowReply>;
   verdict(request: VerdictRequest, signal?: AbortSignal): Promise<VerdictReply>;
   evidence(request: EvidenceRequest, signal?: AbortSignal): Promise<EvidenceReply>;
   reflectionInput(request: ReflectionInputRequest, signal?: AbortSignal): Promise<ReflectionInputReply>;

@@ -1,7 +1,7 @@
 import { agentSystemPrompt, readAgentPin } from '@momonga/agents';
 import { permissionRulesComposerFor } from '../governance/rules.ts';
 import { signalUntil } from '../memory/deadline-signal.ts';
-import { createTokenMeter, withCalibration } from '@momonga/context';
+import { createTokenMeter, inheritanceWindowFor, withCalibration } from '@momonga/context';
 import type { TokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex } from '@momonga/foundation';
 import type { Capabilities, FunctionTool } from '@momonga/protocol';
@@ -241,7 +241,7 @@ const drive = async (
   const session = store.getSession(run.sessionId);
   if (session === undefined) throw new Error(`unknown session ${run.sessionId}`);
   if (journal.state.inherited === undefined) {
-    const inherited = store.inheritContext(claim, { mode: session.permissionMode });
+    const inherited = await store.inheritContext(claim, { mode: session.permissionMode, facts: store.journalFacts });
     if (inherited.kind === 'lease_lost') control.lost();
     if (inherited.kind === 'conflict') throw new Error(`the context of run ${run.id} could not be inherited: ${inherited.reason ?? 'conflict'}`);
     if (inherited.kind !== 'none') journal.sync();
@@ -372,6 +372,15 @@ const drive = async (
   if (firstTarget === undefined || firstCapabilities === undefined) throw new Error(`the gateway lists no target for the model ${pins.modelAlias}`);
   const aliasCounter = counterOf(firstTarget);
   const aliasMeterCapabilities = withCalibration(pins.capabilities, firstCapabilities);
+  if (journal.needsWindow()) {
+    const targetCapabilitiesOf = (target: string): Capabilities => {
+      const capabilities = listing.targetCapabilities[target];
+      if (capabilities === undefined) throw new Error(`the gateway lists no capabilities for the target ${target} of the model ${pins.modelAlias}`);
+      return capabilities;
+    };
+    const windowTargets = [aliasMeterCapabilities, ...listing.targets.slice(1).map(targetCapabilitiesOf)];
+    journal.installWindow(await store.journalFacts.inheritedWindow({ runId: run.id, ...inheritanceWindowFor(windowTargets) }, control.signal));
+  }
   const token = tokenPolicyOf(pins.token);
   const aliasMeter = createTokenMeter({
     counter: { count: (request) => control.recordingRaised(gateway.countTokens(request, { signal: control.signal })) },

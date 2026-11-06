@@ -27,6 +27,13 @@ const inheritanceWindowFor = (targets: readonly Capabilities[]): WindowBound => 
 
 const noticesOf = (env: Env, runId: string): string[] => env.ofType(runId, 'notice').map((event) => event.message);
 
+const runNeutral = (env: Env, sessionId: string, text: string): string =>
+  env.store.listRuns(sessionId).reduce((neutral, run, ordinal) => neutral.split(run.id).join(`<run-${ordinal}>`), text);
+
+const withoutEvictedCount = (notice: string): string => notice.replace(/\d+ tool outputs were replaced by handles/, 'N tool outputs were replaced by handles');
+
+const evictedCountOf = (notice: string): number => Number(/(\d+) tool outputs were replaced by handles/.exec(notice)?.[1] ?? Number.NaN);
+
 const outcomeOf = (env: Env, runId: string) => {
   const run = env.run(runId);
   return { status: run.status, stopReason: run.stopReason, errorCode: run.error?.code };
@@ -51,7 +58,7 @@ const runCase = async ({ seed, window, autoCompact, heavyRuns }: Case, shape: Sh
     else await b.inherit(claim, 'default');
     b.started(claim, 'default');
     for (let step = 0; step < 6; step += 1) {
-      b.text(claim, 1_500);
+      b.text(claim, 6_000);
       b.tool(claim, { outputChars: 1_500, evict: step % 3 === 0, withTokens: false });
     }
     await b.end(claim, { to: 'COMPLETED' });
@@ -65,8 +72,8 @@ const runCase = async ({ seed, window, autoCompact, heavyRuns }: Case, shape: Sh
     env,
     trace,
     outcome: outcomeOf(env, child.id),
-    requests: requestInputs(env, child.id).map((input) => envNeutralJson(env, input)),
-    notices: noticesOf(env, child.id),
+    requests: requestInputs(env, child.id).map((input) => runNeutral(env, child.sessionId, envNeutralJson(env, input))),
+    notices: noticesOf(env, child.id).map((notice) => runNeutral(env, child.sessionId, notice)),
   };
 };
 
@@ -93,7 +100,12 @@ describe('R2 and R15 through the worker: old and new give the same request for t
         expect(copy.outcome, `${label}: R15, a window that omitted older items means today's build overflows`).toMatchObject({ status: 'STOPPED', stopReason: 'budget' });
         expect(reference.notices.some((notice) => /lower bound/i.test(notice)), label).toBe(true);
       } else {
-        expect(reference.notices, label).toEqual(copy.notices);
+        expect(reference.notices.map(withoutEvictedCount), label).toEqual(copy.notices.map(withoutEvictedCount));
+        reference.notices.forEach((notice, index) => {
+          const counted = evictedCountOf(notice);
+          if (Number.isNaN(counted)) return;
+          expect(counted, `${label}: 13.7 3(d), the delivered set never holds more ids than the copy`).toBeLessThanOrEqual(evictedCountOf(copy.notices[index] as string));
+        });
       }
     }
     expect(omitted).toBeGreaterThan(0);

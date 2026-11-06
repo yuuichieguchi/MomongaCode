@@ -36,6 +36,8 @@ const throughTheThread = (dbPath: () => string): { preparer: ContributionPrepare
   return {
     preparer: {
       measure: async (request) => (await client()).measure(request),
+      inheritPlan: async (request) => (await client()).inheritPlan(request),
+      inheritedWindow: async (request) => (await client()).inheritedWindow(request),
       verdict: async (request) => (await client()).verdict(request),
       evidence: async (request) => (await client()).evidence(request),
       reflectionInput: async (request) => (await client()).reflectionInput(request),
