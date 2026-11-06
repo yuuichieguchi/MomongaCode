@@ -8,11 +8,11 @@ import { constAsEnum, splitEnum, splitTypeArray } from './split.ts';
 import { fail, guardWrittenKeys, hasActiveUneval, reportNarrowing, requirePositive } from './state.ts';
 import type { NodeContext, RenderState } from './state.ts';
 
-const typeOfValues = (values: readonly unknown[]): string | string[] => {
+const typeOfValues = (values: readonly unknown[]): string | undefined => {
   const types = values.map(jsonTypeOf);
   const numeric = types.includes('number');
   const unique = [...new Set(types.map((type) => (numeric && type === 'integer' ? 'number' : type)))];
-  return unique.length === 1 ? (unique[0] as string) : unique;
+  return unique.length === 1 ? (unique[0] as string) : undefined;
 };
 
 const commonBranchType = (branches: unknown): string | undefined => {
@@ -24,7 +24,7 @@ const commonBranchType = (branches: unknown): string | undefined => {
 
 const fillType = (state: RenderState, node: JsonObject, context: NodeContext, fallback: DialectFillType): JsonObject => {
   if ('type' in node) return node;
-  let type: string | string[] | undefined;
+  let type: string | undefined;
   if ('const' in node) type = typeOfValues([node['const']]);
   else if (Array.isArray(node['enum']) && node['enum'].length > 0) type = typeOfValues(node['enum']);
   type ??= commonBranchType(node['oneOf']) ?? commonBranchType(node['allOf']);
@@ -50,8 +50,6 @@ const requireAll = (state: RenderState, node: JsonObject, context: NodeContext):
   return { ...node, required: [...existing, ...added] };
 };
 
-const isObjectLike = (node: JsonObject): boolean => typeIncludes(node, 'object') || isRecord(node['properties']) || isRecord(node['patternProperties']);
-
 const closeObject = (state: RenderState, node: JsonObject, context: NodeContext, overwrite: 'never' | 'non-boolean' | 'always'): JsonObject => {
   const current = node['additionalProperties'];
   const replaces = current === undefined || (overwrite === 'non-boolean' && isRecord(current)) || (overwrite === 'always' && current !== false);
@@ -64,10 +62,9 @@ const closeObject = (state: RenderState, node: JsonObject, context: NodeContext,
 
 const ensureKey = (state: RenderState, node: JsonObject, rule: Extract<DialectRule, { op: 'ensure-key' }>, context: NodeContext): JsonObject => {
   const { key, value } = rule;
-  if (key === 'additionalProperties' && !isObjectLike(node)) return node;
   if (key === 'additionalProperties' && value === false) return closeObject(state, node, context, rule.overwrite ?? 'never');
   if (key in node) return node;
-  if (key === 'additionalProperties' && hasActiveUneval(context, node)) {
+  if (key === 'additionalProperties' && hasActiveUneval(state, context, node)) {
     return fail(state, 'dependency', context.origin, 'additionalProperties would evaluate properties that unevaluatedProperties checks');
   }
   guardWrittenKeys(state, [key], 'ensure-key');
@@ -81,7 +78,7 @@ const declareRequired = (state: RenderState, node: JsonObject, context: NodeCont
   const declared = isRecord(node['properties']) ? node['properties'] : {};
   const missing = [...new Set(required.filter((name): name is string => typeof name === 'string' && !Object.hasOwn(declared, name)))];
   if (missing.length === 0) return node;
-  if (hasActiveUneval(context, node)) return fail(state, 'dependency', context.origin, 'a declared property would be evaluated by unevaluatedProperties');
+  if (hasActiveUneval(state, context, node)) return fail(state, 'dependency', context.origin, 'a declared property would be evaluated by unevaluatedProperties');
   guardWrittenKeys(state, ['properties'], 'declare-required');
   const patterns = isRecord(node['patternProperties']) ? Object.keys(node['patternProperties']) : [];
   const additional = node['additionalProperties'];

@@ -17,6 +17,8 @@
     "@momonga/context": "*",
     "@momonga/gateway": "*",
     "@momonga/reliability": "*",
-    "@momonga/supervisor": "*"
+    "@momonga/sandbox": "*",
+    "@momonga/supervisor": "*",
+    "@momonga/tools": "*"
   }
 }

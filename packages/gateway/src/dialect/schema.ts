@@ -46,7 +46,7 @@ export const NUMERIC_VOCABULARY: ReadonlySet<string> = new Set(['multipleOf', 'm
 
 export const ANNOTATION_KEYS: ReadonlySet<string> = new Set(['title', 'description', 'default', 'deprecated', 'readOnly', 'writeOnly', 'examples', '$comment']);
 
-export const DOCUMENT_KEYS: ReadonlySet<string> = new Set(['$schema', '$id', '$defs', 'definitions', '$anchor', '$dynamicAnchor', '$vocabulary']);
+export const DOCUMENT_KEYS: ReadonlySet<string> = new Set(['$schema', '$id', '$defs', 'definitions', '$anchor', '$dynamicAnchor', '$vocabulary', '$recursiveAnchor']);
 
 export const APPLICATOR_KEYS: ReadonlySet<string> = new Set([
   'properties',
@@ -145,6 +145,9 @@ export const typesOf = (node: JsonObject): readonly string[] | undefined => {
 export const typeIncludes = (node: JsonObject, type: string): boolean => typesOf(node)?.includes(type) ?? false;
 
 export const escapePointerSegment = (segment: string): string => segment.replaceAll('~', '~0').replaceAll('/', '~1');
+
+export const childPointer = (parent: string, keyword: string, key: string | undefined): string =>
+  `${parent}/${keyword}${key === undefined ? '' : `/${escapePointerSegment(key)}`}`;
 
 const unescapePointerSegment = (segment: string): string => segment.replaceAll('~1', '/').replaceAll('~0', '~');
 
@@ -245,6 +248,3 @@ export const composePosition = (outer: Position, inner: Position): Position => {
 export const joinPosition = (left: Position, right: Position): Position => (left === right ? left : 'mixed');
 
 export const unevaluatedPropertiesActive = (node: JsonObject): boolean => node['unevaluatedProperties'] !== undefined && node['unevaluatedProperties'] !== true;
-
-export const unevaluatedActive = (node: JsonObject): boolean =>
-  unevaluatedPropertiesActive(node) || (node['unevaluatedItems'] !== undefined && node['unevaluatedItems'] !== true);
