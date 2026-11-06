@@ -1,7 +1,8 @@
 import fs from 'node:fs';
+import { nodeFileSystem } from '@momonga/foundation';
+import type { FileSystem } from '@momonga/foundation';
 
-export type RuntimeFiles = {
-  readdir(dir: string): Promise<string[]>;
+export type RuntimeFiles = Pick<FileSystem, 'readdir'> & {
   lstat(entry: string): Promise<fs.Stats>;
   unlink(entry: string): Promise<void>;
   removeTree(entry: string): Promise<void>;
@@ -11,7 +12,7 @@ export type RuntimeFiles = {
 };
 
 export const nodeRuntimeFiles: RuntimeFiles = {
-  readdir: (dir) => fs.promises.readdir(dir),
+  readdir: nodeFileSystem.readdir,
   lstat: (entry) => fs.promises.lstat(entry),
   unlink: (entry) => fs.promises.unlink(entry),
   removeTree: (entry) => fs.promises.rm(entry, { recursive: true, force: true }),
