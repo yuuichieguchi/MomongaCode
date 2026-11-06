@@ -1,10 +1,45 @@
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import type { TlcRun, TlcRunOptions } from './manifest.ts';
 
 export const TLC_WORKERS = Math.ceil(os.availableParallelism() / 2);
+
+const execFileAsync = promisify(execFile);
+
+export const CPU_POLL_MS = 250;
+
+const cpuSecondsOf = (time: string): number => {
+  const [days, clock] = time.includes('-') ? (time.split('-') as [string, string]) : ['0', time];
+  const parts = clock.split(':').map(Number);
+  if (parts.length < 2 || parts.length > 3 || parts.some((part) => !Number.isFinite(part))) throw new Error(`ps printed an unreadable CPU time: ${time}`);
+  return parts.reduce((total, part) => total * 60 + part, 0) + Number(days) * 86400;
+};
+
+export const treeCpuSeconds = async (rootPid: number): Promise<number> => {
+  const { stdout } = await execFileAsync('ps', ['-A', '-o', 'pid=,ppid=,time='], { maxBuffer: 64 * 1024 * 1024 });
+  const rows = stdout
+    .split('\n')
+    .filter((line) => line.trim().length > 0)
+    .map((line) => {
+      const [pid, ppid, time] = line.trim().split(/\s+/);
+      return { pid: Number(pid), ppid: Number(ppid), cpu: cpuSecondsOf(time as string) };
+    });
+  const inTree = new Set<number>([rootPid]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const row of rows) {
+      if (!inTree.has(row.pid) && inTree.has(row.ppid)) {
+        inTree.add(row.pid);
+        grew = true;
+      }
+    }
+  }
+  return rows.filter((row) => inTree.has(row.pid)).reduce((total, row) => total + row.cpu, 0);
+};
 
 const liveGroups = new Set<number>();
 
@@ -47,21 +82,44 @@ export const runTlc = async (options: TlcRunOptions): Promise<TlcRun> => {
     child.stderr.on('data', (chunk: string) => {
       stderr += chunk;
     });
-    let killedAtBudget = false;
-    const timer = setTimeout(() => {
-      killedAtBudget = true;
-      killGroup(pid);
-    }, options.budgetSeconds * 1000);
-    try {
-      const [exitCode, signal] = await new Promise<[number | null, NodeJS.Signals | null]>((resolve, reject) => {
-        child.once('error', reject);
-        child.once('close', (code, closeSignal) => {
-          resolve([code, closeSignal]);
-        });
+    let killedAtCpuBudget = false;
+    let finished = false;
+    let wake: () => void = () => undefined;
+    const closed = new Promise<[number | null, NodeJS.Signals | null]>((resolve, reject) => {
+      child.once('error', reject);
+      child.once('close', (code, closeSignal) => {
+        finished = true;
+        wake();
+        resolve([code, closeSignal]);
       });
-      return { pid, exitCode, signal, killedAtBudget, stdout, stderr };
+    });
+    const pause = (): Promise<void> =>
+      new Promise((resolve) => {
+        const timer = setTimeout(resolve, CPU_POLL_MS);
+        wake = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+      });
+    const watchCpu = async (): Promise<void> => {
+      while (!finished) {
+        await pause();
+        if (finished) return;
+        const cpu = await treeCpuSeconds(pid);
+        if (finished) return;
+        if (cpu > options.budgetCpuSeconds) {
+          killedAtCpuBudget = true;
+          killGroup(pid);
+          return;
+        }
+      }
+    };
+    try {
+      const [[exitCode, signal]] = await Promise.all([closed, watchCpu()]);
+      return { pid, exitCode, signal, killedAtCpuBudget, stdout, stderr };
     } finally {
-      clearTimeout(timer);
+      finished = true;
+      wake();
       killGroup(pid);
       liveGroups.delete(pid);
     }
