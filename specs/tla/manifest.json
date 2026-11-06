@@ -2744,10 +2744,10 @@
         "final"
       ],
       "tier": "every-run",
-      "distinctStates": 15806,
-      "measuredSeconds": 9.61,
-      "measuredCpuSeconds": 4.42,
-      "budgetCpuSeconds": 12
+      "distinctStates": 17858,
+      "measuredSeconds": 17.17,
+      "measuredCpuSeconds": 4.83,
+      "budgetCpuSeconds": 13
     },
     {
       "config": "SettingsHealth.today",
@@ -2758,9 +2758,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 162,
-      "measuredSeconds": 3.6,
-      "measuredCpuSeconds": 1.7,
+      "distinctStates": 165,
+      "measuredSeconds": 2.2,
+      "measuredCpuSeconds": 1.67,
       "budgetCpuSeconds": 7
     },
     {
@@ -2773,8 +2773,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 15,
-      "measuredSeconds": 1.88,
-      "measuredCpuSeconds": 1.65,
+      "measuredSeconds": 2.72,
+      "measuredCpuSeconds": 1.61,
       "budgetCpuSeconds": 7
     },
     {
@@ -2787,8 +2787,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 14,
-      "measuredSeconds": 2.35,
-      "measuredCpuSeconds": 1.66,
+      "measuredSeconds": 2.45,
+      "measuredCpuSeconds": 1.6,
       "budgetCpuSeconds": 7
     },
     {
@@ -2801,9 +2801,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 14,
-      "measuredSeconds": 2.08,
-      "measuredCpuSeconds": 1.55,
-      "budgetCpuSeconds": 7
+      "measuredSeconds": 2.55,
+      "measuredCpuSeconds": 1.5,
+      "budgetCpuSeconds": 6
     },
     {
       "config": "SettingsHealth.staleCopy",
@@ -2815,23 +2815,37 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 22,
-      "measuredSeconds": 2.06,
-      "measuredCpuSeconds": 1.55,
+      "measuredSeconds": 4.42,
+      "measuredCpuSeconds": 1.69,
       "budgetCpuSeconds": 7
     },
     {
       "config": "SettingsHealth.startBroken",
       "role": "evidence",
       "expect": {
-        "violates": "ProcessHasGood",
+        "violates": "StartReadValid",
         "exitCode": 12
       },
       "args": [],
       "tier": "every-run",
       "distinctStates": 77,
-      "measuredSeconds": 2.02,
-      "measuredCpuSeconds": 1.69,
+      "measuredSeconds": 5.8,
+      "measuredCpuSeconds": 1.68,
       "budgetCpuSeconds": 7
+    },
+    {
+      "config": "SettingsHealth.restartUnkept",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoRunFails",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1450,
+      "measuredSeconds": 6.07,
+      "measuredCpuSeconds": 2.23,
+      "budgetCpuSeconds": 8
     },
     {
       "config": "AutoProbe",

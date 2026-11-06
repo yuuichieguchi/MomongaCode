@@ -1,5 +1,5 @@
 import { loadMcpServers } from '@momonga/config';
-import type { McpServerEntry, UserLayer } from '@momonga/config';
+import type { McpServerEntry, SettingsUse, UserLayer } from '@momonga/config';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { Clock, JsonLogger } from '@momonga/foundation';
 import { AUTHORIZATION_WAIT_MS, McpAuthorizationError } from '@momonga/mcp';
@@ -28,7 +28,7 @@ export type McpAdminOptions = {
   timers: ServiceTimers;
   logger: JsonLogger;
   report(error: unknown): void;
-  settings: Pick<SettingsComposition, 'envFor' | 'takeUserSnapshot' | 'trustOracle'>;
+  settings: Pick<SettingsComposition, 'envFor' | 'admitUserSnapshot' | 'keptLayers' | 'trustOracle'>;
   remote: McpRemotePorts;
   createPool(options: McpPoolOptions): McpAuthorizingPool;
 };
@@ -43,12 +43,21 @@ type Attempt = {
 };
 
 export const loadSessionMcpServers = (
-  options: Pick<McpAdminOptions, 'home' | 'settings'>,
+  options: { home: string; settings: Pick<SettingsComposition, 'trustOracle' | 'keptLayers'> },
   session: Session,
   env: ToolEnv,
-  user: UserLayer = options.settings.takeUserSnapshot().user,
+  user: UserLayer,
+  use: SettingsUse,
 ): ReturnType<typeof loadMcpServers> =>
-  loadMcpServers({ home: options.home, projectDir: session.cwd, trust: options.settings.trustOracle, env, user, sessionServers: session.mcpServers });
+  loadMcpServers({
+    home: options.home,
+    projectDir: session.cwd,
+    trust: options.settings.trustOracle,
+    env,
+    user,
+    kept: options.settings.keptLayers(use),
+    sessionServers: session.mcpServers,
+  });
 
 const failureOf = (error: unknown): { code: string; message: string } =>
   error instanceof McpAuthorizationError ? { code: error.failure, message: error.message } : { code: 'error', message: asError(error).message };
@@ -66,7 +75,7 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
   };
 
   const serverOf = async (session: Session, name: string): Promise<McpServerEntry> => {
-    const loaded = await loadSessionMcpServers(options, session, options.settings.envFor(session));
+    const loaded = await loadSessionMcpServers(options, session, options.settings.envFor(session), options.settings.admitUserSnapshot().user, 'admit');
     const entry = loaded.enabled.find((candidate) => candidate.name === name);
     if (entry === undefined) throw notFound(`session ${session.id} has no enabled MCP server named ${name}`);
     return entry;
@@ -114,7 +123,7 @@ export const createMcpAdmin = (options: McpAdminOptions): McpAdmin => {
 
   const servers: McpAdmin['servers'] = async (sessionId, signal) => {
     const session = sessionOf(sessionId);
-    const loaded = await loadSessionMcpServers(options, session, options.settings.envFor(session));
+    const loaded = await loadSessionMcpServers(options, session, options.settings.envFor(session), options.settings.admitUserSnapshot().user, 'admit');
     const key = sha256Hex(canonicalJson({ session: session.id, cwd: session.cwd, servers: loaded.enabled }));
     const held = acquireProbePool(key, () => poolFor(loaded.enabled, session, options.remote));
     const { pool } = held;

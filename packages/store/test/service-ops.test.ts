@@ -2,7 +2,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { ApprovalStore, ApprovalView, Run, RuntimeStore } from '@momonga/store';
 import { TIMEOUT_MS, START_MS, cancel, enqueue, harness, mustClaim, mustRun, newSession, rawDb } from './helpers.ts';
-import { EXPIRES_MS, OPTIONS, awaitingApproval } from './approval-fixture.ts';
+import { OPTIONS, awaitingApproval } from './approval-fixture.ts';
 
 const digestOf = (body: unknown): string => sha256Hex(canonicalJson(body));
 
@@ -260,7 +260,6 @@ describe('approval views', () => {
       callId: 'call_1',
       status: 'pending',
       options: OPTIONS,
-      expiresAt: EXPIRES_MS,
       createdAt: START_MS,
       suggestedRule: 'Write(/work/a/call_1.txt)',
       reason: 'edits require approval',

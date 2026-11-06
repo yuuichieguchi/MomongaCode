@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RuntimeStore } from '@momonga/store';
-import { EXPIRES_MS, awaitingApproval } from './approval-fixture.ts';
+import { EXPIRES_MS, awaitingApproval, awaitingInput } from './approval-fixture.ts';
 import { LEASE_MS, cancel, enqueue, harness as plainHarness, mustClaim, mustRun, newSession } from './helpers.ts';
 import { fakePreparer } from './preparer-fixture.ts';
 import type { FakePreparer, Reply } from './preparer-fixture.ts';
@@ -95,12 +95,12 @@ describe('facts that specs/tla/TerminalPrepare.tla relies on', () => {
     expect(typesOf(h.store, run.id).slice(-2)).toEqual(['context.contribution', 'run.status:COMPLETED']);
   });
 
-  it('ApprovalRowsMatchJournal: the commit ends exactly the approvals of prepared.leading when an approval falls due after the preparation', async () => {
+  it('ApprovalRowsMatchJournal: the commit ends exactly the waits of prepared.leading when a request for input falls due after the preparation', async () => {
     const h = harness();
     const later = EXPIRES_MS + 60_000;
-    const { runId, approvals } = awaitingApproval(h.store, [{ callId: 'call_1' }, { callId: 'call_2', expiresAt: later }], 'waiting');
+    const { runId, approvals } = awaitingInput(h.store, [{ callId: 'call_1' }, { callId: 'call_2', expiresAt: later }], 'waiting');
     const [first, second] = approvals;
-    if (first === undefined || second === undefined) throw new Error('expected two approvals');
+    if (first === undefined || second === undefined) throw new Error('expected two requests for input');
     h.fake.during(() => {
       h.clock.advance(later + 1 - h.clock.now());
     });
@@ -108,16 +108,16 @@ describe('facts that specs/tla/TerminalPrepare.tla relies on', () => {
     expect(await h.store.expireApprovals(EXPIRES_MS, (error: unknown) => { throw error; })).toEqual([runId]);
 
     expect(h.fake.requests).toHaveLength(1);
-    const leadingCancels = (h.fake.requests[0]?.leading ?? []).flatMap((event) => (event.type === 'tool.permission.cancelled' ? [{ approvalId: event.approvalId, reason: event.reason }] : []));
-    expect(leadingCancels).toEqual([{ approvalId: first.id, reason: 'expired' }]);
-    expect(h.store.approvalView(first.id)?.status).toBe('expired');
-    expect(h.store.approvalView(second.id)?.status).toBe('withdrawn');
+    const leadingCancels = (h.fake.requests[0]?.leading ?? []).flatMap((event) => (event.type === 'tool.elicitation.cancelled' ? [{ inputId: event.inputId, reason: event.reason }] : []));
+    expect(leadingCancels).toEqual([{ inputId: first.id, reason: 'expired' }]);
+    expect(h.store.elicitationView(first.id)?.status).toBe('expired');
+    expect(h.store.elicitationView(second.id)?.status).toBe('withdrawn');
     const journalCancels = h.store
       .readRunEvents(runId, 0, 1000)
-      .flatMap((event) => (event.type === 'tool.permission.cancelled' ? [{ approvalId: event.approvalId, reason: event.reason }] : []));
+      .flatMap((event) => (event.type === 'tool.elicitation.cancelled' ? [{ inputId: event.inputId, reason: event.reason }] : []));
     expect(journalCancels).toEqual([
-      { approvalId: first.id, reason: 'expired' },
-      { approvalId: second.id, reason: 'withdrawn' },
+      { inputId: first.id, reason: 'expired' },
+      { inputId: second.id, reason: 'withdrawn' },
     ]);
     expect(mustRun(h.store, runId)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
   });
