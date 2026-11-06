@@ -83,3 +83,25 @@ describe('the tools kept when they do not all fit', () => {
     await expect(buildWith([...IN_RANK_ORDER.slice(0, 7), unranked], 1_536)).rejects.toThrow(/fitRank/);
   });
 });
+
+describe('a window that holds Bash and exactly one more tool', () => {
+  const BASH_FIRST: RankedTool[] = [ranked('Bash', 0, 800), ranked('BashOutput', 1, 1), ranked('KillBash', 2, 1), ranked('Alpha', 3, 800), ranked('Beta', 4, 800)];
+  const BASH_AND_ONE = BASH_FIRST.slice(0, 4);
+
+  const windowHoldingAll = async (tools: readonly FunctionTool[]): Promise<number> => {
+    for (let window = 1_024; window <= 16_384; window += 8) {
+      const built = await buildWith(tools, window).catch(() => undefined);
+      if (built !== undefined && built.tools.length === tools.length && droppedNoticeOf(built) === undefined) return window;
+    }
+    throw new Error('no window up to 16384 holds the tools');
+  };
+
+  it('keeps Bash with both companions and the next tool by rank, and names the rest in the notice', async () => {
+    const window = await windowHoldingAll(BASH_AND_ONE);
+    const built = await buildWith([...BASH_FIRST].reverse(), window);
+    expect(namesOf(built.tools)).toEqual(['Bash', 'BashOutput', 'KillBash', 'Alpha']);
+    const notice = droppedNoticeOf(built);
+    expect(notice).toContain('Beta');
+    for (const kept of ['Bash', 'BashOutput', 'KillBash', 'Alpha']) expect(notice).not.toMatch(new RegExp(`\\b${kept}\\b`));
+  });
+});
