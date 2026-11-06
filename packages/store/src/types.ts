@@ -30,6 +30,8 @@ import type {
   MemoryState,
   MemoryStatus,
   ReflectionDrop,
+  ReportPage,
+  RunFactsView,
   ReflectionJobState,
   StopReason,
   ToolKind,
@@ -454,6 +456,22 @@ export type HistoryReadResult =
   | { kind: 'ok'; runId: string; project: string; origin: MemoryOrigin; events: RunEvent[]; callPaths: Record<string, string[]>; nextSeq: number | null }
   | { kind: 'not_visible' };
 
+export type FactsCursor = { definitionsVersion: number; afterEventId: number };
+
+export type FactsBatch = { runIds: string[]; throughEventId: number };
+
+export type FactsCommit = { rows: readonly RunFactsView[]; unavailable: readonly string[]; throughEventId: number };
+
+export type StoredFacts = { kind: 'facts'; facts: RunFactsView } | { kind: 'unavailable' };
+
+export type RunFactsStore = {
+  cursor(): FactsCursor;
+  nextBatch(limit: number): FactsBatch;
+  commit(batch: FactsCommit): void;
+  get(runId: string): StoredFacts | undefined;
+  page(after: string, limit: number): ReportPage;
+};
+
 export type SearchStore = {
   indexBatch(options: { limit: number; redactor: Redactor; maxChars?: number }): { runs: number };
   visibleProjects(visibility: HistoryVisibility, scope: HistoryScope): string[];
@@ -617,6 +635,7 @@ export type RuntimeStore = {
   guidelines: GuidelineStore;
   governing: GoverningFactStore;
   search: SearchStore;
+  runFacts: RunFactsStore;
   readonly journalFacts: JournalFacts;
   close(): void;
 };
