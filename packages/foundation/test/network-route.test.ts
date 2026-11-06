@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { isLoopbackHost, matchesNoProxy, NETWORK_ENV_NAMES, routeOf } from '@momonga/foundation';
-import type { NetworkConfig } from '@momonga/foundation';
+import type { NetworkConfig, Route } from '@momonga/foundation';
 
 const PROXY = 'http://user:secret@proxy.corp:3128';
 
@@ -170,14 +170,32 @@ describe('routeOf', () => {
 });
 
 describe('routeOf: unsupported proxy text', () => {
-  it.each([
-    ['proxy.corp:3128', 'proxy.corp:3128'],
-    ['socks5://proxy.corp:1080', 'socks5://proxy.corp:1080'],
-    ['socks5h://u:secret@proxy.corp:1080', 'socks5h://proxy.corp:1080'],
-  ])('quotes %s as given, without credentials', (value, quoted) => {
+  const unsupported = (value: string): Extract<Route, { kind: 'unsupported' }> => {
     const route = routeOf(new URL('https://api.example.com/'), { httpsProxy: { value, source: 'HTTPS_PROXY' }, caFiles: [] });
     if (route.kind !== 'unsupported') throw new Error(`expected unsupported, got ${route.kind}`);
+    return route;
+  };
+
+  it.each([
+    ['socks5://proxy.corp:1080', 'socks5://proxy.corp:1080'],
+    ['socks5h://u:secret@proxy.corp:1080', 'socks5h://proxy.corp:1080'],
+    ['socks5://u:p@h:1/path?token=x#y', 'socks5://h:1'],
+    ['socks5://h:1/a@secret/b', 'socks5://h:1'],
+  ])('shows %s as its parsed scheme and host only', (value, quoted) => {
+    const route = unsupported(value);
     expect(route.display).toBe(quoted);
     expect(route.message).toBe(`HTTPS_PROXY ${JSON.stringify(quoted)}: only http and https proxies are supported`);
+  });
+
+  it.each(['user:secret@proxy:3128', 'proxy.corp:3128'])('names the source of %s and echoes no part of a value without a scheme', (value) => {
+    const route = unsupported(value);
+    expect(route.message).toBe('HTTPS_PROXY has no scheme; write it as http://host:port (only http and https proxies are supported)');
+    expect(`${route.display} ${route.message}`).not.toContain('proxy.corp');
+    expect(`${route.display} ${route.message}`).not.toContain('secret');
+  });
+
+  it.each(['user:secret@proxy:3128', 'proxy.corp:3128', 'socks5://u:p@h:1/path?token=x#y', 'socks5://h:1/a@secret/b'])('never shows credentials, path, query or fragment of %s', (value) => {
+    const shown = `${unsupported(value).display} ${unsupported(value).message}`;
+    for (const part of ['secret', 'u:p', 'token=x', '#y', '/path', '/a@']) expect(shown).not.toContain(part);
   });
 });
