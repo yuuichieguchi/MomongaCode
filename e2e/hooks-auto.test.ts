@@ -177,19 +177,19 @@ describe('hooks and auto mode against real processes', () => {
     const stack = await startStack({ home, settings: autoSettings(home), script });
     const client = createCliRuntimeClient({ socketPath: home.paths.sockets.runtime });
     try {
+      const api = goldenRunApi(client, undefined, {
+        pendingBoundMs: REFLECTION_PICKUP_BOUND_MS,
+        attemptBoundMs: E2E_REFLECTION_ATTEMPTS_BOUND_MS,
+        pollMs: REFLECTION_POLL_MS,
+        now: () => Date.now(),
+        wait: abortableWait,
+      });
       const report = await runDataset(dataset, {
-        api: goldenRunApi(client, undefined, {
-          pendingBoundMs: REFLECTION_PICKUP_BOUND_MS,
-          attemptBoundMs: E2E_REFLECTION_ATTEMPTS_BOUND_MS,
-          pollMs: REFLECTION_POLL_MS,
-          now: () => Date.now(),
-          wait: abortableWait,
-        }),
-        workspace: async (golden, runIndex) => {
+        open: async (golden, runIndex) => {
           const cwd = workspaceOf(golden, runIndex);
           fs.mkdirSync(path.join(cwd, '.git', 'hooks'), { recursive: true });
           fs.mkdirSync(path.join(cwd, '.github', 'workflows'), { recursive: true });
-          return { cwd, env: { HOME: home.home, PATH: SESSION_PATH, TMPDIR: home.sessionTmp } };
+          return { api, workspace: { cwd, env: { HOME: home.home, PATH: SESSION_PATH, TMPDIR: home.sessionTmp } }, close: async () => undefined };
         },
       });
       const meetsMinimum = Object.fromEntries(report.cases.map((entry) => [entry.id, entry.meetsMinimum]));

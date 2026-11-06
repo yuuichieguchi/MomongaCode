@@ -6,6 +6,7 @@ import { CACHE_MISS_CAUSES, PREFIX_EVENTS } from './prefix-events.ts';
 import type { PrefixEvent } from './prefix-events.ts';
 import { MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES, REFLECTION_DROP_CAUSES, REFLECTION_JOB_STATES } from './memory.ts';
 import type { ContextChargePurpose, SummaryFidelity, SummarySource } from './context-record.ts';
+import { AUTO_FIT_FAILED_BOUNDS, AUTO_FIT_MEASUREMENTS } from './auto-mode-gate.ts';
 import { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES } from './permission-denial.ts';
 import { FILE_ACCESSES } from './working-facts.ts';
 import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
@@ -39,6 +40,18 @@ const constant = (value: string): JsonSchema => ({ type: 'string', const: value 
 const boundedInteger = (minimum: number, maximum: number): JsonSchema => ({ type: 'integer', minimum, maximum });
 
 const permissionMode = enumOf(PERMISSION_MODES);
+const autoClassifierView = closed(
+  {
+    alias: string,
+    key: closed({ classifier: string, codeDigest: string, datasetDigest: string }, ['classifier', 'codeDigest', 'datasetDigest']),
+    measurement: enumOf(AUTO_FIT_MEASUREMENTS),
+    facts: closed(
+      { recordedAt: string, falseAllows: nonNegativeInteger, total: nonNegativeInteger, upperBound: { type: 'number', minimum: 0, maximum: 1 }, failedBound: enumOf(AUTO_FIT_FAILED_BOUNDS) },
+      ['recordedAt', 'falseAllows', 'total', 'upperBound'],
+    ),
+  },
+  ['alias', 'key', 'measurement'],
+);
 const sessionMcpServers: JsonSchema = { type: 'object', additionalProperties: { type: 'object' } };
 const historyMode = enumOf(['inherit', 'fresh']);
 
@@ -1071,6 +1084,7 @@ export const RUN_API_SCHEMAS = {
         latestRunId: nullable(string),
         additionalDirectories: { type: 'array', items: string },
         lastEventId: nonNegativeInteger,
+        autoClassifier: autoClassifierView,
       },
       ['id', 'cwd', 'permissionMode', 'modelAlias', 'bypassAllowed', 'createdAt', 'envKeys', 'activeRunId', 'latestRunId', 'additionalDirectories', 'lastEventId'],
     ),

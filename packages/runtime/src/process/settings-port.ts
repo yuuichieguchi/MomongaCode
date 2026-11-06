@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { appendPermissionRule, autoGateDirectoryOf, autoGateKeyOf, systemFileLockPorts, credentialEnvNames, loadSettings, readAutoGateRecords, stripCredentialEnv } from '@momonga/config';
-import type { AutoGateInput, LoadSettingsResult, ResolvedSettings, TrustOracle, UserLayer, UserSettingsCache } from '@momonga/config';
+import { appendPermissionRule, autoFitKeyOf, systemFileLockPorts, credentialEnvNames, loadSettings, stripCredentialEnv } from '@momonga/config';
+import type { AutoFitKey, LoadSettingsResult, ResolvedSettings, TrustOracle, UserLayer, UserSettingsCache } from '@momonga/config';
 import type { RuntimeStore, Session } from '@momonga/store';
 import type { SettingsPort, ToolEnv } from '../ports.ts';
 import type { SessionCreateSettings } from '../service/app.ts';
@@ -30,10 +30,10 @@ export const createSettingsComposition = ({ home, cache, store }: SettingsCompos
 
   const trustOracle: TrustOracle = { isTrusted: (dir) => store.trust.decisionFor(dir).decision === 'trusted' };
 
-  const autoGateOf = (resolved: ResolvedSettings): AutoGateInput | undefined => {
+  const autoFitKeyFor = (resolved: ResolvedSettings): AutoFitKey | undefined => {
     const classifier = resolved.autoMode?.classifier;
     if (classifier === undefined || !Object.hasOwn(resolved.models.aliases, classifier)) return undefined;
-    return { key: autoGateKeyOf(resolved.models, classifier, AUTO_CLASSIFIER_CODE), records: readAutoGateRecords(autoGateDirectoryOf(home)) };
+    return autoFitKeyOf(resolved.models, classifier, AUTO_CLASSIFIER_CODE);
   };
 
   const takeUserSnapshot = (): UserSnapshot => {
@@ -51,7 +51,7 @@ export const createSettingsComposition = ({ home, cache, store }: SettingsCompos
     const { permissions } = (await loadSessionSettings(cwd, snapshot)).settings;
     const origin = permissions.defaultModeOrigin;
     const classifier = snapshot.settings.autoMode?.classifier;
-    const gate = autoGateOf(snapshot.settings);
+    const autoModeKey = autoFitKeyFor(snapshot.settings);
     return {
       ...(permissions.defaultMode === undefined ? {} : { defaultMode: permissions.defaultMode }),
       ...(origin === undefined || origin === 'cli' ? {} : { defaultModeOrigin: origin }),
@@ -59,7 +59,7 @@ export const createSettingsComposition = ({ home, cache, store }: SettingsCompos
       credentialEnvNames: credentialEnvNames(snapshot.settings),
       ...(hasCredentialRules(snapshot.settings.credentials) ? { credentials: snapshot.settings.credentials } : {}),
       ...(classifier === undefined ? {} : { autoModeClassifier: classifier }),
-      ...(gate === undefined ? {} : { autoModeGate: gate }),
+      ...(autoModeKey === undefined ? {} : { autoModeKey }),
     };
   };
 
@@ -76,7 +76,6 @@ export const createSettingsComposition = ({ home, cache, store }: SettingsCompos
     context: async (session) => (await loadSessionSettings(session.cwd, takeUserSnapshot())).settings.context,
     tools: async (session) => (await loadSessionSettings(session.cwd, takeUserSnapshot())).settings.tools,
     autoModeClassifier: () => takeUserSnapshot().settings.autoMode?.classifier,
-    autoModeGate: () => autoGateOf(takeUserSnapshot().settings),
     modelRoles: () => takeUserSnapshot().settings.models.roles,
     appendRule: (session, { effect, rule }) => appendPermissionRule({ ports: systemFileLockPorts, home, projectDir: session.cwd, rule, effect }),
     trusted: (session) => store.trust.decisionFor(session.cwd).decision === 'trusted',

@@ -93,13 +93,16 @@ const GENERATED_KEY_PREFIX = 'MOMONGA_EVAL_KEY_';
 
 const PROBE_TARGET_NAME = /^[A-Za-z0-9._-]+$/;
 
-export const liveSettingsFor = (user: UserModels, alias: string): LiveSettings => {
-  const members = membersOf(user.resolved, alias);
+export const liveSettingsFor = (user: UserModels, aliases: readonly string[]): LiveSettings => {
   const targets: NonNullable<ModelsSettings['targets']> = {};
+  const aliasMembers: Record<string, string[]> = {};
   const credentials: SecretCredential[] = [];
   const fmTargets: string[] = [];
   const endpointProbes: EndpointProbe[] = [];
-  for (const name of members) {
+  const copied = new Set<string>();
+  const copyTarget = (alias: string, name: string): void => {
+    if (copied.has(name)) return;
+    copied.add(name);
     const resolved = user.resolved.targets[name];
     if (resolved === undefined) throw new ContextHostError(`the alias ${alias} names the target ${name}, which is not defined`);
     const declared = user.declared.targets?.[name];
@@ -109,7 +112,7 @@ export const liveSettingsFor = (user: UserModels, alias: string): LiveSettings =
       if (!PROBE_TARGET_NAME.test(name)) throw new ContextHostError(`the fm target ${name} has a name its probe record cannot be keyed by`);
       fmTargets.push(name);
       targets[name] = declared;
-      continue;
+      return;
     }
     if (recordKey?.kind === 'endpoint') {
       endpointProbes.push(recordKey.key);
@@ -119,12 +122,18 @@ export const liveSettingsFor = (user: UserModels, alias: string): LiveSettings =
       const { apiKeySecret: _secret, ...rest } = declared;
       credentials.push({ envName, secretName: resolved.apiKeySecret });
       targets[name] = { ...rest, apiKeyEnv: envName };
-      continue;
+      return;
     }
     targets[name] = declared;
+  };
+  for (const alias of aliases) {
+    if (Object.hasOwn(aliasMembers, alias)) continue;
+    const members = membersOf(user.resolved, alias);
+    aliasMembers[alias] = members;
+    for (const name of members) copyTarget(alias, name);
   }
   return {
-    models: { aliases: { [alias]: members }, targets },
+    models: { aliases: aliasMembers, targets },
     ...(user.sandbox === undefined ? {} : { sandbox: user.sandbox }),
     credentials,
     fmTargets,
@@ -216,10 +225,25 @@ const BENCHMARK_GUIDELINE_REPORT = { source: 'context improve benchmark' } as co
 
 export type ReflectionBounds = Pick<ReflectionSettle, 'pendingBoundMs' | 'attemptBoundMs' | 'pollMs'>;
 
-export const createContextHosts = (
-  effects: ContextHostEffects,
-  options: { settings: LiveSettings; credentialValues: Readonly<Record<string, string>>; reflection: ReflectionBounds; policy?: PolicyOverlay; guideline?: string; interrupt?: AbortSignal },
-): ContextHosts => {
+export type HomeSpec = { label: string; settings: Record<string, unknown>; files?: Readonly<Record<string, string>> };
+
+export type OpenedHome = { cwd: string; env: Record<string, string>; runtime: ContextRuntime; api: ContextCaseHost['api']; close(): Promise<void> };
+
+export type Homes = {
+  open(spec: HomeSpec): Promise<OpenedHome>;
+  dispose(): Promise<void>;
+};
+
+export type HomesOptions = {
+  credentialValues: Readonly<Record<string, string>>;
+  reflection: ReflectionBounds;
+  fmTargets: readonly string[];
+  endpointProbes: readonly EndpointProbe[];
+  guideline?: string;
+  interrupt?: AbortSignal;
+};
+
+export const createHomes = (effects: ContextHostEffects, options: HomesOptions): Homes => {
   const records: CaseRecord[] = [];
 
   const release = async (record: CaseRecord): Promise<void> => {
@@ -245,21 +269,19 @@ export const createContextHosts = (
     if (failures.length > 1) throw new AggregateError(failures, `releasing the temporary home ${record.root} failed ${failures.length} times`);
   };
 
-  const prepared = async (entry: ExpandedCase, record: CaseRecord): Promise<ContextCaseHost> => {
+  const prepared = async (spec: HomeSpec, record: CaseRecord): Promise<OpenedHome> => {
     const { root } = record;
     await effects.writeFile(path.join(root, OWNER_FILE), ownerRecord({ pid: effects.ownerPid, home: effects.ownerHome }));
     assertSocketsFit(await effects.canonical(root), effects.platform);
     const paths = momongaLayout(root, effects.platform, {});
     record.paths = paths;
     await effects.prepare(paths);
-    const { models, sandbox, fmTargets, endpointProbes } = options.settings;
-    const base = { models, ...(sandbox === undefined ? {} : { sandbox }) };
-    await effects.writeFile(paths.settingsFile, `${JSON.stringify(caseSettingsFor(base, { compaction: entry.compaction, ...(options.policy === undefined ? {} : { policy: options.policy }) }), null, 2)}\n`);
-    for (const target of fmTargets) await effects.copyProbeRecord(target, paths);
-    for (const probe of endpointProbes) await effects.copyEndpointProbeRecord(probe, paths);
+    await effects.writeFile(paths.settingsFile, `${JSON.stringify(spec.settings, null, 2)}\n`);
+    for (const target of options.fmTargets) await effects.copyProbeRecord(target, paths);
+    for (const probe of options.endpointProbes) await effects.copyEndpointProbeRecord(probe, paths);
     const workspace = path.join(root, WORKSPACE_DIRECTORY);
     await effects.makeDirectory(workspace);
-    for (const [name, content] of Object.entries(entry.files ?? {})) await effects.writeFile(path.join(workspace, name), content);
+    for (const [name, content] of Object.entries(spec.files ?? {})) await effects.writeFile(path.join(workspace, name), content);
     const cwd = await effects.canonical(workspace);
     if (record.released) throw new ContextInterrupted();
     const pid = await effects.startDaemon(root, paths, { ...caseEnvironment(effects.env, root, effects.platform), ...options.credentialValues });
@@ -272,27 +294,24 @@ export const createContextHosts = (
     record.runtime = runtime;
     await runtime.setTrust(cwd, 'trusted');
     if (options.guideline !== undefined) await runtime.adoptGuideline({ text: options.guideline, parent: null, report: { ...BENCHMARK_GUIDELINE_REPORT } });
+    const env = await effects.sessionEnv(root);
     return {
       cwd,
-      api: goldenRunApi(runtime, await effects.sessionEnv(root), {
+      env,
+      runtime,
+      api: goldenRunApi(runtime, env, {
         ...options.reflection,
         now: () => effects.now(),
         wait: (milliseconds, signal) => effects.after(milliseconds, signal ?? new AbortController().signal),
         ...(options.interrupt === undefined ? {} : { signal: options.interrupt }),
       }),
-      rules: {
-        add: (request) => runtime.addRule(request),
-        retire: async (id) => void (await runtime.retireRule(id)),
-      },
-      seedMemory: async (memory) => void (await runtime.addMemory({ text: memory.text, scope: 'project', project: cwd, paths: memory.paths })),
-      applyStep: (step) => effects.applyStep(cwd, step),
       close: () => release(record),
     };
   };
 
   let disposed = false;
 
-  const openCase = async (entry: ExpandedCase): Promise<ContextCaseHost> => {
+  const open = async (spec: HomeSpec): Promise<OpenedHome> => {
     if (disposed) throw new ContextInterrupted();
     const root = await effects.makeRoot();
     if (disposed) {
@@ -302,12 +321,12 @@ export const createContextHosts = (
     const record: CaseRecord = { root, paths: undefined, pid: undefined, runtime: undefined, released: false };
     records.push(record);
     try {
-      return await prepared(entry, record);
+      return await prepared(spec, record);
     } catch (error) {
       try {
         await release(record);
       } catch (cleanup) {
-        throw new AggregateError([error, cleanup], `case ${entry.id} failed to start and its temporary home was not fully released`);
+        throw new AggregateError([error, cleanup], `${spec.label} failed to start and its temporary home was not fully released`);
       }
       throw error;
     }
@@ -327,7 +346,45 @@ export const createContextHosts = (
     if (failures.length > 1) throw new AggregateError(failures, `releasing the temporary homes failed ${failures.length} times`);
   };
 
-  return { openCase, dispose };
+  return { open, dispose };
+};
+
+export const createContextHosts = (
+  effects: ContextHostEffects,
+  options: { settings: LiveSettings; credentialValues: Readonly<Record<string, string>>; reflection: ReflectionBounds; policy?: PolicyOverlay; guideline?: string; interrupt?: AbortSignal },
+): ContextHosts => {
+  const { models, sandbox, fmTargets, endpointProbes } = options.settings;
+  const base = { models, ...(sandbox === undefined ? {} : { sandbox }) };
+  const homes = createHomes(effects, {
+    credentialValues: options.credentialValues,
+    reflection: options.reflection,
+    fmTargets,
+    endpointProbes,
+    ...(options.guideline === undefined ? {} : { guideline: options.guideline }),
+    ...(options.interrupt === undefined ? {} : { interrupt: options.interrupt }),
+  });
+
+  const openCase = async (entry: ExpandedCase): Promise<ContextCaseHost> => {
+    const home = await homes.open({
+      label: `case ${entry.id}`,
+      settings: caseSettingsFor(base, { compaction: entry.compaction, ...(options.policy === undefined ? {} : { policy: options.policy }) }),
+      ...(entry.files === undefined ? {} : { files: entry.files }),
+    });
+    const { cwd, runtime } = home;
+    return {
+      cwd,
+      api: home.api,
+      rules: {
+        add: (request) => runtime.addRule(request),
+        retire: async (id) => void (await runtime.retireRule(id)),
+      },
+      seedMemory: async (memory) => void (await runtime.addMemory({ text: memory.text, scope: 'project', project: cwd, paths: memory.paths })),
+      applyStep: (step) => effects.applyStep(cwd, step),
+      close: home.close,
+    };
+  };
+
+  return { openCase, dispose: homes.dispose };
 };
 
 export class ContextInterrupted extends Error {
@@ -356,7 +413,7 @@ export type ContextLiveInput = {
 export const runContextLive = async (effects: ContextHostEffects, input: ContextLiveInput): Promise<Transcript[]> => {
   const { interrupt } = input;
   interrupt?.throwIfAborted();
-  const settings = liveSettingsFor(input.models, input.alias);
+  const settings = liveSettingsFor(input.models, [input.alias]);
   const credentialValues = await readCredentials(effects, settings.credentials, interrupt ?? new AbortController().signal);
   const swept = await sweepStaleHomes(effects);
   if (swept.unreadable > 0) input.onUnreadableHomes?.(swept.unreadable);

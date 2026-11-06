@@ -1,8 +1,7 @@
 import path from 'node:path';
-import { autoGateDirectoryOf, autoGateKeyOf, autoModeDatasetDigestOf, loadUserModels, loadUserSettings, systemFileLockPorts, writeAutoGateRecord } from '@momonga/config';
+import { loadUserModels } from '@momonga/config';
 import {
   DEFAULT_DATASET_SEED,
-  autoGateRecordOf,
   GATE_NAMES,
   buildContextReport,
   compareContextReports,
@@ -55,23 +54,23 @@ const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenData
   const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } = await import('@momonga/runtime');
   const env = await environmentSnapshot(ports);
   const client = connectRuntime(paths);
+  const api = goldenRunApi(client, undefined, {
+    pendingBoundMs: REFLECTION_PICKUP_BOUND_MS,
+    attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS,
+    pollMs: REFLECTION_POLL_MS,
+    now: () => ports.clock.now(),
+    wait: (milliseconds, signal) => ports.clock.sleep(milliseconds, signal),
+    ...(interrupt === undefined ? {} : { signal: interrupt }),
+  });
   const workspaces: string[] = [];
   if (record !== undefined) await ports.files.ensureDirectory(record);
   try {
     return await runDataset(dataset, {
-      api: goldenRunApi(client, undefined, {
-        pendingBoundMs: REFLECTION_PICKUP_BOUND_MS,
-        attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS,
-        pollMs: REFLECTION_POLL_MS,
-        now: () => ports.clock.now(),
-        wait: (milliseconds, signal) => ports.clock.sleep(milliseconds, signal),
-        ...(interrupt === undefined ? {} : { signal: interrupt }),
-      }),
-      workspace: async (golden) => {
+      open: async (golden) => {
         const cwd = await ports.files.makeTempDirectory(WORKSPACE_PREFIX);
         workspaces.push(cwd);
         await populate(ports, cwd, golden);
-        return { cwd, env };
+        return { api, workspace: { cwd, env }, close: async () => undefined };
       },
       ...(record === undefined ? {} : { onTranscript: async (run: RecordedRun) => void (await saveTranscript(ports.files, record, { ...run, policy: null, codeDigest: null })) }),
     });
@@ -192,18 +191,6 @@ export const compareContext = async (ports: CliPorts, baselineFile: string, cand
   return comparison.gate.passed ? 0 : 1;
 };
 
-const recordAutoGate = async (ports: CliPorts, dataset: GoldenDataset, report: EvalReport): Promise<string> => {
-  const { AUTO_CLASSIFIER_CODE, RUNTIME_DEFAULTS } = await import('@momonga/runtime');
-  const { settings } = await loadUserSettings({ home: ports.home });
-  const classifier = settings.autoMode?.classifier;
-  if (classifier === undefined) return 'no auto gate record written: autoMode.classifier is not set in the user settings';
-  const key = { ...autoGateKeyOf(settings.models, classifier, AUTO_CLASSIFIER_CODE), datasetDigest: autoModeDatasetDigestOf(dataset) };
-  const record = autoGateRecordOf(report, { key, agentAlias: RUNTIME_DEFAULTS.modelAlias, recordedAt: new Date(ports.clock.now()).toISOString(), version: ports.version });
-  if (record === undefined) return 'no auto gate record written: the report does not meet every bound of the gate';
-  const file = await writeAutoGateRecord(autoGateDirectoryOf(ports.home), record, systemFileLockPorts.randomHex);
-  return `auto gate record written for classifier ${classifier}: ${file}`;
-};
-
 export const evaluate = async (ports: CliPorts, paths: MomongaPaths, datasetFile: string, options: EvaluateOptions): Promise<number> => {
   if (options.record !== undefined && options.replay !== undefined) throw new EvaluateUsageError('--record and --replay cannot be combined');
   const dataset = await loadDataset(ports.files, path.resolve(ports.cwd, datasetFile));
@@ -212,8 +199,5 @@ export const evaluate = async (ports: CliPorts, paths: MomongaPaths, datasetFile
       ? await runLive(ports, paths, dataset, options.record === undefined ? undefined : path.resolve(ports.cwd, options.record), options.interrupt)
       : replayDataset(dataset, await loadTranscripts(ports.files, path.resolve(ports.cwd, options.replay)));
   ports.stdout.write(`${formatReport(report)}\n`);
-  if (dataset.gate === 'autoMode') {
-    ports.stdout.write(`${options.replay === undefined ? await recordAutoGate(ports, dataset, report) : 'no auto gate record written: a replay does not know which classifier produced the transcripts'}\n`);
-  }
   return report.passed ? 0 : 1;
 };

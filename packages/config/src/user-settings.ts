@@ -34,13 +34,19 @@ const loadUserSettingsSync = (home: string): LoadUserSettingsResult => {
   return { settings, warnings, files: user.layer === undefined ? [] : [user.layer.source] };
 };
 
-export type UserModels = { declared: ModelsSettings; resolved: ResolvedModels; sandbox?: SandboxSetting };
+export type UserModels = { declared: ModelsSettings; resolved: ResolvedModels; sandbox?: SandboxSetting; autoModeClassifier?: string };
 
 export const loadUserModels = ({ home }: LoadUserSettingsOptions): UserModels => {
   try {
     const user = readUserLayer(home);
     const sandbox = user.layer?.settings.sandbox;
-    return { declared: user.layer?.settings.models ?? {}, resolved: user.models, ...(sandbox === undefined ? {} : { sandbox }) };
+    const autoModeClassifier = user.layer?.settings.autoMode?.classifier;
+    return {
+      declared: user.layer?.settings.models ?? {},
+      resolved: user.models,
+      ...(sandbox === undefined ? {} : { sandbox }),
+      ...(autoModeClassifier === undefined ? {} : { autoModeClassifier }),
+    };
   } catch (error) {
     rethrowIfTransient(error);
     throw toConfigError(error);

@@ -2,7 +2,13 @@ import { PERMISSION_MODES } from '@momonga/protocol';
 import type { PermissionMode } from '@momonga/protocol';
 import { selectableModes } from '../modes.ts';
 import type { ModeAvailability } from '../modes.ts';
+import type { AutoModeCheckOptions, AutoModeCheckOutcome, AutoModeStatusOptions, AutoModeStatusOutcome } from '../commands/auto-mode.ts';
 import type { TuiBackend } from './backend.ts';
+
+export type AutoModePort = {
+  check(options: AutoModeCheckOptions, write: (text: string) => void): Promise<AutoModeCheckOutcome>;
+  status(options: AutoModeStatusOptions, write: (text: string) => void): Promise<AutoModeStatusOutcome>;
+};
 
 export type SlashContext = ModeAvailability & {
   readonly mode: PermissionMode;
@@ -15,6 +21,8 @@ export type SlashContext = ModeAvailability & {
   exit(): void;
   setMode(mode: PermissionMode): Promise<void>;
   setModel(modelAlias: string): Promise<void>;
+  background<T>(label: string, work: (signal: AbortSignal) => Promise<T>): Promise<T>;
+  readonly autoMode: AutoModePort;
 };
 
 export type SlashCommand = {

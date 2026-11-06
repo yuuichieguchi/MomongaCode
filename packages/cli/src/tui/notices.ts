@@ -36,3 +36,12 @@ export const defaultNoticeSources = (ports: Pick<CliPorts, 'home'>, update: Upda
   agentWarningSource,
   memoryReviewNoticeSource,
 ];
+
+export type AutoNoticePair = { key: { classifier: string; codeDigest: string; datasetDigest: string }; measurement: string };
+
+export const autoNoticeDue = (last: AutoNoticePair | undefined, current: AutoNoticePair): boolean =>
+  last === undefined ||
+  last.measurement !== current.measurement ||
+  last.key.classifier !== current.key.classifier ||
+  last.key.codeDigest !== current.key.codeDigest ||
+  last.key.datasetDigest !== current.key.datasetDigest;

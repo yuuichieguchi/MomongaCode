@@ -151,7 +151,7 @@ describe('the eval host carries the key probeRecordKeyOf gives instead of rebuil
       { endpoint: 'unix:/s/ollama.sock', model: 'qwen3:latest' },
     ]);
 
-    expect(liveSettingsFor(models, 'default').endpointProbes).toEqual(expected);
+    expect(liveSettingsFor(models, ['default']).endpointProbes).toEqual(expected);
   });
 });
 

@@ -9,6 +9,7 @@ import type { ProgramDeps } from '../program-deps.ts';
 import { contextImprove, guidelineAdopt, guidelineList, guidelineRollback } from './context.ts';
 import { showCost } from './cost.ts';
 import { elicit } from './elicit.ts';
+import { autoModeCheck, autoModeCheckPortsOf, autoModeStatus, autoModeStatusPortsOf } from './auto-mode.ts';
 import { compareContext, evaluate, evaluateContext } from './evaluate.ts';
 import { mcpList, mcpLogin } from './mcp.ts';
 import { memoryAccept, memoryAdd, memoryDelete, memoryHistory, memoryList, memoryPromote, memoryReject, memoryRestore, memoryReview, memoryShow } from './memory.ts';
@@ -296,6 +297,30 @@ const registerEvaluate: CommandGroup = (program, deps) => {
     });
 };
 
+const registerAutoMode: CommandGroup = (program, deps) => {
+  const group = program.command('auto-mode').description('measure how well a model judges approvals for auto mode, or show the stored measurement');
+  group
+    .command('check [alias]')
+    .description('run the auto-mode dataset against a classifier alias in temporary homes and store the measurement; auto mode stays selectable whatever it shows')
+    .option('--agent <alias>', 'the model alias that drives the runs and proposes the calls the classifier judges')
+    .action(async (alias: string | undefined, options: { agent?: string }) => {
+      const { RUNTIME_DEFAULTS } = await import('@momonga/runtime');
+      const outcome = await autoModeCheck(await autoModeCheckPortsOf(deps.ports, (text) => deps.ports.stdout.write(text)), {
+        agent: options.agent ?? RUNTIME_DEFAULTS.modelAlias,
+        signal: deps.interrupt,
+        ...(alias === undefined ? {} : { classifier: alias }),
+      });
+      deps.complete(outcome.measurement === 'unmeasurable' ? 1 : 0);
+    });
+  group
+    .command('status [alias]')
+    .description('show the stored measurement of a classifier alias for this version')
+    .action(async (alias: string | undefined) => {
+      await autoModeStatus(autoModeStatusPortsOf(deps.ports, (text) => deps.ports.stdout.write(text)), { surface: 'cli', ...(alias === undefined ? {} : { classifier: alias }) });
+      deps.complete(0);
+    });
+};
+
 const versionArgument = (text: string): number => {
   const value = Number(text);
   if (!Number.isInteger(value) || value < 1) throw new InvalidArgumentError('expected an integer of at least 1');
@@ -405,7 +430,7 @@ const registerRunTree: CommandGroup = (program, deps) => {
     });
 };
 
-export const PRODUCT_COMMAND_GROUPS: readonly CommandGroup[] = [registerElicit, registerMcp, registerRunTree, registerMemory, registerRule, registerCost, registerEvaluate, registerContext, registerSecret, registerModels, registerPolicy];
+export const PRODUCT_COMMAND_GROUPS: readonly CommandGroup[] = [registerElicit, registerMcp, registerRunTree, registerMemory, registerRule, registerCost, registerEvaluate, registerAutoMode, registerContext, registerSecret, registerModels, registerPolicy];
 
 export const registerProductCommands = (program: Command, deps: ProgramDeps): void => {
   for (const group of PRODUCT_COMMAND_GROUPS) group(program, deps);

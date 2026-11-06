@@ -22,6 +22,11 @@ describe('parseSlash', () => {
   });
 });
 
+const unusedAutoMode: SlashContext['autoMode'] = {
+  check: async () => ({ measurement: 'passed' }),
+  status: async () => ({ measurement: 'not_measured' }),
+};
+
 describe('registry', () => {
   const registry = createSlashRegistry(BUILTIN_SLASH_COMMANDS);
 
@@ -54,6 +59,8 @@ describe('built-in commands', () => {
       exit: () => void infos.push('exited'),
       setMode: async (mode) => void modes.push(mode),
       setModel: async (alias) => void models.push(alias),
+      background: (_label, work) => work(new AbortController().signal),
+      autoMode: unusedAutoMode,
       ...overrides,
     };
     return { context, infos, modes, models };
@@ -152,6 +159,8 @@ const contextWith = (backendOptions: FakeBackendOptions = {}) => {
     exit: () => undefined,
     setMode: async () => undefined,
     setModel: async () => undefined,
+    background: (_label, work) => work(new AbortController().signal),
+    autoMode: unusedAutoMode,
   };
   return { context, infos, runs, backend };
 };

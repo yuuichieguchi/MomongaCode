@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DATASET_FORMAT, runDataset } from '@momonga/eval';
-import type { EvalRunApi, EvalSessionInput, GoldenCase } from '@momonga/eval';
+import type { EvalRunApi, EvalSessionInput, GoldenCase, GoldenDataset } from '@momonga/eval';
 import { goldenCase } from './fixtures.ts';
 
 type Scope = { api: EvalRunApi; workspace: { cwd: string; env: Record<string, string> }; close(): Promise<void> };
@@ -25,7 +25,7 @@ const apiFor = (label: string, log: string[], sessions: EvalSessionInput[], fail
   cancelRun: async () => undefined,
 });
 
-const dataset = (runs: number) => ({ format: DATASET_FORMAT, name: 'scoped', cases: [goldenCase({ id: 'answer', runs, graders: [{ kind: 'status', equals: 'COMPLETED' }] })] });
+const dataset = (runs: number): GoldenDataset => ({ format: DATASET_FORMAT, name: 'scoped', cases: [goldenCase({ id: 'answer', runs, graders: [{ kind: 'status', equals: 'COMPLETED' }] })] });
 
 const run = (ports: OpenPorts, runs: number) => runDataset(dataset(runs), ports as unknown as Parameters<typeof runDataset>[1]);
 

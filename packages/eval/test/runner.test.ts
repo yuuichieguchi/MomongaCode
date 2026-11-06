@@ -42,7 +42,7 @@ const scriptedApi = (transcripts: Transcript[]): Scripted => {
   return record;
 };
 
-const workspace = async () => ({ cwd: '/w', env: { HOME: '/h' } });
+const shared = (api: EvalRunApi) => ({ open: async () => ({ api, workspace: { cwd: '/w', env: { HOME: '/h' } }, close: async () => undefined }) });
 
 describe('runDataset', () => {
   it('runs every case N times in a fresh session and reports the pass rate', async () => {
@@ -50,7 +50,7 @@ describe('runDataset', () => {
     const stored: string[] = [];
     const report = await runDataset(
       { format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'answer', runs: 3, graders: [{ kind: 'finalTextEquals', text: 'hi' }] })] },
-      { api: scripted.api, workspace, onTranscript: async (transcript) => void stored.push(`${transcript.caseId}.${transcript.runIndex}`) },
+      { ...shared(scripted.api), onTranscript: async (transcript) => void stored.push(`${transcript.caseId}.${transcript.runIndex}`) },
     );
     expect(scripted.sessions).toEqual(['default', 'default', 'default']);
     expect(stored).toEqual(['answer.0', 'answer.1', 'answer.2']);
@@ -62,7 +62,7 @@ describe('runDataset', () => {
     const scripted = scriptedApi([approvalTranscript('ask', 0)]);
     await runDataset(
       { format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'ask', onAsk: 'reject_once', graders: [{ kind: 'permissionDecision', tool: 'Bash', expected: 'ask' }] })] },
-      { api: scripted.api, workspace },
+      shared(scripted.api),
     );
     expect(scripted.resolved).toEqual([{ approvalId: 'a1', optionId: 'reject_once' }]);
   });
@@ -76,7 +76,7 @@ describe('runDataset', () => {
     await expect(
       runDataset(
         { format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'ask', onAsk: 'allow_once', graders: [{ kind: 'status', equals: 'COMPLETED' }] })] },
-        { api: scripted.api, workspace },
+        shared(scripted.api),
       ),
     ).rejects.toThrow(EvalError);
   });
@@ -94,8 +94,7 @@ describe('runDataset', () => {
     const report = await runDataset(
       { format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'delegate', graders: [{ kind: 'permissionDecision', tool: 'Write', expected: 'ask' }] })] },
       {
-        api: scripted.api,
-        workspace,
+        ...shared(scripted.api),
         onTranscript: async (transcript) => {
           recorded = transcript;
         },
@@ -141,7 +140,7 @@ describe('runDataset', () => {
         },
       };
       await expect(
-        runDataset({ format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'delegate', graders: [{ kind: 'status', equals: 'COMPLETED' }] })] }, { api, workspace }),
+        runDataset({ format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'delegate', graders: [{ kind: 'status', equals: 'COMPLETED' }] })] }, shared(api)),
       ).rejects.toBe(failure);
       expect(scripted.cancelled).toEqual([parent.run.id]);
     });
@@ -172,7 +171,7 @@ describe('runDataset', () => {
       };
       const rejection = await runDataset(
         { format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'delegate', graders: [{ kind: 'status', equals: 'COMPLETED' }] })] },
-        { api, workspace },
+        shared(api),
       ).then(
         () => undefined,
         (error: unknown) => error,
@@ -205,7 +204,7 @@ describe('runDataset', () => {
         },
       };
       await expect(
-        runDataset({ format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'delegate', graders: [{ kind: 'status', equals: 'COMPLETED' }] })] }, { api, workspace }),
+        runDataset({ format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'delegate', graders: [{ kind: 'status', equals: 'COMPLETED' }] })] }, shared(api)),
       ).rejects.toBe(failure);
       expect(scripted.cancelled).toEqual([parent.run.id]);
     });
@@ -228,7 +227,7 @@ describe('runDataset', () => {
       };
       const rejection = await runDataset(
         { format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'delegate', graders: [{ kind: 'status', equals: 'COMPLETED' }] })] },
-        { api, workspace },
+        shared(api),
       ).then(
         () => undefined,
         (error: unknown) => error,
@@ -269,7 +268,7 @@ describe('runDataset', () => {
       try {
         const rejection = await runDataset(
           { format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'delegate', graders: [{ kind: 'status', equals: 'COMPLETED' }] })] },
-          { api, workspace },
+          shared(api),
         ).then(
           () => undefined,
           (error: unknown) => error,
@@ -304,7 +303,7 @@ describe('runDataset', () => {
       };
       const outcome = runDataset(
         { format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'delegate', graders: [{ kind: 'status', equals: 'COMPLETED' }] })] },
-        { api, workspace },
+        shared(api),
       ).then(
         () => 'resolved',
         (error: unknown) => {
@@ -324,7 +323,7 @@ describe('runDataset', () => {
   it('lets an infrastructure failure propagate', async () => {
     const scripted = scriptedApi([]);
     await expect(
-      runDataset({ format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'answer', graders: [{ kind: 'status', equals: 'COMPLETED' }] })] }, { api: scripted.api, workspace }),
+      runDataset({ format: DATASET_FORMAT, name: 'live', cases: [goldenCase({ id: 'answer', graders: [{ kind: 'status', equals: 'COMPLETED' }] })] }, shared(scripted.api)),
     ).rejects.toThrow('no scripted run left');
   });
 });

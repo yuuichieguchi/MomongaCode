@@ -1,4 +1,4 @@
-import type { ApprovalStatus, ElicitationRequestView, PermissionMode, PermissionOption, RunStatus, StopReason, ToolKind } from '@momonga/protocol';
+import type { ApprovalStatus, AutoClassifierView, ElicitationRequestView, PermissionMode, PermissionOption, RunStatus, StopReason, ToolKind } from '@momonga/protocol';
 
 export type SessionView = {
   readonly id: string;
@@ -12,6 +12,7 @@ export type SessionView = {
   readonly latestRunId: string | null;
   readonly additionalDirectories: readonly string[];
   readonly lastEventId: number;
+  readonly autoClassifier?: AutoClassifierView;
 };
 
 export type RunUsage = { readonly inputTokens: number; readonly outputTokens: number; readonly totalTokens: number };

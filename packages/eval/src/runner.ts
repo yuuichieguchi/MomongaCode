@@ -19,9 +19,11 @@ export type EvalRunApi = {
   cancelRun(runId: string): Promise<void>;
 };
 
+export type EvalRunScope = { api: EvalRunApi; workspace: EvalWorkspace; close(): Promise<void> };
+
 export type EvalPorts = {
-  api: EvalRunApi;
-  workspace(golden: GoldenCase, runIndex: number): Promise<EvalWorkspace>;
+  open(golden: GoldenCase, runIndex: number): Promise<EvalRunScope>;
+  modelAlias?: string;
   onTranscript?(transcript: RecordedRun): Promise<void>;
 };
 
@@ -82,13 +84,21 @@ export const driveRun = async (api: EvalRunApi, golden: Pick<GoldenCase, 'id' | 
 };
 
 const runOnce = async (ports: EvalPorts, golden: GoldenCase, runIndex: number): Promise<RecordedRun> => {
-  const workspace = await ports.workspace(golden, runIndex);
-  const session = await ports.api.createSession({ ...workspace, permissionMode: golden.permissionMode });
-  const run = await ports.api.createRun(session.id, { input: golden.input, ...(golden.timeoutMs === undefined ? {} : { timeoutMs: golden.timeoutMs }) });
-  const { events, children } = await driveRun(ports.api, golden, run.id);
-  const transcript: RecordedRun = { caseId: golden.id, runIndex, run: await ports.api.getRun(run.id), events, children, reflection: await ports.api.reflectionOf(run.id) };
-  if (ports.onTranscript !== undefined) await ports.onTranscript(transcript);
-  return transcript;
+  const scope = await ports.open(golden, runIndex);
+  try {
+    const session = await scope.api.createSession({
+      ...scope.workspace,
+      permissionMode: golden.permissionMode,
+      ...(ports.modelAlias === undefined ? {} : { modelAlias: ports.modelAlias }),
+    });
+    const run = await scope.api.createRun(session.id, { input: golden.input, ...(golden.timeoutMs === undefined ? {} : { timeoutMs: golden.timeoutMs }) });
+    const { events, children } = await driveRun(scope.api, golden, run.id);
+    const transcript: RecordedRun = { caseId: golden.id, runIndex, run: await scope.api.getRun(run.id), events, children, reflection: await scope.api.reflectionOf(run.id) };
+    if (ports.onTranscript !== undefined) await ports.onTranscript(transcript);
+    return transcript;
+  } finally {
+    await scope.close();
+  }
 };
 
 const resultOf = (golden: GoldenCase, transcripts: readonly RecordedRun[]): CaseResult => ({

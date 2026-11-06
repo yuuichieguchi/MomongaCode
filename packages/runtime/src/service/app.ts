@@ -1,11 +1,11 @@
 import path from 'node:path';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { ConfigError, assertSessionMcpServers, autoModeAvailability, stripCredentialEnv } from '@momonga/config';
-import type { AutoGateInput, CredentialRules } from '@momonga/config';
+import { ConfigError, assertSessionMcpServers, autoFitDirectoryOf, stripCredentialEnv } from '@momonga/config';
+import type { AutoFitKey, CredentialRules } from '@momonga/config';
 import { canonicalDirectory, canonicalJson, canonicalPath, comparableContains, comparablePath, isTransientErrno, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import { AUTO_MODE_UNAVAILABLE, RUN_STATUSES, autoModeNotMeasuredMessage } from '@momonga/protocol';
+import { AUTO_MODE_UNAVAILABLE, RUN_STATUSES } from '@momonga/protocol';
 import type { Capabilities, CostBreakdownView, GatewayCostReportView, PermissionMode, RunStatus, RunTraceView } from '@momonga/protocol';
 import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
 import { JournalThreadError, sameRunRequest } from '@momonga/store';
@@ -45,6 +45,7 @@ import { registerInputRoutes } from './input-routes.ts';
 import type { McpAdminPort } from './input-routes.ts';
 import { registerTrustRoutes } from './trust.ts';
 import type { ServiceTimers } from './timers.ts';
+import { readAutoClassifierView } from './auto-classifier-view.ts';
 import { isTerminalStatus, toJobView, toAgentView, toRunView, toSessionView, toSkillView } from './views.ts';
 
 export type RunLimitDefaults = { maxSteps: number; maxTotalTokens: number; approvalTtlMs: number; loopThreshold: number };
@@ -58,7 +59,7 @@ export type SessionCreateSettings = {
   credentialEnvNames: readonly string[];
   credentials?: CredentialRules;
   autoModeClassifier?: string;
-  autoModeGate?: AutoGateInput;
+  autoModeKey?: AutoFitKey;
 };
 
 export type RunAppDeps = {
@@ -106,19 +107,11 @@ const protectedAreaOf = (areas: readonly string[], target: string): string | und
 const isGatewayUnavailable = (error: unknown): boolean =>
   error instanceof GatewayRequestError && (error.type === 'transport' || error.status >= 500);
 
-const checkModeAllowed = (
-  mode: PermissionMode,
-  bypassAllowed: boolean,
-  auto: { classifier: string | undefined; gate: AutoGateInput | undefined },
-  aliases: readonly string[],
-): void => {
+const checkModeAllowed = (mode: PermissionMode, bypassAllowed: boolean, autoModeClassifier: string | undefined, aliases: readonly string[]): void => {
   if (mode === 'auto') {
-    if (auto.classifier === undefined) throw conflict(AUTO_MODE_UNAVAILABLE.code, AUTO_MODE_UNAVAILABLE.message);
-    if (!aliases.includes(auto.classifier)) {
-      throw conflict(AUTO_MODE_UNAVAILABLE.code, `the auto mode classifier alias ${auto.classifier} is not known to the gateway`);
-    }
-    if (auto.gate === undefined || !autoModeAvailability(auto.gate.key, auto.gate.records).available) {
-      throw conflict(AUTO_MODE_UNAVAILABLE.code, autoModeNotMeasuredMessage(auto.classifier));
+    if (autoModeClassifier === undefined) throw conflict(AUTO_MODE_UNAVAILABLE.code, AUTO_MODE_UNAVAILABLE.message);
+    if (!aliases.includes(autoModeClassifier)) {
+      throw conflict(AUTO_MODE_UNAVAILABLE.code, `the auto mode classifier alias ${autoModeClassifier} is not known to the gateway`);
     }
   }
   if (mode === 'bypassPermissions' && !bypassAllowed) {
@@ -201,6 +194,15 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     }
   };
 
+  const sessionViewOf = async (session: Session, loaded?: SessionCreateSettings) => {
+    const view = toSessionView(store, session);
+    if (session.permissionMode !== 'auto') return view;
+    const settings = loaded ?? (await sessionSettingsOf(session.cwd));
+    if (settings.autoModeClassifier === undefined || settings.autoModeKey === undefined) return view;
+    const autoClassifier = await readAutoClassifierView({ alias: settings.autoModeClassifier, key: settings.autoModeKey, directory: autoFitDirectoryOf(deps.home) });
+    return { ...view, autoClassifier };
+  };
+
   const createSession: Handler = async (context) => {
     if (deps.isDraining()) throw drainingError();
     const body = validateBody<CreateSessionBody>('CreateSessionRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
@@ -228,12 +230,12 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const permissionMode = body.permissionMode ?? settings.defaultMode ?? 'default';
     const bypassAllowed =
       body.bypassAllowed === true || (settings.defaultMode === 'bypassPermissions' && settings.defaultModeOrigin === 'user');
-    checkModeAllowed(permissionMode, bypassAllowed, { classifier: settings.autoModeClassifier, gate: settings.autoModeGate }, aliases);
+    checkModeAllowed(permissionMode, bypassAllowed, settings.autoModeClassifier, aliases);
     const stripped = stripCredentialEnv(body.env, settings.credentialEnvNames, settings.credentials);
     const mcpServers = checkedMcpServers(body.mcpServers ?? {});
     if (deps.isDraining()) throw drainingError();
     const session = store.createSession({ cwd, env: stripped.env, permissionMode, modelAlias, bypassAllowed, additionalDirectories, mcpServers });
-    return json({ session: toSessionView(store, session), strippedEnvKeys: stripped.removed }, 201, { location: `/v1/sessions/${session.id}` });
+    return json({ session: await sessionViewOf(session, settings), strippedEnvKeys: stripped.removed }, 201, { location: `/v1/sessions/${session.id}` });
   };
 
   const listSessions: Handler = (context) => {
@@ -250,7 +252,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     return json({ sessions: store.listSessions({ cwd }).map((session) => toSessionView(store, session)) });
   };
 
-  const getSession: Handler = (context) => json({ session: toSessionView(store, requireSession(context.req.param('id') ?? '')) });
+  const getSession: Handler = async (context) => json({ session: await sessionViewOf(requireSession(context.req.param('id') ?? '')) });
 
   const patchSession: Handler = async (context) => {
     const session = requireSession(context.req.param('id') ?? '');
@@ -258,7 +260,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const body = validateBody<PatchSessionBody>('PatchSessionRequest', await readJson(context.req.raw, PATCH_MEDIA_TYPES, deps.maxBodyBytes));
     if (body.permissionMode !== undefined) {
       const settings = await sessionSettingsOf(session.cwd);
-      checkModeAllowed(body.permissionMode, session.bypassAllowed, { classifier: settings.autoModeClassifier, gate: settings.autoModeGate }, await gatewayAliases());
+      checkModeAllowed(body.permissionMode, session.bypassAllowed, settings.autoModeClassifier, await gatewayAliases());
     }
     if (body.modelAlias !== undefined && !(await gatewayAliases()).includes(body.modelAlias)) throw invalidRequest(`unknown model alias ${body.modelAlias}`, 'modelAlias');
     const mcpServers = body.mcpServers === undefined ? undefined : checkedMcpServers(body.mcpServers);
@@ -278,7 +280,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
       current = result.session;
     }
-    return json({ session: toSessionView(store, current) });
+    return json({ session: await sessionViewOf(current) });
   };
 
   const listRuns: Handler = (context) => {
