@@ -209,7 +209,7 @@ describe('projectInheritance: closures for dangling calls', () => {
     const state = danglingSource([...withdrawn('expired'), ...toolDone('c2', 'wrote c2')], ended('STOPPED', 'approval_timeout'));
     const payload = project(state, { status: 'STOPPED', stopReason: 'approval_timeout' });
     expect(state.history.map((entry) => entry.seq)).toEqual([1, 2, 3, 4]);
-    expect(payload.history).toEqual([...state.history, closureEntry(5, 'c1', CLOSURE_TEXT.inputTimeout)]);
+    expect(payload.history).toEqual([...state.history, closureEntry(5, 'c1', CLOSURE_TEXT.approvalTimeout)]);
     expect(payload.closures).toEqual([{ callId: 'c1', seq: 5, effect: 'not_executed', announced: true }]);
     expect(payload.nextItemSeq).toBe(6);
     expectWellFormed(payload);
@@ -244,7 +244,7 @@ const closureTextFor = (outcome: Outcome): string => {
   if (outcome.status === 'FAILED') return CLOSURE_TEXT.failed;
   if (outcome.stopReason === 'timeout') return CLOSURE_TEXT.timeout;
   if (outcome.stopReason === 'loop') return CLOSURE_TEXT.loop;
-  if (outcome.stopReason === 'approval_timeout') return CLOSURE_TEXT.inputTimeout;
+  if (outcome.stopReason === 'approval_timeout') return CLOSURE_TEXT.approvalTimeout;
   return CLOSURE_TEXT.other;
 };
 

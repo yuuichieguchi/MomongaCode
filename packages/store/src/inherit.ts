@@ -34,7 +34,7 @@ type MarkerKind = InheritedPayload['markers'][number]['kind'];
 
 const CLOSURE_TEXT = {
   cancelled: 'Not run: the user interrupted the previous request before this tool call ran.',
-  inputTimeout: 'Not run: the previous request was stopped because a request for input was not answered in time.',
+  approvalTimeout: 'Not run: approval for this tool call was not given in time.',
   loop: 'Not run: the previous request was stopped because the same tool call kept repeating.',
   timeout: 'Not run: the previous request ran out of time before this tool call ran.',
   failed: 'Not run: the previous request ended with an error before this tool call ran.',
@@ -66,7 +66,7 @@ const notExecutedText = (outcome: InheritanceOutcome): string => {
   if (outcome.status === 'FAILED') return CLOSURE_TEXT.failed;
   switch (outcome.stopReason) {
     case 'approval_timeout':
-      return CLOSURE_TEXT.inputTimeout;
+      return CLOSURE_TEXT.approvalTimeout;
     case 'loop':
       return CLOSURE_TEXT.loop;
     case 'timeout':
