@@ -135,7 +135,7 @@ describe('eval files keep a specific message', () => {
   });
 
   it('names the property an outcome file is missing', () => {
-    expect(thrown(() => parseOutcomeFile(JSON.stringify({ digest: 'x' }))).message).toBe("the outcome file is not a momonga-guideline-outcome/1 file: /: must have required property 'outcome'");
+    expect(thrown(() => parseOutcomeFile(JSON.stringify({ digest: 'x' }))).message).toBe("the outcome file is not a momonga-guideline-outcome/2 file: /: must have required property 'alias'");
   });
 
   it('names what is wrong with a model reply to a guideline prompt', () => {

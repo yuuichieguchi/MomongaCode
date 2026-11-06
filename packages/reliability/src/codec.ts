@@ -1,3 +1,4 @@
+import { parseOutsideJson } from '@momonga/foundation';
 import { RELIABILITY_FORMAT } from '@momonga/protocol';
 import { GROUP_KEYS } from './types.ts';
 import type { Indicators } from './types.ts';
@@ -83,7 +84,7 @@ const decodeIndicators = (value: unknown, path: string): Indicators => {
 export const encodeReliabilityReport = (report: ReliabilityReport): string => JSON.stringify(report);
 
 export const decodeReliabilityReport = (text: string): ReliabilityReport => {
-  const fields = fieldsAt(JSON.parse(text) as unknown, 'report');
+  const fields = fieldsAt(parseOutsideJson(text), 'report');
   if (fields['format'] !== RELIABILITY_FORMAT) {
     throw new TypeError(`${RELIABILITY_FORMAT}: the report declares format ${JSON.stringify(fields['format'])}, which is not supported`);
   }

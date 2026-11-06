@@ -183,11 +183,13 @@ export const DIALECT_DEFINITION_SCHEMA: Record<string, unknown> = {
     },
     clausePositive: {
       $ref: CLAUSE,
+      type: 'object',
       properties: {
         within: {
+          type: 'object',
           properties: {
-            below: { items: { $ref: '#/$defs/descentPositive' } },
-            through: { items: { $ref: '#/$defs/descentPositive' } },
+            below: { type: 'array', items: { $ref: '#/$defs/descentPositive' } },
+            through: { type: 'array', items: { $ref: '#/$defs/descentPositive' } },
           },
         },
       },
@@ -195,7 +197,7 @@ export const DIALECT_DEFINITION_SCHEMA: Record<string, unknown> = {
     select: { type: 'array', items: { $ref: CLAUSE }, minItems: 1 },
     selectToolParameters: {
       type: 'array',
-      items: { $ref: CLAUSE, properties: { kinds: { const: ['tool-parameters'] } }, not: { required: ['within'] } },
+      items: { $ref: CLAUSE, type: 'object', properties: { kinds: { const: ['tool-parameters'] } }, not: { properties: { within: true }, required: ['within'] } },
       minItems: 1,
     },
     selectPositive: { type: 'array', items: { $ref: '#/$defs/clausePositive' }, minItems: 1 },
@@ -204,6 +206,7 @@ export const DIALECT_DEFINITION_SCHEMA: Record<string, unknown> = {
     labelKey: { anyOf: [{ const: 'title' }, { $ref: '#/$defs/annotationKey' }] },
     vocabularyKeyword: { enum: [...DIALECT_VOCABULARY_KEYWORDS] },
     rule: {
+      type: 'object',
       oneOf: [
         {
           properties: { select: { $ref: '#/$defs/select' }, op: { const: 'reject' }, keys: { $ref: '#/$defs/keywordList' } },
@@ -263,10 +266,10 @@ export const DIALECT_DEFINITION_SCHEMA: Record<string, unknown> = {
           required: ['select', 'op', 'key', 'value'],
           additionalProperties: false,
           oneOf: [
-            { properties: { key: { $ref: '#/$defs/annotationKey' } }, not: { required: ['overwrite'] } },
-            { properties: { key: { const: 'required' }, value: { const: [] } }, not: { required: ['overwrite'] } },
-            { properties: { key: { const: 'properties' }, value: { const: {} } }, not: { required: ['overwrite'] } },
-            { properties: { key: { const: 'additionalProperties' }, value: { const: true } }, not: { required: ['overwrite'] } },
+            { properties: { key: { $ref: '#/$defs/annotationKey' } }, not: { properties: { overwrite: true }, required: ['overwrite'] } },
+            { properties: { key: { const: 'required' }, value: { const: [] } }, not: { properties: { overwrite: true }, required: ['overwrite'] } },
+            { properties: { key: { const: 'properties' }, value: { const: {} } }, not: { properties: { overwrite: true }, required: ['overwrite'] } },
+            { properties: { key: { const: 'additionalProperties' }, value: { const: true } }, not: { properties: { overwrite: true }, required: ['overwrite'] } },
             { properties: { key: { const: 'additionalProperties' }, value: { const: false } } },
           ],
         },
