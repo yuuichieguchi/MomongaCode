@@ -1,4 +1,5 @@
 import type { Migration } from '@momonga/foundation';
+import { UNKNOWN_ANSWERER } from './append-records.ts';
 
 const INITIAL_SCHEMA = `
 CREATE TABLE sessions (
@@ -792,6 +793,29 @@ WHERE e.type = 'tool.call' AND json_type(l.value, '$.path') = 'text'
 GROUP BY e.session_id, json_extract(l.value, '$.path');
 `;
 
+const RUN_ANSWERERS_RECORD = `
+CREATE TABLE run_answerers (
+  run_id TEXT NOT NULL REFERENCES runs (id),
+  target TEXT NOT NULL,
+  PRIMARY KEY (run_id, target)
+) WITHOUT ROWID;
+
+INSERT OR IGNORE INTO run_answerers (run_id, target)
+SELECT r.run_id, COALESCE(
+  json_extract(r.payload_json, '$.target'),
+  (SELECT json_extract(o.payload_json, '$.target') FROM events o
+    WHERE o.run_id = r.run_id AND o.type = 'meter.observed' AND o.seq > r.seq
+      AND o.seq < COALESCE((SELECT MIN(q.seq) FROM events q WHERE q.run_id = r.run_id AND q.type = 'model.requested' AND q.seq > r.seq), 9223372036854775807)
+    ORDER BY o.seq LIMIT 1),
+  '${UNKNOWN_ANSWERER}'
+)
+FROM events r WHERE r.type = 'model.responded' AND r.run_id IS NOT NULL;
+
+INSERT OR IGNORE INTO run_answerers (run_id, target)
+SELECT run_id, COALESCE(json_extract(payload_json, '$.target'), '${UNKNOWN_ANSWERER}')
+FROM events WHERE type IN ('model.rejected', 'usage.charged') AND run_id IS NOT NULL;
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -835,5 +859,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 23,
     name: 'record the locations the tool calls of a session declared, once per path and in the order first seen, derived once for sessions written before',
     sql: SESSION_TOUCHED_RECORD,
+  },
+  {
+    version: 24,
+    name: 'record the targets that answered each run in run_answerers, once per target, from the target of every paid answer; derived once for runs written before by pairing each response with its meter observation, and unknown where no pairing is exact',
+    sql: RUN_ANSWERERS_RECORD,
   },
 ];

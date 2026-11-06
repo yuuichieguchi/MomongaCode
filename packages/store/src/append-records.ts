@@ -68,8 +68,22 @@ export type AppendRecords = {
   startedCallsOf(runId: string): StartedCall[];
   hasNoticeCode(runId: string, code: string): boolean;
   meterRecordOf(sessionId: string, key: MeterKey): MeterRecord | undefined;
+  answeringTargetsOf(runId: string): string[];
   touchedAfter(sessionId: string, afterEventId: number, limit: number, afterPath?: string): SessionTouched[];
   touchedNewest(sessionId: string, limit: number): SessionTouched[];
+};
+
+export const UNKNOWN_ANSWERER = 'unknown' as const;
+
+export const answerTargetOf = (payload: RunEventPayload | SessionEventPayload): string | undefined => {
+  switch (payload.type) {
+    case 'model.responded':
+    case 'model.rejected':
+    case 'usage.charged':
+      return payload.target ?? UNKNOWN_ANSWERER;
+    default:
+      return undefined;
+  }
 };
 
 const missesOf = (identity: string, parsed: unknown): { miss: number; uncounted: number }[] => {
@@ -109,6 +123,8 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
       'SELECT path, first_event_id FROM session_touched WHERE session_id = :sessionId AND (first_event_id, path) > (:after, :afterPath) ORDER BY first_event_id, path LIMIT :limit',
     ),
     touchedNewest: db.prepare('SELECT path, first_event_id FROM session_touched WHERE session_id = :sessionId ORDER BY first_event_id DESC, path DESC LIMIT :limit'),
+    insertAnswerer: db.prepare('INSERT OR IGNORE INTO run_answerers (run_id, target) VALUES (:runId, :target)'),
+    answerers: db.prepare('SELECT target FROM run_answerers WHERE run_id = :runId ORDER BY target'),
     noticeCode: db.prepare("SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'notice' AND notice_code = :code LIMIT 1"),
     meterRecord: db.prepare(
       `SELECT run_id, seq, event_json, misses_json FROM meter_records
@@ -162,6 +178,8 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
 
   const record = (event: RecordedEvent): void => {
     const { runId, payload } = event;
+    const answerer = answerTargetOf(payload);
+    if (answerer !== undefined) sql.insertAnswerer.run({ runId, target: answerer });
     switch (payload.type) {
       case 'tool.call':
         for (const path of locationPathsOf(payload)) sql.insertTouched.run({ sessionId: event.sessionId, path, eventId: event.eventId });
@@ -224,6 +242,7 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
         return { callId: reader.string('call_id'), name: reader.string('name'), idemKey: reader.string('idem_key') };
       }),
     hasNoticeCode: (runId, code) => sql.noticeCode.get({ runId, code }) !== undefined,
+    answeringTargetsOf: (runId) => sql.answerers.all({ runId }).map((row) => readerFor('run_answerers', runId, row).string('target')),
     touchedAfter: (sessionId, afterEventId, limit, afterPath) =>
       touchedOf(afterPath === undefined ? sql.touchedAfter.all({ sessionId, after: afterEventId, limit }) : sql.touchedAfterPath.all({ sessionId, after: afterEventId, afterPath, limit }), sessionId),
     touchedNewest: (sessionId, limit) => touchedOf(sql.touchedNewest.all({ sessionId, limit }), sessionId),

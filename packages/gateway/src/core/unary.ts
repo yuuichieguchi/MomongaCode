@@ -355,14 +355,11 @@ const compactOnce = async (
     output: [item],
     created_at: Math.floor(services.clock.now() / 1000),
     usage: outcome.value.usage,
-    ...(cost === null && outcome.value.cacheWriteInputTokens === undefined
-      ? {}
-      : {
-          momonga: {
-            ...(outcome.value.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: outcome.value.cacheWriteInputTokens }),
-            ...(cost === null ? {} : { cost }),
-          },
-        }),
+    momonga: {
+      target: outcome.target.name,
+      ...(outcome.value.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: outcome.value.cacheWriteInputTokens }),
+      ...(cost === null ? {} : { cost }),
+    },
   };
 };
 
