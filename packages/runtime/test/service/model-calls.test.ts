@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { BilledCallsCursorView, BilledCallsPageView, BilledCallView, TokenAnatomy } from '@momonga/protocol';
 import type { ModelCallRecord } from '@momonga/store';
 import { costBreakdownOf } from '../../src/service/model-calls.ts';
+import { expectSchema } from './helpers.ts';
 
 const ANATOMY: TokenAnatomy = {
   estimated: true,
@@ -63,6 +64,20 @@ const pagedOver = (calls: readonly BilledCallView[], runIds: readonly string[]) 
 };
 
 describe('costBreakdownOf', () => {
+  it('returns a breakdown of metered and plan calls that the CostBreakdown wire schema accepts', async () => {
+    const calls = [billed('r1', 1, 4), billed('r1', 2, 300, { billing: 'plan', price: { kind: 'unpriced', reason: 'plan' } })];
+    const { fetchPage } = pagedOver(calls, ['r1']);
+
+    const { breakdown } = await costBreakdownOf({
+      runIds: ['r1'],
+      recordsOf: (runId) => [requested(1), responded(1, idOf(runId, 1)), requested(2), responded(2, idOf(runId, 2))],
+      fetchPage,
+    });
+
+    expect(breakdown.plan).toEqual({ calls: 1, inputTokens: 300, outputTokens: 1 });
+    expectSchema('CostBreakdown', breakdown);
+  });
+
   it('pages through the gateway and joins each billed call of the main role with the anatomy and timing of its response', async () => {
     const calls = [billed('r1', 1, 1), billed('r2', 1, 2), billed('r3', 1, 3)];
     const { fetchPage, pages } = pagedOver(calls, ['r1', 'r2', 'r3']);
