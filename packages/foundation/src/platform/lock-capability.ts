@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { nodeFileLockOps } from './kernel-lock.ts';
 import type { FileLockOps } from './kernel-lock.ts';
@@ -140,4 +141,31 @@ export const createLockCapability = ({ proofDir, ops = nodeFileLockOps, statDire
     },
     contradicted: (dir) => void cache.delete(dir),
   };
+};
+
+const privateProofDirectory = (): string | undefined => {
+  const uid = process.getuid?.();
+  const directory = path.join(os.tmpdir(), `momonga-lock-proof-${uid ?? 'user'}`);
+  try {
+    fs.mkdirSync(directory, { mode: 0o700 });
+  } catch (error) {
+    if (codeOf(error) !== 'EEXIST') return undefined;
+  }
+  const stat = fs.lstatSync(directory);
+  const foreign = uid !== undefined && stat.uid !== uid;
+  return stat.isDirectory() && !stat.isSymbolicLink() && !foreign && (stat.mode & 0o077) === 0 ? directory : undefined;
+};
+
+let hosted: LockCapabilityProbe | undefined;
+
+export const hostLockCapability: LockCapabilityProbe = {
+  of: async (dir) => {
+    if (hosted === undefined) {
+      const proofDir = privateProofDirectory();
+      if (proofDir === undefined) return 'unmeasured';
+      hosted = createLockCapability({ proofDir });
+    }
+    return hosted.of(dir);
+  },
+  contradicted: (dir) => hosted?.contradicted(dir),
 };

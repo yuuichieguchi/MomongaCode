@@ -2,7 +2,7 @@ import { nodeCommandRunner } from './command-runner.ts';
 import type { CommandRunner } from './command-runner.ts';
 import { createDarwinInspector } from './darwin-inspector.ts';
 import type { ProcessInspector } from './inspector-types.ts';
-import { UNMEASURED_CAPABILITY } from './lock-capability.ts';
+import { hostLockCapability } from './lock-capability.ts';
 import type { LockCapabilityProbe } from './lock-capability.ts';
 import { createLinuxInspector } from './linux-inspector.ts';
 import { withMarkerState } from './marker-state.ts';
@@ -33,7 +33,7 @@ const hostUid = (): number => {
   return process.getuid();
 };
 
-export const hostInspectorPorts = (): InspectorPorts => ({ run: nodeCommandRunner, procfs: nodeProcFs, env: process.env, uid: hostUid, capability: UNMEASURED_CAPABILITY });
+export const hostInspectorPorts = (): InspectorPorts => ({ run: nodeCommandRunner, procfs: nodeProcFs, env: process.env, uid: hostUid, capability: hostLockCapability });
 
 export const createProcessInspector = (platform: NodeJS.Platform, ports: InspectorPorts): ProcessInspector => {
   switch (platform) {

@@ -48,6 +48,7 @@ export type CliPorts = {
   env: Readonly<Record<string, string | undefined>>;
   cwd: string;
   home: string;
+  interrupt?: AbortSignal | undefined;
   stdout: Sink;
   stderr: Sink;
   clock: CliClock;

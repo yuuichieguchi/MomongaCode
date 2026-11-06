@@ -6,7 +6,7 @@ import type { Readable, Stream, Writable } from 'node:stream';
 import { deserializeMessage, serializeMessage, type JSONRPCMessage, type Transport } from '@modelcontextprotocol/client';
 import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
 import type { McpStdioServerConfig } from '@momonga/config';
-import { reapMarkedProcesses, terminateGroup, type TerminateOutcome } from '@momonga/foundation';
+import { deadlineSignal, groupTerminationBoundMs, hostProbeTiming, reapMarkedProcesses, terminateGroup, type TerminateOutcome } from '@momonga/foundation';
 
 const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 const STDERR_TAIL_BYTES = 64 * 1024;
@@ -22,7 +22,7 @@ export interface StdioTransportOptions {
   baseEnv: Record<string, string>;
   closeGraceMs?: number;
   markers?: McpMarkerOptions;
-  terminate?: (pgid: number, options: { graceMs: number }) => Promise<TerminateOutcome>;
+  terminate?: (pgid: number, options: { graceMs: number; signal?: AbortSignal }) => Promise<TerminateOutcome>;
 }
 
 export interface StdioTransportExit {
@@ -214,11 +214,12 @@ class StdioTransportImpl implements StdioTransport {
     try {
       const child = this.child;
       if (child !== undefined && child.pid !== undefined) {
+        const closeStop = deadlineSignal(hostProbeTiming, groupTerminationBoundMs(this.closeGraceMs));
         child.stdin.end();
         await this.raceTimeout(this.exited);
         let terminateFailure: { error: unknown } | undefined;
         try {
-          await (this.options.terminate ?? terminateGroup)(child.pid, { graceMs: this.closeGraceMs });
+          await (this.options.terminate ?? terminateGroup)(child.pid, { graceMs: this.closeGraceMs, signal: closeStop });
         } catch (error) {
           terminateFailure = { error };
         }
@@ -232,6 +233,7 @@ class StdioTransportImpl implements StdioTransport {
               killGraceMs: this.closeGraceMs,
               label: 'mcp',
               onWarning: this.options.markers.onWarning,
+              signal: closeStop,
             });
           } catch (error) {
             sweepFailure = { error };

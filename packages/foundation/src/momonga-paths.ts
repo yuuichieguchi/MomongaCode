@@ -120,7 +120,7 @@ export type PlatformDirectoryPorts = {
   platform?: NodeJS.Platform;
   run?: CommandRunner;
   env?: Readonly<Record<string, string | undefined>>;
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 };
 
 export const ensureMomongaDirs = async (paths: MomongaPaths, ports: PlatformDirectoryPorts = {}): Promise<void> => {
@@ -168,7 +168,7 @@ export const ensureMomongaDirs = async (paths: MomongaPaths, ports: PlatformDire
     await ensureDirectory(directory);
   }
   if (platform === 'win32') {
-    const windows = { run: ports.run ?? nodeCommandRunner, env: ports.env ?? process.env, ...(ports.signal === undefined ? {} : { signal: ports.signal }) };
+    const windows = { run: ports.run ?? nodeCommandRunner, env: ports.env ?? process.env, signal: ports.signal };
     await ensureWindowsPrivateTree(paths.root, windows);
     await ensureWindowsPrivateTree(paths.cacheBase, windows);
   }
