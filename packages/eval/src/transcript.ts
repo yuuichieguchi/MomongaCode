@@ -5,12 +5,13 @@ import { validatePolicyOverlay } from './context-policy.ts';
 import type { PolicyOverlay } from './context-policy.ts';
 import type { ContextChargeView, MemoryOrigin, PublicRunEvent, ReflectionJobState, RunStatus, StopReason } from '@momonga/protocol';
 
-export const TRANSCRIPT_FORMAT = 'momonga-transcript/5';
+export const TRANSCRIPT_FORMAT = 'momonga-transcript/6';
 const RETIRED_TRANSCRIPT_FORMATS: Readonly<Record<string, string>> = {
   'momonga-transcript/1': 'subagent runs',
   'momonga-transcript/2': 'the side effect of a tool call',
   'momonga-transcript/3': 'the policy and the code digest of the run',
   'momonga-transcript/4': 'what answered the run (the answering targets and whether each is a model or a script)',
+  'momonga-transcript/5': 'an answerer whose adapter and model are unknown (a paid answer that recorded no answering target)',
 };
 
 export type TranscriptRun = {
@@ -26,7 +27,7 @@ export type TranscriptRun = {
 export const ANSWER_KINDS = ['model', 'script', 'unknown'] as const;
 export type AnswerKind = (typeof ANSWER_KINDS)[number];
 
-export type Answerer = { target: string; adapter: string; upstreamModel: string; answers: AnswerKind };
+export type Answerer = { target: string; adapter?: string; upstreamModel?: string; answers: AnswerKind };
 
 export type TranscriptChild = { runId: string; agent: string; events: PublicRunEvent[] };
 
@@ -147,14 +148,20 @@ const answeredByOf = (value: unknown, where: string): Answerer[] => {
       !isRecord(entry) ||
       typeof entry['target'] !== 'string' ||
       entry['target'] === '' ||
-      typeof entry['adapter'] !== 'string' ||
-      typeof entry['upstreamModel'] !== 'string' ||
+      (entry['adapter'] !== undefined && typeof entry['adapter'] !== 'string') ||
+      (entry['upstreamModel'] !== undefined && typeof entry['upstreamModel'] !== 'string') ||
       typeof entry['answers'] !== 'string' ||
       !(ANSWER_KINDS as readonly string[]).includes(entry['answers'])
     ) {
-      throw new TranscriptError(`${where}: every answeredBy entry needs a target, an adapter, an upstreamModel and answers model, script or unknown`);
+      throw new TranscriptError(`${where}: every answeredBy entry needs a target and answers model, script or unknown, and its adapter and upstreamModel, when present, are strings`);
     }
-    return { target: entry['target'], adapter: entry['adapter'], upstreamModel: entry['upstreamModel'], answers: entry['answers'] as AnswerKind };
+    const { target, adapter, upstreamModel, answers } = entry;
+    return {
+      target,
+      ...(typeof adapter === 'string' ? { adapter } : {}),
+      ...(typeof upstreamModel === 'string' ? { upstreamModel } : {}),
+      answers: answers as AnswerKind,
+    };
   });
 };
 

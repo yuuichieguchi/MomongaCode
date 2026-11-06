@@ -1,6 +1,7 @@
 import { escapeTerminalLine } from '@momonga/protocol';
 import { MINIMUM_PAIRS, pairedBootstrap, pairedRatioBootstrap } from './bootstrap.ts';
 import type { ClusterPair } from './bootstrap.ts';
+import type { Answerer } from './transcript.ts';
 import type { BootstrapInterval, Cluster } from './bootstrap.ts';
 import { canonicalJson } from '@momonga/foundation';
 import type { PolicyOverlay } from './context-policy.ts';
@@ -128,7 +129,12 @@ type Terms = {
 
 type Term = (terms: Terms) => GateCheck;
 
-const identitiesOf = (report: ContextReport): string => report.answeredBy.map((answerer) => `${answerer.target} (${answerer.adapter} ${answerer.upstreamModel}, ${answerer.answers})`).join(', ');
+const answererIdentityOf = (answerer: Answerer): string => {
+  const served = [answerer.adapter, answerer.upstreamModel].filter((part): part is string => part !== undefined);
+  return `${answerer.target} (${[...(served.length === 0 ? [] : [served.join(' ')]), answerer.answers].join(', ')})`;
+};
+
+const identitiesOf = (report: ContextReport): string => report.answeredBy.map(answererIdentityOf).join(', ');
 
 const answerProblemsOf = (label: string, report: ContextReport): string[] => {
   const kind = modelKindOf(report.answeredBy, report.unrecordedAnswers);
@@ -136,7 +142,11 @@ const answerProblemsOf = (label: string, report: ContextReport): string[] => {
   if (kind === 'fake') return [`the ${label} was answered by scripted target(s) ${named('script')}, and a scripted model proves only that the machinery works`];
   const problems: string[] = [];
   for (const answerer of report.answeredBy.filter((entry) => entry.answers === 'unknown')) {
-    problems.push(`the ${label} was answered by target ${answerer.target}, which does not declare what answers: set answers to model or script on it`);
+    problems.push(
+      answerer.adapter === undefined
+        ? `the ${label} holds a paid answer that recorded no answering target, so what answered it is unknown`
+        : `the ${label} was answered by target ${answerer.target}, which does not declare what answers: set answers to model or script on it`,
+    );
   }
   if (report.unrecordedAnswers > 0) problems.push(`${report.unrecordedAnswers} transcript(s) of the ${label} record no answering target, so what answered is unknown`);
   if (kind === 'unknown' && problems.length === 0) problems.push(`the ${label} records no answering target, so what answered is unknown`);

@@ -29,6 +29,7 @@ const EXPECTED_TABLES = [
   'memory_replacements',
   'meter_records',
   'reflection_jobs',
+  'run_answerers',
   'run_records',
   'runs',
   'schema_migrations',

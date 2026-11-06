@@ -154,7 +154,7 @@ type CaseState = { spent: number };
 const answeredByOfRuns = async (api: ContextCaseHost['api'], runIds: readonly string[]): Promise<Answerer[]> => {
   const unique = new Map<string, Answerer>();
   for (const runId of runIds) {
-    for (const answerer of await api.answeredBy(runId)) unique.set(canonicalJson([answerer.target, answerer.adapter, answerer.upstreamModel, answerer.answers]), answerer);
+    for (const answerer of await api.answeredBy(runId)) unique.set(canonicalJson(answerer), answerer);
   }
   return [...unique.values()];
 };

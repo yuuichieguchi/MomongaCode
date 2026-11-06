@@ -101,7 +101,7 @@ describe('session_touched, the per-session record of declared locations', () => 
   });
 
   it('the migration fills the record from the locations of existing tool.call events, so a session that predates it keeps its activations', () => {
-    const before = MIGRATIONS.filter((migration) => !JSON.stringify(migration).includes('session_touched'));
+    const before = MIGRATIONS.slice(0, MIGRATIONS.findIndex((migration) => JSON.stringify(migration).includes('session_touched')));
     const dbPath = path.join(makeStoreDir(), 'runtime.db');
     const db = new DatabaseSync(dbPath);
     try {

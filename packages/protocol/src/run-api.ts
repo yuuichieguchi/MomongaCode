@@ -302,6 +302,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
         },
         ['status', 'output', 'usage'],
       ),
+      target: string,
     },
     required: ['step', 'attempt', 'response'],
   },
@@ -409,7 +410,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
   'tool.offered': { properties: { names: { type: 'array', items: { type: 'string', minLength: 1 } } }, required: ['names'] },
   'loop.warned': { properties: { signature: string }, required: ['signature'] },
   'model.rejected': {
-    properties: { step: nonNegativeInteger, attempt: nonNegativeInteger, reason: enumOf(MODEL_REJECTION_REASONS), counter: string, meterCounter: string },
+    properties: { step: nonNegativeInteger, attempt: nonNegativeInteger, reason: enumOf(MODEL_REJECTION_REASONS), counter: string, meterCounter: string, target: string },
     required: ['step', 'attempt', 'reason'],
   },
   'meter.observed': {
@@ -476,6 +477,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
       cacheWriteInputTokens: nonNegativeInteger,
       cost: modelCost,
       timing: callTiming,
+      target: string,
     },
     required: ['purpose', 'inputTokens', 'outputTokens', 'totalTokens'],
   },
@@ -984,7 +986,7 @@ export type ContextChargeView = {
   detail?: BilledDetail;
 };
 
-export type AnsweredByView = { target: string; adapter: string; upstreamModel: string; answers: 'model' | 'script' | 'unknown' };
+export type AnsweredByView = { target: string; adapter?: string; upstreamModel?: string; answers: 'model' | 'script' | 'unknown' };
 export type RunAnsweredByView = { answeredBy: AnsweredByView[] };
 export type RunReflectionView = { job: ReflectionJobView | null; charges: ContextChargeView[]; queuedAhead: number };
 
@@ -1287,7 +1289,7 @@ export const RUN_API_SCHEMAS = {
       {
         answeredBy: {
           type: 'array',
-          items: closed({ target: string, adapter: { type: 'string' }, upstreamModel: { type: 'string' }, answers: { enum: ['model', 'script', 'unknown'] } }, ['target', 'adapter', 'upstreamModel', 'answers']),
+          items: closed({ target: string, adapter: { type: 'string' }, upstreamModel: { type: 'string' }, answers: { enum: ['model', 'script', 'unknown'] } }, ['target', 'answers']),
         },
       },
       ['answeredBy'],

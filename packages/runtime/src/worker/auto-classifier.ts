@@ -89,6 +89,7 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
       outputTokens: usage.output_tokens,
       totalTokens: usage.total_tokens,
       ...billedDetailOf(usage, terminal.response.momonga, timing, terminal.response.id),
+      ...(terminal.response.momonga?.target === undefined ? {} : { target: terminal.response.momonga.target }),
     };
     const read = readJsonReply(validateVerdict, jsonReplyOf(terminal.response));
     if ('error' in read) return { ...asked({ alias: classifier, failure: read.error }), spend };

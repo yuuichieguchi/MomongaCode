@@ -1422,6 +1422,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     meterRecordOf: records.meterRecordOf,
 
+    answeringTargetsOf: records.answeringTargetsOf,
+
     lastTerminalRootRuns: (project, limit) => sql.lastTerminalRootRuns.all({ project, limit }).map(decodeRun),
 
     toolCallNames: (runId) => sql.toolCallNames.all({ runId }).map((row) => String(row.name)),
