@@ -47,6 +47,7 @@ const contextFor = (state: RunState) => {
     run: { id: 'run_wrap', sessionId: 'session_wrap' },
     alias: 'fm',
     capabilities,
+    calibration: { tokenCounting: capabilities.tokenCounting },
     systemPrompt: SYSTEM_PROMPT,
     functionTools: () => [ECHO_TOOL],
     companions: () => ({ hostOf: {}, keepWithoutHost: false }),

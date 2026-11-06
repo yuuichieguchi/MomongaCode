@@ -50,6 +50,7 @@ const contextFor = (state: RunState) => {
     run: { id: 'run_claim', sessionId: 'session_claim' },
     alias: 'fm',
     capabilities,
+    calibration: { tokenCounting: capabilities.tokenCounting },
     systemPrompt: SYSTEM_PROMPT,
     functionTools: () => [ECHO_TOOL],
     companions: () => ({ hostOf: {}, keepWithoutHost: false }),
