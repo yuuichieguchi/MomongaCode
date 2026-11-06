@@ -80,6 +80,8 @@ const serve = async (reply: FakeUpstreamReply, response: http.ServerResponse): P
   response.end();
 };
 
+export const serveFakeUpstreamReply = serve;
+
 export const startFakeSseUpstream = async (options: FakeUpstreamOptions): Promise<FakeUpstreamServer> => {
   const requests: RecordedUpstreamRequest[] = [];
   const script = [...(options.script ?? [])];

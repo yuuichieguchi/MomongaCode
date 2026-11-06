@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { McpAuthorizationError, McpRemotePolicyError, authorizeMcpServer, createMcpOAuthProvider, createFileCredentialStore, createMemoryCredentialStore, createMcpToolSource, credentialKey } from '@momonga/mcp';
+import { McpAuthorizationError, McpRemotePolicyError, authorizeMcpServer, createMcpOAuthProvider, createMcpToolSource, credentialKey } from '@momonga/mcp';
+import { createFileCredentialStore, createMemoryCredentialStore } from '@momonga/foundation';
 import type { FetchLike } from '@modelcontextprotocol/client';
 import { createFakeClock } from '@momonga/testkit';
 import { createToolRegistry } from '@momonga/tools';

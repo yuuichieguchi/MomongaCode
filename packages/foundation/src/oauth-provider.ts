@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import type {
   OAuthClientInformationContext,
   OAuthClientMetadata,
@@ -7,11 +6,9 @@ import type {
   StoredOAuthClientInformation,
   StoredOAuthTokens,
 } from '@modelcontextprotocol/client';
-import type { McpServerScope } from '@momonga/config';
-import { isRecord } from '@momonga/foundation';
-import type { McpCredentialStore } from './credential-store.ts';
-import { McpAuthorizationError } from './remote-errors.ts';
-import { assertAuthorizationUrl } from './remote-policy.ts';
+import type { CredentialStore } from './credential-store.ts';
+import { isRecord } from './json.ts';
+import { OAuthAuthorizationError } from './oauth-authorization-error.ts';
 
 const CLIENT_NAME = 'MomongaCode';
 const STORE_VERSION = 1;
@@ -25,18 +22,18 @@ type StoredCredentials = { version: typeof STORE_VERSION; lastIssuer?: string; i
 const parseStored = (raw: string): StoredCredentials => {
   const parsed: unknown = JSON.parse(raw);
   if (!isRecord(parsed) || parsed['version'] !== STORE_VERSION || !isRecord(parsed['issuers'])) {
-    throw new Error('stored MCP credentials have an unrecognised shape');
+    throw new Error('stored credentials have an unrecognised shape');
   }
   const issuers: Record<string, IssuerCredentials> = {};
   for (const [issuer, entry] of Object.entries(parsed['issuers'])) {
-    if (!isRecord(entry)) throw new Error('stored MCP credentials have an unrecognised issuer entry');
+    if (!isRecord(entry)) throw new Error('stored credentials have an unrecognised issuer entry');
     const tokens = entry['tokens'];
     const client = entry['clientInformation'];
     if (tokens !== undefined && !(isRecord(tokens) && typeof tokens['access_token'] === 'string' && typeof tokens['token_type'] === 'string')) {
-      throw new Error('stored MCP tokens have an unrecognised shape');
+      throw new Error('stored tokens have an unrecognised shape');
     }
     if (client !== undefined && !(isRecord(client) && typeof client['client_id'] === 'string')) {
-      throw new Error('stored MCP client information has an unrecognised shape');
+      throw new Error('stored client information has an unrecognised shape');
     }
     issuers[issuer] = {
       ...(tokens === undefined ? {} : { tokens: tokens as StoredOAuthTokens }),
@@ -47,23 +44,21 @@ const parseStored = (raw: string): StoredCredentials => {
   return { version: STORE_VERSION, issuers, ...(typeof lastIssuer === 'string' ? { lastIssuer } : {}) };
 };
 
-export const credentialKey = (server: string, resourceUrl: string): string =>
-  `mcp-oauth/${server}/${createHash('sha256').update(resourceUrl).digest('hex').slice(0, 32)}`;
-
-export type McpOAuthProviderOptions = {
-  server: string;
-  resourceUrl: string;
-  scope: McpServerScope;
-  store: McpCredentialStore;
+export type OAuthProviderOptions = {
+  key: string;
+  subject: string;
+  store: CredentialStore;
   redirectUrl: string | undefined;
   randomToken(): string;
   preregisteredClientId?: string;
   requestedScope?: string;
   onAuthorizationUrl(url: URL): void;
   onSecret?(value: string): void;
+  authorizationParams?(url: URL): Record<string, string>;
+  acceptTokens?(response: StoredOAuthTokens): void | Promise<void>;
 };
 
-export type McpOAuthProvider = OAuthClientProvider & {
+export type OAuthProvider = OAuthClientProvider & {
   readonly expectedState: string | undefined;
   readonly recordedIssuer: { issuer: string; issParameterSupported: boolean } | undefined;
   secretValues(): Promise<string[]>;
@@ -71,8 +66,8 @@ export type McpOAuthProvider = OAuthClientProvider & {
 
 const emptyStored = (): StoredCredentials => ({ version: STORE_VERSION, issuers: {} });
 
-export const createMcpOAuthProvider = (options: McpOAuthProviderOptions): McpOAuthProvider => {
-  const key = credentialKey(options.server, options.resourceUrl);
+export const createOAuthProvider = (options: OAuthProviderOptions): OAuthProvider => {
+  const { key } = options;
   let verifier: string | undefined;
   let state: string | undefined;
   let discovered: { issuer: string; issParameterSupported: boolean } | undefined;
@@ -86,7 +81,7 @@ export const createMcpOAuthProvider = (options: McpOAuthProviderOptions): McpOAu
     await options.store.update(key, (raw) => {
       const stored = raw === undefined ? emptyStored() : parseStored(raw);
       const target = issuer ?? stored.lastIssuer;
-      if (target === undefined) throw new Error('cannot store MCP credentials without an authorization server issuer');
+      if (target === undefined) throw new Error('cannot store credentials without an authorization server issuer');
       stored.issuers[target] = change(stored.issuers[target] ?? {});
       stored.lastIssuer = target;
       return JSON.stringify(stored);
@@ -98,8 +93,8 @@ export const createMcpOAuthProvider = (options: McpOAuthProviderOptions): McpOAu
     return issuer === undefined ? undefined : stored.issuers[issuer];
   };
 
-  const authorizationRequired = (): McpAuthorizationError =>
-    new McpAuthorizationError('required', `MCP server "${options.server}" requires authorization and has no valid credentials`);
+  const authorizationRequired = (): OAuthAuthorizationError =>
+    new OAuthAuthorizationError('required', `${options.subject} requires authorization and has no valid credentials`);
 
   const reveal = (...values: Array<string | undefined>): void => {
     for (const value of values) if (value !== undefined && value !== '') options.onSecret?.(value);
@@ -148,18 +143,27 @@ export const createMcpOAuthProvider = (options: McpOAuthProviderOptions): McpOAu
     },
     saveTokens: async (tokens, context) => {
       reveal(tokens.access_token, tokens.refresh_token);
+      await options.acceptTokens?.(tokens);
       await update(context?.issuer, (entry) => ({ ...entry, tokens }));
     },
     redirectToAuthorization: (url) => {
       if (options.redirectUrl === undefined) throw authorizationRequired();
-      assertAuthorizationUrl(url, options.scope);
-      options.onAuthorizationUrl(url);
+      if (options.authorizationParams === undefined) {
+        options.onAuthorizationUrl(url);
+        return;
+      }
+      const extended = new URL(url);
+      for (const [name, value] of Object.entries(options.authorizationParams(url))) {
+        if (extended.searchParams.has(name)) throw new Error(`authorization parameter "${name}" is already set`);
+        extended.searchParams.set(name, value);
+      }
+      options.onAuthorizationUrl(extended);
     },
     saveCodeVerifier: (value) => {
       verifier = value;
     },
     codeVerifier: () => {
-      if (verifier === undefined) throw new McpAuthorizationError('invalid_callback', 'no authorization is in progress for this server');
+      if (verifier === undefined) throw new OAuthAuthorizationError('invalid_callback', 'no authorization is in progress');
       return verifier;
     },
     discoveryState: () => discoveryState,

@@ -51,7 +51,7 @@ const optionalString = (span: SpanRecord, key: string): string | undefined => {
 
 const billingOf = (span: SpanRecord): CallBilling => {
   const value = span.attributes[MOMONGA_ATTRIBUTES.billing];
-  return value === 'metered' || value === 'local' ? value : UNKNOWN_BILLING;
+  return value === 'metered' || value === 'local' || value === 'plan' ? value : UNKNOWN_BILLING;
 };
 
 export const billedCallOf = (runId: string, span: SpanRecord, table: PriceTable): BilledCall => {

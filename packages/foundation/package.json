@@ -8,6 +8,7 @@
     "./sqlite": "./src/sqlite.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
     "ata-validator": "1.63.1",
     "eventsource-parser": "4.1.3",
     "undici": "8.12.3"

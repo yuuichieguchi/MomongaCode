@@ -1,4 +1,6 @@
 import { SdkError, SdkErrorCode, SdkHttpError } from '@modelcontextprotocol/client';
+import { OAuthAuthorizationError as McpAuthorizationError } from '@momonga/foundation';
+import type { AuthorizationFailure } from '@momonga/foundation';
 
 export type RemotePolicyViolation =
   | 'scheme'
@@ -19,17 +21,8 @@ export class McpRemotePolicyError extends Error {
   }
 }
 
-export type AuthorizationFailure = 'required' | 'denied' | 'timed_out' | 'invalid_callback';
-
-export class McpAuthorizationError extends Error {
-  readonly failure: AuthorizationFailure;
-
-  constructor(failure: AuthorizationFailure, message: string) {
-    super(message);
-    this.name = 'McpAuthorizationError';
-    this.failure = failure;
-  }
-}
+export { McpAuthorizationError };
+export type { AuthorizationFailure };
 
 export class McpTaskError extends Error {
   readonly taskId: string;

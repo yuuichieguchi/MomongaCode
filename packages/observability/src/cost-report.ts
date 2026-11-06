@@ -4,7 +4,7 @@ import { RUN_ROLE, escapeTerminalLine } from '@momonga/protocol';
 import { MOMONGA_ATTRIBUTES, UNKNOWN_BILLING } from './semconv.ts';
 import { billedCallOf, isBilledChat } from './billed-calls.ts';
 import type { BilledCall } from './billed-calls.ts';
-import { LOCAL_PRICE_VERSION, amountOfUnits } from './cost.ts';
+import { LOCAL_PRICE_VERSION, PLAN_USAGE_LABEL, amountOfUnits } from './cost.ts';
 import type { PriceTable } from './cost.ts';
 import type { SpanRecord, TraceStore } from './trace-store.ts';
 
@@ -19,6 +19,9 @@ export type RoleCost = {
   localCalls: number;
   unpricedCalls: number;
   unknownBillingCalls: number;
+  planCalls: number;
+  planInputTokens: number;
+  planOutputTokens: number;
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
@@ -40,6 +43,9 @@ type Accumulator = {
   localCalls: number;
   unpricedCalls: number;
   unknownBillingCalls: number;
+  planCalls: number;
+  planInputTokens: number;
+  planOutputTokens: number;
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
@@ -56,6 +62,9 @@ const emptyAccumulator = (): Accumulator => ({
   localCalls: 0,
   unpricedCalls: 0,
   unknownBillingCalls: 0,
+  planCalls: 0,
+  planInputTokens: 0,
+  planOutputTokens: 0,
   inputTokens: 0,
   outputTokens: 0,
   cachedInputTokens: 0,
@@ -68,6 +77,9 @@ const merge = (target: Accumulator, source: Accumulator): void => {
   target.localCalls += source.localCalls;
   target.unpricedCalls += source.unpricedCalls;
   target.unknownBillingCalls += source.unknownBillingCalls;
+  target.planCalls += source.planCalls;
+  target.planInputTokens += source.planInputTokens;
+  target.planOutputTokens += source.planOutputTokens;
   target.inputTokens += source.inputTokens;
   target.outputTokens += source.outputTokens;
   target.cachedInputTokens += source.cachedInputTokens;
@@ -109,6 +121,9 @@ const roleTotalsOf = (accumulator: Accumulator): RoleCost => ({
   localCalls: accumulator.localCalls,
   unpricedCalls: accumulator.unpricedCalls,
   unknownBillingCalls: accumulator.unknownBillingCalls,
+  planCalls: accumulator.planCalls,
+  planInputTokens: accumulator.planInputTokens,
+  planOutputTokens: accumulator.planOutputTokens,
   inputTokens: accumulator.inputTokens,
   outputTokens: accumulator.outputTokens,
   cachedInputTokens: accumulator.cachedInputTokens,
@@ -143,7 +158,11 @@ const addSpan = (accumulator: Accumulator, span: SpanRecord, call: BilledCall): 
   accumulator.outputTokens += call.usage.outputTokens;
   accumulator.cachedInputTokens += call.usage.cachedInputTokens;
   if (call.billing === 'local') accumulator.localCalls += 1;
-  if (call.billing === UNKNOWN_BILLING) {
+  if (call.billing === 'plan') {
+    accumulator.planCalls += 1;
+    accumulator.planInputTokens += call.usage.inputTokens;
+    accumulator.planOutputTokens += call.usage.outputTokens;
+  } else if (call.billing === UNKNOWN_BILLING) {
     accumulator.unknownBillingCalls += 1;
   } else if (call.price.kind === 'unpriced') {
     accumulator.unpricedCalls += 1;
@@ -203,18 +222,21 @@ const describeTotals = (totals: RoleCost): string => {
   return `${totals.calls} call(s), ${totals.inputTokens} input (${totals.cachedInputTokens} cached) + ${totals.outputTokens} output tokens, ${totals.amount} ${totals.currency} at price version ${versions}${local}${unpriced}${unknown}${fallback.join('')}`;
 };
 
+const planLines = (totals: RoleCost, indent: string): string[] =>
+  totals.planCalls === 0 ? [] : [`${indent}  ${PLAN_USAGE_LABEL}: ${totals.planCalls} call(s), ${totals.planInputTokens} input + ${totals.planOutputTokens} output tokens`];
+
 export const formatCostReport = (report: CostReport): string => {
   const lines = ['cost report'];
   const roleLines = (totals: CostTotals, indent: string): string[] =>
     Object.entries(totals.roles)
       .sort(([left], [right]) => left.localeCompare(right))
-      .map(([role, forRole]) => `${indent}role ${role}: ${describeTotals(forRole)}`);
+      .flatMap(([role, forRole]) => [`${indent}role ${role}: ${describeTotals(forRole)}`, ...planLines(forRole, indent)]);
   for (const session of report.sessions) {
-    lines.push(`  session ${session.sessionId}: ${describeTotals(session)}`, ...roleLines(session, '    '));
+    lines.push(`  session ${session.sessionId}: ${describeTotals(session)}`, ...planLines(session, '  '), ...roleLines(session, '    '));
     for (const run of report.runs.filter((entry) => entry.sessionId === session.sessionId)) {
-      lines.push(`    run ${run.runId}: ${describeTotals(run)}`, ...roleLines(run, '      '));
+      lines.push(`    run ${run.runId}: ${describeTotals(run)}`, ...planLines(run, '    '), ...roleLines(run, '      '));
     }
   }
-  lines.push(`  total: ${describeTotals(report.total)}`, ...roleLines(report.total, '    '));
+  lines.push(`  total: ${describeTotals(report.total)}`, ...planLines(report.total, '  '), ...roleLines(report.total, '    '));
   return lines.map(escapeTerminalLine).join('\n');
 };
