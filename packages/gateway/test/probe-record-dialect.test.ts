@@ -50,8 +50,15 @@ const rewrite = (file: string, change: (stored: Record<string, unknown>) => Reco
 };
 
 describe('record invalidation of the fm record (rule 7)', () => {
-  it('starts the probe method at 1', () => {
-    expect(PROBE_METHOD_VERSION).toBe(1);
+  it('is at probe method 2, the compaction step sending the D2 handoff prompt', () => {
+    expect(PROBE_METHOD_VERSION).toBe(2);
+  });
+
+  it('reads a record stored under probe method 1 as no record', async () => {
+    const dir = makeDir();
+    await save(dir, SELECTED_2020, { ...NO_USER_DIALECTS, probeMethod: 1 });
+    expect(JSON.parse(fs.readFileSync(path.join(dir, 'fm.json'), 'utf8')).probeMethod).toBe(1);
+    expect(await load(dir, NO_USER_DIALECTS)).toBeNull();
   });
 
   it('writes probeMethod and dialectsDigest beside the identity fields and loads the record back', async () => {
@@ -125,6 +132,13 @@ describe('record invalidation of the endpoint record (rule 7)', () => {
     const dir = makeDir();
     await saveEndpoint(dir, SELECTED_2020, NO_USER_DIALECTS);
     rewrite(fileOf(dir), ({ probeMethod: _method, dialectsDigest: _digest, ...rest }) => rest);
+    expect(await loadEndpoint(dir, NO_USER_DIALECTS)).toBeNull();
+  });
+
+  it('reads a record stored under probe method 1 as no record', async () => {
+    const dir = makeDir();
+    await saveEndpoint(dir, SELECTED_2020, { ...NO_USER_DIALECTS, probeMethod: 1 });
+    expect(JSON.parse(fs.readFileSync(fileOf(dir), 'utf8')).probeMethod).toBe(1);
     expect(await loadEndpoint(dir, NO_USER_DIALECTS)).toBeNull();
   });
 
