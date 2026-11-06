@@ -6,7 +6,7 @@ import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
 import { registerCleanup, withTempDir } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import type { CliPorts } from '../src/ports.ts';
-import { MAX_REDIRECTS, nodeDaemonProbe, nodeUpdateLock, nodeUpdatePorts, nodeUpdateState, undiciUpdateHttp } from '../src/update/node-ports.ts';
+import { MAX_REDIRECTS, STAGING_PREFIX, nodeDaemonProbe, nodeUpdateFs, nodeUpdateLock, nodeUpdatePorts, nodeUpdateState, undiciUpdateHttp } from '../src/update/node-ports.ts';
 import { readyChildren, startFakeSupervisor, virtualClock } from './fake-supervisor.ts';
 
 const unusedPort = (name: string): never =>
@@ -175,5 +175,76 @@ describe('undici update http', () => {
 
     expect(seen['user-agent']).toBe('momonga/1.0.0');
     expect(seen['accept']).toBe('x/y');
+  });
+});
+
+describe('publishing over a running executable', () => {
+  const refusal = (code: string): NodeJS.ErrnoException => Object.assign(new Error(`${code}: rename refused`), { code });
+
+  const runningImageRename =
+    (target: string, code = 'EBUSY') =>
+    async (from: string, to: string): Promise<void> => {
+      if (to === target && fs.existsSync(target)) throw refusal(code);
+      await fs.promises.rename(from, to);
+    };
+
+  const setup = async (context: Parameters<typeof withTempDir>[0]) => {
+    const directory = withTempDir(context);
+    const target = path.join(directory, 'momonga.exe');
+    const staged = path.join(directory, `${STAGING_PREFIX}new`);
+    fs.writeFileSync(target, 'old');
+    fs.writeFileSync(staged, 'new');
+    return { directory, target, staged };
+  };
+
+  it('replaces the file with one rename when the platform allows it', async (context) => {
+    const { directory, target, staged } = await setup(context);
+    await nodeUpdateFs().publish(staged, target);
+    expect(fs.readFileSync(target, 'utf8')).toBe('new');
+    expect(fs.readdirSync(directory)).toEqual(['momonga.exe']);
+  });
+
+  it('moves the running file aside and then moves the new one in when the platform refuses to replace it', async (context) => {
+    const { directory, target, staged } = await setup(context);
+    await nodeUpdateFs(runningImageRename(target)).publish(staged, target);
+    expect(fs.readFileSync(target, 'utf8')).toBe('new');
+    const leftovers = fs.readdirSync(directory).filter((name) => name !== 'momonga.exe');
+    expect(leftovers).toHaveLength(1);
+    expect(leftovers[0]?.startsWith(STAGING_PREFIX)).toBe(true);
+    expect(fs.readFileSync(path.join(directory, leftovers[0] as string), 'utf8')).toBe('old');
+    await nodeUpdateFs().removeLeftovers(directory);
+    expect(fs.readdirSync(directory)).toEqual(['momonga.exe']);
+  });
+
+  it('puts the old file back when the new one cannot be moved in', async (context) => {
+    const { directory, target, staged } = await setup(context);
+    const rename = async (from: string, to: string): Promise<void> => {
+      if (from === staged) throw refusal('EIO');
+      if (to === target && fs.existsSync(target)) throw refusal('EBUSY');
+      await fs.promises.rename(from, to);
+    };
+    await expect(nodeUpdateFs(rename).publish(staged, target)).rejects.toMatchObject({ code: 'EIO' });
+    expect(fs.readFileSync(target, 'utf8')).toBe('old');
+    expect(fs.readdirSync(directory).sort()).toEqual([path.basename(staged), 'momonga.exe'].sort());
+  });
+
+  it('reports the refusal and leaves the file alone when moving the old file aside is refused too', async (context) => {
+    const { target, staged } = await setup(context);
+    const rename = async (): Promise<void> => {
+      throw refusal('EACCES');
+    };
+    await expect(nodeUpdateFs(rename).publish(staged, target)).rejects.toMatchObject({ code: 'EACCES' });
+    expect(fs.readFileSync(target, 'utf8')).toBe('old');
+  });
+
+  it('does not move the file aside for a refusal that is not about a busy or protected target', async (context) => {
+    const { target, staged } = await setup(context);
+    const seen: string[] = [];
+    const rename = async (from: string, to: string): Promise<void> => {
+      seen.push(`${path.basename(from)}>${path.basename(to)}`);
+      throw refusal('ENOSPC');
+    };
+    await expect(nodeUpdateFs(rename).publish(staged, target)).rejects.toMatchObject({ code: 'ENOSPC' });
+    expect(seen).toHaveLength(1);
   });
 });
