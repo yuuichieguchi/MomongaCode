@@ -13,7 +13,9 @@ import { createFakeGateway } from '../worker/fake-gateway.ts';
 import type { ScriptStep } from '../worker/fake-gateway.ts';
 import { capabilitiesFor } from '../worker/harness.ts';
 import { withInProcessFacts } from './in-process-facts.ts';
-import { failedStep, textStep } from '../worker/scripts.ts';
+import { assistantMessage, failedStep, incompleteStep, textStep } from '../worker/scripts.ts';
+import { REFLECTION_INSTRUCTIONS } from '../../src/memory/reflection-input.ts';
+import { REFLECTION_REPLY_SCHEMA } from '../../src/memory/reflection-reply.ts';
 import { bash, exported, fileTool, finishClaimed } from './reflection-fixture.ts';
 
 type Dropped = { ordinal: number; text: string | null; cause: 'text_rule' | 'duplicate' | 'evidence'; reason: string };
@@ -246,16 +248,60 @@ describe('the reflection call', () => {
     expect(env.gateway.streams[0]?.body.text?.format).toMatchObject({ type: 'json_schema' });
   });
 
-  it('makes no call and ends the job when the run alias has no structured output', async () => {
+  it('makes the same call and stores the candidates when the run alias has no structured output', async () => {
     const env = setup({ structured: false });
     const run = await queued(env);
-    env.gateway.script.push(textStep(CANDIDATE_REPLY([])));
+    env.gateway.script.push(textStep(CANDIDATE_REPLY(['src/a.ts'])));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
-    expect(env.gateway.streams).toHaveLength(0);
-    const job = env.api.reflection.get(run.id);
-    expect(job?.state).toBe('done');
-    expect(job?.lastError).toContain('structured output');
+    expect(env.gateway.streams).toHaveLength(1);
+    expect(env.gateway.streams[0]?.body.text?.format).toMatchObject({ type: 'json_schema' });
+    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', lastError: null });
+    expect(env.api.memories.candidates()).toHaveLength(1);
+  });
+
+  it('sends the same instructions whether or not the target has structured output, ending with the contract of the schema', async () => {
+    const enforced = setup({ structured: true });
+    await queued(enforced);
+    enforced.gateway.script.push(textStep(CANDIDATE_REPLY([])));
+    await enforced.reflector().runOne(SIGNAL);
+    const prompt = setup({ structured: false });
+    await queued(prompt);
+    prompt.gateway.script.push(textStep(CANDIDATE_REPLY([])));
+    await prompt.reflector().runOne(SIGNAL);
+    const sent = enforced.gateway.streams[0]?.body.instructions;
+    expect(prompt.gateway.streams[0]?.body.instructions).toBe(sent);
+    expect(sent?.endsWith(canonicalJson(REFLECTION_REPLY_SCHEMA))).toBe(true);
+    expect(sent).toBe(REFLECTION_INSTRUCTIONS);
+  });
+
+  it.each([
+    ['not JSON', 'here are my notes'],
+    ['a code fence', `\`\`\`json\n${CANDIDATE_REPLY([])}\n\`\`\``],
+    ['prose around an object', `Sure: ${CANDIDATE_REPLY([])}`],
+    ['two objects', `${CANDIDATE_REPLY([])}${CANDIDATE_REPLY([])}`],
+    ['an extra field', JSON.stringify({ candidates: [], note: 'x' })],
+    ['a missing field', JSON.stringify({ candidates: [{ text: 'a fact', kind: 'fact' }] })],
+    ['a wrong kind', JSON.stringify({ candidates: [{ text: 'a fact', kind: 'rumour', paths: [] }] })],
+    ['a text over the limit', JSON.stringify({ candidates: [{ text: 'x'.repeat(MEMORY_TEXT_MAX_CHARS + 1), kind: 'fact', paths: [] }] })],
+  ])('ends the job once with the schema reason, keeps the charge and makes no candidate for %s', async (_label, reply) => {
+    const env = setup({ structured: false });
+    const run = await queued(env);
+    env.gateway.script.push(textStep(reply, { usage: usageOf(100, 20) }));
+    expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
+    expect(env.gateway.streams).toHaveLength(1);
+    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', lastError: expect.stringMatching(/^output failed the schema/) });
     expect(env.api.memories.candidates()).toEqual([]);
+    expect(env.api.contextCharges.list()).toHaveLength(1);
+  });
+
+  it('treats an incomplete response as an invalid reply even when its text is a valid value', async () => {
+    const env = setup({ structured: false });
+    const run = await queued(env);
+    env.gateway.script.push(incompleteStep([assistantMessage('m1', CANDIDATE_REPLY(['src/a.ts']))], 'max_output_tokens', usageOf(100, 20)));
+    expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
+    expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', lastError: expect.stringContaining('max_output_tokens') });
+    expect(env.api.memories.candidates()).toEqual([]);
+    expect(env.api.contextCharges.list()).toHaveLength(1);
   });
 
   it('records the cached input and the measured timing of the reflection call on its charge', async () => {

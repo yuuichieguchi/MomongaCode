@@ -3,6 +3,9 @@ import {
   CONTEXT_DATASET_FORMAT,
   GATE_CHECKS,
   GUIDELINE_ANALYSIS_INSTRUCTIONS,
+  GUIDELINE_ANALYSIS_SCHEMA,
+  GUIDELINE_CANDIDATE_SCHEMA,
+  candidateRequestOf,
   GUIDELINE_NO_CANDIDATE_REASON,
   GUIDELINE_CAP_REASON,
   GUIDELINE_OUTCOME_FORMAT,
@@ -208,11 +211,11 @@ describe('the analysis call', () => {
     ['a score outside 0 to 1', analysis({ reliability_score: 2 })],
     ['text that is not JSON', 'I think the summary was poor.'],
   ])('guards the closed schema: refuses %s', (_label, text) => {
-    expect(parseGuidelineAnalysis(text)).toEqual({ error: expect.any(String) });
+    expect(parseGuidelineAnalysis({ text })).toEqual({ error: expect.any(String) });
   });
 
   it('accepts a reply of the exact schema', () => {
-    expect(parseGuidelineAnalysis(analysis())).toMatchObject({ analysis: { root_cause_categories: ['Missing Critical Fact'] } });
+    expect(parseGuidelineAnalysis({ text: analysis() })).toMatchObject({ analysis: { root_cause_categories: ['Missing Critical Fact'] } });
   });
 
   it('hands the billed detail of every completion to the charge, so the charge can record the cost and timing of the call', async () => {
@@ -235,6 +238,51 @@ describe('the analysis call', () => {
     expect(outcome.skipped).toEqual([{ scenario: 'a', reason: expect.stringMatching(/^output failed the schema: /) }]);
     expect(only('candidate', requests)).toHaveLength(K);
     expect(charges).toHaveLength(2 + K);
+  });
+
+  it('skips the scenario, charged and with the reason, when the analysis reply is incomplete, and the others go on', async () => {
+    const { outcome, charges, requests } = await improve({
+      reply: (request, index) => ({
+        text: request.purpose === 'analysis' ? analysis() : candidateReply(index),
+        usage: USAGE,
+        ...(request.purpose === 'analysis' && index === 0 ? { incomplete: 'max_output_tokens' } : {}),
+      }),
+    });
+    expect(outcome.skipped).toEqual([{ scenario: 'a', reason: expect.stringContaining('max_output_tokens') }]);
+    expect(outcome.skipped[0]?.reason).toMatch(/^output failed the schema/);
+    expect(only('candidate', requests)).toHaveLength(K);
+    expect(charges).toHaveLength(2 + K);
+  });
+
+  it('skips the candidate, charged and with the reason, when its reply is incomplete', async () => {
+    const { outcome, charges } = await improve({
+      reply: (request, index) => ({ text: request.purpose === 'analysis' ? analysis() : candidateReply(index), usage: USAGE, ...(request.purpose === 'candidate' && index === 0 ? { incomplete: 'max_output_tokens' } : {}) }),
+    });
+    expect(outcome.candidates[0]).toMatchObject({ index: 0, skipped: expect.stringContaining('max_output_tokens') });
+    expect(charges).toHaveLength(2 + K);
+  });
+
+  it('names the path the gateway reported in the reason of an invalid reply', async () => {
+    const { outcome } = await improve({
+      reply: (request, index) => ({ text: request.purpose === 'analysis' ? 'nonsense' : candidateReply(index), usage: USAGE, path: 'prompt' }),
+    });
+    expect(outcome.skipped[0]?.reason).toContain('reply not enforced by the target');
+  });
+
+  it('guards the contract: both instructions end with the canonical JSON of the schema their reply is judged by', () => {
+    const analysisRequest = analysisRequestOf({ scenario: 's', off: [], on: [], guideline: undefined });
+    const candidateRequest = candidateRequestOf({ analyses: [], guideline: undefined, index: 0, count: 1, seed: 1 });
+    expect(analysisRequest.instructions.endsWith(canonicalJson(GUIDELINE_ANALYSIS_SCHEMA))).toBe(true);
+    expect(candidateRequest.instructions.endsWith(canonicalJson(GUIDELINE_CANDIDATE_SCHEMA))).toBe(true);
+    expect(analysisRequest.format.schema).toEqual(GUIDELINE_ANALYSIS_SCHEMA);
+  });
+
+  it.each([
+    ['analysis', GUIDELINE_ANALYSIS_SCHEMA],
+    ['candidate', GUIDELINE_CANDIDATE_SCHEMA],
+  ])('guards a reply shape that a dialect would rewrite: the %s schema is closed and requires every property', (_label, schema) => {
+    expect(schema.additionalProperties).toBe(false);
+    expect([...schema.required].sort()).toEqual(Object.keys(schema.properties).sort());
   });
 
   it('guards a candidate from no evidence: when every analysis fails no candidate is sampled', async () => {
@@ -571,12 +619,12 @@ describe('guideline text that hides itself', () => {
     ['a null', 'a\u0000b'],
     ['a C1 control', 'a\u009bb'],
   ])('guards the candidate schema: refuses %s', (_label, guideline) => {
-    expect(parseGuidelineCandidate(JSON.stringify({ guideline }))).toEqual({ error: expect.any(String) });
+    expect(parseGuidelineCandidate({ text: JSON.stringify({ guideline }) })).toEqual({ error: expect.any(String) });
   });
 
   it.each(BIDIRECTIONAL_CONTROLS)('guards the candidate schema: refuses the bidirectional control U+%s', (hex) => {
     const guideline = `keep${String.fromCodePoint(Number.parseInt(hex, 16))}names`;
-    expect(parseGuidelineCandidate(JSON.stringify({ guideline }))).toEqual({ error: expect.any(String) });
+    expect(parseGuidelineCandidate({ text: JSON.stringify({ guideline }) })).toEqual({ error: expect.any(String) });
   });
 
   it.each(BIDIRECTIONAL_CONTROLS)('guards the printing: U+%s is escaped in the diff and the text', (hex) => {
@@ -589,7 +637,7 @@ describe('guideline text that hides itself', () => {
   });
 
   it('accepts a newline and a tab in a candidate', () => {
-    expect(parseGuidelineCandidate(JSON.stringify({ guideline: 'a\n\tb' }))).toEqual({ guideline: 'a\n\tb' });
+    expect(parseGuidelineCandidate({ text: JSON.stringify({ guideline: 'a\n\tb' }) })).toEqual({ guideline: 'a\n\tb' });
   });
 
   it('guards a candidate that reaches the benchmark with a control character: it is skipped with a reason and never benchmarked', async () => {

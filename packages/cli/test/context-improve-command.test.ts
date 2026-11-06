@@ -97,7 +97,7 @@ describe('what a model reply puts in the text of context improve', () => {
   const REPLY = '\u001b[2K\u001b]0;pwn\u0007‮ not json';
 
   it('reaches stdout escaped when the parse error of a candidate reply carries the reply', () => {
-    const parsed = parseGuidelineCandidate(REPLY);
+    const parsed = parseGuidelineCandidate({ text: REPLY });
     if (!('error' in parsed)) throw new Error('the reply must not parse');
     expect(parsed.error).toMatch(/\u001b|‮/u);
     const outcome: ImproveOutcome = {
