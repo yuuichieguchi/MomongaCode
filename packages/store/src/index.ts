@@ -22,6 +22,8 @@ export { JOURNAL_SCAN_RANGE_ROWS, createJournalReader } from './journal-reader.t
 export { blobDirectoryOf, createBlobStore } from './blobs.ts';
 export type { JournalReader, JournalReaderOptions } from './journal-reader.ts';
 export type { RecordVisit, WalkUnits } from './record-walk.ts';
+export type { RecordHopRef } from './inherit-reference.ts';
+export { VERDICT_RANKS } from './types.ts';
 export { GuidelineConflictError, GuidelineTextError } from './guidelines.ts';
 export {
   HISTORY_CANDIDATE_LIMIT,
@@ -135,6 +137,9 @@ export type {
   EvidenceReply,
   EvidenceRequest,
   FidelityReply,
+  FidelityVerdict,
+  FidelityVerdictRow,
+  VerdictRank,
   FidelityRequest,
   JournalFacts,
   RecordedCheck,

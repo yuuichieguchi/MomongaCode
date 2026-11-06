@@ -51,12 +51,15 @@ export type ReferenceHooks = {
 
 export type RecordFault = { runId: string; reason: string };
 
+export type RecordHopRef = { runId: string; bound: number; omitsTask: boolean };
+
 export type RecordWalkRequest = {
   reference: InheritedReferencePayload & RunEvent;
   types: readonly RunEvent['type'][];
   visit: RecordVisit;
   units: WalkUnits;
   onFault: (fault: RecordFault) => void;
+  cover: (hop: RecordHopRef) => number | undefined;
 };
 
 export type ReferenceReader = {
@@ -363,7 +366,7 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
     return rejected === undefined ? point : { ...point, item: rejected.item };
   };
 
-  type RecordHop = { runId: string; bound: number; skipSeq: number | undefined };
+  type RecordHop = { runId: string; bound: number; skipSeq: number | undefined; from?: number };
 
   const recordHopsOf = (event: InheritedReferencePayload & RunEvent, subject: { runId: string }): RecordHop[] => {
     subject.runId = event.runId;
@@ -388,28 +391,33 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
     return hops;
   };
 
-  const recordChainOf = (reference: InheritedReferencePayload & RunEvent, onFault: (fault: RecordFault) => void): RecordHop[] => {
-    const levels: RecordHop[][] = [];
-    const subject = { runId: reference.runId };
+  const recordChainOf = (request: RecordWalkRequest): RecordHop[] => {
+    const planned: RecordHop[] = [];
+    const subject = { runId: request.reference.runId };
     try {
-      for (let level: (InheritedReferencePayload & RunEvent) | undefined = reference; level !== undefined; ) {
-        levels.push(recordHopsOf(level, subject));
+      for (let level: (InheritedReferencePayload & RunEvent) | undefined = request.reference; level !== undefined; ) {
+        const hops = recordHopsOf(level, subject);
+        for (const hop of [...hops].reverse()) {
+          const from = request.cover({ runId: hop.runId, bound: hop.bound, omitsTask: hop.skipSeq !== undefined });
+          planned.push(from === undefined ? hop : { ...hop, from });
+          if (from !== undefined) return planned.reverse();
+        }
         subject.runId = level.fromRunId;
         const below = inheritedEventOf(level.fromRunId);
         level = below !== undefined && isReferenceInherited(below) ? below : undefined;
       }
     } catch (error) {
       if (!(error instanceof InheritanceError)) throw error;
-      onFault({ runId: subject.runId, reason: error.message });
+      request.onFault({ runId: subject.runId, reason: error.message });
     }
-    return levels.reverse().flat();
+    return planned.reverse();
   };
 
   const visitRecord = async (request: RecordWalkRequest): Promise<void> => {
     const visit: RecordVisit = (event) => (event.type === 'context.inherited' && isReferenceInherited(event) ? undefined : request.visit(event));
-    for (const hop of recordChainOf(request.reference, request.onFault)) {
+    for (const hop of recordChainOf(request)) {
       if (request.units.stop()) return;
-      await walker.walk(hop.runId, hop.bound, request.types, visit, request.units, hop.skipSeq);
+      await walker.walk(hop.runId, hop.bound, request.types, visit, request.units, { ...(hop.skipSeq === undefined ? {} : { skipSeq: hop.skipSeq }), ...(hop.from === undefined ? {} : { from: hop.from }) });
     }
   };
 

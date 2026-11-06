@@ -9,7 +9,7 @@ import { factsStore } from './run-facts-fixture.ts';
 
 export type Claim = 'executed' | 'any';
 
-export type FidelityReply = { lastSeq: number; attested: string[]; unreadable: { handle: string; reason: string }[] };
+export type FidelityReply = { lastSeq: number; attested: string[]; unreadable: { handle: string; reason: string }[]; checkedThrough: number; verdicts: unknown[] };
 
 const USAGE = { input_tokens: 1, output_tokens: 1, total_tokens: 2 };
 

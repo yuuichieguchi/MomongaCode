@@ -50,11 +50,12 @@ const contextFor = (options: ContextOptions = {}) => {
       },
       store: {
         getSession: () => ({ id: 'session_compact', cwd: '/proj' }),
+        recordFidelityVerdicts: () => undefined,
         journalFacts: {
           fidelity: async (request: FidelityAsked) => {
             asked.push(structuredClone(request));
             const tokens = request.tokens.map((entry) => entry.token);
-            return { lastSeq: request.throughEventSeq, attested: (options.attested ?? ((all: string[]) => all))(tokens), unreadable: options.unreadable ?? [] };
+            return { lastSeq: request.throughEventSeq, attested: (options.attested ?? ((all: string[]) => all))(tokens), unreadable: options.unreadable ?? [], checkedThrough: request.throughEventSeq, verdicts: [] };
           },
         },
       },

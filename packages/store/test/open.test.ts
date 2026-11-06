@@ -14,6 +14,7 @@ const EXPECTED_TABLES = [
   'compaction_guidelines',
   'context_charges',
   'events',
+  'fidelity_verdicts',
   'governing_facts',
   'idempotency',
   'jobs',

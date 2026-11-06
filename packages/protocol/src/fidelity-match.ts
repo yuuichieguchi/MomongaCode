@@ -1,5 +1,7 @@
 export const FIDELITY_CLAIMS = ['executed', 'any'] as const;
 
+export const FIDELITY_FOLD_VERSION = 1;
+
 export type FidelityClaim = (typeof FIDELITY_CLAIMS)[number];
 
 export type ClaimedToken = { readonly token: string; readonly claim: FidelityClaim };

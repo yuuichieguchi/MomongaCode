@@ -406,6 +406,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
     },
     ctx.control.signal,
   );
+  options.store.recordFidelityVerdicts(ctx.run.id, sessionOf(ctx).cwd, recorded);
   const fidelity = checkSummary(summary, {
     attested: recorded.attested,
     pinned: plan.pinnedText,

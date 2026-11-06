@@ -19,8 +19,10 @@ export type WalkHooks = {
   onDecode?: (rows: number, bytes: number) => void;
 };
 
+export type WalkRange = { skipSeq?: number; from?: number };
+
 export type RecordWalker = {
-  walk(runId: string, bound: number, types: readonly RunEventPayload['type'][], visit: RecordVisit, units: WalkUnits, skipSeq?: number): Promise<void>;
+  walk(runId: string, bound: number, types: readonly RunEventPayload['type'][], visit: RecordVisit, units: WalkUnits, range?: WalkRange): Promise<void>;
 };
 
 export const createRecordWalker = (db: DatabaseSync, hooks: WalkHooks): RecordWalker => {
@@ -41,11 +43,12 @@ export const createRecordWalker = (db: DatabaseSync, hooks: WalkHooks): RecordWa
     return event;
   };
 
-  const walk: RecordWalker['walk'] = async (runId, bound, types, visit, units, skipSeq) => {
+  const walk: RecordWalker['walk'] = async (runId, bound, types, visit, units, range = {}) => {
+    const { skipSeq, from: start = 1 } = range;
     if (types.length === 0) return;
     const typeBinds = Object.fromEntries(types.map((type, index) => [`type${index}`, type]));
     const statement = statementFor(types.length);
-    for (let from = 1; from <= bound && !units.stop(); from += RECORD_RANGE_ROWS) {
+    for (let from = start; from <= bound && !units.stop(); from += RECORD_RANGE_ROWS) {
       const until = Math.min(from + RECORD_RANGE_ROWS, bound + 1);
       const rows = readTx(db, () => statement.all({ runId, from, until, ...typeBinds })).sort((a, b) => Number(a['seq']) - Number(b['seq']));
       let consumed = until - from;

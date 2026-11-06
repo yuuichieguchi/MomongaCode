@@ -14,7 +14,7 @@ import type {
   VerdictFact,
   VerdictReply,
 } from '@momonga/store';
-import { INHERITANCE_ERROR_CODES } from '@momonga/store';
+import { INHERITANCE_ERROR_CODES, VERDICT_RANKS } from '@momonga/store';
 import { JOURNAL_THREAD_CODE } from './journal-thread-code.generated.ts';
 
 export type JournalThreadTimers = {
@@ -153,11 +153,25 @@ const inheritedWindowOf = (reply: JournalThreadReply): InheritedWindowReply => {
 
 const isUnreadable = (entry: unknown): entry is FidelityReply['unreadable'][number] => isRecord(entry) && typeof entry['handle'] === 'string' && typeof entry['reason'] === 'string';
 
+const isHandles = (value: unknown): value is string[] => Array.isArray(value) && value.every((handle) => typeof handle === 'string');
+
+const isVerdict = (entry: unknown): entry is FidelityReply['verdicts'][number] =>
+  isRecord(entry) &&
+  typeof entry['token'] === 'string' &&
+  VERDICT_RANKS.some((rank) => rank === entry['inh']) &&
+  isHandles(entry['inhDeps']) &&
+  typeof entry['taskStated'] === 'boolean' &&
+  (entry['statedAt'] === null || typeof entry['statedAt'] === 'number') &&
+  (entry['executedAt'] === null || typeof entry['executedAt'] === 'number') &&
+  isHandles(entry['ownDeps']);
+
 const fidelityOf = (reply: JournalThreadReply): FidelityReply => {
-  const { attested, unreadable } = reply;
+  const { attested, unreadable, checkedThrough, verdicts } = reply;
+  if (typeof checkedThrough !== 'number') throw new JournalThreadError('journal thread fidelity reply carries no checkedThrough');
+  if (!Array.isArray(verdicts) || !verdicts.every(isVerdict)) throw new JournalThreadError('journal thread fidelity reply carries malformed verdicts');
   if (!Array.isArray(attested) || !attested.every((token) => typeof token === 'string')) throw new JournalThreadError('journal thread fidelity reply carries malformed attested tokens');
   if (!Array.isArray(unreadable) || !unreadable.every(isUnreadable)) throw new JournalThreadError('journal thread fidelity reply carries malformed unreadable blobs');
-  return { lastSeq: lastSeqOf(reply, 'fidelity'), attested, unreadable };
+  return { lastSeq: lastSeqOf(reply, 'fidelity'), attested, unreadable, checkedThrough, verdicts };
 };
 
 export const startJournalThread = async (options: JournalThreadOptions): Promise<JournalThreadClient> => {

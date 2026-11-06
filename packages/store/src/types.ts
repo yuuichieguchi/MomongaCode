@@ -569,6 +569,7 @@ export type RuntimeStore = {
   hasNoticeCode(runId: string, code: string): boolean;
   meterRecordOf(sessionId: string, key: MeterKey): MeterRecord | undefined;
   answeringTargetsOf(runId: string): string[];
+  recordFidelityVerdicts(runId: string, cwd: string, reply: Pick<FidelityReply, 'checkedThrough' | 'verdicts'>): void;
   lastTerminalRootRuns(project: string, limit: number): Run[];
   toolCallNames(rootRunId: string): string[];
   toolOfferedNames(rootRunId: string): string[];
@@ -668,7 +669,29 @@ export type ReflectionInputReply = { lastSeq: number; input: string };
 
 export type FidelityRequest = { runId: string; throughEventSeq: number; cwd: string; tokens: readonly ClaimedToken[] };
 
-export type FidelityReply = { lastSeq: number; attested: string[]; unreadable: { handle: string; reason: string }[] };
+export const VERDICT_RANKS = ['none', 'stated', 'executed'] as const;
+
+export type VerdictRank = (typeof VERDICT_RANKS)[number];
+
+export type FidelityVerdict = {
+  token: string;
+  inh: VerdictRank;
+  inhDeps: string[];
+  taskStated: boolean;
+  statedAt: number | null;
+  executedAt: number | null;
+  ownDeps: string[];
+};
+
+export type FidelityVerdictRow = FidelityVerdict & { checkedThrough: number };
+
+export type FidelityReply = {
+  lastSeq: number;
+  attested: string[];
+  unreadable: { handle: string; reason: string }[];
+  checkedThrough: number;
+  verdicts: FidelityVerdict[];
+};
 
 export type JournalFacts = {
   inheritPlan(request: InheritPlanRequest, signal?: AbortSignal): Promise<InheritPlanReply>;

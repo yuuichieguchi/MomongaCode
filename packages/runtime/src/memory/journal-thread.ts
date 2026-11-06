@@ -125,7 +125,7 @@ const isCapabilities = (value: unknown): value is Capabilities =>
 
 type VisitingReader = Pick<JournalReader, 'visitRun'>;
 
-type WalkingReader = Pick<JournalReader, 'walkRun' | 'visitRecord'>;
+type WalkingReader = Pick<JournalReader, 'walkRun' | 'visitRecord' | 'verdictRows' | 'boundOf'>;
 
 export const verdictHandler = (reader: VisitingReader): JournalHandler => (request) => {
   const runId = textOf(request, 'runId', 'verdict');
@@ -208,60 +208,98 @@ type FidelityPorts = {
   gateFor(post: () => void): { unit(): void };
 };
 
-const scanBlob = async (blobs: BlobPages, handle: string, fold: FidelityFold, unit: () => void): Promise<void> => {
+const scanBlob = async (blobs: BlobPages, handle: string, fold: FidelityFold, unit: () => void): Promise<boolean> => {
   let offset = 0;
+  let totalBytes = Number.POSITIVE_INFINITY;
   let carry = '';
-  for (let totalBytes = Number.POSITIVE_INFINITY; offset < totalBytes && fold.unresolved > 0; ) {
+  while (offset < totalBytes && fold.unresolved > 0) {
     const page = await blobs.read(handle, { offset, length: FIDELITY_SCAN_PAGE_BYTES });
     totalBytes = page.totalBytes;
     if (page.length === 0) throw new Error(`blob ${handle} returned no bytes at offset ${offset} of ${totalBytes}`);
     offset = page.offset + page.length;
     const text = `${carry}${page.text}`;
-    fold.scan(text, offset >= totalBytes);
+    fold.scan(text, offset >= totalBytes, handle);
     carry = text.slice(Math.max(0, text.length - fold.span));
     unit();
   }
+  return offset >= totalBytes;
 };
 
 const yieldToThread = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
 export const fidelityHandler = ({ reader, blobs, current, gateFor }: FidelityPorts): JournalHandler => async (request, progress) => {
   const runId = textOf(request, 'runId', 'fidelity');
+  const cwd = textOf(request, 'cwd', 'fidelity');
+  const claimed = claimedTokensOf(request);
+  const names = claimed.map((entry) => entry.token);
+  const through = throughOf(request);
   const unreadable: { handle: string; reason: string }[] = [];
-  const units: WalkUnits = {
-    pause: async () => {
-      await yieldToThread();
-      current.progress = progress;
-    },
-    stop: () => fold.unresolved === 0,
+  const pause = async (): Promise<void> => {
+    await yieldToThread();
+    current.progress = progress;
   };
-  const fold: FidelityFold = createFidelityFold(claimedTokensOf(request), textOf(request, 'cwd', 'fidelity'), (event, add) =>
+  let chainStopped = false;
+  const ownUnits: WalkUnits = { pause, stop: () => false };
+  const chainUnits: WalkUnits = {
+    pause,
+    stop: () => {
+      if (fold.unresolved > 0) return false;
+      chainStopped = true;
+      return true;
+    },
+  };
+  const fold: FidelityFold = createFidelityFold(claimed, cwd, (event, add) =>
     reader.visitRecord({
       reference: event,
       types: FIDELITY_EVENT_TYPES,
       visit: add,
-      units,
+      units: chainUnits,
       onFault: (fault) => unreadable.push({ handle: `chain:${fault.runId}`, reason: fault.reason }),
+      cover: (hop) => {
+        const rows = reader.verdictRows(hop.runId, cwd, names);
+        const held = names.map((name) => rows.get(name));
+        if (names.length === 0 || held.some((row) => row === undefined || row.checkedThrough > hop.bound)) return undefined;
+        for (const row of held) if (row !== undefined) fold.applyHop(row.token, row, hop.omitsTask);
+        return Math.min(...held.map((row) => (row === undefined ? hop.bound : row.checkedThrough))) + 1;
+      },
     }),
   );
+  const own = reader.verdictRows(runId, cwd, names);
+  const bound = reader.boundOf(runId, through);
+  const heldOwn = names.map((name) => own.get(name));
+  const resumeFrom =
+    names.length === 0 || heldOwn.some((row) => row === undefined || row.checkedThrough > bound)
+      ? undefined
+      : Math.min(...heldOwn.map((row) => (row === undefined ? bound : row.checkedThrough))) + 1;
+  if (resumeFrom !== undefined) {
+    for (const row of heldOwn) if (row !== undefined) fold.seedOwn(row);
+    fold.resumeAfterTask();
+  }
   current.progress = progress;
   let run: Awaited<ReturnType<WalkingReader['walkRun']>>;
   try {
-    run = await reader.walkRun(runId, FIDELITY_EVENT_TYPES, fold.add, units, throughOf(request));
+    run = await reader.walkRun(runId, FIDELITY_EVENT_TYPES, fold.add, ownUnits, { throughSeq: through, ...(resumeFrom === undefined ? {} : { from: resumeFrom }) });
   } finally {
     current.progress = undefined;
   }
-  fold.finish();
   const gate = gateFor(progress);
-  for (const handle of fold.handles) {
-    if (fold.unresolved === 0) break;
+  let blobsStopped = false;
+  for (const handle of fold.handles.keys()) {
+    if (fold.unresolved === 0) {
+      blobsStopped = true;
+      break;
+    }
     try {
-      await scanBlob(blobs, handle, fold, gate.unit);
+      if (!(await scanBlob(blobs, handle, fold, gate.unit))) blobsStopped = true;
     } catch (error) {
       unreadable.push({ handle, reason: error instanceof Error ? error.message : String(error) });
     }
   }
-  return { lastSeq: run.lastSeq, attested: fold.attested(), unreadable };
+  const floor = fold.pendingFloor();
+  fold.finish();
+  const exact = !chainStopped && !fold.chainSkipped && !blobsStopped;
+  const verdicts = unreadable.length > 0 ? [] : fold.verdicts().filter((verdict) => exact || verdict.inh === 'executed' || verdict.executedAt !== null);
+  return { lastSeq: run.lastSeq, attested: fold.attested(), unreadable, checkedThrough: floor === undefined ? bound : floor - 1, verdicts };
 };
 
 const withProgress = (current: { progress: (() => void) | undefined }, handler: JournalHandler): JournalHandler => (request, progress) => {

@@ -2,9 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
-import { TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
+import { FIDELITY_FOLD_VERSION, TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
 import type { CallTiming, ElicitationAnswerRecord, ElicitationRequestView, PermissionMode, RunEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
 import { createAppendRecords, columnsOf } from './append-records.ts';
+import { createVerdictWriter } from './fidelity-verdicts.ts';
 import { createApprovalStore } from './approvals.ts';
 import { blobDirectoryOf, createBlobStore, prepareBlobDirectory } from './blobs.ts';
 import { addUsage, foldRunState, initialRunState, spendOf } from './fold.ts';
@@ -390,6 +391,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   try {
     identity = fs.statSync(options.path);
     migrate(db, MIGRATIONS);
+    db.prepare('DELETE FROM fidelity_verdicts WHERE fold_version <> :current').run({ current: FIDELITY_FOLD_VERSION });
     blobDirectory = blobDirectoryOf(options.path);
     prepareBlobDirectory(blobDirectory);
     statements = prepareStatements(db);
@@ -410,6 +412,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const preparer = options.preparer;
   const { onDecode, onEncode } = options;
   const records = createAppendRecords(db, onDecode === undefined ? {} : { onDecode });
+  const verdicts = createVerdictWriter(db);
 
   const recordTouch = (sessionId: string, runId: string | null): void => {
     if (options.onCommit === undefined) return;
@@ -1344,6 +1347,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     meterRecordOf: records.meterRecordOf,
 
     answeringTargetsOf: records.answeringTargetsOf,
+
+    recordFidelityVerdicts: (runId, cwd, reply) => transaction(() => verdicts.record(runId, cwd, reply)),
 
     lastTerminalRootRuns: (project, limit) => sql.lastTerminalRootRuns.all({ project, limit }).map(decodeRun),
 
