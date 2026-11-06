@@ -1,6 +1,6 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import { agentReadiness } from '@momonga/protocol';
-import type { AliasCapabilities, MomongaModelEntry } from '@momonga/protocol';
+import { LOCAL_SERVER_CANDIDATES, agentReadiness } from '@momonga/protocol';
+import type { AliasCapabilities, DetectedLocalServer, MomongaModelEntry } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
@@ -36,4 +36,31 @@ export const listModels = async (ports: CliPorts, paths: MomongaPaths, json: boo
   } finally {
     await gateway.close();
   }
+};
+
+export const formatDetected = (servers: readonly DetectedLocalServer[], settingsFile: string): string => {
+  if (servers.length === 0) return `no local model server answered; declare a target in ${settingsFile} (models.targets and models.aliases) or name an address with momonga models detect <url>`;
+  return escapedLines([
+    ...servers.flatMap((server) => [
+      `found at ${server.baseUrl} (${server.shape} API)`,
+      ...(server.models.length === 0 ? ['  no models listed'] : server.models.map((model) => `  ${model.id}  tools: ${model.tools}`)),
+    ]),
+    `nothing was written; declare the target you want in ${settingsFile} (models.targets and models.aliases)`,
+  ]);
+};
+
+export const detectModels = async (
+  ports: CliPorts,
+  paths: MomongaPaths,
+  options: { typed: readonly string[]; json: boolean; interrupt: AbortSignal; fetch?: typeof fetch },
+): Promise<number> => {
+  const { detectLocalServers } = await import('@momonga/gateway');
+  const found = await detectLocalServers({
+    candidates: LOCAL_SERVER_CANDIDATES,
+    typed: options.typed,
+    signal: options.interrupt,
+    ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+  });
+  ports.stdout.write(`${options.json ? JSON.stringify(found) : formatDetected(found, paths.settingsFile)}\n`);
+  return 0;
 };
