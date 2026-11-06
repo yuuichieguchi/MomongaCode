@@ -24,20 +24,44 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 
 const remoteDocumentsOf = (entry: ProductSchema): unknown[] => [...entry.remotes.values()];
 
+type Boundary = ReturnType<typeof createUntrustedBoundary>;
+
+const NO_REMOTES: ProductSchema['remotes'] = new Map();
+const linters = new WeakMap<ProductSchema['remotes'], Ajv2020.default>();
+const boundaries = new WeakMap<ProductSchema['remotes'], Boundary>();
+
 const linterFor = (remotes: ProductSchema['remotes']): Ajv2020.default => {
+  const known = linters.get(remotes);
+  if (known !== undefined) return known;
   const ajv = new Ajv2020.default({ strict: true, allErrors: true });
   for (const [uri, document] of remotes) {
     if (isRecord(document)) ajv.addSchema(document, typeof document['$id'] === 'string' ? undefined : uri);
   }
+  linters.set(remotes, ajv);
   return ajv;
 };
 
+const boundaryFor = (remotes: ProductSchema['remotes']): Boundary => {
+  const known = boundaries.get(remotes);
+  if (known !== undefined) return known;
+  const created = createUntrustedBoundary({ remotes, engine: ataEngine });
+  boundaries.set(remotes, created);
+  return created;
+};
+
 const strictLint = (entry: ProductSchema): string | undefined => {
+  const linter = linterFor(entry.remotes);
+  const remoteResources = new Set(Object.keys(linter.refs));
   try {
-    linterFor(entry.remotes).compile(entry.schema);
+    linter.compile(entry.schema);
     return undefined;
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
+  } finally {
+    linter.removeSchema(entry.schema);
+    for (const resource of Object.keys(linter.refs)) {
+      if (!remoteResources.has(resource)) linter.removeSchema(resource);
+    }
   }
 };
 
@@ -86,12 +110,12 @@ describe('every product schema is standard JSON Schema 2020-12', () => {
         problems.push(`${name}: not an object`);
         continue;
       }
-      const entry: ProductSchema = { id: name, schema, remotes: new Map() };
+      const entry: ProductSchema = { id: name, schema, remotes: NO_REMOTES };
       problems.push(...keywordSites(schema, NON_STANDARD_KEYWORDS).map((site) => `${name}#${site.pointer} ${site.keyword}`));
       const lint = strictLint(entry);
       if (lint !== undefined) problems.push(`${name}: ${lint}`);
       try {
-        createUntrustedBoundary({ remotes: entry.remotes, engine: ataEngine }).compile(schema);
+        boundaryFor(entry.remotes).compile(schema);
       } catch (error) {
         problems.push(`${name}: ${error instanceof Error ? error.message : String(error)}`);
       }
@@ -130,7 +154,7 @@ describe('every product schema is standard JSON Schema 2020-12', () => {
     expect(entries.length).toBeGreaterThan(0);
     const failures = entries.flatMap((entry) => {
       try {
-        createUntrustedBoundary({ remotes: entry.remotes, engine: ataEngine }).compile(entry.schema);
+        boundaryFor(entry.remotes).compile(entry.schema);
         return [];
       } catch (error) {
         return [`${entry.id}: ${error instanceof Error ? error.message : String(error)}`];
