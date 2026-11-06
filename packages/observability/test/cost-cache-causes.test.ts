@@ -79,3 +79,18 @@ describe('momonga cost --breakdown, cache breaks and cache-miss causes', () => {
     expect(breakdown.cacheMissCauses).toEqual({});
   });
 });
+describe('side_call is limited to a side call on the main call target', () => {
+  const causesOf = (calls: BreakdownCall[]) => buildCostBreakdown(calls, {}).cacheMissCauses;
+
+  it('does not blame a side call that ran on another target than the main calls', () => {
+    expect(causesOf([mainCall(1, 'hosted', 100), sideCall(2, 'local'), mainCall(3, 'hosted', 0)])).toEqual({ unexplained: 1 });
+  });
+
+  it('keeps a recorded prefix event over a side call on another target', () => {
+    expect(causesOf([mainCall(1, 'hosted', 100), sideCall(2, 'local'), mainCall(3, 'hosted', 0, brokenBy('eviction'))])).toEqual({ eviction: 1 });
+  });
+
+  it('blames a side call on the same target as the main call', () => {
+    expect(causesOf([mainCall(1, 'local', 100), sideCall(2, 'local'), mainCall(3, 'local', 0)])).toEqual({ side_call: 1 });
+  });
+});

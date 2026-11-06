@@ -3,7 +3,7 @@ import { escapeTerminalLine } from '@momonga/protocol';
 import { probeRecordKeyOf } from '@momonga/config';
 import type { EndpointProbeKey } from '@momonga/config';
 import type { ModelsSettings, ResolvedModels, SandboxSetting, UserModels } from '@momonga/config';
-import { caseSettingsFor, expandContextDataset, liveBoundsFor, runContextDataset } from '@momonga/eval';
+import { caseSettingsFor, expandContextDataset, failedWithCleanup, liveBoundsFor, runContextDataset } from '@momonga/eval';
 import type { ContextCaseHost, ContextDataset, ExpandedCase, PolicyOverlay, Transcript, WorkspaceStep } from '@momonga/eval';
 import { momongaLayout, socketPathLimit } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
@@ -459,6 +459,6 @@ const settle = async (hosts: ContextHosts, error: unknown): Promise<void> => {
   try {
     await hosts.dispose();
   } catch (cleanup) {
-    throw new AggregateError([error, cleanup], 'the benchmark failed and its temporary homes were not fully released');
+    throw failedWithCleanup(error, cleanup, 'the benchmark failed and its temporary homes were not fully released');
   }
 };

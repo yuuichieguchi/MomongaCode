@@ -244,6 +244,8 @@ const runCase = async (
   }
 };
 
+export const failedWithCleanup = (error: unknown, cleanup: unknown, message: string): AggregateError => new AggregateError([error, cleanup], message);
+
 export const runContextDataset = async (expanded: ExpandedContextDataset, ports: ContextRunPorts): Promise<ContextRunResult> => {
   const transcripts: Transcript[] = [];
   const state: CaseState = { spent: 0 };
@@ -268,8 +270,9 @@ export const runContextDataset = async (expanded: ExpandedContextDataset, ports:
     }
     try {
       await host.close();
-    } catch (error) {
-      if (failure === undefined) throw error;
+    } catch (cleanup) {
+      if (failure === undefined) throw cleanup;
+      throw failedWithCleanup(failure.error, cleanup, `case ${entry.id} failed and its temporary home was not released`);
     }
     if (failure !== undefined) throw failure.error;
   }
