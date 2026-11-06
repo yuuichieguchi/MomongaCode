@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as protocol from '@momonga/protocol';
-import { aggregate, buildReliabilityReport, decodeReliabilityReport, encodeReliabilityReport, foldFacts } from '@momonga/reliability';
+import { aggregate, buildReliabilityReport, decodeReliabilityReport, encodeReliabilityReport, foldFacts, formatReliabilityReport } from '@momonga/reliability';
 import type { ReliabilityReport, ReportKind } from '@momonga/reliability';
 import { T0, eventsOf, runInfo, started, terminal } from './streams.ts';
 
@@ -99,6 +99,19 @@ describe('3.3 item 4 and 4.3: per-task rows, per-scenario rows and X3 witnessed'
     const report = buildWith('injection', { scenarios: SCENARIOS, witnessed: WITNESSED });
     expect((report as unknown as { scenarios: unknown; witnessed: unknown })).toMatchObject({ scenarios: SCENARIOS, witnessed: WITNESSED });
     expect(decodeReliabilityReport(encodeReliabilityReport(report))).toEqual(report);
+  });
+
+  it('an injection report carries the scenarios that were not run, with their reasons, through the round trip and into its text', () => {
+    const notRun = [{ id: 'disk-full', reason: 'linux-container: the scenario needs the Linux container' }];
+    const report = buildWith('injection', { scenarios: SCENARIOS, notRun });
+    expect(report.population).toEqual({ notRun });
+    expect(decodeReliabilityReport(encodeReliabilityReport(report))).toEqual(report);
+    expect(formatReliabilityReport(report)).toContain('Not run: disk-full: linux-container');
+  });
+
+  it('the decoder refuses a population block on a benchmark report', () => {
+    const encoded = JSON.parse(encodeReliabilityReport(buildWith('benchmark', { tasks: TASKS }))) as Record<string, unknown>;
+    expect(() => decodeReliabilityReport(JSON.stringify({ ...encoded, population: { notRun: [] } }))).toThrow(/population/);
   });
 
   it('the decoder refuses a per-task row whose met exceeds its trials', () => {

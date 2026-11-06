@@ -1,5 +1,5 @@
 import { createUdsClient } from '@momonga/foundation';
-import type { PermissionMode, RunHealth } from '@momonga/protocol';
+import type { AnsweredByView, PermissionMode, ReportPage, RunHealth } from '@momonga/protocol';
 import { RunApiError, createRuntimeClient as createProductClient } from '../../packages/cli/src/client/runtime-client.ts';
 import type { RuntimeClient as ProductClient } from '../../packages/cli/src/client/runtime-client.ts';
 import type { ApprovalView, RunView, SessionView } from '../../packages/cli/src/client/views.ts';
@@ -42,6 +42,8 @@ export type RuntimeClient = {
   resolveApproval(id: string, optionId: string): Promise<RawResponse>;
   json(method: string, path: string, body?: unknown): Promise<RawResponse>;
   health(): Promise<RunHealth>;
+  reportFacts(request: { cursor: string | null; limit: number }): Promise<ReportPage>;
+  answeredBy(runId: string): Promise<AnsweredByView[]>;
   close(): Promise<void>;
 };
 
@@ -193,6 +195,8 @@ export const createRuntimeClient = (home: E2eHome): RuntimeClient => {
     resolveApproval,
     json,
     health: () => product.health(),
+    reportFacts: (request) => product.reportFacts(request),
+    answeredBy: async (runId) => (await product.runAnsweredBy(runId)).answeredBy,
     close,
   };
 };

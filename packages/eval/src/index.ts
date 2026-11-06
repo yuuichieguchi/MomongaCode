@@ -123,5 +123,9 @@ export { BENCH_PROBLEMS, gradeTrial, validateBenchmark } from './bench-grade.ts'
 export type { BenchProblem, CheckResult, GradeInput, TaskValidation, TrialGrade, Validation, WorkspaceProbe } from './bench-grade.ts';
 export { buildBenchmarkReport, suiteDigestOf } from './bench-report.ts';
 export type { BenchmarkTrial, BuildBenchmarkReportInput } from './bench-report.ts';
+export { EPISODE_OUTCOMES, INJECTION_FAULTS, INJECT_FORMAT, INJECT_SCHEMA, POINT_EVENT_TYPES, RECONCILE_OUTCOMES, parseInjectionScenarios } from './inject.ts';
+export type { InjectionExpect, InjectionFault, InjectionParams, InjectionScenario, InjectionScenarios, InjectionStep } from './inject.ts';
+export { buildInjectionReport } from './inject-report.ts';
+export type { BuildInjectionReportInput, InjectionTrial } from './inject-report.ts';
 export { compareReliability, formatReliabilityComparison } from './reliability-compare.ts';
 export type { ReliabilityComparison } from './reliability-compare.ts';

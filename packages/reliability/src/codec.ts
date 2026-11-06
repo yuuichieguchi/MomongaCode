@@ -3,7 +3,7 @@ import { RELIABILITY_FORMAT } from '@momonga/protocol';
 import { GROUP_KEYS } from './types.ts';
 import type { Indicators } from './types.ts';
 import { REPORT_KINDS } from './report.ts';
-import type { Harness, ReliabilityReport, ReportKind as ReportKindName, ScenarioRow, TaskRow } from './report.ts';
+import type { Harness, NotRun, ReliabilityReport, ReportKind as ReportKindName, ScenarioRow, TaskRow } from './report.ts';
 
 type Fields = Record<string, unknown>;
 
@@ -134,6 +134,17 @@ const decodeWitnessed = (value: unknown): { k: number; n: number } => {
   return rate;
 };
 
+const decodePopulation = (value: unknown): { notRun: NotRun[] } => {
+  const fields = fieldsAt(value, 'report.population');
+  return {
+    notRun: listAt(fields['notRun'], 'report.population.notRun').map((entry, index) => {
+      const path = `report.population.notRun[${index}]`;
+      const row = fieldsAt(entry, path);
+      return { id: textAt(row, 'id', path), reason: textAt(row, 'reason', path) };
+    }),
+  };
+};
+
 export const encodeReliabilityReport = (report: ReliabilityReport): string => JSON.stringify(report);
 
 export const decodeReliabilityReport = (text: string): ReliabilityReport => {
@@ -156,6 +167,7 @@ export const decodeReliabilityReport = (text: string): ReliabilityReport => {
   rowsOnlyFor('tasks', 'benchmark');
   rowsOnlyFor('scenarios', 'injection');
   rowsOnlyFor('witnessed', 'injection');
+  rowsOnlyFor('population', 'injection');
   return {
     format: RELIABILITY_FORMAT,
     kind,
@@ -167,5 +179,6 @@ export const decodeReliabilityReport = (text: string): ReliabilityReport => {
     ...(fields['tasks'] === undefined ? {} : { tasks: decodeTasks(fields['tasks']) }),
     ...(fields['scenarios'] === undefined ? {} : { scenarios: decodeScenarios(fields['scenarios']) }),
     ...(fields['witnessed'] === undefined ? {} : { witnessed: decodeWitnessed(fields['witnessed']) }),
+    ...(fields['population'] === undefined ? {} : { population: decodePopulation(fields['population']) }),
   };
 };

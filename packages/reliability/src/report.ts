@@ -20,6 +20,8 @@ export type TaskRow = { task: string; trials: number; met: number; difficulty: s
 
 export type ScenarioRow = { scenario: string; trials: number; episodes: number; recovered: number };
 
+export type NotRun = { id: string; reason: string };
+
 export type ReliabilityReport = {
   format: typeof RELIABILITY_FORMAT;
   kind: ReportKind;
@@ -31,6 +33,7 @@ export type ReliabilityReport = {
   tasks?: TaskRow[];
   scenarios?: ScenarioRow[];
   witnessed?: Rate;
+  population?: { notRun: NotRun[] };
 };
 
 type Measured = { aggregate: Aggregate };
@@ -38,7 +41,7 @@ type Measured = { aggregate: Aggregate };
 export type ReportInput =
   | (Measured & { kind: 'real'; harness?: null })
   | (Measured & { kind: 'benchmark'; harness: Harness; tasks?: TaskRow[] })
-  | (Measured & { kind: 'injection'; harness: Harness; scenarios?: ScenarioRow[]; witnessed?: Rate });
+  | (Measured & { kind: 'injection'; harness: Harness; scenarios?: ScenarioRow[]; witnessed?: Rate; notRun?: NotRun[] });
 
 export const buildReliabilityReport = (input: ReportInput): ReliabilityReport => {
   const { total, groups } = indicatorsOf(input.aggregate);
@@ -55,6 +58,7 @@ export const buildReliabilityReport = (input: ReportInput): ReliabilityReport =>
         harness: input.harness,
         ...(input.scenarios === undefined ? {} : { scenarios: input.scenarios }),
         ...(input.witnessed === undefined ? {} : { witnessed: input.witnessed }),
+        ...(input.notRun === undefined ? {} : { population: { notRun: input.notRun } }),
       };
   }
 };
@@ -98,6 +102,7 @@ const harnessLines = (harness: Harness | null): string[] =>
       ];
 
 const rowLines = (report: ReliabilityReport): string[] => [
+  ...(report.population?.notRun ?? []).map((entry) => `Not run: ${entry.id}: ${entry.reason}`),
   ...(report.tasks ?? []).map((row) => `Task ${row.task} (${row.taskType}, ${row.difficulty}): met ${row.met}/${row.trials}`),
   ...(report.scenarios ?? []).map((row) => `Scenario ${row.scenario}: recovered ${row.recovered}/${row.episodes} episodes in ${row.trials} trials`),
   ...(report.witnessed === undefined ? [] : [`Duplicate Side Effect Rate (witnessed): ${describeRate(report.witnessed)}`]),

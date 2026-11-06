@@ -1,0 +1,435 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { codeDigestOfRunningProcess } from '@momonga/foundation';
+import { buildInjectionReport, parseInjectionScenarios } from '@momonga/eval';
+import type { InjectionExpect, InjectionScenario, InjectionTrial } from '@momonga/eval';
+import { REPORT_PAGE_ROWS, TERMINAL_STATUSES } from '@momonga/protocol';
+import type { AnsweredByView, RunFactsView } from '@momonga/protocol';
+import { encodeReliabilityReport } from '@momonga/reliability';
+import type { ReliabilityReport } from '@momonga/reliability';
+import { startFakeChatCompletions } from '@momonga/testkit';
+import type { FakeChatCompletionsServer, FakeResponseHold, FakeScriptedReply } from '@momonga/testkit';
+import { createE2eHome, disposeAll, registerE2eCleanup } from './home.ts';
+import type { E2eHome } from './home.ts';
+import { createRuntimeClient } from './runtime-client.ts';
+import type { RunEventStream, RuntimeClient } from './runtime-client.ts';
+import { DEFAULT_E2E_DEPS, spawnSupervisor, startStack } from './stack.ts';
+import type { E2eStack, StartStackOptions } from './stack.ts';
+import { childOf } from './supervisor-client.ts';
+import { textReply, toolCallReply } from './upstream.ts';
+import { E2E_MARGIN_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, until } from './wait.ts';
+
+export type ScenarioResult =
+  | { id: string; status: 'ran'; witness: Record<string, number>; outcomes: string[]; trials: InjectionTrial[] }
+  | { id: string; status: 'not_run'; reason: string };
+
+export type InjectionHost = { linuxContainer: boolean };
+
+export const INJECTION_REPORT_ENV = 'MOMONGA_INJECTION_REPORT';
+
+const SCENARIOS_FILE = path.join(import.meta.dirname, '..', 'inject', 'scenarios.json');
+const SMALL_FILESYSTEM_MAX_BYTES = 256 * 1024 * 1024;
+const FILL_CHUNK_BYTES = 1024 * 1024;
+const COMPETING_SUPERVISOR_EXIT = 75;
+const LEDGER_DIRECTORY_NAME = 'ledger';
+const LEDGER_FILE_NAME = 'ledger.txt';
+const HOOK_MARK_FILE_NAME = 'hook.mark';
+const HOOK_RELEASE_FILE_NAME = 'hook.release';
+
+const scenarioFile = parseInjectionScenarios(fs.readFileSync(SCENARIOS_FILE, 'utf8'), SCENARIOS_FILE);
+const codeDigest = await codeDigestOfRunningProcess();
+
+const finished: ScenarioResult[] = [];
+
+type Point = { type: 'model.requested' | 'tool.started'; occurrence: number };
+
+type TrialEnv = {
+  readonly scenario: InjectionScenario;
+  readonly point: Point | undefined;
+  readonly home: E2eHome;
+  readonly ledgerFile: string;
+  readonly hookMark: string;
+  readonly hookRelease: string;
+  readonly holds: FakeResponseHold[];
+  stack: E2eStack | undefined;
+  runtime: RuntimeClient | undefined;
+  fake: FakeChatCompletionsServer | undefined;
+  runId: string | undefined;
+  stream: RunEventStream | undefined;
+  filler: string | undefined;
+};
+
+type Fault = {
+  stackOptions?(env: TrialEnv): Partial<StartStackOptions>;
+  upstreamScript?(env: TrialEnv, script: FakeScriptedReply[]): FakeScriptedReply[];
+  beforeRun?(env: TrialEnv): Promise<void>;
+  runBody?(env: TrialEnv): Record<string, unknown>;
+  inject?(env: TrialEnv): Promise<void>;
+  afterTerminal?(env: TrialEnv, frames: readonly Frame[]): Promise<void>;
+};
+
+type Frame = { readonly data: { readonly type: string } & Readonly<Record<string, unknown>> };
+
+type Observed = { frames: readonly Frame[]; facts: RunFactsView };
+
+const expandTemplates = (value: unknown, env: TrialEnv): unknown => {
+  if (typeof value === 'string') return value.replaceAll('{ledger}', env.ledgerFile).replaceAll('{project}', env.home.project);
+  if (Array.isArray(value)) return value.map((entry: unknown) => expandTemplates(entry, env));
+  if (typeof value === 'object' && value !== null) return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, expandTemplates(entry, env)]));
+  return value;
+};
+
+const scriptOf = (env: TrialEnv): FakeScriptedReply[] =>
+  env.scenario.task.steps.map((step, index) =>
+    'text' in step ? textReply(step.text) : toolCallReply(step.call.name, expandTemplates(step.call.input, env) as Record<string, unknown>, `call_${index + 1}`),
+  );
+
+const ledgerLines = (env: TrialEnv): string[] => fs.readFileSync(env.ledgerFile, 'utf8').split('\n').filter((line) => line !== '');
+
+const witnessOf = (env: TrialEnv): Record<string, number> => {
+  const counts: Record<string, number> = {};
+  for (const key of ledgerLines(env)) counts[key] = (counts[key] ?? 0) + 1;
+  return counts;
+};
+
+const framesOfType = (frames: readonly Frame[], type: string): Frame[] => frames.filter((frame) => frame.data.type === type);
+
+const runtimePidOf = async (env: TrialEnv): Promise<number> => {
+  const pid = childOf(await (env.stack as E2eStack).client.health(), 'runtime').pid;
+  if (pid === undefined) throw new Error('the runtime has no pid');
+  return pid;
+};
+
+const killRuntime = async (env: TrialEnv): Promise<void> => {
+  const pid = await runtimePidOf(env);
+  await (env.stream as RunEventStream).close();
+  process.kill(pid, 'SIGKILL');
+};
+
+const untilFrames = (env: TrialEnv, type: string, occurrence: number, description: string): Promise<true> =>
+  until(() => framesOfType((env.stream as RunEventStream).frames(), type).length >= occurrence, { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description });
+
+const untilLedger = (env: TrialEnv, key: string): Promise<true> =>
+  until(() => ledgerLines(env).includes(key), { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: `the ledger to hold ${key}` });
+
+const effectKeyOfHeldStep = (env: TrialEnv): string => {
+  const held = env.scenario.task.steps.flatMap((step) => ('call' in step && typeof step.call.input['command'] === 'string' && step.call.input['command'].includes('sleep') ? [step.call.input['command']] : []))[0];
+  const key = held === undefined ? undefined : /echo (\S+) >>/.exec(held)?.[1];
+  if (key === undefined) throw new Error(`scenario ${env.scenario.id} holds no step that appends an effect key before sleeping`);
+  return key;
+};
+
+const hookCommandOf = (env: TrialEnv): string =>
+  `if [ -e ${env.hookMark} ]; then exit 0; fi; : > ${env.hookMark}; while [ ! -e ${env.hookRelease} ]; do sleep 0.1; done`;
+
+const upstreamDown = async (env: TrialEnv): Promise<void> => {
+  await (env.fake as FakeChatCompletionsServer).close();
+};
+
+const upstreamBack = async (env: TrialEnv): Promise<void> => {
+  env.fake = await startFakeChatCompletions({ scenario: 'tools-ok', socketPath: env.home.upstreamSocket, script: scriptOf(env), maxConcurrency: 8 });
+  const restored = env.fake;
+  registerE2eCleanup(() => restored.close());
+};
+
+const chatRequestsOf = (env: TrialEnv) => (env.fake as FakeChatCompletionsServer).requests.filter((request) => request.path === '/v1/chat/completions');
+
+const FAULTS: Record<InjectionScenario['fault'], Fault> = {
+  kill_at_step: {
+    beforeRun: async (env) => {
+      const point = env.point as Point;
+      if (point.type !== 'model.requested') return;
+      for (let index = 0; index < point.occurrence; index += 1) {
+        const hold = (env.fake as FakeChatCompletionsServer).hold();
+        if (index < point.occurrence - 1) hold.release();
+        env.holds.push(hold);
+      }
+    },
+    inject: async (env) => {
+      const point = env.point as Point;
+      await untilFrames(env, point.type, point.occurrence, `${point.type} number ${point.occurrence}`);
+      if (point.type === 'model.requested') await (env.holds.at(-1) as FakeResponseHold).waitForRequest();
+      await killRuntime(env);
+      for (const hold of env.holds) hold.release();
+    },
+  },
+  kill_after_effect: {
+    inject: async (env) => {
+      await untilLedger(env, effectKeyOfHeldStep(env));
+      await killRuntime(env);
+    },
+  },
+  network_down: {
+    upstreamScript: (_env, script) => [{ kind: 'hang', chunks: [{ delta: { role: 'assistant', content: 'cut' } }] }, ...script],
+    inject: async (env) => {
+      await until(() => chatRequestsOf(env).length > 0, { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the upstream to receive the request it will cut' });
+      await upstreamDown(env);
+      await untilFrames(env, 'attempt.failed', 1, 'attempt.failed after the upstream cut the response');
+      await upstreamBack(env);
+    },
+  },
+  upstream_stall: {
+    upstreamScript: (_env, script) => [{ kind: 'hang', chunks: [{ delta: { role: 'assistant', content: 'stalled' } }] }, ...script],
+    runBody: (env) => ({ timeoutMs: env.scenario.params?.timeoutMs }),
+    afterTerminal: async (env) => {
+      if (chatRequestsOf(env).length === 0) throw new Error(`scenario ${env.scenario.id}: the upstream never received a request, so the stall was not injected`);
+    },
+  },
+  disk_full: {
+    beforeRun: async (env) => {
+      env.filler = path.join(env.home.root, 'filler.bin');
+      const descriptor = fs.openSync(env.filler, 'w');
+      const chunk = Buffer.alloc(FILL_CHUNK_BYTES);
+      try {
+        for (;;) fs.writeSync(descriptor, chunk);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOSPC') throw error;
+      } finally {
+        fs.closeSync(descriptor);
+      }
+    },
+    inject: async (env) => {
+      fs.rmSync(env.filler as string, { force: true });
+    },
+  },
+  rate_limit: {
+    upstreamScript: (env, script) => [
+      {
+        kind: 'error',
+        status: 429,
+        body: { error: { message: 'rate limited', type: 'rate_limit_error', param: null, code: 'rate_limit_exceeded' } },
+        headers: { 'retry-after': env.scenario.params?.retryAfter as string },
+      },
+      ...script,
+    ],
+    afterTerminal: async (env) => {
+      if (chatRequestsOf(env).length < 2) throw new Error(`scenario ${env.scenario.id}: the upstream received fewer than two requests, so the rate limit was not injected and retried`);
+    },
+  },
+  duplicate_start: {
+    beforeRun: async (env) => {
+      env.holds.push((env.fake as FakeChatCompletionsServer).hold());
+    },
+    inject: async (env) => {
+      await (env.holds[0] as FakeResponseHold).waitForRequest();
+      const exit = await spawnSupervisor({ home: env.home, stackNumber: 2 }).exited;
+      (env.holds[0] as FakeResponseHold).release();
+      if (exit.code !== COMPETING_SUPERVISOR_EXIT) throw new Error(`scenario ${env.scenario.id}: the competing supervisor exited with ${JSON.stringify(exit)}, not ${COMPETING_SUPERVISOR_EXIT}`);
+    },
+  },
+  concurrent_workers: {
+    stackOptions: (env) => ({ deps: { ...DEFAULT_E2E_DEPS, runtime: { ...DEFAULT_E2E_DEPS.runtime, workerCount: env.scenario.params?.workerCount as number } } }),
+  },
+  budget: {
+    runBody: (env) => ({ limits: { maxTotalTokens: env.scenario.params?.maxTotalTokens } }),
+  },
+  external_state_changed: {
+    stackOptions: (env) => ({
+      settings: { hooks: { PostToolUse: [{ matcher: 'Write', hooks: [{ type: 'command', command: hookCommandOf(env) }] }] } },
+    }),
+    inject: async (env) => {
+      await until(() => fs.existsSync(env.hookMark), { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the PostToolUse hook to hold the Write after its effect' });
+      await killRuntime(env);
+      const step = env.scenario.task.steps.find((candidate) => 'call' in candidate && candidate.call.name === 'Write');
+      if (step === undefined || !('call' in step)) throw new Error(`scenario ${env.scenario.id} holds no Write step`);
+      const input = expandTemplates(step.call.input, env) as { file_path: string; content: string };
+      if (env.scenario.params?.change === 'applied') fs.writeFileSync(input.file_path, input.content);
+      else fs.rmSync(input.file_path, { force: true });
+    },
+  },
+};
+
+const createRunId = async (env: TrialEnv, fault: Fault): Promise<string> => {
+  const runtime = env.runtime as RuntimeClient;
+  const { session } = await runtime.createSession();
+  const extra = fault.runBody?.(env) ?? {};
+  const response = await runtime.json('POST', `/v1/sessions/${session.id}/runs`, { input: env.scenario.task.prompt, ...extra });
+  if (response.status !== 202) throw new Error(`scenario ${env.scenario.id}: creating the run answered ${response.status}: ${JSON.stringify(response.body)}`);
+  return (response.body as { run: { id: string } }).run.id;
+};
+
+const factsOf = async (runtime: RuntimeClient, runId: string): Promise<RunFactsView> =>
+  until(
+    async () => {
+      let cursor: string | null = null;
+      do {
+        const page: Awaited<ReturnType<RuntimeClient['reportFacts']>> = await runtime.reportFacts({ cursor, limit: REPORT_PAGE_ROWS });
+        const row = page.rows.find((candidate) => candidate.runId === runId);
+        if (row !== undefined) return row;
+        cursor = page.nextCursor;
+      } while (cursor !== null);
+      return undefined;
+    },
+    { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: `the facts of run ${runId}` },
+  );
+
+const violationsOf = (expectation: InjectionExpect, observed: Observed, env: TrialEnv): string[] => {
+  const { frames, facts } = observed;
+  const found: string[] = [];
+  if (facts.status !== expectation.status) found.push(`the run ended ${facts.status}, expected ${expectation.status}`);
+  if (expectation.stopReason !== undefined && facts.stopReason !== expectation.stopReason) found.push(`the stop reason is ${String(facts.stopReason)}, expected ${expectation.stopReason}`);
+  const outcomes = facts.recoveries.map((episode) => episode.outcome);
+  if (expectation.episodeOutcomes !== undefined) {
+    const allowed: readonly string[] = expectation.episodeOutcomes;
+    for (const outcome of outcomes) if (!allowed.includes(outcome)) found.push(`an episode ended ${outcome}, expected one of ${allowed.join(', ')}`);
+  }
+  if (expectation.minEpisodes !== undefined && outcomes.length < expectation.minEpisodes) found.push(`${outcomes.length} episodes, expected at least ${expectation.minEpisodes}`);
+  if (expectation.reconciled !== undefined) {
+    const counts = { already_applied: facts.reconciledAlreadyApplied, not_applied: facts.reconciledNotApplied, unknown: facts.reconciledUnknown };
+    for (const [outcome, count] of Object.entries(counts)) {
+      const wanted = (expectation.reconciled as readonly string[]).includes(outcome);
+      if (wanted !== count > 0) found.push(`reconcile outcome ${outcome} was seen ${count} times, and it ${wanted ? 'is' : 'is not'} expected`);
+    }
+  }
+  if (expectation.attemptFailed !== undefined && (framesOfType(frames, 'attempt.failed').length > 0) !== expectation.attemptFailed) {
+    found.push(`attempt.failed ${expectation.attemptFailed ? 'was not' : 'was'} recorded`);
+  }
+  if (expectation.budgetStops !== undefined) {
+    const stops = facts.stopReason === 'budget' ? 1 : 0;
+    if (stops !== expectation.budgetStops) found.push(`${stops} budget stops, expected ${expectation.budgetStops}`);
+  }
+  if (expectation.runStarted !== undefined) {
+    const started = framesOfType(frames, 'run.started').length;
+    if (started !== expectation.runStarted) found.push(`run.started was recorded ${started} times, expected ${expectation.runStarted}`);
+  }
+  for (const file of expectation.files ?? []) {
+    const target = expandTemplates(file.path, env) as string;
+    const content = fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : undefined;
+    if (content !== file.content) found.push(`${target} holds ${JSON.stringify(content)}, expected ${JSON.stringify(file.content)}`);
+  }
+  return found;
+};
+
+const outcomeLabelOf = (facts: RunFactsView): string =>
+  [facts.status, facts.stopReason, ...facts.recoveries.map((episode) => `episode:${episode.outcome}`)].filter((part) => part !== undefined).join(' ');
+
+type TrialRecord = { label: string; witness: Record<string, number>; trial: InjectionTrial };
+
+const NO_FAULT: Fault = {};
+
+const runTrial = async (scenario: InjectionScenario, point: Point | undefined, resultId: string, fault: Fault = FAULTS[scenario.fault]): Promise<TrialRecord & { frames: readonly Frame[] }> => {
+  const home = await createE2eHome();
+  const ledgerDirectory = path.join(home.root, LEDGER_DIRECTORY_NAME);
+  fs.mkdirSync(ledgerDirectory);
+  const ledgerFile = path.join(ledgerDirectory, LEDGER_FILE_NAME);
+  fs.writeFileSync(ledgerFile, '');
+  const env: TrialEnv = {
+    scenario,
+    point,
+    home,
+    ledgerFile,
+    hookMark: path.join(ledgerDirectory, HOOK_MARK_FILE_NAME),
+    hookRelease: path.join(ledgerDirectory, HOOK_RELEASE_FILE_NAME),
+    holds: [],
+    stack: undefined,
+    runtime: undefined,
+    fake: undefined,
+    runId: undefined,
+    stream: undefined,
+    filler: undefined,
+  };
+  try {
+    const stackOptions = fault.stackOptions?.(env) ?? {};
+    const script = fault.upstreamScript?.(env, scriptOf(env)) ?? scriptOf(env);
+    env.stack = await startStack({
+      home,
+      needsBash: true,
+      deps: { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY },
+      target: { answers: 'script' },
+      script,
+      ...stackOptions,
+      settings: { permissions: { additionalDirectories: [ledgerDirectory] }, ...stackOptions.settings },
+    });
+    env.fake = env.stack.fake;
+    env.runtime = createRuntimeClient(home);
+    await fault.beforeRun?.(env);
+    env.runId = await createRunId(env, fault);
+    env.stream = env.runtime.events(env.runId);
+    await fault.inject?.(env);
+    const runtime = env.runtime;
+    const runId = env.runId;
+    await until(async () => (TERMINAL_STATUSES as readonly string[]).includes((await runtime.getRun(runId)).run.status), {
+      deadlineMs: E2E_RUN_COMPLETED_BOUND_MS,
+      description: `run ${runId} to end`,
+    });
+    const replay = runtime.events(runId);
+    const frames = await replay.toEnd(E2E_MARGIN_MS);
+    await replay.close();
+    await fault.afterTerminal?.(env, frames);
+    const facts = await factsOf(runtime, runId);
+    const answeredBy = await runtime.answeredBy(runId);
+    const violations = violationsOf(scenario.expect, { frames, facts }, env);
+    if (violations.length > 0) throw new Error(`scenario ${resultId} (run ${runId}): ${violations.join('; ')}`);
+    const witness = witnessOf(env);
+    return {
+      label: outcomeLabelOf(facts),
+      witness,
+      frames,
+      trial: { scenario: resultId, facts: [facts], witness, answeredBy: answeredBy as AnsweredByView[], unrecordedAnswers: 0 },
+    };
+  } finally {
+    fs.writeFileSync(env.hookRelease, '');
+    await env.stream?.close();
+    await env.runtime?.close();
+    await disposeAll();
+  }
+};
+
+const pointsOf = async (scenario: InjectionScenario): Promise<Point[]> => {
+  const reference = await runTrial({ ...scenario, expect: { status: 'COMPLETED' } }, undefined, `${scenario.id}@reference`, NO_FAULT);
+  return (scenario.params?.points ?? []).flatMap((type) =>
+    Array.from({ length: framesOfType(reference.frames, type).length }, (_unused, index): Point => ({ type, occurrence: index + 1 })),
+  );
+};
+
+const resultOf = async (scenario: InjectionScenario, point: Point | undefined, id: string): Promise<ScenarioResult> => {
+  const trials: TrialRecord[] = [];
+  for (let index = 0; index < scenario.trials; index += 1) trials.push(await runTrial(scenario, point, id));
+  const witness: Record<string, number> = {};
+  trials.forEach((record, index) => {
+    for (const [key, count] of Object.entries(record.witness)) witness[`${index + 1}/${key}`] = count;
+  });
+  return { id, status: 'ran', witness, outcomes: trials.map((record) => record.label), trials: trials.map((record) => record.trial) };
+};
+
+const sweepOf = async (scenario: InjectionScenario): Promise<ScenarioResult[]> => {
+  const sweep: ScenarioResult[] = [];
+  for (const point of await pointsOf(scenario)) sweep.push(await resultOf(scenario, point, `${scenario.id}@${point.type}#${point.occurrence}`));
+  return sweep;
+};
+
+const notRunReason = (scenario: InjectionScenario, host: InjectionHost): string | undefined => {
+  if (scenario.requires === 'any') return undefined;
+  if (!host.linuxContainer) return `linux-container: scenario ${scenario.id} needs the Linux container, where the state directory sits on a size-limited filesystem`;
+  const { blocks, bsize } = fs.statfsSync(os.tmpdir());
+  if (blocks * bsize > SMALL_FILESYSTEM_MAX_BYTES) {
+    return `linux-container: the filesystem under ${os.tmpdir()} holds ${blocks * bsize} bytes, more than the ${SMALL_FILESYSTEM_MAX_BYTES} a scenario may fill`;
+  }
+  return undefined;
+};
+
+export const injectionReportOf = (results: readonly ScenarioResult[]): ReliabilityReport & { population: { notRun: { id: string; reason: string }[] } } => {
+  const report = buildInjectionReport({
+    scenarios: scenarioFile,
+    trials: results.flatMap((result) => (result.status === 'ran' ? result.trials : [])),
+    notRun: results.flatMap((result) => (result.status === 'not_run' ? [{ id: result.id, reason: result.reason }] : [])),
+    codeDigest,
+    groupBy: 'model',
+  });
+  return report as ReliabilityReport & { population: { notRun: { id: string; reason: string }[] } };
+};
+
+export const runInjectionScenario = async (scenario: InjectionScenario, host: InjectionHost): Promise<ScenarioResult[]> => {
+  const reason = notRunReason(scenario, host);
+  const results: ScenarioResult[] =
+    reason !== undefined
+      ? [{ id: scenario.id, status: 'not_run', reason }]
+      : scenario.fault === 'kill_at_step'
+        ? await sweepOf(scenario)
+        : [await resultOf(scenario, undefined, scenario.id)];
+  finished.push(...results);
+  const target = process.env[INJECTION_REPORT_ENV];
+  if (target !== undefined) fs.writeFileSync(target, `${encodeReliabilityReport(injectionReportOf(finished))}\n`);
+  return results;
+};
