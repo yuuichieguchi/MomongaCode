@@ -6,8 +6,8 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, TrackedChild } from '@momonga/testkit';
-import { MarkerReapError, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, reconcileProcessGroup } from '@momonga/foundation';
-import type { ProcessInspector, ReapTiming } from '@momonga/foundation';
+import { MarkerReapError, createProcessInspector, hostInspectorPorts, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, reconcileProcessGroup } from '@momonga/foundation';
+import type { CommandRunner, ProcessInspector, ReapTiming } from '@momonga/foundation';
 
 const SIGTERM_GRACE_TEST_TIMEOUT_MS = REAL_PROCESS_TEST_TIMEOUT_MS;
 const SIGKILL_CONFIRMATION_TEST_TIMEOUT_MS = REAL_PROCESS_TEST_TIMEOUT_MS;
@@ -593,6 +593,8 @@ describe('reapMarkerDirectory', () => {
 });
 
 const SLICE_MS = 25;
+const REMOVED_PS_PROBE_TIMEOUT_MS = 2000;
+const SLOW_LISTING_MS = 5 * REMOVED_PS_PROBE_TIMEOUT_MS;
 
 type AbortableTiming = { timing: ReapTiming; sleeps: number[]; now(): number };
 
@@ -849,20 +851,50 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
         timing: fake.timing,
         ...(withSignal ? { signal: controller.signal } : {}),
       });
-      await Promise.all(holders.map((holder) => holder.exited));
+      const signalsOf = (holder: Held) => signals.filter((entry) => entry.pid === holder.child.pid).map(({ signal }) => signal);
+      const perHolder = holders.map(signalsOf);
       const killTimes = holders.map((holder) => signals.find((entry) => entry.pid === holder.child.pid && entry.signal === 'SIGKILL')?.at);
-      return { result, killTimes, remaining: fs.readdirSync(markerDir) };
+      if (!withSignal) await Promise.all(holders.map((holder) => holder.exited));
+      return { result, perHolder, killTimes, remaining: fs.readdirSync(markerDir).sort(), elapsed: fake.now() };
     };
     const aborted = await reapThree(true);
-    expect(aborted.result).toEqual({ reaped: 3, kept: 0 });
-    expect(aborted.remaining).toEqual([]);
-    for (const at of aborted.killTimes) {
-      expect(at).toBeDefined();
-      expect(at).toBeLessThanOrEqual(100 + SLICE_MS);
-    }
+    expect(aborted.result).toEqual({ reaped: 0, kept: 3 });
+    expect(aborted.remaining).toEqual(['a', 'b', 'c']);
+    expect(aborted.perHolder).toEqual([['SIGTERM'], ['SIGTERM'], ['SIGTERM']]);
+    expect(aborted.elapsed).toBeLessThanOrEqual(100 + SLICE_MS);
     const patient = await reapThree(false);
     expect(patient.result).toEqual({ reaped: 3, kept: 0 });
+    expect(patient.remaining).toEqual([]);
+    expect(patient.perHolder).toEqual([['SIGTERM', 'SIGKILL'], ['SIGTERM', 'SIGKILL'], ['SIGTERM', 'SIGKILL']]);
     for (const at of patient.killTimes) expect(at).toBeGreaterThanOrEqual(1500);
+  });
+
+  it('reapMarkerDirectory over a process listing slower than any fixed wall-clock bound reaps by the listing result alone: nothing is killed and the sweep does not fail', T, async (context) => {
+    const dir = withTempDir(context);
+    const markerDir = path.join(dir, 'markers');
+    fs.mkdirSync(markerDir);
+    markerFile(markerDir, 'a');
+    markerFile(markerDir, 'b');
+    const fake = abortableTiming(undefined);
+    const requests: Array<{ file: string; timeoutMs: number | undefined; signalAborted: boolean | undefined }> = [];
+    const slowListing: CommandRunner = async (file, _args, options) => {
+      requests.push({ file, timeoutMs: options.timeoutMs, signalAborted: options.signal?.aborted });
+      await fake.timing.sleep(SLOW_LISTING_MS);
+      if (options.timeoutMs !== undefined && options.timeoutMs < SLOW_LISTING_MS) throw Object.assign(new Error(`${file} killed after ${options.timeoutMs} ms`), { killed: true, signal: 'SIGKILL' });
+      if (options.signal?.aborted === true) throw Object.assign(new Error('aborted'), { name: 'AbortError', code: 'ABORT_ERR' });
+      return { exitCode: 1, stdout: '', stderr: '' };
+    };
+    const inspector = createProcessInspector('darwin', { ...hostInspectorPorts(), run: slowListing });
+    const { signals, kill } = signalRecorder(fake.now);
+    const warnings: string[] = [];
+    const result = await reapMarkerDirectory({ dir: markerDir, killGraceMs: 1000, label: 'tool', onWarning: (message) => warnings.push(message), kill, timing: fake.timing, inspector });
+    expect(result).toEqual({ reaped: 2, kept: 0 });
+    expect(fs.readdirSync(markerDir)).toEqual([]);
+    expect(signals).toEqual([]);
+    expect(warnings).toEqual([]);
+    expect(requests.length).toBeGreaterThan(0);
+    expect(requests.every((request) => request.timeoutMs === undefined && request.signalAborted === false)).toBe(true);
+    expect(fake.now()).toBeGreaterThan(SLOW_LISTING_MS);
   });
 
   describe('no signal behaves as before', () => {
