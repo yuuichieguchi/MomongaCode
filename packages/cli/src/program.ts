@@ -1,4 +1,4 @@
-import { Command, InvalidArgumentError, Option } from 'commander';
+import { Command, CommanderError, InvalidArgumentError, Option } from 'commander';
 import type { EntryIo } from '@momonga/foundation';
 import { PERMISSION_MODES } from '@momonga/protocol';
 import type { PermissionMode } from '@momonga/protocol';
@@ -15,6 +15,7 @@ import { INTERNAL_COMMANDS } from './daemon/launcher.ts';
 import { pathsOf } from './paths.ts';
 import { terminalPorts } from './terminal-writer.ts';
 import type { ProgramDeps } from './program-deps.ts';
+import type { ShellPort } from './tui/slash.ts';
 import { OUTPUT_FORMATS, runHeadless } from './run/headless.ts';
 import type { OutputFormat } from './run/headless.ts';
 
@@ -48,7 +49,7 @@ const collectValues = (value: string, previous: string[]): string[] => [...previ
 
 const outputFormatOption = (): Option => new Option('--output-format <format>', 'output format of --print and attach').choices(OUTPUT_FORMATS).default('text');
 
-export const buildProgram = (given: ProgramDeps): Command => {
+export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean } = {}): Command => {
   const deps: ProgramDeps = { ...given, ports: terminalPorts(given.ports) };
   const { ports } = deps;
   const program = new Command();
@@ -56,7 +57,7 @@ export const buildProgram = (given: ProgramDeps): Command => {
   program.name('momonga').version(ports.version).enablePositionalOptions().showHelpAfterError();
 
   program.hook('preAction', async (_program, action) => {
-    if (isBackgroundCheckExempt(action.name())) return;
+    if (options.embedded === true || isBackgroundCheckExempt(action.name())) return;
     const wiring = await deps.update();
     try {
       if (!startsInteractiveSession(program, action)) {
@@ -92,7 +93,7 @@ export const buildProgram = (given: ProgramDeps): Command => {
       }
       if (ports.terminal === undefined) throw new Error('the interactive session needs a terminal; pass --print <prompt> to run without one');
       const { runInteractive } = await import('./tui/run-interactive.tsx');
-      deps.complete(await runInteractive(ports, await pathsOf(ports), ports.terminal, { ...(prompt === undefined ? {} : { prompt }), ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...session }, await deps.update()));
+      deps.complete(await runInteractive(ports, await pathsOf(ports), ports.terminal, { ...(prompt === undefined ? {} : { prompt }), ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...session }, await deps.update(), createShellPort(given)));
     });
 
   program
@@ -202,3 +203,19 @@ export const buildProgram = (given: ProgramDeps): Command => {
 
   return program;
 };
+
+export const createShellPort = (given: ProgramDeps): ShellPort => ({
+  run: async (argv, io) => {
+    let code = 0;
+    const sink = { write: io.write };
+    const program = buildProgram({ ...given, ports: { ...given.ports, stdout: sink, stderr: sink }, interrupt: io.signal, complete: (exitCode) => void (code = exitCode) }, { embedded: true });
+    program.exitOverride();
+    try {
+      await program.parseAsync([...argv], { from: 'user' });
+    } catch (error) {
+      if (error instanceof CommanderError) return error.exitCode;
+      throw error;
+    }
+    return code;
+  },
+});
