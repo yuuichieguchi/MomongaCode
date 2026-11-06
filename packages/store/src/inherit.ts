@@ -220,7 +220,6 @@ export const applyInheritance = (state: RunState, payload: InheritedPayload): Ru
     history,
     workingFacts: {
       ...(payload.workingFacts ?? emptyWorkingFacts()),
-      touched: payload.workingFacts?.touched ?? [],
       ...(state.workingFacts.taskText === undefined ? {} : { taskText: state.workingFacts.taskText }),
       itemEvents: state.workingFacts.itemEvents.map((entry) => ({ itemSeq: payload.nextItemSeq, eventSeq: entry.eventSeq })),
     },

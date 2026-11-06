@@ -1,40 +1,78 @@
-import { recallOrder } from '@momonga/memory';
+import { ESTIMATED_ERROR_BOUND_RATIO, sizingRatioFor, tokensForText } from '@momonga/protocol';
 import type { MemoryRecord, MemoryScope, MemoryView } from '@momonga/protocol';
-import { MEMORY_SEARCH_RESULT_LIMIT, ToolExecutionError, createMemoryTools } from '@momonga/tools';
+import { inputCeilingFor, memoryBudgetFor } from '@momonga/context';
+import { recallOrder } from '@momonga/memory';
+import { MEMORY_MATCH_LIMIT } from '@momonga/store';
+import type { MemoryVisibility, RecallCursor, RuntimeStore, Session } from '@momonga/store';
+import { ToolExecutionError, createMemoryTools } from '@momonga/tools';
 import type { MemoryStorePort } from '@momonga/tools';
-import type { MemoryVisibility, RuntimeStore, Session } from '@momonga/store';
 import { bindMemoryEvidence, createEvidencePorts, readGitHead } from '../memory/evidence.ts';
-import type { EvidenceRun } from '../memory/evidence.ts';
+import type { EvidencePortsOptions, EvidenceRun } from '../memory/evidence.ts';
+import type { EvidencePorts, MemoryStatusContext } from '@momonga/memory';
 import { termsOfQuery } from '../memory/recall-query.ts';
-import { memoryViewOf } from '../memory/views.ts';
-import type { MemoryPort, SettingsPort } from '../ports.ts';
+import { withValidity } from '../memory/validity-view.ts';
+import { observedViewOf } from '../memory/views.ts';
+import type { MemoryPort, RecallCapacity, SettingsPort } from '../ports.ts';
+import { MEMORY_PAGE_ROWS } from './constants.ts';
 
 export type MemoryPortOptions = {
   store: Pick<RuntimeStore, 'memories' | 'journalFacts'>;
   settings: Pick<SettingsPort, 'trusted' | 'verification'>;
   evidenceRun: (session: Session) => EvidenceRun;
+  evidencePorts?: (options: EvidencePortsOptions) => EvidencePorts;
 };
 
-export const createMemoryPort = ({ store, settings, evidenceRun }: MemoryPortOptions): MemoryPort => ({
+export const recallPrefixBudgetOf = (capacity: RecallCapacity): number => memoryBudgetFor(inputCeilingFor(capacity.capabilities), capacity.memoryShare);
+
+export const recallPrefixTokensOf = (text: string, capacity: RecallCapacity): number =>
+  Math.floor(tokensForText(text) / (1 + Math.max(sizingRatioFor(capacity.capabilities), ESTIMATED_ERROR_BOUND_RATIO)));
+
+const visibleTo = (memory: MemoryRecord, visibility: MemoryVisibility): boolean =>
+  visibility.trusted ? (memory.scope === 'user' && memory.origin === 'trusted') || memory.project === visibility.project : memory.scope === 'user';
+
+export const createMemoryPort = ({ store, settings, evidenceRun, evidencePorts = createEvidencePorts }: MemoryPortOptions): MemoryPort => ({
   load: async (session, signal) => {
     const trusted = settings.trusted(session);
     const visibility: MemoryVisibility = trusted ? { trusted: true, project: session.cwd } : { trusted: false };
     const run = evidenceRun(session);
     const evidenceOptionsFor = (bound: AbortSignal) => ({ project: session.cwd, trusted, run, signal: bound });
-    const viewsOf = (records: readonly MemoryRecord[], bound: AbortSignal): Promise<MemoryView[]> => {
-      const ports = createEvidencePorts(evidenceOptionsFor(bound));
-      return Promise.all(records.map((record) => memoryViewOf(record, { project: session.cwd, trusted, ports })));
+    const checked = new Map<string, MemoryView>();
+    const contexts = new WeakMap<AbortSignal, MemoryStatusContext>();
+    const contextFor = (bound: AbortSignal): MemoryStatusContext => {
+      const known = contexts.get(bound);
+      if (known !== undefined) return known;
+      const created = { project: session.cwd, trusted, ports: evidencePorts(evidenceOptionsFor(bound)) };
+      contexts.set(bound, created);
+      return created;
+    };
+    const viewsOf = async (records: readonly MemoryRecord[], bound: AbortSignal): Promise<MemoryView[]> => {
+      const context = contextFor(bound);
+      const views: MemoryView[] = [];
+      for (const record of records) {
+        const known = checked.get(record.id);
+        if (known !== undefined) {
+          views.push(known);
+          continue;
+        }
+        const view = await observedViewOf(store, record, context);
+        checked.set(record.id, view);
+        views.push(view);
+      }
+      return views;
     };
     const originOf = trusted ? 'trusted' : 'untrusted';
     const replaceable = (ids: readonly string[], scope: MemoryScope): void => {
       const project = scope === 'project' ? session.cwd : null;
-      const known = new Set(
-        store.memories
-          .search(visibility, [], { include: 'all' })
-          .filter((memory) => memory.scope === scope && memory.project === project && (memory.origin === originOf || memory.origin === 'untrusted'))
-          .map((memory) => memory.id),
-      );
-      const unknown = ids.filter((id) => !known.has(id));
+      const unknown = ids.filter((id) => {
+        const memory = store.memories.get(id);
+        return !(
+          memory !== undefined &&
+          visibleTo(memory, visibility) &&
+          memory.scope === scope &&
+          memory.project === project &&
+          (memory.origin === originOf || memory.origin === 'untrusted')
+        );
+      });
       if (unknown.length > 0) throw new ToolExecutionError(`${unknown.join(', ')} ${unknown.length === 1 ? 'is not a saved memory' : 'are not saved memories'} you can replace`);
     };
     const toolPort: MemoryStorePort = {
@@ -65,19 +103,56 @@ export const createMemoryPort = ({ store, settings, evidenceRun }: MemoryPortOpt
         if (view === undefined) throw new Error(`memory ${saved.memory.id} produced no view`);
         return { memory: view, created: saved.created };
       },
-      search: async (terms, { include, signal: bound }) => {
-        const views = await viewsOf(store.memories.search(visibility, terms, { include }), bound);
+      search: async (terms, { include, limit, signal: bound }) => {
+        const views = await viewsOf(store.memories.search(visibility, terms, { include, limit }), bound);
         const ordered = recallOrder(views, new Set(views.map((memory) => memory.id)));
-        store.memories.markUsed(ordered.slice(0, MEMORY_SEARCH_RESULT_LIMIT).map((memory) => memory.id));
-        return ordered;
+        return include === 'all' ? ordered.map((view) => withValidity(store, view)) : ordered;
       },
     };
-    const recalled = await viewsOf(store.memories.recall(visibility), signal);
+    let prefix: MemoryView[] = [];
+    let pinnedOutside: MemoryView[] = [];
+    let more = false;
+    let capped = false;
     return {
-      memories: recalled,
-      rank: (query) => recallOrder(recalled, store.memories.matchingIds(visibility, termsOfQuery(query))),
+      prepare: async ({ query, capacity, pinnedIds = [] }) => {
+        const budget = recallPrefixBudgetOf(capacity);
+        const terms = termsOfQuery(query);
+        const read: MemoryView[] = [];
+        let tokens = 0;
+        let after: RecallCursor | null = null;
+        let hasMore = false;
+        let matchCapped = false;
+        reading: for (;;) {
+          const page = store.memories.recallPage(visibility, { terms, after, limit: MEMORY_PAGE_ROWS });
+          matchCapped = page.matchCapped;
+          for (const [index, record] of page.memories.entries()) {
+            const [view] = await viewsOf([record], signal);
+            if (view === undefined) throw new Error(`memory ${record.id} produced no view`);
+            read.push(view);
+            tokens += recallPrefixTokensOf(record.text, capacity);
+            if (tokens >= budget) {
+              hasMore = index < page.memories.length - 1 || page.next !== null;
+              break reading;
+            }
+          }
+          if (page.next === null) break;
+          after = page.next;
+        }
+        const readIds = new Set(read.map((view) => view.id));
+        const outside: MemoryRecord[] = [];
+        for (const id of pinnedIds) {
+          const record = readIds.has(id) ? undefined : store.memories.get(id);
+          if (record !== undefined) outside.push(record);
+        }
+        pinnedOutside = await viewsOf(outside, signal);
+        prefix = read;
+        more = hasMore;
+        capped = matchCapped;
+      },
+      ranked: () => [...prefix, ...pinnedOutside],
+      hasMore: () => more,
+      matchCap: () => (capped ? MEMORY_MATCH_LIMIT : undefined),
       tools: createMemoryTools({ port: toolPort, trusted }),
-      markUsed: (ids) => store.memories.markUsed(ids),
     };
   },
 });

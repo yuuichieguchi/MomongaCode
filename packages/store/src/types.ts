@@ -26,6 +26,8 @@ import type {
   MemoryOrigin,
   MemoryRecord,
   MemoryScope,
+  MemoryState,
+  MemoryStatus,
   ReflectionDrop,
   ReflectionJobState,
   StopReason,
@@ -339,6 +341,23 @@ export type MemoryChange<Done extends string, Refused extends string> =
   | { kind: Refused; memory: MemoryRecord }
   | { kind: 'not_found'; memory?: undefined };
 
+export type RecallCursor = { part: 'matched' | 'rest'; tier: number; contributed: number; kept: number; id: string };
+
+export type RecallPage = { memories: MemoryRecord[]; next: RecallCursor | null; matchCapped: boolean };
+
+export type MemoryListFilter = { scope?: MemoryScope; project?: string; state?: MemoryState };
+
+export type MemoryListCursor = { createdAt: number; id: string };
+
+export type MemoryObservation = { status: MemoryStatus; observedAt: number };
+
+export type SessionTouched = { path: string; firstEventId: number };
+
+export type SessionTouchedStore = {
+  after(sessionId: string, afterEventId: number, limit: number, afterPath?: string): SessionTouched[];
+  newest(sessionId: string, limit: number): SessionTouched[];
+};
+
 export type MemoryStore = {
   save(input: SaveMemoryInput): { memory: MemoryRecord; created: boolean };
   addByCommand(input: AddMemoryByCommandInput): MemoryRecord;
@@ -354,14 +373,15 @@ export type MemoryStore = {
   restore(id: string): MemoryChange<'restored', 'not_archived'>;
   get(id: string): MemoryRecord | undefined;
   list(filter?: { scope?: MemoryScope; project?: string }): MemoryRecord[];
-  recall(visibility: MemoryVisibility): MemoryRecord[];
-  search(visibility: MemoryVisibility, terms: readonly string[], options?: { include: MemoryInclude }): MemoryRecord[];
+  listPage(filter: MemoryListFilter, after: MemoryListCursor | null, limit: number): { memories: MemoryRecord[]; next: MemoryListCursor | null };
+  recallPage(visibility: MemoryVisibility, request: { terms: readonly string[]; after: RecallCursor | null; limit: number }): RecallPage;
+  search(visibility: MemoryVisibility, terms: readonly string[], options?: { include?: MemoryInclude; limit?: number }): MemoryRecord[];
   matchingIds(visibility: MemoryVisibility, terms: readonly string[]): Set<string>;
   retire(id: string): { retired: boolean; memory: MemoryRecord } | undefined;
   history(id: string): MemoryRecord[];
-  markUsed(ids: readonly string[]): void;
+  observe(id: string, status: MemoryStatus): boolean;
+  observations(id: string): MemoryObservation[];
   stampContributed(ids: readonly string[], at: number): void;
-  delete(id: string): boolean;
 };
 
 export type AddGoverningFactInput = {
@@ -415,7 +435,9 @@ export type HistoryQueryRequest = {
   readDenied?: (path: string, project: string) => boolean;
 };
 
-export type HistoryQueryResult = { anchors: HistoryAnchor[]; searched?: number; withheld?: number };
+export type HistorySession = { sessionId: string; project: string; span: { from: number; to: number }; runs: HistoryAnchor[] };
+
+export type HistoryQueryResult = { sessions: HistorySession[]; searched?: number; withheld?: number };
 
 export type HistoryReadRequest = {
   runId: string;
@@ -587,6 +609,7 @@ export type RuntimeStore = {
   blobs: BlobStore;
   trust: TrustStore;
   memories: MemoryStore;
+  sessionTouched: SessionTouchedStore;
   reflection: ReflectionStore;
   contextCharges: ContextChargeStore;
   guidelines: GuidelineStore;

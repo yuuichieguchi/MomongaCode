@@ -457,7 +457,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   }): void => {
     const payload = canonicalJson(event.payload);
     onEncode?.('event', Buffer.byteLength(payload));
-    sql.insertEvent.run({
+    const inserted = sql.insertEvent.run({
       runId: event.runId,
       sessionId: event.sessionId,
       seq: event.seq,
@@ -469,7 +469,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       pinnedDigest: event.payload.type === 'model.requested' ? (event.payload.pinnedDigest ?? null) : null,
       ...columnsOf(event.payload),
     });
-    if (event.runId !== null && event.seq !== null && event.step !== null) records.record({ runId: event.runId, sessionId: event.sessionId, seq: event.seq, step: event.step, payload: event.payload });
+    if (event.runId !== null && event.seq !== null && event.step !== null) records.record({ eventId: Number(inserted.lastInsertRowid), runId: event.runId, sessionId: event.sessionId, seq: event.seq, step: event.step, payload: event.payload });
     recordTouch(event.sessionId, event.runId);
   };
 
@@ -1636,6 +1636,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     blobs: createBlobStore(db, clock, blobDirectory),
     trust,
     memories,
+    sessionTouched: { after: records.touchedAfter, newest: records.touchedNewest },
     reflection,
     contextCharges,
     guidelines: createGuidelineStore(db, clock),

@@ -2,7 +2,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createFakeClock } from '@momonga/testkit';
 import type { MemoryRecord, RuntimeStore } from '@momonga/store';
-import { START_MS, callEvent, enqueue, harness, mustClaim, newSession, openStoreAt, rawDb } from './helpers.ts';
+import { START_MS, callEvent, enqueue, harness, mustClaim, newSession, openStoreAt, rawDb, recalled } from './helpers.ts';
 
 const startRun = (store: RuntimeStore, callIds: readonly string[], cwd = '/work/a') => {
   const session = newSession(store, cwd);
@@ -102,9 +102,9 @@ describe('memory store', () => {
     const untrustedUser = save(store, run.id, 'c2', 'injected user note', 'user', null, 'untrusted');
     const project = save(store, run.id, 'c3', 'project note', 'project', '/work/a');
     expect(untrustedUser.origin).toBe('untrusted');
-    expect(store.memories.recall({ trusted: true, project: '/work/a' }).map((memory) => memory.id).sort()).toEqual([project.id, trustedUser.id].sort());
+    expect(recalled(store, { trusted: true, project: '/work/a' }).map((memory) => memory.id).sort()).toEqual([project.id, trustedUser.id].sort());
     expect(store.memories.search({ trusted: true, project: '/work/a' }, ['injected'])).toEqual([]);
-    expect(store.memories.recall({ trusted: false }).map((memory) => memory.id).sort()).toEqual([trustedUser.id, untrustedUser.id].sort());
+    expect(recalled(store, { trusted: false }).map((memory) => memory.id).sort()).toEqual([trustedUser.id, untrustedUser.id].sort());
     expect(store.memories.search({ trusted: false }, ['injected']).map((memory) => memory.id)).toEqual([untrustedUser.id]);
     expect(store.memories.list().map((memory) => memory.id)).toContain(untrustedUser.id);
   });
@@ -131,14 +131,15 @@ describe('memory store', () => {
     expect(store.memories.list({ project: '/work/b' }).map((memory) => memory.id)).toEqual([b.id]);
   });
 
-  it('deletes a memory for good and reports whether one existed', () => {
+  it('retires a memory instead of deleting it, and a second retirement changes nothing', () => {
     const { store } = harness();
     const { run } = startRun(store, ['c1']);
     const memory = save(store, run.id, 'c1', 'forget me');
-    expect(store.memories.delete(memory.id)).toBe(true);
-    expect(store.memories.get(memory.id)).toBeUndefined();
-    expect(store.memories.recall({ trusted: false })).toEqual([]);
-    expect(store.memories.delete(memory.id)).toBe(false);
+    expect(store.memories.retire(memory.id)?.retired).toBe(true);
+    expect(store.memories.get(memory.id)?.text).toBe('forget me');
+    expect(recalled(store, { trusted: false })).toEqual([]);
+    expect(store.memories.retire(memory.id)?.retired).toBe(false);
+    expect(store.memories.retire('absent')).toBeUndefined();
   });
 
   it('keeps memories across store reopenings', () => {
@@ -177,7 +178,7 @@ describe('memories added by a person', () => {
   it('recalls a trusted project memory in its project and finds it by text', () => {
     const { store } = harness();
     const memory = store.memories.addByCommand({ scope: 'project', project: '/work/a', text: 'migrations live in db/migrate', evidence: [] });
-    expect(store.memories.recall({ trusted: true, project: '/work/a' }).map((entry) => entry.id)).toEqual([memory.id]);
+    expect(recalled(store, { trusted: true, project: '/work/a' }).map((entry) => entry.id)).toEqual([memory.id]);
     expect(store.memories.search({ trusted: true, project: '/work/a' }, ['migrations']).map((entry) => entry.id)).toEqual([memory.id]);
   });
 
@@ -254,7 +255,7 @@ describe('memory lifecycle in the store', () => {
     db.prepare('UPDATE memories SET supersedes_json = ? WHERE id = ?').run(JSON.stringify([superseded.id]), successor.id);
     const ids = (memories: MemoryRecord[]) => memories.map((memory) => memory.id).sort();
     const expected = [kept.id, successor.id].sort();
-    expect(ids(store.memories.recall({ trusted: false }))).toEqual(expected);
+    expect(ids(recalled(store, { trusted: false }))).toEqual(expected);
     expect(ids(store.memories.search({ trusted: false }, ['topic']))).toEqual(expected);
     expect(store.memories.list()).toHaveLength(6);
   });
@@ -264,6 +265,6 @@ describe('memory lifecycle in the store', () => {
     const live = save(store, run.id, 'c1', 'live');
     const candidate = save(store, run.id, 'c2', 'proposal');
     db.prepare("UPDATE memories SET state = 'candidate', supersedes_json = ? WHERE id = ?").run(JSON.stringify([live.id]), candidate.id);
-    expect(store.memories.recall({ trusted: false }).map((memory) => memory.id)).toEqual([live.id]);
+    expect(recalled(store, { trusted: false }).map((memory) => memory.id)).toEqual([live.id]);
   });
 });

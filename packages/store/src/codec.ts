@@ -162,6 +162,9 @@ const assertToolFacts = (identity: string, payload: Record<string, unknown>): vo
   if (payload['files'] !== undefined && !(Array.isArray(payload['files']) && payload['files'].every(isToolFile))) {
     throw corrupt('events', identity, 'payload_json files must hold path, sha256 and access entries');
   }
+  if (payload['memories'] !== undefined && !(Array.isArray(payload['memories']) && payload['memories'].every((id) => typeof id === 'string'))) {
+    throw corrupt('events', identity, 'payload_json memories must hold memory ids');
+  }
   if (payload['exitCode'] !== undefined && !Number.isInteger(payload['exitCode'])) {
     throw corrupt('events', identity, 'payload_json exitCode must be an integer');
   }
@@ -370,17 +373,13 @@ const isWorkingFacts = (value: unknown): boolean =>
       isReconciled(entry['reconciled']) &&
       Number.isInteger(entry['seq']),
   ) &&
-  isArrayOf(
-    value['touched'],
-    (entry) => isRecord(entry) && (entry['kind'] === 'file' || entry['kind'] === 'directory') && (entry['path'] === undefined || typeof entry['path'] === 'string'),
-  ) &&
   isArrayOf(value['messages'], (entry) => isRecord(entry) && typeof entry['text'] === 'string' && Number.isInteger(entry['seq'])) &&
   (value['plan'] === undefined ||
     (isRecord(value['plan']) && Number.isInteger(value['plan']['seq']) && isArrayOf(value['plan']['entries'], isPlanEntry))) &&
   isArrayOf(value['itemEvents'], (entry) => isRecord(entry) && Number.isInteger(entry['itemSeq']) && Number.isInteger(entry['eventSeq'])) &&
   (value['replacedThroughEventSeq'] === undefined || Number.isInteger(value['replacedThroughEventSeq']));
 
-export const SNAPSHOT_STATE_VERSION = 14;
+export const SNAPSHOT_STATE_VERSION = 15;
 
 export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
 

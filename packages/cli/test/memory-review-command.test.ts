@@ -28,7 +28,7 @@ const memory = (id: string, overrides: Partial<MemoryView> = {}): MemoryView => 
   text: `note ${id}`,
   source: { kind: 'reflection', sessionId: 's', runId: 'r', ordinal: 0 },
   createdAt: 0,
-  lastUsedAt: 0,
+  keptAt: 0,
   kind: 'procedure',
   state: 'candidate',
   duplicateOf: null,

@@ -57,7 +57,7 @@ import {
   IDEMPOTENCY_PURGE_MS,
   MARKER_REAP_KILL_GRACE_MS,
   MEMORY_UPKEEP_BATCH_MARKS,
-  MEMORY_UPKEEP_PAGE_ROWS,
+  MEMORY_PAGE_ROWS,
   RUNTIME_ABORT_BUDGET_MS,
   RUNTIME_TEARDOWN_BUDGET_MS,
   SANDBOX_KILL_GRACE_MS,
@@ -611,7 +611,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         clock,
         views: memoryViews,
         batchSize: MEMORY_UPKEEP_BATCH_MARKS,
-        pageRows: MEMORY_UPKEEP_PAGE_ROWS,
+        pageRows: MEMORY_PAGE_ROWS,
         passIntervalMs: DAY_MS,
         forgetAfterDays: async (project) =>
           (project === null ? settingsComposition.takeUserSnapshot().settings.memory : await settingsComposition.settings.memory({ cwd: project })).forgetAfterDays,

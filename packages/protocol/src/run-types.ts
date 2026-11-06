@@ -163,6 +163,7 @@ export type RunEventPayload =
       handle?: string;
       denial?: PermissionDenial;
       files?: ToolFile[];
+      memories?: string[];
       exitCode?: number;
       formatted?: { formatter: string; version: number };
     }

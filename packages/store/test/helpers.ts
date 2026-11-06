@@ -6,7 +6,7 @@ import { afterEach } from 'vitest';
 import { canonicalJson, openDatabase, sha256Hex } from '@momonga/foundation';
 import type { RunEventPayload } from '@momonga/protocol';
 import { JournalThreadError, createJournalReader, openRuntimeStore } from '@momonga/store';
-import type { Claim, ContributionPreparer, Run, RuntimeStore, RuntimeStoreOptions, TerminalContribution } from '@momonga/store';
+import type { Claim, ContributionPreparer, HistoryQueryResult, Run, RuntimeStore, RuntimeStoreOptions, TerminalContribution } from '@momonga/store';
 import { createFakeClock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
 
@@ -159,3 +159,8 @@ export const mustRun = (store: RuntimeStore, runId: string): Run => {
   if (run === undefined) throw new Error(`run ${runId} not found`);
   return run;
 };
+
+export const recalled = (store: RuntimeStore, visibility: Parameters<RuntimeStore['memories']['recallPage']>[0]) =>
+  store.memories.recallPage(visibility, { terms: [], after: null, limit: 1000 }).memories;
+
+export const anchorsOf = (result: HistoryQueryResult) => result.sessions.flatMap((session) => session.runs);

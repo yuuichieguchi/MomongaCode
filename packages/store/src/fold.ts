@@ -11,13 +11,11 @@ import {
   withMessage,
   withReplacedThrough,
   withTaskText,
-  withTouched,
   withWritten,
 } from '@momonga/protocol';
 import type { InputItem, RunEvent, RunEventPayload, RunState, StopReason, WorkingFacts } from '@momonga/protocol';
 import { applyInheritance } from './inherit.ts';
 import { isRecord } from './rows.ts';
-import { touchedTargetOf } from './touched.ts';
 
 type PendingCall = RunState['pendingCalls'][string];
 type HistoryEntry = RunState['history'][number];
@@ -120,22 +118,13 @@ const withLoopItem = (state: RunState, item: InputItem): RunState => {
   return state;
 };
 
-const withTouchedItems = (facts: WorkingFacts, items: readonly { item: InputItem }[]): WorkingFacts =>
-  items.reduce((folded, { item }) => {
-    const target = touchedTargetOf(item);
-    return target === undefined ? folded : withTouched(folded, target);
-  }, facts);
-
 const appendItems = (state: RunState, items: readonly { item: InputItem; callId?: string }[], eventSeq: number, handle?: string): RunState =>
   items.reduce<RunState>((folded, { item }) => withLoopItem(folded, item), {
     ...state,
-    workingFacts: withTouchedItems(
-      withItemEvents(
-        state.workingFacts,
-        items.map((_item, offset) => state.nextItemSeq + offset),
-        eventSeq,
-      ),
-      items,
+    workingFacts: withItemEvents(
+      state.workingFacts,
+      items.map((_item, offset) => state.nextItemSeq + offset),
+      eventSeq,
     ),
     history: [
       ...state.history,

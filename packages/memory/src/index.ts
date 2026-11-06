@@ -3,8 +3,10 @@ export type { GoverningFactCheck, GoverningFactRefusalCode, RuleSizeEntry, RuleS
 export { EvidenceOutsideRootError, EvidenceUnreadableError, memoryStatus } from './memory-status.ts';
 export type { EvidencePorts, MemoryStatusContext } from './memory-status.ts';
 export { recallOrder } from './recall-order.ts';
-export { resolveGoverning, scopeKeyOf } from './resolve-governing.ts';
-export type { GoverningConflict, GoverningResolution, ResolveGoverningOptions } from './resolve-governing.ts';
+export { validityOf } from './validity.ts';
+export type { ValidityInput } from './validity.ts';
+export { isLiveFact, pathScopeMatcherOf, resolveGoverning, scopeKeyOf } from './resolve-governing.ts';
+export type { GoverningConflict, GoverningResolution, PathScopeMatcher, ResolveGoverningOptions } from './resolve-governing.ts';
 export { normalizeMemoryText } from './normalize-text.ts';
 export { DAY_MS, archivableIds, duplicateMarks, isIdleBeyondWindow } from './upkeep.ts';
 export type { DuplicateKeepers, DuplicateMark, DuplicateNote, ForgetWindow, UpkeepNote } from './upkeep.ts';

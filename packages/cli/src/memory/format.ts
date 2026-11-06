@@ -1,4 +1,4 @@
-import { describeMemoryValidity, escapeTerminalLine } from '@momonga/protocol';
+import { describeMemoryValidity, describeValidity, escapeTerminalLine } from '@momonga/protocol';
 import type { MemoryView, ReflectionDrop, ReflectionJobView } from '@momonga/protocol';
 
 const firstLine = (text: string): string => escapeTerminalLine(text.split('\n')[0] ?? '');
@@ -15,7 +15,12 @@ const iso = (ms: number): string => new Date(ms).toISOString();
 export const formatMemoryHistory = (memories: readonly MemoryView[]): string =>
   memories.length === 0
     ? 'no memories'
-    : memories.map((memory) => `${memory.id}  ${memory.status}  saved ${iso(memory.createdAt)}${describeMemoryValidity(memory)}  ${firstLine(memory.text)}`).join('\n');
+    : memories
+        .map(
+          (memory) =>
+            `${memory.id}  ${memory.status}  saved ${iso(memory.createdAt)}${describeMemoryValidity(memory)}  ${firstLine(memory.text)}${memory.validity === undefined ? '' : `\n  observed: ${describeValidity(memory.validity)}`}`,
+        )
+        .join('\n');
 
 const evidenceLine = (entry: MemoryView['evidence'][number]): string => {
   switch (entry.kind) {
@@ -64,7 +69,8 @@ export const formatMemory = (memory: MemoryView): string =>
     `status: ${memory.status}`,
     ...(memory.project === null ? [] : [`project: ${escapeTerminalLine(memory.project)}`]),
     `created: ${iso(memory.createdAt)}`,
-    `last used: ${iso(memory.lastUsedAt)}`,
+    `kept: ${iso(memory.keptAt)}`,
+    ...(memory.validity === undefined ? [] : [`validity: ${describeValidity(memory.validity)}`]),
     sourceLine(memory.source),
     ...memory.evidence.map(evidenceLine),
     '',

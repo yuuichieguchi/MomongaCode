@@ -392,8 +392,9 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     await send('DELETE', authorizationPath(sessionId, server), [204]);
   };
 
-  const memoriesQueryOf = (filter: MemoryFilter): string => {
+  const memoriesQueryOf = (filter: MemoryFilter, after?: string): string => {
     const query = new URLSearchParams();
+    if (after !== undefined) query.set('after', after);
     if (filter.scope !== undefined) query.set('scope', filter.scope);
     if (filter.state !== undefined) query.set('state', filter.state);
     if (filter.project !== undefined) query.set('project', filter.project);
@@ -402,9 +403,16 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
   };
 
   const memories = async (filter: MemoryFilter = {}): Promise<MemoryView[]> => {
-    const path = `/v1/memories${memoriesQueryOf(filter)}`;
-    const { body } = await send('GET', path, [200]);
-    return checkMemories(body, `GET ${path}`).memories;
+    const found: MemoryView[] = [];
+    let after: string | undefined;
+    do {
+      const path = `/v1/memories${memoriesQueryOf(filter, after)}`;
+      const { body } = await send('GET', path, [200]);
+      const page = checkMemories(body, `GET ${path}`);
+      found.push(...page.memories);
+      after = page.next ?? undefined;
+    } while (after !== undefined);
+    return found;
   };
 
   const lastReflection = async (project: string): Promise<ReflectionJobView | null> => {

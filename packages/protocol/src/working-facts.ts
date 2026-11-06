@@ -18,11 +18,8 @@ export type MessageFact = { text: string; seq: number };
 
 export type ItemEvent = { itemSeq: number; eventSeq: number };
 
-export type TouchedTarget = { kind: 'file' | 'directory'; path?: string };
-
 export type WorkingFacts = {
   written: WrittenFact[];
-  touched: TouchedTarget[];
   commands: CommandFact[];
   messages: MessageFact[];
   taskText?: string;
@@ -33,10 +30,7 @@ export type WorkingFacts = {
 
 export const INHERITED_FACT_SEQ = 0;
 
-export const emptyWorkingFacts = (): WorkingFacts => ({ written: [], touched: [], commands: [], messages: [], itemEvents: [] });
-
-export const withTouched = (facts: WorkingFacts, target: TouchedTarget): WorkingFacts =>
-  facts.touched.some((entry) => entry.kind === target.kind && entry.path === target.path) ? facts : { ...facts, touched: [...facts.touched, target] };
+export const emptyWorkingFacts = (): WorkingFacts => ({ written: [], commands: [], messages: [], itemEvents: [] });
 
 const newest = <T>(entries: readonly T[]): T[] => entries.slice(-WORKING_FACTS_KEPT);
 
@@ -85,7 +79,6 @@ export const withReplacedThrough = (facts: WorkingFacts, replacedThroughItemSeq:
 
 export const inheritedWorkingFacts = (facts: WorkingFacts, carryTask: boolean): WorkingFacts => ({
   written: facts.written.map((entry) => ({ ...entry, seq: INHERITED_FACT_SEQ })),
-  touched: facts.touched,
   commands: facts.commands.map((entry) => ({ ...entry, seq: INHERITED_FACT_SEQ })),
   messages: [
     ...(carryTask && facts.taskText !== undefined ? [{ text: facts.taskText, seq: INHERITED_FACT_SEQ }] : []),

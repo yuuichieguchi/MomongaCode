@@ -235,6 +235,7 @@ describe('run event payloads', () => {
       handle?: string;
       denial?: { source: 'sandbox' | 'rule' | 'mode' | 'hook'; reason: string };
       files?: { path: string; sha256: string; access: 'read' | 'write' }[];
+      memories?: string[];
       exitCode?: number;
       formatted?: { formatter: string; version: number };
     }>();

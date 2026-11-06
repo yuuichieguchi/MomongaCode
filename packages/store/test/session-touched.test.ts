@@ -85,6 +85,21 @@ describe('session_touched, the per-session record of declared locations', () => 
     expect(pathsOf(store, other.id)).toEqual([]);
   });
 
+  it('the record survives a compaction that replaced the call which declared the path', () => {
+    const { store } = harness();
+    const session = newSession(store, CWD);
+    enqueue(store, session.id);
+    const claim = appendAll(store, 'w1', [toolCall('c1', 'Read', ['/work/a/legacy/a.ts'])]);
+    const compacted: RunEventPayload = {
+      type: 'context.compacted',
+      item: { type: 'message', role: 'user', content: 'summary' },
+      summary: 'summary',
+      replacedThroughSeq: 1,
+    };
+    expect(store.append(claim, [compacted]).kind).toBe('ok');
+    expect(pathsOf(store, session.id)).toEqual(['/work/a/legacy/a.ts']);
+  });
+
   it('the migration fills the record from the locations of existing tool.call events, so a session that predates it keeps its activations', () => {
     const before = MIGRATIONS.filter((migration) => !JSON.stringify(migration).includes('session_touched'));
     const dbPath = path.join(makeStoreDir(), 'runtime.db');

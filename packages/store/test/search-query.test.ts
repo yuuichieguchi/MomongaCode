@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { HISTORY_SNIPPET_MAX_CHARS } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { harness } from './helpers.ts';
+import { anchorsOf, harness } from './helpers.ts';
 import { finishedRun, indexAll, projectDir } from './search-fixture.ts';
 
 const OWN = { trusted: true, project: '/work/a' } as const;
@@ -10,7 +10,7 @@ const output = (text: string) => [{ tool: { name: 'Read', path: '/work/a/f', out
 
 const search = (store: RuntimeStore, query: string, extra: { scanLimit?: number } = {}) => store.search.query(OWN, { query, scope: 'project', ...extra });
 
-const foundRuns = (store: RuntimeStore, query: string, extra: { scanLimit?: number } = {}): string[] => search(store, query, extra).anchors.map((anchor) => anchor.runId);
+const foundRuns = (store: RuntimeStore, query: string, extra: { scanLimit?: number } = {}): string[] => anchorsOf(search(store, query, extra)).map((anchor) => anchor.runId);
 
 describe('search terms of three characters or more', () => {
   it('finds a substring through the trigram index, case-insensitively', async () => {
@@ -92,10 +92,10 @@ describe('search terms shorter than three characters', () => {
     const newest = await finishedRun(store, '/work/a', '新しい設計');
     indexAll(store);
     const bounded = search(store, '設計', { scanLimit: 1 });
-    expect(bounded.anchors.map((anchor) => anchor.runId)).toEqual([newest.id]);
+    expect(anchorsOf(bounded).map((anchor) => anchor.runId)).toEqual([newest.id]);
     expect(bounded.searched).toBe(1);
     const open = search(store, '設計', { scanLimit: 1000 });
-    expect(open.anchors.map((anchor) => anchor.runId).sort()).toEqual([old.id, newest.id].sort());
+    expect(anchorsOf(open).map((anchor) => anchor.runId).sort()).toEqual([old.id, newest.id].sort());
     expect(open.searched).toBeUndefined();
   });
 
@@ -122,7 +122,7 @@ describe('search results', () => {
     const long = `${'p'.repeat(600)} needleterm ${'q'.repeat(600)}`;
     const run = await finishedRun(store, '/work/a', 'unrelated task', [{ text: 'nothing here' }, { tool: { name: 'Read', path: '/work/a/f', output: long } }]);
     indexAll(store);
-    const [anchor] = search(store, 'needleterm').anchors;
+    const [anchor] = anchorsOf(search(store, 'needleterm'));
     expect(anchor).toMatchObject({ runId: run.id, sessionId: run.sessionId, project: '/work/a', outcome: 'COMPLETED', origin: 'untrusted' });
     expect(anchor?.steps.map((step) => step.step)).toEqual([2]);
     const [hit] = anchor?.steps ?? [];
@@ -181,19 +181,19 @@ describe('search visibility', () => {
 
   it('shows a trusted session its project, marking an untrusted-origin run', async () => {
     const { store, own, trustedA, untrustedOriginInA } = await seeded();
-    const { anchors } = store.search.query(own, { query: 'needleterm', scope: 'project' });
+    const anchors = anchorsOf(store.search.query(own, { query: 'needleterm', scope: 'project' }));
     expect(Object.fromEntries(anchors.map((anchor) => [anchor.runId, anchor.origin]))).toEqual({ [trustedA.id]: 'trusted', [untrustedOriginInA.id]: 'untrusted' });
   });
 
   it("adds other projects' trusted-origin runs with scope all, and never their untrusted ones", async () => {
     const { store, own, trustedA, trustedB, untrustedOriginInA } = await seeded();
-    const { anchors } = store.search.query(own, { query: 'needleterm', scope: 'all' });
+    const anchors = anchorsOf(store.search.query(own, { query: 'needleterm', scope: 'all' }));
     expect(anchors.map((anchor) => anchor.runId).sort()).toEqual([trustedA.id, trustedB.id, untrustedOriginInA.id].sort());
   });
 
   it.each(['project', 'all'] as const)('limits an untrusted session to its own project with scope %s', async (scope) => {
     const { store, c, untrustedC } = await seeded();
-    const { anchors } = store.search.query({ trusted: false, project: c }, { query: 'needleterm', scope });
+    const anchors = anchorsOf(store.search.query({ trusted: false, project: c }, { query: 'needleterm', scope }));
     expect(anchors.map((anchor) => anchor.runId)).toEqual([untrustedC.id]);
   });
 
@@ -203,7 +203,7 @@ describe('search visibility', () => {
     clock.advance(1);
     await finishedRun(store, '/work/d', '設計 d');
     indexAll(store);
-    const { anchors } = store.search.query({ trusted: false, project: '/work/c' }, { query: '設計', scope: 'all' });
+    const anchors = anchorsOf(store.search.query({ trusted: false, project: '/work/c' }, { query: '設計', scope: 'all' }));
     expect(anchors.map((anchor) => anchor.runId)).toEqual([mine.id]);
   });
 });

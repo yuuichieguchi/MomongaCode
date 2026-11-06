@@ -213,11 +213,11 @@ describe('worker memory: recall', () => {
     expect(recalledBlock(env, untrustedStream)).not.toContain('tests live in test/');
   });
 
-  it('forgets a deleted memory in the next run', async () => {
+  it('forgets a retired memory in the next run', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     await saveInFirstRun(env, 'prefers tabs');
     const [memory] = env.store.memories.list();
-    expect(env.store.memories.delete(memory?.id ?? '')).toBe(true);
+    expect(env.store.memories.retire(memory?.id ?? '')?.retired).toBe(true);
     const before = env.gateway.streams.length;
 
     env.gateway.script.push(textStep('Hello.'));

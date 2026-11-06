@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { MemoryEvidence, MemoryKind } from '@momonga/protocol';
 import type { MemoryRecord, MemoryStore, RuntimeStore } from '@momonga/store';
-import { callEvent, enqueue, harness, mustClaim, newSession } from './helpers.ts';
+import { callEvent, enqueue, harness, mustClaim, newSession, recalled } from './helpers.ts';
 
 const PROJECT = '/work/a';
 const VISIBLE = { trusted: true, project: PROJECT } as const;
@@ -57,7 +57,7 @@ describe('candidates', () => {
   it('is never recalled, ranked, or found by a plain search, and only an explicit all finds it', () => {
     const { store, candidate } = started();
     const { memory } = candidate(0, 'seeded fixture note');
-    expect(store.memories.recall(VISIBLE)).toEqual([]);
+    expect(recalled(store, VISIBLE)).toEqual([]);
     expect(store.memories.search(VISIBLE, ['seeded'])).toEqual([]);
     expect(store.memories.matchingIds(VISIBLE, ['seeded']).size).toBe(0);
     expect(ids(store.memories.search(VISIBLE, ['seeded'], { include: 'all' }))).toEqual([memory.id]);
@@ -77,7 +77,7 @@ describe('accept and reject', () => {
     const { store, memories, candidate } = started();
     const { memory } = candidate(0, 'waiting');
     expect(memories.accept(memory.id)).toMatchObject({ kind: 'accepted', memory: { id: memory.id, state: 'active' } });
-    expect(ids(store.memories.recall(VISIBLE))).toEqual([memory.id]);
+    expect(ids(recalled(store, VISIBLE))).toEqual([memory.id]);
     expect(memories.candidates()).toEqual([]);
   });
 
@@ -85,7 +85,7 @@ describe('accept and reject', () => {
     const { store, memories, candidate } = started();
     const { memory } = candidate(0, 'waiting');
     expect(memories.reject(memory.id).kind).toBe('rejected');
-    expect(store.memories.recall(VISIBLE)).toEqual([]);
+    expect(recalled(store, VISIBLE)).toEqual([]);
     expect(memories.candidates()).toEqual([]);
     expect(memories.accept(memory.id).kind).not.toBe('accepted');
   });
@@ -95,7 +95,7 @@ describe('accept and reject', () => {
     const { memory } = candidate(0, 'seeded fixture note');
     memories.reject(memory.id);
     expect(memories.get(memory.id)?.state).toBe('rejected');
-    expect(store.memories.recall(VISIBLE)).toEqual([]);
+    expect(recalled(store, VISIBLE)).toEqual([]);
     expect(store.memories.search(VISIBLE, ['seeded'])).toEqual([]);
     expect(ids(store.memories.search(VISIBLE, ['seeded'], { include: 'all' }))).toEqual([memory.id]);
     expect(memories.restore(memory.id).kind).toBe('not_archived');
@@ -169,7 +169,7 @@ describe('duplicate and archive', () => {
     const older = saved('c1', 'same text');
     const newer = saved('c2', 'same text');
     expect(memories.markDuplicate(newer.id, older.id)).toMatchObject({ memory: { state: 'duplicate', duplicateOf: older.id } });
-    expect(ids(store.memories.recall(VISIBLE))).toEqual([older.id]);
+    expect(ids(recalled(store, VISIBLE))).toEqual([older.id]);
     expect(ids(store.memories.search(VISIBLE, ['same'], { include: 'all' })).sort()).toEqual([older.id, newer.id].sort());
   });
 
@@ -177,11 +177,11 @@ describe('duplicate and archive', () => {
     const { store, memories, saved } = started();
     const note = saved('c1', 'old habit');
     expect(memories.archive(note.id)).toMatchObject({ memory: { state: 'archived' } });
-    expect(store.memories.recall(VISIBLE)).toEqual([]);
+    expect(recalled(store, VISIBLE)).toEqual([]);
     expect(store.memories.search(VISIBLE, ['habit'])).toEqual([]);
     expect(ids(store.memories.search(VISIBLE, ['habit'], { include: 'all' }))).toEqual([note.id]);
     expect(memories.restore(note.id)).toMatchObject({ kind: 'restored', memory: { state: 'active' } });
-    expect(ids(store.memories.recall(VISIBLE))).toEqual([note.id]);
+    expect(ids(recalled(store, VISIBLE))).toEqual([note.id]);
   });
 
   it('restore sets keptAt, so the next sweep does not archive it again', () => {

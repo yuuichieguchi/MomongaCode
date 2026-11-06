@@ -1,3 +1,4 @@
+export { MEMORY_MATCH_LIMIT, MEMORY_SCAN_LIMIT } from './memory-constants.ts';
 export { foldRunState, initialRunState } from './fold.ts';
 export { InheritanceError, applyInheritance, projectInheritance } from './inherit.ts';
 export type { InheritanceErrorCode, InheritanceKind, InheritanceOutcome, InheritedPayload } from './inherit.ts';
@@ -77,8 +78,15 @@ export type {
   ContextChargeStore,
   MemoryChange,
   MemoryInclude,
+  MemoryListCursor,
+  MemoryListFilter,
+  MemoryObservation,
   MemoryRecord,
   MemoryStore,
+  RecallCursor,
+  SessionTouched,
+  SessionTouchedStore,
+  RecallPage,
   ReflectionCompletion,
   ReflectionJob,
   ReflectionStore,

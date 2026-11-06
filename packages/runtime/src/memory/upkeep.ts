@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { archivableIds, duplicateMarks, isIdleBeyondWindow } from '@momonga/memory';
+import { archivableIds, duplicateMarks } from '@momonga/memory';
 import type { DuplicateKeepers } from '@momonga/memory';
 import type { Clock } from '@momonga/foundation';
 import type { MemoryRecord } from '@momonga/protocol';
@@ -89,8 +89,7 @@ export const runMemoryUpkeep = async (options: MemoryUpkeepOptions): Promise<Mem
       const forgetAfterDays = known ?? (await options.forgetAfterDays(project));
       pass.days.set(project, forgetAfterDays);
       const window = { now: clock.now(), forgetAfterDays };
-      const idle = group.filter((record) => isIdleBeyondWindow(record, window));
-      if (idle.length > 0) wanted.push(...archivableIds(await views.viewsOf(idle, signal), window));
+      wanted.push(...archivableIds(await views.viewsOf(group, signal), window));
     } catch (error) {
       failures.push(error);
     }

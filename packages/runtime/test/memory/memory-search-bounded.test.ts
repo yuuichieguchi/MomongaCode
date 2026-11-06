@@ -10,7 +10,7 @@ const searchWith = async (count: number) => {
   const tool = set.tools.find((candidate) => candidate.name === MEMORY_SEARCH_TOOL_NAME);
   if (tool === undefined) throw new Error('MemorySearch is not offered');
   const before = seeded.store.memories.revision();
-  const result = (await tool.execute({ query: 'parser' } as never, { signal: SIGNAL } as never)) as { status: string; output: string; memories?: string[] };
+  const result = (await tool.execute({ query: 'parser' } as never, { signal: SIGNAL } as never, undefined)) as { status: string; output: string; memories?: string[] };
   return { seeded, counter, searchCalls: counter.calls - loadCalls, result, before };
 };
 

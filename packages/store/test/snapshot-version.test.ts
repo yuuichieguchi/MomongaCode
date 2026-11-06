@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
+import { SNAPSHOT_STATE_VERSION } from '../src/codec.ts';
 import { fixtureCompactionItem } from '@momonga/testkit';
 import { enqueue, harness, mustClaim, newSession, rawDb } from './helpers.ts';
 import { assistantItem, inheritedEvent, taskItem } from './inherit-fixtures.ts';
@@ -58,9 +59,9 @@ const CALL: RunEventPayload = { type: 'tool.call', callId: 'c1', providerCallId:
 const classifiedWithoutDigest = { type: 'tool.permission.classified', callId: 'c1', outcome: 'allow' } as unknown as RunEventPayload;
 
 describe('snapshot state version 11', () => {
-  it('writes stateVersion 14', () => {
+  it('writes the current stateVersion', () => {
     const { storedJson } = storedSnapshot();
-    expect(storedJson()['stateVersion']).toBe(14);
+    expect(storedJson()['stateVersion']).toBe(SNAPSHOT_STATE_VERSION);
   });
 
   it('reports a snapshot without the working facts as corrupt', () => {
@@ -76,6 +77,17 @@ describe('snapshot state version 11', () => {
     expect(loaded.snapshot).toBeUndefined();
     expect(loaded.tail).toEqual(events);
     expect(loaded.tail.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }) as RunState)).toEqual(state);
+  });
+
+  it('treats a version 14 snapshot, which carried the touched list, as absent and rebuilds a state without it', () => {
+    const { store, run, state, events, mutate } = storedSnapshot();
+    mutate("json_set(json_set(state_json, '$.stateVersion', 14), '$.workingFacts.touched', json('[{\"kind\":\"file\",\"path\":\"/work/a/x.ts\"}]'))");
+    const loaded = store.load(run.id);
+    expect(loaded.snapshot).toBeUndefined();
+    const rebuilt = loaded.tail.reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }) as RunState);
+    expect(rebuilt).toEqual(state);
+    expect(rebuilt.workingFacts).not.toHaveProperty('touched');
+    expect(loaded.tail).toEqual(events);
   });
 
   it('folds a classification journaled without a subject digest into no classification, so the snapshot stays readable', () => {

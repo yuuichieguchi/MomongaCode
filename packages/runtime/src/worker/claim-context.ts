@@ -9,6 +9,7 @@ import type { ClaimControl } from './claim-control.ts';
 import type { Journal } from './journal.ts';
 import type { RunLimits } from './limits.ts';
 import type { ToolOffer } from './tool-offer.ts';
+import type { ClaimTouched } from './touched-paths.ts';
 import type { ToolLoading } from './tool-admission.ts';
 import type { TokenPolicy } from './token-pin.ts';
 import type { WorkerOptions } from './types.ts';
@@ -35,7 +36,7 @@ export type ClaimContext = {
   toolSet: ToolSet;
   skills: SkillSet;
   recalled: MemorySet;
-  usedMemoryIds: Set<string>;
+  touched: ClaimTouched;
   env: ToolEnv;
   functionTools(): FunctionTool[];
   toolOffer(loaded?: readonly string[]): ToolOffer;

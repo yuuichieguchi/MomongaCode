@@ -36,6 +36,7 @@ const contextFor = (state: RunState) => {
         getSession: () => ({ id: 'session_wrap', cwd: '/project/wrap' }),
         readRunEvents: () => [{ type: 'user.message', text: TASK_TEXT }],
         governing: { list: () => [] },
+        sessionTouched: { newest: () => [], after: () => [] },
       },
       clock: { now: () => 0 },
       tools: { sessionState: () => ({ cwd: '/project/wrap' }) },
@@ -50,8 +51,8 @@ const contextFor = (state: RunState) => {
     functionTools: () => [ECHO_TOOL],
     companions: () => ({ hostOf: {}, keepWithoutHost: false }),
     skills: { catalog: undefined },
-    recalled: { memories: [], rank: () => [], tools: [], markUsed: () => undefined },
-    usedMemoryIds: new Set<string>(),
+    recalled: { prepare: async () => undefined, ranked: () => [], hasMore: () => false, matchCap: () => undefined, tools: [] },
+    touched: { governing: { advance: async () => undefined, witnesses: () => [] }, probes: { advance: async () => undefined, witnesses: () => [] } },
     journal: {
       state,
       append: (payloads: readonly RunEventPayload[]) => {

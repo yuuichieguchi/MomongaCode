@@ -125,10 +125,10 @@ const storedSnapshot = () => {
   return { store, run, state, events, mutate, storedJson };
 };
 
-describe('snapshot state version 14', () => {
-  it('is version 14 and is written as such', () => {
-    expect(SNAPSHOT_STATE_VERSION).toBe(14);
-    expect(storedSnapshot().storedJson()['stateVersion']).toBe(14);
+describe('snapshot state version', () => {
+  it('is newer than 14 and is written as such', () => {
+    expect(SNAPSHOT_STATE_VERSION).toBeGreaterThan(14);
+    expect(storedSnapshot().storedJson()['stateVersion']).toBe(SNAPSHOT_STATE_VERSION);
   });
 
   it('round-trips the loaded tools, the loop warning and the arrival seqs', () => {

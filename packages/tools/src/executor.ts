@@ -529,6 +529,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       ...(result.skill === undefined ? {} : { skill: result.skill }),
       ...(result.toolsLoaded === undefined ? {} : { toolsLoaded: result.toolsLoaded }),
       ...(result.files === undefined ? {} : { files: result.files }),
+      ...(result.memories === undefined ? {} : { memories: result.memories }),
       ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
       ...('truncated' in truncated ? { truncated: truncated.truncated, handle: truncated.handle } : {}),
       ...(formatted === undefined ? {} : { formatted: formatted.formatted }),

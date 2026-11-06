@@ -25,6 +25,7 @@ export type ToolResult = {
   toolsLoaded?: string[];
   authorizationRequired?: { server: string };
   files?: ToolFile[];
+  memories?: string[];
   exitCode?: number;
   validatorFailure?: string;
 };
