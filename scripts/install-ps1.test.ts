@@ -37,7 +37,7 @@ describe('install.ps1', () => {
   });
 
   it('declares the release repository yuuichieguchi/MomongaCode right after the embedded release public key', () => {
-    const lines = fs.readFileSync(SCRIPT, 'utf8').split('\n');
+    const lines = fs.readFileSync(SCRIPT, 'utf8').split('\n').map((line) => line.trim());
     const keyLine = lines.indexOf("$embeddedReleasePublicKey = ''");
     expect(keyLine).toBeGreaterThanOrEqual(0);
     expect(lines[keyLine + 1]).toBe("$embeddedReleaseRepo = 'yuuichieguchi/MomongaCode'");
@@ -45,7 +45,7 @@ describe('install.ps1', () => {
 
   it('embeds the same release repository as install.sh', () => {
     const shell = /^readonly EMBEDDED_RELEASE_REPO="([^"\n]*)"$/m.exec(fs.readFileSync(`${repoRoot}scripts/install.sh`, 'utf8'))?.[1];
-    const powershell = /^\$embeddedReleaseRepo = '([^'\n]*)'$/m.exec(fs.readFileSync(SCRIPT, 'utf8'))?.[1];
+    const powershell = /^\s*\$embeddedReleaseRepo = '([^'\n]*)'$/m.exec(fs.readFileSync(SCRIPT, 'utf8'))?.[1];
     expect(shell).toBe('yuuichieguchi/MomongaCode');
     expect(powershell).toBe(shell);
   });
@@ -76,6 +76,63 @@ describe('install.ps1', () => {
   });
 });
 
+const TLS12 = '[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12';
+
+describe('install.ps1 under irm | iex', () => {
+  const source = (): string => fs.readFileSync(SCRIPT, 'utf8');
+  const meaningfulLines = (): string[] => source().split(/\r?\n/).filter((line) => line.trim() !== '');
+
+  it('runs its whole body inside one script block invoked with &, so nothing it defines or sets stays in the caller session', () => {
+    const lines = meaningfulLines();
+    expect(lines[0]).toBe('& {');
+    expect(lines[lines.length - 1]).toBe('}');
+  });
+
+  it('sets the error preference and defines its functions only inside that script block', () => {
+    const lines = source().split(/\r?\n/);
+    const preference = lines.filter((line) => line.includes("$ErrorActionPreference = 'Stop'"));
+    expect(preference).toHaveLength(1);
+    expect(preference[0]).toMatch(/^\s+\$ErrorActionPreference = 'Stop'$/);
+    const definitions = lines.filter((line) => /^\s*function\s/.test(line));
+    expect(definitions.length).toBeGreaterThanOrEqual(3);
+    for (const line of definitions) expect(line).toMatch(/^\s+function\s/);
+    expect(source()).not.toMatch(/\$(global|script):/i);
+    expect(source()).not.toMatch(/^\s*exit\b/m);
+  });
+
+  it('adds TLS 1.2 to the enabled protocols with a bitwise or, without replacing them', () => {
+    const lines = source().split(/\r?\n/).map((line) => line.trim());
+    expect(lines.filter((line) => line === TLS12)).toHaveLength(1);
+    expect(source().match(/SecurityProtocol\s*=/g)?.length ?? 0).toBe(1);
+  });
+
+  it('adds TLS 1.2 before the first download', () => {
+    const tls = source().indexOf(TLS12);
+    const firstDownload = source().search(/Invoke-WebRequest|Invoke-RestMethod/);
+    expect(tls).toBeGreaterThanOrEqual(0);
+    expect(firstDownload).toBeGreaterThan(tls);
+  });
+});
+
+describe.runIf(pwshAvailable)('install.ps1 under iex in a caller session', () => {
+  it('leaves no function, variable or preference of its own in the caller scope', () => {
+    const probe = [
+      "$ErrorActionPreference = 'Continue'",
+      `$text = Get-Content -Raw -LiteralPath '${SCRIPT}'`,
+      'try { Invoke-Expression $text } catch { }',
+      "foreach ($name in 'Fail', 'Read-UserPath', 'Write-UserPath') { if (Get-Command $name -ErrorAction SilentlyContinue) { Write-Output \"leaked function $name\" } }",
+      "foreach ($name in 'assetName', 'embeddedReleaseRepo', 'prefix') { if (Get-Variable -Name $name -Scope Global -ErrorAction SilentlyContinue) { Write-Output \"leaked variable $name\" } }",
+      'Write-Output "preference $ErrorActionPreference"',
+    ].join('; ');
+    const run = spawnSync('pwsh', ['-NoProfile', '-NonInteractive', '-Command', probe], {
+      encoding: 'utf8',
+      env: { PATH: process.env['PATH'], PROCESSOR_ARCHITECTURE: 'x86' },
+    });
+    expect(run.status).toBe(0);
+    expect(run.stdout.split(/\r?\n/).filter((line) => line !== '')).toEqual(['preference Continue']);
+  });
+});
+
 const READ_USER_PATH = "function Read-UserPath { [Environment]::GetEnvironmentVariable('Path', 'User') }";
 const WRITE_USER_PATH = "function Write-UserPath([string]$value) { [Environment]::SetEnvironmentVariable('Path', $value, 'User') }";
 
@@ -83,7 +140,7 @@ describe('install.ps1 PATH contract', () => {
   const source = (): string => fs.readFileSync(SCRIPT, 'utf8');
 
   it('reads and writes the PATH through one user-scope reader and one user-scope writer', () => {
-    const lines = source().split('\n');
+    const lines = source().split('\n').map((line) => line.trim());
     expect(lines.filter((line) => line === READ_USER_PATH)).toHaveLength(1);
     expect(lines.filter((line) => line === WRITE_USER_PATH)).toHaveLength(1);
     expect(source().match(/SetEnvironmentVariable/g)?.length ?? 0).toBe(1);
