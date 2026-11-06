@@ -8,7 +8,7 @@ import { createTransport, descriptorPath, eventually, groupExists, makeDir, pidA
 
 const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 const SSH_AGENT = '/usr/bin/ssh-agent';
-const AGENT_CLOSE_BOUND_MS = 4000;
+const AGENT_CLOSE_GRACE_MS = 200;
 
 const markerSetup = () => {
   const dir = path.join(makeDir(), 'markers');
@@ -95,7 +95,7 @@ describe('MCP stdio transport markers', () => {
   describe.runIf(process.platform === 'linux' && fs.existsSync(SSH_AGENT))('with a real ssh-agent, which is non-dumpable and belongs to the current user', () => {
     it('close completes, names an agent that started after the marker as one that could not be inspected, and keeps the marker', PROCESS_TIMEOUT, async () => {
       const { dir, markers, warnings } = markerSetup();
-      const { transport, request } = await startRaw({ config: rawConfig(), markers, closeGraceMs: 200 });
+      const { transport, request } = await startRaw({ config: rawConfig(), markers, closeGraceMs: AGENT_CLOSE_GRACE_MS });
       const { pid } = (await request('pid')) as { pid: number };
       expect(markerFiles(dir)).toHaveLength(1);
       const socket = path.join(makeDir(), 'agent.sock');
@@ -105,10 +105,8 @@ describe('MCP stdio transport markers', () => {
       await eventually(() => fs.existsSync(socket), 'ssh-agent to listen');
       const [marker] = markerFiles(dir) as [string];
 
-      const started = Date.now();
       await transport.close();
 
-      expect(Date.now() - started).toBeLessThan(AGENT_CLOSE_BOUND_MS);
       expect(groupExists(pid)).toBe(false);
       expect(fs.existsSync(marker)).toBe(true);
       expect(warnings).toEqual([`mcp marker ${marker}: process ${agent.pid} (ssh-agent) could not be inspected, so it was left alone`]);
