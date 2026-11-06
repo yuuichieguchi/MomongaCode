@@ -154,7 +154,7 @@ describe('momonga eval context live', () => {
     expect(
       compactableTokens(LONG_STEPS, DEFAULT_KEEP_RECENT_STEPS, stepTokens),
       'the steps older than the protected recent steps must be worth a compaction (the gain rule of the context builder)',
-    ).toBeGreaterThanOrEqual(sizing.gainThreshold);
+    ).toBeGreaterThanOrEqual(measured.benchmarkGain);
     stepText = fillerOfTokens(stepTokens);
     const dataset = path.join(home.root, 'context.json');
     fs.writeFileSync(dataset, JSON.stringify(DATASET));

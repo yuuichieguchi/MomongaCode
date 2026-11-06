@@ -1,20 +1,23 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { OUTPUT_READER_TOOL } from '@momonga/foundation';
 import { ESTIMATED_CHARACTERS_PER_TOKEN } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
 import type { FakeChatCompletionsServer, FakeRoute } from '@momonga/testkit';
-import { sizingFor, overflowStepRange, wireTokensOfBody } from './budget.ts';
+import { proactiveGainOf, sizingFor, overflowStepRange, wireTokensOfBody } from './budget.ts';
 import type { Sizing } from './budget.ts';
 import { runCli } from './cli.ts';
 import { createGatewayCountClient } from './gateway-count.ts';
 import type { E2eHome } from './home.ts';
+import { omittedMarker } from '../../packages/context/src/tool-output.ts';
 import { chatCompletions, textReply, toolCallReply } from './upstream.ts';
 
 export const PREFIX_PROBE_TASK = 'Report the size of the prefix.';
 
 export const CALIBRATION_LINE = 'line of the walk';
 
-const CALIBRATION_LINE_COUNTS = [20, 60] as const;
+const CALIBRATION_LINE_COUNTS = [20] as const;
 
 const calibrationTask = (lines: number): string => `Read calibration${lines}.txt once.`;
 
@@ -42,7 +45,7 @@ export const calibrationRoute: FakeRoute = {
   },
 };
 
-export type MeasuredWindow = { capabilities: Capabilities; person: Sizing; benchmark: Sizing; readFixedTokens: number };
+export type MeasuredWindow = { capabilities: Capabilities; person: Sizing; benchmark: Sizing; personGain: number; benchmarkGain: number; evictedReadTokens: number };
 
 const calibrationDataset = (): string =>
   JSON.stringify({
@@ -69,12 +72,27 @@ const calibrationDataset = (): string =>
 
 const requestsFor = (fake: Pick<FakeChatCompletionsServer, 'requests'>, task: string) => chatCompletions(fake).filter((entry) => bodyText(entry.body).includes(task));
 
-const firstRequestAndRead = (fake: Pick<FakeChatCompletionsServer, 'requests'>, task: string): { first: number; afterRead: number } => {
+type ChatBody = { messages: { role?: unknown; content?: unknown }[] };
+
+const withOutputsEvicted = (body: unknown): ChatBody => {
+  const chat = body as ChatBody;
+  return {
+    ...chat,
+    messages: chat.messages.map((message) => {
+      if (message.role !== 'tool') return message;
+      const output = String(message.content);
+      const handle = createHash('sha256').update(output, 'utf8').digest('hex');
+      return { ...message, content: omittedMarker(Math.ceil(output.length / ESTIMATED_CHARACTERS_PER_TOKEN), handle, OUTPUT_READER_TOOL) };
+    }),
+  };
+};
+
+const firstRequestAndEvictedRead = (fake: Pick<FakeChatCompletionsServer, 'requests'>, task: string): { first: number; afterEviction: number } => {
   const requests = requestsFor(fake, task);
   const first = requests.find((entry) => !hasToolMessage(entry.body));
   const afterRead = requests.find((entry) => hasToolMessage(entry.body));
   if (first === undefined || afterRead === undefined) throw new Error(`the calibration task ${task} did not make a request before and a request after its read`);
-  return { first: wireTokensOfBody(first.body), afterRead: wireTokensOfBody(afterRead.body) };
+  return { first: wireTokensOfBody(first.body), afterEviction: wireTokensOfBody(withOutputsEvicted(afterRead.body)) };
 };
 
 export const measureWindow = async (home: E2eHome, fake: Pick<FakeChatCompletionsServer, 'requests'>, boundMs: number): Promise<MeasuredWindow> => {
@@ -86,16 +104,19 @@ export const measureWindow = async (home: E2eHome, fake: Pick<FakeChatCompletion
   fs.writeFileSync(calibrationFile, calibrationDataset());
   const calibration = await runCli(home, ['eval', 'context', calibrationFile, '--alias', 'default'], { cwd: home.project, boundMs });
   if (calibration.code !== 0) throw new Error(`the calibration run exited with ${String(calibration.code)}\n${calibration.stdout}\n${calibration.stderr}`);
-  const [small, large] = CALIBRATION_LINE_COUNTS.map((lines) => ({ lines, ...firstRequestAndRead(fake, calibrationTask(lines)) }));
-  if (small === undefined || large === undefined) throw new Error('the calibration needs two file sizes');
-  const growth = (entry: { first: number; afterRead: number }): number => entry.afterRead - entry.first;
-  const readLineTokens = (growth(large) - growth(small)) / (large.lines - small.lines);
-  const capabilities = await createGatewayCountClient(home.paths.sockets.gateway).capabilities();
+  const [read] = CALIBRATION_LINE_COUNTS.map((lines) => firstRequestAndEvictedRead(fake, calibrationTask(lines)));
+  if (read === undefined) throw new Error('the calibration needs a file to read');
+  const count = createGatewayCountClient(home.paths.sockets.gateway);
+  const capabilities = await count.capabilities();
+  const person = sizingFor(capabilities, wireTokensOfBody(personRequest.body));
+  const benchmark = sizingFor(capabilities, read.first);
   return {
     capabilities,
-    person: sizingFor(capabilities, wireTokensOfBody(personRequest.body)),
-    benchmark: sizingFor(capabilities, small.first),
-    readFixedTokens: growth(small) - small.lines * readLineTokens,
+    person,
+    benchmark,
+    personGain: await proactiveGainOf(count, person),
+    benchmarkGain: await proactiveGainOf(count, benchmark),
+    evictedReadTokens: read.afterEviction - read.first,
   };
 };
 

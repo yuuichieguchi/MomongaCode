@@ -1,10 +1,10 @@
-export { MIN_ITEM_CAP, MIN_ROOM_TOKENS, budgetFor, capacityFor, inputCeilingFor, itemCapFor, memoryBudgetFor, pinnedFloorFor, withCalibration } from './budget.ts';
+export { MIN_ITEM_CAP, MIN_ROOM_TOKENS, budgetFor, capacityFor, inputCeilingFor, itemCapFor, memoryBudgetFor, pinnedFloorFor, proactiveGainFor, withCalibration } from './budget.ts';
 export { renderMemories } from './memory.ts';
 export { nestedInstructionCandidates } from './instructions.ts';
 export { textOfContent, textOfItem } from './item-text.ts';
 export { attestedTokens, checkSummary, claimedTokens } from './summary-fidelity.ts';
 export type { FidelityRecord, FidelitySource } from './summary-fidelity.ts';
-export { WORKING_STATE_MESSAGE_MIN_TOKENS, criticalIdentifiersOf, renderWorkingState, workingStateCapFor, workingStateMessage } from './working-state.ts';
+export { WORKING_STATE_MESSAGE_MIN_TOKENS, criticalIdentifiersOf, renderWorkingState, widestMandatoryWorkingStateMessage, workingStateCapFor, workingStateMessage } from './working-state.ts';
 export type { WorkingStateOptions } from './working-state.ts';
 export { buildContext, maxInputFor, measureLayers, measurePinned } from './build-context.ts';
 export type { MaxInputBounds } from './build-context.ts';

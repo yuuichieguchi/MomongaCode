@@ -1,5 +1,5 @@
 import { canonicalJson, createRedactor, systemClock } from '@momonga/foundation';
-import { createFsInstructionReader, createTokenMeter, outputRenderOf } from '@momonga/context';
+import { createFsInstructionReader, createTokenMeter, outputRenderOf, proactiveGainFor, widestMandatoryWorkingStateMessage } from '@momonga/context';
 import type { ContextOverflowError, TokenCounter } from '@momonga/context';
 import { COMPACTION_INSTRUCTIONS_MARKER, wireOf, wireTokensOf } from '@momonga/gateway';
 import type { ChatWire } from '@momonga/gateway';
@@ -32,7 +32,6 @@ export const ACCEPTANCE_TASK = 'Search the haystack';
 export const FINAL_TEXT = 'searched';
 export const ACCEPTANCE_WINDOW = 4096;
 export const ACCEPTANCE_MAX_OUTPUT = 1024;
-export const COMPACTION_MIN_GAIN = 2;
 export const HIGH_MARK_RATIO = 0.7;
 export const EVICT_LOW_WATER = 0.5;
 export const PERTURBATIONS: readonly number[] = [0, -2, 2];
@@ -73,7 +72,6 @@ export type Sizing = {
   readonly summaryItem: number;
   readonly highMark: number;
   readonly lowMark: number;
-  readonly gainThreshold: number;
 };
 
 export type AcceptanceFacts = {
@@ -166,7 +164,6 @@ export const sizingFor = (capabilities: Capabilities, pinned: number): Sizing =>
     summaryItem,
     highMark,
     lowMark: pinned + EVICT_LOW_WATER * (highMark - pinned),
-    gainThreshold: COMPACTION_MIN_GAIN * summaryItem,
   };
 };
 
@@ -177,6 +174,14 @@ export const seenOutputTokens = async (count: GatewayCountClient, call: { callId
     { signal: AbortSignal.timeout(E2E_MARGIN_MS) },
   );
   return counted.input_tokens;
+};
+
+export const proactiveGainOf = async (count: GatewayCountClient, sizing: Sizing): Promise<number> => {
+  const counted = await count.gateway.countTokens(
+    { model: E2E_MODEL_ALIAS, input: [widestMandatoryWorkingStateMessage()], momonga: { lenient_items: { call_names: {}, with_tools: true } } },
+    { signal: AbortSignal.timeout(E2E_MARGIN_MS) },
+  );
+  return proactiveGainFor(sizing.summaryItem + counted.input_tokens, 0);
 };
 
 const textItemOf = (tokens: number): InputItem => ({ type: 'message', role: 'user', content: 'x'.repeat(ESTIMATED_CHARACTERS_PER_TOKEN * tokens) });
@@ -506,7 +511,7 @@ const describeRun = (run: DryRun): string =>
   `${run.perturbation >= 0 ? '+' : ''}${run.perturbation} n=${run.fillers} claims=${run.claims} ${run.facts.status}${run.facts.stopReason === undefined ? '' : ` ${run.facts.stopReason}`} compactions=${run.facts.compactionSeqs.length} grepEviction=${run.facts.grepEvictionSeq ?? '-'} wire=[${run.wireCounts.join(', ')}]${run.facts.notices.length === 0 ? '' : ` notices=${JSON.stringify(run.facts.notices)}`}`;
 
 export const describeSizing = (sizing: Sizing): string =>
-  `P=${sizing.pinned} C=${sizing.ceiling} room=${sizing.room} itemCap=${sizing.itemCap} summaryCap=${sizing.summaryCap} item=${sizing.summaryItem} highMark=${sizing.highMark} lowMark=${sizing.lowMark} threshold=${sizing.gainThreshold}`;
+  `P=${sizing.pinned} C=${sizing.ceiling} room=${sizing.room} itemCap=${sizing.itemCap} summaryCap=${sizing.summaryCap} item=${sizing.summaryItem} highMark=${sizing.highMark} lowMark=${sizing.lowMark}`;
 
 export class NoPlanError extends Error {
   readonly attempts: readonly PlanAttempt[];

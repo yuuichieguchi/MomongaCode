@@ -172,17 +172,17 @@ describe('momonga context improve', () => {
       'the winning guideline costs tokens in every compaction request; the summary written without it is padded by twice that measured cost, so that the guideline pays for itself the way a useful guideline does',
     ).toBeGreaterThan(0);
     const measured = await measureWindow(home, fake, 4 * E2E_RUN_COMPLETED_BOUND_MS);
-    const benchmarkStepTokens = Math.ceil(measured.benchmark.gainThreshold / (STEPS - DEFAULT_KEEP_RECENT_STEPS)) - Math.ceil(measured.readFixedTokens);
+    const benchmarkStepTokens = Math.ceil(measured.benchmarkGain / (STEPS - DEFAULT_KEEP_RECENT_STEPS)) - Math.ceil(measured.evictedReadTokens);
     expect(
       benchmarkStepTokens,
-      'a step older than the protected recent steps keeps its call and an omitted-output marker (about the fixed cost of a Read) once its output is evicted, so its text only has to make up the rest of the compaction gain: the steps outside the protection are then worth a compaction at a level-0 build, and the case without compaction still fits the whole walk',
+      'a step older than the protected recent steps keeps its call and the omitted-output marker once its output is evicted, measured on the calibration read with the marker of the product,, so its text only has to make up the rest of the compaction gain: the steps outside the protection are then worth a compaction at a level-0 build, and the case without compaction still fits the whole walk',
     ).toBeGreaterThan(0);
     benchmarkStepText = fillerOfTokens(benchmarkStepTokens);
     const followUpStepTokens = await stepTokensToOverflowTheRoom(measured.capabilities, measured.person, STEPS);
     expect(
       compactableTokens(STEPS, DEFAULT_KEEP_RECENT_STEPS, followUpStepTokens),
       'the steps older than the protected recent steps must be worth a compaction (the gain rule of the context builder)',
-    ).toBeGreaterThanOrEqual(measured.person.gainThreshold);
+    ).toBeGreaterThanOrEqual(measured.personGain);
     followUpStepText = fillerOfTokens(followUpStepTokens);
     const walkDataset = datasetOf(STEPS + 1);
     const dataset = path.join(home.root, 'improve.json');
