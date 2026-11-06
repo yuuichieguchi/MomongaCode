@@ -23,7 +23,7 @@ export const matchesKind = (kind: Kind, node: Schema, position: Position): boole
     case 'object-with-properties':
       return isObject(node['properties']);
     case 'object-without-properties':
-      return node['type'] === 'object' && !('properties' in node) && !PROPERTY_DECLARING_APPLICATORS.some((keyword) => keyword in node);
+      return hasType(node, 'object') && !('properties' in node) && !PROPERTY_DECLARING_APPLICATORS.some((keyword) => keyword in node);
     case 'any-of':
       return 'anyOf' in node;
     case 'any-of-branch':
@@ -35,7 +35,7 @@ export const matchesKind = (kind: Kind, node: Schema, position: Position): boole
     case 'untyped':
       return !('type' in node) && !('const' in node) && !('$ref' in node) && !('anyOf' in node);
     case 'array':
-      return node['type'] === 'array' || 'items' in node;
+      return hasType(node, 'array') || 'items' in node;
     case 'type-string':
       return hasType(node, 'string');
     case 'type-number':

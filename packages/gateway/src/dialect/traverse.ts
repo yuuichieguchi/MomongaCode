@@ -5,6 +5,11 @@ import { clauseMatches } from './select.ts';
 import { writeAt } from './state.ts';
 import type { NodeContext, RenderState } from './state.ts';
 
+const labelStep = (child: ChildEntry): string => {
+  if (child.keyword === 'properties') return child.key ?? child.keyword;
+  return child.key === undefined ? child.keyword : `${child.keyword}_${child.key}`;
+};
+
 const childContext = (state: RenderState, parent: NodeContext, parentNode: JsonObject, child: ChildEntry): NodeContext => {
   const location = childPointer(parent.location, child.keyword, child.key);
   if (state.wrappers.has(parentNode) && child.keyword === 'anyOf') return { ...parent, isRoot: false, absent: false, location };
@@ -21,7 +26,7 @@ const childContext = (state: RenderState, parent: NodeContext, parentNode: JsonO
   const inPlace = IN_PLACE_KEYWORDS.has(child.keyword);
   return {
     origin,
-    labelPath: `${parent.labelPath}_${child.key ?? child.keyword}`,
+    labelPath: `${parent.labelPath}_${labelStep(child)}`,
     steps: [...parent.steps, child.keyword],
     position,
     isRoot: false,

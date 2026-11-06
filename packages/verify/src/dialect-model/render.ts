@@ -2,7 +2,7 @@ import { classOf, resolveRules, type Definition, type Rule } from './definition.
 import { clone, deepEqual, isObject, parsePointer, type Json, type JsonObject, type Schema } from './json.ts';
 import { applyRule, RenderFailure, type FailureReason, type Position, type State } from './primitives.ts';
 import { selects, type Site } from './selector.ts';
-import { childSlots, collectReferenceSegments, setSlot, slotValue } from './walk.ts';
+import { childSlots, collectReferenceSegments, NODE_EDGES, setSlot, slotValue } from './walk.ts';
 
 export type Rendered = { ok: true; schema: Schema } | { ok: false; reason: FailureReason; path: string; detail: string; node: Schema };
 
@@ -57,7 +57,8 @@ const definitionPositions = (document: Schema): Map<string, Position> => {
 };
 
 const applyAt = (rules: readonly Rule[], initial: Schema, state: State, write: (value: Schema) => void): Schema => {
-  let node = initial;
+  const trueIsNode = initial === true && (state.edges.length === 0 || NODE_EDGES.includes(state.edges[state.edges.length - 1] as string));
+  let node: Schema = trueIsNode ? {} : initial;
   for (const rule of rules) {
     if (!selects(rule.select, node, { site: state.site, edges: state.edges })) continue;
     const before = node;
@@ -82,7 +83,7 @@ const applyAt = (rules: readonly Rule[], initial: Schema, state: State, write: (
     write(node);
     for (const entry of state.pendingDrops) for (const key of entry.keys) delete entry.node[key];
   }
-  return node;
+  return trueIsNode && isObject(node) && Object.keys(node).length === 0 ? true : node;
 };
 
 const visit = (rules: readonly Rule[], read: () => Schema, write: (value: Schema) => void, state: State): void => {

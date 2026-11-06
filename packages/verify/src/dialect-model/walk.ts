@@ -17,6 +17,10 @@ const SINGLE_KEYWORDS: ReadonlySet<string> = new Set([
 
 export const SAME_LOCATION_EDGES: readonly string[] = ['allOf', 'anyOf', 'oneOf', 'if', 'then', 'else', 'dependentSchemas'];
 
+export const NODE_EDGES: readonly string[] = [
+  'properties', 'patternProperties', 'items', 'prefixItems', 'anyOf', 'allOf', 'oneOf', 'then', 'else', 'dependentSchemas', '$defs', 'definitions',
+];
+
 export interface ChildSlot {
   edge: string;
   segments: string[];

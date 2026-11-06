@@ -184,7 +184,8 @@ const FEEDS_ITEMS = ['prefixItems', 'items', 'contains', 'unevaluatedItems', ...
 
 export const dropClosure = (node: JsonObject, keys: readonly string[]): string[] => {
   const closure = new Set<string>();
-  const queue = keys.filter((key) => Object.hasOwn(node, key));
+  const requested = keys.filter((key) => Object.hasOwn(node, key));
+  const queue = requested.includes('minContains') && node['minContains'] === 0 && Object.hasOwn(node, 'contains') ? [...requested, 'contains'] : requested;
   while (queue.length > 0) {
     const key = queue.pop() as string;
     if (closure.has(key)) continue;
@@ -196,7 +197,7 @@ export const dropClosure = (node: JsonObject, keys: readonly string[]): string[]
 
 export const allowedDropKeys = (keys: readonly string[]): Set<string> => {
   const allowed = new Set<string>();
-  const queue = [...keys];
+  const queue = keys.includes('minContains') ? [...keys, 'contains'] : [...keys];
   while (queue.length > 0) {
     const key = queue.pop() as string;
     if (allowed.has(key)) continue;

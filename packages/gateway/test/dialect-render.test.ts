@@ -48,7 +48,7 @@ describe('explicit-keys renders the keys fm was measured to need', () => {
           title: 'root_enforcement',
           anyOf: [
             { type: 'null' },
-            { type: 'object', properties: { level: { type: 'string' } }, required: ['level'], title: 'root_enforcement_1', 'x-order': ['level'], additionalProperties: true },
+            { type: 'object', properties: { level: { type: 'string' } }, required: ['level'], title: 'root_enforcement_anyOf_1', 'x-order': ['level'], additionalProperties: true },
           ],
         },
       },
@@ -75,10 +75,10 @@ describe('explicit-keys renders the keys fm was measured to need', () => {
           type: 'object',
           properties: {
             kind: { const: 'a' },
-            args: { type: 'object', properties: { x: { type: 'integer' } }, title: 'root_0_args', 'x-order': ['x'], additionalProperties: true, required: [] },
+            args: { type: 'object', properties: { x: { type: 'integer' } }, title: 'root_anyOf_0_args', 'x-order': ['x'], additionalProperties: true, required: [] },
           },
           required: ['kind'],
-          title: 'root_0',
+          title: 'root_anyOf_0',
           'x-order': ['kind', 'args'],
           additionalProperties: true,
         },
