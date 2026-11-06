@@ -63,3 +63,44 @@ describe('the tools kept, their order and the digest', () => {
     expect(permuted.notice).toBe(reference.notice);
   });
 });
+
+describe('the tools_dropped notice', () => {
+  const HUGE = 'x'.repeat(20_000);
+  const droppedByTier = (message: string): Record<string, string[]> => {
+    const list = /^Tools (.*) were left out because the declared context window leaves no room for them$/.exec(message)?.[1];
+    expect(list, message).toBeDefined();
+    return Object.fromEntries(
+      list!.split('; ').map((group) => {
+        const separator = group.indexOf(': ');
+        return separator < 0 ? ['', group.split(', ')] : [group.slice(0, separator), group.slice(separator + 2).split(', ')];
+      }),
+    );
+  };
+
+  it('groups the dropped tools by tier, each companion marked with its host and ranked in its host tier, as in the design example "Tools optional: GitCommit, GitPush; common: BashOutput (with Bash) were left out because the declared context window leaves no room for them"', async () => {
+    const set = await toolSetOf(
+      makeTool('Read', { tier: 'essential' }),
+      makeTool('Bash', { tier: 'common', description: HUGE }),
+      makeTool('BashOutput', { tier: 'optional', companionOf: 'Bash' }),
+      makeTool('KillBash', { tier: 'optional', companionOf: 'Bash' }),
+      makeTool('Alpha', { tier: 'optional', description: HUGE }),
+      makeTool('Beta', { tier: 'optional', description: HUGE }),
+    );
+    const capabilities = capabilitiesFor(1_536, { maxOutputTokens: 1024 });
+    const { ports } = harness(capabilities);
+    const built = await buildContext(
+      inputFor(capabilities, {
+        sources: sourcesWith({ tools: set.forModel({ mode: 'default', rules: [] }) }),
+        companions: { hostOf: Object.fromEntries(set.companions), keepWithoutHost: false },
+      }),
+      ports,
+    );
+    expect(built.tools.map((tool) => tool.name)).toEqual(['Read']);
+    const message = built.notices.find((notice) => notice.code === 'tools_dropped')?.message;
+    expect(message).toBeDefined();
+    expect(droppedByTier(message!)).toEqual({
+      common: ['Bash', 'BashOutput (with Bash)', 'KillBash (with Bash)'],
+      optional: ['Alpha', 'Beta'],
+    });
+  });
+});
