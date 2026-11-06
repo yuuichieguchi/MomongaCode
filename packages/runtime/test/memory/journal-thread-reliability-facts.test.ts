@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { MAIN_AGENT } from '@momonga/protocol';
 import type { RunEventPayload } from '@momonga/protocol';
-import { foldFacts } from '@momonga/reliability';
+import { foldRunRecord } from '@momonga/reliability';
 import * as storeModule from '@momonga/store';
 import { startJournalThread } from '../../src/memory/journal-thread-client.ts';
 import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../../src/memory/journal-thread-limits.ts';
@@ -24,7 +24,7 @@ const responded: RunEventPayload = {
 };
 
 describe('the runFacts request of the embedded journal thread (P2: the stored facts equal the fold)', () => {
-  it('answers with the facts foldFacts computes over the same journal and the same run row', async () => {
+  it('answers with the facts and the call rows foldRunRecord computes over the same journal and the same run row', async () => {
     const env = await makeEnv();
     const run = env.enqueue('Work', { history: 'fresh' });
     const claim = env.seed(
@@ -41,10 +41,10 @@ describe('the runFacts request of the embedded journal thread (P2: the stored fa
     const { dev, ino } = fs.statSync(env.dbPath);
     const thread = await startJournalThread({ databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
     try {
-      const facts = await thread.runFacts(run.id);
+      const record = await thread.runFacts(run.id);
       const stored = env.store.getRun(run.id);
       if (stored === undefined) throw new Error('the run is missing');
-      const expected = foldFacts(env.store.readRunEvents(run.id, 0, 1000), {
+      const expected = foldRunRecord(env.store.readRunEvents(run.id, 0, 1000), {
         runId: run.id,
         rootRunId: run.id,
         sessionId: stored.sessionId,
@@ -59,8 +59,8 @@ describe('the runFacts request of the embedded journal thread (P2: the stored fa
         agent: MAIN_AGENT,
         origin: stored.origin,
       });
-      expect(facts).toEqual(expected);
-      expect(facts.recoveries).toEqual([expect.objectContaining({ cause: 'process_lost', outcome: 'recovered' })]);
+      expect(record).toEqual(expected);
+      expect(record.facts.recoveries).toEqual([expect.objectContaining({ cause: 'process_lost', outcome: 'recovered' })]);
     } finally {
       await thread.close();
     }

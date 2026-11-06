@@ -6,7 +6,7 @@ import type { RunFactsView } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 import { START_MS, expectSchema, startService } from './helpers.ts';
 
-type FactsStore = { commit(batch: { rows: readonly RunFactsView[]; unavailable: readonly string[]; throughEventId: number }): void };
+type FactsStore = { commit(batch: { rows: readonly RunFactsView[]; calls: readonly []; unavailable: readonly string[]; throughEventId: number }): void };
 
 const factsOf = (store: RuntimeStore): FactsStore => (store as unknown as { runFacts: FactsStore }).runFacts;
 
@@ -49,7 +49,7 @@ describe('GET /v1/report/facts', () => {
     const session = await env.createSession();
     const ids: string[] = [];
     for (let index = 0; index < 3; index += 1) ids.push((await env.createRun(session.id, { input: `run ${index}` })).id);
-    factsOf(env.store).commit({ rows: ids.map((runId) => factsRow(runId, session.id)), unavailable: [], throughEventId: 0 });
+    factsOf(env.store).commit({ rows: ids.map((runId) => factsRow(runId, session.id)), calls: [], unavailable: [], throughEventId: 0 });
 
     const first = await env.http('GET', '/v1/report/facts?limit=2');
     expect(first.status).toBe(200);
@@ -70,7 +70,7 @@ describe('GET /v1/report/facts', () => {
     const env = await startService();
     const session = await env.createSession();
     const run = await env.createRun(session.id, { input: 'one' });
-    factsOf(env.store).commit({ rows: [factsRow(run.id, session.id)], unavailable: [], throughEventId: 0 });
+    factsOf(env.store).commit({ rows: [factsRow(run.id, session.id)], calls: [], unavailable: [], throughEventId: 0 });
     const response = await env.http('GET', `/v1/report/facts?limit=${REPORT_PAGE_ROWS + 1}`);
     expect(response.status).toBe(400);
     const bounded = await env.http('GET', `/v1/report/facts?limit=${REPORT_PAGE_ROWS}`);

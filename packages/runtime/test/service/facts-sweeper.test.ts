@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as runtime from '@momonga/runtime';
 import { FACTS_SWEEP_BATCH_RUNS, INDICATOR_DEFINITIONS_VERSION } from '@momonga/protocol';
-import type { RunFactsView } from '@momonga/protocol';
+import type { RunCallView, RunFactsView } from '@momonga/protocol';
 import { afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { START_MS } from './helpers.ts';
 import { enqueue, harness, mustClaim, newSession, rawDb } from '../../../store/test/helpers.ts';
@@ -24,7 +24,9 @@ const factsRefusedError = (): RefusalClass => {
   return refusal as RefusalClass;
 };
 
-type Commit = { rows: readonly RunFactsView[]; unavailable: readonly string[]; throughEventId: number };
+type Commit = { rows: readonly RunFactsView[]; calls: readonly RunCallView[]; unavailable: readonly string[]; throughEventId: number };
+
+const recordOf = (facts: RunFactsView, calls: readonly RunCallView[] = []) => ({ facts, calls });
 
 const factsStore = (runIds: readonly string[]) => {
   const commits: Commit[] = [];
@@ -94,7 +96,7 @@ describe('startFactsSweeper (FactsSweeper.tla)', () => {
     const fake = factsStore(ids);
     const requests: string[][] = [];
     let current: string[] = [];
-    const thread = { runFacts: async (runId: string) => (current.push(runId), rowFor(runId)) };
+    const thread = { runFacts: async (runId: string) => (current.push(runId), recordOf(rowFor(runId))) };
     const sweeper = startFactsSweeper({ store: fake.store, thread, timers, intervalMs: 1000, batchSize: FACTS_SWEEP_BATCH_RUNS, onError: () => undefined });
     for (let round = 0; round < 3; round += 1) {
       current = [];
@@ -115,14 +117,14 @@ describe('startFactsSweeper (FactsSweeper.tla)', () => {
     const thread = {
       runFacts: async (runId: string) => {
         if (runId === 'poison') throw new FactsRefused('the fold of poison refused the journal');
-        return rowFor(runId);
+        return recordOf(rowFor(runId));
       },
     };
     const sweeper = startFactsSweeper({ store: fake.store, thread, timers, intervalMs: 1000, batchSize: 3, onError: (error: unknown) => errors.push(error) });
     await tick(timers);
     await tick(timers);
     await sweeper.close();
-    expect(fake.commits[0]).toEqual({ rows: [rowFor('r1'), rowFor('r3')], unavailable: ['poison'], throughEventId: 3 });
+    expect(fake.commits[0]).toEqual({ rows: [rowFor('r1'), rowFor('r3')], calls: [], unavailable: ['poison'], throughEventId: 3 });
     expect(fake.covered().sort()).toEqual(['poison', 'r1', 'r3', 'r4']);
     expect(timers.pending()).toEqual([]);
   });
@@ -145,7 +147,7 @@ describe('startFactsSweeper (FactsSweeper.tla)', () => {
       runFacts: async (runId: string) => {
         requested.push(runId);
         if (runId === poison) throw new FactsRefused('the fold refused the journal');
-        return fullRow(runId, session);
+        return recordOf(fullRow(runId, session), [{ runId, callId: 'call-1', basis: 'rule', sideEffect: 'write', asked: false }]);
       },
     };
     const facts = (store as unknown as { runFacts: { get(runId: string): unknown } }).runFacts;
@@ -155,6 +157,8 @@ describe('startFactsSweeper (FactsSweeper.tla)', () => {
     for (let round = 0; round < 4; round += 1) await tick(timers);
     expect(ids.map((runId) => facts.get(runId) === undefined)).toEqual(ids.map(() => false));
     expect(facts.get(poison)).toEqual({ kind: 'unavailable' });
+    const stored = (store as unknown as { runFacts: { calls(after: null, limit: number): RunCallView[] } }).runFacts.calls(null, 100);
+    expect(stored.map((call) => call.runId).sort()).toEqual(ids.filter((runId) => runId !== poison).sort());
     const before = requested.length;
     await tick(timers);
     expect(requested.length).toBe(before);
@@ -177,7 +181,7 @@ describe('startFactsSweeper (FactsSweeper.tla)', () => {
           failures += 1;
           throw new storeModule.JournalThreadError('journal thread was silent for 1000 ms');
         }
-        return rowFor(runId);
+        return recordOf(rowFor(runId));
       },
     };
     const sweeper = startFactsSweeper({ store: fake.store, thread, timers, intervalMs: 1000, batchSize: 3, onError: () => undefined });

@@ -21,7 +21,10 @@ describe('the shipped benchmark (3.6, decision 20)', () => {
     expect(benchmark.tasks.length).toBeGreaterThanOrEqual(12);
     expect([...new Set(benchmark.tasks.map((task) => task.taskType))].sort()).toEqual([...TASK_TYPES].sort());
     expect([...new Set(benchmark.tasks.map((task) => task.difficulty))].sort()).toEqual([...DIFFICULTIES].sort());
-    for (const task of benchmark.tasks) expect(task.labelledBy.length * task.labelledAt.length, task.id).toBeGreaterThan(0);
+    for (const task of benchmark.tasks) {
+      expect(task.labelledBy, task.id).toBe('Yuuichi');
+      expect(task.labelledAt, task.id).toBe('2026-11-06');
+    }
   });
 
   it('uses only fixture repositories vendored inside this repository, under datasets/bench/repos', () => {

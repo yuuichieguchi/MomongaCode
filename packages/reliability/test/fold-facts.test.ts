@@ -405,7 +405,15 @@ describe('population buckets', () => {
     const stale: RunFacts = { ...fold('stale', [[T0, started(1)], [T0 + 1, terminal('COMPLETED')]]), definitionsVersion: INDICATOR_DEFINITIONS_VERSION - 1 };
     const counted = fold('counted', [[T0, started(1)], [T0 + 1, terminal('COMPLETED')]]);
     const total = totalOf([cancelled, stale, counted]);
-    expect(total.buckets).toEqual({ counted: 1, cancelled: 1, pendingFacts: 1 });
+    expect(total.buckets).toEqual({ counted: 1, cancelled: 1, pendingFacts: 1, factsUnavailable: 0 });
+    expect(total.intervention).toEqual({ k: 0, n: 1 });
+  });
+
+  it('decision 55: a root whose tree holds an unavailable run is the fourth bucket, outside every rate, whether or not its own row exists', () => {
+    const counted = fold('counted', [[T0, started(1)], [T0 + 1, terminal('COMPLETED')]]);
+    const hasUnavailableChild = fold('parent', [[T0, started(1)], [T0 + 1, terminal('COMPLETED')]]);
+    const total = indicatorsOf(aggregate([counted, hasUnavailableChild], { groupBy: 'model', unavailableRoots: ['parent', 'ghost'] })).total;
+    expect(total.buckets).toEqual({ counted: 1, cancelled: 0, pendingFacts: 0, factsUnavailable: 2 });
     expect(total.intervention).toEqual({ k: 0, n: 1 });
   });
 });
@@ -439,5 +447,46 @@ describe('gap A2: an episode owes the calls open at any record of its chain', ()
     const facts = fold('r1', chainWithCallOpenedAfterFirstRecord([[T0 + 1200, modelResponded(2)]]));
     expect(facts.recoveries.map(({ ordinal, cause, outcome }) => ({ ordinal, cause, outcome }))).toEqual([{ ordinal: 1, cause: 'worker_failure', outcome: 'unknown_effect' }]);
     expect(totalOf([facts]).recovery).toEqual({ k: 0, n: 1, unknownEffect: 1, failed: 0, stopped: 0 });
+  });
+});
+
+describe('decision 53: an episode closes at the first progress after which no owed call is unsettled', () => {
+  const owedThenFresh = (settleOwed: Timed): Timed[] => [
+    [T0, started(1)],
+    [T0 + 100, toolCall('c1', 'write')],
+    [T0 + 110, toolStarted('c1')],
+    [T0 + 1000, attemptLost(T0 + 500)],
+    [T0 + 1010, started(2)],
+    [T0 + 1100, toolCall('c2', 'write')],
+    [T0 + 1110, toolStarted('c2')],
+    [T0 + 1200, toolCompleted('c2')],
+    settleOwed,
+    [T0 + 1400, modelResponded(2)],
+    [T0 + 1500, terminal('COMPLETED')],
+  ];
+
+  it('a fresh call that completes while the owed call is unsettled does not close the episode', () => {
+    const facts = fold('r1', owedThenFresh([T0 + 1300, toolCompleted('c1')]));
+    expect(facts.recoveries).toEqual([expect.objectContaining({ ordinal: 1, failedAt: T0 + 500, progressAt: T0 + 1300, outcome: 'recovered' })]);
+  });
+
+  it('the owed call reconciled unknown after a fresh completion makes the one episode unknown_effect, closed at the reconcile', () => {
+    const facts = fold('r1', owedThenFresh([T0 + 1300, reconciled('c1', 'unknown')]));
+    expect(facts.recoveries).toEqual([expect.objectContaining({ ordinal: 1, failedAt: T0 + 500, progressAt: T0 + 1300, outcome: 'unknown_effect' })]);
+    expect(totalOf([facts]).recovery).toEqual({ k: 0, n: 1, unknownEffect: 1, failed: 0, stopped: 0 });
+  });
+
+  it('a model response while an owed call is unsettled does not close the episode', () => {
+    const facts = fold('r1', [
+      [T0, started(1)],
+      [T0 + 100, toolCall('c1', 'write')],
+      [T0 + 110, toolStarted('c1')],
+      [T0 + 1000, attemptLost(T0 + 500)],
+      [T0 + 1010, started(2)],
+      [T0 + 1100, modelResponded(2)],
+      [T0 + 1300, reconciled('c1', 'already_applied')],
+      [T0 + 1500, terminal('COMPLETED')],
+    ]);
+    expect(facts.recoveries).toEqual([expect.objectContaining({ progressAt: T0 + 1300, outcome: 'recovered' })]);
   });
 });

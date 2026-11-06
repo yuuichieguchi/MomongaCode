@@ -16,6 +16,7 @@ import {
   RUN_API_SCHEMAS,
   toPublicRunEvent,
 } from '@momonga/protocol';
+import * as protocol from '@momonga/protocol';
 import type { RunEvent } from '@momonga/protocol';
 
 const schemas = RUN_API_SCHEMAS as unknown as Record<string, Record<string, unknown>>;
@@ -109,7 +110,9 @@ describe('protocol/src/reliability.ts', () => {
     expect(schema?.['$schema']).toBe('https://json-schema.org/draft/2020-12/schema');
     const rows = (schema?.['properties'] as Record<string, Record<string, unknown>> | undefined)?.['rows'];
     expect(rows?.['maxItems']).toBe(REPORT_PAGE_ROWS);
-    expect(accepts('ReportPage', { rows: [], nextCursor: null })).toBe(true);
+    expect(accepts('ReportPage', { rows: [], unavailable: [], nextCursor: null })).toBe(true);
+    expect(accepts('ReportPage', { rows: [], unavailable: [{ runId: 'r', rootRunId: 'r' }], nextCursor: null })).toBe(true);
+    expect(accepts('ReportPage', { rows: [], nextCursor: null })).toBe(false);
     expect(accepts('ReportPage', { rows: [] })).toBe(false);
   });
 });
@@ -128,5 +131,11 @@ describe('protocol/src/trace-attributes.ts', () => {
       fallbackCauses: 'momonga.fallback_causes',
     });
     expect(ERROR_TYPE_ATTRIBUTE).toBe('error.type');
+  });
+});
+
+describe('decisions 54 and 57', () => {
+  it('draws 73 observations per rate denominator for the review sample', () => {
+    expect((protocol as Record<string, unknown>)['REVIEW_SAMPLE_SIZE']).toBe(73);
   });
 });

@@ -259,6 +259,7 @@ const COUNT_PATHS: ((indicators: Indicators) => number)[] = [
   (i) => i.buckets.counted,
   (i) => i.buckets.cancelled,
   (i) => i.buckets.pendingFacts,
+  (i) => i.buckets.factsUnavailable,
   (i) => i.completion.k,
   (i) => i.completion.n,
   (i) => i.completion.undeclared,
@@ -332,8 +333,9 @@ describe('properties of foldFacts and aggregate on generated streams', () => {
         counted: counted.length,
         cancelled: generated.tasks.filter((task) => task.cancelled).length,
         pendingFacts: generated.tasks.filter((task) => task.stale).length,
+        factsUnavailable: 0,
       });
-      expect(total.buckets.counted + total.buckets.cancelled + total.buckets.pendingFacts, message).toBe(TASKS_PER_SEED);
+      expect(total.buckets.counted + total.buckets.cancelled + total.buckets.pendingFacts + total.buckets.factsUnavailable, message).toBe(TASKS_PER_SEED);
       expect(total.completion, message).toEqual({
         k: counted.filter((task) => task.declared && task.met).length,
         n: counted.filter((task) => task.declared).length,

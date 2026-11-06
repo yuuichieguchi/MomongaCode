@@ -1,13 +1,14 @@
 import crypto from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { INDICATOR_DEFINITIONS_VERSION, REPORT_PAGE_ROWS } from '@momonga/protocol';
-import type { ReportPage, RunFactsView } from '@momonga/protocol';
+import type { ReportPage, RunCallView, RunFactsView } from '@momonga/protocol';
 
 const T0 = 1_800_000_000_000;
 
 type FactsClient = { reportFacts(request: { cursor: string | null; limit: number }): Promise<ReportPage> };
 type ReliabilityCommand = { reliabilityText(client: FactsClient, options: { groupBy: 'model'; explain: boolean }): Promise<string> };
-type ReviewCommand = { reviewSample(calls: readonly { runId: string; callId: string; basis: string }[], options: { size: number; seed: string }): { runId: string; callId: string; basis: string }[] };
+type ReviewCall = RunCallView;
+type ReviewCommand = { reviewSample(calls: readonly ReviewCall[], options: { size: number; seed: string }): { allowedWithoutPerson: ReviewCall[]; asks: ReviewCall[] } };
 
 const reliabilityCommand = async (): Promise<ReliabilityCommand> => (await import('../src/commands/' + 'reliability.ts')) as ReliabilityCommand;
 const reviewCommand = async (): Promise<ReviewCommand> => (await import('../src/commands/' + 'review.ts')) as ReviewCommand;
@@ -59,7 +60,7 @@ const pagedClient = (rows: readonly RunFactsView[], pageSize: number) => {
       requests.push(request);
       const start = request.cursor === null ? 0 : Number(request.cursor);
       const next = start + pageSize;
-      return { rows: rows.slice(start, next), nextCursor: next < rows.length ? String(next) : null };
+      return { rows: rows.slice(start, next), unavailable: [], nextCursor: next < rows.length ? String(next) : null };
     },
   };
   return { client, requests };
@@ -97,14 +98,48 @@ describe('momonga reliability', () => {
   });
 });
 
-describe('momonga permissions review --sample', () => {
-  const calls = Array.from({ length: 10 }, (_, index) => ({ runId: `r${index % 3}`, callId: `call-${index}`, basis: 'classifier' }));
-  const bySha = (seed: string) => [...calls].sort((a, b) => crypto.createHash('sha256').update(a.callId + seed).digest('hex').localeCompare(crypto.createHash('sha256').update(b.callId + seed).digest('hex')));
+describe('decision 55: unavailable runs in the text', () => {
+  it('merges the unavailable roots of every page into the fourth bucket and counts them as resolved in the coverage', async () => {
+    const { reliabilityText } = await reliabilityCommand();
+    const pages: ReportPage[] = [
+      { rows: [row('run-a')], unavailable: [{ runId: 'poison-1', rootRunId: 'poison-1' }], nextCursor: '1' },
+      { rows: [row('run-b')], unavailable: [{ runId: 'poison-2', rootRunId: 'run-b' }], nextCursor: null },
+    ];
+    const client: FactsClient = { reportFacts: async (request) => pages[request.cursor === null ? 0 : 1] as ReportPage };
+    const text = await reliabilityText(client, { groupBy: 'model', explain: false });
+    expect(text).toContain('Population: 3 terminal root tasks; counted 1; cancelled 0 (excluded); pending facts 0 (excluded); facts unavailable 2 (excluded); facts coverage 3/3');
+  });
+});
 
-  it('orders the frame by sha256(callId || seed) and takes the first N, the same for the same seed', async () => {
+describe('momonga permissions review --sample (decisions 54 and 57)', () => {
+  const sha = (call: ReviewCall, seed: string): string => crypto.createHash('sha256').update(call.callId + seed).digest('hex');
+  const byHash = (calls: readonly ReviewCall[], seed: string): ReviewCall[] => [...calls].sort((a, b) => sha(a, seed).localeCompare(sha(b, seed)));
+  const call = (index: number, overrides: Partial<ReviewCall>): ReviewCall => ({ runId: `r${index % 3}`, callId: `call-${index}`, basis: 'classifier', sideEffect: 'write', asked: false, ...overrides });
+  const allowed = Array.from({ length: 10 }, (_, index) => call(index, {}));
+  const asks = Array.from({ length: 6 }, (_, index) => call(100 + index, { basis: 'person', asked: true }));
+  const excluded = [call(200, { sideEffect: 'read_only' }), call(201, { basis: 'person' }), call(202, { basis: null })];
+
+  it('draws from each rate denominator on its own, ordered by sha256(callId || seed), the same for the same seed', async () => {
     const { reviewSample } = await reviewCommand();
-    expect(reviewSample(calls, { size: 4, seed: 's1' })).toEqual(bySha('s1').slice(0, 4));
-    expect(reviewSample(calls, { size: 4, seed: 's1' })).toEqual(reviewSample(calls, { size: 4, seed: 's1' }));
-    expect(reviewSample(calls, { size: 10, seed: 's2' })).toEqual(bySha('s2'));
+    const frame = [...excluded, ...asks, ...allowed];
+    const sample = reviewSample(frame, { size: 4, seed: 's1' });
+    expect(sample.allowedWithoutPerson).toEqual(byHash(allowed, 's1').slice(0, 4));
+    expect(sample.asks).toEqual(byHash(asks, 's1').slice(0, 4));
+    expect(reviewSample(frame, { size: 4, seed: 's1' })).toEqual(sample);
+  });
+
+  it('takes every observation of a denominator that holds fewer than the size', async () => {
+    const { reviewSample } = await reviewCommand();
+    const sample = reviewSample([...allowed, ...asks], { size: 8, seed: 's2' });
+    expect(sample.allowedWithoutPerson).toEqual(byHash(allowed, 's2').slice(0, 8));
+    expect(sample.asks).toEqual(byHash(asks, 's2'));
+  });
+
+  it('leaves out of the first denominator a read-only call, a call decided by a person and a call with no basis, and treats an unknown side effect as not read-only', async () => {
+    const { reviewSample } = await reviewCommand();
+    const unknownSideEffect = call(300, { sideEffect: null });
+    const sample = reviewSample([...excluded, unknownSideEffect], { size: 73, seed: 's3' });
+    expect(sample.allowedWithoutPerson).toEqual([unknownSideEffect]);
+    expect(sample.asks).toEqual([]);
   });
 });
