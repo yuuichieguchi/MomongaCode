@@ -91,18 +91,13 @@ describe('every terminal operation measures one run, outside the write transacti
     outsideTheTransaction(measurements, [parent.id, child.id]);
   });
 
-  it('a late answer to an expired approval stops the run through an awaited operation, outside the transaction', async () => {
+  it('an answer to an approval long after the request requeues the run and measures nothing', async () => {
     const { h, measurements } = measuring();
     const { runId, approvals } = awaitingApproval(h.store, [{ callId: 'call_1' }], 'waiting');
-    h.clock.set(EXPIRES_MS);
+    h.clock.set(mustRun(h.store, runId).deadlineAt - 1);
 
-    const pending = h.store.resolveApproval(approvals[0]?.id ?? '', 'allow_once');
-
-    expect(pending).toBeInstanceOf(Promise);
-    expect(await pending).toEqual({ kind: 'approval_not_pending', status: 'expired' });
-    expect(mustRun(h.store, runId)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
-    outsideTheTransaction(measurements, [runId]);
-    expect(contributionsOf(h.store, runId)).toBe(1);
+    expect(await h.store.resolveApproval(approvals[0]?.id ?? '', 'allow_once')).toMatchObject({ kind: 'ok', run: { status: 'QUEUED' } });
+    expect(measurements).toEqual([]);
   });
 
   it('a late answer to an expired elicitation stops the run through an awaited operation, outside the transaction', async () => {
@@ -149,7 +144,6 @@ describe('every terminal operation measures one run, outside the write transacti
     const approval = h.store.requestApproval(childClaim, {
       callId: 'call_w',
       options: [{ optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' }],
-      expiresAt: EXPIRES_MS,
       event: { subjectDigest: 'a'.repeat(64), reason: 'edits require approval' },
     });
     expect(approval.kind).toBe('ok');

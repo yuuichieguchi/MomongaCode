@@ -15,7 +15,7 @@ import {
 } from './context-settings.ts';
 import type { ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from './context-settings.ts';
 import { loadLayers, normalizeHooks } from './layers.ts';
-import type { Layer, TrustOracle, UserLayer } from './layers.ts';
+import type { KeptLayers, Layer, TrustOracle, UserLayer } from './layers.ts';
 import { EDIT_TOOLS, NEGATION_PREFIX, isPathTool, parseRule, RuleParseError } from './rule.ts';
 import type { PermissionRule, RuleEffect, RuleOrigin } from './rule.ts';
 import { assertSettings, defaultSandboxSetting } from './settings.ts';
@@ -60,6 +60,7 @@ export type LoadSettingsOptions = {
   cli: Settings;
   trust: TrustOracle;
   user?: UserLayer;
+  kept?: KeptLayers;
 };
 
 export type LoadSettingsResult = {
@@ -207,8 +208,8 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
   return merged;
 };
 
-export const loadSettings = async ({ home, projectDir, cli, trust, user }: LoadSettingsOptions): Promise<LoadSettingsResult> => {
-  const loaded = await loadLayers({ home, projectDir, trust, ...(user === undefined ? {} : { user }) });
+export const loadSettings = async ({ home, projectDir, cli, trust, user, kept }: LoadSettingsOptions): Promise<LoadSettingsResult> => {
+  const loaded = await loadLayers({ home, projectDir, trust, ...(user === undefined ? {} : { user }), ...(kept === undefined ? {} : { kept }) });
   let cliSettings: Settings;
   const cliWarnings: string[] = [];
   try {

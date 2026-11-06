@@ -11,7 +11,6 @@ const outside: ApprovalView = {
     { optionId: 'o1', name: 'Allow once', kind: 'allow_once' },
     { optionId: 'o2', name: 'reject_once', kind: 'reject_once' },
   ],
-  expiresAt: 2,
   createdAt: 1,
   reason: 'edit outside the workspace requires approval',
   toolCall: { callId: 'c1', name: 'Write', title: 'Write /elsewhere/out.txt', kind: 'edit' },

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type fs from 'node:fs';
-import { createUserSettingsCache, userSettingsChangeKey } from '@momonga/config';
+import { createUserSettingsCache, noKeptRecords, userSettingsChangeKey } from '@momonga/config';
 import {
   EXIT_VERSION_MISMATCH,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
@@ -156,7 +156,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       sleep: (ms) => new Promise<void>((resolve) => timers.setTimeout(resolve, ms)),
     };
 
-    const settings = createUserSettingsCache({ home: canonicalHome, onWarning: (detail) => log(settingsWarning({ detail })) });
+    const settings = createUserSettingsCache({ home: canonicalHome, onWarning: (detail) => log(settingsWarning({ detail })), keptRecords: noKeptRecords });
 
     const createManager = (role: ChildRole): ChildManager =>
       createChildManager({

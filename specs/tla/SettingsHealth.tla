@@ -33,14 +33,23 @@
 (*   a background reader with no Run: the memory upkeep pass              *)
 (*       packages/runtime/src/process/start-runtime-process.ts:632         *)
 (*       (Sweep)                                                           *)
+(*   readers that start no new work (class read): the session view and    *)
+(*       the session patch, packages/runtime/src/service/app.ts            *)
+(*       (sessionViewOf, patchSession, through sessionReadSettings) (View) *)
+(*   the kept copy: packages/config/src/kept-settings.ts, the last good    *)
+(*       copy of each file by path, written on every valid read into the   *)
+(*       runtime state; a crash keeps it, and the start-up and recovery    *)
+(*       read it from there (Persist)                                       *)
 (*   the process start: start-runtime-process.ts:312-317 (the settings     *)
 (*       step throws on a broken file) and supervisor/src/child-manager.ts *)
 (*       :546-548, :612 (the spawn is held while the file is broken); the  *)
 (*       supervisor watch supervisor/src/start-supervisor.ts:244-258 only  *)
 (*       logs. The gateway reads once at its start, gateway/src/process.ts *)
-(*       :465. Restart is the one actor for all three; it starts only when *)
-(*       the start-up read is valid                                        *)
-(*   a daemon crash: loses the cache; the Runs stay in the store          *)
+(*       :465. Restart is the one actor for all three; the start-up reads  *)
+(*       only the user file, so it starts only when the user file is valid;*)
+(*       a project or local file may be broken at a restart                *)
+(*   a daemon crash: loses the memory cache; the kept copy and the Runs   *)
+(*       stay                                                              *)
 (*                                                                         *)
 (* Abstractions: the content of a file beyond "broken" or a version number *)
 (* (a valid version is 1..MaxVersion, 0 is broken); the timing of the file *)
@@ -65,6 +74,8 @@
 (*   StartMode   "refuse": the process starts only when every file is      *)
 (*               valid (the design). "ignore": it starts anyway            *)
 (*   NameFile    the refusal names the broken file                         *)
+(*   Persist     the last good copy survives a crash (the design). FALSE:  *)
+(*               it lives only in memory (the code before the kept copy)   *)
 (***************************************************************************)
 EXTENDS Naturals, FiniteSets, TLC
 
@@ -77,7 +88,8 @@ CONSTANTS
     ReadMode,
     AdmitMode,
     StartMode,
-    NameFile
+    NameFile,
+    Persist
 
 ASSUME /\ MaxVersion \in Nat \ {0}
        /\ MaxEdits \in Nat
@@ -87,15 +99,16 @@ ASSUME /\ MaxVersion \in Nat \ {0}
        /\ AdmitMode \in {"disk", "cache"}
        /\ StartMode \in {"refuse", "ignore"}
        /\ NameFile \in BOOLEAN
+       /\ Persist \in BOOLEAN
 
 Files == {"user", "project"}
 Versions == 0..MaxVersion
 
 VARIABLES disk, lastGood, health, up, runState, steps, edits, crashes,
-          admitLog, refusalLog, readFailed, badReads
+          admitLog, refusalLog, readFailed, badReads, startedBroken
 
 vars == <<disk, lastGood, health, up, runState, steps, edits, crashes,
-          admitLog, refusalLog, readFailed, badReads>>
+          admitLog, refusalLog, readFailed, badReads, startedBroken>>
 
 (* disk[f]      the file on disk: 0 broken, otherwise a valid version     *)
 (* lastGood[f]  the cache: the last valid version it read, 0 none         *)
@@ -109,6 +122,7 @@ vars == <<disk, lastGood, health, up, runState, steps, edits, crashes,
 (* readFailed   some reader threw because of a settings file              *)
 (* badReads     what the readers got that they must not: "invalid" (no    *)
 (*              valid copy) or "stale" (not the current valid version)    *)
+(* startedBroken some start-up served with the user file broken          *)
 
 TypeOK ==
     /\ disk \in [Files -> Versions]
@@ -121,6 +135,7 @@ TypeOK ==
     /\ crashes \in 0..MaxCrashes
     /\ readFailed \in BOOLEAN
     /\ badReads \subseteq {"invalid", "stale"}
+    /\ startedBroken \in BOOLEAN
 
 Init ==
     /\ disk = [f \in Files |-> 1]
@@ -132,6 +147,7 @@ Init ==
     /\ edits = 0 /\ crashes = 0
     /\ admitLog = {} /\ refusalLog = {}
     /\ readFailed = FALSE /\ badReads = {}
+    /\ startedBroken = FALSE
 
 BrokenOnDisk == {f \in Files : disk[f] = 0}
 BrokenInCache == {f \in Files : health[f] = "broken"}
@@ -150,7 +166,9 @@ CacheAfterRead ==
     THEN [good |-> lastGood, hl |-> health]
     ELSE [good |-> [f \in Files |-> GoodAfter(f)], hl |-> [f \in Files |-> HealthAfter(f)]]
 
-ReadThrows == ReadMode = "throw" /\ BrokenOnDisk # {}
+ReadThrows ==
+    \/ ReadMode = "throw" /\ BrokenOnDisk # {}
+    \/ ReadMode = "lastGood" /\ \E f \in BrokenOnDisk : lastGood[f] = 0
 
 ReadProblems(vals) ==
     (IF \E f \in Files : vals[f] = 0 THEN {"invalid"} ELSE {})
@@ -173,12 +191,12 @@ Edit(f) ==
     /\ edits < MaxEdits
     /\ \E v \in Versions \ {disk[f]} : disk' = [disk EXCEPT ![f] = v]
     /\ edits' = edits + 1
-    /\ UNCHANGED <<lastGood, health, up, runState, steps, crashes, admitLog, refusalLog, readFailed, badReads>>
+    /\ UNCHANGED <<lastGood, health, up, runState, steps, crashes, admitLog, refusalLog, readFailed, badReads, startedBroken>>
 
 Watch ==
     /\ up
     /\ RefreshAll
-    /\ UNCHANGED <<disk, up, runState, steps, edits, crashes, admitLog, refusalLog, readFailed, badReads>>
+    /\ UNCHANGED <<disk, up, runState, steps, edits, crashes, admitLog, refusalLog, readFailed, badReads, startedBroken>>
 
 Gate ==
     IF AdmitMode = "disk" THEN BrokenOnDisk ELSE BrokenInCache
@@ -195,43 +213,48 @@ Admit(r) ==
        ELSE /\ refusalLog' = refusalLog \cup
                  {[file |-> IF NameFile THEN CHOOSE f \in Gate : TRUE ELSE "none", broken |-> BrokenOnDisk]}
             /\ UNCHANGED <<runState, admitLog>>
-    /\ UNCHANGED <<disk, up, steps, edits, crashes, readFailed, badReads>>
+    /\ UNCHANGED <<disk, up, steps, edits, crashes, readFailed, badReads, startedBroken>>
 
 Claim(r) ==
     /\ up /\ runState[r] = "queued"
     /\ InRunRead("failed", "running", r)
-    /\ UNCHANGED <<disk, up, steps, edits, crashes, admitLog, refusalLog>>
+    /\ UNCHANGED <<disk, up, steps, edits, crashes, admitLog, refusalLog, startedBroken>>
 
 Step(r) ==
     /\ up /\ runState[r] = "running" /\ steps[r] < MaxSteps
     /\ steps' = [steps EXCEPT ![r] = steps[r] + 1]
     /\ InRunRead("failed", "running", r)
-    /\ UNCHANGED <<disk, up, edits, crashes, admitLog, refusalLog>>
+    /\ UNCHANGED <<disk, up, edits, crashes, admitLog, refusalLog, startedBroken>>
 
 Finish(r) ==
     /\ runState[r] = "running" /\ steps[r] = MaxSteps
     /\ runState' = [runState EXCEPT ![r] = "done"]
-    /\ UNCHANGED <<disk, lastGood, health, up, steps, edits, crashes, admitLog, refusalLog, readFailed, badReads>>
+    /\ UNCHANGED <<disk, lastGood, health, up, steps, edits, crashes, admitLog, refusalLog, readFailed, badReads, startedBroken>>
 
 Sweep ==
     /\ up
     /\ InRunRead("failed", "running", "none")
-    /\ UNCHANGED <<disk, up, steps, edits, crashes, admitLog, refusalLog>>
+    /\ UNCHANGED <<disk, up, steps, edits, crashes, admitLog, refusalLog, startedBroken>>
+
+View ==
+    /\ up
+    /\ InRunRead("failed", "running", "none")
+    /\ UNCHANGED <<disk, up, steps, edits, crashes, admitLog, refusalLog, startedBroken>>
 
 Crash ==
     /\ up /\ crashes < MaxCrashes
     /\ up' = FALSE
     /\ crashes' = crashes + 1
-    /\ lastGood' = [f \in Files |-> 0]
+    /\ lastGood' = IF Persist THEN lastGood ELSE [f \in Files |-> 0]
     /\ health' = [f \in Files |-> "ok"]
-    /\ UNCHANGED <<disk, runState, steps, edits, admitLog, refusalLog, readFailed, badReads>>
+    /\ UNCHANGED <<disk, runState, steps, edits, admitLog, refusalLog, readFailed, badReads, startedBroken>>
 
 Restart ==
     /\ ~up
-    /\ StartMode = "ignore" \/ BrokenOnDisk = {}
+    /\ StartMode = "ignore" \/ disk["user"] # 0
     /\ up' = TRUE
-    /\ lastGood' = [f \in Files |-> disk[f]]
-    /\ health' = [f \in Files |-> HealthAfter(f)]
+    /\ RefreshAll
+    /\ startedBroken' = (startedBroken \/ disk["user"] = 0)
     /\ UNCHANGED <<disk, runState, steps, edits, crashes, admitLog, refusalLog, readFailed, badReads>>
 
 Next ==
@@ -239,6 +262,7 @@ Next ==
     \/ Watch
     \/ \E r \in Runs : Admit(r) \/ Claim(r) \/ Step(r) \/ Finish(r)
     \/ Sweep
+    \/ View
     \/ Crash
     \/ Restart
 
@@ -263,7 +287,10 @@ ReadsCurrent == "stale" \notin badReads
 (* Every refusal names a file, and that file is broken *)
 RefusalNamesFile == \A x \in refusalLog : x.file \in x.broken
 
-(* H5: no process serves without a valid start-up copy *)
+(* H5: no process serves when its start-up read of the user file is broken *)
+StartReadValid == ~startedBroken
+
+(* A serving process has a last good copy of every file *)
 ProcessHasGood == up => \A f \in Files : lastGood[f] # 0
 
 (* Once the files are valid and stay so, every Run is admitted *)

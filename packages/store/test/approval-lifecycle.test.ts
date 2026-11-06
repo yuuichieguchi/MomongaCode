@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RunStatus } from '@momonga/protocol';
-import { DEADLINE_MS, START_MS, cancel, harness, mustRun, payloadOf } from './helpers.ts';
-import { EXPIRES_MS, awaitingApproval, requestFor } from './approval-fixture.ts';
+import { DEADLINE_MS, START_MS, callEvent, cancel, harness, mustRun, payloadOf } from './helpers.ts';
+import { EXPIRES_MS, awaitingApproval, awaitingInput, requestFor } from './approval-fixture.ts';
 
 const tailPayloads = (events: readonly object[], count: number) => events.slice(-count).map(payloadOf);
 
@@ -12,7 +12,7 @@ describe('tool.permission.cancelled on supersede', () => {
     const [first] = approvals;
     if (first === undefined) throw new Error('expected an approval');
 
-    const second = requestFor(store, claim, 'call_1', EXPIRES_MS, 'b'.repeat(64));
+    const second = requestFor(store, claim, 'call_1', 'b'.repeat(64));
 
     expect(store.approvals.get(first.id)?.status).toBe('superseded');
     expect(tailPayloads(store.readRunEvents(runId, 0, 100), 2)).toEqual([
@@ -96,11 +96,14 @@ describe('expireApprovals', () => {
     expect(store.approvals.get(approvals[0]?.id ?? '')?.status).toBe('pending');
   });
 
-  it('expires the due approval, withdraws the rest, notes it and stops the run with approval_timeout', async () => {
+  it('expires the due request for input, withdraws the pending approval, notes it and stops the run with approval_timeout', async () => {
     const { store } = harness();
-    const { runId, approvals } = awaitingApproval(store, [{ callId: 'call_1' }, { callId: 'call_2', expiresAt: EXPIRES_MS + 60_000 }], 'waiting');
-    const [due, later] = approvals;
-    if (due === undefined || later === undefined) throw new Error('expected two approvals');
+    const { runId, claim, approvals } = awaitingInput(store, [{ callId: 'call_1' }], 'running');
+    const [due] = approvals;
+    if (due === undefined) throw new Error('expected a request for input');
+    expect(store.append(claim, [callEvent('call_2')]).kind).toBe('ok');
+    const later = requestFor(store, claim, 'call_2');
+    expect(store.release(claim, 'WAITING_HUMAN').kind).toBe('ok');
     const before = mustRun(store, runId).lastSeq;
 
     expect((await store.expireApprovals(EXPIRES_MS, (error: unknown) => { throw error; }))).toEqual([runId]);
@@ -112,9 +115,9 @@ describe('expireApprovals', () => {
     expect(added).toHaveLength(4);
     expect(added.slice(0, 3)).toEqual(
       expect.arrayContaining([
-        { type: 'tool.permission.cancelled', approvalId: due.id, reason: 'expired' },
+        { type: 'tool.elicitation.cancelled', inputId: due.id, reason: 'expired' },
         { type: 'tool.permission.cancelled', approvalId: later.id, reason: 'withdrawn' },
-        expect.objectContaining({ type: 'notice', message: 'The approval for call_1 expired.' }),
+        expect.objectContaining({ type: 'notice', message: 'The request for input for call_1 expired.' }),
       ]),
     );
     expect(added[3]).toEqual({ type: 'run.status', from: 'WAITING_HUMAN', to: 'STOPPED', reason: 'approval_timeout' });
@@ -123,7 +126,7 @@ describe('expireApprovals', () => {
 
   it('stops a WAITING_HUMAN run whose deadline passed with timeout and withdraws its approvals', async () => {
     const { store } = harness();
-    const { runId, approvals } = awaitingApproval(store, [{ callId: 'call_1', expiresAt: DEADLINE_MS + 60_000 }], 'waiting');
+    const { runId, approvals } = awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
     const [approval] = approvals;
     if (approval === undefined) throw new Error('expected an approval');
 
@@ -151,8 +154,8 @@ describe('expireApprovals', () => {
 
   it('returns every run it stopped', async () => {
     const { store } = harness();
-    const first = awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
-    const second = awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
+    const first = awaitingInput(store, [{ callId: 'call_1' }], 'waiting');
+    const second = awaitingInput(store, [{ callId: 'call_1' }], 'waiting');
 
     expect([...(await store.expireApprovals(EXPIRES_MS, (error: unknown) => { throw error; }))].sort()).toEqual([first.runId, second.runId].sort());
   });
