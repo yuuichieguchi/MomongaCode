@@ -250,11 +250,15 @@ describe('blobs', () => {
   it('fsyncs the blob directory after publishing a new blob', () => {
     const { dir, store } = harness();
     const open = vi.spyOn(fs, 'openSync');
+    const fsync = vi.spyOn(fs, 'fsyncSync');
     try {
       store.blobs.put('durable', { mediaType: 'text/plain' });
-      expect(open.mock.calls.some(([target, flags]) => target === path.join(dir, 'blobs') && flags === fs.constants.O_RDONLY)).toBe(true);
+      const directoryOpen = open.mock.calls.findIndex(([target, flags]) => target === path.join(dir, 'blobs') && flags === 'r');
+      expect(directoryOpen).toBeGreaterThanOrEqual(0);
+      expect(fsync.mock.calls.map(([handle]) => handle)).toContain(open.mock.results[directoryOpen]!.value);
     } finally {
       open.mockRestore();
+      fsync.mockRestore();
     }
   });
 
