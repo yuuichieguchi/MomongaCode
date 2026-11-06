@@ -187,6 +187,42 @@ export {
   terminalEvent,
 } from './fake-open-responses.ts';
 export type { FakeOpenResponsesOptions, TerminalSpec } from './fake-open-responses.ts';
+export { createCanary, findCanaries } from './canary-tokens.ts';
+export {
+  SIWC_CALLBACK_PATH,
+  SIWC_DYNAMIC_CLIENT_ID,
+  SIWC_FULL_SCOPE,
+  SIWC_REFRESH_ERRORS,
+  SIWC_RESOURCE,
+  siwcBrowse,
+  startFakeSiwcAuth,
+} from './fake-siwc-auth.ts';
+export type {
+  SiwcAuth,
+  SiwcAuthOptions,
+  SiwcAuthorizeMode,
+  SiwcCalls,
+  SiwcGrant,
+  SiwcIdTokenFlaw,
+  SiwcIdentity,
+  SiwcJwk,
+  SiwcRecord,
+  SiwcRegistration,
+  SiwcRevokeStep,
+  SiwcTokenStep,
+} from './fake-siwc-auth.ts';
+export {
+  PLAN_ERROR_CODES,
+  PLAN_MODELS_PATH,
+  PLAN_RESPONSES_PATH,
+  PLAN_UNSUPPORTED_FIELDS,
+  PLAN_UNSUPPORTED_TOOL_TYPES,
+  planAdmissionReply,
+  planErrorHttpReply,
+  planErrorStreamReply,
+  startFakePlanResponses,
+} from './fake-plan-responses.ts';
+export type { BearerVerdict, FakePlanResponses, PlanResponsesOptions } from './fake-plan-responses.ts';
 export { createFakeSecretStore, createFakeSecurityPort } from './fake-secrets.ts';
 export type { FakeSecretStore, FakeSecurityPort } from './fake-secrets.ts';
 export { readBody, sendJson, startLoopbackServer } from './loopback-http.ts';
