@@ -72,9 +72,13 @@ export const createFidelityFold = (tokens: readonly ClaimedToken[], cwd: string)
         if (event.handle !== undefined) handles.add(event.handle);
         return;
       }
-      case 'tool.reconciled':
+      case 'tool.reconciled': {
+        const leaves = calls.get(event.callId);
+        calls.delete(event.callId);
+        if (event.outcome === 'already_applied') for (const leaf of leaves ?? []) executed(leaf);
         executed(event.output);
         return;
+      }
       case 'user.message':
         stated(event.text);
         return;
@@ -100,9 +104,6 @@ export const createFidelityFold = (tokens: readonly ClaimedToken[], cwd: string)
   };
 
   const finish = (): void => {
-    for (const [callId, leaves] of calls) {
-      if (ran.started(callId)) for (const leaf of leaves) executed(leaf);
-    }
     calls.clear();
   };
 
