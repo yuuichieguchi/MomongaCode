@@ -18,7 +18,7 @@ import { DEFAULT_E2E_DEPS, spawnSupervisor, startStack } from './stack.ts';
 import type { E2eStack, StartStackOptions } from './stack.ts';
 import { childOf } from './supervisor-client.ts';
 import { textReply, toolCallReply } from './upstream.ts';
-import { E2E_MARGIN_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, until } from './wait.ts';
+import { E2E_MARGIN_MS, E2E_READY_DEADLINE_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS, until, withinBound } from './wait.ts';
 
 export type ScenarioResult =
   | { id: string; status: 'ran'; witness: Record<string, number>; outcomes: string[]; trials: InjectionTrial[] }
@@ -29,9 +29,9 @@ export type InjectionHost = { linuxContainer: boolean };
 export const INJECTION_REPORT_ENV = 'MOMONGA_INJECTION_REPORT';
 
 const SCENARIOS_FILE = path.join(import.meta.dirname, '..', 'inject', 'scenarios.json');
+const COMPETING_SUPERVISOR_EXIT = 75;
 const SMALL_FILESYSTEM_MAX_BYTES = 256 * 1024 * 1024;
 const FILL_CHUNK_BYTES = 1024 * 1024;
-const COMPETING_SUPERVISOR_EXIT = 75;
 const LEDGER_DIRECTORY_NAME = 'ledger';
 const LEDGER_FILE_NAME = 'ledger.txt';
 const HOOK_MARK_FILE_NAME = 'hook.mark';
@@ -67,6 +67,7 @@ type Fault = {
   runBody?(env: TrialEnv): Record<string, unknown>;
   inject?(env: TrialEnv): Promise<void>;
   afterTerminal?(env: TrialEnv, frames: readonly Frame[]): Promise<void>;
+  extraBoundMs?: number;
 };
 
 type Frame = { readonly data: { readonly type: string } & Readonly<Record<string, unknown>> };
@@ -212,11 +213,28 @@ const FAULTS: Record<InjectionScenario['fault'], Fault> = {
       env.holds.push((env.fake as FakeChatCompletionsServer).hold());
     },
     inject: async (env) => {
-      await (env.holds[0] as FakeResponseHold).waitForRequest();
-      const exit = await spawnSupervisor({ home: env.home, stackNumber: 2 }).exited;
-      (env.holds[0] as FakeResponseHold).release();
-      if (exit.code !== COMPETING_SUPERVISOR_EXIT) throw new Error(`scenario ${env.scenario.id}: the competing supervisor exited with ${JSON.stringify(exit)}, not ${COMPETING_SUPERVISOR_EXIT}`);
+      const stack = env.stack as E2eStack;
+      const hold = env.holds[0] as FakeResponseHold;
+      await hold.waitForRequest();
+      await (env.stream as RunEventStream).close();
+      const stopping = await stack.client.shutdown();
+      if (stopping.status !== 202) throw new Error(`scenario ${env.scenario.id}: the first supervisor answered ${stopping.status} to its stop`);
+      const deps = { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY };
+      const second = spawnSupervisor({ home: env.home, stackNumber: 2, deps });
+      hold.release();
+      const bound = E2E_SUPERVISOR_CLOSE_BOUND_MS + E2E_READY_DEADLINE_MS;
+      const claimed = await second.ready(bound).then(
+        () => true,
+        () => false,
+      );
+      const firstExit = await withinBound(stack.supervisor.exited, bound, 'the first supervisor to exit after its stop');
+      if (firstExit.code !== 0) throw new Error(`scenario ${env.scenario.id}: the first supervisor exited with ${JSON.stringify(firstExit)} after its stop`);
+      if (claimed) return;
+      const refusal = await second.exited;
+      if (refusal.code !== COMPETING_SUPERVISOR_EXIT) throw new Error(`scenario ${env.scenario.id}: the competing supervisor exited with ${JSON.stringify(refusal)}, not ${COMPETING_SUPERVISOR_EXIT}`);
+      await spawnSupervisor({ home: env.home, stackNumber: 3, deps }).ready(bound);
     },
+    extraBoundMs: E2E_SUPERVISOR_CLOSE_BOUND_MS + E2E_READY_DEADLINE_MS,
   },
   concurrent_workers: {
     stackOptions: (env) => ({ deps: { ...DEFAULT_E2E_DEPS, runtime: { ...DEFAULT_E2E_DEPS.runtime, workerCount: env.scenario.params?.workerCount as number } } }),
@@ -350,7 +368,7 @@ const runTrial = async (scenario: InjectionScenario, point: Point | undefined, r
     const runtime = env.runtime;
     const runId = env.runId;
     await until(async () => (TERMINAL_STATUSES as readonly string[]).includes((await runtime.getRun(runId)).run.status), {
-      deadlineMs: E2E_RUN_COMPLETED_BOUND_MS,
+      deadlineMs: E2E_RUN_COMPLETED_BOUND_MS + (fault.extraBoundMs ?? 0),
       description: `run ${runId} to end`,
     });
     const replay = runtime.events(runId);

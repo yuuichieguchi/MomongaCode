@@ -250,8 +250,7 @@
       },
       "effect": "effect",
       "expect": {
-        "status": "COMPLETED",
-        "runStarted": 1
+        "status": "COMPLETED"
       }
     },
     {
