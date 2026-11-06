@@ -6,58 +6,17 @@ No release has been published yet.
 
 ## 1. Installation
 
-### One command
-
-macOS (Apple silicon) and Linux (x86_64, aarch64):
+macOS and Linux:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/yuuichieguchi/MomongaCode/main/scripts/install.sh | bash
 ```
 
-Windows (x64), in PowerShell:
+Windows, in PowerShell:
 
 ```powershell
 irm https://raw.githubusercontent.com/yuuichieguchi/MomongaCode/main/scripts/install.ps1 | iex
 ```
-
-You set nothing. The one command works from the first release on, once the repository is public: no release has been published yet, and the repository is private until the release, so until then there is nothing to download.
-
-The script downloads `SHA256SUMS` and `SHA256SUMS.sig` from the latest GitHub release of `yuuichieguchi/MomongaCode`, verifies the signature with `ssh-keygen` against the release public key, checks the SHA-256 of the executable, and only then installs it. Nothing is installed if a check fails. `ssh-keygen` must be available; on Windows that means the OpenSSH Client optional feature.
-
-### Options
-
-All are optional environment variables read by both installers:
-
-| Variable | Meaning |
-| --- | --- |
-| `MOMONGA_REPO` | `<owner>/<repo>` of the GitHub repository to download from. Default: `yuuichieguchi/MomongaCode`. Ignored when `MOMONGA_RELEASE_BASE_URL` is set |
-| `MOMONGA_VERSION` | Install this version (`v<version>` release) instead of the latest. Ignored when `MOMONGA_RELEASE_BASE_URL` is set |
-| `MOMONGA_RELEASE_BASE_URL` | Download from this location instead of GitHub. It must be `https`; plain `http` is accepted only on the loopback interface |
-| `MOMONGA_RELEASE_PUBLIC_KEY` | The release signing key (an `ssh-ed25519` line), used instead of the key embedded in the installer |
-| `MOMONGA_INSTALL_PREFIX` | Install location. Default: `~/.local` on macOS and Linux (the executable goes to `<prefix>/bin/momonga`); `%LOCALAPPDATA%\Programs\momonga` on Windows (the executable is `momonga.exe` in that directory) |
-| `MOMONGA_MODIFY_PATH` | Set to `0` to leave your PATH alone |
-
-### PATH
-
-The installers change your PATH only when the install directory is missing from it (`install.sh` checks the PATH of the running shell, `install.ps1` the user PATH):
-
-- `install.sh` adds one marked block to a shell startup file: `.zshrc` (under `ZDOTDIR` if set) for zsh, the first existing of `.bashrc`, `.bash_profile`, `.profile` (else `.bashrc`) for bash, `~/.config/fish/config.fish` (with `fish_add_path`) for fish, and `~/.profile` for any other shell. Running the installer again updates that block in place and prints a message about it. When the install directory is already on the PATH of the running shell, it changes nothing and prints nothing about PATH.
-- `install.ps1` appends the install directory to the user PATH.
-- With `MOMONGA_MODIFY_PATH=0`, neither script changes anything and both print the command to run in the current shell instead.
-
-### From source
-
-```sh
-npm ci
-npm run bundle
-node packages/cli/dist/main.js --help
-```
-
-Building a release executable is done with `npm run sea` (see `scripts/sea.ts`).
-
-### Updating
-
-`momonga update` replaces the executable with the latest release after verifying its checksum and signature. `momonga update --check` only reports whether a newer release exists.
 
 ## 2. Why Momonga Code?
 
@@ -181,6 +140,8 @@ Commands:
 
 Run `momonga <command> --help` for the options of each command.
 
+`momonga update` replaces the executable with the latest release after verifying its checksum and signature. `momonga update --check` only reports whether a newer release exists.
+
 Inside the interactive session, slash commands include `/help`, `/clear`, `/exit`, `/mode`, `/model`, `/rule`, `/memory`, `/auto-mode`, and `/cost`, `/status`, `/jobs`, `/trace`, `/mcp`, `/context`, `/policy`, `/models`, `/gateway`, which run the command of the same name. `/help` lists the rest.
 
 ## 6. Configuration
@@ -275,6 +236,29 @@ Momonga Code stores its data under `~/.momonga` (settings, `state/` databases, `
 
 Instruction files named `AGENTS.md` are read into the context.
 
+### Installer options
+
+You set nothing. The install command in section 1 works from the first release on, once the repository is public: no release has been published yet, and the repository is private until the release, so until then there is nothing to download.
+
+The script downloads `SHA256SUMS` and `SHA256SUMS.sig` from the latest GitHub release of `yuuichieguchi/MomongaCode`, verifies the signature with `ssh-keygen` against the release public key, checks the SHA-256 of the executable, and only then installs it. Nothing is installed if a check fails. `ssh-keygen` must be available; on Windows that means the OpenSSH Client optional feature.
+
+All are optional environment variables read by both installers:
+
+| Variable | Meaning |
+| --- | --- |
+| `MOMONGA_REPO` | `<owner>/<repo>` of the GitHub repository to download from. Default: `yuuichieguchi/MomongaCode`. Ignored when `MOMONGA_RELEASE_BASE_URL` is set |
+| `MOMONGA_VERSION` | Install this version (`v<version>` release) instead of the latest. Ignored when `MOMONGA_RELEASE_BASE_URL` is set |
+| `MOMONGA_RELEASE_BASE_URL` | Download from this location instead of GitHub. It must be `https`; plain `http` is accepted only on the loopback interface |
+| `MOMONGA_RELEASE_PUBLIC_KEY` | The release signing key (an `ssh-ed25519` line), used instead of the key embedded in the installer |
+| `MOMONGA_INSTALL_PREFIX` | Install location. Default: `~/.local` on macOS and Linux (the executable goes to `<prefix>/bin/momonga`); `%LOCALAPPDATA%\Programs\momonga` on Windows (the executable is `momonga.exe` in that directory) |
+| `MOMONGA_MODIFY_PATH` | Set to `0` to leave your PATH alone |
+
+The installers change your PATH only when the install directory is missing from it (`install.sh` checks the PATH of the running shell, `install.ps1` the user PATH):
+
+- `install.sh` adds one marked block to a shell startup file: `.zshrc` (under `ZDOTDIR` if set) for zsh, the first existing of `.bashrc`, `.bash_profile`, `.profile` (else `.bashrc`) for bash, `~/.config/fish/config.fish` (with `fish_add_path`) for fish, and `~/.profile` for any other shell. Running the installer again updates that block in place and prints a message about it. When the install directory is already on the PATH of the running shell, it changes nothing and prints nothing about PATH.
+- `install.ps1` appends the install directory to the user PATH.
+- With `MOMONGA_MODIFY_PATH=0`, neither script changes anything and both print the command to run in the current shell instead.
+
 ## 7. Architecture
 
 Momonga Code is an npm workspace of packages under `packages/`. The `momonga` command is a client; the work is done by background processes.
@@ -325,6 +309,16 @@ npm run test:packaging
 - On Windows, CI runs the unit suite without the TLC tier, which needs bash, `ps`, and `/usr/bin`.
 - On Linux, tests that use the sandbox need bubblewrap installed.
 - Add or update tests with every change. Behaviour that is described by a TLA+ model in `specs/tla/` is changed in the model and in the code together.
+
+### Building from source
+
+```sh
+npm ci
+npm run bundle
+node packages/cli/dist/main.js --help
+```
+
+Building a release executable is done with `npm run sea` (see `scripts/sea.ts`).
 
 ## 10. License
 
