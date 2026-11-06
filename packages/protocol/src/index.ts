@@ -197,7 +197,7 @@ export { LOOP_GROUPS_KEPT } from './loop-groups.ts';
 export { findDanglingOutput, findUnpairedCalls } from './call-pairing.ts';
 export { DETERMINISTIC_SUMMARY_TEXT, SUMMARY_FRAMING, compactionSummaryMessage, decodeCompactionSummary } from './compaction-summary.ts';
 export type { SummaryOrigin } from './compaction-summary.ts';
-export { FIDELITY_CLAIMS, FIDELITY_FOLD_VERSION, isPathLikeToken, reducedPathToken, tokenMatcherOf } from './fidelity-match.ts';
+export { FIDELITY_CLAIMS, FIDELITY_FOLD_BEHAVIOUR_DIGESTS, FIDELITY_FOLD_VERSION, isPathLikeToken, reducedPathToken, tokenMatcherOf } from './fidelity-match.ts';
 export type { ClaimedToken, FidelityClaim, TokenMatcher } from './fidelity-match.ts';
 export { MAX_TOOL_NAME_CHARS, REFERENCE_KINDS } from './reference-kinds.ts';
 export type { ReferenceKind } from './reference-kinds.ts';
