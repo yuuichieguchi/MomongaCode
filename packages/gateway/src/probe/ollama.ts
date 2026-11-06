@@ -20,6 +20,10 @@ import type { SelectionTransport } from './select-dialect.ts';
 import { IMAGE_PROMPT, measureImageTokens } from './image-tokens.ts';
 import type { ImageCostProbe } from './image-tokens.ts';
 import { parseJson } from './json.ts';
+import { JSON_MODE_PROBE_REQUEST, measureJsonMode } from './json-mode.ts';
+import type { JsonModeAnswer } from './json-mode.ts';
+import { jsonReplyPlanOf } from '../adapters/shared/json-reply.ts';
+import { OLLAMA_VOCABULARY } from '../adapters/ollama/vocabulary.ts';
 
 export type ProbeOllamaTargetOptions = {
   probeRecordDir: string;
@@ -174,6 +178,20 @@ const measurePromptCache = async (client: ProbeClient, model: string, contextWin
   return { kind: cached > 0 ? 'automatic' : 'none' };
 };
 
+const askJsonOnly = async (client: ProbeClient, model: string, contextWindow: number): Promise<JsonModeAnswer> => {
+  const request = { ...JSON_MODE_PROBE_REQUEST, model };
+  const body = buildOllamaChatBody(request, { contextWindow, maxOutputTokens: maxOutputTokensFor(contextWindow) }, false, NO_REASONING_IS_OWN, {
+    jsonReply: jsonReplyPlanOf(request, { structuredOutput: 'none', jsonMode: 'json_object' }),
+  });
+  const result = await client.request('POST', CHAT_PATH, body);
+  const parsed = parseJson(result.text);
+  if (result.status !== 200) return OLLAMA_VOCABULARY.kindOf(result.status, parsed) === 'unsupported' ? { kind: 'unsupported' } : { kind: 'failure' };
+  if (!isRecord(parsed) || parsed['done_reason'] !== 'stop') return { kind: 'failure' };
+  const message = parsed['message'];
+  const content = isRecord(message) ? message['content'] : undefined;
+  return { kind: 'complete', text: typeof content === 'string' ? content : '' };
+};
+
 const ABSENT_STATUSES: readonly number[] = [404, 501];
 
 const ollamaTransport = (client: ProbeClient, model: string, contextWindow: number): SelectionTransport => ({
@@ -219,6 +237,7 @@ export const probeOllamaTarget = async (options: ProbeOllamaTargetOptions): Prom
     ? await withClient(upstream, signal, (client) => measureImageTokens(imageCostProbeOf(client, model, options.contextWindow)), CACHE_PROBE_TIMEOUT_MS)
     : undefined;
   const promptCache = await withClient(upstream, signal, (client) => measurePromptCache(client, model, options.contextWindow), CACHE_PROBE_TIMEOUT_MS);
+  const jsonMode = await measureJsonMode(() => withClient(upstream, signal, (client) => askJsonOnly(client, model, options.contextWindow), CACHE_PROBE_TIMEOUT_MS), signal);
   const userDialects = options.userDialects ?? NO_USER_DIALECTS;
   const selection = await withClient(
     upstream,
@@ -244,6 +263,7 @@ export const probeOllamaTarget = async (options: ProbeOllamaTargetOptions): Prom
     thinkingSupported: capabilities.includes('thinking'),
     schemaDialect: selection.dialect,
     ...(promptCache === undefined ? {} : { promptCache }),
+    jsonMode,
   };
   const { key } = options;
   await saveEndpointRecord(options.probeRecordDir, key, identity, [], report, {

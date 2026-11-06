@@ -1,6 +1,7 @@
 import { MAX_BUDGET_COUNT, imageCapability } from '@momonga/protocol';
 import type { Capabilities, CapabilitiesCore, DialectId, ImageCapability, ProbeReport, ToolCallingMode } from '@momonga/protocol';
 import { resolveDialectId } from '../dialect/resolve-id.ts';
+import { jsonModeCapabilityOf } from './json-mode.ts';
 
 export interface DecideThresholds {
   minValidRate?: number;
@@ -57,6 +58,7 @@ export const capabilitiesFromProbe = (report: ProbeReport, decision: ToolCalling
     maxOutputTokens: maxOutputTokensFor(contextWindow),
     toolCalling: decision.mode,
     structuredOutput: report.constrained.accepted ? 'json_schema' : 'none',
+    ...jsonModeCapabilityOf(report.jsonMode),
     streaming: report.streaming.supported,
     stopSequences: report.stopSequences,
     ...(report.outputBoundField === undefined || report.outputBoundField === 'none' ? {} : { outputBoundField: report.outputBoundField }),

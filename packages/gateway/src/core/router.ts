@@ -111,6 +111,11 @@ const mergedSchemaDialect = (all: readonly [Capabilities, ...Capabilities[]]): P
   return all.every((entry) => entry.schemaDialect === first.schemaDialect) ? { schemaDialect: first.schemaDialect } : {};
 };
 
+const mergedJsonMode = (all: readonly Capabilities[]): Pick<AliasCapabilities, 'jsonMode'> => {
+  if (all.some((entry) => entry.jsonMode === undefined)) return {};
+  return { jsonMode: all.some((entry) => entry.jsonMode === 'none') ? 'none' : 'json_object' };
+};
+
 const mergeCapabilities = (all: readonly [Capabilities, ...Capabilities[]]): AliasCapabilities => {
   const [first] = all;
   return {
@@ -118,6 +123,7 @@ const mergeCapabilities = (all: readonly [Capabilities, ...Capabilities[]]): Ali
     maxOutputTokens: Math.min(...all.map((entry) => entry.maxOutputTokens)),
     toolCalling: mergedToolCalling(all),
     structuredOutput: all.some((entry) => entry.structuredOutput === 'none') ? 'none' : 'json_schema',
+    ...mergedJsonMode(all),
     streaming: all.every((entry) => entry.streaming),
     stopSequences: all.every((entry) => entry.stopSequences),
     ...mergedImageCapability(all),

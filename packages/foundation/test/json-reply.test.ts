@@ -78,3 +78,29 @@ describe('readJsonReply', () => {
     expect(readJsonReply(validator, { text: JSON.stringify({ kind: 'fact', text: emoji }), incomplete: undefined, path: 'prompt' })).toEqual({ value: { kind: 'fact', text: emoji } });
   });
 });
+
+describe('readJsonReply without a schema, for a JSON-only request', () => {
+  it.each([
+    ['prose', 'Sure, the verdict is safe.'],
+    ['a code fence', '```json\n{"verdict":"safe"}\n```'],
+    ['prose around an object', 'Here: {"verdict":"safe"}'],
+    ['two values', '{"a":1}{"a":1}'],
+  ])('refuses %s on both paths with the existing failure', (_label, text) => {
+    for (const [path, label] of [
+      ['enforced', 'reply enforced by the target'],
+      ['prompt', 'reply not enforced by the target'],
+    ] as const) {
+      const read = readJsonReply(null, { text, incomplete: undefined, path });
+      expect(read).toEqual({ error: expect.stringContaining(`output failed the schema (${label}): the reply is not JSON`) });
+    }
+  });
+
+  it('refuses an incomplete reply without parsing it', () => {
+    expect(readJsonReply(null, { text: '{"a":1}', incomplete: 'max_output_tokens', path: 'prompt' })).toEqual({ error: expect.stringContaining('the response was incomplete (max_output_tokens)') });
+  });
+
+  it('returns any one complete JSON value as it is', () => {
+    expect(readJsonReply(null, { text: '{"verdict":"safe","n":[1,2]}', incomplete: undefined, path: 'enforced' })).toEqual({ value: { verdict: 'safe', n: [1, 2] } });
+    expect(readJsonReply(null, { text: '[true,null]', incomplete: undefined, path: 'prompt' })).toEqual({ value: [true, null] });
+  });
+});

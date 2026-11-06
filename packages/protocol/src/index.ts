@@ -122,12 +122,13 @@ export {
   PRECONDITION_FAILED_CODE,
   NO_MODEL_TARGET,
   TARGET_NOT_READY,
+  JSON_MODES,
   agentReadiness,
   isToolCallingState,
   readinessRemedyOf,
   readinessText,
 } from './capabilities.ts';
-export type { OutputTokenCapabilities, Readiness, ReadinessInput, TargetAnswers, TargetBilling } from './capabilities.ts';
+export type { JsonMode, OutputTokenCapabilities, Readiness, ReadinessInput, TargetAnswers, TargetBilling } from './capabilities.ts';
 export { LOCAL_SERVER_CANDIDATES, LOCAL_SERVER_SHAPES } from './local-servers.ts';
 export type { DetectedLocalServer, LocalServerShape, LocalServerToolSupport } from './local-servers.ts';
 export {
@@ -214,8 +215,8 @@ export { RECORDED_DATA_MARKER, recordedDataMessage } from './recorded-data.ts';
 export type { RecordedData } from './recorded-data.ts';
 export { decodePayloadSegment, encodePayloadSegment, joinEnvelope, splitEnvelope } from './envelope-grammar.ts';
 export type { EnvelopeSegments } from './envelope-grammar.ts';
-export { PROBE_KEYWORDS } from './probe.ts';
-export type { EndpointProbeReport, OllamaProbeReport, ProbeDialectAttempt, ProbeDialectResult, ProbeKeyword, ProbeReport, ProbeReportDialect } from './probe.ts';
+export { JSON_MODE_PROBE_STATES, PROBE_KEYWORDS } from './probe.ts';
+export type { EndpointProbeReport, JsonModeProbeState, OllamaProbeReport, ProbeDialectAttempt, ProbeDialectResult, ProbeKeyword, ProbeReport, ProbeReportDialect } from './probe.ts';
 export {
   DIALECT_DEFINITION_SCHEMA,
   DIALECT_ID_PATTERN,

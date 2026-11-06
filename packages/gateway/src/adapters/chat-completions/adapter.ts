@@ -14,7 +14,7 @@ import type { ConstrainedPlan } from './constrained-sink.ts';
 import { PreconditionFailedError, StreamFailure, UnsupportedInputError } from '../shared/failures.ts';
 import { RENDERS_EVERY_SAMPLING_FIELD } from '../shared/sampling.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
-import { jsonReplyFormatOf, jsonReplyPathOf, jsonReplyPlanOf } from '../shared/json-reply.ts';
+import { isJsonOnlyEnforced, jsonReplyFormatOf, jsonReplyPathOf, jsonReplyPlanOf } from '../shared/json-reply.ts';
 import { retryAfterHint, httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
 import { MAX_SSE_EVENT_BYTES } from '../shared/limits.ts';
 import { CHAT_COMPLETIONS_PATH, CHAT_COMPLETIONS_SUFFIX } from './limits.ts';
@@ -120,6 +120,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
     const body = {
       ...withCapabilityOptions(planned.body, request, capabilities),
       ...(responseFormat === undefined ? {} : { response_format: { type: 'json_schema', json_schema: { ...responseFormat } } }),
+      ...(isJsonOnlyEnforced(jsonReply) ? { response_format: { type: 'json_object' } } : {}),
     };
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
