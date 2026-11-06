@@ -1,16 +1,16 @@
 import { canonicalJson, defineProductSchema, parseOutsideJson, sha256Hex } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
 import { GUIDELINE_TEXT_PATTERN } from '@momonga/protocol';
-import { GATE_CHECKS } from './context-compare.ts';
+import { GATE_CHECKS, TOKEN_PRIMARY_METRICS } from './context-compare.ts';
 import type { ContextComparison } from './context-compare.ts';
 import { CONTEXT_MODELS } from './context-report.ts';
 import type { ContextModel } from './context-report.ts';
 import { IMPROVE_STATUSES } from './context-improve.ts';
-import type { ImproveOutcome, ImproveStatus, SkippedScenario } from './context-improve.ts';
+import type { CandidateDerivation, ImproveOutcome, ImproveStatus, SkippedScenario } from './context-improve.ts';
 import { describeFirstError } from './dataset.ts';
 import { EvalError } from './runner.ts';
 
-export const GUIDELINE_OUTCOME_FORMAT = 'momonga-guideline-outcome/1';
+export const GUIDELINE_OUTCOME_FORMAT = 'momonga-guideline-outcome/2';
 
 export type OutcomeCandidate = { index: number; text?: string; skipped?: string; contrastiveFailures?: number; gate?: ContextComparison['gate'] };
 
@@ -21,6 +21,8 @@ export type GuidelineOutcomeBody = {
   alias: string;
   seed: number;
   candidateCount: number;
+  tokenCap: number;
+  derivation?: CandidateDerivation;
   dataset: { name: string; digest: string };
   parent: number | null;
   parentText: string | null;
@@ -32,7 +34,7 @@ export type GuidelineOutcomeBody = {
   tokens: { benchmark: number; charged: number };
 };
 
-export type GuidelineOutcomeFile = { digest: string; outcome: GuidelineOutcomeBody };
+export type GuidelineOutcomeFile = GuidelineOutcomeBody & { digest: string };
 
 export type GuidelineAdoption = { text: string; parent: number | null; parentText: string | null; report: Record<string, unknown> };
 
@@ -68,6 +70,8 @@ export const outcomeFileOf = (outcome: ImproveOutcome, dataset: { name: string; 
     alias: outcome.alias,
     seed: outcome.seed,
     candidateCount: outcome.candidateCount,
+    tokenCap: outcome.tokenCap,
+    derivation: outcome.derivation,
     dataset,
     parent: outcome.current?.version ?? null,
     parentText: outcome.current?.text ?? null,
@@ -84,7 +88,7 @@ export const outcomeFileOf = (outcome: ImproveOutcome, dataset: { name: string; 
     report,
     tokens: outcome.tokens,
   }) as GuidelineOutcomeBody;
-  return { digest: digestOf(body), outcome: body };
+  return { digest: digestOf(body), ...body };
 };
 
 export const encodeOutcomeFile = (file: GuidelineOutcomeFile): string => `${JSON.stringify(file, null, 2)}\n`;
@@ -112,7 +116,7 @@ const gate = {
       type: 'array',
       items: {
         type: 'object',
-        properties: { name: { enum: [...GATE_CHECKS] }, passed: { type: 'boolean' }, detail: { type: 'string' } },
+        properties: { name: { enum: [...GATE_CHECKS, 'passRate', ...TOKEN_PRIMARY_METRICS] }, passed: { type: 'boolean' }, detail: { type: 'string' } },
         required: ['name', 'passed', 'detail'],
         additionalProperties: false,
       },
@@ -161,15 +165,19 @@ const OUTCOME_FILE_SCHEMA = {
   type: 'object',
   properties: {
     digest: { type: 'string', pattern: HEX_DIGEST },
-    outcome: {
-      type: 'object',
-      properties: {
         format: { const: GUIDELINE_OUTCOME_FORMAT },
         status: { enum: [...IMPROVE_STATUSES] },
         model: modelKind,
         alias: { type: 'string' },
         seed: { type: 'integer' },
         candidateCount: count,
+        tokenCap: count,
+        derivation: {
+          type: 'object',
+          properties: { baselineTokens: count, analysisTokens: count, candidateRunTokens: count, affordable: count },
+          required: ['baselineTokens', 'analysisTokens', 'candidateRunTokens', 'affordable'],
+          additionalProperties: false,
+        },
         dataset: {
           type: 'object',
           properties: { name: { type: 'string' }, digest: { type: 'string', pattern: HEX_DIGEST } },
@@ -197,12 +205,8 @@ const OUTCOME_FILE_SCHEMA = {
         },
         report: REPORT_SCHEMA,
         tokens,
-      },
-      required: ['format', 'status', 'model', 'alias', 'seed', 'candidateCount', 'dataset', 'parent', 'parentText', 'contrastive', 'skipped', 'candidates', 'tokens'],
-      additionalProperties: false,
-    },
   },
-  required: ['digest', 'outcome'],
+  required: ['digest', 'format', 'status', 'model', 'alias', 'seed', 'candidateCount', 'tokenCap', 'dataset', 'parent', 'parentText', 'contrastive', 'skipped', 'candidates', 'tokens'],
   additionalProperties: false,
 } as const;
 
@@ -218,14 +222,15 @@ export const parseOutcomeFile = (text: string): GuidelineOutcomeFile => {
   const verdict = validateOutcomeFile(value);
   if (!verdict.valid) throw new EvalError(`the outcome file is not a ${GUIDELINE_OUTCOME_FORMAT} file: ${describeFirstError(verdict.errors)}`);
   const file = verdict.value;
-  if (digestOf(file.outcome) !== file.digest) {
+  const { digest, ...body } = file;
+  if (digestOf(body) !== digest) {
     throw new EvalError('the outcome file was changed after context improve wrote it: its digest does not match its content, so the text in it is not the text that was measured');
   }
   return file;
 };
 
 export const adoptionOf = (file: GuidelineOutcomeFile): GuidelineAdoption => {
-  const { winner, report, parent, parentText } = file.outcome;
+  const { winner, report, parent, parentText } = file;
   if (winner === undefined || report === undefined) throw new EvalError('the outcome file has no winner, so there is nothing to adopt');
   if (winner.parent !== parent) throw new EvalError('the outcome file names two different parents for its winner');
   return { text: winner.text, parent, parentText, report };

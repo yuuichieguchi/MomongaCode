@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { BOOTSTRAP_RESAMPLES, BOOTSTRAP_TAIL_RANK, CONTEXT_DATASET_FORMAT, EvalError, MINIMUM_PAIRS, buildContextReport, formatContextReport, parseContextDataset } from '@momonga/eval';
+import { BOOTSTRAP_RESAMPLES, BOOTSTRAP_TAIL_RANK, CONTEXT_DATASET_FORMAT, EvalError, MINIMUM_PAIRS, formatContextReport, parseContextDataset } from '@momonga/eval';
 import type { Transcript } from '@momonga/eval';
 import type { RunEventPayload } from '@momonga/protocol';
-import { compacted, contextCase, fidelity, governing, historyRead, marked, padding, read, recorded, summarized } from './context-fixtures.ts';
+import { compacted, contextCase, fidelity, governing, historyRead, padding, read, recorded, summarized } from './context-fixtures.ts';
+import { buildReportAs } from './answered-fixtures.ts';
 
 const sample = (both: Record<string, unknown> = {}, onOnly: Record<string, unknown> = {}) =>
   parseContextDataset(
@@ -19,7 +20,7 @@ const sample = (both: Record<string, unknown> = {}, onOnly: Record<string, unkno
     'sample.json',
   );
 
-const build = (dataset: ReturnType<typeof sample>, transcripts: Transcript[]) => buildContextReport({ dataset, transcripts, model: 'real', seed: 1 });
+const build = (dataset: ReturnType<typeof sample>, transcripts: Transcript[]) => buildReportAs({ dataset, transcripts, model: 'real', seed: 1 });
 
 const base = (s1On: RunEventPayload[], s2On: RunEventPayload[] = [summarized(2, fidelity([], 1, 1))], s1Off: RunEventPayload[] = [], s2Off: RunEventPayload[] = []): Transcript[] => [
   recorded('s1-on', 0, s1On),
@@ -79,14 +80,14 @@ describe('what a run is made of', () => {
     expect(report.metrics.lossSignalsPerCompaction).toMatchObject({ signals: 1, compactions: 3 });
   });
 
-  it('refuses a gold range beyond the last seq of a run, which would inflate recall', () => {
-    const dataset = sample({}, { gold: [{ seqFrom: 1, seqTo: 50 }] });
+  it('refuses a gold anchor that no event of the run carries, which would otherwise measure nothing', () => {
+    const dataset = sample({}, { gold: [{ anchor: 'NEEDLE-absent', in: 'tool.completed' }] });
     expect(() => build(dataset, base([summarized(2, fidelity([], 1, 1)), ...padding(2)]))).toThrow(EvalError);
   });
 
-  it('measures retrieval against a range a marked call fixes', () => {
-    const early = [...read('r1', '/p/a.ts', 'one'), ...padding(1)];
-    const dataset = sample({}, { gold: [marked(early, 'r1')] });
+  it('measures retrieval against the range of the call that carries the anchor, wherever the run placed it', () => {
+    const early = [...read('r1', '/p/a.ts', 'one NEEDLE-1'), ...padding(1)];
+    const dataset = sample({}, { gold: [{ anchor: 'NEEDLE-1', in: 'tool.completed' }] });
     const report = build(dataset, base([...early, summarized(3, fidelity([], 1, 1)), ...historyRead('h1', 1, 2)]));
     expect(report.metrics.retrievalRecall).toMatchObject({ successes: 2, trials: 2 });
   });
@@ -103,8 +104,10 @@ describe('provenance of a report', () => {
     expect(report.modelAliases).toEqual(['alias-a', 'alias-b']);
   });
 
-  it('says that the kind of model is declared by the operator', () => {
-    expect(formatContextReport(build(sample(), base([summarized(2, fidelity([], 1, 1))])))).toMatch(/declared by the operator/);
+  it('says that the kind of model is derived from the pinned provenance of the answering targets', () => {
+    const text = formatContextReport(build(sample(), base([summarized(2, fidelity([], 1, 1))])));
+    expect(text).toMatch(/derived from the pinned provenance of the targets that answered: opus \(model\)/);
+    expect(text).not.toMatch(/declared by the operator/);
   });
 });
 

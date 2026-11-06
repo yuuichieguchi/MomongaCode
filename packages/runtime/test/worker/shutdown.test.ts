@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
 import { deferred, within } from './deferred.ts';
 import { START_MS, bodyDigest, makeEnv, modelKey, toolKey } from './harness.ts';
+import { pinnedStart } from './cancel-fixture.ts';
 import type { Env } from './harness.ts';
 import { callsStep, functionCallItem, gated, requestedOffering, textStep } from './scripts.ts';
 
@@ -25,6 +26,7 @@ const expectYieldedWithoutTrace = (env: Env, runId: string, status: 'QUEUED' | '
 };
 
 const markCallSeed = (runId: string): RunEventPayload[] => [
+  pinnedStart(),
   requestedOffering(1, ['Mark']),
   {
     type: 'model.responded',

@@ -25,7 +25,7 @@ export type RunFactsClient = JournalThreadClient & {
 
 type Preparer = NonNullable<RuntimeStoreOptions['preparer']>;
 
-const METHODS = ['measure', 'inheritPlan', 'inheritedWindow', 'verdict', 'evidence', 'reflectionInput'] as const;
+const METHODS = ['measure', 'inheritPlan', 'inheritedWindow', 'verdict', 'evidence', 'reflectionInput', 'fidelity'] as const;
 
 const closers: Array<() => Promise<void>> = [];
 

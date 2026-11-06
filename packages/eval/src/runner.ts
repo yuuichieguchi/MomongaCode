@@ -3,7 +3,7 @@ import type { GoldenCase, GoldenDataset } from './dataset.ts';
 import { grade } from './graders.ts';
 import { buildReport } from './report.ts';
 import type { CaseResult, EvalReport } from './report.ts';
-import type { RecordedRun, Transcript, TranscriptChild, TranscriptReflection, TranscriptRun } from './transcript.ts';
+import type { Answerer, RecordedRun, Transcript, TranscriptChild, TranscriptReflection, TranscriptRun } from './transcript.ts';
 
 export type EvalWorkspace = { cwd: string; env: Record<string, string> };
 
@@ -14,6 +14,7 @@ export type EvalRunApi = {
   createRun(sessionId: string, input: { input: string; timeoutMs?: number }): Promise<{ id: string }>;
   events(runId: string): AsyncIterable<PublicRunEvent>;
   getRun(runId: string): Promise<TranscriptRun>;
+  answeredBy(runId: string): Promise<Answerer[]>;
   reflectionOf(runId: string): Promise<TranscriptReflection>;
   resolveApproval(approvalId: string, optionId: string): Promise<void>;
   cancelRun(runId: string): Promise<void>;

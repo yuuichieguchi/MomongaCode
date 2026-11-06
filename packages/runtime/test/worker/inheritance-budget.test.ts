@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { compactionSummaryMessage } from '@momonga/protocol';
 import type { InputItem, MessageInputItem, RunEventPayload } from '@momonga/protocol';
 import { GatewayRequestError } from '@momonga/runtime';
 import { fixtureCompactionContent } from '@momonga/testkit';
@@ -60,7 +61,7 @@ describe('eviction of inherited outputs', () => {
     const input = firstRequestInput(env, second.id);
     const outputs = input.filter((item): item is Extract<InputItem, { type: 'function_call_output' }> => item.type === 'function_call_output');
     expect(outputs).toHaveLength(5);
-    expect(String(outputs[0]?.output)).toMatch(/^\[tool output omitted: \d+ tokens; stored as \S+; read it with ReadOutput\]$/);
+    expect(String(outputs[0]?.output)).toMatch(/^\[tool output omitted: \d+ tokens; stored as \S+\]$/);
     expect(input.at(-1)).toMatchObject({ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Summarize' }] });
   });
 });
@@ -68,10 +69,10 @@ describe('eviction of inherited outputs', () => {
 describe('compaction of inherited history', () => {
   it('compacts inherited turns in run 2 under a run-scoped key, and run 3 inherits the summary', async () => {
     const env = await makeEnv();
-    const big = (label: string): string => `${label} `.padEnd(6000, 'a');
+    const big = (label: string, size = 6000): string => `${label} `.padEnd(size, 'a');
     await completeSeeded(env, 'question one', [
       requestedPayload(1),
-      respondedPayload(1, [assistantMessage('msg_1', big('answer one'))]),
+      respondedPayload(1, [assistantMessage('msg_1', big('answer one', 6400))]),
       { type: 'user.message', text: 'question two' },
       requestedPayload(2),
       respondedPayload(2, [assistantMessage('msg_2', big('answer two'))]),
@@ -170,7 +171,7 @@ describe('pinned_overflow across runs', () => {
 
 describe('an inherited compaction item the gateway rejects', () => {
   const SUMMARY_TEXT = 'We fixed the <parser> bug';
-  const PLAIN_SUMMARY: MessageInputItem = { type: 'message', role: 'user', content: '<conversation_summary>\nWe fixed the &lt;parser> bug\n</conversation_summary>' };
+  const PLAIN_SUMMARY: MessageInputItem = compactionSummaryMessage('We fixed the <parser> bug', 'model');
 
   it('is replaced by the plain summary in run 2, which completes', async () => {
     const env = await makeEnv();

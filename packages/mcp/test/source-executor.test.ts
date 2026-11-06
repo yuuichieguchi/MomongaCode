@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { ToolExecutionError } from '@momonga/tools';
 import type { ToolContext, ToolSet } from '@momonga/tools';
+import { UNBOUNDED_OUTPUT_FIT } from '@momonga/testkit';
 import {
   MODERN_FIXTURE_AUDIO_BYTES,
   MODERN_FIXTURE_BLOB_BYTES,
@@ -278,7 +279,7 @@ describe('MCP timeouts and cancellation', () => {
       step: 1,
       callId: 'call-direct',
       idemKey: 'idem-direct',
-      outputBudgetChars: 30_000,
+      outputFit: UNBOUNDED_OUTPUT_FIT,
       env: {},
       signal: new AbortController().signal,
       deadlineAt: clock.now() + 300,

@@ -121,7 +121,7 @@ describe('the window request carries W = C + S over the claim targets and the ma
     const floor = inheritanceWindowFor([small]).floorTokens;
     expect(Number.isInteger(floor)).toBe(true);
     expect(floor).toBeGreaterThanOrEqual(1);
-    expect(floor).toBeLessThanOrEqual(Math.ceil(omittedMarker(0, '').length / 4));
+    expect(floor).toBeLessThanOrEqual(Math.ceil(omittedMarker(0, '', undefined).length / 4));
   });
 
   it('the claim asks the thread with the numbers derived from its own capabilities', async () => {

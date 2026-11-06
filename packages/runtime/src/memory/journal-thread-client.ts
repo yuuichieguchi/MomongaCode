@@ -1,10 +1,11 @@
 import { MessageChannel, Worker, receiveMessageOnPort } from 'node:worker_threads';
 import type { MessagePort } from 'node:worker_threads';
-import { InheritanceError, JournalThreadError } from '@momonga/store';
+import { InheritanceError, JournalThreadError, blobDirectoryOf } from '@momonga/store';
 import type {
   ContributionMeasured,
   ContributionPreparer,
   EvidenceReply,
+  FidelityReply,
   InheritPlanReply,
   InheritedWindowReply,
   RecordedCheck,
@@ -150,6 +151,15 @@ const inheritedWindowOf = (reply: JournalThreadReply): InheritedWindowReply => {
   return { lastSeq: lastSeqOf(reply, 'inherited_window'), ...(summary === undefined ? {} : { summary }), entries, evicted, omittedOlder } as InheritedWindowReply;
 };
 
+const isUnreadable = (entry: unknown): entry is FidelityReply['unreadable'][number] => isRecord(entry) && typeof entry['handle'] === 'string' && typeof entry['reason'] === 'string';
+
+const fidelityOf = (reply: JournalThreadReply): FidelityReply => {
+  const { attested, unreadable } = reply;
+  if (!Array.isArray(attested) || !attested.every((token) => typeof token === 'string')) throw new JournalThreadError('journal thread fidelity reply carries malformed attested tokens');
+  if (!Array.isArray(unreadable) || !unreadable.every(isUnreadable)) throw new JournalThreadError('journal thread fidelity reply carries malformed unreadable blobs');
+  return { lastSeq: lastSeqOf(reply, 'fidelity'), attested, unreadable };
+};
+
 export const startJournalThread = async (options: JournalThreadOptions): Promise<JournalThreadClient> => {
   const { databasePath, identity, silenceLimitMs, code = JOURNAL_THREAD_CODE, timers = realTimers } = options;
   const terminations = new Set<Promise<void>>();
@@ -265,7 +275,7 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
     const { port1, port2 } = new MessageChannel();
     let worker: Worker;
     try {
-      worker = new Worker(code, { eval: true, workerData: { databasePath, port: port2 }, transferList: [port2] });
+      worker = new Worker(code, { eval: true, workerData: { databasePath, blobsDir: blobDirectoryOf(databasePath), port: port2 }, transferList: [port2] });
     } catch (error) {
       port1.close();
       port2.close();
@@ -350,6 +360,9 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
     }
   };
 
+  const fidelity: JournalThreadClient['fidelity'] = async ({ runId, throughEventSeq, cwd, tokens }) =>
+    fidelityOf(await request({ kind: 'fidelity', runId, throughEventSeq, cwd, tokens }));
+
   const close = (): Promise<void> => {
     closePromise ??= (async () => {
       if (current !== null) fail(current, new JournalThreadError('journal thread client was closed'));
@@ -360,5 +373,5 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
   };
 
   await liveThread();
-  return { identity, request, ping, measure, verdict, evidence, reflectionInput, inheritPlan, inheritedWindow, close };
+  return { identity, request, ping, measure, verdict, evidence, reflectionInput, fidelity, inheritPlan, inheritedWindow, close };
 };

@@ -20,7 +20,7 @@ describe('Read', () => {
   });
 
   it('reads at most 2000 lines by default and notes where to continue', async () => {
-    const tools = await makeBuiltins({ maxInlineOutputChars: 100_000 });
+    const tools = await makeBuiltins({ outputLimitChars: 100_000 });
     const file = tools.write('long.txt', range(1, 2500).map((n) => `row ${n}`).join('\n'));
     const result = resultOf(await tools.run('Read', { file_path: file }));
     expect(result.output).toBe(`${catN(range(1, 2000).map((n) => `row ${n}`))}\n[Showed lines 1–2000. Continue with offset=2001.]`);
@@ -28,7 +28,7 @@ describe('Read', () => {
   });
 
   it('adds no continuation note when the file ends exactly at the line limit', async () => {
-    const tools = await makeBuiltins({ maxInlineOutputChars: 100_000 });
+    const tools = await makeBuiltins({ outputLimitChars: 100_000 });
     const file = tools.write('exact.txt', `${range(1, 2000).map((n) => `row ${n}`).join('\n')}\n`);
     const result = resultOf(await tools.run('Read', { file_path: file }));
     expect(result.output).toBe(catN(range(1, 2000).map((n) => `row ${n}`)));
@@ -67,7 +67,7 @@ describe('Read', () => {
   });
 
   it('cuts a single line that alone exceeds the budget', async () => {
-    const tools = await makeBuiltins({ maxInlineOutputChars: 200 });
+    const tools = await makeBuiltins({ outputLimitChars: 200 });
     const file = tools.write('one-wide.txt', `${'w'.repeat(1500)}\nnext\n`);
     const result = resultOf(await tools.run('Read', { file_path: file }));
     expect(result.handle).toBeUndefined();

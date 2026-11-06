@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { defineTool } from '@momonga/tools';
 import { capabilitiesFor, makeEnv, textOf } from './harness.ts';
@@ -12,6 +13,7 @@ const readTool = defineTool<{ file_path: string }>({
   inputSchema: { type: 'object', properties: { file_path: { type: 'string' } }, required: ['file_path'], additionalProperties: false },
   timeoutMs: 60_000,
   title: (input) => `Read ${input.file_path}`,
+  locations: (input, ctx) => [{ path: path.resolve(ctx.cwd, input.file_path) }],
   subject: () => ({ kind: 'none', tool: 'Read' }),
   execute: async () => ({ status: 'completed', output: 'contents' }),
 });
@@ -31,7 +33,7 @@ describe('a path-scoped governing fact across a compaction', () => {
     });
     env.gateway.script.push(
       callsStep([{ callId: 'k_read', name: 'Read', args: { file_path: 'legacy/a.ts' } }]),
-      ...[0, 1, 2, 3, 4, 5].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1400) })),
+      ...[0, 1, 2, 3, 4, 5].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1550) })),
       textStep('done'),
     );
     env.gateway.compactSummaries.push('S1');

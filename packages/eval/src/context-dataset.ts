@@ -23,7 +23,10 @@ export type ContextRule = {
 
 export type WorkspaceStep = { beforeRun: number; write?: Record<string, string>; remove?: string[] };
 
-export type GoldRange = { seqFrom: number; seqTo: number };
+export const GOLD_SOURCES = ['tool.completed', 'user.message', 'agent.message'] as const;
+export type GoldSource = (typeof GOLD_SOURCES)[number];
+
+export type GoldAnchor = { anchor: string; in: GoldSource };
 
 export type ContextMemory = { text: string; paths: string[] };
 
@@ -38,7 +41,7 @@ export type ContextCase = GoldenCase & {
   memories?: ContextMemory[];
   noise: { level: number; topics: string[] };
   workspace?: WorkspaceStep[];
-  gold?: GoldRange[];
+  gold?: GoldAnchor[];
 };
 
 export type ContextDataset = { format: typeof CONTEXT_DATASET_FORMAT; name: string; cases: ContextCase[] };
@@ -127,8 +130,8 @@ export const CONTEXT_DATASET_SCHEMA = {
             type: 'array',
             items: {
               type: 'object',
-              properties: { seqFrom: { type: 'integer', minimum: 1 }, seqTo: { type: 'integer', minimum: 1 } },
-              required: ['seqFrom', 'seqTo'],
+              properties: { anchor: string, in: { enum: [...GOLD_SOURCES] } },
+              required: ['anchor', 'in'],
               additionalProperties: false,
             },
           },
@@ -224,12 +227,6 @@ const assertWorkspace = (entry: ContextCase, source: string): void => {
   });
 };
 
-const assertGold = (entry: ContextCase, source: string): void => {
-  for (const range of entry.gold ?? []) {
-    if (range.seqTo < range.seqFrom) throw new DatasetError(`${source}: case ${entry.id} has a gold range ${range.seqFrom}..${range.seqTo} that ends before it starts`);
-  }
-};
-
 const TOKEN_SEPARATOR = /[^\p{L}\p{N}]+/u;
 
 const tokensOf = (text: string): string[] => text.toLowerCase().split(TOKEN_SEPARATOR).filter((token) => token !== '');
@@ -292,7 +289,6 @@ export const parseContextDataset = (text: string, source: string): ContextDatase
   for (const entry of dataset.cases) {
     assertRevisions(entry, source);
     assertWorkspace(entry, source);
-    assertGold(entry, source);
     assertMemoryPaths(entry, source);
     assertNoiseNamesNoTarget(entry, source);
   }

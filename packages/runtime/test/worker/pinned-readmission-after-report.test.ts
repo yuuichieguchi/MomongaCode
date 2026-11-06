@@ -109,7 +109,7 @@ describe('off mode: a fact retired mid-run, after the first request was reported
   });
 
   it('re-admits against the pinned check when the returned tool would overflow, and fails there with the fresh count of the pinned part', async () => {
-    const oversize = 'Finds files. '.repeat(120);
+    const oversize = 'Finds files. '.repeat(150);
     const { env, runId, firstEstimate, globTokens } = await retireMidRun(oversize, SLACK);
 
     expect(ceiling - (firstEstimate + globTokens)).toBeLessThan(MIN_ROOM_TOKENS);

@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { CONTEXT_DATASET_FORMAT, EvalError, buildContextReport, compareContextReports, formatContextComparison, parseContextDataset } from '@momonga/eval';
+import { CONTEXT_DATASET_FORMAT, EvalError, compareContextReports, formatContextComparison, parseContextDataset } from '@momonga/eval';
 import type { Transcript } from '@momonga/eval';
 import type { RunEventPayload, SummaryFidelity } from '@momonga/protocol';
 import { bash, compacted, contextCase, fidelity, recorded, summarized } from './context-fixtures.ts';
+import { buildReportAs, withMeasuredQuality } from './answered-fixtures.ts';
 
 const SCENARIOS = ['a', 'b', 'c', 'd'] as const;
 
@@ -41,7 +42,7 @@ const reportOf = ({ failingOn = [], failingOff = [], tokens = {}, extra = [], su
     ),
     recorded(`${scenario}-off`, 0, [], { status: failingOff.includes(scenario) ? 'FAILED' : 'COMPLETED', totalTokens: tokens[`${scenario}-off`] ?? 100 }),
   ]);
-  return buildContextReport({ dataset: datasetOf(input), transcripts, model, seed: 1 });
+  return withMeasuredQuality(buildReportAs({ dataset: datasetOf(input), transcripts, model, seed: 1 }));
 };
 
 const compare = (baseline = reportOf({ failingOn: ['a', 'b'] }), candidate = reportOf()) => compareContextReports(baseline, candidate, { seed: 1 });
@@ -60,6 +61,13 @@ describe('compareContextReports', () => {
       ['offCases', true],
       ['overallPasses', true],
       ['unclassifiedCompactions', true],
+      ['continuationRate', true],
+      ['governanceFidelity', true],
+      ['governanceConsistency', true],
+      ['governanceMinimality', true],
+      ['memoryStaleRate', true],
+      ['retrievalPrecision', true],
+      ['retrievalRecall', true],
     ]);
     expect(gate.passed).toBe(true);
   });

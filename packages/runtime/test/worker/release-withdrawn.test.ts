@@ -4,6 +4,7 @@ import { ToolInputRequired, defineTool } from '@momonga/tools';
 import type { AnyTool } from '@momonga/tools';
 import { createStoppedRunReleaser } from '../../src/process/release-stopped.ts';
 import { START_MS, makeEnv, toolKey } from './harness.ts';
+import { pinnedStart } from './cancel-fixture.ts';
 import type { Env } from './harness.ts';
 import { callsStep, functionCallItem, requestedOffering } from './scripts.ts';
 
@@ -91,6 +92,7 @@ describe('releasing the checkpoint of a call whose input request was withdrawn',
     const claim = env.seed(
       run.id,
       [
+        pinnedStart(),
         requestedOffering(1, ['Ask']),
         { type: 'model.responded', step: 1, attempt: 1, response: { status: 'completed', output: [functionCallItem({ callId: 'call_ask', name: 'Ask', args: {} })], usage: USAGE } },
         { type: 'tool.call', callId: 'call_ask', providerCallId: 'call_ask', name: 'Ask', kind: 'other', title: 'Ask', rawInput: {} },

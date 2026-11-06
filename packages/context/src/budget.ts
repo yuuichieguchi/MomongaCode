@@ -62,7 +62,7 @@ export type InheritanceWindow = { windowTokens: number; floorTokens: number };
 
 export const inheritanceWindowFor = (targets: readonly Capabilities[]): InheritanceWindow => {
   if (targets.length === 0) throw new RangeError('an inheritance window needs at least one target');
-  const markerTokens = tokensForText(omittedMarker(0, ''));
+  const markerTokens = tokensForText(omittedMarker(0, '', undefined));
   return {
     windowTokens: Math.max(...targets.map((capabilities) => inputCeilingFor(capabilities) + summaryInputCeilingFor(capabilities))),
     floorTokens: Math.min(...targets.map((capabilities) => Math.max(1, discountedFloor(sizingFractionFor(capabilities), markerTokens)))),

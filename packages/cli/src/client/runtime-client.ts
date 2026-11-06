@@ -1,7 +1,7 @@
 import type { McpServerConfig } from '@momonga/config';
 import { createUdsClient, decodeSse, isRecord } from '@momonga/foundation';
 import type { UdsResponse } from '@momonga/foundation';
-import type { AddMemoryRequest, AddRuleRequest, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunReflectionView, RuleAddResponse, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
+import type { AddMemoryRequest, AddRuleRequest, AdoptGuidelineRequest, AgentsResponse, ContextChargeView, CostBreakdownView, CostReportView, GuidelineView, GuidelinesResponse, RecordContextChargeRequest, GoverningFactView, JobView, ElicitationAnswerRecord, ImageAttachment, McpAuthorizationView, McpServerView, MemoryScope, MemoryState, MemoryView, PermissionMode, PolicyGovernanceResponse, PublicRunEvent, ReflectionJobView, RunAnsweredByView, RunReflectionView, RuleAddResponse, RunHealth, RunTraceView, SkillsResponse } from '@momonga/protocol';
 import {
   ContractViolation,
   checkAgents,
@@ -22,6 +22,7 @@ import {
   checkPolicyGovernance,
   checkPromoted,
   checkReflection,
+  checkRunAnsweredBy,
   checkRunReflection,
   checkRule,
   checkRuleAdd,
@@ -124,6 +125,7 @@ export type RuntimeClient = {
   memories(filter?: MemoryFilter): Promise<MemoryView[]>;
   lastReflection(project: string): Promise<ReflectionJobView | null>;
   runReflection(runId: string): Promise<RunReflectionView>;
+  runAnsweredBy(runId: string): Promise<RunAnsweredByView>;
   memory(id: string): Promise<MemoryView>;
   addMemory(request: AddMemoryRequest): Promise<MemoryView>;
   deleteMemory(id: string): Promise<void>;
@@ -413,6 +415,12 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     return checkReflection(body, `GET ${path}`).job;
   };
 
+  const runAnsweredBy = async (runId: string): Promise<RunAnsweredByView> => {
+    const path = `/v1/runs/${encodeURIComponent(runId)}/answered-by`;
+    const { body } = await send('GET', path, [200]);
+    return checkRunAnsweredBy(body, `GET ${path}`);
+  };
+
   const runReflection = async (runId: string): Promise<RunReflectionView> => {
     const path = `/v1/runs/${encodeURIComponent(runId)}/reflection`;
     const { body } = await send('GET', path, [200]);
@@ -592,6 +600,7 @@ export const createRuntimeClient = (options: { socketPath: string }): RuntimeCli
     memories,
     lastReflection,
     runReflection,
+    runAnsweredBy,
     memory,
     addMemory,
     deleteMemory,
