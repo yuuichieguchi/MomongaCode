@@ -127,7 +127,8 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
       const sources: McpPool['sources'] = [];
       if (mcp.enabled.length > 0) {
         const servers = mcp.enabled;
-        const key = sha256Hex(canonicalJson({ project: session.cwd, servers, trust: trust ?? 'unset', env: inheritedEnvOf(env) }));
+        const { credentials } = loaded.settings;
+        const key = sha256Hex(canonicalJson({ project: session.cwd, servers, trust: trust ?? 'unset', env: inheritedEnvOf(env), credentials }));
         const acquired = mcpPools.acquire(runId, {
           key,
           create: () =>
@@ -136,6 +137,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
               projectDir: session.cwd,
               baseEnv: env,
               clock,
+              credentials,
               timers,
               remote: mcpRemote,
               markers: { dir: paths.markers.mcp, onWarning: (message) => logger.warn(message) },
