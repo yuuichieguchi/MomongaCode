@@ -50,7 +50,7 @@ export {
   defaultToolsSettings,
 } from './context-settings.ts';
 export type { ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from './context-settings.ts';
-export { createKeptSettings, diskKeptRecords, keptSettingsDirectory, noKeptRecords } from './kept-settings.ts';
+export { UnreadableKeptCopyError, createKeptSettings, diskKeptRecords, keptSettingsDirectory, noKeptRecords } from './kept-settings.ts';
 export type { KeptProblem, KeptRecords, KeptSettings } from './kept-settings.ts';
 export type { KeptLayers, TrustOracle, UserLayer } from './layers.ts';
 export type { SettingsUse } from './last-good.ts';
