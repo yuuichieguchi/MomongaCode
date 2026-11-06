@@ -88,7 +88,7 @@ const EXCEPTIONS: readonly Exception[] = [
     file: 'optional/format-assertion',
     tests: ['format-assertion: false: invalid string', 'format-assertion: true: invalid string'],
     reason:
-      'the format-assertion vocabulary is not implemented: format stays an annotation whatever a custom metaschema declares (same engine option as optional/format, assertFormat:false). Note that Core 2020-12 section 8.1.2 says an implementation that does not recognize a vocabulary declared true must refuse the schema; the product accepts it.',
+      'the format-assertion vocabulary is not implemented: format stays an annotation whatever a custom metaschema declares (same engine option as optional/format, assertFormat:false). Open: format-assertion declared true is known to ata-validator (lib/vocabularies.js:65-77) but assertFormat:false strips format (lib/validator-core.js:750), so the schema is accepted and format is not asserted; whether the product should assert or refuse is a behaviour the design does not record and is the person's decision.',
   },
   {
     file: 'optional/dependencies-compatibility',
