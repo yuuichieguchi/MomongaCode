@@ -39,14 +39,12 @@ for (const spec of SUBJECTS) {
       validUnderRendered: report.stats.validRendered,
       refusedByBoundary: report.stats.refused,
       oracleErrors: report.stats.oracleErrors,
-      ajvCrossCheck: { disagreements: report.stats.ajvDisagreements, crashes: report.stats.ajvCrashes },
       unverifiableUnsatisfiable: report.stats.unverifiable,
       counterexamples: report.counterexamples,
       seconds: (Date.now() - begun) / 1000,
     })}\n`,
   );
   for (const [reason, example] of Object.entries(report.stats.refusedExamples)) process.stdout.write(`  refused ${reason}: ${example}\n`);
-  for (const sample of report.stats.ajvSamples) process.stdout.write(`  ajv-disagrees ${sample}\n`);
   for (const sample of report.oracleSamples) process.stdout.write(`  oracle-error ${sample}\n`);
   for (const cluster of report.clusters) {
     process.stdout.write(`  cluster ${cluster.signature} x${cluster.count} (minimised ${cluster.minimised})\n`);
