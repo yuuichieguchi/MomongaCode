@@ -11,6 +11,7 @@ CONSTANTS
     CloseCreatorOnFailure,
     GuardEnabled,
     GuardFromRows,
+    SoundAtCreate,
     OwnersIgnored,
     ReleaseRemoves,
     ProofDir
@@ -40,7 +41,7 @@ ASSUME /\ NonReadOnly \subseteq Markers
        /\ LockModes # {}
        /\ ProofDir \in {"outside", "markers"}
        /\ MaxCrashes \in Nat
-       /\ {ProbeMapsHiddenToFree, CloseCreatorOnFailure, GuardEnabled, GuardFromRows, OwnersIgnored, ReleaseRemoves} \subseteq BOOLEAN
+       /\ {ProbeMapsHiddenToFree, CloseCreatorOnFailure, GuardEnabled, GuardFromRows, SoundAtCreate, OwnersIgnored, ReleaseRemoves} \subseteq BOOLEAN
        /\ "none" \notin Markers
        /\ Descendants \cap {"creator", "leader"} = {}
 
@@ -157,9 +158,12 @@ GuardCheck(m) ==
                    /\ file' = [x \in Markers |-> IF x \in cleared THEN "absent" ELSE file[x]]
                    /\ reapedLiveOwner' = (reapedLiveOwner \/ \E x \in Markers : kills[x] # {} /\ owner[x] # "none")
                    /\ phase' = [phase EXCEPT ![m] = IF unreadable \cup stillHeld = {} THEN "guarded" ELSE "refused"]
+                   /\ startedWithOrphan' = (startedWithOrphan \/
+                         (unreadable \cup stillHeld = {} /\ \E x \in Markers : LiveOf(after[x]) # {} /\ owner[x] = "none"))
        ELSE /\ phase' = [phase EXCEPT ![m] = "guarded"]
+            /\ startedWithOrphan' = (startedWithOrphan \/ \E x \in Markers : Orphan(x))
             /\ UNCHANGED <<holds, leader, proc, file, reapedLiveOwner>>
-    /\ UNCHANGED <<up, crashes, startupDone, mode, owner, home, detached, cache, meta, ledger, startedWithOrphan,
+    /\ UNCHANGED <<up, crashes, startupDone, mode, owner, home, detached, cache, meta, ledger,
                    proofFile, runtimeSignalled, attempted>>
 
 CreateMarker(m) ==
@@ -170,7 +174,7 @@ CreateMarker(m) ==
     /\ owner' = [owner EXCEPT ![m] = "call"]
     /\ holds' = [holds EXCEPT ![m] = {"creator"}]
     /\ phase' = [phase EXCEPT ![m] = "created"]
-    /\ startedWithOrphan' = (startedWithOrphan \/ \E x \in Markers \ {m} : Orphan(x))
+    /\ startedWithOrphan' = (startedWithOrphan \/ (SoundAtCreate /\ \E x \in Markers \ {m} : Orphan(x)))
     /\ UNCHANGED <<up, crashes, startupDone, kind, leader, proc, home, detached, cache, meta, ledger,
                    reapedLiveOwner, proofFile, runtimeSignalled, attempted>>
 
