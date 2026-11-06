@@ -9,5 +9,8 @@
   "dependencies": {
     "@momonga/foundation": "*",
     "@momonga/protocol": "*"
+  },
+  "devDependencies": {
+    "@momonga/store": "*"
   }
 }

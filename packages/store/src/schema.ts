@@ -1,5 +1,5 @@
 import type { Migration } from '@momonga/foundation';
-import { UNKNOWN_ANSWERER } from './append-records.ts';
+import { UNKNOWN_ANSWERER } from '@momonga/protocol';
 
 const INITIAL_SCHEMA = `
 CREATE TABLE sessions (

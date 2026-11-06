@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson } from '@momonga/foundation';
-import { ERROR_WINDOW, assistantTextOf } from '@momonga/protocol';
+import { ERROR_WINDOW, UNKNOWN_ANSWERER, assistantTextOf } from '@momonga/protocol';
 import type { RunEventPayload, SessionEventPayload } from '@momonga/protocol';
 import { corrupt, expectRecord, isRecord, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
@@ -72,8 +72,6 @@ export type AppendRecords = {
   touchedAfter(sessionId: string, afterEventId: number, limit: number, afterPath?: string): SessionTouched[];
   touchedNewest(sessionId: string, limit: number): SessionTouched[];
 };
-
-export const UNKNOWN_ANSWERER = 'unknown' as const;
 
 export const answerTargetOf = (payload: RunEventPayload | SessionEventPayload): string | undefined => {
   switch (payload.type) {

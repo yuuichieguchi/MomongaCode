@@ -139,4 +139,4 @@ export type {
   TrustStore,
   WaitTargets,
 } from './types.ts';
-export { UNKNOWN_ANSWERER } from './append-records.ts';
+export { UNKNOWN_ANSWERER } from '@momonga/protocol';

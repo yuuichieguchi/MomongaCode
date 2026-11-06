@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { canonicalPath, comparableContains, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
-import { DEFAULT_ANTHROPIC_API_VERSION, OUTPUT_RESERVE, anthropicVersionSamplingBound, ceilRatio, imageCapability, marginFloorFor } from '@momonga/protocol';
+import { DEFAULT_ANTHROPIC_API_VERSION, OUTPUT_RESERVE, UNKNOWN_ANSWERER, anthropicVersionSamplingBound, ceilRatio, imageCapability, marginFloorFor } from '@momonga/protocol';
 import type { AnthropicApiVersion, DialectDefinition, TargetBilling } from '@momonga/protocol';
 import { checkTargetDialects, resolveDialects } from './dialects.ts';
 import { layoutOf } from './layout.ts';
@@ -344,6 +344,7 @@ export const resolveModels = (models: ModelsSettings | undefined, { source, home
   const targets: Record<string, ResolvedModelTarget> = {};
   for (const [name, target] of configured) {
     const where = `${source}: models.targets.${name}`;
+    if (name === UNKNOWN_ANSWERER) throw new Error(`${where} is reserved: ${JSON.stringify(UNKNOWN_ANSWERER)} is the name a run records for a paid answer whose target is unknown; rename the target`);
     targets[name] = resolveTarget(target, home, where, warnings);
   }
   checkTargetDialects(targets, dialects, source);
@@ -351,6 +352,9 @@ export const resolveModels = (models: ModelsSettings | undefined, { source, home
   const aliases: Record<string, ModelAlias> = { ...models?.aliases };
   for (const [alias, value] of Object.entries(aliases)) {
     for (const member of [value].flat()) {
+      if (member === UNKNOWN_ANSWERER) {
+        throw new Error(`${source}: models.aliases.${alias} names target ${JSON.stringify(member)}, which is reserved: it is the name a run records for a paid answer whose target is unknown; name another target`);
+      }
       if (!Object.hasOwn(targets, member)) {
         throw new Error(`${source}: models.aliases.${alias} names target ${JSON.stringify(member)}, which is not defined in models.targets`);
       }
