@@ -15,7 +15,7 @@ const rejectedWith = async (settings: Record<string, unknown>, fragment: string 
   await expect(loadUserSettings({ home: tree.home })).rejects.toThrow(fragment);
 };
 
-const OFF_CONTEXT = { adaptiveBudget: false, autoCompact: true, cachePrefix: false, outputFormatters: [], loopGuidance: false, observedCapacity: false };
+const OFF_CONTEXT = { adaptiveBudget: false, autoCompact: true, cachePrefix: false, outputFormatters: [], loopGuidance: false, observedCapacity: false, unboundedOutputReserve: false };
 
 describe('token settings defaults', () => {
   it('turns every context policy of the token design off', async () => {
@@ -34,7 +34,7 @@ describe('token settings defaults', () => {
 describe('token settings values', () => {
   it('resolves every key the user sets', async () => {
     const settings = await resolvedWith({
-      context: { cachePrefix: true, outputFormatters: ['log', 'json', 'grep', 'identicalOutput'], loopGuidance: true, observedCapacity: true },
+      context: { cachePrefix: true, outputFormatters: ['log', 'json', 'grep', 'identicalOutput'], loopGuidance: true, observedCapacity: true, unboundedOutputReserve: true },
       tools: { deferral: true, conciseDescriptions: true },
       memory: { repositoryFacts: true },
     });
@@ -45,6 +45,7 @@ describe('token settings values', () => {
       outputFormatters: ['log', 'json', 'grep', 'identicalOutput'],
       loopGuidance: true,
       observedCapacity: true,
+      unboundedOutputReserve: true,
     });
     expect(settings.tools).toEqual({ deferral: true, conciseDescriptions: true });
     expect(settings.memory).toEqual({ reflection: { enabled: false }, forgetAfterDays: 90, repositoryFacts: true });
@@ -64,6 +65,7 @@ describe('token settings values', () => {
     [{ context: { outputFormatters: ['markdown'] } }, /outputFormatters/],
     [{ context: { loopGuidance: 1 } }, /loopGuidance/],
     [{ context: { observedCapacity: 'on' } }, /observedCapacity/],
+    [{ context: { unboundedOutputReserve: 'on' } }, /unboundedOutputReserve/],
     [{ tools: { deferral: 'on' } }, /deferral/],
     [{ tools: { lazy: true } }, /lazy/],
     [{ memory: { repositoryFacts: 'on' } }, /repositoryFacts/],

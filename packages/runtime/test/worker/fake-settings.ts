@@ -37,7 +37,7 @@ export const createFakeSettings = (layout: { home: string; project: string }): F
     hooksValue: {},
     verificationValue: { commands: [...DEFAULT_VERIFICATION_COMMANDS], manifests: [...DEFAULT_VERIFICATION_MANIFESTS] },
     memoryValue: { reflection: { enabled: false }, forgetAfterDays: DEFAULT_FORGET_AFTER_DAYS, repositoryFacts: false },
-    contextValue: { adaptiveBudget: false, autoCompact: true, cachePrefix: false, outputFormatters: [], loopGuidance: false, observedCapacity: false },
+    contextValue: { adaptiveBudget: false, autoCompact: true, cachePrefix: false, outputFormatters: [], loopGuidance: false, observedCapacity: false, unboundedOutputReserve: false },
     toolsValue: { deferral: false, conciseDescriptions: false },
     classifierAlias: undefined,
     rolesValue: {},

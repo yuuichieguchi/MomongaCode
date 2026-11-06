@@ -5,7 +5,7 @@ import { distrusting, makeTree, projectSettingsPath, trusting, userSettingsPath,
 const DEFAULT_COMMANDS = ['npm test', 'pnpm test', 'yarn test', 'cargo test', 'pytest', 'go test ./...', 'swift test', 'make test'];
 const DEFAULT_MANIFESTS = ['package.json', 'pnpm-lock.yaml', 'Cargo.toml', 'pyproject.toml', 'go.mod', 'Package.swift', 'Makefile'];
 
-const TOKEN_OFF = { cachePrefix: false, outputFormatters: [], loopGuidance: false, observedCapacity: false };
+const TOKEN_OFF = { cachePrefix: false, outputFormatters: [], loopGuidance: false, observedCapacity: false, unboundedOutputReserve: false };
 
 const resolvedWith = async (settings: Record<string, unknown>) => {
   const tree = makeTree();

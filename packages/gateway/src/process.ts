@@ -117,7 +117,9 @@ const DEFAULT_FM_BINARY = '/usr/bin/fm';
 
 type ResolvedTargets = Awaited<ReturnType<typeof loadUserSettings>>['settings']['models']['targets'];
 type ResolvedTarget = ResolvedTargets[string];
-type RemoteTarget = Exclude<ResolvedTarget, { adapter: 'fm' }>;
+type PlanTarget = Extract<ResolvedTarget, { plan: unknown }>;
+type ServedTarget = Exclude<ResolvedTarget, PlanTarget>;
+type RemoteTarget = Exclude<ServedTarget, { adapter: 'fm' }>;
 type KeyedTarget = Exclude<RemoteTarget, { adapter: 'ollama' }>;
 type OllamaDetectable = Extract<RemoteTarget, { adapter: 'chat-completions' | 'open-responses' }>;
 
@@ -484,7 +486,10 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     signal?.throwIfAborted();
     const childEnv = minimalChildEnv(options.env);
     const exec = options.exec ?? createExecFn(childEnv);
-    const targets = Object.entries(settings.models.targets);
+    const targets = Object.entries(settings.models.targets).map(([name, target]): [string, ServedTarget] => {
+      if ('plan' in target) throw new Error(`target ${name} uses plan profile ${target.plan.profile}, which this gateway does not serve yet`);
+      return [name, target];
+    });
     const adapters: Record<string, ProviderAdapter> = {};
     const closeAdapters = async (): Promise<void> => {
       await Promise.all(Object.values(adapters).map((adapter) => adapter.close?.()));

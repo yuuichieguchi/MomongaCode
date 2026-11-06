@@ -26,7 +26,9 @@ export { loadSettings } from './load-settings.ts';
 export { MODEL_ROLES } from './settings-schema.ts';
 export { endpointKeyOf, probeRecordKeyOf, upstreamEndpointOf } from './probe-record-key.ts';
 export type { EndpointProbeKey, ProbeRecordKey, UpstreamEndpointKeyed } from './probe-record-key.ts';
-export { credentialEnvNames, secretNames } from './models.ts';
+export { credentialEnvNames, planAccountNames, secretNames } from './models.ts';
+export { PLAN_PROFILES, assertPlanProfile, planProfileOf } from './plan-profiles.ts';
+export type { PlanProfile, PlanProfileCapabilities, PlanProfileCatalog, PlanProfileOAuth } from './plan-profiles.ts';
 export type { ResolvedModels } from './models.ts';
 export { ConfigError, createUserSettingsCache, loadUserModels, loadUserSettings, userSettingsChangeKey } from './user-settings.ts';
 export type { LoadUserSettingsOptions, LoadUserSettingsResult, UserModels, UserSettingsCache, UserSettingsCacheOptions, UserSettingsSnapshot } from './user-settings.ts';
@@ -56,6 +58,7 @@ export type {
   ChatCompletionsTarget,
   FmTarget,
   FmToolCalling,
+  BillingChange,
   ModelAlias,
   ModelRole,
   ModelRoles,
@@ -63,6 +66,8 @@ export type {
   ModelsSettings,
   OllamaTarget,
   OpenResponsesTarget,
+  PlanOpenResponsesTarget,
+  PlanReference,
   RemoteTargetCapabilities,
   ResolvedAnthropicTarget,
   ResolvedChatCompletionsTarget,
@@ -70,6 +75,7 @@ export type {
   ResolvedModelTarget,
   ResolvedOllamaTarget,
   ResolvedOpenResponsesTarget,
+  ResolvedPlanTarget,
   DeclaredImage,
   TargetCapabilities,
   ContextSettings,

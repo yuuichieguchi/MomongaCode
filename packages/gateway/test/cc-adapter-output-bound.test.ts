@@ -40,4 +40,19 @@ describe('the chat-completions adapter sends the output bound in the field its c
     expect('max_tokens' in body).toBe(false);
     expect('max_completion_tokens' in body).toBe(false);
   });
+
+  it('sends no bound for a target whose capability says it carries none', async () => {
+    const fake = await startFake({ scenario: 'tools-ok' });
+    await collect(makeAdapter(fake, { capabilities: async () => declaring('none') }), request);
+    const body = lastCompletionBody(fake);
+    expect('max_tokens' in body).toBe(false);
+    expect('max_completion_tokens' in body).toBe(false);
+  });
+
+  it('fails instead of sending a field the chat-completions wire does not have', async () => {
+    const fake = await startFake({ scenario: 'tools-ok' });
+    const result = await collect(makeAdapter(fake, { capabilities: async () => declaring('max_output_tokens') }), request);
+    expect(result.error).toBeInstanceOf(Error);
+    expect((result.error as Error).message).toMatch(/max_output_tokens/);
+  });
 });

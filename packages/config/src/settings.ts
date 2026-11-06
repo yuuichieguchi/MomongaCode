@@ -1,6 +1,8 @@
 import { defineProductSchema, transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
-import type { ProductValidator, UntrustedError } from '@momonga/foundation';
+import type { ProductValidator } from '@momonga/foundation';
 import type { AnthropicApiVersion, CapabilitiesCore, DialectDefinition, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetAnswers, TargetBilling, PermissionMode } from '@momonga/protocol';
+import { PLAN_PROFILES } from './plan-profiles.ts';
+import { describeSchemaErrors } from './schema-errors.ts';
 import { MCP_SERVERS_FILE_SCHEMA, MCP_SERVER_SCHEMA, MODEL_ROLES, SETTINGS_SCHEMA } from './settings-schema.ts';
 
 export type PermissionsSettings = {
@@ -116,7 +118,28 @@ export type OllamaTarget = {
   admissionTimeoutMs?: number;
 };
 
-export type ModelTarget = FmTarget | ChatCompletionsTarget | OpenResponsesTarget | AnthropicTarget | OllamaTarget;
+export type PlanReference = { profile: string; account?: string };
+
+export type PlanTargetCapabilities = Partial<TargetCapabilitiesCore> & { imageInput?: boolean; imageTokens?: ImageTokenModel };
+
+export type PlanOpenResponsesTarget = {
+  adapter: 'open-responses';
+  answers?: TargetAnswers;
+  model: string;
+  baseUrl?: string;
+  socketPath?: string;
+  apiKeyEnv?: string;
+  apiKeySecret?: string;
+  plan: PlanReference;
+  provider?: string;
+  toolCalling?: 'native' | 'none';
+  billing?: TargetBilling;
+  capabilities?: PlanTargetCapabilities;
+  maxConcurrency?: number;
+  admissionTimeoutMs?: number;
+};
+
+export type ModelTarget = FmTarget | ChatCompletionsTarget | OpenResponsesTarget | PlanOpenResponsesTarget | AnthropicTarget | OllamaTarget;
 
 export type ResolvedFmTarget = {
   adapter: 'fm';
@@ -161,6 +184,27 @@ export type ResolvedOpenResponsesTarget = {
   admissionTimeoutMs: number;
 };
 
+export type ResolvedPlanTargetCapabilities = Partial<Pick<TargetCapabilitiesCore, 'contextWindow' | 'maxOutputTokens'>> &
+  Omit<TargetCapabilitiesCore, 'contextWindow' | 'maxOutputTokens'> &
+  DeclaredImage & { maxConcurrency: number };
+
+export type ResolvedPlanTarget = {
+  adapter: 'open-responses';
+  answers?: TargetAnswers;
+  model: string;
+  baseUrl: string;
+  socketPath?: undefined;
+  apiKeyEnv?: undefined;
+  apiKeySecret?: undefined;
+  provider: string;
+  plan: PlanReference;
+  toolCalling: 'native' | 'none';
+  billing: TargetBilling;
+  capabilities: ResolvedPlanTargetCapabilities;
+  maxConcurrency: number;
+  admissionTimeoutMs: number;
+};
+
 export type ResolvedAnthropicTarget = {
   adapter: 'anthropic';
   answers?: TargetAnswers;
@@ -193,6 +237,7 @@ export type ResolvedModelTarget =
   | ResolvedFmTarget
   | ResolvedChatCompletionsTarget
   | ResolvedOpenResponsesTarget
+  | ResolvedPlanTarget
   | ResolvedAnthropicTarget
   | ResolvedOllamaTarget;
 
@@ -202,8 +247,11 @@ export type ModelRole = (typeof MODEL_ROLES)[number];
 
 export type ModelRoles = Partial<Record<ModelRole, string>>;
 
+export type BillingChange = { from: TargetBilling; to: TargetBilling; alias?: string };
+
 export type ModelsSettings = {
   aliases?: Record<string, ModelAlias>;
+  billingChanges?: BillingChange[];
   targets?: Record<string, ModelTarget>;
   dialects?: Record<string, DialectDefinition>;
   roles?: ModelRoles;
@@ -251,6 +299,7 @@ export type ContextSettings = {
   outputFormatters?: OutputFormatterName[];
   loopGuidance?: boolean;
   observedCapacity?: boolean;
+  unboundedOutputReserve?: boolean;
 };
 
 export type ToolsSettings = { deferral?: boolean; conciseDescriptions?: boolean };
@@ -286,17 +335,24 @@ const validateSettings: ProductValidator<Settings> = defineProductSchema('config
 const validateMcpServersFile: ProductValidator<McpServersFile> = defineProductSchema('config/mcp-servers-file', MCP_SERVERS_FILE_SCHEMA);
 const validateMcpServer: ProductValidator<McpServerConfig> = defineProductSchema('config/mcp-server', MCP_SERVER_SCHEMA);
 
-const describeErrors = (errors: readonly UntrustedError[]): string => {
-  const first = errors[0];
-  if (first === undefined) return '/: schema violation';
-  const additional = first.keyword === 'additionalProperties' ? `/${String(first.params['additionalProperty'])}` : '';
-  const pointer = `${first.instancePath}${additional}`;
-  return `${pointer === '' ? '/' : pointer}: ${first.message}`;
-};
-
 const assertNotHttpSse = (server: unknown, source: string, name: string): void => {
   if (isRecord(server) && server['type'] === 'sse') {
     throw new Error(`${source}: MCP server ${JSON.stringify(name)} uses the deprecated HTTP+SSE transport, which is not supported; use type "http" (Streamable HTTP)`);
+  }
+};
+
+const assertPlanAdapters = (value: unknown, source: string): void => {
+  const models = isRecord(value) ? value['models'] : undefined;
+  const targets = isRecord(models) ? models['targets'] : undefined;
+  if (!isRecord(targets)) return;
+  for (const [name, target] of Object.entries(targets)) {
+    const plan = isRecord(target) ? target['plan'] : undefined;
+    const profileId = isRecord(plan) ? plan['profile'] : undefined;
+    if (typeof profileId !== 'string' || !Object.hasOwn(PLAN_PROFILES, profileId)) continue;
+    const required = (PLAN_PROFILES[profileId] as NonNullable<(typeof PLAN_PROFILES)[string]>).adapter;
+    if ((target as Record<string, unknown>)['adapter'] !== required) {
+      throw new Error(`${source}: models.targets.${name}: profile ${profileId} requires adapter ${required}`);
+    }
   }
 };
 
@@ -304,8 +360,9 @@ export const assertSettings = (value: unknown, source: string): Settings => {
   if (isRecord(value) && isRecord(value['mcpServers'])) {
     for (const [name, server] of Object.entries(value['mcpServers'])) assertNotHttpSse(server, source, name);
   }
+  assertPlanAdapters(value, source);
   const verdict = validateSettings(value);
-  if (!verdict.valid) throw new Error(`${source}: invalid settings at ${describeErrors(verdict.errors)}`);
+  if (!verdict.valid) throw new Error(`${source}: invalid settings at ${describeSchemaErrors(verdict.errors)}`);
   const settings = verdict.value;
   (settings.credentials?.valuePatterns ?? []).forEach((pattern, index) => {
     try {
@@ -325,14 +382,14 @@ export const assertSettings = (value: unknown, source: string): Settings => {
 export const assertMcpServersFile = (value: unknown, source: string): McpServersFile => {
   const verdict = validateMcpServersFile(value);
   if (verdict.valid) return verdict.value;
-  throw new Error(`${source}: invalid MCP server file at ${describeErrors(verdict.errors)}`);
+  throw new Error(`${source}: invalid MCP server file at ${describeSchemaErrors(verdict.errors)}`);
 };
 
 export const assertMcpServer = (value: unknown, source: string, name: string): McpServerConfig => {
   assertNotHttpSse(value, source, name);
   const verdict = validateMcpServer(value);
   if (verdict.valid) return verdict.value;
-  throw new Error(`${source}: invalid MCP server ${JSON.stringify(name)}: ${describeErrors(verdict.errors)}`);
+  throw new Error(`${source}: invalid MCP server ${JSON.stringify(name)}: ${describeSchemaErrors(verdict.errors)}`);
 };
 
 export const KNOWN_SETTINGS_KEYS: readonly string[] = Object.keys(SETTINGS_SCHEMA.properties);

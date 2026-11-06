@@ -12,6 +12,7 @@ export type ResolvedContextSettings = {
   outputFormatters: OutputFormatterName[];
   loopGuidance: boolean;
   observedCapacity: boolean;
+  unboundedOutputReserve: boolean;
 };
 
 export type ResolvedToolsSettings = { deferral: boolean; conciseDescriptions: boolean };
@@ -57,6 +58,7 @@ export const defaultContextSettings = (): ResolvedContextSettings => ({
   outputFormatters: [],
   loopGuidance: false,
   observedCapacity: false,
+  unboundedOutputReserve: false,
 });
 
 export const defaultToolsSettings = (): ResolvedToolsSettings => ({ deferral: false, conciseDescriptions: false });
@@ -85,6 +87,7 @@ export const mergeContextSettings = (base: ResolvedContextSettings, layer: Conte
     outputFormatters: layer.outputFormatters ?? base.outputFormatters,
     loopGuidance: layer.loopGuidance ?? base.loopGuidance,
     observedCapacity: layer.observedCapacity ?? base.observedCapacity,
+    unboundedOutputReserve: layer.unboundedOutputReserve ?? base.unboundedOutputReserve,
   };
 };
 
