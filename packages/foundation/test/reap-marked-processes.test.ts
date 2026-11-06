@@ -942,12 +942,16 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
   });
 });
 
-type TableProcess = { pgid: number; holdsMarker: boolean; ignoresTerm: boolean; holdsFromListing?: number };
+type TableProcess = { pgid: number; holdsMarker: boolean; ignoresTerm: boolean; holdsFromListing?: number; startMs?: number; startUnreadable?: boolean };
 
-const processTable = (initial: Record<number, TableProcess>, exitsAfterListing: Record<number, number[]>) => {
+type Reuses = { afterGroupRead?: Record<number, Record<number, TableProcess>>; afterStartRead?: Record<number, TableProcess> };
+
+const processTable = (initial: Record<number, TableProcess>, exitsAfterListing: Record<number, number[]>, reuses: Reuses = {}) => {
   const table = new Map<number, TableProcess>(Object.entries(initial).map(([pid, entry]) => [Number(pid), entry]));
   const signals: Array<{ pid: number; signal: NodeJS.Signals }> = [];
   let listings = 0;
+  let groupReads = 0;
+  const pendingStartReuse = new Map<number, TableProcess>(Object.entries(reuses.afterStartRead ?? {}).map(([pid, entry]) => [Number(pid), entry]));
   const noSuchProcess = (): NodeJS.ErrnoException => Object.assign(new Error('no such process'), { code: 'ESRCH' });
   const hit = (target: number): number[] => (target < 0 ? [...table].filter(([, entry]) => entry.pgid === -target).map(([pid]) => pid) : table.has(target) ? [target] : []);
   const kill = (target: number, signal: NodeJS.Signals | 0): void => {
@@ -957,19 +961,107 @@ const processTable = (initial: Record<number, TableProcess>, exitsAfterListing: 
     if (signal === 0) return;
     for (const pid of pids) if (signal === 'SIGKILL' || !table.get(pid)?.ignoresTerm) table.delete(pid);
   };
+  const reuse = (replacements: Record<number, TableProcess>): void => {
+    for (const [pid, entry] of Object.entries(replacements)) table.set(Number(pid), entry);
+  };
   const inspector = {
-    startTimeOf: async (pid: number) => (table.has(pid) ? { kind: 'value', value: 0 } : { kind: 'gone' }),
+    startTimeOf: async (pid: number) => {
+      const entry = table.get(pid);
+      if (entry === undefined) return { kind: 'gone' };
+      if (entry.startUnreadable === true) return { kind: 'failed', cause: 'deterministic', evidence: { kind: 'exit', exitCode: 1, detail: 'ps exited with 1' } };
+      const replacement = pendingStartReuse.get(pid);
+      if (replacement !== undefined) {
+        pendingStartReuse.delete(pid);
+        table.set(pid, replacement);
+      }
+      return { kind: 'value', value: entry.startMs ?? pid };
+    },
     holdersOf: async () => {
       listings += 1;
       const holders = [...table].filter(([, entry]) => entry.holdsMarker && listings >= (entry.holdsFromListing ?? 1)).map(([pid]) => pid);
       for (const pid of exitsAfterListing[listings] ?? []) table.delete(pid);
       return { kind: 'value', value: holders };
     },
-    groupsOf: async (pids: readonly number[]) => ({ kind: 'value', value: new Map(pids.filter((pid) => table.has(pid)).map((pid) => [pid, table.get(pid)!.pgid])) }),
+    groupsOf: async (pids: readonly number[]) => {
+      groupReads += 1;
+      const rows = new Map(pids.filter((pid) => table.has(pid)).map((pid) => [pid, table.get(pid)!.pgid]));
+      reuse(reuses.afterGroupRead?.[groupReads] ?? {});
+      return { kind: 'value', value: rows };
+    },
     markerState: async () => 'free',
   } as unknown as ProcessInspector;
   return { signals, kill, inspector };
 };
+
+const stranger = (pgid: number): TableProcess => ({ pgid, holdsMarker: false, ignoresTerm: false, startMs: 999_999 });
+
+describe('a target is signalled only when its start time read at the listing reads the same just before the signal (decision 12: a process whose start time cannot be read is never signalled; ProcessStop HolderTargetProved)', () => {
+  it('a holder outside the group whose pid is reused after the group read gets no SIGTERM', async (context) => {
+    const marker = markerFile(withTempDir(context));
+    const world = processTable(
+      { 100: { pgid: 100, holdsMarker: true, ignoresTerm: false }, 200: { pgid: 200, holdsMarker: true, ignoresTerm: false } },
+      {},
+      { afterGroupRead: { 1: { 200: stranger(300) } } },
+    );
+    await reconcileProcessGroup({ pgid: 100, marker }, { killGraceMs: 1000, kill: world.kill, timing: fakeTiming().timing, inspector: world.inspector });
+    expect(world.signals.filter(({ pid }) => pid === 200)).toEqual([]);
+  });
+
+  it('a group whose only listed holder exits and whose pid and group number are reused after the group read gets no group signal', async (context) => {
+    const marker = markerFile(withTempDir(context));
+    const world = processTable({ 100: { pgid: 100, holdsMarker: true, ignoresTerm: false } }, {}, { afterGroupRead: { 1: { 100: stranger(100) } } });
+    await reconcileProcessGroup({ pgid: 100, marker }, { killGraceMs: 1000, kill: world.kill, timing: fakeTiming().timing, inspector: world.inspector });
+    expect(world.signals.filter(({ pid }) => pid === -100)).toEqual([]);
+  });
+
+  it('a holder outside the group whose pid is reused after the kill pass group read gets no SIGKILL', async (context) => {
+    const marker = markerFile(withTempDir(context));
+    const world = processTable(
+      { 100: { pgid: 100, holdsMarker: true, ignoresTerm: false }, 200: { pgid: 200, holdsMarker: true, ignoresTerm: true } },
+      {},
+      { afterGroupRead: { 2: { 200: stranger(300) } } },
+    );
+    await reconcileProcessGroup({ pgid: 100, marker }, { killGraceMs: 1000, kill: world.kill, timing: fakeTiming().timing, inspector: world.inspector });
+    expect(world.signals.filter(({ pid, signal }) => pid === 200 && signal === 'SIGKILL')).toEqual([]);
+  });
+
+  it('a holder outside the group whose start time cannot be read is not signalled and is reported left alone', async (context) => {
+    const marker = markerFile(withTempDir(context));
+    const world = processTable(
+      { 100: { pgid: 100, holdsMarker: true, ignoresTerm: false }, 200: { pgid: 200, holdsMarker: true, ignoresTerm: false, startUnreadable: true } },
+      {},
+    );
+    const result = await reconcileProcessGroup({ pgid: 100, marker }, { killGraceMs: 1000, kill: world.kill, timing: fakeTiming().timing, inspector: world.inspector });
+    expect(world.signals.filter(({ pid }) => pid === 200)).toEqual([]);
+    expect(result.leftAlonePids).toEqual([200]);
+    expect(result.output).toContain('process 200');
+  });
+
+  it('a group whose only listed holder has a start time that cannot be read gets no group signal', async (context) => {
+    const marker = markerFile(withTempDir(context));
+    const world = processTable({ 100: { pgid: 100, holdsMarker: true, ignoresTerm: false, startUnreadable: true } }, {});
+    const result = await reconcileProcessGroup({ pgid: 100, marker }, { killGraceMs: 1000, kill: world.kill, timing: fakeTiming().timing, inspector: world.inspector });
+    expect(world.signals.filter(({ signal }) => signal !== 0)).toEqual([]);
+    expect(result.leftAlonePids).toEqual([100]);
+  });
+
+  it('a marker with no recorded group: a holder whose start time cannot be read is not signalled, is reported left alone, and the marker is kept', async (context) => {
+    const marker = markerFile(withTempDir(context));
+    const world = processTable({ 200: { pgid: 200, holdsMarker: true, ignoresTerm: false, startUnreadable: true } }, {});
+    const warnings: string[] = [];
+    const result = await reapMarkedProcesses({ marker, killGraceMs: 1000, label: 'mcp', onWarning: (message) => warnings.push(message), kill: world.kill, timing: fakeTiming().timing, inspector: world.inspector });
+    expect(world.signals).toEqual([]);
+    expect(warnings).toContain(`mcp marker ${marker}: process 200 is still alive but could not be verified as belonging to this call, so it was left alone`);
+    expect(result).toEqual({ removed: false });
+  });
+
+  it('a marker with no recorded group: a holder whose pid is reused after its start time was read gets no signal', async (context) => {
+    const marker = markerFile(withTempDir(context));
+    const world = processTable({ 200: { pgid: 200, holdsMarker: true, ignoresTerm: false } }, {}, { afterStartRead: { 200: stranger(300) } });
+    await reapMarkedProcesses({ marker, killGraceMs: 1000, label: 'mcp', onWarning: () => undefined, kill: world.kill, timing: fakeTiming().timing, inspector: world.inspector });
+    expect(world.signals).toEqual([]);
+  });
+});
 
 describe('a holder the group read no longer finds is never signalled by its pid (decision 12: only a process proved ours is signalled)', () => {
   it('a group member that exits between the holder listing and the group read gets no SIGTERM of its own', async (context) => {
