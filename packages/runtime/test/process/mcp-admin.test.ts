@@ -72,12 +72,13 @@ const setup = async () => {
     report: reporter.report,
     settings: {
       envFor: () => ({}),
-      takeUserSnapshot: () => {
+      admitUserSnapshot: () => {
         const snapshot = cache.snapshot();
         if ('error' in snapshot) throw snapshot.error;
         return { settings: snapshot.settings, user: snapshot.user };
       },
       trustOracle: { isTrusted: () => true },
+      keptLayers: (use) => ({ store: cache.kept, use }),
     },
     remote: { openAuthorizationUrl: () => Promise.reject(new Error('the admin must supply its own opener')) } as never,
     createPool: (options) => {

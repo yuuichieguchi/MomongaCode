@@ -32,6 +32,7 @@ import { MEMORY_QUERY_MAX_CHARS } from '@momonga/tools';
 import { arrivalsOf } from './context-arrivals.ts';
 import { renderedFormsOf } from './context-forms.ts';
 import type { ClaimContext } from './claim-context.ts';
+import { requestKey } from '../model-key.ts';
 import { wrapUpInstructionFor } from './wrap-up.ts';
 import type { WrapUpReason } from './wrap-up.ts';
 
@@ -370,7 +371,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
     momonga: { max_summary_tokens: plan.summaryTokenCap, retains_user_request: true, ...(ctx.guideline === undefined ? {} : { guideline: ctx.guideline.text }) },
   };
   const guidelineVersion = ctx.guideline?.version ?? NO_ADOPTED_GUIDELINE;
-  const idempotencyKey = sha256Hex(canonicalJson([ctx.run.id, 'compact', sha256Hex(canonicalJson(request))]));
+  const idempotencyKey = requestKey(ctx.run.id, 'compact', request);
   ctx.control.inFlight.compactionKey = idempotencyKey;
   let resource: CompactResource;
   const startedAt = options.clock.now();

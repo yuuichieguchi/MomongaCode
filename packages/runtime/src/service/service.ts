@@ -41,6 +41,7 @@ export type RunServiceOptions = {
   modelAliases: () => Promise<readonly string[]>;
   modelCapabilities: (alias: string, signal: AbortSignal) => Promise<Capabilities>;
   sessionCreateSettings: (cwd: string) => Promise<SessionCreateSettings>;
+  sessionReadSettings: (cwd: string) => Promise<SessionCreateSettings>;
   skills: SkillsPort;
   agents: AgentCatalogPort;
   evidenceRun: (project: string) => EvidenceRun;
@@ -105,6 +106,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     modelAliases: options.modelAliases,
     modelCapabilities: options.modelCapabilities,
     sessionCreateSettings: options.sessionCreateSettings,
+    sessionReadSettings: options.sessionReadSettings,
     skills: options.skills,
     agents: options.agents,
     evidenceRun: options.evidenceRun,

@@ -5,7 +5,7 @@ import type { UserDialects } from '../../dialect/choice.ts';
 import { RenderLedger } from '../../dialect/ledger.ts';
 import type { ResolvedDialect } from '../../dialect/render.ts';
 import { renderToolParameters } from '../../dialect/tool-render.ts';
-import { jsonReplyFormatOf } from '../shared/json-reply.ts';
+import { isJsonOnlyEnforced, jsonReplyFormatOf } from '../shared/json-reply.ts';
 import type { JsonReplyPlan } from '../shared/json-reply.ts';
 import { callArgumentsText } from '../shared/call-arguments.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
@@ -73,6 +73,7 @@ const itemOf = (item: AdapterInputItem, origin: ReasoningOrigin): InputItem | un
 export type ResponsesRendering = { schemaDialect?: DialectId; userDialects?: UserDialects; ledger?: RenderLedger; jsonReply?: JsonReplyPlan | undefined };
 
 const textFieldOf = (plan: JsonReplyPlan | undefined, dialect: ResolvedDialect): { text?: { format: unknown } } => {
+  if (isJsonOnlyEnforced(plan)) return { text: { format: { type: 'json_object' } } };
   const format = jsonReplyFormatOf(plan, dialect);
   return format === undefined ? {} : { text: { format: { type: 'json_schema', ...format } } };
 };

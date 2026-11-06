@@ -1,5 +1,5 @@
 import { createUdsClient, isRecord } from '@momonga/foundation';
-import { isToolCallingState } from '@momonga/protocol';
+import { JSON_MODES, isToolCallingState } from '@momonga/protocol';
 import type { AliasCapabilities, Capabilities, MomongaModelEntry, MomongaModelList, UsageReport } from '@momonga/protocol';
 
 export type GatewayClient = {
@@ -19,6 +19,7 @@ const isCapabilities = (value: unknown): value is Capabilities =>
   typeof value['maxOutputTokens'] === 'number' &&
   isToolCallingState(value['toolCalling']) &&
   oneOf(value['structuredOutput'], ['json_schema', 'none']) &&
+  (value['jsonMode'] === undefined || oneOf(value['jsonMode'], JSON_MODES)) &&
   typeof value['streaming'] === 'boolean' &&
   typeof value['stopSequences'] === 'boolean' &&
   typeof value['imageInput'] === 'boolean' &&

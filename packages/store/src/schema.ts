@@ -913,6 +913,34 @@ CREATE TRIGGER fidelity_verdicts_session_delete AFTER DELETE ON sessions BEGIN
 END;
 `;
 
+const APPROVALS_WITHOUT_EXPIRY = `
+CREATE TABLE approvals_unbounded (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES runs (id),
+  call_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'resolved', 'superseded', 'expired', 'withdrawn')),
+  options_json TEXT NOT NULL,
+  option_id TEXT,
+  expires_at INTEGER,
+  created_at INTEGER NOT NULL,
+  resolved_at INTEGER,
+  subject_digest TEXT,
+  kind TEXT NOT NULL DEFAULT 'permission' CHECK (kind IN ('permission', 'elicitation')),
+  server TEXT,
+  requests_json TEXT,
+  responses_json TEXT,
+  CHECK ((kind = 'elicitation') = (expires_at IS NOT NULL))
+);
+INSERT INTO approvals_unbounded (id, run_id, call_id, status, options_json, option_id, expires_at, created_at, resolved_at, subject_digest, kind, server, requests_json, responses_json)
+  SELECT id, run_id, call_id, status, options_json, option_id, CASE kind WHEN 'permission' THEN NULL ELSE expires_at END, created_at, resolved_at, subject_digest, kind, server, requests_json, responses_json
+  FROM approvals ORDER BY rowid;
+DROP TABLE approvals;
+ALTER TABLE approvals_unbounded RENAME TO approvals;
+CREATE INDEX approvals_by_expiry ON approvals (status, expires_at);
+CREATE INDEX approvals_by_call ON approvals (run_id, call_id, created_at);
+CREATE UNIQUE INDEX approvals_one_pending_per_call ON approvals (run_id, call_id) WHERE status = 'pending';
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -968,4 +996,5 @@ export const MIGRATIONS: readonly Migration[] = [
     sql: RUN_FACTS_RECORD,
   },
   { version: 26, name: 'memoise the attestation verdicts of the summary fidelity check per run, cwd, fold version and token', sql: FIDELITY_VERDICTS_MEMO },
+  { version: 27, name: 'let an approval wait for its answer with no expiry of its own, keeping the expiry of a request for input', sql: APPROVALS_WITHOUT_EXPIRY },
 ];

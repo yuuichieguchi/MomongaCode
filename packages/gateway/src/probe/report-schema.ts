@@ -1,6 +1,6 @@
 import { defineProductSchema } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
-import { OUTPUT_BOUND_FIELDS, REASONING_EFFORTS } from '@momonga/protocol';
+import { JSON_MODE_PROBE_STATES, OUTPUT_BOUND_FIELDS, REASONING_EFFORTS } from '@momonga/protocol';
 import type { EndpointProbeReport, OllamaProbeReport, ProbeReport } from '@momonga/protocol';
 
 const bool = { type: 'boolean' } as const;
@@ -31,6 +31,8 @@ const dialectReportSchema = {
 } as const;
 
 const constructResult = { type: 'string', enum: ['accepted', 'refused', 'unrenderable'] } as const;
+
+const JSON_MODE_STATE_SCHEMA = { type: 'string', enum: [...JSON_MODE_PROBE_STATES] } as const;
 
 const reportSchema = {
   type: 'object',
@@ -127,6 +129,7 @@ const reportSchema = {
       },
     },
     guardrail: { type: 'object', required: [], properties: { errorShape: anyJson } },
+    jsonMode: JSON_MODE_STATE_SCHEMA,
     promptCache: {
       type: ['object', 'null'],
       required: ['kind'],
@@ -198,6 +201,7 @@ const ollamaReportSchema = {
     imageTokens: imageTokensSchema,
     thinkingSupported: bool,
     schemaDialect: dialectReportSchema,
+    jsonMode: JSON_MODE_STATE_SCHEMA,
     promptCache: {
       type: 'object',
       required: ['kind'],

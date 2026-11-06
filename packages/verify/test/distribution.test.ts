@@ -23,9 +23,9 @@ type Memory = { files: Map<string, Uint8Array>; directories: Set<string>; rename
 
 const memoryFiles = (memory: Memory): DistributionFiles => ({
   exists: async (target) => memory.files.has(target) || memory.directories.has(target),
-  ensureDirectory: async (directory) => void memory.directories.add(directory),
+  mkdir: async (directory) => void memory.directories.add(directory),
   writeBytes: async (file, bytes) => void memory.files.set(file, bytes),
-  readBytes: async (file) => {
+  readFile: async (file) => {
     const bytes = memory.files.get(file);
     if (bytes === undefined) throw new Error(`no such file ${file}`);
     return bytes;
@@ -42,7 +42,7 @@ const memoryFiles = (memory: Memory): DistributionFiles => ({
     memory.directories.delete(from);
     memory.directories.add(to);
   },
-  removeTree: async (directory) => {
+  rm: async (directory) => {
     for (const file of [...memory.files.keys()]) if (file.startsWith(`${directory}/`)) memory.files.delete(file);
     memory.directories.delete(directory);
   },

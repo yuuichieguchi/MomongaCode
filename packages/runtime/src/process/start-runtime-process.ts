@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ConfigError, createUserSettingsCache, resolveTelemetrySettings } from '@momonga/config';
+import { ConfigError, createUserSettingsCache, diskKeptRecords, keptSettingsDirectory, resolveTelemetrySettings } from '@momonga/config';
 import {
   acquireProcessLock,
   announceReady,
@@ -14,6 +14,7 @@ import {
   reapMarkerDirectory,
   ruleEnforcementOf,
   systemClock,
+  nodeFileSystemSync,
 } from '@momonga/foundation';
 import type { Clock, JsonLogger, MomongaPaths, ProcessLock, ReadyFields, TextStream } from '@momonga/foundation';
 import { createTelemetry, exportersFor, openTraceStore, startBodyPurge } from '@momonga/observability';
@@ -313,7 +314,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     cleanups.push({ name: 'lock', run: () => lock.release() });
 
     const { cache, settings } = await step('settings', () => {
-      const created = createUserSettingsCache({ home: canonicalHome, onWarning });
+      const created = createUserSettingsCache({ home: canonicalHome, onWarning, keptRecords: diskKeptRecords(nodeFileSystemSync, keptSettingsDirectory(canonicalHome)) });
       const snapshot = created.snapshot();
       if ('error' in snapshot) throw snapshot.error;
       return { cache: created, settings: snapshot.settings };
@@ -534,6 +535,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         modelAliases: async () => (await gatewayClient.models()).map((model) => model.id),
         modelCapabilities: (alias, signal) => gatewayClient.capabilities(alias, { signal }),
         sessionCreateSettings: settingsComposition.sessionCreateSettings,
+        sessionReadSettings: settingsComposition.sessionReadSettings,
         skills: skillsPort,
         agents: agentsPort,
         evidenceRun: evidenceRunFor,

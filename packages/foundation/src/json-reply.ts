@@ -24,7 +24,9 @@ export const describeFirstError = (errors: readonly UntrustedError[]): string =>
 
 export const jsonReplyInstructions = (instructions: string, schema: Record<string, unknown>): string => `${instructions}\n${CONTRACT_HEAD}\n${canonicalJson(schema)}`;
 
-export const readJsonReply = <T>(validator: ProductValidator<T>, reply: JsonReplyInput): JsonReplyRead<T> => {
+export function readJsonReply<T>(validator: ProductValidator<T>, reply: JsonReplyInput): JsonReplyRead<T>;
+export function readJsonReply(validator: null, reply: JsonReplyInput): JsonReplyRead<unknown>;
+export function readJsonReply<T>(validator: ProductValidator<T> | null, reply: JsonReplyInput): JsonReplyRead<T | unknown> {
   const failure = (detail: string): { error: string } => ({
     error: `output failed the schema${reply.path === undefined ? '' : PATH_LABELS[reply.path]}: ${detail}`,
   });
@@ -35,7 +37,8 @@ export const readJsonReply = <T>(validator: ProductValidator<T>, reply: JsonRepl
   } catch (error) {
     return failure(`the reply is not JSON (${error instanceof Error ? error.message : String(error)})`);
   }
+  if (validator === null) return { value: parsed };
   const verdict = validator(parsed);
   if (verdict.valid) return { value: verdict.value };
   return failure(describeFirstError(verdict.errors));
-};
+}
