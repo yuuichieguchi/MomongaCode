@@ -18,7 +18,7 @@ Left out: the native addon packages (`@ata-validator/native-*`), so `lib/native-
 
 - `package.json`: renamed `@momonga/ata-validator`, private, only the `./lite` and `./package.json` entry points, no optional native packages.
 - `lib/multiple-of.js` (new file): `multipleOfOk`, the one function that decides `multipleOf`. It reads each number as its shortest round-trip decimal (`Number.prototype.toString`) and tests divisibility with `BigInt` over a common decimal scale. Defect fixed: upstream divided as floating point and accepted a quotient within 1e-9 of a whole number, so `1e20` was a multiple of 3 and `1e308` was not a multiple of 0.5.
-- `lib/interpreter-core.js`: its own `multipleOfOk` removed, the one function required instead. Upstream comments removed.
+- `lib/interpreter-core.js`: its own `multipleOfOk` removed, the one function required instead. The native-`RegExp` branch of `plainLinear` (a pattern of at most one loop and 64 choices) no longer admits `.`, `\D`, `\W`, `\S` or a negated class: those atoms match half of an astral character under a `RegExp` without the `u` flag, so they go to the code-point Pike VM. Upstream comments removed.
 - `lib/tier0.js`: its own `_multipleOk` (the second place that decided `multipleOf`) removed, the one function required instead. Upstream comments removed.
 - `lib/safe-regex.js`: the Pike VM reads the pattern and the input by code point (`Array.from` for the pattern, `codePointAt` for the input, including the lazy DFA's last-character step), as an ECMA-262 pattern with the `u` flag does. A pair of `\uD83D\uDC32` escapes is one character. Defect fixed: a quantifier after an astral character repeated half of it, and `.` and astral ranges matched half a character. Upstream comments removed.
 

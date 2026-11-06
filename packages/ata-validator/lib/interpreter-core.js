@@ -4,7 +4,7 @@ const { multipleOfOk } = require('./multiple-of');
 let _safeRe = null;
 const compileSafe = (src) => (_safeRe || (_safeRe = require('./safe-regex'))).compileSafe(src);
 
-const PLAIN_ATOM = /(?:\\[dDwWsS\\/.^$|?*+()[\]{}-]|\[\^?(?:[^\\\][^\ud800-\udfff]|\\[dws\\/.^$[\]-])(?:[^\\\][\ud800-\udfff]|\\[dws\\/.^$[\]-])*\]|[^\\[\](){}|*+?^$\ud800-\udfff])(\?|[*+]|\{(\d{1,3})(?:,(\d{1,3}))?\})?/y;
+const PLAIN_ATOM = /(?:\\[dws\\/.^$|?*+()[\]{}-]|\[(?:[^\\\][^\ud800-\udfff]|\\[dws\\/.^$[\]-])(?:[^\\\][\ud800-\udfff]|\\[dws\\/.^$[\]-])*\]|[^\\[\](){}|*+?^$.\ud800-\udfff])(\?|[*+]|\{(\d{1,3})(?:,(\d{1,3}))?\})?/y;
 function plainLinear(src) {
   const n = src.length, anchored = src[0] === '^';
   if (n > 256) return false;
