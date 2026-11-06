@@ -4,7 +4,7 @@ export { decodeReliabilityReport, encodeReliabilityReport } from './codec.ts';
 export { FACTS_EVENT_TYPES, createFactsFold, foldFacts } from './fold-facts.ts';
 export type { FactsFold } from './fold-facts.ts';
 export { REPORT_KINDS, buildReliabilityReport, describeRate, formatReliabilityReport } from './report.ts';
-export type { ReliabilityReport, ReportInput, ReportKind } from './report.ts';
+export type { Harness, ReliabilityReport, ReportInput, ReportKind, ScenarioRow, TaskRow } from './report.ts';
 export { GROUP_KEYS } from './types.ts';
 export type { GroupKey, IndicatorGroups, Indicators, Rate, RunFacts, RunInfo } from './types.ts';
 export { wilsonInterval } from './wilson.ts';

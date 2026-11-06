@@ -982,6 +982,15 @@ export type ContextChargeView = {
 };
 
 export type AnsweredByView = { target: string; adapter: string; upstreamModel: string; answers: 'model' | 'script' | 'unknown' };
+export const MODEL_KINDS = ['fake', 'real', 'unknown'] as const;
+export type ModelKind = (typeof MODEL_KINDS)[number];
+
+export const modelKindOf = (answeredBy: readonly AnsweredByView[], unrecordedAnswers: number): ModelKind => {
+  if (answeredBy.some((answerer) => answerer.answers === 'script')) return 'fake';
+  if (unrecordedAnswers > 0 || answeredBy.length === 0 || answeredBy.some((answerer) => answerer.answers === 'unknown')) return 'unknown';
+  return 'real';
+};
+
 export type RunAnsweredByView = { answeredBy: AnsweredByView[] };
 export type RunReflectionView = { job: ReflectionJobView | null; charges: ContextChargeView[]; queuedAhead: number };
 

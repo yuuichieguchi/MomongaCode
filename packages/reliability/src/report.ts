@@ -1,4 +1,5 @@
-import { INDICATOR_DEFINITIONS_VERSION, MIN_RATE_POPULATION, RELIABILITY_FORMAT } from '@momonga/protocol';
+import { INDICATOR_DEFINITIONS_VERSION, MIN_RATE_POPULATION, RELIABILITY_FORMAT, modelKindOf } from '@momonga/protocol';
+import type { AnsweredByView } from '@momonga/protocol';
 import { indicatorsOf } from './aggregate.ts';
 import type { Aggregate } from './aggregate.ts';
 import type { GroupKey, Indicators, Rate } from './types.ts';
@@ -8,6 +9,17 @@ export const REPORT_KINDS = ['real', 'benchmark', 'injection'] as const;
 
 export type ReportKind = (typeof REPORT_KINDS)[number];
 
+export type Harness = {
+  suite: { name: string; digest: string };
+  answeredBy: AnsweredByView[];
+  unrecordedAnswers: number;
+  codeDigest: string;
+};
+
+export type TaskRow = { task: string; trials: number; met: number; difficulty: string; taskType: string };
+
+export type ScenarioRow = { scenario: string; trials: number; episodes: number; recovered: number };
+
 export type ReliabilityReport = {
   format: typeof RELIABILITY_FORMAT;
   kind: ReportKind;
@@ -15,13 +27,36 @@ export type ReliabilityReport = {
   groupBy: GroupKey;
   total: Indicators;
   groups: Record<string, Indicators>;
+  harness: Harness | null;
+  tasks?: TaskRow[];
+  scenarios?: ScenarioRow[];
+  witnessed?: Rate;
 };
 
-export type ReportInput = { kind: ReportKind; aggregate: Aggregate };
+type Measured = { aggregate: Aggregate };
 
-export const buildReliabilityReport = ({ kind, aggregate }: ReportInput): ReliabilityReport => {
-  const { total, groups } = indicatorsOf(aggregate);
-  return { format: RELIABILITY_FORMAT, kind, definitionsVersion: INDICATOR_DEFINITIONS_VERSION, groupBy: aggregate.groupBy, total, groups };
+export type ReportInput =
+  | (Measured & { kind: 'real'; harness?: null })
+  | (Measured & { kind: 'benchmark'; harness: Harness; tasks?: TaskRow[] })
+  | (Measured & { kind: 'injection'; harness: Harness; scenarios?: ScenarioRow[]; witnessed?: Rate });
+
+export const buildReliabilityReport = (input: ReportInput): ReliabilityReport => {
+  const { total, groups } = indicatorsOf(input.aggregate);
+  const base: Omit<ReliabilityReport, 'kind' | 'harness'> = { format: RELIABILITY_FORMAT, definitionsVersion: INDICATOR_DEFINITIONS_VERSION, groupBy: input.aggregate.groupBy, total, groups };
+  switch (input.kind) {
+    case 'real':
+      return { ...base, kind: 'real', harness: null };
+    case 'benchmark':
+      return { ...base, kind: 'benchmark', harness: input.harness, ...(input.tasks === undefined ? {} : { tasks: input.tasks }) };
+    case 'injection':
+      return {
+        ...base,
+        kind: 'injection',
+        harness: input.harness,
+        ...(input.scenarios === undefined ? {} : { scenarios: input.scenarios }),
+        ...(input.witnessed === undefined ? {} : { witnessed: input.witnessed }),
+      };
+  }
 };
 
 const percent = (fraction: number): string => `${(fraction * 100).toFixed(1)}%`;
@@ -54,14 +89,31 @@ const populationLine = ({ buckets }: Indicators): string => {
   return `Population: ${roots} terminal root tasks; counted ${buckets.counted}; cancelled ${buckets.cancelled} (excluded); pending facts ${buckets.pendingFacts} (excluded); facts coverage ${buckets.counted + buckets.cancelled}/${roots}`;
 };
 
+const harnessLines = (harness: Harness | null): string[] =>
+  harness === null
+    ? []
+    : [
+        `Suite: ${harness.suite.name} (${harness.suite.digest}); code ${harness.codeDigest}`,
+        `Answered by: ${harness.answeredBy.map((answerer) => `${answerer.target} (${answerer.answers})`).join(', ') || 'nobody recorded'}; unrecorded ${harness.unrecordedAnswers}; model kind ${modelKindOf(harness.answeredBy, harness.unrecordedAnswers)}`,
+      ];
+
+const rowLines = (report: ReliabilityReport): string[] => [
+  ...(report.tasks ?? []).map((row) => `Task ${row.task} (${row.taskType}, ${row.difficulty}): met ${row.met}/${row.trials}`),
+  ...(report.scenarios ?? []).map((row) => `Scenario ${row.scenario}: recovered ${row.recovered}/${row.episodes} episodes in ${row.trials} trials`),
+  ...(report.witnessed === undefined ? [] : [`Duplicate Side Effect Rate (witnessed): ${describeRate(report.witnessed)}`]),
+];
+
 export const formatReliabilityReport = (report: ReliabilityReport): string => {
   const lines = [
     `Reliability report (${report.format}), kind ${report.kind}, definitions version ${report.definitionsVersion}, grouped by ${report.groupBy}`,
+    ...harnessLines(report.harness),
     populationLine(report.total),
     ...indicatorLines(report.total),
   ];
   for (const [name, indicators] of Object.entries(report.groups)) {
     lines.push('', `[${report.groupBy}=${name}]`, populationLine(indicators), ...indicatorLines(indicators));
   }
+  const rows = rowLines(report);
+  if (rows.length > 0) lines.push('', ...rows);
   return `${lines.join('\n')}\n`;
 };

@@ -60,7 +60,6 @@ export { QUALITY_METRICS } from './context-quality.ts';
 export type { QualityCell, QualityCells, QualityMetric, QualityMetricName } from './context-quality.ts';
 export {
   CONTEXT_MODELS,
-  modelKindOf,
   CONTEXT_REPORT_FORMAT,
   DEFAULT_DATASET_SEED,
   MAX_DATASET_SEED,
@@ -115,9 +114,12 @@ export type {
 } from './context-improve.ts';
 export { ANSWER_KINDS, TRANSCRIPT_FORMAT, TranscriptError, decodeTranscript, encodeTranscript, parsePublicRunEvent } from './transcript.ts';
 export type { AnswerKind, Answerer, RecordedRun, Transcript, TranscriptChild, TranscriptReflection, TranscriptRun } from './transcript.ts';
+export { modelKindOf } from '@momonga/protocol';
 export { loadContextDataset, loadContextReport, loadDataset, loadTranscripts, nodeEvalFiles, saveContextReport, saveTranscript, transcriptFileName } from './files.ts';
 export type { EvalFiles } from './files.ts';
 export { BENCH_DEFAULT_RUNS, BENCH_DIFFICULTIES, BENCH_FORMAT, BENCH_SCHEMA, BENCH_TASK_TYPES, EVIDENCE_KINDS, parseBenchmark, treeDigest } from './bench.ts';
 export type { BenchDifficulty, BenchTask, BenchTaskType, Benchmark, OracleCheck } from './bench.ts';
 export { BENCH_PROBLEMS, gradeTrial, validateBenchmark } from './bench-grade.ts';
 export type { BenchProblem, CheckResult, GradeInput, TaskValidation, TrialGrade, Validation, WorkspaceProbe } from './bench-grade.ts';
+export { buildBenchmarkReport, suiteDigestOf } from './bench-report.ts';
+export type { BenchmarkTrial, BuildBenchmarkReportInput } from './bench-report.ts';
