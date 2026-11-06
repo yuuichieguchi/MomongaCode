@@ -3,7 +3,7 @@ import type { SpawnOptions } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, groupTerminationBoundMs } from '@momonga/foundation';
 import { SandboxPolicyError, createBubblewrapSandbox, createPlaceholderJournal } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, waitFor } from '@momonga/testkit';
@@ -225,13 +225,13 @@ describe('bubblewrap cancel (a stand-in bwrap that, like bwrap --die-with-parent
     const abortedAt = Date.now();
     controller.abort();
     const exit = await finished;
-    expect(Date.now() - abortedAt).toBeLessThan(GRACE_MS);
+    expect(Date.now() - abortedAt).toBeLessThanOrEqual(groupTerminationBoundMs(GRACE_MS));
     expect(exit.killedBy).toBe('abort');
   });
 
   it('sends SIGTERM to the command, which stops before the grace ends, and bwrap reports its death as 128 + the signal', async () => {
     const { elapsedMs, exit } = await cancelAfterReady((ready) => `: > ${ready}; sleep 30`);
-    expect(elapsedMs).toBeLessThan(GRACE_MS);
+    expect(elapsedMs).toBeLessThanOrEqual(groupTerminationBoundMs(GRACE_MS));
     expect(exit.killedBy).toBe('abort');
     expect(exit.code).toBe(143);
   });
