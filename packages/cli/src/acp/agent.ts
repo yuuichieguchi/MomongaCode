@@ -1,6 +1,7 @@
 import { PROTOCOL_VERSION, RequestError, agent } from '@agentclientprotocol/sdk';
 import type { AgentApp, AgentConnection, RequestPermissionRequest, SessionConfigOption, SessionUpdate } from '@agentclientprotocol/sdk';
-import type { ElicitationAnswerRecord } from '@momonga/protocol';
+import { readinessText } from '@momonga/protocol';
+import type { ElicitationAnswerRecord, Readiness } from '@momonga/protocol';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import { RunApiError } from '../client/runtime-client.ts';
 import { describeFailure } from '../failure.ts';
@@ -35,6 +36,7 @@ export type AcpDeps = {
   version: string;
   runtime: RuntimeClient;
   contextWindowOf(modelAlias: string): Promise<number>;
+  readinessOf(modelAlias: string): Promise<Readiness>;
   modelAliases(): Promise<readonly string[]>;
   environment(): Promise<Record<string, string>>;
   autoModeAvailable(): Promise<boolean>;
@@ -120,10 +122,20 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
 
   const contextWindowOf = (session: BridgeSession): Promise<number> => (session.contextWindow ??= deps.contextWindowOf(session.modelAlias));
 
+  let readinessNotices = 0;
+
+  const announceReadiness = async (session: BridgeSession): Promise<void> => {
+    const readiness = await deps.readinessOf(session.modelAlias);
+    if (readiness.state === 'ready') return;
+    readinessNotices += 1;
+    send(session, noticeUpdate(clientFeatures(), `${session.id}/readiness/${readinessNotices}`, 'warning', readinessText(readiness)));
+  };
+
   const applyModel = (session: BridgeSession, modelAlias: string): void => {
     if (session.modelAlias === modelAlias) return;
     session.modelAlias = modelAlias;
     session.contextWindow = undefined;
+    session.tasks.run(() => announceReadiness(session));
   };
 
   const listModels = async (): Promise<ModelListing> => {
@@ -319,6 +331,7 @@ export const createAcpAgent = (deps: AcpDeps): AgentApp => {
     session.skillNames = skills.map((skill) => skill.name);
     send(session, { sessionUpdate: 'available_commands_update', availableCommands: availableCommandsOf(skills) });
     for (const update of unreadableNoticeOf(session, listing)) send(session, update);
+    await announceReadiness(session);
     await session.queue.settled();
   };
 

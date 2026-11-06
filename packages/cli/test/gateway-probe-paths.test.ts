@@ -60,6 +60,8 @@ describe('gateway probe on a HOME that has never run momonga', { timeout: REAL_P
     const home = freshDir('mm-home-');
     const fm = await createFakeFm({ dir: freshDir('mm-fm-') });
     fm.configure({ serve: { scenario: 'tools-ok', contextWindow: 8192, contextSizeExposure: 'models' } });
+    fs.mkdirSync(path.join(home, '.momonga'), { mode: 0o700 });
+    fs.writeFileSync(path.join(home, '.momonga', 'settings.json'), JSON.stringify({ models: { targets: { fm: { adapter: 'fm' } }, aliases: { default: 'fm' } } }), { mode: 0o600 });
 
     const result = await runCli(home, ['gateway', 'probe', 'fm', '--fm-binary', fm.binaryPath, '--samples', '1']);
 

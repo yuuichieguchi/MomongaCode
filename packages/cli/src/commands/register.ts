@@ -14,7 +14,7 @@ import { mcpList, mcpLogin } from './mcp.ts';
 import { memoryAccept, memoryAdd, memoryDelete, memoryHistory, memoryList, memoryPromote, memoryReject, memoryRestore, memoryReview, memoryShow } from './memory.ts';
 import { ruleAdd, ruleHistory, ruleList, ruleRetire } from './rule.ts';
 import { listJobs } from './jobs.ts';
-import { listModels } from './models.ts';
+import { detectModels, listModels } from './models.ts';
 import { policyVerify } from './policy.ts';
 import { showStatus } from './runs.ts';
 import { secretSet } from './secret.ts';
@@ -388,12 +388,19 @@ const registerSecret: CommandGroup = (program, deps) => {
 };
 
 const registerModels: CommandGroup = (program, deps) => {
-  program
+  const models = program
     .command('models')
     .description('list the model aliases with the capabilities their targets declare')
     .option('--json', 'print the models as JSON')
     .action(async (options: { json?: true }) => {
       deps.complete(await listModels(deps.ports, await pathsOf(deps.ports), options.json === true));
+    });
+  models
+    .command('detect [url...]')
+    .description('ask the usual local addresses, and any address you name, what model server answers there; nothing is written')
+    .option('--json', 'print the servers as JSON')
+    .action(async (typed: string[], options: { json?: true }) => {
+      deps.complete(await detectModels(deps.ports, await pathsOf(deps.ports), { typed, json: options.json === true, interrupt: deps.interrupt }));
     });
 };
 

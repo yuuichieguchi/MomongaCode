@@ -5,7 +5,7 @@ import { ConfigError, assertSessionMcpServers, autoFitDirectoryOf, stripCredenti
 import type { AutoFitKey, CredentialRules } from '@momonga/config';
 import { canonicalDirectory, canonicalJson, canonicalPath, comparableContains, comparablePath, isTransientErrno, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import { AUTO_MODE_UNAVAILABLE, RUN_STATUSES } from '@momonga/protocol';
+import { AUTO_MODE_UNAVAILABLE, NO_MODEL_TARGET, RUN_STATUSES, agentReadiness } from '@momonga/protocol';
 import type { Capabilities, CostBreakdownView, GatewayCostReportView, PermissionMode, RunStatus, RunTraceView } from '@momonga/protocol';
 import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
 import { JournalThreadError, sameRunRequest } from '@momonga/store';
@@ -28,6 +28,7 @@ import {
   notFound,
   serviceUnavailable,
   skillUnavailable,
+  targetNotReady,
   unknownSkill,
 } from './errors.ts';
 import { STREAM_HEADERS, eventStreamResponse } from './event-stream.ts';
@@ -214,6 +215,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     if (cwdArea !== undefined) throw invalidRequest(`cwd ${body.cwd} is inside ${cwdArea} and cannot be a session root`, 'cwd');
     const modelAlias = body.modelAlias ?? deps.defaults.modelAlias;
     const aliases = await gatewayAliases();
+    if (aliases.length === 0) throw targetNotReady(agentReadiness({ unavailable: NO_MODEL_TARGET }).message);
     if (!aliases.includes(modelAlias)) throw invalidRequest(`unknown model alias ${modelAlias}`, 'modelAlias');
     const settings = await sessionSettingsOf(cwd);
     const additionalDirectories: string[] = [];

@@ -76,3 +76,5 @@ export type { OllamaAdapter, OllamaAdapterOptions } from './adapters/ollama/type
 export { OLLAMA_VOCABULARY } from './adapters/ollama/vocabulary.ts';
 export { probeOllamaTarget } from './probe/ollama.ts';
 export type { ProbeOllamaTargetOptions, ProbeOllamaTargetResult } from './probe/ollama.ts';
+export { detectLocalServers } from './detect-local-servers.ts';
+export type { DetectLocalServersOptions } from './detect-local-servers.ts';

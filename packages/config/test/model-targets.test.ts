@@ -51,12 +51,11 @@ const expectAccepted = async (models: Record<string, unknown>) => {
 };
 
 describe('default targets and aliases', () => {
-  it('provides the fm target and default alias when no targets are configured', async () => {
+  it('creates no target and no default alias when no targets are configured', async () => {
     const tree = makeTree();
     const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
-    expect(result.settings.models.targets).toEqual({ fm: DEFAULT_FM_TARGET });
-    expect(members(result.settings.models.aliases['default'])).toEqual(['fm']);
-    expect(Object.keys(result.settings.models.aliases)).toEqual(['default']);
+    expect(result.settings.models.targets).toEqual({});
+    expect(result.settings.models.aliases).toEqual({});
     expect(result.warnings).toEqual([]);
   });
 
@@ -417,7 +416,7 @@ describe('user-declared dialects', () => {
     writeJson(projectSettingsPath(tree), { models: { dialects: { 'project-dialect': { rules: [] } } } });
     const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(result.settings.models.dialects).toEqual({});
-    expect(result.settings.models.targets).toEqual({ fm: DEFAULT_FM_TARGET });
+    expect(result.settings.models.targets).toEqual({});
   });
 
   it.each([

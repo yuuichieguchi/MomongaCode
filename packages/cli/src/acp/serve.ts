@@ -1,5 +1,6 @@
 import { ndJsonStream } from '@agentclientprotocol/sdk';
 import { canonicalPath } from '@momonga/foundation';
+import { agentReadiness } from '@momonga/protocol';
 import type { MomongaPaths } from '@momonga/foundation';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import { daemonReadyBoundMs, ensureDaemon, restoreDaemon } from '../daemon/ensure-daemon.ts';
@@ -21,6 +22,7 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
     version: ports.version,
     runtime,
     contextWindowOf: (modelAlias) => gateway.contextWindowOf(modelAlias),
+    readinessOf: async (modelAlias) => agentReadiness(await gateway.capabilitiesOf(modelAlias)),
     modelAliases: async () => (await gateway.models()).map((model) => model.id),
     environment: () => environmentSnapshot(ports),
     autoModeAvailable: () => autoModeConfigured(ports),
