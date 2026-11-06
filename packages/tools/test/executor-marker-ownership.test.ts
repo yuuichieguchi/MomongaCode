@@ -95,6 +95,6 @@ describe('T13 drift: createMarker is the one creator and each creator closes its
       const src = path.join(ROOT, 'packages', pkg, 'src');
       if (fs.existsSync(src)) walk(src);
     }
-    expect(offenders.sort()).toEqual(['packages/foundation/src/platform/kernel-lock.ts', 'packages/foundation/src/platform/lock-capability.ts', 'packages/foundation/src/platform/marker-file.ts']);
+    expect(offenders.sort()).toEqual(['packages/foundation/src/platform/kernel-lock.ts', 'packages/foundation/src/platform/lock-capability.ts']);
   });
 });

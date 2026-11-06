@@ -36,7 +36,31 @@ const NOT_ENFORCED_CODES = ['ENOTSUP', 'EOPNOTSUPP', 'EINVAL'];
 const PROOF_MODE = 0o600;
 
 const sharedProbeFlags = (): number => OPEN_FLAGS.readOnly | O_SHLOCK | OPEN_FLAGS.nonBlocking;
-const createLockedFlags = (): number => OPEN_FLAGS.readOnly | OPEN_FLAGS.create | OPEN_FLAGS.exclusive | O_EXLOCK | OPEN_FLAGS.nonBlocking;
+const createLockedFlags = (access: number): number => access | OPEN_FLAGS.create | OPEN_FLAGS.exclusive | O_EXLOCK | OPEN_FLAGS.nonBlocking;
+
+const stagingPathOf = (file: string): string => {
+  const dir = path.dirname(file);
+  return path.join(path.dirname(dir), `.${path.basename(dir)}.${path.basename(file)}.creating`);
+};
+
+export const createLockedFile = (ops: FileLockOps, file: string, access: number, mode: number, initialize: (descriptor: number) => void = () => undefined): number => {
+  const staged = stagingPathOf(file);
+  nodeFileSystemSync.rmSync(staged);
+  const descriptor = ops.open(staged, createLockedFlags(access), mode);
+  let linked = false;
+  try {
+    initialize(descriptor);
+    nodeFileSystemSync.linkSync(staged, file);
+    linked = true;
+    nodeFileSystemSync.rmSync(staged);
+  } catch (error) {
+    ops.close(descriptor);
+    nodeFileSystemSync.rmSync(staged);
+    if (linked) nodeFileSystemSync.rmSync(file);
+    throw error;
+  }
+  return descriptor;
+};
 
 const codeOf = (error: unknown): string | undefined => (error as NodeJS.ErrnoException | undefined)?.code;
 
@@ -71,7 +95,7 @@ const prove = (ops: FileLockOps, random: Random, proofDir: string): 'proved' | '
   let creator: number | undefined;
   try {
     try {
-      creator = ops.open(file, createLockedFlags(), PROOF_MODE);
+      creator = createLockedFile(ops, file, OPEN_FLAGS.readOnly, PROOF_MODE);
     } catch (error) {
       return NOT_ENFORCED_CODES.includes(codeOf(error) ?? '') ? 'unenforced' : 'unmeasured';
     }

@@ -149,3 +149,57 @@ export const pendingOrSettled = async <T>(promise: Promise<T>): Promise<{ state:
   );
   return Promise.race([outcome, flushAsync().then(() => ({ state: 'pending' as const }))]);
 };
+
+export type ProbeSighting = 'absent' | 'held' | 'unlocked';
+
+export const twoStepCreateLockOps = (probeBetweenCreateAndLock: (ops: FileLockOps) => void) => {
+  const exclusive = new Map<bigint, number>();
+  const shared = new Map<bigint, Set<number>>();
+  const inodeOf = (descriptor: number): bigint => fs.fstatSync(descriptor, { bigint: true }).ino;
+  const sharersOf = (inode: bigint): Set<number> => {
+    const existing = shared.get(inode);
+    if (existing !== undefined) return existing;
+    const fresh = new Set<number>();
+    shared.set(inode, fresh);
+    return fresh;
+  };
+  const refuse = (descriptor: number): never => {
+    fs.closeSync(descriptor);
+    throw Object.assign(new Error('EAGAIN: resource temporarily unavailable, open'), { code: 'EAGAIN' });
+  };
+  const ops: FileLockOps = {
+    ...nodeFileLockOps,
+    open: (lockPath, flags, mode) => {
+      const descriptor = fs.openSync(lockPath, flags & ~LOCK_FLAG_BITS, mode);
+      if ((flags & fs.constants.O_CREAT) !== 0 && (flags & 0x20) !== 0) probeBetweenCreateAndLock(ops);
+      const inode = inodeOf(descriptor);
+      if ((flags & 0x20) !== 0) {
+        if (exclusive.has(inode) || sharersOf(inode).size > 0) refuse(descriptor);
+        exclusive.set(inode, descriptor);
+      }
+      if ((flags & 0x10) !== 0) {
+        if (exclusive.has(inode)) refuse(descriptor);
+        sharersOf(inode).add(descriptor);
+      }
+      return descriptor;
+    },
+    close: (descriptor) => {
+      for (const [inode, holder] of exclusive) if (holder === descriptor) exclusive.delete(inode);
+      for (const sharers of shared.values()) sharers.delete(descriptor);
+      fs.closeSync(descriptor);
+    },
+  };
+  return ops;
+};
+
+export const stalledSharedProbe = (ops: FileLockOps, file: string): ProbeSighting => {
+  try {
+    ops.open(file, SHARED_PROBE);
+    return 'unlocked';
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return 'absent';
+    if (code === 'EAGAIN') return 'held';
+    throw error;
+  }
+};
