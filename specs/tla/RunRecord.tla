@@ -71,6 +71,20 @@
 (*   RequestIsProgress  Q and O count as progress                          *)
 (*   StopAsProgress     a STOPPED or CANCELLED end counts as progress      *)
 (*   Refunds            a failed attempt may be refunded                   *)
+(*   MaxCalls           the number of tool calls the run may ever request; *)
+(*                      calls have identities, a response may request     *)
+(*                      several, and they start and settle in any order    *)
+(*   OwedAtFirstRecord  the calls an episode waits for are the calls open  *)
+(*                      at the record that opened it (FALSE: the calls     *)
+(*                      open at any record of the chain)                   *)
+(*   CloseRule          when a settling call event ends an episode.        *)
+(*                      "settled": when no call owed to the episode is     *)
+(*                      left. "nonOwed": also at a settling event of a     *)
+(*                      call that is not owed, with unknown_effect while   *)
+(*                      an owed call is left. "first": at the first        *)
+(*                      settling event                                     *)
+(*   CallsAsFlag        the fold keeps one call flag (any settling event   *)
+(*                      clears every call)                                 *)
 (***************************************************************************)
 EXTENDS Integers, Sequences, FiniteSets, TLC
 
@@ -89,7 +103,11 @@ CONSTANTS
     MergeChain,
     RequestIsProgress,
     StopAsProgress,
-    Refunds
+    Refunds,
+    MaxCalls,
+    OwedAtFirstRecord,
+    CloseRule,
+    CallsAsFlag
 
 ASSUME /\ MaxClaims \in Nat \ {0}
        /\ MaxAttempts \in Nat \ {0}
@@ -103,9 +121,15 @@ ASSUME /\ MaxClaims \in Nat \ {0}
        /\ RequestIsProgress \in BOOLEAN
        /\ StopAsProgress \in BOOLEAN
        /\ Refunds \in BOOLEAN
+       /\ MaxCalls \in Nat
+       /\ OwedAtFirstRecord \in BOOLEAN
+       /\ CloseRule \in {"settled", "nonOwed", "first"}
+       /\ CallsAsFlag \in BOOLEAN
 
-NoOpen == [on |-> FALSE, at |-> 0, aw |-> FALSE, unk |-> FALSE]
-NoChain == [on |-> FALSE, at |-> 0]
+Calls == 1..MaxCalls
+
+NoOpen == [on |-> FALSE, at |-> 0, ow |-> {}, unk |-> FALSE]
+NoChain == [on |-> FALSE, at |-> 0, ow |-> {}, unk |-> FALSE]
 NoUnc == [on |-> FALSE, at |-> 0, cause |-> ""]
 
 Terminal == {"COMPLETED", "STOPPED", "FAILED", "CANCELLED"}
@@ -153,15 +177,23 @@ IdxOf(k) == {i \in DOMAIN ev : ev[i].k = k}
 LastIdx(k) == IF IdxOf(k) = {} THEN 0 ELSE Max(IdxOf(k))
 Count(k) == Cardinality(IdxOf(k))
 
-Phase ==
-    LET work == {i \in DOMAIN ev : ev[i].k \in {"Q", "R", "O", "C"}}
-        last == ev[Max(work)].k
-    IN IF work = {} \/ last = "C" THEN "loop"
-       ELSE IF last = "Q" THEN "stream"
-       ELSE IF last = "R" THEN "decide"
-       ELSE "settle"
+StartedCalls ==
+    {ev[i].y : i \in IdxOf("O")}
+DoneCalls ==
+    {ev[i].y : i \in IdxOf("C")}
+RequestedCalls == UNION {ev[i].y : i \in IdxOf("R")}
+OpenCalls == StartedCalls \ DoneCalls
 
-CallPredatesStart == LastIdx("O") < LastIdx("S")
+Phase ==
+    LET qr == {i \in DOMAIN ev : ev[i].k \in {"Q", "R"}}
+        last == ev[Max(qr)]
+    IN IF qr = {} THEN "loop"
+       ELSE IF last.k = "Q" THEN "stream"
+       ELSE IF last.y = {} THEN "final"
+       ELSE IF RequestedCalls \ DoneCalls = {} THEN "loop"
+       ELSE "calls"
+
+CallPredatesStart(c) == LastIdx("S") > Max({i \in IdxOf("O") : ev[i].y = c})
 
 FailureRecordsSinceStart ==
     {i \in DOMAIN ev : i > LastIdx("S") /\ ev[i].k \in {"F", "L"}}
@@ -186,41 +218,54 @@ Opens(e) == IF FoldOpensOn = "records" THEN e.k \in {"F", "L"}
 OpenAt(e) == IF e.k = "S" THEN e.y ELSE e.x
 
 IsProgress(e) ==
-    \/ e.k \in {"R", "C"}
+    \/ e.k = "R"
     \/ RequestIsProgress /\ e.k \in {"Q", "O"}
     \/ e.k = "T" /\ e.y = "COMPLETED"
     \/ StopAsProgress /\ e.k = "T" /\ e.y \in {"STOPPED", "CANCELLED"}
 
+Verdict(unk, ow) == IF unk \/ ow # {} THEN "unknown_effect" ELSE "recovered"
+
+Settle(fs, e) ==
+    LET c == e.y
+        oc == IF CallsAsFlag THEN {} ELSE fs.oc \ {c}
+        ow == IF CallsAsFlag THEN {} ELSE fs.open.ow \ {c}
+        unk == fs.open.unk \/ e.x = "unknown"
+        stays == [fs EXCEPT !.oc = oc, !.open = [fs.open EXCEPT !.ow = ow, !.unk = unk]]
+        ends == CASE CloseRule = "settled" -> ow = {}
+                  [] CloseRule = "nonOwed" -> ow = {} \/ c \notin fs.open.ow
+                  [] OTHER -> TRUE
+        closed == [stays EXCEPT !.out = Append(@, [at |-> fs.open.at, out |-> Verdict(unk, ow)]), !.open = NoOpen, !.oc = oc]
+    IN IF ~fs.open.on THEN [fs EXCEPT !.oc = oc]
+       ELSE IF ends THEN closed
+       ELSE stays
+
 FoldStep(fs, e) ==
-    LET s1 == IF e.k = "O" THEN [fs EXCEPT !.callOpen = TRUE]
-              ELSE IF e.k = "C"
-              THEN [fs EXCEPT !.callOpen = FALSE,
-                              !.open = IF ~fs.open.on THEN NoOpen
-                                       ELSE [fs.open EXCEPT !.aw = FALSE, !.unk = @ \/ e.x = "unknown"]]
-              ELSE fs
-        fresh == [on |-> TRUE, at |-> OpenAt(e), aw |-> s1.callOpen, unk |-> FALSE]
+    LET s1 == IF e.k = "O" THEN [fs EXCEPT !.oc = @ \cup {e.y}] ELSE fs
+        fresh == [on |-> TRUE, at |-> OpenAt(e), ow |-> s1.oc, unk |-> FALSE]
+        grown == IF OwedAtFirstRecord THEN s1 ELSE [s1 EXCEPT !.open.ow = @ \cup s1.oc]
         closed(o) == [s1 EXCEPT !.out = Append(@, [at |-> s1.open.at, out |-> o]), !.open = NoOpen]
-        verdict == IF s1.open.on /\ (s1.open.aw \/ s1.open.unk) THEN "unknown_effect" ELSE "recovered"
-    IN IF Opens(e)
+    IN IF e.k = "C" THEN Settle(s1, e)
+       ELSE IF Opens(e)
        THEN IF ~s1.open.on THEN [s1 EXCEPT !.open = fresh]
-            ELSE IF MergeChain THEN s1
+            ELSE IF MergeChain THEN grown
             ELSE LET c == closed("failed") IN [c EXCEPT !.open = fresh]
        ELSE IF ~s1.open.on THEN s1
        ELSE IF e.k = "T" /\ e.y = "FAILED" THEN closed("failed")
-       ELSE IF IsProgress(e) THEN closed(verdict)
+       ELSE IF IsProgress(e) THEN closed(Verdict(s1.open.unk, s1.open.ow))
        ELSE IF e.k = "T" /\ e.y \in {"STOPPED", "CANCELLED"} THEN closed("stopped")
        ELSE s1
 
 RECURSIVE FoldFrom(_, _)
 FoldFrom(fs, i) == IF i > Len(ev) THEN fs ELSE FoldFrom(FoldStep(fs, ev[i]), i + 1)
 
-Folded == FoldFrom([open |-> NoOpen, callOpen |-> FALSE, out |-> <<>>], 1)
+Folded == FoldFrom([open |-> NoOpen, oc |-> {}, out |-> <<>>], 1)
 
 -----------------------------------------------------------------------------
 (* Ghost updates *)
 
 GFail(at, cause) ==
-    /\ chain' = IF ~chain.on THEN [on |-> TRUE, at |-> at] ELSE chain
+    /\ chain' = IF ~chain.on THEN [on |-> TRUE, at |-> at, ow |-> OpenCalls, unk |-> FALSE]
+               ELSE [chain EXCEPT !.ow = @ \cup OpenCalls]
     /\ unc' = IF ~unc.on THEN [on |-> TRUE, at |-> at, cause |-> cause] ELSE unc
     /\ UNCHANGED truth
 
@@ -228,6 +273,21 @@ GClose(o) ==
     /\ truth' = IF ~chain.on THEN truth ELSE Append(truth, [at |-> chain.at, out |-> o])
     /\ chain' = NoChain
     /\ UNCHANGED unc
+
+ProgressVerdict == IF chain.on /\ (chain.unk \/ chain.ow # {}) THEN "unknown_effect" ELSE "recovered"
+
+GCloseProgress == GClose(ProgressVerdict)
+
+GSettle(c, o) ==
+    LET ow == chain.ow \ {c}
+        unk == chain.unk \/ o = "unknown"
+    IN /\ IF ~chain.on THEN UNCHANGED <<chain, truth>>
+          ELSE IF ow = {}
+               THEN /\ truth' = Append(truth, [at |-> chain.at, out |-> IF unk THEN "unknown_effect" ELSE "recovered"])
+                    /\ chain' = NoChain
+               ELSE /\ chain' = [chain EXCEPT !.ow = ow, !.unk = unk]
+                    /\ UNCHANGED truth
+       /\ UNCHANGED unc
 
 GKeep == UNCHANGED <<chain, truth, unc>>
 
@@ -326,11 +386,13 @@ Finish(w, to, o) ==
     /\ GClose(o)
     /\ UNCHANGED <<tok, rnw, origin, att, fa, nclaim, clk, miss, badRec>>
 
-FinishStop(w) == (pc[w] = "claimed" \/ Phase \in {"loop", "decide"}) /\ Finish(w, "STOPPED", "stopped")
+FinishStop(w) ==
+    (pc[w] = "claimed" \/ Phase \in {"loop", "final"} \/ (Phase = "calls" /\ OpenCalls = {}))
+        /\ Finish(w, "STOPPED", "stopped")
 
 FinishFail(w) == Finish(w, "FAILED", "failed")
 
-FinishDone(w) == pc[w] = "started" /\ Phase = "decide" /\ Finish(w, "COMPLETED", "recovered")
+FinishDone(w) == pc[w] = "started" /\ Phase = "final" /\ Finish(w, "COMPLETED", ProgressVerdict)
 
 (* terminals.cancel after the cancel recovery *)
 CancelRun(w) ==
@@ -360,20 +422,23 @@ AppendQ(w) ==
 
 AppendR(w) ==
     /\ pc[w] = "started" /\ Fence(w) /\ st = "RUNNING" /\ Phase = "stream"
-    /\ ev' = Append(ev, Ev("R", 0, 0, ""))
-    /\ GClose("recovered")
+    /\ \E requested \in SUBSET (Calls \ RequestedCalls) :
+          ev' = Append(ev, Ev("R", 0, requested, ""))
+    /\ GCloseProgress
     /\ UNCHANGED <<st, owner, tok, live, rnw, origin, att, fa, nclaim, clk, pc, wtok, wtake, wfail, miss, badRec>>
 
-AppendO(w) ==
-    /\ pc[w] = "started" /\ Fence(w) /\ st = "RUNNING" /\ Phase = "decide"
-    /\ ev' = Append(ev, Ev("O", 0, 0, ""))
+AppendO(w, c) ==
+    /\ pc[w] = "started" /\ Fence(w) /\ st = "RUNNING" /\ Phase = "calls"
+    /\ c \in RequestedCalls \ StartedCalls
+    /\ ev' = Append(ev, Ev("O", 0, c, ""))
     /\ UNCHANGED <<st, owner, tok, live, rnw, origin, att, fa, nclaim, clk, pc, wtok, wtake, wfail, truth, chain, unc, miss, badRec>>
 
-AppendC(w, o) ==
-    /\ pc[w] = "started" /\ Fence(w) /\ st = "RUNNING" /\ Phase = "settle"
-    /\ o = "ok" \/ (o = "unknown" /\ CallPredatesStart)
-    /\ ev' = Append(ev, Ev("C", o, 0, ""))
-    /\ GClose(IF o = "ok" THEN "recovered" ELSE "unknown_effect")
+AppendC(w, c, o) ==
+    /\ pc[w] = "started" /\ Fence(w) /\ st = "RUNNING" /\ Phase = "calls"
+    /\ c \in OpenCalls
+    /\ o = "ok" \/ (o = "unknown" /\ CallPredatesStart(c))
+    /\ ev' = Append(ev, Ev("C", o, c, ""))
+    /\ GSettle(c, o)
     /\ UNCHANGED <<st, owner, tok, live, rnw, origin, att, fa, nclaim, clk, pc, wtok, wtake, wfail, miss, badRec>>
 
 (* requeueOrStop, the requeue branches: attempt.failed first, then the     *)
@@ -429,8 +494,8 @@ WaitYield(w) ==
     /\ UNCHANGED <<tok, rnw, origin, att, nclaim, clk, truth, chain, unc, miss, badRec>>
 
 Step(w) ==
-    \/ StartRun(w) \/ AppendQ(w) \/ AppendR(w) \/ AppendO(w)
-    \/ AppendC(w, "ok") \/ AppendC(w, "unknown")
+    \/ StartRun(w) \/ AppendQ(w) \/ AppendR(w)
+    \/ (\E c \in Calls : AppendO(w, c) \/ AppendC(w, c, "ok") \/ AppendC(w, c, "unknown"))
     \/ FinishStop(w) \/ FinishFail(w) \/ FinishDone(w) \/ CancelRun(w)
     \/ Fail(w) \/ YieldFail(w) \/ Drain(w) \/ WaitYield(w)
 
@@ -533,6 +598,11 @@ TerminalFoldTotal == st \in Terminal => ~Folded.open.on
 FailedEventsAtMostTotalAttempts == Count("F") <= MaxTotalAttempts
 
 Bound == Len(ev) <= MaxEvents /\ clk <= MaxClk
+
+(* The configurations of the call family look at the fold of failure     *)
+(* records and calls; they leave out the waiting and the cancelling       *)
+(* paths, which the other configurations cover.                          *)
+CallsFocus == st \notin {"WAITING", "CANCELLING", "CANCELLED"}
 
 WorkerSymmetry == Permutations(Workers)
 
