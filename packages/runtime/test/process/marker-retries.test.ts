@@ -88,3 +88,64 @@ describe('T15 / T16 the unsettled set is every marker file no live owner owns', 
     }
   });
 });
+
+const stateInspector = (states: Record<string, string>) =>
+  ({ ...heldInspector, markerState: async (marker: string) => states[path.basename(marker)] ?? 'held' }) as unknown as ProcessInspector;
+
+describe('T17 (c) the record is written before the reap (write-ahead)', () => {
+  it('a reap that fails after the claim leaves the retry spent, and the next event of that kind does not reap', async () => {
+    const dir = markerDir();
+    const marker = path.join(dir, NAME);
+    fs.writeFileSync(marker, 'r00000\n');
+    let reaps = 0;
+    const crashing = async () => {
+      reaps += 1;
+      throw new Error('the runtime died here: injected');
+    };
+    for (let tick = 0; tick < 2; tick += 1) {
+      await reapToolMarkers({ dir, store, killGraceMs: 100, onWarning: () => undefined, inspector: heldInspector, reap: crashing as never, event: 'startup', owners: createMarkerOwners(), signal: new AbortController().signal } as never).catch(() => undefined);
+    }
+    expect(reaps).toBe(1);
+    expect(fs.readFileSync(marker, 'utf8')).toBe('r00100\n');
+  });
+});
+
+describe('T16 (d) after a crash with a live job no owner is alive', () => {
+  it('the start-up sweep reaps the job marker and removes a marker whose state is free', async () => {
+    const dir = markerDir();
+    fs.writeFileSync(path.join(dir, 'job-key'), 'r00000\n');
+    fs.writeFileSync(path.join(dir, 'free-key'), 'r00000\n');
+    const reaped: string[] = [];
+    await reapToolMarkers({
+      dir,
+      store,
+      killGraceMs: 100,
+      onWarning: () => undefined,
+      inspector: stateInspector({ 'job-key': 'held', 'free-key': 'free' }),
+      reap: (async (options: { marker: string }) => {
+        reaped.push(path.basename(options.marker));
+        return { removed: false };
+      }) as never,
+      event: 'startup',
+      owners: createMarkerOwners(),
+      signal: new AbortController().signal,
+    } as never);
+    expect(reaped).toEqual(['job-key']);
+    expect(fs.existsSync(path.join(dir, 'free-key'))).toBe(false);
+    expect(fs.existsSync(path.join(dir, 'job-key'))).toBe(true);
+  });
+
+  it('a marker owned by a live owner is neither read nor reaped by any sweep', async () => {
+    const dir = markerDir();
+    fs.writeFileSync(path.join(dir, 'owned'), 'r00000\n');
+    const owners = createMarkerOwners();
+    owners.register('owned', { alive: () => true });
+    const reaped: string[] = [];
+    for (const event of ['startup', 'sweep', 'shutdown']) {
+      await reapToolMarkers({ dir, store, killGraceMs: 100, onWarning: () => undefined, inspector: heldInspector, reap: (async (options: { marker: string }) => { reaped.push(options.marker); return { removed: false }; }) as never, event, owners, signal: new AbortController().signal } as never);
+    }
+    expect(reaped).toEqual([]);
+    expect(fs.readFileSync(path.join(dir, 'owned'), 'utf8')).toBe('r00000\n');
+  });
+});
+

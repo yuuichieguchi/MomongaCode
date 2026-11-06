@@ -1,72 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { MarkerState, ProcessInspector, SignalSender } from '@momonga/foundation';
-import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
-import type { HarnessOptions } from './harness.ts';
+import { call, makeTool, toolSetOf } from './harness.ts';
 import { keyFor } from './helpers.ts';
-import type { CallOutcome, ResultOutcome } from '@momonga/tools';
+import { markerOf, resultOf, runOne, world, writer } from './guard-world.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..', '..', '..');
-
-const unenforced = { of: async () => 'unenforced' as const, contradicted: () => undefined };
-
-const world = (initial: MarkerState = 'held') => {
-  const states = new Map<string, MarkerState>();
-  const sent: Array<[number, NodeJS.Signals]> = [];
-  const listed: AbortSignal[] = [];
-  const inspector = {
-    capability: unenforced,
-    startTimeOf: async () => ({ kind: 'gone' }),
-    groupsOf: async () => ({ kind: 'value', value: new Map() }),
-    holdersOf: async (_marker: string, options: { signal: AbortSignal }) => {
-      listed.push(options.signal);
-      return { kind: 'value', value: [] };
-    },
-    markerState: async (marker: string) => states.get(path.basename(marker)) ?? initial,
-  } as unknown as ProcessInspector;
-  const kill: SignalSender = ((target: number, signal: NodeJS.Signals | 0) => {
-    if (signal !== 0) sent.push([target, signal]);
-    throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' });
-  }) as never;
-  const completes: Array<{ key: string; meta: unknown }> = [];
-  const harness = makeHarness({ executor: { reap: { inspector, kill, timing: { now: () => 0, sleep: async () => undefined }, killGraceMs: 100 } } } as HarnessOptions);
-  const port = harness.idempotency.port;
-  const holding = port.holding.bind(port);
-  port.holding = (fence) => {
-    const leased = holding(fence);
-    return {
-      ...leased,
-      complete: (key: string, result: unknown, meta?: unknown) => {
-        completes.push({ key, meta });
-        return leased.complete(key, result);
-      },
-    } as typeof leased;
-  };
-  return { harness, states, sent, listed, completes };
-};
-
-const leaver = makeTool('Leaver', {
-  kind: 'execute',
-  sideEffect: 'exec',
-  subjectKind: 'none',
-  execute: async (_input, ctx) => {
-    ctx.attachProcess({ pgid: 999_999, startedAt: 0 });
-    await ctx.markerSettle?.state(ctx.signal);
-    return { status: 'completed', output: 'left something' };
-  },
-});
-const writer = makeTool('Writer', { sideEffect: 'write', subjectKind: 'none', execute: async () => ({ status: 'completed', output: 'wrote' }) });
-const reader = makeTool('Reader', { execute: async () => ({ status: 'completed', output: 'read' }) });
-
-const runOne = async (h: ReturnType<typeof world>, name: string, callId: string): Promise<CallOutcome | undefined> => {
-  const [outcome] = await h.harness.executor.runBatch(h.harness.input(await toolSetOf(leaver, writer, reader), [call(callId, name, {}, 'allow_once')]));
-  return outcome;
-};
-
-const resultOf = (outcome: CallOutcome | undefined) => (outcome as ResultOutcome).result;
-
-const markerOf = (h: ReturnType<typeof world>, callId: string): string => path.join(h.harness.markerDir, keyFor('run-1', 1, callId));
 
 const SETTLED_PREFIX = (name: string) => `Not run: a process started by an earlier command (marker ${name}, unidentified) may still be running and could not be stopped. `;
 const IGNORE_SUFFIX = (name: string) => `If it can stay running, ask the person to run /markers ignore ${name}.`;
@@ -156,6 +95,41 @@ describe('T17 (g) decision 50 A: the recovery reap is the first attempt of an in
     expect(fs.readFileSync(markerOf(h, 'first'), 'utf8')).toBe('r00000\n');
     await runOne(h, 'Writer', 'second');
     expect(fs.readFileSync(markerOf(h, 'first'), 'utf8')).toBe('r10000\n');
+  });
+});
+
+describe('T8 restart: the unsettled set is rebuilt from the marker files and the ledger', () => {
+  it('a new executor over the same marker directory and ledger refuses the next write call with the settled-call text', async () => {
+    const before = world('held');
+    await runOne(before, 'Leaver', 'first');
+    const name = keyFor('run-1', 1, 'first');
+    const after = world('held', { processMarkerDir: before.harness.markerDir, idempotency: before.harness.idempotency.port });
+    const refused = resultOf(await runOne(after, 'Writer', 'second'));
+    expect(refused.status).toBe('failed');
+    expect(refused.output.startsWith(SETTLED_PREFIX(name))).toBe(true);
+  });
+});
+
+describe('T17 (b) two sessions guard the same marker at once', () => {
+  it('exactly one guard reaps: the record reads r10000 and the listings are those of one reap', async () => {
+    const single = world('held');
+    await runOne(single, 'Leaver', 'first');
+    const singleBefore = single.listed.length;
+    await runOne(single, 'Writer', 'second');
+    const oneReap = single.listed.length - singleBefore;
+
+    const h = world('held');
+    await runOne(h, 'Leaver', 'first');
+    const before = h.listed.length;
+    const sessionOf = (id: string) => ({ cwd: h.harness.layout.project, workingDirectory: h.harness.layout.project, readLedger: new Map(), id });
+    const [a, b] = await Promise.all([
+      runOne(h, 'Writer', 'second', [], { session: sessionOf('s-a') as never }),
+      runOne(h, 'Writer', 'third', [], { session: sessionOf('s-b') as never }),
+    ]);
+    expect([resultOf(a).status, resultOf(b).status]).toEqual(['failed', 'failed']);
+    expect(fs.readFileSync(markerOf(h, 'first'), 'utf8')).toBe('r10000\n');
+    expect(oneReap).toBeGreaterThan(0);
+    expect(h.listed.length - before).toBe(oneReap);
   });
 });
 

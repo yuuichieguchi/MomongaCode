@@ -10,6 +10,7 @@ import { createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { createBackgroundJobs, createNodeJobMarkerFiles } from '@momonga/runtime';
 import type { BackgroundJobRegistry } from '@momonga/runtime';
 import { createJobOutput } from '../../src/process/job-output.ts';
+import { createMarkerOwners, unsettledKeys } from '@momonga/tools';
 
 const START_MS = 1_800_000_000_000;
 
@@ -70,7 +71,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
-const setup = (probes: Parameters<typeof createBackgroundJobs>[0]['probes'] = {}) => {
+const setup = (probes: Parameters<typeof createBackgroundJobs>[0]['probes'] = {}, extra: Record<string, unknown> = {}) => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-jobs-')));
   roots.push(root);
   const markerDir = path.join(root, 'markers');
@@ -110,6 +111,7 @@ const setup = (probes: Parameters<typeof createBackgroundJobs>[0]['probes'] = {}
       },
       ...probes,
     },
+    ...extra,
   });
   const spawned: FakeProcess[] = [];
   const start = (callKey: string, command = 'sleep 30', timeoutMs = 60_000) =>
@@ -382,3 +384,20 @@ describe('background jobs', () => {
     expect(t.reaped).toHaveLength(1);
   });
 });
+
+describe('T16 (a) a live background job owns its marker (PT 3H rule 4: "A marker is owned while a live owner holds it")', () => {
+  it('while the job runs its marker is not unsettled and nothing signals it; at its end a held marker becomes unsettled', async () => {
+    const owners = createMarkerOwners();
+    const t = setup({}, { owners });
+    const { jobId } = await t.start('call-1');
+    const key = t.store.jobs.get(jobId)?.idemKey ?? '';
+    expect(fs.existsSync(path.join(t.markerDir, key))).toBe(true);
+    expect(await unsettledKeys(t.markerDir, owners)).toEqual([]);
+    expect(t.reconciled).toEqual([]);
+    t.holders.push(5000);
+    t.spawned[0]?.exit({ code: 0, signal: null });
+    await t.settled(jobId);
+    expect(await unsettledKeys(t.markerDir, owners)).toEqual([key]);
+  });
+});
+
