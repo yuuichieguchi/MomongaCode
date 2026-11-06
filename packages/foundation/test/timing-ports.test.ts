@@ -30,8 +30,8 @@ const groupPort = (aliveUntil: () => boolean): { port: ProcessGroupPort; signals
   return {
     signals,
     port: {
-      signal: (_pgid, signal) => void signals.push(signal),
-      alive: () => aliveUntil(),
+      signal: async (_pgid, signal) => void signals.push(signal),
+      alive: async () => aliveUntil(),
     },
   };
 };
@@ -89,11 +89,11 @@ describe('process group termination on an injected timing', () => {
     let killed = false;
     const signals: string[] = [];
     const port: ProcessGroupPort = {
-      signal: (_pgid, signal) => {
+      signal: async (_pgid, signal) => {
         signals.push(signal);
         if (signal === 'SIGKILL') killed = true;
       },
-      alive: () => !killed,
+      alive: async () => !killed,
     };
     expect(await terminateGroup(10, { graceMs: 100, port, timing: fake.timing })).toBe('killed');
     expect(signals).toEqual(['SIGTERM', 'SIGKILL']);

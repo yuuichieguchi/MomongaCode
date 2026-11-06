@@ -365,7 +365,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       logger,
       reap: {
         markersDir: paths.markers.daemons,
-        orphanGraceMs: options.orphanGraceMs ?? runtimeMaxCloseMs(drainTimeoutMs) + 2000,
+        orphanGraceMs: options.orphanGraceMs ?? runtimeMaxCloseMs(drainTimeoutMs),
         orphanReapGraceMs: options.orphanReapGraceMs ?? ORPHAN_REAP_GRACE_MS,
         orphanPollMs: intervals.orphanPollMs,
         drainTimeoutMs,

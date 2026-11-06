@@ -360,14 +360,14 @@ describe('reconcileProcessGroup structured result', () => {
 describe('findHolders', () => {
   it('returns an empty list when nothing holds the marker', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const marker = makeMarker(makeDir());
-    expect(await findHolders(marker)).toEqual([]);
+    expect(await findHolders(marker, { signal: new AbortController().signal })).toEqual([]);
   });
 
   it('excludes the current process even when it holds the marker open', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const marker = makeMarker(makeDir());
     const fd = fs.openSync(marker, 'r');
     try {
-      expect(await findHolders(marker)).toEqual([]);
+      expect(await findHolders(marker, { signal: new AbortController().signal })).toEqual([]);
     } finally {
       fs.closeSync(fd);
     }
@@ -377,7 +377,7 @@ describe('findHolders', () => {
     const marker = makeMarker(makeDir());
     const holder = startEscapedHolder(marker);
     expect(await waitUntil(() => holdersOf(marker).includes(holder), 5000)).toBe(true);
-    expect(await findHolders(marker)).toEqual([holder]);
+    expect(await findHolders(marker, { signal: new AbortController().signal })).toEqual([holder]);
   });
 });
 
@@ -388,7 +388,7 @@ describe('holderGroups', () => {
     const group = await startGroup(dir, TERM_MARKER_SCRIPT, { fd3: marker });
     const holders = holdersOf(marker);
     expect(holders.length).toBeGreaterThan(0);
-    const groups = await holderGroups(holders);
+    const groups = await holderGroups(holders, [], { signal: new AbortController().signal });
     expect(groups).toHaveLength(holders.length);
     expect(new Set(groups)).toEqual(new Set([group.pgid]));
   });
@@ -397,7 +397,7 @@ describe('holderGroups', () => {
     const marker = makeMarker(makeDir());
     const holder = startEscapedHolder(marker);
     expect(await waitUntil(() => holdersOf(marker).includes(holder), 5000)).toBe(true);
-    expect(await holderGroups([holder])).toEqual([holder]);
+    expect(await holderGroups([holder], [], { signal: new AbortController().signal })).toEqual([holder]);
   });
 });
 

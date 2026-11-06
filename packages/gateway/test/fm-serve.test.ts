@@ -75,7 +75,7 @@ class FakeChild extends EventEmitter {
     await new Promise<void>((resolve) => silent.listen(this.socketPath, () => resolve()));
   }
 
-  kill(signal: NodeJS.Signals = 'SIGTERM'): boolean {
+  async kill(signal: NodeJS.Signals = 'SIGTERM'): Promise<boolean> {
     this.signals.push(signal);
     if (signal === 'SIGTERM' && this.options.ignoreSigterm === true) return true;
     void this.crash(null, signal);

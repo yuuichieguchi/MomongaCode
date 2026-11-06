@@ -12,7 +12,10 @@ const inspectorOf = (holders: () => ProbeResult<number[]>): ProcessInspector => 
   startTimeOf: async () => ({ kind: 'gone' }),
   holdersOf: async () => holders(),
   groupsOf: async () => ({ kind: 'value', value: new Map() }),
+  markerState: async () => 'free',
 });
+
+const LIVE = { signal: new AbortController().signal };
 
 const timing = () => {
   const clock = createFakeClock(0);
@@ -27,15 +30,15 @@ const marker = (context: Parameters<typeof withTempDir>[0]): string => {
 
 describe('findHolders', () => {
   it('lists the holders other than the current process', async () => {
-    expect(await findHolders('/m', inspectorOf(() => ({ kind: 'value', value: [process.pid, 77] })))).toEqual([77]);
+    expect(await findHolders('/m', { ...LIVE, inspector: inspectorOf(() => ({ kind: 'value', value: [process.pid, 77] })) })).toEqual([77]);
   });
 
   it('reports a missing marker as having no holders', async () => {
-    expect(await findHolders('/m', inspectorOf(() => ({ kind: 'gone' })))).toEqual([]);
+    expect(await findHolders('/m', { ...LIVE, inspector: inspectorOf(() => ({ kind: 'gone' })) })).toEqual([]);
   });
 
   it('throws a typed error for a failed probe instead of reporting no holders', async () => {
-    const failure = await findHolders('/m', inspectorOf(() => transient)).then(
+    const failure = await findHolders('/m', { ...LIVE, inspector: inspectorOf(() => transient) }).then(
       () => undefined,
       (error: unknown) => error,
     );
@@ -46,11 +49,12 @@ describe('findHolders', () => {
 
 const inspectorReporting = (processes: readonly UninspectableProcess[]): ProcessInspector => ({
   startTimeOf: async () => ({ kind: 'gone' }),
-  holdersOf: async (_marker, report) => {
+  holdersOf: async (_marker, _options, report) => {
     for (const process of processes) report?.(process);
     return { kind: 'value', value: [] };
   },
   groupsOf: async () => ({ kind: 'value', value: new Map() }),
+  markerState: async () => 'held',
 });
 
 const aliveRegistry = () => createUninspectableRegistry({ isAlive: () => true });
@@ -62,7 +66,7 @@ describe('findHolders and reportUninspectableOnce with a process that cannot be 
   it('hands the process to the callback and still lists the holders', async () => {
     const seen: UninspectableProcess[] = [];
     const inspector = inspectorReporting([ssh]);
-    expect(await findHolders('/m', inspector, (process) => void seen.push(process))).toEqual([]);
+    expect(await findHolders('/m', { ...LIVE, inspector, onUninspectable: (process) => void seen.push(process) })).toEqual([]);
     expect(seen).toEqual([ssh]);
   });
 

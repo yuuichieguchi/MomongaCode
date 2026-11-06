@@ -82,9 +82,9 @@ const setup = (context: CleanupContext, options: SetupOptions = {}) => {
       logger: log.logger,
       reapTiming: fakeReapTiming(clock, timers),
       markerPorts: {
-        findHolders: async (marker) => {
+        findHolders: async (marker, probe) => {
           calls.push('findHolders');
-          return options.markerPorts?.findHolders?.(marker) ?? [];
+          return options.markerPorts?.findHolders?.(marker, probe) ?? [];
         },
         reapMarkerDirectory: async (reapOptions) => {
           calls.push('reapMarkerDirectory');

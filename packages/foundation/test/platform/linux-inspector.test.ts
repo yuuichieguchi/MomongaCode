@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BOOT_TIME_RESOLUTION_MS, createLinuxInspector } from '../../src/platform/linux-inspector.ts';
 import { auxvLayoutOf, isPidDirectoryName, parseBootTimeSeconds, parseRealUid, parseClockTicksPerSecond, parseProcStat } from '../../src/platform/linux-parsers.ts';
-import { PS_PROBE_TIMEOUT_MS, REAP_POLL_INTERVAL_MS } from '../../src/platform/probe-timing.ts';
 import type { UninspectableProcess } from '../../src/platform/inspector-types.ts';
 import type { FileIdentity, ProcFs } from '../../src/platform/procfs.ts';
 
@@ -41,16 +40,7 @@ const fakeProcfs = (entries: Record<string, FakeEntry>): ProcFs => {
   };
 };
 
-const fakeTiming = () => {
-  let elapsed = 0;
-  return {
-    now: () => elapsed,
-    sleep: async (ms: number): Promise<void> => {
-      elapsed += ms;
-    },
-    slept: () => elapsed,
-  };
-};
+const LIVE = { signal: new AbortController().signal };
 
 const gapsOf = () => {
   const processes: UninspectableProcess[] = [];
@@ -109,7 +99,7 @@ describe('proc parsers (formats from proc_pid_stat(5), proc_stat(5), getauxval(3
 describe('linux inspector through an injected procfs', () => {
   it('computes the start time as boot time plus starttime ticks', async () => {
     const inspector = createLinuxInspector({ procfs: fakeProcfs({ ...BASE_ENTRIES, '/proc/4242/stat': { text: STAT_SLEEP } }), layout: LAYOUT, uid: UID });
-    expect(await inspector.startTimeOf(4242)).toEqual({ kind: 'value', value: 1700000000000 + 9876540 });
+    expect(await inspector.startTimeOf(4242, LIVE)).toEqual({ kind: 'value', value: 1700000000000 + 9876540 });
   });
 
   it('reports a missing process as gone and a failed read as a failure classified by errno', async () => {
@@ -118,14 +108,14 @@ describe('linux inspector through an injected procfs', () => {
       layout: LAYOUT,
       uid: UID,
     });
-    expect(await inspector.startTimeOf(8)).toEqual({ kind: 'gone' });
-    expect(await inspector.startTimeOf(9)).toMatchObject({ kind: 'failed', cause: 'transient', evidence: { kind: 'errno', code: 'EIO' } });
-    expect(await inspector.startTimeOf(10)).toMatchObject({ kind: 'failed', cause: 'deterministic', evidence: { kind: 'errno', code: 'EACCES' } });
+    expect(await inspector.startTimeOf(8, LIVE)).toEqual({ kind: 'gone' });
+    expect(await inspector.startTimeOf(9, LIVE)).toMatchObject({ kind: 'failed', cause: 'transient', evidence: { kind: 'errno', code: 'EIO' } });
+    expect(await inspector.startTimeOf(10, LIVE)).toMatchObject({ kind: 'failed', cause: 'deterministic', evidence: { kind: 'errno', code: 'EACCES' } });
   });
 
   it('reports a stat line it cannot parse as a deterministic failure', async () => {
     const inspector = createLinuxInspector({ procfs: fakeProcfs({ ...BASE_ENTRIES, '/proc/7/stat': { text: '7 broken' } }), layout: LAYOUT, uid: UID });
-    expect(await inspector.startTimeOf(7)).toMatchObject({ kind: 'failed', cause: 'deterministic', evidence: { kind: 'unparseable' } });
+    expect(await inspector.startTimeOf(7, LIVE)).toMatchObject({ kind: 'failed', cause: 'deterministic', evidence: { kind: 'unparseable' } });
   });
 
   it('reads boot parameters once after they were read successfully', async () => {
@@ -133,8 +123,8 @@ describe('linux inspector through an injected procfs', () => {
     const procfs = fakeProcfs({ ...BASE_ENTRIES, '/proc/4242/stat': { text: STAT_SLEEP } });
     const counting: ProcFs = { ...procfs, readText: (file) => ((reads += file === '/proc/stat' ? 1 : 0), procfs.readText(file)) };
     const inspector = createLinuxInspector({ procfs: counting, layout: LAYOUT, uid: UID });
-    await inspector.startTimeOf(4242);
-    await inspector.startTimeOf(4242);
+    await inspector.startTimeOf(4242, LIVE);
+    await inspector.startTimeOf(4242, LIVE);
     expect(reads).toBe(1);
   });
 
@@ -149,9 +139,9 @@ describe('linux inspector through an injected procfs', () => {
       },
     };
     const inspector = createLinuxInspector({ procfs: flaky, layout: LAYOUT, uid: UID });
-    expect(await inspector.startTimeOf(4242)).toMatchObject({ kind: 'failed', cause: 'transient' });
+    expect(await inspector.startTimeOf(4242, LIVE)).toMatchObject({ kind: 'failed', cause: 'transient' });
     failing = false;
-    expect(await inspector.startTimeOf(4242)).toEqual({ kind: 'value', value: 1700000000000 + 9876540 });
+    expect(await inspector.startTimeOf(4242, LIVE)).toEqual({ kind: 'value', value: 1700000000000 + 9876540 });
   });
 
   it('lists the pids whose descriptors resolve to the marker file identity, skipping processes of other users whose descriptors are denied', async () => {
@@ -172,10 +162,10 @@ describe('linux inspector through an injected procfs', () => {
       '/proc/13/fd/5': { identity: marker },
     });
     const inspector = createLinuxInspector({ procfs, layout: LAYOUT, uid: UID });
-    expect(await inspector.holdersOf('/marker')).toEqual({ kind: 'value', value: [10, 13] });
+    expect(await inspector.holdersOf('/marker', LIVE)).toEqual({ kind: 'value', value: [10, 13] });
   });
 
-  it('does not call a same-user process with unreadable descriptors "not a holder": it waits for its exec to complete, then reports it by pid and command', async () => {
+  it('does not call a same-user process with unreadable descriptors "not a holder": it reports it by pid and command at once, with no wait', async () => {
     const procfs = fakeProcfs({
       '/marker': { identity: { dev: 1n, ino: 1n } },
       '/proc': { children: ['12'] },
@@ -183,51 +173,13 @@ describe('linux inspector through an injected procfs', () => {
       '/proc/12/status': statusOwnedBy(UID),
       '/proc/12/stat': { text: STAT_SLEEP },
     });
-    const timing = fakeTiming();
     const found = gapsOf();
-    const result = await createLinuxInspector({ procfs, layout: LAYOUT, uid: UID, timing }).holdersOf('/marker', found.report);
+    const result = await createLinuxInspector({ procfs, layout: LAYOUT, uid: UID }).holdersOf('/marker', LIVE, found.report);
     expect(result).toEqual({ kind: 'value', value: [] });
     expect(found.processes).toEqual([{ pid: 12, command: 'sleep', startTicks: '987654' }]);
-    expect(timing.slept()).toBe(Math.ceil(PS_PROBE_TIMEOUT_MS / REAP_POLL_INTERVAL_MS) * REAP_POLL_INTERVAL_MS);
   });
 
-  it('does not wait again for a process it already reported when the same inspector scans once more', async () => {
-    const procfs = fakeProcfs({
-      '/marker': { identity: { dev: 1n, ino: 1n } },
-      '/proc': { children: ['12'] },
-      '/proc/12/fd': { failure: 'EACCES' },
-      '/proc/12/status': statusOwnedBy(UID),
-      '/proc/12/stat': { text: STAT_SLEEP },
-    });
-    const timing = fakeTiming();
-    const inspector = createLinuxInspector({ procfs, layout: LAYOUT, uid: UID, timing, isAlive: () => true });
-    await inspector.holdersOf('/marker');
-    const afterFirst = timing.slept();
-    const found = gapsOf();
-    expect(await inspector.holdersOf('/marker', found.report)).toEqual({ kind: 'value', value: [] });
-    expect(timing.slept()).toBe(afterFirst);
-    expect(found.processes).toEqual([{ pid: 12, command: 'sleep', startTicks: '987654' }]);
-  });
-
-  it('forgets a process it reported once that process is gone, so the remembered set stays bounded', async () => {
-    const procfs = fakeProcfs({
-      '/marker': { identity: { dev: 1n, ino: 1n } },
-      '/proc': { children: ['12'] },
-      '/proc/12/fd': { failure: 'EACCES' },
-      '/proc/12/status': statusOwnedBy(UID),
-      '/proc/12/stat': { text: STAT_SLEEP },
-    });
-    const timing = fakeTiming();
-    let alive = true;
-    const inspector = createLinuxInspector({ procfs, layout: LAYOUT, uid: UID, timing, isAlive: () => alive });
-    await inspector.holdersOf('/marker');
-    const afterFirst = timing.slept();
-    alive = false;
-    await inspector.holdersOf('/marker');
-    expect(timing.slept()).toBeGreaterThan(afterFirst);
-  });
-
-  it('waits for a same-user process to become readable and then reads it', async () => {
+  it('reports a same-user process that is not readable yet, and lists it on the scan that finds it readable', async () => {
     const marker = { dev: 1n, ino: 1n };
     const entries: Record<string, FakeEntry> = {
       '/marker': { identity: marker },
@@ -247,9 +199,13 @@ describe('linux inspector through an injected procfs', () => {
         return Promise.reject(errno('EACCES'));
       },
     };
-    const timing = fakeTiming();
-    expect(await createLinuxInspector({ procfs, layout: LAYOUT, uid: UID, timing }).holdersOf('/marker')).toEqual({ kind: 'value', value: [12] });
-    expect(timing.slept()).toBe(3 * REAP_POLL_INTERVAL_MS);
+    const inspector = createLinuxInspector({ procfs, layout: LAYOUT, uid: UID });
+    for (let scan = 0; scan < 3; scan += 1) {
+      const found = gapsOf();
+      expect(await inspector.holdersOf('/marker', LIVE, found.report)).toEqual({ kind: 'value', value: [] });
+      expect(found.processes).toHaveLength(1);
+    }
+    expect(await inspector.holdersOf('/marker', LIVE)).toEqual({ kind: 'value', value: [12] });
   });
 
   it('treats a zombie whose descriptor directory is denied as holding nothing, even when it is owned by the current user', async () => {
@@ -263,7 +219,7 @@ describe('linux inspector through an injected procfs', () => {
       '/proc/13/fd': { children: ['3'] },
       '/proc/13/fd/3': { identity: marker },
     });
-    expect(await createLinuxInspector({ procfs, layout: LAYOUT, uid: UID }).holdersOf('/marker')).toEqual({ kind: 'value', value: [13] });
+    expect(await createLinuxInspector({ procfs, layout: LAYOUT, uid: UID }).holdersOf('/marker', LIVE)).toEqual({ kind: 'value', value: [13] });
   });
 
   it('treats a descriptor that is denied because its process became a zombie as not holding the marker', async () => {
@@ -275,7 +231,7 @@ describe('linux inspector through an injected procfs', () => {
       '/proc/12/fd/3': { failure: 'EACCES' },
       '/proc/12/stat': { text: STAT_ZOMBIE },
     });
-    expect(await createLinuxInspector({ procfs, layout: LAYOUT, uid: UID }).holdersOf('/marker')).toEqual({ kind: 'value', value: [] });
+    expect(await createLinuxInspector({ procfs, layout: LAYOUT, uid: UID }).holdersOf('/marker', LIVE)).toEqual({ kind: 'value', value: [] });
   });
 
   it('reports a denied descriptor of a live same-user process as not inspected and skips one of another user without a word', async () => {
@@ -288,10 +244,10 @@ describe('linux inspector through an injected procfs', () => {
       '/proc/12/status': statusOwnedBy(uid),
     });
     const own = gapsOf();
-    expect(await createLinuxInspector({ procfs: fakeProcfs(entries(UID)), layout: LAYOUT, uid: UID, timing: fakeTiming() }).holdersOf('/marker', own.report)).toEqual({ kind: 'value', value: [] });
+    expect(await createLinuxInspector({ procfs: fakeProcfs(entries(UID)), layout: LAYOUT, uid: UID }).holdersOf('/marker', LIVE, own.report)).toEqual({ kind: 'value', value: [] });
     expect(own.processes).toEqual([{ pid: 12, command: 'sleep', startTicks: '987654' }]);
     const other = gapsOf();
-    expect(await createLinuxInspector({ procfs: fakeProcfs(entries(0)), layout: LAYOUT, uid: UID, timing: fakeTiming() }).holdersOf('/marker', other.report)).toEqual({ kind: 'value', value: [] });
+    expect(await createLinuxInspector({ procfs: fakeProcfs(entries(0)), layout: LAYOUT, uid: UID }).holdersOf('/marker', LIVE, other.report)).toEqual({ kind: 'value', value: [] });
     expect(other.processes).toEqual([]);
   });
 
@@ -307,34 +263,30 @@ describe('linux inspector through an injected procfs', () => {
       '/proc/12/status': statusOwnedBy(UID),
     });
 
-    it('holds nothing when it started before the marker existed, and the probe neither waits for it nor reports it', async () => {
-      const timing = fakeTiming();
+    it('holds nothing when it started before the marker existed, and the probe does not report it', async () => {
       const found = gapsOf();
-      const inspector = createLinuxInspector({ procfs: fakeProcfs(entriesFor(SLEEP_STARTED_MS + BOOT_TIME_RESOLUTION_MS + TICK_MS + 1)), layout: LAYOUT, uid: UID, timing });
-      expect(await inspector.holdersOf('/marker', found.report)).toEqual({ kind: 'value', value: [] });
-      expect(timing.slept()).toBe(0);
+      const inspector = createLinuxInspector({ procfs: fakeProcfs(entriesFor(SLEEP_STARTED_MS + BOOT_TIME_RESOLUTION_MS + TICK_MS + 1)), layout: LAYOUT, uid: UID });
+      expect(await inspector.holdersOf('/marker', LIVE, found.report)).toEqual({ kind: 'value', value: [] });
       expect(found.processes).toEqual([]);
     });
 
     it('is not skipped when the marker is younger by less than the resolution of btime and of the clock tick', async () => {
-      const timing = fakeTiming();
       const found = gapsOf();
-      const inspector = createLinuxInspector({ procfs: fakeProcfs(entriesFor(SLEEP_STARTED_MS + BOOT_TIME_RESOLUTION_MS + TICK_MS - 1)), layout: LAYOUT, uid: UID, timing });
-      expect(await inspector.holdersOf('/marker', found.report)).toEqual({ kind: 'value', value: [] });
+      const inspector = createLinuxInspector({ procfs: fakeProcfs(entriesFor(SLEEP_STARTED_MS + BOOT_TIME_RESOLUTION_MS + TICK_MS - 1)), layout: LAYOUT, uid: UID });
+      expect(await inspector.holdersOf('/marker', LIVE, found.report)).toEqual({ kind: 'value', value: [] });
       expect(found.processes).toEqual([{ pid: 12, command: 'sleep', startTicks: '987654' }]);
-      expect(timing.slept()).toBeGreaterThanOrEqual(PS_PROBE_TIMEOUT_MS);
     });
 
     it('does not fail the scan when it started after the marker: it is reported by pid and command as one that could not be inspected', async () => {
       const found = gapsOf();
-      const result = await createLinuxInspector({ procfs: fakeProcfs(entriesFor(SLEEP_STARTED_MS - 1)), layout: LAYOUT, uid: UID, timing: fakeTiming() }).holdersOf('/marker', found.report);
+      const result = await createLinuxInspector({ procfs: fakeProcfs(entriesFor(SLEEP_STARTED_MS - 1)), layout: LAYOUT, uid: UID }).holdersOf('/marker', LIVE, found.report);
       expect(result).toEqual({ kind: 'value', value: [] });
       expect(found.processes).toEqual([{ pid: 12, command: 'sleep', startTicks: '987654' }]);
     });
 
     it('is reported the same way when the file system gives no birth time', async () => {
       const found = gapsOf();
-      const result = await createLinuxInspector({ procfs: fakeProcfs(entriesFor(0)), layout: LAYOUT, uid: UID, timing: fakeTiming() }).holdersOf('/marker', found.report);
+      const result = await createLinuxInspector({ procfs: fakeProcfs(entriesFor(0)), layout: LAYOUT, uid: UID }).holdersOf('/marker', LIVE, found.report);
       expect(result).toEqual({ kind: 'value', value: [] });
       expect(found.processes).toEqual([{ pid: 12, command: 'sleep', startTicks: '987654' }]);
     });
@@ -353,12 +305,12 @@ describe('linux inspector through an injected procfs', () => {
     };
 
     it('holds the marker through a live thread', async () => {
-      expect(await createLinuxInspector({ procfs: fakeProcfs(entries), layout: LAYOUT, uid: UID }).holdersOf('/marker')).toEqual({ kind: 'value', value: [12] });
+      expect(await createLinuxInspector({ procfs: fakeProcfs(entries), layout: LAYOUT, uid: UID }).holdersOf('/marker', LIVE)).toEqual({ kind: 'value', value: [12] });
     });
 
     it('holds nothing when every thread is gone', async () => {
       const gone = { ...entries, '/proc/12/task': { children: ['12'] } };
-      expect(await createLinuxInspector({ procfs: fakeProcfs(gone), layout: LAYOUT, uid: UID }).holdersOf('/marker')).toEqual({ kind: 'value', value: [] });
+      expect(await createLinuxInspector({ procfs: fakeProcfs(gone), layout: LAYOUT, uid: UID }).holdersOf('/marker', LIVE)).toEqual({ kind: 'value', value: [] });
     });
   });
 
@@ -369,13 +321,13 @@ describe('linux inspector through an injected procfs', () => {
 
   it('treats a missing marker as gone and classifies other failures', async () => {
     const inspector = createLinuxInspector({ procfs: fakeProcfs({ '/proc': { children: [] }, '/broken': { failure: 'EIO' } }), layout: LAYOUT, uid: UID });
-    expect(await inspector.holdersOf('/missing')).toEqual({ kind: 'gone' });
-    expect(await inspector.holdersOf('/broken')).toMatchObject({ kind: 'failed', cause: 'transient', evidence: { code: 'EIO' } });
+    expect(await inspector.holdersOf('/missing', LIVE)).toEqual({ kind: 'gone' });
+    expect(await inspector.holdersOf('/broken', LIVE)).toMatchObject({ kind: 'failed', cause: 'transient', evidence: { code: 'EIO' } });
   });
 
   it('does not hide a failure while reading a descriptor directory', async () => {
     const procfs = fakeProcfs({ '/marker': { identity: { dev: 1n, ino: 1n } }, '/proc': { children: ['10'] }, '/proc/10/fd': { failure: 'EIO' } });
-    expect(await createLinuxInspector({ procfs, layout: LAYOUT, uid: UID }).holdersOf('/marker')).toMatchObject({ kind: 'failed', cause: 'transient' });
+    expect(await createLinuxInspector({ procfs, layout: LAYOUT, uid: UID }).holdersOf('/marker', LIVE)).toMatchObject({ kind: 'failed', cause: 'transient' });
   });
 
   it('maps pids to their process group and omits pids that are gone', async () => {
@@ -384,7 +336,7 @@ describe('linux inspector through an injected procfs', () => {
       layout: LAYOUT,
       uid: UID,
     });
-    expect(await inspector.groupsOf([4242, 77, 5], [])).toEqual({
+    expect(await inspector.groupsOf([4242, 77, 5], [], LIVE)).toEqual({
       kind: 'value',
       value: new Map([
         [4242, 4242],

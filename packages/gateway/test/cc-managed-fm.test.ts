@@ -48,7 +48,7 @@ class FakeFmChild extends EventEmitter {
     return (this.server?.requests ?? []).filter((request) => request.path === '/v1/chat/completions').map((request) => request.body);
   }
 
-  kill(): boolean {
+  async kill(): Promise<boolean> {
     void this.exit();
     return true;
   }

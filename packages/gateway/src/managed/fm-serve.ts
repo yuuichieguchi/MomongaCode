@@ -15,7 +15,7 @@ export interface ExecResult {
 
 export interface FmChild {
   finalize?(graceMs: number): Promise<void>;
-  kill(signal?: NodeJS.Signals): boolean;
+  kill(signal?: NodeJS.Signals, stop?: AbortSignal): Promise<boolean>;
   once(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown;
   once(event: 'error', listener: (error: Error) => void): unknown;
 }
@@ -275,9 +275,18 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
   const terminate = (managed: ManagedChild): Promise<void> => {
     managed.terminating ??= (async () => {
       if (!managed.exited) {
-        managed.process.kill('SIGTERM');
+        const exitedStop = new AbortController();
+        managed.exitWaiters.push(() => exitedStop.abort());
+        const sendKill = async (signal: NodeJS.Signals): Promise<void> => {
+          try {
+            await managed.process.kill(signal, exitedStop.signal);
+          } catch (error) {
+            if (!exitedStop.signal.aborted) throw error;
+          }
+        };
+        await sendKill('SIGTERM');
         if (!(await waitForExit(managed, options.stopGraceMs))) {
-          managed.process.kill('SIGKILL');
+          await sendKill('SIGKILL');
           await waitForExit(managed, undefined);
         }
       }

@@ -1,14 +1,12 @@
 import os from 'node:os';
 import { failureOfError, isErrno, probeFailed } from './inspector-types.ts';
+import { withListedState } from './marker-state.ts';
 import type { ProbeFailure, ProbeResult, ProcessInspector, UninspectableProcess } from './inspector-types.ts';
 import { auxvLayoutOf, isPidDirectoryName, parseBootTimeSeconds, parseClockTicksPerSecond, parseProcStat, parseRealUid } from './linux-parsers.ts';
 import type { AuxvLayout } from './linux-parsers.ts';
-import { createLiveIdentities } from './live-identities.ts';
-import { PS_PROBE_TIMEOUT_MS, REAP_POLL_INTERVAL_MS, hostProbeTiming } from './probe-timing.ts';
-import type { ProbeTiming } from './probe-timing.ts';
 import type { FileIdentity, ProcFs } from './procfs.ts';
 
-export type LinuxInspectorPorts = { procfs: ProcFs; uid: number; layout?: AuxvLayout; timing?: ProbeTiming; isAlive?: (pid: number) => boolean };
+export type LinuxInspectorPorts = { procfs: ProcFs; uid: number; layout?: AuxvLayout };
 
 const hostLayout = (): AuxvLayout => auxvLayoutOf(process.arch, os.endianness());
 
@@ -35,9 +33,8 @@ const parsed = <T>(read: () => T): T => {
 const failureOf = (error: unknown): ProbeFailure =>
   error instanceof UnparseableProcfs ? probeFailed({ kind: 'unparseable', detail: error.message }) : failureOfError(error);
 
-export const createLinuxInspector = ({ procfs, uid, layout, timing = hostProbeTiming, isAlive }: LinuxInspectorPorts): ProcessInspector => {
+export const createLinuxInspector = ({ procfs, uid, layout }: LinuxInspectorPorts): ProcessInspector => {
   let clock: ClockParameters | undefined;
-  const uninspected = createLiveIdentities(isAlive === undefined ? {} : { isAlive });
   const clockParameters = async (): Promise<ClockParameters> => {
     if (clock !== undefined) return clock;
     const resolvedLayout = layout ?? hostLayout();
@@ -76,26 +73,18 @@ export const createLinuxInspector = ({ procfs, uid, layout, timing = hostProbeTi
   };
 
   const unlessUnsettled = async <T>(pid: number, scan: Scan, absent: T, read: () => Promise<T>): Promise<T> => {
-    const deadline = timing.now() + PS_PROBE_TIMEOUT_MS;
-    for (;;) {
-      try {
-        return await read();
-      } catch (error) {
-        if (isErrno(error, ...GONE_CODES)) return absent;
-        if (!isErrno(error, ...DENIED_CODES)) throw error;
-        const stat = await statOf(pid);
-        if (stat === undefined || EXITED_STATES.includes(stat.state)) return absent;
-        const owner = await realUidOf(pid);
-        if (owner === undefined || owner !== uid) return absent;
-        if (await startedBeforeMarker(pid, scan.markerBirthMs)) return absent;
-        const startTicks = String(stat.startTicks);
-        if (uninspected.has('', pid, startTicks) || timing.now() >= deadline) {
-          uninspected.add('', pid, startTicks);
-          scan.report?.({ pid, command: stat.command, startTicks });
-          return absent;
-        }
-        await timing.sleep(REAP_POLL_INTERVAL_MS);
-      }
+    try {
+      return await read();
+    } catch (error) {
+      if (isErrno(error, ...GONE_CODES)) return absent;
+      if (!isErrno(error, ...DENIED_CODES)) throw error;
+      const stat = await statOf(pid);
+      if (stat === undefined || EXITED_STATES.includes(stat.state)) return absent;
+      const owner = await realUidOf(pid);
+      if (owner === undefined || owner !== uid) return absent;
+      if (await startedBeforeMarker(pid, scan.markerBirthMs)) return absent;
+      scan.report?.({ pid, command: stat.command, startTicks: String(stat.startTicks) });
+      return absent;
     }
   };
 
@@ -131,7 +120,7 @@ export const createLinuxInspector = ({ procfs, uid, layout, timing = hostProbeTi
     }
   };
 
-  return {
+  return withListedState({
     startTimeOf: (pid) =>
       guarded(async () => {
         const stat = await statOf(pid);
@@ -139,7 +128,7 @@ export const createLinuxInspector = ({ procfs, uid, layout, timing = hostProbeTi
         const { bootMs, ticksPerSecond } = await clockParameters();
         return { kind: 'value', value: bootMs + Number((stat.startTicks * 1000n) / BigInt(ticksPerSecond)) };
       }),
-    holdersOf: (marker, onUninspectable) =>
+    holdersOf: (marker, { signal }, onUninspectable) =>
       guarded(async () => {
         let target: FileIdentity;
         try {
@@ -152,6 +141,7 @@ export const createLinuxInspector = ({ procfs, uid, layout, timing = hostProbeTi
         const pids = (await procfs.list('/proc')).filter(isPidDirectoryName).map(Number);
         const holders: number[] = [];
         for (const pid of pids) {
+          signal.throwIfAborted();
           if (await holdsMarker(pid, scan, `/proc/${pid}`, target)) {
             holders.push(pid);
             continue;
@@ -174,5 +164,5 @@ export const createLinuxInspector = ({ procfs, uid, layout, timing = hostProbeTi
         }
         return { kind: 'value', value: groups };
       }),
-  };
+  });
 };
