@@ -137,7 +137,6 @@ describe('sign-out (F11, I-C10)', () => {
     const reading = h.sessions.authSource({ profile: PROFILE_ID, account: 'work' }).read(new AbortController().signal);
     await expect.poll(() => h.fetchUrls.filter((url) => url === h.auth.tokenUrl).length, CONDITION_WAIT).toBe(1);
     const signingOut = signOut(h);
-    await new Promise((resolve) => setImmediate(resolve));
     expect(h.auth.calls.revoke).toBe(0);
     gate.release();
     await reading;

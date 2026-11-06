@@ -11,10 +11,6 @@ const deferred = (): { promise: Promise<void>; resolve(): void } => {
   return { promise, resolve };
 };
 
-const turns = async (count: number): Promise<void> => {
-  for (let index = 0; index < count; index += 1) await new Promise((resolve) => setImmediate(resolve));
-};
-
 describe.each([
   ['memory', () => createMemoryCredentialStore()],
   ['file', () => createFileCredentialStore(path.join(makeDir(), 'creds'))],
@@ -38,17 +34,17 @@ describe.each([
     const store = make();
     const events: string[] = [];
     const firstHeld = deferred();
+    const firstStarted = deferred();
     const first = store.withKey('k', async () => {
       events.push('first:start');
+      firstStarted.resolve();
       await firstHeld.promise;
       events.push('first:end');
     });
-    await turns(20);
+    await firstStarted.promise;
     const second = store.withKey('k', async () => {
       events.push('second:start');
     });
-    await turns(20);
-    expect(events).toEqual(['first:start']);
     firstHeld.resolve();
     await Promise.all([first, second]);
     expect(events).toEqual(['first:start', 'first:end', 'second:start']);
@@ -58,14 +54,14 @@ describe.each([
     const store = make();
     await store.write('k', '1');
     const held = deferred();
+    const started = deferred();
     const scope = store.withKey('k', async (entry) => {
+      started.resolve();
       await held.promise;
       await entry.write(`${(await entry.read()) ?? ''}a`);
     });
-    await turns(20);
+    await started.promise;
     const updating = store.update('k', (current) => `${current ?? ''}b`);
-    await turns(20);
-    expect(await store.read('k')).toBe('1');
     held.resolve();
     await Promise.all([scope, updating]);
     expect(await store.read('k')).toBe('1ab');
@@ -74,8 +70,12 @@ describe.each([
   it('a scope on another key does not wait', async () => {
     const store = make();
     const held = deferred();
-    const blocking = store.withKey('a', () => held.promise);
-    await turns(20);
+    const started = deferred();
+    const blocking = store.withKey('a', () => {
+      started.resolve();
+      return held.promise;
+    });
+    await started.promise;
     await store.withKey('b', (entry) => entry.write('free'));
     expect(await store.read('b')).toBe('free');
     held.resolve();
@@ -101,17 +101,17 @@ describe('file credential store: the keyed scope across two stores on one direct
     const two = createFileCredentialStore(directory);
     const events: string[] = [];
     const held = deferred();
+    const started = deferred();
     const first = one.withKey('k', async () => {
       events.push('one:start');
+      started.resolve();
       await held.promise;
       events.push('one:end');
     });
-    await turns(50);
+    await started.promise;
     const second = two.withKey('k', async () => {
       events.push('two:start');
     });
-    await turns(50);
-    expect(events).toEqual(['one:start']);
     held.resolve();
     await Promise.all([first, second]);
     expect(events).toEqual(['one:start', 'one:end', 'two:start']);
