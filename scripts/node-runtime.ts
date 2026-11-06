@@ -2,13 +2,14 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { parseChecksumListing } from '@momonga/foundation';
+import { RELEASE_ASSETS, parseChecksumListing } from '@momonga/foundation';
+import type { ReleaseTargetName } from '@momonga/foundation';
 
 export const SEA_NODE_VERSION = '26.12.1';
 export const SEA_NODE_PLATFORM = 'darwin-arm64';
 export const SEA_NODE_ARCHIVE_SHA256 = '1901d539912c02afa10d1cc126943a8855a7eedebe830119463470db5e6c59e8';
 
-export type SeaTargetName = 'darwin-arm64' | 'linux-x64' | 'linux-arm64' | 'win-x64';
+export type SeaTargetName = ReleaseTargetName;
 
 export type SeaTarget = {
   readonly name: SeaTargetName;
@@ -24,28 +25,28 @@ export const SEA_TARGETS: Readonly<Record<SeaTargetName, SeaTarget>> = {
     archiveExtension: 'tar.gz',
     archiveSha256: SEA_NODE_ARCHIVE_SHA256,
     nodeRelativePath: ['bin', 'node'],
-    assetName: 'momonga-darwin-arm64',
+    assetName: RELEASE_ASSETS['darwin-arm64'],
   },
   'linux-x64': {
     name: 'linux-x64',
     archiveExtension: 'tar.gz',
     archiveSha256: '0fd1eb7770598f52a21995edf6ed35fc690400fa437c2386af329519e9143132',
     nodeRelativePath: ['bin', 'node'],
-    assetName: 'momonga-linux-x64',
+    assetName: RELEASE_ASSETS['linux-x64'],
   },
   'linux-arm64': {
     name: 'linux-arm64',
     archiveExtension: 'tar.gz',
     archiveSha256: 'a6c01af459dd8972ab3fb08ee5da81244d26ba8c4944a62d5bbba8c597ae154f',
     nodeRelativePath: ['bin', 'node'],
-    assetName: 'momonga-linux-arm64',
+    assetName: RELEASE_ASSETS['linux-arm64'],
   },
   'win-x64': {
     name: 'win-x64',
     archiveExtension: 'zip',
     archiveSha256: 'b3efd5c70cba3308ed46e7e699a9b8aac075bbc6b027fcb39c84c31acc25e2b4',
     nodeRelativePath: ['node.exe'],
-    assetName: 'momonga-win-x64.exe',
+    assetName: RELEASE_ASSETS['win-x64'],
   },
 };
 

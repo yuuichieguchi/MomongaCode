@@ -64,3 +64,42 @@ describe.skipIf(!HAS_POSIX_SHELL)('tlc.sh with a config of another module', () =
     expect(result.stdout).toContain('3 distinct states found');
   });
 });
+
+describe.skipIf(!HAS_POSIX_SHELL)('tlc.sh --fetch-jar', () => {
+  let root = '';
+  const realJar = `${repoRoot}.cache/tla/tla2tools.jar`;
+
+  const fetchJar = (url: string): SpawnSyncReturns<string> =>
+    spawnSync('/bin/bash', [path.join(root, 'scripts/tlc.sh'), '--fetch-jar'], {
+      encoding: 'utf8',
+      env: { PATH: '/usr/bin:/bin', TLC_JAR_URL: url },
+    });
+
+  const placedJar = (): string => path.join(root, '.cache', 'tla', 'tla2tools.jar');
+
+  beforeAll(() => {
+    root = createTempRoot();
+    fs.mkdirSync(path.join(root, 'scripts'));
+    fs.copyFileSync(`${repoRoot}scripts/tlc.sh`, path.join(root, 'scripts/tlc.sh'));
+  });
+
+  afterAll(() => {
+    removeTempRoot(root);
+  });
+
+  it('refuses a download whose sha256 is not the pinned one and leaves no jar behind', () => {
+    const impostor = path.join(root, 'impostor.jar');
+    fs.writeFileSync(impostor, 'not the jar');
+    const run = fetchJar(`file://${impostor}`);
+    expect(run.status).toBe(4);
+    expect(run.stderr).toContain('sha256 mismatch');
+    expect(fs.existsSync(placedJar())).toBe(false);
+    expect(fs.existsSync(path.dirname(placedJar())) ? fs.readdirSync(path.dirname(placedJar())) : []).toEqual([]);
+  });
+
+  it.skipIf(!fs.existsSync(realJar))('places a download whose sha256 is the pinned one', () => {
+    const run = fetchJar(`file://${realJar}`);
+    expect(run.status).toBe(0);
+    expect(fs.readFileSync(placedJar()).equals(fs.readFileSync(realJar))).toBe(true);
+  });
+});

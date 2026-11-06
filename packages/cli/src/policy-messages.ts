@@ -1,4 +1,4 @@
-import { HOOK_STOPPED_CODE, USER_PROMPT_BLOCKED_CODE } from '@momonga/protocol';
+import { HOOK_STOPPED_CODE, PRECONDITION_FAILED_CODE, USER_PROMPT_BLOCKED_CODE } from '@momonga/protocol';
 import type { PermissionDenial, PermissionDenialSource, PublicRunEvent } from '@momonga/protocol';
 
 type HookCompleted = Extract<PublicRunEvent, { type: 'hook.completed' }>;
@@ -57,13 +57,17 @@ export const describeClassification = (event: Classified, subject: string): stri
 
 export const describeDenial = (denial: PermissionDenial): string => `denied by ${DENIAL_SOURCE_WORDS[denial.source]}: ${denial.reason}`;
 
-export const describeRunError = (error: { code: string; message: string }): string => {
+const PRODUCT_COMPOSED_CODES: ReadonlySet<string> = new Set([PRECONDITION_FAILED_CODE]);
+
+export const describeRunError = (error: { code: string; message: string }): string[] => {
   switch (error.code) {
     case USER_PROMPT_BLOCKED_CODE:
-      return `a UserPromptSubmit hook blocked the prompt: ${error.message}`;
+      return [`a UserPromptSubmit hook blocked the prompt: ${error.message}`];
     case HOOK_STOPPED_CODE:
-      return `a hook stopped the run: ${error.message}`;
-    default:
-      return `${error.code}: ${error.message}`;
+      return [`a hook stopped the run: ${error.message}`];
+    default: {
+      const [first = '', ...rest] = PRODUCT_COMPOSED_CODES.has(error.code) ? error.message.split('\n') : [error.message];
+      return [`${error.code}: ${first}`, ...rest];
+    }
   }
 };

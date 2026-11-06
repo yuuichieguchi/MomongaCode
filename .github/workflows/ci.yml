@@ -33,6 +33,19 @@ jobs:
       - run: npm ci
       - run: npm ci --prefix compliance/open-responses
       - run: npm run typecheck
-      - run: npm test
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78
+        if: runner.os != 'Windows'
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Fetch the pinned TLC jar
+        if: runner.os != 'Windows'
+        run: scripts/tlc.sh --fetch-jar
+      - name: Unit tests
+        if: runner.os != 'Windows'
+        run: npm test
+      - name: Unit tests, without the TLC tier (it needs bash, ps and /usr/bin)
+        if: runner.os == 'Windows'
+        run: npx vitest run --project unit --exclude test/formal/tlc.test.ts
       - run: npm run test:e2e
       - run: npm run test:packaging

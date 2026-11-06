@@ -4,7 +4,7 @@ set -euo pipefail
 JAR_VERSION="TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)"
 JAR_SHA256="936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88"
 JAR_RELEASE_TAG="v1.7.4"
-JAR_URL="https://github.com/tlaplus/tlaplus/releases/download/$JAR_RELEASE_TAG/tla2tools.jar"
+JAR_URL="${TLC_JAR_URL:-https://github.com/tlaplus/tlaplus/releases/download/$JAR_RELEASE_TAG/tla2tools.jar}"
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 jar="$root/.cache/tla/tla2tools.jar"
@@ -19,11 +19,38 @@ usage() {
   echo "  pinned sha256: $JAR_SHA256" >&2
   echo "  pinned version: $JAR_VERSION" >&2
   echo "  fetch: curl -L -o $jar $JAR_URL" >&2
+  echo "  scripts/tlc.sh --fetch-jar downloads the jar and checks the pinned sha256" >&2
+}
+
+sha256_of() {
+  if command -v shasum > /dev/null 2>&1; then
+    shasum -a 256 "$1" | cut -d' ' -f1
+  else
+    sha256sum "$1" | cut -d' ' -f1
+  fi
+}
+
+fetch_jar() {
+  mkdir -p "$(dirname "$jar")"
+  partial="$(mktemp "$jar.XXXXXX")"
+  trap 'rm -f "$partial"' EXIT
+  curl --fail --silent --show-error --location --output "$partial" "$JAR_URL"
+  fetched="$(sha256_of "$partial")"
+  if [ "$fetched" != "$JAR_SHA256" ]; then
+    echo "tla2tools.jar sha256 mismatch: expected $JAR_SHA256, got $fetched" >&2
+    exit 4
+  fi
+  mv -f "$partial" "$jar"
 }
 
 if [ "$#" -lt 1 ]; then
   usage
   exit 2
+fi
+
+if [ "$1" = "--fetch-jar" ]; then
+  fetch_jar
+  exit 0
 fi
 
 config="$1"
@@ -48,11 +75,7 @@ if [ ! -f "$jar" ]; then
   exit 3
 fi
 
-if command -v shasum > /dev/null 2>&1; then
-  actual="$(shasum -a 256 "$jar" | cut -d' ' -f1)"
-else
-  actual="$(sha256sum "$jar" | cut -d' ' -f1)"
-fi
+actual="$(sha256_of "$jar")"
 if [ "$actual" != "$JAR_SHA256" ]; then
   echo "tla2tools.jar sha256 mismatch: expected $JAR_SHA256, got $actual" >&2
   exit 4
