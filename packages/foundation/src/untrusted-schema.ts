@@ -4,7 +4,7 @@ import { inPlaceReferenceCycle } from './schema-reference-cycles.ts';
 import { unresolvableReference } from './schema-references.ts';
 import { META_SCHEMA_URIS, dialectOfSchema, dialectOfUri } from './untrusted-dialect.ts';
 import type { SchemaDialect } from './untrusted-dialect.ts';
-import { ataEngine } from './untrusted-engine.ts';
+import { assertsFormat, ataEngine } from './untrusted-engine.ts';
 import type { Engine, EngineValidator } from './untrusted-engine.ts';
 import { createErrorDescriber } from './untrusted-errors.ts';
 import type { UntrustedError } from './untrusted-errors.ts';
@@ -120,7 +120,7 @@ export const createUntrustedSchemaCompiler = ({ remotes, engine }: { remotes: Re
     }
   };
   const compile = (schema: Record<string, unknown>): UntrustedValidate => {
-    const key = keyOf(schema);
+    const key = `${assertsFormat(schema, compilation.registry) ? 'format-assertion' : 'format-annotation'}\u0000${keyOf(schema)}`;
     const cached = cache.get(key);
     if (cached !== undefined) {
       cache.delete(key);
