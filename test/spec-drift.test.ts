@@ -33,6 +33,7 @@ const UNMODELLED_EVENT_TYPES = [
   'agent.thought.delta',
   'approval.rule.persisted',
   'attempt.failed',
+  'attempt.lost',
   'context.compacted',
   'context.compaction_rejected',
   'context.contribution',

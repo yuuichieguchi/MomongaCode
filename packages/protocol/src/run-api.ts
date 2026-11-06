@@ -13,7 +13,6 @@ import { FILE_ACCESSES } from './working-facts.ts';
 import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
 import type { ImageMediaType, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent } from './run-types.ts';
 import type { ReflectionJobView } from './memory.ts';
-import type { RunRecovery } from './reliability.ts';
 import type { BilledDetail, TokenAnatomy } from './token-anatomy.ts';
 
 const DRAFT_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
@@ -255,11 +254,9 @@ const runFactsView = closed(
 
 const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { properties: Record<string, JsonSchema>; required: readonly string[] }> = {
   'user.message': { properties: { text: string, images: { type: 'array', items: imageSummary } }, required: ['text'] },
-  'run.started': {
-    properties: { attempt: integer, recovery: closed({ cause: enumOf(RECOVERY_CAUSES), failedAt: integer }, ['cause', 'failedAt']) },
-    required: ['attempt'],
-  },
-  'attempt.failed': { properties: { attempt: integer, code: string }, required: ['attempt', 'code'] },
+  'run.started': { properties: { attempt: integer }, required: ['attempt'] },
+  'attempt.failed': { properties: { attempt: integer, code: string, retryAt: integer, limit: integer }, required: ['attempt', 'code', 'retryAt', 'limit'] },
+  'attempt.lost': { properties: { lastLiveAt: integer }, required: ['lastLiveAt'] },
   'run.status': {
     properties: { from: enumOf(RUN_STATUSES), to: enumOf(RUN_STATUSES), reason: string },
     required: ['from', 'to'],
@@ -987,6 +984,15 @@ export type ContextChargeView = {
 };
 
 export type AnsweredByView = { target: string; adapter?: string; upstreamModel?: string; answers: 'model' | 'script' | 'unknown' };
+export const MODEL_KINDS = ['fake', 'real', 'unknown'] as const;
+export type ModelKind = (typeof MODEL_KINDS)[number];
+
+export const modelKindOf = (answeredBy: readonly AnsweredByView[], unrecordedAnswers: number): ModelKind => {
+  if (answeredBy.some((answerer) => answerer.answers === 'script')) return 'fake';
+  if (unrecordedAnswers > 0 || answeredBy.length === 0 || answeredBy.some((answerer) => answerer.answers === 'unknown')) return 'unknown';
+  return 'real';
+};
+
 export type RunAnsweredByView = { answeredBy: AnsweredByView[] };
 export type RunReflectionView = { job: ReflectionJobView | null; charges: ContextChargeView[]; queuedAhead: number };
 
@@ -1362,7 +1368,16 @@ export const RUN_API_SCHEMAS = {
     closed({ error: closed({ type: string, code: string, message: string, param: string }, ['type', 'code', 'message']) }, ['error']),
   ),
   PublicRunEvent: root({ type: 'object', oneOf: EVENT_TYPES.map(publicEventVariant) }),
-  ReportPage: root(closed({ rows: { type: 'array', items: runFactsView, maxItems: REPORT_PAGE_ROWS }, nextCursor: nullable(string) }, ['rows', 'nextCursor'])),
+  ReportPage: root(
+    closed(
+      {
+        rows: { type: 'array', items: runFactsView, maxItems: REPORT_PAGE_ROWS },
+        unavailable: { type: 'array', items: closed({ runId: string, rootRunId: string }, ['runId', 'rootRunId']), maxItems: REPORT_PAGE_ROWS },
+        nextCursor: nullable(string),
+      },
+      ['rows', 'unavailable', 'nextCursor'],
+    ),
+  ),
 } as const satisfies Record<string, JsonSchema>;
 
 type ReducedEventType =
@@ -1379,7 +1394,7 @@ type PublicPayload =
   | Exclude<RunEventPayload, { type: ReducedEventType }>
   | { type: 'user.message'; text: string; images?: { mediaType: ImageMediaType; byteLength: number }[] }
   | { type: 'model.requested'; step: number; attempt: number; digest: string; anatomy?: TokenAnatomy; prefix?: Extract<RunEventPayload, { type: 'model.requested' }>['prefix'] }
-  | { type: 'run.started'; attempt: number; recovery?: RunRecovery }
+  | { type: 'run.started'; attempt: number }
   | { type: 'context.compacted'; summary: string; replacedThroughSeq: number; source?: SummarySource; fidelity?: SummaryFidelity; guidelineVersion?: number }
   | { type: 'context.compaction_rejected'; step?: number; attempt?: number }
   | {
@@ -1426,7 +1441,7 @@ export const toPublicRunEvent = (event: RunEvent | SessionEvent): PublicRunEvent
         ...(event.prefix === undefined ? {} : { prefix: event.prefix }),
       };
     case 'run.started':
-      return { ...envelope, type: event.type, attempt: event.attempt, ...(event.recovery === undefined ? {} : { recovery: event.recovery }) };
+      return { ...envelope, type: event.type, attempt: event.attempt };
     case 'context.compacted':
       return {
         ...envelope,

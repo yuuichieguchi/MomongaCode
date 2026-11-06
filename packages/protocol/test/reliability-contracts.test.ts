@@ -16,6 +16,7 @@ import {
   RUN_API_SCHEMAS,
   toPublicRunEvent,
 } from '@momonga/protocol';
+import * as protocol from '@momonga/protocol';
 import type { RunEvent } from '@momonga/protocol';
 
 const schemas = RUN_API_SCHEMAS as unknown as Record<string, Record<string, unknown>>;
@@ -39,53 +40,60 @@ describe('attempt.failed', () => {
     expect(EVENT_TYPES).toContain('attempt.failed');
   });
 
-  it('is public with the attempt and the disposition code only', () => {
-    const failed = { ...ENVELOPE, type: 'attempt.failed', attempt: 2, code: 'gateway_unavailable' };
+  it('is public with the attempt, the disposition code, the retry instant and the attempt limit only', () => {
+    const failed = { ...ENVELOPE, type: 'attempt.failed', attempt: 2, code: 'gateway_unavailable', retryAt: 1_800_000_030_000, limit: 20 };
     expect(accepts('PublicRunEvent', failed)).toBe(true);
-    expect(accepts('PublicRunEvent', { ...ENVELOPE, type: 'attempt.failed', attempt: 2 })).toBe(false);
-    expect(accepts('PublicRunEvent', { ...ENVELOPE, type: 'attempt.failed', code: 'gateway_unavailable' })).toBe(false);
+    const { retryAt: _retryAt, ...withoutRetryAt } = failed;
+    const { limit: _limit, ...withoutLimit } = failed;
+    const { attempt: _attempt, ...withoutAttempt } = failed;
+    expect(accepts('PublicRunEvent', withoutAttempt)).toBe(false);
+    expect(accepts('PublicRunEvent', withoutRetryAt)).toBe(false);
+    expect(accepts('PublicRunEvent', withoutLimit)).toBe(false);
+    expect(accepts('PublicRunEvent', { ...failed, retryAt: 'soon' })).toBe(false);
+    expect(accepts('PublicRunEvent', { ...failed, limit: 2.5 })).toBe(false);
+    expect(accepts('PublicRunEvent', { ...ENVELOPE, type: 'attempt.failed', attempt: 2, retryAt: 1_800_000_030_000, limit: 20 })).toBe(false);
     expect(accepts('PublicRunEvent', { ...failed, message: 'connection refused by 10.0.0.1' })).toBe(false);
   });
 
-  it('round-trips through the public projection without the lease token', () => {
-    const event = { ...ENVELOPE, leaseToken: 4, type: 'attempt.failed', attempt: 3, code: 'stream_interrupted' } as RunEvent;
+  it('projects to the public event without the lease token, keeping the retry instant and the limit', () => {
+    const event = { ...ENVELOPE, leaseToken: 4, type: 'attempt.failed', attempt: 3, code: 'stream_interrupted', retryAt: 1_800_000_060_000, limit: 20 } as RunEvent;
     const projected = toPublicRunEvent(event);
-    expect(projected).toEqual({ ...ENVELOPE, type: 'attempt.failed', attempt: 3, code: 'stream_interrupted' });
+    expect(projected).toEqual({ ...ENVELOPE, type: 'attempt.failed', attempt: 3, code: 'stream_interrupted', retryAt: 1_800_000_060_000, limit: 20 });
     expect(accepts('PublicRunEvent', projected)).toBe(true);
   });
 });
 
-describe('run.started.recovery', () => {
+describe('attempt.lost', () => {
+  it('is an event type of the protocol', () => {
+    expect(EVENT_TYPES).toContain('attempt.lost');
+  });
+
+  it('is public with the last live instant only', () => {
+    const lost = { ...ENVELOPE, type: 'attempt.lost', lastLiveAt: 1_800_000_000_500 };
+    expect(accepts('PublicRunEvent', lost)).toBe(true);
+    expect(accepts('PublicRunEvent', { ...ENVELOPE, type: 'attempt.lost' })).toBe(false);
+    expect(accepts('PublicRunEvent', { ...lost, workerId: 'worker-1' })).toBe(false);
+  });
+
+  it('round-trips through the public projection without the lease token', () => {
+    const event = { ...ENVELOPE, leaseToken: 4, type: 'attempt.lost', lastLiveAt: 1_800_000_000_100 } as unknown as RunEvent;
+    const projected = toPublicRunEvent(event);
+    expect(projected).toEqual({ ...ENVELOPE, type: 'attempt.lost', lastLiveAt: 1_800_000_000_100 });
+    expect(accepts('PublicRunEvent', projected)).toBe(true);
+  });
+});
+
+describe('run.started carries no recovery field', () => {
   const started = { ...ENVELOPE, type: 'run.started', attempt: 2 };
 
-  it('is accepted in the public run.started for both causes', () => {
-    expect(accepts('PublicRunEvent', { ...started, recovery: { cause: 'worker_failure', failedAt: 1_800_000_000_500 } })).toBe(true);
-    expect(accepts('PublicRunEvent', { ...started, recovery: { cause: 'process_lost', failedAt: 1_800_000_000_500 } })).toBe(true);
+  it('accepts the attempt alone and refuses a recovery field', () => {
     expect(accepts('PublicRunEvent', started)).toBe(true);
+    expect(accepts('PublicRunEvent', { ...started, recovery: { cause: 'process_lost', failedAt: 1_800_000_000_500 } })).toBe(false);
   });
 
-  it('accepts exactly the two causes with a failedAt and nothing else', () => {
-    expect(accepts('PublicRunEvent', { ...started, recovery: { cause: 'worker_failure', failedAt: 1 } })).toBe(true);
-    expect(accepts('PublicRunEvent', { ...started, recovery: { cause: 'drain', failedAt: 1 } })).toBe(false);
-    expect(accepts('PublicRunEvent', { ...started, recovery: { cause: 'worker_failure' } })).toBe(false);
-    expect(accepts('PublicRunEvent', { ...started, recovery: { cause: 'worker_failure', failedAt: 1, message: 'x' } })).toBe(false);
-  });
-
-  it('keeps recovery and drops pins and now in the public projection', () => {
-    const event = {
-      ...ENVELOPE,
-      leaseToken: 4,
-      type: 'run.started',
-      attempt: 2,
-      now: 1_800_000_000_900,
-      pins: { modelAlias: 'fm' },
-      recovery: { cause: 'process_lost', failedAt: 1_800_000_000_100 },
-    } as RunEvent;
-    const projected = toPublicRunEvent(event);
-    expect(projected).toEqual({ ...ENVELOPE, type: 'run.started', attempt: 2, recovery: { cause: 'process_lost', failedAt: 1_800_000_000_100 } });
-    expect(accepts('PublicRunEvent', projected)).toBe(true);
-    const first = { ...ENVELOPE, leaseToken: 4, type: 'run.started', attempt: 1, now: 1, pins: {} } as RunEvent;
-    expect(toPublicRunEvent(first)).toEqual({ ...ENVELOPE, type: 'run.started', attempt: 1 });
+  it('projects run.started to the attempt alone, dropping pins and now', () => {
+    const event = { ...ENVELOPE, leaseToken: 4, type: 'run.started', attempt: 2, now: 1_800_000_000_900, pins: { modelAlias: 'fm' } } as RunEvent;
+    expect(toPublicRunEvent(event)).toEqual({ ...ENVELOPE, type: 'run.started', attempt: 2 });
   });
 });
 
@@ -98,9 +106,9 @@ describe('protocol/src/reliability.ts', () => {
     expect(RELIABILITY_FORMAT).toBe('momonga-reliability/1');
   });
 
-  it('names the two recovery causes and the three episode outcomes', () => {
+  it('names the two recovery causes and the four episode outcomes', () => {
     expect([...RECOVERY_CAUSES]).toEqual(['worker_failure', 'process_lost']);
-    expect([...RECOVERY_OUTCOMES]).toEqual(['recovered', 'unknown_effect', 'failed']);
+    expect([...RECOVERY_OUTCOMES]).toEqual(['recovered', 'unknown_effect', 'failed', 'stopped']);
   });
 
   it('bounds a facts page by REPORT_PAGE_ROWS', () => {
@@ -109,7 +117,9 @@ describe('protocol/src/reliability.ts', () => {
     expect(schema?.['$schema']).toBe('https://json-schema.org/draft/2020-12/schema');
     const rows = (schema?.['properties'] as Record<string, Record<string, unknown>> | undefined)?.['rows'];
     expect(rows?.['maxItems']).toBe(REPORT_PAGE_ROWS);
-    expect(accepts('ReportPage', { rows: [], nextCursor: null })).toBe(true);
+    expect(accepts('ReportPage', { rows: [], unavailable: [], nextCursor: null })).toBe(true);
+    expect(accepts('ReportPage', { rows: [], unavailable: [{ runId: 'r', rootRunId: 'r' }], nextCursor: null })).toBe(true);
+    expect(accepts('ReportPage', { rows: [], nextCursor: null })).toBe(false);
     expect(accepts('ReportPage', { rows: [] })).toBe(false);
   });
 });
@@ -128,5 +138,11 @@ describe('protocol/src/trace-attributes.ts', () => {
       fallbackCauses: 'momonga.fallback_causes',
     });
     expect(ERROR_TYPE_ATTRIBUTE).toBe('error.type');
+  });
+});
+
+describe('decisions 54 and 57', () => {
+  it('draws 73 observations per rate denominator for the review sample', () => {
+    expect((protocol as Record<string, unknown>)['REVIEW_SAMPLE_SIZE']).toBe(73);
   });
 });

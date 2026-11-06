@@ -43,7 +43,7 @@ export type StackReadiness = { phase: SupervisorPhase; children: Readonly<Record
 
 export type StackTargetCapabilities = { readonly contextWindow: number; readonly maxOutputTokens: number };
 
-export type StackTarget = { readonly capabilities?: StackTargetCapabilities; readonly toolCalling?: 'native' | 'constrained' };
+export type StackTarget = { readonly capabilities?: StackTargetCapabilities; readonly toolCalling?: 'native' | 'constrained'; readonly answers?: 'model' | 'script' };
 
 export type StartStackOptions = {
   home: E2eHome;
@@ -162,6 +162,7 @@ export const settingsWithTarget = (settings: Readonly<Record<string, unknown>>, 
           ...primary,
           ...(target.capabilities === undefined ? {} : { capabilities: { ...target.capabilities } }),
           ...(target.toolCalling === undefined ? {} : { toolCalling: target.toolCalling }),
+          ...(target.answers === undefined ? {} : { answers: target.answers }),
         },
       },
     },

@@ -113,7 +113,7 @@ describe('a worker terminal is one operation: plan, await the preparer, commit',
 
     expect(await h.store.transition(claim, ['RUNNING'], 'COMPLETED')).toEqual({ kind: 'lease_lost' });
 
-    expect(typesOf(h.store, run.id).filter((type) => !before.includes(type))).toEqual([]);
+    expect(typesOf(h.store, run.id).filter((type) => !before.includes(type))).toEqual(['attempt.lost']);
     expect(contributionsOf(h.store, run.id)).toEqual([]);
     expect(mustRun(h.store, run.id)).toMatchObject({ status: 'RUNNING', leaseOwner: 'w2' });
   });

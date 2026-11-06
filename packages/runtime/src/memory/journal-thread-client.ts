@@ -1,6 +1,7 @@
 import { MessageChannel, Worker, receiveMessageOnPort } from 'node:worker_threads';
 import type { MessagePort } from 'node:worker_threads';
-import { JournalThreadError, blobDirectoryOf } from '@momonga/store';
+import type { RunCallView, RunFactsRecord, RunFactsView } from '@momonga/protocol';
+import { FactsRefusedError, JournalThreadError, blobDirectoryOf } from '@momonga/store';
 import type { ContributionMeasured, ContributionPreparer, EvidenceReply, FidelityReply, RecordedCheck, RecordedHash, ReflectionInputReply, VerdictFact, VerdictReply } from '@momonga/store';
 import { JOURNAL_THREAD_CODE } from './journal-thread-code.generated.ts';
 
@@ -23,10 +24,11 @@ export type JournalThreadClient = ContributionPreparer & {
   readonly identity: { readonly dev: number; readonly ino: number };
   request(request: { readonly kind: string } & Readonly<Record<string, unknown>>): Promise<JournalThreadReply>;
   ping(): Promise<{ readonly threadId: number }>;
+  runFacts(runId: string): Promise<RunFactsRecord>;
   close(): Promise<void>;
 };
 
-type Pending = { readonly resolve: (reply: JournalThreadReply) => void; readonly reject: (error: JournalThreadError) => void };
+type Pending = { readonly resolve: (reply: JournalThreadReply) => void; readonly reject: (error: Error) => void };
 
 type Live = {
   readonly worker: Worker;
@@ -109,6 +111,17 @@ const fidelityOf = (reply: JournalThreadReply): FidelityReply => {
   if (!Array.isArray(attested) || !attested.every((token) => typeof token === 'string')) throw new JournalThreadError('journal thread fidelity reply carries malformed attested tokens');
   if (!Array.isArray(unreadable) || !unreadable.every(isUnreadable)) throw new JournalThreadError('journal thread fidelity reply carries malformed unreadable blobs');
   return { lastSeq: lastSeqOf(reply, 'fidelity'), attested, unreadable };
+};
+
+const runFactsOf = (reply: JournalThreadReply, runId: string): RunFactsRecord => {
+  const { facts, calls } = reply;
+  if (!isRecord(facts) || facts['runId'] !== runId || typeof facts['definitionsVersion'] !== 'number' || !Array.isArray(facts['recoveries'])) {
+    throw new JournalThreadError(`journal thread runFacts reply carries malformed facts for run ${runId}`);
+  }
+  if (!Array.isArray(calls) || !calls.every((call) => isRecord(call) && call['runId'] === runId && typeof call['callId'] === 'string' && typeof call['asked'] === 'boolean')) {
+    throw new JournalThreadError(`journal thread runFacts reply carries malformed call rows for run ${runId}`);
+  }
+  return { facts: facts as RunFactsView, calls: calls as RunCallView[] };
 };
 
 export const startJournalThread = async (options: JournalThreadOptions): Promise<JournalThreadClient> => {
@@ -198,6 +211,10 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
     const cause = message['error'];
     const name = isRecord(cause) ? String(cause['name']) : 'Error';
     const text = isRecord(cause) ? String(cause['message']) : String(cause);
+    if (isRecord(cause) && cause['refusal'] === true) {
+      request.reject(new FactsRefusedError(text, { cause: { name, message: text } }));
+      return;
+    }
     request.reject(new JournalThreadError(`journal thread request failed: ${text}`, { cause: { name, message: text } }));
   };
 
@@ -297,6 +314,8 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
   const fidelity: JournalThreadClient['fidelity'] = async ({ runId, throughEventSeq, cwd, tokens }) =>
     fidelityOf(await request({ kind: 'fidelity', runId, throughEventSeq, cwd, tokens }));
 
+  const runFacts: JournalThreadClient['runFacts'] = async (runId) => runFactsOf(await request({ kind: 'runFacts', runId }), runId);
+
   const close = (): Promise<void> => {
     closePromise ??= (async () => {
       if (current !== null) fail(current, new JournalThreadError('journal thread client was closed'));
@@ -307,5 +326,5 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
   };
 
   await liveThread();
-  return { identity, request, ping, measure, verdict, evidence, reflectionInput, fidelity, close };
+  return { identity, request, ping, runFacts, measure, verdict, evidence, reflectionInput, fidelity, close };
 };

@@ -16,7 +16,7 @@ export const COMPLETION = [{ id: 'tests', command: 'npm test' }];
 
 export const started = (
   attempt: number,
-  options: { recovery?: { cause: 'worker_failure' | 'process_lost'; failedAt: number }; declared?: boolean; modelAlias?: string; mode?: PermissionMode; now?: number } = {},
+  options: { declared?: boolean; modelAlias?: string; mode?: PermissionMode; now?: number } = {},
 ): RunEventPayload =>
   ({
     type: 'run.started',
@@ -24,12 +24,13 @@ export const started = (
     now: options.now ?? T0,
     pins: { modelAlias: options.modelAlias ?? 'fm', ...(options.declared === true ? { mandate: { completion: COMPLETION } } : {}) },
     ...(options.mode === undefined ? {} : { mode: options.mode }),
-    ...(options.recovery === undefined ? {} : { recovery: options.recovery }),
   }) as RunEventPayload;
 
 export const status = (from: RunStatus, to: RunStatus): RunEventPayload => ({ type: 'run.status', from, to });
 
 export const attemptFailed = (attempt: number, code: string): RunEventPayload => ({ type: 'attempt.failed', attempt, code }) as unknown as RunEventPayload;
+
+export const attemptLost = (lastLiveAt: number): RunEventPayload => ({ type: 'attempt.lost', lastLiveAt }) as unknown as RunEventPayload;
 
 export const toolCall = (callId: string, sideEffect: SideEffect): RunEventPayload => ({
   type: 'tool.call',
@@ -54,6 +55,9 @@ export const reconciled = (callId: string, outcome: 'already_applied' | 'not_app
 });
 
 export const modelRequested = (step: number): RunEventPayload => ({ type: 'model.requested', step, attempt: 1, digest: 'd'.repeat(64), body: {} });
+
+export const modelResponded = (step: number): RunEventPayload =>
+  ({ type: 'model.responded', step, attempt: 1, response: { status: 'completed', output: [], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } }) as unknown as RunEventPayload;
 
 export const permissionRequested = (callId: string): RunEventPayload => ({
   type: 'tool.permission.requested',
