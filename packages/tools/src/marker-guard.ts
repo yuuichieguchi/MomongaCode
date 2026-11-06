@@ -43,7 +43,7 @@ export type MarkerGuardOptions = {
   uninspectable?: UninspectableRegistry;
 };
 
-export type MarkerGuard = { check(signal: AbortSignal): Promise<string | undefined> };
+export type MarkerGuard = { check(signal: AbortSignal, except: string): Promise<string | undefined> };
 
 export const createMarkerGuard = (guardOptions: MarkerGuardOptions): MarkerGuard => {
   const { markerDir, owners, inspector, kill, timing, killGraceMs, uninspectable, onWarning } = guardOptions;
@@ -107,8 +107,8 @@ export const createMarkerGuard = (guardOptions: MarkerGuardOptions): MarkerGuard
   };
 
   return {
-    check: async (signal) => {
-      for (const name of await unsettledKeys(markerDir, owners)) {
+    check: async (signal, except) => {
+      for (const name of (await unsettledKeys(markerDir, owners)).filter((candidate) => candidate !== except)) {
         const refusal = await settleKey(name, signal);
         if (refusal !== undefined) return refusal;
       }

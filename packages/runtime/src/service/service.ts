@@ -2,6 +2,8 @@ import http from 'node:http';
 import path from 'node:path';
 import { getRequestListener } from '@hono/node-server';
 import { canonicalPath, comparableContains, listenUnix } from '@momonga/foundation';
+import { createMarkerOwners } from '@momonga/tools';
+import type { MarkerOwners } from '@momonga/tools';
 import type { Clock, Redactor } from '@momonga/foundation';
 import type { Capabilities, CostBreakdownView, GatewayCostReportView, RunTraceView } from '@momonga/protocol';
 import { isFatalStoreError } from '@momonga/store';
@@ -27,6 +29,7 @@ const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
 const TWO_MIB = 2 * 1024 * 1024;
 
 export type RunServiceOptions = {
+  markerOwners?: MarkerOwners;
   store: RuntimeStore;
   clock: Clock;
   redactor: Redactor;
@@ -124,6 +127,7 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     runCost: options.runCost,
     runCostBreakdown: options.runCostBreakdown,
     mcp: options.mcp,
+    markerOwners: options.markerOwners ?? createMarkerOwners(),
     onError: report,
   });
 

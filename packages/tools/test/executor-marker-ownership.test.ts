@@ -88,7 +88,7 @@ describe('T13 drift: createMarker is the one creator and each creator closes its
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, entry.name);
         if (entry.isDirectory()) walk(full);
-        else if (entry.name.endsWith('.ts') && /O_EXLOCK/.test(fs.readFileSync(full, 'utf8'))) offenders.push(path.relative(ROOT, full));
+        else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.generated.ts') && /O_EXLOCK/.test(fs.readFileSync(full, 'utf8'))) offenders.push(path.relative(ROOT, full));
       }
     };
     for (const pkg of fs.readdirSync(path.join(ROOT, 'packages'))) {

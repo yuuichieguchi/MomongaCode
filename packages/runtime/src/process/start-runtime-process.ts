@@ -572,6 +572,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             fetchPage: (runIds, cursor, limit) => gatewayClient.billedCalls(runIds, cursor, limit, includeRunless, signal),
           }),
         mcp: toolRuntime.mcpAdmin,
+        markerOwners: toolRuntime.owners,
         onError: (error) => logger.error('service error', { err: asError(error) }),
         onFatal: latchFatal,
       }),

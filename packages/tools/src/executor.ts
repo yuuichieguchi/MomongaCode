@@ -1202,11 +1202,6 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           }
         }
         if (scope.abortReason() !== undefined) return failedOutcome(callId, `${tool.name} was cancelled`);
-        if (tool.sideEffect !== 'read_only') {
-          const refusal = await guard.check(scope.controller.signal);
-          if (scope.abortReason() !== undefined) return failedOutcome(callId, `${tool.name} was cancelled`);
-          if (refusal !== undefined) return failedOutcome(callId, refusal);
-        }
         const begun = scope.ledger.begin(key, {
           expiresAt: clock.now() + ttlMs,
           meta: {
@@ -1229,6 +1224,11 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         await batch.outputFit.ready?.();
         if ((await scope.holdCall()) === 'aborted') return failedOutcome(callId, `${tool.name} was cancelled`);
         if (!scope.holding(scope.ledger.authorise(key))) return scope.deferred;
+        if (tool.sideEffect !== 'read_only') {
+          const refusal = await guard.check(scope.controller.signal, key);
+          if (scope.abortReason() !== undefined) return failedOutcome(callId, `${tool.name} was cancelled`);
+          if (refusal !== undefined) return scope.complete({ status: 'failed', output: refusal });
+        }
         const marker = tool.sideEffect === 'exec' ? await scope.openMarker() : undefined;
         try {
           return await executeWithMarker(marker, reconciled, resume);
