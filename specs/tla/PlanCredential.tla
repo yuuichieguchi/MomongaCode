@@ -264,7 +264,9 @@ Toks == 0..MaxTok
 Gens == 0..(MaxTok + 3)
 
 TerminalCodes == {"refresh_token_reused", "refresh_token_invalidated", "invalid_grant"}
-Causes == TerminalCodes \cup {"refresh_interrupted", "transient", None}
+Flags == {"interrupted"}
+EvidenceOnlyCauses == {"refresh_interrupted", "transient"}
+Causes == TerminalCodes \cup EvidenceOnlyCauses \cup {None}
 AcctStates == {"active", "needs_sign_in", "signing_out", "registered", "store_unreadable"}
 
 VARIABLES
