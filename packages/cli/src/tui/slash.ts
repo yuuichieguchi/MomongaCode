@@ -10,6 +10,10 @@ export type AutoModePort = {
   status(options: AutoModeStatusOptions, write: (text: string) => void): Promise<AutoModeStatusOutcome>;
 };
 
+export type ShellPort = {
+  run(argv: readonly string[], io: { write(text: string): void; signal: AbortSignal }): Promise<number>;
+};
+
 export type SlashContext = ModeAvailability & {
   readonly mode: PermissionMode;
   readonly modelAlias: string;
@@ -23,6 +27,7 @@ export type SlashContext = ModeAvailability & {
   setModel(modelAlias: string): Promise<void>;
   background<T>(label: string, work: (signal: AbortSignal) => Promise<T>): Promise<T>;
   readonly autoMode: AutoModePort;
+  readonly shell: ShellPort;
 };
 
 export type SlashCommand = {
