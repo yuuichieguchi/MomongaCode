@@ -112,17 +112,27 @@ describe('install: the compare-and-write of the full record (I-C8 IdentityPinned
     expect((await planError(h.sessions.authSource({ profile: PROFILE_ID, account: 'work' }).read(new AbortController().signal))).code).toBe('plan_use_not_enabled');
   });
 
-  it.each([
-    ['expires_in equal to M', { expires_in: 121 }],
-    ['no refresh token with offline_access granted', { refresh_token: undefined }],
-  ])('a token response with %s is a protocol error and installs nothing', async (_name, change) => {
+  it('a token response with no refresh token while offline_access is granted is a protocol error and installs nothing', async () => {
     const h = await harness();
     const signIn = await signInAtFake(h);
     await h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId });
     const before = await rawRecord(h, 'work');
-    await expect(installOf(h, 'work', signIn, { tokens: { ...signIn.tokens, ...change } as typeof signIn.tokens })).rejects.toThrow();
+    await expect(installOf(h, 'work', signIn, { tokens: { ...signIn.tokens, refresh_token: undefined } as unknown as typeof signIn.tokens })).rejects.toThrow();
     expect(await rawRecord(h, 'work')).toBe(before);
     expect(await activeFile(h)).toBeUndefined();
+  });
+
+  it.each([
+    ['equal to M', 121],
+    ['below M', 30],
+    ['of one second', 1],
+  ])('a well-formed token response with expires_in %s is installed', async (_name, seconds) => {
+    const h = await harness();
+    const signIn = await signInAtFake(h);
+    await h.sessions.register({ profile: PROFILE_ID, account: 'work', clientId: signIn.clientId, hostId: signIn.hostId });
+    expect(await installOf(h, 'work', signIn, { tokens: { ...signIn.tokens, expires_in: seconds } })).toMatchObject({ outcome: 'signed_in' });
+    expect(await readRecord(h, 'work')).toMatchObject({ state: 'active', access_token: signIn.tokens.access_token, refresh_token: signIn.tokens.refresh_token });
+    expect(JSON.parse((await activeFile(h)) ?? '{}')).toEqual({ [PROFILE_ID]: 'work' });
   });
 
   it('a new install of a paused account ends the pause', async () => {
