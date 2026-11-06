@@ -15,20 +15,23 @@ export type SecretProcessResult = { exitCode: number; stdout: string; stderr: st
 
 export type SecretProcessPort = (file: string, args: readonly string[], stdin: string, signal: AbortSignal) => Promise<SecretProcessResult>;
 
-export type SecretBackend = { label: string; storeCommand(secretName: string): string };
+export type SecretBackend = { label: string; childEnvNames: readonly string[]; storeCommand(secretName: string): string };
 
 export const KEYCHAIN_BACKEND: SecretBackend = {
   label: 'Keychain',
+  childEnvNames: [],
   storeCommand: (secretName) => `security add-generic-password -s ${KEYCHAIN_SERVICE} -a ${secretName} -w`,
 };
 
 export const SECRET_SERVICE_BACKEND: SecretBackend = {
   label: 'Secret Service',
+  childEnvNames: ['DBUS_SESSION_BUS_ADDRESS'],
   storeCommand: (secretName) => `secret-tool store --label=${KEYCHAIN_SERVICE} service ${KEYCHAIN_SERVICE} account ${secretName}`,
 };
 
 export const CREDENTIAL_MANAGER_BACKEND: SecretBackend = {
   label: 'Credential Manager',
+  childEnvNames: ['SystemRoot'],
   storeCommand: (secretName) => `cmdkey /generic:${KEYCHAIN_SERVICE}/${secretName} /user:${KEYCHAIN_SERVICE} /pass`,
 };
 
@@ -212,22 +215,43 @@ export const createCredentialManagerStore = (run: SecretProcessPort, powershell:
     }),
   });
 
-const chooseSecretStore = (run: SecretProcessPort, env: Readonly<Record<string, string | undefined>>): SecretStore => {
+type SecretEnv = Readonly<Record<string, string | undefined>>;
+
+type ChosenSecretStore = { kind: 'chosen'; backend: SecretBackend; create(run: SecretProcessPort): SecretStore } | { kind: 'none'; reason: string };
+
+const chooseSecretBackend = (env: SecretEnv): ChosenSecretStore => {
   const security = findProgramOnPath('security', env);
-  if (security !== undefined) return createKeychainSecretStore(run, security);
+  if (security !== undefined) return { kind: 'chosen', backend: KEYCHAIN_BACKEND, create: (run) => createKeychainSecretStore(run, security) };
   const secretTool = findProgramOnPath('secret-tool', env);
   const busAddress = env['DBUS_SESSION_BUS_ADDRESS'];
   const hasSession = busAddress !== undefined && busAddress !== '';
-  if (secretTool !== undefined && hasSession) return createSecretServiceStore(run, secretTool);
-  if (findProgramOnPath('cmdkey', env) !== undefined) return createCredentialManagerStore(run, { file: powershellPath(env), args: powershellArgs });
+  if (secretTool !== undefined && hasSession) return { kind: 'chosen', backend: SECRET_SERVICE_BACKEND, create: (run) => createSecretServiceStore(run, secretTool) };
+  if (findProgramOnPath('cmdkey', env) !== undefined) {
+    return { kind: 'chosen', backend: CREDENTIAL_MANAGER_BACKEND, create: (run) => createCredentialManagerStore(run, { file: powershellPath(env), args: powershellArgs }) };
+  }
   const secretServiceState =
     secretTool === undefined ? 'secret-tool (Secret Service) is not on PATH' : `secret-tool (Secret Service) is on PATH at ${secretTool}, but no D-Bus session is set (DBUS_SESSION_BUS_ADDRESS is empty)`;
-  throw new Error(
-    `no secret store was found on this host: security (Keychain) is not on PATH; ${secretServiceState}; cmdkey (Credential Manager) is not on PATH`,
-  );
+  return { kind: 'none', reason: `no secret store was found on this host: security (Keychain) is not on PATH; ${secretServiceState}; cmdkey (Credential Manager) is not on PATH` };
+};
+
+export const secretStoreChildEnv = (env: SecretEnv): Record<string, string> => {
+  const result: Record<string, string> = {};
+  const chosen = chooseSecretBackend(env);
+  if (chosen.kind === 'none') return result;
+  for (const name of chosen.backend.childEnvNames) {
+    const value = env[name];
+    if (value !== undefined) result[name] = value;
+  }
+  return result;
+};
+
+const storeFor = (run: SecretProcessPort, env: SecretEnv): SecretStore => {
+  const chosen = chooseSecretBackend(env);
+  if (chosen.kind === 'none') throw new Error(chosen.reason);
+  return chosen.create(run);
 };
 
 export const createPlatformSecretStore = (run: SecretProcessPort, env: Readonly<Record<string, string | undefined>>): SecretStore => ({
-  read: async (name, signal) => chooseSecretStore(run, env).read(name, signal),
-  write: async (name, value, signal) => chooseSecretStore(run, env).write(name, value, signal),
+  read: async (name, signal) => storeFor(run, env).read(name, signal),
+  write: async (name, value, signal) => storeFor(run, env).write(name, value, signal),
 });

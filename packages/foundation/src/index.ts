@@ -94,6 +94,7 @@ export {
   keychainWriteCommand,
   credentialWriteScript,
   createPlatformSecretStore,
+  secretStoreChildEnv,
   createSecretServiceStore,
   createCredentialManagerStore,
   credentialReadScript,

@@ -7,6 +7,7 @@ import {
   announceReady,
   createJsonLogger,
   createPlatformSecretStore,
+  secretStoreChildEnv,
   EntryUsageError,
   ensureMomongaDirs,
   minimalChildEnv,
@@ -526,7 +527,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const counters: Record<string, string> = {};
     const referencedSecrets = secretNames(settings);
     const secretStore =
-      options.secretStore ?? createPlatformSecretStore(options.execWithStdin ?? createExecWithStdin(childEnv), childEnv);
+      options.secretStore ?? createPlatformSecretStore(options.execWithStdin ?? createExecWithStdin({ ...childEnv, ...secretStoreChildEnv(options.env) }), options.env);
     const secretResolver = createSecretResolver(secretStore);
     const secretFailures = await warmSecrets(secretResolver, referencedSecrets, signal ?? new AbortController().signal);
     for (const [name, failure] of secretFailures) logger.warn(`secret ${name} is unavailable: ${failure.message}`);
