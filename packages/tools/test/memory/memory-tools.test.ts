@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MemoryView } from '@momonga/protocol';
-import { MEMORY_SAVE_TOOL_NAME, MEMORY_SEARCH_RESULT_LIMIT, MEMORY_SEARCH_TOOL_NAME, MEMORY_TEXT_MAX_CHARS, createMemoryTools } from '@momonga/tools';
+import { MEMORY_SAVE_TOOL_NAME, MEMORY_SEARCH_RESULT_LIMIT, MEMORY_SEARCH_TOOL_NAME, MEMORY_TEXT_MAX_CHARS, createMemoryTools, memoryTextProblem } from '@momonga/tools';
 import type { MemoryStorePort, MemorySaveRequest } from '@momonga/tools';
 import { call, makeHarness, toolSetOf } from '../harness.ts';
 import { keyFor } from '../helpers.ts';
@@ -267,5 +267,15 @@ describe('MemorySearch with include all', () => {
     const output = outcome?.kind === 'result' ? outcome.result.output : '';
     expect(output).toContain('validity verified observed 2026-11-02T00:00:00.000Z to 2026-11-04T00:00:00.000Z; stale observed 2026-11-04T00:00:00.000Z to 2026-11-06T00:00:00.000Z (successor)');
     expect(outcome?.kind === 'result' ? outcome.result.memories : undefined).toEqual(['mem-old']);
+  });
+});
+
+describe('memoryTextProblem', () => {
+  it.each(['Section breaks use ***', 'C declares a triple pointer as char ***argv', 'Markdown ***bold italic*** is allowed'])('accepts the ordinary memory %j', (text) => {
+    expect(memoryTextProblem(text)).toBeUndefined();
+  });
+
+  it.each([FAKE_KEY, 'the key is sk-proj-****…5hQA', 'password=Sup3rS3cretValue99'])('refuses the memory %j as a credential', (text) => {
+    expect(memoryTextProblem(text)?.code).toBe('credential');
   });
 });

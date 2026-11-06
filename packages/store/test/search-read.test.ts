@@ -65,6 +65,21 @@ describe('reading a recorded range', () => {
     expect(text).toContain('[REDACTED]');
   });
 
+  it('redacts a credential field inside JSON text held in a recorded string', async () => {
+    const password = 'Hunter2Hunter2Hunter2';
+    const { store } = harness();
+    const { run, claim, finish } = openRun(store, '/work/a', 'task');
+    const events: RunEventPayload[] = [
+      { type: 'tool.call', callId: 'c1', providerCallId: 'c1', name: 'Bash', kind: 'execute', title: 'cat config', rawInput: { command: 'cat config' } },
+      { type: 'tool.completed', callId: 'c1', status: 'completed', output: JSON.stringify({ password }) },
+    ];
+    store.append(claim, events);
+    await finish();
+    const text = JSON.stringify(okPage(read(store, OWN, { runId: run.id })).events);
+    expect(text).not.toContain(password);
+    expect(text).toContain('[REDACTED]');
+  });
+
   it('keeps the handle of a large output, so the tool can point to it', async () => {
     const { store } = harness();
     const run = await finishedRun(store, '/work/a', 'task', [{ tool: { name: 'Read', path: '/work/a/big', output: 'head', handle: 'blob-handle-1' } }]);

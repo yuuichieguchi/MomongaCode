@@ -1,6 +1,7 @@
 import type { CommandRunner, SyncCommandRunner } from './command-runner.ts';
 import { failureOfError, probeFailed } from './inspector-types.ts';
 import type { ProbeFailure, ProbeResult, ProcessInspector } from './inspector-types.ts';
+import type { GroupLedger } from './windows-parsers.ts';
 import { groupMembers, groupOfPid, parsePidList, parseProcessTable, parseStartTimeMs } from './windows-parsers.ts';
 import { PROCESS_TABLE_SCRIPT, holdersScript, powershellArgs, powershellPath, startTimeScript, taskkillPath } from './windows-scripts.ts';
 
@@ -81,11 +82,16 @@ export type GroupControl = {
 };
 
 export const createWindowsGroupControl = ({ run, env, timeoutMs = WINDOWS_PROBE_TIMEOUT_MS }: WindowsGroupPorts): GroupControl => {
+  const ledgers = new Map<number, GroupLedger>();
   const members = (root: number): number[] => {
     const result = run(powershellPath(env), powershellArgs(PROCESS_TABLE_SCRIPT), { env: probeEnv(env), timeoutMs });
     if (result.exitCode !== 0) throw new Error(`powershell exited with ${result.exitCode}: ${result.stderr.trim()}`);
     const rows = parseProcessTable(result.stdout);
-    return groupMembers(rows, root);
+    const ledger = ledgers.get(root) ?? new Map();
+    ledgers.set(root, ledger);
+    const found = groupMembers(rows, root, ledger);
+    if (found.length === 0) ledgers.delete(root);
+    return found;
   };
   return {
     members,
