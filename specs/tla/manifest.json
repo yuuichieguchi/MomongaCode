@@ -1712,6 +1712,20 @@
       "budgetCpuSeconds": 7
     },
     {
+      "config": "ProcessStop.groupProofWithoutStartTime",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoSignalToUnprovedGroup",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 694,
+      "measuredSeconds": 2.2,
+      "measuredCpuSeconds": 2.12,
+      "budgetCpuSeconds": 8
+    },
+    {
       "config": "ProcessStop.rowlessIsOutside",
       "role": "evidence",
       "expect": {

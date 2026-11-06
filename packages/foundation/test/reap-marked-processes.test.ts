@@ -324,7 +324,7 @@ describe('reapMarkedProcesses', () => {
       const warnings: string[] = [];
       const result = await reapMarkedProcesses({ marker, pgid: pid, killGraceMs: 200, label: 'mcp', onWarning: (m) => warnings.push(m), kill, timing });
       expect(result).toEqual({ removed: true });
-      expect(warnings).toContain(`mcp marker ${marker}: process ${pid} dropped the marker but is still alive, so it was left alone`);
+      expect(warnings).toContain(`mcp marker ${marker}: process ${pid} is still alive but could not be verified as belonging to this call, so it was left alone`);
       expect(alive(pid)).toBe(true);
     });
 
@@ -1041,7 +1041,7 @@ describe('a target is signalled only when its start time read at the listing rea
     const marker = markerFile(withTempDir(context));
     const world = processTable({ 100: { pgid: 100, holdsMarker: true, ignoresTerm: false, startUnreadable: true } }, {});
     const result = await reconcileProcessGroup({ pgid: 100, marker }, { killGraceMs: 1000, kill: world.kill, timing: fakeTiming().timing, inspector: world.inspector });
-    expect(world.signals.filter(({ signal }) => signal !== 0)).toEqual([]);
+    expect(world.signals).toEqual([]);
     expect(result.leftAlonePids).toEqual([100]);
   });
 

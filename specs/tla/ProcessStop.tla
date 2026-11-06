@@ -3,7 +3,7 @@ EXTENDS Naturals, FiniteSets
 
 CONSTANTS Members, Events, MaxAttempts, Variant
 
-ASSUME Variant \in {"decided", "noIdentityCheck", "termToReused", "signalUnlistedGroup", "throwOnSurvivor", "dropMarkerOnUnconfirmed", "signalUnprovedHolder", "killWithoutReproof", "retryReusesProof", "retryAnyEvent", "rowlessIsOutside"}
+ASSUME Variant \in {"decided", "noIdentityCheck", "termToReused", "signalUnlistedGroup", "throwOnSurvivor", "dropMarkerOnUnconfirmed", "signalUnprovedHolder", "killWithoutReproof", "retryReusesProof", "retryAnyEvent", "rowlessIsOutside", "groupProofWithoutStartTime"}
 ASSUME MaxAttempts \in Nat \ {0}
 ASSUME Events # {}
 
@@ -72,14 +72,18 @@ ListedHolderInGroup == \E m \in Members : listed[m] /\ inGroup[m] /\ state[m] # 
 
 Proved == mode = "live" \/ ListedHolderInGroup
 
+ReusedHolderInGroup == \E m \in Members : listed[m] /\ inGroup[m] /\ swapped[m]
+
 GateTerm ==
     CASE Variant \in {"noIdentityCheck", "termToReused"} -> TRUE
       [] Variant = "signalUnlistedGroup" -> Proved \/ (GroupOurs # {} /\ ~other)
+      [] Variant = "groupProofWithoutStartTime" -> Proved \/ ReusedHolderInGroup
       [] OTHER -> Proved
 
 GateKill ==
     CASE Variant = "noIdentityCheck" -> TRUE
       [] Variant = "signalUnlistedGroup" -> Proved \/ (GroupOurs # {} /\ ~other)
+      [] Variant = "groupProofWithoutStartTime" -> Proved \/ ReusedHolderInGroup
       [] OTHER -> Proved
 
 KeepOnUnconfirmed == Variant # "dropMarkerOnUnconfirmed"
