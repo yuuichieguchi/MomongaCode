@@ -54,6 +54,7 @@ export const killGroup = (pgid: number): void => {
   try {
     process.kill(-pgid, 'SIGKILL');
   } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return;
     if (liveMembersOf(pgid).length > 0) throw error;
   }
 };
