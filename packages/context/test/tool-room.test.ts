@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PinnedOverflowError, buildContext, inputCeilingFor, MIN_ROOM_TOKENS } from '@momonga/context';
-import type { FitRankedFunctionTool, FunctionTool } from '@momonga/protocol';
+import type { FunctionTool } from '@momonga/protocol';
 import { capabilitiesFor, harness, inputFor, sourcesWith, tokensOfTools } from './helpers.ts';
 
 const toolNamed = (name: string, descriptionChars: number): FunctionTool => ({
@@ -10,7 +10,7 @@ const toolNamed = (name: string, descriptionChars: number): FunctionTool => ({
   parameters: { type: 'object', properties: {} },
 });
 
-const ranked = (tool: FunctionTool, fitRank: number): FitRankedFunctionTool => ({ ...tool, fitRank });
+const ranked = (tool: FunctionTool, fitRank: number): FunctionTool & { fitRank: number } => ({ ...tool, fitRank });
 
 const TOOLS = ['A', 'B', 'C', 'D', 'E', 'F'].map((name) => toolNamed(name, 800));
 

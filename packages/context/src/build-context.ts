@@ -124,13 +124,20 @@ export const maxInputFor = ({ ceiling, inputBudget, errorBoundAt }: MaxInputBoun
   return low;
 };
 
-type RankedCandidates = { tools: FunctionTool[]; rankOf: ReadonlyMap<string, number> };
+const groupedByTier = (names: readonly string[], tiers: readonly (string | undefined)[]): string[] => {
+  const groups = new Map<string | undefined, string[]>();
+  names.forEach((name, index) => groups.set(tiers[index], [...(groups.get(tiers[index]) ?? []), name]));
+  return [...groups].map(([tier, members]) => (tier === undefined ? members.join(', ') : `${tier}: ${members.join(', ')}`));
+};
+
+type RankedCandidates = { tools: FunctionTool[]; rankOf: ReadonlyMap<string, number>; tierOf: ReadonlyMap<string, string> };
 
 const rankedCandidatesOf = (input: BuildContextInput): RankedCandidates => {
   const rankOf = new Map<string, number>();
+  const tierOf = new Map<string, string>();
   const takenBy = new Map<number, string>();
   const tools = (input.tools === 'none' ? [] : input.sources.tools).map((candidate) => {
-    const { fitRank, ...definition } = candidate as FunctionTool & { fitRank?: unknown };
+    const { fitRank, fitTier, ...definition } = candidate as FunctionTool & { fitRank?: unknown; fitTier?: unknown };
     const { name } = definition;
     const rank = fitRank;
     if (typeof rank !== 'number' || !Number.isInteger(rank)) throw new Error(`tool ${JSON.stringify(name)} has no fitRank`);
@@ -138,9 +145,10 @@ const rankedCandidatesOf = (input: BuildContextInput): RankedCandidates => {
     if (holder !== undefined) throw new Error(`tools ${JSON.stringify(holder)} and ${JSON.stringify(name)} have the same fitRank ${rank}`);
     takenBy.set(rank, name);
     rankOf.set(name, rank);
+    if (typeof fitTier === 'string') tierOf.set(name, fitTier);
     return definition;
   });
-  return { tools, rankOf };
+  return { tools, rankOf, tierOf };
 };
 
 const requiredToolsOf = (input: BuildContextInput, candidates: readonly FunctionTool[]): FunctionTool[] => {
@@ -205,7 +213,7 @@ const ceilingTokensOf = (input: BuildContextInput, counted: MeterCount): number 
 
 const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContextPorts): Promise<Head> => {
   const { capabilities, sources } = input;
-  const { tools: candidates, rankOf } = rankedCandidatesOf(input);
+  const { tools: candidates, rankOf, tierOf } = rankedCandidatesOf(input);
   const discovered = await discoverInstructions({
     reader: suppliedPorts.instructions,
     home: input.home,
@@ -266,15 +274,21 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
     const required = requiredToolsOf(input, eligible);
     const kept: FunctionTool[] = [...required];
     const droppedForRoom: string[] = [];
+    const droppedTiers: (string | undefined)[] = [];
     for (const tool of inFitOrder) {
       if (required.includes(tool)) continue;
-      if (!standsWith(tool, kept)) droppedForRoom.push(`${tool.name} (with ${hostOf[tool.name]})`);
-      else if (await stableFitsFloor([...kept, tool])) kept.push(tool);
-      else droppedForRoom.push(tool.name);
+      if (!standsWith(tool, kept)) {
+        droppedForRoom.push(`${tool.name} (with ${hostOf[tool.name]})`);
+        droppedTiers.push(tierOf.get(tool.name));
+      } else if (await stableFitsFloor([...kept, tool])) kept.push(tool);
+      else {
+        droppedForRoom.push(tool.name);
+        droppedTiers.push(tierOf.get(tool.name));
+      }
     }
     if (kept.length > 0 || (await stableFitsFloor(kept))) {
       tools = inFitOrder.filter((tool) => kept.includes(tool));
-      leftOut = droppedForRoom;
+      leftOut = groupedByTier(droppedForRoom, droppedTiers);
     }
   }
   const { fits } = metering(input, toolPorts, tools);
@@ -282,7 +296,7 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
   if (leftOut.length > 0) {
     notices.push({
       code: 'tools_dropped',
-      message: `Tools ${leftOut.join(', ')} were left out because the declared context window leaves no room for them`,
+      message: `Tools ${leftOut.join('; ')} were left out because the declared context window leaves no room for them`,
     });
   }
   const evaluate = async (layerItems: InputItem[]): Promise<Evaluation> => {

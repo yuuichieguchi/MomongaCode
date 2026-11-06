@@ -46,6 +46,8 @@ const toolSetOf = async (specs: readonly Spec[], only?: readonly string[]): Prom
 
 const namesOf = (tools: readonly FunctionTool[]): string[] => tools.map((tool) => tool.name);
 
+const withoutLoader = (tools: readonly FunctionTool[]): FunctionTool[] => tools.filter((tool) => tool.name !== LOAD_TOOLS_TOOL_NAME);
+
 const loaderOf = (tools: readonly FunctionTool[]): FunctionTool | undefined => tools.find((tool) => tool.name === LOAD_TOOLS_TOOL_NAME);
 
 const enumOf = (loader: FunctionTool | undefined): unknown => {
@@ -75,7 +77,7 @@ describe('the offer without deferral', () => {
 
     const offer = offerFor({ toolSet, visible, deferred: [], loaded: [], keepCompanionsWithoutHost: false, required: new Set<string>() });
 
-    expect(offer.tools).toEqual(visible);
+    expect(offer.tools).toEqual(withoutLoader(visible));
     expect(offer.catalog).toEqual([]);
   });
 });
@@ -150,7 +152,7 @@ describe('what is never deferred (5.4)', () => {
 
     const offer = offerFor({ toolSet, visible, deferred: ['ReadOutput'], loaded: [], keepCompanionsWithoutHost: false, required: new Set<string>() });
 
-    expect(namesOf(offer.tools)).toEqual(namesOf(visible));
+    expect(namesOf(offer.tools)).toEqual(namesOf(withoutLoader(visible)));
     expect(offer.catalog).toEqual([]);
   });
 
@@ -222,7 +224,7 @@ describe('T3-3 for child runs, by exhaustive enumeration', () => {
         const toolSet = await toolSetOf(UNIVERSE, agentTools);
         for (const mode of MODES) {
           const visible = toolSet.forModel({ mode, rules: [] });
-          const visibleNames = new Set(namesOf(visible));
+          const visibleNames = new Set(namesOf(withoutLoader(visible)));
           const expectedCatalog = sorted(parentDeferred.filter((name) => visibleNames.has(name) && !ESSENTIAL.has(name)));
           for (const loaded of subsetsOf(NAMES)) {
             const offer = offerFor({ toolSet, visible, deferred: sorted(parentDeferred), loaded, keepCompanionsWithoutHost: false, required: new Set<string>() });

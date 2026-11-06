@@ -2,7 +2,7 @@ import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { modelVisibleTools } from '@momonga/policy';
 import type { PermissionRule } from '@momonga/policy';
 import { MAX_TOOL_NAME_CHARS } from '@momonga/protocol';
-import type { FitRankedFunctionTool, FunctionTool, PermissionMode, ReferenceKind } from '@momonga/protocol';
+import type { FitRankedFunctionTool, PermissionMode, ReferenceKind } from '@momonga/protocol';
 import { compileToolSchemas } from './validate.ts';
 import { TOOL_TIERS } from './types.ts';
 import type { AnyTool } from './types.ts';
@@ -30,7 +30,6 @@ export type ToolSet = {
   readonly companions: ReadonlyMap<string, string>;
   readerOf(kind: ReferenceKind): string | undefined;
   forModel(options: { mode: PermissionMode; rules: PermissionRule[]; conciseDescriptions?: boolean }): FitRankedFunctionTool[];
-  withFitRank(definition: FunctionTool): FitRankedFunctionTool;
 };
 
 export type ToolRegistry = {
@@ -113,20 +112,14 @@ const comparePlacements = (left: PlacedTool, right: PlacedTool): number => {
   return left.chain.length - right.chain.length;
 };
 
-const inFitOrder = (tools: readonly AnyTool[]): AnyTool[] =>
-  placementsOf(tools)
-    .sort(comparePlacements)
-    .map(({ tool }) => tool);
+const placedInFitOrder = (tools: readonly AnyTool[]): PlacedTool[] => placementsOf(tools).sort(comparePlacements);
 
 const buildToolSet = (tools: readonly AnyTool[], notices: readonly string[], authorizationRequired: readonly string[]): ToolSet => {
-  const frozenTools = Object.freeze(inFitOrder(tools));
+  const placed = placedInFitOrder(tools);
+  const frozenTools = Object.freeze(placed.map(({ tool }) => tool));
+  const tierOf = new Map(placed.map(({ tool, tier }) => [tool.name, TOOL_TIERS[tier]!]));
   const frozenNotices = Object.freeze([...notices]);
   const byName = new Map(frozenTools.map((tool) => [tool.name, tool]));
-  const withFitRank = (definition: FunctionTool): FitRankedFunctionTool => {
-    const index = frozenTools.findIndex((tool) => tool.name === definition.name);
-    if (index < 0) throw new Error(`tool ${JSON.stringify(definition.name)} is not in the tool set, so it has no fitRank`);
-    return { ...definition, fitRank: index };
-  };
   return {
     digest: digestOf(frozenTools),
     tools: frozenTools,
@@ -135,21 +128,22 @@ const buildToolSet = (tools: readonly AnyTool[], notices: readonly string[], aut
     get: (name) => byName.get(name),
     readerOf: (kind) => frozenTools.find((tool) => tool.reads === kind)?.name,
     companions: new Map(frozenTools.flatMap((tool) => (tool.companionOf === undefined ? [] : [[tool.name, tool.companionOf] as const]))),
-    withFitRank,
     forModel: ({ mode, rules, conciseDescriptions }) => {
       const visible = new Set(modelVisibleTools([...frozenTools], { mode, rules }).map((tool) => tool.name));
       const concise = conciseDescriptions === true;
       return frozenTools
         .filter((tool) => visible.has(tool.name))
-        .map((tool) => {
+        .map((tool, index) => {
           const useConcise = concise && hasConciseVariant(tool);
-          return withFitRank({
+          return {
             type: 'function',
             name: tool.name,
             description: useConcise ? conciseDescriptionOf(tool) : tool.description,
             parameters: useConcise ? conciseSchemaOf(tool) : tool.inputSchema,
             strict: false,
-          });
+            fitRank: index,
+            fitTier: tierOf.get(tool.name)!,
+          };
         });
     },
   };
@@ -159,7 +153,7 @@ export const extendToolSet = (toolSet: ToolSet, tool: AnyTool): ToolSet => {
   if (toolSet.get(tool.name) !== undefined) throw new Error(`duplicate tool name ${JSON.stringify(tool.name)}`);
   assertRegistrable(tool);
   const rebuilt = buildToolSet([...toolSet.tools, tool], toolSet.notices, toolSet.authorizationRequired);
-  return { ...rebuilt, digest: toolSet.digest, forModel: (options) => toolSet.forModel(options).map(rebuilt.withFitRank) };
+  return { ...rebuilt, digest: toolSet.digest };
 };
 
 export const createToolRegistry = (): ToolRegistry => {

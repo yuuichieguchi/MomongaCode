@@ -200,9 +200,9 @@ describe('ToolSet forModel', () => {
     const set = await build();
     const read = set.get('Read');
     expect(set.forModel({ mode: 'default', rules: [] })).toEqual([
-      { type: 'function', name: 'Bash', description: 'Bash test tool', parameters: set.get('Bash')?.inputSchema, strict: false, fitRank: 0 },
-      { type: 'function', name: 'Read', description: 'Read test tool', parameters: read?.inputSchema, strict: false, fitRank: 1 },
-      { type: 'function', name: 'Write', description: 'Write test tool', parameters: set.get('Write')?.inputSchema, strict: false, fitRank: 2 },
+      { type: 'function', name: 'Bash', description: 'Bash test tool', parameters: set.get('Bash')?.inputSchema, strict: false, fitRank: 0, fitTier: 'common' },
+      { type: 'function', name: 'Read', description: 'Read test tool', parameters: read?.inputSchema, strict: false, fitRank: 1, fitTier: 'common' },
+      { type: 'function', name: 'Write', description: 'Write test tool', parameters: set.get('Write')?.inputSchema, strict: false, fitRank: 2, fitTier: 'common' },
     ]);
   });
 
