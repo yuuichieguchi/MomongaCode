@@ -20,6 +20,7 @@ const NESTED_GIT_DIRECTORY_PATTERNS = [
   { anchor: 'modules', pattern: 'modules/**/config.worktree' },
   { anchor: 'worktrees', pattern: 'worktrees/*/config.worktree' },
 ] as const;
+const PROTECTED_NAMES = [GIT_NAME] as const;
 const PATTERN_PROVENANCE = { ruleText: 'protected set', layer: 'protected', source: 'momonga' } as const;
 const PATTERN_ENFORCEMENT = 'exact-paths' as const;
 const EMPTY_FILE_FORM: PlaceholderForm = { kind: 'file', bytes: '' };
@@ -331,6 +332,10 @@ export const protectedSetFor = (roots: readonly string[], ports: ProtectedSetPor
     issues: [],
   };
   for (const root of roots) collectRoot(roots, ports, collected, root);
+  for (const root of roots) {
+    const rootPattern = escapeGlob(patternPathOf(flavourOf(ports.platform), root).slice(1));
+    for (const name of PROTECTED_NAMES) for (const entry of GIT_DIRECTORY_ENTRIES) collected.patternSpecifiers.add(`//${rootPattern}/**/${escapeGlob(name)}/${entry}`);
+  }
   const patterns = compileFileRuleSet(patternSpecsOf([...collected.patternSpecifiers], roots), roots, null, ports.canonicalise, ports.volumeProbe, flavourOf(ports.platform), PATTERN_ENFORCEMENT);
   const forms: Record<string, PlaceholderForm> = Object.fromEntries([...[...collected.paths].map((entry): [string, PlaceholderForm] => [entry, EMPTY_FILE_FORM]), ...collected.forms]);
   return {
@@ -339,7 +344,7 @@ export const protectedSetFor = (roots: readonly string[], ports: ProtectedSetPor
     paths: [...collected.paths],
     lexicalPaths: [...collected.lexicalPaths],
     literals: [...collected.literals],
-    names: [GIT_NAME],
+    names: [...PROTECTED_NAMES],
     moduleAnchors: [...collected.moduleAnchors],
     worktreeAnchors: [...collected.worktreeAnchors],
     patterns,
