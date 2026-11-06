@@ -27,14 +27,14 @@ describe('every tool schema goes through the one validator', () => {
     const set = await snapshotOf(tool);
     expect(set.notices).toEqual([]);
     expect(set.get('mcp__srv__lenient')?.name).toBe('mcp__srv__lenient');
-    expect(validateToolInput(tool, { when: 'anything' })).toEqual({ ok: true, value: { when: 'anything' } });
-    expect(validateToolInput(tool, { when: 3 }).ok).toBe(false);
+    expect(await validateToolInput(tool, { when: 'anything' })).toEqual({ ok: true, value: { when: 'anything' } });
+    expect((await validateToolInput(tool, { when: 3 })).ok).toBe(false);
   });
 
-  it('treats a known format as an annotation', () => {
+  it('treats a known format as an annotation', async () => {
     const tool = makeTool('mcp__srv__email', { inputSchema: { type: 'object', properties: { to: { type: 'string', format: 'email' } } } });
-    expect(validateToolInput(tool, { to: 'user@example.com' }).ok).toBe(true);
-    expect(validateToolInput(tool, { to: 'not an email' }).ok).toBe(true);
+    expect((await validateToolInput(tool, { to: 'user@example.com' })).ok).toBe(true);
+    expect((await validateToolInput(tool, { to: 'not an email' })).ok).toBe(true);
   });
 
   it('compiles a draft-07 schema with draft-07 semantics', async () => {
@@ -42,8 +42,8 @@ describe('every tool schema goes through the one validator', () => {
     const set = await snapshotOf(tool);
     expect(set.notices).toEqual([]);
     expect(set.get('mcp__srv__draft07')?.name).toBe('mcp__srv__draft07');
-    expect(validateToolInput(tool, { a: 'x', b: 'y' }).ok).toBe(true);
-    expect(validateToolInput(tool, { a: 'x' }).ok).toBe(false);
+    expect((await validateToolInput(tool, { a: 'x', b: 'y' })).ok).toBe(true);
+    expect((await validateToolInput(tool, { a: 'x' })).ok).toBe(false);
   });
 
   it('skips a schema that cannot compile and reports it', async () => {

@@ -1,8 +1,8 @@
 'use strict';
 const { multipleOfOk } = require('./multiple-of');
 
-let _safeRe = null;
-const compileSafe = (src) => (_safeRe || (_safeRe = require('./safe-regex'))).compileSafe(src);
+const { compileSafe } = require('./safe-regex');
+const { deferredPattern } = require('./deferred-pattern');
 
 const PLAIN_ATOM = /(?:\\[dws\\/.^$|?*+()[\]{}-]|\[(?:[^\\\][^\ud800-\udfff]|\\[dws\\/.^$[\]-])(?:[^\\\][\ud800-\udfff]|\\[dws\\/.^$[\]-])*\]|[^\\[\](){}|*+?^$.\ud800-\udfff])(\?|[*+]|\{(\d{1,3})(?:,(\d{1,3}))?\})?/y;
 function plainLinear(src) {
@@ -792,16 +792,13 @@ class Interpreter {
     if (this.patternCache === null) this.patternCache = new Map();
     let re = this.patternCache.get(src);
     if (!re) {
-      if (/\\[pP]\{/.test(src)) {
-        try { re = new RegExp(src, 'u'); } catch { re = new RegExp(src); }
-      } else if (plainLinear(src)) {
+      if (plainLinear(src)) {
         re = new RegExp(src);
       } else {
         try {
           re = compileSafe(src);
-        } catch (e) {
-          if (e && typeof e.message === 'string' && e.message.includes('built without the pattern engine')) throw e;
-          try { re = new RegExp(src, 'u'); } catch { re = new RegExp(src); }
+        } catch {
+          re = deferredPattern(src);
         }
       }
       this.patternCache.set(src, re);

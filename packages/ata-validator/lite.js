@@ -20,6 +20,8 @@ const core = require('./lib/validator-core.js');
 function defineSchema (schema) { return require('./lib/schema-helpers.js').defineSchema(schema); }
 function schemaOf (...a) { return require('./lib/schema-helpers.js').schemaOf(...a); }
 
+const deferred = require('./lib/deferred-pattern.js');
+
 module.exports = {
   Validator: core.Validator,
   validate: core.validate,
@@ -29,3 +31,6 @@ module.exports = {
   schemaOf,
   version: core.version,
 };
+
+module.exports.evaluateWithPatternAnswers = deferred.evaluateWithPatternAnswers;
+module.exports.patternQueryKey = deferred.patternQueryKey;

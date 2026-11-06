@@ -35,9 +35,9 @@ describe('activate_skill tool', () => {
     const tool = await toolOf();
     expect(tool.name).toBe(ACTIVATE_SKILL_TOOL_NAME);
     expect(tool.inputSchema).toMatchObject({ properties: { name: { type: 'string', enum: ['pdf', 'zip'] } }, required: ['name'], additionalProperties: false });
-    expect(validateToolInput(tool, { name: 'pdf' }).ok).toBe(true);
-    expect(validateToolInput(tool, { name: 'invented' }).ok).toBe(false);
-    expect(validateToolInput(tool, {}).ok).toBe(false);
+    expect((await validateToolInput(tool, { name: 'pdf' })).ok).toBe(true);
+    expect((await validateToolInput(tool, { name: 'invented' })).ok).toBe(false);
+    expect((await validateToolInput(tool, {})).ok).toBe(false);
   });
 
   it('is a read-only tool without a permission subject so that it never asks', async () => {

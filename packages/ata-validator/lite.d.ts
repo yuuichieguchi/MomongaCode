@@ -12,3 +12,10 @@ export {
   version,
 } from './index.js';
 export type * from './index.js';
+
+export type PatternQuery = { readonly source: string; readonly flags: string; readonly input: string };
+export function patternQueryKey(query: PatternQuery): string;
+export function evaluateWithPatternAnswers<T>(
+  answers: ReadonlyMap<string, boolean>,
+  run: () => T,
+): { readonly value: T; readonly queries: readonly PatternQuery[] };
