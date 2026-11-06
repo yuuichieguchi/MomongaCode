@@ -1,3 +1,4 @@
+import { PRECONDITION_FAILED_CODE } from '@momonga/protocol';
 import type { ClassifiedError, ErrorBody } from '@momonga/protocol';
 import { preconditionText } from '../../precondition-text.ts';
 import {
@@ -93,7 +94,7 @@ export const createUpstreamClassifier =
       return { retryable: error.errorType !== 'invalid_request' && error.errorType !== 'not_found' && error.code !== GUARDRAIL_VIOLATION, error: body(error.errorType, error.code, error.message) };
     }
     if (error instanceof PreconditionFailedError) {
-      return { retryable: false, error: body('invalid_request', 'precondition_failed', preconditionText(error.message, error.detail, error.remediation)) };
+      return { retryable: false, error: body('invalid_request', PRECONDITION_FAILED_CODE, preconditionText(error.message, error.detail, error.remediation)) };
     }
     if (error instanceof UnsupportedInputError) {
       return { retryable: false, error: body('invalid_request', error.code, error.message, error.param) };

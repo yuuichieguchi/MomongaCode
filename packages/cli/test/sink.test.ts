@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { PRECONDITION_FAILED_CODE } from '@momonga/protocol';
 import type { PublicRunEvent } from '@momonga/protocol';
 import type { RunEventFrame } from '../src/client/runtime-client.ts';
 import { createFrameSink, describeEnd, resultOf } from '../src/run/headless.ts';
@@ -188,6 +189,14 @@ describe('results', () => {
       num_turns: 1,
       usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
     });
+  });
+
+  it('keeps the line breaks of a precondition failure, which the product composes line by line, and escapes control characters on every line', () => {
+    const message = 'the target "fm" has no probe record\nno record for the fm binary\nremedy: run momonga gateway probe fm\u001b]0;pwn\u0007';
+    const shown = describeEnd(runView({ status: 'FAILED', error: { code: PRECONDITION_FAILED_CODE, message } }));
+    expect(shown).toBe(
+      'momonga: run run-1 FAILED (precondition_failed: the target "fm" has no probe record\nno record for the fm binary\nremedy: run momonga gateway probe fm\\u001b]0;pwn\\u0007)',
+    );
   });
 
   it('describes failures with their error and stop reason', () => {

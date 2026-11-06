@@ -1,5 +1,4 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import { escapeTerminalLine } from '@momonga/protocol';
 import type { PermissionMode, PublicRunEvent } from '@momonga/protocol';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView } from '../client/views.ts';
@@ -63,9 +62,18 @@ export const resultOf = (run: RunView, result: string): RunResult => ({
   usage: run.usage,
 });
 
+const endReasonLines = (run: RunView): string[] => {
+  if (run.error !== undefined) return describeRunError(run.error);
+  return run.stopReason === undefined ? [] : [run.stopReason];
+};
+
 export const describeEnd = (run: RunView): string => {
-  const reason = run.error === undefined ? run.stopReason : describeRunError(run.error);
-  return escapeTerminalLine(`momonga: run ${run.id} ${run.status}${reason === undefined ? '' : ` (${reason})`}`);
+  const head = `momonga: run ${run.id} ${run.status}`;
+  const reason = endReasonLines(run);
+  if (reason.length === 0) return escapedLines([head]);
+  const lines = [`${head} (${reason[0]}`, ...reason.slice(1)];
+  lines[lines.length - 1] += ')';
+  return escapedLines(lines);
 };
 
 const noteText = (lines: readonly string[]): string => `${escapedLines(lines)}\n`;

@@ -102,6 +102,7 @@ export {
   THINKING_OFFS,
   ALLOWED_TOOLS_FORMS,
   requireStructuredOutput,
+  PRECONDITION_FAILED_CODE,
 } from './capabilities.ts';
 export type { OutputTokenCapabilities, StructuredOutputVerdict, TargetAnswers, TargetBilling } from './capabilities.ts';
 export { OUTPUT_FORMATTERS } from './output-formatters.ts';
