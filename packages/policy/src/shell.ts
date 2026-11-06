@@ -126,9 +126,9 @@ const segmentChangesDirectory = (segment: Segment, specs: CommandSpecs): boolean
 
 const CD_OPTION_CLUSTER = /^-[LPe@]+$/;
 
-const directoryStepOf = (segment: Segment): DirectoryStep => {
+const directoryStepOf = (segment: Segment, specs: CommandSpecs): DirectoryStep => {
   const word = segment.words[segment.effectiveIndex];
-  if (word === undefined || word.value !== 'cd') return null;
+  if (word === undefined || specs.specOf(word.value)?.directoryFromOperand !== true) return null;
   const args = segment.words.slice(segment.effectiveIndex + 1);
   let physical = false;
   let first = 0;
@@ -240,7 +240,7 @@ const scanFrom = (command: string, start: number, depth: number, incoming: Place
       cwdState = strongerEffect(cwdState, payloadEffect);
       if (segmentChangesDirectory(segment, specs)) {
         cwdState = strongerEffect(cwdState, 'changed');
-        trail = [...trail, directoryStepOf(segment)];
+        trail = [...trail, directoryStepOf(segment, specs)];
       } else if (payloadEffect !== 'none') {
         trail = [...trail, null];
       }

@@ -4,7 +4,7 @@ import { createKeyedSerializer, isRecord, withFileLock, writeFileAtomically } fr
 import type { FileLockPorts } from '@momonga/foundation';
 import { settingsLockPath } from './file-lock.ts';
 import { layoutOf } from './layout.ts';
-import { localSettingsDirectory } from './local-settings.ts';
+import { localSettingsDirectory, reRootedRule, worktreeRootOf } from './local-settings.ts';
 import { readJsonFile } from './json-file.ts';
 import { parseRule } from './rule.ts';
 import type { RuleEffect } from './rule.ts';
@@ -37,7 +37,9 @@ const addRule = (document: Record<string, unknown>, file: string, rule: string, 
 export const appendPermissionRule = async ({ home, projectDir, rule, effect, ports, lockTimeoutMs }: AppendPermissionRuleOptions): Promise<void> => {
   const directory = await localSettingsDirectory(home, projectDir);
   const file = path.join(directory, 'settings.local.json');
-  parseRule(rule, { effect, origin: 'local', source: file, settingsRoot: projectDir, home, cwd: projectDir });
+  const root = await worktreeRootOf(home, projectDir);
+  const stored = reRootedRule(rule, await fs.promises.realpath(projectDir), root);
+  parseRule(stored, { effect, origin: 'local', source: file, settingsRoot: root, home, cwd: projectDir });
 
   await fs.promises.mkdir(directory, { recursive: true, mode: 0o700 });
   await fs.promises.mkdir(layoutOf(home).run, { recursive: true, mode: 0o700 });
@@ -49,7 +51,7 @@ export const appendPermissionRule = async ({ home, projectDir, rule, effect, por
         if (!isRecord(read.value)) throw new Error(`${file}: settings must be a JSON object`);
         document = read.value;
       }
-      if (!addRule(document, file, rule, effect)) return;
+      if (!addRule(document, file, stored, effect)) return;
       await writeFileAtomically(file, `${JSON.stringify(document, null, 2)}\n`, { mode: SETTINGS_FILE_MODE, randomHex: ports.randomHex });
     }, { ports, ...(lockTimeoutMs === undefined ? {} : { timeoutMs: lockTimeoutMs }) }),
   );

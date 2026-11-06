@@ -18,6 +18,7 @@ import type { ActivatedSkill, TokenMeter, BuildContextInput, ContextArrival, Con
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { resolveGoverning } from '@momonga/memory';
 import type { Session } from '@momonga/store';
+import { outputOriginOf } from '@momonga/tools';
 import { compactionSummaryMessage, decodeCompactionSummary, tokensForText, userMessageContent } from '@momonga/protocol';
 import type { CompactRequest, CompactResource, CompactionInputItem, ContentPart, FunctionTool, InputItem, MessageInputItem, NoticeReduction, RunEvent, RunEventPayload, RunState, SummaryFidelity } from '@momonga/protocol';
 import { foldRunState } from '@momonga/store';
@@ -179,6 +180,7 @@ const offeredInputOf = (
         }
       : {}),
     outputFormatters: ctx.token.outputFormatters,
+    harnessOutputTools: ctx.toolSet.tools.filter((tool) => outputOriginOf(tool) === 'harness').map((tool) => tool.name),
   };
   return { input, offered, governing: governingKey };
 };

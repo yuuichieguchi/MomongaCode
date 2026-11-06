@@ -39,7 +39,10 @@ export type GoldenCase = {
   graders: GraderSpec[];
 };
 
-export type GoldenDataset = { format: typeof DATASET_FORMAT; name: string; cases: GoldenCase[] };
+export const DATASET_GATES = ['autoMode'] as const;
+export type DatasetGate = (typeof DATASET_GATES)[number];
+
+export type GoldenDataset = { format: typeof DATASET_FORMAT; name: string; gate?: DatasetGate; cases: GoldenCase[] };
 
 export class DatasetError extends Error {
   constructor(message: string) {
@@ -69,6 +72,7 @@ export const DATASET_SCHEMA = {
   properties: {
     format: { const: DATASET_FORMAT },
     name: string,
+    gate: { enum: [...DATASET_GATES] },
     cases: {
       type: 'array',
       minItems: 1,

@@ -10,7 +10,7 @@
 (*   packages/store/src/approvals.ts      approvals                        *)
 (*   packages/runtime/src/worker/*        claim-runner, model-step,        *)
 (*       tool-step, cancel-recovery, journal, terminals                    *)
-(*   packages/tools/src/executor.ts       idempotency, reconcile           *)
+(*   packages/tools/src/executor.ts       reconcile, settleInterrupted     *)
 (*                                                                         *)
 (* Abstractions (a proof holds only for this model):                       *)
 (*   - time is not numeric: lease expiry, run deadline and approval expiry *)

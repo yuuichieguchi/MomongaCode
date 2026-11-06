@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { ASSIGNMENT, INERT_PRINTERS, RESERVED_WORDS, commandPatternOf, commandSpecsFor } from '@momonga/policy';
+import { ASSIGNMENT, RESERVED_WORDS, commandPatternOf, commandSpecsFor, inertPrinterSet } from '@momonga/policy';
 import type { CommandPattern, PermissionRule } from '@momonga/policy';
 import type { Bool, Re, Seq } from 'z3-solver';
 import { setContains, singleton } from './char-set.ts';
@@ -60,7 +60,7 @@ export const createCommandModel = (smt: Smt): CommandModel => {
   const basenameIs = (name: string): Re => smt.concat(smt.optional(smt.concat(smt.star(wordAlphabet), slash)), smt.text(name), smt.star(slash));
   const wordsExpressible = (rule: PermissionRule): boolean => patternWords(commandPatternOf(rule)).every(expressible);
   const excludedNames = excludedProgramNames().filter(expressible);
-  const printer = smt.union(...[...INERT_PRINTERS].map(basenameIs));
+  const printer = smt.union(...[...inertPrinterSet(commandSpecsFor('darwin'))].map(basenameIs));
   const command = smt.concat(plainWord, rest);
 
   const excludedBlock = (term: Seq, text: string): Bool | undefined => {

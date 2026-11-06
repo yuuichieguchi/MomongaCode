@@ -137,7 +137,7 @@ const shellQuoted = (word: string): string => (/[!()]/.test(word) ? `'${word}'` 
 
 const plainForms = (spec: Spec): string[] => {
   const operand = OPERANDS[spec.operands];
-  if (operand === undefined || spec.approval !== 'read-only' || spec.extractor === 'git' || spec.extractor === 'cd') return [];
+  if (operand === undefined || spec.approval !== 'read-only' || spec.extractor === 'git' || spec.directoryFromOperand === true) return [];
   const name = spec.names[0] as string;
   return [
     join(name, operand),

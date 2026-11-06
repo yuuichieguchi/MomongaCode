@@ -254,6 +254,7 @@ describe('run event payloads', () => {
       callId: string;
       outcome: 'already_applied' | 'not_applied' | 'unknown';
       output: string;
+      interrupted?: 'timeout' | 'cancelled';
     }>();
   });
 

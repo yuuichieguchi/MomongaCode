@@ -1,5 +1,6 @@
 export { ConfigError } from '@momonga/config';
 export { buildSystemPrompt } from './system-prompt.ts';
+export { AUTO_CLASSIFIER_CODE } from './worker/auto-classifier.ts';
 export type { SystemPromptContext } from './system-prompt.ts';
 export { createWorker } from './worker/worker.ts';
 export type { Worker, WorkerBlobs, WorkerDefaults, WorkerErrorContext, WorkerOptions, WorkerWake } from './worker/types.ts';

@@ -1,4 +1,4 @@
-import type { ModelRoles, PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from '@momonga/config';
+import type { AutoGateInput, ModelRoles, PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from '@momonga/config';
 import type { Clock } from '@momonga/foundation';
 import type {
   Capabilities,
@@ -49,6 +49,7 @@ export type SettingsPort = {
   context(session: Session): Promise<ResolvedContextSettings>;
   tools(session: Session): Promise<ResolvedToolsSettings>;
   autoModeClassifier(): string | undefined;
+  autoModeGate(): AutoGateInput | undefined;
   modelRoles(): ModelRoles;
   appendRule(session: Session, entry: AppendedRule): Promise<void>;
   trusted(session: Session): boolean;

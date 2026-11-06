@@ -1,10 +1,11 @@
 import path from 'node:path';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { ConfigError, assertSessionMcpServers, stripCredentialEnv } from '@momonga/config';
+import { ConfigError, assertSessionMcpServers, autoModeAvailability, stripCredentialEnv } from '@momonga/config';
+import type { AutoGateInput, CredentialRules } from '@momonga/config';
 import { canonicalDirectory, canonicalJson, canonicalPath, comparableContains, comparablePath, isTransientErrno, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import { AUTO_MODE_UNAVAILABLE, RUN_STATUSES } from '@momonga/protocol';
+import { AUTO_MODE_UNAVAILABLE, RUN_STATUSES, autoModeNotMeasuredMessage } from '@momonga/protocol';
 import type { Capabilities, CostBreakdownView, GatewayCostReportView, PermissionMode, RunStatus, RunTraceView } from '@momonga/protocol';
 import { SkillActivationError, UnknownSkillError } from '@momonga/skills';
 import { JournalThreadError, sameRunRequest } from '@momonga/store';
@@ -55,7 +56,9 @@ export type SessionCreateSettings = {
   defaultModeOrigin?: 'user' | 'project' | 'local';
   additionalDirectories: readonly string[];
   credentialEnvNames: readonly string[];
+  credentials?: CredentialRules;
   autoModeClassifier?: string;
+  autoModeGate?: AutoGateInput;
 };
 
 export type RunAppDeps = {
@@ -103,11 +106,19 @@ const protectedAreaOf = (areas: readonly string[], target: string): string | und
 const isGatewayUnavailable = (error: unknown): boolean =>
   error instanceof GatewayRequestError && (error.type === 'transport' || error.status >= 500);
 
-const checkModeAllowed = (mode: PermissionMode, bypassAllowed: boolean, autoModeClassifier: string | undefined, aliases: readonly string[]): void => {
+const checkModeAllowed = (
+  mode: PermissionMode,
+  bypassAllowed: boolean,
+  auto: { classifier: string | undefined; gate: AutoGateInput | undefined },
+  aliases: readonly string[],
+): void => {
   if (mode === 'auto') {
-    if (autoModeClassifier === undefined) throw conflict(AUTO_MODE_UNAVAILABLE.code, AUTO_MODE_UNAVAILABLE.message);
-    if (!aliases.includes(autoModeClassifier)) {
-      throw conflict(AUTO_MODE_UNAVAILABLE.code, `the auto mode classifier alias ${autoModeClassifier} is not known to the gateway`);
+    if (auto.classifier === undefined) throw conflict(AUTO_MODE_UNAVAILABLE.code, AUTO_MODE_UNAVAILABLE.message);
+    if (!aliases.includes(auto.classifier)) {
+      throw conflict(AUTO_MODE_UNAVAILABLE.code, `the auto mode classifier alias ${auto.classifier} is not known to the gateway`);
+    }
+    if (auto.gate === undefined || !autoModeAvailability(auto.gate.key, auto.gate.records).available) {
+      throw conflict(AUTO_MODE_UNAVAILABLE.code, autoModeNotMeasuredMessage(auto.classifier));
     }
   }
   if (mode === 'bypassPermissions' && !bypassAllowed) {
@@ -217,8 +228,8 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const permissionMode = body.permissionMode ?? settings.defaultMode ?? 'default';
     const bypassAllowed =
       body.bypassAllowed === true || (settings.defaultMode === 'bypassPermissions' && settings.defaultModeOrigin === 'user');
-    checkModeAllowed(permissionMode, bypassAllowed, settings.autoModeClassifier, aliases);
-    const stripped = stripCredentialEnv(body.env, settings.credentialEnvNames);
+    checkModeAllowed(permissionMode, bypassAllowed, { classifier: settings.autoModeClassifier, gate: settings.autoModeGate }, aliases);
+    const stripped = stripCredentialEnv(body.env, settings.credentialEnvNames, settings.credentials);
     const mcpServers = checkedMcpServers(body.mcpServers ?? {});
     if (deps.isDraining()) throw drainingError();
     const session = store.createSession({ cwd, env: stripped.env, permissionMode, modelAlias, bypassAllowed, additionalDirectories, mcpServers });
@@ -247,7 +258,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const body = validateBody<PatchSessionBody>('PatchSessionRequest', await readJson(context.req.raw, PATCH_MEDIA_TYPES, deps.maxBodyBytes));
     if (body.permissionMode !== undefined) {
       const settings = await sessionSettingsOf(session.cwd);
-      checkModeAllowed(body.permissionMode, session.bypassAllowed, settings.autoModeClassifier, await gatewayAliases());
+      checkModeAllowed(body.permissionMode, session.bypassAllowed, { classifier: settings.autoModeClassifier, gate: settings.autoModeGate }, await gatewayAliases());
     }
     if (body.modelAlias !== undefined && !(await gatewayAliases()).includes(body.modelAlias)) throw invalidRequest(`unknown model alias ${body.modelAlias}`, 'modelAlias');
     const mcpServers = body.mcpServers === undefined ? undefined : checkedMcpServers(body.mcpServers);

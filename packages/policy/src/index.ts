@@ -3,7 +3,8 @@ export type { ParseRuleOptions, PermissionRule, RuleEffect, RuleOrigin } from '@
 export { decide, decidePrimary, isGoverningRule } from './decide.ts';
 export type { DecideInput, Decision } from './decide.ts';
 export { matchRule, ruleCoversSubject } from './match-rule.ts';
-export { INERT_PRINTERS, commandPatternOf } from './command-match.ts';
+export { commandPatternOf } from './command-match.ts';
+export { inertPrinterSet } from './command-specs.ts';
 export type { CommandPattern } from './command-match.ts';
 export { RESERVED_WORDS, allWriteTargets, analyzeCommand, programNameOf, readPathsOfCommand } from './shell.ts';
 export { GIT_OPTION_TABLES } from './git-option-tables.ts';

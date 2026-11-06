@@ -2,7 +2,23 @@ export { appendPermissionRule } from './append-rule.ts';
 export type { AppendPermissionRuleOptions } from './append-rule.ts';
 export { systemFileLockPorts } from '@momonga/foundation';
 export type { FileLockPorts } from '@momonga/foundation';
+export {
+  AUTO_GATE_BOUNDS,
+  AUTO_MODE_DATASET_DIGEST,
+  autoGateDirectoryOf,
+  autoGateKeyOf,
+  autoGatePasses,
+  autoModeAvailability,
+  autoModeDatasetDigestOf,
+  classifierAliasIdentityOf,
+  classifierCodeDigestOf,
+  classifierIdentityOf,
+  readAutoGateRecords,
+  writeAutoGateRecord,
+} from './auto-gate.ts';
+export type { AutoGateInput, AutoGateKey, AutoGateProportion, AutoGateRecord, AutoModeAvailability, ClassifierCode } from './auto-gate.ts';
 export { isCredentialEnvName, stripCredentialEnv } from './credential-env.ts';
+export type { CredentialRules } from './credential-env.ts';
 export { loadSettings } from './load-settings.ts';
 export { MODEL_ROLES } from './settings-schema.ts';
 export { endpointKeyOf, probeRecordKeyOf, upstreamEndpointOf } from './probe-record-key.ts';

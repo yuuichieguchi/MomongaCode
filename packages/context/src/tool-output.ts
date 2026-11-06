@@ -1,3 +1,4 @@
+import { envelopeOf } from '@momonga/protocol';
 import type { FunctionCallOutputInputItem } from '@momonga/protocol';
 
 const HIGH_SURROGATE_START = 0xd800;
@@ -41,3 +42,11 @@ export const headAndTail = (text: string, keptChars: number, marker: string): st
   [headOf(text, Math.ceil(keptChars / 2)), marker, tailOf(text, Math.floor(keptChars / 2))]
     .filter((part) => part !== '')
     .join('\n');
+
+export type OutputRender = { full: FunctionCallOutputInputItem; enclose: (content: string) => string };
+
+export const outputRenderOf = (original: FunctionCallOutputInputItem, tool: string | undefined, harnessTools: ReadonlySet<string>, pointer: boolean): OutputRender => {
+  if (pointer || (tool !== undefined && harnessTools.has(tool))) return { full: original, enclose: (content) => content };
+  const enclose = (content: string): string => envelopeOf({ content, callId: original.call_id, tool: tool ?? '' });
+  return { full: withOutput(original, enclose(outputTextOf(original.output))), enclose };
+};

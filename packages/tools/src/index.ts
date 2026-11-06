@@ -41,7 +41,7 @@ export type {
 export { createToolRegistry, extendToolSet } from './registry.ts';
 export { MINIMUM_INLINE_OUTPUT_CHARS } from './truncate.ts';
 export type { SnapshotOptions, ToolListOptions, ToolRegistry, ToolSet, ToolSource, ToolSourceListing } from './registry.ts';
-export { TOOL_TIERS, defineTool, ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
+export { TOOL_TIERS, defineTool, outputOriginOf, ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
 export type {
   AnyTool,
   PlanEntry,

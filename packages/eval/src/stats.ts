@@ -1,4 +1,6 @@
-export const WILSON_Z_95 = 1.959963984540054;
+import { AUTO_GATE_BOUNDS } from '@momonga/config';
+
+export const WILSON_Z_95 = AUTO_GATE_BOUNDS.wilsonZ;
 
 export type Proportion = { successes: number; trials: number; rate: number; low: number; high: number };
 

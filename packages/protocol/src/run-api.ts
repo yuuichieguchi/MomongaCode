@@ -353,7 +353,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
     required: ['target', 'counter', 'fallback', 'inputDigest', 'itemCount', 'counted', 'reported', 'kept', 'known', 'uncounted', 'miss', 'contextWindow', 'tokenCounting'],
   },
   'tool.reconciled': {
-    properties: { callId: string, outcome: enumOf(['already_applied', 'not_applied', 'unknown']), output: string },
+    properties: { callId: string, outcome: enumOf(['already_applied', 'not_applied', 'unknown']), output: string, interrupted: enumOf(['timeout', 'cancelled']) },
     required: ['callId', 'outcome', 'output'],
   },
   'tool.waiting': {

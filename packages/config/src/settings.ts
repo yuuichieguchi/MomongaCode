@@ -236,9 +236,12 @@ export type ContextSettings = {
 
 export type ToolsSettings = { deferral?: boolean; conciseDescriptions?: boolean };
 
+export type CredentialsSettings = { env?: string[]; keep?: string[]; valuePatterns?: string[] };
+
 export type Settings = {
   permissions?: PermissionsSettings;
   env?: Record<string, string>;
+  credentials?: CredentialsSettings;
   hooks?: Record<string, HookGroups>;
   autoMode?: AutoModeSettings;
   enabledMcpjsonServers?: string[];
@@ -285,6 +288,13 @@ export const assertSettings = (value: unknown, source: string): Settings => {
   const verdict = validateSettings(value);
   if (!verdict.valid) throw new Error(`${source}: invalid settings at ${describeErrors(verdict.errors)}`);
   const settings = verdict.value;
+  (settings.credentials?.valuePatterns ?? []).forEach((pattern, index) => {
+    try {
+      new RegExp(pattern);
+    } catch (error) {
+      throw new Error(`${source}: invalid settings at /credentials/valuePatterns/${index}: not a regular expression`, { cause: error });
+    }
+  });
   const endpoint = settings.telemetry?.otlp?.endpoint;
   if (endpoint !== undefined) {
     const problem = transportUrlProblem(endpoint);

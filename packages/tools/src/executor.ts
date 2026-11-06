@@ -107,6 +107,7 @@ export type ResultOutcome = {
   result: ToolResult & { truncated?: boolean; handle?: string; denial?: PermissionDenial; formatted?: { formatter: string; version: number } };
   idemKey?: string;
   reconciled?: ReconcileResult['outcome'];
+  interrupted?: 'timeout' | 'cancelled';
 };
 
 export type NeedsApprovalOutcome = {
@@ -392,9 +393,6 @@ const hasUnknownEffects = (tool: AnyTool): boolean => tool.sideEffect !== 'read_
 
 const cancelledOutput = (tool: AnyTool): string =>
   hasUnknownEffects(tool) ? `${tool.name} was cancelled. ${UNKNOWN_EFFECTS_NOTICE}` : `${tool.name} was cancelled`;
-
-const timedOutOutput = (tool: AnyTool, ms: number): string =>
-  hasUnknownEffects(tool) ? `${tool.name} timed out after ${ms} ms. ${UNKNOWN_EFFECTS_NOTICE}` : `${tool.name} timed out after ${ms} ms`;
 
 const interruptedOutput = (tool: AnyTool): string =>
   `An earlier attempt of ${tool.name} was interrupted before it reported a result. Its effect is unknown; inspect the current state before retrying.`;
@@ -815,7 +813,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     holdCall(): Promise<'held' | 'aborted'>;
     trackEffect(running: Promise<unknown>): void;
     checkpoint(state: Record<string, unknown> | undefined): void;
-    complete(result: ResultOutcome['result'], reconciled?: ReconcileResult['outcome']): CallOutcome;
+    complete(result: ResultOutcome['result'], reconciled?: ReconcileResult['outcome'], interrupted?: AbortReason): CallOutcome;
     waiting(pending: ToolPending): CallOutcome;
     release(): void;
   };
@@ -909,9 +907,16 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       checkpoint: (state) => {
         if (!leaseLost() && !contextClosed) holding(ledger.checkpoint(key, state));
       },
-      complete: (result, reconciled) => {
+      complete: (result, reconciled, interrupted) => {
         if (leaseLost()) return deferred;
-        const outcome: ResultOutcome = { callId, kind: 'result', result, idemKey: key, ...(reconciled === undefined ? {} : { reconciled }) };
+        const outcome: ResultOutcome = {
+          callId,
+          kind: 'result',
+          result,
+          idemKey: key,
+          ...(reconciled === undefined ? {} : { reconciled }),
+          ...(interrupted === undefined ? {} : { interrupted }),
+        };
         if (!holding(ledger.complete(key, outcome))) return deferred;
         recordCompleted = true;
         return outcome;
@@ -1141,8 +1146,12 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           return scope.complete(finalizeResult(hooked, tool, outputLimit, batch.runId, batch.formatOutput), reconciled);
         }
         await settleWithin(running, ABORT_SETTLE_LIMIT_MS);
-        const output = scope.abortReason() === 'timeout' ? timedOutOutput(tool, scope.timerMs()) : cancelledOutput(tool);
-        return scope.complete({ status: 'failed', output }, reconciled);
+        return settleInterrupted(scope, tool, target.input, key, scope.abortReason() === 'timeout' ? 'timeout' : 'cancelled', {
+          outputLimit,
+          runId: batch.runId,
+          leaseLost: () => batch.leaseLost?.() === true,
+          ...(batch.formatOutput === undefined ? {} : { formatOutput: batch.formatOutput }),
+        });
       };
 
       const leaseHeld = (): boolean => batch.leaseLost?.() !== true;
@@ -1213,6 +1222,32 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     closeContext();
     running.catch(() => undefined);
     return { outcome: 'unknown', output: interruptedOutput(tool) };
+  };
+
+  const interruptedText = (tool: AnyTool, reason: AbortReason, ms: number, settled: ReconcileResult): string => {
+    const sentence = reason === 'timeout' ? `${tool.name} timed out after ${ms} ms` : `${tool.name} was cancelled`;
+    if (settled.outcome === 'unknown') return hasUnknownEffects(tool) ? `${sentence}. ${UNKNOWN_EFFECTS_NOTICE}` : sentence;
+    return settled.output === '' ? sentence : `${sentence}. ${settled.output}`;
+  };
+
+  const settleInterrupted = async (
+    scope: CallScope,
+    tool: AnyTool,
+    input: unknown,
+    key: string,
+    reason: AbortReason,
+    limits: { outputLimit: number; runId: string; formatOutput?: BatchOutputFormatter; leaseLost: () => boolean },
+  ): Promise<CallOutcome> => {
+    if (limits.leaseLost()) return scope.deferred;
+    const current = idempotency.get(key);
+    if (current === undefined || current.s === 'COMPLETED') throw new Error(`the interrupted call ${key} has no open idempotency record to reconcile`);
+    const { rec: record } = current;
+    const reconciling = new AbortController();
+    const ctx: ReconcileContext = { ...scope.reconcileCtx, signal: reconciling.signal, deadlineAt: clock.now() + reconcileCapMs + reconcileGraceMs };
+    const settled = await reconcileWithin(tool, input, record, ctx, () => reconciling.abort(), scope.closeContext);
+    const status = settled.outcome === 'already_applied' ? 'completed' : 'failed';
+    const output = interruptedText(tool, reason, scope.timerMs(), settled);
+    return scope.complete(finalizeResult({ status, output }, tool, limits.outputLimit, limits.runId, limits.formatOutput), settled.outcome, reason);
   };
 
   const reconcileInterrupted = async (

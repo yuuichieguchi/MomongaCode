@@ -17,7 +17,7 @@ export type CliSession = {
 export const environmentSnapshot = async (ports: Pick<DaemonPorts, 'env' | 'home'>): Promise<Record<string, string>> => {
   const { settings } = await loadUserSettings({ home: ports.home });
   const defined = Object.fromEntries(Object.entries(ports.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-  return stripCredentialEnv(defined, credentialEnvNames(settings)).env;
+  return stripCredentialEnv(defined, credentialEnvNames(settings), settings.credentials).env;
 };
 
 export const autoModeConfigured = async (ports: Pick<DaemonPorts, 'home'>): Promise<boolean> => {

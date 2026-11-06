@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { LeaseLostError } from '@momonga/runtime';
+import { gateOf, passingRecord } from '../auto-gate-fixtures.ts';
 import { CLASSIFIER_INSTRUCTIONS, createAutoClassifier } from '../../src/worker/auto-classifier.ts';
 import type { ClaimContext } from '../../src/worker/claim-context.ts';
 import { capabilitiesFor, makeEnv } from './harness.ts';
@@ -220,7 +221,7 @@ describe('auto mode classifier verdict after a crash', () => {
         append: (payloads: unknown[]) => appended.push(...payloads),
       },
       options: {
-        settings: { autoModeClassifier: () => 'guard' },
+        settings: { autoModeClassifier: () => 'guard', autoModeGate: () => gateOf([passingRecord()]) },
         gateway: {
           capabilities: async () => {
             gatewayCalls.push('capabilities');

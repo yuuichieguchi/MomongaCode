@@ -1,6 +1,7 @@
+import { autoModeAvailability } from '@momonga/config';
 import { budgetFor } from '@momonga/context';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import { CLASSIFIER_VERDICT_SCHEMA, assistantTextOf, classifierAllows, escapeXmlText, outputReserveFor, requireStructuredOutput } from '@momonga/protocol';
+import { CLASSIFIER_VERDICT_SCHEMA, assistantTextOf, autoModeNotMeasuredMessage, classifierAllows, escapeXmlText, outputReserveFor, requireStructuredOutput } from '@momonga/protocol';
 import { parseClassifierVerdict } from './classifier-verdict.ts';
 import type { CreateResponseBody, ResponseResource, RunEventPayload } from '@momonga/protocol';
 import type { AutoClassifier, AutoClassifierRequest } from '@momonga/tools';
@@ -16,6 +17,8 @@ export const CLASSIFIER_INSTRUCTIONS = [
   'Answer "safe" only when the call is clearly within what the user request asks for, is confined to the workspace, is reversible, and does not exfiltrate data, reach credentials, change permissions or settings, or install or run code from an untrusted source. Otherwise answer "unsafe".',
   'Set confidence to "high" only when nothing in the call leaves you unsure. Reply with the JSON object only.',
 ].join('\n');
+
+export const AUTO_CLASSIFIER_CODE = { instructions: CLASSIFIER_INSTRUCTIONS, verdictSchema: CLASSIFIER_VERDICT_SCHEMA } as const;
 
 const outputTextOf = (response: ResponseResource): string => assistantTextOf(response.output);
 
@@ -41,6 +44,10 @@ const asked = (event: Outcome['event']): Outcome => ({ outcome: 'ask', event });
 export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: number): AutoClassifier => {
   const alias = ctx.options.settings.autoModeClassifier();
   const { gateway } = ctx.options;
+  const isMeasured = (): boolean => {
+    const gate = ctx.options.settings.autoModeGate();
+    return gate !== undefined && autoModeAvailability(gate.key, gate.records).available;
+  };
   const judge = async (request: AutoClassifierRequest, classifier: string): Promise<Outcome> => {
     const capabilities = await gateway.capabilities(classifier, { signal: ctx.control.signal });
     const structured = requireStructuredOutput(capabilities, 'autoMode.classifier', classifier);
@@ -103,6 +110,8 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
       let result: Outcome;
       if (alias === undefined) {
         result = asked({ failure: 'no classifier alias is configured: set autoMode.classifier in the user settings' });
+      } else if (!isMeasured()) {
+        result = asked({ alias, failure: autoModeNotMeasuredMessage(alias) });
       } else {
         try {
           result = await judge(request, alias);

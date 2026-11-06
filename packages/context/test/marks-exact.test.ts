@@ -3,7 +3,7 @@ import { COMPACT_AT, EVICT_LOW_WATER, floorRatio, summaryItemTokensFor, summaryT
 import type { Capabilities, InputItem } from '@momonga/protocol';
 import { buildContext, inputCeilingFor } from '@momonga/context';
 import type { HistoryItem } from '@momonga/context';
-import { HOME, MODEL, PROJECT, SYSTEM_PROMPT, TASK, assistant, call, capabilitiesFor, fakeBlobs, fakeReader, output, sourcesWith, user } from './helpers.ts';
+import { HOME, RAW_OUTPUT_TOOL, MODEL, PROJECT, SYSTEM_PROMPT, TASK, assistant, call, capabilitiesFor, fakeBlobs, fakeReader, output, sourcesWith, user } from './helpers.ts';
 import { weightMeter, weightOf, weightOfAll } from './weight-meter.ts';
 
 const systemItem: InputItem = { type: 'message', role: 'system', content: SYSTEM_PROMPT };
@@ -23,6 +23,7 @@ const buildWith = (capabilities: Capabilities, history: HistoryItem[], extra: Pa
       trusted: true,
       projectRoot: PROJECT,
       home: HOME,
+      harnessOutputTools: [RAW_OUTPUT_TOOL],
       keepRecentTurns: 1,
       ...extra,
     },
@@ -180,6 +181,7 @@ describe('proactive acceptance needs one summary item of new history (0.2 #25, B
         trusted: true,
         projectRoot: PROJECT,
         home: HOME,
+        harnessOutputTools: [RAW_OUTPUT_TOOL],
         keepRecentTurns: 1,
       },
       portsWith(),
@@ -204,6 +206,7 @@ describe('proactive acceptance needs one summary item of new history (0.2 #25, B
         trusted: true,
         projectRoot: PROJECT,
         home: HOME,
+        harnessOutputTools: [RAW_OUTPUT_TOOL],
         keepRecentTurns: 1,
       },
       portsWith(),

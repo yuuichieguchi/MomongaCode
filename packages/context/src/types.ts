@@ -178,6 +178,7 @@ export type BuildContextInput = {
   forms?: ReadonlyMap<string, number>;
   renderedFull?: ReadonlySet<string>;
   outputFormatters?: readonly OutputFormatterName[] | undefined;
+  harnessOutputTools?: readonly string[];
 };
 
 export type InstructionScope = 'user' | 'root' | 'nested';

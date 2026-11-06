@@ -3,7 +3,7 @@ import { ESTIMATED_ERROR_SHAPE, summaryTokenCapFor } from '@momonga/protocol';
 import type { InputItem, MessageInputItem } from '@momonga/protocol';
 import { MIN_ROOM_TOKENS, PinnedRoomError, buildContext, capacityFor, createTokenMeter, inputCeilingFor, itemCapFor, measurePinned } from '@momonga/context';
 import type { BuildContextInput, BuildContextPorts, HistoryItem, MeterCount, TokenMeter } from '@momonga/context';
-import { HOME, MODEL, PROJECT, TASK, assistant, call, capabilitiesFor, fakeBlobs, fakeReader, output, shapeCounter, sourcesWith, tokensOfItem, truncatedMarker } from './helpers.ts';
+import { HOME, RAW_OUTPUT_TOOL, MODEL, PROJECT, TASK, assistant, call, capabilitiesFor, fakeBlobs, fakeReader, output, shapeCounter, sourcesWith, tokensOfItem, truncatedMarker } from './helpers.ts';
 
 const WINDOW = 8192;
 const OUTPUT = 1024;
@@ -63,6 +63,7 @@ const inputWith = (history: HistoryItem[], systemPrompt?: string): BuildContextI
   trusted: true,
   projectRoot: PROJECT,
   home: HOME,
+  harnessOutputTools: [RAW_OUTPUT_TOOL],
   keepRecentTurns: 1,
   observedCapacity: true,
 });

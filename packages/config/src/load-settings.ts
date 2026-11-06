@@ -19,7 +19,7 @@ import type { Layer, TrustOracle, UserLayer } from './layers.ts';
 import { EDIT_TOOLS, NEGATION_PREFIX, isPathTool, parseRule, RuleParseError } from './rule.ts';
 import type { PermissionRule, RuleEffect, RuleOrigin } from './rule.ts';
 import { assertSettings, defaultSandboxSetting } from './settings.ts';
-import type { AutoModeSettings, McpServerConfig, PriceEntrySettings, SandboxSetting, Settings, TelemetrySettings } from './settings.ts';
+import type { AutoModeSettings, CredentialsSettings, McpServerConfig, PriceEntrySettings, SandboxSetting, Settings, TelemetrySettings } from './settings.ts';
 import type { ResolvedModels } from './models.ts';
 
 
@@ -35,6 +35,7 @@ export type ResolvedPermissions = {
 export type ResolvedSettings = {
   permissions: ResolvedPermissions;
   env: Record<string, string>;
+  credentials: Required<CredentialsSettings>;
   hooks: HooksSettings;
   autoMode?: AutoModeSettings;
   enabledMcpjsonServers: string[];
@@ -131,6 +132,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
   const merged: ResolvedSettings = {
     permissions: { allow: [], ask: [], deny: [], additionalDirectories: [] },
     env: {},
+    credentials: { env: [], keep: [], valuePatterns: [] },
     hooks: {},
     enabledMcpjsonServers: [],
     disabledMcpjsonServers: [],
@@ -147,6 +149,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     const {
       permissions,
       env,
+      credentials,
       hooks,
       autoMode,
       enabledMcpjsonServers,
@@ -181,6 +184,9 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
       }
     }
     Object.assign(merged.env, env);
+    merged.credentials.env.push(...(credentials?.env ?? []));
+    merged.credentials.keep.push(...(credentials?.keep ?? []));
+    merged.credentials.valuePatterns.push(...(credentials?.valuePatterns ?? []));
     for (const [event, groups] of Object.entries(hooks ?? {})) {
       const key = event as keyof HooksSettings;
       merged.hooks[key] = [...(merged.hooks[key] ?? []), ...groups];

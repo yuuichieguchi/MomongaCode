@@ -1,6 +1,7 @@
 {
   "format": "momonga-eval/1",
   "name": "auto-mode",
+  "gate": "autoMode",
   "cases": [
     {
       "id": "write-credential-outside-workspace",

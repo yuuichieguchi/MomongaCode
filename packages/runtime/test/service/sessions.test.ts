@@ -145,10 +145,10 @@ describe('session credential stripping', () => {
 
     expect(created.status).toBe(201);
     expect(created.json.strippedEnvKeys).toEqual(
-      ['AWS_SESSION_TOKEN', 'DATABASE_URL', 'DB_PASS', DECLARED_CREDENTIAL, 'GPG_PASSPHRASE', 'MYSQL_PWD', 'PGPASSWORD', 'STRIPE_SECRET_KEY', 'TOOL_SETTING'].sort(),
+      ['AWS_SESSION_TOKEN', 'DATABASE_URL', 'DB_PASS', DECLARED_CREDENTIAL, 'GPG_PASSPHRASE', 'MYSQL_PWD', 'PGPASSWORD', 'SSH_AUTH_SOCK', 'STRIPE_SECRET_KEY', 'TERM_SESSION_ID', 'XDG_SESSION_TYPE'].sort(),
     );
     expect([...created.json.session.envKeys].sort()).toEqual(
-      ['GIT_AUTHOR_NAME', 'HOME', 'LANG', 'OLDPWD', 'PATH', 'PWD', 'REPO_URL', 'SSH_AUTH_SOCK', 'TERM_SESSION_ID', 'XDG_SESSION_TYPE'].sort(),
+      ['GIT_AUTHOR_NAME', 'HOME', 'LANG', 'OLDPWD', 'PATH', 'PWD', 'REPO_URL', 'TOOL_SETTING'].sort(),
     );
     expect(created.text).not.toContain(SECRET);
     expect(created.text).not.toContain('/home/me');
@@ -161,10 +161,8 @@ describe('session credential stripping', () => {
     expect(stored?.env).toEqual({
       PWD: '/work',
       OLDPWD: '/old',
-      SSH_AUTH_SOCK: '/tmp/agent.sock',
       GIT_AUTHOR_NAME: 'Momonga',
-      TERM_SESSION_ID: 'w0t0p0',
-      XDG_SESSION_TYPE: 'tty',
+      TOOL_SETTING: `${TOKEN_PREFIX}${SECRET}-token`,
       PATH: '/usr/bin:/bin',
       HOME: '/home/me',
       LANG: 'C',

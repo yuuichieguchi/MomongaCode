@@ -290,6 +290,9 @@ export {
   classifierAllows,
 } from './auto-mode.ts';
 export type { ClassifierVerdict } from './auto-mode.ts';
+export { AUTO_MODE_EVAL_COMMAND, autoModeNotMeasuredMessage } from './auto-mode-gate.ts';
+export { TOOL_OUTPUT_TAG, boundaryOf, envelopeOf } from './tool-envelope.ts';
+export type { ToolOutputEnvelope } from './tool-envelope.ts';
 export {
   HOOK_BLOCKING_EXIT_CODE,
   HOOK_COMMAND_TYPE,

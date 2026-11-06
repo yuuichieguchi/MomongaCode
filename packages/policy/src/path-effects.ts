@@ -5,7 +5,7 @@ import { GLOB_OR_BRACE_CHARACTERS, firstUnescaped, unescapeGlob } from './glob-p
 import { parseGit } from './git-argv.ts';
 import { GIT_READ_ONLY_SUBCOMMANDS, gitSubcommandSpec, reflogView } from './git-subcommands.ts';
 import type { GitParse } from './git-argv.ts';
-import type { CommandSpec, CommandSpecs } from './command-specs.ts';
+import type { CommandSpec, CommandSpecs, OperandRole } from './command-specs.ts';
 import { scanSedScript } from './sed-script.ts';
 import type { SedDialect } from './sed-script.ts';
 import type { Segment, Word } from './shell.ts';
@@ -65,28 +65,38 @@ const optionEffectTargets = (spec: CommandSpec, parsed: ParsedArgv): { reads: Ta
   return { reads, writes };
 };
 
+const roleSetByOption = (spec: CommandSpec, parsed: ParsedArgv): OperandRole | undefined =>
+  parsed.options.map((entry) => spec.declOf(entry.option)?.setsOperandRole).find((role) => role !== undefined);
+
+const HOME_DIRECTORY: Target = { literal: '~' };
+
 const roleEffects = (spec: CommandSpec, parsed: ParsedArgv): ProgramEffects => {
-  const { reads, writes } = optionEffectTargets(spec, parsed);
+  const forcedRole = roleSetByOption(spec, parsed);
+  const { reads, writes } = forcedRole === undefined ? optionEffectTargets(spec, parsed) : { reads: [], writes: [] };
   const operands = parsed.operands;
   const directories = optionValues(parsed, '-t', '--target-directory');
   const last = operands.at(-1);
   const markRemoves = (targets: Target[]): Target[] => (spec.removes === true ? targets.map(removing) : targets);
-  switch (spec.operands) {
+  switch (forcedRole ?? spec.operands) {
     case 'none':
       break;
     case 'read-all':
-      reads.push(...targetsOf(operands, 'read'));
+      if (operands.length === 0 && spec.defaultOperand === 'home') reads.push(HOME_DIRECTORY);
+      reads.push(...operands.map((word) => (spec.dashOperand === 'previous-directory' && word.staticValue === DASH ? DYNAMIC : operandTarget(word, 'read'))));
       break;
     case 'write-all':
       writes.push(...markRemoves(targetsOf(operands, 'write')));
       break;
-    case 'copy':
-      if (directories.length > 0) reads.push(...targetsOf(operands, 'read'));
+    case 'copy': {
+      const sourceReads = (sources: readonly Word[]): Target[] => (spec.sourcesAreText === true ? [] : targetsOf(sources, 'read'));
+      if (directories.length > 0) reads.push(...sourceReads(operands));
       else {
-        reads.push(...targetsOf(operands.slice(0, -1), 'read'));
-        if (last !== undefined) writes.push(operandTarget(last, 'write'));
+        reads.push(...sourceReads(operands.slice(0, -1)));
+        if (spec.singleOperandDestination === 'working-directory' && operands.length === 1) writes.push(DYNAMIC);
+        else if (last !== undefined) writes.push(operandTarget(last, 'write'));
       }
       break;
+    }
     case 'move':
       writes.push(...targetsOf(operands, 'write'));
       reads.push(...targetsOf(directories.length > 0 ? operands : operands.slice(0, -1), 'read'));
@@ -114,17 +124,6 @@ const roleEffects = (spec: CommandSpec, parsed: ParsedArgv): ProgramEffects => {
       break;
   }
   return { writes, reads, opaque: false };
-};
-
-const copyLike = (spec: CommandSpec, parsed: ParsedArgv, name: string): ProgramEffects => {
-  const directories = optionValues(parsed, '-t', '--target-directory');
-  const operands = parsed.operands;
-  if (name === 'install' && hasOption(parsed, '-d')) return { writes: targetsOf(operands, 'write'), reads: [], opaque: false };
-  if (directories.length > 0) return { writes: directories.map(targetOfOption), reads: name === 'ln' ? [] : targetsOf(operands, 'read'), opaque: false };
-  const reads = name === 'ln' ? [] : targetsOf(operands.slice(0, -1), 'read');
-  if (operands.length === 1 && name === 'ln') return { writes: [DYNAMIC], reads, opaque: false };
-  const destination = operands.at(-1);
-  return { writes: destination === undefined ? [] : [operandTarget(destination, 'write')], reads, opaque: false };
 };
 
 const ddEffects = (args: readonly Word[]): ProgramEffects => {
@@ -359,13 +358,6 @@ const findEffects = (spec: CommandSpec, parsed: ParsedArgv): ProgramEffects => {
   return { writes: deleting ? starting.map(removing) : [], reads: [...reads, ...starting], opaque: false };
 };
 
-const cdEffects = (name: string, parsed: ParsedArgv): ProgramEffects => {
-  const [operand] = parsed.operands;
-  if (name === 'popd') return NONE;
-  if (operand === undefined) return { writes: [], reads: name === 'cd' ? [{ literal: '~' }] : [], opaque: false };
-  return { writes: [], reads: [operand.staticValue === DASH ? DYNAMIC : operandTarget(operand, 'read')], opaque: false };
-};
-
 const WORKTREE_REMOVAL: Target = { worktree: true, removes: true };
 const GLOB_IN_PATHSPEC = /[*?[\]{}]/;
 const SHORT_MAGIC = new Set(['/', '!', '^']);
@@ -532,9 +524,6 @@ const programEffects = (name: string, spec: CommandSpec, args: readonly Word[], 
   switch (spec.extractor) {
     case 'sed':
       return sedEffects(spec, args, parsed);
-    case 'ln':
-    case 'install':
-      return { ...copyLike(spec, parsed, spec.extractor), spec, parsed };
     case 'curl':
       return { ...curlEffects(spec, parsed), spec, parsed };
     case 'wget':
@@ -549,8 +538,6 @@ const programEffects = (name: string, spec: CommandSpec, args: readonly Word[], 
       return { ...awkEffects(spec, parsed), spec, parsed };
     case 'find':
       return { ...findEffects(spec, parsed), spec, parsed };
-    case 'cd':
-      return { ...cdEffects(name, parsed), spec, parsed };
     default:
       return { ...roleEffects(spec, parsed), spec, parsed };
   }

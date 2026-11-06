@@ -4,7 +4,7 @@ import { ESTIMATED_ERROR_SHAPE } from '@momonga/protocol';
 import type { InputItem, MemoryView } from '@momonga/protocol';
 import { MIN_ROOM_TOKENS, buildContext, capacityFor, createTokenMeter, inputCeilingFor, measurePinned } from '@momonga/context';
 import type { BuildContextInput, BuildContextPorts, BuiltContext, HistoryItem, MeterCount, TokenMeter } from '@momonga/context';
-import { HOME, MODEL, PROJECT, SYSTEM_PROMPT, TASK, assistant, buildThroughLevels, call, capabilitiesFor, fakeBlobs, fakeReader, output, shapeCounter, sourcesWith, tokensOfItems, touchedFile } from './helpers.ts';
+import { HOME, RAW_OUTPUT_TOOL, MODEL, PROJECT, SYSTEM_PROMPT, TASK, assistant, buildThroughLevels, call, capabilitiesFor, fakeBlobs, fakeReader, output, shapeCounter, sourcesWith, tokensOfItems, touchedFile } from './helpers.ts';
 
 const WINDOW = 8192;
 const sized = capabilitiesFor(WINDOW, { tokenCounting: 'estimated', maxOutputTokens: 1024 });
@@ -48,6 +48,7 @@ const inputWith = (layout: Layout, history: HistoryItem[], extra: Partial<BuildC
   trusted: true,
   projectRoot: PROJECT,
   home: HOME,
+  harnessOutputTools: [RAW_OUTPUT_TOOL],
   keepRecentTurns: 1,
   observedCapacity: true,
   renderedFull: new Set(['c1', 'c2']),
