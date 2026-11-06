@@ -330,6 +330,7 @@ export const fakeRuntime = (): FakeRuntime => {
     adoptGuideline: unexpected('adoptGuideline'),
     rollbackGuideline: unexpected('rollbackGuideline'),
     recordContextCharge: unexpected('recordContextCharge'),
+    reportFacts: unexpected('reportFacts'),
     cost: unexpected('cost'),
     costText: unexpected('costText'),
     runReflection: unexpected('runReflection'),

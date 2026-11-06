@@ -1,7 +1,7 @@
 import { defineProductSchema, productErrorsText } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
 import { RUN_API_SCHEMAS, runApiSchemaName } from '@momonga/protocol';
-import type { AgentsResponse, ContextChargeResponse, CostBreakdownView, CostReportView, GuidelineResponse, GuidelinesResponse, JobsResponse, JsonSchema, MemoriesResponse, MemoryResponse, McpAuthorizationView, McpServerView, PolicyGovernanceResponse, PromoteMemoryResponse, PublicRunEvent, ReflectionResponse, RuleAddResponse, RuleResponse, RulesResponse, RunAnsweredByView, RunHealth, RunReflectionView, RunTraceView, SkillsResponse } from '@momonga/protocol';
+import type { AgentsResponse, ContextChargeResponse, CostBreakdownView, CostReportView, GuidelineResponse, GuidelinesResponse, JobsResponse, JsonSchema, MemoriesResponse, MemoryResponse, McpAuthorizationView, McpServerView, PolicyGovernanceResponse, PromoteMemoryResponse, PublicRunEvent, ReflectionResponse, ReportPage, RuleAddResponse, RuleResponse, RulesResponse, RunAnsweredByView, RunHealth, RunReflectionView, RunTraceView, SkillsResponse } from '@momonga/protocol';
 import type { ApprovalView, ElicitationView, ErrorBody, RunView, SessionView, TrustView } from './views.ts';
 
 export class ContractViolation extends Error {
@@ -42,6 +42,7 @@ export const checkRuleAdd = guard<RuleAddResponse>(RUN_API_SCHEMAS.RuleAddRespon
 export const checkRule = guard<RuleResponse>(RUN_API_SCHEMAS.RuleResponse);
 export const checkRules = guard<RulesResponse>(RUN_API_SCHEMAS.RulesResponse);
 export const checkPolicyGovernance = guard<PolicyGovernanceResponse>(RUN_API_SCHEMAS.PolicyGovernanceResponse);
+export const checkReportPage = guard<ReportPage>(RUN_API_SCHEMAS.ReportPage);
 export const checkCostReport = guard<CostReportView>(RUN_API_SCHEMAS.CostReport);
 export const checkRunAnsweredBy = guard<RunAnsweredByView>(RUN_API_SCHEMAS.RunAnsweredBy);
 export const checkRunReflection = guard<RunReflectionView>(RUN_API_SCHEMAS.RunReflection);
