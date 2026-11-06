@@ -1,26 +1,9 @@
 'use strict';
+const { multipleOfOk } = require('./multiple-of');
 
-// Interpreted draft 2020-12 engine. This is the correctness fallback for
-// schemas the JS codegen cannot represent when the native engine is absent
-// (browser, edge workers, ATA_NO_NATIVE). It walks the schema directly with
-// full annotation tracking (unevaluatedProperties/Items), $id/$anchor
-// resolution, and $dynamicRef dynamic-scope semantics. Each schema node is
-// resolved once into a fixed-shape Plan (type bitmask, compiled pattern,
-// looked-up format, a flag per keyword group) so the walk itself reads no
-// schema properties; codegen and the native engine remain the fast paths.
-
-// Read on the first pattern (see lib/js-compiler.js for why).
 let _safeRe = null;
 const compileSafe = (src) => (_safeRe || (_safeRe = require('./safe-regex'))).compileSafe(src);
 
-// A pattern with no group or alternation, few bounded choices in all, and at
-// most one unbounded repeat, on one character or class and only when the
-// pattern starts with `^`, runs in linear time on a backtracking RegExp, so it
-// takes the platform's: built in about a microsecond where the linear engine's
-// automaton took 40 to 100, and faster to test. Every pattern accepted here
-// also gets a RegExp from the code generator (lib/regex-linear.js), so both
-// engines answer with the same matcher; tests/test_regex_plain_linear.js holds
-// that and the answers.
 const PLAIN_ATOM = /(?:\\[dDwWsS\\/.^$|?*+()[\]{}-]|\[\^?(?:[^\\\][^\ud800-\udfff]|\\[dws\\/.^$[\]-])(?:[^\\\][\ud800-\udfff]|\\[dws\\/.^$[\]-])*\]|[^\\[\](){}|*+?^$\ud800-\udfff])(\?|[*+]|\{(\d{1,3})(?:,(\d{1,3}))?\})?/y;
 function plainLinear(src) {
   const n = src.length, anchored = src[0] === '^';
@@ -63,22 +46,15 @@ function splitFragment(uri) {
   return [uri.slice(0, hash), decodeURIComponent(uri.slice(hash + 1))];
 }
 
-// Loaded on the first collapsed anyOf/oneOf error, not with the engine.
 let _collapse = null;
 const collapseBranches = (args) => (_collapse || (_collapse = require('./branch-collapse').collapseBranches))(args);
 
-// ---------- resource index ----------
-
-// `flat`: the caller knows the schema holds no embedded resource and no
-// anchor (the shared error runtime is told so by the build), so only the root
-// is registered and the walk over every node is skipped. Every node then
-// resolves against the root's base, which is what the walk would record.
 function indexSchemas(rootSchema, schemaMap, flat) {
   const state = {
-    resources: new Map(), // baseUri -> schema node of the resource root
-    anchors: new Map(), // baseUri -> Map(anchorName -> node)
-    dynamicAnchors: new Map(), // baseUri -> Map(anchorName -> node)
-    nodeBase: new Map(), // schema node -> baseUri of its enclosing resource
+    resources: new Map(),
+    anchors: new Map(),
+    dynamicAnchors: new Map(),
+    nodeBase: new Map(),
     rootBase: FALLBACK_BASE,
   };
 
@@ -98,7 +74,6 @@ function indexSchemas(rootSchema, schemaMap, flat) {
     for (const [id, schema] of schemaMap) {
       const base = resolveUri(FALLBACK_BASE, splitFragment(id)[0]);
       if (!state.resources.has(base)) indexResource(schema, base, state);
-      // Also register under the raw key so non-URI ids stay addressable.
       if (!state.resources.has(id)) state.resources.set(id, schema);
     }
   }
@@ -119,24 +94,19 @@ function indexResource(node, baseUri, state) {
 
 function walkSchema(node, baseUri, state, isResourceRoot) {
   if (typeof node !== 'object' || node === null) return;
-  if (state.nodeBase.has(node)) return; // cycle guard
+  if (state.nodeBase.has(node)) return;
   state.nodeBase.set(node, baseUri);
 
   if (!isResourceRoot && typeof node.$id === 'string') {
-    // Embedded resource: new base URI, indexed as its own resource.
     const newBase = splitFragment(resolveUri(baseUri, node.$id))[0];
-    state.nodeBase.delete(node); // re-register under the new base
+    state.nodeBase.delete(node);
     indexResource(node, newBase, state);
     return;
   }
 
-  // A resource's anchor maps are made at its first anchor: most schemas have
-  // none, and two empty maps per resource were a sixth of a small schema's
-  // interpreter. Every reader takes a missing map as no anchor.
   if (typeof node.$anchor === 'string') anchorMap(state.anchors, baseUri).set(node.$anchor, node);
   if (typeof node.$dynamicAnchor === 'string') {
     anchorMap(state.dynamicAnchors, baseUri).set(node.$dynamicAnchor, node);
-    // A $dynamicAnchor is also addressable as a plain anchor.
     anchorMap(state.anchors, baseUri).set(node.$dynamicAnchor, node);
   }
 
@@ -153,8 +123,6 @@ function walkSchema(node, baseUri, state, isResourceRoot) {
     const list = node[kw];
     if (Array.isArray(list)) for (const sub of list) walkSchema(sub, baseUri, state, false);
   }
-  // propertyDependencies nests one level deeper than the other maps:
-  // property name -> property value -> schema.
   const propDeps = node.propertyDependencies;
   if (propDeps && typeof propDeps === 'object' && !Array.isArray(propDeps)) {
     for (const choices of Object.values(propDeps)) {
@@ -164,8 +132,6 @@ function walkSchema(node, baseUri, state, isResourceRoot) {
     }
   }
 }
-
-// ---------- ref resolution ----------
 
 function walkPointer(root, pointer) {
   if (pointer === '' || pointer === '/') return root;
@@ -181,14 +147,10 @@ function walkPointer(root, pointer) {
     } else if (part in node) {
       node = node[part];
     } else if (part === 'definitions' && node.$defs) {
-      // draft-07 normalization renames definitions to $defs; keep old
-      // pointers working (mirrors the 1.0.2 alias fix).
       node = node.$defs;
     } else if (part === '$defs' && node.definitions) {
       node = node.definitions;
     } else if (part === 'items' && Array.isArray(node.prefixItems)) {
-      // draft-07 array-form items is normalized to prefixItems; pointers
-      // written against the original document still land.
       node = node.prefixItems;
     } else {
       return undefined;
@@ -207,7 +169,6 @@ function resolveRef(ref, fromBase, state) {
     resourceBase = state.rootBase;
   }
   if (resource === undefined) {
-    // Raw-id registration (schemaMap keys that are not URIs).
     const [rawUri, rawFragment] = splitFragment(ref);
     if (state.resources.has(rawUri)) {
       resource = state.resources.get(rawUri);
@@ -222,7 +183,6 @@ function resolveRef(ref, fromBase, state) {
   if (fragment === '') return { node: resource, base: resourceBase };
   if (fragment.startsWith('/')) {
     const node = walkPointer(resource, fragment);
-    // A pointer can land inside an embedded resource; its recorded base wins.
     const base = node !== null && typeof node === 'object' && state.nodeBase.has(node) ? state.nodeBase.get(node) : resourceBase;
     return { node, base };
   }
@@ -230,13 +190,8 @@ function resolveRef(ref, fromBase, state) {
   return { node: anchored ? anchored.get(fragment) : undefined, base: resourceBase };
 }
 
-// ---------- value helpers ----------
-
-// uniqueItems: the functions the code generator emits as _uq and _uqp
-// (lib/unique-items.js), so both engines run the same code.
 const { allDistinct, duplicatePair, _deq } = require('./unique-items');
 
-// Whether `data` deep-equals one of the node's enum values (see enumPrims).
 function enumMember(P, data) {
   if (data === null || typeof data !== 'object') return P.enumPrims.has(data);
   const objs = P.enumObjs;
@@ -244,23 +199,18 @@ function enumMember(P, data) {
   return false;
 }
 
-// JSON equality: the same function the code generator emits as `_deq`, so the
-// engines agree on what equal means (an object's own keys, in any order).
 const deepEqual = _deq;
 const propEnum = Object.prototype.propertyIsEnumerable;
 
 function codePointLength(s) {
   let n = 0;
   for (let i = 0; i < s.length; i++) {
-    // Wraparound test: one compare classifies a high surrogate.
     if (((s.charCodeAt(i) - 0xd800) >>> 0) < 0x400 && i + 1 < s.length) i++;
     n++;
   }
   return n;
 }
 
-// The code point count of a UTF-16 string sits between ceil(length / 2) and
-// length, so most length bounds are decided without counting anything.
 function cpAtLeast(s, min) {
   if (s.length >= 2 * min) return true;
   if (s.length < min) return false;
@@ -286,28 +236,8 @@ function typeMatches(type, d) {
   }
 }
 
-function multipleOfOk(d, m) {
-  if (m === 0) return false;
-  const q = d / m;
-  if (Number.isInteger(q)) return true;
-  // Float remainder tolerance (0.0075 % 0.0001 style cases)
-  return Math.abs(q - Math.round(q)) < 1e-9;
-}
-
-// The built-in format checks come from lib/formats.js (formatChecks), loaded
-// on the first schema that names a format: the engine loads without it, which
-// schemas without `format` never need.
-
-// ---------- evaluation ----------
-
-// Sink for subschema results whose annotations the caller never reads
-// (properties, items, propertyNames and friends). eval() skips the merge when
-// it sees this object, so it is never mutated.
 const DISCARD = { props: null, items: null };
 
-// Verdict-only error sink. When eval() sees this identity it neither builds
-// error objects nor formats messages; every push site is guarded on it. The
-// array is frozen so a missed guard throws in tests instead of hiding.
 const NOERRORS = Object.freeze([]);
 
 function mergeAnnotations(target, from) {
@@ -321,10 +251,6 @@ function mergeAnnotations(target, from) {
   }
 }
 
-// ---------- plans ----------
-
-// Type bits, one per JSON Schema type. `integer` data also sets the `number`
-// bit so a `number` constraint accepts it.
 const T_STRING = 1;
 const T_NUMBER = 2;
 const T_INTEGER = 4;
@@ -343,7 +269,7 @@ function typeBit(name) {
     case 'null': return T_NULL;
     case 'object': return T_OBJECT;
     case 'array': return T_ARRAY;
-    default: return T_ANY; // unknown type names match everything
+    default: return T_ANY;
   }
 }
 
@@ -365,13 +291,6 @@ function isObjectMap(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
 
-// A plan is the schema node with every keyword resolved once: the type list
-// folded to a bitmask, the format looked up, patterns compiled, and a flag
-// per section so eval() can skip whole blocks without touching the schema
-// object. Plans have a fixed shape, which keeps eval() monomorphic where the
-// raw schema objects are not.
-// The keyword values of a schema node, from one pass over its enumerable
-// names (its own, as JSON gives them), in a record of one shape for link().
 const KEYWORD_RECORD = () => ({ '$ref': undefined, '$dynamicRef': undefined, type: undefined, enum: undefined, const: undefined, minimum: undefined, maximum: undefined, exclusiveMinimum: undefined, exclusiveMaximum: undefined, multipleOf: undefined, minLength: undefined, maxLength: undefined, pattern: undefined, format: undefined, minItems: undefined, maxItems: undefined, uniqueItems: undefined, prefixItems: undefined, items: undefined, contains: undefined, minContains: undefined, maxContains: undefined, required: undefined, minProperties: undefined, maxProperties: undefined, dependentRequired: undefined, propertyNames: undefined, properties: undefined, patternProperties: undefined, additionalProperties: undefined, dependentSchemas: undefined, propertyDependencies: undefined, allOf: undefined, anyOf: undefined, oneOf: undefined, not: undefined, if: undefined, then: undefined, else: undefined, unevaluatedProperties: undefined, unevaluatedItems: undefined });
 function readKeywords (schema) {
   const S = KEYWORD_RECORD();
@@ -425,25 +344,13 @@ function readKeywords (schema) {
 }
 
 class Plan {
-  // The plan is registered in the cache before `link` runs, so a schema
-  // object that contains itself structurally resolves to the same plan
-  // instead of recursing without end.
   constructor(schema) {
     this.schema = schema;
   }
 
   link(interp) {
     const schema = this.schema;
-    // The keywords read once, by one pass over the schema's own names, into
-    // a record of one shape: read by name on the schema, each absent keyword
-    // was a lookup that missed on an object of yet another shape, and with
-    // many schemas in a process the 41 reads cost 3.7 us a node against 8 ns
-    // for the pass (measured on 64 shapes). Reads on the record hit one
-    // shape every time.
     const S = readKeywords(schema);
-    // Children are linked as plans (or booleans) up front, so a visit never
-    // goes back through the plan cache. Reference targets are resolved at
-    // evaluation time and cached per base URI.
     const child = (sub) => interp.node(sub);
     this.refCache = null;
     this.refBase0 = undefined;
@@ -464,11 +371,6 @@ class Plan {
     }
     this.hasType = S.type !== undefined;
     this.enum = S.enum !== undefined ? S.enum : null;
-    // Membership for enumMember(): the primitive values in a Set, so a long
-    // enum answers in one lookup, and the object and array values, which only
-    // deepEqual can compare, in a list. Scanning every value with deepEqual
-    // was a fifth to a third of what validating SchemaStore's samples cost.
-    // NaN stays out of the Set: deepEqual never matches it, and a Set would.
     this.enumPrims = null;
     this.enumObjs = null;
     if (Array.isArray(this.enum)) {
@@ -496,8 +398,6 @@ class Plan {
     this.format = S.format;
     this.formatFn = null;
     if (S.format !== undefined) {
-      // Own properties only, as the generated code reads them: an inherited
-      // Object member ('hasOwnProperty', 'constructor') is not a check.
       const own = Object.prototype.hasOwnProperty;
       const uf = interp.userFormats;
       const f = S.format;
@@ -507,8 +407,6 @@ class Plan {
       this.formatFn = fc;
     }
     this.hasString = this.minLength !== undefined || this.maxLength !== undefined || this.pattern !== null || this.formatFn !== null;
-    // A format compat registered for numbers (`type: 'number'`), checked on
-    // numbers as the reference checks it.
     const nf = interp.numberFormats;
     this.numFormatFn = S.format !== undefined && nf !== null && typeof nf[S.format] === 'function' ? nf[S.format] : null;
     if (this.numFormatFn !== null) this.hasNumber = true;
@@ -533,15 +431,9 @@ class Plan {
       this.properties = new Map();
       for (const key of Object.keys(S.properties)) {
         const ek = escapePointer(key);
-        // Escaped once here; the walk only concatenates.
         this.properties.set(key, { node: child(S.properties[key]), seg: '/' + ek, schemaSeg: '/properties/' + ek });
       }
     }
-    // A required key holding undefined is missing. Where the key is also a
-    // declared property, the property walk, which reads the value anyway,
-    // finds that (requiredInProps); the required check reads the value only
-    // for the other keys (requiredUndef), so a valid object pays no second
-    // read of each required value.
     this.requiredInProps = null;
     this.requiredUndef = null;
     if (this.required !== null) {
@@ -573,9 +465,6 @@ class Plan {
     this.if = S.if !== undefined ? child(S.if) : undefined;
     this.then = S.then !== undefined ? child(S.then) : undefined;
     this.else = S.else !== undefined ? child(S.else) : undefined;
-    // Macro keywords: the schema the macro returns is applied in place, the
-    // way the reference validator does it, so its errors carry the keyword's
-    // path and the keyword adds an error of its own when that schema fails.
     this.macros = null;
     if (interp.keywords !== null) {
       for (const key of Object.keys(schema)) {
@@ -591,16 +480,10 @@ class Plan {
 
     this.unevaluatedProperties = S.unevaluatedProperties !== undefined ? child(S.unevaluatedProperties) : undefined;
     this.unevaluatedItems = S.unevaluatedItems !== undefined ? child(S.unevaluatedItems) : undefined;
-    // A `false` here rejects the member outright, and the error belongs to this
-    // keyword on this object, not to a boolean schema that happens to sit
-    // under it. Recorded at compile time so the check below is one test.
     this.unevaluatedPropertiesFalse = S.unevaluatedProperties === false;
     this.unevaluatedItemsFalse = S.unevaluatedItems === false;
     this.hasUnevaluated = this.unevaluatedProperties !== undefined || this.unevaluatedItems !== undefined;
 
-    // Custom keywords present on this node, in schema order. Each op holds
-    // the per-value check, built once here for the compile form, and the
-    // type mask it applies to (T_ANY when the definition names no type).
     this.custom = null;
     if (interp.keywords !== null) {
       for (const key of Object.keys(schema)) {
@@ -619,8 +502,6 @@ class Plan {
         } else {
           const validate = def.validate;
           fn = def.dataContext ? (data, ctx) => validate(value, data, schema, ctx) : (data) => validate(value, data, schema);
-          // Errors written by the validate function land on the function
-          // itself, which is where the check reads them from below.
           fn.source = validate;
         }
         if (this.custom === null) this.custom = [];
@@ -629,40 +510,22 @@ class Plan {
       if (this.custom !== null && this.custom.length > 1) this.custom = orderCustom(this.custom);
     }
     this.hasCustom = this.custom !== null;
-    // Keywords declared `post` run after everything else at the node, the
-    // subschemas included (see eval).
     this.hasPost = this.custom !== null && this.custom.some((op) => op.post);
 
-    // Resource bookkeeping, read once instead of two Map lookups per visit.
-    // Only a resource root changes the base: a node inside a resource is
-    // reached with its resource's base already, by descent from the root or
-    // through a reference, whose resolution hands over the target's base. The
-    // index records a base for every node, and carrying it here made every
-    // plan a resource boundary, so no plan was ever a leaf and every value
-    // check went through the whole eval() prologue.
     const nodeBase = interp.state.nodeBase.get(schema);
     this.isResourceRoot = nodeBase !== undefined && interp.state.resources.get(nodeBase) === schema;
     this.nodeBase = this.isResourceRoot ? nodeBase : null;
 
-    // A leaf plan checks only value-level keywords: no references, no
-    // subschemas, no annotations, no resource boundary. Those skip the whole
-    // eval() prologue (cycle guard, scope, annotation sinks) and run through
-    // evalLeaf(). Most schemas are mostly leaves.
     this.leaf = !this.tracked && !this.hasApplicators && !this.hasUnevaluated &&
       this.properties === null && this.patternProperties === null &&
       this.additionalProperties === undefined && this.propertyNames === undefined &&
       this.dependentSchemas === null && this.propertyDependencies === null &&
       this.prefixItems === null && this.items === undefined && this.contains === undefined &&
       this.nodeBase === null &&
-      // The verdict-only leaf check carries no path, which a keyword reading
-      // its data's context needs.
       !(this.custom !== null && this.custom.some((op) => op.ctx));
   }
 }
 
-
-// Verdict-only twin of evalLeaf: no error objects, no path strings, first
-// failure returns. Kept adjacent so the two cannot drift.
 function evalLeafV(P, data) {
   const bits = dataBits(data);
   if (P.hasType && (bits & P.typeMask) === 0) return false;
@@ -693,7 +556,6 @@ function evalLeafV(P, data) {
     if (P.required !== null) {
       const req = P.required;
       for (let i = 0; i < req.length; i++) {
-        // A key holding undefined is missing, as in the default validator.
         if (!Object.hasOwn(data, req[i]) || (P.requiredUndef !== null && P.requiredUndef[i] && data[req[i]] === undefined)) return false;
       }
     }
@@ -711,16 +573,6 @@ function evalLeafV(P, data) {
   return true;
 }
 
-// Custom keyword checks for one node. The verdict variant stops at the first
-// failing keyword; the collecting variant runs them all and reports each,
-// taking the error objects the keyword's function left on itself when it
-// wrote any (`fn.errors`, the same convention as the default validator's
-// custom keywords) and a fixed message otherwise.
-// Custom keywords of one node in the order they declare: schema order, then
-// each one with `before` moved ahead of the keyword it names (when that is
-// one of them), then those marked `post` after the rest. A keyword that
-// rewrites its value (serializing a Date to a string, say) declares that it
-// runs before the one that checks the result.
 function orderCustom(ops) {
   const out = ops.filter((op) => !op.post);
   for (const op of ops.slice()) {
@@ -735,8 +587,6 @@ function orderCustom(ops) {
   return out;
 }
 
-// The interpreter whose validate() is running a context-reading keyword, and
-// the context it is given: where the value sits, read from the root by path.
 let ctxInterp = null;
 function dataCtx(instancePath, schemaPath, keyword) {
   const root = ctxInterp !== null ? ctxInterp._ctxRoot : undefined;
@@ -752,19 +602,11 @@ function dataCtx(instancePath, schemaPath, keyword) {
   return { instancePath, parentData: parent, parentDataProperty: key, rootData: root, schemaPath: schemaPath + '/' + keyword };
 }
 
-// After a context-reading keyword, the value is read again from where it sits:
-// the keyword may have replaced it (a date deserialized, a value serialized),
-// and the keywords after it check what it left, as the default validator's
-// do after a modifying keyword.
 function reread(ctx, data) {
   const p = ctx.parentData;
   return p !== null && typeof p === 'object' && ctx.parentDataProperty !== undefined ? p[ctx.parentDataProperty] : data;
 }
 
-// Every branch's result, kept on a collapsed anyOf or oneOf error when the
-// schema has keywords that read their data's context. Such a keyword may have
-// changed the data, so the errors of each branch cannot be had afterwards by
-// validating it again; compat reads them from here (see compat-errors.js).
 function keepBranches(error, branches) {
   Object.defineProperty(error, '_branches', { value: branches });
 }
@@ -789,8 +631,6 @@ function runCustomV(P, data, bits, instancePath, schemaPath) {
   return true;
 }
 
-// `post`: undefined runs every keyword, false those not declared post, true
-// only those.
 function runCustom(P, data, bits, errors, instancePath, schemaPath, post) {
   const ops = P.custom;
   let valid = true;
@@ -816,8 +656,6 @@ function runCustom(P, data, bits, errors, instancePath, schemaPath, post) {
     if (Array.isArray(own) && own.length > 0) {
       for (let j = 0; j < own.length; j++) {
         const e = own[j];
-        // A context-reading keyword writes the path it was given, as the
-        // default validator's keywords do; the others write one relative to it.
         errors.push(err(op.keyword, e.keyword || op.keyword,
           e.instancePath !== undefined ? (op.ctx ? e.instancePath : instancePath + e.instancePath) : instancePath,
           e.schemaPath !== undefined ? e.schemaPath : kwPath,
@@ -831,8 +669,6 @@ function runCustom(P, data, bits, errors, instancePath, schemaPath, post) {
   return valid;
 }
 
-// Value-level checks only; the caller guarantees P.leaf. The bodies mirror
-// the corresponding sections of eval() exactly, minus the prologue.
 function evalLeaf(P, data, errors, instancePath, schemaPath) {
   let valid = true;
   const schema = P.schema;
@@ -909,58 +745,31 @@ class Interpreter {
     this.state = indexSchemas(rootSchema, opts.schemaMap, opts.flat === true);
     this.userFormats = opts.formats || null;
     this.numberFormats = opts.numberFormats && Object.keys(opts.numberFormats).length > 0 ? opts.numberFormats : null;
-    // Custom keywords, already normalized by lib/keywords.js.
     this.keywords = opts.keywords || null;
-    // 2020-12 requires bookending for `$dynamicRef`; v1 removes the
-    // requirement. See the `$dynamicRef` branch in eval().
     this.bookending = !opts.v1;
-    // Made at the first pattern.
     this.patternCache = null;
-    // Plans are built on first visit; a schema node is never re-read after.
     this.plans = new Map();
     this.rootNode = this.node(rootSchema);
-    // Compiled closure tree: undefined = not attempted, null = out of scope.
     this._fast = undefined;
     this._calls = 0;
     this._tier = typeof opts.tier === 'number' ? opts.tier : TIER;
-    // A keyword that asks for its data's context (parentData and the rest)
-    // needs every value's path, which only the collecting walk builds: the
-    // verdict comes from that walk too, and the closure tree is not used.
     this.dataContext = false;
     if (this.keywords !== null) for (const k of Object.keys(this.keywords)) if (this.keywords[k].dataContext) { this.dataContext = true; break; }
-    // Type coercion where each `type` is checked, the reference's way, which
-    // reaches a value behind allOf, anyOf, oneOf and $ref (the pass that runs
-    // before validation reaches `properties` and `items` only). It writes the
-    // coerced value where the value sits, so it takes the same walk.
     this.coerce = opts.coerce === 'array' ? 'array' : opts.coerce === true;
     if (this.coerce !== false) this.dataContext = true;
-    // OpenAPI's discriminator, read the reference's way under its
-    // `discriminator` option: the tag picks the one oneOf branch to apply.
     this.discriminator = opts.discriminator === true;
     this._discr = null;
-    // Both come from compat, which installs the code for them (see
-    // lib/interpreter-compat.js), so a bundle without compat carries none of it.
     this.ext = this.coerce !== false || this.discriminator ? compatExt() : null;
-    // The compiled closures know none of these.
     if (this.dataContext || this.discriminator || this.numberFormats !== null) this._fast = null;
     this._ctxRoot = undefined;
   }
 
-  // The closure-tree compiler covers every schema the interpreter accepts;
-  // eval() stays as the reference the compiled tree is diffed against.
-  // Compiled lazily so construction stays cheap for schemas that never
-  // validate.
   _fastRoot() {
     if (this._fast === undefined) {
       const compile = planCompiler();
-      // Still on its way (the browser build loads it after the page's first
-      // checks, lib/interpreter.browser.js): the plain walk answers, and the
-      // next call asks again.
       if (compile === null) { if (planPending) return null; this._fast = null; }
       else {
         try { this._fast = compile(this); } catch (e) {
-          // The plain walk answers instead, which tests cannot tell apart;
-          // tests/test_plan_compiles.js holds the compiler to the suite.
           if (typeof process === 'object' && process !== null && process.env && process.env.ATA_DEBUG) console.error('ata: plan compiler failed, plain walk used:', e && e.message);
           this._fast = null;
         }
@@ -968,17 +777,10 @@ class Interpreter {
     }
     return this._fast;
   }
-  // The closure tree once the schema has been used TIER times, the plain walk
-  // before that (null).
   _tiered() {
     if (this._fast !== undefined) return this._fast;
     return ++this._calls > this._tier ? this._fastRoot() : null;
   }
-  // The plain walk takes more stack per level of data than the closure tree,
-  // which answered every call before calls were tiered: data deep enough to
-  // overflow it goes to the closure tree, compiled now, and answers as it did.
-  // Without a plan compiler (the shared error runtime) the overflow is
-  // rethrown for the caller to handle.
   _deep(e) {
     if (!(e instanceof RangeError) || this._fast !== undefined) throw e;
     const fast = this._fastRoot();
@@ -991,12 +793,6 @@ class Interpreter {
     let re = this.patternCache.get(src);
     if (!re) {
       if (/\\[pP]\{/.test(src)) {
-        // Unicode property escapes need a real RegExp in unicode mode; the
-        // linear engine does not understand them (compileSafe refuses them),
-        // so the RegExp answers whether or not it runs this pattern in linear
-        // time. Asking lib/regex-linear.js would change no answer and would
-        // add it to lite. A nested loop around a property escape can
-        // backtrack here; SECURITY.md says so.
         try { re = new RegExp(src, 'u'); } catch { re = new RegExp(src); }
       } else if (plainLinear(src)) {
         re = new RegExp(src);
@@ -1004,14 +800,6 @@ class Interpreter {
         try {
           re = compileSafe(src);
         } catch (e) {
-          // A parse failure means the engine cannot represent the pattern
-          // (a backreference, a lookaround, an escape it does not implement,
-          // a repeat past its instruction budget) and the platform RegExp
-          // takes it.
-          // The stub of a shared error runtime built without the engine
-          // (lib/error-runtime.js) throws too, and that one is rethrown: a
-          // module whose runtime lacks the engine must fail, not quietly
-          // match on a RegExp that can backtrack.
           if (e && typeof e.message === 'string' && e.message.includes('built without the pattern engine')) throw e;
           try { re = new RegExp(src, 'u'); } catch { re = new RegExp(src); }
         }
@@ -1031,11 +819,6 @@ class Interpreter {
     return p;
   }
 
-  // $ref resolution depends on the base URI in effect, which can differ
-  // between visits of the same node; cache per (plan, base). Nearly every
-  // plan only ever sees one base, so the last resolution lives in two plain
-  // fields and the Map exists only for the rare second base. The cached
-  // entry carries the already-planned child, so a visit does no Map lookups.
   resolveRefCached(P, base) {
     if (P.refBase0 === base) return P.refRes0;
     let cache = P.refCache;
@@ -1049,8 +832,6 @@ class Interpreter {
     return r;
   }
 
-  // The static half of $dynamicRef (initial target and fragment) per base;
-  // the dynamic-scope search still runs on every visit.
   resolveDynamicRefCached(P, base) {
     let cache = P.dynCache;
     if (cache === null) cache = P.dynCache = new Map();
@@ -1064,15 +845,12 @@ class Interpreter {
     return r;
   }
 
-  // Maps any schema value to what eval() accepts: a boolean or a Plan.
-  // Non-object, non-boolean values validate everything, as before.
   node(schema) {
     if (schema === true || schema === false) return schema;
     if (typeof schema !== 'object' || schema === null) return true;
     return this.plan(schema);
   }
 
-  // Verdict only: same walk as validate(), no error construction at all.
   isValid(data) {
     if (this.dataContext) return this.validate(data).valid;
     const fast = this._fast !== undefined ? this._fast : this._tiered();
@@ -1086,8 +864,6 @@ class Interpreter {
     }
   }
 
-  // The value at `instancePath` as it is now, after a subschema may have
-  // coerced it.
   here(instancePath, data) {
     if (instancePath === '') return this._ctxRoot;
     const ctx = dataCtx(instancePath, '', '');
@@ -1104,12 +880,9 @@ class Interpreter {
     let errors = [];
     const dynScope = [this.state.rootBase];
     let valid;
-    // The root a context-reading keyword resolves its parent from; kept
-    // across a nested validate() its own function might make.
     const outerRoot = this._ctxRoot;
     if (this.dataContext) { this._ctxRoot = data; ctxInterp = this; }
     try {
-      // Nothing reads the root's annotations, so they are discarded from the start.
       valid = this.eval(this.rootNode, data, this.state.rootBase, dynScope, errors, '', '#', [], DISCARD);
     } catch (e) {
       if (this.dataContext) throw e;
@@ -1122,42 +895,25 @@ class Interpreter {
     return valid ? { valid: true, data, errors: [] } : { valid: false, errors };
   }
 
-  // Evaluates `schema` against `data`. Collected annotations for data are
-  // written into `sink` ({props, items}); errors append to `errors`.
-  // `stack` breaks infinite $ref recursion on identical (schema, data) pairs.
   eval(P, data, base, dynScope, errors, instancePath, schemaPath, stack, sink) {
-    // Paths are built only while errors are collected; a verdict walk never
-    // reads them, and concatenating two per child was most of its cost. A
-    // keyword that reads its data's context needs them on every walk.
     const E = errors !== NOERRORS || this.dataContext;
     if (P === true) return true;
     if (P === false) {
       if (errors !== NOERRORS) errors.push(err('false schema', 'not', instancePath, schemaPath, {}, 'boolean schema is false'));
       return false;
     }
-    // The leaf check cannot coerce: it neither knows the value's place nor
-    // hands a coerced value on.
     if (P.leaf && this.coerce === false) return evalLeaf(P, data, errors, instancePath, schemaPath);
     const schema = P.schema;
 
-    // Only a reference can lead evaluation back to a schema it is already
-    // inside of, so the cycle guard is maintained on reference nodes alone.
-    // The frame is pushed in place and popped on the way out; the array is
-    // created per validate() call, so a throw leaves nothing to clean up.
     const tracked = P.tracked;
     if (tracked) {
       for (let i = stack.length - 2; i >= 0; i -= 2) {
-        if (stack[i] === schema && stack[i + 1] === data) return true; // fixed point
+        if (stack[i] === schema && stack[i + 1] === data) return true;
       }
       stack.push(schema, data);
     }
 
     if (P.nodeBase !== null && P.nodeBase !== base) base = P.nodeBase;
-    // Entering a schema resource extends the dynamic scope, whether evaluation
-    // lands on the resource's root or on a subschema inside it: a reference
-    // to first#/$defs/stuff still passes through resource `first`. The scope
-    // is pushed in place and popped on the way out; evaluation is depth-first
-    // and nothing retains the array.
     let scopePushed = false;
     if (dynScope[dynScope.length - 1] !== base) {
       dynScope.push(base);
@@ -1165,16 +921,11 @@ class Interpreter {
     }
 
     let valid = true;
-    // Annotations only matter if this node or an ancestor reads them. When
-    // nobody does, in-place children get the discard sink too and `local`
-    // stays unallocated.
     const collect = sink !== DISCARD || P.hasUnevaluated;
     const local = collect ? { props: null, items: null } : DISCARD;
 
-    // Coercion first, before anything reads the value, as the reference does it.
     if (this.coerce !== false && P.hasType && (dataBits(data) & P.typeMask) === 0) data = this.ext.coerceAt(this, P, data, instancePath);
 
-    // $ref / $dynamicRef: in-place applicators, annotations flow through
     if (P.ref !== null) {
       const { child, base: refBase } = this.resolveRefCached(P, base);
       if (child === undefined) {
@@ -1194,18 +945,9 @@ class Interpreter {
       let refBase = initial.base;
       const fragment = initial.fragment;
       if (initial.byAnchor) {
-        // Under 2020-12 the initial target must itself carry the matching
-        // $dynamicAnchor before the dynamic scope is consulted (bookending);
-        // otherwise the keyword behaves like $ref. v1 removes that
-        // requirement, so the scope is searched whether or not the initial
-        // target carries the anchor, and also when the reference does not
-        // resolve on its own, which is the shape the suite uses: a
-        // `$dynamicRef` in a resource that declares no anchor of that name.
         const initialDyn = this.state.dynamicAnchors.get(refBase);
         const bookended = node !== undefined && initialDyn && initialDyn.get(fragment) === node;
         if (bookended || !this.bookending) {
-          // Outermost scope first: the first matching $dynamicAnchor
-          // encountered while evaluating wins.
           for (const scopeBase of dynScope) {
             const dyn = this.state.dynamicAnchors.get(scopeBase);
             if (dyn && dyn.has(fragment)) {
@@ -1229,7 +971,6 @@ class Interpreter {
 
     const bits = dataBits(data);
 
-    // type / enum / const
     if (P.hasType && (bits & P.typeMask) === 0) {
       if (errors !== NOERRORS) errors.push(err('type', 'type', instancePath, schemaPath + '/type', { type: schema.type }, `must be ${P.typeNames.join(', ')}`));
       valid = false;
@@ -1245,7 +986,6 @@ class Interpreter {
       valid = false;
     }
 
-    // numbers
     if (P.hasNumber && Number.isFinite(data)) {
       if (P.minimum !== undefined && !(data >= P.minimum)) { errors === NOERRORS || errors.push(err('minimum', 'minimum', instancePath, schemaPath + '/minimum', { comparison: '>=', limit: P.minimum }, `must be >= ${P.minimum}`)); valid = false; }
       if (P.maximum !== undefined && !(data <= P.maximum)) { errors === NOERRORS || errors.push(err('maximum', 'maximum', instancePath, schemaPath + '/maximum', { comparison: '<=', limit: P.maximum }, `must be <= ${P.maximum}`)); valid = false; }
@@ -1255,7 +995,6 @@ class Interpreter {
       if (P.numFormatFn !== null && !P.numFormatFn(data)) { errors === NOERRORS || errors.push(err('format', 'format', instancePath, schemaPath + '/format', { format: P.format }, `must match format "${P.format}"`)); valid = false; }
     }
 
-    // strings
     if (P.hasString && bits === T_STRING) {
       if (P.minLength !== undefined && !cpAtLeast(data, P.minLength)) { errors === NOERRORS || errors.push(err('minLength', 'minLength', instancePath, schemaPath + '/minLength', { limit: P.minLength }, `must NOT have fewer than ${P.minLength} characters`)); valid = false; }
       if (P.maxLength !== undefined && !cpAtMost(data, P.maxLength)) { errors === NOERRORS || errors.push(err('maxLength', 'maxLength', instancePath, schemaPath + '/maxLength', { limit: P.maxLength }, `must NOT have more than ${P.maxLength} characters`)); valid = false; }
@@ -1263,14 +1002,8 @@ class Interpreter {
       if (P.formatFn !== null && !P.formatFn(data)) { errors === NOERRORS || errors.push(err('format', 'format', instancePath, schemaPath + '/format', { format: P.format }, `must match format "${P.format}"`)); valid = false; }
     }
 
-    // Custom keywords, where the plan compiler runs them: with the other
-    // value-level checks (evalLeaf), before any subschema. Only evalLeaf ran
-    // them, so on a node that was not a leaf this walk skipped them and
-    // accepted what they reject; the plan compiler, which answered every call
-    // until calls were tiered, hid it.
     if (P.hasCustom && !runCustom(P, data, bits, errors, instancePath, schemaPath, P.hasPost ? false : undefined)) valid = false;
 
-    // arrays
     if (P.hasArray && bits === T_ARRAY) {
       if (P.minItems !== undefined && data.length < P.minItems) { errors === NOERRORS || errors.push(err('minItems', 'minItems', instancePath, schemaPath + '/minItems', { limit: P.minItems }, `must NOT have fewer than ${P.minItems} items`)); valid = false; }
       if (P.maxItems !== undefined && data.length > P.maxItems) { errors === NOERRORS || errors.push(err('maxItems', 'maxItems', instancePath, schemaPath + '/maxItems', { limit: P.maxItems }, `must NOT have more than ${P.maxItems} items`)); valid = false; }
@@ -1313,11 +1046,6 @@ class Interpreter {
       }
     }
 
-    // objects. The object's own names, enumerable or not: a declared
-    // property is read by name, as the generated code reads it, so one
-    // hidden under its name is checked; patternProperties, propertyNames
-    // and additionalProperties see the names for-in sees, as there too, and
-    // minProperties and maxProperties count those.
     if (P.hasObject && bits === T_OBJECT) {
       const keys = Object.getOwnPropertyNames(data);
       let hidden = 0;
@@ -1354,10 +1082,6 @@ class Interpreter {
         const prop = props !== null ? props.get(key) : undefined;
         const seen = prop !== undefined && patterns === null && P.additionalProperties === undefined || propEnum.call(data, key);
         if (prop !== undefined) {
-          // A declared property whose value is undefined is not checked, as the
-          // generated code does not check it: no JSON document carries one, and
-          // serialized the key is not there. Required, it is missing (see
-          // requiredInProps).
           const value = data[key];
           if (value !== undefined) {
             if (!this.eval(prop.node, value, base, dynScope, errors, E ? instancePath + prop.seg : '', E ? schemaPath + prop.schemaSeg : '', stack, DISCARD)) valid = false;
@@ -1374,9 +1098,6 @@ class Interpreter {
           }
         }
         if (!evaluated && seen && P.additionalProperties !== undefined) {
-          // `additionalProperties: false` keeps its own keyword and names the
-          // property it turned away. Running it as a plain false subschema
-          // reported `not` at the key's path, which drops both.
           if (P.additionalProperties === false) {
             valid = false;
             if (errors !== NOERRORS) errors.push(err('additionalProperties', 'additionalProperties', instancePath, schemaPath + '/additionalProperties', { additionalProperty: key }, 'must NOT have additional properties'));
@@ -1397,10 +1118,6 @@ class Interpreter {
           }
         }
       }
-      // propertyDependencies: like dependentSchemas but keyed on the property's
-      // value rather than its presence. Only string values can match, since the
-      // inner keys are object keys. Equivalent to
-      // `if: { properties: { p: { const: v } }, required: [p] }, then: <schema>`.
       if (P.propertyDependencies !== null) {
         for (const [key, choices] of P.propertyDependencies) {
           if (!Object.hasOwn(data, key)) continue;
@@ -1416,7 +1133,6 @@ class Interpreter {
       }
     }
 
-    // in-place applicators
     if (P.hasApplicators) {
       if (P.allOf !== null) {
         for (let i = 0; i < P.allOf.length; i++) {
@@ -1440,8 +1156,6 @@ class Interpreter {
       if (P.anyOf !== null) {
         let any = false;
         const scratch = errors === NOERRORS ? NOERRORS : [];
-        // Per-branch errors, taken as a slice of the shared scratch rather than
-        // an array each, so a branch that passes costs nothing extra.
         const branches = errors === NOERRORS ? null : [];
         for (let i = 0; i < P.anyOf.length; i++) {
           const sub = collect ? { props: null, items: null } : DISCARD;
@@ -1452,8 +1166,6 @@ class Interpreter {
             any = true;
             if (collect) mergeAnnotations(local, sub);
           }
-          // Coercing, the branches after the first that passes are not tried,
-          // as the reference does not try them: each could coerce the value.
           if (this.coerce !== false) {
             data = this.here(instancePath, data);
             if (ok && !collect) break;
@@ -1474,8 +1186,6 @@ class Interpreter {
         let count = 0;
         let winner = null;
         const scratch = errors === NOERRORS ? NOERRORS : [];
-        // Per-branch results, so a failing oneOf collapses to the branch that
-        // came closest instead of every branch's complaints at once.
         const branches = errors === NOERRORS ? null : [];
         for (let i = 0; i < P.oneOf.length; i++) {
           const sub = collect ? { props: null, items: null } : DISCARD;
@@ -1526,16 +1236,11 @@ class Interpreter {
       }
     }
 
-    // unevaluated*: run last, against annotations from everything above
     if (P.hasUnevaluated) {
       if (P.unevaluatedProperties !== undefined && bits === T_OBJECT) {
         for (const key of Object.keys(data)) {
           if (local.props && local.props.has(key)) continue;
           if (P.unevaluatedPropertiesFalse) {
-            // The name is what is wrong, so the error names it and sits on the
-            // object holding it. Descending instead reported a false boolean
-            // schema at the member's own path, which says nothing about which
-            // key was unexpected and left `params` empty.
             valid = false;
             if (errors !== NOERRORS) errors.push(err('unevaluatedProperties', 'unevaluatedProperties', instancePath, schemaPath + '/unevaluatedProperties', { unevaluatedProperty: key }, 'must NOT have unevaluated properties'));
           } else if (!this.eval(P.unevaluatedProperties, data[key], base, dynScope, errors, E ? instancePath + '/' + escapePointer(key) : '', E ? schemaPath + '/unevaluatedProperties' : '', stack, DISCARD)) valid = false;
@@ -1547,8 +1252,6 @@ class Interpreter {
         for (let i = 0; i < data.length; i++) {
           if (local.items && local.items.has(i)) continue;
           if (P.unevaluatedItemsFalse) {
-            // One error for the array, not one per trailing element: what the
-            // array got wrong is its length past the last evaluated position.
             valid = false;
             if (errors !== NOERRORS) errors.push(err('unevaluatedItems', 'unevaluatedItems', instancePath, schemaPath + '/unevaluatedItems', { limit: i }, 'must NOT have more than ' + i + ' items'));
             break;
@@ -1572,15 +1275,12 @@ class Interpreter {
   }
 }
 
-// One branch title, for the collapsed anyOf/oneOf error. The compiled node
-// keeps the schema it came from, which is where a `title` lives.
 function branchTitle (node) {
   return node && node.schema && typeof node.schema.title === 'string' ? node.schema.title : '';
 }
 
 function escapePointer(s) {
   if (typeof s !== 'string') s = String(s);
-  // Keys almost never contain `~` or `/`; skip the two regex passes when so.
   for (let i = 0; i < s.length; i++) {
     const c = s.charCodeAt(i);
     if (c === 0x7e || c === 0x2f) return s.replace(/~/g, '~0').replace(/\//g, '~1');
@@ -1592,20 +1292,9 @@ function err(code, keyword, instancePath, schemaPath, params, message) {
   return { keyword, instancePath, schemaPath, params, message };
 }
 
-// The plan compiler (closure trees for the verdict and for errors) is wired in
-// by lib/interpreter.js. This file works without it, walking the plans
-// directly with the same answers, so the error runtime compiled modules share
-// (lib/error-runtime-entry.js) can carry the interpreter without it.
-//
-// It is loaded and run only for a schema that has been used often (TIER
-// calls): building the closure tree for a whole schema costs about as much as
-// a few thousand plain walks, measured on SchemaStore schemas, so a page or a
-// short-lived worker that checks a handful of documents never pays for it, or
-// for parsing its source.
 const TIER = 1000;
 let loadPlanCompiler = null;
 let compileInterpreter = null;
-// True while a plan compiler is being loaded and none is set yet.
 let planPending = false;
 function setPlanCompiler(load, pending) {
   loadPlanCompiler = load;
@@ -1626,7 +1315,6 @@ function planCompiler() {
 let installCompat = null;
 let compatInstalled = null;
 function setCompat(install) {
-  // esm.sh hands over a module of one function as { default: fn }.
   installCompat = typeof install === 'function' ? install : install && install.default;
   compatInstalled = null;
 }
@@ -1646,14 +1334,10 @@ module.exports = { createInterpreter };
 Object.defineProperty(module.exports, '_plainLinear', { value: plainLinear, enumerable: false });
 Object.defineProperty(module.exports, '_setPlanCompiler', { value: setPlanCompiler, enumerable: false });
 Object.defineProperty(module.exports, '_setCompat', { value: setCompat, enumerable: false });
-// The resolver, for the code generator: it resolves references at compile
-// time the way this engine does at run time (normalizeRefs in js-compiler).
 Object.defineProperty(module.exports, '_refInternals', {
   value: { indexSchemas, resolveRef, splitFragment, resolveUri, FALLBACK_BASE },
   enumerable: false,
 });
-// For lib/plan-source.js, which emits source from the same plans and must call
-// the same helpers so the two cannot answer differently.
 Object.defineProperty(module.exports, '_planInternals', {
   value: { Plan, deepEqual, cpAtLeast, cpAtMost, multipleOfOk, dataBits, typeBit, T_STRING, T_NUMBER, T_INTEGER, T_BOOLEAN, T_NULL, T_OBJECT, T_ARRAY, T_ANY },
   enumerable: false,

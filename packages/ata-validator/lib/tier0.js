@@ -1,9 +1,5 @@
 'use strict';
-
-// Tier 0 fast path: shared parametric validator for simple schemas.
-// All tier-0 Validators call the same tier0Validate() function;
-// the per-instance difference is the plan object.
-// V8 sees one function with monomorphic hidden classes and JIT-compiles it once.
+const { multipleOfOk } = require('./multiple-of');
 
 const TYPE_MASK = {
   string: 1,
@@ -17,9 +13,6 @@ const T_NUMBER = TYPE_MASK.number;
 const T_INTEGER = TYPE_MASK.integer;
 const T_BOOLEAN = TYPE_MASK.boolean;
 
-// Count Unicode code points, not UTF-16 code units.
-// JSON Schema spec: minLength/maxLength count characters (RFC 8259 = code points).
-// Fast path: scan for surrogates first, skip slow iteration for ASCII-only strings.
 function codePointLength(s) {
   const len = s.length;
   for (let i = 0; i < len; i++) {
@@ -30,33 +23,19 @@ function codePointLength(s) {
   return len;
 }
 
-// Numeric constraint flags, packed into constraint.numFlags.
-// Using bit flags means the validator does a cheap bitwise-and instead of
-// five Number.isNaN() calls per numeric property when only one bound is set.
 const F_MIN = 1;
 const F_MAX = 2;
 const F_EXCL_MIN = 4;
 const F_EXCL_MAX = 8;
 const F_MULT = 16;
 
-// Build a constraint tuple for one primitive-typed property.
-// All fields have the same layout so every constraint shares one hidden class.
-// Names found on Object.prototype. For these a read of data[key] finds the
-// inherited value on every ordinary object, so presence is asked of the object
-// itself; see ownKeyExpr in js-compiler.js.
 const PROTO_NAMES = new Set([...Object.getOwnPropertyNames(Object.prototype), '__proto__']);
 const _hop = Object.prototype.hasOwnProperty;
-// Deno removes the __proto__ accessor; read the prototype another way there.
-const _PN = typeof Bun === 'undefined' && ({}).__proto__ === Object.prototype; // JavaScriptCore goes through Object.getPrototypeOf, see js-compiler's _PN
+const _PN = typeof Bun === 'undefined' && ({}).__proto__ === Object.prototype;
 
-// The check for a string's `format`: the caller's own function by that name,
-// else the built-in one, else none (an unknown format is an annotation), as
-// the interpreted engine picks it.
 function formatFnOf(propSchema, userFormats) {
   const f = propSchema.format;
   if (typeof f !== 'string') return null;
-  // Own properties only: `format: 'constructor'` or '__proto__' read an
-  // inherited Object member and called it as a check, or threw.
   const own = Object.prototype.hasOwnProperty;
   if (userFormats && own.call(userFormats, f) && typeof userFormats[f] === 'function') return userFormats[f];
   const fc = require('./formats').formatChecks();
@@ -124,17 +103,6 @@ function buildTier0Plan(schema, userFormats) {
   };
 }
 
-// The same reading of `multipleOf` the other two engines use: divide and ask
-// whether the quotient is whole. An exact remainder test called 1 not a
-// multiple of 0.1, because 1 % 0.1 is 0.09999999999999995, and this file
-// answers a fresh validator's first calls, so that was the answer users saw.
-function _multipleOk(v, m) {
-  if (m === 0) return false;
-  const q = v / m;
-  return Number.isInteger(q) || Math.abs(q - Math.round(q)) < 1e-9;
-}
-
-// checkPrimitive stays exported for Tier 1 reuse.
 function checkPrimitive(c, v) {
   const m = c.typeMask;
   if (m === T_STRING) {
@@ -152,7 +120,7 @@ function checkPrimitive(c, v) {
       if ((f & F_MAX) && v > c.max) return false;
       if ((f & F_EXCL_MIN) && v <= c.exclMin) return false;
       if ((f & F_EXCL_MAX) && v >= c.exclMax) return false;
-      if ((f & F_MULT) && !_multipleOk(v, c.multipleOf)) return false;
+      if ((f & F_MULT) && !multipleOfOk(v, c.multipleOf)) return false;
     }
   } else if (m === T_NUMBER) {
     if (!Number.isFinite(v)) return false;
@@ -162,26 +130,18 @@ function checkPrimitive(c, v) {
       if ((f & F_MAX) && v > c.max) return false;
       if ((f & F_EXCL_MIN) && v <= c.exclMin) return false;
       if ((f & F_EXCL_MAX) && v >= c.exclMax) return false;
-      if ((f & F_MULT) && !_multipleOk(v, c.multipleOf)) return false;
+      if ((f & F_MULT) && !multipleOfOk(v, c.multipleOf)) return false;
     }
   } else if (m === T_BOOLEAN) {
     if (typeof v !== 'boolean') return false;
   } else if (m !== 0) {
     return false;
   }
-  // m === 0: a node of enum or const alone; the checks below decide.
   if (c.hasEnum && !c.enumSet.has(v)) return false;
   if (c.hasConst && v !== c.constVal) return false;
   return true;
 }
 
-// Inlined object validator. Separating the primitive path removes a dead
-// branch from the hot object path.
-// The object verdict as one closure over the plan's fields, read once: the
-// bound isValidObject() is then one call into a function whose loop reads
-// captured constants, where a plan passed each call cost two calls and a
-// field load per use (an empty object 17 ns against 7 for a validator built
-// the same way by hand; a number 9 against 4).
 function makeObjectVerdict(plan) {
   const P_additionalAllowed = plan.additionalAllowed;
   const P_constraints = plan.constraints;
@@ -192,24 +152,17 @@ function makeObjectVerdict(plan) {
   const cs = P_constraints;
   const n = cs.length;
   const reqMask = P_requiredMask;
-  // Whether the object is an ordinary one, read once: then a defined value
-  // under a name Object.prototype lacks is the object's own. Read for each
-  // present field, it was one test per field on a valid document.
   const plain = (_PN ? data.__proto__ : Object.getPrototypeOf(data)) === Object.prototype;
   let seenMask = 0;
   for (let i = 0; i < n; i++) {
     const c = cs[i];
     let v = data[c.key];
-    // Presence is an own-property question: a value the object inherits is
-    // treated as absent, as the interpreted engine treats it.
     if (v !== undefined && (c.protoName || !plain) && !_hop.call(data, c.key)) v = undefined;
     if (v === undefined) {
-      // A required key holding undefined is missing, as in every engine.
       if (reqMask & (1 << i)) return false;
       continue;
     }
     seenMask |= (1 << i);
-    // Inlined type + constraint check
     const m = c.typeMask;
     if (m === T_STRING) {
       if (typeof v !== 'string') return false;
@@ -226,7 +179,7 @@ function makeObjectVerdict(plan) {
         if ((f & F_MAX) && v > c.max) return false;
         if ((f & F_EXCL_MIN) && v <= c.exclMin) return false;
         if ((f & F_EXCL_MAX) && v >= c.exclMax) return false;
-        if ((f & F_MULT) && !_multipleOk(v, c.multipleOf)) return false;
+        if ((f & F_MULT) && !multipleOfOk(v, c.multipleOf)) return false;
       }
     } else if (m === T_NUMBER) {
       if (!Number.isFinite(v)) return false;
@@ -236,14 +189,13 @@ function makeObjectVerdict(plan) {
         if ((f & F_MAX) && v > c.max) return false;
         if ((f & F_EXCL_MIN) && v <= c.exclMin) return false;
         if ((f & F_EXCL_MAX) && v >= c.exclMax) return false;
-        if ((f & F_MULT) && !_multipleOk(v, c.multipleOf)) return false;
+        if ((f & F_MULT) && !multipleOfOk(v, c.multipleOf)) return false;
       }
     } else if (m === T_BOOLEAN) {
       if (typeof v !== 'boolean') return false;
     } else if (m !== 0) {
       return false;
     }
-    // m === 0: a node of enum or const alone; the checks below decide.
     if (c.hasEnum && !c.enumSet.has(v)) return false;
     if (c.hasConst && v !== c.constVal) return false;
   }
@@ -263,7 +215,6 @@ function tier0ValidateObject(plan, data) {
   if (f === undefined) f = plan._objectVerdict = makeObjectVerdict(plan);
   return f(data);
 }
-// The verdict for a plan as one closure, for a validator to bind directly.
 function tier0Verdict(plan) {
   if (plan.isPrimitive) { const c = plan.constraints[0]; return (data) => checkPrimitive(c, data); }
   let f = plan._objectVerdict;

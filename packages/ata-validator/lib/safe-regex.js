@@ -1,41 +1,16 @@
 'use strict'
 
-// Linear-time regex engine for JSON Schema `pattern`, used in place of JS RegExp
-// so an adversarial input cannot trigger catastrophic backtracking (ReDoS).
-//
-// It is a Pike VM: the pattern compiles to a small instruction program, and the
-// VM simulates all NFA threads in lockstep over the input, deduping by program
-// counter. Runtime is O(input * program), with no backtracking.
-//
-// Supported (the RE2 subset, which is what ata's native path also accepts):
-// literals, ., character classes, \d \w \s \D \W \S, anchors ^ $, quantifiers
-// * + ? {n} {n,} {n,m} (greedy or lazy, same language for a boolean test),
-// groups ( ) (?: ), alternation |. Backreferences and lookaround are not
-// supported by linear engines; compileSafe throws on them so the caller can
-// decide (ata's codegen rejects such schemas rather than risk a hang).
-
-// The engine is one function so it has one source. This module calls it, and
-// a standalone module embeds its text (lib/aot-impl.js), the way
-// lib/branch-collapse.js shares __ataCollapse. The embed used to come from a
-// generated copy of this file as a string, which put the engine in every
-// install twice.
 function __ataSafeRegex () {
-  // ECMA-262 WhiteSpace and LineTerminator, what `\s` matches: tab, line feed,
-  // vertical tab, form feed, carriage return, space, no-break space, the
-  // Unicode space separators, the line and paragraph separators, and the byte
-  // order mark. The set used to stop at U+00A0, so `^\S+$` accepted a string
-  // holding U+2028 or U+3000.
   const WS = [[9, 13], [32, 32], [160, 160], [0x1680, 0x1680], [0x2000, 0x200a], [0x2028, 0x2029], [0x202f, 0x202f], [0x205f, 0x205f], [0x3000, 0x3000], [0xfeff, 0xfeff]]
-  // `.` matches anything but a line terminator: LF, CR and U+2028/U+2029. It
-  // excluded only LF, so `^.$` accepted "\r".
   const isLineTerminator = (c) => c === 10 || c === 13 || c === 0x2028 || c === 0x2029
   const DIGIT = [[48, 57]]
   const WORD = [[48, 57], [65, 90], [97, 122], [95, 95]]
 
   function parse (src) {
     let i = 0
-    const len = src.length
-    const peek = () => src[i]
+    const chars = Array.from(src)
+    const len = chars.length
+    const peek = () => chars[i]
     const eof = () => i >= len
 
     function parseAlt () {
@@ -64,14 +39,12 @@ function __ataSafeRegex () {
           if (!q) { i = saved; break }
           node = { t: 'repeat', child: node, min: q.min, max: q.max }
         } else break
-        // a trailing ? makes the quantifier lazy; same language for a boolean test
         if (!eof() && peek() === '?') i++
       }
       return node
     }
 
     function tryQuantifier () {
-      // assumes current char is '{'
       i++
       let min = ''
       while (!eof() && /[0-9]/.test(peek())) { min += peek(); i++ }
@@ -94,8 +67,8 @@ function __ataSafeRegex () {
       const ch = peek()
       if (ch === '(') {
         i++
-        if (src[i] === '?') {
-          if (src[i + 1] === ':') { i += 2 }
+        if (chars[i] === '?') {
+          if (chars[i + 1] === ':') { i += 2 }
           else throw new Error('unsupported group (lookaround/named) in pattern')
         }
         const child = parseAlt()
@@ -110,11 +83,11 @@ function __ataSafeRegex () {
       if (ch === '\\') return parseEscape(false)
       if (ch === ')' || ch === '|') return { t: 'empty' }
       i++
-      return { t: 'char', c: ch.charCodeAt(0) }
+      return { t: 'char', c: ch.codePointAt(0) }
     }
 
     function parseClass () {
-      i++ // [
+      i++
       let neg = false
       if (peek() === '^') { neg = true; i++ }
       const ranges = []
@@ -124,11 +97,11 @@ function __ataSafeRegex () {
           const esc = parseEscape(true)
           if (esc.t === 'classpart') { for (const r of esc.ranges) ranges.push(r); continue }
           lo = esc.c
-        } else { lo = peek().charCodeAt(0); i++ }
-        if (peek() === '-' && src[i + 1] !== ']' && i + 1 < len) {
-          i++ // -
+        } else { lo = peek().codePointAt(0); i++ }
+        if (peek() === '-' && chars[i + 1] !== ']' && i + 1 < len) {
+          i++
           let hi
-          if (peek() === '\\') { const e = parseEscape(true); hi = e.c } else { hi = peek().charCodeAt(0); i++ }
+          if (peek() === '\\') { const e = parseEscape(true); hi = e.c } else { hi = peek().codePointAt(0); i++ }
           ranges.push([lo, hi])
         } else {
           ranges.push([lo, lo])
@@ -140,7 +113,7 @@ function __ataSafeRegex () {
     }
 
     function parseEscape (inClass) {
-      i++ // backslash
+      i++
       if (eof()) throw new Error('trailing backslash in pattern')
       const ch = peek(); i++
       switch (ch) {
@@ -155,21 +128,19 @@ function __ataSafeRegex () {
         case 't': return { t: 'char', c: 9 }
         case 'f': return { t: 'char', c: 12 }
         case 'v': return { t: 'char', c: 11 }
-        case '0': if (/[0-9]/.test(src[i] || '')) throw new Error('octal escapes are not supported in pattern'); return { t: 'char', c: 0 }
-        // A malformed \x or \u is a syntax error under the u flag and the letter
-        // under the legacy one; here it read as NaN and matched U+0000. Refused.
-        case 'x': { const h = src.slice(i, i + 2); if (!/^[0-9a-fA-F]{2}$/.test(h)) throw new Error('malformed \\x escape in pattern'); i += 2; return { t: 'char', c: parseInt(h, 16) } }
-        case 'u': { const h = src.slice(i, i + 4); if (!/^[0-9a-fA-F]{4}$/.test(h)) throw new Error('malformed \\u escape in pattern'); i += 4; return { t: 'char', c: parseInt(h, 16) } }
+        case '0': if (/[0-9]/.test(chars[i] || '')) throw new Error('octal escapes are not supported in pattern'); return { t: 'char', c: 0 }
+        case 'x': { const h = chars.slice(i, i + 2).join(''); if (!/^[0-9a-fA-F]{2}$/.test(h)) throw new Error('malformed \\x escape in pattern'); i += 2; return { t: 'char', c: parseInt(h, 16) } }
+        case 'u': { const h = chars.slice(i, i + 4).join(''); if (!/^[0-9a-fA-F]{4}$/.test(h)) throw new Error('malformed \\u escape in pattern'); i += 4; const unit = parseInt(h, 16)
+          if (unit >= 0xd800 && unit <= 0xdbff && chars[i] === '\\' && chars[i + 1] === 'u') {
+            const low = parseInt(chars.slice(i + 2, i + 6).join(''), 16)
+            if (/^[0-9a-fA-F]{4}$/.test(chars.slice(i + 2, i + 6).join('')) && low >= 0xdc00 && low <= 0xdfff) { i += 6; return { t: 'char', c: (unit - 0xd800) * 0x400 + (low - 0xdc00) + 0x10000 } }
+          }
+          return { t: 'char', c: unit } }
         case 'b': if (inClass) return { t: 'char', c: 8 }; throw new Error('\\b word boundary is not supported')
-        // Escapes with a meaning the engine does not implement: \B (non word
-        // boundary), \c (control letter), \k (named backreference), \p and
-        // \P (Unicode property), and above a legacy octal \0n. Read as the
-        // letter, ^\B(a|a)$ accepted "Ba" and ^\p{L}+$ accepted "p{L}"; the
-        // callers that ask patternIsSafe directly reached the second.
         case 'B': case 'c': case 'k': case 'p': case 'P': throw new Error('\\' + ch + ' is not supported in pattern')
         default:
           if (/[1-9]/.test(ch)) throw new Error('backreferences are not supported in pattern')
-          return { t: 'char', c: ch.charCodeAt(0) }
+          return { t: 'char', c: ch.codePointAt(0) }
       }
     }
 
@@ -178,17 +149,8 @@ function __ataSafeRegex () {
     return ast
   }
 
-  // A counted repeat is compiled by copying its child, so the program grows
-  // with the product of the counts through nesting: (((a|a)*){1000}){1000}
-  // was a million copies and one level more ran the process out of memory.
-  // Past this many instructions the pattern is refused (compileSafe throws,
-  // patternIsSafe answers false) and the caller takes the platform RegExp.
   const MAX_PROG = 1 << 16
 
-  // The size the program would have, counted before anything is emitted, so a
-  // repeat of an empty group ((){1e5}){1e5} is refused without looping either.
-  // An iteration costs one even when its child emits nothing. Capped past the
-  // budget so nested products stay finite.
   const BUDGET = 'pattern expands past the instruction budget'
   function compileProg (ast) {
     const prog = []
@@ -265,8 +227,6 @@ function __ataSafeRegex () {
     return prog
   }
 
-  // Numeric opcodes for the runner. The program is compiled once into flat
-  // typed arrays so the inner loop does no property lookups or string compares.
   const OP_CHAR = 0
   const OP_ANY = 1
   const OP_CLASS = 2
@@ -277,7 +237,6 @@ function __ataSafeRegex () {
   const OP_MATCH = 7
 
   function classMatcher (instr) {
-    // ASCII is answered from a bitmap; anything above 0x7f walks the ranges.
     const bits = new Uint8Array(128)
     const r = instr.ranges
     for (let k = 0; k < r.length; k++) {
@@ -322,20 +281,13 @@ function __ataSafeRegex () {
 
     const lastGen = new Int32Array(n).fill(-1)
     let gen = 0
-    // Each unvisited instruction is popped once and pushes at most two, so the
-    // stack never holds more than 2n + 1 entries.
     const stack = new Int32Array(2 * n + 2)
-    // Thread lists hold at most one entry per instruction per step.
     let clist = new Int32Array(n)
     let nlist = new Int32Array(n)
     let clen = 0
     let nlen = 0
 
-    // Follows epsilon edges from `pc` and records every consuming instruction
-    // (or match) reached in `list`. `lastGen` dedupes per step.
     function addThread (list, len0, pc, pos, len) {
-      // Most transitions land directly on a consuming instruction; skip the
-      // stack walk for those.
       if (ops[pc] <= OP_CLASS || ops[pc] === OP_MATCH) {
         if (lastGen[pc] === gen) return len0
         lastGen[pc] = gen
@@ -360,11 +312,6 @@ function __ataSafeRegex () {
       return count
     }
 
-    // A pattern is anchored when starting it anywhere but position 0 yields no
-    // thread, which is the case for `^...` and its alternations. The probe sits
-    // at position 1 of a length-1 string so that only `^` can fail. For anchored
-    // patterns the per-position restart below is skipped, and an empty thread
-    // list means the match has already failed.
     gen++
     const anchored = addThread(nlist, 0, 0, 1, 1) === 0
 
@@ -372,47 +319,36 @@ function __ataSafeRegex () {
       const len = s.length
       gen++
       clen = addThread(clist, 0, 0, 0, len)
-      for (let pos = 0; pos <= len; pos++) {
-        const c = pos < len ? s.charCodeAt(pos) : -1
+      let pos = 0
+      while (pos <= len) {
+        const c = pos < len ? s.codePointAt(pos) : -1
+        const next = c > 0xffff ? pos + 2 : pos + 1
         gen++
         nlen = 0
         for (let k = 0; k < clen; k++) {
           const pc = clist[k]
           switch (ops[pc]) {
             case OP_MATCH: return true
-            case OP_CHAR: if (c === cs[pc]) nlen = addThread(nlist, nlen, pc + 1, pos + 1, len); break
-            case OP_ANY: if (c !== -1 && !isLineTerminator(c)) nlen = addThread(nlist, nlen, pc + 1, pos + 1, len); break
-            case OP_CLASS: if (c !== -1 && matchClass(classes[pc], c)) nlen = addThread(nlist, nlen, pc + 1, pos + 1, len); break
+            case OP_CHAR: if (c === cs[pc]) nlen = addThread(nlist, nlen, pc + 1, next, len); break
+            case OP_ANY: if (c !== -1 && !isLineTerminator(c)) nlen = addThread(nlist, nlen, pc + 1, next, len); break
+            case OP_CLASS: if (c !== -1 && matchClass(classes[pc], c)) nlen = addThread(nlist, nlen, pc + 1, next, len); break
           }
         }
         if (pos < len) {
-          if (!anchored) nlen = addThread(nlist, nlen, 0, pos + 1, len)
+          if (!anchored) nlen = addThread(nlist, nlen, 0, next, len)
           else if (nlen === 0) return false
         }
         const tmp = clist; clist = nlist; nlist = tmp
         clen = nlen
+        pos = next
       }
       return false
     }
 
-    // Lazy DFA on top of the NFA. A DFA state is the set of consuming
-    // instructions live at a position; transitions are computed on first use
-    // and cached per ASCII character. `^` and `$` depend on position, so the
-    // closure is taken with flags for "at start" and "at end", which gives two
-    // start states and two transition tables per state. The state count is
-    // capped; past the cap the matcher falls back to the NFA walk above, so the
-    // time bound stays linear either way.
     const MAX_STATES = 256
     const states = []
     const stateIds = new Map()
     let overflow = false
-    // Transitions in one flat table per end flag, 128 slots per state (ASCII),
-    // -2 for not computed yet, -1 for overflow; `flags` holds isMatch (1) and
-    // dead (2) per state. The loop below then reads two typed arrays per
-    // character instead of a state object and the tables hanging off it. The
-    // tables grow with the states, so a pattern with few states stays small.
-    // State ids stay below MAX_STATES, so 16 bits hold them and the two
-    // sentinels: half the memory of the per-state tables this replaced.
     let cap = 0
     let trans = new Int16Array(0)
     let transEnd = new Int16Array(0)
@@ -426,7 +362,6 @@ function __ataSafeRegex () {
     }
 
     function closure (list, count, pc, atStart, atEnd) {
-      // Same walk as addThread, with the position replaced by the two flags.
       let sp = 0
       stack[sp++] = pc
       while (sp > 0) {
@@ -453,7 +388,6 @@ function __ataSafeRegex () {
       id = states.length
       let isMatch = false
       for (let k = 0; k < pcs.length; k++) if (ops[pcs[k]] === OP_MATCH) { isMatch = true; break }
-      // `dead`: an anchored match with no thread left cannot recover.
       states.push({ pcs: Int32Array.from(pcs) })
       if (id >= cap) grow()
       flags[id] = (isMatch ? 1 : 0) | (anchored && pcs.length === 0 ? 2 : 0)
@@ -499,13 +433,13 @@ function __ataSafeRegex () {
       if (id < 0) return testNFA(s)
       if (len === 0) return (flags[id] & 1) === 1
       if ((flags[id] & 1) === 1) return true
-      // The last character, with the end flag, is stepped after the loop.
-      // Tables are locals, reread after `step` (which may grow them).
-      const last = len - 1
+      const lastUnit = s.charCodeAt(len - 1)
+      const last = len >= 2 && lastUnit >= 0xdc00 && lastUnit <= 0xdfff && s.charCodeAt(len - 2) >= 0xd800 && s.charCodeAt(len - 2) <= 0xdbff ? len - 2 : len - 1
       let T = trans
       let F = flags
-      for (let pos = 0; pos < last; pos++) {
-        const c = s.charCodeAt(pos)
+      for (let pos = 0; pos < last;) {
+        const c = s.codePointAt(pos)
+        pos += c > 0xffff ? 2 : 1
         let nid = c < 128 ? T[(id << 7) | c] : -2
         if (nid === -2) {
           nid = step(states[id], c, false)
@@ -520,7 +454,7 @@ function __ataSafeRegex () {
           return true
         }
       }
-      const c = s.charCodeAt(last)
+      const c = s.codePointAt(last)
       let nid
       if (c < 128) {
         nid = transEnd[(id << 7) | c]
@@ -540,14 +474,9 @@ function __ataSafeRegex () {
   function compileSafe (pattern) {
     const prog = compileProg(parse(pattern))
     const runner = makeRunner(prog)
-    // `__ataSafe` brands the result so the standalone serializer can tell a safe
-    // matcher apart from a RegExp and emit `__ataSafeRe(source)` instead.
     return { test: runner, source: pattern, __ataSafe: true }
   }
 
-  // True when the linear engine can represent `src`. Used by the codegen to decide
-  // between the safe matcher and a JS RegExp fallback for patterns outside the
-  // supported (RE2) subset (backreferences, lookaround, etc.).
   function patternIsSafe (src) {
     try { compileSafe(src); return true } catch { return false }
   }
@@ -556,5 +485,4 @@ function __ataSafeRegex () {
 }
 
 module.exports = __ataSafeRegex()
-// The engine's source, for the standalone emitter.
 module.exports.engineSource = () => __ataSafeRegex.toString()
