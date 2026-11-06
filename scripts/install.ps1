@@ -11,6 +11,9 @@ function Fail([string]$message) {
   throw "install.ps1: $message"
 }
 
+function Read-UserPath { [Environment]::GetEnvironmentVariable('Path', 'User') }
+function Write-UserPath([string]$value) { [Environment]::SetEnvironmentVariable('Path', $value, 'User') }
+
 if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { Fail "unsupported architecture ${env:PROCESSOR_ARCHITECTURE}: only x64 is supported" }
 
 if ($env:MOMONGA_INSTALL_PREFIX) { $prefix = $env:MOMONGA_INSTALL_PREFIX } else { $prefix = Join-Path $env:LOCALAPPDATA 'Programs\momonga' }
@@ -57,6 +60,25 @@ try {
   $target = Join-Path $prefix 'momonga.exe'
   Move-Item -Force -LiteralPath (Join-Path $staging $assetName) -Destination $target
   Write-Output "installed momonga to $target"
+
+  $openShellLine = @"
+`$env:Path = "$prefix;`$env:Path"
+"@
+  $normalize = { param([string]$entry) $entry.Trim().TrimEnd('\', '/').ToLowerInvariant() }
+  $userPath = [string](Read-UserPath)
+  $entries = @($userPath -split ';' | Where-Object { $_ })
+  $onUserPath = @($entries | Where-Object { (& $normalize $_) -eq (& $normalize $prefix) }).Count -gt 0
+  if (-not $onUserPath) {
+    if ($env:MOMONGA_MODIFY_PATH -ne '0') {
+      Write-UserPath ((@($entries) + $prefix) -join ';')
+      Write-Output "added $prefix to the user PATH"
+    } else {
+      Write-Output "$prefix is not on your user PATH"
+    }
+    Write-Output 'To use momonga in this PowerShell session now, run:'
+    Write-Output ''
+    Write-Output "  $openShellLine"
+  }
 } finally {
   Remove-Item -Recurse -Force -LiteralPath $staging
 }

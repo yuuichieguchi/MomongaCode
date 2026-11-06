@@ -74,7 +74,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
     return stubs;
   };
   const baseEnv = (): NodeJS.ProcessEnv => ({
-    PATH: `${unameStub('Darwin', 'arm64')}:/usr/bin:/bin`,
+    PATH: `${unameStub('Darwin', 'arm64')}:${path.join(prefix, 'bin')}:/usr/bin:/bin`,
     HOME: root,
     MOMONGA_INSTALL_PREFIX: prefix,
     MOMONGA_RELEASE_BASE_URL: baseUrl,
@@ -184,7 +184,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
     ['aarch64', 'momonga-linux-arm64'],
   ])('installs the %s Linux artifact as %s', async (machine, asset) => {
     served = { [`/${asset}`]: GOOD_BINARY, ...signedSums(`${sha256(GOOD_BINARY)}  ${asset}\n`) };
-    const outcome = await runInstall({ ...baseEnv(), PATH: `${unameStub('Linux', machine)}:/usr/bin:/bin` });
+    const outcome = await runInstall({ ...baseEnv(), PATH: `${unameStub('Linux', machine)}:${path.join(prefix, 'bin')}:/usr/bin:/bin` });
     expect(outcome.code).toBe(0);
     expect(fs.readFileSync(target())).toEqual(GOOD_BINARY);
   });
@@ -325,5 +325,218 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
     expect(outcome.code).toBe(1);
     expect(outcome.stderr).toBe(`install.sh: the release location must be https (plain http is accepted only on the loopback interface), got ${location}\n`);
     expect(fs.existsSync(path.join(prefix, 'bin'))).toBe(false);
+  });
+  describe('putting the install directory on PATH', () => {
+    const SHELL_FILES = ['.zshrc', '.zprofile', '.zshenv', '.bashrc', '.bash_profile', '.profile'];
+    const BEGIN_MARKER = '# >>> momonga installer >>>';
+    const END_MARKER = '# <<< momonga installer <<<';
+
+    const binDir = (): string => path.join(prefix, 'bin');
+    const pathLine = (): string => `export PATH="${binDir()}:$PATH"`;
+
+    const freshHome = (seeded: boolean): string => {
+      const home = fs.mkdtempSync(path.join(root, 'home-'));
+      if (seeded) for (const name of SHELL_FILES) fs.writeFileSync(path.join(home, name), `original ${name}\n`);
+      return home;
+    };
+
+    const snapshot = (home: string): Map<string, string> => {
+      const files = new Map<string, string>();
+      const walk = (directory: string): void => {
+        for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+          const full = path.join(directory, entry.name);
+          if (entry.isDirectory()) walk(full);
+          else files.set(full, fs.readFileSync(full, 'utf8'));
+        }
+      };
+      walk(home);
+      return files;
+    };
+
+    const changedFiles = (before: Map<string, string>, after: Map<string, string>): string[] =>
+      [...after.keys()].filter((file) => before.get(file) !== after.get(file)).sort();
+
+    const offPathEnv = (home: string, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => ({
+      ...baseEnv(),
+      PATH: `${unameStub('Darwin', 'arm64')}:/usr/bin:/bin`,
+      HOME: home,
+      SHELL: '/bin/zsh',
+      ...extra,
+    });
+
+    const count = (text: string, line: string): number => text.split('\n').filter((candidate) => candidate === line).length;
+
+    const expectOneBlock = (text: string, line = pathLine()): void => {
+      const lines = text.split('\n');
+      expect(count(text, BEGIN_MARKER)).toBe(1);
+      expect(count(text, END_MARKER)).toBe(1);
+      const begin = lines.indexOf(BEGIN_MARKER);
+      const end = lines.indexOf(END_MARKER);
+      expect(lines.slice(begin + 1, end)).toEqual([line]);
+    };
+
+    it.each([
+      ['a home that has the usual shell files', true],
+      ['a home with no shell file at all', false],
+    ])('writes one marked block to one shell file in %s and prints the command for the open shell and the file it changed', async (_label, seeded) => {
+      const home = freshHome(seeded);
+      const before = snapshot(home);
+      serveRelease(GOOD_BINARY, GOOD_BINARY);
+      const outcome = await runInstall(offPathEnv(home));
+      expect(outcome.code).toBe(0);
+      expect(outcome.stderr).toBe('');
+      const after = snapshot(home);
+      const changed = changedFiles(before, after);
+      expect(changed).toHaveLength(1);
+      const file = changed[0] as string;
+      expect(file).toBe(path.join(home, '.zshrc'));
+      const text = after.get(file) as string;
+      const original = before.get(file) ?? '';
+      expect(text.startsWith(original)).toBe(true);
+      expectOneBlock(text);
+      const stdoutLines = outcome.stdout.split('\n');
+      expect(stdoutLines[0]).toBe(`installed momonga to ${target()}`);
+      expect(stdoutLines.filter((line) => line.trim() === pathLine())).toHaveLength(1);
+      expect(outcome.stdout).toContain(file);
+    });
+
+    it('leaves the shell file byte-identical on a second install, and keeps what the user wrote after the block', async () => {
+      const home = freshHome(true);
+      const before = snapshot(home);
+      serveRelease(GOOD_BINARY, GOOD_BINARY);
+      expect((await runInstall(offPathEnv(home))).code).toBe(0);
+      const changed = changedFiles(before, snapshot(home));
+      expect(changed).toHaveLength(1);
+      const file = changed[0] as string;
+      const afterFirst = snapshot(home);
+      expect((await runInstall(offPathEnv(home))).code).toBe(0);
+      expect(snapshot(home)).toEqual(afterFirst);
+      fs.appendFileSync(file, 'alias later=true\n');
+      const edited = fs.readFileSync(file, 'utf8');
+      const afterEdit = snapshot(home);
+      expect((await runInstall(offPathEnv(home))).code).toBe(0);
+      expect(snapshot(home)).toEqual(afterEdit);
+      expect(fs.readFileSync(file, 'utf8')).toBe(edited);
+      expectOneBlock(edited);
+    });
+
+    it('changes nothing when the install directory is already on PATH, and writes the block when it is not', async () => {
+      serveRelease(GOOD_BINARY, GOOD_BINARY);
+      const onPathHome = freshHome(true);
+      const onPathBefore = snapshot(onPathHome);
+      const onPath = await runInstall({ ...offPathEnv(onPathHome), PATH: `${unameStub('Darwin', 'arm64')}:/usr/bin:${binDir()}:/bin` });
+      expect(onPath).toEqual({ code: 0, stdout: `installed momonga to ${target()}\n`, stderr: '' });
+      expect(snapshot(onPathHome)).toEqual(onPathBefore);
+      const offPathHome = freshHome(true);
+      const offPathBefore = snapshot(offPathHome);
+      expect((await runInstall(offPathEnv(offPathHome))).code).toBe(0);
+      expect(changedFiles(offPathBefore, snapshot(offPathHome))).toHaveLength(1);
+    });
+
+    it('changes nothing with MOMONGA_MODIFY_PATH=0 and still prints the command for the open shell', async () => {
+      const home = freshHome(true);
+      const before = snapshot(home);
+      serveRelease(GOOD_BINARY, GOOD_BINARY);
+      const outcome = await runInstall(offPathEnv(home, { MOMONGA_MODIFY_PATH: '0' }));
+      expect(outcome.code).toBe(0);
+      expect(snapshot(home)).toEqual(before);
+      expect(fs.readFileSync(target())).toEqual(GOOD_BINARY);
+      const stdoutLines = outcome.stdout.split('\n');
+      expect(stdoutLines[0]).toBe(`installed momonga to ${target()}`);
+      expect(stdoutLines.filter((line) => line.trim() === pathLine())).toHaveLength(1);
+      for (const name of SHELL_FILES) expect(outcome.stdout).not.toContain(path.join(home, name));
+    });
+      const installAs = async (home: string, shell: string, extra: NodeJS.ProcessEnv = {}): Promise<{ outcome: Outcome; changed: string[] }> => {
+      const before = snapshot(home);
+      serveRelease(GOOD_BINARY, GOOD_BINARY);
+      const outcome = await runInstall(offPathEnv(home, { SHELL: shell, ...extra }));
+      expect(outcome.code).toBe(0);
+      return { outcome, changed: changedFiles(before, snapshot(home)) };
+    };
+
+    const seed = (home: string, names: readonly string[]): void => {
+      for (const name of names) {
+        fs.mkdirSync(path.dirname(path.join(home, name)), { recursive: true });
+        fs.writeFileSync(path.join(home, name), `original ${name}\n`);
+      }
+    };
+
+    it.each([
+      ['/bin/zsh', [], '.zshrc'],
+      ['/bin/zsh', ['.zprofile', '.zshenv', '.bashrc', '.profile'], '.zshrc'],
+      ['/bin/bash', [], '.bashrc'],
+      ['/bin/bash', ['.bashrc', '.bash_profile', '.profile'], '.bashrc'],
+      ['/bin/bash', ['.bash_profile', '.profile'], '.bash_profile'],
+      ['/bin/bash', ['.profile'], '.profile'],
+      ['/usr/local/bin/bash', ['.profile'], '.profile'],
+      ['/bin/ksh', [], '.profile'],
+      ['/bin/ksh', ['.bashrc', '.zshrc'], '.profile'],
+    ] as const)('for SHELL=%s with %j present, writes the block to %s', async (shell, present, expected) => {
+      const home = freshHome(false);
+      seed(home, present);
+      const { changed } = await installAs(home, shell);
+      expect(changed).toEqual([path.join(home, expected)]);
+      expectOneBlock(fs.readFileSync(path.join(home, expected), 'utf8'));
+    });
+
+    it('for zsh, writes to .zshrc under ZDOTDIR when it is set, and creates it there', async () => {
+      const home = freshHome(true);
+      const zdot = path.join(home, 'zdot');
+      fs.mkdirSync(zdot);
+      const { changed } = await installAs(home, '/bin/zsh', { ZDOTDIR: zdot });
+      expect(changed).toEqual([path.join(zdot, '.zshrc')]);
+      expectOneBlock(fs.readFileSync(path.join(zdot, '.zshrc'), 'utf8'));
+    });
+
+    it('for fish, writes one block with fish_add_path to config.fish, prints the fish command, and adds nothing on a second install', async () => {
+      const home = freshHome(true);
+      const config = path.join(home, '.config', 'fish', 'config.fish');
+      const fishLine = `fish_add_path ${binDir()}`;
+      const { outcome, changed } = await installAs(home, '/usr/local/bin/fish');
+      expect(changed).toEqual([config]);
+      const text = fs.readFileSync(config, 'utf8');
+      expectOneBlock(text, fishLine);
+      expect(outcome.stdout.split('\n').filter((line) => line.trim() === fishLine)).toHaveLength(1);
+      expect(outcome.stdout).toContain(config);
+      const again = await installAs(home, '/usr/local/bin/fish');
+      expect(again.changed).toEqual([]);
+      expect(fs.readFileSync(config, 'utf8')).toBe(text);
+    });
+
+    it('for fish with MOMONGA_MODIFY_PATH=0, changes nothing and prints the fish command', async () => {
+      const home = freshHome(true);
+      const { outcome, changed } = await installAs(home, '/usr/local/bin/fish', { MOMONGA_MODIFY_PATH: '0' });
+      expect(changed).toEqual([]);
+      expect(fs.existsSync(path.join(home, '.config', 'fish', 'config.fish'))).toBe(false);
+      expect(outcome.stdout.split('\n').filter((line) => line.trim() === `fish_add_path ${binDir()}`)).toHaveLength(1);
+    });
+
+    it('says added, then already configured, naming the file each time', async () => {
+      const home = freshHome(false);
+      const file = path.join(home, '.zshrc');
+      const first = await installAs(home, '/bin/zsh');
+      expect(first.outcome.stdout).toMatch(/added/i);
+      expect(first.outcome.stdout).not.toMatch(/already configured|updated/i);
+      expect(first.outcome.stdout).toContain(file);
+      const second = await installAs(home, '/bin/zsh');
+      expect(second.changed).toEqual([]);
+      expect(second.outcome.stdout).toMatch(/already configured/i);
+      expect(second.outcome.stdout).not.toMatch(/\badded\b|updated/i);
+      expect(second.outcome.stdout).toContain(file);
+    });
+
+    it('rewrites a block whose line differs in place, keeps everything outside the markers byte-identical, and says updated', async () => {
+      const home = freshHome(false);
+      const file = path.join(home, '.zshrc');
+      const head = 'export EDITOR=vim\n\n';
+      const tail = 'alias ll="ls -l"\n';
+      fs.writeFileSync(file, `${head}${BEGIN_MARKER}\nexport PATH="/old/momonga/bin:$PATH"\n${END_MARKER}\n${tail}`);
+      const { outcome, changed } = await installAs(home, '/bin/zsh');
+      expect(changed).toEqual([file]);
+      expect(fs.readFileSync(file, 'utf8')).toBe(`${head}${BEGIN_MARKER}\n${pathLine()}\n${END_MARKER}\n${tail}`);
+      expect(outcome.stdout).toMatch(/updated/i);
+      expect(outcome.stdout).not.toMatch(/already configured|\badded\b/i);
+      expect(outcome.stdout).toContain(file);
+    });
   });
 });
