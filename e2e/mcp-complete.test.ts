@@ -9,7 +9,7 @@ import type { RuntimeClient } from './support/runtime-client.ts';
 import { DEFAULT_E2E_DEPS, startStack } from './support/stack.ts';
 import { childOf } from './support/supervisor-client.ts';
 import { chatCompletions, messagesOf, textReply, toolCallReply } from './support/upstream.ts';
-import { E2E_MARGIN_MS, E2E_RECOVERY_BOUND_MS, E2E_RESTART_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
+import { E2E_CANCEL_SWEEP_BOUND_MS, E2E_MARGIN_MS, E2E_RECOVERY_BOUND_MS, E2E_RESTART_BOUND_MS, E2E_RESTART_POLICY, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 
@@ -46,6 +46,15 @@ const elicitationOf = async (runtime: RuntimeClient, runId: string): Promise<Rec
   const [first] = listed as unknown[];
   if (!isRecord(first)) throw new Error('malformed elicitation');
   return first;
+};
+
+const untilCancelled = async (runtime: RuntimeClient, runId: string): Promise<void> => {
+  const stream = runtime.events(runId);
+  try {
+    await stream.until((frame) => frame.data.type === 'run.status' && frame.data.to === 'CANCELLED', E2E_CANCEL_SWEEP_BOUND_MS);
+  } finally {
+    await stream.close();
+  }
 };
 
 describe('mcp: client gaps', () => {
@@ -182,7 +191,8 @@ describe('mcp: client gaps', () => {
       process.kill(before.pid, 'SIGKILL');
       await stack.client.untilChild('runtime', (child) => child.state === 'ready' && child.pid !== before.pid && child.restarts === 1, E2E_RESTART_BOUND_MS);
 
-      expect((await runtime.cancel(run.id)).run.status).toBe('CANCELLED');
+      expect((await runtime.cancel(run.id)).run.status).toBe('CANCELLING');
+      await untilCancelled(runtime, run.id);
       await until(() => fixture.rpcRecords('tasks/cancel').length === 1, { deadlineMs: E2E_RECOVERY_BOUND_MS, description: 'the restarted runtime to cancel the parked task' });
       await until(
         () => readDb<{ state: string }>(home.paths.databases.runtime, 'SELECT state FROM idempotency').every((row) => row.state !== 'PENDING'),
@@ -203,7 +213,8 @@ describe('mcp: client gaps', () => {
       const { run } = await runtime.createRun(session.id, 'Run the task that asks me');
       await elicitationOf(runtime, run.id);
 
-      expect((await runtime.cancel(run.id)).run.status).toBe('CANCELLED');
+      expect((await runtime.cancel(run.id)).run.status).toBe('CANCELLING');
+      await untilCancelled(runtime, run.id);
       await fixture.until(() => fixture.notes.some((note) => note.type === 'task_cancel_held'));
       expect(fixture.notes.some((note) => note.type === 'task_cancel')).toBe(false);
       expect(readDb<{ state: string }>(home.paths.databases.runtime, 'SELECT state FROM idempotency').some((row) => row.state === 'PENDING')).toBe(true);

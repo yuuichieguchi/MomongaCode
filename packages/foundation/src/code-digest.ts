@@ -24,14 +24,23 @@ const sourceFilesOf = async (packagesDirectory: string): Promise<string[]> => {
   return files;
 };
 
+const SOURCE_READ_WIDTH = 16;
+
 const digestOfSources = async (loadedFrom: string): Promise<string> => {
   const packagesDirectory = path.resolve(path.dirname(loadedFrom), '..', '..');
   const root = path.dirname(packagesDirectory);
+  const files = await sourceFilesOf(packagesDirectory);
   const entries: string[] = [];
-  for (const file of await sourceFilesOf(packagesDirectory)) {
-    const name = path.relative(root, file).split(path.sep).join('/');
-    entries.push(`${name}\0${sha256Of(await fs.readFile(file))}\n`);
-  }
+  let next = 0;
+  const readLane = async (): Promise<void> => {
+    while (next < files.length) {
+      const file = files[next] as string;
+      next += 1;
+      const name = path.relative(root, file).split(path.sep).join('/');
+      entries.push(`${name}\0${sha256Of(await fs.readFile(file))}\n`);
+    }
+  };
+  await Promise.all(Array.from({ length: SOURCE_READ_WIDTH }, readLane));
   return sha256Of(entries.sort().join(''));
 };
 
