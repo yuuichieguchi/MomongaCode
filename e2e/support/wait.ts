@@ -1,7 +1,7 @@
 import { ENTRY_HARD_EXIT_MARGIN_MS, GATEWAY_MAX_CLOSE_MS, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import { LOCK_WATCH_INTERVAL_MS, ORPHAN_REAP_GRACE_MS, SETTINGS_DEBOUNCE_MS, SETTINGS_POLL_MS, SHUTDOWN_RELEASE_BOUND_MS } from '@momonga/supervisor';
 import { VERIFY_BUDGET_MS } from '../../packages/cli/src/commands/policy.ts';
-import { daemonReadyBoundMs } from '../../packages/cli/src/daemon/ensure-daemon.ts';
+import { daemonReadyBoundMs, daemonStopBoundMs } from '../../packages/cli/src/daemon/ensure-daemon.ts';
 import { REFLECTION_PICKUP_BOUND_MS, reflectionAttemptsBoundMs } from '../../packages/runtime/src/memory/reflection-bound.ts';
 import { RUNTIME_DEFAULTS } from '../../packages/runtime/src/process/defaults.ts';
 import { SWEEP_INTERVAL_MS } from '../../packages/runtime/src/service/service.ts';
@@ -38,6 +38,7 @@ export const E2E_LOCK_FREE_BOUND_MS = LOCK_WATCH_INTERVAL_MS + E2E_RESTART_BOUND
 export const E2E_RUN_COMPLETED_BOUND_MS = E2E_RECOVERY_BOUND_MS + E2E_MARGIN_MS;
 export const E2E_SOLVER_LOAD_ALLOWANCE_MS = E2E_CHILD_READY_BOUND_MS + E2E_MARGIN_MS;
 export const policyVerifyBoundMs = async (): Promise<number> => (await daemonReadyBoundMs()) + E2E_SOLVER_LOAD_ALLOWANCE_MS + VERIFY_BUDGET_MS;
+export const daemonReplacingRunBoundMs = async (): Promise<number> => daemonStopBoundMs() + (await daemonReadyBoundMs()) + E2E_RUN_COMPLETED_BOUND_MS;
 export const UNTIL_DEFAULT_INTERVAL_MS = 20;
 
 export type Truthy<T> = Exclude<T, false | null | undefined | 0 | ''>;
