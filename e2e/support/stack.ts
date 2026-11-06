@@ -7,7 +7,7 @@ import { expect } from 'vitest';
 import type { SandboxSetting } from '@momonga/config';
 import { parseReadyLine } from '@momonga/foundation';
 import type { ReadyFields } from '@momonga/foundation';
-import type { SupervisorChildState, SupervisorHealth, SupervisorPhase } from '@momonga/protocol';
+import type { SupervisorChildState, SupervisorHealth, SupervisorPhase, TargetAnswers } from '@momonga/protocol';
 import type { ChildRole } from '@momonga/supervisor';
 import { startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeRoute, FakeScriptedReply } from '@momonga/testkit';
@@ -107,6 +107,7 @@ export const baseSettings = (home: E2eHome, sandbox: StackSandbox): Record<strin
         adapter: 'chat-completions',
         provider: 'fake',
         model: UPSTREAM_MODEL,
+        answers: 'script' satisfies TargetAnswers,
         socketPath: home.upstreamSocket,
         capabilities: { contextWindow: UPSTREAM_CONTEXT_WINDOW, maxOutputTokens: 1024 },
       },
@@ -140,6 +141,14 @@ export const withStructuredRole = (settings: Readonly<Record<string, unknown>>, 
   const structured = withStructuredAlias(settings, alias);
   const models = structured['models'] as { roles?: Record<string, unknown> };
   return { ...structured, models: { ...models, roles: { ...models.roles, [role]: alias } } };
+};
+
+export const withTargetsAnswering = (settings: Readonly<Record<string, unknown>>, answers: TargetAnswers): Record<string, unknown> => {
+  const models = settings['models'] as { targets: Record<string, Record<string, unknown>> };
+  return {
+    ...settings,
+    models: { ...models, targets: Object.fromEntries(Object.entries(models.targets).map(([name, target]) => [name, { ...target, answers }])) },
+  };
 };
 
 export const contextWindowOf = (home: E2eHome): number => {

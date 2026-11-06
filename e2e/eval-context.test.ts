@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { TRANSCRIPT_FORMAT } from '@momonga/eval';
 import type { FakeRoute } from '@momonga/testkit';
 import { ROOT_PREFIX } from '../packages/cli/src/eval/context-host.ts';
 import { DEFAULT_KEEP_RECENT_STEPS } from '../packages/context/src/levels.ts';
@@ -158,7 +159,7 @@ describe('momonga eval context live', () => {
     const liveFile = path.join(home.root, 'live.json');
     const replayFile = path.join(home.root, 'replay.json');
 
-    const live = await runCli(home, ['eval', 'context', dataset, '--model', 'fake', '--alias', 'default', '--seed', '7', '--record', recordings, '--report', liveFile], {
+    const live = await runCli(home, ['eval', 'context', dataset, '--alias', 'default', '--seed', '7', '--record', recordings, '--report', liveFile], {
       boundMs: DATASET.cases.length * E2E_RUN_COMPLETED_BOUND_MS,
     });
 
@@ -201,10 +202,10 @@ describe('momonga eval context live', () => {
     const names = fs.readdirSync(recordings).sort();
     expect(names).toHaveLength(10);
     const header = JSON.parse(fs.readFileSync(path.join(recordings, 'long-on.0.transcript.jsonl'), 'utf8').split('\n')[0] ?? '{}');
-    expect(header).toMatchObject({ format: 'momonga-transcript/4', policy: {}, datasetSeed: 7, run: { modelAlias: 'default' } });
+    expect(header).toMatchObject({ format: TRANSCRIPT_FORMAT, policy: {}, datasetSeed: 7, run: { modelAlias: 'default' } });
 
     const callsBefore = chatCompletions(fake).length;
-    const replayed = await runCli(home, ['eval', 'context', dataset, '--replay', recordings, '--model', 'fake', '--report', replayFile]);
+    const replayed = await runCli(home, ['eval', 'context', dataset, '--replay', recordings, '--report', replayFile]);
     expect(replayed.code).toBe(1);
     expect(JSON.parse(fs.readFileSync(replayFile, 'utf8'))).toEqual(report);
     expect(chatCompletions(fake)).toHaveLength(callsBefore);
