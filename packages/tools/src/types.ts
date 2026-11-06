@@ -2,6 +2,7 @@ import type { Clock } from '@momonga/foundation';
 import type { PermissionSubject } from '@momonga/policy';
 import type { ElicitationRequestView, ReferenceKind, SideEffect, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
+import type { RipgrepLocator } from './ripgrep-locator.ts';
 import type { BackgroundJobs, BlobPort, ToolIdempotencyRecord } from './ports.ts';
 
 export type ToolContent =
@@ -58,6 +59,7 @@ export type ToolResume = {
 export type ToolContext = ReconcileContext & {
   sandbox: Sandbox;
   sandboxPolicy: SandboxPolicy;
+  ripgrep: RipgrepLocator;
   resume?: ToolResume;
   checkpoint(state: Record<string, unknown> | undefined): void;
   extendToRunDeadline(): void;

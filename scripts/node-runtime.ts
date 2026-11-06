@@ -71,7 +71,7 @@ export const assertFileChecksum = (file: string, expected: string): void => {
   if (actual !== expected) throw new Error(`sha256 mismatch for ${file}: expected ${expected}, got ${actual}`);
 };
 
-const download = async (url: string): Promise<Buffer> => {
+export const download = async (url: string): Promise<Buffer> => {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`GET ${url} failed with HTTP ${response.status}`);
   return Buffer.from(await response.arrayBuffer());
@@ -81,7 +81,7 @@ const archiveMatchesPin = (archive: string, pinned: string): boolean => fs.exist
 
 export type ExtractCommand = { readonly file: string; readonly args: readonly string[] };
 
-export const extractCommand = (target: SeaTarget, archive: string, cacheDir: string, platform: NodeJS.Platform, env: Readonly<Record<string, string | undefined>>): ExtractCommand => {
+export const extractCommand = (target: Pick<SeaTarget, 'archiveExtension'>, archive: string, cacheDir: string, platform: NodeJS.Platform, env: Readonly<Record<string, string | undefined>>): ExtractCommand => {
   if (platform === 'win32') {
     const systemRoot = env['SystemRoot'];
     if (systemRoot === undefined) throw new Error('SystemRoot is required to find the Windows tar.exe');

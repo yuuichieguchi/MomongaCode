@@ -6,12 +6,14 @@ readonly ENTITLEMENTS="$ROOT/scripts/sea-entitlements.plist"
 readonly ASSET_NAME="momonga-darwin-arm64"
 readonly CHECKSUMS_NAME="SHA256SUMS"
 readonly SIGNATURE_NAME="SHA256SUMS.sig"
+readonly NOTICES_NAME="THIRD-PARTY-NOTICES.md"
 readonly SIGNATURE_NAMESPACE="momonga-release"
 readonly OUT_DIR="$ROOT/dist/release"
 readonly BINARY="$OUT_DIR/$ASSET_NAME"
 readonly ARCHIVE="$OUT_DIR/$ASSET_NAME.zip"
 readonly CHECKSUMS="$OUT_DIR/$CHECKSUMS_NAME"
 readonly SIGNATURE="$OUT_DIR/$SIGNATURE_NAME"
+readonly NOTICES="$OUT_DIR/$NOTICES_NAME"
 readonly MOMONGA_TEAM_ID="PQQBSRKD72"
 readonly SIGNING_IDENTITY="Developer ID Application: Yuuichi Eguchi ($MOMONGA_TEAM_ID)"
 readonly RELEASE_SIGNING_KEY="$HOME/.ssh/momonga-release"
@@ -88,7 +90,8 @@ delete_draft() {
 }
 
 write_checksums() {
-  (cd "$OUT_DIR" && shasum -a 256 "$ASSET_NAME" "${OTHER_ASSETS[@]}" > "$CHECKSUMS_NAME")
+  cp "$ROOT/$NOTICES_NAME" "$NOTICES"
+  (cd "$OUT_DIR" && shasum -a 256 "$ASSET_NAME" "${OTHER_ASSETS[@]}" "$NOTICES_NAME" > "$CHECKSUMS_NAME")
 }
 
 case "$DRY_RUN" in
@@ -181,7 +184,7 @@ run node "$RELEASE_KEY_TOOL" verify "$CHECKSUMS" "$SIGNATURE"
 step "publish $tag"
 printf 'release notes:\n%s\n' "$notes"
 draft_created=1
-run gh release create "$tag" "$BINARY" "${OTHER_ASSETS[@]/#/$OUT_DIR/}" "$CHECKSUMS" "$SIGNATURE" --repo "$MOMONGA_REPO" --draft --target "$commit" --title "$tag" --notes "$notes"
+run gh release create "$tag" "$BINARY" "${OTHER_ASSETS[@]/#/$OUT_DIR/}" "$NOTICES" "$CHECKSUMS" "$SIGNATURE" --repo "$MOMONGA_REPO" --draft --target "$commit" --title "$tag" --notes "$notes"
 run gh release edit "$tag" --repo "$MOMONGA_REPO" --draft=false
 draft_created=0
 run git fetch origin "refs/tags/$tag:refs/tags/$tag"

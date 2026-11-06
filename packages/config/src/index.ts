@@ -48,6 +48,7 @@ export {
   defaultToolsSettings,
 } from './context-settings.ts';
 export type { ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from './context-settings.ts';
+export type { RipgrepSetting } from './settings.ts';
 export type { TrustOracle, UserLayer } from './layers.ts';
 export type {
   McpOAuthConfig,

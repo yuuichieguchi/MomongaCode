@@ -3,7 +3,7 @@ import { COMMON_ENTRY_FLAGS, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, canonicalPath, mo
 import type { EntryIo, FlagSpec } from '@momonga/foundation';
 import { installOtelErrorHandler } from '@momonga/observability';
 import { startRuntimeProcess } from './start-runtime-process.ts';
-import type { StartRuntimeProcessOptions } from './start-runtime-process.ts';
+import type { BundledRipgrepSource, StartRuntimeProcessOptions } from './start-runtime-process.ts';
 
 export const RUNTIME_ENTRY_FLAGS = {
   ...COMMON_ENTRY_FLAGS,
@@ -13,7 +13,7 @@ export const RUNTIME_ENTRY_FLAGS = {
   'sandbox-exec-path': { kind: 'string' },
 } as const satisfies FlagSpec;
 
-export type RuntimeEntryDeps = { version: string };
+export type RuntimeEntryDeps = { version: string; bundledRipgrep?: BundledRipgrepSource };
 
 export const runRuntimeEntry = (io: EntryIo, deps: RuntimeEntryDeps): Promise<number> =>
   runDaemonEntry(io, {
@@ -32,7 +32,19 @@ export const runRuntimeEntry = (io: EntryIo, deps: RuntimeEntryDeps): Promise<nu
         ...(flags['worker-count'] === undefined ? {} : { workerCount: flags['worker-count'] }),
         ...(flags['sandbox-exec-path'] === undefined ? {} : { sandboxExecPath: flags['sandbox-exec-path'] }),
       };
-      const handle = await startRuntimeProcess({ home, version, logger, stdout, signal, acquireLock, ...tuning });
+      const handle = await startRuntimeProcess({
+        home,
+        version,
+        logger,
+        stdout,
+        signal,
+        acquireLock,
+        ...tuning,
+        ...(deps.bundledRipgrep === undefined ? {} : { bundledRipgrep: deps.bundledRipgrep }),
+      });
       return { close: handle.close, abort: handle.abort, fatal: handle.fatal };
     },
   });
+
+export { RIPGREP_MANIFEST_ASSET, ensureBundledRipgrep } from '@momonga/tools';
+export type { RipgrepDistributionFiles, RipgrepEntryKind } from '@momonga/tools';

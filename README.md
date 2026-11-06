@@ -326,6 +326,8 @@ Building a release executable is done with `npm run sea` (see `scripts/sea.ts`).
 
 Momonga Code is open source under the MIT License. See the [`LICENSE`](LICENSE) file.
 
+Bundles ripgrep (MIT or Unlicense); see [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md).
+
 ## 11. Disclaimer
 
 Momonga Code is provided as is, without warranty of any kind. It runs commands and edits files on your machine, and it sends the content of your prompts, files, and tool output to the model targets you configure. You are responsible for the models, targets, permission rules, sandbox setting, and permission mode you choose, for the cost of any hosted model you use, and for reviewing what the agent does. A model can make mistakes. Do not use `bypassPermissions` mode or `"sandbox": "none"` on a machine or in a folder where an unwanted command could cause harm you cannot undo.

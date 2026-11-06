@@ -6,8 +6,8 @@ import { createMcpPool, inheritedEnvOf, mcpCredentialDirectory } from '@momonga/
 import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
 import type { Sandbox } from '@momonga/sandbox';
 import type { RuntimeStore } from '@momonga/store';
-import { createBuiltinTools, createGitWorkTreeObserver, createPolicyFilesystem, createToolExecutor, createToolRegistry } from '@momonga/tools';
-import type { ShellHost, ToolSet, WorkTreeObserver } from '@momonga/tools';
+import { createBuiltinTools, createGitWorkTreeObserver, createHostRipgrepLocator, createPolicyFilesystem, createToolExecutor, createToolRegistry } from '@momonga/tools';
+import type { BundledRipgrep, ShellHost, ToolSet, WorkTreeObserver } from '@momonga/tools';
 import type { PolicyHostFilesystem } from '@momonga/policy';
 import type { ToolRuntimePort } from '../ports.ts';
 import type { RunNotifier } from '../service/notifier.ts';
@@ -45,6 +45,7 @@ export type ToolRuntimeOptions = {
   mcpRemote?: McpRemotePorts;
   ensureSessionTmpDir?: (paths: MomongaPaths, sessionId: string) => Promise<string>;
   policyFilesystem?: PolicyHostFilesystem;
+  bundledRipgrep?: () => Promise<BundledRipgrep>;
 };
 
 export type ToolRuntime = {
@@ -185,6 +186,12 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     recoveryContextFor,
     executor,
     sandbox,
+    ripgrepLocator: (env) =>
+      createHostRipgrepLocator({
+        setting: settings.takeUserSnapshot().settings.tools.ripgrep,
+        env,
+        ...(options.bundledRipgrep === undefined ? {} : { bundled: options.bundledRipgrep }),
+      }),
     shellHost: options.shellHost,
     markerDir: paths.markers.tools,
     sessionState: (session) => sessionStates.get(session),

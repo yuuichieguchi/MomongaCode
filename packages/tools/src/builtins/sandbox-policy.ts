@@ -27,7 +27,7 @@ export const buildSandboxPolicy = (options: SandboxPolicyOptions): SandboxPolicy
   assertAbsoluteEntries('entry_not_absolute', 'extraReadDenied', options.extraReadDenied ?? []);
   assertAbsoluteEntries('entry_not_absolute', 'readAllowed', options.readAllowed ?? []);
   const denied = alwaysWriteDenied(options.home);
-  const readDenied = [...denied.subtrees, options.sessionsTmpRoot, ...(options.extraReadDenied ?? [])];
+  const readDenied = [...denied.readDenied, options.sessionsTmpRoot, ...(options.extraReadDenied ?? [])];
   const ownTmp = options.tmpDir === undefined ? [] : [options.tmpDir];
   const readAllowed = unique([...ownTmp, ...(options.readAllowed ?? [])]);
   const policy: SandboxPolicy = {
@@ -41,7 +41,7 @@ export const buildSandboxPolicy = (options: SandboxPolicyOptions): SandboxPolicy
     protectedSet: options.protectedSet,
   };
   validateSandboxPolicy(policy, options.tmpDir === undefined ? {} : { tmpDir: options.tmpDir });
-  const homeGuards = denied.subtrees.map(canonicalizePath);
+  const homeGuards = denied.readDenied.map(canonicalizePath);
   const skillsRoot = canonicalizePath(momongaLayout(options.home).skills);
   for (const entry of readAllowed.map(canonicalizePath)) {
     if (homeGuards.some((guard) => comparableContains(guard, entry)) && !comparableContains(skillsRoot, entry)) {

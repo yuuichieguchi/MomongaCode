@@ -65,6 +65,7 @@ const INTERNAL_PARSES: Readonly<Record<string, InternalParse>> = {
   'packages/foundation/src/process-contract.ts': { calls: 1, reason: 'the ready line of a child process the product started' },
   'packages/supervisor/src/lock-watch.ts': { calls: 1, reason: 'health answers of the product\'s own child services' },
   'packages/verify/src/z3-distribution.ts': { calls: 1, reason: 'the Z3 manifest the product builds and ships' },
+  'packages/tools/src/ripgrep-distribution.ts': { calls: 1, reason: 'the ripgrep manifest the product builds and ships' },
   'packages/foundation/src/oauth-provider.ts': { calls: 1, reason: 'the OAuth credential store the product writes' },
   'packages/config/src/auto-fit.ts': {
     calls: 2,

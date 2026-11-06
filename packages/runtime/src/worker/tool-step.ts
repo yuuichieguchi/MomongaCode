@@ -247,6 +247,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
       session: options.tools.sessionState(session),
       sandbox: options.tools.sandbox,
       sandboxPolicy: policy.sandboxPolicy,
+      ripgrep: options.tools.ripgrepLocator(policy.env),
       workTreeObserver: options.tools.workTreeObserver(session, options.settings.trusted(session)),
       windowShared: ctx.windowShared,
       deadlineAt: run.deadlineAt,

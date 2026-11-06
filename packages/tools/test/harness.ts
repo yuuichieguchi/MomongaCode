@@ -4,7 +4,7 @@ import { canonicalJson, resolveCanonicalPath, sha256Hex, truncationMarker, valid
 import { absoluteFrom } from '@momonga/policy';
 import { FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf } from '@momonga/testkit';
 import type { PermissionSubject } from '@momonga/policy';
-import { createToolExecutor, createToolRegistry, defineTool, schemaIdentity } from '@momonga/tools';
+import { createHostRipgrepLocator, createToolExecutor, createToolRegistry, defineTool, schemaIdentity } from '@momonga/tools';
 import type { AnyTool, ExecutionBatchInput, OutputFit, SideEffectBinding, ToolBody, ToolCall, ToolContext, ToolDefinition, ToolExecutorOptions, ToolSet, WorkTreeObserver } from '@momonga/tools';
 import type { PermissionRule } from '@momonga/policy';
 import type { PermissionMode, SideEffect } from '@momonga/protocol';
@@ -122,6 +122,7 @@ export const makeHarness = (options: HarnessOptions = {}) => {
     ...(workTreeObserver === undefined ? {} : { workTreeObserver }),
     ...extra,
     };
+    if (extra.ripgrep === undefined) Object.assign(batch, { ripgrep: createHostRipgrepLocator({ setting: 'bundled', env: batch.env }) });
     if (extra.sandboxPolicy !== undefined) return batch as unknown as ExecutionBatchInput;
     const sandboxPolicy = minimalPolicyFor({ layout, rules: batch.rules, roots: batch.roots, ...(batch.tmpDir === undefined ? {} : { tmpDir: batch.tmpDir }) });
     return { ...batch, sandboxPolicy } as unknown as ExecutionBatchInput;

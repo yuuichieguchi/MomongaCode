@@ -8,6 +8,7 @@ import { permissionDeniedOutput } from '@momonga/protocol';
 import type { ApprovalBasis, ElicitationRequestView, PermissionDenial, PermissionMode, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
 import { SANDBOX_STOP_BOUND_MS, SandboxPolicyError, canonicalParentForm } from '@momonga/sandbox';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
+import type { RipgrepLocator } from './ripgrep-locator.ts';
 import { EarlierAttemptNotStoppedError, createCallLocks } from './call-lock.ts';
 import type { CallLock } from './call-lock.ts';
 import { readOnlyContextOf } from './read-only-call.ts';
@@ -96,6 +97,7 @@ export type ExecutionBatchInput = BatchCore & {
   rules: PermissionRule[];
   sandbox: Sandbox;
   sandboxPolicy: SandboxPolicy;
+  ripgrep: RipgrepLocator;
   recoverOnly?: undefined;
 };
 
@@ -1118,7 +1120,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     const facts = subjectFactsOf(gate.subject);
     const performedFacts: { current: SubjectFacts } = { current: facts };
     const scope = openScope(batch, call, tool, key, fit, batch.deadlineAt, () => performedFacts.current);
-    const toolContext: ToolContext = { ...scope.reconcileCtx, sandbox: batch.sandbox, sandboxPolicy: batch.sandboxPolicy, checkpoint: scope.checkpoint, extendToRunDeadline: scope.extendTimerToDeadline };
+    const toolContext: ToolContext = { ...scope.reconcileCtx, sandbox: batch.sandbox, sandboxPolicy: batch.sandboxPolicy, ripgrep: batch.ripgrep, checkpoint: scope.checkpoint, extendToRunDeadline: scope.extendTimerToDeadline };
     const contextForBasis = (): ToolContext => (requireBasis(target) === 'read_only' ? readOnlyContextOf(toolContext) : toolContext);
 
     try {

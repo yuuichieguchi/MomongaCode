@@ -8,7 +8,7 @@ import type { SandboxPolicy } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import type { AnyTool, SubjectContext } from '@momonga/tools';
 import { HAS_REAL_SANDBOX, HOST_SANDBOX_KIND, keyFor } from '../helpers.ts';
-import { HAS_RG, JS_BACKEND_PATH, RG_PATH, approvalOf, makeBuiltins, resultOf, sha256 } from './fixtures.ts';
+import { HAS_RG, RG_PATH, approvalOf, makeBuiltins, resultOf, sha256 } from './fixtures.ts';
 import type { Builtins } from './fixtures.ts';
 
 const BASE_TIME = 1_700_000_000;
@@ -477,7 +477,6 @@ describe('Glob paths', () => {
 
 const backends: Array<[string, string, boolean, boolean]> = [
   ['ripgrep', RG_PATH, HAS_RG, true],
-  ['JS fallback', JS_BACKEND_PATH, true, false],
 ];
 
 describe.each(backends)('Grep paths (%s backend)', (_name, envPath, available, realSandbox) => {

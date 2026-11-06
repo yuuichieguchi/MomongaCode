@@ -1,5 +1,5 @@
 import type { OutputFormatterName } from '@momonga/protocol';
-import type { ContextSettings, MemorySettings, ToolsSettings, VerificationSettings } from './settings.ts';
+import type { ContextSettings, MemorySettings, RipgrepSetting, ToolsSettings, VerificationSettings } from './settings.ts';
 
 export type ResolvedMemorySettings = { reflection: { enabled: boolean; maxTokens?: number }; forgetAfterDays: number; repositoryFacts: boolean };
 
@@ -15,7 +15,7 @@ export type ResolvedContextSettings = {
   unboundedOutputReserve: boolean;
 };
 
-export type ResolvedToolsSettings = { deferral: boolean; conciseDescriptions: boolean };
+export type ResolvedToolsSettings = { deferral: boolean; conciseDescriptions: boolean; ripgrep: RipgrepSetting };
 
 export const DEFAULT_FORGET_AFTER_DAYS = 90;
 
@@ -61,7 +61,7 @@ export const defaultContextSettings = (): ResolvedContextSettings => ({
   unboundedOutputReserve: false,
 });
 
-export const defaultToolsSettings = (): ResolvedToolsSettings => ({ deferral: false, conciseDescriptions: false });
+export const defaultToolsSettings = (): ResolvedToolsSettings => ({ deferral: false, conciseDescriptions: false, ripgrep: 'bundled' });
 
 export const mergeMemorySettings = (base: ResolvedMemorySettings, layer: MemorySettings | undefined): ResolvedMemorySettings => {
   if (layer === undefined) return base;
@@ -93,5 +93,5 @@ export const mergeContextSettings = (base: ResolvedContextSettings, layer: Conte
 
 export const mergeToolsSettings = (base: ResolvedToolsSettings, layer: ToolsSettings | undefined): ResolvedToolsSettings => {
   if (layer === undefined) return base;
-  return { deferral: layer.deferral ?? base.deferral, conciseDescriptions: layer.conciseDescriptions ?? base.conciseDescriptions };
+  return { deferral: layer.deferral ?? base.deferral, conciseDescriptions: layer.conciseDescriptions ?? base.conciseDescriptions, ripgrep: layer.ripgrep ?? base.ripgrep };
 };

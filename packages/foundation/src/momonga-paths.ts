@@ -27,6 +27,7 @@ export interface MomongaPaths {
   launcher: string;
   keychains: string;
   cacheBase: string;
+  executables: string;
   tmp: { root: string; spawn: string; sessions: string };
 }
 
@@ -98,6 +99,7 @@ export const momongaLayout = (
     launcher: platform === 'win32' ? join(home, 'AppData', 'Local', 'Programs', 'momonga', 'momonga.exe') : join(home, '.local', 'bin', 'momonga'),
     keychains: keychainsOf(home, platform, env),
     cacheBase,
+    executables: join(cacheBase, 'executables'),
     tmp: { root: tmp, spawn: join(tmp, 'spawn'), sessions: join(tmp, 'sessions') },
   };
 };

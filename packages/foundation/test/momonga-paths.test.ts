@@ -57,6 +57,7 @@ const expectedLayout = (home: string, cacheBase: string, keychains: string = pat
     launcher: path.join(home, '.local', 'bin', 'momonga'),
     keychains,
     cacheBase,
+    executables: path.join(cacheBase, 'executables'),
     tmp: {
       root: path.join(cacheBase, 'tmp'),
       spawn: path.join(cacheBase, 'tmp', 'spawn'),

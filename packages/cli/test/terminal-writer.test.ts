@@ -48,7 +48,7 @@ describe('the program hands its commands only the terminal writer', () => {
     const ports = { version: '9.9.9', home: '/h', cwd: '/c', terminal: undefined, stdout: { write: (text: string) => void out.push(text) }, stderr: { write: (text: string) => void err.push(text) } } as unknown as CliPorts;
     const program = buildProgram({
       ports,
-      policyVerify: () => nodePolicyVerifyHost(ports, { cacheBase: '/c/cache' }),
+      policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/c/cache/executables' }),
       entries,
       update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
       interrupt: new AbortController().signal,

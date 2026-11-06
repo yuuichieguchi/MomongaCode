@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
-import { HAS_RG, JS_BACKEND_PATH, RG_PATH, makeBuiltins, resultOf } from './fixtures.ts';
+import { HAS_RG, RG_PATH, makeBuiltins, resultOf } from './fixtures.ts';
 import type { Builtins } from './fixtures.ts';
 
 const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
@@ -79,26 +79,6 @@ describe('readAllowed inside a readDenied root (builtins)', () => {
     const fx = await fixture();
     fs.symlinkSync(path.dirname(fx.token), path.join(fx.ok, 'linked'));
     const result = resultOf(await fx.tools.run('Glob', { pattern: '**/*.txt', path: fx.ok }, { sandboxPolicy: fx.sandboxPolicy }));
-    expect(linesOf(result.output)).toEqual(relativeTo(fx.tools, fx.allowedFile));
-  });
-
-  it('Grep with the JS backend searches the allowed dir', async () => {
-    const fx = await fixture();
-    const result = resultOf(await grep(fx.tools, { path: fx.ok }, fx.sandboxPolicy, JS_BACKEND_PATH));
-    expect(result.status).toBe('completed');
-    expect(linesOf(result.output)).toEqual(relativeTo(fx.tools, fx.allowedFile));
-  });
-
-  it('Grep with the JS backend from the project finds the allowed file and skips denied siblings', async () => {
-    const fx = await fixture();
-    const result = resultOf(await grep(fx.tools, {}, fx.sandboxPolicy, JS_BACKEND_PATH));
-    expect(linesOf(result.output)).toEqual(relativeTo(fx.tools, fx.visibleFile, fx.allowedFile));
-  });
-
-  it('Grep with the JS backend skips a symlink in the allowed dir that points into home/.momonga', async () => {
-    const fx = await fixture();
-    fs.symlinkSync(fx.token, path.join(fx.ok, 'link.txt'));
-    const result = resultOf(await grep(fx.tools, { path: fx.ok }, fx.sandboxPolicy, JS_BACKEND_PATH));
     expect(linesOf(result.output)).toEqual(relativeTo(fx.tools, fx.allowedFile));
   });
 });

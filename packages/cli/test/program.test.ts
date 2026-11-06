@@ -22,7 +22,7 @@ const harness = () => {
   const ports = { version: '9.9.9', home: freshHome(), cwd: '/c', terminal: undefined } as unknown as CliPorts;
   const program = buildProgram({
     ports,
-    policyVerify: () => nodePolicyVerifyHost(ports, { cacheBase: '/c/cache' }),
+    policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/c/cache/executables' }),
     entries,
     update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
     interrupt: new AbortController().signal,

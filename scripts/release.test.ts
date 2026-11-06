@@ -147,6 +147,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     fs.copyFileSync(`${repoRoot}scripts/release.sh`, path.join(work, 'scripts/release.sh'));
     fs.copyFileSync(`${repoRoot}scripts/sea-entitlements.plist`, path.join(work, 'scripts/sea-entitlements.plist'));
     fs.copyFileSync(`${repoRoot}scripts/release-key.ts`, path.join(work, 'scripts/release-key.ts'));
+    fs.copyFileSync(`${repoRoot}THIRD-PARTY-NOTICES.md`, path.join(work, 'THIRD-PARTY-NOTICES.md'));
     for (const [file, content] of Object.entries(installers(PINNED_KEY))) fs.writeFileSync(path.join(work, file), content);
     fs.symlinkSync(`${repoRoot}node_modules`, path.join(work, 'node_modules'));
     fs.writeFileSync(path.join(work, 'packages/cli/package.json'), JSON.stringify({ name: 'momonga', version: '1.2.3' }));
@@ -251,13 +252,14 @@ describe.skipIf(!HAS_POSIX_SHELL)('release.sh', () => {
     expect(calls[14]).toBe(`ssh-keygen -Y sign -f ${signingKey} -n momonga-release ${out}/SHA256SUMS `);
     expect(calls[15]).toMatch(/^ssh-keygen -Y verify -f \S+ -I momonga-release -n momonga-release -s \S+ $/);
     expect(calls[16]).toContain(
-      `gh release create v1.2.3 ${binary} ${out}/momonga-linux-x64 ${out}/momonga-linux-arm64 ${out}/momonga-win-x64.exe ${out}/SHA256SUMS ${out}/SHA256SUMS.sig --repo fake-owner/fake-repo --draft --target ${git(work, 'rev-parse', 'HEAD').trim()} --title v1.2.3 --notes - second change (`,
+      `gh release create v1.2.3 ${binary} ${out}/momonga-linux-x64 ${out}/momonga-linux-arm64 ${out}/momonga-win-x64.exe ${out}/THIRD-PARTY-NOTICES.md ${out}/SHA256SUMS ${out}/SHA256SUMS.sig --repo fake-owner/fake-repo --draft --target ${git(work, 'rev-parse', 'HEAD').trim()} --title v1.2.3 --notes - second change (`,
     );
     expect(calls[17]).toBe('gh release edit v1.2.3 --repo fake-owner/fake-repo --draft=false ');
     expect(originTags()).toBe('v1.2.3\n');
     expect(git(work, 'tag', '--list')).toBe('v1.2.3\n');
     const sums = fs.readFileSync(`${work}/dist/release/SHA256SUMS`, 'utf8').trimEnd().split('\n');
-    expect(sums.map((line) => line.replace(/^[0-9a-f]{64} {2}/, ''))).toEqual(['momonga-darwin-arm64', 'momonga-linux-x64', 'momonga-linux-arm64', 'momonga-win-x64.exe']);
+    expect(sums.map((line) => line.replace(/^[0-9a-f]{64} {2}/, ''))).toEqual(['momonga-darwin-arm64', 'momonga-linux-x64', 'momonga-linux-arm64', 'momonga-win-x64.exe', 'THIRD-PARTY-NOTICES.md']);
+    expect(fs.readFileSync(`${work}/dist/release/THIRD-PARTY-NOTICES.md`, 'utf8')).toBe(fs.readFileSync(`${work}/THIRD-PARTY-NOTICES.md`, 'utf8'));
   });
 
   it('refuses to build or publish when the installers pin no release key, and says what to do', () => {

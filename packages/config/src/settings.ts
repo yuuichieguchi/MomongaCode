@@ -304,7 +304,9 @@ export type ContextSettings = {
   unboundedOutputReserve?: boolean;
 };
 
-export type ToolsSettings = { deferral?: boolean; conciseDescriptions?: boolean };
+export type RipgrepSetting = 'bundled' | 'system' | (string & {});
+
+export type ToolsSettings = { deferral?: boolean; conciseDescriptions?: boolean; ripgrep?: RipgrepSetting };
 
 export type CredentialsSettings = { env?: string[]; keep?: string[]; valuePatterns?: string[] };
 

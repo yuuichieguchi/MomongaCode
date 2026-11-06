@@ -160,6 +160,7 @@ describe('tool marker sweep wiring (§8)', () => {
       session: port.sessionState(session),
       sandbox: port.sandbox,
       sandboxPolicy: policy.sandboxPolicy,
+      ripgrep: port.ripgrepLocator(policy.env),
       deadlineAt: f.clock.now() + 120_000,
       outputFit: UNBOUNDED_OUTPUT_FIT,
       reconcileFit: UNBOUNDED_OUTPUT_FIT,
