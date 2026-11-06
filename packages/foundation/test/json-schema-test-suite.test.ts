@@ -85,12 +85,6 @@ const FORMAT_REASON =
 const EXCEPTIONS: readonly Exception[] = [
   ...FORMAT_FILES.map((name): Exception => ({ file: `optional/format/${name}`, tests: 'expected-invalid', reason: FORMAT_REASON })),
   {
-    file: 'optional/format-assertion',
-    tests: ['format-assertion: false: invalid string', 'format-assertion: true: invalid string'],
-    reason:
-      'the format-assertion vocabulary is not implemented: format stays an annotation whatever a custom metaschema declares (same engine option as optional/format, assertFormat:false). Open: format-assertion declared true is known to ata-validator (lib/vocabularies.js:65-77) but assertFormat:false strips format (lib/validator-core.js:750), so the schema is accepted and format is not asserted; whether the product should assert or refuse is a behaviour the design does not record and is the person's decision.',
-  },
-  {
     file: 'optional/dependencies-compatibility',
     tests: 'expected-invalid',
     reason:
