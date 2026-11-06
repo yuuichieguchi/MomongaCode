@@ -17,7 +17,7 @@ import {
   stepTokensToOverflowTheRoom,
 } from './support/context-window.ts';
 import { createE2eHome } from './support/home.ts';
-import { baseSettings, sandboxChoiceOf, startUpstream, withStructuredRole, writeSettingsFile } from './support/stack.ts';
+import { baseSettings, sandboxChoiceOf, startUpstream, withStructuredRole, withTargetsAnswering, writeSettingsFile } from './support/stack.ts';
 import { SCRIPTED_USAGE, chatCompletions, reportedTokensOfRequest, textReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
@@ -145,7 +145,12 @@ const datasetOf = (lines: number) => ({
   ],
 });
 
-const BENCHMARKS = 1 + 5;
+const CANDIDATES = 5;
+const BENCHMARKS = 1 + CANDIDATES;
+
+type SpentOutcome = { outcome: { tokens: { benchmark: number; charged: number }; contrastive: string[] } };
+
+const spentOf = (file: string): SpentOutcome['outcome'] => (JSON.parse(fs.readFileSync(file, 'utf8')) as SpentOutcome).outcome;
 
 describe('momonga context improve', () => {
   it(titleOf('context-improve-adopt'), { timeout: 40 * E2E_TEST_TIMEOUT_MS }, async () => {
@@ -156,7 +161,8 @@ describe('momonga context improve', () => {
       home,
       routes: [...routesWith(() => benchmarkStepText), walkRoute(FOLLOW_UP_TASK, 'follow-up.txt', false, stepTextOf(() => followUpStepText))],
     });
-    writeSettingsFile(home, withStructuredRole(baseSettings(home, sandboxChoiceOf({ home }).kind), 'analysis', ANALYSIS_ALIAS));
+    const scriptedSettings = withStructuredRole(baseSettings(home, sandboxChoiceOf({ home }).kind), 'analysis', ANALYSIS_ALIAS);
+    writeSettingsFile(home, scriptedSettings);
     expect(
       STEPS,
       'STEPS cannot be derived from the window: it only has to exceed the steps the context builder protects (DEFAULT_KEEP_RECENT_STEPS), so that some steps fall outside the protection and can be compacted',
@@ -185,13 +191,29 @@ describe('momonga context improve', () => {
     const options = { boundMs, cwd: home.project };
     const fakeOutcome = path.join(home.root, 'fake-outcome.json');
     const realOutcome = path.join(home.root, 'real-outcome.json');
-    const improveArgs = (model: 'fake' | 'real', outcome: string): string[] => ['context', 'improve', '--dataset', dataset, '--model', model, '--alias', 'default', '--seed', '7', '--outcome', outcome];
+    const improveArgs = (tokenCap: number, outcome: string): string[] => ['context', 'improve', '--dataset', dataset, '--alias', 'default', '--token-cap', String(tokenCap), '--seed', '7', '--outcome', outcome];
 
-    const removedFlag = await runCli(home, [...improveArgs('real', realOutcome), '--adopt'], options);
+    const removedFlag = await runCli(home, [...improveArgs(1, realOutcome), '--adopt'], options);
     expect(removedFlag.code).not.toBe(0);
     expect(removedFlag.stderr).toContain("unknown option '--adopt'");
+    const removedModel = await runCli(home, [...improveArgs(1, realOutcome), '--model', 'real'], options);
+    expect(removedModel.code).not.toBe(0);
+    expect(removedModel.stderr).toContain("unknown option '--model'");
 
-    const declaredFake = await runCli(home, improveArgs('fake', fakeOutcome), options);
+    const baselineProbe = path.join(home.root, 'baseline-probe.json');
+    const baselineRun = await runCli(home, improveArgs(1, baselineProbe), options);
+    expect(baselineRun.code, baselineRun.stdout).not.toBe(0);
+    const baselineTokens = spentOf(baselineProbe).tokens.benchmark;
+    expect(baselineTokens).toBeGreaterThan(0);
+    const analysisProbe = path.join(home.root, 'analysis-probe.json');
+    expect((await runCli(home, improveArgs(baselineTokens + 1, analysisProbe), options)).code).not.toBe(0);
+    const analysed = spentOf(analysisProbe);
+    expect(analysed.tokens.benchmark).toBe(baselineTokens);
+    expect(analysed.contrastive).toEqual(['fragile']);
+    const candidateRunTokens = baselineTokens + Math.ceil(analysed.tokens.charged / analysed.contrastive.length);
+    const tokenCap = baselineTokens + analysed.tokens.charged + CANDIDATES * candidateRunTokens;
+
+    const declaredFake = await runCli(home, improveArgs(tokenCap, fakeOutcome), options);
     expect(declaredFake.code).not.toBe(0);
     expect(declaredFake.stdout).toContain('model: fake');
     expect(declaredFake.stdout).toMatch(/nothing was adopted/i);
@@ -202,10 +224,11 @@ describe('momonga context improve', () => {
     const none = await runCli(home, ['context', 'guideline', 'list'], options);
     expect(none.stdout).not.toContain(WINNER);
 
-    const improved = await runCli(home, improveArgs('real', realOutcome), options);
+    writeSettingsFile(home, withTargetsAnswering(scriptedSettings, 'model'));
+    const improved = await runCli(home, improveArgs(tokenCap, realOutcome), options);
     expect(improved.code).toBe(0);
     expect(improved.stdout).toContain('model: real');
-    expect(improved.stdout).toMatch(/declared by the operator/);
+    expect(improved.stdout).toMatch(/derived from the pinned provenance of the targets that answered the benchmark/);
     expect(improved.stdout).toContain(`the analysis and candidate calls used the alias ${ANALYSIS_ALIAS}`);
     expect(improved.stdout).toContain('gate: PASS');
     expect(improved.stdout).toContain(`text of the winner:\n  ${WINNER}`);
@@ -218,7 +241,7 @@ describe('momonga context improve', () => {
     expect(written.outcome.winner).toMatchObject({ text: WINNER, parent: null });
     expect(written.outcome.parent).toBeNull();
     expect(written.outcome.dataset.digest).toMatch(/^[0-9a-f]{64}$/);
-    expect(written.outcome.candidates).toHaveLength(5);
+    expect(written.outcome.candidates).toHaveLength(CANDIDATES);
     expect(written.digest).toMatch(/^[0-9a-f]{64}$/);
 
     const tamperedOutcome = path.join(home.root, 'tampered-outcome.json');
