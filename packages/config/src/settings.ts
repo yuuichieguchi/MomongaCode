@@ -1,6 +1,6 @@
 import { defineProductSchema, transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
 import type { ProductValidator, UntrustedError } from '@momonga/foundation';
-import type { AnthropicApiVersion, CapabilitiesCore, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetAnswers, TargetBilling, PermissionMode } from '@momonga/protocol';
+import type { AnthropicApiVersion, CapabilitiesCore, DialectDefinition, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetAnswers, TargetBilling, PermissionMode } from '@momonga/protocol';
 import { MCP_SERVERS_FILE_SCHEMA, MCP_SERVER_SCHEMA, MODEL_ROLES, SETTINGS_SCHEMA } from './settings-schema.ts';
 
 export type PermissionsSettings = {
@@ -36,7 +36,7 @@ export type McpServerConfig = McpStdioServerConfig | McpRemoteServerConfig;
 
 export type FmToolCalling = 'auto' | 'native' | 'constrained';
 
-export type TargetCapabilitiesCore = Omit<CapabilitiesCore, 'toolCalling' | 'probedAt' | 'maxConcurrency'>;
+export type TargetCapabilitiesCore = Omit<CapabilitiesCore, 'toolCalling' | 'probedAt' | 'maxConcurrency' | 'schemaDialect'> & Partial<Pick<CapabilitiesCore, 'schemaDialect'>>;
 
 export type DeclaredImage = ImageCapability | { imageInput?: undefined; imageTokens?: undefined };
 
@@ -205,6 +205,7 @@ export type ModelRoles = Partial<Record<ModelRole, string>>;
 export type ModelsSettings = {
   aliases?: Record<string, ModelAlias>;
   targets?: Record<string, ModelTarget>;
+  dialects?: Record<string, DialectDefinition>;
   roles?: ModelRoles;
 };
 

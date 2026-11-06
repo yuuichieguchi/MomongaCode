@@ -1,5 +1,5 @@
 import { SECRET_NAME_PATTERN } from '@momonga/foundation';
-import { ALLOWED_TOOLS_FORMS, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, REASONING_EFFORTS, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS } from '@momonga/protocol';
+import { ALLOWED_TOOLS_FORMS, DIALECT_DEFINITION_SCHEMA, ANTHROPIC_API_VERSIONS, HOOK_COMMAND_TYPE, MAX_BUDGET_COUNT, OUTPUT_BOUND_FIELDS, OUTPUT_FORMATTERS, PERMISSION_MODES, REASONING_EFFORTS, TARGET_ANSWERS, TARGET_BILLINGS, THINKING_OFFS } from '@momonga/protocol';
 import type { CallRole } from '@momonga/protocol';
 
 export const MODEL_ROLES = ['compaction', 'reflection', 'analysis'] as const satisfies readonly CallRole[];
@@ -161,7 +161,7 @@ const targetCapabilitiesSchema = (promptCache: object, extraProperties: object =
     },
     parallelToolCalls: { type: 'boolean' },
     allowedTools: { type: 'array', items: { enum: [...ALLOWED_TOOLS_FORMS] }, minItems: 1, uniqueItems: true },
-    schemaDialect: { enum: ['json-schema-2020-12', 'guided-generation'] },
+    schemaDialect: { type: 'string', minLength: 1 },
     tokenCounting: { enum: ['exact', 'calibrated', 'estimated'] },
     tokenErrorRatio: { type: 'number', minimum: 0 },
     usageReported: { type: 'boolean' },
@@ -360,6 +360,7 @@ export const SETTINGS_SCHEMA = {
           propertyNames: { pattern: TARGET_NAME_PATTERN },
           additionalProperties: MODEL_TARGET_SCHEMA,
         },
+        dialects: { type: 'object', additionalProperties: DIALECT_DEFINITION_SCHEMA },
         roles: {
           type: 'object',
           properties: Object.fromEntries(MODEL_ROLES.map((role) => [role, { type: 'string', minLength: 1 }])),

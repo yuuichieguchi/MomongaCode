@@ -25,7 +25,6 @@ const resolvedCapabilities = (maxConcurrency: number) => ({
   structuredOutput: 'none',
   streaming: true,
   stopSequences: true,
-  schemaDialect: 'json-schema-2020-12',
   tokenCounting: 'estimated',
   usageReported: true,
   source: 'config',
@@ -380,5 +379,106 @@ describe('credentialEnvNames', () => {
     const tree = makeTree();
     const { settings } = await loadUserSettings({ home: tree.home });
     expect(credentialEnvNames(settings)).toEqual([]);
+  });
+});
+
+const ORDERED_SUBSET = {
+  extends: 'inlined-subset',
+  rules: [{ select: [{ kinds: ['object-with-properties'] }], op: 'property-order', key: 'propertyOrdering' }],
+};
+
+const BUILTIN_IDS = ['json-schema-2020-12', 'explicit-keys', 'strict-closed', 'inlined-subset'];
+
+describe('user-declared dialects', () => {
+  it('resolves models.dialects from user settings as declared', async () => {
+    const models = await expectAccepted({ dialects: { 'ordered-subset': ORDERED_SUBSET } });
+    expect(models.dialects).toEqual({ 'ordered-subset': ORDERED_SUBSET });
+  });
+
+  it('resolves no dialects when none are declared', async () => {
+    const models = await expectAccepted({ targets: { a: chatTarget() }, aliases: { default: 'a' } });
+    expect(models.dialects).toEqual({});
+  });
+
+  it.each([
+    ['project', projectSettingsPath],
+    ['local', localSettingsPath],
+  ] as const)('discards models.dialects from %s settings with a warning naming the file', async (_label, locate) => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { models: { dialects: { 'ordered-subset': ORDERED_SUBSET } } });
+    const file = writeJson(locate(tree), { models: { dialects: { 'project-dialect': { rules: [] } } } });
+    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    expect(result.settings.models.dialects).toEqual({ 'ordered-subset': ORDERED_SUBSET });
+    expect(result.warnings.some((w) => w.includes('models.dialects is only honored in user settings') && w.includes(file))).toBe(true);
+  });
+
+  it('leaves the defaults of a project layer that only declared dialects', async () => {
+    const tree = makeTree();
+    writeJson(projectSettingsPath(tree), { models: { dialects: { 'project-dialect': { rules: [] } } } });
+    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    expect(result.settings.models.dialects).toEqual({});
+    expect(result.settings.models.targets).toEqual({ fm: DEFAULT_FM_TARGET });
+  });
+
+  it.each([
+    ['an unknown op', { rules: [{ select: [{ kinds: ['any'] }], op: 'rename' }] }],
+    ['ensure-key of an assertion keyword', { rules: [{ select: [{ kinds: ['any'] }], op: 'ensure-key', key: 'minimum', value: 0 }] }],
+    ['nullable-optional on a root clause', { rules: [{ select: [{ kinds: ['root'] }], op: 'nullable-optional' }] }],
+    ['no rules', {}],
+  ])('rejects a definition with %s against the definition schema, naming the id', async (_name, definition) => {
+    await expectRejected({ dialects: { 'broken-one': definition } }, 'broken-one');
+  });
+
+  it.each(['Upper', '1digit', 'has space', `a${'b'.repeat(63)}`])('rejects the dialect id %j', async (id) => {
+    await expectRejected({ dialects: { [id]: { rules: [] } } }, id);
+  });
+
+  it.each(BUILTIN_IDS)('rejects a user dialect that reuses the built-in id %s', async (id) => {
+    await expectRejected({ dialects: { [id]: { rules: [] } } }, id, /built-in/);
+  });
+
+  it('rejects a user dialect that extends a dialect that is not built in, naming both ids', async () => {
+    await expectRejected(
+      { dialects: { 'ordered-subset': ORDERED_SUBSET, 'second-level': { extends: 'ordered-subset', rules: [] } } },
+      'second-level',
+      'ordered-subset',
+    );
+  });
+});
+
+describe('the dialect a target declares', () => {
+  it.each(BUILTIN_IDS)('accepts the built-in %s', async (id) => {
+    const models = await expectAccepted({ targets: { a: chatTarget({ capabilities: { ...CAPABILITIES, schemaDialect: id } }) }, aliases: { default: 'a' } });
+    expect(models.targets['a']).toMatchObject({ capabilities: { schemaDialect: id } });
+  });
+
+  it('accepts a dialect declared in the same user settings', async () => {
+    const models = await expectAccepted({
+      dialects: { 'ordered-subset': ORDERED_SUBSET },
+      targets: { a: chatTarget({ capabilities: { ...CAPABILITIES, schemaDialect: 'ordered-subset' } }) },
+      aliases: { default: 'a' },
+    });
+    expect(models.targets['a']).toMatchObject({ capabilities: { schemaDialect: 'ordered-subset' } });
+  });
+
+  it('rejects a dialect id that is neither built in nor declared, naming the id', async () => {
+    await expectRejected(
+      { targets: { a: chatTarget({ capabilities: { ...CAPABILITIES, schemaDialect: 'nowhere-dialect' } }) }, aliases: { default: 'a' } },
+      'nowhere-dialect',
+    );
+  });
+
+  it('does not resolve a target dialect against a dialect a project layer declared', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { models: { targets: { a: chatTarget({ capabilities: { ...CAPABILITIES, schemaDialect: 'project-dialect' } }) }, aliases: { default: 'a' } } });
+    writeJson(projectSettingsPath(tree), { models: { dialects: { 'project-dialect': { rules: [] } } } });
+    const failure = loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    await expect(failure).rejects.toThrow('project-dialect');
+  });
+
+  it('writes no dialect into a target that declares none, so the probe record can decide it', async () => {
+    const models = await expectAccepted({ targets: { a: chatTarget() }, aliases: { default: 'a' } });
+    expect(models.targets['a']?.adapter).toBe('chat-completions');
+    expect(Object.keys((models.targets['a'] as { capabilities: object }).capabilities)).not.toContain('schemaDialect');
   });
 });

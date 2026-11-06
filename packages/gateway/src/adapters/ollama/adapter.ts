@@ -1,5 +1,6 @@
 import { summaryTokenCapFor } from '@momonga/protocol';
 import type { AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, StreamEvent } from '@momonga/protocol';
+import { RenderLedger } from '../../dialect/ledger.ts';
 import { createUpstreamClassifier } from '../shared/classify.ts';
 import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { StreamFailure, UpstreamProtocolError } from '../shared/failures.ts';
@@ -34,7 +35,8 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
   async function* create(request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
     if (closed) throw new Error('the ollama adapter is closed');
     const capabilities = ctx.capabilities;
-    const body = buildOllamaBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.name, OLLAMA_TOOL_CHOICE), capabilities, ctx.reasoningOrigin);
+    const ledger = new RenderLedger();
+    const body = buildOllamaBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.name, OLLAMA_TOOL_CHOICE), capabilities, ctx.reasoningOrigin, { ledger, ...(options.userDialects === undefined ? {} : { userDialects: options.userDialects }) });
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     try {
@@ -45,7 +47,7 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
         signal,
       });
       if (response.status !== 200) throw await httpErrorOf(response, options.clock, detailReader(request.model), OLLAMA_VOCABULARY);
-      for await (const event of ollamaEventsOf(response.body, { request, clock: options.clock, ...retryAfterHint(response, options.clock) })) {
+      for await (const event of ollamaEventsOf(response.body, { request, clock: options.clock, wraps: ledger.wraps, narrowings: ledger.narrowings, ...retryAfterHint(response, options.clock) })) {
         ctx.signal.throwIfAborted();
         yield event;
       }

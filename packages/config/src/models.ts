@@ -1,7 +1,8 @@
 import path from 'node:path';
 import { canonicalPath, comparableContains, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
 import { DEFAULT_ANTHROPIC_API_VERSION, anthropicVersionSamplingBound, imageCapability } from '@momonga/protocol';
-import type { AnthropicApiVersion, TargetBilling } from '@momonga/protocol';
+import type { AnthropicApiVersion, DialectDefinition, TargetBilling } from '@momonga/protocol';
+import { checkTargetDialects, resolveDialects } from './dialects.ts';
 import { layoutOf } from './layout.ts';
 import type {
   AnthropicTarget,
@@ -28,6 +29,7 @@ import type {
 export type ResolvedModels = {
   aliases: Record<string, ModelAlias>;
   targets: Record<string, ResolvedModelTarget>;
+  dialects: Record<string, DialectDefinition>;
   roles: ModelRoles;
 };
 
@@ -78,7 +80,6 @@ const CHAT_COMPLETIONS_CAPABILITY_DEFAULTS: CapabilityDefaults = {
   structuredOutput: 'none',
   streaming: true,
   stopSequences: true,
-  schemaDialect: 'json-schema-2020-12',
   tokenCounting: 'estimated',
   usageReported: true,
   source: 'config',
@@ -223,12 +224,14 @@ const resolveAdapter = (target: ModelTarget, home: string, where: string, warnin
 };
 
 export const resolveModels = (models: ModelsSettings | undefined, { source, home, warnings }: ResolveModelsOptions): ResolvedModels => {
+  const dialects = resolveDialects(models?.dialects, source);
   const configured = Object.entries(models?.targets ?? {});
   const targets: Record<string, ResolvedModelTarget> = {};
   for (const [name, target] of configured) {
     const where = `${source}: models.targets.${name}`;
     targets[name] = resolveTarget(target, home, where, warnings);
   }
+  checkTargetDialects(targets, dialects, source);
   if (configured.length === 0) targets[DEFAULT_FM_NAME] = resolveFm({ adapter: 'fm' });
 
   const aliases: Record<string, ModelAlias> = { ...models?.aliases };
@@ -253,7 +256,7 @@ export const resolveModels = (models: ModelsSettings | undefined, { source, home
     }
     roles[role as ModelRole] = alias;
   }
-  return { aliases, targets, roles };
+  return { aliases, targets, dialects, roles };
 };
 
 type ResolvedTargets = { models: { targets: Record<string, ResolvedModelTarget> } };

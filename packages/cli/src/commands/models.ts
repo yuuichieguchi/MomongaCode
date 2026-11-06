@@ -1,5 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import type { Capabilities, MomongaModelEntry } from '@momonga/protocol';
+import type { AliasCapabilities, MomongaModelEntry } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
@@ -7,15 +7,15 @@ import { escapedLines } from '../terminal-writer.ts';
 
 const yesNo = (value: boolean): string => (value ? 'yes' : 'no');
 
-const toolCallingText = (capabilities: Capabilities): string =>
+const toolCallingText = (capabilities: AliasCapabilities): string =>
   typeof capabilities.toolCalling === 'string' ? capabilities.toolCalling : `needs probe: ${capabilities.toolCalling.remedy}`;
 
-const describeCapabilities = (capabilities: Capabilities): string[] => [
+const describeCapabilities = (capabilities: AliasCapabilities): string[] => [
   `    context window: ${capabilities.contextWindow}, max output: ${capabilities.maxOutputTokens}`,
   `    tool calling: ${toolCallingText(capabilities)}, parallel tool calls: ${capabilities.parallelToolCalls === undefined ? 'unknown' : yesNo(capabilities.parallelToolCalls)}, structured output: ${capabilities.structuredOutput}`,
   `    image input: ${yesNo(capabilities.imageInput)}, streaming: ${yesNo(capabilities.streaming)}, stop sequences: ${yesNo(capabilities.stopSequences)}`,
   `    token counting: ${capabilities.tokenCounting}, usage reported: ${yesNo(capabilities.usageReported)}, max concurrency: ${capabilities.maxConcurrency}`,
-  `    schema dialect: ${capabilities.schemaDialect}, source: ${capabilities.source}${capabilities.probedAt === undefined ? '' : ` (probed ${capabilities.probedAt})`}`,
+  `    ${capabilities.schemaDialect === undefined ? '' : `schema dialect: ${capabilities.schemaDialect}, `}source: ${capabilities.source}${capabilities.probedAt === undefined ? '' : ` (probed ${capabilities.probedAt})`}`,
 ];
 
 export const formatModels = (models: readonly MomongaModelEntry[]): string =>

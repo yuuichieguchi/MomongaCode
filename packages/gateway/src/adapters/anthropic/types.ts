@@ -1,5 +1,6 @@
 import type { Clock } from '@momonga/foundation';
 import type { AdapterTarget, AnthropicApiVersion, Capabilities, HealthResult, ProviderAdapter } from '@momonga/protocol';
+import type { UserDialects } from '../../dialect/choice.ts';
 import type { UpstreamEndpoint, UpstreamLiveness } from '../shared/http-client.ts';
 
 export type AnthropicAdapterOptions = {
@@ -10,6 +11,7 @@ export type AnthropicAdapterOptions = {
   clock: Clock;
   apiVersion: AnthropicApiVersion;
   liveness?: UpstreamLiveness;
+  userDialects?: UserDialects;
 };
 
 export type AnthropicAdapter = ProviderAdapter & { close(): Promise<void> };

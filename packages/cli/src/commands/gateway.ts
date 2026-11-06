@@ -2,6 +2,7 @@ import path from 'node:path';
 import { loadUserSettings, probeRecordKeyOf, upstreamEndpointOf } from '@momonga/config';
 import type { EndpointProbeKey } from '@momonga/config';
 import type { MomongaPaths } from '@momonga/foundation';
+import type { DialectDefinition, ProbeReportDialect } from '@momonga/protocol';
 import { ensureDaemon, stopDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { escapedLines } from '../terminal-writer.ts';
@@ -37,8 +38,8 @@ export const probeTarget = async (ports: CliPorts, paths: MomongaPaths, target: 
   const targets = settings.models.targets;
   const configured = targets[target];
   if (configured?.adapter === 'fm') return probeFm(ports, paths, target, options);
-  if (configured?.adapter === 'chat-completions') return probeChatCompletions(ports, paths, target, configured, options);
-  if (configured?.adapter === 'ollama') return probeOllama(ports, paths, target, configured, options);
+  if (configured?.adapter === 'chat-completions') return probeChatCompletions(ports, paths, target, configured, options, settings.models.dialects);
+  if (configured?.adapter === 'ollama') return probeOllama(ports, paths, target, configured, options, settings.models.dialects);
   throw new NotAProbeableTarget(target, targets);
 };
 
@@ -58,6 +59,12 @@ const outputBoundText = (report: { outputBoundField?: string }, declared: string
 
 type EndpointProbe = Awaited<ReturnType<typeof import('@momonga/gateway').probeEndpointTarget>>;
 
+const dialectText = (dialect: ProbeReportDialect): string => {
+  if (dialect.selected !== null) return `${dialect.selected} (${dialect.shape} envelope)`;
+  const tried = dialect.tried.map((attempt) => `${attempt.id} ${attempt.result}${attempt.detail === undefined ? '' : `: ${attempt.detail}`}`).join('; ');
+  return `none accepted${tried === '' ? '' : ` (${tried})`}`;
+};
+
 export const probeEndpointText = (name: string, endpoint: string, recordPath: string, report: EndpointProbe['report'], toolCalling: EndpointProbe['toolCalling'], declaredOutputBound?: string): string => {
   const reasoning = report.reasoning;
   const parallel = report.parallelToolCalls;
@@ -68,6 +75,7 @@ export const probeEndpointText = (name: string, endpoint: string, recordPath: st
     `  parallel tool calls: ${parallel === undefined ? 'not measured' : `${parallel.accepted && parallel.multiCallRate >= 0.9} (${parallel.multiCallRate} of replies carried several calls)`}`,
     `  reasoning: ${reasoning === undefined ? 'not measured' : reasoning.control === 'reasoning_effort' ? `reasoning_effort, lowest ${reasoning.lowest}` : `cannot be controlled${reasoning.headroomTokens === undefined ? '' : `, leaves room for ${reasoning.headroomTokens} tokens`}`}`,
     `  max concurrency: ${report.maxConcurrency}`,
+    `  schema dialect: ${dialectText(report.schemaDialect)}`,
     `  recorded in ${recordPath}`,
   ])}\n`;
 };
@@ -85,6 +93,7 @@ export const probeOllamaText = (name: string, endpoint: string, recordPath: stri
     `probed ${name}: model ${report.modelId} at ${endpoint}, Ollama ${report.serverVersion}`,
     `  trained context length ${report.contextWindow.value} (${report.contextWindow.method}), configured context window ${contextWindow}`,
     `  tool calling: ${report.nativeTools.accepted ? 'native' : 'none'}, image input: ${imageInputTextOf(report)}, thinking: ${report.thinkingSupported}`,
+    `  schema dialect: ${dialectText(report.schemaDialect)}`,
     `  recorded in ${recordPath}`,
   ])}\n`;
 
@@ -93,6 +102,7 @@ export const probeFmText = (target: string, recordPath: string, report: Endpoint
     `probed ${target}: model ${report.modelId}, context window ${report.contextWindow.value} (${report.contextWindow.method})`,
     `  tool calling: ${toolCalling} (native ${report.nativeTools.validRate}, constrained ${report.constrained.validRate})`,
     `  stop sequences: ${report.stopSequences}, usage reported: ${report.usageReported}, ${outputBoundText(report, declaredOutputBound)}, max concurrency: ${report.maxConcurrency}`,
+    `  schema dialect: ${dialectText(report.schemaDialect)}`,
     `  recorded in ${recordPath}`,
   ])}\n`;
 
@@ -108,6 +118,7 @@ const probeChatCompletions = async (
   name: string,
   target: ChatCompletionsConfig,
   options: ProbeOptions,
+  userDialects: Record<string, DialectDefinition>,
 ): Promise<number> => {
   const { probeEndpointTarget } = await import('@momonga/gateway');
   const { report, toolCalling, key } = await probeEndpointTarget({
@@ -115,6 +126,8 @@ const probeChatCompletions = async (
     upstream: upstreamEndpointOf(target),
     key: endpointRecordKeyOf(name, target),
     model: target.model,
+    ...(target.capabilities.schemaDialect === undefined ? {} : { declaredDialect: target.capabilities.schemaDialect }),
+    userDialects,
     apiKey: await apiKeyOf(ports, target, options.interrupt),
     signal: options.interrupt,
     ...(options.samples === undefined ? {} : { samples: options.samples }),
@@ -124,7 +137,7 @@ const probeChatCompletions = async (
   return 0;
 };
 
-const probeOllama = async (ports: CliPorts, paths: MomongaPaths, name: string, target: OllamaConfig, options: ProbeOptions): Promise<number> => {
+const probeOllama = async (ports: CliPorts, paths: MomongaPaths, name: string, target: OllamaConfig, options: ProbeOptions, userDialects: Record<string, DialectDefinition>): Promise<number> => {
   const { probeOllamaTarget } = await import('@momonga/gateway');
   const { report, key } = await probeOllamaTarget({
     probeRecordDir: paths.probe,
@@ -132,7 +145,10 @@ const probeOllama = async (ports: CliPorts, paths: MomongaPaths, name: string, t
     key: endpointRecordKeyOf(name, target),
     model: target.model,
     contextWindow: target.capabilities.contextWindow,
+    ...(target.capabilities.schemaDialect === undefined ? {} : { declaredDialect: target.capabilities.schemaDialect }),
+    userDialects,
     signal: options.interrupt,
+    ...(options.samples === undefined ? {} : { samples: options.samples }),
   });
   ports.stdout.write(probeOllamaText(name, key.endpoint, paths.probe, report, target.capabilities.contextWindow));
   await restartDaemon(ports, paths);
@@ -151,6 +167,7 @@ export const probeFm = async (ports: CliPorts, paths: MomongaPaths, target: stri
     binary: options.fmBinary,
     socketPath: path.join(paths.run, FM_PROBE_SOCKET_NAME),
     env: ports.env,
+    userDialects: settings.models.dialects,
     signal: options.interrupt,
     ...(configured.model === undefined ? {} : { model: configured.model }),
     onWarning: (message) => ports.stderr.write(`${escapedLines([`momonga: ${message}`])}\n`),

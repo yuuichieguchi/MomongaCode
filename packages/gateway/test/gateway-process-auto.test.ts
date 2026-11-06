@@ -7,6 +7,7 @@ import { getJson, postJson, readJson, userInput } from './gateway-helpers.ts';
 import { readFileTool, startFake } from './cc-support.ts';
 import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, until, writeSettings } from './gateway-process-helpers.ts';
 import { makeReport } from './report-fixture.ts';
+import { CURRENT_DIALECTS } from './dialect-currency.ts';
 
 const request = { model: 'fast', input: userInput('call read_file for a.txt'), tools: [readFileTool] };
 
@@ -58,7 +59,7 @@ describe('chat-completions target with toolCalling auto', () => {
   it('uses the mode the record decided, here constrained output, and the capabilities it measured', async () => {
     const { home, fake, probeDir, endpoint, identity, identityFields } = await autoSetup();
     const report = { ...makeReport(0.2, 1), parallelToolCalls: { accepted: true, multiCallRate: 1 }, reasoning: { control: 'none' as const, headroomTokens: 300 } };
-    await saveEndpointRecord(probeDir, { endpoint, model: 'system' }, identity, identityFields, report);
+    await saveEndpointRecord(probeDir, { endpoint, model: 'system' }, identity, identityFields, report, CURRENT_DIALECTS);
     const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
     const client = clientFor(handle.socketPath);
 
@@ -75,7 +76,7 @@ describe('chat-completions target with toolCalling auto', () => {
   it('applies the reasoning the record measured to a request for a bounded artefact', async () => {
     const { home, fake, probeDir, endpoint, identity, identityFields } = await autoSetup();
     const report = { ...makeReport(1, 1), reasoning: { control: 'none' as const, headroomTokens: 300 } };
-    await saveEndpointRecord(probeDir, { endpoint, model: 'system' }, identity, identityFields, report);
+    await saveEndpointRecord(probeDir, { endpoint, model: 'system' }, identity, identityFields, report, CURRENT_DIALECTS);
     const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
 
     const response = await readJson(
@@ -93,7 +94,7 @@ describe('chat-completions target with toolCalling auto', () => {
 
   it('refuses a record whose identity differs from what the server shows now, and says the record is stale', async () => {
     const { home, fake, probeDir, endpoint, identityFields } = await autoSetup();
-    await saveEndpointRecord(probeDir, { endpoint, model: 'system' }, 'identity-of-an-older-pull', identityFields, makeReport(1, 1));
+    await saveEndpointRecord(probeDir, { endpoint, model: 'system' }, 'identity-of-an-older-pull', identityFields, makeReport(1, 1), CURRENT_DIALECTS);
     const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
 
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', request));
@@ -132,7 +133,7 @@ describe('chat-completions target with toolCalling auto', () => {
     const { home, fake, probeDir, endpoint, identity, identityFields } = await autoSetup(
       { modelsReply: { kind: 'error', status: 403, body: { error: 'secret-token-sk-12345 is not allowed' } } },
     );
-    await saveEndpointRecord(probeDir, { endpoint, model: 'system' }, identity, identityFields, makeReport(1, 1));
+    await saveEndpointRecord(probeDir, { endpoint, model: 'system' }, identity, identityFields, makeReport(1, 1), CURRENT_DIALECTS);
     const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
 
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', request));
@@ -145,7 +146,7 @@ describe('chat-completions target with toolCalling auto', () => {
 
   it('stops the identity read as soon as the caller goes away', async () => {
     const { home, fake, probeDir, endpoint, identity, identityFields } = await autoSetup({ modelsReply: { kind: 'hang' } });
-    await saveEndpointRecord(probeDir, { endpoint, model: 'system' }, identity, identityFields, makeReport(1, 1));
+    await saveEndpointRecord(probeDir, { endpoint, model: 'system' }, identity, identityFields, makeReport(1, 1), CURRENT_DIALECTS);
     const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
     const leaving = new AbortController();
     const pending = clientFor(handle.socketPath)
@@ -168,17 +169,17 @@ describe('chat-completions target with toolCalling auto', () => {
     });
     const { home, fake, probeDir, endpoint, identity, identityFields } = await autoSetup({ script: [reply(300), reply(60)] });
     const report = { ...makeReport(1, 1), reasoning: { control: 'none' as const, headroomTokens: 10 } };
-    await saveEndpointRecord(probeDir, { endpoint, model: 'system' }, identity, identityFields, report);
+    await saveEndpointRecord(probeDir, { endpoint, model: 'system' }, identity, identityFields, report, CURRENT_DIALECTS);
     const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
     const client = clientFor(handle.socketPath);
     const compact = { model: 'fast', input: userInput('a long conversation') };
     const hidden = 300 - tokensForText(summary);
 
     expect((await readJson(await postJson(client, '/v1/responses/compact', compact))).status).toBe(200);
-    expect((await loadEndpointRecord(probeDir, { endpoint, model: 'system' }))?.report.reasoning).toEqual({ control: 'none', headroomTokens: hidden });
+    expect((await loadEndpointRecord(probeDir, { endpoint, model: 'system' }, CURRENT_DIALECTS))?.report.reasoning).toEqual({ control: 'none', headroomTokens: hidden });
 
     expect((await readJson(await postJson(client, '/v1/responses/compact', compact))).status).toBe(200);
-    expect((await loadEndpointRecord(probeDir, { endpoint, model: 'system' }))?.report.reasoning).toEqual({ control: 'none', headroomTokens: hidden });
+    expect((await loadEndpointRecord(probeDir, { endpoint, model: 'system' }, CURRENT_DIALECTS))?.report.reasoning).toEqual({ control: 'none', headroomTokens: hidden });
     expect(completions(fake)).toHaveLength(2);
   });
 
