@@ -43,13 +43,21 @@ const droppedNoticeOf = (built: Awaited<ReturnType<typeof buildWith>>): string |
   built.notices.find((notice) => notice.code === 'tools_dropped')?.message;
 
 describe('the tools kept when they do not all fit', () => {
-  it('are the same tools, in the same order, with the same notice, for every order the candidates arrive in', async () => {
+  it('are the same tools, with the same notice, for every order the candidates arrive in', async () => {
     const builds = await Promise.all(PERMUTATIONS.map((tools) => buildWith(tools, 1_536)));
     const [reference] = builds;
     expect(namesOf(reference!.tools).length).toBeLessThan(IN_RANK_ORDER.length);
     for (const built of builds) {
-      expect(namesOf(built.tools)).toEqual(namesOf(reference!.tools));
+      expect(new Set(namesOf(built.tools))).toEqual(new Set(namesOf(reference!.tools)));
       expect(droppedNoticeOf(built)).toBe(droppedNoticeOf(reference!));
+    }
+  });
+
+  it('keep the order the candidates arrived in, for every arrival order', async () => {
+    for (const tools of PERMUTATIONS) {
+      const kept = namesOf((await buildWith(tools, 1_536)).tools);
+      expect(kept.length).toBeLessThan(IN_RANK_ORDER.length);
+      expect(kept).toEqual(namesOf(tools).filter((name) => kept.includes(name)));
     }
   });
 
@@ -57,7 +65,14 @@ describe('the tools kept when they do not all fit', () => {
     const built = await buildWith([...IN_RANK_ORDER].reverse(), 1_536);
     const kept = namesOf(built.tools);
     expect(kept.length).toBeGreaterThan(0);
-    expect(kept).toEqual(namesOf(IN_RANK_ORDER).slice(0, kept.length));
+    expect(new Set(kept)).toEqual(new Set(namesOf(IN_RANK_ORDER).slice(0, kept.length)));
+  });
+
+  it('keep the reversed arrival order of the leading tools when the candidates arrive reversed', async () => {
+    const built = await buildWith([...IN_RANK_ORDER].reverse(), 1_536);
+    const kept = namesOf(built.tools);
+    expect(kept.length).toBeGreaterThan(0);
+    expect(kept).toEqual(namesOf(IN_RANK_ORDER).slice(0, kept.length).reverse());
   });
 
   it('name every tool that was not kept in the notice, including a companion left out with its host', async () => {
@@ -99,9 +114,15 @@ describe('a window that holds Bash and exactly one more tool', () => {
   it('keeps Bash with both companions and the next tool by rank, and names the rest in the notice', async () => {
     const window = await windowHoldingAll(BASH_AND_ONE);
     const built = await buildWith([...BASH_FIRST].reverse(), window);
-    expect(namesOf(built.tools)).toEqual(['Bash', 'BashOutput', 'KillBash', 'Alpha']);
+    expect(new Set(namesOf(built.tools))).toEqual(new Set(['Bash', 'BashOutput', 'KillBash', 'Alpha']));
     const notice = droppedNoticeOf(built);
     expect(notice).toContain('Beta');
     for (const kept of ['Bash', 'BashOutput', 'KillBash', 'Alpha']) expect(notice).not.toMatch(new RegExp(`\\b${kept}\\b`));
+  });
+
+  it('keeps those tools in the order they arrived in', async () => {
+    const window = await windowHoldingAll(BASH_AND_ONE);
+    const built = await buildWith([...BASH_FIRST].reverse(), window);
+    expect(namesOf(built.tools)).toEqual(['Alpha', 'KillBash', 'BashOutput', 'Bash']);
   });
 });
