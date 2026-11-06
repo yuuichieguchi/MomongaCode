@@ -203,14 +203,14 @@ describe('job creation and the decision to call', () => {
 });
 
 describe('the reflection call', () => {
-  it('uses the model of the run, the fixed key, and no tools', async () => {
+  it('uses the model of the run, the key of the run and the request body, and no tools', async () => {
     const env = setup();
     const run = await queued(env);
     env.gateway.script.push(textStep(CANDIDATE_REPLY([])));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
     const [call] = env.gateway.streams;
     expect(env.gateway.streams).toHaveLength(1);
-    expect(call?.idempotencyKey).toBe(sha256Hex(canonicalJson([run.id, 'reflect'])));
+    expect(call?.idempotencyKey).toBe(sha256Hex(canonicalJson([run.id, 'reflect', sha256Hex(canonicalJson(call?.body))])));
     expect(call?.body.model).toBe('fm');
     expect(call?.body.tools ?? []).toEqual([]);
   });
