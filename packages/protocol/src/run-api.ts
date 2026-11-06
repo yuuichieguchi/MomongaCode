@@ -11,7 +11,7 @@ import { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES } from './permission-denial.t
 import { RECOVERY_CAUSES, RECOVERY_OUTCOMES, REPORT_PAGE_ROWS } from './reliability.ts';
 import { FILE_ACCESSES } from './working-facts.ts';
 import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, isInheritedReference, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
-import type { ImageMediaType, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent } from './run-types.ts';
+import type { ImageMediaType, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent, SessionEventPayload } from './run-types.ts';
 import type { ReflectionJobView } from './memory.ts';
 import type { RunRecovery } from './reliability.ts';
 import type { BilledDetail, TokenAnatomy } from './token-anatomy.ts';
@@ -253,7 +253,16 @@ const runFactsView = closed(
   Object.keys(runFactsViewProperties).filter((key) => key !== 'stopReason' && key !== 'deadlineAt'),
 );
 
-const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { properties: Record<string, JsonSchema>; required: readonly string[] }> = {
+type PublicPayloadKeys<Type> = Extract<PublicPayload | SessionEventPayload, { type: Type }> extends infer Payload ? (Payload extends unknown ? Exclude<keyof Payload, 'type'> : never) : never;
+
+type EnvelopeKey = keyof PublicRunEnvelope;
+
+type PayloadSchema<Type> = {
+  properties: { [Key in Exclude<PublicPayloadKeys<Type>, EnvelopeKey>]: JsonSchema } & { [Key in Extract<PublicPayloadKeys<Type>, EnvelopeKey>]?: JsonSchema };
+  required: readonly PublicPayloadKeys<Type>[];
+};
+
+const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']]: PayloadSchema<Type> } = {
   'user.message': { properties: { text: string, images: { type: 'array', items: imageSummary } }, required: ['text'] },
   'run.started': {
     properties: { attempt: integer, recovery: closed({ cause: enumOf(RECOVERY_CAUSES), failedAt: integer }, ['cause', 'failedAt']) },
@@ -530,7 +539,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
     required: ['fromRunId', 'fromLastSeq', 'itemCount', 'nextItemSeq', 'closures', 'partialMessage', 'markers', 'digest'],
   },
   'context.truncated': {
-    properties: { callId: string, handle: string, kind: enumOf(['omitted', 'truncated', 'reference']), keptChars: nonNegativeInteger },
+    properties: { callId: string, handle: string, kind: enumOf(['omitted', 'truncated', 'reference']), keptChars: nonNegativeInteger, tokens: nonNegativeInteger },
     required: ['callId', 'handle', 'kind'],
   },
   'instructions.loaded': { properties: { path: string }, required: ['path'] },
