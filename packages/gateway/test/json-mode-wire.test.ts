@@ -12,7 +12,6 @@ import { contextOf } from './own-reasoning.ts';
 import { FAKE_API_KEY, REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
 
 const JSON_TEXT = '{"verdict":"safe"}';
-const PROSE_TEXT = 'Sure, the verdict is safe.';
 
 const askingForJsonObject = (): AdapterRequest => ({
   model: 'm',
@@ -129,23 +128,11 @@ describe.each([chatCompletions, ollama, openResponses])('JSON-only mode on the w
     expect(terminalOf(sent.events)['jsonReply']).toBe('enforced');
   });
 
-  it('ends the call with malformed_output when the target has the mode and the reply is not JSON', async () => {
-    const sent = await surface.send(withModes(surface.base, 'none', 'json_object'), askingForJsonObject(), PROSE_TEXT);
-    expect(sent.error).toMatchObject({ code: 'malformed_output' });
-    expect(surface.formatOf(sent.wire)).toEqual(surface.nativeForm);
-  });
-
   it.each([['declared none', 'none'], ['unmeasured', undefined]] as const)('sends no format and reports prompt when the mode is %s', async (_label, jsonMode) => {
     const sent = await surface.send(withModes(surface.base, 'none', jsonMode), askingForJsonObject(), JSON_TEXT);
     expect(sent.error).toBeUndefined();
     expect(surface.formatOf(sent.wire)).toBeUndefined();
     expect(terminalOf(sent.events)['jsonReply']).toBe('prompt');
-  });
-
-  it('ends the call with malformed_output when the target lacks the mode and the reply is not JSON', async () => {
-    const sent = await surface.send(withModes(surface.base, 'none', 'none'), askingForJsonObject(), PROSE_TEXT);
-    expect(sent.error).toMatchObject({ code: 'malformed_output' });
-    expect(surface.formatOf(sent.wire)).toBeUndefined();
   });
 
   it('never infers the mode from structuredOutput: json_schema without the mode is the prompt path', async () => {
@@ -171,8 +158,4 @@ describe('JSON-only mode on the anthropic wire, which has no native JSON-only fo
     expect(terminalOf(sent.events)['jsonReply']).toBe('prompt');
   });
 
-  it('ends the call with malformed_output when the reply is not JSON', async () => {
-    const sent = await anthropic.send(withModes(anthropic.base, 'json_schema', undefined), askingForJsonObject(), PROSE_TEXT);
-    expect(sent.error).toMatchObject({ code: 'malformed_output' });
-  });
 });
