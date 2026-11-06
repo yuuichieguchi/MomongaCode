@@ -93,7 +93,7 @@ export const createFakeToolbox = (): FakeToolbox => {
     inputSchema: schema(['file_path', 'content']),
     timeoutMs: 60_000,
     title: (input) => `Write ${String(input['file_path'])}`,
-    locations: (input) => [{ path: String(input['file_path']) }],
+    locations: (input, ctx) => [{ path: path.resolve(ctx.workingDirectory, String(input['file_path'])) }],
     subject: (input) => ({ kind: 'path', tool: 'Write', paths: [String(input['file_path'])], access: 'write' }),
     execute: async (input, ctx) => {
       await record('Write', input, ctx);

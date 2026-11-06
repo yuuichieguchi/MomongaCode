@@ -83,8 +83,8 @@ describe('the fold reads event data only', () => {
     expect(source).not.toMatch(/call\.name\s*===|\.includes\(call\.name\)/);
   });
 
-  it('holds no tool-name branch in touched.ts', () => {
-    const source = fs.readFileSync(path.join(STORE_SRC, 'touched.ts'), 'utf8');
+  it('holds no tool-name branch in search-documents.ts', () => {
+    const source = fs.readFileSync(path.join(STORE_SRC, 'search-documents.ts'), 'utf8');
     expect(source).not.toMatch(TOOL_NAME_LITERAL);
     expect(source).not.toMatch(/item\.name\s*===|\.includes\(item\.name\)/);
   });
