@@ -37,7 +37,11 @@ export type ResolvedModels = {
   dialects: Record<string, DialectDefinition>;
   roles: ModelRoles;
   billingChanges: BillingChange[];
+  headersTimeoutMs: number;
+  idleTimeoutMs: number;
 };
+
+const FIVE_MINUTES_MS = 300_000;
 
 export type ResolveModelsOptions = { source: string; home: string; warnings: string[] };
 
@@ -368,7 +372,15 @@ export const resolveModels = (models: ModelsSettings | undefined, { source, home
   checkBillingChanges(billingChanges, aliases, source);
   checkUnboundedAliases(aliases, targets, source);
   warnUnallowedBillingChanges(billingChanges, aliases, targets, source, warnings);
-  return { aliases, targets, dialects, roles, billingChanges };
+  return {
+    aliases,
+    targets,
+    dialects,
+    roles,
+    billingChanges,
+    headersTimeoutMs: models?.headersTimeoutMs ?? FIVE_MINUTES_MS,
+    idleTimeoutMs: models?.idleTimeoutMs ?? FIVE_MINUTES_MS,
+  };
 };
 
 type ResolvedTargets = { models: { targets: Record<string, ResolvedModelTarget> } };
