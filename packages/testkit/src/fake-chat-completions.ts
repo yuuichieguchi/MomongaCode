@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { tokensForText } from '@momonga/protocol';
-import { fmSchemaRefusalOf } from './fm-schema-decoding.ts';
+import { fmSchemaRefusalOf, fmToolsRefusalOf } from './fm-schema-decoding.ts';
 import { collectAllowedNames, findUsedKeywords, generateInstance } from './schema-instance.ts';
 
 export type FakeScenario = 'tools-ok' | 'tools-400' | 'tools-ignored' | 'json-schema-only' | 'none';
@@ -368,6 +368,7 @@ export const startFakeChatCompletions = async (
     if (failNativeSamples.includes(sampleIndex)) {
       throw guardrailFailure();
     }
+    if (options.wire === 'fm') return { content: JSON.stringify(args), toolCalls: [], finishReason: 'stop' };
     const valid = isValidAtIndex(sampleIndex, nativeValidity);
     let serialized = JSON.stringify(args);
     if (!valid) {
@@ -465,11 +466,20 @@ export const startFakeChatCompletions = async (
     if (Array.isArray(body['tools']) && body['tools'].length > 0 && !toolsAccepted) {
       throw invalidRequest(TOOLS_UNSUPPORTED_MESSAGE, null, 'tools');
     }
+    if (options.wire === 'fm' && Array.isArray(body['tools']) && body['tools'].length > 0) {
+      const toolsRefusal = fmToolsRefusalOf(body['tools']);
+      if (toolsRefusal !== undefined) throw new HttpFailure(400, fmSchemaRefusalError(toolsRefusal));
+      if (body['tool_choice'] === 'required' || isRecord(body['tool_choice'])) throw new FmStreamedError(FM_UNSUPPORTED_GUIDE_ERROR);
+    }
     if (responseFormat?.['type'] === 'json_schema') {
       if (!jsonSchemaAccepted) throw invalidRequest(JSON_SCHEMA_UNSUPPORTED_MESSAGE, null, 'response_format');
       const jsonSchema = isRecord(responseFormat['json_schema']) ? responseFormat['json_schema'] : {};
       const fmRefusal = options.wire === 'fm' ? fmSchemaRefusalOf(String(jsonSchema['name']), jsonSchema['schema']) : undefined;
-      if (fmRefusal !== undefined) throw new HttpFailure(400, fmSchemaRefusalError(fmRefusal));
+      if (fmRefusal?.status === 500) {
+        if (body['stream'] !== false) throw new FmStreamedError(FM_UNSUPPORTED_GUIDE_ERROR);
+        throw new HttpFailure(500, structuredClone(FM_UNSUPPORTED_GUIDE_ERROR) as unknown as Json);
+      }
+      if (fmRefusal !== undefined) throw new HttpFailure(400, fmSchemaRefusalError(fmRefusal.message));
       const used = findUsedKeywords(jsonSchema['schema'], unsupportedKeywords);
       if (used.length > 0) {
         if (options.wire === 'fm') throw new FmStreamedError(FM_UNSUPPORTED_GUIDE_ERROR);
@@ -648,7 +658,7 @@ export const startFakeChatCompletions = async (
     const out = complete(body);
     if (out.delayMs !== undefined) await delay(out.delayMs, undefined, { signal });
     const id = `chatcmpl-fake-${completionCount}`;
-    if (body['stream'] === true || options.wire === 'fm') {
+    if (body['stream'] === true || (options.wire === 'fm' && body['stream'] !== false)) {
       writeStream(response, body, out, id);
       return;
     }

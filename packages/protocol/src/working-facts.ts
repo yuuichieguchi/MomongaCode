@@ -1,18 +1,22 @@
 import { WORKING_FACTS_KEPT, WORKING_FACT_TEXT_CHARS } from './budget-constants.ts';
 
-export const FILE_ACCESSES = ['read', 'write'] as const;
+export const FILE_ACCESSES = ['read', 'write', 'remove'] as const;
 
 export type FileAccess = (typeof FILE_ACCESSES)[number];
 
-export type ToolFile = { path: string; sha256: string; access: FileAccess };
+export type ToolFile = { path: string; sha256?: string; access: FileAccess };
+
+export const WORKING_FACT_KINDS = ['files written or removed', 'commands and their exit codes', 'the plan', 'the user messages'] as const;
+
+export type WorkingFactKind = (typeof WORKING_FACT_KINDS)[number];
 
 export type PlanEntryRecord = { content: string; priority: 'high' | 'medium' | 'low'; status: 'pending' | 'in_progress' | 'completed' };
 
 export type ReconciledOutcome = 'already_applied' | 'unknown';
 
-export type WrittenFact = { path: string; sha256?: string; reconciled?: ReconciledOutcome; seq: number };
+export type WrittenFact = { path: string; sha256?: string; removed?: true; reconciled?: ReconciledOutcome; seq: number };
 
-export type CommandFact = { command: string; failed: boolean; exitCode?: number; reconciled?: ReconciledOutcome; seq: number };
+export type CommandFact = { command: string; failed: boolean; exitCode?: number; unobserved?: true; windowShared?: true; reconciled?: ReconciledOutcome; seq: number };
 
 export type MessageFact = { text: string; seq: number };
 

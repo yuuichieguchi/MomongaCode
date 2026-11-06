@@ -88,11 +88,18 @@ describe('context events in the journal', () => {
       expect(() => decodeEvent(row({ ...base, memories: [7] }))).toThrow(/corrupt/);
     });
 
+    it('decodes a removed file and a write the observer could not hash, with no sha256, and the command and shared window', () => {
+      const payload = { ...base, command: 'rm a.ts', windowShared: true, files: [{ path: '/p/a.ts', access: 'remove' }, { path: '/p/b.ts', access: 'write' }] };
+      expect(decodeEvent(row(payload))).toEqual({ ...payload, ...ENVELOPE });
+    });
+
     it.each([
       ['files that are not an array', { files: 'a.ts' }],
-      ['a file without a sha256', { files: [{ path: '/p/a.ts', access: 'write' }] }],
+      ['a file whose sha256 is not a hash', { files: [{ path: '/p/a.ts', sha256: 'not-a-hash', access: 'write' }] }],
       ['a file with an unknown access', { files: [{ path: '/p/a.ts', sha256: 'a'.repeat(64), access: 'delete' }] }],
       ['an exit code that is not an integer', { exitCode: '1' }],
+      ['a command that is not a string', { command: 7 }],
+      ['a shared window that is not true', { windowShared: false }],
     ])('refuses %s as corrupt', (_name, extra) => {
       expect(() => decodeEvent(row({ ...base, ...extra }))).toThrow(/corrupt/);
     });
@@ -110,6 +117,6 @@ describe('context events in the journal', () => {
       ...ENVELOPE,
     } as RunEvent;
     expect(foldRunState(start(), event).summary).toEqual({ item, summary: 'so far', replacedThroughSeq: 3 });
-    expect(SNAPSHOT_STATE_VERSION).toBeGreaterThan(14);
+    expect(SNAPSHOT_STATE_VERSION).toBeGreaterThan(15);
   });
 });

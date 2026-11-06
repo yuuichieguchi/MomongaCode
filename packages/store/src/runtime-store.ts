@@ -6,7 +6,7 @@ import { TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
 import type { CallTiming, ElicitationAnswerRecord, ElicitationRequestView, PermissionMode, RunEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
 import { createAppendRecords, columnsOf } from './append-records.ts';
 import { createApprovalStore } from './approvals.ts';
-import { createBlobStore, prepareBlobDirectory } from './blobs.ts';
+import { blobDirectoryOf, createBlobStore, prepareBlobDirectory } from './blobs.ts';
 import { addUsage, foldRunState, initialRunState, spendOf } from './fold.ts';
 import { decodeEvent, decodeRun, decodeRunEvents, decodeRunState, decodeSession, encodeRunState } from './codec.ts';
 import { JournalThreadError, StalePreparation } from './journal-port.ts';
@@ -391,7 +391,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   try {
     identity = fs.statSync(options.path);
     migrate(db, MIGRATIONS);
-    blobDirectory = path.join(path.dirname(options.path), 'blobs');
+    blobDirectory = blobDirectoryOf(options.path);
     prepareBlobDirectory(blobDirectory);
     statements = prepareStatements(db);
   } catch (error) {
@@ -1647,6 +1647,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       verdict: async (request, signal) => journalPreparer(preparer, 'verdict').verdict(request, signal),
       evidence: async (request, signal) => journalPreparer(preparer, 'evidence').evidence(request, signal),
       reflectionInput: async (request, signal) => journalPreparer(preparer, 'reflection input').reflectionInput(request, signal),
+      fidelity: async (request, signal) => journalPreparer(preparer, 'fidelity check').fidelity(request, signal),
     },
 
     dataVersion: () => {

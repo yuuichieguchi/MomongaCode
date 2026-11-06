@@ -69,7 +69,7 @@ export const ollamaHistoryOf = (input: readonly AdapterInputItem[], origin: Reas
     }
     flush();
     if (item.type === 'compaction_summary') {
-      const { role, content } = compactionSummaryMessage(item.summary);
+      const { role, content } = compactionSummaryMessage(item.summary, 'model');
       messages.push({ role, content });
     } else if (item.type === 'function_call_output') {
       const name = namesByCallId.get(item.call_id);

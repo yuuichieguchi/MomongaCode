@@ -1,5 +1,10 @@
-import { acceptedReasoningEfforts, clampReasoningEffort, compactionSummaryMessage, outputTokensFor, thinkingBudgetFor } from '@momonga/protocol';
+import { DEFAULT_DIALECT_ID, acceptedReasoningEfforts, clampReasoningEffort, compactionSummaryMessage, outputTokensFor, thinkingBudgetFor } from '@momonga/protocol';
 import type { AdapterInputItem, AdapterRequest, ContentPart, FunctionTool, PromptCacheCounts, ReasoningCapability, ReasoningOrigin, ThinkingAdaptiveEffort, ThinkingOff, ToolChoice } from '@momonga/protocol';
+import { resolvedOf } from '../../dialect/choice.ts';
+import type { DialectChoice } from '../../dialect/choice.ts';
+import type { RenderLedger } from '../../dialect/ledger.ts';
+import type { ResolvedDialect } from '../../dialect/render.ts';
+import { renderToolParameters } from '../../dialect/tool-render.ts';
 import { callArgumentsObject } from '../shared/call-arguments.ts';
 import { UnsupportedInputError } from '../shared/failures.ts';
 import { hasImagePart, imageSourceOf } from '../shared/image-part.ts';
@@ -54,7 +59,7 @@ export type AnthropicCountTokensBody = Pick<AnthropicRequestBody, 'model' | 'sys
 
 export type CachePlan = { maxBreakpoints: number; marks?: PromptCacheCounts };
 
-export type BodyOptions = { cache: CachePlan | undefined; reasoning?: ReasoningCapability | undefined };
+export type BodyOptions = { cache: CachePlan | undefined; reasoning?: ReasoningCapability | undefined; dialect?: DialectChoice; ledger?: RenderLedger };
 
 const EPHEMERAL: CacheControl = { type: 'ephemeral' };
 const EMPTY_OBJECT_SCHEMA = { type: 'object', properties: {} } as const;
@@ -90,7 +95,7 @@ const blocksOf = (item: AdapterInputItem, origin: ReasoningOrigin): Converted | 
         : { role: 'assistant', blocks: [{ type: 'thinking', thinking: reasoningTextOf(own), signature: own.signature }] };
     }
     case 'compaction_summary': {
-      const summary = compactionSummaryMessage(item.summary);
+      const summary = compactionSummaryMessage(item.summary, 'model');
       return { role: 'user', blocks: textBlocksOf(textOfContent(summary.content)) };
     }
     case 'function_call':
@@ -161,10 +166,10 @@ const systemPlacedOf = (instructions: string | null | undefined, input: readonly
   ),
 ];
 
-const toolOf = (tool: FunctionTool): AnthropicTool => ({
+const toolOf = (tool: FunctionTool, dialect: ResolvedDialect, ledger: RenderLedger | undefined): AnthropicTool => ({
   name: tool.name,
   ...(tool.description === undefined || tool.description === null ? {} : { description: tool.description }),
-  input_schema: tool.parameters === undefined || tool.parameters === null ? { ...EMPTY_OBJECT_SCHEMA } : tool.parameters,
+  input_schema: (renderToolParameters(tool, dialect, ledger).schema as AnthropicTool['input_schema'] | undefined) ?? { ...EMPTY_OBJECT_SCHEMA },
 });
 
 const toolChoiceOf = (choice: ToolChoice | undefined, parallelToolCalls: boolean | undefined): AnthropicToolChoice | undefined => {
@@ -214,7 +219,8 @@ const withMarks = (system: readonly PlacedSystem[], converted: ConvertedMessages
 };
 
 const requestParts = (request: AdapterRequest, options: BodyOptions, origin: ReasoningOrigin) => {
-  const tools = (request.tools ?? []).map(toolOf);
+  const dialect = resolvedOf(options.dialect ?? DEFAULT_DIALECT_ID);
+  const tools = (request.tools ?? []).map((tool) => toolOf(tool, dialect, options.ledger));
   const placedSystem = systemPlacedOf(request.instructions, request.input);
   const system = placedSystem.map((entry) => entry.block);
   const converted = convertMessages(request.input, origin);
@@ -258,8 +264,8 @@ export const buildMessagesBody = (request: AdapterRequest, maxTokens: number, op
   };
 };
 
-export const buildCountTokensBody = (request: AdapterRequest, origin: ReasoningOrigin): AnthropicCountTokensBody => {
-  const { tools, system, messages, toolChoice } = requestParts(request, { cache: undefined }, origin);
+export const buildCountTokensBody = (request: AdapterRequest, origin: ReasoningOrigin, dialect?: DialectChoice): AnthropicCountTokensBody => {
+  const { tools, system, messages, toolChoice } = requestParts(request, { cache: undefined, ...(dialect === undefined ? {} : { dialect }) }, origin);
   return {
     model: request.model,
     ...(system.length === 0 ? {} : { system }),

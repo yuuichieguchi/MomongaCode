@@ -1,10 +1,10 @@
 import { createUdsClient, isRecord } from '@momonga/foundation';
-import type { Capabilities, MomongaModelEntry, MomongaModelList, UsageReport } from '@momonga/protocol';
+import type { AliasCapabilities, Capabilities, MomongaModelEntry, MomongaModelList, UsageReport } from '@momonga/protocol';
 
 export type GatewayClient = {
   models(): Promise<readonly MomongaModelEntry[]>;
   modelOf(alias: string): Promise<MomongaModelEntry>;
-  capabilitiesOf(alias: string): Promise<Capabilities>;
+  capabilitiesOf(alias: string): Promise<AliasCapabilities>;
   contextWindowOf(alias: string): Promise<number>;
   usageOf(runId: string): Promise<UsageReport>;
   close(): Promise<void>;
@@ -26,7 +26,8 @@ const isCapabilities = (value: unknown): value is Capabilities =>
   typeof value['stopSequences'] === 'boolean' &&
   typeof value['imageInput'] === 'boolean' &&
   (value['parallelToolCalls'] === undefined || typeof value['parallelToolCalls'] === 'boolean') &&
-  oneOf(value['schemaDialect'], ['json-schema-2020-12', 'fm-generation']) &&
+  typeof value['schemaDialect'] === 'string' &&
+  value['schemaDialect'] !== '' &&
   oneOf(value['tokenCounting'], ['exact', 'calibrated', 'estimated']) &&
   typeof value['usageReported'] === 'boolean' &&
   typeof value['maxConcurrency'] === 'number' &&
@@ -80,7 +81,7 @@ export const createGatewayClient = (options: { socketPath: string }): GatewayCli
     return entry;
   };
 
-  const capabilitiesOf = async (alias: string): Promise<Capabilities> => (await modelOf(alias)).capabilities;
+  const capabilitiesOf = async (alias: string): Promise<AliasCapabilities> => (await modelOf(alias)).capabilities;
 
   const contextWindowOf = async (alias: string): Promise<number> => (await capabilitiesOf(alias)).contextWindow;
 

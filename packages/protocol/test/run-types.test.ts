@@ -234,7 +234,9 @@ describe('run event payloads', () => {
       truncated?: boolean;
       handle?: string;
       denial?: { source: 'sandbox' | 'rule' | 'mode' | 'hook'; reason: string };
-      files?: { path: string; sha256: string; access: 'read' | 'write' }[];
+      files?: { path: string; sha256?: string; access: 'read' | 'write' | 'remove' }[];
+      command?: string;
+      windowShared?: true;
       memories?: string[];
       exitCode?: number;
       formatted?: { formatter: string; version: number };
@@ -255,6 +257,8 @@ describe('run event payloads', () => {
       callId: string;
       outcome: 'already_applied' | 'not_applied' | 'unknown';
       output: string;
+      files?: { path: string; sha256?: string; access: 'read' | 'write' | 'remove' }[];
+      command?: string;
     }>();
   });
 

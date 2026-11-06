@@ -31,7 +31,7 @@ export const createWorker = (options: WorkerOptions): Worker => {
     memoryOf: (runId) => {
       const existing = memories.get(runId);
       if (existing !== undefined) return existing;
-      const created: RunMemory = { streak: 0, interruptions: 0, deadlineAt: Number.POSITIVE_INFINITY };
+      const created: RunMemory = { streak: 0, interruptions: 0, deadlineAt: Number.POSITIVE_INFINITY, narrowingsNoticed: new Set() };
       memories.set(runId, created);
       return created;
     },

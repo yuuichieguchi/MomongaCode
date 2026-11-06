@@ -17,7 +17,7 @@ import type { AgentSet, ChildRuns } from '@momonga/agents';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { SkillSet } from '@momonga/skills';
 import type { Session } from '@momonga/store';
-import type { AnyTool, ShellHost, ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
+import type { AnyTool, ShellHost, ToolExecutor, ToolSessionState, ToolSet, WorkTreeObserver } from '@momonga/tools';
 
 export type { Clock };
 
@@ -112,6 +112,7 @@ export type ToolRuntimePort = {
   shellHost: ShellHost;
   markerDir: string;
   sessionState(session: Session): ToolSessionState;
+  workTreeObserver(session: Session, trusted: boolean): WorkTreeObserver;
 };
 
 export type TraceSpan = {

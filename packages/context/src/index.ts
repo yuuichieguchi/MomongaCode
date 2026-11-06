@@ -2,15 +2,16 @@ export { MIN_ITEM_CAP, MIN_ROOM_TOKENS, budgetFor, capacityFor, inputCeilingFor,
 export { renderMemories } from './memory.ts';
 export { nestedInstructionCandidates } from './instructions.ts';
 export { textOfContent, textOfItem } from './item-text.ts';
-export { checkSummary } from './summary-fidelity.ts';
-export type { FidelitySource } from './summary-fidelity.ts';
+export { attestedTokens, checkSummary, claimedTokens } from './summary-fidelity.ts';
+export type { FidelityRecord, FidelitySource } from './summary-fidelity.ts';
 export { WORKING_STATE_MESSAGE_MIN_TOKENS, criticalIdentifiersOf, renderWorkingState, workingStateCapFor, workingStateMessage } from './working-state.ts';
 export type { WorkingStateOptions } from './working-state.ts';
 export { buildContext, maxInputFor, measureLayers, measurePinned } from './build-context.ts';
 export type { MaxInputBounds } from './build-context.ts';
 export { FAILURE_MARKERS, FORMATTER_VERSIONS, formatGrep, formatJson, formatLog, formatToolOutput, formattedHeader, formattingViolations } from './formatters/index.ts';
 export type { FormattedOutput, FormattingViolation } from './formatters/index.ts';
-export { HANDLE_READER_TOOL } from './tool-output.ts';
+export { readClauseOf } from './tool-output.ts';
+export { readerNamesOf, readersOffered, referenceKindsOf } from './references.ts';
 export { ContextOverflowError, PinnedBoundError, PinnedOverflowError, PinnedRoomError, PrefixChangedError } from './errors.ts';
 export { createFsInstructionReader } from './fs-instruction-reader.ts';
 export { INSTRUCTION_FILE_LIMIT_BYTES } from './instructions.ts';
@@ -53,6 +54,7 @@ export type {
   PinnedBreakdown,
   PinnedMeasure,
   ProtectionLevel,
+  ReferenceReaders,
   TokenCounter,
   TouchedPath,
   ItemCountContext,

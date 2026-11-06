@@ -14,6 +14,8 @@ import type { CompletionResponse } from '../shared/http-client.ts';
 import { retryAfterHint, httpErrorOf } from '../shared/http-error.ts';
 import { HTTP_TRANSPORT_VOCABULARY } from '../shared/vocabulary.ts';
 import { MAX_SSE_EVENT_BYTES, MAX_UNARY_BODY_BYTES } from '../shared/limits.ts';
+import { NO_USER_DIALECTS, resolveDialect } from '../../dialect/choice.ts';
+import { RenderLedger } from '../../dialect/ledger.ts';
 import { ResponseEmitter } from '../shared/response-emitter.ts';
 import {
   ANTHROPIC_COUNT_TOKENS_SUBPATH,
@@ -94,7 +96,9 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
   async function* stream(request: AdapterRequest, ctx: AdapterContext, cache: CachePlan | undefined): AsyncGenerator<StreamEvent> {
     if (closed) throw new Error('the anthropic adapter is closed');
     const capabilities = ctx.capabilities;
-    const base = buildMessagesBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.name, ANTHROPIC_TOOL_CHOICE), capabilities.maxOutputTokens, { cache, reasoning: capabilities.reasoning }, ctx.reasoningOrigin);
+    const ledger = new RenderLedger();
+    const dialect = resolveDialect(capabilities.schemaDialect, options.userDialects ?? NO_USER_DIALECTS);
+    const base = buildMessagesBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.name, ANTHROPIC_TOOL_CHOICE), capabilities.maxOutputTokens, { cache, reasoning: capabilities.reasoning, dialect, ledger }, ctx.reasoningOrigin);
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     try {
@@ -107,7 +111,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
           paused === undefined ? base : { ...base, messages: [...base.messages, { role: 'assistant', content: paused.content }] };
         const response = await pool.clientFor(endpoint).post({ headers: headersFor(apiKey, 'text/event-stream'), body: JSON.stringify(body), signal });
         if (response.status !== 200) throw await httpErrorOf(response, options.clock, anthropicErrorDetail, HTTP_TRANSPORT_VOCABULARY);
-        emitter ??= new ResponseEmitter({ clock: options.clock, model: request.model, request, ...retryAfterHint(response, options.clock) });
+        emitter ??= new ResponseEmitter({ clock: options.clock, model: request.model, request, wraps: ledger.wraps, narrowings: ledger.narrowings, ...retryAfterHint(response, options.clock) });
         const driver = new AnthropicStreamDriver(emitter, paused === undefined ? undefined : { usage: paused.usage, firstInputTokens: paused.firstInputTokens });
         yield* readSegment(response, driver, ctx);
         if (!driver.paused) return;
@@ -182,6 +186,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
           ANTHROPIC_TOOL_CHOICE,
         ),
         ctx.reasoningOrigin,
+        resolveDialect(ctx.capabilities.schemaDialect, options.userDialects ?? NO_USER_DIALECTS),
       ),
       ctx,
     );
@@ -211,7 +216,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
       const usage =
         collected.usage ??
         estimatedUsage(
-          wireTokensOf(buildMessagesBody(summaryRequest, cap, { cache: undefined, reasoning: capabilities.reasoning }, ctx.reasoningOrigin), capabilities.imageTokens),
+          wireTokensOf(buildMessagesBody(summaryRequest, cap, { cache: undefined, reasoning: capabilities.reasoning, dialect: resolveDialect(capabilities.schemaDialect, options.userDialects ?? NO_USER_DIALECTS) }, ctx.reasoningOrigin), capabilities.imageTokens),
           tokensForText(collected.summary),
         );
       return { summary: collected.summary, usage, ...(collected.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: collected.cacheWriteInputTokens }) };

@@ -40,7 +40,7 @@ describe('placement in the input', () => {
   const build = (workingState: string | undefined, summary: typeof SUMMARY | undefined = SUMMARY) =>
     buildContext(
       inputFor(capabilities, {
-        sources: sourcesWith({ history: HISTORY, ...(summary === undefined ? {} : { summary }), ...(workingState === undefined ? {} : { workingState }) }),
+        sources: sourcesWith({ history: HISTORY, ...(summary === undefined ? {} : { summary }), ...(workingState === undefined ? {} : { workingState: () => workingState }) }),
         trailing: [TRAILING],
       }),
       harness(capabilities).ports,
@@ -67,7 +67,7 @@ describe('placement in the input', () => {
 
   it('is left out until a summary exists', async () => {
     const { input } = await buildContext(
-      inputFor(capabilities, { sources: sourcesWith({ history: HISTORY, workingState: STATE }) }),
+      inputFor(capabilities, { sources: sourcesWith({ history: HISTORY, workingState: () => STATE }) }),
       harness(capabilities).ports,
     );
     expect(JSON.stringify(input)).not.toContain(STATE);
@@ -77,7 +77,7 @@ describe('placement in the input', () => {
     const small = capabilitiesFor(4000);
     const history = [user(3, 'q2'), assistant(4, 'x'.repeat(4400)), user(5, 'q3'), assistant(6, 'y'.repeat(4400)), user(7, 'now')];
     const built = await buildContext(
-      inputFor(small, { sources: sourcesWith({ history, summary: SUMMARY, workingState: STATE }), keepRecentTurns: 1 }),
+      inputFor(small, { sources: sourcesWith({ history, summary: SUMMARY, workingState: () => STATE }), keepRecentTurns: 1 }),
       harness(small).ports,
     );
     expect(built.compaction?.input).toBeDefined();

@@ -98,7 +98,7 @@ describe('the anatomy of a built context', () => {
     const sources = sourcesWith({
       taskSeq: 0,
       summary: { item: summaryItem, replacedThroughSeq: 2 },
-      workingState: 'Files written: src/parser.ts',
+      workingState: () => 'Files written: src/parser.ts',
       history: [call(1, 'old'), output(2, 'old', 'old output'), assistant(3, 'Continuing with the parser.')],
     });
     const built = await buildContext(inputFor(capabilities, { sources }), harness(capabilities).ports);

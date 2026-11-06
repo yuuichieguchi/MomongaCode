@@ -42,7 +42,7 @@ export type StoreOptions = {
 
 const unexercised = (): Promise<never> => Promise.reject(new JournalThreadError('this store test double answers no journal facts'));
 
-export const noJournalFacts = { verdict: unexercised, evidence: unexercised, reflectionInput: unexercised };
+export const noJournalFacts = { verdict: unexercised, evidence: unexercised, reflectionInput: unexercised, fidelity: unexercised };
 
 export const hookPreparer = (hook: TerminalContribution, dbPath: string): ContributionPreparer => ({
   ...noJournalFacts,

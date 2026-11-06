@@ -9,7 +9,7 @@ const W4000 = capabilitiesFor(4000);
 describe('recovery inside one turn', () => {
   it('reuses the compaction key for an identical render after a crash between compact and context.compacted', async () => {
     const env = await makeEnv({ capabilities: W4000 });
-    env.gateway.script.push(...[0, 1, 2, 3, 4, 5].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1400) })), textStep('done'));
+    env.gateway.script.push(...[0, 1, 2, 3, 4, 5].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1550) })), textStep('done'));
     const run = env.enqueue('Fill the context');
     let crashed = false;
     const { store } = recordingStore(env, (payloads) => {
@@ -68,7 +68,7 @@ describe('recovery inside one turn', () => {
       bigStep('k0', { letter: 'a', size: 0, pad: padOf(0, 1400) }),
       bigStep('k1', { letter: 'a', size: 0, pad: padOf(1, 1400) }),
       callsStep([{ callId: 'w2', name: 'Write', args: { file_path: target, content: 'x' } }]),
-      ...[3, 4, 5, 6].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1400) })),
+      ...[3, 4, 5, 6].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1550) })),
       textStep('done'),
     ];
     const overrides = { ...withinTurnWorker(), toolList: () => [bigTool(), ...env.toolbox.tools().filter((tool) => tool.name === 'Write')] };

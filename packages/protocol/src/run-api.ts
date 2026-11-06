@@ -36,6 +36,7 @@ const boolean: JsonSchema = { type: 'boolean' };
 const anything: JsonSchema = {};
 const enumOf = (values: readonly string[]): JsonSchema => ({ type: 'string', enum: values });
 const constant = (value: string): JsonSchema => ({ type: 'string', const: value });
+const toolFiles: JsonSchema = { type: 'array', items: closed({ path: string, sha256: string, access: enumOf(FILE_ACCESSES) }, ['path', 'access']) };
 const boundedInteger = (minimum: number, maximum: number): JsonSchema => ({ type: 'integer', minimum, maximum });
 
 const permissionMode = enumOf(PERMISSION_MODES);
@@ -320,7 +321,9 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
       truncated: boolean,
       handle: string,
       denial: closed({ source: enumOf(PERMISSION_DENIAL_SOURCES), reason: string }, ['source', 'reason']),
-      files: { type: 'array', items: closed({ path: string, sha256: string, access: enumOf(FILE_ACCESSES) }, ['path', 'sha256', 'access']) },
+      files: toolFiles,
+      command: string,
+      windowShared: { type: 'boolean', const: true },
       memories: { type: 'array', items: string },
       exitCode: integer,
       formatted: closed({ formatter: string, version: integer }, ['formatter', 'version']),
@@ -354,7 +357,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
     required: ['target', 'counter', 'fallback', 'inputDigest', 'itemCount', 'counted', 'reported', 'kept', 'known', 'uncounted', 'miss', 'contextWindow', 'tokenCounting'],
   },
   'tool.reconciled': {
-    properties: { callId: string, outcome: enumOf(['already_applied', 'not_applied', 'unknown']), output: string },
+    properties: { callId: string, outcome: enumOf(['already_applied', 'not_applied', 'unknown']), output: string, files: toolFiles, command: string },
     required: ['callId', 'outcome', 'output'],
   },
   'tool.waiting': {

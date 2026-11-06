@@ -428,20 +428,36 @@ describe('history seqs', () => {
   });
 
   it('keeps no touched list in the run state, before or after a compaction, because the record is session_touched', () => {
+    const declared = (callId: string, name: string, kind: 'read' | 'edit' | 'search' | 'execute' | 'other', rawInput: unknown, locations?: { path: string }[]): RunEventPayload => ({
+      type: 'tool.call',
+      callId,
+      providerCallId: callId,
+      name,
+      kind,
+      title: name,
+      rawInput,
+      ...(locations === undefined ? {} : { locations }),
+    });
     const payloads: RunEventPayload[] = [
       { type: 'user.message', text: 'go' },
       ...responded(1, [
-        callItem('c1', 'Read', { file_path: 'legacy/a.ts' }),
-        callItem('c2', 'Glob', { path: 'lib' }),
-        callItem('c3', 'Glob', {}),
-        callItem('c4', 'Bash', { command: 'ls' }),
-        callItem('c5', 'Edit', { file_path: 'legacy/a.ts' }),
-        callItem('c6', 'Read', { path: 'ignored' }),
+        callItem('c1', 'Reader', { file: 'legacy/a.ts' }),
+        callItem('c2', 'Finder', { in: 'lib' }),
+        callItem('c3', 'Finder', {}),
+        callItem('c4', 'Runner', { cmd: 'ls' }),
+        callItem('c5', 'Changer', { file: 'legacy/a.ts' }),
+        callItem('c6', 'Thinker', { path: 'ignored' }),
       ]),
+      declared('c1', 'Reader', 'read', { file: 'legacy/a.ts' }, [{ path: '/p/legacy/a.ts' }]),
+      declared('c2', 'Finder', 'search', { in: 'lib' }, [{ path: '/p/lib' }]),
+      declared('c3', 'Finder', 'search', {}),
+      declared('c4', 'Runner', 'execute', { cmd: 'ls' }),
+      declared('c5', 'Changer', 'edit', { file: 'legacy/a.ts' }, [{ path: '/p/legacy/a.ts' }]),
+      declared('c6', 'Thinker', 'other', { path: 'ignored' }, [{ path: '/p/ignored' }]),
       { type: 'user.message', text: 'next' },
       { type: 'context.compacted', item: fixtureCompactionItem('cmp-1', 'first'), summary: 'first', replacedThroughSeq: 7 },
     ];
-    const before = foldAll(materializeEvents(payloads.slice(0, 3)));
+    const before = foldAll(materializeEvents(payloads.slice(0, 9)));
     expect(before.workingFacts).not.toHaveProperty('touched');
     const after = foldAll(materializeEvents(payloads));
     expect(after.history.map((historyEntry) => historyEntry.seq)).toEqual([8]);

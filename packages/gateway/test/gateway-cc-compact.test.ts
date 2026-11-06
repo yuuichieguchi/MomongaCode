@@ -5,7 +5,7 @@ import { FAKE_GUARDRAIL_ERROR } from '@momonga/testkit';
 import type { FakeScriptedReply } from '@momonga/testkit';
 import { expectErrorBody, getJson, postJson, readJson, readSse, userInput, validator } from './gateway-helpers.ts';
 import type { Harness } from './gateway-helpers.ts';
-import { CC_CAPABILITIES, completionBodies, makeAdapter, startFake, userText } from './cc-support.ts';
+import { CC_CAPABILITIES, completionBodies, makeAdapter, startFake, userText, MODEL_FRAMING } from './cc-support.ts';
 import {
   KEEP_CLAUSE,
   RESTATE_CLAUSE,
@@ -62,7 +62,7 @@ describe('POST /v1/responses/compact for a chat-completions target', () => {
     const followUp = completionBodies(fake).at(-1);
     expect(followUp.messages[0]).toEqual({
       role: 'user',
-      content: '<conversation_summary>\nEarlier &lt;work> done.\n</conversation_summary>\n\ncontinue',
+      content: `<conversation_summary>\n${MODEL_FRAMING}\nEarlier &lt;work> done.\n</conversation_summary>\n\ncontinue`,
     });
     expect(JSON.stringify(followUp)).not.toContain(item.encrypted_content);
   });

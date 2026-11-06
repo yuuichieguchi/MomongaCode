@@ -242,7 +242,8 @@ describe('Write with a relative path', () => {
     moveShellTo(tools, 'sub');
     resultOf(await tools.run('Write', { file_path: 'sub/p.txt', content: 'one' }, { mode: 'acceptEdits' }));
     const metas = tools.idempotency.log.flatMap((entry) => (entry.op === 'begin' ? [entry.meta] : []));
-    expect(metas).toEqual([{ tool: 'Write', runId: 'run-1', prepared: { path: path.join(project(tools), 'sub', 'p.txt'), preHash: null, postHash: sha256('one') } }]);
+    const resolved = path.join(project(tools), 'sub', 'p.txt');
+    expect(metas).toEqual([{ tool: 'Write', runId: 'run-1', prepared: { path: resolved, preHash: null, postHash: sha256('one') }, facts: { files: [{ path: resolved, access: 'write' }] } }]);
   });
 
   it('reports an absolute path inside the working directory relative to it', async () => {

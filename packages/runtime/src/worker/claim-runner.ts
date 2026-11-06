@@ -1,9 +1,10 @@
 import { agentSystemPrompt, readAgentPin } from '@momonga/agents';
 import { permissionRulesComposerFor } from '../governance/rules.ts';
 import { signalUntil } from '../memory/deadline-signal.ts';
-import { createTokenMeter, withCalibration } from '@momonga/context';
+import { createTokenMeter, readerNamesOf, withCalibration } from '@momonga/context';
 import type { TokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex } from '@momonga/foundation';
+import { REFERENCE_KINDS, RUN_STATUSES, TERMINAL_STATUSES } from '@momonga/protocol';
 import type { Capabilities, FunctionTool } from '@momonga/protocol';
 import { isFatalStoreError } from '@momonga/store';
 import type { Claim, Session } from '@momonga/store';
@@ -49,6 +50,7 @@ import { summaryStopReason } from './wrap-up.ts';
 import { reportError } from './report.ts';
 import { GatewayRequestError } from '../gateway-client.ts';
 
+const LIVE_RUN_STATUSES = RUN_STATUSES.filter((status) => !TERMINAL_STATUSES.some((terminal) => terminal === status));
 const DEFAULT_CANCEL_POLL_MS = 250;
 const TOOLS_CHANGED_NOTICE = 'The available tools changed since this run started; the run continues with the current tool set.';
 
@@ -414,8 +416,14 @@ const drive = async (
     toolSet.forModel({ mode: session.permissionMode, rules: composeRules(), conciseDescriptions: token.conciseDescriptions });
   const claimVisible = token.cachePrefix ? visibleNow() : undefined;
   const jobRunningNow = (): boolean => options.store.jobs.listForSession(session.id).some((job) => job.status === 'running');
+  const childRunLive = (): boolean => options.store.listRuns(session.id, LIVE_RUN_STATUSES).some((live) => live.parentRunId !== null && live.id !== run.id);
   const claimKeepsCompanions = token.cachePrefix ? jobRunningNow() : undefined;
   const keepCompanionsWithoutHost = (): boolean => claimKeepsCompanions ?? jobRunningNow();
+  const readersNow = (): Readonly<Record<string, string>> =>
+    Object.fromEntries(REFERENCE_KINDS.flatMap((kind) => {
+      const name = toolSet.readerOf(kind);
+      return name === undefined ? [] : [[kind, name] as const];
+    }));
   const loading = token.deferred === undefined ? undefined : createToolLoading(() => ctx);
   const offerNow = (loaded: readonly string[] = journal.state.loadedTools): ToolOffer =>
     offerFor({
@@ -424,6 +432,7 @@ const drive = async (
       deferred: token.deferred,
       loaded,
       keepCompanionsWithoutHost: keepCompanionsWithoutHost(),
+      required: new Set(readerNamesOf(readersNow(), journal.state)),
     });
   const ctx: ClaimContext = {
     options,
@@ -443,6 +452,8 @@ const drive = async (
     env,
     functionTools: () => offerNow().tools,
     toolOffer: offerNow,
+    readers: readersNow,
+    windowShared: () => jobRunningNow() || childRunLive(),
     companions: () => ({ hostOf: Object.fromEntries(toolSet.companions), keepWithoutHost: keepCompanionsWithoutHost() }),
     systemPrompt,
     inlineLimitForReconcile: inlineOutputLimitFor(pins.capabilities),

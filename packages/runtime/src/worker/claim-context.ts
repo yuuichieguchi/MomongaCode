@@ -41,6 +41,8 @@ export type ClaimContext = {
   functionTools(): FunctionTool[];
   toolOffer(loaded?: readonly string[]): ToolOffer;
   toolLoading?: ToolLoading;
+  readers(): Readonly<Record<string, string>>;
+  windowShared(): boolean;
   companions(): { hostOf: Readonly<Record<string, string>>; keepWithoutHost: boolean };
   systemPrompt: string;
   inlineLimitForReconcile: number;
@@ -61,4 +63,4 @@ export type ClaimContext = {
   token: TokenPolicy;
 };
 
-export type RunMemory = { streak: number; interruptions: number; deadlineAt: number };
+export type RunMemory = { streak: number; interruptions: number; deadlineAt: number; narrowingsNoticed: Set<string> };

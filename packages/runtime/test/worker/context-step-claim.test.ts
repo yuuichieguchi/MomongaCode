@@ -53,6 +53,7 @@ const contextFor = (state: RunState) => {
     calibration: { tokenCounting: capabilities.tokenCounting },
     systemPrompt: SYSTEM_PROMPT,
     functionTools: () => [ECHO_TOOL],
+    readers: () => ({}),
     companions: () => ({ hostOf: {}, keepWithoutHost: false }),
     skills: { catalog: undefined },
     recalled: { prepare: async () => undefined, ranked: () => [], hasMore: () => false, matchCap: () => undefined, tools: [] },

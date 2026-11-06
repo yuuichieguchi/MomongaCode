@@ -126,8 +126,8 @@ const storedSnapshot = () => {
 };
 
 describe('snapshot state version', () => {
-  it('is newer than 14 and is written as such', () => {
-    expect(SNAPSHOT_STATE_VERSION).toBeGreaterThan(14);
+  it('is newer than 15 and is written as such', () => {
+    expect(SNAPSHOT_STATE_VERSION).toBeGreaterThan(15);
     expect(storedSnapshot().storedJson()['stateVersion']).toBe(SNAPSHOT_STATE_VERSION);
   });
 
