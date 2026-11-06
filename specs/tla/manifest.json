@@ -2156,10 +2156,21 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 354106,
-      "measuredSeconds": 101.36,
-      "measuredCpuSeconds": 159.38,
-      "budgetCpuSeconds": 322
+      "distinctStates": 131918,
+      "measuredSeconds": 67.11,
+      "measuredCpuSeconds": 76.14,
+      "budgetCpuSeconds": 156
+    },
+    {
+      "config": "UpdateSwitch.sessions",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 21489,
+      "measuredSeconds": 9.91,
+      "measuredCpuSeconds": 7.7,
+      "budgetCpuSeconds": 19
     },
     {
       "config": "UpdateSwitch.today",
@@ -2170,13 +2181,55 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1336,
-      "measuredSeconds": 2.79,
-      "measuredCpuSeconds": 1.93,
+      "distinctStates": 1571,
+      "measuredSeconds": 3.57,
+      "measuredCpuSeconds": 2.2,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "UpdateSwitch.pausePending",
+      "role": "evidence",
+      "expect": {
+        "violates": "WorkNeverPaused",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 104,
+      "measuredSeconds": 2.75,
+      "measuredCpuSeconds": 1.89,
       "budgetCpuSeconds": 7
     },
     {
-      "config": "UpdateSwitch.jobsNotHeld",
+      "config": "UpdateSwitch.defer",
+      "role": "evidence",
+      "expect": {
+        "violates": "NewerClientNeverWaits",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 762,
+      "measuredSeconds": 2.88,
+      "measuredCpuSeconds": 2.3,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "UpdateSwitch.claimRetiring",
+      "role": "evidence",
+      "expect": {
+        "violates": "RetiringAddsNoWork",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 684,
+      "measuredSeconds": 2.85,
+      "measuredCpuSeconds": 2.23,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "UpdateSwitch.killJobs",
       "role": "evidence",
       "expect": {
         "violates": "NoKilledJob",
@@ -2184,24 +2237,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 13739,
-      "measuredSeconds": 2.37,
-      "measuredCpuSeconds": 2.59,
-      "budgetCpuSeconds": 9
-    },
-    {
-      "config": "UpdateSwitch.admitPending",
-      "role": "evidence",
-      "expect": {
-        "violates": "PendingAddsNoWork",
-        "exitCode": 13
-      },
-      "args": [],
-      "tier": "every-run",
-      "distinctStates": 822,
-      "measuredSeconds": 3.23,
-      "measuredCpuSeconds": 2.07,
-      "budgetCpuSeconds": 8
+      "distinctStates": 9272,
+      "measuredSeconds": 4.38,
+      "measuredCpuSeconds": 3.15,
+      "budgetCpuSeconds": 10
     },
     {
       "config": "UpdateSwitch.noNotice",
@@ -2212,9 +2251,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 58,
-      "measuredSeconds": 3.52,
-      "measuredCpuSeconds": 1.76,
+      "distinctStates": 60,
+      "measuredSeconds": 5.18,
+      "measuredCpuSeconds": 1.89,
       "budgetCpuSeconds": 7
     },
     {
@@ -2226,10 +2265,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 847,
-      "measuredSeconds": 3.11,
-      "measuredCpuSeconds": 2.03,
-      "budgetCpuSeconds": 8
+      "distinctStates": 330,
+      "measuredSeconds": 3.67,
+      "measuredCpuSeconds": 2.0,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "UpdateSwitch.refuseOld",
@@ -2240,10 +2279,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 33942,
-      "measuredSeconds": 5.65,
-      "measuredCpuSeconds": 5.74,
-      "budgetCpuSeconds": 15
+      "distinctStates": 10019,
+      "measuredSeconds": 9.1,
+      "measuredCpuSeconds": 5.1,
+      "budgetCpuSeconds": 14
     }
   ]
 }
