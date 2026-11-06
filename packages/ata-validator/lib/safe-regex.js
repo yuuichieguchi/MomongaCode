@@ -1,6 +1,7 @@
 'use strict'
 
 function __ataSafeRegex () {
+  const nativeExec = RegExp.prototype.exec
   const WS = [[9, 13], [32, 32], [160, 160], [0x1680, 0x1680], [0x2000, 0x200a], [0x2028, 0x2029], [0x202f, 0x202f], [0x205f, 0x205f], [0x3000, 0x3000], [0xfeff, 0xfeff]]
   const isLineTerminator = (c) => c === 10 || c === 13 || c === 0x2028 || c === 0x2029
   const DIGIT = [[48, 57]]
@@ -91,11 +92,12 @@ function __ataSafeRegex () {
       let neg = false
       if (peek() === '^') { neg = true; i++ }
       const ranges = []
+      const props = []
       while (!eof() && peek() !== ']') {
         let lo
         if (peek() === '\\') {
           const esc = parseEscape(true)
-          if (esc.t === 'classpart') { for (const r of esc.ranges) ranges.push(r); continue }
+          if (esc.t === 'classpart') { for (const r of esc.ranges) ranges.push(r); for (const q of esc.props || []) props.push(q); continue }
           lo = esc.c
         } else { lo = peek().codePointAt(0); i++ }
         if (peek() === '-' && chars[i + 1] !== ']' && i + 1 < len) {
@@ -109,7 +111,17 @@ function __ataSafeRegex () {
       }
       if (peek() !== ']') throw new Error('unbalanced [ in pattern')
       i++
-      return { t: 'class', neg, ranges }
+      return { t: 'class', neg, ranges, props }
+    }
+
+    function propertyEscape (ch) {
+      if (chars[i] !== '{') throw new Error('\\' + ch + ' needs a {property} in pattern')
+      let end = i
+      while (end < len && chars[end] !== '}') end++
+      if (end >= len) throw new Error('unterminated \\' + ch + '{ in pattern')
+      const name = chars.slice(i, end + 1).join('')
+      i = end + 1
+      return new RegExp('^\\' + ch + name + '$', 'u')
     }
 
     function parseEscape (inClass) {
@@ -137,7 +149,14 @@ function __ataSafeRegex () {
           }
           return { t: 'char', c: unit } }
         case 'b': if (inClass) return { t: 'char', c: 8 }; throw new Error('\\b word boundary is not supported')
-        case 'B': case 'c': case 'k': case 'p': case 'P': throw new Error('\\' + ch + ' is not supported in pattern')
+        case 'p': case 'P': { const prop = propertyEscape(ch); return inClass ? { t: 'classpart', ranges: [], props: [prop] } : { t: 'class', neg: false, ranges: [], props: [prop] } }
+        case 'c': {
+          const letter = chars[i]
+          if (letter === undefined || !/^[A-Za-z]$/.test(letter)) throw new Error('\\c needs a letter in pattern')
+          i++
+          return { t: 'char', c: letter.charCodeAt(0) % 32 }
+        }
+        case 'B': case 'k': throw new Error('\\' + ch + ' is not supported in pattern')
         default:
           if (/[1-9]/.test(ch)) throw new Error('backreferences are not supported in pattern')
           return { t: 'char', c: ch.codePointAt(0) }
@@ -166,7 +185,7 @@ function __ataSafeRegex () {
         case 'empty': break
         case 'char': emit('char', { c: n.c }); break
         case 'any': emit('any'); break
-        case 'class': emit('class', { neg: n.neg, ranges: n.ranges }); break
+        case 'class': emit('class', { neg: n.neg, ranges: n.ranges, props: n.props || [] }); break
         case 'bol': emit('bol'); break
         case 'eol': emit('eol'); break
         case 'group': rec(n.child); break
@@ -243,7 +262,11 @@ function __ataSafeRegex () {
       const hi = Math.min(r[k][1], 127)
       for (let c = r[k][0]; c <= hi; c++) bits[c] = 1
     }
-    return { bits, ranges: r, neg: instr.neg }
+    const props = instr.props
+    for (let k = 0; k < props.length; k++) {
+      for (let c = 0; c < 128; c++) if (nativeExec.call(props[k], String.fromCharCode(c)) !== null) bits[c] = 1
+    }
+    return { bits, ranges: r, props, neg: instr.neg }
   }
 
   function matchClass (cls, c) {
@@ -254,6 +277,10 @@ function __ataSafeRegex () {
       inside = false
       const r = cls.ranges
       for (let k = 0; k < r.length; k++) { if (c >= r[k][0] && c <= r[k][1]) { inside = true; break } }
+      if (!inside && cls.props.length > 0) {
+        const text = String.fromCodePoint(c)
+        for (let k = 0; k < cls.props.length; k++) { if (nativeExec.call(cls.props[k], text) !== null) { inside = true; break } }
+      }
     }
     return cls.neg ? !inside : inside
   }
