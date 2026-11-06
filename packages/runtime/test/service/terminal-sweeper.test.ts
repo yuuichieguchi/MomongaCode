@@ -112,6 +112,29 @@ describe('startTerminalSweeper (O15 ii): the one owner of the sweeper-owned canc
     await sweeper.close();
   });
 
+  it('sends the runs the dead-letter sweep ended through the same release as the cancel finish', async () => {
+    const store = {
+      finishCancelled: async (): Promise<string[]> => ['run_cancelled'],
+      deadLetterExhausted: async (): Promise<string[]> => ['run_x'],
+    };
+    const released: string[] = [];
+    const upstream: string[] = [];
+    const sweeper = startTerminalSweeper({
+      store,
+      timers: createFakeTimers(createFakeClock(START_MS)),
+      intervalMs: 1000,
+      cancelUpstream: async (runId: string) => void upstream.push(runId),
+      releaseStopped: async (runId: string) => void released.push(runId),
+      onError: () => undefined,
+    });
+
+    await sweeper.sweep();
+    await sweeper.close();
+
+    expect(released).toEqual(['run_cancelled', 'run_x']);
+    expect(upstream).toEqual(['run_cancelled', 'run_x']);
+  });
+
   it('a store that throws in one sweep is reported and the next sweep still runs', async () => {
     const failure = new Error('the store is busy');
     const errors: unknown[] = [];
