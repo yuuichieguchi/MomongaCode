@@ -1,5 +1,6 @@
 import type { AdapterRequest, Capabilities, JsonReplyPath, TextFormat } from '@momonga/protocol';
 import { renderSchema } from '../../dialect/render.ts';
+import { UnsupportedInputError } from './failures.ts';
 import type { ResolvedDialect } from '../../dialect/render.ts';
 
 type JsonSchemaFormat = Extract<TextFormat, { type: 'json_schema' }>;
@@ -10,7 +11,10 @@ export type JsonReplyFormat = { name: string; description?: string; strict?: boo
 
 export const jsonReplyPlanOf = (request: AdapterRequest, capabilities: Pick<Capabilities, 'structuredOutput'>): JsonReplyPlan | undefined => {
   const format = request.text?.format;
-  if (format === undefined || format === null || format.type !== 'json_schema') return undefined;
+  if (format === undefined || format === null || format.type === 'text') return undefined;
+  if (format.type === 'json_object') {
+    throw new UnsupportedInputError('unsupported_input', 'the json_object response format is not supported; ask for a json_schema format', 'text');
+  }
   return capabilities.structuredOutput === 'json_schema' ? { path: 'enforced', format } : { path: 'prompt' };
 };
 

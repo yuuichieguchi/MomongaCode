@@ -4,7 +4,7 @@ import type { ProviderAdapter } from '@momonga/gateway';
 import type { AdapterRequest, AdapterTarget, Capabilities, StreamEvent } from '@momonga/protocol';
 import { anthropicTextReply, createFakeClock, openResponsesTextReply, startFakeAnthropic, startFakeOpenResponses } from '@momonga/testkit';
 import { START_MS, registerCleanup } from './gateway-helpers.ts';
-import { CC_CAPABILITIES, collect, completionBodies, lastCompletionBody, makeAdapter, startFake } from './cc-support.ts';
+import { CC_CAPABILITIES, collect, completionBodies, makeAdapter, startFake } from './cc-support.ts';
 import { textReply } from './cc-compact-support.ts';
 import { OLLAMA_CAPABILITIES, chunkLine, collectOllama, doneLine, makeOllamaAdapter, startFakeOllama } from './ollama-support.ts';
 import { contextOf } from './own-reasoning.ts';
@@ -33,13 +33,17 @@ const terminalOf = (events: readonly StreamEvent[]): Record<string, unknown> => 
   return terminal.response as unknown as Record<string, unknown>;
 };
 
-const drain = async (adapter: ProviderAdapter, target: AdapterTarget, request: AdapterRequest): Promise<StreamEvent[]> => {
+const drain = async (adapter: ProviderAdapter, target: AdapterTarget, request: AdapterRequest): Promise<{ events: StreamEvent[]; error: unknown }> => {
   const events: StreamEvent[] = [];
-  for await (const event of adapter.create(request, await contextOf(adapter, target))) events.push(event);
-  return events;
+  try {
+    for await (const event of adapter.create(request, await contextOf(adapter, target))) events.push(event);
+  } catch (error) {
+    return { events, error };
+  }
+  return { events, error: undefined };
 };
 
-type Sent = { wire: any; events: StreamEvent[]; instructionsOnWire: string };
+type Sent = { wire: any; events: StreamEvent[]; instructionsOnWire: string | undefined; error: unknown };
 
 const withOutput = (base: Capabilities, structuredOutput: Capabilities['structuredOutput']): Capabilities => ({ ...base, structuredOutput });
 
@@ -58,9 +62,8 @@ const chatCompletions: Surface = {
     const fake = await startFake({ scenario: 'tools-ok', script: [textReply('{"verdict":"safe"}')] });
     const adapter = makeAdapter(fake, { capabilities: async () => capabilities });
     const { events, error } = await collect(adapter, request);
-    expect(error).toBeUndefined();
-    const wire = lastCompletionBody(fake);
-    return { wire, events, instructionsOnWire: wire.messages[0].content };
+    const wire = completionBodies(fake).at(-1);
+    return { wire, events, error, instructionsOnWire: wire?.messages[0].content };
   },
   formatOf: (wire) => wire.response_format,
   enforcedForm: { type: 'json_schema', json_schema: { name: 'reply', strict: true, schema: SCHEMA } },
@@ -80,9 +83,9 @@ const anthropic: Surface = {
       apiVersion: '2026-10-21',
     });
     registerCleanup(() => adapter.close());
-    const events = await drain(adapter, { name: 'remote', model: 'claude-fake' }, request);
+    const { events, error } = await drain(adapter, { name: 'remote', model: 'claude-fake' }, request);
     const wire = fake.requests.at(-1)?.body as any;
-    return { wire, events, instructionsOnWire: wire.system?.[0]?.text };
+    return { wire, events, error, instructionsOnWire: wire?.system?.[0]?.text };
   },
   formatOf: (wire) => wire.output_config?.format,
   enforcedForm: { type: 'json_schema', schema: SCHEMA },
@@ -100,9 +103,9 @@ const openResponses: Surface = {
       clock: createFakeClock(START_MS),
     });
     registerCleanup(() => adapter.close());
-    const events = await drain(adapter, { name: 'remote', model: 'gpt-fake' }, request);
+    const { events, error } = await drain(adapter, { name: 'remote', model: 'gpt-fake' }, request);
     const wire = fake.requests.at(-1)?.body as any;
-    return { wire, events, instructionsOnWire: wire.instructions };
+    return { wire, events, error, instructionsOnWire: wire?.instructions };
   },
   formatOf: (wire) => wire.text?.format,
   enforcedForm: { type: 'json_schema', name: 'reply', strict: true, schema: SCHEMA },
@@ -115,9 +118,8 @@ const ollama: Surface = {
     const fake = await startFakeOllama({ chat: [{ kind: 'ndjson', lines: [chunkLine({ content: '{"verdict":"safe"}' }), doneLine()] }] });
     const adapter = makeOllamaAdapter(fake, { capabilities: async () => capabilities });
     const { events, error } = await collectOllama(adapter, request);
-    expect(error).toBeUndefined();
     const wire = fake.chatBodies().at(-1);
-    return { wire, events, instructionsOnWire: wire.messages[0].content };
+    return { wire, events, error, instructionsOnWire: wire?.messages[0].content };
   },
   formatOf: (wire) => wire.format,
   enforcedForm: SCHEMA,
@@ -126,12 +128,14 @@ const ollama: Surface = {
 describe.each([chatCompletions, anthropic, openResponses, ollama])('JSON reply on the wire: $name', (surface) => {
   it('puts the rendered format on the wire and reports enforced when the target measured json_schema', async () => {
     const sent = await surface.send(withOutput(surface.base, 'json_schema'), askingForJson());
+    expect(sent.error).toBeUndefined();
     expect(surface.formatOf(sent.wire)).toEqual(surface.enforcedForm);
     expect(terminalOf(sent.events)['jsonReply']).toBe('enforced');
   });
 
   it('omits the format and reports prompt when the target did not measure json_schema', async () => {
     const sent = await surface.send(withOutput(surface.base, 'none'), askingForJson());
+    expect(sent.error).toBeUndefined();
     expect(surface.formatOf(sent.wire)).toBeUndefined();
     expect(terminalOf(sent.events)['jsonReply']).toBe('prompt');
   });
@@ -147,6 +151,15 @@ describe.each([chatCompletions, anthropic, openResponses, ollama])('JSON reply o
     const other: Capabilities = { ...withOutput(surface.base, 'json_schema'), source: 'declared', tokenCounting: 'exact', maxConcurrency: 7 };
     const sent = await surface.send(other, askingForJson());
     expect(terminalOf(sent.events)['jsonReply']).toBe('enforced');
+  });
+
+  it('refuses a json_object format on either path instead of dropping it, sending nothing', async () => {
+    for (const structuredOutput of ['json_schema', 'none'] as const) {
+      const request: AdapterRequest = { ...plain(), text: { format: { type: 'json_object' } } };
+      const sent = await surface.send(withOutput(surface.base, structuredOutput), request);
+      expect(sent.error).toMatchObject({ code: 'unsupported_input' });
+      expect(sent.wire).toBeUndefined();
+    }
   });
 
   it('reports nothing for a request that asks for no format', async () => {
