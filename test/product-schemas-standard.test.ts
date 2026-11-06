@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { ataEngine, createUntrustedBoundary } from '@momonga/foundation';
 import type { ProductSchema } from '@momonga/foundation';
 import { OPEN_RESPONSES_OPENAPI, RUN_API_SCHEMAS } from '@momonga/protocol';
@@ -18,8 +18,8 @@ import {
 } from './support/product-schemas.ts';
 import { NO_WALL_CLOCK_TIMEOUT_FOR_SYNCHRONOUS_WORK } from './support/synchronous-work.ts';
 
-let loaded: Promise<readonly ProductSchema[]> | undefined;
-const schemas = (): Promise<readonly ProductSchema[]> => (loaded ??= loadProductSchemas());
+const loaded = await loadProductSchemas();
+const schemas = async (): Promise<readonly ProductSchema[]> => loaded;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -72,10 +72,6 @@ const componentNames = (): string[] => {
 };
 
 describe('every product schema is standard JSON Schema 2020-12', () => {
-  beforeAll(async () => {
-    await schemas();
-  });
-
   it('finds the modules that define product schemas by scanning every runtime source', NO_WALL_CLOCK_TIMEOUT_FOR_SYNCHRONOUS_WORK, () => {
     const relative = productSchemaModules().map((file) => path.relative(repositoryRoot, file));
     expect(relative.length).toBeGreaterThan(0);
