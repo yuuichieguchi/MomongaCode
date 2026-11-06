@@ -77,3 +77,32 @@ describe('decision 47: modelKindOf lives in protocol', () => {
     expect(modelKindOf([model], 0)).toBe('real');
   });
 });
+
+describe('3.3 item 4 and 4.3: per-task rows, per-scenario rows and X3 witnessed', () => {
+  const TASKS = [
+    { task: 'fix-add', trials: 3, met: 2, difficulty: 'easy', taskType: 'bug_fix' },
+    { task: 'lint', trials: 3, met: 0, difficulty: 'medium', taskType: 'lint_fix' },
+  ];
+  const SCENARIOS = [{ scenario: 'kill-after-effect', trials: 3, episodes: 3, recovered: 2 }];
+  const WITNESSED = { k: 1, n: 3 };
+
+  const buildWith = (kind: ReportKind, extra: Record<string, unknown>): ReliabilityReport =>
+    (buildReliabilityReport as (input: unknown) => ReliabilityReport)({ kind, aggregate: aggregate(rows, { groupBy: 'model' }), harness: HARNESS, ...extra });
+
+  it('a benchmark report carries its per-task rows through the round trip', () => {
+    const report = buildWith('benchmark', { tasks: TASKS });
+    expect((report as unknown as { tasks: unknown }).tasks).toEqual(TASKS);
+    expect(decodeReliabilityReport(encodeReliabilityReport(report))).toEqual(report);
+  });
+
+  it('an injection report carries its per-scenario rows and the witnessed duplicate rate through the round trip', () => {
+    const report = buildWith('injection', { scenarios: SCENARIOS, witnessed: WITNESSED });
+    expect((report as unknown as { scenarios: unknown; witnessed: unknown })).toMatchObject({ scenarios: SCENARIOS, witnessed: WITNESSED });
+    expect(decodeReliabilityReport(encodeReliabilityReport(report))).toEqual(report);
+  });
+
+  it('the decoder refuses a per-task row whose met exceeds its trials', () => {
+    const encoded = JSON.parse(encodeReliabilityReport(buildWith('benchmark', { tasks: TASKS }))) as Record<string, unknown>;
+    expect(() => decodeReliabilityReport(JSON.stringify({ ...encoded, tasks: [{ ...TASKS[0], met: 4 }] }))).toThrow(/met/);
+  });
+});
