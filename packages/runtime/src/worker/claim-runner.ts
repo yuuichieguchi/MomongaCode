@@ -4,7 +4,7 @@ import { signalUntil } from '../memory/deadline-signal.ts';
 import { createTokenMeter, readerNamesOf, withCalibration } from '@momonga/context';
 import type { TokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex } from '@momonga/foundation';
-import { REFERENCE_KINDS, RUN_STATUSES, TERMINAL_STATUSES } from '@momonga/protocol';
+import { REFERENCE_KINDS, RUN_STATUSES, TARGET_NOT_READY, TERMINAL_STATUSES, agentReadiness, readinessText } from '@momonga/protocol';
 import type { Capabilities, FunctionTool } from '@momonga/protocol';
 import { isFatalStoreError } from '@momonga/store';
 import type { Claim, Session } from '@momonga/store';
@@ -284,8 +284,17 @@ const drive = async (
     return;
   }
 
+  const recorded = journal.state.pins;
+  const pinned = recorded === undefined ? undefined : readPins(recorded);
+  const capabilities = pinned === undefined ? await gateway.capabilities(session.modelAlias, { signal: control.signal }) : pinned.capabilities;
+  const readiness = agentReadiness(capabilities);
+  if (readiness.state !== 'ready' && readiness.state !== 'no_tools') {
+    await terminals.finish('FAILED', { error: { code: TARGET_NOT_READY, message: readinessText(readiness) } });
+    return;
+  }
+  const toolLess = readiness.state === 'no_tools';
   const agentPin = readAgentPin(run.pins);
-  const basePrompt = (options.systemPrompt ?? buildSystemPrompt)({ cwd: session.cwd, platform: options.platform });
+  const basePrompt = (options.systemPrompt ?? buildSystemPrompt)({ cwd: session.cwd, platform: options.platform, ...(toolLess ? { tools: 'none' as const } : {}) });
   const systemPrompt = agentPin === undefined ? basePrompt : agentSystemPrompt(basePrompt, agentPin);
   const systemPromptDigest = sha256Hex(systemPrompt);
   const env = tools.envFor(session);
@@ -309,16 +318,15 @@ const drive = async (
     });
     return;
   }
-  const recorded = journal.state.pins;
   const newMemoryShare = recorded === undefined ? await memoryShareFor({ store: options.store, settings: options.settings, session, run }) : undefined;
   const newGuidelineVersion = recorded === undefined ? guidelineVersionFor(options.store, run) : undefined;
   const pins: RunPins =
-    recorded === undefined
+    pinned === undefined
       ? {
           modelAlias: session.modelAlias,
           systemPromptDigest,
           toolSetDigest: toolSet.digest,
-          capabilities: await gateway.capabilities(session.modelAlias, { signal: control.signal }),
+          capabilities,
           roles: rolesFor({ store: options.store, settings: options.settings, run }),
           targets: { ...options.settings.modelTargets() },
           ...(newMemoryShare === undefined ? {} : { memoryShare: newMemoryShare }),
@@ -328,7 +336,7 @@ const drive = async (
             ...(await deferredPinFor({ store: options.store, settings: options.settings, session, run })),
           },
         }
-      : readPins(recorded);
+      : pinned;
   const startOffered = offeredRecordFor(journal.state.offeredTools, pins.token?.deferred ?? []);
   journal.append([
     { type: 'run.started', attempt: claim.attempt, now: clock.now(), pins: { ...pins }, mode: session.permissionMode },
@@ -340,6 +348,7 @@ const drive = async (
   const knownNotes = new Set(journal.state.notes.map((note) => note.message));
   const toolNotices = [...skills.warnings, ...(agentSet?.warnings ?? []), ...toolSet.notices].filter((message) => !knownNotes.has(message));
   if (toolNotices.length > 0) journal.append([...new Set(toolNotices)].map((message) => ({ type: 'notice', level: 'warning', message })));
+  if (toolLess && recorded === undefined) journal.append([{ type: 'notice', level: 'warning', message: `${readiness.message} ${readiness.remedy}`, code: 'target_no_tools' }]);
   for (const server of toolSet.authorizationRequired) {
     const message = `MCP server "${server}" requires authorization before its tools can be listed`;
     if (journal.state.notes.some((note) => note.code === 'mcp_authorization_required' && note.message === message)) continue;
@@ -407,7 +416,7 @@ const drive = async (
     ? (await Promise.all(listing.targets.filter((target) => target !== firstTarget).map(factsOf))).map((facts) => facts.meter)
     : [];
   const visibleNow = (): FunctionTool[] =>
-    toolSet.forModel({ mode: session.permissionMode, rules: composeRules(), conciseDescriptions: token.conciseDescriptions });
+    toolLess ? [] : toolSet.forModel({ mode: session.permissionMode, rules: composeRules(), conciseDescriptions: token.conciseDescriptions });
   const claimVisible = token.cachePrefix ? visibleNow() : undefined;
   const jobRunningNow = (): boolean => options.store.jobs.listForSession(session.id).some((job) => job.status === 'running');
   const childRunLive = (): boolean => options.store.listRuns(session.id, LIVE_RUN_STATUSES).some((live) => live.parentRunId !== null && live.id !== run.id);
@@ -434,6 +443,7 @@ const drive = async (
     run,
     alias: pins.modelAlias,
     capabilities: pins.capabilities,
+    toolLess,
     roles: pins.roles,
     ...(pins.memoryShare === undefined ? {} : { memoryShare: pins.memoryShare }),
     ...(pinnedGuideline === undefined ? {} : { guideline: pinnedGuideline }),

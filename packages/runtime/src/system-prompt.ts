@@ -1,8 +1,23 @@
 import { TOOL_OUTPUT_TAG } from '@momonga/protocol';
 
-export type SystemPromptContext = { cwd: string; platform: string };
+export type SystemPromptContext = { cwd: string; platform: string; tools?: 'none' };
 
-export const buildSystemPrompt = ({ cwd, platform }: SystemPromptContext): string =>
+const toolLessPrompt = ({ cwd, platform }: SystemPromptContext): string =>
+  [
+    'You are MomongaCode, a coding assistant. This session offers you no tools: you cannot read, search or change files and you cannot run commands.',
+    `The working directory is ${cwd} and the platform is ${platform}.`,
+    '',
+    'Instruction precedence:',
+    '1. The user\'s direct messages come first.',
+    '2. Then the instructions given in this conversation.',
+    '',
+    'Working rules:',
+    '- Answer from the conversation and from what you know. When an answer depends on a file or a command output that you cannot see, say so and ask the user to paste it.',
+    '- Never claim to have read, run or changed anything.',
+    '- Keep answers concise: state the answer, what remains uncertain, and anything the user must decide.',
+  ].join('\n');
+
+const toolSystemPrompt = ({ cwd, platform }: SystemPromptContext): string =>
   [
     'You are MomongaCode, a coding agent that works inside the user\'s repository through tools.',
     `The working directory is ${cwd} and the platform is ${platform}.`,
@@ -20,3 +35,6 @@ export const buildSystemPrompt = ({ cwd, platform }: SystemPromptContext): strin
     '- For work that takes several steps, keep a plan with the UpdatePlan tool and update it as the steps progress.',
     '- Keep answers concise: state what you did, what remains, and anything the user must decide.',
   ].join('\n');
+
+export const buildSystemPrompt = (context: SystemPromptContext): string =>
+  context.tools === 'none' ? toolLessPrompt(context) : toolSystemPrompt(context);

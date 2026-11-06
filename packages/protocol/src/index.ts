@@ -123,6 +123,7 @@ export {
   TARGET_NOT_READY,
   agentReadiness,
   isToolCallingState,
+  readinessRemedyOf,
   readinessText,
 } from './capabilities.ts';
 export type { OutputTokenCapabilities, Readiness, ReadinessInput, TargetAnswers, TargetBilling } from './capabilities.ts';

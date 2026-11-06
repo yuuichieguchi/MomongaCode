@@ -1,6 +1,7 @@
 import type { MomongaPaths } from '@momonga/foundation';
 import { TARGET_NOT_READY } from '@momonga/protocol';
 import type { PermissionMode, PublicRunEvent } from '@momonga/protocol';
+import { noTargetLines } from '../readiness.ts';
 import { RunApiError } from '../client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView } from '../client/views.ts';
@@ -231,13 +232,8 @@ const openInterruptibleSession = async (ports: CliPorts, paths: MomongaPaths, op
 
 export type RefusedResult = { type: 'result'; subtype: 'error'; is_error: true; result: ''; error: { code: string; message: string } };
 
-export const noTargetLines = (reason: string, paths: Pick<MomongaPaths, 'settingsFile'>): string[] => [
-  `momonga: ${reason}`,
-  `  declare a target in ${paths.settingsFile} (models.targets and models.aliases), or run \`momonga models detect\` to find a local model server`,
-];
-
 const refuse = (ports: CliPorts, paths: MomongaPaths, format: OutputFormat, error: RunApiError): number => {
-  ports.stderr.write(`${escapedLines(noTargetLines(error.reason, paths))}\n`);
+  ports.stderr.write(`${escapedLines(leadWith('momonga: ', noTargetLines(error.reason, paths)))}\n`);
   if (format !== 'text') {
     const refused: RefusedResult = { type: 'result', subtype: 'error', is_error: true, result: '', error: { code: TARGET_NOT_READY, message: error.reason } };
     ports.stdout.write(`${JSON.stringify(refused)}\n`);

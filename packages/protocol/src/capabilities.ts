@@ -262,3 +262,5 @@ export function agentReadiness(input: ReadinessInput): Readiness {
 }
 
 export const readinessText = (readiness: Exclude<Readiness, { state: 'ready' }>): string => [readiness.message, readiness.remedy].join('\n');
+
+export const readinessRemedyOf = (text: string): string => text.split('\n').at(-1) ?? text;

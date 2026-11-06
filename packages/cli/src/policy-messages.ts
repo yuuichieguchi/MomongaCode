@@ -1,4 +1,4 @@
-import { HOOK_STOPPED_CODE, PRECONDITION_FAILED_CODE, USER_PROMPT_BLOCKED_CODE } from '@momonga/protocol';
+import { HOOK_STOPPED_CODE, PRECONDITION_FAILED_CODE, TARGET_NOT_READY, USER_PROMPT_BLOCKED_CODE } from '@momonga/protocol';
 import type { PermissionDenial, PermissionDenialSource, PublicRunEvent } from '@momonga/protocol';
 
 type HookCompleted = Extract<PublicRunEvent, { type: 'hook.completed' }>;
@@ -57,7 +57,7 @@ export const describeClassification = (event: Classified, subject: string): stri
 
 export const describeDenial = (denial: PermissionDenial): string => `denied by ${DENIAL_SOURCE_WORDS[denial.source]}: ${denial.reason}`;
 
-const PRODUCT_COMPOSED_CODES: ReadonlySet<string> = new Set([PRECONDITION_FAILED_CODE]);
+const PRODUCT_COMPOSED_CODES: ReadonlySet<string> = new Set([PRECONDITION_FAILED_CODE, TARGET_NOT_READY]);
 
 export const describeRunError = (error: { code: string; message: string }): string[] => {
   switch (error.code) {
