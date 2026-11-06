@@ -163,9 +163,6 @@ const mergeStats = (target: CheckStats, source: CheckStats): void => {
   target.validRendered += source.validRendered;
   target.oracleErrors += source.oracleErrors;
   target.unverifiable += source.unverifiable;
-  target.ajvDisagreements += source.ajvDisagreements;
-  target.ajvCrashes += source.ajvCrashes;
-  for (const sample of source.ajvSamples) if (target.ajvSamples.length < 8) target.ajvSamples.push(sample);
   for (const [reason, count] of Object.entries(source.refused)) target.refused[reason] = (target.refused[reason] ?? 0) + count;
   for (const [reason, example] of Object.entries(source.refusedExamples)) if (target.refusedExamples[reason] === undefined) target.refusedExamples[reason] = example;
   for (const [reason, count] of Object.entries(source.failedRenders)) target.failedRenders[reason] = (target.failedRenders[reason] ?? 0) + count;

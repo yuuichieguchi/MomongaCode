@@ -1,11 +1,11 @@
-import Ajv2020 from 'ajv/dist/2020.js';
+import { defineProductSchema, type ProductValidator } from '@momonga/foundation';
 import { BUILTINS, DEFINITION_SCHEMA, DESCENT, DESCENT_POSITIVE, KINDS, OPS, type Clause, type Definition, type Op, type Rule } from './definition.ts';
 import type { Json } from './json.ts';
 import type { Rng } from './prng.ts';
 
-const definitionValidator = new Ajv2020.default({ strict: false }).compile(DEFINITION_SCHEMA as object);
+const validateDefinition: ProductValidator<Definition> = defineProductSchema('verify/dialect-definition', DEFINITION_SCHEMA);
 
-export const isValidDefinition = (candidate: unknown): boolean => definitionValidator(candidate) === true;
+export const isValidDefinition = (candidate: unknown): boolean => validateDefinition(candidate).valid;
 
 export const DROP_KEYS = [
   '$schema', 'pattern', 'minLength', 'maxLength', 'format', 'enum', 'const', 'anyOf', 'oneOf', 'allOf', 'not', 'if', 'then', 'else',
