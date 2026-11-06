@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { ExecutionBatchInput, ToolContext } from '@momonga/tools';
-import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
+import type { CallOutputFit, ExecutionBatchInput, ToolContext } from '@momonga/tools';
+import { askingFit, call, callAnsweredBy, makeHarness, makeTool, toolSetOf } from './harness.ts';
 
 const FULL = Array.from({ length: 100 }, (_unused, index) => `line-${String(index + 1).padStart(3, '0')}`).join('\n');
 
@@ -47,16 +47,17 @@ describe('the executor cuts a tool output through the output fit port', () => {
 
   it('hands the same port to the tool as ctx.outputFit', async () => {
     const harness = makeHarness();
-    const { port } = fitPort();
-    const seen: unknown[] = [];
+    const asked = askingFit(fitPort().port);
+    const seen: CallOutputFit[] = [];
     const tool = makeTool('Probe', {
       execute: async (_input, ctx: ToolContext) => {
-        seen.push((ctx as unknown as { outputFit: unknown }).outputFit);
+        seen.push(ctx.outputFit);
         return { status: 'completed', output: 'ok' };
       },
     });
-    await harness.executor.runBatch({ ...harness.input(await toolSetOf(tool), [call('c1', 'Probe')]), outputFit: port });
-    expect(seen).toEqual([port]);
+    await harness.executor.runBatch({ ...harness.input(await toolSetOf(tool), [call('c1', 'Probe')]), outputFit: asked.port });
+    expect(seen).toHaveLength(1);
+    expect(await callAnsweredBy(seen[0] as CallOutputFit, asked)).toEqual({ callId: 'c1', tool: 'Probe' });
   });
 
   it('refuses to run an output-producing tool without a fit port instead of falling back to a default length', async () => {

@@ -10,7 +10,7 @@ export { buildContext, maxInputFor, measureLayers, measurePinned } from './build
 export type { MaxInputBounds } from './build-context.ts';
 export { FORMATTER_VERSIONS, formatGrep, formatJson, formatLog, formatToolOutput, formattedHeader, formattingViolations } from './formatters/index.ts';
 export type { FormattedOutput, FormattingViolation } from './formatters/index.ts';
-export { fitToTokens, readClauseOf } from './tool-output.ts';
+export { fitToTokens, outputRenderOf, readClauseOf } from './tool-output.ts';
 export type { TokenCount } from './tool-output.ts';
 export { readerNamesOf, readersOffered, referenceKindsOf } from './references.ts';
 export { ContextOverflowError, PinnedBoundError, PinnedOverflowError, PinnedRoomError, PrefixChangedError } from './errors.ts';
