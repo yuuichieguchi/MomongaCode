@@ -2839,10 +2839,10 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 59354,
-      "measuredSeconds": 3.83,
-      "measuredCpuSeconds": 3.31,
-      "budgetCpuSeconds": 10
+      "distinctStates": 1266624,
+      "measuredSeconds": 29.06,
+      "measuredCpuSeconds": 27.11,
+      "budgetCpuSeconds": 58
     },
     {
       "config": "AutoProbe.twoProbes",
@@ -2853,10 +2853,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 9,
-      "measuredSeconds": 2.48,
-      "measuredCpuSeconds": 1.49,
-      "budgetCpuSeconds": 6
+      "distinctStates": 11,
+      "measuredSeconds": 3.09,
+      "measuredCpuSeconds": 1.77,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "AutoProbe.processLock",
@@ -2867,9 +2867,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 12,
-      "measuredSeconds": 1.9,
-      "measuredCpuSeconds": 1.58,
+      "distinctStates": 14,
+      "measuredSeconds": 3.14,
+      "measuredCpuSeconds": 1.76,
       "budgetCpuSeconds": 7
     },
     {
@@ -2882,8 +2882,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 3,
-      "measuredSeconds": 2.7,
-      "measuredCpuSeconds": 1.58,
+      "measuredSeconds": 2.98,
+      "measuredCpuSeconds": 1.65,
       "budgetCpuSeconds": 7
     },
     {
@@ -2896,8 +2896,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 3,
-      "measuredSeconds": 3.35,
-      "measuredCpuSeconds": 1.69,
+      "measuredSeconds": 2.39,
+      "measuredCpuSeconds": 1.82,
       "budgetCpuSeconds": 7
     },
     {
@@ -2909,9 +2909,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 51,
-      "measuredSeconds": 3.38,
-      "measuredCpuSeconds": 1.61,
+      "distinctStates": 64,
+      "measuredSeconds": 2.37,
+      "measuredCpuSeconds": 1.93,
       "budgetCpuSeconds": 7
     },
     {
@@ -2923,8 +2923,8 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 13,
-      "measuredSeconds": 4.71,
+      "distinctStates": 15,
+      "measuredSeconds": 1.82,
       "measuredCpuSeconds": 1.71,
       "budgetCpuSeconds": 7
     },
@@ -2937,9 +2937,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 189,
-      "measuredSeconds": 4.94,
-      "measuredCpuSeconds": 1.75,
+      "distinctStates": 265,
+      "measuredSeconds": 2.06,
+      "measuredCpuSeconds": 1.96,
       "budgetCpuSeconds": 7
     },
     {
@@ -2951,9 +2951,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 23,
-      "measuredSeconds": 3.67,
-      "measuredCpuSeconds": 1.77,
+      "distinctStates": 27,
+      "measuredSeconds": 2.01,
+      "measuredCpuSeconds": 1.72,
       "budgetCpuSeconds": 7
     },
     {
@@ -2965,9 +2965,62 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 64,
-      "measuredSeconds": 3.48,
-      "measuredCpuSeconds": 1.68,
+      "distinctStates": 82,
+      "measuredSeconds": 2.18,
+      "measuredCpuSeconds": 1.85,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "AutoProbe.endpoint",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 1266624,
+      "measuredSeconds": 36.34,
+      "measuredCpuSeconds": 28.12,
+      "budgetCpuSeconds": 60
+    },
+    {
+      "config": "AutoProbe.reprobeRefused",
+      "role": "evidence",
+      "expect": {
+        "violates": "RefusalGetsRemedy",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 32,
+      "measuredSeconds": 1.96,
+      "measuredCpuSeconds": 1.9,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "AutoProbe.reprobeInBackoff",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoProbeInBackoff",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 69,
+      "measuredSeconds": 1.88,
+      "measuredCpuSeconds": 1.93,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "AutoProbe.endpointUnlocked",
+      "role": "evidence",
+      "expect": {
+        "violates": "RecordUnderLock",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 15,
+      "measuredSeconds": 1.9,
+      "measuredCpuSeconds": 1.79,
       "budgetCpuSeconds": 7
     }
   ]

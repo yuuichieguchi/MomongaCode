@@ -66,6 +66,32 @@
 (*   FailWrites    a failed probe writes its record                        *)
 (*   TaintCheck    a probe during which the key changed writes no record   *)
 (*   Manual        the CLI command exists as an actor                      *)
+(*   Adapter       the adapter of the probed target: "fm", or "endpoint"   *)
+(*                 (a chat-completions or ollama target with toolCalling   *)
+(*                 auto, whose key is the server identity of the model)    *)
+(*   EndpointLocked an endpoint probe takes the probe lock of its key, as  *)
+(*                 the fm probe does                                       *)
+(*   PreconditionCheck a request checks the preconditions first, and a     *)
+(*                 definite refusal answers 412 with the remedy at once    *)
+(*   Backoff       after a probe that started and failed, the gateway      *)
+(*                 starts no probe of that key for one Retry-After interval *)
+(*                                                                         *)
+(* Failure kinds. A definite refusal of a precondition (the licence is not *)
+(* agreed, the model is not available, the binary is missing) is the world *)
+(* state refused, which the user toggles (Refuse, Fix); it is not          *)
+(* remembered. A probe that started and failed is Fail; a gateway probe    *)
+(* that fails puts its key in backoff until BackoffEnds (one interval). A  *)
+(* stop of the gateway (Crash) ends its probes without a failure: no       *)
+(* backoff, and the in-memory backoff is gone after Restart.               *)
+(*                                                                         *)
+(* The key source. The fm key is the binary sha256 and the OS build. The   *)
+(* gateway caches it by the binary's file identity (device, inode, size,   *)
+(* modification time), so a replaced binary is seen by the next request.   *)
+(* The OS build is read with the cache and can change only by an OS        *)
+(* update, which restarts the machine and so the gateway: OsUpdate is      *)
+(* enabled only while the gateway is down. An endpoint key changes when    *)
+(* the server reports another identity, at any time (BinaryChange stands   *)
+(* for both).                                                              *)
 (***************************************************************************)
 EXTENDS Naturals, FiniteSets, TLC
 
@@ -83,7 +109,12 @@ CONSTANTS
     Reject412,
     FailWrites,
     TaintCheck,
-    Manual
+    Manual,
+    Adapter,
+    EndpointLocked,
+    PreconditionCheck,
+    Backoff,
+    MaxRefusalChanges
 
 ASSUME /\ Cardinality(Keys) >= 2
        /\ MaxProbes \in Nat \ {0}
@@ -99,15 +130,22 @@ ASSUME /\ Cardinality(Keys) >= 2
        /\ FailWrites \in BOOLEAN
        /\ TaintCheck \in BOOLEAN
        /\ Manual \in BOOLEAN
+       /\ Adapter \in {"fm", "endpoint"}
+       /\ EndpointLocked \in BOOLEAN
+       /\ PreconditionCheck \in BOOLEAN
+       /\ Backoff \in BOOLEAN
+       /\ MaxRefusalChanges \in Nat
 
 NoKey == "nokey"
 Owners == {"gw", "cli"}
 
 VARIABLES worldKey, gwKey, rec, recSrc, view, probes, started, gwUp,
-          requests, changes, crashes, cancels, respLog
+          requests, changes, crashes, cancels, respLog,
+          refused, refusals, backoff
 
 vars == <<worldKey, gwKey, rec, recSrc, view, probes, started, gwUp,
-          requests, changes, crashes, cancels, respLog>>
+          requests, changes, crashes, cancels, respLog,
+          refused, refusals, backoff>>
 
 (* worldKey   the binary hash and OS build as they are now                *)
 (* gwKey      the key the gateway read when it started                    *)
@@ -120,13 +158,15 @@ vars == <<worldKey, gwKey, rec, recSrc, view, probes, started, gwUp,
 (* started    how many probes have started (the ids)                      *)
 (* respLog    one record per answered request                             *)
 
-Probe == [id : 1..MaxProbes, key : Keys, owner : Owners, tainted : BOOLEAN]
+Probe == [id : 1..MaxProbes, key : Keys, owner : Owners, tainted : BOOLEAN, locked : BOOLEAN]
+
+Locks == Adapter = "fm" \/ EndpointLocked
 
 TypeOK ==
     /\ worldKey \in Keys /\ gwKey \in Keys
     /\ rec \in Keys \cup {NoKey}
     /\ view \in Keys \cup {NoKey}
-    /\ recSrc \in {"none", "ok", "failed", "tainted"}
+    /\ recSrc \in {"none", "ok", "failed", "tainted", "unlocked"}
     /\ probes \subseteq Probe
     /\ started \in 0..MaxProbes
     /\ gwUp \in BOOLEAN
@@ -134,6 +174,9 @@ TypeOK ==
     /\ changes \in 0..MaxKeyChanges
     /\ crashes \in 0..MaxCrashes
     /\ cancels \in 0..MaxCancels
+    /\ refused \in BOOLEAN
+    /\ refusals \in 0..MaxRefusalChanges
+    /\ backoff \subseteq Keys
 
 Init ==
     /\ \E k \in Keys : worldKey = k /\ gwKey = k
@@ -142,33 +185,38 @@ Init ==
     /\ gwUp = TRUE
     /\ requests = 0 /\ changes = 0 /\ crashes = 0 /\ cancels = 0
     /\ respLog = {}
+    /\ refused = FALSE /\ refusals = 0 /\ backoff = {}
 
 HasProbe(k) == \E p \in probes : p.key = k
 
 Blocked(k, owner) ==
-    CASE SingleFlight = "shared" -> HasProbe(k)
+    CASE SingleFlight = "shared" -> Locks /\ \E p \in probes : p.key = k /\ p.locked
       [] SingleFlight = "gateway" -> owner = "gw" /\ \E p \in probes : p.key = k /\ p.owner = "gw"
       [] OTHER -> FALSE
 
 NewProbe(owner) ==
-    [id |-> started + 1, key |-> worldKey, owner |-> owner, tainted |-> FALSE]
+    [id |-> started + 1, key |-> worldKey, owner |-> owner, tainted |-> FALSE, locked |-> Locks]
 
 AskKey == IF KeyView = "perRequest" THEN worldKey ELSE gwKey
 
 Seen == IF ReadRecord = "fresh" THEN rec ELSE view
 
-StartsProbe == Seen # AskKey /\ ~Guess /\ ~Reject412 /\ ~Blocked(AskKey, "gw") /\ started < MaxProbes
+Refuses == PreconditionCheck /\ refused
+
+Waits == Backoff /\ AskKey \in backoff
+
+StartsProbe == Seen # AskKey /\ ~Guess /\ ~Reject412 /\ ~Refuses /\ ~Waits /\ ~Blocked(AskKey, "gw") /\ started < MaxProbes
 
 Request ==
     /\ gwUp /\ requests < MaxRequests
-    /\ Seen = AskKey \/ Guess \/ Reject412 \/ StartsProbe \/ Blocked(AskKey, "gw")
+    /\ Seen = AskKey \/ Guess \/ Reject412 \/ Refuses \/ Waits \/ StartsProbe \/ Blocked(AskKey, "gw")
     /\ requests' = requests + 1
     /\ LET k == AskKey
            present == (rec = k)
            seen == (Seen = k)
            startIt == StartsProbe
            probesAfter == IF startIt THEN probes \cup {NewProbe("gw")} ELSE probes
-           kind == IF seen \/ Guess THEN "200" ELSE IF Reject412 THEN "412" ELSE "503"
+           kind == IF seen \/ Guess THEN "200" ELSE IF Reject412 \/ Refuses THEN "412" ELSE "503"
            src == IF seen THEN "record" ELSE "guess"
        IN /\ probes' = probesAfter
           /\ started' = IF startIt THEN started + 1 ELSE started
@@ -177,26 +225,29 @@ Request ==
                  src |-> src,
                  recordPresent |-> present,
                  recordMatchesWorld |-> (rec = worldKey),
+                 refused |-> refused,
+                 backoffAfter |-> (k \in backoff),
                  probingAfter |-> (\E p \in probesAfter : p.key = k)]}
-    /\ UNCHANGED <<worldKey, gwKey, rec, recSrc, view, gwUp, changes, crashes, cancels>>
+    /\ UNCHANGED <<worldKey, gwKey, rec, recSrc, view, gwUp, changes, crashes, cancels, refused, refusals, backoff>>
 
 ManualStart ==
     /\ Manual /\ started < MaxProbes
     /\ ~Blocked(worldKey, "cli")
     /\ probes' = probes \cup {NewProbe("cli")}
     /\ started' = started + 1
-    /\ UNCHANGED <<worldKey, gwKey, rec, recSrc, view, gwUp, requests, changes, crashes, cancels, respLog>>
+    /\ UNCHANGED <<worldKey, gwKey, rec, recSrc, view, gwUp, requests, changes, crashes, cancels, respLog, refused, refusals, backoff>>
 
 EndProbe(p, ok) ==
     /\ p \in probes
     /\ probes' = probes \ {p}
     /\ IF ok /\ (~p.tainted \/ ~TaintCheck)
        THEN /\ rec' = p.key
-            /\ recSrc' = IF p.tainted THEN "tainted" ELSE "ok"
+            /\ recSrc' = IF p.tainted THEN "tainted" ELSE IF ~p.locked THEN "unlocked" ELSE "ok"
        ELSE IF ~ok /\ FailWrites
             THEN /\ rec' = p.key /\ recSrc' = "failed"
             ELSE UNCHANGED <<rec, recSrc>>
-    /\ UNCHANGED <<worldKey, gwKey, view, started, gwUp, requests, changes, crashes, cancels, respLog>>
+    /\ backoff' = IF ~ok /\ p.owner = "gw" THEN backoff \cup {p.key} ELSE backoff
+    /\ UNCHANGED <<worldKey, gwKey, view, started, gwUp, requests, changes, crashes, cancels, respLog, refused, refusals>>
 
 Succeed(p) == EndProbe(p, TRUE)
 Fail(p) == EndProbe(p, FALSE)
@@ -205,34 +256,59 @@ Cancel(p) ==
     /\ p \in probes /\ cancels < MaxCancels
     /\ probes' = probes \ {p}
     /\ cancels' = cancels + 1
-    /\ UNCHANGED <<worldKey, gwKey, rec, recSrc, view, started, gwUp, requests, changes, crashes, respLog>>
+    /\ UNCHANGED <<worldKey, gwKey, rec, recSrc, view, started, gwUp, requests, changes, crashes, respLog, refused, refusals, backoff>>
 
-KeyChange ==
+ChangeKey ==
     /\ changes < MaxKeyChanges
     /\ \E k \in Keys \ {worldKey} : worldKey' = k
     /\ changes' = changes + 1
     /\ probes' = {[p EXCEPT !.tainted = TRUE] : p \in probes}
-    /\ UNCHANGED <<gwKey, rec, recSrc, view, started, gwUp, requests, crashes, cancels, respLog>>
+    /\ UNCHANGED <<gwKey, rec, recSrc, view, started, gwUp, requests, crashes, cancels, respLog, refused, refusals, backoff>>
+
+BinaryChange == ChangeKey
+
+OsUpdate == Adapter = "fm" /\ ~gwUp /\ ChangeKey
+
+KeyChange == BinaryChange \/ OsUpdate
+
+Refuse ==
+    /\ ~refused /\ refusals < MaxRefusalChanges
+    /\ refused' = TRUE /\ refusals' = refusals + 1
+    /\ UNCHANGED <<worldKey, gwKey, rec, recSrc, view, probes, started, gwUp, requests, changes, crashes, cancels, respLog, backoff>>
+
+Fix ==
+    /\ refused /\ refusals < MaxRefusalChanges
+    /\ refused' = FALSE /\ refusals' = refusals + 1
+    /\ UNCHANGED <<worldKey, gwKey, rec, recSrc, view, probes, started, gwUp, requests, changes, crashes, cancels, respLog, backoff>>
+
+BackoffEnds(k) ==
+    /\ k \in backoff
+    /\ backoff' = backoff \ {k}
+    /\ UNCHANGED <<worldKey, gwKey, rec, recSrc, view, probes, started, gwUp, requests, changes, crashes, cancels, respLog, refused, refusals>>
 
 Crash ==
     /\ gwUp /\ crashes < MaxCrashes
     /\ gwUp' = FALSE
     /\ crashes' = crashes + 1
     /\ probes' = {p \in probes : p.owner = "cli"}
-    /\ UNCHANGED <<worldKey, gwKey, rec, recSrc, view, started, requests, changes, cancels, respLog>>
+    /\ UNCHANGED <<worldKey, gwKey, rec, recSrc, view, started, requests, changes, cancels, respLog, refused, refusals, backoff>>
 
 Restart ==
     /\ ~gwUp
     /\ gwUp' = TRUE
     /\ gwKey' = worldKey
     /\ view' = rec
-    /\ UNCHANGED <<worldKey, rec, recSrc, probes, started, requests, changes, crashes, cancels, respLog>>
+    /\ backoff' = {}
+    /\ UNCHANGED <<worldKey, rec, recSrc, probes, started, requests, changes, crashes, cancels, respLog, refused, refusals>>
 
 Next ==
     \/ Request
     \/ ManualStart
     \/ \E p \in probes : Succeed(p) \/ Fail(p) \/ Cancel(p)
     \/ KeyChange
+    \/ Refuse
+    \/ Fix
+    \/ \E k \in Keys : BackoffEnds(k)
     \/ Crash
     \/ Restart
 
@@ -246,8 +322,18 @@ NoGuessedAnswer == \A x \in respLog : x.kind = "200" => x.src = "record"
 
 (* P3: a request with no record gets 503, never 412 or 200, and the 503    *)
 (* is true: a probe for the key it asked about is running                  *)
-NoRecordGets503 == \A x \in respLog : ~x.recordPresent => x.kind = "503"
-RetryAfterIsHonest == \A x \in respLog : x.kind = "503" => x.probingAfter
+NoRecordGets503 == \A x \in respLog : ~x.recordPresent /\ ~x.refused => x.kind = "503"
+RetryAfterIsHonest == \A x \in respLog : x.kind = "503" => x.probingAfter \/ x.backoffAfter
+
+(* P8: a definite refusal of a precondition answers 412 with the remedy at *)
+(* once, never "probing"                                                   *)
+RefusalGetsRemedy == \A x \in respLog : ~x.recordPresent /\ x.refused => x.kind = "412"
+
+(* P9: no gateway probe of a key starts inside its backoff interval        *)
+NoProbeInBackoff == \A p \in probes : p.owner = "gw" => p.key \notin backoff
+
+(* P10: every record is written by a probe that held the lock of its key  *)
+RecordUnderLock == recSrc # "unlocked"
 
 (* P4: after the record is written, the next request sees it *)
 RecordSeenAtOnce == \A x \in respLog : x.recordPresent => x.kind = "200"
