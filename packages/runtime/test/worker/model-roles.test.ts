@@ -201,19 +201,14 @@ describe('the capability check of autoMode.classifier', () => {
     expect(fs.readFileSync(target, 'utf8')).toBe('x');
   });
 
-  it('guards a verdict asked of a model that cannot give one in shape: a classifier alias without structured output asks the person and names the setting, the alias and the capability', async () => {
+  it('guards a classifier refused for a capability it does not need: a classifier alias without structured output is asked like any other', async () => {
     const { env, target, write } = await autoSetup('judge');
     env.gateway.capabilitiesByAlias['judge'] = capabilitiesFor(100_000, { structuredOutput: 'none' });
-    env.gateway.script.push(write);
+    env.gateway.script.push(write, textStep(VERDICT), textStep('Written.'));
     const run = env.enqueue('Write out.txt');
     await env.runOnce(env.worker());
-    expect(env.run(run.id).status).toBe('WAITING_HUMAN');
-    expect(env.gateway.streams).toHaveLength(1);
-    const [classified] = env.ofType(run.id, 'tool.permission.classified');
-    expect(classified).toMatchObject({ outcome: 'ask' });
-    expect(classified?.failure).toContain('autoMode.classifier');
-    expect(classified?.failure).toContain('judge');
-    expect(classified?.failure).toContain('structured output');
-    expect(fs.existsSync(target)).toBe(false);
+    expect(env.gateway.streams[1]?.body.model).toBe('judge');
+    expect(env.ofType(run.id, 'tool.permission.classified')).toMatchObject([{ outcome: 'allow', alias: 'judge' }]);
+    expect(fs.readFileSync(target, 'utf8')).toBe('x');
   });
 });

@@ -7,6 +7,7 @@ import type {
   FunctionCallItem,
   ItemField,
   ItemStatus,
+  JsonReplyPath,
   MessageItem,
   ContentPart,
   ReasoningItem,
@@ -48,6 +49,7 @@ export type ResponseEmitterOptions = {
   retryAfterMs?: number;
   wraps?: ReadonlyMap<string, WrapRecord>;
   narrowings?: readonly SchemaNarrowing[];
+  jsonReply?: JsonReplyPath | undefined;
 };
 
 const newId = (prefix: string, clock: Clock): string => `${prefix}_${uuidv7(clock).replaceAll('-', '')}`;
@@ -58,7 +60,9 @@ const contextHint = (contextInputTokens: number | undefined): { contextInputToke
 const narrowingsHint = (narrowings: readonly SchemaNarrowing[] | undefined): { schemaNarrowings?: SchemaNarrowing[] } =>
   narrowings === undefined || narrowings.length === 0 ? {} : { schemaNarrowings: [...narrowings] };
 
-const cacheWriteHint = (cacheWriteInputTokens: number | undefined): { cacheWriteInputTokens?: number } =>
+const jsonReplyHint = (jsonReply: JsonReplyPath | undefined): { jsonReply?: JsonReplyPath } => (jsonReply === undefined ? {} : { jsonReply });
+
+const cacheWriteHint =(cacheWriteInputTokens: number | undefined): { cacheWriteInputTokens?: number } =>
   cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens };
 
 export class ResponseEmitter {
@@ -297,6 +301,7 @@ export class ResponseEmitter {
         ...contextHint(contextInputTokens),
         ...cacheWriteHint(cacheWriteInputTokens),
         ...narrowingsHint(this.options.narrowings),
+        ...jsonReplyHint(this.options.jsonReply),
       },
     });
     this.ended = true;
@@ -312,6 +317,7 @@ export class ResponseEmitter {
         ...contextHint(contextInputTokens),
         ...cacheWriteHint(cacheWriteInputTokens),
         ...narrowingsHint(this.options.narrowings),
+        ...jsonReplyHint(this.options.jsonReply),
       },
     });
     this.ended = true;

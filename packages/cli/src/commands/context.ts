@@ -18,8 +18,8 @@ import {
 import type { BenchmarkResult, GuidelineCompletion, GuidelineCompletionRequest, ImproveInput, Transcript } from '@momonga/eval';
 import { codeDigestOfRunningProcess } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { ESTIMATED_CHARACTERS_PER_TOKEN, LOWEST_REASONING_EFFORT, assistantTextOf, requireStructuredOutput, summaryTokenCapFor } from '@momonga/protocol';
-import type { AliasCapabilities, CreateResponseBody, GuidelineView, GuidelinesResponse, StreamEvent } from '@momonga/protocol';
+import { ESTIMATED_CHARACTERS_PER_TOKEN, LOWEST_REASONING_EFFORT, jsonReplyOf, summaryTokenCapFor } from '@momonga/protocol';
+import type { AliasCapabilities, CreateResponseBody, GuidelineView, GuidelinesResponse, ResponseResource, StreamEvent } from '@momonga/protocol';
 import type { RuntimeClient } from '../client/runtime-client.ts';
 import { createGatewayClient as createCliGatewayClient } from '../client/gateway-client.ts';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
@@ -51,10 +51,9 @@ const RECORD_WINDOW_SHARE = 4;
 const recordCharsFor = (capabilities: AliasCapabilities): number =>
   ESTIMATED_CHARACTERS_PER_TOKEN * Math.max(0, Math.floor((capabilities.contextWindow - capabilities.maxOutputTokens) / RECORD_WINDOW_SHARE));
 
-const terminalResponseOf = (events: readonly StreamEvent[]): Extract<StreamEvent, { type: 'response.completed' }>['response'] => {
+export const terminalResponseOf = (events: readonly StreamEvent[]): ResponseResource => {
   for (const event of events) {
-    if (event.type === 'response.completed') return event.response;
-    if (event.type === 'response.incomplete') throw new ContextImproveError(`the model reply was cut short: ${event.response.incomplete_details?.reason ?? 'no reason given'}`);
+    if (event.type === 'response.completed' || event.type === 'response.incomplete') return event.response;
     if (event.type === 'response.failed') throw new ContextImproveError(`the model call failed: ${event.response.error.code}: ${event.response.error.message}`);
     if (event.type === 'error') throw new ContextImproveError(`the model call failed: ${event.error.code}: ${event.error.message}`);
   }
@@ -94,7 +93,7 @@ const completerFor = async (ports: CliPorts, paths: MomongaPaths, alias: string,
     const response = terminalResponseOf(events);
     if (response.usage === null) throw new ContextImproveError('the model response carries no usage, so its tokens cannot be charged');
     return {
-      text: assistantTextOf(response.output),
+      ...jsonReplyOf(response),
       usage: { inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens, totalTokens: response.usage.total_tokens },
       detail: billedDetailOf(response.usage, response.momonga, timing, response.id),
     };
@@ -109,12 +108,8 @@ export type AnalysisModelInput = {
 };
 
 export const analysisModelFor = async (input: AnalysisModelInput): Promise<{ alias: string; capabilities: AliasCapabilities }> => {
-  const roleAlias = input.roles.analysis;
-  const alias = roleAlias ?? input.alias;
-  const capabilities = await input.capabilitiesOf(alias);
-  const structured = requireStructuredOutput(capabilities, roleAlias === undefined ? 'the --alias option' : 'models.roles.analysis', alias);
-  if (!structured.ok) throw new ContextImproveError(structured.reason);
-  return { alias, capabilities };
+  const alias = input.roles.analysis ?? input.alias;
+  return { alias, capabilities: await input.capabilitiesOf(alias) };
 };
 
 export type ImproveInputSource = {

@@ -7,7 +7,9 @@ import type { ClaimContext } from '../../src/worker/claim-context.ts';
 import { capabilitiesFor, makeEnv } from './harness.ts';
 import type { BatchInput, Env } from './harness.ts';
 import { GatewayRequestError } from '../../src/gateway-client.ts';
-import { callsStep, failedStep, textStep } from './scripts.ts';
+import { canonicalJson } from '@momonga/foundation';
+import { CLASSIFIER_VERDICT_SCHEMA } from '@momonga/protocol';
+import { assistantMessage, callsStep, failedStep, incompleteStep, textStep } from './scripts.ts';
 
 const verdict = (overrides: Record<string, unknown> = {}): string =>
   JSON.stringify({ verdict: 'safe', confidence: 'high', rationale: 'writes a file the user asked for', ...overrides });
@@ -70,6 +72,7 @@ describe('auto mode in the worker', () => {
   it.each([
     ['a malformed reply', textStep('not json'), 'not JSON'],
     ['a failed upstream response', failedStep('server_error'), 'server_error'],
+    ['a reply that is not a value of the schema', textStep('{}'), 'output failed the schema'],
   ])('asks the person after %s and records the failure', async (_label, reply, fragment) => {
     const { env, write } = await setup();
     env.gateway.script.push(write, reply);
@@ -93,18 +96,42 @@ describe('auto mode in the worker', () => {
     expect(env.gateway.streams).toHaveLength(1);
   });
 
-  it('asks the person, with no classifier call, when the classifier alias has no structured output', async () => {
-    const { env, write } = await setup();
+  it('calls the classifier and allows a safe plain-text verdict when its alias has no structured output', async () => {
+    const { env, target, write } = await setup();
     env.gateway.capabilitiesByAlias['guard'] = capabilitiesFor(env.gateway.capabilitiesValue.contextWindow, { structuredOutput: 'none' });
-    env.gateway.script.push(write);
+    env.gateway.script.push(write, textStep(verdict()), textStep('Written.'));
+    const run = env.enqueue('Write out.txt');
+    await env.runOnce(env.worker());
+    expect(env.gateway.streams).toHaveLength(3);
+    expect(env.gateway.streams[1]?.body.text?.format).toMatchObject({ type: 'json_schema' });
+    expect(env.ofType(run.id, 'tool.permission.classified')).toMatchObject([{ outcome: 'allow', alias: 'guard', verdict: 'safe' }]);
+    expect(fs.readFileSync(target, 'utf8')).toBe('x');
+  });
+
+  it('sends the classifier instructions with the contract of the verdict schema at the end', () => {
+    expect(CLASSIFIER_INSTRUCTIONS.endsWith(canonicalJson(CLASSIFIER_VERDICT_SCHEMA))).toBe(true);
+  });
+
+  it.each([
+    ['a code fence', textStep(`\`\`\`json\n${verdict()}\n\`\`\``)],
+    ['prose around the object', textStep(`The verdict: ${verdict()}`)],
+    ['two objects', textStep(`${verdict()}${verdict()}`)],
+    ['an extra field', textStep(verdict({ extra: 1 }))],
+    ['a missing field', textStep(JSON.stringify({ verdict: 'safe', confidence: 'high' }))],
+    ['a wrong enum', textStep(verdict({ verdict: 'maybe' }))],
+    ['an incomplete response', incompleteStep([assistantMessage('m1', verdict())])],
+  ])('asks the person after %s, once, with the schema reason and the charge', async (_label, reply) => {
+    const { env, target, write } = await setup();
+    env.gateway.script.push(write, reply);
     const run = env.enqueue('Write out.txt');
     await env.runOnce(env.worker());
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
+    expect(env.gateway.streams).toHaveLength(2);
     const [classified] = env.ofType(run.id, 'tool.permission.classified');
-    expect(classified).toMatchObject({ outcome: 'ask', alias: 'guard' });
-    expect(classified?.failure).toContain('autoMode.classifier');
-    expect(classified?.failure).toContain('structured output');
-    expect(env.gateway.streams).toHaveLength(1);
+    expect(classified).toMatchObject({ outcome: 'ask' });
+    expect(classified?.failure).toMatch(/^output failed the schema/);
+    expect(env.ofType(run.id, 'usage.charged').filter((event) => event.purpose === 'permission_classifier')).toHaveLength(1);
+    expect(fs.existsSync(target)).toBe(false);
   });
 
   it('does not use the classifier for a deny rule', async () => {

@@ -1,7 +1,7 @@
-import { canonicalJson, computeBackoff, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, computeBackoff, readJsonReply, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { normalizeMemoryText } from '@momonga/memory';
-import { LOWEST_REASONING_EFFORT, assistantTextOf, requireStructuredOutput, summaryTokenCapFor } from '@momonga/protocol';
+import { LOWEST_REASONING_EFFORT, jsonReplyOf, summaryTokenCapFor } from '@momonga/protocol';
 import type { BilledDetail, CallTiming, CreateResponseBody, MomongaResponseExtension, ReflectionDrop, Usage } from '@momonga/protocol';
 import { memoryTextProblem } from '@momonga/tools';
 import type { ContextChargeInput, RuntimeStore, SaveCandidateInput } from '@momonga/store';
@@ -14,7 +14,7 @@ import type { ModelResult } from '../worker/model-stream.ts';
 import { MemoryEvidenceError, bindMemoryEvidence, readGitHead } from './evidence.ts';
 import type { EvidenceRun } from './evidence.ts';
 import { REFLECTION_INSTRUCTIONS } from './reflection-input.ts';
-import { REFLECTION_REPLY_SCHEMA, parseReflectionReply } from './reflection-reply.ts';
+import { REFLECTION_REPLY_SCHEMA, validateReflectionReply } from './reflection-reply.ts';
 
 export type ReflectorOptions = {
   store: Pick<RuntimeStore, 'reflection' | 'memories' | 'contextCharges' | 'getRun' | 'getSession' | 'readRunEventsOfTypes' | 'journalFacts'>;
@@ -171,11 +171,6 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     const pins = readPins(started.pins);
     const alias = pins.roles.reflection ?? pins.modelAlias;
     const capabilities = await gateway.capabilities(alias, { signal });
-    const structured = requireStructuredOutput(capabilities, pins.roles.reflection === undefined ? 'the model of the run' : 'models.roles.reflection', alias);
-    if (!structured.ok) {
-      store.reflection.complete({ runId, charge: null, candidates: keptFacts, dropped, reason: structured.reason });
-      return;
-    }
     const { input: recordedRun } = await store.journalFacts.reflectionInput({ runId, project, capabilities }, signal);
     const body: CreateResponseBody = {
       model: alias,
@@ -208,7 +203,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       store.reflection.complete({ runId, charge: ledger.unrecorded ?? null, candidates: [...keptFacts, ...candidates], dropped, ...(reason === undefined ? {} : { reason }) });
       delete ledger.unrecorded;
     };
-    const parsed = parseReflectionReply(assistantTextOf(terminal.response.output));
+    const parsed = readJsonReply(validateReflectionReply, jsonReplyOf(terminal.response));
     if ('error' in parsed) {
       settle([], parsed.error);
       return;
@@ -216,13 +211,13 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
     known = knownTexts();
     for (const fact of keptFacts) known.add(normalizeMemoryText(fact.text));
     const accepted: SaveCandidateInput[] = [];
-    for (const [index, candidate] of parsed.candidates.entries()) {
+    for (const [index, candidate] of parsed.value.candidates.entries()) {
       const screened = await screen(facts.length + index, candidate.text, candidate.kind, candidate.paths);
       if (screened !== undefined) accepted.push(screened);
     }
     signal.throwIfAborted();
     const nothingKept = keptFacts.length + accepted.length === 0;
-    const reason = !nothingKept ? undefined : parsed.candidates.length === 0 ? NO_CANDIDATES_REASON : ALL_DROPPED_REASON;
+    const reason = !nothingKept ? undefined : parsed.value.candidates.length === 0 ? NO_CANDIDATES_REASON : ALL_DROPPED_REASON;
     settle(accepted, reason);
   };
 

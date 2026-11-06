@@ -1,13 +1,20 @@
 import { isRecord } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
-import type { AdapterRequest, SchemaNarrowing, StreamEvent, Usage, WrapRecord } from '@momonga/protocol';
+import type { AdapterRequest, JsonReplyPath, SchemaNarrowing, StreamEvent, Usage, WrapRecord } from '@momonga/protocol';
 import { forbidsTools } from '../../core/tool-choice.ts';
 import { StreamFailure, UpstreamProtocolError } from '../shared/failures.ts';
 import { parseUpstreamJson } from '../shared/upstream-json.ts';
 import { MAX_NDJSON_LINE_BYTES, MAX_TOOL_CALLS } from '../shared/limits.ts';
 import { ResponseEmitter } from '../shared/response-emitter.ts';
 
-export type OllamaStreamOptions = { request: AdapterRequest; clock: Clock; retryAfterMs?: number; wraps?: ReadonlyMap<string, WrapRecord>; narrowings?: readonly SchemaNarrowing[] };
+export type OllamaStreamOptions = {
+  request: AdapterRequest;
+  clock: Clock;
+  retryAfterMs?: number;
+  wraps?: ReadonlyMap<string, WrapRecord>;
+  narrowings?: readonly SchemaNarrowing[];
+  jsonReply?: JsonReplyPath | undefined;
+};
 
 const invalid = (what: string): UpstreamProtocolError => new UpstreamProtocolError(`the upstream sent a malformed chunk: ${what}`);
 
@@ -46,7 +53,7 @@ class OllamaStreamDriver {
   private finished = false;
 
   constructor(options: OllamaStreamOptions) {
-    this.emitter = new ResponseEmitter({ clock: options.clock, model: options.request.model, request: options.request, ...(options.wraps === undefined ? {} : { wraps: options.wraps }), ...(options.narrowings === undefined ? {} : { narrowings: options.narrowings }), ...(options.retryAfterMs === undefined ? {} : { retryAfterMs: options.retryAfterMs }) });
+    this.emitter = new ResponseEmitter({ clock: options.clock, model: options.request.model, request: options.request, ...(options.wraps === undefined ? {} : { wraps: options.wraps }), ...(options.narrowings === undefined ? {} : { narrowings: options.narrowings }), jsonReply: options.jsonReply, ...(options.retryAfterMs === undefined ? {} : { retryAfterMs: options.retryAfterMs }) });
     this.toolsAllowed = !forbidsTools(options.request.tool_choice);
   }
 

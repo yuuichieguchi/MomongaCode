@@ -2,7 +2,7 @@ import { AUTO_MODE_DATASET_TEXT, autoFitDirectoryOf, autoFitKeyOf, autoFitViewOf
 import type { UserModels } from '@momonga/config';
 import { autoGateRecordOf, caseSettingsFor, formatReport, parseDataset, runDataset } from '@momonga/eval';
 import type { GoldenDataset } from '@momonga/eval';
-import { autoModeNotice, requireStructuredOutput } from '@momonga/protocol';
+import { autoModeNotice } from '@momonga/protocol';
 import type { AutoModeSurface } from '@momonga/protocol';
 import { createHomes, liveSettingsFor, readCredentials, sweepStaleHomes, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects, ReflectionBounds } from '../eval/context-host.ts';
@@ -44,17 +44,12 @@ const classifierOf = (configured: string | undefined, named: string | undefined)
   return classifier;
 };
 
-const unsupportedReasonOf = (models: UserModels, classifier: string): string | undefined => {
+const requireDefinedClassifier = (models: UserModels, classifier: string): void => {
   const members = models.resolved.aliases[classifier];
   if (members === undefined) throw new AutoModeCheckError(`the alias ${classifier} is not defined in models.aliases`);
   for (const name of [members].flat()) {
-    const target = models.resolved.targets[name];
-    if (target === undefined) throw new AutoModeCheckError(`the alias ${classifier} names the target ${name}, which is not defined`);
-    if (target.adapter === 'fm') continue;
-    const verdict = requireStructuredOutput(target.capabilities, 'auto-mode check', classifier);
-    if (!verdict.ok) return `${verdict.reason}; nothing was measured and no record was written`;
+    if (models.resolved.targets[name] === undefined) throw new AutoModeCheckError(`the alias ${classifier} names the target ${name}, which is not defined`);
   }
-  return undefined;
 };
 
 const classifierCodeOf = async () => (await import('@momonga/runtime')).AUTO_CLASSIFIER_CODE;
@@ -73,11 +68,7 @@ export const autoModeCheck = async (ports: AutoModeCheckPorts, options: AutoMode
   const { signal } = options;
   signal?.throwIfAborted();
   const classifier = classifierOf(ports.configuredClassifier, options.classifier);
-  const unsupported = unsupportedReasonOf(ports.models, classifier);
-  if (unsupported !== undefined) {
-    ports.write(`${unsupported}\n`);
-    return { measurement: 'unmeasurable' };
-  }
+  requireDefinedClassifier(ports.models, classifier);
   const dataset = parseDataset(AUTO_MODE_DATASET_TEXT, 'auto-mode.json');
   const key = autoFitKeyOf(ports.models.resolved, classifier, await classifierCodeOf());
   const settings = liveSettingsFor(ports.models, [options.agent, classifier]);
