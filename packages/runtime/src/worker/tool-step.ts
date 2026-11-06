@@ -129,7 +129,6 @@ const requestApproval = (ctx: ClaimContext, outcome: NeedsApprovalOutcome): void
   const created = options.store.requestApproval(ctx.claim, {
     callId: outcome.callId,
     options: approvalOptions(outcome.suggestedRule),
-    expiresAt: Math.min(options.clock.now() + ctx.limits.approvalTtlMs, ctx.run.deadlineAt),
     event: {
       subjectDigest: outcome.subjectDigest,
       reason: outcome.decision.reason,
