@@ -84,7 +84,7 @@ export const measureWindow = async (home: E2eHome, fake: Pick<FakeChatCompletion
   if (personRequest === undefined) throw new Error('the prefix probe never reached the upstream');
   const calibrationFile = path.join(home.root, 'calibration.json');
   fs.writeFileSync(calibrationFile, calibrationDataset());
-  const calibration = await runCli(home, ['eval', 'context', calibrationFile, '--model', 'fake', '--alias', 'default'], { cwd: home.project, boundMs });
+  const calibration = await runCli(home, ['eval', 'context', calibrationFile, '--alias', 'default'], { cwd: home.project, boundMs });
   if (calibration.code !== 0) throw new Error(`the calibration run exited with ${String(calibration.code)}\n${calibration.stdout}\n${calibration.stderr}`);
   const [small, large] = CALIBRATION_LINE_COUNTS.map((lines) => ({ lines, ...firstRequestAndRead(fake, calibrationTask(lines)) }));
   if (small === undefined || large === undefined) throw new Error('the calibration needs two file sizes');

@@ -107,6 +107,7 @@ export const baseSettings = (home: E2eHome, sandbox: StackSandbox): Record<strin
         adapter: 'chat-completions',
         provider: 'fake',
         model: UPSTREAM_MODEL,
+        answers: 'script',
         socketPath: home.upstreamSocket,
         capabilities: { contextWindow: UPSTREAM_CONTEXT_WINDOW, maxOutputTokens: 1024 },
       },
