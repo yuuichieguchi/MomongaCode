@@ -416,6 +416,8 @@ export const SETTINGS_SCHEMA = {
           additionalProperties: MODEL_TARGET_SCHEMA,
         },
         dialects: { type: 'object', additionalProperties: DIALECT_DEFINITION_SCHEMA },
+        headersTimeoutMs: NON_NEGATIVE_INTEGER,
+        idleTimeoutMs: NON_NEGATIVE_INTEGER,
         billingChanges: {
           type: 'array',
           items: {

@@ -255,6 +255,8 @@ export type ModelsSettings = {
   targets?: Record<string, ModelTarget>;
   dialects?: Record<string, DialectDefinition>;
   roles?: ModelRoles;
+  headersTimeoutMs?: number;
+  idleTimeoutMs?: number;
 };
 
 export type SandboxSetting = 'seatbelt' | 'bubblewrap' | 'none';
