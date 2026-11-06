@@ -86,6 +86,24 @@ describe('ollama stream: done_reason', () => {
   });
 });
 
+describe('ollama stream: counts that Ollama omits when they are zero', () => {
+  it('reads an absent eval_count as zero output tokens', async () => {
+    const { events, error } = await streamOf([chunkLine({ content: '' }), withoutField(doneLine({ prompt_eval_count: 70, eval_count: 0 }), 'eval_count')]);
+    expect(error).toBeUndefined();
+    expect(expectSpecValid(events)).toEqual([]);
+    const terminal = terminalOf(events);
+    expect(terminal.type).toBe('response.completed');
+    expect(terminal.response.usage).toEqual(usageFromCounts(70, 0, 0));
+  });
+
+  it('reads an absent prompt_eval_count as zero input tokens', async () => {
+    const { events } = await streamOf([chunkLine({ content: 'hi' }), withoutField(doneLine({ prompt_eval_count: 0, eval_count: 3 }), 'prompt_eval_count')]);
+    const terminal = terminalOf(events);
+    expect(terminal.type).toBe('response.completed');
+    expect(terminal.response.usage).toEqual(usageFromCounts(0, 3, 0));
+  });
+});
+
 describe('ollama stream: upstream protocol errors (nothing is defaulted)', () => {
   const expectProtocolError = (events: any[], error: unknown) => {
     expect(error).toBeUndefined();
@@ -105,7 +123,14 @@ describe('ollama stream: upstream protocol errors (nothing is defaulted)', () =>
     expect(ofType(events, 'response.output_item.done').filter((event) => event.item.type === 'function_call')).toEqual([]);
   });
 
-  for (const field of ['done_reason', 'prompt_eval_count', 'eval_count']) {
+  for (const field of ['prompt_eval_count', 'eval_count']) {
+    it(`fails a done chunk whose ${field} is present and not a non-negative integer`, async () => {
+      const { events, error } = await streamOf([chunkLine({ content: 'hello' }), doneLine({ [field]: 'many' })]);
+      expectProtocolError(events, error);
+    });
+  }
+
+  for (const field of ['done_reason']) {
     it(`fails a done chunk without ${field}`, async () => {
       const { events, error } = await streamOf([chunkLine({ content: 'hello' }), withoutField(doneLine(), field)]);
       expectProtocolError(events, error);
