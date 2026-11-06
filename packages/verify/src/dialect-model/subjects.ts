@@ -1,6 +1,6 @@
 import { BUILTINS, classOf, OPS, resolveRules, type Definition, type Op } from './definition.ts';
 import { genDefinition, singleRuleDefinition } from './definition-gen.ts';
-import { checkCase, describeMinimised, emptyStats, minimise, type CheckClass, type CheckStats } from './harness.ts';
+import { checkCase, type CaseInput, describeMinimised, emptyStats, minimise, type CheckClass, type CheckStats } from './harness.ts';
 import { createRng, hashString } from './prng.ts';
 import { generateCase } from './schema-gen.ts';
 
@@ -91,7 +91,7 @@ const causeTag = (schema: unknown): string => {
   return [...found].sort().join('+');
 };
 
-export const runSubject = (spec: SubjectSpec, schemas: number, seed: number, log: (line: string) => void): SubjectReport => {
+export const runSubject = (spec: SubjectSpec, schemas: number, seed: number, log: (line: string) => void, renderer?: CaseInput['renderer']): SubjectReport => {
   const stats = emptyStats();
   const clusters = new Map<string, Cluster>();
   const baseSeed = (hashString(spec.name) ^ Math.imul(seed, 2654435761)) >>> 0;
@@ -125,6 +125,7 @@ export const runSubject = (spec: SubjectSpec, schemas: number, seed: number, log
         cls: variant.cls,
         seed: baseSeed ^ (index * 977),
         perDocument: 14,
+        ...(renderer === undefined ? {} : { renderer }),
       };
       const sink = emptyStats();
       const failure = checkCase({ ...input, stats: sink });

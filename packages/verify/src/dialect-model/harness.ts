@@ -144,6 +144,7 @@ export interface CaseInput {
   perDocument: number;
   forcedInstances?: readonly Json[];
   stats?: CheckStats;
+  renderer?: (schema: Json | null, definition: Definition, site: Site) => Rendered;
 }
 
 const standaloneNode = (node: Schema, root: Schema): Json | undefined => {
@@ -208,10 +209,11 @@ const noteAjv = (stats: CheckStats, ajv: ((value: Json) => boolean | null) | nul
 
 const checkCaseUnguarded = (input: CaseInput): Failure | null => {
   const { schema, site, definition, cls, stats } = input;
+  const renderer = input.renderer ?? render;
   const snapshot = clone(schema);
-  const first = render(schema, definition, site);
+  const first = renderer(schema, definition, site);
   if (!deepEqual(schema, snapshot)) return { kind: 'original-mutated', detail: 'render changed its input' };
-  if (!sameRender(first, render(schema, definition, site))) return { kind: 'nondeterministic', detail: 'two renders differ' };
+  if (!sameRender(first, renderer(schema, definition, site))) return { kind: 'nondeterministic', detail: 'two renders differ' };
   const original: Schema = schema === null ? undefined : schema;
   const rng = createRng(input.seed);
   if (stats !== undefined) stats.schemas += 1;
@@ -403,7 +405,7 @@ export const minimise = (input: CaseInput, failure: Failure): Minimised => {
     while (progressed) {
       progressed = false;
       for (const candidate of instanceCandidates(instance)) {
-        if (instanceFails(current, input.site, input.definition, failure.kind, candidate)) {
+        if (instanceFails(current, input.site, input.definition, failure.kind, candidate, input.renderer ?? render)) {
           instance = candidate;
           reduced = { ...reduced, instance: candidate };
           progressed = true;
@@ -412,12 +414,12 @@ export const minimise = (input: CaseInput, failure: Failure): Minimised => {
       }
     }
   }
-  const rendered = render(current, input.definition, input.site);
+  const rendered = (input.renderer ?? render)(current, input.definition, input.site);
   return { schema: current, site: input.site, definition: input.definition, cls: input.cls, failure: reduced, rendered };
 };
 
-const instanceFails = (schema: Json, site: Site, definition: Definition, kind: FailureKind, instance: Json): boolean => {
-  const result = render(schema, definition, site);
+const instanceFails = (schema: Json, site: Site, definition: Definition, kind: FailureKind, instance: Json, renderer: NonNullable<CaseInput['renderer']>): boolean => {
+  const result = renderer(schema, definition, site);
   const validOriginal = validators.compile(schema);
   if (!result.ok) return kind === 'false-unsatisfiable' && validOriginal(instance);
   const validRendered = validators.compile(result.schema);
