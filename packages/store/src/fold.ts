@@ -11,13 +11,11 @@ import {
   withMessage,
   withReplacedThrough,
   withTaskText,
-  withTouched,
   withWritten,
 } from '@momonga/protocol';
 import type { InputItem, ReconciledOutcome, RunEvent, RunEventPayload, RunState, StopReason, ToolFile, WorkingFacts } from '@momonga/protocol';
 import { applyInheritance } from './inherit.ts';
 import { isRecord } from './rows.ts';
-import { touchedTargetsOf } from './touched.ts';
 
 type PendingCall = RunState['pendingCalls'][string];
 type HistoryEntry = RunState['history'][number];
@@ -397,7 +395,6 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
           [event.callId]: { name: event.name, providerCallId: event.providerCallId, arguments: event.rawInput, status: 'requested' },
         },
         toolCallCounts: { ...state.toolCallCounts, [key]: (state.toolCallCounts[key] ?? 0) + 1 },
-        workingFacts: touchedTargetsOf(event).reduce(withTouched, state.workingFacts),
       };
     }
     case 'tool.permission.classified': {

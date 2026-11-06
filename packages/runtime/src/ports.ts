@@ -61,11 +61,16 @@ export type SkillsPort = {
   load(session: Session): Promise<SkillSet>;
 };
 
+export type RecallCapacity = { capabilities: Capabilities; memoryShare?: number | undefined };
+
+export type RecallRequest = { query: string; capacity: RecallCapacity; pinnedIds?: readonly string[] };
+
 export type MemorySet = {
-  memories: readonly MemoryView[];
-  rank(query: string): readonly MemoryView[];
+  prepare(request: RecallRequest): Promise<void>;
+  ranked(): readonly MemoryView[];
+  hasMore(): boolean;
+  matchCap(): number | undefined;
   tools: readonly AnyTool[];
-  markUsed(ids: readonly string[]): void;
 };
 
 export type MemoryPort = {

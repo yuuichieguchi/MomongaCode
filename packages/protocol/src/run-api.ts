@@ -4,7 +4,7 @@ import { HOOK_EVENTS, HOOK_OUTCOMES, HOOK_PRE_TOOL_DECISIONS } from './hooks.ts'
 import { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
 import { CACHE_MISS_CAUSES, PREFIX_EVENTS } from './prefix-events.ts';
 import type { PrefixEvent } from './prefix-events.ts';
-import { MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES, REFLECTION_DROP_CAUSES, REFLECTION_JOB_STATES } from './memory.ts';
+import { MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES, REFLECTION_DROP_CAUSES, REFLECTION_JOB_STATES, VALIDITY_CLOSERS } from './memory.ts';
 import type { ContextChargePurpose, SummaryFidelity, SummarySource } from './context-record.ts';
 import { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES } from './permission-denial.ts';
 import { RECOVERY_CAUSES, RECOVERY_OUTCOMES, REPORT_PAGE_ROWS } from './reliability.ts';
@@ -386,6 +386,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
       files: toolFiles,
       command: string,
       windowShared: { type: 'boolean', const: true },
+      memories: { type: 'array', items: string },
       exitCode: integer,
       formatted: closed({ formatter: string, version: integer }, ['formatter', 'version']),
     },
@@ -760,6 +761,26 @@ const ruleSize = closed(
   ['target', 'contextWindow', 'tokens', 'percent'],
 );
 
+const memoryValidity = closed(
+  {
+    intervals: {
+      type: 'array',
+      items: closed(
+        { status: enumOf(MEMORY_STATUSES), from: integer, to: nullable(integer), closedBy: nullable(enumOf(VALIDITY_CLOSERS)) },
+        ['status', 'from', 'to', 'closedBy'],
+      ),
+    },
+    changes: {
+      type: 'array',
+      items: closed(
+        { from: enumOf(MEMORY_STATUSES), to: enumOf(MEMORY_STATUSES), changedBetween: { type: 'array', items: integer, minItems: 2, maxItems: 2 } },
+        ['from', 'to', 'changedBetween'],
+      ),
+    },
+  },
+  ['intervals', 'changes'],
+);
+
 const memoryView = closed(
   {
     id: string,
@@ -769,7 +790,7 @@ const memoryView = closed(
     text: string,
     source: memorySource,
     createdAt: integer,
-    lastUsedAt: integer,
+    keptAt: integer,
     kind: enumOf(MEMORY_KINDS),
     state: enumOf(MEMORY_STATES),
     duplicateOf: nullable(string),
@@ -779,6 +800,8 @@ const memoryView = closed(
     evidence: { type: 'array', items: memoryEvidence },
     status: enumOf(MEMORY_STATUSES),
     contributedAt: nullable(integer),
+    observedStatus: nullable(enumOf(MEMORY_STATUSES)),
+    validity: memoryValidity,
   },
   [
     'id',
@@ -788,7 +811,7 @@ const memoryView = closed(
     'text',
     'source',
     'createdAt',
-    'lastUsedAt',
+    'keptAt',
     'kind',
     'state',
     'duplicateOf',
@@ -1236,7 +1259,7 @@ export const RUN_API_SCHEMAS = {
   CostReport: root(costReportView),
   CostBreakdown: root(costBreakdownView),
   MemoryView: root(memoryView),
-  MemoriesResponse: root(closed({ memories: { type: 'array', items: memoryView } }, ['memories'])),
+  MemoriesResponse: root(closed({ memories: { type: 'array', items: memoryView }, next: nullable(string) }, ['memories'])),
   MemoryResponse: root(closed({ memory: memoryView }, ['memory'])),
   ReflectionResponse: root(closed({ job: nullable(reflectionJobView) }, ['job'])),
   RunAnsweredBy: root(

@@ -71,6 +71,7 @@ export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
           ...(result.files === undefined ? {} : { files: result.files }),
           ...(result.command === undefined ? {} : { command: result.command }),
           ...(result.windowShared === undefined ? {} : { windowShared: result.windowShared }),
+          ...(result.memories === undefined ? {} : { memories: result.memories }),
           ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
         }
       : {

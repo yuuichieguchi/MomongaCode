@@ -41,16 +41,22 @@ const fileFinding = async (entry: Extract<MemoryEvidence, { kind: 'file' }>, con
 
 const commitIsAncestor = async (entries: readonly Extract<MemoryEvidence, { kind: 'commit' }>[], context: MemoryStatusContext): Promise<boolean> => {
   if (!context.trusted) return false;
-  const answers = await Promise.all(entries.map((entry) => context.ports.isAncestor(entry.sha)));
-  return answers.every((answer) => answer === true);
+  for (const entry of entries) {
+    if ((await context.ports.isAncestor(entry.sha)) !== true) return false;
+  }
+  return true;
 };
 
 export const memoryStatus = async (memory: { evidence: readonly MemoryEvidence[] }, context: MemoryStatusContext): Promise<MemoryStatus> => {
   const files = memory.evidence.filter((entry): entry is Extract<MemoryEvidence, { kind: 'file' }> => entry.kind === 'file');
   if (files.length > 0) {
-    const findings = await Promise.all(files.map((entry) => fileFinding(entry, context)));
-    if (findings.includes('contradicts')) return 'stale';
-    return findings.includes('unchecked') ? 'unverifiable' : 'verified';
+    let unchecked = false;
+    for (const entry of files) {
+      const finding = await fileFinding(entry, context);
+      if (finding === 'contradicts') return 'stale';
+      if (finding === 'unchecked') unchecked = true;
+    }
+    return unchecked ? 'unverifiable' : 'verified';
   }
   const commits = memory.evidence.filter((entry): entry is Extract<MemoryEvidence, { kind: 'commit' }> => entry.kind === 'commit');
   if (commits.length === 0) return 'unbound';

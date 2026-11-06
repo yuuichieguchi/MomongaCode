@@ -167,6 +167,7 @@ export type RunEventPayload =
       files?: ToolFile[];
       command?: string;
       windowShared?: true;
+      memories?: string[];
       exitCode?: number;
       formatted?: { formatter: string; version: number };
     }

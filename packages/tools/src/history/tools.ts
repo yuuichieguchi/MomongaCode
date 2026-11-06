@@ -28,9 +28,9 @@ export const createHistoryTools = ({ port, trusted, project }: HistoryToolsOptio
     name: HISTORY_SEARCH_TOOL_NAME,
     tier: 'optional',
     description:
-      'Searches the recorded history of earlier runs and sessions for all the given words. Returns run ids, seq ranges and short snippets, best matches first; use HistoryRead with a run id and seq range to read the recorded events. Scope project (the default) searches this project; scope all also reaches other trusted projects and asks for approval first.',
+      'Searches the recorded history of earlier runs and sessions for all the given words. The results are grouped in three levels: the session, its runs, and the steps of each run that match. Returns run ids, seq ranges and short snippets, best matches first; use HistoryRead with a run id and seq range to read the recorded events. Scope project (the default) searches this project; scope all also reaches other trusted projects and asks for approval first.',
     conciseDescription:
-      'Searches earlier runs for all the given words; returns run ids, seq ranges and snippets. Read the events with HistoryRead. scope: project (default) or all, which asks for approval.',
+      'Searches earlier runs for all the given words; returns sessions, their runs and matching steps with run ids, seq ranges and snippets. Read the events with HistoryRead. scope: project (default) or all, which asks for approval.',
     kind: 'search',
     sideEffect: 'read_only',
     inputSchema: {

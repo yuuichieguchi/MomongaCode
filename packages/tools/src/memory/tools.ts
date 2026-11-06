@@ -1,4 +1,4 @@
-import { DEFAULT_MEMORY_KIND, MEMORY_KINDS, MEMORY_SCOPES, describeMemoryValidity } from '@momonga/protocol';
+import { DEFAULT_MEMORY_KIND, MEMORY_KINDS, MEMORY_SCOPES, describeMemoryValidity, describeValidity } from '@momonga/protocol';
 import type { MemoryKind, MemoryScope, MemoryView } from '@momonga/protocol';
 import { defineTool, ToolExecutionError, ToolInputError } from '../types.ts';
 import type { AnyTool } from '../types.ts';
@@ -22,7 +22,7 @@ const describeOrigin = (source: MemoryView['source']): string => {
 };
 
 const describeMemory = (memory: MemoryView): string =>
-  `[${memory.id}] (${memory.scope} memory, ${memory.origin} origin, status ${memory.status}${describeMemoryValidity(memory)}, saved ${new Date(memory.createdAt).toISOString()} ${describeOrigin(memory.source)}, last used ${new Date(memory.lastUsedAt).toISOString()}) ${memory.text}`;
+  `[${memory.id}] (${memory.scope} memory, ${memory.origin} origin, status ${memory.status}${describeMemoryValidity(memory)}, saved ${new Date(memory.createdAt).toISOString()} ${describeOrigin(memory.source)}${memory.validity === undefined ? '' : `, validity ${describeValidity(memory.validity)}`}) ${memory.text}`;
 
 const termsOf = (query: string): string[] => query.split(/\s+/).filter((term) => term !== '');
 
@@ -115,13 +115,13 @@ export const createMemoryTools = ({ port, trusted }: MemoryToolsOptions): AnyToo
       return { kind: 'none', tool: MEMORY_SEARCH_TOOL_NAME };
     },
     execute: async (input, ctx) => {
-      const found = await port.search(termsOf(input.query), { include: input.include ?? 'live', signal: ctx.signal });
+      const found = await port.search(termsOf(input.query), { include: input.include ?? 'live', limit: MEMORY_SEARCH_RESULT_LIMIT + 1, signal: ctx.signal });
       const shown = found.slice(0, MEMORY_SEARCH_RESULT_LIMIT);
       if (shown.length === 0) return { status: 'completed', output: 'No saved memory matches.' };
-      const omitted = found.length - shown.length;
       return {
         status: 'completed',
-        output: [...shown.map(describeMemory), ...(omitted > 0 ? [`${omitted} more matches were not shown; narrow the query.`] : [])].join('\n'),
+        output: [...shown.map(describeMemory), ...(found.length > shown.length ? ['More matches were not shown; narrow the query.'] : [])].join('\n'),
+        memories: shown.map((memory) => memory.id),
       };
     },
   });

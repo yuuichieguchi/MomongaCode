@@ -611,7 +611,7 @@ describe('memory schemas', () => {
     text: 'tests live in test/',
     source: { kind: 'tool', sessionId: 's1', runId: 'r1', step: 2, callId: 'c1', seq: 5 },
     createdAt: 1_800_000_000_000,
-    lastUsedAt: 1_800_000_001_000,
+    keptAt: 1_800_000_001_000,
     kind: 'fact',
     state: 'active',
     duplicateOf: null,
@@ -633,13 +633,15 @@ describe('memory schemas', () => {
     expect(accepts('MemoryView', withoutOrigin)).toBe(false);
     expect(accepts('MemoryView', { ...view, source: { ...view.source, seq: undefined } })).toBe(false);
     expect(accepts('MemoryView', { ...view, extra: 1 })).toBe(false);
-    const { lastUsedAt: _lastUsedAt, ...withoutLastUsed } = view;
-    expect(accepts('MemoryView', withoutLastUsed)).toBe(false);
+    const { keptAt: _keptAt, ...withoutKeptAt } = view;
+    expect(accepts('MemoryView', withoutKeptAt)).toBe(false);
+    expect(accepts('MemoryView', { ...withoutKeptAt, lastUsedAt: 1_800_000_001_000 })).toBe(false);
   });
 
   it('wraps views in the list and item envelopes', () => {
-    expect(accepts('MemoriesResponse', { memories: [view, view] })).toBe(true);
-    expect(accepts('MemoriesResponse', { memories: [] })).toBe(true);
+    expect(accepts('MemoriesResponse', { memories: [view, view], next: null })).toBe(true);
+    expect(accepts('MemoriesResponse', { memories: [view], next: 'opaque-cursor' })).toBe(true);
+    expect(accepts('MemoriesResponse', { memories: [], next: null })).toBe(true);
     expect(accepts('MemoriesResponse', { memories: [{ ...view, scope: 'x' }] })).toBe(false);
     expect(accepts('MemoryResponse', { memory: view })).toBe(true);
     expect(accepts('MemoryResponse', { memory: view, extra: 1 })).toBe(false);

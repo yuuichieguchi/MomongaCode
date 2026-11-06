@@ -62,6 +62,11 @@ const injectedOf = (events: readonly RunEvent[], lookup: Lookup): WorkingStateTr
         const memory = lookup.memories.get(id);
         if (memory !== undefined) add({ kind: 'memory', id, text: memory.text, fromSeq: event.seq });
       }
+    } else if (event.type === 'tool.completed') {
+      for (const id of event.memories ?? []) {
+        const memory = lookup.memories.get(id);
+        if (memory !== undefined) add({ kind: 'memory', id, text: memory.text, fromSeq: event.seq });
+      }
     } else if (event.type === 'context.governing_loaded') {
       for (const { id } of event.active) {
         const fact = lookup.governing.get(id);

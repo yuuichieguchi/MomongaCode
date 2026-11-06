@@ -21,7 +21,9 @@ export type HistoryAnchor = {
   steps: HistoryStepHit[];
 };
 
-export type HistorySearchResult = { anchors: HistoryAnchor[]; searched?: number; withheld?: number };
+export type HistorySession = { sessionId: string; project: string; span: { from: number; to: number }; runs: HistoryAnchor[] };
+
+export type HistorySearchResult = { sessions: HistorySession[]; searched?: number; withheld?: number };
 
 export type HistoryReadRequest = { runId: string; step?: number; seqFrom?: number; seqTo?: number };
 

@@ -63,7 +63,7 @@ const loadedFile = (
 export const recordedNestedFile = (filePath: string, text: string): LoadedInstructionFile =>
   loadedFile(filePath, filePath, 'nested', `${path.posix.dirname(filePath)}/**`, text);
 
-const nestedCandidates = (roots: readonly string[], projectRoot: string, touchedPaths: readonly TouchedPath[]): string[] => {
+export const nestedInstructionCandidates = (roots: readonly string[], projectRoot: string, touchedPaths: readonly TouchedPath[]): string[] => {
   const candidates = new Set<string>();
   for (const touched of touchedPaths) {
     const normalized = path.posix.normalize(touched.path);
@@ -116,7 +116,7 @@ export const discoverInstructions = async (options: DiscoverOptions): Promise<Di
   }
 
   const nested: LoadedInstructionFile[] = [];
-  const candidates = nestedCandidates([...new Set([projectRoot, realRoot])], projectRoot, touchedPaths);
+  const candidates = nestedInstructionCandidates([...new Set([projectRoot, realRoot])], projectRoot, touchedPaths);
   if (!trusted) {
     for (const candidate of candidates) {
       if (await reader.exists(candidate)) {

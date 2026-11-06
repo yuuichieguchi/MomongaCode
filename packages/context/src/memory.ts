@@ -22,16 +22,21 @@ const sourceAttributesOf = (source: DeepReadonly<MemoryView['source']>): string 
 const noteOf = (memory: DeepReadonly<MemoryView>): string =>
   [
     `<memory id="${escapeXmlAttribute(memory.id)}" scope="${memory.scope}" origin="${memory.origin}" status="${memory.status}"`,
-    ` saved="${iso(memory.createdAt)}" last_used="${iso(memory.lastUsedAt)}"`,
+    ` saved="${iso(memory.createdAt)}"`,
     sourceAttributesOf(memory.source),
     escapeXmlText(memory.text),
     '</memory>',
   ].join('');
 
-export const renderMemories = (memories: readonly DeepReadonly<MemoryView>[], omitted: number): string =>
+export type MemoryRendering = { atLeast?: boolean; matchCap?: number | undefined };
+
+export const renderMemories = (memories: readonly DeepReadonly<MemoryView>[], omitted: number, { atLeast = false, matchCap }: MemoryRendering = {}): string =>
   [
     ...FRAMING,
-    ...(omitted > 0 ? [`${omitted} more saved ${omitted === 1 ? 'note is' : 'notes are'} not shown; call ${MEMORY_SEARCH_TOOL} to look for them.`] : []),
+    ...(matchCap === undefined ? [] : [`Only the newest ${matchCap} saved notes matching the task were considered when choosing the notes shown.`]),
+    ...(omitted > 0
+      ? [`${atLeast ? 'at least ' : ''}${omitted} more saved ${omitted === 1 ? 'note is' : 'notes are'} not shown; call ${MEMORY_SEARCH_TOOL} to look for them.`]
+      : []),
     '',
     '<recalled_memories>',
     ...memories.map(noteOf),

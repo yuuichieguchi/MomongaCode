@@ -1,5 +1,6 @@
 export { MIN_ITEM_CAP, MIN_ROOM_TOKENS, budgetFor, capacityFor, inputCeilingFor, itemCapFor, memoryBudgetFor, pinnedFloorFor, withCalibration } from './budget.ts';
 export { renderMemories } from './memory.ts';
+export { nestedInstructionCandidates } from './instructions.ts';
 export { textOfContent, textOfItem } from './item-text.ts';
 export { attestedTokens, checkSummary, claimedTokens } from './summary-fidelity.ts';
 export type { FidelityRecord, FidelitySource } from './summary-fidelity.ts';

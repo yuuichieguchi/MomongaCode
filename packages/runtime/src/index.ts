@@ -17,6 +17,8 @@ export type {
   HistorySet,
   MemoryPort,
   MemorySet,
+  RecallCapacity,
+  RecallRequest,
   SettingsPort,
   TargetFacts,
   SkillsPort,

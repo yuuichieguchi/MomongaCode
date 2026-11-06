@@ -28,6 +28,7 @@ export type ToolResult = {
   command?: string;
   windowShared?: true;
   detached?: true;
+  memories?: string[];
   exitCode?: number;
   validatorFailure?: string;
 };

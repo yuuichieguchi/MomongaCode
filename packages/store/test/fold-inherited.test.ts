@@ -76,7 +76,7 @@ describe('fold of context.inherited', () => {
 
   it('gives a child of a payload without working facts none, so an older event still folds', () => {
     const state = nextRun([task('And again'), INHERITED]);
-    expect(state.workingFacts).toEqual({ written: [], touched: [], commands: [], messages: [], taskText: 'And again', itemEvents: [{ itemSeq: 7, eventSeq: 1 }] });
+    expect(state.workingFacts).toEqual({ written: [], commands: [], messages: [], taskText: 'And again', itemEvents: [{ itemSeq: 7, eventSeq: 1 }] });
   });
 
   it('starts every run with taskSeq 1', () => {

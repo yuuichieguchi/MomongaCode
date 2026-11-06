@@ -71,7 +71,7 @@ const registerMcp: CommandGroup = (program, deps) => {
 const memoryScopeOption = (): Option => new Option('--scope <scope>', 'only memories of this scope').choices(MEMORY_SCOPES);
 
 const registerMemory: CommandGroup = (program, deps) => {
-  const memory = program.command('memory').description('add, review and delete the memories of this folder and of all folders');
+  const memory = program.command('memory').description('add, review and retire the memories of this folder and of all folders');
   memory
     .command('add <text...>')
     .description('add a memory as a person; --path binds it to a file of this folder, so it shows as stale once the file changes')
@@ -120,7 +120,7 @@ const registerMemory: CommandGroup = (program, deps) => {
     });
   memory
     .command('delete <id>')
-    .description('delete a memory')
+    .description('retire a memory: it is no longer recalled or listed and stays in momonga memory history')
     .action(async (id: string) => {
       deps.complete(await memoryDelete(deps.ports, await pathsOf(deps.ports), id));
     });

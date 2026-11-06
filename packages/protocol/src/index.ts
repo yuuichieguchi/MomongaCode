@@ -124,11 +124,9 @@ export {
   withMessage,
   withReplacedThrough,
   withTaskText,
-  withTouched,
   withWritten,
 } from './working-facts.ts';
 export type {
-  TouchedTarget,
   CommandFact,
   FileAccess,
   ItemEvent,
@@ -265,6 +263,7 @@ export type {
 export {
   DEFAULT_MEMORY_KIND,
   describeMemoryValidity,
+  describeValidity,
   MEMORY_EVIDENCE_KINDS,
   MEMORY_KINDS,
   MEMORY_ORIGINS,
@@ -273,6 +272,7 @@ export {
   MEMORY_STATUSES,
   REFLECTION_DROP_CAUSES,
   REFLECTION_JOB_STATES,
+  VALIDITY_CLOSERS,
 } from './memory.ts';
 export type {
   AddMemoryRequest,
@@ -287,6 +287,7 @@ export type {
   MemorySource,
   MemoryState,
   MemoryStatus,
+  MemoryValidity,
   MemoryView,
   PromoteMemoryRequest,
   PromoteMemoryResponse,
@@ -295,6 +296,9 @@ export type {
   ReflectionJobState,
   ReflectionJobView,
   ReflectionResponse,
+  ValidityChange,
+  ValidityCloser,
+  ValidityInterval,
 } from './memory.ts';
 export { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
 export type {

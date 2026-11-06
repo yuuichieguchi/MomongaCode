@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as runtime from '@momonga/runtime';
 import { HISTORY_INDEX_BATCH_CHARS } from '@momonga/store';
 import { afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
-import { harness } from '../../../store/test/helpers.ts';
+import { anchorsOf, harness } from '../../../store/test/helpers.ts';
 import { FAKE_KEY, finishedRun, openRun, redactor } from '../../../store/test/search-fixture.ts';
 import { START_MS, startService } from './helpers.ts';
 
@@ -63,14 +63,14 @@ describe('startSearchSweeper', () => {
     const done = [await finishedRun(store, '/work/a', 'alphaterm one'), await finishedRun(store, '/work/a', 'alphaterm two'), await finishedRun(store, '/work/a', 'alphaterm three')];
     openRun(store, '/work/a2', 'alphaterm live');
     const sweeper = startSearchSweeper({ store, timers, intervalMs: 1000, batchSize: 1, redactor, onError: (error: unknown) => { throw error; } });
-    const found = () => store.search.query({ trusted: false, project: '/work/a' }, { query: 'alphaterm', scope: 'project' }).anchors.length;
+    const found = () => anchorsOf(store.search.query({ trusted: false, project: '/work/a' }, { query: 'alphaterm', scope: 'project' })).length;
     timers.advance(1000);
     await afterMicrotasks();
     expect(found()).toBe(1);
     timers.advance(2000);
     await afterMicrotasks();
     expect(found()).toBe(done.length);
-    expect(store.search.query({ trusted: false, project: '/work/a2' }, { query: 'alphaterm', scope: 'project' }).anchors).toEqual([]);
+    expect(anchorsOf(store.search.query({ trusted: false, project: '/work/a2' }, { query: 'alphaterm', scope: 'project' }))).toEqual([]);
     await sweeper.close();
   });
 });
@@ -86,8 +86,8 @@ describe('the service', () => {
     env.timers?.advance(1000);
     await afterMicrotasks();
     const visibility = { trusted: false, project: session.cwd } as const;
-    const { anchors } = env.store.search.query(visibility, { query: 'deploy notes', scope: 'project' });
+    const anchors = anchorsOf(env.store.search.query(visibility, { query: 'deploy notes', scope: 'project' }));
     expect(anchors.map((anchor) => anchor.runId)).toEqual([run.id]);
-    expect(env.store.search.query(visibility, { query: 'abcdefghij', scope: 'project' }).anchors).toEqual([]);
+    expect(anchorsOf(env.store.search.query(visibility, { query: 'abcdefghij', scope: 'project' }))).toEqual([]);
   });
 });

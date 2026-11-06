@@ -114,7 +114,7 @@ describe('skills, memory and images in the terminal', () => {
     await submit(pty, `/memory show ${id}`);
     await pty.waitFor('source: session');
     await submit(pty, `/memory delete ${id}`);
-    await pty.waitFor(`deleted memory ${id}`);
+    await pty.waitFor(`retired memory ${id}`);
     await submit(pty, '/memory');
     await pty.waitFor('no memories');
     expect((await runCli(home, ['memory', 'list'])).stdout).toBe('no memories\n');

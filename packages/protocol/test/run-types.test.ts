@@ -241,6 +241,7 @@ describe('run event payloads', () => {
       files?: { path: string; sha256?: string; access: 'read' | 'write' | 'remove' }[];
       command?: string;
       windowShared?: true;
+      memories?: string[];
       exitCode?: number;
       formatted?: { formatter: string; version: number };
     }>();

@@ -317,14 +317,19 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
       : input.pinnedMemoryIds.flatMap((id) => rankedMemories.filter((memory) => memory.id === id));
   let memoryMessage = recordedMemory;
   let memoryCount = 0;
+  const moreMemories = sources.moreMemories === true;
   const memoriesDropped = (kept: number, total: number): void => {
     if (kept < total) {
       notices.push({
         code: 'memories_dropped',
-        message: `${total - kept} of ${total} saved memories were left out of the context because of its budget`,
+        message: `${moreMemories ? 'at least ' : ''}${total - kept} of ${total} saved memories were left out of the context because of its budget`,
       });
+    } else if (moreMemories) {
+      notices.push({ code: 'memories_dropped', message: 'more saved memories exist than were read for the context, so some were left out because of its budget' });
     }
   };
+  const omittedOf = (kept: number, total: number): number => Math.max(moreMemories ? 1 : 0, total - kept);
+  const renderingOptions = { atLeast: moreMemories, matchCap: sources.memoryMatchCap };
   if (input.pinnedMemoryIds !== undefined && rankedMemories.length > 0) {
     memoryCount = memoryCandidates.length;
     memoriesDropped(memoryCount, rankedMemories.length);
@@ -333,7 +338,7 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
       const message: MessageInputItem = {
         type: 'message',
         role: 'user',
-        content: renderMemories(memoryCandidates.slice(0, count), memoryCandidates.length - count),
+        content: renderMemories(memoryCandidates.slice(0, count), omittedOf(count, memoryCandidates.length), renderingOptions),
       };
       const evaluation = await evaluate(layersFor(arrivals, message));
       const baseTokens = ceilingTokensOf(input, await evaluation.ports.meter.count({ input: [...layersFor(arrivals, undefined), task], tools }));
@@ -463,7 +468,12 @@ const pinnedMemoryMessageOf = (input: BuildContextInput): MessageInputItem | und
   const ranked = input.sources.memories ?? [];
   if (input.pinnedMemoryIds === undefined || ranked.length === 0) return undefined;
   const chosen = input.pinnedMemoryIds.flatMap((id) => ranked.filter((memory) => memory.id === id));
-  return { type: 'message', role: 'user', content: renderMemories(chosen, ranked.length - chosen.length) };
+  const more = input.sources.moreMemories === true;
+  return {
+    type: 'message',
+    role: 'user',
+    content: renderMemories(chosen, Math.max(more ? 1 : 0, ranked.length - chosen.length), { atLeast: more, matchCap: input.sources.memoryMatchCap }),
+  };
 };
 
 const historyItemsOf = (sources: BuildContextInput['sources']) =>
