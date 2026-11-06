@@ -38,7 +38,7 @@ describe('Grep through the ripgrep locator on the tool context', () => {
     const { ripgrepUnavailableMessage } = await import('../../src/ripgrep-locator.ts');
     const result = resultOf(outcome);
     expect(result.status).not.toBe('completed');
-    expect(JSON.stringify(result)).toContain(ripgrepUnavailableMessage('the embedded ripgrep does not match the checksum in its manifest'));
+    expect(result.output).toBe(ripgrepUnavailableMessage('the embedded ripgrep does not match the checksum in its manifest'));
   });
 
   it('spawns the executable the locator names, by absolute path, and releases it when the call ends', async () => {
