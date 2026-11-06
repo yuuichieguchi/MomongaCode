@@ -942,7 +942,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
   });
 });
 
-type TableProcess = { pgid: number; holdsMarker: boolean; ignoresTerm: boolean };
+type TableProcess = { pgid: number; holdsMarker: boolean; ignoresTerm: boolean; holdsFromListing?: number };
 
 const processTable = (initial: Record<number, TableProcess>, exitsAfterListing: Record<number, number[]>) => {
   const table = new Map<number, TableProcess>(Object.entries(initial).map(([pid, entry]) => [Number(pid), entry]));
@@ -960,8 +960,8 @@ const processTable = (initial: Record<number, TableProcess>, exitsAfterListing: 
   const inspector = {
     startTimeOf: async (pid: number) => (table.has(pid) ? { kind: 'value', value: 0 } : { kind: 'gone' }),
     holdersOf: async () => {
-      const holders = [...table].filter(([, entry]) => entry.holdsMarker).map(([pid]) => pid);
       listings += 1;
+      const holders = [...table].filter(([, entry]) => entry.holdsMarker && listings >= (entry.holdsFromListing ?? 1)).map(([pid]) => pid);
       for (const pid of exitsAfterListing[listings] ?? []) table.delete(pid);
       return { kind: 'value', value: holders };
     },
@@ -997,5 +997,16 @@ describe('a holder the group read no longer finds is never signalled by its pid 
       { pid: 200, signal: 'SIGTERM' },
       { pid: -100, signal: 'SIGKILL' },
     ]);
+  });
+
+  it('a group member first listed at the kill pass is reached through its group, which that pass proves ours, even when the SIGTERM pass found no member in it', async (context) => {
+    const marker = markerFile(withTempDir(context));
+    const world = processTable(
+      { 100: { pgid: 100, holdsMarker: true, ignoresTerm: true, holdsFromListing: 2 }, 101: { pgid: 100, holdsMarker: true, ignoresTerm: false } },
+      { 1: [101] },
+    );
+    const fake = fakeTiming();
+    await reconcileProcessGroup({ pgid: 100, marker }, { killGraceMs: 1000, kill: world.kill, timing: fake.timing, inspector: world.inspector });
+    expect(world.signals).toEqual([{ pid: -100, signal: 'SIGKILL' }]);
   });
 });
