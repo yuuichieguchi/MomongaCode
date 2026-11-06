@@ -20,6 +20,9 @@ export interface MomongaPaths {
   traces: { dir: string; gateway: string; runtime: string };
   gatewayKey: string;
   probe: string;
+  planSessions: string;
+  planHost: string;
+  planActive: string;
   logs: string;
   logFiles: { supervisor: string; gateway: string; runtime: string };
   projects: string;
@@ -87,6 +90,9 @@ export const momongaLayout = (
     traces: { dir: traces, gateway: join(traces, 'gateway.db'), runtime: join(traces, 'runtime.db') },
     gatewayKey: join(state, 'gateway.key'),
     probe: join(state, 'probe'),
+    planSessions: join(state, 'plan-sessions'),
+    planHost: join(state, 'plan-host.json'),
+    planActive: join(state, 'plan-active.json'),
     logs: join(root, 'logs'),
     logFiles: {
       supervisor: join(root, 'logs', 'supervisor.log'),

@@ -2,13 +2,12 @@ import { auth, extractWWWAuthenticateParams, validateAuthorizationResponseIssuer
 import type { FetchLike } from '@modelcontextprotocol/client';
 import type { McpServerScope } from '@momonga/config';
 import type { McpCredentialStore } from './mcp-oauth.ts';
-import { startLoopbackRedirect } from '@momonga/foundation';
+import { AUTHORIZATION_WAIT_MS, startLoopbackRedirect } from '@momonga/foundation';
 import { createMcpOAuthProvider } from './mcp-oauth.ts';
 import { McpAuthorizationError } from './remote-errors.ts';
 import { sanitizeServerText, capText } from './text.ts';
 import type { McpTimers } from './timers.ts';
 
-export const AUTHORIZATION_WAIT_MS = 300_000;
 const MAX_ERROR_CHARS = 200;
 
 export type McpOAuthSettings = { clientId?: string; scope?: string; callbackPort?: number };

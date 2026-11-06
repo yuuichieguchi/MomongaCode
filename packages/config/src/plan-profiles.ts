@@ -113,6 +113,7 @@ const PLAN_PROFILE_SCHEMA = {
         manageUsageLabel: NON_EMPTY_STRING,
         usageLimitMessage: NON_EMPTY_STRING,
         signInExpiredMessage: NON_EMPTY_STRING,
+        signInRequiredMessage: NON_EMPTY_STRING,
         planNotEnabledMessage: NON_EMPTY_STRING,
         notEligibleMessage: NON_EMPTY_STRING,
         firstSignIn: object({ title: NON_EMPTY_STRING, body: NON_EMPTY_STRING, action: NON_EMPTY_STRING }),
@@ -127,6 +128,7 @@ const PLAN_PROFILE_SCHEMA = {
         'manageUsageLabel',
         'usageLimitMessage',
         'signInExpiredMessage',
+        'signInRequiredMessage',
         'planNotEnabledMessage',
         'notEligibleMessage',
         'firstSignIn',
@@ -200,6 +202,7 @@ const CHATGPT_PROFILE_DATA = {
     manageUsageLabel: 'Manage usage',
     usageLimitMessage: "Usage limit reached — Review your plan or this app's limit in ChatGPT settings.",
     signInExpiredMessage: 'ChatGPT sign-in expired',
+    signInRequiredMessage: 'Not signed in to ChatGPT',
     planNotEnabledMessage: "ChatGPT plan use isn't enabled",
     notEligibleMessage: 'ChatGPT plan usage is unavailable for the selected user, workspace, or policy.',
     firstSignIn: {
