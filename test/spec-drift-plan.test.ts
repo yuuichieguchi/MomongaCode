@@ -68,11 +68,11 @@ describe('PlanCredential.tla against plan-constants.json', () => {
     expect(without(constants.terminalCodes, modelled)).toEqual(['invalid_refresh_token', 'refresh_token_expired', 'token_expired']);
   });
 
-  it('names every cause of the constants, and the one cause the model has beyond them is the evidence-only transient', () => {
+  it('names every cause of the constants, and the causes the model has beyond them are the evidence-only transient and the undecided candidate unusable_response', () => {
     const modelledCauses = setDefinitionOf(credentialSpec, 'Causes');
     const known = [...constants.terminalCodes, ...constants.causes];
     expect(constants.causes.filter((cause) => !modelledCauses.includes(cause))).toEqual([]);
-    expect(without(modelledCauses, [...known, 'none'])).toEqual(['transient']);
+    expect(without(modelledCauses, [...known, 'none'])).toEqual(['transient', 'unusable_response']);
   });
 
   it('leaves invalid_client out of the model, as the model states', () => {

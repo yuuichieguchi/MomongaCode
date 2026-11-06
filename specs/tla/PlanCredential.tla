@@ -64,6 +64,20 @@
 (*     memory state store_unreadable with no tokens, the disk untouched;   *)
 (*     sign-in and sign-out do not start; a later restart reads again      *)
 (*                                                                         *)
+(*   - a 200 the client does not take as a new session (MaxNoAdopt, up to  *)
+(*     that many): WeakForms picks what it was. short: the server rotated  *)
+(*     and sent a replacement with expires_in <= M. noRtRotated: the       *)
+(*     server consumed the token and sent no replacement. noRtKept: the    *)
+(*     server sent no replacement and did not consume the token (RFC 6749  *)
+(*     section 6, an issuer that does not rotate). NoAdoptRule is what the *)
+(*     client does with it. transient: keep everything, resend allowed     *)
+(*     (design section 7 as written). reject: keep everything, end the    *)
+(*     refresh, no resend inside it. unanswered: count it as an unanswered *)
+(*     send (a slack credit), resend allowed. adopt: take the replacement  *)
+(*     when there is one, else keep the old token and take the access      *)
+(*     token. signIn: clear the tokens with cause unusable_response. A     *)
+(*     rotated successor that the client never holds is dropped[a]         *)
+(*                                                                         *)
 (* Counters bound every fault: crashes, answers given up, disconnects,     *)
 (* sign-ins, sign-outs, failed persists, spurious 401, failed revocations. *)
 (*                                                                         *)
@@ -173,6 +187,16 @@
 (*   PlanCredential.signOutAfterLoss  GateConfirm = FALSE: SignOutRevokes  *)
 (*                               Family refuted by a sign-out after a lost *)
 (*                               rotation                                  *)
+(*   PlanCredential.causeIsCode  a plain disconnect, one refresh, no       *)
+(*                               earlier send: CauseIsServerCode refuted   *)
+(*                               (the cause is refresh_interrupted, since  *)
+(*                               ReqPend sets dPend before every send)     *)
+(*   PlanCredential.weak*        the 200 that is not taken as a session:   *)
+(*                               one rule against one form, SingleUseServer *)
+(*                               (the server never sees a consumed token   *)
+(*                               that no unanswered send paid for),        *)
+(*                               NoResendAfterAnswer (the literal I-C3),   *)
+(*                               SuccessorKept, NoEraseOnTransient         *)
 (*                                                                         *)
 (* The design (section 9) states that the module and PlanSignIn share      *)
 (* state names and terminal codes through a JSON emitted by the            *)
@@ -187,7 +211,8 @@ CONSTANTS
     MaxPersistFail, MaxReject, MaxRevokeFail,
     UseMutex, CoalesceGen, CoalesceForced, EraseOnTransient, ForgetFirst, SignOutWaits, Intent,
     PinIdentity, GateConfirm, MaxResend,
-    MaxDetFail, MaxUnreadable, RefreshWhenUnwritable, UnreadableAsSignIn
+    MaxDetFail, MaxUnreadable, RefreshWhenUnwritable, UnreadableAsSignIn,
+    MaxNoAdopt, WeakForms, NoAdoptRule
 
 ASSUME Reqs # {} /\ SecondReqs \subseteq Reqs /\ SecondAcct \in BOOLEAN /\ (SecondReqs # {} => SecondAcct)
 
@@ -201,6 +226,9 @@ ASSUME \A c \in {MaxClock, MaxCrash, MaxGiveUp, MaxDisc, MaxSignIn, MaxSignOut, 
 ASSUME \A c \in {UseMutex, CoalesceGen, CoalesceForced, EraseOnTransient, ForgetFirst, SignOutWaits, Intent, PinIdentity, GateConfirm} : c \in BOOLEAN
 ASSUME \A c \in {MaxResend, MaxDetFail, MaxUnreadable} : c \in Nat
 ASSUME \A c \in {RefreshWhenUnwritable, UnreadableAsSignIn} : c \in BOOLEAN
+ASSUME MaxNoAdopt \in Nat
+ASSUME WeakForms \subseteq {"short", "noRtRotated", "noRtKept"}
+ASSUME NoAdoptRule \in {"transient", "reject", "unanswered", "adopt", "signIn"}
 
 None == "none"
 MaxTok == 9
@@ -208,7 +236,7 @@ Toks == 0..MaxTok
 Gens == 0..(MaxTok + 3)
 
 TerminalCodes == {"refresh_token_reused", "refresh_token_invalidated", "invalid_grant"}
-Causes == TerminalCodes \cup {"refresh_interrupted", "transient", None}
+Causes == TerminalCodes \cup {"refresh_interrupted", "transient", "unusable_response", None}
 AcctStates == {"active", "needs_sign_in", "signing_out", "registered", "store_unreadable"}
 
 VARIABLES
@@ -221,7 +249,8 @@ VARIABLES
     inPh, inCand, inSrc, outPh, prPh,
     clock,
     crashes, giveups, discs, signins, signouts, pfails, rejects, rvfails, detFails, unreads,
-    unreadMark, slack, acked, badSend, forcedCnt, soDone, outConfirmed, lossKind, startedAfterOut
+    unreadMark, slack, acked, badSend, forcedCnt, soDone, outConfirmed, lossKind, startedAfterOut,
+    noadopts, dropped
 
 diskVars == <<dState, dGen, dRt, dCause, dPend, dIss, dSub, dClient, dFam>>
 memVars == <<mState, mGen, mRt, mDirty, mIss, mForced, mUnwr>>
@@ -232,7 +261,8 @@ reqVars == <<rph, rpur, rtok, rtry, rpkt, rgot, rgen, rretried, rres>>
 actVars == <<inPh, inCand, inSrc, outPh, prPh>>
 budgetVars == <<crashes, giveups, discs, signins, signouts, pfails, rejects, rvfails, detFails, unreads>>
 ghostVars == <<unreadMark, slack, acked, badSend, forcedCnt, soDone, outConfirmed, lossKind, startedAfterOut>>
-vars == <<diskVars, memVars, srvVars, netVars, lockVars, reqVars, actVars, clock, budgetVars, ghostVars>>
+extraVars == <<noadopts, dropped>>
+vars == <<diskVars, memVars, srvVars, netVars, lockVars, reqVars, actVars, clock, budgetVars, ghostVars, extraVars>>
 
 Max(x, y) == IF x > y THEN x ELSE y
 Age(x) == clock - x
@@ -289,6 +319,8 @@ Init ==
     /\ outConfirmed = [a \in Accts |-> None]
     /\ lossKind = [a \in Accts |-> None]
     /\ startedAfterOut = [a \in Accts |-> FALSE]
+    /\ noadopts = 0
+    /\ dropped = [a \in Accts |-> FALSE]
 
 -----------------------------------------------------------------------------
 
@@ -391,20 +423,25 @@ Deliver(p) ==
         used == t \in sUsed[a]
         rotate == ~stale /\ ~sRev[a] /\ ~used /\ t = sCur[a]
         code == IF stale THEN "invalid_grant" ELSE IF used THEN "refresh_token_reused" ELSE "refresh_token_invalidated"
-        reply == IF rotate THEN [p EXCEPT !.st = "replied", !.rk = "ok", !.rv = sNext[a] + 1]
-                 ELSE [p EXCEPT !.st = "replied", !.rk = "term", !.rv = code]
     IN
     /\ p \in net
     /\ p.st = "sent"
-    /\ rotate => sNext[a] < MaxTok
-    /\ sCur' = IF rotate THEN Set(sCur, a, sNext[a] + 1) ELSE sCur
-    /\ sNext' = IF rotate THEN Set(sNext, a, sNext[a] + 1) ELSE sNext
-    /\ sUsed' = IF rotate THEN Set(sUsed, a, sUsed[a] \cup {t}) ELSE sUsed
-    /\ sRev' = IF ~rotate /\ ~stale THEN Set(sRev, a, TRUE) ELSE sRev
-    /\ slack' = IF used THEN Set(slack, a, Set(slack[a], t, slack[a][t] - 1)) ELSE slack
-    /\ net' = IF p.live THEN (net \ {p}) \cup {reply} ELSE net \ {p}
+    /\ \E f \in {"std"} \cup (IF rotate /\ noadopts < MaxNoAdopt THEN WeakForms ELSE {}) :
+        LET kept == (f = "noRtKept")
+            adv == rotate /\ ~kept
+            reply == IF rotate THEN [p EXCEPT !.st = "replied", !.rk = IF f = "std" THEN "ok" ELSE f, !.rv = IF kept THEN t ELSE sNext[a] + 1]
+                     ELSE [p EXCEPT !.st = "replied", !.rk = "term", !.rv = code]
+        IN
+        /\ adv => sNext[a] < MaxTok
+        /\ sCur' = IF adv THEN Set(sCur, a, sNext[a] + 1) ELSE sCur
+        /\ sNext' = IF adv THEN Set(sNext, a, sNext[a] + 1) ELSE sNext
+        /\ sUsed' = IF adv THEN Set(sUsed, a, sUsed[a] \cup {t}) ELSE sUsed
+        /\ sRev' = IF ~rotate /\ ~stale THEN Set(sRev, a, TRUE) ELSE sRev
+        /\ slack' = IF used THEN Set(slack, a, Set(slack[a], t, slack[a][t] - 1)) ELSE slack
+        /\ net' = IF p.live THEN (net \ {p}) \cup {reply} ELSE net \ {p}
+        /\ noadopts' = IF f = "std" THEN noadopts ELSE noadopts + 1
     /\ UNCHANGED <<diskVars, memVars, sStart, pktN, lockVars, reqVars, actVars, clock, budgetVars>>
-    /\ UNCHANGED <<unreadMark, acked, badSend, forcedCnt, soDone, outConfirmed, lossKind, startedAfterOut>>
+    /\ UNCHANGED <<unreadMark, acked, badSend, forcedCnt, soDone, outConfirmed, lossKind, startedAfterOut, dropped>>
 
 ClearTokens(a, cause, loss) ==
     /\ dState' = Set(dState, a, "needs_sign_in")
@@ -420,7 +457,7 @@ ClearTokens(a, cause, loss) ==
 ReqRecv(r) ==
     LET a == ReqAcct[r] IN
     \E p \in net :
-        /\ rph[r] = "await" /\ p.id = rpkt[r] /\ p.st = "replied" /\ p.live
+        /\ rph[r] = "await" /\ p.id = rpkt[r] /\ p.st = "replied" /\ p.live /\ p.rk \in {"ok", "term"}
         /\ net' = net \ {p}
         /\ IF p.rk = "ok"
             THEN /\ acked' = Set(acked, a, acked[a] \cup {p.tok})
@@ -466,6 +503,47 @@ ReqRetry(r) ==
         /\ rph' = Set(rph, r, "send")
         /\ rtry' = Set(rtry, r, rtry[r] + 1)
         /\ UNCHANGED <<diskVars, memVars, srvVars, pktN, lockVars, rpur, rtok, rpkt, rgot, rgen, rretried, rres, actVars, clock, unreadMark, acked, badSend, forcedCnt, soDone, outConfirmed, lossKind, startedAfterOut, crashes, discs, signins, signouts, pfails, rejects, rvfails, detFails, unreads>>
+
+ReqWeak(r) ==
+    LET a == ReqAcct[r]
+        t == rtok[r]
+    IN
+    \E p \in net :
+        /\ rph[r] = "await" /\ p.id = rpkt[r] /\ p.st = "replied" /\ p.live /\ p.rk \in WeakForms
+        /\ net' = net \ {p}
+        /\ LET lost == p.rk # "noRtKept"
+               EndRefresh ==
+                   /\ Release(a)
+                   /\ IF rpur[r] = "read"
+                       THEN IF Age(mIss[a]) < 2
+                              THEN Begin(r, mGen[a]) /\ UNCHANGED rres
+                              ELSE Finish(r, "unavailable") /\ UNCHANGED <<rgen, startedAfterOut>>
+                       ELSE Finish(r, "rejected") /\ UNCHANGED <<rgen, startedAfterOut>>
+           IN
+           \/ /\ NoAdoptRule \in {"transient", "reject", "unanswered"}
+              /\ acked' = IF NoAdoptRule = "unanswered" THEN acked ELSE Set(acked, a, acked[a] \cup {t})
+              /\ slack' = IF NoAdoptRule = "unanswered" THEN Set(slack, a, Set(slack[a], t, slack[a][t] + 1)) ELSE slack
+              /\ dropped' = Set(dropped, a, dropped[a] \/ lost)
+              /\ \/ /\ NoAdoptRule \in {"transient", "unanswered"} /\ rtry[r] < MaxResend
+                    /\ rph' = Set(rph, r, "send") /\ rtry' = Set(rtry, r, rtry[r] + 1)
+                    /\ UNCHANGED <<lockVars, rgen, rres, startedAfterOut>>
+                 \/ /\ EndRefresh /\ UNCHANGED rtry
+              /\ UNCHANGED <<diskVars, memVars, lossKind, rgot>>
+           \/ /\ NoAdoptRule = "signIn"
+              /\ ClearTokens(a, "unusable_response", "other")
+              /\ UNCHANGED slack
+              /\ acked' = Set(acked, a, acked[a] \cup {t})
+              /\ dropped' = Set(dropped, a, dropped[a] \/ lost)
+              /\ Finish(r, "signIn") /\ Release(a)
+              /\ UNCHANGED <<rgen, startedAfterOut, rtry, rgot>>
+           \/ /\ NoAdoptRule = "adopt"
+              /\ rph' = Set(rph, r, IF ForgetFirst THEN "forget" ELSE "persist")
+              /\ rgot' = Set(rgot, r, IF p.rk = "short" THEN p.rv ELSE t)
+              /\ acked' = IF p.rk = "short" THEN Set(acked, a, acked[a] \cup {t}) ELSE acked
+              /\ UNCHANGED <<diskVars, memVars, lockVars, rres, lossKind, dropped, rtry, rgen, startedAfterOut, slack>>
+        /\ UNCHANGED <<srvVars, pktN, rpur, rtok, rpkt, rretried, actVars, clock, budgetVars, unreadMark, badSend, forcedCnt, soDone, outConfirmed, noadopts>>
+
+Quiet(A) == A /\ UNCHANGED extraVars
 
 ReqForget(r) ==
     LET a == ReqAcct[r] IN
@@ -718,22 +796,23 @@ AllDone == \A r \in Reqs : rph[r] = "done"
 Terminated == AllDone /\ UNCHANGED vars
 
 Next ==
-    \/ Tick
-    \/ \E r \in Reqs : Start(r) \/ ReqGrant(r) \/ ReqPend(r) \/ ReqSend(r) \/ ReqRecv(r) \/ ReqGiveUp(r) \/ ReqRetry(r)
-                       \/ ReqForget(r) \/ ReqPersist(r) \/ ReqResult(r) \/ ForceGrant(r)
+    \/ Quiet(Tick)
+    \/ \E r \in Reqs : Quiet(Start(r) \/ ReqGrant(r) \/ ReqPend(r) \/ ReqSend(r) \/ ReqRecv(r) \/ ReqGiveUp(r) \/ ReqRetry(r)
+                       \/ ReqForget(r) \/ ReqPersist(r) \/ ReqResult(r) \/ ForceGrant(r))
+                       \/ ReqWeak(r)
     \/ \E p \in net : Deliver(p)
-    \/ \E a \in Accts : SiStart(a) \/ SiGrant(a) \/ SiInstall(a) \/ SoStart(a) \/ SoGrant(a) \/ SoRevoke(a) \/ SoClear(a)
-                        \/ PrStart(a) \/ PrGrant(a) \/ PrWrite(a) \/ Disc(a)
-    \/ Crash
+    \/ \E a \in Accts : Quiet(SiStart(a) \/ SiGrant(a) \/ SiInstall(a) \/ SoStart(a) \/ SoGrant(a) \/ SoRevoke(a) \/ SoClear(a)
+                        \/ PrStart(a) \/ PrGrant(a) \/ PrWrite(a) \/ Disc(a))
+    \/ Quiet(Crash)
     \/ Terminated
 
 Fairness ==
-    /\ \A r \in Reqs : WF_vars(Start(r)) /\ WF_vars(ReqGrant(r)) /\ WF_vars(ReqPend(r)) /\ WF_vars(ReqSend(r))
-                       /\ WF_vars(ReqRecv(r)) /\ WF_vars(ReqForget(r)) /\ WF_vars(ReqPersist(r))
-                       /\ WF_vars(ReqResult(r)) /\ WF_vars(ForceGrant(r))
+    /\ \A r \in Reqs : WF_vars(Quiet(Start(r))) /\ WF_vars(Quiet(ReqGrant(r))) /\ WF_vars(Quiet(ReqPend(r))) /\ WF_vars(Quiet(ReqSend(r)))
+                       /\ WF_vars(Quiet(ReqRecv(r))) /\ WF_vars(Quiet(ReqForget(r))) /\ WF_vars(Quiet(ReqPersist(r)))
+                       /\ WF_vars(Quiet(ReqResult(r))) /\ WF_vars(Quiet(ForceGrant(r))) /\ WF_vars(ReqWeak(r))
     /\ WF_vars(\E p \in net : Deliver(p))
-    /\ \A a \in Accts : WF_vars(SiGrant(a)) /\ WF_vars(SiInstall(a)) /\ WF_vars(SoGrant(a)) /\ WF_vars(SoRevoke(a))
-                        /\ WF_vars(SoClear(a)) /\ WF_vars(PrGrant(a)) /\ WF_vars(PrWrite(a))
+    /\ \A a \in Accts : WF_vars(Quiet(SiGrant(a))) /\ WF_vars(Quiet(SiInstall(a))) /\ WF_vars(Quiet(SoGrant(a))) /\ WF_vars(Quiet(SoRevoke(a)))
+                        /\ WF_vars(Quiet(SoClear(a))) /\ WF_vars(Quiet(PrGrant(a))) /\ WF_vars(Quiet(PrWrite(a)))
 
 Spec == Init /\ [][Next]_vars /\ Fairness
 
@@ -748,7 +827,18 @@ TypeOK ==
     /\ \A r \in Reqs : rph[r] \in {"idle", "want", "pend", "send", "await", "forget", "persist", "inflight", "wantForce", "done"}
     /\ \A a \in Accts : holder[a] \in {None, "in", "out", "pr"} \cup Reqs
 
-SingleUse == \A a \in Accts : ~badSend[a] /\ \A t \in Toks : slack[a][t] >= 0
+SingleUseServer == \A a \in Accts : \A t \in Toks : slack[a][t] >= 0
+
+NoResendAfterAnswer == \A a \in Accts : ~badSend[a]
+
+SingleUse == NoResendAfterAnswer /\ SingleUseServer
+
+CauseIsServerCode == \A a \in Accts : dState[a] = "needs_sign_in" => dCause[a] \in TerminalCodes
+
+SuccessorKept == \A a \in Accts : ~dropped[a]
+
+NoEraseUnlessDropped ==
+    \A a \in Accts : (dState[a] = "needs_sign_in" => sRev[a] \/ dropped[a]) /\ (mState[a] = "needs_sign_in" => sRev[a] \/ dropped[a])
 
 Critical(a) ==
     {r \in Reqs : ReqAcct[r] = a /\ rph[r] \in {"pend", "send", "await", "forget", "persist"}}

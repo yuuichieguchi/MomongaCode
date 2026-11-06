@@ -1124,6 +1124,184 @@
       "budgetCpuSeconds": 8
     },
     {
+      "config": "PlanCredential.weakTransientShort",
+      "role": "evidence",
+      "expect": {
+        "violates": "SingleUseServer",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 206,
+      "measuredSeconds": 4.48,
+      "measuredCpuSeconds": 2.41,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "PlanCredential.weakRejectShort",
+      "role": "evidence",
+      "expect": {
+        "violates": "SingleUseServer",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 290,
+      "measuredSeconds": 4.61,
+      "measuredCpuSeconds": 2.65,
+      "budgetCpuSeconds": 9
+    },
+    {
+      "config": "PlanCredential.weakAdoptRotated",
+      "role": "evidence",
+      "expect": {
+        "violates": "SingleUseServer",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 359,
+      "measuredSeconds": 4.53,
+      "measuredCpuSeconds": 2.53,
+      "budgetCpuSeconds": 9
+    },
+    {
+      "config": "PlanCredential.weakTransientKept",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoResendAfterAnswer",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 166,
+      "measuredSeconds": 5.47,
+      "measuredCpuSeconds": 2.44,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "PlanCredential.weakSignInKept",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoEraseOnTransient",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 111,
+      "measuredSeconds": 5.41,
+      "measuredCpuSeconds": 2.69,
+      "budgetCpuSeconds": 9
+    },
+    {
+      "config": "PlanCredential.weakSignInShort",
+      "role": "evidence",
+      "expect": {
+        "violates": "SuccessorKept",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 118,
+      "measuredSeconds": 4.1,
+      "measuredCpuSeconds": 2.48,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "PlanCredential.weakUnansweredRotated",
+      "role": "evidence",
+      "expect": {
+        "violates": "SuccessorKept",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 117,
+      "measuredSeconds": 2.27,
+      "measuredCpuSeconds": 2.43,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "PlanCredential.weakAdoptShort",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 359,
+      "measuredSeconds": 2.55,
+      "measuredCpuSeconds": 2.7,
+      "budgetCpuSeconds": 9
+    },
+    {
+      "config": "PlanCredential.weakAdoptKept",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 371,
+      "measuredSeconds": 2.3,
+      "measuredCpuSeconds": 2.75,
+      "budgetCpuSeconds": 9
+    },
+    {
+      "config": "PlanCredential.weakUnansweredKept",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 557,
+      "measuredSeconds": 2.7,
+      "measuredCpuSeconds": 2.93,
+      "budgetCpuSeconds": 9
+    },
+    {
+      "config": "PlanCredential.weakAdoptShortFaults",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 14303,
+      "measuredSeconds": 4.1,
+      "measuredCpuSeconds": 5.5,
+      "budgetCpuSeconds": 14
+    },
+    {
+      "config": "PlanCredential.weakAdoptKeptFaults",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 12457,
+      "measuredSeconds": 2.98,
+      "measuredCpuSeconds": 5.59,
+      "budgetCpuSeconds": 15
+    },
+    {
+      "config": "PlanCredential.weakUnansweredKeptFaults",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 16689,
+      "measuredSeconds": 4.16,
+      "measuredCpuSeconds": 5.55,
+      "budgetCpuSeconds": 15
+    },
+    {
+      "config": "PlanCredential.causeIsCode",
+      "role": "evidence",
+      "expect": {
+        "violates": "CauseIsServerCode",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 67,
+      "measuredSeconds": 6.89,
+      "measuredCpuSeconds": 2.16,
+      "budgetCpuSeconds": 8
+    },
+    {
       "config": "ProcessMarker",
       "role": "check",
       "expect": "holds",
