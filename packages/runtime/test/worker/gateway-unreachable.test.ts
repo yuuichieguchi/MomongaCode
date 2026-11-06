@@ -43,7 +43,7 @@ describe('a provider that stayed unreachable for the gateway retry window is a t
     expect(env.gateway.streams).toHaveLength(1);
   });
 
-  it('ends the run FAILED with provider_unavailable and the gateway message once the attempts are exhausted', async () => {
+  it('ends the run FAILED under the attempt limit rule, naming the last unreachable-provider failure, once the attempts are exhausted', async () => {
     const env = await makeEnv({ maxAttempts: 3, maxTotalAttempts: 3 });
     env.gateway.script.push(throwing(unreachable()), throwing(unreachable()), throwing(unreachable()));
     const run = env.enqueue('Work');
@@ -58,7 +58,7 @@ describe('a provider that stayed unreachable for the gateway retry window is a t
 
     const final = env.run(run.id);
     expect(final.status).toBe('FAILED');
-    expect(final.error).toEqual({ code: 'provider_unavailable', message: CAUSE });
+    expect(final.error).toEqual({ code: 'max_total_attempts', message: `run ${run.id} exceeded 3 total attempts; the last attempt failed with: ${CAUSE}` });
     expect(env.gateway.streams).toHaveLength(3);
   });
 });
