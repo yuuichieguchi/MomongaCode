@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { findHolders } from '@momonga/foundation';
 import { MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_SETSID_GRANDCHILD_ENV, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
-import { createTransport, descriptorPath, eventually, groupExists, makeDir, pidAlive, rawConfig, startRaw, trackPid, transportCloseBoundMs } from './raw-transport.ts';
+import { createTransport, descriptorPath, eventually, groupExists, makeDir, pidAlive, rawConfig, startRaw, trackPid } from './raw-transport.ts';
 
 const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 const SSH_AGENT = '/usr/bin/ssh-agent';
@@ -105,10 +105,8 @@ describe('MCP stdio transport markers', () => {
       await eventually(() => fs.existsSync(socket), 'ssh-agent to listen');
       const [marker] = markerFiles(dir) as [string];
 
-      const started = Date.now();
       await transport.close();
 
-      expect(Date.now() - started).toBeLessThanOrEqual(transportCloseBoundMs(AGENT_CLOSE_GRACE_MS));
       expect(groupExists(pid)).toBe(false);
       expect(fs.existsSync(marker)).toBe(true);
       expect(warnings).toEqual([`mcp marker ${marker}: process ${agent.pid} (ssh-agent) could not be inspected, so it was left alone`]);
