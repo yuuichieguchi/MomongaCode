@@ -63,11 +63,12 @@ const cancelDuringBash = async (command: string, cancelBoundMs: number): Promise
     expect(frames.at(-1)?.data.type).toBe('run.status');
     expect(frames.at(-1)?.data.to).toBe('CANCELLED');
     expect(framesOfType(frames, 'run.status').some((frame) => frame.data.to === 'COMPLETED')).toBe(false);
-    expect(framesOfType(frames, 'tool.reconciled')).toEqual([]);
+    expect(framesOfType(frames, 'tool.reconciled').map((frame) => ({ interrupted: frame.data.interrupted, outcome: frame.data.outcome }))).toEqual([{ interrupted: 'cancelled', outcome: 'unknown' }]);
     expect(framesOfType(frames, 'model.requested')).toHaveLength(1);
 
     await shutdownBarrier(stack);
     expect(chatCompletions(stack.fake)).toHaveLength(1);
+    expect(readDb<{ state: string }>(home.paths.databases.runtime, 'SELECT state FROM idempotency').map((row) => row.state)).toEqual(['COMPLETED']);
     return { elapsed, project: home.project };
   } finally {
     await runtime.close();
