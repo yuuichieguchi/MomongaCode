@@ -44,9 +44,22 @@ describe('createUpstreamClassifier: outbound connection failures', () => {
     expect(classified.error.message).toContain('HTTPS_PROXY');
   });
 
-  it('keeps the direct-route text unchanged for an unlabelled connection failure', () => {
-    const refused = Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:9'), { code: 'ECONNREFUSED' });
+  it('classifies a labelled direct connection failure as unreachable, naming the origin and the code', () => {
+    const cause = Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:9'), { code: 'ECONNREFUSED' });
+    const classified = classify(new OutboundConnectionError({ kind: 'origin-connection', origin: 'http://127.0.0.1:9', code: 'ECONNREFUSED' }, { cause }));
 
-    expect(classify(refused).error.message).toBe('the chat-completions upstream is unreachable');
+    expect(classified.retryable).toBe(true);
+    expect(classified.error.code).toBe('provider_unavailable');
+    expect(classified.error.message).toContain('the chat-completions upstream is unreachable');
+    expect(classified.error.message).toContain('http://127.0.0.1:9');
+    expect(classified.error.message).toContain('ECONNREFUSED');
+  });
+
+  it('keeps a labelled direct failure that is not a connection failure non-retryable', () => {
+    const cause = Object.assign(new Error('bad request line'), { code: 'UND_ERR_INVALID_ARG' });
+    const classified = classify(new OutboundConnectionError({ kind: 'origin-connection', origin: 'http://127.0.0.1:9', code: 'UND_ERR_INVALID_ARG' }, { cause }));
+
+    expect(classified.retryable).toBe(false);
+    expect(classified.error.code).toBe('adapter_error');
   });
 });

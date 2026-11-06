@@ -4,11 +4,12 @@ import { describe, expect, it } from 'vitest';
 import { createJsonLogger, createUdsClient, systemClock } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, driveFakeTime, registerCleanup, startFakeChatCompletions, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, FakeScriptedReply } from '@momonga/testkit';
 import { PROCESS_VERSION, baseEnv, ccTarget, writeSettings } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
 import { REDACTED } from './credential-support.ts';
+import { GATEWAY_CONFIG_DEFAULTS } from '../src/defaults.ts';
 
 const PROXY_PASSWORD = 'proxy-password-0123456789';
 const body = { model: 'fast', input: userInput('hi') };
@@ -32,6 +33,24 @@ const captureLog = (): { write: (chunk: string) => boolean; text: () => string }
 
 const PROXY_407 = 'HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n';
 
+const startSilentProxy = async (context: CleanupContext): Promise<{ port: number; received: () => string }> => {
+  let text = '';
+  const sockets = new Set<net.Socket>();
+  const server = net.createServer((socket) => {
+    sockets.add(socket);
+    socket.on('error', () => undefined);
+    socket.on('data', (chunk) => {
+      text += chunk.toString('latin1');
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  registerCleanup(context, async () => {
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+  return { port: (server.address() as AddressInfo).port, received: () => text };
+};
+
 const startRefusingProxy = async (context: CleanupContext): Promise<{ port: number; received: () => string }> => {
   let text = '';
   const sockets = new Set<net.Socket>();
@@ -51,7 +70,9 @@ const startRefusingProxy = async (context: CleanupContext): Promise<{ port: numb
   return { port: (server.address() as AddressInfo).port, received: () => text };
 };
 
-const startGateway = async (context: CleanupContext, settings: unknown, env: Record<string, string> = {}) => {
+type FakeTime = { clock: ReturnType<typeof createFakeClock>; timers: ReturnType<typeof createFakeTimers> };
+
+const startGateway = async (context: CleanupContext, settings: unknown, env: Record<string, string> = {}, time?: FakeTime) => {
   const home = withTempDir(context, { asHome: true });
   writeSettings(home, settings);
   const log = captureLog();
@@ -61,6 +82,7 @@ const startGateway = async (context: CleanupContext, settings: unknown, env: Rec
     version: PROCESS_VERSION,
     logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: log, level: 'debug' }),
     stdout: { write: () => true },
+    ...(time === undefined ? {} : { clock: time.clock, timers: time.timers, random: () => 0.5 }),
   });
   registerCleanup(context, async () => {
     await handle.close();
@@ -118,6 +140,45 @@ describe('gateway: a model call to a remote target goes through the configured p
     expect(proxy.received()).toContain('CONNECT model.example.test:443');
     const error = JSON.parse(response.text).error;
     expect(error.code).toBe('proxy_authentication_required');
+    expect(error.message).toContain(`http://127.0.0.1:${proxy.port}`);
+    expect(error.message).toContain('network.httpsProxy');
+  });
+});
+
+const REMOTE_TARGET = {
+  adapter: 'chat-completions',
+  provider: 'fake',
+  model: 'system',
+  baseUrl: 'https://model.example.test/v1',
+  toolCalling: 'native',
+  capabilities: { contextWindow: 4096, maxOutputTokens: 1024 },
+};
+
+describe('gateway: a model call through a proxy that never answers CONNECT', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+  it('ends every attempt at the model headers bound and names the proxy hop and its source', async (context) => {
+    const proxy = await startSilentProxy(context);
+    const clock = createFakeClock(Date.now());
+    const timers = createFakeTimers(clock);
+    const startedAt = clock.now();
+    const { client } = await startGateway(
+      context,
+      { models: { aliases: { fast: ['primary'] }, targets: { primary: REMOTE_TARGET }, headersTimeoutMs: 300 }, network: { httpsProxy: `http://127.0.0.1:${proxy.port}` } },
+      {},
+      { clock, timers },
+    );
+
+    const pending = post(client, { ...body, stream: false });
+    let settled = false;
+    const settle = (): void => {
+      settled = true;
+    };
+    void pending.then(settle, settle);
+    await driveFakeTime(timers, { done: () => settled, horizonAt: startedAt + GATEWAY_CONFIG_DEFAULTS.retry.totalWaitMs, description: 'the answer to a request through a silent proxy' });
+    const response = await pending;
+
+    expect(proxy.received()).toContain('CONNECT model.example.test:443');
+    const error = JSON.parse(response.text).error;
+    expect(error.code).toBe('provider_unavailable');
     expect(error.message).toContain(`http://127.0.0.1:${proxy.port}`);
     expect(error.message).toContain('network.httpsProxy');
   });

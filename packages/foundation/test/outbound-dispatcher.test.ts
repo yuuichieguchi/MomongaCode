@@ -190,17 +190,42 @@ describe('createOutboundDispatcher: routes', { timeout: TEST_TIMEOUT_MS }, () =>
   });
 });
 
+describe('createOutboundDispatcher: the direct route is labelled by the same rule', { timeout: TEST_TIMEOUT_MS }, () => {
+  it('names a refused direct connection as the origin hop with the origin and the code', async () => {
+    const port = await closedPort();
+    const dispatcher = dispatcherFor(networkOf({ caFiles: [] }), 5_000);
+
+    const error = await failureOf(request(`http://127.0.0.1:${port}/v1/models`, { dispatcher }));
+
+    expect(error.hop).toBe('origin');
+    expect(error.failure).toMatchObject({ kind: 'origin-connection', origin: `http://127.0.0.1:${port}`, code: 'ECONNREFUSED' });
+    expect(error.message).toContain(`http://127.0.0.1:${port}`);
+  });
+
+  it('names a direct origin that accepts and never answers once the site headers bound passes', async () => {
+    const silent = await silentProxy();
+    const dispatcher = createOutboundDispatcher(networkOf({ caFiles: [] }), { connectReplyTimeoutMs: 300, headersTimeout: 300 });
+    closers.push(() => dispatcher.destroy());
+
+    const error = await failureOf(request(`http://127.0.0.1:${silent.port}/`, { dispatcher }));
+
+    expect(error.failure).toMatchObject({ kind: 'origin-connection', code: 'UND_ERR_HEADERS_TIMEOUT' });
+  });
+});
+
 describe('createOutboundDispatcher: a CA file that could not be loaded', { timeout: TEST_TIMEOUT_MS }, () => {
   const trust: TrustReport = { sources: [], failures: [{ file: '/etc/corp/missing-ca.pem', source: 'network.extraCaFiles', reason: 'the file could not be read (ENOENT)' }] };
 
-  it('fails an https request to a remote origin naming the file and its source', async () => {
+  it('fails every https request to a remote origin, not only the first, naming the file and its source', async () => {
     const dispatcher = dispatcherFor(networkOf({ caFiles: [] }, trust), 5_000);
 
-    const error = await failureOf(request(REMOTE_HTTPS, { dispatcher }));
+    const errors = [await failureOf(request(REMOTE_HTTPS, { dispatcher })), await failureOf(request('https://other.example.test/', { dispatcher })), await failureOf(request(REMOTE_HTTPS, { dispatcher }))];
 
-    expect(error.failure).toMatchObject({ kind: 'ca-file', file: '/etc/corp/missing-ca.pem', source: 'network.extraCaFiles' });
-    expect(error.message).toContain('/etc/corp/missing-ca.pem');
-    expect(error.message).toContain('network.extraCaFiles');
+    for (const error of errors) {
+      expect(error.failure).toMatchObject({ kind: 'ca-file', file: '/etc/corp/missing-ca.pem', source: 'network.extraCaFiles' });
+      expect(error.message).toContain('/etc/corp/missing-ca.pem');
+      expect(error.message).toContain('network.extraCaFiles');
+    }
   });
 
   it('keeps plain http and loopback destinations working', async () => {
