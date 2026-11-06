@@ -55,11 +55,22 @@ export const startCli = (home: E2eHome, args: readonly string[], options: RunCli
   registerE2eCleanup(() => {
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
   });
-  const result = withinBound(closed, options.boundMs ?? E2E_RUN_COMPLETED_BOUND_MS, `momonga ${args.join(' ')}`).catch((error: unknown) => {
-    throw new Error(`${error instanceof Error ? error.message : String(error)}\nstdout so far:\n${stdout}\nstderr so far:\n${stderr}`, { cause: error });
-  });
+  let awaitedResult: Promise<CliResult> | undefined;
+  const awaitResult = (): Promise<CliResult> =>
+    (awaitedResult ??= withinBound(closed, options.boundMs ?? E2E_RUN_COMPLETED_BOUND_MS, `momonga ${args.join(' ')}`).catch((error: unknown) => {
+      throw new Error(`${error instanceof Error ? error.message : String(error)}\nstdout so far:\n${stdout}\nstderr so far:\n${stderr}`, { cause: error });
+    }));
   if (child.pid === undefined) throw new Error(`momonga ${args.join(' ')} did not start`);
-  return { result, pid: child.pid, kill: (signal) => void child.kill(signal), interrupt: () => void child.kill('SIGINT'), partialStdout: () => stdout, partialStderr: () => stderr };
+  return {
+    get result() {
+      return awaitResult();
+    },
+    pid: child.pid,
+    kill: (signal) => void child.kill(signal),
+    interrupt: () => void child.kill('SIGINT'),
+    partialStdout: () => stdout,
+    partialStderr: () => stderr,
+  };
 };
 
 export const runCli = (home: E2eHome, args: readonly string[], options: RunCliOptions = {}): Promise<CliResult> => startCli(home, args, options).result;
