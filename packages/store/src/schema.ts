@@ -929,7 +929,7 @@ CREATE TABLE approvals_unbounded (
   server TEXT,
   requests_json TEXT,
   responses_json TEXT,
-  CHECK ((kind = 'permission') = (expires_at IS NULL))
+  CHECK ((kind = 'elicitation') = (expires_at IS NOT NULL))
 );
 INSERT INTO approvals_unbounded (id, run_id, call_id, status, options_json, option_id, expires_at, created_at, resolved_at, subject_digest, kind, server, requests_json, responses_json)
   SELECT id, run_id, call_id, status, options_json, option_id, CASE kind WHEN 'permission' THEN NULL ELSE expires_at END, created_at, resolved_at, subject_digest, kind, server, requests_json, responses_json

@@ -228,7 +228,7 @@ describe('startApprovalSweeper release of stopped runs', () => {
 
 describe('sweeper inside the run service', () => {
   it('keeps a pending approval past the former 30-minute limit and writes nothing while it waits', async () => {
-    const env = await startService({ fakeTimers: true, sweepIntervalMs: 1000 });
+    const env = await startService({ fakeTimers: true, sweepIntervalMs: 60_000, dataVersionPollMs: 60_000 });
     const timers = env.timers;
     if (timers === undefined) throw new Error('fake timers missing');
     const kit = attachWorkerKit(env);
@@ -239,7 +239,7 @@ describe('sweeper inside the run service', () => {
     const [approval] = (await env.http('GET', `/v1/runs/${run.id}/approvals`)).json.approvals;
     const before = (await env.getRun(run.id)).lastSeq as number;
 
-    await tick(timers, FORMER_APPROVAL_LIMIT_MS + 5000);
+    await tick(timers, FORMER_APPROVAL_LIMIT_MS + 60_000, 60_000);
 
     expect(await env.getRun(run.id)).toMatchObject({ status: 'WAITING_HUMAN', lastSeq: before });
     expect((await env.http('GET', `/v1/approvals/${approval.id}`)).json.approval.status).toBe('pending');

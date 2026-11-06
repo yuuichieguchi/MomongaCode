@@ -60,12 +60,12 @@ const decodeApproval = (row: Row): Approval => {
     ...(resolvedAt === null ? {} : { resolvedAt }),
     ...(subjectDigest === null ? {} : { subjectDigest }),
   };
-  if (kind === 'permission') {
-    if (expiresAt !== null) throw corrupt('approvals', identity, 'a permission approval must not carry an expiry');
-    return { ...record, kind };
+  if (kind === 'elicitation') {
+    if (expiresAt === null) throw corrupt('approvals', identity, 'a request for input must carry its expiry');
+    return { ...record, kind, expiresAt };
   }
-  if (expiresAt === null) throw corrupt('approvals', identity, 'a request for input must carry its expiry');
-  return { ...record, kind, expiresAt };
+  if (expiresAt !== null) throw corrupt('approvals', identity, 'only a request for input carries an expiry');
+  return { ...record, kind };
 };
 
 export type ApprovalRequest = {

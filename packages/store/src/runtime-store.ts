@@ -684,11 +684,12 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   };
 
   const expiryEvents = (runId: string, approval: Approval): RunEventPayload[] => {
+    if (approval.kind !== 'elicitation') throw corrupt('approvals', approval.id, 'only a request for input carries an expiry');
     const notice: RunEventPayload = {
       type: 'notice',
       level: 'warning',
       code: 'approval_expired',
-      message: `The ${approval.kind === 'elicitation' ? 'request for input' : 'approval'} for ${approval.callId} expired.`,
+      message: `The request for input for ${approval.callId} expired.`,
     };
     return approvalAnnounced(runId, approval.id)
       ? [cancelledEvent(approval, 'expired'), notice]
