@@ -63,6 +63,9 @@ const setup = (context: CleanupContext, options: SetupOptions = {}) => {
     get: () => {
       throw new Error('get() must not be used by the supervisor');
     },
+    read: () => {
+      throw new Error('read() must not be used by the supervisor');
+    },
     snapshot: () => {
       snapshotCalls += 1;
       calls.push('snapshot');

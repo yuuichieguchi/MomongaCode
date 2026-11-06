@@ -36,7 +36,7 @@ export type ToolRuntimeOptions = {
   report(error: unknown): void;
   sandbox: Sandbox;
   shellHost: ShellHost;
-  settings: Pick<SettingsComposition, 'envFor' | 'takeUserSnapshot' | 'loadSessionSettings' | 'trustOracle'>;
+  settings: Pick<SettingsComposition, 'envFor' | 'takeUserSnapshot' | 'admitUserSnapshot' | 'loadSessionSettings' | 'trustOracle'>;
   reapTiming: ReapTiming;
   leaseMs: number;
   heartbeatMs: number;

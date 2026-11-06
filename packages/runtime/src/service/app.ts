@@ -337,6 +337,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     if (drained !== undefined) return drained;
     const replayed = replay();
     if (replayed !== undefined) return replayed;
+    await sessionSettingsOf(session.cwd);
     const skill = body.skill === undefined ? undefined : await activationOf(session, body.skill);
     if (body.images !== undefined && body.images.length > 0) {
       let capabilities: Capabilities;

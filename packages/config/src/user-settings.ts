@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import { isTransientErrno } from '@momonga/foundation';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
+import { keptOrThrow } from './last-good.ts';
+import type { Kept } from './last-good.ts';
 import { layoutOf } from './layout.ts';
 import { readUserLayer } from './layers.ts';
 import type { UserLayer } from './layers.ts';
@@ -57,10 +59,13 @@ export const loadUserSettings = async ({ home }: LoadUserSettingsOptions): Promi
 
 export type UserSettingsCacheOptions = { home: string; onWarning: (message: string) => void };
 
-export type UserSettingsSnapshot = { settings: ResolvedSettings; user: UserLayer } | { error: ConfigError };
+export type UserSettingsLoaded = { settings: ResolvedSettings; user: UserLayer };
+
+export type UserSettingsSnapshot = UserSettingsLoaded | { error: ConfigError };
 
 export type UserSettingsCache = {
   get(): ResolvedSettings;
+  read(): UserSettingsLoaded;
   snapshot(): UserSettingsSnapshot;
 };
 
@@ -78,7 +83,7 @@ export const userSettingsChangeKey = (home: string): string => changeKeyOf(layou
 
 export const createUserSettingsCache = ({ home, onWarning }: UserSettingsCacheOptions): UserSettingsCache => {
   let latest: UserSettingsSnapshot | undefined;
-  let lastGood: ResolvedSettings | undefined;
+  let lastGood: Kept<UserSettingsLoaded>;
   let seenKey: string | undefined;
 
   let warnedFailure: string | undefined;
@@ -106,9 +111,9 @@ export const createUserSettingsCache = ({ home, onWarning }: UserSettingsCacheOp
     try {
       const loaded = readUserSettingsSync(home);
       for (const warning of loaded.warnings) onWarning(warning);
-      lastGood = loaded.settings;
-      warnedFailure = undefined;
       latest = { settings: loaded.settings, user: loaded.user };
+      lastGood = { value: latest };
+      warnedFailure = undefined;
     } catch (error) {
       if (isTransientErrno(error)) seenKey = undefined;
       rethrowIfTransient(error);
@@ -117,19 +122,21 @@ export const createUserSettingsCache = ({ home, onWarning }: UserSettingsCacheOp
     return latest as UserSettingsSnapshot;
   };
 
+  const read = (): UserSettingsLoaded => {
+    let snapshot: UserSettingsSnapshot;
+    try {
+      snapshot = refresh();
+    } catch (error) {
+      if (!isTransientErrno(error)) throw error;
+      return keptOrThrow('read', lastGood, error);
+    }
+    if ('error' in snapshot) return keptOrThrow('read', lastGood, snapshot.error);
+    return snapshot;
+  };
+
   return {
-    get: () => {
-      let snapshot: UserSettingsSnapshot;
-      try {
-        snapshot = refresh();
-      } catch (error) {
-        if (isTransientErrno(error) && lastGood !== undefined) return lastGood;
-        throw error;
-      }
-      if (!('error' in snapshot)) return snapshot.settings;
-      if (lastGood === undefined) throw snapshot.error;
-      return lastGood;
-    },
+    get: () => read().settings,
+    read,
     snapshot: refresh,
   };
 };

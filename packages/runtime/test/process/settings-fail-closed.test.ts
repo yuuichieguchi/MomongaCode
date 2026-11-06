@@ -15,14 +15,14 @@ describe('fail-closed user settings under a running runtime (system timers, in-p
     expect(response.json.error).toMatchObject({ code: 'config_error' });
   });
 
-  it('after the user settings file becomes invalid, a claimed run fails with config_error', PROCESS_TIMEOUT, async () => {
+  it('after the user settings file becomes invalid, a new run is refused with config_error', PROCESS_TIMEOUT, async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);
     const session = await launched.createSession();
     writeInvalidUserSettings(stack.temp.home);
-    const run = await launched.createRun(session.id);
-    expect(await waitForStatus(stack.temp, run.id, ['COMPLETED', 'FAILED', 'CANCELLED'])).toBe('FAILED');
-    expect((await launched.http('GET', `/v1/runs/${run.id}`)).json.run.error).toMatchObject({ code: 'config_error' });
+    const response = await launched.http('POST', `/v1/sessions/${session.id}/runs`, { body: { input: 'hello' } });
+    expect(response.status).toBe(422);
+    expect(response.json.error).toMatchObject({ code: 'config_error' });
   });
 
   it('after the user settings file becomes invalid, cancellation still reaches CANCELLED', PROCESS_TIMEOUT, async () => {

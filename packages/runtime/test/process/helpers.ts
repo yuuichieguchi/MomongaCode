@@ -118,6 +118,10 @@ export const makeCache = (home: string): CountingCache => {
   const cache: CountingCache = {
     snapshots: 0,
     get: () => inner.get(),
+    read: () => {
+      cache.snapshots += 1;
+      return inner.read();
+    },
     snapshot: () => {
       cache.snapshots += 1;
       return inner.snapshot();

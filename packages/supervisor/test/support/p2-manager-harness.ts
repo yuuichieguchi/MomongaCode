@@ -61,6 +61,10 @@ export const settingsDouble = (real: UserSettingsCache): SettingsDouble => {
       double.getCalls += 1;
       throw new Error('the supervisor must never call get() on the settings cache');
     },
+    read: () => {
+      double.getCalls += 1;
+      throw new Error('the supervisor must never call read() on the settings cache');
+    },
     snapshot: () => {
       double.snapshotCalls += 1;
       const script = double.script;

@@ -72,7 +72,7 @@ const setup = async () => {
     report: reporter.report,
     settings: {
       envFor: () => ({}),
-      takeUserSnapshot: () => {
+      admitUserSnapshot: () => {
         const snapshot = cache.snapshot();
         if ('error' in snapshot) throw snapshot.error;
         return { settings: snapshot.settings, user: snapshot.user };

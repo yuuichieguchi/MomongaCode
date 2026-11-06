@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { appendPermissionRule, autoFitKeyOf, systemFileLockPorts, credentialEnvNames, loadSettings, stripCredentialEnv } from '@momonga/config';
-import type { AutoFitKey, LoadSettingsResult, ResolvedSettings, TrustOracle, UserLayer, UserSettingsCache } from '@momonga/config';
+import { appendPermissionRule, autoFitKeyOf, ConfigError, createLayerCache, systemFileLockPorts, credentialEnvNames, loadSettings, stripCredentialEnv } from '@momonga/config';
+import type { AutoFitKey, LoadSettingsResult, ResolvedSettings, SettingsUse, TrustOracle, UserLayer, UserSettingsCache } from '@momonga/config';
 import type { RuntimeStore, Session } from '@momonga/store';
 import type { SettingsPort, ToolEnv } from '../ports.ts';
 import type { SessionCreateSettings } from '../service/app.ts';
@@ -21,6 +21,7 @@ export type SettingsComposition = {
   sessionCreateSettings(cwd: string): Promise<SessionCreateSettings>;
   envFor(session: Session): ToolEnv;
   takeUserSnapshot(): UserSnapshot;
+  admitUserSnapshot(): UserSnapshot;
   loadSessionSettings(cwd: string, snapshot: UserSnapshot): Promise<LoadSettingsResult>;
   trustOracle: TrustOracle;
 };
@@ -36,19 +37,36 @@ export const createSettingsComposition = ({ home, cache, store }: SettingsCompos
     return autoFitKeyOf(resolved.models, classifier, AUTO_CLASSIFIER_CODE);
   };
 
-  const takeUserSnapshot = (): UserSnapshot => {
+  const layerCache = createLayerCache();
+
+  const refusalOf = (error: ConfigError): ConfigError =>
+    new ConfigError(`${error.message}; new runs are refused until the file is fixed, running runs continue`, { cause: error });
+
+  const admitted = async <T>(admit: () => Promise<T> | T): Promise<T> => {
+    try {
+      return await admit();
+    } catch (error) {
+      if (error instanceof ConfigError) throw refusalOf(error);
+      throw error;
+    }
+  };
+
+  const takeUserSnapshot = (): UserSnapshot => cache.read();
+
+  const admitUserSnapshot = (): UserSnapshot => {
     const snapshot = cache.snapshot();
-    if ('error' in snapshot) throw snapshot.error;
+    if ('error' in snapshot) throw refusalOf(snapshot.error);
     return { settings: snapshot.settings, user: snapshot.user };
   };
 
-  const loadSessionSettings = (cwd: string, snapshot: UserSnapshot): Promise<LoadSettingsResult> => {
-    return loadSettings({ home, projectDir: cwd, cli: {}, trust: trustOracle, user: snapshot.user });
-  };
+  const settingsFor = (cwd: string, snapshot: UserSnapshot, use: SettingsUse): Promise<LoadSettingsResult> =>
+    loadSettings({ home, projectDir: cwd, cli: {}, trust: trustOracle, user: snapshot.user, kept: { cache: layerCache, use } });
+
+  const loadSessionSettings = (cwd: string, snapshot: UserSnapshot): Promise<LoadSettingsResult> => settingsFor(cwd, snapshot, 'read');
 
   const sessionCreateSettings = async (cwd: string): Promise<SessionCreateSettings> => {
-    const snapshot = takeUserSnapshot();
-    const { permissions } = (await loadSessionSettings(cwd, snapshot)).settings;
+    const snapshot = admitUserSnapshot();
+    const { permissions } = (await admitted(() => settingsFor(cwd, snapshot, 'admit'))).settings;
     const origin = permissions.defaultModeOrigin;
     const classifier = snapshot.settings.autoMode?.classifier;
     const autoModeKey = autoFitKeyFor(snapshot.settings);
@@ -88,5 +106,5 @@ export const createSettingsComposition = ({ home, cache, store }: SettingsCompos
     trusted: (session) => store.trust.decisionFor(session.cwd).decision === 'trusted',
   };
 
-  return { settings, sessionCreateSettings, envFor, takeUserSnapshot, loadSessionSettings, trustOracle };
+  return { settings, sessionCreateSettings, envFor, takeUserSnapshot, admitUserSnapshot, loadSessionSettings, trustOracle };
 };

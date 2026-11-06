@@ -1,10 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { isTransientErrno } from '@momonga/foundation';
 import { HOOK_EVENTS, HOOK_MATCHER_EVENTS, hookMatcherError } from '@momonga/protocol';
-import { rethrowIfTransient, toConfigError } from './config-error.ts';
+import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import { looksLikeCredentialName } from './credential-env.ts';
 import { isAbsentPathError, readJsonFile, readJsonFileSync } from './json-file.ts';
+import { keptOrThrow } from './last-good.ts';
+import type { Kept, SettingsUse } from './last-good.ts';
 import type { JsonFile } from './json-file.ts';
 import { layoutOf } from './layout.ts';
 import { resolveModels } from './models.ts';
@@ -20,7 +23,13 @@ export type Layer = { origin: RuleOrigin; source: string; root: string; ruleRoot
 
 export type LoadedLayers = { layers: Layer[]; models: ResolvedModels; files: string[]; warnings: string[] };
 
-export type LayerOptions = { home: string; projectDir: string; trust: TrustOracle; user?: UserLayer };
+export type LayerCache = Map<string, Kept<Layer | undefined>>;
+
+export type KeptLayers = { cache: LayerCache; use: SettingsUse };
+
+export type LayerOptions = { home: string; projectDir: string; trust: TrustOracle; user?: UserLayer; kept?: KeptLayers };
+
+export const createLayerCache = (): LayerCache => new Map();
 
 const PROJECT_ENV_ALLOWLIST: ReadonlySet<string> = new Set([
   'NODE_ENV', 'RUST_LOG', 'RUST_BACKTRACE', 'LOG_LEVEL', 'DEBUG', 'TZ', 'LANG', 'LANGUAGE', 'CI', 'FORCE_COLOR', 'NO_COLOR', 'TERM',
@@ -141,13 +150,19 @@ const readLayer = async (
   origin: RuleOrigin,
   root: string,
   warnings: string[],
+  kept: KeptLayers | undefined,
   confineTo?: string,
 ): Promise<Layer | undefined> => {
   try {
-    return buildLayer(await readJsonFile(file, confineTo === undefined ? {} : { confineTo }), file, origin, root, root, true, warnings);
+    const layer = buildLayer(await readJsonFile(file, confineTo === undefined ? {} : { confineTo }), file, origin, root, root, true, warnings);
+    kept?.cache.set(file, { value: layer });
+    return layer;
   } catch (error) {
-    rethrowIfTransient(error);
-    throw toConfigError(error);
+    const failure = isTransientErrno(error) ? error : toConfigError(error);
+    if (kept === undefined) throw failure;
+    const layer = keptOrThrow(kept.use, kept.cache.get(file), failure);
+    if (failure instanceof ConfigError) warnings.push(`settings file is invalid: ${failure.message}`);
+    return layer;
   }
 };
 
@@ -188,7 +203,7 @@ const realpath = async (target: string): Promise<string> => {
   }
 };
 
-export const loadLayers = async ({ home, projectDir, trust, user: snapshot }: LayerOptions): Promise<LoadedLayers> => {
+export const loadLayers = async ({ home, projectDir, trust, user: snapshot, kept }: LayerOptions): Promise<LoadedLayers> => {
   const user = snapshot ?? readUserLayer(home);
   const warnings = [...user.warnings];
   const layers: Layer[] = user.layer === undefined ? [] : [user.layer];
@@ -211,12 +226,12 @@ export const loadLayers = async ({ home, projectDir, trust, user: snapshot }: La
   }
 
   if (trust.isTrusted(projectDir)) {
-    const project = await readLayer(projectFile, 'project', projectDir, warnings, projectDir);
+    const project = await readLayer(projectFile, 'project', projectDir, warnings, kept, projectDir);
     if (project !== undefined) layers.push(project);
   } else if (await exists(projectFile)) {
     warnings.push(`project ${projectDir} is not trusted; skipped settings files: ${projectFile}`);
   }
-  const local = await readLayer(localFile, 'local', await worktreeRootOf(home, projectDir), warnings);
+  const local = await readLayer(localFile, 'local', await worktreeRootOf(home, projectDir), warnings, kept);
   if (local !== undefined) layers.push(local);
 
   return result();
