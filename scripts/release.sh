@@ -54,7 +54,7 @@ verify_team_id() {
   fi
   local display
   display="$(codesign --display --verbose=4 "$BINARY" 2>&1)" || fail "codesign --display failed: $display"
-  printf '%s\n' "$display" | grep -Fxq "TeamIdentifier=$MOMONGA_TEAM_ID" || fail "the signed binary does not carry TeamIdentifier=$MOMONGA_TEAM_ID"
+  grep -Fxq "TeamIdentifier=$MOMONGA_TEAM_ID" <<< "$display" || fail "the signed binary does not carry TeamIdentifier=$MOMONGA_TEAM_ID"
 }
 
 assert_executable_format() {
@@ -123,7 +123,7 @@ tag="v$version"
 git rev-parse --verify --quiet "refs/tags/$tag" > /dev/null && fail "tag $tag already exists"
 if git ls-remote --exit-code --tags origin "refs/tags/$tag" > /dev/null 2>&1; then fail "tag $tag already exists on origin"; fi
 
-previous_tag="$(git tag --list 'v*' --sort=-v:refname | head -n 1)"
+previous_tag="$(git for-each-ref --count=1 --sort=-v:refname --format='%(refname:short)' 'refs/tags/v*')"
 if [ -n "$previous_tag" ]; then
   notes="$(git log --no-merges --pretty='- %s (%h)' "$previous_tag..HEAD")"
 else
@@ -158,7 +158,7 @@ step "notarize"
 submission="$(run xcrun notarytool submit "$ARCHIVE" --key "$APPLE_API_KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" --wait --output-format json)"
 printf '%s\n' "$submission"
 if [ "$DRY_RUN" = "0" ]; then
-  printf '%s\n' "$submission" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"Accepted"' || fail "notarization was not accepted"
+  grep -Eq '"status"[[:space:]]*:[[:space:]]*"Accepted"' <<< "$submission" || fail "notarization was not accepted"
 fi
 
 step "assess with Gatekeeper"
