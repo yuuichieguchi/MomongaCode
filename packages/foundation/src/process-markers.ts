@@ -65,6 +65,17 @@ export const reportUninspectableOnce =
 const groupsByHolder = async (holders: readonly number[], candidateGroups: readonly number[], inspector: ProcessInspector, signal: AbortSignal): Promise<Map<number, number>> =>
   valueOrThrow(`reading the process groups of ${holders.join(',')}`, await inspector.groupsOf(holders, candidateGroups, { signal }), new Map<number, number>());
 
+type HolderSplit = { groupHasHolder: boolean; outsideGroup: number[] };
+
+const splitByGroup = async (holders: readonly number[], pgid: number, inspector: ProcessInspector, signal: AbortSignal): Promise<HolderSplit> => {
+  if (holders.length === 0) return { groupHasHolder: false, outsideGroup: [] };
+  const groups = await groupsByHolder(holders, [pgid], inspector, signal);
+  return {
+    groupHasHolder: [...groups.values()].includes(pgid),
+    outsideGroup: holders.filter((pid) => groups.has(pid) && groups.get(pid) !== pgid),
+  };
+};
+
 type Listing = { inspector: ProcessInspector; timing: ReapTiming; signal: AbortSignal };
 
 const holdersUntil = async (marker: string, listing: Listing, deadline: number, unsettled?: Map<number, UninspectableProcess>): Promise<number[]> => {
@@ -173,18 +184,18 @@ const reconcileWithin = async (recorded: { pgid: number; marker: string }, { giv
       { leftAloneGroup: pgid },
     );
   }
-  const holderGroup = groupAlive ? await groupsByHolder(holders, [pgid], inspector, stop) : new Map<number, number>();
-  const groupVerified = [...holderGroup.values()].includes(pgid);
-  const holdersOutsideGroup = groupVerified ? holders.filter((pid) => holderGroup.get(pid) !== pgid) : holders;
-  const termTargets = [...(groupVerified ? [-pgid] : []), ...holdersOutsideGroup];
+  const listed = await splitByGroup(holders, pgid, inspector, stop);
+  const groupVerified = groupAlive && listed.groupHasHolder;
+  const termTargets = [...(groupVerified ? [-pgid] : []), ...listed.outsideGroup];
   const unsignalled = new Set(await signalTargets(send, termTargets, 'SIGTERM', stop));
   await graceSleep(timing, killGraceMs, given, stop);
   if (stop.aborted) return unknownResult('The interrupted command was sent SIGTERM; the wait for it ended with its operation before its exit could be confirmed.', true, { unsignalledPids: [...unsignalled] });
 
   const remaining = await holdersUntil(marker, listing, timing.now() + killGraceMs, unsettled);
   if (stop.aborted) return unknownResult('The interrupted command was sent SIGTERM; the wait for it ended with its operation before its exit could be confirmed.', true, { unsignalledPids: [...unsignalled] });
-  const stillInGroup = groupVerified && (await aliveVia(send, -pgid, stop)) && remaining.length > 0 && (await holderGroups(remaining, [pgid], { signal: stop, inspector })).includes(pgid);
-  const killTargets = [...(stillInGroup ? [-pgid] : []), ...remaining];
+  const left = await splitByGroup(remaining, pgid, inspector, stop);
+  const stillInGroup = groupVerified && left.groupHasHolder && (await aliveVia(send, -pgid, stop));
+  const killTargets = [...(stillInGroup ? [-pgid] : []), ...left.outsideGroup];
   for (const pid of await signalTargets(send, killTargets, 'SIGKILL', stop)) unsignalled.add(pid);
 
   const notes: string[] = [];
