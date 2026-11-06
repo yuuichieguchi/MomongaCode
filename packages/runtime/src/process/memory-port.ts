@@ -36,6 +36,7 @@ export const createMemoryPort = ({ store, settings, evidenceRun, evidencePorts =
     const visibility: MemoryVisibility = trusted ? { trusted: true, project: session.cwd } : { trusted: false };
     const run = evidenceRun(session);
     const evidenceOptionsFor = (bound: AbortSignal) => ({ project: session.cwd, trusted, run, signal: bound });
+    const through = store.memories.watermark();
     const checked = new Map<string, MemoryView>();
     const contexts = new WeakMap<AbortSignal, MemoryStatusContext>();
     const contextFor = (bound: AbortSignal): MemoryStatusContext => {
@@ -123,7 +124,7 @@ export const createMemoryPort = ({ store, settings, evidenceRun, evidencePorts =
         let hasMore = false;
         let matchCapped = false;
         reading: for (;;) {
-          const page = store.memories.recallPage(visibility, { terms, after, limit: MEMORY_PAGE_ROWS });
+          const page = store.memories.recallPage(visibility, { terms, after, limit: MEMORY_PAGE_ROWS, through });
           matchCapped = page.matchCapped;
           for (const [index, record] of page.memories.entries()) {
             const [view] = await viewsOf([record], signal);

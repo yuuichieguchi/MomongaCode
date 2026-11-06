@@ -85,10 +85,12 @@ const decodeMemory = (row: Row, evidence: MemoryEvidence[], supersededBy: string
 
 const RECENCY = 'ORDER BY kept_at DESC, created_at DESC, id';
 
-const RECALLABLE = `state = 'active' AND retired_at IS NULL AND NOT EXISTS (
+const recallableUntil = (successorBound: string): string => `state = 'active' AND retired_at IS NULL AND NOT EXISTS (
   SELECT 1 FROM memory_replacements AS r JOIN memories AS successor ON successor.id = r.successor_id
-  WHERE r.replaced_id = memories.id AND successor.state <> 'candidate'
+  WHERE r.replaced_id = memories.id AND successor.state <> 'candidate'${successorBound}
 )`;
+
+const RECALLABLE = recallableUntil('');
 
 const VISIBLE_TRUSTED = "((scope = 'user' AND origin = 'trusted') OR project = :project)";
 
@@ -280,7 +282,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
     return { sql: `matched(id) AS (${parts.join(' UNION ')})`, params, shortCount: short.length };
   };
 
-  const recallPage: MemoryStore['recallPage'] = (visibility, { terms, after, limit }) =>
+  const recallPage: MemoryStore['recallPage'] = (visibility, { terms, after, limit, through }) =>
     readTx(db, () => {
       const matched = matchedCte(visibility, terms);
       const lanes = lanesOf(visibility);
@@ -288,12 +290,15 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
       const laneBranch = (part: RecallCursor['part'], lane: string, index: number, cursor: RecallCursor | null): { sql: string; params: Record<string, string | number> } => {
         const key = `${part}${index}`;
         const params: Record<string, string | number> = { [`lane_${key}`]: lane };
+        const bound = through === undefined ? '' : ` AND memories.rowid <= :through_${key}`;
+        const recallable = recallableUntil(through === undefined ? '' : ` AND successor.rowid <= :through_${key}`);
+        if (through !== undefined) params[`through_${key}`] = through;
         const keyset = cursor === null ? '' : ` AND (${RECALL_KEYS}) > (:cursorTier_${key}, :cursorContributed_${key}, :cursorKept_${key}, :cursorId_${key})`;
         if (cursor !== null) for (const [name, value] of Object.entries(cursorKeys(cursor))) params[`${name}_${key}`] = value;
         const membership = part === 'matched' ? 'AND memories.id IN (SELECT id FROM matched)' : matched === undefined ? '' : 'AND memories.id NOT IN (SELECT id FROM matched)';
         return {
           sql: `SELECT * FROM (SELECT memories.*, ${TIER} AS recall_tier, ${CONTRIBUTED_KEY} AS recall_contributed, ${KEPT_KEY} AS recall_kept, '${part}' AS recall_part
-             FROM memories WHERE ${LANE} = :lane_${key} AND ${RECALLABLE} ${membership}${keyset} ORDER BY ${RECALL_KEYS} LIMIT :fetch)`,
+             FROM memories WHERE ${LANE} = :lane_${key} AND ${recallable} ${membership}${bound}${keyset} ORDER BY ${RECALL_KEYS} LIMIT :fetch)`,
           params,
         };
       };
@@ -447,6 +452,12 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
         return { memories: decodeMany(shown), next: rows.length > limit && reader !== undefined ? { createdAt: reader.number('created_at'), id: reader.string('id') } : null };
       }),
     recallPage,
+    watermark: () =>
+      readTx(db, () => {
+        const row = db.prepare('SELECT COALESCE(MAX(rowid), 0) AS high FROM memories').get();
+        if (row === undefined) throw new Error('the memory watermark query returned no row');
+        return readerFor('memories', 'watermark', row).number('high');
+      }),
     matchingIds: (visibility, terms) =>
       readTx(db, () => {
         const matched = matchedCte(visibility, terms);

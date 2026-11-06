@@ -374,7 +374,8 @@ export type MemoryStore = {
   get(id: string): MemoryRecord | undefined;
   list(filter?: { scope?: MemoryScope; project?: string }): MemoryRecord[];
   listPage(filter: MemoryListFilter, after: MemoryListCursor | null, limit: number): { memories: MemoryRecord[]; next: MemoryListCursor | null };
-  recallPage(visibility: MemoryVisibility, request: { terms: readonly string[]; after: RecallCursor | null; limit: number }): RecallPage;
+  recallPage(visibility: MemoryVisibility, request: { terms: readonly string[]; after: RecallCursor | null; limit: number; through?: number }): RecallPage;
+  watermark(): number;
   search(visibility: MemoryVisibility, terms: readonly string[], options?: { include?: MemoryInclude; limit?: number }): MemoryRecord[];
   matchingIds(visibility: MemoryVisibility, terms: readonly string[]): Set<string>;
   retire(id: string): { retired: boolean; memory: MemoryRecord } | undefined;
