@@ -32,7 +32,7 @@ describe.skipIf(!fs.existsSync(SANDBOX_EXEC))('run API boundary under real Seatb
       const run = await env.createRun(session.id);
       const claim = env.claimRun(run.id);
       env.append(claim, [toolCallPayload('call_1', path.join(env.layout.projectReal, 'a.txt'))]);
-      const approvalId = requestManualApproval(env, claim, 'call_1', START_MS + 600_000);
+      const approvalId = requestManualApproval(env, claim, 'call_1');
       expect(env.store.release(claim, 'WAITING_HUMAN').kind).toBe('ok');
 
       const controlSocket = path.join(env.layout.projectReal, 'c.sock');
