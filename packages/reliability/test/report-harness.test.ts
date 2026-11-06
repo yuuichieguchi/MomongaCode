@@ -1,0 +1,79 @@
+import { describe, expect, it } from 'vitest';
+import * as protocol from '@momonga/protocol';
+import { aggregate, buildReliabilityReport, decodeReliabilityReport, encodeReliabilityReport, foldFacts } from '@momonga/reliability';
+import type { ReliabilityReport, ReportKind } from '@momonga/reliability';
+import { T0, eventsOf, runInfo, started, terminal } from './streams.ts';
+
+const SUITE_DIGEST = 'a'.repeat(64);
+const CODE_DIGEST = 'b'.repeat(64);
+
+type Harness = { suite: { name: string; digest: string }; answeredBy: protocol.AnsweredByView[]; unrecordedAnswers: number; codeDigest: string };
+
+const HARNESS: Harness = {
+  suite: { name: 'fixture', digest: SUITE_DIGEST },
+  answeredBy: [{ target: 'fm', adapter: 'fm', upstreamModel: 'fm-1', answers: 'model' }],
+  unrecordedAnswers: 0,
+  codeDigest: CODE_DIGEST,
+};
+
+const rows = [foldFacts(eventsOf('r1', [[T0, started(1, { declared: true })], [T0 + 100, terminal('COMPLETED')]]), runInfo({ runId: 'r1', status: 'COMPLETED' }))];
+
+const build = (kind: ReportKind, harness: Harness | null): ReliabilityReport =>
+  (buildReliabilityReport as (input: unknown) => ReliabilityReport)({ kind, aggregate: aggregate(rows, { groupBy: 'model' }), harness });
+
+const encodedWith = (kind: ReportKind, harness: unknown): string => {
+  const encoded = JSON.parse(encodeReliabilityReport(build('real', null))) as Record<string, unknown>;
+  return JSON.stringify({ ...encoded, kind, harness });
+};
+
+describe('decision 47: the harness field of momonga-reliability/1', () => {
+  it('a benchmark report carries the suite, the answerers, the unrecorded count and the code digest, and the decoder keeps them', () => {
+    const report = build('benchmark', HARNESS);
+    expect((report as unknown as { harness: unknown }).harness).toEqual(HARNESS);
+    expect(decodeReliabilityReport(encodeReliabilityReport(report))).toEqual(report);
+  });
+
+  it('an injection report keeps a scripted answerer through the round trip', () => {
+    const scripted = { ...HARNESS, answeredBy: [{ target: 'script', adapter: 'script', upstreamModel: 'script', answers: 'script' }] } satisfies Harness;
+    const decoded = decodeReliabilityReport(encodeReliabilityReport(build('injection', scripted)));
+    expect((decoded as unknown as { harness: unknown }).harness).toEqual(scripted);
+  });
+
+  it('a real report has harness null', () => {
+    expect((build('real', null) as unknown as { harness: unknown }).harness).toBeNull();
+  });
+
+  it('the decoder requires harness for benchmark and injection', () => {
+    expect(() => decodeReliabilityReport(encodedWith('benchmark', null))).toThrow(/harness/);
+    expect(() => decodeReliabilityReport(encodedWith('injection', null))).toThrow(/harness/);
+  });
+
+  it('the decoder refuses harness on a real report', () => {
+    expect(() => decodeReliabilityReport(encodedWith('real', HARNESS))).toThrow(/harness/);
+  });
+
+  it('the decoder refuses a harness without a code digest', () => {
+    const withoutCode = { suite: HARNESS.suite, answeredBy: HARNESS.answeredBy, unrecordedAnswers: HARNESS.unrecordedAnswers };
+    expect(() => decodeReliabilityReport(encodedWith('benchmark', withoutCode))).toThrow(/codeDigest/);
+  });
+});
+
+describe('decision 47: modelKindOf lives in protocol', () => {
+  const modelKindOf = (protocol as Record<string, unknown>)['modelKindOf'] as
+    | ((answeredBy: readonly protocol.AnsweredByView[], unrecordedAnswers: number) => string)
+    | undefined;
+
+  it('is exported by @momonga/protocol', () => {
+    expect(typeof modelKindOf).toBe('function');
+  });
+
+  it('any script answerer is fake; an unknown answerer or an unrecorded answer is unknown; declared models are real', () => {
+    if (modelKindOf === undefined) throw new Error('@momonga/protocol does not export modelKindOf');
+    const model = { target: 'm', adapter: 'a', upstreamModel: 'u', answers: 'model' as const };
+    expect(modelKindOf([model, { ...model, target: 's', answers: 'script' }], 0)).toBe('fake');
+    expect(modelKindOf([model, { ...model, target: 'x', answers: 'unknown' }], 0)).toBe('unknown');
+    expect(modelKindOf([model], 1)).toBe('unknown');
+    expect(modelKindOf([], 0)).toBe('unknown');
+    expect(modelKindOf([model], 0)).toBe('real');
+  });
+});

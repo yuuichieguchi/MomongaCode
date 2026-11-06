@@ -409,3 +409,35 @@ describe('population buckets', () => {
     expect(total.intervention).toEqual({ k: 0, n: 1 });
   });
 });
+
+describe('gap A2: an episode owes the calls open at any record of its chain', () => {
+  const chainWithCallOpenedAfterFirstRecord = (settle: readonly Timed[]): Timed[] => [
+    [T0, started(1)],
+    [T0 + 100, attemptFailed(1, 'gateway_unavailable')],
+    [T0 + 101, status('RUNNING', 'QUEUED')],
+    [T0 + 200, started(2)],
+    [T0 + 210, toolCall('c1', 'write')],
+    [T0 + 220, toolStarted('c1')],
+    [T0 + 1000, attemptLost(T0 + 500)],
+    [T0 + 1010, started(3)],
+    ...settle,
+    [T0 + 2000, terminal('COMPLETED')],
+  ];
+
+  it('a call started after the first record and reconciled unknown after the second makes the episode unknown_effect', () => {
+    const facts = fold('r1', chainWithCallOpenedAfterFirstRecord([
+      [T0 + 1100, reconciled('c1', 'unknown')],
+      [T0 + 1200, modelResponded(2)],
+    ]));
+    expect(facts.recoveries.map(({ ordinal, cause, failedAt, outcome }) => ({ ordinal, cause, failedAt, outcome }))).toEqual([
+      { ordinal: 1, cause: 'worker_failure', failedAt: T0 + 100, outcome: 'unknown_effect' },
+    ]);
+    expect(totalOf([facts]).recovery).toEqual({ k: 0, n: 1, unknownEffect: 1, failed: 0, stopped: 0 });
+  });
+
+  it('a call started after the first record and still unsettled at the response makes the episode unknown_effect', () => {
+    const facts = fold('r1', chainWithCallOpenedAfterFirstRecord([[T0 + 1200, modelResponded(2)]]));
+    expect(facts.recoveries.map(({ ordinal, cause, outcome }) => ({ ordinal, cause, outcome }))).toEqual([{ ordinal: 1, cause: 'worker_failure', outcome: 'unknown_effect' }]);
+    expect(totalOf([facts]).recovery).toEqual({ k: 0, n: 1, unknownEffect: 1, failed: 0, stopped: 0 });
+  });
+});

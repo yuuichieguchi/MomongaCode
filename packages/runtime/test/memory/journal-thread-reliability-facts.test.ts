@@ -3,11 +3,18 @@ import { describe, expect, it, vi } from 'vitest';
 import { MAIN_AGENT } from '@momonga/protocol';
 import type { RunEventPayload } from '@momonga/protocol';
 import { foldFacts } from '@momonga/reliability';
+import * as storeModule from '@momonga/store';
 import { startJournalThread } from '../../src/memory/journal-thread-client.ts';
 import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../../src/memory/journal-thread-limits.ts';
 import { makeEnv } from '../worker/harness.ts';
 
 vi.setConfig({ testTimeout: 60_000 });
+
+const factsRefusedError = (): abstract new (...args: never[]) => Error => {
+  const refusal = (storeModule as Record<string, unknown>)['FactsRefusedError'];
+  if (typeof refusal !== 'function') throw new Error('@momonga/store does not export FactsRefusedError');
+  return refusal as abstract new (...args: never[]) => Error;
+};
 
 const responded: RunEventPayload = {
   type: 'model.responded',
@@ -59,7 +66,8 @@ describe('the runFacts request of the embedded journal thread (P2: the stored fa
     }
   });
 
-  it('rejects a run whose journal has no run.started, so the sweeper records it as unavailable', async () => {
+  it('rejects a run whose journal has no run.started as a fold refusal, so the sweeper records it as unavailable', async () => {
+    const FactsRefused = factsRefusedError();
     const env = await makeEnv();
     const run = env.enqueue('Work', { history: 'fresh' });
     const claim = env.seed(run.id, [responded], 'hold');
@@ -67,9 +75,31 @@ describe('the runFacts request of the embedded journal thread (P2: the stored fa
     const { dev, ino } = fs.statSync(env.dbPath);
     const thread = await startJournalThread({ databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
     try {
-      await expect(thread.runFacts(run.id)).rejects.toThrow(/run.started/);
+      const refusal = await thread.runFacts(run.id).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(refusal).toBeInstanceOf(FactsRefused);
+      expect(String(refusal)).toMatch(/run.started/);
     } finally {
       await thread.close();
     }
+  });
+
+  it('gap A1: a request on a closed client rejects as a JournalThreadError that is not a fold refusal', async () => {
+    const FactsRefused = factsRefusedError();
+    const env = await makeEnv();
+    const run = env.enqueue('Work', { history: 'fresh' });
+    const claim = env.seed(run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { modelAlias: 'fm' }, mode: 'default' }, responded], 'hold');
+    expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
+    const { dev, ino } = fs.statSync(env.dbPath);
+    const thread = await startJournalThread({ databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
+    await thread.close();
+    const failure = await thread.runFacts(run.id).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(storeModule.JournalThreadError);
+    expect(failure).not.toBeInstanceOf(FactsRefused);
   });
 });
