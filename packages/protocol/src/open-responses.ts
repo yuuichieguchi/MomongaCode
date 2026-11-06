@@ -155,6 +155,8 @@ export type FunctionTool = {
   strict?: boolean;
 };
 
+export type FitRankedFunctionTool = FunctionTool & { fitRank: number; fitTier: string };
+
 export type ResponseFunctionTool = {
   type: 'function';
   name: string;

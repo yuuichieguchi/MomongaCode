@@ -462,6 +462,7 @@ export type {
   FunctionCallItem,
   FunctionCallOutputInputItem,
   FunctionCallOutputItem,
+  FitRankedFunctionTool,
   FunctionTool,
   InputFilePart,
   InputImagePart,
