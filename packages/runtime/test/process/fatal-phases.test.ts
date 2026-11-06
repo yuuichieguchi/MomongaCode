@@ -48,7 +48,7 @@ vi.mock('../../src/worker/worker.ts', async (importOriginal) => {
 
 const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 const DRAIN_MS = 60_000;
-const ALL_STEPS = ['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'gateway-client', 'telemetry', 'trace-store', 'store', 'lock'];
+const ALL_STEPS = ['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'gateway-client', 'telemetry', 'body-purge', 'trace-store', 'store', 'lock'];
 
 beforeEach(() => {
   control.onFatal = [];

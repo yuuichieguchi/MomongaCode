@@ -42,7 +42,7 @@ export type MemoryRecord = {
   text: string;
   source: MemorySource;
   createdAt: number;
-  lastUsedAt: number;
+  keptAt: number;
   kind: MemoryKind;
   state: MemoryState;
   duplicateOf: string | null;
@@ -51,9 +51,20 @@ export type MemoryRecord = {
   retiredAt: number | null;
   evidence: MemoryEvidence[];
   contributedAt: number | null;
+  observedStatus: MemoryStatus | null;
 };
 
-export type MemoryView = MemoryRecord & { status: MemoryStatus };
+export const VALIDITY_CLOSERS = ['observation', 'successor', 'retirement'] as const;
+
+export type ValidityCloser = (typeof VALIDITY_CLOSERS)[number];
+
+export type ValidityInterval = { status: MemoryStatus; from: number; to: number | null; closedBy: ValidityCloser | null };
+
+export type ValidityChange = { from: MemoryStatus; to: MemoryStatus; changedBetween: [number, number] };
+
+export type MemoryValidity = { intervals: ValidityInterval[]; changes: ValidityChange[] };
+
+export type MemoryView = Omit<MemoryRecord, 'observedStatus'> & { status: MemoryStatus; observedStatus?: MemoryStatus | null; validity?: MemoryValidity };
 
 export const describeMemoryValidity = (memory: Pick<MemoryRecord, 'state' | 'retiredAt' | 'supersedes' | 'supersededBy'>): string =>
   [
@@ -64,6 +75,16 @@ export const describeMemoryValidity = (memory: Pick<MemoryRecord, 'state' | 'ret
   ]
     .map((part) => `, ${part}`)
     .join('');
+
+const iso = (at: number): string => new Date(at).toISOString();
+
+export const describeValidity = (validity: MemoryValidity): string =>
+  validity.intervals
+    .map((interval) => {
+      const until = interval.to === null ? 'now' : `${iso(interval.to)}${interval.closedBy === 'observation' ? '' : ` (${interval.closedBy})`}`;
+      return `${interval.status} observed ${iso(interval.from)} to ${until}`;
+    })
+    .join('; ');
 
 export type AddMemoryRequest = {
   text: string;
@@ -94,7 +115,7 @@ export type ReflectionJobView = {
 
 export type ReflectionResponse = { job: ReflectionJobView | null };
 
-export type MemoriesResponse = { memories: MemoryView[] };
+export type MemoriesResponse = { memories: MemoryView[]; next?: string | null };
 
 export type MemoryResponse = { memory: MemoryView };
 

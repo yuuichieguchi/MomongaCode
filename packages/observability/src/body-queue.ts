@@ -1,6 +1,9 @@
 import { reportError } from './errors.ts';
 import type { BodyRecord } from './trace-store.ts';
 
+export const DEFAULT_MAX_QUEUED_BODIES = 2048;
+export const DEFAULT_MAX_QUEUED_BYTES = 16 * 1024 * 1024;
+
 export type BodyQueueLimits = { maxEntries: number; maxBytes: number };
 
 export type BodyQueue = {

@@ -7,7 +7,7 @@ import { computeBackoff, sha256Hex } from '@momonga/foundation';
 import { REFERENCE_KINDS, RUN_STATUSES, TERMINAL_STATUSES } from '@momonga/protocol';
 import type { Capabilities, FunctionTool } from '@momonga/protocol';
 import { isFatalStoreError } from '@momonga/store';
-import type { Claim } from '@momonga/store';
+import type { Claim, Session } from '@momonga/store';
 import type { ClaimContext, Flow, RunMemory, Terminals } from './claim-context.ts';
 import { reconcileStartedCalls, releaseWaitingOnCancel } from './cancel-recovery.ts';
 import { startClaimControl } from './claim-control.ts';
@@ -15,7 +15,7 @@ import type { ClaimControl } from './claim-control.ts';
 import { dispositionOf } from './gateway-policy.ts';
 import { heartbeatMsFor } from './heartbeat.ts';
 import { describeError, LeaseLostError, ShutdownError } from './errors.ts';
-import { inlineLimitForItemCap, inlineOutputLimitFor } from './inline-limit.ts';
+import { meteredOutputFit, reconcileOutputFit } from './output-fit.ts';
 import { governingFailureAtStart, measurePinnedFor } from './context-step.ts';
 import { runStartHooks } from './hook-step.ts';
 import { openJournal } from './journal.ts';
@@ -42,7 +42,9 @@ import { settleCalls } from './tool-step.ts';
 import type { WorkerOptions } from './types.ts';
 import type { TraceSpan } from '../ports.ts';
 import { modelKey } from '../model-key.ts';
-import { REQUEUE_BASE_MS, REQUEUE_MAX_MS } from '../process/constants.ts';
+import { MEMORY_PAGE_ROWS, REQUEUE_BASE_MS, REQUEUE_MAX_MS } from '../process/constants.ts';
+import { createGoverningActivation, createInstructionProbes } from './touched-paths.ts';
+import type { ClaimTouched } from './touched-paths.ts';
 import { buildSystemPrompt } from '../system-prompt.ts';
 import { summaryStopReason } from './wrap-up.ts';
 import { reportError } from './report.ts';
@@ -82,6 +84,15 @@ const cancelUpstream = async (options: WorkerOptions, control: ClaimControl, key
 const recordUpstreamFailures = (journal: Journal, failures: readonly string[]): void => {
   if (failures.length === 0) return;
   journal.append(failures.map((message) => ({ type: 'notice', level: 'warning', message: `Cancelling the upstream model request failed: ${message}`, code: 'upstream_cancel_failed' })));
+};
+
+const touchedOf = (session: Session, options: WorkerOptions): ClaimTouched => {
+  const source = (after: { eventId: number; path: string } | null, limit: number) =>
+    after === null ? options.store.sessionTouched.after(session.id, 0, limit) : options.store.sessionTouched.after(session.id, after.eventId, limit, after.path);
+  return {
+    governing: createGoverningActivation({ project: session.cwd, source, pageRows: MEMORY_PAGE_ROWS }),
+    probes: createInstructionProbes({ reader: options.instructionReader, projectRoot: session.cwd, source, pageRows: MEMORY_PAGE_ROWS }),
+  };
 };
 
 export const runClaim = async (options: WorkerOptions, claim: Claim, host: ClaimHost): Promise<void> => {
@@ -315,6 +326,7 @@ const drive = async (
           toolSetDigest: toolSet.digest,
           capabilities: await gateway.capabilities(session.modelAlias, { signal: control.signal }),
           roles: rolesFor({ store: options.store, settings: options.settings, run }),
+          targets: { ...options.settings.modelTargets() },
           ...(newMemoryShare === undefined ? {} : { memoryShare: newMemoryShare }),
           ...(newGuidelineVersion === undefined ? {} : { guidelineVersion: newGuidelineVersion }),
           token: {
@@ -361,7 +373,6 @@ const drive = async (
   const pinnedGuideline = guidelineOf(options.store, pins.guidelineVersion);
   const limits = readRunLimits(run.limits, options.defaults);
   const composeRules = await permissionRulesComposerFor(options, session);
-  let measuredInlineLimit: Promise<number> | undefined;
   const targetFacts = new Map<string, { meter: TokenMeter; capabilities: Capabilities; counter: string }>();
   const listing = await control.recordingRaised(gateway.model(pins.modelAlias, { signal: control.signal }));
   const counterOf = (target: string): string => {
@@ -437,7 +448,7 @@ const drive = async (
     ...(loading === undefined ? {} : { toolLoading: loading }),
     skills,
     recalled,
-    usedMemoryIds: new Set<string>(),
+    touched: touchedOf(session, options),
     env,
     functionTools: () => offerNow().tools,
     toolOffer: offerNow,
@@ -445,11 +456,8 @@ const drive = async (
     windowShared: () => jobRunningNow() || childRunLive(),
     companions: () => ({ hostOf: Object.fromEntries(toolSet.companions), keepWithoutHost: keepCompanionsWithoutHost() }),
     systemPrompt,
-    inlineLimitForReconcile: inlineOutputLimitFor(pins.capabilities),
-    inlineLimitForExecution: () => {
-      measuredInlineLimit ??= measurePinnedFor(ctx).then((measured) => inlineLimitForItemCap(measured.itemCap));
-      return measuredInlineLimit;
-    },
+    outputFit: meteredOutputFit({ meter: aliasMeter, itemCap: async () => (await measurePinnedFor(ctx)).itemCap }),
+    reconcileFit: reconcileOutputFit(pins.capabilities),
     journal,
     control,
     terminals,

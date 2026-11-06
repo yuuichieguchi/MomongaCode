@@ -3,7 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { MemoryEvidence } from '@momonga/protocol';
 import type { RuntimeStore, SaveMemoryInput } from '@momonga/store';
-import { callEvent, enqueue, harness, mustClaim, newSession } from './helpers.ts';
+import { callEvent, enqueue, harness, mustClaim, newSession, recalled } from './helpers.ts';
 
 const CALLS = ['c1', 'c2', 'c3', 'c4', 'c5'];
 
@@ -55,7 +55,7 @@ describe('recall', () => {
     const newer = save(store, run.id, 'c2', 'newer', { supersedes: [older.id] });
     const retired = save(store, run.id, 'c3', 'retired');
     store.memories.retire(retired.id);
-    expect(store.memories.recall(VISIBLE).map((memory) => memory.id)).toEqual([newer.id]);
+    expect(recalled(store, VISIBLE).map((memory) => memory.id)).toEqual([newer.id]);
     expect(store.memories.history(newer.id).map((memory) => memory.id)).toEqual([older.id, newer.id]);
     expect(store.memories.history(older.id).map((memory) => memory.id)).toEqual([older.id, newer.id]);
   });

@@ -13,7 +13,7 @@ const record = (id: string, project: string, sha = SHA): MemoryRecord => ({
   text: `note ${id}`,
   source: { kind: 'tool', sessionId: 's', runId: 'r', step: 1, callId: id, seq: 1 },
   createdAt: 0,
-  lastUsedAt: 0,
+  keptAt: 0,
   kind: 'fact',
   state: 'active',
   duplicateOf: null,
@@ -22,12 +22,13 @@ const record = (id: string, project: string, sha = SHA): MemoryRecord => ({
   retiredAt: null,
   evidence: [{ kind: 'commit', sha }],
   contributedAt: null,
+  observedStatus: null,
 });
 
 const viewsWith = (exitCode: number | null) => {
   const commands: { project: string; command: EvidenceCommand; signal: AbortSignal }[] = [];
   const views = createRecordViews({
-    store: { trust: { decisionFor: () => ({ decision: 'trusted' }) } } as never,
+    store: { trust: { decisionFor: () => ({ decision: 'trusted' }) }, memories: { observe: () => false } } as never,
     evidenceRun: (project) => async (command, signal) => {
       commands.push({ project, command, signal });
       return { exitCode };

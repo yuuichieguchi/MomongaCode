@@ -5,7 +5,7 @@ import { afterEach } from 'vitest';
 import type { RunEventPayload, ToolKind } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 import { killGroupsForCleanup } from '@momonga/testkit';
-import { START_MS, toolKey } from './harness.ts';
+import { START_MS, capabilitiesFor, toolKey } from './harness.ts';
 import type { Env } from './harness.ts';
 import { functionCallItem, requestedOffering } from './scripts.ts';
 
@@ -30,12 +30,21 @@ export const groupExists = (pgid: number): boolean => {
   }
 };
 
+export const pinnedStart = (): RunEventPayload => ({
+  type: 'run.started',
+  attempt: 1,
+  now: START_MS,
+  pins: { modelAlias: 'fm', systemPromptDigest: 'seeded', toolSetDigest: 'seeded', capabilities: capabilitiesFor(100_000), roles: {}, targets: {} },
+  mode: 'default',
+});
+
 export type StartedCall = { callId: string; name: string; kind?: ToolKind; args?: Record<string, unknown> };
 
 export const seedStartedCalls = (env: Env, calls: readonly StartedCall[], options: { cancel?: boolean } = {}) => {
   const run = env.enqueue('Work');
   const keys = Object.fromEntries(calls.map((call) => [call.callId, toolKey(run.id, 1, call.callId)]));
   const payloads: RunEventPayload[] = [
+    pinnedStart(),
     requestedOffering(1, [...new Set(calls.map((call) => call.name))]),
     {
       type: 'model.responded',

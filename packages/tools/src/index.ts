@@ -41,11 +41,12 @@ export type {
 export { OBSERVED_FILE_HASH_PAGE_BYTES, createGitWorkTreeObserver, observedToolFiles } from './work-tree-observer.ts';
 export type { GitWorkTreeObserverOptions, ObservedFile, ObservedWindow, WorkTreeMark, WorkTreeObserver } from './work-tree-observer.ts';
 export { createToolRegistry, extendToolSet } from './registry.ts';
-export { MINIMUM_INLINE_OUTPUT_CHARS } from './truncate.ts';
+export { pageToFit } from './paging.ts';
 export type { SnapshotOptions, ToolListOptions, ToolRegistry, ToolSet, ToolSource, ToolSourceListing } from './registry.ts';
 export { TOOL_TIERS, defineTool, ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
 export type {
   AnyTool,
+  OutputFit,
   PlanEntry,
   ReconcileContext,
   ReconcileResult,
@@ -92,6 +93,7 @@ export type {
   HistoryScope,
   HistorySearchRequest,
   HistorySearchResult,
+  HistorySession,
   HistoryStepHit,
   HistoryStorePort,
   HistoryToolsOptions,

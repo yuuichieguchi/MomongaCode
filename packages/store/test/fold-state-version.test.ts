@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
+import { SNAPSHOT_STATE_VERSION } from '../src/codec.ts';
 import { enqueue, harness, mustClaim, newSession, rawDb } from './helpers.ts';
 
 const USAGE = { input_tokens: 1, output_tokens: 1, total_tokens: 2 };
@@ -35,8 +36,8 @@ const stored = () => {
 };
 
 describe('snapshot state version for removal and observation', () => {
-  it('writes stateVersion 15', () => {
-    expect(stored().storedJson()['stateVersion']).toBe(15);
+  it('writes the current stateVersion', () => {
+    expect(stored().storedJson()['stateVersion']).toBe(SNAPSHOT_STATE_VERSION);
   });
 
   it('treats a version 14 snapshot as absent and refolds from the journal', () => {

@@ -1,5 +1,6 @@
 import { defineTool, ToolExecutionError } from '../types.ts';
 import { looksBinary, recordInLedger, regularFileProblem, scanLines, statIfExists } from './files.ts';
+import { pageToFit } from '../paging.ts';
 import { DEFAULT_LINE_LIMIT, MAX_LINE_CHARS, pageNumberedLines, pastEndMessage } from './format.ts';
 import { accessedPathOf, canonicalPathOf, resolvedPathOf, shownPath } from './paths.ts';
 
@@ -59,6 +60,6 @@ export const readTool = defineTool<ReadInput>({
     const files = [{ path: canonical, sha256: scan.sha256, access: 'read' as const }];
     if (scan.totalLines === 0) return { status: 'completed', output: '(file is empty)', files };
     if (offset > scan.totalLines) return { status: 'completed', output: pastEndMessage(offset, 'file', scan.totalLines), files };
-    return { status: 'completed', output: pageNumberedLines(selected, offset, scan.totalLines, ctx.outputBudgetChars), files };
+    return { status: 'completed', output: await pageToFit(ctx.outputFit, (budget) => pageNumberedLines(selected, offset, scan.totalLines, budget)), files };
   },
 });

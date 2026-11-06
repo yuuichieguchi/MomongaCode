@@ -5,18 +5,19 @@ import type { Manifest, ManifestEntry } from './manifest.ts';
 
 const manifestPath = path.resolve(import.meta.dirname, '..', '..', 'specs', 'tla', 'manifest.json');
 
-const entry = (config: string, tier: ManifestEntry['tier'], budgetSeconds: number): ManifestEntry => ({
+const entry = (config: string, tier: ManifestEntry['tier'], wallSeconds: number): ManifestEntry => ({
   config,
   role: 'check',
   expect: 'holds',
   args: [],
   tier,
   distinctStates: 1,
-  measuredSeconds: budgetSeconds / 2,
-  budgetSeconds,
+  measuredSeconds: wallSeconds / 2,
+  measuredCpuSeconds: 1,
+  budgetCpuSeconds: 5,
 });
 
-const manifestOf = (unitSuiteSeconds: number, entries: readonly ManifestEntry[]): Manifest => ({ format: MANIFEST_FORMAT, unitSuiteSeconds, entries });
+const manifestOf = (unitSuiteSeconds: number, entries: readonly ManifestEntry[]): Manifest => ({ format: MANIFEST_FORMAT, unitSuiteSeconds, startupCpuSeconds: 3, entries });
 
 const sample = manifestOf(20, [entry('A', 'every-run', 10), entry('A.deep', 'deep', 500), entry('B', 'every-run', 24), entry('C', 'every-run', 46)]);
 

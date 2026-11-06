@@ -71,6 +71,7 @@ export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
           ...(result.files === undefined ? {} : { files: result.files }),
           ...(result.command === undefined ? {} : { command: result.command }),
           ...(result.windowShared === undefined ? {} : { windowShared: result.windowShared }),
+          ...(result.memories === undefined ? {} : { memories: result.memories }),
           ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
         }
       : {
@@ -96,9 +97,9 @@ const batchFormatterOf = (ctx: ClaimContext): BatchOutputFormatter | undefined =
   const enabled = ctx.token.outputFormatters;
   if (enabled.length === 0) return undefined;
   const terms = termsOf(taskOf(ctx).text);
-  return ({ output, tool }) => {
+  return ({ output, status, tool }) => {
     const reader = readersOffered(ctx.readers(), ctx.functionTools())['output_handle'];
-    const formatted = formatToolOutput({ output, tool, enabled, terms, reader });
+    const formatted = formatToolOutput({ output, status, tool, enabled, terms, reader });
     return formatted === undefined ? undefined : { ...formatted, header: (handle) => formattedHeader(formatted.formatter, handle, reader) };
   };
 };
@@ -258,8 +259,8 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
       },
       leaseLost: () => ctx.control.leaseLost() || ctx.control.shuttingDown(),
       onLeaseLost: ctx.control.noteLeaseLost,
-      inlineLimitForReconcile: ctx.inlineLimitForReconcile,
-      inlineLimitForExecution: ctx.inlineLimitForExecution,
+      outputFit: ctx.outputFit,
+      reconcileFit: ctx.reconcileFit,
       traceparentFor: (callId) => {
         const existing = spans.get(callId);
         if (existing !== undefined) return { traceparent: existing.traceparent };

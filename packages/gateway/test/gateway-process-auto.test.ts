@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { momongaPaths } from '@momonga/foundation';
-import { endpointIdentityOf, endpointKeyOf, loadEndpointRecord, probeEndpointTarget, saveEndpointRecord } from '@momonga/gateway';
+import { PROBE_METHOD_VERSION, endpointIdentityOf, endpointKeyOf, loadEndpointRecord, probeEndpointTarget, saveEndpointRecord } from '@momonga/gateway';
 import { tokensForText } from '@momonga/protocol';
 import type { FakeChatCompletionsOptions } from '@momonga/testkit';
 import { getJson, postJson, readJson, userInput } from './gateway-helpers.ts';
@@ -101,6 +101,19 @@ describe('chat-completions target with toolCalling auto', () => {
 
     expect(response.status).toBe(412);
     expect(response.body.error.message).toContain('stale');
+    expect(response.body.error.message).toContain('momonga gateway probe local');
+    expect(completions(fake)).toEqual([]);
+  });
+
+  it('fails a call with precondition_failed naming the probe command when the record was saved by an older probe method', async () => {
+    const { home, fake, probeDir, endpoint, identity, identityFields } = await autoSetup();
+    await saveEndpointRecord(probeDir, { endpoint, model: 'system' }, identity, identityFields, makeReport(1, 1), { ...CURRENT_DIALECTS, probeMethod: PROBE_METHOD_VERSION - 1 });
+    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+
+    const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', request));
+
+    expect(response.status).toBe(412);
+    expect(response.body.error.code).toBe('precondition_failed');
     expect(response.body.error.message).toContain('momonga gateway probe local');
     expect(completions(fake)).toEqual([]);
   });

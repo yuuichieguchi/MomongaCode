@@ -80,9 +80,9 @@ export type RunExtra = Partial<Omit<ExecutionBatchInput, 'recoverOnly'>> & { mod
 
 export type Builtins = Awaited<ReturnType<typeof makeBuiltins>>;
 
-export const makeBuiltins = async (options: { maxInlineOutputChars?: number; realSandbox?: boolean; jobs?: BackgroundJobs; sandbox?: Sandbox } = {}) => {
+export const makeBuiltins = async (options: { outputLimitChars?: number; realSandbox?: boolean; jobs?: BackgroundJobs; sandbox?: Sandbox } = {}) => {
   const harness = makeHarness({
-    ...(options.maxInlineOutputChars === undefined ? {} : { maxInlineOutputChars: options.maxInlineOutputChars }),
+    ...(options.outputLimitChars === undefined ? {} : { outputLimitChars: options.outputLimitChars }),
     ...(options.jobs === undefined ? {} : { executor: { jobs: options.jobs } }),
   });
   const { layout } = harness;

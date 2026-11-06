@@ -12,7 +12,7 @@ import {
   startToolSpan,
 } from '@momonga/observability';
 import { createFakeClock } from '@momonga/testkit';
-import { RUN_ID, SENTINEL, START_MS, dumpAllRows, harness, makeDir, openStore } from './helpers.ts';
+import { CONTENT, RUN_ID, SENTINEL, START_MS, dumpAllRows, harness, makeDir, openStore } from './helpers.ts';
 
 describe('openTraceStore', () => {
   it('creates the database file with mode 0600 in a 0700 directory', () => {
@@ -146,9 +146,8 @@ describe('stored spans', () => {
 });
 
 describe('body capture', () => {
-  it('stores nothing anywhere by default', async () => {
-    const h = harness();
-    const chat = startChatSpan(h.telemetry.tracer, {
+  const chatSpanOf = (h: ReturnType<typeof harness>) =>
+    startChatSpan(h.telemetry.tracer, {
       providerName: 'openai',
       billing: 'metered',
       requestModel: 'gpt-x',
@@ -157,9 +156,10 @@ describe('body capture', () => {
       step: 1,
       attempt: 1,
     });
-    for (const kind of ['input', 'output', 'tool_arguments', 'tool_result'] as const) {
-      h.telemetry.recordBody(chat, { kind, content: `${kind}:${SENTINEL}` });
-    }
+
+  it('stores nothing anywhere by default', async () => {
+    const h = harness();
+    const chat = chatSpanOf(h);
     recordError(chat, new Error(SENTINEL), 'provider_error');
     chat.end(h.clock.now());
     await h.telemetry.forceFlush();
@@ -171,39 +171,31 @@ describe('body capture', () => {
     expect(dumpAllRows(h.file)).toContain('chat gpt-x');
   });
 
-  it('when enabled, stores bodies in the bodies table and never as span attributes', async () => {
-    const h = harness({ bodies: { enabled: true, retentionMs: 1000 } });
-    const chat = startChatSpan(h.telemetry.tracer, {
-      providerName: 'openai',
-      billing: 'metered',
-      requestModel: 'gpt-x',
-      stream: false,
-      runId: RUN_ID,
-      step: 1,
-      attempt: 1,
-    });
-    h.telemetry.recordBody(chat, { kind: 'input', content: `prompt ${SENTINEL}` });
+  it('when enabled, stores content in the bodies table and never as span attributes', async () => {
+    const h = harness({ content: { retentionMs: 1000 } });
+    const chat = chatSpanOf(h);
+    chat.setAttribute(CONTENT.ATTR_GEN_AI_INPUT_MESSAGES, `prompt ${SENTINEL}`);
     h.clock.advance(5);
-    h.telemetry.recordBody(chat, { kind: 'output', content: 'answer' });
+    chat.setAttribute(CONTENT.ATTR_GEN_AI_OUTPUT_MESSAGES, 'answer');
     chat.end(h.clock.now());
     await h.telemetry.forceFlush();
     const [stored] = h.store.spansForRun(RUN_ID);
     expect(JSON.stringify(stored)).not.toContain(SENTINEL);
     const [finished] = h.memory.getFinishedSpans();
-    expect(JSON.stringify({ attributes: finished?.attributes, events: finished?.events })).not.toContain(SENTINEL);
+    expect(finished?.attributes[CONTENT.ATTR_GEN_AI_INPUT_MESSAGES]).toBe(`prompt ${SENTINEL}`);
     expect(h.store.bodiesForSpan(chat.spanContext().spanId)).toEqual([
       {
         traceId: chat.spanContext().traceId,
         spanId: chat.spanContext().spanId,
-        kind: 'input',
+        kind: CONTENT.ATTR_GEN_AI_INPUT_MESSAGES,
         content: `prompt ${SENTINEL}`,
-        createdAtMs: START_MS,
-        expiresAtMs: START_MS + 1000,
+        createdAtMs: START_MS + 5,
+        expiresAtMs: START_MS + 1005,
       },
       {
         traceId: chat.spanContext().traceId,
         spanId: chat.spanContext().spanId,
-        kind: 'output',
+        kind: CONTENT.ATTR_GEN_AI_OUTPUT_MESSAGES,
         content: 'answer',
         createdAtMs: START_MS + 5,
         expiresAtMs: START_MS + 1005,
@@ -212,26 +204,21 @@ describe('body capture', () => {
   });
 
   it('purgeBodies removes exactly the bodies whose retention has elapsed', async () => {
-    const h = harness({ bodies: { enabled: true, retentionMs: 1000 } });
-    const chat = startChatSpan(h.telemetry.tracer, {
-      providerName: 'openai',
-      billing: 'metered',
-      requestModel: 'gpt-x',
-      stream: false,
-      runId: RUN_ID,
-      step: 1,
-      attempt: 1,
-    });
-    h.telemetry.recordBody(chat, { kind: 'input', content: SENTINEL });
+    const h = harness({ content: { retentionMs: 1000 } });
+    const first = chatSpanOf(h);
+    first.setAttribute(CONTENT.ATTR_GEN_AI_INPUT_MESSAGES, SENTINEL);
+    first.end(h.clock.now());
     h.clock.advance(10);
-    h.telemetry.recordBody(chat, { kind: 'output', content: 'later' });
-    chat.end(h.clock.now());
+    const second = chatSpanOf(h);
+    second.setAttribute(CONTENT.ATTR_GEN_AI_OUTPUT_MESSAGES, 'later');
+    second.end(h.clock.now());
     await h.telemetry.forceFlush();
     expect(h.store.purgeBodies(START_MS + 999)).toBe(0);
     expect(h.store.purgeBodies(START_MS + 1000)).toBe(1);
-    expect(h.store.bodiesForSpan(chat.spanContext().spanId).map((body) => body.content)).toEqual(['later']);
+    expect(h.store.bodiesForSpan(first.spanContext().spanId)).toEqual([]);
+    expect(h.store.bodiesForSpan(second.spanContext().spanId).map((body) => body.content)).toEqual(['later']);
     expect(h.store.purgeBodies(START_MS + 1010)).toBe(1);
-    expect(h.store.bodiesForSpan(chat.spanContext().spanId)).toEqual([]);
+    expect(h.store.bodiesForSpan(second.spanContext().spanId)).toEqual([]);
     await h.telemetry.shutdown();
     h.store.close();
     expect(dumpAllRows(h.file)).not.toContain(SENTINEL);

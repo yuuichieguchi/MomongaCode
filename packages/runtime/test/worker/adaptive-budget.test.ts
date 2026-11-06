@@ -16,6 +16,7 @@ const DROPPED_NOTICE = '1 of 2 saved memories were left out of the context becau
 
 const pastEvents = ({ injected, used, dropped = false, share = 1 / 4 }: Past, now: number): RunEventPayload[] => [
   { type: 'run.started', attempt: 1, now, pins: { modelAlias: 'fm', memoryShare: share }, mode: 'default' },
+  { type: 'context.memories_loaded', memories: Array.from({ length: injected }, (_unused, index) => ({ id: `past-${index}`, status: 'verified' as const })) },
   ...(dropped ? [{ type: 'notice', level: 'warning', message: DROPPED_NOTICE, code: 'memories_dropped' } as RunEventPayload] : []),
 ];
 
@@ -171,6 +172,7 @@ describe('a window of runs pinned at the current share', () => {
         run.id,
         [
           { type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' },
+          { type: 'context.memories_loaded', memories: [{ id: `past-${index}`, status: 'verified' }] },
         ],
         'hold',
       );

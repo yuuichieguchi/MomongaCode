@@ -10,7 +10,7 @@ import { HISTORY_CANDIDATE_LIMIT, HISTORY_READ_PAGE_CHARS, HISTORY_SCAN_LIMIT, H
 import { asciiLower, instrFilters, partitionTerms, quoted, termsOf } from './search-terms.ts';
 import { INDEXED_PAYLOAD_TYPES, buildDocuments, locationPathsOf } from './search-documents.ts';
 import type { RecordedEvent } from './search-documents.ts';
-import type { HistoryAnchor, HistoryQueryRequest, HistoryQueryResult, HistoryReadRequest, HistoryReadResult, HistoryScope, HistoryStepHit, HistoryVisibility, SearchStore } from './types.ts';
+import type { HistoryAnchor, HistoryQueryRequest, HistoryQueryResult, HistoryReadRequest, HistoryReadResult, HistoryScope, HistorySession, HistoryStepHit, HistoryVisibility, SearchStore } from './types.ts';
 
 const ORIGINS = ['trusted', 'untrusted'] as const;
 
@@ -25,7 +25,7 @@ const snippetOf = (body: string, terms: readonly string[]): string => {
   const positions = terms.map((term) => lowered.indexOf(term)).filter((position) => position >= 0);
   const hit = positions.length === 0 ? 0 : Math.min(...positions);
   const budget = HISTORY_SNIPPET_MAX_CHARS - 2 * ELLIPSIS.length;
-  if (body.length <= HISTORY_SNIPPET_MAX_CHARS) return body.replace(/\s+/g, ' ');
+  if (body.length <= HISTORY_SNIPPET_MAX_CHARS) return body.replace(/\s+/g, ' ').trimEnd();
   const start = Math.max(0, Math.min(hit - Math.floor(budget / 4), body.length - budget));
   const end = Math.min(body.length, start + budget);
   return `${start > 0 ? ELLIPSIS : ''}${safeSlice(body, start, end).replace(/\s+/g, ' ')}${end < body.length ? ELLIPSIS : ''}`;
@@ -64,6 +64,20 @@ const rankRuns = (candidates: readonly Candidate[]): RunHits[] => {
   return [...runs.values()]
     .map((run) => ({ ...run, steps: run.steps.sort((left, right) => left.score - right.score || (left.step ?? 0) - (right.step ?? 0)) }))
     .sort((left, right) => left.score - right.score || completedFirst(left) - completedFirst(right) || right.at - left.at || left.runId.localeCompare(right.runId));
+};
+
+const sessionsOf = (anchors: readonly HistoryAnchor[]): HistorySession[] => {
+  const sessions = new Map<string, HistorySession>();
+  for (const anchor of anchors) {
+    const known = sessions.get(anchor.sessionId);
+    if (known === undefined) {
+      sessions.set(anchor.sessionId, { sessionId: anchor.sessionId, project: anchor.project, span: { from: anchor.at, to: anchor.at }, runs: [anchor] });
+      continue;
+    }
+    known.runs.push(anchor);
+    known.span = { from: Math.min(known.span.from, anchor.at), to: Math.max(known.span.to, anchor.at) };
+  }
+  return [...sessions.values()];
 };
 
 export const createSearchStore = (db: DatabaseSync): SearchStore => {
@@ -257,7 +271,7 @@ export const createSearchStore = (db: DatabaseSync): SearchStore => {
         withheld += found.withheld;
         if (found.anchor !== undefined) anchors.push(found.anchor);
       }
-      return { anchors, ...(searched === undefined ? {} : { searched }), ...(withheld === 0 ? {} : { withheld }) };
+      return { sessions: sessionsOf(anchors), ...(searched === undefined ? {} : { searched }), ...(withheld === 0 ? {} : { withheld }) };
     });
 
   const lookupRun = (visibility: HistoryVisibility, runId: string): { project: string; origin: MemoryOrigin } | undefined => {

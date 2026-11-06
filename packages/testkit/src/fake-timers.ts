@@ -14,6 +14,14 @@ export type FakeTimers = {
 
 type Entry = PendingTimer & { callback: () => void };
 
+const NODE_TIMEOUT_MAX_MS = 2_147_483_647;
+
+const nodeTimerDelay = (ms: unknown): number => {
+  const coerced = Number(ms) * 1;
+  const clamped = coerced >= 1 && coerced <= NODE_TIMEOUT_MAX_MS ? coerced : 1;
+  return Math.trunc(clamped);
+};
+
 export const createFakeTimers = (clock: FakeClock): FakeTimers => {
   const entries = new Map<number, Entry>();
   let nextId = 1;
@@ -27,7 +35,7 @@ export const createFakeTimers = (clock: FakeClock): FakeTimers => {
   };
   return {
     setTimeout: (callback, ms) => {
-      const delayMs = Math.max(0, Number.isFinite(ms) ? ms : 0);
+      const delayMs = nodeTimerDelay(ms);
       const id = nextId++;
       entries.set(id, { id, delayMs, dueAt: clock.now() + delayMs, callback: AsyncResource.bind(callback) });
       return id;

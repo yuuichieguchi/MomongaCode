@@ -26,6 +26,7 @@ import {
   ATTR_GEN_AI_USAGE_REASONING_OUTPUT_TOKENS,
 } from '@opentelemetry/semantic-conventions/incubating';
 import { ATTR_ERROR_TYPE } from '@opentelemetry/semantic-conventions';
+import { MOMONGA_ATTRIBUTES } from '@momonga/protocol';
 
 const NPM_VERSION = '1.44.0';
 
@@ -65,17 +66,7 @@ export const GENAI_CONTENT_SEMCONV = {
   ATTR_GEN_AI_TOOL_CALL_RESULT,
 } as const;
 
-export const MOMONGA_ATTRIBUTES = {
-  runId: 'momonga.run_id',
-  step: 'momonga.step',
-  attempt: 'momonga.attempt',
-  billing: 'momonga.billing',
-  cacheWriteInputTokens: 'momonga.usage.cache_write_input_tokens',
-  target: 'momonga.target',
-  role: 'momonga.role',
-  failureMessage: 'momonga.failure_message',
-  fallbackCauses: 'momonga.fallback_causes',
-} as const;
+export { MOMONGA_ATTRIBUTES };
 
 export const UNKNOWN_BILLING = 'unknown';
 

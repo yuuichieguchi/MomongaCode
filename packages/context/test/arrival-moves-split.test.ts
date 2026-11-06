@@ -18,7 +18,7 @@ const memoryOf = (text: string): MemoryView => ({
   text,
   source: { kind: 'tool', sessionId: 's1', runId: 'run-1', step: 1, callId: 'm1', seq: 4 },
   createdAt: Date.UTC(2026, 10, 1),
-  lastUsedAt: Date.UTC(2026, 10, 2),
+  keptAt: Date.UTC(2026, 10, 2),
   kind: 'fact',
   state: 'active',
   duplicateOf: null,

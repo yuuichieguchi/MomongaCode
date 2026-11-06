@@ -13,7 +13,7 @@ type Note = {
   project: string | null;
   origin: 'trusted' | 'untrusted';
   createdAt: number;
-  lastUsedAt: number;
+  keptAt: number;
   contributedAt: number | null;
   status: 'verified' | 'unbound' | 'unverifiable' | 'stale';
   state: 'active' | 'candidate' | 'archived' | 'duplicate' | 'rejected';
@@ -26,7 +26,7 @@ const note = (id: string, overrides: Partial<Note> = {}): Note => ({
   project: '/work/a',
   origin: 'trusted',
   createdAt: 1,
-  lastUsedAt: 1,
+  keptAt: 1,
   contributedAt: null,
   status: 'unbound',
   state: 'active',
@@ -43,7 +43,7 @@ const duplicates = (notes: readonly Note[]) => exported('duplicateMarks')(notes)
 
 const archivable = (notes: readonly Note[], now = NOW) => exported('archivableIds')(notes, { now, forgetAfterDays: FORGET_DAYS }) as string[];
 
-const idle = (overrides: Partial<Note> = {}): Partial<Note> => ({ lastUsedAt: NOW - FORGET_MS, ...overrides });
+const idle = (overrides: Partial<Note> = {}): Partial<Note> => ({ keptAt: NOW - FORGET_MS, ...overrides });
 
 describe('duplicateMarks', () => {
   it('marks the newer of two equal notes and keeps the older id', () => {
@@ -97,19 +97,26 @@ describe('archivableIds', () => {
   });
 
   it('keeps a note one millisecond short of the limit', () => {
-    expect(archivable([note('a', { lastUsedAt: NOW - FORGET_MS + 1 })])).toEqual([]);
+    expect(archivable([note('a', { keptAt: NOW - FORGET_MS + 1 })])).toEqual([]);
   });
 
   it.each(['verified', 'unverifiable'] as const)('never archives a %s note', (status) => {
     expect(archivable([note('a', idle({ status }))])).toEqual([]);
   });
 
-  it('keeps a note that contributed inside the window, though its last use is old', () => {
+  it('the idle window is the later of keptAt and contributedAt', () => {
+    expect(archivable([note('kept-late', { keptAt: NOW - DAY_MS, contributedAt: NOW - 2 * FORGET_MS })])).toEqual([]);
+    expect(archivable([note('contributed-late', { keptAt: NOW - 2 * FORGET_MS, contributedAt: NOW - DAY_MS })])).toEqual([]);
+    expect(archivable([note('both-old', { keptAt: NOW - 2 * FORGET_MS, contributedAt: NOW - FORGET_MS })])).toEqual(['both-old']);
+    expect(archivable([note('never-contributed', { keptAt: NOW - FORGET_MS, contributedAt: null })])).toEqual(['never-contributed']);
+  });
+
+  it('keeps a note that contributed inside the window, though it was kept long ago', () => {
     expect(archivable([note('a', idle({ contributedAt: NOW - DAY_MS }))])).toEqual([]);
   });
 
-  it('keeps a note used inside the window whose contribution is older, since the window needs neither alone', () => {
-    expect(archivable([note('a', { lastUsedAt: NOW - DAY_MS, contributedAt: NOW - 2 * FORGET_MS })])).toEqual([]);
+  it('keeps a note kept inside the window whose contribution is older, since the window needs neither alone', () => {
+    expect(archivable([note('a', { keptAt: NOW - DAY_MS, contributedAt: NOW - 2 * FORGET_MS })])).toEqual([]);
   });
 
   it('archives a note whose contribution is older than the window', () => {

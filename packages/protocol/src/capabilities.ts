@@ -10,6 +10,9 @@ export type ToolCallingSetting = 'native' | 'constrained' | 'auto';
 export const TARGET_BILLINGS = ['metered', 'local'] as const;
 export type TargetBilling = (typeof TARGET_BILLINGS)[number];
 
+export const TARGET_ANSWERS = ['model', 'script'] as const;
+export type TargetAnswers = (typeof TARGET_ANSWERS)[number];
+
 export type ImageTokenModel = { pixelsPerToken: number; maxTokens: number; minTokens: number };
 
 export type ImageCapability =

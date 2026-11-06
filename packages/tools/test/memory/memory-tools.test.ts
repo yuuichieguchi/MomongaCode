@@ -16,7 +16,7 @@ const viewOf = (overrides: Partial<MemoryView> = {}): MemoryView => ({
   text: 'prefers tabs',
   source: { kind: 'tool', sessionId: 's1', runId: 'run-1', step: 1, callId: 'c1', seq: 4 },
   createdAt: Date.UTC(2026, 10, 2),
-  lastUsedAt: Date.UTC(2026, 10, 3),
+  keptAt: Date.UTC(2026, 10, 3),
   kind: 'fact',
   state: 'active',
   duplicateOf: null,
@@ -142,8 +142,8 @@ describe('memory tools', () => {
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed' } });
     const output = outcome?.kind === 'result' ? outcome.result.output : '';
     expect(output.split('\n')).toEqual([
-      '[mem-1] (user memory, trusted origin, status unbound, saved 2026-11-02T00:00:00.000Z in run run-1 step 1, last used 2026-11-03T00:00:00.000Z) prefers tabs',
-      '[mem-2] (project memory, trusted origin, status unbound, saved 2026-11-02T00:00:00.000Z in run run-9 step 3, last used 2026-11-03T00:00:00.000Z) run make',
+      '[mem-1] (user memory, trusted origin, status unbound, saved 2026-11-02T00:00:00.000Z in run run-1 step 1) prefers tabs',
+      '[mem-2] (project memory, trusted origin, status unbound, saved 2026-11-02T00:00:00.000Z in run run-9 step 3) run make',
     ]);
   });
 
@@ -165,7 +165,7 @@ describe('memory tools', () => {
     );
     const output = outcome?.kind === 'result' ? outcome.result.output : '';
     expect(output).toBe(
-      '[mem-old] (user memory, trusted origin, status stale, state archived, retired 2026-11-04T00:00:00.000Z, supersedes mem-older, saved 2026-11-02T00:00:00.000Z in run run-1 step 1, last used 2026-11-03T00:00:00.000Z) prefers tabs',
+      '[mem-old] (user memory, trusted origin, status stale, state archived, retired 2026-11-04T00:00:00.000Z, supersedes mem-older, saved 2026-11-02T00:00:00.000Z in run run-1 step 1) prefers tabs',
     );
   });
 
@@ -227,13 +227,13 @@ describe('memory tools', () => {
     });
   });
 
-  it('caps the matches it shows and says how many were left out', async () => {
+  it('caps the matches it shows and says that more exist', async () => {
     const many = Array.from({ length: MEMORY_SEARCH_RESULT_LIMIT + 3 }, (_, index) => viewOf({ id: `mem-${index}` }));
     const harness = makeHarness();
     const [outcome] = await harness.executor.runBatch(harness.input(await toolSet(fakePort(many).port), [call('c1', MEMORY_SEARCH_TOOL_NAME, { query: 'tabs' })]));
     const lines = (outcome?.kind === 'result' ? outcome.result.output : '').split('\n');
     expect(lines).toHaveLength(MEMORY_SEARCH_RESULT_LIMIT + 1);
-    expect(lines.at(-1)).toBe('3 more matches were not shown; narrow the query.');
+    expect(lines.at(-1)).toBe('More matches were not shown; narrow the query.');
   });
 
   it('reports an empty search plainly and rejects a blank query', async () => {
@@ -244,5 +244,28 @@ describe('memory tools', () => {
     );
     expect(none).toMatchObject({ kind: 'result', result: { status: 'completed', output: 'No saved memory matches.' } });
     expect(blank).toMatchObject({ kind: 'result', result: { status: 'failed' } });
+  });
+});
+
+describe('MemorySearch with include all', () => {
+  it('prints the intervals of validity of each note and names the notes it returned in a structured field', async () => {
+    const note = viewOf({
+      id: 'mem-old',
+      status: 'stale',
+      validity: {
+        intervals: [
+          { status: 'verified', from: Date.UTC(2026, 10, 2), to: Date.UTC(2026, 10, 4), closedBy: 'observation' },
+          { status: 'stale', from: Date.UTC(2026, 10, 4), to: Date.UTC(2026, 10, 6), closedBy: 'successor' },
+        ],
+        changes: [{ from: 'verified', to: 'stale', changedBetween: [Date.UTC(2026, 10, 2), Date.UTC(2026, 10, 4)] }],
+      },
+    });
+    const harness = makeHarness();
+    const [outcome] = await harness.executor.runBatch(
+      harness.input(await toolSet(fakePort([note]).port), [call('c1', MEMORY_SEARCH_TOOL_NAME, { query: 'tabs', include: 'all' })]),
+    );
+    const output = outcome?.kind === 'result' ? outcome.result.output : '';
+    expect(output).toContain('validity verified observed 2026-11-02T00:00:00.000Z to 2026-11-04T00:00:00.000Z; stale observed 2026-11-04T00:00:00.000Z to 2026-11-06T00:00:00.000Z (successor)');
+    expect(outcome?.kind === 'result' ? outcome.result.memories : undefined).toEqual(['mem-old']);
   });
 });
