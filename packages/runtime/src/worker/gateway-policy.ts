@@ -1,4 +1,5 @@
 import { ConfigError } from '@momonga/config';
+import { TRANSIENT_REQUEST_STATUSES } from '@momonga/foundation';
 import { SandboxPolicyError } from '@momonga/sandbox';
 import { InheritanceError, JournalThreadError } from '@momonga/store';
 import { EarlierAttemptNotStoppedError } from '@momonga/tools';
@@ -7,7 +8,6 @@ import { GatewayRequestError } from '../gateway-client.ts';
 
 const STREAM_INTERRUPTED_REFUNDS = 3;
 const DEFERRAL_FAILURE_CODE = 'rate_limited';
-const REQUEUEABLE_HOP_STATUSES: readonly number[] = [408, 409];
 
 export const INHERITANCE_FAILURE_MESSAGE = 'The previous conversation could not be loaded. Start a new conversation (/clear) to continue.';
 
@@ -31,6 +31,6 @@ export const dispositionOf = (error: unknown, interruptions: number): FailureDis
   if (error.code === 'gateway_unavailable' && error.provenNotSent === true) return { kind: 'requeue', refund: true, retryAfterMs, interrupted: false };
   if (error.status === 503 && error.code === 'gateway_closed') return { kind: 'requeue', refund: true, retryAfterMs, interrupted: false };
   if (error.code === 'stream_interrupted') return { kind: 'requeue', refund: interruptions < STREAM_INTERRUPTED_REFUNDS, retryAfterMs, interrupted: true };
-  if (error.type === 'transport' || REQUEUEABLE_HOP_STATUSES.includes(error.status)) return { kind: 'requeue', refund: false, retryAfterMs, interrupted: false };
+  if (error.type === 'transport' || TRANSIENT_REQUEST_STATUSES.includes(error.status)) return { kind: 'requeue', refund: false, retryAfterMs, interrupted: false };
   return { kind: 'fail', code: error.code, message: error.message };
 };

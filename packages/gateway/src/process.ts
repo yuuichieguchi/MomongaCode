@@ -214,7 +214,7 @@ type FmContext = {
   fmServe: FmServe;
   execWithStdin: ExecWithStdinFn;
   osBuild: string;
-  binarySha256: string;
+  binarySha256: string | { unreadable: string };
 };
 
 const createFmAdapter = async (name: string, target: Extract<ResolvedTarget, { adapter: 'fm' }>, context: FmContext, clock: Clock, files: ProcessFilePorts, userDialects: UserDialects) => {
@@ -223,7 +223,10 @@ const createFmAdapter = async (name: string, target: Extract<ResolvedTarget, { a
     binary: context.binary,
     exec: context.execWithStdin,
     probeRecordDir: context.paths.probe,
-    recordKey: { target: name, binarySha256: context.binarySha256, osBuild: context.osBuild },
+    recordKey:
+      typeof context.binarySha256 === 'string'
+        ? { target: name, binarySha256: context.binarySha256, osBuild: context.osBuild }
+        : { target: name, unmeasured: context.binarySha256.unreadable },
     toolCallingSetting: target.toolCalling,
     userDialects,
     ...(target.model === undefined ? {} : { declaredModel: target.model }),
@@ -516,7 +519,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
             }),
             execWithStdin: options.execWithStdin ?? createExecWithStdin(childEnv),
             osBuild: await readOsBuild(exec),
-            binarySha256: await sha256OfFile(binary),
+            binarySha256: (await files.isUsableBinary(binary)) ? await sha256OfFile(binary) : { unreadable: `no usable binary at ${binary}` },
           };
     signal?.throwIfAborted();
     const codeDigest = await codeDigestOfRunningProcess();
@@ -536,7 +539,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       if (target.adapter === 'fm') {
         if (fmContext === undefined) throw new Error('fm context is missing for an fm target');
         adapters[name] = await createFmAdapter(name, target, fmContext, clock, files, userDialects);
-        counters[name] = targetCounterOf({ target, codeDigest, fm: { binarySha256: fmContext.binarySha256, osBuild: fmContext.osBuild } });
+        counters[name] = targetCounterOf({ target, codeDigest, fm: { binarySha256: typeof fmContext.binarySha256 === 'string' ? fmContext.binarySha256 : null, osBuild: fmContext.osBuild } });
         continue;
       }
       if (target.adapter === 'ollama') {

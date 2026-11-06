@@ -1,4 +1,4 @@
-import { isRecord, parseRetryAfter } from '@momonga/foundation';
+import { isRecord, parseRetryAfter, parseShouldRetry } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { readTextLimited } from './body-reading.ts';
 import { UpstreamHttpError } from './failures.ts';
@@ -8,7 +8,6 @@ import { MAX_ERROR_BODY_BYTES } from './limits.ts';
 import type { ErrorVocabulary } from './vocabulary.ts';
 
 export type UpstreamErrorDetail = { code?: string | null; message?: string };
-
 
 export type ErrorDetailReader = (parsed: unknown) => UpstreamErrorDetail;
 
@@ -23,14 +22,13 @@ export const httpErrorOf = async (
   const detail = readDetail(parsed);
   const kind = vocabulary.kindOf(response.status, parsed);
   const message = detail.message ?? text;
-  const shouldRetry = response.headers['x-should-retry'];
   return new UpstreamHttpError(
     response.status,
     detail.code ?? null,
     message === '' ? `HTTP ${response.status}` : message,
     retryAfterOf(response, clock),
     kind === 'guardrail',
-    shouldRetry === 'false' ? false : undefined,
+    parseShouldRetry(response.headers['x-should-retry']),
     kind === 'context_overflow',
     kind === 'unsupported',
   );

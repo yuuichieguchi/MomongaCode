@@ -1,3 +1,4 @@
+import { TRANSIENT_REQUEST_STATUSES, isRetryableHttp } from '@momonga/foundation';
 import { PRECONDITION_FAILED_CODE } from '@momonga/protocol';
 import type { ClassifiedError, ErrorBody } from '@momonga/protocol';
 import { preconditionText } from '../../precondition-text.ts';
@@ -59,27 +60,15 @@ const classifyHttp = (error: UpstreamHttpError): ClassifiedError => {
   if (error.unsupported) {
     return { retryable: false, error: body('invalid_request', UNSUPPORTED_REQUEST, error.message) };
   }
-  if (status === 429) {
-    return {
-      retryable: true,
-      ...(error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs }),
-      error: body('too_many_requests', upstreamCode, error.message),
-    };
+  const retryable = isRetryableHttp(status, error.retryHint);
+  const retryAfter = error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs };
+  if (status === 429) return { retryable, ...retryAfter, error: body('too_many_requests', upstreamCode, error.message) };
+  if (status >= 500 || TRANSIENT_REQUEST_STATUSES.includes(status)) {
+    return { retryable, ...retryAfter, error: body('server_error', upstreamCode ?? 'upstream_error', error.message) };
   }
-  if (status >= 500) {
-    return {
-      retryable: error.retryHint !== false,
-      ...(error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs }),
-      error: body('server_error', upstreamCode ?? 'upstream_error', error.message),
-    };
-  }
-  if (status === 413) return { retryable: false, error: body('invalid_request', 'payload_too_large', error.message) };
-  if (status === 401 || status === 403) {
-    return { retryable: false, error: body('invalid_request', 'authentication_failed', error.message) };
-  }
-  if (status >= 400) {
-    return { retryable: false, error: body('invalid_request', upstreamCode, error.message) };
-  }
+  if (status === 413) return { retryable, error: body('invalid_request', 'payload_too_large', error.message) };
+  if (status === 401 || status === 403) return { retryable, error: body('invalid_request', 'authentication_failed', error.message) };
+  if (status >= 400) return { retryable, error: body('invalid_request', upstreamCode, error.message) };
   return { retryable: false, error: body('server_error', 'unexpected_status', error.message) };
 };
 

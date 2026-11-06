@@ -307,7 +307,10 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
           }
           throw new FmServeError('unhealthy', 'fm serve exited before becoming healthy', undefined, undefined);
         }
-        if (await probeHealth(healthClient, deadline.signal)) return;
+        if (await probeHealth(healthClient, deadline.signal)) {
+          if (!managed.exited) return;
+          continue;
+        }
         await sleep(HEALTH_POLL_INTERVAL_MS);
       }
       throw new FmServeError(
