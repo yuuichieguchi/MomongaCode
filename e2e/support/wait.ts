@@ -2,11 +2,12 @@ import { ENTRY_HARD_EXIT_MARGIN_MS, GATEWAY_MAX_CLOSE_MS, runtimeMaxCloseMs, sup
 import { LOCK_WATCH_INTERVAL_MS, ORPHAN_REAP_GRACE_MS, SETTINGS_DEBOUNCE_MS, SETTINGS_POLL_MS, SHUTDOWN_RELEASE_BOUND_MS } from '@momonga/supervisor';
 import { VERIFY_BUDGET_MS } from '../../packages/cli/src/commands/policy.ts';
 import { daemonReadyBoundMs } from '../../packages/cli/src/daemon/ensure-daemon.ts';
-import { reflectionAttemptsBoundMs } from '../../packages/runtime/src/memory/reflection-bound.ts';
+import { REFLECTION_PICKUP_BOUND_MS, reflectionAttemptsBoundMs } from '../../packages/runtime/src/memory/reflection-bound.ts';
 import { RUNTIME_DEFAULTS } from '../../packages/runtime/src/process/defaults.ts';
 import { CANCEL_UPSTREAM_SETTLE_MS, GATEWAY_CANCEL_TIMEOUT_MS, SANDBOX_KILL_GRACE_MS } from '../../packages/runtime/src/process/constants.ts';
 
 export const E2E_REFLECTION_ATTEMPTS_BOUND_MS = reflectionAttemptsBoundMs(RUNTIME_DEFAULTS.runTimeoutMs);
+export const E2E_REFLECTION_SETTLED_BOUND_MS = REFLECTION_PICKUP_BOUND_MS + E2E_REFLECTION_ATTEMPTS_BOUND_MS;
 export const E2E_MARGIN_MS = 4000;
 export const E2E_LEASE_MS = 3000;
 export const E2E_DRAIN_TIMEOUT_MS = 1000;
