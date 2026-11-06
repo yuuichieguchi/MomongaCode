@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { GUIDELINE_ANALYSIS_INSTRUCTIONS, GUIDELINE_CANDIDATE_INSTRUCTIONS } from '@momonga/eval';
+import { COMPACTION_SETTINGS, GUIDELINE_ANALYSIS_INSTRUCTIONS, GUIDELINE_CANDIDATE_INSTRUCTIONS, MINIMUM_PAIRS, QUALITY_METRICS } from '@momonga/eval';
+import type { QualityMetricName } from '@momonga/eval';
 import type { FakeRoute } from '@momonga/testkit';
 import { DEFAULT_KEEP_RECENT_STEPS } from '../packages/context/src/levels.ts';
 import { isCompactionRequest } from './support/budget.ts';
@@ -18,7 +19,7 @@ import {
 } from './support/context-window.ts';
 import { createE2eHome } from './support/home.ts';
 import { baseSettings, sandboxChoiceOf, startUpstream, withStructuredRole, withTargetsAnswering, writeSettingsFile } from './support/stack.ts';
-import { SCRIPTED_USAGE, chatCompletions, reportedTokensOfRequest, textReply } from './support/upstream.ts';
+import { SCRIPTED_USAGE, chatCompletions, reportedTokensOfRequest, textReply, toolCallReply } from './support/upstream.ts';
 import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
 const STEPS = 14;
@@ -102,6 +103,35 @@ const stepTextOf = (text: () => string | undefined) => (): string => {
   return value;
 };
 
+const SCENARIOS_PER_METRIC = Math.ceil(MINIMUM_PAIRS / COMPACTION_SETTINGS.length);
+const indices = Array.from({ length: SCENARIOS_PER_METRIC }, (_unused, index) => index);
+const ANSWERED = 'The question is answered.';
+
+const governanceTaskOf = (index: number): string => `Name the test runner of package ${index}.`;
+const memoryTaskOf = (index: number): string => `Report the value of LIMIT in config${index}.ts.`;
+const memoryFileOf = (index: number): string => `config${index}.ts`;
+const retrievalTaskOf = (index: number): string => `Read notes${index}.md, then recover its rotation day with HistoryRead.`;
+const retrievalFileOf = (index: number): string => `notes${index}.md`;
+const anchorOf = (index: number): string => `NEEDLE-${index}-rotation`;
+
+const toolMessagesOf = (body: unknown): number => ((body as { messages?: { role?: unknown }[] }).messages ?? []).filter((message) => message.role === 'tool').length;
+
+const answerRoute = (task: string): FakeRoute => ({ match: (body) => !isCompactionRequest(body) && bodyText(body).includes(task), reply: textReply(ANSWERED) });
+
+const READ_STEP = 1;
+
+const retrievalRoute = (index: number): FakeRoute => ({
+  match: (body) => !isCompactionRequest(body) && bodyText(body).includes(retrievalTaskOf(index)),
+  reply: (body) => {
+    const delivered = toolMessagesOf(body);
+    if (delivered === 0) return toolCallReply('Read', { file_path: path.join(workspaceOf(body), retrievalFileOf(index)) }, 'call_read');
+    if (delivered === 1) return toolCallReply('HistoryRead', { step: READ_STEP }, 'call_history');
+    return textReply(ANSWERED);
+  },
+});
+
+const qualityRoutes: FakeRoute[] = indices.flatMap((index) => [answerRoute(governanceTaskOf(index)), answerRoute(memoryTaskOf(index)), retrievalRoute(index)]);
+
 const routesWith = (benchmarkStepText: () => string | undefined): FakeRoute[] => [
   prefixProbeRoute,
   calibrationRoute,
@@ -113,6 +143,7 @@ const routesWith = (benchmarkStepText: () => string | undefined): FakeRoute[] =>
   walkRoute(STURDY_TASKS[0] as string, 'first.txt', false, stepTextOf(benchmarkStepText)),
   walkRoute(STURDY_TASKS[1] as string, 'second.txt', false, stepTextOf(benchmarkStepText)),
   walkRoute(STURDY_TASKS[2] as string, 'third.txt', false, stepTextOf(benchmarkStepText)),
+  ...qualityRoutes,
 ];
 
 const walkFileText = (lines: number): string => `${WALK_LINE}\n`.repeat(lines);
@@ -134,6 +165,63 @@ const paired = (scenario: string, input: string, file: string, lines: number): R
     graders: [{ kind: 'finalTextIncludes', text: FINISHED }],
   }));
 
+const qualityPaired = (scenario: string, fields: Record<string, unknown>): Record<string, unknown>[] =>
+  COMPACTION_SETTINGS.map((compaction) => ({
+    id: `${scenario}-${compaction}`,
+    scenario,
+    compaction,
+    permissionMode: 'acceptEdits',
+    onAsk: 'allow_once',
+    runs: 1,
+    minPassRate: 1,
+    rules: [],
+    revisionDepth: 0,
+    noise: { level: 0, topics: ['testing'] },
+    graders: [{ kind: 'finalTextIncludes', text: ANSWERED }],
+    ...fields,
+  }));
+
+const runnerRule = (id: string, text: string, supersedes: string[]) => ({ id, kind: 'constraint', target: 'test-runner', text, inScope: true, live: true, supersedes });
+
+const governanceCases = indices.flatMap((index) =>
+  qualityPaired(`governed-${index}`, {
+    input: governanceTaskOf(index),
+    rules: [runnerRule(`runner-${index}-old`, 'Run tests with jest.', []), runnerRule(`runner-${index}-new`, 'Run tests with vitest.', [`runner-${index}-old`])],
+    revisionDepth: 1,
+  }),
+);
+
+const memoryCases = indices.flatMap((index) =>
+  qualityPaired(`remembered-${index}`, {
+    input: memoryTaskOf(index),
+    runs: 2,
+    files: { [memoryFileOf(index)]: 'export const LIMIT = 10;\n' },
+    memories: [{ text: `LIMIT in ${memoryFileOf(index)} is 10.`, paths: [memoryFileOf(index)] }],
+    workspace: [{ beforeRun: 1, write: { [memoryFileOf(index)]: 'export const LIMIT = 20;\n' } }],
+  }),
+);
+
+const retrievalCases = indices.flatMap((index) =>
+  qualityPaired(`recalled-${index}`, {
+    input: retrievalTaskOf(index),
+    files: { [retrievalFileOf(index)]: `The deploy key rotates on the 14th. ${anchorOf(index)}\n` },
+    gold: [{ anchor: anchorOf(index), in: 'tool.completed' }],
+    graders: [
+      { kind: 'finalTextIncludes', text: ANSWERED },
+      { kind: 'toolCalled', name: 'HistoryRead' },
+    ],
+  }),
+);
+
+const MEASURING_CASES: Record<Exclude<QualityMetricName, 'continuationRate'>, number> = {
+  governanceFidelity: governanceCases.length,
+  governanceConsistency: governanceCases.length,
+  governanceMinimality: governanceCases.length,
+  memoryStaleRate: memoryCases.length,
+  retrievalPrecision: retrievalCases.length,
+  retrievalRecall: retrievalCases.length,
+};
+
 const datasetOf = (lines: number) => ({
   format: 'momonga-eval-context/1',
   name: 'improve-e2e',
@@ -142,8 +230,13 @@ const datasetOf = (lines: number) => ({
     ...paired('first', STURDY_TASKS[0] as string, 'first.txt', lines),
     ...paired('second', STURDY_TASKS[1] as string, 'second.txt', lines),
     ...paired('third', STURDY_TASKS[2] as string, 'third.txt', lines),
+    ...governanceCases,
+    ...memoryCases,
+    ...retrievalCases,
   ],
 });
+
+const RUNS_PER_BENCHMARK = datasetOf(0).cases.reduce((sum, entry) => sum + (typeof entry.runs === 'number' ? entry.runs : 1), 0);
 
 const CANDIDATES = 5;
 const BENCHMARKS = 1 + CANDIDATES;
@@ -153,7 +246,7 @@ type SpentOutcome = { tokens: { benchmark: number; charged: number }; contrastiv
 const spentOf = (file: string): SpentOutcome => JSON.parse(fs.readFileSync(file, 'utf8')) as SpentOutcome;
 
 describe('momonga context improve', () => {
-  it(titleOf('context-improve-adopt'), { timeout: 40 * E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('context-improve-adopt'), { timeout: 5 * RUNS_PER_BENCHMARK * E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     let followUpStepText: string | undefined;
     let benchmarkStepText: string | undefined;
@@ -187,7 +280,7 @@ describe('momonga context improve', () => {
     const walkDataset = datasetOf(STEPS + 1);
     const dataset = path.join(home.root, 'improve.json');
     fs.writeFileSync(dataset, JSON.stringify(walkDataset));
-    const boundMs = BENCHMARKS * walkDataset.cases.length * E2E_RUN_COMPLETED_BOUND_MS;
+    const boundMs = BENCHMARKS * RUNS_PER_BENCHMARK * E2E_RUN_COMPLETED_BOUND_MS;
     const options = { boundMs, cwd: home.project };
     const fakeOutcome = path.join(home.root, 'fake-outcome.json');
     const realOutcome = path.join(home.root, 'real-outcome.json');
@@ -236,7 +329,25 @@ describe('momonga context improve', () => {
     expect(improved.stdout).toMatch(/nothing was adopted/i);
     expect(improved.stdout).not.toContain('adopted version');
     expect((await runCli(home, ['context', 'guideline', 'list'], options)).stdout).not.toContain(WINNER);
-    const written = JSON.parse(fs.readFileSync(realOutcome, 'utf8')) as { digest: string; alias: string; winner: { text: string; parent: number | null }; parent: number | null; dataset: { digest: string }; candidates: unknown[]; report: unknown };
+    const written = JSON.parse(fs.readFileSync(realOutcome, 'utf8')) as {
+      digest: string;
+      alias: string;
+      winner: { text: string; parent: number | null };
+      parent: number | null;
+      dataset: { digest: string };
+      candidates: unknown[];
+      report: { gate: { passed: boolean; checks: { name: string; passed: boolean; detail: string }[] } };
+    };
+    expect(written.report.gate.passed).toBe(true);
+    const checkOf = (name: string) => written.report.gate.checks.find((check) => check.name === name);
+    for (const { name } of QUALITY_METRICS) expect(checkOf(name), `the gate has a passing term for ${name}`).toMatchObject({ name, passed: true });
+    for (const [name, cases] of Object.entries(MEASURING_CASES)) {
+      expect(cases, `${name} is measured by at least the paired cases the gate needs`).toBeGreaterThanOrEqual(MINIMUM_PAIRS);
+      expect(
+        checkOf(name)?.detail,
+        `the guideline changes only compaction requests and no ${name} case compacts, so every paired difference of ${name} is 0 over all its cases`,
+      ).toMatch(new RegExp(`^paired difference 0\\.000 \\(95% bootstrap 0\\.000\\.\\.0\\.000\\), n=${cases};`));
+    }
     expect(written.alias).toBe(ANALYSIS_ALIAS);
     expect(written.winner).toMatchObject({ text: WINNER, parent: null });
     expect(written.parent).toBeNull();
