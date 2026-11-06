@@ -132,7 +132,7 @@ export const startFakeOllama = async (options: FakeOllamaOptions = {}): Promise<
       res.end('data: [DONE]\n\n');
       return;
     }
-    if (url.pathname === '/api/chat' && req.method === 'POST' && body?.format === 'json' && options.jsonModeProbe !== undefined) {
+    if (url.pathname === '/api/chat' && req.method === 'POST' && (body as { format?: unknown } | undefined)?.format === 'json' && options.jsonModeProbe !== undefined) {
       const behaviour = options.jsonModeProbe;
       if (behaviour === 'rejects') return sendJson(res, 400, { error: 'invalid format: json is not supported' });
       if (behaviour === 'fails') return sendJson(res, 500, { error: 'internal error' });
