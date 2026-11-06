@@ -78,7 +78,7 @@ describe('MCP credential notices', () => {
   });
 
   it('gives the guessable notice for a common HTTP header value without refusing the server', () => {
-    const credential = credentialNotices(noticesOfConstruction({ url: 'http://127.0.0.1:9/mcp', headers: { 'X-Api-Key': 'password' } }));
+    const credential = credentialNotices(noticesOfConstruction({ type: 'http', url: 'http://127.0.0.1:9/mcp', headers: { 'X-Api-Key': 'password' } }));
     expect(credential).toHaveLength(1);
     expect(credential[0]).toMatch(WEAK);
     expect(credential[0]).toContain('"remote"');
@@ -87,7 +87,7 @@ describe('MCP credential notices', () => {
   });
 
   it('gives the too-short notice for a short HTTP header credential', () => {
-    const credential = credentialNotices(noticesOfConstruction({ url: 'http://127.0.0.1:9/mcp', headers: { 'X-Api-Key': 'Zq7#vK2' } }));
+    const credential = credentialNotices(noticesOfConstruction({ type: 'http', url: 'http://127.0.0.1:9/mcp', headers: { 'X-Api-Key': 'Zq7#vK2' } }));
     expect(credential).toHaveLength(1);
     expect(credential[0]).toMatch(SHORT);
     expect(credential[0]).not.toContain('Zq7#vK2');
