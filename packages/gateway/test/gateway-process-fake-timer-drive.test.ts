@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, startLoopbackServer } from '@momonga/testkit';
+import { BODY_PURGE_INTERVAL_MS } from '@momonga/observability';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, driveFakeTime, startLoopbackServer } from '@momonga/testkit';
+import { GATEWAY_CONFIG_DEFAULTS } from '../src/defaults.ts';
 import { postJson, readJson, userInput } from './gateway-helpers.ts';
-import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, until, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 
-const ADVANCE_LIMIT = 50;
-const DRAIN_LIMIT = 5000;
+const RETRY_BUDGET_MS = GATEWAY_CONFIG_DEFAULTS.retry.totalWaitMs;
 
 const closedOriginTarget = (origin: string) => ({
   adapter: 'chat-completions',
@@ -17,46 +18,53 @@ const closedOriginTarget = (origin: string) => ({
 
 const ask = async (socketPath: string) => readJson(await postJson(clientFor(socketPath), '/v1/responses', { model: 'fast', input: userInput('hi') }));
 
-describe('driving the injected fake timers of an in-process gateway until a request to a closed upstream settles', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
-  it(`settles within ${ADVANCE_LIMIT} advances of the next due timer`, async () => {
-    const closed = await startLoopbackServer((_req, res) => {
-      res.end();
-    });
-    const origin = closed.origin;
-    await closed.close();
-    const home = makeHome();
-    writeSettings(home, { models: { aliases: { fast: ['local'] }, targets: { local: closedOriginTarget(origin) } } });
-    const clock = createFakeClock(Date.now());
-    const timers = createFakeTimers(clock);
-    const startedAt = clock.now();
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, clock, timers, random: () => 0.5 });
+const launchAgainstClosedUpstream = async () => {
+  const closed = await startLoopbackServer((_req, res) => {
+    res.end();
+  });
+  const origin = closed.origin;
+  await closed.close();
+  const home = makeHome();
+  writeSettings(home, { models: { aliases: { fast: ['local'] }, targets: { local: closedOriginTarget(origin) } } });
+  const clock = createFakeClock(Date.now());
+  const timers = createFakeTimers(clock);
+  const startedAt = clock.now();
+  const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, clock, timers, random: () => 0.5 });
+  return { clock, timers, startedAt, handle };
+};
+
+const settledFlag = (promise: Promise<unknown>): (() => boolean) => {
+  let settled = false;
+  const settle = (): void => {
+    settled = true;
+  };
+  void promise.then(settle, settle);
+  return () => settled;
+};
+
+describe('driving the injected fake timers of an in-process gateway whose body purge is armed on them', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+  it('settles a request to a closed upstream within the retry budget horizon and leaves the purge timer unfired', async () => {
+    const { clock, timers, startedAt, handle } = await launchAgainstClosedUpstream();
 
     const pending = ask(handle.socketPath);
-    let settled = false;
-    const settle = (): void => {
-      settled = true;
-    };
-    void pending.then(settle, settle);
-    let advances = 0;
-    const delaysAdvancedOver: number[] = [];
-    while (!settled && advances < ADVANCE_LIMIT) {
-      await until(() => settled || timers.pending().length > 0, 'a retry timer or the answer');
-      const nextDue = timers.nextDueAt();
-      if (!settled && nextDue !== undefined) {
-        const due = timers.pending().find((timer) => timer.dueAt === nextDue);
-        if (due !== undefined) delaysAdvancedOver.push(due.delayMs);
-        timers.advance(Math.max(0, nextDue - clock.now()));
-        advances += 1;
-      }
-    }
+    const settled = settledFlag(pending);
+    await driveFakeTime(timers, { done: settled, horizonAt: startedAt + RETRY_BUDGET_MS, description: 'the answer to a request against a closed upstream' });
+    const response = await pending;
 
-    const observed = { settled, advances, fakeElapsedMs: clock.now() - startedAt, delaysAdvancedOver: [...new Set(delaysAdvancedOver)], pendingAfter: timers.pending() };
-    for (let drained = 0; !settled && drained < DRAIN_LIMIT; drained += 1) {
-      await new Promise<void>((resolve) => setImmediate(resolve));
-      const nextDue = timers.nextDueAt();
-      if (!settled && nextDue !== undefined) timers.advance(Math.max(0, nextDue - clock.now()));
-    }
+    expect(response.body.error.code).toBe('provider_unavailable');
+    expect(clock.now() - startedAt).toBeGreaterThanOrEqual(83_625);
+    expect(timers.pending()).toContainEqual(expect.objectContaining({ delayMs: BODY_PURGE_INTERVAL_MS, dueAt: startedAt + BODY_PURGE_INTERVAL_MS }));
+  });
 
-    expect(observed.settled, JSON.stringify(observed)).toBe(true);
+  it('fails fast, naming the purge timer, when its predicate never holds', async () => {
+    const { timers, startedAt, handle } = await launchAgainstClosedUpstream();
+    const settled = settledFlag(ask(handle.socketPath));
+    const begunAt = performance.now();
+
+    await expect(driveFakeTime(timers, { done: () => false, horizonAt: startedAt + RETRY_BUDGET_MS, deadlineMs: 3000, description: 'a condition that never holds' })).rejects.toThrow(
+      new RegExp(`a condition that never holds not met within ${RETRY_BUDGET_MS} fake ms: the real-time deadline of 3000 ms passed; pending timers .*"delayMs":${BODY_PURGE_INTERVAL_MS}`),
+    );
+    expect(performance.now() - begunAt).toBeLessThan(10_000);
+    expect(settled()).toBe(true);
   });
 });
