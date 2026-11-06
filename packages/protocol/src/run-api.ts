@@ -255,7 +255,7 @@ const runFactsView = closed(
 const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { properties: Record<string, JsonSchema>; required: readonly string[] }> = {
   'user.message': { properties: { text: string, images: { type: 'array', items: imageSummary } }, required: ['text'] },
   'run.started': { properties: { attempt: integer }, required: ['attempt'] },
-  'attempt.failed': { properties: { attempt: integer, code: string }, required: ['attempt', 'code'] },
+  'attempt.failed': { properties: { attempt: integer, code: string, retryAt: integer, limit: integer }, required: ['attempt', 'code', 'retryAt', 'limit'] },
   'attempt.lost': { properties: { lastLiveAt: integer }, required: ['lastLiveAt'] },
   'run.status': {
     properties: { from: enumOf(RUN_STATUSES), to: enumOf(RUN_STATUSES), reason: string },

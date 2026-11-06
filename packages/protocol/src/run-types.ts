@@ -98,7 +98,7 @@ export type ToolAwait = { kind: 'run'; runId: string; sessionId: string; agent: 
 export type RunEventPayload =
   | { type: 'user.message'; text: string; images?: ImageAttachment[] }
   | { type: 'run.started'; attempt: number; now: number; pins: Record<string, unknown>; mode?: PermissionMode }
-  | { type: 'attempt.failed'; attempt: number; code: string }
+  | { type: 'attempt.failed'; attempt: number; code: string; retryAt: number; limit: number }
   | { type: 'attempt.lost'; lastLiveAt: number }
   | { type: 'run.status'; from: RunStatus; to: RunStatus; reason?: string }
   | {

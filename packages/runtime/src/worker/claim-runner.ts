@@ -246,7 +246,7 @@ const requeueOrStop = async (
   }
   memory.streak += 1;
   if (disposition.kind === 'requeue' && disposition.interrupted) memory.interruptions += 1;
-  journal.append([{ type: 'attempt.failed', attempt: claim.leaseToken, code: observedCodeOf(cause) }]);
+  journal.append([{ type: 'attempt.failed', attempt: claim.leaseToken, code: observedCodeOf(cause), retryAt: availableAt, limit: options.store.maxTotalAttempts }]);
   terminals.yieldTo('QUEUED', availableAt, refund ? { refundAttempt: true } : undefined);
 };
 
