@@ -8,6 +8,8 @@ import { GatewayRequestError } from '../gateway-client.ts';
 
 const STREAM_INTERRUPTED_REFUNDS = 3;
 const DEFERRAL_FAILURE_CODE = 'rate_limited';
+const GATEWAY_FAILURE_CODE = 'gateway_failure';
+const JOURNAL_THREAD_FAILURE_CODE = 'journal_thread_error';
 
 export const INHERITANCE_FAILURE_MESSAGE = 'The previous conversation could not be loaded. Start a new conversation (/clear) to continue.';
 
@@ -16,6 +18,13 @@ export type FailureDisposition =
   | { kind: 'timeout' }
   | { kind: 'defer'; code: string; message: string; retryAfterMs: number }
   | { kind: 'requeue'; refund: boolean; retryAfterMs: number; interrupted: boolean };
+
+export const observedCodeOf = (error: unknown): string => {
+  if (error instanceof GatewayRequestError) return error.code;
+  if (error instanceof GatewayFailureError) return GATEWAY_FAILURE_CODE;
+  if (error instanceof JournalThreadError) return JOURNAL_THREAD_FAILURE_CODE;
+  throw new TypeError('only a gateway or journal thread failure is requeued, and this one is neither', { cause: error });
+};
 
 export const dispositionOf = (error: unknown, interruptions: number): FailureDisposition => {
   if (error instanceof ConfigError) return { kind: 'fail', code: 'config_error', message: error.message };

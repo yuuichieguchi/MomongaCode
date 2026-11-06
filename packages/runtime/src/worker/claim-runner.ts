@@ -12,7 +12,7 @@ import type { ClaimContext, Flow, RunMemory, Terminals } from './claim-context.t
 import { reconcileStartedCalls, releaseWaitingOnCancel } from './cancel-recovery.ts';
 import { startClaimControl } from './claim-control.ts';
 import type { ClaimControl } from './claim-control.ts';
-import { dispositionOf } from './gateway-policy.ts';
+import { dispositionOf, observedCodeOf } from './gateway-policy.ts';
 import { heartbeatMsFor } from './heartbeat.ts';
 import { describeError, LeaseLostError, ShutdownError } from './errors.ts';
 import { meteredOutputFit, reconcileOutputFit } from './output-fit.ts';
@@ -230,6 +230,7 @@ const requeueOrStop = async (
   }
   memory.streak += 1;
   if (disposition.kind === 'requeue' && disposition.interrupted) memory.interruptions += 1;
+  journal.append([{ type: 'attempt.failed', attempt: claim.leaseToken, code: observedCodeOf(cause) }]);
   terminals.yieldTo('QUEUED', availableAt, refund ? { refundAttempt: true } : undefined);
 };
 
