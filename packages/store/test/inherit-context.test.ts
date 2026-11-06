@@ -436,7 +436,7 @@ describe('inheritContext: predecessors that ended badly', () => {
     db.prepare(`INSERT INTO snapshots (run_id, seq, state_json, created_at) VALUES (?, 1, '{"stateVersion":${SNAPSHOT_STATE_VERSION},"runId":7}', 0)`).run(first.id);
     enqueue(store, session.id, 'And again');
     const claim = mustClaim(store, 'w1');
-    expect(thrown(() => store.inheritContext(claim, { mode: 'default' }))).toEqual(inheritanceError('previous_run_unreadable'));
+    expect(await thrown(() => store.inheritContext(claim, { mode: 'default' }))).toEqual(inheritanceError('previous_run_unreadable'));
   });
 
   it('throws previous_run_unreadable when the predecessor journal does not fold', async () => {
