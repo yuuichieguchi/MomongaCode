@@ -33,7 +33,7 @@ describe('Edit', () => {
     tools.markRead(file);
     resultOf(await tools.run('Edit', { file_path: file, old_string: 'a', new_string: 'b' }, ACCEPT));
     const begin = tools.idempotency.log.find((entry) => entry.op === 'begin');
-    expect(begin?.op === 'begin' ? begin.meta : undefined).toEqual({ tool: 'Edit', runId: 'run-1', prepared: { path: file, preHash: sha256('a\n'), postHash: sha256('b\n') } });
+    expect(begin?.op === 'begin' ? begin.meta : undefined).toEqual({ tool: 'Edit', runId: 'run-1', prepared: { path: file, preHash: sha256('a\n'), postHash: sha256('b\n') }, facts: { files: [{ path: file, access: 'write' }] } });
   });
 
   it('limits the snippet to four lines of context around the edit', async () => {

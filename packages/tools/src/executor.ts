@@ -1139,7 +1139,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
             tool: tool.name,
             runId: batch.runId,
             ...(prepared === undefined ? {} : { prepared }),
-            facts,
+            ...(facts.command === undefined && facts.files === undefined ? {} : { facts }),
             ...(target.hookInput === undefined ? {} : { hookInput: target.hookInput }),
           },
         });
