@@ -281,6 +281,36 @@ describe('createFmServe preconditions', () => {
   });
 });
 
+describe('createFmServe a child that exits while its health body is being read', () => {
+  const serveHealthThenExit = async (socketPath: string, exit: () => Promise<void>): Promise<net.Server> => {
+    const server = net.createServer((socket) => {
+      socket.on('error', () => undefined);
+      socket.once('data', () => {
+        socket.write('HTTP/1.1 200 OK\r\ncontent-length: 4\r\n\r\nok');
+        void exit().then(() => socket.end('ok'));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(socketPath, () => resolve()));
+    cleanups.push(() => new Promise<void>((resolve) => server.close(() => resolve())));
+    return server;
+  };
+
+  it('never reports running for a start whose child has exited', async () => {
+    const { server, spawn, socketPath } = setup({ child: { manualServe: true } });
+    const starting = server.start();
+    const outcome = starting.then(
+      () => 'started',
+      () => 'failed',
+    );
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
+    await serveHealthThenExit(socketPath, async () => {
+      await children[0]?.crash(1, null);
+    });
+    expect(await outcome).toBe('failed');
+    expect((await server.health()).ok).toBe(false);
+  });
+});
+
 describe('createFmServe start', () => {
   it('spawns fm serve with exactly the socket argv and resolves only after the socket serves /health', async () => {
     const { server, spawn, socketPath, events } = setup({ child: { manualServe: true } });
