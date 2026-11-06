@@ -485,7 +485,7 @@ export const SETTINGS_SCHEMA = {
       properties: {
         httpProxy: { type: 'string', minLength: 1 },
         httpsProxy: { type: 'string', minLength: 1 },
-        noProxy: { type: 'string' },
+        noProxy: { type: 'string', minLength: 1 },
         extraCaFiles: { type: 'array', items: { type: 'string', minLength: 1 } },
         environment: { type: 'boolean' },
       },

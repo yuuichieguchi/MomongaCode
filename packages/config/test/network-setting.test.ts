@@ -73,6 +73,20 @@ describe('network setting', () => {
   });
 });
 
+describe('network setting: empty and relative values', () => {
+  it('refuses an empty noProxy at load, like an empty proxy URL', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { network: { noProxy: '' } });
+    await expect(loadUserSettings({ home: tree.home })).rejects.toThrow('/network/noProxy');
+  });
+
+  it.each(['root.pem', './certs/root.pem', '../root.pem', '~/root.pem'])('refuses the relative extra CA file %s at load, naming the entry', async (file) => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), { network: { extraCaFiles: [file] } });
+    await expect(loadUserSettings({ home: tree.home })).rejects.toThrow('/network/extraCaFiles/0: not an absolute path');
+  });
+});
+
 describe('resolveNetwork', () => {
   it('has no proxy and no CA file when nothing is configured', () => {
     expect(resolveNetwork(undefined, {})).toEqual({ caFiles: [] });

@@ -133,8 +133,11 @@ const proxyRoute = ({ value, source }: SourcedValue): Route => {
   const url = new URL(value);
   const defaultPort = PROXY_DEFAULT_PORTS[url.protocol];
   if (defaultPort === undefined) {
+    if (url.host === '') {
+      return { kind: 'unsupported', reason: 'scheme', display: '<proxy URL without a scheme>', message: `${source} has no scheme; write it as http://host:port (${UNSUPPORTED_TEXT})`, source };
+    }
     const display = `${url.protocol}//${url.host}`;
-    return { kind: 'unsupported', reason: 'scheme', display, message: `${source} ${display}: ${UNSUPPORTED_TEXT}`, source };
+    return { kind: 'unsupported', reason: 'scheme', display, message: `${source} ${JSON.stringify(display)}: ${UNSUPPORTED_TEXT}`, source };
   }
   if (url.hostname === '') {
     return { kind: 'unsupported', reason: 'malformed', display: `${url.protocol}//`, message: `${source} has no proxy host; ${UNSUPPORTED_TEXT}`, source };
