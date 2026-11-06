@@ -41,6 +41,7 @@ export const DECLARED_CREDENTIAL = 'FM_UPSTREAM_VALUE';
 export const HOUR_MS = 3_600_000;
 export const DEFAULT_TIMEOUT_MS = 6 * HOUR_MS;
 export const DEFAULT_TTL_MS = 30 * 60 * 1000;
+export const FORMER_APPROVAL_LIMIT_MS = DEFAULT_TTL_MS;
 export const DEFAULT_LIMITS = { maxSteps: 50, maxTotalTokens: 1_000_000, approvalTtlMs: DEFAULT_TTL_MS, loopThreshold: 3 };
 export const SOCKET_PATH_LIMIT = 104;
 export const SERVICE_PID = 424_242;
@@ -662,13 +663,11 @@ export const requestManualApproval = (
   env: ServiceEnv,
   claim: Claim,
   callId: string,
-  expiresAt: number,
   extra: { suggestedRule?: string } = {},
 ): string => {
   const result = env.store.requestApproval(claim, {
     callId,
     options: OPTIONS,
-    expiresAt,
     event: { subjectDigest: SUBJECT_DIGEST, reason: 'edits require approval', ...extra },
   });
   if (result.kind !== 'ok') throw new Error(`requestApproval failed: ${result.kind}`);

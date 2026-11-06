@@ -720,11 +720,12 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   };
 
   const expiryEvents = (runId: string, approval: Approval): RunEventPayload[] => {
+    if (approval.kind !== 'elicitation') throw corrupt('approvals', approval.id, 'only a request for input carries an expiry');
     const notice: RunEventPayload = {
       type: 'notice',
       level: 'warning',
       code: 'approval_expired',
-      message: `The ${approval.kind === 'elicitation' ? 'request for input' : 'approval'} for ${approval.callId} expired.`,
+      message: `The request for input for ${approval.callId} expired.`,
     };
     return approvalAnnounced(runId, approval.id)
       ? [cancelledEvent(approval, 'expired'), notice]
@@ -763,16 +764,12 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return true;
   };
 
-  const resolveInTransaction = (approvalId: string, optionId: string, now: number, prepared: Prepared | undefined): ResolveApprovalResult => {
+  const resolveInTransaction = (approvalId: string, optionId: string, now: number): ResolveApprovalResult => {
     const approval = approvalOps.store.get(approvalId);
     if (approval === undefined || approval.kind !== 'permission') return { kind: 'not_found' };
     if (approval.status !== 'pending') return { kind: 'approval_not_pending', status: approval.status };
     if (!approvalAnnounced(approval.runId, approval.id)) return { kind: 'request_missing' };
     const run = requireRun(approval.runId);
-    if (approval.expiresAt <= now) {
-      stopWaitingRun(run, now, prepared);
-      return { kind: 'approval_not_pending', status: 'expired' };
-    }
     if (run.cancelRequested) return { kind: 'run_cancelled' };
     if (!approval.options.some((option) => option.optionId === optionId)) return { kind: 'option_not_offered' };
     const resolved = approvalOps.markResolved(approval.id, optionId);
@@ -786,9 +783,9 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return { kind: 'ok', approval: resolved, run: requireRun(run.id) };
   };
 
-  const lateAnswerNeed = (approvalId: string, now: number): Need | undefined => {
+  const lateInputNeed = (approvalId: string, now: number): Need | undefined => {
     const approval = approvalOps.store.get(approvalId);
-    return approval !== undefined && approval.status === 'pending' && approval.expiresAt <= now ? stopNeed(approval.runId, now) : undefined;
+    return approval !== undefined && approval.kind === 'elicitation' && approval.status === 'pending' && approval.expiresAt <= now ? stopNeed(approval.runId, now) : undefined;
   };
 
   const decodeLocations = (identity: string, value: unknown): { path: string; line?: number }[] => {
@@ -837,7 +834,6 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       callId: approval.callId,
       status: approval.status,
       options: approval.options,
-      expiresAt: approval.expiresAt,
       createdAt: approval.createdAt,
       ...(suggestedRule === undefined ? {} : { suggestedRule }),
       reason,
@@ -870,7 +866,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   };
 
   const elicitationViewOf = (approval: Approval): ElicitationView => {
-    if (approval.server === undefined || approval.requests === undefined) {
+    if (approval.kind !== 'elicitation' || approval.server === undefined || approval.requests === undefined) {
       throw corrupt('approvals', approval.id, 'an elicitation approval must carry its server and requests');
     }
     const { callId, name, title } = toolCallOf(approval);
@@ -1447,7 +1443,6 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           runId: run.id,
           callId: input.callId,
           options: input.options,
-          expiresAt: input.expiresAt,
           subjectDigest: input.event.subjectDigest,
         });
         const events: RunEventPayload[] = [];
@@ -1469,13 +1464,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         return { kind: 'ok', approval: requested.approval };
       }),
 
-    resolveApproval: (approvalId, optionId) => {
-      const now = clock.now();
-      return operate(
-        () => lateAnswerNeed(approvalId, now),
-        (prepared) => resolveInTransaction(approvalId, optionId, now, prepared),
-      );
-    },
+    resolveApproval: async (approvalId, optionId) => transaction(() => resolveInTransaction(approvalId, optionId, clock.now())),
 
     requestElicitation: (claim, input) =>
       transaction<RequestApprovalResult>(() => {
@@ -1485,9 +1474,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           runId: run.id,
           callId: input.callId,
           options: [],
-          expiresAt: input.expiresAt,
           subjectDigest: sha256Hex(canonicalJson({ server: input.server, requests: input.requests })),
-          elicitation: { server: input.server, requests: input.requests },
+          elicitation: { server: input.server, requests: input.requests, expiresAt: input.expiresAt },
         });
         const events: RunEventPayload[] = [];
         if (requested.superseded !== undefined && approvalAnnounced(run.id, requested.superseded.id)) {
@@ -1503,7 +1491,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     resolveElicitation: (elicitationId, responses, notices = []) => {
       const now = clock.now();
       return operate(
-        () => lateAnswerNeed(elicitationId, now),
+        () => lateInputNeed(elicitationId, now),
         (prepared) => resolveElicitationInTransaction(elicitationId, responses, notices, now, prepared),
       );
     },
