@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { HOST_RULE_ENFORCEMENT, resolveCanonicalPath } from '@momonga/foundation';
+import { resolveCanonicalPath, ruleEnforcementOf } from '@momonga/foundation';
 import type { FileRuleSet, PathResolution } from '@momonga/foundation';
 import { computeFileRules, parseRule } from '@momonga/policy';
 import type { PermissionRule, RuleEffect } from '@momonga/policy';
@@ -41,7 +41,7 @@ const withFileRules = (tools: Builtins, rules: PermissionRule[], fileRules: File
 };
 
 const withRules = (tools: Builtins, rules: PermissionRule[], extra: Extra = {}) =>
-  withFileRules(tools, rules, computeFileRules(rules, [tools.layout.project], tools.tmpDir, HOST_RULE_ENFORCEMENT), extra);
+  withFileRules(tools, rules, computeFileRules(rules, [tools.layout.project], tools.tmpDir, ruleEnforcementOf('none')), extra);
 
 const failedWith = (outcome: CallOutcome | undefined): string => {
   expect(outcome).toMatchObject({ kind: 'result', result: { status: 'failed' } });
@@ -291,8 +291,8 @@ describe('one compilation per batch: every reader uses batch.sandboxPolicy.fileR
     const target = tools.write(path.join('real', 'k'), 'KEY');
     const ruleText = `Read(/${path.join(tools.layout.project, 'cfg')}/**)`;
     const rules = [ruleOf(tools, effect, ruleText)];
-    const fileRules = computeFileRules(rules, [tools.layout.project], tools.tmpDir, HOST_RULE_ENFORCEMENT, remapping(path.join(tools.layout.project, 'cfg'), path.join(tools.layout.project, 'real')));
-    expect(fileRules.fingerprint).toBe(computeFileRules(rules, [tools.layout.project], tools.tmpDir, HOST_RULE_ENFORCEMENT).fingerprint);
+    const fileRules = computeFileRules(rules, [tools.layout.project], tools.tmpDir, ruleEnforcementOf('none'), remapping(path.join(tools.layout.project, 'cfg'), path.join(tools.layout.project, 'real')));
+    expect(fileRules.fingerprint).toBe(computeFileRules(rules, [tools.layout.project], tools.tmpDir, ruleEnforcementOf('none')).fingerprint);
     return { tools, target, rules, fileRules, ruleText };
   };
 
@@ -315,7 +315,7 @@ describe('one compilation per batch: every reader uses batch.sandboxPolicy.fileR
     const vault = path.join(tools.layout.outside, 'vault');
     fs.mkdirSync(vault);
     const rules = [ruleOf(tools, 'deny', `Read(/${vault}/**)`)];
-    const fileRules = computeFileRules(rules, [tools.layout.project], tools.tmpDir, HOST_RULE_ENFORCEMENT);
+    const fileRules = computeFileRules(rules, [tools.layout.project], tools.tmpDir, ruleEnforcementOf('none'));
     fs.rmdirSync(vault);
     fs.symlinkSync(vault, vault);
     const notes = tools.write('notes.txt', 'NOTES');
@@ -331,7 +331,7 @@ describe('one compilation per batch: every reader uses batch.sandboxPolicy.fileR
   it('checks the fingerprint without touching the filesystem: a stale seatbelt set fails as file_rules_stale even when a prefix cannot be resolved', async () => {
     const { tools, rules, notes } = await loopedFixture();
     const { sandbox, spawned } = recordingSandbox('seatbelt', () => '');
-    const stale = computeFileRules([], [tools.layout.project], tools.tmpDir, HOST_RULE_ENFORCEMENT);
+    const stale = computeFileRules([], [tools.layout.project], tools.tmpDir, ruleEnforcementOf('none'));
     const error = await rejectionOf(tools.run('Read', { file_path: notes }, withFileRules(tools, rules, stale, { sandbox })));
     expect(error).toMatchObject({ name: 'SandboxPolicyError', code: 'file_rules_stale' });
     expect(spawned).toEqual([]);
@@ -349,7 +349,7 @@ describe('one compilation per batch: every reader uses batch.sandboxPolicy.fileR
   it('fails a stale set as file_rules_stale under a sandbox of kind none', async () => {
     const tools = await makeBuiltins();
     const rules = [ruleOf(tools, 'deny', 'Read(.env)')];
-    const stale = computeFileRules([], [tools.layout.project], tools.tmpDir, HOST_RULE_ENFORCEMENT);
+    const stale = computeFileRules([], [tools.layout.project], tools.tmpDir, ruleEnforcementOf('none'));
     const { sandbox, spawned } = recordingSandbox('none', () => '');
     const error = await rejectionOf(tools.run('Grep', { pattern: 'x', path: tools.layout.project }, withFileRules(tools, rules, stale, { sandbox, env: { PATH: RG_PATH, LANG: 'C' } })));
     expect(error).toMatchObject({ name: 'SandboxPolicyError', code: 'file_rules_stale' });
@@ -462,7 +462,7 @@ describe('a user Read deny over owned read allows', () => {
     const secret = path.join(shared, 'f');
     fs.writeFileSync(secret, 'SHARED');
     const ruleText = `Read(/${shared}/**)`;
-    const fileRules = computeFileRules([ruleOf(tools, 'deny', ruleText)], [tools.layout.project], tools.tmpDir, HOST_RULE_ENFORCEMENT);
+    const fileRules = computeFileRules([ruleOf(tools, 'deny', ruleText)], [tools.layout.project], tools.tmpDir, ruleEnforcementOf('none'));
     const matcher = createReadAccessMatcher({ readDenied: [tools.layout.outside], readAllowed: [shared], fileRules });
     expect(matcher.blockedBy(secret, tools.layout.project)).toMatchObject({ ruleText, layer: 'user', source: SOURCE });
   });

@@ -2,10 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
-import { momongaLayout, EMPTY_PROTECTED_SET, HOST_RULE_ENFORCEMENT } from '@momonga/foundation';
+import { momongaLayout, EMPTY_PROTECTED_SET, ruleEnforcementOf } from '@momonga/foundation';
 import { computeFileRules } from '@momonga/policy';
 import { buildSandboxPolicy } from '@momonga/tools';
-import { HAS_REAL_SANDBOX } from '../helpers.ts';
+import { HAS_REAL_SANDBOX, HOST_SANDBOX_KIND } from '../helpers.ts';
 import { makeBuiltins, resultOf } from './fixtures.ts';
 import type { Builtins, RunExtra } from './fixtures.ts';
 
@@ -25,7 +25,7 @@ const escapeFixture = async (realSandbox: boolean) => {
     roots,
     home,
     session: { cwd, workingDirectory: cwd, readLedger: new Map() },
-    sandboxPolicy: buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: computeFileRules([], roots, mine, HOST_RULE_ENFORCEMENT), roots, home, tmpDir: mine, sessionsTmpRoot: sessions }),
+    sandboxPolicy: buildSandboxPolicy({ protectedSet: EMPTY_PROTECTED_SET, fileRules: computeFileRules([], roots, mine, ruleEnforcementOf(HOST_SANDBOX_KIND)), roots, home, tmpDir: mine, sessionsTmpRoot: sessions }),
     tmpDir: mine,
   });
   return { tools, home, momonga, keychains, sessions, mine, other, markerFor, extraFor };

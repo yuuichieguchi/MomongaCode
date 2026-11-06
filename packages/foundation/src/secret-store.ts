@@ -1,4 +1,5 @@
-import { UnsupportedPlatformError } from './platform/process-inspector.ts';
+import { findProgramOnPath } from './program-search.ts';
+import { declaredChildEnv } from './process-contract.ts';
 import { powershellArgs, powershellPath } from './platform/windows-scripts.ts';
 
 export const SECRET_NAME_PATTERN = '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$';
@@ -15,20 +16,23 @@ export type SecretProcessResult = { exitCode: number; stdout: string; stderr: st
 
 export type SecretProcessPort = (file: string, args: readonly string[], stdin: string, signal: AbortSignal) => Promise<SecretProcessResult>;
 
-export type SecretBackend = { label: string; storeCommand(secretName: string): string };
+export type SecretBackend = { label: string; childEnvNames: readonly string[]; storeCommand(secretName: string): string };
 
 export const KEYCHAIN_BACKEND: SecretBackend = {
   label: 'Keychain',
+  childEnvNames: [],
   storeCommand: (secretName) => `security add-generic-password -s ${KEYCHAIN_SERVICE} -a ${secretName} -w`,
 };
 
 export const SECRET_SERVICE_BACKEND: SecretBackend = {
   label: 'Secret Service',
+  childEnvNames: ['DBUS_SESSION_BUS_ADDRESS'],
   storeCommand: (secretName) => `secret-tool store --label=${KEYCHAIN_SERVICE} service ${KEYCHAIN_SERVICE} account ${secretName}`,
 };
 
 export const CREDENTIAL_MANAGER_BACKEND: SecretBackend = {
   label: 'Credential Manager',
+  childEnvNames: ['SystemRoot'],
   storeCommand: (secretName) => `cmdkey /generic:${KEYCHAIN_SERVICE}/${secretName} /user:${KEYCHAIN_SERVICE} /pass`,
 };
 
@@ -105,25 +109,25 @@ const createCommandSecretStore = (
 export const keychainWriteCommand = (name: string, value: string): string =>
   `add-generic-password -U -s ${KEYCHAIN_SERVICE} -a ${name} -X ${Buffer.from(value, 'utf8').toString('hex')}\n`;
 
-export const createKeychainSecretStore = (run: SecretProcessPort): SecretStore =>
+export const createKeychainSecretStore = (run: SecretProcessPort, security: string = SECURITY_BINARY): SecretStore =>
   createCommandSecretStore(run, {
     read: (name) => ({
-      file: SECURITY_BINARY,
+      file: security,
       args: ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', name, '-w'],
       backend: KEYCHAIN_BACKEND,
     }),
-    write: (name, value) => ({ file: SECURITY_BINARY, args: ['-i'], stdin: keychainWriteCommand(name, value), backend: KEYCHAIN_BACKEND }),
+    write: (name, value) => ({ file: security, args: ['-i'], stdin: keychainWriteCommand(name, value), backend: KEYCHAIN_BACKEND }),
   });
 
-export const createSecretServiceStore = (run: SecretProcessPort): SecretStore =>
+export const createSecretServiceStore = (run: SecretProcessPort, secretTool: string = SECRET_TOOL_BINARY): SecretStore =>
   createCommandSecretStore(run, {
     read: (name) => ({
-      file: SECRET_TOOL_BINARY,
+      file: secretTool,
       args: ['lookup', 'service', KEYCHAIN_SERVICE, 'account', name],
       backend: SECRET_SERVICE_BACKEND,
     }),
     write: (name, value) => ({
-      file: SECRET_TOOL_BINARY,
+      file: secretTool,
       args: ['store', `--label=${KEYCHAIN_SERVICE}`, 'service', KEYCHAIN_SERVICE, 'account', name],
       stdin: value,
       backend: SECRET_SERVICE_BACKEND,
@@ -212,19 +216,81 @@ export const createCredentialManagerStore = (run: SecretProcessPort, powershell:
     }),
   });
 
-export const createPlatformSecretStore = (
-  platform: NodeJS.Platform,
-  run: SecretProcessPort,
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): SecretStore => {
-  switch (platform) {
-    case 'darwin':
-      return createKeychainSecretStore(run);
-    case 'linux':
-      return createSecretServiceStore(run);
-    case 'win32':
-      return createCredentialManagerStore(run, { file: powershellPath(env), args: powershellArgs });
-    default:
-      throw new UnsupportedPlatformError(platform, 'secret storage');
-  }
+type SecretEnv = Readonly<Record<string, string | undefined>>;
+
+export const SECRET_BACKEND_ENV = 'MOMONGA_SECRET_BACKEND';
+export const SECRET_PROGRAM_ENV = 'MOMONGA_SECRET_PROGRAM';
+export const SECRET_REFUSAL_ENV = 'MOMONGA_SECRET_REFUSAL';
+
+type SecretBackendKind = { backend: SecretBackend; create(run: SecretProcessPort, program: string): SecretStore };
+
+const SECRET_BACKENDS: Readonly<Record<string, SecretBackendKind>> = {
+  keychain: { backend: KEYCHAIN_BACKEND, create: (run, program) => createKeychainSecretStore(run, program) },
+  'secret-service': { backend: SECRET_SERVICE_BACKEND, create: (run, program) => createSecretServiceStore(run, program) },
+  'credential-manager': { backend: CREDENTIAL_MANAGER_BACKEND, create: (run, program) => createCredentialManagerStore(run, { file: program, args: powershellArgs }) },
 };
+
+type ChosenSecretStore = { kind: 'chosen'; id: string; program: string } | { kind: 'none'; reason: string };
+
+const chooseSecretBackend = (env: SecretEnv): ChosenSecretStore => {
+  const security = findProgramOnPath('security', env);
+  if (security !== undefined) return { kind: 'chosen', id: 'keychain', program: security };
+  const secretTool = findProgramOnPath('secret-tool', env);
+  const busAddress = env['DBUS_SESSION_BUS_ADDRESS'];
+  const hasSession = busAddress !== undefined && busAddress !== '';
+  if (secretTool !== undefined && hasSession) return { kind: 'chosen', id: 'secret-service', program: secretTool };
+  if (findProgramOnPath('cmdkey', env) !== undefined) return { kind: 'chosen', id: 'credential-manager', program: powershellPath(env) };
+  const secretServiceState =
+    secretTool === undefined ? 'secret-tool (Secret Service) is not on PATH' : `secret-tool (Secret Service) is on PATH at ${secretTool}, but no D-Bus session is set (DBUS_SESSION_BUS_ADDRESS is empty)`;
+  return { kind: 'none', reason: `no secret store was found on this host: security (Keychain) is not on PATH; ${secretServiceState}; cmdkey (Credential Manager) is not on PATH` };
+};
+
+const backendKindOf = (id: string): SecretBackendKind | undefined => (Object.hasOwn(SECRET_BACKENDS, id) ? SECRET_BACKENDS[id] : undefined);
+
+export const secretStoreEnvFor = (hostEnv: SecretEnv): Record<string, string> => {
+  const chosen = chooseSecretBackend(hostEnv);
+  if (chosen.kind === 'none') return { [SECRET_REFUSAL_ENV]: chosen.reason };
+  const kind = backendKindOf(chosen.id) as SecretBackendKind;
+  return { [SECRET_BACKEND_ENV]: chosen.id, [SECRET_PROGRAM_ENV]: chosen.program, ...declaredChildEnv(hostEnv, kind.backend.childEnvNames) };
+};
+
+type GivenSecretStore = { kind: 'given'; backend: SecretBackendKind; program: string } | { kind: 'none'; reason: string };
+
+const givenSecretStore = (givenEnv: SecretEnv): GivenSecretStore => {
+  const id = givenEnv[SECRET_BACKEND_ENV];
+  const program = givenEnv[SECRET_PROGRAM_ENV];
+  if (id === undefined || program === undefined || program === '') {
+    return { kind: 'none', reason: givenEnv[SECRET_REFUSAL_ENV] ?? `no secret store was given to this process (${SECRET_BACKEND_ENV} and ${SECRET_PROGRAM_ENV} are not set)` };
+  }
+  const backend = backendKindOf(id);
+  if (backend === undefined) return { kind: 'none', reason: `${SECRET_BACKEND_ENV} names an unknown secret store: ${id}` };
+  return { kind: 'given', backend, program };
+};
+
+export const givenSecretStoreChildEnv = (givenEnv: SecretEnv): Record<string, string> => {
+  const given = givenSecretStore(givenEnv);
+  return given.kind === 'none' ? {} : declaredChildEnv(givenEnv, given.backend.backend.childEnvNames);
+};
+
+export const createGivenSecretStore = (run: SecretProcessPort, givenEnv: SecretEnv): SecretStore => {
+  const storeOf = (): SecretStore => {
+    const given = givenSecretStore(givenEnv);
+    if (given.kind === 'none') throw new Error(given.reason);
+    return given.backend.create(run, given.program);
+  };
+  return {
+    read: async (name, signal) => storeOf().read(name, signal),
+    write: async (name, value, signal) => storeOf().write(name, value, signal),
+  };
+};
+
+const storeFor = (run: SecretProcessPort, env: SecretEnv): SecretStore => {
+  const chosen = chooseSecretBackend(env);
+  if (chosen.kind === 'none') throw new Error(chosen.reason);
+  return (backendKindOf(chosen.id) as SecretBackendKind).create(run, chosen.program);
+};
+
+export const createPlatformSecretStore = (run: SecretProcessPort, env: SecretEnv): SecretStore => ({
+  read: async (name, signal) => storeFor(run, env).read(name, signal),
+  write: async (name, value, signal) => storeFor(run, env).write(name, value, signal),
+});

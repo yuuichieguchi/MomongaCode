@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { HOST_RULE_ENFORCEMENT, protectedSetFor } from '@momonga/foundation';
+import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import type { PermissionRule } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
 import { hostFilesystemOf } from '@momonga/testkit';
@@ -30,7 +30,7 @@ const predictionFor = async (mode: PermissionMode, effect: 'deny' | 'ask', ruleT
     fs: hostFilesystemOf(fileSystem),
     secretLocations: [sshLocation(layout)],
     exemptDirectory: null,
-    enforcement: HOST_RULE_ENFORCEMENT,
+    enforcement: ruleEnforcementOf('none'),
     budgetMs: 30_000,
   });
   const prediction = await predictDecision(context, 'Bash', witness);
@@ -65,7 +65,7 @@ describe('the governance layer in the model', () => {
       fs: hostFilesystemOf(fileSystem),
       secretLocations: [sshLocation(layout)],
       exemptDirectory: null,
-      enforcement: HOST_RULE_ENFORCEMENT,
+      enforcement: ruleEnforcementOf('none'),
       budgetMs: 30_000,
     });
     const prediction = await predictDecision(context, 'Bash', DYNAMIC);

@@ -1,4 +1,6 @@
-import { minimalChildEnv } from '@momonga/foundation';
+import { declaredChildEnv, minimalChildEnv } from '@momonga/foundation';
+
+export const FM_CHILD_ENV_NAMES: readonly string[] = [];
 import type { MomongaPaths } from '@momonga/foundation';
 import type { DialectId, ProbeReport, ToolCallingMode } from '@momonga/protocol';
 import { NO_USER_DIALECTS } from '../dialect/choice.ts';
@@ -33,7 +35,7 @@ export type ProbeManagedFmOptions = {
 export type ProbeManagedFmResult = { report: ProbeReport; toolCalling: ToolCallingMode; record: ProbeRecordKey };
 
 export const probeManagedFm = async (options: ProbeManagedFmOptions): Promise<ProbeManagedFmResult> => {
-  const childEnv = minimalChildEnv(options.env);
+  const childEnv = { ...minimalChildEnv(options.env), ...declaredChildEnv(options.env, FM_CHILD_ENV_NAMES) };
   const exec = options.exec ?? createExecFn(childEnv);
   const execWithStdin = createExecWithStdin(childEnv);
   const record: ProbeRecordKey = {

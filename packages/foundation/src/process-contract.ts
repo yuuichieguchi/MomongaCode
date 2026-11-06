@@ -46,8 +46,7 @@ export const supervisorMaxCloseMs = (drainTimeoutMs: number): number =>
   SHUTDOWN_REAP_BOUND_MS +
   SHUTDOWN_RELEASE_BOUND_MS;
 
-export const PLATFORM_CHILD_ENV_NAMES: Readonly<Record<'linux' | 'win32', readonly string[]>> = {
-  linux: ['XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS'],
+export const PLATFORM_CHILD_ENV_NAMES: Readonly<Record<'win32', readonly string[]>> = {
   win32: ['SystemRoot', 'SystemDrive', 'windir', 'ComSpec', 'PATHEXT', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'ProgramData', 'TEMP', 'TMP'],
 };
 
@@ -63,7 +62,7 @@ export const minimalChildEnv = (
   platform: NodeJS.Platform = process.platform,
 ): Readonly<Record<string, string>> => {
   const env: Record<string, string> = {};
-  const extra = platform === 'linux' || platform === 'win32' ? PLATFORM_CHILD_ENV_NAMES[platform] : [];
+  const extra = platform === 'win32' ? PLATFORM_CHILD_ENV_NAMES[platform] : [];
   for (const name of [...MINIMAL_CHILD_ENV_NAMES, ...extra]) {
     const value = name === 'PATH' ? minimalChildPath(source, platform) : source[name];
     if (value !== undefined) env[name] = value;
@@ -179,4 +178,13 @@ export const createJsonLogger = ({ service, clock, stream = process.stderr, leve
     warn: (msg, fields) => emit('warn', msg, fields),
     error: (msg, fields) => emit('error', msg, fields),
   };
+};
+
+export const declaredChildEnv = (source: Readonly<Record<string, string | undefined>>, names: readonly string[]): Readonly<Record<string, string>> => {
+  const env: Record<string, string> = {};
+  for (const name of names) {
+    const value = source[name];
+    if (value !== undefined) env[name] = value;
+  }
+  return env;
 };

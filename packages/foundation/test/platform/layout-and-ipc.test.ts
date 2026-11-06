@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { describe, expect, it } from 'vitest';
-import { assertSocketPathLength, ensureMomongaDirs, ensureSessionTmpDir, isPipePath, listenUnix, momongaLayout, momongaPaths, pipePathFor, socketPathLimit } from '@momonga/foundation';
+import { assertSocketPathLength, ensureMomongaDirs, ensureSessionTmpDir, isPipePath, listenUnix, momongaLayout, momongaPaths, pipePathFor } from '@momonga/foundation';
 import type { CommandRunner } from '@momonga/foundation';
 
 describe('win32 layout', () => {
@@ -44,18 +44,11 @@ describe('linux layout', () => {
   });
 });
 
-describe('socket path limits', () => {
-  it('uses sun_path sizes: 104 on darwin and 108 on linux', () => {
-    expect(socketPathLimit('darwin')).toBe(104);
-    expect(socketPathLimit('linux')).toBe(108);
-    expect(() => assertSocketPathLength(`/${'s'.repeat(106)}`, 'linux')).not.toThrow();
-    expect(() => assertSocketPathLength(`/${'s'.repeat(107)}`, 'linux')).toThrow(/108/);
-  });
-
+describe('pipe path limits', () => {
   it('limits pipe paths to 256 characters whatever the platform', () => {
     expect(isPipePath(pipePathFor('C:\\h', 'x'))).toBe(true);
-    expect(() => assertSocketPathLength(`\\\\.\\pipe\\${'p'.repeat(247)}`, 'win32')).not.toThrow();
-    expect(() => assertSocketPathLength(`\\\\.\\pipe\\${'p'.repeat(248)}`, 'win32')).toThrow(/256/);
+    expect(() => assertSocketPathLength(`\\\\.\\pipe\\${'p'.repeat(247)}`)).not.toThrow();
+    expect(() => assertSocketPathLength(`\\\\.\\pipe\\${'p'.repeat(248)}`)).toThrow(/256/);
   });
 });
 

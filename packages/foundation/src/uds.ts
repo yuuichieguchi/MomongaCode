@@ -5,7 +5,7 @@ import { Agent, request } from 'undici';
 import { acquireProcessLock } from './process-lock.ts';
 import type { AcquireProcessLockOptions } from './process-lock.ts';
 import { modeIsPrivate, ownerProblem } from './platform/privacy.ts';
-import { assertSocketPathLength, isPipePath } from './socket-path.ts';
+import { assertSocketPathLength, assertUnixSocketPathFits, isPipePath } from './socket-path.ts';
 
 export interface UdsRequestOptions {
   method: string;
@@ -122,6 +122,7 @@ export const listenUnix = async (server: net.Server, socketPath: string, lockOpt
   if (!modeIsPrivate(directoryStat, 'directory')) {
     throw new Error(`Socket directory ${directory} must have mode 0700, found ${(directoryStat.mode & 0o777).toString(8)}`);
   }
+  await assertUnixSocketPathFits(socketPath);
   const lockPath = `${socketPath}.lock`;
   const lock = await acquireProcessLock(
     lockPath,

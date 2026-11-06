@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
@@ -6,8 +6,18 @@ import path from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { isSea } from 'node:sea';
 import { nodeEvalFiles } from '@momonga/eval';
-import { LIFELINE_FD, createExecWithStdin, createPlatformSecretStore, openInBrowser, systemClock } from '@momonga/foundation';
+import { LIFELINE_FD, createExecWithStdin, createBrowserOpener, createPlatformSecretStore, systemClock } from '@momonga/foundation';
+import type { BrowserRunPort } from '@momonga/foundation';
 import type { CliClock, CliFiles, CliPorts, SelfExecutable, SpawnDetached } from './ports.ts';
+
+const runBrowser: BrowserRunPort = (file, args, signal) =>
+  new Promise((resolve, reject) => {
+    execFile(file, [...args], { signal, windowsHide: true }, (error) => {
+      if (error === null) resolve({ exitCode: 0 });
+      else if (typeof error.code === 'number') resolve({ exitCode: error.code });
+      else reject(error);
+    });
+  });
 
 const sleep = (ms: number, signal?: AbortSignal): Promise<void> =>
   new Promise((resolve, reject) => {
@@ -91,7 +101,7 @@ export const nodePorts = (version: string): CliPorts => ({
   spawnDetached: nodeSpawnDetached,
   terminal: process.stdin.isTTY && process.stdout.isTTY ? { stdin: process.stdin, stdout: process.stdout } : undefined,
   files: nodeFiles,
-  openUrl: (url, signal) => openInBrowser(url, signal, process.env),
-  secretStore: () => createPlatformSecretStore(process.platform, createExecWithStdin(undefined), process.env),
+  openUrl: createBrowserOpener({ env: process.env, print: (text) => process.stderr.write(`${text}\n`), run: runBrowser }),
+  secretStore: () => createPlatformSecretStore(createExecWithStdin(undefined), process.env),
   acpStdio: () => ({ input: Readable.toWeb(process.stdin), output: Writable.toWeb(process.stdout) }),
 });
