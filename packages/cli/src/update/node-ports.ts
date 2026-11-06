@@ -36,7 +36,33 @@ const writeAll = async (handle: fs.FileHandle, chunk: Uint8Array): Promise<void>
   }
 };
 
-export const nodeUpdateFs = (): UpdateFs => ({
+const REPLACE_REFUSED_CODES: ReadonlySet<string> = new Set(['EPERM', 'EACCES', 'EBUSY']);
+
+const errorCodeOf = (error: unknown): string | undefined => {
+  const code: unknown = typeof error === 'object' && error !== null ? Object.getOwnPropertyDescriptor(error, 'code')?.value : undefined;
+  return typeof code === 'string' ? code : undefined;
+};
+
+type Rename = (from: string, to: string) => Promise<void>;
+
+const publishReplacing = async (rename: Rename, staged: string, target: string): Promise<void> => {
+  try {
+    await rename(staged, target);
+  } catch (error) {
+    const code = errorCodeOf(error);
+    if (code === undefined || !REPLACE_REFUSED_CODES.has(code)) throw error;
+    const aside = path.join(path.dirname(target), `${STAGING_PREFIX}${randomBytes(6).toString('hex')}`);
+    await rename(target, aside);
+    try {
+      await rename(staged, target);
+    } catch (second) {
+      await rename(aside, target);
+      throw second;
+    }
+  }
+};
+
+export const nodeUpdateFs = (rename: Rename = fs.rename): UpdateFs => ({
   realpath: (file) => fs.realpath(file),
   modeOf: async (file) => (await fs.stat(file)).mode & 0o777,
   stage: async (directory, mode): Promise<StagedFile> => {
@@ -54,7 +80,7 @@ export const nodeUpdateFs = (): UpdateFs => ({
       },
     };
   },
-  publish: (staged, target) => fs.rename(staged, target),
+  publish: (staged, target) => publishReplacing(rename, staged, target),
   remove: (file) => fs.rm(file, { force: true }),
   removeLeftovers: async (directory) => {
     for (const entry of await fs.readdir(directory)) {

@@ -21,6 +21,25 @@ describe('CI configuration', () => {
     expect(packageJson.scripts['test:packaging']).toBe('vitest run --project packaging');
   });
 
+  it('provides Java and the pinned TLC jar before the unit tests, from the one script that pins it', () => {
+    const java = workflow.indexOf('actions/setup-java@');
+    const fetch = workflow.indexOf('run: scripts/tlc.sh --fetch-jar');
+    const unit = workflow.indexOf('run: npm test');
+    expect(java).toBeGreaterThan(-1);
+    expect(fetch).toBeGreaterThan(java);
+    expect(unit).toBeGreaterThan(fetch);
+    expect(workflow).not.toMatch(/[0-9a-f]{64}/);
+    expect(workflow).not.toContain('tla2tools');
+    expect(workflow).not.toMatch(/releases\/download/);
+  });
+
+  it('runs the formal tier on macOS and Linux only, and says so in the name of the Windows step', () => {
+    expect(workflow).toMatch(/- name: Unit tests, without the TLC tier \(it needs bash, ps and \/usr\/bin\)\n {8}if: runner\.os == 'Windows'\n {8}run: npx vitest run --project unit --exclude test\/formal\/tlc\.test\.ts\n/);
+    expect(workflow).toMatch(/- name: Unit tests\n {8}if: runner\.os != 'Windows'\n {8}run: npm test\n/);
+    expect(workflow).toMatch(/- name: Fetch the pinned TLC jar\n {8}if: runner\.os != 'Windows'\n/);
+    expect(workflow).toMatch(/uses: actions\/setup-java@[0-9a-f]{40}\n {8}if: runner\.os != 'Windows'\n/);
+  });
+
   it('installs the compliance fixtures that the e2e project needs', () => {
     expect(workflow).toContain('npm ci --prefix compliance/open-responses');
   });

@@ -54,13 +54,14 @@ describe('assetNameFor', () => {
     ['darwin', 'arm64', 'momonga-darwin-arm64'],
     ['linux', 'x64', 'momonga-linux-x64'],
     ['linux', 'arm64', 'momonga-linux-arm64'],
+    ['win32', 'x64', 'momonga-win-x64.exe'],
   ] as const)('%s/%s downloads %s', (platform, arch, asset) => {
     expect(assetNameFor(platform, arch)).toBe(asset);
   });
 
   it.each([
     ['darwin', 'x64'],
-    ['win32', 'x64'],
+    ['win32', 'arm64'],
     ['freebsd', 'x64'],
   ] as const)('%s/%s has none', (platform, arch) => {
     expect(() => assetNameFor(platform, arch)).toThrow(UpdateError);

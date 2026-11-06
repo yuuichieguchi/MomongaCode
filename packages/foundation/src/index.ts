@@ -192,6 +192,8 @@ export {
   SIGNATURE_REJECTED_EXIT_CODE,
   verifyReleaseSignature,
 } from './release-signature.ts';
+export { RELEASE_ASSETS, releaseTargetOf } from './release-assets.ts';
+export type { ReleaseTargetName } from './release-assets.ts';
 export type { PlaceFile, PlacedFile, ReleaseSignatureVerdict, VerifyReleaseSignatureInput } from './release-signature.ts';
 export {
   SchemaValidatorFailure,

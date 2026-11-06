@@ -185,3 +185,5 @@ export type HealthResult = {
   detail?: string;
   remediation?: string;
 };
+
+export const PRECONDITION_FAILED_CODE = 'precondition_failed';
