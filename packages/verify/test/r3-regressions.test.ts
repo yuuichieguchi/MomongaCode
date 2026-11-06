@@ -1,4 +1,4 @@
-import { HOST_RULE_ENFORCEMENT, protectedSetFor } from '@momonga/foundation';
+import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import { computeFileRules, decide } from '@momonga/policy';
 import type { PermissionRule } from '@momonga/policy';
 import { describe, expect, it } from 'vitest';
@@ -21,7 +21,7 @@ const decideCommand = (layout: Layout, rules: readonly PermissionRule[], command
     roots,
     home: layout.home,
     cwd: layout.project,
-    fileRules: computeFileRules([...rules], roots, null, HOST_RULE_ENFORCEMENT),
+    fileRules: computeFileRules([...rules], roots, null, ruleEnforcementOf('none')),
     protectedSet: protectedSetFor(roots, fileSystem),
     fs: fileSystem,
     searchPath: '/usr/bin:/bin',

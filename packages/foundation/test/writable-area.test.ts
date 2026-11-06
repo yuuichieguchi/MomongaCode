@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { HOST_FLAVOUR, HOST_RULE_ENFORCEMENT, compileFileRuleSet, inWritableArea, lexicallyWithin, resolveCanonicalPath, writableAreaOf, writableCheckOf } from '@momonga/foundation';
+import { HOST_FLAVOUR, compileFileRuleSet, inWritableArea, lexicallyWithin, resolveCanonicalPath, writableAreaOf, writableCheckOf, ruleEnforcementOf } from '@momonga/foundation';
 import type { FileRuleSpec } from '@momonga/foundation';
 
 const tempDirs: string[] = [];
@@ -28,7 +28,7 @@ const fixture = () => {
     context: { roots: [root], home: path.join(base, 'home'), settingsRoot: root, effect: 'allow' },
     provenance: { ruleText: `Edit(/${wide}/**)`, layer: 'user', source: 'user-settings' },
   };
-  const fileRules = compileFileRuleSet([widening], [root], null, resolveCanonicalPath, () => true, HOST_FLAVOUR, HOST_RULE_ENFORCEMENT);
+  const fileRules = compileFileRuleSet([widening], [root], null, resolveCanonicalPath, () => true, HOST_FLAVOUR, ruleEnforcementOf('none'));
   expect(fileRules.entries.map((entry) => entry.widening)).toEqual([true]);
   const area = writableAreaOf({ writableRoots: [root], entries: fileRules.entries });
   return { root, wide, unrelated, area };
@@ -79,7 +79,7 @@ describe('inWritableArea', () => {
       context: { roots: [root], home: path.join(base, 'home'), settingsRoot: root, effect: 'allow' },
       provenance: { ruleText: `Edit(/${wide}/**)`, layer: 'user', source: 'user-settings' },
     };
-    const area = writableAreaOf({ writableRoots: [root], entries: compileFileRuleSet([widening], [root], null, resolveCanonicalPath, () => true, HOST_FLAVOUR, HOST_RULE_ENFORCEMENT).entries });
+    const area = writableAreaOf({ writableRoots: [root], entries: compileFileRuleSet([widening], [root], null, resolveCanonicalPath, () => true, HOST_FLAVOUR, ruleEnforcementOf('none')).entries });
     expect(inWritableArea(area, path.join(base, 'cafe\u0301', 'x'), mode)).toBe(true);
     expect(inWritableArea(area, path.join(base, 'wide\u0301', 'x'), mode)).toBe(true);
     expect(inWritableArea(area, path.join(base, 'cafe', 'x'), mode)).toBe(false);

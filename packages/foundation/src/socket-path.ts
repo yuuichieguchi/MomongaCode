@@ -1,4 +1,9 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
+import fs from 'node:fs';
+import net from 'node:net';
+import path from 'node:path';
+import { createAsyncCapabilityProbe } from './capability-probe.ts';
+import type { CapabilityResult } from './capability-probe.ts';
 
 export const SOCKET_PATH_LIMIT = 104;
 export const LINUX_SOCKET_PATH_LIMIT = 108;
@@ -16,16 +21,62 @@ export const pipePathFor = (home: string, name: string): string => {
   return `${PIPE_PREFIX}momonga-${scope}-${name}`;
 };
 
-export const assertSocketPathLength = (socketPath: string, platform: NodeJS.Platform = process.platform): void => {
-  const byteLength = Buffer.byteLength(socketPath);
-  if (isPipePath(socketPath)) {
-    if (socketPath.length > PIPE_NAME_LIMIT) {
-      throw new Error(`Named pipe ${socketPath} is ${socketPath.length} characters; it must be at most ${PIPE_NAME_LIMIT} characters. Use a shorter name.`);
-    }
-    return;
+export const assertSocketPathLength = (socketPath: string): void => {
+  if (isPipePath(socketPath) && socketPath.length > PIPE_NAME_LIMIT) {
+    throw new Error(`Named pipe ${socketPath} is ${socketPath.length} characters; it must be at most ${PIPE_NAME_LIMIT} characters. Use a shorter name.`);
   }
-  const limit = socketPathLimit(platform);
-  if (byteLength >= limit) {
-    throw new Error(`Unix socket path ${socketPath} is ${byteLength} bytes; it must be shorter than ${limit} bytes. Use a shorter path.`);
-  }
+};
+
+export type SocketBind = (socketPath: string) => Promise<void>;
+
+const PATH_TOO_LONG_ERRNO = new Set(['ENAMETOOLONG', 'EINVAL']);
+
+const probePathOfLength = (directory: string, byteLength: number): string => {
+  const prefix = path.join(directory, 'x');
+  const nameLength = byteLength - Buffer.byteLength(prefix) + 1;
+  const name = randomBytes(Math.ceil(nameLength / 2)).toString('hex').slice(0, nameLength);
+  return path.join(directory, name);
+};
+
+export const createSocketPathProbe = (bind: SocketBind): ((socketPath: string) => Promise<CapabilityResult<number>>) =>
+  createAsyncCapabilityProbe<string, number>(
+    (socketPath) => `${Buffer.byteLength(socketPath)}:${path.dirname(socketPath)}`,
+    async (socketPath) => {
+      const directory = path.dirname(socketPath);
+      const byteLength = Buffer.byteLength(socketPath);
+      try {
+        await bind(probePathOfLength(directory, byteLength));
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== undefined && PATH_TOO_LONG_ERRNO.has(code)) {
+          return {
+            kind: 'unsupported',
+            evidence: `the kernel refused to bind a Unix socket path of ${byteLength} bytes in ${directory} (${code}); the path must be shorter. Use a shorter path.`,
+          };
+        }
+        return { kind: 'unmeasured', evidence: `a Unix socket path of ${byteLength} bytes in ${directory} could not be tested: ${code ?? (error as Error).message}` };
+      }
+      return { kind: 'supported', value: byteLength, evidence: `the kernel bound a Unix socket path of ${byteLength} bytes in ${directory}` };
+    },
+  );
+
+const bindThenClose: SocketBind = (socketPath) =>
+  new Promise<void>((resolve, reject) => {
+    const server = net.createServer();
+    server.once('error', reject);
+    server.listen(socketPath, () => {
+      server.close((closeError) => {
+        fs.rmSync(socketPath, { force: true });
+        if (closeError === undefined) resolve();
+        else reject(closeError);
+      });
+    });
+  });
+
+const nodeSocketPathProbe = createSocketPathProbe(bindThenClose);
+
+export const assertUnixSocketPathFits = async (socketPath: string): Promise<void> => {
+  const result = await nodeSocketPathProbe(socketPath);
+  if (result.kind === 'supported') return;
+  throw new Error(`Unix socket path ${socketPath}: ${result.evidence}`);
 };

@@ -1,4 +1,4 @@
-import { HOST_RULE_ENFORCEMENT, protectedSetFor } from '@momonga/foundation';
+import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import { hostFilesystemOf } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { checkRuleConsistency } from '../src/properties.ts';
@@ -23,7 +23,7 @@ describe('rule-consistency when the last probe of a rule cannot be decided', () 
       fs: hostFilesystemOf(fileSystem),
       secretLocations: [sshLocation(layout)],
       exemptDirectory: null,
-      enforcement: HOST_RULE_ENFORCEMENT,
+      enforcement: ruleEnforcementOf('none'),
       budgetMs: 120_000,
     });
     let calls = 0;
