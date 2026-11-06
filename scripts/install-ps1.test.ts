@@ -36,11 +36,18 @@ describe('install.ps1', () => {
     expect(source).toContain('set MOMONGA_RELEASE_PUBLIC_KEY to the ssh public key line the maintainers publish');
   });
 
-  it('declares an empty embedded repository right after the embedded release public key', () => {
+  it('declares the release repository yuuichieguchi/MomongaCode right after the embedded release public key', () => {
     const lines = fs.readFileSync(SCRIPT, 'utf8').split('\n');
     const keyLine = lines.indexOf("$embeddedReleasePublicKey = ''");
     expect(keyLine).toBeGreaterThanOrEqual(0);
-    expect(lines[keyLine + 1]).toBe("$embeddedReleaseRepo = ''");
+    expect(lines[keyLine + 1]).toBe("$embeddedReleaseRepo = 'yuuichieguchi/MomongaCode'");
+  });
+
+  it('embeds the same release repository as install.sh', () => {
+    const shell = /^readonly EMBEDDED_RELEASE_REPO="([^"\n]*)"$/m.exec(fs.readFileSync(`${repoRoot}scripts/install.sh`, 'utf8'))?.[1];
+    const powershell = /^\$embeddedReleaseRepo = '([^'\n]*)'$/m.exec(fs.readFileSync(SCRIPT, 'utf8'))?.[1];
+    expect(shell).toBe('yuuichieguchi/MomongaCode');
+    expect(powershell).toBe(shell);
   });
 
   it('builds the download URL from the embedded repository, with MOMONGA_REPO only as an override', () => {

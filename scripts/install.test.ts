@@ -195,15 +195,8 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
     expect(outcome.stderr).toBe('install.sh: unsupported architecture riscv64: only x86_64 and aarch64 are supported on Linux\n');
   });
 
-  it('requires a repository or a base url', async () => {
-    const env = baseEnv();
-    delete env['MOMONGA_RELEASE_BASE_URL'];
-    const outcome = await runInstall(env);
-    expect(outcome.code).toBe(1);
-    expect(outcome.stderr).toBe('install.sh: set MOMONGA_REPO=<owner>/<repo> or MOMONGA_RELEASE_BASE_URL\n');
-  });
-
-  const EMBEDDED_REPO_DECLARATION = 'readonly EMBEDDED_RELEASE_REPO=""';
+  const RELEASE_REPO = 'yuuichieguchi/MomongaCode';
+  const EMBEDDED_REPO_DECLARATION = `readonly EMBEDDED_RELEASE_REPO="${RELEASE_REPO}"`;
 
   const installerWithRepo = (repo: string): string => {
     const source = fs.readFileSync(INSTALL_SCRIPT, 'utf8');
@@ -231,11 +224,29 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
     return { urls, outcome };
   };
 
-  it('declares an empty embedded repository right after the embedded release public key', () => {
+  it('declares the release repository right after the embedded release public key', () => {
     const lines = fs.readFileSync(INSTALL_SCRIPT, 'utf8').split('\n');
     const keyLine = lines.indexOf('readonly EMBEDDED_RELEASE_PUBLIC_KEY=""');
     expect(keyLine).toBeGreaterThanOrEqual(0);
     expect(lines[keyLine + 1]).toBe(EMBEDDED_REPO_DECLARATION);
+  });
+
+  it('downloads the latest release of yuuichieguchi/MomongaCode when neither MOMONGA_REPO nor a base url is set', async () => {
+    const { urls, outcome } = await fetchedUrls(INSTALL_SCRIPT, {});
+    expect(outcome.stderr).not.toContain('set MOMONGA_REPO');
+    expect(urls[0]).toBe('https://github.com/yuuichieguchi/MomongaCode/releases/latest/download/SHA256SUMS');
+  });
+
+  it('lets MOMONGA_REPO override the release repository written in the installer', async () => {
+    const { urls } = await fetchedUrls(INSTALL_SCRIPT, { MOMONGA_REPO: 'override-owner/override-repo' });
+    expect(urls[0]).toBe('https://github.com/override-owner/override-repo/releases/latest/download/SHA256SUMS');
+  });
+
+  it('requires a repository or a base url when the embedded repository is empty', async () => {
+    const { urls, outcome } = await fetchedUrls(installerWithRepo(''), {});
+    expect(urls).toEqual([]);
+    expect(outcome.code).toBe(1);
+    expect(outcome.stderr).toBe('install.sh: set MOMONGA_REPO=<owner>/<repo> or MOMONGA_RELEASE_BASE_URL\n');
   });
 
   it('downloads the latest release of the embedded repository when MOMONGA_REPO is not set', async () => {
