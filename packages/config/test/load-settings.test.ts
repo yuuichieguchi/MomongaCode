@@ -32,6 +32,7 @@ describe('SETTINGS_SCHEMA', () => {
         'mcpServers',
         'memory',
         'models',
+        'network',
         'permissions',
         'pricing',
         'sandbox',

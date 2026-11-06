@@ -19,7 +19,7 @@ import type { Layer, TrustOracle, UserLayer } from './layers.ts';
 import { EDIT_TOOLS, NEGATION_PREFIX, isPathTool, parseRule, RuleParseError } from './rule.ts';
 import type { PermissionRule, RuleEffect, RuleOrigin } from './rule.ts';
 import { assertSettings, defaultSandboxSetting } from './settings.ts';
-import type { AutoModeSettings, CredentialsSettings, McpServerConfig, PriceEntrySettings, SandboxSetting, Settings, TelemetrySettings } from './settings.ts';
+import type { AutoModeSettings, CredentialsSettings, McpServerConfig, NetworkSettings, PriceEntrySettings, SandboxSetting, Settings, TelemetrySettings } from './settings.ts';
 import type { ResolvedModels } from './models.ts';
 
 
@@ -46,6 +46,7 @@ export type ResolvedSettings = {
   autoUpdates: boolean;
   sandbox: SandboxSetting;
   telemetry?: TelemetrySettings;
+  network?: NetworkSettings;
   pricing?: PriceEntrySettings[];
   memory: ResolvedMemorySettings;
   verification: ResolvedVerificationSettings;
@@ -159,6 +160,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
       autoUpdates,
       sandbox,
       telemetry,
+      network,
       pricing,
       memory,
       verification,
@@ -199,6 +201,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     if (autoUpdates !== undefined) merged.autoUpdates = autoUpdates;
     if (sandbox !== undefined) merged.sandbox = sandbox;
     if (telemetry !== undefined) merged.telemetry = telemetry;
+    if (network !== undefined) merged.network = network;
     if (pricing !== undefined) merged.pricing = pricing;
   }
   return merged;
