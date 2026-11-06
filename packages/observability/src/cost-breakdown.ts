@@ -1,4 +1,4 @@
-import { amountOfUnits } from './cost.ts';
+import { PLAN_USAGE_LABEL, amountOfUnits } from './cost.ts';
 import type { CallBilling, PricedCall } from './cost.ts';
 import { CACHE_MISS_CAUSES, RUN_ROLE, escapeTerminalLine } from '@momonga/protocol';
 import type { CacheMissCause, PrefixEvent } from '@momonga/protocol';
@@ -57,6 +57,7 @@ export type CostBreakdown = {
   duration: TimingSummary | null;
   roles: Record<string, RoleBreakdown>;
   cost: { amount: number | null; currency: 'USD'; unpricedCalls: number };
+  plan: { calls: number; inputTokens: number; outputTokens: number };
   unpriced: UnpricedCall[];
   inconsistentUsage: UnpricedCall[];
   callsWithoutResponseId: number;
@@ -136,6 +137,7 @@ export const buildCostBreakdown = (calls: readonly BreakdownCall[], options: Cos
   const byRole = new Map<string, { calls: number; firstEvents: number[]; durations: number[]; notRecorded: number }>();
   const unpriced: UnpricedCall[] = [];
   const inconsistentUsage: UnpricedCall[] = [];
+  const plan = { calls: 0, inputTokens: 0, outputTokens: 0 };
   let units = 0n;
   for (const call of calls) {
     if (call.anatomy === undefined) {
@@ -167,6 +169,12 @@ export const buildCostBreakdown = (calls: readonly BreakdownCall[], options: Cos
     } else {
       if (call.timing.firstEventMs !== undefined) group.firstEvents.push(call.timing.firstEventMs);
       group.durations.push(call.timing.durationMs);
+    }
+    if (call.billing === 'plan') {
+      plan.calls += 1;
+      plan.inputTokens += usage.inputTokens;
+      plan.outputTokens += usage.outputTokens;
+      continue;
     }
     const priced = call.price;
     if (priced.kind === 'unpriced') {
@@ -205,6 +213,7 @@ export const buildCostBreakdown = (calls: readonly BreakdownCall[], options: Cos
     duration: main?.duration ?? null,
     roles,
     cost: { amount: unpriced.length === 0 ? amountOfUnits(units) : null, currency: 'USD', unpricedCalls: unpriced.length },
+    plan,
     unpriced,
     inconsistentUsage,
     callsWithoutResponseId: options.callsWithoutResponseId ?? 0,
@@ -258,6 +267,9 @@ export const formatCostBreakdown = (breakdown: CostBreakdown): string => {
       ? []
       : [`${breakdown.callsWithoutResponseId} calls recorded before response ids: layers and timing not recorded`]),
     cost,
+    ...(breakdown.plan.calls === 0
+      ? []
+      : [`${PLAN_USAGE_LABEL}: ${breakdown.plan.calls} call(s), ${breakdown.plan.inputTokens} input + ${breakdown.plan.outputTokens} output tokens`]),
     ...breakdown.unpriced.map(
       (entry) => `unpriced: ${entry.provider}/${entry.model} (run ${entry.runId}${entry.step === undefined ? '' : `, step ${entry.step}`}): ${entry.reason}`,
     ),

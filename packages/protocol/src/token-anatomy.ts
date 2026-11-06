@@ -86,7 +86,7 @@ export type BilledCallView = {
   target?: string;
   provider: string;
   model: string;
-  billing: 'metered' | 'local' | 'unknown';
+  billing: 'metered' | 'local' | 'plan' | 'unknown';
   startMs: number;
   usage: { inputTokens: number; cachedInputTokens: number; cacheWriteInputTokens: number; outputTokens: number; reasoningTokens: number };
   price: { kind: 'priced'; units: string; priceVersion: string } | { kind: 'unpriced'; reason: string };

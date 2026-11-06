@@ -575,6 +575,9 @@ const costTotalsProperties: Record<string, JsonSchema> = {
   localCalls: nonNegativeInteger,
   unpricedCalls: nonNegativeInteger,
   unknownBillingCalls: nonNegativeInteger,
+  planCalls: nonNegativeInteger,
+  planInputTokens: nonNegativeInteger,
+  planOutputTokens: nonNegativeInteger,
   inputTokens: nonNegativeInteger,
   outputTokens: nonNegativeInteger,
   cachedInputTokens: nonNegativeInteger,
@@ -949,6 +952,9 @@ export type RoleCostView = {
   localCalls: number;
   unpricedCalls: number;
   unknownBillingCalls: number;
+  planCalls: number;
+  planInputTokens: number;
+  planOutputTokens: number;
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number;
