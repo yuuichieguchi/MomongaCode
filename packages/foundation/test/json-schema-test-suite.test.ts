@@ -104,31 +104,6 @@ const EXCEPTIONS: readonly Exception[] = [
   },
 ];
 
-const KNOWN_PRODUCT_DEFECTS: readonly Exception[] = [
-  {
-    file: 'optional/bignum',
-    tests: ['1e20 is not multiple of 3'],
-    reason:
-      'DEFECT, no spec ground: Validation 2020-12 section 6.2.1 says multipleOf is valid only when the division gives an integer. 1e20 is exactly representable as a double and is not a multiple of 3, but the engine answers valid.',
-  },
-  {
-    file: 'optional/float-overflow',
-    tests: 'all',
-    reason:
-      'DEFECT, no spec ground: 1e308 divided by 0.5 is an integer mathematically (Validation 2020-12 section 6.2.1); the engine answers invalid, as the double quotient overflows to Infinity.',
-  },
-  {
-    file: 'optional/non-bmp-regex',
-    tests: [
-      'Proper UTF-16 surrogate pair handling: pattern > matches empty',
-      'Proper UTF-16 surrogate pair handling: pattern > matches two',
-      "Proper UTF-16 surrogate pair handling: patternProperties > doesn't match two",
-    ],
-    reason:
-      'DEFECT, no spec ground: pattern and patternProperties use ECMA-262 regular expressions (Validation 2020-12 section 6.3.3); the engine compiles them without the u flag, so a quantifier after a non-BMP character applies to a lone surrogate.',
-  },
-];
-
 const selectedNames = (list: readonly Exception[]): Map<string, string> => {
   const names = new Map<string, string>();
   for (const entry of list) {
@@ -164,14 +139,11 @@ describe('every test of the official suite through the untrusted-schema boundary
       const outcome = runDraft('draft2020-12', (schema) => schema);
       expect(outcome.total).toBe(2374);
       const excepted = selectedNames(EXCEPTIONS);
-      const defects = selectedNames(KNOWN_PRODUCT_DEFECTS);
       const failed = new Set(outcome.failures);
       expect({
-        unexpectedFailures: outcome.failures.filter((name) => !excepted.has(name) && !defects.has(name)),
+        unexpectedFailures: outcome.failures.filter((name) => !excepted.has(name)),
         exceptionsThatNowPass: [...excepted.keys()].filter((name) => !failed.has(name)),
-        defectsThatNowPass: [...defects.keys()].filter((name) => !failed.has(name)),
-        overlap: [...excepted.keys()].filter((name) => defects.has(name)),
-      }).toEqual({ unexpectedFailures: [], exceptionsThatNowPass: [], defectsThatNowPass: [], overlap: [] });
+      }).toEqual({ unexpectedFailures: [], exceptionsThatNowPass: [] });
     },
     SUITE_TIMEOUT_MS,
   );
