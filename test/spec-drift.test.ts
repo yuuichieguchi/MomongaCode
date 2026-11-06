@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createKernelLockMechanism } from '@momonga/foundation';
-import { EVENT_TYPES, RUN_STATUSES, TERMINAL_STATUSES } from '@momonga/protocol';
+import { EVENT_TYPES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES } from '@momonga/protocol';
 import { moduleOf, readManifest } from './formal/manifest.ts';
 import { CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from '@momonga/store';
 
@@ -136,6 +136,34 @@ describe('RunRecovery.tla against the implementation', () => {
     const modelled = new Set(setOf('ModelledEvents'));
     const emitted = [...spec.matchAll(/\bE\("([a-z.]+)"/g)].map((match) => match[1] as string);
     expect(emitted.filter((kind) => !modelled.has(kind))).toEqual([]);
+  });
+});
+
+describe('STOP_REASONS against RunRecovery.tla and the store', () => {
+  const schemaSource = fs.readFileSync(path.resolve(import.meta.dirname, '..', 'packages', 'store', 'src', 'schema.ts'), 'utf8');
+
+  it('is the list of the stop_reason CHECK constraint of the store, each reason once', () => {
+    const constraint = /stop_reason IS NULL OR stop_reason IN \(([^)]*)\)/.exec(schemaSource);
+    expect(constraint, 'schema.ts states the stop_reason CHECK').not.toBeNull();
+    const sqlReasons = [...(constraint?.[1] ?? '').matchAll(/'([a-z_]+)'/g)].map((match) => match[1] as string);
+    expect(new Set(sqlReasons).size).toBe(sqlReasons.length);
+    expect(sqlReasons.sort()).toEqual([...STOP_REASONS].sort());
+  });
+
+  it('is one STOPPED terminal in the model: no stop reason is a variable, and STOPPED has no outgoing edge in any table', () => {
+    expect(spec).not.toMatch(/stopReason|stop_reason/i);
+    expect(setOf('Terminal')).toContain('STOPPED');
+    for (const name of ['WorkerEdges', 'ServiceEdges', 'SweepEdges', 'DeadLetterEdges']) {
+      expect(tableOf(name)['STOPPED'] ?? [], name).toEqual([]);
+    }
+    for (const table of [WORKER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, DEAD_LETTER_TRANSITIONS] as Array<Record<string, readonly string[]>>) {
+      expect(table['STOPPED'] ?? []).toEqual([]);
+    }
+  });
+
+  it('is reachable by a worker only as a stop at a step boundary: RUNNING may leave to STOPPED in the model and in the store', () => {
+    expect(tableOf('WorkerEdges')['RUNNING']).toContain('STOPPED');
+    expect([...WORKER_TRANSITIONS.RUNNING]).toContain('STOPPED');
   });
 });
 
