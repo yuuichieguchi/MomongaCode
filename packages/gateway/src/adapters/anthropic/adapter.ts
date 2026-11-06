@@ -111,7 +111,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
       const apiKey = await options.apiKey(ctx.target, signal);
       let emitter: ResponseEmitter | undefined;
       let paused: Paused | undefined;
-      const outputCeiling = gatewayOutputCeilingOf(request, capabilities);
+      const outputCeiling = gatewayOutputCeilingOf(capabilities);
       for (let continuation = 0; ; continuation += 1) {
         const body: AnthropicRequestBody =
           paused === undefined ? base : { ...base, messages: [...base.messages, { role: 'assistant', content: paused.content }] };

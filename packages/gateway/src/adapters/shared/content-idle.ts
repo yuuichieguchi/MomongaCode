@@ -1,9 +1,9 @@
-import type { AdapterRequest, Capabilities } from '@momonga/protocol';
+import type { Capabilities } from '@momonga/protocol';
 import { StreamFailure } from './failures.ts';
 import { realTimers } from '../../process-ports.ts';
 import type { UpstreamLiveness } from './http-client.ts';
 
-export const UPSTREAM_IDLE_CODE = 'upstream_idle_timeout';
+export const UPSTREAM_IDLE_CODE = 'stream_interrupted';
 
 export const upstreamIdleText = (idleMs: number): string =>
   `The model sent no output for ${idleMs / 1000} s (only keep-alive signals arrived), so the call was stopped. Raise models.idleTimeoutMs if this model needs longer.`;
@@ -68,8 +68,5 @@ export const watchContent = (liveness: UpstreamLiveness | undefined): ContentWat
 
 export const watchedPostOf = (liveness: UpstreamLiveness | undefined): { streamed?: true } => (liveness === undefined ? {} : { streamed: true });
 
-export const gatewayOutputCeilingOf = (request: AdapterRequest, capabilities: Capabilities): number | undefined => {
-  if (capabilities.outputBoundField !== 'none') return undefined;
-  const requested = request.max_output_tokens;
-  return requested === undefined || requested === null ? capabilities.maxOutputTokens : Math.min(requested, capabilities.maxOutputTokens);
-};
+export const gatewayOutputCeilingOf = (capabilities: Capabilities): number | undefined =>
+  capabilities.outputBoundField === 'none' ? capabilities.maxOutputTokens : undefined;

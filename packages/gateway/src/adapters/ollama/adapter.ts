@@ -55,7 +55,7 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
       if (response.status !== 200) throw await httpErrorOf(response, options.clock, detailReader(request.model), OLLAMA_VOCABULARY);
       const watched = watchContent(options.liveness);
       watch = watched;
-      for await (const event of ollamaEventsOf(watched.source(response.body), { request, clock: options.clock, wraps: ledger.wraps, narrowings: ledger.narrowings, jsonReply: jsonReplyPathOf(jsonReply), onOutput: watched.touch, outputCeiling: gatewayOutputCeilingOf(request, capabilities), ...retryAfterHint(response, options.clock) })) {
+      for await (const event of ollamaEventsOf(watched.source(response.body), { request, clock: options.clock, wraps: ledger.wraps, narrowings: ledger.narrowings, jsonReply: jsonReplyPathOf(jsonReply), onOutput: watched.touch, outputCeiling: gatewayOutputCeilingOf(capabilities), ...retryAfterHint(response, options.clock) })) {
         ctx.signal.throwIfAborted();
         yield event;
       }
