@@ -84,7 +84,7 @@ describe('findHolders and reportUninspectableOnce with a process that cannot be 
 });
 
 describe('reapMarkedProcessesWithReport with a process that cannot be inspected', () => {
-  it('completes, removes the marker, and names the process once as one that could not be inspected', async (context) => {
+  it('keeps the marker, signals nothing, and names the process once as one that could not be inspected', async (context) => {
     const file = marker(context);
     const warnings: string[] = [];
     const result = await reapMarkedProcessesWithReport({
@@ -96,12 +96,12 @@ describe('reapMarkedProcessesWithReport with a process that cannot be inspected'
       inspector: inspectorReporting([ssh]),
       uninspectable: aliveRegistry(),
     });
-    expect(result).toEqual({ removed: true, stopped: false, uninspectable: [ssh] });
-    expect(fs.existsSync(file)).toBe(false);
+    expect(result).toEqual({ removed: false, stopped: false, uninspectable: [ssh] });
+    expect(fs.existsSync(file)).toBe(true);
     expect(warnings).toEqual([`mcp marker ${file}: process 77 (ssh-agent) could not be inspected, so it was left alone`]);
   });
 
-  it('does the same when the recorded group is reconciled', async (context) => {
+  it('keeps the marker in the same way when the recorded group is reconciled', async (context) => {
     const file = marker(context);
     const warnings: string[] = [];
     const gone = Object.assign(new Error('kill ESRCH'), { code: 'ESRCH' });
@@ -118,7 +118,8 @@ describe('reapMarkedProcessesWithReport with a process that cannot be inspected'
       inspector: inspectorReporting([otherSsh]),
       uninspectable: aliveRegistry(),
     });
-    expect(result).toEqual({ removed: true, stopped: false, uninspectable: [otherSsh] });
+    expect(result).toEqual({ removed: false, stopped: false, uninspectable: [otherSsh] });
+    expect(fs.existsSync(file)).toBe(true);
     expect(warnings).toEqual([`mcp marker ${file}: process 77 (ssh-agent) could not be inspected, so it was left alone`]);
   });
 
