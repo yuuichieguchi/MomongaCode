@@ -26,7 +26,7 @@ const trustedGitFolder = () => {
 
 const journalRecordingEveryPath = (store: RuntimeStore): RuntimeStore['journalFacts'] => ({
   ...store.journalFacts,
-  evidence: async ({ paths }): Promise<EvidenceReply> => ({ lastSeq: 0, recorded: paths.map(() => ({ sha256: RECORDED })), check: null }),
+  evidence: async ({ paths }): Promise<EvidenceReply> => ({ lastSeq: 0, recorded: paths.map(() => ({ seq: 1, sha256: RECORDED })), check: null }),
 });
 
 const saveThroughTool = async (store: RuntimeStore, folder: string, scope: MemoryScope, paths?: string[]) => {
