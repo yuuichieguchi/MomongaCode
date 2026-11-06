@@ -6,7 +6,7 @@ type ResolvedTarget = Awaited<ReturnType<typeof loadUserSettings>>['settings']['
 export type TargetCounterInput = {
   target: ResolvedTarget;
   codeDigest: string;
-  fm?: { binarySha256: string; osBuild: string };
+  fm?: { binarySha256: string | null; osBuild: string };
   upstreamIdentity?: string;
 };
 
