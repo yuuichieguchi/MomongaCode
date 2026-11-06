@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MomongaPaths } from '@momonga/foundation';
+import { IDENTITY_READ_TIMEOUT_MS } from '@momonga/gateway';
 import { LOCAL_SERVER_CANDIDATES } from '@momonga/protocol';
 import { detectModels, formatDetected } from '../src/commands/models.ts';
 import type { CliPorts } from '../src/ports.ts';
@@ -22,7 +23,10 @@ const answering = (routes: Readonly<Record<string, unknown>>): { fetch: typeof f
   return { fetch: fetchFn as typeof fetch, asked };
 };
 
-describe('momonga models detect', () => {
+const READS_PER_ADDRESS = 2;
+const DETECT_TIMEOUT_MS = IDENTITY_READ_TIMEOUT_MS * READS_PER_ADDRESS * LOCAL_SERVER_CANDIDATES.length;
+
+describe('momonga models detect', { timeout: DETECT_TIMEOUT_MS }, () => {
   it('asks every shipped candidate and prints what answered without writing anything', async () => {
     const written: string[] = [];
     const [first] = LOCAL_SERVER_CANDIDATES;

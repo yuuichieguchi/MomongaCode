@@ -5,9 +5,13 @@ import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { MomongaPaths } from '@momonga/foundation';
+import { IDENTITY_READ_TIMEOUT_MS } from '@momonga/gateway';
+import { LOCAL_SERVER_CANDIDATES } from '@momonga/protocol';
 import { detectModels } from '../src/commands/models.ts';
 import { processOutboundNetwork, withIdentityReadFetch } from '../src/network.ts';
 import type { CliPorts } from '../src/ports.ts';
+
+const READS_PER_ADDRESS = 2;
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
@@ -47,7 +51,7 @@ describe('the CLI network', () => {
     expect((await first).config).toEqual({ caFiles: [] });
   });
 
-  it('ends models detect against a server that accepts and never answers at the identity read bound, without an interrupt', { timeout: 40_000 }, async () => {
+  it('ends models detect against a server that accepts and never answers at the identity read bound, without an interrupt', { timeout: IDENTITY_READ_TIMEOUT_MS * READS_PER_ADDRESS * (LOCAL_SERVER_CANDIDATES.length + 1) }, async () => {
     const written: string[] = [];
     const ports = portsWith(written);
     const silent = await silentServer();
