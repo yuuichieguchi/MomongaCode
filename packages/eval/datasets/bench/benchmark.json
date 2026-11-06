@@ -1,0 +1,668 @@
+{
+  "format": "momonga-bench/1",
+  "name": "momonga-bench-starter",
+  "repositories": {
+    "bug-fix-add": {
+      "directory": "repos/bug-fix-add",
+      "digest": "sha256:764d82586dc6137d325d771f09a91f6c8d3f99e1c58837402a25c27749fa540b"
+    },
+    "bug-fix-clamp": {
+      "directory": "repos/bug-fix-clamp",
+      "digest": "sha256:08348b9cad2f2023f6adaafca13d066a9e6f65ef5f0c025e2479ec368dfa1e6d"
+    },
+    "bug-fix-duration": {
+      "directory": "repos/bug-fix-duration",
+      "digest": "sha256:fc9a37f1db78b23ca9bb72726eee8a9550cc8256d62ab1304736a0df754848e6"
+    },
+    "bug-fix-dedupe": {
+      "directory": "repos/bug-fix-dedupe",
+      "digest": "sha256:fe8cc7e78352bd810f9c9be5eb89896b397307429bf2457679de20ab0b9544c6"
+    },
+    "add-test-slugify": {
+      "directory": "repos/add-test-slugify",
+      "digest": "sha256:c45d1ac32299545a297ee1a13f8776f24c9f66bc0fab9a75bc815227b6f15c3b"
+    },
+    "add-test-stack": {
+      "directory": "repos/add-test-stack",
+      "digest": "sha256:8f4a8f5d3e93cf328c59776332f91d1fe180858b44d821d5ba3b8c49512e5c28"
+    },
+    "lint-no-var": {
+      "directory": "repos/lint-no-var",
+      "digest": "sha256:4a026f5d9aa9d2f84b6b8a871d245b24ad9d80d5b184295c5533eb8595f12d25"
+    },
+    "lint-eqeqeq": {
+      "directory": "repos/lint-eqeqeq",
+      "digest": "sha256:265f84404344f2e6ffed13abcec24d34d539b7740713c6da558be26c2aea9309"
+    },
+    "docs-exports": {
+      "directory": "repos/docs-exports",
+      "digest": "sha256:f39d2de86a02e8b64ab9f50ae669319e704264b86ced3a03e6a3110425cb7fd3"
+    },
+    "docs-options": {
+      "directory": "repos/docs-options",
+      "digest": "sha256:44ae283ec998134fb30b7cb6955f2b82249677eddf670b9634c6caf9ae152222"
+    },
+    "dep-bump-pad-left": {
+      "directory": "repos/dep-bump-pad-left",
+      "digest": "sha256:0fb878c53c1f7f5993457b53d84af4130ab4cd18894f8177743f191a9ae55eb9"
+    },
+    "dep-bump-kv-store": {
+      "directory": "repos/dep-bump-kv-store",
+      "digest": "sha256:00eec06b1c587ecee4ec2ed2ba29843a7fb902ea3cb5e540b81e287aa60af072"
+    }
+  },
+  "tasks": [
+    {
+      "id": "bug-fix-add",
+      "repository": "bug-fix-add",
+      "taskType": "bug_fix",
+      "difficulty": "easy",
+      "labelledBy": "agent-proposal",
+      "labelledAt": "2026-11-06",
+      "prompt": "The add function in src/index.js returns the wrong result. Fix it without changing the tests.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "allow_once",
+      "budget": {
+        "maxSteps": 30,
+        "maxTotalTokens": 200000,
+        "timeoutMs": 600000
+      },
+      "runs": 3,
+      "setup": [],
+      "graderFiles": {
+        "test/hidden-add.test.js": "const test = require('node:test');\nconst assert = require('node:assert');\nconst { add } = require('../src/index.js');\ntest('adds negatives', () => assert.strictEqual(add(-1, 1), 0));\ntest('adds fractions', () => assert.strictEqual(add(0.5, 0.25), 0.75));\n"
+      },
+      "declaration": [],
+      "oracle": [
+        {
+          "id": "tests",
+          "kind": "command",
+          "run": "node --test",
+          "expectExit": 0,
+          "evidence": "acceptance",
+          "timeoutMs": 60000
+        },
+        {
+          "id": "protected-untouched",
+          "kind": "unchangedPaths",
+          "paths": [
+            "test/"
+          ]
+        },
+        {
+          "id": "scope",
+          "kind": "changedPathsWithin",
+          "paths": [
+            "src/"
+          ]
+        }
+      ],
+      "reference": {
+        "directory": "solutions/bug-fix-add"
+      }
+    },
+    {
+      "id": "bug-fix-clamp",
+      "repository": "bug-fix-clamp",
+      "taskType": "bug_fix",
+      "difficulty": "medium",
+      "labelledBy": "agent-proposal",
+      "labelledAt": "2026-11-06",
+      "prompt": "clamp in src/clamp.js does not clamp. Fix it so that values are limited to the range, and so that an inverted range is rejected as the tests describe.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "allow_once",
+      "budget": {
+        "maxSteps": 40,
+        "maxTotalTokens": 300000,
+        "timeoutMs": 900000
+      },
+      "runs": 3,
+      "setup": [],
+      "graderFiles": {
+        "test/hidden-clamp.test.js": "const test = require('node:test');\nconst assert = require('node:assert');\nconst { clamp } = require('../src/clamp.js');\ntest('lowers a high value', () => assert.strictEqual(clamp(11, 0, 10), 10));\ntest('accepts an empty range', () => assert.strictEqual(clamp(5, 5, 5), 5));\ntest('keeps the bounds', () => assert.deepStrictEqual([clamp(0, 0, 10), clamp(10, 0, 10)], [0, 10]));\n"
+      },
+      "declaration": [],
+      "oracle": [
+        {
+          "id": "tests",
+          "kind": "command",
+          "run": "node --test",
+          "expectExit": 0,
+          "evidence": "acceptance",
+          "timeoutMs": 60000
+        },
+        {
+          "id": "protected-untouched",
+          "kind": "unchangedPaths",
+          "paths": [
+            "test/"
+          ]
+        },
+        {
+          "id": "scope",
+          "kind": "changedPathsWithin",
+          "paths": [
+            "src/"
+          ]
+        }
+      ],
+      "reference": {
+        "directory": "solutions/bug-fix-clamp"
+      }
+    },
+    {
+      "id": "bug-fix-duration",
+      "repository": "bug-fix-duration",
+      "taskType": "bug_fix",
+      "difficulty": "hard",
+      "labelledBy": "agent-proposal",
+      "labelledAt": "2026-11-06",
+      "prompt": "parseDuration in src/duration.js must turn text such as \"1h30m15s\" into milliseconds. It only reads the first unit. Fix it so that the whole text is read and malformed text is rejected, as the tests describe.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "allow_once",
+      "budget": {
+        "maxSteps": 60,
+        "maxTotalTokens": 500000,
+        "timeoutMs": 1200000
+      },
+      "runs": 3,
+      "setup": [],
+      "graderFiles": {
+        "test/hidden-duration.test.js": "const test = require('node:test');\nconst assert = require('node:assert');\nconst { parseDuration } = require('../src/duration.js');\ntest('reads every unit', () => assert.strictEqual(parseDuration('1h30m15s500ms'), 5415500));\ntest('reads units in any order', () => assert.strictEqual(parseDuration('15s1h'), 3615000));\ntest('rejects a unit given twice', () => assert.throws(() => parseDuration('1h1h'), /invalid duration/));\ntest('rejects trailing text', () => assert.throws(() => parseDuration('1h30'), /invalid duration/));\ntest('rejects empty text', () => assert.throws(() => parseDuration(''), /invalid duration/));\n"
+      },
+      "declaration": [],
+      "oracle": [
+        {
+          "id": "tests",
+          "kind": "command",
+          "run": "node --test",
+          "expectExit": 0,
+          "evidence": "acceptance",
+          "timeoutMs": 60000
+        },
+        {
+          "id": "protected-untouched",
+          "kind": "unchangedPaths",
+          "paths": [
+            "test/"
+          ]
+        },
+        {
+          "id": "scope",
+          "kind": "changedPathsWithin",
+          "paths": [
+            "src/"
+          ]
+        }
+      ],
+      "reference": {
+        "directory": "solutions/bug-fix-duration"
+      }
+    },
+    {
+      "id": "bug-fix-dedupe",
+      "repository": "bug-fix-dedupe",
+      "taskType": "bug_fix",
+      "difficulty": "medium",
+      "labelledBy": "agent-proposal",
+      "labelledAt": "2026-11-06",
+      "prompt": "dedupe in src/dedupe.js must keep the first occurrence of each item in its original order, and accept an optional key function. Fix it without changing the tests.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "allow_once",
+      "budget": {
+        "maxSteps": 40,
+        "maxTotalTokens": 300000,
+        "timeoutMs": 900000
+      },
+      "runs": 3,
+      "setup": [],
+      "graderFiles": {
+        "test/hidden-dedupe.test.js": "const test = require('node:test');\nconst assert = require('node:assert');\nconst { dedupe } = require('../src/dedupe.js');\ntest('leaves the input alone', () => { const input = [2, 1, 2]; dedupe(input); assert.deepStrictEqual(input, [2, 1, 2]); });\ntest('treats distinct keys as distinct', () => assert.deepStrictEqual(dedupe(['a', 'A', 'b'], (text) => text.toLowerCase()), ['a', 'b']));\ntest('handles an empty list', () => assert.deepStrictEqual(dedupe([]), []));\n"
+      },
+      "declaration": [],
+      "oracle": [
+        {
+          "id": "tests",
+          "kind": "command",
+          "run": "node --test",
+          "expectExit": 0,
+          "evidence": "acceptance",
+          "timeoutMs": 60000
+        },
+        {
+          "id": "protected-untouched",
+          "kind": "unchangedPaths",
+          "paths": [
+            "test/"
+          ]
+        },
+        {
+          "id": "scope",
+          "kind": "changedPathsWithin",
+          "paths": [
+            "src/"
+          ]
+        }
+      ],
+      "reference": {
+        "directory": "solutions/bug-fix-dedupe"
+      }
+    },
+    {
+      "id": "add-test-slugify",
+      "repository": "add-test-slugify",
+      "taskType": "add_test",
+      "difficulty": "easy",
+      "labelledBy": "agent-proposal",
+      "labelledAt": "2026-11-06",
+      "prompt": "src/slugify.js has no tests. Add test/slugify.test.js with tests that would fail if the lower-casing, the collapsing of separators, the trimming of edge dashes or the handling of digits were broken. Do not change src/.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "allow_once",
+      "budget": {
+        "maxSteps": 30,
+        "maxTotalTokens": 200000,
+        "timeoutMs": 600000
+      },
+      "runs": 3,
+      "setup": [],
+      "graderFiles": {
+        "grader/mutation-check.js": "const { spawnSync } = require('node:child_process');\nconst fs = require('node:fs');\nconst os = require('node:os');\nconst path = require('node:path');\nconst moduleFile = \"src/slugify.js\";\nconst testFile = \"test/slugify.test.js\";\nconst mutants = [[\".toLowerCase()\",\"\"],[\"[^a-z0-9]+\",\"[^a-z0-9]\"],[\"/^-+|-+$/g\",\"/^$/g\"],[\"[^a-z0-9]+\",\"[^a-z]+\"]];\nconst root = process.cwd();\nconst run = (dir) => spawnSync(process.execPath, ['--test', testFile], { cwd: dir, stdio: 'ignore' }).status;\nif (!fs.existsSync(path.join(root, testFile))) { console.error('missing ' + testFile); process.exit(1); }\nif (run(root) !== 0) { console.error('the tests fail on the real module'); process.exit(1); }\nconst source = fs.readFileSync(path.join(root, moduleFile), 'utf8');\nlet survived = 0;\nfor (const [from, to] of mutants) {\n  if (!source.includes(from)) { console.error('mutant not applicable: ' + from); process.exit(2); }\n  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mutant-'));\n  fs.cpSync(root, dir, { recursive: true });\n  fs.writeFileSync(path.join(dir, moduleFile), source.replace(from, to));\n  if (run(dir) === 0) { console.error('survived: ' + from); survived += 1; }\n  fs.rmSync(dir, { recursive: true, force: true });\n}\nprocess.exit(survived === 0 ? 0 : 1);\n"
+      },
+      "declaration": [],
+      "oracle": [
+        {
+          "id": "mutants",
+          "kind": "command",
+          "run": "node grader/mutation-check.js",
+          "expectExit": 0,
+          "evidence": "unit",
+          "timeoutMs": 60000
+        },
+        {
+          "id": "protected-untouched",
+          "kind": "unchangedPaths",
+          "paths": [
+            "src/"
+          ]
+        },
+        {
+          "id": "scope",
+          "kind": "changedPathsWithin",
+          "paths": [
+            "test/"
+          ]
+        }
+      ],
+      "reference": {
+        "directory": "solutions/add-test-slugify"
+      }
+    },
+    {
+      "id": "add-test-stack",
+      "repository": "add-test-stack",
+      "taskType": "add_test",
+      "difficulty": "medium",
+      "labelledBy": "agent-proposal",
+      "labelledAt": "2026-11-06",
+      "prompt": "src/stack.js has no tests. Add test/stack.test.js that pins down push, pop, peek and size, including the error on an empty stack and the last-in first-out order. Do not change src/.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "allow_once",
+      "budget": {
+        "maxSteps": 40,
+        "maxTotalTokens": 300000,
+        "timeoutMs": 900000
+      },
+      "runs": 3,
+      "setup": [],
+      "graderFiles": {
+        "grader/mutation-check.js": "const { spawnSync } = require('node:child_process');\nconst fs = require('node:fs');\nconst os = require('node:os');\nconst path = require('node:path');\nconst moduleFile = \"src/stack.js\";\nconst testFile = \"test/stack.test.js\";\nconst mutants = [[\"return this.#items.pop();\",\"return this.#items.shift();\"],[\"this.#items.push(item);\\n    return this;\",\"this.#items.push(item);\\n    return undefined;\"],[\"this.#items[this.#items.length - 1]\",\"this.#items[0]\"],[\"if (this.#items.length === 0) throw new RangeError('stack is empty');\\n    return this.#items.pop();\",\"return this.#items.pop();\"],[\"if (this.#items.length === 0) throw new RangeError('stack is empty');\\n    return this.#items[\",\"return this.#items[\"],[\"return this.#items.length;\",\"return this.#items.length + 1;\"]];\nconst root = process.cwd();\nconst run = (dir) => spawnSync(process.execPath, ['--test', testFile], { cwd: dir, stdio: 'ignore' }).status;\nif (!fs.existsSync(path.join(root, testFile))) { console.error('missing ' + testFile); process.exit(1); }\nif (run(root) !== 0) { console.error('the tests fail on the real module'); process.exit(1); }\nconst source = fs.readFileSync(path.join(root, moduleFile), 'utf8');\nlet survived = 0;\nfor (const [from, to] of mutants) {\n  if (!source.includes(from)) { console.error('mutant not applicable: ' + from); process.exit(2); }\n  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mutant-'));\n  fs.cpSync(root, dir, { recursive: true });\n  fs.writeFileSync(path.join(dir, moduleFile), source.replace(from, to));\n  if (run(dir) === 0) { console.error('survived: ' + from); survived += 1; }\n  fs.rmSync(dir, { recursive: true, force: true });\n}\nprocess.exit(survived === 0 ? 0 : 1);\n"
+      },
+      "declaration": [],
+      "oracle": [
+        {
+          "id": "mutants",
+          "kind": "command",
+          "run": "node grader/mutation-check.js",
+          "expectExit": 0,
+          "evidence": "unit",
+          "timeoutMs": 60000
+        },
+        {
+          "id": "protected-untouched",
+          "kind": "unchangedPaths",
+          "paths": [
+            "src/"
+          ]
+        },
+        {
+          "id": "scope",
+          "kind": "changedPathsWithin",
+          "paths": [
+            "test/"
+          ]
+        }
+      ],
+      "reference": {
+        "directory": "solutions/add-test-stack"
+      }
+    },
+    {
+      "id": "lint-no-var",
+      "repository": "lint-no-var",
+      "taskType": "lint_fix",
+      "difficulty": "easy",
+      "labelledBy": "agent-proposal",
+      "labelledAt": "2026-11-06",
+      "prompt": "npm run lint reports errors in src/. Fix them in the source without changing the linter, its config or the tests.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "allow_once",
+      "budget": {
+        "maxSteps": 30,
+        "maxTotalTokens": 200000,
+        "timeoutMs": 600000
+      },
+      "runs": 3,
+      "setup": [],
+      "graderFiles": {},
+      "declaration": [],
+      "oracle": [
+        {
+          "id": "lint",
+          "kind": "command",
+          "run": "node scripts/lint.js",
+          "expectExit": 0,
+          "evidence": "lint",
+          "timeoutMs": 60000
+        },
+        {
+          "id": "tests",
+          "kind": "command",
+          "run": "node --test",
+          "expectExit": 0,
+          "evidence": "regression",
+          "timeoutMs": 60000
+        },
+        {
+          "id": "protected-untouched",
+          "kind": "unchangedPaths",
+          "paths": [
+            "test/",
+            "scripts/",
+            "lint.config.json"
+          ]
+        },
+        {
+          "id": "scope",
+          "kind": "changedPathsWithin",
+          "paths": [
+            "src/"
+          ]
+        }
+      ],
+      "reference": {
+        "directory": "solutions/lint-no-var"
+      }
+    },
+    {
+      "id": "lint-eqeqeq",
+      "repository": "lint-eqeqeq",
+      "taskType": "lint_fix",
+      "difficulty": "medium",
+      "labelledBy": "agent-proposal",
+      "labelledAt": "2026-11-06",
+      "prompt": "npm run lint reports errors in several files of src/. Fix them in the source, keeping the behaviour the tests describe, without changing the linter, its config or the tests.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "allow_once",
+      "budget": {
+        "maxSteps": 40,
+        "maxTotalTokens": 300000,
+        "timeoutMs": 900000
+      },
+      "runs": 3,
+      "setup": [],
+      "graderFiles": {},
+      "declaration": [],
+      "oracle": [
+        {
+          "id": "lint",
+          "kind": "command",
+          "run": "node scripts/lint.js",
+          "expectExit": 0,
+          "evidence": "lint",
+          "timeoutMs": 60000
+        },
+        {
+          "id": "tests",
+          "kind": "command",
+          "run": "node --test",
+          "expectExit": 0,
+          "evidence": "regression",
+          "timeoutMs": 60000
+        },
+        {
+          "id": "protected-untouched",
+          "kind": "unchangedPaths",
+          "paths": [
+            "test/",
+            "scripts/",
+            "lint.config.json"
+          ]
+        },
+        {
+          "id": "scope",
+          "kind": "changedPathsWithin",
+          "paths": [
+            "src/"
+          ]
+        }
+      ],
+      "reference": {
+        "directory": "solutions/lint-eqeqeq"
+      }
+    },
+    {
+      "id": "docs-exports",
+      "repository": "docs-exports",
+      "taskType": "docs_update",
+      "difficulty": "easy",
+      "labelledBy": "agent-proposal",
+      "labelledAt": "2026-11-06",
+      "prompt": "README.md documents only some of the functions that src/index.js exports. Document every exported function in its own \"### `name`\" section with a one-line description and an example. Do not change the code.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "allow_once",
+      "budget": {
+        "maxSteps": 30,
+        "maxTotalTokens": 200000,
+        "timeoutMs": 600000
+      },
+      "runs": 3,
+      "setup": [],
+      "graderFiles": {
+        "grader/docs-check.js": "const fs = require('node:fs');\nconst readme = fs.readFileSync('README.md', 'utf8');\nconst names = Object.keys(require(process.cwd() + '/src/index.js'));\nconst missing = names.filter((name) => !readme.includes(`### \\`${name}\\``));\nif (missing.length > 0) { console.error('README.md has no section for: ' + missing.join(', ')); process.exit(1); }\n"
+      },
+      "declaration": [],
+      "oracle": [
+        {
+          "id": "documented",
+          "kind": "command",
+          "run": "node grader/docs-check.js",
+          "expectExit": 0,
+          "evidence": "static",
+          "timeoutMs": 60000
+        },
+        {
+          "id": "protected-untouched",
+          "kind": "unchangedPaths",
+          "paths": [
+            "src/",
+            "test/"
+          ]
+        },
+        {
+          "id": "scope",
+          "kind": "changedPathsWithin",
+          "paths": [
+            "README.md",
+            "docs/"
+          ]
+        }
+      ],
+      "reference": {
+        "directory": "solutions/docs-exports"
+      }
+    },
+    {
+      "id": "docs-options",
+      "repository": "docs-options",
+      "taskType": "docs_update",
+      "difficulty": "medium",
+      "labelledBy": "agent-proposal",
+      "labelledAt": "2026-11-06",
+      "prompt": "truncate in src/truncate.js takes an options object, but README.md does not describe it. Add an \"Options\" table to README.md with one row per option: | `name` | `default` | description |, where the default is the value the code uses, written in backticks as JSON. Do not change the code.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "allow_once",
+      "budget": {
+        "maxSteps": 40,
+        "maxTotalTokens": 300000,
+        "timeoutMs": 900000
+      },
+      "runs": 3,
+      "setup": [],
+      "graderFiles": {
+        "grader/docs-check.js": "const fs = require('node:fs');\nconst readme = fs.readFileSync('README.md', 'utf8').split('\\n');\nconst { DEFAULTS } = require(process.cwd() + '/src/truncate.js');\nconst missing = Object.entries(DEFAULTS).filter(([key, value]) => !readme.some((line) => line.startsWith(`| \\`${key}\\` |`) && line.includes(`\\`${JSON.stringify(value)}\\``)));\nif (missing.length > 0) { console.error('README.md has no table row with the default of: ' + missing.map(([key]) => key).join(', ')); process.exit(1); }\n"
+      },
+      "declaration": [],
+      "oracle": [
+        {
+          "id": "documented",
+          "kind": "command",
+          "run": "node grader/docs-check.js",
+          "expectExit": 0,
+          "evidence": "static",
+          "timeoutMs": 60000
+        },
+        {
+          "id": "protected-untouched",
+          "kind": "unchangedPaths",
+          "paths": [
+            "src/",
+            "test/"
+          ]
+        },
+        {
+          "id": "scope",
+          "kind": "changedPathsWithin",
+          "paths": [
+            "README.md",
+            "docs/"
+          ]
+        }
+      ],
+      "reference": {
+        "directory": "solutions/docs-options"
+      }
+    },
+    {
+      "id": "dep-bump-pad-left",
+      "repository": "dep-bump-pad-left",
+      "taskType": "dependency_update",
+      "difficulty": "easy",
+      "labelledBy": "agent-proposal",
+      "labelledAt": "2026-11-06",
+      "prompt": "Update the vendored dependency pad-left from 1.0.0 to 1.2.0 (the version is declared in package.json under \"vendored\"; both versions are in vendor/). Change only what the update needs.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "allow_once",
+      "budget": {
+        "maxSteps": 30,
+        "maxTotalTokens": 200000,
+        "timeoutMs": 600000
+      },
+      "runs": 3,
+      "setup": [],
+      "graderFiles": {
+        "test/hidden-ticket.test.js": "const test = require('node:test');\nconst assert = require('node:assert');\nconst { ticketNumber } = require('../src/ticket.js');\ntest('pads a number', () => assert.strictEqual(ticketNumber(42), '000042'));\n"
+      },
+      "declaration": [],
+      "oracle": [
+        {
+          "id": "tests",
+          "kind": "command",
+          "run": "node --test",
+          "expectExit": 0,
+          "evidence": "acceptance",
+          "timeoutMs": 60000
+        },
+        {
+          "id": "protected-untouched",
+          "kind": "unchangedPaths",
+          "paths": [
+            "test/",
+            "vendor/"
+          ]
+        },
+        {
+          "id": "scope",
+          "kind": "changedPathsWithin",
+          "paths": [
+            "package.json",
+            "src/"
+          ]
+        }
+      ],
+      "reference": {
+        "directory": "solutions/dep-bump-pad-left"
+      }
+    },
+    {
+      "id": "dep-bump-kv-store",
+      "repository": "dep-bump-kv-store",
+      "taskType": "dependency_update",
+      "difficulty": "hard",
+      "labelledBy": "agent-proposal",
+      "labelledAt": "2026-11-06",
+      "prompt": "Update the vendored dependency kv-store from 1.4.0 to 1.5.0 (the version is declared in package.json under \"vendored\"; both versions are in vendor/, with the changes in vendor/kv-store-1.5.0/CHANGELOG.md). Migrate the code to the new version and keep the behaviour the tests describe.",
+      "permissionMode": "acceptEdits",
+      "onAsk": "allow_once",
+      "budget": {
+        "maxSteps": 60,
+        "maxTotalTokens": 500000,
+        "timeoutMs": 1200000
+      },
+      "runs": 3,
+      "setup": [],
+      "graderFiles": {
+        "test/hidden-sessions.test.js": "const test = require('node:test');\nconst assert = require('node:assert');\nconst fs = require('node:fs');\nconst manifest = require('../package.json');\ntest('declares the new version', () => assert.strictEqual(manifest.vendored['kv-store'], '1.5.0'));\ntest('no longer calls the removed callback form', () => { for (const file of ['session.js', 'counter.js']) assert.doesNotMatch(fs.readFileSync(`${__dirname}/../src/${file}`, 'utf8'), /\\.get\\(/); });\n"
+      },
+      "declaration": [],
+      "oracle": [
+        {
+          "id": "tests",
+          "kind": "command",
+          "run": "node --test",
+          "expectExit": 0,
+          "evidence": "acceptance",
+          "timeoutMs": 60000
+        },
+        {
+          "id": "protected-untouched",
+          "kind": "unchangedPaths",
+          "paths": [
+            "test/",
+            "vendor/"
+          ]
+        },
+        {
+          "id": "scope",
+          "kind": "changedPathsWithin",
+          "paths": [
+            "package.json",
+            "src/"
+          ]
+        }
+      ],
+      "reference": {
+        "directory": "solutions/dep-bump-kv-store"
+      }
+    }
+  ]
+}

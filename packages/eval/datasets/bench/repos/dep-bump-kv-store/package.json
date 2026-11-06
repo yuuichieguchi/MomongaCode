@@ -1,0 +1,11 @@
+{
+  "name": "sessions",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node --test"
+  },
+  "vendored": {
+    "kv-store": "1.4.0"
+  }
+}

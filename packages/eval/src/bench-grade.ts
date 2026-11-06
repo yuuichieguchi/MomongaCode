@@ -18,9 +18,29 @@ export type GradeInput = { task: BenchTask; workspace: string; base: string; pro
 
 const within = (changed: string, allowed: string): boolean => (allowed.endsWith('/') ? changed.startsWith(allowed) : changed === allowed || changed.startsWith(`${allowed}/`));
 
+const filesUnder = async (root: string, relative: string): Promise<string[]> => {
+  const stat = await fs.stat(path.join(root, relative)).then(
+    (found) => found,
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return undefined;
+      throw error;
+    },
+  );
+  if (stat === undefined || !stat.isDirectory()) return stat === undefined ? [] : [relative];
+  const children = await fs.readdir(path.join(root, relative));
+  const nested = await Promise.all(children.map((child) => filesUnder(root, path.posix.join(relative, child))));
+  return nested.flat();
+};
+
+const filesOfPaths = async (paths: readonly string[], roots: readonly string[]): Promise<string[]> => {
+  const found = await Promise.all(paths.flatMap((entry) => roots.map((root) => filesUnder(root, entry.replace(/\/$/, '')))));
+  return [...new Set(found.flat())].sort();
+};
+
 const pathCheck = async (check: Exclude<OracleCheck, { kind: 'command' }>, { workspace, base, probe }: GradeInput): Promise<CheckResult> => {
   if (check.kind === 'unchangedPaths') {
-    const [after, before] = await Promise.all([probe.digest(workspace, check.paths), probe.digest(base, check.paths)]);
+    const files = await filesOfPaths(check.paths, [workspace, base]);
+    const [after, before] = await Promise.all([probe.digest(workspace, files), probe.digest(base, files)]);
     return after === before ? { id: check.id, passed: true } : { id: check.id, passed: false, reason: 'changed' };
   }
   const changed = await probe.changedPaths(workspace, base);
