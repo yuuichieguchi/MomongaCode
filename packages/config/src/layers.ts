@@ -6,8 +6,9 @@ import { HOOK_EVENTS, HOOK_MATCHER_EVENTS, hookMatcherError } from '@momonga/pro
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import { looksLikeCredentialName } from './credential-env.ts';
 import { isAbsentPathError, readJsonFile, readJsonFileSync } from './json-file.ts';
+import type { KeptSettings } from './kept-settings.ts';
 import { keptOrThrow } from './last-good.ts';
-import type { Kept, SettingsUse } from './last-good.ts';
+import type { SettingsUse } from './last-good.ts';
 import type { JsonFile } from './json-file.ts';
 import { layoutOf } from './layout.ts';
 import { resolveModels } from './models.ts';
@@ -23,13 +24,9 @@ export type Layer = { origin: RuleOrigin; source: string; root: string; ruleRoot
 
 export type LoadedLayers = { layers: Layer[]; models: ResolvedModels; files: string[]; warnings: string[] };
 
-export type LayerCache = Map<string, Kept<Layer | undefined>>;
-
-export type KeptLayers = { cache: LayerCache; use: SettingsUse };
+export type KeptLayers = { store: KeptSettings; use: SettingsUse };
 
 export type LayerOptions = { home: string; projectDir: string; trust: TrustOracle; user?: UserLayer; kept?: KeptLayers };
-
-export const createLayerCache = (): LayerCache => new Map();
 
 const PROJECT_ENV_ALLOWLIST: ReadonlySet<string> = new Set([
   'NODE_ENV', 'RUST_LOG', 'RUST_BACKTRACE', 'LOG_LEVEL', 'DEBUG', 'TZ', 'LANG', 'LANGUAGE', 'CI', 'FORCE_COLOR', 'NO_COLOR', 'TERM',
@@ -154,25 +151,39 @@ const readLayer = async (
   confineTo?: string,
 ): Promise<Layer | undefined> => {
   try {
-    const layer = buildLayer(await readJsonFile(file, confineTo === undefined ? {} : { confineTo }), file, origin, root, root, true, warnings);
-    kept?.cache.set(file, { value: layer });
+    const read = await readJsonFile(file, confineTo === undefined ? {} : { confineTo });
+    const layer = buildLayer(read, file, origin, root, root, true, warnings);
+    kept?.store.remember(file, read);
     return layer;
   } catch (error) {
     const failure = isTransientErrno(error) ? error : toConfigError(error);
     if (kept === undefined) throw failure;
-    const layer = keptOrThrow(kept.use, kept.cache.get(file), failure);
-    if (failure instanceof ConfigError) warnings.push(`settings file is invalid: ${failure.message}`);
-    return layer;
+    const copy = keptOrThrow(kept.use, kept.store.recall(file), failure);
+    if (failure instanceof ConfigError) warnings.push(kept.store.report(file, failure, ''));
+    return buildLayer(copy, file, origin, root, root, true, warnings);
   }
 };
 
 export type UserLayer = { layer: Layer | undefined; models: ResolvedModels; warnings: string[] };
 
-export const readUserLayer = (home: string): UserLayer => {
+export const userSettingsFile = (home: string): string => layoutOf(home).settingsFile;
+
+export const readUserJsonFile = (home: string): JsonFile => {
+  try {
+    return readJsonFileSync(userSettingsFile(home));
+  } catch (error) {
+    rethrowIfTransient(error);
+    throw toConfigError(error);
+  }
+};
+
+export const readUserLayer = (home: string): UserLayer => userLayerFrom(home, readUserJsonFile(home));
+
+export const userLayerFrom = (home: string, read: JsonFile): UserLayer => {
   try {
     const warnings: string[] = [];
-    const file = layoutOf(home).settingsFile;
-    const layer = buildLayer(readJsonFileSync(file), file, 'user', home, path.dirname(file), false, warnings);
+    const file = userSettingsFile(home);
+    const layer = buildLayer(read, file, 'user', home, path.dirname(file), false, warnings);
     const models = resolveModels(layer?.settings.models, { source: file, home, warnings });
     return { layer, models, warnings };
   } catch (error) {

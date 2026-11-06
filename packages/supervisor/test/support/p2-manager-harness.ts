@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createUserSettingsCache } from '@momonga/config';
+import { createUserSettingsCache, noKeptRecords } from '@momonga/config';
 import type { UserSettingsCache, UserSettingsSnapshot } from '@momonga/config';
 import { createJsonLogger, momongaPaths } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
@@ -65,6 +65,7 @@ export const settingsDouble = (real: UserSettingsCache): SettingsDouble => {
       double.getCalls += 1;
       throw new Error('the supervisor must never call read() on the settings cache');
     },
+    kept: real.kept,
     snapshot: () => {
       double.snapshotCalls += 1;
       const script = double.script;
@@ -122,7 +123,7 @@ export const createManagerHarness = (context: CleanupContext, options: ManagerHa
   const timers = createFakeTimers(clock);
   const port = createFakeSpawnPort({ role });
   const warnings: string[] = [];
-  const realSettings = createUserSettingsCache({ home, onWarning: (message) => warnings.push(message) });
+  const realSettings = createUserSettingsCache({ home, onWarning: (message) => warnings.push(message), keptRecords: noKeptRecords });
   const settings = settingsDouble(realSettings);
   const lines: string[] = [];
   const logger = createJsonLogger({

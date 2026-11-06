@@ -107,6 +107,7 @@ export type FakePorts = {
   aliasesFailure: { error?: unknown };
   modelAliases: () => Promise<readonly string[]>;
   sessionCreateSettings: (cwd: string) => Promise<SessionCreateSettingsResult>;
+  sessionReadSettings: (cwd: string) => Promise<SessionCreateSettingsResult>;
 };
 
 export const createFakePorts = (): FakePorts => {
@@ -114,6 +115,19 @@ export const createFakePorts = (): FakePorts => {
   const settingsCalls: string[] = [];
   const settingsFailure: { error?: unknown } = {};
   const aliasesFailure: { error?: unknown } = {};
+  const settingsOf = (cwd: string): SessionCreateSettingsResult => {
+    const real = fs.existsSync(cwd) ? fs.realpathSync(cwd) : cwd;
+    const entry = settingsByCwd.get(real) ?? {};
+    return {
+      ...(entry.defaultMode === undefined ? {} : { defaultMode: entry.defaultMode }),
+      ...(entry.defaultModeOrigin === undefined ? {} : { defaultModeOrigin: entry.defaultModeOrigin }),
+      additionalDirectories: entry.additionalDirectories ?? [],
+      credentialEnvNames: entry.credentialEnvNames ?? [DECLARED_CREDENTIAL],
+      ...(entry.autoModeClassifier === undefined
+        ? {}
+        : { autoModeClassifier: entry.autoModeClassifier, autoModeKey: { classifier: `fake|${entry.autoModeClassifier}`, codeDigest: 'fake-code-digest', datasetDigest: 'fake-dataset-digest' } }),
+    };
+  };
   return {
     settingsByCwd,
     settingsCalls,
@@ -126,17 +140,11 @@ export const createFakePorts = (): FakePorts => {
     sessionCreateSettings: async (cwd) => {
       settingsCalls.push(cwd);
       if (settingsFailure.error !== undefined) throw settingsFailure.error;
-      const real = fs.existsSync(cwd) ? fs.realpathSync(cwd) : cwd;
-      const entry = settingsByCwd.get(real) ?? {};
-      return {
-        ...(entry.defaultMode === undefined ? {} : { defaultMode: entry.defaultMode }),
-        ...(entry.defaultModeOrigin === undefined ? {} : { defaultModeOrigin: entry.defaultModeOrigin }),
-        additionalDirectories: entry.additionalDirectories ?? [],
-        credentialEnvNames: entry.credentialEnvNames ?? [DECLARED_CREDENTIAL],
-        ...(entry.autoModeClassifier === undefined
-          ? {}
-          : { autoModeClassifier: entry.autoModeClassifier, autoModeKey: { classifier: `fake|${entry.autoModeClassifier}`, codeDigest: 'fake-code-digest', datasetDigest: 'fake-dataset-digest' } }),
-      };
+      return settingsOf(cwd);
+    },
+    sessionReadSettings: async (cwd) => {
+      settingsCalls.push(cwd);
+      return settingsOf(cwd);
     },
   };
 };
@@ -494,6 +502,7 @@ export const serviceOptions = (
     };
   },
   sessionCreateSettings: base.ports.sessionCreateSettings,
+  sessionReadSettings: base.ports.sessionReadSettings,
   skills: overrides.skills ?? diskSkillsPort(base.home, overrides.skillsTrusted),
   agents: overrides.agents ?? diskAgentCatalog(base.home, overrides.skillsTrusted),
   evidenceRun: overrides.evidenceRun ?? unavailableEvidenceRun,

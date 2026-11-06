@@ -50,8 +50,9 @@ export {
   defaultToolsSettings,
 } from './context-settings.ts';
 export type { ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from './context-settings.ts';
-export { createLayerCache } from './layers.ts';
-export type { KeptLayers, LayerCache, TrustOracle, UserLayer } from './layers.ts';
+export { diskKeptRecords, keptSettingsDirectory, noKeptRecords } from './kept-settings.ts';
+export type { KeptRecords, KeptSettings } from './kept-settings.ts';
+export type { KeptLayers, TrustOracle, UserLayer } from './layers.ts';
 export type { SettingsUse } from './last-good.ts';
 export type {
   McpOAuthConfig,

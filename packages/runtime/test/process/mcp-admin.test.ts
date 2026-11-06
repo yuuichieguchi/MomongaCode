@@ -78,6 +78,7 @@ const setup = async () => {
         return { settings: snapshot.settings, user: snapshot.user };
       },
       trustOracle: { isTrusted: () => true },
+      keptLayers: (use) => ({ store: cache.kept, use }),
     },
     remote: { openAuthorizationUrl: () => Promise.reject(new Error('the admin must supply its own opener')) } as never,
     createPool: (options) => {

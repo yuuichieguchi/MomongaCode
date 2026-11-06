@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { appendPermissionRule, autoFitKeyOf, ConfigError, createLayerCache, systemFileLockPorts, credentialEnvNames, loadSettings, stripCredentialEnv } from '@momonga/config';
-import type { AutoFitKey, LoadSettingsResult, ResolvedSettings, SettingsUse, TrustOracle, UserLayer, UserSettingsCache } from '@momonga/config';
+import { appendPermissionRule, autoFitKeyOf, ConfigError, systemFileLockPorts, credentialEnvNames, loadSettings, stripCredentialEnv } from '@momonga/config';
+import type { AutoFitKey, KeptLayers, LoadSettingsResult, ResolvedSettings, SettingsUse, TrustOracle, UserLayer, UserSettingsCache } from '@momonga/config';
 import type { RuntimeStore, Session } from '@momonga/store';
 import type { SettingsPort, ToolEnv } from '../ports.ts';
 import type { SessionCreateSettings } from '../service/app.ts';
@@ -19,6 +19,8 @@ export type SettingsCompositionOptions = {
 export type SettingsComposition = {
   settings: SettingsPort;
   sessionCreateSettings(cwd: string): Promise<SessionCreateSettings>;
+  sessionReadSettings(cwd: string): Promise<SessionCreateSettings>;
+  keptLayers(use: SettingsUse): KeptLayers;
   envFor(session: Session): ToolEnv;
   takeUserSnapshot(): UserSnapshot;
   admitUserSnapshot(): UserSnapshot;
@@ -36,8 +38,6 @@ export const createSettingsComposition = ({ home, cache, store }: SettingsCompos
     if (classifier === undefined || !Object.hasOwn(resolved.models.aliases, classifier)) return undefined;
     return autoFitKeyOf(resolved.models, classifier, AUTO_CLASSIFIER_CODE);
   };
-
-  const layerCache = createLayerCache();
 
   const refusalOf = (error: ConfigError): ConfigError =>
     new ConfigError(`${error.message}; new runs are refused until the file is fixed, running runs continue`, { cause: error });
@@ -59,14 +59,15 @@ export const createSettingsComposition = ({ home, cache, store }: SettingsCompos
     return { settings: snapshot.settings, user: snapshot.user };
   };
 
+  const keptLayers = (use: SettingsUse): KeptLayers => ({ store: cache.kept, use });
+
   const settingsFor = (cwd: string, snapshot: UserSnapshot, use: SettingsUse): Promise<LoadSettingsResult> =>
-    loadSettings({ home, projectDir: cwd, cli: {}, trust: trustOracle, user: snapshot.user, kept: { cache: layerCache, use } });
+    loadSettings({ home, projectDir: cwd, cli: {}, trust: trustOracle, user: snapshot.user, kept: keptLayers(use) });
 
   const loadSessionSettings = (cwd: string, snapshot: UserSnapshot): Promise<LoadSettingsResult> => settingsFor(cwd, snapshot, 'read');
 
-  const sessionCreateSettings = async (cwd: string): Promise<SessionCreateSettings> => {
-    const snapshot = admitUserSnapshot();
-    const { permissions } = (await admitted(() => settingsFor(cwd, snapshot, 'admit'))).settings;
+  const sessionSettingsFrom = (snapshot: UserSnapshot, loaded: LoadSettingsResult): SessionCreateSettings => {
+    const { permissions } = loaded.settings;
     const origin = permissions.defaultModeOrigin;
     const classifier = snapshot.settings.autoMode?.classifier;
     const autoModeKey = autoFitKeyFor(snapshot.settings);
@@ -79,6 +80,16 @@ export const createSettingsComposition = ({ home, cache, store }: SettingsCompos
       ...(classifier === undefined ? {} : { autoModeClassifier: classifier }),
       ...(autoModeKey === undefined ? {} : { autoModeKey }),
     };
+  };
+
+  const sessionCreateSettings = async (cwd: string): Promise<SessionCreateSettings> => {
+    const snapshot = admitUserSnapshot();
+    return sessionSettingsFrom(snapshot, await admitted(() => settingsFor(cwd, snapshot, 'admit')));
+  };
+
+  const sessionReadSettings = async (cwd: string): Promise<SessionCreateSettings> => {
+    const snapshot = takeUserSnapshot();
+    return sessionSettingsFrom(snapshot, await loadSessionSettings(cwd, snapshot));
   };
 
   const envFor = (session: Session): ToolEnv => {
@@ -106,5 +117,5 @@ export const createSettingsComposition = ({ home, cache, store }: SettingsCompos
     trusted: (session) => store.trust.decisionFor(session.cwd).decision === 'trusted',
   };
 
-  return { settings, sessionCreateSettings, envFor, takeUserSnapshot, admitUserSnapshot, loadSessionSettings, trustOracle };
+  return { settings, sessionCreateSettings, sessionReadSettings, keptLayers, envFor, takeUserSnapshot, admitUserSnapshot, loadSessionSettings, trustOracle };
 };

@@ -530,6 +530,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         modelAliases: async () => (await gatewayClient.models()).map((model) => model.id),
         modelCapabilities: (alias, signal) => gatewayClient.capabilities(alias, { signal }),
         sessionCreateSettings: settingsComposition.sessionCreateSettings,
+        sessionReadSettings: settingsComposition.sessionReadSettings,
         skills: skillsPort,
         agents: agentsPort,
         evidenceRun: evidenceRunFor,
