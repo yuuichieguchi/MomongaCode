@@ -14,24 +14,25 @@ const isVerifiedSuccess: Verify = (input) => {
   return found(input) as boolean;
 };
 
-type Step = { name?: string; command?: string; exitCode?: number; output?: string; files?: ToolFile[]; basis?: ApprovalBasis | 'unrecorded' };
+type Step = { name?: string; command?: string; exitCode?: number; status?: 'completed' | 'failed'; started?: boolean; output?: string; files?: ToolFile[]; basis?: ApprovalBasis | 'unrecorded' };
 
 const journal = (steps: readonly Step[]): RunEvent[] =>
   steps.flatMap((step, index) => {
     const callId = `c${index}`;
-    return [
+    const events = [
       { type: 'tool.call', seq: 3 * index + 1, callId, name: step.name ?? 'Bash', rawInput: step.command === undefined ? {} : { command: step.command } },
       { type: 'tool.started', seq: 3 * index + 2, callId, idemKey: `k${index}`, ...(step.basis === 'unrecorded' ? {} : { basis: step.basis ?? 'read_only' }) },
       {
         type: 'tool.completed',
         seq: 3 * index + 3,
         callId,
-        status: 'completed',
+        status: step.status ?? 'completed',
         output: step.output ?? '',
         ...(step.exitCode === undefined ? {} : { exitCode: step.exitCode }),
         ...(step.files === undefined ? {} : { files: step.files }),
       },
     ] as unknown as RunEvent[];
+    return step.started === false ? events.filter((event) => event.type !== 'tool.started') : events;
   });
 
 const verdict = (steps: readonly Step[], status = 'COMPLETED'): boolean =>
@@ -42,6 +43,9 @@ const write = (file: string): Step => ({ name: 'Write', files: [{ path: `${PROJE
 const pass = (command = 'npm test'): Step => ({ command, exitCode: 0 });
 
 const fail = (command = 'npm test'): Step => ({ command, exitCode: 1 });
+
+const factCommands = (steps: readonly Step[]): string[] =>
+  memory.repositoryFactsOf({ status: 'COMPLETED', events: journal(steps), commands: COMMANDS, manifests: MANIFESTS }).map((fact) => fact.command);
 
 describe('isVerifiedSuccess', () => {
   it('accepts a completed run whose verification passed after its last write', () => {
@@ -63,6 +67,14 @@ describe('isVerifiedSuccess', () => {
   it('refuses a passing check followed by a failing one after the last write', () => {
     expect(verdict([write('src/a.ts'), pass('npm test'), fail('npm test')])).toBe(false);
     expect(verdict([write('src/a.ts'), pass('npm test'), fail('pytest')])).toBe(false);
+  });
+
+  it.each([
+    ['exits non-zero with status failed', { command: 'npm test', exitCode: 1, status: 'failed' as const }],
+    ['is killed by a signal', { command: 'npm test', status: 'failed' as const }],
+  ])('refuses a run whose latest check %s after an earlier pass with no write between', (_name, later) => {
+    expect(verdict([write('src/a.ts'), pass(), later])).toBe(false);
+    expect(factCommands([write('src/a.ts'), pass(), later, pass('pytest')])).toEqual(['pytest']);
   });
 
   it('takes the most recent verification command, so a fix after a failure counts', () => {
@@ -127,6 +139,12 @@ describe('isVerifiedSuccess', () => {
 
   it('does not let a read after the check count as a write', () => {
     expect(verdict([pass(), { name: 'Read', files: [{ path: `${PROJECT}/src/a.ts`, sha256: 'aa', access: 'read' }] }])).toBe(true);
+  });
+
+  it('does not let a call the person rejected, which never started, count as a write of unknown paths', () => {
+    const rejected: Step = { command: 'git push', status: 'failed', started: false, output: 'The user rejected this tool call.' };
+    expect(verdict([write('src/a.ts'), pass(), rejected])).toBe(true);
+    expect(verdict([rejected, write('src/a.ts'), pass()])).toBe(true);
   });
 
   describe('a Bash call that is not read only', () => {

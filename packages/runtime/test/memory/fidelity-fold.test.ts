@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
-import { deniedCall, fidelityEnv, modelSaid, startedCall } from './fidelity-fixture.ts';
+import { deniedCall, fidelityEnv, modelSaid, rejectedCall, startedCall } from './fidelity-fixture.ts';
 
 vi.setConfig({ testTimeout: 120_000 });
 
@@ -29,6 +29,10 @@ describe('the fidelity fold decides sources by event type', () => {
 
   it('does not attest a token in the arguments of a denied call', async () => {
     expect(await attested(deniedCall('c1', { command: TOKEN }), 'executed')).toEqual([]);
+  });
+
+  it('does not attest a token in the arguments of a call the person rejected, which never started', async () => {
+    expect(await attested(rejectedCall('c1', { command: TOKEN }), 'executed')).toEqual([]);
   });
 
   it('attests a token in the output of a call that ran', async () => {
