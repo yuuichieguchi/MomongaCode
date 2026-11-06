@@ -461,6 +461,18 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return rows.flatMap((row) => decodeKnownEvent(row, decodeContext) ?? []);
   };
 
+  const fillPage = <E>(after: number, limit: number, fetch: (after: number, limit: number) => Row[], cursorOf: (row: Row) => number, decode: (rows: readonly Row[]) => E[]): E[] => {
+    const kept: E[] = [];
+    for (let cursor = after; ; ) {
+      const wanted = limit - kept.length;
+      const rows = fetch(cursor, wanted);
+      kept.push(...decode(rows));
+      const last = rows.at(-1);
+      if (last === undefined || rows.length < wanted || kept.length >= limit) return kept;
+      cursor = cursorOf(last);
+    }
+  };
+
   const decodeStreamEvents = (rows: readonly Row[]): (RunEvent | SessionEvent | OpaqueEvent)[] => {
     observeDecode(rows);
     return rows.map((row) => decodeStoredEvent(row, decodeContext));
@@ -1343,7 +1355,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       );
     },
 
-    readRunEvents: (runId, afterSeq, limit) => decodeEvents(sql.runEvents.all({ runId, after: afterSeq, limit })),
+    readRunEvents: (runId, afterSeq, limit) =>
+      fillPage(afterSeq, limit, (after, wanted) => sql.runEvents.all({ runId, after, limit: wanted }), (row) => readerFor('events', runId, row).number('seq'), decodeEvents),
 
     readRunEventsOfTypes: (runId, types) => journalReader.eventsOfTypes(runId, types),
 
@@ -1382,7 +1395,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return sql.toolOfferedNames.all({ runId }).map((row) => String(row.name));
     },
 
-    readSessionEvents: (sessionId, afterId, limit) => decodeKnownEvents(sql.sessionEvents.all({ sessionId, after: afterId, limit })),
+    readSessionEvents: (sessionId, afterId, limit) =>
+      fillPage(afterId, limit, (after, wanted) => sql.sessionEvents.all({ sessionId, after, limit: wanted }), (row) => readerFor('events', sessionId, row).number('id'), decodeKnownEvents),
 
     readRunEventStream: (runId, afterSeq, limit) => decodeStreamEvents(sql.runEvents.all({ runId, after: afterSeq, limit })),
 

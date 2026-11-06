@@ -5,7 +5,7 @@ const statementsOf = (sql: string): string[] => {
   for (const line of sql.split('\n')) {
     current += `${line}\n`;
     if (/^\s*CREATE\s+TRIGGER\b/i.test(line)) depth += 1;
-    if (depth > 0 && /^\s*END\s*;\s*$/i.test(line)) depth -= 1;
+    if (depth > 0 && /\bEND\s*;\s*$/i.test(line)) depth -= 1;
     if (depth === 0 && /;\s*$/.test(line)) {
       statements.push(current.trim());
       current = '';
