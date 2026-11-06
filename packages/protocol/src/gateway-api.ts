@@ -83,13 +83,28 @@ export type ModelListEntry = { id: string; object: 'model'; created: number; own
 
 export type ModelList = { object: 'list'; data: ModelListEntry[] };
 
-export type MomongaModelEntry = {
+export const TARGET_PROBING = 'target_probing';
+
+export const TARGET_PROBING_MESSAGE = 'measuring this model (once per model and OS build)';
+
+export type ModelProbing = { probing: { message: string; retryAfterSeconds: number } };
+
+type MomongaModelIdentity = {
   id: string;
   object: 'model';
   targets: string[];
   targetCounters: Record<string, string>;
+};
+
+export type ReadyModelEntry = MomongaModelIdentity & {
   capabilities: AliasCapabilities;
   targetCapabilities: Record<string, Capabilities>;
 };
+
+export type ProbingModelEntry = MomongaModelIdentity & ModelProbing;
+
+export type MomongaModelEntry = ReadyModelEntry | ProbingModelEntry;
+
+export const isProbingEntry = (entry: MomongaModelEntry): entry is ProbingModelEntry => 'probing' in entry;
 
 export type MomongaModelList = { object: 'list'; data: MomongaModelEntry[] };

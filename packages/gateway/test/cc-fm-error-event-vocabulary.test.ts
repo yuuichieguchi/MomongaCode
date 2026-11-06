@@ -9,6 +9,7 @@ import { START_MS, makeDir, postJson, readJson, readSse, registerCleanup, startG
 import { collect, makeAdapter, userText } from './cc-support.ts';
 import { makeReport } from './report-fixture.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
+import { primed, recordKeyOptions } from './fm-record-support.ts';
 
 const RECORD_KEY = { target: 'fm', binarySha256: 'cd'.repeat(32), osBuild: '25A100' };
 
@@ -28,16 +29,16 @@ const fmAdapter = async (fake: FakeChatCompletionsServer, report?: ProbeReport) 
     health: async (): Promise<HealthResult> => ({ ok: true }),
   };
   const probeRecordDir = path.join(makeDir(), 'probe');
-  if (report !== undefined) await saveProbeRecord(probeRecordDir, RECORD_KEY, report, CURRENT_DIALECTS);
-  const managed = await createManagedFmTarget({
+  await saveProbeRecord(probeRecordDir, RECORD_KEY, report ?? makeReport(1, 1), CURRENT_DIALECTS);
+  const managed = await primed(createManagedFmTarget({
     fmServe,
     binary: '/opt/fake/fm',
     exec: async (): Promise<ExecResult> => ({ exitCode: 0, stdout: '5\n', stderr: '' }),
     probeRecordDir,
-    recordKey: RECORD_KEY,
+    ...recordKeyOptions(RECORD_KEY),
     toolCallingSetting: report === undefined ? 'native' : 'auto',
     declaredModel: 'system',
-  });
+  }), RECORD_KEY.target);
   const adapter = createChatCompletionsAdapter({ ...managed, clock: createFakeClock(START_MS) });
   registerCleanup(() => adapter.close());
   return adapter;

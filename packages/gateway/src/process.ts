@@ -65,6 +65,10 @@ import { PreconditionFailedError } from './adapters/shared/failures.ts';
 import type { ExecFn, FmServe, SpawnFn } from './managed/fm-serve.ts';
 import { createExecFn, createExecWithStdin } from './managed/fm-processes.ts';
 import { readOsBuild, sha256OfFile } from './managed/fm-record-key.ts';
+import { createAutoProbe } from './probe/auto-probe.ts';
+import type { AutoProbe, MeasureProbe } from './probe/auto-probe.ts';
+import { fmDialectCurrencyOf, measureManagedFm, readFmRecordKey } from './probe/probe-fm.ts';
+import type { ProbeRecordKey } from './probe/record.ts';
 import { createManagedFmTarget } from './managed/fm-target.ts';
 import type { ExecWithStdinFn, ManagedFmTarget } from './managed/fm-target.ts';
 import { createGateway } from './server/gateway.ts';
@@ -90,6 +94,7 @@ export type StartGatewayProcessOptions = {
   stdout?: TextStream;
   signal?: AbortSignal;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
+  measureFm?: MeasureProbe;
 };
 
 export type GatewayCloseResult = {
@@ -139,6 +144,8 @@ const withBinaryGuard = (managed: ManagedFmTarget, binary: string, files: Proces
       (await files.isUsableBinary(binary)) ? managed.health(target) : { ok: false, reason: 'precondition_failed', detail },
   };
 };
+
+const modelFieldOf = (model: string | undefined): { model?: string } => (model === undefined ? {} : { model });
 
 const declaredCapabilitiesOf = (target: RemoteTarget, mode: ToolCallingMode): DeclaredCapabilities => ({ ...target.capabilities, toolCalling: mode });
 
@@ -217,6 +224,8 @@ type FmContext = {
   execWithStdin: ExecWithStdinFn;
   osBuild: string;
   binarySha256: string | { unreadable: string };
+  readRecordKey: (target: string) => Promise<ProbeRecordKey>;
+  autoProbe: AutoProbe;
 };
 
 const createFmAdapter = async (name: string, target: Extract<ResolvedTarget, { adapter: 'fm' }>, context: FmContext, clock: Clock, files: ProcessFilePorts, userDialects: UserDialects, liveness: UpstreamLiveness) => {
@@ -225,10 +234,9 @@ const createFmAdapter = async (name: string, target: Extract<ResolvedTarget, { a
     binary: context.binary,
     exec: context.execWithStdin,
     probeRecordDir: context.paths.probe,
-    recordKey:
-      typeof context.binarySha256 === 'string'
-        ? { target: name, binarySha256: context.binarySha256, osBuild: context.osBuild }
-        : { target: name, unmeasured: context.binarySha256.unreadable },
+    target: name,
+    readRecordKey: () => context.readRecordKey(name),
+    autoProbe: context.autoProbe,
     toolCallingSetting: target.toolCalling,
     userDialects,
     ...(target.model === undefined ? {} : { declaredModel: target.model }),
@@ -505,6 +513,11 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     cleanups.push(closeAdapters);
 
     const fmTargets = targets.filter(([, target]) => target.adapter === 'fm');
+    const fmModels = new Map(fmTargets.map(([name, target]) => [name, target.adapter === 'fm' ? target.model : undefined]));
+    const readRecordKey = async (target: string): Promise<ProbeRecordKey> => {
+      if (!(await files.isUsableBinary(binary))) throw new PreconditionFailedError(PRECONDITION_MESSAGE, `fm binary not found at ${binary}`, undefined);
+      return readFmRecordKey(target, binary, exec);
+    };
     const fmContext: FmContext | undefined =
       fmTargets.length === 0
         ? undefined
@@ -525,7 +538,30 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
             execWithStdin: options.execWithStdin ?? createExecWithStdin(childEnv),
             osBuild: await readOsBuild(exec),
             binarySha256: (await files.isUsableBinary(binary)) ? await sha256OfFile(binary) : { unreadable: `no usable binary at ${binary}` },
+            readRecordKey,
+            autoProbe: createAutoProbe({
+              dir: paths.probe,
+              readKey: readRecordKey,
+              measure:
+                options.measureFm ??
+                (({ key, signal: probeSignal }) =>
+                  measureManagedFm({
+                    binary,
+                    socketPath: adapterSocketPath(options.home, `fm-probe-${key.target}`, process.platform),
+                    env: options.env,
+                    exec,
+                    userDialects: settings.models.dialects,
+                    ...modelFieldOf(fmModels.get(key.target)),
+                    onWarning: (message) => logger.warn(message),
+                  })({ key, signal: probeSignal })),
+              currencyOf: () => fmDialectCurrencyOf({ userDialects: settings.models.dialects }),
+              onFailure: (key, error) => logger.warn(`the automatic probe of the target ${key.target} failed and recorded nothing`, { err: error }),
+            }),
           };
+    if (fmContext !== undefined) {
+      const { autoProbe } = fmContext;
+      cleanups.push(() => autoProbe.close());
+    }
     signal?.throwIfAborted();
     const codeDigest = await codeDigestOfRunningProcess();
     const counters: Record<string, string> = {};

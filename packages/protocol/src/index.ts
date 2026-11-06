@@ -510,7 +510,7 @@ export type {
   ResponseToolChoice,
   Usage,
 } from './open-responses.ts';
-export { MOMONGA_EVENT_PREFIX } from './gateway-api.ts';
+export { MOMONGA_EVENT_PREFIX, TARGET_PROBING, TARGET_PROBING_MESSAGE, isProbingEntry } from './gateway-api.ts';
 export type {
   CountTokensMethod,
   CountTokensMomongaExtension,
@@ -519,8 +519,11 @@ export type {
   GatewayHealth,
   ModelList,
   ModelListEntry,
+  ModelProbing,
   MomongaModelEntry,
   MomongaModelList,
+  ProbingModelEntry,
+  ReadyModelEntry,
   MomongaEventName,
   TargetHealth,
   UsageReport,

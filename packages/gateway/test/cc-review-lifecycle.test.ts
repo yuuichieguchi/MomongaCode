@@ -12,6 +12,7 @@ import { CC_CAPABILITIES, TARGET } from './cc-support.ts';
 import { saveProbeRecord } from '@momonga/gateway';
 import { makeReport } from './report-fixture.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
+import { recordKeyOptions } from './fm-record-support.ts';
 
 const KEY: ProbeRecordKey = { target: 'fm', binarySha256: 'ef'.repeat(32), osBuild: '25A100' };
 const userRequest = { model: 'fast', input: [{ type: 'message' as const, role: 'user' as const, content: 'x' }] };
@@ -87,7 +88,7 @@ const managedFm = async () => {
     binary: '/usr/bin/fm',
     exec: async () => ({ exitCode: 0, stdout: '5\n', stderr: '' }),
     probeRecordDir: path.join(dir, 'probe'),
-    recordKey: KEY,
+    ...recordKeyOptions(KEY),
     toolCallingSetting: 'native',
   });
   const clock = createFakeClock(START_MS);
@@ -104,7 +105,7 @@ describe('managed endpoint', () => {
       binary: '/usr/bin/fm',
       exec: okExec,
       probeRecordDir: makeDir(),
-      recordKey: KEY,
+      ...recordKeyOptions(KEY),
       toolCallingSetting: 'native',
     });
     await managed.resolveEndpoint(TARGET);
@@ -192,7 +193,7 @@ describe('count-tokens', () => {
         return { exitCode: 0, stdout: `${counted}\n`, stderr: '' };
       },
       probeRecordDir: dir,
-      recordKey: KEY,
+      ...recordKeyOptions(KEY),
       toolCallingSetting: 'auto',
     });
   };

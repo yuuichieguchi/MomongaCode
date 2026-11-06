@@ -6,6 +6,8 @@ import { describe, expect, it } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
 import { codeDigestOfRunningProcess } from '@momonga/foundation';
 import { saveProbeRecord, targetCounterOf } from '@momonga/gateway';
+import { TARGET_PROBING_MESSAGE } from '@momonga/protocol';
+import { saveFakeFmRecord } from './fm-record-support.ts';
 import { DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { getJson, makeDir, postJson, readJson, registerCleanup, userInput } from './gateway-helpers.ts';
 import { makeReport } from './report-fixture.ts';
@@ -46,6 +48,7 @@ const fakeFmSetup = async () => {
   const dumpFile = path.join(path.dirname(fm.binaryPath), 'env.jsonl');
   fm.configure({ envDumpFile: dumpFile });
   const home = makeHome();
+  await saveFakeFmRecord(home, 'fm', fm.binaryPath);
   return { fm, dumpFile, home };
 };
 
@@ -190,19 +193,28 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
     });
   });
 
-  it('treats a probe record for another OS build as unprobed', async () => {
+  it('treats a probe record for another OS build as no record: the alias is listed as probing, with no capability', async () => {
     const { fm, dumpFile, home } = await fakeFmSetup();
     reapServeGroups(dumpFile);
     declareAutoFm(home);
     const binarySha256 = createHash('sha256').update(fs.readFileSync(fm.binaryPath)).digest('hex');
     await saveProbeRecord(path.join(homePaths(home).root, 'state', 'probe'), { target: 'fm', binarySha256, osBuild: `${FAKE_OS_BUILD}x` }, makeReport(1, 1), CURRENT_DIALECTS);
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });
+    const measured: string[] = [];
+    const handle = await launchGateway({
+      home,
+      env: baseEnv(home),
+      version: PROCESS_VERSION,
+      fmBinary: fm.binaryPath,
+      exec: fakeExec,
+      measureFm: ({ key }) => {
+        measured.push(key.osBuild);
+        return new Promise(() => undefined);
+      },
+    });
     const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
     const entry = models.body.data.find((model: { id: string }) => model.id === 'default');
-    expect(entry.capabilities.source).toBe('unprobed');
-    expect(entry.capabilities.toolCalling.state).toBe('needs_probe');
-    expect(entry.targetCapabilities.fm.toolCalling.remedy).toBe('run `momonga gateway probe fm`');
-    expect(entry.targetCapabilities.fm.toolCalling.evidence).toContain(binarySha256);
-    expect(entry.targetCapabilities.fm.toolCalling.evidence).toContain(FAKE_OS_BUILD);
+    expect(entry).not.toHaveProperty('capabilities');
+    expect(entry.probing.message).toBe(TARGET_PROBING_MESSAGE);
+    expect(measured).toEqual([FAKE_OS_BUILD]);
   });
 });

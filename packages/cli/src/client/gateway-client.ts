@@ -1,10 +1,21 @@
 import { createUdsClient, isRecord } from '@momonga/foundation';
-import { JSON_MODES, isToolCallingState } from '@momonga/protocol';
-import type { AliasCapabilities, Capabilities, MomongaModelEntry, MomongaModelList, UsageReport } from '@momonga/protocol';
+import { JSON_MODES, isProbingEntry, isToolCallingState } from '@momonga/protocol';
+import type { AliasCapabilities, Capabilities, ModelProbing, MomongaModelEntry, MomongaModelList, UsageReport } from '@momonga/protocol';
+
+export class ModelProbingError extends Error {
+  readonly retryAfterSeconds: number;
+
+  constructor(probing: ModelProbing['probing']) {
+    super(probing.message);
+    this.name = 'ModelProbingError';
+    this.retryAfterSeconds = probing.retryAfterSeconds;
+  }
+}
 
 export type GatewayClient = {
   models(): Promise<readonly MomongaModelEntry[]>;
   modelOf(alias: string): Promise<MomongaModelEntry>;
+  stateOf(alias: string): Promise<AliasCapabilities | ModelProbing>;
   capabilitiesOf(alias: string): Promise<AliasCapabilities>;
   contextWindowOf(alias: string): Promise<number>;
   usageOf(runId: string): Promise<UsageReport>;
@@ -33,6 +44,9 @@ const isCapabilities = (value: unknown): value is Capabilities =>
   (value['tokenErrorRatio'] === undefined || typeof value['tokenErrorRatio'] === 'number') &&
   (value['probedAt'] === undefined || typeof value['probedAt'] === 'string');
 
+const isProbing = (value: unknown): value is ModelProbing['probing'] =>
+  isRecord(value) && typeof value['message'] === 'string' && typeof value['retryAfterSeconds'] === 'number';
+
 const isModelList = (value: unknown): value is MomongaModelList =>
   isRecord(value) &&
   Array.isArray(value['data']) &&
@@ -42,7 +56,7 @@ const isModelList = (value: unknown): value is MomongaModelList =>
       typeof entry['id'] === 'string' &&
       Array.isArray(entry['targets']) &&
       entry['targets'].every((target) => typeof target === 'string') &&
-      isCapabilities(entry['capabilities']),
+      (isCapabilities(entry['capabilities']) || isProbing(entry['probing'])),
   );
 
 const isCount = (value: unknown): boolean => typeof value === 'number' && Number.isInteger(value) && value >= 0;
@@ -79,7 +93,16 @@ export const createGatewayClient = (options: { socketPath: string }): GatewayCli
     return entry;
   };
 
-  const capabilitiesOf = async (alias: string): Promise<AliasCapabilities> => (await modelOf(alias)).capabilities;
+  const stateOf = async (alias: string): Promise<AliasCapabilities | ModelProbing> => {
+    const entry = await modelOf(alias);
+    return isProbingEntry(entry) ? { probing: entry.probing } : entry.capabilities;
+  };
+
+  const capabilitiesOf = async (alias: string): Promise<AliasCapabilities> => {
+    const entry = await modelOf(alias);
+    if (isProbingEntry(entry)) throw new ModelProbingError(entry.probing);
+    return entry.capabilities;
+  };
 
   const contextWindowOf = async (alias: string): Promise<number> => (await capabilitiesOf(alias)).contextWindow;
 
@@ -90,5 +113,5 @@ export const createGatewayClient = (options: { socketPath: string }): GatewayCli
     return body;
   };
 
-  return { models, modelOf, capabilitiesOf, contextWindowOf, usageOf, close: () => http.close() };
+  return { models, modelOf, stateOf, capabilitiesOf, contextWindowOf, usageOf, close: () => http.close() };
 };

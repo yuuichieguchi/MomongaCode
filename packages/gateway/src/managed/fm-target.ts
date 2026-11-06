@@ -1,4 +1,4 @@
-import { canonicalJson, createUdsClient } from '@momonga/foundation';
+import { canonicalJson } from '@momonga/foundation';
 import { countReplyOf } from '@momonga/protocol';
 import type { AllowedToolsForm } from '@momonga/protocol';
 import type {
@@ -26,13 +26,14 @@ import { capabilitiesFromProbe, layerOf, mergeCapabilities } from '../probe/deci
 import type { CapabilityLayer } from '../probe/decide.ts';
 import { NO_USER_DIALECTS } from '../dialect/choice.ts';
 import type { UserDialects } from '../dialect/choice.ts';
-import { FULL_KEYWORD_SUPPORT } from '../dialect/keyword-support.ts';
 import type { KeywordSupport } from '../dialect/keyword-support.ts';
+import { FULL_KEYWORD_SUPPORT } from '../dialect/keyword-support.ts';
 import { resolveDialectId } from '../dialect/resolve-id.ts';
 import type { EnvelopeShape } from '../probe/envelope.ts';
 import { PROBE_METHOD_VERSION } from '../probe/run-probe.ts';
-import { field, firstOf, parseJson } from '../probe/json.ts';
-import { isUnprobedAuto, loadProbeRecord, resolveToolCalling } from '../probe/record.ts';
+import { loadProbeRecord, resolveToolCalling } from '../probe/record.ts';
+import { targetProbingError } from '../probe/auto-probe.ts';
+import type { AutoProbe } from '../probe/auto-probe.ts';
 import { declaredDialectRefusal, needsProbeOf } from '../probe/remedy.ts';
 import type { ProbeRecordKey } from '../probe/record.ts';
 import { LICENSE_NOT_ACCEPTED_EXIT_CODE, LICENSE_REMEDIATION, PRECONDITION_MESSAGE, outputOf } from './fm-serve.ts';
@@ -46,14 +47,14 @@ export type ExecWithStdinFn = (
   signal: AbortSignal,
 ) => Promise<ExecResult>;
 
-export type UnmeasuredRecordKey = { target: string; unmeasured: string };
-
 export type ManagedFmTargetOptions = {
   fmServe: FmServe;
   binary: string;
   exec: ExecWithStdinFn;
   probeRecordDir: string;
-  recordKey: ProbeRecordKey | UnmeasuredRecordKey;
+  target: string;
+  readRecordKey: () => Promise<ProbeRecordKey>;
+  autoProbe: AutoProbe;
   toolCallingSetting: ToolCallingSetting;
   declaredModel?: string;
   declaredOutputBoundField?: OutputBoundField;
@@ -79,23 +80,20 @@ export type ManagedFmTarget = {
 const FM_ALLOWED_TOOLS: readonly AllowedToolsForm[] = ['envelope'];
 
 const CEIL_TOLERANCE = 1e-9;
-const UNPROBED_CONTEXT_WINDOW = 4096;
-const UNPROBED_MAX_OUTPUT_TOKENS = 1024;
 
-const unprobedCapabilities = (mode: ToolCallingState, schemaDialect: DialectId): Capabilities => ({
-  contextWindow: UNPROBED_CONTEXT_WINDOW,
-  maxOutputTokens: UNPROBED_MAX_OUTPUT_TOKENS,
+const recordedDefaults = (mode: ToolCallingState, schemaDialect: DialectId, measured: Pick<Capabilities, 'contextWindow' | 'maxOutputTokens'>): Capabilities => ({
+  contextWindow: measured.contextWindow,
+  maxOutputTokens: measured.maxOutputTokens,
   toolCalling: mode,
   structuredOutput: mode === 'constrained' ? 'json_schema' : 'none',
   streaming: true,
   stopSequences: false,
   imageInput: false,
-  parallelToolCalls: false,
   schemaDialect,
   tokenCounting: 'estimated',
   usageReported: false,
   maxConcurrency: 1,
-  source: 'unprobed',
+  source: 'probed',
 });
 
 const textOfOutput = (output: Extract<InputItem, { type: 'function_call_output' }>['output']): string =>
@@ -139,8 +137,8 @@ export const parseCount = (result: ExecResult): number => {
   return Number(text);
 };
 
-const countResultOf = (counted: number, report: ProbeReport | null): CountTokensResult => {
-  const calibration = report?.tokenCalibration;
+const countResultOf = (counted: number, report: ProbeReport): CountTokensResult => {
+  const calibration = report.tokenCalibration;
   if (calibration === undefined) {
     return estimatedCountOf(counted);
   }
@@ -161,8 +159,8 @@ const GENERIC_ERROR_CODES: ReadonlySet<string> = new Set(['invalid_request_error
 
 const isGenericCode = (code: string): boolean => BARE_STATUS_CODE.test(code) || GENERIC_ERROR_CODES.has(code);
 
-const guardrailMatcherOf = (report: ProbeReport | null): ((body: unknown) => boolean) => {
-  const shape = errorOf(report?.guardrail.errorShape);
+const guardrailMatcherOf = (report: ProbeReport): ((body: unknown) => boolean) => {
+  const shape = errorOf(report.guardrail.errorShape);
   const code = nonEmptyString(shape?.['code']);
   const message = nonEmptyString(shape?.['message']);
   const type = nonEmptyString(shape?.['type']);
@@ -177,91 +175,77 @@ const guardrailMatcherOf = (report: ProbeReport | null): ((body: unknown) => boo
   };
 };
 
-const listedModelId = async (socketPath: string, signal: AbortSignal): Promise<string> => {
-  const client = createUdsClient(socketPath);
-  try {
-    const response = await client.request({ method: 'GET', path: '/v1/models', signal });
-    const text = await response.text();
-    if (response.status !== 200) throw new Error(`fm serve answered GET /v1/models with HTTP ${response.status}: ${text.slice(0, 200)}`);
-    const id = field(firstOf(field(parseJson(text), 'data')), 'id');
-    if (typeof id !== 'string') throw new Error('fm serve lists no model id at GET /v1/models');
-    return id;
-  } finally {
-    await client.close();
-  }
+const probedOf = (report: ProbeReport, refusal: NeedsProbe | undefined, modeOf: () => ToolCallingMode): { measured: Capabilities; layer: CapabilityLayer } => {
+  const measured = capabilitiesFromProbe(report, { mode: refusal === undefined ? modeOf() : 'none' });
+  const { layer } = layerOf(measured);
+  return { measured, layer: refusal === undefined ? layer : { ...layer, toolCalling: refusal } };
 };
 
-const probedLayerOf = (report: ProbeReport, refusal: NeedsProbe | undefined, modeOf: () => ToolCallingMode): CapabilityLayer => {
-  const layer = layerOf(capabilitiesFromProbe(report, { mode: refusal === undefined ? modeOf() : 'none' })).layer;
-  return refusal === undefined ? layer : { ...layer, toolCalling: refusal };
+type RecordedFm = {
+  report: ProbeReport;
+  capabilities: Capabilities;
+  isGuardrail: (body: unknown) => boolean;
 };
 
 export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Promise<ManagedFmTarget> => {
-  const { recordKey } = options;
-  const identityText =
-    'unmeasured' in recordKey
-      ? `the fm binary, whose identity could not be measured (${recordKey.unmeasured})`
-      : `the fm binary with sha256 ${recordKey.binarySha256} on OS build ${recordKey.osBuild}`;
-  const report = 'unmeasured' in recordKey ? null : await loadProbeRecord(options.probeRecordDir, recordKey, {
+  const targetName = options.target;
+  const currency = {
     userDialects: options.userDialects ?? NO_USER_DIALECTS,
     probeMethod: PROBE_METHOD_VERSION,
     ...(options.declaredDialect === undefined ? {} : { declaredDialect: options.declaredDialect }),
-  });
-  const schemaDialect = resolveDialectId(options.declaredDialect, report);
-  const targetName = recordKey.target;
-  const needsProbe = needsProbeOf(
-    targetName,
-    `the target "${targetName}" sets toolCalling to auto, but no probe record exists`,
-    `no record for ${identityText}`,
-  );
-  const modeOf = (): ToolCallingMode => resolveToolCalling(options.toolCallingSetting, report, needsProbe).mode;
-  const unprobedAuto = isUnprobedAuto(options.toolCallingSetting, report);
-  const refusedDeclaration =
-    options.toolCallingSetting === 'auto' && report !== null
-      ? declaredDialectRefusal(targetName, options.declaredDialect, report.schemaDialect, identityText)
-      : undefined;
-  const state = unprobedAuto ? needsProbe : (refusedDeclaration ?? modeOf());
-  const { parallelToolCalls: _unprobedParallel, ...probedDefaults } = unprobedCapabilities(state, schemaDialect);
+  };
   const declaredField = options.declaredOutputBoundField === undefined ? {} : { outputBoundField: options.declaredOutputBoundField };
-  const capabilities =
-    report === null
-      ? { ...unprobedCapabilities(state, schemaDialect), ...declaredField }
-      : mergeCapabilities({
-          defaults: layerOf(probedDefaults).core,
-          declared: { ...declaredField, schemaDialect },
-          probed: probedLayerOf(report, refusedDeclaration, modeOf),
-          probedAt: report.probedAt,
-        });
-  const keywordSupport = report?.keywordSupport ?? FULL_KEYWORD_SUPPORT;
-  const isGuardrail = guardrailMatcherOf(report);
-  const knownModel = options.declaredModel ?? report?.modelId;
-  let listedModel: Promise<string> | undefined;
-  const upstreamModel = async (_target: AdapterTarget, signal: AbortSignal): Promise<string> => {
-    if (knownModel !== undefined) return knownModel;
-    const { socketPath } = await options.fmServe.ensureRunning();
-    listedModel ??= listedModelId(socketPath, signal).catch((error: unknown) => {
-      listedModel = undefined;
-      throw error;
+
+  const recordedOf = (key: ProbeRecordKey, report: ProbeReport): RecordedFm => {
+    const identityText = `the fm binary with sha256 ${key.binarySha256} on OS build ${key.osBuild}`;
+    const needsProbe = needsProbeOf(targetName, `the target "${targetName}" sets toolCalling to auto, but no probe record exists`, `no record for ${identityText}`);
+    const modeOf = (): ToolCallingMode => resolveToolCalling(options.toolCallingSetting, report, needsProbe).mode;
+    const refusedDeclaration =
+      options.toolCallingSetting === 'auto' ? declaredDialectRefusal(targetName, options.declaredDialect, report.schemaDialect, identityText) : undefined;
+    const schemaDialect = resolveDialectId(options.declaredDialect, report);
+    const probed = probedOf(report, refusedDeclaration, modeOf);
+    const capabilities = mergeCapabilities({
+      defaults: layerOf(recordedDefaults(refusedDeclaration ?? modeOf(), schemaDialect, probed.measured)).core,
+      declared: { ...declaredField, schemaDialect },
+      probed: probed.layer,
+      probedAt: report.probedAt,
     });
-    return listedModel;
+    return { report, capabilities, isGuardrail: guardrailMatcherOf(report) };
+  };
+
+  let recorded: RecordedFm | undefined;
+  const readRecorded = async (): Promise<RecordedFm> => {
+    const key = await options.readRecordKey();
+    const report = await loadProbeRecord(options.probeRecordDir, key, currency);
+    if (report === null) {
+      await options.autoProbe.start(key);
+      throw targetProbingError();
+    }
+    recorded = recordedOf(key, report);
+    return recorded;
+  };
+  const lastRecorded = (): RecordedFm => {
+    if (recorded === undefined) throw new Error(`the probe record of the target "${targetName}" was read by no request yet`);
+    return recorded;
   };
 
   return {
     resolveEndpoint: () => options.fmServe.ensureRunning(),
-    keywordSupport: () => keywordSupport,
-    schemaDialect: () => capabilities.schemaDialect,
-    constructSupport: () => report?.constructSupport,
-    envelopeShape: () => report?.schemaDialect.shape ?? 'union',
-    upstreamModel,
-    capabilities: async () => ({ ...capabilities, allowedTools: FM_ALLOWED_TOOLS }),
+    keywordSupport: () => lastRecorded().report.keywordSupport ?? FULL_KEYWORD_SUPPORT,
+    schemaDialect: () => lastRecorded().capabilities.schemaDialect,
+    constructSupport: () => lastRecorded().report.constructSupport,
+    envelopeShape: () => lastRecorded().report.schemaDialect.shape ?? 'union',
+    upstreamModel: async () => options.declaredModel ?? lastRecorded().report.modelId,
+    capabilities: async () => ({ ...(await readRecorded()).capabilities, allowedTools: FM_ALLOWED_TOOLS }),
     countTokens: async (_target, request, signal) => {
+      const { report } = await readRecorded();
       const text = countedText(request);
       if (text === '') return countResultOf(0, report);
       const result = await options.exec(options.binary, ['count-tokens', '-q'], text, signal);
       return countResultOf(parseCount(result), report);
     },
     health: () => options.fmServe.health(),
-    isGuardrail: (_target, _status, body) => isGuardrail(body),
+    isGuardrail: (_target, _status, body) => lastRecorded().isGuardrail(body),
     vocabulary: FM_VOCABULARY,
     close: () => options.fmServe.stop(),
   };

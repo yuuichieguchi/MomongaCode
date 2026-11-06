@@ -10,6 +10,8 @@ export { endpointKeyOf } from './probe/endpoint-target.ts';
 export { ProbeTimeoutError } from './probe/client.ts';
 export { runProbe } from './probe/run-probe.ts';
 export { probeManagedFm } from './probe/probe-fm.ts';
+export { ProbeInProgressError, ProbeKeyChangedError, acquireProbeLock, probeLockPath } from './probe/auto-probe.ts';
+export type { AutoProbe, MeasureProbe } from './probe/auto-probe.ts';
 export type { ProbeManagedFmOptions, ProbeManagedFmResult } from './probe/probe-fm.ts';
 export type { ProbeOptions } from './probe/run-probe.ts';
 export { FmServeError, createFmServe } from './managed/fm-serve.ts';

@@ -1,5 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
-import { LOCAL_SERVER_CANDIDATES, agentReadiness } from '@momonga/protocol';
+import { LOCAL_SERVER_CANDIDATES, agentReadiness, isProbingEntry } from '@momonga/protocol';
 import type { AliasCapabilities, DetectedLocalServer, MomongaModelEntry } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
@@ -25,7 +25,9 @@ const describeCapabilities = (capabilities: AliasCapabilities): string[] => [
 export const formatModels = (models: readonly MomongaModelEntry[]): string =>
   models.length === 0
     ? 'the gateway lists no model aliases'
-    : escapedLines(models.flatMap((model) => [`${model.id}  -> ${model.targets.join(', ')}`, ...describeCapabilities(model.capabilities)]));
+    : escapedLines(
+        models.flatMap((model) => [`${model.id}  -> ${model.targets.join(', ')}`, ...(isProbingEntry(model) ? [`    ${model.probing.message}`] : describeCapabilities(model.capabilities))]),
+      );
 
 export const listModels = async (ports: CliPorts, paths: MomongaPaths, json: boolean): Promise<number> => {
   await ensureDaemon(ports, paths);

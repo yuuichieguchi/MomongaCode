@@ -17,12 +17,14 @@ export interface ProbeRecordKey {
 
 const TARGET_PATTERN = /^[A-Za-z0-9._-]+$/;
 
-const recordPath = (dir: string, target: string): string => {
+export const probeTargetName = (target: string): string => {
   if (!TARGET_PATTERN.test(target) || target === '.' || target === '..') {
     throw new Error(`Invalid probe target name: ${target}`);
   }
-  return path.join(dir, `${target}.json`);
+  return target;
 };
+
+const recordPath = (dir: string, target: string): string => path.join(dir, `${probeTargetName(target)}.json`);
 
 const PRIVATE_DIRECTORY_MODE = 0o700;
 
@@ -99,9 +101,6 @@ export interface ResolvedToolCalling {
   mode: ToolCallingMode;
   source: 'config' | 'probed';
 }
-
-export const isUnprobedAuto = (setting: ToolCallingSetting, report: ProbeReport | null): boolean =>
-  setting === 'auto' && report === null;
 
 export const resolveToolCalling = (
   setting: ToolCallingSetting,
