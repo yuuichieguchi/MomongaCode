@@ -10,6 +10,7 @@ CONSTANTS
     ProbeMapsHiddenToFree,
     CloseCreatorOnFailure,
     GuardEnabled,
+    GuardFromRows,
     RemoveInRelease,
     ProofDir
 
@@ -37,7 +38,7 @@ ASSUME /\ NonReadOnly \subseteq Calls
        /\ ProofDir \in {"outside", "markers"}
        /\ CallCount \in 1..3
        /\ MaxCrashes \in Nat
-       /\ {ProbeMapsHiddenToFree, CloseCreatorOnFailure, GuardEnabled, RemoveInRelease} \subseteq BOOLEAN
+       /\ {ProbeMapsHiddenToFree, CloseCreatorOnFailure, GuardEnabled, GuardFromRows, RemoveInRelease} \subseteq BOOLEAN
        /\ "none" \notin Calls
        /\ Descendants \cap {"creator", "leader"} = {}
 
@@ -83,11 +84,17 @@ Named(c) == NamedOf(holds[c])
 Hidden(c) == HiddenOf(holds[c])
 View(c) == ViewOf(c, holds[c])
 
-GuardSet == {c \in Calls : meta[c] \notin {"none", "free"} /\ file[c] = "present"}
+KnownState(c) == IF meta[c] = "none" THEN "unknown" ELSE meta[c]
 
-EarlierDone(c) ==
+UnsettledKeys == {c \in Calls : file[c] = "present" /\ KnownState(c) # "free"}
+
+RowKeys == {c \in Calls : meta[c] \notin {"none", "free"} /\ file[c] = "present"}
+
+GuardedKeys == IF GuardFromRows THEN RowKeys ELSE UnsettledKeys
+
+NoEarlierCallInFlight(c) ==
     \A e \in NonReadOnly :
-        Before(e, c) => (phase[e] \in {"settled", "refused"} \/ (phase[e] = "lost" /\ file[e] = "absent"))
+        Before(e, c) => phase[e] \notin {"idle", "guarded", "created", "running", "exited"}
 
 KillsWithin(scope) ==
     {kills \in [Calls -> SUBSET Killable] :
@@ -126,12 +133,12 @@ GuardCheck(c) ==
     /\ startupDone
     /\ phase[c] = "idle"
     /\ c \in NonReadOnly
-    /\ EarlierDone(c)
+    /\ NoEarlierCallInFlight(c)
     /\ IF GuardEnabled
-       THEN \E kills \in KillsWithin(GuardSet) :
+       THEN \E kills \in KillsWithin(GuardedKeys) :
                 LET after == HoldsAfter(kills)
-                    stillHeld == {x \in GuardSet : ViewOf(x, after[x]) # "free"}
-                    cleared == GuardSet \ stillHeld
+                    stillHeld == {x \in GuardedKeys : ViewOf(x, after[x]) # "free"}
+                    cleared == GuardedKeys \ stillHeld
                 IN /\ holds' = after
                    /\ leader' = LeaderAfter(kills)
                    /\ proc' = ProcAfter(kills)
@@ -318,7 +325,7 @@ StartupSweep(c) ==
     /\ up
     /\ ~startupDone
     /\ ~attempted[c]
-    /\ file[c] = "present"
+    /\ c \in UnsettledKeys
     /\ SweepEffect(c, TRUE)
     /\ attempted' = [attempted EXCEPT ![c] = TRUE]
     /\ UNCHANGED <<up, crashes, startupDone, phase, mode, owner, detached, cache, meta, ledger,
@@ -327,7 +334,7 @@ StartupSweep(c) ==
 FinishStartup ==
     /\ up
     /\ ~startupDone
-    /\ \A c \in Calls : file[c] = "present" => attempted[c]
+    /\ \A c \in UnsettledKeys : attempted[c]
     /\ startupDone' = TRUE
     /\ UNCHANGED <<up, crashes, phase, file, mode, holds, leader, proc, owner, detached, cache, meta, ledger,
                    removedVia, startedWithOrphan, proofFile, proofSwept, attempted>>
@@ -335,8 +342,8 @@ FinishStartup ==
 PeriodicSweepWith(c, mayBeUnknown) ==
     /\ up
     /\ startupDone
-    /\ phase[c] \in {"settled", "lost"}
-    /\ file[c] = "present"
+    /\ phase[c] \in {"settled", "ledgered", "lost"}
+    /\ c \in UnsettledKeys
     /\ SweepEffect(c, mayBeUnknown)
     /\ UNCHANGED <<up, crashes, startupDone, phase, mode, owner, detached, cache, meta, ledger,
                    startedWithOrphan, proofFile, proofSwept, attempted>>
@@ -433,7 +440,7 @@ NoSelfHold == \A c \in Calls : phase[c] \in {"ledgered", "settled"} => "creator"
 GuardSound == ~startedWithOrphan
 
 GuardKnowsOrphans ==
-    \A c \in Calls : (phase[c] = "settled" /\ file[c] = "present" /\ Live(c) # {}) => c \in GuardSet
+    \A c \in Calls : (phase[c] \in {"settled", "ledgered", "lost"} /\ file[c] = "present" /\ Live(c) # {}) => c \in UnsettledKeys
 
 ProofNeverSwept == ~proofSwept
 
@@ -443,6 +450,6 @@ OneWriter == [][\A c \in Calls : meta[c] # "none" => meta'[c] = meta[c]]_vars
 
 EventuallyCleared ==
     \A c \in Calls :
-        (phase[c] = "settled" /\ file[c] = "present") ~> (file[c] = "absent" \/ c \notin GuardSet)
+        (phase[c] \in {"settled", "lost"} /\ file[c] = "present") ~> (file[c] = "absent" \/ c \notin UnsettledKeys)
 
 =============================================================================
