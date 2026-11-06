@@ -19,7 +19,8 @@ CONSTANTS
     GuardHonoursIgnore,
     TrackIgnoredAdmission,
     RetryModel,
-    OwnerKinds
+    OwnerKinds,
+    RecoveryReaps
 
 MarkerOrder == SubSeq(<<"m1", "m2", "m3">>, 1, MarkerCount)
 
@@ -47,7 +48,7 @@ ASSUME /\ NonReadOnly \subseteq Markers
        /\ LockModes # {}
        /\ ProofDir \in {"outside", "markers"}
        /\ MaxCrashes \in Nat
-       /\ {ProbeMapsHiddenToFree, CloseCreatorOnFailure, GuardEnabled, GuardFromRows, SoundAtCreate, OwnersIgnored, ReleaseRemoves, GuardHonoursIgnore, TrackIgnoredAdmission, RetryModel} \subseteq BOOLEAN
+       /\ {ProbeMapsHiddenToFree, CloseCreatorOnFailure, GuardEnabled, GuardFromRows, SoundAtCreate, OwnersIgnored, ReleaseRemoves, GuardHonoursIgnore, TrackIgnoredAdmission, RetryModel, RecoveryReaps} \subseteq BOOLEAN
        /\ OwnerKinds \subseteq {"call", "hook", "job"}
        /\ UnboundedEvents \subseteq Events
        /\ "none" \notin Markers
@@ -78,10 +79,11 @@ VARIABLES
     tries,
     ignored,
     refusedOnlyByIgnored,
-    besideIgnored
+    besideIgnored,
+    recovered
 
 vars == <<up, crashes, startupDone, phase, file, mode, kind, owner, holds, leader, proc, home, detached, cache,
-          meta, ledger, startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored>>
+          meta, ledger, startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 LiveOf(holdSet) == holdSet \ {"creator"}
 
@@ -162,6 +164,7 @@ Init ==
     /\ ignored = [m \in Markers |-> FALSE]
     /\ refusedOnlyByIgnored = FALSE
     /\ besideIgnored = FALSE
+    /\ recovered = [m \in Markers |-> FALSE]
 
 GuardCheck(m) ==
     /\ up
@@ -194,9 +197,9 @@ GuardCheck(m) ==
                          (blocking = {} /\ \E x \in Markers : LiveOf(after[x]) # {} /\ owner[x] = "none" /\ CountsAsOrphan(x)))
        ELSE /\ phase' = [phase EXCEPT ![m] = "guarded"]
             /\ startedWithOrphan' = (startedWithOrphan \/ \E x \in Markers : Orphan(x))
-            /\ UNCHANGED <<holds, leader, proc, file, reapedLiveOwner, tries, refusedOnlyByIgnored, besideIgnored>>
+            /\ UNCHANGED <<holds, leader, proc, file, reapedLiveOwner, tries, refusedOnlyByIgnored, besideIgnored, recovered>>
     /\ UNCHANGED <<up, crashes, startupDone, mode, owner, home, detached, cache, meta, ledger,
-                   proofFile, runtimeSignalled, attempted, ignored>>
+                   proofFile, runtimeSignalled, attempted, ignored, recovered>>
 
 CreateMarker(m) ==
     /\ up
@@ -208,7 +211,7 @@ CreateMarker(m) ==
     /\ phase' = [phase EXCEPT ![m] = "created"]
     /\ startedWithOrphan' = (startedWithOrphan \/ (SoundAtCreate /\ \E x \in Markers \ {m} : Orphan(x)))
     /\ UNCHANGED <<up, crashes, startupDone, kind, leader, proc, home, detached, cache, meta, ledger,
-                   reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 StartOwned(m, ownerKind) ==
     /\ up
@@ -222,7 +225,7 @@ StartOwned(m, ownerKind) ==
     /\ holds' = [holds EXCEPT ![m] = {"creator"}]
     /\ phase' = [phase EXCEPT ![m] = "created"]
     /\ UNCHANGED <<up, crashes, startupDone, leader, proc, home, detached, cache, meta, ledger,
-                   startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 StartJob(m) == "job" \in OwnerKinds /\ StartOwned(m, "job")
 
@@ -234,14 +237,14 @@ SpawnOk(m) ==
     /\ holds' = [holds EXCEPT ![m] = (@ \ {"creator"}) \cup {"leader"}]
     /\ phase' = [phase EXCEPT ![m] = "running"]
     /\ UNCHANGED <<up, crashes, startupDone, file, mode, kind, owner, proc, home, detached, cache, meta, ledger,
-                   startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 LaunchEndsBeforeSpawn(m) ==
     /\ phase[m] = "created"
     /\ phase' = [phase EXCEPT ![m] = "exited"]
     /\ holds' = [holds EXCEPT ![m] = IF CloseCreatorOnFailure THEN @ \ {"creator"} ELSE @]
     /\ UNCHANGED <<up, crashes, startupDone, file, mode, kind, owner, leader, proc, home, detached, cache, meta,
-                   ledger, startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   ledger, startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 SpawnFail(m) == LaunchEndsBeforeSpawn(m)
 
@@ -253,7 +256,7 @@ ChildExit(m) ==
     /\ holds' = [holds EXCEPT ![m] = @ \ {"leader"}]
     /\ phase' = [phase EXCEPT ![m] = IF @ = "running" THEN "exited" ELSE @]
     /\ UNCHANGED <<up, crashes, startupDone, file, mode, kind, owner, proc, home, detached, cache, meta, ledger,
-                   startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 DescendantFork(m, d) ==
     /\ Live(m) # {}
@@ -262,13 +265,13 @@ DescendantFork(m, d) ==
     /\ home' = [home EXCEPT ![d] = m]
     /\ holds' = [holds EXCEPT ![m] = @ \cup {d}]
     /\ UNCHANGED <<up, crashes, startupDone, phase, file, mode, kind, owner, leader, detached, cache, meta, ledger,
-                   startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 DescendantDetach(d) ==
     /\ proc[d] \in AliveProcStates
     /\ detached' = [detached EXCEPT ![d] = TRUE]
     /\ UNCHANGED <<up, crashes, startupDone, phase, file, mode, kind, owner, holds, leader, proc, home, cache, meta,
-                   ledger, startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   ledger, startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 DescendantExec(d) ==
     /\ proc[d] = "running"
@@ -276,13 +279,13 @@ DescendantExec(d) ==
     /\ d \in holds[home[d]]
     /\ proc' = [proc EXCEPT ![d] = "exec"]
     /\ UNCHANGED <<up, crashes, startupDone, phase, file, mode, kind, owner, holds, leader, home, detached, cache,
-                   meta, ledger, startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   meta, ledger, startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 DescendantExecDone(d) ==
     /\ proc[d] = "exec"
     /\ proc' = [proc EXCEPT ![d] = "running"]
     /\ UNCHANGED <<up, crashes, startupDone, phase, file, mode, kind, owner, holds, leader, home, detached, cache,
-                   meta, ledger, startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   meta, ledger, startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 DescendantUndumpable(d) ==
     /\ proc[d] = "running"
@@ -290,21 +293,21 @@ DescendantUndumpable(d) ==
     /\ d \in holds[home[d]]
     /\ proc' = [proc EXCEPT ![d] = "undump"]
     /\ UNCHANGED <<up, crashes, startupDone, phase, file, mode, kind, owner, holds, leader, home, detached, cache,
-                   meta, ledger, startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   meta, ledger, startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 DescendantCloseFd(d) ==
     /\ proc[d] = "running"
     /\ d \in holds[home[d]]
     /\ holds' = [holds EXCEPT ![home[d]] = @ \ {d}]
     /\ UNCHANGED <<up, crashes, startupDone, phase, file, mode, kind, owner, leader, proc, home, detached, cache,
-                   meta, ledger, startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   meta, ledger, startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 DescendantExit(d) ==
     /\ proc[d] \in AliveProcStates
     /\ proc' = [proc EXCEPT ![d] = "exited"]
     /\ holds' = [m \in Markers |-> holds[m] \ {d}]
     /\ UNCHANGED <<up, crashes, startupDone, phase, file, mode, kind, owner, leader, home, detached, cache, meta,
-                   ledger, startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   ledger, startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 SettleState(m) ==
     /\ up
@@ -324,7 +327,7 @@ SettleState(m) ==
                 /\ leader' = LeaderAfter(kills)
                 /\ proc' = ProcAfter(kills)
     /\ UNCHANGED <<up, crashes, startupDone, phase, file, mode, kind, owner, home, detached, meta, ledger,
-                   startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 LedgerWrite(m) ==
     /\ kind[m] = "call"
@@ -335,7 +338,7 @@ LedgerWrite(m) ==
     /\ phase' = [phase EXCEPT ![m] = "ledgered"]
     /\ file' = [file EXCEPT ![m] = IF ReleaseRemoves THEN "absent" ELSE @]
     /\ UNCHANGED <<up, crashes, startupDone, mode, kind, owner, holds, leader, proc, home, detached, cache,
-                   startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 SettleMarker(m) ==
     /\ up
@@ -346,7 +349,7 @@ SettleMarker(m) ==
     /\ owner' = [owner EXCEPT ![m] = "none"]
     /\ phase' = [phase EXCEPT ![m] = "settled"]
     /\ UNCHANGED <<up, crashes, startupDone, mode, kind, holds, leader, proc, home, detached, cache, meta, ledger,
-                   startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 Promote(m) ==
     /\ "job" \in OwnerKinds
@@ -359,7 +362,7 @@ Promote(m) ==
     /\ meta' = [meta EXCEPT ![m] = "unknown"]
     /\ phase' = [phase EXCEPT ![m] = "settled"]
     /\ UNCHANGED <<up, crashes, startupDone, file, mode, kind, holds, leader, proc, home, detached, cache,
-                   startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 OwnerEnd(m) ==
     /\ up
@@ -381,7 +384,7 @@ OwnerEnd(m) ==
     /\ owner' = [owner EXCEPT ![m] = "none"]
     /\ phase' = [phase EXCEPT ![m] = "settled"]
     /\ UNCHANGED <<up, crashes, startupDone, mode, kind, home, detached, cache, meta, ledger, startedWithOrphan,
-                   reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 Crash ==
     /\ up
@@ -398,7 +401,7 @@ Crash ==
     /\ cache' = [m \in Markers |-> "none"]
     /\ proofFile' = "absent"
     /\ UNCHANGED <<startupDone, file, mode, kind, leader, proc, home, detached, meta, ledger, startedWithOrphan,
-                   reapedLiveOwner, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   reapedLiveOwner, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 Restart ==
     /\ ~up
@@ -406,7 +409,7 @@ Restart ==
     /\ startupDone' = FALSE
     /\ attempted' = [m \in Markers |-> FALSE]
     /\ UNCHANGED <<crashes, phase, file, mode, kind, owner, holds, leader, proc, home, detached, cache, meta, ledger,
-                   startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, tries, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, tries, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 SweepEffect(m, mayBeUnknown, e) ==
     \/ /\ mayBeUnknown
@@ -437,7 +440,7 @@ StartupSweep(m) ==
     /\ SweepEffect(m, TRUE, "startup")
     /\ attempted' = [attempted EXCEPT ![m] = TRUE]
     /\ UNCHANGED <<up, crashes, startupDone, phase, mode, kind, owner, home, detached, cache, meta, ledger,
-                   startedWithOrphan, proofFile, runtimeSignalled, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   startedWithOrphan, proofFile, runtimeSignalled, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 FinishStartup ==
     /\ up
@@ -445,7 +448,7 @@ FinishStartup ==
     /\ \A m \in UnsettledKeys : attempted[m]
     /\ startupDone' = TRUE
     /\ UNCHANGED <<up, crashes, phase, file, mode, kind, owner, holds, leader, proc, home, detached, cache, meta,
-                   ledger, startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   ledger, startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 PeriodicSweepWith(m, mayBeUnknown) ==
     /\ up
@@ -453,7 +456,7 @@ PeriodicSweepWith(m, mayBeUnknown) ==
     /\ m \in UnsettledKeys
     /\ SweepEffect(m, mayBeUnknown, "sweep")
     /\ UNCHANGED <<up, crashes, startupDone, phase, mode, kind, owner, home, detached, cache, meta, ledger,
-                   startedWithOrphan, proofFile, runtimeSignalled, attempted, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   startedWithOrphan, proofFile, runtimeSignalled, attempted, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 ShutdownSweep(m) ==
     /\ RetryModel
@@ -461,7 +464,32 @@ ShutdownSweep(m) ==
     /\ m \in UnsettledKeys
     /\ SweepEffect(m, TRUE, "shutdown")
     /\ UNCHANGED <<up, crashes, startupDone, phase, mode, kind, owner, home, detached, cache, meta, ledger,
-                   startedWithOrphan, proofFile, runtimeSignalled, attempted, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   startedWithOrphan, proofFile, runtimeSignalled, attempted, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
+
+RecoveryReap(m) ==
+    /\ RetryModel
+    /\ RecoveryReaps
+    /\ up
+    /\ startupDone
+    /\ phase[m] = "lost"
+    /\ ~recovered[m]
+    /\ m \in UnsettledKeys
+    /\ recovered' = [recovered EXCEPT ![m] = TRUE]
+    /\ \/ /\ UNCHANGED <<file, holds, leader, proc, reapedLiveOwner>>
+       \/ /\ View(m) = "free"
+          /\ file' = [file EXCEPT ![m] = "absent"]
+          /\ UNCHANGED <<holds, leader, proc, reapedLiveOwner>>
+       \/ /\ View(m) = "held"
+          /\ \E kills \in KillsWithin({m}) :
+               /\ holds' = HoldsAfter(kills)
+               /\ leader' = LeaderAfter(kills)
+               /\ proc' = ProcAfter(kills)
+               /\ reapedLiveOwner' = (reapedLiveOwner \/ (kills[m] # {} /\ owner[m] # "none"))
+               /\ IF ViewOf(m, HoldsAfter(kills)[m]) = "free"
+                  THEN file' = [file EXCEPT ![m] = "absent"]
+                  ELSE UNCHANGED file
+    /\ UNCHANGED <<up, crashes, startupDone, phase, mode, kind, owner, home, detached, cache, meta, ledger,
+                   startedWithOrphan, proofFile, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored>>
 
 Ignore(m) ==
     /\ RetryModel
@@ -471,7 +499,7 @@ Ignore(m) ==
     /\ ignored' = [ignored EXCEPT ![m] = TRUE]
     /\ UNCHANGED <<up, crashes, startupDone, phase, file, mode, kind, owner, holds, leader, proc, home, detached, cache,
                    meta, ledger, startedWithOrphan, reapedLiveOwner, proofFile, runtimeSignalled, attempted, tries,
-                   refusedOnlyByIgnored, besideIgnored>>
+                   refusedOnlyByIgnored, besideIgnored, recovered>>
 
 PeriodicSweep(m) == PeriodicSweepWith(m, TRUE)
 
@@ -482,13 +510,13 @@ ProofCreate ==
     /\ proofFile = "absent"
     /\ proofFile' = "locked"
     /\ UNCHANGED <<up, crashes, startupDone, phase, file, mode, kind, owner, holds, leader, proc, home, detached,
-                   cache, meta, ledger, startedWithOrphan, reapedLiveOwner, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   cache, meta, ledger, startedWithOrphan, reapedLiveOwner, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 ProofClose ==
     /\ proofFile = "locked"
     /\ proofFile' = "absent"
     /\ UNCHANGED <<up, crashes, startupDone, phase, file, mode, kind, owner, holds, leader, proc, home, detached,
-                   cache, meta, ledger, startedWithOrphan, reapedLiveOwner, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   cache, meta, ledger, startedWithOrphan, reapedLiveOwner, runtimeSignalled, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 ProofSweep ==
     /\ ProofDir = "markers"
@@ -496,7 +524,7 @@ ProofSweep ==
     /\ proofFile = "locked"
     /\ runtimeSignalled' = TRUE
     /\ UNCHANGED <<up, crashes, startupDone, phase, file, mode, kind, owner, holds, leader, proc, home, detached,
-                   cache, meta, ledger, startedWithOrphan, reapedLiveOwner, proofFile, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored>>
+                   cache, meta, ledger, startedWithOrphan, reapedLiveOwner, proofFile, attempted, tries, ignored, refusedOnlyByIgnored, besideIgnored, recovered>>
 
 Next ==
     \/ Crash
@@ -523,6 +551,7 @@ Next ==
         \/ PeriodicSweep(m)
         \/ ShutdownSweep(m)
         \/ Ignore(m)
+        \/ RecoveryReap(m)
     \/ \E m \in Markers, d \in Descendants : DescendantFork(m, d)
     \/ \E d \in Descendants :
         \/ DescendantDetach(d)
@@ -569,6 +598,7 @@ TypeOK ==
     /\ ignored \in [Markers -> BOOLEAN]
     /\ refusedOnlyByIgnored \in BOOLEAN
     /\ besideIgnored \in BOOLEAN
+    /\ recovered \in [Markers -> BOOLEAN]
 
 NoUntrackedOrphan == \A m \in Markers : (file[m] = "absent" /\ phase[m] # "idle") => Live(m) = {}
 
