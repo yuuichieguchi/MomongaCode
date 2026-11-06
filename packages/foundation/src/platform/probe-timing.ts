@@ -1,3 +1,5 @@
+import { systemTiming } from '../system-timing.ts';
+
 export const REAP_POLL_INTERVAL_MS = 25;
 
 export type ProbeTiming = {
@@ -11,7 +13,7 @@ export const hostProbeTiming: ProbeTiming = {
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   unrefSleep: (ms) =>
     new Promise((resolve) => {
-      setTimeout(resolve, ms).unref();
+      systemTiming.setTimeout(resolve, ms);
     }),
 };
 

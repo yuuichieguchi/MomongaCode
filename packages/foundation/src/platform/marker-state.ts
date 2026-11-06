@@ -1,5 +1,5 @@
-import fs from 'node:fs';
 import path from 'node:path';
+import { OPEN_FLAGS, nodeFileSystem } from '../node-file-system.ts';
 import { O_SHLOCK } from './lock-capability.ts';
 import type { LockCapabilityProbe } from './lock-capability.ts';
 import type { MarkerState } from '../marker-state.ts';
@@ -7,7 +7,7 @@ import type { MarkerStateOptions, ProcessInspector, UninspectableProcess } from 
 
 export type BaseInspector = Omit<ProcessInspector, 'markerState'>;
 
-const sharedProbeFlags = (): number => fs.constants.O_RDONLY | O_SHLOCK | fs.constants.O_NONBLOCK;
+const sharedProbeFlags = (): number => OPEN_FLAGS.readOnly | O_SHLOCK | OPEN_FLAGS.nonBlocking;
 
 const raceAbort = async <T>(pending: Promise<T>, signal: AbortSignal): Promise<T | 'unknown'> => {
   let release: () => void = () => undefined;
@@ -24,16 +24,14 @@ const raceAbort = async <T>(pending: Promise<T>, signal: AbortSignal): Promise<T
 };
 
 const lockState = async (marker: string): Promise<MarkerState> => {
-  let handle: fs.promises.FileHandle;
   try {
-    handle = await fs.promises.open(marker, sharedProbeFlags());
+    await nodeFileSystem.openThenClose(marker, sharedProbeFlags());
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === 'EAGAIN') return 'held';
     if (code === 'ENOENT') return 'free';
     return 'unknown';
   }
-  await handle.close();
   return 'free';
 };
 

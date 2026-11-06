@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import { nodeFileSystem } from '@momonga/foundation';
 import type { MarkerMode } from '@momonga/foundation';
 
 export interface MarkerOwner {
@@ -45,7 +45,7 @@ export const unownedOf = (names: readonly string[], owners: MarkerOwners): strin
 export const unsettledKeys = async (markerDir: string, owners: MarkerOwners): Promise<string[]> => {
   let names: string[];
   try {
-    names = await fs.promises.readdir(markerDir);
+    names = await nodeFileSystem.readdir(markerDir);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw error;

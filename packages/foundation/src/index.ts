@@ -62,7 +62,7 @@ export type { Random } from './random.ts';
 export { systemTiming } from './system-timing.ts';
 export { systemRandom } from './system-random.ts';
 export { nodeFileSystem, nodeFileSystemSync } from './node-file-system.ts';
-export type { FileSystemSync } from './node-file-system.ts';
+export type { FileSystem, FileSystemSync } from './node-file-system.ts';
 export { forceKillGroup, groupAlive, groupTerminationBoundMs, realGroupTiming, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from './process-group.ts';
 export type { ForceKillGroupOptions, GroupTiming, ProcessSignalSender, TerminateGroupOptions, TerminateOutcome } from './process-group.ts';
 export { procGroupMembers } from './platform/group-members.ts';

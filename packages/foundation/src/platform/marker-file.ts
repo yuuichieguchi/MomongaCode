@@ -1,5 +1,5 @@
-import fs from 'node:fs';
 import path from 'node:path';
+import { OPEN_FLAGS, nodeFileSystemSync } from '../node-file-system.ts';
 import type { MarkerMode } from '../marker-state.ts';
 import { EMPTY_RECORD_TEXT } from './marker-record.ts';
 import { O_EXLOCK, O_SHLOCK } from './lock-capability.ts';
@@ -17,9 +17,9 @@ export type CreateMarkerOptions = { capability: LockCapabilityProbe; ops?: FileL
 
 const MARKER_MODE = 0o600;
 
-const createLockedFlags = (): number => fs.constants.O_RDWR | fs.constants.O_CREAT | fs.constants.O_EXCL | O_EXLOCK | fs.constants.O_NONBLOCK;
-const createPlainFlags = (): number => fs.constants.O_RDWR | fs.constants.O_CREAT | fs.constants.O_EXCL;
-const selfCheckFlags = (): number => fs.constants.O_RDONLY | O_SHLOCK | fs.constants.O_NONBLOCK;
+const createLockedFlags = (): number => OPEN_FLAGS.readWrite | OPEN_FLAGS.create | OPEN_FLAGS.exclusive | O_EXLOCK | OPEN_FLAGS.nonBlocking;
+const createPlainFlags = (): number => OPEN_FLAGS.readWrite | OPEN_FLAGS.create | OPEN_FLAGS.exclusive;
+const selfCheckFlags = (): number => OPEN_FLAGS.readOnly | O_SHLOCK | OPEN_FLAGS.nonBlocking;
 
 const selfCheckHolds = (ops: FileLockOps, marker: string): boolean => {
   let descriptor: number;
@@ -52,17 +52,17 @@ const handleOf = (ops: FileLockOps, fd: number, mode: MarkerMode): MarkerHandle 
 
 export const closeMarkerDescriptor = (fd: number): void => {
   const handle = owned.get(fd);
-  if (handle === undefined) fs.closeSync(fd);
+  if (handle === undefined) nodeFileSystemSync.closeSync(fd);
   else handle.close();
 };
 
 const openWithRecord = (ops: FileLockOps, marker: string, flags: number): number => {
   const fd = ops.open(marker, flags, MARKER_MODE);
   try {
-    fs.writeSync(fd, EMPTY_RECORD_TEXT);
+    nodeFileSystemSync.writeTextSync(fd, EMPTY_RECORD_TEXT);
   } catch (error) {
     ops.close(fd);
-    fs.rmSync(marker, { force: true });
+    nodeFileSystemSync.rmSync(marker);
     throw error;
   }
   return fd;

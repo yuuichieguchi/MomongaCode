@@ -1,7 +1,9 @@
-import { randomUUID } from 'node:crypto';
-import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { OPEN_FLAGS, nodeFileSystemSync } from '../node-file-system.ts';
+import type { DirectoryIdentity } from '../node-file-system.ts';
+import type { Random } from '../random.ts';
+import { systemRandom } from '../system-random.ts';
 import { nodeFileLockOps } from './kernel-lock.ts';
 import type { FileLockOps } from './kernel-lock.ts';
 
@@ -12,12 +14,13 @@ export interface LockCapabilityProbe {
   contradicted(dir: string): void;
 }
 
-export type DirectoryIdentity = { dev: bigint; ino: bigint };
+export type { DirectoryIdentity };
 
 export type LockCapabilityOptions = {
   proofDir: string;
   ops?: FileLockOps;
   statDirectory?: (dir: string) => DirectoryIdentity;
+  random?: Random;
 };
 
 export const UNMEASURED_CAPABILITY: LockCapabilityProbe = {
@@ -32,15 +35,12 @@ const WOULD_BLOCK = 'EAGAIN';
 const NOT_ENFORCED_CODES = ['ENOTSUP', 'EOPNOTSUPP', 'EINVAL'];
 const PROOF_MODE = 0o600;
 
-const sharedProbeFlags = (): number => fs.constants.O_RDONLY | O_SHLOCK | fs.constants.O_NONBLOCK;
-const createLockedFlags = (): number => fs.constants.O_RDONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | O_EXLOCK | fs.constants.O_NONBLOCK;
+const sharedProbeFlags = (): number => OPEN_FLAGS.readOnly | O_SHLOCK | OPEN_FLAGS.nonBlocking;
+const createLockedFlags = (): number => OPEN_FLAGS.readOnly | OPEN_FLAGS.create | OPEN_FLAGS.exclusive | O_EXLOCK | OPEN_FLAGS.nonBlocking;
 
 const codeOf = (error: unknown): string | undefined => (error as NodeJS.ErrnoException | undefined)?.code;
 
-const statIdentity = (dir: string): DirectoryIdentity => {
-  const stat = fs.statSync(dir, { bigint: true });
-  return { dev: stat.dev, ino: stat.ino };
-};
+const statIdentity = (dir: string): DirectoryIdentity => nodeFileSystemSync.identitySync(dir);
 
 const sharedOpenIsRefused = (ops: FileLockOps, file: string): boolean => {
   let descriptor: number;
@@ -55,19 +55,19 @@ const sharedOpenIsRefused = (ops: FileLockOps, file: string): boolean => {
 };
 
 const removeFreeLeftovers = (ops: FileLockOps, proofDir: string, own: string): void => {
-  for (const name of fs.readdirSync(proofDir)) {
+  for (const name of nodeFileSystemSync.readdirSync(proofDir)) {
     const file = path.join(proofDir, name);
     if (file === own) continue;
     try {
-      if (!sharedOpenIsRefused(ops, file)) fs.rmSync(file, { force: true });
+      if (!sharedOpenIsRefused(ops, file)) nodeFileSystemSync.rmSync(file);
     } catch {
       continue;
     }
   }
 };
 
-const prove = (ops: FileLockOps, proofDir: string): 'proved' | 'unenforced' | 'unmeasured' => {
-  const file = path.join(proofDir, randomUUID());
+const prove = (ops: FileLockOps, random: Random, proofDir: string): 'proved' | 'unenforced' | 'unmeasured' => {
+  const file = path.join(proofDir, random.uuid());
   let creator: number | undefined;
   try {
     try {
@@ -95,20 +95,20 @@ const prove = (ops: FileLockOps, proofDir: string): 'proved' | 'unenforced' | 'u
     return 'unmeasured';
   } finally {
     if (creator !== undefined) ops.close(creator);
-    fs.rmSync(file, { force: true });
+    nodeFileSystemSync.rmSync(file);
   }
 };
 
 type Cached = { identity: DirectoryIdentity; result: 'proved' | 'unenforced' };
 
-export const createLockCapability = ({ proofDir, ops = nodeFileLockOps, statDirectory = statIdentity }: LockCapabilityOptions): LockCapabilityProbe => {
+export const createLockCapability = ({ proofDir, ops = nodeFileLockOps, statDirectory = statIdentity, random = systemRandom }: LockCapabilityOptions): LockCapabilityProbe => {
   const cache = new Map<string, Cached>();
   const inflight = new Map<string, Promise<LockCapability>>();
 
   const measure = (dir: string, identity: DirectoryIdentity): LockCapability => {
     const proof = statDirectory(proofDir);
     if (proof.dev !== identity.dev) return 'unmeasured';
-    const result = prove(ops, proofDir);
+    const result = prove(ops, random, proofDir);
     if (result !== 'unmeasured') cache.set(dir, { identity, result });
     return result;
   };
@@ -147,11 +147,11 @@ const privateProofDirectory = (): string | undefined => {
   const uid = process.getuid?.();
   const directory = path.join(os.tmpdir(), `momonga-lock-proof-${uid ?? 'user'}`);
   try {
-    fs.mkdirSync(directory, { mode: 0o700 });
+    nodeFileSystemSync.mkdirSync(directory, 0o700);
   } catch (error) {
     if (codeOf(error) !== 'EEXIST') return undefined;
   }
-  const stat = fs.lstatSync(directory);
+  const stat = nodeFileSystemSync.lstatSync(directory);
   const foreign = uid !== undefined && stat.uid !== uid;
   return stat.isDirectory() && !stat.isSymbolicLink() && !foreign && (stat.mode & 0o077) === 0 ? directory : undefined;
 };

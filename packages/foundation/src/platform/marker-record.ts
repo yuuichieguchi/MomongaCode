@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import { nodeFileSystem } from '../node-file-system.ts';
 
 export const RETRY_KINDS = ['guard', 'sweep', 'startup', 'shutdown'] as const;
 
@@ -30,16 +30,8 @@ export type RecordFiles = {
 };
 
 export const nodeRecordFiles: RecordFiles = {
-  read: (file) => fs.promises.readFile(file, 'utf8'),
-  writeByte: async (file, position, byte) => {
-    const handle = await fs.promises.open(file, 'r+');
-    try {
-      await handle.write(byte, position, 'utf8');
-      await handle.datasync();
-    } finally {
-      await handle.close();
-    }
-  },
+  read: (file) => nodeFileSystem.readText(file),
+  writeByte: (file, position, byte) => nodeFileSystem.writeByteAt(file, position, byte),
 };
 
 export type RecordOptions = { signal: AbortSignal; files?: RecordFiles };

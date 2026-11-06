@@ -1,5 +1,4 @@
-import fs from 'node:fs';
-import { defaultProcessInspector, findHolders, reconcileProcessGroup } from '@momonga/foundation';
+import { defaultProcessInspector, nodeFileSystem, findHolders, reconcileProcessGroup } from '@momonga/foundation';
 import type { MarkerMode, MarkerReconcileResult, MarkerState, ProcessInspector, ReapTiming, SignalSender, UninspectableProcess } from '@momonga/foundation';
 
 export type MarkerListing = { holders: number[]; refused: UninspectableProcess[] };
@@ -26,7 +25,7 @@ export type MarkerSettleOptions = {
 
 export const removeMarkerFile = async (marker: string, onWarning: (message: string) => void): Promise<void> => {
   try {
-    await fs.promises.rm(marker, { force: true });
+    await nodeFileSystem.rm(marker);
   } catch (error) {
     onWarning(`the process marker ${marker} could not be removed: ${error instanceof Error ? error.message : String(error)}`);
   }
