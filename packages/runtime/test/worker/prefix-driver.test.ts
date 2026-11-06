@@ -193,27 +193,48 @@ const drive = async (seed: number) => {
   return { env, run, plan };
 };
 
+const featuresOf = (env: Env, runId: string): string[] => {
+  const seen = new Set<string>();
+  for (const event of env.events(runId)) {
+    if (event.type === 'context.truncated') seen.add(`truncated:${event.kind}`);
+    if (event.type === 'context.compacted') seen.add('compacted');
+    if (event.type === 'loop.warned') seen.add('loop.warned');
+    if (event.type === 'tool.completed' && typeof event.handle === 'string' && event.output.startsWith('[formatted by')) seen.add('formatted');
+    if (event.type === 'model.requested' && (event.body as Body).tool_choice === 'none') seen.add('wrap_up');
+  }
+  if (env.ofType(runId, 'run.started').length > 1) seen.add('claim');
+  return [...seen];
+};
+
+type Outcome = { description: string[]; requests: number; violations: Violation[]; status: string; features: string[] };
+
+const outcomes = new Map<number, Promise<Outcome>>();
+
+const outcomeOf = (seed: number): Promise<Outcome> => {
+  const known = outcomes.get(seed);
+  if (known !== undefined) return known;
+  const observed = drive(seed).then(({ env, run, plan }) => ({
+    description: plan.description,
+    requests: env.ofType(run.id, 'model.requested').length,
+    violations: violationsOf(env, run.id),
+    status: env.run(run.id).status,
+    features: featuresOf(env, run.id),
+  }));
+  outcomes.set(seed, observed);
+  return observed;
+};
+
 describe('random driver: the prefix rule of section 1 holds for every pair of consecutive requests built by buildNext (T2-1; review C-3)', () => {
   it.for(SEEDS)('seed %i: k is the minimum over the named events recorded, and no prefix_unexplained is raised', async (seed) => {
-    const { env, run, plan } = await drive(seed);
+    const { description, requests, violations, status } = await outcomeOf(seed);
 
-    expect(env.ofType(run.id, 'model.requested').length, `seed ${seed}: ${plan.description.join(', ')}`).toBeGreaterThan(1);
-    expect(violationsOf(env, run.id), `seed ${seed}: ${plan.description.join(', ')}; status ${env.run(run.id).status}`).toEqual([]);
+    expect(requests, `seed ${seed}: ${description.join(', ')}`).toBeGreaterThan(1);
+    expect(violations, `seed ${seed}: ${description.join(', ')}; status ${status}`).toEqual([]);
   });
 
   it('exercises evictions, compactions, references, C1 formatting, loop warnings, claims and wrap-ups across the seeds', async () => {
     const seen = new Set<string>();
-    for (const seed of SEEDS) {
-      const { env, run } = await drive(seed);
-      for (const event of env.events(run.id)) {
-        if (event.type === 'context.truncated') seen.add(`truncated:${event.kind}`);
-        if (event.type === 'context.compacted') seen.add('compacted');
-        if (event.type === 'loop.warned') seen.add('loop.warned');
-        if (event.type === 'tool.completed' && typeof event.handle === 'string' && event.output.startsWith('[formatted by')) seen.add('formatted');
-        if (event.type === 'model.requested' && (event.body as Body).tool_choice === 'none') seen.add('wrap_up');
-      }
-      if (env.ofType(run.id, 'run.started').length > 1) seen.add('claim');
-    }
+    for (const seed of SEEDS) for (const feature of (await outcomeOf(seed)).features) seen.add(feature);
 
     expect([...seen].sort()).toEqual(expect.arrayContaining(['claim', 'compacted', 'formatted', 'loop.warned', 'truncated:omitted', 'truncated:reference', 'wrap_up']));
   });
