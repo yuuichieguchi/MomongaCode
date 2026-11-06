@@ -1,5 +1,5 @@
-export { aggregate, indicatorsOf, merge } from './aggregate.ts';
-export type { Aggregate, AggregateOptions } from './aggregate.ts';
+export { aggregate, explainOf, indicatorsOf, merge } from './aggregate.ts';
+export type { Aggregate, AggregateOptions, Marks } from './aggregate.ts';
 export { decodeReliabilityReport, encodeReliabilityReport } from './codec.ts';
 export { FACTS_EVENT_TYPES, createFactsFold, foldFacts } from './fold-facts.ts';
 export type { FactsFold } from './fold-facts.ts';

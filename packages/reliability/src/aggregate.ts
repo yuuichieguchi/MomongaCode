@@ -193,21 +193,42 @@ const overrunOf = (root: RunFacts): { limited: boolean; over: boolean } => {
   return { limited: dimensions.length > 0, over: dimensions.some(Boolean) };
 };
 
-const accumulate = (accumulator: Accumulator, task: TaskPartial): void => {
+export type Marks = Map<string, string[]>;
+
+const markOf = (marks: Marks | undefined, label: string, runId: string): void => {
+  if (marks === undefined) return;
+  const ids = marks.get(label);
+  if (ids === undefined) marks.set(label, [runId]);
+  else ids.push(runId);
+};
+
+const accumulate = (accumulator: Accumulator, task: TaskPartial, marks?: Marks): void => {
   const { root } = task;
   if (root === undefined || task.stale) {
     accumulator.pendingFacts += 1;
+    markOf(marks, 'pending facts', (root ?? task.earliest).rootRunId);
     return;
   }
   if (root.status === 'CANCELLED') {
     accumulator.cancelled += 1;
+    markOf(marks, 'cancelled', root.runId);
     return;
   }
   accumulator.counted += 1;
   if (root.declared) {
     accumulator.completionN += 1;
-    if (root.met) accumulator.completionK += 1;
-  } else accumulator.undeclared += 1;
+    if (root.met) {
+      accumulator.completionK += 1;
+      markOf(marks, 'completion met', root.runId);
+    } else markOf(marks, 'completion not met', root.runId);
+  } else {
+    accumulator.undeclared += 1;
+    markOf(marks, 'completion undeclared', root.runId);
+  }
+  if (task.recovered > 0) markOf(marks, 'recovery recovered', root.runId);
+  if (task.unknownEffect > 0) markOf(marks, 'recovery unknown_effect', root.runId);
+  if (task.failedEpisodes > 0) markOf(marks, 'recovery failed', root.runId);
+  if (task.stoppedEpisodes > 0) markOf(marks, 'recovery stopped', root.runId);
   accumulator.recovered += task.recovered;
   accumulator.unknownEffect += task.unknownEffect;
   accumulator.failedEpisodes += task.failedEpisodes;
@@ -216,17 +237,29 @@ const accumulate = (accumulator: Accumulator, task: TaskPartial): void => {
   accumulator.clockSkew += task.clockSkew;
   if (task.sideEffectingCalls > 0) {
     accumulator.duplicatesN += 1;
-    if (task.repeatedStarts > 0) accumulator.duplicatesK += 1;
+    if (task.repeatedStarts > 0) {
+      accumulator.duplicatesK += 1;
+      markOf(marks, 'duplicate side effect (journal)', root.runId);
+    }
   }
   accumulator.prevented += task.prevented;
   accumulator.unknown += task.unknown;
-  if (task.intervened) accumulator.interventionK += 1;
+  if (task.intervened) {
+    accumulator.interventionK += 1;
+    markOf(marks, 'human intervention', root.runId);
+  }
   const overrun = overrunOf(root);
   if (overrun.limited) {
     accumulator.overrunN += 1;
-    if (overrun.over) accumulator.overrunK += 1;
+    if (overrun.over) {
+      accumulator.overrunK += 1;
+      markOf(marks, 'budget overrun', root.runId);
+    }
   }
-  if (root.status === 'STOPPED' && root.stopReason === 'budget') accumulator.budgetStops += 1;
+  if (root.status === 'STOPPED' && root.stopReason === 'budget') {
+    accumulator.budgetStops += 1;
+    markOf(marks, 'budget stop', root.runId);
+  }
   if (root.met) {
     accumulator.timeN += 1;
     accumulator.activeSum += root.elapsedMs - root.humanWaitMs;
@@ -288,4 +321,12 @@ export const indicatorsOf = (aggregated: Aggregate): IndicatorGroups => {
     total: finish(total),
     groups: Object.fromEntries([...groups.entries()].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)).map(([key, group]) => [key, finish(group)])),
   };
+};
+
+export const explainOf = (aggregated: Aggregate): Marks => {
+  const marks: Marks = new Map();
+  const scratch = emptyAccumulator();
+  for (const task of aggregated.tasks.values()) accumulate(scratch, task, marks);
+  for (const ids of marks.values()) ids.sort();
+  return new Map([...marks.entries()].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)));
 };
