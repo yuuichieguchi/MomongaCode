@@ -136,3 +136,27 @@ export const b7Goal = (arith: ProofArith, floor: ToolFloor): ProofBool => {
     floor.itemCap.le(floorOf(arith, ITEM_ROOM, floor.room)),
   );
 };
+
+export type AliasMember = { readonly window: ProofInt; readonly maxOutput: ProofInt };
+
+export type AliasWindow = Window & { readonly members: readonly AliasMember[] };
+
+export const ALIAS_MEMBERS = 3;
+
+export const aliasWindowOf = (arith: ProofArith, options: { readonly loadRule: boolean }): AliasWindow => {
+  const { ctx } = arith;
+  const members = Array.from({ length: ALIAS_MEMBERS }, (_unused, index): AliasMember => {
+    const window = arith.int(`W${index}`);
+    const maxOutput = arith.int(`M${index}`);
+    arith.given(window.ge(1), window.le(ctx.Int.val(MAX_WINDOW)), maxOutput.ge(1), maxOutput.le(window));
+    return { window, maxOutput };
+  });
+  const smallest = members.slice(1).reduce((least, member) => arith.min(least, member.window), (members[0] as AliasMember).window);
+  const largest = members.slice(1).reduce((most, member) => arith.max(most, member.maxOutput), (members[0] as AliasMember).maxOutput);
+  const W = named(arith, 'W', smallest);
+  const U = named(arith, 'U', largest);
+  const margin = named(arith, 'margin', arith.max(ceilOf(arith, MARGIN, W), ctx.Int.val(MIN_MARGIN)));
+  if (options.loadRule) arith.given(W.sub(U).sub(margin).ge(ceilOf(arith, OUTPUT_RESERVE, W)));
+  const I0 = named(arith, 'I0', arith.max(ctx.Int.val(0), W.sub(U).sub(margin)));
+  return { W, maxOutput: U, R: U, margin, I0, members };
+};
