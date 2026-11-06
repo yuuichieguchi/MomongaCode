@@ -38,7 +38,7 @@ export const startTerminalSweeper = (options: TerminalSweeperOptions): TerminalS
   const sweepOnce = async (): Promise<void> => {
     try {
       for (const runId of await store.finishCancelled(reportRun)) afterCommit(runId);
-      await store.deadLetterExhausted(reportRun);
+      for (const runId of await store.deadLetterExhausted(reportRun)) afterCommit(runId);
     } catch (error) {
       onError(error);
     }

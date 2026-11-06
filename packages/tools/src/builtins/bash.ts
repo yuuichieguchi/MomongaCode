@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { commandSpecsFor, readPathsOfCommand } from '@momonga/policy';
 import { findHolders, reconcileProcessGroup, resolveToolPath, stoppedCommandResult } from '@momonga/foundation';
-import { defineTool, ToolExecutionError } from '../types.ts';
+import { defineTool, ToolExecutionError, ToolInputError } from '../types.ts';
 import type { SandboxExit } from '@momonga/sandbox';
 import type { BackgroundJobs } from '../ports.ts';
 import type { ReconcileContext, ToolContext, ToolResult } from '../types.ts';
@@ -89,14 +89,25 @@ export const bashTool = defineTool<BashInput>({
     type: 'object',
     properties: {
       command: { type: 'string', minLength: 1, description: 'The command to run' },
-      timeout: { type: 'integer', minimum: 1, maximum: MAX_BACKGROUND_TIMEOUT_MS, description: 'Timeout in milliseconds' },
+      timeout: {
+        type: 'integer',
+        minimum: 1,
+        maximum: MAX_BACKGROUND_TIMEOUT_MS,
+        description: `Timeout in milliseconds. Maximum ${MAX_TIMEOUT_MS}; with run_in_background maximum ${MAX_BACKGROUND_TIMEOUT_MS}`,
+      },
       description: { type: 'string', description: 'Short description of what the command does' },
       run_in_background: { type: 'boolean', description: 'Run the command as a background job and return its job id immediately' },
     },
     required: ['command'],
     additionalProperties: false,
   },
-  timeoutMs: (input) => Math.min(input.run_in_background === true ? DEFAULT_TIMEOUT_MS : (input.timeout ?? DEFAULT_TIMEOUT_MS), MAX_TIMEOUT_MS),
+  timeoutMs: (input) => (input.run_in_background === true ? DEFAULT_TIMEOUT_MS : (input.timeout ?? DEFAULT_TIMEOUT_MS)),
+  prepare: async (input) => {
+    if (input.run_in_background !== true && input.timeout !== undefined && input.timeout > MAX_TIMEOUT_MS) {
+      throw new ToolInputError(`timeout ${input.timeout} exceeds the maximum of ${MAX_TIMEOUT_MS} ms for a foreground command; use run_in_background for a longer one (maximum ${MAX_BACKGROUND_TIMEOUT_MS} ms)`);
+    }
+    return {};
+  },
   title: (input) => input.description ?? input.command.slice(0, TITLE_CHARS),
   subject: (input) => ({ kind: 'command', tool: 'Bash', command: input.command }),
   locations: (input, ctx) => readPathsOfCommand(input.command, commandSpecsFor(process.platform)).map((target) => ({ path: resolveToolPath(ctx.cwd, target) })),
@@ -144,6 +155,8 @@ export const bashTool = defineTool<BashInput>({
       } else {
         output += `${output === '' ? '' : '\n'}Shell cwd was reset to ${shownPath(ctx, ctx.session.cwd)}`;
       }
+    } else {
+      output += `${output === '' ? '' : '\n'}Shell cwd could not be determined and stays at ${shownPath(ctx, ctx.session.cwd)}`;
     }
     for (const note of notes) output += `${output === '' ? '' : '\n'}${note}`;
     if (exit.signal !== null) return { status: 'failed', output: `${output}${output === '' ? '' : '\n'}[terminated by ${exit.signal}]` };

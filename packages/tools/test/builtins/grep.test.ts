@@ -166,6 +166,32 @@ describe.each(backends)('Grep (%s backend)', (_name, envPath, available, realSan
       expect(result.output.split('\n').filter((line) => !line.startsWith('('))).toEqual([tree.hidden, tree.a, tree.b]);
     });
 
+    it('hides exactly the denied path and not a same-named path deeper in the tree', async () => {
+      const tree = await makeTree(realSandbox);
+      put(tree.tools, 'zeta.env', 'omega root\n', 6);
+      put(tree.tools, 'nested/zeta.env', 'omega nested\n', 6);
+      const sandboxPolicy = {
+        ...tree.tools.sandboxPolicy,
+        readDenied: [...tree.tools.sandboxPolicy.readDenied, path.join(tree.tools.layout.project, 'zeta.env')],
+      };
+      const result = await grepIn(tree, envPath)({ pattern: 'omega' }, { sandboxPolicy });
+      expect(result.output).toContain('nested/zeta.env');
+      expect(result.output).not.toMatch(/(^|\n)zeta\.env/);
+    });
+
+    it('anchors a denied path to the searched directory when the search path is a subdirectory', async () => {
+      const tree = await makeTree(realSandbox);
+      put(tree.tools, 'area/zeta.env', 'omega area\n', 6);
+      put(tree.tools, 'area/inner/zeta.env', 'omega inner\n', 6);
+      const sandboxPolicy = {
+        ...tree.tools.sandboxPolicy,
+        readDenied: [...tree.tools.sandboxPolicy.readDenied, path.join(tree.tools.layout.project, 'area/zeta.env')],
+      };
+      const result = await grepIn(tree, envPath)({ pattern: 'omega', path: path.join(tree.tools.layout.project, 'area') }, { sandboxPolicy });
+      expect(result.output).toContain('inner/zeta.env');
+      expect(result.output).not.toMatch(/area\/zeta\.env/);
+    });
+
     it('is denied when the search path is readDenied', async () => {
       const tree = await makeTree(realSandbox);
       const vault = path.join(tree.tools.layout.project, 'vault');
