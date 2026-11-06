@@ -30,3 +30,36 @@ describe('the JSON-only mode declared in settings', () => {
     await expect(loaded).rejects.toThrow(/jsonMode/);
   });
 });
+
+describe('a declared JSON-only mode on an adapter with no native form', () => {
+  it('is refused at load with an English reason naming the target and the adapter', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), {
+      models: {
+        targets: {
+          claude: { adapter: 'anthropic', model: 'claude-fake', baseUrl: 'https://api.anthropic.com', apiKeyEnv: 'ANTHROPIC_API_KEY', capabilities: { contextWindow: 200000, maxOutputTokens: 8192, jsonMode: 'json_object' } },
+        },
+        aliases: { default: 'claude' },
+      },
+    });
+    const loaded = loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    await expect(loaded).rejects.toThrow(/"claude"/);
+    await expect(loaded).rejects.toThrow(/anthropic/);
+    await expect(loaded).rejects.toThrow(/jsonMode/);
+    await expect(loaded).rejects.not.toThrow(/must NOT have additional properties/);
+  });
+
+  it('accepts a declared none on the same adapter', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), {
+      models: {
+        targets: {
+          claude: { adapter: 'anthropic', model: 'claude-fake', baseUrl: 'https://api.anthropic.com', apiKeyEnv: 'ANTHROPIC_API_KEY', capabilities: { contextWindow: 200000, maxOutputTokens: 8192, jsonMode: 'none' } },
+        },
+        aliases: { default: 'claude' },
+      },
+    });
+    const { settings } = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    expect((settings.models.targets['claude'] as { capabilities?: Record<string, unknown> }).capabilities?.['jsonMode']).toBe('none');
+  });
+});

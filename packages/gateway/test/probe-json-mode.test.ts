@@ -110,10 +110,10 @@ describe('the probe measures the JSON-only mode as its own item', () => {
     expect(isProbeReport(report)).toBe(true);
   });
 
-  it('never records accepted when the target takes the format but answers with text that is not JSON', async () => {
+  it('records refused when the target takes the format but answers with text that is not JSON', async () => {
     const { report, jsonObjectRequests } = await probeAgainst('ignores');
     expect(jsonObjectRequests).toBeGreaterThan(0);
-    expect(['refused', 'unmeasured']).toContain(jsonModeOf(report));
+    expect(jsonModeOf(report)).toBe('refused');
   });
 
   it('measures the mode apart from json_schema: a target that rejects json_object keeps its constrained result', async () => {
