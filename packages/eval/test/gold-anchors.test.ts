@@ -79,3 +79,22 @@ describe('a case states its gold as anchors, and the report resolves them', () =
     }
   });
 });
+
+describe('an agent.message anchor resolves to the model response that carries it', () => {
+  const answered = (text: string): RunEventPayload => ({
+    type: 'model.responded',
+    step: 1,
+    attempt: 1,
+    response: { status: 'completed', output: [{ type: 'message', id: 'm1', role: 'assistant', content: [{ type: 'output_text', text }] }], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } },
+  });
+
+  it('gives the seq of the response whose assistant text holds the anchor', () => {
+    const events = publicEventsOf([...padding(2), answered('the plan: NEEDLE-a11 first')]);
+    const carrier = events.find((event) => event.type === 'model.responded') as { seq: number };
+    expect(goldRangesOf([{ anchor: 'NEEDLE-a11', in: 'agent.message' }], events)).toEqual([{ seqFrom: carrier.seq, seqTo: carrier.seq }]);
+  });
+
+  it('is an EvalError when no response carries it', () => {
+    expect(() => goldRangesOf([{ anchor: 'NEEDLE-a11', in: 'agent.message' }], publicEventsOf([...padding(2), answered('nothing')]))).toThrow(EvalError);
+  });
+});

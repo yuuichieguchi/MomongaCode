@@ -39,11 +39,12 @@ export type {
   ToolIdempotencyRecord,
 } from './ports.ts';
 export { createToolRegistry, extendToolSet } from './registry.ts';
-export { MINIMUM_INLINE_OUTPUT_CHARS } from './truncate.ts';
+export { pageToFit } from './paging.ts';
 export type { SnapshotOptions, ToolListOptions, ToolRegistry, ToolSet, ToolSource, ToolSourceListing } from './registry.ts';
 export { TOOL_TIERS, defineTool, ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
 export type {
   AnyTool,
+  OutputFit,
   PlanEntry,
   ReconcileContext,
   ReconcileResult,

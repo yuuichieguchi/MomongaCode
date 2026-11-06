@@ -8,7 +8,7 @@ const TARGETS: Record<string, Record<string, unknown>> = {
   'chat-completions': { adapter: 'chat-completions', provider: 'fake', model: 'gpt-x', baseUrl: 'https://api.example.com/v1', capabilities: CAPABILITIES },
   'open-responses': { adapter: 'open-responses', provider: 'fake', model: 'llama-fake', baseUrl: 'http://127.0.0.1:11434/v1', capabilities: CAPABILITIES },
   anthropic: { adapter: 'anthropic', model: 'claude-fake', baseUrl: 'https://api.anthropic.com', apiKeyEnv: 'ANTHROPIC_API_KEY', capabilities: CAPABILITIES },
-  ollama: { adapter: 'ollama', model: 'llama3', capabilities: CAPABILITIES },
+  ollama: { adapter: 'ollama', model: 'llama3', baseUrl: 'http://127.0.0.1:11434', capabilities: CAPABILITIES },
   fm: { adapter: 'fm' },
 };
 

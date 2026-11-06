@@ -877,6 +877,8 @@ export type ContextChargeView = {
   detail?: BilledDetail;
 };
 
+export type AnsweredByView = { target: string; adapter: string; upstreamModel: string; answers: 'model' | 'script' | 'unknown' };
+export type RunAnsweredByView = { answeredBy: AnsweredByView[] };
 export type RunReflectionView = { job: ReflectionJobView | null; charges: ContextChargeView[]; queuedAhead: number };
 
 export type ContextChargesView = { charges: ContextChargeView[]; totalTokens: number };
@@ -1172,6 +1174,17 @@ export const RUN_API_SCHEMAS = {
   MemoriesResponse: root(closed({ memories: { type: 'array', items: memoryView } }, ['memories'])),
   MemoryResponse: root(closed({ memory: memoryView }, ['memory'])),
   ReflectionResponse: root(closed({ job: nullable(reflectionJobView) }, ['job'])),
+  RunAnsweredBy: root(
+    closed(
+      {
+        answeredBy: {
+          type: 'array',
+          items: closed({ target: string, adapter: { type: 'string' }, upstreamModel: { type: 'string' }, answers: { enum: ['model', 'script', 'unknown'] } }, ['target', 'adapter', 'upstreamModel', 'answers']),
+        },
+      },
+      ['answeredBy'],
+    ),
+  ),
   RunReflection: root(closed({ job: nullable(reflectionJobView), charges: { type: 'array', items: contextChargeView }, queuedAhead: nonNegativeInteger }, ['job', 'charges', 'queuedAhead'])),
   PromoteMemoryRequest: root(closed({ skill: string }, ['skill'])),
   PromoteMemoryResponse: root(closed({ path: string }, ['path'])),

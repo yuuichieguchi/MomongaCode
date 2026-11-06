@@ -1,7 +1,8 @@
 import { MODEL_ROLES } from '@momonga/config';
 import type { ModelRoles } from '@momonga/config';
 import { OUTPUT_FORMATTERS } from '@momonga/protocol';
-import type { Capabilities, OutputFormatterName } from '@momonga/protocol';
+import { TARGET_ANSWERS } from '@momonga/protocol';
+import type { Capabilities, OutputFormatterName, TargetAnswers } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 import { isRecord } from './json.ts';
 
@@ -14,12 +15,15 @@ export type TokenPin = {
   observedCapacity?: boolean;
 };
 
+export type TargetPin = { adapter: string; model: string; answers?: TargetAnswers };
+
 export type RunPins = {
   modelAlias: string;
   systemPromptDigest: string;
   toolSetDigest: string;
   capabilities: Capabilities;
   roles: ModelRoles;
+  targets?: Record<string, TargetPin>;
   memoryShare?: number;
   guidelineVersion?: number;
   token?: TokenPin;
@@ -36,6 +40,20 @@ export const readRoles = (value: unknown): ModelRoles => {
     roles[role as keyof ModelRoles] = alias;
   }
   return roles;
+};
+
+const isAnswers = (value: unknown): value is TargetAnswers => (TARGET_ANSWERS as readonly unknown[]).includes(value);
+
+export const readTargets = (value: unknown): Record<string, TargetPin> => {
+  if (!isRecord(value)) throw new Error('the targets pinned for this run are malformed');
+  return Object.fromEntries(
+    Object.entries(value).map(([name, pin]) => {
+      if (!isRecord(pin) || typeof pin['adapter'] !== 'string' || typeof pin['model'] !== 'string' || (pin['answers'] !== undefined && !isAnswers(pin['answers']))) {
+        throw new Error('the targets pinned for this run are malformed');
+      }
+      return [name, { adapter: pin['adapter'], model: pin['model'], ...(pin['answers'] === undefined ? {} : { answers: pin['answers'] }) }];
+    }),
+  );
 };
 
 const TOKEN_PIN_KEYS = ['cachePrefix', 'deferred', 'conciseDescriptions', 'outputFormatters', 'loopGuidance', 'observedCapacity'] as const;
@@ -102,6 +120,7 @@ export const readPins = (value: Record<string, unknown>): RunPins => {
     toolSetDigest,
     capabilities,
     roles: readRoles(value['roles']),
+    ...(value['targets'] === undefined ? {} : { targets: readTargets(value['targets']) }),
     ...(memoryShare === undefined ? {} : { memoryShare }),
     ...(guidelineVersion === undefined ? {} : { guidelineVersion }),
     ...(token === undefined ? {} : { token: readTokenPin(token) }),

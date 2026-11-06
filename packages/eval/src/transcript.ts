@@ -5,11 +5,12 @@ import { validatePolicyOverlay } from './context-policy.ts';
 import type { PolicyOverlay } from './context-policy.ts';
 import type { ContextChargeView, MemoryOrigin, PublicRunEvent, ReflectionJobState, RunStatus, StopReason } from '@momonga/protocol';
 
-export const TRANSCRIPT_FORMAT = 'momonga-transcript/4';
+export const TRANSCRIPT_FORMAT = 'momonga-transcript/5';
 const RETIRED_TRANSCRIPT_FORMATS: Readonly<Record<string, string>> = {
   'momonga-transcript/1': 'subagent runs',
   'momonga-transcript/2': 'the side effect of a tool call',
   'momonga-transcript/3': 'the policy and the code digest of the run',
+  'momonga-transcript/4': 'what answered the run (the answering targets and whether each is a model or a script)',
 };
 
 export type TranscriptRun = {
@@ -21,6 +22,11 @@ export type TranscriptRun = {
   modelAlias?: string;
   origin?: MemoryOrigin;
 };
+
+export const ANSWER_KINDS = ['model', 'script', 'unknown'] as const;
+export type AnswerKind = (typeof ANSWER_KINDS)[number];
+
+export type Answerer = { target: string; adapter: string; upstreamModel: string; answers: AnswerKind };
 
 export type TranscriptChild = { runId: string; agent: string; events: PublicRunEvent[] };
 
@@ -34,6 +40,7 @@ export type Transcript = {
   children: TranscriptChild[];
   policy: PolicyOverlay | null;
   codeDigest: string | null;
+  answeredBy?: Answerer[];
   reflection?: TranscriptReflection;
   ruleIds?: Record<string, string>;
   datasetSeed?: number;
@@ -133,6 +140,24 @@ const reflectionOf = (value: unknown, where: string): TranscriptReflection => {
   };
 };
 
+const answeredByOf = (value: unknown, where: string): Answerer[] => {
+  if (!Array.isArray(value)) throw new TranscriptError(`${where}: answeredBy must be a list`);
+  return value.map((entry): Answerer => {
+    if (
+      !isRecord(entry) ||
+      typeof entry['target'] !== 'string' ||
+      entry['target'] === '' ||
+      typeof entry['adapter'] !== 'string' ||
+      typeof entry['upstreamModel'] !== 'string' ||
+      typeof entry['answers'] !== 'string' ||
+      !(ANSWER_KINDS as readonly string[]).includes(entry['answers'])
+    ) {
+      throw new TranscriptError(`${where}: every answeredBy entry needs a target, an adapter, an upstreamModel and answers model, script or unknown`);
+    }
+    return { target: entry['target'], adapter: entry['adapter'], upstreamModel: entry['upstreamModel'], answers: entry['answers'] as AnswerKind };
+  });
+};
+
 const ruleIdsOf = (value: unknown, where: string): Record<string, string> => {
   if (!isRecord(value) || Object.values(value).some((entry) => typeof entry !== 'string' || entry === '')) {
     throw new TranscriptError(`${where}: ruleIds must map product rule ids to dataset rule ids`);
@@ -166,6 +191,7 @@ export const encodeTranscript = (transcript: Transcript): string => {
     children: transcript.children.map(({ runId, agent }) => ({ runId, agent })),
     policy: transcript.policy,
     codeDigest: transcript.codeDigest,
+    ...(transcript.answeredBy === undefined ? {} : { answeredBy: transcript.answeredBy }),
     ...(transcript.reflection === undefined ? {} : { reflection: transcript.reflection }),
     ...(transcript.ruleIds === undefined ? {} : { ruleIds: transcript.ruleIds }),
     ...(transcript.datasetSeed === undefined ? {} : { datasetSeed: transcript.datasetSeed }),
@@ -243,6 +269,7 @@ export const decodeTranscript = (text: string, source: string): Transcript => {
     children,
     policy,
     codeDigest,
+    ...(header['answeredBy'] === undefined ? {} : { answeredBy: answeredByOf(header['answeredBy'], `${source}:1`) }),
     ...(header['reflection'] === undefined ? {} : { reflection: reflectionOf(header['reflection'], `${source}:1`) }),
     ...liveFieldsOf(header, `${source}:1`),
   };

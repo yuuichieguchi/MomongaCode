@@ -89,6 +89,7 @@ export {
   LOWEST_REASONING_EFFORT,
   OUTPUT_BOUND_FIELDS,
   REASONING_EFFORTS,
+  TARGET_ANSWERS,
   TARGET_BILLINGS,
   applyCapabilityOverride,
   imageCapability,
@@ -101,7 +102,7 @@ export {
   ALLOWED_TOOLS_FORMS,
   requireStructuredOutput,
 } from './capabilities.ts';
-export type { OutputTokenCapabilities, StructuredOutputVerdict, TargetBilling } from './capabilities.ts';
+export type { OutputTokenCapabilities, StructuredOutputVerdict, TargetAnswers, TargetBilling } from './capabilities.ts';
 export { OUTPUT_FORMATTERS } from './output-formatters.ts';
 export type { OutputFormatterName } from './output-formatters.ts';
 export { CACHE_MISS_CAUSES, PREFIX_EVENTS } from './prefix-events.ts';
@@ -151,6 +152,8 @@ export type {
   AdoptGuidelineRequest,
   ContextChargeResponse,
   ContextChargeView,
+  RunAnsweredByView,
+  AnsweredByView,
   RunReflectionView,
   ContextChargesView,
   GuidelineResponse,

@@ -8,7 +8,7 @@ import type { McpServerConfig, McpServerEntry, PermissionRule, RuleEffect } from
 import { createMcpPool, type McpPool } from '@momonga/mcp';
 import { createToolExecutor, createToolRegistry } from '@momonga/tools';
 import type { BlobPort, ExecutionBatchInput, IdempotencyPort, LeasedBegin, ToolCall, ToolIdempotencyRecord, ToolSet } from '@momonga/tools';
-import { MCP_LEGACY_SERVER_PATH, MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_RECORD_ENV, createFakeClock, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf, killPidsForCleanup, type FakeClock, type ModernFixtureRecord } from '@momonga/testkit';
+import { MCP_LEGACY_SERVER_PATH, MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_RECORD_ENV, createFakeClock, FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf, killPidsForCleanup, UNBOUNDED_OUTPUT_FIT, type FakeClock, type ModernFixtureRecord } from '@momonga/testkit';
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
@@ -242,6 +242,8 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000), onWa
       sandbox: unusedSandbox,
       sandboxPolicy: { writableRoots: [project], writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: compileFileRuleSet([], [project], null, resolveCanonicalPath, volumeIsCaseInsensitive, HOST_FLAVOUR, HOST_RULE_ENFORCEMENT), readDenied: [], network: 'deny' },
       deadlineAt: clock.now() + 600_000,
+      outputFit: UNBOUNDED_OUTPUT_FIT,
+      reconcileFit: UNBOUNDED_OUTPUT_FIT,
       signal: new AbortController().signal,
       ...extra,
     };

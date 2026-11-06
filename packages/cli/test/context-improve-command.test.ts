@@ -106,6 +106,7 @@ describe('what a model reply puts in the text of context improve', () => {
       alias: 'opus',
       seed: 1,
       candidateCount: 1,
+      tokenCap: 700,
       current: undefined,
       baseline: { contrastiveFailures: 1, compactedScenarios: 1, tokens: 1 },
       contrastive: ['a'],
@@ -133,6 +134,7 @@ describe('adopting from an outcome file', () => {
     alias: 'opus',
     seed: 7,
     candidateCount: 5,
+    tokenCap: 700,
     current: parent,
     baseline: { contrastiveFailures: 1, compactedScenarios: 4, tokens: 10 },
     contrastive: ['a'],
@@ -200,8 +202,8 @@ describe('adopting from an outcome file', () => {
 
   it('guards a file changed after improve wrote it: nothing is asked of the daemon', async () => {
     const { client, calls } = clientAt(null);
-    const raw = JSON.parse(fileText()) as { outcome: { winner: { text: string } } };
-    raw.outcome.winner.text = 'Another text.';
+    const raw = JSON.parse(fileText()) as { winner: { text: string } };
+    raw.winner.text = 'Another text.';
     const changed = JSON.stringify(raw);
     await expect(adoptOutcome(sink().stdout, client, changed)).rejects.toThrow(/digest/);
     expect(calls).toEqual([]);

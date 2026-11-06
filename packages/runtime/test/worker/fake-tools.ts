@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { defineTool } from '@momonga/tools';
-import type { AnyTool, ToolContext } from '@momonga/tools';
+import type { AnyTool, OutputFit, ToolContext } from '@momonga/tools';
 import { deferred } from './deferred.ts';
 import type { Deferred } from './deferred.ts';
 
@@ -10,7 +10,7 @@ export type Execution = {
   callId: string;
   input: Record<string, unknown>;
   traceparent: string | undefined;
-  outputBudgetChars: number;
+  outputFit: OutputFit;
   step: number;
 };
 
@@ -49,7 +49,7 @@ export const createFakeToolbox = (): FakeToolbox => {
   };
 
   const record = async (name: string, input: Record<string, unknown>, ctx: ToolContext): Promise<void> => {
-    box.executions.push({ name, callId: ctx.callId, input, traceparent: ctx.traceparent, outputBudgetChars: ctx.outputBudgetChars, step: ctx.step });
+    box.executions.push({ name, callId: ctx.callId, input, traceparent: ctx.traceparent, outputFit: ctx.outputFit, step: ctx.step });
     await box.hooks[name]?.(input, ctx);
   };
 

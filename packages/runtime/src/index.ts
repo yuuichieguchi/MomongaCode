@@ -18,6 +18,7 @@ export type {
   MemoryPort,
   MemorySet,
   SettingsPort,
+  TargetFacts,
   SkillsPort,
   ToolEnv,
   ToolPolicy,

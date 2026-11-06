@@ -333,6 +333,7 @@ export const fakeRuntime = (): FakeRuntime => {
     cost: unexpected('cost'),
     costText: unexpected('costText'),
     runReflection: unexpected('runReflection'),
+    runAnsweredBy: unexpected('runAnsweredBy'),
     costBreakdown: unexpected('costBreakdown'),
     costBreakdownText: unexpected('costBreakdownText'),
     trust: unexpected('trust'),

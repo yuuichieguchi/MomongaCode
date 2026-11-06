@@ -1,4 +1,5 @@
-import type { Transcript } from '@momonga/eval';
+import { QUALITY_METRICS, buildContextReport } from '@momonga/eval';
+import type { ContextReport, Transcript } from '@momonga/eval';
 
 export type Answerer = { target: string; adapter: string; upstreamModel: string; answers: 'model' | 'script' | 'unknown' };
 
@@ -11,3 +12,18 @@ export const SCRIPTED_TARGET: Answerer = { target: 'scripted', adapter: 'chat-co
 export const UNDECLARED_TARGET: Answerer = { target: 'local-llama', adapter: 'ollama', upstreamModel: 'llama3', answers: 'unknown' };
 
 export const answeredBy = (transcript: Transcript, ...answerers: Answerer[]): Transcript => ({ ...transcript, answeredBy: answerers }) as Transcript;
+
+export type ProvenanceName = 'fake' | 'real';
+
+export const answeredAs = (transcripts: readonly Transcript[], model: ProvenanceName): Transcript[] =>
+  transcripts.map((transcript) => answeredBy(transcript, model === 'real' ? REAL_TARGET : SCRIPTED_TARGET));
+
+export const buildReportAs = (input: Omit<Parameters<typeof buildContextReport>[0], 'transcripts'> & { transcripts: readonly Transcript[]; model: ProvenanceName }): ContextReport => {
+  const { model, transcripts, ...rest } = input;
+  return buildContextReport({ ...rest, transcripts: answeredAs(transcripts, model) });
+};
+
+export const withMeasuredQuality = (report: ContextReport): ContextReport => ({
+  ...report,
+  cases: report.cases.map((entry) => ({ ...entry, quality: Object.fromEntries(QUALITY_METRICS.map((metric) => [metric.name, { numerator: 1, denominator: 2 }])) })),
+});

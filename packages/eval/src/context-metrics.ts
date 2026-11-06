@@ -1,9 +1,10 @@
 import { isRecord } from '@momonga/foundation';
-import { HISTORY_READ_TOOL, WHOLE_RUN_FROM, compactionLossSignals } from '@momonga/memory';
+import { HISTORY_READ_TOOL, HISTORY_SEARCH_TOOL, WHOLE_RUN_FROM, compactionLossSignals } from '@momonga/memory';
 import type { CompactionLossKind } from '@momonga/memory';
+import { assistantTextOf } from '@momonga/protocol';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { bindingRuleIds } from './context-dataset.ts';
-import type { ContextRule, GoldRange } from './context-dataset.ts';
+import type { ContextRule, GoldAnchor } from './context-dataset.ts';
 import { eventsOfType } from './observe.ts';
 import { EvalError } from './runner.ts';
 
@@ -52,6 +53,8 @@ export const recalledOf = (events: readonly PublicRunEvent[]): Recalled => {
   return { stale: loads.filter((memory) => memory.status === 'stale').length, recalled: loads.length };
 };
 
+export type GoldRange = { seqFrom: number; seqTo: number };
+
 export type Retrieval = { relevant: number; retrieved: number; gold: number };
 
 type SequencedEvent = Extract<PublicRunEvent, { seq: number }>;
@@ -93,6 +96,30 @@ const historyRangesOf = (events: readonly PublicRunEvent[]): GoldRange[] => {
       to = Math.min(to, stepSeqs.reduce((high, seq) => Math.max(high, seq)));
     }
     return from <= to ? [{ seqFrom: from, seqTo: to }] : [];
+  });
+};
+
+const matchesAnchor = (event: SequencedEvent, source: GoldAnchor['in'], anchor: string, retrievalCalls: ReadonlySet<string>): boolean => {
+  if (source === 'agent.message') return event.type === 'model.responded' && assistantTextOf(event.response.output).includes(anchor);
+  if (event.type !== source) return false;
+  if (event.type === 'tool.completed') return !retrievalCalls.has(event.callId) && event.output.includes(anchor);
+  return 'text' in event && typeof event.text === 'string' && event.text.includes(anchor);
+};
+
+export const goldRangesOf = (gold: readonly GoldAnchor[], events: readonly PublicRunEvent[]): GoldRange[] => {
+  const sequenced = events.filter(isSequenced);
+  const calls = eventsOfType(events, 'tool.call');
+  const retrievalCalls = new Set(calls.filter((call) => call.name === HISTORY_READ_TOOL || call.name === HISTORY_SEARCH_TOOL).map((call) => call.callId));
+  return gold.map(({ anchor, in: source }) => {
+    const carriers = sequenced.filter((event) => matchesAnchor(event, source, anchor, retrievalCalls));
+    const [carrier] = carriers;
+    if (carrier === undefined || carriers.length > 1) {
+      throw new EvalError(`the gold anchor ${JSON.stringify(anchor)} is carried by ${carriers.length} ${source} event(s) of the run, and exactly one is needed`);
+    }
+    if (carrier.type !== 'tool.completed') return { seqFrom: carrier.seq, seqTo: carrier.seq };
+    const call = calls.find((entry) => entry.callId === carrier.callId);
+    if (call === undefined) throw new EvalError(`the gold anchor ${JSON.stringify(anchor)} is carried by the completion of call ${carrier.callId}, which has no recorded call`);
+    return { seqFrom: call.seq, seqTo: carrier.seq };
   });
 };
 

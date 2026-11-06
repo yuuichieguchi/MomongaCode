@@ -193,6 +193,14 @@ describe('momonga eval context', () => {
   });
 });
 
+const QUALITY_NAMES = ['continuationRate', 'governanceFidelity', 'governanceConsistency', 'governanceMinimality', 'memoryStaleRate', 'retrievalPrecision', 'retrievalRecall'];
+
+const measuredQuality = (reportText: string): string => {
+  const report = JSON.parse(reportText) as { cases: Record<string, unknown>[] };
+  const cells = Object.fromEntries(QUALITY_NAMES.map((name) => [name, { numerator: 1, denominator: 2 }]));
+  return JSON.stringify({ ...report, cases: report.cases.map((entry) => ({ ...entry, quality: cells })) });
+};
+
 describe('momonga eval compare', () => {
   const comparing = async (baseline: string, candidate: string) => {
     const context = harness();
@@ -203,7 +211,7 @@ describe('momonga eval compare', () => {
   };
 
   it('exits 0 and prints PASS when the candidate clears the gate', async () => {
-    const { completed, stdout } = await comparing(await reportFile('a.json', 2, 'real'), await reportFile('b.json', 0, 'real'));
+    const { completed, stdout } = await comparing(measuredQuality(await reportFile('a.json', 2, 'real')), measuredQuality(await reportFile('b.json', 0, 'real')));
     expect(stdout.join('')).toContain('gate: PASS');
     expect(completed).toEqual([0]);
   });

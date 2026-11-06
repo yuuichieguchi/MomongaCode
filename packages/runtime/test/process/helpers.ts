@@ -12,7 +12,7 @@ import type { RunNotifier, SettingsComposition, ToolRuntime } from '@momonga/run
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore, Session } from '@momonga/store';
-import { FAKE_LEASE, createFakeClock, createFakeTimers, fakeReapTiming, killGroupsForCleanup } from '@momonga/testkit';
+import { FAKE_LEASE, UNBOUNDED_OUTPUT_FIT, createFakeClock, createFakeTimers, fakeReapTiming, killGroupsForCleanup } from '@momonga/testkit';
 import { nodeShellHost } from '@momonga/tools';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
 
@@ -366,6 +366,8 @@ export const runBashThroughPort = async (
     sandbox: port.sandbox,
     sandboxPolicy: policy.sandboxPolicy,
     deadlineAt: f.clock.now() + 120_000,
+    outputFit: UNBOUNDED_OUTPUT_FIT,
+    reconcileFit: UNBOUNDED_OUTPUT_FIT,
     signal,
   });
   const outcome = outcomes[0];

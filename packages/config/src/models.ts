@@ -202,7 +202,12 @@ const resolveOllama = (target: OllamaTarget, home: string, where: string): Resol
   ...resolveRemote(target, OLLAMA_CAPABILITY_DEFAULTS, home, where, LOCAL_SERVER_DEFAULTS),
 });
 
-const resolveTarget = (target: ModelTarget, home: string, where: string, warnings: string[]): ResolvedModelTarget => {
+const resolveTarget = (target: ModelTarget, home: string, where: string, warnings: string[]): ResolvedModelTarget => ({
+  ...resolveAdapter(target, home, where, warnings),
+  ...(target.answers === undefined ? {} : { answers: target.answers }),
+});
+
+const resolveAdapter = (target: ModelTarget, home: string, where: string, warnings: string[]): ResolvedModelTarget => {
   switch (target.adapter) {
     case 'fm':
       return resolveFm(target);

@@ -26,7 +26,7 @@ import { renderMemories } from './memory.ts';
 import { workingStateMessage } from './working-state.ts';
 import { heldSkillOf, pointToHeldSkill } from './skill-output.ts';
 import { identicalMarker, identicalReferents } from './formatters/identical.ts';
-import { HANDLE_READER_TOOL, headAndTail, omittedMarker, outputTextOf, truncatedMarker, withOutput } from './tool-output.ts';
+import { HANDLE_READER_TOOL, cutChars, fitToTokens, omittedMarker, outputTextOf, withOutput } from './tool-output.ts';
 import type {
   BuildContextInput,
   BuildContextPorts,
@@ -506,7 +506,7 @@ const frozenTailOf = async (input: BuildContextInput, ports: BuildContextPorts, 
       slots.push({ item: withOutput(original, omittedMarker(tokens, handle)), output: { callId, text, full: false, original } });
     } else if (kept !== undefined) {
       const tokens = await ports.meter.countItem(original, countContextFor(callId));
-      slots.push({ item: withOutput(original, headAndTail(text, kept, truncatedMarker(tokens, handle))), output: { callId, text, full: false, original } });
+      slots.push({ item: withOutput(original, cutChars(text, kept, handle, tokens)), output: { callId, text, full: false, original } });
     } else if (renderedFull?.has(callId) === true) {
       slots.push({ item: original, output: { callId, text, full: true, original } });
     } else {
@@ -609,21 +609,17 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   };
 
   const renderKept = async (state: OutputState, handle: string, kept: number): Promise<InputItem> => {
-    const rendered = withOutput(state.original, headAndTail(state.text, kept, truncatedMarker(state.tokens, handle)));
+    const rendered = withOutput(state.original, cutChars(state.text, kept, handle, state.tokens));
     state.renderedTokens = await meter.countItem(rendered, countContextFor(state.callId));
     state.keptChars = kept;
     return rendered;
   };
 
   const truncation = async (state: OutputState, handle: string): Promise<{ rendered: InputItem; tokens: number; kept: number }> => {
-    const marker = truncatedMarker(state.tokens, handle);
-    let kept = Math.floor((state.text.length * itemCap) / state.tokens);
-    for (;;) {
-      const rendered = withOutput(state.original, headAndTail(state.text, kept, marker));
-      const tokens = await meter.countItem(rendered, countContextFor(state.callId));
-      if (tokens <= itemCap || kept === 0) return { rendered, tokens, kept };
-      kept = Math.max(0, Math.min(kept - 1, Math.floor((kept * itemCap) / tokens)));
-    }
+    const count = (text: string): Promise<number> => meter.countItem(withOutput(state.original, text), countContextFor(state.callId));
+    let kept = state.text.length;
+    const text = await fitToTokens({ text: state.text, cap: itemCap, handle, count, onCut: (keptChars) => void (kept = keptChars) });
+    return { rendered: withOutput(state.original, text), tokens: await count(text), kept };
   };
 
   const truncate = async (state: OutputState, handle: string): Promise<InputItem> => {

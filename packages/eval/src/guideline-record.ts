@@ -1,4 +1,4 @@
-import { MAX_REDACTED_CHARS, safeSlice } from '@momonga/foundation';
+import { MAX_REDACTED_CHARS, cutToChars, keepingHeadAndTail } from '@momonga/foundation';
 import { assistantTextOf, escapeXmlAttribute, escapeXmlText } from '@momonga/protocol';
 import type { PublicRunEvent } from '@momonga/protocol';
 import type { Transcript } from './transcript.ts';
@@ -7,19 +7,7 @@ export const RECORD_OUTPUT_HEAD_CHARS = MAX_REDACTED_CHARS;
 
 export const RECORD_OUTPUT_TAIL_CHARS = 2 * MAX_REDACTED_CHARS;
 
-const ELISION = '\n…\n';
-
-const headAndTail = (text: string): string =>
-  text.length <= RECORD_OUTPUT_HEAD_CHARS + RECORD_OUTPUT_TAIL_CHARS
-    ? text
-    : `${safeSlice(text, 0, RECORD_OUTPUT_HEAD_CHARS)}${ELISION}${safeSlice(text, text.length - RECORD_OUTPUT_TAIL_CHARS, text.length)}`;
-
-const cutTo = (text: string, maxChars: number): string => {
-  if (text.length <= maxChars) return text;
-  const head = Math.max(0, Math.floor((maxChars - ELISION.length) / 2));
-  const tail = Math.max(0, maxChars - ELISION.length - head);
-  return `${safeSlice(text, 0, head)}${ELISION}${safeSlice(text, text.length - tail, text.length)}`;
-};
+const headAndTail = (text: string): string => keepingHeadAndTail(text, RECORD_OUTPUT_HEAD_CHARS, RECORD_OUTPUT_TAIL_CHARS);
 
 const omissionLine = (count: number): string => `${count} earlier ${count === 1 ? 'step is' : 'steps are'} not shown.`;
 
@@ -75,13 +63,13 @@ export const recordOf = (transcript: Transcript, label: string, maxChars: number
   }
   const header = `<recorded_run kind="${escapeXmlAttribute(label)}" case="${escapeXmlAttribute(transcript.caseId)}" outcome="${escapeXmlAttribute(transcript.run.status)}">`;
   const pinnedChars = maxChars === undefined ? Number.POSITIVE_INFINITY : Math.max(0, maxChars - header.length - OMISSION_RESERVE_CHARS);
-  const taskBlock = `<task>\n${cutTo(escapeXmlText(task), Math.floor(pinnedChars / 4))}\n</task>`;
-  const finalBlock = `<final_answer>\n${cutTo(escapeXmlText(final), Math.floor(pinnedChars / 4))}\n</final_answer>`;
+  const taskBlock = `<task>\n${cutToChars(escapeXmlText(task), Math.floor(pinnedChars / 4))}\n</task>`;
+  const finalBlock = `<final_answer>\n${cutToChars(escapeXmlText(final), Math.floor(pinnedChars / 4))}\n</final_answer>`;
   const compactionChars = Math.floor(pinnedChars / 4);
   const kept: Piece[] = [];
   let remaining = pinnedChars - taskBlock.length - finalBlock.length;
   for (const piece of [...pieces].reverse()) {
-    const text = piece.kind === 'compaction' ? cutTo(piece.text, compactionChars) : piece.text;
+    const text = piece.kind === 'compaction' ? cutToChars(piece.text, compactionChars) : piece.text;
     if (text.length + 1 > remaining) break;
     remaining -= text.length + 1;
     kept.unshift({ kind: piece.kind, text });

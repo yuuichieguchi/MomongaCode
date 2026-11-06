@@ -22,6 +22,7 @@ type Outcomes = {
 type Snapshot = { compactionSeq: number } & Outcomes;
 
 export const HISTORY_READ_TOOL = 'HistoryRead';
+export const HISTORY_SEARCH_TOOL = 'HistorySearch';
 
 const callKey = (call: CallRecord): string => `${call.name}\n${canonicalJson(call.input)}`;
 

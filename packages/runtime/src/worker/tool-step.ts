@@ -87,8 +87,8 @@ const batchFormatterOf = (ctx: ClaimContext): BatchOutputFormatter | undefined =
   const enabled = ctx.token.outputFormatters;
   if (enabled.length === 0) return undefined;
   const terms = termsOf(taskOf(ctx).text);
-  return ({ output, tool }) => {
-    const formatted = formatToolOutput({ output, tool, enabled, terms });
+  return ({ output, status, tool }) => {
+    const formatted = formatToolOutput({ output, status, tool, enabled, terms });
     return formatted === undefined ? undefined : { ...formatted, header: (handle) => formattedHeader(formatted.formatter, handle) };
   };
 };
@@ -246,8 +246,8 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
       },
       leaseLost: () => ctx.control.leaseLost() || ctx.control.shuttingDown(),
       onLeaseLost: ctx.control.noteLeaseLost,
-      inlineLimitForReconcile: ctx.inlineLimitForReconcile,
-      inlineLimitForExecution: ctx.inlineLimitForExecution,
+      outputFit: ctx.outputFit,
+      reconcileFit: ctx.reconcileFit,
       traceparentFor: (callId) => {
         const existing = spans.get(callId);
         if (existing !== undefined) return { traceparent: existing.traceparent };

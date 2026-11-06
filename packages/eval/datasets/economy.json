@@ -84,7 +84,7 @@
     },
     {
       "id": "test-failures-on",
-      "description": "Measures a test run whose output is long and repetitive: the failing test name sits among sixty identical stack lines, and the answer must name it. Automatic compaction is on.",
+      "description": "Measures a test run whose output is long and repetitive: the failing test name sits among two hundred identical stack lines, and the answer must name it. Automatic compaction is on.",
       "scenario": "test-failures",
       "input": "Run node test/run.js and tell me which test fails and what it expected.",
       "permissionMode": "default",
@@ -92,7 +92,7 @@
       "runs": 2,
       "minPassRate": 1,
       "files": {
-        "test/run.js": "const names = ['parses empty input', 'parses a quoted field', 'keeps a trailing comma', 'rejects an unterminated quote'];\nconst failing = 'keeps a trailing comma';\nfor (const name of names) {\n  if (name === failing) {\n    console.error(`FAIL ${name}`);\n    for (let line = 0; line < 60; line += 1) console.error(`    at frame ${line} (src/csv.js:${100 + line})`);\n    console.error('expected 3 fields, received 2');\n  } else {\n    console.log(`ok ${name}`);\n  }\n}\nprocess.exit(1);\n",
+        "test/run.js": "const names = ['parses empty input', 'parses a quoted field', 'keeps a trailing comma', 'rejects an unterminated quote'];\nconst failing = 'keeps a trailing comma';\nfor (const name of names) {\n  if (name === failing) {\n    console.error(`FAIL ${name}`);\n    for (let line = 0; line < 200; line += 1) console.error(`    at frame ${line} (src/csv.js:${100 + line})`);\n    console.error('expected 3 fields, received 2');\n  } else {\n    console.log(`ok ${name}`);\n  }\n}\nprocess.exit(1);\n",
         "src/csv.js": "export const parseCsv = (text) => text.split(',');\n"
       },
       "rules": [],
@@ -122,7 +122,7 @@
     },
     {
       "id": "test-failures-off",
-      "description": "Measures a test run whose output is long and repetitive: the failing test name sits among sixty identical stack lines, and the answer must name it. The same task with context.autoCompact false; the contrast for the on case.",
+      "description": "Measures a test run whose output is long and repetitive: the failing test name sits among two hundred identical stack lines, and the answer must name it. The same task with context.autoCompact false; the contrast for the on case.",
       "scenario": "test-failures",
       "input": "Run node test/run.js and tell me which test fails and what it expected.",
       "permissionMode": "default",
@@ -130,7 +130,7 @@
       "runs": 2,
       "minPassRate": 1,
       "files": {
-        "test/run.js": "const names = ['parses empty input', 'parses a quoted field', 'keeps a trailing comma', 'rejects an unterminated quote'];\nconst failing = 'keeps a trailing comma';\nfor (const name of names) {\n  if (name === failing) {\n    console.error(`FAIL ${name}`);\n    for (let line = 0; line < 60; line += 1) console.error(`    at frame ${line} (src/csv.js:${100 + line})`);\n    console.error('expected 3 fields, received 2');\n  } else {\n    console.log(`ok ${name}`);\n  }\n}\nprocess.exit(1);\n",
+        "test/run.js": "const names = ['parses empty input', 'parses a quoted field', 'keeps a trailing comma', 'rejects an unterminated quote'];\nconst failing = 'keeps a trailing comma';\nfor (const name of names) {\n  if (name === failing) {\n    console.error(`FAIL ${name}`);\n    for (let line = 0; line < 200; line += 1) console.error(`    at frame ${line} (src/csv.js:${100 + line})`);\n    console.error('expected 3 fields, received 2');\n  } else {\n    console.log(`ok ${name}`);\n  }\n}\nprocess.exit(1);\n",
         "src/csv.js": "export const parseCsv = (text) => text.split(',');\n"
       },
       "rules": [],
@@ -613,6 +613,422 @@
         }
       ],
       "compaction": "off"
+    },
+    {
+      "id": "failing-build-log-on",
+      "description": "Measures a long failing build log with a failure that carries no marker the formatter knows: the error code and its file and line sit in the middle of 200 compile lines, and the answer must name them. Automatic compaction is on.",
+      "scenario": "failing-build-log",
+      "compaction": "on",
+      "input": "Run node build/run.js and tell me which error the build stops on, with the error code and the file and line.",
+      "permissionMode": "default",
+      "onAsk": "allow_once",
+      "runs": 2,
+      "minPassRate": 1,
+      "files": {
+        "build/run.js": "const lines = [];\nfor (let index = 1; index <= 200; index += 1) lines.push(`   Compiling crate-${String(index).padStart(3, '0')} v0.1.0`);\nlines.splice(100, 0, 'error[E0308]: mismatched types', '  --> src/lib.rs:42:9', '   |', '42 |     let total: u32 = \"seven\";', '   |                      ^^^^^^^ expected `u32`, found `&str`');\nconsole.log(lines.join('\\n'));\nprocess.exit(1);\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 0,
+        "topics": [
+          "planning"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "Bash"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "E0308"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "src/lib\\.rs:42"
+        }
+      ]
+    },
+    {
+      "id": "failing-build-log-off",
+      "description": "The same task The same task with context.autoCompact false; the contrast for the on case.",
+      "scenario": "failing-build-log",
+      "compaction": "off",
+      "input": "Run node build/run.js and tell me which error the build stops on, with the error code and the file and line.",
+      "permissionMode": "default",
+      "onAsk": "allow_once",
+      "runs": 2,
+      "minPassRate": 1,
+      "files": {
+        "build/run.js": "const lines = [];\nfor (let index = 1; index <= 200; index += 1) lines.push(`   Compiling crate-${String(index).padStart(3, '0')} v0.1.0`);\nlines.splice(100, 0, 'error[E0308]: mismatched types', '  --> src/lib.rs:42:9', '   |', '42 |     let total: u32 = \"seven\";', '   |                      ^^^^^^^ expected `u32`, found `&str`');\nconsole.log(lines.join('\\n'));\nprocess.exit(1);\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 0,
+        "topics": [
+          "planning"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "Bash"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "E0308"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "src/lib\\.rs:42"
+        }
+      ]
+    },
+    {
+      "id": "failing-test-log-nonenglish-on",
+      "description": "Measures a failing test log written in Japanese: the failure line sits in the middle of 150 progress lines, and the answer must carry the expected and actual values and the file and line. Automatic compaction is on.",
+      "scenario": "failing-test-log-nonenglish",
+      "compaction": "on",
+      "input": "Run node test/run.js and tell me what failed, with the expected and the actual value and the file and line.",
+      "permissionMode": "default",
+      "onAsk": "allow_once",
+      "runs": 2,
+      "minPassRate": 1,
+      "files": {
+        "test/run.js": "const lines = [];\nfor (let index = 1; index <= 150; index += 1) lines.push(`テスト ${index} を実行中`);\nlines.splice(75, 0, 'テストが失敗しました: 期待値 7、実際の値 9 (src/計算.ts:42)');\nconsole.error(lines.join('\\n'));\nprocess.exit(1);\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 0,
+        "topics": [
+          "planning"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "Bash"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "7"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "9"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "計算\\.ts:42"
+        }
+      ]
+    },
+    {
+      "id": "failing-test-log-nonenglish-off",
+      "description": "The same task The same task with context.autoCompact false; the contrast for the on case.",
+      "scenario": "failing-test-log-nonenglish",
+      "compaction": "off",
+      "input": "Run node test/run.js and tell me what failed, with the expected and the actual value and the file and line.",
+      "permissionMode": "default",
+      "onAsk": "allow_once",
+      "runs": 2,
+      "minPassRate": 1,
+      "files": {
+        "test/run.js": "const lines = [];\nfor (let index = 1; index <= 150; index += 1) lines.push(`テスト ${index} を実行中`);\nlines.splice(75, 0, 'テストが失敗しました: 期待値 7、実際の値 9 (src/計算.ts:42)');\nconsole.error(lines.join('\\n'));\nprocess.exit(1);\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 0,
+        "topics": [
+          "planning"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "Bash"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "7"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "9"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "計算\\.ts:42"
+        }
+      ]
+    },
+    {
+      "id": "passing-long-log-needle-on",
+      "description": "Measures a successful 600-line log with a warning the answer needs: the command exits 0, the warning sits in the middle behind the handle, and the answer requires ReadOutput. Automatic compaction is on.",
+      "scenario": "passing-long-log-needle",
+      "compaction": "on",
+      "input": "Run node scripts/long.js and tell me which flag the warning says will be removed and in which version. The log is long: read the stored output if the warning is not in what you see.",
+      "permissionMode": "default",
+      "onAsk": "allow_once",
+      "runs": 2,
+      "minPassRate": 1,
+      "files": {
+        "scripts/long.js": "const lines = [];\nfor (let index = 1; index <= 600; index += 1) lines.push(`step ${index} ok`);\nlines.splice(300, 0, 'warning: deprecated flag --legacy-peer will be removed in 9.0');\nconsole.log(lines.join('\\n'));\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 0,
+        "topics": [
+          "planning"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "Bash"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "ReadOutput"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "--legacy-peer"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "9\\.0"
+        }
+      ]
+    },
+    {
+      "id": "passing-long-log-needle-off",
+      "description": "The same task The same task with context.autoCompact false; the contrast for the on case.",
+      "scenario": "passing-long-log-needle",
+      "compaction": "off",
+      "input": "Run node scripts/long.js and tell me which flag the warning says will be removed and in which version. The log is long: read the stored output if the warning is not in what you see.",
+      "permissionMode": "default",
+      "onAsk": "allow_once",
+      "runs": 2,
+      "minPassRate": 1,
+      "files": {
+        "scripts/long.js": "const lines = [];\nfor (let index = 1; index <= 600; index += 1) lines.push(`step ${index} ok`);\nlines.splice(300, 0, 'warning: deprecated flag --legacy-peer will be removed in 9.0');\nconsole.log(lines.join('\\n'));\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 0,
+        "topics": [
+          "planning"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "Bash"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "ReadOutput"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "--legacy-peer"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "9\\.0"
+        }
+      ]
+    },
+    {
+      "id": "large-output-small-window-on",
+      "description": "Measures a tool output far over the item cap: 4000 rows, the marked row in the middle. Run it with an alias of a small window, such as 8192 tokens, so the item cap binds and the single cut keeps a head and a tail; the answer needs the marked row through ReadOutput. Automatic compaction is on.",
+      "scenario": "large-output-small-window",
+      "compaction": "on",
+      "input": "Run node scripts/rows.js and tell me the code on the marked row. Read the stored output if the marked row is not in what you see.",
+      "permissionMode": "default",
+      "onAsk": "allow_once",
+      "runs": 2,
+      "minPassRate": 1,
+      "files": {
+        "scripts/rows.js": "const lines = [];\nfor (let index = 1; index <= 4000; index += 1) lines.push(`row ${index} of a wide listing`);\nlines.splice(2000, 0, 'row 2000 is the marked row: CODE-5521');\nconsole.log(lines.join('\\n'));\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 0,
+        "topics": [
+          "planning"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "Bash"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "ReadOutput"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "CODE-5521"
+        }
+      ]
+    },
+    {
+      "id": "large-output-small-window-off",
+      "description": "The same task The same task with context.autoCompact false; the contrast for the on case.",
+      "scenario": "large-output-small-window",
+      "compaction": "off",
+      "input": "Run node scripts/rows.js and tell me the code on the marked row. Read the stored output if the marked row is not in what you see.",
+      "permissionMode": "default",
+      "onAsk": "allow_once",
+      "runs": 2,
+      "minPassRate": 1,
+      "files": {
+        "scripts/rows.js": "const lines = [];\nfor (let index = 1; index <= 4000; index += 1) lines.push(`row ${index} of a wide listing`);\nlines.splice(2000, 0, 'row 2000 is the marked row: CODE-5521');\nconsole.log(lines.join('\\n'));\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 0,
+        "topics": [
+          "planning"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "Bash"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "ReadOutput"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "CODE-5521"
+        }
+      ]
+    },
+    {
+      "id": "large-output-cjk-on",
+      "description": "Measures a Japanese tool output that the old three-characters-per-token rule counted at a third of its real size: 1500 lines, the marked line in the middle, and the answer needs it through ReadOutput. Automatic compaction is on.",
+      "scenario": "large-output-cjk",
+      "compaction": "on",
+      "input": "Run node scripts/ja.js and tell me the code on the important line. Read the stored output if the line is not in what you see.",
+      "permissionMode": "default",
+      "onAsk": "allow_once",
+      "runs": 2,
+      "minPassRate": 1,
+      "files": {
+        "scripts/ja.js": "const lines = [];\nfor (let index = 1; index <= 1500; index += 1) lines.push(`結果 ${index} を確認しています。`);\nlines.splice(750, 0, '重要な行: コードは 回収-8842 です。');\nconsole.log(lines.join('\\n'));\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 0,
+        "topics": [
+          "planning"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "Bash"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "ReadOutput"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "回収-8842"
+        }
+      ]
+    },
+    {
+      "id": "large-output-cjk-off",
+      "description": "The same task The same task with context.autoCompact false; the contrast for the on case.",
+      "scenario": "large-output-cjk",
+      "compaction": "off",
+      "input": "Run node scripts/ja.js and tell me the code on the important line. Read the stored output if the line is not in what you see.",
+      "permissionMode": "default",
+      "onAsk": "allow_once",
+      "runs": 2,
+      "minPassRate": 1,
+      "files": {
+        "scripts/ja.js": "const lines = [];\nfor (let index = 1; index <= 1500; index += 1) lines.push(`結果 ${index} を確認しています。`);\nlines.splice(750, 0, '重要な行: コードは 回収-8842 です。');\nconsole.log(lines.join('\\n'));\n"
+      },
+      "rules": [],
+      "revisionDepth": 0,
+      "noise": {
+        "level": 0,
+        "topics": [
+          "planning"
+        ]
+      },
+      "graders": [
+        {
+          "kind": "status",
+          "equals": "COMPLETED"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "Bash"
+        },
+        {
+          "kind": "toolCalled",
+          "name": "ReadOutput"
+        },
+        {
+          "kind": "finalTextMatches",
+          "pattern": "回収-8842"
+        }
+      ]
     }
   ]
 }
