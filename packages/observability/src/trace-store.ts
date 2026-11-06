@@ -3,7 +3,8 @@ import type { AttributeValue } from '@opentelemetry/api';
 import { immediateTx, migrate, openDatabase, isRecord } from '@momonga/foundation';
 import type { Clock, Migration } from '@momonga/foundation';
 import { reportError } from './errors.ts';
-import { GENAI_SEMCONV, OPERATIONS, UNKNOWN_BILLING } from './semconv.ts';
+import { DEFAULT_MAX_QUEUED_BYTES } from './body-queue.ts';
+import { GENAI_CONTENT_SEMCONV, GENAI_SEMCONV, OPERATIONS, UNKNOWN_BILLING } from './semconv.ts';
 
 const A = GENAI_SEMCONV.attributes;
 
@@ -11,7 +12,18 @@ const jsonPath = (key: string): string => `$."${key}"`;
 
 export const SPAN_KINDS = ['INTERNAL', 'SERVER', 'CLIENT', 'PRODUCER', 'CONSUMER'] as const;
 export const SPAN_STATUSES = ['UNSET', 'OK', 'ERROR'] as const;
-export const BODY_KINDS = ['input', 'output', 'tool_arguments', 'tool_result'] as const;
+const CONTENT = GENAI_CONTENT_SEMCONV;
+
+export const BODY_KINDS = [
+  CONTENT.ATTR_GEN_AI_SYSTEM_INSTRUCTIONS,
+  CONTENT.ATTR_GEN_AI_INPUT_MESSAGES,
+  CONTENT.ATTR_GEN_AI_OUTPUT_MESSAGES,
+  CONTENT.ATTR_GEN_AI_TOOL_DEFINITIONS,
+  CONTENT.ATTR_GEN_AI_TOOL_CALL_ARGUMENTS,
+  CONTENT.ATTR_GEN_AI_TOOL_CALL_RESULT,
+] as const;
+
+const LEGACY_SPANS_PER_BATCH = 16;
 
 export type SpanKindName = (typeof SPAN_KINDS)[number];
 export type SpanStatusName = (typeof SPAN_STATUSES)[number];
@@ -56,6 +68,7 @@ export type TraceStore = {
   spansForTrace(traceId: string): SpanRecord[];
   bodiesForSpan(spanId: string): BodyRecord[];
   purgeBodies(nowMs: number): number;
+  moveLegacyContent(options: { retentionMs: number }): number;
   purgeExpired(): number;
   compact(): void;
   close(): void;
@@ -110,11 +123,46 @@ const RUN_INGEST_INDEX = `
 CREATE INDEX spans_by_run_ingest ON spans (run_id, ingest_seq);
 `;
 
+const CONTENT_PRESENT = [
+  'gen_ai.system_instructions',
+  'gen_ai.input.messages',
+  'gen_ai.output.messages',
+  'gen_ai.tool.definitions',
+  'gen_ai.tool.call.arguments',
+  'gen_ai.tool.call.result',
+]
+  .map((name) => `json_extract(attributes_json, '$."${name}"') IS NOT NULL`)
+  .join(' OR ');
+
+const CONTENT_BODIES = `
+DROP TABLE bodies;
+CREATE TABLE bodies (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  trace_id TEXT NOT NULL,
+  span_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN (
+    'gen_ai.system_instructions',
+    'gen_ai.input.messages',
+    'gen_ai.output.messages',
+    'gen_ai.tool.definitions',
+    'gen_ai.tool.call.arguments',
+    'gen_ai.tool.call.result'
+  )),
+  content TEXT NOT NULL,
+  created_at_ms INTEGER NOT NULL,
+  expires_at_ms INTEGER NOT NULL
+);
+CREATE INDEX bodies_by_span ON bodies (span_id, id);
+CREATE INDEX bodies_by_expiry ON bodies (expires_at_ms);
+CREATE INDEX spans_with_content ON spans (ingest_seq) WHERE ${CONTENT_PRESENT};
+`;
+
 export const TRACE_STORE_MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial', sql: INITIAL_SCHEMA },
   { version: 2, name: 'chat-span-billing', sql: RECORD_BILLING_OF_EARLIER_CHAT_SPANS },
   { version: 3, name: 'span-ingest-sequence', sql: INGEST_SEQUENCE },
   { version: 4, name: 'run-ingest-index', sql: RUN_INGEST_INDEX },
+  { version: 5, name: 'content-bodies', sql: CONTENT_BODIES },
 ];
 
 type Row = Record<string, SQLOutputValue>;
@@ -253,6 +301,12 @@ const prepareStatements = (db: DatabaseSync) => ({
        AND json_extract(attributes_json, ?) = ? AND json_extract(attributes_json, ?) IS NOT NULL
      ORDER BY ingest_seq LIMIT ?`,
   ),
+  legacyContentSpans: db.prepare(
+    `SELECT trace_id, span_id, end_ms, attributes_json FROM spans WHERE ${CONTENT_PRESENT} ORDER BY ingest_seq LIMIT ?`,
+  ),
+  stripContent: db.prepare(
+    `UPDATE spans SET attributes_json = json_remove(attributes_json, ${BODY_KINDS.map(() => '?').join(', ')}) WHERE trace_id = ? AND span_id = ?`,
+  ),
   insertBody: db.prepare(
     `INSERT INTO bodies (trace_id, span_id, kind, content, created_at_ms, expires_at_ms) VALUES (?, ?, ?, ?, ?, ?)`,
   ),
@@ -293,6 +347,32 @@ const createStore = (db: DatabaseSync, statements: Statements, clock: Clock): Tr
     if (deleted > 0) checkpoint('PASSIVE');
     return deleted;
   };
+
+  const moveLegacyContent = ({ retentionMs }: { retentionMs: number }): number =>
+    immediateTx(db, () => {
+      let bytes = 0;
+      let moved = 0;
+      for (const row of all(statements.legacyContentSpans, LEGACY_SPANS_PER_BATCH)) {
+        const identity = `${String(row['trace_id'])}/${String(row['span_id'])}`;
+        const attributes = toAttributes('spans', identity, 'attributes_json', parseJson('spans', identity, 'attributes_json', readText('spans', identity, row, 'attributes_json')));
+        const endMs = readInteger('spans', identity, row, 'end_ms');
+        const bodies = BODY_KINDS.flatMap((kind) => {
+          const content = attributes[kind];
+          if (content === undefined) return [];
+          if (typeof content !== 'string') throw corrupt('spans', identity, `content attribute ${kind} must be a string`);
+          return [{ kind, content }];
+        });
+        const size = bodies.reduce((sum, body) => sum + Buffer.byteLength(body.content, 'utf8'), 0);
+        if (moved > 0 && bytes + size > DEFAULT_MAX_QUEUED_BYTES) break;
+        const traceId = readText('spans', identity, row, 'trace_id');
+        const spanId = readText('spans', identity, row, 'span_id');
+        for (const body of bodies) statements.insertBody.run(traceId, spanId, body.kind, body.content, endMs, endMs + retentionMs);
+        statements.stripContent.run(...BODY_KINDS.map(jsonPath), traceId, spanId);
+        bytes += size;
+        moved += 1;
+      }
+      return moved;
+    });
 
   const compact = (): void => {
     try {
@@ -345,6 +425,7 @@ const createStore = (db: DatabaseSync, statements: Statements, clock: Clock): Tr
     spansForTrace: (traceId) => all(statements.spansForTrace, traceId).map(decodeSpan),
     bodiesForSpan: (spanId) => all(statements.bodiesForSpan, spanId, clock.now()).map(decodeBody),
     purgeBodies,
+    moveLegacyContent,
     purgeExpired: () => purgeBodies(clock.now()),
     compact,
     close: () => {

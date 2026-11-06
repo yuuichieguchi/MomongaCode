@@ -6,19 +6,18 @@ import { BatchSpanProcessor, TracerProvider } from '@opentelemetry/sdk-trace';
 import type { SpanExporter } from '@opentelemetry/sdk-trace';
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import type { Clock } from '@momonga/foundation';
-import { createBodyQueue } from './body-queue.ts';
+import { DEFAULT_MAX_QUEUED_BODIES, DEFAULT_MAX_QUEUED_BYTES, createBodyQueue } from './body-queue.ts';
 import { createClockedTracer } from './clocked-tracer.ts';
 import type { ClockedTracer } from './clocked-tracer.ts';
 import { reportError } from './errors.ts';
 import { GENAI_SEMCONV } from './semconv.ts';
 import { createTraceStoreExporter } from './trace-exporter.ts';
-import type { BodyKind, TraceStore } from './trace-store.ts';
+import type { BodyCapture } from './trace-exporter.ts';
+import type { TraceStore } from './trace-store.ts';
 
 const W3C_PROPAGATOR = new W3CTraceContextPropagator();
 
 const INSTRUMENTATION_SCOPE_NAME = '@momonga/observability';
-const DEFAULT_MAX_QUEUED_BODIES = 2048;
-const DEFAULT_MAX_QUEUED_BYTES = 16 * 1024 * 1024;
 
 const assertPositiveSafeInteger = (name: string, value: number): void => {
   if (!Number.isSafeInteger(value) || value <= 0) {
@@ -33,9 +32,7 @@ export type BatchOptions = {
   exportTimeoutMs?: number;
 };
 
-export type BodyCaptureOptions = {
-  enabled: boolean;
-  retentionMs: number;
+export type ContentQueueOptions = {
   maxQueuedBodies?: number;
   maxQueuedBytes?: number;
 };
@@ -47,11 +44,10 @@ export type TelemetryOptions = {
   store?: TraceStore;
   exporters?: readonly SpanExporter[];
   batch?: BatchOptions;
-  bodies?: BodyCaptureOptions;
   captureMessageContent?: boolean;
+  contentRetentionMs?: number;
+  contentQueue?: ContentQueueOptions;
 };
-
-export type CapturedBody = { kind: BodyKind; content: string };
 
 export type TracePropagation = {
   inject(context: Context): Record<string, string>;
@@ -62,7 +58,6 @@ export type Telemetry = {
   tracer: ClockedTracer;
   captureMessageContent: boolean;
   propagation: TracePropagation;
-  recordBody(span: Span, body: CapturedBody): void;
   forceFlush(): Promise<void>;
   shutdown(): Promise<void>;
 };
@@ -76,18 +71,21 @@ const batchProcessorOptions = (exporter: SpanExporter, batch: BatchOptions) => (
 });
 
 export const createTelemetry = (options: TelemetryOptions): Telemetry => {
-  const { store, bodies = { enabled: false, retentionMs: 0 } } = options;
-  if (bodies.enabled && store === undefined) throw new TypeError('createTelemetry: bodies.enabled requires a store');
-  const maxQueuedBodies = bodies.maxQueuedBodies ?? DEFAULT_MAX_QUEUED_BODIES;
-  const maxQueuedBytes = bodies.maxQueuedBytes ?? DEFAULT_MAX_QUEUED_BYTES;
-  if (bodies.enabled) {
-    assertPositiveSafeInteger('bodies.retentionMs', bodies.retentionMs);
-    assertPositiveSafeInteger('bodies.maxQueuedBodies', maxQueuedBodies);
-    assertPositiveSafeInteger('bodies.maxQueuedBytes', maxQueuedBytes);
+  const { store, captureMessageContent = false } = options;
+  const capturesIntoStore = store !== undefined && captureMessageContent;
+  const maxQueuedBodies = options.contentQueue?.maxQueuedBodies ?? DEFAULT_MAX_QUEUED_BODIES;
+  const maxQueuedBytes = options.contentQueue?.maxQueuedBytes ?? DEFAULT_MAX_QUEUED_BYTES;
+  let bodyCapture: BodyCapture | undefined;
+  if (capturesIntoStore) {
+    const { contentRetentionMs } = options;
+    if (contentRetentionMs === undefined) throw new TypeError('createTelemetry: captureMessageContent with a store requires contentRetentionMs');
+    assertPositiveSafeInteger('contentRetentionMs', contentRetentionMs);
+    assertPositiveSafeInteger('contentQueue.maxQueuedBodies', maxQueuedBodies);
+    assertPositiveSafeInteger('contentQueue.maxQueuedBytes', maxQueuedBytes);
+    bodyCapture = { queue: createBodyQueue({ maxEntries: maxQueuedBodies, maxBytes: maxQueuedBytes }), retentionMs: contentRetentionMs };
   }
   const batch = options.batch ?? {};
-  const bodyQueue = bodies.enabled ? createBodyQueue({ maxEntries: maxQueuedBodies, maxBytes: maxQueuedBytes }) : undefined;
-  const storeExporter = store === undefined ? undefined : createTraceStoreExporter(store, bodyQueue);
+  const storeExporter = store === undefined ? undefined : createTraceStoreExporter(store, bodyCapture);
   const exporters = [...(options.exporters ?? []), ...(storeExporter === undefined ? [] : [storeExporter])];
 
   const provider = new TracerProvider({
@@ -105,7 +103,7 @@ export const createTelemetry = (options: TelemetryOptions): Telemetry => {
 
   return {
     tracer,
-    captureMessageContent: options.captureMessageContent === true,
+    captureMessageContent,
     propagation: {
       inject: (context) => {
         const carrier: Record<string, string> = {};
@@ -113,19 +111,6 @@ export const createTelemetry = (options: TelemetryOptions): Telemetry => {
         return carrier;
       },
       extract: (headers) => W3C_PROPAGATOR.extract(ROOT_CONTEXT, headers, defaultTextMapGetter),
-    },
-    recordBody: (span, body) => {
-      if (bodyQueue === undefined) return;
-      const { traceId, spanId } = span.spanContext();
-      const createdAtMs = options.clock.now();
-      bodyQueue.push({
-        traceId,
-        spanId,
-        kind: body.kind,
-        content: body.content,
-        createdAtMs,
-        expiresAtMs: createdAtMs + bodies.retentionMs,
-      });
     },
     forceFlush: async () => {
       try {
@@ -137,12 +122,12 @@ export const createTelemetry = (options: TelemetryOptions): Telemetry => {
     },
     shutdown: () => {
       shutdownPromise ??= (async () => {
-        bodyQueue?.close('telemetry is shut down');
         try {
           await provider.shutdown();
         } catch (error) {
           reportError(error);
         }
+        bodyCapture?.queue.close('telemetry is shut down');
       })();
       return shutdownPromise;
     },

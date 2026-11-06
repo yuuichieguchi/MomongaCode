@@ -1,6 +1,6 @@
 import { describeFallbackCause } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
-import { anatomyLayerEntries } from '@momonga/protocol';
+import { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, anatomyLayerEntries } from '@momonga/protocol';
 import type { FallbackCauseView, RunTraceCall, RunTraceEvent, RunTraceSpan, RunTraceView, TokenAnatomy, UsageReport } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
@@ -12,25 +12,19 @@ import { latestRunIdOf } from './targets.ts';
 const childrenOf = (spans: readonly RunTraceSpan[], parent: string | null): RunTraceSpan[] =>
   spans.filter((span) => span.parentSpanId === parent).sort((left, right) => left.startMs - right.startMs);
 
-const TARGET_ATTRIBUTE = 'momonga.target';
-const ATTEMPT_ATTRIBUTE = 'momonga.attempt';
-const FAILURE_MESSAGE_ATTRIBUTE = 'momonga.failure_message';
-const FALLBACK_CAUSES_ATTRIBUTE = 'momonga.fallback_causes';
-const ERROR_TYPE_ATTRIBUTE = 'error.type';
-
 const fallbackCausesOf = (span: RunTraceSpan): FallbackCauseView[] => {
-  const value = span.attributes[FALLBACK_CAUSES_ATTRIBUTE];
+  const value = span.attributes[MOMONGA_ATTRIBUTES.fallbackCauses];
   if (value === undefined) return [];
-  if (typeof value !== 'string') throw new TypeError(`span ${span.spanId} attribute ${FALLBACK_CAUSES_ATTRIBUTE} must be a string`);
+  if (typeof value !== 'string') throw new TypeError(`span ${span.spanId} attribute ${MOMONGA_ATTRIBUTES.fallbackCauses} must be a string`);
   return JSON.parse(value) as FallbackCauseView[];
 };
 
 const chatDetail = (span: RunTraceSpan): string => {
-  const target = span.attributes[TARGET_ATTRIBUTE];
+  const target = span.attributes[MOMONGA_ATTRIBUTES.target];
   if (typeof target !== 'string') return '';
-  const attempt = span.attributes[ATTEMPT_ATTRIBUTE];
+  const attempt = span.attributes[MOMONGA_ATTRIBUTES.attempt];
   const where = `target ${target}${typeof attempt === 'number' ? `, attempt ${attempt}` : ''}`;
-  const failure = span.attributes[FAILURE_MESSAGE_ATTRIBUTE];
+  const failure = span.attributes[MOMONGA_ATTRIBUTES.failureMessage];
   if (typeof failure === 'string') {
     const errorType = span.attributes[ERROR_TYPE_ATTRIBUTE];
     return `  ${where}: ${typeof errorType === 'string' ? `${errorType}: ` : ''}${failure}`;

@@ -69,6 +69,47 @@ describe('createFakeTimers', () => {
     expect(seen).toEqual(['scheduler']);
   });
 
+  it('fires a callback that re-arms itself at 0 ms forever once per fake ms, as Node coerces the delay to 1', () => {
+    const clock = createFakeClock(0);
+    const timers = createFakeTimers(clock);
+    let firings = 0;
+    const tick = (): void => {
+      firings += 1;
+      timers.setTimeout(tick, 0);
+    };
+    timers.setTimeout(tick, 0);
+    timers.advance(10);
+    expect(firings).toBe(10);
+    expect(timers.pending().map((timer) => timer.dueAt)).toEqual([clock.now() + 1]);
+  });
+
+  it('finishes a 0 ms retry that re-arms 3 times and then stops inside one advance', () => {
+    const clock = createFakeClock(0);
+    const timers = createFakeTimers(clock);
+    const fired: number[] = [];
+    const retry = (): void => {
+      fired.push(clock.now());
+      if (fired.length < 4) timers.setTimeout(retry, 0);
+    };
+    timers.setTimeout(retry, 0);
+    timers.advance(10);
+    expect(fired).toEqual([1, 2, 3, 4]);
+    expect(timers.pending()).toEqual([]);
+  });
+
+  it.each([2 ** 31, 2_147_483_647.5, Number.NaN, undefined, -5, 0.5, Number.POSITIVE_INFINITY])('arms a delay of %s due at now + 1, as Node does', (ms) => {
+    const clock = createFakeClock(1000);
+    const timers = createFakeTimers(clock);
+    timers.setTimeout(() => undefined, ms as number);
+    expect(timers.pending()).toEqual([{ id: 1, delayMs: 1, dueAt: 1001 }]);
+  });
+
+  it('truncates a non-integer delay, as Node does', () => {
+    const timers = createFakeTimers(createFakeClock(0));
+    timers.setTimeout(() => undefined, 2.7);
+    expect(timers.pending()).toEqual([{ id: 1, delayMs: 2, dueAt: 2 }]);
+  });
+
   it('rejects a negative advance', () => {
     const timers = createFakeTimers(createFakeClock(0));
     expect(() => timers.advance(-1)).toThrow(/non-negative/);

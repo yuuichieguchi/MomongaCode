@@ -183,6 +183,26 @@ export type {
 } from './dialect.ts';
 export { BUILTIN_DIALECTS, BUILTIN_DIALECT_IDS, DEFAULT_DIALECT_ID } from './dialect-builtins.ts';
 export type { BuiltinDialectId } from './dialect-builtins.ts';
+export {
+  FACTS_SWEEP_BATCH_RUNS,
+  INDICATOR_DEFINITIONS_VERSION,
+  MIN_RATE_POPULATION,
+  RECOVERY_CAUSES,
+  RECOVERY_OUTCOMES,
+  RELIABILITY_FORMAT,
+  REPORT_PAGE_ROWS,
+} from './reliability.ts';
+export type {
+  RecoveryCause,
+  RecoveryEpisodeView,
+  RecoveryOutcome,
+  ReportPage,
+  RunFactsBasis,
+  RunFactsLimits,
+  RunFactsView,
+  RunRecovery,
+} from './reliability.ts';
+export { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, MOMONGA_EVENTS, MOMONGA_REQUEST_FIELDS, MOMONGA_SPAN_NOTES } from './trace-attributes.ts';
 export { EVENT_TYPES, RUN_API_SCHEMAS, base64ByteLength, runApiSchemaName, toPublicRunEvent } from './run-api.ts';
 export { MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES } from './run-api.ts';
 export type {
