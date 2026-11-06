@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { PROFILE_ID, START_MS, editRecord, planError, rawRecord, readRecord, rotateAtFake, signedIn, startHarness, toRefreshWindow, CONDITION_WAIT } from './plan-support.ts';
+import { PROFILE_ID, START_MS, editRecord, planError, rawRecord, readRecord, rotateAtFake, signedIn, startHarness, toRefreshWindow, CONDITION_WAIT, TOKEN_ATTEMPT_BOUND_MS } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
 
 const harnesses: Harness[] = [];
@@ -104,6 +104,7 @@ describe('terminal refresh answers (F9, I-C6, I-C7)', () => {
     expect(after?.['access_token']).toBeUndefined();
     expect(after?.['refresh_token']).toBeUndefined();
     for (const field of REGISTRATION_FIELDS) expect(after?.[field], field).toEqual(before?.[field]);
+    expect(after?.['id_token']).toBe(signIn.idToken);
     const raw = await rawRecord(h, 'work');
     expect(raw).not.toContain(signIn.tokens.access_token);
     expect(raw).not.toContain(signIn.tokens.refresh_token);
@@ -229,5 +230,26 @@ describe('the wait between refresh attempts is nextWait of the gateway retry pol
     expect(h.auth.calls.tokenRefreshToken).toBe(1);
     expect(read.bearer).toBe(signIn.tokens.access_token);
     expect((await readRecord(h, 'work'))?.['refresh_token']).toBe(signIn.tokens.refresh_token);
+  });
+});
+
+describe('the token-endpoint attempt bound T_a = 15 s (I-C3)', () => {
+  it('abandons a send that never answers at T_a, counts it as unanswered and resends within the same refresh', async () => {
+    const h = await harness();
+    const signIn = await signedIn(h, 'work');
+    h.holdNextRefresh();
+    toRefreshWindow(h, START_MS);
+    let settled = false;
+    const reading = readWork(h).finally(() => {
+      settled = true;
+    });
+    await expect.poll(() => h.pendingBounds(), CONDITION_WAIT).toContain(TOKEN_ATTEMPT_BOUND_MS);
+    expect(settled).toBe(false);
+    h.fireLatestBound(TOKEN_ATTEMPT_BOUND_MS);
+    const read = await reading;
+    expect(h.fetchUrls.filter((url) => url === h.auth.tokenUrl)).toHaveLength(2);
+    expect(h.auth.calls.tokenRefreshToken).toBe(1);
+    expect(read.bearer).not.toBe(signIn.tokens.access_token);
+    expect(await readRecord(h, 'work')).toMatchObject({ state: 'active', access_token: read.bearer });
   });
 });

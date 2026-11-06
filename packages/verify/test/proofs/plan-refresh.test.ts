@@ -1,6 +1,5 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { AUTHORIZATION_WAIT_MS } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS } from '@momonga/gateway';
 import { proofArith } from '../../src/proofs/arith.ts';
 import type { ProofArith, ProofInt } from '../../src/proofs/arith.ts';
@@ -14,19 +13,15 @@ const retry = (): RetryDefaults => GATEWAY_CONFIG_DEFAULTS.retry as unknown as R
 
 const PLAN = PLAN_SESSION_DEFAULTS;
 
+const ATTEMPT_TTL_MS = 315_000;
+
 const backoffSumMs = (attempts: number, baseMs: number, maxMs: number): number => {
   let total = 0;
   for (let index = 0; index < attempts - 1; index += 1) total += Math.min(baseMs * 2 ** index, maxMs);
   return total;
 };
 
-const authorizeSource = path.resolve(import.meta.dirname, '..', '..', '..', 'mcp', 'src', 'authorize.ts');
-
-const authorizationWaitMs = (): number => {
-  const match = /export const AUTHORIZATION_WAIT_MS = ([\d_]+);/.exec(fs.readFileSync(authorizeSource, 'utf8'));
-  if (match === null) throw new Error('AUTHORIZATION_WAIT_MS is not declared in packages/mcp/src/authorize.ts');
-  return Number((match[1] as string).replaceAll('_', ''));
-};
+const authorizationWaitMs = (): number => AUTHORIZATION_WAIT_MS;
 
 const constant = (arith: ProofArith, name: string, value: number): ProofInt => {
   const variable = arith.int(name);
@@ -52,7 +47,7 @@ describe('the plan credential numbers of design-chatgpt-plan.md section 6', () =
   });
 
   it('keeps the authorization wait of the plan sign-in equal to the constant of the MCP authorization', () => {
-    expect(authorizationWaitMs()).toBe(PLAN.authorizationWaitMs);
+    expect(authorizationWaitMs()).toBe(300_000);
   });
 
   const waitCapArith = (name: string, budgetMs: number, capMs: number) => {
@@ -264,7 +259,7 @@ describe('the plan credential numbers of design-chatgpt-plan.md section 6', () =
       const arith = proofArith(z3.engine().api, 'P7');
       const wait = constant(arith, 'wait', authorizationWaitMs());
       const timeout = constant(arith, 'T_a', PLAN.attemptTimeoutMs);
-      const ttl = constant(arith, 'ttl', PLAN.attemptTtlMs);
+      const ttl = constant(arith, 'ttl', ATTEMPT_TTL_MS);
       const begin = arith.int('begin');
       const arrival = arith.int('arrival');
       const exchange = arith.int('exchange');

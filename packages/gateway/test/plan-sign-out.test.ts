@@ -1,7 +1,7 @@
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import { PROFILE_ID, START_MS, editRecord, planError, rawRecord, readRecord, signedIn, startHarness, toRefreshWindow, profileFor, CONDITION_WAIT } from './plan-support.ts';
+import { PROFILE_ID, START_MS, editRecord, planError, rawRecord, readRecord, signedIn, startHarness, toRefreshWindow, profileFor, CONDITION_WAIT, REVOCATION_ATTEMPT_BOUND_MS } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
 
 const harnesses: Harness[] = [];
@@ -18,7 +18,7 @@ const harness = async (options: Parameters<typeof startHarness>[0] = {}): Promis
   return h;
 };
 
-const KEPT_AFTER_SIGN_OUT = ['account', 'client_id', 'email', 'ext_agent_host_id', 'profile', 'state', 'subject', 'welcomeShown'];
+const KEPT_AFTER_SIGN_OUT = ['account', 'client_id', 'email', 'ext_agent_host_id', 'profile', 'state', 'subject', 'version', 'welcomeShown'];
 
 const signOut = (h: Harness) => h.sessions.signOut({ profile: PROFILE_ID, account: 'work' });
 
@@ -45,7 +45,20 @@ describe('sign-out (F11, I-C10)', () => {
     expect(revoke?.form).toEqual({ token: signIn.tokens.refresh_token, token_type_hint: 'refresh_token', client_id: signIn.clientId });
   });
 
-  it('keeps only the registration fields with state registered, and drops every token including the ID token', async () => {
+  it('abandons a revocation send that never answers at T_rev = 10 s and tries again', async () => {
+    const h = await harness();
+    await signedIn(h, 'work');
+    h.holdNextRevoke();
+    const signingOut = signOut(h);
+    await expect.poll(() => h.fetchUrls.includes(h.auth.revokeUrl) && h.pendingBounds().includes(REVOCATION_ATTEMPT_BOUND_MS), CONDITION_WAIT).toBe(true);
+    h.fireLatestBound(REVOCATION_ATTEMPT_BOUND_MS);
+    const report = await signingOut;
+    expect(h.fetchUrls.filter((url) => url === h.auth.revokeUrl)).toHaveLength(2);
+    expect(h.auth.calls.revoke).toBe(1);
+    expect(report.revocation).toBe('confirmed');
+  });
+
+  it('keeps only the registration fields and the record version with state registered, and drops every token including the ID token', async () => {
     const h = await harness();
     const signIn = await signedIn(h, 'work');
     await signOut(h);

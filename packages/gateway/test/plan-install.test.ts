@@ -128,7 +128,7 @@ describe('install: the compare-and-write of the full record (I-C8 IdentityPinned
   it('a new install of a paused account ends the pause', async () => {
     const h = await harness();
     const signIn = await signedIn(h, 'work');
-    await h.sessions.pause({ profile: PROFILE_ID, account: 'work' }, {});
+    await h.sessions.authSource({ profile: PROFILE_ID, account: 'work' }).pause({});
     const again = await signInAtFake(h, { clientId: signIn.clientId });
     await installOf(h, 'work', again);
     expect((await h.sessions.authSource({ profile: PROFILE_ID, account: 'work' }).read(new AbortController().signal)).bearer).toBe(again.tokens.access_token);

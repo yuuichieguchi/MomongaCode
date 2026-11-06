@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { AUTHORIZATION_WAIT_MS } from '@momonga/foundation';
 import { PLAN_ACCOUNT_STATES } from '@momonga/protocol';
 import { GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS } from '../src/defaults.ts';
 import { PLAN_CONFIGURATION_REFRESH_CODES, PLAN_REFRESH_INTERRUPTED_CAUSE, PLAN_TERMINAL_REFRESH_CODES } from '../src/plan/refresh.ts';
@@ -34,41 +35,47 @@ describe('the session engine against plan-constants.json, the JSON PlanCredentia
   });
 });
 
-describe('PLAN_SESSION_DEFAULTS: the numbers of design section 6', () => {
+describe('PLAN_SESSION_DEFAULTS: the numbers of design section 6 that P5a uses, and only those', () => {
   const retry = GATEWAY_CONFIG_DEFAULTS.retry;
 
-  it('states each documented or chosen number', () => {
-    expect(PLAN_SESSION_DEFAULTS).toMatchObject({
+  it('states exactly P5a numbers', () => {
+    expect(PLAN_SESSION_DEFAULTS).toEqual({
       accessLifetimeMs: 3_600_000,
       attemptTimeoutMs: 15_000,
       revocationTimeoutMs: 10_000,
       skewMs: 60_000,
-      authorizationWaitMs: 300_000,
+      refreshBudgetMs: 61_000,
+      marginMs: 121_000,
+      revocationBudgetMs: 31_500,
       persistRetryMs: 30_000,
     });
   });
 
-  it('derives B from the retry policy: attempts x T_a + (attempts - 1) x retry.maxMs = 61 s', () => {
+  it('derives B from the retry policy: attempts x T_a + (attempts - 1) x retry.maxMs', () => {
     expect(PLAN_SESSION_DEFAULTS.refreshBudgetMs).toBe(retry.maxAttempts * PLAN_SESSION_DEFAULTS.attemptTimeoutMs + (retry.maxAttempts - 1) * retry.maxMs);
-    expect(PLAN_SESSION_DEFAULTS.refreshBudgetMs).toBe(61_000);
   });
 
-  it('derives M = S + B = 121 s', () => {
+  it('derives M = S + B', () => {
     expect(PLAN_SESSION_DEFAULTS.marginMs).toBe(PLAN_SESSION_DEFAULTS.skewMs + PLAN_SESSION_DEFAULTS.refreshBudgetMs);
-    expect(PLAN_SESSION_DEFAULTS.marginMs).toBe(121_000);
   });
 
-  it('derives the attempt TTL = authorization wait + T_a = 315 s and the revocation budget = 3 x T_rev + 500 + 1000 = 31.5 s', () => {
-    expect(PLAN_SESSION_DEFAULTS.attemptTtlMs).toBe(PLAN_SESSION_DEFAULTS.authorizationWaitMs + PLAN_SESSION_DEFAULTS.attemptTimeoutMs);
-    expect(PLAN_SESSION_DEFAULTS.attemptTtlMs).toBe(315_000);
+  it('derives the revocation budget = attempts x T_rev + 500 + 1000', () => {
     expect(PLAN_SESSION_DEFAULTS.revocationBudgetMs).toBe(retry.maxAttempts * PLAN_SESSION_DEFAULTS.revocationTimeoutMs + retry.baseMs + 2 * retry.baseMs);
-    expect(PLAN_SESSION_DEFAULTS.revocationBudgetMs).toBe(31_500);
   });
 
-  it('takes the persist retry from breaker.openMs and the authorization wait from AUTHORIZATION_WAIT_MS', () => {
+  it('takes the persist retry from breaker.openMs', () => {
     expect(PLAN_SESSION_DEFAULTS.persistRetryMs).toBe(GATEWAY_CONFIG_DEFAULTS.breaker.openMs);
-    const match = /export const AUTHORIZATION_WAIT_MS = ([\d_]+);/.exec(authorizeSource);
-    expect(Number((match?.[1] ?? '').replaceAll('_', ''))).toBe(PLAN_SESSION_DEFAULTS.authorizationWaitMs);
+  });
+});
+
+describe('AUTHORIZATION_WAIT_MS has one source, in foundation', () => {
+  it('is 300 s and exported by foundation', () => {
+    expect(AUTHORIZATION_WAIT_MS).toBe(300_000);
+  });
+
+  it('mcp/src/authorize.ts imports it and declares no constant of its own', () => {
+    expect(authorizeSource).not.toMatch(/const AUTHORIZATION_WAIT_MS\s*=/);
+    expect(authorizeSource).toMatch(/import \{[^}]*\bAUTHORIZATION_WAIT_MS\b[^}]*\} from '@momonga\/foundation'/);
   });
 });
 

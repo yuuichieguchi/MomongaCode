@@ -24,6 +24,11 @@ export type TokenFetch = (url: string, init: RequestInit) => Promise<Response>;
 
 export type Gate = { held: Promise<void>; release(): void };
 
+export const TOKEN_ATTEMPT_BOUND_MS = 15_000;
+export const REVOCATION_ATTEMPT_BOUND_MS = 10_000;
+
+type PendingBound = { ms: number; resolve(): void };
+
 export type Harness = {
   home: string;
   paths: { sessions: string; host: string; active: string };
@@ -37,6 +42,9 @@ export type Harness = {
   warnings: string[];
   fetchUrls: string[];
   holdNextRefresh(): Gate;
+  holdNextRevoke(): Gate;
+  pendingBounds(): number[];
+  fireLatestBound(ms: number): void;
   rewriteRefresh(change: (body: Record<string, unknown>) => Record<string, unknown>): void;
   reopen(options?: { accounts?: Array<{ profile: string; account: string }>; store?: CredentialStore }): Promise<PlanSessions>;
   close(): Promise<void>;
@@ -68,12 +76,19 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
   const warnings: string[] = [];
   const fetchUrls: string[] = [];
   const gates: Gate[] = [];
+  const revokeGates: Gate[] = [];
+  const bounds: PendingBound[] = [];
+  const heldUntilAbort = (gate: Gate, signal: AbortSignal | null | undefined): Promise<void> =>
+    new Promise<void>((resolve, reject) => {
+      void gate.held.then(resolve);
+      signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+    });
   const rewrites: Array<(body: Record<string, unknown>) => Record<string, unknown>> = [];
   const fetchPort: TokenFetch = async (url, init) => {
     fetchUrls.push(url);
     if (isRefreshPost(url, init, auth.tokenUrl)) {
       const gate = gates.shift();
-      if (gate !== undefined) await gate.held;
+      if (gate !== undefined) await heldUntilAbort(gate, init.signal);
       const rewrite = rewrites.shift();
       if (rewrite !== undefined) {
         const response = await fetch(url, init);
@@ -81,7 +96,18 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
         return new Response(JSON.stringify(rewrite(body)), { status: response.status, headers: { 'content-type': 'application/json' } });
       }
     }
+    if (url === auth.revokeUrl) {
+      const gate = revokeGates.shift();
+      if (gate !== undefined) await heldUntilAbort(gate, init.signal);
+    }
     return fetch(url, init);
+  };
+  const newGate = (): Gate => {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return { held, release };
   };
   const open = (accounts: Array<{ profile: string; account: string }> = [], chosenStore: CredentialStore = store): Promise<PlanSessions> =>
     openPlanSessions({
@@ -91,9 +117,23 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
       accounts,
       clock,
       fetch: fetchPort,
-      sleep: (ms) => {
-        sleeps.push(ms);
-        return Promise.resolve();
+      sleep: (ms, signal) => {
+        if (ms !== TOKEN_ATTEMPT_BOUND_MS && ms !== REVOCATION_ATTEMPT_BOUND_MS) {
+          sleeps.push(ms);
+          return Promise.resolve();
+        }
+        return new Promise<void>((resolve, reject) => {
+          const entry: PendingBound = { ms, resolve };
+          bounds.push(entry);
+          signal?.addEventListener(
+            'abort',
+            () => {
+              bounds.splice(bounds.indexOf(entry), 1);
+              reject(signal.reason);
+            },
+            { once: true },
+          );
+        });
       },
       onSecret: (value) => {
         secrets.push(value);
@@ -115,13 +155,21 @@ export const startHarness = async (options: { profile?: (auth: SiwcAuth) => Plan
     warnings,
     fetchUrls,
     holdNextRefresh: () => {
-      let release = (): void => undefined;
-      const held = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      const gate = { held, release };
+      const gate = newGate();
       gates.push(gate);
       return gate;
+    },
+    holdNextRevoke: () => {
+      const gate = newGate();
+      revokeGates.push(gate);
+      return gate;
+    },
+    pendingBounds: () => bounds.map((bound) => bound.ms),
+    fireLatestBound: (ms) => {
+      const index = bounds.map((bound) => bound.ms).lastIndexOf(ms);
+      if (index === -1) throw new Error(`no pending ${ms} ms bound`);
+      const [bound] = bounds.splice(index, 1);
+      bound?.resolve();
     },
     rewriteRefresh: (change) => {
       rewrites.push(change);
