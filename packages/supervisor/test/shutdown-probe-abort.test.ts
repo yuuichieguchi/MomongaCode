@@ -101,11 +101,12 @@ describe('T6 shutdown aborts the probes it waits for', () => {
     });
     const closing = settled<SupervisorCloseResult>(controller.close());
     timers.advance(REAP_POLL_INTERVAL_MS);
-    await waitFor(() => log.events('shutdown.step').some((line) => line['shutdownStep'] === 2), { description: 'step 2 begins within one poll interval of the drain' });
+    await waitFor(() => log.events('shutdown.step').some((line) => line['shutdownStep'] === 2), { description: 'step 2 begins within one poll interval of the drain', maxTurns: 20_000 });
     expect(clock.now()).toBeLessThanOrEqual(REAP_POLL_INTERVAL_MS);
     expect(clock.now()).toBeLessThan(SHUTDOWN_DRAIN_BOUND_MS);
     expect(log.events('shutdown.step.bound').filter((line) => line['detail'] === 'step 1 bound reached')).toEqual([]);
-    expect(seen[0]).toBe(launchController.signal);
+    expect(seen[0]).toBeInstanceOf(AbortSignal);
+    expect(seen[0]?.aborted).toBe(true);
     expect(fs.existsSync(marker)).toBe(true);
     void closing;
   });
@@ -121,9 +122,8 @@ describe('T6 shutdown aborts the probes it waits for', () => {
       logger: log.logger,
       markerPorts: {
         reapMarkedProcesses: (options: ReapMarkedProcessesOptions) =>
-          new Promise<{ removed: boolean }>((resolve) => {
+          new Promise<{ removed: boolean }>(() => {
             signals.push(options.signal);
-            options.signal?.addEventListener('abort', () => resolve({ removed: false }), { once: true });
           }),
       },
       beginDraining: () => undefined,

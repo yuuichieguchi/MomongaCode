@@ -5,7 +5,7 @@ import { createProcessInspector, hostInspectorPorts, nodeCommandRunner } from '@
 import type { CommandOptions, CommandRunner } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { HAS_REAL_SANDBOX, keyFor } from '../helpers.ts';
-import { makeBuiltins, resultOf, waitFor } from './fixtures.ts';
+import { makeBuiltins, resultOf, trackPid, waitFor } from './fixtures.ts';
 
 const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 
@@ -63,6 +63,7 @@ describe.runIf(HAS_REAL_SANDBOX && process.platform === 'darwin')('T0 Bash with 
     const ready = path.join(tools.layout.project, 'ready');
     const result = resultOf(await tools.run('Bash', { command: ESCAPED(ready) }, {}, 'allow_once', 'slow'));
     const escaped = Number(/pid:(\d+)/.exec(result.output)?.[1]);
+    if (escaped > 1) trackPid(escaped);
     expect(result.status).toBe('completed');
     expect(result.output).not.toContain('Internal error');
     expect(result.output).toContain('ok');

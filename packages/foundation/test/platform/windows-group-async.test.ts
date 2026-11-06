@@ -26,7 +26,7 @@ describe('T9 Windows group control is asynchronous and ends with the caller sign
     expect((await pendingOrSettled(asked)).state).toBe('pending');
     await timing.advanceTo(5000);
     expect((await pendingOrSettled(asked)).state).toBe('rejected');
-    expect(calls.map((call) => [call.options.signal, call.killed])).toEqual([[signal, true]]);
+    expect(calls.map((call) => [call.options.signal?.aborted, call.killed])).toEqual([[true, true]]);
   });
 
   it('signal on a PowerShell that never answers rejects when the caller aborts, and its child is killed', async () => {

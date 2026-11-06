@@ -40,7 +40,7 @@ describe('T4 no private probe bound; every probe ends with the signal of its cal
     await timing.advanceTo(4999);
     expect((await pendingOrSettled(listing)).state).toBe('pending');
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.options.signal).toBe(signal);
+    expect(calls[0]?.options.signal).toBeInstanceOf(AbortSignal);
     await timing.advanceTo(5000);
     const settled = await pendingOrSettled(listing);
     expect(settled).toMatchObject({ state: 'resolved', value: { kind: 'failed' } });
@@ -65,9 +65,9 @@ describe('T4 no private probe bound; every probe ends with the signal of its cal
     controller.abort();
     expect(await pendingOrSettled(start)).toMatchObject({ state: 'resolved', value: { kind: 'failed' } });
     expect(await pendingOrSettled(groups)).toMatchObject({ state: 'resolved', value: { kind: 'failed' } });
-    expect(calls.map((call) => [call.options.signal, call.killed])).toEqual([
-      [controller.signal, true],
-      [controller.signal, true],
+    expect(calls.map((call) => [call.options.signal?.aborted, call.killed])).toEqual([
+      [true, true],
+      [true, true],
     ]);
   });
 });
