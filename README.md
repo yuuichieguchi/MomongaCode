@@ -140,7 +140,7 @@ Commands:
 
 Run `momonga <command> --help` for the options of each command.
 
-`momonga update` replaces the executable with the latest release after verifying its checksum and signature. `momonga update --check` only reports whether a newer release exists.
+`momonga update` replaces the executable with the latest release after verifying its checksum and signature. `momonga update --check` only reports whether a newer release exists. If the daemon was running, both `momonga update` and the automatic update restart it on the new version: each run finishes its current step, then continues in the new daemon. A session opened before the update is told that momonga was updated and to reopen it. If the restart fails, the new version stays installed and the message says what to run.
 
 Inside the interactive session, slash commands include `/help`, `/clear`, `/exit`, `/mode`, `/model`, `/rule`, `/memory`, `/auto-mode`, and `/cost`, `/status`, `/jobs`, `/trace`, `/mcp`, `/context`, `/policy`, `/models`, `/gateway`, which run the command of the same name. `/help` lists the rest.
 

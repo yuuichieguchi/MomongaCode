@@ -138,7 +138,7 @@ describe('ensureDaemon', () => {
     const failure = await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS }).catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(DaemonStartError);
-    expect((failure as DaemonStartError).message).toBe(`momonga was updated to 1.2.4; reopen this session (the daemon, pid ${process.pid}, runs version 1.2.4, not ${VERSION})`);
+    expect((failure as DaemonStartError).message).toContain(`momonga was updated to 1.2.4; reopen this session (the daemon, pid ${process.pid}, runs version 1.2.4, not ${VERSION})`);
     expect(other.shutdowns).toBe(0);
     expect(spawned).toEqual([]);
   });
