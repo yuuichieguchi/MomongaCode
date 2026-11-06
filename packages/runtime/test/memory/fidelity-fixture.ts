@@ -32,6 +32,12 @@ export const deniedCall = (callId: string, rawInput: Record<string, unknown>): R
     { type: 'tool.completed', callId, status: 'failed', output: 'Permission denied: rule', denial: { source: 'rule', reason: 'rule' } },
   ] as RunEventPayload[];
 
+export const rejectedCall = (callId: string, rawInput: Record<string, unknown>): RunEventPayload[] =>
+  [
+    { type: 'tool.call', callId, providerCallId: callId, name: 'Sh', kind: 'other', title: callId, rawInput },
+    { type: 'tool.completed', callId, status: 'failed', output: 'The user rejected this tool call.' },
+  ] as RunEventPayload[];
+
 export const modelSaid = (step: number, text: string): RunEventPayload[] => [
   { type: 'model.requested', step, attempt: 1, digest: `d${step}`, body: { tool_choice: 'auto' } },
   {

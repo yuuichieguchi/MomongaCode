@@ -57,7 +57,7 @@ const traced = async (events: readonly RunEvent[], status: Run['status'], name: 
 
 const checks = (count: number): RunEventPayload[] => Array.from({ length: count }, (_unused, index) => bash(`t${index}`, 'npm test', 0, 'ok')).flat();
 
-const lastCheckSeq = 2 + 3 * STEPS;
+const lastCheckSeq = 3 + 3 * STEPS;
 
 describe('each new handler touches a bounded number of events between two unit() calls (review of fd3c85df, finding 1)', () => {
   it('verdictHandler folds each event as it is visited, never the whole journal after the last unit', async () => {
@@ -81,7 +81,7 @@ describe('each new handler touches a bounded number of events between two unit()
 
     expect(reply).toEqual({
       lastSeq: events.length,
-      recorded: [{ sha256: SHA, seq: 2 }],
+      recorded: [{ sha256: SHA, seq: 3 }],
       check: { callId: `t${STEPS - 1}`, seq: lastCheckSeq, command: 'npm test', exitCode: 0 },
     });
     expect(trace.visited).toBeGreaterThanOrEqual(2 * STEPS);

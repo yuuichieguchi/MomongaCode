@@ -1,5 +1,6 @@
 import { textOfItem } from '@momonga/context';
 import { isRecord } from '@momonga/foundation';
+import { createCallRunTracker } from '@momonga/memory';
 import { tokenMatcherOf } from '@momonga/protocol';
 import type { ClaimedToken, FidelityClaim, RunEvent } from '@momonga/protocol';
 
@@ -24,8 +25,6 @@ export type FidelityFold = {
   attested(): string[];
 };
 
-type PendingCall = { leaves: string[]; started: boolean };
-
 type Source = 'executed' | 'stated';
 
 const stringLeavesOf = (value: unknown): string[] => {
@@ -40,7 +39,8 @@ const claimsSatisfiedBy = (source: Source, claim: FidelityClaim): boolean => sou
 export const createFidelityFold = (tokens: readonly ClaimedToken[], cwd: string): FidelityFold => {
   const entries = tokens.map((entry) => ({ ...entry, matcher: tokenMatcherOf(entry.token, cwd), found: false }));
   const handles = new Set<string>();
-  const calls = new Map<string, PendingCall>();
+  const calls = new Map<string, string[]>();
+  const ran = createCallRunTracker();
   let unresolved = entries.length;
 
   const offer = (text: string, source: Source, complete: boolean): void => {
@@ -56,26 +56,17 @@ export const createFidelityFold = (tokens: readonly ClaimedToken[], cwd: string)
   const executed = (text: string): void => offer(text, 'executed', true);
   const stated = (text: string): void => offer(text, 'stated', true);
 
-  const completedCall = (callId: string): PendingCall | undefined => {
-    const call = calls.get(callId);
-    calls.delete(callId);
-    return call;
-  };
-
   const add = (event: RunEvent): void => {
+    ran.observe(event);
     switch (event.type) {
       case 'tool.call':
-        calls.set(event.callId, { leaves: stringLeavesOf(event.rawInput), started: false });
+        calls.set(event.callId, stringLeavesOf(event.rawInput));
         return;
-      case 'tool.started': {
-        const call = calls.get(event.callId);
-        if (call !== undefined) call.started = true;
-        return;
-      }
       case 'tool.completed': {
-        const call = completedCall(event.callId);
+        const leaves = calls.get(event.callId);
+        calls.delete(event.callId);
         if (event.denial !== undefined) return;
-        for (const leaf of call?.leaves ?? []) executed(leaf);
+        if (ran.ran(event)) for (const leaf of leaves ?? []) executed(leaf);
         executed(event.output);
         for (const file of event.files ?? []) executed(file.path);
         if (event.handle !== undefined) handles.add(event.handle);
@@ -109,8 +100,8 @@ export const createFidelityFold = (tokens: readonly ClaimedToken[], cwd: string)
   };
 
   const finish = (): void => {
-    for (const call of calls.values()) {
-      if (call.started) for (const leaf of call.leaves) executed(leaf);
+    for (const [callId, leaves] of calls) {
+      if (ran.started(callId)) for (const leaf of leaves) executed(leaf);
     }
     calls.clear();
   };

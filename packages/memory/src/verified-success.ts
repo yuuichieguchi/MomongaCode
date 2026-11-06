@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { isRecord } from '@momonga/foundation';
 import type { ApprovalBasis, RunEvent } from '@momonga/protocol';
+import { createCallRunTracker } from './call-ran.ts';
 
 export type VerifiedSuccessInput = {
   status: string;
@@ -49,6 +50,7 @@ export type VerifiedSuccessFold = {
 export const createVerifiedSuccessFold = (input: Pick<VerifiedSuccessInput, 'commands' | 'manifests'>): VerifiedSuccessFold => {
   const calls = new Map<string, CallFacts>();
   const bases = new Map<string, ApprovalBasis | undefined>();
+  const ran = createCallRunTracker();
   const manifests = new Set(input.manifests);
   let manifestWritten = false;
   let latestCheckPassed: boolean | undefined;
@@ -65,7 +67,13 @@ export const createVerifiedSuccessFold = (input: Pick<VerifiedSuccessInput, 'com
   };
   const mayHaveWritten = (callId: string, call: CallFacts): boolean =>
     call.command !== undefined && !input.commands.includes(call.command) && bases.get(callId) !== 'read_only';
+  const recordCheck = (command: string, callId: string, seq: number, passed: boolean): void => {
+    latestCheckPassed = passed;
+    latestChecks.delete(command);
+    latestChecks.set(command, { callId, seq, passed });
+  };
   const add = (event: RunEvent): void => {
+    ran.observe(event);
     if (event.type === 'tool.call') {
       calls.set(event.callId, factsOfCall(event));
       return;
@@ -83,22 +91,22 @@ export const createVerifiedSuccessFold = (input: Pick<VerifiedSuccessInput, 'com
       else if (mayHaveWritten(event.callId, call)) wroteUnknownPaths();
       return;
     }
-    if (event.denial !== undefined) return;
+    if (!ran.ran(event)) return;
     if (mayHaveWritten(event.callId, call)) {
       wroteUnknownPaths();
       return;
     }
-    if (event.status !== 'completed') return;
+    const isCheck = call.command !== undefined && input.commands.includes(call.command);
+    if (event.status !== 'completed') {
+      if (call.command !== undefined && isCheck) recordCheck(call.command, event.callId, event.seq, false);
+      return;
+    }
     const written = writtenPaths(call, event);
     if (written !== undefined) {
       wrote(written);
       return;
     }
-    if (call.command !== undefined && event.exitCode !== undefined && input.commands.includes(call.command)) {
-      latestCheckPassed = event.exitCode === 0;
-      latestChecks.delete(call.command);
-      latestChecks.set(call.command, { callId: event.callId, seq: event.seq, passed: latestCheckPassed });
-    }
+    if (call.command !== undefined && isCheck && event.exitCode !== undefined) recordCheck(call.command, event.callId, event.seq, event.exitCode === 0);
   };
   const finish = (status: string): VerifiedSuccessAnalysis => {
     const verified = status === 'COMPLETED' && !manifestWritten && latestCheckPassed === true;

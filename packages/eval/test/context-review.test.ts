@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BOOTSTRAP_RESAMPLES, BOOTSTRAP_TAIL_RANK, CONTEXT_DATASET_FORMAT, EvalError, MINIMUM_PAIRS, formatContextReport, parseContextDataset } from '@momonga/eval';
 import type { Transcript } from '@momonga/eval';
 import type { RunEventPayload } from '@momonga/protocol';
-import { compacted, contextCase, fidelity, governing, historyRead, padding, read, recorded, summarized } from './context-fixtures.ts';
+import { compacted, contextCase, fidelity, governing, historyRead, padding, ran, read, recorded, summarized } from './context-fixtures.ts';
 import { buildReportAs } from './answered-fixtures.ts';
 
 const sample = (both: Record<string, unknown> = {}, onOnly: Record<string, unknown> = {}) =>
@@ -72,7 +72,7 @@ describe('what a compacted run is', () => {
 
 describe('what a run is made of', () => {
   it('counts the compactions and loss signals of child runs, each judged against its own seqs', () => {
-    const childEvents = recorded('x', 0, [...read('r1', '/p/a.ts', 'same'), summarized(2, fidelity(['ghost.ts'], 2, 1)), ...read('r2', '/p/a.ts', 'same')]).events;
+    const childEvents = recorded('x', 0, [...ran(read('r1', '/p/a.ts', 'same')), summarized(2, fidelity(['ghost.ts'], 2, 1)), ...ran(read('r2', '/p/a.ts', 'same'))]).events;
     const child = { runId: 'child-1', agent: 'explore', events: childEvents };
     const transcripts = base([summarized(2, fidelity([], 1, 1))]).map((entry) => (entry.caseId === 's1-on' ? { ...entry, children: [child] } : entry));
     const report = build(sample(), transcripts);

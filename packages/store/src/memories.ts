@@ -92,6 +92,8 @@ const recallableUntil = (successorBound: string): string => `state = 'active' AN
 
 const RECALLABLE = recallableUntil('');
 
+const SEARCHABLE_WITH_HISTORY = "state <> 'candidate'";
+
 const VISIBLE_TRUSTED = "((scope = 'user' AND origin = 'trusted') OR project = :project)";
 
 const VISIBLE_UNTRUSTED = "scope = 'user'";
@@ -468,7 +470,7 @@ export const createMemoryStore = (db: DatabaseSync, clock: Clock): MemoryStore =
       readTx(db, () => {
         const { indexed, short } = partitionTerms(terms.map(asciiLower));
         const scope = visibilityOf(visibility);
-        const live = include === 'live' ? ` AND ${RECALLABLE}` : '';
+        const live = ` AND ${include === 'live' ? RECALLABLE : SEARCHABLE_WITH_HISTORY}`;
         const filters = instrFilters('text', short);
         const params: Record<string, string | number> = { ...scope.params, ...filters.params, fetch: limit === undefined ? -1 : limit };
         const candidates =

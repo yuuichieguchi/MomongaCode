@@ -12,7 +12,7 @@ import {
 } from '@momonga/eval';
 import type { ContextReport, Transcript } from '@momonga/eval';
 import type { RunEventPayload, TokenAnatomy } from '@momonga/protocol';
-import { bash, contextCase, fidelity, recorded, summarized } from './context-fixtures.ts';
+import { bash, contextCase, fidelity, ran, recorded, summarized } from './context-fixtures.ts';
 import { buildReportAs, withMeasuredQuality } from './answered-fixtures.ts';
 
 const SCENARIOS = ['a', 'b', 'c', 'd'] as const;
@@ -82,7 +82,7 @@ type Variant = { failing?: string[]; calls?: Record<string, Call[]>; every?: Cal
 const transcriptsOf = ({ failing = [], calls = {}, every = {}, silent = false }: Variant): Transcript[] =>
   CASE_IDS.map((caseId) => {
     const modelCalls = silent ? [] : (calls[caseId] ?? [every]).flatMap((call, index) => callEvents({ ...every, ...call }, index + 1));
-    const compaction = caseId.endsWith('-on') ? [...bash('b0', 'npm test', 'failed'), summarized(3, fidelity([], 2, 2))] : [];
+    const compaction = caseId.endsWith('-on') ? [...ran(bash('b0', 'npm test', 'failed')), summarized(3, fidelity([], 2, 2))] : [];
     return recorded(caseId, 0, [...modelCalls, ...compaction], { status: failing.includes(caseId) ? 'FAILED' : 'COMPLETED' });
   });
 
@@ -213,7 +213,7 @@ describe('eval compare --gate token', () => {
     const lossy = reportOf({ ...cheaper });
     const losing = buildReportAs({ dataset,
       transcripts: transcriptsOf(cheaper).map((transcript) =>
-        transcript.caseId.endsWith('-on') ? recorded(transcript.caseId, 0, [...callEvents({ cost: 0.001 }, 1), ...bash('b0', 'npm test', 'failed'), summarized(3, fidelity([], 2, 2)), ...bash('b1', 'npm test', 'failed')]) : transcript,
+        transcript.caseId.endsWith('-on') ? recorded(transcript.caseId, 0, [...callEvents({ cost: 0.001 }, 1), ...ran(bash('b0', 'npm test', 'failed')), summarized(3, fidelity([], 2, 2)), ...ran(bash('b1', 'npm test', 'failed'))]) : transcript,
       ),
       model: 'real',
       seed: 1,
@@ -226,7 +226,7 @@ describe('eval compare --gate token', () => {
     expect(comparison.gate.passed).toBe(false);
     const fabricating = buildReportAs({ dataset,
       transcripts: transcriptsOf(cheaper).map((transcript) =>
-        transcript.caseId.endsWith('-on') ? recorded(transcript.caseId, 0, [...callEvents({ cost: 0.001 }, 1), ...bash('b0', 'npm test', 'failed'), summarized(3, fidelity(['ghost.ts'], 2, 2))]) : transcript,
+        transcript.caseId.endsWith('-on') ? recorded(transcript.caseId, 0, [...callEvents({ cost: 0.001 }, 1), ...ran(bash('b0', 'npm test', 'failed')), summarized(3, fidelity(['ghost.ts'], 2, 2))]) : transcript,
       ),
       model: 'real',
       seed: 1,

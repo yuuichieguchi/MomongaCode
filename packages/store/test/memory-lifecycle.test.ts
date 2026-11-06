@@ -54,13 +54,15 @@ describe('candidates', () => {
     expect(again.memory.id).toBe(first.memory.id);
   });
 
-  it('is never recalled, ranked, or found by a plain search, and only an explicit all finds it', () => {
+  it('is never recalled, ranked, or found by a search, whichever notes the search includes', () => {
     const { store, candidate } = started();
     const { memory } = candidate(0, 'seeded fixture note');
     expect(recalled(store, VISIBLE)).toEqual([]);
     expect(store.memories.search(VISIBLE, ['seeded'])).toEqual([]);
     expect(store.memories.matchingIds(VISIBLE, ['seeded']).size).toBe(0);
-    expect(ids(store.memories.search(VISIBLE, ['seeded'], { include: 'all' }))).toEqual([memory.id]);
+    expect(store.memories.search(VISIBLE, ['seeded'], { include: 'all' })).toEqual([]);
+    expect(store.memories.search(VISIBLE, [], { include: 'all' })).toEqual([]);
+    expect(memory.state).toBe('candidate');
   });
 
   it('lists what waits for a person, per project', () => {

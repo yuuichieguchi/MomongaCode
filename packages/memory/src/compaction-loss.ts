@@ -1,5 +1,6 @@
 import { canonicalJson, isRecord } from '@momonga/foundation';
 import type { PermissionOption, PublicRunEvent, RunEvent } from '@momonga/protocol';
+import { createCallRunTracker } from './call-ran.ts';
 
 export const COMPACTION_LOSS_KINDS = ['history_read', 'rediscovery', 'repeated_failure', 'instruction_drift'] as const;
 
@@ -61,6 +62,7 @@ export const compactionLossSignals = (events: readonly (RunEvent | PublicRunEven
   const calls = new Map<string, CallRecord>();
   const approvalOptions = new Map<string, { callId: string; options: readonly PermissionOption[] }>();
   const rejectedCalls = new Set<string>();
+  const ran = createCallRunTracker();
   const live: Outcomes = { reads: new Map(), commandFailed: new Map(), refused: new Map() };
   let snapshot: Snapshot | undefined;
 
@@ -69,6 +71,7 @@ export const compactionLossSignals = (events: readonly (RunEvent | PublicRunEven
   };
 
   for (const event of events) {
+    ran.observe(event);
     switch (event.type) {
       case 'context.compacted':
         snapshot = { compactionSeq: event.seq, ...copyOf(live) };
@@ -94,7 +97,7 @@ export const compactionLossSignals = (events: readonly (RunEvent | PublicRunEven
         if (call === undefined) break;
         const refused = event.denial !== undefined || rejectedCalls.has(event.callId);
         live.refused.set(callKey(call), refused);
-        const readFile = event.files?.flatMap((file) => (file.access === 'read' && file.sha256 !== undefined ? [{ path: file.path, sha256: file.sha256 }] : []))[0];
+        const readFile = !ran.ran(event) ? undefined : event.files?.flatMap((file) => (file.access === 'read' && file.sha256 !== undefined ? [{ path: file.path, sha256: file.sha256 }] : []))[0];
         if (readFile !== undefined) {
           const range = lineRangeOf(call);
           const before = snapshot?.reads.get(readFile.path);
@@ -106,7 +109,7 @@ export const compactionLossSignals = (events: readonly (RunEvent | PublicRunEven
           });
         }
         const command = commandOf(call);
-        if (command !== undefined && !refused) {
+        if (command !== undefined && ran.ran(event)) {
           const failed = event.status === 'failed';
           if (failed && snapshot?.commandFailed.get(command) === true) signal('repeated_failure', call);
           live.commandFailed.set(command, failed);

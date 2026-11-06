@@ -9,6 +9,7 @@ const journal = (payloads: readonly RunEventPayload[]): RunEvent[] =>
   payloads.map((payload, index) => ({ ...payload, id: index + 1, runId: RUN, sessionId: 's', seq: index + 1, step: 1, leaseToken: 1, createdAt: 1 }) as RunEvent);
 
 const call = (callId: string, name: string, rawInput: unknown): RunEventPayload => ({ type: 'tool.call', callId, providerCallId: callId, name, kind: 'other', title: name, rawInput });
+const started = (callId: string): RunEventPayload => ({ type: 'tool.started', callId, idemKey: `key-${callId}` });
 const done = (callId: string, output = 'ok', status: 'completed' | 'failed' = 'completed', extra: Partial<Extract<RunEventPayload, { type: 'tool.completed' }>> = {}): RunEventPayload => ({
   type: 'tool.completed',
   callId,
@@ -19,10 +20,12 @@ const done = (callId: string, output = 'ok', status: 'completed' | 'failed' = 'c
 const compacted: RunEventPayload = { type: 'context.compacted', item: { type: 'message', role: 'user', content: 's' }, summary: 's', replacedThroughSeq: 1 };
 const read = (id: string, path: string, content: string, range: { offset?: number; limit?: number } = {}): RunEventPayload[] => [
   call(id, 'Read', { file_path: path, ...range }),
+  started(id),
   done(id, content, 'completed', { files: [{ path, sha256: sha256Hex(content), access: 'read' }] }),
 ];
 const bash = (id: string, command: string, status: 'completed' | 'failed'): RunEventPayload[] => [
   call(id, 'Bash', { command }),
+  started(id),
   done(id, status === 'failed' ? 'boom' : 'ok', status, { exitCode: status === 'failed' ? 1 : 0 }),
 ];
 const denied = (id: string, input: unknown): RunEventPayload[] => [
@@ -55,7 +58,7 @@ describe('compactionLossSignals', () => {
 
   it('names the compaction seq and the seq of the call that lost', () => {
     const events = journal([...read('a', '/p/x.ts', 'one'), compacted, ...read('b', '/p/x.ts', 'one')]);
-    expect(compactionLossSignals(events)).toEqual([{ kind: 'rediscovery', compactionSeq: 3, seq: 4 }]);
+    expect(compactionLossSignals(events)).toEqual([{ kind: 'rediscovery', compactionSeq: 4, seq: 5 }]);
   });
 });
 
@@ -126,6 +129,12 @@ describe('rediscovery', () => {
 });
 
 describe('repeated_failure', () => {
+  it('ignores a failure of a call that never started, because the command did not run', () => {
+    const neverStarted = (id: string): RunEventPayload[] => [call(id, 'Bash', { command: 'npm test' }), done(id, 'invalid arguments', 'failed')];
+    expect(kindsOf([...neverStarted('a'), compacted, ...neverStarted('b')])).toEqual([]);
+    expect(kindsOf([...bash('a', 'npm test', 'failed'), compacted, ...neverStarted('b')])).toEqual([]);
+  });
+
   it('fires when the same command fails on both sides', () => {
     expect(kindsOf([...bash('a', 'npm test', 'failed'), compacted, ...bash('b', 'npm test', 'failed')])).toEqual(['repeated_failure']);
   });
