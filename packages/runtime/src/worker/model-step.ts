@@ -166,7 +166,8 @@ const handleResult = async (
         attempt: position.attempt,
         reason,
         ...(answerCounter === undefined ? {} : { counter: answerCounter }),
-        ...(answered === undefined ? {} : { meterCounter: answered.counter }), ...(response.momonga?.target === undefined ? {} : { target: response.momonga.target }),
+        ...(answered === undefined ? {} : { meterCounter: answered.counter }),
+        ...(response.momonga?.target === undefined ? {} : { target: response.momonga.target }),
       },
       ...(usage === null
         ? []
@@ -181,7 +182,8 @@ const handleResult = async (
               cachedInputTokens: usage.input_tokens_details.cached_tokens,
               ...(response.momonga?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: response.momonga.cacheWriteInputTokens }),
               ...(response.momonga?.cost === undefined ? {} : { cost: response.momonga.cost }),
-              timing, ...(response.momonga?.target === undefined ? {} : { target: response.momonga.target }),
+              timing,
+              ...(response.momonga?.target === undefined ? {} : { target: response.momonga.target }),
             },
           ]),
     ]);
@@ -213,7 +215,7 @@ const handleResult = async (
     {
       type: 'model.responded',
       step: position.step,
-      attempt: position.attempt, ...(answeredBy === undefined ? {} : { target: answeredBy }),
+      attempt: position.attempt,
       response: {
         id: response.id,
         status: incomplete ? 'incomplete' : 'completed',
@@ -229,6 +231,7 @@ const handleResult = async (
         ...(billed === undefined ? {} : { momonga: billed }),
         timing,
       },
+      ...(answeredBy === undefined ? {} : { target: answeredBy }),
     },
     {
       type: 'usage.updated',

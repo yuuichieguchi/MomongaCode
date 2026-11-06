@@ -34,9 +34,9 @@ describe('who reads the snapshot of a run, which a terminal transition writes on
     expect(filesMatching(/\.writeSnapshot\(/)).toEqual(['runtime/src/worker/journal.ts']);
   });
 
-  it('is read by the store itself only for the claim, for inheritance and through load', () => {
+  it('is read by the store itself only through load: inheritance plans on the journal thread and the loop only commits it (row 11, 13.4 inherit_plan)', () => {
     const source = fs.readFileSync(path.join(packagesDir, 'store', 'src', 'runtime-store.ts'), 'utf8');
-    expect(source.match(/loadInReadTx\(/g)).toHaveLength(2);
-    expect(source.match(/foldedRun\(/g)).toHaveLength(2);
+    expect(source.match(/loadInReadTx\(/g)).toHaveLength(1);
+    expect(source.match(/foldedRun\(/g)).toBeNull();
   });
 });
