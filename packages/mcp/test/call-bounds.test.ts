@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { FakeClock } from '@momonga/testkit';
 import type { CallToolResult, Tool } from '@modelcontextprotocol/client';
 import { createMcpToolSource, MCP_TOOL_IDLE_TIMEOUT_MS, MCP_TOOL_TOTAL_TIMEOUT_MS, MIN_TASK_POLL_MS } from '@momonga/mcp';
 import type { McpCallToolInput, McpServerConnection } from '@momonga/mcp';
@@ -237,5 +238,45 @@ describe('G2: the server poll hint is clamped to half the idle window (R-G2c)', 
     expect(pollCeilingMs(1_800_000, MCP_TOOL_TOTAL_TIMEOUT_MS)).toBe(900_000);
     expect(pollCeilingMs(undefined, MCP_TOOL_TOTAL_TIMEOUT_MS)).toBe(MCP_TOOL_TOTAL_TIMEOUT_MS / 2);
     expect(pollCeilingMs(301, MCP_TOOL_TOTAL_TIMEOUT_MS)).toBe(150);
+  });
+});
+
+describe('G2 test 6: the overall limit ends a call that keeps reporting progress, under a run deadline raised past it (end to end, fake clock)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('ends at 28 hours with the overall text, not at the 7-day run deadline', async () => {
+    vi.useFakeTimers();
+    const clock = { now: () => Date.now(), set: () => undefined } as unknown as FakeClock;
+    const progressEveryMs = 4 * 60 * 1000;
+    const connection = fakeConnection({
+      transportKind: 'network',
+      call: async (input) => {
+        while (input.signal?.aborted !== true) {
+          await new Promise((resolve) => setTimeout(resolve, progressEveryMs));
+          input.onProgress?.();
+        }
+        return DONE;
+      },
+    });
+    const harness = makeExecutor(clock);
+    const registry = createToolRegistry();
+    registry.addSource(createMcpToolSource({ server: 'jobs', connection }));
+    const startedAt = Date.now();
+    const pending = harness.resultOf(await registry.snapshot(), 'mcp__jobs__long_job', {}, { deadlineAt: startedAt + 7 * 24 * 60 * 60 * 1000 });
+    let settled = false;
+    void pending.finally(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(MCP_TOOL_TOTAL_TIMEOUT_MS - progressEveryMs);
+    expect(settled).toBe(false);
+    while (!settled) await vi.advanceTimersByTimeAsync(progressEveryMs);
+    const result = await pending;
+    expect(Date.now() - startedAt).toBeLessThan(MCP_TOOL_TOTAL_TIMEOUT_MS + 2 * progressEveryMs);
+    expect(result).toEqual({
+      status: 'failed',
+      output: 'The call to long_job on MCP server "jobs" reached the overall limit of 28 hours and was stopped. The server may have run it; check before repeating it.',
+    });
   });
 });

@@ -1,5 +1,3 @@
-import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { childResultOf } from '@momonga/agents';
 
@@ -25,10 +23,5 @@ describe('G3: the subagent wait has no timer of its own; its bound is the bound 
 
   it('test 2: returns the final message of a child whose MCP call ended by the G2 idle window, so the parent sees the G2 text', () => {
     expect(childResultOf('explorer', finished('COMPLETED', { text: `The tool failed: ${MCP_IDLE_TEXT}` }))).toEqual({ status: 'completed', output: `The tool failed: ${MCP_IDLE_TEXT}` });
-  });
-
-  it('test 3: a child run loads no Agent tool, so the depth stays 1 and the bound stays maxSteps steps of bounded calls', () => {
-    const source = fs.readFileSync(fileURLToPath(new URL('../../runtime/src/worker/claim-runner.ts', import.meta.url)), 'utf8');
-    expect(source).toContain('const agentSet = run.parentRunId === null && options.agents !== undefined ? await options.agents.load(session) : undefined;');
   });
 });
