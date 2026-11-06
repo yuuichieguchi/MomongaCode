@@ -90,8 +90,8 @@ export type {
 } from './process-lock.ts';
 export { bsdFileLock, createFileLock, nodeFileLockOps, resolveKernelLock, writeHolderOrRelease } from './platform/kernel-lock.ts';
 export { createKernelLockMechanism, hostKernelLock } from './platform/host-kernel-lock.ts';
-export { createLockCapability, hostLockCapability } from './platform/lock-capability.ts';
-export type { LockCapability, LockCapabilityOptions, LockCapabilityProbe } from './platform/lock-capability.ts';
+export { StagingLinkError, createLockCapability, hostLockCapability } from './platform/lock-capability.ts';
+export type { LockCapability, LockCapabilityOptions, LockCapabilityProbe, StagingFiles } from './platform/lock-capability.ts';
 export { UNMEASURED_CAPABILITY } from './platform/lock-capability.ts';
 export { MARKER_MODES, MARKER_PHASES, MARKER_STATES } from './marker-state.ts';
 export type { MarkerMode, MarkerPhase, MarkerState } from './marker-state.ts';

@@ -3,7 +3,7 @@ import { OPEN_FLAGS, nodeFileSystemSync } from '../node-file-system.ts';
 import type { MarkerMode } from '../marker-state.ts';
 import { EMPTY_RECORD_TEXT } from './marker-record.ts';
 import { O_SHLOCK, createLockedFile } from './lock-capability.ts';
-import type { LockCapabilityProbe } from './lock-capability.ts';
+import type { LockCapabilityProbe, StagingFiles } from './lock-capability.ts';
 import { nodeFileLockOps } from './kernel-lock.ts';
 import type { FileLockOps } from './kernel-lock.ts';
 
@@ -13,7 +13,7 @@ export interface MarkerHandle {
   close(): void;
 }
 
-export type CreateMarkerOptions = { capability: LockCapabilityProbe; ops?: FileLockOps };
+export type CreateMarkerOptions = { capability: LockCapabilityProbe; ops?: FileLockOps; files?: StagingFiles };
 
 const MARKER_MODE = 0o600;
 
@@ -69,10 +69,10 @@ const openPlainWithRecord = (ops: FileLockOps, marker: string): number => {
   return fd;
 };
 
-export const createMarker = async (marker: string, { capability, ops = nodeFileLockOps }: CreateMarkerOptions): Promise<MarkerHandle> => {
+export const createMarker = async (marker: string, { capability, ops = nodeFileLockOps, files = nodeFileSystemSync }: CreateMarkerOptions): Promise<MarkerHandle> => {
   const dir = path.dirname(marker);
   if ((await capability.of(dir)) !== 'proved') return handleOf(ops, openPlainWithRecord(ops, marker), 'listed');
-  const fd = createLockedFile(ops, marker, OPEN_FLAGS.readWrite, MARKER_MODE, writeEmptyRecord);
+  const fd = createLockedFile(ops, marker, OPEN_FLAGS.readWrite, MARKER_MODE, writeEmptyRecord, files);
   if (selfCheckHolds(ops, marker)) return handleOf(ops, fd, 'locked');
   capability.contradicted(dir);
   return handleOf(ops, fd, 'listed');

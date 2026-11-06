@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createLockCapability } from '../../src/platform/lock-capability.ts';
+import { nodeFileSystemSync } from '../../src/node-file-system.ts';
+import { StagingLinkError, createLockCapability } from '../../src/platform/lock-capability.ts';
 import { createMarker } from '../../src/platform/marker-file.ts';
 import { makeTemporaryDirectory } from '../support/temporary-directory.ts';
 import { fixedCapability, stalledSharedProbe, twoStepCreateLockOps } from '../support/probe-fakes.ts';
@@ -55,5 +56,30 @@ describe('T7 (b) on a kernel that creates the file before it locks it, a probe t
     });
     expect(await createLockCapability({ proofDir, ops }).of(markerDir)).toBe('proved');
     expect(sightings).not.toContain('unlocked');
+  });
+});
+
+describe('T7 (b) a staging place on another filesystem than the marker is refused with a typed error', () => {
+  const crossDeviceLink = {
+    ...nodeFileSystemSync,
+    linkSync: (): void => {
+      throw Object.assign(new Error('EXDEV: cross-device link not permitted, link'), { code: 'EXDEV' });
+    },
+  };
+
+  it('createMarker rejects with StagingLinkError naming both paths and the reason, and leaves neither file behind', async () => {
+    const { markerDir } = directories();
+    const marker = path.join(markerDir, 'call-1');
+    const staged = path.join(path.dirname(markerDir), '.tools.call-1.creating');
+    const failure = await createMarker(marker, { capability: fixedCapability('proved'), ops: twoStepCreateLockOps(() => undefined), files: crossDeviceLink }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(StagingLinkError);
+    expect(failure).toMatchObject({ name: 'StagingLinkError', stagingPath: staged, targetPath: marker });
+    expect((failure as Error).message).toBe(`${staged} cannot be hard-linked to ${marker}: the two paths are on different filesystems, so the locked file cannot be given its name without a moment in which it exists unlocked`);
+    expect(((failure as Error).cause as NodeJS.ErrnoException).code).toBe('EXDEV');
+    expect(fs.existsSync(marker)).toBe(false);
+    expect(fs.existsSync(staged)).toBe(false);
   });
 });

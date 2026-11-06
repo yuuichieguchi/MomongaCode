@@ -38,31 +38,60 @@ const PROOF_MODE = 0o600;
 const sharedProbeFlags = (): number => OPEN_FLAGS.readOnly | O_SHLOCK | OPEN_FLAGS.nonBlocking;
 const createLockedFlags = (access: number): number => access | OPEN_FLAGS.create | OPEN_FLAGS.exclusive | O_EXLOCK | OPEN_FLAGS.nonBlocking;
 
+const codeOf = (error: unknown): string | undefined => (error as NodeJS.ErrnoException | undefined)?.code;
+
 const stagingPathOf = (file: string): string => {
   const dir = path.dirname(file);
   return path.join(path.dirname(dir), `.${path.basename(dir)}.${path.basename(file)}.creating`);
 };
 
-export const createLockedFile = (ops: FileLockOps, file: string, access: number, mode: number, initialize: (descriptor: number) => void = () => undefined): number => {
+export class StagingLinkError extends Error {
+  readonly stagingPath: string;
+  readonly targetPath: string;
+  constructor(stagingPath: string, targetPath: string, options: { cause: unknown }) {
+    super(`${stagingPath} cannot be hard-linked to ${targetPath}: the two paths are on different filesystems, so the locked file cannot be given its name without a moment in which it exists unlocked`, options);
+    this.name = 'StagingLinkError';
+    this.stagingPath = stagingPath;
+    this.targetPath = targetPath;
+  }
+}
+
+export type StagingFiles = { linkSync(from: string, to: string): void; rmSync(file: string): void };
+
+const linkStaged = (files: StagingFiles, staged: string, file: string): void => {
+  try {
+    files.linkSync(staged, file);
+  } catch (error) {
+    if (codeOf(error) === 'EXDEV') throw new StagingLinkError(staged, file, { cause: error });
+    throw error;
+  }
+};
+
+export const createLockedFile = (
+  ops: FileLockOps,
+  file: string,
+  access: number,
+  mode: number,
+  initialize: (descriptor: number) => void = () => undefined,
+  files: StagingFiles = nodeFileSystemSync,
+): number => {
   const staged = stagingPathOf(file);
-  nodeFileSystemSync.rmSync(staged);
+  files.rmSync(staged);
   const descriptor = ops.open(staged, createLockedFlags(access), mode);
   let linked = false;
   try {
     initialize(descriptor);
-    nodeFileSystemSync.linkSync(staged, file);
+    linkStaged(files, staged, file);
     linked = true;
-    nodeFileSystemSync.rmSync(staged);
+    files.rmSync(staged);
   } catch (error) {
     ops.close(descriptor);
-    nodeFileSystemSync.rmSync(staged);
-    if (linked) nodeFileSystemSync.rmSync(file);
+    files.rmSync(staged);
+    if (linked) files.rmSync(file);
     throw error;
   }
   return descriptor;
 };
-
-const codeOf = (error: unknown): string | undefined => (error as NodeJS.ErrnoException | undefined)?.code;
 
 const statIdentity = (dir: string): DirectoryIdentity => nodeFileSystemSync.identitySync(dir);
 
