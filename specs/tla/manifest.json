@@ -2734,6 +2734,89 @@
       "measuredSeconds": 1.61,
       "measuredCpuSeconds": 2.1,
       "budgetCpuSeconds": 8
+    },
+    {
+      "config": "RipgrepExtract",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1953,
+      "measuredSeconds": 1.64,
+      "measuredCpuSeconds": 2.69,
+      "budgetCpuSeconds": 9
+    },
+    {
+      "config": "RipgrepExtract.split",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 14126,
+      "measuredSeconds": 2.85,
+      "measuredCpuSeconds": 4.45,
+      "budgetCpuSeconds": 12
+    },
+    {
+      "config": "RipgrepExtract.blobBad",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1206,
+      "measuredSeconds": 1.85,
+      "measuredCpuSeconds": 2.4,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "RipgrepExtract.replaceFile",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 3090,
+      "measuredSeconds": 1.87,
+      "measuredCpuSeconds": 2.6,
+      "budgetCpuSeconds": 9
+    },
+    {
+      "config": "RipgrepExtract.replaceFileEvents",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 10193,
+      "measuredSeconds": 2.34,
+      "measuredCpuSeconds": 3.8,
+      "budgetCpuSeconds": 11
+    },
+    {
+      "config": "RipgrepExtract.asDesigned",
+      "role": "evidence",
+      "expect": {
+        "violates": "SpuriousFree",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 141,
+      "measuredSeconds": 1.69,
+      "measuredCpuSeconds": 1.7,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "RipgrepExtract.noVerify",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoBadSpawn",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 86,
+      "measuredSeconds": 2.41,
+      "measuredCpuSeconds": 1.49,
+      "budgetCpuSeconds": 6
     }
   ]
 }
