@@ -19,15 +19,15 @@ const entry = (config: string, tier: ManifestEntry['tier'], wallSeconds: number)
 
 const manifestOf = (unitSuiteSeconds: number, entries: readonly ManifestEntry[]): Manifest => ({ format: MANIFEST_FORMAT, unitSuiteSeconds, startupCpuSeconds: 3, entries });
 
-const sample = manifestOf(20, [entry('A', 'every-run', 10), entry('A.deep', 'deep', 500), entry('B', 'every-run', 24), entry('C', 'every-run', 46)]);
+const sample = manifestOf(20, [entry('A', 'every-run', 10), entry('A.deep', 'deep', 500), entry('B', 'every-run', 24), entry('C', 'every-run', EVERY_RUN_BUDGET_RATIO * 20 - 34)]);
 
 describe('the time budget of the every-run tier', () => {
-  it('allows the every-run tier four times the unit suite time', () => {
-    expect(EVERY_RUN_BUDGET_RATIO).toBe(4);
+  it('allows the every-run tier seven times the unit suite time', () => {
+    expect(EVERY_RUN_BUDGET_RATIO).toBe(7);
   });
 
   it('sums the budgets of the every-run entries only', () => {
-    expect(everyRunBudgetSeconds(sample)).toBe(80);
+    expect(everyRunBudgetSeconds(sample)).toBe(EVERY_RUN_BUDGET_RATIO * 20);
   });
 
   it('accepts a sum equal to the ratio times unitSuiteSeconds', () => {
@@ -38,10 +38,9 @@ describe('the time budget of the every-run tier', () => {
     const over = manifestOf(20, [...sample.entries, entry('D', 'every-run', 1)]);
     const problem = tierBudgetProblem(over);
     expect(problem).toBeDefined();
-    expect(problem).toContain('81 s');
-    expect(problem).toContain('over 4 x 20 s = 80 s');
-    expect(problem).toContain('20');
-    expect(problem).toContain('80');
+    const limit = EVERY_RUN_BUDGET_RATIO * 20;
+    expect(problem).toContain(`${limit + 1} s`);
+    expect(problem).toContain(`over ${EVERY_RUN_BUDGET_RATIO} x 20 s = ${limit} s`);
   });
 
   it('does not count deep entries against the total', () => {
@@ -52,6 +51,6 @@ describe('the time budget of the every-run tier', () => {
     const manifest = readManifest(manifestPath);
     expect(manifest.unitSuiteSeconds).toBeGreaterThan(0);
     expect(tierBudgetProblem(manifest)).toBeUndefined();
-    expect(everyRunBudgetSeconds(manifest)).toBeLessThanOrEqual(4 * manifest.unitSuiteSeconds);
+    expect(everyRunBudgetSeconds(manifest)).toBeLessThanOrEqual(EVERY_RUN_BUDGET_RATIO * manifest.unitSuiteSeconds);
   });
 });
