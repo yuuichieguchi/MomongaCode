@@ -7,14 +7,14 @@ import { expectSchema } from '../service/helpers.ts';
 
 type Outcome = Parameters<typeof outcomePayloads>[0];
 
-const liveOutcome = (reconciled: 'already_applied' | 'not_applied' | 'unknown', interrupted: 'timeout' | 'cancelled'): Outcome =>
+const liveOutcome = (reconciled: 'already_applied' | 'not_applied' | 'unknown', interrupted: 'timeout' | 'cancelled', command?: string): Outcome =>
   ({
     callId: 'c1',
     kind: 'result',
     idemKey: 'k1',
     reconciled,
     interrupted,
-    result: { status: reconciled === 'already_applied' ? 'completed' : 'failed', output: 'Bash timed out after 30 ms. Its side effects are unknown; inspect the current state before retrying.' },
+    result: { status: reconciled === 'already_applied' ? 'completed' : 'failed', output: 'Bash timed out after 30 ms. Its side effects are unknown; inspect the current state before retrying.', ...(command === undefined ? {} : { command }) },
   }) as unknown as Outcome;
 
 const publicEvent = (payload: Record<string, unknown>): Record<string, unknown> => ({
@@ -74,7 +74,7 @@ describe('the journal record of a live timeout', () => {
       },
       { type: 'tool.call', callId: 'c1', providerCallId: 'c1', name: 'Bash', kind: 'execute', title: 'npm test', rawInput: input },
       { type: 'tool.started', callId: 'c1', idemKey: 'k1' },
-      ...outcomePayloads(liveOutcome('unknown', 'timeout')),
+      ...outcomePayloads(liveOutcome('unknown', 'timeout', 'npm test')),
     ] as RunEventPayload[];
     const events = materializeEvents(payloads);
     const state = events.reduce(foldRunState, initialRunState({ runId: FIXTURE_RUN_ID, sessionId: FIXTURE_SESSION_ID }));
