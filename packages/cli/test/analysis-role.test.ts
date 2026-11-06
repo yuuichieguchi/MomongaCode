@@ -57,12 +57,9 @@ describe('the analysis role of context improve', () => {
     expect(chosen).toEqual({ alias: 'opus', capabilities: CAPABILITIES['opus'] });
   });
 
-  it('guards a schema the role cannot hold: an analysis role without structured output is refused, naming the role, the alias and the capability', async () => {
-    const failure = analysisModelFor()({ roles: { analysis: 'plain' }, alias: 'opus', capabilitiesOf });
-    await expect(failure).rejects.toBeInstanceOf(contextCommand.ContextImproveError);
-    await expect(failure).rejects.toThrow('models.roles.analysis');
-    await expect(failure).rejects.toThrow('plain');
-    await expect(failure).rejects.toThrow('structured output');
+  it('guards a role refused for a capability it does not need: an analysis role without structured output is used like any other', async () => {
+    const chosen = await analysisModelFor()({ roles: { analysis: 'plain' }, alias: 'opus', capabilitiesOf });
+    expect(chosen).toEqual({ alias: 'plain', capabilities: CAPABILITIES['plain'] });
   });
 
   it('guards a report that names the wrong alias: the improve input names the analysis role alias the calls used, not the --alias of the command', async () => {
@@ -71,10 +68,8 @@ describe('the analysis role of context improve', () => {
     expect(input.alias).toBe('cheap');
   });
 
-  it('refuses an --alias without structured output when no role is set, naming the alias and the capability', async () => {
-    const failure = analysisModelFor()({ roles: {}, alias: 'plain', capabilitiesOf });
-    await expect(failure).rejects.toBeInstanceOf(contextCommand.ContextImproveError);
-    await expect(failure).rejects.toThrow('plain');
-    await expect(failure).rejects.toThrow('structured output');
+  it('uses an --alias without structured output when no role is set', async () => {
+    const chosen = await analysisModelFor()({ roles: {}, alias: 'plain', capabilitiesOf });
+    expect(chosen).toEqual({ alias: 'plain', capabilities: CAPABILITIES['plain'] });
   });
 });

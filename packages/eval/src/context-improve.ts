@@ -157,8 +157,8 @@ export const improveGuideline = async (input: ImproveInput, ports: ImprovePorts)
       }),
     );
     analysed += 1;
-    const parsed = parseGuidelineAnalysis(completion.text);
-    if ('error' in parsed) skipped.push({ scenario: entry.scenario, reason: `output failed the schema: ${parsed.error}` });
+    const parsed = parseGuidelineAnalysis(completion);
+    if ('error' in parsed) skipped.push({ scenario: entry.scenario, reason: parsed.error });
     else analyses.push({ scenario: entry.scenario, analysis: parsed.analysis });
   }
   if (analyses.length === 0) return outcome('no_analysis');
@@ -182,9 +182,9 @@ export const improveGuideline = async (input: ImproveInput, ports: ImprovePorts)
         ...(input.recordChars === undefined ? {} : { analysisChars: input.recordChars }),
       }),
     );
-    const parsed = parseGuidelineCandidate(completion.text);
+    const parsed = parseGuidelineCandidate(completion);
     if ('error' in parsed) {
-      candidates.push({ index, skipped: `output failed the schema: ${parsed.error}` });
+      candidates.push({ index, skipped: parsed.error });
       continue;
     }
     const twin = candidates.find((earlier) => earlier.text === parsed.guideline);

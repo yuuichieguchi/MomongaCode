@@ -14,6 +14,7 @@ import type { ConstrainedPlan } from './constrained-sink.ts';
 import { PreconditionFailedError, StreamFailure, UnsupportedInputError } from '../shared/failures.ts';
 import { RENDERS_EVERY_SAMPLING_FIELD } from '../shared/sampling.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
+import { jsonReplyFormatOf, jsonReplyPathOf, jsonReplyPlanOf } from '../shared/json-reply.ts';
 import { retryAfterHint, httpErrorOf, nestedErrorDetail } from '../shared/http-error.ts';
 import { MAX_SSE_EVENT_BYTES } from '../shared/limits.ts';
 import { CHAT_COMPLETIONS_PATH, CHAT_COMPLETIONS_SUFFIX } from './limits.ts';
@@ -111,7 +112,15 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
     const capabilities = ctx.capabilities;
     const planned = bodyFor(request, ctx.target, ctx.reasoningOrigin, capabilities, capabilities.allowedTools);
     const { envelope, ledger } = planned;
-    const body = withCapabilityOptions(planned.body, request, capabilities);
+    const jsonReply = jsonReplyPlanOf(request, capabilities);
+    if (jsonReply !== undefined && envelope !== undefined) {
+      throw new UnsupportedInputError('unsupported_input', 'a JSON reply format cannot be combined with tools on a constrained target, whose response format carries the tool envelope', 'text');
+    }
+    const responseFormat = jsonReplyFormatOf(jsonReply, resolveDialect(options.schemaDialect(ctx.target), options.userDialects ?? NO_USER_DIALECTS, options.constructSupport?.(ctx.target)));
+    const body = {
+      ...withCapabilityOptions(planned.body, request, capabilities),
+      ...(responseFormat === undefined ? {} : { response_format: { type: 'json_schema', json_schema: { ...responseFormat } } }),
+    };
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     try {
@@ -137,7 +146,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
         );
       }
 
-      const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request, wraps: ledger.wraps, narrowings: ledger.narrowings, ...retryAfterHint(response, options.clock) });
+      const emitter = new ResponseEmitter({ clock: options.clock, model: request.model, request, wraps: ledger.wraps, narrowings: ledger.narrowings, jsonReply: jsonReplyPathOf(jsonReply), ...retryAfterHint(response, options.clock) });
       const sink = envelope === undefined ? createNativeSink(emitter) : createConstrainedSink(emitter, envelope, options.clock);
       const driver = new StreamDriver(emitter, sink);
 

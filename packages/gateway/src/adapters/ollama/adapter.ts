@@ -5,6 +5,7 @@ import { createUpstreamClassifier } from '../shared/classify.ts';
 import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { StreamFailure, UpstreamProtocolError } from '../shared/failures.ts';
 import { createEndpointPool } from '../shared/http-client.ts';
+import { jsonReplyPathOf, jsonReplyPlanOf } from '../shared/json-reply.ts';
 import { retryAfterHint, httpErrorOf } from '../shared/http-error.ts';
 import type { ErrorDetailReader } from '../shared/http-error.ts';
 import { resolveToolChoice } from '../../core/tool-choice.ts';
@@ -36,7 +37,8 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
     if (closed) throw new Error('the ollama adapter is closed');
     const capabilities = ctx.capabilities;
     const ledger = new RenderLedger();
-    const body = buildOllamaBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.name, OLLAMA_TOOL_CHOICE), capabilities, ctx.reasoningOrigin, { ledger, ...(options.userDialects === undefined ? {} : { userDialects: options.userDialects }) });
+    const jsonReply = jsonReplyPlanOf(request, capabilities);
+    const body = buildOllamaBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.name, OLLAMA_TOOL_CHOICE), capabilities, ctx.reasoningOrigin, { ledger, jsonReply, ...(options.userDialects === undefined ? {} : { userDialects: options.userDialects }) });
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     try {
@@ -47,7 +49,7 @@ export const createOllamaAdapter = (options: OllamaAdapterOptions): OllamaAdapte
         signal,
       });
       if (response.status !== 200) throw await httpErrorOf(response, options.clock, detailReader(request.model), OLLAMA_VOCABULARY);
-      for await (const event of ollamaEventsOf(response.body, { request, clock: options.clock, wraps: ledger.wraps, narrowings: ledger.narrowings, ...retryAfterHint(response, options.clock) })) {
+      for await (const event of ollamaEventsOf(response.body, { request, clock: options.clock, wraps: ledger.wraps, narrowings: ledger.narrowings, jsonReply: jsonReplyPathOf(jsonReply), ...retryAfterHint(response, options.clock) })) {
         ctx.signal.throwIfAborted();
         yield event;
       }

@@ -255,15 +255,13 @@ describe('auto-mode check over the embedded dataset', () => {
     expect(settings.autoMode?.classifier).toBe('guard');
   });
 
-  it('prints the reason and writes nothing for a classifier without structured output, starting no daemon', async () => {
+  it('measures a classifier without structured output like any other: the check runs the whole dataset and writes a record', async () => {
     const state = fake();
-    const { ports, home, output } = portsFor(state.effects);
+    const { ports, home } = portsFor(state.effects);
     const outcome = await autoModeCheck(ports, { classifier: 'plain', agent: 'worker' });
-    expect(outcome.measurement).toBe('unmeasurable');
-    expect(output.join('')).toContain('plain');
-    expect(output.join('')).toContain('structured output');
-    expect(recordsIn(home)).toEqual([]);
-    expect(state.started).toEqual([]);
+    expect(outcome.measurement).not.toBe('unmeasurable');
+    expect(state.started).toHaveLength(AUTO_MODE_RUNS);
+    expect(recordsIn(home)).toHaveLength(1);
   });
 
   it('prints the reason and writes nothing when no labelled decision was observed', async () => {
