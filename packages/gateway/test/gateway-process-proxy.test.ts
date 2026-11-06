@@ -145,12 +145,13 @@ describe('gateway: a model call to a remote target goes through the configured p
   });
 });
 
+const ANTHROPIC_KEY_ENV = 'MOMONGA_TEST_ANTHROPIC_KEY';
+
 const REMOTE_TARGET = {
-  adapter: 'chat-completions',
-  provider: 'fake',
-  model: 'system',
-  baseUrl: 'https://model.example.test/v1',
-  toolCalling: 'native',
+  adapter: 'anthropic',
+  model: 'model-a',
+  baseUrl: 'https://model.example.test',
+  apiKeyEnv: ANTHROPIC_KEY_ENV,
   capabilities: { contextWindow: 4096, maxOutputTokens: 1024 },
 };
 
@@ -163,7 +164,7 @@ describe('gateway: a model call through a proxy that never answers CONNECT', { t
     const { client } = await startGateway(
       context,
       { models: { aliases: { fast: ['primary'] }, targets: { primary: REMOTE_TARGET }, headersTimeoutMs: 300 }, network: { httpsProxy: `http://127.0.0.1:${proxy.port}` } },
-      {},
+      { [ANTHROPIC_KEY_ENV]: 'test-anthropic-key-0123456789' },
       { clock, timers },
     );
 

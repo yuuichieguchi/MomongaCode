@@ -36,7 +36,9 @@ const codeOf = (error: unknown): string | undefined => {
 const PROXY_REFUSAL_TRANSIENT_STATUS = 500;
 
 const isTransientOutbound = (error: OutboundConnectionError): boolean =>
-  error.failure.kind === 'proxy-unreachable' || (error.failure.kind === 'proxy-refused' && error.failure.status >= PROXY_REFUSAL_TRANSIENT_STATUS);
+  error.failure.kind === 'proxy-unreachable' ||
+  (error.failure.kind === 'proxy-refused' && error.failure.status >= PROXY_REFUSAL_TRANSIENT_STATUS) ||
+  (error.failure.kind === 'origin-connection' && isRawConnectionFailure(error.cause));
 
 const OUTBOUND_CODES: Readonly<Record<OutboundConnectionError['failure']['kind'], string>> = {
   'proxy-unreachable': 'provider_unavailable',
@@ -46,19 +48,23 @@ const OUTBOUND_CODES: Readonly<Record<OutboundConnectionError['failure']['kind']
   'proxy-unsupported': 'proxy_unsupported',
   'origin-certificate': 'certificate_untrusted',
   'ca-file': 'ca_file_unreadable',
+  'origin-connection': 'adapter_error',
 };
 
-export const isConnectionFailure = (error: unknown, depth = 0): boolean => {
-  if (depth > MAX_CAUSE_DEPTH || typeof error !== 'object' || error === null) return false;
+export const isConnectionFailure = (error: unknown): boolean => {
   const outbound = findOutboundError(error);
-  if (outbound !== undefined) return isTransientOutbound(outbound);
+  return outbound === undefined ? isRawConnectionFailure(error) : isTransientOutbound(outbound);
+};
+
+function isRawConnectionFailure(error: unknown, depth = 0): boolean {
+  if (depth > MAX_CAUSE_DEPTH || typeof error !== 'object' || error === null) return false;
   const code = codeOf(error);
   if (code === 'UND_ERR_ABORTED' || (error as { name?: unknown }).name === 'AbortError') return false;
   if (code !== undefined && CONNECTION_CODES.has(code)) return true;
-  if (isConnectionFailure((error as { cause?: unknown }).cause, depth + 1)) return true;
+  if (isRawConnectionFailure((error as { cause?: unknown }).cause, depth + 1)) return true;
   const nested = (error as { errors?: unknown }).errors;
-  return Array.isArray(nested) && nested.some((entry) => isConnectionFailure(entry, depth + 1));
-};
+  return Array.isArray(nested) && nested.some((entry) => isRawConnectionFailure(entry, depth + 1));
+}
 
 const body = (type: ErrorBody['type'], code: string | null, message: string, param: string | null = null): ErrorBody => ({
   type,
@@ -111,7 +117,9 @@ export const createUpstreamClassifier =
       const transient = isTransientOutbound(outbound);
       return {
         retryable: transient,
-        error: body('server_error', transient ? 'provider_unavailable' : OUTBOUND_CODES[outbound.failure.kind], `the ${label} upstream is unreachable: ${outbound.message}`),
+        error: transient
+          ? body('server_error', 'provider_unavailable', `the ${label} upstream is unreachable: ${outbound.message}`)
+          : body('server_error', OUTBOUND_CODES[outbound.failure.kind], `the ${label} upstream failed: ${outbound.message}`),
       };
     }
     if (isConnectionFailure(error)) {

@@ -260,7 +260,7 @@ const createAutoChatCompletionsAdapter = async (
   readKey: ReturnType<typeof apiKeyReader>,
   probeRecordDir: string,
   clock: Clock,
-  refusal: PreconditionFailedError | undefined,
+  identify: Identification,
   userDialects: UserDialects,
   liveness: UpstreamLiveness,
   network: OutboundNetwork,
@@ -284,7 +284,7 @@ const createAutoChatCompletionsAdapter = async (
   });
   const adapter = createChatCompletionsAdapter({
     resolveEndpoint: async (_target, signal) => {
-      if (refusal !== undefined) throw refusal;
+      await identify(signal);
       await probed.verify(signal);
       return upstream;
     },
@@ -336,16 +336,25 @@ const createProbedOllamaAdapter = async (
   return { adapter, upstreamIdentity: loaded?.identity };
 };
 
-const ollamaRefusalsOf = async (targets: ReadonlyArray<readonly [string, ResolvedTarget]>, network: OutboundNetwork, signal: AbortSignal): Promise<Map<string, PreconditionFailedError>> => {
-  const candidates = targets.filter((entry): entry is readonly [string, OllamaDetectable] => {
-    const [, target] = entry;
-    return (target.adapter === 'chat-completions' || target.adapter === 'open-responses') && target.baseUrl !== undefined;
-  });
-  const answers = await Promise.all(candidates.map(async ([, target]) => answersAsOllama(reachableEndpoint(upstreamEndpointOf(target), network), signal)));
-  return new Map(
-    candidates.flatMap(([name, target], index) => (answers[index] === true ? [[name, ollamaServerRefusal(name, target.adapter, endpointKeyOf(upstreamEndpointOf(target)))] as const] : [])),
-  );
+type Identification = (signal: AbortSignal) => Promise<void>;
+
+const UNIDENTIFIED = Symbol('unidentified');
+
+const ollamaIdentificationOf = (name: string, target: OllamaDetectable, network: OutboundNetwork): Identification => {
+  let refusal: PreconditionFailedError | null | typeof UNIDENTIFIED = UNIDENTIFIED;
+  return async (signal) => {
+    if (refusal === UNIDENTIFIED) {
+      const isOllama = await answersAsOllama(reachableEndpoint(upstreamEndpointOf(target), network), signal);
+      refusal = isOllama ? ollamaServerRefusal(name, target.adapter, endpointKeyOf(upstreamEndpointOf(target))) : null;
+    }
+    if (refusal !== null) throw refusal;
+  };
 };
+
+const NO_IDENTIFICATION: Identification = async () => undefined;
+
+const identificationOf = (name: string, target: ServedTarget, network: OutboundNetwork): Identification =>
+  (target.adapter === 'chat-completions' || target.adapter === 'open-responses') && target.baseUrl !== undefined ? ollamaIdentificationOf(name, target, network) : NO_IDENTIFICATION;
 
 const DEBUG_TCP_HOST = '127.0.0.1';
 
@@ -555,8 +564,6 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     signal?.throwIfAborted();
     const userDialects = settings.models.dialects;
     const liveness: UpstreamLiveness = { headersTimeoutMs: settings.models.headersTimeoutMs, idleTimeoutMs: settings.models.idleTimeoutMs };
-    const ollamaRefusals = await ollamaRefusalsOf(targets, network, signal ?? new AbortController().signal);
-    signal?.throwIfAborted();
     for (const [name, target] of targets) {
       signal?.throwIfAborted();
       if (target.adapter === 'fm') {
@@ -572,9 +579,9 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         continue;
       }
       const readKey = apiKeyReader(options.env, secretResolver, target);
-      const refusal = ollamaRefusals.get(name);
+      const identify = identificationOf(name, target, network);
       if (target.adapter === 'chat-completions' && target.toolCalling === 'auto') {
-        const probed = await createAutoChatCompletionsAdapter(name, target, readKey, paths.probe, clock, refusal, userDialects, liveness, network);
+        const probed = await createAutoChatCompletionsAdapter(name, target, readKey, paths.probe, clock, identify, userDialects, liveness, network);
         adapters[name] = probed.adapter;
         counters[name] = targetCounterOf({ target, codeDigest, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) });
         continue;
@@ -582,8 +589,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       counters[name] = targetCounterOf({ target, codeDigest });
       const mode: ToolCallingMode = target.toolCalling === 'auto' ? 'native' : target.toolCalling;
       const common = {
-        resolveEndpoint: async () => {
-          if (refusal !== undefined) throw refusal;
+        resolveEndpoint: async (_target: AdapterTarget, requestSignal: AbortSignal) => {
+          await identify(requestSignal);
           return reachableEndpoint(upstreamEndpointOf(target), network);
         },
         capabilities: async () => capabilitiesOf(target, mode),

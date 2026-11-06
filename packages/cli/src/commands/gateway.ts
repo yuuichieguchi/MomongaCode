@@ -5,7 +5,7 @@ import type { MomongaPaths, OutboundNetwork } from '@momonga/foundation';
 import type { DialectDefinition, ProbeReportDialect } from '@momonga/protocol';
 import { ensureDaemon, stopDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
-import { outboundNetworkOf } from '../network.ts';
+import { processOutboundNetwork } from '../network.ts';
 import { escapedLines } from '../terminal-writer.ts';
 
 export const DEFAULT_FM_BINARY = '/usr/bin/fm';
@@ -39,8 +39,8 @@ export const probeTarget = async (ports: CliPorts, paths: MomongaPaths, target: 
   const targets = settings.models.targets;
   const configured = targets[target];
   if (configured?.adapter === 'fm') return probeFm(ports, paths, target, options);
-  if (configured?.adapter === 'chat-completions') return probeChatCompletions(ports, paths, target, configured, options, settings.models.dialects, await outboundNetworkOf(ports, settings.network));
-  if (configured?.adapter === 'ollama') return probeOllama(ports, paths, target, configured, options, settings.models.dialects, await outboundNetworkOf(ports, settings.network));
+  if (configured?.adapter === 'chat-completions') return probeChatCompletions(ports, paths, target, configured, options, settings.models.dialects, await processOutboundNetwork(ports));
+  if (configured?.adapter === 'ollama') return probeOllama(ports, paths, target, configured, options, settings.models.dialects, await processOutboundNetwork(ports));
   throw new NotAProbeableTarget(target, targets);
 };
 

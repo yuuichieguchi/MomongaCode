@@ -1,6 +1,7 @@
 import { nodeEntryIo } from '@momonga/foundation';
 import { daemonEntries } from './daemon/entries.ts';
 import { describeFailure } from './failure.ts';
+import { processOutboundNetwork } from './network.ts';
 import { nodePorts } from './node-ports.ts';
 import type { CliPorts } from './ports.ts';
 import { pathsOf } from './paths.ts';
@@ -18,6 +19,7 @@ export const runMain = async (version: string, overrides: Partial<CliPorts> = {}
 
   try {
     const ports: CliPorts = { ...nodePorts(version), ...overrides };
+    await processOutboundNetwork(ports);
     let update: UpdateWiring | undefined;
     const program = buildProgram({
       ports,

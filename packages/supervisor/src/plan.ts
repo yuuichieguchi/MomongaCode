@@ -21,6 +21,19 @@ export const digestsOf = (settings: Pick<ResolvedSettings, 'sandbox' | 'models' 
   network: sha256Hex(canonicalJson(settings.network ?? null)),
 });
 
+export const changedSections = (
+  current: SettingsDigests,
+  runtime: SettingsDigests | undefined,
+  gateway: AppliedDigests['gateway'],
+): Record<keyof SettingsDigests, boolean> => {
+  const differs = (section: keyof SettingsDigests): boolean => {
+    const fromRuntime = runtime !== undefined && runtime[section] !== current[section];
+    const fromGateway = gateway !== undefined && section !== 'sandbox' && gateway[section] !== current[section];
+    return fromRuntime || fromGateway;
+  };
+  return { models: differs('models'), sandbox: differs('sandbox'), telemetry: differs('telemetry'), network: differs('network') };
+};
+
 export const planRoles = (current: SettingsDigests, applied: AppliedDigests): ChildRole[] => {
   const roles: ChildRole[] = [];
   if (

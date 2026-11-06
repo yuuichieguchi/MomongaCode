@@ -19,6 +19,11 @@ type ShapeReader = (ask: Ask) => Promise<Pick<DetectedLocalServer, 'models'> | u
 
 const rootOf = (baseUrl: string): string => baseUrl.replace(/\/+$/, '').replace(/\/v1$/, '');
 
+const nothingAnswered = (error: TypeError): boolean => {
+  const outbound = findOutboundError(error);
+  return outbound === undefined || outbound.failure.kind === 'origin-connection';
+};
+
 const askerOf = (baseUrl: string, fetchFn: DetectFetch, signal: AbortSignal): Ask => {
   const root = rootOf(baseUrl);
   return async (method, path, body) => {
@@ -31,7 +36,7 @@ const askerOf = (baseUrl: string, fetchFn: DetectFetch, signal: AbortSignal): As
       if (!response.ok) return undefined;
       return await response.json();
     } catch (error) {
-      if (signal.aborted || (error instanceof TypeError && findOutboundError(error) === undefined) || error instanceof SyntaxError) return undefined;
+      if (signal.aborted || error instanceof SyntaxError || (error instanceof TypeError && nothingAnswered(error))) return undefined;
       throw error;
     }
   };

@@ -5,7 +5,7 @@ import { GROUP_KEYS } from '@momonga/reliability';
 import type { GroupKey } from '@momonga/reliability';
 import { GOVERNING_KINDS, MEMORY_KINDS, MEMORY_SCOPES, PERMISSION_MODES } from '@momonga/protocol';
 import type { GoverningEnforcement, GoverningKind, MemoryKind, MemoryScope, PermissionMode } from '@momonga/protocol';
-import { withOutboundFetch } from '../network.ts';
+import { withIdentityReadFetch } from '../network.ts';
 import { pathsOf } from '../paths.ts';
 import type { ProgramDeps } from '../program-deps.ts';
 import { contextImprove, guidelineAdopt, guidelineList, guidelineRollback } from './context.ts';
@@ -416,8 +416,7 @@ const registerModels: CommandGroup = (program, deps) => {
     .option('--json', 'print the servers as JSON')
     .action(async (typed: string[], options: { json?: true }) => {
       const paths = await pathsOf(deps.ports);
-      const { DEFAULT_STEP_TIMEOUT_MS } = await import('@momonga/gateway');
-      deps.complete(await withOutboundFetch(deps.ports, DEFAULT_STEP_TIMEOUT_MS, (fetch) => detectModels(deps.ports, paths, { typed, json: options.json === true, interrupt: deps.interrupt, fetch })));
+      deps.complete(await withIdentityReadFetch(deps.ports, (fetch) => detectModels(deps.ports, paths, { typed, json: options.json === true, interrupt: deps.interrupt, fetch })));
     });
 };
 

@@ -23,7 +23,8 @@ export type OutboundFailure =
   | { readonly kind: 'proxy-tls'; readonly proxy: string; readonly source: NetworkSource; readonly code: string; readonly caSources: readonly string[] }
   | { readonly kind: 'proxy-unsupported'; readonly source: NetworkSource; readonly text: string }
   | { readonly kind: 'origin-certificate'; readonly host: string; readonly code: string; readonly caSources: readonly string[] }
-  | { readonly kind: 'ca-file'; readonly file: string; readonly source: NetworkSource; readonly reason: string };
+  | { readonly kind: 'ca-file'; readonly file: string; readonly source: NetworkSource; readonly reason: string }
+  | { readonly kind: 'origin-connection'; readonly origin: string; readonly code?: string };
 
 export type OutboundHop = 'proxy' | 'origin';
 
@@ -41,12 +42,14 @@ const failureText = (failure: OutboundFailure): string => {
       return failure.text;
     case 'origin-certificate':
       return `the certificate of ${failure.host} did not verify (${failure.code}); trusted CA sources: ${failure.caSources.join(', ')}`;
+    case 'origin-connection':
+      return `the connection to ${failure.origin} failed before a response${failure.code === undefined ? '' : ` (${failure.code})`}`;
     case 'ca-file':
       return `the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}; https connections to remote hosts are refused until it loads`;
   }
 };
 
-const hopOf = (failure: OutboundFailure): OutboundHop => (failure.kind === 'origin-certificate' || failure.kind === 'ca-file' ? 'origin' : 'proxy');
+const hopOf = (failure: OutboundFailure): OutboundHop => (failure.kind === 'origin-certificate' || failure.kind === 'ca-file' || failure.kind === 'origin-connection' ? 'origin' : 'proxy');
 
 export class OutboundConnectionError extends Error {
   readonly failure: OutboundFailure;
@@ -298,7 +301,8 @@ class OutboundDispatcher extends Dispatcher {
       if (proxyFailure !== undefined) return new OutboundConnectionError(proxyFailure, { cause: error });
       const certificateCode = certificateCodeOf(error);
       if (certificateCode !== undefined) return new OutboundConnectionError({ kind: 'origin-certificate', host: destination.hostname, code: certificateCode, caSources }, { cause: error });
-      return error;
+      const code = causeChain(error).map(codeOf).find((entry) => entry !== undefined);
+      return new OutboundConnectionError({ kind: 'origin-connection', origin: destination.origin, ...(code === undefined ? {} : { code }) }, { cause: error });
     };
     const target = route.kind === 'proxy' ? this.#proxyFor(route) : this.#direct;
     return target.dispatch(options, labelledHandler(handler, label));

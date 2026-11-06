@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ConfigError, createUserSettingsCache, resolveTelemetrySettings } from '@momonga/config';
+import { ConfigError, createUserSettingsCache, resolveNetwork, resolveTelemetrySettings } from '@momonga/config';
+import { installTrust } from '@momonga/foundation';
 import {
   acquireProcessLock,
   announceReady,
@@ -309,10 +310,13 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
     cleanups.push({ name: 'lock', run: () => lock.release() });
 
-    const { cache, settings } = await step('settings', () => {
+    const { cache, settings } = await step('settings', async () => {
       const created = createUserSettingsCache({ home: canonicalHome, onWarning });
       const snapshot = created.snapshot();
       if ('error' in snapshot) throw snapshot.error;
+      const networkConfig = resolveNetwork(snapshot.settings.network, process.env);
+      const trust = await installTrust(networkConfig, (file) => fs.promises.readFile(file, 'utf8'));
+      for (const failure of trust.failures) logger.warn(`the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}`);
       return { cache: created, settings: snapshot.settings };
     });
 
