@@ -1,9 +1,10 @@
-import { createHash, randomBytes } from 'node:crypto';
-import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import net from 'node:net';
 import path from 'node:path';
 import { createAsyncCapabilityProbe } from './capability-probe.ts';
 import type { CapabilityResult } from './capability-probe.ts';
+import { nodeFileSystemSync } from './node-file-system.ts';
+import { systemRandom } from './system-random.ts';
 
 export const SOCKET_PATH_LIMIT = 104;
 export const LINUX_SOCKET_PATH_LIMIT = 108;
@@ -34,7 +35,7 @@ const PATH_TOO_LONG_ERRNO = new Set(['ENAMETOOLONG', 'EINVAL']);
 const probePathOfLength = (directory: string, byteLength: number): string => {
   const prefix = path.join(directory, 'x');
   const nameLength = byteLength - Buffer.byteLength(prefix) + 1;
-  const name = randomBytes(Math.ceil(nameLength / 2)).toString('hex').slice(0, nameLength);
+  const name = systemRandom.hex(Math.ceil(nameLength / 2)).slice(0, nameLength);
   return path.join(directory, name);
 };
 
@@ -66,7 +67,7 @@ const bindThenClose: SocketBind = (socketPath) =>
     server.once('error', reject);
     server.listen(socketPath, () => {
       server.close((closeError) => {
-        fs.rmSync(socketPath, { force: true });
+        nodeFileSystemSync.rmSync(socketPath);
         if (closeError === undefined) resolve();
         else reject(closeError);
       });
