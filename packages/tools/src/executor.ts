@@ -1229,7 +1229,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         }
         await settleWithin(running, ABORT_SETTLE_LIMIT_MS);
         return settleInterrupted(scope, tool, target.input, key, scope.abortReason() === 'timeout' ? 'timeout' : 'cancelled', {
-          fit: fitOfCall(batch.outputFit, call),
+          fit: fitOfCall(batch.reconcileFit, call),
           runId: batch.runId,
           leaseLost: () => batch.leaseLost?.() === true,
           ...(batch.formatOutput === undefined ? {} : { formatOutput: batch.formatOutput }),

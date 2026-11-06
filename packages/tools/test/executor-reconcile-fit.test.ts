@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { waitFor } from '@momonga/testkit';
 import type { CallOutputFit, OutputFit, ToolContext } from '@momonga/tools';
 import { askingFit, call, callAnsweredBy, charFit, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import { keyFor } from './helpers.ts';
@@ -85,5 +86,48 @@ describe('two output fits in one batch', () => {
     expect(execution.readied.length).toBeGreaterThan(0);
     expect(ports).toHaveLength(1);
     expect(await callAnsweredBy(ports[0] as CallOutputFit, execution)).toEqual({ callId: 'c1', tool: 'Edit' });
+  });
+
+  it('cuts the output of a call cancelled in mid-execution through the reconcile fit, so a cancel cannot lose its outcome to an execution fit bound to the cancelled signal', async () => {
+    const harness = makeHarness();
+    const controller = new AbortController();
+    let running = false;
+    const signalBound = (inner: OutputFit): OutputFit => ({
+      ...inner,
+      fits: async (text, call) => {
+        controller.signal.throwIfAborted();
+        return inner.fits(text, call);
+      },
+      fit: async (text, handle, call) => {
+        controller.signal.throwIfAborted();
+        return inner.fit(text, handle, call);
+      },
+    });
+    const tool = makeTool('Edit', {
+      kind: 'edit',
+      sideEffect: 'write', subjectKind: 'none',
+      prepare: async () => STORED,
+      reconcile: async () => ({ outcome: 'unknown', output: LONG }),
+      execute: (_input, ctx: ToolContext) =>
+        new Promise((resolve) => {
+          running = true;
+          ctx.signal.addEventListener('abort', () => resolve({ status: 'failed', output: 'aborted by signal' }), { once: true });
+        }),
+    });
+    const pending = harness.executor.runBatch({
+      ...harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')], { signal: controller.signal }),
+      reconcileFit: charFit(200),
+      outputFit: signalBound(charFit(1000)),
+    });
+    await waitFor(() => running, { description: 'the Edit call to start' });
+    controller.abort('cancel');
+    const [result] = await pending;
+
+    if (result?.kind !== 'result') throw new Error('expected a result');
+    expect(result.reconciled).toBe('unknown');
+    expect(result.result.status).toBe('failed');
+    expect(result.result.output.startsWith('Edit was cancelled')).toBe(true);
+    expect(result.result.output.length).toBeLessThanOrEqual(200);
+    expect(harness.idempotency.stateOf(KEY)).toBe('COMPLETED');
   });
 });
