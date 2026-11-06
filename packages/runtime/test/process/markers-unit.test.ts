@@ -342,7 +342,7 @@ const deadLetterStore = (lookups: Record<string, IdempotencyLookup>, runs: reado
 
 const terminalWarning = (marker: string, runId: string): string => `tool marker ${marker}: run ${runId} is terminal, so its holder was reaped`;
 
-describe('reapToolMarkers dead-lettered runs, start scope (§8)', () => {
+describe('reapToolMarkers dead-lettered runs, start scope (§8)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('PENDING with a dead-lettered run is reaped with the recorded pgid and a warning naming the run', async (context) => {
     const dir = trackedMarkerDir(context);
     const key = deadLetterKey(1);
@@ -404,7 +404,7 @@ describe('reapToolMarkers dead-lettered runs, start scope (§8)', () => {
   });
 });
 
-describe('reapToolMarkers by event: the sweep reads the unowned markers only', () => {
+describe('reapToolMarkers by event: the sweep reads the unowned markers only', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('a dead-lettered run is reaped with the recorded pgid and a warning naming the run', async (context) => {
     const dir = trackedMarkerDir(context);
     const key = deadLetterKey(5);
