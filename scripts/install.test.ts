@@ -366,13 +366,13 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
 
     const count = (text: string, line: string): number => text.split('\n').filter((candidate) => candidate === line).length;
 
-    const expectOneBlock = (text: string): void => {
+    const expectOneBlock = (text: string, line = pathLine()): void => {
       const lines = text.split('\n');
       expect(count(text, BEGIN_MARKER)).toBe(1);
       expect(count(text, END_MARKER)).toBe(1);
       const begin = lines.indexOf(BEGIN_MARKER);
       const end = lines.indexOf(END_MARKER);
-      expect(lines.slice(begin + 1, end)).toEqual([pathLine()]);
+      expect(lines.slice(begin + 1, end)).toEqual([line]);
     };
 
     it.each([
@@ -389,7 +389,7 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
       const changed = changedFiles(before, after);
       expect(changed).toHaveLength(1);
       const file = changed[0] as string;
-      expect(path.dirname(file)).toBe(home);
+      expect(file).toBe(path.join(home, '.zshrc'));
       const text = after.get(file) as string;
       const original = before.get(file) ?? '';
       expect(text.startsWith(original)).toBe(true);
@@ -445,6 +445,98 @@ describe.skipIf(!HAS_POSIX_SHELL)('install.sh', () => {
       expect(stdoutLines[0]).toBe(`installed momonga to ${target()}`);
       expect(stdoutLines.filter((line) => line.trim() === pathLine())).toHaveLength(1);
       for (const name of SHELL_FILES) expect(outcome.stdout).not.toContain(path.join(home, name));
+    });
+      const installAs = async (home: string, shell: string, extra: NodeJS.ProcessEnv = {}): Promise<{ outcome: Outcome; changed: string[] }> => {
+      const before = snapshot(home);
+      serveRelease(GOOD_BINARY, GOOD_BINARY);
+      const outcome = await runInstall(offPathEnv(home, { SHELL: shell, ...extra }));
+      expect(outcome.code).toBe(0);
+      return { outcome, changed: changedFiles(before, snapshot(home)) };
+    };
+
+    const seed = (home: string, names: readonly string[]): void => {
+      for (const name of names) {
+        fs.mkdirSync(path.dirname(path.join(home, name)), { recursive: true });
+        fs.writeFileSync(path.join(home, name), `original ${name}\n`);
+      }
+    };
+
+    it.each([
+      ['/bin/zsh', [], '.zshrc'],
+      ['/bin/zsh', ['.zprofile', '.zshenv', '.bashrc', '.profile'], '.zshrc'],
+      ['/bin/bash', [], '.bashrc'],
+      ['/bin/bash', ['.bashrc', '.bash_profile', '.profile'], '.bashrc'],
+      ['/bin/bash', ['.bash_profile', '.profile'], '.bash_profile'],
+      ['/bin/bash', ['.profile'], '.profile'],
+      ['/usr/local/bin/bash', ['.profile'], '.profile'],
+      ['/bin/ksh', [], '.profile'],
+      ['/bin/ksh', ['.bashrc', '.zshrc'], '.profile'],
+    ] as const)('for SHELL=%s with %j present, writes the block to %s', async (shell, present, expected) => {
+      const home = freshHome(false);
+      seed(home, present);
+      const { changed } = await installAs(home, shell);
+      expect(changed).toEqual([path.join(home, expected)]);
+      expectOneBlock(fs.readFileSync(path.join(home, expected), 'utf8'));
+    });
+
+    it('for zsh, writes to .zshrc under ZDOTDIR when it is set, and creates it there', async () => {
+      const home = freshHome(true);
+      const zdot = path.join(home, 'zdot');
+      fs.mkdirSync(zdot);
+      const { changed } = await installAs(home, '/bin/zsh', { ZDOTDIR: zdot });
+      expect(changed).toEqual([path.join(zdot, '.zshrc')]);
+      expectOneBlock(fs.readFileSync(path.join(zdot, '.zshrc'), 'utf8'));
+    });
+
+    it('for fish, writes one block with fish_add_path to config.fish, prints the fish command, and adds nothing on a second install', async () => {
+      const home = freshHome(true);
+      const config = path.join(home, '.config', 'fish', 'config.fish');
+      const fishLine = `fish_add_path ${binDir()}`;
+      const { outcome, changed } = await installAs(home, '/usr/local/bin/fish');
+      expect(changed).toEqual([config]);
+      const text = fs.readFileSync(config, 'utf8');
+      expectOneBlock(text, fishLine);
+      expect(outcome.stdout.split('\n').filter((line) => line.trim() === fishLine)).toHaveLength(1);
+      expect(outcome.stdout).toContain(config);
+      const again = await installAs(home, '/usr/local/bin/fish');
+      expect(again.changed).toEqual([]);
+      expect(fs.readFileSync(config, 'utf8')).toBe(text);
+    });
+
+    it('for fish with MOMONGA_MODIFY_PATH=0, changes nothing and prints the fish command', async () => {
+      const home = freshHome(true);
+      const { outcome, changed } = await installAs(home, '/usr/local/bin/fish', { MOMONGA_MODIFY_PATH: '0' });
+      expect(changed).toEqual([]);
+      expect(fs.existsSync(path.join(home, '.config', 'fish', 'config.fish'))).toBe(false);
+      expect(outcome.stdout.split('\n').filter((line) => line.trim() === `fish_add_path ${binDir()}`)).toHaveLength(1);
+    });
+
+    it('says added, then already configured, naming the file each time', async () => {
+      const home = freshHome(false);
+      const file = path.join(home, '.zshrc');
+      const first = await installAs(home, '/bin/zsh');
+      expect(first.outcome.stdout).toMatch(/added/i);
+      expect(first.outcome.stdout).not.toMatch(/already configured|updated/i);
+      expect(first.outcome.stdout).toContain(file);
+      const second = await installAs(home, '/bin/zsh');
+      expect(second.changed).toEqual([]);
+      expect(second.outcome.stdout).toMatch(/already configured/i);
+      expect(second.outcome.stdout).not.toMatch(/\badded\b|updated/i);
+      expect(second.outcome.stdout).toContain(file);
+    });
+
+    it('rewrites a block whose line differs in place, keeps everything outside the markers byte-identical, and says updated', async () => {
+      const home = freshHome(false);
+      const file = path.join(home, '.zshrc');
+      const head = 'export EDITOR=vim\n\n';
+      const tail = 'alias ll="ls -l"\n';
+      fs.writeFileSync(file, `${head}${BEGIN_MARKER}\nexport PATH="/old/momonga/bin:$PATH"\n${END_MARKER}\n${tail}`);
+      const { outcome, changed } = await installAs(home, '/bin/zsh');
+      expect(changed).toEqual([file]);
+      expect(fs.readFileSync(file, 'utf8')).toBe(`${head}${BEGIN_MARKER}\n${pathLine()}\n${END_MARKER}\n${tail}`);
+      expect(outcome.stdout).toMatch(/updated/i);
+      expect(outcome.stdout).not.toMatch(/already configured|\badded\b/i);
+      expect(outcome.stdout).toContain(file);
     });
   });
 });
