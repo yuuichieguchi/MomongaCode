@@ -78,7 +78,10 @@ export const createFactsFold = (): FactsFold => {
   };
 
   const open = (event: RunEvent, cause: RecoveryCause, failedAt: number): void => {
-    if (pending !== undefined) return;
+    if (pending !== undefined) {
+      for (const callId of openCalls) pending.awaiting.add(callId);
+      return;
+    }
     ordinal += 1;
     pending = { ordinal, cause, failedAt, startedSeq: event.seq, awaiting: new Set(openCalls), unknownReconciled: false };
   };
