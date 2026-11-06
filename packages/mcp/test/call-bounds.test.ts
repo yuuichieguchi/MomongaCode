@@ -265,18 +265,19 @@ describe('G2 test 6: the overall limit ends a call that keeps reporting progress
     registry.addSource(createMcpToolSource({ server: 'jobs', connection }));
     const startedAt = Date.now();
     const pending = harness.resultOf(await registry.snapshot(), 'mcp__jobs__long_job', {}, { deadlineAt: startedAt + 7 * 24 * 60 * 60 * 1000 });
-    let settled = false;
-    void pending.finally(() => {
-      settled = true;
+    let outcome: { settled: false } | { settled: true; value: unknown } = { settled: false };
+    void pending.then((value) => {
+      outcome = { settled: true, value };
     });
     await vi.advanceTimersByTimeAsync(MCP_TOOL_TOTAL_TIMEOUT_MS - progressEveryMs);
-    expect(settled).toBe(false);
-    while (!settled) await vi.advanceTimersByTimeAsync(progressEveryMs);
-    const result = await pending;
-    expect(Date.now() - startedAt).toBeLessThan(MCP_TOOL_TOTAL_TIMEOUT_MS + 2 * progressEveryMs);
-    expect(result).toEqual({
-      status: 'failed',
-      output: 'The call to long_job on MCP server "jobs" reached the overall limit of 28 hours and was stopped. The server may have run it; check before repeating it.',
+    expect(outcome.settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(2 * progressEveryMs);
+    expect(outcome).toEqual({
+      settled: true,
+      value: {
+        status: 'failed',
+        output: 'The call to long_job on MCP server "jobs" reached the overall limit of 28 hours and was stopped. The server may have run it; check before repeating it.',
+      },
     });
   });
 });

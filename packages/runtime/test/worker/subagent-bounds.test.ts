@@ -5,18 +5,22 @@ import type { CallToolResult, Tool } from '@modelcontextprotocol/client';
 import { createMcpToolSource } from '@momonga/mcp';
 import type { McpServerConnection } from '@momonga/mcp';
 import { createNodeSkillFileSystem } from '@momonga/skills';
-import { GatewayRequestError, createAgentsPort, createChildRuns } from '@momonga/runtime';
+import { createAgentsPort, createChildRuns } from '@momonga/runtime';
 import type { AgentsPort } from '@momonga/runtime';
 import type { AnyTool } from '@momonga/tools';
+import { upstreamIdleText } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 import type { ScriptStep } from './fake-gateway.ts';
+import { keepAliveOnly, startRealGateway, within } from './keep-alive-gateway.ts';
 
-const MODEL_IDLE_TEXT = 'The model sent no output for 300 s (only keep-alive signals arrived), so the call was stopped. Raise models.idleTimeoutMs if this model needs longer.';
-const IDLE_MS = 150;
-const MCP_IDLE_TEXT = `MCP server "jobs" sent no response or progress for ${IDLE_MS} ms, so the call to long_job was stopped. The server may have run it; check before repeating it. To wait longer, raise mcp.toolIdleTimeoutMs.`;
+const MODEL_IDLE_MS = 300;
+const MCP_IDLE_MS = 150;
+const REFUNDED_CUT_STREAMS = 3;
+const CHILD_IDLE_STOPS = REFUNDED_CUT_STREAMS + 1;
+const MCP_IDLE_TEXT = `MCP server "jobs" sent no response or progress for ${MCP_IDLE_MS} ms, so the call to long_job was stopped. The server may have run it; check before repeating it. To wait longer, raise mcp.toolIdleTimeoutMs.`;
 
 const agentsPortOf = (env: Env): AgentsPort =>
   createAgentsPort({
@@ -33,8 +37,6 @@ const writeAgent = (env: Env): void => {
 };
 
 const delegate = (callId: string): ScriptStep => callsStep([{ callId, name: 'Agent', args: { description: 'work', prompt: 'Do it', subagent_type: 'worker' } }]);
-
-const idleStop = (): ScriptStep => ({ events: [], error: new GatewayRequestError({ status: 502, type: 'server_error', code: 'stream_interrupted', message: MODEL_IDLE_TEXT }) });
 
 const silentMcpTool = async (): Promise<AnyTool> => {
   const tool: Tool = { name: 'long_job', inputSchema: { type: 'object', properties: {} }, annotations: { readOnlyHint: true } };
@@ -54,7 +56,7 @@ const silentMcpTool = async (): Promise<AnyTool> => {
     diagnostics: () => ({ server: 'jobs', state: 'connected', pgid: undefined, protocolVersion: undefined, lastError: null, stderrTail: '' }),
     close: async () => undefined,
   };
-  const [listed] = await createMcpToolSource({ server: 'jobs', connection, toolIdleTimeoutMs: IDLE_MS }).list();
+  const [listed] = await createMcpToolSource({ server: 'jobs', connection, toolIdleTimeoutMs: MCP_IDLE_MS }).list();
   if (listed === undefined) throw new Error('the fake server lists one tool');
   return listed;
 };
@@ -70,30 +72,34 @@ const untilTerminal = async (env: Env, worker: ReturnType<Env['worker']>, runId:
 };
 
 describe('G3: the subagent wait is bounded by the bounds of the child steps (R-G3)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
-  it('test 1: a child whose model only sends keep-alives ends by the G1 stop, and the parent wait ends with that failure', async () => {
+  it('test 1: a child whose model only sends keep-alives ends by the real gateway idle stop, and the parent wait ends with that failure', async () => {
     const env = await makeEnv({ maxAttempts: 1, maxTotalAttempts: 1 });
     writeAgent(env);
-    const worker = env.worker('w1', { agents: agentsPortOf(env) });
+    const real = await startRealGateway({ clock: env.clock, idleTimeoutMs: MODEL_IDLE_MS, script: Array.from({ length: CHILD_IDLE_STOPS }, () => keepAliveOnly) });
+    const parentWorker = env.worker('w1', { agents: agentsPortOf(env) });
+    const childWorker = env.worker('w2', { agents: agentsPortOf(env), gateway: real.client });
     const parent = env.enqueue('Delegate');
-    env.gateway.script.push(delegate('call-a'), idleStop(), idleStop(), idleStop(), idleStop(), idleStop(), textStep('parent done'));
-    await env.runOnce(worker);
+    env.gateway.script.push(delegate('call-a'), textStep('parent done'));
+    await env.runOnce(parentWorker);
     expect(env.run(parent.id).status).toBe('WAITING_TOOL');
     const [child] = env.store.listChildRuns(parent.id);
     if (child === undefined) throw new Error('the parent did not create a child run');
-    await untilTerminal(env, worker, child.id);
+    expect(await within(untilTerminal(env, childWorker, child.id), CHILD_IDLE_STOPS * 10 * MODEL_IDLE_MS)).toEqual({ settled: true, value: undefined });
     const ended = env.run(child.id);
     expect(ended.status).toBe('FAILED');
-    expect(ended.error?.message).toContain(MODEL_IDLE_TEXT);
+    expect(ended.error?.message).toContain(upstreamIdleText(MODEL_IDLE_MS));
+    expect(real.upstream.requests.filter((request) => request.path === '/v1/chat/completions')).toHaveLength(CHILD_IDLE_STOPS);
     expect(env.run(parent.id).status).toBe('QUEUED');
-    await untilTerminal(env, worker, parent.id);
+    await untilTerminal(env, parentWorker, parent.id);
     const [completed] = env.ofType(parent.id, 'tool.completed');
     expect(completed).toMatchObject({ status: 'failed' });
-    expect((completed as { output: string }).output).toContain(MODEL_IDLE_TEXT);
+    expect((completed as { output: string }).output).toContain(upstreamIdleText(MODEL_IDLE_MS));
     expect(env.clock.now()).toBeLessThan(parent.deadlineAt);
   });
 
   it('test 2: a child whose MCP call never answers ends that call at the G2 idle window, and the parent wait ends when the child ends', async () => {
-    const env = await makeEnv({ mode: 'bypassPermissions' });
+    const env = await makeEnv();
+    env.settings.stored.push({ effect: 'allow', rule: 'mcp__jobs__long_job' });
     writeAgent(env);
     const mcpTool = await silentMcpTool();
     const worker = env.worker('w1', { agents: agentsPortOf(env), toolList: () => [mcpTool] });
@@ -102,7 +108,7 @@ describe('G3: the subagent wait is bounded by the bounds of the child steps (R-G
     await env.runOnce(worker);
     const [child] = env.store.listChildRuns(parent.id);
     if (child === undefined) throw new Error('the parent did not create a child run');
-    await untilTerminal(env, worker, child.id);
+    expect(await within(untilTerminal(env, worker, child.id), 20 * MCP_IDLE_MS)).toEqual({ settled: true, value: undefined });
     expect(JSON.stringify(env.ofType(child.id, 'tool.reconciled'))).toContain(JSON.stringify(MCP_IDLE_TEXT));
     expect(env.run(child.id).status).toBe('COMPLETED');
     await untilTerminal(env, worker, parent.id);
