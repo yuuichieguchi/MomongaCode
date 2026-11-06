@@ -109,7 +109,7 @@ const warnings = () => {
   return { messages, onWarning: (message: string) => void messages.push(message) };
 };
 
-describe('reapToolMarkers on hook markers', () => {
+describe('reapToolMarkers on hook markers', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('reaps the holder of a hook marker that has no idempotency record', async () => {
     const temp = await makeTempHome();
     const marker = markerOf(temp, `hook-${keyOf(7)}`);
