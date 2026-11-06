@@ -18,12 +18,14 @@ export type ManifestEntry = {
   readonly tier: Tier;
   readonly distinctStates: number;
   readonly measuredSeconds: number;
-  readonly budgetSeconds: number;
+  readonly measuredCpuSeconds: number;
+  readonly budgetCpuSeconds: number;
 };
 
 export type Manifest = {
   readonly format: typeof MANIFEST_FORMAT;
   readonly unitSuiteSeconds: number;
+  readonly startupCpuSeconds: number;
   readonly entries: readonly ManifestEntry[];
 };
 
@@ -31,7 +33,7 @@ export type TlcRun = {
   readonly pid: number;
   readonly exitCode: number | null;
   readonly signal: NodeJS.Signals | null;
-  readonly killedAtBudget: boolean;
+  readonly killedAtCpuBudget: boolean;
   readonly stdout: string;
   readonly stderr: string;
 };
@@ -40,7 +42,7 @@ export type TlcRunOptions = {
   readonly script: string;
   readonly config: string;
   readonly args: readonly string[];
-  readonly budgetSeconds: number;
+  readonly budgetCpuSeconds: number;
   readonly env?: Readonly<Record<string, string>>;
 };
 
@@ -66,13 +68,17 @@ const expectationOf = (value: unknown, where: string): Expectation => {
   return { violates: textOf(value['violates'], `${where}.violates`), exitCode };
 };
 
-const entryOf = (value: unknown, index: number): ManifestEntry => {
+const entryOf = (value: unknown, index: number, startupCpuSeconds: number): ManifestEntry => {
   const where = `entries[${index}]`;
   if (!isRecord(value)) return fail(where, 'an object');
   const { role, tier, args } = value;
   if (role !== 'check' && role !== 'evidence') return fail(`${where}.role`, '"check" or "evidence"');
   if (tier !== 'every-run' && tier !== 'deep') return fail(`${where}.tier`, '"every-run" or "deep"');
   if (!Array.isArray(args) || !args.every((arg) => typeof arg === 'string')) return fail(`${where}.args`, 'an array of strings');
+  const measuredCpuSeconds = positiveNumber(value['measuredCpuSeconds'], `${where}.measuredCpuSeconds`);
+  const budgetCpuSeconds = positiveInteger(value['budgetCpuSeconds'], `${where}.budgetCpuSeconds`);
+  const derivedBudgetCpuSeconds = Math.ceil(2 * measuredCpuSeconds) + startupCpuSeconds;
+  if (budgetCpuSeconds !== derivedBudgetCpuSeconds) return fail(`${where}.budgetCpuSeconds`, `${derivedBudgetCpuSeconds}, twice measuredCpuSeconds rounded up plus startupCpuSeconds`);
   return {
     config: textOf(value['config'], `${where}.config`),
     role,
@@ -81,7 +87,8 @@ const entryOf = (value: unknown, index: number): ManifestEntry => {
     tier,
     distinctStates: positiveInteger(value['distinctStates'], `${where}.distinctStates`),
     measuredSeconds: positiveNumber(value['measuredSeconds'], `${where}.measuredSeconds`),
-    budgetSeconds: positiveInteger(value['budgetSeconds'], `${where}.budgetSeconds`),
+    measuredCpuSeconds,
+    budgetCpuSeconds,
   };
 };
 
@@ -91,7 +98,13 @@ export const readManifest = (file: string): Manifest => {
   if (parsed['format'] !== MANIFEST_FORMAT) return fail('format', `"${MANIFEST_FORMAT}"`);
   const entries = parsed['entries'];
   if (!Array.isArray(entries)) return fail('entries', 'an array');
-  return { format: MANIFEST_FORMAT, unitSuiteSeconds: positiveNumber(parsed['unitSuiteSeconds'], 'unitSuiteSeconds'), entries: entries.map(entryOf) };
+  const startupCpuSeconds = positiveNumber(parsed['startupCpuSeconds'], 'startupCpuSeconds');
+  return {
+    format: MANIFEST_FORMAT,
+    unitSuiteSeconds: positiveNumber(parsed['unitSuiteSeconds'], 'unitSuiteSeconds'),
+    startupCpuSeconds,
+    entries: entries.map((entry, index) => entryOf(entry, index, startupCpuSeconds)),
+  };
 };
 
 export const moduleOf = (config: string): string => config.split('.')[0] as string;
@@ -119,7 +132,7 @@ const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/
 
 export const verdictProblems = (entry: ManifestEntry, run: TlcRun): string[] => {
   const label = entry.config;
-  if (run.killedAtBudget) return [`${label} was killed at its budget of ${entry.budgetSeconds} s`];
+  if (run.killedAtCpuBudget) return [`${label} was killed at its CPU budget of ${entry.budgetCpuSeconds} CPU s`];
   const scriptFailure = run.exitCode !== null && SCRIPT_FAILURE_CODES.includes(run.exitCode) ? [`${label}: tlc.sh exited ${run.exitCode}:\n${run.stderr.trim()}`] : [];
   if (entry.expect === 'holds') {
     if (scriptFailure.length > 0) return scriptFailure;
@@ -144,7 +157,7 @@ export const verdictProblems = (entry: ManifestEntry, run: TlcRun): string[] => 
 };
 
 export const everyRunBudgetSeconds = (manifest: Manifest): number =>
-  manifest.entries.filter((entry) => entry.tier === 'every-run').reduce((total, entry) => total + entry.budgetSeconds, 0);
+  manifest.entries.filter((entry) => entry.tier === 'every-run').reduce((total, entry) => total + Math.ceil(2 * entry.measuredSeconds), 0);
 
 export const EVERY_RUN_BUDGET_RATIO = 4;
 
