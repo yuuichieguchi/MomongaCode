@@ -130,8 +130,20 @@ describe('ensureDaemon', () => {
     expect(spawned).toEqual([]);
   });
 
+  it('tells a session of the old version that meets a daemon of a newer version that momonga was updated and to reopen the session', async (context) => {
+    const { paths, start, portsWith } = await setup(context);
+    const other = await start({ version: '1.2.4' });
+    const { spawn, spawned } = recordingSpawn(() => undefined);
+
+    const failure = await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS }).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(DaemonStartError);
+    expect((failure as DaemonStartError).message).toBe(`momonga was updated to 1.2.4; reopen this session (the daemon, pid ${process.pid}, runs version 1.2.4, not ${VERSION})`);
+    expect(other.shutdowns).toBe(0);
+    expect(spawned).toEqual([]);
+  });
+
   it.for([
-    ['a newer daemon', '1.2.4'],
     ['a daemon whose version cannot be ordered against this one', 'e2e'],
   ] as const)('never stops or replaces %s, and tells the person to update or restart this CLI', async ([, version], context) => {
     const { paths, start, portsWith } = await setup(context);
