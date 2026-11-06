@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { HOST_RULE_ENFORCEMENT, protectedSetFor } from '@momonga/foundation';
+import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import { EMPTY_GLOB_TABLE, computeFileRules, createGlobDeadline, decide, prepareGlobs, settleGlobs } from '@momonga/policy';
 import type { Sandbox } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_SEARCH_PATH, isWritableFor } from '@momonga/testkit';
@@ -11,6 +11,7 @@ import { buildSandboxPolicy, createPolicyFilesystem } from '@momonga/tools';
 import { makeBuiltins, resultOf } from './builtins/fixtures.ts';
 import { collect } from './read-only-collect.ts';
 import { approvableForms, exitStatusOf, normalised, outputDiffersByNature, permittedPsStatuses, seesOnlyItsOwnNamespace } from './read-only-forms.ts';
+import { HOST_SANDBOX_KIND } from './helpers.ts';
 import { HAS_REAL_SANDBOX, realSandbox, recordingSandbox, withoutRefusedXcrunCacheWrite } from './read-only-support.ts';
 import type { RecordedSpawn } from './read-only-support.ts';
 
@@ -48,7 +49,7 @@ describe.runIf(HAS_REAL_SANDBOX)('every approvable command form prints the same 
       roots,
       home,
       cwd: project,
-      fileRules: computeFileRules([], roots, null, HOST_RULE_ENFORCEMENT),
+      fileRules: computeFileRules([], roots, null, ruleEnforcementOf(HOST_SANDBOX_KIND)),
       protectedSet: protectedSetFor(roots, filesystem),
       fs: settleGlobs(filesystem, globs ?? EMPTY_GLOB_TABLE),
       searchPath: TEST_SEARCH_PATH,
@@ -94,7 +95,7 @@ describe.runIf(HAS_REAL_SANDBOX)('every approvable command form prints the same 
     const recorded = recordingSandbox(inner);
     const built = await makeBuiltins({ sandbox: recorded.sandbox });
     const roots = [project];
-    const sandboxPolicy = buildSandboxPolicy({ roots, home, tmpDir, sessionsTmpRoot: path.join(base, 'sessions'), fileRules: computeFileRules([], roots, tmpDir, HOST_RULE_ENFORCEMENT), protectedSet: protectedSetFor(roots, filesystem), network: 'deny' });
+    const sandboxPolicy = buildSandboxPolicy({ roots, home, tmpDir, sessionsTmpRoot: path.join(base, 'sessions'), fileRules: computeFileRules([], roots, tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND)), protectedSet: protectedSetFor(roots, filesystem), network: 'deny' });
     resultOf(await built.run('Bash', { command: 'pwd' }, { env: plainEnv as Record<string, string>, roots, home, tmpDir, sandboxPolicy, session: { cwd: project, workingDirectory: project, readLedger: new Map() } }));
     spawned = recorded.spawns[0] as RecordedSpawn;
   });

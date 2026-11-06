@@ -13,23 +13,26 @@ type TaskPartial = {
   recovered: number;
   unknownEffect: number;
   failedEpisodes: number;
+  stoppedEpisodes: number;
   durations: number[];
   clockSkew: number;
 };
 
-export type Aggregate = { groupBy: GroupKey; tasks: ReadonlyMap<string, TaskPartial> };
+export type Aggregate = { groupBy: GroupKey; tasks: ReadonlyMap<string, TaskPartial>; unavailableRoots: ReadonlySet<string> };
 
-export type AggregateOptions = { groupBy: GroupKey };
+export type AggregateOptions = { groupBy: GroupKey; unavailableRoots?: readonly string[] };
 
 const partialOf = (row: RunFacts): TaskPartial => {
   const durations: number[] = [];
   let recovered = 0;
   let unknownEffect = 0;
   let failedEpisodes = 0;
+  let stoppedEpisodes = 0;
   let clockSkew = 0;
   for (const episode of row.recoveries) {
     if (episode.outcome === 'unknown_effect') unknownEffect += 1;
     else if (episode.outcome === 'failed') failedEpisodes += 1;
+    else if (episode.outcome === 'stopped') stoppedEpisodes += 1;
     else {
       recovered += 1;
       if (episode.progressAt === null) throw new RangeError(`run ${row.runId}: a recovered episode has no progress instant`);
@@ -50,6 +53,7 @@ const partialOf = (row: RunFacts): TaskPartial => {
     recovered,
     unknownEffect,
     failedEpisodes,
+    stoppedEpisodes,
     durations,
     clockSkew,
   };
@@ -71,6 +75,7 @@ const combine = (left: TaskPartial, right: TaskPartial): TaskPartial => {
     recovered: left.recovered + right.recovered,
     unknownEffect: left.unknownEffect + right.unknownEffect,
     failedEpisodes: left.failedEpisodes + right.failedEpisodes,
+    stoppedEpisodes: left.stoppedEpisodes + right.stoppedEpisodes,
     durations: [...left.durations, ...right.durations],
     clockSkew: left.clockSkew + right.clockSkew,
   };
@@ -87,7 +92,7 @@ const addRows = (tasks: Map<string, TaskPartial>, rows: readonly RunFacts[]): vo
 export const aggregate = (rows: readonly RunFacts[], options: AggregateOptions): Aggregate => {
   const tasks = new Map<string, TaskPartial>();
   addRows(tasks, rows);
-  return { groupBy: options.groupBy, tasks };
+  return { groupBy: options.groupBy, tasks, unavailableRoots: new Set(options.unavailableRoots) };
 };
 
 export const merge = (left: Aggregate, right: Aggregate): Aggregate => {
@@ -97,7 +102,7 @@ export const merge = (left: Aggregate, right: Aggregate): Aggregate => {
     const existing = tasks.get(rootRunId);
     tasks.set(rootRunId, existing === undefined ? partial : combine(existing, partial));
   }
-  return { groupBy: left.groupBy, tasks };
+  return { groupBy: left.groupBy, tasks, unavailableRoots: new Set([...left.unavailableRoots, ...right.unavailableRoots]) };
 };
 
 const DAY_MS = 86_400_000;
@@ -129,12 +134,14 @@ type Accumulator = {
   counted: number;
   cancelled: number;
   pendingFacts: number;
+  factsUnavailable: number;
   completionK: number;
   completionN: number;
   undeclared: number;
   recovered: number;
   unknownEffect: number;
   failedEpisodes: number;
+  stoppedEpisodes: number;
   durations: number[];
   clockSkew: number;
   duplicatesK: number;
@@ -154,12 +161,14 @@ const emptyAccumulator = (): Accumulator => ({
   counted: 0,
   cancelled: 0,
   pendingFacts: 0,
+  factsUnavailable: 0,
   completionK: 0,
   completionN: 0,
   undeclared: 0,
   recovered: 0,
   unknownEffect: 0,
   failedEpisodes: 0,
+  stoppedEpisodes: 0,
   durations: [],
   clockSkew: 0,
   duplicatesK: 0,
@@ -186,39 +195,73 @@ const overrunOf = (root: RunFacts): { limited: boolean; over: boolean } => {
   return { limited: dimensions.length > 0, over: dimensions.some(Boolean) };
 };
 
-const accumulate = (accumulator: Accumulator, task: TaskPartial): void => {
+export type Marks = Map<string, string[]>;
+
+const markOf = (marks: Marks | undefined, label: string, runId: string): void => {
+  if (marks === undefined) return;
+  const ids = marks.get(label);
+  if (ids === undefined) marks.set(label, [runId]);
+  else ids.push(runId);
+};
+
+const accumulate = (accumulator: Accumulator, task: TaskPartial, marks?: Marks): void => {
   const { root } = task;
   if (root === undefined || task.stale) {
     accumulator.pendingFacts += 1;
+    markOf(marks, 'pending facts', (root ?? task.earliest).rootRunId);
     return;
   }
   if (root.status === 'CANCELLED') {
     accumulator.cancelled += 1;
+    markOf(marks, 'cancelled', root.runId);
     return;
   }
   accumulator.counted += 1;
   if (root.declared) {
     accumulator.completionN += 1;
-    if (root.met) accumulator.completionK += 1;
-  } else accumulator.undeclared += 1;
+    if (root.met) {
+      accumulator.completionK += 1;
+      markOf(marks, 'completion met', root.runId);
+    } else markOf(marks, 'completion not met', root.runId);
+  } else {
+    accumulator.undeclared += 1;
+    markOf(marks, 'completion undeclared', root.runId);
+  }
+  if (task.recovered > 0) markOf(marks, 'recovery recovered', root.runId);
+  if (task.unknownEffect > 0) markOf(marks, 'recovery unknown_effect', root.runId);
+  if (task.failedEpisodes > 0) markOf(marks, 'recovery failed', root.runId);
+  if (task.stoppedEpisodes > 0) markOf(marks, 'recovery stopped', root.runId);
   accumulator.recovered += task.recovered;
   accumulator.unknownEffect += task.unknownEffect;
   accumulator.failedEpisodes += task.failedEpisodes;
+  accumulator.stoppedEpisodes += task.stoppedEpisodes;
   accumulator.durations.push(...task.durations);
   accumulator.clockSkew += task.clockSkew;
   if (task.sideEffectingCalls > 0) {
     accumulator.duplicatesN += 1;
-    if (task.repeatedStarts > 0) accumulator.duplicatesK += 1;
+    if (task.repeatedStarts > 0) {
+      accumulator.duplicatesK += 1;
+      markOf(marks, 'duplicate side effect (journal)', root.runId);
+    }
   }
   accumulator.prevented += task.prevented;
   accumulator.unknown += task.unknown;
-  if (task.intervened) accumulator.interventionK += 1;
+  if (task.intervened) {
+    accumulator.interventionK += 1;
+    markOf(marks, 'human intervention', root.runId);
+  }
   const overrun = overrunOf(root);
   if (overrun.limited) {
     accumulator.overrunN += 1;
-    if (overrun.over) accumulator.overrunK += 1;
+    if (overrun.over) {
+      accumulator.overrunK += 1;
+      markOf(marks, 'budget overrun', root.runId);
+    }
   }
-  if (root.status === 'STOPPED' && root.stopReason === 'budget') accumulator.budgetStops += 1;
+  if (root.status === 'STOPPED' && root.stopReason === 'budget') {
+    accumulator.budgetStops += 1;
+    markOf(marks, 'budget stop', root.runId);
+  }
   if (root.met) {
     accumulator.timeN += 1;
     accumulator.activeSum += root.elapsedMs - root.humanWaitMs;
@@ -237,9 +280,15 @@ const finish = (accumulator: Accumulator): Indicators => {
   const durationSum = sorted.reduce((sum, value) => sum + value, 0);
   const episodes = accumulator.recovered + accumulator.unknownEffect + accumulator.failedEpisodes;
   return {
-    buckets: { counted: accumulator.counted, cancelled: accumulator.cancelled, pendingFacts: accumulator.pendingFacts },
+    buckets: { counted: accumulator.counted, cancelled: accumulator.cancelled, pendingFacts: accumulator.pendingFacts, factsUnavailable: accumulator.factsUnavailable },
     completion: { k: accumulator.completionK, n: accumulator.completionN, undeclared: accumulator.undeclared },
-    recovery: { k: accumulator.recovered, n: episodes, unknownEffect: accumulator.unknownEffect, failed: accumulator.failedEpisodes },
+    recovery: {
+      k: accumulator.recovered,
+      n: episodes,
+      unknownEffect: accumulator.unknownEffect,
+      failed: accumulator.failedEpisodes,
+      stopped: accumulator.stoppedEpisodes,
+    },
     recoveryTime: {
       n: sorted.length,
       meanMs: sorted.length === 0 ? null : durationSum / sorted.length,
@@ -257,21 +306,41 @@ const finish = (accumulator: Accumulator): Indicators => {
   };
 };
 
+const place = (accumulator: Accumulator, rootRunId: string, task: TaskPartial, unavailable: boolean, marks?: Marks): void => {
+  if (!unavailable) {
+    accumulate(accumulator, task, marks);
+    return;
+  }
+  accumulator.factsUnavailable += 1;
+  markOf(marks, 'facts unavailable', rootRunId);
+};
+
 export const indicatorsOf = (aggregated: Aggregate): IndicatorGroups => {
   const total = emptyAccumulator();
   const groups = new Map<string, Accumulator>();
-  for (const task of aggregated.tasks.values()) {
-    accumulate(total, task);
+  for (const [rootRunId, task] of aggregated.tasks) {
+    const unavailable = aggregated.unavailableRoots.has(rootRunId);
+    place(total, rootRunId, task, unavailable);
     const key = groupOf(task.root ?? task.earliest, aggregated.groupBy);
     let group = groups.get(key);
     if (group === undefined) {
       group = emptyAccumulator();
       groups.set(key, group);
     }
-    accumulate(group, task);
+    place(group, rootRunId, task, unavailable);
   }
+  for (const rootRunId of aggregated.unavailableRoots) if (!aggregated.tasks.has(rootRunId)) total.factsUnavailable += 1;
   return {
     total: finish(total),
     groups: Object.fromEntries([...groups.entries()].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)).map(([key, group]) => [key, finish(group)])),
   };
+};
+
+export const explainOf = (aggregated: Aggregate): Marks => {
+  const marks: Marks = new Map();
+  const scratch = emptyAccumulator();
+  for (const [rootRunId, task] of aggregated.tasks) place(scratch, rootRunId, task, aggregated.unavailableRoots.has(rootRunId), marks);
+  for (const rootRunId of aggregated.unavailableRoots) if (!aggregated.tasks.has(rootRunId)) markOf(marks, 'facts unavailable', rootRunId);
+  for (const ids of marks.values()) ids.sort();
+  return new Map([...marks.entries()].sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)));
 };

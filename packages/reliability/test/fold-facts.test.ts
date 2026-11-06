@@ -5,10 +5,12 @@ import type { RunFacts } from '@momonga/reliability';
 import {
   T0,
   attemptFailed,
+  attemptLost,
   authorizationRequired,
   elicitationRequested,
   eventsOf,
   modelRequested,
+  modelResponded,
   permissionClassifiedAllow,
   permissionRequested,
   reconciled,
@@ -31,11 +33,14 @@ const crashThenReconcile = (outcome: 'already_applied' | 'unknown'): Timed[] => 
   [T0, started(1, { declared: true })],
   [T0 + 1000, toolCall('c1', 'write')],
   [T0 + 1010, toolStarted('c1')],
-  [T0 + 5000, started(2, { recovery: { cause: 'process_lost', failedAt: T0 + 2000 } })],
+  [T0 + 5000, attemptLost(T0 + 2000)],
+  [T0 + 5050, started(2)],
   [T0 + 5100, reconciled('c1', outcome)],
-  [T0 + 5200, modelRequested(2)],
+  [T0 + 5200, modelResponded(2)],
   [T0 + 6000, terminal('COMPLETED')],
 ];
+
+const NO_EPISODES = { k: 0, n: 0, unknownEffect: 0, failed: 0, stopped: 0 };
 
 describe('foldFacts: the per-run facts', () => {
   it('stamps the definitions version and the run identity', () => {
@@ -53,62 +58,148 @@ describe('foldFacts: the per-run facts', () => {
   });
 });
 
-describe('X2 Recovery Success Rate and X9 Mean Recovery Time', () => {
-  it('a reconcile already_applied then progress is recovered, and it is prevented, never a duplicate', () => {
+describe('X2 Recovery Success Rate and X9 Mean Recovery Time: an episode is a chain of failure records', () => {
+  it('attempt.lost opens the episode at its lastLiveAt; the reconcile already_applied is progress and recovers it, and it is prevented, never a duplicate', () => {
     const facts = fold('r1', crashThenReconcile('already_applied'));
     expect(facts.recoveries).toEqual([
-      expect.objectContaining({ ordinal: 1, cause: 'process_lost', failedAt: T0 + 2000, progressAt: T0 + 5200, outcome: 'recovered' }),
+      expect.objectContaining({ ordinal: 1, cause: 'process_lost', failedAt: T0 + 2000, progressAt: T0 + 5100, outcome: 'recovered' }),
     ]);
     expect(facts).toMatchObject({ reconciledAlreadyApplied: 1, reconciledUnknown: 0, repeatedStarts: 0, sideEffectingCalls: 1 });
     const total = totalOf([facts]);
-    expect(total.recovery).toEqual({ k: 1, n: 1, unknownEffect: 0, failed: 0 });
-    expect(total.recoveryTime).toEqual({ n: 1, meanMs: 3200, medianMs: 3200, clockSkew: 0 });
+    expect(total.recovery).toEqual({ k: 1, n: 1, unknownEffect: 0, failed: 0, stopped: 0 });
+    expect(total.recoveryTime).toEqual({ n: 1, meanMs: 3100, medianMs: 3100, clockSkew: 0 });
     expect(total.duplicates).toEqual({ journal: { k: 0, n: 1 }, prevented: 1, unknown: 0 });
   });
 
-  it('a reconcile unknown is unknown_effect, not recovered (O-1), and stays out of the mean', () => {
+  it('a reconcile unknown is unknown_effect, its own row and not recovered (decision 19), and stays out of the mean', () => {
     const facts = fold('r1', crashThenReconcile('unknown'));
     expect(facts.recoveries.map((episode) => episode.outcome)).toEqual(['unknown_effect']);
     const total = totalOf([facts]);
-    expect(total.recovery).toEqual({ k: 0, n: 1, unknownEffect: 1, failed: 0 });
+    expect(total.recovery).toEqual({ k: 0, n: 1, unknownEffect: 1, failed: 0, stopped: 0 });
     expect(total.recoveryTime).toEqual({ n: 0, meanMs: null, medianMs: null, clockSkew: 0 });
     expect(total.duplicates).toEqual({ journal: { k: 0, n: 1 }, prevented: 0, unknown: 1 });
   });
 
-  it('a worker failure takes failedAt from the attempt.failed it follows', () => {
+  it('a worker failure opens the episode at the createdAt of attempt.failed; a model request is not progress, the response is', () => {
     const facts = fold('r1', [
       [T0, started(1)],
       [T0 + 100, modelRequested(1)],
       [T0 + 300, attemptFailed(1, 'gateway_unavailable')],
       [T0 + 301, status('RUNNING', 'QUEUED')],
-      [T0 + 900, started(2, { recovery: { cause: 'worker_failure', failedAt: T0 + 300 } })],
+      [T0 + 900, started(2)],
       [T0 + 950, modelRequested(1)],
+      [T0 + 980, modelResponded(1)],
       [T0 + 1000, terminal('COMPLETED')],
     ]);
-    expect(facts.recoveries).toEqual([expect.objectContaining({ cause: 'worker_failure', failedAt: T0 + 300, progressAt: T0 + 950, outcome: 'recovered' })]);
-    expect(totalOf([facts]).recoveryTime).toEqual({ n: 1, meanMs: 650, medianMs: 650, clockSkew: 0 });
+    expect(facts.recoveries).toEqual([expect.objectContaining({ ordinal: 1, cause: 'worker_failure', failedAt: T0 + 300, progressAt: T0 + 980, outcome: 'recovered' })]);
+    expect(totalOf([facts]).recoveryTime).toEqual({ n: 1, meanMs: 680, medianMs: 680, clockSkew: 0 });
   });
 
-  it('another recovery start before progress fails the earlier episode; the later one recovers once the open call is reconciled', () => {
+  it('D4: a retry that sends a request and fails again is the same episode, not a recovery and not a second failure', () => {
     const facts = fold('r1', [
       [T0, started(1)],
-      [T0 + 10, toolCall('c1', 'exec')],
-      [T0 + 20, toolStarted('c1')],
-      [T0 + 1000, started(2, { recovery: { cause: 'process_lost', failedAt: T0 + 500 } })],
-      [T0 + 2000, started(3, { recovery: { cause: 'process_lost', failedAt: T0 + 1500 } })],
-      [T0 + 2100, reconciled('c1', 'not_applied')],
-      [T0 + 2200, toolStarted('c1')],
-      [T0 + 2300, toolCompleted('c1')],
-      [T0 + 2400, terminal('COMPLETED')],
+      [T0 + 10, modelRequested(1)],
+      [T0 + 100, attemptFailed(1, 'gateway_unavailable')],
+      [T0 + 101, status('RUNNING', 'QUEUED')],
+      [T0 + 200, started(2)],
+      [T0 + 210, modelRequested(1)],
+      [T0 + 300, attemptFailed(2, 'gateway_unavailable')],
+      [T0 + 301, status('RUNNING', 'QUEUED')],
+      [T0 + 400, started(3)],
+      [T0 + 450, modelResponded(1)],
+      [T0 + 500, terminal('COMPLETED')],
     ]);
-    expect(facts.recoveries.map(({ ordinal, outcome }) => ({ ordinal, outcome }))).toEqual([
-      { ordinal: 1, outcome: 'failed' },
-      { ordinal: 2, outcome: 'recovered' },
-    ]);
-    expect(facts).toMatchObject({ repeatedStarts: 0, reconciledNotApplied: 1 });
+    expect(facts.recoveries).toEqual([expect.objectContaining({ ordinal: 1, cause: 'worker_failure', failedAt: T0 + 100, progressAt: T0 + 450, outcome: 'recovered' })]);
     const total = totalOf([facts]);
-    expect(total.recovery).toEqual({ k: 1, n: 2, unknownEffect: 0, failed: 1 });
-    expect(total.recoveryTime).toEqual({ n: 1, meanMs: 700, medianMs: 700, clockSkew: 0 });
+    expect(total.recovery).toEqual({ k: 1, n: 1, unknownEffect: 0, failed: 0, stopped: 0 });
+    expect(total.recoveryTime).toEqual({ n: 1, meanMs: 350, medianMs: 350, clockSkew: 0 });
+  });
+
+  it('D4: a chain of takeovers is one episode that keeps the first lastLiveAt', () => {
+    const facts = fold('r1', [
+      [T0, started(1)],
+      [T0 + 1000, attemptLost(T0 + 500)],
+      [T0 + 1010, started(2)],
+      [T0 + 2000, attemptLost(T0 + 1500)],
+      [T0 + 2010, started(3)],
+      [T0 + 2100, modelResponded(1)],
+      [T0 + 2200, terminal('COMPLETED')],
+    ]);
+    expect(facts.recoveries).toEqual([expect.objectContaining({ ordinal: 1, cause: 'process_lost', failedAt: T0 + 500, progressAt: T0 + 2100, outcome: 'recovered' })]);
+    expect(totalOf([facts]).recoveryTime).toEqual({ n: 1, meanMs: 1600, medianMs: 1600, clockSkew: 0 });
+  });
+
+  it('D3: two failure records before one run.started make one episode named by the earliest record', () => {
+    const facts = fold('r1', [
+      [T0, started(1)],
+      [T0 + 100, attemptFailed(1, 'gateway_unavailable')],
+      [T0 + 101, status('RUNNING', 'QUEUED')],
+      [T0 + 400, attemptLost(T0 + 250)],
+      [T0 + 410, started(3)],
+      [T0 + 500, modelResponded(1)],
+      [T0 + 600, terminal('COMPLETED')],
+    ]);
+    expect(facts.recoveries).toEqual([expect.objectContaining({ ordinal: 1, cause: 'worker_failure', failedAt: T0 + 100, progressAt: T0 + 500, outcome: 'recovered' })]);
+  });
+
+  it('D2: a failure never followed by run.started is still an episode; a deadline stop makes it stopped, outside the rate', () => {
+    const facts = fold(
+      'r1',
+      [
+        [T0, started(1)],
+        [T0 + 100, attemptFailed(1, 'gateway_unavailable')],
+        [T0 + 101, status('RUNNING', 'QUEUED')],
+        [T0 + 200, status('QUEUED', 'STOPPED')],
+      ],
+      { status: 'STOPPED', stopReason: 'timeout' },
+    );
+    expect(facts.recoveries).toEqual([expect.objectContaining({ ordinal: 1, cause: 'worker_failure', failedAt: T0 + 100, progressAt: null, outcome: 'stopped' })]);
+    expect(totalOf([facts]).recovery).toEqual({ k: 0, n: 0, unknownEffect: 0, failed: 0, stopped: 1 });
+  });
+
+  it('D2: a failure dead-lettered with no run.started after it is failed', () => {
+    const facts = fold(
+      'r1',
+      [
+        [T0, started(1)],
+        [T0 + 100, attemptFailed(1, 'gateway_unavailable')],
+        [T0 + 101, status('RUNNING', 'QUEUED')],
+        [T0 + 200, status('QUEUED', 'FAILED')],
+      ],
+      { status: 'FAILED' },
+    );
+    expect(facts.recoveries.map((episode) => episode.outcome)).toEqual(['failed']);
+    expect(totalOf([facts]).recovery).toEqual({ k: 0, n: 1, unknownEffect: 0, failed: 1, stopped: 0 });
+  });
+
+  it('D2: a failure followed by a cancel is stopped', () => {
+    const facts = fold(
+      'r1',
+      [
+        [T0, started(1)],
+        [T0 + 100, attemptLost(T0 + 50)],
+        [T0 + 110, started(2)],
+        [T0 + 200, terminal('CANCELLED')],
+      ],
+      { status: 'CANCELLED' },
+    );
+    expect(facts.recoveries.map((episode) => episode.outcome)).toEqual(['stopped']);
+  });
+
+  it('D4: a STOPPED after a response recorded before the crash is stopped, never recovered', () => {
+    const facts = fold(
+      'r1',
+      [
+        [T0, started(1)],
+        [T0 + 50, modelResponded(1)],
+        [T0 + 1000, attemptLost(T0 + 100)],
+        [T0 + 1010, started(2)],
+        [T0 + 1100, terminal('STOPPED')],
+      ],
+      { status: 'STOPPED', stopReason: 'budget' },
+    );
+    expect(facts.recoveries.map((episode) => episode.outcome)).toEqual(['stopped']);
+    expect(totalOf([facts]).recovery).toEqual({ k: 0, n: 0, unknownEffect: 0, failed: 0, stopped: 1 });
   });
 
   it('a terminal FAILED before progress is failed', () => {
@@ -116,28 +207,51 @@ describe('X2 Recovery Success Rate and X9 Mean Recovery Time', () => {
       'r1',
       [
         [T0, started(1)],
-        [T0 + 1000, started(2, { recovery: { cause: 'worker_failure', failedAt: T0 + 400 } })],
+        [T0 + 1000, attemptLost(T0 + 400)],
+        [T0 + 1001, started(2)],
         [T0 + 1100, terminal('FAILED')],
       ],
       { status: 'FAILED' },
     );
     expect(facts.recoveries.map((episode) => episode.outcome)).toEqual(['failed']);
-    expect(totalOf([facts]).recovery).toEqual({ k: 0, n: 1, unknownEffect: 0, failed: 1 });
+    expect(totalOf([facts]).recovery).toEqual({ k: 0, n: 1, unknownEffect: 0, failed: 1, stopped: 0 });
+  });
+
+  it('a failure after progress opens a second episode with the next ordinal', () => {
+    const facts = fold(
+      'r1',
+      [
+        [T0, started(1)],
+        [T0 + 1000, attemptLost(T0 + 500)],
+        [T0 + 1010, started(2)],
+        [T0 + 1100, modelResponded(1)],
+        [T0 + 2000, attemptLost(T0 + 1800)],
+        [T0 + 2010, started(3)],
+        [T0 + 2100, terminal('FAILED')],
+      ],
+      { status: 'FAILED' },
+    );
+    expect(facts.recoveries.map(({ ordinal, outcome, failedAt }) => ({ ordinal, outcome, failedAt }))).toEqual([
+      { ordinal: 1, outcome: 'recovered', failedAt: T0 + 500 },
+      { ordinal: 2, outcome: 'failed', failedAt: T0 + 1800 },
+    ]);
+    expect(totalOf([facts]).recovery).toEqual({ k: 1, n: 2, unknownEffect: 0, failed: 1, stopped: 0 });
   });
 
   it('a recovered episode whose progress precedes failedAt is clock_skew and out of the mean, still recovered', () => {
     const facts = fold('r1', [
       [T0, started(1)],
-      [T0 + 10, started(2, { recovery: { cause: 'process_lost', failedAt: T0 + 5000 } })],
-      [T0 + 20, modelRequested(1)],
+      [T0 + 10, attemptLost(T0 + 5000)],
+      [T0 + 11, started(2)],
+      [T0 + 20, modelResponded(1)],
       [T0 + 30, terminal('COMPLETED')],
     ]);
     const total = totalOf([facts]);
-    expect(total.recovery).toEqual({ k: 1, n: 1, unknownEffect: 0, failed: 0 });
+    expect(total.recovery).toEqual({ k: 1, n: 1, unknownEffect: 0, failed: 0, stopped: 0 });
     expect(total.recoveryTime).toEqual({ n: 0, meanMs: null, medianMs: null, clockSkew: 1 });
   });
 
-  it('a first start, a wake and a drain carry no recovery and make no episode', () => {
+  it('a first start, a wake and a drain write no failure record and make no episode', () => {
     const facts = fold('r1', [
       [T0, started(1)],
       [T0 + 10, status('RUNNING', 'QUEUED')],
@@ -145,29 +259,24 @@ describe('X2 Recovery Success Rate and X9 Mean Recovery Time', () => {
       [T0 + 30, terminal('COMPLETED')],
     ]);
     expect(facts.recoveries).toEqual([]);
-    expect(totalOf([facts]).recovery).toEqual({ k: 0, n: 0, unknownEffect: 0, failed: 0 });
+    expect(totalOf([facts]).recovery).toEqual(NO_EPISODES);
   });
 
   it('the mean and median are over recovered episodes of every task', () => {
-    const quick = fold('r1', [
-      [T0, started(1)],
-      [T0 + 100, started(2, { recovery: { cause: 'process_lost', failedAt: T0 } })],
-      [T0 + 100, modelRequested(1)],
-      [T0 + 200, terminal('COMPLETED')],
-    ]);
-    const slow = fold('r2', [
-      [T0, started(1)],
-      [T0 + 1000, started(2, { recovery: { cause: 'process_lost', failedAt: T0 } })],
-      [T0 + 1000, modelRequested(1)],
-      [T0 + 2000, terminal('COMPLETED')],
-    ]);
-    const slowest = fold('r3', [
-      [T0, started(1)],
-      [T0 + 7000, started(2, { recovery: { cause: 'process_lost', failedAt: T0 } })],
-      [T0 + 7000, modelRequested(1)],
-      [T0 + 8000, terminal('COMPLETED')],
-    ]);
-    expect(totalOf([quick, slow, slowest]).recoveryTime).toEqual({ n: 3, meanMs: 2700, medianMs: 1000, clockSkew: 0 });
+    const lostThenResponded = (runId: string, at: number): RunFacts =>
+      fold(runId, [
+        [T0, started(1)],
+        [at, attemptLost(T0)],
+        [at, started(2)],
+        [at, modelResponded(1)],
+        [at + 1000, terminal('COMPLETED')],
+      ]);
+    expect(totalOf([lostThenResponded('r1', T0 + 100), lostThenResponded('r2', T0 + 1000), lostThenResponded('r3', T0 + 7000)]).recoveryTime).toEqual({
+      n: 3,
+      meanMs: 2700,
+      medianMs: 1000,
+      clockSkew: 0,
+    });
   });
 });
 
@@ -296,7 +405,88 @@ describe('population buckets', () => {
     const stale: RunFacts = { ...fold('stale', [[T0, started(1)], [T0 + 1, terminal('COMPLETED')]]), definitionsVersion: INDICATOR_DEFINITIONS_VERSION - 1 };
     const counted = fold('counted', [[T0, started(1)], [T0 + 1, terminal('COMPLETED')]]);
     const total = totalOf([cancelled, stale, counted]);
-    expect(total.buckets).toEqual({ counted: 1, cancelled: 1, pendingFacts: 1 });
+    expect(total.buckets).toEqual({ counted: 1, cancelled: 1, pendingFacts: 1, factsUnavailable: 0 });
     expect(total.intervention).toEqual({ k: 0, n: 1 });
+  });
+
+  it('decision 55: a root whose tree holds an unavailable run is the fourth bucket, outside every rate, whether or not its own row exists', () => {
+    const counted = fold('counted', [[T0, started(1)], [T0 + 1, terminal('COMPLETED')]]);
+    const hasUnavailableChild = fold('parent', [[T0, started(1)], [T0 + 1, terminal('COMPLETED')]]);
+    const total = indicatorsOf(aggregate([counted, hasUnavailableChild], { groupBy: 'model', unavailableRoots: ['parent', 'ghost'] })).total;
+    expect(total.buckets).toEqual({ counted: 1, cancelled: 0, pendingFacts: 0, factsUnavailable: 2 });
+    expect(total.intervention).toEqual({ k: 0, n: 1 });
+  });
+});
+
+describe('gap A2: an episode owes the calls open at any record of its chain', () => {
+  const chainWithCallOpenedAfterFirstRecord = (settle: readonly Timed[]): Timed[] => [
+    [T0, started(1)],
+    [T0 + 100, attemptFailed(1, 'gateway_unavailable')],
+    [T0 + 101, status('RUNNING', 'QUEUED')],
+    [T0 + 200, started(2)],
+    [T0 + 210, toolCall('c1', 'write')],
+    [T0 + 220, toolStarted('c1')],
+    [T0 + 1000, attemptLost(T0 + 500)],
+    [T0 + 1010, started(3)],
+    ...settle,
+    [T0 + 2000, terminal('COMPLETED')],
+  ];
+
+  it('a call started after the first record and reconciled unknown after the second makes the episode unknown_effect', () => {
+    const facts = fold('r1', chainWithCallOpenedAfterFirstRecord([
+      [T0 + 1100, reconciled('c1', 'unknown')],
+      [T0 + 1200, modelResponded(2)],
+    ]));
+    expect(facts.recoveries.map(({ ordinal, cause, failedAt, outcome }) => ({ ordinal, cause, failedAt, outcome }))).toEqual([
+      { ordinal: 1, cause: 'worker_failure', failedAt: T0 + 100, outcome: 'unknown_effect' },
+    ]);
+    expect(totalOf([facts]).recovery).toEqual({ k: 0, n: 1, unknownEffect: 1, failed: 0, stopped: 0 });
+  });
+
+  it('a call started after the first record and still unsettled at the response makes the episode unknown_effect', () => {
+    const facts = fold('r1', chainWithCallOpenedAfterFirstRecord([[T0 + 1200, modelResponded(2)]]));
+    expect(facts.recoveries.map(({ ordinal, cause, outcome }) => ({ ordinal, cause, outcome }))).toEqual([{ ordinal: 1, cause: 'worker_failure', outcome: 'unknown_effect' }]);
+    expect(totalOf([facts]).recovery).toEqual({ k: 0, n: 1, unknownEffect: 1, failed: 0, stopped: 0 });
+  });
+});
+
+describe('decision 53: an episode closes at the first progress after which no owed call is unsettled', () => {
+  const owedThenFresh = (settleOwed: Timed): Timed[] => [
+    [T0, started(1)],
+    [T0 + 100, toolCall('c1', 'write')],
+    [T0 + 110, toolStarted('c1')],
+    [T0 + 1000, attemptLost(T0 + 500)],
+    [T0 + 1010, started(2)],
+    [T0 + 1100, toolCall('c2', 'write')],
+    [T0 + 1110, toolStarted('c2')],
+    [T0 + 1200, toolCompleted('c2')],
+    settleOwed,
+    [T0 + 1400, modelResponded(2)],
+    [T0 + 1500, terminal('COMPLETED')],
+  ];
+
+  it('a fresh call that completes while the owed call is unsettled does not close the episode', () => {
+    const facts = fold('r1', owedThenFresh([T0 + 1300, toolCompleted('c1')]));
+    expect(facts.recoveries).toEqual([expect.objectContaining({ ordinal: 1, failedAt: T0 + 500, progressAt: T0 + 1300, outcome: 'recovered' })]);
+  });
+
+  it('the owed call reconciled unknown after a fresh completion makes the one episode unknown_effect, closed at the reconcile', () => {
+    const facts = fold('r1', owedThenFresh([T0 + 1300, reconciled('c1', 'unknown')]));
+    expect(facts.recoveries).toEqual([expect.objectContaining({ ordinal: 1, failedAt: T0 + 500, progressAt: T0 + 1300, outcome: 'unknown_effect' })]);
+    expect(totalOf([facts]).recovery).toEqual({ k: 0, n: 1, unknownEffect: 1, failed: 0, stopped: 0 });
+  });
+
+  it('a model response while an owed call is unsettled does not close the episode', () => {
+    const facts = fold('r1', [
+      [T0, started(1)],
+      [T0 + 100, toolCall('c1', 'write')],
+      [T0 + 110, toolStarted('c1')],
+      [T0 + 1000, attemptLost(T0 + 500)],
+      [T0 + 1010, started(2)],
+      [T0 + 1100, modelResponded(2)],
+      [T0 + 1300, reconciled('c1', 'already_applied')],
+      [T0 + 1500, terminal('COMPLETED')],
+    ]);
+    expect(facts.recoveries).toEqual([expect.objectContaining({ progressAt: T0 + 1300, outcome: 'recovered' })]);
   });
 });

@@ -2,6 +2,7 @@ import type { ContentBlock, PermissionOption, SessionUpdate, ToolCall, ToolCallC
 import { isRecord } from '@momonga/foundation';
 import type { ElicitationRequestView, PublicRunEvent } from '@momonga/protocol';
 import { classificationLevel, describeClassification, describeDenial, describeHook, hookLevel } from '../policy-messages.ts';
+import { describeRetryWait } from '../retry-wait.ts';
 import { asChildEvent } from '../run/child-events.ts';
 
 export type ClientFeatures = {
@@ -26,9 +27,13 @@ export type Effect =
     }
   | { readonly kind: 'withdraw'; readonly id: string };
 
-export type MapperState = { readonly calls: Map<string, ToolCall>; contextTokens: number | undefined };
+export type MapperState = {
+  readonly calls: Map<string, ToolCall>;
+  contextTokens: number | undefined;
+  lastFailure: Extract<PublicRunEvent, { type: 'attempt.failed' }> | undefined;
+};
 
-export const createMapperState = (): MapperState => ({ calls: new Map(), contextTokens: undefined });
+export const createMapperState = (): MapperState => ({ calls: new Map(), contextTokens: undefined, lastFailure: undefined });
 
 export class UnsupportedToolContent extends Error {
   constructor(detail: string) {
@@ -187,8 +192,14 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
       return phase === 'live' ? [{ kind: 'update', update: { sessionUpdate: 'current_mode_update', currentModeId: event.mode } }] : [];
     case 'model.changed':
       return phase === 'live' ? [{ kind: 'model', modelAlias: event.modelAlias }] : [];
-    case 'run.started':
+    case 'attempt.failed':
+      state.lastFailure = event;
+      return [];
     case 'run.status':
+      return phase === 'live' && event.to === 'QUEUED' && state.lastFailure !== undefined
+        ? liveNotice(features, event.runId, event.seq, 'info', describeRetryWait(state.lastFailure))
+        : [];
+    case 'run.started':
     case 'model.requested':
     case 'model.stream.restarted':
     case 'context.inherited':
@@ -202,7 +213,7 @@ export const mapRunEvent = (event: PublicRunEvent, phase: Phase, state: MapperSt
     case 'model.rejected':
     case 'approval.rule.persisted':
     case 'job.finished':
-    case 'attempt.failed':
+    case 'attempt.lost':
     case 'usage.charged':
     case 'context.governing_loaded':
     case 'context.memories_loaded':

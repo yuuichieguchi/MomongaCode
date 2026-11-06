@@ -26,6 +26,7 @@ import type { Row } from './rows.ts';
 import { sameRunRequest } from './run-request.ts';
 import { MIGRATIONS } from './schema.ts';
 import { CANCEL_ORIGINS, CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from './transitions.ts';
+import { createRunFactsStore } from './run-facts.ts';
 import { createSearchStore } from './search.ts';
 import { createTrustStore } from './trust.ts';
 import type {
@@ -290,6 +291,10 @@ const prepareStatements = (db: DatabaseSync) => ({
   sweeperOwnedById: db.prepare(
     `SELECT r.* FROM runs r
      WHERE r.id = :id AND r.status = 'CANCELLING' AND r.cancel_origin IN ('QUEUED', 'WAITING_HUMAN') AND (r.lease_owner IS NULL OR r.lease_expires_at <= :now)`,
+  ),
+  claimTakeover: db.prepare(
+    `SELECT CASE WHEN ${TAKEOVER} THEN r.lease_expires_at END AS taken_from
+     FROM runs r WHERE ${CLAIMABLE} AND NOT ${EXHAUSTED} ${CLAIM_ORDER} LIMIT 1`,
   ),
   claim: db.prepare(
     `UPDATE runs SET
@@ -1281,9 +1286,13 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     claim: (workerId) => {
       const now = clock.now();
       return transaction(() => {
+        const candidate = sql.claimTakeover.get({ now, maxAttempts, maxTotalAttempts });
         const row = sql.claim.get({ now, maxAttempts, maxTotalAttempts, workerId, leaseExpiresAt: now + leaseMs });
         if (row === undefined) return null;
-        const run = decodeRun(row);
+        const claimed = decodeRun(row);
+        const takenFrom = candidate === undefined ? null : readerFor('runs', claimed.id, candidate).nullableNumber('taken_from');
+        const run = takenFrom === null ? claimed : appendPayloads(claimed, [{ type: 'attempt.lost', lastLiveAt: takenFrom - leaseMs }]);
+        if (takenFrom !== null) writeRun(run);
         const status: ClaimStatus = expectOneOf('runs', run.id, 'status', CLAIM_STATUSES, run.status);
         return { runId: run.id, sessionId: run.sessionId, workerId, leaseToken: run.leaseToken, attempt: run.attempts, status };
       });
@@ -1644,6 +1653,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     guidelines: createGuidelineStore(db, clock),
     governing,
     search: createSearchStore(db),
+    runFacts: createRunFactsStore(db),
 
     journalFacts: {
       verdict: async (request, signal) => journalPreparer(preparer, 'verdict').verdict(request, signal),

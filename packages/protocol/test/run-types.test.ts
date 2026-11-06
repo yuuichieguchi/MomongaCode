@@ -18,7 +18,6 @@ import type {
   PrefixEvent,
   RunEvent,
   RunEventPayload,
-  RunRecovery,
   RunState,
   RunStatus,
   StopReason,
@@ -79,6 +78,7 @@ describe('run event payloads', () => {
       | 'user.message'
       | 'run.started'
       | 'attempt.failed'
+      | 'attempt.lost'
       | 'run.status'
       | 'model.requested'
       | 'model.responded'
@@ -131,9 +131,9 @@ describe('run event payloads', () => {
       now: number;
       pins: Record<string, unknown>;
       mode?: PermissionMode;
-      recovery?: RunRecovery;
     }>();
-    expectTypeOf<Payload<'attempt.failed'>>().toEqualTypeOf<{ type: 'attempt.failed'; attempt: number; code: string }>();
+    expectTypeOf<Payload<'attempt.failed'>>().toEqualTypeOf<{ type: 'attempt.failed'; attempt: number; code: string; retryAt: number; limit: number }>();
+    expectTypeOf<Payload<'attempt.lost'>>().toEqualTypeOf<{ type: 'attempt.lost'; lastLiveAt: number }>();
     expectTypeOf<Payload<'run.status'>>().toEqualTypeOf<{
       type: 'run.status';
       from: RunStatus;

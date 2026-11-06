@@ -3,13 +3,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { HOST_RULE_ENFORCEMENT, isProtectedWrite, protectedSetFor } from '@momonga/foundation';
+import { isProtectedWrite, protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import type { ProtectedSet } from '@momonga/foundation';
 import { EMPTY_GLOB_TABLE, computeFileRules, decide, settleGlobs } from '@momonga/policy';
 import type { SandboxedProcess } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, TEST_SEARCH_PATH, isWritableFor } from '@momonga/testkit';
 import { buildSandboxPolicy, createPolicyFilesystem } from '@momonga/tools';
-import { createHostSandbox } from './helpers.ts';
+import { HOST_SANDBOX_KIND, createHostSandbox } from './helpers.ts';
 
 const SYSTEM_GIT = '/usr/bin/git';
 const SEARCH_PATH = '/usr/bin:/bin';
@@ -201,7 +201,7 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
         roots: [repositoryRoot],
         home: path.join(root, 'home'),
         cwd: repositoryRoot,
-        fileRules: computeFileRules([], [repositoryRoot], null, HOST_RULE_ENFORCEMENT),
+        fileRules: computeFileRules([], [repositoryRoot], null, ruleEnforcementOf(HOST_SANDBOX_KIND)),
         fs: settleGlobs(policyFilesystem(), EMPTY_GLOB_TABLE), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([repositoryRoot]),
         protectedSet: set,
       });
@@ -217,7 +217,7 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
         home: path.join(root, 'home'),
         tmpDir,
         sessionsTmpRoot: sessions,
-        fileRules: computeFileRules([], [repositoryRoot], tmpDir, HOST_RULE_ENFORCEMENT),
+        fileRules: computeFileRules([], [repositoryRoot], tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND)),
         protectedSet: set,
       });
       const sandbox = createHostSandbox({ tmpRoot: sandboxTmp, killGraceMs: 300 });
@@ -256,7 +256,7 @@ describe('real git: a linked worktree, a submodule and the missing-target sequen
         home: path.join(root, 'home'),
         tmpDir,
         sessionsTmpRoot: sessions,
-        fileRules: computeFileRules([], [repositoryRoot], tmpDir, HOST_RULE_ENFORCEMENT),
+        fileRules: computeFileRules([], [repositoryRoot], tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND)),
         protectedSet: setFor(repositoryRoot),
       });
       const sandbox = createHostSandbox({ tmpRoot: sandboxTmp, killGraceMs: 300 });

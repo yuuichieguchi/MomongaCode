@@ -166,7 +166,7 @@ describe('the plan credential numbers of design-chatgpt-plan.md section 6', () =
   );
 
   it(
-    'P4 proves that with the adoption rule expires_in > M, two lazy refreshes of one account start at least expires_in - M apart (3479 s for expires_in = 3600 s): the adopted token expires expires_in after the response, and a lazy refresh starts only when at most M remains',
+    'P4 proves that when expires_in > M, two lazy refreshes of one account start at least expires_in - M apart (3479 s for expires_in = 3600 s): the adopted token expires expires_in after the response, and a lazy refresh starts only when at most M remains',
     async () => {
       const arith = proofArith(z3.engine().api, 'P4');
       const lifetime = constant(arith, 'L', PLAN.accessLifetimeMs);
@@ -189,7 +189,7 @@ describe('the plan credential numbers of design-chatgpt-plan.md section 6', () =
   );
 
   it(
-    'P4w refutes the same spacing when a response with expires_in <= M is adopted: the next lazy refresh can start at once',
+    'P4w refutes the spacing for an adopted response with expires_in <= M (every 200 is adopted): the next lazy refresh can start at once, so the bound for that case is per read (P4s)',
     async () => {
       const arith = proofArith(z3.engine().api, 'P4w');
       const margin = constant(arith, 'M', PLAN.marginMs);
@@ -201,6 +201,20 @@ describe('the plan credential numbers of design-chatgpt-plan.md section 6', () =
       arith.given(secondStart.ge(firstEnd), expiresAt.sub(secondStart).le(margin));
       expect(await hypothesesSatisfiable(arith)).toBe(true);
       await expectRefuted(arith, secondStart.sub(firstEnd).ge(1));
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'P4s proves that when expires_in <= M there is at most one refresh per read: a read joins the refresh in flight (single flight) or starts one, and the adopted token starts no refresh by itself',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'P4s');
+      const reads = arith.int('reads');
+      const started = arith.int('started');
+      const joined = arith.int('joined');
+      arith.given(reads.ge(0), started.ge(0), joined.ge(0), started.add(joined).eq(reads));
+      expect(await hypothesesSatisfiable(arith)).toBe(true);
+      expect(await prove(arith, started.le(reads))).toEqual({ status: 'proved' });
     },
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );

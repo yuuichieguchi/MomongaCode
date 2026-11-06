@@ -1,10 +1,11 @@
 import { INDICATOR_DEFINITIONS_VERSION, TERMINAL_STATUSES } from '@momonga/protocol';
-import type { RecoveryEpisodeView, RecoveryOutcome, RunEvent, RunFactsView, RunRecovery } from '@momonga/protocol';
+import type { RecoveryCause, RecoveryEpisodeView, RecoveryOutcome, RunEvent, RunFactsView } from '@momonga/protocol';
 import type { RunInfo } from './types.ts';
 
 type Episode = {
   ordinal: number;
-  recovery: RunRecovery;
+  cause: RecoveryCause;
+  failedAt: number;
   startedSeq: number;
   awaiting: Set<string>;
   unknownReconciled: boolean;
@@ -26,7 +27,24 @@ const declaredCompletion = (event: Extract<RunEvent, { type: 'run.started' }>): 
   return completion.length > 0;
 };
 
-export const foldFacts = (events: readonly RunEvent[], info: RunInfo): RunFactsView => {
+export const FACTS_EVENT_TYPES = [
+  'run.started',
+  'attempt.failed',
+  'attempt.lost',
+  'run.status',
+  'model.responded',
+  'tool.call',
+  'tool.started',
+  'tool.completed',
+  'tool.reconciled',
+  'tool.permission.requested',
+  'tool.elicitation.requested',
+  'mcp.authorization.required',
+] as const satisfies readonly RunEvent['type'][];
+
+export type FactsFold = { add(event: RunEvent): void; finish(info: RunInfo): RunFactsView };
+
+export const createFactsFold = (): FactsFold => {
   const basis = { readOnly: 0, rule: 0, mode: 0, hook: 0, classifier: 0, person: 0 };
   const sideEffecting = new Set<string>();
   const startedSinceNotApplied = new Set<string>();
@@ -49,8 +67,8 @@ export const foldFacts = (events: readonly RunEvent[], info: RunInfo): RunFactsV
   const resolve = (episode: Episode, outcome: RecoveryOutcome, progress: { at: number; seq: number } | undefined): void => {
     recoveries.push({
       ordinal: episode.ordinal,
-      cause: episode.recovery.cause,
-      failedAt: episode.recovery.failedAt,
+      cause: episode.cause,
+      failedAt: episode.failedAt,
       progressAt: progress?.at ?? null,
       outcome,
       startedSeq: episode.startedSeq,
@@ -59,10 +77,24 @@ export const foldFacts = (events: readonly RunEvent[], info: RunInfo): RunFactsV
     pending = undefined;
   };
 
-  const progress = (event: RunEvent): void => {
+  const open = (event: RunEvent, cause: RecoveryCause, failedAt: number): void => {
+    if (pending !== undefined) {
+      for (const callId of openCalls) pending.awaiting.add(callId);
+      return;
+    }
+    ordinal += 1;
+    pending = { ordinal, cause, failedAt, startedSeq: event.seq, awaiting: new Set(openCalls), unknownReconciled: false };
+  };
+
+  const closeAt = (event: RunEvent): void => {
     if (pending === undefined) return;
     const settled = pending.awaiting.size === 0 && !pending.unknownReconciled;
     resolve(pending, settled ? 'recovered' : 'unknown_effect', { at: event.createdAt, seq: event.seq });
+  };
+
+  const progress = (event: RunEvent): void => {
+    if (pending === undefined || pending.awaiting.size > 0) return;
+    closeAt(event);
   };
 
   const settle = (callId: string): void => {
@@ -70,17 +102,18 @@ export const foldFacts = (events: readonly RunEvent[], info: RunInfo): RunFactsV
     pending?.awaiting.delete(callId);
   };
 
-  for (const event of events) {
+  const add = (event: RunEvent): void => {
     switch (event.type) {
       case 'run.started': {
         declared ??= declaredCompletion(event);
-        if (event.recovery !== undefined) {
-          if (pending !== undefined) resolve(pending, 'failed', undefined);
-          ordinal += 1;
-          pending = { ordinal, recovery: event.recovery, startedSeq: event.seq, awaiting: new Set(openCalls), unknownReconciled: false };
-        }
         break;
       }
+      case 'attempt.failed':
+        open(event, 'worker_failure', event.createdAt);
+        break;
+      case 'attempt.lost':
+        open(event, 'process_lost', event.lastLiveAt);
+        break;
       case 'run.status': {
         if (event.from === 'WAITING_HUMAN' && waitingSince !== undefined) {
           humanWaitMs += event.createdAt - waitingSince;
@@ -91,19 +124,19 @@ export const foldFacts = (events: readonly RunEvent[], info: RunInfo): RunFactsV
           endedAt ??= event.createdAt;
           if (pending !== undefined) {
             if (event.to === 'FAILED') resolve(pending, 'failed', undefined);
-            else progress(event);
+            else if (event.to === 'COMPLETED') closeAt(event);
+            else resolve(pending, 'stopped', undefined);
           }
         }
         break;
       }
-      case 'model.requested':
+      case 'model.responded':
         progress(event);
         break;
       case 'tool.call':
         if (event.sideEffect !== 'read_only') sideEffecting.add(event.callId);
         break;
       case 'tool.started': {
-        progress(event);
         if (event.basis !== undefined) basis[basisKey(event.basis)] += 1;
         if (sideEffecting.has(event.callId) && startedSinceNotApplied.has(event.callId)) repeatedStarts += 1;
         startedSinceNotApplied.add(event.callId);
@@ -112,6 +145,7 @@ export const foldFacts = (events: readonly RunEvent[], info: RunInfo): RunFactsV
       }
       case 'tool.completed':
         settle(event.callId);
+        progress(event);
         break;
       case 'tool.reconciled': {
         if (event.outcome === 'already_applied') reconciledAlreadyApplied += 1;
@@ -123,6 +157,7 @@ export const foldFacts = (events: readonly RunEvent[], info: RunInfo): RunFactsV
           if (pending?.awaiting.has(event.callId) === true) pending.unknownReconciled = true;
         }
         settle(event.callId);
+        progress(event);
         break;
       }
       case 'tool.permission.requested':
@@ -137,41 +172,51 @@ export const foldFacts = (events: readonly RunEvent[], info: RunInfo): RunFactsV
       default:
         break;
     }
-  }
-
-  if (endedAt === undefined) throw new RangeError(`run ${info.runId}: facts are defined for terminal runs and the journal has no terminal run.status`);
-  if (pending !== undefined) throw new RangeError(`run ${info.runId}: the recovery episode started at seq ${pending.startedSeq} never reached progress or failure`);
-
-  return {
-    runId: info.runId,
-    rootRunId: info.rootRunId,
-    sessionId: info.sessionId,
-    definitionsVersion: INDICATOR_DEFINITIONS_VERSION,
-    modelAlias: info.modelAlias,
-    mode: info.mode,
-    agent: info.agent,
-    origin: info.origin,
-    status: info.status,
-    ...(info.stopReason === undefined ? {} : { stopReason: info.stopReason }),
-    createdAt: info.createdAt,
-    endedAt,
-    elapsedMs: endedAt - info.createdAt,
-    humanWaitMs,
-    tokensTotal: info.tokensTotal,
-    steps: info.step,
-    limits: info.limits,
-    ...(info.deadlineAt === undefined ? {} : { deadlineAt: info.deadlineAt }),
-    asked,
-    elicited,
-    authorizationRequired,
-    sideEffectingCalls: sideEffecting.size,
-    repeatedStarts,
-    reconciledAlreadyApplied,
-    reconciledNotApplied,
-    reconciledUnknown,
-    basis,
-    declared: declared ?? false,
-    met: info.status === 'COMPLETED',
-    recoveries,
   };
+
+  const finish = (info: RunInfo): RunFactsView => {
+    if (endedAt === undefined) throw new RangeError(`run ${info.runId}: facts are defined for terminal runs and the journal has no terminal run.status`);
+    if (pending !== undefined) throw new RangeError(`run ${info.runId}: the recovery episode opened at seq ${pending.startedSeq} never reached progress or failure`);
+
+    return {
+      runId: info.runId,
+      rootRunId: info.rootRunId,
+      sessionId: info.sessionId,
+      definitionsVersion: INDICATOR_DEFINITIONS_VERSION,
+      modelAlias: info.modelAlias,
+      mode: info.mode,
+      agent: info.agent,
+      origin: info.origin,
+      status: info.status,
+      ...(info.stopReason === undefined ? {} : { stopReason: info.stopReason }),
+      createdAt: info.createdAt,
+      endedAt,
+      elapsedMs: endedAt - info.createdAt,
+      humanWaitMs,
+      tokensTotal: info.tokensTotal,
+      steps: info.step,
+      limits: info.limits,
+      ...(info.deadlineAt === undefined ? {} : { deadlineAt: info.deadlineAt }),
+      asked,
+      elicited,
+      authorizationRequired,
+      sideEffectingCalls: sideEffecting.size,
+      repeatedStarts,
+      reconciledAlreadyApplied,
+      reconciledNotApplied,
+      reconciledUnknown,
+      basis,
+      declared: declared ?? false,
+      met: info.status === 'COMPLETED',
+      recoveries,
+    };
+  };
+
+  return { add, finish };
+};
+
+export const foldFacts = (events: readonly RunEvent[], info: RunInfo): RunFactsView => {
+  const fold = createFactsFold();
+  for (const event of events) fold.add(event);
+  return fold.finish(info);
 };

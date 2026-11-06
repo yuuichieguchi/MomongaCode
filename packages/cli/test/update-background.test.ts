@@ -2,7 +2,7 @@ import { waitFor } from '@momonga/testkit';
 import { describe, expect, it } from 'vitest';
 import { UPDATE_CHECK_COMMAND, announceUpdate, runBackgroundCheck, startBackgroundCheck } from '../src/update/background.ts';
 import { assetNameFor } from '../src/update/source.ts';
-import { NEW_BINARY, OLD_BINARY, PUBLIC_KEY, setupUpdate } from './update-harness.ts';
+import { DAEMON_RESTART_BOUND_MS, NEW_BINARY, OLD_BINARY, PUBLIC_KEY, setupUpdate } from './update-harness.ts';
 import type { HarnessOptions, UpdateHarness } from './update-harness.ts';
 
 const interrupt = (): AbortSignal => new AbortController().signal;
@@ -120,6 +120,19 @@ describe('startBackgroundCheck: what the user command does', () => {
     expect(harness.state.value).toEqual({ checkedAt: 0, outcome: { kind: 'installed', version: '2.0.0' }, announced: true });
   });
 
+  it('returns an install whose daemon restart failed with both facts and what to run', async (context) => {
+    const harness = await setupUpdate(context);
+    harness.state.value = {
+      checkedAt: 0,
+      outcome: { kind: 'installed_not_restarted', version: '2.0.0', code: 'daemon_restart_failed', message: 'the new daemon did not start (exit code 1)', remediation: 'run `momonga daemon start`' },
+      announced: false,
+    };
+
+    expect(await announceUpdate(harness.wiring)).toBe(
+      'momonga 2.0.0 was installed in the background, but the daemon could not be restarted (daemon_restart_failed): the new daemon did not start (exit code 1); run `momonga daemon start`',
+    );
+  });
+
   it('returns an update of the running version as an update', async (context) => {
     const harness = await setupUpdate(context, { version: '2.0.0' });
     harness.state.value = { checkedAt: 0, outcome: { kind: 'installed', version: '2.0.0' }, announced: false };
@@ -179,7 +192,7 @@ describe('startBackgroundCheck: what the user command does', () => {
 });
 
 describe('runBackgroundCheck: the detached check itself', () => {
-  it('installs a newer release without touching the daemon and records it for announcement', async (context) => {
+  it('restarts a running daemon on the new executable after the background install, and records the install', async (context) => {
     const harness = await setupUpdate(context);
     harness.control.daemonRunning = true;
     publish(harness);
@@ -188,8 +201,64 @@ describe('runBackgroundCheck: the detached check itself', () => {
     expect(await runBackgroundCheck(harness.wiring, interrupt())).toBe(0);
 
     expect(harness.targetBytes().equals(NEW_BINARY)).toBe(true);
+    const restarts = harness.runs.filter((call) => call.args[0] === 'daemon');
+    expect(restarts).toHaveLength(1);
+    expect(restarts[0]?.file).toBe(harness.target);
+    expect(restarts[0]?.args).toEqual(['daemon', 'start']);
+    expect(restarts[0]?.targetContent).toBe(NEW_BINARY.toString());
+    expect(harness.state.value).toMatchObject({ checkedAt: 5, outcome: { kind: 'installed', version: '2.0.0' }, announced: false });
+  });
+
+  it('restarts through the draining daemon start, bounded by the restart bound and stopped by the interrupt', async (context) => {
+    const harness = await setupUpdate(context);
+    harness.control.daemonRunning = true;
+    publish(harness);
+    const signal = interrupt();
+
+    await runBackgroundCheck(harness.wiring, signal);
+
+    const restart = harness.runs.find((call) => call.args[0] === 'daemon');
+    expect(restart?.args).toEqual(['daemon', 'start']);
+    expect(restart?.options.timeoutMs).toBe(DAEMON_RESTART_BOUND_MS);
+    expect(restart?.options.signal).toBe(signal);
+  });
+
+  it('does not start a daemon that was not running when the background install ends', async (context) => {
+    const harness = await setupUpdate(context);
+    publish(harness);
+
+    await runBackgroundCheck(harness.wiring, interrupt());
+
+    expect(harness.targetBytes().equals(NEW_BINARY)).toBe(true);
     expect(harness.runs.some((call) => call.args[0] === 'daemon')).toBe(false);
-    expect(harness.state.value).toEqual({ checkedAt: 5, outcome: { kind: 'installed', version: '2.0.0' }, announced: false });
+  });
+
+  it('installs nothing and restarts nothing when autoUpdates is off, even when the check process is run directly', async (context) => {
+    const harness = await setupUpdate(context);
+    harness.control.autoUpdates = false;
+    harness.control.daemonRunning = true;
+    publish(harness);
+
+    expect(await runBackgroundCheck(harness.wiring, interrupt())).toBe(0);
+
+    expect(harness.targetBytes().equals(OLD_BINARY)).toBe(true);
+    expect(harness.runs).toEqual([]);
+    expect(harness.state.writes).toEqual([]);
+  });
+
+  it('records both the install and the failed restart when the daemon does not come back on the new executable', async (context) => {
+    const harness = await setupUpdate(context);
+    harness.control.daemonRunning = true;
+    harness.control.daemonStart = { exitCode: 1, stdout: '', stderr: 'supervisor exited' };
+    publish(harness);
+
+    expect(await runBackgroundCheck(harness.wiring, interrupt())).toBe(0);
+
+    expect(harness.targetBytes().equals(NEW_BINARY)).toBe(true);
+    expect(harness.state.value).toMatchObject({
+      outcome: { kind: 'installed_not_restarted', version: '2.0.0', code: 'daemon_restart_failed', remediation: 'run `momonga daemon start`' },
+      announced: false,
+    });
   });
 
   it('records an up-to-date result as already announced', async (context) => {

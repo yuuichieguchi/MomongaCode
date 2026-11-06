@@ -6,6 +6,8 @@ export { SWEEP_INTERVAL_MS, createRunService } from './service.ts';
 export type { RunService, RunServiceOptions } from './service.ts';
 export { startMemorySweeper } from './memory-sweeper.ts';
 export type { MemorySweeperOptions } from './memory-sweeper.ts';
+export { startFactsSweeper } from './facts-sweeper.ts';
+export type { FactsSweeperOptions } from './facts-sweeper.ts';
 export { startSearchSweeper } from './search-sweeper.ts';
 export type { SearchSweeperOptions } from './search-sweeper.ts';
 export { startApprovalSweeper } from './sweeper.ts';

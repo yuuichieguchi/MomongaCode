@@ -1,6 +1,6 @@
 import { selfInvocation } from '../daemon/launcher.ts';
 import { UpdateError } from './errors.ts';
-import { installLocked, resolveUpdateTarget } from './install.ts';
+import { DAEMON_RESTART_REMEDIATION, installLocked, resolveUpdateTarget } from './install.ts';
 import type { UpdatePorts } from './ports.ts';
 import { checkForUpdate } from './release.ts';
 import type { BuildUpdateInputs, UpdateEndpoints } from './source.ts';
@@ -43,6 +43,10 @@ const noticeOf = (ports: UpdatePorts, state: UpdateState): string | undefined =>
       return state.outcome.version === ports.version
         ? escapedLines([`momonga was updated to ${state.outcome.version} in the background`])
         : escapedLines([`momonga ${state.outcome.version} was installed in the background; you are running ${ports.version}`]);
+    case 'installed_not_restarted':
+      return escapedLines([
+        `momonga ${state.outcome.version} was installed in the background, but the daemon could not be restarted (${state.outcome.code}): ${state.outcome.message}; ${state.outcome.remediation}`,
+      ]);
     case 'failed':
       return escapedLines([`the background update check failed (${state.outcome.code}): ${state.outcome.message}; run \`momonga update\` for details`]);
   }
@@ -79,23 +83,30 @@ export const startBackgroundCheck = async (wiring: UpdateWiring): Promise<void> 
 const recordOutcome = (ports: UpdatePorts, checkedAt: number, outcome: BackgroundOutcome): Promise<void> =>
   ports.state.write({ checkedAt, outcome, announced: outcome.kind === 'up_to_date' } satisfies UpdateState);
 
-const failureOutcome = (error: unknown): BackgroundOutcome => ({
+const failureOutcome = (error: unknown): Extract<BackgroundOutcome, { kind: 'failed' }> => ({
   kind: 'failed',
   code: error instanceof UpdateError ? error.code : 'unexpected',
   message: error instanceof Error ? error.message : String(error),
 });
+
+const restartFailureOutcome = (version: string, error: unknown): BackgroundOutcome => {
+  const { code, message } = failureOutcome(error);
+  const remediation = error instanceof UpdateError && error.remediation !== undefined ? error.remediation : DAEMON_RESTART_REMEDIATION;
+  return { kind: 'installed_not_restarted', version, code, message, remediation };
+};
 
 const checkAndInstall = async (wiring: UpdateWiring, signal: AbortSignal): Promise<BackgroundOutcome> => {
   const { ports } = wiring;
   const target = resolveUpdateTarget(ports, wiring.build, wiring.endpoints);
   const check = await checkForUpdate(ports, target.source, signal);
   if (check.kind !== 'available') return { kind: 'up_to_date' };
-  const result = await installLocked(ports, target, check.latest, { restartDaemon: false, signal });
-  return { kind: 'installed', version: result.to };
+  const result = await installLocked(ports, target, check.latest, { signal });
+  return result.restart.kind === 'failed' ? restartFailureOutcome(result.to, result.restart.error) : { kind: 'installed', version: result.to };
 };
 
 export const runBackgroundCheck = async (wiring: UpdateWiring, signal: AbortSignal): Promise<number> => {
   const { ports } = wiring;
+  if (!(await isEnabled(wiring))) return 0;
   const lock = await ports.lock.acquire();
   if (lock === undefined) return 0;
   try {

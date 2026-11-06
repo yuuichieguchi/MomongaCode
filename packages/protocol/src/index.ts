@@ -249,24 +249,29 @@ export {
   FACTS_SWEEP_BATCH_RUNS,
   INDICATOR_DEFINITIONS_VERSION,
   MIN_RATE_POPULATION,
+  MAIN_AGENT,
   RECOVERY_CAUSES,
   RECOVERY_OUTCOMES,
   RELIABILITY_FORMAT,
   REPORT_PAGE_ROWS,
+  REVIEW_SAMPLE_SIZE,
 } from './reliability.ts';
 export type {
   RecoveryCause,
   RecoveryEpisodeView,
   RecoveryOutcome,
   ReportPage,
+  RunCallView,
   RunFactsBasis,
+  RunFactsRecord,
   RunFactsLimits,
   RunFactsView,
-  RunRecovery,
+  UnavailableRunView,
 } from './reliability.ts';
 export { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, MOMONGA_EVENTS, MOMONGA_REQUEST_FIELDS, MOMONGA_SPAN_NOTES } from './trace-attributes.ts';
 export { EVENT_TYPES, RUN_API_SCHEMAS, base64ByteLength, runApiSchemaName, toPublicRunEvent } from './run-api.ts';
-export { MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES } from './run-api.ts';
+export { MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES, MODEL_KINDS, modelKindOf } from './run-api.ts';
+export type { ModelKind } from './run-api.ts';
 export type {
   JobView,
   JobsResponse,

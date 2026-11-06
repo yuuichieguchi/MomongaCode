@@ -5,7 +5,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { LOCK_DATABASE_SUFFIX, ProcessLockHeldError, createUdsClient, hostKernelLock, socketPathLimit, inspectProcessLock, listenUnix } from '@momonga/foundation';
+import { LOCK_DATABASE_SUFFIX, ProcessLockHeldError, createUdsClient, hostKernelLock, inspectProcessLock, listenUnix, setSocketBind } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, withTempDir } from '@momonga/testkit';
 import { startHolder } from './support/lock-processes.ts';
@@ -91,23 +91,46 @@ describe('listenUnix', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     expect(fs.existsSync(socketPath)).toBe(false);
   });
 
-  it('rejects socket paths of the platform limit or more with a clear error', async () => {
-    const limit = socketPathLimit(process.platform);
+  const refusingFrom = (limit: number) => {
+    const attempts: string[] = [];
+    const bind = async (candidate: string): Promise<void> => {
+      attempts.push(candidate);
+      if (Buffer.byteLength(candidate) >= limit) throw Object.assign(new Error(`bind ${candidate}: ENAMETOOLONG`), { code: 'ENAMETOOLONG' });
+    };
+    return { bind, attempts };
+  };
+
+  const pathOfLength = (dir: string, byteLength: number): string => path.join(dir, 'x'.repeat(byteLength - Buffer.byteLength(dir) - 1));
+
+  it('rejects a socket path at the length the bind probe measures as refused, with the probe evidence', async () => {
     const dir = makeDir();
-    const name = 'x'.repeat(limit - Buffer.byteLength(dir) - 1);
-    const socketPath = path.join(dir, name);
+    const limit = Buffer.byteLength(dir) + 20;
+    expect(limit).toBeLessThan(104);
+    const fake = refusingFrom(limit);
+    setSocketBind(fake.bind);
+    cleanups.push(() => setSocketBind(undefined));
+    const socketPath = pathOfLength(dir, limit);
     expect(Buffer.byteLength(socketPath)).toBe(limit);
     const server = echoServer();
-    await expect(listenUnix(server, socketPath)).rejects.toThrow(new RegExp(String(limit)));
+    const error = await listenUnix(server, socketPath).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain(socketPath);
+    expect((error as Error).message).toContain('ENAMETOOLONG');
+    expect((error as Error).message).toContain(String(limit));
+    expect(fake.attempts).toHaveLength(1);
     expect(server.listening).toBe(false);
+    expect(fs.existsSync(socketPath)).toBe(false);
   });
 
-  it('accepts a socket path one byte below the platform limit', async () => {
-    const limit = socketPathLimit(process.platform) - 1;
+  it('accepts a socket path one byte below the measured refusal and binds it for real', async () => {
     const dir = makeDir();
-    const socketPath = path.join(dir, 'y'.repeat(limit - Buffer.byteLength(dir) - 1));
-    expect(Buffer.byteLength(socketPath)).toBe(limit);
+    const limit = Buffer.byteLength(dir) + 20;
+    const fake = refusingFrom(limit);
+    setSocketBind(fake.bind);
+    cleanups.push(() => setSocketBind(undefined));
+    const socketPath = pathOfLength(dir, limit - 1);
     await listenUnix(echoServer(), socketPath);
+    expect(fake.attempts).toHaveLength(1);
     expect(fs.statSync(socketPath).isSocket()).toBe(true);
   });
 

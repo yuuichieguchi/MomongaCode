@@ -1,13 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { HOST_RULE_ENFORCEMENT } from '@momonga/foundation';
+import { ruleEnforcementOf } from '@momonga/foundation';
 import { computeFileRules, parseRule } from '@momonga/policy';
 import type { PermissionRule } from '@momonga/policy';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import type { AnyTool, SubjectContext } from '@momonga/tools';
-import { HAS_REAL_SANDBOX, keyFor } from '../helpers.ts';
+import { HAS_REAL_SANDBOX, HOST_SANDBOX_KIND, keyFor } from '../helpers.ts';
 import { HAS_RG, JS_BACKEND_PATH, RG_PATH, approvalOf, makeBuiltins, resultOf, sha256 } from './fixtures.ts';
 import type { Builtins } from './fixtures.ts';
 
@@ -57,7 +57,7 @@ const denyRule = (tools: Builtins, text: string): PermissionRule =>
 
 const withDenyRule = (tools: Builtins, text: string) => {
   const rules = [denyRule(tools, text)];
-  const fileRules = computeFileRules(rules, [project(tools)], tools.tmpDir, HOST_RULE_ENFORCEMENT);
+  const fileRules = computeFileRules(rules, [project(tools)], tools.tmpDir, ruleEnforcementOf(HOST_SANDBOX_KIND));
   return { rules, sandboxPolicy: { ...tools.sandboxPolicy, fileRules } as SandboxPolicy, roots: [project(tools)] };
 };
 

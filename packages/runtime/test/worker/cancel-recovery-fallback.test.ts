@@ -320,7 +320,7 @@ describe('cancel recovery fallback', () => {
 
     expect(env.portCalls.abandon).toEqual([]);
     expect(store.appends.filter((append) => append.runId === run.id)).toEqual([]);
-    expect(env.events(run.id)).toHaveLength(before);
+    expect(env.events(run.id)).toHaveLength(before + 2);
     expect(env.store.idempotency.get(keys[REMOTE.callId] as string)?.s).toBe('PENDING');
   });
 
@@ -346,7 +346,7 @@ describe('cancel recovery fallback', () => {
 
     expect(env.portCalls.abandon).toEqual([]);
     expect(store.appends.filter((append) => append.runId === run.id)).toEqual([]);
-    expect(env.events(run.id)).toHaveLength(before);
+    expect(env.events(run.id)).toHaveLength(before + 1);
     expect(env.run(run.id)).toMatchObject({ status: 'CANCELLING', leaseOwner: null });
     expect(env.store.idempotency.get(keys[REMOTE.callId] as string)?.s).toBe('PENDING');
   });

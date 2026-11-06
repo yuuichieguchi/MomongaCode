@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, HOST_RULE_ENFORCEMENT } from '@momonga/foundation';
+import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, ruleEnforcementOf } from '@momonga/foundation';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { computeFileRules } from '@momonga/policy';
@@ -96,7 +96,7 @@ describe('the executor and the read-access matcher trust the validated policy', 
     const stray = path.join(tools.layout.root, 'stray-tmp');
     fs.mkdirSync(stray, { mode: 0o700 });
     const target = path.join(tools.layout.project, 'out.txt');
-    const outcome = await tools.run('Write', { file_path: target, content: 'x' }, { mode: 'acceptEdits', tmpDir: stray, sandboxPolicy: { ...tools.sandboxPolicy, fileRules: computeFileRules([], [tools.layout.project], stray, HOST_RULE_ENFORCEMENT) } });
+    const outcome = await tools.run('Write', { file_path: target, content: 'x' }, { mode: 'acceptEdits', tmpDir: stray, sandboxPolicy: { ...tools.sandboxPolicy, fileRules: computeFileRules([], [tools.layout.project], stray, ruleEnforcementOf('none')) } });
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'completed' } });
     expect(fs.readFileSync(target, 'utf8')).toBe('x');
   });

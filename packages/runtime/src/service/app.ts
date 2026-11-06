@@ -44,6 +44,7 @@ import { registerMemoryRoutes } from './memories.ts';
 import { registerRuleRoutes } from './rules.ts';
 import { registerInputRoutes } from './input-routes.ts';
 import type { McpAdminPort } from './input-routes.ts';
+import { registerReportRoutes } from './report-routes.ts';
 import { registerTrustRoutes } from './trust.ts';
 import type { ServiceTimers } from './timers.ts';
 import { answeredByOf } from './answered-by.ts';
@@ -540,6 +541,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
   route('/v1/runs/:id/approvals', { GET: listRunApprovals });
   route('/v1/runs/:id/events', { GET: runEvents });
   route('/v1/approvals/:id', { GET: getApproval, POST: resolveApproval });
+  registerReportRoutes(route, { store });
   registerTrustRoutes(route, { store, maxBodyBytes: deps.maxBodyBytes });
   registerMemoryRoutes(route, {
     store,

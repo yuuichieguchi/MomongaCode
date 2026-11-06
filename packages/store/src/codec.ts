@@ -107,6 +107,7 @@ const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   'user.message': true,
   'run.started': true,
   'attempt.failed': true,
+  'attempt.lost': true,
   'run.status': true,
   'model.requested': true,
   'model.responded': true,
