@@ -55,7 +55,9 @@ export function launch(options: LaunchOptions): SandboxedProcess {
   const { stdout, stderr, stdin } = child;
   if (stdout === null || stderr === null) {
     child.once('error', () => undefined);
-    void signalGroup(pid, 'SIGKILL', groupPort, signal);
+    signalGroup(pid, 'SIGKILL', groupPort, signal).catch((failure: unknown) => {
+      process.emitWarning(new Error(`the process group ${pid} could not be killed after its output pipes failed`, { cause: failure }));
+    });
     throw new Error(`failed to open output pipes for ${options.file}`);
   }
   const signalTerm = options.signalTerm ?? ((pgid: number, stop: AbortSignal) => signalGroup(pgid, 'SIGTERM', groupPort, stop));
