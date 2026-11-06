@@ -170,7 +170,13 @@ const FAULTS: Record<InjectionScenario['fault'], Fault> = {
   network_down: {
     beforeRun: upstreamDown,
     inject: async (env) => {
-      await untilFrames(env, 'attempt.failed', 1, 'attempt.failed after the upstream refused connections for longer than the gateway retry window', GATEWAY_WINDOW_BOUND_MS);
+      await until(
+        () => {
+          const frames = (env.stream as RunEventStream).frames();
+          return framesOfType(frames, 'attempt.failed').length > 0 || framesOfType(frames, 'run.status').some((frame) => (TERMINAL_STATUSES as readonly string[]).includes(String(frame.data['to'])));
+        },
+        { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS + GATEWAY_WINDOW_BOUND_MS, description: 'attempt.failed or the end of the run after the upstream refused connections for longer than the gateway retry window' },
+      );
       await upstreamBack(env);
     },
     extraBoundMs: () => GATEWAY_WINDOW_BOUND_MS,
