@@ -38,6 +38,7 @@ export const preparerFake = (): PreparerFake => {
     },
     preparer: {
       ...noJournalFacts,
+      inheritPlan: async () => ({ kind: 'none' }),
       measure: async (request): Promise<ContributionMeasured> => {
         requests.push({ runId: request.runId, leading: [...request.leading] });
         if (gate !== undefined) await gate;
