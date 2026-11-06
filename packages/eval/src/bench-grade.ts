@@ -1,6 +1,6 @@
-import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { nodeFileSystem } from '@momonga/foundation';
 import { parseBenchmark, treeDigest } from './bench.ts';
 import type { BenchTask, OracleCheck } from './bench.ts';
 
@@ -19,7 +19,7 @@ export type GradeInput = { task: BenchTask; workspace: string; base: string; pro
 const within = (changed: string, allowed: string): boolean => (allowed.endsWith('/') ? changed.startsWith(allowed) : changed === allowed || changed.startsWith(`${allowed}/`));
 
 const filesUnder = async (root: string, relative: string): Promise<string[]> => {
-  const stat = await fs.stat(path.join(root, relative)).then(
+  const stat = await nodeFileSystem.stat(path.join(root, relative)).then(
     (found) => found,
     (error: NodeJS.ErrnoException) => {
       if (error.code === 'ENOENT') return undefined;
@@ -27,7 +27,7 @@ const filesUnder = async (root: string, relative: string): Promise<string[]> => 
     },
   );
   if (stat === undefined || !stat.isDirectory()) return stat === undefined ? [] : [relative];
-  const children = await fs.readdir(path.join(root, relative));
+  const children = await nodeFileSystem.readdir(path.join(root, relative));
   const nested = await Promise.all(children.map((child) => filesUnder(root, path.posix.join(relative, child))));
   return nested.flat();
 };
@@ -56,8 +56,8 @@ const commandCheck = async (check: Extract<OracleCheck, { kind: 'command' }>, { 
 
 const writeGraderFiles = async (task: BenchTask, workspace: string): Promise<void> => {
   for (const [relative, content] of Object.entries(task.graderFiles)) {
-    await fs.mkdir(path.dirname(path.join(workspace, relative)), { recursive: true });
-    await fs.writeFile(path.join(workspace, relative), content);
+    await nodeFileSystem.mkdir(path.dirname(path.join(workspace, relative)));
+    await nodeFileSystem.writeFile(path.join(workspace, relative), content);
   }
 };
 
@@ -85,7 +85,7 @@ export type TaskValidation = { id: string; problems: BenchProblem[] };
 export type Validation = { tasks: TaskValidation[] };
 
 const exists = (file: string): Promise<boolean> =>
-  fs.access(file).then(
+  nodeFileSystem.access(file).then(
     () => true,
     (error: NodeJS.ErrnoException) => {
       if (error.code === 'ENOENT') return false;
@@ -95,12 +95,12 @@ const exists = (file: string): Promise<boolean> =>
 
 const preparedWorkspace = async (scratch: string, name: string, repository: string, task: BenchTask, probe: WorkspaceProbe, reference?: string): Promise<string | undefined> => {
   const workspace = path.join(scratch, name);
-  await fs.cp(repository, workspace, { recursive: true });
+  await nodeFileSystem.cp(repository, workspace);
   for (const step of task.setup) {
     const outcome = await probe.run(step.run, step.timeoutMs, workspace);
     if (outcome.timedOut || outcome.exitCode !== 0) return undefined;
   }
-  if (reference !== undefined) await fs.cp(reference, workspace, { recursive: true, force: true });
+  if (reference !== undefined) await nodeFileSystem.cp(reference, workspace);
   return workspace;
 };
 
@@ -126,9 +126,9 @@ const validateTask = async (task: BenchTask, root: string, repository: { directo
 };
 
 export const validateBenchmark = async (benchmarkFile: string, probe: WorkspaceProbe): Promise<Validation> => {
-  const benchmark = parseBenchmark(await fs.readFile(benchmarkFile, 'utf8'), benchmarkFile);
+  const benchmark = parseBenchmark(await nodeFileSystem.readTextFile(benchmarkFile), benchmarkFile);
   const root = path.dirname(path.resolve(benchmarkFile));
-  const scratch = await fs.mkdtemp(path.join(os.tmpdir(), 'momonga-bench-validate-'));
+  const scratch = await nodeFileSystem.mkdtemp(path.join(os.tmpdir(), 'momonga-bench-validate-'));
   try {
     const tasks: TaskValidation[] = [];
     for (const task of benchmark.tasks) {
@@ -138,6 +138,6 @@ export const validateBenchmark = async (benchmarkFile: string, probe: WorkspaceP
     }
     return { tasks };
   } finally {
-    await fs.rm(scratch, { recursive: true, force: true });
+    await nodeFileSystem.rm(scratch, { recursive: true });
   }
 };

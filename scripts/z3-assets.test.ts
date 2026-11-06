@@ -33,11 +33,11 @@ describe('the Z3 assets embedded in the single executable', () => {
       random: () => 0.5,
       files: {
         exists: async (target) => fs.existsSync(target),
-        ensureDirectory: async (directory) => void fs.mkdirSync(directory, { recursive: true }),
+        mkdir: async (directory) => void fs.mkdirSync(directory, { recursive: true }),
         writeBytes: async (file, bytes) => fs.writeFileSync(file, bytes),
-        readBytes: async (file) => fs.readFileSync(file),
+        readFile: async (file) => fs.readFileSync(file),
         rename: async (from, to) => fs.renameSync(from, to),
-        removeTree: async (directory) => fs.rmSync(directory, { recursive: true, force: true }),
+        rm: async (directory) => fs.rmSync(directory, { recursive: true, force: true }),
       },
     });
 

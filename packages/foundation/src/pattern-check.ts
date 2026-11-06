@@ -1,6 +1,7 @@
 import { Worker } from 'node:worker_threads';
 import { evaluateWithPatternAnswers, patternQueryKey } from '@momonga/ata-validator/lite';
 import type { PatternQuery } from '@momonga/ata-validator/lite';
+import { systemTiming } from './system-timing.ts';
 
 export const PATTERN_CHECK_LIMIT_MS = 5000;
 
@@ -62,7 +63,7 @@ export const checkWithPatterns = async <T>(pass: (answers: ReadonlyMap<string, b
   let attempt = evaluateWithPatternAnswers(answers, () => pass(answers));
   if (attempt.queries.length === 0) return { kind: 'checked', value: attempt.value };
   const limit = new AbortController();
-  const timer = setTimeout(() => limit.abort(), limitMs);
+  const timer = systemTiming.setTimeout(() => limit.abort(), limitMs);
   try {
     while (attempt.queries.length > 0) {
       if (options.signal?.aborted === true) return { kind: 'stopped' };
@@ -74,6 +75,6 @@ export const checkWithPatterns = async <T>(pass: (answers: ReadonlyMap<string, b
     }
     return { kind: 'checked', value: attempt.value };
   } finally {
-    clearTimeout(timer);
+    systemTiming.clearTimeout(timer);
   }
 };
