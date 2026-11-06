@@ -335,7 +335,7 @@ npm run test:packaging
 
 ## 10. License
 
-Momonga Code is open source under the MIT License. The repository does not contain a `LICENSE` file yet.
+Momonga Code is open source under the MIT License. See the [`LICENSE`](LICENSE) file.
 
 ## 11. Disclaimer
 
