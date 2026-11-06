@@ -130,6 +130,18 @@ describe('executor guards read the user file rules', () => {
     expect(lines.filter((line) => line.includes('.env'))).toEqual([]);
   });
 
+  it.runIf(HAS_RG)('answers a Grep over a directory with Read(.env) with exactly the visible matches and no unreadable note, under the real sandbox', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+    const tools = await makeBuiltins({ realSandbox: true });
+    tools.write('.env', 'secret');
+    tools.write(path.join('sub', '.env'), 'secret');
+    const visible = tools.write('notes.txt', 'secret');
+    const options = withRules(tools, [ruleOf(tools, 'deny', 'Read(.env)')], { env: { PATH: RG_PATH, LANG: 'C' } });
+    const listed = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project }, options);
+    expect(resultOf(listed).output).toBe(inProject(tools, visible));
+    const content = await tools.run('Grep', { pattern: 'secret', path: tools.layout.project, output_mode: 'content' }, options);
+    expect(resultOf(content).output).toBe(`${inProject(tools, visible)}:1:secret`);
+  });
+
   it('hands ripgrep a policy that carries fileRules and drops the denied records', async () => {
     const { tools, project } = await grepFixture();
     const { sandbox, spawned } = recordingSandbox('seatbelt', () => recorded(RECORDINGS.files_with_matches, project));
