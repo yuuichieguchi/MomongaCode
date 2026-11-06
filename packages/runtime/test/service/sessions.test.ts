@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { AUTO_MODE_UNAVAILABLE } from '@momonga/protocol';
-import { gateOf, passingRecord } from '../auto-gate-fixtures.ts';
 import { DECLARED_CREDENTIAL, MODEL_ALIAS, OTHER_ALIAS, SERVICE_PID, SERVICE_VERSION, STARTED_AT, START_MS, expectError, expectSchema, startService } from './helpers.ts';
 
 const SECRET = 'hunter2-value';
@@ -230,9 +229,9 @@ describe('session permission mode rules', () => {
     expect(response.json).toMatchObject({ error: { message: AUTO_MODE_UNAVAILABLE.message } });
   });
 
-  it('accepts auto at creation and by PATCH when a known classifier alias has a passing measurement record', async () => {
+  it('accepts auto at creation and by PATCH when a known classifier alias is configured', async () => {
     const env = await startService();
-    env.ports.settingsByCwd.set(env.layout.projectReal, { autoModeClassifier: OTHER_ALIAS, autoModeGate: gateOf([passingRecord()]) });
+    env.ports.settingsByCwd.set(env.layout.projectReal, { autoModeClassifier: OTHER_ALIAS });
     const session = await env.createSession({ permissionMode: 'auto' });
     expect(session.permissionMode).toBe('auto');
     const other = await env.createSession();

@@ -39,7 +39,7 @@ const observedAfterUnobserved = (arith: ProofArith, runs: number): ProofInt => {
   return arith.ctx.Int.val(runs).sub(unobserved);
 };
 
-describe('I6.5: the auto-mode dataset sizes force the gate bounds', () => {
+describe('I6.5: the auto-mode dataset sizes force the auto-fit pass bounds', () => {
   const z3 = useZ3();
 
   it('reads the bounds from the one module shared by eval and config', () => {

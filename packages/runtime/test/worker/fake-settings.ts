@@ -3,8 +3,6 @@ import type { ModelRoles, PermissionRule, ResolvedContextSettings, ResolvedMemor
 import type { HooksSettings } from '@momonga/protocol';
 import type { SettingsPort } from '@momonga/runtime';
 import type { Session } from '@momonga/store';
-import { gateOf, passingRecord } from '../auto-gate-fixtures.ts';
-import type { AutoGateInput } from '../auto-gate-fixtures.ts';
 
 export type FakeSettings = SettingsPort & {
   stored: { effect: 'allow' | 'deny'; rule: string }[];
@@ -20,8 +18,6 @@ export type FakeSettings = SettingsPort & {
   context: (session: Session) => Promise<ResolvedContextSettings>;
   toolsValue: ResolvedToolsSettings;
   classifierAlias: string | undefined;
-  autoGateValue: AutoGateInput | undefined;
-  autoModeGate: () => AutoGateInput | undefined;
   rolesValue: ModelRoles;
   modelRoles: () => ModelRoles;
 };
@@ -42,8 +38,6 @@ export const createFakeSettings = (layout: { home: string; project: string }): F
     contextValue: { adaptiveBudget: false, autoCompact: true, cachePrefix: false, outputFormatters: [], loopGuidance: false, observedCapacity: false },
     toolsValue: { deferral: false, conciseDescriptions: false },
     classifierAlias: undefined,
-    autoGateValue: gateOf([passingRecord()]),
-    autoModeGate: () => settings.autoGateValue,
     rolesValue: {},
     modelRoles: () => ({ ...settings.rolesValue }),
     hooks: async () => settings.hooksValue,

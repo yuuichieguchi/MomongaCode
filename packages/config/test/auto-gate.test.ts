@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import * as config from '@momonga/config';
+import * as protocol from '@momonga/protocol';
 
 type AutoGateKey = { classifier: string; codeDigest: string; datasetDigest: string };
 
@@ -15,23 +20,39 @@ type AutoGateRecord = {
   version: string;
 };
 
-type Availability = { available: true } | { available: false; message: string };
+type Measurement = 'passed' | 'did_not_pass' | 'not_measured';
 
 type GateApi = {
   AUTO_GATE_BOUNDS: { falseAllowHigh: number; falseBlockHigh: number; unobservedMax: number; wilsonZ: number };
   autoGatePasses: (record: AutoGateRecord) => boolean;
-  autoModeAvailability: (key: AutoGateKey, records: readonly AutoGateRecord[]) => Availability;
   classifierIdentityOf: (target: unknown) => string;
   classifierCodeDigestOf: (code: { instructions: string; verdictSchema: unknown }) => string;
 };
 
-const gate = (): GateApi => {
-  const api = config as unknown as Partial<GateApi>;
-  for (const name of ['AUTO_GATE_BOUNDS', 'autoGatePasses', 'autoModeAvailability', 'classifierIdentityOf', 'classifierCodeDigestOf'] as const) {
-    if (api[name] === undefined) throw new Error(`@momonga/config does not export ${name}`);
-  }
-  return api as GateApi;
+type FitApi = {
+  measurement: (key: AutoGateKey, records: readonly AutoGateRecord[]) => Measurement;
+  autoFitDirectoryOf: (home: string) => string;
+  readAutoFitRecord: (directory: string, key: AutoGateKey) => Promise<AutoGateRecord | undefined>;
+  writeAutoFitRecord: (directory: string, record: AutoGateRecord, randomHex: (bytes: number) => string) => Promise<string>;
 };
+
+type NoticeApi = {
+  autoModeNotice: (input: { alias: string; measurement: 'not_measured'; surface: 'tui' | 'cli' }) => string;
+};
+
+const exportsOf = <T>(module: unknown, names: readonly string[], from: string): T => {
+  const api = module as Record<string, unknown>;
+  for (const name of names) {
+    if (api[name] === undefined) throw new Error(`${from} does not export ${name}`);
+  }
+  return api as T;
+};
+
+const gate = (): GateApi => exportsOf<GateApi>(config, ['AUTO_GATE_BOUNDS', 'autoGatePasses', 'classifierIdentityOf', 'classifierCodeDigestOf'], '@momonga/config');
+
+const fit = (): FitApi => exportsOf<FitApi>(config, ['measurement', 'autoFitDirectoryOf', 'readAutoFitRecord', 'writeAutoFitRecord'], '@momonga/config');
+
+const notice = (): NoticeApi => exportsOf<NoticeApi>(protocol, ['autoModeNotice'], '@momonga/protocol');
 
 const KEY: AutoGateKey = { classifier: 'classifier-identity', codeDigest: 'classifier-code-digest', datasetDigest: 'auto-mode-dataset-digest' };
 
@@ -71,34 +92,104 @@ describe('the bounds of the auto gate', () => {
   });
 });
 
-describe('autoModeAvailability', () => {
-  it('is unavailable with no record and names the eval command', () => {
-    const result = gate().autoModeAvailability(KEY, []);
-    expect(result.available).toBe(false);
-    expect(result.available === false ? result.message : '').toContain('momonga eval packages/eval/datasets/auto-mode.json');
+describe('measurement', () => {
+  it('is not_measured with no record', () => {
+    expect(fit().measurement(KEY, [])).toBe('not_measured');
   });
 
-  it('is available with a matching passing record', () => {
-    expect(gate().autoModeAvailability(KEY, [passing()])).toEqual({ available: true });
+  it('is passed with a matching passing record', () => {
+    expect(fit().measurement(KEY, [passing()])).toBe('passed');
+  });
+
+  it('is did_not_pass with a matching record that fails a bound', () => {
+    expect(fit().measurement(KEY, [passing({ unobserved: 38 })])).toBe('did_not_pass');
+    expect(fit().measurement(KEY, [passing({ falseAllow: { successes: 1, trials: 75, high: 0.0721 } })])).toBe('did_not_pass');
   });
 
   it.each([
     ['classifier', 'another-model'],
     ['codeDigest', 'older-classifier-code'],
     ['datasetDigest', 'older-dataset'],
-  ] as const)('is unavailable when only the %s of the record differs', (field, value) => {
-    const result = gate().autoModeAvailability(KEY, [passing({ key: { ...KEY, [field]: value } })]);
-    expect(result.available).toBe(false);
-    expect(result.available === false ? result.message : '').toContain('momonga eval');
+  ] as const)('is not_measured when only the %s of the record differs (I6.3)', (field, value) => {
+    expect(fit().measurement(KEY, [passing({ key: { ...KEY, [field]: value } })])).toBe('not_measured');
+    expect(fit().measurement(KEY, [passing({ key: { ...KEY, [field]: value }, unobserved: 100 })])).toBe('not_measured');
   });
 
-  it('is unavailable with a matching record that fails a bound', () => {
-    expect(gate().autoModeAvailability(KEY, [passing({ unobserved: 38 })]).available).toBe(false);
+  it('decides from the record of the key alone, over every set of records of other keys (I6.1)', () => {
+    const fields = ['classifier', 'codeDigest', 'datasetDigest'] as const;
+    const states = ['absent', 'passing', 'failing'] as const;
+    const recordFor = (state: (typeof states)[number], key: AutoGateKey): AutoGateRecord[] =>
+      state === 'absent' ? [] : [passing({ key, ...(state === 'failing' ? { unobserved: 100 } : {}) })];
+    let checked = 0;
+    for (const first of states) {
+      for (const second of states) {
+        for (const third of states) {
+          const others = [first, second, third].flatMap((state, index) => recordFor(state, { ...KEY, [fields[index] as string]: `other-${index}` }));
+          for (const mine of states) {
+            for (let at = 0; at <= others.length; at += 1) {
+              const records = [...others];
+              records.splice(at, 0, ...recordFor(mine, KEY));
+              const expected = mine === 'absent' ? 'not_measured' : mine === 'passing' ? 'passed' : 'did_not_pass';
+              expect(fit().measurement(KEY, records)).toBe(expected);
+              checked += 1;
+              if (mine === 'absent') break;
+            }
+          }
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(27);
   });
 
-  it('finds the matching passing record among stale and failing ones', () => {
-    const records = [passing({ key: { ...KEY, codeDigest: 'older' } }), passing({ unobserved: 100 }), passing()];
-    expect(gate().autoModeAvailability(KEY, records)).toEqual({ available: true });
+  it('states the not-measured text naming /auto-mode check in the TUI and momonga auto-mode check outside it', () => {
+    const caveat = 'auto reduces prompts but does not guarantee safety.';
+    const tui = notice().autoModeNotice({ alias: 'guard', measurement: 'not_measured', surface: 'tui' });
+    expect(tui.startsWith('auto: classifier guard has not been measured for this version; run /auto-mode check')).toBe(true);
+    expect(tui.endsWith(caveat)).toBe(true);
+    const cli = notice().autoModeNotice({ alias: 'guard', measurement: 'not_measured', surface: 'cli' });
+    expect(cli.startsWith('auto: classifier guard has not been measured for this version; run momonga auto-mode check')).toBe(true);
+    expect(cli.endsWith(caveat)).toBe(true);
+    expect(tui).not.toContain('momonga eval');
+  });
+});
+
+describe('the record file', () => {
+  const homes: string[] = [];
+  afterAll(() => {
+    for (const home of homes) fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  const freshHome = (): string => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-fit-home-'));
+    homes.push(home);
+    return home;
+  };
+
+  it('lives in <state>/auto-fit', () => {
+    expect(fit().autoFitDirectoryOf('/home/me')).toBe(path.join('/home/me', '.momonga', 'state', 'auto-fit'));
+  });
+
+  it('is written for a failing measurement as well, named by the hash of its key, mode 0600, and read back by key', async () => {
+    const directory = fit().autoFitDirectoryOf(freshHome());
+    const failing = passing({ unobserved: 100 });
+    const file = await fit().writeAutoFitRecord(directory, failing, (bytes) => '0'.repeat(bytes * 2));
+    expect(path.basename(file)).toBe(`${sha256Hex(canonicalJson(KEY))}.json`);
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+    expect(await fit().readAutoFitRecord(directory, KEY)).toEqual(failing);
+    expect(fit().measurement(KEY, [(await fit().readAutoFitRecord(directory, KEY)) as AutoGateRecord])).toBe('did_not_pass');
+  });
+
+  it('replaces an earlier pass with a later failing record of the same key', async () => {
+    const directory = fit().autoFitDirectoryOf(freshHome());
+    const hex = (bytes: number) => '1'.repeat(bytes * 2);
+    await fit().writeAutoFitRecord(directory, passing(), hex);
+    await fit().writeAutoFitRecord(directory, passing({ falseAllow: { successes: 1, trials: 75, high: 0.0721 }, recordedAt: '2026-11-07T00:00:00.000Z' }), hex);
+    expect(fs.readdirSync(directory).filter((name) => name.endsWith('.json'))).toHaveLength(1);
+    expect((await fit().readAutoFitRecord(directory, KEY))?.recordedAt).toBe('2026-11-07T00:00:00.000Z');
+  });
+
+  it('reads nothing for a key that has no file', async () => {
+    expect(await fit().readAutoFitRecord(fit().autoFitDirectoryOf(freshHome()), KEY)).toBeUndefined();
   });
 });
 

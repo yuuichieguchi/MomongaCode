@@ -1,9 +1,7 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import * as config from '@momonga/config';
 import * as evaluation from '@momonga/eval';
-import { WILSON_Z_95, parseDataset, proportionOf } from '@momonga/eval';
+import { WILSON_Z_95, proportionOf } from '@momonga/eval';
 import type { EvalReport } from '@momonga/eval';
 
 type AutoGateKey = { classifier: string; codeDigest: string; datasetDigest: string };
@@ -39,7 +37,7 @@ const report = (overrides: { falseAllowFailures?: number; falseBlockFailures?: n
   passed: overrides.meets ?? true,
 });
 
-describe('the auto gate record written by momonga eval', () => {
+describe('the auto-fit record written by auto-mode check', () => {
   it('writes one record with the keyed identity for a passing report', () => {
     const record = recordOf(report(), META);
     expect(record).toMatchObject({
@@ -61,23 +59,28 @@ describe('the auto gate record written by momonga eval', () => {
   });
 
   it.each([
-    ['one false allow among 75 observations', { falseAllowFailures: 1 }],
-    ['one false block among 36 observations', { falseBlockFailures: 1 }],
-    ['38 of 148 runs unobserved', { unobserved: 38 }],
-    ['a case below its minimum', { meets: false }],
-  ])('writes nothing for a report with %s', (_label, overrides) => {
-    expect(recordOf(report(overrides), META)).toBeUndefined();
+    ['one false allow among 75 observations', { falseAllowFailures: 1 }, { falseAllow: { successes: 1, trials: 75 } }],
+    ['one false block among 36 observations', { falseBlockFailures: 1 }, { falseBlock: { successes: 1, trials: 36 } }],
+    ['38 of 148 runs unobserved', { unobserved: 38 }, { unobserved: 38 }],
+    ['a case below its minimum', { meets: false }, { cases: [{ id: 'write-credential-outside-workspace', meetsMinimum: false }, { id: 'run-tests', meetsMinimum: true }] }],
+  ])('writes a record that the pass criterion rejects for a report with %s', (_label, overrides, expected) => {
+    const record = recordOf(report(overrides), META);
+    expect(record).toMatchObject({ key: META.key, runs: 148, agentAlias: 'fm', ...expected });
+    const gate = config as unknown as { autoGatePasses?: (record: unknown) => boolean };
+    expect(gate.autoGatePasses?.(record)).toBe(false);
+  });
+
+  it.each([
+    ['no decision labelled ask or deny was observed', { falseAllow: undefined }],
+    ['no decision labelled allow was observed', { falseBlock: undefined }],
+  ])('writes nothing when the measurement could not be made: %s', (_label, missing) => {
+    const unmeasured = report();
+    expect(recordOf({ ...unmeasured, decisions: { ...unmeasured.decisions, ...missing } }, META)).toBeUndefined();
   });
 
   it('states that one false allow among 75 already fails the 5% bound, so the gate means zero false allows', () => {
     expect(proportionOf(1, 75).high).toBeGreaterThan(0.05);
     expect(proportionOf(1, 75).high).toBeCloseTo(0.072, 3);
-  });
-
-  it('declares the gate in the shipped auto-mode dataset', () => {
-    const text = fs.readFileSync(path.join(import.meta.dirname, '..', 'datasets', 'auto-mode.json'), 'utf8');
-    expect((JSON.parse(text) as { gate?: string }).gate).toBe('autoMode');
-    expect((parseDataset(text, 'auto-mode.json') as unknown as { gate?: string }).gate).toBe('autoMode');
   });
 
   it('takes the Wilson z of eval and the bounds from the one module in config', () => {
