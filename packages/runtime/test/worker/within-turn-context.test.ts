@@ -58,7 +58,7 @@ describe('in-turn eviction', () => {
 });
 
 describe('in-turn compaction', () => {
-  const sixPaddedSteps = () => [0, 1, 2, 3, 4, 5].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1400) }));
+  const sixPaddedSteps = () => [0, 1, 2, 3, 4, 5].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1550) }));
 
   it('compacts the rendered steps before the protected ones with the summary cap and retains_user_request, and rebuilds summary, task, retained', async () => {
     const env = await makeEnv({ capabilities: W4000 });
@@ -152,14 +152,14 @@ describe('budget stop with nothing compacted', () => {
 });
 
 describe('budget stop counts of the final attempt', () => {
-  const sixPaddedSteps = () => [0, 1, 2, 3, 4, 5].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1400) }));
+  const sixPaddedSteps = () => [0, 1, 2, 3, 4, 5].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1550) }));
   const noticeOf = (env: Env, runId: string): string => noticesOf(env, runId).find((message) => message.startsWith('The context needs')) ?? '';
   const hasCompactionItem = (input: unknown): boolean => Array.isArray(input) && input.some((item: InputItem) => item.type === 'compaction');
 
   it('says the compaction did not free enough room after a successful compaction at the last level', async () => {
     const env = await makeEnv({ capabilities: W4000 });
     env.gateway.script.push(
-      ...[4378, 4378, 100, 8880].map((size, index) => bigStep(`s${index}`, { letter: 'a', size: 0, pad: 'pqrs'[index]?.repeat(size) ?? '' })),
+      ...[4378, 4378, 100, 3500].map((size, index) => bigStep(`s${index}`, { letter: 'a', size: 0, pad: 'pqrs'[index]?.repeat(size) ?? '' })),
       textStep('never sent'),
     );
     env.gateway.compactSummaries.push('T'.repeat(2400));
@@ -212,7 +212,7 @@ describe('budget stop counts of the final attempt', () => {
 
 describe('forced compaction failure decided by code', () => {
   const forcedScript = () => [
-    ...[0, 1, 2, 3, 4].map((index) => bigStep(`k${index}`, { letter: 'abcde'[index] as string, size: 504, pad: padOf(index, 1616) })),
+    ...[0, 1, 2, 3, 4].map((index) => bigStep(`k${index}`, { letter: 'abcde'[index] as string, size: 504, pad: padOf(index, 1800) })),
     textStep('done'),
   ];
 
@@ -331,7 +331,7 @@ describe('compaction after a rejected model summary', () => {
   it.for([0, 1])('keeps the protected zone when the context overflows %i quiet steps after the first compaction fell back to the deterministic summary', async (quietSteps) => {
     const env = await makeEnv({ capabilities: W4000 });
     env.gateway.script.push(
-      ...[0, 1, 2, 3, 4, 5].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1400) })),
+      ...[0, 1, 2, 3, 4, 5].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1550) })),
       ...Array.from({ length: quietSteps }, (_unused, index) => bigStep(`q${index}`, { letter: 'a', size: 0, pad: padOf(index, 40) })),
       bigStep('overflow', { letter: 'a', size: 0, pad: padOf(9, 3600) }),
       textStep('done'),
@@ -355,9 +355,9 @@ describe('compaction after a rejected model summary', () => {
 });
 
 describe('minimum room at claim', () => {
-  it('fails pinned_overflow with the minimum-room message when the prefix leaves fewer than 260 tokens', async () => {
+  it('fails pinned_overflow with the minimum-room message when the prefix leaves fewer than 317 tokens', async () => {
     const env = await makeEnv({ capabilities: W4000 });
-    env.instructions.files.set(`${env.project}/AGENTS.md`, 'r'.repeat(10600));
+    env.instructions.files.set(`${env.project}/AGENTS.md`, 'r'.repeat(10372));
     const run = env.enqueue('Fill the context');
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));
@@ -366,7 +366,7 @@ describe('minimum room at claim', () => {
     expect(failed.status).toBe('FAILED');
     expect(failed.error?.code).toBe('pinned_overflow');
     expect(failed.error?.message).toMatch(
-      /^The pinned context fits \(\d+ of 2920 tokens\) but leaves only \d+ tokens for the conversation; at least 260 are needed for one tool call, one tool result, a summary and the working state\. Reduce the fixed prefix \(deny rules for unused tools, plan mode, shorter instructions\) or use a larger window\.$/,
+      /^The pinned context fits \(\d+ of 2920 tokens\) but leaves only \d+ tokens for the conversation; at least 317 are needed for one tool call, one tool result, a summary and the working state\. Reduce the fixed prefix \(deny rules for unused tools, plan mode, shorter instructions\) or use a larger window\.$/,
     );
     expect(env.gateway.streams).toEqual([]);
   });
@@ -390,7 +390,7 @@ describe('inherited history and loop detection across compaction', () => {
         response: { status: 'completed', output: [assistantMessage('msg_1', 'answer one')], usage: { input_tokens: 50, output_tokens: 5, total_tokens: 55 } },
       },
     ]);
-    env.gateway.script.push(...Array.from({ length: 7 }, (_unused, index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1400) })), textStep('done'));
+    env.gateway.script.push(...Array.from({ length: 7 }, (_unused, index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1550) })), textStep('done'));
     const second = env.enqueue('Continue the work');
 
     await env.runOnce(env.worker('worker-1', withinTurnWorker()));

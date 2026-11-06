@@ -1,0 +1,1 @@
+export const ESTIMATED_CHARACTERS_PER_TOKEN = 4;

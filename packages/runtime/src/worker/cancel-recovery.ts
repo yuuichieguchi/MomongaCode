@@ -5,6 +5,8 @@ import type { AbandonTarget, ResultOutcome, ToolCall } from '@momonga/tools';
 import type { ClaimControl } from './claim-control.ts';
 import { describeError, LeaseLostError, ShutdownError } from './errors.ts';
 import type { Journal } from './journal.ts';
+import { reconcileOutputFit } from './output-fit.ts';
+import { readPins } from './pins.ts';
 import { reportError } from './report.ts';
 import { releaseWaitingCalls } from './release-waiting.ts';
 import { offeredOfRequest, outcomePayloads } from './tool-step.ts';
@@ -95,6 +97,9 @@ export const reconcileStartedCalls = async ({ options, claim, run, session, jour
     const recoverable = started.filter((call) => toolSet.get(call.name) !== undefined);
     if (recoverable.length > 0) {
       const context = await tools.recoveryContextFor(session, { env });
+      const recorded = journal.state.pins;
+      if (recorded === undefined) throw new Error(`run ${run.id} has started calls but no recorded pins`);
+      const reconcileFit = reconcileOutputFit(readPins(recorded).capabilities);
       await tools.executor.runBatch({
         calls: recoverable.map(({ callId, name, arguments: args }) => ({ callId, name, arguments: args })),
         toolSet,
@@ -111,6 +116,8 @@ export const reconcileStartedCalls = async ({ options, claim, run, session, jour
         deadlineAt: run.deadlineAt,
         signal: control.recoverySignal,
         recoverOnly: true,
+        outputFit: reconcileFit,
+        reconcileFit,
         offered: offeredOfRequest(options.store, run.id, journal.state.lastSeq),
         leaseLost: () => control.leaseLost() || control.shuttingDown(),
         onLeaseLost: control.noteLeaseLost,

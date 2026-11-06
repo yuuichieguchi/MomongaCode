@@ -183,6 +183,8 @@ export const stepsOf = (chars: readonly number[]): HistoryItem[] =>
 export const SYSTEM_PROMPT = 'You are MomongaCode.';
 export const TASK: MessageInputItem = { type: 'message', role: 'user', content: 'Do the task.' };
 
+export const DECLARED_READERS = { output_handle: 'ReadOutput', history_range: 'HistoryRead' } as const;
+
 export const sourcesWith = (overrides: Partial<ContextSources> = {}): ContextSources => ({
   systemPrompt: SYSTEM_PROMPT,
   tools: [],
@@ -190,6 +192,7 @@ export const sourcesWith = (overrides: Partial<ContextSources> = {}): ContextSou
   taskSeq: 0,
   activatedSkills: [],
   history: [],
+  readers: DECLARED_READERS,
   ...overrides,
 });
 

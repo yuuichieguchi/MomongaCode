@@ -110,6 +110,7 @@ describe('worker final answer', () => {
       toolSetDigest: toolSet.digest,
       capabilities: env.gateway.capabilitiesValue,
       roles: {},
+      targets: {},
       token: {},
     });
     expect(env.fold(run.id).pins).toEqual(started?.pins);

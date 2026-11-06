@@ -32,6 +32,7 @@ const UNMODELLED_EVENT_TYPES = [
   'agent.message.delta',
   'agent.thought.delta',
   'approval.rule.persisted',
+  'attempt.failed',
   'context.compacted',
   'context.compaction_rejected',
   'context.contribution',
@@ -124,6 +125,11 @@ describe('RunRecovery.tla against the implementation', () => {
     const modelled = new Set(setOf('ModelledEvents'));
     const unmodelled = EVENT_TYPES.filter((kind) => !modelled.has(kind)).sort();
     expect(unmodelled).toEqual([...UNMODELLED_EVENT_TYPES].sort());
+  });
+
+  it('records attempt.failed as an observation outside the model: the protocol defines it and ModelledEvents does not', () => {
+    expect(EVENT_TYPES as readonly string[]).toContain('attempt.failed');
+    expect(setOf('ModelledEvents')).not.toContain('attempt.failed');
   });
 
   it('emits only event kinds it declares as modelled', () => {

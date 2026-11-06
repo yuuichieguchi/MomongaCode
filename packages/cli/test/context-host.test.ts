@@ -18,6 +18,8 @@ vi.mock('@momonga/foundation', async (importOriginal) => ({
   codeDigestOfRunningProcess: () => Promise.reject(new Error('the eval host computed the code digest; the command supplies it')),
 }));
 
+const SCRIPTED_ANSWER = { target: 'scripted', adapter: 'chat-completions', upstreamModel: 'fake-model', answers: 'script' } as const;
+
 const CALLER_CODE_DIGEST = 'a'.repeat(64);
 
 const target = (overrides: Partial<ResolvedChatCompletionsTarget> = {}): ResolvedChatCompletionsTarget => ({
@@ -130,6 +132,7 @@ const harness = (behaviour: Behaviour = {}) => {
       },
       getRun: async (id: string) => ({ id, sessionId: `s${counter}`, status: 'COMPLETED', step: 1, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 1 } }),
       runReflection: async () => ({ job: null, charges: [], queuedAhead: 0 }),
+      runAnsweredBy: async () => ({ answeredBy: [SCRIPTED_ANSWER] }),
       resolveApproval: async () => ({}),
       cancel: async () => ({ status: 200, run: {} }),
       addRule: async (request: unknown) => {
@@ -455,7 +458,10 @@ describe('the shipped context dataset with the fake model', () => {
     expect(context.inputs).toHaveLength(expected + noiseRuns);
     const lint = transcripts.find((transcript) => transcript.caseId === 'lint-chain-on');
     expect(Object.values(lint?.ruleIds ?? {}).sort()).toEqual(['lint-0', 'lint-1']);
-    const report = buildContextReport({ dataset: shipped, transcripts, model: 'fake', seed: 1, datasetSeed: 11 });
+    const ungolded = { ...shipped, cases: shipped.cases.map(({ gold: _anchors, ...rest }) => rest) };
+    const report = buildContextReport({ dataset: ungolded, transcripts, seed: 1, datasetSeed: 11 });
+    expect(report.model).toBe('fake');
+    expect(transcripts.every((transcript) => transcript.answeredBy?.[0]?.answers === 'script')).toBe(true);
     expect(report.stopped).toEqual([]);
     expect(report.cases.map((entry) => entry.id)).toEqual(shipped.cases.map((entry) => entry.id));
     expect(report.noiseTokens).toBe(noiseRuns);

@@ -19,7 +19,7 @@ import { openRuntimeStore } from '@momonga/store';
 import type { Claim, RuntimeStore, Session } from '@momonga/store';
 import { FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
-import { createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
+import { createGitWorkTreeObserver, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import type { AnyTool, ToolSessionState } from '@momonga/tools';
 import { within } from '../worker/deferred.ts';
 import { createFakeGateway } from '../worker/fake-gateway.ts';
@@ -718,6 +718,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
     return registry.snapshot(only === undefined ? {} : { only });
   };
   const tools: ToolRuntimePort = {
+    workTreeObserver: (target: Session) => createGitWorkTreeObserver({ storeDir: path.join(env.layout.root, 'observer'), workTree: target.cwd, trusted: false }),
     envFor: (target: Session) => ({ ...target.env }),
     toolSet: async (_runId: string, toolSetOptions: { additionalTools?: readonly AnyTool[]; only?: readonly string[] }) =>
       snapshotToolbox(toolSetOptions.additionalTools, toolSetOptions.only),

@@ -69,31 +69,31 @@ describe('PinnedOverflowError names the ceiling and the breakdown', () => {
 describe('minimum room above the pinned prefix', () => {
   const capabilities = capabilitiesFor(1024);
 
-  it('is 260 tokens: an item, the summary item of the smallest summary, and the smallest working-state message', () => {
-    expect(MIN_ROOM_TOKENS).toBe(260);
+  it('is 317 tokens: an item, the summary item of the smallest summary, and the smallest working-state message', () => {
+    expect(MIN_ROOM_TOKENS).toBe(317);
   });
 
-  it('fails with the minimum-room subtype when the prefix fits but leaves 259 tokens', async () => {
-    const error = await buildContext(inputFor(capabilities, { sources: sourcesWith({ systemPrompt: 's'.repeat(1798) }) }), harness(capabilities).ports).catch(
+  it('fails with the minimum-room subtype when the prefix fits but leaves 316 tokens', async () => {
+    const error = await buildContext(inputFor(capabilities, { sources: sourcesWith({ systemPrompt: 's'.repeat(1570) }) }), harness(capabilities).ports).catch(
       (caught: unknown) => caught,
     );
 
     expect(error).toBeInstanceOf(PinnedRoomError);
     expect(error).toBeInstanceOf(PinnedOverflowError);
     const room = error as PinnedRoomError;
-    expect(room.pinnedTokens).toBe(477);
+    expect(room.pinnedTokens).toBe(420);
     expect(room.ceiling).toBe(736);
-    expect(room.room).toBe(259);
-    expect(room.minimum).toBe(260);
+    expect(room.room).toBe(316);
+    expect(room.minimum).toBe(317);
   });
 
-  it('builds when exactly 260 tokens remain', async () => {
-    const built = await buildContext(inputFor(capabilities, { sources: sourcesWith({ systemPrompt: 's'.repeat(1794) }) }), harness(capabilities).ports);
-    expect(built.inputTokens).toBe(476);
+  it('builds when exactly 317 tokens remain', async () => {
+    const built = await buildContext(inputFor(capabilities, { sources: sourcesWith({ systemPrompt: 's'.repeat(1566) }) }), harness(capabilities).ports);
+    expect(built.inputTokens).toBe(419);
   });
 
   it('fails measurePinned with the same subtype', async () => {
-    const error = await measurePinned(inputFor(capabilities, { sources: sourcesWith({ systemPrompt: 's'.repeat(1798) }) }), harness(capabilities).ports).catch(
+    const error = await measurePinned(inputFor(capabilities, { sources: sourcesWith({ systemPrompt: 's'.repeat(1570) }) }), harness(capabilities).ports).catch(
       (caught: unknown) => caught,
     );
     expect(error).toBeInstanceOf(PinnedRoomError);

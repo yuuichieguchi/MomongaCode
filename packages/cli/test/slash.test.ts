@@ -130,7 +130,7 @@ const MEMORY: MemoryView = {
   text: 'The build uses pnpm.\nSecond line.',
   source: { kind: 'tool', sessionId: 's1', runId: 'r1', step: 2, callId: 'c1', seq: 9 },
   createdAt: 0,
-  lastUsedAt: 1000,
+  keptAt: 1000,
   kind: 'fact',
   state: 'active',
   duplicateOf: null,
@@ -227,6 +227,17 @@ describe('/memory', () => {
     const { context, infos } = contextWith();
     await memory?.run('show', context);
     await memory?.run('forget mem-1', context);
-    expect(infos).toEqual(Array(2).fill('usage: /memory [list] | /memory show <id> | /memory delete <id>'));
+    expect(infos).toEqual(Array(2).fill('usage: /memory [list] | /memory show <id> | /memory delete <id> (retires the memory; it stays in momonga memory history)'));
+  });
+});
+
+describe('/memory delete', () => {
+  const memory = createSlashRegistry(DEFAULT_SLASH_COMMANDS).find('memory');
+
+  it('says that the memory was retired and stays in the history, and describes itself as retiring', async () => {
+    const { context, infos } = contextWith({ memories: [MEMORY] });
+    await memory?.run('delete mem-1', context);
+    expect(infos.at(-1)).toBe('retired memory mem-1; it stays in momonga memory history');
+    expect(memory?.description).toBe('list, show or retire the memories the agent saved');
   });
 });

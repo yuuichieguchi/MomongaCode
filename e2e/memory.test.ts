@@ -88,7 +88,7 @@ describe('memory', () => {
       const { session: sessionA } = await runtime.createSession({ permissionMode: 'default' });
       const { run: runA } = await runtime.createRun(sessionA.id, 'Remember how we deploy');
       await approveOnce(runtime, runA.id);
-      expect((await raw.call('GET', '/v1/memories')).json).toEqual({ memories: [] });
+      expect((await raw.call('GET', '/v1/memories')).json).toEqual({ memories: [], next: null });
       const framesA = await runToEnd(runtime, runA.id);
       expect(framesA.at(-1)?.data['to']).toBe('COMPLETED');
 
@@ -119,12 +119,16 @@ describe('memory', () => {
       expect(carrier?.role).toBe('user');
 
       const used = await raw.call('GET', `/v1/memories/${saved['id']}`);
-      expect(used.json['memory'].lastUsedAt).toBeGreaterThan(saved['lastUsedAt']);
+      expect(used.json['memory'].keptAt).toBe(saved['keptAt']);
+      expect(used.json['memory'].contributedAt).toBeNull();
       expect(used.json['memory'].createdAt).toBe(saved['createdAt']);
 
       expect((await raw.call('DELETE', `/v1/memories/${saved['id']}`)).status).toBe(204);
-      expect((await raw.call('GET', `/v1/memories/${saved['id']}`)).status).toBe(404);
-      expect(memoryRows(home)).toEqual([]);
+      const retired = await raw.call('GET', `/v1/memories/${saved['id']}`);
+      expect(retired.status).toBe(200);
+      expect(retired.json['memory'].retiredAt).toEqual(expect.any(Number));
+      expect(memoryRows(home).map((row) => row.id)).toEqual([saved['id']]);
+      expect((await raw.call('GET', '/v1/memories')).json['memories']).toEqual([]);
 
       const { session: sessionC } = await runtime.createSession();
       const { run: runC } = await runtime.createRun(sessionC.id, 'Say hello again');

@@ -12,7 +12,7 @@ export type MemorySaveRequest = {
   supersedes?: string[];
 };
 
-export type MemorySearchOptions = { include: 'live' | 'all'; signal: AbortSignal };
+export type MemorySearchOptions = { include: 'live' | 'all'; limit: number; signal: AbortSignal };
 
 export type MemoryStorePort = {
   save(request: MemorySaveRequest): { memory: MemoryView; created: boolean } | Promise<{ memory: MemoryView; created: boolean }>;

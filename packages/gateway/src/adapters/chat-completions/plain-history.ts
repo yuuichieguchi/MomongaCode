@@ -22,7 +22,7 @@ export const toolCallsText = (calls: ReadonlyArray<{ name: string; arguments: un
 export const finalReplyText = (text: string): string => canonicalJson({ kind: 'final', text });
 
 export const summaryMessageOf = (summary: string): ChatMessage => {
-  const { role, content } = compactionSummaryMessage(summary);
+  const { role, content } = compactionSummaryMessage(summary, 'model');
   return { role, content };
 };
 

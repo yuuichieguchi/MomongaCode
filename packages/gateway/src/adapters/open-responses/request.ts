@@ -57,7 +57,7 @@ const itemOf = (item: AdapterInputItem, origin: ReasoningOrigin): InputItem | un
       };
     }
     case 'compaction_summary':
-      return compactionSummaryMessage(item.summary);
+      return compactionSummaryMessage(item.summary, 'model');
     case 'message':
       return { type: 'message', role: item.role, content: relayable(item.content, item.role === 'user' ? USER_PART_TYPES : TEXT_PART_TYPES) };
     case 'function_call':

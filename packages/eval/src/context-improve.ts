@@ -4,20 +4,20 @@ import { compareContextReports } from './context-compare.ts';
 import type { ContextComparison } from './context-compare.ts';
 import { contrastiveCasesOf } from './context-report.ts';
 import type { ContextModel, ContextReport } from './context-report.ts';
-import { GUIDELINE_CANDIDATES, analysisRequestOf, candidateRequestOf, parseGuidelineAnalysis, parseGuidelineCandidate } from './guideline-prompts.ts';
+import { analysisRequestOf, candidateRequestOf, parseGuidelineAnalysis, parseGuidelineCandidate } from './guideline-prompts.ts';
 import type { GuidelineAnalysis, GuidelineCompletion, GuidelineCompletionRequest } from './guideline-prompts.ts';
 import type { Transcript } from './transcript.ts';
 
 export const GUIDELINE_CAP_REASON = 'the command reached its token cap, counting the benchmark runs and the model calls together';
+export const GUIDELINE_NO_CANDIDATE_REASON = 'the token cap leaves less than one candidate run after the baseline benchmark and the analyses';
 
 export type AdoptedGuideline = { version: number; text: string };
 
 export type ImproveInput = {
   seed: number;
   bootstrapSeed: number;
-  model: ContextModel;
   alias: string;
-  capTokens: number;
+  tokenCap: number;
   current: AdoptedGuideline | undefined;
   recordChars?: number;
 };
@@ -47,12 +47,16 @@ export type ImproveCandidate = {
 
 export type ImproveWinner = { index: number; text: string; parent: number | null; contrastiveFailures: number; comparison: ContextComparison };
 
+export type CandidateDerivation = { baselineTokens: number; analysisTokens: number; candidateRunTokens: number; affordable: number };
+
 export type ImproveOutcome = {
   status: ImproveStatus;
   model: ContextModel;
   alias: string;
   seed: number;
   candidateCount: number;
+  tokenCap: number;
+  derivation?: CandidateDerivation;
   current: AdoptedGuideline | undefined;
   baseline: { contrastiveFailures: number; compactedScenarios: number; tokens: number };
   contrastive: string[];
@@ -80,19 +84,24 @@ const bestWinner = (candidates: readonly ImproveCandidate[], parent: number | nu
 
 export const improveGuideline = async (input: ImproveInput, ports: ImprovePorts): Promise<ImproveOutcome> => {
   const tokens = { benchmark: 0, charged: 0 };
-  const reached = (): boolean => tokens.benchmark + tokens.charged >= input.capTokens;
+  const reached = (): boolean => tokens.benchmark + tokens.charged >= input.tokenCap;
   const skipped: SkippedScenario[] = [];
   const candidates: ImproveCandidate[] = [];
   let analysed = 0;
   let contrastive: string[] = [];
   let baseline: ImproveOutcome['baseline'] = { contrastiveFailures: 0, compactedScenarios: 0, tokens: 0 };
 
+  let model: ContextModel = 'unknown';
+  let derivation: CandidateDerivation | undefined;
+
   const outcome = (status: ImproveStatus, extra: Pick<ImproveOutcome, 'winner' | 'reason'> = {}): ImproveOutcome => ({
     status,
-    model: input.model,
+    model,
     alias: input.alias,
     seed: input.seed,
-    candidateCount: GUIDELINE_CANDIDATES,
+    candidateCount: new Set(candidates.flatMap((candidate) => (candidate.text === undefined ? [] : [candidate.text]))).size,
+    tokenCap: input.tokenCap,
+    ...(derivation === undefined ? {} : { derivation }),
     current: input.current,
     baseline,
     contrastive,
@@ -114,6 +123,7 @@ export const improveGuideline = async (input: ImproveInput, ports: ImprovePorts)
 
   const first = await ports.benchmark(input.current?.text);
   tokens.benchmark += first.tokens;
+  model = first.report.model;
   baseline = {
     contrastiveFailures: first.report.metrics.contrastiveFailures.count,
     compactedScenarios: first.report.metrics.contrastiveFailures.n,
@@ -153,14 +163,21 @@ export const improveGuideline = async (input: ImproveInput, ports: ImprovePorts)
   }
   if (analyses.length === 0) return outcome('no_analysis');
 
-  for (let index = 0; index < GUIDELINE_CANDIDATES; index += 1) {
+  if (reached()) return stopped();
+  const analysisTokens = tokens.charged;
+  const candidateRunTokens = first.tokens + Math.ceil(analysisTokens / analysed);
+  const affordable = Math.floor((input.tokenCap - first.tokens - analysisTokens) / candidateRunTokens);
+  derivation = { baselineTokens: first.tokens, analysisTokens, candidateRunTokens, affordable };
+  if (affordable < 1) return outcome('stopped', { reason: GUIDELINE_NO_CANDIDATE_REASON });
+
+  for (let index = 0; index < affordable; index += 1) {
     if (reached()) return stopped();
     const completion = await spend(
       candidateRequestOf({
         analyses,
         guideline: input.current?.text,
         index,
-        count: GUIDELINE_CANDIDATES,
+        count: affordable,
         seed: input.seed,
         ...(input.recordChars === undefined ? {} : { analysisChars: input.recordChars }),
       }),
@@ -168,6 +185,11 @@ export const improveGuideline = async (input: ImproveInput, ports: ImprovePorts)
     const parsed = parseGuidelineCandidate(completion.text);
     if ('error' in parsed) {
       candidates.push({ index, skipped: `output failed the schema: ${parsed.error}` });
+      continue;
+    }
+    const twin = candidates.find((earlier) => earlier.text === parsed.guideline);
+    if (twin !== undefined) {
+      candidates.push({ index, text: parsed.guideline, skipped: `the same text as candidate ${twin.index}, which is measured once` });
       continue;
     }
     const estimated = tokensForText(parsed.guideline);
@@ -275,9 +297,9 @@ const verdictLines = (outcome: ImproveOutcome): string[] => {
 export const formatImproveOutcome = (outcome: ImproveOutcome): string => {
   const { baseline } = outcome;
   const lines = [
-    `model: ${outcome.model} (declared by the operator; the analysis and candidate calls used the alias ${outcome.alias})`,
+    `model: ${outcome.model} (derived from the pinned provenance of the targets that answered the benchmark; the analysis and candidate calls used the alias ${outcome.alias})`,
     ...(outcome.model === 'fake' ? ['a fake model proves only that the machinery works, so no candidate can pass the gate'] : []),
-    `seed ${outcome.seed}, K=${outcome.candidateCount} candidates`,
+    `seed ${outcome.seed}, token cap ${outcome.tokenCap}, K=${outcome.candidateCount} distinct candidates${outcome.derivation === undefined ? '' : ` (the cap affords ${outcome.derivation.affordable}: (${outcome.tokenCap} - ${outcome.derivation.baselineTokens} baseline - ${outcome.derivation.analysisTokens} analyses) / ${outcome.derivation.candidateRunTokens} per candidate run)`}`,
     `baseline: ${outcome.current === undefined ? 'no guideline in force' : `guideline version ${outcome.current.version}`}, contrastiveFailures ${baseline.contrastiveFailures} of ${baseline.compactedScenarios} scenarios, ${baseline.tokens} benchmark tokens`,
     `contrastive set: ${outcome.contrastive.length === 0 ? 'none' : outcome.contrastive.join(', ')}`,
     ...outcome.skipped.map((entry) => `skipped ${entry.scenario}: ${entry.reason}`),

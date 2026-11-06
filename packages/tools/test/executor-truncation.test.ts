@@ -5,8 +5,8 @@ import { blobHandle } from './helpers.ts';
 const LINES = Array.from({ length: 100 }, (_unused, index) => `line-${String(index + 1).padStart(3, '0')}`);
 const FULL = LINES.join('\n');
 
-const run = async (output: string, maxInlineOutputChars = 200) => {
-  const harness = makeHarness({ maxInlineOutputChars });
+const run = async (output: string, outputLimitChars = 200) => {
+  const harness = makeHarness({ outputLimitChars });
   const set = await toolSetOf(makeTool('Read', { execute: async () => ({ status: 'completed', output }) }));
   const first = await harness.executor.runBatch(harness.input(set, [call('c1', 'Read')]));
   const outcome = first[0];
@@ -37,32 +37,22 @@ describe('output truncation', () => {
     expect(result.output).toContain('ReadOutput');
   });
 
-  it('splits on line boundaries and names the omitted line count', async () => {
+  it('names the handle and the reader tool once, in the marker the port wrote', async () => {
     const { result } = await run(FULL);
-    const outputLines = result.output.split('\n');
-    const kept = outputLines.filter((line) => /^line-\d{3}$/.test(line));
-    const keptNumbers = kept.map((line) => Number(line.slice(5)));
-    const markerLines = outputLines.filter((line) => !/^line-\d{3}$/.test(line));
-    expect(markerLines.length).toBeGreaterThan(0);
-    const headCount = keptNumbers.findIndex((value, index) => value !== index + 1);
-    expect(headCount).toBeGreaterThan(0);
-    const tail = keptNumbers.slice(headCount);
-    expect(tail.length).toBeGreaterThan(0);
-    expect(tail).toEqual(Array.from({ length: tail.length }, (_unused, index) => 101 - tail.length + index));
-    const omitted = 100 - kept.length;
-    expect(markerLines.join('\n')).toMatch(new RegExp(`\\b${omitted}\\b`));
+    expect(result.output.split(blobHandle(1))).toHaveLength(2);
+    expect(result.output.split('ReadOutput')).toHaveLength(2);
   });
 
   it('keeps truncated failed results failed', async () => {
-    const harness = makeHarness({ maxInlineOutputChars: 200 });
+    const harness = makeHarness({ outputLimitChars: 200 });
     const set = await toolSetOf(makeTool('Read', { execute: async () => ({ status: 'failed', output: FULL }) }));
     const [outcome] = await harness.executor.runBatch(harness.input(set, [call('c1', 'Read')]));
     expect(outcome).toMatchObject({ kind: 'result', result: { status: 'failed', truncated: true, handle: blobHandle(1) } });
   });
 
-  it('defaults the inline limit to 30000 characters', async () => {
-    const atLimit = `${'a'.repeat(29_999)}\n`;
-    const harness = makeHarness();
+  it('decides by the port alone: an output one character over the limit is cut, one at the limit is not', async () => {
+    const atLimit = 'a'.repeat(250);
+    const harness = makeHarness({ outputLimitChars: 250 });
     const set = await toolSetOf(
       makeTool('Read', {
         inputSchema: { type: 'object', properties: { big: { type: 'boolean' } }, additionalProperties: false },

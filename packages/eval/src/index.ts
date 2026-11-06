@@ -35,7 +35,8 @@ export type {
   ContextRule,
   ExpandedCase,
   ExpandedContextDataset,
-  GoldRange,
+  GoldAnchor,
+  GoldSource,
   NoiseTurn,
   RevisionChain,
   WorkspaceStep,
@@ -52,10 +53,13 @@ export {
 export type { ContextCaseHost, ContextRunPorts, ContextRunResult, LiveBounds, LiveLimits } from './context-live.ts';
 export { parsePolicyOverlay } from './context-policy.ts';
 export type { PolicyOverlay } from './context-policy.ts';
-export { compactionFactsOf, governanceCountsOf, governanceOf, lossSignalsOf, recalledOf, retrievalOf } from './context-metrics.ts';
-export type { CompactionFacts, GovernanceCounts, GovernanceScore, LossSignal, Recalled, Retrieval } from './context-metrics.ts';
+export { compactionFactsOf, goldRangesOf, governanceCountsOf, governanceOf, lossSignalsOf, recalledOf, retrievalOf } from './context-metrics.ts';
+export type { CompactionFacts, GoldRange, GovernanceCounts, GovernanceScore, LossSignal, Recalled, Retrieval } from './context-metrics.ts';
+export { QUALITY_METRICS } from './context-quality.ts';
+export type { QualityCell, QualityCells, QualityMetric, QualityMetricName } from './context-quality.ts';
 export {
   CONTEXT_MODELS,
+  modelKindOf,
   CONTEXT_REPORT_FORMAT,
   DEFAULT_DATASET_SEED,
   MAX_DATASET_SEED,
@@ -76,7 +80,6 @@ export type { ContrastiveCase } from './context-report.ts';
 export {
   GUIDELINE_ANALYSIS_INSTRUCTIONS,
   GUIDELINE_ANALYSIS_SCHEMA,
-  GUIDELINE_CANDIDATES,
   GUIDELINE_CANDIDATE_INSTRUCTIONS,
   GUIDELINE_CANDIDATE_SCHEMA,
   GUIDELINE_ROOT_CAUSES,
@@ -94,7 +97,7 @@ export type {
   GuidelineCompletionRequest,
   GuidelineRootCause,
 } from './guideline-prompts.ts';
-export { GUIDELINE_CAP_REASON, formatGuidelineText, formatImproveOutcome, guidelineDiff, improveGuideline } from './context-improve.ts';
+export { GUIDELINE_CAP_REASON, GUIDELINE_NO_CANDIDATE_REASON, formatGuidelineText, formatImproveOutcome, guidelineDiff, improveGuideline } from './context-improve.ts';
 export { GUIDELINE_OUTCOME_FORMAT, adoptionOf, encodeOutcomeFile, outcomeFileOf, parseOutcomeFile } from './guideline-outcome.ts';
 export type { GuidelineAdoption, GuidelineOutcomeBody, GuidelineOutcomeFile, OutcomeCandidate } from './guideline-outcome.ts';
 export type {
@@ -109,7 +112,7 @@ export type {
   SkippedScenario,
   TokenUsage,
 } from './context-improve.ts';
-export { TRANSCRIPT_FORMAT, TranscriptError, decodeTranscript, encodeTranscript, parsePublicRunEvent } from './transcript.ts';
-export type { RecordedRun, Transcript, TranscriptChild, TranscriptReflection, TranscriptRun } from './transcript.ts';
+export { ANSWER_KINDS, TRANSCRIPT_FORMAT, TranscriptError, decodeTranscript, encodeTranscript, parsePublicRunEvent } from './transcript.ts';
+export type { AnswerKind, Answerer, RecordedRun, Transcript, TranscriptChild, TranscriptReflection, TranscriptRun } from './transcript.ts';
 export { loadContextDataset, loadContextReport, loadDataset, loadTranscripts, nodeEvalFiles, saveContextReport, saveTranscript, transcriptFileName } from './files.ts';
 export type { EvalFiles } from './files.ts';

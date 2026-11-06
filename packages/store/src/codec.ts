@@ -106,6 +106,7 @@ export const decodeRun = (row: Row): Run => {
 const EVENT_TYPES: Record<RunEventPayload['type'], true> = {
   'user.message': true,
   'run.started': true,
+  'attempt.failed': true,
   'run.status': true,
   'model.requested': true,
   'model.responded': true,
@@ -154,13 +155,21 @@ const SESSION_EVENT_TYPES: Record<SessionEventPayload['type'], true> = { 'mode.c
 const isToolFile = (value: unknown): boolean =>
   isRecord(value) &&
   typeof value['path'] === 'string' &&
-  typeof value['sha256'] === 'string' &&
-  /^[0-9a-f]{64}$/.test(value['sha256']) &&
+  (value['sha256'] === undefined || (typeof value['sha256'] === 'string' && /^[0-9a-f]{64}$/.test(value['sha256']))) &&
   FILE_ACCESSES.some((access) => access === value['access']);
 
 const assertToolFacts = (identity: string, payload: Record<string, unknown>): void => {
   if (payload['files'] !== undefined && !(Array.isArray(payload['files']) && payload['files'].every(isToolFile))) {
-    throw corrupt('events', identity, 'payload_json files must hold path, sha256 and access entries');
+    throw corrupt('events', identity, 'payload_json files must hold path, an optional sha256 and access entries');
+  }
+  if (payload['command'] !== undefined && typeof payload['command'] !== 'string') {
+    throw corrupt('events', identity, 'payload_json command must be a string');
+  }
+  if (payload['windowShared'] !== undefined && payload['windowShared'] !== true) {
+    throw corrupt('events', identity, 'payload_json windowShared must be true');
+  }
+  if (payload['memories'] !== undefined && !(Array.isArray(payload['memories']) && payload['memories'].every((id) => typeof id === 'string'))) {
+    throw corrupt('events', identity, 'payload_json memories must hold memory ids');
   }
   if (payload['exitCode'] !== undefined && !Number.isInteger(payload['exitCode'])) {
     throw corrupt('events', identity, 'payload_json exitCode must be an integer');
@@ -170,7 +179,7 @@ const assertToolFacts = (identity: string, payload: Record<string, unknown>): vo
 const decodeRunEvent = (row: Row, identity: string, type: string, payload: Record<string, unknown>): RunEvent => {
   const reader = readerFor('events', identity, row);
   if (!Object.hasOwn(EVENT_TYPES, type)) throw corrupt('events', identity, `column type has unknown event type "${type}"`);
-  if (type === 'tool.completed') assertToolFacts(identity, payload);
+  if (type === 'tool.completed' || type === 'tool.reconciled') assertToolFacts(identity, payload);
   const envelope = {
     id: reader.number('id'),
     runId: reader.string('run_id'),
@@ -357,6 +366,7 @@ const isWorkingFacts = (value: unknown): boolean =>
       isRecord(entry) &&
       typeof entry['path'] === 'string' &&
       (entry['sha256'] === undefined || isSha256(entry['sha256'])) &&
+      (entry['removed'] === undefined || entry['removed'] === true) &&
       isReconciled(entry['reconciled']) &&
       Number.isInteger(entry['seq']),
   ) &&
@@ -367,12 +377,10 @@ const isWorkingFacts = (value: unknown): boolean =>
       typeof entry['command'] === 'string' &&
       typeof entry['failed'] === 'boolean' &&
       (entry['exitCode'] === undefined || Number.isInteger(entry['exitCode'])) &&
+      (entry['unobserved'] === undefined || entry['unobserved'] === true) &&
+      (entry['windowShared'] === undefined || entry['windowShared'] === true) &&
       isReconciled(entry['reconciled']) &&
       Number.isInteger(entry['seq']),
-  ) &&
-  isArrayOf(
-    value['touched'],
-    (entry) => isRecord(entry) && (entry['kind'] === 'file' || entry['kind'] === 'directory') && (entry['path'] === undefined || typeof entry['path'] === 'string'),
   ) &&
   isArrayOf(value['messages'], (entry) => isRecord(entry) && typeof entry['text'] === 'string' && Number.isInteger(entry['seq'])) &&
   (value['plan'] === undefined ||
@@ -380,7 +388,7 @@ const isWorkingFacts = (value: unknown): boolean =>
   isArrayOf(value['itemEvents'], (entry) => isRecord(entry) && Number.isInteger(entry['itemSeq']) && Number.isInteger(entry['eventSeq'])) &&
   (value['replacedThroughEventSeq'] === undefined || Number.isInteger(value['replacedThroughEventSeq']));
 
-export const SNAPSHOT_STATE_VERSION = 14;
+export const SNAPSHOT_STATE_VERSION = 16;
 
 export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
 

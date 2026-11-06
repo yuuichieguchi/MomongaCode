@@ -1,6 +1,6 @@
 import type { Clock } from '@momonga/foundation';
 import type { PermissionSubject } from '@momonga/policy';
-import type { ElicitationRequestView, SideEffect, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
+import type { ElicitationRequestView, ReferenceKind, SideEffect, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { BackgroundJobs, BlobPort, ToolIdempotencyRecord } from './ports.ts';
 
@@ -25,6 +25,10 @@ export type ToolResult = {
   toolsLoaded?: string[];
   authorizationRequired?: { server: string };
   files?: ToolFile[];
+  command?: string;
+  windowShared?: true;
+  detached?: true;
+  memories?: string[];
   exitCode?: number;
   validatorFailure?: string;
 };
@@ -59,12 +63,18 @@ export type ToolContext = ReconcileContext & {
   extendToRunDeadline(): void;
 };
 
+export type OutputFit = {
+  fits(text: string): Promise<boolean>;
+  fit(text: string, handle: string): Promise<string>;
+  ready?(): Promise<void>;
+};
+
 export type ReconcileContext = SubjectContext & {
   runId: string;
   step: number;
   callId: string;
   idemKey: string;
-  outputBudgetChars: number;
+  outputFit: OutputFit;
   tmpDir?: string;
   processMarker?: string;
   earlierAttempt?: { stopped: boolean; uninspectable?: ReadonlyArray<{ pid: number; command: string }> };
@@ -118,6 +128,7 @@ export type ToolBody<Input> = {
   pagesOutput?: true;
   output?: ToolOutputOrigin;
   tier?: ToolTier;
+  reads?: ReferenceKind;
   companionOf?: string;
   outputSchema?: Record<string, unknown>;
   server?: string;

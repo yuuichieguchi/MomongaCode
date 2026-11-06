@@ -22,6 +22,7 @@ const apiFor = (label: string, log: string[], sessions: EvalSessionInput[], fail
   getRun: async (runId) => ({ id: runId, sessionId: `s-${label}`, status: 'COMPLETED', step: 1, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } }) as never,
   reflectionOf: async () => ({ state: 'none' }),
   resolveApproval: async () => undefined,
+  answeredBy: async () => [],
   cancelRun: async () => undefined,
 });
 

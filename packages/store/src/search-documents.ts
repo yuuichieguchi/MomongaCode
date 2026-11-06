@@ -1,6 +1,6 @@
-import { HISTORY_OUTPUT_HEAD_CHARS, HISTORY_OUTPUT_TAIL_CHARS, safeSlice } from '@momonga/foundation';
+import { HISTORY_OUTPUT_HEAD_CHARS, HISTORY_OUTPUT_TAIL_CHARS, keepingHeadAndTail } from '@momonga/foundation';
 import type { Redactor } from '@momonga/foundation';
-import { assistantTextOf } from '@momonga/protocol';
+import { TERMINAL_STATUSES, assistantTextOf } from '@momonga/protocol';
 import { isRecord } from './rows.ts';
 
 export type RecordedEvent = { seq: number; step: number; type: string; payload: Record<string, unknown> };
@@ -14,13 +14,11 @@ export type SearchDocument = {
   paths: string[];
 };
 
+const OUTCOME_LABEL_CHARS = Math.max(...TERMINAL_STATUSES.map((status) => status.length));
+
 export const INDEXED_PAYLOAD_TYPES = ['user.message', 'model.responded', 'tool.call', 'tool.completed'] as const;
 
-const ELISION ='\n…\n';
-const headAndTail = (text: string): string =>
-  text.length <= HISTORY_OUTPUT_HEAD_CHARS + HISTORY_OUTPUT_TAIL_CHARS
-    ? text
-    : `${safeSlice(text, 0, HISTORY_OUTPUT_HEAD_CHARS)}${ELISION}${safeSlice(text, text.length - HISTORY_OUTPUT_TAIL_CHARS, text.length)}`;
+const headAndTail = (text: string): string => keepingHeadAndTail(text, HISTORY_OUTPUT_HEAD_CHARS, HISTORY_OUTPUT_TAIL_CHARS);
 
 const stringField = (record: Record<string, unknown>, key: string): string | undefined => {
   const value = record[key];
@@ -90,7 +88,7 @@ export const buildDocuments = (events: Iterable<RecordedEvent>, outcome: string,
     }
   }
   if (firstSeq === undefined) throw new Error('a terminal run has no recorded events');
-  const runBody = bodyOf(redactor, [[task], [finalText], [...touched], [outcome]]);
+  const runBody = bodyOf(redactor, [[task], [finalText], [...touched], [outcome.padEnd(OUTCOME_LABEL_CHARS)]]);
   const documents: SearchDocument[] = [{ level: 'run', step: null, seqFrom: firstSeq, seqTo: lastSeq, body: runBody, paths: [...touched] }];
   for (const [step, draft] of steps) {
     const body = bodyOf(redactor, [draft.texts, draft.calls, draft.outputs]);

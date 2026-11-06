@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach } from 'vitest';
 import { InMemorySpanExporter } from '@opentelemetry/sdk-trace';
 import type { SpanExporter } from '@opentelemetry/sdk-trace';
-import { createTelemetry, openTraceStore } from '@momonga/observability';
+import { GENAI_CONTENT_SEMCONV, createTelemetry, openTraceStore } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import { createFakeClock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
@@ -48,7 +48,7 @@ export type Harness = {
 };
 
 export const harness = (
-  options: { bodies?: { enabled: boolean; retentionMs: number }; exporters?: SpanExporter[] } = {},
+  options: { content?: { retentionMs: number; maxQueuedBodies?: number; maxQueuedBytes?: number }; exporters?: SpanExporter[] } = {},
 ): Harness => {
   const clock = createFakeClock(START_MS);
   const { store, file } = openStore(clock);
@@ -60,7 +60,16 @@ export const harness = (
     store,
     exporters: [memory, ...(options.exporters ?? [])],
     batch: QUIET_BATCH,
-    ...(options.bodies === undefined ? {} : { bodies: options.bodies }),
+    ...(options.content === undefined
+      ? {}
+      : {
+          captureMessageContent: true,
+          contentRetentionMs: options.content.retentionMs,
+          contentQueue: {
+            ...(options.content.maxQueuedBodies === undefined ? {} : { maxQueuedBodies: options.content.maxQueuedBodies }),
+            ...(options.content.maxQueuedBytes === undefined ? {} : { maxQueuedBytes: options.content.maxQueuedBytes }),
+          },
+        }),
   });
   registerCleanup(() => telemetry.shutdown());
   return { clock, telemetry, memory, store, file };
@@ -77,3 +86,7 @@ export const dumpAllRows = (file: string): string => {
     db.close();
   }
 };
+
+export const CONTENT = GENAI_CONTENT_SEMCONV;
+
+export const CONTENT_KEYS = Object.values(GENAI_CONTENT_SEMCONV) as string[];

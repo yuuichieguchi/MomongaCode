@@ -136,7 +136,7 @@ describe('a value a person did not write stays on its own line in command output
       text: `note\tone\nstatus: forged\n${FORGED}`,
       source: { kind: 'command', at: 0 },
       createdAt: 0,
-      lastUsedAt: 0,
+      keptAt: 0,
       kind: 'procedure',
       status: 'unbound',
       evidence: [],

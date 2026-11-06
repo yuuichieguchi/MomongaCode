@@ -49,23 +49,27 @@ const compactionEvents = (caseId: string): Transcript['events'] =>
 
 const RECORDED_CODE = 'c'.repeat(64);
 
-const transcript = (caseId: string, status: 'COMPLETED' | 'FAILED' = 'COMPLETED'): Transcript => ({
-  caseId,
-  runIndex: 0,
-  run: { id: `run-${caseId}`, status, step: 1, usage: { inputTokens: 9, outputTokens: 1, totalTokens: 10 } },
-  events: caseId.endsWith('-on') ? compactionEvents(caseId) : [],
-  children: [],
-  policy: {},
-  codeDigest: RECORDED_CODE,
-});
+type Answers = 'model' | 'script';
 
-const harness = (failingOn: number = 0) => {
+const transcript = (caseId: string, status: 'COMPLETED' | 'FAILED' = 'COMPLETED', answers: Answers = 'script'): Transcript =>
+  ({
+    caseId,
+    runIndex: 0,
+    run: { id: `run-${caseId}`, status, step: 1, usage: { inputTokens: 9, outputTokens: 1, totalTokens: 10 } },
+    events: caseId.endsWith('-on') ? compactionEvents(caseId) : [],
+    children: [],
+    policy: {},
+    codeDigest: RECORDED_CODE,
+    answeredBy: [{ target: answers === 'model' ? 'opus' : 'scripted', adapter: 'anthropic', upstreamModel: 'claude-opus', answers }],
+  }) as Transcript;
+
+const harness = (failingOn: number = 0, answers: Answers = 'script') => {
   const stored = new Map<string, string>([
     ['/w/context.json', CONTEXT_DATASET],
     ['/w/golden.json', GOLDEN_DATASET],
     ...SCENARIOS.flatMap((scenario, index): [string, string][] => [
-      [`/w/t/${scenario}-on.0.transcript.jsonl`, encodeTranscript(transcript(`${scenario}-on`, index < failingOn ? 'FAILED' : 'COMPLETED'))],
-      [`/w/t/${scenario}-off.0.transcript.jsonl`, encodeTranscript(transcript(`${scenario}-off`))],
+      [`/w/t/${scenario}-on.0.transcript.jsonl`, encodeTranscript(transcript(`${scenario}-on`, index < failingOn ? 'FAILED' : 'COMPLETED', answers))],
+      [`/w/t/${scenario}-off.0.transcript.jsonl`, encodeTranscript(transcript(`${scenario}-off`, 'COMPLETED', answers))],
     ]),
     ['/w/g/a-on.0.transcript.jsonl', encodeTranscript(transcript('a-on'))],
   ]);
@@ -108,46 +112,54 @@ const harness = (failingOn: number = 0) => {
 const run = (program: ReturnType<typeof harness>['program'], ...args: string[]): Promise<unknown> => program.parseAsync(args, { from: 'user' });
 
 const reportFile = async (name: string, failingOn: number, model: 'fake' | 'real'): Promise<string> => {
-  const { program, stored } = harness(failingOn);
-  await run(program, 'eval', 'context', 'context.json', '--replay', 't', '--model', model, '--report', name);
+  const { program, stored } = harness(failingOn, model === 'real' ? 'model' : 'script');
+  await run(program, 'eval', 'context', 'context.json', '--replay', 't', '--report', name);
   const text = stored.get(`/w/${name}`);
   if (text === undefined) throw new Error('the command stored no report');
   return text;
 };
 
 describe('momonga eval context', () => {
-  it('replays a dataset with no model and states the provenance', async () => {
+  it('replays a dataset with no model and states the provenance it derived from the pins', async () => {
     const { program, stdout, completed } = harness();
-    await run(program, 'eval', 'context', 'context.json', '--replay', 't', '--model', 'fake');
+    await run(program, 'eval', 'context', 'context.json', '--replay', 't');
     expect(completed).toEqual([0]);
     expect(stdout.join('')).toContain('model: fake');
     expect(stdout.join('')).toContain('machinery');
+    expect(stdout.join('')).not.toContain('declared by the operator');
+  });
+
+  it('takes the provenance of a replay from the transcripts: declared models give real', async () => {
+    const { program, stdout } = harness(0, 'model');
+    await run(program, 'eval', 'context', 'context.json', '--replay', 't');
+    expect(stdout.join('')).toContain('model: real');
   });
 
   it('exits 1 when a case misses its required pass rate', async () => {
     const { program, completed } = harness(1);
-    await run(program, 'eval', 'context', 'context.json', '--replay', 't', '--model', 'fake');
+    await run(program, 'eval', 'context', 'context.json', '--replay', 't');
     expect(completed).toEqual([1]);
   });
 
-  it('requires the provenance of a live run', async () => {
+  it('--model is no longer an option of eval context', async () => {
     const { program } = harness();
-    await expect(run(program, 'eval', 'context', 'context.json', '--alias', 'default')).rejects.toThrow(/--model fake\|real is required/);
+    await expect(run(program, 'eval', 'context', 'context.json', '--replay', 't', '--model', 'real')).rejects.toThrow(/unknown option '--model'/);
+    await expect(run(harness().program, 'eval', 'context', 'context.json', '--alias', 'default', '--model', 'fake')).rejects.toThrow(/unknown option '--model'/);
   });
 
   it('requires the alias of a live run', async () => {
     const { program } = harness();
-    await expect(run(program, 'eval', 'context', 'context.json', '--model', 'fake')).rejects.toThrow(/--alias <alias> is required/);
+    await expect(run(program, 'eval', 'context', 'context.json')).rejects.toThrow(/--alias <alias> is required/);
   });
 
   it('refuses --record together with --replay', async () => {
     const { program } = harness();
-    await expect(run(program, 'eval', 'context', 'context.json', '--replay', 't', '--record', 'r', '--model', 'fake')).rejects.toThrow(/--record and --replay cannot be combined/);
+    await expect(run(program, 'eval', 'context', 'context.json', '--replay', 't', '--record', 'r')).rejects.toThrow(/--record and --replay cannot be combined/);
   });
 
   it('refuses a seed that is not an integer', async () => {
     const { program } = harness();
-    await expect(run(program, 'eval', 'context', 'context.json', '--model', 'fake', '--alias', 'default', '--seed', 'x')).rejects.toThrow(/--seed/);
+    await expect(run(program, 'eval', 'context', 'context.json', '--alias', 'default', '--seed', 'x')).rejects.toThrow(/--seed/);
   });
 
   it('takes the seed of a replay from the transcripts', async () => {
@@ -158,18 +170,21 @@ describe('momonga eval context', () => {
         context.stored.set(`/w/t/${caseId}.0.transcript.jsonl`, encodeTranscript({ ...transcript(caseId), datasetSeed: 7 }));
       }
     }
-    await run(context.program, 'eval', 'context', 'context.json', '--replay', 't', '--model', 'fake', '--report', 'seeded.json');
+    await run(context.program, 'eval', 'context', 'context.json', '--replay', 't', '--report', 'seeded.json');
     expect(JSON.parse(context.stored.get('/w/seeded.json') ?? '{}')).toMatchObject({ datasetSeed: 7 });
   });
 
-  it('requires the provenance of a replay instead of guessing it', async () => {
-    const { program } = harness();
-    await expect(run(program, 'eval', 'context', 'context.json', '--replay', 't')).rejects.toThrow(/--model/);
-  });
-
-  it('refuses an unknown provenance', async () => {
-    const { program } = harness();
-    await expect(run(program, 'eval', 'context', 'context.json', '--replay', 't', '--model', 'gpt')).rejects.toThrow(/--model.*fake.*real/);
+  it('states unknown for transcripts that do not record what answered, instead of guessing', async () => {
+    const context = harness();
+    for (const scenario of SCENARIOS) {
+      for (const suffix of ['on', 'off']) {
+        const caseId = `${scenario}-${suffix}`;
+        const { answeredBy: _dropped, ...bare } = transcript(caseId) as Transcript & { answeredBy?: unknown };
+        context.stored.set(`/w/t/${caseId}.0.transcript.jsonl`, encodeTranscript(bare as Transcript));
+      }
+    }
+    await run(context.program, 'eval', 'context', 'context.json', '--replay', 't');
+    expect(context.stdout.join('')).toContain('model: unknown');
   });
 
   it('stores a report that compare can read', async () => {
@@ -177,6 +192,14 @@ describe('momonga eval context', () => {
     expect(parsed).toMatchObject({ dataset: 'sample', model: 'real' });
   });
 });
+
+const QUALITY_NAMES = ['continuationRate', 'governanceFidelity', 'governanceConsistency', 'governanceMinimality', 'memoryStaleRate', 'retrievalPrecision', 'retrievalRecall'];
+
+const measuredQuality = (reportText: string): string => {
+  const report = JSON.parse(reportText) as { cases: Record<string, unknown>[] };
+  const cells = Object.fromEntries(QUALITY_NAMES.map((name) => [name, { numerator: 1, denominator: 2 }]));
+  return JSON.stringify({ ...report, cases: report.cases.map((entry) => ({ ...entry, quality: cells })) });
+};
 
 describe('momonga eval compare', () => {
   const comparing = async (baseline: string, candidate: string) => {
@@ -188,7 +211,7 @@ describe('momonga eval compare', () => {
   };
 
   it('exits 0 and prints PASS when the candidate clears the gate', async () => {
-    const { completed, stdout } = await comparing(await reportFile('a.json', 2, 'real'), await reportFile('b.json', 0, 'real'));
+    const { completed, stdout } = await comparing(measuredQuality(await reportFile('a.json', 2, 'real')), measuredQuality(await reportFile('b.json', 0, 'real')));
     expect(stdout.join('')).toContain('gate: PASS');
     expect(completed).toEqual([0]);
   });
@@ -250,13 +273,13 @@ describe('momonga eval context --settings', () => {
   it('belongs to a live run, so a replay refuses it', async () => {
     const { program, stored } = harness();
     stored.set('/w/policy.json', JSON.stringify({ context: { cachePrefix: true } }));
-    await expect(run(program, 'eval', 'context', 'context.json', '--replay', 't', '--model', 'real', '--settings', 'policy.json')).rejects.toThrow(/--settings.*live run/);
+    await expect(run(program, 'eval', 'context', 'context.json', '--replay', 't', '--settings', 'policy.json')).rejects.toThrow(/--settings.*live run/);
   });
 
   it('refuses an overlay with a key outside the token design before any case runs, and names the file', async () => {
     const { program, stored, completed } = harness();
     stored.set('/w/bad.json', JSON.stringify({ context: { autoCompact: false } }));
-    await expect(run(program, 'eval', 'context', 'context.json', '--model', 'fake', '--alias', 'default', '--settings', 'bad.json')).rejects.toThrow(/bad\.json/);
+    await expect(run(program, 'eval', 'context', 'context.json', '--alias', 'default', '--settings', 'bad.json')).rejects.toThrow(/bad\.json/);
     expect(completed).toEqual([]);
   });
 });
@@ -270,7 +293,7 @@ describe('momonga eval compare --gate token, the policies and the code digests',
         context.stored.set(`/w/t/${scenario}-${side}.0.transcript.jsonl`, encodeTranscript({ ...transcript(`${scenario}-${side}`), policy, codeDigest: 'e'.repeat(64) }));
       }
     }
-    await run(context.program, 'eval', 'context', 'context.json', '--replay', 't', '--model', 'real', '--report', 'r.json');
+    await run(context.program, 'eval', 'context', 'context.json', '--replay', 't', '--report', 'r.json');
     const report = JSON.parse(context.stored.get('/w/r.json') ?? '{}');
     expect(report.policy).toEqual(policy);
     expect(report.codeDigest).toBe('e'.repeat(64));
@@ -279,7 +302,7 @@ describe('momonga eval compare --gate token, the policies and the code digests',
   it('refuses a replay whose transcripts record different code digests', async () => {
     const context = harness();
     context.stored.set('/w/t/a-on.0.transcript.jsonl', encodeTranscript({ ...transcript('a-on'), codeDigest: 'f'.repeat(64) }));
-    await expect(run(context.program, 'eval', 'context', 'context.json', '--replay', 't', '--model', 'real')).rejects.toThrow(/codeDigest/);
+    await expect(run(context.program, 'eval', 'context', 'context.json', '--replay', 't')).rejects.toThrow(/codeDigest/);
     expect(context.completed).toEqual([]);
   });
 

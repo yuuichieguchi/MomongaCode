@@ -135,9 +135,12 @@ describe('momonga models, cost and memory', () => {
     expect(jsonOf((await runCli(home, ['memory', 'show', id, '--json'])).stdout)).toMatchObject({ id, scope: 'user', project: null, text: note });
 
     const deleted = await runCli(home, ['memory', 'delete', id]);
-    expect(deleted.stdout).toBe(`deleted memory ${id}\n`);
+    expect(deleted.stdout).toBe(`retired memory ${id}; it stays in momonga memory history\n`);
     expect((await runCli(home, ['memory', 'list'])).stdout).toBe('no memories\n');
-    const missing = await runCli(home, ['memory', 'show', id]);
+    const retired = await runCli(home, ['memory', 'show', id]);
+    expect(retired.code).toBe(0);
+    expect(retired.stdout).toContain(note);
+    const missing = await runCli(home, ['memory', 'show', '0193a1b2-0000-7000-8000-00000000dead']);
     expect(missing.code).toBe(1);
     expect(missing.stderr).toContain('404');
   });

@@ -27,7 +27,7 @@ const pause = async (settle: ReflectionSettle): Promise<void> => {
 };
 
 export const goldenRunApi = (
-  client: Pick<RuntimeClient, 'createSession' | 'createRun' | 'streamEvents' | 'getRun' | 'runReflection' | 'resolveApproval' | 'cancel'>,
+  client: Pick<RuntimeClient, 'createSession' | 'createRun' | 'streamEvents' | 'getRun' | 'runReflection' | 'runAnsweredBy' | 'resolveApproval' | 'cancel'>,
   sessionEnv: Readonly<Record<string, string>> | undefined,
   settle: ReflectionSettle,
 ): EvalRunApi => {
@@ -55,6 +55,7 @@ export const goldenRunApi = (
       id: (await client.createRun(sessionId, input.input, input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs })).run.id,
     }),
     events,
+    answeredBy: async (runId) => (await client.runAnsweredBy(runId)).answeredBy,
     getRun: async (runId) => {
       const run = await client.getRun(runId);
       const modelAlias = pinnedAliases.get(run.sessionId);

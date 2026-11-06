@@ -98,7 +98,7 @@ describe('MemoryView schema additions', () => {
     text: 'tests live in test/',
     source: { kind: 'tool', sessionId: 's1', runId: 'r1', step: 2, callId: 'c1', seq: 5 },
     createdAt: 1,
-    lastUsedAt: 2,
+    keptAt: 2,
   };
   const evidence = [
     { kind: 'file', project: '/work/a', path: 'src/a.ts', sha256: 'abc' },

@@ -2,7 +2,6 @@ import { RECORDED_IDENTITY } from './fixtures.ts';
 import { describe, expect, it } from 'vitest';
 import {
   CONTEXT_DATASET_FORMAT,
-  buildContextReport,
   decodeTranscript,
   encodeTranscript,
   expandContextDataset,
@@ -14,6 +13,7 @@ import {
 } from '@momonga/eval';
 import type { ContextCaseHost, EvalRunApi, Transcript, TranscriptReflection } from '@momonga/eval';
 import { contextCase } from './context-fixtures.ts';
+import { buildReportAs } from './answered-fixtures.ts';
 
 const datasetOf = (extra: Record<string, unknown>) =>
   parseContextDataset(
@@ -45,6 +45,7 @@ const host = (
       if (inputOfRun.get(runId) === hangOn) await new Promise<void>((resolve) => releases.push(resolve));
     },
     reflectionOf: async (runId) => reflect(inputOfRun.get(runId) ?? ''),
+    answeredBy: async () => [],
     getRun: async (runId) => ({ id: runId, status: 'COMPLETED', step: 1, usage: { inputTokens: 0, outputTokens: 0, totalTokens: tokensOf(inputOfRun.get(runId) ?? '') } }),
     resolveApproval: async () => undefined,
     cancelRun: async (runId) => {
@@ -87,7 +88,7 @@ describe('noise turns of a live run', () => {
       [10, 14],
       [10, 14],
     ]);
-    const report = buildContextReport({ dataset, transcripts, model: 'fake', seed: 1, datasetSeed: 3 });
+    const report = buildReportAs({ dataset, transcripts, model: 'fake', seed: 1, datasetSeed: 3 });
     expect(report.noiseTokens).toBe(28);
     expect(report.cases.map((entry) => entry.totalTokens)).toEqual([10, 10]);
     expect(report.metrics.tokensPerSuccess).toMatchObject({ tokens: 20, successes: 2 });
@@ -110,7 +111,7 @@ describe('noise turns of a live run', () => {
     const first = transcripts[0] as Transcript;
     expect(first.noiseTokens).toBe(7 + 35 + 7);
     expect(first.noiseReflectionsUnsettled).toBe(1);
-    const report = buildContextReport({ dataset, transcripts, model: 'real', seed: 1, datasetSeed: 3 });
+    const report = buildReportAs({ dataset, transcripts, model: 'real', seed: 1, datasetSeed: 3 });
     expect(report.unsettledNoiseReflections).toBe(transcripts.reduce((sum, entry) => sum + (entry.noiseReflectionsUnsettled ?? 0), 0));
     expect(report.cases.every((entry) => entry.tokens?.unsettledReflections === 0)).toBe(true);
     expect(formatContextReport(report)).toMatch(/noise reflections unsettled \d+/);
@@ -153,7 +154,7 @@ describe('noise turns of a live run', () => {
     const { transcripts } = await runContextDataset(expandContextDataset(dataset, 3), ports(host(() => 5).open));
     const decoded = transcripts.map((transcript) => decodeTranscript(encodeTranscript(transcript), 'x'));
     expect(decoded.map((transcript) => transcript.noiseTokens)).toEqual([10, 10]);
-    const report = buildContextReport({ dataset, transcripts: decoded, model: 'fake', seed: 1, datasetSeed: 3 });
+    const report = buildReportAs({ dataset, transcripts: decoded, model: 'fake', seed: 1, datasetSeed: 3 });
     expect(parseContextReport(encodeContextReport(report), 'x').noiseTokens).toBe(20);
   });
 
@@ -172,7 +173,7 @@ describe('noise turns of a live run', () => {
     const { transcripts } = await runContextDataset(expanded, ports(context.open, { deadline: async () => undefined }));
     expect(context.cancelled).toHaveLength(2);
     expect(context.inputs).not.toContain('work on a');
-    const report = buildContextReport({ dataset, transcripts, model: 'fake', seed: 1, datasetSeed: 3 });
+    const report = buildReportAs({ dataset, transcripts, model: 'fake', seed: 1, datasetSeed: 3 });
     expect(report.stopped.map((stop) => stop.caseId)).toEqual(['a-on', 'a-off']);
     expect(report.cases.map((entry) => entry.passedRuns)).toEqual([0, 0]);
   });
@@ -198,7 +199,7 @@ describe('a stopped run in a replay', () => {
       }),
       'lenient.json',
     );
-    const report = buildContextReport({ dataset, transcripts: [stopped('a-on'), stopped('a-off')], model: 'fake', seed: 1 });
+    const report = buildReportAs({ dataset, transcripts: [stopped('a-on'), stopped('a-off')], model: 'fake', seed: 1 });
     expect(report.cases.map((entry) => entry.passedRuns)).toEqual([0, 0]);
     expect(report.stopped).toHaveLength(2);
   });

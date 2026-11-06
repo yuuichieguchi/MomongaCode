@@ -29,6 +29,7 @@ const ALL_PACKAGES = [
   'eval',
   'testkit',
   'verify',
+  'reliability',
 ] as const;
 
 interface PackageRule {
@@ -56,12 +57,13 @@ const MATRIX: Record<string, PackageRule> = {
   memory: rule(['protocol', 'foundation']),
   skills: rule(['protocol', 'foundation', 'config', 'tools']),
   agents: rule(['protocol', 'foundation', 'skills', 'tools']),
-  runtime: rule(['protocol', 'foundation', 'config', 'store', 'observability', 'policy', 'sandbox', 'tools', 'mcp', 'context', 'memory', 'skills', 'agents']),
+  runtime: rule(['protocol', 'foundation', 'config', 'store', 'observability', 'policy', 'sandbox', 'tools', 'mcp', 'context', 'memory', 'skills', 'agents', 'reliability']),
   supervisor: rule(['protocol', 'foundation', 'config']),
-  cli: rule(['protocol', 'foundation', 'config', 'eval'], ['runtime', 'gateway', 'supervisor', 'verify']),
-  eval: rule(['protocol', 'foundation', 'config', 'memory']),
+  cli: rule(['protocol', 'foundation', 'config', 'eval', 'reliability'], ['runtime', 'gateway', 'supervisor', 'verify']),
+  eval: rule(['protocol', 'foundation', 'config', 'memory', 'reliability']),
   testkit: rule(['protocol', 'foundation']),
   verify: rule(['protocol', 'foundation', 'config', 'policy']),
+  reliability: rule(['protocol', 'foundation']),
 };
 
 export interface ImportSpecifier {
@@ -207,6 +209,32 @@ describe('architecture: memory package', () => {
     expect(checkFile('context', contextFile, "import { a } from '@momonga/memory';").map(({ reason }) => reason)).toEqual(['context may not import memory']);
     expect(checkManifest('context', { '@momonga/memory': '*' })).toEqual(['context must not depend on @momonga/memory']);
     expect(checkFile('memory', path.join(memoryDir, 'src', 'index.ts'), "import { s } from '@momonga/store';").map(({ reason }) => reason)).toEqual(['memory may not import store']);
+  });
+});
+
+describe('architecture: reliability package', () => {
+  const reliabilityDir = path.join(packagesDir, 'reliability');
+  const fileIn = (packageName: string): string => path.join(packagesDir, packageName, 'src', 'index.ts');
+
+  it('exists with an index that is the package entry point, imported by runtime, eval and cli, never by store, and importing protocol and foundation only', () => {
+    for (const importer of ['runtime', 'eval', 'cli']) {
+      expect(checkFile(importer, fileIn(importer), "import { foldFacts } from '@momonga/reliability';")).toEqual([]);
+    }
+    expect(checkFile('store', fileIn('store'), "import { foldFacts } from '@momonga/reliability';")).toHaveLength(1);
+    expect(checkManifest('store', { '@momonga/reliability': '*' })).toEqual(['store must not depend on @momonga/reliability']);
+    expect(checkFile('reliability', fileIn('reliability'), "import { a } from '@momonga/protocol';\nimport { b } from '@momonga/foundation';")).toEqual([]);
+    for (const forbidden of ['store', 'observability', 'eval', 'runtime', 'config']) {
+      expect(checkFile('reliability', fileIn('reliability'), `import { x } from '@momonga/${forbidden}';`)).toHaveLength(1);
+    }
+    expect(fs.existsSync(path.join(reliabilityDir, 'src', 'index.ts'))).toBe(true);
+    const manifest = JSON.parse(fs.readFileSync(path.join(reliabilityDir, 'package.json'), 'utf8')) as {
+      name: string;
+      exports: Record<string, string>;
+      dependencies: Record<string, string>;
+    };
+    expect(manifest.name).toBe('@momonga/reliability');
+    expect(manifest.exports).toEqual({ '.': './src/index.ts' });
+    expect(manifest.dependencies).toEqual({ '@momonga/foundation': '*', '@momonga/protocol': '*' });
   });
 });
 
@@ -506,6 +534,7 @@ describe('architecture: a large-window target gets the whole tool set', () => {
           taskSeq: 1,
           activatedSkills: [],
           history: [],
+          readers: {},
         },
         evicted: new Set(),
         recordedReferences: new Set(),

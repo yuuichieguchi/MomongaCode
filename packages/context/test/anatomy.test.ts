@@ -98,7 +98,7 @@ describe('the anatomy of a built context', () => {
     const sources = sourcesWith({
       taskSeq: 0,
       summary: { item: summaryItem, replacedThroughSeq: 2 },
-      workingState: 'Files written: src/parser.ts',
+      workingState: () => 'Files written: src/parser.ts',
       history: [call(1, 'old'), output(2, 'old', 'old output'), assistant(3, 'Continuing with the parser.')],
     });
     const built = await buildContext(inputFor(capabilities, { sources }), harness(capabilities).ports);
@@ -118,7 +118,7 @@ describe('the anatomy of a built context', () => {
       text: 'The team deploys with pnpm.',
       source: { kind: 'tool', sessionId: 's1', runId: 'run-1', step: 1, callId: 'c1', seq: 4 },
       createdAt: Date.UTC(2026, 10, 1),
-      lastUsedAt: Date.UTC(2026, 10, 2),
+      keptAt: Date.UTC(2026, 10, 2),
       kind: 'fact',
       state: 'active',
       duplicateOf: null,

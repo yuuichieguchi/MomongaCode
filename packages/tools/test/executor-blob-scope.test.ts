@@ -21,7 +21,7 @@ const recordingBlobs = () => {
 describe('blobs handed to a tool', () => {
   it('are scoped to the run of the call, for a read, a put and the truncation of an oversized result', async () => {
     const { port, puts, reads } = recordingBlobs();
-    const harness = makeHarness({ maxInlineOutputChars: 200, executor: { blobs: port } });
+    const harness = makeHarness({ outputLimitChars: 200, executor: { blobs: port } });
     const tool = makeTool('Scoped', {
       execute: async (_input, ctx) => {
         ctx.blobs.put('data', { mediaType: 'text/plain' });

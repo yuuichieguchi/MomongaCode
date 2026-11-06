@@ -7,16 +7,18 @@ import type { ExportResult } from '@opentelemetry/core';
 import { InMemorySpanExporter } from '@opentelemetry/sdk-trace';
 import type { SpanExporter } from '@opentelemetry/sdk-trace';
 import {
+  BODY_PURGE_INTERVAL_MS,
   createBodyQueue,
   createTelemetry,
   createTraceStoreExporter,
   openTraceStore,
   startAgentSpan,
+  startBodyPurge,
   startChatSpan,
 } from '@momonga/observability';
 import type { BodyRecord, TraceStore } from '@momonga/observability';
-import { createFakeClock } from '@momonga/testkit';
-import { QUIET_BATCH, RUN_ID, START_MS, harness, openStore, registerCleanup } from './helpers.ts';
+import { createFakeClock, createFakeTimers } from '@momonga/testkit';
+import { CONTENT, QUIET_BATCH, RUN_ID, START_MS, dumpAllRows, harness, openStore, registerCleanup } from './helpers.ts';
 
 const captureErrors = (): unknown[] => {
   const errors: unknown[] = [];
@@ -30,7 +32,22 @@ const captureErrors = (): unknown[] => {
 const chatSpan = (tracer: Parameters<typeof startChatSpan>[0]) =>
   startChatSpan(tracer, { providerName: 'openai', billing: 'metered', requestModel: 'gpt-x', stream: false, runId: RUN_ID, step: 1, attempt: 1 });
 
-const bodiesEnabled = { enabled: true, retentionMs: 1000 };
+const content = { retentionMs: 1000 };
+
+const INPUT = CONTENT.ATTR_GEN_AI_INPUT_MESSAGES;
+const OUTPUT = CONTENT.ATTR_GEN_AI_OUTPUT_MESSAGES;
+const TOOL_RESULT = CONTENT.ATTR_GEN_AI_TOOL_CALL_RESULT;
+const SYSTEM = CONTENT.ATTR_GEN_AI_SYSTEM_INSTRUCTIONS;
+
+const endedChat = (tracer: Parameters<typeof startChatSpan>[0], clock: { now(): number }, attributes: Record<string, string>) => {
+  const chat = chatSpan(tracer);
+  for (const [key, value] of Object.entries(attributes)) chat.setAttribute(key, value);
+  chat.end(clock.now());
+  return chat;
+};
+
+const bodyContents = (store: TraceStore, chat: { spanContext(): { spanId: string } }): string[] =>
+  store.bodiesForSpan(chat.spanContext().spanId).map((body) => body.content);
 
 const countRows = (file: string, table: string): number => {
   const db = new DatabaseSync(file, { readOnly: true });
@@ -41,24 +58,40 @@ const countRows = (file: string, table: string): number => {
   }
 };
 
-describe('recordBody is non-blocking and non-throwing', () => {
+const telemetryWith = (clock: ReturnType<typeof createFakeClock>, store: TraceStore, contentQueue: { maxQueuedBodies?: number; maxQueuedBytes?: number }) => {
+  const telemetry = createTelemetry({
+    serviceName: 's',
+    serviceVersion: '1',
+    clock,
+    store,
+    batch: QUIET_BATCH,
+    captureMessageContent: true,
+    contentRetentionMs: content.retentionMs,
+    contentQueue,
+  });
+  registerCleanup(() => telemetry.shutdown());
+  return telemetry;
+};
+
+describe('captured content is queued off the span path and never throws', () => {
   it('performs no store write until a flush', async () => {
-    const h = harness({ bodies: bodiesEnabled });
-    const chat = chatSpan(h.telemetry.tracer);
-    h.telemetry.recordBody(chat, { kind: 'input', content: 'queued' });
-    expect(h.store.bodiesForSpan(chat.spanContext().spanId)).toEqual([]);
+    const h = harness({ content });
+    const chat = endedChat(h.telemetry.tracer, h.clock, { [INPUT]: 'queued' });
+    expect(bodyContents(h.store, chat)).toEqual([]);
     expect(countRows(h.file, 'bodies')).toBe(0);
-    chat.end(h.clock.now());
     await h.telemetry.forceFlush();
-    expect(h.store.bodiesForSpan(chat.spanContext().spanId).map((body) => body.content)).toEqual(['queued']);
+    expect(bodyContents(h.store, chat)).toEqual(['queued']);
   });
 
   it('does not throw on a closed store and reports the persistence failure to the global error handler', async () => {
     const errors = captureErrors();
-    const h = harness({ bodies: bodiesEnabled });
+    const h = harness({ content });
     const chat = chatSpan(h.telemetry.tracer);
     h.store.close();
-    expect(() => h.telemetry.recordBody(chat, { kind: 'input', content: 'x' })).not.toThrow();
+    expect(() => {
+      chat.setAttribute(INPUT, 'x');
+      chat.end(h.clock.now());
+    }).not.toThrow();
     await expect(h.telemetry.forceFlush()).resolves.toBeUndefined();
     expect(errors.length).toBeGreaterThan(0);
   });
@@ -67,82 +100,64 @@ describe('recordBody is non-blocking and non-throwing', () => {
     const errors = captureErrors();
     const clock = createFakeClock(START_MS);
     const { store } = openStore(clock);
-    const telemetry = createTelemetry({
-      serviceName: 's',
-      serviceVersion: '1',
-      clock,
-      store,
-      batch: QUIET_BATCH,
-      bodies: { ...bodiesEnabled, maxQueuedBodies: 2 },
-    });
-    registerCleanup(() => telemetry.shutdown());
-    const chat = chatSpan(telemetry.tracer);
-    for (const content of ['a', 'b', 'c']) telemetry.recordBody(chat, { kind: 'input', content });
+    const telemetry = telemetryWith(clock, store, { maxQueuedBodies: 2 });
+    const chat = endedChat(telemetry.tracer, clock, { [INPUT]: 'a', [OUTPUT]: 'b', [TOOL_RESULT]: 'c' });
     expect(errors).toHaveLength(0);
     await telemetry.forceFlush();
     expect(errors).toHaveLength(1);
     expect(String(errors[0])).toContain('dropped 1 bodies');
-    expect(store.bodiesForSpan(chat.spanContext().spanId).map((body) => body.content)).toEqual(['a', 'b']);
+    expect(bodyContents(store, chat)).toEqual(['a', 'b']);
   });
 
   it('drops bodies beyond the byte budget measured in UTF-8 bytes', async () => {
     const errors = captureErrors();
     const clock = createFakeClock(START_MS);
     const { store } = openStore(clock);
-    const telemetry = createTelemetry({
-      serviceName: 's',
-      serviceVersion: '1',
-      clock,
-      store,
-      batch: QUIET_BATCH,
-      bodies: { ...bodiesEnabled, maxQueuedBytes: 5 },
-    });
-    registerCleanup(() => telemetry.shutdown());
-    const chat = chatSpan(telemetry.tracer);
-    for (const content of ['\u00e9\u00e9\u00e9', '\u00e9\u00e9', 'x']) telemetry.recordBody(chat, { kind: 'input', content });
+    const telemetry = telemetryWith(clock, store, { maxQueuedBytes: 5 });
+    const chat = endedChat(telemetry.tracer, clock, { [SYSTEM]: '\u00e9\u00e9\u00e9', [INPUT]: '\u00e9\u00e9', [OUTPUT]: 'x' });
     await telemetry.forceFlush();
     expect(errors).toHaveLength(1);
-    expect(store.bodiesForSpan(chat.spanContext().spanId).map((body) => body.content)).toEqual(['\u00e9\u00e9', 'x']);
+    expect(bodyContents(store, chat)).toEqual(['\u00e9\u00e9', 'x']);
   });
 
   it('aggregates 100 overflow drops into a single report', async () => {
     const errors = captureErrors();
     const clock = createFakeClock(START_MS);
     const { store } = openStore(clock);
-    const telemetry = createTelemetry({
-      serviceName: 's',
-      serviceVersion: '1',
-      clock,
-      store,
-      batch: QUIET_BATCH,
-      bodies: { ...bodiesEnabled, maxQueuedBodies: 1 },
-    });
-    registerCleanup(() => telemetry.shutdown());
-    const chat = chatSpan(telemetry.tracer);
-    for (let index = 0; index < 101; index += 1) telemetry.recordBody(chat, { kind: 'input', content: String(index) });
+    const telemetry = telemetryWith(clock, store, { maxQueuedBodies: 1 });
+    for (let index = 0; index < 101; index += 1) endedChat(telemetry.tracer, clock, { [INPUT]: String(index) });
     await telemetry.forceFlush();
     expect(errors).toHaveLength(1);
     expect(String(errors[0])).toContain('dropped 100 bodies since last export');
   });
 
-  it('after shutdown recordBody enqueues nothing and reports one aggregated error', async () => {
+  it('a queue closed at shutdown enqueues nothing and reports one aggregated error', async () => {
     const errors = captureErrors();
-    const h = harness({ bodies: bodiesEnabled });
-    const chat = chatSpan(h.telemetry.tracer);
-    await h.telemetry.shutdown();
-    for (const content of ['a', 'b', 'c']) h.telemetry.recordBody(chat, { kind: 'input', content });
+    const queue = createBodyQueue({ maxEntries: 10, maxBytes: 1000 });
+    queue.close('telemetry is shut down');
+    for (const index of [1, 2, 3]) queue.push({ traceId: 't'.repeat(32), spanId: 's'.repeat(16), kind: INPUT, content: String(index), createdAtMs: START_MS, expiresAtMs: START_MS + 1 });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(errors).toHaveLength(1);
     expect(String(errors[0])).toContain('telemetry is shut down; dropped 3 bodies');
+    expect(queue.drain()).toEqual([]);
+  });
+
+  it('a span ended after shutdown stores no span and no body', async () => {
+    const h = harness({ content });
+    const chat = chatSpan(h.telemetry.tracer);
+    await h.telemetry.shutdown();
+    chat.setAttribute(INPUT, 'late');
+    chat.end(h.clock.now());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(h.store.spansForRun(RUN_ID)).toEqual([]);
     expect(h.store.bodiesForSpan(chat.spanContext().spanId)).toEqual([]);
   });
 
-  it('persists queued bodies at shutdown even when no span ended', async () => {
-    const h = harness({ bodies: bodiesEnabled });
-    const chat = chatSpan(h.telemetry.tracer);
-    h.telemetry.recordBody(chat, { kind: 'output', content: 'late' });
+  it('persists the bodies of spans that ended before shutdown even when no flush ran', async () => {
+    const h = harness({ content });
+    const chat = endedChat(h.telemetry.tracer, h.clock, { [OUTPUT]: 'late' });
     await h.telemetry.shutdown();
-    expect(h.store.bodiesForSpan(chat.spanContext().spanId).map((body) => body.content)).toEqual(['late']);
+    expect(bodyContents(h.store, chat)).toEqual(['late']);
   });
 });
 
@@ -225,28 +240,33 @@ describe('flush and shutdown failure policy', () => {
   });
 });
 
-describe('bodies.retentionMs validation', () => {
-  it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])('rejects %s when bodies are enabled', (retentionMs) => {
+describe('contentRetentionMs validation', () => {
+  it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])('rejects %s when message content is captured into a store', (contentRetentionMs) => {
     const clock = createFakeClock(START_MS);
     const { store } = openStore(clock);
     expect(() =>
-      createTelemetry({ serviceName: 's', serviceVersion: '1', clock, store, batch: QUIET_BATCH, bodies: { enabled: true, retentionMs } }),
+      createTelemetry({ serviceName: 's', serviceVersion: '1', clock, store, batch: QUIET_BATCH, captureMessageContent: true, contentRetentionMs }),
     ).toThrow(RangeError);
   });
 
-  it('ignores retentionMs when bodies are disabled', async () => {
+  it('requires contentRetentionMs when message content is captured into a store', () => {
     const clock = createFakeClock(START_MS);
-    const telemetry = createTelemetry({ serviceName: 's', serviceVersion: '1', clock, batch: QUIET_BATCH, bodies: { enabled: false, retentionMs: 0 } });
+    const { store } = openStore(clock);
+    expect(() => createTelemetry({ serviceName: 's', serviceVersion: '1', clock, store, batch: QUIET_BATCH, captureMessageContent: true })).toThrow(TypeError);
+  });
+
+  it('ignores contentRetentionMs when message content is not captured', async () => {
+    const clock = createFakeClock(START_MS);
+    const { store } = openStore(clock);
+    const telemetry = createTelemetry({ serviceName: 's', serviceVersion: '1', clock, store, batch: QUIET_BATCH, contentRetentionMs: 0 });
     await telemetry.shutdown();
   });
 });
 
 describe('body retention', () => {
   it('bodiesForSpan hides bodies whose retention has elapsed', async () => {
-    const h = harness({ bodies: bodiesEnabled });
-    const chat = chatSpan(h.telemetry.tracer);
-    h.telemetry.recordBody(chat, { kind: 'input', content: 'x' });
-    chat.end(h.clock.now());
+    const h = harness({ content });
+    const chat = endedChat(h.telemetry.tracer, h.clock, { [INPUT]: 'x' });
     await h.telemetry.forceFlush();
     h.clock.advance(999);
     expect(h.store.bodiesForSpan(chat.spanContext().spanId)).toHaveLength(1);
@@ -254,25 +274,26 @@ describe('body retention', () => {
     expect(h.store.bodiesForSpan(chat.spanContext().spanId)).toEqual([]);
   });
 
-  it('a batch that writes bodies purges expired bodies', async () => {
-    const h = harness({ bodies: bodiesEnabled });
-    const first = chatSpan(h.telemetry.tracer);
-    h.telemetry.recordBody(first, { kind: 'input', content: 'old' });
-    first.end(h.clock.now());
+  it('an export never purges; the purge timer removes the expired bodies', async () => {
+    const h = harness({ content: { retentionMs: BODY_PURGE_INTERVAL_MS + BODY_PURGE_INTERVAL_MS / 6 } });
+    endedChat(h.telemetry.tracer, h.clock, { [INPUT]: 'old' });
     await h.telemetry.forceFlush();
-    h.clock.advance(2000);
-    const second = chatSpan(h.telemetry.tracer);
-    h.telemetry.recordBody(second, { kind: 'input', content: 'new' });
-    second.end(h.clock.now());
+    h.clock.advance(BODY_PURGE_INTERVAL_MS / 3);
+    endedChat(h.telemetry.tracer, h.clock, { [INPUT]: 'new' });
     await h.telemetry.forceFlush();
+    expect(countRows(h.file, 'bodies')).toBe(2);
+    const timers = createFakeTimers(h.clock);
+    const reportedErrors: unknown[] = [];
+    const purge = startBodyPurge({ store: h.store, timers, report: (error) => void reportedErrors.push(error) });
+    registerCleanup(() => purge.stop());
+    timers.advance(BODY_PURGE_INTERVAL_MS);
     expect(countRows(h.file, 'bodies')).toBe(1);
+    expect(reportedErrors).toEqual([]);
   });
 
   it('opening the store purges expired bodies', async () => {
-    const h = harness({ bodies: bodiesEnabled });
-    const chat = chatSpan(h.telemetry.tracer);
-    h.telemetry.recordBody(chat, { kind: 'input', content: 'old' });
-    chat.end(h.clock.now());
+    const h = harness({ content });
+    endedChat(h.telemetry.tracer, h.clock, { [INPUT]: 'old' });
     await h.telemetry.shutdown();
     h.store.close();
     expect(countRows(h.file, 'bodies')).toBe(1);
@@ -283,10 +304,8 @@ describe('body retention', () => {
 
   it('a purge removes the purged bytes from the database file and compact removes them from the WAL', async () => {
     const marker = 'WALMARKER-5f2c9d41';
-    const h = harness({ bodies: bodiesEnabled });
-    const chat = chatSpan(h.telemetry.tracer);
-    h.telemetry.recordBody(chat, { kind: 'input', content: marker });
-    chat.end(h.clock.now());
+    const h = harness({ content });
+    endedChat(h.telemetry.tracer, h.clock, { [INPUT]: marker });
     await h.telemetry.forceFlush();
     const bytes = (): string =>
       [h.file, `${h.file}-wal`].map((file) => (fs.existsSync(file) ? fs.readFileSync(file).toString('latin1') : '')).join('|');
@@ -300,10 +319,8 @@ describe('body retention', () => {
 
   it('a purge never blocks on a concurrent reader and reports the incomplete checkpoint', async () => {
     const errors = captureErrors();
-    const h = harness({ bodies: bodiesEnabled });
-    const chat = chatSpan(h.telemetry.tracer);
-    h.telemetry.recordBody(chat, { kind: 'input', content: 'x' });
-    chat.end(h.clock.now());
+    const h = harness({ content });
+    endedChat(h.telemetry.tracer, h.clock, { [INPUT]: 'x' });
     await h.telemetry.forceFlush();
     const reader = new DatabaseSync(h.file, { readOnly: true });
     try {
@@ -325,7 +342,7 @@ describe('housekeeping is separate from the write', () => {
   const bodyRecord = (spanId: string, expiresAtMs: number): BodyRecord => ({
     traceId: 't'.repeat(32),
     spanId,
-    kind: 'input',
+    kind: INPUT,
     content: 'x',
     createdAtMs: START_MS,
     expiresAtMs,
@@ -340,11 +357,8 @@ describe('housekeeping is separate from the write', () => {
     expect(countRows(file, 'bodies')).toBe(2);
   });
 
-  it('a purge that throws neither loses the batch nor escapes, and is reported', async () => {
-    const errors = captureErrors();
-    const clock = createFakeClock(START_MS);
-    const { store } = openStore(clock);
-    const brokenPurge: TraceStore = new Proxy(store, {
+  const brokenPurge = (store: TraceStore): TraceStore =>
+    new Proxy(store, {
       get: (target, key, receiver) =>
         key === 'purgeExpired' || key === 'purgeBodies'
           ? () => {
@@ -352,15 +366,52 @@ describe('housekeeping is separate from the write', () => {
             }
           : Reflect.get(target, key, receiver),
     });
-    const telemetry = createTelemetry({ serviceName: 's', serviceVersion: '1', clock, store: brokenPurge, batch: QUIET_BATCH, bodies: bodiesEnabled });
+
+  it('an export neither purges nor loses the batch when the purge would throw', async () => {
+    const errors = captureErrors();
+    const clock = createFakeClock(START_MS);
+    const { store } = openStore(clock);
+    const telemetry = createTelemetry({
+      serviceName: 's',
+      serviceVersion: '1',
+      clock,
+      store: brokenPurge(store),
+      batch: QUIET_BATCH,
+      captureMessageContent: true,
+      contentRetentionMs: content.retentionMs,
+    });
     registerCleanup(() => telemetry.shutdown());
-    const chat = chatSpan(telemetry.tracer);
-    telemetry.recordBody(chat, { kind: 'input', content: 'kept' });
-    chat.end(clock.now());
+    const chat = endedChat(telemetry.tracer, clock, { [INPUT]: 'kept' });
     await expect(telemetry.forceFlush()).resolves.toBeUndefined();
     expect(store.spansForRun(RUN_ID)).toHaveLength(1);
-    expect(store.bodiesForSpan(chat.spanContext().spanId)).toHaveLength(1);
-    expect(errors.map(String).join('|')).toContain('database is locked');
+    expect(bodyContents(store, chat)).toEqual(['kept']);
+    expect(errors).toEqual([]);
+  });
+
+  it('the purge timer reports a purge that throws and keeps ticking', () => {
+    const clock = createFakeClock(START_MS);
+    const timers = createFakeTimers(clock);
+    const { store } = openStore(clock);
+    const reported: unknown[] = [];
+    const purge = startBodyPurge({ store: brokenPurge(store), timers, report: (error) => void reported.push(error) });
+    registerCleanup(() => purge.stop());
+    timers.advance(BODY_PURGE_INTERVAL_MS);
+    expect(reported.map(String).join('|')).toContain('database is locked');
+    expect(timers.pending()).toHaveLength(1);
+    timers.advance(BODY_PURGE_INTERVAL_MS);
+    expect(reported).toHaveLength(2);
+  });
+
+  it('stopping the purge timer clears the pending timer and no tick runs afterwards', () => {
+    const clock = createFakeClock(START_MS);
+    const timers = createFakeTimers(clock);
+    const { store } = openStore(clock);
+    const reported: unknown[] = [];
+    const purge = startBodyPurge({ store: brokenPurge(store), timers, report: (error) => void reported.push(error) });
+    purge.stop();
+    expect(timers.pending()).toEqual([]);
+    timers.advance(BODY_PURGE_INTERVAL_MS * 2);
+    expect(reported).toEqual([]);
   });
 });
 
@@ -368,7 +419,7 @@ describe('standalone store exporter', () => {
   const record = (): BodyRecord => ({
     traceId: 't'.repeat(32),
     spanId: 's'.repeat(16),
-    kind: 'output',
+    kind: OUTPUT,
     content: 'last words',
     createdAtMs: START_MS,
     expiresAtMs: START_MS + 1000,
@@ -379,7 +430,7 @@ describe('standalone store exporter', () => {
     const { store } = openStore(createFakeClock(START_MS));
     const queue = createBodyQueue(limits);
     queue.push(record());
-    const exporter = createTraceStoreExporter(store, queue);
+    const exporter = createTraceStoreExporter(store, { queue, retentionMs: 1000 });
     await expect(exporter[phase]?.()).resolves.toBeUndefined();
     expect(store.bodiesForSpan('s'.repeat(16)).map((body) => body.content)).toEqual(['last words']);
   });
@@ -390,8 +441,25 @@ describe('standalone store exporter', () => {
     const queue = createBodyQueue(limits);
     queue.push(record());
     store.close();
-    await expect(createTraceStoreExporter(store, queue).shutdown()).resolves.toBeUndefined();
+    await expect(createTraceStoreExporter(store, { queue, retentionMs: 1000 }).shutdown()).resolves.toBeUndefined();
     expect(errors).toHaveLength(1);
     expect(String(errors[0])).toContain('dropped 1 captured bodies');
+  });
+
+  it('refuses a span that carries message content when it has no body capture, reports it and stores nothing of it', async () => {
+    const errors = captureErrors();
+    const clock = createFakeClock(START_MS);
+    const { store, file } = openStore(clock);
+    const memory = new InMemorySpanExporter();
+    const telemetry = createTelemetry({ serviceName: 's', serviceVersion: '1', clock, exporters: [memory], batch: QUIET_BATCH });
+    registerCleanup(() => telemetry.shutdown());
+    endedChat(telemetry.tracer, clock, { [INPUT]: 'SECRET-without-capture' });
+    await telemetry.forceFlush();
+    const result = await new Promise<ExportResult>((resolve) => createTraceStoreExporter(store).export(memory.getFinishedSpans(), resolve));
+    expect(result.code).toBe(ExportResultCode.SUCCESS);
+    expect(errors).toHaveLength(1);
+    expect(String(errors[0])).toContain(INPUT);
+    expect(store.spansForRun(RUN_ID)).toEqual([]);
+    expect(dumpAllRows(file)).not.toContain('SECRET-without-capture');
   });
 });

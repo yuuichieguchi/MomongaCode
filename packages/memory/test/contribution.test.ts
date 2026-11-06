@@ -146,6 +146,32 @@ describe('measureContribution', () => {
   });
 });
 
+describe('a note returned by MemorySearch', () => {
+  const header = '[q1] (user memory, trusted origin, status unbound, saved 2026-11-02T00:00:00.000Z in run run-1 step 1)';
+
+  const searchedOutput = (text: string): RunEventPayload => ({ type: 'tool.completed', callId: 'c0', status: 'completed', output: `${header} ${text}`, memories: ['q1'] });
+
+  it("is an item that enters at the call's seq, so a step before the call earns nothing", () => {
+    const searched = item('use zorpLauncher', { fromSeq: 2 });
+    expect(contributedOf([said(1, 'zorpLauncher is mentioned too early'), searchedOutput('use zorpLauncher')], searched)).toBe(false);
+    expect(contributedOf([searchedOutput('use zorpLauncher'), said(2, 'Running zorpLauncher')], searched)).toBe(true);
+  });
+
+  it('is cut out of what the model had on screen, so the output that showed it does not hide its own use', () => {
+    const searched = item('use zorpLauncher', { fromSeq: 1 });
+    expect(contributedOf([searchedOutput('use zorpLauncher'), said(2, 'Running zorpLauncher')], searched)).toBe(true);
+    const plain: RunEventPayload = { type: 'tool.completed', callId: 'c0', status: 'completed', output: `${header} use zorpLauncher` };
+    expect(contributedOf([plain, said(2, 'Running zorpLauncher')], searched)).toBe(false);
+  });
+
+  it('leaves another note that carries the same words on screen', () => {
+    const searched = item('use zorpLauncher', { fromSeq: 1 });
+    const other = `[q2] (user memory, trusted origin, status unbound, saved 2026-11-02T00:00:00.000Z in run run-1 step 1) also zorpLauncher`;
+    const output: RunEventPayload = { type: 'tool.completed', callId: 'c0', status: 'completed', output: `${header} use zorpLauncher\n${other}`, memories: ['q1'] };
+    expect(contributedOf([output, said(2, 'Running zorpLauncher')], searched)).toBe(false);
+  });
+});
+
 describe('what the model was shown before the step', () => {
   const SYSTEM = layer('system', 'Be careful. You should run the checks before you answer, and return the result.');
 

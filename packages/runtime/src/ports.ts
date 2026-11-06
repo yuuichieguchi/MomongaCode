@@ -11,13 +11,13 @@ import type {
   HooksSettings,
   StreamEvent,
 } from '@momonga/protocol';
-import type { MemoryView } from '@momonga/protocol';
+import type { MemoryView, TargetAnswers } from '@momonga/protocol';
 import type { GatewayModel } from './gateway-client.ts';
 import type { AgentSet, ChildRuns } from '@momonga/agents';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { SkillSet } from '@momonga/skills';
 import type { Session } from '@momonga/store';
-import type { AnyTool, ShellHost, ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
+import type { AnyTool, ShellHost, ToolExecutor, ToolSessionState, ToolSet, WorkTreeObserver } from '@momonga/tools';
 
 export type { Clock };
 
@@ -41,6 +41,8 @@ export type GatewayPort = {
 
 export type AppendedRule = { effect: 'allow' | 'deny'; rule: string };
 
+export type TargetFacts = { adapter: string; model: string; answers?: TargetAnswers };
+
 export type SettingsPort = {
   rules(session: Session): Promise<PermissionRule[]>;
   hooks(session: Session): Promise<HooksSettings>;
@@ -50,6 +52,7 @@ export type SettingsPort = {
   tools(session: Session): Promise<ResolvedToolsSettings>;
   autoModeClassifier(): string | undefined;
   modelRoles(): ModelRoles;
+  modelTargets(): Readonly<Record<string, TargetFacts>>;
   appendRule(session: Session, entry: AppendedRule): Promise<void>;
   trusted(session: Session): boolean;
 };
@@ -58,11 +61,16 @@ export type SkillsPort = {
   load(session: Session): Promise<SkillSet>;
 };
 
+export type RecallCapacity = { capabilities: Capabilities; memoryShare?: number | undefined };
+
+export type RecallRequest = { query: string; capacity: RecallCapacity; pinnedIds?: readonly string[] };
+
 export type MemorySet = {
-  memories: readonly MemoryView[];
-  rank(query: string): readonly MemoryView[];
+  prepare(request: RecallRequest): Promise<void>;
+  ranked(): readonly MemoryView[];
+  hasMore(): boolean;
+  matchCap(): number | undefined;
   tools: readonly AnyTool[];
-  markUsed(ids: readonly string[]): void;
 };
 
 export type MemoryPort = {
@@ -107,6 +115,7 @@ export type ToolRuntimePort = {
   shellHost: ShellHost;
   markerDir: string;
   sessionState(session: Session): ToolSessionState;
+  workTreeObserver(session: Session, trusted: boolean): WorkTreeObserver;
 };
 
 export type TraceSpan = {

@@ -52,7 +52,7 @@ export const outputTextFor = (items: readonly InputItem[], callId: string): stri
   return found.output.replace(/^<tool_output [^>]*>\n([\s\S]*)\n<\/tool_output boundary="[^"]*">$/, '$1');
 };
 
-export const OMITTED = /^\[tool output omitted: \d+ tokens; stored as [0-9a-f]{64}; read it with ReadOutput\]$/;
+export const OMITTED = /^\[tool output omitted: \d+ tokens; stored as [0-9a-f]{64}\]$/;
 
 export type AppendRecorder = { store: RuntimeStore; appends: RunEventPayload[][] };
 

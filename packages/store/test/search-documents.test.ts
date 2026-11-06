@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createRedactor } from '@momonga/foundation';
-import { harness, rawDb } from './helpers.ts';
+import { anchorsOf, harness, rawDb } from './helpers.ts';
 import { FAKE_KEY, finishedRun, indexAll, projectDir, redactor } from './search-fixture.ts';
 
 type DocRow = { level: string; session_id: string; run_id: string; step: number | null; project: string; origin: string; outcome: string; seq_from: number; seq_to: number; at: number; body: string };
@@ -95,7 +95,7 @@ describe('search documents', () => {
     expect(bodies.join('\n')).not.toContain(FAKE_KEY);
     expect(indexMatches(dbPath, 'abcdefghij')).toBe(0);
     expect(indexMatches(dbPath, 'xyz012345')).toBe(0);
-    expect(store.search.query({ trusted: true, project: '/work/a' }, { query: 'abcdefghij', scope: 'project' }).anchors).toEqual([]);
+    expect(anchorsOf(store.search.query({ trusted: true, project: '/work/a' }, { query: 'abcdefghij', scope: 'project' }))).toEqual([]);
   });
 
   it('never cuts a secret before redacting it, wherever the head and tail end', async () => {

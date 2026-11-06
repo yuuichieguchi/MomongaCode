@@ -7,7 +7,9 @@ import { COMPACTION_SETTINGS, expandContextDataset } from './context-dataset.ts'
 import { POLICY_OVERLAY_SCHEMA, normalisePolicyOverlay } from './context-policy.ts';
 import type { PolicyOverlay } from './context-policy.ts';
 import type { CompactionSetting, ContextDataset, ExpandedCase } from './context-dataset.ts';
-import { compactionFactsOf, governanceCountsOf, lossSignalsOf, recalledOf, retrievalOf } from './context-metrics.ts';
+import { compactionFactsOf, goldRangesOf, governanceCountsOf, lossSignalsOf, recalledOf, retrievalOf } from './context-metrics.ts';
+import { QUALITY_METRICS } from './context-quality.ts';
+import type { QualityCell, QualityMetricName } from './context-quality.ts';
 import type { CompactionFacts, GovernanceCounts, Recalled, Retrieval } from './context-metrics.ts';
 import { describeFirstError, jsonOf } from './dataset.ts';
 import { grade } from './graders.ts';
@@ -16,15 +18,22 @@ import { EvalError, transcriptsByCase } from './runner.ts';
 import type { Proportion } from './stats.ts';
 import { caseTotalsOf, tokenFactsOf, tokenMetricsOf } from './token-metrics.ts';
 import type { CaseTokenTotals, RatioMetric, TokenFacts } from './token-metrics.ts';
-import type { Transcript } from './transcript.ts';
+import type { Answerer, Transcript } from './transcript.ts';
 
-export const CONTEXT_REPORT_FORMAT = 'momonga-eval-context-report/2';
+export const CONTEXT_REPORT_FORMAT = 'momonga-eval-context-report/3';
 const RETIRED_CONTEXT_REPORT_FORMATS: Readonly<Record<string, string>> = {
   'momonga-eval-context-report/1': 'the policy and the code digest of the runs',
+  'momonga-eval-context-report/2': 'the targets that answered the runs and whether each is a model or a script',
 };
 
-export const CONTEXT_MODELS = ['fake', 'real'] as const;
+export const CONTEXT_MODELS = ['fake', 'real', 'unknown'] as const;
 export type ContextModel = (typeof CONTEXT_MODELS)[number];
+
+export const modelKindOf = (answeredBy: readonly Answerer[], unrecordedAnswers: number): ContextModel => {
+  if (answeredBy.some((answerer) => answerer.answers === 'script')) return 'fake';
+  if (unrecordedAnswers > 0 || answeredBy.length === 0 || answeredBy.some((answerer) => answerer.answers === 'unknown')) return 'unknown';
+  return 'real';
+};
 
 export const MODEL_DEPENDENT_METRICS = [
   'cacheHitRatio',
@@ -56,6 +65,7 @@ export type ContextCaseReport = {
   totalTokens: number;
   compactions: number;
   lossSignals: number;
+  quality: Record<string, QualityCell>;
   tokens?: CaseTokenTotals;
 };
 
@@ -94,6 +104,8 @@ export type ContextReport = {
   datasetDigest: string;
   datasetSeed: number;
   model: ContextModel;
+  answeredBy: Answerer[];
+  unrecordedAnswers: number;
   modelAliases: string[];
   policy: PolicyOverlay | null;
   codeDigest: string | null;
@@ -117,6 +129,7 @@ type RunMeasure = {
   recalled: Recalled;
   retrieval: Retrieval | undefined;
   modelAlias: string | undefined;
+  quality: Record<QualityMetricName, Cluster>;
   token: TokenFacts;
 };
 
@@ -131,8 +144,6 @@ const sumFacts = (list: readonly CompactionFacts[]): CompactionFacts => ({
   unclassified: total(list, (facts) => facts.unclassified),
 });
 
-const lastSeqOf = (events: Transcript['events']): number => events.reduce((last, event) => ('seq' in event ? Math.max(last, event.seq) : last), 0);
-
 const measureRun = (entry: ExpandedCase, transcript: Transcript): RunMeasure => {
   const runs = [transcript.events, ...transcript.children.map((child) => child.events)];
   const facts = sumFacts(runs.map((events) => compactionFactsOf(events)));
@@ -140,19 +151,29 @@ const measureRun = (entry: ExpandedCase, transcript: Transcript): RunMeasure => 
     throw new EvalError(`case ${entry.id} has compaction off but its run ${transcript.run.id} holds ${facts.compactions} compaction(s), so the pair would compare nothing`);
   }
   const stopped = transcript.stopped !== undefined;
-  const beyond = stopped ? undefined : (entry.gold ?? []).find((range) => range.seqTo > lastSeqOf(transcript.events));
-  if (beyond !== undefined) {
-    throw new EvalError(`case ${entry.id} has the gold range ${beyond.seqFrom}..${beyond.seqTo} but run ${transcript.run.id} ends at seq ${lastSeqOf(transcript.events)}`);
-  }
+  const governance = governanceCountsOf(entry.rules, transcript.events, transcript.ruleIds);
+  const recalled = recalledOf(transcript.events);
+  const retrieval = entry.gold === undefined || stopped ? undefined : retrievalOf(goldRangesOf(entry.gold, transcript.events), transcript.events);
+  const passed = !stopped && grade(entry.graders, transcript).passed;
+  const none: Cluster = { numerator: 0, denominator: 0 };
   return {
-    passed: !stopped && grade(entry.graders, transcript).passed,
+    passed,
     tokens: transcript.run.usage.totalTokens,
     facts,
     signals: total(runs, (events) => lossSignalsOf(events).length),
-    governance: governanceCountsOf(entry.rules, transcript.events, transcript.ruleIds),
-    recalled: recalledOf(transcript.events),
-    retrieval: entry.gold === undefined || stopped ? undefined : retrievalOf(entry.gold, transcript.events),
+    governance,
+    recalled,
+    retrieval,
     modelAlias: transcript.run.modelAlias,
+    quality: {
+      continuationRate: { numerator: facts.compactions > 0 && passed ? 1 : 0, denominator: facts.compactions > 0 ? 1 : 0 },
+      governanceFidelity: governance === undefined ? none : { numerator: governance.bindingLoaded, denominator: governance.binding },
+      governanceConsistency: governance === undefined ? none : { numerator: governance.consistent ? 1 : 0, denominator: 1 },
+      governanceMinimality: governance === undefined || governance.loaded === 0 ? none : { numerator: governance.bindingLoaded, denominator: governance.loaded },
+      memoryStaleRate: { numerator: recalled.stale, denominator: recalled.recalled },
+      retrievalPrecision: retrieval === undefined ? none : { numerator: retrieval.relevant, denominator: retrieval.retrieved },
+      retrievalRecall: retrieval === undefined ? none : { numerator: retrieval.relevant, denominator: retrieval.gold },
+    },
     token: tokenFactsOf(runs, stopped ? { state: 'none' } : transcript.reflection),
   };
 };
@@ -174,6 +195,9 @@ const caseReportOf = (entry: ExpandedCase, measures: readonly RunMeasure[]): Con
     totalTokens: total(measures, (measure) => measure.tokens),
     compactions: total(measures, (measure) => measure.facts.compactions),
     lossSignals: total(measures, (measure) => measure.signals),
+    quality: Object.fromEntries(
+      QUALITY_METRICS.map(({ name }) => [name, { numerator: total(measures, (measure) => measure.quality[name].numerator), denominator: total(measures, (measure) => measure.quality[name].denominator) }]),
+    ),
     tokens: caseTotalsOf(measures.map((measure) => measure.token)),
   };
 };
@@ -219,30 +243,32 @@ const clusteredOver = (measured: readonly MeasuredCase[], seed: number, pick: (m
 const definedOnly = <T extends object>(values: T): { [K in keyof T]?: Exclude<T[K], undefined> } =>
   Object.fromEntries(Object.entries(values).filter(([, value]) => value !== undefined)) as { [K in keyof T]?: Exclude<T[K], undefined> };
 
+const proportionOf = (measures: readonly RunMeasure[], name: QualityMetricName): Proportion | undefined =>
+  proportionOrUndefined(
+    total(measures, (measure) => measure.quality[name].numerator),
+    total(measures, (measure) => measure.quality[name].denominator),
+  );
+
 const metricsOf = (cases: readonly ContextCaseReport[], measured: readonly MeasuredCase[], seed: number): ContextMetrics => {
   const measures = measured.flatMap((entry) => entry.measures);
-  const compactedRuns = measures.filter((measure) => measure.facts.compactions > 0);
-  const governed = measures.flatMap((measure) => (measure.governance === undefined ? [] : [measure.governance]));
   const compactions = total(measures, (measure) => measure.facts.compactions);
   const signals = total(measures, (measure) => measure.signals);
   const tokens = total(measures, (measure) => measure.tokens);
   const successes = measures.filter((measure) => measure.passed).length;
   const cluster = (pick: (measure: RunMeasure) => Cluster) => clusteredOver(measured, seed, pick);
-  const none: Cluster = { numerator: 0, denominator: 0 };
+  const qualityCluster = (name: QualityMetricName) => cluster((measure) => measure.quality[name]);
   return {
-    continuationRate: proportionOrUndefined(compactedRuns.filter((measure) => measure.passed).length, compactedRuns.length),
+    continuationRate: proportionOf(measures, 'continuationRate'),
     contrastiveFailures: contrastiveFailuresOf(cases),
     lossSignalsPerCompaction: compactions === 0 ? undefined : { value: signals / compactions, signals, compactions, n: compactions },
     fabricationRate: cluster((measure) => ({ numerator: measure.facts.fabricatedSummaries, denominator: measure.facts.modelSummaries })),
     identifierRetention: cluster((measure) => ({ numerator: measure.facts.retained, denominator: measure.facts.identifiers })),
-    governanceFidelity: cluster((measure) => (measure.governance === undefined ? none : { numerator: measure.governance.bindingLoaded, denominator: measure.governance.binding })),
-    governanceConsistency: proportionOrUndefined(governed.filter((counts) => counts.consistent).length, governed.length),
-    governanceMinimality: cluster((measure) =>
-      measure.governance === undefined || measure.governance.loaded === 0 ? none : { numerator: measure.governance.bindingLoaded, denominator: measure.governance.loaded },
-    ),
-    memoryStaleRate: cluster((measure) => ({ numerator: measure.recalled.stale, denominator: measure.recalled.recalled })),
-    retrievalPrecision: cluster((measure) => (measure.retrieval === undefined ? none : { numerator: measure.retrieval.relevant, denominator: measure.retrieval.retrieved })),
-    retrievalRecall: cluster((measure) => (measure.retrieval === undefined ? none : { numerator: measure.retrieval.relevant, denominator: measure.retrieval.gold })),
+    governanceFidelity: qualityCluster('governanceFidelity'),
+    governanceConsistency: proportionOf(measures, 'governanceConsistency'),
+    governanceMinimality: qualityCluster('governanceMinimality'),
+    memoryStaleRate: qualityCluster('memoryStaleRate'),
+    retrievalPrecision: qualityCluster('retrievalPrecision'),
+    retrievalRecall: qualityCluster('retrievalRecall'),
     tokensPerSuccess: successes === 0 ? undefined : { value: tokens / successes, tokens, successes, n: successes },
     ...definedOnly(
       tokenMetricsOf(
@@ -262,7 +288,6 @@ export const datasetDigestOf = (dataset: ContextDataset, seed: number): string =
 export type BuildContextReportInput = {
   dataset: ContextDataset;
   transcripts: readonly Transcript[];
-  model: ContextModel;
   seed: number;
   datasetSeed?: number;
 };
@@ -284,6 +309,14 @@ const identityOf = (transcripts: readonly Transcript[]): { policy: PolicyOverlay
   return first;
 };
 
+const answeredKey = (answerer: Answerer): string => canonicalJson([answerer.target, answerer.adapter, answerer.upstreamModel, answerer.answers]);
+
+const answeredByOf = (transcripts: readonly Transcript[]): Answerer[] => {
+  const unique = new Map<string, Answerer>();
+  for (const answerer of transcripts.flatMap((transcript) => transcript.answeredBy ?? [])) unique.set(answeredKey(answerer), answerer);
+  return [...unique].sort(([left], [right]) => (left < right ? -1 : 1)).map(([, answerer]) => answerer);
+};
+
 export const buildContextReport = (input: BuildContextReportInput): ContextReport => {
   const datasetSeed = input.datasetSeed ?? DEFAULT_DATASET_SEED;
   const expanded = expandContextDataset(input.dataset, datasetSeed);
@@ -296,17 +329,22 @@ export const buildContextReport = (input: BuildContextReportInput): ContextRepor
   const measures = measured.flatMap((item) => item.measures);
   const transcripts = measured.flatMap((item) => item.transcripts);
   const identity = identityOf(transcripts);
+  const answeredBy = answeredByOf(transcripts);
+  const unrecordedAnswers = transcripts.filter((transcript) => transcript.answeredBy === undefined).length;
+  const model = modelKindOf(answeredBy, unrecordedAnswers);
   return {
     format: CONTEXT_REPORT_FORMAT,
     dataset: input.dataset.name,
     datasetDigest: datasetDigestOf(input.dataset, datasetSeed),
     datasetSeed,
-    model: input.model,
+    model,
+    answeredBy,
+    unrecordedAnswers,
     modelAliases: [...new Set(measures.flatMap((measure) => (measure.modelAlias === undefined ? [] : [measure.modelAlias])))].sort(),
     policy: identity.policy,
     codeDigest: identity.codeDigest,
     metrics: metricsOf(cases, measured, input.seed),
-    meaningless: input.model === 'fake' ? [...MODEL_DEPENDENT_METRICS] : [],
+    meaningless: model === 'fake' ? [...MODEL_DEPENDENT_METRICS] : [],
     unclassifiedCompactions: total(measures, (measure) => measure.facts.unclassified),
     governanceRunsWithoutEvent: measures.filter((measure) => measure.governance !== undefined && measure.governance.loads === 0).length,
     noiseTokens: total(transcripts, (transcript) => transcript.noiseTokens ?? 0),
@@ -357,12 +395,18 @@ const tokenLines = (metrics: ContextMetrics, cases: readonly ContextCaseReport[]
   ];
 };
 
+const answeredLine = (report: Pick<ContextReport, 'answeredBy' | 'unrecordedAnswers'>): string => {
+  const targets = report.answeredBy.map((answerer) => `${answerer.target} (${answerer.answers})`);
+  const unrecorded = report.unrecordedAnswers === 0 ? [] : [`${report.unrecordedAnswers} transcript(s) record no answering target`];
+  return [...targets, ...unrecorded].join(', ') || 'no target recorded';
+};
+
 export const formatContextReport = (report: ContextReport): string => {
   const { metrics } = report;
   const aliases = report.modelAliases.length === 0 ? 'none recorded' : report.modelAliases.join(', ');
   const lines = [
     `dataset ${report.dataset}: ${report.passed ? 'PASS' : 'FAIL'}`,
-    `model: ${report.model} (declared by the operator; the aliases the runs pinned: ${aliases})`,
+    `model: ${report.model} (derived from the pinned provenance of the targets that answered: ${answeredLine(report)}; the aliases the runs pinned: ${aliases})`,
   ];
   if (report.model === 'fake') {
     lines.push('a fake model proves only that the machinery works; none of these numbers says anything about the quality of the context');
@@ -440,6 +484,14 @@ const CONTEXT_REPORT_SCHEMA = {
       datasetDigest: { type: 'string', pattern: '^[0-9a-f]{64}$' },
       datasetSeed: { type: 'integer', minimum: 0, maximum: MAX_DATASET_SEED },
       model: { enum: [...CONTEXT_MODELS] },
+      answeredBy: {
+        type: 'array',
+        items: closed(
+          { target: { type: 'string', minLength: 1 }, adapter: { type: 'string' }, upstreamModel: { type: 'string' }, answers: { enum: ['model', 'script', 'unknown'] } },
+          ['target', 'adapter', 'upstreamModel', 'answers'],
+        ),
+      },
+      unrecordedAnswers: count,
       modelAliases: { type: 'array', items: { type: 'string', minLength: 1 } },
       policy: { anyOf: [policySchema, { type: 'null' }] },
       codeDigest: { anyOf: [{ type: 'string', pattern: '^[0-9a-f]{64}$' }, { type: 'null' }] },
@@ -491,9 +543,13 @@ const CONTEXT_REPORT_SCHEMA = {
             totalTokens: count,
             compactions: count,
             lossSignals: count,
+            quality: closed(
+              Object.fromEntries(QUALITY_METRICS.map(({ name }) => [name, closed({ numerator: count, denominator: count }, ['numerator', 'denominator'])])),
+              QUALITY_METRICS.map(({ name }) => name),
+            ),
             tokens: caseTokensSchema,
           },
-          ['id', 'scenario', 'compaction', 'runs', 'passedRuns', 'passed', 'passRate', 'minPassRate', 'meetsMinimum', 'totalTokens', 'compactions', 'lossSignals'],
+          ['id', 'scenario', 'compaction', 'runs', 'passedRuns', 'passed', 'passRate', 'minPassRate', 'meetsMinimum', 'totalTokens', 'compactions', 'lossSignals', 'quality'],
         ),
       },
       passed: { type: 'boolean' },
@@ -504,6 +560,8 @@ const CONTEXT_REPORT_SCHEMA = {
       'datasetDigest',
       'datasetSeed',
       'model',
+      'answeredBy',
+      'unrecordedAnswers',
       'modelAliases',
       'policy',
       'codeDigest',
@@ -526,7 +584,7 @@ export const parseContextReport = (text: string, source: string): ContextReport 
   const value = jsonOf(text, source);
   if (isRecord(value) && typeof value['format'] === 'string' && Object.hasOwn(RETIRED_CONTEXT_REPORT_FORMATS, value['format'])) {
     throw new EvalError(
-      `${source}: ${value['format']} reports do not record ${RETIRED_CONTEXT_REPORT_FORMATS[value['format']]}, so ${value['format']} is retired and cannot be compared as ${CONTEXT_REPORT_FORMAT}; build a ${CONTEXT_REPORT_FORMAT} base from one bundle: run \`momonga eval context <dataset> --model real --alias <alias> --report <off report>\` without --settings, then \`momonga eval context <dataset> --model real --alias <alias> --settings <policy file> --report <on report>\`, then \`momonga eval compare <off report> <on report> --gate token\``,
+      `${source}: ${value['format']} reports do not record ${RETIRED_CONTEXT_REPORT_FORMATS[value['format']]}, so ${value['format']} is retired and cannot be compared as ${CONTEXT_REPORT_FORMAT}; build a ${CONTEXT_REPORT_FORMAT} base from one bundle: run \`momonga eval context <dataset> --alias <alias> --report <off report>\` without --settings, then \`momonga eval context <dataset> --alias <alias> --settings <policy file> --report <on report>\`, then \`momonga eval compare <off report> <on report> --gate token\``,
     );
   }
   const verdict = validateContextReport(value);
