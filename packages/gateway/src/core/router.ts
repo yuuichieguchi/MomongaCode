@@ -1,5 +1,5 @@
 import type { Clock } from '@momonga/foundation';
-import { MOMONGA_REQUEST_FIELDS, PRECONDITION_FAILED_CODE, applyCapabilityOverride, imageCapability, sizingRatioFor, summaryTokenCapFor } from '@momonga/protocol';
+import { MOMONGA_REQUEST_FIELDS, PRECONDITION_FAILED_CODE, agentReadiness, applyCapabilityOverride, imageCapability, sizingRatioFor, summaryTokenCapFor } from '@momonga/protocol';
 import type { AliasCapabilities, Capabilities, CapabilityOverride, ClientOperation, FunctionTool, ToolChoice, ToolCallingMode, ToolCallingState, GatewayHealth, HealthResult, ImageCapability, ProviderAdapter, TargetBilling, TargetHealth } from '@momonga/protocol';
 import { constrainsToolChoice, resolveToolChoice } from './tool-choice.ts';
 import { UnsupportedInputError } from './unsupported-input.ts';
@@ -198,11 +198,11 @@ export const createRouter = (options: RouterOptions): Router => {
     const samples = sampling !== undefined && carriesSampling(sampling);
     const judge = (target: TargetRuntime, capabilities: Capabilities): Refusal | undefined => {
       if (requirements.tools === true) {
-        const { toolCalling } = capabilities;
-        if (typeof toolCalling !== 'string') {
-          throw new UnprobedTarget(invalidRequest(PRECONDITION_FAILED_CODE, preconditionText(toolCalling.message, toolCalling.evidence, toolCalling.remedy), null, 412));
+        const readiness = agentReadiness(capabilities);
+        if (readiness.state === 'needs_probe') {
+          throw new UnprobedTarget(invalidRequest(PRECONDITION_FAILED_CODE, preconditionText(readiness.message, readiness.evidence, readiness.remedy), null, 412));
         }
-        if (toolCalling === 'none') {
+        if (readiness.state === 'no_tools') {
           return { stage: REFUSAL_STAGES.tools, error: invalidRequest('capability_unsupported', `no target of model alias "${alias}" supports tool calling`, 'tools') };
         }
       }
@@ -214,7 +214,7 @@ export const createRouter = (options: RouterOptions): Router => {
         if (refusal !== undefined) return { stage: REFUSAL_STAGES.sampling, error: invalidRequest('sampling_not_accepted', refusal.message, refusal.field) };
       }
       const { toolChoice } = requirements;
-      if (toolChoice !== undefined && constrainsToolChoice(toolChoice.tool_choice) && typeof capabilities.toolCalling === 'string') {
+      if (toolChoice !== undefined && constrainsToolChoice(toolChoice.tool_choice) && agentReadiness(capabilities).state !== 'needs_probe') {
         try {
           resolveToolChoice(
             {

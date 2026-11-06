@@ -1,5 +1,5 @@
 import { decodeSse } from '@momonga/foundation';
-import { summaryTokenCapFor } from '@momonga/protocol';
+import { agentReadiness, readinessText, summaryTokenCapFor } from '@momonga/protocol';
 import type { ToolChoiceWire, AdapterCompactRequest, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, ReasoningOrigin, StreamEvent } from '@momonga/protocol';
 import { resolveToolChoice } from '../../core/tool-choice.ts';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
@@ -32,8 +32,9 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
   async function* create(request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
     if (closed) throw new Error('the open-responses adapter is closed');
     const capabilities = ctx.capabilities;
-    if (capabilities.toolCalling === 'none' && (request.tools ?? []).length > 0) {
-      throw new UnsupportedInputError('capability_unsupported', 'this target does not support tool calling', 'tools');
+    const readiness = agentReadiness(capabilities);
+    if (readiness.state === 'no_tools' && (request.tools ?? []).length > 0) {
+      throw new UnsupportedInputError('capability_unsupported', readinessText(readiness), 'tools');
     }
     const ledger = new RenderLedger();
     const jsonReply = jsonReplyPlanOf(request, capabilities);

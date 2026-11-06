@@ -119,8 +119,15 @@ export {
   THINKING_OFFS,
   ALLOWED_TOOLS_FORMS,
   PRECONDITION_FAILED_CODE,
+  NO_MODEL_TARGET,
+  TARGET_NOT_READY,
+  agentReadiness,
+  isToolCallingState,
+  readinessText,
 } from './capabilities.ts';
-export type { OutputTokenCapabilities, TargetAnswers, TargetBilling } from './capabilities.ts';
+export type { OutputTokenCapabilities, Readiness, ReadinessInput, TargetAnswers, TargetBilling } from './capabilities.ts';
+export { LOCAL_SERVER_CANDIDATES, LOCAL_SERVER_SHAPES } from './local-servers.ts';
+export type { DetectedLocalServer, LocalServerShape, LocalServerToolSupport } from './local-servers.ts';
 export {
   BREAKER_VERDICTS,
   CREDENTIAL_EFFECTS,

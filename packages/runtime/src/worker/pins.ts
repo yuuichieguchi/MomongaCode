@@ -1,7 +1,6 @@
 import { MODEL_ROLES } from '@momonga/config';
 import type { ModelRoles } from '@momonga/config';
-import { OUTPUT_FORMATTERS } from '@momonga/protocol';
-import { TARGET_ANSWERS } from '@momonga/protocol';
+import { OUTPUT_FORMATTERS, TARGET_ANSWERS, agentReadiness, isToolCallingState } from '@momonga/protocol';
 import type { Capabilities, OutputFormatterName, TargetAnswers } from '@momonga/protocol';
 import type { RuntimeStore } from '@momonga/store';
 import { isRecord } from './json.ts';
@@ -100,7 +99,7 @@ const isCapabilities = (value: unknown): value is Capabilities =>
   (value['parallelToolCalls'] === undefined || typeof value['parallelToolCalls'] === 'boolean') &&
   typeof value['streaming'] === 'boolean' &&
   typeof value['tokenCounting'] === 'string' &&
-  typeof value['toolCalling'] === 'string';
+  isToolCallingState(value['toolCalling']);
 
 export const readPins = (value: Record<string, unknown>): RunPins => {
   const { modelAlias, systemPromptDigest, toolSetDigest, capabilities, memoryShare, guidelineVersion, token } = value;
@@ -113,6 +112,10 @@ export const readPins = (value: Record<string, unknown>): RunPins => {
     (guidelineVersion !== undefined && (typeof guidelineVersion !== 'number' || !Number.isInteger(guidelineVersion) || guidelineVersion < 1))
   ) {
     throw new Error('the pins recorded for this run are malformed');
+  }
+  const readiness = agentReadiness(capabilities);
+  if (readiness.state !== 'ready' && readiness.state !== 'no_tools') {
+    throw new Error(`the pins recorded for this run hold capabilities of a target that was not ready: ${readiness.message}`);
   }
   return {
     modelAlias,

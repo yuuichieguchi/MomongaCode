@@ -1,5 +1,5 @@
 import { decodeSse } from '@momonga/foundation';
-import { summaryTokenCapFor } from '@momonga/protocol';
+import { agentReadiness, readinessText, summaryTokenCapFor } from '@momonga/protocol';
 import type { AdapterCompactRequest, AllowedToolsForm, Capabilities, ToolCallingMode, ToolChoiceWire, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, LenientItems, ReasoningOrigin, RenderWireOptions, StreamEvent } from '@momonga/protocol';
 import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate.ts';
 import { NO_TOOL_CHOICE_WIRE, resolveToolChoice } from '../../core/tool-choice.ts';
@@ -71,9 +71,9 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
     allowedTools: readonly AllowedToolsForm[] | undefined,
   ): { body: ChatRequestBody; envelope: ConstrainedPlan | undefined; ledger: RenderLedger } => {
     const mode = modeOf(capabilities);
-    const hasTools = (request.tools ?? []).length > 0;
-    if (mode === 'none' && hasTools) {
-      throw new UnsupportedInputError('capability_unsupported', 'this target does not support tool calling', 'tools');
+    const readiness = agentReadiness(capabilities);
+    if (readiness.state === 'no_tools' && (request.tools ?? []).length > 0) {
+      throw new UnsupportedInputError('capability_unsupported', readinessText(readiness), 'tools');
     }
     const dialect = resolveDialect(options.schemaDialect(target), options.userDialects ?? NO_USER_DIALECTS, options.constructSupport?.(target));
     if (mode === 'constrained') {

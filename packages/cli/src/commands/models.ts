@@ -1,4 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
+import { agentReadiness } from '@momonga/protocol';
 import type { AliasCapabilities, MomongaModelEntry } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
@@ -7,8 +8,10 @@ import { escapedLines } from '../terminal-writer.ts';
 
 const yesNo = (value: boolean): string => (value ? 'yes' : 'no');
 
-const toolCallingText = (capabilities: AliasCapabilities): string =>
-  typeof capabilities.toolCalling === 'string' ? capabilities.toolCalling : `needs probe: ${capabilities.toolCalling.remedy}`;
+const toolCallingText = (capabilities: AliasCapabilities): string => {
+  const readiness = agentReadiness(capabilities);
+  return readiness.state === 'needs_probe' ? `needs probe: ${readiness.remedy}` : String(capabilities.toolCalling);
+};
 
 const describeCapabilities = (capabilities: AliasCapabilities): string[] => [
   `    context window: ${capabilities.contextWindow}, max output: ${capabilities.maxOutputTokens}`,
