@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { NeedsProbe } from '@momonga/protocol';
 import { FRAME_BOUND_MS, KEYS, untilFrame, untilOutput } from './ink-helpers.ts';
-import { start, type } from './tui-harness.tsx';
+import { frame, runStarted, start, type } from './tui-harness.tsx';
 
 const BOUND = { timeout: 3 * FRAME_BOUND_MS };
 
@@ -47,6 +47,18 @@ describe('the TUI shows the readiness verdict before any request', () => {
     const { backend, app } = await start({ toolCalling: { default: NEEDS_PROBE } });
     await untilOutput(app, NEEDS_PROBE.remedy);
     expect(backend.started).toEqual([]);
+    app.unmount();
+  });
+});
+
+describe('the no-tools notice appears once to a TUI user', () => {
+  it('shows the notice exactly once after session start and a whole tool-less run', BOUND, async () => {
+    const { backend, app } = await start({ toolCalling: { default: 'none' } });
+    await untilOutput(app, NO_TOOLS_NOTICE);
+    await runStarted(backend, app, 'explain the module');
+    backend.emit(frame({ type: 'agent.message.delta', attempt: 0, itemId: 'm1', text: 'A plain answer.' }));
+    const last = await untilFrame(app, 'A plain answer.');
+    expect(last.split(NO_TOOLS_NOTICE).length - 1).toBe(1);
     app.unmount();
   });
 });
