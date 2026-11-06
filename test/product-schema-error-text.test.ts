@@ -139,8 +139,8 @@ describe('eval files keep a specific message', () => {
   });
 
   it('names what is wrong with a model reply to a guideline prompt', () => {
-    expect(parseGuidelineCandidate(JSON.stringify({ guideline: '' }))).toEqual({ error: '/guideline: must NOT have fewer than 1 characters' });
-    expect(parseGuidelineAnalysis('{}')).toEqual({ error: "/: must have required property 'divergence_step_description'" });
+    expect(parseGuidelineCandidate({ text: JSON.stringify({ guideline: '' }) })).toEqual({ error: 'output failed the schema: /guideline: must NOT have fewer than 1 characters' });
+    expect(parseGuidelineAnalysis({ text: '{}' })).toEqual({ error: "output failed the schema: /: must have required property 'divergence_step_description'" });
   });
 });
 

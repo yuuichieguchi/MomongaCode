@@ -203,6 +203,8 @@ export type FailedResponseResource = ResponseResource & { error: ResponseError }
 
 export type ResponseStatus = 'in_progress' | 'completed' | 'failed' | 'incomplete' | 'queued';
 
+export type JsonReplyPath = 'enforced' | 'prompt';
+
 export type MomongaResponseExtension = {
   alias: string;
   target: string;
@@ -211,6 +213,7 @@ export type MomongaResponseExtension = {
   fallbackFrom?: string[];
   fallbackCauses?: { target: string; code: string | null; message: string }[];
   schemaNarrowings?: SchemaNarrowing[];
+  jsonReply?: JsonReplyPath;
   usageSource: 'reported' | 'estimated';
   contextInputTokens?: number;
   cacheWriteInputTokens?: number;
@@ -254,6 +257,7 @@ export type ResponseResource = {
   contextInputTokens?: number;
   cacheWriteInputTokens?: number;
   schemaNarrowings?: SchemaNarrowing[];
+  jsonReply?: JsonReplyPath;
 };
 
 export type PromptCacheCounts = { stable: number; fixed: number; previousHistory?: number; history: number };

@@ -10,7 +10,7 @@ const sourceFilesUnder = (directory: string): string[] =>
   fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(directory, entry.name);
     if (entry.isDirectory()) return entry.name === 'node_modules' ? [] : sourceFilesUnder(full);
-    return entry.name.endsWith('.ts') ? [full] : [];
+    return entry.name.endsWith('.ts') && !entry.name.endsWith('.generated.ts') ? [full] : [];
   });
 
 const callerFiles = (): string[] => [

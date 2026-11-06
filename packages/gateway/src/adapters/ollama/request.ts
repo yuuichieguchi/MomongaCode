@@ -3,10 +3,11 @@ import type { ToolChoiceWire, AdapterRequest, Capabilities, FunctionTool, Reason
 import { NO_USER_DIALECTS, resolveDialect } from '../../dialect/choice.ts';
 import type { UserDialects } from '../../dialect/choice.ts';
 import { RenderLedger } from '../../dialect/ledger.ts';
-import { renderSchema } from '../../dialect/render.ts';
 import type { ResolvedDialect } from '../../dialect/render.ts';
 import { renderToolParameters } from '../../dialect/tool-render.ts';
 import { forbidsTools } from '../../core/tool-choice.ts';
+import { jsonReplyFormatOf } from '../shared/json-reply.ts';
+import type { JsonReplyPlan } from '../shared/json-reply.ts';
 import { carriedSamplingOf } from '../shared/sampling.ts';
 import { SYSTEM_PART_SEPARATOR, systemTextOf } from '../shared/system-text.ts';
 import { ollamaHistoryOf } from './history.ts';
@@ -45,10 +46,9 @@ const requireToolChoice = (request: AdapterRequest): void => {
 
 export const OLLAMA_TOOL_CHOICE: ToolChoiceWire = { forms: ['filter'], expressesRequired: false };
 
-const formatOf = (request: AdapterRequest, dialect: ResolvedDialect): { format?: unknown } => {
-  const format = request.text?.format;
-  if (format === undefined || format === null || format.type === 'text') return {};
-  return { format: format.type === 'json_schema' ? renderSchema(format.schema, { kind: 'response-format' }, dialect).schema : 'json' };
+const formatOf = (plan: JsonReplyPlan | undefined, dialect: ResolvedDialect): { format?: unknown } => {
+  const format = jsonReplyFormatOf(plan, dialect);
+  return format === undefined ? {} : { format: format.schema };
 };
 
 const thinkOf = (effort: ReasoningEffort | undefined, reasoning: ReasoningCapability | undefined): { think?: boolean } =>
@@ -56,7 +56,7 @@ const thinkOf = (effort: ReasoningEffort | undefined, reasoning: ReasoningCapabi
 
 export type OllamaBodyCapabilities = Pick<Capabilities, 'contextWindow' | 'maxOutputTokens' | 'reasoning'>;
 
-export type OllamaRendering = { userDialects?: UserDialects; ledger?: RenderLedger };
+export type OllamaRendering = { userDialects?: UserDialects; ledger?: RenderLedger; jsonReply?: JsonReplyPlan | undefined };
 
 export const buildOllamaChatBody = (
   request: AdapterRequest,
@@ -81,7 +81,7 @@ export const buildOllamaChatBody = (
       ...carriedSamplingOf(request),
     },
     ...(sendsTools(request) ? { tools: (request.tools ?? []).map((tool) => toolOf(tool, dialect, ledger)) } : {}),
-    ...formatOf(request, dialect),
+    ...formatOf(rendering.jsonReply, dialect),
     ...thinkOf(request.reasoning_effort, capabilities.reasoning),
   };
 };
