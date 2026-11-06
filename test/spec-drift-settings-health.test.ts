@@ -57,7 +57,8 @@ const filesIn = (section: string): string[] => [...new Set([...section.matchAll(
 
 const ADMISSION = filesIn(sectionOf('admission readers', 'in-run readers'));
 const IN_RUN = filesIn(sectionOf('in-run readers', 'a background reader'));
-const BACKGROUND = filesIn(sectionOf('a background reader', 'the process start'));
+const BACKGROUND = filesIn(sectionOf('a background reader', 'readers that start no new work'));
+const VIEW = filesIn(sectionOf('readers that start no new work', 'the kept copy'));
 
 const ADMIT_CALL = /\badmitUserSnapshot\(/;
 const CACHE_CALL = /\bcache\.(snapshot|read)\(/;
@@ -74,6 +75,7 @@ describe('the code follows SettingsHealth.tla (one rule for every settings file)
     expect(ADMISSION).toEqual(['runtime/src/process/mcp-admin.ts', 'runtime/src/process/settings-port.ts', 'runtime/src/service/app.ts']);
     expect(IN_RUN.length).toBeGreaterThanOrEqual(12);
     expect(BACKGROUND).toEqual(['runtime/src/process/start-runtime-process.ts']);
+    expect(VIEW).toEqual(['runtime/src/service/app.ts']);
   });
 
   it('only the admission readers of the model call admitUserSnapshot', () => {
@@ -94,6 +96,23 @@ describe('the code follows SettingsHealth.tla (one rule for every settings file)
     const end = app.indexOf('\n  };\n', start);
     expect(start).toBeGreaterThan(-1);
     expect(app.slice(start, end)).toMatch(/await sessionSettingsOf\(session\.cwd\)/);
+  });
+
+  it('the readers that start no new work go through the read use: sessionViewOf and patchSession never call sessionSettingsOf (View)', () => {
+    const app = textOf('runtime/src/service/app.ts');
+    for (const name of ['const sessionViewOf', 'const patchSession: Handler']) {
+      const start = app.indexOf(name);
+      const end = app.indexOf('\n  };\n', start);
+      expect(start, name).toBeGreaterThan(-1);
+      const body = app.slice(start, end);
+      expect(body, name).not.toMatch(/sessionSettingsOf\(/);
+      expect(body, name).toMatch(/sessionReadSettingsOf\(/);
+    }
+  });
+
+  it('the kept copy of the model is one store for every file, used by the user cache and the project and local layers (Persist)', () => {
+    expect(filesMatching(/\bcreateKeptSettings\(/)).toEqual(['config/src/kept-settings.ts', 'config/src/user-settings.ts']);
+    expect(textOf('config/src/layers.ts')).toMatch(/kept\.store\.(recall|remember)\(/);
   });
 
   it('only the settings composition reads the user settings cache in the runtime, through snapshot for admission and read in a Run', () => {
