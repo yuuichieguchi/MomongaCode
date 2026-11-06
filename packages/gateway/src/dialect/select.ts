@@ -11,7 +11,7 @@ const KIND_TESTS: Record<DialectKind, KindTest> = {
   any: () => true,
   root: (_node, context, state) => context.isRoot && state.site.kind !== 'tool-parameters',
   'tool-parameters': (_node, context, state) => context.isRoot && state.site.kind === 'tool-parameters',
-  'object-with-properties': (node) => isRecord(node['properties']) && (node['type'] === undefined || typeIncludes(node, 'object')),
+  'object-with-properties': (node) => isRecord(node['properties']),
   'object-without-properties': (node) => typeIncludes(node, 'object') && !isRecord(node['properties']) && !PROPERTY_DECLARING_APPLICATORS.some((keyword) => keyword in node),
   'any-of': (node) => Array.isArray(node['anyOf']),
   'any-of-branch': (_node, context) => context.via === 'anyOf',

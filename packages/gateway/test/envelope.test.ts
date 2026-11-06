@@ -25,8 +25,8 @@ describe('keyword table rules, enum and const lowering', () => {
     expect(lowerSchema({ const: null }, without('const'))).toEqual({ type: 'null' });
   });
 
-  it('derives a type array for mixed literals', () => {
-    expect(lowerSchema({ enum: ['a', 1, null] }, without('enum'))).toEqual({ type: ['string', 'integer', 'null'] });
+  it('falls back to string for literals of more than one JSON type', () => {
+    expect(lowerSchema({ enum: ['a', 1, null] }, without('enum'))).toEqual({ type: 'string' });
   });
 
   it('keeps an explicit type', () => {

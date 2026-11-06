@@ -2,7 +2,8 @@ import type { DialectRule, SchemaNarrowing, WrapRecord } from '@momonga/protocol
 import { SchemaRenderError } from './failure.ts';
 import type { RenderFailureReason } from './failure.ts';
 import type { RefIndex } from './references.ts';
-import { unevaluatedPropertiesActive } from './schema.ts';
+import { feedsRestrictedProperties, unevaluatedFeeders } from './in-place-chain.ts';
+import { isRecord, pointerSegments, unevaluatedPropertiesActive } from './schema.ts';
 import type { JsonObject, Position } from './schema.ts';
 
 export type RenderSite = { kind: 'tool-parameters'; tool: string } | { kind: 'response-format' } | { kind: 'probe' };
@@ -15,13 +16,14 @@ export type NodeContext = {
   readonly isRoot: boolean;
   readonly absent: boolean;
   readonly via: string | undefined;
-  readonly inPlace: readonly JsonObject[];
-  readonly refUneval: boolean;
+  readonly location: string;
+  readonly inPlace: readonly string[];
 };
 
 export type RenderState = {
   readonly site: RenderSite;
   readonly rules: readonly DialectRule[];
+  document: unknown;
   refs: RefIndex;
   refSegments: ReadonlySet<string>;
   readonly originOverride: WeakMap<object, string>;
@@ -52,5 +54,21 @@ export const reportNarrowing = (state: RenderState, context: NodeContext): void 
   if (!state.narrowings.has(context.origin)) state.narrowings.set(context.origin, { tool, path: context.origin });
 };
 
-export const hasActiveUneval = (context: NodeContext, node: JsonObject): boolean =>
-  context.refUneval || unevaluatedPropertiesActive(node) || context.inPlace.some(unevaluatedPropertiesActive);
+export const writeAt = (state: RenderState, location: string, value: unknown): void => {
+  if (location === '') {
+    state.document = value;
+    return;
+  }
+  const segments = pointerSegments(location);
+  const last = segments[segments.length - 1] as string;
+  let holder: unknown = state.document;
+  for (const segment of segments.slice(0, -1)) holder = Array.isArray(holder) ? holder[Number(segment)] : isRecord(holder) ? holder[segment] : undefined;
+  if (Array.isArray(holder)) holder[Number(last)] = value;
+  else if (isRecord(holder)) holder[last] = value;
+};
+
+export const feedersOf = (state: RenderState, context: NodeContext): JsonObject[] =>
+  unevaluatedFeeders(state.document, { location: context.location, inPlace: context.inPlace, hasReferences: state.refs.positions.size > 0 });
+
+export const hasActiveUneval = (state: RenderState, context: NodeContext, node: JsonObject): boolean =>
+  unevaluatedPropertiesActive(node) || feedsRestrictedProperties(feedersOf(state, context));

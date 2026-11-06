@@ -1,4 +1,4 @@
-import { fail, guardWrittenKeys, requirePositive } from './state.ts';
+import { feedersOf, guardWrittenKeys, requirePositive } from './state.ts';
 import type { NodeContext, RenderState } from './state.ts';
 import type { JsonObject } from './schema.ts';
 
@@ -34,10 +34,9 @@ export const dropKeys = (state: RenderState, node: JsonObject, keys: readonly st
   guardWrittenKeys(state, removed, 'drop');
   const touchesProperties = removed.some((key) => PROPERTY_EVALUATORS.has(key));
   const touchesItems = removed.some((key) => ITEM_EVALUATORS.has(key));
-  if ((touchesProperties || touchesItems) && context.refUneval) fail(state, 'dependency', context.origin, 'a referenced schema feeds unevaluated keywords that drop would change');
-  for (const ancestor of context.inPlace) {
-    if (touchesProperties) delete ancestor['unevaluatedProperties'];
-    if (touchesItems) delete ancestor['unevaluatedItems'];
-  }
+  const feeders = touchesProperties || touchesItems ? feedersOf(state, context) : [];
+  const fed = [...(touchesProperties ? ['unevaluatedProperties'] : []), ...(touchesItems ? ['unevaluatedItems'] : [])];
+  guardWrittenKeys(state, fed.filter((key) => feeders.some((feeder) => key in feeder)), 'drop');
+  for (const feeder of feeders) for (const key of fed) delete feeder[key];
   return Object.fromEntries(Object.entries(node).filter(([key]) => !removed.includes(key)));
 };

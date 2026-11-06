@@ -48,7 +48,7 @@ describe('explicit-keys renders the keys fm was measured to need', () => {
           title: 'root_enforcement',
           anyOf: [
             { type: 'null' },
-            { type: 'object', properties: { level: { type: 'string' } }, required: ['level'], title: 'root_enforcement_1', 'x-order': ['level'], additionalProperties: true },
+            { type: 'object', properties: { level: { type: 'string' } }, required: ['level'], title: 'root_enforcement_anyOf_1', 'x-order': ['level'], additionalProperties: true },
           ],
         },
       },
@@ -75,10 +75,10 @@ describe('explicit-keys renders the keys fm was measured to need', () => {
           type: 'object',
           properties: {
             kind: { const: 'a' },
-            args: { type: 'object', properties: { x: { type: 'integer' } }, title: 'root_0_args', 'x-order': ['x'], additionalProperties: true, required: [] },
+            args: { type: 'object', properties: { x: { type: 'integer' } }, title: 'root_anyOf_0_args', 'x-order': ['x'], additionalProperties: true, required: [] },
           },
           required: ['kind'],
-          title: 'root_0',
+          title: 'root_anyOf_0',
           'x-order': ['kind', 'args'],
           additionalProperties: true,
         },
@@ -436,7 +436,11 @@ describe('each primitive on its seed cases', () => {
     expect(one({ op: 'ensure-key', key: 'required', value: [] }, { type: 'object', required: ['a'] })).toEqual({ type: 'object', required: ['a'] });
     expect(one({ op: 'ensure-key', key: 'properties', value: {} }, { type: 'object' })).toEqual({ type: 'object', properties: {} });
     const closed = (overwrite: string, additionalProperties: unknown) =>
-      one({ op: 'ensure-key', key: 'additionalProperties', value: false, overwrite }, { type: 'object', additionalProperties });
+      renderSchema(
+        { type: 'object', additionalProperties },
+        RESPONSE_FORMAT,
+        userRules([{ select: [{ kinds: ['object-without-properties'] }], op: 'ensure-key', key: 'additionalProperties', value: false, overwrite }]),
+      ).schema;
     expect(closed('never', { type: 'string' })).toEqual({ type: 'object', additionalProperties: { type: 'string' } });
     expect(closed('non-boolean', { type: 'string' })).toEqual({ type: 'object', additionalProperties: false });
     expect(closed('non-boolean', true)).toEqual({ type: 'object', additionalProperties: true });
@@ -488,6 +492,24 @@ describe('each primitive on its seed cases', () => {
       userRules([{ select: [{ kinds: ['root'] }], op: 'inline-refs' }]),
     );
     expect(rendered.schema).toEqual({ type: 'object', properties: { r: { type: 'integer', minimum: 0, description: 'x' } } });
+  });
+
+  it('inline-refs below the root resolves against the document and keeps the root $defs', () => {
+    const below = userRules([{ select: [{ kinds: ['object-with-properties'], within: { below: ['properties'], through: ['properties'] } }], op: 'inline-refs' }]);
+    const rendered = renderSchema(
+      { $defs: { d: { type: 'string' } }, properties: { p: { $defs: { d: { type: 'number' } }, type: 'object', properties: { q: { $ref: '#/$defs/d' } } } } },
+      RESPONSE_FORMAT,
+      below,
+    );
+    expect(rendered.schema).toEqual({ $defs: { d: { type: 'string' } }, properties: { p: { type: 'object', properties: { q: { type: 'string' } } } } });
+  });
+
+  it('inline-refs below the root fails with construct when a reference outside points into the removed $defs', () => {
+    const below = userRules([{ select: [{ kinds: ['object-with-properties'], within: { below: ['properties'], through: ['properties'] } }], op: 'inline-refs' }]);
+    const failure = failureOf(() =>
+      renderSchema({ properties: { p: { $defs: { d: { type: 'string' } }, type: 'object', properties: { q: {} } }, r: { $ref: '#/properties/p/$defs/d' } } }, RESPONSE_FORMAT, below),
+    );
+    expect(failure.reason).toBe('construct');
   });
 
   it('empty-parameters writes an empty object only for absent parameters', () => {
