@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { TRANSCRIPT_FORMAT } from '@momonga/eval';
+import { envelopeOf } from '@momonga/protocol';
 import type { FakeRoute } from '@momonga/testkit';
 import { ROOT_PREFIX } from '../packages/cli/src/eval/context-host.ts';
 import { DEFAULT_KEEP_RECENT_STEPS } from '../packages/context/src/levels.ts';
@@ -125,6 +126,8 @@ type CaseLine = { id: string; compaction: string; runs: number; passedRuns: numb
 
 const metricCounts = (metric: { successes: number; trials: number } | undefined): [number, number] | undefined => (metric === undefined ? undefined : [metric.successes, metric.trials]);
 
+const enclosedContentOf = (enclosed: string): string => enclosed.split('\n').slice(1, -1).join('\n');
+
 describe('momonga eval context live', () => {
   it(titleOf('eval-context-live'), { timeout: 8 * E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
@@ -176,9 +179,14 @@ describe('momonga eval context live', () => {
     expect(byId.get('shell-off')).toMatchObject({ runs: 1, passedRuns: 1 });
     const homesSeen = chatCompletions(fake)
       .filter((request) => asks(request.body, SHELL_TASK))
-      .flatMap((request) => messagesOf(request).filter((message) => message.role === 'tool').map((message) => ({ output: String(message.content), workspace: workspaceOf(request.body) })));
+      .flatMap((request) =>
+        messagesOf(request)
+          .filter((message) => message.role === 'tool')
+          .map((message) => ({ enclosed: String(message.content), callId: String(message.tool_call_id), output: enclosedContentOf(String(message.content)), workspace: workspaceOf(request.body) })),
+      );
     expect(homesSeen).toHaveLength(2);
     for (const seen of homesSeen) {
+      expect(seen.enclosed).toBe(envelopeOf({ content: seen.output, callId: seen.callId, tool: 'Bash' }));
       expect(seen.output).not.toBe(home.home);
       expect(path.basename(seen.output).startsWith(ROOT_PREFIX)).toBe(true);
       expect(seen.workspace.endsWith(`${path.basename(seen.output)}/w`)).toBe(true);
