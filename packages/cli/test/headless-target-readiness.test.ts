@@ -1,6 +1,7 @@
 import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
 import { withTempDir } from '@momonga/testkit';
-import type { AliasCapabilities, NeedsProbe, ToolCallingState } from '@momonga/protocol';
+import { TARGET_PROBING_MESSAGE } from '@momonga/protocol';
+import type { AliasCapabilities, ModelProbing, NeedsProbe, ToolCallingState } from '@momonga/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import type { RuntimeClient } from '../src/client/runtime-client.ts';
 import type { CliPorts } from '../src/ports.ts';
@@ -43,7 +44,7 @@ const NEEDS_PROBE: NeedsProbe = {
   remedy: 'run the tool-calling probe for local',
 };
 
-const headless = async (context: Parameters<typeof withTempDir>[0], toolCalling: ToolCallingState) => {
+const headless = async (context: Parameters<typeof withTempDir>[0], toolCalling: ToolCallingState | ModelProbing) => {
   log.length = 0;
   const home = withTempDir(context, { asHome: true });
   const paths = momongaPaths(home);
@@ -65,8 +66,9 @@ const headless = async (context: Parameters<typeof withTempDir>[0], toolCalling:
       },
     },
   } as unknown as CliPorts;
-  const capabilitiesOfAlias = async (alias: string): Promise<AliasCapabilities> => {
+  const capabilitiesOfAlias = async (alias: string): Promise<AliasCapabilities | ModelProbing> => {
     log.push(`capabilitiesOf:${alias}`);
+    if (typeof toolCalling === 'object' && 'probing' in toolCalling) return toolCalling;
     return { ...capabilitiesOf(), toolCalling } as AliasCapabilities;
   };
   const options = { prompt: 'explain the module', format: 'text', verbose: false, interrupt: new AbortController().signal, capabilitiesOf: capabilitiesOfAlias } as HeadlessOptions;
@@ -96,5 +98,15 @@ describe('headless asks capabilitiesOf(alias) at session open and shows the verd
     expect(log).not.toContain('createRun');
     expect(result.stderr).toContain(NEEDS_PROBE.remedy);
     expect(result.stderr).toContain('target_not_ready');
+  });
+
+  it('shows that the model is being measured, once per model and OS build, before the run is created, and the run proceeds', async (context) => {
+    const result = await headless(context, { probing: { message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 } });
+
+    const noticeAt = log.findIndex((entry) => entry.startsWith('stderr:') && entry.includes(TARGET_PROBING_MESSAGE));
+    expect(noticeAt).toBeGreaterThan(-1);
+    expect(noticeAt).toBeLessThan(log.indexOf('createRun'));
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('A plain answer.');
   });
 });
