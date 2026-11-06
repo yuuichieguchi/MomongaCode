@@ -2,22 +2,20 @@ import { nodeCommandRunner } from './command-runner.ts';
 import type { CommandRunner } from './command-runner.ts';
 import { createDarwinInspector } from './darwin-inspector.ts';
 import type { ProcessInspector } from './inspector-types.ts';
+import { UNMEASURED_CAPABILITY } from './lock-capability.ts';
+import type { LockCapabilityProbe } from './lock-capability.ts';
 import { createLinuxInspector } from './linux-inspector.ts';
-import { PS_PROBE_TIMEOUT_MS, hostProbeTiming } from './probe-timing.ts';
-import type { ProbeTiming } from './probe-timing.ts';
+import { withMarkerState } from './marker-state.ts';
 import { nodeProcFs } from './procfs.ts';
 import type { ProcFs } from './procfs.ts';
 import { createWindowsInspector } from './windows-inspector.ts';
-
-export { PS_PROBE_TIMEOUT_MS };
 
 export type InspectorPorts = {
   run: CommandRunner;
   procfs: ProcFs;
   env: Readonly<Record<string, string | undefined>>;
   uid(): number;
-  startTimeoutMs: number;
-  timing: ProbeTiming;
+  capability: LockCapabilityProbe;
 };
 
 export class UnsupportedPlatformError extends Error {
@@ -35,16 +33,16 @@ const hostUid = (): number => {
   return process.getuid();
 };
 
-export const hostInspectorPorts = (): InspectorPorts => ({ run: nodeCommandRunner, procfs: nodeProcFs, env: process.env, uid: hostUid, startTimeoutMs: PS_PROBE_TIMEOUT_MS, timing: hostProbeTiming });
+export const hostInspectorPorts = (): InspectorPorts => ({ run: nodeCommandRunner, procfs: nodeProcFs, env: process.env, uid: hostUid, capability: UNMEASURED_CAPABILITY });
 
 export const createProcessInspector = (platform: NodeJS.Platform, ports: InspectorPorts): ProcessInspector => {
   switch (platform) {
     case 'darwin':
-      return createDarwinInspector({ run: ports.run, startTimeoutMs: ports.startTimeoutMs });
+      return withMarkerState(createDarwinInspector({ run: ports.run }), ports.capability);
     case 'linux':
-      return createLinuxInspector({ procfs: ports.procfs, uid: ports.uid(), timing: ports.timing });
+      return withMarkerState(createLinuxInspector({ procfs: ports.procfs, uid: ports.uid() }), ports.capability);
     case 'win32':
-      return createWindowsInspector({ run: ports.run, env: ports.env });
+      return withMarkerState(createWindowsInspector({ run: ports.run, env: ports.env }), ports.capability);
     default:
       throw new UnsupportedPlatformError(platform, 'process inspection');
   }

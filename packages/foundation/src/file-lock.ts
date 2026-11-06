@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { systemClock } from './clock.ts';
 import type { Clock } from './clock.ts';
 import { CLAIM_POLL_MS, claimWithin } from './platform/claim-within.ts';
-import { hostKernelLock } from './platform/kernel-lock.ts';
+import { hostKernelLock } from './platform/host-kernel-lock.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
 
 export const DEFAULT_LOCK_TIMEOUT_MS = 10000;

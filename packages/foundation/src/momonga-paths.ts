@@ -13,6 +13,7 @@ export interface MomongaPaths {
   sockets: { gateway: string; runtime: string; supervisor: string };
   locks: { gateway: string; runtime: string; supervisor: string };
   callLocks: string;
+  lockProof: string;
   markers: { root: string; tools: string; mcp: string; targets: string; daemons: string };
   state: string;
   databases: { runtime: string; gateway: string };
@@ -74,6 +75,7 @@ export const momongaLayout = (
     sockets: { gateway: socket('gateway'), runtime: socket('runtime'), supervisor: socket('supervisor') },
     locks: { gateway: join(run, 'gateway.lock'), runtime: join(run, 'runtime.lock'), supervisor: join(run, 'supervisor.lock') },
     callLocks: join(run, 'call-locks'),
+    lockProof: join(run, 'lock-proof'),
     markers: {
       root: markers,
       tools: join(markers, 'tools'),
@@ -118,6 +120,7 @@ export type PlatformDirectoryPorts = {
   platform?: NodeJS.Platform;
   run?: CommandRunner;
   env?: Readonly<Record<string, string | undefined>>;
+  signal?: AbortSignal;
 };
 
 export const ensureMomongaDirs = async (paths: MomongaPaths, ports: PlatformDirectoryPorts = {}): Promise<void> => {
@@ -145,6 +148,7 @@ export const ensureMomongaDirs = async (paths: MomongaPaths, ports: PlatformDire
     paths.root,
     paths.run,
     paths.callLocks,
+    paths.lockProof,
     paths.markers.root,
     paths.markers.tools,
     paths.markers.mcp,
@@ -164,7 +168,7 @@ export const ensureMomongaDirs = async (paths: MomongaPaths, ports: PlatformDire
     await ensureDirectory(directory);
   }
   if (platform === 'win32') {
-    const windows = { run: ports.run ?? nodeCommandRunner, env: ports.env ?? process.env };
+    const windows = { run: ports.run ?? nodeCommandRunner, env: ports.env ?? process.env, ...(ports.signal === undefined ? {} : { signal: ports.signal }) };
     await ensureWindowsPrivateTree(paths.root, windows);
     await ensureWindowsPrivateTree(paths.cacheBase, windows);
   }

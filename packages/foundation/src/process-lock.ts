@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { LOCK_FD } from './process-contract.ts';
-import { HOLDER_READ_MAX_BYTES, LockAdoptionError, hostKernelLock, writeHolderOrRelease } from './platform/kernel-lock.ts';
+import { hostKernelLock } from './platform/host-kernel-lock.ts';
+import { HOLDER_READ_MAX_BYTES, LockAdoptionError, writeHolderOrRelease } from './platform/kernel-lock.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
 
 export { HOLDER_READ_MAX_BYTES, LockAdoptionError };
