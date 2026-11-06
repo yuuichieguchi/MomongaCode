@@ -24,6 +24,7 @@ export const bash = (callId: string, command: string, exitCode: number, output =
 
 export const fileTool = (callId: string, name: string, file: ToolFile, output = ''): RunEventPayload[] => [
   { type: 'tool.call', callId, providerCallId: callId, name, kind: 'other', title: `${name} ${file.path}`, rawInput: { file_path: file.path } },
+  { type: 'tool.started', callId, idemKey: `key-${callId}`, basis: 'person' },
   { type: 'tool.completed', callId, status: 'completed', output, files: [file] },
 ] as RunEventPayload[];
 

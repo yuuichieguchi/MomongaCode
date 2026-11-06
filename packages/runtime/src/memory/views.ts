@@ -26,7 +26,13 @@ const UNREACHABLE_PORTS: EvidencePorts = {
   isAncestor: () => Promise.reject(new Error('a memory with no project is never checked against a commit')),
 };
 
+export type RecordViewsReading = {
+  viewOf(record: MemoryRecord): Promise<MemoryView>;
+  viewsOf(records: readonly MemoryRecord[]): Promise<MemoryView[]>;
+};
+
 export type RecordViews = {
+  reading(signal: AbortSignal): RecordViewsReading;
   viewOf(record: MemoryRecord, signal: AbortSignal): Promise<MemoryView>;
   viewsOf(records: readonly MemoryRecord[], signal: AbortSignal): Promise<MemoryView[]>;
 };
@@ -39,7 +45,7 @@ export type RecordViewsOptions = {
 
 export const createRecordViews = (options: RecordViewsOptions): RecordViews => {
   const portsFor = options.evidencePorts ?? createEvidencePorts;
-  const viewsOf = (records: readonly MemoryRecord[], signal: AbortSignal): Promise<MemoryView[]> => {
+  const reading = (signal: AbortSignal): RecordViewsReading => {
     const contexts = new Map<string, MemoryStatusContext>();
     const contextOf = (project: string): MemoryStatusContext => {
       const known = contexts.get(project);
@@ -49,16 +55,22 @@ export const createRecordViews = (options: RecordViewsOptions): RecordViews => {
       contexts.set(project, created);
       return created;
     };
-    return observedViewsOf(options.store, records, (record) => {
-      const bound = record.evidence.find((entry) => entry.kind === 'file');
-      const project = record.project ?? (bound?.kind === 'file' ? bound.project : undefined);
-      return project === undefined ? { project: NO_PROJECT, trusted: false, ports: UNREACHABLE_PORTS } : contextOf(project);
-    });
+    const viewsOf = (records: readonly MemoryRecord[]): Promise<MemoryView[]> =>
+      observedViewsOf(options.store, records, (record) => {
+        const bound = record.evidence.find((entry) => entry.kind === 'file');
+        const project = record.project ?? (bound?.kind === 'file' ? bound.project : undefined);
+        return project === undefined ? { project: NO_PROJECT, trusted: false, ports: UNREACHABLE_PORTS } : contextOf(project);
+      });
+    const viewOf = async (record: MemoryRecord): Promise<MemoryView> => {
+      const [view] = await viewsOf([record]);
+      if (view === undefined) throw new Error(`memory ${record.id} produced no view`);
+      return view;
+    };
+    return { viewOf, viewsOf };
   };
-  const viewOf = async (record: MemoryRecord, signal: AbortSignal): Promise<MemoryView> => {
-    const [view] = await viewsOf([record], signal);
-    if (view === undefined) throw new Error(`memory ${record.id} produced no view`);
-    return view;
+  return {
+    reading,
+    viewOf: (record, signal) => reading(signal).viewOf(record),
+    viewsOf: (records, signal) => reading(signal).viewsOf(records),
   };
-  return { viewOf, viewsOf };
 };

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CONTEXT_DATASET_FORMAT, EvalError, compareContextReports, formatContextComparison, parseContextDataset } from '@momonga/eval';
 import type { Transcript } from '@momonga/eval';
 import type { RunEventPayload, SummaryFidelity } from '@momonga/protocol';
-import { bash, compacted, contextCase, fidelity, recorded, summarized } from './context-fixtures.ts';
+import { bash, compacted, contextCase, fidelity, ran, recorded, summarized } from './context-fixtures.ts';
 import { buildReportAs, withMeasuredQuality } from './answered-fixtures.ts';
 
 const SCENARIOS = ['a', 'b', 'c', 'd'] as const;
@@ -37,7 +37,7 @@ const reportOf = ({ failingOn = [], failingOff = [], tokens = {}, extra = [], su
     recorded(
       `${scenario}-on`,
       0,
-      noCompaction.includes(scenario) ? [] : [...bash('b0', 'npm test', 'failed'), unlabelled ? compacted(3) : summarized(3, summary), ...extra],
+      noCompaction.includes(scenario) ? [] : [...ran(bash('b0', 'npm test', 'failed')), unlabelled ? compacted(3) : summarized(3, summary), ...extra],
       { status: failingOn.includes(scenario) ? 'FAILED' : 'COMPLETED', totalTokens: tokens[`${scenario}-on`] ?? 100 },
     ),
     recorded(`${scenario}-off`, 0, [], { status: failingOff.includes(scenario) ? 'FAILED' : 'COMPLETED', totalTokens: tokens[`${scenario}-off`] ?? 100 }),
@@ -111,7 +111,7 @@ describe('compareContextReports', () => {
   });
 
   it('fails when every paired compaction loses more', () => {
-    const candidate = reportOf({ extra: bash('b1', 'npm test', 'failed') });
+    const candidate = reportOf({ extra: ran(bash('b1', 'npm test', 'failed')) });
     expect(checkOf('lossSignalsPerCompaction', reportOf(), candidate)?.passed).toBe(false);
   });
 

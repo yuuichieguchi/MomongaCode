@@ -479,7 +479,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         env: process.env['PATH'] === undefined ? {} : { PATH: process.env['PATH'] },
         enforcement: ruleEnforcementOf(sandbox.kind),
       });
-      const memories = createMemoryPort({ store, settings: composition.settings, evidenceRun: (session) => evidenceRunFor(session.cwd) });
+      const memories = createMemoryPort({ store, settings: composition.settings, evidenceRun: evidenceRunFor });
       const history = createHistoryPort({ store, settings: composition.settings, clock, home: canonicalHome, redactor, enforcement: ruleEnforcementOf(sandbox.kind) });
       const governance = createGovernancePort({ store, settings: composition.settings });
       const agents = createAgentsPort({

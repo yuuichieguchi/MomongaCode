@@ -10,6 +10,12 @@ import { makeEnv, textOf } from './harness.ts';
 import type { Env } from './harness.ts';
 import { callsStep, textStep } from './scripts.ts';
 
+const trustedEnv = async (): Promise<Env> => {
+  const env = await makeEnv({ mode: 'bypassPermissions' });
+  env.store.trust.set(env.session.cwd, 'trusted');
+  return env;
+};
+
 const HEAD = '0123456789abcdef0123456789abcdef01234567';
 
 const FILE = 'src/a.ts';
@@ -66,7 +72,7 @@ const inputText = (env: Env, index: number): string => (env.gateway.streams[inde
 
 describe('MemorySave in a run', () => {
   it('binds a file read in this run with the hash the tool recorded, the head commit and the latest check, and takes no hash from the model', async () => {
-    const env = await makeEnv({ mode: 'bypassPermissions' });
+    const env = await trustedEnv();
     const target = writeFile(env, 'abc');
     const commands: EvidenceCommand[] = [];
     env.settings.verificationValue = { commands: ['npm test'], manifests: [] };
@@ -90,7 +96,7 @@ describe('MemorySave in a run', () => {
   });
 
   it('records HEAD for a note that names no path, and hands the evidence run the signal of the tool call', async () => {
-    const env = await makeEnv({ mode: 'bypassPermissions' });
+    const env = await trustedEnv();
     const signals: AbortSignal[] = [];
     const commands: EvidenceCommand[] = [];
     env.gateway.script.push(callsStep([{ callId: 'call_m_1', name: 'MemorySave', args: { text: 'the repo uses vitest', scope: 'project' } }]), textStep('Saved.'));
@@ -110,7 +116,7 @@ describe('MemorySave in a run', () => {
   });
 
   it('hands recall a signal that follows the run: open while the run lives', async () => {
-    const env = await makeEnv({ mode: 'bypassPermissions' });
+    const env = await trustedEnv();
     const given: AbortSignal[] = [];
     const inner = createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: () => gitRun([]) });
     env.gateway.script.push(textStep('Fine.'));
@@ -130,7 +136,7 @@ describe('MemorySave in a run', () => {
   });
 
   it('fails the call, saving nothing, when the path was not read or written in this run', async () => {
-    const env = await makeEnv({ mode: 'bypassPermissions' });
+    const env = await trustedEnv();
     writeFile(env, 'abc');
     env.gateway.script.push(savePaths([FILE]), textStep('Refused.'));
     const run = env.enqueue('Remember what a.ts does');
@@ -151,7 +157,7 @@ describe('MemorySave in a run', () => {
     };
 
     it('refuses an untrusted folder replacing a trusted user note, leaving the old note recalled', async () => {
-      const env = await makeEnv({ mode: 'bypassPermissions' });
+      const env = await trustedEnv();
       await saveOnce(env, 'a', { text: 'trusted user note', scope: 'user' }, true);
       const [older] = env.store.memories.list();
       const run = await saveOnce(env, 'b', { text: 'hostile replacement', scope: 'user', supersedes: [older?.id] }, false);
@@ -162,7 +168,7 @@ describe('MemorySave in a run', () => {
     });
 
     it('refuses a user note replacing a project note, and a project note replacing a user note', async () => {
-      const env = await makeEnv({ mode: 'bypassPermissions' });
+      const env = await trustedEnv();
       await saveOnce(env, 'a', { text: 'project note', scope: 'project' }, true);
       await saveOnce(env, 'b', { text: 'user note', scope: 'user' }, true);
       const [project, user] = env.store.memories.list();
@@ -175,7 +181,7 @@ describe('MemorySave in a run', () => {
   });
 
   it('fails the call when the note replaces a memory that is not saved', async () => {
-    const env = await makeEnv({ mode: 'bypassPermissions' });
+    const env = await trustedEnv();
     env.gateway.script.push(savePaths([], { supersedes: ['absent'] }), textStep('Refused.'));
     const run = env.enqueue('Remember');
     await env.runOnce(workerFor(env, 'w-1', gitRun([])));
@@ -184,7 +190,7 @@ describe('MemorySave in a run', () => {
   });
 
   it('shows the note as verified while the file is unchanged and as stale once it changes, recording the status each run recalled', async () => {
-    const env = await makeEnv({ mode: 'bypassPermissions' });
+    const env = await trustedEnv();
     const target = writeFile(env, 'abc');
     const run = gitRun([]);
     env.gateway.script.push(callsStep([{ callId: 'call_r_1', name: 'Read', args: { file_path: target } }]), savePaths([FILE]), textStep('Saved.'));
@@ -208,7 +214,7 @@ describe('MemorySave in a run', () => {
   });
 
   it('shows a replaced note only with include all, and the status of each', async () => {
-    const env = await makeEnv({ mode: 'bypassPermissions' });
+    const env = await trustedEnv();
     const port = createMemoryPort({ store: env.store, settings: env.settings, evidenceRun: () => gitRun([]) });
     env.gateway.script.push(
       callsStep([{ callId: 'call_m_1', name: 'MemorySave', args: { text: 'old shared note', scope: 'project' } }]),

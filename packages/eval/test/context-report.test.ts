@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CONTEXT_DATASET_FORMAT, EvalError, formatContextReport, pairedBootstrap, parseContextDataset, proportionOf } from '@momonga/eval';
 import type { Transcript } from '@momonga/eval';
 import type { RunEventPayload, SummaryFidelity } from '@momonga/protocol';
-import { bash, compacted, contextCase, fidelity, governing, historyRead, memories, recorded, summarized } from './context-fixtures.ts';
+import { bash, compacted, contextCase, fidelity, governing, historyRead, memories, ran, recorded, summarized } from './context-fixtures.ts';
 import { buildReportAs } from './answered-fixtures.ts';
 
 type Variant = { s1On?: 'COMPLETED' | 'FAILED'; tokens?: Partial<Record<'s1-on' | 's1-off' | 's2-on' | 's2-off', number>>; extra?: RunEventPayload[]; summary?: SummaryFidelity };
@@ -14,7 +14,7 @@ const needleBash = (): RunEventPayload[] => bash('b0', 'npm test', 'failed').map
 const s1OnPayloads = (summary: SummaryFidelity, extra: RunEventPayload[]): RunEventPayload[] => [
   governing('r'),
   memories('stale', 'verified'),
-  ...needleBash(),
+  ...ran(needleBash()),
   summarized(4, summary),
   ...extra,
   ...historyRead('h1', 3, 6),
@@ -37,7 +37,7 @@ const dataset = parseContextDataset(
 const transcriptsOf = ({ s1On = 'FAILED', tokens = {}, extra = [], summary = fidelity([], 2, 2) }: Variant = {}): Transcript[] => [
   recorded('s1-on', 0, s1OnPayloads(summary, extra), { status: s1On, totalTokens: tokens['s1-on'] ?? 300 }),
   recorded('s1-off', 0, [governing('r')], { totalTokens: tokens['s1-off'] ?? 100 }),
-  recorded('s2-on', 0, [...bash('b0', 'npm test', 'failed'), summarized(2, summary), ...extra], { totalTokens: tokens['s2-on'] ?? 100 }),
+  recorded('s2-on', 0, [...ran(bash('b0', 'npm test', 'failed')), summarized(2, summary), ...extra], { totalTokens: tokens['s2-on'] ?? 100 }),
   recorded('s2-off', 0, [], { totalTokens: tokens['s2-off'] ?? 100 }),
 ];
 
@@ -96,8 +96,8 @@ describe('buildContextReport', () => {
   });
 
   it('pools retrieval over seqs against the gold ranges that the call carrying the anchor fixes', () => {
-    expect(report.metrics.retrievalPrecision).toMatchObject({ successes: 2, trials: 4, clusters: 1 });
-    expect(report.metrics.retrievalRecall).toMatchObject({ successes: 2, trials: 2, clusters: 1 });
+    expect(report.metrics.retrievalPrecision).toMatchObject({ successes: 3, trials: 4, clusters: 1 });
+    expect(report.metrics.retrievalRecall).toMatchObject({ successes: 3, trials: 3, clusters: 1 });
   });
 
   it('pools governance over the cases that define rules', () => {
@@ -119,7 +119,7 @@ describe('buildContextReport', () => {
   });
 
   it('divides loss signals by compactions', () => {
-    const extra = bash('b1', 'npm test', 'failed');
+    const extra = ran(bash('b1', 'npm test', 'failed'));
     expect(realReport().metrics.lossSignalsPerCompaction).toMatchObject({ value: 0.5, n: 2 });
     expect(realReport({ extra }).metrics.lossSignalsPerCompaction).toMatchObject({ value: 1.5, n: 2 });
   });
