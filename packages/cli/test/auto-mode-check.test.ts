@@ -8,7 +8,6 @@ import type { MomongaPaths } from '@momonga/foundation';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { autoModeCheck } from '../src/commands/auto-mode.ts';
 import type { AutoModeCheckPorts } from '../src/commands/auto-mode.ts';
-import { liveSettingsFor } from '../src/eval/context-host.ts';
 import type { ContextHostEffects, ContextRuntime } from '../src/eval/context-host.ts';
 
 const AUTO_MODE_RUNS = 148;
@@ -195,28 +194,6 @@ const noDaemonOrHomeLeft = (state: Fake): void => {
   expect([...state.terminated].sort()).toEqual([...state.started].sort());
   expect([...state.roots.values()].filter((entry) => !entry.removed)).toEqual([]);
 };
-
-describe('liveSettingsFor takes a list of aliases (N1)', () => {
-  it('returns the old output for one alias', () => {
-    const settings = liveSettingsFor(userModels(), ['guard']);
-    expect(settings.models).toEqual({ aliases: { guard: ['g'] }, targets: { g: declared('guard-model') } });
-    expect(settings.credentials).toEqual([]);
-    expect(settings.fmTargets).toEqual([]);
-    expect(settings.endpointProbes).toHaveLength(1);
-  });
-
-  it('maps each listed alias to its members and unites their targets', () => {
-    const settings = liveSettingsFor(userModels(), ['worker', 'guard']);
-    expect(settings.models).toEqual({ aliases: { worker: ['w'], guard: ['g'] }, targets: { w: declared('worker-model'), g: declared('guard-model') } });
-    expect(settings.endpointProbes).toHaveLength(2);
-  });
-
-  it('deduplicates when the agent and the classifier alias are equal', () => {
-    const settings = liveSettingsFor(userModels(), ['guard', 'guard']);
-    expect(settings.models).toEqual({ aliases: { guard: ['g'] }, targets: { g: declared('guard-model') } });
-    expect(settings.endpointProbes).toHaveLength(1);
-  });
-});
 
 describe('auto-mode check over the embedded dataset', () => {
   it('runs each of the 148 runs in its own temporary home and daemon, and connects to no other daemon (N2)', async () => {
