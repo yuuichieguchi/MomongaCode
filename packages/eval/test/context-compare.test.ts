@@ -74,7 +74,8 @@ describe('compareContextReports', () => {
 
   it('reports paired differences with n', () => {
     const { differences } = compare(reportOf({ failingOn: ['a'] }), reportOf({ tokens: { 'a-on': 150, 'b-on': 150, 'c-on': 150, 'd-on': 150 } }));
-    expect(differences.tokensPerSuccess).toEqual({ mean: 50, low: 50, high: 50, n: 4 });
+    expect(differences.tokensPerSuccess?.mean).toBeCloseTo(600 / 4 - 400 / 3, 9);
+    expect(differences.tokensPerSuccess?.n).toBe(4);
     expect(differences.lossSignalsPerCompaction).toEqual({ mean: 0, low: 0, high: 0, n: 4 });
   });
 
@@ -118,6 +119,14 @@ describe('compareContextReports', () => {
   it('fails when every paired case costs more tokens', () => {
     const candidate = reportOf({ tokens: { 'a-on': 150, 'b-on': 150, 'c-on': 150, 'd-on': 150 } });
     expect(checkOf('tokensPerSuccess', reportOf(), candidate)?.passed).toBe(false);
+  });
+
+  it('judges tokens per passing run, so a candidate that passes more runs for more total tokens can still be cheaper per success', () => {
+    const baseline = reportOf({ failingOn: ['a', 'b'] });
+    const candidate = reportOf({ tokens: { 'a-on': 150, 'b-on': 150, 'c-on': 150, 'd-on': 150 } });
+    const { differences } = compare(baseline, candidate);
+    expect(differences.tokensPerSuccess?.mean).toBe(-50);
+    expect(checkOf('tokensPerSuccess', baseline, candidate)?.passed).toBe(true);
   });
 
   it('tolerates a token change whose interval spans zero', () => {
