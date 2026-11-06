@@ -73,8 +73,7 @@
       "expect": {
         "status": "COMPLETED",
         "episodeOutcomes": [
-          "recovered",
-          "unknown_effect"
+          "recovered"
         ],
         "minEpisodes": 1
       }
@@ -104,7 +103,6 @@
       "expect": {
         "status": "COMPLETED",
         "episodeOutcomes": [
-          "recovered",
           "unknown_effect"
         ],
         "minEpisodes": 1,
