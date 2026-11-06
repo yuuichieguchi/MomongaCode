@@ -64,11 +64,14 @@ const capabilitiesOrReason = async (
   gateway: WorkerOptions['gateway'],
   alias: string,
   signal: AbortSignal,
+  interruptions: number,
 ): Promise<{ capabilities: Capabilities } | { unavailable: string }> => {
   try {
     return { capabilities: await gateway.capabilities(alias, { signal }) };
   } catch (error) {
-    if (error instanceof GatewayRequestError) return { unavailable: error.message };
+    if (!(error instanceof GatewayRequestError)) throw error;
+    const disposition = dispositionOf(error, interruptions);
+    if (disposition.kind === 'fail') return { unavailable: disposition.message };
     throw error;
   }
 };
@@ -299,7 +302,7 @@ const drive = async (
 
   const recorded = journal.state.pins;
   const pinned = recorded === undefined ? undefined : readPins(recorded);
-  const read = pinned === undefined ? await capabilitiesOrReason(gateway, session.modelAlias, control.signal) : { capabilities: pinned.capabilities };
+  const read = pinned === undefined ? await capabilitiesOrReason(gateway, session.modelAlias, control.signal, memory.interruptions) : { capabilities: pinned.capabilities };
   if ('unavailable' in read) {
     await terminals.finish('FAILED', { error: { code: TARGET_NOT_READY, message: readinessText(agentReadiness({ unavailable: read.unavailable })) } });
     return;
