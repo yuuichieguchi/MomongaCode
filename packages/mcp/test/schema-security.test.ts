@@ -24,26 +24,40 @@ describe('untrusted MCP input schemas', () => {
     expect(noticesAbout(set, 'mcp__modern__uncompilable')).toHaveLength(1);
   });
 
-  it('strips pattern and patternProperties and loosens additionalProperties only where patternProperties was', async () => {
+  it('keeps pattern and patternProperties as the server wrote them, also in the schema shown to the model', async () => {
     const { set } = await modernSet();
-    expect(set.get('mcp__modern__patterned')?.inputSchema).toEqual({
+    const written = {
       type: 'object',
       properties: {
-        code: { type: 'string' },
+        code: { type: 'string', pattern: '^[0-9]+$' },
         when: { type: 'string', format: 'vendor-date' },
-        nested: { type: 'object', properties: { inner: { type: 'string' } }, additionalProperties: false },
+        nested: { type: 'object', properties: { inner: { type: 'string', pattern: '^z$' } }, additionalProperties: false },
       },
-      additionalProperties: true,
+      patternProperties: { '^x-': { type: 'number' } },
+      additionalProperties: false,
       required: ['code'],
-    });
-    expect(set.forModel({ mode: 'default', rules: [] }).find((tool) => tool.name === 'mcp__modern__patterned')?.parameters).not.toHaveProperty(
-      'patternProperties',
-    );
+    };
+    expect(set.get('mcp__modern__patterned')?.inputSchema).toEqual(written);
+    const parameters = set.forModel({ mode: 'default', rules: [] }).find((tool) => tool.name === 'mcp__modern__patterned')?.parameters;
+    expect(parameters).toMatchObject({ properties: { code: { pattern: '^[0-9]+$' } }, patternProperties: { '^x-': { type: 'number' } } });
   });
 
-  it('lets arguments that only violate stripped patterns reach the server', async () => {
+  it.each([
+    ['a value that breaks a pattern', { code: 'not-digits' }],
+    ['a nested value that breaks a pattern', { code: '1', nested: { inner: 'q' } }],
+    ['a property matched by patternProperties with the wrong type', { code: '1', 'x-extra': 'text' }],
+    ['a property neither listed nor matched by patternProperties', { code: '1', other: 1 }],
+  ])('refuses %s before it reaches the server', async (_label, args) => {
     const { set, recordFile } = await modernSet();
-    const args = { code: 'not-digits', when: 'whenever', 'x-extra': 'text', nested: { inner: 'q' } };
+    const result = await makeExecutor().resultOf(set, 'mcp__modern__patterned', args);
+    expect(result.status).toBe('failed');
+    expect(result.output.startsWith('Invalid input for mcp__modern__patterned:')).toBe(true);
+    expect(callRecords(recordFile, 'patterned')).toEqual([]);
+  });
+
+  it('lets arguments that meet every pattern reach the server', async () => {
+    const { set, recordFile } = await modernSet();
+    const args = { code: '42', when: 'whenever', 'x-extra': 3, nested: { inner: 'z' } };
     const result = await makeExecutor().resultOf(set, 'mcp__modern__patterned', args);
     expect(result.status).toBe('completed');
     expect(JSON.parse(result.output)).toEqual(args);
@@ -54,7 +68,7 @@ describe('untrusted MCP input schemas', () => {
     ['a wrong type', { code: 5 }],
     ['a missing required property', { when: 'x' }],
     ['an unknown property where additionalProperties stays false', { code: '1', nested: { inner: 'z', other: 1 } }],
-  ])('still rejects %s after sanitizing', async (_label, args) => {
+  ])('still rejects %s', async (_label, args) => {
     const { set, recordFile } = await modernSet();
     const result = await makeExecutor().resultOf(set, 'mcp__modern__patterned', args);
     expect(result.status).toBe('failed');

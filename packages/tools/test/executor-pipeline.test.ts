@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { EMPTY_PROTECTED_SET, HOST_RULE_ENFORCEMENT, canonicalJson, resolveCanonicalPath, sha256Hex } from '@momonga/foundation';
+import { EMPTY_PROTECTED_SET, canonicalJson, resolveCanonicalPath, sha256Hex, ruleEnforcementOf } from '@momonga/foundation';
 import { TEST_SEARCH_PATH, afterMicrotasks, fakePolicyFilesystem, isWritableFor, protectedSetWith } from '@momonga/testkit';
 import { computeFileRules, decide, suggestAllowRule } from '@momonga/policy';
 import { ToolExecutionError, ToolInputError } from '@momonga/tools';
@@ -64,7 +64,7 @@ describe('executor pipeline early exits', () => {
       mode: 'default',
       rules,
       roots: [harness.layout.project],
-      fileRules: computeFileRules(rules, [harness.layout.project], null, HOST_RULE_ENFORCEMENT),
+      fileRules: computeFileRules(rules, [harness.layout.project], null, ruleEnforcementOf('none')),
       home: harness.layout.home,
       cwd: harness.layout.project,
       fs: fakePolicyFilesystem(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([harness.layout.project]),
@@ -94,7 +94,7 @@ describe('executor pipeline early exits', () => {
       mode: 'default',
       rules: [],
       roots: [harness.layout.project],
-      fileRules: computeFileRules([], [harness.layout.project], null, HOST_RULE_ENFORCEMENT),
+      fileRules: computeFileRules([], [harness.layout.project], null, ruleEnforcementOf('none')),
       home: harness.layout.home,
       cwd: harness.layout.project,
       fs: fakePolicyFilesystem(), searchPath: TEST_SEARCH_PATH, isWritable: isWritableFor([harness.layout.project]),

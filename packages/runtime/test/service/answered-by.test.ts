@@ -1,11 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { answeredByOf } from '../../src/service/answered-by.ts';
+import { expectSchema } from './helpers.ts';
 
 type FakeEvent = { type: string; [key: string]: unknown };
-
-const storeOf = (events: FakeEvent[]) => ({
-  readRunEventsOfTypes: (_runId: string, types: readonly string[]) => events.filter((event) => types.includes(event.type)),
-});
 
 const started = (targets: unknown): FakeEvent => ({ type: 'run.started', attempt: 1, now: 0, pins: { modelAlias: 'default', targets } });
 
@@ -17,34 +14,70 @@ const TARGETS = {
   local: { adapter: 'ollama', model: 'llama3' },
 };
 
-const answeredBy = (events: FakeEvent[]) => answeredByOf(storeOf(events) as unknown as Parameters<typeof answeredByOf>[0], 'run-1');
+const countingStore = (events: FakeEvent[], answering: string[]) => {
+  const readTypes: string[][] = [];
+  const store = {
+    readRunEventsOfTypes: (_runId: string, types: readonly string[]) => {
+      readTypes.push([...types]);
+      return events.filter((event) => types.includes(event.type));
+    },
+    answeringTargetsOf: (_runId: string) => [...answering],
+  };
+  return { store, readTypes };
+};
 
-describe('what answered a run, from its meter observations and its pins', () => {
-  it('names each answering target once, with the adapter, the upstream model and the pinned answers', () => {
-    expect(answeredBy([started(TARGETS), observed('opus'), observed('opus'), observed('scripted')])).toEqual([
+const answeredBy = (events: FakeEvent[], answering: string[]) => {
+  const { store, readTypes } = countingStore(events, answering);
+  const view = answeredByOf(store as unknown as Parameters<typeof answeredByOf>[0], 'run-1');
+  return { view, readTypes };
+};
+
+describe('what answered a run, from the per-run answerers record and its pins', () => {
+  it('names each answering target with the adapter, the upstream model and the pinned answers', () => {
+    expect(answeredBy([started(TARGETS)], ['opus', 'scripted']).view).toStrictEqual([
       { target: 'opus', adapter: 'anthropic', upstreamModel: 'claude-opus', answers: 'model' },
       { target: 'scripted', adapter: 'chat-completions', upstreamModel: 'fake-model', answers: 'script' },
     ]);
   });
 
+  it('reads no meter.observed event, whatever the journal holds, and takes the targets from the record', () => {
+    const { view, readTypes } = answeredBy([started(TARGETS), observed('local'), observed('local')], ['opus']);
+    expect(view.map((entry) => entry.target)).toEqual(['opus']);
+    expect(readTypes.flat()).not.toContain('meter.observed');
+    expect(readTypes.flat().every((type) => type === 'run.started')).toBe(true);
+  });
+
   it('reports a target the settings never declared as unknown, never as a model', () => {
-    expect(answeredBy([started(TARGETS), observed('local')])).toEqual([{ target: 'local', adapter: 'ollama', upstreamModel: 'llama3', answers: 'unknown' }]);
+    expect(answeredBy([started(TARGETS)], ['local']).view).toStrictEqual([{ target: 'local', adapter: 'ollama', upstreamModel: 'llama3', answers: 'unknown' }]);
+  });
+
+  it('an unknown answerer is not looked up in the pins and has no adapter and no upstreamModel field', () => {
+    const { view } = answeredBy([started(TARGETS)], ['opus', 'unknown']);
+    expect(view).toStrictEqual([
+      { target: 'opus', adapter: 'anthropic', upstreamModel: 'claude-opus', answers: 'model' },
+      { target: 'unknown', answers: 'unknown' },
+    ]);
+    expect(Object.keys(view[1] ?? {})).toEqual(['target', 'answers']);
+  });
+
+  it('the RunAnsweredBy response schema accepts an unknown answerer without adapter and upstreamModel', () => {
+    expect(() => expectSchema('RunAnsweredBy', { answeredBy: [{ target: 'unknown', answers: 'unknown' }] })).not.toThrow();
   });
 
   it('reads the pins of the run, so a target that a settings change later declared script stays what it was pinned as', () => {
     const pinned = { opus: { adapter: 'anthropic', model: 'claude-opus', answers: 'model' } };
-    expect(answeredBy([started(pinned), observed('opus')])[0]?.answers).toBe('model');
+    expect(answeredBy([started(pinned)], ['opus']).view[0]?.answers).toBe('model');
   });
 
-  it('answers with no target when no response was observed', () => {
-    expect(answeredBy([started(TARGETS)])).toEqual([]);
+  it('answers with no target when the record names none', () => {
+    expect(answeredBy([started(TARGETS)], []).view).toEqual([]);
   });
 
   it('refuses a run that pinned no targets instead of guessing what answered it', () => {
-    expect(() => answeredBy([{ type: 'run.started', attempt: 1, now: 0, pins: { modelAlias: 'default' } }, observed('opus')])).toThrow(/pinned no targets/);
+    expect(() => answeredBy([{ type: 'run.started', attempt: 1, now: 0, pins: { modelAlias: 'default' } }], ['opus'])).toThrow(/pinned no targets/);
   });
 
-  it('refuses a response of a target the pins do not list', () => {
-    expect(() => answeredBy([started({ opus: TARGETS.opus }), observed('ghost')])).toThrow(/ghost/);
+  it('refuses a recorded answerer that the pins do not list', () => {
+    expect(() => answeredBy([started({ opus: TARGETS.opus })], ['ghost'])).toThrow(/ghost/);
   });
 });

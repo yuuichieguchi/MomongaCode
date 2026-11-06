@@ -425,6 +425,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
     ...(resource.momonga?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: resource.momonga.cacheWriteInputTokens }),
     ...(resource.momonga?.cost === undefined ? {} : { cost: resource.momonga.cost }),
     timing: { durationMs: options.clock.now() - startedAt },
+    ...(resource.momonga === undefined ? {} : { target: resource.momonga.target }),
   };
   const unreadableNotices =
     recorded.unreadable.length === 0

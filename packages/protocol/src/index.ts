@@ -108,6 +108,7 @@ export {
   TOOL_PLACEMENTS,
   REASONING_EFFORTS,
   TARGET_ANSWERS,
+  UNKNOWN_ANSWERER,
   TARGET_BILLINGS,
   applyCapabilityOverride,
   imageCapability,

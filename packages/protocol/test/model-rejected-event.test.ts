@@ -36,6 +36,7 @@ describe('model.rejected', () => {
       reason: 'counter_mismatch' | 'missing_counter' | 'missing_usage' | 'missing_target';
       counter?: string;
       meterCounter?: string;
+      target?: string;
     }>();
   });
 

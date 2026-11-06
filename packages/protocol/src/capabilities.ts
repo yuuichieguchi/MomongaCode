@@ -11,6 +11,7 @@ export const TARGET_BILLINGS = ['metered', 'local', 'plan'] as const;
 export type TargetBilling = (typeof TARGET_BILLINGS)[number];
 
 export const TARGET_ANSWERS = ['model', 'script'] as const;
+export const UNKNOWN_ANSWERER = 'unknown' as const;
 export type TargetAnswers = (typeof TARGET_ANSWERS)[number];
 
 export type ImageTokenModel = { pixelsPerToken: number; maxTokens: number; minTokens: number };

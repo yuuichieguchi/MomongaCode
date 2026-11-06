@@ -2,10 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Unresolved } from './path-resolution.ts';
 import { isTransientErrno } from './transient-errno.ts';
+import { unmeasuredBecause } from './capability-probe.ts';
+import type { CapabilityResult } from './capability-probe.ts';
 
 export type CaseSensitivityProbe = (existingDirectory: string) => boolean | undefined;
-
-const PLATFORM_DEFAULT_CASE_INSENSITIVE = process.platform === 'darwin' || process.platform === 'win32';
 
 const flipCase = (value: string): string =>
   [...value].map((char) => (char === char.toLowerCase() ? char.toUpperCase() : char.toLowerCase())).join('');
@@ -58,7 +58,7 @@ const probeCaseFolding = (directory: string): boolean | undefined => {
 };
 
 let caseSensitivityProbe: CaseSensitivityProbe = probeCaseFolding;
-type VolumeVerdict = { rootPath: string; rootIno: number; verdict: boolean };
+type VolumeVerdict = { rootPath: string; rootIno: number; result: CapabilityResult<boolean> };
 
 const caseFoldingByDevice = new Map<number, VolumeVerdict>();
 
@@ -87,17 +87,45 @@ const mountRootOf = (directory: string, device: number): string => {
   }
 };
 
-const verdictForDirectory = (directory: string, device: number): boolean => {
+const UNDETERMINED = 'case sensitivity of this volume could not be determined';
+
+const measureCaseSensitivity = (directory: string): CapabilityResult<boolean> => {
+  let verdict: boolean | undefined;
+  try {
+    verdict = caseSensitivityProbe(directory);
+  } catch (error) {
+    const reason = unmeasuredBecause(error).evidence;
+    return { kind: 'unmeasured', evidence: `${UNDETERMINED}: ${reason} (${directory})` };
+  }
+  if (verdict === undefined) {
+    return { kind: 'unsupported', evidence: `${UNDETERMINED}: no entry on the volume could be compared in a different case (${directory})` };
+  }
+  return { kind: 'supported', value: verdict, evidence: `measured on the volume of ${directory}` };
+};
+
+const resultForDirectory = (directory: string, device: number): CapabilityResult<boolean> => {
   const cached = caseFoldingByDevice.get(device);
   if (cached !== undefined) {
     const root = statIfPresent(cached.rootPath);
-    if (root !== undefined && root.dev === device && root.ino === cached.rootIno) return cached.verdict;
+    if (root !== undefined && root.dev === device && root.ino === cached.rootIno) return cached.result;
   }
   const rootPath = mountRootOf(directory, device);
   const rootIno = statIfPresent(rootPath)?.ino as number;
-  const verdict = caseSensitivityProbe(directory) ?? PLATFORM_DEFAULT_CASE_INSENSITIVE;
-  caseFoldingByDevice.set(device, { rootPath, rootIno, verdict });
-  return verdict;
+  const result = measureCaseSensitivity(directory);
+  if (result.kind === 'unmeasured') caseFoldingByDevice.delete(device);
+  else caseFoldingByDevice.set(device, { rootPath, rootIno, result });
+  return result;
+};
+
+const verdictForDirectory = (directory: string, device: number): boolean => {
+  const result = resultForDirectory(directory, device);
+  if (result.kind !== 'supported') throw new Error(result.evidence);
+  return result.value;
+};
+
+export const caseSensitivityOf = (target: string): CapabilityResult<boolean> => {
+  const { directory, device } = deepestExistingDirectory(target);
+  return resultForDirectory(directory, device);
 };
 
 export const volumeIsCaseInsensitive = (target: string): boolean => {

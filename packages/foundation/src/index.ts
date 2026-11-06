@@ -26,8 +26,9 @@ export { OUTPUT_READER_TOOL, TRUNCATION_MARKER_SOURCE, truncationMarker } from '
 export { immediateTx, joinedTx, migrate, openDatabase, readTx } from './sqlite.ts';
 export type { MigrateResult, Migration, OpenDatabaseOptions } from './sqlite.ts';
 export { SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS, decodeSse, encodeSse } from './sse.ts';
-export { openCommandFor, openInBrowser } from './open-browser.ts';
-export type { OpenCommand } from './open-browser.ts';
+export { createBrowserOpener, openCommandFor } from './open-browser.ts';
+export type { BrowserOpenerPorts, BrowserRunPort, OpenCommand } from './open-browser.ts';
+export { findProgramOnPath } from './program-search.ts';
 export type { SseEvent } from './sse.ts';
 export { createUdsClient, isUnixSocketLive, listenUnix } from './uds.ts';
 export type { UdsClient, UdsClientOptions, UdsRequestOptions, UdsResponse } from './uds.ts';
@@ -98,8 +99,8 @@ export { RETRY_KINDS, claimRetry, markIgnored, nodeRecordFiles, parseAttemptReco
 export type { AttemptRecord, ClaimOutcome as RetryClaim, RecordFiles, RetryKind } from './platform/marker-record.ts';
 export { closeMarkerDescriptor, createMarker } from './platform/marker-file.ts';
 export type { CreateMarkerOptions, MarkerHandle } from './platform/marker-file.ts';
-export { LOCK_DATABASE_SUFFIX, createSqliteFileLock, nodeSqliteLockOps, sqliteFileLock } from './platform/sqlite-lock.ts';
-export type { OpenLockDatabase, SqliteLockOps } from './platform/sqlite-lock.ts';
+export { LOCK_DATABASE_SUFFIX, createSqliteFileLock, nodeSqliteLockOps, probeRemovesOpenFiles, sqliteFileLock } from './platform/sqlite-lock.ts';
+export type { OpenLockDatabase, SqliteLockOps, UnlinkOpenProbePorts } from './platform/sqlite-lock.ts';
 export { removeFilesThenRelease } from './platform/holder-file.ts';
 export type { LockFileIdentity } from './platform/file-identity.ts';
 export { CLAIM_POLL_MS, claimWithin } from './platform/claim-within.ts';
@@ -122,6 +123,12 @@ export {
   keychainWriteCommand,
   credentialWriteScript,
   createPlatformSecretStore,
+  secretStoreEnvFor,
+  givenSecretStoreChildEnv,
+  createGivenSecretStore,
+  SECRET_BACKEND_ENV,
+  SECRET_PROGRAM_ENV,
+  SECRET_REFUSAL_ENV,
   createSecretServiceStore,
   createCredentialManagerStore,
   credentialReadScript,
@@ -167,6 +174,7 @@ export {
   createJsonLogger,
   formatLogLine,
   minimalChildEnv,
+  declaredChildEnv,
   parseReadyLine,
   runtimeMaxCloseMs,
   supervisorMaxCloseMs,
@@ -180,8 +188,11 @@ export { createUninspectableRegistry } from './uninspectable-registry.ts';
 export type { UninspectableRegistry, UninspectableRegistryPorts } from './uninspectable-registry.ts';
 export { isProcessAlive } from './process-alive.ts';
 export type { SignalSender } from './process-alive.ts';
-export { LINUX_SOCKET_PATH_LIMIT, PIPE_NAME_LIMIT, SOCKET_PATH_LIMIT, assertSocketPathLength, isPipePath, pipePathFor, socketPathLimit } from './socket-path.ts';
-export { MAX_SYMLINK_HOPS, canonicalDirectory, canonicalPath, comparableContains, comparableFromParts, comparablePath, containsByComponents, locateThroughFiles, setCaseSensitivityProbe, volumeIsCaseInsensitive, walkPath } from './path-compare.ts';
+export { LINUX_SOCKET_PATH_LIMIT, PIPE_NAME_LIMIT, SOCKET_PATH_LIMIT, assertSocketPathLength, assertUnixSocketPathFits, createSocketPathProbe, isPipePath, setSocketBind, pipePathFor, socketPathLimit } from './socket-path.ts';
+export { MAX_SYMLINK_HOPS, canonicalDirectory, canonicalPath, comparableContains, comparableFromParts, comparablePath, containsByComponents, locateThroughFiles, caseSensitivityOf, setCaseSensitivityProbe, volumeIsCaseInsensitive, walkPath } from './path-compare.ts';
+export type { SocketBind } from './socket-path.ts';
+export { createAsyncCapabilityProbe, createCapabilityProbe, unmeasuredBecause } from './capability-probe.ts';
+export type { CapabilityResult } from './capability-probe.ts';
 export type { CanonicalDirectoryFailureCode, CanonicalDirectoryResult, CaseSensitivityProbe, LocatedParts, PathParts, StepRead, StepReader, WalkEntry, WalkFailure, WalkFailureDetail, WalkFailureReason, WalkResult, WalkStep } from './path-compare.ts';
 export { isTransientErrno } from './transient-errno.ts';
 export { PRIVATE_MODE, PrivateTreeError, assertPrivateRegularFile, directoryFlag, ensureWindowsPrivateTree, modeIsPrivate, noFollowFlag, ownerProblem } from './platform/privacy.ts';
@@ -249,5 +260,7 @@ export type { RemoteDocuments, UntrustedError, UntrustedValidate, UntrustedVerdi
 export { ataEngine } from './untrusted-engine.ts';
 export type { Engine, EngineValidator, EngineVerdict, RawError } from './untrusted-engine.ts';
 export { createUntrustedBoundary, validateUntrusted } from './validate-untrusted.ts';
+export * from './pattern-check.ts';
+export { patternRefusal, renderInstancePath } from './pattern-refusal.ts';
 export { defineProductSchema, productErrorsText, productSchemas } from './product-schema.ts';
 export type { ProductSchema, ProductValidator, ProductVerdict } from './product-schema.ts';

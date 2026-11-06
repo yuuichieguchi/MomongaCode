@@ -112,7 +112,7 @@ export const momongaPaths = (
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): MomongaPaths => {
   const paths = momongaLayout(home, platform, env);
-  for (const socket of Object.values(paths.sockets)) assertSocketPathLength(socket, platform);
+  for (const socket of Object.values(paths.sockets)) assertSocketPathLength(socket);
   return paths;
 };
 

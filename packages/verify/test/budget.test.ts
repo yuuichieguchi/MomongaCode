@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { HOST_RULE_ENFORCEMENT, protectedSetFor } from '@momonga/foundation';
+import { protectedSetFor, ruleEnforcementOf } from '@momonga/foundation';
 import { hostFilesystemOf } from '@momonga/testkit';
 import { verifyPermissions } from '../src/index.ts';
 import type { VerifyRequest } from '../src/index.ts';
@@ -25,7 +25,7 @@ describe('the overall budget of a verification', () => {
       fs: hostFilesystemOf(fileSystem),
       secretLocations: [sshLocation(layout)],
       exemptDirectory: null,
-      enforcement: HOST_RULE_ENFORCEMENT,
+      enforcement: ruleEnforcementOf('none'),
       budgetMs: 0,
     };
 

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createUdsClient } from '@momonga/foundation';
+import { envelopeOf } from '@momonga/protocol';
 import { skipCase, titleOf } from './support/cases.ts';
 import { runCli, startCli } from './support/cli.ts';
 import { prepareProduct } from './support/product.ts';
@@ -81,6 +82,11 @@ const toolTexts = (request: Parameters<typeof messagesOf>[0]): string[] =>
     .filter((message) => message.role === 'tool')
     .map((message) => (typeof message.content === 'string' ? message.content : JSON.stringify(message.content)));
 
+const agentEnvelopes = (request: Parameters<typeof messagesOf>[0], content: string): string[] =>
+  messagesOf(request)
+    .filter((message) => message.role === 'tool')
+    .map((message) => envelopeOf({ content, callId: String(message.tool_call_id), tool: 'Agent' }));
+
 describe('agents: subagents', () => {
   it(titleOf('agent-run'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
@@ -123,7 +129,8 @@ describe('agents: subagents', () => {
       expect(childBody).toContain('You are a terse reviewer.');
       expect(childBody).not.toContain('"name":"Agent"');
       expect(JSON.stringify(calls[0]?.body)).toContain('"name":"Agent"');
-      expect(toolTexts(calls[2])).toEqual(['child verdict: ship it']);
+      expect(toolTexts(calls[2])).toHaveLength(1);
+      expect(toolTexts(calls[2])).toEqual(agentEnvelopes(calls[2], 'child verdict: ship it'));
       await shutdownBarrier(stack);
     } finally {
       await runtime.close();
@@ -206,7 +213,8 @@ describe('agents: subagents', () => {
       expect(childRunsOf(home, run.id)).toEqual([{ id: child.id, status: 'COMPLETED' }]);
       const calls = chatCompletions(stack.fake);
       expect(calls).toHaveLength(3);
-      expect(toolTexts(calls[2])).toEqual(['child recovered']);
+      expect(toolTexts(calls[2])).toHaveLength(1);
+      expect(toolTexts(calls[2])).toEqual(agentEnvelopes(calls[2], 'child recovered'));
       const childStream = runtime.events(child.id);
       const childFrames = await childStream.toEnd(E2E_MARGIN_MS);
       await childStream.close();

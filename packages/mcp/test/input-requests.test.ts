@@ -9,7 +9,7 @@ const OPTIONS = { server: 'fx', onValidatorFailure: () => undefined };
 const link = { method: 'elicitation/create', params: { mode: 'url', message: 'Connect', url: 'https://example.test/c' } };
 
 describe('parseInputRequests', () => {
-  it('treats a request without a mode as a form and strips control characters from the message', () => {
+  it('treats a request without a mode as a form and strips control characters from the message', async () => {
     const [request] = parseInputRequests({ who: { ...nameForm, params: { ...nameForm.params, message: 'Name?\u001b[31m\u0007' } } });
     expect(request).toMatchObject({ key: 'who', mode: 'form', message: 'Name?' });
   });
@@ -21,7 +21,7 @@ describe('parseInputRequests', () => {
     ['a file url', { method: 'elicitation/create', params: { mode: 'url', message: 'x', url: 'file:///etc/passwd' } }, 'only http and https'],
     ['a url that is not absolute', { method: 'elicitation/create', params: { mode: 'url', message: 'x', url: '/relative' } }, 'not an absolute URL'],
     ['a form without a schema', { method: 'elicitation/create', params: { message: 'x' } }, 'without a requestedSchema'],
-  ])('rejects %s with a typed error', (_name, entry, fragment) => {
+  ])('rejects %s with a typed error', async (_name, entry, fragment) => {
     expect(() => parseInputRequests({ k: entry })).toThrow(McpInputProtocolError);
     expect(() => parseInputRequests({ k: entry })).toThrow(fragment);
   });
@@ -30,15 +30,15 @@ describe('parseInputRequests', () => {
 describe('parseElicitationAnswers', () => {
   const requests = parseInputRequests({ who: nameForm, link });
 
-  it('accepts a form answer that matches the schema and a url consent', () => {
-    expect(parseElicitationAnswers(requests, { who: { action: 'accept', content: { name: 'Ada', age: 30 } }, link: { action: 'accept' } }, OPTIONS)).toEqual({
+  it('accepts a form answer that matches the schema and a url consent', async () => {
+    expect(await parseElicitationAnswers(requests, { who: { action: 'accept', content: { name: 'Ada', age: 30 } }, link: { action: 'accept' } }, OPTIONS)).toEqual({
       who: { action: 'accept', content: { name: 'Ada', age: 30 } },
       link: { action: 'accept' },
     });
   });
 
-  it('lets a person decline or cancel without content', () => {
-    expect(parseElicitationAnswers(requests, { who: { action: 'decline' }, link: { action: 'cancel' } }, OPTIONS)).toEqual({ who: { action: 'decline' }, link: { action: 'cancel' } });
+  it('lets a person decline or cancel without content', async () => {
+    expect(await parseElicitationAnswers(requests, { who: { action: 'decline' }, link: { action: 'cancel' } }, OPTIONS)).toEqual({ who: { action: 'decline' }, link: { action: 'cancel' } });
   });
 
   it.each([
@@ -49,8 +49,33 @@ describe('parseElicitationAnswers', () => {
     ['an unknown key', { who: { action: 'decline' }, link: { action: 'cancel' }, extra: { action: 'cancel' } }, 'not an outstanding request key'],
     ['an unknown action', { who: { action: 'maybe' }, link: { action: 'cancel' } }, 'expected accept, decline or cancel'],
     ['content on a decline', { who: { action: 'decline', content: {} }, link: { action: 'cancel' } }, 'must not carry content'],
-  ])('rejects %s', (_name, answers, fragment) => {
-    expect(() => parseElicitationAnswers(requests, answers, OPTIONS)).toThrow(McpElicitationAnswerError);
-    expect(() => parseElicitationAnswers(requests, answers, OPTIONS)).toThrow(fragment);
+  ])('rejects %s', async (_name, answers, fragment) => {
+    await expect(parseElicitationAnswers(requests, answers, OPTIONS)).rejects.toThrow(McpElicitationAnswerError);
+    await expect(parseElicitationAnswers(requests, answers, OPTIONS)).rejects.toThrow(fragment);
+  });
+});
+
+describe('an elicitation requestedSchema with server patterns', () => {
+  const coded = {
+    method: 'elicitation/create',
+    params: { message: 'Code?', requestedSchema: { type: 'object', properties: { code: { type: 'string', pattern: '^[0-9]+$' }, twice: { type: 'string', pattern: '^(a+)-\\1$' } }, required: ['code'] } },
+  };
+  const requests = parseInputRequests({ code: coded });
+
+  it('keeps the patterns as written', () => {
+    expect(requests[0]).toMatchObject({ requestedSchema: { properties: { code: { pattern: '^[0-9]+$' }, twice: { pattern: '^(a+)-\\1$' } } } });
+  });
+
+  it.each([
+    ['a value that breaks a pattern', { code: 'abc' }],
+    ['a value that breaks a backreference pattern', { code: '1', twice: 'aa-a' }],
+  ])('refuses %s', async (_name, content) => {
+    await expect(parseElicitationAnswers(requests, { code: { action: 'accept', content } }, OPTIONS)).rejects.toThrow('does not match the requested schema');
+  });
+
+  it('accepts content that meets every pattern', async () => {
+    expect(await parseElicitationAnswers(requests, { code: { action: 'accept', content: { code: '12', twice: 'aa-aa' } } }, OPTIONS)).toEqual({
+      code: { action: 'accept', content: { code: '12', twice: 'aa-aa' } },
+    });
   });
 });

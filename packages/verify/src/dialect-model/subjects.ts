@@ -1,6 +1,6 @@
 import { BUILTINS, classOf, OPS, resolveRules, type Definition, type Op } from './definition.ts';
 import { genDefinition, singleRuleDefinition } from './definition-gen.ts';
-import { checkCase, type CaseInput, describeMinimised, emptyStats, minimise, type CheckClass, type CheckStats } from './harness.ts';
+import { checkCase, type CaseInput, type CrossCheck, describeMinimised, emptyStats, minimise, type CheckClass, type CheckStats } from './harness.ts';
 import { createRng, hashString } from './prng.ts';
 import { generateCase } from './schema-gen.ts';
 
@@ -91,7 +91,7 @@ const causeTag = (schema: unknown): string => {
   return [...found].sort().join('+');
 };
 
-export const runSubject = (spec: SubjectSpec, schemas: number, seed: number, log: (line: string) => void, renderer?: CaseInput['renderer']): SubjectReport => {
+export const runSubject = async (spec: SubjectSpec, schemas: number, seed: number, log: (line: string) => void, renderer?: CaseInput['renderer'], crossCheck?: CrossCheck): Promise<SubjectReport> => {
   const stats = emptyStats();
   const clusters = new Map<string, Cluster>();
   const baseSeed = (hashString(spec.name) ^ Math.imul(seed, 2654435761)) >>> 0;
@@ -126,9 +126,10 @@ export const runSubject = (spec: SubjectSpec, schemas: number, seed: number, log
         seed: baseSeed ^ (index * 977),
         perDocument: 14,
         ...(renderer === undefined ? {} : { renderer }),
+        ...(crossCheck === undefined ? {} : { crossCheck }),
       };
       const sink = emptyStats();
-      const failure = checkCase({ ...input, stats: sink });
+      const failure = await checkCase({ ...input, stats: sink });
       mergeStats(stats, sink);
       if (failure === null) continue;
       if (failure.kind === 'oracle-error') {
@@ -142,7 +143,7 @@ export const runSubject = (spec: SubjectSpec, schemas: number, seed: number, log
       cluster.count += 1;
       if (cluster.minimised < MINIMISE_PER_SIGNATURE) {
         cluster.minimised += 1;
-        const shrunk = minimise(input, failure);
+        const shrunk = await minimise(input, failure);
         const tag = causeTag(shrunk.schema);
         const known = cluster.causes.find((entry) => entry.tag === tag);
         if (known === undefined) cluster.causes.push({ tag, count: 1, example: describeMinimised(shrunk) });
@@ -163,6 +164,10 @@ const mergeStats = (target: CheckStats, source: CheckStats): void => {
   target.validRendered += source.validRendered;
   target.oracleErrors += source.oracleErrors;
   target.unverifiable += source.unverifiable;
+  target.crossCheckDisagreements += source.crossCheckDisagreements;
+  target.crossCheckCrashes += source.crossCheckCrashes;
+  for (const [name, count] of Object.entries(source.crossCheckExplained)) target.crossCheckExplained[name] = (target.crossCheckExplained[name] ?? 0) + count;
+  for (const sample of source.crossCheckSamples) if (target.crossCheckSamples.length < 8) target.crossCheckSamples.push(sample);
   for (const [reason, count] of Object.entries(source.refused)) target.refused[reason] = (target.refused[reason] ?? 0) + count;
   for (const [reason, example] of Object.entries(source.refusedExamples)) if (target.refusedExamples[reason] === undefined) target.refusedExamples[reason] = example;
   for (const [reason, count] of Object.entries(source.failedRenders)) target.failedRenders[reason] = (target.failedRenders[reason] ?? 0) + count;

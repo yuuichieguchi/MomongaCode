@@ -49,8 +49,9 @@ export const registerInputRoutes = (route: RouteRegistrar, deps: InputRoutesDeps
     let responses;
     const notices: string[] = [];
     try {
-      responses = parseElicitationAnswers(view.requests, body.responses, {
+      responses = await parseElicitationAnswers(view.requests, body.responses, {
         server: view.server,
+        signal: context.req.raw.signal,
         onValidatorFailure: (request, message) =>
           notices.push(`Elicitation ${JSON.stringify(cleanFailureMessage(request.key))} of MCP server ${JSON.stringify(cleanFailureMessage(view.server))} was declined: its requestedSchema validator failed: ${message}`),
       });

@@ -6,49 +6,42 @@ No release has been published yet.
 
 ## 1. Installation
 
-### From a release
+### One command
 
-The repository is `yuuichieguchi/MomongaCode`. Releases are installed with the scripts in `scripts/`:
-
-- `scripts/install.sh` for macOS (Apple silicon) and Linux (x86_64, aarch64).
-- `scripts/install.ps1` for Windows (x64).
-
-Each script downloads `SHA256SUMS` and `SHA256SUMS.sig` from a GitHub release, verifies the signature with `ssh-keygen` against a pinned release public key, checks the SHA-256 of the executable, and only then installs it. Nothing is installed if a check fails.
-
-The scripts in this repository do not yet pin a repository name or a signing key, because no release has been made. Until a release exists there is nothing to download. When a release exists, you can point a script at it with environment variables:
+macOS (Apple silicon) and Linux (x86_64, aarch64):
 
 ```sh
-MOMONGA_REPO=yuuichieguchi/MomongaCode \
-MOMONGA_RELEASE_PUBLIC_KEY="ssh-ed25519 AAAA..." \
-bash scripts/install.sh
+curl -fsSL https://raw.githubusercontent.com/yuuichieguchi/MomongaCode/main/scripts/install.sh | bash
 ```
+
+Windows (x64), in PowerShell:
 
 ```powershell
-$env:MOMONGA_REPO = 'yuuichieguchi/MomongaCode'
-$env:MOMONGA_RELEASE_PUBLIC_KEY = 'ssh-ed25519 AAAA...'
-.\scripts\install.ps1
+irm https://raw.githubusercontent.com/yuuichieguchi/MomongaCode/main/scripts/install.ps1 | iex
 ```
 
-`MOMONGA_RELEASE_PUBLIC_KEY` is the SSH public key line that the maintainers publish for releases. The installers refuse to run without a key.
+You set nothing. The one command works from the first release on, once the repository is public: no release has been published yet, and the repository is private until the release, so until then there is nothing to download.
 
-Environment variables read by both installers:
+The script downloads `SHA256SUMS` and `SHA256SUMS.sig` from the latest GitHub release of `yuuichieguchi/MomongaCode`, verifies the signature with `ssh-keygen` against the release public key, checks the SHA-256 of the executable, and only then installs it. Nothing is installed if a check fails. `ssh-keygen` must be available; on Windows that means the OpenSSH Client optional feature.
+
+### Options
+
+All are optional environment variables read by both installers:
 
 | Variable | Meaning |
 | --- | --- |
-| `MOMONGA_REPO` | `<owner>/<repo>` of the GitHub repository to download from |
-| `MOMONGA_VERSION` | Install this version (`v<version>` release) instead of the latest |
+| `MOMONGA_REPO` | `<owner>/<repo>` of the GitHub repository to download from. Default: `yuuichieguchi/MomongaCode`. Ignored when `MOMONGA_RELEASE_BASE_URL` is set |
+| `MOMONGA_VERSION` | Install this version (`v<version>` release) instead of the latest. Ignored when `MOMONGA_RELEASE_BASE_URL` is set |
 | `MOMONGA_RELEASE_BASE_URL` | Download from this location instead of GitHub. It must be `https`; plain `http` is accepted only on the loopback interface |
-| `MOMONGA_RELEASE_PUBLIC_KEY` | The release signing key (an `ssh-ed25519` line) |
+| `MOMONGA_RELEASE_PUBLIC_KEY` | The release signing key (an `ssh-ed25519` line), used instead of the key embedded in the installer |
 | `MOMONGA_INSTALL_PREFIX` | Install location. Default: `~/.local` on macOS and Linux (the executable goes to `<prefix>/bin/momonga`); `%LOCALAPPDATA%\Programs\momonga` on Windows (the executable is `momonga.exe` in that directory) |
 | `MOMONGA_MODIFY_PATH` | Set to `0` to leave your PATH alone |
 
-`ssh-keygen` must be available. On Windows that means the OpenSSH Client optional feature.
-
 ### PATH
 
-If the install directory is not already on your PATH:
+The installers change your PATH only when the install directory is missing from it (`install.sh` checks the PATH of the running shell, `install.ps1` the user PATH):
 
-- `install.sh` adds one marked block to a shell startup file: `.zshrc` (under `ZDOTDIR` if set) for zsh, the first existing of `.bashrc`, `.bash_profile`, `.profile` (else `.bashrc`) for bash, `~/.config/fish/config.fish` (with `fish_add_path`) for fish, and `~/.profile` for any other shell. Running the installer again updates that block in place and reports `added`, `updated`, or `already configured`.
+- `install.sh` adds one marked block to a shell startup file: `.zshrc` (under `ZDOTDIR` if set) for zsh, the first existing of `.bashrc`, `.bash_profile`, `.profile` (else `.bashrc`) for bash, `~/.config/fish/config.fish` (with `fish_add_path`) for fish, and `~/.profile` for any other shell. Running the installer again updates that block in place and prints a message about it. When the install directory is already on the PATH of the running shell, it changes nothing and prints nothing about PATH.
 - `install.ps1` appends the install directory to the user PATH.
 - With `MOMONGA_MODIFY_PATH=0`, neither script changes anything and both print the command to run in the current shell instead.
 

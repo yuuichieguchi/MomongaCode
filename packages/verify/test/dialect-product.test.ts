@@ -28,7 +28,7 @@ export const productRenderer: NonNullable<CaseInput['renderer']> = (schema, defi
 };
 
 describe('dialect reference model against the product renderer', () => {
-  it('the three built-in definitions the model carries are the product data', () => {
+  it('the three built-in definitions the model carries are the product data', async () => {
     for (const id of ['json-schema-2020-12', 'explicit-keys', 'strict-closed'] as const) {
       const model: Definition | undefined = BUILTINS[id];
       expect(model, id).toBeDefined();
@@ -39,8 +39,8 @@ describe('dialect reference model against the product renderer', () => {
 
   it.each(SUBJECTS.map((spec) => [spec.name, spec] as const))(
     '%s: the product render is sound under the model oracle',
-    (_name, spec) => {
-      const report = runSubject(spec, SCHEMAS_PER_SUBJECT, 20261106, () => undefined, productRenderer);
+    async (_name, spec) => {
+      const report = await runSubject(spec, SCHEMAS_PER_SUBJECT, 20261106, () => undefined, productRenderer);
       expect({ schemas: report.stats.schemas, counterexamples: report.counterexamples, clusters: report.clusters, oracleErrors: report.stats.oracleErrors }).toEqual({
         schemas: SCHEMAS_PER_SUBJECT,
         counterexamples: 0,

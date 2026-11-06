@@ -567,6 +567,7 @@ export type RuntimeStore = {
   startedCallsOf(runId: string): StartedCall[];
   hasNoticeCode(runId: string, code: string): boolean;
   meterRecordOf(sessionId: string, key: MeterKey): MeterRecord | undefined;
+  answeringTargetsOf(runId: string): string[];
   lastTerminalRootRuns(project: string, limit: number): Run[];
   toolCallNames(rootRunId: string): string[];
   toolOfferedNames(rootRunId: string): string[];

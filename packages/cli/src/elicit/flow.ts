@@ -48,10 +48,10 @@ export const currentRequest = (flow: ElicitationFlow): ElicitationRequestView =>
 
 export const currentField = (flow: ElicitationFlow): FormField | undefined => flow.fields[flow.fieldIndex];
 
-export const enterValue = (flow: ElicitationFlow, text: string): ElicitationFlow => {
+export const enterValue = async (flow: ElicitationFlow, text: string): Promise<ElicitationFlow> => {
   const field = currentField(flow);
   if (flow.stage !== 'fields' || field === undefined) throw new Error('the elicitation is not asking for a field');
-  const parsed = parseFieldInput({ server: flow.server, key: currentRequest(flow).key }, field, text);
+  const parsed = await parseFieldInput({ server: flow.server, key: currentRequest(flow).key }, field, text);
   if (!parsed.ok) return parsed.reason === 'validator-failed' ? declined(flow, parsed.error) : { ...flow, error: parsed.error };
   const content = parsed.value === undefined ? flow.content : { ...flow.content, [field.name]: parsed.value };
   const last = flow.fieldIndex + 1 >= flow.fields.length;
@@ -62,11 +62,11 @@ export const leaveFields = (flow: ElicitationFlow): ElicitationFlow => ({ ...flo
 
 type Settled = { answer: ElicitationAnswerRecord; notice?: string };
 
-const answerFor = (flow: ElicitationFlow, decision: ElicitationDecision): Settled | string => {
+const answerFor = async (flow: ElicitationFlow, decision: ElicitationDecision): Promise<Settled | string> => {
   if (decision !== 'accept') return { answer: { action: decision } };
   const request = currentRequest(flow);
   if (request.mode === 'url') return { answer: { action: 'accept' } };
-  const check = validateContent({ server: flow.server, key: request.key }, request.requestedSchema, flow.content);
+  const check = await validateContent({ server: flow.server, key: request.key }, request.requestedSchema, flow.content);
   if (check.kind === 'validator-failed') return declinedBecause(request.key, check.message);
   return check.kind === 'valid' ? { answer: { action: 'accept', content: { ...flow.content } } } : check.message;
 };
@@ -86,9 +86,9 @@ const settle = (flow: ElicitationFlow, settled: Settled): ElicitationFlow => {
 
 const declined = (flow: ElicitationFlow, message: string): ElicitationFlow => settle(flow, declinedBecause(currentRequest(flow).key, message));
 
-export const decide = (flow: ElicitationFlow, decision: ElicitationDecision): ElicitationFlow => {
+export const decide = async (flow: ElicitationFlow, decision: ElicitationDecision): Promise<ElicitationFlow> => {
   if (flow.stage !== 'decision') throw new Error('the elicitation is not waiting for a decision');
-  const settled = answerFor(flow, decision);
+  const settled = await answerFor(flow, decision);
   if (typeof settled === 'string') {
     const missing = flow.fields.findIndex((field) => field.required && !(field.name in flow.content));
     return { ...flow, stage: flow.fields.length === 0 ? 'decision' : 'fields', fieldIndex: Math.max(0, missing), error: settled };

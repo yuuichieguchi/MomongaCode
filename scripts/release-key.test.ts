@@ -89,4 +89,11 @@ describe('release-key.ts', () => {
     expect(result.stderr).toContain('release-key.ts: no release signing key is pinned');
     expect(result.stdout).toBe('');
   });
+
+  it('prints yuuichieguchi/MomongaCode as the release repository from the command line', () => {
+    const result = spawnSync(process.execPath, [`${repoRoot}scripts/release-key.ts`, 'print-repo'], { encoding: 'utf8' });
+    expect(result.stderr).toBe('');
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe('yuuichieguchi/MomongaCode\n');
+  });
 });

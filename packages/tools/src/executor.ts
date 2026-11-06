@@ -516,8 +516,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     batch.onWarning?.(message, toolKey);
   };
 
-  const validateFor = (batch: BatchCore, tool: AnyTool, raw: unknown): ValidationResult =>
-    isRefused(batch, tool) ? unavailable(tool, undefined) : validateToolInput(tool, raw);
+  const validateFor = async (batch: BatchCore, tool: AnyTool, raw: unknown): Promise<ValidationResult> =>
+    isRefused(batch, tool) ? unavailable(tool, undefined) : validateToolInput(tool, raw, { signal: batch.signal });
 
   const rejectionOf = (batch: BatchCore, tool: AnyTool, validation: Extract<ValidationResult, { ok: false }>): string => {
     if (validation.reason === 'validator-failed' && validation.detail !== undefined) announceValidatorFailure(batch, tool, validation.detail);
@@ -694,7 +694,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         return failedOutcome(call.callId, `${tool.name} was not run: a PreToolUse hook stopped the run: ${reason}`);
       }
       if (verdict?.updatedInput !== undefined) {
-        const validation = validateFor(batch, tool, verdict.updatedInput);
+        const validation = await validateFor(batch, tool, verdict.updatedInput);
         if (!validation.ok) return failedOutcome(call.callId, `A PreToolUse hook returned an input that ${tool.name} rejects: ${rejectionOf(batch, tool, validation)}`);
         let subject: PermissionSubject;
         try {
@@ -772,10 +772,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     return undefined;
   };
 
-  const hookedInputOf = (batch: BatchCore, tool: AnyTool, lookup: ToolIdempotencyLookup | undefined): { input: unknown } | { failure: string } | undefined => {
+  const hookedInputOf = async (batch: BatchCore, tool: AnyTool, lookup: ToolIdempotencyLookup | undefined): Promise<{ input: unknown } | { failure: string } | undefined> => {
     const record = lookup?.s === 'PENDING' || lookup?.s === 'UNKNOWN' ? lookup.rec.meta['hookInput'] : undefined;
     if (record === undefined) return undefined;
-    const validation = validateFor(batch, tool, record);
+    const validation = await validateFor(batch, tool, record);
     return validation.ok ? { input: validation.value } : { failure: rejectionOf(batch, tool, validation) };
   };
 
@@ -799,7 +799,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       const available = (offered === undefined ? batch.toolSet.tools.map((candidate) => candidate.name) : offered.tools).join(', ');
       return outcome(failedOutcome(call.callId, `Unknown tool "${call.name}". Available tools: ${available}`));
     }
-    const validation = validateFor(batch, tool, call.arguments);
+    const validation = await validateFor(batch, tool, call.arguments);
     if (!validation.ok) return outcome(failedOutcome(call.callId, rejectionOf(batch, tool, validation)));
     let input = validation.value;
     const cwd = batch.session.cwd;
@@ -812,7 +812,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       if (existing.s === 'UNKNOWN') {
         return outcome({ ...failedOutcome(call.callId, interruptedOutput(tool)), idemKey: key, reconciled: 'unknown' });
       }
-      const hooked = hookedInputOf(batch, tool, existing);
+      const hooked = await hookedInputOf(batch, tool, existing);
       if (hooked !== undefined && 'failure' in hooked) return outcome(failedOutcome(call.callId, hooked.failure));
       return { kind: 'run', plan: { kind: 'recovery', call, tool, input: hooked === undefined ? input : hooked.input, key, batch } };
     }
@@ -821,7 +821,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     const existing = idempotency.get(key);
     if (existing?.s === 'COMPLETED') return outcome(storedOutcome(existing.result));
     const recovered = existing?.s === 'PENDING' || existing?.s === 'UNKNOWN' ? existing.rec : undefined;
-    const hooked = hookedInputOf(batch, tool, existing);
+    const hooked = await hookedInputOf(batch, tool, existing);
     if (hooked !== undefined && 'failure' in hooked) return outcome(failedOutcome(call.callId, hooked.failure));
     if (hooked !== undefined) input = hooked.input;
 

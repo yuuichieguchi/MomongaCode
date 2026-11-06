@@ -14,7 +14,7 @@ import {
   parseContextReport,
 } from '@momonga/eval';
 import type { ContextReport, Transcript } from '@momonga/eval';
-import { OTHER_REAL_TARGET, REAL_TARGET, SCRIPTED_TARGET, UNDECLARED_TARGET, answeredBy } from './answered-fixtures.ts';
+import { OTHER_REAL_TARGET, REAL_TARGET, SCRIPTED_TARGET, UNDECLARED_TARGET, UNKNOWN_ANSWERER, answeredBy } from './answered-fixtures.ts';
 import type { Answerer } from './answered-fixtures.ts';
 import { bash, contextCase, fidelity, recorded, summarized } from './context-fixtures.ts';
 
@@ -45,8 +45,22 @@ const realModelCheck = (baseline: ContextReport, candidate: ContextReport) =>
   compareContextReports(baseline, candidate, { seed: 1 }).gate.checks.find((check) => check.name === 'real_model');
 
 describe('the transcript records what answered', () => {
-  it('is format momonga-transcript/5', () => {
-    expect(TRANSCRIPT_FORMAT).toBe('momonga-transcript/5');
+  it('is format momonga-transcript/6', () => {
+    expect(TRANSCRIPT_FORMAT).toBe('momonga-transcript/6');
+  });
+
+  it('an unknown answerer without adapter and upstreamModel is written and parsed back without those fields', () => {
+    const transcript = answeredBy(recorded('a-on', 0, []), REAL_TARGET, UNKNOWN_ANSWERER);
+    const decoded = decodeTranscript(encodeTranscript(transcript), 'a.jsonl');
+    expect(decoded.answeredBy).toStrictEqual([REAL_TARGET, { target: 'unknown', answers: 'unknown' }]);
+    expect(Object.keys(decoded.answeredBy?.[1] ?? {})).toEqual(['target', 'answers']);
+  });
+
+  it('a momonga-transcript/5 file is retired with the reason that it cannot record an answerer whose adapter and model are unknown', () => {
+    const header = { format: 'momonga-transcript/5', caseId: 'a-on', runIndex: 0, run: recorded('a-on', 0, []).run, children: [], policy: {}, codeDigest: 'c'.repeat(64), answeredBy: [REAL_TARGET] };
+    const text = `${JSON.stringify(header)}\n${JSON.stringify({ end: true, events: 0, childEvents: 0 })}\n`;
+    expect(() => decodeTranscript(text, 'old.jsonl')).toThrow(TranscriptError);
+    expect(() => decodeTranscript(text, 'old.jsonl')).toThrow(/momonga-transcript\/5 transcripts do not record .*momonga-transcript\/6/);
   });
 
   it('answeredBy is written and parsed back', () => {
@@ -69,10 +83,19 @@ describe('the transcript records what answered', () => {
 });
 
 describe('the report computes its model kind from answeredBy', () => {
-  it('is format momonga-eval-context-report/3, and /2 is retired', () => {
-    expect(CONTEXT_REPORT_FORMAT).toBe('momonga-eval-context-report/3');
+  it('is format momonga-eval-context-report/4, and /2 and /3 are retired', () => {
+    expect(CONTEXT_REPORT_FORMAT).toBe('momonga-eval-context-report/4');
     const old = JSON.stringify({ format: 'momonga-eval-context-report/2' });
     expect(() => parseContextReport(old, 'old.json')).toThrow(/momonga-eval-context-report\/2/);
+    const previous = encodeContextReport({ ...build(transcriptsBy(() => [REAL_TARGET])), format: 'momonga-eval-context-report/3' } as unknown as ContextReport);
+    expect(() => parseContextReport(previous, 'previous.json')).toThrow(/momonga-eval-context-report\/3 reports do not record .*retired.*momonga-eval-context-report\/4/);
+  });
+
+  it('a report answered in part by an unknown answerer is unknown, and parses back with that answerer lacking adapter and upstreamModel', () => {
+    const report = build(transcriptsBy((caseId) => (caseId === 'a-on' ? [REAL_TARGET, UNKNOWN_ANSWERER] : [REAL_TARGET])));
+    expect(report.model).toBe('unknown');
+    const parsed = parseContextReport(encodeContextReport(report), 'r.json');
+    expect(parsed.answeredBy).toStrictEqual([REAL_TARGET, { target: 'unknown', answers: 'unknown' }]);
   });
 
   it('every answering target declared model gives real', () => {
@@ -132,5 +155,12 @@ describe('real_model is a derived fact', () => {
     expect(check?.passed).toBe(false);
     expect(check?.detail).toContain('opus');
     expect(check?.detail).toContain('sonnet');
+  });
+
+  it('an unknown answerer fails real_model, and the detail renders it without inventing an adapter or a model', () => {
+    const check = realModelCheck(real(['a']), build(transcriptsBy(() => [REAL_TARGET, UNKNOWN_ANSWERER])));
+    expect(check?.passed).toBe(false);
+    expect(check?.detail).toMatch(/unknown/);
+    expect(check?.detail).not.toMatch(/undefined/);
   });
 });
