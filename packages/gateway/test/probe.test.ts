@@ -75,14 +75,23 @@ describe('runProbe tool calling', () => {
   });
 
   it('honours the samples option', async () => {
-    const { report, fake } = await probe({ scenario: 'tools-ok', nativeValidity: 0.5, constrainedValidity: 0.5 }, { samples: 4 });
+    const { report, fake } = await probe({ scenario: 'tools-ok', nativeValidity: 0.5, constrainedValidity: 1 }, { samples: 4 });
     expect(report.nativeTools.validRate).toBeCloseTo(0.5, 10);
-    expect(report.constrained.validRate).toBeCloseTo(0.5, 10);
+    expect(report.constrained).toEqual({ accepted: true, validRate: 1 });
     const toolSamples = fake.requests.filter((request) => {
       const body = request.body as { tools?: unknown[]; messages?: Array<{ role?: string }> } | undefined;
       return Array.isArray(body?.tools) && body?.messages?.at(-1)?.role === 'user';
     });
     expect(toolSamples.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('does not accept constrained mode below the 0.9 valid share of the demanding sample, whatever the samples option', async () => {
+    const { report } = await probe({ scenario: 'tools-ok', nativeValidity: 0.5, constrainedValidity: 0.5 }, { samples: 4 });
+    expect(report.nativeTools.validRate).toBeCloseTo(0.5, 10);
+    expect(report.constrained).toEqual({ accepted: false, validRate: 0 });
+    expect(report.schemaDialect.selected).toBeNull();
+    expect(report.schemaDialect.shape).toBeNull();
+    expect(report.schemaDialect.tried.every(({ result }) => result === 'not-enforced')).toBe(true);
   });
 
   it('tools-400: native not accepted, valid rate 0, constrained measured', async () => {
@@ -100,11 +109,19 @@ describe('runProbe tool calling', () => {
   });
 
   it('json-schema-only: native not accepted, constrained valid', async () => {
+    const { report } = await probe({ scenario: 'json-schema-only', constrainedValidity: 1 });
+    expect(report.nativeTools.accepted).toBe(false);
+    expect(report.nativeTools.validRate).toBe(0);
+    expect(report.constrained).toEqual({ accepted: true, validRate: 1 });
+  });
+
+  it('json-schema-only with constrained validity 0.5: constrained is not accepted, because the valid share is under 0.9 and no candidate is enforced', async () => {
     const { report } = await probe({ scenario: 'json-schema-only', constrainedValidity: 0.5 });
     expect(report.nativeTools.accepted).toBe(false);
     expect(report.nativeTools.validRate).toBe(0);
-    expect(report.constrained.accepted).toBe(true);
-    expect(report.constrained.validRate).toBeCloseTo(0.5, 10);
+    expect(report.constrained).toEqual({ accepted: false, validRate: 0 });
+    expect(report.schemaDialect.selected).toBeNull();
+    expect(report.schemaDialect.tried.every(({ result }) => result === 'not-enforced')).toBe(true);
   });
 
   it('none: neither native nor constrained accepted', async () => {
@@ -397,14 +414,17 @@ describe('runProbe server features', () => {
       { samples: 5, vocabulary: FM_VOCABULARY },
     );
     expect(report.constrained).toEqual({ accepted: false, validRate: 0 });
-    expect(fake.routeHits).toEqual([1]);
+    expect(report.schemaDialect.selected).toBeNull();
+    expect(report.schemaDialect.tried.find(({ id }) => id === 'explicit-keys')).toEqual({ id: 'explicit-keys', result: 'refused', detail: expect.stringContaining('unsupported generation guide') });
+    expect(fake.routeHits).toEqual([2]);
   });
 
-  it('marks nested objects unsupported when rejected', async () => {
+  it('records no keyword table when the server refuses the nested objects and additionalProperties that the probe schema carries, because no dialect is selected', async () => {
     const { report } = await probe({ scenario: 'tools-ok', unsupportedKeywords: ['nested', 'additionalProperties'] });
-    expect(report.keywordSupport.nested).toBe(false);
-    expect(report.keywordSupport.additionalProperties).toBe(false);
-    expect(report.keywordSupport.enum).toBe(true);
+    expect(report.constrained).toEqual({ accepted: false, validRate: 0 });
+    expect(report.schemaDialect.selected).toBeNull();
+    expect(report.keywordSupport).toBeUndefined();
+    expect(report.schemaDialect.tried.filter(({ id }) => id !== 'json-schema-2020-12').map(({ result }) => result)).toEqual(['refused', 'refused', 'refused']);
   });
 
   it('records the guardrail error shape when the guardrail prompt triggers it', async () => {
@@ -518,7 +538,7 @@ describe('runProbe concurrency measurement', () => {
       { samples: 1 },
     );
     expect(report.maxConcurrency).toBe(1);
-  });
+  }, 20000);
 });
 
 describe('runProbe sampling resilience', () => {

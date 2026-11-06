@@ -81,7 +81,7 @@ const configurations: readonly Configuration[] = [
 const modelsWith = (resolved: ResolvedModelTarget, declared: Record<string, unknown>): UserModels =>
   ({
     declared: { aliases: { default: ['t'] }, targets: { t: declared } },
-    resolved: { aliases: { default: ['t'] }, targets: { t: resolved }, roles: {} },
+    resolved: { aliases: { default: ['t'] }, targets: { t: resolved }, dialects: {}, roles: {} },
   }) as unknown as UserModels;
 
 const copiedRecordsOf = (models: UserModels): string[] => {

@@ -5,6 +5,7 @@ export type {
   SamplingCapability,
   SamplingField,
   TopPRange,
+  AliasCapabilities,
   Capabilities,
   CapabilitiesCore,
   CapabilityOverride,
@@ -35,6 +36,7 @@ export {
   ITEM_CAP,
   ITEM_ROOM,
   MARGIN,
+  ERROR_WINDOW,
   MAX_BUDGET_COUNT,
   MAX_OUTPUT_WINDOW,
   OUTPUT_RESERVE,
@@ -141,7 +143,36 @@ export { compactionSummaryMessage, decodeCompactionSummary } from './compaction-
 export { decodePayloadSegment, encodePayloadSegment, joinEnvelope, splitEnvelope } from './envelope-grammar.ts';
 export type { EnvelopeSegments } from './envelope-grammar.ts';
 export { PROBE_KEYWORDS } from './probe.ts';
-export type { EndpointProbeReport, OllamaProbeReport, ProbeKeyword, ProbeReport } from './probe.ts';
+export type { EndpointProbeReport, OllamaProbeReport, ProbeDialectAttempt, ProbeDialectResult, ProbeKeyword, ProbeReport, ProbeReportDialect } from './probe.ts';
+export {
+  DIALECT_DEFINITION_SCHEMA,
+  DIALECT_ID_PATTERN,
+  DIALECT_FILL_TYPES,
+  DIALECT_KINDS,
+  DIALECT_NON_POSITIVE_DESCENTS,
+  DIALECT_POSITIVE_DESCENTS,
+  DIALECT_VOCABULARY_KEYWORDS,
+} from './dialect.ts';
+export type {
+  ConstructResult,
+  ConstructSupport,
+  DialectClause,
+  DialectDefinition,
+  DialectDescent,
+  DialectFillType,
+  DialectId,
+  DialectKind,
+  DialectOp,
+  DialectOverwrite,
+  DialectPositiveDescent,
+  DialectRule,
+  DialectSelect,
+  SchemaNarrowing,
+  Segment,
+  WrapRecord,
+} from './dialect.ts';
+export { BUILTIN_DIALECTS, BUILTIN_DIALECT_IDS, DEFAULT_DIALECT_ID } from './dialect-builtins.ts';
+export type { BuiltinDialectId } from './dialect-builtins.ts';
 export { EVENT_TYPES, RUN_API_SCHEMAS, base64ByteLength, runApiSchemaName, toPublicRunEvent } from './run-api.ts';
 export { MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES } from './run-api.ts';
 export type {
@@ -269,6 +300,7 @@ export {
   HOOK_MATCHER_EVENTS,
   HOOK_STOPPED_CODE,
   USER_PROMPT_BLOCKED_CODE,
+  STOP_HOOK_FEEDBACK_PREFIX,
   STOP_HOOK_MAX_CONTINUATIONS,
   USER_PROMPT_HOOK_DEFAULT_TIMEOUT_SECONDS,
   hookMatcherError,

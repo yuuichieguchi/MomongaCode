@@ -56,7 +56,6 @@ describe('anthropic target', () => {
         stopSequences: false,
         parallelToolCalls: true,
         promptCache: { kind: 'breakpoints', maxBreakpoints: 4 },
-        schemaDialect: 'json-schema-2020-12',
         tokenCounting: 'exact',
         usageReported: true,
         source: 'config',
@@ -134,7 +133,6 @@ describe('open-responses target', () => {
         structuredOutput: 'none',
         streaming: true,
         stopSequences: false,
-        schemaDialect: 'json-schema-2020-12',
         tokenCounting: 'estimated',
         usageReported: true,
         source: 'config',
@@ -250,5 +248,32 @@ describe('targets are user settings only', () => {
     const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
     expect(Object.keys(result.settings.models.targets)).toEqual(['fm']);
     expect(result.warnings.some((warning) => warning.includes('models.targets is only honored in user settings'))).toBe(true);
+  });
+});
+
+describe('the schema dialect of a remote target', () => {
+  it.each([
+    ['anthropic', anthropicTarget],
+    ['open-responses', openResponsesTarget],
+  ] as const)('keeps a declared built-in dialect on an %s target', async (_label, build) => {
+    const { result } = await loadWithTargets({ remote: build({ capabilities: { ...CAPABILITIES, schemaDialect: 'strict-closed' } }) });
+    expect(result.settings.models.targets['remote']).toMatchObject({ capabilities: { schemaDialect: 'strict-closed' } });
+  });
+
+  it('keeps a dialect the user declared in models.dialects', async () => {
+    const tree = makeTree();
+    writeJson(userSettingsPath(tree), {
+      models: {
+        dialects: { 'ordered-subset': { extends: 'inlined-subset', rules: [] } },
+        targets: { remote: openResponsesTarget({ capabilities: { ...CAPABILITIES, schemaDialect: 'ordered-subset' } }) },
+        aliases: { default: 'remote' },
+      },
+    });
+    const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
+    expect(result.settings.models.targets['remote']).toMatchObject({ capabilities: { schemaDialect: 'ordered-subset' } });
+  });
+
+  it('rejects an undeclared dialect on an anthropic target, naming it', async () => {
+    await expectRejected({ claude: anthropicTarget({ capabilities: { ...CAPABILITIES, schemaDialect: 'guided-generation' } }) }, 'guided-generation');
   });
 });

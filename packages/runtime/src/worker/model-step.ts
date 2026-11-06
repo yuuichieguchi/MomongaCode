@@ -246,6 +246,17 @@ const handleResult = async (
       code: 'fallback_target',
     });
   }
+  for (const narrowing of response.momonga?.schemaNarrowings ?? []) {
+    const key = JSON.stringify([answeredBy, narrowing.tool, narrowing.path]);
+    if (ctx.memory.narrowingsNoticed.has(key)) continue;
+    ctx.memory.narrowingsNoticed.add(key);
+    recorded.push({
+      type: 'notice',
+      level: 'warning',
+      message: `The tool ${narrowing.tool} was sent with its parameter at ${narrowing.path} narrowed, because the target's schema dialect cannot carry it as declared.`,
+      code: 'schema_narrowed',
+    });
+  }
   if (estimate !== undefined && answeredBy !== undefined) {
     recorded.push({
       type: 'meter.observed',
@@ -327,9 +338,7 @@ const loopGuidanceTrailing = (ctx: ClaimContext): InputItem[] => {
   if (!loopGuidancePending(ctx)) return [];
   const { state } = ctx.journal;
   if (state.loopWarned === undefined) throw new Error(`run ${ctx.run.id} has no loop warning to write guidance for`);
-  const statuses = new Map<string, CallResult>(
-    ctx.options.store.readRunEventsOfTypes(ctx.run.id, ['tool.completed']).flatMap((event) => (event.type === 'tool.completed' ? [[event.callId, event.status] as const] : [])),
-  );
+  const statuses = new Map<string, CallResult>(Object.entries(state.callResults));
   const ours = new Map<string, string>(
     state.history.flatMap((entry) => (entry.item.type === 'function_call_output' && entry.callId !== undefined ? [[entry.item.call_id, entry.callId] as const] : [])),
   );

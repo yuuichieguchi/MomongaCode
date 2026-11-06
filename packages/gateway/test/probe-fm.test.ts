@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { loadProbeRecord, probeManagedFm } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec } from '@momonga/testkit';
 import { makeHome } from './gateway-process-helpers.ts';
+import { CURRENT_DIALECTS } from './dialect-currency.ts';
 
 const setup = async (): Promise<{ dir: string; binary: string; probeDir: string; socketPath: string }> => {
   const dir = makeHome();
@@ -33,7 +34,7 @@ describe('probeManagedFm', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     expect(result.record.binarySha256).toMatch(/^[0-9a-f]{64}$/);
     expect(result.report.health).toEqual({ ok: true });
     expect(['native', 'constrained', 'none']).toContain(result.toolCalling);
-    expect(await loadProbeRecord(paths.probeDir, result.record)).toEqual(result.report);
+    expect(await loadProbeRecord(paths.probeDir, result.record, CURRENT_DIALECTS)).toEqual(result.report);
     expect(fs.existsSync(paths.socketPath)).toBe(false);
   });
 

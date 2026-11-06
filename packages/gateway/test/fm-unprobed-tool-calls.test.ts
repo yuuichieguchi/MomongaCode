@@ -47,14 +47,16 @@ describe('an fm target with no probe record', () => {
     expect(completionRequests(fake)).toEqual([]);
   });
 
-  it('answers a tool request with a function call when toolCalling is declared native', async () => {
-    const { adapter } = await unprobedFmAdapter('native');
+  it('sends the tools natively when toolCalling is declared native, and fm answers in content as measured', async () => {
+    const { fake, adapter } = await unprobedFmAdapter('native');
 
     const { events, error } = await collect(adapter, toolRequest);
 
     expect(error).toBeUndefined();
-    const items = ofType(events, 'response.output_item.done').map((event) => [event.item.type, event.item.name]);
-    expect(items).toContainEqual(['function_call', 'read_file']);
+    const sent = completionRequests(fake).map((entry) => (entry.body as { tools?: { function: { name: string } }[] }).tools?.map((tool) => tool.function.name));
+    expect(sent).toEqual([['read_file']]);
+    const items = ofType(events, 'response.output_item.done').map((event) => event.item.type);
+    expect(items).toEqual(['message']);
   });
 });
 

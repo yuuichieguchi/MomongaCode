@@ -18,7 +18,7 @@ vi.mock('@momonga/context', async (importOriginal) => {
         ...meter,
         observe: (observation: UsageObservation) => {
           observations.push(observation);
-          meter.observe(observation);
+          return meter.observe(observation);
         },
       };
     },

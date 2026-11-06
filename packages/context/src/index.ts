@@ -14,7 +14,8 @@ export { ContextOverflowError, PinnedBoundError, PinnedOverflowError, PinnedRoom
 export { createFsInstructionReader } from './fs-instruction-reader.ts';
 export { INSTRUCTION_FILE_LIMIT_BYTES } from './instructions.ts';
 export { createTokenMeter } from './token-meter.ts';
-export { foldMeter } from './meter-fold.ts';
+export { foldMeter, meterMemoryOf } from './meter-fold.ts';
+export type { MeterRecordView } from './meter-fold.ts';
 export type { FoldedEvent, MeterFoldOptions, ObservedEvent } from './meter-fold.ts';
 export type {
   ActivatedSkill,

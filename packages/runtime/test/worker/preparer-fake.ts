@@ -1,5 +1,6 @@
 import type { RunEventPayload } from '@momonga/protocol';
 import type { ContributionMeasured, ContributionPreparer, RuntimeStore } from '@momonga/store';
+import { noJournalFacts } from '../../../store/test/helpers.ts';
 import type { ServiceTimers } from '../../src/service/timers.ts';
 
 export type MeasureRequest = { runId: string; leading: RunEventPayload[] };
@@ -36,6 +37,7 @@ export const preparerFake = (): PreparerFake => {
       bound = store;
     },
     preparer: {
+      ...noJournalFacts,
       measure: async (request): Promise<ContributionMeasured> => {
         requests.push({ runId: request.runId, leading: [...request.leading] });
         if (gate !== undefined) await gate;

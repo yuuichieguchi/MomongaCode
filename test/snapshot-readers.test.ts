@@ -21,21 +21,12 @@ const filesMatching = (pattern: RegExp): string[] =>
     .sort();
 
 describe('who reads the snapshot of a run, which a terminal transition writes on the event loop', () => {
-  it('is read only through store.load, by these callers and by the store itself', () => {
-    expect(filesMatching(/store\.load\(/)).toEqual([
-      'runtime/src/process/cancel-upstream.ts',
-      'runtime/src/process/child-runs.ts',
-      'runtime/src/process/release-stopped.ts',
-      'runtime/src/worker/journal.ts',
-    ]);
+  it('is read only through store.load, by the claim start alone: child final text, upstream cancel and stopped-run release read small facts (row 3, I2)', () => {
+    expect(filesMatching(/store\.load\(/)).toEqual(['runtime/src/worker/journal.ts']);
   });
 
-  it('is reachable through an aliased store only where a type grants it: Pick<RuntimeStore, ..., load>', () => {
-    expect(filesMatching(/Pick<RuntimeStore,[^>]*'load'/)).toEqual([
-      'runtime/src/process/cancel-upstream.ts',
-      'runtime/src/process/child-runs.ts',
-      'runtime/src/process/release-stopped.ts',
-    ]);
+  it('is reachable through an aliased store by no caller: no Pick<RuntimeStore, ..., load> remains (row 3, I2)', () => {
+    expect(filesMatching(/Pick<RuntimeStore,[^>]*'load'/)).toEqual([]);
     expect(filesMatching(/\bload:\s*\(runId/)).toEqual(['store/src/runtime-store.ts']);
   });
 
