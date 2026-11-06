@@ -10,7 +10,8 @@ describe('the model list of an alias the gateway is measuring', () => {
       object: 'model',
       targets: ['fm'],
       targetCounters: { fm: '1'.repeat(64) },
-      probing: { message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 },
+      capabilities: { toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 }, source: 'unprobed' },
+      targetCapabilities: { fm: { toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 }, source: 'unprobed' } },
     };
 
     const text = formatModels([entry]);

@@ -6,7 +6,7 @@ import { probeLockPath } from '@momonga/gateway';
 const specDir = path.resolve(import.meta.dirname, '..', '..', '..', 'specs', 'tla');
 const spec = fs.readFileSync(path.join(specDir, 'AutoProbe.tla'), 'utf8');
 const config = fs.readFileSync(path.join(specDir, 'AutoProbe.cfg'), 'utf8');
-const invariantTests = fs.readFileSync(path.join(import.meta.dirname, 'auto-probe.test.ts'), 'utf8');
+const invariantTests = ['auto-probe.test.ts', 'auto-probe-endpoints.test.ts'].map((file) => fs.readFileSync(path.join(import.meta.dirname, file), 'utf8')).join('\n');
 const cliProbe = fs.readFileSync(path.resolve(import.meta.dirname, '..', '..', 'cli', 'src', 'commands', 'gateway.ts'), 'utf8');
 
 const constantOf = (name: string): string => {
@@ -30,6 +30,9 @@ const PROPERTY_OF_INVARIANT: Record<string, string> = {
   FailedWritesNothing: 'P5',
   RecordMatchesKey: 'P6',
   RecordIsClean: 'P7',
+  RefusalGetsRemedy: 'P8',
+  NoProbeInBackoff: 'P9',
+  RecordUnderLock: 'P10',
 };
 
 describe('the code conforms to specs/tla/AutoProbe.tla', () => {
@@ -43,6 +46,10 @@ describe('the code conforms to specs/tla/AutoProbe.tla', () => {
       FailWrites: constantOf('FailWrites'),
       TaintCheck: constantOf('TaintCheck'),
       Manual: constantOf('Manual'),
+      Adapter: constantOf('Adapter'),
+      EndpointLocked: constantOf('EndpointLocked'),
+      PreconditionCheck: constantOf('PreconditionCheck'),
+      Backoff: constantOf('Backoff'),
     }).toEqual({
       SingleFlight: '"shared"',
       KeyView: '"perRequest"',
@@ -52,6 +59,10 @@ describe('the code conforms to specs/tla/AutoProbe.tla', () => {
       FailWrites: 'FALSE',
       TaintCheck: 'TRUE',
       Manual: 'TRUE',
+      Adapter: '"fm"',
+      EndpointLocked: 'TRUE',
+      PreconditionCheck: 'TRUE',
+      Backoff: 'TRUE',
     });
   });
 
@@ -90,5 +101,15 @@ describe('the code conforms to specs/tla/AutoProbe.tla', () => {
 
     expect(header).toContain('gateway/src/probe/auto-probe.ts');
     expect(header).not.toMatch(/a cache that only|computed once at gateway start|It takes no lock/);
+  });
+
+  it('checks the endpoint adapter under the same properties, and names its key source and the backoff in the model', () => {
+    const endpoint = fs.readFileSync(path.join(specDir, 'AutoProbe.endpoint.cfg'), 'utf8');
+
+    expect(endpoint).toMatch(/Adapter = "endpoint"/);
+    expect(endpoint).toMatch(/EndpointLocked = TRUE/);
+    expect(spec).toContain('file identity');
+    expect(spec).toContain('gateway/src/probe/auto-probe.ts (createAutoProbe');
+    expect(spec).toContain('packages/gateway/src/probe/probe-endpoint.ts');
   });
 });

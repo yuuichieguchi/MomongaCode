@@ -1,7 +1,7 @@
 import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
 import { withTempDir } from '@momonga/testkit';
 import { TARGET_PROBING_MESSAGE } from '@momonga/protocol';
-import type { AliasCapabilities, ModelProbing, NeedsProbe, ToolCallingState } from '@momonga/protocol';
+import type { AliasCapabilities, NeedsProbe, ToolCallingState } from '@momonga/protocol';
 import { describe, expect, it, vi } from 'vitest';
 import type { RuntimeClient } from '../src/client/runtime-client.ts';
 import type { CliPorts } from '../src/ports.ts';
@@ -44,7 +44,7 @@ const NEEDS_PROBE: NeedsProbe = {
   remedy: 'run the tool-calling probe for local',
 };
 
-const headless = async (context: Parameters<typeof withTempDir>[0], toolCalling: ToolCallingState | ModelProbing) => {
+const headless = async (context: Parameters<typeof withTempDir>[0], toolCalling: ToolCallingState) => {
   log.length = 0;
   const home = withTempDir(context, { asHome: true });
   const paths = momongaPaths(home);
@@ -66,9 +66,8 @@ const headless = async (context: Parameters<typeof withTempDir>[0], toolCalling:
       },
     },
   } as unknown as CliPorts;
-  const capabilitiesOfAlias = async (alias: string): Promise<AliasCapabilities | ModelProbing> => {
+  const capabilitiesOfAlias = async (alias: string): Promise<AliasCapabilities> => {
     log.push(`capabilitiesOf:${alias}`);
-    if (typeof toolCalling === 'object' && 'probing' in toolCalling) return toolCalling;
     return { ...capabilitiesOf(), toolCalling } as AliasCapabilities;
   };
   const options = { prompt: 'explain the module', format: 'text', verbose: false, interrupt: new AbortController().signal, capabilitiesOf: capabilitiesOfAlias } as HeadlessOptions;
@@ -101,7 +100,7 @@ describe('headless asks capabilitiesOf(alias) at session open and shows the verd
   });
 
   it('shows that the model is being measured, once per model and OS build, before the run is created, and the run proceeds', async (context) => {
-    const result = await headless(context, { probing: { message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 } });
+    const result = await headless(context, { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 });
 
     const noticeAt = log.findIndex((entry) => entry.startsWith('stderr:') && entry.includes(TARGET_PROBING_MESSAGE));
     expect(noticeAt).toBeGreaterThan(-1);
