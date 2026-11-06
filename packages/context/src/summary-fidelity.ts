@@ -1,11 +1,17 @@
-import type { SummaryFidelity, SummarySectionCoverage } from '@momonga/protocol';
+import { tokenMatcherOf } from '@momonga/protocol';
+import type { ClaimedToken, FidelityClaim, SummaryFidelity, SummarySectionCoverage } from '@momonga/protocol';
 
 export type FidelitySource = {
-  region: string;
+  attested: readonly string[];
   pinned: string;
-  previousSummary: string;
   critical: readonly string[];
   workingState: string;
+};
+
+export type FidelityRecord = {
+  executedLeaves: readonly string[];
+  executedText: readonly string[];
+  statedText: readonly string[];
 };
 
 const SECTIONS = ['GOAL', 'STATE', 'DONE', 'TODO', 'DECISIONS', 'GUARDRAILS'] as const;
@@ -19,7 +25,7 @@ const HAS_DIGIT = /[0-9]/;
 const HAS_HEX_LETTER = /[a-f]/;
 const TRAILING_PUNCTUATION = /[.,]+$/;
 const FILE_EXTENSION = /\.[A-Za-z][\w-]*$/;
-const MIN_SUFFIX_SEGMENTS = 2;
+const STRICT_SECTIONS: readonly string[] = ['STATE', 'DONE'];
 
 type Segment = { name: string | undefined; lines: string[] };
 
@@ -63,39 +69,37 @@ export const checkedTokens = (text: string): string[] => {
   return [...new Set(tokens.filter((token) => token !== '').map((token) => withoutLineSuffix(decodedEntities(token))))];
 };
 
-const forwardSlashes = (text: string): string => text.replaceAll('\\', '/');
-
-const normalisedSegments = (token: string): string[] =>
-  forwardSlashes(token)
-    .replace(/^(?:\.\/)+/, '')
-    .split('/')
-    .filter((segment) => segment !== '');
-
-export const occursIn = (token: string, haystack: string): boolean => {
-  const haystacks = [haystack, forwardSlashes(haystack)];
-  if (haystacks.some((text) => text.includes(token) || text.includes(forwardSlashes(token)))) return true;
-  if (!/[/\\]/.test(token)) return false;
-  const segments = normalisedSegments(token);
-  for (let start = 0; start + MIN_SUFFIX_SEGMENTS <= segments.length; start += 1) {
-    const suffix = segments.slice(start).join('/');
-    if (haystacks.some((text) => text.includes(suffix))) return true;
-  }
-  return false;
+export const claimedTokens = (summary: string): ClaimedToken[] => {
+  const checked = segmentsOf(summary).filter((segment) => segment.name !== EXEMPT_SECTION);
+  const strict = new Set(
+    checked.filter((segment) => segment.name !== undefined && STRICT_SECTIONS.includes(segment.name)).flatMap((segment) => checkedTokens(segment.lines.join('\n'))),
+  );
+  return checkedTokens(checked.map((segment) => segment.lines.join('\n')).join('\n')).map(
+    (token): ClaimedToken => ({ token, claim: strict.has(token) ? 'executed' : 'any' }),
+  );
 };
+
+const occursIn = (token: string, cwd: string, texts: readonly string[]): boolean => {
+  const matcher = tokenMatcherOf(token, cwd);
+  return texts.some((text) => matcher.matches(text, true));
+};
+
+const sourcesFor = (claim: FidelityClaim, record: FidelityRecord): readonly string[] =>
+  claim === 'executed' ? [...record.executedLeaves, ...record.executedText] : [...record.executedLeaves, ...record.executedText, ...record.statedText];
+
+export const attestedTokens = (claims: readonly ClaimedToken[], record: FidelityRecord, cwd: string): string[] =>
+  claims.filter(({ token, claim }) => occursIn(token, cwd, sourcesFor(claim, record))).map(({ token }) => token);
 
 const coverageOf = (found: number): SummarySectionCoverage => (found === SECTIONS.length ? 'complete' : found === 0 ? 'none' : 'partial');
 
 export const checkSummary = (summary: string, source: FidelitySource): SummaryFidelity => {
-  const segments = segmentsOf(summary);
-  const named = new Set(segments.flatMap((segment) => (segment.name === undefined ? [] : [segment.name])));
-  const checked = segments
-    .filter((segment) => segment.name !== EXEMPT_SECTION)
-    .map((segment) => segment.lines.join('\n'))
-    .join('\n');
-  const known = [source.region, source.pinned, source.previousSummary].join('\n');
+  const named = new Set(segmentsOf(summary).flatMap((segment) => (segment.name === undefined ? [] : [segment.name])));
+  const attested = new Set(source.attested);
   const critical = [...new Set(source.critical)];
   return {
-    fabricated: checkedTokens(checked).filter((token) => !occursIn(token, known)),
+    fabricated: claimedTokens(summary)
+      .filter(({ token, claim }) => !attested.has(token) && !(claim === 'any' && occursIn(token, '', [source.pinned])))
+      .map(({ token }) => token),
     identifiers: critical.length,
     retained: critical.filter((identifier) => summary.includes(identifier) || source.workingState.includes(identifier)).length,
     sections: coverageOf(named.size),

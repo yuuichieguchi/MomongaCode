@@ -38,6 +38,7 @@ const boolean: JsonSchema = { type: 'boolean' };
 const anything: JsonSchema = {};
 const enumOf = (values: readonly string[]): JsonSchema => ({ type: 'string', enum: values });
 const constant = (value: string): JsonSchema => ({ type: 'string', const: value });
+const toolFiles: JsonSchema = { type: 'array', items: closed({ path: string, sha256: string, access: enumOf(FILE_ACCESSES) }, ['path', 'access']) };
 const boundedInteger = (minimum: number, maximum: number): JsonSchema => ({ type: 'integer', minimum, maximum });
 
 const permissionMode = enumOf(PERMISSION_MODES);
@@ -382,7 +383,9 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
       truncated: boolean,
       handle: string,
       denial: closed({ source: enumOf(PERMISSION_DENIAL_SOURCES), reason: string }, ['source', 'reason']),
-      files: { type: 'array', items: closed({ path: string, sha256: string, access: enumOf(FILE_ACCESSES) }, ['path', 'sha256', 'access']) },
+      files: toolFiles,
+      command: string,
+      windowShared: { type: 'boolean', const: true },
       exitCode: integer,
       formatted: closed({ formatter: string, version: integer }, ['formatter', 'version']),
     },
@@ -415,7 +418,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
     required: ['target', 'counter', 'fallback', 'inputDigest', 'itemCount', 'counted', 'reported', 'kept', 'known', 'uncounted', 'miss', 'contextWindow', 'tokenCounting'],
   },
   'tool.reconciled': {
-    properties: { callId: string, outcome: enumOf(['already_applied', 'not_applied', 'unknown']), output: string },
+    properties: { callId: string, outcome: enumOf(['already_applied', 'not_applied', 'unknown']), output: string, files: toolFiles, command: string },
     required: ['callId', 'outcome', 'output'],
   },
   'tool.waiting': {
@@ -939,6 +942,8 @@ export type ContextChargeView = {
   detail?: BilledDetail;
 };
 
+export type AnsweredByView = { target: string; adapter: string; upstreamModel: string; answers: 'model' | 'script' | 'unknown' };
+export type RunAnsweredByView = { answeredBy: AnsweredByView[] };
 export type RunReflectionView = { job: ReflectionJobView | null; charges: ContextChargeView[]; queuedAhead: number };
 
 export type ContextChargesView = { charges: ContextChargeView[]; totalTokens: number };
@@ -1234,6 +1239,17 @@ export const RUN_API_SCHEMAS = {
   MemoriesResponse: root(closed({ memories: { type: 'array', items: memoryView } }, ['memories'])),
   MemoryResponse: root(closed({ memory: memoryView }, ['memory'])),
   ReflectionResponse: root(closed({ job: nullable(reflectionJobView) }, ['job'])),
+  RunAnsweredBy: root(
+    closed(
+      {
+        answeredBy: {
+          type: 'array',
+          items: closed({ target: string, adapter: { type: 'string' }, upstreamModel: { type: 'string' }, answers: { enum: ['model', 'script', 'unknown'] } }, ['target', 'adapter', 'upstreamModel', 'answers']),
+        },
+      },
+      ['answeredBy'],
+    ),
+  ),
   RunReflection: root(closed({ job: nullable(reflectionJobView), charges: { type: 'array', items: contextChargeView }, queuedAhead: nonNegativeInteger }, ['job', 'charges', 'queuedAhead'])),
   PromoteMemoryRequest: root(closed({ skill: string }, ['skill'])),
   PromoteMemoryResponse: root(closed({ path: string }, ['path'])),

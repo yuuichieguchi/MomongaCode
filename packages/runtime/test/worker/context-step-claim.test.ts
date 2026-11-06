@@ -51,6 +51,7 @@ const contextFor = (state: RunState) => {
     capabilities,
     systemPrompt: SYSTEM_PROMPT,
     functionTools: () => [ECHO_TOOL],
+    readers: () => ({}),
     companions: () => ({ hostOf: {}, keepWithoutHost: false }),
     skills: { catalog: undefined },
     recalled: { memories: [], rank: () => [], tools: [], markUsed: () => undefined },

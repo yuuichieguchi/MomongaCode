@@ -68,6 +68,7 @@ const startBackgroundJob = async (input: BashInput, ctx: ToolContext): Promise<T
   return {
     status: 'completed',
     output: `Started background job ${jobId}. Read its output with BashOutput (bash_id ${jobId}) and stop it with KillBash (shell_id ${jobId}).`,
+    detached: true,
   };
 };
 

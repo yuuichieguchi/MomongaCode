@@ -3,7 +3,9 @@ import { MINIMUM_PAIRS, pairedBootstrap, pairedRatioBootstrap } from './bootstra
 import type { BootstrapInterval, Cluster } from './bootstrap.ts';
 import { canonicalJson } from '@momonga/foundation';
 import type { PolicyOverlay } from './context-policy.ts';
-import { describeClustered } from './context-report.ts';
+import { QUALITY_METRICS } from './context-quality.ts';
+import type { QualityMetric, QualityMetricName } from './context-quality.ts';
+import { describeClustered, modelKindOf } from './context-report.ts';
 import type { ClusteredProportion, ContextCaseReport, ContextReport } from './context-report.ts';
 import { percent } from './report.ts';
 import { EvalError } from './runner.ts';
@@ -17,6 +19,7 @@ export const GATE_CHECKS = [
   'offCases',
   'overallPasses',
   'unclassifiedCompactions',
+  ...QUALITY_METRICS.map((metric) => metric.name),
 ] as const;
 
 export const GATE_NAMES = ['context', 'token'] as const;
@@ -25,7 +28,7 @@ export type GateName = (typeof GATE_NAMES)[number];
 export const TOKEN_PRIMARY_METRICS = ['costPerSuccess', 'uncachedInputPerSuccess'] as const;
 export type TokenPrimaryMetric = (typeof TOKEN_PRIMARY_METRICS)[number];
 
-export type GateCheckName = (typeof GATE_CHECKS)[number] | 'passRate' | TokenPrimaryMetric;
+export type GateCheckName = (typeof GATE_CHECKS)[number] | 'passRate' | TokenPrimaryMetric | QualityMetricName;
 
 export type GateCheck = { name: GateCheckName; passed: boolean; detail: string };
 
@@ -113,6 +116,7 @@ const fabricationCheck = (baseline: ClusteredProportion | undefined, candidate: 
 type Terms = {
   baseline: ContextReport;
   candidate: ContextReport;
+  seed: number;
   pairs: CasePair[];
   compacted: CasePair[];
   loss: BootstrapInterval | undefined;
@@ -123,13 +127,51 @@ type Terms = {
 
 type Term = (terms: Terms) => GateCheck;
 
+const identitiesOf = (report: ContextReport): string => report.answeredBy.map((answerer) => `${answerer.target} (${answerer.adapter} ${answerer.upstreamModel}, ${answerer.answers})`).join(', ');
+
+const answerProblemsOf = (label: string, report: ContextReport): string[] => {
+  const kind = modelKindOf(report.answeredBy, report.unrecordedAnswers);
+  const named = (answers: 'script' | 'unknown'): string => report.answeredBy.filter((answerer) => answerer.answers === answers).map((answerer) => answerer.target).join(', ');
+  if (kind === 'fake') return [`the ${label} was answered by scripted target(s) ${named('script')}, and a scripted model proves only that the machinery works`];
+  const problems: string[] = [];
+  for (const answerer of report.answeredBy.filter((entry) => entry.answers === 'unknown')) {
+    problems.push(`the ${label} was answered by target ${answerer.target}, which does not declare what answers: set answers to model or script on it`);
+  }
+  if (report.unrecordedAnswers > 0) problems.push(`${report.unrecordedAnswers} transcript(s) of the ${label} record no answering target, so what answered is unknown`);
+  if (kind === 'unknown' && problems.length === 0) problems.push(`the ${label} records no answering target, so what answered is unknown`);
+  return problems;
+};
+
 const realModelTerm: Term = ({ baseline, candidate }) => {
-  const bothReal = baseline.model === 'real' && candidate.model === 'real';
+  const problems = [...answerProblemsOf('baseline', baseline), ...answerProblemsOf('candidate', candidate)];
+  const before = identitiesOf(baseline);
+  const after = identitiesOf(candidate);
+  if (problems.length === 0 && before !== after) {
+    problems.push(`the baseline was answered by ${before} and the candidate by ${after}, and a paired difference between two different models measures the model, not the candidate`);
+  }
   return {
     name: 'real_model',
-    passed: bothReal,
-    detail: `baseline model ${baseline.model}, candidate model ${candidate.model}, both declared by the operator${bothReal ? '' : '; a fake model proves only that the machinery works, so it cannot pass the gate'}`,
+    passed: problems.length === 0,
+    detail: problems.length === 0 ? `baseline and candidate were both answered by ${before}, declared as models by the pinned provenance of the targets` : problems.join('; '),
   };
+};
+
+const direction = (metric: QualityMetric): string => (metric.direction === 'higher' ? 'below' : 'above');
+
+const qualityTerm = (metric: QualityMetric): Term => ({ pairs, seed }) => {
+  const { name } = metric;
+  const measured = pairs.flatMap((pair) => {
+    const before = pair.baseline.quality[name];
+    const after = pair.candidate.quality[name];
+    if (before === undefined || after === undefined) throw new EvalError(`case ${pair.baseline.id} carries no ${name} cell in one of the reports, so the reports cannot be paired on it`);
+    return before.denominator > 0 && after.denominator > 0 ? [after.numerator / after.denominator - before.numerator / before.denominator] : [];
+  });
+  if (measured.length < MINIMUM_PAIRS) {
+    return { name, passed: false, detail: `${NO_MEASURE}: ${measured.length} case(s) measure ${name} in both reports, and ${MINIMUM_PAIRS} are needed for a real interval` };
+  }
+  const interval = pairedBootstrap(measured, { seed });
+  const worse = metric.direction === 'higher' ? interval.high < 0 : interval.low > 0;
+  return { name, passed: !worse, detail: `paired difference ${describeInterval(interval, 3)}; the candidate is worse only when the whole interval lies ${direction(metric)} 0` };
 };
 
 const lossTerm: Term = ({ compacted, loss }) => pairedCheck('lossSignalsPerCompaction', compacted.length, loss, 3);
@@ -178,9 +220,11 @@ const primaryTerm: Term = ({ pairs, primary }) => {
   };
 };
 
+const QUALITY_TERMS: readonly Term[] = QUALITY_METRICS.map(qualityTerm);
+
 const GATE_TERMS: Record<GateName, readonly Term[]> = {
-  context: [realModelTerm, contrastiveTerm, fabricationTerm, lossTerm, tokensTerm, offCasesTerm, overallTerm, unclassifiedTerm],
-  token: [realModelTerm, passRateTerm, primaryTerm, lossTerm, fabricationTerm],
+  context: [realModelTerm, contrastiveTerm, fabricationTerm, lossTerm, tokensTerm, offCasesTerm, overallTerm, unclassifiedTerm, ...QUALITY_TERMS],
+  token: [realModelTerm, passRateTerm, primaryTerm, lossTerm, fabricationTerm, ...QUALITY_TERMS],
 };
 
 const sideNames = ['baseline', 'candidate'] as const;
@@ -253,7 +297,7 @@ export const compareContextReports = (
     options.seed,
   );
   const primary = tokenPrimaryOf(baseline, candidate, pairs, options.seed);
-  const terms: Terms = { baseline, candidate, pairs, compacted, loss, tokens, passRate, primary };
+  const terms: Terms = { baseline, candidate, seed: options.seed, pairs, compacted, loss, tokens, passRate, primary };
   const checks = GATE_TERMS[gateName].map((term) => term(terms));
   return {
     gateName,

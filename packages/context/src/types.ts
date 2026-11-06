@@ -36,6 +36,8 @@ export type ContextGoverning = {
   conflicts: readonly { target: string; ids: readonly string[] }[];
 };
 
+export type ReferenceReaders = Readonly<Record<string, string>>;
+
 export type ContextSources = {
   systemPrompt: string;
   tools: readonly FunctionTool[];
@@ -47,7 +49,8 @@ export type ContextSources = {
   memories?: readonly DeepReadonly<MemoryView>[];
   history: readonly HistoryItem[];
   summary?: ContextSummary;
-  workingState?: string;
+  readers: ReferenceReaders;
+  workingState?: (readers: ReferenceReaders) => string;
   projectedWorkingState?: string;
 };
 

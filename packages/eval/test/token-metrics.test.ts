@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CONTEXT_DATASET_FORMAT,
   GATE_CHECKS,
-  buildContextReport,
+  QUALITY_METRICS,
   compareContextReports,
   encodeContextReport,
   formatContextComparison,
@@ -13,6 +13,7 @@ import {
 import type { ContextReport, Transcript } from '@momonga/eval';
 import type { RunEventPayload, TokenAnatomy } from '@momonga/protocol';
 import { bash, contextCase, fidelity, recorded, summarized } from './context-fixtures.ts';
+import { buildReportAs, withMeasuredQuality } from './answered-fixtures.ts';
 
 const SCENARIOS = ['a', 'b', 'c', 'd'] as const;
 const CASE_IDS = SCENARIOS.flatMap((scenario) => [`${scenario}-on`, `${scenario}-off`]);
@@ -85,7 +86,7 @@ const transcriptsOf = ({ failing = [], calls = {}, every = {}, silent = false }:
     return recorded(caseId, 0, [...modelCalls, ...compaction], { status: failing.includes(caseId) ? 'FAILED' : 'COMPLETED' });
   });
 
-const reportOf = (variant: Variant = {}): ContextReport => buildContextReport({ dataset, transcripts: transcriptsOf(variant), model: variant.model ?? 'real', seed: 1 });
+const reportOf = (variant: Variant = {}): ContextReport => withMeasuredQuality(buildReportAs({ dataset, transcripts: transcriptsOf(variant), model: variant.model ?? 'real', seed: 1 }));
 
 const tokenGate = (baseline: ContextReport, candidate: ContextReport) =>
   compareContextReports(baseline, { ...candidate, policy: { context: { cachePrefix: true } } }, { seed: 1, gate: 'token' });
@@ -151,6 +152,13 @@ describe('eval compare --gate token', () => {
       ['costPerSuccess', true],
       ['lossSignalsPerCompaction', true],
       ['fabricationRate', true],
+      ['continuationRate', true],
+      ['governanceFidelity', true],
+      ['governanceConsistency', true],
+      ['governanceMinimality', true],
+      ['memoryStaleRate', true],
+      ['retrievalPrecision', true],
+      ['retrievalRecall', true],
     ]);
     expect(comparison.gate.passed).toBe(true);
   });
@@ -163,7 +171,7 @@ describe('eval compare --gate token', () => {
 
     expect(named.gate).toEqual(byDefault.gate);
     expect(named.gate.checks.map((check) => check.name)).toEqual([...GATE_CHECKS]);
-    expect(tokenGate(baseline, candidate).gate.checks.map((check) => check.name)).toEqual(['real_model', 'passRate', 'costPerSuccess', 'lossSignalsPerCompaction', 'fabricationRate']);
+    expect(tokenGate(baseline, candidate).gate.checks.map((check) => check.name)).toEqual(['real_model', 'passRate', 'costPerSuccess', 'lossSignalsPerCompaction', 'fabricationRate', ...QUALITY_METRICS.map((metric) => metric.name)]);
   });
 
   it('fails a candidate whose cost is only equal, because the primary metric must drop beyond its interval', () => {
@@ -203,7 +211,7 @@ describe('eval compare --gate token', () => {
 
   it('fails when the candidate loses more after compaction or fabricates more, however cheap', () => {
     const lossy = reportOf({ ...cheaper });
-    const losing = buildContextReport({ dataset,
+    const losing = buildReportAs({ dataset,
       transcripts: transcriptsOf(cheaper).map((transcript) =>
         transcript.caseId.endsWith('-on') ? recorded(transcript.caseId, 0, [...callEvents({ cost: 0.001 }, 1), ...bash('b0', 'npm test', 'failed'), summarized(3, fidelity([], 2, 2)), ...bash('b1', 'npm test', 'failed')]) : transcript,
       ),
@@ -216,7 +224,7 @@ describe('eval compare --gate token', () => {
     expect(checkOf(comparison, 'costPerSuccess')?.passed).toBe(true);
     expect(checkOf(comparison, 'lossSignalsPerCompaction')?.passed).toBe(false);
     expect(comparison.gate.passed).toBe(false);
-    const fabricating = buildContextReport({ dataset,
+    const fabricating = buildReportAs({ dataset,
       transcripts: transcriptsOf(cheaper).map((transcript) =>
         transcript.caseId.endsWith('-on') ? recorded(transcript.caseId, 0, [...callEvents({ cost: 0.001 }, 1), ...bash('b0', 'npm test', 'failed'), summarized(3, fidelity(['ghost.ts'], 2, 2))]) : transcript,
       ),

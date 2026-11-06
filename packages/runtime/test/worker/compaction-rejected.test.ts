@@ -3,13 +3,14 @@ import type { CountTokensResult, InputItem, MessageInputItem, RunEvent, RunEvent
 import { GatewayRequestError } from '@momonga/runtime';
 import { fixtureCompactionContent } from '@momonga/testkit';
 import { budgetFor } from '@momonga/context';
+import { compactionSummaryMessage } from '@momonga/protocol';
 import { bodyDigest, capabilitiesFor, compactKey, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import type { ScriptStep } from './fake-gateway.ts';
 import { assistantMessage, textStep } from './scripts.ts';
 
 const SUMMARY_TEXT = 'We fixed the <parser> bug';
-const PLAIN_SUMMARY: MessageInputItem = { type: 'message', role: 'user', content: '<conversation_summary>\nWe fixed the &lt;parser> bug\n</conversation_summary>' };
+const PLAIN_SUMMARY: MessageInputItem = compactionSummaryMessage(SUMMARY_TEXT, 'model');
 const COMPACTION_ITEM = { type: 'compaction' as const, id: 'cmp_seed', encrypted_content: fixtureCompactionContent(SUMMARY_TEXT) };
 const USAGE = { input_tokens: 50, output_tokens: 5, total_tokens: 55 };
 

@@ -18,5 +18,5 @@ export { TOOL_USAGE_WINDOW_RUNS, deferredSetOf } from './tool-usage.ts';
 export type { ToolUsageRun } from './tool-usage.ts';
 export { CONTRIBUTION_WINDOW_RUNS, DEFAULT_MEMORY_SHARE, MAX_MEMORY_SHARE, MIN_MEMORY_SHARE, SHARE_FACTOR, nextMemoryShare } from './memory-share.ts';
 export type { ContributionWindowRun } from './memory-share.ts';
-export { COMPACTION_LOSS_KINDS, HISTORY_READ_TOOL, WHOLE_RUN_FROM, compactionLossSignals } from './compaction-loss.ts';
+export { COMPACTION_LOSS_KINDS, HISTORY_READ_TOOL, HISTORY_SEARCH_TOOL, WHOLE_RUN_FROM, compactionLossSignals } from './compaction-loss.ts';
 export type { CompactionLossKind, CompactionLossSignal } from './compaction-loss.ts';

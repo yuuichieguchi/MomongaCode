@@ -1,7 +1,6 @@
 import type { Command } from 'commander';
 import { InvalidArgumentError, Option } from 'commander';
-import { CONTEXT_MODELS, DEFAULT_DATASET_SEED, MAX_DATASET_SEED } from '@momonga/eval';
-import type { ContextModel } from '@momonga/eval';
+import { DEFAULT_DATASET_SEED, MAX_DATASET_SEED } from '@momonga/eval';
 import { GOVERNING_KINDS, MEMORY_KINDS, MEMORY_SCOPES, PERMISSION_MODES } from '@momonga/protocol';
 import type { GoverningEnforcement, GoverningKind, MemoryKind, MemoryScope, PermissionMode } from '@momonga/protocol';
 import { pathsOf } from '../paths.ts';
@@ -268,18 +267,16 @@ const registerEvaluate: CommandGroup = (program, deps) => {
     )
     .option('--replay <directory>', 'the recorded transcripts to measure instead of running the dataset')
     .option('--record <directory>', 'save the transcript of every measured run of a live run in this directory')
-    .addOption(new Option('--model <model>', 'which kind of model produced the runs; a fake model proves only that the machinery works').choices(CONTEXT_MODELS))
     .option('--alias <alias>', 'the model alias every session of a live run is pinned to')
     .option('--seed <n>', 'the seed of the noise turns of a live run; 0 when omitted', seedArgument)
     .option('--report <file>', 'store the report as JSON for eval compare')
     .option('--settings <file>', 'a token policy overlay (context.cachePrefix, outputFormatters, loopGuidance, observedCapacity; tools.deferral, conciseDescriptions; memory.repositoryFacts) merged into the settings of every case of a live run and recorded in the report')
-    .action(async (dataset: string, options: { replay?: string; record?: string; model?: ContextModel; alias?: string; seed?: number; report?: string; settings?: string }) => {
+    .action(async (dataset: string, options: { replay?: string; record?: string; alias?: string; seed?: number; report?: string; settings?: string }) => {
       deps.complete(
         await evaluateContext(deps.ports, dataset, {
           interrupt: deps.interrupt,
           ...(options.replay === undefined ? {} : { replay: options.replay }),
           ...(options.record === undefined ? {} : { record: options.record }),
-          ...(options.model === undefined ? {} : { model: options.model }),
           ...(options.alias === undefined ? {} : { alias: options.alias }),
           ...(options.seed === undefined ? {} : { seed: options.seed }),
           ...(options.report === undefined ? {} : { report: options.report }),
@@ -302,6 +299,12 @@ const versionArgument = (text: string): number => {
   return value;
 };
 
+const tokenCapArgument = (text: string): number => {
+  const value = Number(text);
+  if (!Number.isInteger(value) || value < 1) throw new InvalidArgumentError('expected an integer of at least 1');
+  return value;
+};
+
 const registerContext: CommandGroup = (program, deps) => {
   const context = program.command('context').description('improve how the context is compacted, from the failures a benchmark shows');
   context
@@ -310,16 +313,16 @@ const registerContext: CommandGroup = (program, deps) => {
       'analyse the scenarios that pass without compaction and fail with it, sample candidate guidelines for the compaction summary, benchmark each against the guideline in force, print the winner and its full text, and write the outcome to a file; nothing is stored',
     )
     .requiredOption('--dataset <file>', 'the context dataset to benchmark')
-    .addOption(new Option('--model <model>', 'which kind of model produced the runs; a fake model proves only that the machinery works, and no candidate can pass the gate with it').choices(CONTEXT_MODELS).makeOptionMandatory())
     .requiredOption('--alias <alias>', 'the model alias of the benchmark sessions and of the analysis and candidate calls')
+    .requiredOption('--token-cap <n>', 'the most tokens the command may spend on benchmark runs and model calls together; the number of candidates is what this cap affords after the baseline and the analyses', tokenCapArgument)
     .option('--seed <n>', 'the seed of the noise turns and of the candidate draws; 0 when omitted', seedArgument)
     .requiredOption('--outcome <file>', 'the file the outcome is written to: the candidates, the text of the winner, its report, the dataset digest, the parent version and a digest of the whole')
-    .action(async (options: { dataset: string; model: ContextModel; alias: string; seed?: number; outcome: string }) => {
+    .action(async (options: { dataset: string; alias: string; tokenCap: number; seed?: number; outcome: string }) => {
       deps.complete(
         await contextImprove(deps.ports, await pathsOf(deps.ports), {
           dataset: options.dataset,
-          model: options.model,
           alias: options.alias,
+          tokenCap: options.tokenCap,
           seed: options.seed ?? DEFAULT_DATASET_SEED,
           outcome: options.outcome,
           interrupt: deps.interrupt,

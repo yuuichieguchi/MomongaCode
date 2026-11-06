@@ -4,6 +4,7 @@ import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import { blobHandle } from './helpers.ts';
 
 const LIMIT = 300;
+const WIDE_LIMIT = 700;
 
 const headerOf = (formatter: string) => (handle: string): string => `[formatted by ${formatter}; raw output ${handle}; read it with ReadOutput]`;
 const RAW = Array.from({ length: 100 }, (_unused, index) => `raw-line-${String(index + 1).padStart(3, '0')}`).join('\n');
@@ -11,8 +12,8 @@ const SHORT_RAW = 'short raw output';
 
 type Seen = Parameters<BatchOutputFormatter>[0];
 
-const runWith = async (output: string, formatOutput: BatchOutputFormatter | undefined) => {
-  const harness = makeHarness({ maxInlineOutputChars: LIMIT });
+const runWith = async (output: string, formatOutput: BatchOutputFormatter | undefined, limit: number = LIMIT) => {
+  const harness = makeHarness({ outputLimitChars: limit });
   const set = await toolSetOf(makeTool('Grep', { kind: 'search', execute: async () => ({ status: 'completed', output }) }));
   const [outcome] = await harness.executor.runBatch(harness.input(set, [call('c1', 'Grep')], formatOutput === undefined ? {} : { formatOutput }));
   if (outcome?.kind !== 'result') throw new Error('expected a result');
@@ -57,13 +58,13 @@ describe('the batch output formatter in finalizeResult', () => {
     expect(result.formatted).toEqual({ formatter: 'log', version: 2 });
   });
 
-  it('cuts a formatted text over the inline limit with a marker naming the same raw handle, storing one blob', async () => {
+  it('cuts a formatted text over the output fit with a marker naming the same raw handle, storing one blob', async () => {
     const formattedText = Array.from({ length: 80 }, (_unused, index) => `formatted-${String(index + 1).padStart(3, '0')}`).join('\n');
-    const { harness, result } = await runWith(RAW, () => ({ output: formattedText, formatter: 'grep', version: 1, header: headerOf('grep') }));
+    const { harness, result } = await runWith(RAW, () => ({ output: formattedText, formatter: 'grep', version: 1, header: headerOf('grep') }), WIDE_LIMIT);
     expect(harness.blobs.puts).toHaveLength(1);
     expect(harness.blobs.stored.get(blobHandle(1))?.text).toBe(RAW);
     expect(result.handle).toBe(blobHandle(1));
-    expect(result.output.length).toBeLessThanOrEqual(LIMIT);
+    expect(result.output.length).toBeLessThanOrEqual(WIDE_LIMIT);
     const lines = result.output.split('\n');
     expect(lines[0]).toContain('grep');
     expect(lines[0]).toContain(blobHandle(1));

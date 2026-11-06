@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { sha256Hex } from '@momonga/foundation';
-import { compactionSummaryMessage } from '@momonga/protocol';
+import { DETERMINISTIC_SUMMARY_TEXT, compactionSummaryMessage } from '@momonga/protocol';
 import type { RunEventPayload } from '@momonga/protocol';
 import { GatewayRequestError } from '@momonga/runtime';
 import { fixtureCompactionItem } from '@momonga/testkit';
+import { defineTool } from '@momonga/tools';
+import type { AnyTool } from '@momonga/tools';
 import { capabilitiesFor, makeEnv, textOf } from './harness.ts';
 import type { Env } from './harness.ts';
 import { assistantMessage, textStep } from './scripts.ts';
@@ -48,9 +50,23 @@ const prepare = async (payloads: RunEventPayload[] = conversation()) => {
   return { env, run };
 };
 
+const historyRead: AnyTool = defineTool<Record<string, unknown>>({
+  name: 'HistoryRead',
+  description: 'Reads the recorded events of a run in a seq range.',
+  tier: 'optional',
+  reads: 'history_range',
+  kind: 'read',
+  sideEffect: 'read_only',
+  subject: () => ({ kind: 'none', tool: 'HistoryRead' }),
+  inputSchema: { type: 'object', properties: { seqFrom: { type: 'integer' }, seqTo: { type: 'integer' } }, additionalProperties: false },
+  timeoutMs: 1_000,
+  title: () => 'HistoryRead',
+  execute: async () => ({ status: 'completed' as const, output: 'events' }),
+} as never);
+
 const runToEnd = async (env: Env, finalText = 'Done.') => {
   env.gateway.script.push(textStep(finalText));
-  expect(await env.runOnce(env.worker())).toBe('yielded');
+  expect(await env.runOnce(env.worker('worker-1', { toolList: () => [historyRead] }))).toBe('yielded');
 };
 
 const onlyCompaction = (env: Env, runId: string) => {
@@ -100,24 +116,43 @@ describe('a model summary that passes the check', () => {
     expect(onlyCompaction(env, run.id)).toMatchObject({ source: 'model', fidelity: { fabricated: [] } });
   });
 
-  it('accepts a token from the previous summary', async () => {
+  it('does not accept a token found only in the previous summary', async () => {
     const earlier = 'STATE:\n`src/earlier/kept.ts`';
     const seeded: RunEventPayload = { type: 'context.compacted', item: fixtureCompactionItem('cmp_seed', earlier), summary: earlier, replacedThroughSeq: 3, source: 'model' };
     const [first, second, third, ...rest] = conversation();
     const { env, run } = await prepare([first!, second!, third!, seeded, ...rest]);
     env.gateway.compactSummaries.push(CLEAN.replace('/proj/src/read.ts', 'src/earlier/kept.ts'));
     await runToEnd(env);
-    expect(env.ofType(run.id, 'context.compacted').at(-1)).toMatchObject({ source: 'model', fidelity: { fabricated: [] } });
+    expect(env.ofType(run.id, 'context.compacted').at(-1)).toMatchObject({ source: 'deterministic', fidelity: { fabricated: ['src/earlier/kept.ts'] } });
   });
 
-  it('accepts a token from the pinned layers', async () => {
+  it('accepts a GOAL token from the pinned layers', async () => {
+    const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
+    env.instructions.files.set(`${env.project}/AGENTS.md`, 'Never touch src/pinned/rule.ts');
+    const run = env.enqueue('question one');
+    env.seed(run.id, conversation(), 'release');
+    env.gateway.compactSummaries.push(CLEAN.replace('GOAL:\ng', 'GOAL:\nkeep `src/pinned/rule.ts` untouched'));
+    await runToEnd(env);
+    expect(onlyCompaction(env, run.id)).toMatchObject({ source: 'model', fidelity: { fabricated: [] } });
+  });
+
+  it('does not accept a STATE token found only in the pinned layers', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
     env.instructions.files.set(`${env.project}/AGENTS.md`, 'Never touch src/pinned/rule.ts');
     const run = env.enqueue('question one');
     env.seed(run.id, conversation(), 'release');
     env.gateway.compactSummaries.push(CLEAN.replace('/proj/src/read.ts', 'src/pinned/rule.ts'));
     await runToEnd(env);
-    expect(onlyCompaction(env, run.id).source).toBe('model');
+    expect(onlyCompaction(env, run.id)).toMatchObject({ source: 'deterministic', fidelity: { fabricated: ['src/pinned/rule.ts'] } });
+  });
+
+  it('does not accept a STATE token found only in the model own earlier message', async () => {
+    const payloads = conversation();
+    payloads.splice(6, 1, responded(3, [assistantMessage('m3', `I changed src/said/only.ts ${'x'.repeat(120_000)}`)]));
+    const { env, run } = await prepare(payloads);
+    env.gateway.compactSummaries.push(CLEAN.replace('/proj/src/read.ts', 'src/said/only.ts'));
+    await runToEnd(env);
+    expect(onlyCompaction(env, run.id)).toMatchObject({ source: 'deterministic', fidelity: { fabricated: ['src/said/only.ts'] } });
   });
 });
 
@@ -129,7 +164,7 @@ describe('a fabricated model summary', () => {
     const event = onlyCompaction(env, run.id);
     expect(event.source).toBe('deterministic');
     expect(event.summary).not.toContain('ghost');
-    expect(event.item).toEqual(compactionSummaryMessage(event.summary));
+    expect(event.item).toEqual(compactionSummaryMessage(event.summary, 'code'));
     expect(event.fidelity?.fabricated).toEqual(['src/ghost.ts']);
     expect(lastInputText(env)).not.toContain('src/ghost.ts');
     expect(env.run(run.id).status).toBe('COMPLETED');
@@ -164,7 +199,7 @@ describe('an escalating gateway failure', () => {
     await runToEnd(env);
     const event = onlyCompaction(env, run.id);
     expect(event.source).toBe('deterministic');
-    expect(event.item).toEqual(compactionSummaryMessage(event.summary));
+    expect(event.item).toEqual(compactionSummaryMessage(event.summary, 'code'));
     expect(env.ofType(run.id, 'notice').filter((notice) => notice.message.startsWith('Compaction failed'))).toEqual([]);
     expect(env.run(run.id).status).toBe('COMPLETED');
   });
@@ -218,31 +253,30 @@ describe('a failure that sent the run to the deterministic summary', () => {
 });
 
 describe('the deterministic summary', () => {
-  it('carries the previous summary forward, then the working state, within the cap', async () => {
+  it('carries no text of the previous model summary', async () => {
     const earlier = 'STATE:\n`src/earlier/kept.ts`';
     const seeded: RunEventPayload = { type: 'context.compacted', item: fixtureCompactionItem('cmp_seed', earlier), summary: earlier, replacedThroughSeq: 3, source: 'model' };
     const [first, second, third, ...rest] = conversation();
     const { env, run } = await prepare([first!, second!, third!, seeded, ...rest]);
     env.gateway.compactSummaries.push(FABRICATED);
     await runToEnd(env);
-    const cap = env.gateway.compacts[0]?.request.momonga?.max_summary_tokens as number;
     const { summary } = env.ofType(run.id, 'context.compacted').at(-1)!;
-    expect(summary.indexOf('src/earlier/kept.ts')).toBeGreaterThanOrEqual(0);
-    expect(summary.indexOf('src/earlier/kept.ts')).toBeLessThan(summary.indexOf(WRITTEN));
-    expect(Math.ceil(summary.length / 4)).toBeLessThanOrEqual(cap);
+    expect(summary).toBe(DETERMINISTIC_SUMMARY_TEXT);
+    expect(summary).not.toContain('src/earlier/kept.ts');
   });
 
-  it('fits the summary cap and names the written file, the range and HistoryRead', async () => {
+  it('is the fixed sentence, and the written file, the range and HistoryRead are in the working state that follows', async () => {
     const { env, run } = await prepare();
     env.gateway.compactSummaries.push(FABRICATED);
     await runToEnd(env);
-    const cap = env.gateway.compacts[0]?.request.momonga?.max_summary_tokens as number;
     const { summary, replacedThroughSeq } = onlyCompaction(env, run.id);
     expect(replacedThroughSeq).toBeGreaterThan(0);
-    expect(Math.ceil(summary.length / 4)).toBeLessThanOrEqual(cap);
-    expect(summary).toContain(WRITTEN);
-    expect(summary).toContain('HistoryRead');
-    expect(summary).toMatch(/seqFrom[ :=]+\d+[\s\S]*seqTo[ :=]+\d+/);
+    expect(summary).toBe(DETERMINISTIC_SUMMARY_TEXT);
+    const body = env.gateway.streams.at(-1)?.body as { input: unknown[] };
+    const last = textOf(body.input.at(-1));
+    expect(last).toContain(WRITTEN);
+    expect(last).toContain('HistoryRead');
+    expect(last).toMatch(/seqFrom[ :=]+\d+[\s\S]*seqTo[ :=]+\d+/);
   });
 
   it('holds no prose from the replaced region', async () => {
@@ -268,7 +302,7 @@ describe('working state in the model request', () => {
 describe('replay and recovery', () => {
   it('reuses a recorded deterministic compaction on a new claim', async () => {
     const payloads = conversation();
-    const deterministic = compactionSummaryMessage('recorded');
+    const deterministic = compactionSummaryMessage('recorded', 'code');
     const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
     const run = env.enqueue('question one');
     env.seed(run.id, [...payloads.slice(0, 7), { type: 'context.compacted', item: deterministic, summary: 'recorded', replacedThroughSeq: 6, source: 'deterministic' }, ...payloads.slice(7)], 'crash');
@@ -283,7 +317,7 @@ describe('unchanged behaviour', () => {
   it('never rejects a message summary at the gateway', async () => {
     const env = await makeEnv();
     const run = env.enqueue('question one');
-    env.seed(run.id, [responded(1, [assistantMessage('m1', 'a')]), { type: 'user.message', text: 'q2' }, { type: 'context.compacted', item: compactionSummaryMessage('s'), summary: 's', replacedThroughSeq: 2, source: 'deterministic' }], 'release');
+    env.seed(run.id, [responded(1, [assistantMessage('m1', 'a')]), { type: 'user.message', text: 'q2' }, { type: 'context.compacted', item: compactionSummaryMessage('s', 'code'), summary: 's', replacedThroughSeq: 2, source: 'deterministic' }], 'release');
     await runToEnd(env);
     expect(env.ofType(run.id, 'context.compaction_rejected')).toEqual([]);
     expect(env.run(run.id).status).toBe('COMPLETED');

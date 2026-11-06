@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { AdapterInputItem, AdapterRequest, ContentPart } from '@momonga/protocol';
 import { UnsupportedInputError } from '../src/adapters/shared/failures.ts';
 import { buildMessagesBody } from '../src/adapters/anthropic/request.ts';
+import { MODEL_FRAMING } from './cc-support.ts';
 
 const MAX_TOKENS = 4096;
 const PNG_BASE64 =
@@ -67,7 +68,7 @@ describe('buildMessagesBody', () => {
   it('renders a compaction summary as a user turn', () => {
     const body = bodyOf([{ type: 'compaction_summary', summary: 'earlier <work>' }]);
     expect(body.messages).toEqual([
-      { role: 'user', content: [{ type: 'text', text: '<conversation_summary>\nearlier &lt;work>\n</conversation_summary>' }] },
+      { role: 'user', content: [{ type: 'text', text: `<conversation_summary>\n${MODEL_FRAMING}\nearlier &lt;work>\n</conversation_summary>` }] },
     ]);
   });
 

@@ -58,9 +58,9 @@ const CALL: RunEventPayload = { type: 'tool.call', callId: 'c1', providerCallId:
 const classifiedWithoutDigest = { type: 'tool.permission.classified', callId: 'c1', outcome: 'allow' } as unknown as RunEventPayload;
 
 describe('snapshot state version 11', () => {
-  it('writes stateVersion 14', () => {
+  it('writes stateVersion 15', () => {
     const { storedJson } = storedSnapshot();
-    expect(storedJson()['stateVersion']).toBe(14);
+    expect(storedJson()['stateVersion']).toBe(15);
   });
 
   it('reports a snapshot without the working facts as corrupt', () => {

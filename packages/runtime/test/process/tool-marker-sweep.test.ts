@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { canonicalJson, ensureMomongaDirs, momongaPaths, sha256Hex } from '@momonga/foundation';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, withTempDir } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, UNBOUNDED_OUTPUT_FIT, createFakeClock, createFakeTimers, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { createToolRegistry, defineTool } from '@momonga/tools';
 import { TOOL_MARKER_SWEEP_MS } from '../../src/process/constants.ts';
@@ -161,6 +161,8 @@ describe('tool marker sweep wiring (§8)', () => {
       sandbox: port.sandbox,
       sandboxPolicy: policy.sandboxPolicy,
       deadlineAt: f.clock.now() + 120_000,
+      outputFit: UNBOUNDED_OUTPUT_FIT,
+      reconcileFit: UNBOUNDED_OUTPUT_FIT,
       signal: signalNever(),
     });
     const settled = batch.then(

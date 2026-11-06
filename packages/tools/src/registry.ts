@@ -1,12 +1,13 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { modelVisibleTools } from '@momonga/policy';
 import type { PermissionRule } from '@momonga/policy';
-import type { FunctionTool, PermissionMode } from '@momonga/protocol';
+import { MAX_TOOL_NAME_CHARS } from '@momonga/protocol';
+import type { FunctionTool, PermissionMode, ReferenceKind } from '@momonga/protocol';
 import { compileToolSchemas } from './validate.ts';
 import { TOOL_TIERS } from './types.ts';
 import type { AnyTool } from './types.ts';
 
-const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+const TOOL_NAME = new RegExp(`^[A-Za-z0-9_-]{1,${MAX_TOOL_NAME_CHARS}}$`);
 
 export type ToolSourceListing = { tools: AnyTool[]; notices: string[]; authorizationRequired?: string[] };
 
@@ -27,6 +28,7 @@ export type ToolSet = {
   readonly authorizationRequired: readonly string[];
   get(name: string): AnyTool | undefined;
   readonly companions: ReadonlyMap<string, string>;
+  readerOf(kind: ReferenceKind): string | undefined;
   forModel(options: { mode: PermissionMode; rules: PermissionRule[]; conciseDescriptions?: boolean }): FunctionTool[];
 };
 
@@ -88,6 +90,7 @@ const buildToolSet = (tools: readonly AnyTool[], notices: readonly string[], aut
     notices: frozenNotices,
     authorizationRequired: Object.freeze([...authorizationRequired]),
     get: (name) => byName.get(name),
+    readerOf: (kind) => frozenTools.find((tool) => tool.reads === kind)?.name,
     companions: new Map(frozenTools.flatMap((tool) => (tool.companionOf === undefined ? [] : [[tool.name, tool.companionOf] as const]))),
     forModel: ({ mode, rules, conciseDescriptions }) => {
       const visible = new Set(modelVisibleTools([...frozenTools], { mode, rules }).map((tool) => tool.name));

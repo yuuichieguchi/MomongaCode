@@ -534,6 +534,7 @@ describe('architecture: a large-window target gets the whole tool set', () => {
           taskSeq: 1,
           activatedSkills: [],
           history: [],
+          readers: {},
         },
         evicted: new Set(),
         recordedReferences: new Set(),
