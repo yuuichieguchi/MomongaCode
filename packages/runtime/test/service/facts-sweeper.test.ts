@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import * as runtime from '@momonga/runtime';
-import { FACTS_SWEEP_BATCH_RUNS } from '@momonga/protocol';
+import { FACTS_SWEEP_BATCH_RUNS, INDICATOR_DEFINITIONS_VERSION } from '@momonga/protocol';
 import type { RunFactsView } from '@momonga/protocol';
 import { afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
 import { START_MS } from './helpers.ts';
+import { enqueue, harness, mustClaim, newSession, rawDb } from '../../../store/test/helpers.ts';
+import type { RuntimeStore } from '@momonga/store';
 
 type Sweeper = { close(): Promise<void> };
 
@@ -38,6 +40,37 @@ const factsStore = (runIds: readonly string[]) => {
 };
 
 const rowFor = (runId: string): RunFactsView => ({ runId }) as RunFactsView;
+
+const fullRow = (runId: string, sessionId: string): RunFactsView => ({
+  runId,
+  rootRunId: runId,
+  sessionId,
+  definitionsVersion: INDICATOR_DEFINITIONS_VERSION,
+  modelAlias: 'fm',
+  mode: 'default',
+  agent: 'build',
+  origin: 'cli',
+  status: 'COMPLETED',
+  createdAt: START_MS,
+  endedAt: START_MS,
+  elapsedMs: 0,
+  humanWaitMs: 0,
+  tokensTotal: 0,
+  steps: 1,
+  limits: {},
+  asked: 0,
+  elicited: 0,
+  authorizationRequired: 0,
+  sideEffectingCalls: 0,
+  repeatedStarts: 0,
+  reconciledAlreadyApplied: 0,
+  reconciledNotApplied: 0,
+  reconciledUnknown: 0,
+  basis: { readOnly: 0, rule: 0, mode: 0, hook: 0, classifier: 0, person: 0 },
+  declared: false,
+  met: true,
+  recoveries: [],
+});
 
 const tick = async (timers: ReturnType<typeof createFakeTimers>): Promise<void> => {
   timers.advance(1000);
@@ -82,5 +115,41 @@ describe('startFactsSweeper (FactsSweeper.tla)', () => {
     expect(fake.commits[0]).toEqual({ rows: [rowFor('r1'), rowFor('r3')], unavailable: ['poison'], throughEventId: 3 });
     expect(fake.covered().sort()).toEqual(['poison', 'r1', 'r3', 'r4']);
     expect(timers.pending()).toEqual([]);
+  });
+
+  it('coverage converges through the real store: with no new terminal runs, every terminal run gets a row or an unavailable mark, again after a definitions version change', async () => {
+    const { dbPath, store, clock } = harness();
+    const timers = createFakeTimers(clock);
+    const session = newSession(store).id;
+    const complete = async (): Promise<string> => {
+      const run = enqueue(store, session);
+      const claim = mustClaim(store, 'w1');
+      expect((await store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
+      return run.id;
+    };
+    const ids = [await complete(), await complete(), await complete(), await complete()];
+    const poison = ids[1] as string;
+    const requested: string[] = [];
+    const thread = {
+      runFacts: async (runId: string) => {
+        requested.push(runId);
+        if (runId === poison) throw new RangeError('the fold threw');
+        return fullRow(runId, session);
+      },
+    };
+    const facts = (store as unknown as { runFacts: { get(runId: string): unknown } }).runFacts;
+    const sweeper = startFactsSweeper({ store: store as RuntimeStore, thread, timers, intervalMs: 1000, batchSize: FACTS_SWEEP_BATCH_RUNS, onError: () => undefined });
+    await tick(timers);
+    ids.push(await complete());
+    for (let round = 0; round < 4; round += 1) await tick(timers);
+    expect(ids.map((runId) => facts.get(runId) === undefined)).toEqual(ids.map(() => false));
+    expect(facts.get(poison)).toEqual({ kind: 'unavailable' });
+    const before = requested.length;
+    await tick(timers);
+    expect(requested.length).toBe(before);
+    rawDb(dbPath).prepare('UPDATE facts_cursor SET definitions_version = definitions_version - 1').run();
+    for (let round = 0; round < 3; round += 1) await tick(timers);
+    expect(requested.slice(before).sort()).toEqual([...ids].sort());
+    await sweeper.close();
   });
 });

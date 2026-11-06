@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RunEvent } from '@momonga/protocol';
+import { foldFacts } from '@momonga/reliability';
 import { makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { GatewayRequestError } from '../../src/gateway-client.ts';
@@ -103,5 +104,51 @@ describe('the failing worker records attempt.failed before it yields to QUEUED (
     expect(preceding).toHaveLength(2);
     expect(preceding[0]).not.toBe(FAILED);
     expect(preceding[1]).toBe(FAILED);
+  });
+});
+
+describe('a crash between attempt.failed and the yield (RunRecord FailedBeforeYield, carrier)', () => {
+  it('leaves attempt.failed then attempt.lost from the takeover, and the fold makes one worker_failure episode at the attempt.failed instant', async () => {
+    const env = await makeEnv();
+    env.gateway.script.push(
+      gatewayErrorStep({ status: 0, type: 'transport', code: 'gateway_unavailable', message: 'the gateway connection was lost', provenNotSent: false }),
+      textStep('Recovered.'),
+    );
+    const run = env.enqueue('Work');
+    const crash = new Error('the process died before the yield');
+    const dying = new Proxy(env.store, {
+      get: (target, key, receiver) => {
+        if (key === 'release') return () => { throw crash; };
+        const value = Reflect.get(target, key, receiver) as unknown;
+        return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+      },
+    });
+
+    await env.runOnce(env.worker('worker-1', { store: dying })).catch(() => undefined);
+    expect(env.run(run.id).status).toBe('RUNNING');
+    expect(failureRecords(env, run.id)).toEqual([expect.objectContaining({ attempt: 1, code: 'gateway_unavailable' })]);
+    const failedAt = failureRecords(env, run.id)[0]?.createdAt as number;
+
+    env.clock.set(env.run(run.id).leaseExpiresAt as number);
+    expect(await env.runOnce(env.worker('worker-2'))).toBe('yielded');
+
+    expect(env.run(run.id).status).toBe('COMPLETED');
+    const records = typedEvents(env, run.id).filter((event) => ['attempt.failed', 'attempt.lost'].includes(event.type as string)).map((event) => event.type as string);
+    expect(records).toEqual(['attempt.failed', 'attempt.lost']);
+    const facts = foldFacts(typedEvents(env, run.id), {
+      runId: run.id,
+      rootRunId: run.id,
+      sessionId: run.sessionId,
+      status: 'COMPLETED',
+      createdAt: run.createdAt,
+      limits: {},
+      step: 1,
+      tokensTotal: 0,
+      modelAlias: 'fm',
+      mode: 'default',
+      agent: 'build',
+      origin: 'cli',
+    });
+    expect(facts.recoveries).toEqual([expect.objectContaining({ ordinal: 1, cause: 'worker_failure', failedAt, outcome: 'recovered' })]);
   });
 });

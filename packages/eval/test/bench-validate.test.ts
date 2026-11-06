@@ -64,3 +64,24 @@ describe('momonga eval bench --validate (3.4)', () => {
     expect(fs.existsSync(path.join(dir, 'repos', 'hidden', 'test', 'hidden.test.js'))).toBe(false);
   });
 });
+
+describe('grading a trial whose model step edited a protected path (3.2, 3.3 step 3)', () => {
+  it('the edit stands and the trial is not met: the command check passes, unchangedPaths fails', async () => {
+    const dir = await benchmarkDir([{ id: 'cheat', reference: { 'src/add.js': ADD_FIXED } }]);
+    const parse = exported<(text: string, source: string) => { tasks: { id: string }[] }>('parseBenchmark');
+    const gradeTrial = exported<
+      (input: { task: unknown; workspace: string; base: string; probe: typeof nodeProbe }) => Promise<{ met: boolean; checks: { id: string; passed: boolean }[] }>
+    >('gradeTrial');
+    const benchmark = parse(fs.readFileSync(path.join(dir, 'benchmark.json'), 'utf8'), 'benchmark.json');
+    const workspace = fs.mkdtempSync(path.join(dir, 'workspace-'));
+    fs.cpSync(path.join(dir, 'repos', 'cheat'), workspace, { recursive: true });
+    fs.writeFileSync(path.join(workspace, 'test', 'add.test.js'), CHEATING_TEST);
+    const graded = await gradeTrial({ task: benchmark.tasks[0], workspace, base: path.join(dir, 'repos', 'cheat'), probe: nodeProbe });
+    expect(graded.met).toBe(false);
+    expect(graded.checks.map(({ id, passed }) => ({ id, passed }))).toEqual([
+      { id: 'tests', passed: true },
+      { id: 'tests-untouched', passed: false },
+      { id: 'scope', passed: true },
+    ]);
+  });
+});
