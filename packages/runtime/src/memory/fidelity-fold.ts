@@ -15,8 +15,12 @@ export const FIDELITY_EVENT_TYPES = [
   'context.inherited',
 ] as const satisfies readonly RunEvent['type'][];
 
+export type ReferenceEvent = Extract<RunEvent, { type: 'context.inherited'; form: 'reference' }>;
+
+export type RecordPort = (event: ReferenceEvent, add: (event: RunEvent) => void | Promise<void>) => void | Promise<void>;
+
 export type FidelityFold = {
-  add(event: RunEvent): void;
+  add(event: RunEvent): void | Promise<void>;
   finish(): void;
   readonly handles: ReadonlySet<string>;
   readonly unresolved: number;
@@ -36,7 +40,7 @@ const stringLeavesOf = (value: unknown): string[] => {
 
 const claimsSatisfiedBy = (source: Source, claim: FidelityClaim): boolean => source === 'executed' || claim === 'any';
 
-export const createFidelityFold = (tokens: readonly ClaimedToken[], cwd: string): FidelityFold => {
+export const createFidelityFold = (tokens: readonly ClaimedToken[], cwd: string, record: RecordPort): FidelityFold => {
   const entries = tokens.map((entry) => ({ ...entry, matcher: tokenMatcherOf(entry.token, cwd), found: false }));
   const handles = new Set<string>();
   const calls = new Map<string, string[]>();
@@ -56,7 +60,7 @@ export const createFidelityFold = (tokens: readonly ClaimedToken[], cwd: string)
   const executed = (text: string): void => offer(text, 'executed', true);
   const stated = (text: string): void => offer(text, 'stated', true);
 
-  const add = (event: RunEvent): void => {
+  const add = (event: RunEvent): void | Promise<void> => {
     ran.observe(event);
     switch (event.type) {
       case 'tool.call':
@@ -89,6 +93,7 @@ export const createFidelityFold = (tokens: readonly ClaimedToken[], cwd: string)
         executed(event.content);
         return;
       case 'context.inherited':
+        if (event.form === 'reference') return unresolved === 0 ? undefined : record(event, add);
         for (const entry of event.history) {
           if (entry.handle !== undefined) handles.add(entry.handle);
           if (entry.item.type === 'message') {

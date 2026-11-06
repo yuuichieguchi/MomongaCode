@@ -199,7 +199,8 @@ export const oracleState = (store: RuntimeStore, runId: string, throughSeq = Num
   const replaced = events.map((event) => {
     if (event.type !== 'context.inherited' || isOldShape(event)) return event;
     const mode = (event as unknown as { mode?: PermissionMode }).mode ?? 'default';
-    return { ...event, ...oracleProjection(store, run, mode) } as unknown as RunEvent;
+    const { form: _form, ...rest } = event as RunEvent & { form?: string };
+    return { ...rest, ...oracleProjection(store, run, mode) } as unknown as RunEvent;
   });
   return foldEvents(run, replaced);
 };

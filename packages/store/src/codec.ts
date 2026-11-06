@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { FILE_ACCESSES, LOOP_GROUPS_KEPT, MEMORY_ORIGINS, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
 import type { RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload } from '@momonga/protocol';
+import { InheritanceError } from './inherit.ts';
 import { hasConsistentSeqs } from './seqs.ts';
 import { CANCEL_ORIGINS } from './transitions.ts';
 import { corrupt, expectOneOf, expectRecord, expectStringRecord, isRecord, readerFor } from './rows.ts';
@@ -176,10 +177,30 @@ const assertToolFacts = (identity: string, payload: Record<string, unknown>): vo
   }
 };
 
+const REFERENCE_NUMBERS = ['fromLastSeq', 'nextItemSeq', 'fromNextItemSeq', 'itemCount'] as const;
+
+const REFERENCE_LISTS = ['omitSeqs', 'synthesised', 'via'] as const;
+
+const assertInheritedForm = (identity: string, payload: Record<string, unknown>): void => {
+  const refuse = (detail: string): never => {
+    throw new InheritanceError('previous_run_inconsistent', `event ${identity}: context.inherited ${detail}`);
+  };
+  if (payload['form'] === undefined) {
+    if (!Array.isArray(payload['history'])) refuse('has neither form "reference" nor a history');
+    return;
+  }
+  if (payload['form'] !== 'reference') refuse(`has the unknown form ${JSON.stringify(payload['form'])}`);
+  if (payload['history'] !== undefined) refuse('is a reference and carries a history');
+  if (typeof payload['fromRunId'] !== 'string' || typeof payload['digest'] !== 'string') refuse('is a reference without fromRunId and digest');
+  for (const key of REFERENCE_NUMBERS) if (!Number.isInteger(payload[key])) refuse(`is a reference without the number ${key}`);
+  for (const key of REFERENCE_LISTS) if (!Array.isArray(payload[key])) refuse(`is a reference without the list ${key}`);
+};
+
 const decodeRunEvent = (row: Row, identity: string, type: string, payload: Record<string, unknown>): RunEvent => {
   const reader = readerFor('events', identity, row);
   if (!Object.hasOwn(EVENT_TYPES, type)) throw corrupt('events', identity, `column type has unknown event type "${type}"`);
   if (type === 'tool.completed' || type === 'tool.reconciled') assertToolFacts(identity, payload);
+  if (type === 'context.inherited') assertInheritedForm(identity, payload);
   const envelope = {
     id: reader.number('id'),
     runId: reader.string('run_id'),
@@ -402,7 +423,7 @@ const isWorkingFacts = (value: unknown): boolean =>
   isArrayOf(value['itemEvents'], (entry) => isRecord(entry) && Number.isInteger(entry['itemSeq']) && Number.isInteger(entry['eventSeq'])) &&
   (value['replacedThroughEventSeq'] === undefined || Number.isInteger(value['replacedThroughEventSeq']));
 
-export const SNAPSHOT_STATE_VERSION = 16;
+export const SNAPSHOT_STATE_VERSION = 17;
 
 export const encodeRunState = (state: RunState): Record<string, unknown> => ({ ...state, stateVersion: SNAPSHOT_STATE_VERSION });
 

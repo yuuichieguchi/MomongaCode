@@ -422,6 +422,7 @@ export type {
   RunEvent,
   RunEventEnvelope,
   NoticeReduction,
+  InheritedCopyPayload,
   InheritedReferencePayload,
   InheritedSynthesisEntry,
   InheritedViaLink,

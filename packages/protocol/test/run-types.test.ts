@@ -8,6 +8,8 @@ import type {
   ElicitationAnswerRecord,
   ElicitationRequestView,
   ImageAttachment,
+  InheritedCopyPayload,
+  InheritedReferencePayload,
   InputItem,
   MemoryStatus,
   MessageInputItem,
@@ -307,8 +309,10 @@ describe('run event payloads', () => {
       attempt?: number;
       item: MessageInputItem;
     }>();
-    expectTypeOf<Payload<'context.inherited'>>().toEqualTypeOf<{
+    expectTypeOf<Payload<'context.inherited'>>().toEqualTypeOf<InheritedCopyPayload | InheritedReferencePayload>();
+    expectTypeOf<InheritedCopyPayload>().toEqualTypeOf<{
       type: 'context.inherited';
+      form?: undefined;
       fromRunId: string;
       fromLastSeq: number;
       history: { seq: number; item: InputItem; callId?: string; handle?: string }[];

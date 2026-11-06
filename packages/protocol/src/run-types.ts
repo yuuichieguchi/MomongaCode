@@ -96,6 +96,25 @@ export type JobStatus = (typeof JOB_STATUSES)[number];
 
 export type ToolAwait = { kind: 'run'; runId: string; sessionId: string; agent: string } | { kind: 'job'; jobId: string };
 
+export type InheritedCopyPayload = {
+  type: 'context.inherited';
+  form?: undefined;
+  fromRunId: string;
+  fromLastSeq: number;
+  history: { seq: number; item: InputItem; callId?: string; handle?: string }[];
+  nextItemSeq: number;
+  summary?: { item: CompactionInputItem | MessageInputItem; summary: string; replacedThroughSeq: number };
+  workingFacts?: WorkingFacts;
+  evicted: string[];
+  closures: { callId: string; seq: number; effect: 'not_executed' | 'unknown'; announced: boolean }[];
+  partial?: { seq: number };
+  markers: { seq: number; kind: 'interrupted' | 'unprocessed' | 'dropped' | 'mode_changed' }[];
+  fromMode?: PermissionMode;
+  mode?: PermissionMode;
+  activatedSkills?: ActivatedSkillRecord[];
+  digest: string;
+};
+
 export type RunEventPayload =
   | { type: 'user.message'; text: string; images?: ImageAttachment[] }
   | { type: 'run.started'; attempt: number; now: number; pins: Record<string, unknown>; mode?: PermissionMode; recovery?: RunRecovery }
@@ -234,23 +253,8 @@ export type RunEventPayload =
   | { type: 'context.memories_loaded'; memories: { id: string; status: MemoryStatus }[] }
   | { type: 'context.contribution'; items: { kind: ContributionKind; id: string; contributed: boolean }[] }
   | { type: 'context.compaction_rejected'; step?: number; attempt?: number; item: MessageInputItem }
-  | {
-      type: 'context.inherited';
-      fromRunId: string;
-      fromLastSeq: number;
-      history: { seq: number; item: InputItem; callId?: string; handle?: string }[];
-      nextItemSeq: number;
-      summary?: { item: CompactionInputItem | MessageInputItem; summary: string; replacedThroughSeq: number };
-      workingFacts?: WorkingFacts;
-      evicted: string[];
-      closures: { callId: string; seq: number; effect: 'not_executed' | 'unknown'; announced: boolean }[];
-      partial?: { seq: number };
-      markers: { seq: number; kind: 'interrupted' | 'unprocessed' | 'dropped' | 'mode_changed' }[];
-      fromMode?: PermissionMode;
-      mode?: PermissionMode;
-      activatedSkills?: ActivatedSkillRecord[];
-      digest: string;
-    }
+  | InheritedCopyPayload
+  | InheritedReferencePayload
   | { type: 'context.truncated'; callId: string; handle: string; kind: 'omitted' | 'truncated' | 'reference'; keptChars?: number; tokens?: number }
   | { type: 'instructions.loaded'; path: string; content: string }
   | { type: 'skill.activated'; name: string; content: string }
@@ -289,8 +293,7 @@ export type InheritedReferencePayload = {
   digest: string;
 };
 
-export const isInheritedReference = (payload: { type: 'context.inherited' }): payload is InheritedReferencePayload & { type: 'context.inherited' } =>
-  'form' in payload && payload.form === 'reference' && !('history' in payload);
+export const isInheritedReference = (payload: InheritedCopyPayload | InheritedReferencePayload): payload is InheritedReferencePayload => payload.form === 'reference';
 
 export type RunEventEnvelope = {
   id: number;

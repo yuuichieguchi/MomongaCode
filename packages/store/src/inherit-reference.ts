@@ -7,6 +7,8 @@ import { isFatalStoreError } from './fatal.ts';
 import { foldRunState, initialRunState } from './fold.ts';
 import { InheritanceError, isReferenceInherited, projectReference, rebaseOntoReference, referenceDigest, retractsTask, signReference } from './inherit.ts';
 import type { InheritanceOutcome } from './inherit.ts';
+import { createRecordWalker } from './record-walk.ts';
+import type { RecordVisit, WalkUnits } from './record-walk.ts';
 import type { Row } from './rows.ts';
 import type { Run } from './types.ts';
 
@@ -47,7 +49,18 @@ export type ReferenceHooks = {
   onHop?: (runId: string) => void;
 };
 
+export type RecordFault = { runId: string; reason: string };
+
+export type RecordWalkRequest = {
+  reference: InheritedReferencePayload & RunEvent;
+  types: readonly RunEvent['type'][];
+  visit: RecordVisit;
+  units: WalkUnits;
+  onFault: (fault: RecordFault) => void;
+};
+
 export type ReferenceReader = {
+  visitRecord(request: RecordWalkRequest): Promise<void>;
   planInheritance(request: InheritPlanRequest): InheritPlanReply;
   readInheritedWindow(request: InheritedWindowRequest): InheritedWindowReply;
   retainedOf(reference: InheritedReferencePayload & { type: 'context.inherited' }): RetainedHistory;
@@ -154,6 +167,7 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
        AND json_extract(payload_json, '$.kind') = 'omitted' AND json_extract(payload_json, '$.tokens') IS NOT NULL
      ORDER BY seq DESC LIMIT 1`,
   );
+  const walker = createRecordWalker(db, { unit, stepped, ...(hooks.onDecode === undefined ? {} : { onDecode: hooks.onDecode }) });
   const foldRows = db.prepare(`SELECT ${FOLD_EVENT_COLUMNS} FROM events e WHERE e.run_id = :runId AND e.seq >= :from AND e.seq < :until ORDER BY e.seq`);
 
   const decode = (row: Row): RunEvent => {
@@ -180,7 +194,7 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
   };
 
   const referenceOf = (event: RunEvent & { type: 'context.inherited' }): (InheritedReferencePayload & RunEvent) | undefined =>
-    isReferenceInherited(event) ? (event as unknown as InheritedReferencePayload & RunEvent) : undefined;
+    isReferenceInherited(event) ? event : undefined;
 
   function* ownItems(context: WalkContext, runId: string, bound: number, nextItemSeq: number, taskSeq: () => number): Generator<HistoryEntry> {
     let top = nextItemSeq - 1;
@@ -263,9 +277,8 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
     yield* ownItems(context, runId, bound, nextItemSeq, () => load()?.nextItemSeq ?? 1);
     const event = load();
     if (event === undefined || event.nextItemSeq - 1 <= context.floor) return;
-    const reference = referenceOf(event);
-    if (reference !== undefined) {
-      yield* streamOfReference(context, reference);
+    if (isReferenceInherited(event)) {
+      yield* streamOfReference(context, event);
       return;
     }
     for (const id of event.evicted) context.oldEvicted.add(id);
@@ -350,6 +363,56 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
     return rejected === undefined ? point : { ...point, item: rejected.item };
   };
 
+  type RecordHop = { runId: string; bound: number; skipSeq: number | undefined };
+
+  const recordHopsOf = (event: InheritedReferencePayload & RunEvent, subject: { runId: string }): RecordHop[] => {
+    subject.runId = event.runId;
+    if (referenceDigest(event) !== event.digest) throw inconsistent(`run ${event.runId}: context.inherited digest does not match its content`);
+    const stack = [
+      { runId: event.fromRunId, bound: event.fromLastSeq, taskSeq: undefined as number | undefined },
+      ...event.via.map((link) => ({ runId: link.runId, bound: link.lastSeq, taskSeq: link.nextItemSeq as number | undefined })),
+    ];
+    const omits = [...event.via.map((link) => link.omitSeqs), event.omitSeqs];
+    const hops: RecordHop[] = stack.map((entry) => ({ runId: entry.runId, bound: entry.bound, skipSeq: undefined }));
+    stack.forEach((entry, index) => {
+      subject.runId = entry.runId;
+      if (selectRun.get({ id: entry.runId }) === undefined) throw inconsistent(`run ${entry.runId} does not exist`);
+      const task = firstTask.get({ runId: entry.runId, bound: entry.bound });
+      if (task === undefined) throw inconsistent(`run ${entry.runId}: its task record is missing`);
+      const omitted = omits[index] ?? [];
+      if (omitted.length === 0) return;
+      const taskSeq = entry.taskSeq ?? inheritedEventOf(entry.runId)?.nextItemSeq ?? 1;
+      if (omitted.length !== 1 || omitted[0] !== taskSeq) throw inconsistent(`run ${entry.runId}: the items omitted above it are ${JSON.stringify(omitted)}, not its task at item ${taskSeq}`);
+      (hops[index] as RecordHop).skipSeq = Number(task['seq']);
+    });
+    return hops;
+  };
+
+  const recordChainOf = (reference: InheritedReferencePayload & RunEvent, onFault: (fault: RecordFault) => void): RecordHop[] => {
+    const levels: RecordHop[][] = [];
+    const subject = { runId: reference.runId };
+    try {
+      for (let level: (InheritedReferencePayload & RunEvent) | undefined = reference; level !== undefined; ) {
+        levels.push(recordHopsOf(level, subject));
+        subject.runId = level.fromRunId;
+        const below = inheritedEventOf(level.fromRunId);
+        level = below !== undefined && isReferenceInherited(below) ? below : undefined;
+      }
+    } catch (error) {
+      if (!(error instanceof InheritanceError)) throw error;
+      onFault({ runId: subject.runId, reason: error.message });
+    }
+    return levels.reverse().flat();
+  };
+
+  const visitRecord = async (request: RecordWalkRequest): Promise<void> => {
+    const visit: RecordVisit = (event) => (event.type === 'context.inherited' && isReferenceInherited(event) ? undefined : request.visit(event));
+    for (const hop of recordChainOf(request.reference, request.onFault)) {
+      if (request.units.stop()) return;
+      await walker.walk(hop.runId, hop.bound, request.types, visit, request.units, hop.skipSeq);
+    }
+  };
+
   const referenceOfRun = (runId: string): InheritedReferencePayload & RunEvent => {
     const event = inheritedEventOf(runId);
     const reference = event === undefined ? undefined : referenceOf(event);
@@ -406,9 +469,8 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
       const taskSeq = event?.nextItemSeq ?? 1;
       total += Math.max(0, cursor.fromNextItemSeq - 1 - Math.max(taskSeq - 1, floor));
       if (event === undefined || floor >= taskSeq - 1) return total;
-      const next = referenceOf(event);
-      if (next === undefined) return total + countAbove(floor, event.history.map((entry) => entry.seq));
-      cursor = next;
+      if (!isReferenceInherited(event)) return total + countAbove(floor, event.history.map((entry) => entry.seq));
+      cursor = event;
     }
     return total;
   };
@@ -538,6 +600,7 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
   };
 
   return {
+    visitRecord,
     planInheritance: (request) => readTx(db, () => planOf(request)),
     readInheritedWindow: (request) => readTx(db, () => windowOf(request)),
     retainedOf,

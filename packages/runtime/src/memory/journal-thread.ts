@@ -6,7 +6,7 @@ import { REPOSITORY_FACTS_EVENT_TYPES, createRepositoryFactsFold } from '@momong
 import { createBlobStore, createJournalReader } from '@momonga/store';
 import { FIDELITY_CLAIMS, PERMISSION_MODES } from '@momonga/protocol';
 import type { Capabilities, ClaimedToken, PermissionMode, RunEventPayload } from '@momonga/protocol';
-import type { BlobStore, JournalReader } from '@momonga/store';
+import type { BlobStore, JournalReader, WalkUnits } from '@momonga/store';
 import { contributionAtTerminal } from './contribution.ts';
 import { EVIDENCE_EVENT_TYPES, createEvidenceFold } from './evidence-fold.ts';
 import { FIDELITY_EVENT_TYPES, createFidelityFold } from './fidelity-fold.ts';
@@ -125,6 +125,8 @@ const isCapabilities = (value: unknown): value is Capabilities =>
 
 type VisitingReader = Pick<JournalReader, 'visitRun'>;
 
+type WalkingReader = Pick<JournalReader, 'walkRun' | 'visitRecord'>;
+
 export const verdictHandler = (reader: VisitingReader): JournalHandler => (request) => {
   const runId = textOf(request, 'runId', 'verdict');
   const fold = createRepositoryFactsFold({ commands: textsOf(request, 'commands', 'verdict'), manifests: textsOf(request, 'manifests', 'verdict') });
@@ -200,7 +202,7 @@ const throughOf = (request: JournalRequest): number => {
 type BlobPages = Pick<BlobStore, 'read'>;
 
 type FidelityPorts = {
-  reader: VisitingReader;
+  reader: WalkingReader;
   blobs: BlobPages;
   current: { progress: (() => void) | undefined };
   gateFor(post: () => void): { unit(): void };
@@ -221,19 +223,36 @@ const scanBlob = async (blobs: BlobPages, handle: string, fold: FidelityFold, un
   }
 };
 
+const yieldToThread = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
 export const fidelityHandler = ({ reader, blobs, current, gateFor }: FidelityPorts): JournalHandler => async (request, progress) => {
   const runId = textOf(request, 'runId', 'fidelity');
-  const fold = createFidelityFold(claimedTokensOf(request), textOf(request, 'cwd', 'fidelity'));
+  const unreadable: { handle: string; reason: string }[] = [];
+  const units: WalkUnits = {
+    pause: async () => {
+      await yieldToThread();
+      current.progress = progress;
+    },
+    stop: () => fold.unresolved === 0,
+  };
+  const fold: FidelityFold = createFidelityFold(claimedTokensOf(request), textOf(request, 'cwd', 'fidelity'), (event, add) =>
+    reader.visitRecord({
+      reference: event,
+      types: FIDELITY_EVENT_TYPES,
+      visit: add,
+      units,
+      onFault: (fault) => unreadable.push({ handle: `chain:${fault.runId}`, reason: fault.reason }),
+    }),
+  );
   current.progress = progress;
-  let run: ReturnType<VisitingReader['visitRun']>;
+  let run: Awaited<ReturnType<WalkingReader['walkRun']>>;
   try {
-    run = reader.visitRun(runId, FIDELITY_EVENT_TYPES, fold.add, throughOf(request));
+    run = await reader.walkRun(runId, FIDELITY_EVENT_TYPES, fold.add, units, throughOf(request));
   } finally {
     current.progress = undefined;
   }
   fold.finish();
   const gate = gateFor(progress);
-  const unreadable: { handle: string; reason: string }[] = [];
   for (const handle of fold.handles) {
     if (fold.unresolved === 0) break;
     try {

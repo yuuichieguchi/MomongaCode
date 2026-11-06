@@ -10,6 +10,8 @@ import type { InheritedPayload } from './inherit.ts';
 import { createReferenceReader } from './inherit-reference.ts';
 import type { ReferenceReader } from './inherit-reference.ts';
 import { createMemoryStore } from './memories.ts';
+import { createRecordWalker } from './record-walk.ts';
+import type { RecordVisit, WalkUnits } from './record-walk.ts';
 import { readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
 import type { ContributionMeasured, ContributionRequest, GoverningFactStore, MemoryStore, Run, TerminalContribution } from './types.ts';
@@ -53,6 +55,8 @@ export type JournalReader = {
   measure(hook: TerminalContribution, request: ContributionRequest): ContributionMeasured;
   eventsOfTypes(runId: string, types: readonly RunEventPayload['type'][]): RunEvent[];
   visitRun(runId: string, types: readonly RunEventPayload['type'][], visit: (event: RunEvent) => void, throughSeq?: number): Run;
+  walkRun(runId: string, types: readonly RunEventPayload['type'][], visit: RecordVisit, units: WalkUnits, throughSeq?: number): Promise<Run>;
+  visitRecord: ReferenceReader['visitRecord'];
   planInheritance: ReferenceReader['planInheritance'];
   readInheritedWindow: ReferenceReader['readInheritedWindow'];
 };
@@ -137,6 +141,18 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
       return run;
     });
 
+  const walker = createRecordWalker(db, { unit, stepped, ...(options.onDecode === undefined ? {} : { onDecode: options.onDecode }) });
+
+  const walkRun = async (runId: string, types: readonly RunEventPayload['type'][], visit: RecordVisit, units: WalkUnits, throughSeq?: number): Promise<Run> => {
+    const run = readTx(db, () => {
+      const row = selectRun.get({ id: runId });
+      if (row === undefined) throw new Error(`unknown run ${runId}`);
+      return decodeRun(row);
+    });
+    await walker.walk(runId, throughSeq === undefined ? run.lastSeq : Math.min(run.lastSeq, throughSeq), types, visit, units);
+    return run;
+  };
+
   const hookEventsOfTypes = (runId: string, types: readonly RunEventPayload['type'][]): RunEvent[] => {
     const plain = types.filter((type) => type !== 'model.requested');
     const events = eventsOfTypes(runId, plain);
@@ -206,5 +222,5 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
       return contribution === undefined ? { lastSeq: run.lastSeq } : { lastSeq: run.lastSeq, contribution };
     });
 
-  return { measure, eventsOfTypes, visitRun, planInheritance: reference.planInheritance, readInheritedWindow: reference.readInheritedWindow };
+  return { measure, eventsOfTypes, visitRun, walkRun, visitRecord: reference.visitRecord, planInheritance: reference.planInheritance, readInheritedWindow: reference.readInheritedWindow };
 };

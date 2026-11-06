@@ -1,6 +1,6 @@
 import { expect } from 'vitest';
 import { canonicalJson } from '@momonga/foundation';
-import type { InputItem, PermissionMode, RunEvent, RunEventPayload } from '@momonga/protocol';
+import type { InheritedCopyPayload, InputItem, PermissionMode, RunEvent, RunEventPayload } from '@momonga/protocol';
 import type { Run } from '@momonga/store';
 import { FLOOR_TOKENS, UNBOUNDED_WINDOW, withReader } from '../../../store/test/support/reference.ts';
 import { textOf } from './harness.ts';
@@ -42,7 +42,7 @@ export const modeChangedText = (from: PermissionMode, to: PermissionMode): strin
 
 export const MODE_CHANGED_PREFIX = '[The permission mode changed from ';
 
-export type InheritedPayload = Extract<RunEventPayload, { type: 'context.inherited' }>;
+export type InheritedPayload = InheritedCopyPayload;
 
 export type Turn = readonly (string | undefined)[];
 

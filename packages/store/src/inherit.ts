@@ -1,9 +1,9 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { emptyWorkingFacts, findDanglingOutput, findUnpairedCalls, inheritedWorkingFacts, isInheritedReference } from '@momonga/protocol';
 import { hasConsistentSeqs } from './seqs.ts';
-import type { InheritedReferencePayload, InheritedSynthesisEntry, InheritedViaLink, InputItem, PermissionMode, RunEventPayload, RunState, StopReason, TerminalStatus } from '@momonga/protocol';
+import type { InheritedCopyPayload, InheritedReferencePayload, InheritedSynthesisEntry, InheritedViaLink, InputItem, PermissionMode, RunEventPayload, RunState, StopReason, TerminalStatus } from '@momonga/protocol';
 
-export type InheritedPayload = Extract<RunEventPayload, { type: 'context.inherited' }>;
+export type InheritedPayload = InheritedCopyPayload;
 
 export type ReferencePayload = InheritedReferencePayload;
 
@@ -299,7 +299,7 @@ const REFERENCE_FIELDS = [
 export const referenceDigest = (unsigned: UnsignedReference): string =>
   sha256Hex(canonicalJson(Object.fromEntries(REFERENCE_FIELDS.flatMap((field) => (unsigned[field] === undefined ? [] : [[field, unsigned[field]]])))));
 
-export const referencePayload = (reference: InheritedReferencePayload): RunEventPayload => reference as unknown as RunEventPayload;
+export const referencePayload = (reference: InheritedReferencePayload): RunEventPayload => reference;
 
 export const signReference = (unsigned: UnsignedReference): InheritedReferencePayload => ({ ...unsigned, digest: referenceDigest(unsigned) });
 
