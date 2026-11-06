@@ -109,7 +109,7 @@ describe('tool definitions', () => {
     ]);
     expect(TOOL_TIERS).toContain('optional');
     const set = await toolSetOf(...tools, makeTool('Plain'), makeTool('Core', { tier: 'essential' }));
-    expect(set.tools.map((tool) => tool.name)).toEqual(['Core', 'Plain', 'HistorySearch', 'HistoryRead']);
+    expect(set.tools.map((tool) => tool.name)).toEqual(['Core', 'Plain', 'HistoryRead', 'HistorySearch']);
     expect(set.forModel({ mode: 'plan', rules: [] }).map((tool) => tool.name)).toContain('HistoryRead');
   });
 

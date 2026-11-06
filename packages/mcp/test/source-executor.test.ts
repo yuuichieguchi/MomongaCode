@@ -72,7 +72,7 @@ describe('MCP tools through createToolExecutor', () => {
   it('runs a legacy server tool end to end', async () => {
     const harness = makePool([entry('legacy', legacyConfig())]);
     const set = await harness.snapshot();
-    expect(set.tools.map((tool) => tool.name)).toEqual(['mcp__legacy__echo', 'mcp__legacy__add', 'mcp__legacy__bare']);
+    expect(set.tools.map((tool) => tool.name)).toEqual(['mcp__legacy__add', 'mcp__legacy__bare', 'mcp__legacy__echo']);
     const result = await makeExecutor().resultOf(set, 'mcp__legacy__add', { a: 40, b: 2 });
     expect(result.status).toBe('completed');
     expect(result.output).toBe('42');
@@ -81,7 +81,7 @@ describe('MCP tools through createToolExecutor', () => {
   it('shows only read-only MCP tools in plan mode and still asks before running them', async () => {
     const { set, recordFile } = await modernSet();
     const visible = set.forModel({ mode: 'plan', rules: [] }).map((tool) => tool.name);
-    expect(visible).toEqual(['mcp__modern__read_only', 'mcp__modern__content_kinds']);
+    expect(visible).toEqual(['mcp__modern__content_kinds', 'mcp__modern__read_only']);
     const outcome = await makeExecutor().run(set, 'mcp__modern__read_only', {}, { mode: 'plan', rules: [] });
     expect(outcome).toMatchObject({ kind: 'needs_approval', decision: { kind: 'ask', source: 'mode' }, toolKind: 'read' });
     expect(callRecords(recordFile, 'read_only')).toEqual([]);
@@ -116,7 +116,7 @@ describe('MCP tool naming', () => {
     expect(callRecords(recordFile, MODERN_FIXTURE_LONG_TOOL_NAME)).toHaveLength(1);
   });
 
-  it('lists exactly the registrable modern tools in server order', async () => {
+  it('lists exactly the registrable modern tools in name order', async () => {
     const { set } = await modernSet();
     expect(set.tools.map((tool) => tool.name)).toEqual([
       'mcp__modern__echo',
@@ -135,7 +135,7 @@ describe('MCP tool naming', () => {
       'mcp__modern__content_kinds',
       'mcp__modern__patterned',
       'mcp__modern__dotted_name_with-slash',
-    ]);
+    ].sort());
   });
 });
 

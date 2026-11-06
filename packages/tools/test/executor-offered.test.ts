@@ -35,6 +35,6 @@ describe('a call to a tool the request did not offer, by one rule', () => {
   });
 
   it('lists every tool of the snapshot for an unknown name when no offer is recorded', async () => {
-    expect(await failedOutputOf('Nope', 'none')).toBe('Unknown tool "Nope". Available tools: Read, Grep, Write');
+    expect(await failedOutputOf('Nope', 'none')).toBe('Unknown tool "Nope". Available tools: Grep, Read, Write');
   });
 });

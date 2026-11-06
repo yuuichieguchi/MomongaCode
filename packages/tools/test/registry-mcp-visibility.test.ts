@@ -33,8 +33,8 @@ describe('registry visibility of MCP tools under deny rules', () => {
     const set = await snapshot();
     expect(set.forModel({ mode: 'default', rules: [rule('deny', 'mcp__srv__echo')] }).map((tool) => tool.name)).toEqual([
       'Read',
-      'mcp__srv__add',
       'mcp__other__echo',
+      'mcp__srv__add',
     ]);
   });
 

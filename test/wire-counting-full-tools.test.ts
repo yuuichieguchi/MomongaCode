@@ -26,7 +26,7 @@ const fullToolSet = async (): Promise<FunctionTool[]> => {
   const registry = createToolRegistry();
   for (const tool of createBuiltinTools()) registry.register(tool);
   const snapshot = await registry.snapshot();
-  return snapshot.forModel({ mode: 'default', rules: [] });
+  return snapshot.forModel({ mode: 'default', rules: [] }).map((tool) => Object.fromEntries(Object.entries(tool).filter(([key]) => key !== 'fitRank')) as FunctionTool);
 };
 
 const firstRequest = async (): Promise<AdapterRequest> => ({
@@ -62,7 +62,7 @@ describe('wire counting for the full builtin tool set at fm\'s window', () => {
   it('counts the constrained wire with the tool listing in the system message, above the count of the input and the tools', async () => {
     const request = await firstRequest();
     const tools = request.tools ?? [];
-    expect(tools.map((tool) => tool.name)).toEqual(['Read', 'Glob', 'Grep', 'ReadOutput', 'Write', 'Edit', 'Bash', 'UpdatePlan', 'BashOutput', 'KillBash']);
+    expect(tools.map((tool) => tool.name)).toEqual(['Glob', 'Grep', 'Read', 'ReadOutput', 'Bash', 'BashOutput', 'KillBash', 'Edit', 'UpdatePlan', 'Write']);
     const wire = adapterIn('constrained').renderWire?.(request, { name: 'fm', model: 'system' }, { reasoningOrigin: NO_REASONING_IS_OWN, capabilities: { ...CAPABILITIES, toolCalling: 'constrained' } }) as { messages: Array<{ role: string; content: string }> };
     expect(wire).not.toHaveProperty('response_format');
     const system = wire.messages.find((message) => message.role === 'system')?.content ?? '';

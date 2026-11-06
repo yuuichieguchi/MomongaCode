@@ -7,7 +7,7 @@ export const LOAD_TOOLS_TOOL_NAME = 'LoadTools';
 export type ToolOffer = { tools: FunctionTool[]; catalog: string[] };
 
 export type ToolOfferInput = {
-  toolSet: Pick<ToolSet, 'get' | 'companions'>;
+  toolSet: Pick<ToolSet, 'get' | 'companions' | 'withFitRank'>;
   visible: readonly FunctionTool[];
   deferred: readonly string[] | undefined;
   loaded: readonly string[];
@@ -75,7 +75,7 @@ export const offerFor = (input: ToolOfferInput): ToolOffer => {
     ];
   };
   return {
-    tools: [...inPlace, loaderDefinitionOf(catalogDefinitions), ...loadedInCatalog.flatMap(afterLoad)],
+    tools: [...inPlace, toolSet.withFitRank(loaderDefinitionOf(catalogDefinitions)), ...loadedInCatalog.flatMap(afterLoad)],
     catalog,
   };
 };

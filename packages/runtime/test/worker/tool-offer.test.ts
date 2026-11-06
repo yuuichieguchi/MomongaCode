@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FunctionTool, PermissionMode } from '@momonga/protocol';
-import { createToolRegistry, defineTool } from '@momonga/tools';
+import { createToolRegistry, defineTool, extendToolSet } from '@momonga/tools';
 import type { AnyTool, ToolSet } from '@momonga/tools';
 import { LOAD_TOOLS_TOOL_NAME, offerFor } from '../../src/worker/tool-offer.ts';
 
@@ -40,7 +40,8 @@ const UNIVERSE = [ALPHA, BETA, GAMMA, READ_OUTPUT];
 const toolSetOf = async (specs: readonly Spec[], only?: readonly string[]): Promise<ToolSet> => {
   const registry = createToolRegistry();
   for (const spec of specs) registry.register(toolOf(spec));
-  return registry.snapshot(only === undefined ? {} : { only });
+  const loader: Spec = { name: LOAD_TOOLS_TOOL_NAME, description: 'Loads tools.', sideEffect: 'read_only', tier: 'essential' };
+  return extendToolSet(await registry.snapshot(only === undefined ? {} : { only }), toolOf(loader));
 };
 
 const namesOf = (tools: readonly FunctionTool[]): string[] => tools.map((tool) => tool.name);

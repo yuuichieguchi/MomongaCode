@@ -126,11 +126,11 @@ export const sessionEnvFor = (tempHome: string): Readonly<Record<string, string>
 
 const TARGET_CONTEXT_WINDOW = 8192;
 
-export const modelSettings = (fakeSocketPath: string): Record<string, unknown> => ({
+export const modelSettings = (fakeSocketPath: string, contextWindow: number = TARGET_CONTEXT_WINDOW): Record<string, unknown> => ({
   models: {
     aliases: { default: ['primary'] },
     targets: {
-      primary: { adapter: 'chat-completions', provider: 'fake', model: 'system', socketPath: fakeSocketPath, capabilities: { contextWindow: TARGET_CONTEXT_WINDOW, maxOutputTokens: 1024 } },
+      primary: { adapter: 'chat-completions', provider: 'fake', model: 'system', socketPath: fakeSocketPath, capabilities: { contextWindow, maxOutputTokens: 1024 } },
     },
   },
 });

@@ -185,6 +185,9 @@ export const TASK: MessageInputItem = { type: 'message', role: 'user', content: 
 
 export const DECLARED_READERS = { output_handle: 'ReadOutput', history_range: 'HistoryRead' } as const;
 
+const rankedByPosition = (tools: readonly FunctionTool[]): FunctionTool[] =>
+  tools.some((tool) => 'fitRank' in tool) ? [...tools] : tools.map((tool, index) => ({ ...tool, fitRank: index }));
+
 export const sourcesWith = (overrides: Partial<ContextSources> = {}): ContextSources => ({
   systemPrompt: SYSTEM_PROMPT,
   tools: [],
@@ -194,6 +197,7 @@ export const sourcesWith = (overrides: Partial<ContextSources> = {}): ContextSou
   history: [],
   readers: DECLARED_READERS,
   ...overrides,
+  ...(overrides.tools === undefined ? {} : { tools: rankedByPosition(overrides.tools) }),
 });
 
 export const READ_TOOL: FunctionTool = {

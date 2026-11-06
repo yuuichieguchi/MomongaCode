@@ -2,7 +2,7 @@ import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { modelVisibleTools } from '@momonga/policy';
 import type { PermissionRule } from '@momonga/policy';
 import { MAX_TOOL_NAME_CHARS } from '@momonga/protocol';
-import type { FunctionTool, PermissionMode, ReferenceKind } from '@momonga/protocol';
+import type { FitRankedFunctionTool, FunctionTool, PermissionMode, ReferenceKind } from '@momonga/protocol';
 import { compileToolSchemas } from './validate.ts';
 import { TOOL_TIERS } from './types.ts';
 import type { AnyTool } from './types.ts';
@@ -29,7 +29,8 @@ export type ToolSet = {
   get(name: string): AnyTool | undefined;
   readonly companions: ReadonlyMap<string, string>;
   readerOf(kind: ReferenceKind): string | undefined;
-  forModel(options: { mode: PermissionMode; rules: PermissionRule[]; conciseDescriptions?: boolean }): FunctionTool[];
+  forModel(options: { mode: PermissionMode; rules: PermissionRule[]; conciseDescriptions?: boolean }): FitRankedFunctionTool[];
+  withFitRank(definition: FunctionTool): FitRankedFunctionTool;
 };
 
 export type ToolRegistry = {
@@ -80,10 +81,52 @@ const conciseSchemaOf = (tool: AnyTool): Record<string, unknown> => {
 
 const tierRankOf = (tool: AnyTool): number => TOOL_TIERS.indexOf(tool.tier ?? 'common');
 
+const compareNames = (left: string, right: string): number => {
+  const leftPoints = [...left].map((character) => character.codePointAt(0)!);
+  const rightPoints = [...right].map((character) => character.codePointAt(0)!);
+  for (let index = 0; index < Math.min(leftPoints.length, rightPoints.length); index += 1) {
+    const difference = leftPoints[index]! - rightPoints[index]!;
+    if (difference !== 0) return difference;
+  }
+  return leftPoints.length - rightPoints.length;
+};
+
+type PlacedTool = { tool: AnyTool; tier: number; chain: readonly string[] };
+
+const placementsOf = (tools: readonly AnyTool[]): PlacedTool[] => {
+  const byName = new Map(tools.map((tool) => [tool.name, tool]));
+  const placementOf = (tool: AnyTool, seen: ReadonlySet<string>): { tier: number; chain: string[] } => {
+    const host = tool.companionOf === undefined ? undefined : byName.get(tool.companionOf);
+    if (host === undefined || seen.has(host.name)) return { tier: tierRankOf(tool), chain: [tool.name] };
+    const placed = placementOf(host, new Set([...seen, tool.name]));
+    return { tier: placed.tier, chain: [...placed.chain, tool.name] };
+  };
+  return tools.map((tool) => ({ tool, ...placementOf(tool, new Set<string>()) }));
+};
+
+const comparePlacements = (left: PlacedTool, right: PlacedTool): number => {
+  if (left.tier !== right.tier) return left.tier - right.tier;
+  for (let index = 0; index < Math.min(left.chain.length, right.chain.length); index += 1) {
+    const difference = compareNames(left.chain[index]!, right.chain[index]!);
+    if (difference !== 0) return difference;
+  }
+  return left.chain.length - right.chain.length;
+};
+
+const inFitOrder = (tools: readonly AnyTool[]): AnyTool[] =>
+  placementsOf(tools)
+    .sort(comparePlacements)
+    .map(({ tool }) => tool);
+
 const buildToolSet = (tools: readonly AnyTool[], notices: readonly string[], authorizationRequired: readonly string[]): ToolSet => {
-  const frozenTools = Object.freeze([...tools].sort((left, right) => tierRankOf(left) - tierRankOf(right)));
+  const frozenTools = Object.freeze(inFitOrder(tools));
   const frozenNotices = Object.freeze([...notices]);
   const byName = new Map(frozenTools.map((tool) => [tool.name, tool]));
+  const withFitRank = (definition: FunctionTool): FitRankedFunctionTool => {
+    const index = frozenTools.findIndex((tool) => tool.name === definition.name);
+    if (index < 0) throw new Error(`tool ${JSON.stringify(definition.name)} is not in the tool set, so it has no fitRank`);
+    return { ...definition, fitRank: index };
+  };
   return {
     digest: digestOf(frozenTools),
     tools: frozenTools,
@@ -92,6 +135,7 @@ const buildToolSet = (tools: readonly AnyTool[], notices: readonly string[], aut
     get: (name) => byName.get(name),
     readerOf: (kind) => frozenTools.find((tool) => tool.reads === kind)?.name,
     companions: new Map(frozenTools.flatMap((tool) => (tool.companionOf === undefined ? [] : [[tool.name, tool.companionOf] as const]))),
+    withFitRank,
     forModel: ({ mode, rules, conciseDescriptions }) => {
       const visible = new Set(modelVisibleTools([...frozenTools], { mode, rules }).map((tool) => tool.name));
       const concise = conciseDescriptions === true;
@@ -99,13 +143,13 @@ const buildToolSet = (tools: readonly AnyTool[], notices: readonly string[], aut
         .filter((tool) => visible.has(tool.name))
         .map((tool) => {
           const useConcise = concise && hasConciseVariant(tool);
-          return {
+          return withFitRank({
             type: 'function',
             name: tool.name,
             description: useConcise ? conciseDescriptionOf(tool) : tool.description,
             parameters: useConcise ? conciseSchemaOf(tool) : tool.inputSchema,
             strict: false,
-          };
+          });
         });
     },
   };
@@ -114,11 +158,8 @@ const buildToolSet = (tools: readonly AnyTool[], notices: readonly string[], aut
 export const extendToolSet = (toolSet: ToolSet, tool: AnyTool): ToolSet => {
   if (toolSet.get(tool.name) !== undefined) throw new Error(`duplicate tool name ${JSON.stringify(tool.name)}`);
   assertRegistrable(tool);
-  return {
-    ...toolSet,
-    tools: [...toolSet.tools, tool],
-    get: (name) => (name === tool.name ? tool : toolSet.get(name)),
-  };
+  const rebuilt = buildToolSet([...toolSet.tools, tool], toolSet.notices, toolSet.authorizationRequired);
+  return { ...rebuilt, digest: toolSet.digest, forModel: (options) => toolSet.forModel(options).map(rebuilt.withFitRank) };
 };
 
 export const createToolRegistry = (): ToolRegistry => {

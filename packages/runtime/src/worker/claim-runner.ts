@@ -406,8 +406,10 @@ const drive = async (
   const fallbackMeters = token.observedCapacity
     ? (await Promise.all(listing.targets.filter((target) => target !== firstTarget).map(factsOf))).map((facts) => facts.meter)
     : [];
+  const loading = token.deferred === undefined ? undefined : createToolLoading(() => ctx);
+  const offeredSet = loading === undefined ? toolSet : extendToolSet(toolSet, createLoadToolsTool(loading));
   const visibleNow = (): FunctionTool[] =>
-    toolSet.forModel({ mode: session.permissionMode, rules: composeRules(), conciseDescriptions: token.conciseDescriptions });
+    offeredSet.forModel({ mode: session.permissionMode, rules: composeRules(), conciseDescriptions: token.conciseDescriptions });
   const claimVisible = token.cachePrefix ? visibleNow() : undefined;
   const jobRunningNow = (): boolean => options.store.jobs.listForSession(session.id).some((job) => job.status === 'running');
   const childRunLive = (): boolean => options.store.listRuns(session.id, LIVE_RUN_STATUSES).some((live) => live.parentRunId !== null && live.id !== run.id);
@@ -418,10 +420,9 @@ const drive = async (
       const name = toolSet.readerOf(kind);
       return name === undefined ? [] : [[kind, name] as const];
     }));
-  const loading = token.deferred === undefined ? undefined : createToolLoading(() => ctx);
   const offerNow = (loaded: readonly string[] = journal.state.loadedTools): ToolOffer =>
     offerFor({
-      toolSet,
+      toolSet: offeredSet,
       visible: claimVisible === undefined ? visibleNow() : [...claimVisible],
       deferred: token.deferred,
       loaded,
@@ -438,7 +439,7 @@ const drive = async (
     ...(pins.memoryShare === undefined ? {} : { memoryShare: pins.memoryShare }),
     ...(pinnedGuideline === undefined ? {} : { guideline: pinnedGuideline }),
     limits,
-    toolSet: loading === undefined ? toolSet : extendToolSet(toolSet, createLoadToolsTool(loading)),
+    toolSet: offeredSet,
     ...(loading === undefined ? {} : { toolLoading: loading }),
     skills,
     recalled,

@@ -124,22 +124,28 @@ export const maxInputFor = ({ ceiling, inputBudget, errorBoundAt }: MaxInputBoun
   return low;
 };
 
-const candidateToolsOf = (input: BuildContextInput): FunctionTool[] => (input.tools === 'none' ? [] : [...input.sources.tools]);
+type RankedCandidates = { tools: FunctionTool[]; rankOf: ReadonlyMap<string, number> };
+
+const rankedCandidatesOf = (input: BuildContextInput): RankedCandidates => {
+  const rankOf = new Map<string, number>();
+  const takenBy = new Map<number, string>();
+  const tools = (input.tools === 'none' ? [] : input.sources.tools).map((candidate) => {
+    const { fitRank, ...definition } = candidate as FunctionTool & { fitRank?: unknown };
+    const { name } = definition;
+    const rank = fitRank;
+    if (typeof rank !== 'number' || !Number.isInteger(rank)) throw new Error(`tool ${JSON.stringify(name)} has no fitRank`);
+    const holder = takenBy.get(rank);
+    if (holder !== undefined) throw new Error(`tools ${JSON.stringify(holder)} and ${JSON.stringify(name)} have the same fitRank ${rank}`);
+    takenBy.set(rank, name);
+    rankOf.set(name, rank);
+    return definition;
+  });
+  return { tools, rankOf };
+};
 
 const requiredToolsOf = (input: BuildContextInput, candidates: readonly FunctionTool[]): FunctionTool[] => {
   const names = new Set(readerNamesOf(input.sources.readers, input));
   return candidates.filter((tool) => names.has(tool.name));
-};
-
-const hostsFirst = (tools: readonly FunctionTool[], hostOf: Readonly<Record<string, string>>): FunctionTool[] => {
-  const depthOf = (name: string, seen: ReadonlySet<string>): number => {
-    const host = hostOf[name];
-    return host === undefined || seen.has(host) ? 0 : 1 + depthOf(host, new Set([...seen, name]));
-  };
-  return tools
-    .map((tool, index) => ({ tool, index, depth: depthOf(tool.name, new Set<string>()) }))
-    .sort((left, right) => left.depth - right.depth || left.index - right.index)
-    .map(({ tool }) => tool);
 };
 
 const metering = (input: BuildContextInput, ports: BuildContextPorts, tools: readonly FunctionTool[]) => {
@@ -199,7 +205,7 @@ const ceilingTokensOf = (input: BuildContextInput, counted: MeterCount): number 
 
 const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContextPorts): Promise<Head> => {
   const { capabilities, sources } = input;
-  const candidates = candidateToolsOf(input);
+  const { tools: candidates, rankOf } = rankedCandidatesOf(input);
   const discovered = await discoverInstructions({
     reader: suppliedPorts.instructions,
     home: input.home,
@@ -243,7 +249,15 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
     return host === undefined || offered.some((other) => other.name === host);
   };
   const selectsTools = input.pinnedTokens === undefined && input.toolsFrozen !== true;
+  for (const tool of candidates) {
+    const host = hostOf[tool.name];
+    const hostRank = host === undefined ? undefined : rankOf.get(host);
+    if (hostRank !== undefined && hostRank >= rankOf.get(tool.name)!) {
+      throw new Error(`tool ${JSON.stringify(tool.name)} has a fitRank that does not come after the fitRank of its host ${JSON.stringify(host)}`);
+    }
+  }
   const eligible = candidates.filter((tool) => standsWith(tool, candidates));
+  const inFitOrder = [...eligible].sort((left, right) => rankOf.get(left.name)! - rankOf.get(right.name)!);
   const toolFloor =
     !selectsTools ? 0 : pinnedFloorAt(observed ? await capacityOver(sized, toolPorts, toolFrozen, eligible) : inputCeilingFor(sized));
   let tools = eligible;
@@ -252,13 +266,14 @@ const measureHead = async (input: BuildContextInput, suppliedPorts: BuildContext
     const required = requiredToolsOf(input, eligible);
     const kept: FunctionTool[] = [...required];
     const droppedForRoom: string[] = [];
-    for (const tool of hostsFirst(eligible, hostOf)) {
-      if (required.includes(tool) || !standsWith(tool, kept)) continue;
-      if (await stableFitsFloor([...kept, tool])) kept.push(tool);
+    for (const tool of inFitOrder) {
+      if (required.includes(tool)) continue;
+      if (!standsWith(tool, kept)) droppedForRoom.push(`${tool.name} (with ${hostOf[tool.name]})`);
+      else if (await stableFitsFloor([...kept, tool])) kept.push(tool);
       else droppedForRoom.push(tool.name);
     }
     if (kept.length > 0 || (await stableFitsFloor(kept))) {
-      tools = eligible.filter((tool) => kept.includes(tool));
+      tools = inFitOrder.filter((tool) => kept.includes(tool));
       leftOut = droppedForRoom;
     }
   }

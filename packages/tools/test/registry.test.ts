@@ -62,14 +62,14 @@ describe('createToolRegistry register', () => {
 });
 
 describe('createToolRegistry sources', () => {
-  it('orders builtins in registration order, then sources in addSource order and returned order', async () => {
+  it('orders builtins and source tools by tier, then by name, whatever the registration, source and listing order', async () => {
     const registry = createToolRegistry();
     registry.register(makeTool('B1'));
     registry.addSource(source('s1', [makeTool('S1b'), makeTool('S1a')]));
     registry.register(makeTool('A2'));
     registry.addSource(source('s2', [makeTool('S2')]));
     const set = await registry.snapshot();
-    expect(set.tools.map((tool) => tool.name)).toEqual(['B1', 'A2', 'S1b', 'S1a', 'S2']);
+    expect(set.tools.map((tool) => tool.name)).toEqual(['A2', 'B1', 'S1a', 'S1b', 'S2']);
     expect(set.notices).toEqual([]);
   });
 
@@ -79,7 +79,7 @@ describe('createToolRegistry sources', () => {
     registry.register(builtin);
     registry.addSource(source('mcp-files', [makeTool('Read', { description: 'impostor' }), makeTool('Other')]));
     const set = await registry.snapshot();
-    expect(set.tools.map((tool) => tool.name)).toEqual(['Read', 'Other']);
+    expect(set.tools.map((tool) => tool.name)).toEqual(['Other', 'Read']);
     expect(set.get('Read')?.description).toBe('Read test tool');
     expect(set.notices).toHaveLength(1);
     expect(set.notices[0]).toContain('Read');
@@ -103,7 +103,7 @@ describe('createToolRegistry sources', () => {
     registry.addSource({ id: 'broken-src', list: async () => Promise.reject(new Error('connection refused')) });
     registry.addSource(source('ok-src', [makeTool('Fine')]));
     const set = await registry.snapshot();
-    expect(set.tools.map((tool) => tool.name)).toEqual(['Read', 'Fine']);
+    expect(set.tools.map((tool) => tool.name)).toEqual(['Fine', 'Read']);
     expect(set.notices).toHaveLength(1);
     expect(set.notices[0]).toContain('broken-src');
   });
@@ -128,7 +128,7 @@ describe('ToolSet snapshot', () => {
     const grep = { ...makeTool('Grep'), conciseDescription: 'Searches.', conciseParameterDescriptions: { pattern: 'Regex.' } } as AnyTool;
     registry.register(read);
     registry.register(grep);
-    expect((await registry.snapshot()).digest).toBe(digestOf([read, grep]));
+    expect((await registry.snapshot()).digest).toBe(digestOf([grep, read]));
   });
 
   it('computes the digest from name, description, kind, sideEffect, inputSchema and the concise variant in order', async () => {
@@ -200,15 +200,15 @@ describe('ToolSet forModel', () => {
     const set = await build();
     const read = set.get('Read');
     expect(set.forModel({ mode: 'default', rules: [] })).toEqual([
-      { type: 'function', name: 'Read', description: 'Read test tool', parameters: read?.inputSchema, strict: false },
-      { type: 'function', name: 'Write', description: 'Write test tool', parameters: set.get('Write')?.inputSchema, strict: false },
-      { type: 'function', name: 'Bash', description: 'Bash test tool', parameters: set.get('Bash')?.inputSchema, strict: false },
+      { type: 'function', name: 'Bash', description: 'Bash test tool', parameters: set.get('Bash')?.inputSchema, strict: false, fitRank: 0 },
+      { type: 'function', name: 'Read', description: 'Read test tool', parameters: read?.inputSchema, strict: false, fitRank: 1 },
+      { type: 'function', name: 'Write', description: 'Write test tool', parameters: set.get('Write')?.inputSchema, strict: false, fitRank: 2 },
     ]);
   });
 
   it('hides non-read-only tools except Bash in plan mode', async () => {
     const set = await build();
-    expect(set.forModel({ mode: 'plan', rules: [] }).map((tool) => tool.name)).toEqual(['Read', 'Bash']);
+    expect(set.forModel({ mode: 'plan', rules: [] }).map((tool) => tool.name)).toEqual(['Bash', 'Read']);
   });
 
   it('hides tools covered by a blanket deny rule but not by a specific deny rule', async () => {
@@ -216,9 +216,9 @@ describe('ToolSet forModel', () => {
     const rule = ruleFor(makeLayout());
     expect(set.forModel({ mode: 'default', rules: [rule('deny', 'Bash')] }).map((tool) => tool.name)).toEqual(['Read', 'Write']);
     expect(set.forModel({ mode: 'default', rules: [rule('deny', 'Bash(rm:*)')] }).map((tool) => tool.name)).toEqual([
+      'Bash',
       'Read',
       'Write',
-      'Bash',
     ]);
   });
 });
