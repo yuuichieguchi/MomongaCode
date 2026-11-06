@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
+import { createFakeClock, createFakeTimers, driveFakeTime, waitFor } from '@momonga/testkit';
 import type { ChildManager } from '../src/child-manager.ts';
 import { SHUTDOWN_DRAIN_BOUND_MS, killedChildSettleMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import { stopBudgetMs } from '../src/child-manager.ts';
@@ -163,15 +163,7 @@ describe('shutdown step 1 bound and the sum of every wait', () => {
     });
     const result = settledResult(controller.close());
     const limit = supervisorMaxCloseMs(0);
-    let elapsed = 0;
-    while (result() === undefined && elapsed <= limit) {
-      await waitFor(() => timers.nextDueAt() !== undefined || result() !== undefined, { description: 'the next shutdown timer' });
-      if (result() !== undefined) break;
-      const due = timers.nextDueAt() as number;
-      timers.advance(due - clock.now());
-      elapsed = clock.now();
-      await waitFor(() => timers.nextDueAt() !== undefined || result() !== undefined, { description: 'the shutdown to proceed' });
-    }
+    await driveFakeTime(timers, { done: () => result() !== undefined, horizonAt: limit, description: 'close to settle' });
     expect(result()).toBeDefined();
     expect(clock.now()).toBe(limit);
   });

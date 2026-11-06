@@ -61,6 +61,8 @@ export {
 export type { RecordedRun } from './run-event-fixtures.ts';
 export { drivenReapTiming, fakeReapTiming } from './fake-reap-timing.ts';
 export { createFakeTimers } from './fake-timers.ts';
+export { DEFAULT_DRIVE_DEADLINE_MS, DEFAULT_DRIVE_MAX_STEPS, driveFakeTime } from './drive-fake-time.ts';
+export type { DriveFakeTimeOptions } from './drive-fake-time.ts';
 export type { FakeTimers, PendingTimer } from './fake-timers.ts';
 export { afterMicrotasks, waitFor } from './wait-for.ts';
 export { createRealWorkScope, quiesce, settleRealWork, waitForRealWork } from './real-work.ts';

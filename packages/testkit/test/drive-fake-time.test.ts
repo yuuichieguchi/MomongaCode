@@ -59,11 +59,11 @@ describe('driveFakeTime', () => {
   it('fails fast, naming the pending timers, when its predicate never holds while a timer re-arms inside the horizon', async () => {
     const clock = createFakeClock(0);
     const timers = createFakeTimers(clock);
-    armPeriodic(timers, 0);
+    armPeriodic(timers, 1);
     const startedAt = performance.now();
 
     await expect(driveFakeTime(timers, { done: () => false, horizonAt: 90_000, maxSteps: 1000, description: 'never' })).rejects.toThrow(
-      /never not met within 90000 fake ms: 1000 steps used; pending timers \[\{"id":\d+,"delayMs":0,"dueAt":0\}\]/,
+      /never not met within 90000 fake ms: 1000 steps used; pending timers \[\{"id":\d+,"delayMs":1,"dueAt":\d+\}\]/,
     );
     expect(performance.now() - startedAt).toBeLessThan(5000);
   });
@@ -82,7 +82,7 @@ describe('driveFakeTime', () => {
   it('honours its real-time deadline even when the action of every step never yields', async () => {
     const clock = createFakeClock(0);
     const timers = createFakeTimers(clock);
-    armPeriodic(timers, 0, () => blockFor(20));
+    armPeriodic(timers, 1, () => blockFor(20));
     const startedAt = performance.now();
 
     await expect(
