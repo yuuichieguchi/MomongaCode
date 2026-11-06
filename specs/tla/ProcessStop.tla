@@ -1,16 +1,17 @@
 --------------------------- MODULE ProcessStop ---------------------------
-EXTENDS Naturals
+EXTENDS Naturals, FiniteSets
 
-CONSTANTS Members, MaxAttempts, Variant
+CONSTANTS Members, Events, MaxAttempts, Variant
 
-ASSUME Variant \in {"decided", "noIdentityCheck", "termToReused", "signalUnlistedGroup", "throwOnSurvivor", "dropMarkerOnUnconfirmed", "signalUnprovedHolder", "killWithoutReproof", "retryReusesProof"}
+ASSUME Variant \in {"decided", "noIdentityCheck", "termToReused", "signalUnlistedGroup", "throwOnSurvivor", "dropMarkerOnUnconfirmed", "signalUnprovedHolder", "killWithoutReproof", "retryReusesProof", "retryAnyEvent"}
 ASSUME MaxAttempts \in Nat \ {0}
+ASSUME Events # {}
 
 MemberStates == {"live", "stuck", "zombie", "gone"}
 
-VARIABLES inGroup, listed, swapped, provedOnce, hstage, attempts, state, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved
+VARIABLES inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved
 
-vars == <<inGroup, listed, swapped, provedOnce, hstage, attempts, state, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved>>
+vars == <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved>>
 
 TypeOK ==
     /\ inGroup \in [Members -> BOOLEAN]
@@ -19,6 +20,7 @@ TypeOK ==
     /\ provedOnce \in [Members -> BOOLEAN]
     /\ hstage \in [Members -> {"idle", "term", "kill"}]
     /\ attempts \in 0..MaxAttempts
+    /\ retried \in [Events -> 0..MaxAttempts]
     /\ state \in [Members -> MemberStates]
     /\ other \in BOOLEAN
     /\ mode \in {"live", "recorded"}
@@ -45,6 +47,7 @@ Init ==
     /\ provedOnce = [m \in Members |-> FALSE]
     /\ hstage = [m \in Members |-> "idle"]
     /\ attempts = 0
+    /\ retried = [e \in Events |-> 0]
     /\ state \in [Members -> MemberStates]
     /\ mode \in {"live", "recorded"}
     /\ other \in BOOLEAN
@@ -84,31 +87,31 @@ Reuse ==
     /\ GroupOurs = {}
     /\ ~other
     /\ other' = TRUE
-    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, state, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved>>
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved>>
 
 MemberExits(m) ==
     /\ state[m] \in {"live", "stuck"}
     /\ state' = [state EXCEPT ![m] = "zombie"]
-    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved>>
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved>>
 
 InitReaps(m) ==
     /\ state[m] = "zombie"
     /\ state' = [state EXCEPT ![m] = "gone"]
-    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved>>
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved>>
 
 MemberDies(m) ==
     /\ state[m] = "live"
     /\ inGroup[m]
     /\ (termSent \/ killSent)
     /\ state' = [state EXCEPT ![m] = "zombie"]
-    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved>>
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved>>
 
 ReusePid(m) ==
     /\ mode = "recorded"
     /\ state[m] = "gone"
     /\ ~swapped[m]
     /\ swapped' = [swapped EXCEPT ![m] = TRUE]
-    /\ UNCHANGED <<inGroup, listed, provedOnce, hstage, attempts, state, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved>>
+    /\ UNCHANGED <<inGroup, listed, provedOnce, hstage, attempts, retried, state, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved>>
 
 HolderTargetProved(m) == state[m] # "gone" /\ ~swapped[m]
 
@@ -152,7 +155,7 @@ Begin ==
                  /\ provedOnce' = [m \in Members |-> provedOnce[m] \/ (SigT(m) /\ HolderTargetProved(m))]
                  /\ \E dies \in SUBSET Members : state' = [m \in Members |-> IF SigT(m) /\ state[m] = "live" /\ m \in dies THEN "zombie" ELSE state[m]]
                  /\ UNCHANGED <<outcome, marker>>
-    /\ UNCHANGED <<inGroup, listed, swapped, attempts, other, mode, killSent>>
+    /\ UNCHANGED <<inGroup, listed, swapped, attempts, retried, other, mode, killSent>>
 
 TermWaitEnds ==
     /\ phase = "termWait"
@@ -168,21 +171,21 @@ TermWaitEnds ==
                  /\ hstage' = [m \in Members |-> IF SigK(m) THEN "kill" ELSE hstage[m]]
                  /\ state' = [m \in Members |-> IF SigK(m) /\ state[m] = "live" THEN "zombie" ELSE state[m]]
                  /\ UNCHANGED <<outcome, marker>>
-    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, attempts, other, mode, termSent, begunUnproved>>
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, attempts, retried, other, mode, termSent, begunUnproved>>
 
 KillWaitEnds ==
     /\ phase = "killWait"
     /\ IF ~Seen
        THEN Finish("killed", FALSE)
        ELSE Finish(IF Variant = "throwOnSurvivor" THEN "throw" ELSE "unconfirmed", KeepOnUnconfirmed)
-    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, state, other, mode, termSent, killSent, unprovedSignalled, begunUnproved>>
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, termSent, killSent, unprovedSignalled, begunUnproved>>
 
 CallerAborts ==
     /\ phase \in {"termWait", "killWait"}
     /\ IF ~Seen
        THEN Finish(IF phase = "termWait" THEN "terminated" ELSE "killed", FALSE)
        ELSE Finish("unconfirmed", KeepOnUnconfirmed)
-    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, state, other, mode, termSent, killSent, unprovedSignalled, begunUnproved>>
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, termSent, killSent, unprovedSignalled, begunUnproved>>
 
 Sweep ==
     /\ phase = "done"
@@ -190,13 +193,16 @@ Sweep ==
     /\ ~OursVisible
     /\ marker = "kept"
     /\ marker' = "none"
-    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, state, other, mode, phase, termSent, killSent, outcome, unprovedSignalled, begunUnproved>>
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, phase, termSent, killSent, outcome, unprovedSignalled, begunUnproved>>
 
 Retry ==
     /\ phase = "done"
     /\ outcome = "unconfirmed"
     /\ marker = "kept"
     /\ attempts < MaxAttempts
+    /\ \E e \in Events :
+        /\ (Variant = "retryAnyEvent" \/ retried[e] = 0)
+        /\ retried' = [retried EXCEPT ![e] = @ + 1]
     /\ attempts' = attempts + 1
     /\ phase' = "idle"
     /\ termSent' = FALSE
@@ -234,6 +240,15 @@ NoSignalToUnprovedGroup == ~unprovedSignalled
 OutcomeIsTruthful == (outcome \in {"gone", "terminated", "killed"}) => ~OursVisible
 
 MarkerKeptWhileMembersRemain == marker = "none" => ~OursVisible
+
+OneRetryPerEvent == \A e \in Events : retried[e] <= 1
+
+AtMostFourRetries == attempts <= Cardinality(Events)
+
+AllEventsSpent == \A e \in Events : retried[e] >= 1
+
+ExhaustedIsFinal ==
+    [][(AllEventsSpent /\ phase = "done") => (phase' = "done" /\ termSent' = termSent /\ killSent' = killSent /\ hstage' = hstage)]_vars
 
 UnprovedEndsUnconfirmed == (phase = "done" /\ begunUnproved /\ GroupOurs # {}) => (outcome = "unconfirmed" /\ marker = "kept")
 
