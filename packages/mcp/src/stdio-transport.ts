@@ -6,7 +6,7 @@ import type { Readable, Stream, Writable } from 'node:stream';
 import { deserializeMessage, serializeMessage, type JSONRPCMessage, type Transport } from '@modelcontextprotocol/client';
 import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
 import type { McpStdioServerConfig } from '@momonga/config';
-import { Deadline, groupTerminationBoundMs, reapMarkedProcesses, systemTiming, terminateGroup, type DeadlineTiming, type TerminateOutcome } from '@momonga/foundation';
+import { Deadline, groupTerminationBoundMs, operationSignal, reapMarkedProcesses, systemTiming, terminateGroup, type DeadlineTiming, type TerminateOutcome } from '@momonga/foundation';
 
 const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 const STDERR_TAIL_BYTES = 64 * 1024;
@@ -216,18 +216,20 @@ class StdioTransportImpl implements StdioTransport {
       const child = this.child;
       if (child !== undefined && child.pid !== undefined) {
         const stopBound = Deadline.after(groupTerminationBoundMs(this.closeGraceMs), this.options.timing ?? systemTiming);
-        const closeStop = stopBound.signal;
         child.stdin.end();
         await this.raceTimeout(this.exited);
         let terminateFailure: { error: unknown } | undefined;
         try {
-          await (this.options.terminate ?? terminateGroup)(child.pid, { graceMs: this.closeGraceMs, signal: closeStop });
+          await (this.options.terminate ?? terminateGroup)(child.pid, { graceMs: this.closeGraceMs, signal: stopBound.signal });
         } catch (error) {
           terminateFailure = { error };
+        } finally {
+          stopBound.dispose();
         }
         await this.raceTimeout(this.stdoutEnded);
         let sweepFailure: { error: unknown } | undefined;
         if (this.markerPath !== undefined && this.options.markers !== undefined) {
+          const sweep = operationSignal(undefined);
           try {
             await reapMarkedProcesses({
               marker: this.markerPath,
@@ -235,10 +237,12 @@ class StdioTransportImpl implements StdioTransport {
               killGraceMs: this.closeGraceMs,
               label: 'mcp',
               onWarning: this.options.markers.onWarning,
-              signal: closeStop,
+              signal: sweep.signal,
             });
           } catch (error) {
             sweepFailure = { error };
+          } finally {
+            sweep.end();
           }
         }
         if (terminateFailure !== undefined && sweepFailure !== undefined) {
