@@ -470,7 +470,8 @@ describe('scheduling and restart', () => {
     env.api.reflection.begin(run.id);
     env.gateway.script.push(textStep(CANDIDATE_REPLY([])));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
-    expect(env.gateway.streams[0]?.idempotencyKey).toBe(sha256Hex(canonicalJson([run.id, 'reflect'])));
+    const call = env.gateway.streams[0];
+    expect(call?.idempotencyKey).toBe(sha256Hex(canonicalJson([run.id, 'reflect', sha256Hex(canonicalJson(call?.body))])));
     expect(env.api.reflection.get(run.id)).toMatchObject({ state: 'done', attempts: 2 });
   });
 });
