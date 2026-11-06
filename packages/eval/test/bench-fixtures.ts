@@ -98,7 +98,7 @@ export const benchmarkDir = async (tasks: readonly FixtureTask[]): Promise<strin
       graderFiles: task.graderFiles ?? {},
       declaration: [],
       oracle: [
-        { id: 'tests', kind: 'command', run: 'node --test test/', expectExit: 0, evidence: 'unit', timeoutMs: 30000 },
+        { id: 'tests', kind: 'command', run: 'node --test', expectExit: 0, evidence: 'unit', timeoutMs: 30000 },
         { id: 'tests-untouched', kind: 'unchangedPaths', paths: ['test/add.test.js'] },
         { id: 'scope', kind: 'changedPathsWithin', paths: ['src/', 'test/'] },
       ],
