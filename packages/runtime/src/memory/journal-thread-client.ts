@@ -1,7 +1,7 @@
 import { MessageChannel, Worker, receiveMessageOnPort } from 'node:worker_threads';
 import type { MessagePort } from 'node:worker_threads';
 import type { RunFactsView } from '@momonga/protocol';
-import { JournalThreadError, blobDirectoryOf } from '@momonga/store';
+import { FactsRefusedError, JournalThreadError, blobDirectoryOf } from '@momonga/store';
 import type { ContributionMeasured, ContributionPreparer, EvidenceReply, FidelityReply, RecordedCheck, RecordedHash, ReflectionInputReply, VerdictFact, VerdictReply } from '@momonga/store';
 import { JOURNAL_THREAD_CODE } from './journal-thread-code.generated.ts';
 
@@ -28,7 +28,7 @@ export type JournalThreadClient = ContributionPreparer & {
   close(): Promise<void>;
 };
 
-type Pending = { readonly resolve: (reply: JournalThreadReply) => void; readonly reject: (error: JournalThreadError) => void };
+type Pending = { readonly resolve: (reply: JournalThreadReply) => void; readonly reject: (error: Error) => void };
 
 type Live = {
   readonly worker: Worker;
@@ -208,6 +208,10 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
     const cause = message['error'];
     const name = isRecord(cause) ? String(cause['name']) : 'Error';
     const text = isRecord(cause) ? String(cause['message']) : String(cause);
+    if (isRecord(cause) && cause['refusal'] === true) {
+      request.reject(new FactsRefusedError(text, { cause: { name, message: text } }));
+      return;
+    }
     request.reject(new JournalThreadError(`journal thread request failed: ${text}`, { cause: { name, message: text } }));
   };
 

@@ -1,4 +1,5 @@
 import type { RunFactsView } from '@momonga/protocol';
+import { FactsRefusedError } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import type { ServiceTimers } from './timers.ts';
 
@@ -23,26 +24,28 @@ export const startFactsSweeper = (options: FactsSweeperOptions): { close(): Prom
     }, intervalMs);
   };
 
-  const factsOfBatch = async (runIds: readonly string[]): Promise<{ rows: RunFactsView[]; unavailable: string[] }> => {
+  const factsOfBatch = async (runIds: readonly string[]): Promise<{ rows: RunFactsView[]; unavailable: string[]; processed: number }> => {
     const rows: RunFactsView[] = [];
     const unavailable: string[] = [];
-    for (const runId of runIds) {
+    for (const [index, runId] of runIds.entries()) {
       try {
         rows.push(await thread.runFacts(runId));
       } catch (error) {
-        unavailable.push(runId);
         onError(error);
+        if (!(error instanceof FactsRefusedError)) return { rows, unavailable, processed: index };
+        unavailable.push(runId);
       }
     }
-    return { rows, unavailable };
+    return { rows, unavailable, processed: runIds.length };
   };
 
   async function sweep(): Promise<void> {
     try {
       const batch = store.runFacts.nextBatch(batchSize);
       if (batch.runIds.length > 0) {
-        const { rows, unavailable } = await factsOfBatch(batch.runIds);
-        store.runFacts.commit({ rows, unavailable, throughEventId: batch.throughEventId });
+        const { rows, unavailable, processed } = await factsOfBatch(batch.runIds);
+        if (processed === batch.runIds.length) store.runFacts.commit({ rows, unavailable, throughEventId: batch.throughEventId });
+        else if (processed > 0) store.runFacts.commit({ rows, unavailable, throughEventId: store.runFacts.nextBatch(processed).throughEventId });
       }
     } catch (error) {
       onError(error);

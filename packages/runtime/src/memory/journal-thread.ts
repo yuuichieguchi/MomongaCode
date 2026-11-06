@@ -3,7 +3,7 @@ import { performance } from 'node:perf_hooks';
 import { MessagePort, isMainThread, parentPort, threadId, workerData } from 'node:worker_threads';
 import { openDatabase } from '@momonga/foundation/sqlite';
 import { REPOSITORY_FACTS_EVENT_TYPES, createRepositoryFactsFold } from '@momonga/memory';
-import { createBlobStore, createJournalReader } from '@momonga/store';
+import { FactsRefusedError, createBlobStore, createJournalReader } from '@momonga/store';
 import { FIDELITY_CLAIMS, MAIN_AGENT, PERMISSION_MODES } from '@momonga/protocol';
 import { FACTS_EVENT_TYPES, createFactsFold } from '@momonga/reliability';
 import type { Capabilities, ClaimedToken, PermissionMode, RunEvent, RunEventPayload, RunFactsLimits } from '@momonga/protocol';
@@ -43,8 +43,12 @@ const requestOf = (message: unknown): { readonly id: number; readonly kind: stri
   return { id: request.id, kind: request.kind, request: request as JournalRequest };
 };
 
-const errorOf = (error: unknown): { name: string; message: string } =>
-  error instanceof Error ? { name: error.name, message: error.message } : { name: 'Error', message: String(error) };
+const errorOf = (error: unknown): { name: string; message: string; refusal?: true } =>
+  error instanceof FactsRefusedError
+    ? { name: error.name, message: error.message, refusal: true }
+    : error instanceof Error
+      ? { name: error.name, message: error.message }
+      : { name: 'Error', message: String(error) };
 
 export const serveJournalReader = (handlers: Readonly<Record<string, JournalHandler>>, { incoming, outgoing }: JournalChannel): void => {
   incoming.on('message', (message: unknown) => {
@@ -181,6 +185,14 @@ const agentOf = (pins: Record<string, unknown>, runId: string): string => {
   return agent['name'];
 };
 
+const refusingFold = <T>(work: () => T): T => {
+  try {
+    return work();
+  } catch (error) {
+    throw new FactsRefusedError(error instanceof Error ? error.message : String(error), { cause: error });
+  }
+};
+
 export const runFactsHandler = (db: DatabaseSync, reader: VisitingReader): JournalHandler => {
   const rootOf = db.prepare(ROOT_RUN_ID);
   const treeTokens = db.prepare(TREE_TOKENS);
@@ -189,30 +201,35 @@ export const runFactsHandler = (db: DatabaseSync, reader: VisitingReader): Journ
     const fold = createFactsFold();
     let started: ReturnType<typeof startOf> | undefined;
     const run = reader.visitRun(runId, FACTS_EVENT_TYPES, (event) => {
-      if (event.type === 'run.started') started ??= startOf(event);
-      fold.add(event);
+      refusingFold(() => {
+        if (event.type === 'run.started') started ??= startOf(event);
+        fold.add(event);
+      });
     });
-    if (started === undefined) throw new RangeError(`run ${runId}: facts need the run.started event and the journal has none`);
+    if (started === undefined) throw new FactsRefusedError(`run ${runId}: facts need the run.started event and the journal has none`);
+    const begun = started;
     const rootRow = rootOf.get({ runId });
     const tokensRow = treeTokens.get({ runId });
     if (rootRow === undefined || tokensRow === undefined) throw new Error(`run ${runId}: its tree could not be read`);
-    const maxSteps = limitOf(run.limits, 'maxSteps', runId);
-    const maxTotalTokens = limitOf(run.limits, 'maxTotalTokens', runId);
-    const facts = fold.finish({
-      runId,
-      rootRunId: String(rootRow['id']),
-      sessionId: run.sessionId,
-      status: run.status,
-      ...(run.stopReason === undefined ? {} : { stopReason: run.stopReason }),
-      createdAt: run.createdAt,
-      limits: { ...(maxSteps === undefined ? {} : { maxSteps }), ...(maxTotalTokens === undefined ? {} : { maxTotalTokens }) },
-      deadlineAt: run.deadlineAt,
-      step: run.step,
-      tokensTotal: Number(tokensRow['total']),
-      modelAlias: started.modelAlias,
-      mode: started.mode,
-      agent: agentOf(run.pins, runId),
-      origin: run.origin,
+    const facts = refusingFold(() => {
+      const maxSteps = limitOf(run.limits, 'maxSteps', runId);
+      const maxTotalTokens = limitOf(run.limits, 'maxTotalTokens', runId);
+      return fold.finish({
+        runId,
+        rootRunId: String(rootRow['id']),
+        sessionId: run.sessionId,
+        status: run.status,
+        ...(run.stopReason === undefined ? {} : { stopReason: run.stopReason }),
+        createdAt: run.createdAt,
+        limits: { ...(maxSteps === undefined ? {} : { maxSteps }), ...(maxTotalTokens === undefined ? {} : { maxTotalTokens }) },
+        deadlineAt: run.deadlineAt,
+        step: run.step,
+        tokensTotal: Number(tokensRow['total']),
+        modelAlias: begun.modelAlias,
+        mode: begun.mode,
+        agent: agentOf(run.pins, runId),
+        origin: run.origin,
+      });
     });
     return { lastSeq: run.lastSeq, facts };
   };
