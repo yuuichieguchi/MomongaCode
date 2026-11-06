@@ -91,6 +91,24 @@ describe('worker gateway error policy: fatal 4xx', () => {
     expect(env.gateway.streams).toEqual([]);
   });
 
+  it('requeues the run and records attempt.failed provider_unavailable when capabilities cannot reach the provider (decision 65)', async () => {
+    const env = await makeEnv();
+    const fields: ErrorFields = { status: 502, type: 'server_error', code: 'provider_unavailable', message: 'the chat-completions upstream is unreachable' };
+    env.gateway.capabilitiesHook = async () => {
+      throw gatewayError(fields);
+    };
+    const run = env.enqueue('Work');
+
+    await claimOnce(env, env.worker());
+
+    const requeued = env.run(run.id);
+    expect(requeued.status).toBe('QUEUED');
+    expect(requeued.attempts).toBe(1);
+    expect(env.events(run.id).filter((event) => event.type === 'attempt.failed')).toEqual([expect.objectContaining({ attempt: 1, code: 'provider_unavailable' })]);
+    expect(env.gateway.capabilitiesCalls).toHaveLength(1);
+    expect(env.gateway.streams).toEqual([]);
+  });
+
   it('passes the claim signal to capabilities', async () => {
     const env = await makeEnv();
     env.gateway.script.push(textStep('Hello.'));
