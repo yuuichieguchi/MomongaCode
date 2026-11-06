@@ -306,8 +306,22 @@ const isStreaming = (value: unknown): boolean =>
   Array.isArray(value['items']) &&
   value['items'].every((item: unknown) => isRecord(item) && typeof item['itemId'] === 'string' && typeof item['text'] === 'string');
 
+const isCompactionPointer = (value: unknown): boolean => isRecord(value) && typeof value['runId'] === 'string' && Number.isInteger(value['eventSeq']);
+
 const isInherited = (value: unknown): boolean =>
-  isRecord(value) && typeof value['fromRunId'] === 'string' && Number.isInteger(value['fromLastSeq']) && typeof value['digest'] === 'string';
+  isRecord(value) &&
+  typeof value['fromRunId'] === 'string' &&
+  Number.isInteger(value['fromLastSeq']) &&
+  typeof value['digest'] === 'string' &&
+  (value['form'] === undefined || value['form'] === 'reference') &&
+  (value['fromNextItemSeq'] === undefined || Number.isInteger(value['fromNextItemSeq'])) &&
+  (value['itemCount'] === undefined || Number.isInteger(value['itemCount'])) &&
+  (value['compaction'] === undefined || isCompactionPointer(value['compaction']));
+
+const TRUNCATION_KINDS: readonly unknown[] = ['omitted', 'truncated', 'reference'];
+
+const isInheritedTruncation = (value: unknown): boolean =>
+  isRecord(value) && typeof value['callId'] === 'string' && typeof value['handle'] === 'string' && TRUNCATION_KINDS.includes(value['kind']);
 
 const isLoadedInstruction = (value: unknown): boolean =>
   isRecord(value) && typeof value['path'] === 'string' && typeof value['textSha256'] === 'string' && Number.isInteger(value['seq']) && typeof value['content'] === 'string';
@@ -451,7 +465,10 @@ export const decodeRunState = (identity: string, value: unknown): RunState | und
     state['loopGroups'].length <= LOOP_GROUPS_KEPT &&
     state['loopGroups'].every(isLoopGroup) &&
     (state['loopOpen'] === undefined || isLoopOpen(state['loopOpen'])) &&
-    (state['inherited'] === undefined || isInherited(state['inherited']));
+    (state['inherited'] === undefined || isInherited(state['inherited'])) &&
+    (state['ownCompactionEventSeq'] === undefined || Number.isInteger(state['ownCompactionEventSeq'])) &&
+    (state['inheritedSummaryItem'] === undefined || isSummaryItem(state['inheritedSummaryItem'])) &&
+    (state['inheritedTruncations'] === undefined || isArrayOf(state['inheritedTruncations'], isInheritedTruncation));
   if (!valid) throw corrupt('snapshots', identity, 'column state_json does not hold a RunState');
   return state as RunState;
 };

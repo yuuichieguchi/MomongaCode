@@ -5,6 +5,10 @@ import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
 import { decodeRun, decodeRunEvents } from './codec.ts';
 import { foldRunState, initialRunState } from './fold.ts';
 import { createGoverningFactStore } from './governing.ts';
+import { copyDigestOf, isReferenceInherited } from './inherit.ts';
+import type { InheritedPayload } from './inherit.ts';
+import { createReferenceReader } from './inherit-reference.ts';
+import type { ReferenceReader } from './inherit-reference.ts';
 import { createMemoryStore } from './memories.ts';
 import { readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
@@ -41,6 +45,7 @@ export type JournalReaderOptions = {
   unit?: () => void;
   onRowsStepped?: (rows: number) => void;
   onDecode?: (rows: number, bytes: number) => void;
+  onHop?: (runId: string) => void;
   lookups?: { memories: Pick<MemoryStore, 'get'>; governing: Pick<GoverningFactStore, 'get'> };
 };
 
@@ -48,6 +53,8 @@ export type JournalReader = {
   measure(hook: TerminalContribution, request: ContributionRequest): ContributionMeasured;
   eventsOfTypes(runId: string, types: readonly RunEventPayload['type'][]): RunEvent[];
   visitRun(runId: string, types: readonly RunEventPayload['type'][], visit: (event: RunEvent) => void, throughSeq?: number): Run;
+  planInheritance: ReferenceReader['planInheritance'];
+  readInheritedWindow: ReferenceReader['readInheritedWindow'];
 };
 
 const typePlaceholders = (types: readonly string[]): { list: string; bound: Record<string, string> } => ({
@@ -60,6 +67,7 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
   const stepped = options.onRowsStepped ?? ((): void => undefined);
   const { memories, governing } = options.lookups ?? { memories: createMemoryStore(db, NO_CLOCK), governing: createGoverningFactStore(db, NO_CLOCK) };
   const selectRun = db.prepare('SELECT * FROM runs WHERE id = :id');
+  const reference = createReferenceReader(db, { unit, stepped, ...(options.onDecode === undefined ? {} : { onDecode: options.onDecode }), ...(options.onHop === undefined ? {} : { onHop: options.onHop }) });
   const pinnedDigests = db.prepare("SELECT seq, pinned_digest FROM events WHERE run_id = :runId AND type = 'model.requested' ORDER BY seq");
 
   const decodeEach = (rows: Iterable<Row>): RunEvent[] => {
@@ -154,6 +162,28 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
     }
   };
 
+  const copyOfInherited = (event: RunEvent): RunEvent => {
+    if (event.type !== 'context.inherited' || !isReferenceInherited(event)) return event;
+    const retained = reference.retainedOf(event);
+    const copy: Omit<InheritedPayload, 'digest'> = {
+      type: 'context.inherited',
+      fromRunId: event.fromRunId,
+      fromLastSeq: event.fromLastSeq,
+      history: retained.entries,
+      nextItemSeq: event.nextItemSeq,
+      ...(retained.summary === undefined ? {} : { summary: retained.summary }),
+      ...(event.workingFacts === undefined ? {} : { workingFacts: event.workingFacts }),
+      evicted: retained.evicted,
+      closures: event.closures,
+      ...(event.partial === undefined ? {} : { partial: event.partial }),
+      markers: event.markers,
+      ...(event.fromMode === undefined ? {} : { fromMode: event.fromMode }),
+      ...(event.mode === undefined ? {} : { mode: event.mode }),
+      ...(event.activatedSkills === undefined ? {} : { activatedSkills: event.activatedSkills }),
+    };
+    return { ...copy, digest: copyDigestOf(copy), id: event.id, runId: event.runId, sessionId: event.sessionId, seq: event.seq, step: event.step, leaseToken: event.leaseToken, createdAt: event.createdAt };
+  };
+
   const measure = (hook: TerminalContribution, request: ContributionRequest): ContributionMeasured =>
     readTx(db, () => {
       const row = selectRun.get({ id: request.runId });
@@ -171,10 +201,10 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
           createdAt: 0,
         }),
       );
-      const events = [...hookEventsOfTypes(run.id, hook.eventTypes), ...leading.filter((event) => hook.eventTypes.includes(event.type))];
+      const events = [...hookEventsOfTypes(run.id, hook.eventTypes).map(copyOfInherited), ...leading.filter((event) => hook.eventTypes.includes(event.type))];
       const contribution = hook.measure({ run, events, replay: (visit) => replayRun(run, events, visit, leading), memories, governing, unit });
       return contribution === undefined ? { lastSeq: run.lastSeq } : { lastSeq: run.lastSeq, contribution };
     });
 
-  return { measure, eventsOfTypes, visitRun };
+  return { measure, eventsOfTypes, visitRun, planInheritance: reference.planInheritance, readInheritedWindow: reference.readInheritedWindow };
 };

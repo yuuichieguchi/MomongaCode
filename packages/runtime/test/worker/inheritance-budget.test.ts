@@ -7,7 +7,7 @@ import { fixtureCompactionContent } from '@momonga/testkit';
 import { capabilitiesFor, compactKey, makeEnv, textOf } from './harness.ts';
 import type { Env } from './harness.ts';
 import { MODEL_ALIAS, assistantMessage, callsStep, functionCallItem, textStep } from './scripts.ts';
-import { MARKER_TEXT, firstConversation, firstRequestInput, inheritedEventOf, settle } from './inheritance-support.ts';
+import { MARKER_TEXT, firstConversation, firstRequestInput, resolvedInheritedOf as inheritedEventOf, settle } from './inheritance-support.ts';
 
 const USAGE = { input_tokens: 50, output_tokens: 5, total_tokens: 55 };
 const NO_TOOLS = { toolList: () => [] };

@@ -1,7 +1,17 @@
 export { MEMORY_MATCH_LIMIT, MEMORY_SCAN_LIMIT } from './memory-constants.ts';
-export { foldRunState, initialRunState } from './fold.ts';
-export { InheritanceError, applyInheritance, projectInheritance } from './inherit.ts';
-export type { InheritanceErrorCode, InheritanceKind, InheritanceOutcome, InheritedPayload } from './inherit.ts';
+export { foldRunState, initialRunState, itemCountOf } from './fold.ts';
+export { INHERITANCE_ERROR_CODES, InheritanceError, applyInheritance, applyReferenceInheritance, isReferenceInherited, projectInheritance, referenceDigest } from './inherit.ts';
+export type { InheritanceErrorCode, InheritanceKind, InheritanceOutcome, InheritedPayload, ReferencePayload } from './inherit.ts';
+export { lowerBoundTokens } from './inherit-reference.ts';
+export type {
+  EvictedStub,
+  InheritPlanReply,
+  InheritPlanRequest,
+  InheritWalked,
+  InheritedWindowReply,
+  InheritedWindowRequest,
+  WindowEntry,
+} from './inherit-reference.ts';
 export { StoreIdentityError, isFatalStoreError } from './fatal.ts';
 export { DuplicateChargeError } from './context-charges.ts';
 export { sameRunRequest } from './run-request.ts';

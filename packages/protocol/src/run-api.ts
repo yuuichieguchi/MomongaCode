@@ -10,7 +10,7 @@ import { AUTO_FIT_FAILED_BOUNDS, AUTO_FIT_MEASUREMENTS } from './auto-mode-gate.
 import { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES } from './permission-denial.ts';
 import { RECOVERY_CAUSES, RECOVERY_OUTCOMES, REPORT_PAGE_ROWS } from './reliability.ts';
 import { FILE_ACCESSES } from './working-facts.ts';
-import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
+import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, isInheritedReference, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
 import type { ImageMediaType, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent } from './run-types.ts';
 import type { ReflectionJobView } from './memory.ts';
 import type { RunRecovery } from './reliability.ts';
@@ -1401,6 +1401,12 @@ export type PublicRunEvent =
   | (PublicPayload extends infer Payload ? (Payload extends unknown ? Payload & PublicRunEnvelope : never) : never)
   | SessionEvent;
 
+const inheritedCountsOf = (event: Extract<RunEvent, { type: 'context.inherited' }>): { itemCount: number; summaryThroughSeq?: number } => {
+  if (isInheritedReference(event)) return { itemCount: event.itemCount };
+  const { history, summary } = event;
+  return { itemCount: history.length, ...(summary === undefined ? {} : { summaryThroughSeq: summary.replacedThroughSeq }) };
+};
+
 export const toPublicRunEvent = (event: RunEvent | SessionEvent): PublicRunEvent => {
   if (!('runId' in event)) return event;
   const { id, runId, sessionId, seq, step, createdAt } = event;
@@ -1443,9 +1449,8 @@ export const toPublicRunEvent = (event: RunEvent | SessionEvent): PublicRunEvent
         type: event.type,
         fromRunId: event.fromRunId,
         fromLastSeq: event.fromLastSeq,
-        itemCount: event.history.length,
+        ...inheritedCountsOf(event),
         nextItemSeq: event.nextItemSeq,
-        ...(event.summary === undefined ? {} : { summaryThroughSeq: event.summary.replacedThroughSeq }),
         closures: event.closures.map(({ callId, effect, announced }) => ({ callId, effect, announced })),
         partialMessage: event.partial !== undefined,
         markers: event.markers.map(({ kind }) => ({ kind })),
