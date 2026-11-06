@@ -244,9 +244,10 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
   it('kills the whole process group on timeout', PROCESS_TIMEOUT, async () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const childPidFile = path.join(tools.layout.project, 'child.pid');
-    const outcome = await tools.run('Bash', { command: `sleep 30 & echo $! > ${childPidFile}; wait`, timeout: 1000 }, {}, 'allow_once');
+    const command = `sleep 30 & echo $! > ${childPidFile}; wait`;
+    const outcome = await tools.run('Bash', { command, timeout: 1000 }, {}, 'allow_once');
     const result = resultOf(outcome);
-    expect(result).toEqual({ status: 'failed', output: 'Bash timed out after 1000 ms. Its side effects are unknown; inspect the current state before retrying.' });
+    expect(result).toEqual({ status: 'failed', command, output: 'Bash timed out after 1000 ms. Its side effects are unknown; inspect the current state before retrying.' });
     const [pgid] = attachedGroups(tools);
     expect(typeof pgid).toBe('number');
     const child = Number(fs.readFileSync(childPidFile, 'utf8').trim());
@@ -258,9 +259,8 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     const tools = await makeBuiltins({ realSandbox: true });
     const ready = path.join(tools.layout.project, 'ready');
     const controller = new AbortController();
-    const running = tools.executor.runBatch(
-      tools.batch('Bash', { command: `sleep 30 & echo $! > ${ready}.tmp; mv ${ready}.tmp ${ready}; wait` }, { signal: controller.signal }, 'allow_once'),
-    );
+    const command = `sleep 30 & echo $! > ${ready}.tmp; mv ${ready}.tmp ${ready}; wait`;
+    const running = tools.executor.runBatch(tools.batch('Bash', { command }, { signal: controller.signal }, 'allow_once'));
     expect(await waitFor(() => fs.existsSync(ready), 10_000)).toBe(true);
     const child = Number(fs.readFileSync(ready, 'utf8').trim());
     trackPid(child);
@@ -269,7 +269,7 @@ describe.runIf(HAS_REAL_SANDBOX)('Bash (real sandbox)', () => {
     trackGroup(pgid as number);
     controller.abort();
     const [outcome] = await running;
-    expect(resultOf(outcome)).toEqual({ status: 'failed', output: 'Bash was cancelled. Its side effects are unknown; inspect the current state before retrying.' });
+    expect(resultOf(outcome)).toEqual({ status: 'failed', command, output: 'Bash was cancelled. Its side effects are unknown; inspect the current state before retrying.' });
     expect(await waitFor(() => !isAlive(-(pgid as number)) && !isAlive(child), 5000)).toBe(true);
   });
 
