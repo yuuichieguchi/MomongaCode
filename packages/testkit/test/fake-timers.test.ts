@@ -69,6 +69,30 @@ describe('createFakeTimers', () => {
     expect(seen).toEqual(['scheduler']);
   });
 
+  it('fails fast, naming the timer, when a timer re-arms itself at zero delay inside one advance', () => {
+    const timers = createFakeTimers(createFakeClock(0));
+    let firings = 0;
+    const tick = (): void => {
+      firings += 1;
+      timers.setTimeout(tick, 0);
+    };
+    timers.setTimeout(tick, 5);
+    expect(() => timers.advance(10)).toThrow(/timer \{"id":2,"delayMs":0,"dueAt":5\} re-armed itself at the fake instant it fired/);
+    expect(firings).toBe(1);
+  });
+
+  it('fires a zero-delay timer armed by a different callback inside the same advance', () => {
+    const clock = createFakeClock(0);
+    const timers = createFakeTimers(clock);
+    const fired: string[] = [];
+    timers.setTimeout(() => {
+      fired.push('first');
+      timers.setTimeout(() => fired.push('deferred'), 0);
+    }, 5);
+    timers.advance(5);
+    expect(fired).toEqual(['first', 'deferred']);
+  });
+
   it('rejects a negative advance', () => {
     const timers = createFakeTimers(createFakeClock(0));
     expect(() => timers.advance(-1)).toThrow(/non-negative/);

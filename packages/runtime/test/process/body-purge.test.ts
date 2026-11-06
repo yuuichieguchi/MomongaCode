@@ -59,6 +59,7 @@ beforeEach(() => {
 describe('the runtime process owns a trace store and starts the body purge', () => {
   it('starts one purge timer on the runtime trace store, purges expired bodies on its tick and stops it at close', PROCESS_TIMEOUT, async () => {
     const stack = await startStack();
+    control.purges = [];
     const launched = await launchRuntime(stack.temp);
     expect(control.purges).toHaveLength(1);
     const [purge] = control.purges as [Purge];
@@ -79,13 +80,17 @@ describe('the runtime process owns a trace store and starts the body purge', () 
 
   it('hands the content retention to the legacy move: 30 days by default', PROCESS_TIMEOUT, async () => {
     const stack = await startStack();
+    control.purges = [];
     await launchRuntime(stack.temp);
+    expect(control.purges).toHaveLength(1);
     expect(control.purges[0]?.legacyRetentionMs).toBe(30 * DAY_MS);
   });
 
   it('hands the configured telemetry.contentRetentionDays to the legacy move', PROCESS_TIMEOUT, async () => {
     const stack = await startStack({}, { telemetry: { contentRetentionDays: 7 } });
+    control.purges = [];
     await launchRuntime(stack.temp);
+    expect(control.purges).toHaveLength(1);
     expect(control.purges[0]?.legacyRetentionMs).toBe(7 * DAY_MS);
   });
 });

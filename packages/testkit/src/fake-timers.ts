@@ -12,11 +12,12 @@ export type FakeTimers = {
   nextDueAt(): number | undefined;
 };
 
-type Entry = PendingTimer & { callback: () => void };
+type Entry = PendingTimer & { callback: () => void; source: () => void; armedBy: (() => void) | undefined };
 
 export const createFakeTimers = (clock: FakeClock): FakeTimers => {
   const entries = new Map<number, Entry>();
   let nextId = 1;
+  let firing: Entry | undefined;
   const earliestDue = (limit: number): Entry | undefined => {
     let best: Entry | undefined;
     for (const entry of entries.values()) {
@@ -29,7 +30,8 @@ export const createFakeTimers = (clock: FakeClock): FakeTimers => {
     setTimeout: (callback, ms) => {
       const delayMs = Math.max(0, Number.isFinite(ms) ? ms : 0);
       const id = nextId++;
-      entries.set(id, { id, delayMs, dueAt: clock.now() + delayMs, callback: AsyncResource.bind(callback) });
+      const armedBy = firing !== undefined && delayMs === 0 ? firing.source : undefined;
+      entries.set(id, { id, delayMs, dueAt: clock.now() + delayMs, callback: AsyncResource.bind(callback), source: callback, armedBy });
       return id;
     },
     clearTimeout: (handle) => {
@@ -41,7 +43,17 @@ export const createFakeTimers = (clock: FakeClock): FakeTimers => {
       for (let entry = earliestDue(target); entry !== undefined; entry = earliestDue(target)) {
         entries.delete(entry.id);
         clock.set(Math.max(clock.now(), entry.dueAt));
-        entry.callback();
+        if (entry.armedBy === entry.source) {
+          throw new Error(
+            `FakeTimers.advance: timer ${JSON.stringify({ id: entry.id, delayMs: entry.delayMs, dueAt: entry.dueAt })} re-armed itself at the fake instant it fired, so fake time can never pass it`,
+          );
+        }
+        firing = entry;
+        try {
+          entry.callback();
+        } finally {
+          firing = undefined;
+        }
       }
       clock.set(target);
     },
