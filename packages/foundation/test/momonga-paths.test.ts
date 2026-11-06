@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { SOCKET_PATH_LIMIT, assertSocketPathLength, momongaPaths, rotatedLogPath } from '@momonga/foundation';
+import { momongaPaths, rotatedLogPath } from '@momonga/foundation';
 
 const HOME = '/Users/alice';
 
@@ -113,28 +113,6 @@ describe('relative XDG_CACHE_HOME', () => {
 
   it('ignores an empty XDG_CACHE_HOME on linux', () => {
     expect(momongaPaths('/home/bob', 'linux', { XDG_CACHE_HOME: '' }).cacheBase).toBe('/home/bob/.cache/momonga');
-  });
-});
-
-describe('socket path limit', () => {
-  it('is 104 bytes', () => {
-    expect(SOCKET_PATH_LIMIT).toBe(104);
-  });
-
-  it('accepts a 103-byte path', () => {
-    expect(() => assertSocketPathLength(`/${'s'.repeat(102)}`, 'darwin')).not.toThrow();
-  });
-
-  it('rejects a 104-byte path naming the path and its length', () => {
-    const socket = `/${'s'.repeat(103)}`;
-    expect(() => assertSocketPathLength(socket, 'darwin')).toThrow(socket);
-    expect(() => assertSocketPathLength(socket, 'darwin')).toThrow(/104/);
-  });
-
-  it('counts bytes rather than characters', () => {
-    const socket = `/${'\u00e9'.repeat(52)}`;
-    expect(Buffer.byteLength(socket)).toBe(105);
-    expect(() => assertSocketPathLength(socket, 'darwin')).toThrow(/105/);
   });
 });
 

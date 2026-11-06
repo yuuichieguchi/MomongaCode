@@ -28,7 +28,6 @@ const kernelFoldsCase = (): boolean => {
 };
 
 const CASE_INSENSITIVE = kernelFoldsCase();
-const PLATFORM_DEFAULT = process.platform === 'darwin' || process.platform === 'win32';
 
 describe('the real probe', () => {
   it('reports the case sensitivity the kernel applies on the temp volume', () => {
@@ -100,10 +99,10 @@ describe('probe caching', () => {
     expect(fs.statSync(probed[0] as string).isDirectory()).toBe(true);
   });
 
-  it('falls back to the platform default when the probe cannot decide', () => {
+  it('refuses to guess when the probe cannot decide, naming the volume as unsupported', () => {
     setCaseSensitivityProbe(() => undefined);
     const root = makeDir();
-    expect(volumeIsCaseInsensitive(path.join(root, 'Missing'))).toBe(PLATFORM_DEFAULT);
-    expect(comparableContains(path.join(root, 'Missing'), path.join(root, 'missing', 'child'))).toBe(PLATFORM_DEFAULT);
+    expect(() => volumeIsCaseInsensitive(path.join(root, 'Missing'))).toThrow('case sensitivity of this volume could not be determined');
+    expect(() => comparableContains(path.join(root, 'Missing'), path.join(root, 'missing', 'child'))).toThrow('case sensitivity of this volume could not be determined');
   });
 });
