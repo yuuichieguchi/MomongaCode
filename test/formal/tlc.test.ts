@@ -200,8 +200,11 @@ describe('the manifest of specs/tla', () => {
       'RunRecovery.unlocked': evidenceAtMostOnce,
       'RunRecovery.reapOnly': evidenceAtMostOnce,
       'RunRecovery.noReap': { role: 'evidence', expect: { violates: 'ReconcileSeesStoppedEffect', exitCode: 12 }, args: [], tier: 'every-run' },
+      'RunRecovery.liveTimeout': { role: 'check', expect: 'holds', args: [], tier: 'every-run' },
+      'RunRecovery.liveTimeoutFailed': { role: 'evidence', expect: { violates: 'KilledExecIsUnknown', exitCode: 12 }, args: [], tier: 'every-run' },
       'RunRecovery.uniformCancelNoWorkers': { role: 'check', expect: 'holds', args: LIVENESS_ARGS, tier: 'every-run' },
-      'RunRecovery.uniformCancelNoSweeper': { role: 'evidence', expect: { violates: 'CancelNeedsNoWorker', exitCode: 13 }, args: LIVENESS_ARGS, tier: 'every-run' },    });
+      'RunRecovery.uniformCancelNoSweeper': { role: 'evidence', expect: { violates: 'CancelNeedsNoWorker', exitCode: 13 }, args: LIVENESS_ARGS, tier: 'every-run' },
+    });
   });
 
   it('records the measured distinct states of lockOnly', () => {
