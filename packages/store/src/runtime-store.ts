@@ -2,9 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
-import { TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
+import { FIDELITY_FOLD_VERSION, TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
 import type { CallTiming, ElicitationAnswerRecord, ElicitationRequestView, PermissionMode, RunEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
 import { createAppendRecords, columnsOf } from './append-records.ts';
+import { createVerdictWriter } from './fidelity-verdicts.ts';
 import { createApprovalStore } from './approvals.ts';
 import { blobDirectoryOf, createBlobStore, prepareBlobDirectory } from './blobs.ts';
 import { addUsage, foldRunState, initialRunState, spendOf } from './fold.ts';
@@ -19,8 +20,8 @@ import { createGuidelineStore } from './guidelines.ts';
 import { createContextChargeStore } from './context-charges.ts';
 import { createMemoryStore } from './memories.ts';
 import { createReflectionStore } from './reflection.ts';
-import { InheritanceError, applyInheritance, projectInheritance, retractsTask } from './inherit.ts';
-import type { InheritanceOutcome, InheritedPayload } from './inherit.ts';
+import { referencePayload } from './inherit.ts';
+import type { InheritPlanReply } from './inherit-reference.ts';
 import { corrupt, expectOneOf, expectRecord, isRecord, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
 import { sameRunRequest } from './run-request.ts';
@@ -323,7 +324,6 @@ const prepareStatements = (db: DatabaseSync) => ({
     "SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.permission.requested' AND approval_id = :approvalId LIMIT 1",
   ),
   inheritedEvent: db.prepare("SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'context.inherited' LIMIT 1"),
-  inheritedEventRow: db.prepare("SELECT * FROM events WHERE run_id = :runId AND type = 'context.inherited' LIMIT 1"),
   latestSnapshot: db.prepare('SELECT * FROM snapshots WHERE run_id = :runId ORDER BY seq DESC LIMIT 1'),
   upsertSnapshot: db.prepare(
     `INSERT INTO snapshots (run_id, seq, state_json, created_at) VALUES (:runId, :seq, :state, :createdAt)
@@ -396,6 +396,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   try {
     identity = fs.statSync(options.path);
     migrate(db, MIGRATIONS);
+    db.prepare('DELETE FROM fidelity_verdicts WHERE fold_version <> :current').run({ current: FIDELITY_FOLD_VERSION });
     blobDirectory = blobDirectoryOf(options.path);
     prepareBlobDirectory(blobDirectory);
     statements = prepareStatements(db);
@@ -416,6 +417,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const preparer = options.preparer;
   const { onDecode, onEncode } = options;
   const records = createAppendRecords(db, onDecode === undefined ? {} : { onDecode });
+  const verdicts = createVerdictWriter(db);
 
   const recordTouch = (sessionId: string, runId: string | null): void => {
     if (options.onCommit === undefined) return;
@@ -857,14 +859,6 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
   const hasInheritedEvent = (runId: string): boolean => sql.inheritedEvent.get({ runId }) !== undefined;
 
-  const carriedSkillsOf = (runId: string): string[] => {
-    const row = sql.inheritedEventRow.get({ runId });
-    if (row === undefined) return [];
-    const [event] = decodeEvents([row]);
-    if (event?.type !== 'context.inherited') throw corrupt('events', runId, 'the context.inherited row does not decode to a context.inherited event');
-    return (event.activatedSkills ?? []).map((skill) => skill.name);
-  };
-
   const loadInReadTx = (runId: string): LoadedRun => {
     requireRun(runId);
     const row: Row | undefined = sql.latestSnapshot.get({ runId });
@@ -878,77 +872,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     return { snapshot: { seq, state }, tail: decodeEvents(sql.runEvents.all({ runId, after: seq, limit: -1 })) };
   };
 
-  const foldedRun = (run: Run): RunState => {
-    const loaded = loadInReadTx(run.id);
-    return loaded.tail.reduce(foldRunState, loaded.snapshot?.state ?? initialRunState({ runId: run.id, sessionId: run.sessionId }));
-  };
-
-  const outcomeOf = (run: Run & { status: TerminalStatus }): InheritanceOutcome => ({
-    status: run.status,
-    ...(run.stopReason === undefined ? {} : { stopReason: run.stopReason }),
-    ...(run.error === undefined ? {} : { errorCode: run.error.code }),
-  });
-
-  const predecessorOf = (child: Run): Run => {
-    if (child.previousRunId === null) throw new InheritanceError('previous_run_inconsistent', `run ${child.id} has no previous run`);
-    const row = sql.selectRun.get({ id: child.previousRunId });
-    if (row === undefined) throw new InheritanceError('previous_run_inconsistent', `previous run ${child.previousRunId} of run ${child.id} does not exist`);
-    const previous = decodeRun(row);
-    if (previous.sessionId !== child.sessionId || previous.ordinal !== child.ordinal - 1) {
-      throw new InheritanceError('previous_run_inconsistent', `previous run ${previous.id} is not the run before ${child.id} in session ${child.sessionId}`);
-    }
-    return previous;
-  };
-
-  type WalkedRun = { runId: string; lastSeq: number; status: RunStatus };
-  type InheritPlan = { kind: 'none' } | { kind: 'already' } | Conflict | { kind: 'ready'; payload: InheritedPayload; walked: WalkedRun[] };
-
-  type TerminalRun = Run & { status: TerminalStatus };
-
-  const isTerminalRun = (run: Run): run is TerminalRun => isTerminal(run.status);
-
-  const resolveSource = (run: Run, mode: PermissionMode): InheritPlan => {
-    const walked: WalkedRun[] = [];
-    const unmaterialised: TerminalRun[] = [];
-    let base: TerminalRun;
-    for (let cursor = run; ; ) {
-      const previous = predecessorOf(cursor);
-      if (!isTerminalRun(previous)) return conflict(`previous run ${previous.id} of run ${run.id} is ${previous.status}, not terminal`);
-      walked.push({ runId: previous.id, lastSeq: previous.lastSeq, status: previous.status });
-      if (previous.history === 'fresh' || previous.previousRunId === null || hasInheritedEvent(previous.id)) {
-        base = previous;
-        break;
-      }
-      unmaterialised.push(previous);
-      cursor = previous;
-    }
-    let sourceRun = base;
-    let sourceState = foldedRun(base);
-    let carriedSkills = carriedSkillsOf(base.id);
-    for (const candidate of unmaterialised.reverse()) {
-      const candidateState = foldedRun(candidate);
-      if (retractsTask(candidateState, outcomeOf(candidate))) continue;
-      const payload = projectInheritance(sourceState, { ...outcomeOf(sourceRun), carriedSkills }, { kind: 'intermediate' });
-      sourceState = applyInheritance(candidateState, payload);
-      carriedSkills = (payload.activatedSkills ?? []).map((skill) => skill.name);
-      sourceRun = candidate;
-    }
-    return { kind: 'ready', payload: projectInheritance(sourceState, { ...outcomeOf(sourceRun), carriedSkills }, { kind: 'final', currentMode: mode }), walked };
-  };
-
-  const planInheritance = (claim: Claim, mode: PermissionMode): InheritPlan => {
-    const run = requireRun(claim.runId);
-    if (run.history !== 'inherit' || run.previousRunId === null) return { kind: 'none' };
-    if (hasInheritedEvent(run.id)) return { kind: 'already' };
-    try {
-      return resolveSource(run, mode);
-    } catch (error) {
-      if (error instanceof InheritanceError || isFatalStoreError(error)) throw error;
-      throw new InheritanceError('previous_run_unreadable', `the previous run of ${run.id} could not be read`, { cause: error });
-    }
-  };
-
-  const writeInheritance = (claim: Claim, plan: Extract<InheritPlan, { kind: 'ready' }>): InheritContextResult =>
+  const writeInheritance = (claim: Claim, plan: Extract<InheritPlanReply, { kind: 'ready' }>): InheritContextResult =>
     transaction<InheritContextResult>(() => {
       const run = fenced(claim);
       if (run === undefined) return leaseLost;
@@ -960,7 +884,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           return conflict(`run ${walkedRun.runId} changed while the context of run ${run.id} was being inherited`);
         }
       }
-      writeRun(appendPayloads(run, [plan.payload]));
+      writeRun(appendPayloads(run, [referencePayload(plan.payload)]));
       return { kind: 'inherited' };
     });
 
@@ -1433,6 +1357,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     answeringTargetsOf: records.answeringTargetsOf,
 
+    recordFidelityVerdicts: (runId, cwd, reply) => transaction(() => verdicts.record(runId, cwd, reply)),
+
     lastTerminalRootRuns: (project, limit) => sql.lastTerminalRootRuns.all({ project, limit }).map(decodeRun),
 
     toolCallNames: (runId) => sql.toolCallNames.all({ runId }).map((row) => String(row.name)),
@@ -1464,9 +1390,10 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     load: (runId) => readTx(db, () => loadInReadTx(runId)),
 
-    inheritContext: (claim, { mode }) => {
-      const plan = readTx(db, () => planInheritance(claim, mode));
-      return plan.kind === 'ready' ? writeInheritance(claim, plan) : plan;
+    inheritContext: async (claim, { mode, facts = store.journalFacts }) => {
+      const run = requireRun(claim.runId);
+      const plan = await facts.inheritPlan({ runId: run.id, mode });
+      return plan.kind === 'ready' ? writeInheritance(claim, plan) : plan.kind === 'conflict' ? conflict(plan.reason) : plan;
     },
 
     requestApproval: (claim, input) =>
@@ -1656,6 +1583,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     runFacts: createRunFactsStore(db),
 
     journalFacts: {
+      inheritPlan: async (request, signal) => journalPreparer(preparer, 'inheritance plan').inheritPlan(request, signal),
+      inheritedWindow: async (request, signal) => journalPreparer(preparer, 'inherited window').inheritedWindow(request, signal),
       verdict: async (request, signal) => journalPreparer(preparer, 'verdict').verdict(request, signal),
       evidence: async (request, signal) => journalPreparer(preparer, 'evidence').evidence(request, signal),
       reflectionInput: async (request, signal) => journalPreparer(preparer, 'reflection input').reflectionInput(request, signal),

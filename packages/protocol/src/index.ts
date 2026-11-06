@@ -206,7 +206,7 @@ export { LOOP_GROUPS_KEPT } from './loop-groups.ts';
 export { findDanglingOutput, findUnpairedCalls } from './call-pairing.ts';
 export { DETERMINISTIC_SUMMARY_TEXT, SUMMARY_FRAMING, compactionSummaryMessage, decodeCompactionSummary } from './compaction-summary.ts';
 export type { SummaryOrigin } from './compaction-summary.ts';
-export { FIDELITY_CLAIMS, isPathLikeToken, reducedPathToken, tokenMatcherOf } from './fidelity-match.ts';
+export { FIDELITY_CLAIMS, FIDELITY_FOLD_BEHAVIOUR_DIGESTS, FIDELITY_FOLD_VERSION, isPathLikeToken, reducedPathToken, tokenMatcherOf } from './fidelity-match.ts';
 export type { ClaimedToken, FidelityClaim, TokenMatcher } from './fidelity-match.ts';
 export { MAX_TOOL_NAME_CHARS, REFERENCE_KINDS } from './reference-kinds.ts';
 export type { ReferenceKind } from './reference-kinds.ts';
@@ -419,7 +419,7 @@ export {
 export type { HookCommand, HookEvent, HookExecution, HookMatcherGroup, HookOutcome, HookPreToolDecision, HooksSettings } from './hooks.ts';
 export { APPROVAL_BASES, PERMISSION_DENIAL_SOURCES, permissionDeniedOutput } from './permission-denial.ts';
 export type { ApprovalBasis, PermissionDenial, PermissionDenialSource } from './permission-denial.ts';
-export { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
+export { APPROVAL_STATUSES, isInheritedReference, IMAGE_MEDIA_TYPES, JOB_STATUSES, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
 export type {
   ActivatedSkillEntry,
   ActivatedSkillRecord,
@@ -436,6 +436,10 @@ export type {
   RunEvent,
   RunEventEnvelope,
   NoticeReduction,
+  InheritedCopyPayload,
+  InheritedReferencePayload,
+  InheritedSynthesisEntry,
+  InheritedViaLink,
   RunEventPayload,
   RunState,
   RunStatus,

@@ -1,5 +1,5 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
-import type { InputItem, PermissionMode, RunEventPayload, RunState, StopReason } from '@momonga/protocol';
+import type { InheritedCopyPayload, InputItem, PermissionMode, RunEventPayload, RunState, StopReason } from '@momonga/protocol';
 import { foldRunState, initialRunState } from '@momonga/store';
 import { materializeEvents } from '@momonga/testkit';
 
@@ -11,7 +11,7 @@ const USAGE = { input_tokens: 10, output_tokens: 2, total_tokens: 12 };
 
 type HistoryEntry = RunState['history'][number];
 
-export type InheritedEvent = Extract<RunEventPayload, { type: 'context.inherited' }>;
+export type InheritedEvent = Omit<InheritedCopyPayload, 'form'>;
 
 export const foldOf = (payloads: readonly RunEventPayload[], runId = SOURCE_RUN): RunState =>
   materializeEvents(payloads, { runId, sessionId: SESSION }).reduce(foldRunState, initialRunState({ runId, sessionId: SESSION }));

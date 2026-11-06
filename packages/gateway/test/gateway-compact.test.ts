@@ -49,6 +49,13 @@ describe('POST /v1/responses/compact', () => {
     expect(JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')).summary).toBe(SUMMARY);
   });
 
+  it('names the answering target in momonga.target even with no cost and no cache write (D17 section 7)', async () => {
+    const { response } = await compactOnce();
+    expect(response.status).toBe(200);
+    expect(response.body.momonga).toEqual({ target: 'primary' });
+    expect(validator.validate('CompactResource', response.body).errors).toEqual([]);
+  });
+
   it('decodes a valid compaction item for the adapter so it receives the summary, not the opaque blob', async () => {
     const { primary, harness, response } = await compactOnce();
     const compaction = response.body.output.find((item: { type: string }) => item.type === 'compaction');

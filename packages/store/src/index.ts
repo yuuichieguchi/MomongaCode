@@ -1,7 +1,17 @@
 export { MEMORY_MATCH_LIMIT, MEMORY_SCAN_LIMIT } from './memory-constants.ts';
-export { foldRunState, initialRunState } from './fold.ts';
-export { InheritanceError, applyInheritance, projectInheritance } from './inherit.ts';
-export type { InheritanceErrorCode, InheritanceKind, InheritanceOutcome, InheritedPayload } from './inherit.ts';
+export { foldRunState, initialRunState, itemCountOf } from './fold.ts';
+export { INHERITANCE_ERROR_CODES, InheritanceError, applyInheritance, applyReferenceInheritance, isReferenceInherited, projectInheritance, referenceDigest } from './inherit.ts';
+export type { InheritanceErrorCode, InheritanceKind, InheritanceOutcome, InheritedPayload, ReferencePayload } from './inherit.ts';
+export { lowerBoundTokens } from './inherit-reference.ts';
+export type {
+  EvictedStub,
+  InheritPlanReply,
+  InheritPlanRequest,
+  InheritWalked,
+  InheritedWindowReply,
+  InheritedWindowRequest,
+  WindowEntry,
+} from './inherit-reference.ts';
 export { StoreIdentityError, isFatalStoreError } from './fatal.ts';
 export { DuplicateChargeError } from './context-charges.ts';
 export { sameRunRequest } from './run-request.ts';
@@ -11,6 +21,9 @@ export { FactsRefusedError, JournalThreadError, StalePreparation } from './journ
 export { JOURNAL_SCAN_RANGE_ROWS, createJournalReader } from './journal-reader.ts';
 export { blobDirectoryOf, createBlobStore } from './blobs.ts';
 export type { JournalReader, JournalReaderOptions } from './journal-reader.ts';
+export type { RecordVisit, WalkUnits } from './record-walk.ts';
+export type { RecordHopRef } from './inherit-reference.ts';
+export { VERDICT_RANKS } from './types.ts';
 export { GuidelineConflictError, GuidelineTextError } from './guidelines.ts';
 export {
   HISTORY_CANDIDATE_LIMIT,
@@ -129,6 +142,9 @@ export type {
   EvidenceReply,
   EvidenceRequest,
   FidelityReply,
+  FidelityVerdict,
+  FidelityVerdictRow,
+  VerdictRank,
   FidelityRequest,
   JournalFacts,
   RecordedCheck,

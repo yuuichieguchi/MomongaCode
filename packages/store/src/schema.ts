@@ -893,6 +893,26 @@ CREATE TABLE permission_reviews (
 ) WITHOUT ROWID;
 `;
 
+const FIDELITY_VERDICTS_MEMO = `
+CREATE TABLE fidelity_verdicts (
+  run_id TEXT NOT NULL REFERENCES runs (id),
+  cwd TEXT NOT NULL,
+  fold_version INTEGER NOT NULL,
+  token TEXT NOT NULL,
+  inh TEXT NOT NULL CHECK (inh IN ('none', 'stated', 'executed')),
+  inh_deps TEXT NOT NULL,
+  task_stated INTEGER NOT NULL CHECK (task_stated IN (0, 1)),
+  stated_at INTEGER,
+  executed_at INTEGER,
+  own_deps TEXT NOT NULL,
+  checked_through INTEGER NOT NULL,
+  PRIMARY KEY (run_id, cwd, fold_version, token)
+) WITHOUT ROWID;
+CREATE TRIGGER fidelity_verdicts_session_delete AFTER DELETE ON sessions BEGIN
+  DELETE FROM fidelity_verdicts WHERE run_id IN (SELECT id FROM runs WHERE session_id = OLD.id);
+END;
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -947,4 +967,5 @@ export const MIGRATIONS: readonly Migration[] = [
     name: 'record the reliability facts of each terminal run as columns, its recovery episodes, the cursor of the sweeper that computes them, and the labels of reviewed permission decisions',
     sql: RUN_FACTS_RECORD,
   },
+  { version: 26, name: 'memoise the attestation verdicts of the summary fidelity check per run, cwd, fold version and token', sql: FIDELITY_VERDICTS_MEMO },
 ];

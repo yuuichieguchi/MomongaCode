@@ -185,7 +185,12 @@ const offeredInputOf = (
       ...(matchCap === undefined ? {} : { memoryMatchCap: matchCap }),
       history: state.history
         .filter((entry) => entry.seq !== state.taskSeq)
-        .map((entry) => ({ seq: entry.seq, item: entry.item, ...(entry.handle === undefined ? {} : { handle: entry.handle }) })),
+        .map((entry) => ({
+          seq: entry.seq,
+          item: entry.item,
+          ...(entry.handle === undefined ? {} : { handle: entry.handle }),
+          ...(entry.omittedTokens === undefined ? {} : { omittedTokens: entry.omittedTokens }),
+        })),
       ...(state.summary === undefined ? {} : { summary: { item: state.summary.item, replacedThroughSeq: state.summary.replacedThroughSeq } }),
       ...(workingState === undefined ? {} : { workingState }),
       ...(projectedWorkingState === undefined ? {} : { projectedWorkingState }),
@@ -408,6 +413,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
     },
     ctx.control.signal,
   );
+  options.store.recordFidelityVerdicts(ctx.run.id, sessionOf(ctx).cwd, recorded);
   const fidelity = checkSummary(summary, {
     attested: recorded.attested,
     pinned: plan.pinnedText,
@@ -519,6 +525,7 @@ const recordEvictions = (ctx: ClaimContext, evictions: readonly ContextEviction[
       handle: eviction.handle,
       kind: eviction.kind,
       ...(eviction.keptChars === undefined ? {} : { keptChars: eviction.keptChars }),
+      ...(eviction.kind === 'omitted' && eviction.tokens !== undefined ? { tokens: eviction.tokens } : {}),
     })),
   );
 };
@@ -613,7 +620,8 @@ const budgetStopNotice = (ctx: ClaimContext, error: ContextOverflowError, attemp
     `The fixed prefix takes ${prefix}. ` +
     `Earlier in this run: ${ctx.journal.state.evicted.length} tool outputs were replaced by handles and ${ctx.journal.state.compactions - attempt.successes} compaction(s) were recorded. ` +
     `Final attempt: ${attempt.attempts} compaction(s) ran; no further compaction was possible because ${reason}; ` +
-    `${protectionClause(error)}; ${wrapUpClause}.`
+    `${protectionClause(error)}; ${wrapUpClause}.` +
+    (ctx.journal.windowOmitted ? ' Older inherited items were not read, so the token counts and the number of replaced outputs in this notice are lower bounds.' : '')
   );
 };
 

@@ -2149,6 +2149,591 @@
       "measuredSeconds": 1.17,
       "measuredCpuSeconds": 1.57,
       "budgetCpuSeconds": 7
+    },
+    {
+      "config": "FidelityMemo.aloneNonQuiet",
+      "role": "evidence",
+      "expect": {
+        "violates": "ResultEqualsFresh",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 132,
+      "measuredSeconds": 2.88,
+      "measuredCpuSeconds": 4.32,
+      "budgetCpuSeconds": 12
+    },
+    {
+      "config": "FidelityMemo.ignoreCwd",
+      "role": "evidence",
+      "expect": {
+        "violates": "KeyedByCwdAndVersion",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 669,
+      "measuredSeconds": 2.65,
+      "measuredCpuSeconds": 4.06,
+      "budgetCpuSeconds": 12
+    },
+    {
+      "config": "FidelityMemo.ignoreVersion",
+      "role": "evidence",
+      "expect": {
+        "violates": "KeyedByCwdAndVersion",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1335,
+      "measuredSeconds": 2.63,
+      "measuredCpuSeconds": 5.1,
+      "budgetCpuSeconds": 14
+    },
+    {
+      "config": "FidelityMemo.inheritedDepsDropped",
+      "role": "evidence",
+      "expect": {
+        "violates": "GuardedPositive",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 2779,
+      "measuredSeconds": 3.45,
+      "measuredCpuSeconds": 8.09,
+      "budgetCpuSeconds": 20
+    },
+    {
+      "config": "FidelityMemo.midCall",
+      "role": "evidence",
+      "expect": {
+        "violates": "ResultEqualsFresh",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 273,
+      "measuredSeconds": 2.23,
+      "measuredCpuSeconds": 4.25,
+      "budgetCpuSeconds": 12
+    },
+    {
+      "config": "FidelityMemo.noBlobGuard",
+      "role": "evidence",
+      "expect": {
+        "violates": "GuardedPositive",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 270,
+      "measuredSeconds": 2.37,
+      "measuredCpuSeconds": 4.54,
+      "budgetCpuSeconds": 13
+    },
+    {
+      "config": "FidelityMemo.overwriteWrite",
+      "role": "evidence",
+      "expect": {
+        "violates": "MonotoneRow",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 144,
+      "measuredSeconds": 2.39,
+      "measuredCpuSeconds": 4.84,
+      "budgetCpuSeconds": 13
+    },
+    {
+      "config": "FidelityMemo.reconcileEndsCall",
+      "role": "evidence",
+      "expect": {
+        "violates": "ResultEqualsFresh",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 198,
+      "measuredSeconds": 1.71,
+      "measuredCpuSeconds": 3.23,
+      "budgetCpuSeconds": 10
+    },
+    {
+      "config": "FidelityMemo.recordUnreadable",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoUnmeasuredRecord",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 265,
+      "measuredSeconds": 1.69,
+      "measuredCpuSeconds": 4.27,
+      "budgetCpuSeconds": 12
+    },
+    {
+      "config": "FidelityMemo.skipDenial",
+      "role": "evidence",
+      "expect": {
+        "violates": "ResultEqualsFresh",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 63,
+      "measuredSeconds": 1.57,
+      "measuredCpuSeconds": 3.11,
+      "budgetCpuSeconds": 10
+    },
+    {
+      "config": "FidelityMemo.stalePastBound",
+      "role": "evidence",
+      "expect": {
+        "violates": "ResultEqualsFresh",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 124,
+      "measuredSeconds": 1.69,
+      "measuredCpuSeconds": 3.75,
+      "budgetCpuSeconds": 11
+    },
+    {
+      "config": "FidelityMemo.storeFinish",
+      "role": "evidence",
+      "expect": {
+        "violates": "FinishNotStored",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 64,
+      "measuredSeconds": 1.49,
+      "measuredCpuSeconds": 2.87,
+      "budgetCpuSeconds": 9
+    },
+    {
+      "config": "FidelityMemo.base.current",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 18240,
+      "measuredSeconds": 10.86,
+      "measuredCpuSeconds": 40.3,
+      "budgetCpuSeconds": 84
+    },
+    {
+      "config": "FidelityMemo.base.strict",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 17280,
+      "measuredSeconds": 9.67,
+      "measuredCpuSeconds": 31.62,
+      "budgetCpuSeconds": 67
+    },
+    {
+      "config": "FidelityMemo.blobChain3.current",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 129600,
+      "measuredSeconds": 92.74,
+      "measuredCpuSeconds": 384.79,
+      "budgetCpuSeconds": 773
+    },
+    {
+      "config": "FidelityMemo.blobChain3.strict",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 121600,
+      "measuredSeconds": 82.02,
+      "measuredCpuSeconds": 313.3,
+      "budgetCpuSeconds": 630
+    },
+    {
+      "config": "FidelityMemo.blobExpire.current",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 46464,
+      "measuredSeconds": 14.7,
+      "measuredCpuSeconds": 69.75,
+      "budgetCpuSeconds": 143
+    },
+    {
+      "config": "FidelityMemo.blobExpire.strict",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 45312,
+      "measuredSeconds": 11.01,
+      "measuredCpuSeconds": 51.14,
+      "budgetCpuSeconds": 106
+    },
+    {
+      "config": "FidelityMemo.blobExpireInherited.current",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 27520,
+      "measuredSeconds": 13.44,
+      "measuredCpuSeconds": 63.36,
+      "budgetCpuSeconds": 130
+    },
+    {
+      "config": "FidelityMemo.blobExpireInherited.strict",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 25600,
+      "measuredSeconds": 10.73,
+      "measuredCpuSeconds": 49.97,
+      "budgetCpuSeconds": 103
+    },
+    {
+      "config": "FidelityMemo.bumpVersion.current",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 4096,
+      "measuredSeconds": 3.02,
+      "measuredCpuSeconds": 10.98,
+      "budgetCpuSeconds": 25
+    },
+    {
+      "config": "FidelityMemo.bumpVersion.strict",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 3776,
+      "measuredSeconds": 2.8,
+      "measuredCpuSeconds": 10.01,
+      "budgetCpuSeconds": 24
+    },
+    {
+      "config": "FidelityMemo.concurrent.current",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 38400,
+      "measuredSeconds": 33.35,
+      "measuredCpuSeconds": 159.41,
+      "budgetCpuSeconds": 322
+    },
+    {
+      "config": "FidelityMemo.concurrent.strict",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 37760,
+      "measuredSeconds": 27.98,
+      "measuredCpuSeconds": 119.91,
+      "budgetCpuSeconds": 243
+    },
+    {
+      "config": "FidelityMemo.denied.current",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 9120,
+      "measuredSeconds": 6.12,
+      "measuredCpuSeconds": 20.53,
+      "budgetCpuSeconds": 45
+    },
+    {
+      "config": "FidelityMemo.denied.strict",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 8640,
+      "measuredSeconds": 5.0,
+      "measuredCpuSeconds": 17.39,
+      "budgetCpuSeconds": 38
+    },
+    {
+      "config": "FidelityMemo.omitTask.current",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 18240,
+      "measuredSeconds": 9.76,
+      "measuredCpuSeconds": 41.16,
+      "budgetCpuSeconds": 86
+    },
+    {
+      "config": "FidelityMemo.omitTask.strict",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 17280,
+      "measuredSeconds": 8.02,
+      "measuredCpuSeconds": 32.47,
+      "budgetCpuSeconds": 68
+    },
+    {
+      "config": "FidelityMemo.open.current",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 13120,
+      "measuredSeconds": 7.36,
+      "measuredCpuSeconds": 28.55,
+      "budgetCpuSeconds": 61
+    },
+    {
+      "config": "FidelityMemo.open.strict",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 13120,
+      "measuredSeconds": 6.21,
+      "measuredCpuSeconds": 23.65,
+      "budgetCpuSeconds": 51
+    },
+    {
+      "config": "FidelityMemo.recA.current",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 13120,
+      "measuredSeconds": 7.41,
+      "measuredCpuSeconds": 28.72,
+      "budgetCpuSeconds": 61
+    },
+    {
+      "config": "FidelityMemo.recA.strict",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 17280,
+      "measuredSeconds": 8.09,
+      "measuredCpuSeconds": 32.76,
+      "budgetCpuSeconds": 69
+    },
+    {
+      "config": "FidelityMemo.recN5.current",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 71680,
+      "measuredSeconds": 42.83,
+      "measuredCpuSeconds": 156.94,
+      "budgetCpuSeconds": 317
+    },
+    {
+      "config": "FidelityMemo.recN5.strict",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 96768,
+      "measuredSeconds": 30.97,
+      "measuredCpuSeconds": 149.53,
+      "budgetCpuSeconds": 303
+    },
+    {
+      "config": "FidelityMemo.recU.current",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 13120,
+      "measuredSeconds": 7.35,
+      "measuredCpuSeconds": 29.2,
+      "budgetCpuSeconds": 62
+    },
+    {
+      "config": "FidelityMemo.recU.strict",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 17280,
+      "measuredSeconds": 6.97,
+      "measuredCpuSeconds": 28.24,
+      "budgetCpuSeconds": 60
+    },
+    {
+      "config": "FidelityMemo.twoCwds.current",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 3712,
+      "measuredSeconds": 3.29,
+      "measuredCpuSeconds": 13.02,
+      "budgetCpuSeconds": 30
+    },
+    {
+      "config": "FidelityMemo.twoCwds.strict",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 3328,
+      "measuredSeconds": 3.11,
+      "measuredCpuSeconds": 11.19,
+      "budgetCpuSeconds": 26
+    },
+    {
+      "config": "InheritRef",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 33088,
+      "measuredSeconds": 2.0,
+      "measuredCpuSeconds": 5.5,
+      "budgetCpuSeconds": 14
+    },
+    {
+      "config": "InheritRef.chainSmall",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 121624,
+      "measuredSeconds": 5.33,
+      "measuredCpuSeconds": 12.09,
+      "budgetCpuSeconds": 28
+    },
+    {
+      "config": "InheritRef.chain",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 17282924,
+      "measuredSeconds": 617.37,
+      "measuredCpuSeconds": 1331.31,
+      "budgetCpuSeconds": 2666
+    },
+    {
+      "config": "InheritRef.live",
+      "role": "check",
+      "expect": "holds",
+      "args": [
+        "-lncheck",
+        "final"
+      ],
+      "tier": "deep",
+      "distinctStates": 33088,
+      "measuredSeconds": 3.23,
+      "measuredCpuSeconds": 6.83,
+      "budgetCpuSeconds": 17
+    },
+    {
+      "config": "InheritRef.copyOnInherit",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoHistoryInEvent",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 119,
+      "measuredSeconds": 1.26,
+      "measuredCpuSeconds": 1.78,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "InheritRef.readsLatest",
+      "role": "evidence",
+      "expect": {
+        "violates": "ReadEqualsInheritAtWrite",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1259,
+      "measuredSeconds": 1.29,
+      "measuredCpuSeconds": 2.29,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "InheritRef.noAlreadyCheck",
+      "role": "evidence",
+      "expect": {
+        "violates": "AtMostOneReference",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1997,
+      "measuredSeconds": 1.8,
+      "measuredCpuSeconds": 2.95,
+      "budgetCpuSeconds": 9
+    },
+    {
+      "config": "InheritRef.noWalkedCheck",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoStaleReference",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 266,
+      "measuredSeconds": 1.53,
+      "measuredCpuSeconds": 2.04,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "InheritRef.readAppends",
+      "role": "evidence",
+      "expect": {
+        "violates": "ReadWritesNothing",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 250,
+      "measuredSeconds": 1.46,
+      "measuredCpuSeconds": 1.94,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "InheritRef.recordCuts",
+      "role": "evidence",
+      "expect": {
+        "violates": "RecordIsChainConcat",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 364,
+      "measuredSeconds": 1.61,
+      "measuredCpuSeconds": 2.1,
+      "budgetCpuSeconds": 8
     }
   ]
 }

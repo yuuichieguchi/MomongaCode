@@ -79,11 +79,11 @@ describe('migration 21 adds one general typed-read index on events (O4 option b)
 
     const db = rawDb(dbPath);
     expect(typedIndexesOf(db)).toHaveLength(1);
-    expect(db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toMatchObject({ version: 25 });
+    expect(db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toMatchObject({ version: 26 });
   });
 
   it('the migration list holds 21 and the migrations after it', () => {
-    expect(MIGRATIONS.map((migration) => migration.version).slice(20)).toEqual([21, 22, 23, 24, 25]);
+    expect(MIGRATIONS.map((migration) => migration.version).slice(20)).toEqual([21, 22, 23, 24, 25, 26]);
   });
 
   it('a version-20 database with events upgrades, gains the index and keeps every event row', () => {
@@ -108,7 +108,7 @@ describe('migration 21 adds one general typed-read index on events (O4 option b)
 
     const db = rawDb(dbPath);
     expect(typedIndexesOf(db)).toHaveLength(1);
-    expect(db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toMatchObject({ version: 25 });
+    expect(db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toMatchObject({ version: 26 });
     expect(db.prepare('SELECT seq, type FROM events WHERE run_id = :runId ORDER BY seq').all({ runId: run.id })).toEqual(eventsBefore);
   });
 });
