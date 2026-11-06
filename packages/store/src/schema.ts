@@ -254,14 +254,16 @@ const SESSION_MCP_SERVERS = `
 ALTER TABLE sessions ADD COLUMN mcp_servers_json TEXT NOT NULL DEFAULT '{}';
 `;
 
+const nearestTrustDecisionOfSession = (sessionId: string): string => `SELECT t.decision FROM sessions s JOIN trust t ON (s.cwd = t.path OR substr(s.cwd, 1, length(t.path) + 1) = t.path || '/')
+     WHERE s.id = ${sessionId}
+     ORDER BY length(t.path) DESC LIMIT 1`;
+
 const MEMORY_TRUST_ORIGIN = `
 ALTER TABLE memories ADD COLUMN origin TEXT NOT NULL DEFAULT 'untrusted' CHECK (origin IN ('trusted', 'untrusted'));
 UPDATE memories SET origin = 'trusted'
 WHERE scope = 'project'
    OR (
-     SELECT t.decision FROM sessions s JOIN trust t ON (s.cwd = t.path OR substr(s.cwd, 1, length(t.path) + 1) = t.path || '/')
-     WHERE s.id = memories.source_session_id
-     ORDER BY length(t.path) DESC LIMIT 1
+     ${nearestTrustDecisionOfSession('memories.source_session_id')}
    ) = 'trusted';
 `;
 
@@ -451,6 +453,10 @@ CREATE TRIGGER governing_facts_reject_delete BEFORE DELETE ON governing_facts BE
 END;
 
 ALTER TABLE runs ADD COLUMN origin TEXT NOT NULL DEFAULT 'untrusted' CHECK (origin IN ('trusted', 'untrusted'));
+UPDATE runs SET origin = 'trusted'
+WHERE (
+  ${nearestTrustDecisionOfSession('runs.session_id')}
+) = 'trusted';
 
 CREATE TABLE search_docs (
   id INTEGER PRIMARY KEY,
@@ -578,6 +584,22 @@ WHERE EXISTS (SELECT 1 FROM events o WHERE o.run_id = runs.id AND o.type = 'tool
 
 const RUN_CANCEL_ORIGIN = `
 ALTER TABLE runs ADD COLUMN cancel_origin TEXT CHECK (cancel_origin IS NULL OR cancel_origin IN ('QUEUED', 'WAITING_HUMAN', 'RUNNING', 'WAITING_TOOL'));
+UPDATE runs SET cancel_origin = COALESCE(
+  (
+    SELECT json_extract(e.payload_json, '$.from') FROM events e
+    WHERE e.run_id = runs.id AND e.type = 'run.status' AND json_extract(e.payload_json, '$.to') = 'CANCELLING'
+      AND json_extract(e.payload_json, '$.from') IN ('RUNNING', 'WAITING_TOOL')
+    ORDER BY e.seq DESC LIMIT 1
+  ),
+  'RUNNING'
+)
+WHERE status = 'CANCELLING';
+CREATE TRIGGER runs_cancelling_has_cancel_origin_insert BEFORE INSERT ON runs WHEN NEW.status = 'CANCELLING' AND NEW.cancel_origin IS NULL BEGIN
+  SELECT RAISE(ABORT, 'a CANCELLING run must have a cancel origin');
+END;
+CREATE TRIGGER runs_cancelling_has_cancel_origin_update BEFORE UPDATE OF status, cancel_origin ON runs WHEN NEW.status = 'CANCELLING' AND NEW.cancel_origin IS NULL BEGIN
+  SELECT RAISE(ABORT, 'a CANCELLING run must have a cancel origin');
+END;
 `;
 
 const APPEND_TIME_RECORDS = `
