@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { PROFILE_ID, START_MS, editRecord, planError, rawRecord, readRecord, rotateAtFake, signedIn, startHarness, toRefreshWindow, CONDITION_WAIT, TOKEN_ATTEMPT_BOUND_MS } from './plan-support.ts';
+import { ACCESS_LIFETIME_MS, MARGIN_MS, PROFILE_ID, START_MS, editRecord, planError, rawRecord, readRecord, rotateAtFake, signedIn, startHarness, toRefreshWindow, CONDITION_WAIT, TOKEN_ATTEMPT_BOUND_MS } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
 
 const harnesses: Harness[] = [];
@@ -293,5 +293,54 @@ describe('the token-endpoint attempt bound T_a = 15 s (I-C3)', () => {
     expect(h.auth.calls.tokenRefreshToken).toBe(1);
     expect(read.bearer).not.toBe(signIn.tokens.access_token);
     expect(await readRecord(h, 'work')).toMatchObject({ state: 'active', access_token: read.bearer });
+  });
+});
+
+describe('the write-ahead intent stays while the token it covers is still the stored one (design 14, InterruptedRecorded)', () => {
+  const secondWindow = START_MS + ACCESS_LIFETIME_MS - MARGIN_MS;
+
+  it('a 200 without a replacement after an unanswered send in the same refresh keeps pendingRefresh, and the next refresh_token_reused records interrupted', async () => {
+    const h = await harness();
+    const signIn = await signedIn(h, 'work');
+    h.auth.scriptToken('refresh_token', [{ kind: 'drop' }, { kind: 'no_replacement_refresh_token' }]);
+    toRefreshWindow(h, START_MS);
+    await readWork(h);
+    expect(h.auth.calls.tokenRefreshToken).toBe(2);
+    const kept = await readRecord(h, 'work');
+    expect(kept).toMatchObject({ state: 'active', refresh_token: signIn.tokens.refresh_token });
+    expect(kept?.['pendingRefresh']).toBeDefined();
+    toRefreshWindow(h, secondWindow);
+    expect((await planError(readWork(h))).code).toBe('sign_in_required');
+    expect(await readRecord(h, 'work')).toMatchObject({ state: 'needs_sign_in', cause: 'refresh_token_reused', interrupted: true });
+  });
+
+  it('a 200 without a replacement after a pendingRefresh loaded at startup keeps pendingRefresh, and the next refresh_token_reused records interrupted', async () => {
+    const h = await harness();
+    const signIn = await signedIn(h, 'work');
+    const installed = await readRecord(h, 'work');
+    await editRecord(h, 'work', (record) => ({ ...record, pendingRefresh: { generation: installed?.['generation'], startedAt: START_MS } }));
+    await h.reopen({ accounts: [{ profile: PROFILE_ID, account: 'work' }] });
+    h.auth.scriptToken('refresh_token', [{ kind: 'no_replacement_refresh_token' }]);
+    toRefreshWindow(h, START_MS);
+    await readWork(h);
+    const kept = await readRecord(h, 'work');
+    expect(kept).toMatchObject({ state: 'active', refresh_token: signIn.tokens.refresh_token });
+    expect(kept?.['pendingRefresh']).toBeDefined();
+    toRefreshWindow(h, secondWindow);
+    expect((await planError(readWork(h))).code).toBe('sign_in_required');
+    expect(await readRecord(h, 'work')).toMatchObject({ state: 'needs_sign_in', cause: 'refresh_token_reused', interrupted: true });
+  });
+
+  it('a 200 with a replacement after an unanswered send clears pendingRefresh', async () => {
+    const h = await harness();
+    const signIn = await signedIn(h, 'work');
+    h.auth.scriptToken('refresh_token', [{ kind: 'drop' }]);
+    toRefreshWindow(h, START_MS);
+    await readWork(h);
+    expect(h.auth.calls.tokenRefreshToken).toBe(2);
+    const after = await readRecord(h, 'work');
+    expect(after).toMatchObject({ state: 'active' });
+    expect(after?.['refresh_token']).not.toBe(signIn.tokens.refresh_token);
+    expect(after?.['pendingRefresh']).toBeUndefined();
   });
 });
