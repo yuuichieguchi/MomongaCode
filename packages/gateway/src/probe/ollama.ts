@@ -1,4 +1,4 @@
-import { isRecord } from '@momonga/foundation';
+import { findOutboundError, isRecord } from '@momonga/foundation';
 import type { DialectId, OllamaProbeReport } from '@momonga/protocol';
 import { NO_USER_DIALECTS } from '../dialect/choice.ts';
 import type { UserDialects } from '../dialect/choice.ts';
@@ -85,7 +85,7 @@ export const answersAsOllama = async (upstream: UpstreamEndpoint, signal: AbortS
     });
   } catch (error) {
     signal.throwIfAborted();
-    if (error instanceof StreamFailure || isConnectionFailure(error)) return false;
+    if (error instanceof StreamFailure || isConnectionFailure(error) || findOutboundError(error) !== undefined) return false;
     throw error;
   }
 };

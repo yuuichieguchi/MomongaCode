@@ -30,7 +30,9 @@ const captureLog = (): { write: (chunk: string) => boolean; text: () => string }
   };
 };
 
-const startSilentProxy = async (context: CleanupContext): Promise<{ port: number; received: () => string }> => {
+const PROXY_407 = 'HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n';
+
+const startRefusingProxy = async (context: CleanupContext): Promise<{ port: number; received: () => string }> => {
   let text = '';
   const sockets = new Set<net.Socket>();
   const server = net.createServer((socket) => {
@@ -38,6 +40,7 @@ const startSilentProxy = async (context: CleanupContext): Promise<{ port: number
     socket.on('error', () => undefined);
     socket.on('data', (chunk) => {
       text += chunk.toString('latin1');
+      if (text.endsWith('\r\n\r\n') && socket.writable) socket.end(PROXY_407);
     });
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -59,7 +62,9 @@ const startGateway = async (context: CleanupContext, settings: unknown, env: Rec
     logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: log, level: 'debug' }),
     stdout: { write: () => true },
   });
-  registerCleanup(context, () => handle.close());
+  registerCleanup(context, async () => {
+    await handle.close();
+  });
   const client = createUdsClient(handle.socketPath);
   registerCleanup(context, () => client.close());
   return { handle, client, log };
@@ -92,9 +97,9 @@ describe('gateway: the proxy password is a credential', { timeout: REAL_PROCESS_
   });
 });
 
-describe('gateway: a model call through a proxy that never answers CONNECT', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
-  it('ends at the model headers bound and names the proxy hop and its source', async (context) => {
-    const proxy = await startSilentProxy(context);
+describe('gateway: a model call to a remote target goes through the configured proxy', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+  it('sends the CONNECT to the proxy from network.httpsProxy and names the proxy hop and its source when it refuses', async (context) => {
+    const proxy = await startRefusingProxy(context);
     const remote = {
       adapter: 'chat-completions',
       provider: 'fake',
@@ -112,7 +117,7 @@ describe('gateway: a model call through a proxy that never answers CONNECT', { t
 
     expect(proxy.received()).toContain('CONNECT model.example.test:443');
     const error = JSON.parse(response.text).error;
-    expect(error.code).toBe('provider_unavailable');
+    expect(error.code).toBe('proxy_authentication_required');
     expect(error.message).toContain(`http://127.0.0.1:${proxy.port}`);
     expect(error.message).toContain('network.httpsProxy');
   });

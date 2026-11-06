@@ -54,16 +54,16 @@ describe('gatewayEnv', () => {
     expect(env).not.toHaveProperty('ABSENT_KEY');
   });
 
-  it('gatewayEnv carries NODE_EXTRA_CA_CERTS and still drops HTTPS_PROXY', () => {
+  it('gatewayEnv carries NODE_EXTRA_CA_CERTS together with the proxy and SSL_CERT_FILE variables', () => {
     const env = gatewayEnv(
       { PATH: '/bin', HOME: '/h', NODE_EXTRA_CA_CERTS: '/etc/corp-ca.pem', HTTPS_PROXY: 'http://proxy:3128', HTTP_PROXY: 'http://proxy:3128', SSL_CERT_FILE: '/etc/ssl.pem' },
       declaring(),
       '/h',
     );
     expect(env['NODE_EXTRA_CA_CERTS']).toBe('/etc/corp-ca.pem');
-    expect(env).not.toHaveProperty('HTTPS_PROXY');
-    expect(env).not.toHaveProperty('HTTP_PROXY');
-    expect(env).not.toHaveProperty('SSL_CERT_FILE');
+    expect(env['HTTPS_PROXY']).toBe('http://proxy:3128');
+    expect(env['HTTP_PROXY']).toBe('http://proxy:3128');
+    expect(env['SSL_CERT_FILE']).toBe('/etc/ssl.pem');
   });
 
   it('gatewayEnv hands the gateway every network variable the resolver reads', () => {

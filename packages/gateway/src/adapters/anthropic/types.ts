@@ -10,7 +10,7 @@ export type AnthropicAdapterOptions = {
   health?: (target: AdapterTarget) => Promise<HealthResult>;
   clock: Clock;
   apiVersion: AnthropicApiVersion;
-  liveness?: UpstreamLiveness;
+  liveness: UpstreamLiveness;
   userDialects?: UserDialects;
 };
 

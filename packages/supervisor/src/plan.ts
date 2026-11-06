@@ -2,9 +2,9 @@ import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { ResolvedSettings } from '@momonga/config';
 import type { ChildRole } from './launcher.ts';
 
-export type SettingsDigests = { sandbox: string; models: string; telemetry: string };
+export type SettingsDigests = { sandbox: string; models: string; telemetry: string; network: string };
 
-export type AppliedDigests = { runtime?: SettingsDigests; gateway?: Pick<SettingsDigests, 'models' | 'telemetry'> };
+export type AppliedDigests = { runtime?: SettingsDigests; gateway?: Pick<SettingsDigests, 'models' | 'telemetry' | 'network'> };
 
 export type RestartPlanPort = {
   isDraining(): boolean;
@@ -14,21 +14,30 @@ export type RestartPlanPort = {
   isPlanStopped(role: ChildRole): boolean;
 };
 
-export const digestsOf = (settings: Pick<ResolvedSettings, 'sandbox' | 'models' | 'telemetry'>): SettingsDigests => ({
+export const digestsOf = (settings: Pick<ResolvedSettings, 'sandbox' | 'models' | 'telemetry' | 'network'>): SettingsDigests => ({
   sandbox: sha256Hex(canonicalJson(settings.sandbox)),
   models: sha256Hex(canonicalJson(settings.models)),
   telemetry: sha256Hex(canonicalJson(settings.telemetry ?? null)),
+  network: sha256Hex(canonicalJson(settings.network ?? null)),
 });
 
 export const planRoles = (current: SettingsDigests, applied: AppliedDigests): ChildRole[] => {
   const roles: ChildRole[] = [];
   if (
     applied.runtime !== undefined &&
-    (applied.runtime.models !== current.models || applied.runtime.sandbox !== current.sandbox || applied.runtime.telemetry !== current.telemetry)
+    (applied.runtime.models !== current.models ||
+      applied.runtime.sandbox !== current.sandbox ||
+      applied.runtime.telemetry !== current.telemetry ||
+      applied.runtime.network !== current.network)
   ) {
     roles.push('runtime');
   }
-  if (applied.gateway !== undefined && (applied.gateway.models !== current.models || applied.gateway.telemetry !== current.telemetry)) roles.push('gateway');
+  if (
+    applied.gateway !== undefined &&
+    (applied.gateway.models !== current.models || applied.gateway.telemetry !== current.telemetry || applied.gateway.network !== current.network)
+  ) {
+    roles.push('gateway');
+  }
   return roles;
 };
 

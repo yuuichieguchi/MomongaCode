@@ -6,11 +6,12 @@ import { createProbedOllamaTarget } from '../src/probe/ollama-target.ts';
 import { makeDir } from './gateway-helpers.ts';
 import { OLLAMA_CAPABILITIES, OLLAMA_MODEL, startFakeOllama } from './ollama-support.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
+import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
 
 const probeWith = async (cacheProbe: 'automatic' | 'none' | 'unreported') => {
   const fake = await startFakeOllama({ cacheProbe });
   const dir = makeDir();
-  const result = await probeOllamaTarget({ probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: fake.origin }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL, contextWindow: 32768 });
+  const result = await probeOllamaTarget({ probeRecordDir: dir, upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL, contextWindow: 32768 });
   return { fake, dir, result };
 };
 

@@ -18,6 +18,7 @@ describe('digestsOf', () => {
       sandbox: sha256Hex(canonicalJson('seatbelt')),
       models: sha256Hex(canonicalJson(modelsA)),
       telemetry: sha256Hex(canonicalJson(null)),
+      network: sha256Hex(canonicalJson(null)),
     });
   });
 
@@ -52,27 +53,27 @@ describe('the network digest', () => {
 });
 
 describe('planRoles', () => {
-  const a = { sandbox: 's1', models: 'm1', telemetry: 't1' };
-  const g = { models: 'm1', telemetry: 't1' };
+  const a = { sandbox: 's1', models: 'm1', telemetry: 't1', network: 'n1' };
+  const g = { models: 'm1', telemetry: 't1', network: 'n1' };
 
   it('models change gives runtime then gateway', () => {
-    expect(planRoles({ sandbox: 's1', models: 'm2', telemetry: 't1' }, { runtime: a, gateway: g })).toEqual(['runtime', 'gateway']);
+    expect(planRoles({ sandbox: 's1', models: 'm2', telemetry: 't1', network: 'n1' }, { runtime: a, gateway: g })).toEqual(['runtime', 'gateway']);
   });
 
   it('sandbox change gives only the runtime', () => {
-    expect(planRoles({ sandbox: 's2', models: 'm1', telemetry: 't1' }, { runtime: a, gateway: g })).toEqual(['runtime']);
+    expect(planRoles({ sandbox: 's2', models: 'm1', telemetry: 't1', network: 'n1' }, { runtime: a, gateway: g })).toEqual(['runtime']);
   });
 
   it('telemetry change restarts the runtime and the gateway because both export spans', () => {
-    expect(planRoles({ sandbox: 's1', models: 'm1', telemetry: 't2' }, { runtime: a, gateway: g })).toEqual(['runtime', 'gateway']);
+    expect(planRoles({ sandbox: 's1', models: 'm1', telemetry: 't2', network: 'n1' }, { runtime: a, gateway: g })).toEqual(['runtime', 'gateway']);
   });
 
   it('no change gives no plan', () => {
-    expect(planRoles({ sandbox: 's1', models: 'm1', telemetry: 't1' }, { runtime: a, gateway: g })).toEqual([]);
+    expect(planRoles({ sandbox: 's1', models: 'm1', telemetry: 't1', network: 'n1' }, { runtime: a, gateway: g })).toEqual([]);
   });
 
   it('both changed is still the coordinated restart', () => {
-    expect(planRoles({ sandbox: 's2', models: 'm2', telemetry: 't1' }, { runtime: a, gateway: g })).toEqual(['runtime', 'gateway']);
+    expect(planRoles({ sandbox: 's2', models: 'm2', telemetry: 't1', network: 'n1' }, { runtime: a, gateway: g })).toEqual(['runtime', 'gateway']);
   });
 });
 

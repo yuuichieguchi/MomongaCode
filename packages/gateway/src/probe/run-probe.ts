@@ -1,5 +1,5 @@
 import { decodeSse, defineProductSchema } from '@momonga/foundation';
-import type { ProductValidator } from '@momonga/foundation';
+import type { OutboundNetwork, ProductValidator } from '@momonga/foundation';
 import {
   ESTIMATED_ERROR_BOUND_RATIO,
   DEFAULT_DIALECT_ID,
@@ -45,6 +45,7 @@ import { field, firstOf, isRecord, listedEntryOf, parseJson } from './json.ts';
 export interface ProbeOptions {
   socketPath?: string;
   baseUrl?: string;
+  network?: OutboundNetwork;
   headers?: Record<string, string>;
   managedHealthRoute?: boolean;
   vocabulary?: ErrorVocabulary;
@@ -67,7 +68,7 @@ export const DEFAULT_SAMPLES = 10;
 const CONCURRENCY_ATTEMPTS = 8;
 const SEARCH_INITIAL_WORDS = 64;
 const SEARCH_MAX_WORDS = 262144;
-const DEFAULT_STEP_TIMEOUT_MS = 120000;
+export const DEFAULT_STEP_TIMEOUT_MS = 120000;
 const CACHE_PROBE_WORDS = 1536;
 const OUTPUT_BOUND_PROBE_TOKENS = 16;
 const OUTPUT_BOUND_HONOURED_FACTOR = 2;
@@ -137,7 +138,8 @@ const endpointOf = (options: ProbeOptions): ProbeEndpoint => {
   const { socketPath, baseUrl } = options;
   if ((socketPath === undefined) === (baseUrl === undefined)) throw new Error('A probe needs exactly one of socketPath and baseUrl');
   if (socketPath !== undefined) return { kind: 'unix', socketPath };
-  return { kind: 'tcp', baseUrl: baseUrl as string, ...(options.headers === undefined ? {} : { headers: options.headers }) };
+  if (options.network === undefined) throw new Error('A probe of a baseUrl needs the network configuration');
+  return { kind: 'tcp', baseUrl: baseUrl as string, network: options.network, ...(options.headers === undefined ? {} : { headers: options.headers }) };
 };
 
 export const runProbe = async (options: ProbeOptions): Promise<ProbeReport> => {

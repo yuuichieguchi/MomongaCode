@@ -9,7 +9,7 @@ export type OpenResponsesAdapterOptions = {
   capabilities: (target: AdapterTarget) => Promise<Capabilities>;
   health?: (target: AdapterTarget) => Promise<HealthResult>;
   clock: Clock;
-  liveness?: UpstreamLiveness;
+  liveness: UpstreamLiveness;
   userDialects?: UserDialects;
 };
 
