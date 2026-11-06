@@ -1,4 +1,3 @@
-import Ajv2020 from 'ajv/dist/2020.js';
 import { SchemaValidatorFailure, compileUntrustedSchema, validateUntrusted } from '@momonga/foundation';
 import { resolveRules, type Definition } from './definition.ts';
 import { instancesFor } from './instance-gen.ts';
@@ -42,9 +41,6 @@ export interface CheckStats {
   unverifiable: number;
   refused: Record<string, number>;
   refusedExamples: Record<string, string>;
-  ajvDisagreements: number;
-  ajvCrashes: number;
-  ajvSamples: string[];
 }
 
 export const emptyStats = (): CheckStats => ({
@@ -59,9 +55,6 @@ export const emptyStats = (): CheckStats => ({
   unverifiable: 0,
   refused: {},
   refusedExamples: {},
-  ajvDisagreements: 0,
-  ajvCrashes: 0,
-  ajvSamples: [],
 });
 
 export class OracleError extends Error {}
@@ -110,30 +103,7 @@ class Validators {
   }
 }
 
-class AjvCrossCheck {
-  private ajv = new Ajv2020.default({ strict: false, validateFormats: false });
-  private compiled = 0;
-
-  compile(schema: Schema): ((value: Json) => boolean | null) | null {
-    this.compiled += 1;
-    if (this.compiled % 2500 === 0) this.ajv = new Ajv2020.default({ strict: false, validateFormats: false });
-    try {
-      const validate = this.ajv.compile((schema === undefined ? true : schema) as never);
-      return (value) => {
-        try {
-          return validate(value) === true;
-        } catch {
-          return null;
-        }
-      };
-    } catch {
-      return null;
-    }
-  }
-}
-
 const validators = new Validators();
-const crossCheck = new AjvCrossCheck();
 
 export interface CaseInput {
   schema: Json | null;
@@ -189,23 +159,6 @@ const sameRender = (left: Rendered, right: Rendered): boolean => {
 const noteRefusal = (stats: CheckStats, refusal: Refused): void => {
   stats.refused[refusal.reason] = (stats.refused[refusal.reason] ?? 0) + 1;
   if (stats.refusedExamples[refusal.reason] === undefined) stats.refusedExamples[refusal.reason] = refusal.message;
-};
-
-const MAX_AJV_SAMPLES = 8;
-
-const noteAjv = (stats: CheckStats, ajv: ((value: Json) => boolean | null) | null, side: string, schema: Schema, instance: Json, product: boolean): void => {
-  if (ajv === null) {
-    stats.ajvCrashes += 1;
-    return;
-  }
-  const verdict = ajv(instance);
-  if (verdict === null) {
-    stats.ajvCrashes += 1;
-    return;
-  }
-  if (verdict === product) return;
-  stats.ajvDisagreements += 1;
-  if (stats.ajvSamples.length < MAX_AJV_SAMPLES) stats.ajvSamples.push(JSON.stringify({ side, schema: schema ?? null, instance, product, ajv: verdict }));
 };
 
 const checkCaseUnguarded = (input: CaseInput): Failure | null => {
@@ -272,8 +225,6 @@ const checkCaseUnguarded = (input: CaseInput): Failure | null => {
     if (error instanceof Refused) return { kind: 'rendered-uncompilable', detail: `${error.reason}: ${error.message}` };
     throw error;
   }
-  const ajvOriginal = crossCheck.compile(original);
-  const ajvRendered = crossCheck.compile(rendered);
   const instances = [...instancesFor(original, rendered, rng, input.perDocument), ...(input.forcedInstances ?? [])];
   for (const instance of instances) {
     const inOriginal = validOriginal(instance);
@@ -282,10 +233,6 @@ const checkCaseUnguarded = (input: CaseInput): Failure | null => {
       stats.instances += 1;
       if (inOriginal) stats.validOriginal += 1;
       if (inRendered) stats.validRendered += 1;
-    }
-    if (stats !== undefined) {
-      noteAjv(stats, ajvOriginal, 'original', original, instance, inOriginal);
-      noteAjv(stats, ajvRendered, 'rendered', rendered, instance, inRendered);
     }
     if (inRendered && !inOriginal && cls !== 'W') return { kind: 'rendered-accepts-more', instance, detail: 'valid under rendered, invalid under original' };
     if (inOriginal && !inRendered && (cls === 'P' || cls === 'W')) return { kind: 'rendered-rejects-more', instance, detail: 'valid under original, invalid under rendered' };

@@ -105,7 +105,7 @@ export const VOCABULARY_KEYWORDS = [
   'title', 'description', 'default', 'deprecated', 'readOnly', 'writeOnly', 'examples',
 ] as const;
 
-export const DEFINITION_SCHEMA: Json = {
+export const DEFINITION_SCHEMA: Record<string, Json> = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
   $id: 'momonga:dialect-definition',
   type: 'object',
@@ -139,11 +139,13 @@ export const DEFINITION_SCHEMA: Json = {
     },
     clausePositive: {
       $ref: '#/$defs/clause',
+      type: 'object',
       properties: {
         within: {
+          type: 'object',
           properties: {
-            below: { items: { $ref: '#/$defs/descentPositive' } },
-            through: { items: { $ref: '#/$defs/descentPositive' } },
+            below: { type: 'array', items: { $ref: '#/$defs/descentPositive' } },
+            through: { type: 'array', items: { $ref: '#/$defs/descentPositive' } },
           },
         },
       },
@@ -157,16 +159,19 @@ export const DEFINITION_SCHEMA: Json = {
     rule: {
       oneOf: [
         {
+          type: 'object',
           properties: { select: { $ref: '#/$defs/select' }, op: { const: 'reject' }, keys: { $ref: '#/$defs/keywordList' } },
           required: ['select', 'op', 'keys'],
           additionalProperties: false,
         },
         {
+          type: 'object',
           properties: { select: { $ref: '#/$defs/selectPositive' }, op: { const: 'drop' }, keys: { $ref: '#/$defs/keywordList' } },
           required: ['select', 'op', 'keys'],
           additionalProperties: false,
         },
         {
+          type: 'object',
           properties: {
             select: { $ref: '#/$defs/selectPositive' },
             op: { const: 'fill-type' },
@@ -176,6 +181,7 @@ export const DEFINITION_SCHEMA: Json = {
           additionalProperties: false,
         },
         {
+          type: 'object',
           properties: {
             select: { $ref: '#/$defs/select' },
             op: { enum: ['split-enum', 'split-type-array', 'const-as-enum', 'declare-required', 'inline-refs'] },
@@ -184,21 +190,25 @@ export const DEFINITION_SCHEMA: Json = {
           additionalProperties: false,
         },
         {
+          type: 'object',
           properties: { select: { $ref: '#/$defs/selectPositive' }, op: { enum: ['require-all', 'empty-parameters'] } },
           required: ['select', 'op'],
           additionalProperties: false,
         },
         {
+          type: 'object',
           properties: { select: { $ref: '#/$defs/select' }, op: { const: 'label' }, key: { $ref: '#/$defs/labelKey' } },
           required: ['select', 'op', 'key'],
           additionalProperties: false,
         },
         {
+          type: 'object',
           properties: { select: { $ref: '#/$defs/select' }, op: { const: 'property-order' }, key: { $ref: '#/$defs/annotationKey' } },
           required: ['select', 'op', 'key'],
           additionalProperties: false,
         },
         {
+          type: 'object',
           properties: {
             select: { $ref: '#/$defs/selectPositive' },
             op: { const: 'ensure-key' },
@@ -209,10 +219,10 @@ export const DEFINITION_SCHEMA: Json = {
           required: ['select', 'op', 'key', 'value'],
           additionalProperties: false,
           oneOf: [
-            { properties: { key: { $ref: '#/$defs/annotationKey' } }, not: { required: ['overwrite'] } },
-            { properties: { key: { const: 'required' }, value: { const: [] } }, not: { required: ['overwrite'] } },
-            { properties: { key: { const: 'properties' }, value: { const: {} } }, not: { required: ['overwrite'] } },
-            { properties: { key: { const: 'additionalProperties' }, value: { const: true } }, not: { required: ['overwrite'] } },
+            { properties: { key: { $ref: '#/$defs/annotationKey' }, overwrite: false } },
+            { properties: { key: { const: 'required' }, value: { const: [] }, overwrite: false } },
+            { properties: { key: { const: 'properties' }, value: { const: {} }, overwrite: false } },
+            { properties: { key: { const: 'additionalProperties' }, value: { const: true }, overwrite: false } },
             { properties: { key: { const: 'additionalProperties' }, value: { const: false } } },
           ],
         },
