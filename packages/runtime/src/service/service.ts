@@ -17,6 +17,7 @@ import type { RunNotifier } from './notifier.ts';
 import { startDataVersionPoll } from './data-version-poll.ts';
 import { SEARCH_INDEX_BATCH_RUNS, startSearchSweeper } from './search-sweeper.ts';
 import { releaseStoppedRunsAtStartup, startApprovalSweeper } from './sweeper.ts';
+import { startTerminalSweeper } from './terminal-sweeper.ts';
 import { systemTimers } from './timers.ts';
 import type { ServiceTimers } from './timers.ts';
 
@@ -49,7 +50,7 @@ export type RunServiceOptions = {
   sweepIntervalMs?: number;
   dataVersionPollMs?: number;
   maxBodyBytes?: number;
-  cancelUpstream?: (runId: string) => Promise<void>;
+  cancelUpstream?: (runId: string, signal: AbortSignal) => Promise<void>;
   releaseStopped(runId: string, signal: AbortSignal): Promise<void>;
   runTrace: (runId: string) => Promise<RunTraceView | undefined>;
   runCost: (runs: readonly { runId: string; sessionId: string }[], signal: AbortSignal, includeRunless: boolean) => Promise<{ report: GatewayCostReportView; text: string }>;
@@ -119,12 +120,10 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
     keepAliveMs: options.keepAliveMs ?? 15_000,
     maxBodyBytes: options.maxBodyBytes ?? TWO_MIB,
     closeSignal: closeController.signal,
-    releaseStopped: options.releaseStopped,
     runTrace: options.runTrace,
     runCost: options.runCost,
     runCostBreakdown: options.runCostBreakdown,
     mcp: options.mcp,
-    ...(options.cancelUpstream === undefined ? {} : { cancelUpstream: options.cancelUpstream }),
     onError: report,
   });
 
@@ -133,10 +132,12 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
 
   let sweeper: { close(): Promise<void> } | undefined;
   let searchSweeper: { close(): Promise<void> } | undefined;
+  let terminalSweeper: { close(): Promise<void> } | undefined;
   let poll: { close(): void } | undefined;
   let startupRelease: Promise<void> = Promise.resolve();
   const stop = async (): Promise<void> => {
     await searchSweeper?.close();
+    await terminalSweeper?.close();
     await sweeper?.close();
     closeController.abort();
     await startupRelease;
@@ -156,6 +157,14 @@ export const createRunService = async (options: RunServiceOptions): Promise<RunS
       clock: options.clock,
       timers,
       intervalMs: options.sweepIntervalMs ?? SWEEP_INTERVAL_MS,
+      releaseStopped: options.releaseStopped,
+      onError: report,
+    });
+    terminalSweeper = startTerminalSweeper({
+      store: options.store,
+      timers,
+      intervalMs: options.sweepIntervalMs ?? SWEEP_INTERVAL_MS,
+      ...(options.cancelUpstream === undefined ? {} : { cancelUpstream: options.cancelUpstream }),
       releaseStopped: options.releaseStopped,
       onError: report,
     });

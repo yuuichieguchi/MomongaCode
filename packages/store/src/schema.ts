@@ -576,6 +576,10 @@ UPDATE runs SET last_seq = last_seq + 1
 WHERE EXISTS (SELECT 1 FROM events o WHERE o.run_id = runs.id AND o.type = 'tool.offered' AND o.seq = runs.last_seq + 1);
 `;
 
+const RUN_CANCEL_ORIGIN = `
+ALTER TABLE runs ADD COLUMN cancel_origin TEXT CHECK (cancel_origin IS NULL OR cancel_origin IN ('QUEUED', 'WAITING_HUMAN', 'RUNNING', 'WAITING_TOOL'));
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -603,4 +607,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 16, name: 'record the cache, cost and timing of a context charge', sql: CONTEXT_CHARGE_DETAIL },
   { version: 17, name: 'index the model switches of a session, so a resume reads them without scanning the events of the session', sql: MODEL_CHANGE_INDEX },
   { version: 18, name: 'record, for each run written before the offered-names record, the tool names it offered, derived once from its pinned deferred set and its recorded requests', sql: TOOL_OFFERED_RECORD },
+  { version: 19, name: 'record the status a cancelled run had when it became CANCELLING, so a run that never ran is finished by the sweeper and not claimed', sql: RUN_CANCEL_ORIGIN },
 ];

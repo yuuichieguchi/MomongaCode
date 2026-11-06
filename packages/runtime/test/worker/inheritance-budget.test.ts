@@ -20,10 +20,10 @@ const respondedPayload = (step: number, output: unknown[]): RunEventPayload => (
   response: { status: 'completed', output, usage: USAGE },
 });
 
-const completeSeeded = (env: Env, task: string, payloads: readonly RunEventPayload[]): string => {
+const completeSeeded = async (env: Env, task: string, payloads: readonly RunEventPayload[]): Promise<string> => {
   const run = env.enqueue(task);
   const claim = env.seed(run.id, payloads, 'hold');
-  expect(env.store.transition(claim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
+  expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
   return run.id;
 };
 
@@ -34,7 +34,7 @@ describe('eviction of inherited outputs', () => {
     const env = await makeEnv();
     const callIds = ['call_big_1', 'call_big_2', 'call_big_3', 'call_big_4', 'call_big_5'];
     const outputOf = (callId: string): string => `${callId} `.padEnd(5000, 'o');
-    completeSeeded(env, 'Read five files', [
+    await completeSeeded(env, 'Read five files', [
       requestedPayload(1),
       respondedPayload(1, callIds.map((callId) => functionCallItem({ callId, name: 'Echo', args: { value: callId } }))),
       ...callIds.flatMap((callId): RunEventPayload[] => [
@@ -69,7 +69,7 @@ describe('compaction of inherited history', () => {
   it('compacts inherited turns in run 2 under a run-scoped key, and run 3 inherits the summary', async () => {
     const env = await makeEnv();
     const big = (label: string): string => `${label} `.padEnd(6000, 'a');
-    completeSeeded(env, 'question one', [
+    await completeSeeded(env, 'question one', [
       requestedPayload(1),
       respondedPayload(1, [assistantMessage('msg_1', big('answer one'))]),
       { type: 'user.message', text: 'question two' },
@@ -174,7 +174,7 @@ describe('an inherited compaction item the gateway rejects', () => {
 
   it('is replaced by the plain summary in run 2, which completes', async () => {
     const env = await makeEnv();
-    completeSeeded(env, 'question one', [
+    await completeSeeded(env, 'question one', [
       requestedPayload(1),
       respondedPayload(1, [assistantMessage('msg_1', 'answer one')]),
       { type: 'user.message', text: 'question two' },

@@ -127,7 +127,7 @@ describe('auto mode in the worker', () => {
     env.gateway.script.push(write, textStep(verdict({ verdict: 'unsafe' })), textStep('Written.'));
     const run = env.enqueue('Write out.txt');
     await env.runOnce(env.worker());
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
     await env.runOnce(env.worker('worker-2'));
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.ofType(run.id, 'tool.permission.classified')).toHaveLength(1);

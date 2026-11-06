@@ -87,7 +87,7 @@ describe('worker approval resume', () => {
   it('runs the call on allow_once and does not persist a rule', async () => {
     const env = await makeEnv();
     const { run, target } = await askToWrite(env);
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
     env.gateway.script.push(textStep('Written.'));
 
     expect(await env.runOnce(env.worker('worker-2'))).toBe('yielded');
@@ -104,7 +104,7 @@ describe('worker approval resume', () => {
     const { run, target } = await askToWrite(env);
     const rule = `Write(/${target})`;
     const noticesBefore = env.ofType(run.id, 'notice').length;
-    env.resolveApproval(run.id, 'allow_always');
+    await env.resolveApproval(run.id, 'allow_always');
     env.gateway.script.push(textStep('Written.'));
 
     await env.runOnce(env.worker('worker-2'));
@@ -118,7 +118,7 @@ describe('worker approval resume', () => {
   it('persists the allow rule once and no longer asks for the same subject in a later run', async () => {
     const env = await makeEnv();
     const { run, target } = await askToWrite(env);
-    env.resolveApproval(run.id, 'allow_always');
+    await env.resolveApproval(run.id, 'allow_always');
     env.gateway.script.push(textStep('Written.'));
     await env.runOnce(env.worker('worker-2'));
 
@@ -135,7 +135,7 @@ describe('worker approval resume', () => {
   it.each(['reject_once', 'reject_always'] as const)('fails the call with the rejection output on %s and continues', async (kind) => {
     const env = await makeEnv();
     const { run, target } = await askToWrite(env);
-    env.resolveApproval(run.id, kind);
+    await env.resolveApproval(run.id, kind);
     env.gateway.script.push(textStep('Understood.'));
 
     await env.runOnce(env.worker('worker-2'));
@@ -163,7 +163,7 @@ describe('worker approval resume', () => {
     const [firstRequest] = env.ofType(run.id, 'tool.permission.requested');
     fs.rmSync(directory, { recursive: true });
     fs.symlinkSync(other, directory, 'dir');
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
 
     expect(await env.runOnce(env.worker('worker-2'))).toBe('yielded');
 
@@ -183,7 +183,7 @@ describe('worker approval resume', () => {
   it('decides rejection from the resolution kind, not the call status', async () => {
     const env = await makeEnv();
     const { run } = await askToWrite(env);
-    env.resolveApproval(run.id, 'reject_once');
+    await env.resolveApproval(run.id, 'reject_once');
     expect(env.fold(run.id).pendingCalls[env.gateway.callId('call_w_1')]).toMatchObject({ status: 'requested', resolution: { kind: 'reject_once' } });
     env.gateway.script.push(textStep('Understood.'));
 

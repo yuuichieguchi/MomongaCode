@@ -93,7 +93,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
 
   async function* stream(request: AdapterRequest, ctx: AdapterContext, cache: CachePlan | undefined): AsyncGenerator<StreamEvent> {
     if (closed) throw new Error('the anthropic adapter is closed');
-    const capabilities = await options.capabilities(ctx.target);
+    const capabilities = ctx.capabilities;
     const base = buildMessagesBody(resolveToolChoice(request, capabilities.allowedTools, ctx.target.name, ANTHROPIC_TOOL_CHOICE), capabilities.maxOutputTokens, { cache, reasoning: capabilities.reasoning }, ctx.reasoningOrigin);
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
@@ -134,7 +134,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
   }
 
   async function* create(request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
-    const { promptCache } = await options.capabilities(ctx.target);
+    const { promptCache } = ctx.capabilities;
     const cache: CachePlan | undefined =
       promptCache?.kind === 'breakpoints'
         ? { maxBreakpoints: promptCache.maxBreakpoints, ...(request.cacheMarks === undefined ? {} : { marks: request.cacheMarks }) }
@@ -166,7 +166,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
   };
 
   const countTokens = async (request: CountTokensRequest, ctx: AdapterContext): Promise<AdapterCountTokensResult> => {
-    const { allowedTools } = await options.capabilities(ctx.target);
+    const { allowedTools } = ctx.capabilities;
     return postCount(
       buildCountTokensBody(
         resolveToolChoice(
@@ -202,7 +202,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
   };
 
   const compact = async (request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult> => {
-    const capabilities = await options.capabilities(ctx.target);
+    const capabilities = ctx.capabilities;
     const cap = request.momonga?.max_summary_tokens ?? summaryTokenCapFor(capabilities);
     const summaryRequest = summaryRequestOf(request, cap, ctx.reasoningOrigin);
     for await (const event of stream(summaryRequest, ctx, undefined)) {
@@ -227,6 +227,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
   return {
     kind: ANTHROPIC_PROVIDER_LABEL,
     sampling,
+    relaysClientBody: [],
     capabilities: (target) => options.capabilities(target),
     create,
     countTokens,

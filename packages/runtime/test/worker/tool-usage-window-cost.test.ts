@@ -67,7 +67,7 @@ describe('the cost of the tool usage window at root run start (person item 9)', 
       const events = runEvents(env.clock.now());
       bodyBytes += events.reduce((sum, event) => sum + (event.type === 'model.requested' ? Buffer.byteLength(JSON.stringify(event.body)) : 0), 0);
       const claim = env.seed(run.id, events, 'hold');
-      expect(env.store.transition(claim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
+      expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
     }
 
     const { store, reads } = bodyWatchedStore(env.store);

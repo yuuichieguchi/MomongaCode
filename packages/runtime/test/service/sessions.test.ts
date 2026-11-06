@@ -432,10 +432,12 @@ describe('session run pointers and run listing', () => {
     expect(read.json.session).toMatchObject({ activeRunId: first.id, latestRunId: second.id });
 
     expect((await env.http('POST', `/v1/runs/${first.id}/cancel`)).status).toBe(202);
+    expect(await env.store.finishCancelled(() => undefined)).toEqual([first.id]);
     const afterCancel = await env.http('GET', `/v1/sessions/${session.id}`);
     expect(afterCancel.json.session).toMatchObject({ activeRunId: second.id, latestRunId: second.id });
 
     expect((await env.http('POST', `/v1/runs/${second.id}/cancel`)).status).toBe(202);
+    expect(await env.store.finishCancelled(() => undefined)).toEqual([second.id]);
     const allDone = await env.http('GET', `/v1/sessions/${session.id}`);
     expect(allDone.json.session).toMatchObject({ activeRunId: null, latestRunId: second.id });
   });
@@ -447,6 +449,7 @@ describe('session run pointers and run listing', () => {
     const second = await env.createRun(session.id, { input: 'two' });
     const third = await env.createRun(session.id, { input: 'three' });
     await env.http('POST', `/v1/runs/${second.id}/cancel`);
+    expect(await env.store.finishCancelled(() => undefined)).toEqual([second.id]);
 
     const all = await env.http('GET', `/v1/sessions/${session.id}/runs`);
     expect(all.status).toBe(200);

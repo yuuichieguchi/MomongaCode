@@ -74,7 +74,7 @@ describe('append', () => {
     expect(store.append({ ...claim, leaseToken: 0 }, [event])).toEqual({ kind: 'lease_lost' });
   });
 
-  it('keeps seq contiguous and global ids increasing when service and worker writes interleave across connections', () => {
+  it('keeps seq contiguous and global ids increasing when service and worker writes interleave across connections', async () => {
     const { dbPath, clock, store: worker } = harness();
     const service = openStoreAt(dbPath, clock);
     const session = newSession(worker);
@@ -86,7 +86,7 @@ describe('append', () => {
       } else {
         const current = mustRun(service, run.id);
         const result = service.appendAsService(run.id, current.version, null, [{ type: 'notice', level: 'info', message: `s${index}` }]);
-        expect(result.kind).toBe('ok');
+        expect((await result).kind).toBe('ok');
       }
     }
     const events = service.readRunEvents(run.id, 0, 100);

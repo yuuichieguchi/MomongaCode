@@ -49,7 +49,6 @@ export type ManagedFmTargetOptions = {
 
 export type ManagedFmTarget = {
   resolveEndpoint: (target: AdapterTarget) => Promise<ChatCompletionsEndpoint>;
-  toolCalling: (target: AdapterTarget) => ToolCallingMode;
   keywordSupport: (target: AdapterTarget) => KeywordSupport;
   upstreamModel: (target: AdapterTarget, signal: AbortSignal) => Promise<string>;
   capabilities: (target: AdapterTarget) => Promise<Capabilities>;
@@ -193,15 +192,15 @@ export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Pr
     `the target "${targetName}" sets toolCalling to auto, but no probe record exists`,
     `no record for the fm binary with sha256 ${binarySha256} on OS build ${osBuild}`,
   );
-  const toolCalling = (): ToolCallingMode => resolveToolCalling(options.toolCallingSetting, report, needsProbe).mode;
+  const modeOf = (): ToolCallingMode => resolveToolCalling(options.toolCallingSetting, report, needsProbe).mode;
   const unprobedAuto = isUnprobedAuto(options.toolCallingSetting, report);
-  const state = unprobedAuto ? needsProbe : toolCalling();
+  const state = unprobedAuto ? needsProbe : modeOf();
   const { parallelToolCalls: _unprobedParallel, ...probedDefaults } = unprobedCapabilities(state);
   const declaredField = options.declaredOutputBoundField === undefined ? {} : { outputBoundField: options.declaredOutputBoundField };
   const capabilities =
     report === null
       ? { ...unprobedCapabilities(state), ...declaredField }
-      : mergeCapabilities({ defaults: layerOf(probedDefaults).core, declared: declaredField, probed: layerOf(capabilitiesFromProbe(report, { mode: toolCalling() })).layer, probedAt: report.probedAt });
+      : mergeCapabilities({ defaults: layerOf(probedDefaults).core, declared: declaredField, probed: layerOf(capabilitiesFromProbe(report, { mode: modeOf() })).layer, probedAt: report.probedAt });
   const keywordSupport = report === null ? UNPROBED_KEYWORD_SUPPORT : report.keywordSupport;
   const isGuardrail = guardrailMatcherOf(report);
   const knownModel = options.declaredModel ?? report?.modelId;
@@ -218,7 +217,6 @@ export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Pr
 
   return {
     resolveEndpoint: () => options.fmServe.ensureRunning(),
-    toolCalling,
     keywordSupport: () => keywordSupport,
     upstreamModel,
     capabilities: async () => ({ ...capabilities, allowedTools: FM_ALLOWED_TOOLS }),

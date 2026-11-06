@@ -40,7 +40,7 @@ describe('the build ceiling of a claim resumed after the calibration of the alia
     if (firstBody === undefined) throw new Error('the first claim made no model call');
     expect(inputTokensOf(firstBody)).toBeGreaterThan(liveCeiling);
     expect(inputTokensOf(firstBody)).toBeLessThan(pinnedCeiling);
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
     env.gateway.script.push(textStep('never sent'));
 
     env.gateway.capabilitiesValue = liveListing();
@@ -73,7 +73,7 @@ describe('the tool floor of a claim resumed after the calibration of the alias t
     expect(stable).toBeGreaterThan(pinnedFloorFor(capabilitiesFor(FLOOR_WINDOW, { maxOutputTokens: 1024, tokenErrorRatio: LIVE_RATIO })));
     expect(stable).toBeLessThanOrEqual(pinnedFloorFor(listedSmall()));
     expect(env.ofType(run.id, 'notice').map((notice) => notice.code)).not.toContain('tools_dropped');
-    env.resolveApproval(run.id, 'allow_once');
+    await env.resolveApproval(run.id, 'allow_once');
     env.gateway.script.push(textStep('Written.'));
 
     env.gateway.capabilitiesValue = listedSmall();

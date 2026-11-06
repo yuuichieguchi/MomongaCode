@@ -6,11 +6,11 @@ import { canonicalJson } from '@momonga/foundation';
 import { createReplayAdapter } from '@momonga/gateway';
 import type { AdapterRequest, ProviderAdapter } from '@momonga/gateway';
 import type { StreamEvent } from '@momonga/protocol';
-import { createScriptedAdapter, textResponseEvents } from '@momonga/testkit';
+import { DEFAULT_SCRIPTED_CAPABILITIES, createScriptedAdapter, textResponseEvents } from '@momonga/testkit';
 import { makeDir, userInput } from './gateway-helpers.ts';
 
 const target = { name: 'primary', model: 'scripted-primary' };
-const ctx = () => ({ signal: new AbortController().signal, target, attempt: 1, reasoningOrigin: EVERY_REASONING_IS_OWN });
+const ctx = () => ({ signal: new AbortController().signal, target, attempt: 1, reasoningOrigin: EVERY_REASONING_IS_OWN, capabilities: DEFAULT_SCRIPTED_CAPABILITIES });
 const requestA: AdapterRequest = { model: 'scripted-primary', input: userInput('first') };
 const requestB: AdapterRequest = { model: 'scripted-primary', input: userInput('second') };
 const eventsA = textResponseEvents({ model: 'scripted-primary', chunks: ['alpha'] });

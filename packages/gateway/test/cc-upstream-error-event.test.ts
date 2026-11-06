@@ -58,7 +58,6 @@ const unprobedFmAdapter = async (upstream: FakeUpstreamServer) => {
 const genericAdapter = (upstream: FakeUpstreamServer) => {
   const adapter = createChatCompletionsAdapter({
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: upstream.socketPath }),
-    toolCalling: () => 'native',
     capabilities: async () => CC_CAPABILITIES,
     clock: createFakeClock(START_MS),
   });

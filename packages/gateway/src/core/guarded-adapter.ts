@@ -125,6 +125,7 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
   return {
     kind: inner.kind,
     sampling: inner.sampling,
+    relaysClientBody: inner.relaysClientBody,
     capabilities: (target) => converting(() => inner.capabilities(target)),
     create: (request, ctx) => {
       const source = convertingSync(() => inner.create(request, ctx));
@@ -137,8 +138,8 @@ export const guardAdapter = (inner: ProviderAdapter, redactor: Redactor, reasoni
     ...(renderWire === undefined ? {} : { renderWire: (request, target, options) => convertingSync(() => renderWire.call(inner, request, target, options)) }),
     ...(renderCompactWire === undefined
       ? {}
-      : { renderCompactWire: (request, target, cap, origin) => convertingSync(() => renderCompactWire.call(inner, request, target, cap, origin)) }),
-    toolChoiceWire: (target) => inner.toolChoiceWire(target),
+      : { renderCompactWire: (request, target, cap, origin, capabilities) => convertingSync(() => renderCompactWire.call(inner, request, target, cap, origin, capabilities)) }),
+    toolChoiceWire: (capabilities, target) => inner.toolChoiceWire(capabilities, target),
     ...(health === undefined ? {} : { health: guardedHealth(health) }),
     ...(close === undefined ? {} : { close: () => close.call(inner) }),
     [guardBrand]: true,

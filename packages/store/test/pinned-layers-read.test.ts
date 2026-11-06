@@ -18,7 +18,7 @@ const requested = (step: number, pinnedDigest: string | undefined, extra: readon
 const D1 = 'a'.repeat(64);
 const D2 = 'b'.repeat(64);
 
-const readSteps = (payloads: readonly RunEventPayload[]): { steps: number[]; bodies: unknown[] } => {
+const readSteps = async (payloads: readonly RunEventPayload[]): Promise<{ steps: number[]; bodies: unknown[] }> => {
   const seen: RunEvent[] = [];
   const h = harness({
     contribution: {
@@ -32,24 +32,24 @@ const readSteps = (payloads: readonly RunEventPayload[]): { steps: number[]; bod
   enqueue(h.store, newSession(h.store).id);
   const claim = mustClaim(h.store, 'w1');
   expect(h.store.append(claim, [...payloads]).kind).toBe('ok');
-  expect(h.store.transition(claim, ['RUNNING'], 'COMPLETED').kind).toBe('ok');
+  expect((await h.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
   return { steps: seen.map((event) => event.step), bodies: seen.map((event) => (event.type === 'model.requested' ? event.body : undefined)) };
 };
 
 describe('reading the pinned layers of the recorded requests at a terminal', () => {
-  it('reads a request only when its pinned-layer digest differs from every one already read', () => {
-    const { steps } = readSteps([requested(1, D1), requested(2, D1), requested(3, D2), requested(4, D1), requested(5, D2)]);
+  it('reads a request only when its pinned-layer digest differs from every one already read', async () => {
+    const { steps } = await readSteps([requested(1, D1), requested(2, D1), requested(3, D2), requested(4, D1), requested(5, D2)]);
     expect(steps).toEqual([1, 3]);
   });
 
-  it('reads in full every request that records no digest', () => {
-    const { steps } = readSteps([requested(1, undefined), requested(2, D1), requested(3, undefined), requested(4, D1)]);
+  it('reads in full every request that records no digest', async () => {
+    const { steps } = await readSteps([requested(1, undefined), requested(2, D1), requested(3, undefined), requested(4, D1)]);
     expect(steps).toEqual([1, 2, 3]);
   });
 
-  it('hands the hook the pinned layers and the tools of a request, not its history', () => {
+  it('hands the hook the pinned layers and the tools of a request, not its history', async () => {
     const developer = { type: 'message', role: 'developer', content: 'Instruction file.' };
-    const { bodies } = readSteps([requested(1, D1, [developer])]);
+    const { bodies } = await readSteps([requested(1, D1, [developer])]);
     expect(bodies).toEqual([{ input: [SYSTEM, developer], tools: [{ type: 'function', name: 'Read' }], tool_choice: 'auto' }]);
   });
 });

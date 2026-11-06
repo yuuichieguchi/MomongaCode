@@ -64,21 +64,21 @@ describe('approval subject digest and supersede', () => {
     expect(store.approvals.listPending(runId).map((approval) => approval.id)).toEqual([second.id]);
   });
 
-  it('refuses to resolve a superseded approval', () => {
+  it('refuses to resolve a superseded approval', async () => {
     const { store, claim } = setup();
     const first = request(store, claim, OPTIONS, FIRST);
     request(store, claim, OPTIONS, SECOND);
-    expect(store.resolveApproval(first.id, 'allow_once')).toEqual({ kind: 'approval_not_pending', status: 'superseded' });
+    expect(await store.resolveApproval(first.id, 'allow_once')).toEqual({ kind: 'approval_not_pending', status: 'superseded' });
     expect(store.approvals.get(first.id)).not.toHaveProperty('optionId');
   });
 
-  it('leaves superseded approvals superseded when the pending one expires', () => {
+  it('leaves superseded approvals superseded when the pending one expires', async () => {
     const { store, runId, claim } = setup();
     const first = request(store, claim, OPTIONS, FIRST);
     const second = request(store, claim, OPTIONS, SECOND);
     expect(store.release(claim, 'WAITING_HUMAN').kind).toBe('ok');
 
-    expect(store.expireApprovals(EXPIRES)).toEqual([runId]);
+    expect(await store.expireApprovals(EXPIRES, (error: unknown) => { throw error; })).toEqual([runId]);
 
     expect(store.approvals.get(first.id)?.status).toBe('superseded');
     expect(store.approvals.get(second.id)?.status).toBe('expired');

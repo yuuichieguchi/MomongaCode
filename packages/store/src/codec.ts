@@ -2,6 +2,7 @@ import path from 'node:path';
 import { FILE_ACCESSES, LOOP_GROUPS_KEPT, MEMORY_ORIGINS, MEMORY_STATUSES, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
 import type { RunEvent, RunEventPayload, RunState, SessionEvent, SessionEventPayload } from '@momonga/protocol';
 import { hasConsistentSeqs } from './seqs.ts';
+import { CANCEL_ORIGINS } from './transitions.ts';
 import { corrupt, expectOneOf, expectRecord, expectStringRecord, isRecord, readerFor } from './rows.ts';
 import type { Row } from './rows.ts';
 import type { Run, RunError, Session, SessionMcpServers } from './types.ts';
@@ -53,6 +54,9 @@ const decodeUsage = (identity: string, value: unknown): Run['usage'] => {
   return { inputTokens, outputTokens, totalTokens };
 };
 
+const decodeCancelOrigin = (identity: string, value: string | null): Run['cancelOrigin'] =>
+  value === null ? null : expectOneOf('runs', identity, 'cancel_origin', CANCEL_ORIGINS, value);
+
 const decodeRunError = (identity: string, value: unknown): RunError => {
   const record = expectRecord('runs', identity, 'error_json', value);
   if (typeof record['code'] !== 'string' || typeof record['message'] !== 'string') {
@@ -92,6 +96,7 @@ export const decodeRun = (row: Row): Run => {
     parentRunId: reader.nullableString('parent_run_id'),
     parentCallId: reader.nullableString('parent_call_id'),
     origin: expectOneOf('runs', identity, 'origin', MEMORY_ORIGINS, reader.string('origin')),
+    cancelOrigin: decodeCancelOrigin(identity, reader.nullableString('cancel_origin')),
   };
   if (stopReason !== null) run.stopReason = expectOneOf('runs', identity, 'stop_reason', STOP_REASONS, stopReason);
   if (errorJson !== null) run.error = decodeRunError(identity, errorJson);

@@ -4,9 +4,11 @@ import { Worker } from 'node:worker_threads';
 import type { TestContext } from 'vitest';
 import { describe, expect, it, vi } from 'vitest';
 import { openDatabase } from '@momonga/foundation';
+import { JournalThreadError, openRuntimeStore } from '@momonga/store';
 import { createFakeClock, createFakeTimers, withTempDir } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
-import { JournalThreadError, startJournalThread } from '../../src/memory/journal-thread-client.ts';
+import * as clientModule from '../../src/memory/journal-thread-client.ts';
+import { startJournalThread } from '../../src/memory/journal-thread-client.ts';
 import type { JournalThreadClient, JournalThreadOptions } from '../../src/memory/journal-thread-client.ts';
 import { JOURNAL_THREAD_CODE } from '../../src/memory/journal-thread-code.generated.ts';
 
@@ -24,9 +26,7 @@ type Fixture = { readonly databasePath: string; readonly identity: { dev: number
 const fixture = (context: TestContext): Fixture => {
   const dir = withTempDir(context);
   const databasePath = path.join(dir, 'runtime.db');
-  const db = openDatabase(databasePath);
-  db.exec('CREATE TABLE events (id INTEGER PRIMARY KEY, payload_json TEXT NOT NULL)');
-  db.close();
+  openRuntimeStore({ path: databasePath, home: dir, clock: createFakeClock(0), leaseMs: 30_000, maxAttempts: 5, maxTotalAttempts: 50 }).close();
   const stat = fs.statSync(databasePath);
   return { databasePath, identity: { dev: stat.dev, ino: stat.ino }, dir, marker: path.join(dir, 'spawns') };
 };
@@ -112,11 +112,40 @@ const PROGRESS_ON_SIGNAL = [
   'port.postMessage({ id: message.id, ok: true, steps: 1 });',
 ].join('\n');
 
+describe('the one import path of JournalThreadError', () => {
+  it('is defined by the store, and the client module does not export it', () => {
+    expect(Object.keys(clientModule)).not.toContain('JournalThreadError');
+    expect(new JournalThreadError('x').name).toBe('JournalThreadError');
+  });
+});
+
 describe('journal thread start and handshake', () => {
   it('resolves start only after the embedded thread reports ready with the database identity', async (context) => {
     const { databasePath, identity } = fixture(context);
     const client = await started(context, { databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS });
     expect(client.identity).toEqual(identity);
+  });
+
+  it('rejects start with JournalThreadError when the database lacks the events table the reader prepares its statements against', async (context) => {
+    const { databasePath, identity } = fixture(context);
+    const db = openDatabase(databasePath);
+    db.exec('ALTER TABLE events RENAME TO events_moved_away');
+    db.close();
+
+    const error = await rejectionOf(startJournalThread({ databasePath, identity, silenceLimitMs: GENEROUS_SILENCE_MS }));
+
+    expect(error).toBeInstanceOf(JournalThreadError);
+    expect(String((error as Error).message) + String(((error as Error).cause as Error | undefined)?.message ?? '')).toMatch(/events/);
+  });
+
+  it('prepares the journal reader before it posts ready: the reader is created eagerly in the thread, never on the first request', () => {
+    const source = fs.readFileSync(path.resolve(import.meta.dirname, '..', '..', 'src', 'memory', 'journal-thread.ts'), 'utf8');
+    const serveBody = source.slice(source.indexOf('const serve = '));
+    const created = serveBody.indexOf('createJournalReader(');
+    const ready = serveBody.indexOf('ready: true');
+    expect(created).toBeGreaterThan(-1);
+    expect(ready).toBeGreaterThan(created);
+    expect(serveBody).not.toMatch(/\?\?=\s*createJournalReader/);
   });
 
   it('rejects start with JournalThreadError when the ready identity does not match the store file', async (context) => {

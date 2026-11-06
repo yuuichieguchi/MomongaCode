@@ -27,11 +27,11 @@ export const fileTool = (callId: string, name: string, file: ToolFile, output = 
   { type: 'tool.completed', callId, status: 'completed', output, files: [file] },
 ] as RunEventPayload[];
 
-export const finishClaimed = (store: RuntimeStore, events: readonly RunEventPayload[], outcome: 'COMPLETED' | 'FAILED' = 'COMPLETED'): void => {
+export const finishClaimed = async (store: RuntimeStore, events: readonly RunEventPayload[], outcome: 'COMPLETED' | 'FAILED' = 'COMPLETED'): Promise<void> => {
   const claim = mustClaim(store, 'w1');
   const appended = store.append(claim, [{ type: 'run.started', attempt: claim.attempt, now: 0, pins: { ...RUN_PINS } }, ...events]);
   if (appended.kind !== 'ok') throw new Error(`append failed: ${appended.kind}`);
   const patch = outcome === 'FAILED' ? { error: { code: 'fixture', message: 'fixture failure' } } : {};
-  const finished = store.transition(claim, ['RUNNING'], outcome, patch);
+  const finished = await store.transition(claim, ['RUNNING'], outcome, patch);
   if (finished.kind !== 'ok') throw new Error(`finish failed: ${finished.kind}`);
 };

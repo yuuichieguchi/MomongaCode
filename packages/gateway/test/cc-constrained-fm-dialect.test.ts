@@ -30,7 +30,7 @@ const twoToolRequest: AdapterRequest = {
 
 const constrainedRunOnFm = async (support: Record<ProbeKeyword, boolean>) => {
   const fake = await startFake({ scenario: 'tools-ok', wire: 'fm' });
-  const adapter = makeAdapter(fake, { toolCalling: () => 'constrained', keywordSupport: () => support });
+  const adapter = makeAdapter(fake, { keywordSupport: () => support }, 'constrained');
   return collect(adapter, twoToolRequest);
 };
 

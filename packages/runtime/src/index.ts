@@ -33,6 +33,7 @@ export {
   startApprovalSweeper,
   startMemorySweeper,
   startSearchSweeper,
+  startTerminalSweeper,
 } from './service/index.ts';
 export type {
   ApprovalSweeperOptions,

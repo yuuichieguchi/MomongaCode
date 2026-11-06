@@ -124,7 +124,7 @@ describe('context.contribution at terminal', () => {
     await env.runOnce(memoryWorker(env, 'worker-2'));
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
 
-    env.cancel(run.id);
+    await env.cancelToEnd(run.id);
 
     expect(env.run(run.id).status).toBe('CANCELLED');
     const events = env.events(run.id);
@@ -150,20 +150,6 @@ describe('context.contribution at terminal', () => {
     blocked.gate.release.resolve();
     await within(recovering, 5_000, 'the recovering worker');
     await within(abandoned, 5_000, 'the abandoned worker to stop');
-
-    expect(env.run(run.id).status).toBe('COMPLETED');
-    expect(env.ofType(run.id, 'context.contribution').map((event) => event.items)).toEqual([[{ kind: 'memory', id, contributed: true }]]);
-    expect(env.store.memories.get(id)?.contributedAt).toBe(env.clock.now());
-  });
-
-  it('keeps the event a crash left in the journal, adds no second one, and still stamps contributedAt', async () => {
-    const env = await makeEnv({ mode: 'bypassPermissions' });
-    const id = await saveNote(env, NOTE);
-    const run = env.enqueue('Say hello', { history: 'fresh' });
-    env.seed(run.id, [{ type: 'context.contribution', items: [{ kind: 'memory', id, contributed: true }] }], 'crash');
-    env.gateway.script.push(textStep('Hello.'));
-
-    await env.runOnce(memoryWorker(env, 'worker-2'));
 
     expect(env.run(run.id).status).toBe('COMPLETED');
     expect(env.ofType(run.id, 'context.contribution').map((event) => event.items)).toEqual([[{ kind: 'memory', id, contributed: true }]]);

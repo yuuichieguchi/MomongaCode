@@ -29,7 +29,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
 
   async function* create(request: AdapterRequest, ctx: AdapterContext): AsyncGenerator<StreamEvent> {
     if (closed) throw new Error('the open-responses adapter is closed');
-    const capabilities = await options.capabilities(ctx.target);
+    const capabilities = ctx.capabilities;
     if (capabilities.toolCalling === 'none' && (request.tools ?? []).length > 0) {
       throw new UnsupportedInputError('capability_unsupported', 'this target does not support tool calling', 'tools');
     }
@@ -82,7 +82,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
   }
 
   const compact = async (request: AdapterCompactRequest, ctx: AdapterContext): Promise<AdapterCompactResult> => {
-    const capabilities = await options.capabilities(ctx.target);
+    const capabilities = ctx.capabilities;
     const cap = request.momonga?.max_summary_tokens ?? summaryTokenCapFor(capabilities);
     const summaryRequest = summaryRequestOf(request, cap, ctx.reasoningOrigin);
     for await (const event of create(summaryRequest, ctx)) {
@@ -102,6 +102,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
   return {
     kind: OPEN_RESPONSES_PROVIDER_LABEL,
     sampling: RENDERS_EVERY_SAMPLING_FIELD,
+    relaysClientBody: ['create'],
     capabilities: (target) => options.capabilities(target),
     create,
     compact,

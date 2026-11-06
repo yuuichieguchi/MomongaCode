@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { openDatabase } from '@momonga/foundation';
+import { migrateRuntimeDatabase } from '@momonga/store';
 import { startJournalThread } from '../../../packages/runtime/src/memory/journal-thread-client.ts';
 import { JOURNAL_THREAD_CODE } from '../../../packages/runtime/src/memory/journal-thread-code.generated.ts';
 
@@ -10,7 +10,7 @@ const PING_SILENCE_MS = 30_000;
 const directory = process.argv[2];
 if (directory === undefined) throw new Error('usage: journal-thread-ping <private directory>');
 const databasePath = path.join(directory, 'runtime.db');
-openDatabase(databasePath).close();
+migrateRuntimeDatabase(databasePath);
 const stat = fs.statSync(databasePath);
 const client = await startJournalThread({ databasePath, identity: { dev: stat.dev, ino: stat.ino }, silenceLimitMs: PING_SILENCE_MS });
 try {
