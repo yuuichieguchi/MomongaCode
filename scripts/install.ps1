@@ -5,7 +5,7 @@ $checksumsName = 'SHA256SUMS'
 $signatureName = 'SHA256SUMS.sig'
 $signatureNamespace = 'momonga-release'
 $embeddedReleasePublicKey = ''
-$embeddedReleaseRepo = ''
+$embeddedReleaseRepo = 'yuuichieguchi/MomongaCode'
 
 function Fail([string]$message) {
   throw "install.ps1: $message"

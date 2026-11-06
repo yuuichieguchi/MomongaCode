@@ -5,7 +5,7 @@ readonly CHECKSUMS_NAME="SHA256SUMS"
 readonly SIGNATURE_NAME="SHA256SUMS.sig"
 readonly SIGNATURE_NAMESPACE="momonga-release"
 readonly EMBEDDED_RELEASE_PUBLIC_KEY=""
-readonly EMBEDDED_RELEASE_REPO=""
+readonly EMBEDDED_RELEASE_REPO="yuuichieguchi/MomongaCode"
 
 fail() {
   printf 'install.sh: %s\n' "$*" >&2
