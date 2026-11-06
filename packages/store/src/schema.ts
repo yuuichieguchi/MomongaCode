@@ -792,6 +792,26 @@ WHERE e.type = 'tool.call' AND json_type(l.value, '$.path') = 'text'
 GROUP BY e.session_id, json_extract(l.value, '$.path');
 `;
 
+const RUN_ANSWERERS_RECORD = `
+CREATE TABLE run_answerers (
+  run_id TEXT NOT NULL REFERENCES runs (id),
+  target TEXT NOT NULL,
+  PRIMARY KEY (run_id, target)
+) WITHOUT ROWID;
+
+INSERT OR IGNORE INTO run_answerers (run_id, target)
+SELECT r.run_id, COALESCE(
+  (SELECT json_extract(o.payload_json, '$.target') FROM events o
+   WHERE o.run_id = r.run_id AND o.type = 'meter.observed' AND o.seq > r.seq
+     AND o.seq < COALESCE((SELECT MIN(q.seq) FROM events q WHERE q.run_id = r.run_id AND q.type = 'model.requested' AND q.seq > r.seq), 9223372036854775807)
+   ORDER BY o.seq LIMIT 1),
+  'unknown')
+FROM events r WHERE r.type = 'model.responded' AND r.run_id IS NOT NULL;
+
+INSERT OR IGNORE INTO run_answerers (run_id, target)
+SELECT run_id, 'unknown' FROM events WHERE type IN ('model.rejected', 'usage.charged') AND run_id IS NOT NULL;
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -835,5 +855,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 23,
     name: 'record the locations the tool calls of a session declared, once per path and in the order first seen, derived once for sessions written before',
     sql: SESSION_TOUCHED_RECORD,
+  },
+  {
+    version: 24,
+    name: 'record the targets that answered each run at append, from every paid answer; derived once for runs written before, pairing a model.responded with its meter.observed and recording unknown where the old record names no target',
+    sql: RUN_ANSWERERS_RECORD,
   },
 ];

@@ -208,6 +208,7 @@ describe('Open Responses types conform to the vendored component schemas', () =>
       output: [compaction],
       created_at: 1_800_000_000,
       usage: usageOf(40, 8),
+      momonga: { target: 'primary' },
     };
     expectValid('CompactResponseMethodPublicBody', request);
     expectValid('CompactResource', resource);

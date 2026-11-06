@@ -302,6 +302,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
         },
         ['status', 'output', 'usage'],
       ),
+      target: string,
     },
     required: ['step', 'attempt', 'response'],
   },
@@ -409,7 +410,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
   'tool.offered': { properties: { names: { type: 'array', items: { type: 'string', minLength: 1 } } }, required: ['names'] },
   'loop.warned': { properties: { signature: string }, required: ['signature'] },
   'model.rejected': {
-    properties: { step: nonNegativeInteger, attempt: nonNegativeInteger, reason: enumOf(MODEL_REJECTION_REASONS), counter: string, meterCounter: string },
+    properties: { step: nonNegativeInteger, attempt: nonNegativeInteger, reason: enumOf(MODEL_REJECTION_REASONS), counter: string, meterCounter: string, target: string },
     required: ['step', 'attempt', 'reason'],
   },
   'meter.observed': {
@@ -476,6 +477,7 @@ const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { 
       cacheWriteInputTokens: nonNegativeInteger,
       cost: modelCost,
       timing: callTiming,
+      target: string,
     },
     required: ['purpose', 'inputTokens', 'outputTokens', 'totalTokens'],
   },

@@ -76,6 +76,7 @@ const contextFor = (options: ContextOptions = {}) => {
               input_tokens_details: { cached_tokens: 0 },
               output_tokens_details: { reasoning_tokens: 0 },
             },
+            momonga: { target: 'primary' },
           };
           produced.set(callOptions.idempotencyKey, resource);
           return resource;

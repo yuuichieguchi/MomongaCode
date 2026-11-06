@@ -167,6 +167,7 @@ const handleResult = async (
         reason,
         ...(answerCounter === undefined ? {} : { counter: answerCounter }),
         ...(answered === undefined ? {} : { meterCounter: answered.counter }),
+        ...(response.momonga?.target === undefined ? {} : { target: response.momonga.target }),
       },
       ...(usage === null
         ? []
@@ -182,6 +183,7 @@ const handleResult = async (
               ...(response.momonga?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: response.momonga.cacheWriteInputTokens }),
               ...(response.momonga?.cost === undefined ? {} : { cost: response.momonga.cost }),
               timing,
+              ...(response.momonga?.target === undefined ? {} : { target: response.momonga.target }),
             },
           ]),
     ]);
@@ -229,6 +231,7 @@ const handleResult = async (
         ...(billed === undefined ? {} : { momonga: billed }),
         timing,
       },
+      ...(answeredBy === undefined ? {} : { target: answeredBy }),
     },
     {
       type: 'usage.updated',

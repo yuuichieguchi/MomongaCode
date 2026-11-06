@@ -173,6 +173,7 @@ describe('run event payloads', () => {
       step: number;
       attempt: number;
       response: ModelResponse;
+      target?: string;
     }>();
     expectTypeOf<Payload<'agent.message.delta'>>().toEqualTypeOf<{
       type: 'agent.message.delta';
