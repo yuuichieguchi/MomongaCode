@@ -167,7 +167,8 @@ describe.each<Transport>(['tcp', 'unix'])('the upstream liveness bounds from mod
   it('ends a stream that sends only SSE comments past the idle bound: a keep-alive is not content (R-G1a)', async () => {
     const { reply } = await askThrough(transport, ['commentsPastTheBound', 'commentsPastTheBound'], settingsLiveness(0, BOUND_MS));
     expect(reply.status).toBe(502);
-    expect(reply.body.error.code).toBe('upstream_idle_timeout');
+    expect(reply.body.error.code).toBe('stream_interrupted');
+    expect(reply.body.error.message).toContain('The model sent no output for 0.05 s (only keep-alive signals arrived), so the call was stopped.');
   });
 
   it('completes a request whose headers arrive late when the headers bound is 0', async () => {

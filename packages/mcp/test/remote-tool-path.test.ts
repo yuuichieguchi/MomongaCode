@@ -59,6 +59,20 @@ describe.each(['modern', 'legacy'] as const)('a remote tool through the executor
 });
 
 describe('a task through the executor', () => {
+  it('G2 test 3: ends a task whose tasks/get view stays the same at the idle window, cancels it on the server and says so', async () => {
+    const fixture = await startHttpFixture({ era: 'modern', taskPollIntervalMs: 1 });
+    const { connection } = makeRemoteConnection({ fixture });
+    const registry = createToolRegistry();
+    registry.addSource(createMcpToolSource({ server: 'remote', connection, toolIdleTimeoutMs: 400 }));
+    const result = await makeExecutor().resultOf(await registry.snapshot(), 'mcp__remote__long_task', {});
+    expect(result).toEqual({
+      status: 'failed',
+      output:
+        'MCP server "remote" sent no response or progress for 400 ms, so the call to long_task was stopped. The server may have run it; check before repeating it. To wait longer, raise mcp.toolIdleTimeoutMs. The task was cancelled on the server.',
+    });
+    expect(fixture.notes.filter((note) => note.type === 'task_cancel')).toHaveLength(1);
+  });
+
   it('finishes through the executor when the server completes it within the idle window', async () => {
     const fixture = await startHttpFixture({ era: 'modern', taskPollIntervalMs: 1 });
     const { connection } = makeRemoteConnection({ fixture });

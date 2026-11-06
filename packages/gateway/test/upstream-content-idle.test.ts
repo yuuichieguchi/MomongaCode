@@ -244,7 +244,7 @@ describe('G1: a target that carries no output bound is ended at its bound by the
   const longDelta = 'word '.repeat(40);
 
   it(
-    'counts the streamed Chat Completions output and ends the response as incomplete with reason max_output_tokens, not as a failure',
+    'counts the streamed Chat Completions output and ends the response at the declared maxOutputTokens as incomplete with reason max_output_tokens, not as a failure',
     async () => {
       const upstream = await startTimedUpstream({
         steps: [
@@ -253,7 +253,7 @@ describe('G1: a target that carries no output bound is ended at its bound by the
         ],
         end: 'hang',
       });
-      const adapter = chatAdapter(upstream.socketPath, { ...CC_CAPABILITIES, outputBoundField: 'none', maxOutputTokens: 1024 });
+      const adapter = chatAdapter(upstream.socketPath, { ...CC_CAPABILITIES, outputBoundField: 'none', maxOutputTokens: CEILING });
       const ending = await drive(adapter, await contextOf(adapter, target), { ...REQUEST, max_output_tokens: CEILING });
       expect(ending.kind).toBe('ended');
       const last = ending.events.at(-1);
@@ -262,6 +262,24 @@ describe('G1: a target that carries no output bound is ended at its bound by the
       const body = upstream.bodies[0] as Record<string, unknown>;
       expect(body['max_tokens']).toBeUndefined();
       expect(body['max_completion_tokens']).toBeUndefined();
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'ends at the declared maxOutputTokens, not at a smaller requested bound: the declared value is the ceiling the context budget reserves (config/src/models.ts)',
+    async () => {
+      const upstream = await startTimedUpstream({
+        steps: [
+          { waitMs: 1, write: chatChunk({ role: 'assistant', content: longDelta }) },
+          { waitMs: 1, write: chatChunk({}, 'stop') },
+          { waitMs: 1, write: 'data: [DONE]\n\n' },
+        ],
+        end: 'close',
+      });
+      const adapter = chatAdapter(upstream.socketPath, { ...CC_CAPABILITIES, outputBoundField: 'none', maxOutputTokens: 1024 });
+      const ending = await drive(adapter, await contextOf(adapter, target), { ...REQUEST, max_output_tokens: CEILING });
+      expect(ending.events.at(-1)?.type).toBe('response.completed');
     },
     TEST_TIMEOUT_MS,
   );
@@ -314,7 +332,7 @@ describe('G1: a target that carries no output bound is ended at its bound by the
         ],
         end: 'hang',
       });
-      const adapter = responsesAdapter(upstream.socketPath, { ...REMOTE_CAPABILITIES, outputBoundField: 'none' });
+      const adapter = responsesAdapter(upstream.socketPath, { ...REMOTE_CAPABILITIES, outputBoundField: 'none', maxOutputTokens: CEILING });
       const ending = await drive(adapter, await contextOf(adapter, target), { ...REQUEST, max_output_tokens: CEILING });
       const body = upstream.bodies[0] as Record<string, unknown>;
       expect(body['max_output_tokens']).toBeUndefined();

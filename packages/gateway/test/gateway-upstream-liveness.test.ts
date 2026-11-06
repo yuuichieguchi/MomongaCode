@@ -42,6 +42,6 @@ describe('upstream liveness from models.headersTimeoutMs and models.idleTimeoutM
     const harness = await startSilentUpstream([openingThenSilence()]);
     const reply = await readJson(await postJson(harness.client, '/v1/responses', { model: 'fast', input: userInput('hi'), stream: true }));
     expect(reply.status).toBe(502);
-    expect(reply.body.error.code).toBe('upstream_idle_timeout');
+    expect(reply.body.error.code).toBe('stream_interrupted');
   });
 });
