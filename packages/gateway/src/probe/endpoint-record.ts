@@ -3,7 +3,8 @@ import path from 'node:path';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { EndpointProbeReport, OllamaProbeReport, ProbeReport } from '@momonga/protocol';
 import type { DialectCurrency } from '../dialect/candidates.ts';
-import { field, isRecord } from './json.ts';
+import { PreconditionFailedError } from '../adapters/shared/failures.ts';
+import { isRecord, listedEntryOf } from './json.ts';
 import { currentStamp, isCurrentRecord, writePrivateRecord } from './record.ts';
 import { isEndpointProbeReport } from './report-schema.ts';
 
@@ -24,10 +25,16 @@ export const endpointRecordFileName = (key: EndpointKey): string =>
 
 const fileOf = (dir: string, key: EndpointKey): string => path.join(dir, endpointRecordFileName(key));
 
-const listedEntryOf = (modelsBody: unknown, model: string): Record<string, unknown> | undefined => {
-  const data = field(modelsBody, 'data');
-  const listed: unknown = Array.isArray(data) ? data.find((entry) => field(entry, 'id') === model) : undefined;
-  return isRecord(listed) ? listed : undefined;
+export const requireListedEntry = (modelsBody: unknown, model: string): Record<string, unknown> => {
+  const listed = listedEntryOf(modelsBody, model);
+  if (listed === undefined) {
+    throw new PreconditionFailedError(
+      `the server does not list the model ${model}, so its identity cannot be measured`,
+      'GET /v1/models has no entry whose id is the model of the target',
+      'serve the model under an id that GET /v1/models lists, or declare the capabilities of the target instead of toolCalling auto',
+    );
+  }
+  return listed;
 };
 
 export const stableIdentityFieldsOf = (firstBody: unknown, secondBody: unknown, model: string): string[] => {
@@ -40,8 +47,7 @@ export const stableIdentityFieldsOf = (firstBody: unknown, secondBody: unknown, 
 };
 
 export const endpointIdentityOf = (modelsBody: unknown, model: string, fields: readonly string[]): string => {
-  const listed = listedEntryOf(modelsBody, model);
-  if (listed === undefined) return '';
+  const listed = requireListedEntry(modelsBody, model);
   return sha256Hex(canonicalJson(Object.fromEntries(fields.filter((name) => name in listed).map((name) => [name, listed[name]]))));
 };
 

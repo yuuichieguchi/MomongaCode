@@ -137,6 +137,22 @@ describe('runProbe context window', () => {
     expect(report.contextWindow).toEqual({ value: 8192, method: 'reported' });
   });
 
+  it('reads context_window from the entry of the probed model, not from the first entry', async () => {
+    const { report } = await probe(
+      { scenario: 'tools-ok', contextWindow: 8192, models: [{ id: 'a', context_window: 131072 }, { id: 'b', context_window: 8192 }] },
+      { model: 'b' },
+    );
+    expect(report.contextWindow).toEqual({ value: 8192, method: 'reported' });
+  });
+
+  it('does not take another model\'s window when the probed model is not listed', async () => {
+    const { report } = await probe(
+      { scenario: 'tools-ok', contextWindow: 3000, modelId: 'b', models: [{ id: 'a', context_window: 131072 }] },
+      { model: 'b' },
+    );
+    expect(report.contextWindow.method).toBe('searched');
+  });
+
   it('reads context_window from /health', async () => {
     const { report } = await probe({ scenario: 'tools-ok', contextWindow: 6000, contextSizeExposure: 'health' });
     expect(report.contextWindow).toEqual({ value: 6000, method: 'reported' });

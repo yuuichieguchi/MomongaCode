@@ -30,9 +30,9 @@ describe('endpointIdentityOf', () => {
     expect(endpointIdentityOf({ data: [{ id: 'other', object: 'model' }, reordered] }, KEY.model, FIELDS)).toBe(first);
   });
 
-  it('is empty when the server does not list the model', () => {
-    expect(endpointIdentityOf({ data: [{ id: 'other' }] }, KEY.model, FIELDS)).toBe('');
-    expect(endpointIdentityOf(undefined, KEY.model, FIELDS)).toBe('');
+  it('refuses to name an identity when the server does not list the model', () => {
+    expect(() => endpointIdentityOf({ data: [{ id: 'other' }] }, KEY.model, FIELDS)).toThrow(/does not list/);
+    expect(() => endpointIdentityOf(undefined, KEY.model, FIELDS)).toThrow(/does not list/);
   });
 });
 
