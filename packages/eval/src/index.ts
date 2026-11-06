@@ -49,6 +49,7 @@ export {
   caseSettingsFor,
   liveBoundsFor,
   runContextDataset,
+  failedWithCleanup,
 } from './context-live.ts';
 export type { ContextCaseHost, ContextRunPorts, ContextRunResult, LiveBounds, LiveLimits } from './context-live.ts';
 export { parsePolicyOverlay } from './context-policy.ts';
