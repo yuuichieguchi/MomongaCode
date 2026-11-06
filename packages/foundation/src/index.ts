@@ -9,11 +9,12 @@ export { codeDigestOf, codeDigestOfRunningProcess } from './code-digest.ts';
 export type { CodeOrigin } from './code-digest.ts';
 export { systemClock } from './clock.ts';
 export type { Clock } from './clock.ts';
-export { Deadline, realDeadlineTiming } from './deadline.ts';
+export { Deadline } from './deadline.ts';
 export type { DeadlineTiming } from './deadline.ts';
 export { describeFallbackCause } from './fallback-cause.ts';
 export type { FallbackCause } from './fallback-cause.ts';
-export { isRecord, parseJsonOrText } from './json.ts';
+export { isRecord, parseBoundedJson, parseJsonOrText } from './json.ts';
+export type { BoundedJson } from './json.ts';
 export { JsonDepthError, MAX_JSON_DEPTH, checkJsonDepth, parseOutsideJson } from './json-depth.ts';
 export { describeFirstError, jsonReplyInstructions, readJsonReply } from './json-reply.ts';
 export type { JsonReplyInput, JsonReplyPath, JsonReplyRead } from './json-reply.ts';
@@ -41,8 +42,26 @@ export { createOAuthProvider } from './oauth-provider.ts';
 export type { OAuthProvider, OAuthProviderOptions } from './oauth-provider.ts';
 export { startLoopbackRedirect } from './loopback-redirect.ts';
 export type { LoopbackRedirect, LoopbackRedirectOptions } from './loopback-redirect.ts';
-export { syncDirectory, syncDirectorySync, writeFileAtomically } from './atomic-file.ts';
-export type { AtomicWriteOptions } from './atomic-file.ts';
+export { syncDirectory, syncDirectorySync, writeFileAtomically, writeFileAtomicallySync } from './atomic-file.ts';
+export type {
+  AtomicWriteFileHandle,
+  AtomicWriteFileSystem,
+  AtomicWriteFileSystemSync,
+  AtomicWriteOptions,
+  AtomicWriteOptionsSync,
+  CreateOutcome,
+  FileContent,
+  PublishMode,
+} from './atomic-file.ts';
+export { sleep } from './timing.ts';
+export type { SleepOutcome, Timing } from './timing.ts';
+export { POLL_INTERVAL_MS, waitUntil } from './wait-until.ts';
+export type { WaitOutcome, WaitUntilOptions } from './wait-until.ts';
+export type { Random } from './random.ts';
+export { systemTiming } from './system-timing.ts';
+export { systemRandom } from './system-random.ts';
+export { nodeFileSystem, nodeFileSystemSync } from './node-file-system.ts';
+export type { FileSystemSync } from './node-file-system.ts';
 export { forceKillGroup, groupAlive, groupTerminationBoundMs, realGroupTiming, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from './process-group.ts';
 export type { ForceKillGroupOptions, GroupTiming, ProcessSignalSender, TerminateGroupOptions, TerminateOutcome } from './process-group.ts';
 export { procGroupMembers } from './platform/group-members.ts';
@@ -81,7 +100,7 @@ export type { ProcessIdentity } from './process-identity.ts';
 export { SessionTmpDirError, adapterSocketPath, ensureMomongaDirs, ensureSessionTmpDir, momongaLayout, momongaPaths, rotatedLogPath } from './momonga-paths.ts';
 export type { MomongaPaths } from './momonga-paths.ts';
 export { createExecWithStdin } from './exec-with-stdin.ts';
-export { secretKeyFile } from './secret-key-file.ts';
+export { createSecretKeyFile, secretKeyFile } from './secret-key-file.ts';
 export {
   KEYCHAIN_SERVICE,
   SECRET_NAME_PATTERN,
@@ -99,7 +118,7 @@ export {
   SECRET_TOOL_BINARY,
 } from './secret-store.ts';
 export type { SecretProcessPort, SecretProcessResult, SecretStore } from './secret-store.ts';
-export type { SecretKeyFileOptions } from './secret-key-file.ts';
+export type { SecretKeyFile, SecretKeyFileOptions } from './secret-key-file.ts';
 export { isLoopbackHost, redactedUrl, transportUrlMessage, transportUrlProblem } from './loopback.ts';
 export type { TransportUrlProblem } from './loopback.ts';
 export {
