@@ -31,7 +31,7 @@ export { PLAN_PROFILES, assertPlanProfile, planProfileOf } from './plan-profiles
 export type { PlanProfile, PlanProfileCapabilities, PlanProfileCatalog, PlanProfileOAuth } from './plan-profiles.ts';
 export type { ResolvedModels } from './models.ts';
 export { ConfigError, createUserSettingsCache, loadUserModels, loadUserSettings, userSettingsChangeKey } from './user-settings.ts';
-export type { LoadUserSettingsOptions, LoadUserSettingsResult, UserModels, UserSettingsCache, UserSettingsCacheOptions, UserSettingsSnapshot } from './user-settings.ts';
+export type { LoadUserSettingsOptions, LoadUserSettingsResult, UserModels, UserSettingsCache, UserSettingsCacheOptions, UserSettingsLoaded, UserSettingsSnapshot } from './user-settings.ts';
 export type { LoadSettingsOptions, LoadSettingsResult, ResolvedPermissions, ResolvedSettings } from './load-settings.ts';
 export { assertSessionMcpServers, loadMcpServers } from './mcp-servers.ts';
 export type { LoadMcpServersOptions, LoadMcpServersResult, McpServerEntry, McpServerFailure, McpServerScope } from './mcp-servers.ts';
@@ -50,7 +50,10 @@ export {
   defaultToolsSettings,
 } from './context-settings.ts';
 export type { ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from './context-settings.ts';
-export type { TrustOracle, UserLayer } from './layers.ts';
+export { createKeptSettings, diskKeptRecords, keptSettingsDirectory, noKeptRecords } from './kept-settings.ts';
+export type { KeptProblem, KeptRecords, KeptSettings } from './kept-settings.ts';
+export type { KeptLayers, TrustOracle, UserLayer } from './layers.ts';
+export type { SettingsUse } from './last-good.ts';
 export type {
   McpOAuthConfig,
   McpRemoteServerConfig,

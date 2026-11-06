@@ -27,6 +27,7 @@ export interface FileSystemSync extends AtomicWriteFileSystemSync<number> {
   readdirSync(directory: string): string[];
   statSync(file: string): fs.Stats;
   accessSync(file: string, check: AccessCheck): void;
+  mkdirSync(directory: string, mode: number): void;
 }
 
 const accessMode = (check: AccessCheck): number => (check === 'execute' ? fs.constants.X_OK : fs.constants.F_OK);
@@ -66,6 +67,7 @@ export const nodeFileSystemSync: FileSystemSync = {
   readdirSync: (directory) => fs.readdirSync(directory),
   statSync: (file) => fs.statSync(file),
   accessSync: (file, check) => fs.accessSync(file, accessMode(check)),
+  mkdirSync: (directory, mode) => void fs.mkdirSync(directory, { recursive: true, mode }),
   renameSync: (from, to) => fs.renameSync(from, to),
   linkSync: (from, to) => fs.linkSync(from, to),
   rmSync: (file) => fs.rmSync(file, { force: true }),

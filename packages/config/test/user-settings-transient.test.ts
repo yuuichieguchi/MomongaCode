@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ConfigError, createUserSettingsCache, loadMcpServers } from '@momonga/config';
+import { ConfigError, createUserSettingsCache, loadMcpServers, noKeptRecords } from '@momonga/config';
 import { makeTree, mcpJsonPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 
 const T0 = new Date('2026-01-01T00:00:00Z');
@@ -50,7 +50,7 @@ describe('UserSettingsCache with a transient errno after a good load', () => {
       const tree = makeTree();
       const file = userSettingsPath(tree);
       writeAt(file, { env: { TZ: 'good' } }, T0);
-      const cache = createUserSettingsCache({ home: tree.home, onWarning: () => undefined });
+      const cache = createUserSettingsCache({ home: tree.home, onWarning: () => undefined, keptRecords: noKeptRecords });
       expect(cache.get().env).toEqual({ TZ: 'good' });
 
       writeAt(file, { env: { TZ: 'newer' } }, T1);
@@ -76,7 +76,7 @@ describe('UserSettingsCache with a transient errno after a good load', () => {
     writeAt(file, { env: { TZ: 'good' } }, T0);
     const fault: Fault = { error: errnoError('EMFILE') };
     faultRead(file, fault);
-    const cache = createUserSettingsCache({ home: tree.home, onWarning: () => undefined });
+    const cache = createUserSettingsCache({ home: tree.home, onWarning: () => undefined, keptRecords: noKeptRecords });
     expect(thrownBy(() => cache.get())).toBe(fault.error);
     delete fault.error;
     expect(cache.get().env).toEqual({ TZ: 'good' });
@@ -87,7 +87,7 @@ describe('UserSettingsCache with a transient errno after a good load', () => {
     const file = userSettingsPath(tree);
     writeAt(file, {}, T0);
     faultRead(file, { error: errnoError('EACCES') });
-    const cache = createUserSettingsCache({ home: tree.home, onWarning: () => undefined });
+    const cache = createUserSettingsCache({ home: tree.home, onWarning: () => undefined, keptRecords: noKeptRecords });
     const snapshot = cache.snapshot();
     expect('error' in snapshot && snapshot.error).toBeInstanceOf(ConfigError);
   });
