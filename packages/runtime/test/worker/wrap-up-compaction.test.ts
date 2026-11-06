@@ -3,7 +3,7 @@ import { capabilitiesFor, makeEnv } from './harness.ts';
 import { textStep } from './scripts.ts';
 import { bigStep, padOf, withinTurnWorker } from './within-turn-support.ts';
 
-const sixPaddedSteps = () => [0, 1, 2, 3, 4, 5].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1400) }));
+const sixPaddedSteps = () => [0, 1, 2, 3, 4, 5].map((index) => bigStep(`k${index}`, { letter: 'a', size: 0, pad: padOf(index, 1550) }));
 
 describe('wrap-up build', () => {
   it('makes no proactive compaction call although the context is above the high-water mark', async () => {

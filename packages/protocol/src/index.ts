@@ -115,6 +115,7 @@ export { GUIDELINE_TEXT_PATTERN, hasForbiddenGuidelineCharacter } from './guidel
 export { escapeTerminalBlock, escapeTerminalLine } from './terminal-text.ts';
 export {
   FILE_ACCESSES,
+  WORKING_FACT_KINDS,
   INHERITED_FACT_SEQ,
   emptyWorkingFacts,
   inheritedWorkingFacts,
@@ -135,12 +136,20 @@ export type {
   PlanEntryRecord,
   ReconciledOutcome,
   ToolFile,
+  WorkingFactKind,
   WorkingFacts,
   WrittenFact,
 } from './working-facts.ts';
 export { LOOP_GROUPS_KEPT } from './loop-groups.ts';
 export { findDanglingOutput, findUnpairedCalls } from './call-pairing.ts';
-export { compactionSummaryMessage, decodeCompactionSummary } from './compaction-summary.ts';
+export { DETERMINISTIC_SUMMARY_TEXT, SUMMARY_FRAMING, compactionSummaryMessage, decodeCompactionSummary } from './compaction-summary.ts';
+export type { SummaryOrigin } from './compaction-summary.ts';
+export { FIDELITY_CLAIMS, isPathLikeToken, reducedPathToken, tokenMatcherOf } from './fidelity-match.ts';
+export type { ClaimedToken, FidelityClaim, TokenMatcher } from './fidelity-match.ts';
+export { MAX_TOOL_NAME_CHARS, REFERENCE_KINDS } from './reference-kinds.ts';
+export type { ReferenceKind } from './reference-kinds.ts';
+export { RECORDED_DATA_MARKER, recordedDataMessage } from './recorded-data.ts';
+export type { RecordedData } from './recorded-data.ts';
 export { decodePayloadSegment, encodePayloadSegment, joinEnvelope, splitEnvelope } from './envelope-grammar.ts';
 export type { EnvelopeSegments } from './envelope-grammar.ts';
 export { PROBE_KEYWORDS } from './probe.ts';

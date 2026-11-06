@@ -135,6 +135,8 @@ const assertNonNegativeInteger = (name: string, value: number): void => {
   if (!Number.isInteger(value) || value < 0) throw new RangeError(`blob range ${name} must be a non-negative integer, got ${value}`);
 };
 
+export const blobDirectoryOf = (databasePath: string): string => path.join(path.dirname(databasePath), 'blobs');
+
 export const createBlobStore = (db: DatabaseSync, clock: Clock, dir: string): BlobStore => {
   const insert = db.prepare(
     `INSERT INTO blobs (sha256, byte_length, line_count, media_type, created_at)

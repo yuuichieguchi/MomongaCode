@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import { compactionSummaryMessage } from '@momonga/protocol';
 import type { RunEvent, RunEventPayload } from '@momonga/protocol';
 
 export type RecordedRun = {
@@ -196,11 +197,7 @@ const compactedPrefix: RunEventPayload[] = [
   { type: 'context.compacted', item: fixtureCompactionItem('cmp-1', 'searched for x'), summary: 'searched for x', replacedThroughSeq: 2 },
 ];
 
-const plainSummary = {
-  type: 'message' as const,
-  role: 'user' as const,
-  content: '<conversation_summary>\nsearched for x\n</conversation_summary>',
-};
+const plainSummary = compactionSummaryMessage('searched for x', 'model');
 
 export const compactionRejectedAtBuildRun: RecordedRun = {
   name: 'compaction rejected at build',

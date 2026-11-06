@@ -7,7 +7,7 @@ const OTHER_HANDLE = 'ef'.repeat(32);
 
 const count = (text: string): number => tokensForText(text);
 
-const fit = (text: string, cap: number, handle: string = HANDLE): Promise<string> => fitToTokens({ text, cap, handle, count });
+const fit = (text: string, cap: number, handle: string = HANDLE): Promise<string> => fitToTokens({ text, cap, handle, reader: 'ReadOutput', count });
 
 const markersIn = (text: string): number => text.split('ReadOutput').length - 1;
 

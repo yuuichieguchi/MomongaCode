@@ -1,6 +1,6 @@
 import type { Clock } from '@momonga/foundation';
 import type { PermissionSubject } from '@momonga/policy';
-import type { ElicitationRequestView, SideEffect, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
+import type { ElicitationRequestView, ReferenceKind, SideEffect, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { BackgroundJobs, BlobPort, ToolIdempotencyRecord } from './ports.ts';
 
@@ -25,6 +25,9 @@ export type ToolResult = {
   toolsLoaded?: string[];
   authorizationRequired?: { server: string };
   files?: ToolFile[];
+  command?: string;
+  windowShared?: true;
+  detached?: true;
   exitCode?: number;
   validatorFailure?: string;
 };
@@ -119,6 +122,7 @@ export type ToolBody<Input> = {
   inputSchema: Record<string, unknown>;
   pagesOutput?: true;
   tier?: ToolTier;
+  reads?: ReferenceKind;
   companionOf?: string;
   outputSchema?: Record<string, unknown>;
   server?: string;

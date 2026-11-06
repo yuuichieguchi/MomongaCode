@@ -315,7 +315,7 @@ describe('HistoryRead output', () => {
 
   it('strips the blob handle and the real truncation marker from the output and the input of another run', async () => {
     const handle = 'ab'.repeat(32);
-    const truncated = { output: ['line of output', truncationMarker(1200, handle), 'line of output'].join('\n') };
+    const truncated = { output: ['line of output', truncationMarker(1200, handle, 'ReadOutput'), 'line of output'].join('\n') };
     expect(truncated.output).toContain(handle);
     const events = [
       eventOf(1, { type: 'tool.call', callId: 'r', providerCallId: 'r', name: 'ReadOutput', kind: 'read', title: 'ReadOutput', rawInput: { handle } }),

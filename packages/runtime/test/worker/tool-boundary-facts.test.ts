@@ -48,7 +48,7 @@ describe('structured facts set at the tool boundary', () => {
     expect(env.fold(run.id).workingFacts.written).toEqual([{ path: WRITTEN, sha256: sha256Hex('hello'), seq: completed?.seq }]);
   });
 
-  it('journals the exit code a tool reports, and the fold keeps a failed command as a working fact', async () => {
+  it('journals the command of a command subject and the exit code a tool reports, and the fold keeps a failed command whose file effects were not observed as a working fact', async () => {
     const env = await makeEnv({ mode: 'bypassPermissions' });
     env.gateway.script.push(callsStep([{ callId: 'call_b_1', name: 'Bash', args: { command: 'make lint' } }]), textStep('Done.'));
     const run = env.enqueue();
@@ -56,8 +56,8 @@ describe('structured facts set at the tool boundary', () => {
     await env.runOnce(env.worker('worker-1', { toolList: factTools }));
 
     const [completed] = env.ofType(run.id, 'tool.completed');
-    expect(completed).toMatchObject({ status: 'failed', exitCode: 3 });
+    expect(completed).toMatchObject({ status: 'failed', exitCode: 3, command: 'make lint' });
     expect(completed?.files).toBeUndefined();
-    expect(env.fold(run.id).workingFacts.commands).toEqual([{ command: 'make lint', failed: true, exitCode: 3, seq: completed?.seq }]);
+    expect(env.fold(run.id).workingFacts.commands).toEqual([{ command: 'make lint', failed: true, exitCode: 3, unobserved: true, seq: completed?.seq }]);
   });
 });

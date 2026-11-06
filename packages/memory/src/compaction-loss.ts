@@ -94,7 +94,7 @@ export const compactionLossSignals = (events: readonly (RunEvent | PublicRunEven
         if (call === undefined) break;
         const refused = event.denial !== undefined || rejectedCalls.has(event.callId);
         live.refused.set(callKey(call), refused);
-        const readFile = event.files?.find((file) => file.access === 'read');
+        const readFile = event.files?.flatMap((file) => (file.access === 'read' && file.sha256 !== undefined ? [{ path: file.path, sha256: file.sha256 }] : []))[0];
         if (readFile !== undefined) {
           const range = lineRangeOf(call);
           const before = snapshot?.reads.get(readFile.path);

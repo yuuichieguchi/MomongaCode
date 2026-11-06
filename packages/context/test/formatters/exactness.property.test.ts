@@ -96,7 +96,7 @@ describe('T4-2prime: the log formatter is exact, its inverse reproduces the raw 
     ['go', GO, ['--- FAIL: TestX (0.00s)', '    x_test.go:12: got 1 want 2']],
     ['marker-less', NO_MARKER, ['the widget count drifted to 9 in src/widget.ts:88']],
   ])('a failed %s call formatted with log keeps every raw line in the text the model sees', (_name, raw, lines) => {
-    const result = formatToolOutput({ output: raw, tool: BASH, enabled: ['log'], terms: [], status: 'failed' });
+    const result = formatToolOutput({ output: raw, tool: BASH, enabled: ['log'], terms: [], reader: 'ReadOutput', status: 'failed' });
     expect(result).toBeDefined();
     const shown = (result as { output: string }).output;
     for (const line of lines) expect(shown.split('\n')).toContain(line);

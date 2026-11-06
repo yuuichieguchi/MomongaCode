@@ -7,23 +7,25 @@ import {
   budgetFor,
   buildContext,
   checkSummary,
+  claimedTokens,
   criticalIdentifiersOf,
   measureLayers,
   measurePinned,
+  readerNamesOf,
+  readersOffered,
+  referenceKindsOf,
   renderWorkingState,
-  textOfItem,
   workingStateCapFor,
 } from '@momonga/context';
-import type { ActivatedSkill, TokenMeter, BuildContextInput, ContextArrival, ContextNotice, BuildContextPorts, BuiltContext, CompactionPlan, ContextEviction, LoadedGoverning, PinnedMeasure, TouchedPath } from '@momonga/context';
+import type { ActivatedSkill, ReferenceReaders, TokenMeter, BuildContextInput, ContextArrival, ContextNotice, BuildContextPorts, BuiltContext, CompactionPlan, ContextEviction, LoadedGoverning, PinnedMeasure, TouchedPath } from '@momonga/context';
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import { resolveGoverning } from '@momonga/memory';
 import type { Session } from '@momonga/store';
-import { compactionSummaryMessage, decodeCompactionSummary, tokensForText, userMessageContent } from '@momonga/protocol';
+import { DETERMINISTIC_SUMMARY_TEXT, compactionSummaryMessage, decodeCompactionSummary, tokensForText, userMessageContent } from '@momonga/protocol';
 import type { CompactRequest, CompactResource, CompactionInputItem, ContentPart, FunctionTool, InputItem, MessageInputItem, NoticeReduction, RunEvent, RunEventPayload, RunState, SummaryFidelity } from '@momonga/protocol';
 import { foldRunState } from '@momonga/store';
 import { GatewayRequestError } from '../gateway-client.ts';
 import { recallQueryOf } from '../memory/recall-query.ts';
-import type { WorkerBlobs } from './types.ts';
 import { arrivalsOf } from './context-arrivals.ts';
 import { renderedFormsOf } from './context-forms.ts';
 import type { ClaimContext } from './claim-context.ts';
@@ -80,15 +82,23 @@ const governingKeyOf = (governing: { active: unknown; conflicts: unknown }): str
 
 const EMPTY_GOVERNING: LoadedGoverning = { active: [], conflicts: [] };
 
-const workingStateOf = (ctx: ClaimContext, state: RunState): string | undefined =>
-  state.summary === undefined
-    ? undefined
-    : renderWorkingState(state, { capTokens: workingStateCapFor(ctx.capabilities), tokensOf: tokensForText, verificationCommands: ctx.verificationCommands });
+const renderedWorkingState = (ctx: ClaimContext, state: RunState, capTokens: number, readers: ReferenceReaders): string => {
+  const text = renderWorkingState(state, { capTokens, tokensOf: tokensForText, verificationCommands: ctx.verificationCommands, readers });
+  if (text === undefined) throw new Error(`run ${state.runId} has no summary to render a working state for`);
+  return text;
+};
+
+const workingStateOf = (ctx: ClaimContext, state: RunState): ((readers: ReferenceReaders) => string) | undefined =>
+  state.summary === undefined ? undefined : (readers) => renderedWorkingState(ctx, state, workingStateCapFor(ctx.capabilities), readers);
 
 const projectedWorkingStateOf = (ctx: ClaimContext, state: RunState): string | undefined =>
-  state.history.length === 0 ? undefined : workingStateOf(ctx, projectCompaction(ctx, state.nextItemSeq - 1, compactionSummaryMessage(''), ''));
+  state.history.length === 0
+    ? undefined
+    : renderedWorkingState(ctx, projectCompaction(ctx, state.nextItemSeq - 1, compactionSummaryMessage('', 'model'), ''), workingStateCapFor(ctx.capabilities), ctx.readers());
 
-type AdmittedFloor = { pinnedTokens: number; tools: FunctionTool[]; offered: string; governing: string };
+type AdmittedFloor = { pinnedTokens: number; tools: FunctionTool[]; offered: string; governing: string; kinds: string };
+
+const kindsKeyOf = (state: RunState): string => [...referenceKindsOf(state)].sort().join('\n');
 
 type Companions = ReturnType<ClaimContext['companions']>;
 
@@ -105,7 +115,7 @@ const recordedReferencesOf = (ctx: ClaimContext): ReadonlySet<string> =>
       )
     : new Set<string>();
 
-type OfferedInput = { input: BuildContextInput; offered: string; governing: string };
+type OfferedInput = { input: BuildContextInput; offered: string; governing: string; kinds: string; joined: string[] };
 
 const offeredInputOf = (
   ctx: ClaimContext,
@@ -126,9 +136,16 @@ const offeredInputOf = (
   const offered = offeredKeyOf(candidates, companions);
   const governing = governingFor(ctx, session, touchedPaths, scan);
   const governingKey = governingKeyOf(governing);
+  const kinds = kindsKeyOf(state);
+  const readers = readersOffered(ctx.readers(), candidates);
   const recorded = admittedFloors.get(ctx);
-  const admittedTools = recorded !== undefined && (ctx.token.observedCapacity || recorded.offered === offered) ? recorded : undefined;
-  const admittedFloor = admittedTools !== undefined && admittedTools.governing === governingKey ? admittedTools : undefined;
+  const admittedTools = recorded !== undefined && (ctx.token.observedCapacity ? true : recorded.offered === offered && recorded.kinds === kinds) ? recorded : undefined;
+  const readerNames = new Set(readerNamesOf(readers, state));
+  const joined =
+    admittedTools !== undefined && admittedTools.kinds !== kinds
+      ? candidates.filter((tool) => readerNames.has(tool.name) && !admittedTools.tools.some((admitted) => admitted.name === tool.name))
+      : [];
+  const admittedFloor = admittedTools !== undefined && admittedTools.governing === governingKey && joined.length === 0 ? admittedTools : undefined;
   const rendered = ctx.token.observedCapacity ? renderedFormsOf(options.store, state) : undefined;
   const wrapUpItems: InputItem[] = wrapUp === undefined ? [] : [{ type: 'message', role: 'user', content: wrapUpInstructionFor(wrapUp) }];
   const input: BuildContextInput = {
@@ -137,7 +154,8 @@ const offeredInputOf = (
     model: ctx.alias,
     sources: {
       systemPrompt: ctx.systemPrompt,
-      tools: admittedTools === undefined ? candidates : admittedTools.tools,
+      tools: admittedTools === undefined ? candidates : [...admittedTools.tools, ...joined],
+      readers,
       task: { type: 'message', role: 'user', content: task.content },
       taskSeq: state.taskSeq,
       ...(ctx.skills.catalog === undefined ? {} : { skillCatalog: ctx.skills.catalog }),
@@ -180,7 +198,7 @@ const offeredInputOf = (
       : {}),
     outputFormatters: ctx.token.outputFormatters,
   };
-  return { input, offered, governing: governingKey };
+  return { input, offered, governing: governingKey, kinds, joined: joined.map((tool) => tool.name) };
 };
 
 export const contextInputOf = (
@@ -254,13 +272,14 @@ export const measureLayersWith = (ctx: ClaimContext, activatedSkills: readonly A
 };
 
 const buildOnce = async (ctx: ClaimContext, wrapUp: WrapUpReason | undefined, level: number, trailing: readonly InputItem[]): Promise<BuiltContext> => {
-  const { input, offered, governing } = offeredInputOf(ctx, wrapUp, level, 'active', trailing);
+  const { input, offered, governing, kinds, joined } = offeredInputOf(ctx, wrapUp, level, 'active', trailing);
   const built = await buildContext(input, portsOf(ctx));
   if (wrapUp === undefined) {
     ctx.pinnedDigest.value ??= built.pinnedDigest;
     if (input.pinnedTokens === undefined) {
-      admittedFloors.set(ctx, { pinnedTokens: built.pinnedTokens, tools: built.tools, offered, governing });
+      admittedFloors.set(ctx, { pinnedTokens: built.pinnedTokens, tools: built.tools, offered, governing, kinds });
     }
+    if (joined.length > 0) ctx.journal.append([{ type: 'tool.loaded', names: joined }]);
   }
   return built;
 };
@@ -269,45 +288,7 @@ type CompactedPayload = Extract<RunEventPayload, { type: 'context.compacted' }>;
 type CompactedEvent = Extract<RunEvent, { type: 'context.compacted' }>;
 type CompactionSource = Pick<CompactionPlan, 'throughSeq' | 'input' | 'summaryTokenCap' | 'pinnedText' | 'notices'>;
 
-const wholeBlobText = async (blobs: WorkerBlobs, handle: string, scope: { runId: string }): Promise<string> => {
-  const { totalBytes } = await blobs.read(handle, { offset: 0, length: 0 }, scope);
-  return (await blobs.read(handle, { offset: 0, length: totalBytes }, scope)).text;
-};
-
-type RegionText = { text: string; unreadable: { handle: string; reason: string }[] };
-
-const replacedRegionText = async (ctx: ClaimContext, plan: CompactionSource): Promise<RegionText> => {
-  const replaced = ctx.journal.state.history.filter((entry) => entry.seq <= plan.throughSeq);
-  const unreadable: RegionText['unreadable'] = [];
-  const recorded = await Promise.all(
-    replaced.map(async (entry) => {
-      if (entry.handle === undefined || entry.item.type !== 'function_call_output') return textOfItem(entry.item);
-      const { handle } = entry;
-      try {
-        return await wholeBlobText(ctx.options.blobs, handle, { runId: ctx.run.id });
-      } catch (error) {
-        unreadable.push({ handle, reason: error instanceof Error ? error.message : String(error) });
-        return textOfItem(entry.item);
-      }
-    }),
-  );
-  return { text: [...recorded, ...plan.input.map((item) => textOfItem(item))].join('\n'), unreadable };
-};
-
 const noticeOf = (code: string, message: string): RunEventPayload => ({ type: 'notice', level: 'warning', message, code });
-
-const fittingHead = (text: string, maxTokens: number): string => {
-  if (tokensForText(text) <= maxTokens) return text;
-  const marker = ' [… cut]';
-  let kept = 0;
-  let tooLong = text.length;
-  while (tooLong - kept > 1) {
-    const middle = Math.floor((kept + tooLong) / 2);
-    if (tokensForText(`${text.slice(0, middle)}${marker}`) <= maxTokens) kept = middle;
-    else tooLong = middle;
-  }
-  return `${text.slice(0, kept)}${marker}`;
-};
 
 const projectCompaction = (ctx: ClaimContext, throughSeq: number, item: CompactionInputItem | MessageInputItem, summary: string): RunState => {
   const state = ctx.journal.state;
@@ -327,28 +308,17 @@ const projectCompaction = (ctx: ClaimContext, throughSeq: number, item: Compacti
   return foldRunState(state, event);
 };
 
-const renderedFacts = (ctx: ClaimContext, projected: RunState, capTokens: number): string => {
-  const text = renderWorkingState(projected, { capTokens, tokensOf: tokensForText, verificationCommands: ctx.verificationCommands });
-  if (text === undefined) throw new Error(`run ${projected.runId} has no summary after a projected compaction`);
-  return text;
-};
+const renderedFacts = (ctx: ClaimContext, projected: RunState, capTokens: number): string => renderedWorkingState(ctx, projected, capTokens, ctx.readers());
 
-const deterministicCompaction = (ctx: ClaimContext, plan: CompactionSource, guidelineVersion: number, fidelity?: SummaryFidelity): CompactedPayload => {
-  const projected = projectCompaction(ctx, plan.throughSeq, compactionSummaryMessage(''), '');
-  const facts = renderedFacts(ctx, projected, Math.min(plan.summaryTokenCap, workingStateCapFor(ctx.capabilities)));
-  const previous = ctx.journal.state.summary?.summary ?? '';
-  const room = plan.summaryTokenCap - tokensForText(facts) - 1;
-  const summary = previous === '' || room <= 0 ? facts : `${fittingHead(previous, room)}\n${facts}`;
-  return {
-    type: 'context.compacted',
-    item: compactionSummaryMessage(summary),
-    summary,
-    replacedThroughSeq: plan.throughSeq,
-    source: 'deterministic',
-    ...(fidelity === undefined ? {} : { fidelity }),
-    guidelineVersion,
-  };
-};
+const deterministicCompaction = (plan: CompactionSource, guidelineVersion: number, fidelity?: SummaryFidelity): CompactedPayload => ({
+  type: 'context.compacted',
+  item: compactionSummaryMessage(DETERMINISTIC_SUMMARY_TEXT, 'code'),
+  summary: DETERMINISTIC_SUMMARY_TEXT,
+  replacedThroughSeq: plan.throughSeq,
+  source: 'deterministic',
+  ...(fidelity === undefined ? {} : { fidelity }),
+  guidelineVersion,
+});
 
 export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource): Promise<void> => {
   const { journal, options } = ctx;
@@ -381,7 +351,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
         'compaction_failed',
         `Compaction summary failed (${error.code}): ${error.message}${roleAlias === undefined ? '' : ` [models.roles.compaction names alias ${roleAlias}]`}; the deterministic summary was used`,
       ),
-      deterministicCompaction(ctx, plan, NO_ADOPTED_GUIDELINE),
+      deterministicCompaction(plan, NO_ADOPTED_GUIDELINE),
       ...unrecordedNoticePayloads(ctx, plan.notices),
     ]);
     return;
@@ -392,11 +362,19 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
   const item: CompactionInputItem = { type: 'compaction', id: compaction.id, encrypted_content: compaction.encrypted_content };
   const summary = decodeCompactionSummary(compaction.encrypted_content) ?? '';
   const projected = projectCompaction(ctx, plan.throughSeq, item, summary);
-  const region = await replacedRegionText(ctx, plan);
+  const claims = claimedTokens(summary);
+  const recorded = await options.store.journalFacts.fidelity(
+    {
+      runId: ctx.run.id,
+      throughEventSeq: projected.workingFacts.replacedThroughEventSeq ?? journal.state.lastSeq,
+      cwd: sessionOf(ctx).cwd,
+      tokens: claims,
+    },
+    ctx.control.signal,
+  );
   const fidelity = checkSummary(summary, {
-    region: region.text,
+    attested: recorded.attested,
     pinned: plan.pinnedText,
-    previousSummary: journal.state.summary?.summary ?? '',
     critical: criticalIdentifiersOf(projected.workingFacts),
     workingState: renderedFacts(ctx, projected, workingStateCapFor(ctx.capabilities)),
   });
@@ -413,12 +391,12 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
     timing: { durationMs: options.clock.now() - startedAt },
   };
   const unreadableNotices =
-    region.unreadable.length === 0
+    recorded.unreadable.length === 0
       ? []
       : [
           noticeOf(
             'compaction_outputs_unreadable',
-            `Compaction fidelity check could not read ${region.unreadable.length} recorded output(s): ${region.unreadable.map((blob) => `${blob.handle} (${blob.reason})`).join('; ')}; a token found only there cannot be verified`,
+            `Compaction fidelity check could not read ${recorded.unreadable.length} recorded output(s): ${recorded.unreadable.map((blob) => `${blob.handle} (${blob.reason})`).join('; ')}; a token found only there cannot be verified`,
           ),
         ];
   const accepted = fidelity.fabricated.length === 0;
@@ -430,7 +408,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
       : [noticeOf('compaction_rejected', `Compaction summary rejected: ${fidelity.fabricated.length} token(s) found nowhere in the replaced history or the pinned context (${fidelity.fabricated.slice(0, MAX_NAMED_TOKENS).join(', ')}); the deterministic summary was used`)]),
     accepted
       ? { type: 'context.compacted', item, summary, replacedThroughSeq: plan.throughSeq, source: 'model', fidelity, guidelineVersion }
-      : deterministicCompaction(ctx, plan, guidelineVersion, fidelity),
+      : deterministicCompaction(plan, guidelineVersion, fidelity),
     ...unrecordedNoticePayloads(ctx, plan.notices),
   ]);
 };
@@ -525,7 +503,7 @@ export const recoverRejectedCompaction = async (ctx: ClaimContext, error: unknow
     });
     return 'done';
   }
-  ctx.journal.append([{ type: 'context.compaction_rejected', ...(position ?? {}), item: compactionSummaryMessage(summary.summary) }]);
+  ctx.journal.append([{ type: 'context.compaction_rejected', ...(position ?? {}), item: compactionSummaryMessage(summary.summary, 'model') }]);
   return 'recovered';
 };
 

@@ -94,7 +94,7 @@ describe('forced compaction inside one turn', () => {
   });
 
   it('takes the latest cut before the last step at the last level', async () => {
-    const history = stepsOf([930, 930, 2205, 2205, 2205, 2205]);
+    const history = stepsOf([930, 930, 2150, 2150, 2150, 2370]);
     const error = await overflowOf(inputFor(capabilities, { sources: sourcesWith({ history }), level: 1 }), harness(capabilities).ports);
 
     expect(error.lastLevel).toBe(true);
@@ -133,10 +133,10 @@ describe('forced compaction inside one turn', () => {
   });
 
   it.for([
-    { chars: 9235, inputTokens: 2944, fits: true },
-    { chars: 9239, inputTokens: 2945, fits: false },
+    { chars: 9111, inputTokens: 2944, fits: true },
+    { chars: 9115, inputTokens: 2945, fits: false },
   ])('includes the task in the summary request budget (step of $chars characters)', async ({ chars, inputTokens, fits }) => {
-    const history = [argsCall(1, 'c0', chars), output(2, 'c0', 'ok'), argsCall(3, 'c1', 2083), output(4, 'c1', 'ok')];
+    const history = [argsCall(1, 'c0', chars), output(2, 'c0', 'ok'), argsCall(3, 'c1', 2207), output(4, 'c1', 'ok')];
     const error = await overflowOf(inputFor(capabilities, { sources: sourcesWith({ history }), level: 1 }), harness(capabilities).ports);
 
     expect(error.inputTokens).toBe(inputTokens);

@@ -6,7 +6,7 @@ import type { AdapterRequest, CountTokensRequest, CountTokensResult, ToolCalling
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
 import { expectErrorBody, postJson, readJson, readSse } from './gateway-helpers.ts';
 import type { Harness } from './gateway-helpers.ts';
-import { CC_CAPABILITIES, TARGET, collect, lastCompletionBody, listDirTool, makeAdapter, readFileTool, startFake, userText } from './cc-support.ts';
+import { CC_CAPABILITIES, TARGET, collect, lastCompletionBody, listDirTool, makeAdapter, readFileTool, startFake, userText, MODEL_FRAMING } from './cc-support.ts';
 import { UNTRUSTED_NOTICE, ccAdapterFor, signedCompaction, startCcGateway } from './cc-compact-support.ts';
 
 const tokensOfWire = (wire: unknown): number => Math.max(1, Math.ceil(JSON.stringify(wire).length / 4));
@@ -159,7 +159,7 @@ describe('POST /v1/momonga/count_tokens counts the chat-completions wire', () =>
     const { harness, fake } = await gatewayFor('native');
     const body = { input: [signedCompaction('Earlier <work> was done.'), userText('continue')] };
     const wire = (await sentWire(harness, fake, body)) as { messages: Array<{ content: string }> };
-    expect(wire.messages[0]?.content).toBe('<conversation_summary>\nEarlier &lt;work> was done.\n</conversation_summary>\n\ncontinue');
+    expect(wire.messages[0]?.content).toBe(`<conversation_summary>\n${MODEL_FRAMING}\nEarlier &lt;work> was done.\n</conversation_summary>\n\ncontinue`);
     const counted = await count(harness, body);
     expect(counted.status).toBe(200);
     expect(counted.body.input_tokens).toBe(tokensOfWire(wire));

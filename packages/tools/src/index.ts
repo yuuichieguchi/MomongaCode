@@ -38,6 +38,8 @@ export type {
   ToolIdempotencyLookup,
   ToolIdempotencyRecord,
 } from './ports.ts';
+export { OBSERVED_FILE_HASH_PAGE_BYTES, createGitWorkTreeObserver, observedToolFiles } from './work-tree-observer.ts';
+export type { GitWorkTreeObserverOptions, ObservedFile, ObservedWindow, WorkTreeMark, WorkTreeObserver } from './work-tree-observer.ts';
 export { createToolRegistry, extendToolSet } from './registry.ts';
 export { pageToFit } from './paging.ts';
 export type { SnapshotOptions, ToolListOptions, ToolRegistry, ToolSet, ToolSource, ToolSourceListing } from './registry.ts';

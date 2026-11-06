@@ -14,13 +14,13 @@ import { contributionAtTerminal, createSkillsPort, createWorker } from '@momonga
 import type { AgentCatalogPort, EvidenceRun, GovernancePort, HistoryPort, MemoryPort, SkillsPort, ToolEnv, ToolRuntimePort, Worker, WorkerOptions } from '@momonga/runtime';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
-import { createJournalReader, foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
+import { blobDirectoryOf, createBlobStore, createJournalReader, foldRunState, initialRunState, openRuntimeStore } from '@momonga/store';
 import type { Claim, ContributionPreparer, Run, RuntimeStore, Session } from '@momonga/store';
 import { FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock } from '@momonga/testkit';
 import type { FakeClock } from '@momonga/testkit';
-import { createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
+import { createGitWorkTreeObserver, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import type { AbandonTarget, AnyTool, ToolExecutor, ToolSessionState, ToolSet } from '@momonga/tools';
-import { evidenceHandler, reflectionInputHandler, verdictHandler } from '../../src/memory/journal-thread.ts';
+import { evidenceHandler, fidelityHandler, reflectionInputHandler, verdictHandler } from '../../src/memory/journal-thread.ts';
 import type { JournalHandler } from '../../src/memory/journal-thread.ts';
 import { systemTimers } from '../../src/service/timers.ts';
 import { within } from './deferred.ts';
@@ -155,10 +155,26 @@ const inProcessFacts = (dbPath: string, handlerFor: (reader: ReturnType<typeof c
   }
 };
 
-export const journalReaderPreparer =(dbPath: string): ContributionPreparer => ({
+const inProcessFidelity = (dbPath: string) => async (request: object): Promise<never> => {
+  const db = openDatabase(dbPath);
+  try {
+    const handler = fidelityHandler({
+      reader: createJournalReader(db),
+      blobs: createBlobStore(db, createFakeClock(START_MS), blobDirectoryOf(dbPath)),
+      current: { progress: undefined },
+      gateFor: () => ({ unit: () => undefined }),
+    });
+    return (await handler(request as Record<string, unknown>, () => undefined)) as never;
+  } finally {
+    db.close();
+  }
+};
+
+export const journalReaderPreparer = (dbPath: string): ContributionPreparer => ({
   verdict: inProcessFacts(dbPath, verdictHandler),
   evidence: inProcessFacts(dbPath, evidenceHandler),
   reflectionInput: inProcessFacts(dbPath, reflectionInputHandler),
+  fidelity: inProcessFidelity(dbPath),
   measure: async (request) => {
     const db = openDatabase(dbPath);
     try {
@@ -271,6 +287,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
   };
 
   const toolRuntime = (toolList: () => AnyTool[]): ToolRuntimePort => ({
+    workTreeObserver: (target: Session) => createGitWorkTreeObserver({ storeDir: path.join(stateDir, 'observer'), workTree: target.cwd, trusted: false }),
     envFor: (target: Session) => {
       const env: ToolEnv = { ...target.env };
       portCalls.envFor.push({ sessionId: target.id, env });

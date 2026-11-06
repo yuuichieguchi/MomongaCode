@@ -29,7 +29,7 @@ describe('the render keeps each tool output at most itemCap(room) tokens on the 
 
   it('a text journaled at a larger cap is cut again at the render with one marker and the same handle', async () => {
     const handle = handleOf(ASCII);
-    const journaled = await fitToTokens({ text: ASCII, cap: 600, handle, count: envelopedCount });
+    const journaled = await fitToTokens({ text: ASCII, cap: 600, handle, reader: 'ReadOutput', count: envelopedCount });
     expect(markers(journaled)).toBe(1);
     const sources = sourcesWith({ history: [call(1, 'big'), output(2, 'big', journaled, handle)] });
     const built = await buildContext(inputFor(capabilities, { sources, itemCap: 300 }), harness(capabilities).ports);
@@ -42,7 +42,7 @@ describe('the render keeps each tool output at most itemCap(room) tokens on the 
 
   it('a text journaled at the same cap is rendered unchanged', async () => {
     const handle = handleOf(ASCII);
-    const journaled = await fitToTokens({ text: ASCII, cap: 300, handle, count: envelopedCount });
+    const journaled = await fitToTokens({ text: ASCII, cap: 300, handle, reader: 'ReadOutput', count: envelopedCount });
     const sources = sourcesWith({ history: [call(1, 'big'), output(2, 'big', journaled, handle)] });
     const built = await buildContext(inputFor(capabilities, { sources, itemCap: 300 }), harness(capabilities).ports);
     expect(outputTextOf(built.input, 'big')).toBe(journaled);

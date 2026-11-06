@@ -6,7 +6,7 @@ const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[
 
 const HANDLE = 'cd'.repeat(32);
 
-const fit = (text: string, cap: number): Promise<string> => fitToTokens({ text, cap, handle: HANDLE, count: tokensForText });
+const fit = (text: string, cap: number): Promise<string> => fitToTokens({ text, cap, handle: HANDLE, reader: 'ReadOutput', count: tokensForText });
 
 const inputs: Array<[string, string]> = [
   ['ascii lines', Array.from({ length: 400 }, (_unused, index) => `row ${index}`).join('\n')],

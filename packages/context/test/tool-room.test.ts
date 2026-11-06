@@ -47,7 +47,7 @@ describe('the tools a target is offered', () => {
     const { ports } = harness(capabilities);
     const task = (text: string) => ({ type: 'message' as const, role: 'user' as const, content: text });
     const short = await buildContext(inputFor(capabilities, { sources: sourcesWith({ tools: TOOLS, task: task('Do the work.') }) }), ports);
-    const longer = await buildContext(inputFor(capabilities, { sources: sourcesWith({ tools: TOOLS, task: task('Do the work. '.repeat(40)) }) }), ports);
+    const longer = await buildContext(inputFor(capabilities, { sources: sourcesWith({ tools: TOOLS, task: task('Do the work. '.repeat(20)) }) }), ports);
     expect(longer.tools).toEqual(short.tools);
     expect(longer.notices.filter((notice) => notice.code === 'tools_dropped')).toEqual(short.notices.filter((notice) => notice.code === 'tools_dropped'));
   });

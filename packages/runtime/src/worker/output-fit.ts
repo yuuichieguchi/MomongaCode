@@ -1,5 +1,6 @@
 import { fitToTokens, itemCapFor } from '@momonga/context';
 import type { TokenCount, TokenMeter } from '@momonga/context';
+import { OUTPUT_READER_TOOL } from '@momonga/foundation';
 import { tokensForText } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
 import type { OutputFit } from '@momonga/tools';
@@ -14,7 +15,7 @@ const outputFitOf = (input: { count: TokenCount; itemCap: () => Promise<number> 
       await capOf();
     },
     fits: async (text) => (await input.count(text)) <= (await capOf()),
-    fit: async (text, handle) => fitToTokens({ text, cap: await capOf(), handle, count: input.count }),
+    fit: async (text, handle) => fitToTokens({ text, cap: await capOf(), handle, reader: OUTPUT_READER_TOOL, count: input.count }),
   };
 };
 

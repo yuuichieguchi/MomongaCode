@@ -9,16 +9,16 @@ const jsonArray = (): string => JSON.stringify(Array.from({ length: 50 }, (_unus
 describe('the record status decides whether a reduction that is not exact may apply', () => {
   it('a failed call is never reduced by json, while the same output of a completed call is', () => {
     const raw = jsonArray();
-    const completed = formatToolOutput({ output: raw, tool: FETCH, enabled: ['json'], terms: [], status: 'completed' });
+    const completed = formatToolOutput({ output: raw, tool: FETCH, enabled: ['json'], terms: [], reader: 'ReadOutput', status: 'completed' });
     expect(completed?.formatter).toBe('json');
     expect(completed?.output).toBe(formatJson(raw, []));
-    expect(formatToolOutput({ output: raw, tool: FETCH, enabled: ['json'], terms: [], status: 'failed' })).toBeUndefined();
+    expect(formatToolOutput({ output: raw, tool: FETCH, enabled: ['json'], terms: [], reader: 'ReadOutput', status: 'failed' })).toBeUndefined();
   });
 
   it('a failed Bash call that prints a JSON array is not reduced by json even with log enabled', () => {
     const raw = jsonArray();
-    const result = formatToolOutput({ output: `${raw}\n[exit code 1]`, tool: BASH, enabled: ['json', 'log'], terms: [], status: 'failed' });
+    const result = formatToolOutput({ output: `${raw}\n[exit code 1]`, tool: BASH, enabled: ['json', 'log'], terms: [], reader: 'ReadOutput', status: 'failed' });
     expect(result?.formatter).not.toBe('json');
-    expect(formatToolOutput({ output: raw, tool: BASH, enabled: ['json'], terms: [], status: 'failed' })).toBeUndefined();
+    expect(formatToolOutput({ output: raw, tool: BASH, enabled: ['json'], terms: [], reader: 'ReadOutput', status: 'failed' })).toBeUndefined();
   });
 });

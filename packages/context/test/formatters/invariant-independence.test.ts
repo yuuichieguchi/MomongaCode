@@ -23,13 +23,13 @@ const droppedFrom = (raw: string, line: string): string =>
 describe('T4-2prime does not depend on a vocabulary', () => {
   it.each(DROPPED_LINES)('a log formatting that drops the line %j is rejected whatever the line says', (line) => {
     const raw = rawWith(line);
-    const violations = formattingViolations({ raw, formatted: droppedFrom(raw, line), handle: HANDLE, header: formattedHeader('log', HANDLE), formatter: 'log' });
+    const violations = formattingViolations({ raw, formatted: droppedFrom(raw, line), handle: HANDLE, header: formattedHeader('log', HANDLE, 'ReadOutput'), formatter: 'log' });
     expect(violations).toContain('T4-2');
   });
 
   it('a log formatting that drops one ordinary progress line is rejected too', () => {
     const raw = rawWith('the widget count drifted to 9 in src/widget.ts:88');
-    const violations = formattingViolations({ raw, formatted: droppedFrom(raw, 'step 17 ok'), handle: HANDLE, header: formattedHeader('log', HANDLE), formatter: 'log' });
+    const violations = formattingViolations({ raw, formatted: droppedFrom(raw, 'step 17 ok'), handle: HANDLE, header: formattedHeader('log', HANDLE, 'ReadOutput'), formatter: 'log' });
     expect(violations).toContain('T4-2');
   });
 
@@ -37,8 +37,8 @@ describe('T4-2prime does not depend on a vocabulary', () => {
     const repeated = Array.from({ length: 30 }, () => 'warning: deprecated api');
     const raw = [...filler(1, 5), ...repeated, ...filler(6, 5)].join('\n');
     const formatted = [...filler(1, 5), 'warning: deprecated api [×30]', ...filler(6, 5)].join('\n');
-    expect(formattingViolations({ raw, formatted, handle: HANDLE, header: formattedHeader('log', HANDLE), formatter: 'log' })).toEqual([]);
+    expect(formattingViolations({ raw, formatted, handle: HANDLE, header: formattedHeader('log', HANDLE, 'ReadOutput'), formatter: 'log' })).toEqual([]);
     const miscounted = [...filler(1, 5), 'warning: deprecated api [×29]', ...filler(6, 5)].join('\n');
-    expect(formattingViolations({ raw, formatted: miscounted, handle: HANDLE, header: formattedHeader('log', HANDLE), formatter: 'log' })).toContain('T4-2');
+    expect(formattingViolations({ raw, formatted: miscounted, handle: HANDLE, header: formattedHeader('log', HANDLE, 'ReadOutput'), formatter: 'log' })).toContain('T4-2');
   });
 });
