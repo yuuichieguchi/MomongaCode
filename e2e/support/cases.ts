@@ -45,7 +45,7 @@ export const E2E_CASES = [
   { id: 'b2-reap-escapee', file: 'b2-bash.test.ts', title: 'b2: after a runtime SIGKILL, recovery also stops a child that left the group with setsid but still holds the call marker', needsBash: true },
   { id: 'b2-reap-escapee-dropped', file: 'b2-bash.test.ts', title: 'b2: after a runtime SIGKILL, a child that left the group and closed the call marker survives recovery, because nothing ties it to the call, unless the sandbox itself ends with the runtime (bubblewrap --die-with-parent)', needsBash: true },
   { id: 'b3-gateway-kill', file: 'b3-gateway-kill.test.ts', title: 'b3: a gateway killed mid-call is restarted and the run completes', needsBash: false },
-  { id: 'c1', file: 'c-cancel.test.ts', title: 'c1: cancel during sleep 30', needsBash: true },
+  { id: 'c1', file: 'c-cancel.test.ts', title: 'c1: cancel during sleep 30 ends the command through its SIGTERM handler', needsBash: true },
   { id: 'c1b', file: 'c-cancel.test.ts', title: 'c1b: cancel when the command ignores SIGTERM', needsBash: true },
   { id: 'c2', file: 'c-cancel.test.ts', title: 'c2: cancel mid-stream cuts the upstream connection', needsBash: false },
   { id: 'c3', file: 'c-cancel.test.ts', title: 'c3: cancel of a queued run', needsBash: false },

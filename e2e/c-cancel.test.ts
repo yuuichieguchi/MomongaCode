@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SANDBOX_KILL_GRACE_MS } from '../packages/runtime/src/process/constants.ts';
 import { readDb } from './support/db.ts';
@@ -22,6 +24,7 @@ import {
 } from './support/wait.ts';
 
 const PARTIAL_TEXT = 'partial';
+const TERM_RECEIVED_FILE = 'term-received';
 
 const toolGroupsOf = (home: E2eHome): number[] =>
   readDb<{ pgid: number }>(home.paths.databases.runtime, TOOL_GROUPS_SQL).map((row) => Number(row.pgid));
@@ -33,7 +36,7 @@ const untilStatus = async (runtime: RuntimeClient, runId: string, status: string
   await until(async () => (await runtime.getRun(runId)).run.status === status, { deadlineMs, description: `run ${runId} is ${status}` });
 };
 
-const cancelDuringBash = async (command: string, cancelBoundMs: number): Promise<number> => {
+const cancelDuringBash = async (command: string, cancelBoundMs: number): Promise<{ elapsed: number; project: string }> => {
   const home = await createE2eHome();
   const stack = await startStack({ home, needsBash: true, script: [toolCallReply('Bash', { command })] });
   expect(stack.sandbox).toBe(platformSandbox());
@@ -65,7 +68,7 @@ const cancelDuringBash = async (command: string, cancelBoundMs: number): Promise
 
     await shutdownBarrier(stack);
     expect(chatCompletions(stack.fake)).toHaveLength(1);
-    return elapsed;
+    return { elapsed, project: home.project };
   } finally {
     await runtime.close();
   }
@@ -74,13 +77,13 @@ const cancelDuringBash = async (command: string, cancelBoundMs: number): Promise
 describe('c: cancel', () => {
   it.skipIf(skipCase('c1'))(titleOf('c1'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
     sandboxOrSkip(context);
-    const elapsed = await cancelDuringBash('sleep 30', E2E_CANCEL_TERM_BOUND_MS);
-    expect(elapsed).toBeLessThan(SANDBOX_KILL_GRACE_MS);
+    const { project } = await cancelDuringBash(`trap ': > ${TERM_RECEIVED_FILE}; exit 143' TERM; sleep 30 & wait`, E2E_CANCEL_TERM_BOUND_MS);
+    expect(fs.existsSync(path.join(project, TERM_RECEIVED_FILE))).toBe(true);
   });
 
   it.skipIf(skipCase('c1b'))(titleOf('c1b'), { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
     sandboxOrSkip(context);
-    const elapsed = await cancelDuringBash("trap '' TERM; sleep 30", E2E_CANCEL_KILL_BOUND_MS);
+    const { elapsed } = await cancelDuringBash("trap '' TERM; sleep 30", E2E_CANCEL_KILL_BOUND_MS);
     expect(elapsed).toBeGreaterThanOrEqual(SANDBOX_KILL_GRACE_MS);
     expect(elapsed).toBeLessThan(E2E_CANCEL_KILL_BOUND_MS);
   });
