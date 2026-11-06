@@ -2149,6 +2149,101 @@
       "measuredSeconds": 1.17,
       "measuredCpuSeconds": 1.57,
       "budgetCpuSeconds": 7
+    },
+    {
+      "config": "UpdateSwitch",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 354106,
+      "measuredSeconds": 101.36,
+      "measuredCpuSeconds": 159.38,
+      "budgetCpuSeconds": 322
+    },
+    {
+      "config": "UpdateSwitch.today",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoAbortRunning",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1336,
+      "measuredSeconds": 2.79,
+      "measuredCpuSeconds": 1.93,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "UpdateSwitch.jobsNotHeld",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoKilledJob",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 13739,
+      "measuredSeconds": 2.37,
+      "measuredCpuSeconds": 2.59,
+      "budgetCpuSeconds": 9
+    },
+    {
+      "config": "UpdateSwitch.admitPending",
+      "role": "evidence",
+      "expect": {
+        "violates": "PendingAddsNoWork",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 822,
+      "measuredSeconds": 3.23,
+      "measuredCpuSeconds": 2.07,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "UpdateSwitch.noNotice",
+      "role": "evidence",
+      "expect": {
+        "violates": "ClientsInformed",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 58,
+      "measuredSeconds": 3.52,
+      "measuredCpuSeconds": 1.76,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "UpdateSwitch.noRecord",
+      "role": "evidence",
+      "expect": {
+        "violates": "DraftKept",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 847,
+      "measuredSeconds": 3.11,
+      "measuredCpuSeconds": 2.03,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "UpdateSwitch.refuseOld",
+      "role": "evidence",
+      "expect": {
+        "violates": "SessionMoves",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 33942,
+      "measuredSeconds": 5.65,
+      "measuredCpuSeconds": 5.74,
+      "budgetCpuSeconds": 15
     }
   ]
 }
