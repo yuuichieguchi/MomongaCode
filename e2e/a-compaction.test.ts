@@ -15,6 +15,7 @@ import {
   journalOfRows,
   ofType,
   planScript,
+  seenOutputTokens,
   summaryRoute,
   summaryTextOf,
   upstreamRepliesOf,
@@ -159,7 +160,7 @@ const assertAcceptance = async (
   expect(grep?.data['handle']).toBe(haystack.handle);
   const grepInline = String(grep?.data['output']);
   expect(grepInline.length).toBeLessThan(haystack.grepOutput.length);
-  expect(grepInline.length).toBeLessThanOrEqual(plan.sizing.inlineChars);
+  expect(await seenOutputTokens(count, { callId: String(grep?.data['callId']), tool: 'Grep' }, grepInline)).toBeLessThanOrEqual(plan.sizing.itemCap);
 
   expect(compacted.length).toBeGreaterThanOrEqual(1);
   const firstCompaction = compacted[0] as JournalEvent;

@@ -1,5 +1,5 @@
 import { canonicalJson, createRedactor, systemClock } from '@momonga/foundation';
-import { createFsInstructionReader, createTokenMeter } from '@momonga/context';
+import { createFsInstructionReader, createTokenMeter, outputRenderOf } from '@momonga/context';
 import type { ContextOverflowError, TokenCounter } from '@momonga/context';
 import { COMPACTION_INSTRUCTIONS_MARKER, wireOf, wireTokensOf } from '@momonga/gateway';
 import type { ChatWire } from '@momonga/gateway';
@@ -10,7 +10,7 @@ import type { GatewayPort } from '@momonga/runtime';
 import { createUnsandboxed } from '@momonga/sandbox';
 import type { FakeRoute, FakeScriptedReply } from '@momonga/testkit';
 import { usageOf } from '@momonga/testkit';
-import { createBuiltinTools } from '@momonga/tools';
+import { createBuiltinTools, harnessOutputToolsOf } from '@momonga/tools';
 import { budgetFor, capacityFor, inputCeilingFor, itemCapFor } from '../../packages/context/src/budget.ts';
 import { errorBoundFor } from '../../packages/gateway/src/core/estimate.ts';
 import { makeEnv, unavailableEvidenceRun } from '../../packages/runtime/test/worker/harness.ts';
@@ -20,8 +20,10 @@ import { HAYSTACK_LINE_COUNT, HAYSTACK_READ_BACK_LINE, NEEDLE, writeFiller } fro
 import type { Haystack } from './haystack.ts';
 import type { E2eHome } from './home.ts';
 import { E2E_MODEL_ALIAS, countRequestOf } from './gateway-count.ts';
+import type { GatewayCountClient } from './gateway-count.ts';
 import { SESSION_PATH } from './runtime-client.ts';
 import { SUPERVISOR_APP_VERSION } from './stack.ts';
+import { E2E_MARGIN_MS } from './wait.ts';
 import { envelopeFinalReply, envelopeToolCallsReply, textReply, toolCallReply, wireTokensOfRequest } from './upstream.ts';
 
 export { budgetFor, errorBoundFor, wireOf, wireTokensOf };
@@ -67,7 +69,6 @@ export type Sizing = {
   readonly ceiling: number;
   readonly room: number;
   readonly itemCap: number;
-  readonly inlineChars: number;
   readonly summaryCap: number;
   readonly summaryItem: number;
   readonly highMark: number;
@@ -161,13 +162,21 @@ export const sizingFor = (capabilities: Capabilities, pinned: number): Sizing =>
     ceiling,
     room,
     itemCap,
-    inlineChars: 3 * itemCap,
     summaryCap,
     summaryItem,
     highMark,
     lowMark: pinned + EVICT_LOW_WATER * (highMark - pinned),
     gainThreshold: COMPACTION_MIN_GAIN * summaryItem,
   };
+};
+
+export const seenOutputTokens = async (count: GatewayCountClient, call: { callId: string; tool: string }, output: string): Promise<number> => {
+  const render = outputRenderOf({ type: 'function_call_output', call_id: call.callId, output }, call.tool, new Set(harnessOutputToolsOf(createBuiltinTools())), false);
+  const counted = await count.gateway.countTokens(
+    { model: E2E_MODEL_ALIAS, input: [render.full], momonga: { lenient_items: { call_names: { [call.callId]: call.tool }, with_tools: true } } },
+    { signal: AbortSignal.timeout(E2E_MARGIN_MS) },
+  );
+  return counted.input_tokens;
 };
 
 const textItemOf = (tokens: number): InputItem => ({ type: 'message', role: 'user', content: 'x'.repeat(ESTIMATED_CHARACTERS_PER_TOKEN * tokens) });
@@ -497,7 +506,7 @@ const describeRun = (run: DryRun): string =>
   `${run.perturbation >= 0 ? '+' : ''}${run.perturbation} n=${run.fillers} claims=${run.claims} ${run.facts.status}${run.facts.stopReason === undefined ? '' : ` ${run.facts.stopReason}`} compactions=${run.facts.compactionSeqs.length} grepEviction=${run.facts.grepEvictionSeq ?? '-'} wire=[${run.wireCounts.join(', ')}]${run.facts.notices.length === 0 ? '' : ` notices=${JSON.stringify(run.facts.notices)}`}`;
 
 export const describeSizing = (sizing: Sizing): string =>
-  `P=${sizing.pinned} C=${sizing.ceiling} room=${sizing.room} itemCap=${sizing.itemCap} inline=${sizing.inlineChars} summaryCap=${sizing.summaryCap} item=${sizing.summaryItem} highMark=${sizing.highMark} lowMark=${sizing.lowMark} threshold=${sizing.gainThreshold}`;
+  `P=${sizing.pinned} C=${sizing.ceiling} room=${sizing.room} itemCap=${sizing.itemCap} summaryCap=${sizing.summaryCap} item=${sizing.summaryItem} highMark=${sizing.highMark} lowMark=${sizing.lowMark} threshold=${sizing.gainThreshold}`;
 
 export class NoPlanError extends Error {
   readonly attempts: readonly PlanAttempt[];
