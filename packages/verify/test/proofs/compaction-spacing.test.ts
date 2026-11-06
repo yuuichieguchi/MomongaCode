@@ -11,6 +11,7 @@ import {
   SUMMARY_ACCEPT,
   SUMMARY_ITEM_OVERHEAD,
   applyCapabilityOverride,
+  summaryItemTokensFor,
 } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
 import { proofArith } from '../../src/proofs/arith.ts';
@@ -206,17 +207,21 @@ describe('B5: two proactive compactions are separated by at least summaryItemTok
   );
 
   it(
-    'B5w (evidence) refutes today\'s region >= COMPACTION_MIN_GAIN x item for a falling cap: caps 65 then 64 accept 103 new tokens, below 104',
+    'B5w (evidence) refutes today\'s region >= COMPACTION_MIN_GAIN x item for a falling cap: caps 65 then 64 accept one token fewer than the item of the later cap',
     async () => {
       const arith = proofArith(z3.engine().api, 'B5w');
       const model = twoCompactions(arith);
+      const firstItem = summaryItemTokensFor(65);
+      const secondItem = summaryItemTokensFor(64);
+      const acceptedFresh = COMPACTION_MIN_GAIN.num * secondItem - firstItem * COMPACTION_MIN_GAIN.den;
+      expect(acceptedFresh).toBe(secondItem - 1);
       arith.given(model.previousSummary.le(model.firstItem), model.region.ge(model.gained));
-      arith.given(model.cap1.eq(65), model.cap2.eq(64), model.growth.eq(0), model.previousSummary.eq(model.firstItem), model.fresh.eq(103));
+      arith.given(model.cap1.eq(65), model.cap2.eq(64), model.growth.eq(0), model.previousSummary.eq(model.firstItem), model.fresh.eq(acceptedFresh));
       expect(await hypothesesSatisfiable(arith)).toBe(true);
       const found = await expectRefuted(arith, model.fresh.ge(model.secondItem));
-      expect(found.item1Tokens).toBe('105');
-      expect(found.item2Tokens).toBe('104');
-      expect(found.fresh).toBe('103');
+      expect(found.item1Tokens).toBe(String(firstItem));
+      expect(found.item2Tokens).toBe(String(secondItem));
+      expect(found.fresh).toBe(String(acceptedFresh));
     },
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );
