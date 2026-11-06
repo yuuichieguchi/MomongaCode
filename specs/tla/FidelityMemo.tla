@@ -374,6 +374,7 @@ KindRecA == KindsOne(KRecA)
 KindRecU == KindsOne(KRecU)
 KindRecN5 == [r \in Runs |-> IF r = 1 THEN KRecN5 ELSE Plain5]
 KindLeaf == KindsLeaf(KBase)
+KindLeafBare == [r \in Runs |-> IF r = 1 THEN Bare4 ELSE KBase]
 OfBase == OfsOne(OfCall)
 OfOpenAll == OfsOne(OfOpen)
 OfRecN5 == [r \in Runs |-> IF r = 1 THEN OfCall5 ELSE Ident5]
