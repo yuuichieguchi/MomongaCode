@@ -45,7 +45,7 @@ const startCheck = async (app: ReturnType<typeof renderObservable>, seen: { sign
 };
 
 const until = async (condition: () => boolean): Promise<void> => {
-  for (let attempt = 0; attempt < 200 && !condition(); attempt += 1) await new Promise<void>((resolve) => setImmediate(resolve));
+  for (let attempt = 0; attempt < 200 && !condition(); attempt += 1) await new Promise<void>((resolve) => setTimeout(resolve, 5));
   expect(condition()).toBe(true);
 };
 

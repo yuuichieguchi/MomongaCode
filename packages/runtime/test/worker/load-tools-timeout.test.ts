@@ -50,12 +50,12 @@ const runWithTimedOutAdmission = async (env: Env) => {
   );
   const run = env.enqueue('Use the tools', { history: 'fresh', deadlineAt: env.clock.now() + TOOL_TIMER_MS });
   const running = env.runOnce(env.worker('main', { toolList: workToolsOf(env) }));
-  await waitUntil(() => loaderCallIds(env, run.id).length >= 1 && env.ofType(run.id, 'tool.completed').some((event) => event.callId === loaderCallIds(env, run.id)[0]), 20_000, 'the first LoadTools to end by its timer');
+  await waitUntil(() => loaderCallIds(env, run.id).length >= 1 && env.ofType(run.id, 'tool.reconciled').some((event) => event.callId === loaderCallIds(env, run.id)[0]), 20_000, 'the first LoadTools to end by its timer');
   admissionGate.resolve();
   await within(running, 20_000, 'the run to finish');
   const [first, second] = loaderCallIds(env, run.id);
   const completed = (callId: string | undefined) => env.ofType(run.id, 'tool.completed').find((event) => event.callId === callId);
-  return { run, gated: () => gated, first: completed(first), second: completed(second), requests: env.ofType(run.id, 'model.requested') };
+  return { run, gated: () => gated, first: env.ofType(run.id, 'tool.reconciled').find((event) => event.callId === first), second: completed(second), requests: env.ofType(run.id, 'model.requested') };
 };
 
 describe('a tool is loaded exactly when tool.loaded is journaled (review H3)', () => {
@@ -66,7 +66,7 @@ describe('a tool is loaded exactly when tool.loaded is journaled (review H3)', (
 
     expect(gated()).toBe(true);
     expect(env.run(run.id).status).toBe('COMPLETED');
-    expect(first?.status).toBe('failed');
+    expect(first).toMatchObject({ outcome: 'not_applied', interrupted: 'timeout' });
     expect(second?.status).toBe('completed');
     expect(second?.output).not.toMatch(/already loaded/);
     expect(env.ofType(run.id, 'tool.loaded').map((event) => event.names)).toEqual([['Write']]);
