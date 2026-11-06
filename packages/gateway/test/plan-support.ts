@@ -288,6 +288,17 @@ export const failingWrites = (inner: CredentialStore, fails: (value: string) => 
     const error = fails(value);
     return error === undefined ? inner.write(key, value) : Promise.reject(error);
   },
+  withKey: (key, action) =>
+    inner.withKey(key, (entry) =>
+      action({
+        read: () => entry.read(),
+        remove: () => entry.remove(),
+        write: (value) => {
+          const error = fails(value);
+          return error === undefined ? entry.write(value) : Promise.reject(error);
+        },
+      }),
+    ),
   update: (key, change) =>
     inner.update(key, (current) => {
       const next = change(current);

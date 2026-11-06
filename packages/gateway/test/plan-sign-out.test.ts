@@ -1,7 +1,7 @@
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
-import { PROFILE_ID, START_MS, editRecord, planError, rawRecord, readRecord, signedIn, startHarness, toRefreshWindow, profileFor, CONDITION_WAIT, REVOCATION_ATTEMPT_BOUND_MS } from './plan-support.ts';
+import { PROFILE_ID, START_MS, editRecord, planError, rawRecord, readRecord, signInAtFake, signedIn, startHarness, toRefreshWindow, profileFor, CONDITION_WAIT, REVOCATION_ATTEMPT_BOUND_MS } from './plan-support.ts';
 import type { Harness } from './plan-support.ts';
 
 const harnesses: Harness[] = [];
@@ -18,7 +18,7 @@ const harness = async (options: Parameters<typeof startHarness>[0] = {}): Promis
   return h;
 };
 
-const KEPT_AFTER_SIGN_OUT = ['account', 'client_id', 'email', 'ext_agent_host_id', 'profile', 'state', 'subject', 'version', 'welcomeShown'];
+const KEPT_AFTER_SIGN_OUT = ['account', 'client_id', 'email', 'ext_agent_host_id', 'generation', 'profile', 'state', 'subject', 'version', 'welcomeShown'];
 
 const signOut = (h: Harness) => h.sessions.signOut({ profile: PROFILE_ID, account: 'work' });
 
@@ -58,7 +58,7 @@ describe('sign-out (F11, I-C10)', () => {
     expect(report.revocation).toBe('confirmed');
   });
 
-  it('keeps only the registration fields and the record version with state registered, and drops every token including the ID token', async () => {
+  it('keeps only the registration fields, the record version and the generation with state registered, and drops every token including the ID token', async () => {
     const h = await harness();
     const signIn = await signedIn(h, 'work');
     await signOut(h);
@@ -67,6 +67,21 @@ describe('sign-out (F11, I-C10)', () => {
     expect(after).toMatchObject({ state: 'registered', client_id: signIn.clientId, subject: signIn.subject, email: signIn.email, ext_agent_host_id: signIn.hostId });
     const raw = await rawRecord(h, 'work');
     for (const token of [signIn.tokens.access_token, signIn.tokens.refresh_token, signIn.idToken]) expect(raw).not.toContain(token);
+  });
+
+  it('keeps the generation monotonic for the life of the record: an install after sign-out numbers above every earlier generation', async () => {
+    const h = await harness();
+    const signIn = await signedIn(h, 'work');
+    toRefreshWindow(h, START_MS);
+    const seen = [(await h.sessions.authSource({ profile: PROFILE_ID, account: 'work' }).read(new AbortController().signal)).generation];
+    await signOut(h);
+    const signedOut = (await readRecord(h, 'work'))?.['generation'] as number;
+    expect(signedOut).toBeGreaterThanOrEqual(Math.max(...seen));
+    const again = await signInAtFake(h, { clientId: signIn.clientId });
+    expect(await h.sessions.install({ profile: PROFILE_ID, account: 'work', clientId: again.clientId, hostId: again.hostId, subject: again.subject, email: again.email, idToken: again.idToken, tokens: again.tokens })).toMatchObject({ outcome: 'signed_in' });
+    const reinstalled = await h.sessions.authSource({ profile: PROFILE_ID, account: 'work' }).read(new AbortController().signal);
+    expect(reinstalled.generation).toBeGreaterThan(Math.max(...seen, signedOut));
+    expect((await readRecord(h, 'work'))?.['generation']).toBe(reinstalled.generation);
   });
 
   it('no request starts with the cleared tokens after sign-out returns', async () => {
