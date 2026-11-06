@@ -172,7 +172,7 @@ describe('T2: no cut before redaction, and the 64 KiB read drops a cut token', {
 
   it('drops the partial key at the 64 KiB cut after a star run collapses into one marker', async (context) => {
     const starCount = MAX_ERROR_BODY_BYTES - 8 - 2;
-    const raw = `${'*'.repeat(starCount)} ${TEST_API_KEY} ${'tail '.repeat(100)}`;
+    const raw = `${'*'.repeat(starCount - 1)}a ${TEST_API_KEY} ${'tail '.repeat(100)}`;
     const served = JSON.stringify(raw);
     expect(served.indexOf(TEST_API_KEY)).toBe(MAX_ERROR_BODY_BYTES - 8);
     expect(served.slice(MAX_ERROR_BODY_BYTES - 8, MAX_ERROR_BODY_BYTES)).toBe('momonga-');
@@ -190,7 +190,7 @@ describe('T2: the 64 KiB read drops a cut token that carries an escape', { timeo
   it('drops a key echoed with \\/ escapes when the cut lands after the escape', async (context) => {
     const key = 'momonga/test/api-key-01';
     const echoed = key.replaceAll('/', '\\/');
-    const raw = `${'*'.repeat(MAX_ERROR_BODY_BYTES - 14)} ${echoed} ${'tail '.repeat(100)}`;
+    const raw = `${'*'.repeat(MAX_ERROR_BODY_BYTES - 15)}a ${echoed} ${'tail '.repeat(100)}`;
     const served = JSON.stringify(raw);
     const servedKey = JSON.stringify(echoed).slice(1, -1);
     expect(served.indexOf(servedKey)).toBe(MAX_ERROR_BODY_BYTES - 12);
