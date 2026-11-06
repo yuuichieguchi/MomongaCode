@@ -61,6 +61,20 @@ export const noKeptRecords: KeptRecords = { load: () => undefined, save: () => u
 export function createKeptSettings({ records, onWarning }: KeptSettingsOptions): KeptSettings {
   const copies = new Map<string, JsonFile>();
   const warned = new Map<string, string>();
+  const unkept = new Map<string, string>();
+
+  const saved = (file: string, read: JsonFile): void => {
+    try {
+      records.save(file, read);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      if (unkept.get(file) === reason) return;
+      unkept.set(file, reason);
+      onWarning(`could not keep the last good copy of ${file}: ${reason}`);
+      return;
+    }
+    unkept.delete(file);
+  };
 
   return {
     recall: (file) => {
@@ -73,8 +87,8 @@ export function createKeptSettings({ records, onWarning }: KeptSettingsOptions):
       warned.delete(file);
       const known = copies.get(file);
       if (known !== undefined && canonicalJson(known) === canonicalJson(read)) return;
-      records.save(file, read);
       copies.set(file, read);
+      saved(file, read);
     },
     report: (file, error, identity) => {
       const notice = `settings file is invalid: ${error.message}`;

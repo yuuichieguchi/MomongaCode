@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createUserSettingsCache } from '@momonga/config';
+import { createUserSettingsCache, noKeptRecords } from '@momonga/config';
 import * as runtime from '@momonga/runtime';
 import { createRun, createSession, makeCache, makeRuntimeFixture, signalNever, writeInvalidUserSettings, writeProjectSettings, writeUserSettings } from './helpers.ts';
 import fs from 'node:fs';
@@ -55,7 +55,7 @@ describe('every settings file reports a kept copy the same way: one notice to th
     f.store.trust.set(f.temp.project, 'trusted');
     writeProjectSettings(f.temp.project, {});
     const warnings: string[] = [];
-    const cache = createUserSettingsCache({ home: f.temp.home, onWarning: (warning) => warnings.push(warning) });
+    const cache = createUserSettingsCache({ home: f.temp.home, onWarning: (warning) => warnings.push(warning), keptRecords: noKeptRecords });
     const composition = runtime.createSettingsComposition({ home: f.temp.home, cache, store: f.store });
     const session = createSession(f.store, f.temp.project, { env: { PLAIN: '1' } });
     await composition.settings.rules(session);

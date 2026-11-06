@@ -1,8 +1,8 @@
 import fs from 'node:fs';
-import { isTransientErrno, nodeFileSystemSync } from '@momonga/foundation';
+import { isTransientErrno } from '@momonga/foundation';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
 import type { JsonFile } from './json-file.ts';
-import { createKeptSettings, diskKeptRecords, keptSettingsDirectory } from './kept-settings.ts';
+import { createKeptSettings } from './kept-settings.ts';
 import type { KeptRecords, KeptSettings } from './kept-settings.ts';
 import { keptOrThrow } from './last-good.ts';
 import type { Kept } from './last-good.ts';
@@ -60,7 +60,7 @@ export const loadUserModels = ({ home }: LoadUserSettingsOptions): UserModels =>
 
 export const loadUserSettings = async ({ home }: LoadUserSettingsOptions): Promise<LoadUserSettingsResult> => loadUserSettingsSync(home);
 
-export type UserSettingsCacheOptions = { home: string; onWarning: (message: string) => void; keptRecords?: KeptRecords };
+export type UserSettingsCacheOptions = { home: string; onWarning: (message: string) => void; keptRecords: KeptRecords };
 
 export type UserSettingsLoaded = { settings: ResolvedSettings; user: UserLayer };
 
@@ -87,7 +87,7 @@ export const userSettingsChangeKey = (home: string): string => changeKeyOf(layou
 
 export const createUserSettingsCache = ({ home, onWarning, keptRecords }: UserSettingsCacheOptions): UserSettingsCache => {
   const file = userSettingsFile(home);
-  const kept = createKeptSettings({ records: keptRecords ?? diskKeptRecords(nodeFileSystemSync, keptSettingsDirectory(home)), onWarning });
+  const kept = createKeptSettings({ records: keptRecords, onWarning });
   let latest: UserSettingsSnapshot | undefined;
   let lastGood: Kept<UserSettingsLoaded>;
   let seenKey: string | undefined;
