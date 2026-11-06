@@ -402,6 +402,7 @@ export const startAgent = (overrides: Partial<AcpDeps> = {}): Harness => {
       if (size === undefined) throw new Error(`no context window for ${alias}`);
       return size;
     },
+    readinessOf: async () => ({ state: 'ready' }),
     environment: async () => ({ HOME: '/h' }),
     autoModeAvailable: async () => false,
     canonicalCwd: (cwd) => cwd,

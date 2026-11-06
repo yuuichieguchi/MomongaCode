@@ -5,7 +5,7 @@ import type { RuntimeClient } from '../src/client/runtime-client.ts';
 import type { CliPorts } from '../src/ports.ts';
 import { EXIT_CANCELLED, runHeadless, watchRun } from '../src/run/headless.ts';
 import { recordingSpawn, virtualClock } from './fake-supervisor.ts';
-import { runView } from './fake-backend.ts';
+import { capabilitiesOf, runView } from './fake-backend.ts';
 
 describe('an interrupt that arrives before the run is followed', () => {
   it('starts no daemon and no run when it arrived before the daemon was ensured', async (context) => {
@@ -27,7 +27,7 @@ describe('an interrupt that arrives before the run is followed', () => {
     const interrupt = new AbortController();
     interrupt.abort();
 
-    const code = await runHeadless(ports, paths, { prompt: 'hello', format: 'text', verbose: false, interrupt: interrupt.signal });
+    const code = await runHeadless(ports, paths, { prompt: 'hello', format: 'text', verbose: false, interrupt: interrupt.signal, capabilitiesOf: async () => capabilitiesOf() });
 
     expect(code).toBe(EXIT_CANCELLED);
     expect(spawned).toEqual([]);

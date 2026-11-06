@@ -1,5 +1,6 @@
 import { RequestError } from '@agentclientprotocol/sdk';
 import type { StopReason } from '@agentclientprotocol/sdk';
+import { TARGET_NOT_READY, readinessRemedyOf } from '@momonga/protocol';
 import type { RunView } from '../client/views.ts';
 
 export const RUN_STOPPED_CODE = -32010;
@@ -9,6 +10,7 @@ const detailOf = (run: RunView) => ({
   status: run.status,
   ...(run.stopReason === undefined ? {} : { stopReason: run.stopReason }),
   ...(run.error === undefined ? {} : { error: run.error }),
+  ...(run.error?.code === TARGET_NOT_READY ? { code: TARGET_NOT_READY, remedy: readinessRemedyOf(run.error.message) } : {}),
 });
 
 const stopped = (run: RunView, description: string): RequestError => new RequestError(RUN_STOPPED_CODE, `run ${run.id} ${description}`, detailOf(run));

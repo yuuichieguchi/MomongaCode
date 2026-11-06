@@ -41,7 +41,6 @@ export type ResolvedModels = {
 
 export type ResolveModelsOptions = { source: string; home: string; warnings: string[] };
 
-const DEFAULT_FM_NAME = 'fm';
 const DEFAULT_ALIAS = 'default';
 
 const LOCAL_SERVER_DEFAULTS = { billing: 'local', maxConcurrency: 1 } as const satisfies { billing: TargetBilling; maxConcurrency: number };
@@ -344,7 +343,6 @@ export const resolveModels = (models: ModelsSettings | undefined, { source, home
     targets[name] = resolveTarget(target, home, where, warnings);
   }
   checkTargetDialects(targets, dialects, source);
-  if (configured.length === 0) targets[DEFAULT_FM_NAME] = resolveFm({ adapter: 'fm' });
 
   const aliases: Record<string, ModelAlias> = { ...models?.aliases };
   for (const [alias, value] of Object.entries(aliases)) {
@@ -354,12 +352,10 @@ export const resolveModels = (models: ModelsSettings | undefined, { source, home
       }
     }
   }
-  if (!Object.hasOwn(aliases, DEFAULT_ALIAS)) {
-    const first = Object.keys(targets)[0] as string;
+  const [first] = Object.keys(targets);
+  if (first !== undefined && !Object.hasOwn(aliases, DEFAULT_ALIAS)) {
     aliases[DEFAULT_ALIAS] = [first];
-    if (configured.length > 0) {
-      warnings.push(`${source}: models.aliases has no "default" alias; using the first target ${JSON.stringify(first)}`);
-    }
+    warnings.push(`${source}: models.aliases has no "default" alias; using the first target ${JSON.stringify(first)}`);
   }
   const roles: ModelRoles = {};
   for (const [role, alias] of Object.entries(models?.roles ?? {})) {

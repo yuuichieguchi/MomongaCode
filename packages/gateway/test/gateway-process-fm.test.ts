@@ -53,6 +53,10 @@ const declareNativeFm = (home: string): void => {
   writeSettings(home, { models: { aliases: { default: ['fm'] }, targets: { fm: { adapter: 'fm', toolCalling: 'native' } } } });
 };
 
+const declareAutoFm = (home: string): void => {
+  writeSettings(home, { models: { aliases: { default: ['fm'] }, targets: { fm: { adapter: 'fm' } } } });
+};
+
 const servePids = (dumpFile: string): number[] =>
   readDump(dumpFile)
     .filter((record) => record.argv[0] === 'serve')
@@ -144,6 +148,7 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
 
   it('reports precondition_failed health for a missing fm binary and still starts', async () => {
     const home = makeHome();
+    declareAutoFm(home);
     const missing = path.join(makeDir(), 'no-such-fm');
     const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, fmBinary: missing, exec: fakeExec });
     const health = await getJson(clientFor(handle.socketPath), '/v1/momonga/health');
@@ -160,6 +165,7 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
   it('keys the fm probe record by target name, binary sha256 and the sw_vers build', async () => {
     const { fm, dumpFile, home } = await fakeFmSetup();
     reapServeGroups(dumpFile);
+    declareAutoFm(home);
     const binarySha256 = createHash('sha256').update(fs.readFileSync(fm.binaryPath)).digest('hex');
     await saveProbeRecord(path.join(homePaths(home).root, 'state', 'probe'), { target: 'fm', binarySha256, osBuild: FAKE_OS_BUILD }, makeReport(1, 1), CURRENT_DIALECTS);
     const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });
@@ -172,6 +178,7 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
   it('lists the fm target counter over its resolved definition, the binary sha256, the sw_vers build and the code digest', async () => {
     const { fm, dumpFile, home } = await fakeFmSetup();
     reapServeGroups(dumpFile);
+    declareAutoFm(home);
     const binarySha256 = createHash('sha256').update(fs.readFileSync(fm.binaryPath)).digest('hex');
     const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });
     const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
@@ -186,6 +193,7 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
   it('treats a probe record for another OS build as unprobed', async () => {
     const { fm, dumpFile, home } = await fakeFmSetup();
     reapServeGroups(dumpFile);
+    declareAutoFm(home);
     const binarySha256 = createHash('sha256').update(fs.readFileSync(fm.binaryPath)).digest('hex');
     await saveProbeRecord(path.join(homePaths(home).root, 'state', 'probe'), { target: 'fm', binarySha256, osBuild: `${FAKE_OS_BUILD}x` }, makeReport(1, 1), CURRENT_DIALECTS);
     const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });

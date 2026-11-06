@@ -74,7 +74,7 @@ describe('worker gateway error policy: fatal 4xx', () => {
     expect(env.gateway.cancels).toEqual([]);
   });
 
-  it('fails the run when capabilities rejects with model_not_found', async () => {
+  it('fails the run as target_not_ready carrying the reason when capabilities rejects with model_not_found', async () => {
     const env = await makeEnv();
     const fields: ErrorFields = { status: 404, type: 'not_found', code: 'model_not_found', message: 'model fm does not exist' };
     env.gateway.capabilitiesHook = async () => {
@@ -84,7 +84,10 @@ describe('worker gateway error policy: fatal 4xx', () => {
 
     await claimOnce(env, env.worker());
 
-    expect(env.run(run.id)).toMatchObject({ status: 'FAILED', error: { code: 'model_not_found', message: 'model fm does not exist' } });
+    const failed = env.run(run.id);
+    expect(failed.status).toBe('FAILED');
+    expect(failed.error?.code).toBe('target_not_ready');
+    expect(failed.error?.message).toContain('model fm does not exist');
     expect(env.gateway.streams).toEqual([]);
   });
 
