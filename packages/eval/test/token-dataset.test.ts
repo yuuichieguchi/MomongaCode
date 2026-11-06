@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { expandContextDataset, parseContextDataset } from '@momonga/eval';
 import { CONTRIBUTION_WINDOW_RUNS } from '@momonga/memory';
 
-const TOKEN_CASE_KINDS = ['repeated-reads', 'test-failures', 'json-api', 'large-grep', 'loop-prone', 'deferral'] as const;
+const TOKEN_CASE_KINDS = ['repeated-reads', 'test-failures', 'json-api', 'large-grep', 'loop-prone', 'deferral', 'failing-build-log', 'failing-test-log-nonenglish', 'passing-long-log-needle', 'large-output-small-window', 'large-output-cjk'] as const;
 
 const load = async () => parseContextDataset(await fs.readFile(new URL('../datasets/economy.json', import.meta.url), 'utf8'), 'economy.json');
 

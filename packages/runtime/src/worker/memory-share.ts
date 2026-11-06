@@ -16,7 +16,8 @@ const recordedShareOf = (runId: string, events: readonly RunEvent[]): number | u
 };
 
 const windowRunOf = (store: RuntimeStore, runId: string, events: readonly RunEvent[]): ContributionWindowRun => {
-  const items = events.flatMap((event) => (event.type === 'context.contribution' ? event.items : [])).filter((item) => item.kind === 'memory');
+  const injectedIds = new Set(events.flatMap((event) => (event.type === 'context.memories_loaded' ? event.memories.map((memory) => memory.id) : [])));
+  const items = events.flatMap((event) => (event.type === 'context.contribution' ? event.items : [])).filter((item) => item.kind === 'memory' && injectedIds.has(item.id));
   return {
     injected: items.length,
     used: items.filter((item) => item.contributed).length,
@@ -29,7 +30,7 @@ const shareOfParent = (store: RuntimeStore, parentRunId: string): number | undef
 
 const shareFromWindow = (store: RuntimeStore, project: string): number => {
   const recent = store.lastTerminalRootRuns(project, CONTRIBUTION_WINDOW_RUNS).map((run) => {
-    const events = store.readRunEventsOfTypes(run.id, ['run.started', 'context.contribution']);
+    const events = store.readRunEventsOfTypes(run.id, ['run.started', 'context.contribution', 'context.memories_loaded']);
     return { share: recordedShareOf(run.id, events) ?? DEFAULT_MEMORY_SHARE, window: windowRunOf(store, run.id, events) };
   });
   const previous = recent[0]?.share;

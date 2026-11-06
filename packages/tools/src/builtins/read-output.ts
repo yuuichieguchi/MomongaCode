@@ -1,4 +1,5 @@
 import { defineTool, ToolExecutionError } from '../types.ts';
+import { pageToFit } from '../paging.ts';
 import { DEFAULT_LINE_LIMIT, pageNumberedLines, pastEndMessage, splitLines } from './format.ts';
 
 type ReadOutputInput = { handle: string; offset?: number; limit?: number };
@@ -38,6 +39,6 @@ export const readOutputTool = defineTool<ReadOutputInput>({
       throw error;
     });
     if (offset > page.totalLines) return { status: 'completed', output: pastEndMessage(offset, 'output', page.totalLines) };
-    return { status: 'completed', output: pageNumberedLines(splitLines(page.text), offset, page.totalLines, ctx.outputBudgetChars) };
+    return { status: 'completed', output: await pageToFit(ctx.outputFit, (budget) => pageNumberedLines(splitLines(page.text), offset, page.totalLines, budget)) };
   },
 });

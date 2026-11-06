@@ -5,7 +5,7 @@ export const DAY_MS = 86_400_000;
 
 export type DuplicateNote = Pick<MemoryView, 'id' | 'text' | 'scope' | 'project' | 'origin' | 'createdAt' | 'state'>;
 
-export type UpkeepNote = Pick<MemoryView, 'id' | 'lastUsedAt' | 'contributedAt' | 'status' | 'state'>;
+export type UpkeepNote = Pick<MemoryView, 'id' | 'keptAt' | 'contributedAt' | 'status' | 'state'>;
 
 export type DuplicateMark = { id: string; duplicateOf: string };
 
@@ -25,8 +25,8 @@ export const duplicateMarks = (notes: readonly DuplicateNote[], keepers: Duplica
 
 export type ForgetWindow = { now: number; forgetAfterDays: number };
 
-export const isIdleBeyondWindow = (note: Pick<UpkeepNote, 'lastUsedAt' | 'contributedAt'>, window: ForgetWindow): boolean =>
-  window.now - Math.max(note.lastUsedAt, note.contributedAt ?? note.lastUsedAt) >= window.forgetAfterDays * DAY_MS;
+export const isIdleBeyondWindow = (note: Pick<UpkeepNote, 'keptAt' | 'contributedAt'>, window: ForgetWindow): boolean =>
+  window.now - Math.max(note.keptAt, note.contributedAt ?? note.keptAt) >= window.forgetAfterDays * DAY_MS;
 
 export const archivableIds = (notes: readonly UpkeepNote[], window: ForgetWindow): string[] =>
   notes

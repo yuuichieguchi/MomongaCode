@@ -1,5 +1,6 @@
 export { MIN_ITEM_CAP, MIN_ROOM_TOKENS, budgetFor, capacityFor, inputCeilingFor, itemCapFor, memoryBudgetFor, pinnedFloorFor, withCalibration } from './budget.ts';
 export { renderMemories } from './memory.ts';
+export { nestedInstructionCandidates } from './instructions.ts';
 export { textOfContent, textOfItem } from './item-text.ts';
 export { attestedTokens, checkSummary, claimedTokens } from './summary-fidelity.ts';
 export type { FidelityRecord, FidelitySource } from './summary-fidelity.ts';
@@ -7,9 +8,10 @@ export { WORKING_STATE_MESSAGE_MIN_TOKENS, criticalIdentifiersOf, renderWorkingS
 export type { WorkingStateOptions } from './working-state.ts';
 export { buildContext, maxInputFor, measureLayers, measurePinned } from './build-context.ts';
 export type { MaxInputBounds } from './build-context.ts';
-export { FAILURE_MARKERS, FORMATTER_VERSIONS, formatGrep, formatJson, formatLog, formatToolOutput, formattedHeader, formattingViolations } from './formatters/index.ts';
+export { FORMATTER_VERSIONS, formatGrep, formatJson, formatLog, formatToolOutput, formattedHeader, formattingViolations } from './formatters/index.ts';
 export type { FormattedOutput, FormattingViolation } from './formatters/index.ts';
-export { readClauseOf } from './tool-output.ts';
+export { fitToTokens, readClauseOf } from './tool-output.ts';
+export type { TokenCount } from './tool-output.ts';
 export { readerNamesOf, readersOffered, referenceKindsOf } from './references.ts';
 export { ContextOverflowError, PinnedBoundError, PinnedOverflowError, PinnedRoomError, PrefixChangedError } from './errors.ts';
 export { createFsInstructionReader } from './fs-instruction-reader.ts';

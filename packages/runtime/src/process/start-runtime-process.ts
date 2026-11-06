@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ConfigError, createUserSettingsCache } from '@momonga/config';
+import { ConfigError, createUserSettingsCache, resolveTelemetrySettings } from '@momonga/config';
 import {
   acquireProcessLock,
   announceReady,
@@ -16,7 +16,7 @@ import {
   systemClock,
 } from '@momonga/foundation';
 import type { Clock, JsonLogger, ProcessLock, ReadyFields, TextStream } from '@momonga/foundation';
-import { createTelemetry, exportersFor, openTraceStore } from '@momonga/observability';
+import { createTelemetry, exportersFor, openTraceStore, startBodyPurge } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
 import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
@@ -57,7 +57,7 @@ import {
   IDEMPOTENCY_PURGE_MS,
   MARKER_REAP_KILL_GRACE_MS,
   MEMORY_UPKEEP_BATCH_MARKS,
-  MEMORY_UPKEEP_PAGE_ROWS,
+  MEMORY_PAGE_ROWS,
   RUNTIME_ABORT_BUDGET_MS,
   RUNTIME_TEARDOWN_BUDGET_MS,
   SANDBOX_KILL_GRACE_MS,
@@ -409,8 +409,21 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     const traceStore: TraceStore = await step('trace-store', () => openTraceStore({ path: paths.traces.runtime, clock }));
     cleanups.push({ name: 'trace-store', run: () => traceStore.close() });
 
+    const telemetrySettings = resolveTelemetrySettings(settings.telemetry);
+    const contentRetentionMs = telemetrySettings.contentRetentionDays * DAY_MS;
+    const bodyPurge = startBodyPurge({ store: traceStore, timers, report, legacyRetentionMs: contentRetentionMs });
+    cleanups.push({ name: 'body-purge', run: () => bodyPurge.stop() });
+
     const telemetry: Telemetry = await step('telemetry', () =>
-      createTelemetry({ serviceName: 'momonga-runtime', serviceVersion: version, clock, store: traceStore, exporters: exportersFor(settings.telemetry), captureMessageContent: settings.telemetry?.captureMessageContent === true }),
+      createTelemetry({
+        serviceName: 'momonga-runtime',
+        serviceVersion: version,
+        clock,
+        store: traceStore,
+        exporters: exportersFor(settings.telemetry),
+        captureMessageContent: telemetrySettings.captureMessageContent,
+        contentRetentionMs,
+      }),
     );
     cleanups.push({
       name: 'telemetry',
@@ -611,7 +624,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         clock,
         views: memoryViews,
         batchSize: MEMORY_UPKEEP_BATCH_MARKS,
-        pageRows: MEMORY_UPKEEP_PAGE_ROWS,
+        pageRows: MEMORY_PAGE_ROWS,
         passIntervalMs: DAY_MS,
         forgetAfterDays: async (project) =>
           (project === null ? settingsComposition.takeUserSnapshot().settings.memory : await settingsComposition.settings.memory({ cwd: project })).forgetAfterDays,

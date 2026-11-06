@@ -1,24 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
+import type { OutputFit } from '@momonga/tools';
+import { call, charFit, makeHarness, makeTool, toolSetOf } from './harness.ts';
 
 const BUDGET = 500;
 
-describe('executor output budget and self-paging tools', () => {
-  it.each([undefined, 500, 12_345])('exposes maxInlineOutputChars %s as ctx.outputBudgetChars', async (limit) => {
-    const harness = makeHarness(limit === undefined ? {} : { maxInlineOutputChars: limit });
-    const seen: number[] = [];
+describe('executor output fit and self-paging tools', () => {
+  it.each([200, 500, 12_345])('exposes the batch output fit with limit %s as ctx.outputFit', async (limit) => {
+    const harness = makeHarness({ outputLimitChars: limit });
+    const seen: OutputFit[] = [];
+    const port = charFit(limit);
     const tool = makeTool('Probe', {
       execute: async (_input, ctx) => {
-        seen.push(ctx.outputBudgetChars);
+        seen.push(ctx.outputFit);
         return { status: 'completed', output: 'ok' };
       },
     });
-    await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Probe')]));
-    expect(seen).toEqual([limit ?? 30_000]);
+    await harness.executor.runBatch({ ...harness.input(await toolSetOf(tool), [call('c1', 'Probe')]), outputFit: port });
+    expect(seen).toEqual([port]);
   });
 
-  it('does not truncate a pagesOutput tool whose output fits the budget', async () => {
-    const harness = makeHarness({ maxInlineOutputChars: BUDGET });
+  it('does not truncate a pagesOutput tool whose output fits the port', async () => {
+    const harness = makeHarness({ outputLimitChars: BUDGET });
     const output = `${'p'.repeat(BUDGET - 1)}\n`;
     const tool = makeTool('Pager', { pagesOutput: true, execute: async () => ({ status: 'completed', output }) });
     const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Pager')]));
@@ -26,8 +28,8 @@ describe('executor output budget and self-paging tools', () => {
     expect(harness.blobs.puts).toEqual([]);
   });
 
-  it('falls back to blob truncation when a pagesOutput tool exceeds the budget', async () => {
-    const harness = makeHarness({ maxInlineOutputChars: BUDGET });
+  it('cuts a pagesOutput tool through the port when its output does not fit', async () => {
+    const harness = makeHarness({ outputLimitChars: BUDGET });
     const output = Array.from({ length: 200 }, (_, index) => `line ${index}`).join('\n');
     const tool = makeTool('Pager', { pagesOutput: true, execute: async () => ({ status: 'completed', output }) });
     const [outcome] = await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Pager')]));

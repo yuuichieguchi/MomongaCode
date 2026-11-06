@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RunEventPayload } from '@momonga/protocol';
-import { harness } from './helpers.ts';
+import { anchorsOf, harness } from './helpers.ts';
 import { FAKE_KEY, finishedRun, indexAll, openRun, projectDir, redactor } from './search-fixture.ts';
 
 const OWN = { trusted: true, project: '/work/a' } as const;
@@ -44,9 +44,9 @@ describe('a denied path in the touched paths of a run document', () => {
     indexAll(store);
     const denied = (target: string) => target.startsWith('/work/a/secret/');
     const plain = store.search.query(OWN, { query: 'key.txt', scope: 'project' });
-    expect(plain.anchors).toHaveLength(1);
+    expect(anchorsOf(plain)).toHaveLength(1);
     const result = store.search.query(OWN, { query: 'key.txt', scope: 'project', readDenied: denied });
-    expect(result.anchors).toEqual([]);
+    expect(anchorsOf(result)).toEqual([]);
     expect(result.withheld).toBe(2);
   });
 
@@ -56,7 +56,7 @@ describe('a denied path in the touched paths of a run document', () => {
     indexAll(store);
     const result = store.search.query(OWN, { query: 'widgetterm', scope: 'project', readDenied: (target) => target.startsWith('/work/a/secret/') });
     expect(JSON.stringify(result)).not.toContain('key.txt');
-    expect(result.anchors).toHaveLength(1);
+    expect(anchorsOf(result)).toHaveLength(1);
   });
 });
 
@@ -70,10 +70,10 @@ describe('the candidate bound of an indexed query', () => {
     const newest = await finishedRun(store, '/work/a', 'candidateterm newest');
     indexAll(store);
     const bounded = store.search.query(OWN, { query: 'candidateterm', scope: 'project', candidateLimit: 2 });
-    expect(bounded.anchors.map((anchor) => anchor.runId).sort()).toEqual([middle.id, newest.id].sort());
+    expect(anchorsOf(bounded).map((anchor) => anchor.runId).sort()).toEqual([middle.id, newest.id].sort());
     expect(bounded.searched).toBe(2);
     const open = store.search.query(OWN, { query: 'candidateterm', scope: 'project', candidateLimit: 3 });
-    expect(open.anchors.map((anchor) => anchor.runId)).toContain(old.id);
+    expect(anchorsOf(open).map((anchor) => anchor.runId)).toContain(old.id);
     expect(open.searched).toBeUndefined();
   });
 });

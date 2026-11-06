@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { recallOrder } from '@momonga/memory';
-import type { MemoryView } from '@momonga/protocol';
+import type { MemoryRecord } from '@momonga/protocol';
 
-const memory = (id: string, overrides: Partial<MemoryView> = {}): MemoryView => ({
+const memory = (id: string, overrides: Partial<MemoryRecord> = {}): MemoryRecord => ({
   id,
   scope: 'user',
   origin: 'trusted',
@@ -10,7 +10,7 @@ const memory = (id: string, overrides: Partial<MemoryView> = {}): MemoryView => 
   text: id,
   source: { kind: 'tool', sessionId: 's', runId: 'r', step: 1, callId: id, seq: 1 },
   createdAt: 1,
-  lastUsedAt: 1,
+  keptAt: 1,
   kind: 'fact',
   state: 'active',
   duplicateOf: null,
@@ -19,36 +19,51 @@ const memory = (id: string, overrides: Partial<MemoryView> = {}): MemoryView => 
   retiredAt: null,
   evidence: [],
   contributedAt: null,
-  status: 'unbound',
+  observedStatus: 'unbound',
   ...overrides,
 });
 
-const order = (memories: MemoryView[], matched: string[] = []): string[] => recallOrder(memories, new Set(matched)).map((entry) => entry.id);
+const order = (memories: MemoryRecord[], matched: string[] = []): string[] => recallOrder(memories, new Set(matched)).map((entry) => entry.id);
 
 describe('recallOrder', () => {
   it('puts a match first, even a stale one over a verified note', () => {
-    expect(order([memory('verified', { status: 'verified' }), memory('stale', { status: 'stale' })], ['stale'])).toEqual(['stale', 'verified']);
+    expect(order([memory('verified', { observedStatus: 'verified' }), memory('stale', { observedStatus: 'stale' })], ['stale'])).toEqual(['stale', 'verified']);
   });
 
-  it('orders the status tiers verified, unbound, unverifiable, stale', () => {
-    const memories = [memory('d', { status: 'stale' }), memory('c', { status: 'unverifiable' }), memory('b', { status: 'unbound' }), memory('a', { status: 'verified' })];
-    expect(order(memories)).toEqual(['a', 'b', 'c', 'd']);
+  it('orders the tiers of the newest recorded finding verified, unbound, unverifiable, stale', () => {
+    const memories = [
+      memory('a', { observedStatus: 'stale' }),
+      memory('b', { observedStatus: 'unverifiable' }),
+      memory('c', { observedStatus: 'unbound' }),
+      memory('d', { observedStatus: 'verified' }),
+    ];
+    expect(order(memories)).toEqual(['d', 'c', 'b', 'a']);
   });
 
-  it('lets status beat use: a stale note used a moment ago stays behind', () => {
-    expect(order([memory('stale', { status: 'stale', contributedAt: 999, lastUsedAt: 999 }), memory('verified', { status: 'verified' })])).toEqual(['verified', 'stale']);
+  it('sorts a note never observed after every tier', () => {
+    expect(order([memory('never', { observedStatus: null, contributedAt: 999 }), memory('stale', { observedStatus: 'stale' })])).toEqual(['stale', 'never']);
+  });
+
+  it('reads the recorded finding, not a fresh status carried on a view', () => {
+    const fresh = { ...memory('freshly-verified', { observedStatus: 'stale' }), status: 'verified' as const };
+    const other = { ...memory('recorded-verified', { observedStatus: 'verified' }), status: 'stale' as const };
+    expect(recallOrder([fresh, other], new Set()).map((entry) => entry.id)).toEqual(['recorded-verified', 'freshly-verified']);
+  });
+
+  it('lets status beat contribution: a stale note that contributed a moment ago stays behind', () => {
+    expect(order([memory('stale', { observedStatus: 'stale', contributedAt: 999, keptAt: 999 }), memory('verified', { observedStatus: 'verified' })])).toEqual(['verified', 'stale']);
   });
 
   it('orders by contribution newest first, with no contribution last', () => {
     expect(order([memory('none'), memory('old', { contributedAt: 5 }), memory('new', { contributedAt: 9 })])).toEqual(['new', 'old', 'none']);
   });
 
-  it('lets contribution beat last use', () => {
-    expect(order([memory('used', { lastUsedAt: 999 }), memory('contributed', { contributedAt: 1 })])).toEqual(['contributed', 'used']);
+  it('lets contribution beat keptAt', () => {
+    expect(order([memory('kept', { keptAt: 999 }), memory('contributed', { contributedAt: 1 })])).toEqual(['contributed', 'kept']);
   });
 
-  it('breaks a tie of contribution by last use, newest first', () => {
-    expect(order([memory('old', { lastUsedAt: 2 }), memory('new', { lastUsedAt: 3 })])).toEqual(['new', 'old']);
+  it('key 4 is keptAt: a tie of contribution is broken by the newest kept', () => {
+    expect(order([memory('old', { keptAt: 2 }), memory('new', { keptAt: 3 })])).toEqual(['new', 'old']);
   });
 
   it('breaks a full tie by id', () => {

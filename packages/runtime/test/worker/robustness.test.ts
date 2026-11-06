@@ -4,6 +4,7 @@ import type { RuntimeStore } from '@momonga/store';
 import type { ExecutionBatchInput } from '@momonga/tools';
 import { waitUntil, within } from './deferred.ts';
 import { EXTRA_ROOT, START_MS, makeEnv, toolKey } from './harness.ts';
+import { pinnedStart } from './cancel-fixture.ts';
 import { callsStep, functionCallItem, requestedOffering, textStep } from './scripts.ts';
 
 describe('worker tool-set notices', () => {
@@ -135,6 +136,7 @@ describe('worker policyFor', () => {
     env.seed(
       run.id,
       [
+        pinnedStart(),
         requestedOffering(1, ['Mark']),
         {
           type: 'model.responded',

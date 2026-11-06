@@ -28,7 +28,7 @@ const memory = (id: string, overrides: Partial<MemoryView> = {}): MemoryView => 
   text: `note ${id}`,
   source: { kind: 'reflection', sessionId: 's', runId: 'r', ordinal: 0 },
   createdAt: 0,
-  lastUsedAt: 0,
+  keptAt: 0,
   kind: 'procedure',
   state: 'candidate',
   duplicateOf: null,
@@ -92,6 +92,15 @@ const command = (name: string): ((...args: unknown[]) => Promise<number>) => {
 };
 
 const requests = (seen: readonly Seen[]): string[] => seen.map((entry) => `${entry.method} ${entry.url}`);
+
+describe('momonga memory delete', () => {
+  it('memory delete prints that the note was retired', async (context) => {
+    const { paths, ports, seen, out } = await setup(context, () => ({ status: 204, body: null }));
+    expect(await command('memoryDelete')(ports, paths, 'm1')).toBe(0);
+    expect(requests(seen)).toEqual(['DELETE /v1/memories/m1']);
+    expect(out.join('')).toBe('retired memory m1; it stays in momonga memory history\n');
+  });
+});
 
 describe('momonga memory review', () => {
   it('lists the candidates of this folder', async (context) => {

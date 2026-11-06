@@ -9,7 +9,7 @@ import { startGatewayProcess } from '@momonga/gateway';
 import * as runtime from '@momonga/runtime';
 import type { ServiceTimers } from '@momonga/runtime';
 import type { ShellHost } from '@momonga/tools';
-import { afterMicrotasks, fakeUsageOfRequest, startFakeChatCompletions } from '@momonga/testkit';
+import { afterMicrotasks, driveFakeTime, fakeUsageOfRequest, startFakeChatCompletions } from '@momonga/testkit';
 
 import type { FakeChatCompletionsOptions, FakeChatCompletionsServer, FakeFixedUsage, FakeResponseHold, FakeTimers, FakeUsageOfRequest } from '@momonga/testkit';
 import { makeLogger, onCleanup, writeUserSettings } from './helpers.ts';
@@ -221,17 +221,12 @@ export type LaunchOptions = Omit<StartRuntimeProcessOptions, 'home' | 'version' 
   fakeTimers?: FakeTimers;
 };
 
-export const driveUntilSettled = async <T>(promise: Promise<T>, timers: FakeTimers, now: () => number, maxRounds = 400): Promise<T> => {
+export const driveUntilSettled = async <T>(promise: Promise<T>, timers: FakeTimers, horizonMs: number, description: string): Promise<T> => {
   let settled = false;
   const tracked = promise.finally(() => {
     settled = true;
   });
-  for (let round = 0; round < maxRounds && !settled; round += 1) {
-    await new Promise<void>((resolve) => setTimeout(resolve, 50));
-    if (settled) break;
-    const next = [...timers.pending()].sort((a, b) => a.dueAt - b.dueAt)[0];
-    if (next !== undefined) timers.advance(Math.max(0, next.dueAt - now()));
-  }
+  await driveFakeTime(timers, { done: () => settled, horizonAt: timers.now() + horizonMs, description });
   return tracked;
 };
 
@@ -267,7 +262,7 @@ export const launchRuntime = async (temp: RunHome, options: LaunchOptions = {}):
     const closing = handle.abort();
     const clock = rest.clock;
     if (fakeTimers === undefined || clock === undefined) await closing;
-    else await driveUntilSettled(closing, fakeTimers, () => clock.now());
+    else await driveUntilSettled(closing, fakeTimers, runtime.runtimeMaxCloseMs(0), 'the runtime abort at cleanup');
   });
   return { handle, logger, stdout, ...clientOf(temp) };
 };

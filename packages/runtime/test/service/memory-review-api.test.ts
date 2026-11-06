@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { MemoryKind, MemoryRecord } from '@momonga/protocol';
 import { parseSkillFile } from '@momonga/skills';
 import type { RuntimeStore } from '@momonga/store';
+import { recalled } from '../../../store/test/helpers.ts';
 import { expectSchema, startService } from './helpers.ts';
 import type { ServiceEnv } from './helpers.ts';
 
@@ -70,7 +71,7 @@ describe('reviewing candidates', () => {
     const memory = candidate('waiting');
     expect((await env.http('POST', `/v1/memories/${memory.id}/reject`, { body: {} })).status).toBe(200);
     expect((await env.http('GET', '/v1/memories?state=candidate')).json.memories).toEqual([]);
-    expect(env.store.memories.recall({ trusted: true, project: session.cwd })).toEqual([]);
+    expect(recalled(env.store, { trusted: true, project: session.cwd })).toEqual([]);
   });
 
   it('answers 404 for an unknown id', async () => {

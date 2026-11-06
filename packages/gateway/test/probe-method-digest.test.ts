@@ -11,6 +11,7 @@ afterEach(async () => {
 
 const KNOWN_REQUEST_DIGESTS: Readonly<Record<number, string>> = {
   1: '2eba6dccf9cb71711251926e08c4e1e1ced08fcf720ac88b650328b89263bc92',
+  2: '3305d855cc65fca9cfdf159ee2749a7ea6f43c63665faed95146c70f84c67136',
 };
 
 const requestDigestOfProbe = async (): Promise<string> => {

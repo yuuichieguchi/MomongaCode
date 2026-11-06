@@ -5,6 +5,7 @@ import type { PrefixEvent } from './prefix-events.ts';
 import type { MemoryStatus } from './memory.ts';
 import type { CompactionInputItem, InputItem, MessageInputItem } from './open-responses.ts';
 import type { ApprovalBasis, PermissionDenial } from './permission-denial.ts';
+import type { RunRecovery } from './reliability.ts';
 import type { CallTiming, ModelCost, TokenAnatomy } from './token-anatomy.ts';
 
 export const RUN_STATUSES = [
@@ -97,7 +98,8 @@ export type ToolAwait = { kind: 'run'; runId: string; sessionId: string; agent: 
 
 export type RunEventPayload =
   | { type: 'user.message'; text: string; images?: ImageAttachment[] }
-  | { type: 'run.started'; attempt: number; now: number; pins: Record<string, unknown>; mode?: PermissionMode }
+  | { type: 'run.started'; attempt: number; now: number; pins: Record<string, unknown>; mode?: PermissionMode; recovery?: RunRecovery }
+  | { type: 'attempt.failed'; attempt: number; code: string }
   | { type: 'run.status'; from: RunStatus; to: RunStatus; reason?: string }
   | {
       type: 'model.requested';
@@ -165,6 +167,7 @@ export type RunEventPayload =
       files?: ToolFile[];
       command?: string;
       windowShared?: true;
+      memories?: string[];
       exitCode?: number;
       formatted?: { formatter: string; version: number };
     }

@@ -90,6 +90,7 @@ export {
   LOWEST_REASONING_EFFORT,
   OUTPUT_BOUND_FIELDS,
   REASONING_EFFORTS,
+  TARGET_ANSWERS,
   TARGET_BILLINGS,
   applyCapabilityOverride,
   imageCapability,
@@ -102,7 +103,7 @@ export {
   ALLOWED_TOOLS_FORMS,
   requireStructuredOutput,
 } from './capabilities.ts';
-export type { OutputTokenCapabilities, StructuredOutputVerdict, TargetBilling } from './capabilities.ts';
+export type { OutputTokenCapabilities, StructuredOutputVerdict, TargetAnswers, TargetBilling } from './capabilities.ts';
 export { OUTPUT_FORMATTERS } from './output-formatters.ts';
 export type { OutputFormatterName } from './output-formatters.ts';
 export { CACHE_MISS_CAUSES, PREFIX_EVENTS } from './prefix-events.ts';
@@ -123,11 +124,9 @@ export {
   withMessage,
   withReplacedThrough,
   withTaskText,
-  withTouched,
   withWritten,
 } from './working-facts.ts';
 export type {
-  TouchedTarget,
   CommandFact,
   FileAccess,
   ItemEvent,
@@ -182,6 +181,26 @@ export type {
 } from './dialect.ts';
 export { BUILTIN_DIALECTS, BUILTIN_DIALECT_IDS, DEFAULT_DIALECT_ID } from './dialect-builtins.ts';
 export type { BuiltinDialectId } from './dialect-builtins.ts';
+export {
+  FACTS_SWEEP_BATCH_RUNS,
+  INDICATOR_DEFINITIONS_VERSION,
+  MIN_RATE_POPULATION,
+  RECOVERY_CAUSES,
+  RECOVERY_OUTCOMES,
+  RELIABILITY_FORMAT,
+  REPORT_PAGE_ROWS,
+} from './reliability.ts';
+export type {
+  RecoveryCause,
+  RecoveryEpisodeView,
+  RecoveryOutcome,
+  ReportPage,
+  RunFactsBasis,
+  RunFactsLimits,
+  RunFactsView,
+  RunRecovery,
+} from './reliability.ts';
+export { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, MOMONGA_EVENTS, MOMONGA_REQUEST_FIELDS, MOMONGA_SPAN_NOTES } from './trace-attributes.ts';
 export { EVENT_TYPES, RUN_API_SCHEMAS, base64ByteLength, runApiSchemaName, toPublicRunEvent } from './run-api.ts';
 export { MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES } from './run-api.ts';
 export type {
@@ -190,6 +209,8 @@ export type {
   AdoptGuidelineRequest,
   ContextChargeResponse,
   ContextChargeView,
+  RunAnsweredByView,
+  AnsweredByView,
   RunReflectionView,
   ContextChargesView,
   GuidelineResponse,
@@ -242,6 +263,7 @@ export type {
 export {
   DEFAULT_MEMORY_KIND,
   describeMemoryValidity,
+  describeValidity,
   MEMORY_EVIDENCE_KINDS,
   MEMORY_KINDS,
   MEMORY_ORIGINS,
@@ -250,6 +272,7 @@ export {
   MEMORY_STATUSES,
   REFLECTION_DROP_CAUSES,
   REFLECTION_JOB_STATES,
+  VALIDITY_CLOSERS,
 } from './memory.ts';
 export type {
   AddMemoryRequest,
@@ -264,6 +287,7 @@ export type {
   MemorySource,
   MemoryState,
   MemoryStatus,
+  MemoryValidity,
   MemoryView,
   PromoteMemoryRequest,
   PromoteMemoryResponse,
@@ -272,6 +296,9 @@ export type {
   ReflectionJobState,
   ReflectionJobView,
   ReflectionResponse,
+  ValidityChange,
+  ValidityCloser,
+  ValidityInterval,
 } from './memory.ts';
 export { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
 export type {

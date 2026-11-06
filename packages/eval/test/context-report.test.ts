@@ -1,15 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { CONTEXT_DATASET_FORMAT, EvalError, buildContextReport, formatContextReport, pairedBootstrap, parseContextDataset, proportionOf } from '@momonga/eval';
+import { CONTEXT_DATASET_FORMAT, EvalError, formatContextReport, pairedBootstrap, parseContextDataset, proportionOf } from '@momonga/eval';
 import type { Transcript } from '@momonga/eval';
 import type { RunEventPayload, SummaryFidelity } from '@momonga/protocol';
-import { bash, compacted, contextCase, fidelity, governing, historyRead, marked, memories, padding, recorded, summarized } from './context-fixtures.ts';
+import { bash, compacted, contextCase, fidelity, governing, historyRead, memories, recorded, summarized } from './context-fixtures.ts';
+import { buildReportAs } from './answered-fixtures.ts';
 
 type Variant = { s1On?: 'COMPLETED' | 'FAILED'; tokens?: Partial<Record<'s1-on' | 's1-off' | 's2-on' | 's2-off', number>>; extra?: RunEventPayload[]; summary?: SummaryFidelity };
+
+const NEEDLE = 'NEEDLE-b0';
+
+const needleBash = (): RunEventPayload[] => bash('b0', 'npm test', 'failed').map((payload) => (payload.type === 'tool.completed' ? { ...payload, output: NEEDLE } : payload));
 
 const s1OnPayloads = (summary: SummaryFidelity, extra: RunEventPayload[]): RunEventPayload[] => [
   governing('r'),
   memories('stale', 'verified'),
-  ...bash('b0', 'npm test', 'failed'),
+  ...needleBash(),
   summarized(4, summary),
   ...extra,
   ...historyRead('h1', 3, 6),
@@ -20,7 +25,7 @@ const dataset = parseContextDataset(
     format: CONTEXT_DATASET_FORMAT,
     name: 'sample',
     cases: [
-      { ...contextCase('s1-on', 's1', 'on'), rules: [{ id: 'r', kind: 'constraint', target: 't', text: 'x', inScope: true, live: true, supersedes: [] }], gold: [marked(s1OnPayloads(fidelity([], 2, 2), []), 'b0')] },
+      { ...contextCase('s1-on', 's1', 'on'), rules: [{ id: 'r', kind: 'constraint', target: 't', text: 'x', inScope: true, live: true, supersedes: [] }], gold: [{ anchor: NEEDLE, in: 'tool.completed' }] },
       { ...contextCase('s1-off', 's1', 'off'), rules: [{ id: 'r', kind: 'constraint', target: 't', text: 'x', inScope: true, live: true, supersedes: [] }] },
       contextCase('s2-on', 's2', 'on'),
       contextCase('s2-off', 's2', 'off'),
@@ -36,9 +41,9 @@ const transcriptsOf = ({ s1On = 'FAILED', tokens = {}, extra = [], summary = fid
   recorded('s2-off', 0, [], { totalTokens: tokens['s2-off'] ?? 100 }),
 ];
 
-const bareTranscripts = (): Transcript[] => dataset.cases.map((entry) => recorded(entry.id, 0, entry.gold === undefined ? [] : padding(4)));
+const bareTranscripts = (): Transcript[] => dataset.cases.map((entry) => recorded(entry.id, 0, entry.gold === undefined ? [] : needleBash()));
 
-const realReport = (variant: Variant = {}) => buildContextReport({ dataset, transcripts: transcriptsOf(variant), model: 'real', seed: 1 });
+const realReport = (variant: Variant = {}) => buildReportAs({ dataset, transcripts: transcriptsOf(variant), model: 'real', seed: 1 });
 
 describe('pairedBootstrap', () => {
   const spread = [1, -2, 3, 0, 5, -1, 2, 2, 7, -3];
@@ -90,7 +95,7 @@ describe('buildContextReport', () => {
     expect(report.metrics.memoryStaleRate?.high).toBe(0.5);
   });
 
-  it('pools retrieval over seqs against the gold ranges that a marked call fixes', () => {
+  it('pools retrieval over seqs against the gold ranges that the call carrying the anchor fixes', () => {
     expect(report.metrics.retrievalPrecision).toMatchObject({ successes: 2, trials: 4, clusters: 1 });
     expect(report.metrics.retrievalRecall).toMatchObject({ successes: 2, trials: 2, clusters: 1 });
   });
@@ -103,7 +108,7 @@ describe('buildContextReport', () => {
 
   it('excludes undefined minimality and shrinks n', () => {
     const transcripts = transcriptsOf().map((entry) => (entry.caseId === 's1-off' ? recorded('s1-off', 0, []) : entry));
-    const scored = buildContextReport({ dataset, transcripts, model: 'real', seed: 1 });
+    const scored = buildReportAs({ dataset, transcripts, model: 'real', seed: 1 });
     expect(scored.metrics.governanceMinimality).toMatchObject({ successes: 1, trials: 1 });
     expect(scored.metrics.governanceFidelity).toMatchObject({ successes: 1, trials: 2 });
     expect(scored.governanceRunsWithoutEvent).toBe(1);
@@ -124,7 +129,7 @@ describe('buildContextReport', () => {
   });
 
   it('leaves a metric with no trials undefined instead of inventing a rate', () => {
-    const bare = buildContextReport({ dataset, transcripts: bareTranscripts(), model: 'real', seed: 1 });
+    const bare = buildReportAs({ dataset, transcripts: bareTranscripts(), model: 'real', seed: 1 });
     expect(bare.metrics.fabricationRate).toBeUndefined();
     expect(bare.metrics.memoryStaleRate).toBeUndefined();
     expect(bare.metrics.lossSignalsPerCompaction).toBeUndefined();
@@ -132,17 +137,17 @@ describe('buildContextReport', () => {
 
   it('counts compactions recorded without a source apart', () => {
     const transcripts = transcriptsOf().map((entry) => (entry.caseId === 's2-on' ? recorded('s2-on', 0, [compacted(0)]) : entry));
-    const scored = buildContextReport({ dataset, transcripts, model: 'real', seed: 1 });
+    const scored = buildReportAs({ dataset, transcripts, model: 'real', seed: 1 });
     expect(scored.metrics.fabricationRate?.trials).toBe(1);
     expect(scored.unclassifiedCompactions).toBe(1);
   });
 
   it('refuses a missing transcript', () => {
-    expect(() => buildContextReport({ dataset, transcripts: transcriptsOf().slice(1), model: 'real', seed: 1 })).toThrow(EvalError);
+    expect(() => buildReportAs({ dataset, transcripts: transcriptsOf().slice(1), model: 'real', seed: 1 })).toThrow(EvalError);
   });
 
   it('marks the provenance and what is meaningless for a fake model', () => {
-    const fake = buildContextReport({ dataset, transcripts: transcriptsOf(), model: 'fake', seed: 1 });
+    const fake = buildReportAs({ dataset, transcripts: transcriptsOf(), model: 'fake', seed: 1 });
     expect(fake.model).toBe('fake');
     expect(fake.meaningless).toEqual([
       'cacheHitRatio',
@@ -174,14 +179,14 @@ describe('formatContextReport', () => {
   });
 
   it('says that a fake result proves only the machinery, and lists the meaningless metrics', () => {
-    const text = formatContextReport(buildContextReport({ dataset, transcripts: transcriptsOf(), model: 'fake', seed: 1 }));
+    const text = formatContextReport(buildReportAs({ dataset, transcripts: transcriptsOf(), model: 'fake', seed: 1 }));
     expect(text).toContain('model: fake');
     expect(text).toContain('machinery');
     expect(text).toMatch(/meaningless.*continuationRate/);
   });
 
   it('prints n/a for an undefined metric', () => {
-    const bare = buildContextReport({ dataset, transcripts: bareTranscripts(), model: 'real', seed: 1 });
+    const bare = buildReportAs({ dataset, transcripts: bareTranscripts(), model: 'real', seed: 1 });
     expect(formatContextReport(bare)).toMatch(/fabricationRate n\/a/);
   });
 });

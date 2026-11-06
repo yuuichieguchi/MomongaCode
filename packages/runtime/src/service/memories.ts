@@ -2,8 +2,10 @@ import type { Context } from 'hono';
 import { MEMORY_SCOPES, MEMORY_STATES } from '@momonga/protocol';
 import type { AddMemoryRequest, MemoryScope, MemoryState, PromoteMemoryRequest, ReflectionResponse, RunReflectionView } from '@momonga/protocol';
 import { isValidSkillName } from '@momonga/skills';
-import type { MemoryChange, RuntimeStore } from '@momonga/store';
+import type { MemoryChange, MemoryListCursor, RuntimeStore } from '@momonga/store';
 import { MemoryAddRefusal, prepareCommandMemory } from '../memory/add-memory.ts';
+import { MEMORY_PAGE_ROWS } from '../process/constants.ts';
+import { withValidity } from '../memory/validity-view.ts';
 import type { EvidenceRun } from '../memory/evidence.ts';
 import { writeSkillFile } from '../memory/skill-promotion.ts';
 import type { RecordViews } from '../memory/views.ts';
@@ -27,6 +29,21 @@ const stateOf = (raw: string | undefined): MemoryState | undefined => {
   const state = MEMORY_STATES.find((candidate) => candidate === raw);
   if (state === undefined) throw invalidRequest(`state must be one of ${MEMORY_STATES.join(', ')}`, 'state');
   return state;
+};
+
+const encodeCursor = (cursor: MemoryListCursor): string => Buffer.from(JSON.stringify([cursor.createdAt, cursor.id])).toString('base64url');
+
+const decodeCursor = (raw: string | undefined): MemoryListCursor | null => {
+  if (raw === undefined) return null;
+  const refused = invalidRequest('after is not a cursor this service issued', 'after');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
+  } catch {
+    throw refused;
+  }
+  if (!Array.isArray(parsed) || parsed.length !== 2 || !Number.isInteger(parsed[0]) || typeof parsed[1] !== 'string') throw refused;
+  return { createdAt: parsed[0] as number, id: parsed[1] };
 };
 
 const projectOf = (raw: string | undefined): string | undefined => (raw === undefined ? undefined : canonicalProject(raw, 'project'));
@@ -57,10 +74,12 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDe
     const project = projectOf(context.req.query('project'));
     if (project !== undefined && scope === 'user') throw invalidRequest('a project filter cannot be combined with the user scope', 'project');
     const state = stateOf(context.req.query('state'));
-    const found = memories
-      .list({ ...(scope === undefined ? {} : { scope }), ...(project === undefined ? {} : { project }) })
-      .filter((memory) => (state === undefined ? memory.state !== 'candidate' : memory.state === state));
-    return json({ memories: await views.viewsOf(found, boundOf(context)) }, 200);
+    const page = memories.listPage(
+      { ...(scope === undefined ? {} : { scope }), ...(project === undefined ? {} : { project }), ...(state === undefined ? {} : { state }) },
+      decodeCursor(context.req.query('after')),
+      MEMORY_PAGE_ROWS,
+    );
+    return json({ memories: await views.viewsOf(page.memories, boundOf(context)), next: page.next === null ? null : encodeCursor(page.next) }, 200);
   };
 
   const changed = async (context: Context, result: MemoryChange<string, string>, done: string, requirement: string): Promise<Response> => {
@@ -112,12 +131,13 @@ export const registerMemoryRoutes = (route: RouteRegistrar, deps: MemoryRoutesDe
 
   const memoryHistory: Handler = async (context) => {
     const memory = requireMemory(context);
-    return json({ memories: await views.viewsOf(memories.history(memory.id), boundOf(context)) }, 200);
+    const chain = await views.viewsOf(memories.history(memory.id), boundOf(context));
+    return json({ memories: chain.map((view) => withValidity(deps.store, view)) }, 200);
   };
 
   const deleteMemory: Handler = (context) => {
     const id = context.req.param('id') ?? '';
-    if (!memories.delete(id)) throw notFound(`memory ${id} does not exist`);
+    if (memories.retire(id) === undefined) throw notFound(`memory ${id} does not exist`);
     return new Response(null, { status: 204 });
   };
 

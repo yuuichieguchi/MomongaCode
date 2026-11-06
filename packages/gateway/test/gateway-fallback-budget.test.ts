@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createFakeClock, createFakeTimers, createScriptedAdapter } from '@momonga/testkit';
 import { START_MS, expectErrorBody, outputText, postJson, readJson, startGateway } from './gateway-helpers.ts';
-import { BREAKER_OUT_OF_THE_WAY, BUDGET, driveTimers, ok, request } from './retry-support.ts';
+import { BREAKER_OUT_OF_THE_WAY, BUDGET, TOTAL_WAIT_MS, driveTimers, ok, request, sum } from './retry-support.ts';
 
 const startTwo = async (primaryCalls: Parameters<typeof createScriptedAdapter>[0]['calls'], secondaryCalls: Parameters<typeof createScriptedAdapter>[0]['calls']) => {
   const clock = createFakeClock(START_MS);
@@ -19,9 +19,10 @@ const startTwo = async (primaryCalls: Parameters<typeof createScriptedAdapter>[0
       breaker: BREAKER_OUT_OF_THE_WAY,
     },
   });
+  const scriptedDelaysMs = sum([...primaryCalls, ...secondaryCalls].map((call) => ('delayMs' in call ? (call.delayMs ?? 0) : 0)));
   const send = async () => {
     const pending = postJson(harness.client, '/v1/responses', request);
-    await driveTimers(harness, [pending]);
+    await driveTimers(harness, [pending], undefined, TOTAL_WAIT_MS + scriptedDelaysMs);
     return readJson(await pending);
   };
   return { primary, secondary, send };

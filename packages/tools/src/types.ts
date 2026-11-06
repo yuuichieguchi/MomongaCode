@@ -28,6 +28,7 @@ export type ToolResult = {
   command?: string;
   windowShared?: true;
   detached?: true;
+  memories?: string[];
   exitCode?: number;
   validatorFailure?: string;
 };
@@ -62,12 +63,18 @@ export type ToolContext = ReconcileContext & {
   extendToRunDeadline(): void;
 };
 
+export type OutputFit = {
+  fits(text: string): Promise<boolean>;
+  fit(text: string, handle: string): Promise<string>;
+  ready?(): Promise<void>;
+};
+
 export type ReconcileContext = SubjectContext & {
   runId: string;
   step: number;
   callId: string;
   idemKey: string;
-  outputBudgetChars: number;
+  outputFit: OutputFit;
   tmpDir?: string;
   processMarker?: string;
   earlierAttempt?: { stopped: boolean; uninspectable?: ReadonlyArray<{ pid: number; command: string }> };

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { sha256Hex } from '@momonga/foundation';
 import type { MemoryEvidence } from '@momonga/protocol';
 import { afterMicrotasks, createFakeClock, createFakeTimers } from '@momonga/testkit';
-import { START_MS, callEvent, enqueue, harness, makeStoreDir, mustClaim, newSession } from '../../../store/test/helpers.ts';
+import { START_MS, callEvent, enqueue, harness, makeStoreDir, mustClaim, newSession, recalled } from '../../../store/test/helpers.ts';
 import { beginUpkeepPass, runMemoryUpkeep } from '../../src/memory/upkeep.ts';
 import { createMemoryUpkeepSchedule } from '../../src/memory/upkeep-schedule.ts';
 import { createRecordViews } from '../../src/memory/views.ts';
@@ -55,7 +55,7 @@ describe('runMemoryUpkeep', () => {
     expect(await upkeep()).toMatchObject({ duplicates: 0 });
     expect(store.memories.get(untrusted.id)?.state).toBe('active');
     expect(store.memories.get(trusted.id)?.state).toBe('active');
-    expect(store.memories.recall({ trusted: true, project })).toHaveLength(2);
+    expect(recalled(store, { trusted: true, project })).toHaveLength(2);
   });
 
   it('merges notes whose text differs only in Unicode form, case-sensitively', async () => {
@@ -83,7 +83,7 @@ describe('runMemoryUpkeep', () => {
       supersedes: [replaced.id],
     }).memory;
     clock.advance(FORGET_MS);
-    store.memories.markUsed([kept.id, replacement.id]);
+    store.memories.stampContributed([kept.id, replacement.id], clock.now());
     expect(await upkeep()).toMatchObject({ duplicates: 0, archived: 0 });
     expect(store.memories.get(replaced.id)?.state).toBe('active');
   });
@@ -93,7 +93,7 @@ describe('runMemoryUpkeep', () => {
     const a = save('use X');
     const b = save('do not use X');
     expect(await upkeep()).toMatchObject({ duplicates: 0 });
-    expect(store.memories.recall({ trusted: true, project }).map((memory) => memory.id).sort()).toEqual([a.id, b.id].sort());
+    expect(recalled(store, { trusted: true, project }).map((memory) => memory.id).sort()).toEqual([a.id, b.id].sort());
   });
 
   it('archives an idle unbound note and a stale one, and keeps a verified one of the same age', async () => {
@@ -106,16 +106,16 @@ describe('runMemoryUpkeep', () => {
     expect(store.memories.get(unbound.id)?.state).toBe('archived');
     expect(store.memories.get(stale.id)?.state).toBe('archived');
     expect(store.memories.get(verified.id)?.state).toBe('active');
-    expect(store.memories.recall({ trusted: true, project }).map((memory) => memory.id)).toEqual([verified.id]);
+    expect(recalled(store, { trusted: true, project }).map((memory) => memory.id)).toEqual([verified.id]);
     expect(store.memories.search({ trusted: true, project }, ['unbound'], { include: 'all' }).map((memory) => memory.id)).toEqual([unbound.id]);
   });
 
-  it('keeps a note that was used inside the window', async () => {
+  it('keeps a note that contributed inside the window', async () => {
     const { store, clock, save, upkeep } = setup();
     const note = save('used note');
     const other = save('idle note');
     clock.advance(FORGET_MS - 1);
-    store.memories.markUsed([note.id]);
+    store.memories.stampContributed([note.id], clock.now());
     clock.advance(1);
     await upkeep();
     expect(store.memories.get(note.id)?.state).toBe('active');

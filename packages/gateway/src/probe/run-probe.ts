@@ -58,7 +58,7 @@ export interface ProbeOptions {
   sleep?: (ms: number, signal: AbortSignal | undefined) => Promise<void>;
 }
 
-export const PROBE_METHOD_VERSION = 1;
+export const PROBE_METHOD_VERSION = 2;
 
 const MAX_RATE_LIMIT_RETRIES = 3;
 export const DEFAULT_SAMPLES = 10;

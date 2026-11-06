@@ -121,7 +121,7 @@ export const memoryDelete = async (ports: CliPorts, paths: MomongaPaths, id: str
   const client = connectRuntime(paths);
   try {
     await client.deleteMemory(id);
-    ports.stdout.write(`deleted memory ${id}\n`);
+    ports.stdout.write(`retired memory ${id}; it stays in momonga memory history\n`);
     return 0;
   } finally {
     await client.close();

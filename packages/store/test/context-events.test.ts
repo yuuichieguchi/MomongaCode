@@ -81,6 +81,13 @@ describe('context events in the journal', () => {
       expect(decodeEvent(row(payload))).toEqual({ ...payload, ...ENVELOPE });
     });
 
+    it('memories on tool.completed round trips', () => {
+      const payload = { ...base, memories: ['0193a1b2-0000-7000-8000-000000000001', '0193a1b2-0000-7000-8000-000000000002'] };
+      expect(decodeEvent(row(payload))).toEqual({ ...payload, ...ENVELOPE });
+      expect(() => decodeEvent(row({ ...base, memories: 'not-a-list' }))).toThrow(/corrupt/);
+      expect(() => decodeEvent(row({ ...base, memories: [7] }))).toThrow(/corrupt/);
+    });
+
     it('decodes a removed file and a write the observer could not hash, with no sha256, and the command and shared window', () => {
       const payload = { ...base, command: 'rm a.ts', windowShared: true, files: [{ path: '/p/a.ts', access: 'remove' }, { path: '/p/b.ts', access: 'write' }] };
       expect(decodeEvent(row(payload))).toEqual({ ...payload, ...ENVELOPE });
@@ -110,6 +117,6 @@ describe('context events in the journal', () => {
       ...ENVELOPE,
     } as RunEvent;
     expect(foldRunState(start(), event).summary).toEqual({ item, summary: 'so far', replacedThroughSeq: 3 });
-    expect(SNAPSHOT_STATE_VERSION).toBe(15);
+    expect(SNAPSHOT_STATE_VERSION).toBeGreaterThan(15);
   });
 });

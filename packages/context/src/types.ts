@@ -47,6 +47,8 @@ export type ContextSources = {
   activatedSkills: readonly ActivatedSkill[];
   governing?: ContextGoverning;
   memories?: readonly DeepReadonly<MemoryView>[];
+  moreMemories?: boolean;
+  memoryMatchCap?: number;
   history: readonly HistoryItem[];
   summary?: ContextSummary;
   readers: ReferenceReaders;

@@ -6,7 +6,7 @@ const UNKNOWN_HANDLE = 'a'.repeat(64);
 
 describe('ReadOutput', () => {
   it.runIf(process.platform === 'darwin')('reads back a truncated Bash output exactly', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
-    const tools = await makeBuiltins({ maxInlineOutputChars: 2000, realSandbox: true });
+    const tools = await makeBuiltins({ outputLimitChars: 2000, realSandbox: true });
     const bashResult = resultOf(await tools.run('Bash', { command: 'seq 1 3000' }, {}, 'allow_once'));
     expect(bashResult).toMatchObject({ status: 'completed', truncated: true });
     const handle = bashResult.handle as string;
@@ -30,14 +30,14 @@ describe('ReadOutput', () => {
   });
 
   it('reads 2000 lines by default and notes where to continue', async () => {
-    const tools = await makeBuiltins({ maxInlineOutputChars: 100_000 });
+    const tools = await makeBuiltins({ outputLimitChars: 100_000 });
     const { handle } = tools.blobs.port.put(range(1, 2500).map((n) => `out ${n}`).join('\n'), { mediaType: 'text/plain; charset=utf-8' });
     const result = resultOf(await tools.run('ReadOutput', { handle }));
     expect(result.output).toBe(`${catN(range(1, 2000).map((n) => `out ${n}`))}\n[Showed lines 1–2000. Continue with offset=2001.]`);
   });
 
   it('adds no continuation note when the blob ends exactly at the line limit', async () => {
-    const tools = await makeBuiltins({ maxInlineOutputChars: 100_000 });
+    const tools = await makeBuiltins({ outputLimitChars: 100_000 });
     const { handle } = tools.blobs.port.put(range(1, 2000).map((n) => `out ${n}`).join('\n'), { mediaType: 'text/plain; charset=utf-8' });
     const result = resultOf(await tools.run('ReadOutput', { handle }));
     expect(result.output).toBe(catN(range(1, 2000).map((n) => `out ${n}`)));
