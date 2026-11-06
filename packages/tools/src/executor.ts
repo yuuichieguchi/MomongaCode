@@ -877,9 +877,11 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       abortWith('timeout');
     };
     const armIdle = (): void => {
-      if (bounds?.idleMs === undefined || abortReason !== undefined) return;
+      if (bounds === undefined || abortReason !== undefined) return;
       clearTimeout(idleTimer);
-      idleTimer = setTimeout(() => expire('idle'), bounds.idleMs);
+      const now = clock.now();
+      const stop = callStopOf({ startedAt: bounds.startedAt, lastProgressAt: now, idleMs: bounds.idleMs, totalMs: bounds.totalMs, deadlineAt });
+      if (stop.bound === 'idle') idleTimer = setTimeout(() => expire('idle'), Math.max(0, stop.at - now));
     };
     let heldLock: CallLock | undefined;
     let effect: Promise<unknown> | undefined;
