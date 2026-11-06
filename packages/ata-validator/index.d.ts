@@ -1,0 +1,696 @@
+export interface ValidationError {
+  keyword: string;
+  instancePath: string;
+  schemaPath: string;
+  params: Record<string, unknown>;
+  message: string;
+  /**
+   * The schema object that owns the failing keyword. Populated only when the
+   * Validator was constructed with `verbose: true`. Matches ajv's `verbose`
+   * behavior.
+   */
+  parentSchema?: object;
+}
+
+export interface SchemaSource {
+  file: string;
+  line: number;
+  col: number;
+  text: string;
+}
+
+export interface DataFrame {
+  byteOffset: number;
+  length: number;
+  line: number;
+  col: number;
+  text: string;
+}
+
+export interface Suggestion {
+  text: string;
+  kind: 'typo' | 'format' | 'coercion' | 'similar-key';
+}
+
+export type ErrorCode = `ATA${number}`;
+
+export interface RichValidationError {
+  code: ErrorCode;
+  message: string;
+  keyword: string;
+  path: string;
+  expected?: string;
+  received?: string;
+  schemaPath?: string;
+  schemaSource?: SchemaSource;
+  dataFrame?: DataFrame;
+  suggestion?: Suggestion;
+  docUrl?: string;
+  // Back-compat aliases retained indefinitely
+  instancePath?: string;
+  dataPath?: string;
+  params?: Record<string, unknown>;
+  parentSchema?: unknown;
+}
+
+export interface RenderOptions {
+  color?: 'auto' | 'always' | 'never';
+  cwd?: string;
+}
+
+export interface PrettyOptions extends RenderOptions {
+  maxErrors?: number;
+}
+
+export interface CompactOptions extends RenderOptions {}
+
+export interface JSONRenderOptions {
+  pretty?: boolean;
+}
+
+export function renderPretty(errors: RichValidationError[], opts?: PrettyOptions): string;
+export function renderCompact(errors: RichValidationError[], opts?: CompactOptions): string;
+export function renderJSON(errors: RichValidationError[], opts?: JSONRenderOptions): string;
+
+/** Options for {@link describeSchema}. */
+export interface DescribeSchemaOptions {
+  /** What to call the top level in the description. Defaults to `output`. */
+  name?: string;
+}
+
+/**
+ * The schema's constraints as prose, for the prompt that asks a model to
+ * produce a document. Values a model cannot infer, an `enum` of internal codes
+ * most of all, are the ones worth stating: measured on one fixture, naming them
+ * took first-attempt validity from 0 of 30 to 23 of 30, where a careful
+ * hand-written description scored 0 on exactly those fields.
+ * https://github.com/mertcanaltin/retry-message-experiment
+ */
+export function describeSchema(schema: object, opts?: DescribeSchemaOptions): string;
+
+/** Options for {@link toRetryMessage}. */
+export interface RetryMessageOptions {
+  /** Most errors to include. Defaults to 20, because a model does not act on a long list. */
+  limit?: number;
+}
+
+/**
+ * The errors as a string to send back to a model, naming what was expected and
+ * what arrived. On constraints a model can infer from context this changes
+ * nothing; where a constraint is an internal vocabulary it was the difference
+ * between 0 of 30 and 30 of 30 recovered on one retry.
+ * https://github.com/mertcanaltin/retry-message-experiment
+ */
+export function toRetryMessage(errors: RichValidationError[], opts?: RetryMessageOptions): string;
+
+/** A user-supplied format checker. Receives the candidate value, returns true if valid. */
+export type FormatChecker = (value: string) => boolean;
+
+/**
+ * Per-keyword custom error messages for a subschema's `errorMessage`. Keys are
+ * keyword names (`type`, `minimum`, `pattern`, ...). `required` may be a single
+ * string or a map keyed by the missing property name. `_` is the fallback used
+ * when no keyword-specific entry matches.
+ */
+export interface ErrorMessageMap {
+  required?: string | Record<string, string>;
+  _?: string;
+  [keyword: string]: string | Record<string, string> | undefined;
+}
+
+/** The seven primitive `type` values defined by JSON Schema. */
+export type JSONSchemaTypeName =
+  | 'string'
+  | 'number'
+  | 'integer'
+  | 'boolean'
+  | 'object'
+  | 'array'
+  | 'null';
+
+/**
+ * A hand-written type for authoring JSON Schema (draft 2020-12) objects inline
+ * in TypeScript. Known keywords are typed, so you get autocomplete and an error
+ * when a value has the wrong shape (e.g. `type: 123` or `required: 'id'`).
+ * Unknown keywords are permitted, so custom/vendor keywords do not error.
+ *
+ * Pair it with {@link defineSchema} for inline authoring without `as const`.
+ */
+export interface JSONSchema {
+  $id?: string;
+  $schema?: string;
+  $ref?: string;
+  $defs?: Record<string, JSONSchema>;
+  definitions?: Record<string, JSONSchema>;
+  $comment?: string;
+
+  type?: JSONSchemaTypeName | JSONSchemaTypeName[];
+  enum?: ReadonlyArray<unknown>;
+  const?: unknown;
+
+  title?: string;
+  description?: string;
+  default?: unknown;
+  examples?: ReadonlyArray<unknown>;
+  deprecated?: boolean;
+  readOnly?: boolean;
+  writeOnly?: boolean;
+
+  // object
+  properties?: Record<string, JSONSchema>;
+  required?: ReadonlyArray<string>;
+  additionalProperties?: boolean | JSONSchema;
+  patternProperties?: Record<string, JSONSchema>;
+  propertyNames?: JSONSchema;
+  minProperties?: number;
+  maxProperties?: number;
+  dependentRequired?: Record<string, ReadonlyArray<string>>;
+  dependentSchemas?: Record<string, JSONSchema>;
+
+  // array
+  items?: JSONSchema | ReadonlyArray<JSONSchema> | boolean;
+  prefixItems?: ReadonlyArray<JSONSchema>;
+  additionalItems?: boolean | JSONSchema;
+  contains?: JSONSchema;
+  minContains?: number;
+  maxContains?: number;
+  minItems?: number;
+  maxItems?: number;
+  uniqueItems?: boolean;
+
+  // string
+  minLength?: number;
+  maxLength?: number;
+  pattern?: string;
+  format?: string;
+
+  // number
+  minimum?: number;
+  maximum?: number;
+  exclusiveMinimum?: number;
+  exclusiveMaximum?: number;
+  multipleOf?: number;
+
+  // composition
+  allOf?: ReadonlyArray<JSONSchema>;
+  anyOf?: ReadonlyArray<JSONSchema>;
+  oneOf?: ReadonlyArray<JSONSchema>;
+  not?: JSONSchema;
+  if?: JSONSchema;
+  then?: JSONSchema;
+  else?: JSONSchema;
+
+  /** OpenAPI compatibility: ata honors `nullable` as a JSON Schema extension. */
+  nullable?: boolean;
+
+  /**
+   * Override the human-facing `message` on errors this subschema produces.
+   * A string replaces the message for any failing keyword; an object overrides
+   * per keyword, with `required` keyed by missing property name (or a single
+   * string) and `_` as a fallback. Other fields (`code`, `keyword`, `path`)
+   * are unaffected.
+   */
+  errorMessage?: string | ErrorMessageMap;
+
+  /** Custom and vendor keywords are allowed without error. */
+  [keyword: string]: unknown;
+}
+
+/**
+ * Collapse an intersection of mapped object types into a single readable object
+ * type. `& {}` forces TypeScript to evaluate the mapped type eagerly.
+ */
+type Simplify<T> = { [K in keyof T]: T[K] } & {};
+
+/** Keys listed in a schema's `required` array, as a string union (or never). */
+type RequiredKeys<S> = S extends { required: infer R }
+  ? R extends ReadonlyArray<infer K extends string>
+    ? K
+    : never
+  : never;
+
+/** Collapse a union of types into their intersection (used for `allOf`). */
+type UnionToIntersection<U> =
+  (U extends unknown ? (k: U) => void : never) extends (k: infer I) => void ? I : never;
+
+/** The root `$defs`/`definitions` map, threaded through inference for `$ref` resolution. */
+type RootDefs<S> = S extends { $defs: infer D }
+  ? D
+  : S extends { definitions: infer D }
+    ? D
+    : {};
+
+/** Extract the definition name from a local `#/$defs/...` or `#/definitions/...` pointer. */
+type RefName<R> = R extends `#/$defs/${infer N}`
+  ? N
+  : R extends `#/definitions/${infer N}`
+    ? N
+    : never;
+
+/** Resolve a `$ref` against the root defs map; external/unresolvable refs -> unknown. */
+type ResolveRef<R, D> = [RefName<R>] extends [never]
+  ? unknown
+  : RefName<R> extends keyof D
+    ? InferWith<D[RefName<R>], D>
+    : unknown;
+
+/** Object shape: required keys are required, all other declared keys optional.
+ * When `properties` is absent and `additionalProperties` is a schema, infer
+ * a `Record<string, V>` (the JSON Schema "dictionary"/"record" shape). */
+type InferObject<S, D> = S extends { properties: infer P }
+  ? Simplify<
+      { [K in keyof P as K extends RequiredKeys<S> ? K : never]: InferWith<P[K], D> } &
+      { [K in keyof P as K extends RequiredKeys<S> ? never : K]?: InferWith<P[K], D> }
+    >
+  : S extends { additionalProperties: infer A }
+    ? A extends boolean
+      ? Record<string, unknown>
+      : Record<string, InferWith<A, D>>
+    : Record<string, unknown>;
+
+/** Array shape: `prefixItems` -> tuple; `items` (single schema) -> element type; otherwise unknown[]. */
+type InferArray<S, D> = S extends { prefixItems: infer P }
+  ? P extends ReadonlyArray<unknown>
+    ? { -readonly [K in keyof P]: InferWith<P[K], D> }
+    : unknown[]
+  : S extends { items: infer I }
+    ? I extends ReadonlyArray<unknown>
+      ? unknown[]
+      : InferWith<I, D>[]
+    : unknown[];
+
+/** Map a single JSON Schema type name (+ its schema) to a TS type. */
+type InferByTypeName<N, S, D> = N extends 'object'
+  ? InferObject<S, D>
+  : N extends 'array'
+    ? InferArray<S, D>
+    : N extends 'string'
+      ? string
+      : N extends 'number'
+        ? number
+        : N extends 'integer'
+          ? number
+          : N extends 'boolean'
+            ? boolean
+            : N extends 'null'
+              ? null
+              : unknown;
+
+/** Core inference with the root defs map `D` threaded for `$ref` resolution. */
+type InferWith<S, D> = S extends { $ref: infer R }
+  ? ResolveRef<R, D>
+  : S extends { const: infer C }
+    ? C
+    : S extends { enum: infer E }
+      ? E extends ReadonlyArray<infer U>
+        ? U
+        : unknown
+      : S extends { allOf: infer A }
+        ? A extends ReadonlyArray<unknown>
+          ? Simplify<UnionToIntersection<{ [K in keyof A]: InferWith<A[K], D> }[number]>>
+          : unknown
+        : S extends { anyOf: infer A }
+          ? A extends ReadonlyArray<unknown>
+            ? { [K in keyof A]: InferWith<A[K], D> }[number]
+            : unknown
+          : S extends { oneOf: infer A }
+            ? A extends ReadonlyArray<unknown>
+              ? { [K in keyof A]: InferWith<A[K], D> }[number]
+              : unknown
+            : S extends { type: infer T }
+              ? T extends ReadonlyArray<infer N>
+                ? InferByTypeName<N, S, D>
+                : InferByTypeName<T, S, D>
+              : unknown;
+
+/**
+ * Infer the TypeScript data type a JSON Schema literal describes.
+ *
+ * Handles: primitives, `type` arrays (union), `const`, `enum`, objects
+ * (`properties` + `required` -> required/optional keys), arrays (`items`),
+ * tuples (`prefixItems`), `anyOf`/`oneOf` (union), `allOf` (intersection),
+ * and `$ref` to local `#/$defs/...` or `#/definitions/...`. External or
+ * unresolvable `$ref` resolves to `unknown` rather than erroring.
+ *
+ * Pair with {@link defineSchema}:
+ * `const s = defineSchema({...}); type T = Infer<typeof s>;`
+ */
+export type Infer<S> = InferWith<S, RootDefs<S>>;
+
+export type ValidationResult<T = unknown> =
+  | { valid: true;  data: T;       errors: ValidationError[] }
+  | { valid: false; data?: never;  errors: ValidationError[] };
+
+export type ValidateAndParseResult<T = unknown> =
+  | { valid: true;  value: T;       errors: ValidationError[] }
+  | { valid: false; value: unknown; errors: ValidationError[] };
+
+export type KeywordValidate = (schemaValue: unknown, data: unknown, parentSchema: object) => boolean;
+
+export interface KeywordDefinition {
+  /** JSON Schema type name(s) the keyword applies to. Other types pass. */
+  type?: string | string[];
+  /**
+   * Called per value with the keyword's value in the schema, the data, and
+   * the schema object that carries the keyword. May leave error objects on
+   * itself (`fn.errors`) to replace the default error.
+   */
+  validate?: KeywordValidate;
+  /** Called once per schema node; the returned function runs per value. */
+  compile?: (schemaValue: unknown, parentSchema: object) => (data: unknown) => boolean;
+  /**
+   * Returns a schema that is applied in place. Its errors carry the keyword's
+   * path, and the keyword reports an error of its own when it fails.
+   */
+  macro?: (schemaValue: unknown, parentSchema: object) => JSONSchema | boolean;
+}
+
+export interface ValidatorOptions {
+  coerceTypes?: boolean;
+  removeAdditional?: boolean;
+  /**
+   * When true (default), missing properties are filled in from their `default`
+   * before validation. Set to false to leave the instance untouched, which is
+   * what the specification describes: `default` is an annotation and never
+   * affects whether an instance is valid.
+   */
+  useDefaults?: boolean;
+  /**
+   * When true (default), `format` is asserted and a value that does not match
+   * its format fails. Set to false to treat `format` as an annotation, the
+   * Draft 2020-12 behavior when the format-assertion vocabulary is not in use.
+   */
+  assertFormat?: boolean;
+  schemas?: Record<string, object> | object[];
+  /**
+   * Custom format checkers. Keys are format names referenced from `format` in
+   * the schema. Values are functions that return true when the input is valid.
+   */
+  formats?: Record<string, FormatChecker>;
+  /**
+   * Custom keywords, keyed by name. A schema that uses one runs on the
+   * interpreted engine and cannot be compiled ahead of time. See
+   * docs/custom-keywords.md.
+   */
+  keywords?: Record<string, KeywordDefinition | KeywordValidate>;
+  /**
+   * When true, validation errors include `parentSchema` (the schema object
+   * that produced the error), `schema` (the failing keyword's own value) and
+   * `data` (the value the error points at). Matches ajv's `verbose: true`.
+   */
+  verbose?: boolean;
+  /**
+   * Authoring-time schema checks, run at construction on the schema as
+   * written: unknown keywords (with a spelling suggestion), keywords the
+   * node's own `type` makes inert, `required` names nothing can satisfy, and
+   * local `$ref`s that do not resolve. `true` throws with every finding;
+   * `'log'` warns through `logger` (or the console) and continues.
+   */
+  strictSchema?: boolean | 'log';
+  /**
+   * The URI the schema was retrieved from. Relative references resolve against
+   * it when the schema declares no `$id` of its own, including a draft-07 root
+   * whose `$id` sits beside a `$ref` and is therefore ignored.
+   */
+  baseURI?: string;
+  /** Receives `strictSchema: 'log'` warnings; `false` silences them. */
+  logger?: { warn(...args: unknown[]): void } | false;
+  /**
+   * When true, validate() returns a shared frozen result on the first failure
+   * instead of collecting full error details. Smaller hot-path allocation.
+   */
+  abortEarly?: boolean;
+  /**
+   * Optional source descriptor for the schema. When supplied, validation errors
+   * carry a `schemaSource` frame pointing to the originating file/line/col.
+   */
+  source?: { path: string; content: string };
+  /**
+   * When true (default), validate() returns enriched errors with stable codes,
+   * docUrl, expected/received hints. Set to false to opt back into the
+   * v0.14 error shape.
+   */
+  richErrors?: boolean;
+  /**
+   * Which engine may answer this validator. 'auto' (default) picks the fastest
+   * engine that handles the schema, generated JavaScript for most schemas.
+   * 'interpreter' keeps the schema off code generation entirely: no
+   * `new Function`, no shared compile cache; the eval-free interpreted engine
+   * answers `validate()`, `isValidObject()` and `validateJSON()`. For a schema
+   * that arrives from outside the trust boundary. The verdict is the same on
+   * every engine; the cost is not. The buffer APIs (`isValid`, `countValid`,
+   * `batchIsValid`) use the native addon where it loads, which this option
+   * does not affect; without it they answer through the engine it picks.
+   */
+  engine?: 'auto' | 'interpreter';
+}
+
+export interface BundleStandaloneOptions extends ValidatorOptions {
+  /** Module format for the emitted bundle. Default: 'cjs'. */
+  format?: 'esm' | 'cjs';
+}
+
+export interface StandardSchemaV1Props<Output = unknown, Input = unknown> {
+  version: 1;
+  vendor: "ata-validator";
+  /**
+   * Standard JSON Schema: the schema this validator checks, as a copy, for a
+   * consumer that publishes it (the MCP SDK's `inputSchema`, for one). The
+   * target must be the dialect the schema declares, and a schema without
+   * `$schema` is 2020-12. Any other target throws; ata does not convert
+   * between dialects.
+   */
+  jsonSchema: {
+    input(options: { target: "draft-2020-12" | "draft-07" | (string & {}); libraryOptions?: Record<string, unknown> }): Record<string, unknown>;
+    output(options: { target: "draft-2020-12" | "draft-07" | (string & {}); libraryOptions?: Record<string, unknown> }): Record<string, unknown>;
+  };
+  validate(
+    value: unknown
+  ):
+    | { value: Output }
+    | {
+        issues: Array<{
+          message: string;
+          /** Array indices are emitted as numbers, object keys as strings. */
+          path?: ReadonlyArray<{ key: PropertyKey }>;
+        }>;
+      };
+  /**
+   * Type-only carrier the Standard Schema spec uses for inference: consumers
+   * read the validated type off `types.output`. Never present at runtime.
+   */
+  readonly types?: { readonly input: Input; readonly output: Output } | undefined;
+}
+
+export interface StandaloneModule {
+  boolFn: (data: unknown) => boolean;
+  hybridFactory: (validResult: object, errFn: Function) => (data: unknown) => ValidationResult;
+  errFn: ((data: unknown, allErrors?: boolean) => ValidationResult) | null;
+}
+
+/** Instance surface of a compiled validator. */
+export interface Validator<T = unknown> {
+  /** Add a schema to the registry for cross-schema $ref resolution */
+  addSchema(schema: object): void;
+
+  /** Validate data, returns result with errors. Applies defaults, coerceTypes, removeAdditional. */
+  validate(data: unknown): ValidationResult<T>;
+
+  /** Fast boolean check via JS codegen or tier 0 interpreter. No error collection. */
+  isValidObject(data: unknown): data is T;
+  /**
+   * Which engine answers `validate()` for this schema: 'codegen' (generated
+   * JS), 'closure' (the closure compiler) or 'interpreter'; 'native' is
+   * reserved. The verdict is the same on every engine; the cost is not.
+   * A diagnostic; the `engine` option is the setting.
+   */
+  engine(): 'codegen' | 'closure' | 'native' | 'interpreter';
+
+  /** Validate a JSON string. Uses simdjson fast path for large documents. */
+  validateJSON(jsonString: string): ValidationResult<T>;
+
+  /**
+   * Validation as the body arrives: a record stream over this validator for a
+   * JSON array or NDJSON fed in chunks, reporting the first failing record the
+   * moment it is complete. See `ata-validator/stream` for the types.
+   */
+  stream(opts?: import('./stream').StreamOptions): import('./stream').RecordStream;
+
+  /** Fast boolean check for a JSON string */
+  isValidJSON(jsonString: string): boolean;
+
+  /** Parse JSON and validate against the schema. Returns the parsed value and the validation result. Works without the native addon. */
+  validateAndParse(jsonString: string | Buffer): ValidateAndParseResult<T>;
+
+  /**
+   * Validate, then return a copy holding only the properties the schema declares, with defaults
+   * filled. The input is not modified. Throws an error named `AtaValidationError`, with `errors`,
+   * when the value is invalid, and a `TypeError` where the kept key set cannot be proven from the
+   * schema (a $ref it cannot inline, patternProperties, an object that allows unknown keys) or the
+   * validator rewrites input (`coerceTypes`, custom keywords). Same result as the `parse` export of
+   * a module built with `ata build`.
+   */
+  parse(data: unknown): T;
+
+  /** Ultra-fast buffer validation via native addon */
+  isValid(input: Buffer | Uint8Array | string): boolean;
+
+  /** Count valid documents in an NDJSON buffer. Requires native addon. */
+  countValid(ndjsonBuf: Buffer | Uint8Array | string): number;
+
+  /** Validate an array of buffers, returns count of valid ones. Requires native addon. */
+  batchIsValid(buffers: (Buffer | Uint8Array)[]): number;
+
+  /** Zero-copy validation with pre-padded buffer. Requires native addon. */
+  isValidPrepadded(paddedBuffer: Buffer, jsonLength: number): boolean;
+
+  /** Multi-core parallel NDJSON validation. Returns boolean per line. Requires native addon. */
+  isValidParallel(ndjsonBuffer: Buffer): boolean[];
+
+  /** Single-thread NDJSON batch validation. Requires native addon. */
+  isValidNDJSON(ndjsonBuffer: Buffer): boolean[];
+
+  /** Standard Schema V1 interface, compatible with Fastify, tRPC, TanStack, etc. */
+  readonly "~standard": StandardSchemaV1Props<T>;
+}
+
+/** Constructor + statics for {@link Validator}. */
+export interface ValidatorConstructor {
+  /** Construct from a JSON Schema literal; the validated data type is inferred. */
+  new <const S extends JSONSchema>(schema: S, options?: ValidatorOptions): Validator<Infer<S>>;
+  /** Construct from a plain object/string schema, or with an explicit data type. */
+  new <T = unknown>(schema: object | string | boolean, options?: ValidatorOptions): Validator<T>;
+
+  /** Load a pre-compiled standalone module. Zero schema compilation at startup. */
+  fromStandalone<T = unknown>(mod: StandaloneModule, schema: object | string, options?: ValidatorOptions): Validator<T>;
+
+  /** Bundle multiple schemas into a single JS module string. Load with Validator.loadBundle(). */
+  bundle(schemas: object[], options?: ValidatorOptions): string;
+
+  /**
+   * Bundle multiple schemas into a self-contained JS module with no
+   * ata-validator runtime dependency. Cross-schema `$ref` resolves between
+   * the supplied schemas. Set `format: 'esm'` for ESM output (default 'cjs').
+   */
+  bundleStandalone(schemas: object[], options?: BundleStandaloneOptions): string;
+
+  /**
+   * Bundle multiple schemas with deduplicated shared templates. Smaller output
+   * than bundle(). Accepts the same options as bundleStandalone.
+   */
+  bundleCompact(schemas: object[], options?: BundleStandaloneOptions): string;
+
+  /** Load a bundle created by Validator.bundle(). Returns array of Validator instances. */
+  loadBundle(mods: object[], schemas: object[], options?: ValidatorOptions): Validator[];
+
+  readonly prototype: Validator;
+}
+
+/** Compile a schema into a reusable validator. */
+export const Validator: ValidatorConstructor;
+
+/**
+ * One-shot validate: validates data against a schema or an existing
+ * {@link Validator} and returns the result. A schema written with
+ * {@link defineSchema} (or as a `const` literal) types `data` from the schema
+ * itself. The last form takes the type as an argument for a schema TypeScript
+ * cannot see into, such as one read from a file; that type is an assertion,
+ * not something the schema is checked against.
+ */
+export function validate<T>(
+  validator: Validator<T>,
+  data: unknown
+): ValidationResult<T>;
+export function validate<const S extends JSONSchema>(
+  schema: S,
+  data: unknown
+): ValidationResult<Infer<S>>;
+export function validate<T = unknown>(
+  schema: object | string,
+  data: unknown
+): ValidationResult<T>;
+
+/**
+ * Async validate for schemas built with `t.refine(...)`. Structural JSON Schema
+ * validation runs synchronously first; refinements are awaited only when the
+ * value is structurally valid. Failing refinements surface as errors with
+ * `keyword: 'refine'`. Accepts a schema literal or an existing {@link Validator}.
+ */
+export function validateAsync<T>(
+  validator: Validator<T>,
+  data: unknown
+): Promise<ValidationResult<T>>;
+export function validateAsync<const S extends JSONSchema>(
+  schema: S,
+  data: unknown
+): Promise<ValidationResult<Infer<S>>>;
+export function validateAsync<T = unknown>(
+  schema: object,
+  data: unknown
+): Promise<ValidationResult<T>>;
+
+/**
+ * Like {@link validateAsync}, but resolves to the validated data on success and
+ * rejects with an `Error` whose `errors` property holds the
+ * {@link ValidationError} list on failure.
+ */
+export function parseAsync<T>(validator: Validator<T>, data: unknown): Promise<T>;
+export function parseAsync<const S extends JSONSchema>(schema: S, data: unknown): Promise<Infer<S>>;
+export function parseAsync<T = unknown>(schema: object, data: unknown): Promise<T>;
+
+/** Fast compile: returns a validate function directly. WeakMap cached, second call with same schema is near-zero cost. */
+export function compile<T = unknown>(
+  schema: object | string,
+  options?: ValidatorOptions
+): (data: unknown) => ValidationResult<T>;
+
+/** Parse JSON using simdjson (native addon) or JSON.parse (fallback). */
+export function parseJSON(jsonString: string | Buffer): unknown;
+
+/** Returns ata-validator version string. */
+export function version(): string;
+
+/** Create a simdjson-compatible padded buffer from a JSON string. */
+export function createPaddedBuffer(jsonStr: string): { buffer: Buffer; length: number };
+
+/** Required padding size for simdjson buffers. */
+export const SIMDJSON_PADDING: number;
+
+/**
+ * Generate a TypeScript declaration (.d.ts source) for the given JSON Schema.
+ * Returns a string containing the generated type plus `isValid` / `validate`
+ * signatures. Used internally by the `ata compile` CLI and exposed for
+ * build-time integrations (Vite plugin, custom build steps).
+ */
+export function toTypeScript(schema: object, options?: { name?: string }): string;
+
+/**
+ * Authoring helper for writing a JSON Schema inline in TypeScript. Returns the
+ * schema unchanged at runtime; its purpose is to apply the {@link JSONSchema}
+ * type so you get keyword autocomplete and an error on malformed values, while
+ * the `const` type parameter preserves the literal shape (no `as const` needed).
+ *
+ * ```ts
+ * import { defineSchema, Validator } from 'ata-validator';
+ *
+ * const user = defineSchema({
+ *   type: 'object',
+ *   properties: { id: { type: 'integer', minimum: 1 } },
+ *   required: ['id'],
+ * });
+ *
+ * const v = new Validator(user);
+ * ```
+ *
+ * Requires TypeScript >= 5.0 for the `const` type parameter.
+ */
+export declare function defineSchema<const S extends JSONSchema>(schema: S): S;
+
+/**
+ * The JSON Schema of a TypeScript type, written in at build time by
+ * `@ata-project/unplugin` from the type and the JSDoc tags on its properties
+ * (`@format email`, `@minimum 1`, `@pattern`, `@minLength`, `@maxItems`,
+ * `@asType integer`). `new Validator(schemaOf<User>())` then compiles like any
+ * static schema. Without the plugin the call throws: it has no run-time form.
+ */
+export declare function schemaOf<T>(): JSONSchema;

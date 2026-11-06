@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useReducer, useRef, useState } from 'react';
 import { Box, Static, Text, useApp, useInput, usePaste, useStdout, useWindowSize } from 'ink';
-import { autoModeNotice, escapeTerminalBlock, escapeTerminalLine } from '@momonga/protocol';
+import { agentReadiness, autoModeNotice, escapeTerminalBlock, escapeTerminalLine } from '@momonga/protocol';
 import type { AliasCapabilities, ImageAttachment, MomongaModelEntry, PermissionMode, PermissionOption } from '@momonga/protocol';
 import { cleanFailureMessage } from '@momonga/foundation';
 import { currentField, currentRequest, decide, enterValue, leaveFields, withError } from '../elicit/flow.ts';
@@ -9,6 +9,7 @@ import type { RunEventFrame } from '../client/runtime-client.ts';
 import type { RunView, SessionView } from '../client/views.ts';
 import { describeAttachment, pastedImagePaths } from '../images.ts';
 import { describeFailure } from '../failure.ts';
+import { readinessNoticeOf } from '../readiness.ts';
 import { describeDenial } from '../policy-messages.ts';
 import { describeEnd } from '../run/headless.ts';
 import type { StartRunOptions, TuiBackend } from './backend.ts';
@@ -375,6 +376,12 @@ export function App(props: AppProps) {
     note(autoModeNotice({ view, surface: 'tui' }));
   };
 
+  const showModel = (entry: MomongaModelEntry): void => {
+    setModel(entry);
+    const text = readinessNoticeOf(agentReadiness(entry.capabilities));
+    if (text !== undefined) dispatch({ kind: 'append', entry: { kind: 'notice', level: 'warning', text } });
+  };
+
   const openSession = async (): Promise<void> => {
     const session = await backend.openSession();
     setModeState(session.permissionMode);
@@ -384,7 +391,7 @@ export function App(props: AppProps) {
     setAutoAvailable(await backend.autoModeAvailable());
     replaceEditor(emptyEditor(await backend.loadHistory()));
     setPhase({ kind: 'ready' });
-    void backend.model().then(setModel, (error: unknown) => {
+    void backend.model().then(showModel, (error: unknown) => {
       dispatch({ kind: 'append', entry: { kind: 'notice', level: 'warning', text: `model information unavailable: ${errorOf(error).message}` } });
     });
     void backend.startupNotices().then(
@@ -509,7 +516,7 @@ export function App(props: AppProps) {
             ? `model: ${session.modelAlias}; the running task keeps ${previous}, the next task uses ${session.modelAlias}`
             : `model: ${session.modelAlias}; applies from the next task`,
         );
-        void backend.model().then(setModel, (error: unknown) => {
+        void backend.model().then(showModel, (error: unknown) => {
           dispatch({ kind: 'append', entry: { kind: 'notice', level: 'warning', text: `model information unavailable: ${errorOf(error).message}` } });
         });
       },
@@ -616,14 +623,17 @@ export function App(props: AppProps) {
     const flow = flowOf(pending);
     const request = currentRequest(flow);
     if (decision === 'accept' && request.mode === 'url') {
-      const next = decide(flow, decision);
-      backend.openUrl(new URL(request.url)).then(
-        () => proceedFlow(pending, next),
-        (error: unknown) => applyFlow(pending, withError(flow, `could not open the URL: ${errorOf(error).message}`)),
+      decide(flow, decision).then(
+        (next) =>
+          backend.openUrl(new URL(request.url)).then(
+            () => proceedFlow(pending, next),
+            (error: unknown) => applyFlow(pending, withError(flow, `could not open the URL: ${errorOf(error).message}`)),
+          ),
+        fail,
       );
       return;
     }
-    proceedFlow(pending, decide(flow, decision));
+    decide(flow, decision).then((next) => proceedFlow(pending, next), fail);
   };
 
   const elicitationKey = (pending: PendingElicitation, input: string, key: Parameters<Parameters<typeof useInput>[0]>[1]): void => {
@@ -647,12 +657,12 @@ export function App(props: AppProps) {
       return;
     }
     if (key.return && elicitEditorRef.current.text === '') {
-      proceedFlow(pending, enterValue(flow, ''));
+      enterValue(flow, '').then((next) => proceedFlow(pending, next), fail);
       return;
     }
     const outcome = applyKey(elicitEditorRef.current, { ...key, input });
     replaceElicitEditor(outcome.state);
-    if (outcome.submit !== undefined) proceedFlow(pending, enterValue(flow, outcome.submit));
+    if (outcome.submit !== undefined) enterValue(flow, outcome.submit).then((next) => proceedFlow(pending, next), fail);
   };
 
   const cycleMode = (): void => {

@@ -23,10 +23,10 @@ type PendingCall = RunState['pendingCalls'][string];
 const toolRefusedInJournal = (ctx: ClaimContext, toolKey: string): boolean =>
   ctx.journal.state.notes.some((note) => note.code === TOOL_VALIDATOR_FAILED_CODE && note.toolKey === toolKey);
 
-const callPayload = (ctx: ClaimContext, display: DisplayContext, item: { call_id: string; name: string; arguments: string }): RunEventPayload => {
+const callPayload = async (ctx: ClaimContext, display: DisplayContext, item: { call_id: string; name: string; arguments: string }): Promise<RunEventPayload> => {
   const rawInput = parseJsonOrText(item.arguments);
   const tool = ctx.toolSet.get(item.name);
-  const validation = tool === undefined || toolRefusedInJournal(ctx, toolRefusalKey(tool)) ? undefined : validateToolInput(tool, rawInput);
+  const validation = tool === undefined || toolRefusedInJournal(ctx, toolRefusalKey(tool)) ? undefined : await validateToolInput(tool, rawInput, { signal: ctx.control.signal });
   const input = validation?.ok === true ? validation.value : undefined;
   const locations = tool !== undefined && input !== undefined ? tool.locations?.(input, display) : undefined;
   return {
@@ -42,14 +42,14 @@ const callPayload = (ctx: ClaimContext, display: DisplayContext, item: { call_id
   };
 };
 
-export const recordCalls = (ctx: ClaimContext, leading: readonly RunEventPayload[] = []): void => {
+export const recordCalls = async (ctx: ClaimContext, leading: readonly RunEventPayload[] = []): Promise<void> => {
   const { pendingCalls } = ctx.journal.state;
   const payloads: RunEventPayload[] = [...leading];
   const session = ctx.options.store.getSession(ctx.run.sessionId);
   if (session === undefined) throw new Error(`unknown session ${ctx.run.sessionId}`);
   const display = ctx.options.tools.sessionState(session);
   for (const { item } of ownEntries(ctx.journal.state)) {
-    if (item.type === 'function_call' && pendingCalls[item.call_id] === undefined) payloads.push(callPayload(ctx, display, item));
+    if (item.type === 'function_call' && pendingCalls[item.call_id] === undefined) payloads.push(await callPayload(ctx, display, item));
   }
   if (payloads.length > 0) ctx.journal.append(payloads);
 };
@@ -183,7 +183,7 @@ const recordToolContent = (spans: ReadonlyMap<string, TraceSpan>, calls: readonl
 
 export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   const { options, journal, run } = ctx;
-  recordCalls(ctx);
+  await recordCalls(ctx);
   const entries = Object.entries(journal.state.pendingCalls);
   if (entries.some(([, call]) => call.status === 'awaiting_approval' || call.status === 'awaiting_input')) return ctx.terminals.yieldTo('WAITING_HUMAN');
   const runnable = entries.filter(([, call]) => call.status === 'requested' || call.status === 'started');

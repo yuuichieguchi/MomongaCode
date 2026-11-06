@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PATH_TOOLS, PATH_TOOL_RULES, isPathTool, parseRule } from '@momonga/config';
-import { HOST_RULE_ENFORCEMENT } from '@momonga/foundation';
+import { ruleEnforcementOf } from '@momonga/foundation';
 import { computeFileRules, fileRuleSpecsOf } from '@momonga/policy';
 import { EDIT_FAMILY, READ_FAMILY } from '../src/match-rule.ts';
 import { makeLayout } from './helpers.ts';
@@ -23,7 +23,7 @@ describe('one table of path tools (DUP-24)', () => {
       const specs = fileRuleSpecsOf([rule], [layout.project]);
       expect(specs).toHaveLength(1);
       expect(specs[0]).toMatchObject({ tool: PATH_TOOL_RULES[tool].tool, access: PATH_TOOL_RULES[tool].access, effect });
-      expect(computeFileRules([rule], [layout.project], null, HOST_RULE_ENFORCEMENT).entries.length).toBeGreaterThanOrEqual(1);
+      expect(computeFileRules([rule], [layout.project], null, ruleEnforcementOf('none')).entries.length).toBeGreaterThanOrEqual(1);
     }
   });
 

@@ -1,0 +1,1282 @@
+'use strict';
+const { collapseBranches } = require('./branch-collapse');
+
+// One branch title, for the collapsed anyOf/oneOf error. The compiled node
+// keeps the schema it came from, which is where a `title` lives.
+const branchTitle = (n) => (n && n.schema && typeof n.schema.title === 'string' ? n.schema.title : '');
+
+// Compiles interpreter Plans into a tree of specialized closures. No source
+// generation, no `new Function`: this is plain closure composition, so it
+// runs wherever the interpreter runs, CSP included. The payoff over eval()
+// is that every keyword branch is decided once at compile time and every
+// child call is a direct monomorphic call, which is the same advantage the
+// code generator has, minus the codegen.
+//
+// Everything eval() decides at run time from the schema path is decided
+// here at compile time instead, because the schema path is static:
+//   - the base URI in effect, so `$ref` targets resolve once;
+//   - the dynamic scope, kept as the ordered list of resources entered so
+//     far, so `$dynamicRef` targets resolve once too. eval() pushes a
+//     resource every time the base changes, which can repeat entries; the
+//     outermost-first anchor search gives the same answer on the list with
+//     repeats removed, and that list is finite, so compilation terminates
+//     on cyclic schemas;
+//   - whether a node's annotations are read by anyone. A node under an
+//     in-place applicator of a collecting node collects; one under a child
+//     applicator (properties, items, not, ...) does not, exactly as eval()
+//     hands those the discard sink;
+//   - whether the schema can recurse at all. eval() guards every reference
+//     against revisiting a (schema, data) pair; that guard can only fire
+//     when the compiled graph has a cycle, which compilation notices, so an
+//     acyclic schema compiles without the guard and without the stack.
+// A `$ref` or `$dynamicRef` that does not resolve compiles into the same
+// runtime rejection eval() produces, so nothing declines. Error output must
+// be byte-for-byte what eval() produces; tests/test_plan_compiler.js diffs
+// the two over the official suite.
+//
+// Compiled pairs: `c(data, errors, instancePath, schemaPath, stack[, rec])`
+// collects errors and returns the verdict; `v(data, stack[, rec])` returns
+// the verdict alone, with no path strings and no error objects, and returns
+// on the first failure. `errors` may be the NOERRORS sentinel, in which case
+// the collect variant also stops at the first failure.
+//
+// Annotations live in a record {props, n, x}: the property names evaluated
+// so far, the count of items evaluated contiguously from index 0, and any
+// further item indexes (from `contains`). A node that reads annotations
+// (unevaluated*) owns a fresh record per call; every in-place child writes
+// straight into the record it is handed. eval() keeps a failed child's
+// annotations out of its parent by merging only on success; here the
+// caller notes the record's lengths before a child that may fail without
+// failing the caller, and truncates back on failure. Same result, no
+// allocation per child.
+
+function install(deps) {
+  const { Plan, NOERRORS, err, evalLeaf, evalLeafV, runCustomV, dataBits, escapePointer,
+          deepEqual, enumMember, allDistinct, multipleOfOk, cpAtLeast, cpAtMost,
+          T_STRING, T_NUMBER, T_INTEGER, T_BOOLEAN, T_NULL, T_ARRAY, T_OBJECT, resolveRef, splitFragment, resolveUri } = deps;
+
+  const TRUE_FN = () => true;
+  // Leaf codes (leafCode in compileLeafV): a string with lengths and a
+  // pattern, an integer or a number with minimum and maximum, a boolean, an
+  // enum of primitives, a primitive const. Each answers as the closure it
+  // stands for.
+  const LC_STR = 1, LC_INT = 2, LC_NUM = 3, LC_BOOL = 4, LC_ENUM = 5, LC_CONST = 6;
+  function leafOk(c, d) {
+    switch (c[0]) {
+      case LC_STR: return typeof d === 'string' && (c[1] === -1 || cpAtLeast(d, c[1])) && (c[2] === -1 || cpAtMost(d, c[2])) && (c[3] === null || c[3].test(d));
+      case LC_INT: case LC_NUM: return (c[0] === LC_INT ? Number.isInteger(d) : typeof d === 'number' && isFinite(d)) && d >= c[1] && d <= c[2];
+      case LC_BOOL: return typeof d === 'boolean';
+      case LC_ENUM: return c[1].has(d);
+      default: return d === c[1];
+    }
+  }
+
+  // `leaf`: the node compiled no subschema of its own (see compileNode). A
+  // collecting caller asks a leaf for its verdict first and builds the paths
+  // for its errors only when it fails.
+  const TRUE_PAIR = { v: TRUE_FN, c: TRUE_FN, leaf: true };
+  const FALSE_PAIR = {
+    leaf: true,
+    v: () => false,
+    c: (data, errors, instancePath, schemaPath) => {
+      if (errors !== NOERRORS) errors.push(err('false schema', 'not', instancePath, schemaPath, {}, 'boolean schema is false'));
+      return false;
+    },
+  };
+
+  // Static $dynamicRef target, mirroring the `$dynamicRef` branch of eval()
+  // with the compile-time scope list in place of the runtime one.
+  function dynTarget(interp, ref, base, chain) {
+    const state = interp.state;
+    let { node, base: refBase } = resolveRef(ref, base, state);
+    const [, fragment] = splitFragment(resolveUri(base, ref));
+    if (fragment && !fragment.startsWith('/')) {
+      const initialDyn = state.dynamicAnchors.get(refBase);
+      const bookended = node !== undefined && initialDyn && initialDyn.get(fragment) === node;
+      if (bookended || !interp.bookending) {
+        for (let i = 0; i < chain.length; i++) {
+          const dyn = state.dynamicAnchors.get(chain[i]);
+          if (dyn && dyn.has(fragment)) { node = dyn.get(fragment); refBase = chain[i]; break; }
+        }
+      }
+    }
+    return { node, base: refBase };
+  }
+
+  // ---- annotation records ----
+  function fresh() { return { props: null, n: 0, x: null, keys: null }; }
+  // Object.keys once per record: every node that shares a record sees the
+  // same data object.
+  const propEnum = Object.prototype.propertyIsEnumerable;
+  function keysOf(rec, data) {
+    if (rec.keys === null) rec.keys = Object.keys(data);
+    return rec.keys;
+  }
+  function hasProp(rec, key) {
+    const p = rec.props;
+    if (p === null) return false;
+    for (let i = 0; i < p.length; i++) if (p[i] === key) return true;
+    return false;
+  }
+  function addProp(rec, key) {
+    if (rec.props === null) rec.props = [key];
+    else rec.props.push(key);
+  }
+  function hasItem(rec, i) {
+    if (i < rec.n) return true;
+    const x = rec.x;
+    if (x === null) return false;
+    for (let j = 0; j < x.length; j++) if (x[j] === i) return true;
+    return false;
+  }
+  function addItem(rec, i) {
+    if (i < rec.n) return;
+    if (i === rec.n) { rec.n = i + 1; return; }
+    if (rec.x === null) rec.x = [i];
+    else rec.x.push(i);
+  }
+  function markRange(rec, from, to) {
+    if (from >= to) return;
+    if (from <= rec.n) { if (to > rec.n) rec.n = to; return; }
+    if (rec.x === null) rec.x = [];
+    for (let i = from; i < to; i++) rec.x.push(i);
+  }
+  function mergeRec(target, from) {
+    if (from.props !== null) {
+      if (target.props === null) target.props = from.props;
+      else for (let i = 0; i < from.props.length; i++) target.props.push(from.props[i]);
+    }
+    if (from.n > target.n) target.n = from.n;
+    if (from.x !== null) {
+      if (target.x === null) target.x = from.x;
+      else for (let i = 0; i < from.x.length; i++) target.x.push(from.x[i]);
+    }
+  }
+  // Rollback marks: the two array lengths and the contiguous count.
+  function pLen(rec) { return rec.props === null ? 0 : rec.props.length; }
+  function xLen(rec) { return rec.x === null ? 0 : rec.x.length; }
+  // Writing an array's length is a slow path in V8 even when it does not
+  // change it, and most undos change nothing: a branch that failed before
+  // marking anything. So the length is written only when it moves.
+  function undo(rec, pl, n0, xl) {
+    const p = rec.props;
+    if (p !== null && p.length !== pl) p.length = pl;
+    rec.n = n0;
+    const x = rec.x;
+    if (x !== null && x.length !== xl) x.length = xl;
+  }
+
+  // The value-level keywords of one node, compiled. evalLeafV() answers the
+  // same question by re-reading a dozen presence flags off the plan on every
+  // call, which is work the schema already decided: a plan's keywords never
+  // change. So each present keyword becomes one closure over its own operand
+  // and the node keeps only those, in the same order evalLeafV() runs them.
+  // Checks take (data, bits) because the type of the value is worth computing
+  // once per node rather than once per keyword; `needsBits` stays false when
+  // nothing in the node asks for it.
+  function compileLeafV(P) {
+    const checks = [];
+    let needsBits = false;
+
+    if (P.hasType) {
+      const mask = P.typeMask;
+      needsBits = true;
+      checks.push((data, bits) => (bits & mask) !== 0);
+    }
+    if (P.enum !== null) {
+      if (P.enum.length === 0) checks.push(() => false);
+      else if (P.enumObjs.length === 0) { const prims = P.enumPrims; checks.push((data) => prims.has(data)); }
+      else checks.push((data) => enumMember(P, data));
+    }
+    if (P.hasConst) {
+      const c = P.const;
+      checks.push((data) => deepEqual(c, data));
+    }
+    // The value checks of each type, folded to one call or null. A node of
+    // one type and nothing but that type's keywords (the common leaf: a
+    // string with a length, an integer with a bound) is answered by one
+    // closure over typeof and that call, with no type bits computed and no
+    // chain of guarded checks: the interpreted engine spent a fifth of a
+    // document in those calls.
+    const reqFolded = P.required !== null && P.requiredUndef === null && P.properties !== null;
+    // The operands of the commonest leaves, for an object walk that checks
+    // them in place (leafCode below): bounds that are only minimum and
+    // maximum, and string checks that are only lengths and a pattern.
+    let nLo = -Infinity, nHi = Infinity, nPlain = true;
+    let sLo = -1, sHi = -1, sRe = null, sPlain = true;
+    let numsRun = null;
+    if (P.hasNumber) {
+      const nums = [];
+      if (P.minimum !== undefined) { const m = P.minimum; nLo = m; nums.push((d) => d >= m); }
+      if (P.maximum !== undefined) { const m = P.maximum; nHi = m; nums.push((d) => d <= m); }
+      if (P.exclusiveMinimum !== undefined || P.exclusiveMaximum !== undefined || P.multipleOf !== undefined) nPlain = false;
+      if (P.exclusiveMinimum !== undefined) { const m = P.exclusiveMinimum; nums.push((d) => d > m); }
+      if (P.exclusiveMaximum !== undefined) { const m = P.exclusiveMaximum; nums.push((d) => d < m); }
+      if (P.multipleOf !== undefined) { const m = P.multipleOf; nums.push((d) => multipleOfOk(d, m)); }
+      numsRun = combineValue(nums);
+    }
+    let strsRun = null;
+    if (P.hasString) {
+      const strs = [];
+      if (P.minLength !== undefined) sLo = P.minLength;
+      if (P.maxLength !== undefined) sHi = P.maxLength;
+      if (P.pattern !== null) sRe = P.pattern;
+      if (P.formatFn !== null) sPlain = false;
+      if (P.minLength !== undefined && P.maxLength !== undefined) {
+        const lo = P.minLength, hi = P.maxLength;
+        strs.push((d) => { const n = d.length; return (n >= 2 * lo && n <= hi) || (cpAtLeast(d, lo) && cpAtMost(d, hi)); });
+      } else if (P.minLength !== undefined) { const m = P.minLength; strs.push((d) => cpAtLeast(d, m)); }
+      else if (P.maxLength !== undefined) { const m = P.maxLength; strs.push((d) => cpAtMost(d, m)); }
+      if (P.pattern !== null) { const re = P.pattern; strs.push((d) => re.test(d)); }
+      if (P.formatFn !== null) { const f = P.formatFn; strs.push((d) => f(d)); }
+      strsRun = combineValue(strs);
+    }
+    let arrsRun = null;
+    if (P.minItems !== undefined || P.maxItems !== undefined || P.uniqueItems) {
+      const arrs = [];
+      if (P.minItems !== undefined) { const m = P.minItems; arrs.push((d) => d.length >= m); }
+      if (P.maxItems !== undefined) { const m = P.maxItems; arrs.push((d) => d.length <= m); }
+      if (P.uniqueItems) arrs.push(allDistinct);
+      arrsRun = combineValue(arrs);
+    }
+    let objsRun = null;
+    if ((P.required !== null && !reqFolded) || P.minProperties !== undefined || P.maxProperties !== undefined || P.dependentRequired !== null) {
+      const objs = [];
+      if (P.required !== null && !reqFolded) {
+        const req = P.required;
+        // A required key holding undefined is missing; for a declared
+        // property the property step finds it (requiredInProps).
+        const undef = P.requiredUndef;
+        if (req.length === 1) { const k = req[0]; objs.push(undef !== null && undef[0] ? (d) => Object.hasOwn(d, k) && d[k] !== undefined : (d) => Object.hasOwn(d, k)); }
+        else if (undef === null) objs.push((d) => {
+          for (let i = 0; i < req.length; i++) if (!Object.hasOwn(d, req[i])) return false;
+          return true;
+        });
+        else objs.push((d) => {
+          for (let i = 0; i < req.length; i++) if (!Object.hasOwn(d, req[i]) || (undef[i] && d[req[i]] === undefined)) return false;
+          return true;
+        });
+      }
+      if (P.minProperties !== undefined) { const m = P.minProperties; objs.push((d) => Object.keys(d).length >= m); }
+      if (P.maxProperties !== undefined) { const m = P.maxProperties; objs.push((d) => Object.keys(d).length <= m); }
+      if (P.dependentRequired !== null) {
+        const entries = P.dependentRequired;
+        objs.push((d) => {
+          for (let i = 0; i < entries.length; i++) {
+            const [key, deps] = entries[i];
+            if (!Object.hasOwn(d, key)) continue;
+            for (let j = 0; j < deps.length; j++) if (!Object.hasOwn(d, deps[j])) return false;
+          }
+          return true;
+        });
+      }
+      objsRun = combineValue(objs);
+    }
+    if (P.hasType && P.enum === null && !P.hasConst && !P.hasCustom && checks.length === 1) {
+      const m = P.typeMask;
+      // The run of the type's own keywords, and whether any other type's are present.
+      const own = m === T_STRING ? strsRun : m === T_INTEGER || m === T_NUMBER ? numsRun : m === T_OBJECT ? objsRun : m === T_ARRAY ? arrsRun : null;
+      const foreign = (numsRun !== null && m !== T_INTEGER && m !== T_NUMBER) || (strsRun !== null && m !== T_STRING) || (arrsRun !== null && m !== T_ARRAY) || (objsRun !== null && m !== T_OBJECT);
+      if (!foreign) {
+        const r = own;
+        switch (m) {
+          case T_STRING: return leafCode(r === null ? (d) => typeof d === 'string' : (d) => typeof d === 'string' && r(d), sPlain ? [LC_STR, sLo, sHi, sRe] : null);
+          case T_INTEGER: return leafCode(r === null ? (d) => Number.isInteger(d) : (d) => Number.isInteger(d) && r(d), nPlain ? [LC_INT, nLo, nHi] : null);
+          case T_NUMBER: return leafCode(r === null ? (d) => typeof d === 'number' && isFinite(d) : (d) => typeof d === 'number' && isFinite(d) && r(d), nPlain ? [LC_NUM, nLo, nHi] : null);
+          case T_BOOLEAN: return leafCode((d) => typeof d === 'boolean', [LC_BOOL]);
+          case T_NULL: return (d) => d === null;
+          case T_OBJECT: return r === null ? (d) => typeof d === 'object' && d !== null && !Array.isArray(d) : (d) => typeof d === 'object' && d !== null && !Array.isArray(d) && r(d);
+          case T_ARRAY: return r === null ? (d) => Array.isArray(d) : (d) => Array.isArray(d) && r(d);
+        }
+      }
+    }
+    // A non-finite number is not of type `number` here: dataBits() gives it
+    // no type bit, and an empty schema accepts it. So the numeric keywords
+    // must not apply to it either, or `{ minimum: 3 }` rejects a value that
+    // `{}` accepts and the compiled engine admits.
+    if (numsRun !== null) { const run = numsRun; checks.push((data) => !Number.isFinite(data) || run(data)); }
+    if (strsRun !== null) { const run = strsRun; needsBits = true; checks.push((data, bits) => bits !== T_STRING || run(data)); }
+    if (arrsRun !== null) { const run = arrsRun; needsBits = true; checks.push((data, bits) => bits !== T_ARRAY || run(data)); }
+    if (objsRun !== null) { const run = objsRun; needsBits = true; checks.push((data, bits) => bits !== T_OBJECT || run(data)); }
+
+    if (P.hasCustom) {
+      needsBits = true;
+      checks.push((data, bits) => runCustomV(P, data, bits));
+    }
+    if (checks.length === 0) return TRUE_FN;
+    if (!needsBits) {
+      if (checks.length === 1) {
+        const a = checks[0];
+        const fn = (data) => a(data, 0);
+        // An enum of primitives alone, or a primitive const alone.
+        if (!P.hasType && !P.hasCustom && numsRun === null && strsRun === null && arrsRun === null && objsRun === null) {
+          if (P.enum !== null && P.enum.length > 0 && P.enumObjs.length === 0) return leafCode(fn, [LC_ENUM, P.enumPrims]);
+          if (P.hasConst && P.enum === null && (P.const === null || typeof P.const !== 'object')) return leafCode(fn, [LC_CONST, P.const]);
+        }
+        return fn;
+      }
+      return (data) => {
+        for (let i = 0; i < checks.length; i++) if (!checks[i](data, 0)) return false;
+        return true;
+      };
+    }
+    if (checks.length === 1) { const a = checks[0]; return (data) => a(data, dataBits(data)); }
+    if (checks.length === 2) {
+      const [a, b] = checks;
+      return (data) => { const bits = dataBits(data); return a(data, bits) && b(data, bits); };
+    }
+    return (data) => {
+      const bits = dataBits(data);
+      for (let i = 0; i < checks.length; i++) if (!checks[i](data, bits)) return false;
+      return true;
+    };
+  }
+
+  // A leaf check that an object walk may run in place, by its code and
+  // operands, instead of calling it: one call site calling every property's
+  // check cannot be inlined, and on a form the calls were most of the
+  // verdict. leafOk must answer as the function does; tests/test_plan_leaf_codes.js
+  // holds the two to each other.
+  function leafCode(fn, code) {
+    if (code !== null) fn.lc = code;
+    return fn;
+  }
+
+  // Folds a group's checks into one call, or null when the group is empty.
+  function combineValue(fns) {
+    if (fns.length === 0) return null;
+    if (fns.length === 1) return fns[0];
+    if (fns.length === 2) { const [a, b] = fns; return (d) => a(d) && b(d); }
+    return (d) => {
+      for (let i = 0; i < fns.length; i++) if (!fns[i](d)) return false;
+      return true;
+    };
+  }
+
+  function compileNode(ctx, node, base, chain, ann) {
+    if (node === true) return TRUE_PAIR;
+    if (node === false) return FALSE_PAIR;
+    if (!(node instanceof Plan)) return TRUE_PAIR;
+    const interp = ctx.interp;
+    const P = node;
+    if (P.nodeBase !== null && P.nodeBase !== base) base = P.nodeBase;
+    if (chain.indexOf(base) === -1) chain = chain.concat(base);
+    const collect = ann || P.hasUnevaluated;
+
+    let perKey = ctx.memo.get(P);
+    if (perKey === undefined) { perKey = new Map(); ctx.memo.set(P, perKey); }
+    const key = (ann ? 'a ' : 'p ') + base + ' ' + chain.join(' ');
+    const cached = perKey.get(key);
+    if (cached !== undefined) {
+      if (cached.open) ctx.cyclic = true;
+      return cached;
+    }
+    // Cycles: register trampolines before compiling children.
+    const box = { v: null, c: null };
+    const pair = {
+      open: true,
+      leaf: false,
+      v: (d, st, rec) => box.v(d, st, rec),
+      c: (d, e, ip, sp, st, rec) => box.c(d, e, ip, sp, st, rec),
+    };
+    perKey.set(key, pair);
+
+    // In-place children collect when this node does; child applicators
+    // never do. `rec` is threaded as the trailing argument of every step
+    // and is undefined on non-collecting nodes, where nothing reads it.
+    // Whether this node compiles any subschema: a node that does not is a
+    // leaf, whose verdict is a few comparisons.
+    let nested = false;
+    const inPlace = (n, b) => { nested = true; return compileNode(ctx, n, b, chain, collect); };
+    const child = (n) => { nested = true; return compileNode(ctx, n, base, chain, false); };
+
+    const steps = [];   // collect variant: (data, errors, ip, sp, stack, rec)
+    const vsteps = [];  // verdict variant: (data, stack, rec)
+    let leafV = TRUE_FN;
+
+    // $ref / $dynamicRef, resolved at compile time.
+    for (let which = 0; which < 2; which++) {
+      let t, seg;
+      if (which === 0) {
+        if (P.ref === null) continue;
+        t = resolveRef(P.ref, base, interp.state);
+        seg = '/$ref';
+      } else {
+        if (P.dynamicRef === null) continue;
+        t = dynTarget(interp, P.dynamicRef, base, chain);
+        seg = '/$dynamicRef';
+      }
+      if (t.node === undefined) {
+        // Reported when reached, exactly as eval() does; a metaschema-sized
+        // tree with one dangling reference in a branch the data never
+        // enters still compiles.
+        const ref = which === 0 ? P.ref : P.dynamicRef;
+        const kw = which === 0 ? '$ref' : '$dynamicRef';
+        steps.push((data, errors, instancePath, schemaPath) => {
+          if (errors !== NOERRORS) errors.push(err(kw, kw, instancePath, schemaPath + seg, { ref }, `cannot resolve ${kw} ${ref}`));
+          return false;
+        });
+        vsteps.push(() => false);
+        continue;
+      }
+      const target = inPlace(interp.node(t.node), t.base);
+      let cstep, vstep;
+      if (collect) {
+        cstep = (data, errors, instancePath, schemaPath, stack, rec) => {
+          const pl = pLen(rec), n0 = rec.n, xl = xLen(rec);
+          const ok = target.c(data, errors, instancePath, schemaPath, stack, rec);
+          if (!ok) undo(rec, pl, n0, xl);
+          return ok;
+        };
+        vstep = (data, stack, rec) => target.v(data, stack, rec);
+      } else {
+        cstep = (data, errors, instancePath, schemaPath, stack) => target.c(data, errors, instancePath, schemaPath, stack);
+        vstep = target.v;
+      }
+      if (ctx.guard) {
+        // The cycle guard mirrors eval(): a (schema, data) pair already on
+        // the stack is a fixed point.
+        const schema = P.schema;
+        const ic = cstep, iv = vstep;
+        cstep = (data, errors, instancePath, schemaPath, stack, rec) => {
+          for (let i = stack.length - 2; i >= 0; i -= 2) {
+            if (stack[i] === schema && stack[i + 1] === data) return true;
+          }
+          stack.push(schema, data);
+          const ok = ic(data, errors, instancePath, schemaPath, stack, rec);
+          stack.length -= 2;
+          return ok;
+        };
+        vstep = (data, stack, rec) => {
+          for (let i = stack.length - 2; i >= 0; i -= 2) {
+            if (stack[i] === schema && stack[i + 1] === data) return true;
+          }
+          stack.push(schema, data);
+          const ok = iv(data, stack, rec);
+          stack.length -= 2;
+          return ok;
+        };
+      }
+      steps.push(cstep);
+      vsteps.push(vstep);
+    }
+
+    // Every value-level keyword in one step, reusing the leaf evaluator so
+    // the two paths cannot drift.
+    if (P.hasType || P.enum !== null || P.hasConst || P.hasNumber || P.hasString ||
+        P.minItems !== undefined || P.maxItems !== undefined || P.uniqueItems ||
+        P.required !== null || P.minProperties !== undefined || P.maxProperties !== undefined ||
+        P.dependentRequired !== null || P.hasCustom) {
+      steps.push((data, errors, instancePath, schemaPath) => evalLeaf(P, data, errors, instancePath, schemaPath));
+      leafV = compileLeafV(P);
+      if (leafV !== TRUE_FN) vsteps.push(leafV);
+    }
+
+    // Arrays
+    if (P.prefixItems !== null) {
+      const fns = P.prefixItems.map(child);
+      steps.push((data, errors, instancePath, schemaPath, stack, rec) => {
+        if (dataBits(data) !== T_ARRAY) return true;
+        let ok = true;
+        const n = Math.min(fns.length, data.length);
+        for (let i = 0; i < n; i++) {
+          if (!((fns[i].leaf && fns[i].v(data[i], stack)) || fns[i].c(data[i], errors, instancePath + '/' + i, schemaPath + '/prefixItems/' + i, stack))) {
+            ok = false;
+            if (errors === NOERRORS) return false;
+          }
+        }
+        if (collect) markRange(rec, 0, n);
+        return ok;
+      });
+      vsteps.push((data, stack, rec) => {
+        if (dataBits(data) !== T_ARRAY) return true;
+        const n = Math.min(fns.length, data.length);
+        for (let i = 0; i < n; i++) if (!fns[i].v(data[i], stack)) return false;
+        if (collect) markRange(rec, 0, n);
+        return true;
+      });
+    }
+    if (P.items !== undefined) {
+      const fn = child(P.items);
+      const start = P.prefixItems !== null ? P.prefixItems.length : 0;
+      steps.push((data, errors, instancePath, schemaPath, stack, rec) => {
+        if (dataBits(data) !== T_ARRAY) return true;
+        let ok = true;
+        for (let i = start; i < data.length; i++) {
+          if (!((fn.leaf && fn.v(data[i], stack)) || fn.c(data[i], errors, instancePath + '/' + i, schemaPath + '/items', stack))) {
+            ok = false;
+            if (errors === NOERRORS) return false;
+          }
+        }
+        if (collect) markRange(rec, start, data.length);
+        return ok;
+      });
+      const fv = fn.v;
+      vsteps.push((data, stack, rec) => {
+        if (dataBits(data) !== T_ARRAY) return true;
+        for (let i = start; i < data.length; i++) if (!fv(data[i], stack)) return false;
+        if (collect) markRange(rec, start, data.length);
+        return true;
+      });
+    }
+    if (P.contains !== undefined) {
+      const fn = child(P.contains);
+      const minC = P.minContains !== undefined ? P.minContains : 1;
+      const maxC = P.maxContains;
+      steps.push((data, errors, instancePath, schemaPath, stack, rec) => {
+        if (dataBits(data) !== T_ARRAY) return true;
+        let matched = 0;
+        for (let i = 0; i < data.length; i++) {
+          if (fn.v(data[i], stack)) {
+            matched++;
+            if (collect) addItem(rec, i);
+          }
+        }
+        let ok = true;
+        if (matched < minC) {
+          if (errors !== NOERRORS) errors.push(err('contains', 'contains', instancePath, schemaPath + '/contains', { minContains: minC }, `must contain at least ${minC} valid item(s)`));
+          ok = false;
+        }
+        if (maxC !== undefined && matched > maxC) {
+          // Reported as `contains` at `#/contains`, the way the generated code
+          // and the reference implementation both do it: maxContains bounds the
+          // same keyword rather than being one of its own.
+          if (errors !== NOERRORS) errors.push(err('contains', 'contains', instancePath, schemaPath + '/contains', { minContains: minC, maxContains: maxC }, `must NOT contain more than ${maxC} valid item(s)`));
+          ok = false;
+        }
+        return ok;
+      });
+      if (collect) {
+        // Every matching index is an annotation, so the scan runs to the end.
+        vsteps.push((data, stack, rec) => {
+          if (dataBits(data) !== T_ARRAY) return true;
+          let matched = 0;
+          for (let i = 0; i < data.length; i++) {
+            if (fn.v(data[i], stack)) { matched++; addItem(rec, i); }
+          }
+          return matched >= minC && (maxC === undefined || matched <= maxC);
+        });
+      } else {
+        vsteps.push((data, stack) => {
+          if (dataBits(data) !== T_ARRAY) return true;
+          let matched = 0;
+          for (let i = 0; i < data.length; i++) {
+            if (fn.v(data[i], stack)) { matched++; if (maxC === undefined && matched >= minC) return true; }
+          }
+          return matched >= minC && (maxC === undefined || matched <= maxC);
+        });
+      }
+    }
+
+    // Objects
+    if (P.properties !== null || P.patternProperties !== null || P.additionalProperties !== undefined || P.propertyNames !== undefined) {
+      const props = P.properties;
+      // Declared properties: a linear scan over a short list beats a Map
+      // lookup, and most schemas declare a handful.
+      const propKeys = props !== null ? [...props.keys()] : null;
+      // req: the key is also required, so holding undefined it is missing.
+      // Flagged only when the leaf folded `required` into this walk
+      // (reqFolded in compileLeafV). With an undeclared required name the
+      // leaf checks every required key itself, and a flag here would be
+      // counted against a total of zero, so a document with the key was
+      // refused until the closure plan replaced this one.
+      const reqIn = P.requiredInProps;
+      const reqWalked = P.required !== null && P.requiredUndef === null && reqIn !== null;
+      const propList = props !== null
+        ? [...props].map(([key, entry]) => ({ fn: child(entry.node), seg: entry.seg, schemaSeg: entry.schemaSeg, req: reqWalked && reqIn.has(key) }))
+        : null;
+      const propMap = props !== null && props.size > 8 ? new Map(propKeys.map((k, i) => [k, propList[i]])) : null;
+      const lookup = propMap !== null
+        ? (key) => propMap.get(key)
+        : propKeys !== null
+          ? (key) => { for (let i = 0; i < propKeys.length; i++) if (propKeys[i] === key) return propList[i]; return undefined; }
+          : null;
+      const patterns = P.patternProperties !== null
+        ? P.patternProperties.map((e) => ({ re: e.re, src: e.src, fn: child(e.node) }))
+        : null;
+      const apFn = P.additionalProperties !== undefined ? child(P.additionalProperties) : null;
+      // The node's value checks, when they are the step before this one,
+      // run inside it: one closure call per object instead of two, and the
+      // composition above it goes away.
+      const fusedLeaf = vsteps.length > 0 && vsteps[vsteps.length - 1] === leafV && leafV !== TRUE_FN ? vsteps.pop() : null;
+      // `additionalProperties: false` is a boolean subschema, but its error is
+      // not the generic "boolean schema is false": every consumer switches on
+      // keyword === 'additionalProperties' and reads params.additionalProperty
+      // to learn which key was rejected. Reporting it as `not` at the key's own
+      // path loses both, and that shape is what the generated code emits, so
+      // the two engines have to agree here.
+      const apFalse = P.additionalProperties === false;
+      const pnFn = P.propertyNames !== undefined ? child(P.propertyNames) : null;
+      steps.push((data, errors, instancePath, schemaPath, stack, rec) => {
+        if (dataBits(data) !== T_OBJECT) return true;
+        let ok = true;
+        const keys = collect ? keysOf(rec, data) : Object.getOwnPropertyNames(data);
+        if (pnFn !== null) {
+          for (const k of keys) {
+            if (!collect && !propEnum.call(data, k)) continue;
+            // propertyNames applies its subschema to the property NAME, not to
+            // the value sitting at that key, so the failure is reported against
+            // the object that carries the name rather than against `/<key>`.
+            // The generated code and the compat shim both do it this way, and
+            // the shim has to because that is where the reference puts it.
+            if (!pnFn.c(k, errors, instancePath, schemaPath + '/propertyNames', stack)) {
+              ok = false;
+              if (errors === NOERRORS) return false;
+            }
+          }
+        }
+        for (let k = 0; k < keys.length; k++) {
+          const key = keys[k];
+          let evaluated = false;
+          const prop = lookup !== null ? lookup(key) : undefined;
+          // A declared property whose value is undefined is not checked (see
+          // the interpreter's eval); required, it is missing.
+          if (prop !== undefined) {
+            const value = data[key];
+            if (value !== undefined) {
+              if (!((prop.fn.leaf && prop.fn.v(value, stack)) || prop.fn.c(value, errors, instancePath + prop.seg, schemaPath + prop.schemaSeg, stack))) {
+                ok = false;
+                if (errors === NOERRORS) return false;
+              }
+            } else if (prop.req) {
+              ok = false;
+              if (errors === NOERRORS) return false;
+              errors.push(err('required', 'required', instancePath, schemaPath + '/required', { missingProperty: key }, `must have required property '${key}'`));
+            }
+            evaluated = true;
+          }
+          // A name only properties lists is read whether enumerable or not,
+          // as the short walk above and the generated code read it by name;
+          // patterns and additionalProperties see the names for-in sees.
+          const seen = collect || prop !== undefined && patterns === null && apFn === null || propEnum.call(data, key);
+          if (patterns !== null && seen) {
+            for (let pi = 0; pi < patterns.length; pi++) {
+              const pp = patterns[pi];
+              if (pp.re.test(key)) {
+                if (!((pp.fn.leaf && pp.fn.v(data[key], stack)) || pp.fn.c(data[key], errors, instancePath + '/' + escapePointer(key), schemaPath + '/patternProperties/' + escapePointer(pp.src), stack))) {
+                  ok = false;
+                  if (errors === NOERRORS) return false;
+                }
+                evaluated = true;
+              }
+            }
+          }
+          if (!evaluated && apFn !== null && seen) {
+            if (apFalse) {
+              ok = false;
+              if (errors === NOERRORS) return false;
+              errors.push(err('additionalProperties', 'additionalProperties', instancePath, schemaPath + '/additionalProperties', { additionalProperty: key }, 'must NOT have additional properties'));
+            } else if (!((apFn.leaf && apFn.v(data[key], stack)) || apFn.c(data[key], errors, instancePath + '/' + escapePointer(key), schemaPath + '/additionalProperties', stack))) {
+              ok = false;
+              if (errors === NOERRORS) return false;
+            }
+            evaluated = true;
+          }
+          if (evaluated && collect) addProp(rec, key);
+        }
+        return ok;
+      });
+      if (patterns === null && apFn === null && pnFn === null && propKeys.length <= 8) {
+        // Only declared properties matter and there are few: walk the
+        // schema's list and look each one up, no key array. Own-property
+        // test on purpose, so an inherited name (`toString`, `__proto__`) is
+        // not mistaken for data. A long list walks the data's keys instead,
+        // since the data usually carries far fewer.
+        const n = propKeys.length;
+        // On an ordinary object (its prototype is Object.prototype) a key
+        // that names nothing on that prototype is read directly: a value
+        // means the key is the object's own, undefined means absent or held
+        // undefined, which the schema treats alike. Other objects, and keys
+        // such as `constructor` or `toString`, keep the own-property test.
+        const direct = propKeys.map((k) => !(k in Object.prototype));
+        const assertsObject = fusedLeaf !== null && P.hasType && P.typeMask === T_OBJECT;
+        vsteps.push((data, stack, rec) => {
+          if (fusedLeaf !== null && !fusedLeaf(data)) return false;
+          if (!assertsObject && dataBits(data) !== T_OBJECT) return true;
+          const plain = Object.getPrototypeOf(data) === Object.prototype;
+          for (let i = 0; i < n; i++) {
+            const key = propKeys[i];
+            let value;
+            if (plain && direct[i]) {
+              value = data[key];
+              // Absent or held undefined: missing when required (the leaf
+              // step no longer checks it, reqFolded in compileLeafV). A key
+              // held undefined still counts as evaluated for the record.
+              if (value === undefined) { if (propList[i].req) return false; if (collect && Object.hasOwn(data, key)) addProp(rec, key); continue; }
+            } else {
+              if (!Object.hasOwn(data, key)) { if (propList[i].req) return false; continue; }
+              value = data[key];
+              if (value === undefined) { if (propList[i].req) return false; if (collect) addProp(rec, key); continue; }
+            }
+            if (!propList[i].fn.v(value, stack)) return false;
+            if (collect) addProp(rec, key);
+          }
+          return true;
+        });
+      } else {
+        // Required keys that are declared properties are counted as the walk
+        // meets them (reqFolded in compileLeafV); one short at the end means
+        // one is missing.
+        const reqN = P.required !== null && P.requiredUndef === null && P.requiredInProps !== null ? P.requiredInProps.size : 0;
+        vsteps.push((data, stack, rec) => {
+        if (fusedLeaf !== null && !fusedLeaf(data)) return false;
+        if (dataBits(data) !== T_OBJECT) return true;
+        const keys = collect ? keysOf(rec, data) : Object.getOwnPropertyNames(data);
+        if (pnFn !== null) {
+          for (const k of keys) if ((collect || propEnum.call(data, k)) && !pnFn.v(k, stack)) return false;
+        }
+        let seenReq = 0;
+        for (let k = 0; k < keys.length; k++) {
+          const key = keys[k];
+          let evaluated = false;
+          const prop = lookup !== null ? lookup(key) : undefined;
+          if (prop !== undefined) {
+            const value = data[key];
+            if (value !== undefined) { if (!prop.fn.v(value, stack)) return false; }
+            else if (prop.req) return false;
+            if (prop.req) seenReq++;
+            evaluated = true;
+          }
+          const seen = collect || prop !== undefined && patterns === null && apFn === null || propEnum.call(data, key);
+          if (patterns !== null && seen) {
+            for (let pi = 0; pi < patterns.length; pi++) {
+              const pp = patterns[pi];
+              if (pp.re.test(key)) {
+                if (!pp.fn.v(data[key], stack)) return false;
+                evaluated = true;
+              }
+            }
+          }
+          if (!evaluated && apFn !== null && seen) {
+            if (!apFn.v(data[key], stack)) return false;
+            evaluated = true;
+          }
+          if (evaluated && collect) addProp(rec, key);
+        }
+        return seenReq === reqN;
+      });
+        // From three names to 32: below three the key array costs less than
+        // the for-in (1.7 ns on one name), past 32 the scan costs more.
+        if (apFalse && patterns === null && pnFn === null && !collect && propKeys !== null && propKeys.length >= 3 && propKeys.length <= 32) {
+          // A closed object with a short list of names, on an ordinary
+          // object: walk its keys with for-in and find each in the list, no
+          // key array and no Map. A key the list lacks is extra when it is
+          // the object's own (an enumerable name on Object.prototype is not).
+          // A listed key is read directly: for-in meets Object.prototype's
+          // own names (`constructor`) only on the object itself, so this is
+          // the short walk's rule. Other objects take the walk above.
+          const keyed = vsteps.pop();
+          const n = propKeys.length;
+          const fns = propList.map((e) => e.fn);
+          const reqs = propList.map((e) => e.req);
+          // Names met, as bits: the required ones must all be set, and a
+          // listed name not met may still be the object's own, hidden from
+          // for-in (defineProperty, enumerable: false), which the generated
+          // code and this engine's error path read by name: those are read
+          // after the walk, which on an ordinary document is the absent ones.
+          const reqMask = reqs.reduce((m, r, i) => r ? m | (1 << i) : m, 0);
+          const allMask = n === 32 ? -1 : (1 << n) - 1;
+          // A property whose check is a coded leaf is checked in place.
+          const codes = propList.map((e) => (e.fn.leaf && e.fn.v.lc !== undefined ? e.fn.v.lc : null));
+          vsteps.push((data, stack, rec) => {
+            if (dataBits(data) !== T_OBJECT || Object.getPrototypeOf(data) !== Object.prototype) return keyed(data, stack, rec);
+            if (fusedLeaf !== null && !fusedLeaf(data)) return false;
+            let seen = 0;
+            for (const key in data) {
+              let i = 0;
+              while (i < n && propKeys[i] !== key) i++;
+              if (i === n) { if (Object.hasOwn(data, key)) return false; continue; }
+              seen |= 1 << i;
+              const value = data[key];
+              if (value === undefined) { if (reqs[i]) return false; continue; }
+              const lc = codes[i];
+              if (lc !== null ? !leafOk(lc, value) : !fns[i].v(value, stack)) return false;
+            }
+            if ((seen & reqMask) !== reqMask) return false;
+            for (let miss = seen ^ allMask; miss !== 0; miss &= miss - 1) {
+              const i = 31 - Math.clz32(miss & -miss);
+              const value = data[propKeys[i]];
+              if (value === undefined || !Object.hasOwn(data, propKeys[i])) continue;
+              const lc = codes[i];
+              if (lc !== null ? !leafOk(lc, value) : !fns[i].v(value, stack)) return false;
+            }
+            return true;
+          });
+        }
+      }
+    }
+    if (P.dependentSchemas !== null) {
+      const entries = P.dependentSchemas.map(([k, v]) => [k, inPlace(v, base), escapePointer(k)]);
+      steps.push((data, errors, instancePath, schemaPath, stack, rec) => {
+        if (dataBits(data) !== T_OBJECT) return true;
+        let ok = true;
+        for (const [k, fn, ek] of entries) {
+          if (Object.hasOwn(data, k)) {
+            if (collect) {
+              const pl = pLen(rec), n0 = rec.n, xl = xLen(rec);
+              if (!fn.c(data, errors, instancePath, schemaPath + '/dependentSchemas/' + ek, stack, rec)) {
+                undo(rec, pl, n0, xl);
+                ok = false;
+                if (errors === NOERRORS) return false;
+              }
+            } else if (!fn.c(data, errors, instancePath, schemaPath + '/dependentSchemas/' + ek, stack)) {
+              ok = false;
+              if (errors === NOERRORS) return false;
+            }
+          }
+        }
+        return ok;
+      });
+      vsteps.push((data, stack, rec) => {
+        if (dataBits(data) !== T_OBJECT) return true;
+        for (const [k, fn] of entries) {
+          if (Object.hasOwn(data, k) && !fn.v(data, stack, rec)) return false;
+        }
+        return true;
+      });
+    }
+    if (P.propertyDependencies !== null) {
+      const entries = P.propertyDependencies.map(([k, choices]) => {
+        const m = new Map();
+        for (const [value, v] of choices) m.set(value, inPlace(v, base));
+        return [k, m];
+      });
+      steps.push((data, errors, instancePath, schemaPath, stack, rec) => {
+        if (dataBits(data) !== T_OBJECT) return true;
+        let ok = true;
+        for (const [k, choices] of entries) {
+          if (!Object.hasOwn(data, k)) continue;
+          const value = data[k];
+          if (typeof value !== 'string') continue;
+          const fn = choices.get(value);
+          if (fn === undefined) continue;
+          const branchPath = schemaPath + '/propertyDependencies/' + escapePointer(k) + '/' + escapePointer(value);
+          if (collect) {
+            const pl = pLen(rec), n0 = rec.n, xl = xLen(rec);
+            if (!fn.c(data, errors, instancePath, branchPath, stack, rec)) {
+              undo(rec, pl, n0, xl);
+              ok = false;
+              if (errors === NOERRORS) return false;
+            }
+          } else if (!fn.c(data, errors, instancePath, branchPath, stack)) {
+            ok = false;
+            if (errors === NOERRORS) return false;
+          }
+        }
+        return ok;
+      });
+      vsteps.push((data, stack, rec) => {
+        if (dataBits(data) !== T_OBJECT) return true;
+        for (const [k, choices] of entries) {
+          if (!Object.hasOwn(data, k)) continue;
+          const value = data[k];
+          if (typeof value !== 'string') continue;
+          const fn = choices.get(value);
+          if (fn !== undefined && !fn.v(data, stack, rec)) return false;
+        }
+        return true;
+      });
+    }
+
+    // In-place applicators
+    if (P.allOf !== null) {
+      const fns = P.allOf.map((v) => inPlace(v, base));
+      steps.push((data, errors, instancePath, schemaPath, stack, rec) => {
+        let ok = true;
+        for (let i = 0; i < fns.length; i++) {
+          if (collect) {
+            const pl = pLen(rec), n0 = rec.n, xl = xLen(rec);
+            if (!fns[i].c(data, errors, instancePath, schemaPath + '/allOf/' + i, stack, rec)) {
+              undo(rec, pl, n0, xl);
+              ok = false;
+              if (errors === NOERRORS) return false;
+            }
+          } else if (!fns[i].c(data, errors, instancePath, schemaPath + '/allOf/' + i, stack)) {
+            ok = false;
+            if (errors === NOERRORS) return false;
+          }
+        }
+        return ok;
+      });
+      vsteps.push((data, stack, rec) => {
+        for (let i = 0; i < fns.length; i++) if (!fns[i].v(data, stack, rec)) return false;
+        return true;
+      });
+    }
+    if (P.macros !== null) {
+      const ms = P.macros.map((m) => ({ keyword: m.keyword, fn: inPlace(m.node, base) }));
+      steps.push((data, errors, instancePath, schemaPath, stack, rec) => {
+        let ok = true;
+        for (let i = 0; i < ms.length; i++) {
+          const m = ms[i];
+          const sp = schemaPath + '/' + m.keyword;
+          let passed;
+          if (collect) {
+            const pl = pLen(rec), n0 = rec.n, xl = xLen(rec);
+            passed = m.fn.c(data, errors, instancePath, sp, stack, rec);
+            if (!passed) undo(rec, pl, n0, xl);
+          } else {
+            passed = m.fn.c(data, errors, instancePath, sp, stack);
+          }
+          if (!passed) {
+            ok = false;
+            if (errors === NOERRORS) return false;
+            errors.push(err(m.keyword, m.keyword, instancePath, sp, { keyword: m.keyword }, `must pass "${m.keyword}" keyword validation`));
+          }
+        }
+        return ok;
+      });
+      vsteps.push((data, stack, rec) => {
+        for (let i = 0; i < ms.length; i++) if (!ms[i].fn.v(data, stack, rec)) return false;
+        return true;
+      });
+    }
+    if (P.anyOf !== null) {
+      const fns = P.anyOf.map((v) => inPlace(v, base));
+      const titles = P.anyOf.map(branchTitle);
+      steps.push((data, errors, instancePath, schemaPath, stack, rec) => {
+        const scratch = errors === NOERRORS ? NOERRORS : [];
+        let any = false;
+        // Per-branch errors, taken as slices of the shared scratch rather than
+        // an array each, so a branch that passes costs nothing extra.
+        const branches = errors === NOERRORS ? null : [];
+        for (let i = 0; i < fns.length; i++) {
+          const mark = branches === null ? 0 : scratch.length;
+          let ok;
+          if (collect) {
+            const pl = pLen(rec), n0 = rec.n, xl = xLen(rec);
+            ok = fns[i].c(data, scratch, instancePath, schemaPath + '/anyOf/' + i, stack, rec);
+            if (ok) any = true;
+            else undo(rec, pl, n0, xl);
+          } else {
+            ok = fns[i].c(data, scratch, instancePath, schemaPath + '/anyOf/' + i, stack);
+            if (ok) any = true;
+          }
+          if (branches !== null) branches.push({ valid: ok, errors: scratch.slice(mark), title: titles[i] });
+        }
+        if (!any) {
+          if (branches !== null) {
+            const collapsed = collapseBranches({ keyword: 'anyOf', branchResults: branches, parentPath: instancePath, parentSchemaPath: schemaPath + '/anyOf' });
+            if (collapsed !== null) errors.push(collapsed);
+          }
+          return false;
+        }
+        return true;
+      });
+      if (collect) {
+        // Every passing branch contributes annotations, so all of them run.
+        vsteps.push((data, stack, rec) => {
+          let any = false;
+          for (let i = 0; i < fns.length; i++) {
+            const pl = pLen(rec), n0 = rec.n, xl = xLen(rec);
+            if (fns[i].v(data, stack, rec)) any = true;
+            else undo(rec, pl, n0, xl);
+          }
+          return any;
+        });
+      } else {
+        vsteps.push((data, stack) => {
+          for (let i = 0; i < fns.length; i++) if (fns[i].v(data, stack)) return true;
+          return false;
+        });
+      }
+    }
+    if (P.oneOf !== null) {
+      const fns = P.oneOf.map((v) => inPlace(v, base));
+      const titles = P.oneOf.map(branchTitle);
+      steps.push((data, errors, instancePath, schemaPath, stack, rec) => {
+        const scratch = errors === NOERRORS ? NOERRORS : [];
+        let count = 0;
+        // Per-branch results, so a failing oneOf collapses to the branch that
+        // came closest instead of every branch's complaints at once.
+        const branches = errors === NOERRORS ? null : [];
+        // With a record: the winner's annotations stay, every other branch's
+        // are undone, and a second winner undoes everything since the node
+        // fails and merges nothing.
+        const pl0 = collect ? pLen(rec) : 0, n00 = collect ? rec.n : 0, xl0 = collect ? xLen(rec) : 0;
+        for (let i = 0; i < fns.length; i++) {
+          const mark = branches === null ? 0 : scratch.length;
+          let ok;
+          if (collect) {
+            const pl = pLen(rec), n0 = rec.n, xl = xLen(rec);
+            ok = fns[i].c(data, scratch, instancePath, schemaPath + '/oneOf/' + i, stack, rec);
+            if (ok) count++;
+            else undo(rec, pl, n0, xl);
+          } else {
+            ok = fns[i].c(data, scratch, instancePath, schemaPath + '/oneOf/' + i, stack);
+            if (ok) count++;
+          }
+          if (branches !== null) branches.push({ valid: ok, errors: scratch.slice(mark), title: titles[i] });
+        }
+        if (count !== 1) {
+          if (collect) undo(rec, pl0, n00, xl0);
+          if (branches !== null) {
+            const collapsed = collapseBranches({ keyword: 'oneOf', branchResults: branches, parentPath: instancePath, parentSchemaPath: schemaPath + '/oneOf' });
+            if (collapsed !== null) errors.push(collapsed);
+          }
+          return false;
+        }
+        return true;
+      });
+      if (collect) {
+        vsteps.push((data, stack, rec) => {
+          let count = 0;
+          for (let i = 0; i < fns.length; i++) {
+            const pl = pLen(rec), n0 = rec.n, xl = xLen(rec);
+            if (fns[i].v(data, stack, rec)) { count++; if (count > 1) return false; }
+            else undo(rec, pl, n0, xl);
+          }
+          return count === 1;
+        });
+      } else {
+        vsteps.push((data, stack) => {
+          let count = 0;
+          for (let i = 0; i < fns.length; i++) {
+            if (fns[i].v(data, stack)) { count++; if (count > 1) return false; }
+          }
+          return count === 1;
+        });
+      }
+    }
+    if (P.not !== undefined) {
+      const fn = child(P.not);
+      steps.push((data, errors, instancePath, schemaPath, stack) => {
+        if (fn.v(data, stack)) {
+          if (errors !== NOERRORS) errors.push(err('not', 'not', instancePath, schemaPath + '/not', {}, 'must NOT be valid'));
+          return false;
+        }
+        return true;
+      });
+      vsteps.push((data, stack) => !fn.v(data, stack));
+    }
+    if (P.if !== undefined) {
+      const ifFn = inPlace(P.if, base);
+      const thenFn = P.then !== undefined ? inPlace(P.then, base) : null;
+      const elseFn = P.else !== undefined ? inPlace(P.else, base) : null;
+      // The `if` branch keeps its annotations only when it passes; then and
+      // else fail the node when they fail, and the collect variant undoes
+      // theirs so the node's own unevaluated* sees what eval() sees.
+      steps.push((data, errors, instancePath, schemaPath, stack, rec) => {
+        let pl = collect ? pLen(rec) : 0, n0 = collect ? rec.n : 0, xl = collect ? xLen(rec) : 0;
+        let ok;
+        if (ifFn.v(data, stack, rec)) {
+          if (thenFn === null) return true;
+          if (collect) { pl = pLen(rec); n0 = rec.n; xl = xLen(rec); }
+          ok = thenFn.c(data, errors, instancePath, schemaPath + '/then', stack, rec);
+        } else {
+          if (collect) undo(rec, pl, n0, xl);
+          if (elseFn === null) return true;
+          ok = elseFn.c(data, errors, instancePath, schemaPath + '/else', stack, rec);
+        }
+        if (!ok && collect) undo(rec, pl, n0, xl);
+        return ok;
+      });
+      vsteps.push((data, stack, rec) => {
+        const pl = collect ? pLen(rec) : 0, n0 = collect ? rec.n : 0, xl = collect ? xLen(rec) : 0;
+        if (ifFn.v(data, stack, rec)) {
+          if (thenFn !== null) return thenFn.v(data, stack, rec);
+          return true;
+        }
+        if (collect) undo(rec, pl, n0, xl);
+        if (elseFn !== null) return elseFn.v(data, stack, rec);
+        return true;
+      });
+    }
+
+    // unevaluated*: run last, against the annotations of everything above.
+    if (P.unevaluatedProperties !== undefined) {
+      const fn = child(P.unevaluatedProperties);
+      if (fn === FALSE_PAIR) {
+        // `false` rejects the member outright, and what is wrong is the name.
+        // Running the boolean schema against the value instead reported a
+        // false schema at the member's own path with empty params, which does
+        // not say which key was unexpected. The error belongs to this keyword,
+        // on the object holding the key, and it carries the key.
+        steps.push((data, errors, instancePath, schemaPath, stack, rec) => {
+          if (dataBits(data) !== T_OBJECT) return true;
+          let ok = true;
+          const keys = keysOf(rec, data);
+          for (let k = 0; k < keys.length; k++) {
+            const key = keys[k];
+            if (hasProp(rec, key)) continue;
+            ok = false;
+            if (errors === NOERRORS) return false;
+            errors.push(err('unevaluatedProperties', 'unevaluatedProperties', instancePath, schemaPath + '/unevaluatedProperties', { unevaluatedProperty: key }, 'must NOT have unevaluated properties'));
+            addProp(rec, key);
+          }
+          return ok;
+        });
+      } else {
+      steps.push((data, errors, instancePath, schemaPath, stack, rec) => {
+        if (dataBits(data) !== T_OBJECT) return true;
+        let ok = true;
+        const keys = keysOf(rec, data);
+        for (let k = 0; k < keys.length; k++) {
+          const key = keys[k];
+          if (hasProp(rec, key)) continue;
+          if (!((fn.leaf && fn.v(data[key], stack)) || fn.c(data[key], errors, instancePath + '/' + escapePointer(key), schemaPath + '/unevaluatedProperties', stack))) {
+            ok = false;
+            if (errors === NOERRORS) return false;
+          }
+          addProp(rec, key);
+        }
+        return ok;
+      });
+      }
+      if (fn === FALSE_PAIR) {
+        // Every key must already be evaluated; on success there is nothing
+        // new to record.
+        vsteps.push((data, stack, rec) => {
+          if (dataBits(data) !== T_OBJECT) return true;
+          const keys = keysOf(rec, data);
+          if (keys.length === 0) return true;
+          if (rec.props === null) return false;
+          for (let k = 0; k < keys.length; k++) if (!hasProp(rec, keys[k])) return false;
+          return true;
+        });
+      } else {
+        vsteps.push((data, stack, rec) => {
+          if (dataBits(data) !== T_OBJECT) return true;
+          const keys = keysOf(rec, data);
+          for (let k = 0; k < keys.length; k++) {
+            const key = keys[k];
+            if (hasProp(rec, key)) continue;
+            if (!fn.v(data[key], stack)) return false;
+            addProp(rec, key);
+          }
+          return true;
+        });
+      }
+    }
+    if (P.unevaluatedItems !== undefined) {
+      const fn = child(P.unevaluatedItems);
+      if (fn === FALSE_PAIR) {
+        // One error for the array rather than one per trailing element: what
+        // the array got wrong is its length past the last evaluated position.
+        steps.push((data, errors, instancePath, schemaPath, stack, rec) => {
+          if (dataBits(data) !== T_ARRAY) return true;
+          for (let i = 0; i < data.length; i++) {
+            if (hasItem(rec, i)) continue;
+            if (errors !== NOERRORS) errors.push(err('unevaluatedItems', 'unevaluatedItems', instancePath, schemaPath + '/unevaluatedItems', { limit: i }, 'must NOT have more than ' + i + ' items'));
+            if (data.length > rec.n) rec.n = data.length;
+            return false;
+          }
+          if (data.length > rec.n) rec.n = data.length;
+          return true;
+        });
+      } else {
+      steps.push((data, errors, instancePath, schemaPath, stack, rec) => {
+        if (dataBits(data) !== T_ARRAY) return true;
+        let ok = true;
+        for (let i = 0; i < data.length; i++) {
+          if (hasItem(rec, i)) continue;
+          if (!((fn.leaf && fn.v(data[i], stack)) || fn.c(data[i], errors, instancePath + '/' + i, schemaPath + '/unevaluatedItems', stack))) {
+            ok = false;
+            if (errors === NOERRORS) return false;
+          }
+        }
+        if (data.length > rec.n) rec.n = data.length;
+        return ok;
+      });
+      }
+      if (fn === FALSE_PAIR) {
+        vsteps.push((data, stack, rec) => {
+          if (dataBits(data) !== T_ARRAY) return true;
+          for (let i = rec.n; i < data.length; i++) if (!hasItem(rec, i)) return false;
+          return true;
+        });
+      } else {
+        vsteps.push((data, stack, rec) => {
+          if (dataBits(data) !== T_ARRAY) return true;
+          for (let i = 0; i < data.length; i++) {
+            if (hasItem(rec, i)) continue;
+            if (!fn.v(data[i], stack)) return false;
+          }
+          if (data.length > rec.n) rec.n = data.length;
+          return true;
+        });
+      }
+    }
+
+    let cfn;
+    if (steps.length === 0) cfn = TRUE_FN;
+    else if (steps.length === 1) cfn = steps[0];
+    else {
+      const arr = steps;
+      cfn = (d, e, ip, sp, st, rec) => {
+        let ok = true;
+        for (let i = 0; i < arr.length; i++) {
+          if (!arr[i](d, e, ip, sp, st, rec)) {
+            if (e === NOERRORS) return false;
+            ok = false;
+          }
+        }
+        return ok;
+      };
+    }
+    let vfn;
+    if (vsteps.length === 0) vfn = TRUE_FN;
+    else if (vsteps.length === 1) vfn = vsteps[0];
+    else if (vsteps.length === 2) {
+      const [a, b] = vsteps;
+      vfn = (d, st, rec) => a(d, st, rec) && b(d, st, rec);
+    } else {
+      const arr = vsteps;
+      vfn = (d, st, rec) => {
+        for (let i = 0; i < arr.length; i++) if (!arr[i](d, st, rec)) return false;
+        return true;
+      };
+    }
+    if (P.hasUnevaluated) {
+      // This node reads annotations, so it owns a record that starts empty
+      // (siblings' annotations are not its to see) and hands it up on
+      // success when a caller reads it.
+      const inner = cfn;
+      const innerV = vfn;
+      if (ann) {
+        cfn = (d, e, ip, sp, st, rec) => {
+          const own = fresh();
+          const ok = inner(d, e, ip, sp, st, own);
+          if (ok) mergeRec(rec, own);
+          return ok;
+        };
+        vfn = (d, st, rec) => {
+          const own = fresh();
+          const ok = innerV(d, st, own);
+          if (ok) mergeRec(rec, own);
+          return ok;
+        };
+      } else {
+        cfn = (d, e, ip, sp, st) => inner(d, e, ip, sp, st, fresh());
+        vfn = (d, st) => innerV(d, st, fresh());
+      }
+    }
+    box.c = cfn;
+    box.v = vfn;
+    pair.c = cfn;
+    pair.v = vfn;
+    pair.leaf = !nested;
+    pair.open = false;
+    return pair;
+  }
+
+  // Entry point: every schema the interpreter accepts compiles. The first
+  // pass carries the cycle guard and reports whether the graph has a cycle;
+  // an acyclic schema is compiled again without the guard, since eval()'s
+  // guard can never fire on it.
+  function compileInterpreter(interp) {
+    const root = interp.rootNode;
+    const base = interp.state.rootBase;
+    let ctx = { interp, memo: new Map(), guard: true, cyclic: false };
+    let pair = compileNode(ctx, root, base, [base], false);
+    if (!ctx.cyclic) {
+      ctx = { interp, memo: new Map(), guard: false, cyclic: false };
+      pair = compileNode(ctx, root, base, [base], false);
+    }
+    return { v: pair.v, c: pair.c, cyclic: ctx.guard };
+  }
+
+  return { compileInterpreter };
+}
+
+module.exports = { install };

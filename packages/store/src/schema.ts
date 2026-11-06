@@ -1,4 +1,5 @@
 import type { Migration } from '@momonga/foundation';
+import { UNKNOWN_ANSWERER } from '@momonga/protocol';
 
 const INITIAL_SCHEMA = `
 CREATE TABLE sessions (
@@ -792,6 +793,106 @@ WHERE e.type = 'tool.call' AND json_type(l.value, '$.path') = 'text'
 GROUP BY e.session_id, json_extract(l.value, '$.path');
 `;
 
+const RUN_ANSWERERS_RECORD = `
+CREATE TABLE run_answerers (
+  run_id TEXT NOT NULL REFERENCES runs (id),
+  target TEXT NOT NULL,
+  PRIMARY KEY (run_id, target)
+) WITHOUT ROWID;
+
+INSERT OR IGNORE INTO run_answerers (run_id, target)
+SELECT r.run_id, COALESCE(
+  json_extract(r.payload_json, '$.target'),
+  (SELECT json_extract(o.payload_json, '$.target') FROM events o
+    WHERE o.run_id = r.run_id AND o.type = 'meter.observed' AND o.seq > r.seq
+      AND o.seq < COALESCE((SELECT MIN(q.seq) FROM events q WHERE q.run_id = r.run_id AND q.type = 'model.requested' AND q.seq > r.seq), 9223372036854775807)
+    ORDER BY o.seq LIMIT 1),
+  '${UNKNOWN_ANSWERER}'
+)
+FROM events r WHERE r.type = 'model.responded' AND r.run_id IS NOT NULL;
+
+INSERT OR IGNORE INTO run_answerers (run_id, target)
+SELECT run_id, COALESCE(json_extract(payload_json, '$.target'), '${UNKNOWN_ANSWERER}')
+FROM events WHERE type IN ('model.rejected', 'usage.charged') AND run_id IS NOT NULL;
+`;
+
+const RUN_FACTS_RECORD = `
+CREATE TABLE run_facts (
+  run_id TEXT PRIMARY KEY REFERENCES runs (id),
+  unavailable INTEGER NOT NULL CHECK (unavailable IN (0, 1)),
+  definitions_version INTEGER NOT NULL,
+  root_run_id TEXT,
+  session_id TEXT,
+  model_alias TEXT,
+  mode TEXT,
+  agent TEXT,
+  origin TEXT,
+  status TEXT,
+  stop_reason TEXT,
+  created_at INTEGER,
+  ended_at INTEGER,
+  elapsed_ms INTEGER,
+  human_wait_ms INTEGER,
+  tokens_total INTEGER,
+  steps INTEGER,
+  max_steps INTEGER,
+  max_total_tokens INTEGER,
+  deadline_at INTEGER,
+  asked INTEGER,
+  elicited INTEGER,
+  authorization_required INTEGER,
+  side_effecting_calls INTEGER,
+  repeated_starts INTEGER,
+  reconciled_already_applied INTEGER,
+  reconciled_not_applied INTEGER,
+  reconciled_unknown INTEGER,
+  basis_read_only INTEGER,
+  basis_rule INTEGER,
+  basis_mode INTEGER,
+  basis_hook INTEGER,
+  basis_classifier INTEGER,
+  basis_person INTEGER,
+  declared INTEGER,
+  met INTEGER
+);
+
+CREATE TABLE run_recoveries (
+  run_id TEXT NOT NULL REFERENCES runs (id),
+  ordinal INTEGER NOT NULL,
+  cause TEXT NOT NULL CHECK (cause IN ('worker_failure', 'process_lost')),
+  failed_at INTEGER NOT NULL,
+  progress_at INTEGER,
+  outcome TEXT NOT NULL CHECK (outcome IN ('recovered', 'unknown_effect', 'failed', 'stopped')),
+  started_seq INTEGER NOT NULL,
+  progress_seq INTEGER,
+  PRIMARY KEY (run_id, ordinal)
+) WITHOUT ROWID;
+
+CREATE TABLE run_calls (
+  run_id TEXT NOT NULL REFERENCES runs (id),
+  call_id TEXT NOT NULL,
+  basis TEXT CHECK (basis IS NULL OR basis IN ('read_only', 'rule', 'mode', 'hook', 'classifier', 'person')),
+  side_effect TEXT CHECK (side_effect IS NULL OR side_effect IN ('read_only', 'write', 'exec')),
+  asked INTEGER NOT NULL CHECK (asked IN (0, 1)),
+  PRIMARY KEY (run_id, call_id)
+) WITHOUT ROWID;
+
+CREATE TABLE facts_cursor (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  definitions_version INTEGER NOT NULL,
+  after_event_id INTEGER NOT NULL
+);
+INSERT INTO facts_cursor (id, definitions_version, after_event_id) VALUES (1, 0, 0);
+
+CREATE TABLE permission_reviews (
+  run_id TEXT NOT NULL REFERENCES runs (id),
+  call_id TEXT NOT NULL,
+  label TEXT NOT NULL CHECK (label IN ('correct', 'unneeded_ask', 'missed_ask')),
+  reviewed_at INTEGER NOT NULL,
+  PRIMARY KEY (run_id, call_id)
+) WITHOUT ROWID;
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: 'initial schema', sql: INITIAL_SCHEMA },
   { version: 2, name: 'allow a new approval once the previous one for the call is resolved or superseded, and bind approvals to a subject digest', sql: RENEWABLE_APPROVALS },
@@ -835,5 +936,15 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 23,
     name: 'record the locations the tool calls of a session declared, once per path and in the order first seen, derived once for sessions written before',
     sql: SESSION_TOUCHED_RECORD,
+  },
+  {
+    version: 24,
+    name: 'record the targets that answered each run in run_answerers, once per target, from the target of every paid answer; derived once for runs written before by pairing each response with its meter observation, and unknown where no pairing is exact',
+    sql: RUN_ANSWERERS_RECORD,
+  },
+  {
+    version: 25,
+    name: 'record the reliability facts of each terminal run as columns, its recovery episodes, the cursor of the sweeper that computes them, and the labels of reviewed permission decisions',
+    sql: RUN_FACTS_RECORD,
   },
 ];

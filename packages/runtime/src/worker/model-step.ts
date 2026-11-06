@@ -87,7 +87,7 @@ export const decideAfterResponse = async (ctx: ClaimContext): Promise<Flow> => {
       return terminals.finish('STOPPED', { stopReason: 'loop' });
     }
   }
-  recordCalls(ctx, warning);
+  await recordCalls(ctx, warning);
   return settleCalls(ctx);
 };
 
@@ -158,6 +158,8 @@ const handleResult = async (
       ? undefined
       : await meterFactsFor(ctx, fallbackDecision.fallback ? fallbackDecision.target : undefined);
   const answerCounter = response.momonga?.counter;
+  const answeredBy = response.momonga?.target;
+  const answeredTarget = answeredBy === undefined ? {} : { target: answeredBy };
   const reject = (reason: ModelRejectionReason): never => {
     journal.append([
       {
@@ -167,6 +169,7 @@ const handleResult = async (
         reason,
         ...(answerCounter === undefined ? {} : { counter: answerCounter }),
         ...(answered === undefined ? {} : { meterCounter: answered.counter }),
+        ...answeredTarget,
       },
       ...(usage === null
         ? []
@@ -182,13 +185,13 @@ const handleResult = async (
               ...(response.momonga?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: response.momonga.cacheWriteInputTokens }),
               ...(response.momonga?.cost === undefined ? {} : { cost: response.momonga.cost }),
               timing,
+              ...answeredTarget,
             },
           ]),
     ]);
     throw new GatewayFailureError(`the model response was rejected: ${reason}`);
   };
   if (usage === null) return reject('missing_usage');
-  const answeredBy = response.momonga?.target;
   if (observation !== undefined) {
     if (answerCounter === undefined) return reject('missing_counter');
     if (answeredBy === undefined) return reject('missing_target');
@@ -229,6 +232,7 @@ const handleResult = async (
         ...(billed === undefined ? {} : { momonga: billed }),
         timing,
       },
+      ...answeredTarget,
     },
     {
       type: 'usage.updated',
@@ -371,8 +375,8 @@ export const runModelStep = async (ctx: ClaimContext): Promise<Flow> => {
     model: ctx.alias,
     input: built.input,
     tools: built.tools,
-    tool_choice: summarising ? 'none' : 'auto',
-    ...(ctx.capabilities.parallelToolCalls === undefined ? {} : { parallel_tool_calls: ctx.capabilities.parallelToolCalls }),
+    ...(summarising ? { tool_choice: 'none' as const } : ctx.toolLess ? {} : { tool_choice: 'auto' as const }),
+    ...(ctx.capabilities.parallelToolCalls === undefined || ctx.toolLess ? {} : { parallel_tool_calls: ctx.capabilities.parallelToolCalls }),
     ...(summarising ? { reasoning: { effort: LOWEST_REASONING_EFFORT } } : {}),
     max_output_tokens: built.maxOutputTokens,
     store: false,

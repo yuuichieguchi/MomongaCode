@@ -1,5 +1,5 @@
 import { applyCapabilityOverride } from '@momonga/protocol';
-import type { Capabilities, CapabilityOverride, ElicitationAnswerRecord, GoverningFactView, ImageAttachment, MemoryView, PermissionMode, SkillView } from '@momonga/protocol';
+import type { Capabilities, CapabilityOverride, ToolCallingState, ElicitationAnswerRecord, GoverningFactView, ImageAttachment, MemoryView, PermissionMode, SkillView } from '@momonga/protocol';
 import type { RunEventFrame } from '../src/client/runtime-client.ts';
 import type { RunView, SessionView, TrustView } from '../src/client/views.ts';
 import type { FollowHandlers, StartRunOptions, TuiBackend } from '../src/tui/backend.ts';
@@ -67,6 +67,7 @@ export type FakeBackendOptions = {
   modelPending?: Promise<void>;
   aliases?: readonly string[];
   windows?: Readonly<Record<string, number>>;
+  toolCalling?: Readonly<Record<string, ToolCallingState>>;
 };
 
 export const capabilitiesOf = (overrides: CapabilityOverride = {}): Capabilities =>
@@ -100,6 +101,12 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
   let handlers: FollowHandlers | undefined;
   let finishRun: ((run: RunView) => void) | undefined;
   let session: SessionView = { ...SESSION, ...options.session };
+
+  const toolCallingOf = (alias: string): { toolCalling?: ToolCallingState } => {
+    const toolCalling = options.toolCalling?.[alias];
+    return toolCalling === undefined ? {} : { toolCalling };
+  };
+  const aliasCapabilities = (alias: string): Capabilities => ({ ...capabilitiesOf({ contextWindow: options.windows?.[alias] ?? options.contextWindow ?? 8192 }), ...toolCallingOf(alias) });
 
   const waiters: { call: string; resolve: () => void }[] = [];
 
@@ -147,8 +154,8 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
         id,
         object: 'model',
         targets: [...(options.targets ?? ['primary'])],
-        capabilities: capabilitiesOf({ contextWindow: options.windows?.[id] ?? options.contextWindow ?? 8192 }),
-        targetCapabilities: Object.fromEntries((options.targets ?? ['primary']).map((target) => [target, capabilitiesOf({ contextWindow: options.windows?.[id] ?? options.contextWindow ?? 8192 })])),
+        capabilities: aliasCapabilities(id),
+        targetCapabilities: Object.fromEntries((options.targets ?? ['primary']).map((target) => [target, aliasCapabilities(id)])),
         targetCounters: Object.fromEntries((options.targets ?? ['primary']).map((target) => [target, `counter of ${target}`])),
       })),
     setModel: async (modelAlias: string) => {
@@ -229,7 +236,7 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     ruleHistory: async (id) => rules.filter((fact) => fact.id === id),
     model: async () => {
       if (options.modelPending !== undefined) await options.modelPending;
-      const capabilities = capabilitiesOf({ contextWindow: options.windows?.[session.modelAlias] ?? options.contextWindow ?? 8192, ...(options.imageInput === true ? { imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } } : {}) });
+      const capabilities = { ...capabilitiesOf({ contextWindow: options.windows?.[session.modelAlias] ?? options.contextWindow ?? 8192, ...(options.imageInput === true ? { imageInput: true, imageTokens: { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 } } : {}) }), ...toolCallingOf(session.modelAlias) };
       const targets = [...(options.targets ?? ['primary'])];
       return {
         id: session.modelAlias,

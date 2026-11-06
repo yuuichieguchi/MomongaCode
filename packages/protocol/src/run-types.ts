@@ -5,7 +5,6 @@ import type { PrefixEvent } from './prefix-events.ts';
 import type { MemoryStatus } from './memory.ts';
 import type { CompactionInputItem, InputItem, MessageInputItem } from './open-responses.ts';
 import type { ApprovalBasis, PermissionDenial } from './permission-denial.ts';
-import type { RunRecovery } from './reliability.ts';
 import type { CallTiming, ModelCost, TokenAnatomy } from './token-anatomy.ts';
 
 export const RUN_STATUSES = [
@@ -98,8 +97,9 @@ export type ToolAwait = { kind: 'run'; runId: string; sessionId: string; agent: 
 
 export type RunEventPayload =
   | { type: 'user.message'; text: string; images?: ImageAttachment[] }
-  | { type: 'run.started'; attempt: number; now: number; pins: Record<string, unknown>; mode?: PermissionMode; recovery?: RunRecovery }
-  | { type: 'attempt.failed'; attempt: number; code: string }
+  | { type: 'run.started'; attempt: number; now: number; pins: Record<string, unknown>; mode?: PermissionMode }
+  | { type: 'attempt.failed'; attempt: number; code: string; retryAt: number; limit: number }
+  | { type: 'attempt.lost'; lastLiveAt: number }
   | { type: 'run.status'; from: RunStatus; to: RunStatus; reason?: string }
   | {
       type: 'model.requested';
@@ -111,7 +111,7 @@ export type RunEventPayload =
       anatomy?: TokenAnatomy;
       prefix?: { preservedItems: number; toolsChanged: boolean; causes: PrefixEvent[] };
     }
-  | { type: 'model.responded'; step: number; attempt: number; response: ModelResponse }
+  | { type: 'model.responded'; step: number; attempt: number; response: ModelResponse; target?: string }
   | { type: 'agent.message.delta'; step: number; attempt: number; itemId: string; text: string }
   | { type: 'agent.thought.delta'; step: number; attempt: number; itemId: string; text: string }
   | { type: 'model.stream.restarted'; step: number; attempt: number }
@@ -181,6 +181,7 @@ export type RunEventPayload =
       reason: ModelRejectionReason;
       counter?: string;
       meterCounter?: string;
+      target?: string;
     }
   | {
       type: 'meter.observed';
@@ -218,6 +219,7 @@ export type RunEventPayload =
       cacheWriteInputTokens?: number;
       cost?: ModelCost;
       timing?: CallTiming;
+      target?: string;
     }
   | {
       type: 'context.compacted';

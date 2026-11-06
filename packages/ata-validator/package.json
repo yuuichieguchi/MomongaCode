@@ -1,0 +1,22 @@
+{
+  "name": "@momonga/ata-validator",
+  "version": "1.63.1",
+  "description": "The repository copy of ata-validator 1.63.1 that MomongaCode loads, with the fixes listed in UPSTREAM.md.",
+  "private": true,
+  "type": "commonjs",
+  "main": "lite.js",
+  "types": "lite.d.ts",
+  "exports": {
+    "./lite": {
+      "types": "./lite.d.ts",
+      "default": "./lite.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "license": "MIT",
+  "author": "Mert Can Altin <mertgold60@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ata-core/ata-validator.git"
+  }
+}

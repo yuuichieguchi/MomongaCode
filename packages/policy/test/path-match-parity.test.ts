@@ -1,6 +1,6 @@
 import ignore from 'ignore';
 import { describe, expect, it } from 'vitest';
-import { HOST_FLAVOUR, HOST_RULE_ENFORCEMENT, compileFileRuleSet, fileRuleBlocks } from '@momonga/foundation';
+import { HOST_FLAVOUR, compileFileRuleSet, fileRuleBlocks, ruleEnforcementOf } from '@momonga/foundation';
 import type { FileRuleSpec, PathResolution } from '@momonga/foundation';
 import { PARITY_CANDIDATES, PARITY_SPECS } from './parity-table.ts';
 import type { ParityRow } from './parity-table.ts';
@@ -23,7 +23,7 @@ const specOf = (specifier: string): FileRuleSpec => ({
 const oracleBlocks = (row: ParityRow, candidate: string): boolean => ignore({ ignorecase: false }).add([...row.gitignore]).ignores(candidate);
 
 const engineBlocks = (row: ParityRow, candidate: string): boolean => {
-  const set = compileFileRuleSet([specOf(row.specifier)], [ROOT], null, identity, () => false, HOST_FLAVOUR, HOST_RULE_ENFORCEMENT);
+  const set = compileFileRuleSet([specOf(row.specifier)], [ROOT], null, identity, () => false, HOST_FLAVOUR, ruleEnforcementOf('none'));
   const absolute = `${ROOT}/${candidate}`;
   return set.entries.some((entry) => fileRuleBlocks(set, entry, absolute, absolute));
 };

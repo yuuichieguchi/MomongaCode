@@ -144,7 +144,7 @@ describe('auto mode in the worker', () => {
     expect(env.ofType(run.id, 'tool.permission.classified')).toEqual([]);
     expect(env.ofType(run.id, 'tool.permission.requested')).toEqual([]);
     const completed = env.ofType(run.id, 'tool.completed');
-    expect(completed).toMatchObject([{ status: 'failed', output: 'Tool "Write" was not offered in the request that produced this call, so it cannot run. Available tools: Echo, Counter, Bash, UpdatePlan, Wait, Mark, Probe' }]);
+    expect(completed).toMatchObject([{ status: 'failed', output: 'Tool "Write" was not offered in the request that produced this call, so it cannot run. Available tools: Bash, Counter, Echo, Mark, Probe, UpdatePlan, Wait' }]);
     expect(completed[0]).not.toHaveProperty('denial');
     expect(fs.existsSync(target)).toBe(false);
   });

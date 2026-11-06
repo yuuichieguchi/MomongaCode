@@ -298,6 +298,13 @@ export const measureLayersWith = async (ctx: ClaimContext, activatedSkills: read
   );
 };
 
+const rankedAmong = (ranked: readonly FunctionTool[], kept: readonly FunctionTool[]): FunctionTool[] =>
+  kept.map((tool) => {
+    const candidate = ranked.find((offered) => offered.name === tool.name);
+    if (candidate === undefined) throw new Error(`the built context holds ${JSON.stringify(tool.name)}, which was not among the offered tools`);
+    return candidate;
+  });
+
 const buildOnce = async (ctx: ClaimContext, wrapUp: WrapUpReason | undefined, level: number, trailing: readonly InputItem[]): Promise<BuiltContext> => {
   await advanceTouched(ctx);
   await prepareRecall(ctx);
@@ -306,7 +313,7 @@ const buildOnce = async (ctx: ClaimContext, wrapUp: WrapUpReason | undefined, le
   if (wrapUp === undefined) {
     ctx.pinnedDigest.value ??= built.pinnedDigest;
     if (input.pinnedTokens === undefined) {
-      admittedFloors.set(ctx, { pinnedTokens: built.pinnedTokens, tools: built.tools, offered, governing, kinds });
+      admittedFloors.set(ctx, { pinnedTokens: built.pinnedTokens, tools: rankedAmong(input.sources.tools, built.tools), offered, governing, kinds });
     }
     if (joined.length > 0) ctx.journal.append([{ type: 'tool.loaded', names: joined }]);
   }
@@ -418,6 +425,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
     ...(resource.momonga?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: resource.momonga.cacheWriteInputTokens }),
     ...(resource.momonga?.cost === undefined ? {} : { cost: resource.momonga.cost }),
     timing: { durationMs: options.clock.now() - startedAt },
+    ...(resource.momonga === undefined ? {} : { target: resource.momonga.target }),
   };
   const unreadableNotices =
     recorded.unreadable.length === 0

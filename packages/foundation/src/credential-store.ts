@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { writeFileAtomically } from './atomic-file.ts';
+import { nodeFileSystem } from './node-file-system.ts';
+import { systemRandom } from './system-random.ts';
 import { createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
 import type { FileLockPorts } from './file-lock.ts';
 import { assertPrivateRegularFile, noFollowFlag } from './platform/privacy.ts';
@@ -67,7 +69,7 @@ export const createFileCredentialStore = (directory: string, options: FileCreden
 
   const writeAtomically = async (key: string, value: string): Promise<void> => {
     await ensureDirectory();
-    await writeFileAtomically(fileFor(directory, key), value, { mode: FILE_MODE, randomHex: ports.randomHex });
+    await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: ports.randomHex }, fileFor(directory, key), value, { mode: FILE_MODE });
   };
 
   const locked = <T>(key: string, action: () => Promise<T>): Promise<T> =>

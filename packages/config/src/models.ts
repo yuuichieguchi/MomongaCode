@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { canonicalPath, comparableContains, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
-import { DEFAULT_ANTHROPIC_API_VERSION, OUTPUT_RESERVE, anthropicVersionSamplingBound, ceilRatio, imageCapability, marginFloorFor } from '@momonga/protocol';
+import { DEFAULT_ANTHROPIC_API_VERSION, OUTPUT_RESERVE, UNKNOWN_ANSWERER, anthropicVersionSamplingBound, ceilRatio, imageCapability, marginFloorFor } from '@momonga/protocol';
 import type { AnthropicApiVersion, DialectDefinition, TargetBilling } from '@momonga/protocol';
 import { checkTargetDialects, resolveDialects } from './dialects.ts';
 import { layoutOf } from './layout.ts';
@@ -37,11 +37,14 @@ export type ResolvedModels = {
   dialects: Record<string, DialectDefinition>;
   roles: ModelRoles;
   billingChanges: BillingChange[];
+  headersTimeoutMs: number;
+  idleTimeoutMs: number;
 };
+
+const FIVE_MINUTES_MS = 300_000;
 
 export type ResolveModelsOptions = { source: string; home: string; warnings: string[] };
 
-const DEFAULT_FM_NAME = 'fm';
 const DEFAULT_ALIAS = 'default';
 
 const LOCAL_SERVER_DEFAULTS = { billing: 'local', maxConcurrency: 1 } as const satisfies { billing: TargetBilling; maxConcurrency: number };
@@ -341,25 +344,26 @@ export const resolveModels = (models: ModelsSettings | undefined, { source, home
   const targets: Record<string, ResolvedModelTarget> = {};
   for (const [name, target] of configured) {
     const where = `${source}: models.targets.${name}`;
+    if (name === UNKNOWN_ANSWERER) throw new Error(`${where} is reserved: ${JSON.stringify(UNKNOWN_ANSWERER)} is the name a run records for a paid answer whose target is unknown; rename the target`);
     targets[name] = resolveTarget(target, home, where, warnings);
   }
   checkTargetDialects(targets, dialects, source);
-  if (configured.length === 0) targets[DEFAULT_FM_NAME] = resolveFm({ adapter: 'fm' });
 
   const aliases: Record<string, ModelAlias> = { ...models?.aliases };
   for (const [alias, value] of Object.entries(aliases)) {
     for (const member of [value].flat()) {
+      if (member === UNKNOWN_ANSWERER) {
+        throw new Error(`${source}: models.aliases.${alias} names target ${JSON.stringify(member)}, which is reserved: it is the name a run records for a paid answer whose target is unknown; name another target`);
+      }
       if (!Object.hasOwn(targets, member)) {
         throw new Error(`${source}: models.aliases.${alias} names target ${JSON.stringify(member)}, which is not defined in models.targets`);
       }
     }
   }
-  if (!Object.hasOwn(aliases, DEFAULT_ALIAS)) {
-    const first = Object.keys(targets)[0] as string;
+  const [first] = Object.keys(targets);
+  if (first !== undefined && !Object.hasOwn(aliases, DEFAULT_ALIAS)) {
     aliases[DEFAULT_ALIAS] = [first];
-    if (configured.length > 0) {
-      warnings.push(`${source}: models.aliases has no "default" alias; using the first target ${JSON.stringify(first)}`);
-    }
+    warnings.push(`${source}: models.aliases has no "default" alias; using the first target ${JSON.stringify(first)}`);
   }
   const roles: ModelRoles = {};
   for (const [role, alias] of Object.entries(models?.roles ?? {})) {
@@ -372,7 +376,15 @@ export const resolveModels = (models: ModelsSettings | undefined, { source, home
   checkBillingChanges(billingChanges, aliases, source);
   checkUnboundedAliases(aliases, targets, source);
   warnUnallowedBillingChanges(billingChanges, aliases, targets, source, warnings);
-  return { aliases, targets, dialects, roles, billingChanges };
+  return {
+    aliases,
+    targets,
+    dialects,
+    roles,
+    billingChanges,
+    headersTimeoutMs: models?.headersTimeoutMs ?? FIVE_MINUTES_MS,
+    idleTimeoutMs: models?.idleTimeoutMs ?? FIVE_MINUTES_MS,
+  };
 };
 
 type ResolvedTargets = { models: { targets: Record<string, ResolvedModelTarget> } };

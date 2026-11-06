@@ -4,7 +4,7 @@ import { signalUntil } from '../memory/deadline-signal.ts';
 import { createTokenMeter, readerNamesOf, withCalibration } from '@momonga/context';
 import type { TokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex } from '@momonga/foundation';
-import { REFERENCE_KINDS, RUN_STATUSES, TERMINAL_STATUSES } from '@momonga/protocol';
+import { REFERENCE_KINDS, RUN_STATUSES, TARGET_NOT_READY, TERMINAL_STATUSES, agentReadiness, readinessText } from '@momonga/protocol';
 import type { Capabilities, FunctionTool } from '@momonga/protocol';
 import { isFatalStoreError } from '@momonga/store';
 import type { Claim, Session } from '@momonga/store';
@@ -12,7 +12,7 @@ import type { ClaimContext, Flow, RunMemory, Terminals } from './claim-context.t
 import { reconcileStartedCalls, releaseWaitingOnCancel } from './cancel-recovery.ts';
 import { startClaimControl } from './claim-control.ts';
 import type { ClaimControl } from './claim-control.ts';
-import { dispositionOf } from './gateway-policy.ts';
+import { dispositionOf, observedCodeOf } from './gateway-policy.ts';
 import { heartbeatMsFor } from './heartbeat.ts';
 import { describeError, LeaseLostError, ShutdownError } from './errors.ts';
 import { meteredOutputFit, reconcileOutputFit } from './output-fit.ts';
@@ -58,6 +58,22 @@ export type ClaimHost = {
   attach(control: ClaimControl): () => void;
   memoryOf(runId: string): RunMemory;
   forget(runId: string): void;
+};
+
+const capabilitiesOrReason = async (
+  gateway: WorkerOptions['gateway'],
+  alias: string,
+  signal: AbortSignal,
+  interruptions: number,
+): Promise<{ capabilities: Capabilities } | { unavailable: string }> => {
+  try {
+    return { capabilities: await gateway.capabilities(alias, { signal }) };
+  } catch (error) {
+    if (!(error instanceof GatewayRequestError)) throw error;
+    const disposition = dispositionOf(error, interruptions);
+    if (disposition.kind === 'fail') return { unavailable: disposition.message };
+    throw error;
+  }
 };
 
 const cancelUpstream = async (options: WorkerOptions, control: ClaimControl, keys: readonly string[]): Promise<string[]> => {
@@ -230,6 +246,7 @@ const requeueOrStop = async (
   }
   memory.streak += 1;
   if (disposition.kind === 'requeue' && disposition.interrupted) memory.interruptions += 1;
+  journal.append([{ type: 'attempt.failed', attempt: claim.leaseToken, code: observedCodeOf(cause), retryAt: availableAt, limit: options.store.maxTotalAttempts }]);
   terminals.yieldTo('QUEUED', availableAt, refund ? { refundAttempt: true } : undefined);
 };
 
@@ -284,8 +301,22 @@ const drive = async (
     return;
   }
 
+  const recorded = journal.state.pins;
+  const pinned = recorded === undefined ? undefined : readPins(recorded);
+  const read = pinned === undefined ? await capabilitiesOrReason(gateway, session.modelAlias, control.signal, memory.interruptions) : { capabilities: pinned.capabilities };
+  if ('unavailable' in read) {
+    await terminals.finish('FAILED', { error: { code: TARGET_NOT_READY, message: readinessText(agentReadiness({ unavailable: read.unavailable })) } });
+    return;
+  }
+  const { capabilities } = read;
+  const readiness = agentReadiness(capabilities);
+  if (readiness.state !== 'ready' && readiness.state !== 'no_tools') {
+    await terminals.finish('FAILED', { error: { code: TARGET_NOT_READY, message: readinessText(readiness) } });
+    return;
+  }
+  const toolLess = readiness.state === 'no_tools';
   const agentPin = readAgentPin(run.pins);
-  const basePrompt = (options.systemPrompt ?? buildSystemPrompt)({ cwd: session.cwd, platform: options.platform });
+  const basePrompt = (options.systemPrompt ?? buildSystemPrompt)({ cwd: session.cwd, platform: options.platform, ...(toolLess ? { tools: 'none' as const } : {}) });
   const systemPrompt = agentPin === undefined ? basePrompt : agentSystemPrompt(basePrompt, agentPin);
   const systemPromptDigest = sha256Hex(systemPrompt);
   const env = tools.envFor(session);
@@ -309,16 +340,15 @@ const drive = async (
     });
     return;
   }
-  const recorded = journal.state.pins;
   const newMemoryShare = recorded === undefined ? await memoryShareFor({ store: options.store, settings: options.settings, session, run }) : undefined;
   const newGuidelineVersion = recorded === undefined ? guidelineVersionFor(options.store, run) : undefined;
   const pins: RunPins =
-    recorded === undefined
+    pinned === undefined
       ? {
           modelAlias: session.modelAlias,
           systemPromptDigest,
           toolSetDigest: toolSet.digest,
-          capabilities: await gateway.capabilities(session.modelAlias, { signal: control.signal }),
+          capabilities,
           roles: rolesFor({ store: options.store, settings: options.settings, run }),
           targets: { ...options.settings.modelTargets() },
           ...(newMemoryShare === undefined ? {} : { memoryShare: newMemoryShare }),
@@ -328,7 +358,7 @@ const drive = async (
             ...(await deferredPinFor({ store: options.store, settings: options.settings, session, run })),
           },
         }
-      : readPins(recorded);
+      : pinned;
   const startOffered = offeredRecordFor(journal.state.offeredTools, pins.token?.deferred ?? []);
   journal.append([
     { type: 'run.started', attempt: claim.attempt, now: clock.now(), pins: { ...pins }, mode: session.permissionMode },
@@ -406,8 +436,10 @@ const drive = async (
   const fallbackMeters = token.observedCapacity
     ? (await Promise.all(listing.targets.filter((target) => target !== firstTarget).map(factsOf))).map((facts) => facts.meter)
     : [];
+  const loading = token.deferred === undefined ? undefined : createToolLoading(() => ctx);
+  const offeredSet = loading === undefined ? toolSet : extendToolSet(toolSet, createLoadToolsTool(loading));
   const visibleNow = (): FunctionTool[] =>
-    toolSet.forModel({ mode: session.permissionMode, rules: composeRules(), conciseDescriptions: token.conciseDescriptions });
+    toolLess ? [] : offeredSet.forModel({ mode: session.permissionMode, rules: composeRules(), conciseDescriptions: token.conciseDescriptions });
   const claimVisible = token.cachePrefix ? visibleNow() : undefined;
   const jobRunningNow = (): boolean => options.store.jobs.listForSession(session.id).some((job) => job.status === 'running');
   const childRunLive = (): boolean => options.store.listRuns(session.id, LIVE_RUN_STATUSES).some((live) => live.parentRunId !== null && live.id !== run.id);
@@ -418,28 +450,27 @@ const drive = async (
       const name = toolSet.readerOf(kind);
       return name === undefined ? [] : [[kind, name] as const];
     }));
-  const loading = token.deferred === undefined ? undefined : createToolLoading(() => ctx);
   const offerNow = (loaded: readonly string[] = journal.state.loadedTools): ToolOffer =>
     offerFor({
-      toolSet,
+      toolSet: offeredSet,
       visible: claimVisible === undefined ? visibleNow() : [...claimVisible],
       deferred: token.deferred,
       loaded,
       keepCompanionsWithoutHost: keepCompanionsWithoutHost(),
       required: new Set(readerNamesOf(readersNow(), journal.state)),
     });
-  const claimToolSet = loading === undefined ? toolSet : extendToolSet(toolSet, createLoadToolsTool(loading));
   const ctx: ClaimContext = {
     options,
     claim,
     run,
     alias: pins.modelAlias,
     capabilities: pins.capabilities,
+    toolLess,
     roles: pins.roles,
     ...(pins.memoryShare === undefined ? {} : { memoryShare: pins.memoryShare }),
     ...(pinnedGuideline === undefined ? {} : { guideline: pinnedGuideline }),
     limits,
-    toolSet: claimToolSet,
+    toolSet: offeredSet,
     ...(loading === undefined ? {} : { toolLoading: loading }),
     skills,
     recalled,
@@ -451,7 +482,7 @@ const drive = async (
     windowShared: () => jobRunningNow() || childRunLive(),
     companions: () => ({ hostOf: Object.fromEntries(toolSet.companions), keepWithoutHost: keepCompanionsWithoutHost() }),
     systemPrompt,
-    outputFit: meteredOutputFit({ meter: aliasMeter, itemCap: async () => (await measurePinnedFor(ctx)).itemCap, harnessTools: new Set(harnessOutputToolsOf(claimToolSet.tools)) }),
+    outputFit: meteredOutputFit({ meter: aliasMeter, itemCap: async () => (await measurePinnedFor(ctx)).itemCap, harnessTools: new Set(harnessOutputToolsOf(offeredSet.tools)) }),
     reconcileFit: reconcileOutputFit(pins.capabilities),
     journal,
     control,

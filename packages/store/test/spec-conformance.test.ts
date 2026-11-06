@@ -29,7 +29,7 @@ describe('facts that specs/tla/RunRecovery.tla relies on', () => {
     expect(await h.store.transition(stale, ['RUNNING'], 'COMPLETED')).toEqual({ kind: 'lease_lost' });
     expect(h.store.release(stale, 'QUEUED')).toEqual({ kind: 'lease_lost' });
     expect(h.store.heartbeat(stale)).toEqual({ kind: 'lease_lost' });
-    expect(h.store.readRunEvents(run.id, 0, 100).map((event) => event.type)).toEqual(['user.message']);
+    expect(h.store.readRunEvents(run.id, 0, 100).map((event) => event.type)).toEqual(['user.message', 'attempt.lost']);
   });
 
   it('the idempotency ledger is fenced: a superseded holder can neither begin, authorise, attach, checkpoint nor complete', () => {

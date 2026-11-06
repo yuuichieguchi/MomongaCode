@@ -1,5 +1,5 @@
 import type { AnyTool } from './types.ts';
-import { JsonDepthError, SchemaValidatorFailure, checkJsonDepth, compileUntrustedSchema, parseOutsideJson, sha256Hex, untrustedSchemaFailure, validateUntrusted } from '@momonga/foundation';
+import { JsonDepthError, SchemaValidatorFailure, checkJsonDepth, checkWithPatterns, compileUntrustedSchema, parseOutsideJson, patternRefusal, renderInstancePath, sha256Hex, untrustedSchemaFailure, validateUntrusted } from '@momonga/foundation';
 import type { UntrustedError } from '@momonga/foundation';
 
 const MAX_REPORTED_ERRORS = 20;
@@ -30,15 +30,7 @@ export const compileToolSchemas = (tool: AnyTool): void => {
 
 const unescapePointerSegment = (segment: string): string => segment.replaceAll('~1', '/').replaceAll('~0', '~');
 
-const renderPath = (segments: readonly string[]): string => {
-  if (segments.length === 0) return '(root)';
-  return segments
-    .map((segment, index) => {
-      if (/^\d+$/.test(segment)) return `[${segment}]`;
-      return index === 0 ? segment : `.${segment}`;
-    })
-    .join('');
-};
+const renderPath = renderInstancePath;
 
 const pathSegments = (instancePath: string): string[] =>
   instancePath === '' ? [] : instancePath.slice(1).split('/').map(unescapePointerSegment);
@@ -66,7 +58,11 @@ const describeErrors = (toolName: string, errors: readonly UntrustedError[]): st
 export type ValidationResult =
   | { ok: true; value: unknown }
   | { ok: false; reason: 'invalid'; message: string }
-  | { ok: false; reason: 'validator-failed'; message: string; detail: string | undefined };
+  | { ok: false; reason: 'validator-failed'; message: string; detail: string | undefined }
+  | { ok: false; reason: 'not-checked'; message: string }
+  | { ok: false; reason: 'stopped'; message: string };
+
+export type ValidationOptions = { readonly signal?: AbortSignal; readonly patternCheckLimitMs?: number };
 
 export const unavailable = (tool: AnyTool, detail: string | undefined): Extract<ValidationResult, { ok: false }> => ({
   ok: false,
@@ -91,11 +87,16 @@ const parseArguments = (tool: AnyTool, rawArguments: unknown): ValidationResult 
   }
 };
 
-export const validateToolInput = (tool: AnyTool, rawArguments: unknown): ValidationResult => {
+export const validateToolInput = async (tool: AnyTool, rawArguments: unknown, options: ValidationOptions = {}): Promise<ValidationResult> => {
   const parsed = parseArguments(tool, rawArguments);
   if (!parsed.ok) return parsed;
   try {
-    const verdict = validateUntrusted(schemaIdentity(tool), tool.inputSchema, parsed.value);
+    const checked = await checkWithPatterns(() => validateUntrusted(schemaIdentity(tool), tool.inputSchema, parsed.value), options);
+    if (checked.kind === 'stopped') return { ok: false, reason: 'stopped', message: `${tool.name} was cancelled` };
+    if (checked.kind === 'not-checked') {
+      return { ok: false, reason: 'not-checked', message: patternRefusal(`arguments of ${tool.name}`, parsed.value, checked) };
+    }
+    const verdict = checked.value;
     return verdict.valid ? parsed : { ok: false, reason: 'invalid', message: describeErrors(tool.name, verdict.errors) };
   } catch (error) {
     if (error instanceof SchemaValidatorFailure) return unavailable(tool, error.message);

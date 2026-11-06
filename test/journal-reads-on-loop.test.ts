@@ -16,6 +16,7 @@ const relative = (file: string): string => path.relative(packagesDir, file).spli
 const filesMatching = (pattern: RegExp): string[] =>
   fs
     .readdirSync(packagesDir)
+    .filter((name) => fs.existsSync(path.join(packagesDir, name, 'src')))
     .flatMap((name) => sourcesOf(path.join(packagesDir, name, 'src')).filter((file) => pattern.test(fs.readFileSync(file, 'utf8'))))
     .map(relative)
     .sort();

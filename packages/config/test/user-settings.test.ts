@@ -33,9 +33,8 @@ describe('loadUserSettings', () => {
     const tree = makeTree();
     const result = await loadUserSettings({ home: tree.home });
     expect(result.settings.autoUpdates).toBe(true);
-    expect(result.settings.models.targets).toEqual({
-      fm: { adapter: 'fm', toolCalling: 'auto', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 30000 },
-    });
+    expect(result.settings.models.targets).toEqual({});
+    expect(result.settings.models.aliases).toEqual({});
     expect(result.warnings).toEqual([]);
     expect(result.files).toEqual([]);
   });

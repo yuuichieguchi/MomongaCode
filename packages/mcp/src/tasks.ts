@@ -69,7 +69,7 @@ export type SettleTaskOptions = {
   clock: Clock;
   signal: AbortSignal;
   onCheckpoint(checkpoint: McpCheckpoint): void;
-  accept(taskId: string, result: unknown): CallToolResult;
+  accept(taskId: string, result: unknown): Promise<CallToolResult>;
   trackCancel(outcome: Promise<void>): void;
 };
 
@@ -110,7 +110,7 @@ export const settleTask = async ({ start, answers, request, timers, clock, signa
     }
     switch (view.status) {
       case 'completed':
-        return accept(taskId, view.result);
+        return await accept(taskId, view.result);
       case 'failed':
         throw new McpTaskError(taskId, `task ${taskId} failed: ${describeJsonRpcError(view.error)}`);
       case 'cancelled':

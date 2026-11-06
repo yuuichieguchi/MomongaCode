@@ -25,24 +25,24 @@ beforeEach(() => {
 });
 
 describe('built-in tool input validation', () => {
-  it('goes through the untrusted-schema boundary', () => {
+  it('goes through the untrusted-schema boundary', async () => {
     const tool = makeTool('builtin_boundary');
-    expect(validateToolInput(tool, { value: 'x' })).toEqual({ ok: true, value: { value: 'x' } });
+    expect(await validateToolInput(tool, { value: 'x' })).toEqual({ ok: true, value: { value: 'x' } });
     expect(boundaryCalls.identities).toEqual(['builtin_boundary']);
   });
 
-  it('treats format as an annotation and accepts a string that is not an email', () => {
+  it('treats format as an annotation and accepts a string that is not an email', async () => {
     const tool = makeTool('builtin_email', { inputSchema: EMAIL_SCHEMA });
-    expect(validateToolInput(tool, { address: 'not-an-email' })).toEqual({ ok: true, value: { address: 'not-an-email' } });
+    expect(await validateToolInput(tool, { address: 'not-an-email' })).toEqual({ ok: true, value: { address: 'not-an-email' } });
   });
 
-  it('accepts an object whose if subschema evaluates every property when then is empty', () => {
+  it('accepts an object whose if subschema evaluates every property when then is empty', async () => {
     const tool = makeTool('builtin_if_then', { inputSchema: IF_THEN_EMPTY_SCHEMA });
-    expect(validateToolInput(tool, { a: null })).toEqual({ ok: true, value: { a: null } });
+    expect(await validateToolInput(tool, { a: null })).toEqual({ ok: true, value: { a: null } });
   });
 
-  it('still rejects input that violates the schema', () => {
+  it('still rejects input that violates the schema', async () => {
     const tool = makeTool('builtin_reject');
-    expect(validateToolInput(tool, { value: 1 })).toMatchObject({ ok: false, reason: 'invalid' });
+    expect(await validateToolInput(tool, { value: 1 })).toMatchObject({ ok: false, reason: 'invalid' });
   });
 });

@@ -330,6 +330,7 @@ export const fakeRuntime = (): FakeRuntime => {
     adoptGuideline: unexpected('adoptGuideline'),
     rollbackGuideline: unexpected('rollbackGuideline'),
     recordContextCharge: unexpected('recordContextCharge'),
+    reportFacts: unexpected('reportFacts'),
     cost: unexpected('cost'),
     costText: unexpected('costText'),
     runReflection: unexpected('runReflection'),
@@ -401,6 +402,7 @@ export const startAgent = (overrides: Partial<AcpDeps> = {}): Harness => {
       if (size === undefined) throw new Error(`no context window for ${alias}`);
       return size;
     },
+    readinessOf: async () => ({ state: 'ready' }),
     environment: async () => ({ HOME: '/h' }),
     autoModeAvailable: async () => false,
     canonicalCwd: (cwd) => cwd,

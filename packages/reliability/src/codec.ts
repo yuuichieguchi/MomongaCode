@@ -3,7 +3,7 @@ import { RELIABILITY_FORMAT } from '@momonga/protocol';
 import { GROUP_KEYS } from './types.ts';
 import type { Indicators } from './types.ts';
 import { REPORT_KINDS } from './report.ts';
-import type { ReliabilityReport } from './report.ts';
+import type { Harness, NotRun, ReliabilityReport, ReportKind as ReportKindName, ScenarioRow, TaskRow } from './report.ts';
 
 type Fields = Record<string, unknown>;
 
@@ -44,6 +44,7 @@ const decodeIndicators = (value: unknown, path: string): Indicators => {
       counted: countAt(buckets, 'counted', `${path}.buckets`),
       cancelled: countAt(buckets, 'cancelled', `${path}.buckets`),
       pendingFacts: countAt(buckets, 'pendingFacts', `${path}.buckets`),
+      factsUnavailable: countAt(buckets, 'factsUnavailable', `${path}.buckets`),
     },
     completion: {
       k: countAt(completion, 'k', `${path}.completion`),
@@ -55,6 +56,7 @@ const decodeIndicators = (value: unknown, path: string): Indicators => {
       n: countAt(recovery, 'n', `${path}.recovery`),
       unknownEffect: countAt(recovery, 'unknownEffect', `${path}.recovery`),
       failed: countAt(recovery, 'failed', `${path}.recovery`),
+      stopped: countAt(recovery, 'stopped', `${path}.recovery`),
     },
     recoveryTime: {
       n: countAt(recoveryTime, 'n', `${path}.recoveryTime`),
@@ -81,6 +83,69 @@ const decodeIndicators = (value: unknown, path: string): Indicators => {
   };
 };
 
+const textAt = (fields: Fields, key: string, path: string): string => {
+  const value = fields[key];
+  return typeof value === 'string' && value.length > 0 ? value : fail(`${path}.${key}`, 'a non-empty string');
+};
+
+const listAt = (value: unknown, path: string): unknown[] => (Array.isArray(value) ? value : fail(path, 'a list'));
+
+const ANSWER_KINDS = ['model', 'script', 'unknown'] as const;
+
+const decodeHarness = (value: unknown): Harness => {
+  const fields = fieldsAt(value, 'report.harness');
+  const suite = fieldsAt(fields['suite'], 'report.harness.suite');
+  return {
+    suite: { name: textAt(suite, 'name', 'report.harness.suite'), digest: textAt(suite, 'digest', 'report.harness.suite') },
+    answeredBy: listAt(fields['answeredBy'], 'report.harness.answeredBy').map((entry, index) => {
+      const path = `report.harness.answeredBy[${index}]`;
+      const answerer = fieldsAt(entry, path);
+      const answers = ANSWER_KINDS.find((candidate) => candidate === answerer['answers']);
+      if (answers === undefined) return fail(`${path}.answers`, `one of ${ANSWER_KINDS.join(', ')}`);
+      return { target: textAt(answerer, 'target', path), adapter: textAt(answerer, 'adapter', path), upstreamModel: textAt(answerer, 'upstreamModel', path), answers };
+    }),
+    unrecordedAnswers: countAt(fields, 'unrecordedAnswers', 'report.harness'),
+    codeDigest: textAt(fields, 'codeDigest', 'report.harness'),
+  };
+};
+
+const decodeTasks = (value: unknown): TaskRow[] =>
+  listAt(value, 'report.tasks').map((entry, index) => {
+    const path = `report.tasks[${index}]`;
+    const row = fieldsAt(entry, path);
+    const trials = countAt(row, 'trials', path);
+    const met = countAt(row, 'met', path);
+    if (met > trials) fail(`${path}.met`, `at most trials (${trials})`);
+    return { task: textAt(row, 'task', path), trials, met, difficulty: textAt(row, 'difficulty', path), taskType: textAt(row, 'taskType', path) };
+  });
+
+const decodeScenarios = (value: unknown): ScenarioRow[] =>
+  listAt(value, 'report.scenarios').map((entry, index) => {
+    const path = `report.scenarios[${index}]`;
+    const row = fieldsAt(entry, path);
+    const episodes = countAt(row, 'episodes', path);
+    const recovered = countAt(row, 'recovered', path);
+    if (recovered > episodes) fail(`${path}.recovered`, `at most episodes (${episodes})`);
+    return { scenario: textAt(row, 'scenario', path), trials: countAt(row, 'trials', path), episodes, recovered };
+  });
+
+const decodeWitnessed = (value: unknown): { k: number; n: number } => {
+  const rate = rateAt(value, 'report.witnessed');
+  if (rate.k > rate.n) fail('report.witnessed.k', `at most n (${rate.n})`);
+  return rate;
+};
+
+const decodePopulation = (value: unknown): { notRun: NotRun[] } => {
+  const fields = fieldsAt(value, 'report.population');
+  return {
+    notRun: listAt(fields['notRun'], 'report.population.notRun').map((entry, index) => {
+      const path = `report.population.notRun[${index}]`;
+      const row = fieldsAt(entry, path);
+      return { id: textAt(row, 'id', path), reason: textAt(row, 'reason', path) };
+    }),
+  };
+};
+
 export const encodeReliabilityReport = (report: ReliabilityReport): string => JSON.stringify(report);
 
 export const decodeReliabilityReport = (text: string): ReliabilityReport => {
@@ -93,6 +158,17 @@ export const decodeReliabilityReport = (text: string): ReliabilityReport => {
   const groupBy = GROUP_KEYS.find((candidate) => candidate === fields['groupBy']);
   if (groupBy === undefined) return fail('report.groupBy', `one of ${GROUP_KEYS.join(', ')}`);
   const groups = fieldsAt(fields['groups'], 'report.groups');
+  const harness = fields['harness'];
+  if (kind === 'real' ? harness !== null : harness === null || harness === undefined) {
+    return fail('report.harness', kind === 'real' ? 'null for a real report' : `present for a ${kind} report`);
+  }
+  const rowsOnlyFor = (key: string, owner: ReportKindName): void => {
+    if (fields[key] !== undefined && kind !== owner) fail(`report.${key}`, `absent from a ${kind} report`);
+  };
+  rowsOnlyFor('tasks', 'benchmark');
+  rowsOnlyFor('scenarios', 'injection');
+  rowsOnlyFor('witnessed', 'injection');
+  rowsOnlyFor('population', 'injection');
   return {
     format: RELIABILITY_FORMAT,
     kind,
@@ -100,5 +176,10 @@ export const decodeReliabilityReport = (text: string): ReliabilityReport => {
     groupBy,
     total: decodeIndicators(fields['total'], 'report.total'),
     groups: Object.fromEntries(Object.entries(groups).map(([name, indicators]) => [name, decodeIndicators(indicators, `report.groups.${name}`)])),
+    harness: harness === null ? null : decodeHarness(harness),
+    ...(fields['tasks'] === undefined ? {} : { tasks: decodeTasks(fields['tasks']) }),
+    ...(fields['scenarios'] === undefined ? {} : { scenarios: decodeScenarios(fields['scenarios']) }),
+    ...(fields['witnessed'] === undefined ? {} : { witnessed: decodeWitnessed(fields['witnessed']) }),
+    ...(fields['population'] === undefined ? {} : { population: decodePopulation(fields['population']) }),
   };
 };

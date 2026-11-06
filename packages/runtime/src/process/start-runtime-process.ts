@@ -33,6 +33,8 @@ import type { GatewayClient } from '../gateway-client.ts';
 import { createTracerPort } from '../tracer.ts';
 import { createRunNotifier } from '../service/notifier.ts';
 import type { RunNotifier } from '../service/notifier.ts';
+import { FACTS_SWEEP_BATCH_RUNS } from '@momonga/protocol';
+import { startFactsSweeper } from '../service/facts-sweeper.ts';
 import { startMemorySweeper } from '../service/memory-sweeper.ts';
 import { SWEEP_INTERVAL_MS, createRunService } from '../service/service.ts';
 import { createReflector } from '../memory/reflection.ts';
@@ -637,6 +639,14 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         reflect: (sweepSignal) => reflector.runOne(sweepSignal),
         onError: report,
       });
+      const factsSweeper = startFactsSweeper({
+        store,
+        thread: journalThread,
+        timers,
+        intervalMs: SWEEP_INTERVAL_MS,
+        batchSize: FACTS_SWEEP_BATCH_RUNS,
+        onError: report,
+      });
       periodics.push(
         startPeriodic({ intervalMs: IDEMPOTENCY_PURGE_MS, run: () => {
             store.idempotency.purgeExpired(clock.now());
@@ -689,7 +699,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       );
       cleanups.push({
         name: 'timers',
-        run: async () => void (await Promise.all([memorySweeper.close(), ...periodics.map((periodic) => periodic.stop())])),
+        run: async () => void (await Promise.all([memorySweeper.close(), factsSweeper.close(), ...periodics.map((periodic) => periodic.stop())])),
       });
     });
 

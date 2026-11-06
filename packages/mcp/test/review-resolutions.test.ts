@@ -150,7 +150,7 @@ describe('deterministic hashed names', () => {
     const set = await makePool([entry('modern', modernConfig(recordFile, extras('a.b', 'a/b', 'a_b')))]).snapshot();
     const dot = `mcp__modern__a_b_${hash8('a.b')}`;
     const slash = `mcp__modern__a_b_${hash8('a/b')}`;
-    expect(set.tools.map((tool) => tool.name).slice(-3)).toEqual([dot, slash, 'mcp__modern__a_b']);
+    expect(set.tools.map((tool) => tool.name).filter((name) => name.startsWith('mcp__modern__a_b'))).toEqual(['mcp__modern__a_b', ...[dot, slash].sort()]);
     expect(set.notices.filter((notice) => notice.includes('a_b'))).toEqual([]);
     const executor = makeExecutor();
     expect((await executor.resultOf(set, dot, {})).output).toBe('a.b');

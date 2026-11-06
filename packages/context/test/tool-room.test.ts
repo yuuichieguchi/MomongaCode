@@ -10,6 +10,8 @@ const toolNamed = (name: string, descriptionChars: number): FunctionTool => ({
   parameters: { type: 'object', properties: {} },
 });
 
+const ranked = (tool: FunctionTool, fitRank: number): FunctionTool & { fitRank: number } => ({ ...tool, fitRank });
+
 const TOOLS = ['A', 'B', 'C', 'D', 'E', 'F'].map((name) => toolNamed(name, 800));
 
 const builtWith = async (contextWindow: number) => {
@@ -81,7 +83,7 @@ describe('the tools a target is offered', () => {
       expect(namesOf(built.tools)).not.toContain('F');
       expect(namesOf(built.tools)).not.toContain('G');
       expect(built.notices.filter((notice) => notice.code === 'tools_dropped').map((notice) => notice.message)).toEqual([
-        expect.not.stringContaining('G'),
+        expect.stringContaining('G (with F)'),
       ]);
     });
 
@@ -91,10 +93,10 @@ describe('the tools a target is offered', () => {
       expect(namesOf(built.tools)).toContain('G');
     });
 
-    it('follow the tool they serve by the relation, not by the order the candidates come in', async () => {
+    it('follow the tool they serve by the fit rank, not by the order the candidates come in', async () => {
       const capabilities = capabilitiesFor(1_536, { maxOutputTokens: 1024 });
       const { ports } = harness(capabilities);
-      const companionFirst = [toolNamed('G', 1), ...TOOLS];
+      const companionFirst = [ranked(toolNamed('G', 1), 6), ...TOOLS.map((tool, index) => ranked(tool, index))];
       const built = await buildContext(
         inputFor(capabilities, { sources: sourcesWith({ tools: companionFirst }), companions: { hostOf: { G: 'A' }, keepWithoutHost: false } }),
         ports,
@@ -103,10 +105,10 @@ describe('the tools a target is offered', () => {
       expect(namesOf(built.tools)).toContain('G');
     });
 
-    it('keep the order the candidates came in, because the offered order is the cached prefix', async () => {
-      const capabilities = capabilitiesFor(1_536, { maxOutputTokens: 1024 });
+    it('keep the order the candidates came in when all fit, because the offered order is the cached prefix', async () => {
+      const capabilities = capabilitiesFor(128_000, { maxOutputTokens: 1024 });
       const { ports } = harness(capabilities);
-      const companionFirst = [toolNamed('G', 1), ...TOOLS];
+      const companionFirst = [ranked(toolNamed('G', 1), 6), ...TOOLS.map((tool, index) => ranked(tool, index))];
       const built = await buildContext(
         inputFor(capabilities, { sources: sourcesWith({ tools: companionFirst }), companions: { hostOf: { G: 'A' }, keepWithoutHost: false } }),
         ports,
@@ -120,7 +122,7 @@ describe('the tools a target is offered', () => {
       const capabilities = capabilitiesFor(1_536, { maxOutputTokens: 1024 });
       const { ports } = harness(capabilities);
       const built = await buildContext(
-        inputFor(capabilities, { sources: sourcesWith({ tools: [toolNamed('G', 1), ...TOOLS] }), companions: { hostOf: { G: 'F' }, keepWithoutHost: false } }),
+        inputFor(capabilities, { sources: sourcesWith({ tools: [ranked(toolNamed('G', 1), 6), ...TOOLS.map((tool, index) => ranked(tool, index))] }), companions: { hostOf: { G: 'F' }, keepWithoutHost: false } }),
         ports,
       );
       expect(namesOf(built.tools)).not.toContain('F');

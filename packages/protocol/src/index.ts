@@ -108,6 +108,7 @@ export {
   TOOL_PLACEMENTS,
   REASONING_EFFORTS,
   TARGET_ANSWERS,
+  UNKNOWN_ANSWERER,
   TARGET_BILLINGS,
   applyCapabilityOverride,
   imageCapability,
@@ -119,8 +120,16 @@ export {
   THINKING_OFFS,
   ALLOWED_TOOLS_FORMS,
   PRECONDITION_FAILED_CODE,
+  NO_MODEL_TARGET,
+  TARGET_NOT_READY,
+  agentReadiness,
+  isToolCallingState,
+  readinessRemedyOf,
+  readinessText,
 } from './capabilities.ts';
-export type { OutputTokenCapabilities, TargetAnswers, TargetBilling } from './capabilities.ts';
+export type { OutputTokenCapabilities, Readiness, ReadinessInput, TargetAnswers, TargetBilling } from './capabilities.ts';
+export { LOCAL_SERVER_CANDIDATES, LOCAL_SERVER_SHAPES } from './local-servers.ts';
+export type { DetectedLocalServer, LocalServerShape, LocalServerToolSupport } from './local-servers.ts';
 export {
   BREAKER_VERDICTS,
   CREDENTIAL_EFFECTS,
@@ -240,24 +249,29 @@ export {
   FACTS_SWEEP_BATCH_RUNS,
   INDICATOR_DEFINITIONS_VERSION,
   MIN_RATE_POPULATION,
+  MAIN_AGENT,
   RECOVERY_CAUSES,
   RECOVERY_OUTCOMES,
   RELIABILITY_FORMAT,
   REPORT_PAGE_ROWS,
+  REVIEW_SAMPLE_SIZE,
 } from './reliability.ts';
 export type {
   RecoveryCause,
   RecoveryEpisodeView,
   RecoveryOutcome,
   ReportPage,
+  RunCallView,
   RunFactsBasis,
+  RunFactsRecord,
   RunFactsLimits,
   RunFactsView,
-  RunRecovery,
+  UnavailableRunView,
 } from './reliability.ts';
 export { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, MOMONGA_EVENTS, MOMONGA_REQUEST_FIELDS, MOMONGA_SPAN_NOTES } from './trace-attributes.ts';
 export { EVENT_TYPES, RUN_API_SCHEMAS, base64ByteLength, runApiSchemaName, toPublicRunEvent } from './run-api.ts';
-export { MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES } from './run-api.ts';
+export { MCP_AUTHORIZATION_STATUSES, MCP_AUTH_STATES, MODEL_KINDS, modelKindOf } from './run-api.ts';
+export type { ModelKind } from './run-api.ts';
 export type {
   JobView,
   JobsResponse,
@@ -454,6 +468,7 @@ export type {
   FunctionCallItem,
   FunctionCallOutputInputItem,
   FunctionCallOutputItem,
+  FitRankedFunctionTool,
   FunctionTool,
   InputFilePart,
   InputImagePart,

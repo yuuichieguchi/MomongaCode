@@ -12,6 +12,7 @@ import { DEFAULT_FM_BINARY, probeTarget } from './commands/gateway.ts';
 import { approve, attachRun, cancelRun } from './commands/runs.ts';
 import { showTrace } from './commands/trace.ts';
 import { INTERNAL_COMMANDS } from './daemon/launcher.ts';
+import { createGatewayClient } from './client/gateway-client.ts';
 import { pathsOf } from './paths.ts';
 import { terminalPorts } from './terminal-writer.ts';
 import type { ProgramDeps } from './program-deps.ts';
@@ -88,7 +89,16 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
         ...(options.dangerouslySkipPermissions === true ? { bypassAllowed: true } : {}),
       };
       if (options.print !== undefined) {
-        deps.complete(await runHeadless(ports, await pathsOf(ports), { prompt: options.print, format: options.outputFormat, verbose: options.verbose === true, interrupt: deps.interrupt, ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...session }));
+        const paths = await pathsOf(ports);
+        const capabilitiesOf = async (alias: string) => {
+          const gateway = createGatewayClient({ socketPath: paths.sockets.gateway });
+          try {
+            return await gateway.capabilitiesOf(alias);
+          } finally {
+            await gateway.close();
+          }
+        };
+        deps.complete(await runHeadless(ports, paths, { capabilitiesOf, prompt: options.print, format: options.outputFormat, verbose: options.verbose === true, interrupt: deps.interrupt, ...(options.skill === undefined ? {} : { skill: options.skill }), images: options.image, ...session }));
         return;
       }
       if (ports.terminal === undefined) throw new Error('the interactive session needs a terminal; pass --print <prompt> to run without one');

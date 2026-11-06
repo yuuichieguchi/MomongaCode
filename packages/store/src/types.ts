@@ -30,6 +30,8 @@ import type {
   MemoryState,
   MemoryStatus,
   ReflectionDrop,
+  ReportPage, RunCallView,
+  RunFactsView,
   ReflectionJobState,
   StopReason,
   ToolKind,
@@ -454,6 +456,23 @@ export type HistoryReadResult =
   | { kind: 'ok'; runId: string; project: string; origin: MemoryOrigin; events: RunEvent[]; callPaths: Record<string, string[]>; nextSeq: number | null }
   | { kind: 'not_visible' };
 
+export type FactsCursor = { definitionsVersion: number; afterEventId: number };
+
+export type FactsBatch = { runIds: string[]; throughEventId: number };
+
+export type FactsCommit = { rows: readonly RunFactsView[]; calls: readonly RunCallView[]; unavailable: readonly string[]; throughEventId: number };
+
+export type StoredFacts = { kind: 'facts'; facts: RunFactsView } | { kind: 'unavailable' };
+
+export type RunFactsStore = {
+  cursor(): FactsCursor;
+  nextBatch(limit: number): FactsBatch;
+  commit(batch: FactsCommit): void;
+  get(runId: string): StoredFacts | undefined;
+  page(after: string, limit: number): ReportPage;
+  calls(after: { runId: string; callId: string } | null, limit: number): RunCallView[];
+};
+
 export type SearchStore = {
   indexBatch(options: { limit: number; redactor: Redactor; maxChars?: number }): { runs: number };
   visibleProjects(visibility: HistoryVisibility, scope: HistoryScope): string[];
@@ -567,6 +586,7 @@ export type RuntimeStore = {
   startedCallsOf(runId: string): StartedCall[];
   hasNoticeCode(runId: string, code: string): boolean;
   meterRecordOf(sessionId: string, key: MeterKey): MeterRecord | undefined;
+  answeringTargetsOf(runId: string): string[];
   lastTerminalRootRuns(project: string, limit: number): Run[];
   toolCallNames(rootRunId: string): string[];
   toolOfferedNames(rootRunId: string): string[];
@@ -617,6 +637,7 @@ export type RuntimeStore = {
   guidelines: GuidelineStore;
   governing: GoverningFactStore;
   search: SearchStore;
+  runFacts: RunFactsStore;
   readonly journalFacts: JournalFacts;
   close(): void;
 };

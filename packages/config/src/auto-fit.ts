@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalJson, isRecord, sha256Hex, writeFileAtomically } from '@momonga/foundation';
+import { canonicalJson, isRecord, nodeFileSystem, sha256Hex, systemRandom, writeFileAtomically } from '@momonga/foundation';
 import type { AutoClassifierView } from '@momonga/protocol';
 import { AUTO_MODE_DATASET_TEXT } from './auto-mode-dataset.ts';
 import { ConfigError } from './config-error.ts';
@@ -150,6 +150,6 @@ export const readAutoFitRecord = async (directory: string, key: AutoFitKey): Pro
 export const writeAutoFitRecord = async (directory: string, record: AutoFitRecord, randomHex: (bytes: number) => string): Promise<string> => {
   await fs.promises.mkdir(directory, { recursive: true, mode: RECORD_DIRECTORY_MODE });
   const file = fileOf(directory, record.key);
-  await writeFileAtomically(file, `${JSON.stringify(record, null, 2)}\n`, { mode: RECORD_FILE_MODE, randomHex });
+  await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: randomHex }, file, `${JSON.stringify(record, null, 2)}\n`, { mode: RECORD_FILE_MODE });
   return file;
 };

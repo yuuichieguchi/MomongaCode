@@ -7,7 +7,7 @@ export { DuplicateChargeError } from './context-charges.ts';
 export { sameRunRequest } from './run-request.ts';
 export { CANCEL_ORIGINS, CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from './transitions.ts';
 export { migrateRuntimeDatabase, openRuntimeStore } from './runtime-store.ts';
-export { JournalThreadError, StalePreparation } from './journal-port.ts';
+export { FactsRefusedError, JournalThreadError, StalePreparation } from './journal-port.ts';
 export { JOURNAL_SCAN_RANGE_ROWS, createJournalReader } from './journal-reader.ts';
 export { blobDirectoryOf, createBlobStore } from './blobs.ts';
 export type { JournalReader, JournalReaderOptions } from './journal-reader.ts';
@@ -102,6 +102,11 @@ export type {
   SaveMemoryInput,
   AddMemoryByCommandInput,
   SearchStore,
+  FactsBatch,
+  FactsCommit,
+  FactsCursor,
+  RunFactsStore,
+  StoredFacts,
   RuntimeStore,
   RuntimeStoreOptions,
   ServiceMutationResult,
@@ -139,3 +144,4 @@ export type {
   TrustStore,
   WaitTargets,
 } from './types.ts';
+export { UNKNOWN_ANSWERER } from '@momonga/protocol';

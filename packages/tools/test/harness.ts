@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalJson, resolveCanonicalPath, sha256Hex, truncationMarker } from '@momonga/foundation';
+import { canonicalJson, resolveCanonicalPath, sha256Hex, truncationMarker, validateUntrusted } from '@momonga/foundation';
 import { absoluteFrom } from '@momonga/policy';
 import { FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemOf } from '@momonga/testkit';
 import type { PermissionSubject } from '@momonga/policy';
-import { createToolExecutor, createToolRegistry, defineTool, validateToolInput } from '@momonga/tools';
+import { createToolExecutor, createToolRegistry, defineTool, schemaIdentity } from '@momonga/tools';
 import type { AnyTool, CallOutputFit, ExecutionBatchInput, OutputCall, OutputFit, SideEffectBinding, ToolBody, ToolCall, ToolContext, ToolDefinition, ToolExecutorOptions, ToolSet, WorkTreeObserver } from '@momonga/tools';
 import type { PermissionRule } from '@momonga/policy';
 import type { PermissionMode, SideEffect } from '@momonga/protocol';
@@ -191,10 +191,10 @@ export const expectedSubjectDigest = (subject: PermissionSubject, cwd: string): 
 const digestForCall = (entry: HarnessCall, toolSet: ToolSet, context: { cwd: string; workingDirectory: string; home: string; roots: readonly string[] }): string => {
   const tool = toolSet.get(entry.name);
   if (tool === undefined) return UNRESOLVED_SUBJECT_DIGEST;
-  const validation = validateToolInput(tool, entry.arguments);
-  if (!validation.ok) return UNRESOLVED_SUBJECT_DIGEST;
+  const value: unknown = typeof entry.arguments === 'string' ? JSON.parse(entry.arguments) : entry.arguments;
+  if (!validateUntrusted(schemaIdentity(tool), tool.inputSchema, value).valid) return UNRESOLVED_SUBJECT_DIGEST;
   try {
-    return expectedSubjectDigest(tool.subject(validation.value, context), context.cwd);
+    return expectedSubjectDigest(tool.subject(value, context), context.cwd);
   } catch {
     return UNRESOLVED_SUBJECT_DIGEST;
   }

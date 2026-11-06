@@ -58,6 +58,13 @@ describe('the code digest of an unbundled CLI covers the product sources', () =>
     expect(await codeDigestOf(fromSources(left))).not.toBe(await codeDigestOf(fromSources(right)));
   });
 
+  it('changes when a JavaScript file of a vendored package without a src directory changes', async () => {
+    const root = sourceTree({ ...SOURCES, 'packages/vendored/lib/engine.js': 'module.exports = 1;\n' });
+    const before = await codeDigestOf(fromSources(root));
+    fs.writeFileSync(path.join(root, 'packages', 'vendored', 'lib', 'engine.js'), 'module.exports = 2;\n');
+    expect(await codeDigestOf(fromSources(root))).not.toBe(before);
+  });
+
   it('is the same for two trees with the same sources', async () => {
     expect(await codeDigestOf(fromSources(sourceTree()))).toBe(await codeDigestOf(fromSources(sourceTree())));
   });

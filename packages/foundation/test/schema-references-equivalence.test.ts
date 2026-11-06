@@ -2,12 +2,12 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Validator } from 'ata-validator/lite';
+import { Validator } from '@momonga/ata-validator/lite';
 import { describe, expect, it } from 'vitest';
 import { SchemaValidatorFailure, ataEngine, createUntrustedBoundary } from '@momonga/foundation';
 
 const require = createRequire(import.meta.url);
-const ataLib = path.join(path.dirname(require.resolve('ata-validator/package.json')), 'lib');
+const ataLib = path.join(path.dirname(require.resolve('@momonga/ata-validator/package.json')), 'lib');
 
 type RefInternals = {
   indexSchemas(root: unknown, schemaMap: Map<string, unknown> | null, flat: boolean): { nodeBase: Map<unknown, string> };

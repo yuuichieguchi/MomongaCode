@@ -5,6 +5,7 @@ import { TRANSCRIPT_FORMAT } from '@momonga/eval';
 import { envelopeOf } from '@momonga/protocol';
 import type { FakeRoute } from '@momonga/testkit';
 import { ROOT_PREFIX } from '../packages/cli/src/eval/context-host.ts';
+import { SHORT_TEMP_BASE } from '../packages/cli/src/eval/context-effects.ts';
 import { DEFAULT_KEEP_RECENT_STEPS } from '../packages/context/src/levels.ts';
 import { fitLimitAfterReport, summaryRoute } from './support/budget.ts';
 import { titleOf } from './support/cases.ts';
@@ -126,7 +127,6 @@ type CaseLine = { id: string; compaction: string; runs: number; passedRuns: numb
 
 const metricCounts = (metric: { successes: number; trials: number } | undefined): [number, number] | undefined => (metric === undefined ? undefined : [metric.successes, metric.trials]);
 
-const enclosedContentOf = (enclosed: string): string => enclosed.split('\n').slice(1, -1).join('\n');
 
 describe('momonga eval context live', () => {
   it(titleOf('eval-context-live'), { timeout: 8 * E2E_TEST_TIMEOUT_MS }, async () => {
@@ -182,14 +182,15 @@ describe('momonga eval context live', () => {
       .flatMap((request) =>
         messagesOf(request)
           .filter((message) => message.role === 'tool')
-          .map((message) => ({ enclosed: String(message.content), callId: String(message.tool_call_id), output: enclosedContentOf(String(message.content)), workspace: workspaceOf(request.body) })),
+          .map((message) => ({ output: String(message.content), callId: String(message.tool_call_id), workspace: workspaceOf(request.body) })),
       );
     expect(homesSeen).toHaveLength(2);
     for (const seen of homesSeen) {
-      expect(seen.enclosed).toBe(envelopeOf({ content: seen.output, callId: seen.callId, tool: 'Bash' }));
-      expect(seen.output).not.toBe(home.home);
-      expect(path.basename(seen.output).startsWith(ROOT_PREFIX)).toBe(true);
-      expect(seen.workspace.endsWith(`${path.basename(seen.output)}/w`)).toBe(true);
+      const caseHome = path.join(SHORT_TEMP_BASE, path.basename(path.dirname(seen.workspace)));
+      expect(path.basename(seen.workspace)).toBe('w');
+      expect(path.basename(caseHome).startsWith(ROOT_PREFIX)).toBe(true);
+      expect(caseHome).not.toBe(home.home);
+      expect(seen.output).toBe(envelopeOf({ content: caseHome, callId: seen.callId, tool: 'Bash' }));
     }
     expect(byId.get('long-on')?.compactions).toBeGreaterThanOrEqual(1);
     expect(byId.get('long-on')?.passedRuns).toBe(1);

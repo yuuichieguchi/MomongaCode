@@ -6,7 +6,8 @@ import {
   SecretUnavailableError,
   announceReady,
   createJsonLogger,
-  createPlatformSecretStore,
+  createGivenSecretStore,
+  givenSecretStoreChildEnv,
   EntryUsageError,
   ensureMomongaDirs,
   minimalChildEnv,
@@ -44,6 +45,7 @@ import { createProbedOllamaTarget } from './probe/ollama-target.ts';
 import { createSecretResolver } from './secrets.ts';
 import { targetCounterOf } from './target-counter.ts';
 import type { SecretResolver } from './secrets.ts';
+import type { UpstreamLiveness } from './adapters/shared/http-client.ts';
 import { createAnthropicAdapter } from './adapters/anthropic/adapter.ts';
 import { createChatCompletionsAdapter } from './adapters/chat-completions/adapter.ts';
 import { createOllamaAdapter } from './adapters/ollama/adapter.ts';
@@ -217,7 +219,7 @@ type FmContext = {
   binarySha256: string | { unreadable: string };
 };
 
-const createFmAdapter = async (name: string, target: Extract<ResolvedTarget, { adapter: 'fm' }>, context: FmContext, clock: Clock, files: ProcessFilePorts, userDialects: UserDialects) => {
+const createFmAdapter = async (name: string, target: Extract<ResolvedTarget, { adapter: 'fm' }>, context: FmContext, clock: Clock, files: ProcessFilePorts, userDialects: UserDialects, liveness: UpstreamLiveness) => {
   const managed = await createManagedFmTarget({
     fmServe: context.fmServe,
     binary: context.binary,
@@ -232,7 +234,7 @@ const createFmAdapter = async (name: string, target: Extract<ResolvedTarget, { a
     ...(target.model === undefined ? {} : { declaredModel: target.model }),
     ...(target.outputBoundField === undefined ? {} : { declaredOutputBoundField: target.outputBoundField }),
   });
-  return createChatCompletionsAdapter({ ...withBinaryGuard(managed, context.binary, files), sampling: { renders: [] }, clock, userDialects });
+  return createChatCompletionsAdapter({ ...withBinaryGuard(managed, context.binary, files), sampling: { renders: [] }, clock, userDialects, liveness });
 };
 
 const dialectCurrencyOf = (declaredDialect: DialectId | undefined, userDialects: UserDialects = NO_USER_DIALECTS): DialectCurrency => ({
@@ -255,6 +257,7 @@ const createAutoChatCompletionsAdapter = async (
   clock: Clock,
   refusal: PreconditionFailedError | undefined,
   userDialects: UserDialects,
+  liveness: UpstreamLiveness,
 ) => {
   const upstream = upstreamEndpointOf(target);
   const key = endpointProbeKeyOf(name, target);
@@ -288,11 +291,12 @@ const createAutoChatCompletionsAdapter = async (
     apiKey: readKey,
     clock,
     userDialects,
+    liveness,
   });
   return { adapter, upstreamIdentity: loaded?.identity };
 };
 
-const createProbedOllamaAdapter = async (name: string, target: Extract<RemoteTarget, { adapter: 'ollama' }>, probeRecordDir: string, clock: Clock, userDialects: UserDialects) => {
+const createProbedOllamaAdapter = async (name: string, target: Extract<RemoteTarget, { adapter: 'ollama' }>, probeRecordDir: string, clock: Clock, userDialects: UserDialects, liveness: UpstreamLiveness) => {
   const upstream = upstreamEndpointOf(target);
   const key = endpointProbeKeyOf(name, target);
   const { endpoint } = key;
@@ -313,6 +317,7 @@ const createProbedOllamaAdapter = async (name: string, target: Extract<RemoteTar
     capabilities: () => probed.capabilities(),
     clock,
     userDialects,
+    liveness,
   });
   return { adapter, upstreamIdentity: loaded?.identity };
 };
@@ -526,24 +531,25 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const counters: Record<string, string> = {};
     const referencedSecrets = secretNames(settings);
     const secretStore =
-      options.secretStore ?? createPlatformSecretStore(process.platform, options.execWithStdin ?? createExecWithStdin(childEnv), childEnv);
+      options.secretStore ?? createGivenSecretStore(options.execWithStdin ?? createExecWithStdin({ ...childEnv, ...givenSecretStoreChildEnv(options.env) }), options.env);
     const secretResolver = createSecretResolver(secretStore);
     const secretFailures = await warmSecrets(secretResolver, referencedSecrets, signal ?? new AbortController().signal);
     for (const [name, failure] of secretFailures) logger.warn(`secret ${name} is unavailable: ${failure.message}`);
     signal?.throwIfAborted();
     const userDialects = settings.models.dialects;
+    const liveness: UpstreamLiveness = { headersTimeoutMs: settings.models.headersTimeoutMs, idleTimeoutMs: settings.models.idleTimeoutMs };
     const ollamaRefusals = await ollamaRefusalsOf(targets, signal ?? new AbortController().signal);
     signal?.throwIfAborted();
     for (const [name, target] of targets) {
       signal?.throwIfAborted();
       if (target.adapter === 'fm') {
         if (fmContext === undefined) throw new Error('fm context is missing for an fm target');
-        adapters[name] = await createFmAdapter(name, target, fmContext, clock, files, userDialects);
+        adapters[name] = await createFmAdapter(name, target, fmContext, clock, files, userDialects, liveness);
         counters[name] = targetCounterOf({ target, codeDigest, fm: { binarySha256: typeof fmContext.binarySha256 === 'string' ? fmContext.binarySha256 : null, osBuild: fmContext.osBuild } });
         continue;
       }
       if (target.adapter === 'ollama') {
-        const probed = await createProbedOllamaAdapter(name, target, paths.probe, clock, userDialects);
+        const probed = await createProbedOllamaAdapter(name, target, paths.probe, clock, userDialects, liveness);
         adapters[name] = probed.adapter;
         counters[name] = targetCounterOf({ target, codeDigest, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) });
         continue;
@@ -551,7 +557,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       const readKey = apiKeyReader(options.env, secretResolver, target);
       const refusal = ollamaRefusals.get(name);
       if (target.adapter === 'chat-completions' && target.toolCalling === 'auto') {
-        const probed = await createAutoChatCompletionsAdapter(name, target, readKey, paths.probe, clock, refusal, userDialects);
+        const probed = await createAutoChatCompletionsAdapter(name, target, readKey, paths.probe, clock, refusal, userDialects, liveness);
         adapters[name] = probed.adapter;
         counters[name] = targetCounterOf({ target, codeDigest, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) });
         continue;
@@ -566,6 +572,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         capabilities: async () => capabilitiesOf(target, mode),
         clock,
         userDialects,
+        liveness,
       };
       switch (target.adapter) {
         case 'chat-completions':

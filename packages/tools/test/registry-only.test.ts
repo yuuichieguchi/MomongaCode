@@ -11,7 +11,7 @@ const registryOf = (...names: string[]) => {
 describe('snapshot with an allow list', () => {
   it('keeps only the named tools and reports the names that match nothing', async () => {
     const set = await registryOf('Read', 'Grep', 'Bash').snapshot({ only: ['Read', 'Grep', 'Ghost'] });
-    expect(set.tools.map((tool) => tool.name)).toEqual(['Read', 'Grep']);
+    expect(set.tools.map((tool) => tool.name)).toEqual(['Grep', 'Read']);
     expect(set.notices).toEqual(['Tools "Ghost" are not available and were left out']);
     expect(set.get('Bash')).toBeUndefined();
   });

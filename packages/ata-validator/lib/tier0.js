@@ -1,0 +1,237 @@
+'use strict';
+const { multipleOfOk } = require('./multiple-of');
+
+const TYPE_MASK = {
+  string: 1,
+  number: 2,
+  integer: 4,
+  boolean: 8,
+};
+
+const T_STRING = TYPE_MASK.string;
+const T_NUMBER = TYPE_MASK.number;
+const T_INTEGER = TYPE_MASK.integer;
+const T_BOOLEAN = TYPE_MASK.boolean;
+
+function codePointLength(s) {
+  const len = s.length;
+  for (let i = 0; i < len; i++) {
+    if (s.charCodeAt(i) >= 0xD800 && s.charCodeAt(i) <= 0xDBFF) {
+      let n = 0; for (const _ of s) n++; return n;
+    }
+  }
+  return len;
+}
+
+const F_MIN = 1;
+const F_MAX = 2;
+const F_EXCL_MIN = 4;
+const F_EXCL_MAX = 8;
+const F_MULT = 16;
+
+const PROTO_NAMES = new Set([...Object.getOwnPropertyNames(Object.prototype), '__proto__']);
+const _hop = Object.prototype.hasOwnProperty;
+const _PN = typeof Bun === 'undefined' && ({}).__proto__ === Object.prototype;
+
+function formatFnOf(propSchema, userFormats) {
+  const f = propSchema.format;
+  if (typeof f !== 'string') return null;
+  const own = Object.prototype.hasOwnProperty;
+  if (userFormats && own.call(userFormats, f) && typeof userFormats[f] === 'function') return userFormats[f];
+  const fc = require('./formats').formatChecks();
+  return own.call(fc, f) && typeof fc[f] === 'function' ? fc[f] : null;
+}
+
+function primConstraint(key, propSchema, userFormats) {
+  const t = propSchema.type;
+  const hasEnum = Array.isArray(propSchema.enum);
+  const hasConst = propSchema.const !== undefined;
+  let numFlags = 0;
+  if (typeof propSchema.minimum === 'number') numFlags |= F_MIN;
+  if (typeof propSchema.maximum === 'number') numFlags |= F_MAX;
+  if (typeof propSchema.exclusiveMinimum === 'number') numFlags |= F_EXCL_MIN;
+  if (typeof propSchema.exclusiveMaximum === 'number') numFlags |= F_EXCL_MAX;
+  if (typeof propSchema.multipleOf === 'number') numFlags |= F_MULT;
+  return {
+    key,
+    protoName: PROTO_NAMES.has(key),
+    typeMask: TYPE_MASK[t] | 0,
+    numFlags,
+    hasEnum,
+    hasConst,
+    enumSet: hasEnum ? new Set(propSchema.enum) : null,
+    constVal: hasConst ? propSchema.const : undefined,
+    minLen: typeof propSchema.minLength === 'number' ? propSchema.minLength : -1,
+    maxLen: typeof propSchema.maxLength === 'number' ? propSchema.maxLength : -1,
+    min: typeof propSchema.minimum === 'number' ? propSchema.minimum : 0,
+    max: typeof propSchema.maximum === 'number' ? propSchema.maximum : 0,
+    exclMin: typeof propSchema.exclusiveMinimum === 'number' ? propSchema.exclusiveMinimum : 0,
+    exclMax: typeof propSchema.exclusiveMaximum === 'number' ? propSchema.exclusiveMaximum : 0,
+    multipleOf: typeof propSchema.multipleOf === 'number' ? propSchema.multipleOf : 0,
+    formatFn: propSchema.type === 'string' ? formatFnOf(propSchema, userFormats) : null,
+  };
+}
+
+function buildTier0Plan(schema, userFormats) {
+  if (schema.type !== 'object') {
+    return {
+      isPrimitive: true,
+      constraints: [primConstraint('__root__', schema, userFormats)],
+      requiredMask: 0,
+      additionalAllowed: true,
+      knownKeys: null,
+    };
+  }
+  const props = schema.properties || {};
+  const keys = Object.keys(props);
+  const required = schema.required ? new Set(schema.required) : null;
+  const constraints = new Array(keys.length);
+  const knownKeys = new Set();
+  let requiredMask = 0;
+  for (let i = 0; i < keys.length; i++) {
+    const k = keys[i];
+    constraints[i] = primConstraint(k, props[k], userFormats);
+    knownKeys.add(k);
+    if (required && required.has(k)) requiredMask |= (1 << i);
+  }
+  return {
+    isPrimitive: false,
+    constraints,
+    requiredMask,
+    additionalAllowed: schema.additionalProperties !== false,
+    knownKeys,
+  };
+}
+
+function checkPrimitive(c, v) {
+  const m = c.typeMask;
+  if (m === T_STRING) {
+    if (typeof v !== 'string') return false;
+    const minLen = c.minLen;
+    const maxLen = c.maxLen;
+    if (minLen >= 0) { const l = v.length; if (l < minLen) return false; if (l < minLen * 2 && codePointLength(v) < minLen) return false; }
+    if (maxLen >= 0) { const l = v.length; if (l > maxLen && codePointLength(v) > maxLen) return false; }
+    if (c.formatFn !== null && !c.formatFn(v)) return false;
+  } else if (m === T_INTEGER) {
+    if (typeof v !== 'number' || !Number.isInteger(v)) return false;
+    const f = c.numFlags;
+    if (f !== 0) {
+      if ((f & F_MIN) && v < c.min) return false;
+      if ((f & F_MAX) && v > c.max) return false;
+      if ((f & F_EXCL_MIN) && v <= c.exclMin) return false;
+      if ((f & F_EXCL_MAX) && v >= c.exclMax) return false;
+      if ((f & F_MULT) && !multipleOfOk(v, c.multipleOf)) return false;
+    }
+  } else if (m === T_NUMBER) {
+    if (!Number.isFinite(v)) return false;
+    const f = c.numFlags;
+    if (f !== 0) {
+      if ((f & F_MIN) && v < c.min) return false;
+      if ((f & F_MAX) && v > c.max) return false;
+      if ((f & F_EXCL_MIN) && v <= c.exclMin) return false;
+      if ((f & F_EXCL_MAX) && v >= c.exclMax) return false;
+      if ((f & F_MULT) && !multipleOfOk(v, c.multipleOf)) return false;
+    }
+  } else if (m === T_BOOLEAN) {
+    if (typeof v !== 'boolean') return false;
+  } else if (m !== 0) {
+    return false;
+  }
+  if (c.hasEnum && !c.enumSet.has(v)) return false;
+  if (c.hasConst && v !== c.constVal) return false;
+  return true;
+}
+
+function makeObjectVerdict(plan) {
+  const P_additionalAllowed = plan.additionalAllowed;
+  const P_constraints = plan.constraints;
+  const P_knownKeys = plan.knownKeys;
+  const P_requiredMask = plan.requiredMask;
+  return function tier0ObjectVerdict(data) {
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) return false;
+  const cs = P_constraints;
+  const n = cs.length;
+  const reqMask = P_requiredMask;
+  const plain = (_PN ? data.__proto__ : Object.getPrototypeOf(data)) === Object.prototype;
+  let seenMask = 0;
+  for (let i = 0; i < n; i++) {
+    const c = cs[i];
+    let v = data[c.key];
+    if (v !== undefined && (c.protoName || !plain) && !_hop.call(data, c.key)) v = undefined;
+    if (v === undefined) {
+      if (reqMask & (1 << i)) return false;
+      continue;
+    }
+    seenMask |= (1 << i);
+    const m = c.typeMask;
+    if (m === T_STRING) {
+      if (typeof v !== 'string') return false;
+      const minLen = c.minLen;
+      const maxLen = c.maxLen;
+      if (minLen >= 0) { const l = v.length; if (l < minLen) return false; if (l < minLen * 2 && codePointLength(v) < minLen) return false; }
+      if (maxLen >= 0) { const l = v.length; if (l > maxLen && codePointLength(v) > maxLen) return false; }
+      if (c.formatFn !== null && !c.formatFn(v)) return false;
+    } else if (m === T_INTEGER) {
+      if (typeof v !== 'number' || !Number.isInteger(v)) return false;
+      const f = c.numFlags;
+      if (f !== 0) {
+        if ((f & F_MIN) && v < c.min) return false;
+        if ((f & F_MAX) && v > c.max) return false;
+        if ((f & F_EXCL_MIN) && v <= c.exclMin) return false;
+        if ((f & F_EXCL_MAX) && v >= c.exclMax) return false;
+        if ((f & F_MULT) && !multipleOfOk(v, c.multipleOf)) return false;
+      }
+    } else if (m === T_NUMBER) {
+      if (!Number.isFinite(v)) return false;
+      const f = c.numFlags;
+      if (f !== 0) {
+        if ((f & F_MIN) && v < c.min) return false;
+        if ((f & F_MAX) && v > c.max) return false;
+        if ((f & F_EXCL_MIN) && v <= c.exclMin) return false;
+        if ((f & F_EXCL_MAX) && v >= c.exclMax) return false;
+        if ((f & F_MULT) && !multipleOfOk(v, c.multipleOf)) return false;
+      }
+    } else if (m === T_BOOLEAN) {
+      if (typeof v !== 'boolean') return false;
+    } else if (m !== 0) {
+      return false;
+    }
+    if (c.hasEnum && !c.enumSet.has(v)) return false;
+    if (c.hasConst && v !== c.constVal) return false;
+  }
+  if ((seenMask & reqMask) !== reqMask) return false;
+  if (!P_additionalAllowed) {
+    const known = P_knownKeys;
+    for (const k in data) {
+      if (!Object.prototype.hasOwnProperty.call(data, k)) continue;
+      if (!known.has(k)) return false;
+    }
+  }
+  return true;
+  };
+}
+function tier0ValidateObject(plan, data) {
+  let f = plan._objectVerdict;
+  if (f === undefined) f = plan._objectVerdict = makeObjectVerdict(plan);
+  return f(data);
+}
+function tier0Verdict(plan) {
+  if (plan.isPrimitive) { const c = plan.constraints[0]; return (data) => checkPrimitive(c, data); }
+  let f = plan._objectVerdict;
+  if (f === undefined) f = plan._objectVerdict = makeObjectVerdict(plan);
+  return f;
+}
+
+function tier0Validate(plan, data) {
+  if (plan.isPrimitive) return checkPrimitive(plan.constraints[0], data);
+  return tier0ValidateObject(plan, data);
+}
+
+module.exports = {
+  buildTier0Plan,
+  tier0Validate,
+  tier0Verdict,
+  tier0ValidateObject,
+  checkPrimitive,
+  TYPE_MASK,
+};

@@ -29,6 +29,7 @@ export type ClaimContext = {
   run: Run;
   alias: string;
   capabilities: Capabilities;
+  toolLess: boolean;
   roles: ModelRoles;
   memoryShare?: number;
   guideline?: { version: number; text: string };

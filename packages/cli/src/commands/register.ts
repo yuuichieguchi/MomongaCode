@@ -1,6 +1,8 @@
 import type { Command } from 'commander';
 import { InvalidArgumentError, Option } from 'commander';
 import { DEFAULT_DATASET_SEED, MAX_DATASET_SEED } from '@momonga/eval';
+import { GROUP_KEYS } from '@momonga/reliability';
+import type { GroupKey } from '@momonga/reliability';
 import { GOVERNING_KINDS, MEMORY_KINDS, MEMORY_SCOPES, PERMISSION_MODES } from '@momonga/protocol';
 import type { GoverningEnforcement, GoverningKind, MemoryKind, MemoryScope, PermissionMode } from '@momonga/protocol';
 import { pathsOf } from '../paths.ts';
@@ -14,8 +16,9 @@ import { mcpList, mcpLogin } from './mcp.ts';
 import { memoryAccept, memoryAdd, memoryDelete, memoryHistory, memoryList, memoryPromote, memoryReject, memoryRestore, memoryReview, memoryShow } from './memory.ts';
 import { ruleAdd, ruleHistory, ruleList, ruleRetire } from './rule.ts';
 import { listJobs } from './jobs.ts';
-import { listModels } from './models.ts';
+import { detectModels, listModels } from './models.ts';
 import { policyVerify } from './policy.ts';
+import { showReliability } from './reliability.ts';
 import { showStatus } from './runs.ts';
 import { secretSet } from './secret.ts';
 
@@ -245,6 +248,17 @@ const registerCost: CommandGroup = (program, deps) => {
     });
 };
 
+const registerReliability: CommandGroup = (program, deps) => {
+  program
+    .command('reliability')
+    .description('report the completion, recovery, duplicate, intervention, budget and time indicators of the terminal tasks in the record')
+    .addOption(new Option('--group-by <key>', 'the key the indicators are grouped by').choices(GROUP_KEYS).default('model'))
+    .option('--explain', 'list the run ids behind each count')
+    .action(async (options: { groupBy: GroupKey; explain?: true }) => {
+      deps.complete(await showReliability(deps.ports, await pathsOf(deps.ports), { groupBy: options.groupBy, explain: options.explain === true }));
+    });
+};
+
 const registerEvaluate: CommandGroup = (program, deps) => {
   const evaluation = program
     .command('eval <dataset>')
@@ -388,12 +402,19 @@ const registerSecret: CommandGroup = (program, deps) => {
 };
 
 const registerModels: CommandGroup = (program, deps) => {
-  program
+  const models = program
     .command('models')
     .description('list the model aliases with the capabilities their targets declare')
     .option('--json', 'print the models as JSON')
     .action(async (options: { json?: true }) => {
       deps.complete(await listModels(deps.ports, await pathsOf(deps.ports), options.json === true));
+    });
+  models
+    .command('detect [url...]')
+    .description('ask the usual local addresses, and any address you name, what model server answers there; nothing is written')
+    .option('--json', 'print the servers as JSON')
+    .action(async (typed: string[], options: { json?: true }) => {
+      deps.complete(await detectModels(deps.ports, await pathsOf(deps.ports), { typed, json: options.json === true, interrupt: deps.interrupt }));
     });
 };
 
@@ -433,7 +454,7 @@ const registerRunTree: CommandGroup = (program, deps) => {
     });
 };
 
-export const PRODUCT_COMMAND_GROUPS: readonly CommandGroup[] = [registerElicit, registerMcp, registerRunTree, registerMemory, registerRule, registerCost, registerEvaluate, registerAutoMode, registerContext, registerSecret, registerModels, registerPolicy];
+export const PRODUCT_COMMAND_GROUPS: readonly CommandGroup[] = [registerElicit, registerMcp, registerRunTree, registerMemory, registerRule, registerCost, registerReliability, registerEvaluate, registerAutoMode, registerContext, registerSecret, registerModels, registerPolicy];
 
 export const registerProductCommands = (program: Command, deps: ProgramDeps): void => {
   for (const group of PRODUCT_COMMAND_GROUPS) group(program, deps);

@@ -1,3 +1,4 @@
+import { assertsFormat } from './untrusted-engine.ts';
 import type { Engine, EngineValidator, RawError } from './untrusted-engine.ts';
 import { capText, sanitizeServerText } from './untrusted-text.ts';
 
@@ -95,7 +96,7 @@ export const createErrorDescriber = ({ root, rootUri, engine, registry }: { root
     const key = locationKey(branch);
     const cached = probes.get(key);
     if (cached !== undefined) return cached;
-    const compiled = engine.compile({ $id: PROBE_ID, $ref: fragmentUri(branch.uri, branch.pointer) }, probeRegistry);
+    const compiled = engine.compile({ $id: PROBE_ID, ...(assertsFormat(root, registry) ? { $schema: root['$schema'] } : {}), $ref: fragmentUri(branch.uri, branch.pointer) }, probeRegistry);
     probes.set(key, compiled);
     return compiled;
   };

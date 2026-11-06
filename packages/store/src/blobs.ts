@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { immediateTx, modeIsPrivate, sha256Hex, syncDirectorySync, uuidv7 } from '@momonga/foundation';
+import { immediateTx, modeIsPrivate, nodeFileSystemSync, sha256Hex, syncDirectorySync, uuidv7 } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { readerFor } from './rows.ts';
 import type { BlobByteRange, BlobByteSlice, BlobLineRange, BlobRef, BlobScope, BlobSlice, BlobStore } from './types.ts';
@@ -53,7 +53,7 @@ const writeAtomically = (dir: string, target: string, bytes: Uint8Array, clock: 
     fs.rmSync(temp, { force: true });
     throw error;
   }
-  syncDirectorySync(dir);
+  syncDirectorySync(nodeFileSystemSync, dir);
 };
 
 const holdsContent = (target: string, sha256: string, byteLength: number): boolean => {

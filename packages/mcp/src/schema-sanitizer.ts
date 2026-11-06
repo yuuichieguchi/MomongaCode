@@ -19,7 +19,7 @@ const SCHEMA_KEYWORDS = new Set([
   'contentSchema',
 ]);
 const SCHEMA_ARRAY_KEYWORDS = new Set(['allOf', 'anyOf', 'oneOf', 'prefixItems', 'items']);
-const SCHEMA_MAP_KEYWORDS = new Set(['properties', '$defs', 'definitions', 'dependentSchemas', 'dependencies']);
+const SCHEMA_MAP_KEYWORDS = new Set(['properties', 'patternProperties', '$defs', 'definitions', 'dependentSchemas', 'dependencies']);
 
 const isObject = (value: unknown): value is SchemaObject => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -38,16 +38,13 @@ const sanitizeMap = (value: unknown): unknown => {
 };
 
 const sanitizeObject = (schema: SchemaObject): SchemaObject => {
-  const hadPatternProperties = 'patternProperties' in schema;
   const result: SchemaObject = {};
   for (const [keyword, value] of Object.entries(schema)) {
-    if (keyword === 'pattern' || keyword === 'patternProperties') continue;
     if (SCHEMA_MAP_KEYWORDS.has(keyword)) result[keyword] = sanitizeMap(value);
     else if (SCHEMA_ARRAY_KEYWORDS.has(keyword) && Array.isArray(value)) result[keyword] = value.map(sanitizeSubschema);
     else if (SCHEMA_KEYWORDS.has(keyword)) result[keyword] = sanitizeSubschema(value);
     else result[keyword] = value;
   }
-  if (hadPatternProperties && result['additionalProperties'] === false) result['additionalProperties'] = true;
   return result;
 };
 

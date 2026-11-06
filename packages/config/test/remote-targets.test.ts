@@ -246,7 +246,7 @@ describe('targets are user settings only', () => {
     const tree = makeTree();
     writeJson(projectSettingsPath(tree), { models: { targets: { claude: anthropicTarget() } } });
     const result = await loadSettings({ home: tree.home, projectDir: tree.project, cli: {}, trust: trusting(tree) });
-    expect(Object.keys(result.settings.models.targets)).toEqual(['fm']);
+    expect(Object.keys(result.settings.models.targets)).toEqual([]);
     expect(result.warnings.some((warning) => warning.includes('models.targets is only honored in user settings'))).toBe(true);
   });
 });

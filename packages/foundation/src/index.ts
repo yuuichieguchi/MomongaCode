@@ -9,11 +9,12 @@ export { codeDigestOf, codeDigestOfRunningProcess } from './code-digest.ts';
 export type { CodeOrigin } from './code-digest.ts';
 export { systemClock } from './clock.ts';
 export type { Clock } from './clock.ts';
-export { Deadline, realDeadlineTiming } from './deadline.ts';
+export { Deadline } from './deadline.ts';
 export type { DeadlineTiming } from './deadline.ts';
 export { describeFallbackCause } from './fallback-cause.ts';
 export type { FallbackCause } from './fallback-cause.ts';
-export { isRecord, parseJsonOrText } from './json.ts';
+export { isRecord, parseBoundedJson, parseJsonOrText } from './json.ts';
+export type { BoundedJson } from './json.ts';
 export { JsonDepthError, MAX_JSON_DEPTH, checkJsonDepth, parseOutsideJson } from './json-depth.ts';
 export { describeFirstError, jsonReplyInstructions, readJsonReply } from './json-reply.ts';
 export type { JsonReplyInput, JsonReplyPath, JsonReplyRead } from './json-reply.ts';
@@ -25,8 +26,9 @@ export { OUTPUT_READER_TOOL, TRUNCATION_MARKER_SOURCE, truncationMarker } from '
 export { immediateTx, joinedTx, migrate, openDatabase, readTx } from './sqlite.ts';
 export type { MigrateResult, Migration, OpenDatabaseOptions } from './sqlite.ts';
 export { SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS, decodeSse, encodeSse } from './sse.ts';
-export { openCommandFor, openInBrowser } from './open-browser.ts';
-export type { OpenCommand } from './open-browser.ts';
+export { createBrowserOpener, openCommandFor } from './open-browser.ts';
+export type { BrowserOpenerPorts, BrowserRunPort, OpenCommand } from './open-browser.ts';
+export { findProgramOnPath } from './program-search.ts';
 export type { SseEvent } from './sse.ts';
 export { createUdsClient, isUnixSocketLive, listenUnix } from './uds.ts';
 export type { UdsClient, UdsClientOptions, UdsRequestOptions, UdsResponse } from './uds.ts';
@@ -41,8 +43,26 @@ export { createOAuthProvider } from './oauth-provider.ts';
 export type { OAuthProvider, OAuthProviderOptions } from './oauth-provider.ts';
 export { startLoopbackRedirect } from './loopback-redirect.ts';
 export type { LoopbackRedirect, LoopbackRedirectOptions } from './loopback-redirect.ts';
-export { syncDirectory, syncDirectorySync, writeFileAtomically } from './atomic-file.ts';
-export type { AtomicWriteOptions } from './atomic-file.ts';
+export { syncDirectory, syncDirectorySync, writeFileAtomically, writeFileAtomicallySync } from './atomic-file.ts';
+export type {
+  AtomicWriteFileHandle,
+  AtomicWriteFileSystem,
+  AtomicWriteFileSystemSync,
+  AtomicWriteOptions,
+  AtomicWriteOptionsSync,
+  CreateOutcome,
+  FileContent,
+  PublishMode,
+} from './atomic-file.ts';
+export { sleep } from './timing.ts';
+export type { SleepOutcome, Timing } from './timing.ts';
+export { POLL_INTERVAL_MS, waitUntil } from './wait-until.ts';
+export type { WaitOutcome, WaitUntilOptions } from './wait-until.ts';
+export type { Random } from './random.ts';
+export { systemTiming } from './system-timing.ts';
+export { systemRandom } from './system-random.ts';
+export { nodeFileSystem, nodeFileSystemSync } from './node-file-system.ts';
+export type { FileSystemSync } from './node-file-system.ts';
 export { forceKillGroup, groupAlive, groupTerminationBoundMs, realGroupTiming, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from './process-group.ts';
 export type { ForceKillGroupOptions, GroupTiming, ProcessSignalSender, TerminateGroupOptions, TerminateOutcome } from './process-group.ts';
 export { procGroupMembers } from './platform/group-members.ts';
@@ -69,8 +89,8 @@ export type {
   ProcessLockOptions,
 } from './process-lock.ts';
 export { createFileLock, createKernelLockMechanism, darwinFileLock, hostKernelLock, nodeFileLockOps, writeHolderOrRelease } from './platform/kernel-lock.ts';
-export { LOCK_DATABASE_SUFFIX, createSqliteFileLock, nodeSqliteLockOps, sqliteFileLock } from './platform/sqlite-lock.ts';
-export type { OpenLockDatabase, SqliteLockOps } from './platform/sqlite-lock.ts';
+export { LOCK_DATABASE_SUFFIX, createSqliteFileLock, nodeSqliteLockOps, probeRemovesOpenFiles, sqliteFileLock } from './platform/sqlite-lock.ts';
+export type { OpenLockDatabase, SqliteLockOps, UnlinkOpenProbePorts } from './platform/sqlite-lock.ts';
 export { removeFilesThenRelease } from './platform/holder-file.ts';
 export type { LockFileIdentity } from './platform/file-identity.ts';
 export { CLAIM_POLL_MS, claimWithin } from './platform/claim-within.ts';
@@ -81,7 +101,7 @@ export type { ProcessIdentity } from './process-identity.ts';
 export { SessionTmpDirError, adapterSocketPath, ensureMomongaDirs, ensureSessionTmpDir, momongaLayout, momongaPaths, rotatedLogPath } from './momonga-paths.ts';
 export type { MomongaPaths } from './momonga-paths.ts';
 export { createExecWithStdin } from './exec-with-stdin.ts';
-export { secretKeyFile } from './secret-key-file.ts';
+export { createSecretKeyFile, secretKeyFile } from './secret-key-file.ts';
 export {
   KEYCHAIN_SERVICE,
   SECRET_NAME_PATTERN,
@@ -93,13 +113,19 @@ export {
   keychainWriteCommand,
   credentialWriteScript,
   createPlatformSecretStore,
+  secretStoreEnvFor,
+  givenSecretStoreChildEnv,
+  createGivenSecretStore,
+  SECRET_BACKEND_ENV,
+  SECRET_PROGRAM_ENV,
+  SECRET_REFUSAL_ENV,
   createSecretServiceStore,
   createCredentialManagerStore,
   credentialReadScript,
   SECRET_TOOL_BINARY,
 } from './secret-store.ts';
 export type { SecretProcessPort, SecretProcessResult, SecretStore } from './secret-store.ts';
-export type { SecretKeyFileOptions } from './secret-key-file.ts';
+export type { SecretKeyFile, SecretKeyFileOptions } from './secret-key-file.ts';
 export { isLoopbackHost, redactedUrl, transportUrlMessage, transportUrlProblem } from './loopback.ts';
 export type { TransportUrlProblem } from './loopback.ts';
 export {
@@ -138,6 +164,7 @@ export {
   createJsonLogger,
   formatLogLine,
   minimalChildEnv,
+  declaredChildEnv,
   parseReadyLine,
   runtimeMaxCloseMs,
   supervisorMaxCloseMs,
@@ -151,8 +178,11 @@ export { createUninspectableRegistry } from './uninspectable-registry.ts';
 export type { UninspectableRegistry, UninspectableRegistryPorts } from './uninspectable-registry.ts';
 export { isProcessAlive } from './process-alive.ts';
 export type { SignalSender } from './process-alive.ts';
-export { LINUX_SOCKET_PATH_LIMIT, PIPE_NAME_LIMIT, SOCKET_PATH_LIMIT, assertSocketPathLength, isPipePath, pipePathFor, socketPathLimit } from './socket-path.ts';
-export { MAX_SYMLINK_HOPS, canonicalDirectory, canonicalPath, comparableContains, comparableFromParts, comparablePath, containsByComponents, locateThroughFiles, setCaseSensitivityProbe, volumeIsCaseInsensitive, walkPath } from './path-compare.ts';
+export { LINUX_SOCKET_PATH_LIMIT, PIPE_NAME_LIMIT, SOCKET_PATH_LIMIT, assertSocketPathLength, assertUnixSocketPathFits, createSocketPathProbe, isPipePath, setSocketBind, pipePathFor, socketPathLimit } from './socket-path.ts';
+export { MAX_SYMLINK_HOPS, canonicalDirectory, canonicalPath, comparableContains, comparableFromParts, comparablePath, containsByComponents, locateThroughFiles, caseSensitivityOf, setCaseSensitivityProbe, volumeIsCaseInsensitive, walkPath } from './path-compare.ts';
+export type { SocketBind } from './socket-path.ts';
+export { createAsyncCapabilityProbe, createCapabilityProbe, unmeasuredBecause } from './capability-probe.ts';
+export type { CapabilityResult } from './capability-probe.ts';
 export type { CanonicalDirectoryFailureCode, CanonicalDirectoryResult, CaseSensitivityProbe, LocatedParts, PathParts, StepRead, StepReader, WalkEntry, WalkFailure, WalkFailureDetail, WalkFailureReason, WalkResult, WalkStep } from './path-compare.ts';
 export { isTransientErrno } from './transient-errno.ts';
 export { PRIVATE_MODE, PrivateTreeError, assertPrivateRegularFile, directoryFlag, ensureWindowsPrivateTree, modeIsPrivate, noFollowFlag, ownerProblem } from './platform/privacy.ts';
@@ -219,5 +249,7 @@ export type { RemoteDocuments, UntrustedError, UntrustedValidate, UntrustedVerdi
 export { ataEngine } from './untrusted-engine.ts';
 export type { Engine, EngineValidator, EngineVerdict, RawError } from './untrusted-engine.ts';
 export { createUntrustedBoundary, validateUntrusted } from './validate-untrusted.ts';
+export * from './pattern-check.ts';
+export { patternRefusal, renderInstancePath } from './pattern-refusal.ts';
 export { defineProductSchema, productErrorsText, productSchemas } from './product-schema.ts';
 export type { ProductSchema, ProductValidator, ProductVerdict } from './product-schema.ts';
