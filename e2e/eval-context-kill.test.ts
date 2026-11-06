@@ -66,7 +66,7 @@ describe('momonga eval context after SIGKILL', () => {
     const hanging = path.join(home.root, 'hang.json');
     fs.writeFileSync(hanging, datasetOf('hang', HANG_TASK));
 
-    const running = startCli(home, ['eval', 'context', hanging, '--model', 'fake', '--alias', 'default'], { boundMs: 4 * E2E_RUN_COMPLETED_BOUND_MS });
+    const running = startCli(home, ['eval', 'context', hanging, '--alias', 'default'], { boundMs: 4 * E2E_RUN_COMPLETED_BOUND_MS });
     const root = await until(() => rootOwnedBy(running.pid), { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the case home to name its owner' });
     await until(() => chatCompletions(fake).length > 0, { deadlineMs: E2E_RUN_COMPLETED_BOUND_MS, description: 'the case run to reach the upstream' });
     const lock = await inspectProcessLock(momongaLayout(root).locks.supervisor);
@@ -83,7 +83,7 @@ describe('momonga eval context after SIGKILL', () => {
 
     const quick = path.join(home.root, 'quick.json');
     fs.writeFileSync(quick, datasetOf('quick', QUICK_TASK));
-    const next = await runCli(home, ['eval', 'context', quick, '--model', 'fake', '--alias', 'default'], { boundMs: 4 * E2E_RUN_COMPLETED_BOUND_MS });
+    const next = await runCli(home, ['eval', 'context', quick, '--alias', 'default'], { boundMs: 4 * E2E_RUN_COMPLETED_BOUND_MS });
     expect(next.code).toBe(0);
     expect(fs.existsSync(root)).toBe(false);
   });

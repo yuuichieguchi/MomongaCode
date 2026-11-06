@@ -185,7 +185,7 @@ describe('momonga context improve', () => {
     const options = { boundMs, cwd: home.project };
     const fakeOutcome = path.join(home.root, 'fake-outcome.json');
     const realOutcome = path.join(home.root, 'real-outcome.json');
-    const improveArgs = (model: 'fake' | 'real', outcome: string): string[] => ['context', 'improve', '--dataset', dataset, '--model', model, '--alias', 'default', '--seed', '7', '--outcome', outcome];
+    const improveArgs = (model: 'fake' | 'real', outcome: string): string[] => ['context', 'improve', '--dataset', dataset, '--alias', 'default', '--seed', '7', '--outcome', outcome];
 
     const removedFlag = await runCli(home, [...improveArgs('real', realOutcome), '--adopt'], options);
     expect(removedFlag.code).not.toBe(0);
