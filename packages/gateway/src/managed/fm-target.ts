@@ -1,4 +1,5 @@
-import { canonicalJson } from '@momonga/foundation';
+import { canonicalJson, createUdsClient } from '@momonga/foundation';
+import { field, firstOf, parseJson } from '../probe/json.ts';
 import { countReplyOf } from '@momonga/protocol';
 import type { AllowedToolsForm } from '@momonga/protocol';
 import type {
@@ -11,6 +12,7 @@ import type {
   HealthResult,
   InputItem,
   NeedsProbe,
+  Probing,
   OutputBoundField,
   ProbeReport,
   ToolCallingMode,
@@ -33,7 +35,7 @@ import type { EnvelopeShape } from '../probe/envelope.ts';
 import { PROBE_METHOD_VERSION } from '../probe/run-probe.ts';
 import { loadProbeRecord, resolveToolCalling } from '../probe/record.ts';
 import { targetProbingError } from '../probe/auto-probe.ts';
-import type { AutoProbe } from '../probe/auto-probe.ts';
+
 import { declaredDialectRefusal, needsProbeOf } from '../probe/remedy.ts';
 import type { ProbeRecordKey } from '../probe/record.ts';
 import { LICENSE_NOT_ACCEPTED_EXIT_CODE, LICENSE_REMEDIATION, PRECONDITION_MESSAGE, outputOf } from './fm-serve.ts';
@@ -54,7 +56,8 @@ export type ManagedFmTargetOptions = {
   probeRecordDir: string;
   target: string;
   readRecordKey: () => Promise<ProbeRecordKey>;
-  autoProbe: AutoProbe;
+  startProbe: (key: ProbeRecordKey) => Promise<Probing>;
+  declaredCapabilities?: { contextWindow: number; maxOutputTokens: number };
   toolCallingSetting: ToolCallingSetting;
   declaredModel?: string;
   declaredOutputBoundField?: OutputBoundField;
@@ -137,8 +140,8 @@ export const parseCount = (result: ExecResult): number => {
   return Number(text);
 };
 
-const countResultOf = (counted: number, report: ProbeReport): CountTokensResult => {
-  const calibration = report.tokenCalibration;
+const countResultOf = (counted: number, report: ProbeReport | null): CountTokensResult => {
+  const calibration = report?.tokenCalibration;
   if (calibration === undefined) {
     return estimatedCountOf(counted);
   }
@@ -182,9 +185,23 @@ const probedOf = (report: ProbeReport, refusal: NeedsProbe | undefined, modeOf: 
 };
 
 type RecordedFm = {
-  report: ProbeReport;
+  report: ProbeReport | null;
   capabilities: Capabilities;
   isGuardrail: (body: unknown) => boolean;
+};
+
+const listedModelId = async (socketPath: string, signal: AbortSignal): Promise<string> => {
+  const client = createUdsClient(socketPath);
+  try {
+    const response = await client.request({ method: 'GET', path: '/v1/models', signal });
+    const text = await response.text();
+    if (response.status !== 200) throw new Error(`fm serve answered GET /v1/models with HTTP ${response.status}: ${text.slice(0, 200)}`);
+    const id = field(firstOf(field(parseJson(text), 'data')), 'id');
+    if (typeof id !== 'string') throw new Error('fm serve lists no model id at GET /v1/models');
+    return id;
+  } finally {
+    await client.close();
+  }
 };
 
 export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Promise<ManagedFmTarget> => {
@@ -195,6 +212,16 @@ export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Pr
     ...(options.declaredDialect === undefined ? {} : { declaredDialect: options.declaredDialect }),
   };
   const declaredField = options.declaredOutputBoundField === undefined ? {} : { outputBoundField: options.declaredOutputBoundField };
+  const declaredBounds = options.declaredCapabilities;
+  const declaredMode = options.toolCallingSetting === 'auto' ? undefined : options.toolCallingSetting;
+  const declaredOnly: RecordedFm | undefined =
+    declaredBounds === undefined || declaredMode === undefined
+      ? undefined
+      : {
+          report: null,
+          capabilities: { ...recordedDefaults(declaredMode, resolveDialectId(options.declaredDialect, null), declaredBounds), ...declaredField, source: 'declared' },
+          isGuardrail: matchesGuardrailCode,
+        };
 
   const recordedOf = (key: ProbeRecordKey, report: ProbeReport): RecordedFm => {
     const identityText = `the fm binary with sha256 ${key.binarySha256} on OS build ${key.osBuild}`;
@@ -206,7 +233,7 @@ export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Pr
     const probed = probedOf(report, refusedDeclaration, modeOf);
     const capabilities = mergeCapabilities({
       defaults: layerOf(recordedDefaults(refusedDeclaration ?? modeOf(), schemaDialect, probed.measured)).core,
-      declared: { ...declaredField, schemaDialect },
+      declared: { ...declaredField, ...(declaredBounds ?? {}), schemaDialect },
       probed: probed.layer,
       probedAt: report.probedAt,
     });
@@ -218,8 +245,11 @@ export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Pr
     const key = await options.readRecordKey();
     const report = await loadProbeRecord(options.probeRecordDir, key, currency);
     if (report === null) {
-      await options.autoProbe.start(key);
-      throw targetProbingError();
+      if (declaredOnly !== undefined) {
+        recorded = declaredOnly;
+        return recorded;
+      }
+      throw targetProbingError(await options.startProbe(key));
     }
     recorded = recordedOf(key, report);
     return recorded;
@@ -229,13 +259,25 @@ export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Pr
     return recorded;
   };
 
+  let listedModel: Promise<string> | undefined;
+  const upstreamModel = async (_target: AdapterTarget, signal: AbortSignal): Promise<string> => {
+    const knownModel = options.declaredModel ?? lastRecorded().report?.modelId;
+    if (knownModel !== undefined) return knownModel;
+    const { socketPath } = await options.fmServe.ensureRunning();
+    listedModel ??= listedModelId(socketPath, signal).catch((error: unknown) => {
+      listedModel = undefined;
+      throw error;
+    });
+    return listedModel;
+  };
+
   return {
     resolveEndpoint: () => options.fmServe.ensureRunning(),
-    keywordSupport: () => lastRecorded().report.keywordSupport ?? FULL_KEYWORD_SUPPORT,
+    keywordSupport: () => lastRecorded().report?.keywordSupport ?? FULL_KEYWORD_SUPPORT,
     schemaDialect: () => lastRecorded().capabilities.schemaDialect,
-    constructSupport: () => lastRecorded().report.constructSupport,
-    envelopeShape: () => lastRecorded().report.schemaDialect.shape ?? 'union',
-    upstreamModel: async () => options.declaredModel ?? lastRecorded().report.modelId,
+    constructSupport: () => lastRecorded().report?.constructSupport,
+    envelopeShape: () => lastRecorded().report?.schemaDialect.shape ?? 'union',
+    upstreamModel,
     capabilities: async () => ({ ...(await readRecorded()).capabilities, allowedTools: FM_ALLOWED_TOOLS }),
     countTokens: async (_target, request, signal) => {
       const { report } = await readRecorded();

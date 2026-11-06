@@ -61,7 +61,7 @@ const setup = async (options: SetupOptions = {}) => {
     version: PROCESS_VERSION,
     fmBinary: fm.binaryPath,
     exec,
-    logger: createJsonLogger({ service: 'gateway', clock: options.clock ?? { now: () => Date.now() }, stream: { write: (line: string) => logLines.push(line) } }),
+    logger: createJsonLogger({ service: 'gateway', clock: options.clock ?? { now: () => Date.now() }, stream: { write: (line: string) => logLines.push(line) > 0 } }),
     ...(options.clock === undefined ? {} : { clock: options.clock }),
     ...(options.realMeasure === true
       ? {}

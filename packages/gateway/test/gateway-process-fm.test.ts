@@ -213,8 +213,7 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
     });
     const models = await getJson(clientFor(handle.socketPath), '/v1/momonga/models');
     const entry = models.body.data.find((model: { id: string }) => model.id === 'default');
-    expect(entry).not.toHaveProperty('capabilities');
-    expect(entry.probing.message).toBe(TARGET_PROBING_MESSAGE);
+    expect(entry.capabilities).toEqual({ toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 }, source: 'unprobed' });
     expect(measured).toEqual([FAKE_OS_BUILD]);
   });
 });

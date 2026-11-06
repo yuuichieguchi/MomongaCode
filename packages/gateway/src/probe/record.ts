@@ -9,11 +9,11 @@ import { isRecord } from './json.ts';
 import { preconditionOf } from './remedy.ts';
 import { isProbeReport } from './report-schema.ts';
 
-export interface ProbeRecordKey {
+export type ProbeRecordKey = {
   target: string;
   binarySha256: string;
   osBuild: string;
-}
+};
 
 const TARGET_PATTERN = /^[A-Za-z0-9._-]+$/;
 

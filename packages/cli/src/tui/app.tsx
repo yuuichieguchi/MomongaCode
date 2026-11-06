@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useReducer, useRef, useState } from 'react';
 import { Box, Static, Text, useApp, useInput, usePaste, useStdout, useWindowSize } from 'ink';
-import { agentReadiness, autoModeNotice, escapeTerminalBlock, escapeTerminalLine, isProbingEntry } from '@momonga/protocol';
+import { agentReadiness, autoModeNotice, escapeTerminalBlock, escapeTerminalLine, isProbingCapabilities } from '@momonga/protocol';
 import type { AliasCapabilities, ImageAttachment, MomongaModelEntry, PermissionMode, PermissionOption } from '@momonga/protocol';
 import { cleanFailureMessage } from '@momonga/foundation';
 import { currentField, currentRequest, decide, enterValue, leaveFields, withError } from '../elicit/flow.ts';
@@ -308,7 +308,7 @@ export function App(props: AppProps) {
   const [model, setModel] = useState<MomongaModelEntry | undefined>(undefined);
   const [alias, setAlias] = useState<string | undefined>(undefined);
   const [notices, setNotices] = useState<readonly string[]>([]);
-  const capabilities: AliasCapabilities | undefined = model === undefined || isProbingEntry(model) ? undefined : model.capabilities;
+  const capabilities: AliasCapabilities | undefined = model === undefined || isProbingCapabilities(model.capabilities) ? undefined : model.capabilities;
   const [attachments, setAttachmentsState] = useState<readonly Attachment[]>([]);
   const [elicitEditor, setElicitEditor] = useState<EditorState>(emptyEditor());
   const [epoch, setEpoch] = useState(0);
@@ -378,7 +378,7 @@ export function App(props: AppProps) {
 
   const showModel = (entry: MomongaModelEntry): void => {
     setModel(entry);
-    const text = isProbingEntry(entry) ? entry.probing.message : readinessNoticeOf(agentReadiness(entry.capabilities));
+    const text = readinessNoticeOf(agentReadiness(entry.capabilities));
     if (text !== undefined) dispatch({ kind: 'append', entry: { kind: 'notice', level: 'warning', text } });
   };
 

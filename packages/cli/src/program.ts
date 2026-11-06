@@ -93,7 +93,7 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
         const capabilitiesOf = async (alias: string) => {
           const gateway = createGatewayClient({ socketPath: paths.sockets.gateway });
           try {
-            return await gateway.stateOf(alias);
+            return await gateway.capabilitiesOf(alias);
           } finally {
             await gateway.close();
           }

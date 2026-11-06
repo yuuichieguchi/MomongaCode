@@ -24,6 +24,11 @@ import { JSON_MODE_PROBE_REQUEST, measureJsonMode } from './json-mode.ts';
 import type { JsonModeAnswer } from './json-mode.ts';
 import { jsonReplyPlanOf } from '../adapters/shared/json-reply.ts';
 import { OLLAMA_VOCABULARY } from '../adapters/ollama/vocabulary.ts';
+import { recordProbe } from './auto-probe.ts';
+import type { MeasureProbe, ProbePrecondition, ProbeSubject } from './auto-probe.ts';
+import { endpointKeyOfLock, endpointLockKeyOf } from './endpoint-record.ts';
+import type { EndpointLockKey } from './endpoint-record.ts';
+import type { DialectCurrency } from '../dialect/candidates.ts';
 
 export type ProbeOllamaTargetOptions = {
   probeRecordDir: string;
@@ -215,61 +220,103 @@ const ollamaTransport = (client: ProbeClient, model: string, contextWindow: numb
   },
 });
 
-export const probeOllamaTarget = async (options: ProbeOllamaTargetOptions): Promise<ProbeOllamaTargetResult> => {
-  const { model, upstream } = options;
-  const signal = options.signal ?? new AbortController().signal;
-  const { version, show, tags } = await withClient(upstream, signal, async (client) => ({
-    version: await jsonOf(client, 'GET', VERSION_PATH),
-    show: await jsonOf(client, 'POST', SHOW_PATH, { model }),
-    tags: await jsonOf(client, 'GET', TAGS_PATH),
-  }));
-  const serverVersion = versionOf(version);
-  if (serverVersion === undefined) throw new Error(`the server at ${options.key.endpoint} did not answer ${VERSION_PATH} in Ollama's form`);
-  const trained = trainedContextOf(show, model);
-  if (options.contextWindow > trained) {
-    throw new Error(`the context window ${options.contextWindow} is above the trained context length ${trained} of model ${model}`);
-  }
-  const identity = digestIn(tags, model);
-  if (identity === undefined) throw new Error(`the Ollama server does not list model ${model}; pull it with \`ollama pull ${model}\``);
-  const capabilities = capabilitiesOf(show, model);
-  const imageInputAccepted = capabilities.includes('vision');
-  const imageTokens = imageInputAccepted
-    ? await withClient(upstream, signal, (client) => measureImageTokens(imageCostProbeOf(client, model, options.contextWindow)), CACHE_PROBE_TIMEOUT_MS)
-    : undefined;
-  const promptCache = await withClient(upstream, signal, (client) => measurePromptCache(client, model, options.contextWindow), CACHE_PROBE_TIMEOUT_MS);
-  const jsonMode = await measureJsonMode(() => withClient(upstream, signal, (client) => askJsonOnly(client, model, options.contextWindow), CACHE_PROBE_TIMEOUT_MS), signal);
-  const userDialects = options.userDialects ?? NO_USER_DIALECTS;
-  const selection = await withClient(
-    upstream,
-    signal,
-    (client) =>
-      selectDialect({
-        transport: ollamaTransport(client, model, options.contextWindow),
-        samples: options.samples ?? DEFAULT_SAMPLES,
-        userDialects,
-        declaredDialect: options.declaredDialect,
-      }),
-    CACHE_PROBE_TIMEOUT_MS,
-  );
-  const report: OllamaProbeReport = {
-    kind: 'ollama',
-    probedAt: new Date().toISOString(),
-    serverVersion,
-    modelId: model,
-    contextWindow: { value: trained, method: 'reported' },
-    nativeTools: { accepted: capabilities.includes('tools') },
-    imageInputAccepted,
-    ...(imageTokens === undefined ? {} : { imageTokens }),
-    thinkingSupported: capabilities.includes('thinking'),
-    schemaDialect: selection.dialect,
-    ...(promptCache === undefined ? {} : { promptCache }),
-    jsonMode,
+export type OllamaMeasurement = { report: OllamaProbeReport; identity: string };
+
+export type MeasureOllamaOptions = Omit<ProbeOllamaTargetOptions, 'probeRecordDir' | 'key' | 'signal'>;
+
+export const measureOllama =
+  (options: MeasureOllamaOptions): MeasureProbe<EndpointLockKey, OllamaMeasurement> =>
+  async ({ key, signal }) => {
+    const { model, upstream } = options;
+    const { version, show, tags } = await withClient(upstream, signal, async (client) => ({
+      version: await jsonOf(client, 'GET', VERSION_PATH),
+      show: await jsonOf(client, 'POST', SHOW_PATH, { model }),
+      tags: await jsonOf(client, 'GET', TAGS_PATH),
+    }));
+    const serverVersion = versionOf(version);
+    if (serverVersion === undefined) throw new Error(`the server at ${key.endpoint} did not answer ${VERSION_PATH} in Ollama's form`);
+    const trained = trainedContextOf(show, model);
+    if (options.contextWindow > trained) {
+      throw new Error(`the context window ${options.contextWindow} is above the trained context length ${trained} of model ${model}`);
+    }
+    const identity = digestIn(tags, model);
+    if (identity === undefined) throw new Error(`the Ollama server does not list model ${model}; pull it with \`ollama pull ${model}\``);
+    const capabilities = capabilitiesOf(show, model);
+    const imageInputAccepted = capabilities.includes('vision');
+    const imageTokens = imageInputAccepted
+      ? await withClient(upstream, signal, (client) => measureImageTokens(imageCostProbeOf(client, model, options.contextWindow)), CACHE_PROBE_TIMEOUT_MS)
+      : undefined;
+    const promptCache = await withClient(upstream, signal, (client) => measurePromptCache(client, model, options.contextWindow), CACHE_PROBE_TIMEOUT_MS);
+    const jsonMode = await measureJsonMode(() => withClient(upstream, signal, (client) => askJsonOnly(client, model, options.contextWindow), CACHE_PROBE_TIMEOUT_MS), signal);
+    const userDialects = options.userDialects ?? NO_USER_DIALECTS;
+    const selection = await withClient(
+      upstream,
+      signal,
+      (client) =>
+        selectDialect({
+          transport: ollamaTransport(client, model, options.contextWindow),
+          samples: options.samples ?? DEFAULT_SAMPLES,
+          userDialects,
+          declaredDialect: options.declaredDialect,
+        }),
+      CACHE_PROBE_TIMEOUT_MS,
+    );
+    const report: OllamaProbeReport = {
+      kind: 'ollama',
+      probedAt: new Date().toISOString(),
+      serverVersion,
+      modelId: model,
+      contextWindow: { value: trained, method: 'reported' },
+      nativeTools: { accepted: capabilities.includes('tools') },
+      imageInputAccepted,
+      ...(imageTokens === undefined ? {} : { imageTokens }),
+      thinkingSupported: capabilities.includes('thinking'),
+      schemaDialect: selection.dialect,
+      ...(promptCache === undefined ? {} : { promptCache }),
+      jsonMode,
+    };
+    return { report, identity };
   };
-  const { key } = options;
-  await saveEndpointRecord(options.probeRecordDir, key, identity, [], report, {
-    userDialects,
-    probeMethod: PROBE_METHOD_VERSION,
-    ...(options.declaredDialect === undefined ? {} : { declaredDialect: options.declaredDialect }),
+
+export const ollamaPrecondition = (upstream: UpstreamEndpoint, model: string): ProbePrecondition => ({
+  boundMs: IDENTITY_READ_TIMEOUT_MS,
+  check: async (signal) => {
+    const tags = await withClient(upstream, signal, (client) => jsonOf(client, 'GET', TAGS_PATH));
+    if (digestIn(tags, model) !== undefined) return { kind: 'met' };
+    return { kind: 'refused', message: `the Ollama server does not list the model "${model}"`, detail: `GET ${TAGS_PATH} has no entry for it`, remedy: `ollama pull ${model}` };
+  },
+});
+
+export type OllamaProbeSubjectOptions = {
+  target: string;
+  key: EndpointKey;
+  probeRecordDir: string;
+  precondition: ProbePrecondition;
+  measure: MeasureProbe<EndpointLockKey, OllamaMeasurement>;
+  currency: DialectCurrency;
+};
+
+export const ollamaProbeSubject = (options: OllamaProbeSubjectOptions): ProbeSubject<EndpointLockKey, OllamaMeasurement> => ({
+  target: options.target,
+  readKey: async () => endpointLockKeyOf(options.key),
+  precondition: options.precondition,
+  measure: options.measure,
+  save: (key, measured) => saveEndpointRecord(options.probeRecordDir, endpointKeyOfLock(key), measured.identity, [], measured.report, options.currency),
+});
+
+export const probeOllamaTarget = async (options: ProbeOllamaTargetOptions): Promise<ProbeOllamaTargetResult> => {
+  const subject = ollamaProbeSubject({
+    target: endpointLockKeyOf(options.key).target,
+    key: options.key,
+    probeRecordDir: options.probeRecordDir,
+    precondition: ollamaPrecondition(options.upstream, options.model),
+    measure: measureOllama(options),
+    currency: {
+      userDialects: options.userDialects ?? NO_USER_DIALECTS,
+      probeMethod: PROBE_METHOD_VERSION,
+      ...(options.declaredDialect === undefined ? {} : { declaredDialect: options.declaredDialect }),
+    },
   });
-  return { report, key, identity };
+  const { report: measured } = await recordProbe(subject, options.probeRecordDir, options.signal ?? new AbortController().signal);
+  return { report: measured.report, key: options.key, identity: measured.identity };
 };

@@ -32,6 +32,7 @@ import type { ChatWire } from './wire.ts';
 import { NO_USER_DIALECTS, resolveDialect } from '../../dialect/choice.ts';
 import { RenderLedger } from '../../dialect/ledger.ts';
 import { FULL_KEYWORD_SUPPORT } from '../../dialect/keyword-support.ts';
+import { targetProbingError } from '../../probe/auto-probe.ts';
 
 const DONE_MARKER = '[DONE]';
 
@@ -42,7 +43,10 @@ const PINNING_CONSTRAINED_TOOL_CHOICE: ToolChoiceWire = { forms: ['envelope', 's
 const LITERALLESS_CONSTRAINED_TOOL_CHOICE: ToolChoiceWire = { forms: ['filter'], expressesRequired: true };
 
 const modeOf = ({ toolCalling }: Capabilities): ToolCallingMode => {
-  if (typeof toolCalling !== 'string') throw new PreconditionFailedError(toolCalling.message, toolCalling.evidence, toolCalling.remedy);
+  if (typeof toolCalling !== 'string') {
+    if (toolCalling.state === 'probing') throw targetProbingError(toolCalling);
+    throw new PreconditionFailedError(toolCalling.message, toolCalling.evidence, toolCalling.remedy);
+  }
   return toolCalling;
 };
 

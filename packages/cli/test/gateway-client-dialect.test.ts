@@ -40,7 +40,7 @@ const serveModels = async (context: TestContext, schemaDialect: unknown): Promis
 describe('the gateway client reads a dialect id as an open string', () => {
   it.for(['json-schema-2020-12', 'explicit-keys', 'strict-closed', 'inlined-subset', 'ordered-subset'])('accepts the dialect id %s', async (id, context) => {
     const client = await serveModels(context, id);
-    expect((await client.capabilitiesOf('default')).schemaDialect).toBe(id);
+    expect(await client.capabilitiesOf('default')).toMatchObject({ schemaDialect: id });
   });
 
   it.for([

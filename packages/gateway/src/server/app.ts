@@ -2,7 +2,17 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER } from '@momonga/protocol';
 import { MAX_BILLED_CALLS_PAGE } from '@momonga/observability';
-import { isTargetProbing } from '../probe/auto-probe.ts';
+import { isTargetProbing, probingOf } from '../probe/auto-probe.ts';
+import type { ProbingCapabilities } from '@momonga/protocol';
+
+const probingOr = async <Measured>(capabilities: Promise<Measured>): Promise<Measured | ProbingCapabilities> => {
+  try {
+    return await capabilities;
+  } catch (error) {
+    if (!isTargetProbing(error)) throw error;
+    return { toolCalling: probingOf(error), source: 'unprobed' };
+  }
+};
 import type { BilledCallsCursorView, BilledCallsPageView, GatewayCostReportView, GatewayHealth, ModelList, MomongaModelList } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, invalidRequest, notFound } from '../core/errors.ts';
 import type { ResponsesService, SubmitHeaders } from '../core/responses-service.ts';
@@ -162,16 +172,11 @@ export const createApp = (dependencies: AppDependencies): Hono => {
           targets: targets.map((target) => target.name),
           targetCounters: Object.fromEntries(targets.map((target) => [target.name, target.counter])),
         };
-        try {
-          return {
-            ...identity,
-            capabilities: await services.router.aliasCapabilitiesOf(id),
-            targetCapabilities: Object.fromEntries(await Promise.all(targets.map(async (target) => [target.name, await services.router.capabilitiesOf(target)] as const))),
-          };
-        } catch (error) {
-          if (!isTargetProbing(error)) throw error;
-          return { ...identity, probing: { message: error.body.message, retryAfterSeconds: Number(error.headers['retry-after']) } };
-        }
+        return {
+          ...identity,
+          capabilities: await probingOr(services.router.aliasCapabilitiesOf(id)),
+          targetCapabilities: Object.fromEntries(await Promise.all(targets.map(async (target) => [target.name, await probingOr(services.router.capabilitiesOf(target))] as const))),
+        };
       }),
     );
     const list: MomongaModelList = { object: 'list', data };

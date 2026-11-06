@@ -1,22 +1,12 @@
 import { createUdsClient, isRecord } from '@momonga/foundation';
-import { JSON_MODES, isProbingEntry, isToolCallingState } from '@momonga/protocol';
-import type { AliasCapabilities, Capabilities, ModelProbing, MomongaModelEntry, MomongaModelList, UsageReport } from '@momonga/protocol';
+import { JSON_MODES, agentReadiness, isProbingCapabilities, isToolCallingState } from '@momonga/protocol';
+import type { AliasCapabilities, Capabilities, MomongaModelEntry, MomongaModelList, ProbingCapabilities, UsageReport } from '@momonga/protocol';
 
-export class ModelProbingError extends Error {
-  readonly retryAfterSeconds: number;
-
-  constructor(probing: ModelProbing['probing']) {
-    super(probing.message);
-    this.name = 'ModelProbingError';
-    this.retryAfterSeconds = probing.retryAfterSeconds;
-  }
-}
 
 export type GatewayClient = {
   models(): Promise<readonly MomongaModelEntry[]>;
   modelOf(alias: string): Promise<MomongaModelEntry>;
-  stateOf(alias: string): Promise<AliasCapabilities | ModelProbing>;
-  capabilitiesOf(alias: string): Promise<AliasCapabilities>;
+  capabilitiesOf(alias: string): Promise<AliasCapabilities | ProbingCapabilities>;
   contextWindowOf(alias: string): Promise<number>;
   usageOf(runId: string): Promise<UsageReport>;
   close(): Promise<void>;
@@ -44,8 +34,7 @@ const isCapabilities = (value: unknown): value is Capabilities =>
   (value['tokenErrorRatio'] === undefined || typeof value['tokenErrorRatio'] === 'number') &&
   (value['probedAt'] === undefined || typeof value['probedAt'] === 'string');
 
-const isProbing = (value: unknown): value is ModelProbing['probing'] =>
-  isRecord(value) && typeof value['message'] === 'string' && typeof value['retryAfterSeconds'] === 'number';
+const isProbingListing = (value: unknown): boolean => isRecord(value) && isToolCallingState(value['toolCalling']) && agentReadiness({ toolCalling: value['toolCalling'] }).state === 'probing';
 
 const isModelList = (value: unknown): value is MomongaModelList =>
   isRecord(value) &&
@@ -56,7 +45,7 @@ const isModelList = (value: unknown): value is MomongaModelList =>
       typeof entry['id'] === 'string' &&
       Array.isArray(entry['targets']) &&
       entry['targets'].every((target) => typeof target === 'string') &&
-      (isCapabilities(entry['capabilities']) || isProbing(entry['probing'])),
+      (isCapabilities(entry['capabilities']) || isProbingListing(entry['capabilities'])),
   );
 
 const isCount = (value: unknown): boolean => typeof value === 'number' && Number.isInteger(value) && value >= 0;
@@ -93,18 +82,13 @@ export const createGatewayClient = (options: { socketPath: string }): GatewayCli
     return entry;
   };
 
-  const stateOf = async (alias: string): Promise<AliasCapabilities | ModelProbing> => {
-    const entry = await modelOf(alias);
-    return isProbingEntry(entry) ? { probing: entry.probing } : entry.capabilities;
-  };
+  const capabilitiesOf = async (alias: string): Promise<AliasCapabilities | ProbingCapabilities> => (await modelOf(alias)).capabilities;
 
-  const capabilitiesOf = async (alias: string): Promise<AliasCapabilities> => {
-    const entry = await modelOf(alias);
-    if (isProbingEntry(entry)) throw new ModelProbingError(entry.probing);
-    return entry.capabilities;
+  const contextWindowOf = async (alias: string): Promise<number> => {
+    const capabilities = await capabilitiesOf(alias);
+    if (isProbingCapabilities(capabilities)) throw new Error(capabilities.toolCalling.message);
+    return capabilities.contextWindow;
   };
-
-  const contextWindowOf = async (alias: string): Promise<number> => (await capabilitiesOf(alias)).contextWindow;
 
   const usageOf = async (runId: string): Promise<UsageReport> => {
     const path = `/v1/momonga/usage?run_id=${encodeURIComponent(runId)}`;
@@ -113,5 +97,5 @@ export const createGatewayClient = (options: { socketPath: string }): GatewayCli
     return body;
   };
 
-  return { models, modelOf, stateOf, capabilitiesOf, contextWindowOf, usageOf, close: () => http.close() };
+  return { models, modelOf, capabilitiesOf, contextWindowOf, usageOf, close: () => http.close() };
 };

@@ -8,6 +8,7 @@ import { readFileTool, startFake } from './cc-support.ts';
 import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, until, writeSettings } from './gateway-process-helpers.ts';
 import { makeReport } from './report-fixture.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
+import { TARGET_PROBING } from '@momonga/protocol';
 
 const request = { model: 'fast', input: userInput('call read_file for a.txt'), tools: [readFileTool] };
 
@@ -43,16 +44,14 @@ const probedSetup = async (models: () => Array<Record<string, unknown>>) => {
 };
 
 describe('chat-completions target with toolCalling auto', () => {
-  it('fails a call with a message that names the target and the probe command when no record exists', async () => {
+  it('answers a call 503 target_probing and starts the probe when no record exists', async () => {
     const { home, fake } = await autoSetup();
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, measureEndpoint: () => new Promise(() => undefined), measureOllama: () => new Promise(() => undefined) });
 
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', request));
 
-    expect(response.status).toBe(412);
-    expect(response.body.error.code).toBe('precondition_failed');
-    expect(response.body.error.message).toContain('local');
-    expect(response.body.error.message).toContain('momonga gateway probe local');
+    expect(response.status).toBe(503);
+    expect(response.body.error.code).toBe(TARGET_PROBING);
     expect(completions(fake)).toEqual([]);
   });
 
@@ -105,16 +104,15 @@ describe('chat-completions target with toolCalling auto', () => {
     expect(completions(fake)).toEqual([]);
   });
 
-  it('fails a call with precondition_failed naming the probe command when the record was saved by an older probe method', async () => {
+  it('treats a record saved by an older probe method as no record: 503 target_probing and a new probe', async () => {
     const { home, fake, probeDir, endpoint, identity, identityFields } = await autoSetup();
     await saveEndpointRecord(probeDir, { endpoint, model: 'system' }, identity, identityFields, makeReport(1, 1), { ...CURRENT_DIALECTS, probeMethod: PROBE_METHOD_VERSION - 1 });
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, measureEndpoint: () => new Promise(() => undefined), measureOllama: () => new Promise(() => undefined) });
 
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', request));
 
-    expect(response.status).toBe(412);
-    expect(response.body.error.code).toBe('precondition_failed');
-    expect(response.body.error.message).toContain('momonga gateway probe local');
+    expect(response.status).toBe(503);
+    expect(response.body.error.code).toBe(TARGET_PROBING);
     expect(completions(fake)).toEqual([]);
   });
 

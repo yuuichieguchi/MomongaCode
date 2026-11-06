@@ -48,12 +48,15 @@ export type TargetCapabilities = TargetCapabilitiesCore & DeclaredImage;
 export type DeclaredTargetCapabilities = Pick<TargetCapabilitiesCore, 'contextWindow' | 'maxOutputTokens'> &
   Partial<TargetCapabilitiesCore> & { imageInput?: boolean; imageTokens?: ImageTokenModel };
 
+export type FmDeclaredCapabilities = { contextWindow: number; maxOutputTokens: number };
+
 export type FmTarget = {
   adapter: 'fm';
   answers?: TargetAnswers;
   model?: string;
   outputBoundField?: OutputBoundField;
   toolCalling?: FmToolCalling;
+  capabilities?: FmDeclaredCapabilities;
   maxConcurrency?: number;
   admissionTimeoutMs?: number;
 };
@@ -148,6 +151,7 @@ export type ResolvedFmTarget = {
   model?: string;
   outputBoundField?: OutputBoundField;
   toolCalling: FmToolCalling;
+  capabilities?: FmDeclaredCapabilities;
   billing: 'local';
   maxConcurrency: number;
   admissionTimeoutMs: number;

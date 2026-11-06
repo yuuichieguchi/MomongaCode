@@ -1,5 +1,6 @@
 import { LOWEST_REASONING_EFFORT, imageCapability } from '@momonga/protocol';
-import type { Capabilities } from '@momonga/protocol';
+import type { Capabilities, Probing } from '@momonga/protocol';
+import { targetProbingError } from './auto-probe.ts';
 import { PreconditionFailedError } from '../adapters/shared/failures.ts';
 import type { OllamaEndpointRecord } from './endpoint-record.ts';
 import { resolveDialectId } from '../dialect/resolve-id.ts';
@@ -15,6 +16,8 @@ export type ProbedOllamaTargetOptions = {
   model: string;
   declared: DeclaredCapabilities;
   record: OllamaEndpointRecord | null;
+  readRecord: () => Promise<OllamaEndpointRecord | null>;
+  startProbe: () => Promise<Probing>;
   readDigest: (signal: AbortSignal) => Promise<string | undefined>;
 };
 
@@ -24,7 +27,8 @@ export type ProbedOllamaTarget = {
 };
 
 export const createProbedOllamaTarget = (options: ProbedOllamaTargetOptions): ProbedOllamaTarget => {
-  const { targetName, endpoint, model, declared, record } = options;
+  const { targetName, endpoint, model, declared } = options;
+  let { record } = options;
   const declaredParts = layerOf(declared);
   const needsProbe = needsProbeOf(
     targetName,
@@ -47,7 +51,8 @@ export const createProbedOllamaTarget = (options: ProbedOllamaTargetOptions): Pr
   return {
     verify: memoizedVerification(verifyOnce),
     capabilities: async () => {
-      if (record === null) return { ...withImageDefault(declared), toolCalling: needsProbe, source: 'unprobed' };
+      record = await options.readRecord();
+      if (record === null) throw targetProbingError(await options.startProbe());
       const { report } = record;
       return mergeCapabilities({
         defaults: { ...declaredParts.core, schemaDialect: resolveDialectId(declared.schemaDialect, report) },

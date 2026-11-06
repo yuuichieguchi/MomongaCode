@@ -11,7 +11,7 @@ import {
   createManagedFmTarget,
   saveProbeRecord,
 } from '@momonga/gateway';
-import type { AutoProbe, ExecResult, FmServe, FmServeTimers, ManagedFmTarget, ProbeRecordKey } from '@momonga/gateway';
+import type { ExecResult, FmServe, FmServeTimers, ManagedFmTarget, ProbeRecordKey } from '@momonga/gateway';
 import { ESTIMATED_ERROR_SHAPE, TARGET_PROBING, errorBoundOfShape } from '@momonga/protocol';
 import type { ProbeReport } from '@momonga/protocol';
 import { FAKE_DETERMINISTIC_REPLY, createFakeClock, startFakeChatCompletions } from '@momonga/testkit';
@@ -20,7 +20,8 @@ import { START_MS, getJson, makeDir, postJson, readJson, registerCleanup, startG
 import { TARGET, collect, outputTextOf, userText } from './cc-support.ts';
 import { makeReport } from './report-fixture.ts';
 import { PROBE_METHOD_VERSION } from '../src/probe/run-probe.ts';
-import { recordKeyOptions } from './fm-record-support.ts';
+import { probingAnswer, recordKeyOptions } from './fm-record-support.ts';
+import type { Probing } from '@momonga/protocol';
 
 const BINARY = '/usr/bin/fm';
 const POLL_MS = 25;
@@ -91,11 +92,9 @@ const setup = async (config: Setup = {}) => {
   const recorded = config.unprobed === true ? undefined : (config.report ?? UNCALIBRATED_REPORT);
   if (recorded !== undefined) await saveProbeRecord(recordDir, RECORD_KEY, recorded, { userDialects: {}, probeMethod: PROBE_METHOD_VERSION });
   const probeStarts: ProbeRecordKey[] = [];
-  const autoProbe: AutoProbe = {
-    start: async (key) => {
-      probeStarts.push(key);
-    },
-    close: async () => undefined,
+  const startProbe = async (key: ProbeRecordKey): Promise<Probing> => {
+    probeStarts.push(key);
+    return probingAnswer();
   };
   const clock = createFakeClock(START_MS);
   const children: FakeFmChild[] = [];
@@ -140,7 +139,7 @@ const setup = async (config: Setup = {}) => {
     binary: BINARY,
     exec,
     probeRecordDir: recordDir,
-    ...recordKeyOptions(RECORD_KEY, autoProbe),
+    ...recordKeyOptions(RECORD_KEY, startProbe),
     toolCallingSetting: config.report === undefined ? 'native' : 'auto',
   });
   if (recorded !== undefined) await managed.capabilities(TARGET);

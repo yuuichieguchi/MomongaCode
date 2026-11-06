@@ -10,6 +10,7 @@ import { isProbeReport } from '../src/probe/report-schema.ts';
 import { makeDir } from './gateway-helpers.ts';
 import { OLLAMA_MODEL, startFakeOllama } from './ollama-support.ts';
 import { REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
+import { NO_PROBE_START } from './fm-record-support.ts';
 
 type CachingBehaviour = 'automatic' | 'none' | 'unreported' | 'malformed';
 
@@ -194,6 +195,8 @@ describe('the probed prompt cache becomes the target capability', () => {
       model: 'm',
       declared,
       record: { identity: 'id', identityFields: [], report },
+      readRecord: async () => ({ identity: 'id', identityFields: [], report }),
+      startProbe: NO_PROBE_START,
       readIdentity: async () => 'id',
       saveRecord: async () => undefined,
     });

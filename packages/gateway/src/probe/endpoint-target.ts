@@ -1,5 +1,6 @@
 import { endpointKeyOf } from '@momonga/config';
-import type { Capabilities, ConstructSupport, DialectId } from '@momonga/protocol';
+import type { Capabilities, ConstructSupport, DialectId, Probing } from '@momonga/protocol';
+import { targetProbingError } from './auto-probe.ts';
 import type { UpstreamEndpoint } from '../adapters/shared/http-client.ts';
 import { PreconditionFailedError, StreamFailure, UpstreamHttpError } from '../adapters/shared/failures.ts';
 import { FULL_KEYWORD_SUPPORT } from '../dialect/keyword-support.ts';
@@ -117,6 +118,8 @@ export type ProbedEndpointTargetOptions = {
   model: string;
   declared: DeclaredCapabilities;
   record: EndpointRecord | null;
+  readRecord: () => Promise<EndpointRecord | null>;
+  startProbe: () => Promise<Probing>;
   readIdentity: (fields: readonly string[], signal: AbortSignal) => Promise<string>;
   saveRecord: (record: EndpointRecord) => Promise<void>;
 };
@@ -184,7 +187,8 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
     verify,
     raiseHeadroom,
     capabilities: async () => {
-      if (record === null) return { ...withImageDefault(declared), toolCalling: needsProbe, source: 'unprobed' };
+      record = await options.readRecord();
+      if (record === null) throw targetProbingError(await options.startProbe());
       const refusal = declaredDialectRefusal(targetName, declared.schemaDialect, record.report.schemaDialect, `the server at ${endpoint} for model ${model}`);
       const decision = decideToolCalling(record.report);
       const { toolCalling, structuredOutput, jsonMode, streaming, stopSequences, outputBoundField, parallelToolCalls, usageReported, reasoning, promptCache } = capabilitiesFromProbe(

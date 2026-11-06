@@ -1,4 +1,4 @@
-import { PERMISSION_MODES, isProbingEntry } from '@momonga/protocol';
+import { PERMISSION_MODES, isProbingCapabilities } from '@momonga/protocol';
 import type { PermissionMode } from '@momonga/protocol';
 import { selectableModes } from '../modes.ts';
 import type { ModeAvailability } from '../modes.ts';
@@ -138,7 +138,7 @@ const model: SlashCommand = {
       context.info(
         [
           'models (the current one is marked *):',
-          ...entries.map((entry) => `  ${entry.id === context.modelAlias ? '*' : ' '} ${entry.id}  ${isProbingEntry(entry) ? entry.probing.message : `${entry.capabilities.contextWindow}-token window`}`),
+          ...entries.map((entry) => `  ${entry.id === context.modelAlias ? '*' : ' '} ${entry.id}  ${isProbingCapabilities(entry.capabilities) ? entry.capabilities.toolCalling.message : `${entry.capabilities.contextWindow}-token window`}`),
           'switch with /model <alias>; a change applies from the next task',
         ].join('\n'),
       );

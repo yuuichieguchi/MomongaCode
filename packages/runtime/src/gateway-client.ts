@@ -1,7 +1,7 @@
 import { createUdsClient, decodeSse, parseRetryAfter } from '@momonga/foundation';
 import type { UdsClient, UdsResponse } from '@momonga/foundation';
-import { COMPACTION_RESULT_EVENT, DEFERRED_HEADER, ERROR_TYPES, ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER, TARGET_PROBING } from '@momonga/protocol';
-import type { BilledCallsCursorView, BilledCallsPageView, GatewayCostReportView, HeaderRole, ModelProbing } from '@momonga/protocol';
+import { COMPACTION_RESULT_EVENT, DEFERRED_HEADER, ERROR_TYPES, ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER, TARGET_PROBING, agentReadiness, isToolCallingState } from '@momonga/protocol';
+import type { BilledCallsCursorView, BilledCallsPageView, GatewayCostReportView, HeaderRole } from '@momonga/protocol';
 
 const MS_PER_SECOND = 1000;
 import type {
@@ -70,9 +70,10 @@ export type GatewayModel = {
   targetCounters: Record<string, string>;
 };
 
-export type ProbingGatewayModel = Pick<GatewayModel, 'id' | 'targets' | 'targetCounters'> & ModelProbing;
-
-export type ListedGatewayModel = GatewayModel | ProbingGatewayModel;
+export type ListedGatewayModel = Pick<GatewayModel, 'id' | 'targets' | 'targetCounters'> & {
+  capabilities: Record<string, unknown>;
+  targetCapabilities: Record<string, Record<string, unknown>>;
+};
 
 export type GatewayClient = GatewayPort & {
   models(): Promise<ListedGatewayModel[]>;
@@ -292,21 +293,13 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
       if (!Array.isArray(targets) || !targets.every((target) => typeof target === 'string') || !isRecord(counters) || !targets.every((target) => typeof counters[target] === 'string')) {
         throw invalidResponse('the model list holds an entry without its targets and their counters');
       }
-      const identity = { id: entry['id'], targets, targetCounters: counters as Record<string, string> };
-      const probing = entry['probing'];
-      if (probing !== undefined) {
-        if (!isRecord(probing) || typeof probing['message'] !== 'string' || typeof probing['retryAfterSeconds'] !== 'number') {
-          throw invalidResponse('the model list holds a probing entry without its message and Retry-After');
-        }
-        return { ...identity, probing: { message: probing['message'], retryAfterSeconds: probing['retryAfterSeconds'] } };
-      }
       if (!isRecord(entry['capabilities']) || !isRecord(entry['targetCapabilities'])) throw invalidResponse('the model list holds a malformed entry');
       return {
-        id: identity.id,
+        id: entry['id'],
         targets,
-        capabilities: entry['capabilities'] as Capabilities,
-        targetCapabilities: entry['targetCapabilities'] as Record<string, Capabilities>,
-        targetCounters: identity.targetCounters,
+        capabilities: entry['capabilities'],
+        targetCapabilities: entry['targetCapabilities'] as Record<string, Record<string, unknown>>,
+        targetCounters: counters as Record<string, string>,
       };
     });
   };
@@ -316,10 +309,14 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
     if (found === undefined) {
       throw new GatewayRequestError({ status: 404, type: 'not_found', code: 'model_not_found', message: `the gateway does not list the model "${alias}"`, param: 'model' });
     }
-    if ('probing' in found) {
-      throw new GatewayRequestError({ status: 503, type: 'server_error', code: TARGET_PROBING, message: found.probing.message, retryAfterMs: found.probing.retryAfterSeconds * MS_PER_SECOND });
+    const { toolCalling } = found.capabilities;
+    if (isToolCallingState(toolCalling)) {
+      const readiness = agentReadiness({ toolCalling });
+      if (readiness.state === 'probing') {
+        throw new GatewayRequestError({ status: 503, type: 'server_error', code: TARGET_PROBING, message: readiness.message, retryAfterMs: readiness.retryAfterSeconds * MS_PER_SECOND });
+      }
     }
-    return found;
+    return { ...found, capabilities: found.capabilities as Capabilities, targetCapabilities: found.targetCapabilities as Record<string, Capabilities> };
   };
 
   const timedChunksOf = async function* (guard: Guard, response: UdsResponse): AsyncGenerator<Uint8Array> {

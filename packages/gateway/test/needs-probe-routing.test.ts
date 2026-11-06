@@ -10,7 +10,7 @@ import { OLLAMA_MODEL, startFakeOllama } from './ollama-support.ts';
 
 type Kind = 'fm' | 'chat-completions' | 'ollama';
 
-const ENDPOINT_KINDS: readonly Kind[] = ['chat-completions', 'ollama'];
+const KINDS: readonly Kind[] = ['fm', 'chat-completions', 'ollama'];
 
 const servePidsOf = (dumpFile: string): number[] =>
   fs.existsSync(dumpFile)
@@ -49,6 +49,8 @@ const launch = async (kind: Kind, aliasTargets: readonly string[], extraTargets:
     version: PROCESS_VERSION,
     exec: fakeExec,
     measureFm: () => new Promise(() => undefined),
+    measureEndpoint: () => new Promise(() => undefined),
+    measureOllama: () => new Promise(() => undefined),
     ...(fmBinary === undefined ? {} : { fmBinary }),
   });
   return clientFor(handle.socketPath);
@@ -56,56 +58,20 @@ const launch = async (kind: Kind, aliasTargets: readonly string[], extraTargets:
 
 const completionRequests = (fake: Awaited<ReturnType<typeof startFake>>) => fake.requests.filter((entry) => entry.path === '/v1/chat/completions');
 
-describe.each(ENDPOINT_KINDS)('an unprobed auto %s target through the router', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, (kind) => {
-  it('reports the needs-probe state with the probe remedy in the model listing', async () => {
+describe.each(KINDS)('an auto %s target with no probe record through the router', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, (kind) => {
+  it('lists the alias with the probing readiness state and no capability numbers', async () => {
     const client = await launch(kind, ['local'], {});
-
-    const models = await getJson(client, '/v1/momonga/models');
-
-    const entry = models.body.data.find((model: { id: string }) => model.id === 'fast');
-    expect(entry.capabilities.toolCalling.state).toBe('needs_probe');
-    expect(entry.targetCapabilities.local.toolCalling.state).toBe('needs_probe');
-    expect(entry.targetCapabilities.local.toolCalling.remedy).toBe('run `momonga gateway probe local`');
-  });
-
-  it('refuses a request with tools with precondition_failed and the probe remedy', async () => {
-    const client = await launch(kind, ['local'], {});
-
-    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('call read_file for a.txt'), tools: [readFileTool] }));
-
-    expect(response.status).toBe(412);
-    expect(response.body.error.code).toBe('precondition_failed');
-    expect(response.body.error.message).toContain('momonga gateway probe local');
-  });
-
-  it('does not reroute a request with tools to the next target of the alias', async () => {
-    const second = await startFake({ scenario: 'tools-ok' });
-    const client = await launch(kind, ['local', 'backup'], { backup: ccTarget(second.socketPath, { toolCalling: 'native' }) });
-
-    const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('call read_file for a.txt'), tools: [readFileTool] }));
-
-    expect(response.status).toBe(412);
-    expect(response.body.error.code).toBe('precondition_failed');
-    expect(response.body.error.message).toContain('momonga gateway probe local');
-    expect(completionRequests(second)).toEqual([]);
-  });
-});
-
-describe('an fm target with no probe record through the router', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
-  it('lists the alias as probing, with no capability', async () => {
-    const client = await launch('fm', ['local'], {});
     await postJson(client, '/v1/responses', { model: 'fast', input: userInput('call read_file for a.txt'), tools: [readFileTool] });
 
     const models = await getJson(client, '/v1/momonga/models');
 
     const entry = models.body.data.find((model: { id: string }) => model.id === 'fast');
-    expect(entry.probing.message).toBe(TARGET_PROBING_MESSAGE);
-    expect(entry).not.toHaveProperty('capabilities');
+    expect(entry.capabilities).toEqual({ toolCalling: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 }, source: 'unprobed' });
   });
 
   it('answers a request with tools 503 target_probing and does not reroute it to the next target of the alias', async () => {
     const second = await startFake({ scenario: 'tools-ok' });
-    const client = await launch('fm', ['local', 'backup'], { backup: ccTarget(second.socketPath, { toolCalling: 'native' }) });
+    const client = await launch(kind, ['local', 'backup'], { backup: ccTarget(second.socketPath, { toolCalling: 'native' }) });
 
     const response = await readJson(await postJson(client, '/v1/responses', { model: 'fast', input: userInput('call read_file for a.txt'), tools: [readFileTool] }));
 

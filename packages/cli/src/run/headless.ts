@@ -1,6 +1,6 @@
 import type { MomongaPaths } from '@momonga/foundation';
 import { TARGET_NOT_READY, agentReadiness, readinessText } from '@momonga/protocol';
-import type { AliasCapabilities, ModelProbing, PermissionMode, PublicRunEvent } from '@momonga/protocol';
+import type { AliasCapabilities, PermissionMode, ProbingCapabilities, PublicRunEvent } from '@momonga/protocol';
 import { noTargetLines } from '../readiness.ts';
 import { RunApiError } from '../client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
@@ -33,7 +33,7 @@ export type HeadlessOptions = {
   permissionMode?: PermissionMode;
   bypassAllowed?: boolean;
   modelAlias?: string;
-  capabilitiesOf(alias: string): Promise<AliasCapabilities | ModelProbing>;
+  capabilitiesOf(alias: string): Promise<AliasCapabilities | ProbingCapabilities>;
   skill?: string;
   images?: readonly string[];
   verbose: boolean;
@@ -261,22 +261,18 @@ export const runHeadless = async (ports: CliPorts, paths: MomongaPaths, options:
   }
   if (session === undefined) return EXIT_CANCELLED;
   try {
-    const state = await options.capabilitiesOf(session.created.session.modelAlias);
-    if ('probing' in state) {
-      ports.stderr.write(`${escapedLines([`momonga: ${state.probing.message}`])}\n`);
-    } else {
-      const readiness = agentReadiness(state);
-      if (readiness.state === 'needs_probe') {
-        const message = readinessText(readiness);
-        ports.stderr.write(`${escapedLines(leadWith(`momonga: ${TARGET_NOT_READY}: `, message.split('\n')))}\n`);
-        if (options.format !== 'text') {
-          const refused: RefusedResult = { type: 'result', subtype: 'error', is_error: true, result: '', error: { code: TARGET_NOT_READY, message } };
-          ports.stdout.write(`${JSON.stringify(refused)}\n`);
-        }
-        return EXIT_RUN_FAILED;
+    const readiness = agentReadiness(await options.capabilitiesOf(session.created.session.modelAlias));
+    if (readiness.state === 'probing') ports.stderr.write(`${escapedLines([`momonga: ${readiness.message}`])}\n`);
+    if (readiness.state === 'needs_probe') {
+      const message = readinessText(readiness);
+      ports.stderr.write(`${escapedLines(leadWith(`momonga: ${TARGET_NOT_READY}: `, message.split('\n')))}\n`);
+      if (options.format !== 'text') {
+        const refused: RefusedResult = { type: 'result', subtype: 'error', is_error: true, result: '', error: { code: TARGET_NOT_READY, message } };
+        ports.stdout.write(`${JSON.stringify(refused)}\n`);
       }
-      if (readiness.state === 'no_tools') ports.stderr.write(`${escapedLines(leadWith('momonga: warning: ', readinessText(readiness).split('\n')))}\n`);
+      return EXIT_RUN_FAILED;
     }
+    if (readiness.state === 'no_tools') ports.stderr.write(`${escapedLines(leadWith('momonga: warning: ', readinessText(readiness).split('\n')))}\n`);
     const sessionId = session.created.session.id;
     const invocation = await resolveSkillInvocation(session.client, sessionId, options.prompt, options.skill);
     const images = await Promise.all((options.images ?? []).map((file) => readImageAttachment(ports.files, ports.cwd, file)));
