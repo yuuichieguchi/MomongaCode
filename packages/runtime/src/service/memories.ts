@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { parseOutsideJson } from '@momonga/foundation';
 import { MEMORY_SCOPES, MEMORY_STATES } from '@momonga/protocol';
 import type { AddMemoryRequest, MemoryScope, MemoryState, PromoteMemoryRequest, ReflectionResponse, RunReflectionView } from '@momonga/protocol';
 import { isValidSkillName } from '@momonga/skills';
@@ -38,7 +39,7 @@ const decodeCursor = (raw: string | undefined): MemoryListCursor | null => {
   const refused = invalidRequest('after is not a cursor this service issued', 'after');
   let parsed: unknown;
   try {
-    parsed = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
+    parsed = parseOutsideJson(Buffer.from(raw, 'base64url').toString('utf8'));
   } catch {
     throw refused;
   }

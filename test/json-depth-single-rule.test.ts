@@ -11,7 +11,7 @@ const sourceFiles = (dir: string): string[] =>
   fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) return sourceFiles(full);
-    return entry.name.endsWith('.ts') ? [full] : [];
+    return entry.name.endsWith('.ts') && !entry.name.endsWith('.generated.ts') ? [full] : [];
   });
 
 const productSources = (): string[] =>
@@ -66,6 +66,10 @@ const INTERNAL_PARSES: Readonly<Record<string, InternalParse>> = {
   'packages/supervisor/src/lock-watch.ts': { calls: 1, reason: 'health answers of the product\'s own child services' },
   'packages/verify/src/z3-distribution.ts': { calls: 1, reason: 'the Z3 manifest the product builds and ships' },
   'packages/mcp/src/oauth-provider.ts': { calls: 1, reason: 'the OAuth credential store the product writes' },
+  'packages/config/src/auto-fit.ts': {
+    calls: 2,
+    reason: 'the auto mode dataset the product ships, and the measurement record the product wrote to its own state directory',
+  },
   'packages/eval/src/guideline-outcome.ts': { calls: 1, reason: 'a JSON.stringify round trip of a value already in memory' },
 };
 
