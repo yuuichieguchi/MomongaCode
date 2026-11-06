@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { SECRET_TOOL_BINARY, SECURITY_BINARY, KEYCHAIN_SERVICE, createJsonLogger, createUdsClient, systemClock } from '@momonga/foundation';
+import { SECRET_TOOL_BINARY, SECURITY_BINARY, KEYCHAIN_SERVICE, createJsonLogger, secretStoreEnvFor, createUdsClient, systemClock } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
@@ -61,7 +61,7 @@ const fakeHostPath = (context: CleanupContext, store: HostStore): HostPath => {
   const bin = withTempDir(context);
   const programPath = path.join(bin, store.program);
   fs.writeFileSync(programPath, '#!/bin/sh\nexit 97\n', { mode: 0o755 });
-  return { env: { PATH: bin, ...store.extraEnv }, programPath };
+  return { env: secretStoreEnvFor({ PATH: bin, ...store.extraEnv }), programPath };
 };
 
 const portOnFakePath = (inner: FakeSecurityPort, store: HostStore, host: HostPath): FakeSecurityPort => {

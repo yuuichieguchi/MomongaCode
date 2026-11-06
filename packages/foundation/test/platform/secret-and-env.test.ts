@@ -107,8 +107,8 @@ describe('minimalChildEnv per platform', () => {
     SECRET_TOKEN: 'x',
   };
 
-  it('keeps the session bus variables on linux only', () => {
-    expect(minimalChildEnv(source, 'linux')).toEqual({ PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: '/home/u', XDG_RUNTIME_DIR: '/run/user/1000', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/1000/bus' });
+  it('keeps no session bus variable by platform name; a child that needs one declares it', () => {
+    expect(minimalChildEnv(source, 'linux')).toEqual({ PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: '/home/u' });
     expect(minimalChildEnv(source, 'darwin')).toEqual({ PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: '/home/u' });
   });
 
