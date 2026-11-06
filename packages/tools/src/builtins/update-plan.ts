@@ -10,6 +10,7 @@ export const updatePlanTool = defineTool<UpdatePlanInput>({
   conciseDescription:
     'Records the task plan. Send all entries every time, each with content, status (pending, in_progress, completed) and priority (high, medium, low).',
   kind: 'think',
+  output: 'harness',
   sideEffect: 'read_only',
   inputSchema: {
     type: 'object',

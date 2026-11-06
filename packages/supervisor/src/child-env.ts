@@ -1,7 +1,8 @@
 import { credentialEnvNames, stripCredentialEnv } from '@momonga/config';
+import type { CredentialRules } from '@momonga/config';
 import { MINIMAL_CHILD_ENV_LC_PREFIX, MINIMAL_CHILD_ENV_NAMES, minimalChildEnv } from '@momonga/foundation';
 
-export type CredentialSettings = Parameters<typeof credentialEnvNames>[0];
+export type CredentialSettings = Parameters<typeof credentialEnvNames>[0] & { credentials?: CredentialRules };
 
 export type SourceEnv = Readonly<Record<string, string | undefined>>;
 
@@ -39,4 +40,4 @@ export const gatewayEnv = (env: SourceEnv, settings: CredentialSettings, home: s
 };
 
 export const runtimeEnv = (env: SourceEnv, settings: CredentialSettings): { env: Record<string, string>; removed: string[] } =>
-  stripCredentialEnv(definedEnv(env), credentialEnvNames(settings));
+  stripCredentialEnv(definedEnv(env), credentialEnvNames(settings), settings.credentials);

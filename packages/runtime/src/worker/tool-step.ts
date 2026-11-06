@@ -57,7 +57,7 @@ export const recordCalls = (ctx: ClaimContext, leading: readonly RunEventPayload
 export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
   const { callId, result } = outcome;
   const settled: RunEventPayload =
-    outcome.reconciled === undefined || outcome.reconciled === 'not_applied'
+    outcome.reconciled === undefined || (outcome.reconciled === 'not_applied' && outcome.interrupted === undefined)
       ? {
           type: 'tool.completed',
           callId,
@@ -79,6 +79,7 @@ export const outcomePayloads = (outcome: ResultOutcome): RunEventPayload[] => {
           callId,
           outcome: outcome.reconciled,
           output: result.output,
+          ...(outcome.interrupted === undefined ? {} : { interrupted: outcome.interrupted }),
           ...(result.files === undefined ? {} : { files: result.files }),
           ...(result.command === undefined ? {} : { command: result.command }),
         };

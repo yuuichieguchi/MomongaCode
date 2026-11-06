@@ -2,10 +2,11 @@ import path from 'node:path';
 import { COMMAND_PREFIX_SUFFIX } from '@momonga/config';
 import type { PermissionRule } from '@momonga/config';
 import { ASSIGNMENT } from './shell-lexemes.ts';
-import { analyzeCommand } from './shell.ts';
+import { inertPrinterSet } from './command-specs.ts';
+import { STRUCTURAL_SPECS, analyzeCommand } from './shell.ts';
 import type { Analysis, Segment, Word } from './shell.ts';
 
-export const INERT_PRINTERS: ReadonlySet<string> = new Set(['echo', 'printf']);
+const INERT_PRINTERS = inertPrinterSet(STRUCTURAL_SPECS);
 const WORD_PIECE_SEPARATOR = /[=!]/;
 
 export type MatchStrength = 'position' | 'incidental';

@@ -27,7 +27,7 @@ const W8192 = capabilitiesFor(8192, { maxOutputTokens: 1024, tokenCounting: 'est
 
 const argsSteps = (chars: readonly number[]): HistoryItem[] =>
   chars.flatMap((size, index) => [
-    { seq: 2 * index + 1, item: { type: 'function_call', id: `h${2 * index + 1}`, call_id: `c${index}`, name: 'Read', arguments: `{"p":"${'x'.repeat(size)}"}` } },
+    { seq: 2 * index + 1, item: { type: 'function_call', id: `h${2 * index + 1}`, call_id: `c${index}`, name: 'Peek', arguments: `{"p":"${'x'.repeat(size)}"}` } },
     output(2 * index + 2, `c${index}`, 'ok'),
   ]);
 

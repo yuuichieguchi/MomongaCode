@@ -89,6 +89,7 @@ const contextFor = (state: RunState) => {
     }),
     pinnedDigest: { value: undefined as string | undefined },
     token: { cachePrefix: false, conciseDescriptions: false, loopGuidance: false, observedCapacity: false, outputFormatters: [], deferred: undefined },
+    toolSet: { tools: [] },
   } as unknown as ClaimContext;
   return { ctx, appended, counts };
 };

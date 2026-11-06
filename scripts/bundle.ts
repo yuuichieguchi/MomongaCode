@@ -39,7 +39,18 @@ export const updateSourceDefines = ({ releaseRepo, teamId, releasePublicKey }: U
   };
 };
 
+export const autoModeDatasetFile = `${repoRoot}packages/eval/datasets/auto-mode.json`;
+
 const bundlePlugins: Plugin[] = [
+  {
+    name: 'auto-mode-dataset-embedded',
+    setup: (build) => {
+      build.onLoad({ filter: /[\\/]packages[\\/]config[\\/]src[\\/]auto-mode-dataset\.ts$/ }, () => ({
+        contents: `export const AUTO_MODE_DATASET_TEXT = ${JSON.stringify(fs.readFileSync(autoModeDatasetFile, 'utf8'))};\n`,
+        loader: 'ts',
+      }));
+    },
+  },
   {
     name: 'ata-validator-without-native-and-code-from-strings',
     setup: (build) => {

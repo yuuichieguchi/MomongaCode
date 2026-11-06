@@ -1,17 +1,21 @@
 import { useEffect, useEffectEvent, useReducer, useRef, useState } from 'react';
 import { Box, Static, Text, useApp, useInput, usePaste, useStdout, useWindowSize } from 'ink';
-import { escapeTerminalBlock, escapeTerminalLine } from '@momonga/protocol';
+import { autoModeNotice, escapeTerminalBlock, escapeTerminalLine } from '@momonga/protocol';
 import type { AliasCapabilities, ImageAttachment, MomongaModelEntry, PermissionMode, PermissionOption } from '@momonga/protocol';
 import { cleanFailureMessage } from '@momonga/foundation';
 import { currentField, currentRequest, decide, enterValue, leaveFields, withError } from '../elicit/flow.ts';
 import type { ElicitationDecision, ElicitationFlow } from '../elicit/flow.ts';
 import type { RunEventFrame } from '../client/runtime-client.ts';
-import type { RunView } from '../client/views.ts';
+import type { RunView, SessionView } from '../client/views.ts';
 import { describeAttachment, pastedImagePaths } from '../images.ts';
 import { describeFailure } from '../failure.ts';
 import { describeDenial } from '../policy-messages.ts';
 import { describeEnd } from '../run/headless.ts';
 import type { StartRunOptions, TuiBackend } from './backend.ts';
+import { createBackgroundTasks } from './background-tasks.ts';
+import type { BackgroundTasks } from './background-tasks.ts';
+import { autoNoticeDue } from './notices.ts';
+import type { AutoNoticePair } from './notices.ts';
 import { DEFAULT_SLASH_COMMANDS } from './commands/index.ts';
 import { StartupScreen } from './startup.tsx';
 import type { StartupConfig } from './startup.tsx';
@@ -21,7 +25,7 @@ import type { DiffLine } from './diff.ts';
 import { applyKey, characterEndAfter, emptyEditor } from './editor.ts';
 import type { EditorState } from './editor.ts';
 import { createSlashRegistry, parseSlash, slashCompletion } from './slash.ts';
-import type { SlashCommand, SlashRegistry } from './slash.ts';
+import type { AutoModePort, SlashCommand, SlashRegistry } from './slash.ts';
 import { appendEntry, initialTranscript, nextMode, reduceChildEvent, reduceEvent, settledCount, withElicitationFlow } from './transcript.ts';
 import type { Entry, PendingApproval, PendingElicitation, Transcript } from './transcript.ts';
 
@@ -39,7 +43,18 @@ export type AppProps = {
   initialSkill?: string;
   startup?: StartupConfig;
   slash?: SlashRegistry;
+  tasks?: BackgroundTasks;
+  autoMode?: AutoModePort;
   onExit(outcome: TuiOutcome): void;
+};
+
+const unavailableAutoMode: AutoModePort = {
+  check() {
+    return Promise.reject(new Error('the auto-mode check is not available in this interface'));
+  },
+  status() {
+    return Promise.reject(new Error('the auto-mode status is not available in this interface'));
+  },
 };
 
 type Phase = { kind: 'starting' } | { kind: 'trust'; path: string } | { kind: 'ready' };
@@ -269,6 +284,9 @@ export function App(props: AppProps) {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const baseSlash = props.slash ?? createSlashRegistry(DEFAULT_SLASH_COMMANDS);
+  const ownTasks = useRef<BackgroundTasks>(props.tasks ?? createBackgroundTasks());
+  const tasks = props.tasks ?? ownTasks.current;
+  const lastAutoNotice = useRef<AutoNoticePair | undefined>(undefined);
   const [skillSlash, setSkillSlash] = useState<readonly SlashCommand[]>([]);
   const slash = createSlashRegistry([...baseSlash.list(), ...skillSlash]);
   const [phase, setPhase] = useState<Phase>({ kind: 'starting' });
@@ -342,9 +360,18 @@ export function App(props: AppProps) {
     dispatch({ kind: 'append', entry: { kind: 'notice', level: 'error', text: describeFailure(error) } });
   };
 
+  const showAutoNotice = (session: SessionView): void => {
+    const view = session.autoClassifier;
+    if (session.permissionMode !== 'auto' || view === undefined) return;
+    if (!autoNoticeDue(lastAutoNotice.current, view)) return;
+    lastAutoNotice.current = { key: view.key, measurement: view.measurement };
+    note(autoModeNotice({ view, surface: 'tui' }));
+  };
+
   const openSession = async (): Promise<void> => {
     const session = await backend.openSession();
     setModeState(session.permissionMode);
+    showAutoNotice(session);
     setAlias(session.modelAlias);
     setBypassAllowed(session.bypassAllowed);
     setAutoAvailable(await backend.autoModeAvailable());
@@ -454,10 +481,16 @@ export function App(props: AppProps) {
         setEpoch((value) => value + 1);
       },
       exit: () => finish({}),
+      background: (label, work) => {
+        note(`${label}: running (esc cancels)`);
+        return tasks.run(work);
+      },
+      autoMode: props.autoMode ?? unavailableAutoMode,
       setMode: async (chosen) => {
         const session = await backend.setMode(chosen);
         setModeState(session.permissionMode);
         note(`permission mode: ${session.permissionMode}`);
+        showAutoNotice(session);
       },
       setModel: async (chosen) => {
         const previous = alias;
@@ -509,9 +542,12 @@ export function App(props: AppProps) {
     if (phase.kind === 'ready') sendInitialPrompt();
   }, [phase.kind]);
 
-  const cancelRun = (): void => {
+  const cancelNewest = (): void => {
     const runId = runIdRef.current;
-    if (runId === undefined) return;
+    if (runId === undefined) {
+      tasks.abortNewest();
+      return;
+    }
     backend.cancel(runId).catch(reportError);
   };
 
@@ -584,14 +620,14 @@ export function App(props: AppProps) {
 
   const elicitationKey = (pending: PendingElicitation, input: string, key: Parameters<Parameters<typeof useInput>[0]>[1]): void => {
     if (key.ctrl && input === 'c') {
-      cancelRun();
+      cancelNewest();
       return;
     }
     if (pending.submitted) return;
     const flow = flowOf(pending);
     if (flow.stage === 'decision') {
       const choices = decisionChoices(flow);
-      if (key.escape) cancelRun();
+      if (key.escape) cancelNewest();
       else if (key.upArrow) setApprovalIndex((approvalIndexRef.current + choices.length - 1) % choices.length);
       else if (key.downArrow) setApprovalIndex((approvalIndexRef.current + 1) % choices.length);
       else if (key.return) decideFlow(pending, choices[approvalIndexRef.current]?.decision);
@@ -614,7 +650,10 @@ export function App(props: AppProps) {
   const cycleMode = (): void => {
     backend
       .setMode(nextMode({ current: mode, bypassAllowed, autoAvailable }))
-      .then((session) => setModeState(session.permissionMode), reportError);
+      .then((session) => {
+        setModeState(session.permissionMode);
+        showAutoNotice(session);
+      }, reportError);
   };
 
   const decideTrust = (decision: 'trusted' | 'untrusted'): void => {
@@ -650,7 +689,7 @@ export function App(props: AppProps) {
     const approval = transcript.approval;
     if (approval !== undefined) {
       if (key.escape || (key.ctrl && input === 'c')) {
-        cancelRun();
+        cancelNewest();
         return;
       }
       if (key.upArrow) setApprovalIndex((approvalIndexRef.current + approval.options.length - 1) % approval.options.length);
@@ -660,11 +699,11 @@ export function App(props: AppProps) {
       return;
     }
     if (key.escape) {
-      cancelRun();
+      cancelNewest();
       return;
     }
     if (key.ctrl && input === 'c') {
-      if (busy) cancelRun();
+      if (busy) cancelNewest();
       else if (editorRef.current.text === '') finish({});
       else replaceEditor(emptyEditor(editorRef.current.history));
       return;

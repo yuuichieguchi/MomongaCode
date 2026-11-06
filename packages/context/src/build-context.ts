@@ -27,7 +27,8 @@ import { readerNamesOf, readersOffered } from './references.ts';
 import { workingStateMessage } from './working-state.ts';
 import { heldSkillOf, pointToHeldSkill } from './skill-output.ts';
 import { identicalMarker, identicalReferents } from './formatters/identical.ts';
-import { cutChars, fitToTokens, omittedMarker, outputTextOf, withOutput } from './tool-output.ts';
+import { cutChars, fitToTokens, omittedMarker, outputRenderOf, outputTextOf, withOutput } from './tool-output.ts';
+import type { OutputRender } from './tool-output.ts';
 import type {
   BuildContextInput,
   BuildContextPorts,
@@ -49,6 +50,7 @@ const BLOB_MEDIA_TYPE = 'text/plain';
 
 type OutputState = {
   original: FunctionCallOutputInputItem;
+  render: OutputRender;
   callId: string;
   text: string;
   tokens: number;
@@ -483,17 +485,21 @@ const historyItemsOf = (sources: BuildContextInput['sources']) =>
     return {
       seq: entry.seq,
       item: pointToHeldSkill(item, sources.activatedSkills),
+      pointer: held,
       ...(entry.handle === undefined || held ? {} : { handle: entry.handle }),
     };
   });
 
 type FrozenSlot = { item: InputItem; output?: { callId: string; text: string; full: boolean; original: FunctionCallOutputInputItem } };
 
+const harnessToolsOf = (input: BuildContextInput): ReadonlySet<string> => new Set(input.harnessOutputTools ?? []);
+
 const frozenTailOf = async (input: BuildContextInput, ports: BuildContextPorts, task: InputItem): Promise<InputItem[]> => {
   const { sources, evicted, forms, renderedFull } = input;
   const reader = sources.readers['output_handle'];
   const entries = historyItemsOf(sources);
   const callNames = new Map<string, string>();
+  const harnessTools = harnessToolsOf(input);
   for (const entry of entries) if (entry.item.type === 'function_call') callNames.set(entry.item.call_id, entry.item.name);
   const countContextFor = (callId: string): ItemCountContext => {
     const name = callNames.get(callId);
@@ -511,14 +517,15 @@ const frozenTailOf = async (input: BuildContextInput, ports: BuildContextPorts, 
     const text = outputTextOf(original.output);
     const handle = 'handle' in entry ? entry.handle : ports.blobs.handleFor(text);
     const kept = forms?.get(callId);
+    const render = outputRenderOf(original, callNames.get(callId), harnessTools, entry.pointer);
     if (evicted.has(callId)) {
-      const tokens = await ports.meter.countItem(original, countContextFor(callId));
+      const tokens = await ports.meter.countItem(render.full, countContextFor(callId));
       slots.push({ item: withOutput(original, omittedMarker(tokens, handle, reader)), output: { callId, text, full: false, original } });
     } else if (kept !== undefined) {
-      const tokens = await ports.meter.countItem(original, countContextFor(callId));
-      slots.push({ item: withOutput(original, cutChars(text, kept, handle, tokens, reader)), output: { callId, text, full: false, original } });
+      const tokens = await ports.meter.countItem(render.full, countContextFor(callId));
+      slots.push({ item: withOutput(original, render.enclose(cutChars(text, kept, handle, tokens, reader))), output: { callId, text, full: false, original } });
     } else if (renderedFull?.has(callId) === true) {
-      slots.push({ item: original, output: { callId, text, full: true, original } });
+      slots.push({ item: render.full, output: { callId, text, full: true, original } });
     } else {
       complete = false;
       break;
@@ -620,17 +627,17 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   };
 
   const renderKept = async (state: OutputState, handle: string, kept: number): Promise<InputItem> => {
-    const rendered = withOutput(state.original, cutChars(state.text, kept, handle, state.tokens, reader));
+    const rendered = withOutput(state.original, state.render.enclose(cutChars(state.text, kept, handle, state.tokens, reader)));
     state.renderedTokens = await meter.countItem(rendered, countContextFor(state.callId));
     state.keptChars = kept;
     return rendered;
   };
 
   const truncation = async (state: OutputState, handle: string): Promise<{ rendered: InputItem; tokens: number; kept: number }> => {
-    const count = (text: string): Promise<number> => meter.countItem(withOutput(state.original, text), countContextFor(state.callId));
+    const count = (text: string): Promise<number> => meter.countItem(withOutput(state.original, state.render.enclose(text)), countContextFor(state.callId));
     let kept = state.text.length;
     const text = await fitToTokens({ text: state.text, cap: itemCap, handle, reader, count, onCut: (keptChars) => void (kept = keptChars) });
-    return { rendered: withOutput(state.original, text), tokens: await count(text), kept };
+    return { rendered: withOutput(state.original, state.render.enclose(text)), tokens: await count(text), kept };
   };
 
   const truncate = async (state: OutputState, handle: string): Promise<InputItem> => {
@@ -690,7 +697,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   };
 
   const restoreFull = (slot: Slot, state: OutputState): void => {
-    slot.item = state.original;
+    slot.item = state.render.full;
     state.mode = 'full';
     state.renderedTokens = state.tokens;
     state.keptChars = undefined;
@@ -707,6 +714,7 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
   };
 
   const historyItems = historyItemsOf(sources);
+  const harnessTools = harnessToolsOf(input);
 
   for (const entry of historyItems) {
     if (entry.item.type === 'function_call') callNames.set(entry.item.call_id, entry.item.name);
@@ -730,9 +738,12 @@ export const buildContext = async (input: BuildContextInput, suppliedPorts: Buil
     if (entry.item.type === 'function_call_output') {
       const original = entry.item;
       const text = outputTextOf(original.output);
-      const tokens = await meter.countItem(original, countContextFor(original.call_id));
+      const render = outputRenderOf(original, callNames.get(original.call_id), harnessTools, entry.pointer);
+      slot.item = render.full;
+      const tokens = await meter.countItem(render.full, countContextFor(original.call_id));
       const state: OutputState = {
         original,
+        render,
         callId: original.call_id,
         text,
         tokens,

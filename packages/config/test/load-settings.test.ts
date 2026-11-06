@@ -23,6 +23,7 @@ describe('SETTINGS_SCHEMA', () => {
         'autoMode',
         'autoUpdates',
         'context',
+        'credentials',
         'disabledMcpjsonServers',
         'enableAllProjectMcpServers',
         'enabledMcpjsonServers',

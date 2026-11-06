@@ -8,13 +8,21 @@ import type { SessionOptions } from '../run/open-session.ts';
 import type { UpdateWiring } from '../update/background.ts';
 import { App } from './app.tsx';
 import type { TuiOutcome } from './app.tsx';
+import type { AutoModePort } from './slash.ts';
+import { autoModeCheck, autoModeCheckPortsOf, autoModeStatus, autoModeStatusPortsOf } from '../commands/auto-mode.ts';
 import { createTuiBackend } from './backend.ts';
+import { createBackgroundTasks } from './background-tasks.ts';
 import { defaultNoticeSources } from './notices.ts';
 
 export type InteractiveOptions = SessionOptions & { prompt?: string; skill?: string; images?: readonly string[] };
 
 export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, terminal: Terminal, options: InteractiveOptions, update: UpdateWiring): Promise<number> => {
   const backend = createTuiBackend(ports, paths, options, createHistoryStore(ports.files, path.join(paths.state, 'history.jsonl')), defaultNoticeSources(ports, update));
+  const tasks = createBackgroundTasks();
+  const autoMode: AutoModePort = {
+    check: async (checkOptions, write) => autoModeCheck(await autoModeCheckPortsOf(ports, write), checkOptions),
+    status: async (statusOptions, write) => autoModeStatus(autoModeStatusPortsOf(ports, write), statusOptions),
+  };
   let outcome: TuiOutcome = {};
   const onExit = (result: TuiOutcome): void => {
     outcome = result;
@@ -23,11 +31,14 @@ export const runInteractive = async (ports: CliPorts, paths: MomongaPaths, termi
     <App backend={backend} initialMode={options.permissionMode} startup={{ version: ports.version, home: ports.home, color: (ports.env['NO_COLOR'] ?? '') === '' }} {...(options.prompt === undefined ? {} : { initialPrompt: options.prompt })}
       {...(options.skill === undefined ? {} : { initialSkill: options.skill })}
       {...(options.images === undefined ? {} : { initialImages: options.images })}
+      tasks={tasks}
+      autoMode={autoMode}
       onExit={onExit}
     />,
     { stdin: terminal.stdin, stdout: terminal.stdout, exitOnCtrlC: false },
   );
   await instance.waitUntilExit();
+  await tasks.settle();
   await backend.close();
   return exitCodeOf(ports, outcome);
 };

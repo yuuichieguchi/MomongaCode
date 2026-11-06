@@ -89,7 +89,7 @@ describe('gatewayEnv', () => {
 });
 
 describe('runtimeEnv', () => {
-  it('runtime env keeps neutral names and removes declared and credential-looking ones', () => {
+  it('runtime env keeps neutral names, including a token-shaped value under a neutral name, and removes declared and credential-looking ones', () => {
     const result = runtimeEnv(
       {
         FOO: 'foo',
@@ -102,8 +102,8 @@ describe('runtimeEnv', () => {
       },
       declaring('UPSTREAM_X'),
     );
-    expect(result.env).toEqual({ FOO: 'foo', PATH: '/opt/bin:/usr/bin' });
-    expect(result.removed).toEqual(['DATABASE_URL', 'GITHUB_TOKEN', 'MY_API_KEY', 'NEUTRAL_NAME', 'UPSTREAM_X']);
+    expect(result.env).toEqual({ FOO: 'foo', PATH: '/opt/bin:/usr/bin', NEUTRAL_NAME: TOKEN_LIKE });
+    expect(result.removed).toEqual(['DATABASE_URL', 'GITHUB_TOKEN', 'MY_API_KEY', 'UPSTREAM_X']);
   });
 });
 

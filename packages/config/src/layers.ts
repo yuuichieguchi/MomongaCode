@@ -9,7 +9,7 @@ import type { JsonFile } from './json-file.ts';
 import { layoutOf } from './layout.ts';
 import { resolveModels } from './models.ts';
 import type { ResolvedModels } from './models.ts';
-import { localSettingsFile } from './local-settings.ts';
+import { localSettingsFile, worktreeRootOf } from './local-settings.ts';
 import type { RuleOrigin } from './rule.ts';
 import { assertSettings, KNOWN_SETTINGS_KEYS } from './settings.ts';
 import type { Settings } from './settings.ts';
@@ -67,6 +67,11 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
       else kept[key] = value;
     }
     restricted.env = kept;
+  }
+
+  if (settings.credentials !== undefined) {
+    warnings.push(`${source}: credentials is only honored in user settings; discarded`);
+    delete restricted.credentials;
   }
 
   if (settings.mcpServers !== undefined) {
@@ -211,7 +216,7 @@ export const loadLayers = async ({ home, projectDir, trust, user: snapshot }: La
   } else if (await exists(projectFile)) {
     warnings.push(`project ${projectDir} is not trusted; skipped settings files: ${projectFile}`);
   }
-  const local = await readLayer(localFile, 'local', projectDir, warnings);
+  const local = await readLayer(localFile, 'local', await worktreeRootOf(home, projectDir), warnings);
   if (local !== undefined) layers.push(local);
 
   return result();

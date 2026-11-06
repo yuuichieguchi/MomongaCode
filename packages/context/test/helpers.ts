@@ -159,9 +159,11 @@ export const assistant = (seq: number, text: string): HistoryItem => ({
   item: { type: 'message', id: `h${seq}`, role: 'assistant', content: text },
 });
 
+export const RAW_OUTPUT_TOOL = 'Peek';
+
 export const call = (seq: number, callId: string): HistoryItem => ({
   seq,
-  item: { type: 'function_call', id: `h${seq}`, call_id: callId, name: 'Read', arguments: '{}' },
+  item: { type: 'function_call', id: `h${seq}`, call_id: callId, name: RAW_OUTPUT_TOOL, arguments: '{}' },
 });
 
 export const output = (seq: number, callId: string, text: string, handle?: string): HistoryItem => ({
@@ -172,7 +174,7 @@ export const output = (seq: number, callId: string, text: string, handle?: strin
 
 export const argsCall = (seq: number, callId: string, chars: number): HistoryItem => ({
   seq,
-  item: { type: 'function_call', id: `h${seq}`, call_id: callId, name: 'Read', arguments: `{"p":"${'x'.repeat(chars)}"}` },
+  item: { type: 'function_call', id: `h${seq}`, call_id: callId, name: RAW_OUTPUT_TOOL, arguments: `{"p":"${'x'.repeat(chars)}"}` },
 });
 
 export const stepsOf = (chars: readonly number[]): HistoryItem[] =>
@@ -233,6 +235,7 @@ export const inputFor = (
   trusted: true,
   projectRoot: PROJECT,
   home: HOME,
+  harnessOutputTools: [RAW_OUTPUT_TOOL],
   ...overrides,
 });
 

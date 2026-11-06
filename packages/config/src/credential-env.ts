@@ -1,33 +1,42 @@
-const CREDENTIAL_NAME = /(KEY|TOKEN|SECRET|PASSW(OR)?D|CREDENTIAL|AUTH|COOKIE|SESSION|PRIVATE|PASSPHRASE|CREDS)|(^|_)PASS(_|$)|.+_PWD$/i;
+export type CredentialRules = { env?: readonly string[]; keep?: readonly string[]; valuePatterns?: readonly string[] };
 
-const KEPT_NAMES: ReadonlySet<string> = new Set(['PWD', 'OLDPWD', 'SSH_AUTH_SOCK', 'TERM_SESSION_ID', 'SECURITYSESSIONID', 'GPG_TTY']);
+const STRONG_WORD = /KEY|TOKEN|SECRET|PASSW(OR)?D|PASSPHRASE|CREDENTIAL|CREDS/i;
 
-const KEPT_PREFIXES = ['XDG_SESSION_', 'GIT_AUTHOR_', 'GIT_COMMITTER_'] as const;
+const WEAK_WORDS: ReadonlySet<string> = new Set(['AUTH', 'COOKIE', 'SESSION', 'PRIVATE', 'PASS']);
 
-const TOKEN_PREFIXES = ['sk-', 'ghp_', 'gho_', 'ghu_', 'ghs_', 'github_pat_', 'xoxa-', 'xoxb-', 'xoxp-', 'xoxr-', 'xoxs-'] as const;
+const LAST_WORD_ONLY = 'PWD';
 
 const URL_WITH_PASSWORD = /^[a-z][a-z0-9+.-]*:\/\/[^/?#@\s]*:[^/?#@\s]+@/i;
 
-const AWS_ACCESS_KEY_ID = /^AKIA[0-9A-Z]{16}$/;
+export const looksLikeCredentialName = (name: string): boolean => {
+  if (STRONG_WORD.test(name)) return true;
+  const words = name.toUpperCase().split('_');
+  return words.some((word) => WEAK_WORDS.has(word)) || (words.length > 1 && words.at(-1) === LAST_WORD_ONLY);
+};
 
-export const looksLikeCredentialName = (name: string): boolean => CREDENTIAL_NAME.test(name);
+export const isCredentialEnvName = looksLikeCredentialName;
 
-export const isCredentialEnvName = (name: string): boolean =>
-  looksLikeCredentialName(name) && !KEPT_NAMES.has(name) && !KEPT_PREFIXES.some((prefix) => name.startsWith(prefix));
-
-const isCredentialEnvValue = (value: string): boolean =>
-  URL_WITH_PASSWORD.test(value) || TOKEN_PREFIXES.some((prefix) => value.startsWith(prefix)) || AWS_ACCESS_KEY_ID.test(value);
+const globOf = (glob: string): RegExp => new RegExp(`^${glob.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`);
 
 export const stripCredentialEnv = (
   env: Readonly<Record<string, string>>,
   declaredNames: readonly string[],
+  credentials: CredentialRules = {},
 ): { env: Record<string, string>; removed: string[] } => {
-  const declared = new Set(declaredNames);
-  const kept: Record<string, string> = {};
+  const declaredExact = new Set(declaredNames);
+  const declaredGlobs = (credentials.env ?? []).map(globOf);
+  const valuePatterns = (credentials.valuePatterns ?? []).map((pattern) => new RegExp(pattern));
+  const kept = new Set(credentials.keep ?? []);
+  const isDeclared = (name: string): boolean => declaredExact.has(name) || declaredGlobs.some((glob) => glob.test(name));
+  const isWithheldDirectly = (name: string, value: string): boolean =>
+    isDeclared(name) || (!kept.has(name) && (URL_WITH_PASSWORD.test(value) || valuePatterns.some((pattern) => pattern.test(value)) || looksLikeCredentialName(name)));
+  const entries = Object.entries(env);
+  const withheldValues = new Set(entries.filter(([name, value]) => isWithheldDirectly(name, value)).map(([, value]) => value));
+  const result: Record<string, string> = {};
   const removed: string[] = [];
-  for (const [name, value] of Object.entries(env)) {
-    if (declared.has(name) || isCredentialEnvName(name) || isCredentialEnvValue(value)) removed.push(name);
-    else kept[name] = value;
+  for (const [name, value] of entries) {
+    if (withheldValues.has(value)) removed.push(name);
+    else result[name] = value;
   }
-  return { env: kept, removed: removed.sort() };
+  return { env: result, removed: removed.sort() };
 };

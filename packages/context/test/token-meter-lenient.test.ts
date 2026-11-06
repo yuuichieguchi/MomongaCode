@@ -72,7 +72,7 @@ describe('buildContext counts lone items with tools and the call name', () => {
       expect(request.input).toHaveLength(1);
       const [item] = request.input as InputItem[];
       if (item?.type === 'function_call_output') {
-        expect(request.momonga?.lenient_items?.call_names[item.call_id]).toBe('Read');
+        expect(request.momonga?.lenient_items?.call_names[item.call_id]).toBe('Peek');
       }
     }
     expect(lone.some((request) => (request.input as InputItem[])[0]?.type === 'function_call_output')).toBe(true);

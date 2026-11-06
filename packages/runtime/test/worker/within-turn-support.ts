@@ -12,6 +12,7 @@ export const WITHIN_TURN_PROMPT = 'You are the within-turn test agent.';
 export const bigTool = (description = 'Return a block of text'): AnyTool =>
   defineTool<Record<string, unknown>>({
     name: 'Big',
+    output: 'harness',
     description,
     kind: 'read',
     sideEffect: 'read_only',
@@ -47,7 +48,8 @@ export const inputOf = (body: { input?: unknown }): InputItem[] => {
 
 export const outputTextFor = (items: readonly InputItem[], callId: string): string | undefined => {
   const found = items.find((item) => item.type === 'function_call_output' && item.call_id === callId);
-  return found?.type === 'function_call_output' && typeof found.output === 'string' ? found.output : undefined;
+  if (found?.type !== 'function_call_output' || typeof found.output !== 'string') return undefined;
+  return found.output.replace(/^<tool_output [^>]*>\n([\s\S]*)\n<\/tool_output boundary="[^"]*">$/, '$1');
 };
 
 export const OMITTED = /^\[tool output omitted: \d+ tokens; stored as [0-9a-f]{64}\]$/;

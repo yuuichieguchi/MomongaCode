@@ -17,6 +17,8 @@ export const CLASSIFIER_INSTRUCTIONS = [
   'Set confidence to "high" only when nothing in the call leaves you unsure. Reply with the JSON object only.',
 ].join('\n');
 
+export const AUTO_CLASSIFIER_CODE = { instructions: CLASSIFIER_INSTRUCTIONS, verdictSchema: CLASSIFIER_VERDICT_SCHEMA } as const;
+
 const outputTextOf = (response: ResponseResource): string => assistantTextOf(response.output);
 
 const userPromptOf = (ctx: ClaimContext, cwd: string, request: AutoClassifierRequest): string => {

@@ -61,14 +61,15 @@ const sectionOf = (base: Readonly<Record<string, unknown>>, name: string): Recor
 
 export const caseSettingsFor = (
   base: Readonly<Record<string, unknown>>,
-  setting: { compaction: CompactionSetting; policy?: PolicyOverlay },
+  setting: { compaction?: CompactionSetting; policy?: PolicyOverlay; classifier?: string },
 ): Record<string, unknown> => {
   const merged: Record<string, unknown> = { ...base };
   for (const name of POLICY_SECTIONS) {
     const overlay = setting.policy?.[name];
     if (overlay !== undefined) merged[name] = { ...sectionOf(base, name), ...overlay };
   }
-  return { ...merged, context: { ...sectionOf(merged, 'context'), autoCompact: setting.compaction === 'on' } };
+  const compacted = setting.compaction === undefined ? merged : { ...merged, context: { ...sectionOf(merged, 'context'), autoCompact: setting.compaction === 'on' } };
+  return setting.classifier === undefined ? compacted : { ...compacted, autoMode: { classifier: setting.classifier } };
 };
 
 const outsideMessage = (root: string, name: string): string => `workspace step names ${JSON.stringify(name)}, which resolves outside ${root}`;

@@ -112,6 +112,10 @@ export type SideEffectBinding<Input> =
   | ({ sideEffect: 'read_only' } & (DeclaredSubject<Input> | UndeclaredSubject<Input>))
   | ({ sideEffect: Exclude<SideEffect, 'read_only'> } & DeclaredSubject<Input>);
 
+export const TOOL_OUTPUT_ORIGINS = ['external', 'harness'] as const;
+
+export type ToolOutputOrigin = (typeof TOOL_OUTPUT_ORIGINS)[number];
+
 export type ToolDefinition<Input> = SideEffectBinding<Input> & ToolBody<Input>;
 
 export type ToolBody<Input> = {
@@ -122,6 +126,7 @@ export type ToolBody<Input> = {
   kind: ToolKind;
   inputSchema: Record<string, unknown>;
   pagesOutput?: true;
+  output?: ToolOutputOrigin;
   tier?: ToolTier;
   reads?: ReferenceKind;
   companionOf?: string;
@@ -138,6 +143,8 @@ export type ToolBody<Input> = {
 };
 
 export type AnyTool = ToolDefinition<unknown>;
+
+export const outputOriginOf = (tool: AnyTool): ToolOutputOrigin => (tool.server === undefined ? (tool.output ?? 'external') : 'external');
 
 export const defineTool = <Input>(definition: ToolDefinition<Input>): AnyTool => definition as unknown as AnyTool;
 

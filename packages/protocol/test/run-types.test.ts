@@ -261,6 +261,7 @@ describe('run event payloads', () => {
       callId: string;
       outcome: 'already_applied' | 'not_applied' | 'unknown';
       output: string;
+      interrupted?: 'timeout' | 'cancelled';
       files?: { path: string; sha256?: string; access: 'read' | 'write' | 'remove' }[];
       command?: string;
     }>();

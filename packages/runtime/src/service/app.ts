@@ -1,7 +1,8 @@
 import path from 'node:path';
 import { Hono } from 'hono';
 import type { Context } from 'hono';
-import { ConfigError, assertSessionMcpServers, stripCredentialEnv } from '@momonga/config';
+import { ConfigError, assertSessionMcpServers, autoFitDirectoryOf, stripCredentialEnv } from '@momonga/config';
+import type { AutoFitKey, CredentialRules } from '@momonga/config';
 import { canonicalDirectory, canonicalJson, canonicalPath, comparableContains, comparablePath, isTransientErrno, sha256Hex } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { AUTO_MODE_UNAVAILABLE, RUN_STATUSES } from '@momonga/protocol';
@@ -45,6 +46,7 @@ import type { McpAdminPort } from './input-routes.ts';
 import { registerTrustRoutes } from './trust.ts';
 import type { ServiceTimers } from './timers.ts';
 import { answeredByOf } from './answered-by.ts';
+import { readAutoClassifierView } from './auto-classifier-view.ts';
 import { isTerminalStatus, toJobView, toAgentView, toRunView, toSessionView, toSkillView } from './views.ts';
 
 export type RunLimitDefaults = { maxSteps: number; maxTotalTokens: number; approvalTtlMs: number; loopThreshold: number };
@@ -56,7 +58,9 @@ export type SessionCreateSettings = {
   defaultModeOrigin?: 'user' | 'project' | 'local';
   additionalDirectories: readonly string[];
   credentialEnvNames: readonly string[];
+  credentials?: CredentialRules;
   autoModeClassifier?: string;
+  autoModeKey?: AutoFitKey;
 };
 
 export type RunAppDeps = {
@@ -191,6 +195,15 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     }
   };
 
+  const sessionViewOf = async (session: Session, loaded?: SessionCreateSettings) => {
+    const view = toSessionView(store, session);
+    if (session.permissionMode !== 'auto') return view;
+    const settings = loaded ?? (await sessionSettingsOf(session.cwd));
+    if (settings.autoModeClassifier === undefined || settings.autoModeKey === undefined) return view;
+    const autoClassifier = await readAutoClassifierView({ alias: settings.autoModeClassifier, key: settings.autoModeKey, directory: autoFitDirectoryOf(deps.home) });
+    return { ...view, autoClassifier };
+  };
+
   const createSession: Handler = async (context) => {
     if (deps.isDraining()) throw drainingError();
     const body = validateBody<CreateSessionBody>('CreateSessionRequest', await readJson(context.req.raw, JSON_MEDIA_TYPES, deps.maxBodyBytes));
@@ -219,11 +232,11 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     const bypassAllowed =
       body.bypassAllowed === true || (settings.defaultMode === 'bypassPermissions' && settings.defaultModeOrigin === 'user');
     checkModeAllowed(permissionMode, bypassAllowed, settings.autoModeClassifier, aliases);
-    const stripped = stripCredentialEnv(body.env, settings.credentialEnvNames);
+    const stripped = stripCredentialEnv(body.env, settings.credentialEnvNames, settings.credentials);
     const mcpServers = checkedMcpServers(body.mcpServers ?? {});
     if (deps.isDraining()) throw drainingError();
     const session = store.createSession({ cwd, env: stripped.env, permissionMode, modelAlias, bypassAllowed, additionalDirectories, mcpServers });
-    return json({ session: toSessionView(store, session), strippedEnvKeys: stripped.removed }, 201, { location: `/v1/sessions/${session.id}` });
+    return json({ session: await sessionViewOf(session, settings), strippedEnvKeys: stripped.removed }, 201, { location: `/v1/sessions/${session.id}` });
   };
 
   const listSessions: Handler = (context) => {
@@ -240,7 +253,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     return json({ sessions: store.listSessions({ cwd }).map((session) => toSessionView(store, session)) });
   };
 
-  const getSession: Handler = (context) => json({ session: toSessionView(store, requireSession(context.req.param('id') ?? '')) });
+  const getSession: Handler = async (context) => json({ session: await sessionViewOf(requireSession(context.req.param('id') ?? '')) });
 
   const patchSession: Handler = async (context) => {
     const session = requireSession(context.req.param('id') ?? '');
@@ -268,7 +281,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       if (result.kind === 'not_found') throw notFound(`session ${session.id} does not exist`);
       current = result.session;
     }
-    return json({ session: toSessionView(store, current) });
+    return json({ session: await sessionViewOf(current) });
   };
 
   const listRuns: Handler = (context) => {

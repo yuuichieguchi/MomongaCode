@@ -85,7 +85,7 @@ const modelsWith = (resolved: ResolvedModelTarget, declared: Record<string, unkn
   }) as unknown as UserModels;
 
 const copiedRecordsOf = (models: UserModels): string[] => {
-  const settings = liveSettingsFor(models, 'default');
+  const settings = liveSettingsFor(models, ['default']);
   return [...settings.fmTargets.map((target) => `target ${target}`), ...settings.endpointProbes.map((probe) => `endpoint ${probe.endpoint} ${probe.model}`)];
 };
 
@@ -125,7 +125,7 @@ describe('the probe record of an ollama target in a case home', () => {
     const text = '{"identity":"sha256:digest","identityFields":["digest"],"report":{}}\n';
     fs.writeFileSync(path.join(owner, fileName), text);
     const [, resolved, declared] = ollamaOverTcp;
-    const settings = liveSettingsFor(modelsWith(resolved, declared), 'default');
+    const settings = liveSettingsFor(modelsWith(resolved, declared), ['default']);
     for (const probe of settings.endpointProbes) {
       await copyEndpointProbeRecord(nodeFiles, owner, caseProbe, probe);
     }

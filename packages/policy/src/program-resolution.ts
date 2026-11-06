@@ -14,7 +14,6 @@ export type ResolutionContext = {
 };
 
 const PATH_ASSIGNMENT = /^PATH\+?=/;
-const ENV_PATH_DISQUALIFIERS: readonly string[] = ['-P', '-i', '--ignore-environment'];
 
 const unresolved: ProgramResolution = { none: true };
 
@@ -44,7 +43,8 @@ const resolveBareWord = (word: string, searchPath: string | undefined, context: 
 const resolveWord = (word: string, searchPath: string | undefined, context: ResolutionContext, outsideWritable: boolean): ProgramResolution =>
   word.includes('/') ? resolveSlashWord(word, context) : resolveBareWord(word, searchPath, context, outsideWritable);
 
-const isCommandP = (wrapper: WrapperUse): boolean => wrapper.name === 'command' && wrapper.options.some((option) => option.option === '-p');
+const usesDefaultPath = (wrapper: WrapperUse): boolean =>
+  wrapper.options.some((option) => wrapper.spec.wrapper?.defaultPathOptions?.includes(option.option) === true);
 
 const runsProgram = (wrapper: WrapperUse): boolean => wrapper.spec.wrapper?.program === true;
 
@@ -57,12 +57,13 @@ export const resolveSegmentProgram = (segment: Segment, context: ResolutionConte
   let lookupPath = context.searchPath;
   let executed = false;
   for (const wrapper of segment.wrappers) {
-    if (wrapper.name === 'env') {
-      if (wrapper.options.some((option) => ENV_PATH_DISQUALIFIERS.includes(option.option))) return unresolved;
+    const keeps = wrapper.spec.wrapper?.keepsSearchPath;
+    if (keeps !== undefined) {
+      if (wrapper.options.some((option) => keeps.exceptWith.includes(option.option))) return unresolved;
     } else if (!wrapper.stripped) return unresolved;
     if ((executed || runsProgram(wrapper) || wrapper.word.value.includes('/')) && !('program' in resolveWord(wrapper.word.value, lookupPath, context, true))) return unresolved;
     executed = executed || runsProgram(wrapper);
-    lookupPath = isCommandP(wrapper) ? DEFAULT_COMMAND_PATH : context.searchPath;
+    lookupPath = usesDefaultPath(wrapper) ? DEFAULT_COMMAND_PATH : context.searchPath;
   }
   return resolveWord(word.value, lookupPath, context, false);
 };

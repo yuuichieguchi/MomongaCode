@@ -54,23 +54,23 @@ const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenData
   const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } = await import('@momonga/runtime');
   const env = await environmentSnapshot(ports);
   const client = connectRuntime(paths);
+  const api = goldenRunApi(client, undefined, {
+    pendingBoundMs: REFLECTION_PICKUP_BOUND_MS,
+    attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS,
+    pollMs: REFLECTION_POLL_MS,
+    now: () => ports.clock.now(),
+    wait: (milliseconds, signal) => ports.clock.sleep(milliseconds, signal),
+    ...(interrupt === undefined ? {} : { signal: interrupt }),
+  });
   const workspaces: string[] = [];
   if (record !== undefined) await ports.files.ensureDirectory(record);
   try {
     return await runDataset(dataset, {
-      api: goldenRunApi(client, undefined, {
-        pendingBoundMs: REFLECTION_PICKUP_BOUND_MS,
-        attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS,
-        pollMs: REFLECTION_POLL_MS,
-        now: () => ports.clock.now(),
-        wait: (milliseconds, signal) => ports.clock.sleep(milliseconds, signal),
-        ...(interrupt === undefined ? {} : { signal: interrupt }),
-      }),
-      workspace: async (golden) => {
+      open: async (golden) => {
         const cwd = await ports.files.makeTempDirectory(WORKSPACE_PREFIX);
         workspaces.push(cwd);
         await populate(ports, cwd, golden);
-        return { cwd, env };
+        return { api, workspace: { cwd, env }, close: async () => undefined };
       },
       ...(record === undefined ? {} : { onTranscript: async (run: RecordedRun) => void (await saveTranscript(ports.files, record, { ...run, policy: null, codeDigest: null })) }),
     });

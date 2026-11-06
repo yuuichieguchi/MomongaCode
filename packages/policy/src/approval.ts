@@ -334,14 +334,14 @@ const plainApproved = (spec: CommandSpec, segment: Segment, context: ApprovalCon
   if (spec.plainOperandsOnly === true && parsed.options.length > 0) return false;
   if (!operandsAllowed(spec, parsed.operands, context)) return false;
   if (spec.extractor === 'sed' && !sedAllowed(spec, parsed)) return false;
-  if (spec.extractor === 'cd' && parsed.operands.some((word) => word.staticValue === '-')) return false;
+  if (spec.dashOperand === 'previous-directory' && parsed.operands.some((word) => word.staticValue === '-')) return false;
   if (!psAllowed(spec, segment, parsed.operands)) return false;
   return true;
 };
 
 const changesIntoUnknownDirectory = (segment: Segment): boolean => {
   const word = segment.words[segment.effectiveIndex];
-  if (word === undefined || word.value !== 'cd') return false;
+  if (word === undefined || !word.literal || word.value.includes('/') || segment.effects.spec?.directoryFromOperand !== true) return false;
   const parsed = segment.effects.parsed;
   const [operand] = parsed?.operands ?? [];
   return operand === undefined || operand.staticValue === null || operand.staticValue === '-';

@@ -150,7 +150,9 @@ const constantsOf = (name: string): Record<string, string> => {
 const manifest = readManifest(path.join(configDir, 'manifest.json'));
 const recoveryEntries = manifest.entries.filter((entry) => entry.config.split('.')[0] === 'RunRecovery');
 const checkNames = recoveryEntries.filter((entry) => entry.role === 'check').map((entry) => entry.config);
-const evidenceNames = recoveryEntries.filter((entry) => entry.role === 'evidence' && !entry.config.startsWith('RunRecovery.uniformCancel')).map((entry) => entry.config);
+const evidenceNames = recoveryEntries
+  .filter((entry) => entry.role === 'evidence' && !entry.config.startsWith('RunRecovery.uniformCancel') && !entry.config.startsWith('RunRecovery.liveTimeout'))
+  .map((entry) => entry.config);
 const configText = (name: string): string => fs.readFileSync(path.join(configDir, `${name}.cfg`), 'utf8');
 const hasInvariantSection = (name: string): boolean => /^INVARIANTS$/m.test(configText(name));
 const lists = (name: string, invariant: string): boolean => new RegExp(`^\\s+${invariant}$`, 'm').test(configText(name));

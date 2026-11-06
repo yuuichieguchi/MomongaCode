@@ -1,4 +1,5 @@
 import { TRUNCATION_MARKER_SOURCE, truncationMarker } from '@momonga/foundation';
+import { envelopeOf } from '@momonga/protocol';
 import type { FunctionCallOutputInputItem } from '@momonga/protocol';
 
 const HIGH_SURROGATE_START = 0xd800;
@@ -75,4 +76,12 @@ export const fitToTokens = async (input: FitInput): Promise<string> => {
     }
     keptChars = Math.max(0, Math.min(keptChars - 1, Math.floor((keptChars * cap) / tokens)));
   }
+};
+
+export type OutputRender = { full: FunctionCallOutputInputItem; enclose: (content: string) => string };
+
+export const outputRenderOf = (original: FunctionCallOutputInputItem, tool: string | undefined, harnessTools: ReadonlySet<string>, pointer: boolean): OutputRender => {
+  if (pointer || (tool !== undefined && harnessTools.has(tool))) return { full: original, enclose: (content) => content };
+  const enclose = (content: string): string => envelopeOf({ content, callId: original.call_id, tool: tool ?? '' });
+  return { full: withOutput(original, enclose(outputTextOf(original.output))), enclose };
 };

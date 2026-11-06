@@ -410,9 +410,9 @@ describe('the settings, credentials and probe records of a live run', () => {
     const models = userModels();
     models.resolved.targets['t'] = target({ toolCalling: 'auto' as never });
     models.declared.targets = { ...models.declared.targets, t: { ...declaredTarget, toolCalling: 'auto' } as never };
-    const settings = liveSettingsFor(models, 'default');
+    const settings = liveSettingsFor(models, ['default']);
     expect(settings.endpointProbes).toEqual([{ endpoint: 'https://upstream.invalid/v1', model: 'm' }]);
-    expect(liveSettingsFor(userModels(), 'default').endpointProbes).toEqual([]);
+    expect(liveSettingsFor(userModels(), ['default']).endpointProbes).toEqual([]);
   });
 
   it('copies the endpoint probe record of an auto target into every case home', async () => {
@@ -541,14 +541,14 @@ describe('a home left by a CLI that was killed', () => {
 
 describe('the models of a live run', () => {
   it('copies only the target definitions the alias reaches', () => {
-    expect(liveSettingsFor(userModels(), 'other').models).toEqual({ aliases: { other: ['u'] }, targets: { u: userModels().declared.targets?.['u'] } });
+    expect(liveSettingsFor(userModels(), ['other']).models).toEqual({ aliases: { other: ['u'] }, targets: { u: userModels().declared.targets?.['u'] } });
   });
 
   it('replaces the secret of a target by a generated environment variable name and keeps the secret name out of the settings', () => {
     const models = userModels();
     models.resolved.targets['t'] = target({ apiKeySecret: 'work-key' });
     models.declared.targets = { ...models.declared.targets, t: { ...declaredTarget, apiKeySecret: 'work-key' } as never };
-    const settings = liveSettingsFor(models, 'default');
+    const settings = liveSettingsFor(models, ['default']);
     expect(settings.credentials).toEqual([{ envName: 'MOMONGA_EVAL_KEY_0', secretName: 'work-key' }]);
     expect(JSON.stringify(settings.models)).not.toContain('work-key');
     expect(settings.models.targets?.['t']).toMatchObject({ apiKeyEnv: 'MOMONGA_EVAL_KEY_0' });
@@ -558,21 +558,21 @@ describe('the models of a live run', () => {
     const models = userModels();
     models.resolved.targets['t'] = { adapter: 'fm', model: 'system', toolCalling: 'native', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 1000 } as unknown as ResolvedChatCompletionsTarget;
     models.declared.targets = { ...models.declared.targets, t: { adapter: 'fm' } };
-    const settings = liveSettingsFor(models, 'default');
+    const settings = liveSettingsFor(models, ['default']);
     expect(settings.fmTargets).toEqual(['t']);
     expect(settings.models.targets?.['t']).toEqual({ adapter: 'fm' });
   });
 
   it('carries the sandbox the person set, and none when the person set none', () => {
-    expect(liveSettingsFor({ ...userModels(), sandbox: 'none' }, 'default').sandbox).toBe('none');
-    expect(liveSettingsFor(userModels(), 'default')).not.toHaveProperty('sandbox');
+    expect(liveSettingsFor({ ...userModels(), sandbox: 'none' }, ['default']).sandbox).toBe('none');
+    expect(liveSettingsFor(userModels(), ['default'])).not.toHaveProperty('sandbox');
   });
 
   it('refuses an unknown alias and a target that is not declared', () => {
-    expect(() => liveSettingsFor(userModels(), 'missing')).toThrow(/alias missing is not defined/);
+    expect(() => liveSettingsFor(userModels(), ['missing'])).toThrow(/alias missing is not defined/);
     const models = userModels();
     models.declared.targets = {};
-    expect(() => liveSettingsFor(models, 'default')).toThrow(ContextHostError);
+    expect(() => liveSettingsFor(models, ['default'])).toThrow(ContextHostError);
   });
 });
 

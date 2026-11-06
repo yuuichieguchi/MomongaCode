@@ -199,7 +199,7 @@ export type RunEventPayload =
       tokenErrorRatio?: number;
       tokenCounting: 'exact' | 'calibrated' | 'estimated';
     }
-  | { type: 'tool.reconciled'; callId: string; outcome: 'already_applied' | 'not_applied' | 'unknown'; output: string; files?: ToolFile[]; command?: string }
+  | { type: 'tool.reconciled'; callId: string; outcome: 'already_applied' | 'not_applied' | 'unknown'; output: string; interrupted?: 'timeout' | 'cancelled'; files?: ToolFile[]; command?: string }
   | { type: 'tool.waiting'; callId: string; awaits: ToolAwait; wakeAt?: number }
   | { type: 'job.finished'; jobId: string; status: Exclude<JobStatus, 'running'>; exitCode?: number; signal?: string }
   | {
