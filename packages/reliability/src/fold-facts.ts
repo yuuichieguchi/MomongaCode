@@ -27,7 +27,24 @@ const declaredCompletion = (event: Extract<RunEvent, { type: 'run.started' }>): 
   return completion.length > 0;
 };
 
-export const foldFacts = (events: readonly RunEvent[], info: RunInfo): RunFactsView => {
+export const FACTS_EVENT_TYPES = [
+  'run.started',
+  'attempt.failed',
+  'attempt.lost',
+  'run.status',
+  'model.responded',
+  'tool.call',
+  'tool.started',
+  'tool.completed',
+  'tool.reconciled',
+  'tool.permission.requested',
+  'tool.elicitation.requested',
+  'mcp.authorization.required',
+] as const satisfies readonly RunEvent['type'][];
+
+export type FactsFold = { add(event: RunEvent): void; finish(info: RunInfo): RunFactsView };
+
+export const createFactsFold = (): FactsFold => {
   const basis = { readOnly: 0, rule: 0, mode: 0, hook: 0, classifier: 0, person: 0 };
   const sideEffecting = new Set<string>();
   const startedSinceNotApplied = new Set<string>();
@@ -81,7 +98,7 @@ export const foldFacts = (events: readonly RunEvent[], info: RunInfo): RunFactsV
     if (!wasAwaited || pending?.awaiting.size === 0) progress(event);
   };
 
-  for (const event of events) {
+  const add = (event: RunEvent): void => {
     switch (event.type) {
       case 'run.started': {
         declared ??= declaredCompletion(event);
@@ -149,41 +166,51 @@ export const foldFacts = (events: readonly RunEvent[], info: RunInfo): RunFactsV
       default:
         break;
     }
-  }
-
-  if (endedAt === undefined) throw new RangeError(`run ${info.runId}: facts are defined for terminal runs and the journal has no terminal run.status`);
-  if (pending !== undefined) throw new RangeError(`run ${info.runId}: the recovery episode opened at seq ${pending.startedSeq} never reached progress or failure`);
-
-  return {
-    runId: info.runId,
-    rootRunId: info.rootRunId,
-    sessionId: info.sessionId,
-    definitionsVersion: INDICATOR_DEFINITIONS_VERSION,
-    modelAlias: info.modelAlias,
-    mode: info.mode,
-    agent: info.agent,
-    origin: info.origin,
-    status: info.status,
-    ...(info.stopReason === undefined ? {} : { stopReason: info.stopReason }),
-    createdAt: info.createdAt,
-    endedAt,
-    elapsedMs: endedAt - info.createdAt,
-    humanWaitMs,
-    tokensTotal: info.tokensTotal,
-    steps: info.step,
-    limits: info.limits,
-    ...(info.deadlineAt === undefined ? {} : { deadlineAt: info.deadlineAt }),
-    asked,
-    elicited,
-    authorizationRequired,
-    sideEffectingCalls: sideEffecting.size,
-    repeatedStarts,
-    reconciledAlreadyApplied,
-    reconciledNotApplied,
-    reconciledUnknown,
-    basis,
-    declared: declared ?? false,
-    met: info.status === 'COMPLETED',
-    recoveries,
   };
+
+  const finish = (info: RunInfo): RunFactsView => {
+    if (endedAt === undefined) throw new RangeError(`run ${info.runId}: facts are defined for terminal runs and the journal has no terminal run.status`);
+    if (pending !== undefined) throw new RangeError(`run ${info.runId}: the recovery episode opened at seq ${pending.startedSeq} never reached progress or failure`);
+
+    return {
+      runId: info.runId,
+      rootRunId: info.rootRunId,
+      sessionId: info.sessionId,
+      definitionsVersion: INDICATOR_DEFINITIONS_VERSION,
+      modelAlias: info.modelAlias,
+      mode: info.mode,
+      agent: info.agent,
+      origin: info.origin,
+      status: info.status,
+      ...(info.stopReason === undefined ? {} : { stopReason: info.stopReason }),
+      createdAt: info.createdAt,
+      endedAt,
+      elapsedMs: endedAt - info.createdAt,
+      humanWaitMs,
+      tokensTotal: info.tokensTotal,
+      steps: info.step,
+      limits: info.limits,
+      ...(info.deadlineAt === undefined ? {} : { deadlineAt: info.deadlineAt }),
+      asked,
+      elicited,
+      authorizationRequired,
+      sideEffectingCalls: sideEffecting.size,
+      repeatedStarts,
+      reconciledAlreadyApplied,
+      reconciledNotApplied,
+      reconciledUnknown,
+      basis,
+      declared: declared ?? false,
+      met: info.status === 'COMPLETED',
+      recoveries,
+    };
+  };
+
+  return { add, finish };
+};
+
+export const foldFacts = (events: readonly RunEvent[], info: RunInfo): RunFactsView => {
+  const fold = createFactsFold();
+  for (const event of events) fold.add(event);
+  return fold.finish(info);
 };

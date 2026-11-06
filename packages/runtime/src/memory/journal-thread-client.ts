@@ -1,5 +1,6 @@
 import { MessageChannel, Worker, receiveMessageOnPort } from 'node:worker_threads';
 import type { MessagePort } from 'node:worker_threads';
+import type { RunFactsView } from '@momonga/protocol';
 import { JournalThreadError, blobDirectoryOf } from '@momonga/store';
 import type { ContributionMeasured, ContributionPreparer, EvidenceReply, FidelityReply, RecordedCheck, RecordedHash, ReflectionInputReply, VerdictFact, VerdictReply } from '@momonga/store';
 import { JOURNAL_THREAD_CODE } from './journal-thread-code.generated.ts';
@@ -23,6 +24,7 @@ export type JournalThreadClient = ContributionPreparer & {
   readonly identity: { readonly dev: number; readonly ino: number };
   request(request: { readonly kind: string } & Readonly<Record<string, unknown>>): Promise<JournalThreadReply>;
   ping(): Promise<{ readonly threadId: number }>;
+  runFacts(runId: string): Promise<RunFactsView>;
   close(): Promise<void>;
 };
 
@@ -109,6 +111,14 @@ const fidelityOf = (reply: JournalThreadReply): FidelityReply => {
   if (!Array.isArray(attested) || !attested.every((token) => typeof token === 'string')) throw new JournalThreadError('journal thread fidelity reply carries malformed attested tokens');
   if (!Array.isArray(unreadable) || !unreadable.every(isUnreadable)) throw new JournalThreadError('journal thread fidelity reply carries malformed unreadable blobs');
   return { lastSeq: lastSeqOf(reply, 'fidelity'), attested, unreadable };
+};
+
+const runFactsOf = (reply: JournalThreadReply, runId: string): RunFactsView => {
+  const { facts } = reply;
+  if (!isRecord(facts) || facts['runId'] !== runId || typeof facts['definitionsVersion'] !== 'number' || !Array.isArray(facts['recoveries'])) {
+    throw new JournalThreadError(`journal thread runFacts reply carries malformed facts for run ${runId}`);
+  }
+  return facts as RunFactsView;
 };
 
 export const startJournalThread = async (options: JournalThreadOptions): Promise<JournalThreadClient> => {
@@ -297,6 +307,8 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
   const fidelity: JournalThreadClient['fidelity'] = async ({ runId, throughEventSeq, cwd, tokens }) =>
     fidelityOf(await request({ kind: 'fidelity', runId, throughEventSeq, cwd, tokens }));
 
+  const runFacts: JournalThreadClient['runFacts'] = async (runId) => runFactsOf(await request({ kind: 'runFacts', runId }), runId);
+
   const close = (): Promise<void> => {
     closePromise ??= (async () => {
       if (current !== null) fail(current, new JournalThreadError('journal thread client was closed'));
@@ -307,5 +319,5 @@ export const startJournalThread = async (options: JournalThreadOptions): Promise
   };
 
   await liveThread();
-  return { identity, request, ping, measure, verdict, evidence, reflectionInput, fidelity, close };
+  return { identity, request, ping, runFacts, measure, verdict, evidence, reflectionInput, fidelity, close };
 };

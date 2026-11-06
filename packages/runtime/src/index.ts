@@ -36,6 +36,7 @@ export {
   createRunService,
   startApprovalSweeper,
   startMemorySweeper,
+  startFactsSweeper,
   startSearchSweeper,
   startTerminalSweeper,
 } from './service/index.ts';

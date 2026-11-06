@@ -6,6 +6,8 @@ export const REPORT_PAGE_ROWS = 500;
 export const FACTS_SWEEP_BATCH_RUNS = 3;
 export const INDICATOR_DEFINITIONS_VERSION = 1;
 
+export const MAIN_AGENT = 'main';
+
 export const RECOVERY_CAUSES = ['worker_failure', 'process_lost'] as const;
 export const RECOVERY_OUTCOMES = ['recovered', 'unknown_effect', 'failed', 'stopped'] as const;
 
