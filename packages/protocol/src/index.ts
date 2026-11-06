@@ -253,7 +253,6 @@ export type {
   RunFactsBasis,
   RunFactsLimits,
   RunFactsView,
-  RunRecovery,
 } from './reliability.ts';
 export { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, MOMONGA_EVENTS, MOMONGA_REQUEST_FIELDS, MOMONGA_SPAN_NOTES } from './trace-attributes.ts';
 export { EVENT_TYPES, RUN_API_SCHEMAS, base64ByteLength, runApiSchemaName, toPublicRunEvent } from './run-api.ts';

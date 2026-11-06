@@ -1,10 +1,11 @@
 import { INDICATOR_DEFINITIONS_VERSION, TERMINAL_STATUSES } from '@momonga/protocol';
-import type { RecoveryEpisodeView, RecoveryOutcome, RunEvent, RunFactsView, RunRecovery } from '@momonga/protocol';
+import type { RecoveryCause, RecoveryEpisodeView, RecoveryOutcome, RunEvent, RunFactsView } from '@momonga/protocol';
 import type { RunInfo } from './types.ts';
 
 type Episode = {
   ordinal: number;
-  recovery: RunRecovery;
+  cause: RecoveryCause;
+  failedAt: number;
   startedSeq: number;
   awaiting: Set<string>;
   unknownReconciled: boolean;
@@ -49,8 +50,8 @@ export const foldFacts = (events: readonly RunEvent[], info: RunInfo): RunFactsV
   const resolve = (episode: Episode, outcome: RecoveryOutcome, progress: { at: number; seq: number } | undefined): void => {
     recoveries.push({
       ordinal: episode.ordinal,
-      cause: episode.recovery.cause,
-      failedAt: episode.recovery.failedAt,
+      cause: episode.cause,
+      failedAt: episode.failedAt,
       progressAt: progress?.at ?? null,
       outcome,
       startedSeq: episode.startedSeq,
@@ -59,28 +60,39 @@ export const foldFacts = (events: readonly RunEvent[], info: RunInfo): RunFactsV
     pending = undefined;
   };
 
+  const open = (event: RunEvent, cause: RecoveryCause, failedAt: number): void => {
+    if (pending !== undefined) return;
+    ordinal += 1;
+    pending = { ordinal, cause, failedAt, startedSeq: event.seq, awaiting: new Set(openCalls), unknownReconciled: false };
+  };
+
   const progress = (event: RunEvent): void => {
     if (pending === undefined) return;
     const settled = pending.awaiting.size === 0 && !pending.unknownReconciled;
     resolve(pending, settled ? 'recovered' : 'unknown_effect', { at: event.createdAt, seq: event.seq });
   };
 
-  const settle = (callId: string): void => {
+  const settle = (callId: string): boolean => {
     openCalls.delete(callId);
-    pending?.awaiting.delete(callId);
+    return pending?.awaiting.delete(callId) === true;
+  };
+
+  const progressUnlessAwaiting = (event: RunEvent, wasAwaited: boolean): void => {
+    if (!wasAwaited || pending?.awaiting.size === 0) progress(event);
   };
 
   for (const event of events) {
     switch (event.type) {
       case 'run.started': {
         declared ??= declaredCompletion(event);
-        if (event.recovery !== undefined) {
-          if (pending !== undefined) resolve(pending, 'failed', undefined);
-          ordinal += 1;
-          pending = { ordinal, recovery: event.recovery, startedSeq: event.seq, awaiting: new Set(openCalls), unknownReconciled: false };
-        }
         break;
       }
+      case 'attempt.failed':
+        open(event, 'worker_failure', event.createdAt);
+        break;
+      case 'attempt.lost':
+        open(event, 'process_lost', event.lastLiveAt);
+        break;
       case 'run.status': {
         if (event.from === 'WAITING_HUMAN' && waitingSince !== undefined) {
           humanWaitMs += event.createdAt - waitingSince;
@@ -91,19 +103,19 @@ export const foldFacts = (events: readonly RunEvent[], info: RunInfo): RunFactsV
           endedAt ??= event.createdAt;
           if (pending !== undefined) {
             if (event.to === 'FAILED') resolve(pending, 'failed', undefined);
-            else progress(event);
+            else if (event.to === 'COMPLETED') progress(event);
+            else resolve(pending, 'stopped', undefined);
           }
         }
         break;
       }
-      case 'model.requested':
+      case 'model.responded':
         progress(event);
         break;
       case 'tool.call':
         if (event.sideEffect !== 'read_only') sideEffecting.add(event.callId);
         break;
       case 'tool.started': {
-        progress(event);
         if (event.basis !== undefined) basis[basisKey(event.basis)] += 1;
         if (sideEffecting.has(event.callId) && startedSinceNotApplied.has(event.callId)) repeatedStarts += 1;
         startedSinceNotApplied.add(event.callId);
@@ -111,7 +123,7 @@ export const foldFacts = (events: readonly RunEvent[], info: RunInfo): RunFactsV
         break;
       }
       case 'tool.completed':
-        settle(event.callId);
+        progressUnlessAwaiting(event, settle(event.callId));
         break;
       case 'tool.reconciled': {
         if (event.outcome === 'already_applied') reconciledAlreadyApplied += 1;
@@ -122,7 +134,7 @@ export const foldFacts = (events: readonly RunEvent[], info: RunInfo): RunFactsV
           reconciledUnknown += 1;
           if (pending?.awaiting.has(event.callId) === true) pending.unknownReconciled = true;
         }
-        settle(event.callId);
+        progressUnlessAwaiting(event, settle(event.callId));
         break;
       }
       case 'tool.permission.requested':
@@ -140,7 +152,7 @@ export const foldFacts = (events: readonly RunEvent[], info: RunInfo): RunFactsV
   }
 
   if (endedAt === undefined) throw new RangeError(`run ${info.runId}: facts are defined for terminal runs and the journal has no terminal run.status`);
-  if (pending !== undefined) throw new RangeError(`run ${info.runId}: the recovery episode started at seq ${pending.startedSeq} never reached progress or failure`);
+  if (pending !== undefined) throw new RangeError(`run ${info.runId}: the recovery episode opened at seq ${pending.startedSeq} never reached progress or failure`);
 
   return {
     runId: info.runId,

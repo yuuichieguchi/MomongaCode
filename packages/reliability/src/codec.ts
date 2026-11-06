@@ -55,6 +55,7 @@ const decodeIndicators = (value: unknown, path: string): Indicators => {
       n: countAt(recovery, 'n', `${path}.recovery`),
       unknownEffect: countAt(recovery, 'unknownEffect', `${path}.recovery`),
       failed: countAt(recovery, 'failed', `${path}.recovery`),
+      stopped: countAt(recovery, 'stopped', `${path}.recovery`),
     },
     recoveryTime: {
       n: countAt(recoveryTime, 'n', `${path}.recoveryTime`),

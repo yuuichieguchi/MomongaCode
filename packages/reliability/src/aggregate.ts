@@ -13,6 +13,7 @@ type TaskPartial = {
   recovered: number;
   unknownEffect: number;
   failedEpisodes: number;
+  stoppedEpisodes: number;
   durations: number[];
   clockSkew: number;
 };
@@ -26,10 +27,12 @@ const partialOf = (row: RunFacts): TaskPartial => {
   let recovered = 0;
   let unknownEffect = 0;
   let failedEpisodes = 0;
+  let stoppedEpisodes = 0;
   let clockSkew = 0;
   for (const episode of row.recoveries) {
     if (episode.outcome === 'unknown_effect') unknownEffect += 1;
     else if (episode.outcome === 'failed') failedEpisodes += 1;
+    else if (episode.outcome === 'stopped') stoppedEpisodes += 1;
     else {
       recovered += 1;
       if (episode.progressAt === null) throw new RangeError(`run ${row.runId}: a recovered episode has no progress instant`);
@@ -50,6 +53,7 @@ const partialOf = (row: RunFacts): TaskPartial => {
     recovered,
     unknownEffect,
     failedEpisodes,
+    stoppedEpisodes,
     durations,
     clockSkew,
   };
@@ -71,6 +75,7 @@ const combine = (left: TaskPartial, right: TaskPartial): TaskPartial => {
     recovered: left.recovered + right.recovered,
     unknownEffect: left.unknownEffect + right.unknownEffect,
     failedEpisodes: left.failedEpisodes + right.failedEpisodes,
+    stoppedEpisodes: left.stoppedEpisodes + right.stoppedEpisodes,
     durations: [...left.durations, ...right.durations],
     clockSkew: left.clockSkew + right.clockSkew,
   };
@@ -135,6 +140,7 @@ type Accumulator = {
   recovered: number;
   unknownEffect: number;
   failedEpisodes: number;
+  stoppedEpisodes: number;
   durations: number[];
   clockSkew: number;
   duplicatesK: number;
@@ -160,6 +166,7 @@ const emptyAccumulator = (): Accumulator => ({
   recovered: 0,
   unknownEffect: 0,
   failedEpisodes: 0,
+  stoppedEpisodes: 0,
   durations: [],
   clockSkew: 0,
   duplicatesK: 0,
@@ -204,6 +211,7 @@ const accumulate = (accumulator: Accumulator, task: TaskPartial): void => {
   accumulator.recovered += task.recovered;
   accumulator.unknownEffect += task.unknownEffect;
   accumulator.failedEpisodes += task.failedEpisodes;
+  accumulator.stoppedEpisodes += task.stoppedEpisodes;
   accumulator.durations.push(...task.durations);
   accumulator.clockSkew += task.clockSkew;
   if (task.sideEffectingCalls > 0) {
@@ -239,7 +247,13 @@ const finish = (accumulator: Accumulator): Indicators => {
   return {
     buckets: { counted: accumulator.counted, cancelled: accumulator.cancelled, pendingFacts: accumulator.pendingFacts },
     completion: { k: accumulator.completionK, n: accumulator.completionN, undeclared: accumulator.undeclared },
-    recovery: { k: accumulator.recovered, n: episodes, unknownEffect: accumulator.unknownEffect, failed: accumulator.failedEpisodes },
+    recovery: {
+      k: accumulator.recovered,
+      n: episodes,
+      unknownEffect: accumulator.unknownEffect,
+      failed: accumulator.failedEpisodes,
+      stopped: accumulator.stoppedEpisodes,
+    },
     recoveryTime: {
       n: sorted.length,
       meanMs: sorted.length === 0 ? null : durationSum / sorted.length,

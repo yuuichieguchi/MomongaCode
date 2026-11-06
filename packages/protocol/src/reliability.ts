@@ -7,12 +7,10 @@ export const FACTS_SWEEP_BATCH_RUNS = 3;
 export const INDICATOR_DEFINITIONS_VERSION = 1;
 
 export const RECOVERY_CAUSES = ['worker_failure', 'process_lost'] as const;
-export const RECOVERY_OUTCOMES = ['recovered', 'unknown_effect', 'failed'] as const;
+export const RECOVERY_OUTCOMES = ['recovered', 'unknown_effect', 'failed', 'stopped'] as const;
 
 export type RecoveryCause = (typeof RECOVERY_CAUSES)[number];
 export type RecoveryOutcome = (typeof RECOVERY_OUTCOMES)[number];
-
-export type RunRecovery = { cause: RecoveryCause; failedAt: number };
 
 export type RecoveryEpisodeView = {
   ordinal: number;

@@ -28,7 +28,7 @@ export type Rate = { k: number; n: number };
 export type Indicators = {
   buckets: { counted: number; cancelled: number; pendingFacts: number };
   completion: { k: number; n: number; undeclared: number };
-  recovery: { k: number; n: number; unknownEffect: number; failed: number };
+  recovery: { k: number; n: number; unknownEffect: number; failed: number; stopped: number };
   recoveryTime: { n: number; meanMs: number | null; medianMs: number | null; clockSkew: number };
   duplicates: { journal: Rate; prevented: number; unknown: number };
   intervention: Rate;

@@ -40,7 +40,7 @@ const indicatorLines = (indicators: Indicators): string[] => {
     completion.n === 0
       ? `Task Completion Rate: not measurable: no task declared a completion condition (${completion.undeclared} tasks without one)`
       : `Task Completion Rate: ${describeRate(completion)} (${completion.undeclared} tasks without a declared condition are not in the denominator)`,
-    `Recovery Success Rate: ${describeRate(recovery)}; unknown_effect ${recovery.unknownEffect}; failed ${recovery.failed}`,
+    `Recovery Success Rate: ${describeRate(recovery)}; unknown_effect ${recovery.unknownEffect}; failed ${recovery.failed}; stopped ${recovery.stopped}`,
     `Mean Recovery Time: n=${recoveryTime.n}, mean ${milliseconds(recoveryTime.meanMs)}, median ${milliseconds(recoveryTime.medianMs)}; clock_skew ${recoveryTime.clockSkew}`,
     `Duplicate Side Effect Rate (journal): ${describeRate(duplicates.journal)}; prevented ${duplicates.prevented}; unknown ${duplicates.unknown}`,
     `Human Intervention Rate: ${describeRate(intervention)}`,

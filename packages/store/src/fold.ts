@@ -487,6 +487,7 @@ const applyEvent = (state: RunState, event: RunEvent): RunState => {
       return withHookCompleted(state, event);
     case 'job.finished':
     case 'attempt.failed':
+    case 'attempt.lost':
     case 'tool.updated':
     case 'usage.updated':
     case 'meter.observed':

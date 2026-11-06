@@ -13,7 +13,6 @@ import { FILE_ACCESSES } from './working-facts.ts';
 import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, MODEL_REJECTION_REASONS, PERMISSION_MODES, RUN_STATUSES, SIDE_EFFECTS, STOP_REASONS, TOOL_KINDS, USAGE_CHARGE_PURPOSES } from './run-types.ts';
 import type { ImageMediaType, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent } from './run-types.ts';
 import type { ReflectionJobView } from './memory.ts';
-import type { RunRecovery } from './reliability.ts';
 import type { BilledDetail, TokenAnatomy } from './token-anatomy.ts';
 
 const DRAFT_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
@@ -255,11 +254,9 @@ const runFactsView = closed(
 
 const PAYLOAD_SCHEMAS: Record<RunEventPayload['type'] | SessionEvent['type'], { properties: Record<string, JsonSchema>; required: readonly string[] }> = {
   'user.message': { properties: { text: string, images: { type: 'array', items: imageSummary } }, required: ['text'] },
-  'run.started': {
-    properties: { attempt: integer, recovery: closed({ cause: enumOf(RECOVERY_CAUSES), failedAt: integer }, ['cause', 'failedAt']) },
-    required: ['attempt'],
-  },
+  'run.started': { properties: { attempt: integer }, required: ['attempt'] },
   'attempt.failed': { properties: { attempt: integer, code: string }, required: ['attempt', 'code'] },
+  'attempt.lost': { properties: { lastLiveAt: integer }, required: ['lastLiveAt'] },
   'run.status': {
     properties: { from: enumOf(RUN_STATUSES), to: enumOf(RUN_STATUSES), reason: string },
     required: ['from', 'to'],
@@ -1377,7 +1374,7 @@ type PublicPayload =
   | Exclude<RunEventPayload, { type: ReducedEventType }>
   | { type: 'user.message'; text: string; images?: { mediaType: ImageMediaType; byteLength: number }[] }
   | { type: 'model.requested'; step: number; attempt: number; digest: string; anatomy?: TokenAnatomy; prefix?: Extract<RunEventPayload, { type: 'model.requested' }>['prefix'] }
-  | { type: 'run.started'; attempt: number; recovery?: RunRecovery }
+  | { type: 'run.started'; attempt: number }
   | { type: 'context.compacted'; summary: string; replacedThroughSeq: number; source?: SummarySource; fidelity?: SummaryFidelity; guidelineVersion?: number }
   | { type: 'context.compaction_rejected'; step?: number; attempt?: number }
   | {
@@ -1424,7 +1421,7 @@ export const toPublicRunEvent = (event: RunEvent | SessionEvent): PublicRunEvent
         ...(event.prefix === undefined ? {} : { prefix: event.prefix }),
       };
     case 'run.started':
-      return { ...envelope, type: event.type, attempt: event.attempt, ...(event.recovery === undefined ? {} : { recovery: event.recovery }) };
+      return { ...envelope, type: event.type, attempt: event.attempt };
     case 'context.compacted':
       return {
         ...envelope,
