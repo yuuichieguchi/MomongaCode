@@ -44,9 +44,11 @@ const startCheck = async (app: ReturnType<typeof renderObservable>, seen: { sign
   expect(seen.signal?.aborted).toBe(false);
 };
 
-const until = async (condition: () => boolean): Promise<void> => {
-  for (let attempt = 0; attempt < 200 && !condition(); attempt += 1) await new Promise<void>((resolve) => setTimeout(resolve, 5));
-  expect(condition()).toBe(true);
+const aborted = async (seen: { signal?: AbortSignal }): Promise<void> => {
+  const signal = seen.signal;
+  expect(signal).toBeDefined();
+  if (signal !== undefined && !signal.aborted) await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }));
+  expect(signal?.aborted).toBe(true);
 };
 
 describe('a long client-side task in the TUI (C1)', () => {
@@ -65,7 +67,7 @@ describe('a long client-side task in the TUI (C1)', () => {
     const { app } = await startWith(command);
     await startCheck(app, seen);
     app.stdin.write(KEYS.escape);
-    await until(() => seen.signal?.aborted === true);
+    await aborted(seen);
     app.unmount();
   });
 
@@ -81,7 +83,7 @@ describe('a long client-side task in the TUI (C1)', () => {
     backend.finish({ ...(await import('./fake-backend.ts')).runView({ status: 'CANCELLED' }) });
     await untilFrame(app, 'esc cancels');
     app.stdin.write(KEYS.escape);
-    await until(() => seen.signal?.aborted === true);
+    await aborted(seen);
     app.unmount();
   });
 });
