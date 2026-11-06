@@ -320,7 +320,7 @@ describe('executor abandon', () => {
       expect.arrayContaining([`tool marker ${marker} kept: process ${stubborn} still hold it after cleanup; the next start will retry`]),
     );
     expect(harness.idempotency.stateOf(KEY_A)).toBe('UNKNOWN');
-    expect(timing.sleeps).toBe(1 + STUBBORN_GRACE_MS / REAP_POLL_INTERVAL_MS);
+    expect(timing.sleeps).toBe((2 * STUBBORN_GRACE_MS) / REAP_POLL_INTERVAL_MS);
   });
 
   it('a target whose marker cannot be removed is a typed failure while the others are still reaped and every target is CAS-ed', PROCESS_TIMEOUT, async () => {
@@ -450,5 +450,60 @@ describe('executor reconcile of a PENDING call whose earlier attempt is still ru
     });
     expect(fs.existsSync(marker)).toBe(true);
     expect(harness.idempotency.stateOf(KEY_A)).toBe('UNKNOWN');
+  });
+  const hungInspector = (seen: AbortSignal[]): ProcessInspector =>
+    ({
+      startTimeOf: async () => ({ kind: 'gone' }),
+      groupsOf: async () => ({ kind: 'value', value: new Map() }),
+      markerState: (_marker: string, options: { signal: AbortSignal }) =>
+        new Promise((resolve) => {
+          seen.push(options.signal);
+          options.signal.addEventListener('abort', () => resolve('unknown'), { once: true });
+        }),
+      holdersOf: (_marker: string, options: { signal: AbortSignal }) =>
+        new Promise((resolve) => {
+          seen.push(options.signal);
+          options.signal.addEventListener('abort', () => resolve({ kind: 'failed', cause: 'transient', evidence: { kind: 'opaque', detail: 'aborted' } }), { once: true });
+        }),
+    }) as unknown as ProcessInspector;
+
+  const settlesAfterAbort = async (running: Promise<unknown>, seen: AbortSignal[], abort: () => void): Promise<void> => {
+    await eventually(() => seen.length > 0, 'the reap started its first probe', 200);
+    abort();
+    let settled = false;
+    void running.then(
+      () => void (settled = true),
+      () => void (settled = true),
+    );
+    await eventually(() => settled, 'the reap ended with its operation', 200);
+    expect(seen.every((signal) => signal.aborted)).toBe(true);
+  };
+
+  it('abandon bounds every probe of its reap by the abandon signal: a listing that never answers ends with it, refused as unverifiable, the marker kept', PROCESS_TIMEOUT, async () => {
+    const seen: AbortSignal[] = [];
+    const harness = harnessWith({ inspector: hungInspector(seen), timing: fakeTiming(), killGraceMs: STUBBORN_GRACE_MS });
+    const marker = markerOf(harness, KEY_A);
+    fs.writeFileSync(marker, '', { mode: 0o600 });
+    seedPending(harness, KEY_A);
+    const controller = new AbortController();
+    const running = harness.executor.abandon([{ callId: 'call-a', idemKey: KEY_A }], { signal: controller.signal });
+    await settlesAfterAbort(running, seen, () => controller.abort());
+    await expect(running).rejects.toMatchObject({ name: 'EarlierAttemptNotStoppedError', reason: 'unverifiable' });
+    expect(fs.existsSync(marker)).toBe(true);
+  });
+
+  it('recovery bounds every probe of the earlier-attempt reap by the batch signal: a listing that never answers ends with it and reconcile does not run', PROCESS_TIMEOUT, async () => {
+    const seen: AbortSignal[] = [];
+    const harness = harnessWith({ inspector: hungInspector(seen), timing: fakeTiming(), killGraceMs: STUBBORN_GRACE_MS });
+    const marker = markerOf(harness, KEY_A);
+    fs.writeFileSync(marker, '', { mode: 0o600 });
+    seedPending(harness, KEY_A);
+    const reconciled: unknown[] = [];
+    const tool = makeTool('Bash', { kind: 'execute', sideEffect: 'exec', subjectKind: 'none', reconcile: async (_input, _record, ctx) => { reconciled.push(ctx.earlierAttempt); return { outcome: 'unknown', output: 'unknown' }; } });
+    const controller = new AbortController();
+    const running = harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('call-a', 'Bash', {}, 'allow_once')], { signal: controller.signal }));
+    await settlesAfterAbort(running, seen, () => controller.abort());
+    expect(reconciled).toEqual([]);
+    expect(fs.existsSync(marker)).toBe(true);
   });
 });

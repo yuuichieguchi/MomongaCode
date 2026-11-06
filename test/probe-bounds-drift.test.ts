@@ -9,7 +9,7 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 
 const read = (relative: string): string => fs.readFileSync(path.join(ROOT, relative), 'utf8');
 
-const PROBE_CALL = /\b(findHolders|holdersOf|markerState|reconcileProcessGroup|reapMarkedProcesses|reapMarkedProcessesWithReport)\(/g;
+const PROBE_CALL = /\b(findHolders|holdersOf|markerState|reconcileProcessGroup|reapMarkedProcesses|reapMarkedProcessesWithReport|reapMarkerDirectory|reapToolMarkers|reapDaemonMarker|terminateGroup|ensureMomongaDirs)\(/g;
 
 const callTextFrom = (text: string, open: number): string => {
   let depth = 0;
@@ -43,6 +43,10 @@ describe('T4 (d) every caller of a probe passes the signal of its operation', ()
     'packages/runtime/src/process/background-jobs.ts',
     'packages/tools/src/builtins/bash.ts',
     'packages/tools/src/hooks/run.ts',
+    'packages/runtime/src/process/start-runtime-process.ts',
+    'packages/supervisor/src/shutdown.ts',
+    'packages/mcp/src/stdio-transport.ts',
+    'packages/cli/src/paths.ts',
   ])('%s calls no probe without a signal', (relative) => {
     expect(callsWithoutSignal(relative)).toEqual([]);
   });
@@ -63,5 +67,37 @@ describe('T12 no private probe number remains and the + 2000 margins are gone', 
     expect(orphans).toMatch(/Math\.min\(options\.orphanGraceMs, runtimeMaxCloseMs\([^)]*\)\)/);
     expect(read('packages/supervisor/src/start-supervisor.ts')).toMatch(/orphanGraceMs: options\.orphanGraceMs \?\? runtimeMaxCloseMs\(drainTimeoutMs\),/);
     expect(read('packages/supervisor/src/constants.ts')).not.toMatch(/ORPHAN_REAP_GRACE_MS = [^;\n]*\+ 2000/);
+  });
+});
+
+const REAP_PATH_SOURCES = [
+  'packages/foundation/src/process-markers.ts',
+  'packages/foundation/src/process-group.ts',
+  'packages/tools/src/executor.ts',
+  'packages/tools/src/builtins/bash.ts',
+  'packages/tools/src/hooks/run.ts',
+  'packages/supervisor/src/orphans.ts',
+  'packages/supervisor/src/shutdown.ts',
+  'packages/runtime/src/process/tool-markers.ts',
+  'packages/runtime/src/process/background-jobs.ts',
+  'packages/runtime/src/process/start-runtime-process.ts',
+  'packages/mcp/src/stdio-transport.ts',
+];
+
+const NEVER_ABORTING = [/NEVER_ABORTED/, /new AbortController\(\)\.signal/, /signal \?\? /, /signal = new AbortController/];
+
+describe('PT 3G and HB2 rule 1: no reap-path probe gets a signal that never aborts', () => {
+  it.for(REAP_PATH_SOURCES)('%s creates no never-aborting signal and has no fallback for a missing one', (relative) => {
+    const text = read(relative);
+    const found = text
+      .split('\n')
+      .map((line, index) => ({ line: line.trim(), number: index + 1 }))
+      .filter(({ line }) => NEVER_ABORTING.some((pattern) => pattern.test(line)))
+      .map(({ line, number }) => `${relative}:${number}: ${line}`);
+    expect(found).toEqual([]);
+  });
+
+  it.for(REAP_PATH_SOURCES)('%s neither passes an undefined signal nor drops a missing one', (relative) => {
+    expect(read(relative)).not.toMatch(/signal: undefined|signal === undefined \? \{\} : \{ signal \}/);
   });
 });

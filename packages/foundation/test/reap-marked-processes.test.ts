@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, TrackedChild } from '@momonga/testkit';
 import { MarkerReapError, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, reconcileProcessGroup } from '@momonga/foundation';
-import type { ReapTiming } from '@momonga/foundation';
+import type { ProcessInspector, ReapTiming } from '@momonga/foundation';
 
 const SIGTERM_GRACE_TEST_TIMEOUT_MS = REAL_PROCESS_TEST_TIMEOUT_MS;
 const SIGKILL_CONFIRMATION_TEST_TIMEOUT_MS = REAL_PROCESS_TEST_TIMEOUT_MS;
@@ -664,8 +664,26 @@ const signalRecorder = (now: () => number, intercept: (pid: number, signal: Node
 
 const firstAt = (signals: readonly SignalRecord[], signal: NodeJS.Signals): number | undefined => signals.find((entry) => entry.signal === signal)?.at;
 
-describe('marker reap: AbortSignal', () => {
-  it('abort during the grace sends SIGKILL at once', { timeout: SIGTERM_GRACE_PLUS_SIGKILL_CONFIRMATION_TEST_TIMEOUT_MS }, async (context) => {
+const T = { timeout: SIGTERM_GRACE_PLUS_SIGKILL_CONFIRMATION_TEST_TIMEOUT_MS };
+
+const hungListing = (seen: AbortSignal[]): ProcessInspector =>
+  ({
+    startTimeOf: async () => ({ kind: 'gone' }),
+    groupsOf: async () => ({ kind: 'value', value: new Map() }),
+    markerState: (_marker: string, options: { signal: AbortSignal }) =>
+      new Promise((resolve) => {
+        seen.push(options.signal);
+        options.signal.addEventListener('abort', () => resolve('unknown'), { once: true });
+      }),
+    holdersOf: (_marker: string, options: { signal: AbortSignal }) =>
+      new Promise((resolve) => {
+        seen.push(options.signal);
+        options.signal.addEventListener('abort', () => resolve({ kind: 'failed', cause: 'transient', evidence: { kind: 'opaque', detail: 'aborted' } }), { once: true });
+      }),
+  }) as unknown as ProcessInspector;
+
+describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bound, the marker kept and nothing unverified signalled; HB2 rule 1: the caller signal ending the wait gives unconfirmed, marker kept)', () => {
+  it('abort during the grace ends the reap at once: no SIGKILL is sent and the marker is kept', T, async (context) => {
     const dir = withTempDir(context);
     const marker = markerFile(dir);
     const holder = await spawnOnMarker(context, dir, marker, TERM_IGNORING_HOLDER);
@@ -673,18 +691,13 @@ describe('marker reap: AbortSignal', () => {
     const fake = abortableTiming({ controller, at: 100 });
     const { signals, kill } = signalRecorder(fake.now);
     const result = await reapMarkedProcesses({ marker, killGraceMs: 1000, label: 'daemon', onWarning: () => undefined, kill, timing: fake.timing, signal: controller.signal });
-    expect(controller.signal.aborted).toBe(true);
-    expect(signals[0]).toEqual({ pid: holder.child.pid, signal: 'SIGTERM', at: 0 });
-    const killedAt = firstAt(signals, 'SIGKILL');
-    expect(killedAt).toBeDefined();
-    expect(killedAt).toBeGreaterThanOrEqual(100);
-    expect(killedAt).toBeLessThanOrEqual(100 + SLICE_MS);
-    await holder.exited;
-    expect(result).toEqual({ removed: true });
-    expect(fs.existsSync(marker)).toBe(false);
+    expect(signals).toEqual([{ pid: holder.child.pid, signal: 'SIGTERM', at: 0 }]);
+    expect(fake.now()).toBeLessThanOrEqual(100 + SLICE_MS);
+    expect(result).toEqual({ removed: false });
+    expect(fs.existsSync(marker)).toBe(true);
   });
 
-  it('abort during the grace on the recorded-group path', { timeout: SIGTERM_GRACE_PLUS_SIGKILL_CONFIRMATION_TEST_TIMEOUT_MS }, async (context) => {
+  it('abort during the grace on the recorded-group path ends the reap the same way; without an abort the group gets SIGKILL at the grace', T, async (context) => {
     const dir = withTempDir(context);
     const marker = markerFile(dir);
     const group = await spawnOnMarker(context, dir, marker, TERM_IGNORING_GROUP);
@@ -693,105 +706,100 @@ describe('marker reap: AbortSignal', () => {
     const fake = abortableTiming({ controller, at: 100 });
     const { signals, kill } = signalRecorder(fake.now);
     const result = await reapMarkedProcesses({ marker, pgid, killGraceMs: 1000, label: 'daemon', onWarning: () => undefined, kill, timing: fake.timing, signal: controller.signal });
-    expect(signals[0]).toEqual({ pid: -pgid, signal: 'SIGTERM', at: 0 });
-    const groupKill = signals.find((entry) => entry.signal === 'SIGKILL' && entry.pid === -pgid);
-    expect(groupKill).toBeDefined();
-    expect(groupKill?.at).toBeGreaterThanOrEqual(100);
-    expect(groupKill?.at).toBeLessThanOrEqual(100 + SLICE_MS);
-    expect(fake.sleeps.every((ms) => ms <= SLICE_MS)).toBe(true);
-    await group.exited;
-    expect(result).toEqual({ removed: true });
+    expect(signals.map(({ pid, signal }) => [pid, signal])).toEqual([[-pgid, 'SIGTERM']]);
+    expect(result).toEqual({ removed: false });
+    expect(fs.existsSync(marker)).toBe(true);
 
     const unsignalledDir = withTempDir(context);
     const unsignalledMarker = markerFile(unsignalledDir);
     const unsignalledGroup = await spawnOnMarker(context, unsignalledDir, unsignalledMarker, TERM_IGNORING_GROUP);
     const plain = abortableTiming(undefined);
     const plainRecorder = signalRecorder(plain.now);
-    await reapMarkedProcesses({
-      marker: unsignalledMarker,
-      pgid: unsignalledGroup.child.pid,
-      killGraceMs: 1000,
-      label: 'daemon',
-      onWarning: () => undefined,
-      kill: plainRecorder.kill,
-      timing: plain.timing,
-    });
-    const killIndex = plain.sleeps.findIndex((_, index) => plain.sleeps.slice(0, index + 1).reduce((total, ms) => total + ms, 0) >= 1000);
-    expect(plain.sleeps.slice(0, killIndex + 1)).toEqual([1000]);
+    await reapMarkedProcesses({ marker: unsignalledMarker, pgid: unsignalledGroup.child.pid, killGraceMs: 1000, label: 'daemon', onWarning: () => undefined, kill: plainRecorder.kill, timing: plain.timing, signal: new AbortController().signal });
     expect(firstAt(plainRecorder.signals, 'SIGKILL')).toBe(1000);
   });
 
-  it('abort before the call SIGTERMs and then SIGKILLs without waiting', { timeout: SIGTERM_GRACE_PLUS_SIGKILL_CONFIRMATION_TEST_TIMEOUT_MS }, async (context) => {
+  it('abort before the call signals nothing and keeps the marker', T, async (context) => {
     const dir = withTempDir(context);
     const marker = markerFile(dir);
-    const holder = await spawnOnMarker(context, dir, marker, TERM_IGNORING_HOLDER);
-    const controller = new AbortController();
-    controller.abort();
+    await spawnOnMarker(context, dir, marker, TERM_IGNORING_HOLDER);
     const fake = abortableTiming(undefined);
     const { signals, kill } = signalRecorder(fake.now);
-    const result = await reapMarkedProcesses({ marker, killGraceMs: 1000, label: 'daemon', onWarning: () => undefined, kill, timing: fake.timing, signal: controller.signal });
-    expect(signals.map(({ pid, signal }) => [pid, signal])).toEqual([
-      [holder.child.pid, 'SIGTERM'],
-      [holder.child.pid, 'SIGKILL'],
-    ]);
-    expect(firstAt(signals, 'SIGKILL')).toBeLessThan(SLICE_MS);
-    await holder.exited;
-    expect(result).toEqual({ removed: true });
-    expect(fs.existsSync(marker)).toBe(false);
-  });
-
-  it('abort does not shorten the SIGKILL confirmation', { timeout: SIGTERM_GRACE_PLUS_SIGKILL_CONFIRMATION_TEST_TIMEOUT_MS }, async (context) => {
-    const dir = withTempDir(context);
-    const marker = markerFile(dir);
-    const holder = await spawnOnMarker(context, dir, marker, TERM_IGNORING_HOLDER);
-    const controller = new AbortController();
-    const fake = abortableTiming({ controller, at: 100 });
-    const { signals, kill } = signalRecorder(fake.now, (pid, signal) => pid === holder.child.pid && signal === 'SIGKILL');
-    const warnings: string[] = [];
-    const result = await reapMarkedProcesses({ marker, killGraceMs: 500, label: 'daemon', onWarning: (message) => warnings.push(message), kill, timing: fake.timing, signal: controller.signal });
-    const killedAt = firstAt(signals, 'SIGKILL');
-    expect(killedAt).toBeDefined();
-    expect(killedAt).toBeLessThanOrEqual(100 + SLICE_MS);
-    expect(fake.now() - (killedAt ?? 0)).toBeGreaterThanOrEqual(500);
+    const result = await reapMarkedProcesses({ marker, killGraceMs: 1000, label: 'daemon', onWarning: () => undefined, kill, timing: fake.timing, signal: AbortSignal.abort() });
+    expect(signals).toEqual([]);
     expect(result).toEqual({ removed: false });
-    expect(warnings).toEqual([`daemon marker ${marker} kept: process ${holder.child.pid} still hold it after cleanup; the next start will retry`]);
     expect(fs.existsSync(marker)).toBe(true);
   });
 
-  it('abort during the confirmation or after the reap has no effect', { timeout: SIGTERM_GRACE_PLUS_SIGKILL_CONFIRMATION_TEST_TIMEOUT_MS }, async (context) => {
-    const run = async (abortWhen: 'confirmation' | 'after' | 'never') => {
+  it('abort during the SIGKILL confirmation ends the wait as unconfirmed: the marker is kept', T, async (context) => {
+    const dir = withTempDir(context);
+    const marker = markerFile(dir);
+    const holder = await spawnOnMarker(context, dir, marker, TERM_IGNORING_HOLDER);
+    const controller = new AbortController();
+    const fake = abortableTiming(undefined);
+    const { signals, kill } = signalRecorder(fake.now, (pid, signal) => {
+      if (signal === 'SIGKILL') controller.abort();
+      return pid === holder.child.pid && signal === 'SIGKILL';
+    });
+    const result = await reapMarkedProcesses({ marker, killGraceMs: 500, label: 'daemon', onWarning: () => undefined, kill, timing: fake.timing, signal: controller.signal });
+    const killedAt = firstAt(signals, 'SIGKILL') ?? Number.NaN;
+    expect(fake.now() - killedAt).toBeLessThanOrEqual(SLICE_MS);
+    expect(result).toEqual({ removed: false });
+    expect(fs.existsSync(marker)).toBe(true);
+  });
+
+  it('abort after the reap has no effect', T, async (context) => {
+    const run = async (abortAfter: boolean) => {
       const dir = withTempDir(context);
       const marker = markerFile(dir);
       const holder = await spawnOnMarker(context, dir, marker, TERM_IGNORING_HOLDER);
       const controller = new AbortController();
       const fake = abortableTiming(undefined);
-      const { signals, kill } = signalRecorder(fake.now, (pid, signal) => {
-        if (signal === 'SIGKILL' && abortWhen === 'confirmation') controller.abort();
-        return pid === holder.child.pid && signal === 'SIGKILL';
-      });
+      const { signals, kill } = signalRecorder(fake.now, (pid, signal) => pid === holder.child.pid && signal === 'SIGKILL');
       const warnings: string[] = [];
       const result = await reapMarkedProcesses({ marker, killGraceMs: 300, label: 'daemon', onWarning: (message) => warnings.push(message), kill, timing: fake.timing, signal: controller.signal });
-      if (abortWhen === 'after') controller.abort();
+      if (abortAfter) controller.abort();
       return { result, signals: signals.map(({ signal, at }) => [signal, at]), warnings: warnings.map((message) => message.replace(marker, '<marker>').replace(String(holder.child.pid), '<pid>')), end: fake.now() };
     };
-    const baseline = await run('never');
-    expect(await run('confirmation')).toEqual(baseline);
-    expect(await run('after')).toEqual(baseline);
+    expect(await run(true)).toEqual(await run(false));
   });
 
-  it('abort never throws', { timeout: SIGTERM_GRACE_PLUS_SIGKILL_CONFIRMATION_TEST_TIMEOUT_MS }, async (context) => {
+  it('abort never throws', T, async (context) => {
     const dir = withTempDir(context);
     const marker = markerFile(dir);
-    const holder = await spawnOnMarker(context, dir, marker, TERM_IGNORING_HOLDER);
+    await spawnOnMarker(context, dir, marker, TERM_IGNORING_HOLDER);
     const controller = new AbortController();
     const fake = abortableTiming({ controller, at: 100 });
+    const { kill } = signalRecorder(fake.now);
+    await expect(reapMarkedProcesses({ marker, killGraceMs: 1000, label: 'daemon', onWarning: () => undefined, kill, timing: fake.timing, signal: controller.signal })).resolves.toEqual({ removed: false });
+  });
+
+  it.for([
+    ['reapMarkedProcesses', 'reap'],
+    ['reconcileProcessGroup', 'reconcile'],
+  ] as const)('%s: a listing that never answers is bounded by the operation signal, and nothing is signalled', T, async ([, kind], context) => {
+    const dir = withTempDir(context);
+    const marker = markerFile(dir);
+    const seen: AbortSignal[] = [];
+    const controller = new AbortController();
+    const fake = abortableTiming(undefined);
     const { signals, kill } = signalRecorder(fake.now);
-    const warnings: string[] = [];
-    const result = await reapMarkedProcesses({ marker, killGraceMs: 1000, label: 'daemon', onWarning: (message) => warnings.push(message), kill, timing: fake.timing, signal: controller.signal });
-    expect(firstAt(signals, 'SIGKILL')).toBeLessThanOrEqual(100 + SLICE_MS);
-    await holder.exited;
-    expect(result).toEqual({ removed: true });
-    expect(warnings).toEqual([]);
+    const options = { killGraceMs: 1000, kill, timing: fake.timing, signal: controller.signal, inspector: hungListing(seen) };
+    const running =
+      kind === 'reap'
+        ? reapMarkedProcesses({ marker, label: 'daemon', onWarning: () => undefined, ...options }).catch((error: unknown) => error)
+        : reconcileProcessGroup({ pgid: 999_999, marker }, options).catch((error: unknown) => error);
+    await waitFor(() => seen.length > 0, { description: 'the reap started its first probe' });
+    controller.abort();
+    let settled = false;
+    void running.then(() => {
+      settled = true;
+    });
+    await waitFor(() => settled || seen.every((signal) => signal.aborted), { description: 'the probe saw the abort' });
+    expect(seen.every((signal) => signal.aborted)).toBe(true);
+    await running;
+    expect(signals).toEqual([]);
+    expect(fs.existsSync(marker)).toBe(true);
   });
 
   describe('no listener is added to or left on the signal', () => {
@@ -802,27 +810,23 @@ describe('marker reap: AbortSignal', () => {
       ['an abort during the grace', 'grace'],
       ['a pre-aborted signal', 'pre-aborted'],
       ['a kill that throws EIO', 'eio'],
-    ] as const)('%s', { timeout: SIGTERM_GRACE_PLUS_SIGKILL_CONFIRMATION_TEST_TIMEOUT_MS }, async ([, variant], context) => {
+    ] as const)('%s', T, async ([, variant], context) => {
       const dir = withTempDir(context);
       const marker = markerFile(dir);
       const script = variant === 'normal' ? `trap 'exit 0' TERM; touch "$READY"; exec /bin/sleep 60` : TERM_IGNORING_HOLDER;
       const holder = await spawnOnMarker(context, dir, marker, script);
       const controller = new AbortController();
       if (variant === 'pre-aborted') controller.abort();
-      const observed: number[] = [listeners(controller.signal)];
-      const fake = abortableTiming(variant === 'grace' ? { controller, at: 100 } : undefined, () => observed.push(listeners(controller.signal)));
+      const fake = abortableTiming(variant === 'grace' ? { controller, at: 100 } : undefined);
       const { signals, kill } = signalRecorder(fake.now, (pid) => {
-        observed.push(listeners(controller.signal));
         if (variant === 'eio' && pid === holder.child.pid) throw errnoError('EIO', pid);
         return false;
       });
       const reap = reapMarkedProcesses({ marker, killGraceMs: 1000, label: 'daemon', onWarning: () => undefined, kill, timing: fake.timing, signal: controller.signal });
       if (variant === 'eio') await expect(reap).rejects.toThrow('kill EIO');
       else await reap;
-      observed.push(listeners(controller.signal));
-      expect(observed.every((count) => count === 0)).toBe(true);
-      expect(observed.length).toBeGreaterThan(2);
-      if (variant === 'grace' || variant === 'pre-aborted') expect(firstAt(signals, 'SIGKILL')).toBeLessThanOrEqual(100 + SLICE_MS);
+      expect(listeners(controller.signal)).toBe(0);
+      if (variant === 'grace' || variant === 'pre-aborted') expect(firstAt(signals, 'SIGKILL')).toBeUndefined();
     });
   });
 

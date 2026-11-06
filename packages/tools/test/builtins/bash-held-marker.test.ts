@@ -104,3 +104,14 @@ describe.runIf(HAS_REAL_SANDBOX && process.platform === 'darwin')('T2 Bash when 
     expect(fs.existsSync(path.join(tools.markerDir, keyFor('run-1', 1, 'failed-unknown')))).toBe(true);
   });
 });
+
+describe.runIf(HAS_REAL_SANDBOX && process.platform === 'darwin')('PT 3H rule 4: a free marker is asked about once ("so their post-exit check and the executor see the same answer, and a free marker is asked about once")', () => {
+  it('on the listing path a command that leaves nothing behind costs one listing, and its marker is removed', PROCESS_TIMEOUT, async () => {
+    const calls: Recorded[] = [];
+    const tools = await builtinsWith(slowLsof(0, calls), notProved);
+    const result = resultOf(await tools.run('Bash', { command: 'echo ok' }, {}, 'allow_once', 'once'));
+    expect(result).toMatchObject({ status: 'completed', output: 'ok' });
+    expect(calls).toHaveLength(1);
+    expect(fs.existsSync(path.join(tools.markerDir, keyFor('run-1', 1, 'once')))).toBe(false);
+  });
+});
