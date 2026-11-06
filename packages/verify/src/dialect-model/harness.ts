@@ -41,6 +41,9 @@ export interface CheckStats {
   unverifiable: number;
   refused: Record<string, number>;
   refusedExamples: Record<string, string>;
+  crossCheckDisagreements: number;
+  crossCheckCrashes: number;
+  crossCheckSamples: string[];
 }
 
 export const emptyStats = (): CheckStats => ({
@@ -55,6 +58,9 @@ export const emptyStats = (): CheckStats => ({
   unverifiable: 0,
   refused: {},
   refusedExamples: {},
+  crossCheckDisagreements: 0,
+  crossCheckCrashes: 0,
+  crossCheckSamples: [],
 });
 
 export class OracleError extends Error {}
@@ -105,6 +111,10 @@ class Validators {
 
 const validators = new Validators();
 
+export interface CrossCheck {
+  compile(schema: Schema): ((value: Json) => boolean | null) | null;
+}
+
 export interface CaseInput {
   schema: Json | null;
   site: Site;
@@ -114,6 +124,7 @@ export interface CaseInput {
   perDocument: number;
   forcedInstances?: readonly Json[];
   stats?: CheckStats;
+  crossCheck?: CrossCheck;
   renderer?: (schema: Json | null, definition: Definition, site: Site) => Rendered;
 }
 
@@ -159,6 +170,19 @@ const sameRender = (left: Rendered, right: Rendered): boolean => {
 const noteRefusal = (stats: CheckStats, refusal: Refused): void => {
   stats.refused[refusal.reason] = (stats.refused[refusal.reason] ?? 0) + 1;
   if (stats.refusedExamples[refusal.reason] === undefined) stats.refusedExamples[refusal.reason] = refusal.message;
+};
+
+const MAX_CROSS_CHECK_SAMPLES = 8;
+
+const noteCrossCheck = (stats: CheckStats, verdictOf: ((value: Json) => boolean | null) | null, side: string, schema: Schema, instance: Json, product: boolean): void => {
+  const verdict = verdictOf === null ? null : verdictOf(instance);
+  if (verdict === null) {
+    stats.crossCheckCrashes += 1;
+    return;
+  }
+  if (verdict === product) return;
+  stats.crossCheckDisagreements += 1;
+  if (stats.crossCheckSamples.length < MAX_CROSS_CHECK_SAMPLES) stats.crossCheckSamples.push(JSON.stringify({ side, schema: schema ?? null, instance, product, crossCheck: verdict }));
 };
 
 const checkCaseUnguarded = (input: CaseInput): Failure | null => {
@@ -225,6 +249,8 @@ const checkCaseUnguarded = (input: CaseInput): Failure | null => {
     if (error instanceof Refused) return { kind: 'rendered-uncompilable', detail: `${error.reason}: ${error.message}` };
     throw error;
   }
+  const crossOriginal = input.crossCheck?.compile(original) ?? null;
+  const crossRendered = input.crossCheck?.compile(rendered) ?? null;
   const instances = [...instancesFor(original, rendered, rng, input.perDocument), ...(input.forcedInstances ?? [])];
   for (const instance of instances) {
     const inOriginal = validOriginal(instance);
@@ -233,6 +259,10 @@ const checkCaseUnguarded = (input: CaseInput): Failure | null => {
       stats.instances += 1;
       if (inOriginal) stats.validOriginal += 1;
       if (inRendered) stats.validRendered += 1;
+    }
+    if (stats !== undefined && input.crossCheck !== undefined) {
+      noteCrossCheck(stats, crossOriginal, 'original', original, instance, inOriginal);
+      noteCrossCheck(stats, crossRendered, 'rendered', rendered, instance, inRendered);
     }
     if (inRendered && !inOriginal && cls !== 'W') return { kind: 'rendered-accepts-more', instance, detail: 'valid under rendered, invalid under original' };
     if (inOriginal && !inRendered && (cls === 'P' || cls === 'W')) return { kind: 'rendered-rejects-more', instance, detail: 'valid under original, invalid under rendered' };
