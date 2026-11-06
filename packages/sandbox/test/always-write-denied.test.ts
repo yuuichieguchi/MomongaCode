@@ -41,7 +41,7 @@ describe('alwaysWriteDenied', () => {
     const denied = alwaysWriteDenied(home);
     expect(denied.root).toBe(path.join(home, '.momonga'));
     expect(denied.keychains).toBe(keychainsOf(home));
-    expect([...denied.subtrees]).toEqual([denied.root, denied.keychains]);
+    expect([...denied.subtrees].sort()).toEqual([denied.root, denied.keychains, path.join(momongaLayout(home).cacheBase, 'executables')].sort());
     expect(sortedUnique(denied.literals)).toEqual([path.join(home, '.local', 'bin', 'momonga')]);
   });
 
@@ -50,7 +50,7 @@ describe('alwaysWriteDenied', () => {
     const denied = alwaysWriteDenied(home);
     expect(denied.root).toBe(path.join(home, '.momonga'));
     expect(denied.keychains).toBe(keychainsOf(home));
-    expect([...denied.subtrees]).toEqual([denied.root, denied.keychains]);
+    expect([...denied.subtrees].sort()).toEqual([denied.root, denied.keychains, path.join(momongaLayout(home).cacheBase, 'executables')].sort());
     expect(sortedUnique(denied.literals)).toEqual(
       sortedUnique([path.join(home, '.local', 'bin', 'momonga'), path.join(home, 'dotfiles', 'local', 'bin', 'momonga')]),
     );

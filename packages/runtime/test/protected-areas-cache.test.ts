@@ -17,11 +17,11 @@ const tempHome = (): string => {
   return home;
 };
 
-describe('protectedRootAreasOf and the cache base that holds the extracted ripgrep', () => {
-  it('lists the cache base, so that no session root lies inside the folder the product executes ripgrep from', () => {
+describe('protectedRootAreasOf and the executables area that holds every extracted product executable', () => {
+  it('lists <cacheBase>/executables, so that no session root lies inside it', () => {
     const home = tempHome();
     const paths = momongaPaths(home, process.platform, {});
-    expect(protectedRootAreasOf(paths, home)).toContain(paths.cacheBase);
+    expect(protectedRootAreasOf(paths, home)).toContain(path.join(paths.cacheBase, 'executables'));
   });
 
   it('keeps the momonga root, the keychains and the tmp root listed', () => {
@@ -29,6 +29,13 @@ describe('protectedRootAreasOf and the cache base that holds the extracted ripgr
     const paths = momongaPaths(home, process.platform, {});
     const areas = protectedRootAreasOf(paths, home);
     expect(areas).toContain(path.join(home, '.momonga'));
+    expect(areas).toContain(paths.keychains);
     expect(areas).toContain(paths.tmp.root);
+  });
+
+  it('does not list the whole cache base, which holds the writable tmp area', () => {
+    const home = tempHome();
+    const paths = momongaPaths(home, process.platform, {});
+    expect(protectedRootAreasOf(paths, home)).not.toContain(paths.cacheBase);
   });
 });

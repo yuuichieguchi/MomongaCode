@@ -35,11 +35,11 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('the built executable runs its embe
       });
     });
 
-  const cacheEntries = (): string[] => fs.readdirSync(paths.cacheBase).filter((name) => name.startsWith('ripgrep-'));
+  const cacheEntries = (): string[] => fs.readdirSync(paths.executables).filter((name) => name.startsWith('ripgrep-'));
 
   const extractedRg = (): string => {
     const [directory] = cacheEntries();
-    return path.join(paths.cacheBase, directory as string, 'rg');
+    return path.join(paths.executables, directory as string, 'rg');
   };
 
   const searchRound = async (): Promise<string> => {
@@ -99,7 +99,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('the built executable runs its embe
     const entries = cacheEntries();
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatch(new RegExp(`^ripgrep-${RIPGREP_VERSION.replaceAll('.', '\\.')}-[0-9a-f]{16}$`));
-    expect(fs.readdirSync(path.join(paths.cacheBase, entries[0] as string)).sort()).toEqual(['NOTICE.txt', 'rg']);
+    expect(fs.readdirSync(path.join(paths.executables, entries[0] as string)).sort()).toEqual(['NOTICE.txt', 'rg']);
   });
 
   it('restores rg when it was deleted, and finds the match again', async () => {

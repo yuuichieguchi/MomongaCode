@@ -15,7 +15,7 @@ import type { RipgrepDistributionPorts } from '../src/ripgrep-distribution.ts';
 const VERSION = '15.2.0';
 const BINARY = new TextEncoder().encode('#!rg-binary-bytes');
 const NOTICES = new TextEncoder().encode('COPYING\nUNLICENSE\nLICENSE-MIT\n');
-const CACHE = path.join(path.sep, 'cache', 'momonga');
+const AREA = path.join(path.sep, 'cache', 'momonga', 'executables');
 
 const manifestFor = (binary: Uint8Array = BINARY, notices: Uint8Array = NOTICES) => ({
   version: VERSION,
@@ -24,7 +24,7 @@ const manifestFor = (binary: Uint8Array = BINARY, notices: Uint8Array = NOTICES)
   notices: { asset: RIPGREP_NOTICES_ASSET, sha256: sha256Hex(notices) },
 });
 
-const DIRECTORY = path.join(CACHE, `ripgrep-${VERSION}-${sha256Hex(BINARY).slice(0, 16)}`);
+const DIRECTORY = path.join(AREA, `ripgrep-${VERSION}-${sha256Hex(BINARY).slice(0, 16)}`);
 const FINAL = path.join(DIRECTORY, 'rg');
 
 type Entry = { kind: 'file'; bytes: Uint8Array; mode: number } | { kind: 'directory' } | { kind: 'symlink' };
@@ -89,7 +89,7 @@ const portsOf = (fixture: Fixture, overrides: Partial<RipgrepDistributionPorts> 
       if (bytes === undefined) throw new Error(`no embedded asset ${name}`);
       return bytes;
     },
-    cacheBase: CACHE,
+    executablesRoot: AREA,
     random: () => {
       counter += 1;
       return counter / 1000;
@@ -274,7 +274,7 @@ describe('ensureBundledRipgrep', () => {
   it('keeps a release with another binary hash in its own directory', async () => {
     const fixture = makeFiles();
     const other = new TextEncoder().encode('another release rg');
-    const otherDirectory = path.join(CACHE, `ripgrep-${VERSION}-${sha256Hex(other).slice(0, 16)}`);
+    const otherDirectory = path.join(AREA, `ripgrep-${VERSION}-${sha256Hex(other).slice(0, 16)}`);
     const resolvedOld = await ensureBundledRipgrep(portsOf(fixture));
     const resolvedNew = await ensureBundledRipgrep(
       portsOf(fixture, {}, { [RIPGREP_MANIFEST_ASSET]: new TextEncoder().encode(JSON.stringify(manifestFor(other))), [RIPGREP_BINARY_ASSET]: brotliCompressSync(other) }),

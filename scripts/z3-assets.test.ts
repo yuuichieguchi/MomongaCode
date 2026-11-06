@@ -29,7 +29,7 @@ describe('the Z3 assets embedded in the single executable', () => {
     const read = (name: string): Uint8Array => fs.readFileSync(assets[name] as string);
     const bundled = await ensureBundledZ3({
       asset: read,
-      cacheBase,
+      executablesRoot: cacheBase,
       random: () => 0.5,
       files: {
         exists: async (target) => fs.existsSync(target),

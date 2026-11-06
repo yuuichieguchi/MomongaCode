@@ -69,10 +69,10 @@ describe('shared runtime helpers (system timers; reapTimingOf uses fake timers)'
     expect(timing.now()).toBe(START_MS + 525);
   });
 
-  it('protectedRootAreasOf returns home/.momonga, the platform keychains and the tmp root', () => {
+  it('protectedRootAreasOf returns home/.momonga, the platform keychains, the executables area and the tmp root', () => {
     const home = tempHome();
     const paths = momongaPaths(home, process.platform, {});
-    expect(protectedRootAreasOf(paths, home)).toEqual([path.join(home, '.momonga'), momongaLayout(home).keychains, paths.tmp.root]);
+    expect([...protectedRootAreasOf(paths, home)].sort()).toEqual([path.join(home, '.momonga'), momongaLayout(home).keychains, path.join(paths.cacheBase, 'executables'), paths.tmp.root].sort());
   });
 
   it('RUNTIME_DEFAULTS has the documented values', () => {
