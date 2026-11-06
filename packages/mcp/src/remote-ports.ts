@@ -1,4 +1,4 @@
-import type { McpCredentialStore } from './credential-store.ts';
+import type { McpCredentialStore } from './mcp-oauth.ts';
 import type { HostResolver } from './remote-policy.ts';
 
 export type McpRemotePorts = {

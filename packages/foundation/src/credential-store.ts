@@ -1,19 +1,19 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { assertPrivateRegularFile, createKeyedSerializer, noFollowFlag, systemFileLockPorts, withFileLock, writeFileAtomically } from '@momonga/foundation';
-import type { FileLockPorts, MomongaPaths } from '@momonga/foundation';
+import { writeFileAtomically } from './atomic-file.ts';
+import { createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
+import type { FileLockPorts } from './file-lock.ts';
+import { assertPrivateRegularFile, noFollowFlag } from './platform/privacy.ts';
 
-export interface McpCredentialStore {
+export interface CredentialStore {
   read(key: string): Promise<string | undefined>;
   write(key: string, value: string): Promise<void>;
   update(key: string, change: (current: string | undefined) => string): Promise<void>;
   remove(key: string): Promise<void>;
 }
 
-export const mcpCredentialDirectory = (paths: Pick<MomongaPaths, 'state'>): string => path.join(paths.state, 'mcp-credentials');
-
-export const createMemoryCredentialStore = (): McpCredentialStore => {
+export const createMemoryCredentialStore = (): CredentialStore => {
   const entries = new Map<string, string>();
   return {
     update: (key, change) => {
@@ -56,7 +56,7 @@ const readOwnerOnly = async (file: string): Promise<string | undefined> => {
 
 export type FileCredentialStoreOptions = { ports?: FileLockPorts; lockTimeoutMs?: number };
 
-export const createFileCredentialStore = (directory: string, options: FileCredentialStoreOptions = {}): McpCredentialStore => {
+export const createFileCredentialStore = (directory: string, options: FileCredentialStoreOptions = {}): CredentialStore => {
   const ports = options.ports ?? systemFileLockPorts;
   const serialized = createKeyedSerializer();
 

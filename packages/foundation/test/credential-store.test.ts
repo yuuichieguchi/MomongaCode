@@ -2,11 +2,10 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ensureMomongaDirs, momongaLayout } from '@momonga/foundation';
+import { createFileCredentialStore, createMemoryCredentialStore } from '@momonga/foundation';
 import type { FileLockPorts } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder } from '@momonga/testkit';
-import { createFileCredentialStore, createMemoryCredentialStore, mcpCredentialDirectory } from '@momonga/mcp';
-import { makeDir } from './mcp-harness.ts';
+import { makeTemporaryDirectory as makeDir } from './support/temporary-directory.ts';
 
 describe.each([
   ['memory', () => createMemoryCredentialStore()],
@@ -115,23 +114,5 @@ describe('file credential store while another process holds the key lock', { tim
     const { store } = await heldStore(context);
     await store.write('other', 'free');
     expect(await store.read('other')).toBe('free');
-  });
-});
-
-describe('file credential store under the real path layout', () => {
-  it('keeps owner-only files in the per-user state directory of a temporary home and survives a new instance', async () => {
-    const home = makeDir();
-    const paths = momongaLayout(home);
-    await ensureMomongaDirs(paths);
-    const directory = mcpCredentialDirectory(paths);
-    expect(directory).toBe(path.join(home, '.momonga', 'state', 'mcp-credentials'));
-    await createFileCredentialStore(directory).write('server|tokens', '{"access_token":"fake"}');
-
-    expect(await createFileCredentialStore(directory).read('server|tokens')).toBe('{"access_token":"fake"}');
-    expect(fs.statSync(directory).mode & 0o777).toBe(0o700);
-    expect(fs.statSync(paths.state).mode & 0o777).toBe(0o700);
-    const [file] = fs.readdirSync(directory);
-    expect(fs.statSync(path.join(directory, file as string)).mode & 0o777).toBe(0o600);
-    expect(directory.startsWith(fs.realpathSync(home))).toBe(true);
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_JSON_DEPTH } from '@momonga/foundation';
-import { createMcpPool, createMemoryCredentialStore } from '@momonga/mcp';
+import { MAX_JSON_DEPTH, createMemoryCredentialStore } from '@momonga/foundation';
+import { createMcpPool } from '@momonga/mcp';
 import { createToolRegistry } from '@momonga/tools';
 import { createFakeClock } from '@momonga/testkit';
 import { boundedMessages } from '../src/connection.ts';
