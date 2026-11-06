@@ -14,6 +14,7 @@ export type McpPoolOptions = {
   baseEnv: Record<string, string>;
   clock: Clock;
   credentials?: CredentialRules;
+  credentialNames?: readonly string[];
   timers?: McpTimers;
   remote?: McpRemotePorts;
   random?: () => number;
@@ -48,6 +49,7 @@ export const createMcpPool = (options: McpPoolOptions): McpAuthorizingPool => {
       baseEnv,
       clock,
       ...(options.credentials === undefined ? {} : { credentials: options.credentials }),
+      ...(options.credentialNames === undefined ? {} : { credentialNames: options.credentialNames }),
       ...(options.timers === undefined ? {} : { timers: options.timers }),
       ...(options.remote === undefined ? {} : { remote: options.remote }),
       ...(options.random === undefined ? {} : { random: options.random }),

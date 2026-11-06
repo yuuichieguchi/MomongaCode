@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
+import { credentialEnvNames } from '@momonga/config';
 import { canonicalJson, createFileCredentialStore, ensureSessionTmpDir as defaultEnsureSessionTmpDir, ruleEnforcementOf, sha256Hex } from '@momonga/foundation';
 import type { Clock, JsonLogger, MomongaPaths, ReapTiming, RuleEnforcement } from '@momonga/foundation';
 import { createMcpPool, inheritedEnvOf, mcpCredentialDirectory } from '@momonga/mcp';
@@ -128,7 +129,8 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
       if (mcp.enabled.length > 0) {
         const servers = mcp.enabled;
         const { credentials } = loaded.settings;
-        const key = sha256Hex(canonicalJson({ project: session.cwd, servers, trust: trust ?? 'unset', env: inheritedEnvOf(env), credentials }));
+        const credentialNames = credentialEnvNames(loaded.settings);
+        const key = sha256Hex(canonicalJson({ project: session.cwd, servers, trust: trust ?? 'unset', env: inheritedEnvOf(env), credentials, credentialNames }));
         const acquired = mcpPools.acquire(runId, {
           key,
           create: () =>
@@ -138,6 +140,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
               baseEnv: env,
               clock,
               credentials,
+              credentialNames,
               timers,
               remote: mcpRemote,
               markers: { dir: paths.markers.mcp, onWarning: (message) => logger.warn(message) },

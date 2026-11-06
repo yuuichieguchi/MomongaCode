@@ -104,6 +104,7 @@ export type McpConnectionOptions = {
   mrtrMaxRounds?: number;
   onNotice?: (message: string) => void;
   credentials?: CredentialRules;
+  credentialNames?: readonly string[];
 };
 
 export class McpUnavailableError extends Error {
@@ -141,7 +142,7 @@ const idOf = (message: JSONRPCMessage): string | number | undefined => ('id' in 
 
 type ConfiguredCredential = { label: string; redacted: readonly string[]; judged: string };
 
-const configuredCredentialsOf = (config: McpServerConfig, rules: CredentialRules | undefined): ConfiguredCredential[] => {
+const configuredCredentialsOf = (config: McpServerConfig, names: readonly string[], rules: CredentialRules | undefined): ConfiguredCredential[] => {
   if (!('command' in config)) {
     return Object.entries(config.headers ?? {})
       .filter(([header, value]) => !DESCRIPTIVE_HEADER.test(header) && (SECRET_HEADER.test(header) || value.length >= MIN_CREDENTIAL_CHARS))
@@ -152,7 +153,7 @@ const configuredCredentialsOf = (config: McpServerConfig, rules: CredentialRules
       });
   }
   const env = config.env ?? {};
-  const withheld = new Set(stripCredentialEnv(env, [], rules).removed);
+  const withheld = new Set(stripCredentialEnv(env, names, rules).removed);
   return Object.entries(env)
     .filter(([name]) => withheld.has(name))
     .map(([name, value]) => ({ label: `variable ${name}`, redacted: [value], judged: value }));
@@ -225,7 +226,7 @@ class ManagedConnection implements McpServerConnection {
       openMs: options.resetAfterMs ?? DEFAULT_RESET_AFTER_MS,
       clock: options.clock,
     });
-    for (const credential of configuredCredentialsOf(options.config, options.credentials)) {
+    for (const credential of configuredCredentialsOf(options.config, options.credentialNames ?? [], options.credentials)) {
       for (const value of credential.redacted) this.trackSecret(value);
       for (const notice of credentialNoticesOf(this.name, credential.label, credential.judged)) options.onNotice?.(notice);
     }
