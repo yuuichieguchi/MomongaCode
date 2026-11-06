@@ -4,7 +4,7 @@ import path from 'node:path';
 import { lexicallyWithin, resolveToolPath } from '@momonga/foundation';
 import { EvidenceOutsideRootError, EvidenceUnreadableError } from '@momonga/memory';
 import type { EvidencePorts } from '@momonga/memory';
-import type { MemoryEvidence } from '@momonga/protocol';
+import type { MemoryEvidence, MemoryScope } from '@momonga/protocol';
 import type { EvidenceReply } from '@momonga/store';
 import { ToolExecutionError } from '@momonga/tools';
 
@@ -110,7 +110,10 @@ export const readGitHead = async ({ project, trusted, run, signal }: EvidencePor
   return exitCode === 0 && head !== undefined && COMMIT_ID.test(head) ? head : undefined;
 };
 
+export const USER_MEMORY_PATH_REFUSAL = 'a user memory belongs to no project, so it cannot be bound to a path';
+
 export type BindMemoryEvidenceInput = {
+  scope: MemoryScope;
   runId: string;
   paths: readonly string[];
   project: string;
@@ -120,6 +123,10 @@ export type BindMemoryEvidenceInput = {
 };
 
 export const bindMemoryEvidence = async (input: BindMemoryEvidenceInput): Promise<MemoryEvidence[]> => {
+  if (input.scope === 'user') {
+    if (input.paths.length > 0) throw new MemoryEvidenceError(USER_MEMORY_PATH_REFUSAL);
+    return [];
+  }
   const resolvedPaths = input.paths.map((given) => resolveToolPath(input.project, given));
   const facts = await input.journal(resolvedPaths);
   const bound = new Map<string, MemoryEvidence>();

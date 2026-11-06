@@ -4,7 +4,7 @@ import { EvidenceOutsideRootError, EvidenceUnreadableError } from '@momonga/memo
 import type { AddMemoryRequest, MemoryEvidence } from '@momonga/protocol';
 import { MEMORY_TEXT_MAX_CHARS, memoryTextProblem } from '@momonga/tools';
 import type { AddMemoryByCommandInput } from '@momonga/store';
-import { createEvidencePorts, readGitHead } from './evidence.ts';
+import { USER_MEMORY_PATH_REFUSAL, createEvidencePorts, readGitHead } from './evidence.ts';
 import type { EvidenceRun } from './evidence.ts';
 
 export class MemoryAddRefusal extends Error {
@@ -46,7 +46,7 @@ export const prepareCommandMemory = async (request: AddMemoryRequest, context: M
   const paths = request.paths ?? [];
   if (request.scope === 'user') {
     if (request.project !== undefined) throw new MemoryAddRefusal('a user memory belongs to no project, so project cannot be given', 'project');
-    if (paths.length > 0) throw new MemoryAddRefusal('a user memory belongs to no project, so it cannot be bound to a path', 'paths');
+    if (paths.length > 0) throw new MemoryAddRefusal(USER_MEMORY_PATH_REFUSAL, 'paths');
     return { scope: 'user', project: null, text: request.text, evidence: [], ...kind };
   }
   const { project } = request;

@@ -27,6 +27,7 @@ const fileOf = (target: string, access: ToolFile['access'], sha256 = HASH): Tool
 
 const binding = (events: RunEvent[], paths: string[], overrides: { trusted?: boolean; head?: string | undefined } = {}) =>
   bindMemoryEvidence({
+    scope: 'project',
     runId: 'r1',
     paths,
     project: PROJECT,

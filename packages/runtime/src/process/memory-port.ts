@@ -77,6 +77,7 @@ export const createMemoryPort = ({ store, settings, evidenceRun, evidencePorts =
         replaceable(supersedes ?? [], scope);
         const { commands: verificationCommands } = await settings.verification(session);
         const evidence = await bindMemoryEvidence({
+          scope,
           runId,
           paths: paths ?? [],
           project: session.cwd,
