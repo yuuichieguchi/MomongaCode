@@ -126,7 +126,7 @@ describe('executor abandon', () => {
     const pgid = spawnHolder(marker, 'sleep 30 & exec 3>&-; wait');
     seedPending(harness, KEY_A, pgid);
     await eventually(async () => {
-      const holders = await findHolders(marker);
+      const holders = await findHolders(marker, { signal: new AbortController().signal });
       return holders.length === 1 && holders[0] !== pgid;
     }, 'the leader to close fd 3 while its sleep child keeps it');
 
@@ -148,7 +148,7 @@ describe('executor abandon', () => {
     const grandchild = Number(fs.readFileSync(pidFile, 'utf8'));
     pids.push(grandchild);
     expect(grandchild).toBeGreaterThan(1);
-    await eventually(async () => (await findHolders(marker)).includes(grandchild), 'the grandchild to hold the marker');
+    await eventually(async () => (await findHolders(marker, { signal: new AbortController().signal })).includes(grandchild), 'the grandchild to hold the marker');
 
     const outcomes = await harness.executor.abandon([{ callId: 'call-a', idemKey: KEY_A }], { signal: noSignal() });
 
@@ -402,11 +402,12 @@ describe('executor reconcile of a PENDING call whose earlier attempt is still ru
   const unreadable = { pid: 31_340, command: 'ssh-agent', startTicks: '9' };
   const unreadableInspector: ProcessInspector = {
     startTimeOf: async () => ({ kind: 'gone' }),
-    holdersOf: async (_marker, report) => {
+    holdersOf: async (_marker, _options, report) => {
       report?.(unreadable);
       return { kind: 'value', value: [] };
     },
     groupsOf: async () => ({ kind: 'value', value: new Map() }),
+    markerState: async () => 'held',
   };
   const unreadableHarness = (): Harness =>
     harnessWith({ inspector: unreadableInspector, uninspectable: createUninspectableRegistry({ isAlive: () => true }), timing: fakeTiming(), killGraceMs: STUBBORN_GRACE_MS });

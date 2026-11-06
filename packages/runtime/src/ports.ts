@@ -1,5 +1,5 @@
 import type { ModelRoles, PermissionRule, ResolvedContextSettings, ResolvedMemorySettings, ResolvedToolsSettings, ResolvedVerificationSettings } from '@momonga/config';
-import type { Clock } from '@momonga/foundation';
+import type { Clock, LockCapabilityProbe, ProcessInspector } from '@momonga/foundation';
 import type {
   Capabilities,
   CompactRequest,
@@ -114,6 +114,8 @@ export type ToolRuntimePort = {
   sandbox: Sandbox;
   shellHost: ShellHost;
   markerDir: string;
+  lockCapability?: LockCapabilityProbe;
+  inspector?: ProcessInspector;
   sessionState(session: Session): ToolSessionState;
   workTreeObserver(session: Session, trusted: boolean): WorkTreeObserver;
 };

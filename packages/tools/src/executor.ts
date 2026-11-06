@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalJson, canonicalPath, comparableFromParts, containsByComponents, computeBackoff, displayToolPath, fileRuleFingerprint, hostKernelLock, hostReapTiming, lexicallyWithin, locateThroughFiles, momongaLayout, reapMarkedProcessesWithReport, resolveCanonicalPath, sha256Hex, writableAreaOf, writableCheckOf } from '@momonga/foundation';
-import type { Clock, FileRuleProvenance, KernelLockMechanism, PathResolution, ProcessInspector, ReapReport, ReapTiming, SignalSender, UninspectableRegistry } from '@momonga/foundation';
+import { UNMEASURED_CAPABILITY, canonicalJson, canonicalPath, comparableFromParts, containsByComponents, computeBackoff, createMarker, defaultProcessInspector, displayToolPath, fileRuleFingerprint, hostKernelLock, hostReapTiming, lexicallyWithin, locateThroughFiles, momongaLayout, reapMarkedProcessesWithReport, resolveCanonicalPath, sha256Hex, writableAreaOf, writableCheckOf } from '@momonga/foundation';
+import { createMarkerSettle } from './marker-settle.ts';
+import type { MarkerSettle } from './marker-settle.ts';
+import type { Clock, FileRuleProvenance, KernelLockMechanism, MarkerHandle, PathResolution, ProcessInspector, ReapReport, ReapTiming, SignalSender, UninspectableRegistry } from '@momonga/foundation';
 import { absoluteFrom, createGlobDeadline, decide, fileRuleSpecsOf, globBudgetMs, prepareGlobs, settleGlobs, suggestAllowRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject, PolicyHostFilesystem } from '@momonga/policy';
 import { permissionDeniedOutput } from '@momonga/protocol';
@@ -848,6 +850,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     extendTimerToDeadline(): void;
     disarmTimer(): void;
     closeContext(): void;
+    openMarker(): Promise<{ handle: MarkerHandle; settle: MarkerSettle }>;
+    settleMarker(): Promise<void>;
     ledger: LeasedIdempotencyPort;
     holding(outcome: LeasedOutcome): boolean;
     deferred: CallOutcome;
@@ -865,6 +869,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     let abortReason: AbortReason | undefined;
     let recordCompleted = false;
     let contextClosed = false;
+    let markerSettle: MarkerSettle | undefined;
+    let processAttached = false;
     let timer: NodeJS.Timeout | undefined;
     let timerMs = 0;
     let heldLock: CallLock | undefined;
@@ -905,6 +911,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       ...(options.jobs === undefined ? {} : { jobs: options.jobs }),
       session: batch.session,
       attachProcess: (processInfo) => {
+        processAttached = true;
         if (!leaseLost() && !contextClosed) holding(ledger.attachProcess(key, processInfo));
       },
       update: (content) => {
@@ -931,6 +938,27 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       disarmTimer: () => clearTimeout(timer),
       closeContext: () => {
         contextClosed = true;
+      },
+      openMarker: async () => {
+        const inspector = options.reap?.inspector ?? defaultProcessInspector();
+        const handle = await createMarker(processMarker, { capability: inspector.capability ?? UNMEASURED_CAPABILITY });
+        const settle = createMarkerSettle({
+          marker: processMarker,
+          mode: handle.mode,
+          inspector,
+          onWarning: options.onWarning,
+          ...(options.reap?.killGraceMs === undefined ? {} : { killGraceMs: options.reap.killGraceMs }),
+          ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
+          timing: reapTiming,
+        });
+        markerSettle = settle;
+        return { handle, settle };
+      },
+      settleMarker: async () => {
+        if (markerSettle === undefined || !recordCompleted) return;
+        if (processAttached) await markerSettle.state(controller.signal);
+        else await fs.promises.rm(processMarker, { force: true }).catch((error: unknown) => options.onWarning(`the process marker of call ${key} could not be removed: ${error instanceof Error ? error.message : String(error)}`));
+        if (processAttached) await markerSettle.remove();
       },
       ledger,
       holding,
@@ -982,13 +1010,6 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         const remaining = (activeKeys.get(key) ?? 0) - 1;
         if (remaining > 0) activeKeys.set(key, remaining);
         else activeKeys.delete(key);
-        if (recordCompleted && tool.sideEffect === 'exec') {
-          try {
-            fs.rmSync(processMarker, { force: true });
-          } catch (error) {
-            options.onWarning(`the process marker of call ${key} could not be removed: ${error instanceof Error ? error.message : String(error)}`);
-          }
-        }
       },
     };
   };
@@ -1016,10 +1037,13 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       );
     }
     if (!reaped.removed) {
+      if (reaped.uninspectable.length > 0) {
+        throw new EarlierAttemptNotStoppedError(
+          `a process holding the marker of the earlier attempt of call ${key} could not be inspected, so it could not be verified as stopped: ${reaped.uninspectable.map(({ pid, command }) => `${pid} (${command})`).join(', ')}`,
+          'unverifiable',
+        );
+      }
       throw new EarlierAttemptNotStoppedError(`a process of the earlier attempt of call ${key} survived the attempt to stop it`, 'survived');
-    }
-    if (reaped.uninspectable.length > 0) {
-      return { stopped: false, uninspectable: reaped.uninspectable.map(({ pid, command }) => ({ pid, command })) };
     }
     return { stopped: reaped.stopped };
   };
@@ -1170,11 +1194,22 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         await batch.outputFit.ready?.();
         if ((await scope.holdCall()) === 'aborted') return failedOutcome(callId, `${tool.name} was cancelled`);
         if (!scope.holding(scope.ledger.authorise(key))) return scope.deferred;
-        const executionCtx: ToolContext = { ...contextForBasis(), outputFit: batch.outputFit, ...(resume === undefined ? {} : { resume }) };
-        if (tool.sideEffect === 'exec') {
-          fs.rmSync(scope.processMarker, { force: true });
-          fs.closeSync(fs.openSync(scope.processMarker, 'wx', 0o600));
+        const marker = tool.sideEffect === 'exec' ? await scope.openMarker() : undefined;
+        try {
+          return await executeWithMarker(marker, reconciled, resume);
+        } finally {
+          marker?.handle.close();
+          await scope.settleMarker();
         }
+      };
+
+      const executeWithMarker = async (marker: { handle: MarkerHandle; settle: MarkerSettle } | undefined, reconciled: ReconcileResult['outcome'] | undefined, resume: ToolResume | undefined): Promise<CallOutcome> => {
+        const executionCtx: ToolContext = {
+          ...contextForBasis(),
+          outputFit: batch.outputFit,
+          ...(resume === undefined ? {} : { resume }),
+          ...(marker === undefined ? {} : { markerFd: marker.handle.fd, markerSettle: marker.settle }),
+        };
         const requestedMs = typeof tool.timeoutMs === 'function' ? tool.timeoutMs(target.input) : tool.timeoutMs;
         const timeoutMs = Math.max(0, Math.min(requestedMs, batch.deadlineAt - clock.now()));
 

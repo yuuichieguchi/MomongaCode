@@ -25,6 +25,7 @@ export type BackgroundJobsOptions = {
   report(error: unknown): void;
   probes?: Partial<ProcessProbes>;
   uninspectable?: UninspectableRegistry;
+  signal?: AbortSignal;
 };
 
 export type ProcessProbes = {
@@ -62,6 +63,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
   const { store, clock, timers, markerDir, markerFiles, killGraceMs, reapTiming, onWarning, report } = options;
   const probes: ProcessProbes = { findHolders, reconcileProcessGroup, reapMarkedProcesses, ...options.probes };
   const live = new Map<string, LiveJob>();
+  const lifecycle = options.signal ?? new AbortController().signal;
 
   const authorize = (runId: string, jobId: string): Job => {
     const run = store.getRun(runId);
@@ -91,6 +93,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
   const finalize = async (entry: LiveJob, process: SandboxedProcess, pumps: Promise<void>, timer: unknown): Promise<void> => {
     const { job } = entry;
     const marker = path.join(markerDir, job.idemKey);
+    let markerSettled = false;
     const recordUnknown = (): void => {
       if (store.jobs.get(job.id)?.status !== 'running') return;
       store.jobs.finish(job.id, { status: 'unknown' });
@@ -101,14 +104,23 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       timers.clearTimeout(timer);
       const uninspectable: UninspectableProcess[] = [];
       const reportOnce = reportUninspectableOnce(onWarning, `background job ${job.id}`, options.uninspectable);
-      const holders = await probes.findHolders(marker, undefined, (unreadable) => {
-        uninspectable.push(unreadable);
-        reportOnce(unreadable);
+      const holders = await probes.findHolders(marker, {
+        signal: lifecycle,
+        onUninspectable: (unreadable) => {
+          uninspectable.push(unreadable);
+          reportOnce(unreadable);
+        },
       });
       if (holders.length > 0) {
-        await probes.reconcileProcessGroup({ pgid: process.pgid, marker }, { killGraceMs, timing: reapTiming });
+        await probes.reconcileProcessGroup({ pgid: process.pgid, marker }, { killGraceMs, timing: reapTiming, signal: lifecycle });
         entry.output.push(Buffer.from(`\nTerminated ${holders.length} process(es) that outlived the job.\n`));
       }
+      let refused = false;
+      const remaining =
+        holders.length === 0 && uninspectable.length === 0
+          ? []
+          : await probes.findHolders(marker, { signal: lifecycle, onUninspectable: () => void (refused = true) });
+      markerSettled = remaining.length === 0 && !refused;
       await drain(pumps);
       const window = entry.output.window();
       const stored = window.bytes.length === 0 ? undefined : store.blobs.put(window.bytes, { mediaType: 'text/plain', runId: job.runId });
@@ -125,7 +137,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       throw error;
     } finally {
       timers.clearTimeout(timer);
-      markerFiles.remove(marker);
+      if (markerSettled) markerFiles.remove(marker);
       live.delete(job.id);
     }
   };
@@ -162,13 +174,16 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
       command: request.command,
     });
     const marker = path.join(markerDir, idemKey);
-    markerFiles.create(marker);
     const controller = new AbortController();
     let process: SandboxedProcess;
+    let created = false;
     try {
-      process = request.spawn(marker, controller.signal);
+      process = await markerFiles.create(marker, (markerFd) => {
+        created = true;
+        return request.spawn(marker, controller.signal, markerFd);
+      });
     } catch (error) {
-      markerFiles.remove(marker);
+      if (created) markerFiles.remove(marker);
       store.jobs.finish(job.id, { status: 'unknown' });
       settleRecord(job, { job: job.id, status: 'unknown' });
       throw error;
@@ -240,6 +255,7 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
             label: 'job',
             onWarning,
             timing: reapTiming,
+            signal: lifecycle,
           });
         } catch (error) {
           onWarning(`background job ${job.id} could not be reaped: ${asError(error).message}`);

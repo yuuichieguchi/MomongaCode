@@ -1,11 +1,13 @@
 import { randomBytes } from 'node:crypto';
 import { commandSpecsFor, readPathsOfCommand } from '@momonga/policy';
-import { findHolders, reconcileProcessGroup, resolveToolPath, stoppedCommandResult } from '@momonga/foundation';
+import { reconcileProcessGroup, resolveToolPath, stoppedCommandResult } from '@momonga/foundation';
 import { defineTool, ToolExecutionError, ToolInputError } from '../types.ts';
 import type { SandboxExit } from '@momonga/sandbox';
 import type { BackgroundJobs } from '../ports.ts';
+import type { MarkerSettle } from '../marker-settle.ts';
 import type { ReconcileContext, ToolContext, ToolResult } from '../types.ts';
 import { createCapture, pumpOutput } from '../capture.ts';
+import { settleFinishedCommand } from '../marker-settle.ts';
 import { describeJobStatus } from './jobs.ts';
 import { canonicalDirectories, insideAny, shownPath } from './paths.ts';
 import { nodeShellPorts, resolveBashPath } from './shell.ts';
@@ -35,9 +37,9 @@ const bashPathFor = (env: Readonly<Record<string, string>>): string => resolveBa
 
 const bashEnvOf = (env: Readonly<Record<string, string>>): Record<string, string> => ({ ...env, CDPATH: '', GIT_TERMINAL_PROMPT: '0', PAGER: 'cat', GIT_PAGER: 'cat' });
 
-const requireMarker = (ctx: ToolContext): string => {
-  if (ctx.processMarker === undefined) throw new ToolExecutionError('Bash needs a process marker from the executor');
-  return ctx.processMarker;
+const requireMarker = (ctx: ToolContext): { marker: string; settle: MarkerSettle } => {
+  if (ctx.processMarker === undefined || ctx.markerSettle === undefined) throw new ToolExecutionError('Bash needs a process marker from the executor');
+  return { marker: ctx.processMarker, settle: ctx.markerSettle };
 };
 
 const requireJobs = (ctx: ReconcileContext): BackgroundJobs => {
@@ -52,7 +54,7 @@ const startBackgroundJob = async (input: BashInput, ctx: ToolContext): Promise<T
     callId: ctx.callId,
     command: input.command,
     timeoutMs: input.timeout ?? DEFAULT_BACKGROUND_TIMEOUT_MS,
-    spawn: (markerFile, signal) =>
+    spawn: (markerFile, signal, markerFd) =>
       ctx.sandbox.spawn(
         {
           argv: [bashPathFor(ctx.env), '-c', input.command],
@@ -63,6 +65,7 @@ const startBackgroundJob = async (input: BashInput, ctx: ToolContext): Promise<T
         },
         ctx.sandboxPolicy,
         signal,
+        markerFd === undefined ? {} : { markerFd },
       ),
   });
   return {
@@ -113,7 +116,7 @@ export const bashTool = defineTool<BashInput>({
   locations: (input, ctx) => readPathsOfCommand(input.command, commandSpecsFor(process.platform)).map((target) => ({ path: resolveToolPath(ctx.cwd, target) })),
   execute: async (input, ctx) => {
     if (input.run_in_background === true) return startBackgroundJob(input, ctx);
-    const marker = requireMarker(ctx);
+    const { marker, settle } = requireMarker(ctx);
     const nonce = randomBytes(16).toString('hex');
     const script = `${trapScript(nonce)}\n${input.command}`;
     const child = ctx.sandbox.spawn(
@@ -126,6 +129,7 @@ export const bashTool = defineTool<BashInput>({
       },
       ctx.sandboxPolicy,
       ctx.signal,
+      ctx.markerFd === undefined ? {} : { markerFd: ctx.markerFd },
     );
     ctx.attachProcess({ pgid: child.pgid, startedAt: ctx.clock.now() });
 
@@ -135,11 +139,7 @@ export const bashTool = defineTool<BashInput>({
     const notes: string[] = [];
     try {
       exit = await child.exited;
-      const holders = await findHolders(marker);
-      if (holders.length > 0) {
-        await reconcileProcessGroup({ pgid: child.pgid, marker });
-        notes.push(`Terminated ${holders.length} process(es) that outlived the command.`);
-      }
+      notes.push(...(await settleFinishedCommand(settle, { pgid: child.pgid, exit, signal: ctx.signal })));
       await pump.settle();
     } finally {
       await pump.close();
@@ -173,17 +173,9 @@ export const bashTool = defineTool<BashInput>({
         output: `Started background job ${job.id}. The call was interrupted after the job started, so ${describeJobStatus(job)}.`,
       };
     }
-    const unreadable = ctx.earlierAttempt?.uninspectable ?? [];
-    if (unreadable.length > 0) {
-      const named = unreadable.map(({ pid, command }) => `${pid} (${command})`).join(', ');
-      return {
-        outcome: 'unknown',
-        output: `Process ${named} could not be inspected, so it was left alone and may still be running from the interrupted command. The effect of the interrupted command is unknown; inspect the current state before retrying it.`,
-      };
-    }
     if (ctx.earlierAttempt?.stopped === true) return stoppedCommandResult();
     if (record.pgid !== undefined && ctx.processMarker !== undefined) {
-      return reconcileProcessGroup({ pgid: record.pgid, marker: ctx.processMarker });
+      return reconcileProcessGroup({ pgid: record.pgid, marker: ctx.processMarker }, { signal: ctx.signal });
     }
     return {
       outcome: 'unknown',

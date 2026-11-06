@@ -24,6 +24,7 @@ export type ReapToolMarkersOptions = {
   killGraceMs: number;
   onWarning(message: string): void;
   timing?: ReapTiming;
+  signal?: AbortSignal;
   reap?: typeof reapMarkedProcesses;
   files?: RuntimeFiles;
   uninspectable?: UninspectableRegistry;
@@ -35,6 +36,7 @@ export const reapToolMarkers = async ({
   killGraceMs,
   onWarning,
   timing,
+  signal = new AbortController().signal,
   reap = reapMarkedProcesses,
   scope = 'all',
   files = nodeRuntimeFiles,
@@ -74,13 +76,21 @@ export const reapToolMarkers = async ({
   const planFor = async (name: string): Promise<ReapPlan | undefined> => {
     const marker = path.join(dir, name);
     let holders: number[];
+    let refused = false;
+    const reportRefused = reportUninspectableOnce(onWarning, `tool marker ${marker}`, uninspectable);
     try {
-      holders = await findHolders(marker, undefined, reportUninspectableOnce(onWarning, `tool marker ${marker}`, uninspectable));
+      holders = await findHolders(marker, {
+        signal,
+        onUninspectable: (process) => {
+          refused = true;
+          reportRefused(process);
+        },
+      });
     } catch (error) {
       onWarning(`tool marker ${marker} holders could not be determined: ${asError(error).message}`);
       return undefined;
     }
-    if (holders.length === 0) {
+    if (holders.length === 0 && !refused) {
       try {
         await files.unlink(marker);
       } catch (error) {

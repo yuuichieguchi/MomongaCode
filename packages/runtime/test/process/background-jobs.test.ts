@@ -257,8 +257,8 @@ describe('background jobs', () => {
   });
 
   const reportingSshd = {
-    findHolders: async (_marker: string, _inspector?: unknown, onUninspectable?: (process: { pid: number; command: string; startTicks: string }) => void): Promise<number[]> => {
-      onUninspectable?.({ pid: 31_338, command: 'sshd', startTicks: '515151' });
+    findHolders: async (_marker: string, options: { onUninspectable?: (process: { pid: number; command: string; startTicks: string }) => void }): Promise<number[]> => {
+      options.onUninspectable?.({ pid: 31_338, command: 'sshd', startTicks: '515151' });
       return [];
     },
   };
@@ -312,7 +312,7 @@ describe('background jobs', () => {
     expect(t.store.readRunEvents(t.run.id, 0, 100).filter((event) => event.type === 'job.finished')).toMatchObject([{ jobId, status: 'unknown' }]);
     expect(t.store.jobs.listForSession(t.run.sessionId).filter((job) => job.status === 'running')).toEqual([]);
     expect(t.jobs.liveKeys().size).toBe(0);
-    expect(fs.existsSync(path.join(t.markerDir, key))).toBe(false);
+    expect(fs.existsSync(path.join(t.markerDir, key))).toBe(message === 'lsof is unavailable');
   });
 
   it('refuses a job id that belongs to another session tree', async () => {

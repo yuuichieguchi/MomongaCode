@@ -61,7 +61,7 @@ const holdMarker = async (marker: string): Promise<number> => {
     fs.closeSync(fd);
   }
   for (let attempt = 0; attempt < 200; attempt += 1) {
-    if ((await findHolders(marker)).includes(pid)) return pid;
+    if ((await findHolders(marker, { signal: new AbortController().signal })).includes(pid)) return pid;
   }
   throw new Error(`process ${pid} never showed up as a holder of ${marker}`);
 };
@@ -115,7 +115,7 @@ describe('reapToolMarkers on hook markers', () => {
     const pid = await holdMarker(marker);
     const { store } = idempotencyOf({});
     await reapToolMarkers({ dir: temp.paths.markers.tools, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning });
-    expect(await findHolders(marker)).not.toContain(pid);
+    expect(await findHolders(marker, { signal: new AbortController().signal })).not.toContain(pid);
     expect(exists(marker)).toBe(false);
   });
 });
@@ -283,7 +283,7 @@ describe('reapToolMarkers (real processes, system timers, except where fake time
     await reapToolMarkers({ dir: temp.paths.markers.tools, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, timing });
 
     expect(exists(marker)).toBe(false);
-    expect(await findHolders(marker)).toEqual([]);
+    expect(await findHolders(marker, { signal: new AbortController().signal })).toEqual([]);
     expect(timers.pending()).toEqual([]);
   });
 });
@@ -311,7 +311,7 @@ const trackedHolder = async (context: CleanupContext, marker: string): Promise<n
     fs.closeSync(fd);
   }
   const deadline = Date.now() + 10_000;
-  while (!(await findHolders(marker)).includes(pid)) {
+  while (!(await findHolders(marker, { signal: new AbortController().signal })).includes(pid)) {
     if (Date.now() > deadline) throw new Error(`process ${pid} never showed up as a holder of ${marker}`);
     await new Promise<void>((resolve) => setTimeout(resolve, 10));
   }

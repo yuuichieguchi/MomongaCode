@@ -16,8 +16,8 @@ vi.mock('@momonga/foundation', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@momonga/foundation')>();
   return {
     ...actual,
-    findHolders: async (marker: string, _inspector?: unknown, onUninspectable?: (process: { pid: number; command: string; startTicks: string }) => void): Promise<number[]> => {
-      for (const process of holderState.unreadable) onUninspectable?.(process);
+    findHolders: async (marker: string, options: { onUninspectable?: (process: { pid: number; command: string; startTicks: string }) => void }): Promise<number[]> => {
+      for (const process of holderState.unreadable) options.onUninspectable?.(process);
       const entry = holderState.byMarker.get(marker);
       if (entry instanceof Error) throw entry;
       return entry ?? [];

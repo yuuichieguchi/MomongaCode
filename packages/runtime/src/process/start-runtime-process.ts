@@ -7,11 +7,13 @@ import {
   canonicalPath,
   createJsonLogger,
   createRedactor,
+  createLockCapability,
   ensureMomongaDirs,
   momongaPaths,
   ProcessLockHeldError,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
   reapMarkerDirectory,
+  resolveKernelLock,
   ruleEnforcementOf,
   systemClock,
 } from '@momonga/foundation';
@@ -397,7 +399,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
 
     await step('tool-markers', async () => {
-      await reapToolMarkers({ dir: paths.markers.tools, store, killGraceMs: MARKER_REAP_KILL_GRACE_MS, onWarning, timing: reapTiming });
+      await reapToolMarkers({ dir: paths.markers.tools, store, killGraceMs: MARKER_REAP_KILL_GRACE_MS, onWarning, timing: reapTiming, ...(signal === undefined ? {} : { signal }) });
       await clearCallLocks(paths.callLocks);
     });
 
@@ -448,9 +450,13 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     );
     cleanups.push({ name: 'gateway-client', run: () => gatewayClient.destroy() });
 
-    const ports = await step('ports', () => {
+    const ports = await step('ports', async () => {
       const composition = createSettingsComposition({ home: canonicalHome, cache, store });
+      const lockCapability = createLockCapability({ proofDir: paths.lockProof });
+      const kernelLock = await resolveKernelLock(paths.callLocks, { capability: lockCapability });
       const runtime: ToolRuntime = createToolRuntime({
+        lockCapability,
+        kernelLock,
         paths,
         home: canonicalHome,
         store,
@@ -675,6 +681,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
                 killGraceMs: MARKER_REAP_KILL_GRACE_MS,
                 onWarning,
                 timing: reapTiming,
+                ...(signal === undefined ? {} : { signal }),
                 scope: { deadLetterOnly: true, skipKeys: toolRuntime.inFlightKeys() },
               });
             } catch (error) {

@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
-import { canonicalJson, createFileCredentialStore, ensureSessionTmpDir as defaultEnsureSessionTmpDir, ruleEnforcementOf, sha256Hex } from '@momonga/foundation';
-import type { Clock, JsonLogger, MomongaPaths, ReapTiming, RuleEnforcement } from '@momonga/foundation';
+import { canonicalJson, createFileCredentialStore, createLockCapability, createProcessInspector, ensureSessionTmpDir as defaultEnsureSessionTmpDir, hostInspectorPorts, ruleEnforcementOf, sha256Hex } from '@momonga/foundation';
+import type { Clock, JsonLogger, KernelLockMechanism, LockCapabilityProbe, MomongaPaths, ReapTiming, RuleEnforcement } from '@momonga/foundation';
 import { createMcpPool, inheritedEnvOf, mcpCredentialDirectory } from '@momonga/mcp';
 import type { McpAuthorizingPool, McpPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
 import type { Sandbox } from '@momonga/sandbox';
@@ -26,6 +26,8 @@ import type { SettingsComposition } from './settings-port.ts';
 import { createPolicyFor, createRecoveryContextFor } from './tool-policy.ts';
 
 export type ToolRuntimeOptions = {
+  lockCapability?: LockCapabilityProbe;
+  kernelLock?: KernelLockMechanism;
   paths: MomongaPaths;
   home: string;
   store: RuntimeStore;
@@ -70,12 +72,14 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
   const ensureSessionTmpDir = options.ensureSessionTmpDir ?? defaultEnsureSessionTmpDir;
 
   const policyFilesystem = options.policyFilesystem ?? createPolicyFilesystem();
+  const lockCapability = options.lockCapability ?? createLockCapability({ proofDir: paths.lockProof });
+  const inspector = createProcessInspector(process.platform, { ...hostInspectorPorts(), capability: lockCapability });
   const jobs = createBackgroundJobs({
     store,
     clock,
     timers,
     markerDir: paths.markers.tools,
-    markerFiles: createNodeJobMarkerFiles(),
+    markerFiles: createNodeJobMarkerFiles(lockCapability),
     killGraceMs: SANDBOX_KILL_GRACE_MS,
     reapTiming,
     onWarning: (message) => logger.warn(message),
@@ -91,8 +95,9 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     clock,
     processMarkerDir: paths.markers.tools,
     callLockDir: paths.callLocks,
+    ...(options.kernelLock === undefined ? {} : { kernelLock: options.kernelLock }),
     onWarning: (message) => logger.warn(message),
-    reap: { timing: reapTiming },
+    reap: { timing: reapTiming, inspector },
   });
   const mcpAdmin = createMcpAdmin({
     home,
@@ -187,6 +192,8 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     sandbox,
     shellHost: options.shellHost,
     markerDir: paths.markers.tools,
+    lockCapability,
+    inspector,
     sessionState: (session) => sessionStates.get(session),
     workTreeObserver: (session, trusted) => {
       const key = `${trusted ? 'trusted' : 'untrusted'}\n${session.cwd}`;
