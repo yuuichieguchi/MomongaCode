@@ -168,3 +168,16 @@ describe('routeOf', () => {
     expect(routeOf(new URL('https://api.internal.example/'), config)).toEqual({ kind: 'bypass', source: 'NO_PROXY' });
   });
 });
+
+describe('routeOf: unsupported proxy text', () => {
+  it.each([
+    ['proxy.corp:3128', 'proxy.corp:3128'],
+    ['socks5://proxy.corp:1080', 'socks5://proxy.corp:1080'],
+    ['socks5h://u:secret@proxy.corp:1080', 'socks5h://proxy.corp:1080'],
+  ])('quotes %s as given, without credentials', (value, quoted) => {
+    const route = routeOf(new URL('https://api.example.com/'), { httpsProxy: { value, source: 'HTTPS_PROXY' }, caFiles: [] });
+    if (route.kind !== 'unsupported') throw new Error(`expected unsupported, got ${route.kind}`);
+    expect(route.display).toBe(quoted);
+    expect(route.message).toBe(`HTTPS_PROXY ${JSON.stringify(quoted)}: only http and https proxies are supported`);
+  });
+});
