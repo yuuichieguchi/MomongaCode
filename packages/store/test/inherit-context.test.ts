@@ -483,7 +483,7 @@ describe('session serialisation', () => {
     const session = newSession(store);
     const first = enqueue(store, session.id, 'first');
     enqueue(store, session.id, 'second');
-    writable(dbPath).prepare("UPDATE runs SET status = ?, available_at = ?, lease_owner = 'someone', lease_expires_at = ? WHERE id = ?").run(status, START_MS + TIMEOUT_MS, START_MS + LONG_LEASE_MS, first.id);
+    writable(dbPath).prepare("UPDATE runs SET status = ?, cancel_origin = CASE WHEN ? = 'CANCELLING' THEN 'RUNNING' END, available_at = ?, lease_owner = 'someone', lease_expires_at = ? WHERE id = ?").run(status, status, START_MS + TIMEOUT_MS, START_MS + LONG_LEASE_MS, first.id);
     expect(store.claim('w1')).toBeNull();
   });
 });
