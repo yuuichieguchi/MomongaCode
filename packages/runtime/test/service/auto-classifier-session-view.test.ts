@@ -1,14 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { OTHER_ALIAS, startService } from './helpers.ts';
 
+const expectNotMeasured = (view: Record<string, unknown> | undefined): void => {
+  expect(view).toMatchObject({ alias: OTHER_ALIAS, measurement: 'not_measured' });
+  expect(Object.keys(view ?? {}).sort()).toEqual(['alias', 'key', 'measurement']);
+  expect(view?.['key']).toMatchObject({ classifier: expect.any(String), codeDigest: expect.any(String), datasetDigest: expect.any(String) });
+};
+
 describe('the session view in auto carries the classifier measurement as information', () => {
   it('carries autoClassifier on create in auto, and none in another mode', async () => {
     const env = await startService();
     env.ports.settingsByCwd.set(env.layout.projectReal, { autoModeClassifier: OTHER_ALIAS });
     const created = await env.http('POST', '/v1/sessions', { body: { cwd: env.layout.project, env: {}, permissionMode: 'auto' } });
     expect(created.status).toBe(201);
-    expect(created.json.session.autoClassifier).toMatchObject({ alias: OTHER_ALIAS, measurement: 'not_measured' });
-    expect(String(created.json.session.autoClassifier.detail)).toContain('auto-mode check');
+    expectNotMeasured(created.json.session.autoClassifier);
     const other = await env.createSession();
     expect((other as Record<string, unknown>)['autoClassifier']).toBeUndefined();
   });
@@ -19,8 +24,8 @@ describe('the session view in auto carries the classifier measurement as informa
     const session = await env.createSession();
     const patched = await env.http('PATCH', `/v1/sessions/${session.id}`, { body: { permissionMode: 'auto' } });
     expect(patched.status).toBe(200);
-    expect(patched.json.session.autoClassifier).toMatchObject({ alias: OTHER_ALIAS, measurement: 'not_measured' });
+    expectNotMeasured(patched.json.session.autoClassifier);
     const read = await env.http('GET', `/v1/sessions/${session.id}`);
-    expect(read.json.session.autoClassifier).toMatchObject({ alias: OTHER_ALIAS, measurement: 'not_measured' });
+    expectNotMeasured(read.json.session.autoClassifier);
   });
 });

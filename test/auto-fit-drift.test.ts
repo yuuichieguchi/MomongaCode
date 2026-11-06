@@ -122,3 +122,25 @@ describe('the record is written only by the client-side check host (I6.7)', () =
     expect(fs.existsSync(path.join(ROOT, 'packages', 'config', 'src', 'auto-gate.ts'))).toBe(false);
   });
 });
+
+describe('both entries reach the one autoModeCheck of cli/src/commands/auto-mode.ts', () => {
+  const cliSources = (): string[] => sourceFiles(path.join(ROOT, 'packages', 'cli', 'src'));
+
+  const importsCheck = (file: string): boolean =>
+    importsOf(read(file)).some((entry) => entry.names.includes('autoModeCheck') && resolveRelative(file, entry.from) === CHECK_HOST);
+
+  it('defines autoModeCheck only in cli/src/commands/auto-mode.ts', () => {
+    const definers = cliSources().filter((file) => /\b(?:const|function)\s+autoModeCheck\b/.test(read(file)));
+    expect(definers).toEqual([CHECK_HOST]);
+  });
+
+  it('momonga auto-mode check in register.ts imports it from the check host', () => {
+    expect(importsCheck(path.join(ROOT, 'packages', 'cli', 'src', 'commands', 'register.ts'))).toBe(true);
+  });
+
+  it('the builder of the TUI port context.autoMode.check imports it from the check host', () => {
+    const builders = cliSources().filter((file) => file !== CHECK_HOST && /\bautoMode\s*[:=]/.test(read(file)) && /\bcheck\s*:/.test(read(file)));
+    expect(builders.length).toBeGreaterThan(0);
+    expect(builders.filter((file) => !importsCheck(file)).map((file) => path.relative(ROOT, file))).toEqual([]);
+  });
+});
