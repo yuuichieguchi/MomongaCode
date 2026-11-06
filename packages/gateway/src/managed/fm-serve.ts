@@ -169,8 +169,31 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
     }
   };
 
+  type BoundedExec = { kind: 'finished'; result: ExecResult } | { kind: 'expired'; failure: HealthResult };
+
+  const execWithinHealthTimeout = async (args: readonly string[]): Promise<BoundedExec> => {
+    const deadline = createDeadline(options.healthTimeoutMs);
+    try {
+      return { kind: 'finished', result: await exec(options.binary, args, { signal: deadline.signal }) };
+    } catch (error) {
+      if (!deadline.expired) throw error;
+      return {
+        kind: 'expired',
+        failure: {
+          ok: false,
+          reason: 'precondition_failed',
+          detail: `fm ${args.join(' ')} did not finish within ${options.healthTimeoutMs} ms`,
+        },
+      };
+    } finally {
+      deadline.dispose();
+    }
+  };
+
   const runPreconditionChecks = async (): Promise<HealthResult | undefined> => {
-    const license = await exec(options.binary, ['license', '--status']);
+    const licenseRun = await execWithinHealthTimeout(['license', '--status']);
+    if (licenseRun.kind === 'expired') return licenseRun.failure;
+    const license = licenseRun.result;
     if (license.exitCode === LICENSE_NOT_ACCEPTED_EXIT_CODE) {
       return {
         ok: false,
@@ -182,7 +205,9 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
     if (license.exitCode !== 0) {
       return { ok: false, reason: 'precondition_failed', detail: outputOf(license) };
     }
-    const available = await exec(options.binary, ['available']);
+    const availableRun = await execWithinHealthTimeout(['available']);
+    if (availableRun.kind === 'expired') return availableRun.failure;
+    const available = availableRun.result;
     if (available.exitCode !== 0) {
       return { ok: false, reason: 'precondition_failed', detail: outputOf(available) };
     }
@@ -256,7 +281,7 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
     return managed;
   };
 
-  const waitForExit = (managed: ManagedChild, timeoutMs: number | undefined): Promise<boolean> =>
+  const waitForExit = (managed: ManagedChild, timeoutMs: number): Promise<boolean> =>
     new Promise((resolve) => {
       if (managed.exited) {
         resolve(true);
@@ -264,16 +289,14 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
       }
       let timer: unknown;
       const waiter = (): void => {
-        if (timer !== undefined) timers.clearTimeout(timer);
+        timers.clearTimeout(timer);
         resolve(true);
       };
       managed.exitWaiters.push(waiter);
-      if (timeoutMs !== undefined) {
-        timer = timers.setTimeout(() => {
-          managed.exitWaiters = managed.exitWaiters.filter((candidate) => candidate !== waiter);
-          resolve(false);
-        }, timeoutMs);
-      }
+      timer = timers.setTimeout(() => {
+        managed.exitWaiters = managed.exitWaiters.filter((candidate) => candidate !== waiter);
+        resolve(false);
+      }, timeoutMs);
     });
 
   const terminate = (managed: ManagedChild): Promise<void> => {
@@ -282,7 +305,9 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
         managed.process.kill('SIGTERM');
         if (!(await waitForExit(managed, options.stopGraceMs))) {
           managed.process.kill('SIGKILL');
-          await waitForExit(managed, undefined);
+          if (!(await waitForExit(managed, options.stopGraceMs))) {
+            options.onWarning(`fm serve was not confirmed stopped: it did not exit within ${options.stopGraceMs} ms after SIGKILL`);
+          }
         }
       }
       await managed.process.finalize?.(options.stopGraceMs);

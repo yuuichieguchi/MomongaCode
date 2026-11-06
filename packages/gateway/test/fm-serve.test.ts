@@ -336,6 +336,7 @@ describe('createFmServe start', () => {
       child: (index) => (index === 0 ? { healthy: false } : {}),
     });
     const rejected = expect(server.start()).rejects.toMatchObject({ reason: 'unhealthy' });
+    await vi.waitFor(() => expect(children[0]).toBeDefined());
     await vi.waitFor(() => expect(manual.delays()).toContain(HEALTH_MS));
     manual.fire(HEALTH_MS);
     await rejected;
@@ -353,6 +354,7 @@ describe('createFmServe start', () => {
       child: (index) => (index === 0 ? { healthy: false, ignoreSigterm: true } : {}),
     });
     const rejected = expect(server.start()).rejects.toMatchObject({ reason: 'unhealthy' });
+    await vi.waitFor(() => expect(children[0]).toBeDefined());
     await vi.waitFor(() => expect(manual.delays()).toContain(HEALTH_MS));
     manual.fire(HEALTH_MS);
     await vi.waitFor(() => expect(manual.delays()).toContain(GRACE_MS));
@@ -366,6 +368,7 @@ describe('createFmServe start', () => {
   it('rejects with unhealthy and terminates the child when it never opens the socket', async () => {
     const { server, manual } = setup({ child: { serve: false } });
     const rejected = expect(server.start()).rejects.toMatchObject({ reason: 'unhealthy' });
+    await vi.waitFor(() => expect(children[0]).toBeDefined());
     await vi.waitFor(() => expect(manual.delays()).toContain(HEALTH_MS));
     manual.fire(HEALTH_MS);
     await rejected;
@@ -548,6 +551,7 @@ describe('createFmServe restarts', () => {
     await children[0]?.crash(1, null);
     await vi.waitFor(() => expect(manual.delays()).toEqual([BACKOFF_MS]));
     manual.fire(BACKOFF_MS);
+    await vi.waitFor(() => expect(children[1]).toBeDefined());
     await vi.waitFor(() => expect(manual.delays()).toContain(HEALTH_MS));
     manual.fire(HEALTH_MS);
     await vi.waitFor(() => expect(children[1]?.signals).toEqual(['SIGTERM']));
@@ -683,6 +687,7 @@ describe('createFmServe injected timers', () => {
   it('routes the health poll and the health deadline through the injected timers', async () => {
     const { server, manual } = setup({ child: { manualServe: true } });
     const starting = server.start();
+    await vi.waitFor(() => expect(children[0]).toBeDefined());
     await vi.waitFor(() => expect(manual.scheduled).toContain(HEALTH_MS));
     await children[0]?.serveNow();
     await starting;
