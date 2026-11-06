@@ -15,6 +15,9 @@
   },
   "devDependencies": {
     "@momonga/context": "*",
-    "@momonga/gateway": "*"
+    "@momonga/gateway": "*",
+    "@momonga/sandbox": "*",
+    "@momonga/supervisor": "*",
+    "@momonga/tools": "*"
   }
 }
