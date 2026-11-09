@@ -101,4 +101,31 @@ describe('a fallback that changes the billing kind needs the user policy (M9, I-
     expect(response.status).toBe(200);
     expect(response.body.momonga.fallbackCauses).toMatchObject([{ target: 'local', fromBilling: 'local', toBilling: 'metered', reason: 'billing_change_allowed' }]);
   });
+
+  it('judges the next hop from the last member sent a request, so a member passed over by its breaker does not change the kind', async () => {
+    const adapters = {
+      plan: adapterOf(PLAN_FAILING),
+      local: adapterOf({ name: 'local', billing: 'local', fails: true }),
+      metered: adapterOf(METERED),
+    };
+    const harness = await startGateway({
+      adapters,
+      config: {
+        aliases: { warm: ['local'], fast: ['plan', 'local', 'metered'] },
+        targets: { plan: { model: 'model-plan', billing: 'plan' }, local: { model: 'model-local', billing: 'local' }, metered: { model: 'model-metered', billing: 'metered' } },
+        retry: { maxAttempts: 1, totalWaitMs: 1 },
+        breaker: { failureThreshold: 1 },
+        billingChanges: [
+          { from: 'plan', to: 'local' },
+          { from: 'local', to: 'metered' },
+        ],
+      },
+    });
+    expect((await readJson(await postJson(harness.client, '/v1/responses', { model: 'warm', input: userInput('hi') }))).status).toBe(502);
+    const response = await readJson(await postJson(harness.client, '/v1/responses', { model: 'fast', input: userInput('hi') }));
+    expect(response.status).toBe(502);
+    expect(adapters.local.calls).toHaveLength(1);
+    expect(adapters.metered.calls).toHaveLength(0);
+    expect(response.body.error.message.endsWith(' Model target "metered" was not tried: changing from plan to metered billing is not allowed (models.billingChanges).')).toBe(true);
+  });
 });
