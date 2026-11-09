@@ -136,7 +136,7 @@ describe('S1 managed targets under a settings change (design-settings-live 3.1)'
       expect(serves(dumpFile).map(socketOf)).toEqual([path.join(targetsDirectory(home), 'apple-1.sock'), path.join(targetsDirectory(home), 'apple-2.sock')]);
       release();
       expect(await first).toBe(200);
-      expect(await third).toBe(200);
+      expect(await third, 'the return to a shares the gate of a, which its first call holds').toBe(429);
     } finally {
       release();
     }

@@ -171,21 +171,22 @@ describe.each(HOST_STORES)('stored secrets in the gateway process, $label found 
     expect(error.message).toContain(store.storeCommand);
     expect(error.message).toContain('reads a missing secret again on the next request');
     expect(stack.anthropic.requests).toEqual([]);
-    expect(stack.logText()).toContain(`secret ${SECRET_NAME} is unavailable`);
+    expect(stack.security.calls).toHaveLength(1);
   });
 
   it('reads a secret that was added after start on the next request, then stops reading it', async (context) => {
     const secrets: Record<string, string> = {};
     const stack = await startStack(context, store, { secrets, anthropicScript: [anthropicTextReply(['a']), anthropicTextReply(['b'])] });
+    expect(stack.security.calls).toEqual([]);
     expect((await post(stack.client, request)).status).toBe(401);
-    expect(stack.security.calls).toHaveLength(2);
+    expect(stack.security.calls).toHaveLength(1);
     secrets[SECRET_NAME] = SECRET;
     const added = await post(stack.client, request);
     expect(added.status).toBe(200);
     expect(stack.anthropic.requests[0]?.headers['x-api-key']).toBe(SECRET);
-    expect(stack.security.calls).toHaveLength(3);
+    expect(stack.security.calls).toHaveLength(2);
     expect((await post(stack.client, request)).status).toBe(200);
-    expect(stack.security.calls).toHaveLength(3);
+    expect(stack.security.calls).toHaveLength(2);
   });
 
   it('redacts a secret that was resolved after start from upstream error text', async (context) => {
@@ -212,28 +213,47 @@ describe.each(HOST_STORES)('stored secrets in the gateway process, $label found 
     expect(stack.anthropic.requests).toEqual([]);
   });
 
-  it('does not start when the process port itself fails', async (context) => {
+  it('starts when the process port itself fails, fails the first call that needs the secret with the port message, and keeps other targets working', async (context) => {
     const anthropic = await startFakeAnthropic({ apiKey: SECRET, script: [] });
     registerCleanup(context, () => anthropic.close());
+    const openResponses = await startFakeOpenResponses({ script: [openResponsesTextReply(['from the local target'])] });
+    registerCleanup(context, () => openResponses.close());
     const home = withTempDir(context, { asHome: true });
     writeSettings(home, {
       models: {
-        aliases: { fast: ['claude'] },
-        targets: { claude: { adapter: 'anthropic', model: 'm', socketPath: anthropic.socketPath, apiKeySecret: SECRET_NAME, capabilities: CAPABILITIES } },
+        aliases: { fast: ['claude'], other: ['local'] },
+        targets: {
+          claude: { adapter: 'anthropic', model: 'm', socketPath: anthropic.socketPath, apiKeySecret: SECRET_NAME, capabilities: CAPABILITIES },
+          local: { adapter: 'open-responses', provider: 'fake', model: 'local-fake', socketPath: openResponses.socketPath, capabilities: CAPABILITIES },
+        },
       },
     });
-    await expect(
-      startGatewayProcess({
-        generation: FIRST_GENERATION,
-        home,
-        env: baseEnv(home, fakeHostPath(context, store).env),
-        version: PROCESS_VERSION,
-        execWithStdin: async () => {
-          throw new Error('spawn security ENOENT');
-        },
-        stdout: { write: () => true },
-      }),
-    ).rejects.toThrow('spawn security ENOENT');
+    let portCalls = 0;
+    const handle = await startGatewayProcess({
+      generation: FIRST_GENERATION,
+      home,
+      env: baseEnv(home, fakeHostPath(context, store).env),
+      version: PROCESS_VERSION,
+      execWithStdin: async () => {
+        portCalls += 1;
+        throw new Error('spawn security ENOENT');
+      },
+      stdout: { write: () => true },
+    });
+    registerCleanup(context, async () => {
+      await handle.close();
+    });
+    const client = createUdsClient(fixedSocket(handle.socketPath));
+    registerCleanup(context, () => client.close());
+    expect(portCalls).toBe(0);
+    const failed = await post(client, request);
+    expect(failed.status).toBeGreaterThanOrEqual(400);
+    expect(failed.text).toContain('spawn security ENOENT');
+    expect(anthropic.requests).toEqual([]);
+    expect(portCalls).toBe(1);
+    const other = await post(client, { model: 'other', input: userInput('hi') });
+    expect(other.status).toBe(200);
+    expect(JSON.parse(other.text).momonga).toMatchObject({ target: 'local' });
   });
 
   it('never invokes the process port when no target references a secret', async (context) => {

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
-import { KEYCHAIN_SERVICE, SECURITY_BINARY, codeDigestOfRunningProcess, createJsonLogger, systemClock, FIRST_GENERATION } from '@momonga/foundation';
+import { SECURITY_BINARY, codeDigestOfRunningProcess, FIRST_GENERATION } from '@momonga/foundation';
 import { saveEndpointRecord, targetCounterOf } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecurityPort } from '@momonga/testkit';
 import { startFake } from './cc-support.ts';
@@ -67,22 +67,17 @@ describe('the counters a started gateway lists', { timeout: REAL_PROCESS_TEST_TI
       writeSettings(home, settings);
       const host = fakeSecretHost(makeHome(), KEYCHAIN_HOST);
       const security = portOnSecretHost(createFakeSecurityPort(() => ({ [SECRET_NAME]: value })), KEYCHAIN_HOST, host);
-      const lines: string[] = [];
-      const logger = createJsonLogger({ service: 'gateway', clock: systemClock, stream: { write: (chunk: string) => (lines.push(chunk), true) }, level: 'debug' });
-      const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home, host.env), version: PROCESS_VERSION, execWithStdin: security, logger });
+      const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home, host.env), version: PROCESS_VERSION, execWithStdin: security });
       const counters = await listedCounters(handle.socketPath);
       await handle.close();
-      return { counters, reads: security.calls, programPath: host.programPath, log: lines.join('') };
+      return { counters, reads: security.calls };
     };
 
     const first = await launchWithSecret('first-value-of-the-secret');
     const second = await launchWithSecret('second-value-of-the-secret');
 
-    const lookupArgs = ['find-generic-password', '-s', KEYCHAIN_SERVICE, '-a', SECRET_NAME, '-w'];
-    expect(first.reads).toEqual([{ file: first.programPath, args: lookupArgs, stdin: '' }]);
-    expect(second.reads).toEqual([{ file: second.programPath, args: lookupArgs, stdin: '' }]);
-    expect(first.log).not.toContain(`secret ${SECRET_NAME} is unavailable`);
-    expect(second.log).not.toContain(`secret ${SECRET_NAME} is unavailable`);
+    expect(first.reads).toEqual([]);
+    expect(second.reads).toEqual([]);
     expect(first.counters['primary']).toMatch(/^[0-9a-f]{64}$/);
     expect(second.counters).toEqual(first.counters);
   });
