@@ -135,6 +135,7 @@ const makeIdempotency = (): IdempotencyPort => {
       if (rec === undefined) return undefined;
       return rec.state === 'UNKNOWN' ? { s: 'UNKNOWN', rec } : { s: 'PENDING', rec };
     },
+    processGroupOf: (key) => open.get(key)?.pgid,
     holding: () => ({
       begin: (key, beginOptions): LeasedBegin => {
         if (completed.has(key)) return { s: 'COMPLETED', result: completed.get(key) };

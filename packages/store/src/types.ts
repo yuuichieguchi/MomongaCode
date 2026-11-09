@@ -206,6 +206,7 @@ export type LeasedIdempotency = {
 
 export type IdempotencyStore = {
   get(key: string): IdempotencyLookup | undefined;
+  processGroupOf(key: string): number | undefined;
   holding(fence: LeaseFence): LeasedIdempotency;
   clearCheckpoint(key: string): void;
   begin(key: string, options: { expiresAt: number; meta: Record<string, unknown> }): IdempotencyBegin;

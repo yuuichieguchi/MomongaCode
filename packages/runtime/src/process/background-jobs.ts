@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { canonicalJson, claimRetry, findHolders, outlivedNotes, reapMarkedProcesses, reconcileProcessGroup, reportUninspectableOnce, sha256Hex } from '@momonga/foundation';
-import type { Clock, ReapTiming, UninspectableProcess, UninspectableRegistry } from '@momonga/foundation';
+import { canonicalJson, claimRetry, commandMayStillRun, defaultProcessInspector, findHolders, outlivedNotes, reapMarkedProcesses, reconcileProcessGroup, reportUninspectableOnce, sha256Hex } from '@momonga/foundation';
+import type { Clock, MarkerMode, MarkerState, ReapTiming, UninspectableProcess, UninspectableRegistry } from '@momonga/foundation';
 import type { SandboxedProcess } from '@momonga/sandbox';
 import type { Job, JobResult, RuntimeStore } from '@momonga/store';
 import { ToolExecutionError, createMarkerOwners } from '@momonga/tools';
@@ -31,6 +31,7 @@ export type BackgroundJobsOptions = {
 
 export type ProcessProbes = {
   findHolders: typeof findHolders;
+  markerState(marker: string, options: { signal: AbortSignal; mode: MarkerMode }): Promise<MarkerState>;
   reconcileProcessGroup: typeof reconcileProcessGroup;
   reapMarkedProcesses: typeof reapMarkedProcesses;
 };
@@ -62,7 +63,13 @@ const matching = (text: string, filter: RegExp): string =>
 
 export const createBackgroundJobs = (options: BackgroundJobsOptions): BackgroundJobRegistry => {
   const { store, clock, timers, markerDir, markerFiles, killGraceMs, reapTiming, onWarning, report } = options;
-  const probes: ProcessProbes = { findHolders, reconcileProcessGroup, reapMarkedProcesses, ...options.probes };
+  const probes: ProcessProbes = {
+    findHolders,
+    markerState: (marker, { signal, mode }) => defaultProcessInspector().markerState(marker, { signal, mode }),
+    reconcileProcessGroup,
+    reapMarkedProcesses,
+    ...options.probes,
+  };
   const live = new Map<string, LiveJob>();
   const owners = options.owners ?? createMarkerOwners();
   const ownedKeys = new Set<string>();
@@ -121,12 +128,10 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
         const notes = outlivedNotes(reaped, 'job');
         if (notes.length > 0) entry.output.push(Buffer.from(`\n${notes.join('\n')}\n`));
       }
-      let refused = false;
-      const remaining =
-        holders.length === 0 && uninspectable.length === 0
-          ? []
-          : await probes.findHolders(marker, { signal: lifecycle, onUninspectable: () => void (refused = true) });
-      markerSettled = remaining.length === 0 && !refused;
+      const refused: UninspectableProcess[] = [];
+      const remaining = holders.length === 0 && uninspectable.length === 0 ? [] : await probes.findHolders(marker, { signal: lifecycle, onUninspectable: (process) => void refused.push(process) });
+      const markerState = await probes.markerState(marker, { signal: lifecycle, mode: owners.modeOf(job.idemKey) ?? 'listed' });
+      markerSettled = commandMayStillRun({ marker: markerState, listing: { kind: 'listed', holders: remaining, refused } }).answer === 'no';
       await drain(pumps);
       const window = entry.output.window();
       const stored = window.bytes.length === 0 ? undefined : store.blobs.put(window.bytes, { mediaType: 'text/plain', runId: job.runId });

@@ -82,6 +82,9 @@ export const hostProcessGroupPort = (): ProcessGroupPort => {
   return hostPort;
 };
 
+export const groupPortOf = (given: ProcessGroupPort | undefined, kill: SignalSender | undefined): ProcessGroupPort =>
+  given ?? (kill === undefined ? hostProcessGroupPort() : createProcessGroupPort(process.platform, { run: nodeCommandRunner, env: process.env, kill }));
+
 export const hostSignalSender: SignalSender = (target, signal) => void process.kill(target, signal);
 
 export type AsyncSignalSender = (target: number, signal: NodeJS.Signals | 0, options: GroupProbeOptions) => Promise<void>;

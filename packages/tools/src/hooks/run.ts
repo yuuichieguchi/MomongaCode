@@ -2,7 +2,7 @@ import path from 'node:path';
 import { HOOK_BLOCKING_EXIT_CODE, hookMatcherMatches, hookTimeoutMs, HOOK_MATCHER_EVENTS } from '@momonga/protocol';
 import type { HookCommand, HookEvent, HookExecution, HooksSettings, PermissionMode } from '@momonga/protocol';
 import { UNMEASURED_CAPABILITY, canonicalJson, createMarker, defaultProcessInspector, sha256Hex } from '@momonga/foundation';
-import type { Clock, ProcessInspector } from '@momonga/foundation';
+import type { Clock, ProcessGroupPort, ProcessInspector } from '@momonga/foundation';
 import type { Sandbox, SandboxExit, SandboxPolicy } from '@momonga/sandbox';
 import { createCapture, pumpOutput } from '../capture.ts';
 import { resolveBashPath } from '../builtins/shell.ts';
@@ -26,6 +26,7 @@ export type HookRunContext = {
   tmpDir?: string;
   markerDir: string;
   inspector?: ProcessInspector;
+  groupPort?: ProcessGroupPort;
   owners?: MarkerOwners;
   runId: string;
   session: { id: string; permissionMode: PermissionMode };
@@ -96,7 +97,7 @@ const executeHook = async (
   try {
     handle = await createMarker(marker, { capability: inspector.capability ?? UNMEASURED_CAPABILITY });
     ctx.owners?.remember(path.basename(marker), handle.mode);
-    settle = createMarkerSettle({ marker, mode: handle.mode, inspector, onWarning: () => undefined });
+    settle = createMarkerSettle({ marker, mode: handle.mode, inspector, ...(ctx.groupPort === undefined ? {} : { groupPort: ctx.groupPort }), onWarning: () => undefined });
     const child = ctx.sandbox.spawn(
       {
         argv: [resolveBashPath(shellHost.platform, { isExecutable: shellHost.isExecutable, env: ctx.env }), '-c', command.command],

@@ -96,6 +96,8 @@ export type { LockCapability, LockCapabilityOptions, LockCapabilityProbe, Stagin
 export { UNMEASURED_CAPABILITY } from './platform/lock-capability.ts';
 export { MARKER_MODES, MARKER_PHASES, MARKER_STATES } from './marker-state.ts';
 export type { MarkerMode, MarkerPhase, MarkerState } from './marker-state.ts';
+export { UNNAMED_REASON, commandMayStillRun, refusedReason } from './command-liveness.ts';
+export type { CommandLiveness, CommandLivenessEvidence, GroupLiveness, HolderListing } from './command-liveness.ts';
 export { RETRY_KINDS, claimRetry, markIgnored, nodeRecordFiles, parseAttemptRecord, readAttemptRecord } from './platform/marker-record.ts';
 export type { AttemptRecord, ClaimOutcome as RetryClaim, RecordFiles, RetryKind } from './platform/marker-record.ts';
 export { closeMarkerDescriptor, createMarker } from './platform/marker-file.ts';
@@ -231,7 +233,7 @@ export { ProbeFailedError, classifyProbeCause, failureOfError, isTransientFailur
 export type { MarkerStateOptions, ProbeCause, ProbeEvidence, ProbeFailure, ProbeOptions, ProbeResult, ProcessInspector, UninspectableProcess } from './platform/inspector-types.ts';
 export { UnsupportedPlatformError, createProcessInspector, defaultProcessInspector, hostInspectorPorts, hostProcessInspector } from './platform/process-inspector.ts';
 export type { InspectorPorts } from './platform/process-inspector.ts';
-export { createAsyncSignalSender, createPosixGroupPort, createProcessGroupPort, hostAsyncSignalSender, hostProcessGroupPort, hostSignalSender } from './platform/group-port.ts';
+export { createAsyncSignalSender, createPosixGroupPort, createProcessGroupPort, groupPortOf, hostAsyncSignalSender, hostProcessGroupPort, hostSignalSender } from './platform/group-port.ts';
 export { canStillRun } from './platform/run-state.ts';
 export type { GroupReading, GroupStatesReader } from './platform/run-state.ts';
 export type { AsyncSignalSender, PosixGroupHost, ProcessGroupPort } from './platform/group-port.ts';
