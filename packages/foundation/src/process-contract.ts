@@ -1,5 +1,6 @@
 import type { Clock } from './clock.ts';
 import { REAP_POLL_INTERVAL_MS } from './platform/probe-timing.ts';
+import { parseOutsideJson } from './json-depth.ts';
 
 export const EXIT_OK = 0;
 export const EXIT_FAILURE = 1;
@@ -124,9 +125,9 @@ export const parseStopMessage = (line: string): StopMessage => {
   if (Buffer.byteLength(line, 'utf8') > STOP_MESSAGE_MAX_BYTES) return { kind: 'malformed', reason: STOP_MESSAGE_OVERLONG_REASON };
   let parsed: unknown;
   try {
-    parsed = JSON.parse(line);
-  } catch {
-    return { kind: 'malformed', reason: 'the line is not JSON' };
+    parsed = parseOutsideJson(line);
+  } catch (error) {
+    return { kind: 'malformed', reason: `the line is not JSON within the allowed depth: ${error instanceof Error ? error.message : String(error)}` };
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return { kind: 'malformed', reason: 'the line is not a JSON object' };
   const record = parsed as Readonly<Record<string, unknown>>;

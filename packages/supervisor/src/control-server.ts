@@ -1,6 +1,6 @@
 import http from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { listenUnix, parseStopValues } from '@momonga/foundation';
+import { listenUnix, parseOutsideJson, parseStopValues } from '@momonga/foundation';
 import type { KernelLockMechanism, StopValues } from '@momonga/foundation';
 import type { ErrorBody, SupervisorHealth, SupervisorShutdownResponse } from '@momonga/protocol';
 import { CONTROL_CLOSE_ALL_AFTER_MS, CONTROL_REQUEST_TIMEOUT_MS, SHUTDOWN_BODY_LIMIT_BYTES } from './constants.ts';
@@ -78,9 +78,9 @@ const parseShutdownBody = (body: string): ShutdownBody => {
   if (body.length === 0) return { kind: 'values', values: undefined };
   let parsed: unknown;
   try {
-    parsed = JSON.parse(body);
-  } catch {
-    return { kind: 'invalid', reason: 'the request body is not JSON' };
+    parsed = parseOutsideJson(body);
+  } catch (error) {
+    return { kind: 'invalid', reason: `the request body is not JSON within the allowed depth: ${error instanceof Error ? error.message : String(error)}` };
   }
   const values = parseStopValues(parsed);
   return values.kind === 'values' ? { kind: 'values', values: values.values } : { kind: 'invalid', reason: values.reason };
