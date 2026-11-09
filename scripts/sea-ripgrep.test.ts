@@ -58,7 +58,11 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('the built executable runs its embe
     paths = momongaLayout(root);
     fs.mkdirSync(project);
     fs.writeFileSync(path.join(project, 'needle.txt'), `${NEEDLE}\n`);
-    const script = Array.from({ length: RUNS }, (_, index) => [toolCallReply('Grep', { pattern: NEEDLE }, `call_grep_${index}`), textReply(DONE)]).flat();
+    const script = [
+      ...Array.from({ length: RUNS }, (_, index) => [toolCallReply('Grep', { pattern: NEEDLE }, `call_grep_${index}`), textReply(DONE)]).flat(),
+      toolCallReply('Grep', { pattern: NEEDLE, glob: '', output_mode: 'content' }, 'call_grep_empty_glob'),
+      textReply(DONE),
+    ];
     upstream = await startFakeChatCompletions({ scenario: 'tools-ok', maxConcurrency: 8, socketPath: path.join(root, 'u.sock'), script });
     fs.mkdirSync(paths.root, { recursive: true });
     fs.writeFileSync(
@@ -124,6 +128,21 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('the built executable runs its embe
       expect(lastRequest).toContain('ripgrep is not available');
       expect(lastRequest).toContain('no-such-rg');
       expect(lastRequest).not.toContain('needle.txt:');
+    } finally {
+      await run('daemon', 'stop');
+      fs.writeFileSync(paths.settingsFile, original);
+    }
+  });
+
+  it('carries an empty glob as ripgrep does on argv, filtering nothing, through the bundled ripgrep under the sandbox', async () => {
+    await run('daemon', 'stop');
+    const original = fs.readFileSync(paths.settingsFile, 'utf8');
+    const { sandbox: _none, ...sandboxed } = JSON.parse(original) as Record<string, unknown>;
+    fs.writeFileSync(paths.settingsFile, JSON.stringify(sandboxed));
+    try {
+      const lastRequest = await searchRound();
+      expect(lastRequest).toContain(`needle.txt:1:${NEEDLE}`);
+      expect(lastRequest).not.toContain('could not be read');
     } finally {
       await run('daemon', 'stop');
       fs.writeFileSync(paths.settingsFile, original);

@@ -159,12 +159,12 @@ describe('Grep hands ripgrep its flags through an owner-only file that lives onl
     expect(fs.existsSync(seen[0]?.file as string)).toBe(false);
   });
 
-  it('refuses a model glob that one line of the file cannot carry, and says why', async () => {
+  it('refuses a model glob with a line break, which one line of the file cannot carry, before any spawn', async () => {
     const seen: Array<{ file: string; mode: number; text: string }> = [];
     const tools = await makeBuiltins({ sandbox: seenAtSpawn(seen, () => '') as never });
     tools.write('a.ts', 'alpha\n');
     const result = resultOf(await tools.run('Grep', { pattern: 'alpha', glob: '*.ts\n--pre=sh' }, { ripgrep: bundled } as never));
-    expect(result.output).toContain('glob must not be empty, contain a line break, or end with whitespace');
+    expect(result.output).toContain('glob must not contain a line break');
     expect(seen).toEqual([]);
   });
 });

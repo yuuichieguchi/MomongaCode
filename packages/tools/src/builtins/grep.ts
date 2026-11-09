@@ -86,12 +86,23 @@ const exclusionLine = (glob: string): string => {
   return /\s/.test(last) ? `${lineFree.slice(0, lineFree.length - last.length)}${literalClassOf(last)}` : lineFree;
 };
 
-const modelGlobLine = (glob: string): string => {
-  if (glob === '' || LINE_BREAK.test(glob) || /\s$/.test(glob)) {
-    throw new ToolExecutionError('glob must not be empty, contain a line break, or end with whitespace');
-  }
-  const [first] = glob;
-  return first === LEADING_LINE_COMMENT || /\s/.test(first as string) ? `${literalClassOf(first as string)}${glob.slice(1)}` : glob;
+const ESCAPED_TRAILING_SPACE = '\\ ';
+
+const effectiveModelGlob = (glob: string): string => (glob.endsWith(ESCAPED_TRAILING_SPACE) ? glob : glob.trimEnd());
+
+const trailingSpaceAsClass = (glob: string): string => {
+  const body = glob.slice(0, -1);
+  const backslashes = body.length - body.replace(/\\+$/, '').length;
+  return backslashes % 2 === 1 ? `${body.slice(0, -1)}${literalClassOf(' ')}` : `${body}${literalClassOf(' ')}`;
+};
+
+const modelGlobFlags = (glob: string): string[] => {
+  if (LINE_BREAK.test(glob)) throw new ToolExecutionError('glob must not contain a line break');
+  const effective = effectiveModelGlob(glob);
+  if (effective === '') return [];
+  const lastKept = effective.endsWith(' ') ? trailingSpaceAsClass(effective) : effective;
+  const [first] = lastKept;
+  return ['--glob', first === LEADING_LINE_COMMENT || /\s/.test(first as string) ? `${literalClassOf(first as string)}${lastKept.slice(1)}` : lastKept];
 };
 
 const isConfigLine = (line: string): boolean => line !== '' && !LINE_BREAK.test(line) && !EDGE_WHITESPACE.test(line) && !line.startsWith(LEADING_LINE_COMMENT);
@@ -121,7 +132,7 @@ const ripgrepFlags = (input: GrepInput, mode: OutputMode, target: string, access
     ...(input['-i'] === true ? ['-i'] : []),
     ...(input.multiline === true ? ['-U', '--multiline-dotall'] : []),
     ...(input.type === undefined ? [] : [...extensionsForType(input.type).flatMap((extension) => ['--type-add', `momonga:*.${extension}`]), '--type', 'momonga']),
-    ...(input.glob === undefined ? [] : ['--glob', modelGlobLine(input.glob)]),
+    ...(input.glob === undefined ? [] : modelGlobFlags(input.glob)),
     ...deniedGlobs(access, target, isDirectory),
     ...ruleBlocked,
   ];
