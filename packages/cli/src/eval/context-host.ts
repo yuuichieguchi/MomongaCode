@@ -95,6 +95,7 @@ export type ManagedRecordSource = { target: string; server: string; binary: stri
 
 export const liveSettingsFor = (user: UserModels, aliases: readonly string[]): LiveSettings => {
   const targets: NonNullable<ModelsSettings['targets']> = {};
+  const servers: NonNullable<ModelsSettings['servers']> = {};
   const aliasMembers: Record<string, string[]> = {};
   const credentials: SecretCredential[] = [];
   const managedTargets: ManagedRecordSource[] = [];
@@ -110,6 +111,8 @@ export const liveSettingsFor = (user: UserModels, aliases: readonly string[]): L
     const recordKey = probeRecordKeyOf(name, resolved);
     if (resolved.adapter === 'managed') {
       managedTargets.push({ target: name, server: resolved.server, binary: resolved.binary, model: resolved.model });
+      const declaredServer = user.declared.servers?.[resolved.server];
+      if (declaredServer !== undefined) servers[resolved.server] = declaredServer;
       targets[name] = declared;
       return;
     }
@@ -132,7 +135,7 @@ export const liveSettingsFor = (user: UserModels, aliases: readonly string[]): L
     for (const name of members) copyTarget(alias, name);
   }
   return {
-    models: { aliases: aliasMembers, targets },
+    models: { aliases: aliasMembers, targets, ...(Object.keys(servers).length === 0 ? {} : { servers }) },
     ...(user.sandbox === undefined ? {} : { sandbox: user.sandbox }),
     credentials,
     managedTargets,

@@ -3,7 +3,7 @@ import type { AutoFitKey, UserModels } from '@momonga/config';
 import { STARTUP_TIMEOUT_MS, createBinaryHashCache, createHostExec, probeKeyComponentLabel } from '@momonga/foundation';
 import { autoGateRecordOf, caseSettingsFor, formatReport, parseDataset, runDataset } from '@momonga/eval';
 import type { GoldenDataset } from '@momonga/eval';
-import { MANAGED_SERVERS, autoModeNotice } from '@momonga/protocol';
+import { autoModeNotice } from '@momonga/protocol';
 import type { AutoModeSurface } from '@momonga/protocol';
 import { createHomes, liveSettingsFor, readCredentials, sweepStaleHomes, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects, ReflectionBounds } from '../eval/context-host.ts';
@@ -56,7 +56,7 @@ const requireDefinedClassifier = (models: UserModels, classifier: string): void 
 const classifierKeyOf = async (models: UserModels, classifier: string, given: AbortSignal | undefined): Promise<AutoFitKey> => {
   const bound = AbortSignal.timeout(STARTUP_TIMEOUT_MS);
   const signal = given === undefined ? bound : AbortSignal.any([given, bound]);
-  const probeKeys = await readClassifierProbeKeys(models.resolved, classifier, { servers: MANAGED_SERVERS, exec: createHostExec(), hashes: createBinaryHashCache(), platform: process.platform, signal });
+  const probeKeys = await readClassifierProbeKeys(models.resolved, classifier, { exec: createHostExec(), hashes: createBinaryHashCache(), platform: process.platform, signal });
   const result = autoFitKeyOf(models.resolved, classifier, await classifierCodeOf(), probeKeys);
   if (result.kind === 'unknown') throw new AutoModeCheckError(`the classifier target ${result.target} has no probe key: its ${probeKeyComponentLabel(result.component)} could not be read (${result.reason})`);
   return result.key;

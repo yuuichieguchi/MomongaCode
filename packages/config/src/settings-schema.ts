@@ -103,6 +103,17 @@ const MANAGED_TARGET_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+const DECLARED_SERVER_SCHEMA = {
+  type: 'object',
+  properties: {
+    command: { type: 'string', minLength: 1 },
+    args: { type: 'array', items: { type: 'string' } },
+    readyPath: { type: 'string', pattern: '^/' },
+  },
+  required: ['command', 'args', 'readyPath'],
+  additionalProperties: false,
+} as const;
+
 const BREAKPOINTS_PROMPT_CACHE = {
   type: 'object',
   properties: { kind: { const: 'breakpoints' }, maxBreakpoints: POSITIVE_INTEGER },
@@ -436,6 +447,11 @@ export const SETTINGS_SCHEMA = {
           type: 'object',
           propertyNames: { pattern: TARGET_NAME_PATTERN },
           additionalProperties: MODEL_TARGET_SCHEMA,
+        },
+        servers: {
+          type: 'object',
+          propertyNames: { pattern: PROVIDER_NAME_PATTERN },
+          additionalProperties: DECLARED_SERVER_SCHEMA,
         },
         dialects: { type: 'object', additionalProperties: DIALECT_DEFINITION_SCHEMA },
         headersTimeoutMs: NON_NEGATIVE_INTEGER,

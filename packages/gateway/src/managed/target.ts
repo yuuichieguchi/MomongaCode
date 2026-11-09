@@ -78,6 +78,7 @@ export type ManagedTarget = {
   upstreamModel: (target: AdapterTarget, signal: AbortSignal) => Promise<string>;
   capabilities: (target: AdapterTarget) => Promise<Capabilities>;
   roomFacts: (target: AdapterTarget) => Promise<AliasRoomFacts>;
+  instanceKey: (signal: AbortSignal) => Promise<ProbeKey>;
   countTokens?: (target: AdapterTarget, request: CountTokensRequest, signal: AbortSignal) => Promise<CountTokensResult>;
   health: (target: AdapterTarget) => Promise<HealthResult>;
   isGuardrail: (target: AdapterTarget, status: number, body: unknown) => boolean;
@@ -224,10 +225,21 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
     return unknownProbe.probe;
   };
 
+  let heldKey: Promise<ProbeKey> | undefined;
+  const instanceKey = (signal: AbortSignal): Promise<ProbeKey> => {
+    if (heldKey !== undefined) return heldKey;
+    const reading = options.readKey(signal);
+    heldKey = reading;
+    reading.catch(() => {
+      if (heldKey === reading) heldKey = undefined;
+    });
+    return reading;
+  };
+
   let recorded: Recorded | undefined;
   const readRecorded = async (): Promise<Recorded> => {
     await checkBinary();
-    const key = await options.readKey(requestSignal());
+    const key = await instanceKey(requestSignal());
     if (key.kind === 'unknown') {
       const ensured = await instanceProbeFor(key.component, key.reason).ensure();
       if (ensured.kind === 'probing') {
@@ -315,9 +327,11 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
       }
       return options.server.health(requestSignal());
     },
+    instanceKey,
     isGuardrail: (_target, _status, body) => lastRecorded().isGuardrail(body),
     vocabulary,
     childExited: () => {
+      heldKey = undefined;
       options.onInstanceEnd();
       unknownProbe?.probe.restarted();
     },

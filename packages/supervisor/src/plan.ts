@@ -16,7 +16,7 @@ export type RestartPlanPort = {
 
 export const digestsOf = (settings: Pick<ResolvedSettings, 'sandbox' | 'models' | 'telemetry' | 'network'>): SettingsDigests => ({
   sandbox: sha256Hex(canonicalJson(settings.sandbox)),
-  models: sha256Hex(canonicalJson(settings.models)),
+  models: sha256Hex(canonicalJson(Object.fromEntries(Object.entries(settings.models).filter(([, value]) => value !== undefined)))),
   telemetry: sha256Hex(canonicalJson(settings.telemetry ?? null)),
   network: sha256Hex(canonicalJson(settings.network ?? null)),
 });

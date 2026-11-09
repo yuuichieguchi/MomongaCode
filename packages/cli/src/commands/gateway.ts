@@ -1,8 +1,7 @@
-import { loadUserSettings, probeRecordKeyOf, upstreamEndpointOf } from '@momonga/config';
+import { loadUserSettings, probeRecordKeyOf, registeredServer, upstreamEndpointOf } from '@momonga/config';
 import type { EndpointProbeKey } from '@momonga/config';
 import { createBinaryHashCache, managedInstancePaths } from '@momonga/foundation';
 import type { MomongaPaths, OutboundNetwork } from '@momonga/foundation';
-import { MANAGED_SERVERS, managedServerOf } from '@momonga/protocol';
 import type { DialectDefinition, ProbeReportDialect } from '@momonga/protocol';
 import { ensureDaemon, stopDaemon } from '../daemon/ensure-daemon.ts';
 import { stderrStopNotice } from '../daemon/stop-notice.ts';
@@ -171,7 +170,7 @@ export const probeFm = async (ports: CliPorts, paths: MomongaPaths, target: stri
   const configured: ManagedConfig | undefined = targets[target]?.adapter === 'managed' ? (targets[target] as ManagedConfig) : undefined;
   if (configured === undefined) throw new NotAProbeableTarget(target, targets);
   const { probeManagedFm, systemProcessFiles } = await import('@momonga/gateway');
-  const description = managedServerOf(MANAGED_SERVERS, configured.server);
+  const description = registeredServer(settings.models.servers, configured.server);
   if (description === undefined) throw new NotAProbeableTarget(target, targets);
   const { report, toolCalling, recordFile } = await probeManagedFm({
     paths,

@@ -1,6 +1,5 @@
 import path from 'node:path';
-import { createStopValuesReader, credentialEnvNames, loadUserSettings, probeRecordKeyOf, readUserStopValues, resolveNetwork, resolveTelemetrySettings, secretNames, upstreamEndpointOf } from '@momonga/config';
-import { MANAGED_SERVERS, managedServerOf } from '@momonga/protocol';
+import { createStopValuesReader, credentialEnvNames, loadUserSettings, probeRecordKeyOf, readUserStopValues, registeredIds, registeredServer, resolveNetwork, resolveTelemetrySettings, secretNames, upstreamEndpointOf } from '@momonga/config';
 import type { ManagedServerDescription } from '@momonga/protocol';
 import {
   acquireProcessLock,
@@ -25,7 +24,7 @@ import {
   ensureGenerationDirs,
   generationLayout,
 } from '@momonga/foundation';
-import type { EndpointProbeKey, StopValuesReader } from '@momonga/config';
+import type { EndpointProbeKey, ServerRegistry, StopValuesReader } from '@momonga/config';
 import type { BinaryHashCache, Clock, JsonLogger, MomongaPaths, NetworkConfig, OutboundNetwork, ProcessLock, ReadyFields, SecretStore, StopValues, TextStream } from '@momonga/foundation';
 import { installTrust, proxyPasswordsOf } from '@momonga/foundation';
 import {
@@ -107,7 +106,6 @@ export type StartGatewayProcessOptions = {
   stdout?: TextStream;
   signal?: AbortSignal;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
-  managedServers?: readonly ManagedServerDescription[];
   measureEndpoint?: MeasureEndpointPort<EndpointMeasurement>;
   measureOllama?: MeasureEndpointPort<OllamaMeasurement>;
   stopValues?: StopValuesReader;
@@ -238,9 +236,9 @@ const onRecordKey =
 
 const SAMPLING_OF: Record<ManagedServerDescription['sampling'], { renders: [] }> = { none: { renders: [] } };
 
-const requiredServer = (servers: readonly ManagedServerDescription[], id: string): ManagedServerDescription => {
-  const description = managedServerOf(servers, id);
-  if (description === undefined) throw new Error(`server ${JSON.stringify(id)} is not a managed server this build supports; supported: ${servers.map((server) => server.id).join(', ')}`);
+const requiredServer = (servers: ServerRegistry | undefined, id: string): ManagedServerDescription => {
+  const description = registeredServer(servers, id);
+  if (description === undefined) throw new Error(`server ${JSON.stringify(id)} is not a managed server this build supports; supported: ${registeredIds(servers).join(', ')}`);
   return description;
 };
 
@@ -356,7 +354,7 @@ const createManagedAdapter = async (wiring: ManagedAdapterWiring): Promise<{ ada
     ...(target.outputBoundField === undefined ? {} : { declaredOutputBoundField: target.outputBoundField }),
   });
   const adapter = createChatCompletionsAdapter({ ...managed, sampling: SAMPLING_OF[description.sampling], clock: wiring.clock, userDialects: wiring.userDialects, liveness: wiring.liveness });
-  const startKey = (await wiring.files.isUsableBinary(target.binary)) ? await readKey(wiring.startSignal) : undefined;
+  const startKey = (await wiring.files.isUsableBinary(target.binary)) ? await managed.instanceKey(wiring.startSignal) : undefined;
   if (startKey?.kind !== 'known') return { adapter, probeKey: undefined, listedModel: undefined };
   return { adapter, probeKey: startKey.canonical, listedModel: await listedModelOf(wiring, startKey, currency) };
 };
@@ -523,7 +521,7 @@ const DEBUG_TCP_HOST = '127.0.0.1';
 
 const NOT_LISTED_YET = 'not listed yet';
 
-const providerNameOf = (target: ResolvedTarget, servers: readonly ManagedServerDescription[]): string => {
+const providerNameOf = (target: ResolvedTarget, servers: ServerRegistry | undefined): string => {
   switch (target.adapter) {
     case 'managed':
       return requiredServer(servers, target.server).provider;
@@ -558,7 +556,7 @@ const withCounters = (config: UncountedGatewayConfig, counters: Readonly<Record<
 export const gatewayConfigOf = (
   targets: ResolvedTargets,
   aliases: Record<string, string | string[]>,
-  servers: readonly ManagedServerDescription[] = MANAGED_SERVERS,
+  servers?: ServerRegistry,
   listedModels: ReadonlyMap<string, string> = new Map(),
 ): UncountedGatewayConfig => ({
   models: {
@@ -586,7 +584,6 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   const random = options.random ?? systemProcessPorts.random;
   const files = options.files ?? systemProcessPorts.files;
   const logger = options.logger ?? createJsonLogger({ service: 'gateway', clock });
-  const managedServers = options.managedServers ?? MANAGED_SERVERS;
   const { signal } = options;
   const startSignal = startDeadlineSignal(signal);
   const stdout = options.stdout ?? process.stdout;
@@ -660,7 +657,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
 
   try {
     signal?.throwIfAborted();
-    const { settings, warnings } = await loadUserSettings({ home: options.home, managedServers });
+    const { settings, warnings } = await loadUserSettings({ home: options.home });
     for (const warning of warnings) logger.warn(warning);
     stopValues.remember(settings.gateway);
     const networkConfig = resolveNetwork(settings.network, options.env);
@@ -749,7 +746,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         const wired = await createManagedAdapter({
           name,
           target,
-          description: requiredServer(managedServers, target.server),
+          description: requiredServer(settings.models.servers, target.server),
           paths,
           childEnv,
           exec,
@@ -816,7 +813,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     signal?.throwIfAborted();
     const gateway = await createGateway({
       startSignal,
-      config: withCounters(gatewayConfigOf(settings.models.targets, settings.models.aliases, managedServers, listedModels), counters),
+      config: withCounters(gatewayConfigOf(settings.models.targets, settings.models.aliases, settings.models.servers, listedModels), counters),
       adapters,
       credentials: credentialValuesOf(options.env, credentialEnvNames(settings), secretResolver.resolved(), (message) => logger.warn(message), network.config),
       credentialFeed: (add) =>

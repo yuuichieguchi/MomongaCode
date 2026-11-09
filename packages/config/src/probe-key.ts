@@ -42,8 +42,9 @@ export const probeKeyOf = (input: ProbeKeyInput): ProbeKey => {
   return knownKeyOf(fields);
 };
 
-const behaviourOf = (description: ManagedServerDescription): unknown => ({
+const behaviourOf = ({ provider: _provider, ...description }: ManagedServerDescription): unknown => ({
   ...description,
+  errors: description.errors.map((entry) => ({ kind: entry.kind })),
   preconditions: description.preconditions.map((precondition) => ({
     argv: precondition.argv,
     rules: precondition.rules.map((rule) => ('otherExit' in rule ? { otherExit: rule.otherExit, verdict: rule.verdict } : { exitCode: rule.exitCode, verdict: rule.verdict })),

@@ -35,6 +35,8 @@ export { credentialEnvNames, planAccountNames, secretNames } from './models.ts';
 export { PLAN_PROFILES, assertPlanProfile, planProfileOf } from './plan-profiles.ts';
 export type { PlanProfile, PlanProfileCapabilities, PlanProfileCatalog, PlanProfileOAuth } from './plan-profiles.ts';
 export type { ResolvedModels } from './models.ts';
+export { registeredIds, registeredServer } from './server-registry.ts';
+export type { ServerRegistry } from './server-registry.ts';
 export { ConfigError, createStopValuesReader, createUserSettingsCache, loadUserModels, loadUserSettings, readUserStopValues, userSettingsChangeKey } from './user-settings.ts';
 export type { LoadUserSettingsOptions, LoadUserSettingsResult, StopValuesReader, StopValuesReaderOptions, UserModels, UserSettingsCache, UserSettingsCacheOptions, UserSettingsLoaded, UserSettingsSnapshot } from './user-settings.ts';
 export type { LoadSettingsOptions, LoadSettingsResult, ResolvedPermissions, ResolvedSettings } from './load-settings.ts';
@@ -77,6 +79,7 @@ export type {
   ModelRoles,
   ModelTarget,
   ModelsSettings,
+  DeclaredServer,
   OllamaTarget,
   OpenResponsesTarget,
   PlanOpenResponsesTarget,
