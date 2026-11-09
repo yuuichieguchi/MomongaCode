@@ -100,14 +100,25 @@ describe('the reap signals only a target proved ours by the same start time at t
     expect(manifest.entries.find((entry) => entry.config === `ProcessStop.${variant}`)).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: 'NoSignalToUnprovedGroup' } });
   });
 
-  it('the model header states the one-second resolution of the darwin start time, which the darwin inspector still reads with ps -o lstart', () => {
+  it('the same-second reuse of a pid by another generation is modelled, so the darwin one-second start time is the limit the proof must not rely on alone', () => {
     const darwin = fs.readFileSync(path.resolve(import.meta.dirname, '..', 'packages', 'foundation', 'src', 'platform', 'darwin-inspector.ts'), 'utf8');
     expect(darwin).toContain("'lstart='");
-    expect(spec).toContain('darwin reads a start time with ps -o lstart, whose resolution is one second');
+    expect(definitionOf('ReuseSameSecond')).toContain('CrossGen');
+    expect(definitionOf('HolderTargetProved')).toContain('crossGen');
   });
 
-  it('the model header states that the window between holdersOf and the first startTimeOf cannot be closed where the listing carries no start time', () => {
-    expect(spec).toContain('the window between holdersOf and the first startTimeOf cannot be closed where the listing carries no start time');
+  it('the stop proves a target and signals it in one step: Begin signals through SigT, which needs the proof of the target', () => {
+    expect(definitionOf('Begin')).toContain('SigT(m)');
+    expect(definitionOf('SigT')).toContain('TermAllowed(m)');
+  });
+
+  it.each(['retireSignalsOther', 'proofWithoutGen'])('the code variant %s is an every-run evidence configuration that violates StopNeverSignalsOtherGen', (variant) => {
+    expect(variants()).toContain(variant);
+    expect(manifest.entries.find((entry) => entry.config === `ProcessStop.${variant}`)).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: 'StopNeverSignalsOtherGen', exitCode: 13 } });
+  });
+
+  it.each(['ProcessStop.generations', 'ProcessStop.userStop'])('the generation configuration %s holds', (config) => {
+    expect(manifest.entries.find((entry) => entry.config === config)).toMatchObject({ role: 'check', expect: 'holds' });
   });
 
   it('signalUnprovedHolder: a holder whose pid is reused before the SIGTERM is not signalled', async () => {
