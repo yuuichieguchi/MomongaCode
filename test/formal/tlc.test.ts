@@ -442,6 +442,30 @@ describe('running tlc.sh under the harness', () => {
     30000 + REAP_SLACK_MS,
   );
 
+  const unparsableModule = ['---- MODULE Broken ----', 'VARIABLE x', 'Init == x = = 0', '===='].join('\n');
+  const brokenInputs = [
+    ['a module that does not parse', 'Broken', { 'Broken.tla': unparsableModule, 'Broken.cfg': cfgFor('Small') }],
+    ['a configuration that names an undefined invariant', 'Tiny.undefined', { 'Tiny.tla': tinySpec, 'Tiny.undefined.cfg': cfgFor('Undefined') }],
+  ] as const;
+
+  it.each(brokenInputs.flatMap(([input, config, specs]) => [holdsEntry, invariantEntry].map((entry) => [input, entry.expect === 'holds' ? 'holds' : 'violates', config, specs, entry] as const)))(
+    'reports the exit code, the configuration and the whole output of TLC for %s expected to %s',
+    async (_input, _expectation, config, specs, entry) => {
+      const script = sandboxWithScript(root, specs, true);
+      const run = await runTlc({ script, config, args: [], budgetCpuSeconds: 30 });
+      expect(run.killedAtCpuBudget).toBe(false);
+      expect(run.exitCode).not.toBeNull();
+      expect([0, 12, 13]).not.toContain(run.exitCode);
+      expect(run.stdout.trim().length + run.stderr.trim().length).toBeGreaterThan(0);
+      const report = verdictProblems({ ...entry, config }, run).join('\n');
+      expect(report).toContain(config);
+      expect(report).toContain(`exited ${run.exitCode}`);
+      expect(report).toContain(run.stdout.trim());
+      expect(report).toContain(run.stderr.trim());
+    },
+    30000 + REAP_SLACK_MS,
+  );
+
   it(
     'kills the script and its JVM as one process group at the CPU budget and leaves no JVM',
     async () => {
