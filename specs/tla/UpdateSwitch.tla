@@ -3,7 +3,7 @@ EXTENDS Naturals, FiniteSets
 
 CONSTANTS Runs, Jobs, Clients, Sessions, MaxV, MaxGen, MaxSteps, MaxStarts, MaxExecFails, MaxModals, Variant
 
-ASSUME Variant \in {"decided", "today", "pausePending", "defer", "claimRetiring", "killJobs", "noNotice", "noRecord", "refuseOld"}
+ASSUME Variant \in {"decided", "today", "pausePending", "defer", "claimRetiring", "killJobs", "noNotice", "noRecord", "refuseOld", "noReqWait", "pinPath"}
 ASSUME MaxV \in Nat \ {0, 1}
 ASSUME MaxGen \in Nat \ {0}
 ASSUME MaxSteps \in Nat \ {0}
@@ -17,11 +17,12 @@ GenStates == {"none", "serving", "retiring", "draining", "gone"}
 RunStates == {"none", "queued", "stepping", "done"}
 JobStates == {"none", "live", "ended", "killed"}
 ClientStates == {"none", "starting", "waiting", "connected", "handing", "refused", "left"}
+RequestStates == {"none", "open", "done", "cut"}
 Messages == {"none", "pending", "connected", "reopen", "stillRunning", "reconnecting", "moving", "handoverFailed", "retiring"}
 
-VARIABLES iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cs, cv, conn, msg, starts, abortedRun, draft, rec, execFails, modal, modals
+VARIABLES iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cs, cv, conn, msg, starts, abortedRun, draft, rec, execFails, modal, modals, rq, rqg, pin
 
-vars == <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cs, cv, conn, msg, starts, abortedRun, draft, rec, execFails, modal, modals>>
+vars == <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cs, cv, conn, msg, starts, abortedRun, draft, rec, execFails, modal, modals, rq, rqg, pin>>
 
 Serving == {g \in Gens : gstate[g] = "serving"}
 
@@ -58,6 +59,9 @@ TypeOK ==
     /\ execFails \in 0..MaxExecFails
     /\ modal \in [Clients -> BOOLEAN]
     /\ modals \in 0..MaxModals
+    /\ rq \in [Clients -> RequestStates]
+    /\ rqg \in [Clients -> 0..MaxGen]
+    /\ pin \in [Clients -> 0..MaxGen]
 
 NoticeFor(text) == IF Variant = "noNotice" THEN "none" ELSE text
 
@@ -82,6 +86,9 @@ Init ==
     /\ execFails = 0
     /\ modal = [c \in Clients |-> FALSE]
     /\ modals = 0
+    /\ rq = [c \in Clients |-> "none"]
+    /\ rqg = [c \in Clients |-> 0]
+    /\ pin = [c \in Clients |-> 0]
 
 Install(c) ==
     /\ cs[c] = "none"
@@ -92,7 +99,8 @@ Install(c) ==
     /\ cv' = [cv EXCEPT ![c] = iv + 1]
     /\ msg' = [msg EXCEPT ![c] = "none"]
     /\ starts' = starts + 1
-    /\ UNCHANGED <<gstate, ver, nextGen, run, stepsLeft, at, job, jat, conn, abortedRun, draft, rec, execFails, modal, modals>>
+    /\ pin' = [pin EXCEPT ![c] = 0]
+    /\ UNCHANGED <<gstate, ver, nextGen, run, stepsLeft, at, job, jat, conn, abortedRun, draft, rec, execFails, modal, modals, rq, rqg>>
 
 StartClient(c, v) ==
     /\ cs[c] = "none"
@@ -102,7 +110,8 @@ StartClient(c, v) ==
     /\ cv' = [cv EXCEPT ![c] = v]
     /\ msg' = [msg EXCEPT ![c] = "none"]
     /\ starts' = starts + 1
-    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, conn, abortedRun, draft, rec, execFails, modal, modals>>
+    /\ pin' = [pin EXCEPT ![c] = 0]
+    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, conn, abortedRun, draft, rec, execFails, modal, modals, rq, rqg>>
 
 StartFirst(c) ==
     /\ cs[c] = "starting"
@@ -111,7 +120,7 @@ StartFirst(c) ==
     /\ gstate' = [gstate EXCEPT ![nextGen] = "serving"]
     /\ ver' = [ver EXCEPT ![nextGen] = iv]
     /\ nextGen' = nextGen + 1
-    /\ UNCHANGED <<iv, run, stepsLeft, at, job, jat, cs, cv, conn, msg, starts, abortedRun, draft, rec, execFails, modal, modals>>
+    /\ UNCHANGED <<iv, run, stepsLeft, at, job, jat, cs, cv, conn, msg, starts, abortedRun, draft, rec, execFails, modal, modals, rq, rqg, pin>>
 
 Promote(c, text) ==
     /\ nextGen <= MaxGen
@@ -119,23 +128,23 @@ Promote(c, text) ==
     /\ ver' = [ver EXCEPT ![nextGen] = iv]
     /\ nextGen' = nextGen + 1
     /\ msg' = [msg EXCEPT ![c] = NoticeFor(text)]
-    /\ UNCHANGED <<iv, run, stepsLeft, at, job, jat, cs, cv, conn, starts, abortedRun, draft, rec, execFails, modal, modals>>
+    /\ UNCHANGED <<iv, run, stepsLeft, at, job, jat, cs, cv, conn, starts, abortedRun, draft, rec, execFails, modal, modals, rq, rqg, pin>>
 
 BeginDrain(c) ==
     /\ gstate' = [gstate EXCEPT ![Cur] = "draining"]
     /\ msg' = [msg EXCEPT ![c] = NoticeFor("pending")]
-    /\ UNCHANGED <<iv, ver, nextGen, run, stepsLeft, at, job, jat, cs, cv, conn, starts, abortedRun, draft, rec, execFails, modal, modals>>
+    /\ UNCHANGED <<iv, ver, nextGen, run, stepsLeft, at, job, jat, cs, cv, conn, starts, abortedRun, draft, rec, execFails, modal, modals, rq, rqg, pin>>
 
 Connect(c) ==
     /\ cs' = [cs EXCEPT ![c] = "connected"]
     /\ conn' = [conn EXCEPT ![c] = Cur]
     /\ msg' = [msg EXCEPT ![c] = "connected"]
-    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cv, starts, abortedRun, draft, rec, execFails, modal, modals>>
+    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cv, starts, abortedRun, draft, rec, execFails, modal, modals, rq, rqg, pin>>
 
 Wait(c) ==
     /\ cs' = [cs EXCEPT ![c] = "waiting"]
     /\ msg' = [msg EXCEPT ![c] = NoticeFor("pending")]
-    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cv, conn, starts, abortedRun, draft, rec, execFails, modal, modals>>
+    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cv, conn, starts, abortedRun, draft, rec, execFails, modal, modals, rq, rqg, pin>>
 
 Move(c) ==
     /\ c \in Sessions
@@ -143,14 +152,14 @@ Move(c) ==
     /\ cs' = [cs EXCEPT ![c] = "handing"]
     /\ msg' = [msg EXCEPT ![c] = NoticeFor("moving")]
     /\ rec' = [rec EXCEPT ![c] = IF Variant = "noRecord" THEN 0 ELSE draft[c]]
-    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cv, conn, starts, abortedRun, draft, execFails, modal, modals>>
+    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cv, conn, starts, abortedRun, draft, execFails, modal, modals, rq, rqg, pin>>
 
 Refuse(c) ==
     /\ \/ c \notin Sessions
        \/ Variant = "refuseOld"
     /\ cs' = [cs EXCEPT ![c] = "refused"]
     /\ msg' = [msg EXCEPT ![c] = NoticeFor("reopen")]
-    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cv, conn, starts, abortedRun, draft, rec, execFails, modal, modals>>
+    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cv, conn, starts, abortedRun, draft, rec, execFails, modal, modals, rq, rqg, pin>>
 
 Evaluate(c) ==
     /\ cs[c] = "starting"
@@ -158,7 +167,7 @@ Evaluate(c) ==
     /\ \/ cv[c] = ver[Cur] /\ Connect(c)
        \/ cv[c] < ver[Cur] /\ (Move(c) \/ Refuse(c))
        \/ /\ cv[c] > ver[Cur]
-          /\ \/ /\ Variant \in {"decided", "claimRetiring", "killJobs", "noNotice", "noRecord", "refuseOld"}
+          /\ \/ /\ Variant \in {"decided", "claimRetiring", "killJobs", "noNotice", "noRecord", "refuseOld", "noReqWait", "pinPath"}
                 /\ Promote(c, "retiring")
              \/ /\ Variant \in {"today", "pausePending"}
                 /\ BeginDrain(c)
@@ -181,12 +190,12 @@ OpenModal(c) ==
     /\ modals < MaxModals
     /\ modal' = [modal EXCEPT ![c] = TRUE]
     /\ modals' = modals + 1
-    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cs, cv, conn, msg, starts, abortedRun, draft, rec, execFails>>
+    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cs, cv, conn, msg, starts, abortedRun, draft, rec, execFails, rq, rqg, pin>>
 
 CloseModal(c) ==
     /\ modal[c]
     /\ modal' = [modal EXCEPT ![c] = FALSE]
-    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cs, cv, conn, msg, starts, abortedRun, draft, rec, execFails, modals>>
+    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cs, cv, conn, msg, starts, abortedRun, draft, rec, execFails, modals, rq, rqg, pin>>
 
 Exec(c) ==
     /\ cs[c] = "handing"
@@ -197,7 +206,8 @@ Exec(c) ==
     /\ draft' = [draft EXCEPT ![c] = rec[c]]
     /\ rec' = [rec EXCEPT ![c] = 0]
     /\ modal' = [modal EXCEPT ![c] = FALSE]
-    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, starts, abortedRun, execFails, modals>>
+    /\ pin' = [pin EXCEPT ![c] = 0]
+    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, starts, abortedRun, execFails, modals, rq, rqg>>
 
 ExecFail(c) ==
     /\ cs[c] = "handing"
@@ -206,28 +216,32 @@ ExecFail(c) ==
     /\ cs' = [cs EXCEPT ![c] = "refused"]
     /\ msg' = [msg EXCEPT ![c] = NoticeFor("handoverFailed")]
     /\ rec' = [rec EXCEPT ![c] = 0]
-    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cv, conn, starts, abortedRun, draft, modal, modals>>
+    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cv, conn, starts, abortedRun, draft, modal, modals, rq, rqg, pin>>
 
 Retry(c) ==
     /\ cs[c] = "waiting"
     /\ Serving # {}
     /\ cs' = [cs EXCEPT ![c] = "starting"]
-    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cv, conn, msg, starts, abortedRun, draft, rec, execFails, modal, modals>>
+    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cv, conn, msg, starts, abortedRun, draft, rec, execFails, modal, modals, rq, rqg, pin>>
 
 Leave(c) ==
     /\ cs[c] = "waiting"
     /\ cs' = [cs EXCEPT ![c] = "left"]
     /\ msg' = [msg EXCEPT ![c] = NoticeFor("stillRunning")]
-    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cv, conn, starts, abortedRun, draft, rec, execFails, modal, modals>>
+    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cv, conn, starts, abortedRun, draft, rec, execFails, modal, modals, rq, rqg, pin>>
 
 Finish(c) ==
     /\ cs[c] \in {"connected", "refused", "left"}
+    /\ rq[c] # "open"
     /\ cs' = [cs EXCEPT ![c] = "none"]
     /\ cv' = [cv EXCEPT ![c] = 0]
     /\ conn' = [conn EXCEPT ![c] = 0]
     /\ msg' = [msg EXCEPT ![c] = "none"]
     /\ draft' = [draft EXCEPT ![c] = 0]
     /\ modal' = [modal EXCEPT ![c] = FALSE]
+    /\ rq' = [rq EXCEPT ![c] = "none"]
+    /\ rqg' = [rqg EXCEPT ![c] = 0]
+    /\ pin' = [pin EXCEPT ![c] = 0]
     /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, starts, abortedRun, rec, execFails, modals>>
 
 Type(c) ==
@@ -235,21 +249,21 @@ Type(c) ==
     /\ cs[c] \in {"connected", "starting", "waiting"}
     /\ draft[c] = 0
     /\ draft' = [draft EXCEPT ![c] = 1]
-    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cs, cv, conn, msg, starts, abortedRun, rec, execFails, modal, modals>>
+    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cs, cv, conn, msg, starts, abortedRun, rec, execFails, modal, modals, rq, rqg, pin>>
 
 Send(c) ==
     /\ c \in Sessions
     /\ cs[c] = "connected"
     /\ draft[c] = 1
     /\ draft' = [draft EXCEPT ![c] = 0]
-    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cs, cv, conn, msg, starts, abortedRun, rec, execFails, modal, modals>>
+    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cs, cv, conn, msg, starts, abortedRun, rec, execFails, modal, modals, rq, rqg, pin>>
 
 Submit(r) ==
     /\ run[r] = "none"
     /\ \E c \in Clients : cs[c] = "connected"
     /\ run' = [run EXCEPT ![r] = "queued"]
     /\ \E n \in 1..MaxSteps : stepsLeft' = [stepsLeft EXCEPT ![r] = n]
-    /\ UNCHANGED <<iv, gstate, ver, nextGen, at, job, jat, cs, cv, conn, msg, starts, abortedRun, draft, rec, execFails, modal, modals>>
+    /\ UNCHANGED <<iv, gstate, ver, nextGen, at, job, jat, cs, cv, conn, msg, starts, abortedRun, draft, rec, execFails, modal, modals, rq, rqg, pin>>
 
 Claimers == IF Variant = "claimRetiring" THEN {g \in Gens : gstate[g] \in {"serving", "retiring"}} ELSE Serving
 
@@ -258,14 +272,14 @@ Claim(r, g) ==
     /\ g \in Claimers
     /\ run' = [run EXCEPT ![r] = "stepping"]
     /\ at' = [at EXCEPT ![r] = g]
-    /\ UNCHANGED <<iv, gstate, ver, nextGen, stepsLeft, job, jat, cs, cv, conn, msg, starts, abortedRun, draft, rec, execFails, modal, modals>>
+    /\ UNCHANGED <<iv, gstate, ver, nextGen, stepsLeft, job, jat, cs, cv, conn, msg, starts, abortedRun, draft, rec, execFails, modal, modals, rq, rqg, pin>>
 
 StepEnd(r) ==
     /\ run[r] = "stepping"
     /\ stepsLeft' = [stepsLeft EXCEPT ![r] = stepsLeft[r] - 1]
     /\ run' = [run EXCEPT ![r] = IF stepsLeft[r] = 1 THEN "done" ELSE "queued"]
     /\ at' = [at EXCEPT ![r] = 0]
-    /\ UNCHANGED <<iv, gstate, ver, nextGen, job, jat, cs, cv, conn, msg, starts, abortedRun, draft, rec, execFails, modal, modals>>
+    /\ UNCHANGED <<iv, gstate, ver, nextGen, job, jat, cs, cv, conn, msg, starts, abortedRun, draft, rec, execFails, modal, modals, rq, rqg, pin>>
 
 JobStart(j, r) ==
     /\ job[j] = "none"
@@ -273,12 +287,12 @@ JobStart(j, r) ==
     /\ at[r] \in Claimers
     /\ job' = [job EXCEPT ![j] = "live"]
     /\ jat' = [jat EXCEPT ![j] = at[r]]
-    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, cs, cv, conn, msg, starts, abortedRun, draft, rec, execFails, modal, modals>>
+    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, cs, cv, conn, msg, starts, abortedRun, draft, rec, execFails, modal, modals, rq, rqg, pin>>
 
 JobEnd(j) ==
     /\ job[j] = "live"
     /\ job' = [job EXCEPT ![j] = "ended"]
-    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, jat, cs, cv, conn, msg, starts, abortedRun, draft, rec, execFails, modal, modals>>
+    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, jat, cs, cv, conn, msg, starts, abortedRun, draft, rec, execFails, modal, modals, rq, rqg, pin>>
 
 Expire(g) ==
     /\ Variant = "today"
@@ -287,22 +301,45 @@ Expire(g) ==
     /\ abortedRun' = TRUE
     /\ run' = [r \in Runs |-> IF run[r] = "stepping" /\ at[r] = g THEN "queued" ELSE run[r]]
     /\ at' = [r \in Runs |-> IF run[r] = "stepping" /\ at[r] = g THEN 0 ELSE at[r]]
-    /\ UNCHANGED <<iv, gstate, ver, nextGen, stepsLeft, job, jat, cs, cv, conn, msg, starts, draft, rec, execFails, modal, modals>>
+    /\ UNCHANGED <<iv, gstate, ver, nextGen, stepsLeft, job, jat, cs, cv, conn, msg, starts, draft, rec, execFails, modal, modals, rq, rqg, pin>>
+
+ReqHolds(g) == Variant = "noReqWait" \/ ~(\E c \in Clients : rq[c] = "open" /\ rqg[c] = g)
+
+Target(c) == IF Variant = "pinPath" /\ pin[c] # 0 THEN pin[c] ELSE Cur
+
+SendRead(c) ==
+    /\ rq[c] \in {"none", "done"}
+    /\ cs[c] \in {"connected", "starting"}
+    /\ Serving # {}
+    /\ rq' = [rq EXCEPT ![c] = IF Target(c) \in Alive THEN "open" ELSE "cut"]
+    /\ rqg' = [rqg EXCEPT ![c] = IF Target(c) \in Alive THEN Target(c) ELSE 0]
+    /\ pin' = [pin EXCEPT ![c] = IF Variant = "pinPath" THEN IF pin[c] = 0 THEN Cur ELSE pin[c] ELSE 0]
+    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cs, cv, conn, msg, starts, abortedRun, draft, rec, execFails, modal, modals>>
+
+AnswerRead(c) ==
+    /\ rq[c] = "open"
+    /\ rqg[c] \in Alive
+    /\ rq' = [rq EXCEPT ![c] = "done"]
+    /\ rqg' = [rqg EXCEPT ![c] = 0]
+    /\ UNCHANGED <<iv, gstate, ver, nextGen, run, stepsLeft, at, job, jat, cs, cv, conn, msg, starts, abortedRun, draft, rec, execFails, modal, modals, pin>>
 
 Holds(g) == IF Variant \in {"today", "killJobs"} THEN StepsAt(g) = {} ELSE Empty(g)
 
 Retire(g) ==
     /\ gstate[g] \in {"retiring", "draining"}
     /\ Holds(g)
+    /\ ReqHolds(g)
     /\ gstate' = [gstate EXCEPT ![g] = "gone"]
     /\ job' = [j \in Jobs |-> IF job[j] = "live" /\ jat[j] = g THEN "killed" ELSE job[j]]
     /\ cs' = [c \in Clients |-> IF cs[c] = "connected" /\ conn[c] = g THEN "starting" ELSE cs[c]]
     /\ conn' = [c \in Clients |-> IF conn[c] = g THEN 0 ELSE conn[c]]
     /\ msg' = [c \in Clients |-> IF cs[c] = "connected" /\ conn[c] = g THEN NoticeFor("reconnecting") ELSE msg[c]]
-    /\ UNCHANGED <<iv, ver, nextGen, run, stepsLeft, at, jat, cv, starts, abortedRun, draft, rec, execFails, modal, modals>>
+    /\ rq' = [c \in Clients |-> IF rq[c] = "open" /\ rqg[c] = g THEN "cut" ELSE rq[c]]
+    /\ rqg' = [c \in Clients |-> IF rq[c] = "open" /\ rqg[c] = g THEN 0 ELSE rqg[c]]
+    /\ UNCHANGED <<iv, ver, nextGen, run, stepsLeft, at, jat, cv, starts, abortedRun, draft, rec, execFails, modal, modals, pin>>
 
 Next ==
-    \/ \E c \in Clients : Install(c) \/ StartFirst(c) \/ Evaluate(c) \/ Notified(c) \/ OpenModal(c) \/ CloseModal(c) \/ Exec(c) \/ ExecFail(c) \/ Retry(c) \/ Leave(c) \/ Finish(c) \/ Type(c) \/ Send(c)
+    \/ \E c \in Clients : Install(c) \/ StartFirst(c) \/ Evaluate(c) \/ Notified(c) \/ OpenModal(c) \/ CloseModal(c) \/ Exec(c) \/ ExecFail(c) \/ Retry(c) \/ Leave(c) \/ Finish(c) \/ Type(c) \/ Send(c) \/ SendRead(c) \/ AnswerRead(c)
     \/ \E c \in Clients, v \in 1..MaxV : StartClient(c, v)
     \/ \E r \in Runs : Submit(r) \/ StepEnd(r) \/ \E g \in Gens : Claim(r, g)
     \/ \E j \in Jobs, r \in Runs : JobStart(j, r)
@@ -310,7 +347,7 @@ Next ==
     \/ \E g \in Gens : Expire(g) \/ Retire(g)
 
 Fairness ==
-    /\ \A c \in Clients : WF_vars(StartFirst(c)) /\ WF_vars(Evaluate(c)) /\ WF_vars(Retry(c)) /\ WF_vars(Exec(c)) /\ WF_vars(Notified(c)) /\ WF_vars(CloseModal(c))
+    /\ \A c \in Clients : WF_vars(StartFirst(c)) /\ WF_vars(Evaluate(c)) /\ WF_vars(Retry(c)) /\ WF_vars(Exec(c)) /\ WF_vars(Notified(c)) /\ WF_vars(CloseModal(c)) /\ WF_vars(AnswerRead(c))
     /\ \A r \in Runs : WF_vars(StepEnd(r)) /\ \A g \in Gens : WF_vars(Claim(r, g))
     /\ \A j \in Jobs : WF_vars(JobEnd(j))
     /\ \A g \in Gens : WF_vars(Retire(g))
@@ -318,6 +355,8 @@ Fairness ==
 Spec == Init /\ [][Next]_vars /\ Fairness
 
 NoAbortRunning == ~abortedRun
+
+NoRequestCut == \A c \in Clients : rq[c] # "cut"
 
 NoKilledJob == \A j \in Jobs : job[j] # "killed"
 
