@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { SETTINGS_DEBOUNCE_MS } from '../src/constants.ts';
-import { chatTarget, fakeSettingsWatch, httpOver, pump, startHarness, validSettings, writeSettings } from './fixtures/p3-harness.ts';
+import { CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER, createUdsClient, fixedSocket, minimalChildEnv } from '@momonga/foundation';
+import { registerCleanup } from '@momonga/testkit';
+import { chatTarget, fakeSettingsWatch, pump, startHarness, validSettings, writeSettings } from './fixtures/p3-harness.ts';
 import type { FakeSettingsWatch, Harness, SimpleResponse } from './fixtures/p3-harness.ts';
 
 const CREDENTIAL_ROUTE = '/v1/credentials/';
@@ -39,8 +41,23 @@ const declareTargetsWithKeys = async (h: Watched, ...names: string[]): Promise<v
   await pump(h.timers, h.realWork, SETTINGS_DEBOUNCE_MS + 50);
 };
 
-const askForCredential = (context: CleanupContext, h: Watched, name: string): Promise<SimpleResponse> =>
-  h.realWork.run(() => httpOver(context, firstGeneration(h.paths).sockets.supervisor, 'GET', `${CREDENTIAL_ROUTE}${name}`));
+const requestCredential = (context: CleanupContext, h: Watched, name: string, capability: string | undefined): Promise<SimpleResponse> =>
+  h.realWork.run(async () => {
+    const client = createUdsClient(fixedSocket(firstGeneration(h.paths).sockets.supervisor), { headersTimeoutMs: 5000 });
+    registerCleanup(context, () => client.destroy());
+    const response = await client.request({ method: 'GET', path: `${CREDENTIAL_ROUTE}${name}`, ...(capability === undefined ? {} : { headers: { [CREDENTIAL_CAPABILITY_HEADER]: capability } }) });
+    const text = await response.text();
+    await client.close();
+    return { status: response.status, headers: response.headers, text };
+  });
+
+const gatewayCapability = (h: Watched): string => {
+  const capability = h.fake.latest('gateway').options.env[CREDENTIAL_CAPABILITY_ENV];
+  if (capability === undefined || capability.length < 32) throw new Error('the gateway was spawned without a credential capability');
+  return capability;
+};
+
+const askForCredential = (context: CleanupContext, h: Watched, name: string): Promise<SimpleResponse> => requestCredential(context, h, name, gatewayCapability(h));
 
 describe('S6: the supervisor hands a declared environment credential to the gateway (design-settings-live section 12)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('a target added with apiKeyEnv naming a variable of the start environment gets its value with no restart', async (context) => {
@@ -69,5 +86,27 @@ describe('S6: the supervisor hands a declared environment credential to the gate
     const response = await askForCredential(context, h, EXPORTED_AFTER_START);
     expect(response.status).toBe(404);
     expect(response.text).not.toContain('exported-after-start');
+  });
+
+  it('a caller without the gateway capability gets no value, and the answer does not tell whether the name is declared', async (context) => {
+    const h = await watched(context);
+    await declareTargetsWithKeys(h, DECLARED_LATER);
+    const declared = await requestCredential(context, h, DECLARED_LATER, undefined);
+    const undeclared = await requestCredential(context, h, NEVER_DECLARED, undefined);
+    const forged = await requestCredential(context, h, DECLARED_LATER, 'f'.repeat(gatewayCapability(h).length));
+    for (const response of [declared, undeclared, forged]) {
+      expect(response.status).toBe(403);
+      expect(response.text).not.toContain(ADDED_KEY_VALUE);
+      expect(response.text).not.toContain(UNDECLARED_VALUE);
+    }
+    expect(declared.text).toBe(undeclared.text);
+    expect(forged.text).toBe(declared.text);
+  });
+
+  it('the capability is in the gateway environment only, and a process the gateway spawns does not inherit it', async (context) => {
+    const h = await watched(context);
+    const capability = gatewayCapability(h);
+    expect(h.fake.latest('runtime').options.env[CREDENTIAL_CAPABILITY_ENV]).toBeUndefined();
+    expect(Object.values(minimalChildEnv(h.fake.latest('gateway').options.env))).not.toContain(capability);
   });
 });
