@@ -7,8 +7,8 @@ import { createManagerHarness } from './support/p2-manager-harness.ts';
 import type { ManagerHarness, ManagerHarnessOptions } from './support/p2-manager-harness.ts';
 
 const VALUES: StopValues = { closeGraceMs: 1200, managedServerStopGraceMs: 300, drainTimeoutMs: 300_000, mcpCloseGraceMs: 30_000 };
-const TERM_BUDGET_MS = 1200 + 6 * 300 + 5000;
-const ABORT_BUDGET_MS = 6 * 300 + 5000;
+const TERM_BUDGET_MS = 1200 + 4 * 300 + 10_075 + 5000;
+const ABORT_BUDGET_MS = 4 * 300 + 10_075 + 5000;
 
 type HeldWrite = { chunks: string[]; complete(error?: Error): void };
 

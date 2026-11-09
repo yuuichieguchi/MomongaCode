@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ProbeFailedError, canStillRun, createProcessGroupPort, groupTerminationBoundMs, reconcileProcessGroup, terminateGroup } from '@momonga/foundation';
+import { KILL_CONFIRM_MS, ProbeFailedError, canStillRun, createProcessGroupPort, groupTerminationBoundMs, reconcileProcessGroup, terminateGroup } from '@momonga/foundation';
 import type { CommandOptions, CommandRunner, FileIdentity, GroupTiming, ProcessGroupPort, ProcessInspector, ProcFs, ReapTiming } from '@momonga/foundation';
 import { createFakeClock } from '@momonga/testkit';
 
@@ -87,14 +87,15 @@ describe('a group is alive while a member remains that can still run (EPERM from
     expect(calls.every((call) => call.options.signal === stop)).toBe(true);
   });
 
-  it('darwin: a member of another user that can still run keeps the group alive, and the stop is unconfirmed within one grace after SIGKILL', async () => {
+  it('darwin: a member of another user that can still run keeps the group alive, and the stop is unconfirmed once the window K after SIGKILL has passed', async () => {
     const members: Member[] = [{ pid: PGID + 5, ours: false, darwinStat: 'Ss', linuxState: 'S' }];
     fakeGroup(members, () => undefined);
     const port = createProcessGroupPort('darwin', { run: psRunner(members, []), env: {} });
     expect(await port.alive(PGID, { signal: new AbortController().signal })).toBe(true);
     const fake = fakeTiming();
     expect(await terminateGroup(PGID, { graceMs: 100, port, timing: fake.timing, signal: new AbortController().signal })).toBe('unconfirmed');
-    expect(fake.now()).toBeLessThanOrEqual(groupTerminationBoundMs(100));
+    expect(fake.now()).toBeGreaterThanOrEqual(100 + KILL_CONFIRM_MS);
+    expect(fake.now()).toBeLessThanOrEqual(100 + KILL_CONFIRM_MS + 2 * 10);
   });
 
   it('linux: EPERM for a group whose only member is a zombie is gone, and EPERM for a running member of another user is alive', async () => {
@@ -108,8 +109,9 @@ describe('a group is alive while a member remains that can still run (EPERM from
     expect(await createProcessGroupPort('linux', { run: psRunner([], []), env: {}, procfs: fakeProcfs(running) }).alive(PGID, { signal: stop })).toBe(true);
   });
 
-  it('the wait after SIGKILL is the grace of the operation, with no fixed floor', () => {
-    expect(groupTerminationBoundMs(100) - groupTerminationBoundMs(0)).toBe(200);
+  it('only the wait before SIGKILL depends on the grace; the window after it is K for every grace', () => {
+    expect(groupTerminationBoundMs(100) - groupTerminationBoundMs(0)).toBe(100);
+    expect(groupTerminationBoundMs(0)).toBe(KILL_CONFIRM_MS);
   });
 
   it('with a grace of 0 the group is checked once after SIGKILL', async () => {

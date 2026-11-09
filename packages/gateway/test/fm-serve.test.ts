@@ -7,6 +7,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Agent } from 'undici';
 import { createManagedServer, type ExecOptions, type ExecResult, type ManagedServer, type ManagedServerTimers } from '@momonga/gateway';
+import { KILL_CONFIRM_MS } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, startFakeChatCompletions, type FakeChatCompletionsServer } from '@momonga/testkit';
 import { FM_SERVER } from '@momonga/protocol';
 
@@ -872,20 +873,50 @@ describe('createManagedServer bounds each precondition command by the asking ope
   });
 });
 
-describe('createManagedServer bounds the wait after SIGKILL by stopGraceMs', () => {
-  it('reports the stop as not confirmed after a second stopGraceMs when the child ignores SIGKILL', async () => {
+describe('createManagedServer confirms its SIGKILL in its own window K = KILL_CONFIRM_MS, not the grace (design 2.4, point 1)', () => {
+  const started: Array<Pick<ReturnType<typeof setup>, 'server' | 'manual' | 'warnings'>> = [];
+
+  afterEach(async () => {
+    for (const { server, manual, warnings } of started.splice(0)) {
+      const stopped = server.stop();
+      await vi.waitFor(() => {
+        for (const delay of manual.delays()) manual.fire(delay);
+        expect(manual.delays()).toEqual([]);
+      });
+      await stopped;
+      warnings.splice(0);
+    }
+  });
+
+  it.each([GRACE_MS, 0])('stop grace %i: the wait after SIGKILL is K; a child that outlives it is reported and the stop resolves', async (stopGraceMs) => {
     const { server, manual, warnings } = setup({ child: { ignoreSigterm: true, ignoreSigkill: true } });
+    started.push({ server, manual, warnings });
     await server.start();
-    const stopping = server.stop();
-    await vi.waitFor(() => expect(manual.delays()).toEqual([GRACE_MS]));
-    manual.fire(GRACE_MS);
+    const stopping = server.stop({ stopGraceMs });
+    await vi.waitFor(() => expect(manual.delays()).toEqual([stopGraceMs]));
+    manual.fire(stopGraceMs);
     await vi.waitFor(() => expect(children[0]?.signals).toEqual(['SIGTERM', 'SIGKILL']));
-    await vi.waitFor(() => expect(manual.delays()).toEqual([GRACE_MS]));
-    manual.fire(GRACE_MS);
+    await vi.waitFor(() => expect(manual.delays()).toEqual([KILL_CONFIRM_MS]));
+    manual.fire(KILL_CONFIRM_MS);
     await stopping;
-    expect(warnings).toEqual([`the target "fm": the server process was not confirmed stopped: it did not exit within ${GRACE_MS} ms after SIGKILL`]);
+    expect(warnings).toEqual([`the target "fm": the server process was not confirmed stopped: it did not exit within ${KILL_CONFIRM_MS} ms after SIGKILL`]);
     warnings.splice(0);
     expect(children[0]?.alive).toBe(true);
+  });
+
+  it.each([GRACE_MS, 0])('stop grace %i: a child that ends inside the window after SIGKILL is confirmed stopped with no warning', async (stopGraceMs) => {
+    const { server, manual, warnings } = setup({ child: { ignoreSigterm: true, ignoreSigkill: true } });
+    started.push({ server, manual, warnings });
+    await server.start();
+    const stopping = server.stop({ stopGraceMs });
+    await vi.waitFor(() => expect(manual.delays()).toEqual([stopGraceMs]));
+    manual.fire(stopGraceMs);
+    await vi.waitFor(() => expect(children[0]?.signals).toEqual(['SIGTERM', 'SIGKILL']));
+    await vi.waitFor(() => expect(manual.delays()).toEqual([KILL_CONFIRM_MS]));
+    await children[0]?.crash(null, 'SIGKILL');
+    await stopping;
+    expect(warnings).toEqual([]);
+    expect(manual.delays()).toEqual([]);
   });
 });
 

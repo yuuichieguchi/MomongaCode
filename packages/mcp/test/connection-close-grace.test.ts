@@ -3,12 +3,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createManagedConnection } from '@momonga/mcp';
-import { isProcessAlive } from '@momonga/foundation';
+import { KILL_CONFIRM_MS, isProcessAlive } from '@momonga/foundation';
 import type { DeadlineTiming } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, killPidsForCleanup, waitFor } from '@momonga/testkit';
 
 const STUBBORN_SERVER = path.join(import.meta.dirname, 'fixtures', 'stubborn-stdio-server.ts');
-const poolCloseBoundMs = (graceMs: number): number => 8 * graceMs + 2 * 10 + 4 * 25;
+const poolCloseBoundMs = (graceMs: number): number => 6 * graceMs + 3 * 25 + 2 * KILL_CONFIRM_MS;
 const DRIVE_MAX_TURNS = 200_000;
 
 const dirs: string[] = [];

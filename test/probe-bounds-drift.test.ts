@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import * as foundation from '@momonga/foundation';
-import { RUNTIME_ABORT_BUDGET_MS, RUNTIME_TEARDOWN_BUDGET_MS } from '@momonga/foundation';
-import { ORPHAN_REAP_GRACE_MS } from '@momonga/supervisor';
+import { DEFAULT_STOP_VALUES, MAXIMUM_STOP_VALUES, RUNTIME_ABORT_BUDGET_MS, orphanReapGraceMs, runtimeTeardownBudgetMs } from '@momonga/foundation';
+import * as supervisor from '@momonga/supervisor';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 
@@ -57,15 +57,24 @@ describe('T12 no private probe number remains and the + 2000 margins are gone', 
     expect(Object.keys(foundation).filter((name) => name.endsWith('_PROBE_TIMEOUT_MS'))).toEqual([]);
   });
 
-  it('ORPHAN_REAP_GRACE_MS is the abort budget plus the teardown budget, with no margin', () => {
-    expect(ORPHAN_REAP_GRACE_MS).toBe(RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS);
+  it('no fixed ORPHAN_REAP_GRACE_MS is exported: the orphan reap grace depends on the MCP grace of the predecessor stop', () => {
+    expect('ORPHAN_REAP_GRACE_MS' in supervisor).toBe(false);
+    expect('ORPHAN_REAP_GRACE_MS' in foundation).toBe(false);
   });
 
-  it('the orphan phase deadline and the default orphanGraceMs are runtimeMaxCloseMs(d) with no margin', () => {
+  it('orphanReapGraceMs(v) is the abort budget plus the teardown budget of the MCP grace of v, with no margin', () => {
+    for (const values of [DEFAULT_STOP_VALUES, MAXIMUM_STOP_VALUES, { ...DEFAULT_STOP_VALUES, mcpCloseGraceMs: 0 }]) {
+      expect(orphanReapGraceMs(values), JSON.stringify(values)).toBe(RUNTIME_ABORT_BUDGET_MS + runtimeTeardownBudgetMs(values.mcpCloseGraceMs));
+    }
+  });
+
+  it('the orphan phase deadline and the default orphanGraceMs are runtimeMaxCloseMs of the predecessor values with no margin', () => {
     const orphans = read('packages/supervisor/src/orphans.ts');
     expect(orphans).not.toContain('PHASE_ONE_MARGIN_MS');
     expect(orphans).toMatch(/Math\.min\(\w+\.orphanGraceMs, runtimeMaxCloseMs\([^)]*\)\)/);
-    expect(read('packages/supervisor/src/start-supervisor.ts')).toMatch(/orphanGraceMs: options\.orphanGraceMs \?\? runtimeMaxCloseMs\(drainTimeoutMs\),/);
+    const start = read('packages/supervisor/src/start-supervisor.ts');
+    expect(start).not.toMatch(/runtimeMaxCloseMs\(drainTimeoutMs\)/);
+    expect(start).toMatch(/runtimeMaxCloseMs\(/);
     expect(read('packages/supervisor/src/constants.ts')).not.toMatch(/ORPHAN_REAP_GRACE_MS = [^;\n]*\+ 2000/);
   });
 });

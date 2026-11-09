@@ -54,7 +54,7 @@ vi.mock('../../src/process/mcp-admin.ts', async (importOriginal) => {
 const PROCESS_TIMEOUT = { timeout: BUILT_BINARY_TEST_TIMEOUT_MS };
 const CLEAN = { clean: true, abandoned: [], stragglers: [] };
 const VALUES: StopValues = { ...DEFAULT_STOP_VALUES, closeGraceMs: 300_000, managedServerStopGraceMs: 60_000, drainTimeoutMs: 4321, mcpCloseGraceMs: 50 };
-const DERIVED_TEARDOWN_MS = 10_000 + 8 * 50 + 120;
+const DERIVED_TEARDOWN_MS = 10_000 + 6 * 50 + 10_075;
 
 beforeEach(() => {
   control.closeAllGraces = [];
@@ -113,7 +113,7 @@ describe('the runtime close takes the values its stop carries (fake timers, in-p
     const launched = await launchFake(stack);
     const closing = launched.handle.close(VALUES);
     await waitForCondition(() => stepsLogged(launched.logger, 'teardown.step').includes('mcp-pools'), 'the mcp-pools step');
-    await waitForTimer(launched.timers, DERIVED_TEARDOWN_MS, 'the teardown budget at 10000 + 8g + 120');
+    await waitForTimer(launched.timers, DERIVED_TEARDOWN_MS, 'the teardown budget at 10000 + 6g + 75 + 2K');
     launched.timers.advance(DERIVED_TEARDOWN_MS - 1);
     control.releaseCloseAll();
     expect(await closing).toEqual(CLEAN);

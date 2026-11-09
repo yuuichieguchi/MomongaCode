@@ -11,10 +11,10 @@ import { startSupervisorHarness } from './support/p2-supervisor-harness.ts';
 import type { SupervisorHarness } from './support/p2-supervisor-harness.ts';
 
 const FIRST: StopValues = { closeGraceMs: 1000, managedServerStopGraceMs: 200, drainTimeoutMs: 7000, mcpCloseGraceMs: 40 };
-const FIRST_DAEMON_STOP_BOUND_MS = 7000 + 1000 + 10 * 200 + 8 * 40 + 48_220 + 3000;
+const FIRST_DAEMON_STOP_BOUND_MS = 7000 + 1000 + 7 * 200 + 6 * 40 + 79_245;
 const LATER: StopValues = { closeGraceMs: 250_000, managedServerStopGraceMs: 50_000, drainTimeoutMs: 250_000, mcpCloseGraceMs: 25_000 };
 const POSTED: StopValues = { closeGraceMs: 0, managedServerStopGraceMs: 10, drainTimeoutMs: 20, mcpCloseGraceMs: 30 };
-const POSTED_DAEMON_STOP_BOUND_MS = 20 + 0 + 10 * 10 + 8 * 30 + 48_220 + 3000;
+const POSTED_DAEMON_STOP_BOUND_MS = 20 + 0 + 7 * 10 + 6 * 30 + 79_245;
 
 const settingsOf = (values: StopValues): Record<string, unknown> => ({
   gateway: { closeGraceMs: values.closeGraceMs, managedServerStopGraceMs: values.managedServerStopGraceMs },
@@ -22,7 +22,8 @@ const settingsOf = (values: StopValues): Record<string, unknown> => ({
   mcp: { closeGraceMs: values.mcpCloseGraceMs },
 });
 
-type Observed = { lines: string[]; boundsAtSignal: unknown[]; recordAtFirstLine: Array<StopValues | undefined> };
+type RecordedStop = { generation: number; values: StopValues };
+type Observed = { lines: string[]; boundsAtSignal: unknown[]; recordAtFirstLine: Array<RecordedStop | undefined> };
 
 const observeChildren = (harness: SupervisorHarness): Record<'gateway' | 'runtime', Observed> => {
   const recordPath = generationLayout(harness.home, FIRST_GENERATION).stopRecord;
@@ -31,7 +32,7 @@ const observeChildren = (harness: SupervisorHarness): Record<'gateway' | 'runtim
     if (child === undefined) throw new Error(`no ${role} child was spawned`);
     const observed: Observed = { lines: [], boundsAtSignal: [], recordAtFirstLine: [] };
     child.lifeline.on('data', (chunk: Buffer) => {
-      if (observed.lines.length === 0) observed.recordAtFirstLine.push(fs.existsSync(recordPath) ? (JSON.parse(fs.readFileSync(recordPath, 'utf8')) as StopValues) : undefined);
+      if (observed.lines.length === 0) observed.recordAtFirstLine.push(fs.existsSync(recordPath) ? (JSON.parse(fs.readFileSync(recordPath, 'utf8')) as RecordedStop) : undefined);
       observed.lines.push(chunk.toString('utf8'));
     });
     return observed;
@@ -83,8 +84,8 @@ describe('the supervisor reads the four stop values once, when its stop begins',
     const observed = observeChildren(harness);
     void harness.supervisor.close(POSTED);
     await waitFor(() => observed.gateway.lines.includes('SIGTERM') && observed.runtime.lines.includes('SIGTERM'), { description: 'both children to be signalled' });
-    expect(observed.gateway.recordAtFirstLine).toEqual([POSTED]);
-    expect(observed.runtime.recordAtFirstLine).toEqual([POSTED]);
+    expect(observed.gateway.recordAtFirstLine).toEqual([{ generation: FIRST_GENERATION, values: POSTED }]);
+    expect(observed.runtime.recordAtFirstLine).toEqual([{ generation: FIRST_GENERATION, values: POSTED }]);
     expect(await readStopRecord(generationLayout(harness.home, FIRST_GENERATION).stopRecord)).toEqual(POSTED);
   });
 });

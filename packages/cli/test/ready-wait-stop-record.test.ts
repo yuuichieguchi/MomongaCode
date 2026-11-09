@@ -7,8 +7,8 @@ import type { TestContext } from 'vitest';
 import { readyWaitBoundMs } from '../src/daemon/ensure-daemon.ts';
 
 const PREDECESSOR: StopValues = { closeGraceMs: 1, managedServerStopGraceMs: 2, drainTimeoutMs: 7000, mcpCloseGraceMs: 40 };
-const PREDECESSOR_READY_MS = (7000 + 5000 + 10_000 + 8 * 40 + 120) + (5000 + 10_000 + 8 * 40 + 120) + 60_000;
-const READY_WAIT_WHEN_UNKNOWN_MS = 870_240;
+const PREDECESSOR_READY_MS = (7000 + 8020 + 10_000 + 6 * 40 + 10_075) + (8020 + 10_000 + 6 * 40 + 10_075) + 60_000;
+const READY_WAIT_WHEN_UNKNOWN_MS = 776_190;
 
 const homeWithCurrent = async (context: TestContext, generation: number) => {
   const home = withTempDir(context, { asHome: true });
@@ -23,14 +23,14 @@ const homeWithCurrent = async (context: TestContext, generation: number) => {
 describe('the ready wait for a new daemon covers its predecessor stop, read from the stop record', () => {
   it('waits requirementOfStop of the recorded values plus the start-up timeout', async (context) => {
     const { paths, layout } = await homeWithCurrent(context, 3);
-    await writeStopRecord(layout.stopRecord, PREDECESSOR);
+    await writeStopRecord(layout.stopRecord, 3, PREDECESSOR);
     expect(await readyWaitBoundMs(paths)).toBe(PREDECESSOR_READY_MS);
   });
 
   it('reads the record of the generation run/current names, not another generation', async (context) => {
     const { home, paths } = await homeWithCurrent(context, 3);
     fs.mkdirSync(generationLayout(home, 2).dir, { recursive: true });
-    await writeStopRecord(generationLayout(home, 2).stopRecord, PREDECESSOR);
+    await writeStopRecord(generationLayout(home, 2).stopRecord, 2, PREDECESSOR);
     expect(await readyWaitBoundMs(paths)).toBe(READY_WAIT_WHEN_UNKNOWN_MS);
   });
 
@@ -42,7 +42,7 @@ describe('the ready wait for a new daemon covers its predecessor stop, read from
 
   it('waits the bound of the allowed maxima when the record is invalid', async (context) => {
     const { paths, layout } = await homeWithCurrent(context, 1);
-    fs.writeFileSync(layout.stopRecord, JSON.stringify({ ...PREDECESSOR, drainTimeoutMs: 300_001 }));
+    fs.writeFileSync(layout.stopRecord, JSON.stringify({ generation: 1, values: { ...PREDECESSOR, drainTimeoutMs: 300_001 } }));
     expect(await readyWaitBoundMs(paths)).toBe(READY_WAIT_WHEN_UNKNOWN_MS);
   });
 

@@ -4,16 +4,15 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createMcpPool, createStdioTransport } from '@momonga/mcp';
 import type { StdioTransport, StdioTransportOptions } from '@momonga/mcp';
-import { groupAlive, hostProcessGroupPort, terminateGroup } from '@momonga/foundation';
+import { KILL_CONFIRM_MS, groupAlive, hostProcessGroupPort, terminateGroup } from '@momonga/foundation';
 import type { DeadlineTiming, ProcessGroupPort } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, killGroupsForCleanup, waitFor } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
 import { BASE_ENV, entry, makeRecordFile, modernConfig } from './mcp-harness.ts';
 
 const STUBBORN_SERVER = path.join(import.meta.dirname, 'fixtures', 'stubborn-stdio-server.ts');
-const GROUP_POLL_INTERVAL_MS = 10;
 const REAP_POLL_INTERVAL_MS = 25;
-const poolCloseBoundMs = (graceMs: number): number => 8 * graceMs + 2 * GROUP_POLL_INTERVAL_MS + 4 * REAP_POLL_INTERVAL_MS;
+const poolCloseBoundMs = (graceMs: number): number => 6 * graceMs + 3 * REAP_POLL_INTERVAL_MS + 2 * KILL_CONFIRM_MS;
 const DRIVE_MAX_TURNS = 200_000;
 
 const dirs: string[] = [];

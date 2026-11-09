@@ -17,7 +17,10 @@ import {
   SHUTDOWN_MARGIN_MS,
   STDIO_EXIT_FLUSH_MS,
   CHILD_STDIO_FLUSH_MS,
+  ABORT_SETTLE_LIMIT_MS,
+  GROUP_POLL_INTERVAL_MS,
   KILL_CONFIRM_MS,
+  SANDBOX_KILL_GRACE_MS,
   SHUTDOWN_DRAIN_BOUND_MS,
   SHUTDOWN_REAP_BOUND_MS,
   SHUTDOWN_RELEASE_BOUND_MS,
@@ -226,18 +229,23 @@ describe('formatLogLine', () => {
 
 describe('close budgets', () => {
   it('pins the runtime budgets and the default drain', () => {
-    expect([RUNTIME_ABORT_BUDGET_MS, RUNTIME_TEARDOWN_BUDGET_MS, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS]).toEqual([5000, 10_000, 30_000]);
+    expect([RUNTIME_ABORT_BUDGET_MS, RUNTIME_TEARDOWN_BUDGET_MS, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS]).toEqual([8020, 10_000, 30_000]);
   });
 
-  it('runtimeMaxCloseMs equals drain + 15000 + 8 x MCP grace + 120', () => {
-    expect(runtimeMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 0, mcpCloseGraceMs: 0 })).toBe(15_120);
-    expect(runtimeMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(53_120);
-    expect(runtimeMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 1, mcpCloseGraceMs: 0 })).toBe(15_121);
+  it('RUNTIME_ABORT_BUDGET_MS is derived: the held-call settle plus the sandbox group stop at its worst, its grace, K and two group polls (design 2.3)', () => {
+    expect([ABORT_SETTLE_LIMIT_MS, SANDBOX_KILL_GRACE_MS, GROUP_POLL_INTERVAL_MS]).toEqual([2000, 1000, 10]);
+    expect(RUNTIME_ABORT_BUDGET_MS).toBe(ABORT_SETTLE_LIMIT_MS + SANDBOX_KILL_GRACE_MS + KILL_CONFIRM_MS + 2 * GROUP_POLL_INTERVAL_MS);
+  });
+
+  it('runtimeMaxCloseMs equals drain + 8020 + 10000 + 6 x MCP grace + 75 + 2K', () => {
+    expect(runtimeMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 0, mcpCloseGraceMs: 0 })).toBe(28_095);
+    expect(runtimeMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(64_095);
+    expect(runtimeMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 1, mcpCloseGraceMs: 0 })).toBe(28_096);
   });
 
   it('pins the gateway close at the default stop values, the margins and the stdio flushes', () => {
     expect(gatewayMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(DEFAULT_STOP_VALUES.closeGraceMs + managedServerStopBoundMs(DEFAULT_STOP_VALUES.managedServerStopGraceMs));
-    expect([DEFAULT_STOP_VALUES.closeGraceMs, DEFAULT_STOP_VALUES.managedServerStopGraceMs, managedServerStopBoundMs(DEFAULT_STOP_VALUES.managedServerStopGraceMs), gatewayMaxCloseMs(DEFAULT_STOP_VALUES)]).toEqual([10_000, 3000, 18_000, 28_000]);
+    expect([DEFAULT_STOP_VALUES.closeGraceMs, DEFAULT_STOP_VALUES.managedServerStopGraceMs, managedServerStopBoundMs(DEFAULT_STOP_VALUES.managedServerStopGraceMs), gatewayMaxCloseMs(DEFAULT_STOP_VALUES)]).toEqual([10_000, 3000, 22_075, 32_075]);
     expect(ENTRY_HARD_EXIT_MARGIN_MS).toBe(3000);
     expect(SHUTDOWN_MARGIN_MS).toBe(5000);
     expect(STDIO_EXIT_FLUSH_MS).toBe(1000);
@@ -262,8 +270,8 @@ describe('close budgets', () => {
   });
 
   it('supervisorMaxCloseMs counts every wait of the orderly shutdown once', () => {
-    expect(supervisorMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(126_220);
-    expect(supervisorMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 0, mcpCloseGraceMs: 0 })).toBe(88_220);
+    expect(supervisorMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(143_245);
+    expect(supervisorMaxCloseMs({ ...DEFAULT_STOP_VALUES, drainTimeoutMs: 0, mcpCloseGraceMs: 0 })).toBe(107_245);
     for (const drain of [1, 1000, 12_345]) {
       const values = { ...DEFAULT_STOP_VALUES, drainTimeoutMs: drain };
       const steps = [

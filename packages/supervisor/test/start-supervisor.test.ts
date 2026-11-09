@@ -281,8 +281,8 @@ describe('resolveStartTiming', () => {
   it('waits for an unknown predecessor by the bounds of the allowed maxima', () => {
     expect(resolveStartTiming({ predecessorStopValues: undefined })).toEqual({
       startupTimeoutMs: STARTUP_TIMEOUT_MS,
-      orphanGraceMs: 555_120,
-      orphanReapGraceMs: 255_120,
+      orphanGraceMs: 508_095,
+      orphanReapGraceMs: 208_095,
       orphanPollMs: ORPHAN_POLL_MS,
     });
   });
@@ -290,8 +290,8 @@ describe('resolveStartTiming', () => {
   it('waits for a predecessor whose stop record it read by the runtime close and the orphan grace of those values', () => {
     expect(resolveStartTiming({ predecessorStopValues: PREDECESSOR })).toEqual({
       startupTimeoutMs: STARTUP_TIMEOUT_MS,
-      orphanGraceMs: 7000 + 5000 + 10_000 + 8 * 40 + 120,
-      orphanReapGraceMs: 5000 + 10_000 + 8 * 40 + 120,
+      orphanGraceMs: 7000 + 8020 + 10_000 + 6 * 40 + 10_075,
+      orphanReapGraceMs: 8020 + 10_000 + 6 * 40 + 10_075,
       orphanPollMs: ORPHAN_POLL_MS,
     });
   });

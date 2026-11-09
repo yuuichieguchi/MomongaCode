@@ -3,17 +3,17 @@ import { ProcessLockHeldError } from '@momonga/foundation';
 import { RUNTIME_ABORT_BUDGET_MS, RUNTIME_TEARDOWN_BUDGET_MS, RuntimeAlreadyRunningError, runtimeMaxCloseMs } from '@momonga/runtime';
 
 describe('runtime lifecycle exports (system timers, none used)', () => {
-  it('the abort budget is 5000 ms and the teardown budget is 10000 ms', () => {
-    expect(RUNTIME_ABORT_BUDGET_MS).toBe(5000);
+  it('the abort budget is the derived 8020 ms and the fixed teardown share is 10000 ms', () => {
+    expect(RUNTIME_ABORT_BUDGET_MS).toBe(8020);
     expect(RUNTIME_TEARDOWN_BUDGET_MS).toBe(10000);
   });
 
   it.each([
-    [0, 0, 15_120],
-    [1, 0, 15_121],
-    [30_000, 1000, 53_120],
-    [0, 30_000, 255_120],
-  ])('runtimeMaxCloseMs at drain %i and MCP grace %i is d + 5000 + 10000 + 8g + 120 = %i', (drainTimeoutMs, mcpCloseGraceMs, expected) => {
+    [0, 0, 28_095],
+    [1, 0, 28_096],
+    [30_000, 1000, 64_095],
+    [0, 30_000, 208_095],
+  ])('runtimeMaxCloseMs at drain %i and MCP grace %i is d + 8020 + 10000 + 6g + 75 + 2K = %i', (drainTimeoutMs, mcpCloseGraceMs, expected) => {
     expect(runtimeMaxCloseMs({ closeGraceMs: 300_000, managedServerStopGraceMs: 60_000, drainTimeoutMs, mcpCloseGraceMs })).toBe(expected);
   });
 
