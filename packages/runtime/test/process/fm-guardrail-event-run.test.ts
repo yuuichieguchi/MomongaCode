@@ -37,6 +37,7 @@ const startFmGateway = async (temp: RunHome): Promise<void> => {
   onCleanup(() => killGroupsForCleanup(servePids(dumpFile)));
   writeUserSettings(temp.home, { sandbox: 'none', models: { aliases: { default: ['fm'] }, targets: { fm: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, toolCalling: 'native' } } } });
   await probeManagedFm({
+    platform: process.platform,
     paths: temp.paths,
     instance: managedInstancePaths(temp.paths, { owner: 'cli', purpose: 'probe', target: 'fm' } as Parameters<typeof managedInstancePaths>[1]),
     description: FM_SERVER,

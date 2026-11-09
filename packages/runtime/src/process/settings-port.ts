@@ -14,6 +14,7 @@ export type UserSnapshot = { settings: ResolvedSettings; user: UserLayer };
 
 export type SettingsCompositionOptions = {
   home: string;
+  platform: NodeJS.Platform;
   cache: UserSettingsCache;
   store: Pick<RuntimeStore, 'trust'>;
 };
@@ -30,12 +31,12 @@ export type SettingsComposition = {
   trustOracle: TrustOracle;
 };
 
-export const createSettingsComposition = ({ home, cache, store }: SettingsCompositionOptions): SettingsComposition => {
+export const createSettingsComposition = ({ home, platform, cache, store }: SettingsCompositionOptions): SettingsComposition => {
   if (!path.isAbsolute(home)) throw new TypeError(`home must be an absolute path, got ${home}`);
 
   const trustOracle: TrustOracle = { isTrusted: (dir) => store.trust.decisionFor(dir).decision === 'trusted' };
 
-  const classifierKeyPorts = { servers: MANAGED_SERVERS, exec: createHostExec(), hashes: createBinaryHashCache(), host: createHeldHostReadings(), platform: process.platform };
+  const classifierKeyPorts = { servers: MANAGED_SERVERS, exec: createHostExec(), hashes: createBinaryHashCache(), host: createHeldHostReadings(), platform };
 
   const autoFitKeyFor = async (resolved: ResolvedSettings): Promise<AutoFitKey | undefined> => {
     const classifier = resolved.autoMode?.classifier;

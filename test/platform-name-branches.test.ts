@@ -23,8 +23,6 @@ const KEPT: readonly Kept[] = [
   { file: 'foundation/src/release-assets.ts', row: 'B19', reason: 'asset names are release-engineering names' },
   { file: 'cli/src/update/source.ts', row: 'B19', reason: 'signing is a macOS fact' },
   { file: 'supervisor/src/spawn-port.ts', row: 'B21', reason: 'the detached spawn form differs by API' },
-  { file: 'gateway/src/probe/probe-fm.ts', row: 'M6.1', reason: 'the host OS-build reader table is keyed by the OS (design-managed-servers section 6.1, hostOsBuild); this passes the OS to it' },
-  { file: 'runtime/src/process/settings-port.ts', row: 'M6.1', reason: 'the host OS-build reader table is keyed by the OS (design-managed-servers section 6.1, hostOsBuild); this passes the OS to it' },
 ];
 
 const BURN_DOWN: readonly BurnDown[] = [
