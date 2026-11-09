@@ -124,8 +124,8 @@ describe('approval resolution', () => {
     const run = await env.createRun(session.id);
     const claim = env.claimRun(run.id);
     env.append(claim, [toolCallPayload('call_1', path.join(env.layout.projectReal, 'a.txt'))]);
-    const first = requestManualApproval(env, claim, 'call_1');
-    const result = env.store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, event: { subjectDigest: 'b'.repeat(64), reason: 'edits require approval' } });
+    const first = await requestManualApproval(env, claim, 'call_1');
+    const result = await env.store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, event: { subjectDigest: 'b'.repeat(64), reason: 'edits require approval' } });
     expect(result.kind).toBe('ok');
     expect((await env.http('GET', `/v1/approvals/${first}`)).json.approval.status).toBe('superseded');
 
@@ -195,14 +195,14 @@ describe('approval resolution', () => {
     const run = await env.createRun(session.id);
     const claim = env.claimRun(run.id);
     env.append(claim, [toolCallPayload('call_1', path.join(env.layout.projectReal, 'a.txt'))]);
-    const approvalId = requestManualApproval(env, claim, 'call_1');
+    const approvalId = await requestManualApproval(env, claim, 'call_1');
 
     const response = await env.http('POST', `/v1/approvals/${approvalId}`, { body: { optionId: 'opt-allow-once' } });
 
     expect(response.status).toBe(200);
     expect(response.json.run.status).toBe('RUNNING');
     expect(env.ofType(run.id, 'tool.permission.resolved')).toEqual([expect.objectContaining({ approvalId, optionId: 'opt-allow-once' })]);
-    expect(env.store.release(claim, 'WAITING_HUMAN').kind).toBe('ok');
+    expect((await env.store.release(claim, 'WAITING_HUMAN')).kind).toBe('ok');
     expect((await env.getRun(run.id)).status).toBe('QUEUED');
   });
 
@@ -213,8 +213,8 @@ describe('approval resolution', () => {
     const claim = env.claimRun(run.id);
     const target = path.join(env.layout.projectReal, 'a.txt');
     env.append(claim, [toolCallPayload('call_1', target), toolCallPayload('call_2', target)]);
-    const withRule = requestManualApproval(env, claim, 'call_1', { suggestedRule: 'Write(/a.txt)' });
-    const withoutRule = requestManualApproval(env, claim, 'call_2');
+    const withRule = await requestManualApproval(env, claim, 'call_1', { suggestedRule: 'Write(/a.txt)' });
+    const withoutRule = await requestManualApproval(env, claim, 'call_2');
 
     expect((await env.http('GET', `/v1/approvals/${withRule}`)).json.approval).toMatchObject({ suggestedRule: 'Write(/a.txt)', toolCall: { callId: 'call_1' } });
     const plain = (await env.http('GET', `/v1/approvals/${withoutRule}`)).json.approval;

@@ -70,14 +70,16 @@ describe('context-overflow wrap-up (path 3)', () => {
     env.gateway.script.push(...overflowScript(), textStep('Continued normally.'));
     const run = env.enqueue('Fill the context');
     let crashed = false;
+    const steals: Promise<void>[] = [];
     const { store, appends } = recordingStore(env, (payloads) => {
       if (!crashed && payloads.some(isStopNotice)) {
         crashed = true;
-        stealLease(env);
+        steals.push(stealLease(env));
       }
     });
 
     await env.runOnce(env.worker('worker-1', { ...withinTurnWorker(LONG_DESCRIPTION), store }));
+    await Promise.all(steals);
 
     expect(crashed).toBe(true);
     const crashedAppend = appends.find((payloads) => payloads.some(isStopNotice));

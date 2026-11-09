@@ -3,7 +3,8 @@ import { immediateTx, uuidv7 } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from '@momonga/protocol';
 import type { GoverningFactView } from '@momonga/protocol';
-import { corrupt, expectOneOf, readerFor } from './rows.ts';
+import { UNKNOWN_VALUE, corrupt, readerFor, storedOneOf } from './rows.ts';
+import type { DecodeContext } from './decode-context.ts';
 import type { Row } from './rows.ts';
 import { revisionChain } from './revision-chain.ts';
 import type { AddGoverningFactInput, GoverningAdmissionResult, GoverningFactStore } from './types.ts';
@@ -17,27 +18,29 @@ const decodeStrings = (identity: string, column: string, value: unknown): string
   return value as string[];
 };
 
-const decodeFact = (row: Row): GoverningFactView => {
+const decodeFact = (row: Row, context: DecodeContext): GoverningFactView => {
   const identity = String(row['id']);
   const reader = readerFor('governing_facts', identity, row);
-  const level = expectOneOf('governing_facts', identity, 'scope_level', SCOPE_LEVELS, reader.string('scope_level'));
+  const level = storedOneOf(context, 'governing_facts', identity, 'scope_level', SCOPE_LEVELS, reader.string('scope_level'));
   const behavior = reader.nullableString('enforcement_behavior');
   const rule = reader.nullableString('enforcement_rule');
-  const sourceKind = expectOneOf('governing_facts', identity, 'source_kind', SOURCE_KINDS, reader.string('source_kind'));
+  const sourceKind = storedOneOf(context, 'governing_facts', identity, 'source_kind', SOURCE_KINDS, reader.string('source_kind'));
   return {
     id: reader.string('id'),
-    kind: expectOneOf('governing_facts', identity, 'kind', GOVERNING_KINDS, reader.string('kind')),
+    kind: storedOneOf(context, 'governing_facts', identity, 'kind', GOVERNING_KINDS, reader.string('kind')),
     target: reader.string('target'),
     text: reader.string('text'),
-    scope: level === 'user' ? { level } : { level, project: reader.string('project'), paths: decodeStrings(identity, 'paths_json', reader.json('paths_json')) },
+    scope: level === 'user' || level === UNKNOWN_VALUE ? { level } : { level, project: reader.string('project'), paths: decodeStrings(identity, 'paths_json', reader.json('paths_json')) },
     validFrom: reader.number('valid_from'),
     validUntil: reader.nullableNumber('valid_until'),
     retiredAt: reader.nullableNumber('retired_at'),
     supersedes: decodeStrings(identity, 'supersedes_json', reader.json('supersedes_json')),
     enforcement:
-      behavior === null || rule === null ? null : { behavior: expectOneOf('governing_facts', identity, 'enforcement_behavior', GOVERNING_ENFORCEMENT_BEHAVIORS, behavior), rule },
+      behavior === null || rule === null ? null : { behavior: storedOneOf(context, 'governing_facts', identity, 'enforcement_behavior', GOVERNING_ENFORCEMENT_BEHAVIORS, behavior), rule },
     source:
-      sourceKind === 'command'
+      sourceKind === UNKNOWN_VALUE
+        ? { kind: sourceKind }
+        : sourceKind === 'command'
         ? { kind: sourceKind, at: reader.number('source_at') }
         : {
             kind: sourceKind,
@@ -49,7 +52,7 @@ const decodeFact = (row: Row): GoverningFactView => {
   };
 };
 
-export const createGoverningFactStore = (db: DatabaseSync, clock: Clock): GoverningFactStore => {
+export const createGoverningFactStore = (db: DatabaseSync, clock: Clock, context: DecodeContext): GoverningFactStore => {
   const insert = db.prepare(
     `INSERT INTO governing_facts (id, kind, target, text, scope_level, project, paths_json, valid_from, valid_until, supersedes_json,
        enforcement_behavior, enforcement_rule, source_kind, source_at, source_session_id, source_run_id, source_seq, source_call_id)
@@ -65,7 +68,7 @@ export const createGoverningFactStore = (db: DatabaseSync, clock: Clock): Govern
 
   const get = (id: string): GoverningFactView | undefined => {
     const row = byId.get({ id });
-    return row === undefined ? undefined : decodeFact(row);
+    return row === undefined ? undefined : decodeFact(row, context);
   };
 
   const insertFact = (input: AddGoverningFactInput): { fact: GoverningFactView; created: boolean } => {
@@ -73,7 +76,7 @@ export const createGoverningFactStore = (db: DatabaseSync, clock: Clock): Govern
     const { source } = input;
     if (source.kind === 'proposal') {
       const existing = byProposal.get({ runId: source.runId, callId: source.callId });
-      if (existing !== undefined) return { fact: decodeFact(existing), created: false };
+      if (existing !== undefined) return { fact: decodeFact(existing, context), created: false };
     }
     const id = uuidv7(clock);
     insert.run({
@@ -108,14 +111,14 @@ export const createGoverningFactStore = (db: DatabaseSync, clock: Clock): Govern
         const { source } = input;
         if (source.kind === 'proposal') {
           const replayed = byProposal.get({ runId: source.runId, callId: source.callId });
-          if (replayed !== undefined) return { kind: 'added', fact: decodeFact(replayed), created: false };
+          if (replayed !== undefined) return { kind: 'added', fact: decodeFact(replayed, context), created: false };
         }
-        const admission = admit(all.all().map(decodeFact));
+        const admission = admit(all.all().map((row) => decodeFact(row, context)));
         if (!admission.ok) return { kind: 'refused', message: admission.message };
         return { kind: 'added', ...insertFact(input) };
       }),
     get,
-    list: (filter) => (filter === undefined ? all.all() : ofProject.all({ project: filter.project })).map(decodeFact),
+    list: (filter) => (filter === undefined ? all.all() : ofProject.all({ project: filter.project })).map((row) => decodeFact(row, context)),
     retire: (id) =>
       immediateTx(db, () => {
         if (get(id) === undefined) return undefined;
@@ -127,7 +130,7 @@ export const createGoverningFactStore = (db: DatabaseSync, clock: Clock): Govern
     history: (id) => {
       const start = get(id);
       if (start === undefined) return [];
-      return revisionChain(start, { byId: get, successorsOf: (successor) => successors.all({ id: successor }).map(decodeFact) }, (fact) => fact.validFrom);
+      return revisionChain(start, { byId: get, successorsOf: (successor) => successors.all({ id: successor }).map((row) => decodeFact(row, context)) }, (fact) => fact.validFrom);
     },
   };
 };

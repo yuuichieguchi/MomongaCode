@@ -149,7 +149,7 @@ describe('a compaction starts a new epoch (4.5)', () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
     env.settings.contextValue = { ...env.settings.contextValue, adaptiveBudget: false, autoCompact: true };
     const run = env.enqueue('question one');
-    env.seed(run.id, compactingConversation, 'release');
+    await env.seed(run.id, compactingConversation, 'release');
     env.gateway.script.push(textStep('Done.'));
 
     await env.runOnce(env.worker());
@@ -190,7 +190,7 @@ describe('the marks over generated request sequences (4.5; T2-5 has no formal mo
     }
     env.gateway.script.push(textStep('Done.'));
     const run = env.enqueue('question one');
-    if (compacting) env.seed(run.id, compactingConversation, 'release');
+    if (compacting) await env.seed(run.id, compactingConversation, 'release');
 
     await env.runOnce(env.worker());
 

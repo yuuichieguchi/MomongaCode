@@ -1,7 +1,12 @@
+import type { Stored } from './stored-value.ts';
 import type { ApprovalBasis } from './permission-denial.ts';
 import type { PermissionMode, RunStatus, SideEffect, StopReason } from './run-types.ts';
 
-export const RELIABILITY_FORMAT = 'momonga-reliability/1';
+export const RELIABILITY_FORMAT = 'momonga-reliability/2';
+
+export const RETIRED_RELIABILITY_FORMATS: Readonly<Record<string, string>> = {
+  'momonga-reliability/1': 'the tasks whose run facts hold a value the build does not know',
+};
 export const MIN_RATE_POPULATION = 35;
 export const REVIEW_SAMPLE_SIZE = 73;
 export const REPORT_PAGE_ROWS = 500;
@@ -18,10 +23,10 @@ export type RecoveryOutcome = (typeof RECOVERY_OUTCOMES)[number];
 
 export type RecoveryEpisodeView = {
   ordinal: number;
-  cause: RecoveryCause;
+  cause: Stored<RecoveryCause>;
   failedAt: number;
   progressAt: number | null;
-  outcome: RecoveryOutcome;
+  outcome: Stored<RecoveryOutcome>;
   startedSeq: number;
   progressSeq: number | null;
 };
@@ -36,11 +41,11 @@ export type RunFactsView = {
   sessionId: string;
   definitionsVersion: number;
   modelAlias: string;
-  mode: PermissionMode;
+  mode: Stored<PermissionMode>;
   agent: string;
   origin: string;
-  status: RunStatus;
-  stopReason?: StopReason;
+  status: Stored<RunStatus>;
+  stopReason?: Stored<StopReason>;
   createdAt: number;
   endedAt: number;
   elapsedMs: number;
@@ -63,7 +68,7 @@ export type RunFactsView = {
   recoveries: RecoveryEpisodeView[];
 };
 
-export type RunCallView = { runId: string; callId: string; basis: ApprovalBasis | null; sideEffect: SideEffect | null; asked: boolean };
+export type RunCallView = { runId: string; callId: string; basis: Stored<ApprovalBasis> | null; sideEffect: Stored<SideEffect> | null; asked: boolean };
 
 export type RunFactsRecord = { facts: RunFactsView; calls: RunCallView[] };
 

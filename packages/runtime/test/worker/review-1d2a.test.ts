@@ -18,9 +18,9 @@ const requested = (): RunEventPayload => ({ type: 'model.requested', step: 1, at
 
 const gatewayClosed = (): ScriptStep => ({ events: [], error: new GatewayRequestError({ status: 503, type: 'server_error', code: 'gateway_closed', message: 'the gateway is shutting down' }) });
 
-const startedMarkSeed = (env: Env, runId: string): void => {
+const startedMarkSeed = async (env: Env, runId: string): Promise<void> => {
   const key = toolKey(runId, 1, 'call_m_1');
-  env.seed(
+  await env.seed(
     runId,
     [
       {
@@ -101,8 +101,8 @@ describe('WW2: CANCELLING branch guard', () => {
   it('sends no upstream cancel when the shutdown lands between the claim and drive', async () => {
     const env = await makeEnv();
     const run = env.enqueue('Work');
-    env.seed(run.id, [requested()], 'crash');
-    expect(env.cancel(run.id).status).toBe('CANCELLING');
+    await env.seed(run.id, [requested()], 'crash');
+    expect((await env.cancel(run.id)).status).toBe('CANCELLING');
     const holder: { worker?: Worker; aborting?: Promise<void> | undefined } = {};
     const store: RuntimeStore = {
       ...env.store,
@@ -126,7 +126,7 @@ describe('WW3: restart detection scans from requestedSeq', () => {
     const env = await makeEnv();
     const run = env.enqueue('Work');
     const padding: RunEventPayload[] = Array.from({ length: 30 }, (_unused, index) => ({ type: 'notice', level: 'info', message: `pad ${index}` }));
-    env.seed(run.id, [...padding, requested(), { type: 'agent.message.delta', step: 1, attempt: 1, itemId: 'msg_partial', text: 'partial ' }], 'crash');
+    await env.seed(run.id, [...padding, requested(), { type: 'agent.message.delta', step: 1, attempt: 1, itemId: 'msg_partial', text: 'partial ' }], 'crash');
     const requestedSeq = env.ofType(run.id, 'model.requested')[0]?.seq ?? 0;
     expect(requestedSeq).toBeGreaterThan(30);
     const reads: { after: number; limit: number }[] = [];
@@ -176,8 +176,8 @@ describe('WS1: quiet detached cancel recovery', () => {
   ] as const)('does not report a %s from the detached recovery after shutdown', async (_label, makeError) => {
     const env = await makeEnv();
     const run = env.enqueue('Mark it');
-    startedMarkSeed(env, run.id);
-    expect(env.cancel(run.id).status).toBe('CANCELLING');
+    await startedMarkSeed(env, run.id);
+    expect((await env.cancel(run.id)).status).toBe('CANCELLING');
     const reached = deferred<void>();
     const gate = deferred<void>();
     const thrown = deferred<void>();

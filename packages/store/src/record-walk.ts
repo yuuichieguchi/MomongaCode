@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { readTx } from '@momonga/foundation/sqlite';
 import type { RunEvent, RunEventPayload } from '@momonga/protocol';
-import { decodeRunEvents } from './codec.ts';
+import { decodeContextOf, decodeRunEvents } from './codec.ts';
 import type { Row } from './rows.ts';
 
 export const RECORD_RANGE_ROWS = 1000;
@@ -26,6 +26,7 @@ export type RecordWalker = {
 };
 
 export const createRecordWalker = (db: DatabaseSync, hooks: WalkHooks): RecordWalker => {
+  const decodeContext = decodeContextOf(db);
   const statements = new Map<number, ReturnType<DatabaseSync['prepare']>>();
   const statementFor = (count: number): ReturnType<DatabaseSync['prepare']> => {
     const known = statements.get(count);
@@ -38,8 +39,8 @@ export const createRecordWalker = (db: DatabaseSync, hooks: WalkHooks): RecordWa
 
   const decode = (row: Row): RunEvent => {
     hooks.onDecode?.(1, typeof row['payload_json'] === 'string' ? Buffer.byteLength(row['payload_json']) : 0);
-    const [event] = decodeRunEvents([row]);
-    if (event === undefined) throw new Error('a journal row did not decode to an event');
+    const [event] = decodeRunEvents([row], decodeContext);
+    if (event === undefined) throw new Error('a row of a requested known type did not decode to an event');
     return event;
   };
 

@@ -46,7 +46,7 @@ describe('worker recovery of a not_applied call under the current policy', () =>
       { type: 'tool.call', callId: 'call_p_1', providerCallId: 'call_p_1', name: 'Patch', kind: 'edit', title: 'Patch', rawInput: { file_path: target } },
       { type: 'tool.started', callId: 'call_p_1', idemKey: key },
     ];
-    env.seed(run.id, payloads, 'crash');
+    await env.seed(run.id, payloads, 'crash');
     env.store.idempotency.begin(key, { expiresAt: START_MS + 86_400_000, meta: { tool: 'Patch' } });
 
     await env.runOnce(env.worker('worker-1', { toolList }));

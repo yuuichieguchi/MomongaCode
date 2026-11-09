@@ -9,7 +9,7 @@ const fileMode = (file: string) => fs.statSync(file).mode & 0o777;
 const sha256 = (data: string) => createHash('sha256').update(data, 'utf8').digest('hex');
 
 describe('idempotency', () => {
-  it('reports NEW, then PENDING with the record, then COMPLETED with the result', () => {
+  it('reports NEW, then PENDING with the record, then COMPLETED with the result', async () => {
     const { clock, store } = harness();
     expect(store.idempotency.begin('k1', { expiresAt: START_MS + 1000, meta: { tool: 'Bash' } })).toEqual({ s: 'NEW' });
     clock.advance(5);
@@ -33,7 +33,7 @@ describe('idempotency', () => {
     });
   });
 
-  it('reports UNKNOWN after markUnknown', () => {
+  it('reports UNKNOWN after markUnknown', async () => {
     const { store } = harness();
     store.idempotency.begin('k1', { expiresAt: START_MS + 1000, meta: {} });
     store.idempotency.markUnknown('k1');
@@ -43,7 +43,7 @@ describe('idempotency', () => {
     });
   });
 
-  it('lets exactly one of two connections win the insert', () => {
+  it('lets exactly one of two connections win the insert', async () => {
     const { dbPath, clock, store } = harness();
     const other = openStoreAt(dbPath, clock);
     const first = store.idempotency.begin('race', { expiresAt: START_MS + 1000, meta: {} });
@@ -51,7 +51,7 @@ describe('idempotency', () => {
     expect([first.s, second.s]).toEqual(['NEW', 'PENDING']);
   });
 
-  it('purges only expired records and returns how many', () => {
+  it('purges only expired records and returns how many', async () => {
     const { store } = harness();
     store.idempotency.begin('old', { expiresAt: START_MS + 10, meta: {} });
     store.idempotency.begin('new', { expiresAt: START_MS + 1000, meta: {} });
@@ -60,21 +60,21 @@ describe('idempotency', () => {
     expect(store.idempotency.begin('new', { expiresAt: START_MS + 2000, meta: {} }).s).toBe('PENDING');
   });
 
-  it('throws naming the key when completing an unknown key', () => {
+  it('throws naming the key when completing an unknown key', async () => {
     const { store } = harness();
     expect(() => store.idempotency.complete('ghost', {})).toThrow(/ghost/);
   });
 });
 
 describe('approvals', () => {
-  it('keeps one pending approval per (run, call) and lists it', () => {
+  it('keeps one pending approval per (run, call) and lists it', async () => {
     const { store } = harness();
-    const { runId, claim, approvals } = awaitingApproval(store, [{ callId: 'c1' }], 'running');
+    const { runId, claim, approvals } = await awaitingApproval(store, [{ callId: 'c1' }], 'running');
     const [approval] = approvals;
     if (approval === undefined) throw new Error('expected an approval');
     expect(approval).toMatchObject({ runId, callId: 'c1', status: 'pending', options: OPTIONS, createdAt: START_MS });
     expect(approval).not.toHaveProperty('expiresAt');
-    const again = requestFor(store, claim, 'c1');
+    const again = await requestFor(store, claim, 'c1');
     expect(again.id).toBe(approval.id);
     expect(store.approvals.listPending(runId).map((item) => item.id)).toEqual([approval.id]);
     expect(store.approvals.get(approval.id)).toEqual(approval);
@@ -82,7 +82,7 @@ describe('approvals', () => {
 
   it('approves calls that share a provider id independently under their run-unique ids', async () => {
     const { store } = harness();
-    const { approvals } = awaitingApproval(store, [{ callId: 'run-call-1' }, { callId: 'run-call-2' }], 'running');
+    const { approvals } = await awaitingApproval(store, [{ callId: 'run-call-1' }, { callId: 'run-call-2' }], 'running');
     const [first, second] = approvals;
     if (first === undefined || second === undefined) throw new Error('expected two approvals');
     expect((await store.resolveApproval(first.id, 'allow_once')).kind).toBe('ok');
@@ -93,7 +93,7 @@ describe('approvals', () => {
 
   it('resolves exactly once', async () => {
     const { clock, store } = harness();
-    const { runId, approvals } = awaitingApproval(store, [{ callId: 'c1' }], 'running');
+    const { runId, approvals } = await awaitingApproval(store, [{ callId: 'c1' }], 'running');
     const id = approvals[0]?.id ?? '';
     clock.advance(9);
     expect(await store.resolveApproval(id, 'allow_once')).toMatchObject({
@@ -109,7 +109,7 @@ describe('approvals', () => {
 describe('blobs', () => {
   const text = 'l1\nl2\nl3\nl4\n';
 
-  it('stores content-addressed private files and deduplicates', () => {
+  it('stores content-addressed private files and deduplicates', async () => {
     const { dir, store } = harness();
     const first = store.blobs.put(text, { mediaType: 'text/plain' });
     expect(first).toEqual({ handle: sha256(text), sha256: sha256(text), byteLength: 12, lineCount: 4 });
@@ -210,7 +210,7 @@ describe('blobs', () => {
     }
   });
 
-  it('counts a last line without trailing newline', () => {
+  it('counts a last line without trailing newline', async () => {
     const { store } = harness();
     expect(store.blobs.put('a\nb', { mediaType: 'text/plain' }).lineCount).toBe(2);
   });
@@ -221,7 +221,7 @@ describe('blobs', () => {
     await expect(store.blobs.read(missing, { offset: 0, length: 1 })).rejects.toThrow(new RegExp(`unknown blob.*${missing}`));
   });
 
-  it('rejects content that is not valid UTF-8', () => {
+  it('rejects content that is not valid UTF-8', async () => {
     const { dir, store } = harness();
     expect(() => store.blobs.put(Buffer.from([0x61, 0xff, 0xfe]), { mediaType: 'application/octet-stream' })).toThrow(/UTF-8/);
     expect(fs.existsSync(path.join(dir, 'blobs'))).toBe(true);
@@ -248,7 +248,7 @@ describe('blobs', () => {
     }
   });
 
-  it('fsyncs the blob directory after publishing a new blob', () => {
+  it('fsyncs the blob directory after publishing a new blob', async () => {
     const { dir, store } = harness();
     const open = vi.spyOn(fs, 'openSync');
     const fsync = vi.spyOn(fs, 'fsyncSync');
@@ -279,7 +279,7 @@ describe('blobs', () => {
 });
 
 describe('trust', () => {
-  it('stores decisions under the realpath', () => {
+  it('stores decisions under the realpath', async () => {
     const { store } = harness();
     const project = makeStoreDir();
     const link = path.join(makeStoreDir(), 'link');

@@ -18,9 +18,9 @@ export type Flow = 'continue' | 'done';
 
 export type Terminals = {
   finish(to: 'COMPLETED' | 'STOPPED' | 'FAILED', patch?: StatusPatch, preceding?: readonly RunEventPayload[]): Promise<'done'>;
-  yieldTo(to: 'WAITING_HUMAN' | 'WAITING_TOOL' | 'QUEUED', availableAt?: number, options?: { refundAttempt?: true; awaits?: WaitTargets }): 'done';
+  yieldTo(to: 'WAITING_HUMAN' | 'WAITING_TOOL' | 'QUEUED', availableAt?: number, options?: { refundAttempt?: true; awaits?: WaitTargets }): Promise<'done'>;
   cancel(): Promise<'done'>;
-  yieldLease(): 'done';
+  yieldLease(): Promise<'done'>;
 };
 
 export type ClaimContext = {

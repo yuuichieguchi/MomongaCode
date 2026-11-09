@@ -12,7 +12,7 @@ const takeOver = (h: ReturnType<typeof harness>) => {
 };
 
 describe('facts that specs/tla/RunRecovery.tla relies on', () => {
-  it('a holder is stale by lease token: an expired holder that nobody reclaimed can still append', () => {
+  it('a holder is stale by lease token: an expired holder that nobody reclaimed can still append', async () => {
     const h = harness();
     const run = enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
@@ -27,12 +27,12 @@ describe('facts that specs/tla/RunRecovery.tla relies on', () => {
     expect(fresh.leaseToken).toBe(stale.leaseToken + 1);
     expect(h.store.append(stale, [{ type: 'notice', level: 'info', message: 'stale' }])).toEqual({ kind: 'lease_lost' });
     expect(await h.store.transition(stale, ['RUNNING'], 'COMPLETED')).toEqual({ kind: 'lease_lost' });
-    expect(h.store.release(stale, 'QUEUED')).toEqual({ kind: 'lease_lost' });
+    expect(await h.store.release(stale, 'QUEUED')).toEqual({ kind: 'lease_lost' });
     expect(h.store.heartbeat(stale)).toEqual({ kind: 'lease_lost' });
     expect(h.store.readRunEvents(run.id, 0, 100).map((event) => event.type)).toEqual(['user.message', 'attempt.lost']);
   });
 
-  it('the idempotency ledger is fenced: a superseded holder can neither begin, authorise, attach, checkpoint nor complete', () => {
+  it('the idempotency ledger is fenced: a superseded holder can neither begin, authorise, attach, checkpoint nor complete', async () => {
     const h = harness();
     const { stale, fresh } = takeOver(h);
     const lost = { kind: 'lease_lost' };
@@ -50,7 +50,7 @@ describe('facts that specs/tla/RunRecovery.tla relies on', () => {
     expect(pending?.s === 'PENDING' && pending.rec.pgid).toBe(undefined);
   });
 
-  it('a superseded holder gets lease_lost, not an exception, for a record that the holder has already completed', () => {
+  it('a superseded holder gets lease_lost, not an exception, for a record that the holder has already completed', async () => {
     const h = harness();
     const { stale, fresh } = takeOver(h);
     const holder = h.store.idempotency.holding(fresh);
@@ -61,7 +61,7 @@ describe('facts that specs/tla/RunRecovery.tla relies on', () => {
     expect(h.store.idempotency.get('call')).toEqual({ s: 'COMPLETED', result: { by: 'w2' } });
   });
 
-  it('a record carries the lease token of the holder that began it and of the holder that last authorised it', () => {
+  it('a record carries the lease token of the holder that began it and of the holder that last authorised it', async () => {
     const h = harness();
     const run = enqueue(h.store, newSession(h.store).id);
     const first = mustClaim(h.store, 'w1');
@@ -75,15 +75,15 @@ describe('facts that specs/tla/RunRecovery.tla relies on', () => {
     expect(second.leaseToken).toBe(first.leaseToken + 1);
   });
 
-  it('a holder that released the run is fenced out of the ledger', () => {
+  it('a holder that released the run is fenced out of the ledger', async () => {
     const h = harness();
     enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
-    expect(h.store.release(claim, 'QUEUED')).toMatchObject({ kind: 'ok' });
+    expect(await h.store.release(claim, 'QUEUED')).toMatchObject({ kind: 'ok' });
     expect(h.store.idempotency.holding(claim).begin('call', { expiresAt: EXPIRES_AT, meta: {} })).toEqual({ s: 'LEASE_LOST' });
   });
 
-  it('the job ledger and the clearing of an abandoned checkpoint are not lease operations', () => {
+  it('the job ledger and the clearing of an abandoned checkpoint are not lease operations', async () => {
     const h = harness();
     expect(h.store.idempotency.begin('job', { expiresAt: EXPIRES_AT, meta: {} })).toEqual({ s: 'NEW' });
     expect(h.store.idempotency.get('job')).toMatchObject({ s: 'PENDING' });
@@ -114,7 +114,7 @@ describe('facts that specs/tla/RunRecovery.tla relies on', () => {
     const childClaim = mustClaim(h.store, 'w-child');
     expect(childClaim.runId).toBe(created.run.id);
     await h.store.transition(childClaim, ['RUNNING'], 'COMPLETED');
-    const released = h.store.release(parentClaim, 'WAITING_TOOL', DEADLINE_MS, { awaits: { runIds: [created.run.id], jobIds: [] } });
+    const released = await h.store.release(parentClaim, 'WAITING_TOOL', DEADLINE_MS, { awaits: { runIds: [created.run.id], jobIds: [] } });
     expect(released).toMatchObject({ kind: 'ok', run: { status: 'QUEUED' } });
   });
 
@@ -125,7 +125,7 @@ describe('facts that specs/tla/RunRecovery.tla relies on', () => {
     const parentClaim = mustClaim(h.store, 'w-parent');
     const created = h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'c1', input: 'task', pins: {}, modelAlias: 'fm' });
     if (created.kind !== 'created') throw new Error(`expected a child run, got ${created.kind}`);
-    h.store.release(parentClaim, 'WAITING_TOOL', DEADLINE_MS, { awaits: { runIds: [created.run.id], jobIds: [] } });
+    await h.store.release(parentClaim, 'WAITING_TOOL', DEADLINE_MS, { awaits: { runIds: [created.run.id], jobIds: [] } });
     expect(mustRun(h.store, parent.id).status).toBe('WAITING_TOOL');
     const childClaim = mustClaim(h.store, 'w-child');
     await h.store.transition(childClaim, ['RUNNING'], 'FAILED', { error: { code: 'x', message: 'x' } });
@@ -136,9 +136,9 @@ describe('facts that specs/tla/RunRecovery.tla relies on', () => {
     const h = harness();
     const run = enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
-    h.store.requestCancel(run.id);
+    await h.store.requestCancel(run.id);
     expect(mustRun(h.store, run.id).status).toBe('CANCELLING');
-    expect(h.store.release(claim, 'WAITING_HUMAN')).toMatchObject({ kind: 'conflict' });
+    expect(await h.store.release(claim, 'WAITING_HUMAN')).toMatchObject({ kind: 'conflict' });
     expect(await h.store.transition(claim, ['CANCELLING'], 'CANCELLED')).toMatchObject({ kind: 'ok', run: { status: 'CANCELLED' } });
   });
 });

@@ -274,7 +274,7 @@ describe('worker skills: cancelling an activation', () => {
   it('settles a started activation that never completed as cancelled instead of abandoning it with unknown effects', async () => {
     const env = await makeEnv();
     writeSkill(projectSkills(env), 'pdf', 'Extract PDF text', PDF_BODY);
-    const { run } = seedStartedCalls(env, [{ callId: 'call_skill', name: 'activate_skill', kind: 'read', args: { name: 'pdf' } }]);
+    const { run } = await seedStartedCalls(env, [{ callId: 'call_skill', name: 'activate_skill', kind: 'read', args: { name: 'pdf' } }]);
 
     await env.runOnce(env.worker());
 
@@ -288,7 +288,7 @@ describe('worker skills: cancelling an activation', () => {
   it('records the activation of a call that completed in the executor before its result reached the journal', async () => {
     const env = await makeEnv();
     writeSkill(projectSkills(env), 'pdf', 'Extract PDF text', PDF_BODY);
-    const { run, keys } = seedStartedCalls(env, [{ callId: 'call_skill', name: 'activate_skill', kind: 'read', args: { name: 'pdf' } }]);
+    const { run, keys } = await seedStartedCalls(env, [{ callId: 'call_skill', name: 'activate_skill', kind: 'read', args: { name: 'pdf' } }]);
     const content = `<skill_content name="pdf">\n${PDF_BODY}\n</skill_content>`;
     env.store.idempotency.complete(keys['call_skill'] as string, {
       callId: 'call_skill',
@@ -338,7 +338,7 @@ describe('worker skills: compaction', () => {
     writeSkill(projectSkills(env), 'pdf', 'Extract PDF text', PDF_BODY);
     const wrapped = '<skill_content name="pdf">\nrecorded body\n</skill_content>';
     const run = env.enqueue('Task one');
-    env.seed(
+    await env.seed(
       run.id,
       [
         { type: 'skill.activated', name: 'pdf', content: wrapped },
@@ -370,7 +370,7 @@ describe('worker skills: compaction', () => {
     writeSkill(projectSkills(env), 'pdf', 'Extract PDF text', PDF_BODY);
     const wrapped = '<skill_content name="pdf">\nrecorded body\n</skill_content>';
     const run = env.enqueue('Task one');
-    env.seed(
+    await env.seed(
       run.id,
       [
         responded(1, [{ type: 'function_call', id: 'fc_1', call_id: 'call_skill', name: 'activate_skill', arguments: '{"name":"pdf"}', status: 'completed' }]),

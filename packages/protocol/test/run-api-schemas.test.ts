@@ -640,7 +640,8 @@ describe('memory schemas', () => {
     expect(accepts('MemoryView', { ...view, scope: 'user', project: null })).toBe(true);
     expect(accepts('MemoryView', { ...view, scope: 'team' })).toBe(false);
     expect(accepts('MemoryView', { ...view, origin: 'untrusted' })).toBe(true);
-    expect(accepts('MemoryView', { ...view, origin: 'unknown' })).toBe(false);
+    expect(accepts('MemoryView', { ...view, origin: 'unknown' })).toBe(true);
+    expect(accepts('MemoryView', { ...view, origin: 'vouched' })).toBe(false);
     const { origin: _origin, ...withoutOrigin } = view;
     expect(accepts('MemoryView', withoutOrigin)).toBe(false);
     expect(accepts('MemoryView', { ...view, source: { ...view.source, seq: undefined } })).toBe(false);

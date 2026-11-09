@@ -21,8 +21,8 @@ export const createTerminals = ({ store, claim, journal, control, clock }: Termi
     return 'done';
   };
 
-  const yieldLease = (): 'done' => {
-    const result = store.releaseLease(claim, { availableAt: clock.now(), refundAttempt: true });
+  const yieldLease = async (): Promise<'done'> => {
+    const result = await store.releaseLease(claim, { availableAt: clock.now(), refundAttempt: true });
     if (result.kind === 'conflict') throw new Error(`run ${claim.runId} could not release its lease: ${result.reason ?? 'conflict'}`);
     return 'done';
   };
@@ -45,9 +45,9 @@ export const createTerminals = ({ store, claim, journal, control, clock }: Termi
       }
       return 'done';
     },
-    yieldTo: (to, availableAt, options) => {
+    yieldTo: async (to, availableAt, options) => {
       journal.snapshot();
-      return settle(store.release(claim, to, availableAt, options)) === 'cancelling' ? yieldLease() : 'done';
+      return settle(await store.release(claim, to, availableAt, options)) === 'cancelling' ? yieldLease() : 'done';
     },
     cancel,
     yieldLease,

@@ -24,7 +24,7 @@ describe('a journal thread failure during the fidelity check', () => {
   it('requeues the claim, appends no compaction, and the retry reuses the idempotency key', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
     const run = env.enqueue('question one');
-    env.seed(run.id, journal(), 'release');
+    await env.seed(run.id, journal(), 'release');
     env.gateway.compactSummaries.push(SUMMARY, SUMMARY);
     env.gateway.script.push(textStep('Done.'));
     let failures = 0;

@@ -2,14 +2,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { canonicalJson, immediateTx, isTransientErrno, migrate, openDatabase, readTx, sha256Hex, uuidv7 } from '@momonga/foundation';
-import { FIDELITY_FOLD_VERSION, TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
-import type { CallTiming, ElicitationAnswerRecord, ElicitationRequestView, PermissionMode, RunEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
+import { FIDELITY_FOLD_VERSION, MEMORY_ORIGINS, PERMISSION_MODES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, TOOL_KINDS } from '@momonga/protocol';
+import type { CallTiming, ElicitationAnswerRecord, ElicitationRequestView, OpaqueEvent, PermissionMode, RunEvent, SessionEvent, TokenAnatomy, RunTracePrefix, RunEventPayload, RunState, RunStatus, SessionEventPayload, TerminalStatus } from '@momonga/protocol';
 import { createAppendRecords, columnsOf } from './append-records.ts';
 import { createVerdictWriter } from './fidelity-verdicts.ts';
 import { createApprovalStore } from './approvals.ts';
 import { blobDirectoryOf, createBlobStore, prepareBlobDirectory } from './blobs.ts';
 import { addUsage, foldRunState, initialRunState, spendOf } from './fold.ts';
-import { decodeEvent, decodeRun, decodeRunEvents, decodeRunState, decodeSession, encodeRunState } from './codec.ts';
+import { HISTORY_MODES, decodeContextOf, decodeKnownEvent, decodeRun, decodeRunEvents, decodeRunState, decodeSession, decodeStoredEvent, encodeRunState } from './codec.ts';
+import { createDerivedReads, createDerivedRepair } from './derived-repair.ts';
+import type { DerivedScope } from './derived-repair.ts';
 import { JournalThreadError, StalePreparation } from './journal-port.ts';
 import { createJournalReader, payloadStep } from './journal-reader.ts';
 import { StoreIdentityError, isFatalStoreError } from './fatal.ts';
@@ -22,8 +24,8 @@ import { createMemoryStore } from './memories.ts';
 import { createReflectionStore } from './reflection.ts';
 import { referencePayload } from './inherit.ts';
 import type { InheritPlanReply } from './inherit-reference.ts';
-import { corrupt, expectOneOf, expectRecord, isRecord, readerFor } from './rows.ts';
-import type { Row } from './rows.ts';
+import { UNKNOWN_VALUE, corrupt, expectOneOf, expectRecord, isRecord, readerFor, refuseUnknown } from './rows.ts';
+import type { Row, Stored } from './rows.ts';
 import { sameRunRequest } from './run-request.ts';
 import { MIGRATIONS } from './schema.ts';
 import { CANCEL_ORIGINS, CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from './transitions.ts';
@@ -73,7 +75,7 @@ const journalPreparer = (preparer: ContributionPreparer | undefined, what: strin
   return preparer;
 };
 
-const isClaimStatus = (status: RunStatus): status is ClaimStatus => CLAIM_STATUSES.some((claimStatus) => claimStatus === status);
+const isClaimStatus = (status: Stored<RunStatus>): status is ClaimStatus => CLAIM_STATUSES.some((claimStatus) => claimStatus === status);
 
 const releaseTarget = (status: ClaimStatus): 'QUEUED' | 'CANCELLING' => {
   switch (status) {
@@ -105,10 +107,28 @@ const clearLease = (
   attempts: refundedAttempts(run, change.refundAttempt),
 });
 
-const isTerminal = (status: RunStatus): status is TerminalStatus => TERMINAL_STATUSES.some((terminal) => terminal === status);
+const isTerminal = (status: Stored<RunStatus>): status is TerminalStatus => TERMINAL_STATUSES.some((terminal) => terminal === status);
+
+const listed = (statuses: readonly RunStatus[], status: Stored<RunStatus>): boolean => statuses.some((candidate) => candidate === status);
+
+const knownStatusOf = (run: Run): RunStatus => {
+  if (run.status === UNKNOWN_VALUE) throw new Error(`run ${run.id} has a status this build does not know, so it is not acted on`);
+  return run.status;
+};
+
+const sqlList = (values: readonly string[]): string => values.map((value) => `'${value}'`).join(', ');
+
+const KNOWN_RUN_VALUES = `
+  r.history_mode IN (${sqlList(HISTORY_MODES)})
+  AND r.origin IN (${sqlList(MEMORY_ORIGINS)})
+  AND (r.cancel_origin IS NULL OR r.cancel_origin IN (${sqlList(CANCEL_ORIGINS)}))
+  AND (r.stop_reason IS NULL OR r.stop_reason IN (${sqlList(STOP_REASONS)}))
+  AND EXISTS (SELECT 1 FROM sessions known WHERE known.id = r.session_id AND known.permission_mode IN (${sqlList(PERMISSION_MODES)}))
+`;
 
 const CLAIMABLE = `
-  (
+  ${KNOWN_RUN_VALUES}
+  AND (
     (r.status = 'QUEUED' AND r.available_at <= :now)
     OR (r.status IN ('RUNNING', 'CANCELLING') AND r.available_at <= :now AND (r.lease_expires_at IS NULL OR r.lease_expires_at <= :now))
   )
@@ -118,6 +138,12 @@ const CLAIMABLE = `
     WHERE earlier.session_id = r.session_id
       AND earlier.ordinal < r.ordinal
       AND earlier.status NOT IN ('COMPLETED', 'STOPPED', 'FAILED', 'CANCELLED')
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM runs earlier
+    WHERE earlier.session_id = r.session_id
+      AND earlier.ordinal < r.ordinal
+      AND (earlier.history_mode NOT IN (${sqlList(HISTORY_MODES)}) OR (earlier.stop_reason IS NOT NULL AND earlier.stop_reason NOT IN (${sqlList(STOP_REASONS)})))
   )
 `;
 
@@ -236,40 +262,26 @@ const prepareStatements = (db: DatabaseSync) => ({
   ),
   dueWaitingRuns: db.prepare(
     `SELECT r.id FROM runs r
-     WHERE (r.status = 'QUEUED' AND r.deadline_at <= :nowMs)
-       OR (
-         r.status = 'WAITING_HUMAN'
-         AND (
-           r.deadline_at <= :nowMs
-           OR EXISTS (SELECT 1 FROM approvals a WHERE a.run_id = r.id AND a.status = 'pending' AND a.expires_at <= :nowMs)
+     WHERE ${KNOWN_RUN_VALUES}
+       AND (
+         (r.status = 'QUEUED' AND r.deadline_at <= :nowMs)
+         OR (
+           r.status = 'WAITING_HUMAN'
+           AND (
+             r.deadline_at <= :nowMs
+             OR EXISTS (SELECT 1 FROM approvals a WHERE a.run_id = r.id AND a.status = 'pending' AND a.expires_at <= :nowMs)
+           )
          )
+         OR (r.status = 'WAITING_TOOL' AND r.available_at <= :nowMs)
        )
-       OR (r.status = 'WAITING_TOOL' AND r.available_at <= :nowMs)
      ORDER BY r.created_at, r.rowid`,
   ),
-  toolCallEvent: db.prepare(
-    "SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.call' AND call_id = :callId LIMIT 1",
-  ),
-  requestedEvent: db.prepare(
-    "SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.permission.requested' AND approval_id = :approvalId LIMIT 1",
-  ),
-  elicitationRequestedEvent: db.prepare(
-    "SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.elicitation.requested' AND approval_id = :approvalId LIMIT 1",
-  ),
   runEvents: db.prepare('SELECT * FROM events WHERE run_id = :runId AND seq > :after ORDER BY seq LIMIT :limit'),
-  modelCallEvents: db.prepare(
-    `SELECT seq, step, type, model_call_json
-     FROM events WHERE run_id = :runId AND type IN ('model.requested', 'model.responded')`,
-  ),
   lastTerminalRootRuns: db.prepare(
     `SELECT r.* FROM runs r JOIN sessions s ON s.id = r.session_id
      WHERE s.cwd = :project AND r.parent_run_id IS NULL AND r.status IN (${TERMINAL_LIST})
        AND EXISTS (SELECT 1 FROM events e WHERE e.run_id = r.id AND e.type = 'run.started')
      ORDER BY r.created_at DESC, r.rowid DESC LIMIT :limit`,
-  ),
-  toolCallNames: db.prepare(
-    `WITH RECURSIVE tree(id) AS (SELECT :runId UNION ALL SELECT r.id FROM runs r JOIN tree t ON r.parent_run_id = t.id)
-     SELECT DISTINCT e.tool_name AS name FROM tree t CROSS JOIN events e ON e.run_id = t.id WHERE e.tool_name IS NOT NULL ORDER BY name`,
   ),
   toolOfferedNames: db.prepare(
     `WITH RECURSIVE tree(id) AS (SELECT :runId UNION ALL SELECT r.id FROM runs r JOIN tree t ON r.parent_run_id = t.id)
@@ -286,12 +298,12 @@ const prepareStatements = (db: DatabaseSync) => ({
   exhaustedById: db.prepare(`SELECT r.* FROM runs r WHERE r.id = :id AND ${CLAIMABLE} AND ${EXHAUSTED}`),
   listSweeperOwned: db.prepare(
     `SELECT r.* FROM runs r
-     WHERE r.status = 'CANCELLING' AND r.cancel_origin IN ('QUEUED', 'WAITING_HUMAN') AND (r.lease_owner IS NULL OR r.lease_expires_at <= :now)
+     WHERE ${KNOWN_RUN_VALUES} AND r.status = 'CANCELLING' AND r.cancel_origin IN ('QUEUED', 'WAITING_HUMAN') AND (r.lease_owner IS NULL OR r.lease_expires_at <= :now)
      ORDER BY r.created_at, r.rowid`,
   ),
   sweeperOwnedById: db.prepare(
     `SELECT r.* FROM runs r
-     WHERE r.id = :id AND r.status = 'CANCELLING' AND r.cancel_origin IN ('QUEUED', 'WAITING_HUMAN') AND (r.lease_owner IS NULL OR r.lease_expires_at <= :now)`,
+     WHERE r.id = :id AND ${KNOWN_RUN_VALUES} AND r.status = 'CANCELLING' AND r.cancel_origin IN ('QUEUED', 'WAITING_HUMAN') AND (r.lease_owner IS NULL OR r.lease_expires_at <= :now)`,
   ),
   claimTakeover: db.prepare(
     `SELECT CASE WHEN ${TAKEOVER} THEN r.lease_expires_at END AS taken_from
@@ -320,8 +332,12 @@ const prepareStatements = (db: DatabaseSync) => ({
      RETURNING status, cancel_requested, id`,
   ),
   fence: db.prepare(FENCE_SQL),
-  approvalRequested: db.prepare(
-    "SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.permission.requested' AND approval_id = :approvalId LIMIT 1",
+  heldWithUnknownStatus: db.prepare(
+    `SELECT * FROM runs WHERE id = :runId AND lease_token = :leaseToken AND lease_owner = :workerId AND status NOT IN (${sqlList(RUN_STATUSES)})`,
+  ),
+  releaseHeldLease: db.prepare(
+    `UPDATE runs SET version = version + 1, lease_owner = NULL, lease_expires_at = NULL, available_at = :availableAt, failed_attempts = 0, attempts = :attempts
+     WHERE id = :runId AND lease_token = :leaseToken AND lease_owner = :workerId`,
   ),
   inheritedEvent: db.prepare("SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'context.inherited' LIMIT 1"),
   latestSnapshot: db.prepare('SELECT * FROM snapshots WHERE run_id = :runId ORDER BY seq DESC LIMIT 1'),
@@ -335,7 +351,7 @@ const prepareStatements = (db: DatabaseSync) => ({
 type Statements = ReturnType<typeof prepareStatements>;
 
 type StatusChange = {
-  edges: Record<RunStatus, readonly RunStatus[]>;
+  edges: Record<Stored<RunStatus>, readonly RunStatus[]>;
   availableAt?: number;
   patch?: StatusPatch;
   deadLetter?: boolean;
@@ -396,7 +412,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   try {
     identity = fs.statSync(options.path);
     migrate(db, MIGRATIONS);
-    db.prepare('DELETE FROM fidelity_verdicts WHERE fold_version <> :current').run({ current: FIDELITY_FOLD_VERSION });
+    db.prepare('DELETE FROM fidelity_verdicts WHERE fold_version < :current').run({ current: FIDELITY_FOLD_VERSION });
     blobDirectory = blobDirectoryOf(options.path);
     prepareBlobDirectory(blobDirectory);
     statements = prepareStatements(db);
@@ -405,20 +421,21 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     throw error;
   }
   const sql = statements;
-  const approvalOps = createApprovalStore(db, clock);
-  const memories = createMemoryStore(db, clock);
-  const contextCharges = createContextChargeStore(db, clock);
-  const reflection = createReflectionStore(db, clock, { memories, contextCharges });
-  const governing = createGoverningFactStore(db, clock);
+  const decodeContext = decodeContextOf(db);
+  const approvalOps = createApprovalStore(db, clock, decodeContext);
+  const memories = createMemoryStore(db, clock, decodeContext);
+  const contextCharges = createContextChargeStore(db, clock, decodeContext);
+  const reflection = createReflectionStore(db, clock, { memories, contextCharges }, decodeContext);
+  const governing = createGoverningFactStore(db, clock, decodeContext);
   const journalReader = createJournalReader(db, { lookups: { memories, governing }, ...(options.onDecode === undefined ? {} : { onDecode: options.onDecode }) });
-  const trust = createTrustStore(db, clock, home);
+  const trust = createTrustStore(db, clock, home, decodeContext);
   const originOf = (cwd: string): 'trusted' | 'untrusted' => (trust.decisionFor(cwd).decision === 'trusted' ? 'trusted' : 'untrusted');
   const touched = new Map<string, { runId?: string; sessionId: string }>();
   const preparer = options.preparer;
   const { onDecode, onEncode } = options;
   const records = createAppendRecords(db, onDecode === undefined ? {} : { onDecode });
   const verdicts = createVerdictWriter(db);
-
+  const derived = createDerivedRepair(db, records, decodeContext);
   const recordTouch = (sessionId: string, runId: string | null): void => {
     if (options.onCommit === undefined) return;
     touched.set(`${sessionId}\n${runId ?? ''}`, runId === null ? { sessionId } : { runId, sessionId });
@@ -442,6 +459,9 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       throw error;
     }
   };
+  const derivedReads = createDerivedReads(db, derived, records, transaction);
+  const derivedView = derivedReads.view;
+
 
   const observeDecode = (rows: readonly Row[]): void => {
     if (onDecode === undefined) return;
@@ -450,7 +470,29 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
   const decodeEvents = (rows: readonly Row[]): RunEvent[] => {
     observeDecode(rows);
-    return decodeRunEvents(rows);
+    return decodeRunEvents(rows, decodeContext);
+  };
+
+  const decodeKnownEvents = (rows: readonly Row[]): (RunEvent | SessionEvent)[] => {
+    observeDecode(rows);
+    return rows.flatMap((row) => decodeKnownEvent(row, decodeContext) ?? []);
+  };
+
+  const fillPage = <E>(after: number, limit: number, fetch: (after: number, limit: number) => Row[], cursorOf: (row: Row) => number, decode: (rows: readonly Row[]) => E[]): E[] => {
+    const kept: E[] = [];
+    for (let cursor = after; ; ) {
+      const wanted = limit - kept.length;
+      const rows = fetch(cursor, wanted);
+      kept.push(...decode(rows));
+      const last = rows.at(-1);
+      if (last === undefined || rows.length < wanted || kept.length >= limit) return kept;
+      cursor = cursorOf(last);
+    }
+  };
+
+  const decodeStreamEvents = (rows: readonly Row[]): (RunEvent | SessionEvent | OpaqueEvent)[] => {
+    observeDecode(rows);
+    return rows.map((row) => decodeStoredEvent(row, decodeContext));
   };
 
   const insertEvent = (event: {
@@ -476,12 +518,12 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       pinnedDigest: event.payload.type === 'model.requested' ? (event.payload.pinnedDigest ?? null) : null,
       ...columnsOf(event.payload),
     });
-    if (event.runId !== null && event.seq !== null && event.step !== null) records.record({ eventId: Number(inserted.lastInsertRowid), runId: event.runId, sessionId: event.sessionId, seq: event.seq, step: event.step, payload: event.payload });
+    if (event.runId !== null && event.seq !== null && event.step !== null) derived.recordAppended({ eventId: Number(inserted.lastInsertRowid), runId: event.runId, sessionId: event.sessionId, seq: event.seq, step: event.step, payload: event.payload });
     recordTouch(event.sessionId, event.runId);
   };
 
   const approvalAnnounced = (runId: string, approvalId: string): boolean =>
-    sql.requestedEvent.get({ runId, approvalId }) !== undefined || sql.elicitationRequestedEvent.get({ runId, approvalId }) !== undefined;
+    derivedView.permissionRequestOf(runId, approvalId) !== undefined || derivedView.elicitationRequested(runId, approvalId);
 
   const cancelledEvent = (approval: Approval, reason: 'expired' | 'withdrawn' | 'superseded'): RunEventPayload =>
     approval.kind === 'elicitation'
@@ -491,7 +533,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const requireRun = (runId: string): Run => {
     const row = sql.selectRun.get({ id: runId });
     if (row === undefined) throw new Error(`unknown run ${runId}`);
-    return decodeRun(row);
+    return decodeRun(row, decodeContext);
   };
 
   const requestBodies = new Map<string, { leaseToken: number; event: Extract<RunEvent, { type: 'model.requested' }> }>();
@@ -510,6 +552,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   };
 
   const writeRun = (run: Run): void => {
+    refuseUnknown(`run ${run.id}`, [run.status, run.stopReason, run.cancelOrigin]);
     if (run.leaseOwner === null) requestBodies.delete(run.id);
     const result = sql.writeRun.run({
       id: run.id,
@@ -556,15 +599,15 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   type Need = { runId: string; leading: readonly RunEventPayload[]; expiring: readonly string[] };
   type Prepared = Need & { measured: ContributionMeasured | undefined };
 
-  const operate = async <T>(plan: () => Need | undefined, commit: (prepared: Prepared | undefined) => T): Promise<T> => {
+  const operate = async <T>(scope: DerivedScope, plan: () => Need | undefined, commit: (prepared: Prepared | undefined) => T): Promise<T> => {
     for (;;) {
-      const need = plan();
+      const need = await derivedReads.read(scope, plan);
       let prepared: Prepared | undefined;
       if (need !== undefined) {
         prepared = preparer === undefined ? { ...need, measured: undefined } : { ...need, measured: await preparer.measure({ runId: need.runId, leading: need.leading }) };
       }
       try {
-        return transaction(() => commit(prepared));
+        return await derivedReads.write(scope, () => commit(prepared));
       } catch (error) {
         if (!(error instanceof StalePreparation) || preparer === undefined) throw error;
       }
@@ -593,9 +636,10 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
   const changeStatus = (run: Run, to: RunStatus, change: StatusChange, leadingEvents: readonly RunEventPayload[] = [], prepared?: Prepared): Run => {
     if (!change.edges[run.status].includes(to)) throw new Error(`run ${run.id} has no permitted edge ${run.status} -> ${to}`);
+    const from = knownStatusOf(run);
     const patch = change.patch ?? {};
     const reason = patch.stopReason ?? patch.error?.code;
-    const statusEvent: RunEventPayload = { type: 'run.status', from: run.status, to, ...(reason === undefined ? {} : { reason }) };
+    const statusEvent: RunEventPayload = { type: 'run.status', from, to, ...(reason === undefined ? {} : { reason }) };
     const withdrawal = isTerminal(to) || to === 'CANCELLING' ? withdrawPendingApprovals(run.id) : [];
     const contribution = isTerminal(to) ? settleContribution(run, to, prepared) : [];
     const appended = appendPayloads(run, [...leadingEvents, ...withdrawal, ...contribution, statusEvent]);
@@ -608,7 +652,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       status: to,
       version: run.version + 1,
       cancelRequested: run.cancelRequested || to === 'CANCELLING' || to === 'CANCELLED',
-      cancelOrigin: to === 'CANCELLING' ? cancelOriginOf(run.status) : null,
+      cancelOrigin: to === 'CANCELLING' ? cancelOriginOf(from) : null,
       deadLetter: change.deadLetter ?? run.deadLetter,
       ...(keepsLease
         ? {
@@ -630,8 +674,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
   const cancelChildren = (runId: string): void => {
     for (const row of sql.childRuns.all({ runId })) {
-      const child = decodeRun(row);
-      if (isTerminal(child.status) || child.status === 'CANCELLING') continue;
+      const child = decodeRun(row, decodeContext);
+      if (isTerminal(child.status) || child.status === 'CANCELLING' || child.status === UNKNOWN_VALUE) continue;
       changeStatus(child, 'CANCELLING', { edges: SERVICE_TRANSITIONS });
     }
   };
@@ -661,10 +705,22 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
   const fenced = (claim: LeaseFence): Run | undefined => {
     const row = sql.fence.get({ runId: claim.runId, leaseToken: claim.leaseToken, workerId: claim.workerId });
-    return row === undefined ? undefined : decodeRun(row);
+    return row === undefined ? undefined : decodeRun(row, decodeContext);
   };
 
   const leaseLost: LeaseLost = { kind: 'lease_lost' };
+
+  const releaseUntouched = (run: Run, claim: LeaseFence, options: { availableAt: number; refundAttempt?: boolean }): RunMutationResult => {
+    requestBodies.delete(run.id);
+    sql.releaseHeldLease.run({
+      runId: claim.runId,
+      leaseToken: claim.leaseToken,
+      workerId: claim.workerId,
+      availableAt: options.availableAt,
+      attempts: refundedAttempts(run, options.refundAttempt),
+    });
+    return { kind: 'ok', run: requireRun(run.id) };
+  };
 
   const conflict = (reason: string): Conflict => ({ kind: 'conflict', reason });
 
@@ -676,7 +732,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     preceding: readonly RunEventPayload[] = [],
     prepared?: Prepared,
   ): RunMutationResult => {
-    if (!from.includes(run.status)) {
+    if (!listed(from, run.status)) {
       return conflict(`run ${run.id} is ${run.status}, expected one of ${from.join(', ')}`);
     }
     if (!WORKER_TRANSITIONS[run.status].includes(to)) return conflict(`run ${run.id} cannot move from ${run.status} to ${to}`);
@@ -710,7 +766,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
   const stopNeed = (runId: string, nowMs: number): Need | undefined => {
     const row = sql.selectRun.get({ id: runId });
-    const stop = row === undefined ? undefined : planStop(decodeRun(row), nowMs);
+    const stop = row === undefined ? undefined : planStop(decodeRun(row, decodeContext), nowMs);
     return stop === undefined ? undefined : { runId, leading: stop.leading, expiring: stop.expiring };
   };
 
@@ -763,7 +819,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   };
 
   const toolCallOf = (approval: Approval): ApprovalView['toolCall'] => {
-    const row = sql.toolCallEvent.get({ runId: approval.runId, callId: approval.callId });
+    const row = derivedView.toolCallEventOf(approval.runId, approval.callId);
     if (row === undefined) throw corrupt('approvals', approval.id, `run ${approval.runId} has no tool.call event for call ${approval.callId}`);
     const payload = expectRecord('events', approval.id, 'payload_json', readerFor('events', approval.id, row).json('payload_json'));
     const { name, title, kind, locations } = payload;
@@ -781,7 +837,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   };
 
   const requestOf = (approval: Approval): { reason: string; suggestedRule?: string } => {
-    const row = sql.requestedEvent.get({ runId: approval.runId, approvalId: approval.id });
+    const row = derivedView.permissionRequestOf(approval.runId, approval.id);
     if (row === undefined) throw corrupt('approvals', approval.id, `run ${approval.runId} has no tool.permission.requested event for approval ${approval.id}`);
     const payload = expectRecord('events', approval.id, 'payload_json', readerFor('events', approval.id, row).json('payload_json'));
     const { reason, suggestedRule } = payload;
@@ -850,7 +906,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const findRunByIdempotencyKey = (sessionId: string, key: string): { run: Run; requestDigest: string | null } | undefined => {
     const row = sql.selectRunByKey.get({ sessionId, key });
     if (row === undefined) return undefined;
-    return { run: decodeRun(row), requestDigest: readerFor('runs', String(row['id']), row).nullableString('request_digest') };
+    return { run: decodeRun(row, decodeContext), requestDigest: readerFor('runs', String(row['id']), row).nullableString('request_digest') };
   };
 
   const hasInheritedEvent = (runId: string): boolean => sql.inheritedEvent.get({ runId }) !== undefined;
@@ -875,7 +931,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       if (hasInheritedEvent(run.id)) return { kind: 'already' };
       for (const walkedRun of plan.walked) {
         const row = sql.selectRun.get({ id: walkedRun.runId });
-        const current = row === undefined ? undefined : decodeRun(row);
+        const current = row === undefined ? undefined : decodeRun(row, decodeContext);
         if (current === undefined || current.status !== walkedRun.status || current.lastSeq !== walkedRun.lastSeq) {
           return conflict(`run ${walkedRun.runId} changed while the context of run ${run.id} was being inherited`);
         }
@@ -887,7 +943,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const requireSession = (sessionId: string): Session => {
     const row = sql.selectSession.get({ id: sessionId });
     if (row === undefined) throw new Error(`unknown session ${sessionId}`);
-    return decodeSession(row);
+    return decodeSession(row, decodeContext);
   };
 
   const rootSessionIdOf = (sessionId: string): string => {
@@ -910,7 +966,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     targets.jobIds.some((jobId) => {
       const row = sql.jobs.select.get({ id: jobId });
       if (row === undefined) throw new Error(`unknown job ${jobId}`);
-      return decodeJob(row).status !== 'running';
+      return decodeJob(row, decodeContext).status !== 'running';
     });
 
   const propagateMode = (sessionId: string, mode: PermissionMode): void => {
@@ -927,30 +983,30 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     start: (input) =>
       transaction(() => {
         const existing = sql.jobs.selectByKey.get({ idemKey: input.idemKey });
-        if (existing !== undefined) return { job: decodeJob(existing), created: false };
+        if (existing !== undefined) return { job: decodeJob(existing, decodeContext), created: false };
         sql.jobs.insert.run({ ...input, sessionId: rootSessionIdOf(input.sessionId), startedAt: clock.now() });
         const row = sql.jobs.select.get({ id: input.id });
         if (row === undefined) throw new Error(`job ${input.id} vanished during start`);
-        return { job: decodeJob(row), created: true };
+        return { job: decodeJob(row, decodeContext), created: true };
       }),
     attachProcess: (id, pgid) => {
       if (Number(sql.jobs.attach.run({ id, pgid }).changes) !== 1) throw new Error(`cannot attach a process to job ${id}: it is not running`);
     },
     get: (id) => {
       const row = sql.jobs.select.get({ id });
-      return row === undefined ? undefined : decodeJob(row);
+      return row === undefined ? undefined : decodeJob(row, decodeContext);
     },
     byIdemKey: (idemKey) => {
       const row = sql.jobs.selectByKey.get({ idemKey });
-      return row === undefined ? undefined : decodeJob(row);
+      return row === undefined ? undefined : decodeJob(row, decodeContext);
     },
-    listRunning: () => sql.jobs.running.all().map(decodeJob),
-    listForSession: (sessionId) => sql.jobs.forSession.all({ sessionId: rootSessionIdOf(sessionId) }).map(decodeJob),
+    listRunning: () => sql.jobs.running.all().map((row) => decodeJob(row, decodeContext)),
+    listForSession: (sessionId) => sql.jobs.forSession.all({ sessionId: rootSessionIdOf(sessionId) }).map((row) => decodeJob(row, decodeContext)),
     finish: (id, result) =>
       transaction<FinishJobResult>(() => {
         const row = sql.jobs.select.get({ id });
         if (row === undefined) return { kind: 'not_found' };
-        const job = decodeJob(row);
+        const job = decodeJob(row, decodeContext);
         if (job.status !== 'running') return { kind: 'already_finished', job };
         sql.jobs.finish.run({
           id,
@@ -978,7 +1034,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         }
         const finished = sql.jobs.select.get({ id });
         if (finished === undefined) throw new Error(`job ${id} vanished during finish`);
-        return { kind: 'finished', job: decodeJob(finished) };
+        return { kind: 'finished', job: decodeJob(finished, decodeContext) };
       }),
     advanceRead: (id, offset, call) => {
       sql.jobs.advance.run({ id, offset, call });
@@ -1008,22 +1064,22 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         });
         const row = sql.selectSession.get({ id });
         if (row === undefined) throw new Error(`session ${id} vanished during create`);
-        return decodeSession(row);
+        return decodeSession(row, decodeContext);
       }),
 
     getSession: (id) => {
       const row = sql.selectSession.get({ id });
-      return row === undefined ? undefined : decodeSession(row);
+      return row === undefined ? undefined : decodeSession(row, decodeContext);
     },
 
     listSessions: (filter) =>
-      (filter?.cwd === undefined ? sql.listSessions.all() : sql.listSessionsByCwd.all({ cwd: filter.cwd })).map(decodeSession),
+      (filter?.cwd === undefined ? sql.listSessions.all() : sql.listSessionsByCwd.all({ cwd: filter.cwd })).map((row) => decodeSession(row, decodeContext)),
 
     setPermissionMode: (sessionId, mode: PermissionMode) =>
       transaction<SetPermissionModeResult>(() => {
         const row = sql.selectSession.get({ id: sessionId });
         if (row === undefined) return { kind: 'not_found' };
-        const session = decodeSession(row);
+        const session = decodeSession(row, decodeContext);
         if (session.permissionMode === mode) return { kind: 'ok', session, changed: false };
         sql.updateSessionMode.run({ id: sessionId, permissionMode: mode });
         propagateMode(sessionId, mode);
@@ -1035,7 +1091,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       transaction<SetModelAliasResult>(() => {
         const row = sql.selectSession.get({ id: sessionId });
         if (row === undefined) return { kind: 'not_found' };
-        const session = decodeSession(row);
+        const session = decodeSession(row, decodeContext);
         if (session.modelAlias === modelAlias) return { kind: 'ok', session, changed: false };
         sql.updateSessionModelAlias.run({ id: sessionId, modelAlias });
         insertEvent({
@@ -1055,7 +1111,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         const row = sql.selectSession.get({ id: sessionId });
         if (row === undefined) return { kind: 'not_found' };
         sql.updateSessionMcpServers.run({ id: sessionId, mcpServers: canonicalJson(servers) });
-        return { kind: 'ok', session: { ...decodeSession(row), mcpServers: servers } };
+        return { kind: 'ok', session: { ...decodeSession(row, decodeContext), mcpServers: servers } };
       }),
 
     createRunAndEnqueue: (sessionId, input) =>
@@ -1090,7 +1146,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
           usage: canonicalJson({ inputTokens: 0, outputTokens: 0, totalTokens: 0 }),
           pins: canonicalJson(input.pins),
           createdAt: now,
-          origin: originOf(decodeSession(sessionRow).cwd),
+          origin: originOf(decodeSession(sessionRow, decodeContext).cwd),
         });
         const inserted = appendPayloads(requireRun(id), [
           { type: 'user.message', text: input.input, ...(input.images === undefined ? {} : { images: input.images }) },
@@ -1104,13 +1160,13 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       transaction<CreateChildRunResult>(() => {
         const existing = sql.childByCall.get({ parentRunId: input.parentRunId, parentCallId: input.parentCallId });
         if (existing !== undefined) {
-          const run = decodeRun(existing);
+          const run = decodeRun(existing, decodeContext);
           return { kind: 'existing', run, session: requireSession(run.sessionId) };
         }
         const parentRow = sql.selectRun.get({ id: input.parentRunId });
         if (parentRow === undefined) return { kind: 'parent_not_active', status: 'missing' };
-        const parent = decodeRun(parentRow);
-        if (isTerminal(parent.status) || parent.status === 'CANCELLING' || parent.cancelRequested) {
+        const parent = decodeRun(parentRow, decodeContext);
+        if (isTerminal(parent.status) || parent.status === 'CANCELLING' || parent.status === UNKNOWN_VALUE || parent.cancelRequested) {
           return { kind: 'parent_not_active', status: parent.status };
         }
         const parentSession = requireSession(parent.sessionId);
@@ -1150,7 +1206,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         return { kind: 'created', run: requireRun(runId), session: requireSession(sessionId) };
       }),
 
-    listChildRuns: (runId) => sql.childRuns.all({ runId }).map(decodeRun),
+    listChildRuns: (runId) => sql.childRuns.all({ runId }).map((row) => decodeRun(row, decodeContext)),
 
     treeTokens: (runId) => {
       const row = sql.treeTokens.get({ rootId: rootRunIdOf(runId) });
@@ -1172,7 +1228,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         const active = sql.activeRunExists.get({ sessionId });
         if (active === undefined) throw new Error(`could not compute whether session ${sessionId} has an active run`);
         return {
-          lastActivityAt: latest === undefined ? decodeSession(row).createdAt : readerFor('events', sessionId, latest).number('created_at'),
+          lastActivityAt: latest === undefined ? decodeSession(row, decodeContext).createdAt : readerFor('events', sessionId, latest).number('created_at'),
           hasActiveRun: readerFor('runs', sessionId, active).number('active') === 1,
         };
       }),
@@ -1195,27 +1251,29 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     listRuns: (sessionId, statuses) =>
       sql.listRuns
         .all({ sessionId })
-        .map(decodeRun)
-        .filter((run) => statuses === undefined || statuses.includes(run.status)),
+        .map((row) => decodeRun(row, decodeContext))
+        .filter((run) => statuses === undefined || listed(statuses, run.status)),
 
     getRun: (id) => {
       const row = sql.selectRun.get({ id });
-      return row === undefined ? undefined : decodeRun(row);
+      return row === undefined ? undefined : decodeRun(row, decodeContext);
     },
 
     claim: (workerId) => {
       const now = clock.now();
-      return transaction(() => {
+      const claim = transaction(() => {
         const candidate = sql.claimTakeover.get({ now, maxAttempts, maxTotalAttempts });
         const row = sql.claim.get({ now, maxAttempts, maxTotalAttempts, workerId, leaseExpiresAt: now + leaseMs });
         if (row === undefined) return null;
-        const claimed = decodeRun(row);
+        const claimed = decodeRun(row, decodeContext);
         const takenFrom = candidate === undefined ? null : readerFor('runs', claimed.id, candidate).nullableNumber('taken_from');
         const run = takenFrom === null ? claimed : appendPayloads(claimed, [{ type: 'attempt.lost', lastLiveAt: takenFrom - leaseMs }]);
         if (takenFrom !== null) writeRun(run);
         const status: ClaimStatus = expectOneOf('runs', run.id, 'status', CLAIM_STATUSES, run.status);
+        derived.repairPage(run.id, run.lastSeq);
         return { runId: run.id, sessionId: run.sessionId, workerId, leaseToken: run.leaseToken, attempt: run.attempts, status };
       });
+      return claim;
     },
 
     heartbeat: (claim) =>
@@ -1235,24 +1293,28 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         };
       }),
 
-    append: (claim, events) =>
-      transaction(() => {
+    append: (claim, events) => {
+      const result = transaction(() => {
         rejectContribution(events);
         const run = fenced(claim);
         if (run === undefined) return leaseLost;
         if (events.length === 0) return { kind: 'ok', lastSeq: run.lastSeq } as const;
         const next = appendPayloads(run, events);
         writeRun(next);
+        derived.repairPage(next.id, next.lastSeq);
         return { kind: 'ok', lastSeq: next.lastSeq } as const;
-      }),
+      });
+      return result;
+    },
 
     transition: (claim, from, to, patch, preceding = []) =>
       operate(
+        { runTree: claim.runId },
         () => {
           if (!isTerminal(to)) return undefined;
           const row = sql.selectRun.get({ id: claim.runId });
-          const run = row === undefined ? undefined : decodeRun(row);
-          return run === undefined || !from.includes(run.status) ? undefined : { runId: run.id, leading: preceding, expiring: [] };
+          const run = row === undefined ? undefined : decodeRun(row, decodeContext);
+          return run === undefined || !listed(from, run.status) ? undefined : { runId: run.id, leading: preceding, expiring: [] };
         },
         (prepared) => {
           const run = fenced(claim);
@@ -1261,7 +1323,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       ),
 
     release: (claim, to, availableAt, options) =>
-      transaction<RunMutationResult>(() => {
+      derivedReads.write<RunMutationResult>({ runTree: claim.runId }, () => {
         const run = fenced(claim);
         if (run === undefined) return leaseLost;
         const refund = options?.refundAttempt === true ? { refundAttempt: true } : {};
@@ -1275,7 +1337,9 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       }),
 
     releaseLease: (claim, options) =>
-      transaction<RunMutationResult>(() => {
+      derivedReads.write<RunMutationResult>({ runTree: claim.runId }, () => {
+        const unknownHeld = sql.heldWithUnknownStatus.get({ runId: claim.runId, leaseToken: claim.leaseToken, workerId: claim.workerId });
+        if (unknownHeld !== undefined) return releaseUntouched(decodeRun(unknownHeld, decodeContext), claim, options);
         const run = fenced(claim);
         if (run === undefined) return leaseLost;
         const refund = options.refundAttempt === true ? { refundAttempt: true } : {};
@@ -1290,11 +1354,12 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       }),
 
     requestCancel: (runId) =>
-      transaction<RequestCancelResult>(() => {
+      derivedReads.write<RequestCancelResult>({ runTree: runId }, () => {
         const row = sql.selectRun.get({ id: runId });
         if (row === undefined) return { kind: 'not_found' };
-        const run = decodeRun(row);
+        const run = decodeRun(row, decodeContext);
         if (isTerminal(run.status) || run.status === 'CANCELLING') return { kind: 'ok', run, changed: false };
+        if (run.status === UNKNOWN_VALUE) return { kind: 'status_unknown', run };
         if (!SERVICE_TRANSITIONS[run.status].includes('CANCELLING')) throw new Error(`run ${runId} in status ${run.status} cannot be cancelled`);
         return { kind: 'ok', run: changeStatus(run, 'CANCELLING', { edges: SERVICE_TRANSITIONS }), changed: true };
       }),
@@ -1302,10 +1367,11 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     appendAsService: async (runId, expectedVersion, to, events, patch) => {
       rejectContribution(events);
       return operate(
+        { runTree: runId },
         () => {
           if (to === null || !isTerminal(to)) return undefined;
           const row = sql.selectRun.get({ id: runId });
-          return row === undefined || isTerminal(decodeRun(row).status) ? undefined : { runId, leading: events, expiring: [] };
+          return row === undefined || isTerminal(decodeRun(row, decodeContext).status) ? undefined : { runId, leading: events, expiring: [] };
         },
         (prepared): ServiceMutationResult => {
           const run = requireRun(runId);
@@ -1325,7 +1391,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       );
     },
 
-    readRunEvents: (runId, afterSeq, limit) => decodeEvents(sql.runEvents.all({ runId, after: afterSeq, limit })),
+    readRunEvents: (runId, afterSeq, limit) =>
+      fillPage(afterSeq, limit, (after, wanted) => sql.runEvents.all({ runId, after, limit: wanted }), (row) => readerFor('events', runId, row).number('seq'), decodeEvents),
 
     readRunEventsOfTypes: (runId, types) => journalReader.eventsOfTypes(runId, types),
 
@@ -1337,44 +1404,45 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return event as Extract<RunEvent, { type: T }> | undefined;
     },
 
-    readModelCallEvents: (runId) => sql.modelCallEvents.all({ runId }).sort((a, b) => Number(a.seq) - Number(b.seq)).map(decodeModelCallRecord),
+    readModelCallEvents: (runId) => derivedReads.read({ runId }, (view) => view.modelCallRowsOf(runId).map(decodeModelCallRecord)),
 
-    toolCallSeq: records.toolCallSeq,
+    toolCallSeq: (runId, callId) => derivedReads.read({ runId }, (view) => view.toolCallSeq(runId, callId)),
 
-    finalTextOf: records.finalTextOf,
+    finalTextOf: (runId) => derivedReads.read({ runId }, (view) => view.finalTextOf(runId)),
 
-    inFlightModelRequestOf: records.inFlightModelRequestOf,
+    inFlightModelRequestOf: (runId) => derivedReads.read({ runId }, (view) => view.inFlightModelRequestOf(runId)),
 
-    startedCallsOf: records.startedCallsOf,
+    startedCallsOf: (runId) => derivedReads.read({ runId }, (view) => view.startedCallsOf(runId)),
 
-    hasNoticeCode: records.hasNoticeCode,
+    hasNoticeCode: (runId, code) => derivedReads.read({ runId }, (view) => view.hasNoticeCode(runId, code)),
 
-    meterRecordOf: records.meterRecordOf,
+    meterRecordOf: (sessionId, key) => derivedReads.read({ sessionId }, (view) => view.meterRecordOf(sessionId, key)),
 
-    answeringTargetsOf: records.answeringTargetsOf,
+    answeringTargetsOf: (runId) => derivedReads.read({ runId }, (view) => view.answeringTargetsOf(runId)),
 
     recordFidelityVerdicts: (runId, cwd, reply) => transaction(() => verdicts.record(runId, cwd, reply)),
 
-    lastTerminalRootRuns: (project, limit) => sql.lastTerminalRootRuns.all({ project, limit }).map(decodeRun),
+    lastTerminalRootRuns: (project, limit) => sql.lastTerminalRootRuns.all({ project, limit }).map((row) => decodeRun(row, decodeContext)),
 
-    toolCallNames: (runId) => sql.toolCallNames.all({ runId }).map((row) => String(row.name)),
+    toolCallNames: (runId) => derivedReads.read({ runTree: runId }, (view) => view.toolCallNamesOf(runId)),
 
     toolOfferedNames: (runId) => {
       if (sql.hasToolOffered.get({ runId }) === undefined) throw new Error(`run ${runId} has no tool.offered record`);
       return sql.toolOfferedNames.all({ runId }).map((row) => String(row.name));
     },
 
-    readSessionEvents: (sessionId, afterId, limit) => {
-      const rows = sql.sessionEvents.all({ sessionId, after: afterId, limit });
-      observeDecode(rows);
-      return rows.map(decodeEvent);
-    },
+    readSessionEvents: (sessionId, afterId, limit) =>
+      fillPage(afterId, limit, (after, wanted) => sql.sessionEvents.all({ sessionId, after, limit: wanted }), (row) => readerFor('events', sessionId, row).number('id'), decodeKnownEvents),
+
+    readRunEventStream: (runId, afterSeq, limit) => decodeStreamEvents(sql.runEvents.all({ runId, after: afterSeq, limit })),
+
+    readSessionEventStream: (sessionId, afterId, limit) => decodeStreamEvents(sql.sessionEvents.all({ sessionId, after: afterId, limit })),
 
     readModelChanges: (sessionId, afterId) =>
       sql.modelChanges.all({ sessionId, after: afterId }).map((row) => {
         observeDecode([row]);
-        const event = decodeEvent(row);
-        if (event.type !== 'model.changed') throw new Error(`event ${event.id} of session ${sessionId} is not a model.changed event`);
+        const event = decodeKnownEvent(row, decodeContext);
+        if (event === undefined || event.type !== 'model.changed') throw new Error(`event ${String(row['id'])} of session ${sessionId} is not a model.changed event`);
         return event;
       }),
 
@@ -1393,7 +1461,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     },
 
     requestApproval: (claim, input) =>
-      transaction<RequestApprovalResult>(() => {
+      derivedReads.write<RequestApprovalResult>({ runTree: claim.runId }, () => {
         const run = fenced(claim);
         if (run === undefined) return leaseLost;
         const requested = approvalOps.request({
@@ -1421,10 +1489,14 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         return { kind: 'ok', approval: requested.approval };
       }),
 
-    resolveApproval: async (approvalId, optionId) => transaction(() => resolveInTransaction(approvalId, optionId, clock.now())),
+    resolveApproval: async (approvalId, optionId) => {
+      const approval = approvalOps.store.get(approvalId);
+      if (approval === undefined) return { kind: 'not_found' };
+      return derivedReads.write({ runTree: approval.runId }, () => resolveInTransaction(approvalId, optionId, clock.now()));
+    },
 
     requestElicitation: (claim, input) =>
-      transaction<RequestApprovalResult>(() => {
+      derivedReads.write<RequestApprovalResult>({ runTree: claim.runId }, () => {
         const run = fenced(claim);
         if (run === undefined) return leaseLost;
         const requested = approvalOps.request({
@@ -1445,20 +1517,23 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         return { kind: 'ok', approval: requested.approval };
       }),
 
-    resolveElicitation: (elicitationId, responses, notices = []) => {
+    resolveElicitation: async (elicitationId, responses, notices = []) => {
       const now = clock.now();
+      const elicitation = approvalOps.store.get(elicitationId);
+      if (elicitation === undefined) return { kind: 'not_found' };
       return operate(
+        { runTree: elicitation.runId },
         () => lateInputNeed(elicitationId, now),
         (prepared) => resolveElicitationInTransaction(elicitationId, responses, notices, now, prepared),
       );
     },
 
-    elicitationView: (elicitationId) => {
+    elicitationView: async (elicitationId) => {
       const approval = approvalOps.store.get(elicitationId);
-      return approval === undefined || approval.kind !== 'elicitation' ? undefined : elicitationViewOf(approval);
+      return approval === undefined || approval.kind !== 'elicitation' ? undefined : derivedReads.read({ runId: approval.runId }, () => elicitationViewOf(approval));
     },
 
-    pendingElicitationViews: (runId) => approvalOps.store.listPending(runId).filter((approval) => approval.kind === 'elicitation').map(elicitationViewOf),
+    pendingElicitationViews: (runId) => derivedReads.read({ runId }, () => approvalOps.store.listPending(runId).filter((approval) => approval.kind === 'elicitation').map(elicitationViewOf)),
 
     hasActiveRun: () => {
       const row = sql.anyActiveRunExists.get({});
@@ -1474,6 +1549,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         const runId = readerFor('runs', 'due', row).string('id');
         try {
           const didStop = await operate(
+            { runTree: runId },
             () => stopNeed(runId, nowMs),
             (prepared) => stopWaitingRun(requireRun(runId), nowMs, prepared),
           );
@@ -1489,14 +1565,15 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       const finished: string[] = [];
       const now = clock.now();
       for (const row of sql.listSweeperOwned.all({ now })) {
-        const runId = decodeRun(row).id;
+        const runId = decodeRun(row, decodeContext).id;
         try {
           const didFinish = await operate(
+            { runTree: runId },
             () => (sql.sweeperOwnedById.get({ id: runId, now }) === undefined ? undefined : { runId, leading: [], expiring: [] }),
             (prepared) => {
               const current = sql.sweeperOwnedById.get({ id: runId, now });
               if (current === undefined) return false;
-              changeStatus(decodeRun(current), 'CANCELLED', { edges: WORKER_TRANSITIONS }, [], prepared);
+              changeStatus(decodeRun(current, decodeContext), 'CANCELLED', { edges: WORKER_TRANSITIONS }, [], prepared);
               return true;
             },
           );
@@ -1513,14 +1590,15 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       const now = clock.now();
       const exhausted = { now, maxAttempts, maxTotalAttempts };
       for (const row of sql.listExhausted.all(exhausted)) {
-        const runId = decodeRun(row).id;
+        const runId = decodeRun(row, decodeContext).id;
         try {
           const didEnd = await operate(
+            { runTree: runId },
             () => (sql.exhaustedById.get({ id: runId, ...exhausted }) === undefined ? undefined : { runId, leading: [], expiring: [] }),
             (prepared) => {
               const current = sql.exhaustedById.get({ id: runId, ...exhausted });
               if (current === undefined) return false;
-              deadLetter(decodeRun(current), prepared);
+              deadLetter(decodeRun(current, decodeContext), prepared);
               return true;
             },
           );
@@ -1532,12 +1610,12 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return ended;
     },
 
-    approvalView: (approvalId) => {
+    approvalView: async (approvalId) => {
       const approval = approvalOps.store.get(approvalId);
-      return approval === undefined || approval.kind !== 'permission' ? undefined : viewOf(approval);
+      return approval === undefined || approval.kind !== 'permission' ? undefined : derivedReads.read({ runId: approval.runId }, () => viewOf(approval));
     },
 
-    pendingApprovalViews: (runId) => approvalOps.store.listPending(runId).filter((approval) => approval.kind === 'permission').map(viewOf),
+    pendingApprovalViews: (runId) => derivedReads.read({ runId }, () => approvalOps.store.listPending(runId).filter((approval) => approval.kind === 'permission').map(viewOf)),
 
     writeSnapshot: (claim, seq, state) =>
       transaction(() => {
@@ -1557,18 +1635,21 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         return { kind: 'ok' } as const;
       }),
 
-    idempotency: createIdempotencyStore(db, clock, (fence) => fenced(fence) !== undefined),
+    idempotency: createIdempotencyStore(db, clock, (fence) => fenced(fence) !== undefined, decodeContext),
     approvals: approvalOps.store,
     blobs: createBlobStore(db, clock, blobDirectory),
     trust,
-    memories,
-    sessionTouched: { after: records.touchedAfter, newest: records.touchedNewest },
+    memories: { ...memories, save: (input) => derivedReads.write({ runId: input.runId }, () => memories.save(input)) },
+    sessionTouched: {
+      after: (sessionId, afterEventId, limit, afterPath) => derivedReads.read({ sessionId }, (view) => view.touchedAfter(sessionId, afterEventId, limit, afterPath)),
+      newest: (sessionId, limit) => derivedReads.read({ sessionId }, (view) => view.touchedNewest(sessionId, limit)),
+    },
     reflection,
     contextCharges,
     guidelines: createGuidelineStore(db, clock),
     governing,
-    search: createSearchStore(db),
-    runFacts: createRunFactsStore(db),
+    search: createSearchStore(db, decodeContext, derivedReads),
+    runFacts: createRunFactsStore(db, decodeContext),
 
     journalFacts: {
       inheritPlan: async (request, signal) => journalPreparer(preparer, 'inheritance plan').inheritPlan(request, signal),

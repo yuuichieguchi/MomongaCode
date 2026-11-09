@@ -22,7 +22,7 @@ describe('the cost of the adaptive budget window at run start', () => {
     for (let index = 0; index < RUNS; index += 1) {
       env.clock.advance(1);
       const run = createdRun(env.store.createRunAndEnqueue(env.session.id, { input: 'Past work', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
-      const claim = env.seed(
+      const claim = await env.seed(
         run.id,
         [
           { type: 'run.started', attempt: 1, now: env.clock.now(), pins: { memoryShare: 1 / 4 }, mode: 'default' },

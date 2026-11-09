@@ -47,16 +47,16 @@ describe('context types', () => {
     expectTypeOf<GoverningKind>().toEqualTypeOf<'constraint' | 'preference' | 'commitment' | 'role' | 'identity'>();
     expectTypeOf<GoverningFactView>().toEqualTypeOf<{
       id: string;
-      kind: GoverningKind;
+      kind: GoverningKind | 'unknown';
       target: string;
       text: string;
-      scope: { level: 'user' } | { level: 'project'; project: string; paths: string[] };
+      scope: { level: 'user' } | { level: 'project'; project: string; paths: string[] } | { level: 'unknown' };
       validFrom: number;
       validUntil: number | null;
       retiredAt: number | null;
       supersedes: string[];
-      enforcement: { behavior: 'deny' | 'ask'; rule: string } | null;
-      source: { kind: 'command'; at: number } | { kind: 'proposal'; sessionId: string; runId: string; seq: number; callId: string };
+      enforcement: { behavior: 'deny' | 'ask' | 'unknown'; rule: string } | null;
+      source: { kind: 'command'; at: number } | { kind: 'proposal'; sessionId: string; runId: string; seq: number; callId: string } | { kind: 'unknown' };
     }>();
   });
 
@@ -70,9 +70,9 @@ describe('context types', () => {
       | { kind: 'commit'; sha: string }
       | { kind: 'check'; runId: string; callId: string; seq: number; command: string; exitCode: number }
     >();
-    expectTypeOf<MemoryView['evidence']>().toEqualTypeOf<MemoryEvidence[]>();
-    expectTypeOf<MemoryView['state']>().toEqualTypeOf<MemoryState>();
-    expectTypeOf<MemoryView['kind']>().toEqualTypeOf<MemoryKind>();
+    expectTypeOf<MemoryView['evidence']>().toEqualTypeOf<(MemoryEvidence | { kind: 'unknown' })[]>();
+    expectTypeOf<MemoryView['state']>().toEqualTypeOf<MemoryState | 'unknown'>();
+    expectTypeOf<MemoryView['kind']>().toEqualTypeOf<MemoryKind | 'unknown'>();
     expectTypeOf<MemoryView['duplicateOf']>().toEqualTypeOf<string | null>();
     expectTypeOf<MemoryView['supersedes']>().toEqualTypeOf<string[]>();
     expectTypeOf<MemoryView['retiredAt']>().toEqualTypeOf<number | null>();

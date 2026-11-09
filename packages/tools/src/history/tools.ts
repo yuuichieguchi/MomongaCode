@@ -89,7 +89,7 @@ export const createHistoryTools = ({ port, trusted, project }: HistoryToolsOptio
     },
     execute: async (input, ctx) => {
       const runId = input.runId ?? ctx.runId;
-      const page = port.read({
+      const page = await port.read({
         runId,
         ...(input.step === undefined ? {} : { step: input.step }),
         ...(input.seqFrom === undefined ? {} : { seqFrom: input.seqFrom }),

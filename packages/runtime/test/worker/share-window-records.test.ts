@@ -22,7 +22,7 @@ const shareWindowWith = async (noticesPerRun: number) => {
     env.clock.advance(1);
     const run = createdRun(env.store.createRunAndEnqueue(env.session.id, { input: 'Past work', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
     const dropped: RunEventPayload[] = index === WINDOW_RUNS - 1 ? [{ type: 'notice', level: 'warning', message: 'dropped', code: 'memories_dropped' }] : [];
-    const claim = env.seed(
+    const claim = await env.seed(
       run.id,
       [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { memoryShare: 1 / 4 }, mode: 'default' }, { type: 'context.memories_loaded', memories: [{ id: `past-${index}`, status: 'verified' }] }, ...Array.from({ length: noticesPerRun }, (_unused, at) => plainNotice(at)), ...dropped],
       'hold',

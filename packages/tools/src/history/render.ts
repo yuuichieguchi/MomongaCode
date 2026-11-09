@@ -25,7 +25,7 @@ const omissionNote = (omitted: number): string => `${omitted} more runs were not
 const OMISSION_RESERVE_CHARS = omissionNote(Number.MAX_SAFE_INTEGER).length + 1;
 
 const anchorBlock = (anchor: HistoryAnchor): string => {
-  const mark = anchor.origin === 'untrusted' ? ' origin="untrusted"' : '';
+  const mark = anchor.origin !== 'trusted' ? ' origin="untrusted"' : '';
   const head = `run ${escapeRecorded(anchor.runId)} ${escapeRecorded(anchor.outcome)} ended ${new Date(anchor.at).toISOString()}${mark} seq ${anchor.seqFrom}-${anchor.seqTo}`;
   const steps = anchor.steps.map((step) => `  step ${step.step} seq ${step.seqFrom}-${step.seqTo}: ${escapeRecorded(step.snippet)}`);
   return [head, `  ${escapeRecorded(anchor.snippet)}`, ...steps].join('\n');
@@ -136,7 +136,7 @@ export const renderRead = ({ page, denied, redact, ownRun, offset, offsetSeq, bu
   };
   const shown = page.events.filter((event) => !isWithheld(event));
   const withheldCalls = new Set(page.events.filter(isWithheld).map(callIdOf));
-  const mark = page.origin === 'untrusted' ? ' origin="untrusted"' : '';
+  const mark = page.origin !== 'trusted' ? ' origin="untrusted"' : '';
   const heading = `Run ${escapeRecorded(page.runId)} in project ${escapeRecorded(page.project)}${mark}`;
   const withheldNote =
     withheldCalls.size === 0

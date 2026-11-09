@@ -27,7 +27,7 @@ describe('a deterministic compaction states each fact once', () => {
   it('leaves one occurrence of a written path in the built input, in the working state', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
     const run = env.enqueue('question one');
-    env.seed(run.id, journal(), 'release');
+    await env.seed(run.id, journal(), 'release');
     env.gateway.compactSummaries.push(FABRICATED);
     env.gateway.script.push(textStep('Done.'));
     expect(await env.runOnce(env.worker())).toBe('yielded');

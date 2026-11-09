@@ -14,9 +14,9 @@ const waitingForInput = async (env: ServiceEnv) => {
   const run = await env.createRun(session.id);
   const claim = env.claimRun(run.id);
   env.append(claim, [toolCallPayload('call_1', path.join(env.layout.projectReal, 'a.txt'))]);
-  const requested = env.store.requestElicitation(claim, { callId: 'call_1', expiresAt: START_MS + 60_000, server: 'remote', requests: REQUESTS });
+  const requested = await env.store.requestElicitation(claim, { callId: 'call_1', expiresAt: START_MS + 60_000, server: 'remote', requests: REQUESTS });
   if (requested.kind !== 'ok') throw new Error('expected an elicitation');
-  expect(env.store.release(claim, 'WAITING_HUMAN').kind).toBe('ok');
+  expect((await env.store.release(claim, 'WAITING_HUMAN')).kind).toBe('ok');
   return { run, id: requested.approval.id };
 };
 

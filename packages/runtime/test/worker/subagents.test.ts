@@ -229,7 +229,7 @@ describe('worker subagents', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     await env.runOnce(worker);
     const [child] = env.store.listChildRuns(parent.id);
     if (child === undefined) throw new Error('missing child');
-    env.cancel(parent.id);
+    await env.cancel(parent.id);
     expect(env.run(child.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'QUEUED' });
     expect(await env.store.finishCancelled(() => undefined)).toEqual([child.id]);
     expect(env.run(child.id).status).toBe('CANCELLED');
@@ -255,7 +255,7 @@ describe('worker subagents', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     expect(env.run(parent.id).status).toBe('QUEUED');
     expect(env.store.claim('crashing-worker')?.runId).toBe(parent.id);
     env.clock.advance(LEASE_MS + 1);
-    expect(env.cancel(parent.id).status).toBe('CANCELLING');
+    expect((await env.cancel(parent.id)).status).toBe('CANCELLING');
 
     await env.runOnce(worker);
 

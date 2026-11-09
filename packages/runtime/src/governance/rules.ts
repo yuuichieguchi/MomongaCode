@@ -2,6 +2,7 @@ import { RuleParseError, checkRuleText, parseGovernanceRule } from '@momonga/con
 import type { PermissionRule } from '@momonga/config';
 import type { Clock } from '@momonga/foundation';
 import { resolveGoverning } from '@momonga/memory';
+import { enforcedBehaviorOf } from '@momonga/protocol';
 import type { GoverningFactView } from '@momonga/protocol';
 import type { RuntimeStore, Session } from '@momonga/store';
 import type { SettingsPort } from '../ports.ts';
@@ -33,7 +34,7 @@ export const enforcedFactsFor = (store: Pick<RuntimeStore, 'governing'>, clock: 
   resolveGoverning(store.governing.list({ project }), { now: clock.now(), project, touchedPaths: [], ignorePaths: true }).active.filter(isEnforced);
 
 export const governanceRulesOf = (facts: readonly EnforcedFact[], context: RuleParseContext): PermissionRule[] =>
-  facts.map((fact) => parseGovernanceRule({ id: fact.id, behavior: fact.enforcement.behavior, rule: fact.enforcement.rule }, context));
+  facts.map((fact) => parseGovernanceRule({ id: fact.id, behavior: enforcedBehaviorOf(fact.enforcement.behavior), rule: fact.enforcement.rule }, context));
 
 const governanceRulesFor = (sources: PermissionRuleSources, session: Session): PermissionRule[] =>
   governanceRulesOf(enforcedFactsFor(sources.store, sources.clock, session.cwd), { home: sources.home, project: session.cwd });

@@ -1,3 +1,5 @@
+import type { Stored } from './stored-value.ts';
+import { UNKNOWN_VALUE } from './stored-value.ts';
 import { GOVERNING_ENFORCEMENT_BEHAVIORS, GOVERNING_KINDS } from './governance.ts';
 import { GUIDELINE_TEXT_PATTERN } from './guideline-text.ts';
 import { HOOK_EVENTS, HOOK_OUTCOMES, HOOK_PRE_TOOL_DECISIONS } from './hooks.ts';
@@ -37,11 +39,13 @@ const nonNegativeInteger: JsonSchema = { type: 'integer', minimum: 0 };
 const boolean: JsonSchema = { type: 'boolean' };
 const anything: JsonSchema = {};
 const enumOf = (values: readonly string[]): JsonSchema => ({ type: 'string', enum: values });
+const storedEnumOf = (values: readonly string[]): JsonSchema => enumOf([...values, UNKNOWN_VALUE]);
 const constant = (value: string): JsonSchema => ({ type: 'string', const: value });
 const toolFiles: JsonSchema = { type: 'array', items: closed({ path: string, sha256: string, access: enumOf(FILE_ACCESSES) }, ['path', 'access']) };
 const boundedInteger = (minimum: number, maximum: number): JsonSchema => ({ type: 'integer', minimum, maximum });
 
 const permissionMode = enumOf(PERMISSION_MODES);
+const storedPermissionMode = storedEnumOf(PERMISSION_MODES);
 const autoClassifierView = closed(
   {
     alias: string,
@@ -56,6 +60,7 @@ const autoClassifierView = closed(
 );
 const sessionMcpServers: JsonSchema = { type: 'object', additionalProperties: { type: 'object' } };
 const historyMode = enumOf(['inherit', 'fresh']);
+const storedHistoryMode = storedEnumOf(['inherit', 'fresh']);
 
 const permissionOption = closed(
   {
@@ -130,7 +135,7 @@ const jobView = closed(
     runId: string,
     callId: string,
     command: string,
-    status: enumOf(JOB_STATUSES),
+    status: storedEnumOf(JOB_STATUSES),
     exitCode: integer,
     signal: string,
     startedAt: integer,
@@ -199,10 +204,10 @@ const billedDetail = closed(
 const recoveryEpisodeView = closed(
   {
     ordinal: nonNegativeInteger,
-    cause: enumOf(RECOVERY_CAUSES),
+    cause: storedEnumOf(RECOVERY_CAUSES),
     failedAt: integer,
     progressAt: nullable(integer),
-    outcome: enumOf(RECOVERY_OUTCOMES),
+    outcome: storedEnumOf(RECOVERY_OUTCOMES),
     startedSeq: nonNegativeInteger,
     progressSeq: nullable(nonNegativeInteger),
   },
@@ -220,11 +225,11 @@ const runFactsViewProperties: Record<string, JsonSchema> = {
   sessionId: string,
   definitionsVersion: nonNegativeInteger,
   modelAlias: string,
-  mode: permissionMode,
+  mode: storedPermissionMode,
   agent: string,
   origin: string,
-  status: enumOf(RUN_STATUSES),
-  stopReason: enumOf(STOP_REASONS),
+  status: storedEnumOf(RUN_STATUSES),
+  stopReason: storedEnumOf(STOP_REASONS),
   createdAt: integer,
   endedAt: integer,
   elapsedMs: integer,
@@ -573,6 +578,22 @@ const publicEventVariant = (type: keyof typeof PAYLOAD_SCHEMAS): JsonSchema => {
 
 export const EVENT_TYPES = Object.keys(PAYLOAD_SCHEMAS) as (keyof typeof PAYLOAD_SCHEMAS)[];
 
+const publicOpaqueVariant = (): JsonSchema =>
+  closed(
+    {
+      opaque: { const: true },
+      id: integer,
+      runId: string,
+      sessionId: string,
+      seq: integer,
+      step: nonNegativeInteger,
+      createdAt: integer,
+      type: { type: 'string', not: { enum: EVENT_TYPES } },
+      payload: { type: 'object' },
+    },
+    ['opaque', 'id', 'sessionId', 'createdAt', 'type', 'payload'],
+  );
+
 const trustView = closed(
   { path: string, decision: { anyOf: [enumOf(['trusted', 'untrusted']), { type: 'null' }] }, inheritedFrom: string },
   ['path', 'decision'],
@@ -624,7 +645,7 @@ const costTotalsSchemaProperties: Record<string, JsonSchema> = {
 const contextChargeView = closed(
   {
     id: integer,
-    purpose: enumOf(CONTEXT_CHARGE_PURPOSES),
+    purpose: storedEnumOf(CONTEXT_CHARGE_PURPOSES),
     runId: nullable(string),
     project: string,
     model: string,
@@ -720,6 +741,8 @@ const costBreakdownView = closed(
 
 const memoryScope = enumOf(MEMORY_SCOPES);
 
+const unknownKind = closed({ kind: constant(UNKNOWN_VALUE) }, ['kind']);
+
 const memorySource: JsonSchema = {
   oneOf: [
     closed(
@@ -728,6 +751,7 @@ const memorySource: JsonSchema = {
     ),
     closed({ kind: constant('reflection'), sessionId: string, runId: string, ordinal: nonNegativeInteger }, ['kind', 'sessionId', 'runId', 'ordinal']),
     closed({ kind: constant('command'), at: integer }, ['kind', 'at']),
+    unknownKind,
   ],
 };
 
@@ -746,34 +770,40 @@ const memoryEvidence: JsonSchema = {
       },
       ['kind', 'runId', 'callId', 'seq', 'command', 'exitCode'],
     ),
+    unknownKind,
   ],
 };
 
 const governingEnforcement = closed({ behavior: enumOf(GOVERNING_ENFORCEMENT_BEHAVIORS), rule: { type: 'string', minLength: 1 } }, ['behavior', 'rule']);
 
-const governingScope: JsonSchema = {
-  oneOf: [
-    closed({ level: constant('user') }, ['level']),
-    closed({ level: constant('project'), project: { type: 'string', minLength: 1 }, paths: { type: 'array', items: { type: 'string', minLength: 1 } } }, ['level', 'project', 'paths']),
-  ],
-};
+const governingScopes = [
+  closed({ level: constant('user') }, ['level']),
+  closed({ level: constant('project'), project: { type: 'string', minLength: 1 }, paths: { type: 'array', items: { type: 'string', minLength: 1 } } }, ['level', 'project', 'paths']),
+];
+
+const governingScope: JsonSchema = { oneOf: governingScopes };
+
+const storedGoverningScope: JsonSchema = { oneOf: [...governingScopes, closed({ level: constant(UNKNOWN_VALUE) }, ['level'])] };
+
+const storedGoverningEnforcement = closed({ behavior: storedEnumOf(GOVERNING_ENFORCEMENT_BEHAVIORS), rule: { type: 'string', minLength: 1 } }, ['behavior', 'rule']);
 
 const governingFactView = closed(
   {
     id: string,
-    kind: enumOf(GOVERNING_KINDS),
+    kind: storedEnumOf(GOVERNING_KINDS),
     target: string,
     text: string,
-    scope: governingScope,
+    scope: storedGoverningScope,
     validFrom: integer,
     validUntil: nullable(integer),
     retiredAt: nullable(integer),
     supersedes: { type: 'array', items: string },
-    enforcement: nullable(governingEnforcement),
+    enforcement: nullable(storedGoverningEnforcement),
     source: {
       oneOf: [
         closed({ kind: constant('command'), at: integer }, ['kind', 'at']),
         closed({ kind: constant('proposal'), sessionId: string, runId: string, seq: nonNegativeInteger, callId: string }, ['kind', 'sessionId', 'runId', 'seq', 'callId']),
+        unknownKind,
       ],
     },
   },
@@ -790,14 +820,14 @@ const memoryValidity = closed(
     intervals: {
       type: 'array',
       items: closed(
-        { status: enumOf(MEMORY_STATUSES), from: integer, to: nullable(integer), closedBy: nullable(enumOf(VALIDITY_CLOSERS)) },
+        { status: storedEnumOf(MEMORY_STATUSES), from: integer, to: nullable(integer), closedBy: nullable(enumOf(VALIDITY_CLOSERS)) },
         ['status', 'from', 'to', 'closedBy'],
       ),
     },
     changes: {
       type: 'array',
       items: closed(
-        { from: enumOf(MEMORY_STATUSES), to: enumOf(MEMORY_STATUSES), changedBetween: { type: 'array', items: integer, minItems: 2, maxItems: 2 } },
+        { from: storedEnumOf(MEMORY_STATUSES), to: storedEnumOf(MEMORY_STATUSES), changedBetween: { type: 'array', items: integer, minItems: 2, maxItems: 2 } },
         ['from', 'to', 'changedBetween'],
       ),
     },
@@ -808,15 +838,15 @@ const memoryValidity = closed(
 const memoryView = closed(
   {
     id: string,
-    scope: memoryScope,
-    origin: enumOf(MEMORY_ORIGINS),
+    scope: storedEnumOf(MEMORY_SCOPES),
+    origin: storedEnumOf(MEMORY_ORIGINS),
     project: nullable(string),
     text: string,
     source: memorySource,
     createdAt: integer,
     keptAt: integer,
-    kind: enumOf(MEMORY_KINDS),
-    state: enumOf(MEMORY_STATES),
+    kind: storedEnumOf(MEMORY_KINDS),
+    state: storedEnumOf(MEMORY_STATES),
     duplicateOf: nullable(string),
     supersedes: { type: 'array', items: string },
     supersededBy: { type: 'array', items: string },
@@ -824,7 +854,7 @@ const memoryView = closed(
     evidence: { type: 'array', items: memoryEvidence },
     status: enumOf(MEMORY_STATUSES),
     contributedAt: nullable(integer),
-    observedStatus: nullable(enumOf(MEMORY_STATUSES)),
+    observedStatus: nullable(storedEnumOf(MEMORY_STATUSES)),
     validity: memoryValidity,
   },
   [
@@ -851,7 +881,7 @@ const memoryView = closed(
 const reflectionJobView = closed(
   {
     runId: string,
-    state: enumOf(REFLECTION_JOB_STATES),
+    state: storedEnumOf(REFLECTION_JOB_STATES),
     attempts: nonNegativeInteger,
     reason: nullable(string),
     dropped: {
@@ -981,7 +1011,7 @@ export type GatewayCostReportView = {
 
 export type ContextChargeView = {
   id: number;
-  purpose: ContextChargePurpose;
+  purpose: Stored<ContextChargePurpose>;
   runId: string | null;
   project: string;
   model: string;
@@ -1051,8 +1081,8 @@ const runView = closed(
     id: string,
     sessionId: string,
     ordinal: integer,
-    status: enumOf(RUN_STATUSES),
-    stopReason: enumOf(STOP_REASONS),
+    status: storedEnumOf(RUN_STATUSES),
+    stopReason: storedEnumOf(STOP_REASONS),
     error: closed({ code: string, message: string }, ['code', 'message']),
     usage,
     step: nonNegativeInteger,
@@ -1062,10 +1092,10 @@ const runView = closed(
     cancelRequested: boolean,
     lastSeq: nonNegativeInteger,
     previousRunId: nullable(string),
-    history: historyMode,
+    history: storedHistoryMode,
     parentRunId: nullable(string),
     parentCallId: nullable(string),
-    origin: enumOf(MEMORY_ORIGINS),
+    origin: storedEnumOf(MEMORY_ORIGINS),
     agent: string,
   },
   [
@@ -1159,7 +1189,7 @@ export const RUN_API_SCHEMAS = {
         id: string,
         runId: string,
         callId: string,
-        status: enumOf(APPROVAL_STATUSES),
+        status: storedEnumOf(APPROVAL_STATUSES),
         server: string,
         requests: { type: 'array', items: elicitationRequest },
         expiresAt: integer,
@@ -1188,7 +1218,7 @@ export const RUN_API_SCHEMAS = {
       {
         id: string,
         cwd: string,
-        permissionMode,
+        permissionMode: storedPermissionMode,
         modelAlias: string,
         bypassAllowed: boolean,
         createdAt: integer,
@@ -1212,7 +1242,7 @@ export const RUN_API_SCHEMAS = {
         id: string,
         runId: string,
         callId: string,
-        status: enumOf(APPROVAL_STATUSES),
+        status: storedEnumOf(APPROVAL_STATUSES),
         options: { type: 'array', items: permissionOption },
         createdAt: integer,
         suggestedRule: string,
@@ -1375,7 +1405,7 @@ export const RUN_API_SCHEMAS = {
   ErrorBody: root(
     closed({ error: closed({ type: string, code: string, message: string, param: string }, ['type', 'code', 'message']) }, ['error']),
   ),
-  PublicRunEvent: root({ type: 'object', oneOf: EVENT_TYPES.map(publicEventVariant) }),
+  PublicRunEvent: root({ type: 'object', oneOf: [...EVENT_TYPES.map(publicEventVariant), publicOpaqueVariant()] }),
   ReportPage: root(
     closed(
       {
@@ -1432,7 +1462,44 @@ const inheritedCountsOf = (event: Extract<RunEvent, { type: 'context.inherited' 
   return { itemCount: history.length, ...(summary === undefined ? {} : { summaryThroughSeq: summary.replacedThroughSeq }) };
 };
 
-export const toPublicRunEvent = (event: RunEvent | SessionEvent): PublicRunEvent => {
+export type OpaqueEvent = {
+  opaque: true;
+  type: string;
+  id: number;
+  runId: string | null;
+  sessionId: string;
+  seq: number | null;
+  step: number | null;
+  createdAt: number;
+  payload: Record<string, unknown>;
+};
+
+export type PublicOpaqueEvent = {
+  opaque: true;
+  type: string;
+  id: number;
+  runId?: string;
+  sessionId: string;
+  seq?: number;
+  step?: number;
+  createdAt: number;
+  payload: Record<string, unknown>;
+};
+
+const toPublicOpaqueEvent = (event: OpaqueEvent): PublicOpaqueEvent => {
+  const { opaque, type, id, runId, sessionId, seq, step, createdAt, payload } = event;
+  return { opaque, type, id, ...(runId === null ? {} : { runId }), sessionId, ...(seq === null ? {} : { seq }), ...(step === null ? {} : { step }), createdAt, payload };
+};
+
+export type PublicEventOf<E extends RunEvent | SessionEvent | OpaqueEvent> = E extends OpaqueEvent ? PublicOpaqueEvent : PublicRunEvent;
+
+export const toPublicRunEvent = <E extends RunEvent | SessionEvent | OpaqueEvent>(event: E): PublicEventOf<E> => {
+  const stored: RunEvent | SessionEvent | OpaqueEvent = event;
+  const visible = 'opaque' in stored ? toPublicOpaqueEvent(stored) : toPublicKnownEvent(stored);
+  return visible as PublicEventOf<E>;
+};
+
+const toPublicKnownEvent = (event: RunEvent | SessionEvent): PublicRunEvent => {
   if (!('runId' in event)) return event;
   const { id, runId, sessionId, seq, step, createdAt } = event;
   const envelope = { id, runId, sessionId, seq, step, createdAt };

@@ -45,7 +45,7 @@ const measuring = (): { h: Harness; measurements: Measurement[] } => {
 describe('an answer for input that arrives after one of two requests for input is due, while the clock moves past the other', () => {
   it('measures the run once, outside the write transaction, on the time the operation read once', async () => {
     const { h, measurements } = measuring();
-    const waiting = awaitingInput(h.store, [{ callId: 'a', expiresAt: FIRST_DUE_MS }, { callId: 'b', expiresAt: SECOND_DUE_MS }], 'waiting');
+    const waiting = await awaitingInput(h.store, [{ callId: 'a', expiresAt: FIRST_DUE_MS }, { callId: 'b', expiresAt: SECOND_DUE_MS }], 'waiting');
     const [first] = waiting.approvals;
     if (first === undefined) throw new Error('expected the first request for input');
     h.clock.set(FIRST_DUE_MS + 1);

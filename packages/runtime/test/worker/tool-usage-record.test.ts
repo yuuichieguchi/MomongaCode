@@ -38,7 +38,7 @@ const called = (callId: string, name: string): RunEventPayload => ({
 const pastRun = async (env: Env, payloads: readonly RunEventPayload[]): Promise<string> => {
   env.clock.advance(1);
   const run = env.enqueue('Past work', { history: 'fresh' });
-  const claim = env.seed(run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' }, ...payloads], 'hold');
+  const claim = await env.seed(run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' }, ...payloads], 'hold');
   expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
   return run.id;
 };
@@ -74,7 +74,7 @@ describe('the tool usage window reads one offered-names record per run (person i
     await pastRun(env, [offered(['Glob', 'Read']), requested(1, ['Bash', 'Read']), called('call_a', 'Read')]);
     const { store, reads } = bodyWatchedStore(env.store);
 
-    const window = toolUsageWindowOf(store, env.session.cwd);
+    const window = await toolUsageWindowOf(store, env.session.cwd);
 
     expect(window).toEqual([{ offered: ['Glob', 'Read'], called: ['Read'] }]);
     expect(reads.bodyReads).toEqual([]);
@@ -86,7 +86,7 @@ describe('the tool usage window reads one offered-names record per run (person i
     for (let index = 0; index < TOOL_USAGE_WINDOW_RUNS; index += 1) await pastRun(env, [offered(['Glob', 'Grep', 'Read']), called(`call_${index}`, 'Read')]);
     const { store, reads } = bodyWatchedStore(env.store);
 
-    const window = toolUsageWindowOf(store, env.session.cwd);
+    const window = await toolUsageWindowOf(store, env.session.cwd);
 
     expect(window).toEqual(Array.from({ length: TOOL_USAGE_WINDOW_RUNS }, () => ({ offered: ['Glob', 'Grep', 'Read'], called: ['Read'] })));
     expect(deferredSetOf({ runs: window })).toEqual(['Glob', 'Grep']);
@@ -104,7 +104,7 @@ describe('the tool usage window reads one offered-names record per run (person i
     expect(namesSentTo(env, run.id)).toEqual([LOADER, 'Echo']);
     const { store, reads } = bodyWatchedStore(env.store);
 
-    const window = toolUsageWindowOf(store, env.project);
+    const window = await toolUsageWindowOf(store, env.project);
 
     expect(window[0]).toEqual({ offered: ['Counter', 'Echo', LOADER, 'Write'], called: [] });
     expect(reads.bodyReads).toEqual([]);
@@ -141,7 +141,7 @@ describe('the tool usage window reads one offered-names record per run (person i
     expect(namesSentTo(env, child.id)).toContain('Counter');
     const { store, reads } = bodyWatchedStore(env.store);
 
-    const window = toolUsageWindowOf(store, env.project);
+    const window = await toolUsageWindowOf(store, env.project);
 
     expect(window).toHaveLength(1);
     expect(window[0]).toEqual({ offered: ['Agent', 'Counter', 'Echo'], called: ['Agent'] });
@@ -162,7 +162,7 @@ describe('the tool usage window reads one offered-names record per run (person i
     const records = events.filter((event) => event.type === TOOL_OFFERED);
     const { store, reads } = bodyWatchedStore(env.store);
 
-    const window = toolUsageWindowOf(store, env.project);
+    const window = await toolUsageWindowOf(store, env.project);
 
     expect(records.map((record) => record.names)).toEqual([['Counter', 'Write'], ['Counter', 'Echo', LOADER, 'Write']]);
     expect(records.every((record) => record.seq > startedAt && record.seq < firstRequestAt)).toBe(true);

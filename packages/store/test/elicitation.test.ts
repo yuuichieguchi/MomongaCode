@@ -9,48 +9,48 @@ const REQUESTS: ElicitationRequestView[] = [
 ];
 const EXPIRES_MS = START_MS + 60_000;
 
-const asking = (store: RuntimeStore, end: 'running' | 'waiting' = 'waiting'): { runId: string; claim: Claim; id: string } => {
+const asking = async (store: RuntimeStore, end: 'running' | 'waiting' = 'waiting'): Promise<{ runId: string; claim: Claim; id: string }> => {
   const session = newSession(store);
   const run = enqueue(store, session.id);
   const claim = mustClaim(store, 'worker-1');
   const appended = store.append(claim, [callEvent('call_1')]);
   if (appended.kind !== 'ok') throw new Error('expected the call to be appended');
-  const requested = store.requestElicitation(claim, { callId: 'call_1', expiresAt: EXPIRES_MS, server: 'remote', requests: REQUESTS });
+  const requested = await store.requestElicitation(claim, { callId: 'call_1', expiresAt: EXPIRES_MS, server: 'remote', requests: REQUESTS });
   if (requested.kind !== 'ok') throw new Error('expected an elicitation');
-  if (end === 'waiting' && store.release(claim, 'WAITING_HUMAN').kind !== 'ok') throw new Error('expected WAITING_HUMAN');
+  if (end === 'waiting' && (await store.release(claim, 'WAITING_HUMAN')).kind !== 'ok') throw new Error('expected WAITING_HUMAN');
   return { runId: run.id, claim, id: requested.approval.id };
 };
 
 describe('elicitation gates', () => {
-  it('announces the request once, even when the worker asks again for the same call', () => {
+  it('announces the request once, even when the worker asks again for the same call', async () => {
     const { store } = harness();
-    const { runId, claim, id } = asking(store, 'running');
-    const again = store.requestElicitation(claim, { callId: 'call_1', expiresAt: EXPIRES_MS, server: 'remote', requests: REQUESTS });
+    const { runId, claim, id } = await asking(store, 'running');
+    const again = await store.requestElicitation(claim, { callId: 'call_1', expiresAt: EXPIRES_MS, server: 'remote', requests: REQUESTS });
     expect(again).toMatchObject({ kind: 'ok', approval: { id } });
     const requested = store.readRunEvents(runId, 0, 100).map(payloadOf).filter((event) => event['type'] === 'tool.elicitation.requested');
     expect(requested).toEqual([{ type: 'tool.elicitation.requested', inputId: id, callId: 'call_1', server: 'remote', requests: REQUESTS }]);
   });
 
-  it('shows the elicitation through its own view and keeps it out of the approvals the CLI lists', () => {
+  it('shows the elicitation through its own view and keeps it out of the approvals the CLI lists', async () => {
     const { store } = harness();
-    const { runId, id } = asking(store);
-    expect(store.pendingApprovalViews(runId)).toEqual([]);
-    expect(store.approvalView(id)).toBeUndefined();
-    expect(store.pendingElicitationViews(runId)).toMatchObject([{ id, runId, callId: 'call_1', status: 'pending', server: 'remote', requests: REQUESTS, toolCall: { callId: 'call_1', name: 'Write' } }]);
-    expect(store.elicitationView(id)?.expiresAt).toBe(EXPIRES_MS);
+    const { runId, id } = await asking(store);
+    expect(await store.pendingApprovalViews(runId)).toEqual([]);
+    expect(await store.approvalView(id)).toBeUndefined();
+    expect(await store.pendingElicitationViews(runId)).toMatchObject([{ id, runId, callId: 'call_1', status: 'pending', server: 'remote', requests: REQUESTS, toolCall: { callId: 'call_1', name: 'Write' } }]);
+    expect((await store.elicitationView(id))?.expiresAt).toBe(EXPIRES_MS);
   });
 
   it('refuses to resolve an elicitation as an approval and an approval as an elicitation', async () => {
     const { store } = harness();
-    const { id } = asking(store);
+    const { id } = await asking(store);
     expect(await store.resolveApproval(id, 'allow_once')).toEqual({ kind: 'not_found' });
-    const { approvals } = awaitingApproval(store, [{ callId: 'call_9' }], 'waiting');
+    const { approvals } = await awaitingApproval(store, [{ callId: 'call_9' }], 'waiting');
     expect(await store.resolveElicitation(approvals[0]?.id ?? '', {})).toEqual({ kind: 'wrong_kind' });
   });
 
   it('records the answers, requeues the run and folds the answered call back to started', async () => {
     const { store } = harness();
-    const { runId, id } = asking(store);
+    const { runId, id } = await asking(store);
     const responses = { who: { action: 'accept' as const, content: { name: 'Ada' } } };
     const resolved = await store.resolveElicitation(id, responses);
     expect(resolved).toMatchObject({ kind: 'ok', elicitation: { status: 'resolved', responses }, run: { status: 'QUEUED' } });
@@ -61,7 +61,7 @@ describe('elicitation gates', () => {
 
   it('stops the run with approval_timeout when nobody answered in time, never answering for the person', async () => {
     const { store, clock } = harness();
-    const { runId, id } = asking(store);
+    const { runId, id } = await asking(store);
     clock.set(EXPIRES_MS);
     expect(await store.expireApprovals(EXPIRES_MS, (error: unknown) => { throw error; })).toEqual([runId]);
     expect(mustRun(store, runId)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
@@ -73,8 +73,8 @@ describe('elicitation gates', () => {
 
   it('withdraws the request when the run is cancelled', async () => {
     const { store } = harness();
-    const { runId, id } = asking(store);
-    cancel(store, runId);
+    const { runId, id } = await asking(store);
+    await cancel(store, runId);
     expect(store.readRunEvents(runId, 0, 100).map(payloadOf)).toEqual(expect.arrayContaining([{ type: 'tool.elicitation.cancelled', inputId: id, reason: 'withdrawn' }]));
     expect(await store.resolveElicitation(id, {})).toEqual({ kind: 'approval_not_pending', status: 'withdrawn' });
   });
@@ -86,7 +86,7 @@ describe('elicitation gates', () => {
 });
 
 describe('idempotency checkpoint', () => {
-  it('stores, replaces and clears the checkpoint of a pending key', () => {
+  it('stores, replaces and clears the checkpoint of a pending key', async () => {
     const { store } = harness();
     enqueue(store, newSession(store).id);
     const ledger = store.idempotency.holding(mustClaim(store, 'worker-1'));
@@ -99,7 +99,7 @@ describe('idempotency checkpoint', () => {
     expect(lookup?.s === 'PENDING' && 'checkpoint' in lookup.rec.meta).toBe(false);
   });
 
-  it('refuses a checkpoint for a key that is not pending', () => {
+  it('refuses a checkpoint for a key that is not pending', async () => {
     const { store } = harness();
     enqueue(store, newSession(store).id);
     const ledger = store.idempotency.holding(mustClaim(store, 'worker-1'));

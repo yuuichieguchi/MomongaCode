@@ -1,10 +1,11 @@
 import type { RunStatus } from '@momonga/protocol';
+import type { Stored } from './rows.ts';
 
 export const CLAIM_STATUSES = ['RUNNING', 'CANCELLING'] as const;
 
 export const CANCEL_ORIGINS = ['QUEUED', 'WAITING_HUMAN', 'RUNNING', 'WAITING_TOOL'] as const;
 
-type Edges = Record<RunStatus, readonly RunStatus[]>;
+type Edges = Record<Stored<RunStatus>, readonly RunStatus[]>;
 
 export const WORKER_TRANSITIONS: Edges = {
   QUEUED: [],
@@ -16,6 +17,7 @@ export const WORKER_TRANSITIONS: Edges = {
   STOPPED: [],
   FAILED: [],
   CANCELLED: [],
+  unknown: [],
 };
 
 export const SERVICE_TRANSITIONS: Edges = {
@@ -28,6 +30,7 @@ export const SERVICE_TRANSITIONS: Edges = {
   STOPPED: [],
   FAILED: [],
   CANCELLED: [],
+  unknown: [],
 };
 
 export const SWEEP_TRANSITIONS: Edges = {
@@ -45,4 +48,5 @@ export const DEAD_LETTER_TRANSITIONS: Edges = {
   STOPPED: [],
   FAILED: [],
   CANCELLED: [],
+  unknown: [],
 };

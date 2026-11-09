@@ -14,7 +14,7 @@ const setup = () => {
 };
 
 describe('background jobs', () => {
-  it('records a running job once per idempotency key', () => {
+  it('records a running job once per idempotency key', async () => {
     const { h, session, run } = setup();
     const first = startJob(h.store, session.id, run.id);
     expect(first.created).toBe(true);
@@ -27,7 +27,7 @@ describe('background jobs', () => {
     expect(h.store.jobs.listRunning().map((job) => job.id)).toEqual([first.job.id]);
   });
 
-  it('files a job started in a child session under the root session', () => {
+  it('files a job started in a child session under the root session', async () => {
     const { h, session, run } = setup();
     const child = h.store.createChildRun({ parentRunId: run.id, parentCallId: 'c', input: 'x', pins: {}, modelAlias: 'fm' });
     if (child.kind !== 'created') throw new Error('expected a child');
@@ -37,7 +37,7 @@ describe('background jobs', () => {
     expect(h.store.jobs.listForSession(session.id).map((entry) => entry.id)).toEqual([job.id]);
   });
 
-  it('finishes a job once, records the output reference and tells the active run', () => {
+  it('finishes a job once, records the output reference and tells the active run', async () => {
     const { h, session, run } = setup();
     const { job } = startJob(h.store, session.id, run.id);
     const finished = h.store.jobs.finish(job.id, { status: 'exited', exitCode: 3, output: { handle: 'h'.repeat(64), start: 0, total: 12 } });
@@ -58,29 +58,29 @@ describe('background jobs', () => {
     expect(mustRun(h.store, run.id).lastSeq).toBe(before);
   });
 
-  it('wakes a run parked on the job, including one in a child session', () => {
+  it('wakes a run parked on the job, including one in a child session', async () => {
     const { h, session, run, claim } = setup();
     const child = h.store.createChildRun({ parentRunId: run.id, parentCallId: 'c', input: 'x', pins: {}, modelAlias: 'fm' });
     if (child.kind !== 'created') throw new Error('expected a child');
-    h.store.release(claim, 'WAITING_TOOL', DEADLINE_MS);
+    await h.store.release(claim, 'WAITING_TOOL', DEADLINE_MS);
     const childClaim = mustClaim(h.store, 'w2');
     const { job } = startJob(h.store, session.id, run.id);
-    h.store.release(childClaim, 'WAITING_TOOL', DEADLINE_MS, { awaits: { runIds: [], jobIds: [job.id] } });
+    await h.store.release(childClaim, 'WAITING_TOOL', DEADLINE_MS, { awaits: { runIds: [], jobIds: [job.id] } });
     expect(mustRun(h.store, child.run.id).status).toBe('WAITING_TOOL');
     h.store.jobs.finish(job.id, { status: 'exited', exitCode: 0 });
     expect(mustRun(h.store, child.run.id).status).toBe('QUEUED');
     expect(mustRun(h.store, run.id).status).toBe('QUEUED');
   });
 
-  it('queues a run that tries to park on a job that already finished', () => {
+  it('queues a run that tries to park on a job that already finished', async () => {
     const { h, session, run, claim } = setup();
     const { job } = startJob(h.store, session.id, run.id);
     h.store.jobs.finish(job.id, { status: 'exited', exitCode: 0 });
-    h.store.release(claim, 'WAITING_TOOL', DEADLINE_MS, { awaits: { runIds: [], jobIds: [job.id] } });
+    await h.store.release(claim, 'WAITING_TOOL', DEADLINE_MS, { awaits: { runIds: [], jobIds: [job.id] } });
     expect(mustRun(h.store, run.id).status).toBe('QUEUED');
   });
 
-  it('only moves the read offset forward', () => {
+  it('only moves the read offset forward', async () => {
     const { h, session, run } = setup();
     const { job } = startJob(h.store, session.id, run.id);
     h.store.jobs.advanceRead(job.id, 40, 'call-a');

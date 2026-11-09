@@ -19,7 +19,7 @@ describe('worker context: evictions', () => {
   it('appends context.truncated once for an oversized output not yet reflected in state', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(4000) });
     const run = env.enqueue('Read the log');
-    env.seed(
+    await env.seed(
       run.id,
       [
         responded(1, [functionCallItem({ callId: 'call_big', name: 'Echo', args: { value: 'log' } })]),
@@ -55,7 +55,7 @@ describe('worker context: compaction', () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
     const run = env.enqueue('Task one');
     const big = assistantMessage('msg_big', 'x'.repeat(100_000));
-    env.seed(
+    await env.seed(
       run.id,
       [
         responded(1, [big]),
@@ -98,7 +98,7 @@ describe('worker context: compaction', () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
     const run = env.enqueue('Task one');
     const prior = fixtureCompactionItem('cmp_0', 'S0');
-    env.seed(
+    await env.seed(
       run.id,
       [
         responded(1, [assistantMessage('msg_a', 'answer one')]),

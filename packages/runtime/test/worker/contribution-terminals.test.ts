@@ -27,7 +27,7 @@ describe('context.contribution on the terminals the worker does not reach', () =
     const run = env.enqueue('Say hello', { history: 'fresh' });
     await env.runOnce(memoryWorker(env, 'worker-2'));
     expect(env.run(run.id).status).toBe('WAITING_HUMAN');
-    const [approval] = env.store.pendingApprovalViews(run.id);
+    const [approval] = await env.store.pendingApprovalViews(run.id);
     if (approval === undefined) throw new Error('the run asked for no approval');
 
     expect(await env.store.expireApprovals(env.run(run.id).deadlineAt, (error: unknown) => { throw error; })).toEqual([run.id]);

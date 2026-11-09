@@ -5,12 +5,12 @@ import { LEASE_MS, START_MS, cancel, cancelToEnd, deadLetterAll, enqueue, harnes
 import { parkWaitingHuman } from './approval-fixture.ts';
 
 describe('claim', () => {
-  it('returns null when nothing is queued', () => {
+  it('returns null when nothing is queued', async () => {
     const { store } = harness();
     expect(store.claim('w1')).toBeNull();
   });
 
-  it('claims a queued run, making it RUNNING with a fresh lease', () => {
+  it('claims a queued run, making it RUNNING with a fresh lease', async () => {
     const { clock, store } = harness();
     const session = newSession(store);
     const run = enqueue(store, session.id);
@@ -27,36 +27,36 @@ describe('claim', () => {
     expect(store.claim('w2')).toBeNull();
   });
 
-  it('claims oldest available first across sessions', () => {
+  it('claims oldest available first across sessions', async () => {
     const { clock, store } = harness();
     const late = enqueue(store, newSession(store, '/a').id);
     clock.advance(1);
     const early = enqueue(store, newSession(store, '/b').id);
     clock.advance(1);
-    store.release(mustClaim(store, 'w0'), 'QUEUED', START_MS + 100);
+    await store.release(mustClaim(store, 'w0'), 'QUEUED', START_MS + 100);
     expect(mustClaim(store, 'w1').runId).toBe(early.id);
     clock.set(START_MS + 100);
     expect(mustClaim(store, 'w2').runId).toBe(late.id);
   });
 
-  it('breaks available_at ties by creation time', () => {
+  it('breaks available_at ties by creation time', async () => {
     const { clock, store } = harness();
     const first = enqueue(store, newSession(store, '/a').id);
     clock.advance(1);
     const second = enqueue(store, newSession(store, '/b').id);
     const firstClaim = mustClaim(store, 'w1');
-    store.release(firstClaim, 'QUEUED', START_MS + 50);
+    await store.release(firstClaim, 'QUEUED', START_MS + 50);
     const secondClaim = mustClaim(store, 'w1');
-    store.release(secondClaim, 'QUEUED', START_MS + 50);
+    await store.release(secondClaim, 'QUEUED', START_MS + 50);
     clock.set(START_MS + 50);
     expect(mustClaim(store, 'w2').runId).toBe(first.id);
     expect(mustClaim(store, 'w3').runId).toBe(second.id);
   });
 
-  it('does not claim a run before its available_at', () => {
+  it('does not claim a run before its available_at', async () => {
     const { clock, store } = harness();
     enqueue(store, newSession(store).id);
-    store.release(mustClaim(store, 'w1'), 'QUEUED', START_MS + 500);
+    await store.release(mustClaim(store, 'w1'), 'QUEUED', START_MS + 500);
     clock.set(START_MS + 499);
     expect(store.claim('w2')).toBeNull();
     clock.set(START_MS + 500);
@@ -72,7 +72,7 @@ describe('claim', () => {
     const c1 = mustClaim(store, 'w1');
     expect(c1.runId).toBe(r1.id);
     expect(store.claim('w2')).toBeNull();
-    parkWaitingHuman(store, c1);
+    await parkWaitingHuman(store, c1);
     expect(store.claim('w2')).toBeNull();
     const queued = mustRun(store, r1.id);
     const requeued = store.appendAsService(r1.id, queued.version, 'QUEUED', []);
@@ -80,11 +80,11 @@ describe('claim', () => {
     expect((await requeued).kind).toBe('ok');
     const again = mustClaim(store, 'w2');
     expect(again.runId).toBe(r1.id);
-    expect(store.release(again, 'COMPLETED').kind).toBe('ok');
+    expect((await store.release(again, 'COMPLETED')).kind).toBe('ok');
     expect(mustClaim(store, 'w3').runId).toBe(r2.id);
   });
 
-  it('reclaims a RUNNING run only after its lease expired, keeping RUNNING and bumping token and attempt', () => {
+  it('reclaims a RUNNING run only after its lease expired, keeping RUNNING and bumping token and attempt', async () => {
     const { clock, store } = harness();
     const run = enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
@@ -96,11 +96,11 @@ describe('claim', () => {
     expect(mustRun(store, run.id).leaseOwner).toBe('w2');
   });
 
-  it('reclaims an expired CANCELLING run as CANCELLING', () => {
+  it('reclaims an expired CANCELLING run as CANCELLING', async () => {
     const { clock, store } = harness();
     const run = enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
-    expect(cancel(store, run.id).status).toBe('CANCELLING');
+    expect((await cancel(store, run.id)).status).toBe('CANCELLING');
     clock.advance(LEASE_MS);
     const claim = mustClaim(store, 'w2');
     expect(claim.status).toBe('CANCELLING');
@@ -137,7 +137,7 @@ describe('claim', () => {
     expect(mustRun(store, run.id).status).toBe('FAILED');
   });
 
-  it('never hands the same run to two connections', () => {
+  it('never hands the same run to two connections', async () => {
     const { dbPath, clock, store } = harness();
     const other = openStoreAt(dbPath, clock);
     enqueue(store, newSession(store).id);
@@ -149,11 +149,11 @@ describe('claim', () => {
 describe('attempt accounting', () => {
   const resume = async (store: RuntimeStore, runId: string, claim: Claim, via: 'WAITING_HUMAN' | 'WAITING_TOOL' | 'RUNNING'): Promise<void> => {
     if (via === 'RUNNING') {
-      expect(store.release(claim, 'QUEUED').kind).toBe('ok');
+      expect((await store.release(claim, 'QUEUED')).kind).toBe('ok');
       return;
     }
-    if (via === 'WAITING_HUMAN') parkWaitingHuman(store, claim);
-    else expect(store.release(claim, via).kind).toBe('ok');
+    if (via === 'WAITING_HUMAN') await parkWaitingHuman(store, claim);
+    else expect((await store.release(claim, via)).kind).toBe('ok');
     const parked = mustRun(store, runId);
     const pending = store.appendAsService(runId, parked.version, 'QUEUED', []);
     expect(pending).toBeInstanceOf(Promise);
@@ -190,14 +190,14 @@ describe('attempt accounting', () => {
     expect(mustRun(store, run.id)).toMatchObject({ status: 'FAILED', deadLetter: true, attempts: 3, failedAttempts: 2 });
   });
 
-  it('forgives earlier crashes once the holder releases voluntarily', () => {
+  it('forgives earlier crashes once the holder releases voluntarily', async () => {
     const { clock, store } = harness({ maxAttempts: 2 });
     const run = enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
     clock.advance(LEASE_MS);
     const takeover = mustClaim(store, 'w2');
     expect(mustRun(store, run.id).failedAttempts).toBe(1);
-    expect(store.release(takeover, 'QUEUED').kind).toBe('ok');
+    expect((await store.release(takeover, 'QUEUED')).kind).toBe('ok');
     expect(mustRun(store, run.id).failedAttempts).toBe(0);
     const again = mustClaim(store, 'w3');
     clock.advance(LEASE_MS);
@@ -210,7 +210,7 @@ describe('attempt accounting', () => {
     const { clock, store } = harness({ maxAttempts: 1 });
     const run = enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
-    store.requestCancel(run.id);
+    await store.requestCancel(run.id);
     clock.advance(LEASE_MS);
     expect(store.claim('w2')).toBeNull();
     await deadLetterAll(store);
@@ -243,7 +243,7 @@ describe('total attempt cap', () => {
       mustClaim(store, 'crasher');
       clock.advance(LEASE_MS);
       const takeover = mustClaim(store, 'healer');
-      expect(store.release(takeover, 'QUEUED').kind).toBe('ok');
+      expect((await store.release(takeover, 'QUEUED')).kind).toBe('ok');
       expect(mustRun(store, run.id)).toMatchObject({ deadLetter: false, failedAttempts: 0, attempts: (cycle + 1) * 2 });
     }
     expect(store.claim('w')).toBeNull();
@@ -264,7 +264,7 @@ describe('total attempt cap', () => {
     for (let round = 1; round <= 8; round += 1) {
       const claim = mustClaim(store, 'w1');
       expect(claim.attempt).toBe(round);
-      expect(store.release(claim, 'QUEUED').kind).toBe('ok');
+      expect((await store.release(claim, 'QUEUED')).kind).toBe('ok');
     }
     expect(mustRun(store, run.id)).toMatchObject({ status: 'QUEUED', deadLetter: false });
     expect(store.claim('w1')).toBeNull();
@@ -276,7 +276,7 @@ describe('total attempt cap', () => {
     const { clock, store } = harness({ maxAttempts: 1, maxTotalAttempts: 1 });
     const run = enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
-    store.requestCancel(run.id);
+    await store.requestCancel(run.id);
     clock.advance(LEASE_MS);
     expect(store.claim('w2')).toBeNull();
     await deadLetterAll(store);
@@ -286,7 +286,7 @@ describe('total attempt cap', () => {
 });
 
 describe('heartbeat lease renewal', () => {
-  it('renews an expired lease that nobody reclaimed', () => {
+  it('renews an expired lease that nobody reclaimed', async () => {
     const { clock, store } = harness();
     enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
@@ -295,7 +295,7 @@ describe('heartbeat lease renewal', () => {
     expect(store.claim('w2')).toBeNull();
   });
 
-  it('refuses to renew once another worker reclaimed the run', () => {
+  it('refuses to renew once another worker reclaimed the run', async () => {
     const { clock, store } = harness();
     enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
@@ -306,7 +306,7 @@ describe('heartbeat lease renewal', () => {
 });
 
 describe('heartbeat', () => {
-  it('extends the lease so another worker cannot claim', () => {
+  it('extends the lease so another worker cannot claim', async () => {
     const { clock, store } = harness();
     const run = enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
@@ -319,15 +319,15 @@ describe('heartbeat', () => {
     expect(store.claim('w2')?.runId).toBe(run.id);
   });
 
-  it('reports a pending cancel request', () => {
+  it('reports a pending cancel request', async () => {
     const { store } = harness();
     const run = enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
-    store.requestCancel(run.id);
+    await store.requestCancel(run.id);
     expect(store.heartbeat(claim)).toEqual({ kind: 'ok', cancelRequested: true, status: 'CANCELLING' });
   });
 
-  it('renews an expired lease nobody else has taken', () => {
+  it('renews an expired lease nobody else has taken', async () => {
     const { clock, store } = harness();
     const run = enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
@@ -336,7 +336,7 @@ describe('heartbeat', () => {
     expect(mustRun(store, run.id).leaseExpiresAt).toBe(START_MS + LEASE_MS + 10 + LEASE_MS);
   });
 
-  it('returns lease_lost for a wrong owner or token', () => {
+  it('returns lease_lost for a wrong owner or token', async () => {
     const { store } = harness();
     enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
@@ -346,11 +346,11 @@ describe('heartbeat', () => {
 });
 
 describe('release', () => {
-  it('clears the lease and makes the run claimable again at availableAt', () => {
+  it('clears the lease and makes the run claimable again at availableAt', async () => {
     const { clock, store } = harness();
     const run = enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
-    const result = store.release(claim, 'QUEUED', START_MS + 200);
+    const result = await store.release(claim, 'QUEUED', START_MS + 200);
     expect(result.kind).toBe('ok');
     expect(mustRun(store, run.id)).toMatchObject({
       status: 'QUEUED',
@@ -364,20 +364,20 @@ describe('release', () => {
     expect(mustClaim(store, 'w2').leaseToken).toBe(2);
   });
 
-  it('defaults availableAt to now', () => {
+  it('defaults availableAt to now', async () => {
     const { clock, store } = harness();
     const run = enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
     clock.advance(42);
-    store.release(claim, 'QUEUED');
+    await store.release(claim, 'QUEUED');
     expect(mustRun(store, run.id).availableAt).toBe(START_MS + 42);
   });
 
-  it('is fenced', () => {
+  it('is fenced', async () => {
     const { store } = harness();
     const run = enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
-    expect(store.release({ ...claim, leaseToken: 99 }, 'QUEUED')).toEqual({ kind: 'lease_lost' });
+    expect(await store.release({ ...claim, leaseToken: 99 }, 'QUEUED')).toEqual({ kind: 'lease_lost' });
     expect(mustRun(store, run.id).status).toBe('RUNNING');
   });
 });
@@ -386,7 +386,7 @@ describe('requestCancel', () => {
   it('moves a QUEUED run to CANCELLING, which no claim takes, and the sweep ends it CANCELLED', async () => {
     const { store } = harness();
     const run = enqueue(store, newSession(store).id);
-    const cancelling = cancel(store, run.id);
+    const cancelling = await cancel(store, run.id);
     expect(cancelling).toMatchObject({ id: run.id, status: 'CANCELLING' });
     expect(store.readRunEvents(run.id, 0, 10).at(-1)).toMatchObject({ type: 'run.status', from: 'QUEUED', to: 'CANCELLING' });
     expect(store.claim('w1')).toBeNull();
@@ -397,23 +397,23 @@ describe('requestCancel', () => {
   it('moves a WAITING_HUMAN run to CANCELLING, and the sweep ends it CANCELLED', async () => {
     const { store } = harness();
     const run = enqueue(store, newSession(store).id);
-    parkWaitingHuman(store, mustClaim(store, 'w1'));
+    await parkWaitingHuman(store, mustClaim(store, 'w1'));
     expect((await cancelToEnd(store, run.id)).status).toBe('CANCELLED');
   });
 
-  it('moves a RUNNING run to CANCELLING with cancel_requested', () => {
+  it('moves a RUNNING run to CANCELLING with cancel_requested', async () => {
     const { store } = harness();
     const run = enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
-    expect(cancel(store, run.id)).toMatchObject({ status: 'CANCELLING', cancelRequested: true, leaseOwner: 'w1' });
+    expect(await cancel(store, run.id)).toMatchObject({ status: 'CANCELLING', cancelRequested: true, leaseOwner: 'w1' });
   });
 
-  it('moves a WAITING_TOOL run to CANCELLING and makes it claimable now', () => {
+  it('moves a WAITING_TOOL run to CANCELLING and makes it claimable now', async () => {
     const { clock, store } = harness();
     const run = enqueue(store, newSession(store).id);
-    store.release(mustClaim(store, 'w1'), 'WAITING_TOOL', START_MS + 1_000_000);
+    await store.release(mustClaim(store, 'w1'), 'WAITING_TOOL', START_MS + 1_000_000);
     clock.advance(7);
-    expect(cancel(store, run.id)).toMatchObject({
+    expect(await cancel(store, run.id)).toMatchObject({
       status: 'CANCELLING',
       cancelRequested: true,
       availableAt: START_MS + 7,
@@ -422,19 +422,19 @@ describe('requestCancel', () => {
     expect(claim).toMatchObject({ runId: run.id, status: 'CANCELLING' });
   });
 
-  it('leaves a terminal run unchanged', () => {
+  it('leaves a terminal run unchanged', async () => {
     const { store } = harness();
     const run = enqueue(store, newSession(store).id);
-    store.release(mustClaim(store, 'w1'), 'COMPLETED');
+    await store.release(mustClaim(store, 'w1'), 'COMPLETED');
     const before = mustRun(store, run.id);
     const lastSeq = store.readRunEvents(run.id, 0, 100).length;
-    expect(store.requestCancel(run.id)).toEqual({ kind: 'ok', changed: false, run: before });
+    expect(await store.requestCancel(run.id)).toEqual({ kind: 'ok', changed: false, run: before });
     expect(store.readRunEvents(run.id, 0, 100)).toHaveLength(lastSeq);
   });
 
-  it('returns not_found for an unknown run', () => {
+  it('returns not_found for an unknown run', async () => {
     const { store } = harness();
-    expect(store.requestCancel('nope')).toEqual({ kind: 'not_found' });
+    expect(await store.requestCancel('nope')).toEqual({ kind: 'not_found' });
   });
 });
 
@@ -455,7 +455,7 @@ describe('fencing across connections', () => {
     expect(workerA.heartbeat(claimA)).toEqual({ kind: 'lease_lost' });
     expect(await workerA.transition(claimA, ['RUNNING'], 'COMPLETED')).toEqual({ kind: 'lease_lost' });
     expect(workerA.writeSnapshot(claimA, 2, initialRunState({ runId: run.id, sessionId: run.sessionId }))).toEqual({ kind: 'lease_lost' });
-    expect(workerA.release(claimA, 'QUEUED')).toEqual({ kind: 'lease_lost' });
+    expect(await workerA.release(claimA, 'QUEUED')).toEqual({ kind: 'lease_lost' });
 
     expect(mustRun(workerB, run.id)).toEqual(before);
     expect(rawDb(dbPath).prepare('SELECT COUNT(*) AS n FROM events').get()).toEqual(eventsBefore);
