@@ -1,7 +1,8 @@
 import path from 'node:path';
-import type { AtomicWriteFileSystem, AtomicWriteFileSystemSync, FileContent } from '@momonga/foundation';
+import type { AtomicWriteFileSystem, AtomicWriteFileSystemSync, FileContent, FileSystem } from '@momonga/foundation';
 
 export type FakeFileSystem = AtomicWriteFileSystem &
+  Pick<FileSystem, 'rm' | 'readTextFile' | 'readdir' | 'openThenClose' | 'writeByteAt'> &
   AtomicWriteFileSystemSync & {
     readonly files: Map<string, Uint8Array>;
     readonly directories: Set<string>;
@@ -41,6 +42,11 @@ export const createFakeFileSystem = (directories: readonly string[]): FakeFileSy
     files.delete(file);
   };
   const noop = (): void => undefined;
+  const contentOf = (file: string): Uint8Array => {
+    const content = files.get(file);
+    if (content === undefined) throw errnoError('ENOENT', file);
+    return content;
+  };
   return {
     files,
     directories: known,
@@ -55,6 +61,19 @@ export const createFakeFileSystem = (directories: readonly string[]): FakeFileSy
     rename: async (from, to) => renameSync(from, to),
     link: async (from, to) => linkSync(from, to),
     rm: async (file) => rmSync(file),
+    readTextFile: async (file) => new TextDecoder().decode(contentOf(file)),
+    readdir: async (directory) => {
+      if (!known.has(directory)) throw errnoError('ENOENT', directory);
+      return [...files.keys(), ...known].filter((entry) => path.dirname(entry) === directory && entry !== directory).map((entry) => path.basename(entry));
+    },
+    openThenClose: async (file) => {
+      contentOf(file);
+    },
+    writeByteAt: async (file, position, byte) => {
+      const content = new Uint8Array(contentOf(file));
+      content.set(new TextEncoder().encode(byte), position);
+      files.set(file, content);
+    },
     openSync,
     writeFileSync,
     fsyncSync: noop,

@@ -63,7 +63,7 @@ export type ChildHandle = {
   onSpawnError(listener: (error: NodeJS.ErrnoException) => void): void;
   onExit(listener: (exit: ChildExit) => void): void;
   kill(signal: NodeJS.Signals): void;
-  killGroup(): void;
+  killGroup(stop?: AbortSignal): Promise<void>;
 };
 
 export type SpawnPort = (command: string, args: readonly string[], options: SpawnPortOptions) => ChildHandle;
@@ -146,6 +146,7 @@ type Life = {
   stopPromise: Promise<ChildStopResult> | undefined;
   resolveStop: ((result: ChildStopResult) => void) | undefined;
   groupKilled: boolean;
+  killStop: AbortController;
   exited: boolean;
   abandoned: boolean;
   failed: boolean;
@@ -498,6 +499,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
 
   const handleExit = async (life: Life, exit: ChildExit): Promise<void> => {
     life.exited = true;
+    life.killStop.abort();
     clearLifeTimers(life);
     if (life.abandoned) {
       await flushStdio(life);
@@ -588,6 +590,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       stopPromise: undefined,
       resolveStop: undefined,
       groupKilled: false,
+      killStop: new AbortController(),
       exited: false,
       abandoned: false,
       failed: false,
@@ -619,7 +622,8 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   }
 
   const declareUnkillable = (life: Life): void => {
-    if (life.exited) return;
+    if (life.exited || life.abandoned) return;
+    life.killStop.abort();
     life.abandoned = true;
     generation += 1;
     leaked = true;
@@ -637,11 +641,11 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       life.timers.budget = undefined;
       if (life.exited) return;
       life.groupKilled = true;
-      life.handle.killGroup();
       life.timers.confirm = schedule('kill-confirm-timer', options.intervals.killConfirmMs, () => {
         life.timers.confirm = undefined;
         declareUnkillable(life);
       });
+      life.handle.killGroup(life.killStop.signal).catch(() => declareUnkillable(life));
     });
   };
 

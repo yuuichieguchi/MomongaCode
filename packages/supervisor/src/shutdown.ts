@@ -60,8 +60,10 @@ export const createShutdownController = (options: ShutdownControllerOptions): Sh
     const boundReached = new Promise<void>((resolve) => {
       wake = resolve;
     });
+    const reapStop = new AbortController();
     const boundTimer = timers.setTimeout(() => {
       expired = true;
+      reapStop.abort();
       wake();
     }, SHUTDOWN_REAP_BOUND_MS);
     const finished = new Set<string>();
@@ -69,7 +71,7 @@ export const createShutdownController = (options: ShutdownControllerOptions): Sh
     const reapMarker = async (marker: string, attemptsMade: number): Promise<void> => {
       let made = attemptsMade;
       while (made < MAX_REAP_ATTEMPTS && !expired) {
-        const result = await reapDaemonMarker({ marker, logger, ...omitUndefined({ markerPorts: options.markerPorts }) });
+        const result = await reapDaemonMarker({ marker, logger, signal: reapStop.signal, ...omitUndefined({ markerPorts: options.markerPorts }) });
         made += 1;
         if (result.removed) break;
       }

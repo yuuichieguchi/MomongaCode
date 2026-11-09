@@ -1,18 +1,20 @@
-import fs from 'node:fs';
+import { UNMEASURED_CAPABILITY, createMarker } from '@momonga/foundation';
+import type { LockCapabilityProbe, MarkerMode } from '@momonga/foundation';
+import { removeMarkerFile } from '@momonga/tools';
 
 export type JobMarkerFiles = {
-  create(marker: string): void;
-  remove(marker: string): void;
+  create<T>(marker: string, use: (markerFd: number, mode: MarkerMode) => T): Promise<T>;
+  remove(marker: string, onWarning: (message: string) => void): Promise<void>;
 };
 
-const MARKER_MODE = 0o600;
-
-export const createNodeJobMarkerFiles = (): JobMarkerFiles => ({
-  create: (marker) => {
-    fs.rmSync(marker, { force: true });
-    fs.closeSync(fs.openSync(marker, 'wx', MARKER_MODE));
+export const createNodeJobMarkerFiles = (capability: LockCapabilityProbe = UNMEASURED_CAPABILITY): JobMarkerFiles => ({
+  create: async (marker, use) => {
+    const handle = await createMarker(marker, { capability });
+    try {
+      return use(handle.fd, handle.mode);
+    } finally {
+      handle.close();
+    }
   },
-  remove: (marker) => {
-    fs.rmSync(marker, { force: true });
-  },
+  remove: (marker, onWarning) => removeMarkerFile(marker, onWarning),
 });
