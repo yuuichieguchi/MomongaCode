@@ -111,7 +111,7 @@ describe('S1 managed targets under a settings change (design-settings-live 3.1)'
     const releaseFile = path.join(makeDir(), 'release-first-reply');
     const release = (): void => fs.writeFileSync(releaseFile, '');
     fm.configure({ envDumpFile: dumpFile, serve: { holdFirstUntilFile: releaseFile } });
-    const settingsWith = (maxOutputTokens: number) => ({ models: { targets: { apple: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, ...declared(maxOutputTokens) } }, aliases: { default: ['apple'] } } });
+    const settingsWith = (maxOutputTokens: number) => ({ models: { targets: { apple: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, admissionTimeoutMs: 1, ...declared(maxOutputTokens) } }, aliases: { default: ['apple'] } } });
     try {
       replaceSettings(home, settingsWith(512));
       const handle = await launch(home);
@@ -134,9 +134,10 @@ describe('S1 managed targets under a settings change (design-settings-live 3.1)'
       for (let turn = 0; turn < 200_000 && serves(dumpFile).length < 3; turn += 1) await new Promise<void>((resolve) => setImmediate(resolve));
       expect(firstSettled, 'the first call still holds its epoch while the third request starts').toBe(false);
       expect(serves(dumpFile).map(socketOf)).toEqual([path.join(targetsDirectory(home), 'apple-1.sock'), path.join(targetsDirectory(home), 'apple-2.sock')]);
+      expect(await third, 'the return to a shares the gate of a, which its first call holds').toBe(429);
+      expect(firstSettled, 'the first call still holds the gate of a when the third request is refused').toBe(false);
       release();
       expect(await first).toBe(200);
-      expect(await third, 'the return to a shares the gate of a, which its first call holds').toBe(429);
     } finally {
       release();
     }
