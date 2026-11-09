@@ -1,0 +1,214 @@
+import { PLAN_PROFILES } from '@momonga/config';
+import type {
+  DetectedLocalServer,
+  GatewayHealth,
+  MomongaModelEntry,
+  PlanAccountView,
+  PlanModelsResponse,
+  PlanProfileView,
+  PlanSignInCompleteResponse,
+  TargetBilling,
+  TargetHealth,
+} from '@momonga/protocol';
+import type { ModelConnection } from '@momonga/config';
+import { App } from '../src/tui/app.tsx';
+import type { AppProps, TuiOutcome } from '../src/tui/app.tsx';
+import type { PlanGatewayClient } from '../src/client/gateway-client.ts';
+import type { SignInListener, TuiBackend } from '../src/tui/backend.ts';
+import { fakeBackend } from './fake-backend.ts';
+import type { FakeBackend, FakeBackendOptions } from './fake-backend.ts';
+import { FRAME_BOUND_MS, KEYS, renderObservable, untilFrame } from './ink-helpers.ts';
+import type { Instance } from './ink-helpers.ts';
+
+const shipped = PLAN_PROFILES['chatgpt'];
+if (shipped === undefined) throw new Error('the chatgpt profile is not shipped');
+
+export const CHATGPT: PlanProfileView = { id: shipped.id, usageUrl: shipped.usageUrl, messages: shipped.messages, loginLabel: shipped.loginLabel };
+
+export const LISTENER_PORT = 49152;
+export const PLAN_TEST_TIMEOUT_MS = FRAME_BOUND_MS * 4;
+export const AUTHORIZATION_URL = 'https://auth.openai.com/api/accounts/authorize?client_id=c&state=st-1';
+
+export const account = (overrides: Partial<PlanAccountView> = {}): PlanAccountView => ({
+  profile: 'chatgpt',
+  label: 'chatgpt',
+  email: 'ada@example.com',
+  state: 'active',
+  active: true,
+  pinnedBy: ['gpt-5'],
+  ...overrides,
+});
+
+export type PlanCall = { route: string; body?: unknown };
+
+export type FakePlanOptions = FakeBackendOptions & {
+  accounts?: readonly PlanAccountView[];
+  profiles?: readonly PlanProfileView[];
+  catalogs?: Readonly<Record<string, PlanModelsResponse>>;
+  complete?: PlanSignInCompleteResponse;
+  health?: Readonly<Record<string, TargetHealth>>;
+  billing?: Readonly<Record<string, TargetBilling>>;
+  planTargets?: Readonly<Record<string, { profile: string; account?: string }>>;
+  detected?: readonly DetectedLocalServer[];
+  trainedContext?: Readonly<Record<string, number>>;
+  dismissed?: Readonly<Record<string, string>>;
+};
+
+export type FakePlanBackend = FakeBackend & {
+  readonly plan: PlanGatewayClient;
+  readonly planCalls: PlanCall[];
+  readonly connections: ModelConnection[];
+  readonly dismissals: string[];
+  readonly listenerPaths: string[];
+  readonly detections: (readonly string[])[];
+};
+
+export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend => {
+  const base = fakeBackend(options);
+  const planCalls: PlanCall[] = [];
+  const connections: ModelConnection[] = [];
+  const dismissals: string[] = [];
+  const listenerPaths: string[] = [];
+  const detections: (readonly string[])[] = [];
+  let aliases: string[] = [...(options.aliases ?? ['default'])];
+  let accounts: PlanAccountView[] = [...(options.accounts ?? [])];
+  const targets = [...(options.targets ?? ['primary'])];
+  const called = (route: string, body?: unknown): void => {
+    planCalls.push(body === undefined ? { route } : { route, body });
+  };
+  const withBilling = (entry: MomongaModelEntry): MomongaModelEntry =>
+    ({
+      ...entry,
+      targetBilling: Object.fromEntries(entry.targets.map((target) => [target, options.billing?.[target] ?? 'metered'])),
+      targetPlan: Object.fromEntries(entry.targets.flatMap((target) => (options.planTargets?.[target] === undefined ? [] : [[target, options.planTargets[target]]]))),
+    }) as MomongaModelEntry;
+  const plan: PlanGatewayClient = {
+    accounts: async () => {
+      called('accounts');
+      return { profiles: [...(options.profiles ?? [CHATGPT])], accounts: [...accounts] };
+    },
+    signInBegin: async (request) => {
+      called('sign-in/begin', request);
+      return { attemptId: 'attempt-1', authorizationUrl: AUTHORIZATION_URL, state: 'st-1', expiresAt: '2026-11-10T00:05:00.000Z' };
+    },
+    signInComplete: async (request) => {
+      called('sign-in/complete', request);
+      const begun = planCalls.find((call) => call.route === 'sign-in/begin')?.body as { account: string } | undefined;
+      const answer: PlanSignInCompleteResponse = options.complete ?? { outcome: 'signed_in', account: account({ label: begun?.account ?? 'chatgpt' }), firstSignIn: false };
+      if (answer.outcome !== 'retry') accounts = [...accounts.filter((existing) => existing.label !== answer.account.label).map((existing) => ({ ...existing, active: false })), answer.account];
+      return answer;
+    },
+    signInCancel: async (request) => {
+      called('sign-in/cancel', request);
+    },
+    signOut: async (request) => {
+      called('sign-out', request);
+      accounts = accounts.map((existing) => (existing.label === request.account ? { ...existing, state: 'registered', active: false } : existing));
+      return { revocation: 'confirmed', usageUrl: CHATGPT.usageUrl };
+    },
+    setActive: async (request) => {
+      called('accounts/active', request);
+      accounts = accounts.map((existing) => ({ ...existing, active: existing.label === request.account }));
+      return { active: request };
+    },
+    resume: async (label, request) => {
+      called(`accounts/${label}/resume`, request);
+    },
+    accountModels: async (label) => {
+      called(`accounts/${label}/models`);
+      return options.catalogs?.[label] ?? { readAt: '2026-11-10T00:00:00.000Z', models: [] };
+    },
+    addTarget: async (label, request) => {
+      called(`accounts/${label}/targets`, request);
+      aliases = [...aliases, request.slug];
+      return { target: request.slug, alias: request.slug };
+    },
+  };
+  const listener = async (path: string): Promise<SignInListener> => {
+    listenerPaths.push(path);
+    const redirectUrl = `http://127.0.0.1:${LISTENER_PORT}${path}`;
+    return {
+      port: LISTENER_PORT,
+      redirectUrl,
+      callback: async ({ state }) => new URL(`${redirectUrl}?code=code-1&state=${state}`),
+      close: async () => undefined,
+    };
+  };
+  const backend: FakePlanBackend = Object.assign(base, {
+    plan,
+    planCalls,
+    connections,
+    dismissals,
+    listenerPaths,
+    detections,
+    models: async () => (await fakeBackend({ ...options, aliases }).models()).map(withBilling),
+    model: async () => withBilling(await fakeBackend(options).model()),
+    health: async (): Promise<GatewayHealth> => ({
+      ok: true,
+      targets: Object.fromEntries(targets.map((target) => [target, options.health?.[target] ?? { ok: true, breaker: 'closed' }])),
+      version: '0.0.0',
+      apiVersion: 1,
+      pid: 1,
+      startedAt: '2026-11-10T00:00:00.000Z',
+      state: 'running',
+    }),
+    sandbox: async () => 'seatbelt' as const,
+    startSignInListener: listener,
+    detectLocalServers: async (typed: readonly string[]) => {
+      detections.push(typed);
+      return [...(options.detected ?? [])];
+    },
+    trainedContextOf: async (_baseUrl: string, model: string) => options.trainedContext?.[model],
+    addModelConnection: async (connection: ModelConnection) => {
+      connections.push(connection);
+      const name = connection.kind === 'managed' ? connection.server : connection.model;
+      aliases = [...aliases, name];
+      return { target: name, alias: name };
+    },
+    dismissedNotices: async () => ({ ...(options.dismissed ?? {}) }),
+    dismissNotice: async (key: string) => {
+      dismissals.push(key);
+    },
+  });
+  return backend;
+};
+
+export const startPlan = async (options: FakePlanOptions = {}, extra: Pick<AppProps, 'initialPrompt' | 'initialSkill'> = {}) => {
+  const backend = fakePlanBackend(options);
+  const outcomes: TuiOutcome[] = [];
+  const app = renderObservable(<App backend={backend as TuiBackend} initialMode={undefined} {...extra} onExit={(outcome) => void outcomes.push(outcome)} />);
+  return { backend, app, outcomes };
+};
+
+export const rowNumberOf = (frame: string, label: string): number => {
+  const line = frame.split('\n').find((candidate) => /^\s*\W?\s*\d+\. /.test(candidate) && candidate.includes(label));
+  if (line === undefined) throw new Error(`no numbered row with ${label} in:\n${frame}`);
+  return Number(/(\d+)\. /.exec(line)?.[1]);
+};
+
+export const choose = async (app: Instance, label: string): Promise<void> => {
+  const frame = await untilFrame(app, label);
+  const row = rowNumberOf(frame, label);
+  for (let step = 1; step < row; step += 1) app.stdin.write(KEYS.down);
+  app.stdin.write(KEYS.enter);
+};
+
+export const submitLine = async (app: Instance, text: string): Promise<void> => {
+  app.stdin.write(text);
+  await untilFrame(app, text);
+  app.stdin.write(KEYS.enter);
+};
+
+export const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
+export const eventually = async (holds: () => boolean, what: string): Promise<void> => {
+  const deadline = Date.now() + FRAME_BOUND_MS;
+  while (!holds()) {
+    if (Date.now() > deadline) throw new Error(`${what} did not happen within ${FRAME_BOUND_MS} ms`);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+};
+
+export const quiet = async (): Promise<void> => {
+  for (let tick = 0; tick < 20; tick += 1) await settle();
+};
