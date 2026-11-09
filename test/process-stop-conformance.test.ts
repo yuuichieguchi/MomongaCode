@@ -142,7 +142,7 @@ describe('the reap signals only a target proved ours by the same start time at t
 });
 
 describe('the settle says that a process is still running only while a holder or a member of its group can still run, as specs/tla/ProcessStop.tla states', () => {
-  it.each(['settleCandidate', 'settleCurrent', 'guardCurrent', 'jobCurrent', 'reconcileCurrent'])('the variant %s is declared in the model', (variant) => {
+  it.each(['settleCandidate', 'settleCurrent', 'guardCurrent', 'guardUnknownCurrent', 'jobCurrent', 'reconcileCurrent'])('the variant %s is declared in the model', (variant) => {
     expect(variants()).toContain(variant);
   });
 
@@ -158,14 +158,15 @@ describe('the settle says that a process is still running only while a holder or
     expect(canStillRun('Z')).toBe(false);
   });
 
-  it('a claim that a process is still running carries the basis that some holder or group member can still run', () => {
-    expect(definitionOf('Claimed')).toContain("basis' = SomeoneRuns");
-    expect(spec).toContain('NoteOnlyWhileRunning == shown \\in {"running", "final", "guard"} => basis');
+  it('a claim that a process is still running carries the basis of positive evidence', () => {
+    expect(definitionOf('Claimed')).toContain("basis' = Pos");
+    expect(spec).toContain('EmitOnlyOnPositiveEvidence == shown \\in {"running", "final", "guard"} => basis');
   });
 
   it.each([
-    ['settleCurrent', 'NoteOnlyWhileRunning'],
-    ['guardCurrent', 'NoteOnlyWhileRunning'],
+    ['settleCurrent', 'EmitOnlyOnPositiveEvidence'],
+    ['guardCurrent', 'EmitOnlyOnPositiveEvidence'],
+    ['guardUnknownCurrent', 'EmitOnlyOnPositiveEvidence'],
     ['jobCurrent', 'RemovalSafe'],
   ])('the code without the check, variant %s, is an every-run evidence configuration that violates %s', (variant, property) => {
     expect(manifest.entries.find((entry) => entry.config === `ProcessStop.${variant}`)).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: property, exitCode: 12 } });
@@ -182,6 +183,13 @@ describe('the settle says that a process is still running only while a holder or
     expect(definitionOf('NoRunningClaimAfterListFailure')).toContain('listFailed => shown # "running"');
     expect(definitionOf('NoLongerRunningOnlyWhenClear')).toContain('shown = "gone" => basis');
     expect(definitionOf('ReconcileCall')).toContain('ObsHeld');
+  });
+
+  it('a refusal, a running claim and the final notice rest on positive evidence: a named holder, a runnable group member, or the marker still held after the four occasions', () => {
+    expect(definitionOf('Pos')).toContain('groupKnown');
+    expect(definitionOf('RefusalDue')).toContain('Pos');
+    expect(definitionOf('FinalNotice')).toContain('ObsHeld');
+    expect(definitionOf('SurvivorReachesNotice')).toContain('SomeoneRuns');
   });
 
   it('the candidate configuration holds every-run', () => {
