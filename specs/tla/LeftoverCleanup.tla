@@ -1,10 +1,11 @@
 ---------------------------- MODULE LeftoverCleanup ----------------------------
 EXTENDS Naturals, FiniteSets
 
-CONSTANTS Writers, Sweepers, Starters, Foreign, MaxGen, MaxCrash, MaxGenCrash, Variant
+CONSTANTS Writers, Sweepers, Starters, Foreign, MaxGen, MaxCrash, MaxGenCrash, Variant, LockForm
 
 ASSUME Variant \in {"decided", "ageRemoval", "pidOnly", "noTempLock", "splitCreate", "reapFirst", "listingNumbers", "unlockedStart", "noClaimDirs"}
 ASSUME Foreign \subseteq Writers
+ASSUME LockForm \in {"entry", "sidecar"}
 ASSUME MaxGen \in Nat \ {0}
 ASSUME MaxCrash \in Nat
 ASSUME MaxGenCrash \in Nat
@@ -14,20 +15,21 @@ Gens == 1..MaxGen
 WPhases == {"idle", "created", "locked", "published", "done", "failed", "crashed"}
 SPhases == {"idle", "reserved", "mkdir", "running", "done", "crashed"}
 
-VARIABLES wph, tmp, held, aged, crashes, genCounter, uses, dir, supLock, alive, sph, sN, genHolder, reaping, deaths, gCrashes
+VARIABLES wph, tmp, held, aged, sc, crashes, genCounter, uses, dir, supLock, alive, sph, sN, genHolder, reaping, deaths, gCrashes
 
-wvars == <<wph, tmp, held, aged>>
+wvars == <<wph, tmp, held, aged, sc>>
 gvars == <<genCounter, uses, dir, supLock, alive, sph, sN, genHolder, reaping, deaths, gCrashes>>
-vars == <<wph, tmp, held, aged, crashes, genCounter, uses, dir, supLock, alive, sph, sN, genHolder, reaping, deaths, gCrashes>>
+vars == <<wph, tmp, held, aged, sc, crashes, genCounter, uses, dir, supLock, alive, sph, sN, genHolder, reaping, deaths, gCrashes>>
 
 Live(w) == wph[w] \in {"created", "locked", "published"}
+Units(w) == tmp[w] \/ sc[w] /= "none"
 PidAlive(w) == w \notin Foreign /\ Live(w)
 
 TempRemovable(w) ==
-    CASE Variant = "noTempLock" -> tmp[w]
-      [] Variant = "ageRemoval" -> tmp[w] /\ aged[w]
-      [] Variant = "pidOnly" -> tmp[w] /\ ~PidAlive(w)
-      [] OTHER -> tmp[w] /\ ~held[w]
+    CASE Variant = "noTempLock" -> Units(w)
+      [] Variant = "ageRemoval" -> Units(w) /\ aged[w]
+      [] Variant = "pidOnly" -> Units(w) /\ ~PidAlive(w)
+      [] OTHER -> Units(w) /\ ~held[w]
 
 NextNumber ==
     IF Variant = "listingNumbers"
@@ -39,6 +41,7 @@ Init ==
     /\ tmp = [w \in Writers |-> FALSE]
     /\ held = [w \in Writers |-> FALSE]
     /\ aged = [w \in Writers |-> FALSE]
+    /\ sc = [w \in Writers |-> "none"]
     /\ crashes = 0
     /\ genCounter = 0
     /\ uses = [g \in Gens |-> 0]
@@ -58,6 +61,7 @@ CreateLocked(w) ==
     /\ wph' = [wph EXCEPT ![w] = "locked"]
     /\ tmp' = [tmp EXCEPT ![w] = TRUE]
     /\ held' = [held EXCEPT ![w] = TRUE]
+    /\ sc' = [sc EXCEPT ![w] = IF LockForm = "sidecar" THEN "file" ELSE "none"]
     /\ UNCHANGED <<aged, crashes, gvars>>
 
 CreateSplit(w) ==
@@ -65,12 +69,13 @@ CreateSplit(w) ==
     /\ wph[w] = "idle"
     /\ wph' = [wph EXCEPT ![w] = "created"]
     /\ tmp' = [tmp EXCEPT ![w] = TRUE]
-    /\ UNCHANGED <<held, aged, crashes, gvars>>
+    /\ UNCHANGED <<held, sc, aged, crashes, gvars>>
 
 LockSplit(w) ==
     /\ wph[w] = "created"
     /\ wph' = [wph EXCEPT ![w] = "locked"]
     /\ held' = [held EXCEPT ![w] = TRUE]
+    /\ sc' = [sc EXCEPT ![w] = IF LockForm = "sidecar" THEN "file" ELSE "none"]
     /\ UNCHANGED <<tmp, aged, crashes, gvars>>
 
 Publish(w) ==
@@ -82,11 +87,12 @@ Publish(w) ==
        ELSE /\ wph' = [wph EXCEPT ![w] = "failed"]
             /\ tmp' = tmp
             /\ held' = [held EXCEPT ![w] = FALSE]
-    /\ UNCHANGED <<aged, crashes, gvars>>
+    /\ UNCHANGED <<aged, sc, crashes, gvars>>
 
 Dispose(w) ==
     /\ wph[w] = "published"
     /\ wph' = [wph EXCEPT ![w] = "done"]
+    /\ sc' = [sc EXCEPT ![w] = "none"]
     /\ held' = [held EXCEPT ![w] = FALSE]
     /\ UNCHANGED <<tmp, aged, crashes, gvars>>
 
@@ -96,20 +102,45 @@ WriterCrash(w) ==
     /\ wph' = [wph EXCEPT ![w] = "crashed"]
     /\ held' = [held EXCEPT ![w] = FALSE]
     /\ crashes' = crashes + 1
-    /\ UNCHANGED <<tmp, aged, gvars>>
+    /\ UNCHANGED <<tmp, aged, sc, gvars>>
 
 TickAge(w) ==
     /\ Variant = "ageRemoval"
     /\ tmp[w]
     /\ ~aged[w]
     /\ aged' = [aged EXCEPT ![w] = TRUE]
-    /\ UNCHANGED <<wph, tmp, held, crashes, gvars>>
+    /\ UNCHANGED <<wph, tmp, held, sc, crashes, gvars>>
 
-SweepTemp(w) ==
+SweepEntryForm(w) ==
+    /\ LockForm = "entry"
     /\ TempRemovable(w)
     /\ tmp' = [tmp EXCEPT ![w] = FALSE]
     /\ aged' = [aged EXCEPT ![w] = FALSE]
-    /\ UNCHANGED <<wph, held, crashes, gvars>>
+    /\ UNCHANGED <<wph, held, sc, crashes, gvars>>
+
+SweepClaim(w) ==
+    /\ LockForm = "sidecar"
+    /\ sc[w] = "file"
+    /\ TempRemovable(w)
+    /\ sc' = [sc EXCEPT ![w] = "claimed"]
+    /\ UNCHANGED <<wph, tmp, held, aged, crashes, gvars>>
+
+SweepEntryRm(w) ==
+    /\ LockForm = "sidecar"
+    /\ sc[w] = "claimed"
+    /\ tmp[w]
+    /\ tmp' = [tmp EXCEPT ![w] = FALSE]
+    /\ aged' = [aged EXCEPT ![w] = FALSE]
+    /\ UNCHANGED <<wph, held, sc, crashes, gvars>>
+
+SweepSidecarRm(w) ==
+    /\ LockForm = "sidecar"
+    /\ sc[w] = "claimed"
+    /\ ~tmp[w]
+    /\ sc' = [sc EXCEPT ![w] = "none"]
+    /\ UNCHANGED <<wph, tmp, held, aged, crashes, gvars>>
+
+SweepTemp(w) == SweepEntryForm(w) \/ SweepClaim(w) \/ SweepEntryRm(w) \/ SweepSidecarRm(w)
 
 StartReserve(s) ==
     /\ sph[s] = "idle"
@@ -234,6 +265,7 @@ TypeOK ==
     /\ tmp \in [Writers -> BOOLEAN]
     /\ held \in [Writers -> BOOLEAN]
     /\ aged \in [Writers -> BOOLEAN]
+    /\ sc \in [Writers -> {"none", "file", "claimed"}]
     /\ dir \in [Gens -> BOOLEAN]
     /\ supLock \in [Gens -> {"none", "free", "held"}]
     /\ alive \in [Gens -> BOOLEAN]
@@ -252,7 +284,7 @@ LiveStartStepOK == \A s \in Starters : sph[s] = "mkdir" => dir[sN[s]]
 
 LiveDialReachable == \A g \in Gens : supLock[g] = "held" => dir[g]
 
-Leftover(w) == tmp[w] /\ ~held[w] /\ wph[w] = "crashed"
+Leftover(w) == Units(w) /\ ~held[w] /\ wph[w] = "crashed"
 
 Owned(g) == \E s \in Starters : sph[s] \in {"reserved", "mkdir"} /\ sN[s] = g
 
@@ -260,7 +292,7 @@ TempBound == Cardinality({w \in Writers : Leftover(w)}) <= crashes
 
 GenBound == Cardinality({g \in Gens : dir[g] /\ supLock[g] # "held" /\ ~Owned(g)}) <= deaths
 
-TempCleared == \A w \in Writers : (tmp[w] /\ ~held[w]) ~> ~tmp[w]
+TempCleared == \A w \in Writers : (Units(w) /\ ~held[w]) ~> ~Units(w)
 
 DirCleared == \A g \in Gens : (dir[g] /\ supLock[g] # "held") ~> ~dir[g]
 
