@@ -3664,10 +3664,35 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 20480,
-      "measuredSeconds": 4.36,
-      "measuredCpuSeconds": 5.99,
-      "budgetCpuSeconds": 15
+      "distinctStates": 263160,
+      "measuredSeconds": 31.31,
+      "measuredCpuSeconds": 103.45,
+      "budgetCpuSeconds": 210
+    },
+    {
+      "config": "StopProtocol.malformed",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 670964,
+      "measuredSeconds": 71.84,
+      "measuredCpuSeconds": 249.96,
+      "budgetCpuSeconds": 503
+    },
+    {
+      "config": "StopProtocol.noReap",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoManagedOutlives",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 851,
+      "measuredSeconds": 1.25,
+      "measuredCpuSeconds": 1.91,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "StopProtocol.mixed",
@@ -3678,10 +3703,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 59,
-      "measuredSeconds": 1.18,
-      "measuredCpuSeconds": 1.44,
-      "budgetCpuSeconds": 6
+      "distinctStates": 142,
+      "measuredSeconds": 1.16,
+      "measuredCpuSeconds": 1.53,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "StopProtocol.noMessage",
@@ -3692,10 +3717,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 59,
-      "measuredSeconds": 1.13,
-      "measuredCpuSeconds": 1.39,
-      "budgetCpuSeconds": 6
+      "distinctStates": 157,
+      "measuredSeconds": 1.15,
+      "measuredCpuSeconds": 1.54,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "StopProtocol.lateWaiter",
@@ -3706,10 +3731,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 67,
-      "measuredSeconds": 1.17,
-      "measuredCpuSeconds": 1.42,
-      "budgetCpuSeconds": 6
+      "distinctStates": 149,
+      "measuredSeconds": 1.15,
+      "measuredCpuSeconds": 1.52,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "StopProtocol.lateWaiter.outlast",
@@ -3720,10 +3745,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 84712,
-      "measuredSeconds": 2.23,
-      "measuredCpuSeconds": 3.42,
-      "budgetCpuSeconds": 10
+      "distinctStates": 4492979,
+      "measuredSeconds": 22.66,
+      "measuredCpuSeconds": 117.17,
+      "budgetCpuSeconds": 238
     },
     {
       "config": "StopProtocol.noDeadline",
@@ -3734,10 +3759,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1695,
-      "measuredSeconds": 1.26,
-      "measuredCpuSeconds": 1.82,
-      "budgetCpuSeconds": 7
+      "distinctStates": 14417,
+      "measuredSeconds": 1.41,
+      "measuredCpuSeconds": 3.02,
+      "budgetCpuSeconds": 10
     },
     {
       "config": "StopProtocol.waitsForever",
@@ -3748,10 +3773,38 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 7932,
-      "measuredSeconds": 2.29,
-      "measuredCpuSeconds": 3.52,
-      "budgetCpuSeconds": 11
+      "distinctStates": 1228484,
+      "measuredSeconds": 66.6,
+      "measuredCpuSeconds": 221.47,
+      "budgetCpuSeconds": 446
+    },
+    {
+      "config": "StopProtocol.malformedNoKill",
+      "role": "evidence",
+      "expect": {
+        "violates": "WithinBound",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 5034,
+      "measuredSeconds": 1.31,
+      "measuredCpuSeconds": 2.5,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "StopProtocol.sigtermAfterFail",
+      "role": "evidence",
+      "expect": {
+        "violates": "SameValues",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 169,
+      "measuredSeconds": 1.16,
+      "measuredCpuSeconds": 1.51,
+      "budgetCpuSeconds": 7
     }
   ]
 }
