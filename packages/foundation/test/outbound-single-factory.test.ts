@@ -27,25 +27,22 @@ const sourceFiles = (dir: string): string[] =>
     return /\.tsx?$/.test(entry.name) ? [full] : [];
   });
 
-type Position = 'value' | 'typeQuery';
-
-type ClientModule = { module: string; reason: string; calls: readonly string[]; constructs: readonly string[] };
+type ClientModule = { module: string; reason: string; clients: readonly string[] };
 
 const CLIENT_MODULES: readonly ClientModule[] = [
-  { module: 'node:http', reason: 'its Agent opens TCP connections to any host', calls: [], constructs: ['Agent'] },
-  { module: 'http', reason: 'its Agent opens TCP connections to any host', calls: [], constructs: ['Agent'] },
-  { module: 'node:https', reason: 'its Agent opens TLS connections to any host', calls: [], constructs: ['Agent'] },
-  { module: 'https', reason: 'its Agent opens TLS connections to any host', calls: [], constructs: ['Agent'] },
+  { module: 'node:http', reason: 'its Agent opens TCP connections to any host', clients: ['Agent'] },
+  { module: 'http', reason: 'its Agent opens TCP connections to any host', clients: ['Agent'] },
+  { module: 'node:https', reason: 'its Agent opens TLS connections to any host', clients: ['Agent'] },
+  { module: 'https', reason: 'its Agent opens TLS connections to any host', clients: ['Agent'] },
   {
     module: 'undici',
     reason: 'its fetch sends requests and its dispatchers open connections to any host',
-    calls: ['fetch'],
-    constructs: ['Agent', 'ProxyAgent', 'EnvHttpProxyAgent', 'Socks5ProxyAgent', 'Pool', 'Client', 'BalancedPool', 'RetryAgent', 'Dispatcher'],
+    clients: ['fetch', 'Agent', 'ProxyAgent', 'EnvHttpProxyAgent', 'Socks5ProxyAgent', 'Pool', 'Client', 'BalancedPool', 'RetryAgent', 'Dispatcher'],
   },
-  { module: 'https-proxy-agent', reason: 'its agent tunnels connections through a proxy', calls: [], constructs: ['HttpsProxyAgent'] },
-  { module: 'http-proxy-agent', reason: 'its agent sends requests through a proxy', calls: [], constructs: ['HttpProxyAgent'] },
-  { module: 'socks-proxy-agent', reason: 'its agent opens connections through a SOCKS proxy', calls: [], constructs: ['SocksProxyAgent'] },
-  { module: 'proxy-agent', reason: 'its agent opens connections through the proxy the environment names', calls: [], constructs: ['ProxyAgent'] },
+  { module: 'https-proxy-agent', reason: 'its agent tunnels connections through a proxy', clients: ['HttpsProxyAgent'] },
+  { module: 'http-proxy-agent', reason: 'its agent sends requests through a proxy', clients: ['HttpProxyAgent'] },
+  { module: 'socks-proxy-agent', reason: 'its agent opens connections through a SOCKS proxy', clients: ['SocksProxyAgent'] },
+  { module: 'proxy-agent', reason: 'its agent opens connections through the proxy the environment names', clients: ['ProxyAgent'] },
 ];
 
 type AstNode = { type: string; start: number; [key: string]: unknown };
@@ -91,12 +88,10 @@ const memberOf = (ref: Ref, name: string): Ref => {
   return NONE;
 };
 
-const isClient = (ref: Ref, position: Position): boolean => {
-  if (ref.kind === 'globalFetch') return position === 'value';
+const isClient = (ref: Ref): boolean => {
+  if (ref.kind === 'globalFetch') return true;
   if (ref.kind !== 'export') return false;
-  const entry = clientModule(ref.module);
-  if (entry === undefined) return false;
-  return entry.constructs.includes(ref.name) || (position === 'value' && entry.calls.includes(ref.name));
+  return clientModule(ref.module)?.clients.includes(ref.name) === true;
 };
 
 const lookup = (scope: Scope | undefined, name: string): Binding | undefined => {
@@ -251,30 +246,14 @@ const clientsInModule = (source: string, lang: 'ts' | 'tsx'): string[] => {
     return scope;
   };
 
-  const record = (node: AstNode, scope: Scope, position: Position): boolean => {
-    const client = isClient(resolveIn(node, scope, new Set()), position);
+  const record = (node: AstNode, scope: Scope): boolean => {
+    const client = isClient(resolveIn(node, scope, new Set()));
     if (client) found.add(lineAt(node.start));
     return client;
   };
 
-  const visitType = (node: AstNode, scope: Scope): void => {
-    if (node.type === 'TSTypeQuery') {
-      const name = child(node, 'exprName');
-      if (name !== undefined) record(name, scope, 'typeQuery');
-      const typeArguments = child(node, 'typeArguments');
-      if (typeArguments !== undefined) visitType(typeArguments, scope);
-      return;
-    }
-    for (const [, item] of entriesOf(node)) visitType(item, scope);
-  };
-
   const visitPattern = (pattern: AstNode, scope: Scope, functionScope: Scope): void => {
-    if (isTypeNode(pattern)) return visitType(pattern, scope);
-    if (pattern.type === 'Identifier') {
-      const annotation = child(pattern, 'typeAnnotation');
-      if (annotation !== undefined) visitType(annotation, scope);
-      return;
-    }
+    if (isTypeNode(pattern) || pattern.type === 'Identifier') return;
     if (pattern.type === 'MemberExpression') return visit(pattern, scope, functionScope);
     if (pattern.type === 'AssignmentPattern') {
       const left = child(pattern, 'left');
@@ -300,14 +279,14 @@ const clientsInModule = (source: string, lang: 'ts' | 'tsx'): string[] => {
   const NO_KEYS: ReadonlySet<string> = new Set();
 
   const visit = (node: AstNode, scope: Scope, functionScope: Scope): void => {
-    if (isTypeNode(node)) return visitType(node, scope);
+    if (isTypeNode(node)) return;
     if (node.type === 'ImportDeclaration' || node.type === 'ExportSpecifier') return;
     if (node.type === 'Identifier') {
-      record(node, scope, 'value');
+      record(node, scope);
       return;
     }
     if (node.type === 'MemberExpression') {
-      if (record(node, scope, 'value')) return;
+      if (record(node, scope)) return;
       return visitChildren(node, scope, functionScope, node.computed === true ? NO_KEYS : new Set(['property']));
     }
     if (KEYED_MEMBERS.has(node.type)) return visitChildren(node, scope, functionScope, node.computed === true ? NO_KEYS : new Set(['key']));
