@@ -4,7 +4,7 @@ import type { CleanupContext } from '@momonga/testkit';
 import { SETTINGS_DEBOUNCE_MS } from '../src/constants.ts';
 import { CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER, createUdsClient, fixedSocket, minimalChildEnv } from '@momonga/foundation';
 import { registerCleanup } from '@momonga/testkit';
-import { chatTarget, fakeSettingsWatch, pump, startHarness, validSettings, writeSettings } from './fixtures/p3-harness.ts';
+import { chatTarget, fakeSettingsWatch, pump, pumpUntil, startHarness, validSettings, writeSettings } from './fixtures/p3-harness.ts';
 import type { FakeSettingsWatch, Harness, SimpleResponse } from './fixtures/p3-harness.ts';
 
 const CREDENTIAL_ROUTE = '/v1/credentials/';
@@ -121,6 +121,22 @@ describe('S6: the per-spawn capability ends with the child (design-settings-live
       h.fake.latest('gateway').exit(1);
     });
     await pump(h.timers, h.realWork, 0);
+    const response = await requestCredential(context, h, DECLARED_LATER, capability);
+    expect(response.status).toBe(403);
+    expect(response.text).not.toContain(ADDED_KEY_VALUE);
+  });
+});
+
+describe('S6: the per-spawn capability ends when the child is stopped (design-settings-live 15.6)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+  it('the capability of a gateway being stopped answers nothing, before the child has exited', async (context) => {
+    const h = await watched(context);
+    await declareTargetsWithKeys(h, DECLARED_LATER);
+    const capability = gatewayCapability(h);
+    expect((await requestCredential(context, h, DECLARED_LATER, capability)).status).toBe(200);
+    h.fake.setBehaviour('gateway', { onTerm: 'ignore' });
+    void h.supervisor.close();
+    await pumpUntil(h.timers, () => h.fake.latest('gateway').signals.includes('SIGTERM'), { realWork: h.realWork, maxMs: 120_000, description: 'the gateway to be asked to stop' });
+    expect(h.fake.latest('gateway').signals).toContain('SIGTERM');
     const response = await requestCredential(context, h, DECLARED_LATER, capability);
     expect(response.status).toBe(403);
     expect(response.text).not.toContain(ADDED_KEY_VALUE);
