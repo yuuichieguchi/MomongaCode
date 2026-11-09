@@ -285,6 +285,25 @@ describe('S1 gateway: a changed network applies from the next connection (design
 
 const spanTraces = (collector: OtlpCollector): Set<string> => new Set(decodeOtlpSpans(collector.requests).map((span) => span.traceId));
 
+describe('S1 gateway: the redactor learns the proxy password of a changed network (design-settings-live 3.1)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+  it('redacts the password of a proxy set by a change from the answer and the log', async (context) => {
+    const PROXY_PASSWORD = 'changed-proxy-password-0123456789';
+    const initial = await startProxy(context, 'refuse');
+    const refusing = await startProxy(context, 'refuse');
+    const models = { aliases: { fast: ['remote'] }, targets: { remote: remoteTarget } };
+    const stack = await startStack(context, { models, network: { httpsProxy: `http://127.0.0.1:${initial.port}` } }, { [REMOTE_KEY_ENV]: 'remote-key-0123456789' });
+    registerCleanup(context, () => {
+      initial.dropConnections();
+      refusing.dropConnections();
+    });
+    replaceSettings(stack.home, { models, network: { httpsProxy: `http://user:${PROXY_PASSWORD}@127.0.0.1:${refusing.port}` } });
+    const answered = await post(stack.client, ask('fast', { stream: false }));
+    expect(refusing.connects()).toEqual(['CONNECT model.example.test:443 HTTP/1.1']);
+    expect(answered.text).not.toContain(PROXY_PASSWORD);
+    expect(stack.logText()).not.toContain(PROXY_PASSWORD);
+  });
+});
+
 describe('S2 gateway telemetry: a span ends on the provider it started on (design-settings-live 3.3)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('a span started before the change is exported by the old provider; a request after the change is exported by the new one', async (context) => {
     const first = await startOtlpCollector();
