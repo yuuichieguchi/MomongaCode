@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { processOutboundNetwork } from '../src/network.ts';
+import { withOutboundNetwork } from '../src/network.ts';
 import { nodeFiles } from '../src/node-ports.ts';
 import type { CliPorts } from '../src/ports.ts';
 
@@ -32,9 +32,9 @@ describe('S4 CLI network: the next outbound operation uses the network settings 
   it('an operation that starts after a network change gets the new proxy; the earlier operation kept the old one', async () => {
     const { ports, writeProxy } = homeWithProxy();
     writeProxy('http://proxy-before.corp:3128');
-    const before = await processOutboundNetwork(ports);
+    const before = await withOutboundNetwork(ports, new AbortController().signal, async (network) => network);
     writeProxy('http://proxy-after.corp:3128');
-    const after = await processOutboundNetwork(ports);
+    const after = await withOutboundNetwork(ports, new AbortController().signal, async (network) => network);
     expect(before.config.httpsProxy).toMatchObject({ value: 'http://proxy-before.corp:3128', source: 'network.httpsProxy' });
     expect(after.config.httpsProxy).toMatchObject({ value: 'http://proxy-after.corp:3128', source: 'network.httpsProxy' });
   });

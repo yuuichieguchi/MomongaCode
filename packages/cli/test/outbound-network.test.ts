@@ -8,7 +8,7 @@ import type { MomongaPaths } from '@momonga/foundation';
 import { IDENTITY_READ_TIMEOUT_MS } from '@momonga/gateway';
 import { LOCAL_SERVER_CANDIDATES } from '@momonga/protocol';
 import { detectModels } from '../src/commands/models.ts';
-import { processOutboundNetwork, withIdentityReadFetch } from '../src/network.ts';
+import { withIdentityReadFetch, withOutboundNetwork } from '../src/network.ts';
 import { nodeFiles } from '../src/node-ports.ts';
 import type { CliPorts } from '../src/ports.ts';
 
@@ -46,8 +46,8 @@ describe('the CLI network', () => {
   it('is resolved from the current settings for each outbound operation', async () => {
     const ports = portsWith([]);
 
-    const first = await processOutboundNetwork(ports);
-    const second = await processOutboundNetwork(ports);
+    const first = await withOutboundNetwork(ports, new AbortController().signal, async (network) => network);
+    const second = await withOutboundNetwork(ports, new AbortController().signal, async (network) => network);
 
     expect(first.config).toEqual({ caFiles: [] });
     expect(second.config).toEqual(first.config);
@@ -58,8 +58,9 @@ describe('the CLI network', () => {
     const ports = portsWith(written);
     const silent = await silentServer();
 
-    const code = await withIdentityReadFetch(ports, (fetch) =>
-      detectModels(ports, { settingsFile: path.join(ports.home, 'settings.json') } as unknown as MomongaPaths, { typed: [silent], json: true, interrupt: new AbortController().signal, fetch }),
+    const interrupt = new AbortController().signal;
+    const code = await withIdentityReadFetch(ports, interrupt, (fetch) =>
+      detectModels(ports, { settingsFile: path.join(ports.home, 'settings.json') } as unknown as MomongaPaths, { typed: [silent], json: true, interrupt, fetch }),
     );
 
     expect(code).toBe(0);

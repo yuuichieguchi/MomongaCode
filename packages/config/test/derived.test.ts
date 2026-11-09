@@ -14,6 +14,7 @@ type PinnedDerivation<T> = {
 
 type PinnedDerivationOptions<T> = {
   cache: UserSettingsCache;
+  signal: AbortSignal;
   inputsOf(settings: ResolvedSettings): unknown;
   derive(settings: ResolvedSettings, previous: T | undefined): T | Promise<T>;
   retire(object: T): void | Promise<void>;
@@ -81,6 +82,7 @@ const harness = (initial: Record<string, unknown>) => {
   let hold: Deferred<void> | undefined;
   const derivation = createPinnedDerivation<Built>({
     cache,
+    signal: new AbortController().signal,
     inputsOf: (settings) => (settings as unknown as Record<string, unknown>)['network'] ?? null,
     derive: async (settings, previous) => {
       const network = (settings as unknown as Record<string, unknown>)['network'];

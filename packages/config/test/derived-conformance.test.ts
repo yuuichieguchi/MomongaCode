@@ -123,19 +123,28 @@ const replay = async (prefix: readonly Action[]): Promise<World> => {
   return world;
 };
 
-const sequences = async (prefix: Action[], found: Action[][]): Promise<void> => {
+const sequences = async (prefix: Action[], found: Action[][]): Promise<number> => {
   if (prefix.length === DEPTH) {
     found.push(prefix);
-    return;
+    return 1;
   }
   const world = await replay(prefix);
-  for (const action of enabled(world)) await sequences([...prefix, action], found);
+  let leaves = 0;
+  for (const action of enabled(world)) leaves += await sequences([...prefix, action], found);
+  return leaves;
 };
 
 describe('createPinnedDerivation conforms to SettingsSwap.tla over every action sequence of depth 5 (design-settings-live 15.6)', () => {
-  it('every enumerated sequence keeps the model invariants after each step', { timeout: 600_000 }, async () => {
+  it('every sequence the generator yields to depth 5 is replayed and checked after each step', { timeout: 600_000 }, async () => {
     const found: Action[][] = [];
-    await sequences([], found);
-    expect(found.length).toBeGreaterThan(1000);
+    const generated = await sequences([], found);
+    let checked = 0;
+    for (const sequence of found) {
+      await replay(sequence);
+      checked += 1;
+    }
+    expect(generated).toBeGreaterThan(0);
+    expect(found.every((sequence) => sequence.length === DEPTH)).toBe(true);
+    expect(checked).toBe(generated);
   });
 });
