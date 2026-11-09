@@ -2,7 +2,7 @@ import type { PlanProfile } from '@momonga/config';
 import { FIRST_GENERATION, momongaLayout } from '@momonga/foundation';
 import { PLAN_API_PREFIX, PLAN_ROUTES } from '@momonga/protocol';
 import { createFakeSecretStore, startFakePlanResponses, startFakeSiwcAuth } from '@momonga/testkit';
-import type { FakePlanResponses, FakeSecretStore, SiwcAuth } from '@momonga/testkit';
+import type { FakeClock, FakePlanResponses, FakeSecretStore, SiwcAuth } from '@momonga/testkit';
 import { getJson, postJson, readJson, registerCleanup } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { PROFILE_ID, profileFor } from './plan-support.ts';
@@ -25,7 +25,20 @@ export type PlanGateway = {
 
 export const accountRoute = (route: string, account: string = ACCOUNT): string => route.replace(':account', encodeURIComponent(account));
 
-export type PlanGatewayOptions = { models?: readonly unknown[]; declaredCapabilities?: boolean };
+export type PlanGatewayOptions = { models?: readonly unknown[]; declaredCapabilities?: boolean; clock?: FakeClock };
+
+export const holdNextExchange = (gateway: PlanGateway): { reached: Promise<void>; release(): void } => {
+  let reach = (): void => undefined;
+  let release = (): void => undefined;
+  const reached = new Promise<void>((resolve) => {
+    reach = resolve;
+  });
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  gateway.auth.scriptToken('authorization_code', [{ kind: 'hold', reached: reach, released }]);
+  return { reached, release };
+};
 
 export const startPlanGateway = async (options: PlanGatewayOptions = {}): Promise<PlanGateway> => {
   const home = makeHome();
@@ -50,7 +63,7 @@ export const startPlanGateway = async (options: PlanGatewayOptions = {}): Promis
       },
     },
   });
-  const launch = () => launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, secretStore, planProfiles: { [PROFILE_ID]: profile } });
+  const launch = () => launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, secretStore, planProfiles: { [PROFILE_ID]: profile }, ...(options.clock === undefined ? {} : { clock: options.clock }) });
   let handle = await launch();
   const gateway: PlanGateway = {
     home,

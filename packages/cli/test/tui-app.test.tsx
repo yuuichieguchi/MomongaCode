@@ -4,6 +4,7 @@ import { App } from '../src/tui/app.tsx';
 import { fakeBackend, runView } from './fake-backend.ts';
 import { KEYS, renderObservable, untilFrame, untilOutput } from './ink-helpers.ts';
 import { frame, runStarted, start, type } from './tui-harness.tsx';
+import { startPlan } from './fake-plan-gateway.tsx';
 
 describe('App startup', () => {
   it('opens the session of a trusted folder and shows the status line', async () => {
@@ -346,15 +347,14 @@ describe('App slash commands', () => {
     app.unmount();
   });
 
-  it('/model lists the aliases with the current one marked', async () => {
-    const { app } = await start({ aliases: ['default', 'qwen-local'] });
+  it('/model opens the model picker with a row per alias and the current one marked', async () => {
+    const { app } = await startPlan({ aliases: ['default', 'qwen-local'] });
     await untilFrame(app, 'mode: default');
     await type(app, '/model', '> /model');
     app.stdin.write(KEYS.enter);
-    const output = await untilOutput(app, 'switch with /model <alias>');
-    expect(output).toContain('* default');
-    expect(output).toContain('qwen-local');
-    expect(output).not.toContain('* qwen-local');
+    const picker = await untilFrame(app, 'qwen-local · primary');
+    expect(picker).toContain('default (current) · primary');
+    expect(picker).not.toContain('qwen-local (current)');
     app.unmount();
   });
 

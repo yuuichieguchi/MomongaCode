@@ -216,6 +216,7 @@ export type {
   SiwcJwk,
   SiwcRecord,
   SiwcRegistration,
+  SiwcJwksStep,
   SiwcRevokeStep,
   SiwcTokenStep,
 } from './fake-siwc-auth.ts';

@@ -49,7 +49,10 @@ export type SiwcTokenStep =
   | { kind: 'drop' }
   | { kind: 'lose_response' }
   | { kind: 'no_replacement_refresh_token' }
-  | { kind: 'expires_in'; seconds: number };
+  | { kind: 'expires_in'; seconds: number }
+  | { kind: 'hold'; reached: () => void; released: Promise<void> };
+
+export type SiwcJwksStep = { kind: 'http'; status: number; body?: string } | { kind: 'drop' };
 
 export type SiwcRevokeStep = { kind: 'http'; status: number; body?: string } | { kind: 'drop' };
 
@@ -83,6 +86,7 @@ export type SiwcAuth = {
   calls: SiwcCalls;
   scriptToken(grant: SiwcGrant, steps: SiwcTokenStep[]): void;
   scriptRevoke(steps: SiwcRevokeStep[]): void;
+  scriptJwks(steps: SiwcJwksStep[]): void;
   rotateKeys(options: { retireOld: boolean }): Promise<string>;
   jwks(): { keys: SiwcJwk[] };
   disconnect(clientId: string): void;
@@ -161,6 +165,7 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
   const secrets: string[] = [];
   const tokenScripts: Record<SiwcGrant, SiwcTokenStep[]> = { authorization_code: [], refresh_token: [] };
   const revokeScript: SiwcRevokeStep[] = [];
+  const jwksScript: SiwcJwksStep[] = [];
   const records: SiwcRecord[] = [];
   const calls: SiwcCalls = { authorize: 0, tokenAuthorizationCode: 0, tokenRefreshToken: 0, revoke: 0, jwks: 0, discovery: 0 };
   let earliestRefreshCounter = 0;
@@ -187,6 +192,9 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
     },
     scriptRevoke: (steps) => {
       revokeScript.push(...steps);
+    },
+    scriptJwks: (steps) => {
+      jwksScript.push(...steps);
     },
     rotateKeys: async ({ retireOld }) => {
       const fresh = await newSigningKey();
@@ -320,7 +328,7 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
     const family: Family = { clientId: grant.clientId, revoked: false };
     const body = tokenBody({
       access: issueAccess(family, grant.clientId, grant.resource, grant.scope, expiresIn),
-      refresh: issueRefresh(family, grant.clientId, grant.resource, grant.scope),
+      ...(step?.kind === 'no_replacement_refresh_token' ? {} : { refresh: issueRefresh(family, grant.clientId, grant.resource, grant.scope) }),
       idToken: remember(idTokenFor(grant.clientId, grant, grant.scope)),
       scope: grant.scope,
       expiresIn,
@@ -367,6 +375,10 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
     if (grantType === 'authorization_code') calls.tokenAuthorizationCode += 1;
     else calls.tokenRefreshToken += 1;
     const step = tokenScripts[grantType].shift();
+    if (step?.kind === 'hold') {
+      step.reached();
+      await step.released;
+    }
     if (step?.kind === 'drop') {
       res.socket?.destroy();
       return;
@@ -483,6 +495,16 @@ export const startFakeSiwcAuth = async (options: SiwcAuthOptions = {}): Promise<
     if (req.method === 'GET' && url.pathname === JWKS_PATH) {
       calls.jwks += 1;
       records.push({ method: 'GET', path: JWKS_PATH, form: {} });
+      const jwksStep = jwksScript.shift();
+      if (jwksStep?.kind === 'drop') {
+        res.socket?.destroy();
+        return;
+      }
+      if (jwksStep?.kind === 'http') {
+        res.writeHead(jwksStep.status, { 'content-type': 'application/json' });
+        res.end(jwksStep.body ?? '{}');
+        return;
+      }
       sendJson(res, 200, fixture.jwks());
       return;
     }

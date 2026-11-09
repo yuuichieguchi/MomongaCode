@@ -3,8 +3,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { momongaLayout } from '@momonga/foundation';
 import { PLAN_ROUTES } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
-import { ACCOUNT, CALLBACK_PORT, begin, browse, sessionsDirectory, signIn, startPlanGateway } from './plan-signin-support.ts';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock } from '@momonga/testkit';
+import { ACCOUNT, CALLBACK_PORT, begin, browse, holdNextExchange, sessionsDirectory, signIn, startPlanGateway } from './plan-signin-support.ts';
 import type { PlanGateway } from './plan-signin-support.ts';
 
 const failureOf = (answer: { status: number; body: any }) => ({ status: answer.status, type: answer.body.error?.type, code: answer.body.error?.code, message: answer.body.error?.message });
@@ -42,8 +42,8 @@ describe('sign-in begin builds the authorization URL from the profile (P5b, 5.1,
       state: begun.body.state,
     });
     expect(params['scope']?.split(' ').sort()).toEqual([...gateway.profile.oauth.identityScopes, ...gateway.profile.oauth.useScopes].sort());
-    expect(params['nonce']?.length).toBeGreaterThanOrEqual(22);
-    expect(params['state']?.length).toBeGreaterThanOrEqual(22);
+    expect(params['nonce']).toMatch(/^[A-Za-z0-9_-]{22}$/);
+    expect(params['state']).toMatch(/^[A-Za-z0-9_-]{22}$/);
     expect(params['code_challenge']).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(params['ext_agent_host_id']).toMatch(/^urn:ietf:params:oauth:jwk-thumbprint:sha-256:[A-Za-z0-9_-]{43}$/);
     expect(params).not.toHaveProperty('prompt');
@@ -239,12 +239,140 @@ describe('the attempt lifecycle (P5b, 5.2)', { timeout: REAL_PROCESS_TEST_TIMEOU
     await gateway.close();
   });
 
-  it('cancels an attempt through sign-in/cancel', async () => {
+  it('cancels a pending attempt once and answers every later cancel with cancelled false (O-R5-4 f)', async () => {
     const gateway = await startPlanGateway();
     const begun = await begin(gateway);
     const callback = await browse(begun.body.authorizationUrl);
-    expect((await gateway.post(PLAN_ROUTES.signInCancel, { attemptId: begun.body.attemptId })).status).toBe(200);
+    const first = await gateway.post(PLAN_ROUTES.signInCancel, { attemptId: begun.body.attemptId });
+    expect({ status: first.status, body: first.body }).toEqual({ status: 200, body: { cancelled: true } });
+    const second = await gateway.post(PLAN_ROUTES.signInCancel, { attemptId: begun.body.attemptId });
+    expect({ status: second.status, body: second.body }).toEqual({ status: 200, body: { cancelled: false } });
+    const unknown = await gateway.post(PLAN_ROUTES.signInCancel, { attemptId: 'no-such-attempt' });
+    expect({ status: unknown.status, body: unknown.body }).toEqual({ status: 200, body: { cancelled: false } });
     expect(failureOf(await complete(gateway, begun.body.attemptId, callback.toString())).code).toBe('attempt_not_found');
+    await gateway.close();
+  });
+
+  it('answers cancelled false for a consumed attempt and 400 for a body without an attemptId', async () => {
+    const gateway = await startPlanGateway();
+    const { begun } = await signIn(gateway);
+    expect((await gateway.post(PLAN_ROUTES.signInCancel, { attemptId: begun.body.attemptId })).body).toEqual({ cancelled: false });
+    const malformed = await gateway.post(PLAN_ROUTES.signInCancel, {});
+    expect(malformed.status).toBe(400);
+    expect(malformed.body.error.type).toBe('invalid_request');
+    await gateway.close();
+  });
+});
+
+describe('the five sign-in failures settled in O-R5-4', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+  it('attempt_expired: a complete at or after expiresAt answers 400 and consumes the attempt', async () => {
+    const clock = createFakeClock(Date.now());
+    const gateway = await startPlanGateway({ clock });
+    const begun = await begin(gateway);
+    const callback = await browse(begun.body.authorizationUrl);
+    clock.set(Date.parse(begun.body.expiresAt));
+    expect(failureOf(await complete(gateway, begun.body.attemptId, callback.toString()))).toEqual({
+      status: 400,
+      type: 'invalid_request',
+      code: 'attempt_expired',
+      message: 'This sign-in attempt expired before the browser returned.',
+    });
+    expect(failureOf(await complete(gateway, begun.body.attemptId, callback.toString())).code).toBe('attempt_not_found');
+    await gateway.close();
+  });
+
+  it('registration_superseded: 409 for the attempt that installs second, leaving the record of the one that installed first', async () => {
+    const gateway = await startPlanGateway();
+    const held = holdNextExchange(gateway);
+    const first = await begin(gateway);
+    const firstCallback = await browse(first.body.authorizationUrl);
+    const firstCompleting = complete(gateway, first.body.attemptId, firstCallback.toString());
+    await held.reached;
+    gateway.auth.subjectOverride = 'second-subject';
+    const second = await signIn(gateway);
+    expect(second.completed.body).toMatchObject({ outcome: 'signed_in' });
+    gateway.auth.subjectOverride = undefined;
+    held.release();
+    expect(failureOf(await firstCompleting)).toEqual({
+      status: 409,
+      type: 'invalid_request',
+      code: 'registration_superseded',
+      message: 'Another sign-in for this account finished first. An app registered during this attempt remains listed in ChatGPT settings; you can remove it there.',
+    });
+    const accounts = await gateway.get(`${PLAN_ROUTES.accounts}`);
+    expect(accounts.body.accounts).toEqual([expect.objectContaining({ label: ACCOUNT, state: 'active' })]);
+    await gateway.close();
+  });
+
+  it('exchange_unavailable: 502 for a 5xx answer of the code exchange, with no retry and the registration kept', async () => {
+    const gateway = await startPlanGateway();
+    gateway.auth.scriptToken('authorization_code', [{ kind: 'http', status: 503 }]);
+    const { completed } = await signIn(gateway);
+    expect(failureOf(completed)).toEqual({ status: 502, type: 'server_error', code: 'exchange_unavailable', message: 'ChatGPT could not be reached to finish the sign-in.' });
+    expect(gateway.auth.calls.tokenAuthorizationCode).toBe(1);
+    const accounts = await gateway.get(PLAN_ROUTES.accounts);
+    expect(accounts.body.accounts).toEqual([expect.objectContaining({ label: ACCOUNT, state: 'registered' })]);
+    await gateway.close();
+  });
+
+  it.each([
+    [{ kind: 'expires_in', seconds: 121 }, 'the token response lifetime does not exceed the refresh margin'],
+    [{ kind: 'no_replacement_refresh_token' }, 'the token response has no refresh token'],
+  ] as const)('token_response_invalid: 502 naming the problem of %j, and nothing saved', async (step, reason) => {
+    const gateway = await startPlanGateway();
+    gateway.auth.scriptToken('authorization_code', [step]);
+    const { completed } = await signIn(gateway);
+    expect(failureOf(completed)).toEqual({
+      status: 502,
+      type: 'server_error',
+      code: 'token_response_invalid',
+      message: `ChatGPT returned a sign-in response this version cannot use (${reason}). Nothing was saved.`,
+    });
+    const accounts = await gateway.get(PLAN_ROUTES.accounts);
+    expect(accounts.body.accounts.filter((entry: { state: string }) => entry.state === 'active')).toEqual([]);
+    await gateway.close();
+  });
+
+  it('jwks_unavailable: 502 when the keys request answers 500', async () => {
+    const gateway = await startPlanGateway();
+    gateway.auth.scriptJwks([{ kind: 'http', status: 500 }]);
+    const { completed } = await signIn(gateway);
+    expect(failureOf(completed)).toEqual({
+      status: 502,
+      type: 'server_error',
+      code: 'jwks_unavailable',
+      message: 'The keys needed to verify the identity returned by ChatGPT could not be fetched.',
+    });
+    await gateway.close();
+  });
+});
+
+describe('the {error} of authorization_failed and exchange_rejected is sanitised (O-R5-4 e)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+  const LONG = 'a'.repeat(70);
+
+  it.each([
+    ['server_error<script>', 'server_errorscript'],
+    ['<>!', 'unspecified'],
+    [LONG, 'a'.repeat(64)],
+  ])('authorization_failed shows %j as %j', async (raw, shown) => {
+    const gateway = await startPlanGateway();
+    const begun = await begin(gateway);
+    expect(failureOf(await complete(gateway, begun.body.attemptId, callbackWith(begun, { error: raw, error_description: 'never shown' }))).message).toBe(
+      `ChatGPT refused the sign-in (${shown}).`,
+    );
+    await gateway.close();
+  });
+
+  it.each([
+    [{ kind: 'http', status: 400, body: JSON.stringify({ error: 'bad grant!', error_description: 'never shown' }) }, 'badgrant'],
+    [{ kind: 'http', status: 400, body: JSON.stringify({ error: '<>' }) }, 'unspecified'],
+    [{ kind: 'http', status: 403, body: '{}' }, 'http_403'],
+    [{ kind: 'http', status: 400, body: JSON.stringify({ error: LONG }) }, 'a'.repeat(64)],
+  ] as const)('exchange_rejected shows the token answer %j as %j', async (step, shown) => {
+    const gateway = await startPlanGateway();
+    gateway.auth.scriptToken('authorization_code', [step]);
+    const { completed } = await signIn(gateway);
+    expect(failureOf(completed)).toEqual({ status: 400, type: 'invalid_request', code: 'exchange_rejected', message: `ChatGPT rejected the sign-in code (${shown}).` });
     await gateway.close();
   });
 });

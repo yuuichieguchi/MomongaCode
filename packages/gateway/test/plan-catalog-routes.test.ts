@@ -1,11 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { createFileCredentialStore, credentialFileFor, momongaLayout } from '@momonga/foundation';
 import { PLAN_ROUTES } from '@momonga/protocol';
-import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock } from '@momonga/testkit';
 import { getJson } from './gateway-helpers.ts';
 import { clientFor } from './gateway-process-helpers.ts';
-import { accountRoute, signIn, startPlanGateway } from './plan-signin-support.ts';
+import { ACCOUNT, accountRoute, signIn, startPlanGateway } from './plan-signin-support.ts';
+import type { PlanGateway } from './plan-signin-support.ts';
 
 const LISTED = [
   { slug: 'reported-model', display_name: 'Reported Model', visibility: 'list', context_window: 200000 },
@@ -14,12 +16,27 @@ const LISTED = [
 ];
 
 const NO_WINDOW = 'the server reports no context window for this model';
+const ACCESS_LIFETIME_MS = 3_600_000;
+const RECORD_KEY = `chatgpt/${ACCOUNT}`;
+
+const catalogDirectory = (gateway: PlanGateway): string => (momongaLayout(gateway.home) as unknown as { planCatalog: string }).planCatalog;
+
+const readRecord = async (gateway: PlanGateway): Promise<any> => {
+  const raw = await createFileCredentialStore(catalogDirectory(gateway)).read(RECORD_KEY);
+  return raw === undefined ? undefined : JSON.parse(raw);
+};
+
+const modelsRoute = (query = 'profile=chatgpt', account: string = ACCOUNT): string => `${accountRoute(PLAN_ROUTES.accountModels, account)}?${query}`;
+
+const listReads = (gateway: PlanGateway): number => gateway.upstream.requests.filter((request) => request.method === 'GET' && request.path === '/v1/models').length;
+
+const settingsOf = (gateway: PlanGateway): any => JSON.parse(fs.readFileSync(path.join(gateway.home, '.momonga', 'settings.json'), 'utf8'));
 
 describe('the live model catalog of a signed-in account (P7, M2a, I-M2)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('lists the server models in order through the probe reader, marks an entry without a window unusable, and filters by visibility', async () => {
     const gateway = await startPlanGateway({ models: LISTED });
     await signIn(gateway);
-    const listed = await gateway.get(accountRoute(PLAN_ROUTES.accountModels));
+    const listed = await gateway.get(modelsRoute());
     expect(listed.status).toBe(200);
     expect(listed.body.models).toEqual([
       { slug: 'reported-model', displayName: 'Reported Model', usable: true, contextWindow: 200000, maxOutputTokens: 50000 },
@@ -30,44 +47,105 @@ describe('the live model catalog of a signed-in account (P7, M2a, I-M2)', { time
     await gateway.close();
   });
 
-  it('saves the capability record named by profile and account, with no secret and no defaulted window', async () => {
+  it('requires the profile in the query and answers plan_account_not_found for an account with no record (O-R5-4 h)', async () => {
     const gateway = await startPlanGateway({ models: LISTED });
     await signIn(gateway);
-    await gateway.get(accountRoute(PLAN_ROUTES.accountModels));
-    const file = path.join(gateway.home, '.momonga', 'state', 'plan-catalog', 'chatgpt-work.json');
-    expect((fs.statSync(file).mode & 0o777).toString(8)).toBe('600');
-    const record = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const noProfile = await gateway.get(accountRoute(PLAN_ROUTES.accountModels));
+    expect(noProfile.status).toBe(400);
+    expect(noProfile.body.error.type).toBe('invalid_request');
+    const unknown = await gateway.get(modelsRoute('profile=chatgpt', 'nobody'));
+    expect(unknown.status).toBe(404);
+    expect(unknown.body.error).toMatchObject({ type: 'not_found', code: 'plan_account_not_found' });
+    await gateway.close();
+  });
+
+  it('saves the capability record in the plain store under <profile>/<account>, 0600, with no secret and no defaulted window (O-R5-4 b)', async () => {
+    const gateway = await startPlanGateway({ models: LISTED });
+    await signIn(gateway);
+    await gateway.get(modelsRoute());
+    const file = credentialFileFor(catalogDirectory(gateway), RECORD_KEY);
+    expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+    const record = await readRecord(gateway);
     expect(record.models).toEqual({
       'reported-model': { contextWindow: 200000, maxOutputTokens: 50000, source: 'reported' },
       'silent-model': { unreported: true },
     });
-    expect(typeof record.readAt).toBe('string');
-    for (const secret of gateway.auth.issuedSecrets()) expect(JSON.stringify(record)).not.toContain(secret);
+    expect(Number.isNaN(Date.parse(record.readAt))).toBe(false);
+    for (const secret of gateway.auth.issuedSecrets()) expect(fs.readFileSync(file, 'utf8')).not.toContain(secret);
     await gateway.close();
   });
 
-  it('loads the record at gateway start, so a plan target with no declared window takes the reported one', async () => {
+  it('serves the record while it is younger than the access lifetime, reads again past it, and on refresh=1 (O-R5-4 g)', async () => {
+    const clock = createFakeClock(Date.now());
+    const gateway = await startPlanGateway({ models: LISTED, clock });
+    await signIn(gateway);
+    await gateway.get(modelsRoute());
+    expect(listReads(gateway)).toBe(1);
+    clock.advance(ACCESS_LIFETIME_MS - 1);
+    expect((await gateway.get(modelsRoute())).status).toBe(200);
+    expect(listReads(gateway)).toBe(1);
+    expect((await gateway.get(modelsRoute('profile=chatgpt&refresh=1'))).status).toBe(200);
+    expect(listReads(gateway)).toBe(2);
+    clock.advance(ACCESS_LIFETIME_MS);
+    await gateway.get(modelsRoute());
+    expect(listReads(gateway)).toBe(3);
+    await gateway.close();
+  });
+
+  it('reads again when the record readAt lies in the future', async () => {
+    const gateway = await startPlanGateway({ models: LISTED });
+    await signIn(gateway);
+    await gateway.get(modelsRoute());
+    const record = await readRecord(gateway);
+    await createFileCredentialStore(catalogDirectory(gateway)).write(RECORD_KEY, JSON.stringify({ ...record, readAt: new Date(Date.now() + 86_400_000).toISOString() }));
+    await gateway.get(modelsRoute());
+    expect(listReads(gateway)).toBe(2);
+    await gateway.close();
+  });
+
+  it('loads the record at gateway start, so a plan target with no declared window takes the reported one without a list read', async () => {
     const gateway = await startPlanGateway({ models: LISTED, declaredCapabilities: false });
     await signIn(gateway);
-    await gateway.get(accountRoute(PLAN_ROUTES.accountModels));
-    const upstreamCalls = gateway.upstream.requests.length;
+    await gateway.get(modelsRoute());
+    const reads = listReads(gateway);
     await gateway.restart();
     const health = await getJson(clientFor(gateway.socketPath), '/v1/momonga/health');
     expect(health.body.targets['gpt'].reason).not.toBe('capabilities_unknown');
-    expect(gateway.upstream.requests.length).toBe(upstreamCalls);
+    expect(listReads(gateway)).toBe(reads);
+    await gateway.close();
+  });
+});
+
+describe('accounts/{account}/targets adds an unpinned target named by the P6.8 rule (O-R5-4 c)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+  const add = (gateway: PlanGateway, slug: string) => gateway.post(accountRoute(PLAN_ROUTES.accountTargets), { profile: 'chatgpt', slug });
+
+  it('writes { adapter, model: slug, plan: { profile } } under the slug name with an alias of the same name, and is idempotent', async () => {
+    const gateway = await startPlanGateway({ models: LISTED });
+    await signIn(gateway);
+    await gateway.get(modelsRoute());
+    const created = await add(gateway, 'reported-model');
+    expect({ status: created.status, body: created.body }).toEqual({ status: 200, body: { target: 'reported-model', alias: 'reported-model' } });
+    const settings = settingsOf(gateway);
+    expect(settings.models.targets['reported-model']).toEqual({ adapter: 'open-responses', model: 'reported-model', plan: { profile: 'chatgpt' } });
+    expect(settings.models.aliases['reported-model']).toEqual(expect.arrayContaining(['reported-model']));
+    const before = fs.readFileSync(path.join(gateway.home, '.momonga', 'settings.json'), 'utf8');
+    const again = await add(gateway, 'reported-model');
+    expect(again.body).toEqual({ target: 'reported-model', alias: 'reported-model' });
+    expect(fs.readFileSync(path.join(gateway.home, '.momonga', 'settings.json'), 'utf8')).toBe(before);
     await gateway.close();
   });
 
-  it('creates a target for a listed model through accounts/{account}/targets', async () => {
+  it('refuses an unusable entry with plan_model_unusable and an unknown slug with plan_model_unknown', async () => {
     const gateway = await startPlanGateway({ models: LISTED });
     await signIn(gateway);
-    await gateway.get(accountRoute(PLAN_ROUTES.accountModels));
-    const created = await gateway.post(accountRoute(PLAN_ROUTES.accountTargets), { profile: 'chatgpt', slug: 'reported-model' });
-    expect(created.status).toBe(200);
-    expect(typeof created.body.target).toBe('string');
-    expect(typeof created.body.alias).toBe('string');
-    const settings = JSON.parse(fs.readFileSync(path.join(gateway.home, '.momonga', 'settings.json'), 'utf8'));
-    expect(settings.models.targets[created.body.target]).toMatchObject({ adapter: 'open-responses', model: 'reported-model', plan: { profile: 'chatgpt', account: 'work' } });
+    await gateway.get(modelsRoute());
+    const unusable = await add(gateway, 'silent-model');
+    expect(unusable.status).toBe(400);
+    expect(unusable.body.error).toMatchObject({ type: 'invalid_request', code: 'plan_model_unusable' });
+    expect(unusable.body.error.message).toContain(NO_WINDOW);
+    const unknown = await add(gateway, 'no-such-model');
+    expect(unknown.status).toBe(404);
+    expect(unknown.body.error).toMatchObject({ type: 'not_found', code: 'plan_model_unknown' });
     await gateway.close();
   });
 });
