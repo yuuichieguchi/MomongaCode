@@ -4472,9 +4472,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 768689,
-      "measuredSeconds": 103.48,
-      "measuredCpuSeconds": 94.96,
-      "budgetCpuSeconds": 193
+      "measuredSeconds": 53.74,
+      "measuredCpuSeconds": 59.67,
+      "budgetCpuSeconds": 123
     },
     {
       "config": "SettingsSwap.underivable",
@@ -4483,9 +4483,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 380457,
-      "measuredSeconds": 42.11,
-      "measuredCpuSeconds": 43.07,
-      "budgetCpuSeconds": 90
+      "measuredSeconds": 24.95,
+      "measuredCpuSeconds": 28.27,
+      "budgetCpuSeconds": 60
     },
     {
       "config": "SettingsSwap.removal",
@@ -4494,9 +4494,9 @@
       "args": [],
       "tier": "deep",
       "distinctStates": 7914027,
-      "measuredSeconds": 1068.95,
-      "measuredCpuSeconds": 1110.43,
-      "budgetCpuSeconds": 2224
+      "measuredSeconds": 796.47,
+      "measuredCpuSeconds": 864.72,
+      "budgetCpuSeconds": 1733
     },
     {
       "config": "SettingsSwap.restartOnChange",
@@ -4508,9 +4508,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 72,
-      "measuredSeconds": 2.81,
-      "measuredCpuSeconds": 2.48,
-      "budgetCpuSeconds": 8
+      "measuredSeconds": 1.35,
+      "measuredCpuSeconds": 1.77,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "SettingsSwap.retireEager",
@@ -4522,9 +4522,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 219,
-      "measuredSeconds": 2.64,
-      "measuredCpuSeconds": 2.51,
-      "budgetCpuSeconds": 9
+      "measuredSeconds": 1.34,
+      "measuredCpuSeconds": 2.0,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "SettingsSwap.retireEagerPin",
@@ -4536,9 +4536,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 679,
-      "measuredSeconds": 3.57,
-      "measuredCpuSeconds": 2.89,
-      "budgetCpuSeconds": 9
+      "measuredSeconds": 1.43,
+      "measuredCpuSeconds": 2.28,
+      "budgetCpuSeconds": 8
     },
     {
       "config": "SettingsSwap.staleRead",
@@ -4550,9 +4550,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 9,
-      "measuredSeconds": 2.51,
-      "measuredCpuSeconds": 2.25,
-      "budgetCpuSeconds": 8
+      "measuredSeconds": 1.27,
+      "measuredCpuSeconds": 1.7,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "SettingsSwap.strictInRun",
@@ -4564,9 +4564,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 13,
-      "measuredSeconds": 2.79,
-      "measuredCpuSeconds": 2.33,
-      "budgetCpuSeconds": 8
+      "measuredSeconds": 1.3,
+      "measuredCpuSeconds": 1.74,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "SettingsSwap.sweepWithJob",
@@ -4578,9 +4578,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 5082,
-      "measuredSeconds": 3.5,
-      "measuredCpuSeconds": 3.7,
-      "budgetCpuSeconds": 11
+      "measuredSeconds": 1.52,
+      "measuredCpuSeconds": 2.63,
+      "budgetCpuSeconds": 9
     },
     {
       "config": "SettingsSwap.splitGate",
@@ -4592,8 +4592,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 41,
-      "measuredSeconds": 1.38,
-      "measuredCpuSeconds": 1.87,
+      "measuredSeconds": 1.3,
+      "measuredCpuSeconds": 1.81,
       "budgetCpuSeconds": 7
     },
     {
@@ -4606,9 +4606,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 4660,
-      "measuredSeconds": 2.26,
-      "measuredCpuSeconds": 3.08,
-      "budgetCpuSeconds": 10
+      "measuredSeconds": 1.58,
+      "measuredCpuSeconds": 2.62,
+      "budgetCpuSeconds": 9
     },
     {
       "config": "SettingsSwap.lateWake",
@@ -4620,8 +4620,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 6009,
-      "measuredSeconds": 1.66,
-      "measuredCpuSeconds": 2.83,
+      "measuredSeconds": 1.59,
+      "measuredCpuSeconds": 2.7,
       "budgetCpuSeconds": 9
     },
     {
@@ -4634,8 +4634,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 141,
-      "measuredSeconds": 1.34,
-      "measuredCpuSeconds": 1.91,
+      "measuredSeconds": 1.32,
+      "measuredCpuSeconds": 1.86,
       "budgetCpuSeconds": 7
     },
     {
@@ -4648,8 +4648,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 463,
-      "measuredSeconds": 1.44,
-      "measuredCpuSeconds": 2.14,
+      "measuredSeconds": 1.42,
+      "measuredCpuSeconds": 2.19,
       "budgetCpuSeconds": 8
     },
     {
@@ -4659,9 +4659,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 30961,
-      "measuredSeconds": 6.48,
-      "measuredCpuSeconds": 6.46,
-      "budgetCpuSeconds": 16
+      "measuredSeconds": 3.08,
+      "measuredCpuSeconds": 4.44,
+      "budgetCpuSeconds": 12
     },
     {
       "config": "SettingsSwap.lazyLastGood",
@@ -4673,8 +4673,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 147,
-      "measuredSeconds": 2.92,
-      "measuredCpuSeconds": 2.35,
+      "measuredSeconds": 1.41,
+      "measuredCpuSeconds": 2.06,
       "budgetCpuSeconds": 8
     },
     {
@@ -4687,9 +4687,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 1739,
-      "measuredSeconds": 2.06,
-      "measuredCpuSeconds": 3.33,
-      "budgetCpuSeconds": 10
+      "measuredSeconds": 1.47,
+      "measuredCpuSeconds": 2.46,
+      "budgetCpuSeconds": 8
     }
   ]
 }
