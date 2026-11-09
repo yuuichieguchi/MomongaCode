@@ -14,8 +14,6 @@ import type { EvidenceRunnerOptions } from '../../src/process/evidence-run.ts';
 
 const KILL_GRACE_MS = 300;
 const GROUP = 999_998;
-const STILL_RUNNING = 'At least one process started by it is still running';
-const FOUR_OCCASIONS = 'at most once at each of: before the next command that runs a process or changes files, the periodic check, start-up and shutdown';
 
 const scene = (survives: boolean) => {
   const timing = virtualTiming();
@@ -89,12 +87,9 @@ const runEvidence = async (context: Parameters<typeof withTempDir>[0], survives:
 };
 
 describe('the evidence run spawns under the same marker as every other spawn, so decision 12 reaches a group member that survives the stop', () => {
-  it('returns the exit code and output with the still-running note and keeps a marker for the four occasions', async (context) => {
+  it('returns the exit code and output and keeps a marker for the four occasions', async (context) => {
     const { result, markers } = await runEvidence(context, true);
-    expect(result).toMatchObject({ exitCode: 0, stdout: 'abc\n' });
-    const notes = (result as { notes?: string[] }).notes ?? [];
-    expect(notes.join(' ')).toContain(STILL_RUNNING);
-    expect(notes.join(' ')).toContain(FOUR_OCCASIONS);
+    expect(result).toEqual({ exitCode: 0, stdout: 'abc\n' });
     expect(markers).toHaveLength(1);
   });
 
