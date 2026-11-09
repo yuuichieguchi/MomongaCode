@@ -1721,9 +1721,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 694,
-      "measuredSeconds": 2.2,
-      "measuredCpuSeconds": 2.12,
-      "budgetCpuSeconds": 8
+      "measuredSeconds": 1.45,
+      "measuredCpuSeconds": 1.69,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "ProcessStop.rowlessIsOutside",
