@@ -184,6 +184,5 @@ export const probeFm = async (ports: CliPorts, paths: MomongaPaths, target: stri
     ...(options.samples === undefined ? {} : { samples: options.samples }),
   });
   ports.stdout.write(probeFmText(target, paths.probe, report, toolCalling, configured.outputBoundField));
-  await restartDaemon(ports, paths);
   return 0;
 };

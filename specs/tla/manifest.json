@@ -1854,6 +1854,20 @@
       "budgetCpuSeconds": 7
     },
     {
+      "config": "ProcessStop.groupProofWithoutStartTime",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoSignalToUnprovedGroup",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 694,
+      "measuredSeconds": 1.45,
+      "measuredCpuSeconds": 1.69,
+      "budgetCpuSeconds": 7
+    },
+    {
       "config": "ProcessStop.rowlessIsOutside",
       "role": "evidence",
       "expect": {
@@ -3031,10 +3045,10 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 59354,
-      "measuredSeconds": 3.83,
-      "measuredCpuSeconds": 3.31,
-      "budgetCpuSeconds": 10
+      "distinctStates": 1266624,
+      "measuredSeconds": 33.05,
+      "measuredCpuSeconds": 29.1,
+      "budgetCpuSeconds": 62
     },
     {
       "config": "AutoProbe.twoProbes",
@@ -3045,10 +3059,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 9,
-      "measuredSeconds": 2.48,
-      "measuredCpuSeconds": 1.49,
-      "budgetCpuSeconds": 6
+      "distinctStates": 11,
+      "measuredSeconds": 2.71,
+      "measuredCpuSeconds": 1.67,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "AutoProbe.processLock",
@@ -3059,9 +3073,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 12,
-      "measuredSeconds": 1.9,
-      "measuredCpuSeconds": 1.58,
+      "distinctStates": 14,
+      "measuredSeconds": 3.03,
+      "measuredCpuSeconds": 1.74,
       "budgetCpuSeconds": 7
     },
     {
@@ -3074,8 +3088,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 3,
-      "measuredSeconds": 2.7,
-      "measuredCpuSeconds": 1.58,
+      "measuredSeconds": 1.91,
+      "measuredCpuSeconds": 1.64,
       "budgetCpuSeconds": 7
     },
     {
@@ -3088,8 +3102,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 3,
-      "measuredSeconds": 3.35,
-      "measuredCpuSeconds": 1.69,
+      "measuredSeconds": 2.35,
+      "measuredCpuSeconds": 1.74,
       "budgetCpuSeconds": 7
     },
     {
@@ -3101,9 +3115,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 51,
-      "measuredSeconds": 3.38,
-      "measuredCpuSeconds": 1.61,
+      "distinctStates": 64,
+      "measuredSeconds": 2.48,
+      "measuredCpuSeconds": 1.65,
       "budgetCpuSeconds": 7
     },
     {
@@ -3115,8 +3129,8 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 13,
-      "measuredSeconds": 4.71,
+      "distinctStates": 15,
+      "measuredSeconds": 2.15,
       "measuredCpuSeconds": 1.71,
       "budgetCpuSeconds": 7
     },
@@ -3129,9 +3143,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 189,
-      "measuredSeconds": 4.94,
-      "measuredCpuSeconds": 1.75,
+      "distinctStates": 265,
+      "measuredSeconds": 2.26,
+      "measuredCpuSeconds": 1.82,
       "budgetCpuSeconds": 7
     },
     {
@@ -3143,9 +3157,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 23,
-      "measuredSeconds": 3.67,
-      "measuredCpuSeconds": 1.77,
+      "distinctStates": 27,
+      "measuredSeconds": 2.22,
+      "measuredCpuSeconds": 1.69,
       "budgetCpuSeconds": 7
     },
     {
@@ -3157,9 +3171,76 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 64,
-      "measuredSeconds": 3.48,
-      "measuredCpuSeconds": 1.68,
+      "distinctStates": 82,
+      "measuredSeconds": 2.54,
+      "measuredCpuSeconds": 1.74,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "AutoProbe.endpoint",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 1266624,
+      "measuredSeconds": 35.71,
+      "measuredCpuSeconds": 28.94,
+      "budgetCpuSeconds": 61
+    },
+    {
+      "config": "AutoProbe.reprobeRefused",
+      "role": "evidence",
+      "expect": {
+        "violates": "RefusalGetsRemedy",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 32,
+      "measuredSeconds": 2.11,
+      "measuredCpuSeconds": 1.77,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "AutoProbe.reprobeInBackoff",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoProbeInBackoff",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 69,
+      "measuredSeconds": 2.31,
+      "measuredCpuSeconds": 1.75,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "AutoProbe.endpointUnlocked",
+      "role": "evidence",
+      "expect": {
+        "violates": "RecordUnderLock",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 15,
+      "measuredSeconds": 2.12,
+      "measuredCpuSeconds": 1.73,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "AutoProbe.rejectStale",
+      "role": "evidence",
+      "expect": {
+        "violates": "RecordMatchesKey",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 266,
+      "measuredSeconds": 2.27,
+      "measuredCpuSeconds": 1.92,
       "budgetCpuSeconds": 7
     },
     {

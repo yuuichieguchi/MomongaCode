@@ -12,7 +12,7 @@ import {
   saveProbeRecord,
 } from '@momonga/gateway';
 import type { ExecResult, FmServe, FmServeTimers, ManagedFmTarget, ProbeRecordKey } from '@momonga/gateway';
-import { ESTIMATED_ERROR_SHAPE, errorBoundOfShape } from '@momonga/protocol';
+import { ESTIMATED_ERROR_SHAPE, TARGET_PROBING, errorBoundOfShape } from '@momonga/protocol';
 import type { ProbeReport } from '@momonga/protocol';
 import { FAKE_DETERMINISTIC_REPLY, createFakeClock, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeClock } from '@momonga/testkit';
@@ -20,12 +20,16 @@ import { START_MS, getJson, makeDir, postJson, readJson, registerCleanup, startG
 import { TARGET, collect, outputTextOf, userText } from './cc-support.ts';
 import { makeReport } from './report-fixture.ts';
 import { PROBE_METHOD_VERSION } from '../src/probe/run-probe.ts';
+import { probingAnswer, recordKeyOptions } from './fm-record-support.ts';
+import type { Probing } from '@momonga/protocol';
 import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 const BINARY = '/usr/bin/fm';
 const POLL_MS = 25;
 const LICENSE_NOTICE = 'YOU HAVE NOT AGREED TO THE FM TERMS';
 const RECORD_KEY: ProbeRecordKey = { target: 'fm', binarySha256: 'ab'.repeat(32), osBuild: '25A100' };
+const { tokenCalibration: _calibration, ...uncalibrated } = makeReport(1, 1);
+const UNCALIBRATED_REPORT: ProbeReport = uncalibrated;
 const ALL_TRUE = { enum: true, anyOf: true, const: true, pattern: true, minimum: true, nested: true, additionalProperties: true };
 
 class FakeFmChild extends EventEmitter {
@@ -76,6 +80,7 @@ const pollingTimers = (clock: FakeClock): FmServeTimers => ({
 
 type Setup = {
   report?: ProbeReport;
+  unprobed?: true;
   licenseExitCode?: number;
   countStdout?: string;
   countExitCode?: number;
@@ -85,7 +90,13 @@ const setup = async (config: Setup = {}) => {
   const dir = makeDir();
   const socketPath = path.join(dir, 'fm.sock');
   const recordDir = path.join(dir, 'probe');
-  if (config.report !== undefined) await saveProbeRecord(recordDir, RECORD_KEY, config.report, { userDialects: {}, probeMethod: PROBE_METHOD_VERSION });
+  const recorded = config.unprobed === true ? undefined : (config.report ?? UNCALIBRATED_REPORT);
+  if (recorded !== undefined) await saveProbeRecord(recordDir, RECORD_KEY, recorded, { userDialects: {}, probeMethod: PROBE_METHOD_VERSION });
+  const probeStarts: ProbeRecordKey[] = [];
+  const startProbe = async (key: ProbeRecordKey): Promise<Probing> => {
+    probeStarts.push(key);
+    return probingAnswer();
+  };
   const clock = createFakeClock(START_MS);
   const children: FakeFmChild[] = [];
   const spawn = vi.fn((_file: string, _args: readonly string[]) => {
@@ -129,10 +140,11 @@ const setup = async (config: Setup = {}) => {
     binary: BINARY,
     exec,
     probeRecordDir: recordDir,
-    recordKey: RECORD_KEY,
+    ...recordKeyOptions(RECORD_KEY, startProbe),
     toolCallingSetting: config.report === undefined ? 'native' : 'auto',
   });
-  return { managed, spawn, socketPath, execCalls, clock, children };
+  if (recorded !== undefined) await managed.capabilities(TARGET);
+  return { managed, spawn, socketPath, execCalls, clock, children, probeStarts };
 };
 
 const adapterFor = (managed: ManagedFmTarget, clock: FakeClock) => {
@@ -186,9 +198,10 @@ describe('createManagedFmTarget probe-derived settings', () => {
     expect(managed.constructSupport(TARGET)).toEqual(constructSupport);
   });
 
-  it('resolves an unprobed target that declares no dialect to json-schema-2020-12', async () => {
-    const { managed } = await setup();
-    expect((await managed.capabilities(TARGET)).schemaDialect).toBe('json-schema-2020-12');
+  it('answers a target with no record 503 target_probing, with no capability, and starts the probe of its key', async () => {
+    const { managed, probeStarts } = await setup({ unprobed: true });
+    await expect(managed.capabilities(TARGET)).rejects.toMatchObject({ status: 503, body: { code: TARGET_PROBING } });
+    expect(probeStarts).toEqual([RECORD_KEY]);
   });
 
   it('exposes the tool-calling mode only through capabilities', async () => {
@@ -196,11 +209,11 @@ describe('createManagedFmTarget probe-derived settings', () => {
     expect(managed).not.toHaveProperty('toolCalling');
   });
 
-  it('declares the envelope as its only allowed_tools form, probed or not', async () => {
+  it('declares the envelope as its only allowed_tools form, whether tool calling is probed or declared', async () => {
     const probed = await setup({ report: makeReport(0.5, 1) });
-    const unprobed = await setup();
+    const declared = await setup();
     expect((await probed.managed.capabilities(TARGET)).allowedTools).toEqual(['envelope']);
-    expect((await unprobed.managed.capabilities(TARGET)).allowedTools).toEqual(['envelope']);
+    expect((await declared.managed.capabilities(TARGET)).allowedTools).toEqual(['envelope']);
   });
 
   it('sends the envelope over the allowed subset to a constrained fm target', async () => {
@@ -222,15 +235,12 @@ describe('createManagedFmTarget probe-derived settings', () => {
     expect(validate({ kind: 'final', text: 'done' })).toBe(false);
   });
 
-  it('uses the declared native tool calling, full keyword support and conservative unprobed capabilities without a record', async () => {
+  it('uses the declared native tool calling over the record, and the context window the record measured', async () => {
     const { managed } = await setup();
-    expect((await managed.capabilities(TARGET)).toolCalling).toBe('native');
-    expect(managed.keywordSupport(TARGET)).toEqual(ALL_TRUE);
     expect(await managed.capabilities(TARGET)).toMatchObject({
-      contextWindow: 4096,
+      contextWindow: UNCALIBRATED_REPORT.contextWindow.value,
       toolCalling: 'native',
-      tokenCounting: 'estimated',
-      source: 'unprobed',
+      source: 'probed',
     });
   });
 });

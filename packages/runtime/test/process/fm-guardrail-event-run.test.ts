@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { startGatewayProcess } from '@momonga/gateway';
+import { probeManagedFm, startGatewayProcess } from '@momonga/gateway';
 import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { onCleanup, writeUserSettings } from './helpers.ts';
 import { GATEWAY_VERSION, launchRuntime, makeRunHome, readDb, sessionEnvFor, waitForCondition } from './run-helpers.ts';
@@ -33,6 +33,16 @@ const startFmGateway = async (temp: RunHome): Promise<void> => {
   fm.configure({ envDumpFile: dumpFile, serve: { guardrailTrigger: GUARDRAIL_TRIGGER } });
   onCleanup(() => killGroupsForCleanup(servePids(dumpFile)));
   writeUserSettings(temp.home, { sandbox: 'none', models: { aliases: { default: ['fm'] }, targets: { fm: { adapter: 'fm', toolCalling: 'native' } } } });
+  await probeManagedFm({
+    paths: temp.paths,
+    target: 'fm',
+    binary: fm.binaryPath,
+    socketPath: path.join(temp.root, 'fm-probe.sock'),
+    env: sessionEnvFor(temp.home),
+    exec: fakeExec,
+    samples: 1,
+    onWarning: () => undefined,
+  });
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
   try {
     const gateway = await startGatewayProcess({ home: temp.home, env: sessionEnvFor(temp.home), version: GATEWAY_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });

@@ -5,9 +5,11 @@ import { InheritanceError, JournalThreadError } from '@momonga/store';
 import { EarlierAttemptNotStoppedError } from '@momonga/tools';
 import { GatewayFailureError } from './errors.ts';
 import { GatewayRequestError } from '../gateway-client.ts';
+import { TARGET_PROBING } from '@momonga/protocol';
 
 const STREAM_INTERRUPTED_REFUNDS = 3;
 const PROVIDER_UNAVAILABLE_CODE = 'provider_unavailable';
+const SERVICE_UNAVAILABLE_STATUS = 503;
 const DEFERRAL_FAILURE_CODE = 'rate_limited';
 const GATEWAY_FAILURE_CODE = 'gateway_failure';
 const JOURNAL_THREAD_FAILURE_CODE = 'journal_thread_error';
@@ -18,7 +20,8 @@ export type FailureDisposition =
   | { kind: 'fail'; code: string; message: string }
   | { kind: 'timeout' }
   | { kind: 'defer'; code: string; message: string; retryAfterMs: number }
-  | { kind: 'requeue'; refund: boolean; retryAfterMs: number; interrupted: boolean };
+  | { kind: 'requeue'; refund: boolean; retryAfterMs: number; interrupted: boolean }
+  | { kind: 'wait'; code: string; message: string; retryAfterMs: number };
 
 export const observedCodeOf = (error: unknown): string => {
   if (error instanceof GatewayRequestError) return error.code;
@@ -37,10 +40,11 @@ export const dispositionOf = (error: unknown, interruptions: number): FailureDis
   if (!(error instanceof GatewayRequestError)) return { kind: 'fail', code: 'internal_error', message: error instanceof Error ? error.message : String(error) };
   const retryAfterMs = error.retryAfterMs ?? 0;
   if (error.code === 'deadline_exceeded') return { kind: 'timeout' };
+  if (error.status === SERVICE_UNAVAILABLE_STATUS && error.code === TARGET_PROBING) return { kind: 'wait', code: error.code, message: error.message, retryAfterMs };
   if (error.deferred === true) return { kind: 'defer', code: DEFERRAL_FAILURE_CODE, message: error.message, retryAfterMs };
   if (error.code === 'gateway_unavailable' && error.provenNotSent === true) return { kind: 'requeue', refund: true, retryAfterMs, interrupted: false };
   if (error.status === 503 && error.code === 'gateway_closed') return { kind: 'requeue', refund: true, retryAfterMs, interrupted: false };
   if (error.code === 'stream_interrupted') return { kind: 'requeue', refund: interruptions < STREAM_INTERRUPTED_REFUNDS, retryAfterMs, interrupted: true };
-  if (error.type === 'transport' || error.code === PROVIDER_UNAVAILABLE_CODE || TRANSIENT_REQUEST_STATUSES.includes(error.status)) return { kind: 'requeue', refund: false, retryAfterMs, interrupted: false };
+  if (error.type === 'transport' || error.code === PROVIDER_UNAVAILABLE_CODE || error.status === SERVICE_UNAVAILABLE_STATUS || TRANSIENT_REQUEST_STATUSES.includes(error.status)) return { kind: 'requeue', refund: false, retryAfterMs, interrupted: false };
   return { kind: 'fail', code: error.code, message: error.message };
 };
