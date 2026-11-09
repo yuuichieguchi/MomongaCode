@@ -148,7 +148,8 @@ describe('local servers from the welcome', () => {
     const { app, backend } = await startPlan({ aliases: [], accounts: [], detected: [ollama]}, { initialPrompt: 'hello there' });
     await choose(app, 'Use a local server');
     await choose(app, 'llama3.2');
-    await untilFrame(app, '131072');
+    const ceiling = await untilFrame(app, '131072');
+    expect(ceiling).toMatch(/trained maximum/i);
     app.stdin.write(KEYS.enter);
     await quiet();
     expect(backend.connections).toEqual([]);
@@ -168,11 +169,12 @@ describe('local servers from the welcome', () => {
     app.unmount();
   });
 
-  it('asks for the window of an openai-shape model that reports none, with no default, and writes the entry', async () => {
+  it('asks for the window of an openai-shape model that reports none, with no ceiling and no default, and writes the entry', async () => {
     const { app, backend } = await startPlan({ aliases: [], accounts: [], detected: [lmstudio] });
     await choose(app, 'Use a local server');
     await choose(app, 'silent-model');
-    await untilFrame(app, /context window/i);
+    const asked = await untilFrame(app, /context window/i);
+    expect(asked).not.toMatch(/trained maximum/i);
     app.stdin.write(KEYS.enter);
     await quiet();
     expect(backend.connections).toEqual([]);
