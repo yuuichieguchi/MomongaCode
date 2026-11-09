@@ -1,8 +1,8 @@
 import { loadMcpServers } from '@momonga/config';
 import type { McpServerEntry, SettingsUse, UserLayer } from '@momonga/config';
-import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import { AUTHORIZATION_WAIT_MS, canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { Clock, JsonLogger } from '@momonga/foundation';
-import { AUTHORIZATION_WAIT_MS, McpAuthorizationError } from '@momonga/mcp';
+import { McpAuthorizationError } from '@momonga/mcp';
 import type { McpAuthorizingPool, McpPoolOptions, McpRemotePorts } from '@momonga/mcp';
 import type { McpAuthorizationView, McpServerView } from '@momonga/protocol';
 import type { RuntimeStore, Session } from '@momonga/store';

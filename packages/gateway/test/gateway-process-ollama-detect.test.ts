@@ -30,9 +30,49 @@ const startedWith = async (adapter: 'chat-completions' | 'open-responses', optio
 const ask = async (socketPath: string) => readJson(await postJson(clientFor(socketPath), '/v1/responses', { model: 'fast', input: userInput('hi') }));
 
 describe('decision 3: a chat-completions or open-responses target whose server is Ollama', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
-  it('asks the origin of the baseUrl for GET /api/version at start', async () => {
-    const { fake } = await startedWith('chat-completions', { version: { status: 404, body: { error: 'not found' } } });
-    expect(fake.requests.filter((request) => request.method === 'GET' && request.path === '/api/version')).toHaveLength(1);
+  it('does not ask at start, and asks the origin of the baseUrl for GET /api/version at the first use, before the request is sent', async () => {
+    const { fake, handle } = await startedWith('chat-completions', { version: { status: 404, body: { error: 'not found' } } });
+    const versions = () => fake.requests.filter((request) => request.method === 'GET' && request.path === '/api/version');
+    expect(versions()).toHaveLength(0);
+
+    await ask(handle.socketPath);
+    await ask(handle.socketPath);
+
+    expect(versions()).toHaveLength(1);
+    const firstVersion = fake.requests.findIndex((request) => request.path === '/api/version');
+    const firstV1 = fake.requests.findIndex((request) => request.path.startsWith('/v1/'));
+    expect(firstVersion).toBeLessThan(firstV1);
+  });
+
+  it('keeps no answer from an identification that failed, and makes it again before the next send', async () => {
+    let versionAsks = 0;
+    let v1Asks = 0;
+    const server = await startLoopbackServer((req, res) => {
+      if (req.url === '/api/version') {
+        versionAsks += 1;
+        if (versionAsks === 1) {
+          req.socket.destroy();
+          return;
+        }
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ version: RECORDED_SERVER_VERSION }));
+        return;
+      }
+      v1Asks += 1;
+      res.statusCode = 500;
+      res.end();
+    });
+    const home = makeHome();
+    writeSettings(home, { models: { aliases: { fast: ['local'] }, targets: { local: v1Target('chat-completions', server.origin) } } });
+    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+
+    const response = await ask(handle.socketPath);
+    await server.close();
+
+    expect(versionAsks).toBe(2);
+    expect(response.status).toBe(412);
+    expect(response.body.error.message).toContain('adapter: "ollama"');
+    expect(v1Asks).toBe(0);
   });
 
   for (const adapter of ['chat-completions', 'open-responses'] as const) {

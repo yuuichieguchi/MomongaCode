@@ -7,6 +7,7 @@ import { FM_CONTEXT_OVERFLOW_ERROR, FM_UNSUPPORTED_GUIDE_ERROR, createFakeClock,
 import type { FakeUpstreamServer } from '@momonga/testkit';
 import { START_MS, makeDir, postJson, readSse, registerCleanup, startGateway } from './gateway-helpers.ts';
 import { CC_CAPABILITIES, collect, terminalOf, userText } from './cc-support.ts';
+import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 const FM_ROLE_CHUNK = {
   id: 'chatcmpl-fm',
@@ -50,13 +51,13 @@ const unprobedFmAdapter = async (upstream: FakeUpstreamServer) => {
     toolCallingSetting: 'native',
     declaredModel: 'system',
   });
-  const adapter = createChatCompletionsAdapter({ ...managed, clock: createFakeClock(START_MS) });
+  const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock: createFakeClock(START_MS) });
   registerCleanup(() => adapter.close());
   return adapter;
 };
 
 const genericAdapter = (upstream: FakeUpstreamServer) => {
-  const adapter = createChatCompletionsAdapter({ schemaDialect: () => 'json-schema-2020-12',
+  const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, schemaDialect: () => 'json-schema-2020-12',
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: upstream.socketPath }),
     capabilities: async () => CC_CAPABILITIES,
     clock: createFakeClock(START_MS),

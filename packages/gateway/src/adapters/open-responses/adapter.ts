@@ -50,7 +50,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     try {
-      const endpoint = await options.resolveEndpoint(ctx.target);
+      const endpoint = await options.resolveEndpoint(ctx.target, signal);
       const apiKey = await options.apiKey?.(ctx.target, signal);
       const response = await pool.clientFor(endpoint).post({
         headers: {

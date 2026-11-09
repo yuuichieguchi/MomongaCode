@@ -1,7 +1,13 @@
-import { Agent, request } from 'undici';
-import { createUdsClient } from '@momonga/foundation';
+import { request } from 'undici';
+import { createOutboundDispatcher, createUdsClient } from '@momonga/foundation';
+import type { OutboundNetwork } from '@momonga/foundation';
 
-export type UpstreamEndpoint = { kind: 'unix'; socketPath: string } | { kind: 'tcp'; baseUrl: string };
+export type UpstreamEndpoint = { kind: 'unix'; socketPath: string } | { kind: 'tcp'; baseUrl: string; network: OutboundNetwork };
+
+export type KeyedEndpoint = { kind: 'unix'; socketPath: string } | { kind: 'tcp'; baseUrl: string };
+
+export const reachableEndpoint = (endpoint: KeyedEndpoint, network: OutboundNetwork): UpstreamEndpoint =>
+  endpoint.kind === 'unix' ? endpoint : { kind: 'tcp', baseUrl: endpoint.baseUrl, network };
 
 export type UpstreamLiveness = { headersTimeoutMs: number; idleTimeoutMs: number };
 
@@ -34,18 +40,22 @@ const lowercased = (headers: Record<string, string | string[] | undefined>): Rec
   return result;
 };
 
-const unixClient = (socketPath: string, route: EndpointRoute, liveness: UpstreamLiveness | undefined): EndpointClient => {
-  const client = createUdsClient(socketPath, liveness === undefined ? {} : { headersTimeoutMs: liveness.headersTimeoutMs, bodyTimeoutMs: liveness.idleTimeoutMs });
+const unixClient = (socketPath: string, route: EndpointRoute, liveness: UpstreamLiveness): EndpointClient => {
+  const client = createUdsClient(socketPath, { headersTimeoutMs: liveness.headersTimeoutMs, bodyTimeoutMs: liveness.idleTimeoutMs });
   return {
     post: ({ subpath, ...options }) => client.request({ method: 'POST', path: `${route.unixPath}${subpath ?? ''}`, ...options }),
     close: () => client.close(),
   };
 };
 
-const tcpClient = (baseUrl: string, route: EndpointRoute, liveness: UpstreamLiveness | undefined): EndpointClient => {
-  const base = new URL(baseUrl);
+const tcpClient = (endpoint: Extract<UpstreamEndpoint, { kind: 'tcp' }>, route: EndpointRoute, liveness: UpstreamLiveness): EndpointClient => {
+  const base = new URL(endpoint.baseUrl);
   const urlFor = (subpath: string | undefined): URL => new URL(`${base.pathname.replace(/\/+$/, '')}${route.urlSuffix}${subpath ?? ''}`, base.origin);
-  const agent = new Agent(liveness === undefined ? {} : { headersTimeout: liveness.headersTimeoutMs, bodyTimeout: liveness.idleTimeoutMs });
+  const agent = createOutboundDispatcher(endpoint.network, {
+    connectReplyTimeoutMs: liveness.headersTimeoutMs,
+    headersTimeout: liveness.headersTimeoutMs,
+    bodyTimeout: liveness.idleTimeoutMs,
+  });
   let closing: Promise<void> | undefined;
   return {
     post: async (options) => {
@@ -73,7 +83,7 @@ export type EndpointPool = {
   close(): Promise<void>;
 };
 
-export const createEndpointPool = (route: EndpointRoute, liveness: UpstreamLiveness | undefined): EndpointPool => {
+export const createEndpointPool = (route: EndpointRoute, liveness: UpstreamLiveness): EndpointPool => {
   const clients = new Map<string, EndpointClient>();
   let closed = false;
   return {
@@ -82,7 +92,7 @@ export const createEndpointPool = (route: EndpointRoute, liveness: UpstreamLiven
       const key = keyOf(endpoint);
       let client = clients.get(key);
       if (client === undefined) {
-        client = endpoint.kind === 'unix' ? unixClient(endpoint.socketPath, route, liveness) : tcpClient(endpoint.baseUrl, route, liveness);
+        client = endpoint.kind === 'unix' ? unixClient(endpoint.socketPath, route, liveness) : tcpClient(endpoint, route, liveness);
         clients.set(key, client);
       }
       return client;

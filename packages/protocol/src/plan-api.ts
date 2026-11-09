@@ -35,6 +35,7 @@ export type PlanProfileMessages = {
   manageUsageLabel: string;
   usageLimitMessage: string;
   signInExpiredMessage: string;
+  signInRequiredMessage: string;
   planNotEnabledMessage: string;
   notEligibleMessage: string;
   firstSignIn: { title: string; body: string; action: string };

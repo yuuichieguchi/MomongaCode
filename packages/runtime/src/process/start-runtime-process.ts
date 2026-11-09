@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ConfigError, createUserSettingsCache, diskKeptRecords, keptSettingsDirectory, resolveTelemetrySettings } from '@momonga/config';
+import { ConfigError, createUserSettingsCache, diskKeptRecords, keptSettingsDirectory, resolveNetwork, resolveTelemetrySettings } from '@momonga/config';
+import { installTrust } from '@momonga/foundation';
 import {
   acquireProcessLock,
   announceReady,
@@ -14,6 +15,7 @@ import {
   reapMarkerDirectory,
   ruleEnforcementOf,
   systemClock,
+  nodeFileSystem,
   nodeFileSystemSync,
 } from '@momonga/foundation';
 import type { Clock, JsonLogger, MomongaPaths, ProcessLock, ReadyFields, TextStream } from '@momonga/foundation';
@@ -313,10 +315,13 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
     cleanups.push({ name: 'lock', run: () => lock.release() });
 
-    const { cache, settings } = await step('settings', () => {
+    const { cache, settings } = await step('settings', async () => {
       const created = createUserSettingsCache({ home: canonicalHome, onWarning, keptRecords: diskKeptRecords(nodeFileSystemSync, keptSettingsDirectory(canonicalHome)) });
       const snapshot = created.snapshot();
       if ('error' in snapshot) throw snapshot.error;
+      const networkConfig = resolveNetwork(snapshot.settings.network, process.env);
+      const trust = await installTrust(networkConfig, nodeFileSystem);
+      for (const failure of trust.failures) logger.warn(`the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}`);
       return { cache: created, settings: snapshot.settings };
     });
 

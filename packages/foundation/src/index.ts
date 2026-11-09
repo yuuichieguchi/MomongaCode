@@ -36,7 +36,8 @@ export { uuidv7 } from './uuidv7.ts';
 export { DEFAULT_LOCK_TIMEOUT_MS, createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
 export type { FileLockOptions, FileLockPorts, KeyedSerializer } from './file-lock.ts';
 export { createFileCredentialStore, createMemoryCredentialStore } from './credential-store.ts';
-export type { CredentialStore, FileCredentialStoreOptions } from './credential-store.ts';
+export type { CredentialEntry, CredentialStore, FileCredentialStoreOptions } from './credential-store.ts';
+export { AUTHORIZATION_WAIT_MS } from './authorization-wait.ts';
 export { OAuthAuthorizationError } from './oauth-authorization-error.ts';
 export type { AuthorizationFailure } from './oauth-authorization-error.ts';
 export { createOAuthProvider } from './oauth-provider.ts';
@@ -129,6 +130,8 @@ export type { SecretKeyFile, SecretKeyFileOptions } from './secret-key-file.ts';
 export { isLoopbackHost, redactedUrl, transportUrlMessage, transportUrlProblem } from './loopback.ts';
 export type { TransportUrlProblem } from './loopback.ts';
 export { matchesNoProxy, NETWORK_ENV_NAMES, routeOf } from './network-route.ts';
+export { OutboundConnectionError, createOutboundDispatcher, findOutboundError, installTrust, outboundFetch, proxyPasswordsOf } from './outbound.ts';
+export type { OutboundFailure, OutboundFetch, OutboundHop, OutboundNetwork, OutboundOptions, TrustFailure, TrustFiles, TrustReport, TrustSource } from './outbound.ts';
 export type { Destination, NetworkConfig, NetworkEnvName, NetworkSettingKey, NetworkSource, Route, SourcedValue, UnsupportedProxyReason } from './network-route.ts';
 export {
   EXIT_ALREADY_RUNNING,

@@ -15,6 +15,7 @@ import {
   startFakeOllama,
 } from './ollama-support.ts';
 import type { FakeOllamaOptions } from './ollama-support.ts';
+import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
 
 const CONTEXT_WINDOW = 12288;
 
@@ -33,7 +34,7 @@ const probedHome = async (options: FakeOllamaOptions) => {
   writeSettings(home, { models: { aliases: { fast: ['local'] }, targets: { local: ollamaTarget(fake.origin) } } });
   await probeOllamaTarget({
     probeRecordDir: momongaPaths(home, process.platform, {}).probe,
-    upstream: { kind: 'tcp', baseUrl: fake.origin }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL,
+    upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL,
     contextWindow: CONTEXT_WINDOW,
   });
   fake.requests.length = 0;

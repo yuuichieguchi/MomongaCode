@@ -39,7 +39,7 @@ export { runSupervisorEntry } from './entry.ts';
 export type { SupervisorEntryDeps } from './entry.ts';
 export { CHILD_ROLES, childStdio, contractArgs, resolveLaunch } from './launcher.ts';
 export type { ChildRole, GatewayTuning, LaunchSpec, Launcher, ResolvedLaunch, RuntimeTuning } from './launcher.ts';
-export { COLLIDING_CREDENTIAL_DETAIL, COLLIDING_CREDENTIAL_PREFIXES, GATEWAY_TRUST_ENV_NAMES, definedEnv, gatewayEnv, runtimeEnv } from './child-env.ts';
+export { COLLIDING_CREDENTIAL_DETAIL, COLLIDING_CREDENTIAL_PREFIXES, definedEnv, gatewayEnv, runtimeEnv } from './child-env.ts';
 export type { CredentialSettings, SourceEnv } from './child-env.ts';
 export { DEFAULT_RESTART_POLICY, backoffDelay, classifyExit, decideAfterExit, failureWithoutProcess, resolveRestartPolicy, stopReasonRank } from './restart-policy.ts';
 export type { ExitClass, ExitClassification, ExitDecision, RestartPolicy, StopMode, StopReason } from './restart-policy.ts';

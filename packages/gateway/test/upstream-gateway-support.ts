@@ -7,6 +7,7 @@ import { createFakeClock, startFakeAnthropic, startFakeOpenResponses } from '@mo
 import type { FakeAnthropicOptions, FakeOpenResponsesOptions, FakeUpstreamServer } from '@momonga/testkit';
 import { START_MS, postJson, readSse, registerCleanup, startGateway, userInput, validator } from './gateway-helpers.ts';
 import type { ConfigOverrides, Harness } from './gateway-helpers.ts';
+import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 export const FAKE_API_KEY = 'sk-ant-fake-0000000000000000';
 
@@ -49,7 +50,7 @@ export const startAnthropicGateway = async (
 ): Promise<UpstreamGateway> => {
   const fake = await startFakeAnthropic({ apiKey: options.apiKey ?? FAKE_API_KEY, ...options });
   registerCleanup(() => fake.close());
-  const adapter = createAnthropicAdapter({
+  const adapter = createAnthropicAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
     apiKey: async () => options.sentKey ?? FAKE_API_KEY,
     capabilities: async () => options.capabilities ?? REMOTE_CAPABILITIES,
@@ -70,7 +71,7 @@ export const startOpenResponsesGateway = async (
 ): Promise<UpstreamGateway> => {
   const fake = await startFakeOpenResponses(options);
   registerCleanup(() => fake.close());
-  const adapter = createOpenResponsesAdapter({
+  const adapter = createOpenResponsesAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
     ...(options.sentKey === undefined ? {} : { apiKey: async () => options.sentKey }),
     capabilities: async () => options.capabilities ?? REMOTE_CAPABILITIES,
