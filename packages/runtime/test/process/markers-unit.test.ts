@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { findHolders } from '@momonga/foundation';
+import { findHolders, recordMarkerGroup } from '@momonga/foundation';
 import type { ReapMarkedProcessesOptions } from '@momonga/foundation';
 import type { IdempotencyLookup, IdempotencyRecord, Run } from '@momonga/store';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, fakeReapTiming, killGroupsForCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
@@ -26,6 +26,7 @@ vi.mock('@momonga/foundation', async (importOriginal) => {
 });
 
 const KILL_GRACE_MS = 2000;
+const LEDGER_PGID = 1_111_111;
 const spawnedGroups: number[] = [];
 
 afterEach(async () => {
@@ -191,11 +192,12 @@ describe('reapToolMarkers (real processes, system timers, except where fake time
     expect(timers.pending()).toEqual([]);
   });
 
-  it('PENDING with a holder is reaped with the recorded pgid: ownership decides, not the ledger row', async () => {
+  it('PENDING with a holder is reaped with the pgid recorded in the marker file: ownership decides, not the ledger row', async () => {
     const temp = await makeTempHome();
     const marker = markerOf(temp, keyOf(1));
+    await recordMarkerGroup(marker, 4321);
     await holdMarker(marker);
-    const { store } = idempotencyOf({ [keyOf(1)]: { s: 'PENDING', rec: record(keyOf(1), 'PENDING', 4321) } });
+    const { store } = idempotencyOf({ [keyOf(1)]: { s: 'PENDING', rec: record(keyOf(1), 'PENDING', LEDGER_PGID) } });
     const reaper = recordingReap();
 
     await reapToolMarkers({ event: 'startup', owners: createMarkerOwners(), dir: temp.paths.markers.tools, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never });
@@ -226,15 +228,16 @@ describe('reapToolMarkers (real processes, system timers, except where fake time
     }
   });
 
-  it('UNKNOWN with a holder is reaped with the recorded pgid, and an UNKNOWN record with no pgid is reaped by holders only', async () => {
+  it('UNKNOWN with a holder is reaped with the pgid recorded in the marker file, and a marker with no group line is reaped by holders only whatever the ledger holds', async () => {
     const temp = await makeTempHome();
     const withGroup = markerOf(temp, keyOf(1));
     const withoutGroup = markerOf(temp, keyOf(2));
+    await recordMarkerGroup(withGroup, 98765);
     await holdMarker(withGroup);
     await holdMarker(withoutGroup);
     const { store } = idempotencyOf({
-      [keyOf(1)]: { s: 'UNKNOWN', rec: record(keyOf(1), 'UNKNOWN', 98765) },
-      [keyOf(2)]: { s: 'UNKNOWN', rec: record(keyOf(2), 'UNKNOWN') },
+      [keyOf(1)]: { s: 'UNKNOWN', rec: record(keyOf(1), 'UNKNOWN', LEDGER_PGID) },
+      [keyOf(2)]: { s: 'UNKNOWN', rec: record(keyOf(2), 'UNKNOWN', LEDGER_PGID) },
     });
     const reaper = recordingReap();
 
@@ -354,12 +357,13 @@ const deadLetterStore = (lookups: Record<string, IdempotencyLookup>, runs: reado
 const terminalWarning = (marker: string, runId: string): string => `tool marker ${marker}: run ${runId} is terminal, so its holder was reaped`;
 
 describe('reapToolMarkers dead-lettered runs, start scope (§8)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
-  it('PENDING with a dead-lettered run is reaped with the recorded pgid and a warning naming the run', async (context) => {
+  it('PENDING with a dead-lettered run is reaped with the pgid recorded in the marker file and a warning naming the run', async (context) => {
     const dir = trackedMarkerDir(context);
     const key = deadLetterKey(1);
     const marker = emptyMarker(dir, key);
     const pgid = await trackedHolder(context, marker);
-    const { store } = deadLetterStore({ [key]: pendingFor(key, 'run-dead', pgid) }, [{ id: 'run-dead', status: 'FAILED', deadLetter: true }]);
+    await recordMarkerGroup(marker, pgid);
+    const { store } = deadLetterStore({ [key]: pendingFor(key, 'run-dead', LEDGER_PGID) }, [{ id: 'run-dead', status: 'FAILED', deadLetter: true }]);
     const reaper = recordingReap();
     const warned = warnings();
 
@@ -405,7 +409,8 @@ describe('reapToolMarkers dead-lettered runs, start scope (§8)', { timeout: REA
     const key = deadLetterKey(4);
     const marker = emptyMarker(dir, key);
     const pgid = await trackedHolder(context, marker);
-    const { store } = deadLetterStore({ [key]: pendingFor(key, 'run-cancelled', pgid) }, [{ id: 'run-cancelled', status: 'CANCELLED', deadLetter: false }]);
+    await recordMarkerGroup(marker, pgid);
+    const { store } = deadLetterStore({ [key]: pendingFor(key, 'run-cancelled', LEDGER_PGID) }, [{ id: 'run-cancelled', status: 'CANCELLED', deadLetter: false }]);
     const reaper = recordingReap();
 
     await reapToolMarkers({ event: 'startup', owners: createMarkerOwners(), dir, store, killGraceMs: KILL_GRACE_MS, onWarning: warnings().onWarning, reap: reaper.reap as never });
@@ -416,12 +421,13 @@ describe('reapToolMarkers dead-lettered runs, start scope (§8)', { timeout: REA
 });
 
 describe('reapToolMarkers by event: the sweep reads the unowned markers only', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
-  it('a dead-lettered run is reaped with the recorded pgid and a warning naming the run', async (context) => {
+  it('a dead-lettered run is reaped with the pgid recorded in the marker file and a warning naming the run', async (context) => {
     const dir = trackedMarkerDir(context);
     const key = deadLetterKey(5);
     const marker = emptyMarker(dir, key);
     const pgid = await trackedHolder(context, marker);
-    const { store } = deadLetterStore({ [key]: pendingFor(key, 'run-dead', pgid) }, [{ id: 'run-dead', status: 'FAILED', deadLetter: true }]);
+    await recordMarkerGroup(marker, pgid);
+    const { store } = deadLetterStore({ [key]: pendingFor(key, 'run-dead', LEDGER_PGID) }, [{ id: 'run-dead', status: 'FAILED', deadLetter: true }]);
     const reaper = recordingReap();
     const warned = warnings();
 

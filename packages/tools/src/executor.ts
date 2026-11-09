@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { UNMEASURED_CAPABILITY, canonicalJson, canonicalPath, comparableFromParts, containsByComponents, computeBackoff, createMarker, defaultProcessInspector, displayToolPath, fileRuleFingerprint, hostKernelLock, hostReapTiming, lexicallyWithin, locateThroughFiles, momongaLayout, reapMarkedProcessesWithReport, resolveCanonicalPath, sha256Hex, writableAreaOf, writableCheckOf } from '@momonga/foundation';
+import { UNMEASURED_CAPABILITY, canonicalJson, canonicalPath, comparableFromParts, containsByComponents, computeBackoff, createMarker, defaultProcessInspector, displayToolPath, fileRuleFingerprint, hostKernelLock, hostReapTiming, lexicallyWithin, locateThroughFiles, momongaLayout, reapMarkedProcessesWithReport, recordMarkerGroup, resolveCanonicalPath, sha256Hex, writableAreaOf, writableCheckOf } from '@momonga/foundation';
 import { createMarkerGuard } from './marker-guard.ts';
 import { createMarkerOwners } from './marker-owners.ts';
 import type { MarkerOwners } from './marker-owners.ts';
@@ -28,8 +28,8 @@ import type { CallStop } from './call-stop.ts';
 import { cancellableTimer } from './timers.ts';
 import { observedToolFiles } from './work-tree-observer.ts';
 import type { WorkTreeMark, WorkTreeObserver } from './work-tree-observer.ts';
-import { ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
-import type { AnyTool, CallOutputFit, OutputFit, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
+import { startsProcesses, ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
+import type { AnyTool, CallOutputFit, OutputFit, SpawnMarker, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
 import { cleanFailureMessage } from '@momonga/foundation';
 import { toolRefusalKey, unavailable, validateToolInput } from './validate.ts';
 import type { ValidationResult } from './validate.ts';
@@ -500,7 +500,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   const guard = createMarkerGuard({
     markerDir: options.processMarkerDir,
     owners,
-    ledgerRow: (name) => ({ settled: idempotency.get(name)?.s === 'COMPLETED', pgid: idempotency.processGroupOf(name) }),
+    ledgerRow: (name) => ({ settled: idempotency.get(name)?.s === 'COMPLETED' }),
     onWarning: options.onWarning,
     killGraceMs: options.reap?.killGraceMs ?? ABANDON_KILL_GRACE_MS,
     timing: reapTiming,
@@ -878,6 +878,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     disarmTimer(): void;
     closeContext(): void;
     openMarker(): Promise<{ handle: MarkerHandle; settle: MarkerSettle }>;
+    spawnMarker(): Promise<SpawnMarker>;
     settleMarker(): Promise<void>;
     ledger: LeasedIdempotencyPort;
     holding(outcome: LeasedOutcome): boolean;
@@ -898,6 +899,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     let recordCompleted = false;
     let contextClosed = false;
     let markerSettle: MarkerSettle | undefined;
+    let callMarker: { handle: MarkerHandle; settle: MarkerSettle } | undefined;
+    let callMarkerSpawned = false;
+    const spawnMarkers: Array<{ handle: MarkerHandle; settle: MarkerSettle }> = [];
+    const groupRecords: Promise<void>[] = [];
     let markerOwned = false;
     let processAttached = false;
     let noteAfterOutput: string | undefined;
@@ -931,7 +936,25 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       abortReason = reason;
       controller.abort();
     };
+    const openMarkerAt = async (file: string, name: string): Promise<{ handle: MarkerHandle; settle: MarkerSettle }> => {
+      const inspector = options.reap?.inspector ?? defaultProcessInspector();
+      owners.register(name, { alive: () => markerOwned });
+      const handle = await createMarker(file, { capability: inspector.capability ?? UNMEASURED_CAPABILITY });
+      const settle = createMarkerSettle({
+        marker: file,
+        mode: handle.mode,
+        inspector,
+        onWarning: options.onWarning,
+        ...(options.reap?.killGraceMs === undefined ? {} : { killGraceMs: options.reap.killGraceMs }),
+        ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
+        ...(options.reap?.groupPort === undefined ? {} : { groupPort: options.reap.groupPort }),
+        timing: reapTiming,
+      });
+      owners.remember(name, handle.mode);
+      return { handle, settle };
+    };
     const processMarker = path.join(options.processMarkerDir, key);
+    let attachingMarker = processMarker;
     const onBatchAbort = (): void => abortWith('cancelled');
     batch.signal.addEventListener('abort', onBatchAbort, { once: true });
     activeKeys.set(key, (activeKeys.get(key) ?? 0) + 1);
@@ -944,7 +967,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       callId,
       idemKey: key,
       outputFit: fitOfCall(fit, call),
-      ...(tool.sideEffect === 'exec' ? { processMarker } : {}),
+      ...(startsProcesses(tool) ? { processMarker } : {}),
       ...(trace === undefined ? {} : { traceparent: trace.traceparent }),
       ...(trace?.tracestate === undefined ? {} : { tracestate: trace.tracestate }),
       env: batch.env,
@@ -957,6 +980,15 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       attachProcess: (processInfo) => {
         processAttached = true;
         if (!leaseLost() && !contextClosed) holding(ledger.attachProcess(key, processInfo));
+        if (callMarker === undefined) return Promise.resolve();
+        const recorded = recordMarkerGroup(attachingMarker, processInfo.pgid);
+        groupRecords.push(
+          recorded.then(
+            () => undefined,
+            () => undefined,
+          ),
+        );
+        return recorded;
       },
       update: (content) => {
         if (!contextClosed) batch.onUpdate?.(callId, content);
@@ -991,26 +1023,32 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         contextClosed = true;
       },
       openMarker: async () => {
-        const inspector = options.reap?.inspector ?? defaultProcessInspector();
         markerOwned = true;
-        owners.register(key, { alive: () => markerOwned });
-        const handle = await createMarker(processMarker, { capability: inspector.capability ?? UNMEASURED_CAPABILITY });
-        const settle = createMarkerSettle({
-          marker: processMarker,
-          mode: handle.mode,
-          inspector,
-          onWarning: options.onWarning,
-          ...(options.reap?.killGraceMs === undefined ? {} : { killGraceMs: options.reap.killGraceMs }),
-          ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
-          ...(options.reap?.groupPort === undefined ? {} : { groupPort: options.reap.groupPort }),
-          timing: reapTiming,
-        });
-        markerSettle = settle;
-        owners.remember(key, handle.mode);
-        return { handle, settle };
+        callMarker = await openMarkerAt(processMarker, key);
+        markerSettle = callMarker.settle;
+        return callMarker;
+      },
+      spawnMarker: async () => {
+        if (callMarker !== undefined && !callMarkerSpawned) {
+          callMarkerSpawned = true;
+          attachingMarker = processMarker;
+          return { file: processMarker, fd: callMarker.handle.fd, settle: callMarker.settle };
+        }
+        const name = `${key}-${spawnMarkers.length + 1}`;
+        const file = path.join(options.processMarkerDir, name);
+        const opened = await openMarkerAt(file, name);
+        spawnMarkers.push(opened);
+        attachingMarker = file;
+        return { file, fd: opened.handle.fd, settle: opened.settle };
       },
       settleMarker: async () => {
         try {
+          await Promise.all(groupRecords.splice(0));
+          for (const { handle, settle } of spawnMarkers.splice(0)) {
+            handle.close();
+            await settle.state(controller.signal);
+            await settle.remove();
+          }
           if (markerSettle === undefined || !recordCompleted) return;
           if (!processAttached) {
             await markerSettle.discard();
@@ -1264,13 +1302,13 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         await batch.outputFit.ready?.();
         if ((await scope.holdCall()) === 'aborted') return failedOutcome(callId, `${tool.name} was cancelled`);
         if (!scope.holding(scope.ledger.authorise(key))) return scope.deferred;
-        if (tool.sideEffect !== 'read_only') {
+        if (tool.sideEffect !== 'read_only' || startsProcesses(tool)) {
           const verdict = await guard.check(scope.controller.signal, key);
           if (scope.abortReason() !== undefined) return failedOutcome(callId, `${tool.name} was cancelled`);
           if (verdict.kind === 'refuse') return scope.complete({ status: 'failed', output: verdict.text });
           if (verdict.kind === 'note') scope.noteAfterOutput(verdict.text);
         }
-        const marker = tool.sideEffect === 'exec' ? await scope.openMarker() : undefined;
+        const marker = startsProcesses(tool) ? await scope.openMarker() : undefined;
         try {
           return await executeWithMarker(marker, reconciled, resume);
         } finally {
@@ -1284,7 +1322,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           ...contextForBasis(),
           outputFit: fitOfCall(batch.outputFit, call),
           ...(resume === undefined ? {} : { resume }),
-          ...(marker === undefined ? {} : { markerFd: marker.handle.fd, markerSettle: marker.settle }),
+          ...(marker === undefined ? {} : { markerFd: marker.handle.fd, markerSettle: marker.settle, spawnMarker: scope.spawnMarker }),
         };
         const requestedMs = typeof tool.timeoutMs === 'function' ? tool.timeoutMs(target.input) : tool.timeoutMs;
 
