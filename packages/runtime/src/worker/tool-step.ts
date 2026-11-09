@@ -284,7 +284,7 @@ const runBatchOn = async (ctx: ClaimContext, held: HeldSandbox, session: HeldSes
         if (existing !== undefined) return { traceparent: existing.traceparent };
         const toolName = journal.state.pendingCalls[callId]?.name;
         if (toolName === undefined) throw new Error(`unknown tool call ${callId}`);
-        const span = options.tracer.startToolSpan(ctx.agentSpan, { runId: run.id, step, callId, toolName, toolType: 'function' });
+        const span = ctx.tracer.startToolSpan(ctx.agentSpan, { runId: run.id, step, callId, toolName, toolType: 'function' });
         spans.set(callId, span);
         return { traceparent: span.traceparent };
       },

@@ -42,7 +42,7 @@ export type GatewayEpochsShared = { redactor: Redactor; reasoningOrigin: Reasoni
 
 export type GatewayLimits = Omit<GatewayConfig, 'models'>;
 
-export type FixedModelsOptions = { config: GatewayConfig; adapters: Record<string, ProviderAdapter>; priceTable?: PriceTable };
+export type FixedModelsOptions = { config: GatewayConfig; adapters: Record<string, ProviderAdapter>; priceTable?: PriceTable; telemetry?: Telemetry };
 
 export type DerivedModelsOptions = { limits: GatewayLimits; epochs: GatewayEpochs } & GatewayEpochsShared;
 
@@ -57,7 +57,6 @@ export type GatewayCommonOptions = {
   dbPath: string;
   hmacKey: Uint8Array;
   socketPath: string;
-  telemetry?: Telemetry;
   costReport?: (runs: readonly { runId: string; sessionId: string }[], includeRunless: boolean, signal: AbortSignal) => Promise<{ report: GatewayCostReportView; text: string }>;
   billedCalls?: (runIds: readonly string[], cursor: BilledCallsCursorView, limit: number, includeRunless: boolean, signal: AbortSignal) => Promise<BilledCallsPageView>;
   debugTcp?: DebugTcpOptions;

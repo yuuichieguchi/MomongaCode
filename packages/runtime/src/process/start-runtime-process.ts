@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ConfigError, createPinnedDerivation, createUserSettingsCache, derivedInputsOf, diskKeptRecords, keptSettingsDirectory, resolveNetwork, resolveTelemetrySettings } from '@momonga/config';
+import type { ResolvedSettings } from '@momonga/config';
 import { installTrust } from '@momonga/foundation';
 import {
   acquireProcessLock,
@@ -85,7 +86,7 @@ import type { Periodic } from './periodic.ts';
 import { protectedRootAreasOf } from './protected-areas.ts';
 import { reapTimingOf } from './reap-timing.ts';
 import type { SandboxKind } from './sandbox-kind.ts';
-import type { SandboxBinding } from '../ports.ts';
+import type { SandboxBinding, TracerLeases, TracerPort } from '../ports.ts';
 import { createSettingsComposition } from './settings-port.ts';
 import { createGovernancePort } from '../governance/governance-port.ts';
 import { createEvidenceRunner } from './evidence-run.ts';
@@ -324,15 +325,17 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
     cleanups.push({ name: 'lock', run: () => lock.release() });
 
-    const { cache, settings, network } = await step('settings', async () => {
+    const outboundNetworkOf = async (section: ResolvedSettings['network']): Promise<OutboundNetwork> => {
+      const networkConfig = resolveNetwork(section, process.env);
+      const trust = await installTrust(networkConfig, nodeFileSystem);
+      for (const failure of trust.failures) logger.warn(`the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}`);
+      return { config: networkConfig, trust };
+    };
+    const { cache, settings } = await step('settings', async () => {
       const created = createUserSettingsCache({ home: canonicalHome, onWarning, keptRecords: diskKeptRecords(nodeFileSystemSync, keptSettingsDirectory(canonicalHome)) });
       const snapshot = created.snapshot();
       if ('error' in snapshot) throw snapshot.error;
-      const networkConfig = resolveNetwork(snapshot.settings.network, process.env);
-      const trust = await installTrust(networkConfig, nodeFileSystem);
-      for (const failure of trust.failures) logger.warn(`the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}`);
-      const outbound: OutboundNetwork = { config: networkConfig, trust };
-      return { cache: created, settings: snapshot.settings, network: outbound };
+      return { cache: created, settings: snapshot.settings };
     });
 
     const platform = options.platform ?? process.platform;
@@ -391,7 +394,6 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     await step('sandbox', async () => {
       (await sandboxes.admit(startDeadlineSignal(signal))).release();
     });
-    cleanups.push({ name: 'sandboxes', run: () => sandboxes.retireAll() });
 
     await step('mcp-markers', async () => {
       await reapMarkerDirectory({ dir: paths.markers.mcp, killGraceMs: MARKER_REAP_KILL_GRACE_MS, label: 'mcp', onWarning, timing: reapTiming, signal });
@@ -443,33 +445,47 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     const traceStore: TraceStore = await step('trace-store', () => openTraceStore({ path: paths.traces.runtime, clock }));
     cleanups.push({ name: 'trace-store', run: () => traceStore.close() });
 
-    const telemetrySettings = resolveTelemetrySettings(settings.telemetry);
-    const contentRetentionMs = telemetrySettings.contentRetentionDays * DAY_MS;
+    const contentRetentionMs = resolveTelemetrySettings(settings.telemetry).contentRetentionDays * DAY_MS;
     const bodyPurge = startBodyPurge({ store: traceStore, timers, report, legacyRetentionMs: contentRetentionMs });
     cleanups.push({ name: 'body-purge', run: () => bodyPurge.stop() });
 
-    const telemetry: Telemetry = await step('telemetry', () =>
-      createTelemetry({
-        serviceName: 'momonga-runtime',
-        serviceVersion: version,
-        clock,
-        store: traceStore,
-        exporters: exportersFor(settings.telemetry, network),
-        captureMessageContent: telemetrySettings.captureMessageContent,
-        contentRetentionMs,
-      }),
-    );
-    cleanups.push({
-      name: 'telemetry',
-      run: async () => {
+    type TracedTelemetry = { telemetry: Telemetry; tracer: TracerPort };
+    const telemetries = createPinnedDerivation<TracedTelemetry>({
+      cache,
+      inputsOf: derivedInputsOf('D2'),
+      derive: async (current) => {
+        const resolved = resolveTelemetrySettings(current.telemetry);
+        const outbound = await outboundNetworkOf(current.network);
+        const telemetry = createTelemetry({
+          serviceName: 'momonga-runtime',
+          serviceVersion: version,
+          clock,
+          store: traceStore,
+          exporters: exportersFor(current.telemetry, outbound),
+          captureMessageContent: resolved.captureMessageContent,
+          contentRetentionMs: resolved.contentRetentionDays * DAY_MS,
+        });
+        return { telemetry, tracer: createTracerPort(telemetry) };
+      },
+      retire: async ({ telemetry }) => {
         try {
           await telemetry.forceFlush();
         } finally {
           await telemetry.shutdown();
         }
       },
+      onWarning,
     });
-    const tracer = createTracerPort(telemetry);
+    await step('telemetry', async () => {
+      (await telemetries.admit(startDeadlineSignal(undefined))).release();
+    });
+    cleanups.push({ name: 'telemetry', run: () => telemetries.retireAll() });
+    const tracers: TracerLeases = {
+      acquire: async (tracerSignal) => {
+        const lease = await telemetries.acquire(tracerSignal);
+        return { value: lease.value.tracer, release: lease.release };
+      },
+    };
 
     const gatewayClient: GatewayClient = await step('gateway-client', () =>
       createGatewayClient({
@@ -596,7 +612,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         cancelUpstream: tracker.cancel,
         releaseStopped: createStoppedRunReleaser({ store, tools: toolRuntime.port }),
         runTrace: async (runId) => {
-          await telemetry.forceFlush();
+          await telemetries.current().telemetry.forceFlush();
           const trace = runTraceOf(traceStore, runId);
           return trace === undefined
             ? undefined
@@ -633,7 +649,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           governance: governancePort,
           agents: agentsPort,
           tools: toolRuntime.port,
-          tracer,
+          tracers,
           clock,
           workerId: id,
           leaseMs,

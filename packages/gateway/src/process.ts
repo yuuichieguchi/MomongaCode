@@ -48,7 +48,6 @@ import type { BinaryHashCache, Clock, JsonLogger, MomongaPaths, NetworkConfig, O
 import { installTrust, proxyPasswordsOf } from '@momonga/foundation';
 import {
   buildCostReport,
-  closeTelemetry,
   definePriceTable,
   formatCostReport,
   createTelemetry,
@@ -731,18 +730,32 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       dependentPath: paths.databases.gateway,
     });
     const traceStore: TraceStore = openTraceStore({ path: paths.traces.gateway, clock });
-    const telemetrySettings = resolveTelemetrySettings(settings.telemetry);
-    const contentRetentionMs = telemetrySettings.contentRetentionDays * DAY_MS;
-    const telemetry: Telemetry = createTelemetry({
-      serviceName: 'momonga-gateway',
-      serviceVersion: options.version,
-      clock,
-      store: traceStore,
-      exporters: exportersFor(settings.telemetry, network),
-      captureMessageContent: telemetrySettings.captureMessageContent,
-      contentRetentionMs,
+    cleanups.push(() => traceStore.close());
+    const telemetryOf = (current: ResolvedSettings, outbound: OutboundNetwork): Telemetry => {
+      const resolved = resolveTelemetrySettings(current.telemetry);
+      return createTelemetry({
+        serviceName: 'momonga-gateway',
+        serviceVersion: options.version,
+        clock,
+        store: traceStore,
+        exporters: exportersFor(current.telemetry, outbound),
+        captureMessageContent: resolved.captureMessageContent,
+        contentRetentionMs: resolved.contentRetentionDays * DAY_MS,
+      });
+    };
+    const telemetries = createPinnedDerivation<Telemetry>({
+      cache,
+      inputsOf: derivedInputsOf('D2'),
+      derive: async (current) => telemetryOf(current, await outboundNetworkOf(current.network)),
+      retire: async (retired) => {
+        await retired.forceFlush();
+        await retired.shutdown();
+      },
+      onWarning: (message) => logger.warn(message),
     });
-    cleanups.push(() => closeTelemetry(telemetry, traceStore));
+    cleanups.push(() => telemetries.retireAll());
+    (await telemetries.admit(startSignal)).release();
+    const contentRetentionMs = resolveTelemetrySettings(settings.telemetry).contentRetentionDays * DAY_MS;
     const bodyPurge = startBodyPurge({
       store: traceStore,
       timers,
@@ -940,7 +953,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       for (const credential of credentialValuesOf(options.env, credentialEnvNames(current), secretResolver.resolved(), (message) => logger.warn(message), outbound.config)) shared.redactor.add(credential);
       const priceTable = definePriceTable(current.pricing === undefined ? [] : current.pricing);
       const epoch: ProcessEpoch = {
-        gateway: { router, priceTable },
+        gateway: { router, priceTable, telemetry: undefined },
         priceTable,
         parts,
         network: outbound,
@@ -966,9 +979,29 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const epochs: GatewayEpochs = {
       acquire: async (requestSignal) => {
         const lease = await derivation.acquire(requestSignal);
-        return { value: lease.value.gateway, release: lease.release };
+        try {
+          const traced = await telemetries.acquire(requestSignal);
+          return {
+            value: { ...lease.value.gateway, telemetry: traced.value },
+            release: () => {
+              traced.release();
+              lease.release();
+            },
+          };
+        } catch (error) {
+          lease.release();
+          throw error;
+        }
       },
       close: () => derivation.retireAll(),
+    };
+    const flushTelemetry = async (requestSignal: AbortSignal): Promise<void> => {
+      const traced = await telemetries.acquire(requestSignal);
+      try {
+        await traced.value.forceFlush();
+      } finally {
+        traced.release();
+      }
     };
     const withPriceTable = async <T>(signal: AbortSignal, work: (priceTable: PriceTable) => Promise<T>): Promise<T> => {
       const lease = await derivation.acquire(signal);
@@ -997,16 +1030,15 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       hmacKey,
       socketPath: own.sockets.gateway,
       ...(options.debugTcp === undefined ? {} : { debugTcp: { host: DEBUG_TCP_HOST, port: options.debugTcp.port, token: files.readDebugToken(options.debugTcp.tokenFile) } }),
-      telemetry,
       costReport: (runs, includeRunless, requestSignal) =>
         withPriceTable(requestSignal, async (table) => {
-          await telemetry.forceFlush();
+          await flushTelemetry(requestSignal);
           const report = buildCostReport(traceStore, runs, { table, includeRunless });
           return { report, text: formatCostReport(report) };
         }),
       billedCalls: (runIds, cursor, limit, includeRunless, requestSignal) =>
         withPriceTable(requestSignal, async (table) => {
-          await telemetry.forceFlush();
+          await flushTelemetry(requestSignal);
           return pageBilledCalls(traceStore, runIds, table, cursor, limit, includeRunless);
         }),
       version: options.version,

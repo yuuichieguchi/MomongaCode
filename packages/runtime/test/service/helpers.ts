@@ -32,7 +32,7 @@ import { createFakeToolbox } from '../worker/fake-tools.ts';
 import type { FakeToolbox } from '../worker/fake-tools.ts';
 import { createFakeTracer } from '../worker/fake-tracer.ts';
 import { capabilitiesFor, createFakeInstructions, diskAgentCatalog, diskSkillsPort, fakeSandbox, inertGovernancePort, inertHistoryPort, testSystemPrompt, unavailableEvidenceRun } from '../worker/harness.ts';
-import { fixedSandboxBindings } from '@momonga/runtime';
+import { fixedSandboxBindings, fixedTracers } from '@momonga/runtime';
 
 export const START_MS = 1_800_000_000_000;
 export const LEASE_MS = 30_000;
@@ -483,7 +483,7 @@ export const serviceOptions = (
   socketPath: base.socketPath,
   pid: SERVICE_PID,
   startedAt: STARTED_AT,
-  sandboxKind: overrides.sandboxKind ?? 'seatbelt',
+  sandboxKind: () => overrides.sandboxKind ?? 'seatbelt',
   protectedRootAreas: overrides.protectedRootAreas ?? protectedAreasOf(base.home),
   modelAliases: base.ports.modelAliases,
   modelCapabilities: async () => {
@@ -765,7 +765,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
       history: inertHistoryPort,
       governance: inertGovernancePort,
       tools,
-      tracer,
+      tracers: fixedTracers(tracer),
       clock: env.clock,
       workerId: id,
       leaseMs: LEASE_MS,

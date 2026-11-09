@@ -89,6 +89,7 @@ const fixedEpochs = (options: FixedModelsOptions & Pick<GatewayOptions, 'clock' 
   const epoch: GatewayEpoch = {
     router: createRouter({ config: options.config, adapters: options.adapters, clock: options.clock, timers: options.timers, ...shared }),
     priceTable: options.priceTable,
+    telemetry: options.telemetry,
   };
   return {
     epochs: { acquire: async () => ({ value: epoch, release: () => undefined }), close: async () => undefined },
@@ -129,7 +130,6 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       store,
       codec: createCompactionCodec(options.hmacKey),
       reasoningOrigin,
-      telemetry: options.telemetry,
       closeSignal: closeController.signal,
       forceCloseSignal: forceCloseController.signal,
     };

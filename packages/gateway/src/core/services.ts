@@ -7,7 +7,7 @@ import type { Router } from './router.ts';
 import type { GatewayStore } from './store.ts';
 import type { GatewayLimits, GatewayTimers } from '../types.ts';
 
-export type GatewayEpoch = { readonly router: Router; readonly priceTable: PriceTable | undefined };
+export type GatewayEpoch = { readonly router: Router; readonly priceTable: PriceTable | undefined; readonly telemetry: Telemetry | undefined };
 
 export type GatewayEpochs = {
   acquire(signal: AbortSignal): Promise<Lease<GatewayEpoch>>;
@@ -23,14 +23,13 @@ export type GatewayServices = {
   store: GatewayStore;
   codec: CompactionCodec;
   reasoningOrigin: ReasoningOriginCodec;
-  telemetry: Telemetry | undefined;
   closeSignal: AbortSignal;
   forceCloseSignal: AbortSignal;
 };
 
 export type Services = GatewayServices & GatewayEpoch;
 
-export const pinnedServices = (services: GatewayServices, epoch: GatewayEpoch): Services => ({ ...services, router: epoch.router, priceTable: epoch.priceTable });
+export const pinnedServices = (services: GatewayServices, epoch: GatewayEpoch): Services => ({ ...services, router: epoch.router, priceTable: epoch.priceTable, telemetry: epoch.telemetry });
 
 export const withPinnedServices = async <T>(services: GatewayServices, signal: AbortSignal, work: (pinned: Services) => Promise<T>): Promise<T> => {
   const lease = await services.epochs.acquire(signal);

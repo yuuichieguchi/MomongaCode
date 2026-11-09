@@ -34,7 +34,7 @@ import type { FakeToolbox } from './fake-tools.ts';
 import { createFakeTracer } from './fake-tracer.ts';
 import type { FakeTracer } from './fake-tracer.ts';
 import { MODEL_ALIAS, resetResponseIds } from './scripts.ts';
-import { fixedSandboxBindings } from '@momonga/runtime';
+import { fixedSandboxBindings, fixedTracers } from '@momonga/runtime';
 
 export const START_MS = 1_800_000_000_000;
 export const LEASE_MS = 30_000;
@@ -340,7 +340,7 @@ export const makeEnv = async (options: EnvOptions = {}) => {
       history: inertHistoryPort,
       governance: inertGovernancePort,
       tools: { ...toolRuntime(toolList ?? (() => toolbox.tools())), ...toolOverrides },
-      tracer,
+      tracers: fixedTracers(tracer),
       clock,
       workerId,
       leaseMs: LEASE_MS,

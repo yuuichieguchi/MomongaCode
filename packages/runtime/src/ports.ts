@@ -133,6 +133,8 @@ export type TraceSpan = {
   end(error?: unknown): void;
 };
 
+export type TracerLeases = { acquire(signal: AbortSignal): Promise<Lease<TracerPort>> };
+
 export type AgentSpanInput = { runId: string; sessionId: string; attempt: number };
 
 export type ToolSpanInput = { runId: string; step: number; callId: string; toolName: string; toolType: string };
