@@ -2,6 +2,7 @@ import { applyCapabilityOverride } from '@momonga/protocol';
 import type { Capabilities, CapabilityOverride, ToolCallingState, ElicitationAnswerRecord, GoverningFactView, ImageAttachment, MemoryView, PermissionMode, SkillView } from '@momonga/protocol';
 import type { RunEventFrame } from '../src/client/runtime-client.ts';
 import type { RunView, SessionView, TrustView } from '../src/client/views.ts';
+import type { PlanGatewayClient } from '../src/client/gateway-client.ts';
 import type { FollowHandlers, StartRunOptions, TuiBackend } from '../src/tui/backend.ts';
 
 export const SESSION: SessionView = {
@@ -89,6 +90,22 @@ export const capabilitiesOf = (overrides: CapabilityOverride = {}): Capabilities
     },
     overrides,
   );
+
+const noPlanRoute = (route: string) => async (): Promise<never> => {
+  throw new Error(`the fake backend serves no plan route ${route}`);
+};
+
+const NO_PLAN: PlanGatewayClient = {
+  accounts: async () => ({ profiles: [], accounts: [] }),
+  signInBegin: noPlanRoute('sign-in/begin'),
+  signInComplete: noPlanRoute('sign-in/complete'),
+  signInCancel: noPlanRoute('sign-in/cancel'),
+  signOut: noPlanRoute('sign-out'),
+  setActive: noPlanRoute('accounts/active'),
+  resume: noPlanRoute('accounts/resume'),
+  accountModels: noPlanRoute('accounts/models'),
+  addTarget: noPlanRoute('accounts/targets'),
+};
 
 export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
   const calls: string[] = [];
@@ -260,6 +277,26 @@ export const fakeBackend = (options: FakeBackendOptions = {}): FakeBackend => {
     recordHistory: async (text) => {
       recorded.push(text);
     },
+    plan: NO_PLAN,
+    health: async () => ({
+      ok: true,
+      targets: Object.fromEntries((options.targets ?? ['primary']).map((target) => [target, { ok: true, breaker: 'closed' as const }])),
+      version: '0.0.0',
+      apiVersion: 1,
+      pid: 1,
+      startedAt: '2026-11-10T00:00:00.000Z',
+      state: 'running',
+    }),
+    sandbox: async () => 'seatbelt',
+    startSignInListener: async () => {
+      throw new Error('the fake backend opens no sign-in listener');
+    },
+    detectLocalServers: async () => [],
+    addModelConnection: async () => {
+      throw new Error('the fake backend writes no model connection');
+    },
+    dismissedNotices: async () => ({}),
+    dismissNotice: async () => undefined,
     close: async () => {
       record('close');
     },

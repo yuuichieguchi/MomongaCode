@@ -217,7 +217,7 @@ export const createShellPort = (given: ProgramDeps): ShellPort => ({
   run: async (argv, io) => {
     let code = 0;
     const sink = { write: io.write };
-    const program = buildProgram({ ...given, ports: { ...given.ports, stdout: sink, stderr: sink }, interrupt: io.signal, complete: (exitCode) => void (code = exitCode) }, { embedded: true });
+    const program = buildProgram({ ...given, ports: { ...given.ports, stdout: sink, stderr: sink, terminal: undefined }, interrupt: io.signal, complete: (exitCode) => void (code = exitCode) }, { embedded: true });
     program.exitOverride();
     try {
       await program.parseAsync([...argv], { from: 'user' });

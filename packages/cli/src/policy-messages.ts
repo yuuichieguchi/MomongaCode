@@ -1,4 +1,5 @@
-import { HOOK_STOPPED_CODE, PRECONDITION_FAILED_CODE, TARGET_NOT_READY, USER_PROMPT_BLOCKED_CODE } from '@momonga/protocol';
+import { HOOK_STOPPED_CODE, PRECONDITION_FAILED_CODE, SIGN_IN_REQUIRED_CODE, TARGET_NOT_READY, USER_PROMPT_BLOCKED_CODE } from '@momonga/protocol';
+import type { PlanAccountRef } from '@momonga/protocol';
 import type { PermissionDenial, PermissionDenialSource, PublicRunEvent } from '@momonga/protocol';
 
 type HookCompleted = Extract<PublicRunEvent, { type: 'hook.completed' }>;
@@ -59,8 +60,17 @@ export const describeDenial = (denial: PermissionDenial): string => `denied by $
 
 const PRODUCT_COMPOSED_CODES: ReadonlySet<string> = new Set([PRECONDITION_FAILED_CODE, TARGET_NOT_READY]);
 
-export const describeRunError = (error: { code: string; message: string }): string[] => {
+export type MessageSurface = 'tui' | 'headless';
+
+export const signInCommandOf = (surface: MessageSurface, plan: PlanAccountRef | undefined): string => {
+  if (surface === 'tui') return '/login';
+  return plan === undefined ? 'momonga auth login' : `momonga auth login ${plan.profile} --account ${plan.account}`;
+};
+
+export const describeRunError = (error: { code: string; message: string; plan?: PlanAccountRef }, surface: MessageSurface): string[] => {
   switch (error.code) {
+    case SIGN_IN_REQUIRED_CODE:
+      return [`${error.message} · Run ${signInCommandOf(surface, error.plan)} to sign in again`, `cause: ${error.code}`];
     case USER_PROMPT_BLOCKED_CODE:
       return [`a UserPromptSubmit hook blocked the prompt: ${error.message}`];
     case HOOK_STOPPED_CODE:

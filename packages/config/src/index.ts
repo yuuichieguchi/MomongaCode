@@ -1,3 +1,5 @@
+export { addModelConnection, connectionTargetName } from './add-model-connection.ts';
+export type { ModelConnection, WrittenConnection } from './add-model-connection.ts';
 export { appendPermissionRule } from './append-rule.ts';
 export type { AppendPermissionRuleOptions } from './append-rule.ts';
 export { systemFileLockPorts } from '@momonga/foundation';

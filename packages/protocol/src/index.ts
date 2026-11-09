@@ -122,6 +122,7 @@ export {
   acceptedReasoningEfforts,
   clampReasoningEffort,
   outputTokensFor,
+  maxOutputTokensFor,
   thinkingBudgetFor,
   THINKING_OFFS,
   ALLOWED_TOOLS_FORMS,
@@ -149,6 +150,8 @@ export {
   PLAN_API_PREFIX,
   PLAN_ROUTES,
   PLAN_SIGN_IN_FAILURES,
+  SIGN_IN_REQUIRED_CODE,
+  USAGE_LIMIT_CODES,
 } from './plan-api.ts';
 export type {
   BreakerVerdict,

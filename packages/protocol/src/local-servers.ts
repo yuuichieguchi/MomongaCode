@@ -8,5 +8,5 @@ export type LocalServerToolSupport = 'yes' | 'no' | 'unknown';
 export type DetectedLocalServer = {
   baseUrl: string;
   shape: LocalServerShape;
-  models: readonly { id: string; tools: LocalServerToolSupport }[];
+  models: readonly { id: string; tools: LocalServerToolSupport; contextWindow?: number; trainedContext?: number }[];
 };

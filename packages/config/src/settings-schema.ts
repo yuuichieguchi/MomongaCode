@@ -389,6 +389,12 @@ const HOOK_MATCHER_GROUP_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+export const LOCAL_CONNECTION_TARGET_SCHEMAS = {
+  ollama: OLLAMA_TARGET_SCHEMA,
+  'chat-completions': CHAT_COMPLETIONS_TARGET_SCHEMA,
+  managed: MANAGED_TARGET_SCHEMA,
+} as const;
+
 export const SETTINGS_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
   type: 'object',

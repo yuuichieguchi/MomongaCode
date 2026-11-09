@@ -16,7 +16,7 @@ export type ShellPort = {
 
 export type SlashContext = ModeAvailability & {
   readonly mode: PermissionMode;
-  readonly modelAlias: string;
+  readonly modelAlias: string | undefined;
   readonly commands: readonly SlashCommand[];
   readonly backend: TuiBackend;
   info(text: string): void;
@@ -35,6 +35,7 @@ export type SlashCommand = {
   readonly aliases?: readonly string[];
   readonly description: string;
   readonly usage?: string;
+  readonly needsSession?: boolean;
   run(args: string, context: SlashContext): Promise<void>;
 };
 
@@ -79,6 +80,7 @@ export const parseSlash = (line: string): ParsedSlash | undefined => {
 
 const help: SlashCommand = {
   name: 'help',
+  needsSession: false,
   description: 'list the slash commands and key bindings',
   run: async (_args, context) => {
     context.info(
@@ -95,6 +97,7 @@ const help: SlashCommand = {
 
 const clear: SlashCommand = {
   name: 'clear',
+  needsSession: false,
   description: 'clear the screen and start a new conversation',
   run: async (_args, context) => {
     context.clear();
@@ -103,6 +106,7 @@ const clear: SlashCommand = {
 
 const exit: SlashCommand = {
   name: 'exit',
+  needsSession: false,
   aliases: ['quit'],
   description: 'leave momonga; a running task continues in the daemon',
   run: async (_args, context) => {
@@ -128,6 +132,15 @@ const mode: SlashCommand = {
   },
 };
 
+export const switchModel = async (args: string, entries: readonly { id: string }[], context: SlashContext): Promise<void> => {
+  const chosen = entries.find((entry) => entry.id === args);
+  if (chosen === undefined) {
+    context.info(`unknown model ${args}; available: ${entries.map((entry) => entry.id).join(', ')}`);
+    return;
+  }
+  await context.setModel(chosen.id);
+};
+
 const model: SlashCommand = {
   name: 'model',
   usage: '[alias]',
@@ -144,12 +157,7 @@ const model: SlashCommand = {
       );
       return;
     }
-    const chosen = entries.find((entry) => entry.id === args);
-    if (chosen === undefined) {
-      context.info(`unknown model ${args}; available: ${entries.map((entry) => entry.id).join(', ')}`);
-      return;
-    }
-    await context.setModel(chosen.id);
+    await switchModel(args, entries, context);
   },
 };
 

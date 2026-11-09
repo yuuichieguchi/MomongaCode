@@ -279,3 +279,5 @@ export const isProbingCapabilities = (capabilities: { toolCalling: ToolCallingSt
 export const readinessText = (readiness: Exclude<Readiness, { state: 'ready' }>): string => ('remedy' in readiness ? [readiness.message, readiness.remedy].join('\n') : readiness.message);
 
 export const readinessRemedyOf = (text: string): string => text.split('\n').at(-1) ?? text;
+
+export const maxOutputTokensFor = (contextWindow: number): number => Math.min(contextWindow, Math.max(256, Math.ceil(contextWindow / 4)));
