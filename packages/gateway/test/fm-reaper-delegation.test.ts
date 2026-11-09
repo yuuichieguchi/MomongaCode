@@ -4,18 +4,20 @@ import { describe, expect, it } from 'vitest';
 
 const source = fs.readFileSync(path.join(import.meta.dirname, '..', 'src', 'managed', 'fm-processes.ts'), 'utf8');
 
-describe('fm reaper delegation to foundation', () => {
+describe('managed server reaper delegation to foundation (design-managed-servers section 18, item 1)', () => {
   it('no longer defines a private reapMarkedGroup', () => {
     expect(source).not.toMatch(/\breapMarkedGroup\b/);
   });
 
-  it('finalize reaps through reapMarkedProcesses with the fm label and the child pid as pgid', () => {
+  it('finalize reaps through reapMarkedProcesses with the one managed server label and the child pid as pgid, never a label named for one server', () => {
     expect(source).toMatch(/\breapMarkedProcesses\(\{[^}]*\bpgid:\s*child\.pid\b[^}]*\}\)/s);
-    expect(source).toMatch(/\breapMarkedProcesses\(\{[^}]*\blabel:\s*'fm'[^}]*\}\)/s);
+    expect(source).toMatch(/\breapMarkedProcesses\(\{[^}]*\blabel:\s*MANAGED_SERVER_LABEL\b[^}]*\}\)/s);
+    expect(source).toMatch(/export const MANAGED_SERVER_LABEL = 'managed server';/);
+    expect(source).not.toMatch(/label:\s*'fm'/);
   });
 
-  it('reapStaleFmGroups reaps through reapMarkerDirectory with the fm label', () => {
-    expect(source).toMatch(/\breapMarkerDirectory\(\{[^}]*\bdir:\s*markerDirectory\b[^}]*\blabel:\s*'fm'[^}]*\}\)/s);
+  it('the start-time reap goes through reapMarkerDirectory with the managed server label and the startup occasion of decision 12', () => {
+    expect(source).toMatch(/\breapMarkerDirectory\(\{[^}]*\bdir:\s*markerDirectory\b[^}]*\blabel:\s*MANAGED_SERVER_LABEL\b[^}]*\boccasion:\s*'startup'[^}]*\}\)/s);
   });
 
   it('imports both reapers from @momonga/foundation', () => {

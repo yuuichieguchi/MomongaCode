@@ -43,13 +43,13 @@ describe('R-ALIAS with declared or measured values (design-managed-servers secti
   });
 });
 
-describe('R-ALIAS at load: an alias whose values can be measured is not refused at load', () => {
-  it('loads an alias of an unbounded chat-completions target and a managed target that declares no windows', async () => {
+describe('R-ALIAS at load: an alias whose values can be measured is not refused at load (section 18, item 11)', () => {
+  it('loads an alias of a chat-completions target whose output bound is measured after load and a managed target that declares no windows', async () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), {
       models: {
         targets: {
-          remote: { adapter: 'chat-completions', provider: 'local', model: 'm', baseUrl: 'https://api.example.com/v1', capabilities: { contextWindow: 100_000, maxOutputTokens: 1_000, outputBoundField: 'none' } },
+          remote: { adapter: 'chat-completions', provider: 'local', model: 'm', baseUrl: 'https://api.example.com/v1', capabilities: { contextWindow: 100_000, maxOutputTokens: 1_000 } },
           apple: { adapter: 'managed', server: 'fm' },
         },
         aliases: { default: ['remote', 'apple'] },

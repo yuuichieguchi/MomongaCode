@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { FM_VOCABULARY, capabilitiesFromProbe, ProbeTimeoutError, runProbe } from '@momonga/gateway';
+import { vocabularyOf, capabilitiesFromProbe, ProbeTimeoutError, runProbe } from '@momonga/gateway';
 import { Deadline } from '@momonga/foundation';
 import { tokensForText } from '@momonga/protocol';
 import type { ProbeReport } from '@momonga/protocol';
@@ -17,6 +17,8 @@ import {
 } from '@momonga/testkit';
 import { fillerText } from '../src/probe/filler.ts';
 import { isProbeReport } from '../src/probe/report-schema.ts';
+import { FM_SERVER } from '@momonga/protocol';
+import { FM_PROBE_ROUTES } from './fm-record-support.ts';
 
 const servers: FakeChatCompletionsServer[] = [];
 afterEach(async () => {
@@ -33,7 +35,7 @@ const probe = async (
 ): Promise<{ report: ProbeReport; fake: FakeChatCompletionsServer }> => {
   const fake = await startFakeChatCompletions(options);
   servers.push(fake);
-  const report = await runProbe({ socketPath: fake.socketPath, managedHealthRoute: true, now: fixedNow, ...probeOptions });
+  const report = await runProbe({ socketPath: fake.socketPath, managed: FM_PROBE_ROUTES, now: fixedNow, ...probeOptions });
   return { report, fake };
 };
 
@@ -170,7 +172,7 @@ describe('runProbe context window', () => {
     let firstRejectedSize = 64;
     while (countFakeRequestTokens(searchPrompt(firstRejectedSize)) + 1 <= window) firstRejectedSize *= 2;
 
-    const { report, fake } = await probe({ scenario: 'tools-ok', contextWindow: window, contextSizeExposure: 'none', wire: 'fm' }, { vocabulary: FM_VOCABULARY, countTokens: async (text) => countFakeTokens(text) });
+    const { report, fake } = await probe({ scenario: 'tools-ok', contextWindow: window, contextSizeExposure: 'none', wire: 'fm' }, { vocabulary: vocabularyOf(FM_SERVER), countTokens: async (text) => countFakeTokens(text) });
 
     const searchSizes = fake.requests
       .filter((request) => request.path === '/v1/chat/completions' && (request.body as { max_completion_tokens?: unknown }).max_completion_tokens === 1)
@@ -385,7 +387,7 @@ describe('runProbe server features', () => {
   it('reads fm\'s unsupported generation guide error event as the keyword being unsupported, and completes the probe', async () => {
     const { report } = await probe(
       { scenario: 'tools-ok', wire: 'fm', contextSizeExposure: 'models', unsupportedKeywords: ['pattern', 'minimum'] },
-      { vocabulary: FM_VOCABULARY },
+      { vocabulary: vocabularyOf(FM_SERVER) },
     );
     expect(report.keywordSupport).toEqual({
       enum: true,
@@ -415,7 +417,7 @@ describe('runProbe server features', () => {
     });
     servers.push(fake);
 
-    await expect(runProbe({ socketPath: fake.socketPath, managedHealthRoute: true, now: fixedNow, samples: 5, vocabulary: FM_VOCABULARY })).rejects.toThrow(
+    await expect(runProbe({ socketPath: fake.socketPath, managed: FM_PROBE_ROUTES, now: fixedNow, samples: 5, vocabulary: vocabularyOf(FM_SERVER) })).rejects.toThrow(
       'failed with HTTP 200',
     );
     expect(fake.routeHits).toEqual([1]);
@@ -429,7 +431,7 @@ describe('runProbe server features', () => {
         contextSizeExposure: 'models',
         routes: [{ match: isConstrainedSample, reply: { kind: 'error-event', body: FM_UNSUPPORTED_GUIDE_ERROR } }],
       },
-      { samples: 5, vocabulary: FM_VOCABULARY },
+      { samples: 5, vocabulary: vocabularyOf(FM_SERVER) },
     );
     expect(report.constrained).toEqual({ accepted: false, validRate: 0 });
     expect(report.schemaDialect.selected).toBeNull();
@@ -461,7 +463,7 @@ describe('runProbe server features', () => {
         wire: 'fm',
         routes: [{ match: (body) => JSON.stringify(body).includes('GUARDRAIL-PROBE'), reply: { kind: 'error-event', body: FM_GUARDRAIL_ERROR } }],
       },
-      { guardrailPrompt: 'please discuss GUARDRAIL-PROBE', vocabulary: FM_VOCABULARY },
+      { guardrailPrompt: 'please discuss GUARDRAIL-PROBE', vocabulary: vocabularyOf(FM_SERVER) },
     );
     expect(report.guardrail.errorShape).toEqual(FM_GUARDRAIL_ERROR);
   });
@@ -523,7 +525,7 @@ describe('runProbe context window calibration', () => {
     });
     servers.push(fake);
 
-    await expect(runProbe({ socketPath: fake.socketPath, managedHealthRoute: true, samples: 2 })).rejects.toThrow(/payload_too_large.*413/);
+    await expect(runProbe({ socketPath: fake.socketPath, managed: FM_PROBE_ROUTES, samples: 2 })).rejects.toThrow(/payload_too_large.*413/);
   });
 
   it('records the first overflow response body for a context_length_exceeded 400', async () => {

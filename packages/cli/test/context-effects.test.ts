@@ -1,9 +1,12 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
+import { probeKeyOf } from '@momonga/config';
+import { FM_SERVER } from '@momonga/protocol';
 import { nodeFiles } from '../src/node-ports.ts';
 import { OWNER_FILE, ROOT_PREFIX, caseEnvironment } from '../src/eval/context-host.ts';
 import { endpointRecordFileName } from '@momonga/gateway';
@@ -178,21 +181,36 @@ describe('copyEndpointProbeRecord', () => {
 });
 
 describe('copyProbeRecord', () => {
-  const record = JSON.stringify({ binarySha256: 'a'.repeat(64), osBuild: '25A1', report: { anything: true } });
+  const binaryIn = (dir: string): string => {
+    const binary = path.join(dir, 'fm');
+    fs.writeFileSync(binary, '#!/bin/sh\n', { mode: 0o755 });
+    return binary;
+  };
 
-  it('copies the record of a target byte for byte, keyed by the same name', async () => {
+  const recordNameFor = (binary: string, model: string): string => {
+    const binarySha256 = createHash('sha256').update(fs.readFileSync(binary)).digest('hex');
+    const osBuild = execFileSync('sw_vers', ['-buildVersion'], { encoding: 'utf8' }).trim();
+    const key = probeKeyOf({ subject: FM_SERVER.id, identity: FM_SERVER.identity, readings: { binarySha256: { kind: 'read', value: binarySha256 }, hostOsBuild: { kind: 'read', value: osBuild } }, model });
+    if (key.kind !== 'known') throw new Error('the key is built from read components');
+    return `${key.digest}.json`;
+  };
+
+  it.skipIf(process.platform !== 'darwin')('copies the record of the probe key of a managed target byte for byte, under the same key file name', async () => {
     const from = temporary();
     const to = path.join(temporary(), 'state', 'probe');
-    fs.writeFileSync(path.join(from, 'system.json'), record);
-    expect(await copyProbeRecord(nodeFiles, from, to, 'system')).toBe(true);
-    expect(fs.readFileSync(path.join(to, 'system.json'), 'utf8')).toBe(record);
-    expect(fs.statSync(path.join(to, 'system.json')).mode & 0o777).toBe(0o600);
+    const binary = binaryIn(temporary());
+    const name = recordNameFor(binary, 'system');
+    const record = JSON.stringify({ key: 'k', descriptionDigest: 'd', report: { anything: true } });
+    fs.writeFileSync(path.join(from, name), record);
+    expect(await copyProbeRecord(nodeFiles, from, to, { target: 'apple', server: 'fm', binary, model: 'system' }, new AbortController().signal)).toBe(true);
+    expect(fs.readFileSync(path.join(to, name), 'utf8')).toBe(record);
+    expect(fs.statSync(path.join(to, name)).mode & 0o777).toBe(0o600);
   });
 
   it('copies nothing when the person never probed the target, so the case sees the same answer', async () => {
     const from = temporary();
     const to = path.join(temporary(), 'probe');
-    expect(await copyProbeRecord(nodeFiles, from, to, 'system')).toBe(false);
+    expect(await copyProbeRecord(nodeFiles, from, to, { target: 'apple', server: 'fm', binary: binaryIn(temporary()), model: 'system' }, new AbortController().signal)).toBe(false);
     expect(fs.existsSync(to)).toBe(false);
   });
 });

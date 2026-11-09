@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { capabilitiesFromProbe, runProbe } from '@momonga/gateway';
 import { countFakeRequestTokens, startFakeChatCompletions, type FakeChatCompletionsOptions, type FakeChatCompletionsServer } from '@momonga/testkit';
 import { isProbeReport } from '../src/probe/report-schema.ts';
+import { FM_PROBE_ROUTES } from './fm-record-support.ts';
 
 const servers: FakeChatCompletionsServer[] = [];
 afterEach(async () => {
@@ -11,7 +12,7 @@ afterEach(async () => {
 const probeWith = async (options: FakeChatCompletionsOptions) => {
   const fake = await startFakeChatCompletions(options);
   servers.push(fake);
-  const report = await runProbe({ socketPath: fake.socketPath, managedHealthRoute: true, samples: 2 });
+  const report = await runProbe({ socketPath: fake.socketPath, managed: FM_PROBE_ROUTES, samples: 2 });
   return { report, fake };
 };
 

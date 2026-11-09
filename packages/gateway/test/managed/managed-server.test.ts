@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import { createUdsClient, fixedSocket } from '@momonga/foundation';
 import { FAKE_SERVER, FAKE_SERVER_MODEL, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeManagedServer } from '@momonga/testkit';
+import { HEALTH_POLL_INTERVAL_MS } from '../../src/managed/server.ts';
 import { FakeChild, SERVER_KINDS, createManagedServer, createManualTimers, makeShortDir } from './managed-support.ts';
 import type { ExecPort, FakeChildOptions, ManagedServerHandle, ServerKind } from './managed-support.ts';
 
@@ -29,15 +30,17 @@ type Setup = {
   socketPath?: string;
   lockPath?: string;
   spawned?: FakeChild[];
+  onSpawn?: () => void;
 };
 
-const setup = ({ kind, exec, child, socketPath, lockPath, spawned = [] }: Setup) => {
+const setup = ({ kind, exec, child, socketPath, lockPath, spawned = [], onSpawn }: Setup) => {
   const dir = makeShortDir(dirs);
   const socket = socketPath ?? path.join(dir, `${kind.target}.sock`);
   const execMock = vi.fn(exec ?? kind.metExec);
   const manual = createManualTimers();
   const warnings: string[] = [];
   const spawn = vi.fn((_file: string, _args: readonly string[]) => {
+    onSpawn?.();
     const created = new FakeChild(socket, kind.readyPath, child?.(spawned.length) ?? {});
     spawned.push(created);
     children.push(created);
@@ -179,20 +182,43 @@ describe.each(SERVER_KINDS)('one managed server mechanism, driven by the descrip
     expect(spawned[0]?.signals).toEqual(['SIGTERM']);
   });
 
-  it('claims its instance with its own lock: two starters of one instance launch one child while the first runs (item 18)', async () => {
+  it('claims its instance with its own lock: of two starters of one instance, the second launches only after the first child has ended, driven by fake timers and fake children (item 18; section 18, item 10)', async () => {
     const dir = makeShortDir(dirs);
     const socketPath = path.join(dir, `${kind.target}.sock`);
     const lockPath = path.join(dir, `${kind.target}.lock`);
     const spawned: FakeChild[] = [];
-    const first = setup({ kind, socketPath, lockPath, spawned, child: () => ({ manualServe: true }) });
-    const second = setup({ kind, socketPath, lockPath, spawned, child: () => ({ manualServe: true }) });
-    const firstStart = first.server.start(asking());
-    void second.server.start(asking()).catch(() => undefined);
-    await vi.waitFor(() => expect(spawned).toHaveLength(1));
+    const othersAliveAtSpawn: boolean[] = [];
+    const order: string[] = [];
+    let firstSpawned: () => void = () => undefined;
+    const firstSpawn = new Promise<void>((resolve) => {
+      firstSpawned = resolve;
+    });
+    const spawnedBy = (starter: string) => (): void => {
+      othersAliveAtSpawn.push(spawned.some((child) => child.alive));
+      order.push(starter);
+      if (order.length === 1) firstSpawned();
+    };
+    const manualChild = (): FakeChildOptions => ({ manualServe: true });
+    const starters = {
+      a: setup({ kind, socketPath, lockPath, spawned, onSpawn: spawnedBy('a'), child: manualChild }),
+      b: setup({ kind, socketPath, lockPath, spawned, onSpawn: spawnedBy('b'), child: manualChild }),
+    };
+    const starts = { a: starters.a.server.start(asking()), b: starters.b.server.start(asking()) };
+    await firstSpawn;
+    const winner = order[0] === 'a' ? 'a' : 'b';
+    const loser = winner === 'a' ? 'b' : 'a';
     await spawned[0]?.serveNow();
-    await firstStart;
-    await settleRounds();
+    expect(await starts[winner]).toEqual({ kind: 'unix', socketPath });
     expect(spawned).toHaveLength(1);
+    await starters[winner].server.stop();
+    while (order.length < 2) {
+      await vi.waitFor(() => expect(order.length === 2 || starters[loser].manual.delays().includes(HEALTH_POLL_INTERVAL_MS)).toBe(true), { timeout: READY_MS * 10 });
+      if (order.length < 2) starters[loser].manual.fire(HEALTH_POLL_INTERVAL_MS);
+    }
+    await spawned[1]?.serveNow();
+    expect(await starts[loser]).toEqual({ kind: 'unix', socketPath });
+    expect(order).toEqual([winner, loser]);
+    expect(othersAliveAtSpawn).toEqual([false, false]);
   });
 
   it('makes a flight under a newer key wait for the running flight of its instance, then launch once it ends, never refused as occupied (item 12 with item 18)', async () => {

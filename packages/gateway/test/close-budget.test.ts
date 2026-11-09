@@ -4,16 +4,17 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_STOP_VALUES, REAP_POLL_INTERVAL_MS, gatewayMaxCloseMs, managedServerStopBoundMs, reapMarkedProcesses } from '@momonga/foundation';
 import type { ProcessInspector } from '@momonga/foundation';
-import { FM_SERVE_DEFAULTS, GATEWAY_CONFIG_DEFAULTS, createFmServe } from '@momonga/gateway';
-import type { FmChild, FmServeTimers } from '@momonga/gateway';
+import { GATEWAY_CONFIG_DEFAULTS, createManagedServer } from '@momonga/gateway';
+import type { ManagedChild, ManagedServerTimers } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, drivenReapTiming, startFakeChatCompletions, waitFor } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeClock, FakeTimers } from '@momonga/testkit';
 import { makeDir, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
 import { advanceToNextWait, bigTextEvents, createHangingAdapter, openUnreadStream } from './gateway-support.ts';
+import { FM_SERVER } from '@momonga/protocol';
 
 describe('gateway close budget', () => {
   it('the gateway close at the default stop values is the close grace plus the managed-server stop bound at the default stop grace', () => {
-    expect(gatewayMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(GATEWAY_CONFIG_DEFAULTS.closeGraceMs + managedServerStopBoundMs(FM_SERVE_DEFAULTS.stopGraceMs));
+    expect(gatewayMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(GATEWAY_CONFIG_DEFAULTS.closeGraceMs + managedServerStopBoundMs(DEFAULT_STOP_VALUES.managedServerStopGraceMs));
   });
 });
 
@@ -28,7 +29,7 @@ const survivorInspector: ProcessInspector = {
   markerState: async () => 'held',
 };
 
-type SwitchableTimers = FmServeTimers & { useFake(): void };
+type SwitchableTimers = ManagedServerTimers & { useFake(): void };
 
 const switchableTimers = (fake: FakeTimers): SwitchableTimers => {
   let virtual = false;
@@ -51,7 +52,7 @@ const switchableTimers = (fake: FakeTimers): SwitchableTimers => {
   };
 };
 
-const unkillableFmChild = (socketPath: string, marker: string, clock: FakeClock, timers: FakeTimers, servers: FakeChatCompletionsServer[]): FmChild => {
+const unkillableManagedChild = (socketPath: string, marker: string, clock: FakeClock, timers: FakeTimers, servers: FakeChatCompletionsServer[]): ManagedChild => {
   const events = new EventEmitter();
   void startFakeChatCompletions({ scenario: 'tools-ok', socketPath }).then((server) => servers.push(server));
   return {
@@ -69,7 +70,7 @@ const unkillableFmChild = (socketPath: string, marker: string, clock: FakeClock,
       });
     },
     once: (event: 'exit' | 'error', listener: (...args: never[]) => void) => events.once(event, listener as (...args: unknown[]) => void),
-  } as FmChild;
+  } as ManagedChild;
 };
 
 describe('the gateway close bound against a gateway that holds an fm serve at the default grace', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
@@ -84,12 +85,16 @@ describe('the gateway close bound against a gateway that holds an fm serve at th
     const primary = createHangingAdapter(bigTextEvents(80, 100_000));
     const harness = await startGateway({ adapters: { primary }, config: { closeGraceMs: GATEWAY_CONFIG_DEFAULTS.closeGraceMs }, dir });
     const fmTimers = switchableTimers(harness.timers);
-    const serve = createFmServe({
-      ...FM_SERVE_DEFAULTS,
+    const serve = createManagedServer({
+      description: FM_SERVER,
+      target: 'fm',
+      lockPath: path.join(dir, 'fm.lock'),
+      readyTimeoutMs: FM_SERVER.ready.limitMs,
+      readStopGraceMs: () => DEFAULT_STOP_VALUES.managedServerStopGraceMs,
       binary: '/usr/bin/fm',
       socketPath: path.join(dir, 'fm.sock'),
       exec: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
-      spawn: () => unkillableFmChild(path.join(dir, 'fm.sock'), marker, harness.clock, harness.timers, servers),
+      spawn: () => unkillableManagedChild(path.join(dir, 'fm.sock'), marker, harness.clock, harness.timers, servers),
       timers: fmTimers,
       onWarning: () => undefined,
     });
@@ -105,7 +110,7 @@ describe('the gateway close bound against a gateway that holds an fm serve at th
     const closing = harness.gateway.close().finally(() => {
       closed = true;
     });
-    const waits = new Set([GATEWAY_CONFIG_DEFAULTS.closeGraceMs, FM_SERVE_DEFAULTS.stopGraceMs, REAP_POLL_INTERVAL_MS]);
+    const waits = new Set([GATEWAY_CONFIG_DEFAULTS.closeGraceMs, DEFAULT_STOP_VALUES.managedServerStopGraceMs, REAP_POLL_INTERVAL_MS]);
     while (!closed) await advanceToNextWait(harness.timers, waits, () => closed, 'the next wait of the close');
     await closing;
 

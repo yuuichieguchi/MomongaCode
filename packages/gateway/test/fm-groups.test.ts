@@ -2,14 +2,18 @@ import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { createFmServe } from '@momonga/gateway';
+import { createManagedServer } from '@momonga/gateway';
+import type { ManagedServer } from '@momonga/gateway';
 import { createGroupSpawn } from '../src/managed/fm-processes.ts';
-import type { FmServe } from '@momonga/gateway';
 import { DAEMON_PROCESS_TEST_TIMEOUT_MS, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
 import { REAL_FM_STOP_GRACE_MS, registerCleanup } from './gateway-helpers.ts';
 import { MINIMAL_PATH, isAlive, makeHome, pause, until } from './gateway-process-helpers.ts';
+import { FM_SERVER } from '@momonga/protocol';
+import { readMarkerGroup } from '@momonga/foundation';
 
 const SLEEPER = 'setInterval(() => {}, 1 << 30);';
+
+const groupRecord = (pgid: number): string => `r00000\ng${String(pgid).padStart(10, '0')}\n`;
 
 const pgidOf = (pid: number): number => Number(execFileSync('/bin/ps', ['-o', 'pgid=', '-p', String(pid)], { encoding: 'utf8' }).trim());
 
@@ -39,34 +43,34 @@ const servePids = (dumpFile: string): number[] =>
 
 const groupAlive = (pgid: number): boolean => isAlive(-pgid);
 
-type ServeOptions = Parameters<typeof createFmServe>[0];
+type ServeOptions = Parameters<typeof createManagedServer>[0];
+
+const NO_RESTART_FM = { ...FM_SERVER, restart: { ...FM_SERVER.restart, backoffMs: 600_000, maxRestarts: 0 } };
 
 const serveOptions = (context: Setup, onWarning: ServeOptions['onWarning']): ServeOptions => ({
+  description: NO_RESTART_FM,
+  target: 'fm',
+  lockPath: `${context.socketPath}.lock`,
+  readyTimeoutMs: 15_000,
+  readStopGraceMs: () => REAL_FM_STOP_GRACE_MS,
   binary: context.binary,
   socketPath: context.socketPath,
-  healthTimeoutMs: 15_000,
-  restartBackoffMs: 600_000,
-  stopGraceMs: REAL_FM_STOP_GRACE_MS,
-  maxRestarts: 0,
-  restartResetMs: 60_000,
-  preconditionTtlMs: 60_000,
   env: { PATH: MINIMAL_PATH, HOME: context.dir, TMPDIR: context.dir },
   markerDirectory: context.markers,
   exec: fakeExec,
   onWarning,
 });
 
-const makeServe = (context: Setup, overrides: Partial<ServeOptions> = {}): FmServe => {
+const makeServe = (context: Setup, overrides: Partial<ServeOptions> = {}): ManagedServer => {
   const warnings: string[] = [];
-  const serve = createFmServe({
+  const serve = createManagedServer({
+    description: FM_SERVER,
+    target: 'fm',
+    lockPath: `${context.socketPath}.lock`,
+    readyTimeoutMs: 15_000,
+    readStopGraceMs: () => REAL_FM_STOP_GRACE_MS,
     binary: context.binary,
     socketPath: context.socketPath,
-    healthTimeoutMs: 15_000,
-    restartBackoffMs: 600_000,
-    stopGraceMs: REAL_FM_STOP_GRACE_MS,
-    maxRestarts: 0,
-    restartResetMs: 60_000,
-    preconditionTtlMs: 60_000,
     env: { PATH: MINIMAL_PATH, HOME: context.dir, TMPDIR: context.dir },
     markerDirectory: context.markers,
     exec: fakeExec,
@@ -152,7 +156,7 @@ describe('fm serve group lifetime', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS },
     expect(fs.readdirSync(context.markers)).toEqual([]);
   });
 
-  it('records the fm leader pid, which is its pgid, in the marker file', async () => {
+  it('records the fm leader pid, which is its pgid, as the group line of the marker record', async () => {
     const context = await setup();
     reapAll(context);
     const serve = makeServe(context);
@@ -160,7 +164,7 @@ describe('fm serve group lifetime', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS },
     const [leader] = servePids(context.dumpFile);
     if (leader === undefined) throw new Error('fm serve did not start');
     const [marker] = fs.readdirSync(context.markers);
-    expect(fs.readFileSync(path.join(context.markers, marker ?? ''), 'utf8').trim()).toBe(String(leader));
+    expect(await readMarkerGroup(path.join(context.markers, marker ?? ''))).toBe(leader);
     expect(pgidOf(leader)).toBe(leader);
   });
 });
@@ -189,16 +193,13 @@ describe('stale fm marker reaping', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS },
   };
 
   const unprovedGroupWarning = (marker: string, group: number): string =>
-    `fm marker ${marker}: group ${group} is still alive but could not be verified as belonging to this call, so it was left alone`;
+    `managed server marker ${marker}: group ${group} is still alive but could not be verified as belonging to this call, so it was left alone`;
 
-  it.each([
-    ['a recorded pgid of an unrelated group, and reports that group as left alone', true],
-    ['unreadable content', false],
-  ])('signals only the holder when the marker has %s', async (_label, recordsVictim) => {
+  it('signals only the holder when the record names an unrelated group, and reports that group as left alone (decision 12, item 8)', async () => {
     const context = await setup();
     reapAll(context);
     const victim = spawnDetached(['-e', SLEEPER]);
-    const planted = plantHolderInForeignGroup(context.markers, recordsVictim ? `${victim}\n` : 'not a pid');
+    const planted = plantHolderInForeignGroup(context.markers, groupRecord(victim));
     const holder = await holderPid(planted.holderPidFile);
     expect(pgidOf(holder)).toBe(planted.groupLeader);
 
@@ -209,7 +210,23 @@ describe('stale fm marker reaping', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS },
     expect(isAlive(planted.groupLeader)).toBe(true);
     expect(isAlive(victim)).toBe(true);
     expect(fs.existsSync(planted.marker)).toBe(false);
-    expect(warnings).toEqual(recordsVictim ? [unprovedGroupWarning(planted.marker, victim)] : []);
+    expect(warnings).toEqual([unprovedGroupWarning(planted.marker, victim)]);
+  });
+
+  it('treats unreadable marker content as a record whose retries are all spent: it signals nothing, keeps the marker and tells the person once (decision 12)', async () => {
+    const context = await setup();
+    reapAll(context);
+    const planted = plantHolderInForeignGroup(context.markers, 'not a pid');
+    const holder = await holderPid(planted.holderPidFile);
+
+    const warnings: string[] = [];
+    const serve = makeServe(context, { onWarning: (message) => warnings.push(message) });
+    await serve.start();
+    expect(isAlive(holder)).toBe(true);
+    expect(fs.existsSync(planted.marker)).toBe(true);
+    expect(warnings).toEqual([
+      'a managed server process (marker stale-marker) may still be running. MomongaCode has used its 4 retries and will not try again. If it can stay running, run /markers ignore stale-marker.',
+    ]);
   });
 });
 
@@ -229,7 +246,8 @@ describe('finalize of a spawned fm group', { timeout: REAL_PROCESS_TEST_TIMEOUT_
     ].join(' ');
     const child = createGroupSpawn({ env: { PATH: MINIMAL_PATH, HOME: dir, TMPDIR: dir }, markerDirectory: markers, onWarning: (message) => warnings.push(message) })(process.execPath, ['-e', source, readyFile]);
     const [marker] = fs.readdirSync(markers);
-    const pid = Number(fs.readFileSync(path.join(markers, marker ?? ''), 'utf8').trim());
+    await until(() => fs.readFileSync(path.join(markers, marker ?? ''), 'utf8').includes('\ng'), 'the group line');
+    const pid = (await readMarkerGroup(path.join(markers, marker ?? ''))) ?? 0;
     registerCleanup(() => killGroupsForCleanup([pid]));
     await until(() => fs.existsSync(readyFile), 'the child to drop the marker fd');
     expect(pgidOf(pid)).toBe(pid);
@@ -263,7 +281,7 @@ const plantStaleHolder = (markers: string): { marker: string; holder: number } =
   const holder = child.pid;
   if (holder === undefined) throw new Error('could not spawn the holder');
   child.unref();
-  fs.writeFileSync(marker, `${holder}\n`);
+  fs.writeFileSync(marker, groupRecord(holder));
   registerCleanup(() => killGroupsForCleanup([holder]));
   return { marker, holder };
 };
@@ -283,7 +301,7 @@ describe('group cleanup outcome', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, (
     await waitForHolder(marker, holder);
     shieldFromSignals(holder);
     const onWarning = vi.fn();
-    const serve = makeServe(context, { stopGraceMs: 300, onWarning });
+    const serve = makeServe(context, { readStopGraceMs: () => 300, onWarning });
     await serve.start();
     expect(isAlive(holder)).toBe(true);
     expect(fs.existsSync(marker)).toBe(true);
@@ -297,7 +315,7 @@ describe('group cleanup outcome', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, (
     const context = await setup();
     reapAll(context);
     const onWarning = vi.fn();
-    const serve = makeServe(context, { stopGraceMs: 300, onWarning });
+    const serve = makeServe(context, { readStopGraceMs: () => 300, onWarning });
     await serve.start();
     const survivor = await survivorOf(context);
     const [marker] = fs.readdirSync(context.markers);
@@ -320,7 +338,7 @@ describe('group cleanup outcome', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, (
     const { marker, holder } = plantStaleHolder(context.markers);
     await waitForHolder(marker, holder);
     const onWarning = vi.fn();
-    const serve = makeServe(context, { stopGraceMs: 300, onWarning });
+    const serve = makeServe(context, { readStopGraceMs: () => 300, onWarning });
     await serve.start();
     expect(isAlive(holder)).toBe(false);
     expect(fs.existsSync(marker)).toBe(false);
@@ -331,7 +349,7 @@ describe('group cleanup outcome', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, (
     const context = await setup();
     reapAll(context);
     const onWarning = vi.fn();
-    const serve = makeServe(context, { stopGraceMs: 300, onWarning });
+    const serve = makeServe(context, { readStopGraceMs: () => 300, onWarning });
     await serve.start();
     const survivor = await survivorOf(context);
     await serve.stop();
@@ -394,7 +412,7 @@ describe('reaper warnings for a live stale leader whose helper outlives it', { t
     reapAll(liveContext);
 
     const abandonedWarnings: string[] = [];
-    const abandoned = createFmServe(serveOptions(liveContext, (message) => abandonedWarnings.push(message)));
+    const abandoned = createManagedServer(serveOptions(liveContext, (message) => abandonedWarnings.push(message)));
     await abandoned.start();
     await until(() => fs.existsSync(helperPidFile) && fs.readFileSync(helperPidFile, 'utf8').endsWith('\n'), 'the helper pid');
     const helper = Number(fs.readFileSync(helperPidFile, 'utf8').trim());
@@ -406,7 +424,7 @@ describe('reaper warnings for a live stale leader whose helper outlives it', { t
     expect(isAlive(leader)).toBe(true);
 
     const onWarning = vi.fn();
-    const second = makeServe(liveContext, { onWarning, stopGraceMs: 500 });
+    const second = makeServe(liveContext, { onWarning, readStopGraceMs: () => 500 });
     await second.start();
     await until(() => !isAlive(leader), 'the stale leader to be killed', 5000);
     expect(isAlive(helper)).toBe(true);

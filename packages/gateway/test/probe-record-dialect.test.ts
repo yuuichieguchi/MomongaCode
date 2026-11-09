@@ -6,6 +6,8 @@ import { endpointRecordFileName, loadEndpointRecord, loadProbeRecord, saveEndpoi
 import type { DialectDefinition, ProbeReport } from '@momonga/protocol';
 import { PROBE_METHOD_VERSION } from '../src/probe/run-probe.ts';
 import { makeReport } from './report-fixture.ts';
+import type { KnownProbeKey } from '@momonga/config';
+import { FM_CURRENCY, fmRecordKey } from './fm-record-support.ts';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -19,12 +21,14 @@ const makeDir = (): string => {
   return dir;
 };
 
-const key = { target: 'fm', binarySha256: 'a'.repeat(64), osBuild: '27A100' };
+const key: KnownProbeKey = fmRecordKey('a'.repeat(64), '27A100');
 const endpointKey = { endpoint: 'unix:/tmp/fake.sock', model: 'qwen-fake' };
 
 type Currency = { userDialects: Record<string, DialectDefinition>; probeMethod: number };
 
 const NO_USER_DIALECTS: Currency = { userDialects: {}, probeMethod: PROBE_METHOD_VERSION };
+
+const managedCurrency = (currency: Currency) => ({ ...currency, descriptionDigest: FM_CURRENCY.descriptionDigest });
 
 const MINE: DialectDefinition = { rules: [{ select: [{ kinds: ['object-with-properties'] }], op: 'property-order', key: 'x-order' }] } as DialectDefinition;
 const MINE_CHANGED: DialectDefinition = { rules: [{ select: [{ kinds: ['object-with-properties'] }], op: 'property-order', key: 'x-sequence' }] } as DialectDefinition;
@@ -42,8 +46,8 @@ const NONE_OF_BUILTINS = reportSelecting(null, [
 const NONE_WITH_MINE = reportSelecting(null, [...NONE_OF_BUILTINS.schemaDialect.tried.map(({ id, result }) => ({ id, result: result as 'refused' })), { id: 'mine', result: 'refused' }]);
 
 const save = (dir: string, report: ProbeReport, currency: Currency) =>
-  saveProbeRecord(dir, key, report, currency);
-const load = (dir: string, currency: Currency) => loadProbeRecord(dir, key, currency);
+  saveProbeRecord(dir, key, report, managedCurrency(currency));
+const load = (dir: string, currency: Currency) => loadProbeRecord(dir, key, managedCurrency(currency), 'apple');
 
 const rewrite = (file: string, change: (stored: Record<string, unknown>) => Record<string, unknown>) => {
   fs.writeFileSync(file, JSON.stringify(change(JSON.parse(fs.readFileSync(file, 'utf8')))));
@@ -57,37 +61,37 @@ describe('record invalidation of the fm record (rule 7)', () => {
   it('reads a record stored under probe method 1 as no record', async () => {
     const dir = makeDir();
     await save(dir, SELECTED_2020, { ...NO_USER_DIALECTS, probeMethod: 1 });
-    expect(JSON.parse(fs.readFileSync(path.join(dir, 'fm.json'), 'utf8')).probeMethod).toBe(1);
+    expect(JSON.parse(fs.readFileSync(path.join(dir, `${key.digest}.json`), 'utf8')).probeMethod).toBe(1);
     expect(await load(dir, NO_USER_DIALECTS)).toBeNull();
   });
 
   it('writes probeMethod and dialectsDigest beside the identity fields and loads the record back', async () => {
     const dir = makeDir();
     await save(dir, SELECTED_2020, NO_USER_DIALECTS);
-    const stored = JSON.parse(fs.readFileSync(path.join(dir, 'fm.json'), 'utf8'));
+    const stored = JSON.parse(fs.readFileSync(path.join(dir, `${key.digest}.json`), 'utf8'));
     expect(stored.probeMethod).toBe(PROBE_METHOD_VERSION);
     expect(stored.dialectsDigest).toMatch(/^[0-9a-f]{64}$/);
     expect(stored.report.schemaDialect).toEqual(SELECTED_2020.schemaDialect);
     expect(await load(dir, NO_USER_DIALECTS)).toEqual(SELECTED_2020);
   });
 
-  it('reads a record written before the change as no record, without throwing', async () => {
+  it('reads a record written before the change, under the old target file name, as no record, without throwing (design 6.6, migration)', async () => {
     const dir = makeDir();
-    fs.writeFileSync(path.join(dir, 'fm.json'), JSON.stringify({ binarySha256: key.binarySha256, osBuild: key.osBuild, report: makeReport(1, 1) }));
+    fs.writeFileSync(path.join(dir, 'fm.json'), JSON.stringify({ binarySha256: 'a'.repeat(64), osBuild: '27A100', report: makeReport(1, 1) }));
     expect(await load(dir, NO_USER_DIALECTS)).toBeNull();
   });
 
   it('reads a record of another probe method as no record', async () => {
     const dir = makeDir();
     await save(dir, SELECTED_2020, NO_USER_DIALECTS);
-    rewrite(path.join(dir, 'fm.json'), (stored) => ({ ...stored, probeMethod: PROBE_METHOD_VERSION + 1 }));
+    rewrite(path.join(dir, `${key.digest}.json`), (stored) => ({ ...stored, probeMethod: PROBE_METHOD_VERSION + 1 }));
     expect(await load(dir, NO_USER_DIALECTS)).toBeNull();
   });
 
   it('reads a record whose digest no longer matches as no record', async () => {
     const dir = makeDir();
     await save(dir, SELECTED_2020, NO_USER_DIALECTS);
-    rewrite(path.join(dir, 'fm.json'), (stored) => ({ ...stored, dialectsDigest: '0'.repeat(64) }));
+    rewrite(path.join(dir, `${key.digest}.json`), (stored) => ({ ...stored, dialectsDigest: '0'.repeat(64) }));
     expect(await load(dir, NO_USER_DIALECTS)).toBeNull();
   });
 

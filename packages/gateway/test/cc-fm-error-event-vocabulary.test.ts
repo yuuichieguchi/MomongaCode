@@ -1,18 +1,19 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { FM_VOCABULARY, createChatCompletionsAdapter, createManagedFmTarget, saveProbeRecord } from '@momonga/gateway';
-import type { ChatCompletionsAdapter, ExecResult, FmServe } from '@momonga/gateway';
+import { vocabularyOf, createChatCompletionsAdapter, createManagedTarget, saveProbeRecord } from '@momonga/gateway';
+import type { ChatCompletionsAdapter, ExecResult, ManagedServer } from '@momonga/gateway';
 import type { HealthResult, ProbeReport } from '@momonga/protocol';
 import { FM_CONTEXT_OVERFLOW_ERROR, FM_GUARDRAIL_ERROR, createFakeClock, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer, FakeScriptedReply } from '@momonga/testkit';
 import { START_MS, makeDir, postJson, readJson, readSse, registerCleanup, startGateway } from './gateway-helpers.ts';
 import { collect, makeAdapter, userText } from './cc-support.ts';
 import { makeReport } from './report-fixture.ts';
-import { CURRENT_DIALECTS } from './dialect-currency.ts';
-import { primed, recordKeyOptions } from './fm-record-support.ts';
+import { FM_CURRENCY, fmRecordKey, fmTargetBase, primed, recordKeyOptions } from './fm-record-support.ts';
 import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
+import type { KnownProbeKey } from '@momonga/config';
+import { FM_SERVER } from '@momonga/protocol';
 
-const RECORD_KEY = { target: 'fm', binarySha256: 'cd'.repeat(32), osBuild: '25A100' };
+const RECORD_KEY: KnownProbeKey = fmRecordKey('cd'.repeat(32), '25A100');
 
 const startFakeFm = async (reply: FakeScriptedReply): Promise<FakeChatCompletionsServer> => {
   const fake = await startFakeChatCompletions({ scenario: 'tools-ok', wire: 'fm', script: [reply] });
@@ -22,7 +23,7 @@ const startFakeFm = async (reply: FakeScriptedReply): Promise<FakeChatCompletion
 
 const fmAdapter = async (fake: FakeChatCompletionsServer, report?: ProbeReport) => {
   const endpoint = { kind: 'unix' as const, socketPath: fake.socketPath };
-  const fmServe: FmServe = {
+  const fmServe: ManagedServer = {
     restarts: 0,
     start: async () => endpoint,
     ensureRunning: async () => endpoint,
@@ -30,16 +31,17 @@ const fmAdapter = async (fake: FakeChatCompletionsServer, report?: ProbeReport) 
     health: async (): Promise<HealthResult> => ({ ok: true }),
   };
   const probeRecordDir = path.join(makeDir(), 'probe');
-  await saveProbeRecord(probeRecordDir, RECORD_KEY, report ?? makeReport(1, 1), CURRENT_DIALECTS);
-  const managed = await primed(createManagedFmTarget({
-    fmServe,
+  await saveProbeRecord(probeRecordDir, RECORD_KEY, report ?? makeReport(1, 1), FM_CURRENCY);
+  const managed = await primed(createManagedTarget({
+    ...fmTargetBase(),
+    server: fmServe,
     binary: '/opt/fake/fm',
     exec: async (): Promise<ExecResult> => ({ exitCode: 0, stdout: '5\n', stderr: '' }),
     probeRecordDir,
     ...recordKeyOptions(RECORD_KEY),
     toolCallingSetting: report === undefined ? 'native' : 'auto',
     declaredModel: 'system',
-  }), RECORD_KEY.target);
+  }), 'fm');
   const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock: createFakeClock(START_MS) });
   registerCleanup(() => adapter.close());
   return adapter;
@@ -158,6 +160,6 @@ describe('a recorded guardrail shape with a generic code never matches by its co
 
 describe('fm has no status rule that makes a 413 an overflow', () => {
   it('reads a 413 without the overflow message as payload_too_large', () => {
-    expect(FM_VOCABULARY.kindOf(413, { error: { message: 'x' } })).toBe('payload_too_large');
+    expect(vocabularyOf(FM_SERVER).kindOf(413, { error: { message: 'x' } })).toBe('payload_too_large');
   });
 });

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { shortTempBase } from '@momonga/foundation';
 import type { EntryIo } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsServer } from '@momonga/testkit';
@@ -19,7 +19,7 @@ afterEach(async () => {
 });
 
 const freshDir = (prefix: string): string => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(shortTempBase(process.platform), prefix)));
   cleanups.push(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;
 };
@@ -61,9 +61,9 @@ describe('gateway probe on a HOME that has never run momonga', { timeout: REAL_P
     const fm = await createFakeFm({ dir: freshDir('mm-fm-') });
     fm.configure({ serve: { scenario: 'tools-ok', contextWindow: 8192, contextSizeExposure: 'models' } });
     fs.mkdirSync(path.join(home, '.momonga'), { mode: 0o700 });
-    fs.writeFileSync(path.join(home, '.momonga', 'settings.json'), JSON.stringify({ models: { targets: { fm: { adapter: 'managed', server: 'fm' } }, aliases: { default: 'fm' } } }), { mode: 0o600 });
+    fs.writeFileSync(path.join(home, '.momonga', 'settings.json'), JSON.stringify({ models: { targets: { fm: { adapter: 'managed', server: 'fm', binary: fm.binaryPath } }, aliases: { default: 'fm' } } }), { mode: 0o600 });
 
-    const result = await runCli(home, ['gateway', 'probe', 'fm', '--fm-binary', fm.binaryPath, '--samples', '1']);
+    const result = await runCli(home, ['gateway', 'probe', 'fm', '--samples', '1']);
 
     expect(result.codes).toEqual([0]);
     expect(result.stdout).toContain('probed fm: model system, context window 8192 (reported)');

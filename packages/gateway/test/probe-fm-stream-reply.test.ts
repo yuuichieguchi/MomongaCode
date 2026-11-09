@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { FM_VOCABULARY, runProbe } from '@momonga/gateway';
+import { vocabularyOf, runProbe } from '@momonga/gateway';
 import { startFakeChatCompletions, type FakeChatCompletionsServer, type FakeStreamChunk } from '@momonga/testkit';
+import { FM_SERVER } from '@momonga/protocol';
+import { FM_PROBE_ROUTES } from './fm-record-support.ts';
 
 const LONG_ANSWER_PROMPT = 'Count from 1 to 300, one number per line, and write nothing else.';
 
@@ -38,7 +40,7 @@ describe('the fm probe reads a streamed reply through the decoder every probe st
     });
     servers.push(fake);
 
-    const report = await runProbe({ socketPath: fake.socketPath, managedHealthRoute: true, samples: 2, vocabulary: FM_VOCABULARY });
+    const report = await runProbe({ socketPath: fake.socketPath, managed: FM_PROBE_ROUTES, samples: 2, vocabulary: vocabularyOf(FM_SERVER) });
 
     expect(fake.routeHits[0]).toBeGreaterThan(0);
     expect(report.outputBoundField).toBe('max_completion_tokens');
@@ -50,8 +52,8 @@ describe('the fm probe reads a streamed reply through the decoder every probe st
     const unary = await startFakeChatCompletions(options);
     servers.push(streamed, unary);
 
-    const fromStream = await runProbe({ socketPath: streamed.socketPath, managedHealthRoute: true, samples: 2, vocabulary: FM_VOCABULARY });
-    const fromJson = await runProbe({ socketPath: unary.socketPath, managedHealthRoute: true, samples: 2 });
+    const fromStream = await runProbe({ socketPath: streamed.socketPath, managed: FM_PROBE_ROUTES, samples: 2, vocabulary: vocabularyOf(FM_SERVER) });
+    const fromJson = await runProbe({ socketPath: unary.socketPath, managed: FM_PROBE_ROUTES, samples: 2 });
 
     expect(fromStream.constrained).toEqual(fromJson.constrained);
     expect(fromStream.nativeTools).toEqual({ accepted: true, validRate: 0, roundTripOk: false });

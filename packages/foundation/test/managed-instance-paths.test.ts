@@ -1,70 +1,55 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import * as foundation from '@momonga/foundation';
-import { momongaPaths } from '@momonga/foundation';
+import { managedInstancePaths, momongaPaths } from '@momonga/foundation';
 
-type Instance = { owner: 'gateway' | 'cli'; purpose: 'serve' | 'probe'; target: string };
-type InstancePaths = { socketPath: string; markerDirectory: string; lockPath: string };
-type InstancePathsOf = (paths: ReturnType<typeof momongaPaths>, instance: Instance) => InstancePaths;
+type Instance = { owner: 'gateway'; generation: number; purpose: 'serve' | 'probe'; target: string } | { owner: 'cli'; purpose: 'serve' | 'probe'; target: string };
 
-const managedInstancePaths: InstancePathsOf = (paths, instance) => {
-  const value = (foundation as Record<string, unknown>)['managedInstancePaths'];
-  if (value === undefined) throw new Error('@momonga/foundation does not export managedInstancePaths');
-  return (value as InstancePathsOf)(paths, instance);
-};
+const placeOf = managedInstancePaths as unknown as (paths: ReturnType<typeof momongaPaths>, instance: Instance) => { socketPath: string; markerDirectory: string; lockPath: string };
 
 const HOME = '/Users/someone';
 const paths = momongaPaths(HOME, 'darwin', {});
 
-const inside = (dir: string, file: string): boolean => {
-  const relative = path.relative(dir, file);
-  return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
-};
+const gateway = (generation: number, purpose: 'serve' | 'probe', target: string) => placeOf(paths, { owner: 'gateway', generation, purpose, target });
+const cli = (purpose: 'serve' | 'probe', target: string) => placeOf(paths, { owner: 'cli', purpose, target });
 
-const of = (owner: Instance['owner'], purpose: Instance['purpose'], target: string): InstancePaths => managedInstancePaths(paths, { owner, purpose, target });
-
-describe.skipIf(process.platform === 'win32')('a managed server instance is named by (owner, purpose, target) (design-managed-servers section 17, items 12, 13 and 19)', () => {
-  it('names the gateway serving instance of a target by the target: socket <target>.sock and marker directory markers/targets/<target>', () => {
-    const serving = of('gateway', 'serve', 'apple');
-    expect(path.basename(serving.socketPath)).toBe('apple.sock');
-    expect(serving.markerDirectory).toBe(path.join(paths.markers.targets, 'apple'));
+describe.skipIf(process.platform === 'win32')('the one rule for the place of an instance (design-update-no-interrupt 18.2.1; design-managed-servers section 18, item 2)', () => {
+  it.each([
+    ['serve', 'apple'],
+    ['probe', '_probe-apple'],
+  ] as const)('places the gateway %s instance of generation N at run/g<N>/targets/<stem>.sock, its lock beside it, and markers/g<N>/targets/<stem>/', (purpose, stem) => {
+    expect(gateway(3, purpose, 'apple')).toEqual({
+      socketPath: path.join(paths.run, 'g3', 'targets', `${stem}.sock`),
+      lockPath: path.join(paths.run, 'g3', 'targets', `${stem}.lock`),
+      markerDirectory: path.join(paths.markers.root, 'g3', 'targets', stem),
+    });
   });
 
-  it('gives two targets of one server kind two instances that share no socket, marker directory or lock', () => {
-    const apple = of('gateway', 'serve', 'apple');
-    const banana = of('gateway', 'serve', 'banana');
-    expect(new Set([apple.socketPath, banana.socketPath]).size).toBe(2);
-    expect(new Set([apple.markerDirectory, banana.markerDirectory]).size).toBe(2);
-    expect(new Set([apple.lockPath, banana.lockPath]).size).toBe(2);
+  it.each([
+    ['serve', '_cli-serve-apple'],
+    ['probe', '_cli-probe-apple'],
+  ] as const)('places the CLI %s instance outside every generation: run/<stem>.sock, run/<stem>.lock and markers/cli/<purpose>-<target>/', (purpose, stem) => {
+    expect(cli(purpose, 'apple')).toEqual({
+      socketPath: path.join(paths.run, `${stem}.sock`),
+      lockPath: path.join(paths.run, `${stem}.lock`),
+      markerDirectory: path.join(paths.markers.root, 'cli', `${purpose}-apple`),
+    });
   });
 
-  it('gives the gateway probe of a target its own instance under markers/targets, apart from the serving instance', () => {
-    const serving = of('gateway', 'serve', 'apple');
-    const probe = of('gateway', 'probe', 'apple');
-    expect(inside(paths.markers.targets, probe.markerDirectory)).toBe(true);
-    expect(probe.socketPath).not.toBe(serving.socketPath);
-    expect(probe.markerDirectory).not.toBe(serving.markerDirectory);
-    expect(inside(serving.markerDirectory, probe.markerDirectory) || inside(probe.markerDirectory, serving.markerDirectory)).toBe(false);
-    expect(probe.lockPath).not.toBe(serving.lockPath);
+  it('gives two generations of one target two instances that share no socket, lock or marker directory (18.2.2)', () => {
+    const first = gateway(1, 'serve', 'apple');
+    const second = gateway(2, 'serve', 'apple');
+    expect(new Set([first.socketPath, second.socketPath]).size).toBe(2);
+    expect(new Set([first.lockPath, second.lockPath]).size).toBe(2);
+    expect(new Set([first.markerDirectory, second.markerDirectory]).size).toBe(2);
   });
 
-  it('puts the CLI probe of a target under the markers root but outside markers/targets, so the supervisor reap of a gone gateway never cuts it', () => {
-    const cli = of('cli', 'probe', 'apple');
-    expect(inside(paths.markers.root, cli.markerDirectory)).toBe(true);
-    expect(inside(paths.markers.targets, cli.markerDirectory)).toBe(false);
-    expect(cli.markerDirectory).not.toBe(paths.markers.targets);
+  it('keeps a target named like a role file apart from the role sockets of its generation', () => {
+    expect(gateway(1, 'serve', 'gateway').socketPath).not.toBe(path.join(paths.run, 'g1', 'gateway.sock'));
+    expect(gateway(1, 'serve', 'gateway').lockPath).not.toBe(path.join(paths.run, 'g1', 'gateway.lock'));
   });
 
-  it('gives the CLI probe one instance per target, not one socket for all targets', () => {
-    const apple = of('cli', 'probe', 'apple');
-    const banana = of('cli', 'probe', 'banana');
-    expect(apple.socketPath).not.toBe(banana.socketPath);
-    expect(apple.markerDirectory).not.toBe(banana.markerDirectory);
-    expect(apple.socketPath).not.toBe(of('gateway', 'probe', 'apple').socketPath);
-  });
-
-  it('recurs across starts: the same instance always gets the same names, so its start-time reap finds its orphans', () => {
-    expect(of('gateway', 'probe', 'apple')).toEqual(of('gateway', 'probe', 'apple'));
-    expect(of('cli', 'probe', 'apple')).toEqual(of('cli', 'probe', 'apple'));
+  it('recurs across starts: the same instance always gets the same place, so its start-time reap finds its orphans', () => {
+    expect(gateway(4, 'probe', 'apple')).toEqual(gateway(4, 'probe', 'apple'));
+    expect(cli('probe', 'apple')).toEqual(cli('probe', 'apple'));
   });
 });

@@ -38,7 +38,7 @@ const ollamaOverTcp: Configuration = [
 ];
 
 const configurations: readonly Configuration[] = [
-  ['fm', { adapter: 'managed', server: 'fm', model: 'system', toolCalling: 'native', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 1000 }, { adapter: 'managed', server: 'fm' }, ['target t']],
+  ['managed fm', { adapter: 'managed', server: 'fm', binary: '/usr/bin/fm', readyTimeoutMs: 10_000, model: 'system', toolCalling: 'native', billing: 'local', maxConcurrency: 1, admissionTimeoutMs: 1000 }, { adapter: 'managed', server: 'fm' }, ['managed fm /usr/bin/fm system']],
   [
     'chat-completions auto',
     { ...remote, adapter: 'chat-completions', model: 'm', provider: 'p', baseUrl: 'https://upstream.invalid/v1', toolCalling: 'auto' },
@@ -86,10 +86,11 @@ const modelsWith = (resolved: ResolvedModelTarget, declared: Record<string, unkn
 
 const copiedRecordsOf = (models: UserModels): string[] => {
   const settings = liveSettingsFor(models, ['default']);
-  return [...settings.fmTargets.map((target) => `target ${target}`), ...settings.endpointProbes.map((probe) => `endpoint ${probe.endpoint} ${probe.model}`)];
+  return [...settings.managedTargets.map((source) => `managed ${source.server} ${source.binary} ${source.model ?? ''}`.trim()), ...settings.endpointProbes.map((probe) => `endpoint ${probe.endpoint} ${probe.model}`)];
 };
 
 const gatewayRecordsOf = (resolved: ResolvedModelTarget): string[] => {
+  if (resolved.adapter === 'managed') return [`managed ${resolved.server} ${resolved.binary} ${resolved.model ?? ''}`.trim()];
   const key = probeRecordKeyOf('t', resolved);
   if (key === undefined) return [];
   return [key.kind === 'target' ? `target ${key.target}` : `endpoint ${key.key.endpoint} ${key.key.model}`];

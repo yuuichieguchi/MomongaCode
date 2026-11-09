@@ -1,18 +1,32 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { saveProbeRecord } from '@momonga/gateway';
-import type { ProbeRecordKey } from '@momonga/gateway';
-import { TARGET_PROBING_MESSAGE } from '@momonga/protocol';
+import { probeKeyOf } from '@momonga/config';
+import type { KnownProbeKey } from '@momonga/config';
+import { managedCurrencyOf, saveProbeRecord } from '@momonga/gateway';
+import type { ManagedServer, ManagedTargetOptions } from '@momonga/gateway';
+import { FM_SERVER, TARGET_PROBING_MESSAGE } from '@momonga/protocol';
 import type { Probing, ProbeReport } from '@momonga/protocol';
 import { FAKE_OS_BUILD } from '@momonga/testkit';
 import { makeReport } from './report-fixture.ts';
-import { CURRENT_DIALECTS } from './dialect-currency.ts';
 
-export type StartProbe = (key: ProbeRecordKey) => Promise<Probing>;
+export const FM_CURRENCY = managedCurrencyOf(FM_SERVER, { userDialects: {} });
+
+export type StartProbe = (key: KnownProbeKey) => Promise<Probing>;
+
+export const fmRecordKey = (binarySha256: string, osBuild: string = FAKE_OS_BUILD, model?: string): KnownProbeKey => {
+  const key = probeKeyOf({
+    subject: FM_SERVER.id,
+    identity: FM_SERVER.identity,
+    readings: { binarySha256: { kind: 'read', value: binarySha256 }, hostOsBuild: { kind: 'read', value: osBuild } },
+    model,
+  });
+  if (key.kind !== 'known') throw new Error('a key built from read components is known');
+  return key;
+};
 
 export const NO_AUTO_PROBE: StartProbe = async (key) => {
-  throw new Error(`this test keeps a probe record and expects no automatic probe of ${key.target}`);
+  throw new Error(`this test keeps a probe record and expects no automatic probe of ${key.canonical}`);
 };
 
 export const NO_PROBE_START = async (): Promise<Probing> => {
@@ -23,7 +37,27 @@ export const probingAnswer = (): Probing => ({ state: 'probing', message: TARGET
 
 export const IDLE_AUTO_PROBE: StartProbe = async () => probingAnswer();
 
-export const recordKeyOptions = (key: ProbeRecordKey, startProbe: StartProbe = NO_AUTO_PROBE) => ({ target: key.target, readRecordKey: async () => key, startProbe });
+export const recordKeyOptions = (key: KnownProbeKey, startProbe: StartProbe = NO_AUTO_PROBE) => ({ readKey: async () => key, startProbe });
+
+export const idleServer: ManagedServer = {
+  restarts: 0,
+  start: async () => ({ kind: 'unix', socketPath: '/unused.sock' }),
+  ensureRunning: async () => ({ kind: 'unix', socketPath: '/unused.sock' }),
+  stop: async () => undefined,
+  health: async () => ({ ok: true }),
+};
+
+export const fmTargetBase = (target = 'fm'): Omit<ManagedTargetOptions, 'server' | 'exec' | 'binary' | 'probeRecordDir' | 'readKey' | 'startProbe' | 'toolCallingSetting'> => ({
+  description: FM_SERVER,
+  target,
+  requestLimitMs: 300_000,
+  isUsableBinary: async () => true,
+  onInstanceEnd: () => undefined,
+  instanceProbe: () => {
+    throw new Error('this test reads every probe key component, so no instance probe runs');
+  },
+  currency: FM_CURRENCY,
+});
 
 export const primed = async <Managed extends { capabilities: (target: { name: string; model: string }) => Promise<unknown> }>(managed: Promise<Managed>, target: string): Promise<Managed> => {
   const ready = await managed;
@@ -31,7 +65,35 @@ export const primed = async <Managed extends { capabilities: (target: { name: st
   return ready;
 };
 
-export const saveFakeFmRecord = async (home: string, target: string, binaryPath: string, report: ProbeReport = makeReport(1, 1)): Promise<void> => {
-  const key = { target, binarySha256: createHash('sha256').update(fs.readFileSync(binaryPath)).digest('hex'), osBuild: FAKE_OS_BUILD };
-  await saveProbeRecord(path.join(home, '.momonga', 'state', 'probe'), key, report, CURRENT_DIALECTS);
+export const saveFakeFmRecord = async (home: string, binaryPath: string, report: ProbeReport = makeReport(1, 1), model?: string): Promise<void> => {
+  const key = fmRecordKey(createHash('sha256').update(fs.readFileSync(binaryPath)).digest('hex'), FAKE_OS_BUILD, model);
+  await saveProbeRecord(path.join(home, '.momonga', 'state', 'probe'), key, report, FM_CURRENCY);
 };
+
+type SettingsTree = { models?: { targets?: Record<string, Record<string, unknown>> } } & Record<string, unknown>;
+
+const managedTargetsOf = (settings: unknown): Array<[string, Record<string, unknown>]> =>
+  Object.entries((settings as SettingsTree).models?.targets ?? {}).filter(([, target]) => target['adapter'] === 'managed' && target['server'] === FM_SERVER.id);
+
+export const withFakeBinary = <Settings>(settings: Settings, binaryPath: string): Settings => {
+  const tree = settings as SettingsTree;
+  const targets = tree.models?.targets;
+  if (targets === undefined) return settings;
+  const placed = Object.fromEntries(Object.entries(targets).map(([name, target]) => [name, target['adapter'] === 'managed' && target['server'] === FM_SERVER.id && target['binary'] === undefined ? { ...target, binary: binaryPath } : target]));
+  return { ...tree, models: { ...tree.models, targets: placed } } as Settings;
+};
+
+export const saveFakeFmRecordsFor = async (home: string, settings: unknown, binaryPath: string, report: ProbeReport = makeReport(1, 1)): Promise<void> => {
+  const models = new Set(managedTargetsOf(settings).map(([, target]) => (typeof target['model'] === 'string' ? target['model'] : undefined)));
+  for (const model of models) await saveFakeFmRecord(home, binaryPath, report, model);
+};
+
+export const placeFakeFm = async (home: string, binaryPath: string, report: ProbeReport = makeReport(1, 1)): Promise<void> => {
+  const file = path.join(home, '.momonga', 'settings.json');
+  const settings: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const placed = withFakeBinary(settings, binaryPath);
+  fs.writeFileSync(file, JSON.stringify(placed), { mode: 0o600 });
+  await saveFakeFmRecordsFor(home, placed, binaryPath, report);
+};
+
+export const FM_PROBE_ROUTES = { readyPath: FM_SERVER.ready.path, listPath: FM_SERVER.models.listPath, idPath: FM_SERVER.models.idPath };

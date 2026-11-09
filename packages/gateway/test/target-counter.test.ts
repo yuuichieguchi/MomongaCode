@@ -4,11 +4,11 @@ import { describe, expect, it } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
 import { targetCounterOf } from '@momonga/gateway';
 import { makeDir } from './gateway-helpers.ts';
+import { fmRecordKey } from './fm-record-support.ts';
 
 const CAPABILITIES = { contextWindow: 8192, maxOutputTokens: 1024 };
 const CODE_DIGEST = 'a'.repeat(64);
 const OTHER_CODE_DIGEST = 'b'.repeat(64);
-const FM = { binarySha256: '1'.repeat(64), osBuild: '25A354' };
 const HOSTED = { adapter: 'chat-completions', model: 'm', baseUrl: 'https://api.example.com/v1', provider: 'acme', toolCalling: 'native', capabilities: CAPABILITIES };
 
 const resolvedTarget = async (target: Record<string, unknown>) => {
@@ -59,14 +59,16 @@ describe('targetCounterOf', () => {
     expect(targetCounterOf({ target, codeDigest: OTHER_CODE_DIGEST })).not.toBe(targetCounterOf({ target, codeDigest: CODE_DIGEST }));
   });
 
-  it('changes for an fm target when the binary sha256 or the OS build changes', async () => {
+  it('changes for a managed target when its probe key changes (the binary sha256, the OS build or the declared model)', async () => {
     const target = await resolvedTarget({ adapter: 'managed', server: 'fm' });
-    expect(target.adapter).toBe('fm');
-    const base = targetCounterOf({ target, codeDigest: CODE_DIGEST, fm: FM });
+    expect(target.adapter).toBe('managed');
+    const keyOf = (binarySha256: string, osBuild: string, model?: string) => fmRecordKey(binarySha256, osBuild, model).canonical;
+    const base = targetCounterOf({ target, codeDigest: CODE_DIGEST, probeKey: keyOf('1'.repeat(64), '25A354') });
     expect(base).toMatch(/^[0-9a-f]{64}$/);
-    expect(targetCounterOf({ target, codeDigest: CODE_DIGEST, fm: { ...FM } })).toBe(base);
-    expect(targetCounterOf({ target, codeDigest: CODE_DIGEST, fm: { ...FM, binarySha256: '2'.repeat(64) } })).not.toBe(base);
-    expect(targetCounterOf({ target, codeDigest: CODE_DIGEST, fm: { ...FM, osBuild: '25A355' } })).not.toBe(base);
+    expect(targetCounterOf({ target, codeDigest: CODE_DIGEST, probeKey: keyOf('1'.repeat(64), '25A354') })).toBe(base);
+    expect(targetCounterOf({ target, codeDigest: CODE_DIGEST, probeKey: keyOf('2'.repeat(64), '25A354') })).not.toBe(base);
+    expect(targetCounterOf({ target, codeDigest: CODE_DIGEST, probeKey: keyOf('1'.repeat(64), '25A355') })).not.toBe(base);
+    expect(targetCounterOf({ target, codeDigest: CODE_DIGEST, probeKey: keyOf('1'.repeat(64), '25A354', 'system') })).not.toBe(base);
   });
 
   it('changes for a probed endpoint target when its probe record names another upstream identity', async () => {

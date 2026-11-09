@@ -2,20 +2,20 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createJsonLogger, FIRST_GENERATION } from '@momonga/foundation';
 import { DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, createFakeTimers, fakeExec } from '@momonga/testkit';
-import type { FmServeOptions } from '../src/managed/fm-serve.ts';
+import type { ManagedServerOptions } from '../src/managed/server.ts';
 import { START_MS, makeDir } from './gateway-helpers.ts';
-import { saveFakeFmRecord } from './fm-record-support.ts';
+import { placeFakeFm } from './fm-record-support.ts';
 import { PROCESS_VERSION, baseEnv, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 
-const servedOptions: FmServeOptions[] = [];
+const servedOptions: ManagedServerOptions[] = [];
 
-vi.mock('../src/managed/fm-serve.ts', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../src/managed/fm-serve.ts')>();
+vi.mock('../src/managed/server.ts', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../src/managed/server.ts')>();
   return {
     ...original,
-    createFmServe: (options: FmServeOptions) => {
+    createManagedServer: (options: ManagedServerOptions) => {
       servedOptions.push(options);
-      return original.createFmServe(options);
+      return original.createManagedServer(options);
     },
   };
 });
@@ -29,7 +29,7 @@ const hostExec = async (file: string, args: readonly string[]) => {
 
 const settingsWith = (managedServerStopGraceMs: number) => ({
   gateway: { managedServerStopGraceMs },
-  models: { aliases: { default: ['fm'] }, targets: { fm: { adapter: 'managed', server: 'fm' } } },
+  models: { aliases: { default: ['apple'] }, targets: { apple: { adapter: 'managed', server: 'fm' } } },
 });
 
 describe('the gateway process wires the settings file into its managed server stops begun outside a close (design 3.2)', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
@@ -37,24 +37,23 @@ describe('the gateway process wires the settings file into its managed server st
     const fm = await createFakeFm({ dir: makeDir() });
     const home = makeHome();
     writeSettings(home, settingsWith(700));
-    await saveFakeFmRecord(home, 'fm', fm.binaryPath);
+    await placeFakeFm(home, fm.binaryPath);
     const clock = createFakeClock(START_MS);
     await launchGateway({
       generation: FIRST_GENERATION,
       home,
       env: baseEnv(home),
       version: PROCESS_VERSION,
-      fmBinary: fm.binaryPath,
       exec: hostExec,
       execWithStdin: async () => ({ exitCode: 0, stdout: '5\n', stderr: '' }),
       clock,
       timers: createFakeTimers(clock),
       logger: createJsonLogger({ service: 'gateway', clock, stream: { write: () => true } }),
     });
-    const managed = servedOptions.find((options) => options.markerDirectory?.endsWith(`${path.sep}fm`));
+    const managed = servedOptions.find((options) => options.target === 'apple');
     expect(managed).toBeDefined();
-    expect(managed?.readStopGraceMs?.()).toBe(700);
+    expect(managed?.readStopGraceMs()).toBe(700);
     writeSettings(home, settingsWith(1500));
-    expect(managed?.readStopGraceMs?.()).toBe(1500);
+    expect(managed?.readStopGraceMs()).toBe(1500);
   });
 });
