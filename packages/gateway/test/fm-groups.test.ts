@@ -6,7 +6,7 @@ import { createFmServe } from '@momonga/gateway';
 import { createGroupSpawn } from '../src/managed/fm-processes.ts';
 import type { FmServe } from '@momonga/gateway';
 import { DAEMON_PROCESS_TEST_TIMEOUT_MS, LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
-import { registerCleanup } from './gateway-helpers.ts';
+import { REAL_FM_STOP_GRACE_MS, registerCleanup } from './gateway-helpers.ts';
 import { MINIMAL_PATH, isAlive, makeHome, pause, until } from './gateway-process-helpers.ts';
 
 const SLEEPER = 'setInterval(() => {}, 1 << 30);';
@@ -46,7 +46,7 @@ const serveOptions = (context: Setup, onWarning: ServeOptions['onWarning']): Ser
   socketPath: context.socketPath,
   healthTimeoutMs: 15_000,
   restartBackoffMs: 600_000,
-  stopGraceMs: 5000,
+  stopGraceMs: REAL_FM_STOP_GRACE_MS,
   maxRestarts: 0,
   restartResetMs: 60_000,
   preconditionTtlMs: 60_000,
@@ -63,7 +63,7 @@ const makeServe = (context: Setup, overrides: Partial<ServeOptions> = {}): FmSer
     socketPath: context.socketPath,
     healthTimeoutMs: 15_000,
     restartBackoffMs: 600_000,
-    stopGraceMs: 5000,
+    stopGraceMs: REAL_FM_STOP_GRACE_MS,
     maxRestarts: 0,
     restartResetMs: 60_000,
     preconditionTtlMs: 60_000,
