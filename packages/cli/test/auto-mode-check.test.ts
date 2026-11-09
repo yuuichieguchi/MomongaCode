@@ -6,6 +6,7 @@ import type { ResolvedChatCompletionsTarget, UserModels } from '@momonga/config'
 import { autoFitDirectoryOf } from '@momonga/config';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { PublicRunEvent } from '@momonga/protocol';
+import { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } from '@momonga/runtime';
 import { autoModeCheck } from '../src/commands/auto-mode.ts';
 import type { AutoModeCheckPorts } from '../src/commands/auto-mode.ts';
 import type { ContextHostEffects, ContextRuntime } from '../src/eval/context-host.ts';
@@ -178,7 +179,7 @@ const portsFor = (effects: ContextHostEffects): { ports: AutoModeCheckPorts; out
     version: '0.0.0-test',
     now: () => Date.parse('2026-11-06T00:00:00.000Z'),
     randomHex: (bytes) => '0'.repeat(bytes * 2),
-    reflection: { pendingBoundMs: 2000, attemptBoundMs: 9000, pollMs: 100 },
+    reflection: { pendingBoundMs: REFLECTION_PICKUP_BOUND_MS, attemptBoundMs: REFLECTION_ATTEMPTS_BOUND_MS, pollMs: REFLECTION_POLL_MS },
     write: (text) => void output.push(text),
   };
   return { ports, output, home };
