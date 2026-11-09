@@ -4471,10 +4471,10 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 395125,
-      "measuredSeconds": 36.81,
-      "measuredCpuSeconds": 40.38,
-      "budgetCpuSeconds": 84
+      "distinctStates": 768689,
+      "measuredSeconds": 103.48,
+      "measuredCpuSeconds": 94.96,
+      "budgetCpuSeconds": 193
     },
     {
       "config": "SettingsSwap.underivable",
@@ -4482,10 +4482,10 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 220760,
-      "measuredSeconds": 30.27,
-      "measuredCpuSeconds": 27.67,
-      "budgetCpuSeconds": 59
+      "distinctStates": 380457,
+      "measuredSeconds": 42.11,
+      "measuredCpuSeconds": 43.07,
+      "budgetCpuSeconds": 90
     },
     {
       "config": "SettingsSwap.removal",
@@ -4493,10 +4493,10 @@
       "expect": "holds",
       "args": [],
       "tier": "deep",
-      "distinctStates": 2493988,
-      "measuredSeconds": 381.9,
-      "measuredCpuSeconds": 348.24,
-      "budgetCpuSeconds": 700
+      "distinctStates": 7914027,
+      "measuredSeconds": 1068.95,
+      "measuredCpuSeconds": 1110.43,
+      "budgetCpuSeconds": 2224
     },
     {
       "config": "SettingsSwap.restartOnChange",
@@ -4507,9 +4507,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 69,
-      "measuredSeconds": 1.9,
-      "measuredCpuSeconds": 2.5,
+      "distinctStates": 72,
+      "measuredSeconds": 2.81,
+      "measuredCpuSeconds": 2.48,
       "budgetCpuSeconds": 8
     },
     {
@@ -4521,9 +4521,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 194,
-      "measuredSeconds": 1.82,
-      "measuredCpuSeconds": 2.52,
+      "distinctStates": 219,
+      "measuredSeconds": 2.64,
+      "measuredCpuSeconds": 2.51,
       "budgetCpuSeconds": 9
     },
     {
@@ -4535,10 +4535,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 574,
-      "measuredSeconds": 1.91,
-      "measuredCpuSeconds": 2.5,
-      "budgetCpuSeconds": 8
+      "distinctStates": 679,
+      "measuredSeconds": 3.57,
+      "measuredCpuSeconds": 2.89,
+      "budgetCpuSeconds": 9
     },
     {
       "config": "SettingsSwap.staleRead",
@@ -4550,8 +4550,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 9,
-      "measuredSeconds": 1.65,
-      "measuredCpuSeconds": 2.05,
+      "measuredSeconds": 2.51,
+      "measuredCpuSeconds": 2.25,
       "budgetCpuSeconds": 8
     },
     {
@@ -4564,8 +4564,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 13,
-      "measuredSeconds": 1.68,
-      "measuredCpuSeconds": 2.03,
+      "measuredSeconds": 2.79,
+      "measuredCpuSeconds": 2.33,
       "budgetCpuSeconds": 8
     },
     {
@@ -4577,10 +4577,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 3910,
-      "measuredSeconds": 2.18,
-      "measuredCpuSeconds": 2.95,
-      "budgetCpuSeconds": 9
+      "distinctStates": 5082,
+      "measuredSeconds": 3.5,
+      "measuredCpuSeconds": 3.7,
+      "budgetCpuSeconds": 11
     },
     {
       "config": "SettingsSwap.splitGate",
@@ -4591,10 +4591,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 82,
-      "measuredSeconds": 3.36,
-      "measuredCpuSeconds": 2.07,
-      "budgetCpuSeconds": 8
+      "distinctStates": 41,
+      "measuredSeconds": 1.38,
+      "measuredCpuSeconds": 1.87,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "SettingsSwap.lockWait",
@@ -4605,9 +4605,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 3581,
-      "measuredSeconds": 2.35,
-      "measuredCpuSeconds": 3.03,
+      "distinctStates": 4660,
+      "measuredSeconds": 2.26,
+      "measuredCpuSeconds": 3.08,
       "budgetCpuSeconds": 10
     },
     {
@@ -4619,10 +4619,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 4458,
-      "measuredSeconds": 2.21,
-      "measuredCpuSeconds": 3.09,
-      "budgetCpuSeconds": 10
+      "distinctStates": 6009,
+      "measuredSeconds": 1.66,
+      "measuredCpuSeconds": 2.83,
+      "budgetCpuSeconds": 9
     },
     {
       "config": "SettingsSwap.parallelDerive",
@@ -4633,10 +4633,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 126,
-      "measuredSeconds": 1.71,
-      "measuredCpuSeconds": 2.12,
-      "budgetCpuSeconds": 8
+      "distinctStates": 141,
+      "measuredSeconds": 1.34,
+      "measuredCpuSeconds": 1.91,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "SettingsSwap.awaitOlder",
@@ -4647,9 +4647,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 388,
-      "measuredSeconds": 1.55,
-      "measuredCpuSeconds": 2.03,
+      "distinctStates": 463,
+      "measuredSeconds": 1.44,
+      "measuredCpuSeconds": 2.14,
       "budgetCpuSeconds": 8
     },
     {
@@ -4658,10 +4658,10 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 25705,
-      "measuredSeconds": 4.1,
-      "measuredCpuSeconds": 5.77,
-      "budgetCpuSeconds": 15
+      "distinctStates": 30961,
+      "measuredSeconds": 6.48,
+      "measuredCpuSeconds": 6.46,
+      "budgetCpuSeconds": 16
     },
     {
       "config": "SettingsSwap.lazyLastGood",
@@ -4672,10 +4672,24 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 132,
-      "measuredSeconds": 1.97,
-      "measuredCpuSeconds": 2.66,
-      "budgetCpuSeconds": 9
+      "distinctStates": 147,
+      "measuredSeconds": 2.92,
+      "measuredCpuSeconds": 2.35,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "SettingsSwap.recordFirst",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoRollbackAfterApply",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1739,
+      "measuredSeconds": 2.06,
+      "measuredCpuSeconds": 3.33,
+      "budgetCpuSeconds": 10
     }
   ]
 }
