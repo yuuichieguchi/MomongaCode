@@ -2,16 +2,19 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { OutboundNetwork } from '@momonga/foundation';
 import type { CliPorts } from '../src/ports.ts';
 
-const captured = vi.hoisted(() => ({ signals: [] as Array<AbortSignal | undefined> }));
+const reader = vi.hoisted(() => ({
+  read: (): Promise<readonly string[]> => new Promise<readonly string[]>(() => undefined),
+  signals: [] as Array<AbortSignal | undefined>,
+}));
 
 vi.mock('@momonga/foundation', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@momonga/foundation')>();
-  const installTrust = (...args: Parameters<typeof actual.installTrust>): ReturnType<typeof actual.installTrust> => {
-    const options = args[2] as { signal?: AbortSignal } | undefined;
-    captured.signals.push(options?.signal);
-    return Promise.resolve({ sources: [], failures: [] });
+  const installTrust: typeof actual.installTrust = (config, files, options = {}) => {
+    reader.signals.push(options.signal);
+    return actual.installTrust(config, files, { ...options, readSystemCertificates: () => reader.read() });
   };
   return { ...actual, installTrust };
 });
@@ -35,6 +38,16 @@ const ports = (): CliPorts => {
   } as unknown as CliPorts;
 };
 
+const freshNetwork = async (): Promise<typeof import('../src/network.ts')> => {
+  vi.resetModules();
+  reader.signals.length = 0;
+  return import('../src/network.ts');
+};
+
+const flush = async (): Promise<void> => {
+  for (let turn = 0; turn < 20; turn += 1) await new Promise<void>((resolve) => setImmediate(resolve));
+};
+
 describe('the CLI reads the trust store under the one CLI host-read bound', () => {
   it('foundation exports HOST_READ_BOUND_MS as 300 000 ms', async () => {
     const foundation = (await import('@momonga/foundation')) as Record<string, unknown>;
@@ -42,24 +55,44 @@ describe('the CLI reads the trust store under the one CLI host-read bound', () =
     expect(foundation['HOST_READ_BOUND_MS']).toBe(300_000);
   });
 
-  it('passes installTrust a signal that aborts exactly when HOST_READ_BOUND_MS has passed', async () => {
-    const foundation = (await import('@momonga/foundation')) as Record<string, unknown>;
-    const bound = foundation['HOST_READ_BOUND_MS'] as number;
-    expect(bound).toBe(300_000);
-    vi.resetModules();
-    captured.signals.length = 0;
+  it('a read that never settles is live at the bound minus 1 ms and ends with a system failure at the bound', async () => {
+    const { HOST_READ_BOUND_MS } = await import('@momonga/foundation');
+    reader.read = () => new Promise<readonly string[]>(() => undefined);
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    const { processOutboundNetwork } = await import('../src/network.ts');
+    const { processOutboundNetwork } = await freshNetwork();
+    let settled: OutboundNetwork | undefined;
 
-    await processOutboundNetwork(ports());
+    void processOutboundNetwork(ports()).then((network) => {
+      settled = network;
+    });
+    while (reader.signals.length === 0) await new Promise<void>((resolve) => setImmediate(resolve));
+    const signal = reader.signals[0];
+    vi.advanceTimersByTime(HOST_READ_BOUND_MS - 1);
+    await flush();
 
-    expect(captured.signals).toHaveLength(1);
-    const signal = captured.signals[0];
-    expect(signal).toBeInstanceOf(AbortSignal);
     expect(signal?.aborted).toBe(false);
-    vi.advanceTimersByTime(bound - 1);
-    expect(signal?.aborted).toBe(false);
+    expect(settled).toBeUndefined();
+
     vi.advanceTimersByTime(1);
+    while (settled === undefined) await new Promise<void>((resolve) => setImmediate(resolve));
+
     expect(signal?.aborted).toBe(true);
+    expect(settled.trust.sources.find((entry) => entry.source === 'system')).toEqual({ source: 'system', certificates: 0 });
+    expect(settled.trust.failures).toHaveLength(1);
+    expect(settled.trust.failures[0]?.reason.startsWith('the system store was not read:')).toBe(true);
+  });
+
+  it('clears the bound when the read settles, so no timer is left and the signal never aborts', async () => {
+    const { HOST_READ_BOUND_MS } = await import('@momonga/foundation');
+    reader.read = () => Promise.resolve([]);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { processOutboundNetwork } = await freshNetwork();
+
+    const network = await processOutboundNetwork(ports());
+
+    expect(network.trust.failures).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(HOST_READ_BOUND_MS);
+    expect(reader.signals[0]?.aborted).toBe(false);
   });
 });

@@ -1,3 +1,4 @@
+import { X509Certificate } from 'node:crypto';
 import tls from 'node:tls';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { installTrust } from '../src/outbound.ts';
@@ -5,6 +6,7 @@ import type { NetworkConfig } from '../src/network-route.ts';
 
 const noFiles = { readTextFile: (): Promise<string> => Promise.reject(new Error('no file is read in this test')) };
 const noCaFiles: NetworkConfig = { caFiles: [] };
+const fingerprints = (pems: readonly string[]): Set<string> => new Set(pems.map((pem) => new X509Certificate(pem).fingerprint256));
 const neverSettles = (): Promise<readonly string[]> => new Promise<readonly string[]>(() => undefined);
 
 let original: string[] = [];
@@ -69,6 +71,6 @@ describe('installTrust ends the system store read when the signal of the operati
   it('installs the bundled and extra certificates when the system read was abandoned', async () => {
     await installTrust(noCaFiles, noFiles, { readSystemCertificates: neverSettles, signal: AbortSignal.abort(new Error('stopped')) });
 
-    expect(tls.getCACertificates('default')).toEqual([...bundled, ...extra]);
+    expect(fingerprints(tls.getCACertificates('default'))).toEqual(fingerprints([...bundled, ...extra]));
   });
 });

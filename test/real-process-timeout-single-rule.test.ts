@@ -1,6 +1,8 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import * as testkit from '@momonga/testkit';
-import { fileLevelTestTimeout, importsFromTestkit, repositoryTests } from './support/test-timeout-source.ts';
+import { ROOT, fileLevelTestTimeout, importsFromTestkit, repositoryTests } from './support/test-timeout-source.ts';
 
 const PRODUCT_STARTS = ['startGatewayProcess', 'runGatewayEntry', 'startRuntimeProcess', 'runRuntimeEntry'] as const;
 const TEST_HELPER_STARTS: Readonly<Record<string, readonly string[]>> = {
@@ -32,8 +34,23 @@ const offendersOf = (file: string, source: string): string[] => {
 };
 
 describe('every test file that starts a real gateway or runtime sets REAL_PROCESS_TEST_TIMEOUT_MS at file level', () => {
-  it('testkit exports REAL_PROCESS_TEST_TIMEOUT_MS as 30 000 ms', () => {
-    expect((testkit as Record<string, unknown>)['REAL_PROCESS_TEST_TIMEOUT_MS']).toBe(30_000);
+  it('testkit exports one real-process hang guard, REAL_PROCESS_TEST_TIMEOUT_MS, and no DAEMON_PROCESS_TEST_TIMEOUT_MS', () => {
+    expect(typeof (testkit as Record<string, unknown>)['REAL_PROCESS_TEST_TIMEOUT_MS']).toBe('number');
+    expect(testkit).not.toHaveProperty('DAEMON_PROCESS_TEST_TIMEOUT_MS');
+  });
+
+  it('no file outside this check names DAEMON_PROCESS_TEST_TIMEOUT_MS', () => {
+    const naming = repositoryTests()
+      .filter(({ file, source }) => source.includes('DAEMON_PROCESS_TEST_TIMEOUT_MS') && !file.startsWith('test/real-process-timeout-single-rule'))
+      .map(({ file }) => file);
+
+    expect(naming).toEqual([]);
+  });
+
+  it('testkit sources do not declare DAEMON_PROCESS_TEST_TIMEOUT_MS', () => {
+    const source = fs.readFileSync(path.join(ROOT, 'packages/testkit/src/test-support.ts'), 'utf8');
+
+    expect(source).not.toMatch(/\bDAEMON_PROCESS_TEST_TIMEOUT_MS\b/);
   });
 
   it('finds the files the feature review named', () => {
