@@ -9,6 +9,7 @@ import { makeAdapter, startFake } from './cc-support.ts';
 import { textReply } from './cc-compact-support.ts';
 import { chunkLine, doneLine, makeOllamaAdapter, startFakeOllama } from './ollama-support.ts';
 import { FAKE_API_KEY, REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
+import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 type Upstream = { adapter: ProviderAdapter; sent: () => number };
 
@@ -17,7 +18,7 @@ const REPLIES = 2;
 const openResponses = async (): Promise<Upstream> => {
   const fake = await startFakeOpenResponses({ script: Array.from({ length: REPLIES }, () => openResponsesTextReply(['ok'])) });
   registerCleanup(() => fake.close());
-  const adapter = createOpenResponsesAdapter({
+  const adapter = createOpenResponsesAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
     capabilities: async () => REMOTE_CAPABILITIES,
     clock: createFakeClock(START_MS),
@@ -37,7 +38,7 @@ const anthropic = async (path: string): Promise<Upstream> => {
   const reply = () => (path === COUNT_PATH ? anthropicCountTokensReply(7) : anthropicTextReply(['ok']));
   const fake = await startFakeAnthropic({ apiKey: FAKE_API_KEY, script: Array.from({ length: REPLIES }, reply) });
   registerCleanup(() => fake.close());
-  const adapter = createAnthropicAdapter({
+  const adapter = createAnthropicAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
     apiKey: async () => FAKE_API_KEY,
     capabilities: async () => REMOTE_CAPABILITIES,

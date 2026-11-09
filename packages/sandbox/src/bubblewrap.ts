@@ -12,7 +12,7 @@ import { EMPTY_FILE_FORM, identityOf, isStillThePlaceholder, removePlaceholderEn
 import type { PlaceholderIdentity, PlaceholderJournal } from './placeholder-journal.ts';
 import { assertExistingDirectory, removePrivateTmpDir } from './scratch.ts';
 import type { DirectoryPort } from './scratch.ts';
-import type { Sandbox, SandboxCommand, SandboxPolicy, SandboxedProcess } from './types.ts';
+import type { Sandbox, SandboxCommand, SandboxDescriptors, SandboxPolicy, SandboxedProcess } from './types.ts';
 
 export const DEFAULT_BWRAP_PATH = '/usr/bin/bwrap';
 
@@ -380,8 +380,8 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
   const bwrapPath = options.bwrapPath ?? DEFAULT_BWRAP_PATH;
   const filesystem = options.filesystem ?? nodeFilesystemPort;
   const groupMembers = options.groupMembers ?? procGroupMembers;
-  const signalSandboxTerm = (pgid: number): void => {
-    if (signalGroupExceptLeader(pgid, 'SIGTERM', groupMembers) === 0) signalGroup(pgid, 'SIGTERM');
+  const signalSandboxTerm = async (pgid: number, stop: AbortSignal): Promise<void> => {
+    if (signalGroupExceptLeader(pgid, 'SIGTERM', groupMembers) === 0) await signalGroup(pgid, 'SIGTERM', undefined, stop);
   };
   filesystem.requireExecutable(bwrapPath);
   const tmpRoot = filesystem.realpath(options.tmpRoot);
@@ -487,7 +487,7 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
     steps.push(sweepKept);
     throwAll(attemptAll(steps));
   };
-  const launchWith = (command: SandboxCommand, plan: BubblewrapPlan, tmpDir: string, signal: AbortSignal, afterExit: () => void): SandboxedProcess => {
+  const launchWith = (command: SandboxCommand, plan: BubblewrapPlan, tmpDir: string, signal: AbortSignal, afterExit: () => void, descriptors?: SandboxDescriptors): SandboxedProcess => {
     hold(plan);
     try {
       return launch({
@@ -495,6 +495,7 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
         args: [...plan.args, '--', ...command.argv],
         cwd: command.cwd,
         ...(command.markerFile === undefined ? {} : { markerFile: command.markerFile }),
+        ...(descriptors?.markerFd === undefined ? {} : { markerFd: descriptors.markerFd }),
         ...(command.stdin === undefined ? {} : { stdin: command.stdin }),
         env: { ...command.env, TMPDIR: tmpDir },
         signal,
@@ -512,18 +513,18 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
   return {
     kind: 'bubblewrap',
     sweep: sweepKept,
-    spawn(command: SandboxCommand, policy: SandboxPolicy, signal: AbortSignal): SandboxedProcess {
+    spawn(command: SandboxCommand, policy: SandboxPolicy, signal: AbortSignal, descriptors?: SandboxDescriptors): SandboxedProcess {
       for (const root of policy.writableRoots) assertExistingDirectory(root, directories);
       const planned = { heldPlaceholders: new Set([...held.keys(), ...kept.keys()]), cwd: command.cwd };
       if (command.tmpDir !== undefined) {
         assertExistingDirectory(command.tmpDir, directories);
-        return launchWith(command, planBubblewrap(policy, { ...planned, tmpDir: command.tmpDir }, filesystem), command.tmpDir, signal, () => undefined);
+        return launchWith(command, planBubblewrap(policy, { ...planned, tmpDir: command.tmpDir }, filesystem), command.tmpDir, signal, () => undefined, descriptors);
       }
       const tmpDir = filesystem.makeTempDirectory(tmpRoot, 'sandbox-');
       try {
         const scratchDir = canonicalizePath(tmpDir);
         const plan = planBubblewrap(policy, { ...planned, scratchDir }, filesystem);
-        return launchWith(command, plan, tmpDir, signal, () => filesystem.removePrivateDirectory(tmpDir));
+        return launchWith(command, plan, tmpDir, signal, () => filesystem.removePrivateDirectory(tmpDir), descriptors);
       } catch (error) {
         filesystem.removePrivateDirectory(tmpDir);
         throw error;

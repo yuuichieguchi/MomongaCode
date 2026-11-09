@@ -103,3 +103,8 @@ export type {
   ReadDenial,
   ReadDenialOptions,
 } from './history/index.ts';
+export { createMarkerOwners, unownedOf, unsettledKeys } from './marker-owners.ts';
+export type { MarkerOwner, MarkerOwners } from './marker-owners.ts';
+export { removeMarkerFile } from './marker-settle.ts';
+export { createMarkerSettle } from './marker-settle.ts';
+export type { MarkerSettle } from './marker-settle.ts';

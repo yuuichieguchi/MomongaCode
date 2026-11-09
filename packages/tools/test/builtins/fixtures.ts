@@ -5,7 +5,7 @@ import { afterEach, expect } from 'vitest';
 import { killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import { createBuiltinTools } from '@momonga/tools';
-import type { BackgroundJobs, CallOutcome, ExecutionBatchInput, NeedsApprovalOutcome, ResultOutcome, ToolSet } from '@momonga/tools';
+import type { BackgroundJobs, CallOutcome, ExecutionBatchInput, NeedsApprovalOutcome, ResultOutcome, ToolExecutorOptions, ToolSet } from '@momonga/tools';
 import type { PermissionRule } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
 import { call, makeHarness, toolSetOf } from '../harness.ts';
@@ -80,10 +80,10 @@ export type RunExtra = Partial<Omit<ExecutionBatchInput, 'recoverOnly'>> & { mod
 
 export type Builtins = Awaited<ReturnType<typeof makeBuiltins>>;
 
-export const makeBuiltins = async (options: { outputLimitChars?: number; realSandbox?: boolean; jobs?: BackgroundJobs; sandbox?: Sandbox } = {}) => {
+export const makeBuiltins = async (options: { outputLimitChars?: number; realSandbox?: boolean; jobs?: BackgroundJobs; sandbox?: Sandbox; executor?: Partial<ToolExecutorOptions> } = {}) => {
   const harness = makeHarness({
     ...(options.outputLimitChars === undefined ? {} : { outputLimitChars: options.outputLimitChars }),
-    ...(options.jobs === undefined ? {} : { executor: { jobs: options.jobs } }),
+    executor: { ...(options.jobs === undefined ? {} : { jobs: options.jobs }), ...options.executor },
   });
   const { layout } = harness;
   const sessionsTmpRoot = sessionsTmpRootOf(layout);

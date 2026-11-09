@@ -34,7 +34,7 @@ export const probeEndpointTarget = async (options: ProbeEndpointTargetOptions): 
   const firstListing = await readModelsListing(endpoint, signal);
   requireListedEntry(firstListing, options.model);
   const report = await runProbe({
-    ...(endpoint.kind === 'unix' ? { socketPath: endpoint.socketPath } : { baseUrl: endpoint.baseUrl, ...(endpoint.headers === undefined ? {} : { headers: endpoint.headers }) }),
+    ...(endpoint.kind === 'unix' ? { socketPath: endpoint.socketPath } : { baseUrl: endpoint.baseUrl, network: endpoint.network, ...(endpoint.headers === undefined ? {} : { headers: endpoint.headers }) }),
     model: options.model,
     ...(options.userDialects === undefined ? {} : { userDialects: options.userDialects }),
     ...(options.declaredDialect === undefined ? {} : { declaredDialect: options.declaredDialect }),

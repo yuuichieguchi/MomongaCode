@@ -42,9 +42,9 @@ export const createSpawnPort = (platform: NodeJS.Platform = process.platform): S
       }
       child.kill(signal);
     },
-    killGroup: () => {
+    killGroup: async (stop) => {
       if (child.pid === undefined) throw new Error(`cannot signal the group of ${command}: the process was never spawned`);
-      signalGroup(child.pid, 'SIGKILL');
+      await signalGroup(child.pid, 'SIGKILL', undefined, stop);
     },
   };
   return handle;

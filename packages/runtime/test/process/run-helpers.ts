@@ -41,7 +41,7 @@ export const STARTUP_STEPS = [
   'timers',
   'ready',
 ] as const;
-export const TEARDOWN_ORDER = ['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'gateway-client', 'telemetry', 'trace-store', 'store', 'lock'] as const;
+export const TEARDOWN_ORDER = ['timers', 'workers', 'service', 'cancel-upstream', 'mcp-pools', 'background-jobs', 'tool-markers', 'gateway-client', 'telemetry', 'trace-store', 'store', 'lock'] as const;
 export const HOUR_MS = 3_600_000;
 export const FIVE_MINUTES_MS = 300_000;
 export const STORE_IDENTITY_CHECK_MS = 5000;

@@ -22,6 +22,10 @@ const markerPath = (harness: ManagerHarness): string => {
   return path.join(harness.paths.markers.daemons, names[0] as string);
 };
 
+const untilReapEnds = async (reapEnded: () => boolean): Promise<void> => {
+  while (!reapEnded()) await new Promise<void>((resolve) => setTimeout(resolve, 10));
+};
+
 const trackUnhandled = (context: Parameters<typeof registerCleanup>[0]): unknown[] => {
   const rejections: unknown[] = [];
   const listener = (reason: unknown): void => {
@@ -195,7 +199,7 @@ describe('daemon markers at child exit', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS
     harness.spawnInitial();
     const marker = markerPath(harness);
     harness.port.last().exit(1);
-    await pollUntil(() => harness.manager.state() === 'backoff', 5000, 'exit handled');
+    await untilReapEnds(() => harness.manager.state() === 'backoff');
     expect(fs.existsSync(marker)).toBe(false);
     expect(harness.manager.unreapedMarkers()).toEqual([]);
   });
@@ -212,7 +216,7 @@ describe('daemon markers at child exit', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS
     await pollUntil(() => reportedPid(harness, 'grandchild') !== undefined, 5000, 'grandchild reported');
     const grandchild = reportedPid(harness, 'grandchild') as number;
     port.trackGroup(grandchild);
-    await pollUntil(() => !isProcessAlive(grandchild) && !fs.existsSync(marker), 5000, 'holder killed and marker removed');
+    await untilReapEnds(() => !isProcessAlive(grandchild) && !fs.existsSync(marker));
   });
 
   it('a grandchild spawned without explicit mapping does not hold the marker', async (context) => {

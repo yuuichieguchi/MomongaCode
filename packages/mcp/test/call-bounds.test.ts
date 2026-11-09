@@ -269,9 +269,14 @@ describe('G2 test 6: the overall limit ends a call that keeps reporting progress
     vi.useFakeTimers();
     const clock = { now: () => Date.now(), set: () => undefined } as unknown as FakeClock;
     const progressEveryMs = 4 * 60 * 1000;
+    let callStarted: () => void = () => undefined;
+    const started = new Promise<void>((resolve) => {
+      callStarted = resolve;
+    });
     const connection = fakeConnection({
       transportKind: 'network',
       call: async (input) => {
+        callStarted();
         while (input.signal?.aborted !== true) {
           await new Promise((resolve) => setTimeout(resolve, progressEveryMs));
           input.onProgress?.();
@@ -288,6 +293,7 @@ describe('G2 test 6: the overall limit ends a call that keeps reporting progress
     void pending.then((value) => {
       outcome = { settled: true, value };
     });
+    await started;
     await vi.advanceTimersByTimeAsync(MCP_TOOL_TOTAL_TIMEOUT_MS - progressEveryMs);
     expect(outcome.settled).toBe(false);
     await vi.advanceTimersByTimeAsync(2 * progressEveryMs);

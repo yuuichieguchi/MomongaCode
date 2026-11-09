@@ -14,7 +14,7 @@ const longCheck = () => {
   const command: SlashCommand = {
     name: 'long',
     description: 'a long client-side task',
-    run: (_args, context) => {
+    run: async (_args, context) => {
       const background = (context as SlashContext & { background: Background }).background;
       void background('long check', async (signal) => {
         seen.signal = signal;

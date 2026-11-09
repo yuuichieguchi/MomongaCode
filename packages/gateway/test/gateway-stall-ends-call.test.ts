@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { OutboundConnectionError } from '@momonga/foundation';
 import { createOpenResponsesAdapter } from '@momonga/gateway';
 import type { UpstreamLiveness } from '@momonga/gateway';
 import { createFakeClock, openResponsesStream, openResponsesTextReply, openingEvents, startFakeOpenResponses } from '@momonga/testkit';
@@ -6,6 +7,7 @@ import type { FakeTimers, FakeUpstreamReply, FakeUpstreamServer } from '@momonga
 import { START_MS, postJson, readJson, readSse, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
 import type { ConfigOverrides } from './gateway-helpers.ts';
 import { REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
+import { createUpstreamClassifier } from '../src/adapters/shared/classify.ts';
 
 const STALL_MS = 50;
 const LIVENESS: UpstreamLiveness = { headersTimeoutMs: STALL_MS, idleTimeoutMs: STALL_MS };
@@ -124,5 +126,25 @@ describe('a stalled attempt ends the call at once and is never retried inside th
     expect(next.body.momonga).not.toHaveProperty('fallbackFrom');
     expect(responsesTo(remote)).toBe(2);
     expect(responsesTo(backup)).toBe(0);
+  });
+});
+
+describe('a stall carried by a labelled connection error keeps both rules: the label decides retryable and the code, the undici timeout decides stalled', () => {
+  const classify = createUpstreamClassifier('test');
+  const timeout = (code: string): Error => Object.assign(new Error(code), { code });
+
+  it('marks an origin-connection error caused by a headers timeout as a retryable, unreachable stall', () => {
+    const classified = classify(new OutboundConnectionError({ kind: 'origin-connection', origin: 'https://upstream.example' }, { cause: timeout('UND_ERR_HEADERS_TIMEOUT') }));
+    expect(classified).toMatchObject({ retryable: true, stalled: true, error: { code: 'provider_unavailable' } });
+  });
+
+  it('does not mark an origin-connection error caused by a refused connection as a stall', () => {
+    const classified = classify(new OutboundConnectionError({ kind: 'origin-connection', origin: 'https://upstream.example' }, { cause: timeout('ECONNREFUSED') }));
+    expect(classified.retryable).toBe(true);
+    expect(classified.stalled).toBeUndefined();
+  });
+
+  it('marks a bare headers timeout as a retryable, unreachable stall', () => {
+    expect(classify(timeout('UND_ERR_HEADERS_TIMEOUT'))).toMatchObject({ retryable: true, stalled: true, error: { code: 'provider_unavailable' } });
   });
 });

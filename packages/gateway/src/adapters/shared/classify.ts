@@ -1,4 +1,5 @@
-import { TRANSIENT_REQUEST_STATUSES, isRetryableHttp } from '@momonga/foundation';
+import { TRANSIENT_REQUEST_STATUSES, findOutboundError, isRetryableHttp } from '@momonga/foundation';
+import type { OutboundConnectionError } from '@momonga/foundation';
 import { PRECONDITION_FAILED_CODE } from '@momonga/protocol';
 import type { ClassifiedError, ErrorBody } from '@momonga/protocol';
 import { preconditionText } from '../../precondition-text.ts';
@@ -44,7 +45,30 @@ const carriesCode = (codes: ReadonlySet<string>, error: unknown, depth: number):
 
 const isStall = (error: unknown): boolean => carriesCode(STALL_CODES, error, 0);
 
-export const isConnectionFailure = (error: unknown): boolean => isStall(error) || carriesCode(CONNECTION_CODES, error, 0);
+const isRawConnectionFailure = (error: unknown): boolean => isStall(error) || carriesCode(CONNECTION_CODES, error, 0);
+
+const PROXY_REFUSAL_TRANSIENT_STATUS = 500;
+
+const isTransientOutbound = (error: OutboundConnectionError): boolean =>
+  error.failure.kind === 'proxy-unreachable' ||
+  (error.failure.kind === 'proxy-refused' && error.failure.status >= PROXY_REFUSAL_TRANSIENT_STATUS) ||
+  (error.failure.kind === 'origin-connection' && isRawConnectionFailure(error.cause));
+
+const OUTBOUND_CODES: Readonly<Record<OutboundConnectionError['failure']['kind'], string>> = {
+  'proxy-unreachable': 'provider_unavailable',
+  'proxy-refused': 'proxy_refused',
+  'proxy-auth': 'proxy_authentication_required',
+  'proxy-tls': 'proxy_tls_failed',
+  'proxy-unsupported': 'proxy_unsupported',
+  'origin-certificate': 'certificate_untrusted',
+  'ca-file': 'ca_file_unreadable',
+  'origin-connection': 'adapter_error',
+};
+
+export const isConnectionFailure = (error: unknown): boolean => {
+  const outbound = findOutboundError(error);
+  return outbound === undefined ? isRawConnectionFailure(error) : isTransientOutbound(outbound);
+};
 
 const body = (type: ErrorBody['type'], code: string | null, message: string, param: string | null = null): ErrorBody => ({
   type,
@@ -94,6 +118,17 @@ export const createUpstreamClassifier =
     }
     if (error instanceof UnsupportedInputError) {
       return { retryable: false, error: body('invalid_request', error.code, error.message, error.param) };
+    }
+    const outbound = findOutboundError(error);
+    if (outbound !== undefined) {
+      const transient = isTransientOutbound(outbound);
+      return {
+        retryable: transient,
+        ...(isStall(outbound) ? { stalled: true as const } : {}),
+        error: transient
+          ? body('server_error', 'provider_unavailable', `the ${label} upstream is unreachable: ${outbound.message}`)
+          : body('server_error', OUTBOUND_CODES[outbound.failure.kind], `the ${label} upstream failed: ${outbound.message}`),
+      };
     }
     if (isConnectionFailure(error)) {
       return {
