@@ -175,6 +175,7 @@ export const probeFm = async (ports: CliPorts, paths: MomongaPaths, target: stri
   if (description === undefined) throw new NotAProbeableTarget(target, targets);
   const { report, toolCalling, recordFile } = await probeManagedFm({
     paths,
+    platform: ports.platform,
     instance: managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', target }),
     description,
     target,

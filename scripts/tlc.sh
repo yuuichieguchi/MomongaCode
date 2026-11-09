@@ -91,9 +91,12 @@ else
   trap 'rm -rf "$work"' EXIT
 fi
 
-java -cp "$jar" tla2sany.SANY "$module_file"
+java_tmp="$work/java-tmp"
+mkdir -p "$java_tmp"
 
-java -XX:+UseParallelGC -cp "$jar" tlc2.TLC \
+java -Djava.io.tmpdir="$java_tmp" -cp "$jar" tla2sany.SANY "$module_file"
+
+java -Djava.io.tmpdir="$java_tmp" -XX:+UseParallelGC -cp "$jar" tlc2.TLC \
   -metadir "$work" \
   -config "$spec_dir/$config.cfg" \
   "$@" \

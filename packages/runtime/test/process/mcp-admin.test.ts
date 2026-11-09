@@ -213,7 +213,7 @@ describe('createMcpAdmin authorization', () => {
     pools[0]?.failAuthorization(new Error('the token endpoint is down'));
     await admin.close();
 
-    expect(admin.authorization(session.id, 'remote')).toMatchObject({ status: 'failed', failure: { code: 'error', message: 'the token endpoint is down' } });
+    expect(admin.authorization(session.id, 'remote')).toMatchObject({ status: 'failed', failure: { code: 'error', message: 'the authorization of MCP server "remote" failed: the token endpoint is down' } });
   });
 
   it('cancels an awaiting attempt and refuses to cancel anything else', async () => {
@@ -224,7 +224,7 @@ describe('createMcpAdmin authorization', () => {
     expect(admin.cancelAuthorization(session.id, 'remote')).toBe(true);
     await admin.close();
 
-    expect(admin.authorization(session.id, 'remote')).toMatchObject({ status: 'failed', failure: { code: 'error', message: 'authorization was cancelled by the client' } });
+    expect(admin.authorization(session.id, 'remote')).toMatchObject({ status: 'failed', failure: { code: 'error', message: 'the authorization of MCP server "remote" failed: authorization was cancelled by the client' } });
     expect(admin.cancelAuthorization(session.id, 'remote')).toBe(false);
   });
 
@@ -243,6 +243,6 @@ describe('createMcpAdmin authorization', () => {
 
     await admin.close();
 
-    expect(admin.authorization(session.id, 'remote')).toMatchObject({ status: 'failed', failure: { message: 'the runtime is shutting down' } });
+    expect(admin.authorization(session.id, 'remote')).toMatchObject({ status: 'failed', failure: { message: 'the authorization of MCP server "remote" failed: the runtime is shutting down' } });
   });
 });

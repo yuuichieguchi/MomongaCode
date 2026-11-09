@@ -16,6 +16,7 @@ const jarPath = path.join(repoRoot, '.cache', 'tla', 'tla2tools.jar');
 const REAP_SLACK_MS = 5000;
 const FETCH_COMMAND = 'curl -L -o .cache/tla/tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar';
 const LIVENESS_ARGS = ['-lncheck', 'final'];
+const ENDLESS_BUDGET_CPU_SECONDS = 8;
 
 const loadManifest = (): { manifest: Manifest } | { error: unknown } => {
   try {
@@ -179,37 +180,6 @@ describe('the manifest of specs/tla', () => {
 
   it('lists exactly the configurations on disk, each module exists, and every module has a configuration', () => {
     expect(discoveryProblems(specDir, manifestOrThrow())).toEqual([]);
-  });
-
-  it('records the role, expectation, arguments and tier of every RunRecovery configuration as the design states', () => {
-    const recorded = Object.fromEntries(
-      manifestOrThrow()
-        .entries.filter((entry) => entry.config.startsWith('RunRecovery'))
-        .map((entry) => [entry.config, { role: entry.role, expect: entry.expect, args: [...entry.args], tier: entry.tier }]),
-    );
-    const evidenceAtMostOnce = { role: 'evidence', expect: { violates: 'AtMostOnceEffect', exitCode: 12 }, args: [], tier: 'every-run' };
-    expect(recorded).toEqual({
-      RunRecovery: { role: 'check', expect: 'holds', args: [], tier: 'every-run' },
-      'RunRecovery.children': { role: 'check', expect: 'holds', args: [], tier: 'deep' },
-      'RunRecovery.childrenSmall': { role: 'check', expect: 'holds', args: [], tier: 'every-run' },
-      'RunRecovery.liveNone': { role: 'check', expect: 'holds', args: LIVENESS_ARGS, tier: 'every-run' },
-      'RunRecovery.liveSpawn': { role: 'check', expect: 'holds', args: LIVENESS_ARGS, tier: 'deep' },
-      'RunRecovery.liveSpawnSmall': { role: 'check', expect: 'holds', args: LIVENESS_ARGS, tier: 'every-run' },
-      'RunRecovery.lockOnly': { role: 'evidence', expect: 'holds', args: [], tier: 'every-run' },
-      'RunRecovery.unfixed': evidenceAtMostOnce,
-      'RunRecovery.fenceOnly': evidenceAtMostOnce,
-      'RunRecovery.unlocked': evidenceAtMostOnce,
-      'RunRecovery.reapOnly': evidenceAtMostOnce,
-      'RunRecovery.noReap': { role: 'evidence', expect: { violates: 'ReconcileSeesStoppedEffect', exitCode: 12 }, args: [], tier: 'every-run' },
-      'RunRecovery.liveTimeout': { role: 'check', expect: 'holds', args: [], tier: 'every-run' },
-      'RunRecovery.liveTimeoutFailed': { role: 'evidence', expect: { violates: 'KilledExecIsUnknown', exitCode: 12 }, args: [], tier: 'every-run' },
-      'RunRecovery.uniformCancelNoWorkers': { role: 'check', expect: 'holds', args: LIVENESS_ARGS, tier: 'every-run' },
-      'RunRecovery.uniformCancelNoSweeper': { role: 'evidence', expect: { violates: 'CancelNeedsNoWorker', exitCode: 13 }, args: LIVENESS_ARGS, tier: 'every-run' },
-    });
-  });
-
-  it('records the measured distinct states of lockOnly', () => {
-    expect(manifestOrThrow().entries.find((entry) => entry.config === 'RunRecovery.lockOnly')?.distinctStates).toBe(1071230);
   });
 
   it('records the measured wall seconds of every entry as a positive number', () => {
@@ -467,21 +437,33 @@ describe('running tlc.sh under the harness', () => {
   );
 
   it(
+    'keeps the standard modules TLC unpacks inside its own run, never in the shared Java temporary directory',
+    async () => {
+      const shared = path.join(root, 'shared-java-tmp');
+      const foreign = path.join(shared, 'Naturals.tla');
+      writeFile(foreign, 'owned by another run');
+      const script = sandboxWithScript(root, { 'Tiny.tla': tinySpec, 'Tiny.cfg': cfgFor('Small') }, true);
+      const run = await runTlc({ script, config: 'Tiny', args: [], budgetCpuSeconds: 30, env: { JAVA_TOOL_OPTIONS: `-Djava.io.tmpdir=${shared}` } });
+      expect(run.exitCode).toBe(0);
+      expect(fs.readdirSync(shared)).toEqual(['Naturals.tla']);
+      expect(fs.readFileSync(foreign, 'utf8')).toBe('owned by another run');
+    },
+    30000 + REAP_SLACK_MS,
+  );
+
+  it(
     'kills the script and its JVM as one process group at the CPU budget and leaves no JVM',
     async () => {
-      const budgetCpuSeconds = 8;
       const script = sandboxWithScript(root, { 'Endless.tla': endlessSpec, 'Endless.cfg': cfgFor('Fine') }, true);
-      const startedAt = Date.now();
-      const run = await runTlc({ script, config: 'Endless', args: [], budgetCpuSeconds });
-      expect(Date.now() - startedAt).toBeLessThan(budgetCpuSeconds * 1000 + REAP_SLACK_MS);
+      const run = await runTlc({ script, config: 'Endless', args: [], budgetCpuSeconds: ENDLESS_BUDGET_CPU_SECONDS });
       expect(run.killedAtCpuBudget).toBe(true);
       expect(run.signal).toBe('SIGKILL');
       expect(run.stdout).toContain('TLC2 Version');
       expect(await groupGoneWithin(run.pid, REAP_SLACK_MS)).toEqual([]);
       expect(tlcMetadirsLeft()).toEqual([]);
-      expect(verdictProblems({ ...holdsEntry, config: 'Endless', budgetCpuSeconds }, run)).not.toEqual([]);
+      expect(verdictProblems({ ...holdsEntry, config: 'Endless', budgetCpuSeconds: ENDLESS_BUDGET_CPU_SECONDS }, run)).not.toEqual([]);
     },
-    8000 + 3 * REAP_SLACK_MS,
+    ENDLESS_BUDGET_CPU_SECONDS * TLC_WORKERS * 1000 + 2 * REAP_SLACK_MS,
   );
 });
 

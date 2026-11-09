@@ -101,6 +101,7 @@ const setup = (probes: Parameters<typeof createBackgroundJobs>[0]['probes'] = {}
     uninspectable: createUninspectableRegistry({ isAlive: () => true }),
     probes: {
       findHolders: async () => holders,
+      markerState: async () => 'free',
       reconcileProcessGroup: async ({ pgid }) => {
         reconciled.push({ pgid });
         return { outcome: 'unknown', output: '', stopped: holders.length > 0, stoppedHolders: [...holders], leftAlonePids: [], unsignalledPids: [] };
@@ -111,6 +112,7 @@ const setup = (probes: Parameters<typeof createBackgroundJobs>[0]['probes'] = {}
       },
       ...probes,
     },
+    groupPort: { signal: async () => undefined, alive: async () => false },
     ...extra,
   });
   const spawned: FakeProcess[] = [];

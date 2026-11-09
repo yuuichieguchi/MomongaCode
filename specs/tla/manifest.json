@@ -4464,6 +4464,123 @@
       "measuredSeconds": 1.61,
       "measuredCpuSeconds": 4.02,
       "budgetCpuSeconds": 12
+    },
+    {
+      "config": "CredentialKey",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 12603,
+      "measuredSeconds": 2.21,
+      "measuredCpuSeconds": 2.59,
+      "budgetCpuSeconds": 9
+    },
+    {
+      "config": "CredentialKey.userRemoves",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 92476,
+      "measuredSeconds": 2.57,
+      "measuredCpuSeconds": 3.43,
+      "budgetCpuSeconds": 10
+    },
+    {
+      "config": "CredentialKey.noOsStore",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 387,
+      "measuredSeconds": 1.32,
+      "measuredCpuSeconds": 1.51,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "CredentialKey.noLock",
+      "role": "evidence",
+      "expect": {
+        "violates": "RecordsReadable",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 976,
+      "measuredSeconds": 1.29,
+      "measuredCpuSeconds": 1.56,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "CredentialKey.noLockMarker",
+      "role": "evidence",
+      "expect": {
+        "violates": "MarkerWrittenOnce",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 456,
+      "measuredSeconds": 1.36,
+      "measuredCpuSeconds": 1.56,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "CredentialKey.recordBeforeKey",
+      "role": "evidence",
+      "expect": {
+        "violates": "KeyBeforeRecord",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 49,
+      "measuredSeconds": 1.29,
+      "measuredCpuSeconds": 1.41,
+      "budgetCpuSeconds": 6
+    },
+    {
+      "config": "CredentialKey.markerBeforeKey",
+      "role": "evidence",
+      "expect": {
+        "violates": "MarkerImpliesKey",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 49,
+      "measuredSeconds": 1.56,
+      "measuredCpuSeconds": 1.58,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "CredentialKey.recreateOnReadFailure",
+      "role": "evidence",
+      "expect": {
+        "violates": "UnreadableNeverRecreates",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 437,
+      "measuredSeconds": 1.57,
+      "measuredCpuSeconds": 1.78,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "CredentialKey.plaintextFallback",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoPlaintextUnlessOptIn",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 9,
+      "measuredSeconds": 1.36,
+      "measuredCpuSeconds": 1.5,
+      "budgetCpuSeconds": 6
     }
   ]
 }

@@ -14,7 +14,7 @@ describe('credentials settings', () => {
     const tree = makeTree();
     writeJson(userSettingsPath(tree), { credentials: CREDENTIALS });
     const result = await load(tree);
-    expect(credentialsOf(result.settings)).toEqual(CREDENTIALS);
+    expect(credentialsOf(result.settings)).toEqual({ ...CREDENTIALS, plaintextTokenFiles: false });
     expect(result.warnings).toEqual([]);
   });
 
@@ -27,14 +27,14 @@ describe('credentials settings', () => {
   it('defaults every credentials list to empty', async () => {
     const tree = makeTree();
     const result = await load(tree);
-    expect(credentialsOf(result.settings)).toEqual({ env: [], keep: [], valuePatterns: [] });
+    expect(credentialsOf(result.settings)).toEqual({ env: [], keep: [], valuePatterns: [], plaintextTokenFiles: false });
   });
 
   it.each(['env', 'keep', 'valuePatterns'] as const)('discards credentials.%s from project settings with a warning naming the file', async (key) => {
     const tree = makeTree();
     const file = writeJson(projectSettingsPath(tree), { credentials: { [key]: ['SSH_AUTH_SOCK'] } });
     const result = await load(tree);
-    expect(credentialsOf(result.settings)).toEqual({ env: [], keep: [], valuePatterns: [] });
+    expect(credentialsOf(result.settings)).toEqual({ env: [], keep: [], valuePatterns: [], plaintextTokenFiles: false });
     expect(result.warnings.filter((warning) => warning.includes(file) && warning.includes('credentials'))).toHaveLength(1);
   });
 

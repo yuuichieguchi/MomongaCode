@@ -197,6 +197,7 @@ describe('the automatic probe of an fm target with no probe record', { timeout: 
       const instance = managedInstancePaths(paths, { owner: 'cli', purpose: 'probe', target: 'fm' } as Parameters<typeof managedInstancePaths>[1]);
 
       const failure = await probeManagedFm({
+        platform: process.platform,
         paths,
         instance,
         description: FM_SERVER,
