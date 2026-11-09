@@ -4,6 +4,7 @@ import { PRECONDITION_FAILED_CODE, TARGET_NOT_READY } from '@momonga/protocol';
 import type { ClassifiedError, ErrorBody, ErrorMatch, ErrorRule, ErrorRules } from '@momonga/protocol';
 import { preconditionText } from '../../precondition-text.ts';
 import { retryableFailureOf } from '../../core/breaker-verdict.ts';
+import { PlanCredentialError } from '../../plan/auth-source.ts';
 import {
   CONTEXT_WINDOW_EXCEEDED,
   CompactionReplyError,
@@ -28,6 +29,12 @@ const CONNECTION_CODES: ReadonlySet<string> = new Set([
 ]);
 const STALL_CODES: ReadonlySet<string> = new Set(['UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT']);
 const MAX_CAUSE_DEPTH = 8;
+
+const CREDENTIAL_ERROR_TYPES: Readonly<Record<string, ErrorBody['type']>> = {
+  sign_in_required: 'invalid_request',
+  plan_use_not_enabled: 'invalid_request',
+  plan_usage_paused: 'too_many_requests',
+};
 
 const codeOf = (error: unknown): string | undefined => {
   if (typeof error !== 'object' || error === null) return undefined;
@@ -158,6 +165,13 @@ export const createUpstreamClassifier =
       return { retryable: true, stalled: true, error: body(error.errorType, error.code, error.message) };
     }
     if (error instanceof StreamFailure) return classifyStream(error, rules);
+    if (error instanceof PlanCredentialError) {
+      return {
+        retryable: error.retryable,
+        ...(error.retryAfterMs === undefined ? {} : { retryAfterMs: error.retryAfterMs }),
+        error: body(CREDENTIAL_ERROR_TYPES[error.code] ?? 'server_error', error.code, error.message),
+      };
+    }
     if (error instanceof TargetNotReadyError) {
       return { retryable: false, error: body('invalid_request', TARGET_NOT_READY, error.message) };
     }

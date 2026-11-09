@@ -1,4 +1,4 @@
-import { defineProductSchema } from '@momonga/foundation';
+import { defineProductSchema, transportUrlMessage, transportUrlProblem } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
 import {
   BREAKER_VERDICTS,
@@ -54,6 +54,7 @@ export type PlanProfile = {
 
 const NON_EMPTY_STRING = { type: 'string', minLength: 1 } as const;
 const HTTPS_URL = { type: 'string', pattern: '^https://[^\\s]+$' } as const;
+const TRANSPORT_URL = { type: 'string', pattern: '^[^\\s]+$' } as const;
 const NON_EMPTY_STRINGS = { type: 'array', items: NON_EMPTY_STRING, minItems: 1 } as const;
 
 const object = (properties: Record<string, unknown>) => ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false }) as const;
@@ -136,12 +137,12 @@ const PLAN_PROFILE_SCHEMA = {
       additionalProperties: false,
     },
     oauth: object({
-      issuer: HTTPS_URL,
-      discoveryUrl: HTTPS_URL,
-      authorizeUrl: HTTPS_URL,
-      tokenUrl: HTTPS_URL,
-      jwksUrl: HTTPS_URL,
-      resource: HTTPS_URL,
+      issuer: TRANSPORT_URL,
+      discoveryUrl: TRANSPORT_URL,
+      authorizeUrl: TRANSPORT_URL,
+      tokenUrl: TRANSPORT_URL,
+      jwksUrl: TRANSPORT_URL,
+      resource: TRANSPORT_URL,
       identityScopes: NON_EMPTY_STRINGS,
       useScopes: NON_EMPTY_STRINGS,
       requiredScope: NON_EMPTY_STRING,
@@ -151,7 +152,7 @@ const PLAN_PROFILE_SCHEMA = {
       idTokenAlgorithms: { type: 'array', items: { enum: ['RS256'] }, minItems: 1, uniqueItems: true },
     }),
     targetDefaults: object({
-      baseUrl: HTTPS_URL,
+      baseUrl: TRANSPORT_URL,
       billing: { const: 'plan' },
       capabilities: {
         type: 'object',
@@ -183,6 +184,20 @@ const validatePlanProfile: ProductValidator<PlanProfile> = defineProductSchema('
 export const assertPlanProfile = (value: unknown, source: string): PlanProfile => {
   const verdict = validatePlanProfile(value);
   if (!verdict.valid) throw new Error(`${source}: invalid plan profile at ${describeSchemaErrors(verdict.errors)}`);
+  const { oauth, targetDefaults } = verdict.value;
+  const transports: Array<[string, string]> = [
+    ['oauth.issuer', oauth.issuer],
+    ['oauth.discoveryUrl', oauth.discoveryUrl],
+    ['oauth.authorizeUrl', oauth.authorizeUrl],
+    ['oauth.tokenUrl', oauth.tokenUrl],
+    ['oauth.jwksUrl', oauth.jwksUrl],
+    ['oauth.resource', oauth.resource],
+    ['targetDefaults.baseUrl', targetDefaults.baseUrl],
+  ];
+  for (const [field, url] of transports) {
+    const problem = transportUrlProblem(url);
+    if (problem !== undefined) throw new Error(`${source}: invalid plan profile: ${transportUrlMessage(field, url, problem)}`);
+  }
   return verdict.value;
 };
 

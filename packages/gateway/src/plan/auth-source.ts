@@ -5,12 +5,14 @@ import type { PlanRecord } from './session.ts';
 export class PlanCredentialError extends Error {
   readonly code: string;
   readonly retryable: boolean;
+  readonly retryAfterMs: number | undefined;
 
-  constructor(code: string, message: string, retryable: boolean) {
+  constructor(code: string, message: string, retryable: boolean, retryAfterMs?: number) {
     super(message);
     this.name = 'PlanCredentialError';
     this.code = code;
     this.retryable = retryable;
+    this.retryAfterMs = retryAfterMs;
   }
 }
 
@@ -24,7 +26,7 @@ export type HealthReason = 'sign_in_required' | 'plan_use_not_enabled' | 'plan_u
 
 export type PlanHealth = { ok: boolean; reason?: HealthReason; detail?: string; remediation?: string };
 
-export type PlanRead = { bearer: string; generation: number };
+export type PlanRead = { bearer: string | undefined; generation: number };
 
 export type AuthSource = {
   read(signal: AbortSignal): Promise<PlanRead>;
@@ -35,7 +37,7 @@ export type AuthSource = {
   health(): PlanHealth;
 };
 
-type Condition = { reason: HealthReason; code: string; detail: string };
+type Condition = { reason: HealthReason; code: string; detail: string; retryAfterMs?: number };
 
 const REGISTRATION_INVALID_MESSAGE = 'the registration is no longer valid; sign out of this account and sign in again';
 
@@ -60,7 +62,10 @@ export const blockingCondition = (profile: PlanProfile, view: AccountView, nowMs
     return { reason: 'sign_in_required', code: 'sign_in_required', detail: signInRequiredMessage(profile, view.kind === 'absent' ? undefined : view.record) };
   }
   if (view.record.state === 'plan_disabled') return { reason: 'plan_use_not_enabled', code: 'plan_use_not_enabled', detail: profile.messages.planNotEnabledMessage };
-  if (activePause(view.record, nowMs) !== undefined) return { reason: 'plan_usage_paused', code: 'plan_usage_paused', detail: profile.messages.usageLimitMessage };
+  const pause = activePause(view.record, nowMs);
+  if (pause !== undefined) {
+    return { reason: 'plan_usage_paused', code: 'plan_usage_paused', detail: profile.messages.usageLimitMessage, ...(pause.until === undefined ? {} : { retryAfterMs: pause.until - nowMs }) };
+  }
   return undefined;
 };
 
@@ -73,7 +78,7 @@ export const unavailableFailure = (): PlanCredentialError =>
 export const hostIdentityFailure = (error: unknown): PlanCredentialError =>
   new PlanCredentialError('plan_host_identity_unavailable', error instanceof Error ? error.message : String(error), false);
 
-export const conditionFailure = (condition: Condition): PlanCredentialError => new PlanCredentialError(condition.code, condition.detail, false);
+export const conditionFailure = (condition: Condition): PlanCredentialError => new PlanCredentialError(condition.code, condition.detail, false, condition.retryAfterMs);
 
 const remediationOf = (reason: HealthReason, profile: PlanProfile, label: string): string => {
   const login = `momonga auth login ${profile.id} --account ${label}`;

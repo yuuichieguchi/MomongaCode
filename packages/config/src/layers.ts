@@ -12,9 +12,10 @@ import type { SettingsUse } from './last-good.ts';
 import type { JsonFile } from './json-file.ts';
 import { layoutOf } from './layout.ts';
 import { resolveModels } from './models.ts';
+import { PLAN_PROFILES } from './plan-profiles.ts';
 import { MANAGED_SERVERS } from '@momonga/protocol';
 import type { ManagedServerDescription } from '@momonga/protocol';
-import type { ResolvedModels } from './models.ts';
+import type { PlanProfiles, ResolvedModels } from './models.ts';
 import { localSettingsFile, worktreeRootOf } from './local-settings.ts';
 import type { RuleOrigin } from './rule.ts';
 import { assertSettings, KNOWN_SETTINGS_KEYS } from './settings.ts';
@@ -209,12 +210,12 @@ export const readUserJsonFile = (home: string): JsonFile => {
 
 export const readUserLayer = (home: string): UserLayer => userLayerFrom(home, readUserJsonFile(home));
 
-export const userLayerFrom = (home: string, read: JsonFile, managedServers: readonly ManagedServerDescription[] = MANAGED_SERVERS): UserLayer => {
+export const userLayerFrom = (home: string, read: JsonFile, managedServers: readonly ManagedServerDescription[] = MANAGED_SERVERS, planProfiles: PlanProfiles = PLAN_PROFILES): UserLayer => {
   try {
     const warnings: string[] = [];
     const file = userSettingsFile(home);
     const layer = buildLayer(read, file, 'user', home, path.dirname(file), false, warnings);
-    const models = resolveModels(layer?.settings.models, { source: file, home, warnings, managedServers });
+    const models = resolveModels(layer?.settings.models, { source: file, home, warnings, managedServers, planProfiles });
     return { layer, models, warnings };
   } catch (error) {
     rethrowIfTransient(error);

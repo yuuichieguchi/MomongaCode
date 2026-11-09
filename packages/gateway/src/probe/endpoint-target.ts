@@ -9,6 +9,7 @@ import { resolveDialectId } from '../dialect/resolve-id.ts';
 import { ProbeTimeoutError, createProbeClient } from './client.ts';
 import type { ProbeEndpoint } from './client.ts';
 import { capabilitiesFromProbe, decideToolCalling, layerOf, mergeCapabilities, withImageDefault } from './decide.ts';
+import type { ProbeOutputPolicy } from './decide.ts';
 import type { DeclaredCapabilities } from './decide.ts';
 import { endpointIdentityOf } from './endpoint-record.ts';
 import { recordForIdentity } from './record.ts';
@@ -123,6 +124,7 @@ export type ProbedEndpointTargetOptions = {
   startProbe: () => Promise<Probing>;
   readIdentity: (fields: readonly string[], signal: AbortSignal) => Promise<string>;
   saveRecord: (record: EndpointRecord) => Promise<void>;
+  outputPolicy?: () => ProbeOutputPolicy;
 };
 
 export type ProbedEndpointTarget = {
@@ -196,6 +198,8 @@ export const createProbedEndpointTarget = (options: ProbedEndpointTargetOptions)
       const { toolCalling, structuredOutput, jsonMode, streaming, stopSequences, outputBoundField, parallelToolCalls, usageReported, reasoning, promptCache } = capabilitiesFromProbe(
         record.report,
         decision,
+        {},
+        options.outputPolicy?.(),
       );
       return mergeCapabilities({
         defaults: { ...declaredParts.core, schemaDialect: resolveDialectId(declared.schemaDialect, record.report) },

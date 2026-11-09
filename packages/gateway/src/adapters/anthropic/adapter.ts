@@ -5,6 +5,7 @@ import { estimatedUsage, tokensForText, wireTokensOf } from '../../core/estimate
 import { normalizeInput } from '../../core/input.ts';
 import { resolveToolChoice } from '../../core/tool-choice.ts';
 import { boundedSseBytes, readTextLimited } from '../shared/body-reading.ts';
+import { sendAuthorized } from '../shared/auth.ts';
 import { createUpstreamClassifier } from '../shared/classify.ts';
 import { summaryOfTerminal, summaryRequestOf } from '../shared/compact.ts';
 import { StreamFailure, UnsupportedInputError, UpstreamProtocolError } from '../shared/failures.ts';
@@ -66,10 +67,10 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
   let closing: Promise<void> | undefined;
   let closed = false;
 
-  const headersFor = (apiKey: string, accept: string): Record<string, string> => ({
+  const headersFor = (key: string | undefined, accept: string): Record<string, string> => ({
     'content-type': 'application/json',
     accept,
-    'x-api-key': apiKey,
+    ...(key === undefined ? {} : { 'x-api-key': key }),
     'anthropic-version': apiVersion,
   });
 
@@ -108,14 +109,16 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
     let watch: ContentWatch | undefined;
     try {
       const endpoint = await options.resolveEndpoint(ctx.target, signal);
-      const apiKey = await options.apiKey(ctx.target, signal);
+      const auth = options.authSource(ctx.target);
       let emitter: ResponseEmitter | undefined;
       let paused: Paused | undefined;
       const outputCeiling = gatewayOutputCeilingOf(capabilities);
       for (let continuation = 0; ; continuation += 1) {
         const body: AnthropicRequestBody =
           paused === undefined ? base : { ...base, messages: [...base.messages, { role: 'assistant', content: paused.content }] };
-        const response = await pool.clientFor(endpoint).post({ headers: headersFor(apiKey, 'text/event-stream'), body: JSON.stringify(body), signal, ...watchedPostOf(options.liveness) });
+        const response = await sendAuthorized(auth, signal, (key) =>
+          pool.clientFor(endpoint).post({ headers: headersFor(key, 'text/event-stream'), body: JSON.stringify(body), signal, ...watchedPostOf(options.liveness) }),
+        );
         if (response.status !== 200) throw await httpErrorOf(response, options.clock, anthropicErrorDetail, HTTP_TRANSPORT_VOCABULARY);
         watch?.dispose();
         const segmentWatch = watchContent(options.liveness);
@@ -163,13 +166,14 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     try {
       const endpoint = await options.resolveEndpoint(ctx.target, signal);
-      const apiKey = await options.apiKey(ctx.target, signal);
-      const response = await pool.clientFor(endpoint).post({
-        headers: headersFor(apiKey, 'application/json'),
-        body: JSON.stringify(body),
-        signal,
-        subpath: ANTHROPIC_COUNT_TOKENS_SUBPATH,
-      });
+      const response = await sendAuthorized(options.authSource(ctx.target), signal, (key) =>
+        pool.clientFor(endpoint).post({
+          headers: headersFor(key, 'application/json'),
+          body: JSON.stringify(body),
+          signal,
+          subpath: ANTHROPIC_COUNT_TOKENS_SUBPATH,
+        }),
+      );
       if (response.status !== 200) throw await httpErrorOf(response, options.clock, anthropicErrorDetail, HTTP_TRANSPORT_VOCABULARY);
       const { text, truncated } = await readTextLimited(response.body, MAX_UNARY_BODY_BYTES);
       if (truncated) throw new UpstreamProtocolError(`the upstream count_tokens reply exceeds ${MAX_UNARY_BODY_BYTES} bytes`);

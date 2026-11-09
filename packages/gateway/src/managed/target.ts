@@ -29,6 +29,7 @@ import type { ErrorVocabulary } from '../adapters/shared/vocabulary.ts';
 import { PreconditionFailedError } from '../adapters/shared/failures.ts';
 import { estimatedCountOf } from '../core/estimate.ts';
 import { capabilitiesFromProbe, layerOf, mergeCapabilities } from '../probe/decide.ts';
+import type { ProbeOutputPolicy } from '../probe/decide.ts';
 import type { CapabilityLayer } from '../probe/decide.ts';
 import type { UserDialects } from '../dialect/choice.ts';
 import type { KeywordSupport } from '../dialect/keyword-support.ts';
@@ -67,6 +68,7 @@ export type ManagedTargetOptions = {
   declaredOutputBoundField?: OutputBoundField;
   declaredDialect?: DialectId;
   userDialects?: UserDialects;
+  outputPolicy?: () => ProbeOutputPolicy;
 };
 
 export type ManagedTarget = {
@@ -167,8 +169,8 @@ const guardrailMatcherOf = (report: ProbeReport): ((body: unknown) => boolean) =
   };
 };
 
-const probedOf = (report: ProbeReport, refusal: NeedsProbe | undefined, modeOf: () => ToolCallingMode): { measured: Capabilities; layer: CapabilityLayer } => {
-  const measured = capabilitiesFromProbe(report, { mode: refusal === undefined ? modeOf() : 'none' });
+const probedOf = (report: ProbeReport, refusal: NeedsProbe | undefined, modeOf: () => ToolCallingMode, policy: ProbeOutputPolicy | undefined): { measured: Capabilities; layer: CapabilityLayer } => {
+  const measured = capabilitiesFromProbe(report, { mode: refusal === undefined ? modeOf() : 'none' }, {}, policy);
   const { layer } = layerOf(measured);
   return { measured, layer: refusal === undefined ? layer : { ...layer, toolCalling: refusal } };
 };
@@ -200,7 +202,7 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
     const modeOf = (): ToolCallingMode => resolveToolCalling(options.toolCallingSetting, report, needsProbe).mode;
     const refusedDeclaration = options.toolCallingSetting === 'auto' ? declaredDialectRefusal(targetName, options.declaredDialect, report.schemaDialect, identityText) : undefined;
     const schemaDialect = resolveDialectId(options.declaredDialect, report);
-    const probed = probedOf(report, refusedDeclaration, modeOf);
+    const probed = probedOf(report, refusedDeclaration, modeOf, options.outputPolicy?.());
     const capabilities = mergeCapabilities({
       defaults: layerOf(recordedDefaultsOf(description, refusedDeclaration ?? modeOf(), schemaDialect, probed.measured)).core,
       declared: { ...declaredField, ...(declaredBounds ?? {}), schemaDialect },

@@ -12,19 +12,19 @@ import { readUserJsonFile, readUserLayer, userLayerFrom, userSettingsFile } from
 import type { UserLayer } from './layers.ts';
 import { mergeLayers, parseLayerRules } from './load-settings.ts';
 import type { ResolvedSettings } from './load-settings.ts';
-import type { ResolvedModels } from './models.ts';
+import type { PlanProfiles, ResolvedModels } from './models.ts';
 import type { ModelsSettings, SandboxSetting } from './settings.ts';
 import type { ManagedServerDescription } from '@momonga/protocol';
 
-export type LoadUserSettingsOptions = { home: string; managedServers?: readonly ManagedServerDescription[] };
+export type LoadUserSettingsOptions = { home: string; managedServers?: readonly ManagedServerDescription[]; planProfiles?: PlanProfiles };
 
 export type LoadUserSettingsResult = { settings: ResolvedSettings; warnings: string[]; files: string[] };
 
 type UserSettingsLoad = { settings: ResolvedSettings; user: UserLayer; warnings: string[] };
 
-const userSettingsFrom = (home: string, read: JsonFile, managedServers?: readonly ManagedServerDescription[]): UserSettingsLoad => {
+const userSettingsFrom = (home: string, read: JsonFile, managedServers?: readonly ManagedServerDescription[], planProfiles?: PlanProfiles): UserSettingsLoad => {
   try {
-    const user = userLayerFrom(home, read, managedServers);
+    const user = userLayerFrom(home, read, managedServers, planProfiles);
     const warnings = [...user.warnings];
     const layers = user.layer === undefined ? [] : [user.layer];
     for (const layer of layers) parseLayerRules(layer, home, home, warnings);
@@ -36,8 +36,8 @@ const userSettingsFrom = (home: string, read: JsonFile, managedServers?: readonl
   }
 };
 
-const loadUserSettingsSync = (home: string, managedServers: readonly ManagedServerDescription[] | undefined): LoadUserSettingsResult => {
-  const { settings, user, warnings } = userSettingsFrom(home, readUserJsonFile(home), managedServers);
+const loadUserSettingsSync = (home: string, managedServers: readonly ManagedServerDescription[] | undefined, planProfiles?: PlanProfiles): LoadUserSettingsResult => {
+  const { settings, user, warnings } = userSettingsFrom(home, readUserJsonFile(home), managedServers, planProfiles);
   return { settings, warnings, files: user.layer === undefined ? [] : [user.layer.source] };
 };
 
@@ -60,7 +60,9 @@ export const loadUserModels = ({ home }: LoadUserSettingsOptions): UserModels =>
   }
 };
 
-export const loadUserSettings = async ({ home, managedServers }: LoadUserSettingsOptions): Promise<LoadUserSettingsResult> => loadUserSettingsSync(home, managedServers);
+export const readUserSettingsNow = ({ home, managedServers, planProfiles }: LoadUserSettingsOptions): LoadUserSettingsResult => loadUserSettingsSync(home, managedServers, planProfiles);
+
+export const loadUserSettings = async ({ home, managedServers, planProfiles }: LoadUserSettingsOptions): Promise<LoadUserSettingsResult> => loadUserSettingsSync(home, managedServers, planProfiles);
 
 export type UserSettingsCacheOptions = { home: string; onWarning: (message: string) => void; keptRecords: KeptRecords };
 

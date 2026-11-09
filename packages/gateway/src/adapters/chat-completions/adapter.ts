@@ -1,3 +1,4 @@
+import { sendAuthorized } from '../shared/auth.ts';
 import { decodeSse } from '@momonga/foundation';
 import { agentReadiness, readinessText, summaryTokenCapFor } from '@momonga/protocol';
 import type { AdapterCompactRequest, AllowedToolsForm, Capabilities, ToolCallingMode, ToolChoiceWire, AdapterCompactResult, AdapterContext, AdapterRequest, AdapterTarget, LenientItems, ReasoningOrigin, RenderWireOptions, StreamEvent } from '@momonga/protocol';
@@ -134,18 +135,19 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
     try {
       const vocabulary = withGuardrailMatcher(baseVocabulary, guardrailMatcher(ctx.target));
       const endpoint = await options.resolveEndpoint(ctx.target, signal);
-      const apiKey = await options.apiKey?.(ctx.target, signal);
       const upstreamModel = await options.upstreamModel?.(ctx.target, signal);
-      const response = await pool.clientFor(endpoint).post({
-        headers: {
-          'content-type': 'application/json',
-          accept: 'text/event-stream',
-          ...(apiKey === undefined ? {} : { authorization: `Bearer ${apiKey}` }),
-        },
-        body: JSON.stringify(upstreamModel === undefined ? body : { ...body, model: upstreamModel }),
-        signal,
-        ...watchedPostOf(options.liveness),
-      });
+      const response = await sendAuthorized(options.authSource?.(ctx.target), signal, (bearer) =>
+        pool.clientFor(endpoint).post({
+          headers: {
+            'content-type': 'application/json',
+            accept: 'text/event-stream',
+            ...(bearer === undefined ? {} : { authorization: `Bearer ${bearer}` }),
+          },
+          body: JSON.stringify(upstreamModel === undefined ? body : { ...body, model: upstreamModel }),
+          signal,
+          ...watchedPostOf(options.liveness),
+        }),
+      );
       if (response.status !== 200) {
         throw await httpErrorOf(
           response,

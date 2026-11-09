@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { createStopValuesReader, credentialEnvNames, loadUserSettings, probeRecordKeyOf, readUserStopValues, resolveNetwork, resolveTelemetrySettings, secretNames, upstreamEndpointOf } from '@momonga/config';
+import { PLAN_PROFILES, createStopValuesReader, credentialEnvNames, loadUserSettings, readUserSettingsNow, userSettingsChangeKey, probeRecordKeyOf, readUserStopValues, resolveNetwork, resolveTelemetrySettings, secretNames, upstreamEndpointOf } from '@momonga/config';
 import { MANAGED_SERVERS, managedServerOf } from '@momonga/protocol';
 import type { ManagedServerDescription } from '@momonga/protocol';
 import {
@@ -25,9 +25,9 @@ import {
   ensureGenerationDirs,
   generationLayout,
 } from '@momonga/foundation';
-import type { EndpointProbeKey, StopValuesReader } from '@momonga/config';
+import type { EndpointProbeKey, PlanProfiles, StopValuesReader } from '@momonga/config';
 import type { BinaryHashCache, Clock, JsonLogger, MomongaPaths, NetworkConfig, OutboundNetwork, ProcessLock, ReadyFields, SecretStore, StopValues, TextStream } from '@momonga/foundation';
-import { installTrust, proxyPasswordsOf } from '@momonga/foundation';
+import { createEncryptedCredentialStore, createOutboundDispatcher, givenCredentialSecretStore, installTrust, nodeFileSystem, outboundFetch, proxyPasswordsOf } from '@momonga/foundation';
 import {
   buildCostReport,
   closeTelemetry,
@@ -40,7 +40,7 @@ import {
   startBodyPurge,
 } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
-import type { AdapterTarget, Capabilities, DialectId, ProviderAdapter, ToolCallingMode } from '@momonga/protocol';
+import type { AdapterTarget, Capabilities, DialectId, HealthResult, ProviderAdapter, ToolCallingMode } from '@momonga/protocol';
 import { NO_USER_DIALECTS } from './dialect/choice.ts';
 import type { UserDialects } from './dialect/choice.ts';
 import type { DialectCurrency } from './dialect/candidates.ts';
@@ -61,8 +61,14 @@ import { createAnthropicAdapter } from './adapters/anthropic/adapter.ts';
 import { createChatCompletionsAdapter } from './adapters/chat-completions/adapter.ts';
 import { createOllamaAdapter } from './adapters/ollama/adapter.ts';
 import { createOpenResponsesAdapter } from './adapters/open-responses/adapter.ts';
+import { keyAuthSource } from './adapters/shared/auth.ts';
+import { openPlanSessions } from './plan/session.ts';
+import type { AuthSource, PlanHealth } from './plan/auth-source.ts';
+import type { PlanFetch } from './plan/refresh.ts';
+import { createSettingsNow } from './user-settings-now.ts';
+import type { ProbeOutputPolicy } from './probe/decide.ts';
 import type { UpstreamEndpoint } from './adapters/shared/http-client.ts';
-import { ANTHROPIC_PROVIDER_NAME, OLLAMA_PROVIDER_NAME, GATEWAY_CONFIG_DEFAULTS } from './defaults.ts';
+import { ANTHROPIC_PROVIDER_NAME, OLLAMA_PROVIDER_NAME, GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS } from './defaults.ts';
 import { missingApiKeyError, secretUnavailableError } from './core/errors.ts';
 import { MIN_CREDENTIAL_CHARS } from './core/redaction.ts';
 import { PreconditionFailedError } from './adapters/shared/failures.ts';
@@ -111,6 +117,7 @@ export type StartGatewayProcessOptions = {
   measureEndpoint?: MeasureEndpointPort<EndpointMeasurement>;
   measureOllama?: MeasureEndpointPort<OllamaMeasurement>;
   stopValues?: StopValuesReader;
+  planProfiles?: PlanProfiles;
 };
 
 export type GatewayCloseResult = {
@@ -227,6 +234,7 @@ type MeasureEndpointPort<Measurement> = (request: { key: EndpointKey; signal: Ab
 
 type ProbeWiring = {
   autoProbe: AutoProbe;
+  outputPolicy: () => ProbeOutputPolicy;
   measureEndpoint?: MeasureEndpointPort<EndpointMeasurement>;
   measureOllama?: MeasureEndpointPort<OllamaMeasurement>;
 };
@@ -246,6 +254,7 @@ const requiredServer = (servers: readonly ManagedServerDescription[], id: string
 
 type ManagedAdapterWiring = {
   name: string;
+  outputPolicy: () => ProbeOutputPolicy;
   target: Extract<ResolvedTarget, { adapter: 'managed' }>;
   description: ManagedServerDescription;
   paths: MomongaPaths;
@@ -327,6 +336,7 @@ const createManagedAdapter = async (wiring: ManagedAdapterWiring): Promise<{ ada
     currency,
   });
   managed = await createManagedTarget({
+    outputPolicy: wiring.outputPolicy,
     description,
     server,
     binary: target.binary,
@@ -410,6 +420,7 @@ const createAutoChatCompletionsAdapter = async (
     currency,
   });
   const probed = createProbedEndpointTarget({
+    outputPolicy: probes.outputPolicy,
     targetName: name,
     endpoint,
     model: target.model,
@@ -436,7 +447,7 @@ const createAutoChatCompletionsAdapter = async (
     envelopeShape: () => probed.envelopeShape(),
     capabilities: () => probed.capabilities(),
     onSummaryReasoning: (_target, hiddenReasoningTokens) => probed.raiseHeadroom(hiddenReasoningTokens),
-    apiKey: readKey,
+    authSource: keyAuthSource(readKey),
     clock,
     userDialects,
     liveness,
@@ -521,6 +532,77 @@ const identificationOf = (name: string, target: ServedTarget, network: OutboundN
 
 const DEBUG_TCP_HOST = '127.0.0.1';
 
+type PlanSecretFeed = { add: (value: string) => void; attach: (add: (value: string) => void) => void };
+
+const createPlanSecretFeed = (): PlanSecretFeed => {
+  const early: string[] = [];
+  let sink: ((value: string) => void) | undefined;
+  return {
+    add: (value) => {
+      if (sink === undefined) early.push(value);
+      else sink(value);
+    },
+    attach: (add) => {
+      sink = add;
+      for (const value of early.splice(0)) add(value);
+    },
+  };
+};
+
+const sleepOn = (timers: GatewayTimers, ms: number, signal: AbortSignal | undefined): Promise<void> =>
+  new Promise((resolve, reject) => {
+    signal?.throwIfAborted();
+    const onAbort = (): void => {
+      timers.clearTimeout(handle);
+      reject(signal?.reason);
+    };
+    const handle = timers.setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+
+const HEALTH_REASON_OF_PLAN: Readonly<Record<NonNullable<PlanHealth['reason']>, NonNullable<HealthResult['reason']>>> = {
+  sign_in_required: 'sign_in_required',
+  plan_use_not_enabled: 'sign_in_required',
+  plan_usage_paused: 'sign_in_required',
+  store_unreadable: 'store_unreadable',
+  store_unwritable: 'store_unwritable',
+};
+
+const healthResultOf = (health: PlanHealth): HealthResult => ({
+  ok: health.ok,
+  ...(health.reason === undefined ? {} : { reason: HEALTH_REASON_OF_PLAN[health.reason] }),
+  ...(health.detail === undefined ? {} : { detail: health.detail }),
+  ...(health.remediation === undefined ? {} : { remediation: health.remediation }),
+});
+
+type PlanAdapterWiring = { clock: Clock; userDialects: UserDialects; liveness: UpstreamLiveness; network: OutboundNetwork };
+
+const planCapabilitiesOf = (name: string, target: PlanTarget): Capabilities => {
+  const { contextWindow, maxOutputTokens, ...rest } = target.capabilities;
+  if (contextWindow === undefined || maxOutputTokens === undefined) {
+    throw new Error(`the plan target ${name} declares no contextWindow and maxOutputTokens, and the live model catalog that reports them is not built yet`);
+  }
+  return withImageDefault({ ...rest, contextWindow, maxOutputTokens, toolCalling: target.toolCalling });
+};
+
+const createPlanAdapter = (name: string, target: PlanTarget, auth: AuthSource, profiles: PlanProfiles, wiring: PlanAdapterWiring): ProviderAdapter => {
+  const profile = profiles[target.plan.profile];
+  if (profile === undefined) throw new Error(`the plan target ${name} names the unknown plan profile ${JSON.stringify(target.plan.profile)}`);
+  return createOpenResponsesAdapter({
+    resolveEndpoint: async () => reachableEndpoint(upstreamEndpointOf(target), wiring.network),
+    capabilities: async () => planCapabilitiesOf(name, target),
+    health: async () => healthResultOf(auth.health()),
+    authSource: () => auth,
+    errorRules: profile.errorRules,
+    clock: wiring.clock,
+    userDialects: wiring.userDialects,
+    liveness: wiring.liveness,
+  });
+};
+
 const NOT_LISTED_YET = 'not listed yet';
 
 const providerNameOf = (target: ResolvedTarget, servers: readonly ManagedServerDescription[]): string => {
@@ -544,13 +626,13 @@ const requiredCounter = (counters: Readonly<Record<string, string>>, name: strin
 };
 
 type UncountedGatewayConfig = Omit<GatewayConfig, 'models'> & {
-  models: { aliases: GatewayConfig['models']['aliases']; targets: Record<string, Omit<GatewayConfig['models']['targets'][string], 'counter'>> };
+  models: Omit<GatewayConfig['models'], 'targets'> & { targets: Record<string, Omit<GatewayConfig['models']['targets'][string], 'counter'>> };
 };
 
 const withCounters = (config: UncountedGatewayConfig, counters: Readonly<Record<string, string>>): GatewayConfig => ({
   ...config,
   models: {
-    aliases: config.models.aliases,
+    ...config.models,
     targets: Object.fromEntries(Object.entries(config.models.targets).map(([name, target]) => [name, { ...target, counter: requiredCounter(counters, name) }])),
   },
 });
@@ -560,8 +642,10 @@ export const gatewayConfigOf = (
   aliases: Record<string, string | string[]>,
   servers: readonly ManagedServerDescription[] = MANAGED_SERVERS,
   listedModels: ReadonlyMap<string, string> = new Map(),
+  billingChanges: GatewayConfig['models']['billingChanges'] = [],
 ): UncountedGatewayConfig => ({
   models: {
+    billingChanges,
     aliases: Object.fromEntries(Object.entries(aliases).map(([alias, members]) => [alias, [members].flat()])),
     targets: Object.fromEntries(
       Object.entries(targets).map(([name, target]) => [
@@ -660,8 +744,18 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
 
   try {
     signal?.throwIfAborted();
-    const { settings, warnings } = await loadUserSettings({ home: options.home, managedServers });
+    const planProfiles = options.planProfiles ?? PLAN_PROFILES;
+    const initialKey = userSettingsChangeKey(options.home);
+    const { settings, warnings } = await loadUserSettings({ home: options.home, managedServers, planProfiles });
     for (const warning of warnings) logger.warn(warning);
+    const settingsNow = createSettingsNow({
+      initial: settings,
+      initialKey,
+      changeKey: () => userSettingsChangeKey(options.home),
+      load: () => readUserSettingsNow({ home: options.home, managedServers, planProfiles }).settings,
+      warn: (message) => logger.warn(message),
+    });
+    const outputPolicy = (): ProbeOutputPolicy => ({ unboundedOutputReserve: settingsNow().context.unboundedOutputReserve });
     stopValues.remember(settings.gateway);
     const networkConfig = resolveNetwork(settings.network, options.env);
     const network: OutboundNetwork = { config: networkConfig, trust: await installTrust(networkConfig, files) };
@@ -697,10 +791,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     signal?.throwIfAborted();
     const childEnv = minimalChildEnv(options.env);
     const exec = options.exec ?? createExecFn(childEnv);
-    const targets = Object.entries(settings.models.targets).map(([name, target]): [string, ServedTarget] => {
-      if ('plan' in target) throw new Error(`target ${name} uses plan profile ${target.plan.profile}, which this gateway does not serve yet`);
-      return [name, target];
-    });
+    const targets = Object.entries(settings.models.targets).flatMap(([name, target]): Array<[string, ServedTarget]> => ('plan' in target ? [] : [[name, target]]));
+    const planTargets = Object.entries(settings.models.targets).flatMap(([name, target]): Array<[string, PlanTarget]> => ('plan' in target ? [[name, target]] : []));
     const adapters: Record<string, ProviderAdapter> = {};
     const listedModels = new Map<string, string>();
     const closeAdapters = async (): Promise<void> => {
@@ -724,6 +816,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     cleanups.push(closeProbes);
     const probes: ProbeWiring = {
       autoProbe,
+      outputPolicy,
       ...(options.measureEndpoint === undefined ? {} : { measureEndpoint: options.measureEndpoint }),
       ...(options.measureOllama === undefined ? {} : { measureOllama: options.measureOllama }),
     };
@@ -740,6 +833,40 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const secretResolver = createSecretResolver(secretStore);
     const secretFailures = await warmSecrets(secretResolver, referencedSecrets, signal ?? new AbortController().signal);
     for (const [name, failure] of secretFailures) logger.warn(`secret ${name} is unavailable: ${failure.message}`);
+    const planSecrets = createPlanSecretFeed();
+    const planDispatcher =
+      planTargets.length === 0
+        ? undefined
+        : createOutboundDispatcher(network, { connectReplyTimeoutMs: Math.max(PLAN_SESSION_DEFAULTS.attemptTimeoutMs, PLAN_SESSION_DEFAULTS.revocationTimeoutMs) });
+    if (planDispatcher !== undefined) cleanups.push(() => planDispatcher.close());
+    const planFetch: PlanFetch = (url, init) => {
+      if (planDispatcher === undefined) throw new Error('plan requests need the plan dispatcher');
+      return outboundFetch(planDispatcher)(url, init as never) as unknown as Promise<Response>;
+    };
+    const sessions =
+      planTargets.length === 0
+        ? undefined
+        : await openPlanSessions({
+            profiles: planProfiles,
+            paths: { sessions: paths.planSessions, host: paths.planHost, active: paths.planActive },
+            store: createEncryptedCredentialStore({
+              directory: paths.planSessions,
+              stateDirectory: paths.state,
+              secretStore:
+                options.secretStore === undefined
+                  ? givenCredentialSecretStore(options.execWithStdin ?? createExecWithStdin({ ...childEnv, ...givenSecretStoreChildEnv(options.env) }), options.env)
+                  : { kind: 'available', store: options.secretStore },
+              plaintextTokenFiles: () => settingsNow().credentials.plaintextTokenFiles,
+            }),
+            fileSystem: nodeFileSystem,
+            accounts: planTargets.flatMap(([, target]) => (target.plan.account === undefined ? [] : [{ profile: target.plan.profile, account: target.plan.account }])),
+            clock,
+            fetch: planFetch,
+            sleep: (ms, sleepSignal) => sleepOn(timers, ms, sleepSignal),
+            onSecret: planSecrets.add,
+            warn: (message) => logger.warn(message),
+          });
+    if (sessions !== undefined) cleanups.push(() => sessions.close());
     signal?.throwIfAborted();
     const userDialects = settings.models.dialects;
     const liveness: UpstreamLiveness = { headersTimeoutMs: settings.models.headersTimeoutMs, idleTimeoutMs: settings.models.idleTimeoutMs, timers };
@@ -748,6 +875,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       if (target.adapter === 'managed') {
         const wired = await createManagedAdapter({
           name,
+          outputPolicy,
           target,
           description: requiredServer(managedServers, target.server),
           paths,
@@ -802,27 +930,39 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       };
       switch (target.adapter) {
         case 'chat-completions':
-          adapters[name] = createChatCompletionsAdapter({ ...common, schemaDialect: () => resolveDialectId(target.capabilities.schemaDialect, null), apiKey: readKey });
+          adapters[name] = createChatCompletionsAdapter({ ...common, schemaDialect: () => resolveDialectId(target.capabilities.schemaDialect, null), authSource: keyAuthSource(readKey) });
           break;
         case 'open-responses':
-          adapters[name] = createOpenResponsesAdapter({ ...common, apiKey: readKey });
+          adapters[name] = createOpenResponsesAdapter({ ...common, authSource: keyAuthSource(readKey) });
           break;
         case 'anthropic':
-          adapters[name] = createAnthropicAdapter({ ...common, apiVersion: target.apiVersion, apiKey: (adapterTarget, signal) => requiredKey(readKey, adapterTarget, signal) });
+          adapters[name] = createAnthropicAdapter({ ...common, apiVersion: target.apiVersion, authSource: keyAuthSource((adapterTarget, keySignal) => requiredKey(readKey, adapterTarget, keySignal)) });
           break;
       }
+    }
+    for (const [name, target] of planTargets) {
+      if (sessions === undefined) throw new Error(`the plan target ${name} has no session engine`);
+      adapters[name] = createPlanAdapter(name, target, sessions.authSource({ profile: target.plan.profile, ...(target.plan.account === undefined ? {} : { account: target.plan.account }) }), planProfiles, {
+        clock,
+        userDialects,
+        liveness,
+        network,
+      });
+      counters[name] = targetCounterOf({ target, codeDigest });
     }
 
     signal?.throwIfAborted();
     const gateway = await createGateway({
       startSignal,
-      config: withCounters(gatewayConfigOf(settings.models.targets, settings.models.aliases, managedServers, listedModels), counters),
+      config: withCounters(gatewayConfigOf(settings.models.targets, settings.models.aliases, managedServers, listedModels, settings.models.billingChanges), counters),
       adapters,
       credentials: credentialValuesOf(options.env, credentialEnvNames(settings), secretResolver.resolved(), (message) => logger.warn(message), network.config),
-      credentialFeed: (add) =>
+      credentialFeed: (add) => {
+        planSecrets.attach(add);
         secretResolver.onResolved((name, value) => {
           for (const credential of credentialValuesOf({}, [], new Map([[name, value]]), (message) => logger.warn(message), undefined)) add(credential);
-        }),
+        });
+      },
       clock,
       timers,
       random,
