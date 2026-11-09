@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { groupAlive } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import type { Harness } from './harness.ts';
@@ -16,14 +17,7 @@ afterEach(async () => {
   await killGroupsForCleanup(groups.splice(0));
 });
 
-const groupExists = (pgid: number): boolean => {
-  try {
-    process.kill(-pgid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
-};
+const groupExists = (pgid: number): Promise<boolean> => groupAlive(pgid);
 
 const seedEarlierAttempt = (harness: Harness): { marker: string; pgid: number } => {
   const marker = path.join(harness.markerDir, KEY);
@@ -49,7 +43,7 @@ const effectTool = (outcome: 'not_applied' | 'already_applied' = 'not_applied') 
     sideEffect: 'write', subjectKind: 'none',
     reconcile: async () => {
       seen.reconciles += 1;
-      if (watched !== undefined) seen.groupAliveAtReconcile.push(groupExists(watched));
+      if (watched !== undefined) seen.groupAliveAtReconcile.push(await groupExists(watched));
       return { outcome, output: `reconciled ${outcome}` };
     },
     execute: async () => {
@@ -197,6 +191,6 @@ describe('a taken-over call reaps the earlier attempt before it reconciles', () 
 
     await harness.executor.runBatch(harness.input(await toolSetOf(tool), [call('c1', 'Edit', {}, 'allow_once')]));
 
-    expect(groupExists(pgid)).toBe(true);
+    expect(await groupExists(pgid)).toBe(true);
   });
 });

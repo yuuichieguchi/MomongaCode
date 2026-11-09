@@ -84,8 +84,8 @@ describe('createMcpPool diagnostics and close', { timeout: REAL_PROCESS_TEST_TIM
     const [modern, legacy] = harness.pool.diagnostics();
     expect(modern).toMatchObject({ server: 'modern', state: 'connected', protocolVersion: '2026-07-28', lastError: null });
     expect(legacy).toMatchObject({ server: 'legacy', state: 'connected', protocolVersion: '2025-11-25', lastError: null });
-    expect(groupExists(modern?.pgid as number)).toBe(true);
-    expect(groupExists(legacy?.pgid as number)).toBe(true);
+    expect(await groupExists(modern?.pgid as number)).toBe(true);
+    expect(await groupExists(legacy?.pgid as number)).toBe(true);
     expect(modern?.pgid).not.toBe(legacy?.pgid);
   });
 
@@ -108,7 +108,7 @@ describe('createMcpPool diagnostics and close', { timeout: REAL_PROCESS_TEST_TIM
     expect(grandchildPid).toBeGreaterThan(1);
     const pgids = harness.pool.diagnostics().map((diagnostics) => diagnostics.pgid as number);
     await harness.pool.close();
-    for (const pgid of pgids) expect(groupExists(pgid)).toBe(false);
+    for (const pgid of pgids) expect(await groupExists(pgid)).toBe(false);
     await waitUntil(() => !pidAlive(grandchildPid), 'grandchild is gone', 2000);
     expect(harness.pool.diagnostics().map((diagnostics) => diagnostics.state)).toEqual(['closed', 'closed']);
   });

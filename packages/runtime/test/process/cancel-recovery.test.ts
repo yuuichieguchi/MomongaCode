@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { canonicalJson, ensureMomongaDirs, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, ensureMomongaDirs, groupAlive, sha256Hex } from '@momonga/foundation';
 import type { McpPoolOptions } from '@momonga/mcp';
 import type { RunEventPayload } from '@momonga/protocol';
 import { openRuntimeStore } from '@momonga/store';
@@ -11,27 +11,13 @@ import { START_MS, trackGroup } from './helpers.ts';
 import { eventTypes, launchRuntime, readDb, sessionEnvFor, startStack, waitForStatus } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
 
-const control = vi.hoisted(() => ({ watchedGroups: [] as number[], aliveAtCancel: [] as boolean[], poolsCreated: 0 }));
+const control = vi.hoisted(() => ({ watchedGroups: [] as number[], aliveAtCancel: [] as Array<Promise<boolean>>, poolsCreated: 0 }));
 
-const groupExists = (pgid: number): boolean => {
-  try {
-    process.kill(-pgid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
-};
+const groupExists = (pgid: number): Promise<boolean> => groupAlive(pgid);
 
 vi.mock('@momonga/store', async (importOriginal) => {
   const original = await importOriginal<typeof import('@momonga/store')>();
-  const alive = (pgid: number): boolean => {
-    try {
-      process.kill(-pgid, 0);
-      return true;
-    } catch (error) {
-      return (error as NodeJS.ErrnoException).code === 'EPERM';
-    }
-  };
+  const { groupAlive: alive } = await import('@momonga/foundation');
   return {
     ...original,
     openRuntimeStore: (options: Parameters<typeof original.openRuntimeStore>[0]) => {
@@ -160,8 +146,8 @@ describe('cancel recovery through startRuntimeProcess (real processes, system ti
     control.watchedGroups = [pgid];
     await launchRuntime(stack.temp, { clock: createFakeClock(RUNTIME_MS) });
     expect(await waitForStatus(stack.temp, seeded.runId, ['CANCELLED', 'FAILED', 'COMPLETED'])).toBe('CANCELLED');
-    expect(control.aliveAtCancel).toEqual([false]);
-    expect(groupExists(pgid)).toBe(false);
+    expect(await Promise.all(control.aliveAtCancel)).toEqual([false]);
+    expect(await groupExists(pgid)).toBe(false);
     expect(recordState(stack.temp, seeded.key)).toBe('UNKNOWN');
     expect(reconciledOutcomes(stack.temp, seeded.runId)).toEqual(['unknown']);
     expect(stack.completions()).toBe(0);
@@ -175,8 +161,8 @@ describe('cancel recovery through startRuntimeProcess (real processes, system ti
     control.watchedGroups = [pgid];
     await launchRuntime(stack.temp, { clock: createFakeClock(RUNTIME_MS) });
     expect(await waitForStatus(stack.temp, seeded.runId, ['CANCELLED', 'FAILED', 'COMPLETED'])).toBe('CANCELLED');
-    expect(control.aliveAtCancel).toEqual([false]);
-    expect(groupExists(pgid)).toBe(false);
+    expect(await Promise.all(control.aliveAtCancel)).toEqual([false]);
+    expect(await groupExists(pgid)).toBe(false);
     expect(recordState(stack.temp, seeded.key)).toBe('UNKNOWN');
   });
 
@@ -204,10 +190,10 @@ describe('cancel recovery through startRuntimeProcess (real processes, system ti
     } finally {
       store.close();
     }
-    expect(groupExists(pgid)).toBe(true);
+    expect(await groupExists(pgid)).toBe(true);
     const launched = await launchRuntime(stack.temp, { clock: createFakeClock(RUNTIME_MS) });
     expect(launched.stdout.lines()).toHaveLength(1);
-    expect(groupExists(pgid)).toBe(false);
+    expect(await groupExists(pgid)).toBe(false);
     expect(fs.existsSync(path.join(stack.temp.paths.markers.tools, key))).toBe(false);
     expect(recordState(stack.temp, key)).toBe('UNKNOWN');
   });

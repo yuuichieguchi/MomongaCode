@@ -81,7 +81,7 @@ describe('cancel recovery fallback', () => {
     const key = keys[BASH.callId] as string;
     const pgid = spawnMarkerHolder(env, key);
     const store = recordingStore(env);
-    const aliveAtCancel: boolean[] = [];
+    const aliveAtCancel: Array<Promise<boolean>> = [];
     store.onCancelled.push(() => aliveAtCancel.push(groupExists(pgid)));
     const errors: unknown[] = [];
     const failure = new Error('the sandbox profile could not be built');
@@ -98,7 +98,7 @@ describe('cancel recovery fallback', () => {
     await within(env.runOnce(worker), 20_000, 'the cancel recovery');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
-    expect(aliveAtCancel).toEqual([false]);
+    expect(await Promise.all(aliveAtCancel)).toEqual([false]);
     expect(env.store.idempotency.get(key)?.s).toBe('UNKNOWN');
     expect(errors).toEqual([failure]);
     expect(errorNotices(env, run.id).map((notice) => notice.message)).toEqual([`${RECONCILE_FAILURE_PREFIX}the sandbox profile could not be built`]);
@@ -114,7 +114,7 @@ describe('cancel recovery fallback', () => {
     const key = keys[BASH.callId] as string;
     const pgid = spawnMarkerHolder(env, key, 'sleep 30 & exec 3>&-; wait');
     const store = recordingStore(env);
-    const aliveAtCancel: boolean[] = [];
+    const aliveAtCancel: Array<Promise<boolean>> = [];
     store.onCancelled.push(() => aliveAtCancel.push(groupExists(pgid)));
     const worker = env.worker('worker-1', {
       store,
@@ -128,8 +128,8 @@ describe('cancel recovery fallback', () => {
     await within(env.runOnce(worker), 20_000, 'the cancel recovery');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
-    expect(aliveAtCancel).toEqual([false]);
-    expect(groupExists(pgid)).toBe(false);
+    expect(await Promise.all(aliveAtCancel)).toEqual([false]);
+    expect(await groupExists(pgid)).toBe(false);
     expect(env.store.idempotency.get(key)?.s).toBe('UNKNOWN');
   });
 
