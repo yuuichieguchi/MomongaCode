@@ -1,8 +1,10 @@
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
+import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import { ensureMomongaDirs, momongaPaths, ruleEnforcementOf } from '@momonga/foundation';
+import * as foundation from '@momonga/foundation';
 import type { MarkerState, ProcessGroupPort, ProcessInspector } from '@momonga/foundation';
 import type { Sandbox } from '@momonga/sandbox';
 import { fakePolicyFilesystem, withTempDir } from '@momonga/testkit';
@@ -11,6 +13,10 @@ import type { LaunchOptions } from '../../../sandbox/src/process.ts';
 import { virtualTiming } from '../../../foundation/test/support/probe-fakes.ts';
 import { createEvidenceRunner } from '../../src/process/evidence-run.ts';
 import type { EvidenceRunnerOptions } from '../../src/process/evidence-run.ts';
+
+type MarkerGroupApi = { readMarkerGroup(marker: string): Promise<number | undefined> };
+
+const markerGroups = foundation as unknown as MarkerGroupApi;
 
 const KILL_GRACE_MS = 300;
 const GROUP = 999_998;
@@ -83,7 +89,7 @@ const runEvidence = async (context: Parameters<typeof withTempDir>[0], survives:
   );
   for (let step = 1; !done && step <= 1000; step += 1) await timing.advanceTo(step * KILL_GRACE_MS);
   const result = await pending;
-  return { result, markers: fs.readdirSync(paths.markers.tools) };
+  return { result, markers: fs.readdirSync(paths.markers.tools), dir: paths.markers.tools };
 };
 
 describe('the evidence run spawns under the same marker as every other spawn, so decision 12 reaches a group member that survives the stop', () => {
@@ -97,5 +103,12 @@ describe('the evidence run spawns under the same marker as every other spawn, so
     const { result, markers } = await runEvidence(context, false);
     expect(result).toEqual({ exitCode: 0, stdout: 'abc\n' });
     expect(markers).toEqual([]);
+  });
+
+  it('writes the spawn group into its evidence marker file', async (context) => {
+    const { markers, dir } = await runEvidence(context, true);
+    expect(markers).toHaveLength(1);
+    expect(markers[0]).toMatch(/^evidence-/);
+    expect(await markerGroups.readMarkerGroup(path.join(dir, markers[0] ?? ''))).toBe(GROUP);
   });
 });

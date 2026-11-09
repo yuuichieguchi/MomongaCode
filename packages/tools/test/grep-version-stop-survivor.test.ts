@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
+import * as foundation from '@momonga/foundation';
 import type { MarkerState, ProcessGroupPort, ProcessInspector } from '@momonga/foundation';
 import type { Sandbox } from '@momonga/sandbox';
 import { launch } from '../../sandbox/src/process.ts';
@@ -14,6 +15,12 @@ import { call, makeHarness, toolSetOf } from './harness.ts';
 import type { HarnessOptions } from './harness.ts';
 import { resultOf } from './guard-world.ts';
 
+type MarkerGroupApi = { readMarkerGroup(marker: string): Promise<number | undefined> };
+
+const markerGroups = foundation as unknown as MarkerGroupApi;
+
+type Survivor = 'version' | 'search' | 'none';
+
 const KILL_GRACE_MS = 300;
 const VERSION_GROUP = 999_995;
 const SEARCH_GROUP = 999_994;
@@ -22,23 +29,24 @@ const FOUR_OCCASIONS = 'at most once at each of: before the next command that ru
 
 const versionlessRipgrep = (): RipgrepLocator => ({ locate: async () => ({ ok: true, path: '/fake/rg', source: 'path', release: async () => undefined }) });
 
-const scene = (versionSurvives: boolean) => {
+const scene = (survivor: Survivor) => {
+  const groupOf = (kind: Survivor): number => (kind === 'version' ? VERSION_GROUP : SEARCH_GROUP);
   const timing = virtualTiming();
   const runnable = new Set([VERSION_GROUP, SEARCH_GROUP]);
   const groupPort: ProcessGroupPort = {
     signal: async (pgid) => {
-      if (pgid === SEARCH_GROUP || !versionSurvives) runnable.delete(pgid);
+      if (survivor === 'none' || pgid !== groupOf(survivor)) runnable.delete(pgid);
     },
     alive: async (pgid) => runnable.has(pgid),
   };
   const markers: Array<{ kind: 'version' | 'search'; marker: string | undefined }> = [];
-  const versionMarker = (): string | undefined => markers.find((entry) => entry.kind === 'version')?.marker;
+  const survivorMarker = (): string | undefined => markers.find((entry) => entry.kind === survivor)?.marker;
   const inspector = {
     capability: { of: async () => 'unenforced' as const, contradicted: () => undefined },
     startTimeOf: async () => ({ kind: 'gone' }),
     holdersOf: async () => ({ kind: 'value', value: [] }),
     groupsOf: async () => ({ kind: 'value', value: new Map() }),
-    markerState: async (marker: string): Promise<MarkerState> => (versionSurvives && marker === versionMarker() ? 'held' : 'free'),
+    markerState: async (marker: string): Promise<MarkerState> => (survivor !== 'none' && marker === survivorMarker() ? 'held' : 'free'),
   } as unknown as ProcessInspector;
   const sandbox: Sandbox = {
     kind: 'none',
@@ -71,8 +79,8 @@ const scene = (versionSurvives: boolean) => {
   return { timing, groupPort, inspector, sandbox, markers };
 };
 
-const runGrep = async (versionSurvives: boolean) => {
-  const { timing, groupPort, inspector, sandbox, markers } = scene(versionSurvives);
+const runGrep = async (survivor: Survivor) => {
+  const { timing, groupPort, inspector, sandbox, markers } = scene(survivor);
   let now = 0;
   const harness = makeHarness({ executor: { reap: { inspector, groupPort, timing: { now: () => now, sleep: async (ms: number) => void (now += ms) }, killGraceMs: 100 } } } as HarnessOptions);
   const batch = harness.executor.runBatch(harness.input(await toolSetOf(grepTool), [call('search', 'Grep', { pattern: 'needle' }, 'allow_once')], { sandbox, ripgrep: versionlessRipgrep() }));
@@ -87,7 +95,7 @@ const runGrep = async (versionSurvives: boolean) => {
 
 describe("Grep's ripgrep --version spawn takes its own marker, so decision 12 reaches a member of that group that survives the stop", () => {
   it('reports the survivor of the version spawn with the still-running note and keeps that spawn marker', async () => {
-    const { result, markers, left } = await runGrep(true);
+    const { result, markers, left } = await runGrep('version');
     const version = markers.find((entry) => entry.kind === 'version')?.marker;
     const search = markers.find((entry) => entry.kind === 'search')?.marker;
     expect(version).toBeDefined();
@@ -101,9 +109,20 @@ describe("Grep's ripgrep --version spawn takes its own marker, so decision 12 re
   });
 
   it('leaves no marker and no note when the members of both spawns stop', async () => {
-    const { result, markers, left } = await runGrep(false);
+    const { result, markers, left } = await runGrep('none');
     expect(markers.map((entry) => entry.marker === undefined)).toEqual([false, false]);
     expect(result).toMatchObject({ status: 'completed', output: 'No matches found' });
     expect(left).toEqual([]);
+  });
+
+  it('writes each spawn group into that spawn marker file: the call marker for the first spawn, the <key>-1 marker for the second', async () => {
+    const versionRun = await runGrep('version');
+    const version = versionRun.markers.find((entry) => entry.kind === 'version')?.marker ?? '';
+    expect(await markerGroups.readMarkerGroup(version)).toBe(VERSION_GROUP);
+    const searchRun = await runGrep('search');
+    const search = searchRun.markers.find((entry) => entry.kind === 'search')?.marker ?? '';
+    expect(path.basename(search)).toMatch(/^[0-9a-f]{64}-1$/);
+    expect(searchRun.left).toEqual([path.basename(search)]);
+    expect(await markerGroups.readMarkerGroup(search)).toBe(SEARCH_GROUP);
   });
 });

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET } from '@momonga/foundation';
+import * as foundation from '@momonga/foundation';
 import type { MarkerState, ProcessGroupPort, ProcessInspector } from '@momonga/foundation';
 import type { HookExecution, HooksSettings } from '@momonga/protocol';
 import type { Sandbox } from '@momonga/sandbox';
@@ -13,6 +14,10 @@ import type { HookRunContext } from '@momonga/tools';
 import { launch } from '../../sandbox/src/process.ts';
 import type { LaunchOptions } from '../../sandbox/src/process.ts';
 import { virtualTiming } from '../../foundation/test/support/probe-fakes.ts';
+
+type MarkerGroupApi = { readMarkerGroup(marker: string): Promise<number | undefined> };
+
+const markerGroups = foundation as unknown as MarkerGroupApi;
 
 const KILL_GRACE_MS = 300;
 const GROUP = 999_997;
@@ -110,7 +115,7 @@ const runHook = async (survives: boolean) => {
   } catch (error) {
     failure = error;
   }
-  return { failure, executions, markers: fs.readdirSync(markerDir).filter((name) => name.startsWith('hook-')) };
+  return { failure, executions, markerDir, markers: fs.readdirSync(markerDir).filter((name) => name.startsWith('hook-')) };
 };
 
 describe('a hook whose process group keeps a member that survives the stop', () => {
@@ -126,5 +131,11 @@ describe('a hook whose process group keeps a member that survives the stop', () 
     expect(failure).toBeUndefined();
     expect(executions.map((execution) => execution.outcome)).toEqual(['success']);
     expect(markers).toEqual([]);
+  });
+
+  it('writes the spawn group into its hook marker file', async () => {
+    const { markerDir, markers } = await runHook(true);
+    expect(markers).toHaveLength(1);
+    expect(await markerGroups.readMarkerGroup(path.join(markerDir, markers[0] ?? ''))).toBe(GROUP);
   });
 });
