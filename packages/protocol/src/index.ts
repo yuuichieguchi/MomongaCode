@@ -142,6 +142,7 @@ export { FM_SERVER, MANAGED_DECLARABLE_FIELDS, MANAGED_SERVERS, MANAGED_SERVER_E
 export type { ManagedDeclarableField, ManagedRecordedDefaults, ManagedServerDescription, ManagedServerErrorKind, ManagedTokenCount, Precondition, PreconditionRule, ProbeKeyComponent } from './managed-servers.ts';
 export {
   BREAKER_VERDICTS,
+  USAGE_LIMIT_CODES,
   CREDENTIAL_EFFECTS,
   ERROR_FALLBACKS,
   PLAN_ACCOUNT_STATES,

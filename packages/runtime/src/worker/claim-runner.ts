@@ -214,6 +214,10 @@ const requeueOrStop = async (
     await terminals.finish('STOPPED', { stopReason: 'timeout' });
     return;
   }
+  if (disposition.kind === 'stop') {
+    await terminals.finish('STOPPED', { stopReason: disposition.reason, error: { code: disposition.code, message: disposition.message } });
+    return;
+  }
   if (disposition.kind === 'wait') {
     const availableAt = options.clock.now() + disposition.retryAfterMs;
     const deadlineAt = options.store.getRun(claim.runId)?.deadlineAt;

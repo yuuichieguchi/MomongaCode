@@ -1,5 +1,8 @@
 import type { ErrorType } from './open-responses.ts';
 
+export const USAGE_LIMIT_CODES = ['plan_usage_limit', 'plan_workspace_usage_limit', 'plan_usage_paused'] as const;
+export type UsageLimitCode = (typeof USAGE_LIMIT_CODES)[number];
+
 export const BREAKER_VERDICTS = ['failure', 'neutral'] as const;
 export type BreakerVerdict = (typeof BREAKER_VERDICTS)[number];
 

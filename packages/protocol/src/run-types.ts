@@ -22,7 +22,7 @@ export const RUN_STATUSES = [
 
 export const TERMINAL_STATUSES = ['COMPLETED', 'STOPPED', 'FAILED', 'CANCELLED'] as const;
 
-export const STOP_REASONS = ['max_steps', 'budget', 'max_tokens', 'timeout', 'loop', 'approval_timeout', 'refusal'] as const;
+export const STOP_REASONS = ['max_steps', 'budget', 'max_tokens', 'timeout', 'loop', 'approval_timeout', 'refusal', 'usage_limit'] as const;
 
 export const PERMISSION_MODES = ['default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions'] as const;
 
