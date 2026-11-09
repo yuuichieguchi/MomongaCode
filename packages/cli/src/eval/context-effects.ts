@@ -5,6 +5,7 @@ import { applyWorkspaceStep } from '@momonga/eval';
 import { ensureMomongaDirs, inspectProcessLock, isProcessAlive } from '@momonga/foundation';
 import { DAEMON_POLL_INTERVAL_MS } from '../constants.ts';
 import { STOP_WAIT_WHEN_UNKNOWN_MS, ensureDaemon } from '../daemon/ensure-daemon.ts';
+import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import { pathsOf } from '../paths.ts';
@@ -115,7 +116,7 @@ export const nodeContextEffects = (ports: CliPorts): ContextHostEffects => ({
   },
   makeDirectory: (directory) => ports.files.mkdir(directory),
   canonical: (directory) => fs.realpath(directory),
-  startDaemon: async (root, paths, env) => (await ensureDaemon({ ...ports, home: root, env }, paths, { lifeline: true })).pid,
+  startDaemon: async (root, paths, env) => (await ensureDaemon({ ...ports, home: root, env }, paths, { lifeline: true, onNotice: stderrStopNotice(ports) })).pid,
   daemonHolder: async (paths) => {
     const lock = await inspectProcessLock(paths.locks.supervisor);
     return lock.state === 'held' ? lock.pid : undefined;

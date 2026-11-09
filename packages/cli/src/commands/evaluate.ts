@@ -29,6 +29,7 @@ import type { MomongaPaths } from '@momonga/foundation';
 import { goldenRunApi } from '../client/golden-run-api.ts';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
+import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import { nodeContextEffects } from '../eval/context-effects.ts';
 import { runContextLive, unownedHomesNotice, unreadableHomesNotice } from '../eval/context-host.ts';
 import type { ContextHostEffects } from '../eval/context-host.ts';
@@ -55,7 +56,7 @@ const populate = async (ports: CliPorts, directory: string, golden: GoldenCase):
 };
 
 const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenDataset, record: string | undefined, interrupt: AbortSignal | undefined): Promise<EvalReport> => {
-  await ensureDaemon(ports, paths);
+  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
   const { REFLECTION_ATTEMPTS_BOUND_MS, REFLECTION_PICKUP_BOUND_MS, REFLECTION_POLL_MS } = await import('@momonga/runtime');
   const env = await environmentSnapshot(ports);
   const client = connectRuntime(paths);

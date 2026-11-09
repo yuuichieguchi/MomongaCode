@@ -239,13 +239,9 @@ export const runDaemonEntry = async <F extends FlagSpec>(io: EntryIo, definition
   };
 
   const takeStopValues = async (): Promise<StopValues> => {
-    const drained = lifeline === undefined ? Promise.resolve() : lifeline.drain();
-    const readAtBegin = receivedValues === undefined ? definition.readStopValues({ home, logger }) : undefined;
-    await drained;
+    if (lifeline !== undefined) await lifeline.drain();
     valuesTaken = true;
-    const taken = receivedValues ?? readAtBegin;
-    if (taken === undefined) throw new Error('the stop took no values: no stop message and no read at its begin');
-    return taken;
+    return receivedValues ?? definition.readStopValues({ home, logger });
   };
 
   const settleShutdown = (result: DaemonCloseResult | Error, method: 'close' | 'abort'): void => {

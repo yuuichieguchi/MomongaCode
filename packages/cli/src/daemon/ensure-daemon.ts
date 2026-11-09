@@ -1,5 +1,5 @@
 import { createStopValuesReader, readUserStopValues } from '@momonga/config';
-import { EXIT_ALREADY_RUNNING, EXIT_VERSION_MISMATCH, LIFELINE_FD, STOP_WAIT_WHEN_UNKNOWN_MS, daemonStopBoundMs, inspectProcessLock, stopWaitBoundMs as largestStopBoundMs } from '@momonga/foundation';
+import { EXIT_ALREADY_RUNNING, EXIT_VERSION_MISMATCH, LIFELINE_FD, ORPHAN_REAP_GRACE_MS, STARTUP_TIMEOUT_MS, STOP_WAIT_WHEN_UNKNOWN_MS, daemonStopBoundMs, inspectProcessLock, stopWaitBoundMs as largestStopBoundMs } from '@momonga/foundation';
 import type { MomongaPaths, StopValues } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { createSupervisorClient } from '../client/supervisor-client.ts';
@@ -9,6 +9,7 @@ import { pollUntil } from '../poll.ts';
 import type { CliPorts, DetachedExit } from '../ports.ts';
 import { compareVersions, tryParseVersion } from '../update/version.ts';
 import { INTERNAL_COMMANDS, selfInvocation } from './launcher.ts';
+import type { StopNotice } from './stop-notice.ts';
 
 export class DaemonStartError extends Error {
   readonly logFile: string;
@@ -42,7 +43,6 @@ export const probeSupervisor = async (client: SupervisorClient): Promise<Supervi
 export type DaemonBounds = { readyMs: number; stopMs: number };
 
 export const daemonReadyBoundMs = async (): Promise<number> => {
-  const { STARTUP_TIMEOUT_MS, ORPHAN_REAP_GRACE_MS } = await import('@momonga/supervisor');
   return ORPHAN_REAP_GRACE_MS + STARTUP_TIMEOUT_MS;
 };
 
@@ -50,16 +50,13 @@ export { STOP_WAIT_WHEN_UNKNOWN_MS };
 
 export const stopWaitBoundMs = (healths: readonly SupervisorHealth[]): number => largestStopBoundMs(healths.map((health) => health.stopBoundMs));
 
-export type StopNotice = (message: string) => void;
+export type { StopNotice };
 
-const readStopValues = (ports: Pick<DaemonPorts, 'home'>, onNotice: StopNotice | undefined): StopValues =>
-  createStopValuesReader({
-    load: () => readUserStopValues(ports.home),
-    onNotice: (message) => {
-      if (onNotice === undefined) throw new Error(message);
-      onNotice(message);
-    },
-  }).read();
+const NO_NOTICE_CHANNEL: StopNotice = (message) => {
+  throw new Error(`no notice channel was given for this daemon stop: ${message}`);
+};
+
+const readStopValues = (ports: Pick<DaemonPorts, 'home'>, onNotice: StopNotice): StopValues => createStopValuesReader({ load: () => readUserStopValues(ports.home), onNotice }).read();
 
 const superviseFlags = (ports: DaemonPorts, lifeline: boolean): string[] => [
   `--home=${ports.home}`,
@@ -89,13 +86,13 @@ export const waitForSupervisorGone = async (ports: Pick<DaemonPorts, 'clock'>, p
   );
 };
 
-const beginStop = async (ports: DaemonPorts, client: SupervisorClient, onNotice: StopNotice | undefined, signal?: AbortSignal): Promise<number> => {
+const beginStop = async (ports: DaemonPorts, client: SupervisorClient, onNotice: StopNotice, signal?: AbortSignal): Promise<number> => {
   const values = readStopValues(ports, onNotice);
   await client.shutdown(values, signal);
   return daemonStopBoundMs(values);
 };
 
-export const stopDaemon = async (ports: DaemonPorts, paths: MomongaPaths, bounds?: DaemonBounds, onNotice?: StopNotice): Promise<{ stopped: boolean }> => {
+export const stopDaemon = async (ports: DaemonPorts, paths: MomongaPaths, bounds?: DaemonBounds, onNotice: StopNotice = NO_NOTICE_CHANNEL): Promise<{ stopped: boolean }> => {
   const client = createSupervisorClient({ socketPath: paths.sockets.supervisor });
   try {
     const health = await probeSupervisor(client);
@@ -176,9 +173,9 @@ export type EnsureDaemonOptions = { bounds?: DaemonBounds; signal?: AbortSignal;
 
 
 export const restoreDaemon =
-  (ports: DaemonPorts, paths: MomongaPaths) =>
+  (ports: DaemonPorts, paths: MomongaPaths, onNotice: StopNotice) =>
   async (signal: AbortSignal | undefined): Promise<void> => {
-    await ensureDaemon(ports, paths, signal === undefined ? {} : { signal });
+    await ensureDaemon(ports, paths, signal === undefined ? { onNotice } : { signal, onNotice });
   };
 
 export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, options: EnsureDaemonOptions = {}): Promise<SupervisorHealth> => {
@@ -194,7 +191,7 @@ export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, opti
       return await startDaemon(ports, paths, client, readyMs, options.lifeline === true, signal);
     }
     if (current.version !== ports.version && isStrictlyNewerThan(ports.version, current.version)) {
-      const stopMs = await beginStop(ports, client, options.onNotice, signal);
+      const stopMs = await beginStop(ports, client, options.onNotice ?? NO_NOTICE_CHANNEL, signal);
       await waitForSupervisorGone(ports, paths, options.bounds?.stopMs ?? stopMs, signal);
       return await startDaemon(ports, paths, client, readyMs, options.lifeline === true, signal);
     }

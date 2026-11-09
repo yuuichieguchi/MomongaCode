@@ -13,6 +13,7 @@ import type { ProcessInspector, UninspectableProcess } from './platform/inspecto
 import { defaultProcessInspector } from './platform/process-inspector.ts';
 import { defaultUninspectableRegistry } from './uninspectable-registry.ts';
 import type { UninspectableRegistry } from './uninspectable-registry.ts';
+import { markerReapClockBoundMs } from './process-contract.ts';
 
 export type ReapTiming = ProbeTiming;
 
@@ -448,9 +449,7 @@ const reapObserved = async (options: ReapMarkedProcessesOptions): Promise<ReapRe
   }
 };
 
-const MARKER_REAP_GRACE_WINDOWS = 4;
-
-export const markerReapClockBoundMs = (killGraceMs: number): number => MARKER_REAP_GRACE_WINDOWS * (killGraceMs + REAP_POLL_INTERVAL_MS);
+export { markerReapClockBoundMs };
 
 export const reapMarkedProcessesWithReport = async (options: ReapMarkedProcessesOptions): Promise<ReapReport> => {
   const outcome = await reapObserved(options);

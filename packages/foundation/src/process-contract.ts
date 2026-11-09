@@ -1,4 +1,5 @@
 import type { Clock } from './clock.ts';
+import { REAP_POLL_INTERVAL_MS } from './platform/probe-timing.ts';
 
 export const EXIT_OK = 0;
 export const EXIT_FAILURE = 1;
@@ -12,8 +13,11 @@ export const MINIMAL_CHILD_ENV_LC_PREFIX = 'LC_';
 export const RUNTIME_ABORT_BUDGET_MS = 5000;
 export const RUNTIME_TEARDOWN_BUDGET_MS = 10_000;
 export const RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS = 30_000;
+export const STARTUP_TIMEOUT_MS = 60_000;
+export const ORPHAN_REAP_GRACE_MS = RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS;
 const FM_TERMINATE_GRACE_WAITS = 2;
-const MARKER_REAP_GRACE_WINDOWS = 4;
+export const MARKER_REAP_GRACE_WINDOWS = 4;
+export const markerReapClockBoundMs = (killGraceMs: number): number => MARKER_REAP_GRACE_WINDOWS * (killGraceMs + REAP_POLL_INTERVAL_MS);
 export const fmServeStopBoundMs = (stopGraceMs: number): number => (FM_TERMINATE_GRACE_WAITS + MARKER_REAP_GRACE_WINDOWS) * stopGraceMs;
 export const ENTRY_HARD_EXIT_MARGIN_MS = 3000;
 export const SHUTDOWN_MARGIN_MS = 5000;
@@ -82,7 +86,7 @@ export const gatewayAbortCloseMs = (values: StopValues): number => fmServeStopBo
 
 export const gatewayAbortBudgetMs = (values: StopValues): number => gatewayAbortCloseMs(values) + SHUTDOWN_MARGIN_MS;
 
-export const managedServerReapBoundMs = (values: StopValues): number => MARKER_REAP_GRACE_WINDOWS * values.managedServerStopGraceMs;
+export const managedServerReapBoundMs = (values: StopValues): number => markerReapClockBoundMs(values.managedServerStopGraceMs);
 
 export const killedChildSettleMs = (): number => KILL_CONFIRM_MS + CHILD_STDIO_FLUSH_MS;
 

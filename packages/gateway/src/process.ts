@@ -657,6 +657,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       ...(options.measureOllama === undefined ? {} : { measureOllama: options.measureOllama }),
     };
     const startKey = fmTargets.length > 0 && (await files.isUsableBinary(binary)) ? await fmKeys.read('fm') : undefined;
+    const readStopGraceMs = (): number => stopValues.read().managedServerStopGraceMs;
     const fmTimers: FmServeTimers = { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout, now: () => clock.now() };
     const fmContext: FmContext | undefined =
       fmTargets.length === 0
@@ -670,6 +671,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
               socketPath: adapterSocketPath(options.home, 'fm', process.platform),
               env: childEnv,
               markerDirectory: path.join(paths.markers.targets, 'fm'),
+              readStopGraceMs,
               onWarning: (message) => logger.warn(message),
               exec,
               ...(options.spawn === undefined ? {} : { spawn: options.spawn }),
@@ -692,6 +694,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
                 ...modelFieldOf(fmModels.get(target)),
                 markerDirectory: path.join(paths.markers.targets, `fm-probe-${target}`),
                 serves: probeServes,
+                readStopGraceMs,
                 onWarning: (message) => logger.warn(message),
                 ...(options.spawn === undefined ? {} : { spawn: options.spawn }),
                 timers: fmTimers,
