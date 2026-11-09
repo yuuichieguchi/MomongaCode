@@ -33,8 +33,8 @@ export {
 export type { SupervisorIntervals, SupervisorTimers } from './constants.ts';
 export { omitUndefined } from './omit-undefined.ts';
 export type { OmitUndefined } from './omit-undefined.ts';
-export { startSupervisor } from './start-supervisor.ts';
-export type { SupervisorCloseResult, SupervisorOptions, SupervisorProcess } from './start-supervisor.ts';
+export { resolveStartTiming, startSupervisor, supervisorStartBoundMs } from './start-supervisor.ts';
+export type { SupervisorCloseResult, SupervisorOptions, SupervisorProcess, SupervisorStartTiming } from './start-supervisor.ts';
 export { runSupervisorEntry } from './entry.ts';
 export type { SupervisorEntryDeps } from './entry.ts';
 export { CHILD_ROLES, childStdio, contractArgs, resolveLaunch } from './launcher.ts';
@@ -69,7 +69,7 @@ export { ERROR_KEY_PREFIX, safeChangeKey, watchSettings } from './settings-watch
 export type { SettingsWatch, WatchSettingsOptions } from './settings-watch.ts';
 export { createControlRequestHandler, respondShutdown, startControlServer } from './control-server.ts';
 export type { ControlHandlerOptions, ControlServer, ControlServerOptions, ShutdownResponseWriter } from './control-server.ts';
-export { openDaemonMarker, reapDaemonMarker, reapOrphans } from './orphans.ts';
+export { openDaemonMarker, orphanReapBoundMs, reapDaemonMarker, reapOrphans } from './orphans.ts';
 export type { DaemonMarker, MarkerFiles, MarkerPorts, OrphanReapOptions, OrphanReapResult } from './orphans.ts';
 export { runLaunchTask } from './launch.ts';
 export type { LaunchTaskOptions } from './launch.ts';

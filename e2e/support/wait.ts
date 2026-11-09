@@ -1,7 +1,6 @@
 import { ENTRY_HARD_EXIT_MARGIN_MS, GATEWAY_MAX_CLOSE_MS, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import {
   LOCK_WATCH_INTERVAL_MS,
-  ORPHAN_REAP_GRACE_MS,
   SETTINGS_DEBOUNCE_MS,
   SETTINGS_POLL_MS,
   SHUTDOWN_RELEASE_BOUND_MS,
@@ -9,6 +8,8 @@ import {
   STDIO_FLUSH_MS,
   childRestartBoundMs,
   resolveRestartPolicy,
+  resolveStartTiming,
+  supervisorStartBoundMs,
 } from '@momonga/supervisor';
 import { VERIFY_BUDGET_MS } from '../../packages/cli/src/commands/policy.ts';
 import { daemonReadyBoundMs, daemonStopBoundMs } from '../../packages/cli/src/daemon/ensure-daemon.ts';
@@ -22,7 +23,8 @@ export const E2E_REFLECTION_SETTLED_BOUND_MS = REFLECTION_PICKUP_BOUND_MS + E2E_
 export const E2E_MARGIN_MS = 4000;
 export const E2E_LEASE_MS = 3000;
 export const E2E_DRAIN_TIMEOUT_MS = 1000;
-export const E2E_READY_DEADLINE_MS = 30_000;
+export const e2eStartBoundMs = (deps: Parameters<typeof resolveStartTiming>[0]): number => supervisorStartBoundMs(resolveStartTiming(deps));
+export const E2E_READY_DEADLINE_MS = e2eStartBoundMs({ runtime: { drainTimeoutMs: E2E_DRAIN_TIMEOUT_MS } });
 export const E2E_HOOK_TIMEOUT_MS = 30_000;
 export const E2E_DISPOSE_BOUND_MS = 25_000;
 export const E2E_CHILD_READY_BOUND_MS = 5000;
@@ -41,7 +43,7 @@ export const E2E_CANCEL_SWEEP_BOUND_MS = SWEEP_INTERVAL_MS + E2E_MARGIN_MS;
 export const E2E_CANCEL_KILL_BOUND_MS = SANDBOX_KILL_GRACE_MS + E2E_MARGIN_MS;
 export const E2E_CANCEL_STREAM_BOUND_MS = GATEWAY_CANCEL_TIMEOUT_MS + CANCEL_UPSTREAM_SETTLE_MS + E2E_MARGIN_MS;
 export const E2E_ORPHAN_GRACE_MS = 3000;
-export const E2E_REAP_TO_RUNNING_BOUND_MS = E2E_ORPHAN_GRACE_MS + ORPHAN_REAP_GRACE_MS + E2E_RESTART_BOUND_MS + E2E_MARGIN_MS;
+export const E2E_REAP_TO_RUNNING_BOUND_MS = e2eStartBoundMs({ runtime: { drainTimeoutMs: E2E_DRAIN_TIMEOUT_MS }, orphanGraceMs: E2E_ORPHAN_GRACE_MS });
 export const E2E_PHASE2_REACHED_BOUND_MS = E2E_ORPHAN_GRACE_MS + E2E_MARGIN_MS;
 export const E2E_LOCK_FREE_BOUND_MS = LOCK_WATCH_INTERVAL_MS + E2E_RESTART_BOUND_MS;
 export const E2E_RUN_COMPLETED_BOUND_MS = E2E_RECOVERY_BOUND_MS + E2E_MARGIN_MS;

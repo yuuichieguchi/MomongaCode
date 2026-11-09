@@ -22,7 +22,7 @@ import { createSupervisorClient } from './supervisor-client.ts';
 import type { SupervisorClient } from './supervisor-client.ts';
 import { E2E_DEPS_ENV } from './supervisor-main.ts';
 import type { E2eDeps } from './supervisor-main.ts';
-import { E2E_DRAIN_TIMEOUT_MS, E2E_LEASE_MS, E2E_READY_DEADLINE_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS, until, withinBound } from './wait.ts';
+import { E2E_DRAIN_TIMEOUT_MS, E2E_LEASE_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS, e2eStartBoundMs, until, withinBound } from './wait.ts';
 
 export const SUPERVISOR_MAIN_PATH = path.join(REPO_ROOT, 'e2e', 'support', 'supervisor-main.ts');
 export { SUPERVISOR_APP_VERSION };
@@ -275,7 +275,7 @@ export const spawnSupervisor = (options: SpawnSupervisorOptions): SpawnedSupervi
     stdin.assertHealthy();
   });
 
-  const ready = async (deadlineMs = E2E_READY_DEADLINE_MS): Promise<ReadyFields> => {
+  const ready = async (deadlineMs = e2eStartBoundMs(deps)): Promise<ReadyFields> => {
     await registered;
     try {
       return await withinBound(readyGate.promise, deadlineMs, 'the supervisor printing its ready line');
@@ -328,12 +328,14 @@ export const startUpstream = async (home: E2eHome, options: StartStackOptions): 
 export const startStack = async (options: StartStackOptions): Promise<E2eStack> => {
   const { home } = options;
   if (options.settings !== undefined && 'sandbox' in options.settings) throw new Error('startStack: settings must not contain a sandbox key; use the sandbox option');
-  const deadlineMs = options.readinessDeadlineMs ?? E2E_READY_DEADLINE_MS;
+  const deps = options.deps ?? DEFAULT_E2E_DEPS;
   const choice = sandboxChoiceOf(options);
   const fake = await startUpstream(home, options);
   writeSettingsFile(home, settingsOf(home, choice.kind, options));
-  const supervisor = spawnSupervisor({ home, deps: options.deps ?? DEFAULT_E2E_DEPS, stackNumber: 1, ...(options.supervisorScript === undefined ? {} : { script: options.supervisorScript }), ...(options.version === undefined ? {} : { version: options.version }) });
-  const ready = await supervisor.ready(deadlineMs);
+  const deadline = Date.now() + (options.readinessDeadlineMs ?? e2eStartBoundMs(deps));
+  const remainingMs = (): number => Math.max(0, deadline - Date.now());
+  const supervisor = spawnSupervisor({ home, deps, stackNumber: 1, ...(options.supervisorScript === undefined ? {} : { script: options.supervisorScript }), ...(options.version === undefined ? {} : { version: options.version }) });
+  const ready = await supervisor.ready(remainingMs());
   const client = createSupervisorClient(home);
   registerE2eCleanup(() => client.close());
 
@@ -356,7 +358,7 @@ export const startStack = async (options: StartStackOptions): Promise<E2eStack> 
             return satisfied(current, wanted) ? current : undefined;
           },
           {
-            deadlineMs,
+            deadlineMs: remainingMs(),
             description: `supervisor phase ${wanted.phase} with gateway ${wanted.children.gateway} and runtime ${wanted.children.runtime}`,
             signal: polling.signal,
           },

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, findHolders, isTransientFailure, reapMarkedProcesses, reapMarkerDirectory, reportUninspectableOnce, runtimeMaxCloseMs, uuidv7 } from '@momonga/foundation';
+import { RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, findHolders, isTransientFailure, markerReapClockBoundMs, reapMarkedProcesses, reapMarkerDirectory, reportUninspectableOnce, runtimeMaxCloseMs, uuidv7 } from '@momonga/foundation';
 import type { JsonLogger, ReapTiming, UninspectableRegistry } from '@momonga/foundation';
 import { DAEMON_MARKER_KILL_GRACE_MS } from './constants.ts';
 import type { SupervisorTimers } from './constants.ts';
@@ -101,6 +101,13 @@ const listMarkerNames = (markersDir: string): Promise<string[]> => fs.promises.r
 
 type Observation = { kind: 'listed'; holders: number } | { kind: 'unlisted'; error: Error } | { kind: 'deadline' } | { kind: 'aborted' };
 
+type OrphanReapTiming = Pick<OrphanReapOptions, 'orphanGraceMs' | 'orphanReapGraceMs' | 'orphanPollMs' | 'drainTimeoutMs'>;
+
+const phaseOneGraceMs = (timing: Pick<OrphanReapTiming, 'orphanGraceMs' | 'drainTimeoutMs'>): number =>
+  Math.min(timing.orphanGraceMs, runtimeMaxCloseMs(timing.drainTimeoutMs ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS));
+
+export const orphanReapBoundMs = (timing: OrphanReapTiming): number => phaseOneGraceMs(timing) + timing.orphanPollMs + markerReapClockBoundMs(timing.orphanReapGraceMs);
+
 const failureOf = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
 const sleepUnlessAborted = (options: OrphanReapOptions, ms: number): Promise<void> =>
@@ -148,7 +155,7 @@ export const reapOrphans = async (options: OrphanReapOptions): Promise<OrphanRea
     writeEvent(logger, orphansWaiting({ markers: 0, holders: 0 }));
     return { reaped: 0, kept: 0, aborted: false };
   }
-  const graceMs = Math.min(options.orphanGraceMs, runtimeMaxCloseMs(options.drainTimeoutMs ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS));
+  const graceMs = phaseOneGraceMs(options);
   const deadline = now() + graceMs;
   const phaseStop = new AbortController();
   const phaseEnded = new Promise<Observation>((resolve) => phaseStop.signal.addEventListener('abort', () => resolve({ kind: 'deadline' }), { once: true }));

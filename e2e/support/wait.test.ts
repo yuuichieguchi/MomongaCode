@@ -6,6 +6,8 @@ import {
   E2E_DISPOSE_BOUND_MS,
   E2E_HOOK_TIMEOUT_MS,
   E2E_ORPHAN_CLOSE_BOUND_MS,
+  E2E_READY_DEADLINE_MS,
+  E2E_REAP_TO_RUNNING_BOUND_MS,
   E2E_RECOVERY_BOUND_MS,
   E2E_REAP_CLOSE_BOUND_MS,
   E2E_RESTART_BOUND_MS,
@@ -16,6 +18,7 @@ import {
   E2E_TEST_TIMEOUT_MS,
   E2E_TEST_WAIT_BOUNDS_MS,
   abortableWait,
+  e2eStartBoundMs,
   until,
   withinBound,
 } from './wait.ts';
@@ -37,12 +40,18 @@ describe('wait constants', () => {
     expect(E2E_CANCEL_KILL_BOUND_MS).toBe(5000);
     expect(E2E_CANCEL_STREAM_BOUND_MS).toBe(6000);
     expect(E2E_RESTART_POLICY).toEqual({ baseMs: 200, maxMs: 200, minMs: 200 });
-    expect(E2E_TEST_TIMEOUT_MS).toBe(174_800);
+    expect(E2E_READY_DEADLINE_MS).toBe(146_350);
+    expect(E2E_REAP_TO_RUNNING_BOUND_MS).toBe(131_350);
+    expect(E2E_TEST_TIMEOUT_MS).toBe(291_150);
   });
 
   it('wait for a restarted child exactly as long as the supervisor of the e2e stack promises', () => {
     expect(DEFAULT_E2E_DEPS.startupTimeoutMs).toBeUndefined();
     expect(E2E_RESTART_BOUND_MS).toBe(childRestartBoundMs({ policy: resolveRestartPolicy(E2E_RESTART_POLICY), startupTimeoutMs: STARTUP_TIMEOUT_MS, stdioFlushMs: STDIO_FLUSH_MS }));
+  });
+
+  it('wait for a stack to start exactly as long as the supervisor of the default e2e stack promises', () => {
+    expect(E2E_READY_DEADLINE_MS).toBe(e2eStartBoundMs(DEFAULT_E2E_DEPS));
   });
 
   it('keep every wait a test makes below the test timeout, so a broken promise fails with its own description', () => {

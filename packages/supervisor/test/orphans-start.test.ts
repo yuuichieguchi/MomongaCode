@@ -1,12 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ProbeFailedError, createUninspectableRegistry, probeFailed, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
+import { ProbeFailedError, createUninspectableRegistry, markerReapClockBoundMs, probeFailed, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import type { ReapMarkerDirectoryOptions } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, fakeReapTiming, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { ORPHAN_REAP_GRACE_MS, SHUTDOWN_RELEASE_BOUND_MS } from '../src/constants.ts';
-import { reapOrphans } from '../src/orphans.ts';
+import { orphanReapBoundMs, reapOrphans } from '../src/orphans.ts';
 import type { MarkerPorts, OrphanReapOptions, OrphanReapResult } from '../src/orphans.ts';
 import { captureLog, createRealWorkScope, httpOver, pumpUntil, settledFlag, startHarness, writeMarker } from './fixtures/p3-harness.ts';
 
@@ -157,6 +157,24 @@ describe('reapOrphans', () => {
     expect(clock.now()).toBeGreaterThanOrEqual(bound);
     expect(clock.now()).toBeLessThanOrEqual(bound + 250);
     await waitFor(() => result.settled());
+  });
+
+  it('a holder that never exits and a reap that spends its whole clock still settle within orphanReapBoundMs', async (context) => {
+    const dir = markersDir(context);
+    fs.writeFileSync(path.join(dir, 'runtime-06'), '');
+    const { ports } = recorded({
+      findHolders: async () => [HOLDER_PID],
+      reapMarkerDirectory: async (reapOptions) => {
+        await reapOptions.timing?.sleep(markerReapClockBoundMs(reapOptions.killGraceMs));
+        return { reaped: 0, kept: 1 };
+      },
+    });
+    const { clock, options, reap, until } = reapSetup(dir, { markerPorts: ports, orphanGraceMs: 1000 });
+    const result = reap();
+    await until(() => result.settled(), 100000);
+    expect(result.value()).toEqual({ reaped: 0, kept: 1, aborted: false });
+    expect(clock.now()).toBeGreaterThan(options.orphanGraceMs + markerReapClockBoundMs(options.orphanReapGraceMs) - options.orphanPollMs);
+    expect(clock.now()).toBeLessThanOrEqual(orphanReapBoundMs(options));
   });
 
   it('the reap receives the supervisor signal, timing and grace', async (context) => {
