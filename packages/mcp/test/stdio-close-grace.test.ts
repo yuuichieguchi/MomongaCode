@@ -156,12 +156,12 @@ describe('the grace of a close is an argument of that close', { timeout: REAL_PR
       clock: { now: () => timers.now() } as never,
       timers: timing,
       random: () => 0,
-      closeGraceMs: 5000,
+      closeGraceMs: 29_999,
     });
     await pool.sources[0]?.list({});
     timing.delays.splice(0);
     await (pool.close as (graceMs?: number) => Promise<void>)(250);
     expect(timing.delays).toContain(250);
-    expect(timing.delays).not.toContain(5000);
+    expect(timing.delays).not.toContain(29_999);
   });
 });
