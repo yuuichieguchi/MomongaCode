@@ -117,7 +117,6 @@ export const nodeContextEffects = (ports: CliPorts, lock: KernelLockMechanism = 
     env: ports.env,
     ownerPid: process.pid,
     ownerHome: ports.home,
-    isAlive: isProcessAlive,
     readSecret: (name, signal) => ports.secretStore().read(name, signal),
     copyEndpointProbeRecord: async (probe, paths) => {
       await copyEndpointProbeRecord(ports.files, (await pathsOf(ports)).probe, paths.probe, probe);

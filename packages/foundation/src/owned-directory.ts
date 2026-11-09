@@ -6,12 +6,7 @@ import { claimNewEntry, claimNewEntrySync } from './platform/lock-form.ts';
 import type { Random } from './random.ts';
 import { systemRandom } from './system-random.ts';
 
-export type OwnedDirectoryOptions = {
-  parent: string;
-  prefix: string;
-  lock?: KernelLockMechanism;
-  random?: Random;
-};
+export type OwnedDirectoryOptions = { parent: string; lock?: KernelLockMechanism } & ({ prefix: string; random?: Random } | { name: string });
 
 export type OwnedDirectory = { readonly path: string; dispose(): Promise<void> };
 
@@ -20,7 +15,8 @@ export type OwnedDirectorySync = { readonly path: string; dispose(): void };
 const NAME_SUFFIX_BYTES = 6;
 const OWNED_DIRECTORY_MODE = 0o700;
 
-const ownedPathOf = ({ parent, prefix, random = systemRandom }: OwnedDirectoryOptions): string => path.join(parent, `${prefix}${random.hex(NAME_SUFFIX_BYTES)}`);
+const ownedPathOf = (options: OwnedDirectoryOptions): string =>
+  'name' in options ? path.join(options.parent, options.name) : path.join(options.parent, `${options.prefix}${(options.random ?? systemRandom).hex(NAME_SUFFIX_BYTES)}`);
 
 const disposeOnce = (held: HeldKernelLock, removeDirectory: () => void): (() => void) => {
   let disposed = false;

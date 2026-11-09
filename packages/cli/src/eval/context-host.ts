@@ -48,7 +48,6 @@ export type ContextHostEffects = {
   copyEndpointProbeRecord(probe: EndpointProbe, paths: MomongaPaths): Promise<void>;
   listRoots(): Promise<string[]>;
   readOwner(root: string): Promise<EvalOwner | 'legacy' | 'unreadable' | undefined>;
-  isAlive(pid: number): boolean;
 };
 
 const WORKSPACE_DIRECTORY = 'w';

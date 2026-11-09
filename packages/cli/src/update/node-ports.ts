@@ -111,6 +111,7 @@ export const nodeUpdateFs = (rename: Rename = fs.rename, lock: KernelLockMechani
       };
     },
     publish: async (staged, target) => {
+      staging.get(staged)?.assertStillNamed();
       await publishReplacing(rename, staged, target);
       staging.get(staged)?.finish();
       staging.delete(staged);

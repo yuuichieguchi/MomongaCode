@@ -1,4 +1,4 @@
-import { openClaimedEntry } from './atomic-file.ts';
+import { ClaimedEntryReplacedError, openClaimedEntry } from './atomic-file.ts';
 import type { AtomicWriteFileHandle, AtomicWriteFileSystem } from './atomic-file.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
 import { claimNewEntry, lockFormOf } from './platform/lock-form.ts';
@@ -10,6 +10,7 @@ export type LockedEntry = {
   readonly handle: AtomicWriteFileHandle;
   finish(): void;
   remove(): Promise<void>;
+  assertStillNamed(): void;
 };
 
 export type LockedEntryFiles = Pick<AtomicWriteFileSystem, 'open' | 'rm' | 'descriptors'>;
@@ -41,6 +42,11 @@ export const createLockedEntry = async (files: LockedEntryFiles, lock: KernelLoc
     form,
     handle,
     finish,
+    assertStillNamed: () => {
+      if (held.stillNamed?.() !== false) return;
+      finish();
+      throw new ClaimedEntryReplacedError(entry);
+    },
     remove: async () => {
       try {
         await files.rm(entry);

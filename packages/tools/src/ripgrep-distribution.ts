@@ -171,6 +171,7 @@ const writeStaged = async (resolution: Resolution, bytes: Uint8Array, suffix: st
 
 const placeNotice = async (resolution: Resolution, notices: Uint8Array): Promise<void> => {
   const staged = await writeStaged(resolution, notices, '.notice');
+  staged.assertStillNamed();
   try {
     await resolution.ports.files.rename(staged.path, path.join(resolution.directory, RIPGREP_NOTICE_FILE));
   } catch (error) {
@@ -205,6 +206,7 @@ const nextState = async (state: ResolutionState, resolution: Resolution): Promis
       return { step: 'rename', staged };
     }
     case 'rename':
+      state.staged.assertStillNamed();
       try {
         await ports.files.rename(state.staged.path, final);
       } catch (error) {

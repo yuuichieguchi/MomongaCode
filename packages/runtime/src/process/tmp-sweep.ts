@@ -1,7 +1,6 @@
 import { hostKernelLock, sweepLeftovers } from '@momonga/foundation';
 import type { KernelLockMechanism, LeftoverFiles } from '@momonga/foundation';
 import type { RuntimeStore } from '@momonga/store';
-import { asError } from './as-error.ts';
 import { nodeRuntimeFiles } from './runtime-files.ts';
 import type { RuntimeFiles } from './runtime-files.ts';
 
@@ -14,11 +13,6 @@ const leftoverFilesOf = (files: RuntimeFiles): LeftoverFiles => ({
   rm: (entry) => files.rm(entry, { recursive: true }),
 });
 
-const warnFor =
-  (what: string, onWarning: (message: string) => void) =>
-  (entry: string, error: unknown): void =>
-    onWarning(`${what} ${entry} could not be swept: ${asError(error).message}`);
-
 export const sweepSpawnTmp = async ({
   dir,
   onWarning,
@@ -30,7 +24,7 @@ export const sweepSpawnTmp = async ({
   files?: RuntimeFiles;
   lock?: KernelLockMechanism;
 }): Promise<void> => {
-  await sweepLeftovers({ directories: [{ directory: dir, isLeftover: everyName }], lock, files: leftoverFilesOf(files), onEntryError: warnFor('spawn tmp entry', onWarning) });
+  await sweepLeftovers({ directories: [{ directory: dir, isLeftover: everyName }], lock, files: leftoverFilesOf(files), warn: onWarning });
 };
 
 export const sweepSessionTmp = async ({
@@ -59,7 +53,7 @@ export const sweepSessionTmp = async ({
     directories: [{ directory: root, isLeftover: everyName, retain: retained }],
     lock,
     files: leftoverFilesOf(files),
-    onEntryError: warnFor('session tmp entry', onWarning),
+    warn: onWarning,
   });
   return { removed: swept.removed.length, kept: swept.kept.length };
 };

@@ -189,6 +189,19 @@ const pathHandleSync = <Handle>(fs: AtomicWriteFileSystemSync<Handle>, handle: H
   close: () => fs.closeSync(handle),
 });
 
+export class ClaimedEntryReplacedError extends Error {
+  constructor(entry: string) {
+    super(`${entry} no longer names the file this writer locked, so it is not published`);
+    this.name = 'ClaimedEntryReplacedError';
+  }
+}
+
+const assertStillClaimed = <Handle>(write: Write<Handle>): void => {
+  if (heldOf(write).stillNamed?.() !== false) return;
+  write.ownsTemporary = false;
+  throw new ClaimedEntryReplacedError(write.temporary);
+};
+
 const heldOf = <Handle>(write: Write<Handle>): HeldKernelLock => {
   if (write.held === undefined) throw new Error(`${write.temporary} has no lock at a step that needs it`);
   return write.held;
@@ -251,6 +264,7 @@ export async function writeFileAtomically(
     },
     publish: async () => {
       await options.beforePublish?.();
+      assertStillClaimed(write);
       if (publish === 'replace') await fs.rename(temporary, file);
       else {
         try {
@@ -341,6 +355,7 @@ export function writeFileAtomicallySync<Handle>(
     },
     publish: () => {
       options.beforePublish?.();
+      assertStillClaimed(write);
       if (publish === 'replace') fs.renameSync(temporary, file);
       else {
         try {

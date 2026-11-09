@@ -19,6 +19,7 @@ export type HeldKernelLock = {
   writeHolder(text: string): void;
   release(): void;
   dispose(): void;
+  readonly stillNamed?: () => boolean;
 };
 
 export const writeHolderOrRelease = (lock: HeldKernelLock, text: string): void => {
@@ -90,6 +91,7 @@ const heldFile = (ops: FileLockOps, lockPath: string, descriptor: number): HeldK
     writeHolder: (text) => rewriteHolderThroughDescriptor(descriptor, text),
     release,
     dispose: () => removeFilesThenRelease([lockPath], release),
+    stillNamed: () => sameFile(ops.fstat(descriptor), ops.lstat(lockPath)),
   };
 };
 

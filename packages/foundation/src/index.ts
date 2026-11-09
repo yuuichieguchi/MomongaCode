@@ -44,7 +44,7 @@ export { createOAuthProvider } from './oauth-provider.ts';
 export type { OAuthProvider, OAuthProviderOptions } from './oauth-provider.ts';
 export { startLoopbackRedirect } from './loopback-redirect.ts';
 export type { LoopbackRedirect, LoopbackRedirectOptions } from './loopback-redirect.ts';
-export { ATOMIC_WRITE_STEP_ACTIONS, ClaimedDescriptorUnwritableError, atomicWriteSteps, isAtomicWriteTemporary, syncDirectory, syncDirectorySync, writeFileAtomically, writeFileAtomicallySync } from './atomic-file.ts';
+export { ATOMIC_WRITE_STEP_ACTIONS, ClaimedDescriptorUnwritableError, ClaimedEntryReplacedError, atomicWriteSteps, isAtomicWriteTemporary, syncDirectory, syncDirectorySync, writeFileAtomically, writeFileAtomicallySync } from './atomic-file.ts';
 export type {
   AtomicWriteStep,
   DescriptorWriter,

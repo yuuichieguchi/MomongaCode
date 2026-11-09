@@ -21,7 +21,7 @@ export type SweepLeftoversOptions = {
   directories: readonly LeftoverDirectory[];
   lock: KernelLockMechanism;
   files?: LeftoverFiles;
-  onEntryError?(entry: string, error: unknown): void;
+  warn?(message: string): void;
 };
 
 export const nodeLeftoverFiles: LeftoverFiles = {
@@ -88,14 +88,16 @@ const removeUnderClaim = async (files: LeftoverFiles, unit: Unit, entry: string,
   else held.release();
 };
 
-type EntryErrors = ((entry: string, error: unknown) => void) | undefined;
+type EntryErrors = ((message: string) => void) | undefined;
+
+const keptMessage = (entry: string, error: unknown): string => `leftover cleanup kept ${entry}: ${codeOf(error) ?? (error instanceof Error ? error.message : String(error))}`;
 
 const reportedOr = async <T>(entry: string, onEntryError: EntryErrors, failed: T, work: () => Promise<T>): Promise<T> => {
   if (onEntryError === undefined) return work();
   try {
     return await work();
   } catch (error) {
-    onEntryError(entry, error);
+    onEntryError(keptMessage(entry, error));
     return failed;
   }
 };
@@ -129,12 +131,13 @@ const sweepUnit = async (registered: LeftoverDirectory, lock: KernelLockMechanis
   });
 };
 
-export const sweepLeftovers = async ({ directories, lock, files = nodeLeftoverFiles, onEntryError }: SweepLeftoversOptions): Promise<LeftoverSweep> => {
+export const sweepLeftovers = async ({ directories, lock, files = nodeLeftoverFiles, warn: onEntryError }: SweepLeftoversOptions): Promise<LeftoverSweep> => {
   const removed: string[] = [];
   const kept: string[] = [];
   const sidecarSuffix = sidecarSuffixOf(lock);
   for (const registered of directories) {
-    for (const unit of unitsOf(await namesIn(files, registered.directory), registered, sidecarSuffix)) {
+    const names = await reportedOr<string[]>(registered.directory, onEntryError, [], () => namesIn(files, registered.directory));
+    for (const unit of unitsOf(names, registered, sidecarSuffix)) {
       const outcome = await sweepUnit(registered, lock, files, unit, onEntryError);
       (outcome === 'removed' ? removed : kept).push(path.join(registered.directory, unit.name));
     }
