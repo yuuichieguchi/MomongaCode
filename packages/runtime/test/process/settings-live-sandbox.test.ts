@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, decodeOtlpSpans, startOtlpCollector } from '@momonga/testkit';
-import { onCleanup } from './helpers.ts';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, firstGeneration, decodeOtlpSpans, startOtlpCollector } from '@momonga/testkit';
+import { onCleanup, writeInvalidUserSettings } from './helpers.ts';
 import { finishApprovingPrompts, launchRuntime, prepareStack, scriptedToolCall, startGateway, startStack, waitForCondition, waitForStatus } from './run-helpers.ts';
 
 const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
@@ -111,5 +111,32 @@ describe('S2 runtime telemetry: a span ends on the provider it started on (desig
     const runtimeSpans = (collector: typeof before) => decodeOtlpSpans(collector.requests).filter((span) => span.service.includes('runtime'));
     expect(decodeOtlpSpans(before.requests).map((span) => span.service)).toContain('momonga-runtime');
     expect(runtimeSpans(after).length, 'runtime spans exported to the endpoint set after the change').toBeGreaterThan(0);
+  });
+});
+
+describe('S7 no rollback after apply: a tightened sandbox survives a broken file (design-settings-live 15.1, NoRollbackAfterApply)', () => {
+  it('c tightened and not yet recorded, the file breaks during a run, the next Bash call runs under c', PROCESS_TIMEOUT, async () => {
+    const stack = await prepareStack((temp) => ({ script: [scriptedToolCall('Bash', { command: `touch ${path.join(temp.root, 'outside-after-break')}` })] }));
+    const record = firstGeneration(stack.temp.paths).settingsApplied;
+    fs.mkdirSync(path.dirname(record), { recursive: true, mode: 0o700 });
+    stack.settings();
+    fs.writeFileSync(record, `${JSON.stringify({ seq: 1, settings: JSON.parse(fs.readFileSync(path.join(stack.temp.home, '.momonga', 'settings.json'), 'utf8')) })}\n`, { mode: 0o600 });
+    const previous = process.env['MOMONGA_SETTINGS_APPLIED'];
+    process.env['MOMONGA_SETTINGS_APPLIED'] = record;
+    onCleanup(() => {
+      if (previous === undefined) delete process.env['MOMONGA_SETTINGS_APPLIED'];
+      else process.env['MOMONGA_SETTINGS_APPLIED'] = previous;
+    });
+    await startGateway(stack.temp);
+    const launched = await launchRuntime(stack.temp);
+    stack.settings({ sandbox: HOST_KIND });
+    const hold = stack.hold();
+    const session = await launched.createSession(BYPASS);
+    const run = await launched.createRun(session.id, { input: 'touch outside' });
+    await hold.waitForRequest();
+    writeInvalidUserSettings(stack.temp.home);
+    hold.release();
+    expect(await finishApprovingPrompts(launched, stack.temp, run.id)).toBe('COMPLETED');
+    expect(fs.existsSync(path.join(stack.temp.root, 'outside-after-break')), 'the Bash call after the break ran under the tightened sandbox').toBe(false);
   });
 });

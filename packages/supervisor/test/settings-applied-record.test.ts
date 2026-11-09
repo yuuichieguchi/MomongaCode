@@ -56,4 +56,20 @@ describe('S7: the supervisor writes the applied record (design-settings-live 15.
     await settle(h);
     expect(readRecord(h.home)).toEqual(validSettings({ model: 'gpt-bb' }));
   });
+
+  it('the record seq starts at 1 and rises only when the recorded content changes', async (context) => {
+    const h = await watched(context);
+    const seqOf = (): unknown => (readRecord(h.home) as { seq?: unknown }).seq;
+    expect(seqOf()).toBe(1);
+    writeSettings(h.home, validSettings({ model: 'gpt-a' }));
+    await settle(h);
+    expect(seqOf()).toBe(1);
+    writeSettings(h.home, validSettings({ model: 'gpt-bb' }));
+    await settle(h);
+    expect(seqOf()).toBe(2);
+    writeSettingsText(h.home, INVALID_SETTINGS_TEXT);
+    await settle(h);
+    expect(seqOf()).toBe(2);
+    expect((readRecord(h.home) as { settings?: unknown }).settings).toEqual(validSettings({ model: 'gpt-bb' }));
+  });
 });
