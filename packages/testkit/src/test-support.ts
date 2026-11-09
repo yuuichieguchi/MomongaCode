@@ -73,10 +73,15 @@ const removeTempDir = (dir: string): void => {
 
 export type TempDirOptions = { asHome?: boolean };
 
+const tempDirBase = (asHome: boolean): string => (asHome ? shortTempBase(process.platform) : os.tmpdir());
+
+export const isUnderTestTempBase = (dir: string): boolean =>
+  [tempDirBase(true), tempDirBase(false)].some((base) => dir.startsWith(`${fs.realpathSync(base)}${path.sep}`));
+
 export const withTempDir = (context: CleanupContext | undefined, options: TempDirOptions = {}): string => {
   assertTestContext(context, 'withTempDir');
   const asHome = options.asHome === true;
-  const created = fs.mkdtempSync(path.join(asHome ? shortTempBase(process.platform) : os.tmpdir(), tempDirPrefixFor(testRunToken())));
+  const created = fs.mkdtempSync(path.join(tempDirBase(asHome), tempDirPrefixFor(testRunToken())));
   context.onTestFinished(async () => {
     if (asHome) await stopSupervisorHolder(created);
     removeTempDir(created);
