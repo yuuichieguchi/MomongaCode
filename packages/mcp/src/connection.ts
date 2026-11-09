@@ -1,9 +1,11 @@
 import { Client, ProtocolError, SdkError, SdkErrorCode, TRACEPARENT_META_KEY, TRACESTATE_META_KEY, isCallToolResult, isInputRequiredResult } from '@modelcontextprotocol/client';
 import type { CallToolResult, Implementation, JSONRPCMessage, ProtocolEra, Tool, Transport } from '@modelcontextprotocol/client';
-import type { McpServerConfig, McpServerScope } from '@momonga/config';
-import { CircuitBreaker, JsonDepthError, checkJsonDepth, computeBackoff } from '@momonga/foundation';
+import { stripCredentialEnv } from '@momonga/config';
+import type { CredentialRules, McpServerConfig, McpServerScope } from '@momonga/config';
+import { CircuitBreaker, JsonDepthError, MIN_CREDENTIAL_CHARS, checkJsonDepth, computeBackoff } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { authorizeMcpServer } from './authorize.ts';
+import { credentialNoticesOf } from './credential-strength.ts';
 import { createMcpOAuthProvider } from './mcp-oauth.ts';
 import type { McpOAuthProvider } from './mcp-oauth.ts';
 import { parseInputRequests } from './input-requests.ts';
@@ -37,7 +39,6 @@ const DEFAULT_RESET_AFTER_MS = 60_000;
 const FAILURE_THRESHOLD = 3;
 const BACKOFF_BASE_MS = 200;
 const BACKOFF_MAX_MS = 5000;
-const MIN_SECRET_CHARS = 8;
 const SECRET_HEADER = /auth|token|key|secret|cookie|password/i;
 const DESCRIPTIVE_HEADER = /^(accept(-charset|-encoding|-language)?|content-(type|language)|cache-control|user-agent)$/i;
 const REDACTED = '[redacted]';
@@ -102,6 +103,8 @@ export type McpConnectionOptions = {
   closeGraceMs?: number;
   mrtrMaxRounds?: number;
   onNotice?: (message: string) => void;
+  credentials?: CredentialRules;
+  credentialNames?: readonly string[];
 };
 
 export class McpUnavailableError extends Error {
@@ -136,6 +139,25 @@ const describeExit = (transport: ConnectionTransport): string | undefined => {
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 const idOf = (message: JSONRPCMessage): string | number | undefined => ('id' in message ? message.id : undefined);
+
+type ConfiguredCredential = { label: string; redacted: readonly string[]; judged: string };
+
+const configuredCredentialsOf = (config: McpServerConfig, names: readonly string[], rules: CredentialRules | undefined): ConfiguredCredential[] => {
+  if (!('command' in config)) {
+    return Object.entries(config.headers ?? {})
+      .filter(([header, value]) => !DESCRIPTIVE_HEADER.test(header) && (SECRET_HEADER.test(header) || value.length >= MIN_CREDENTIAL_CHARS))
+      .map(([header, value]) => {
+        if (!SECRET_HEADER.test(header)) return { label: `header ${header}`, redacted: [value], judged: value };
+        const parts = value.split(/\s+/).filter((part) => part !== '');
+        return { label: `header ${header}`, redacted: [value, ...parts], judged: parts.at(-1) ?? value };
+      });
+  }
+  const env = config.env ?? {};
+  const withheld = new Set(stripCredentialEnv(env, names, rules).removed);
+  return Object.entries(env)
+    .filter(([name]) => withheld.has(name))
+    .map(([name, value]) => ({ label: `variable ${name}`, redacted: [value], judged: value }));
+};
 
 export const boundedMessages = (transport: ConnectionTransport, server: string, onNotice: ((message: string) => void) | undefined): ConnectionTransport => {
   const bounded = (handler: NonNullable<Transport['onmessage']>): NonNullable<Transport['onmessage']> => (message, extra) => {
@@ -204,13 +226,9 @@ class ManagedConnection implements McpServerConnection {
       openMs: options.resetAfterMs ?? DEFAULT_RESET_AFTER_MS,
       clock: options.clock,
     });
-    if ('headers' in options.config) {
-      for (const [header, value] of Object.entries(options.config.headers ?? {})) {
-        if (DESCRIPTIVE_HEADER.test(header)) continue;
-        const secretive = SECRET_HEADER.test(header);
-        this.trackSecret(value, secretive);
-        if (secretive) for (const part of value.split(/\s+/)) this.trackSecret(part, false);
-      }
+    for (const credential of configuredCredentialsOf(options.config, options.credentialNames ?? [], options.credentials)) {
+      for (const value of credential.redacted) this.trackSecret(value);
+      for (const notice of credentialNoticesOf(this.name, credential.label, credential.judged)) options.onNotice?.(notice);
     }
   }
 
@@ -349,10 +367,8 @@ class ManagedConnection implements McpServerConnection {
     return this.closing;
   }
 
-  private trackSecret(value: string, force = false): void {
-    if (value.length >= MIN_SECRET_CHARS || force) {
-      if (value !== '') this.secrets.add(value);
-    }
+  private trackSecret(value: string): void {
+    if (value.length >= MIN_CREDENTIAL_CHARS) this.secrets.add(value);
   }
 
   private async definitionOf(session: Session, name: string, signal: AbortSignal | undefined): Promise<Tool> {
@@ -596,7 +612,7 @@ class ManagedConnection implements McpServerConnection {
           ...(config.oauth?.clientId === undefined ? {} : { preregisteredClientId: config.oauth.clientId }),
           ...(config.oauth?.scope === undefined ? {} : { requestedScope: config.oauth.scope }),
           onAuthorizationUrl: () => undefined,
-          onSecret: (secret) => this.trackSecret(secret, true),
+          onSecret: (secret) => this.trackSecret(secret),
         });
     try {
       return { transport: createRemoteTransport({ config, scope, fetch: guarded.fetch, authProvider, timers: this.timers }), guarded };
