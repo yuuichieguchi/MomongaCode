@@ -117,6 +117,17 @@ describe('the reap signals only a target proved ours by the same start time at t
     expect(manifest.entries.find((entry) => entry.config === `ProcessStop.${variant}`)).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: 'StopNeverSignalsOtherGen', exitCode: 13 } });
   });
 
+  it('the proof of a target requires the marker hold at the reprove, and a stop of a holder that stopped holding is not proved', () => {
+    expect(definitionOf('HolderTargetProved')).toContain('held[m]');
+    expect(definitionOf('Unhold')).toContain('held[m]');
+    expect(definitionOf('ReusePid')).toContain("held' = [held EXCEPT ![m] = FALSE]");
+  });
+
+  it('a same-second reuse without the hold is an every-run evidence configuration that violates NoSignalToNonHolder', () => {
+    expect(variants()).toContain('sameSecondWithoutHold');
+    expect(manifest.entries.find((entry) => entry.config === 'ProcessStop.sameSecondWithoutHold')).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: 'NoSignalToNonHolder', exitCode: 13 } });
+  });
+
   it.each(['ProcessStop.generations', 'ProcessStop.userStop'])('the generation configuration %s holds', (config) => {
     expect(manifest.entries.find((entry) => entry.config === config)).toMatchObject({ role: 'check', expect: 'holds' });
   });

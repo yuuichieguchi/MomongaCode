@@ -1781,10 +1781,10 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 93044,
-      "measuredSeconds": 2.23,
-      "measuredCpuSeconds": 6.92,
-      "budgetCpuSeconds": 17
+      "distinctStates": 314421,
+      "measuredSeconds": 3.98,
+      "measuredCpuSeconds": 18.21,
+      "budgetCpuSeconds": 40
     },
     {
       "config": "ProcessStop.three",
@@ -1792,10 +1792,10 @@
       "expect": "holds",
       "args": [],
       "tier": "deep",
-      "distinctStates": 2053764,
-      "measuredSeconds": 24.97,
-      "measuredCpuSeconds": 89.35,
-      "budgetCpuSeconds": 182
+      "distinctStates": 13907233,
+      "measuredSeconds": 188.36,
+      "measuredCpuSeconds": 812.12,
+      "budgetCpuSeconds": 1628
     },
     {
       "config": "ProcessStop.noIdentityCheck",
@@ -1806,10 +1806,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 316,
-      "measuredSeconds": 1.21,
-      "measuredCpuSeconds": 1.8,
-      "budgetCpuSeconds": 7
+      "distinctStates": 315,
+      "measuredSeconds": 2.93,
+      "measuredCpuSeconds": 4.94,
+      "budgetCpuSeconds": 13,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 65.71 at start)"
     },
     {
       "config": "ProcessStop.termToReused",
@@ -1820,10 +1821,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 316,
-      "measuredSeconds": 1.17,
-      "measuredCpuSeconds": 1.66,
-      "budgetCpuSeconds": 7
+      "distinctStates": 315,
+      "measuredSeconds": 2.6,
+      "measuredCpuSeconds": 4.7,
+      "budgetCpuSeconds": 13,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 72.38 at start)"
     },
     {
       "config": "ProcessStop.signalUnlistedGroup",
@@ -1834,10 +1836,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 389,
-      "measuredSeconds": 1.22,
-      "measuredCpuSeconds": 1.86,
-      "budgetCpuSeconds": 7
+      "distinctStates": 413,
+      "measuredSeconds": 2.94,
+      "measuredCpuSeconds": 5.26,
+      "budgetCpuSeconds": 14,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 72.38 at start)"
     },
     {
       "config": "ProcessStop.signalUnprovedHolder",
@@ -1848,10 +1851,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 808,
-      "measuredSeconds": 1.22,
-      "measuredCpuSeconds": 1.93,
-      "budgetCpuSeconds": 7
+      "distinctStates": 884,
+      "measuredSeconds": 2.62,
+      "measuredCpuSeconds": 4.97,
+      "budgetCpuSeconds": 13,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 75.79 at start)"
     },
     {
       "config": "ProcessStop.groupProofWithoutStartTime",
@@ -1862,10 +1866,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1065,
-      "measuredSeconds": 1.32,
-      "measuredCpuSeconds": 2.12,
-      "budgetCpuSeconds": 8
+      "distinctStates": 1359,
+      "measuredSeconds": 2.84,
+      "measuredCpuSeconds": 5.69,
+      "budgetCpuSeconds": 15,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 75.79 at start)"
     },
     {
       "config": "ProcessStop.rowlessIsOutside",
@@ -1876,10 +1881,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 331,
-      "measuredSeconds": 1.35,
-      "measuredCpuSeconds": 1.97,
-      "budgetCpuSeconds": 7
+      "distinctStates": 333,
+      "measuredSeconds": 2.7,
+      "measuredCpuSeconds": 4.7,
+      "budgetCpuSeconds": 13,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 81.73 at start)"
     },
     {
       "config": "ProcessStop.killWithoutReproof",
@@ -1890,10 +1896,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 3658,
-      "measuredSeconds": 1.35,
-      "measuredCpuSeconds": 2.62,
-      "budgetCpuSeconds": 9
+      "distinctStates": 2142,
+      "measuredSeconds": 2.27,
+      "measuredCpuSeconds": 4.96,
+      "budgetCpuSeconds": 13,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 87.28 at start)"
     },
     {
       "config": "ProcessStop.retryReusesProof",
@@ -1904,10 +1911,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 10326,
-      "measuredSeconds": 1.68,
-      "measuredCpuSeconds": 3.4,
-      "budgetCpuSeconds": 10
+      "distinctStates": 10602,
+      "measuredSeconds": 1.63,
+      "measuredCpuSeconds": 4.62,
+      "budgetCpuSeconds": 13,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 87.28 at start)"
     },
     {
       "config": "ProcessStop.throwOnSurvivor",
@@ -1918,10 +1926,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1620,
-      "measuredSeconds": 1.28,
-      "measuredCpuSeconds": 2.3,
-      "budgetCpuSeconds": 8
+      "distinctStates": 2159,
+      "measuredSeconds": 1.44,
+      "measuredCpuSeconds": 3.8,
+      "budgetCpuSeconds": 11,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 87.28 at start)"
     },
     {
       "config": "ProcessStop.exitingCountsAlive",
@@ -1932,10 +1941,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 3178,
-      "measuredSeconds": 1.52,
-      "measuredCpuSeconds": 3.36,
-      "budgetCpuSeconds": 10
+      "distinctStates": 4606,
+      "measuredSeconds": 1.78,
+      "measuredCpuSeconds": 5.3,
+      "budgetCpuSeconds": 14,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 81.65 at start)"
     },
     {
       "config": "ProcessStop.forkFromExiting",
@@ -1946,10 +1956,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1408,
-      "measuredSeconds": 1.33,
-      "measuredCpuSeconds": 2.35,
-      "budgetCpuSeconds": 8
+      "distinctStates": 1773,
+      "measuredSeconds": 1.43,
+      "measuredCpuSeconds": 3.77,
+      "budgetCpuSeconds": 11,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 81.65 at start)"
     },
     {
       "config": "ProcessStop.dropMarkerOnUnconfirmed",
@@ -1960,10 +1971,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 437,
-      "measuredSeconds": 1.28,
-      "measuredCpuSeconds": 1.91,
-      "budgetCpuSeconds": 7
+      "distinctStates": 457,
+      "measuredSeconds": 1.38,
+      "measuredCpuSeconds": 3.31,
+      "budgetCpuSeconds": 10,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 81.65 at start)"
     },
     {
       "config": "ProcessStop.retryTwice",
@@ -1974,10 +1986,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 4217,
-      "measuredSeconds": 1.6,
-      "measuredCpuSeconds": 2.96,
-      "budgetCpuSeconds": 9
+      "distinctStates": 6734,
+      "measuredSeconds": 2.47,
+      "measuredCpuSeconds": 5.92,
+      "budgetCpuSeconds": 15,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 85.36 at start)"
     },
     {
       "config": "ProcessStop.retryAnyEvent",
@@ -1988,10 +2001,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 67490,
-      "measuredSeconds": 2.16,
-      "measuredCpuSeconds": 5.08,
-      "budgetCpuSeconds": 14
+      "distinctStates": 172717,
+      "measuredSeconds": 2.8,
+      "measuredCpuSeconds": 10.23,
+      "budgetCpuSeconds": 24,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 85.36 at start)"
     },
     {
       "config": "ProcessStop.retryAfterLast",
@@ -2002,10 +2016,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 69071,
-      "measuredSeconds": 2.35,
-      "measuredCpuSeconds": 5.7,
-      "budgetCpuSeconds": 15
+      "distinctStates": 173085,
+      "measuredSeconds": 2.68,
+      "measuredCpuSeconds": 11.17,
+      "budgetCpuSeconds": 26,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 79.97 at start)"
     },
     {
       "config": "ProcessStop.settleCandidate",
@@ -2013,10 +2028,11 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 997166,
-      "measuredSeconds": 59.98,
-      "measuredCpuSeconds": 177.75,
-      "budgetCpuSeconds": 359
+      "distinctStates": 2725166,
+      "measuredSeconds": 296.95,
+      "measuredCpuSeconds": 804.18,
+      "budgetCpuSeconds": 1612,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 79.97 at start)"
     },
     {
       "config": "ProcessStop.settleCurrent",
@@ -2027,10 +2043,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 3740,
-      "measuredSeconds": 1.51,
-      "measuredCpuSeconds": 2.55,
-      "budgetCpuSeconds": 9
+      "distinctStates": 3951,
+      "measuredSeconds": 2.79,
+      "measuredCpuSeconds": 5.38,
+      "budgetCpuSeconds": 14,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 30.88 at start)"
     },
     {
       "config": "ProcessStop.guardCurrent",
@@ -2041,10 +2058,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 22329,
-      "measuredSeconds": 1.72,
-      "measuredCpuSeconds": 4.8,
-      "budgetCpuSeconds": 13
+      "distinctStates": 25647,
+      "measuredSeconds": 3.47,
+      "measuredCpuSeconds": 8.4,
+      "budgetCpuSeconds": 20,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 30.88 at start)"
     },
     {
       "config": "ProcessStop.guardUnknownCurrent",
@@ -2055,10 +2073,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 22297,
-      "measuredSeconds": 1.71,
-      "measuredCpuSeconds": 4.88,
-      "budgetCpuSeconds": 13
+      "distinctStates": 25631,
+      "measuredSeconds": 5.11,
+      "measuredCpuSeconds": 9.71,
+      "budgetCpuSeconds": 23,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 35.85 at start)"
     },
     {
       "config": "ProcessStop.guardHeldCurrent",
@@ -2069,10 +2088,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 290468,
-      "measuredSeconds": 2.99,
-      "measuredCpuSeconds": 11.23,
-      "budgetCpuSeconds": 26
+      "distinctStates": 530245,
+      "measuredSeconds": 11.53,
+      "measuredCpuSeconds": 27.09,
+      "budgetCpuSeconds": 58,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 43.63 at start)"
     },
     {
       "config": "ProcessStop.jobCurrent",
@@ -2083,10 +2103,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 828,
-      "measuredSeconds": 1.23,
-      "measuredCpuSeconds": 1.78,
-      "budgetCpuSeconds": 7
+      "distinctStates": 822,
+      "measuredSeconds": 2.62,
+      "measuredCpuSeconds": 4.64,
+      "budgetCpuSeconds": 13,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 54.64 at start)"
     },
     {
       "config": "ProcessStop.reconcileCurrent",
@@ -2097,10 +2118,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 3755,
-      "measuredSeconds": 1.43,
-      "measuredCpuSeconds": 2.48,
-      "budgetCpuSeconds": 8
+      "distinctStates": 3956,
+      "measuredSeconds": 3.03,
+      "measuredCpuSeconds": 5.88,
+      "budgetCpuSeconds": 15,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 59.79 at start)"
     },
     {
       "config": "ProcessStop.listFailCurrent",
@@ -2111,10 +2133,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 3762,
-      "measuredSeconds": 1.38,
-      "measuredCpuSeconds": 2.41,
-      "budgetCpuSeconds": 8
+      "distinctStates": 3948,
+      "measuredSeconds": 3.3,
+      "measuredCpuSeconds": 5.99,
+      "budgetCpuSeconds": 15,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 59.79 at start)"
     },
     {
       "config": "RunRecord",
@@ -3991,10 +4014,11 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 70019,
-      "measuredSeconds": 1.9,
-      "measuredCpuSeconds": 5.46,
-      "budgetCpuSeconds": 14
+      "distinctStates": 230182,
+      "measuredSeconds": 7.89,
+      "measuredCpuSeconds": 17.86,
+      "budgetCpuSeconds": 39,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 63.41 at start)"
     },
     {
       "config": "ProcessStop.proofWithoutGen",
@@ -4005,10 +4029,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 917,
-      "measuredSeconds": 1.26,
-      "measuredCpuSeconds": 2.08,
-      "budgetCpuSeconds": 8
+      "distinctStates": 1185,
+      "measuredSeconds": 2.94,
+      "measuredCpuSeconds": 5.6,
+      "budgetCpuSeconds": 15,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 74.30 at start)"
     },
     {
       "config": "ProcessStop.retireSignalsOther",
@@ -4019,10 +4044,11 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 304,
-      "measuredSeconds": 1.44,
-      "measuredCpuSeconds": 2.03,
-      "budgetCpuSeconds": 8
+      "distinctStates": 305,
+      "measuredSeconds": 2.91,
+      "measuredCpuSeconds": 4.92,
+      "budgetCpuSeconds": 13,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 74.30 at start)"
     },
     {
       "config": "ProcessStop.userStop",
@@ -4030,10 +4056,26 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 133988,
-      "measuredSeconds": 2.02,
-      "measuredCpuSeconds": 6.43,
-      "budgetCpuSeconds": 16
+      "distinctStates": 502497,
+      "measuredSeconds": 8.86,
+      "measuredCpuSeconds": 27.51,
+      "budgetCpuSeconds": 59,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 80.29 at start)"
+    },
+    {
+      "config": "ProcessStop.sameSecondWithoutHold",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoSignalToNonHolder",
+        "exitCode": 13
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 987,
+      "measuredSeconds": 1.5,
+      "measuredCpuSeconds": 3.93,
+      "budgetCpuSeconds": 11,
+      "measuredNote": "measured above the load gate, to be re-measured (1-minute load 83.23 at start)"
     },
     {
       "config": "RunRecovery.abortDropsLock",
