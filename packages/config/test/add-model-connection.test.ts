@@ -94,4 +94,15 @@ describe('addModelConnection, the one writer of a chosen local model', () => {
     expect(targetsOf(read(existing).models.aliases['default'])).toEqual(['keep']);
     expect(read(existing).models.targets['keep']).toEqual({ adapter: 'ollama', model: 'keep', capabilities: { contextWindow: 10, maxOutputTokens: 5 } });
   });
+  it('writes the local-server value on each of billing, maxConcurrency and provider that the shape schema declares, and nothing else of them', async () => {
+    const file = settingsFileIn();
+    const ollamaTarget = (await addModelConnection(file, ollama('o-model', 4096))).target;
+    const openaiTarget = (await addModelConnection(file, { kind: 'server', baseUrl: 'http://127.0.0.1:1234', shape: 'openai', model: 'c-model', contextWindow: 4096 })).target;
+    const managedTarget = (await addModelConnection(file, { kind: 'managed', server: 'fm', model: 'fm' })).target;
+    const pick = (target: Record<string, unknown> | undefined) => ({ billing: target?.['billing'], maxConcurrency: target?.['maxConcurrency'], provider: target?.['provider'] });
+    const targets = read(file).models.targets;
+    expect(pick(targets[ollamaTarget])).toEqual({ billing: 'local', maxConcurrency: 1, provider: undefined });
+    expect(pick(targets[openaiTarget])).toEqual({ billing: 'local', maxConcurrency: 1, provider: 'local-1234' });
+    expect(pick(targets[managedTarget])).toEqual({ billing: undefined, maxConcurrency: 1, provider: undefined });
+  });
 });

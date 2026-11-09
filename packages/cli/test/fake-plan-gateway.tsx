@@ -25,6 +25,8 @@ if (shipped === undefined) throw new Error('the chatgpt profile is not shipped')
 
 export const CHATGPT: PlanProfileView = { id: shipped.id, usageUrl: shipped.usageUrl, messages: shipped.messages, loginLabel: shipped.loginLabel };
 
+export type DetectedServer = Omit<DetectedLocalServer, 'models'> & { models: readonly (DetectedLocalServer['models'][number] & { trainedContext?: number; contextWindow?: number })[] };
+
 export const LISTENER_PORT = 49152;
 export const PLAN_TEST_TIMEOUT_MS = FRAME_BOUND_MS * 4;
 export const AUTHORIZATION_URL = 'https://auth.openai.com/api/accounts/authorize?client_id=c&state=st-1';
@@ -49,8 +51,7 @@ export type FakePlanOptions = FakeBackendOptions & {
   health?: Readonly<Record<string, TargetHealth>>;
   billing?: Readonly<Record<string, TargetBilling>>;
   planTargets?: Readonly<Record<string, { profile: string; account?: string }>>;
-  detected?: readonly DetectedLocalServer[];
-  trainedContext?: Readonly<Record<string, number>>;
+  detected?: readonly DetectedServer[];
   dismissed?: Readonly<Record<string, string>>;
 };
 
@@ -158,7 +159,6 @@ export const fakePlanBackend = (options: FakePlanOptions = {}): FakePlanBackend 
       detections.push(typed);
       return [...(options.detected ?? [])];
     },
-    trainedContextOf: async (_baseUrl: string, model: string) => options.trainedContext?.[model],
     addModelConnection: async (connection: ModelConnection) => {
       connections.push(connection);
       const name = connection.kind === 'managed' ? connection.server : connection.model;

@@ -77,10 +77,15 @@ describe('describeRunError names the command of the surface for plan errors', ()
     expect(lines[1]).toContain('sign_in_required');
   });
 
-  it('names momonga auth login in a headless run', () => {
+  it('names momonga auth login with the profile and label from the error plan data in a headless run', () => {
+    const lines = describeRunError({ ...expired, plan: { profile: 'chatgpt', account: 'chatgpt' } }, 'headless');
+    expect(lines[0]).toBe('ChatGPT sign-in expired · Run momonga auth login chatgpt --account chatgpt to sign in again');
+    expect(lines[1]).toContain('sign_in_required');
+  });
+
+  it('names plain momonga auth login when the error carries no plan data', () => {
     const lines = describeRunError(expired, 'headless');
-    expect(lines[0]).toMatch(/^ChatGPT sign-in expired · Run momonga auth login\b/);
-    expect(lines[0]).not.toContain('/login');
+    expect(lines[0]).toBe('ChatGPT sign-in expired · Run momonga auth login to sign in again');
     expect(lines[1]).toContain('sign_in_required');
   });
 
@@ -109,6 +114,9 @@ describe('momonga auth status', () => {
         account({ label: 'expired', email: 'e@example.com', state: 'needs_sign_in', active: false }),
         account({ label: 'off', email: 'o@example.com', state: 'plan_disabled', active: false }),
         account({ label: 'gone', email: 'g@example.com', state: 'registered', active: false }),
+        account({ label: 'broken', email: 'b@example.com', state: 'store_unreadable', active: false, cause: 'bad tag' }),
+        account({ label: 'stuck', email: 's@example.com', state: 'store_unwritable', active: false, cause: 'EACCES' }),
+        account({ label: 'leaving', email: 'l@example.com', state: 'signing_out', active: false }),
       ],
     });
     const code = await authStatus({ stdout: out, plan: backend.plan }, { json: false });
@@ -123,6 +131,13 @@ describe('momonga auth status', () => {
     expect(lineOf('e@example.com')).toContain('sign-in required');
     expect(lineOf('o@example.com')).toContain('plan use not enabled');
     expect(lineOf('g@example.com')).toContain('signed out');
+    expect(lineOf('b@example.com')).toContain('record unreadable');
+    expect(lineOf('b@example.com')).not.toContain('sign-in required');
+    expect(lineOf('s@example.com')).toContain('record not writable');
+    expect(lineOf('l@example.com')).toContain('signing out');
+    const brokenAt = lines.findIndex((line) => line.includes('b@example.com'));
+    expect(lines[brokenAt + 1]).toContain('bad tag');
+    expect(out.written.join('').split('https://chatgpt.com/settings/usage')).toHaveLength(2);
     expect(out.written.join('')).toContain('https://chatgpt.com/settings/usage');
   });
 });

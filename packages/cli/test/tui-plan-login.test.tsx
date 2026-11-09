@@ -53,6 +53,59 @@ describe('/login opens the generic list of every way to connect', () => {
   });
 });
 
+describe('where /login <provider> leads', () => {
+  it('goes to the sentence screen with the first free label when the profile has no account record', async () => {
+    const { app, backend } = await startPlan({ accounts: [] });
+    await ready(app);
+    await submitLine(app, '/login chatgpt');
+    const screen = await untilFrame(app, SENTENCE);
+    expect(screen).not.toContain('Add another account or workspace');
+    await choose(app, 'Continue with ChatGPT');
+    await eventually(() => routesOf(backend).includes('sign-in/begin'), 'the sign-in start');
+    expect(bodyOf(backend, 'sign-in/begin')).toEqual({ profile: 'chatgpt', account: 'chatgpt', port: LISTENER_PORT });
+    app.unmount();
+  });
+});
+
+describe('choosing a saved account in the picker', () => {
+  it('an active account only moves the active pointer', async () => {
+    const { app, backend } = await startPlan({ accounts: [account({ label: 'home' }), account({ label: 'work', email: 'w@example.com', active: false })] });
+    await ready(app);
+    await submitLine(app, '/login chatgpt');
+    await choose(app, 'work · w@example.com');
+    await eventually(() => routesOf(backend).includes('accounts/active'), 'the pointer move');
+    await quiet();
+    expect(bodyOf(backend, 'accounts/active')).toEqual({ profile: 'chatgpt', account: 'work' });
+    expect(routesOf(backend).filter((route) => route !== 'accounts' && route !== 'accounts/active')).toEqual([]);
+    expect(backend.listenerPaths).toEqual([]);
+    app.unmount();
+  });
+
+  it('an account that needs sign-in shows the sentence screen', async () => {
+    const { app, backend } = await startPlan({ accounts: [account({ label: 'work', email: 'w@example.com', state: 'needs_sign_in' })] });
+    await ready(app);
+    await submitLine(app, '/login chatgpt');
+    await choose(app, 'work · w@example.com');
+    await untilFrame(app, SENTENCE);
+    expect(routesOf(backend)).not.toContain('sign-in/begin');
+    app.unmount();
+  });
+
+  it('an account whose record is unreadable starts nothing', async () => {
+    const { app, backend } = await startPlan({ accounts: [account({ label: 'work', email: 'w@example.com', state: 'store_unreadable', cause: 'bad tag' })] });
+    await ready(app);
+    await submitLine(app, '/login chatgpt');
+    const picker = await untilFrame(app, 'work · w@example.com · record unreadable');
+    expect(picker).not.toContain('sign-in required');
+    await choose(app, 'work · w@example.com');
+    await quiet();
+    expect(routesOf(backend).filter((route) => route !== 'accounts')).toEqual([]);
+    expect(backend.listenerPaths).toEqual([]);
+    expect(app.lastFrame()).not.toContain(SENTENCE);
+    app.unmount();
+  });
+});
+
 describe('the account picker and a new sign-in', () => {
   it('offers the first free label, here chatgpt-2 between chatgpt and chatgpt-3, and runs the loopback sign-in with it', async () => {
     const { app, backend } = await startPlan({
@@ -156,7 +209,7 @@ describe('Using ChatGPT plan in the footer', () => {
     backend.emit(frame({ type: 'model.responded', attempt: 0, target: 'plan-gpt', response: { status: 'completed', output: [], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } }));
     const footer = await untilFrame(app, 'Using ChatGPT plan');
     expect(footer).toContain('Manage usage');
-    expect(footer).toContain('chatgpt.com/settings/usage');
+    expect(footer).toContain('https://chatgpt.com/settings/usage');
     app.unmount();
   });
 
@@ -235,7 +288,7 @@ describe('plan errors in the transcript', () => {
     const { app, backend } = await startPlan({ accounts: [account({ paused: {} })] });
     await ready(app);
     await runStarted(backend, app, 'go');
-    backend.finish(runView({ status: 'STOPPED', stopReason: 'usage_limit' as never, error: { code: 'plan_usage_limit', message: 'Manage usage' } }));
+    backend.finish(runView({ status: 'STOPPED', stopReason: 'usage_limit' as never, error: { code: 'plan_usage_limit', message: 'Manage usage', plan: { profile: 'chatgpt', account: 'chatgpt' } } as never }));
     const block = await untilFrame(app, "Review your plan or this app's limit in ChatGPT settings.");
     const limit = block.indexOf('Usage limit reached');
     expect(limit).toBeGreaterThan(-1);

@@ -123,10 +123,18 @@ describe('the unconnected phase', () => {
 });
 
 describe('local servers from the welcome', () => {
-  const ollama = { baseUrl: 'http://127.0.0.1:11434', shape: 'ollama' as const, models: [{ id: 'llama3.2', tools: 'yes' as const }] };
+  const ollama = { baseUrl: 'http://127.0.0.1:11434', shape: 'ollama' as const, models: [{ id: 'llama3.2', tools: 'yes' as const, trainedContext: 131072 }] };
+  const lmstudio = {
+    baseUrl: 'http://127.0.0.1:1234',
+    shape: 'openai' as const,
+    models: [
+      { id: 'reported-model', tools: 'unknown' as const, contextWindow: 32768 },
+      { id: 'silent-model', tools: 'unknown' as const },
+    ],
+  };
 
   it('detects on the user action, shows what it found, and writes nothing until a model is chosen', async () => {
-    const { app, backend } = await startPlan({ aliases: [], accounts: [], detected: [ollama], trainedContext: { 'llama3.2': 131072 } });
+    const { app, backend } = await startPlan({ aliases: [], accounts: [], detected: [ollama]});
     expect(backend.detections).toEqual([]);
     await choose(app, 'Use a local server');
     const frame = await untilFrame(app, 'http://127.0.0.1:11434');
@@ -137,7 +145,7 @@ describe('local servers from the welcome', () => {
   });
 
   it('asks an Ollama model for its context window with the trained maximum as the ceiling and no default, then writes it and opens the session', async () => {
-    const { app, backend } = await startPlan({ aliases: [], accounts: [], detected: [ollama], trainedContext: { 'llama3.2': 131072 } }, { initialPrompt: 'hello there' });
+    const { app, backend } = await startPlan({ aliases: [], accounts: [], detected: [ollama]}, { initialPrompt: 'hello there' });
     await choose(app, 'Use a local server');
     await choose(app, 'llama3.2');
     await untilFrame(app, '131072');
@@ -149,6 +157,28 @@ describe('local servers from the welcome', () => {
     expect(backend.connections).toEqual([{ kind: 'server', baseUrl: 'http://127.0.0.1:11434', shape: 'ollama', model: 'llama3.2', contextWindow: 8192 }]);
     await eventually(() => backend.started.length > 0, 'the initial prompt');
     expect(backend.started.map((run) => run.text)).toEqual(['hello there']);
+    app.unmount();
+  });
+  it('writes an openai-shape model whose listing reports a window without asking for one', async () => {
+    const { app, backend } = await startPlan({ aliases: [], accounts: [], detected: [lmstudio] });
+    await choose(app, 'Use a local server');
+    await choose(app, 'reported-model');
+    await backend.called('openSession');
+    expect(backend.connections).toEqual([{ kind: 'server', baseUrl: 'http://127.0.0.1:1234', shape: 'openai', model: 'reported-model', contextWindow: 32768 }]);
+    app.unmount();
+  });
+
+  it('asks for the window of an openai-shape model that reports none, with no default, and writes the entry', async () => {
+    const { app, backend } = await startPlan({ aliases: [], accounts: [], detected: [lmstudio] });
+    await choose(app, 'Use a local server');
+    await choose(app, 'silent-model');
+    await untilFrame(app, /context window/i);
+    app.stdin.write(KEYS.enter);
+    await quiet();
+    expect(backend.connections).toEqual([]);
+    await submitLine(app, '16384');
+    await backend.called('openSession');
+    expect(backend.connections).toEqual([{ kind: 'server', baseUrl: 'http://127.0.0.1:1234', shape: 'openai', model: 'silent-model', contextWindow: 16384 }]);
     app.unmount();
   });
 });
