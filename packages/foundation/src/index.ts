@@ -37,6 +37,17 @@ export { DEFAULT_LOCK_TIMEOUT_MS, createKeyedSerializer, systemFileLockPorts, wi
 export type { FileLockOptions, FileLockPorts, KeyedSerializer } from './file-lock.ts';
 export { createFileCredentialStore, createMemoryCredentialStore } from './credential-store.ts';
 export type { CredentialEntry, CredentialStore, FileCredentialStoreOptions } from './credential-store.ts';
+export {
+  CREDENTIAL_ENVELOPE_FORMAT,
+  CREDENTIAL_KEY_CREATION_STEPS,
+  CREDENTIAL_KEY_LOCK_NAME,
+  CREDENTIAL_KEY_MARKER_FILE,
+  CREDENTIAL_KEY_PREFIX,
+  CREDENTIAL_STORE_ERROR_CODES,
+  CredentialStoreError,
+  createEncryptedCredentialStore,
+} from './encrypted-credential-store.ts';
+export type { CredentialSecretStore, CredentialStoreErrorCode, EncryptedCredentialStoreOptions } from './encrypted-credential-store.ts';
 export { AUTHORIZATION_WAIT_MS } from './authorization-wait.ts';
 export { OAuthAuthorizationError } from './oauth-authorization-error.ts';
 export type { AuthorizationFailure } from './oauth-authorization-error.ts';
@@ -145,6 +156,7 @@ export {
   secretStoreEnvFor,
   givenSecretStoreChildEnv,
   createGivenSecretStore,
+  givenCredentialSecretStore,
   SECRET_BACKEND_ENV,
   SECRET_PROGRAM_ENV,
   SECRET_REFUSAL_ENV,

@@ -48,6 +48,7 @@ export type OAuthProviderOptions = {
   key: string;
   subject: string;
   store: CredentialStore;
+  signal: AbortSignal;
   redirectUrl: string | undefined;
   randomToken(): string;
   preregisteredClientId?: string;
@@ -74,7 +75,7 @@ export const createOAuthProvider = (options: OAuthProviderOptions): OAuthProvide
   let discoveryState: OAuthDiscoveryState | undefined;
 
   const load = async (): Promise<StoredCredentials> => {
-    const raw = await options.store.read(key);
+    const raw = await options.store.read(key, options.signal);
     return raw === undefined ? emptyStored() : parseStored(raw);
   };
   const update = async (issuer: string | undefined, change: (entry: IssuerCredentials) => IssuerCredentials): Promise<void> => {
@@ -85,7 +86,7 @@ export const createOAuthProvider = (options: OAuthProviderOptions): OAuthProvide
       stored.issuers[target] = change(stored.issuers[target] ?? {});
       stored.lastIssuer = target;
       return JSON.stringify(stored);
-    });
+    }, options.signal);
   };
   const entryFor = async (context: OAuthClientInformationContext | undefined): Promise<IssuerCredentials | undefined> => {
     const stored = await load();
@@ -188,7 +189,7 @@ export const createOAuthProvider = (options: OAuthProviderOptions): OAuthProvide
         return;
       }
       if (scope === 'all') {
-        await options.store.remove(key);
+        await options.store.remove(key, options.signal);
         return;
       }
       await options.store.update(key, (raw) => {
@@ -198,7 +199,7 @@ export const createOAuthProvider = (options: OAuthProviderOptions): OAuthProvide
           if (scope === 'client') delete entry.clientInformation;
         }
         return JSON.stringify(stored);
-      });
+      }, options.signal);
     },
     secretValues: async () => {
       const stored = await load();

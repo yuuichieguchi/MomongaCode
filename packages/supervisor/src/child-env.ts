@@ -1,4 +1,4 @@
-import { credentialEnvNames, secretNames, stripCredentialEnv } from '@momonga/config';
+import { credentialEnvNames, stripCredentialEnv } from '@momonga/config';
 import type { CredentialRules } from '@momonga/config';
 import { MINIMAL_CHILD_ENV_LC_PREFIX, MINIMAL_CHILD_ENV_NAMES, NETWORK_ENV_NAMES, minimalChildEnv, secretStoreEnvFor } from '@momonga/foundation';
 
@@ -29,7 +29,7 @@ export const gatewayEnv = (env: SourceEnv, settings: CredentialSettings, home: s
     if (value !== undefined) result[name] = value;
   }
   Object.assign(result, minimalChildEnv(source));
-  if (secretNames(settings).length > 0) Object.assign(result, secretStoreEnvFor(source));
+  Object.assign(result, secretStoreEnvFor(source));
   if (source['HOME'] === undefined) result['HOME'] = home;
   for (const name of NETWORK_ENV_NAMES) {
     const value = source[name];
@@ -38,5 +38,8 @@ export const gatewayEnv = (env: SourceEnv, settings: CredentialSettings, home: s
   return result;
 };
 
-export const runtimeEnv = (env: SourceEnv, settings: CredentialSettings): { env: Record<string, string>; removed: string[] } =>
-  stripCredentialEnv(definedEnv(env), credentialEnvNames(settings), settings.credentials);
+export const runtimeEnv = (env: SourceEnv, settings: CredentialSettings): { env: Record<string, string>; removed: string[] } => {
+  const source = definedEnv(env);
+  const stripped = stripCredentialEnv(source, credentialEnvNames(settings), settings.credentials);
+  return { env: { ...stripped.env, ...secretStoreEnvFor(source) }, removed: stripped.removed };
+};

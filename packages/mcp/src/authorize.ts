@@ -54,6 +54,7 @@ export const authorizeMcpServer = async (options: AuthorizeMcpServerOptions): Pr
       resourceUrl: options.url,
       scope: options.scope,
       store: ports.store,
+      signal,
       redirectUrl: redirect.redirectUrl,
       randomToken: ports.randomToken,
       ...(oauth?.clientId === undefined ? {} : { preregisteredClientId: oauth.clientId }),
@@ -92,14 +93,14 @@ export const authorizeMcpServer = async (options: AuthorizeMcpServerOptions): Pr
     }
     const iss = params.get('iss') ?? undefined;
     const recorded = provider.recordedIssuer;
-    if (recorded === undefined) throw new McpAuthorizationError('invalid_callback', 'the authorization server was not recorded before the redirect');
+    if (recorded === undefined) throw new McpAuthorizationError('invalid_callback', `the authorization server of MCP server "${options.server}" was not recorded before the redirect`);
     validateAuthorizationResponseIssuer({ iss, expectedIssuer: recorded.issuer, issParameterSupported: recorded.issParameterSupported });
     const refusal = params.get('error');
     if (refusal !== null) {
       throw new McpAuthorizationError('denied', `authorization for MCP server "${options.server}" was refused (${capText(sanitizeServerText(refusal), MAX_ERROR_CHARS)})`);
     }
     const code = params.get('code');
-    if (code === null) throw new McpAuthorizationError('invalid_callback', 'the authorization response carried no code');
+    if (code === null) throw new McpAuthorizationError('invalid_callback', `the authorization response of MCP server "${options.server}" carried no code`);
     await auth(provider, { ...common, authorizationCode: code, ...(iss === undefined ? {} : { iss }) });
   } finally {
     await redirect.close();

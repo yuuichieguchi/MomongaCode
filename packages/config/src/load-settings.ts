@@ -137,7 +137,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
   const merged: ResolvedSettings = {
     permissions: { allow: [], ask: [], deny: [], additionalDirectories: [] },
     env: {},
-    credentials: { env: [], keep: [], valuePatterns: [] },
+    credentials: { env: [], keep: [], valuePatterns: [], plaintextTokenFiles: false },
     hooks: {},
     enabledMcpjsonServers: [],
     disabledMcpjsonServers: [],
@@ -197,6 +197,7 @@ export const mergeLayers = (layers: Layer[], models: ResolvedModels, home: strin
     merged.credentials.env.push(...(credentials?.env ?? []));
     merged.credentials.keep.push(...(credentials?.keep ?? []));
     merged.credentials.valuePatterns.push(...(credentials?.valuePatterns ?? []));
+    if (credentials?.plaintextTokenFiles !== undefined) merged.credentials.plaintextTokenFiles = credentials.plaintextTokenFiles;
     for (const [event, groups] of Object.entries(hooks ?? {})) {
       const key = event as keyof HooksSettings;
       merged.hooks[key] = [...(merged.hooks[key] ?? []), ...groups];
