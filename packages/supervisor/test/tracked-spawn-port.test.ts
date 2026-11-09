@@ -69,6 +69,7 @@ describe('trackedSpawnPort', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     tracked.push(inGroup.pid as number, ownGroup.pid as number, groupGrandchild, detachedGrandchild);
     expect(port.spawned).toEqual([inGroup, ownGroup]);
     expect(processGroupOf(groupGrandchild)).toBe(inGroup.pid);
+    expect(processGroupOf(detachedGrandchild)).toBe(detachedGrandchild);
     port.trackGroup(detachedGrandchild);
     for (const pid of tracked) expect(isProcessAlive(pid)).toBe(true);
     await captured.run();
