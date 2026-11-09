@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import * as config from '@momonga/config';
 import type { ResolvedSettings, UserSettingsCache, UserSettingsLoaded } from '@momonga/config';
 import { canonicalJson } from '@momonga/foundation';
+import { flush as flushTurns, ownedHarness, settled } from './derived-fixture.ts';
 
 type Lease<T> = { readonly value: T; release(): void };
 
@@ -290,5 +291,81 @@ describe('S0: the digest cases moved from the deleted supervisor plan tests (des
   it('reformatting, the same sections with keys in another order, rebuilds nothing', () => {
     const reordered = { gateway: BASE_SETTINGS['gateway'], sandbox: 'seatbelt', models: { targets: (BASE_SETTINGS['models'] as { targets: unknown }).targets, aliases: { default: ['remote'] } } };
     expect(changedObjects(BASE_SETTINGS, reordered)).toEqual([]);
+  });
+});
+
+describe('S0: a derivation runs under its owner signal; a caller abort detaches only that caller (design-settings-live 15.6, AbortIsolated)', () => {
+  const ready = async () => {
+    const h = ownedHarness();
+    const first = h.derivation.acquire(new AbortController().signal);
+    await flushTurns();
+    h.gates.shift()?.release();
+    (await first).release();
+    h.edit();
+    return h;
+  };
+
+  it('derive receives the owner signal, not the signal of the caller that started it', async () => {
+    const h = await ready();
+    const starter = new AbortController();
+    void h.derivation.acquire(starter.signal).catch(() => undefined);
+    await flushTurns();
+    expect(h.derived.at(-1)?.signal).toBe(h.owner.signal);
+  });
+
+  it('the starter abort rejects only the starter; another waiter gets the new object, the flight completes, nothing is logged', async () => {
+    const h = await ready();
+    const starter = new AbortController();
+    const started = settled(h.derivation.acquire(starter.signal));
+    const waiter = settled(h.derivation.admit(new AbortController().signal));
+    await flushTurns();
+    starter.abort(new Error('the starter went away'));
+    await flushTurns();
+    expect(started.outcome).toBe('rejected');
+    expect(waiter.outcome).toBe('pending');
+    h.gates.shift()?.release();
+    await flushTurns();
+    expect(waiter.outcome).toBe('resolved');
+    expect(waiter.value?.value.version).toBe(2);
+    expect(h.derived).toHaveLength(2);
+    expect(h.warnings).toEqual([]);
+  });
+
+  it('a flight whose waiters all left still finishes and becomes current', async () => {
+    const h = await ready();
+    const starter = new AbortController();
+    const started = settled(h.derivation.acquire(starter.signal));
+    await flushTurns();
+    starter.abort(new Error('the only waiter went away'));
+    await flushTurns();
+    expect(started.outcome).toBe('rejected');
+    h.gates.shift()?.release();
+    await flushTurns();
+    const next = settled(h.derivation.acquire(new AbortController().signal));
+    await flushTurns();
+    expect(h.derived).toHaveLength(2);
+    expect(next.outcome).toBe('resolved');
+    expect(next.value?.value.version).toBe(2);
+    expect(h.warnings).toEqual([]);
+  });
+
+  it('an owner abort ends the flight silently', async () => {
+    const h = await ready();
+    const waiter = settled(h.derivation.acquire(new AbortController().signal));
+    await flushTurns();
+    h.owner.abort(new Error('the process is stopping'));
+    await flushTurns();
+    expect(waiter.outcome).not.toBe('pending');
+    expect(h.warnings).toEqual([]);
+  });
+
+  it('the failure is logged only when derive itself throws', async () => {
+    const h = await ready();
+    const waiter = settled(h.derivation.acquire(new AbortController().signal));
+    await flushTurns();
+    h.gates.shift()?.fail(new Error('proxy refused'));
+    await flushTurns();
+    expect(waiter.outcome).toBe('resolved');
+    expect(h.warnings).toEqual(['the settings could not be applied: proxy refused; the last applied settings stay in use']);
   });
 });

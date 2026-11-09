@@ -31,7 +31,7 @@ const invariantsOf = (cfg: string): string[] => {
   return block === null ? [] : (block[1] as string).split(/\s+/).filter((word) => word.length > 0);
 };
 
-const DESIGN_PROPERTIES = ['PinStable', 'FreshStart', 'LastValidWins', 'NoRollbackAfterApply', 'NoCut', 'InvalidKeepsRunning', 'NoRetireInUse', 'NoSweepWhileHeld', 'RetireOnce', 'CarryOverByIdentity', 'SingleDerivation'];
+const DESIGN_PROPERTIES = ['PinStable', 'FreshStart', 'LastValidWins', 'NoRollbackAfterApply', 'AbortIsolated', 'NoCut', 'InvalidKeepsRunning', 'NoRetireInUse', 'NoSweepWhileHeld', 'RetireOnce', 'CarryOverByIdentity', 'SingleDerivation'];
 
 type DerivedObjectDeclaration = { readonly id: string; readonly inputs: readonly string[] };
 

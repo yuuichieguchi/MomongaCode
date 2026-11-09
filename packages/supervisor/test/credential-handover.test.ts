@@ -110,3 +110,19 @@ describe('S6: the supervisor hands a declared environment credential to the gate
     expect(Object.values(minimalChildEnv(h.fake.latest('gateway').options.env))).not.toContain(capability);
   });
 });
+
+describe('S6: the per-spawn capability ends with the child (design-settings-live 15.6)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+  it('the capability of a gateway that exited answers nothing', async (context) => {
+    const h = await watched(context);
+    await declareTargetsWithKeys(h, DECLARED_LATER);
+    const capability = gatewayCapability(h);
+    expect((await requestCredential(context, h, DECLARED_LATER, capability)).status).toBe(200);
+    await h.realWork.run(async () => {
+      h.fake.latest('gateway').exit(1);
+    });
+    await pump(h.timers, h.realWork, 0);
+    const response = await requestCredential(context, h, DECLARED_LATER, capability);
+    expect(response.status).toBe(403);
+    expect(response.text).not.toContain(ADDED_KEY_VALUE);
+  });
+});

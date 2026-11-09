@@ -449,3 +449,48 @@ describe('S8 gateway side of the credential hand-over (design-settings-live 15.2
     expect(a.requests).toEqual([]);
   });
 });
+
+const REPLY_MARKER = 'supervisor-reply-text-0123456789';
+
+const replyingSupervisor = async (context: CleanupContext, home: string, status: number, body: string): Promise<void> => {
+  const socketPath = generationLayout(home, FIRST_GENERATION).sockets.supervisor;
+  fs.mkdirSync(path.dirname(socketPath), { recursive: true, mode: 0o700 });
+  const server = http.createServer((_request, response) => {
+    response.writeHead(status, { 'content-type': 'application/json' });
+    response.end(body);
+  });
+  await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+  registerCleanup(context, () => new Promise<void>((resolve) => server.close(() => resolve())));
+};
+
+describe('S8 gateway: every supervisor reply that is not a value is unset, and its text goes nowhere (design-settings-live 15.6)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+  it.for([
+    { label: 'a status other than 200', status: 500, body: JSON.stringify({ error: { message: REPLY_MARKER } }) },
+    { label: 'a body that does not parse', status: 200, body: `not json ${REPLY_MARKER}` },
+    { label: 'a body without a string value', status: 200, body: JSON.stringify({ name: CREDENTIAL_ENV, note: REPLY_MARKER }) },
+  ])('$label gives the unset text and no reply text in the answer or the log', async ({ status, body }, context) => {
+    const a = await fakeUpstream(context);
+    const home = withTempDir(context, { asHome: true });
+    await replyingSupervisor(context, home, status, body);
+    replaceSettings(home, keyedTarget(a));
+    const chunks: string[] = [];
+    const handle = await startGatewayProcess({
+      generation: FIRST_GENERATION,
+      home,
+      env: baseEnv(home, { [CREDENTIAL_CAPABILITY_ENV]: CAPABILITY }),
+      version: PROCESS_VERSION,
+      logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: { write: (chunk: string) => (chunks.push(chunk), true) }, level: 'debug' }),
+      stdout: { write: () => true },
+    });
+    registerCleanup(context, async () => {
+      await handle.close(NO_GRACE);
+    });
+    const client = createUdsClient(fixedSocket(handle.socketPath));
+    registerCleanup(context, () => client.destroy());
+    const answered = await post(client, ask());
+    expect(answered.text).toContain(UNSET_TEXT);
+    expect(answered.text).not.toContain(REPLY_MARKER);
+    expect(chunks.join('')).not.toContain(REPLY_MARKER);
+    expect(a.requests).toEqual([]);
+  });
+});

@@ -148,3 +148,30 @@ describe('S7 no rollback after apply: a tightened sandbox survives a broken file
     expect(fs.existsSync(path.join(stack.temp.root, 'outside-after-break')), 'the Bash call after the break ran under the tightened sandbox').toBe(false);
   });
 });
+
+describe('S2 runtime telemetry: the tracer lease is held for the agent span of a run (design-settings-live 15.6)', () => {
+  it('a running run keeps its child spans on the old provider; the next run goes to the new one', PROCESS_TIMEOUT, async () => {
+    const before = await startOtlpCollector();
+    onCleanup(() => before.close());
+    const after = await startOtlpCollector();
+    onCleanup(() => after.close());
+    const stack = await startStack({}, { telemetry: { otlp: { endpoint: before.endpoint } } });
+    const launched = await launchRuntime(stack.temp);
+    const session = await launched.createSession();
+    const hold = stack.hold();
+    const running = await launched.createRun(session.id, { input: 'first' });
+    await hold.waitForRequest();
+    stack.settings({ telemetry: { otlp: { endpoint: after.endpoint } } });
+    hold.release();
+    expect(await waitForStatus(stack.temp, running.id, FINAL)).toBe('COMPLETED');
+    const next = await launched.createRun(session.id, { input: 'second' });
+    expect(await waitForStatus(stack.temp, next.id, FINAL)).toBe('COMPLETED');
+    await launched.handle.close();
+    const tracesOf = (collector: typeof before) => new Set(decodeOtlpSpans(collector.requests).filter((span) => span.service === 'momonga-runtime').map((span) => span.traceId));
+    const old = tracesOf(before);
+    const fresh = tracesOf(after);
+    expect(old.size, 'the running run exported its spans to the old provider').toBe(1);
+    expect(fresh.size, 'the next run exported its spans to the new provider').toBe(1);
+    expect([...fresh].some((trace) => old.has(trace)), 'no span of the running run reached the new provider').toBe(false);
+  });
+});
