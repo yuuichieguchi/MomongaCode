@@ -1,5 +1,5 @@
 import { deadlineExceededError, invalidRequest } from './errors.ts';
-import type { Services } from './services.ts';
+import type { GatewayServices } from './services.ts';
 
 export const parseDeadlineHeader = (header: string | undefined, nowMs: number): number | undefined => {
   if (header === undefined) return undefined;
@@ -9,7 +9,7 @@ export const parseDeadlineHeader = (header: string | undefined, nowMs: number): 
   return nowMs + Number(header);
 };
 
-export const armDeadline = (services: Services, deadlineAt: number | undefined, abort: (reason: unknown) => void): (() => void) => {
+export const armDeadline = (services: GatewayServices, deadlineAt: number | undefined, abort: (reason: unknown) => void): (() => void) => {
   if (deadlineAt === undefined) return () => undefined;
   const handle = services.timers.setTimeout(
     () => abort(deadlineExceededError('the request deadline passed before the response completed')),
@@ -19,7 +19,7 @@ export const armDeadline = (services: Services, deadlineAt: number | undefined, 
 };
 
 export const withDeadline = async <T>(
-  services: Services,
+  services: GatewayServices,
   deadlineAt: number | undefined,
   signal: AbortSignal,
   run: (signal: AbortSignal) => Promise<T>,

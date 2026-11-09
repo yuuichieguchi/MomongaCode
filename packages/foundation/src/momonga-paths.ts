@@ -155,14 +155,18 @@ export const momongaLayout = (
 export type ManagedInstancePurpose = 'serve' | 'probe';
 
 export type ManagedInstance =
-  | { owner: 'gateway'; generation: number; purpose: ManagedInstancePurpose; target: string }
+  | { owner: 'gateway'; generation: number; purpose: 'serve'; target: string; incarnation: number }
+  | { owner: 'gateway'; generation: number; purpose: 'probe'; target: string }
   | { owner: 'cli'; purpose: ManagedInstancePurpose; target: string };
+
+type GatewayInstance = Extract<ManagedInstance, { owner: 'gateway' }>;
 
 export type ManagedInstancePaths = { socketPath: string; markerDirectory: string; lockPath: string };
 
-const GATEWAY_INSTANCE_STEMS: Record<ManagedInstancePurpose, (target: string) => string> = {
-  serve: (target) => target,
-  probe: (target) => `_probe-${target}`,
+const gatewayInstanceStem = (instance: GatewayInstance): string => {
+  if (instance.purpose === 'probe') return `_probe-${instance.target}`;
+  if (!Number.isSafeInteger(instance.incarnation) || instance.incarnation < 1) throw new RangeError(`an incarnation number must be a positive integer, got ${instance.incarnation}`);
+  return `${instance.target}-${instance.incarnation}`;
 };
 
 const CLI_INSTANCE_STEM = (purpose: ManagedInstancePurpose, target: string): string => `_cli-${purpose}-${target}`;
@@ -179,7 +183,7 @@ const generationDirectoryName = (generation: number): string => {
 export const managedInstancePaths = (paths: MomongaPaths, instance: ManagedInstance): ManagedInstancePaths => {
   if (instance.owner === 'gateway') {
     const generation = generationDirectoryName(instance.generation);
-    const stem = GATEWAY_INSTANCE_STEMS[instance.purpose](instance.target);
+    const stem = gatewayInstanceStem(instance);
     const targets = path.join(paths.run, generation, GENERATION_TARGETS_DIRECTORY);
     return {
       socketPath: path.join(targets, `${stem}.sock`),

@@ -29,7 +29,8 @@ import { adapterContextOf, originOf } from './adapter-context.ts';
 import type { Narrowed, TargetRuntime } from './router.ts';
 import { CandidateRefused, REFUSAL_STAGES, UnprobedTarget } from './candidate-refusal.ts';
 import type { Refusal } from './candidate-refusal.ts';
-import type { Services } from './services.ts';
+import { withPinnedServices } from './services.ts';
+import type { GatewayServices, Services } from './services.ts';
 import type { UnknownFields } from './unknown-fields.ts';
 import { resolveToolChoice } from './tool-choice.ts';
 import { textOfWire } from './wire-text.ts';
@@ -363,7 +364,7 @@ const compactOnce = async (
   };
 };
 
-export const createUnaryService = (services: Services, validator: RequestValidator): UnaryService => {
+export const createUnaryService = (services: GatewayServices, validator: RequestValidator): UnaryService => {
   const inflight = new Map<string, InflightCompaction>();
   const active = new Set<InflightCompaction>();
 
@@ -447,7 +448,7 @@ export const createUnaryService = (services: Services, validator: RequestValidat
       settled: false,
       promise: Promise.resolve().then(async () => {
         try {
-          const resource = await compactOnce(services, request, unknownFields, controller.signal, deadlineAt, trace);
+          const resource = await withPinnedServices(services, controller.signal, (pinned) => compactOnce(pinned, request, unknownFields, controller.signal, deadlineAt, trace));
           if (isRunCancelled(controller.signal.reason)) throw controller.signal.reason;
           const now = services.clock.now();
           services.store.commitCompaction({ key, digest, resource, createdAtMs: now, expiresAtMs: now + services.config.idempotency.ttlMs });
@@ -473,14 +474,15 @@ export const createUnaryService = (services: Services, validator: RequestValidat
   };
 
   return {
-    countTokens: (rawBody, signal, deadlineHeader) => countTokens(services, validator, rawBody, signal, deadlineHeader),
+    countTokens: (rawBody, signal, deadlineHeader) => withPinnedServices(services, signal, (pinned) => countTokens(pinned, validator, rawBody, signal, deadlineHeader)),
     compact: (rawBody, signal, deadlineHeader, idempotencyKeyHeader, trace) => {
       const key = parseIdempotencyKey(idempotencyKeyHeader);
       if (key !== undefined) return compactKeyed(rawBody, key, signal, deadlineHeader, trace);
       const request = validator.parseCompact(rawBody);
       const unknownFields = validator.unknownCompactFields(rawBody);
       const deadlineAt = parseDeadlineHeader(deadlineHeader, services.clock.now());
-      return compactOnce(services, request, unknownFields, AbortSignal.any([signal, services.closeSignal]), deadlineAt, trace);
+      const compactSignal = AbortSignal.any([signal, services.closeSignal]);
+      return withPinnedServices(services, compactSignal, (pinned) => compactOnce(pinned, request, unknownFields, compactSignal, deadlineAt, trace));
     },
     cancel: (idempotencyKeyHeader) => {
       const key = parseIdempotencyKey(idempotencyKeyHeader);

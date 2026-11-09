@@ -36,7 +36,7 @@ export type PinnedDerivation<T> = {
 export type PinnedDerivationOptions<T> = {
   cache: Pick<UserSettingsCache, 'read'>;
   inputsOf(settings: ResolvedSettings): unknown;
-  derive(settings: ResolvedSettings, previous: T | undefined): T | Promise<T>;
+  derive(settings: ResolvedSettings, previous: T | undefined, signal: AbortSignal): T | Promise<T>;
   retire(object: T): void | Promise<void>;
   onWarning(message: string): void;
 };
@@ -55,13 +55,18 @@ export const createPinnedDerivation = <T>({ cache, inputsOf, derive, retire, onW
   let current: Entry<T> | undefined;
   let inFlight: InFlight<T> | undefined;
   const warned = new Set<string>();
+  const live = new Set<Entry<T>>();
   const retirements = new Set<Promise<void>>();
+
+  const retireNow = (entry: Entry<T>): Promise<void> => {
+    entry.retired = true;
+    live.delete(entry);
+    return Promise.resolve().then(() => retire(entry.value));
+  };
 
   const retireIfIdle = (entry: Entry<T>): void => {
     if (entry === current || entry.leases > 0 || entry.retired) return;
-    entry.retired = true;
-    const retirement = Promise.resolve()
-      .then(() => retire(entry.value))
+    const retirement = retireNow(entry)
       .catch((error: unknown) => onWarning(`a replaced settings object could not be closed: ${reasonOf(error)}`))
       .finally(() => retirements.delete(retirement));
     retirements.add(retirement);
@@ -91,14 +96,15 @@ export const createPinnedDerivation = <T>({ cache, inputsOf, derive, retire, onW
     flight.waiters.clear();
   };
 
-  const start = (digest: string, settings: ResolvedSettings): InFlight<T> => {
+  const start = (digest: string, settings: ResolvedSettings, signal: AbortSignal): InFlight<T> => {
     const previous = current;
     const flight: InFlight<T> = { digest, waiters: new Set<Waiter<T>>(), settled: Promise.resolve() };
     flight.settled = (async () => {
       await Promise.resolve();
       try {
-        const value = await derive(settings, previous?.value);
+        const value = await derive(settings, previous?.value, signal);
         const entry: Entry<T> = { digest, value, leases: 0, retired: false };
+        live.add(entry);
         current = entry;
         warned.delete(digest);
         inFlight = undefined;
@@ -144,7 +150,7 @@ export const createPinnedDerivation = <T>({ cache, inputsOf, derive, retire, onW
     for (;;) {
       if (current !== undefined && current.digest === digest) return leaseOf(current);
       if (inFlight === undefined) {
-        inFlight = start(digest, settings);
+        inFlight = start(digest, settings, signal);
         return join(inFlight, admitting, signal);
       }
       if (inFlight.digest === digest) return join(inFlight, admitting, signal);
@@ -157,10 +163,11 @@ export const createPinnedDerivation = <T>({ cache, inputsOf, derive, retire, onW
     admit: (signal) => take(true, signal),
     retireAll: async () => {
       if (inFlight !== undefined) await inFlight.settled;
-      const last = current;
       current = undefined;
-      if (last !== undefined) retireIfIdle(last);
+      const failures: unknown[] = [];
+      await Promise.all([...live].map((entry) => retireNow(entry).catch((error: unknown) => failures.push(error))));
       await Promise.all([...retirements]);
+      if (failures.length > 0) throw new AggregateError(failures, 'one or more settings objects failed to close');
     },
   };
 };

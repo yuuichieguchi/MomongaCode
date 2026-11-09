@@ -62,7 +62,7 @@ export const loadUserModels = ({ home }: LoadUserSettingsOptions): UserModels =>
 
 export const loadUserSettings = async ({ home, managedServers }: LoadUserSettingsOptions): Promise<LoadUserSettingsResult> => loadUserSettingsSync(home, managedServers);
 
-export type UserSettingsCacheOptions = { home: string; onWarning: (message: string) => void; keptRecords: KeptRecords };
+export type UserSettingsCacheOptions = { home: string; onWarning: (message: string) => void; keptRecords: KeptRecords; managedServers?: readonly ManagedServerDescription[] };
 
 export type UserSettingsLoaded = { settings: ResolvedSettings; user: UserLayer };
 
@@ -87,7 +87,7 @@ const changeKeyOf = (file: string): string => {
 
 export const userSettingsChangeKey = (home: string): string => changeKeyOf(layoutOf(home).settingsFile);
 
-export const createUserSettingsCache = ({ home, onWarning, keptRecords }: UserSettingsCacheOptions): UserSettingsCache => {
+export const createUserSettingsCache = ({ home, onWarning, keptRecords, managedServers }: UserSettingsCacheOptions): UserSettingsCache => {
   const file = userSettingsFile(home);
   const kept = createKeptSettings({ records: keptRecords, onWarning });
   let latest: UserSettingsSnapshot | undefined;
@@ -99,7 +99,7 @@ export const createUserSettingsCache = ({ home, onWarning, keptRecords }: UserSe
     if (lastGood !== undefined) return lastGood;
     const recalled = kept.recall(file);
     if (recalled === undefined) return undefined;
-    const rebuilt = userSettingsFrom(home, recalled.value);
+    const rebuilt = userSettingsFrom(home, recalled.value, managedServers);
     lastGood = { value: { settings: rebuilt.settings, user: rebuilt.user } };
     return lastGood;
   };
@@ -124,7 +124,7 @@ export const createUserSettingsCache = ({ home, onWarning, keptRecords }: UserSe
     seenKey = key;
     try {
       const read = readUserJsonFile(home);
-      const loaded = userSettingsFrom(home, read);
+      const loaded = userSettingsFrom(home, read, managedServers);
       for (const warning of loaded.warnings) onWarning(warning);
       kept.remember(file, read);
       const current = { settings: loaded.settings, user: loaded.user };

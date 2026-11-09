@@ -1,6 +1,6 @@
 import { isIP } from 'node:net';
 import { isLoopbackHost } from '@momonga/foundation';
-import type { GatewayOptions } from '../types.ts';
+import type { FixedModelsOptions, GatewayConfig, GatewayLimits, GatewayOptions } from '../types.ts';
 
 const MIN_HMAC_KEY_BYTES = 32;
 
@@ -10,8 +10,7 @@ const requirePositiveInteger = (name: string, value: number): void => {
   if (!Number.isInteger(value) || value < 1) throw new RangeError(`createGateway: ${name} must be a positive integer, got ${value}`);
 };
 
-export const checkGatewayOptions = (options: GatewayOptions): void => {
-  const { config, adapters, debugTcp } = options;
+const checkModels = (config: GatewayConfig, adapters: FixedModelsOptions['adapters']): void => {
   const targetNames = Object.keys(config.models.targets);
   for (const [name, target] of Object.entries(config.models.targets)) {
     if (!Object.hasOwn(adapters, name)) {
@@ -26,6 +25,14 @@ export const checkGatewayOptions = (options: GatewayOptions): void => {
       if (!targetNames.includes(name)) throw new Error(`createGateway: alias "${alias}" references unknown target "${name}"`);
     }
   }
+};
+
+export const limitsOf = (options: GatewayOptions): GatewayLimits => ('epochs' in options ? options.limits : options.config);
+
+export const checkGatewayOptions = (options: GatewayOptions): void => {
+  const { debugTcp } = options;
+  if (!('epochs' in options)) checkModels(options.config, options.adapters);
+  const config = limitsOf(options);
   requirePositiveInteger('retry.maxAttempts', config.retry.maxAttempts);
   requirePositiveInteger('retry.totalWaitMs', config.retry.totalWaitMs);
   requirePositiveInteger('limits.maxBodyBytes', config.limits.maxBodyBytes);
