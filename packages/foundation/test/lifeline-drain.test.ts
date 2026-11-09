@@ -43,7 +43,7 @@ const start = async (context: CleanupContext) => {
 
 const MESSAGE = formatStopMessage({ closeGraceMs: 4321, managedServerStopGraceMs: 12 });
 
-describe('the lifeline watcher over a real pipe', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the lifeline watcher over a real pipe (the delivered-but-unread order at the signal is covered by the fake-watcher test in daemon-entry-stop-values.test.ts)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('after a drain begun on SIGTERM, every line written before the signal has been delivered, including lines written while the reader was blocked', async (context) => {
     const reader = await start(context);
     const noise = Array.from({ length: 200 }, (_, index) => `noise ${index}`).join('\n');
