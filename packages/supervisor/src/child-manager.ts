@@ -10,6 +10,7 @@ import {
   formatStopMessage,
   gatewayAbortBudgetMs,
   gatewayStopBudgetMs,
+  managedServerStopBoundMs,
   parseReadyLine,
   reapMarkerDirectory,
   runtimeStopBudgetMs,
@@ -524,13 +525,20 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   const reapManagedServers = async (life: Life): Promise<void> => {
     if (!carriesStopValues(role)) return;
     const values = life.stopValues ?? stopValuesReader.read();
-    await (options.markerPorts?.reapMarkerDirectory ?? reapMarkerDirectory)({
-      dir: options.paths.markers.targets,
-      killGraceMs: values.managedServerStopGraceMs,
-      label: 'managed server',
-      occasion: 'shutdown',
-      onWarning: (detail) => log(settingsWarning({ detail })),
-    });
+    const reapStop = new AbortController();
+    const bound = options.timers.setTimeout(() => reapStop.abort(), managedServerStopBoundMs(values.managedServerStopGraceMs));
+    try {
+      await (options.markerPorts?.reapMarkerDirectory ?? reapMarkerDirectory)({
+        dir: options.paths.markers.targets,
+        killGraceMs: values.managedServerStopGraceMs,
+        label: 'managed server',
+        occasion: 'shutdown',
+        onWarning: (detail) => log(settingsWarning({ detail })),
+        signal: reapStop.signal,
+      });
+    } finally {
+      options.timers.clearTimeout(bound);
+    }
   };
 
   const handleExit = async (life: Life, exit: ChildExit): Promise<void> => {
