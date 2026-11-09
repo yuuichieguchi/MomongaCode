@@ -36,6 +36,7 @@ export type PinnedDerivation<T> = {
 
 export type PinnedDerivationOptions<T> = {
   cache: Pick<UserSettingsCache, 'read'>;
+  signal: AbortSignal;
   inputsOf(settings: ResolvedSettings): unknown;
   derive(settings: ResolvedSettings, previous: T | undefined, signal: AbortSignal): T | Promise<T>;
   retire(object: T): void | Promise<void>;
@@ -52,7 +53,7 @@ export const derivationFailureText = (reason: string): string => `the settings c
 
 const reasonOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-export const createPinnedDerivation = <T>({ cache, inputsOf, derive, retire, onWarning }: PinnedDerivationOptions<T>): PinnedDerivation<T> => {
+export const createPinnedDerivation = <T>({ cache, signal: owner, inputsOf, derive, retire, onWarning }: PinnedDerivationOptions<T>): PinnedDerivation<T> => {
   let current: Entry<T> | undefined;
   let inFlight: InFlight<T> | undefined;
   const warned = new Set<string>();
@@ -97,13 +98,13 @@ export const createPinnedDerivation = <T>({ cache, inputsOf, derive, retire, onW
     flight.waiters.clear();
   };
 
-  const start = (digest: string, settings: ResolvedSettings, signal: AbortSignal): InFlight<T> => {
+  const start = (digest: string, settings: ResolvedSettings): InFlight<T> => {
     const previous = current;
     const flight: InFlight<T> = { digest, waiters: new Set<Waiter<T>>(), settled: Promise.resolve() };
     flight.settled = (async () => {
       await Promise.resolve();
       try {
-        const value = await derive(settings, previous?.value, signal);
+        const value = await derive(settings, previous?.value, owner);
         const entry: Entry<T> = { digest, value, leases: 0, retired: false };
         live.add(entry);
         current = entry;
@@ -112,7 +113,7 @@ export const createPinnedDerivation = <T>({ cache, inputsOf, derive, retire, onW
         settle(flight, { entry });
         if (previous !== undefined) retireIfIdle(previous);
       } catch (error) {
-        if (!warned.has(digest)) {
+        if (!owner.aborted && !warned.has(digest)) {
           warned.add(digest);
           onWarning(derivationFailureText(reasonOf(error)));
         }
@@ -151,7 +152,7 @@ export const createPinnedDerivation = <T>({ cache, inputsOf, derive, retire, onW
     for (;;) {
       if (current !== undefined && current.digest === digest) return leaseOf(current);
       if (inFlight === undefined) {
-        inFlight = start(digest, settings, signal);
+        inFlight = start(digest, settings);
         return join(inFlight, admitting, signal);
       }
       if (inFlight.digest === digest) return join(inFlight, admitting, signal);

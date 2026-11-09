@@ -183,6 +183,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   const onWarning = (message: string): void => logger.warn(message);
 
   const cleanups: TeardownStep[] = [];
+  const lifetime = new AbortController();
   const markerOwners = createMarkerOwners();
   const workers: StartedWorker[] = [];
   const periodics: Periodic[] = [];
@@ -258,8 +259,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     }
   };
 
-  const teardown = (failureEvent?: string): Promise<string[]> =>
-    runTeardown({ steps: [...cleanups].reverse(), budgetMs: RUNTIME_TEARDOWN_BUDGET_MS, clock, timers, logger, ...(failureEvent === undefined ? {} : { failureEvent }) });
+  const teardown = (failureEvent?: string): Promise<string[]> => {
+    lifetime.abort(new Error('the runtime is closing'));
+    return runTeardown({ steps: [...cleanups].reverse(), budgetMs: RUNTIME_TEARDOWN_BUDGET_MS, clock, timers, logger, ...(failureEvent === undefined ? {} : { failureEvent }) });
+  };
 
   const shutdown = async (abortFirst: boolean): Promise<RuntimeCloseResult> => {
     let stragglers: string[] = [];
@@ -385,6 +388,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     };
     const sandboxes = createPinnedDerivation<SandboxBinding>({
       cache,
+      signal: lifetime.signal,
       inputsOf: derivedInputsOf('D3'),
       derive: async (current, _previous, deriveSignal) => {
         const sandbox = await sandboxOf(current.sandbox, deriveSignal);
@@ -454,6 +458,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     type TracedTelemetry = { telemetry: Telemetry; tracer: TracerPort };
     const telemetries = createPinnedDerivation<TracedTelemetry>({
       cache,
+      signal: lifetime.signal,
       inputsOf: derivedInputsOf('D2'),
       derive: async (current) => {
         const resolved = resolveTelemetrySettings(current.telemetry);
@@ -597,8 +602,9 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         startedAt,
         sandboxKind: async (healthSignal) => {
           const lease = await sandboxes.acquire(healthSignal);
+          const { kind } = lease.value.sandbox;
           lease.release();
-          return lease.value.sandbox.kind;
+          return kind;
         },
         protectedRootAreas: protectedRootAreasOf(paths, canonicalHome),
         notifier,

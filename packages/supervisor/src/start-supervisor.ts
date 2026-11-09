@@ -250,9 +250,11 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
     });
 
     let recordFailedKey: string | undefined;
+    let lastWrittenSeq: number | undefined;
     const recordApplied = (key: string | undefined): void => {
       try {
-        writeAppliedRecord(canonicalHome, own.settingsApplied);
+        const written = writeAppliedRecord(canonicalHome, own.settingsApplied, undefined, lastWrittenSeq);
+        if (written.kind !== 'invalid') lastWrittenSeq = written.seq;
       } catch (error) {
         if (key === recordFailedKey) return;
         recordFailedKey = key;

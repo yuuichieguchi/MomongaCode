@@ -188,6 +188,19 @@ type HandedCredential = (name: string, signal: AbortSignal) => Promise<string | 
 
 const UNREACHABLE_CODES: ReadonlySet<string> = new Set(['ENOENT', 'ECONNREFUSED']);
 
+const handedValueOf = (text: string): string | undefined => {
+  let answer: unknown;
+  try {
+    answer = JSON.parse(text);
+  } catch (error) {
+    if (error instanceof SyntaxError) return undefined;
+    throw error;
+  }
+  if (typeof answer !== 'object' || answer === null) return undefined;
+  const value = (answer as Record<string, unknown>)['value'];
+  return typeof value === 'string' && value !== '' ? value : undefined;
+};
+
 const credentialFromSupervisor =
   (socketPath: string, capability: string | undefined, redact: (value: string) => void): HandedCredential =>
   async (name, signal) => {
@@ -197,10 +210,8 @@ const credentialFromSupervisor =
       const response = await client.request({ method: 'GET', path: `/v1/credentials/${encodeURIComponent(name)}`, headers: { [CREDENTIAL_CAPABILITY_HEADER]: capability }, signal });
       const text = await response.text();
       if (response.status !== 200) return undefined;
-      const answer: unknown = JSON.parse(text);
-      if (typeof answer !== 'object' || answer === null) return undefined;
-      const value = (answer as Record<string, unknown>)['value'];
-      if (typeof value !== 'string' || value === '') return undefined;
+      const value = handedValueOf(text);
+      if (value === undefined) return undefined;
       redact(value);
       return value;
     } catch (error) {
@@ -669,7 +680,9 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   signal?.throwIfAborted();
   const lock = await (options.acquireLock ?? acquireProcessLock)(own.locks.gateway);
   const cleanups: Array<() => void | Promise<void>> = [() => lock.release()];
+  const lifetime = new AbortController();
   const unwind = async (): Promise<Error[]> => {
+    lifetime.abort(new Error('the gateway is closing'));
     const failures: Error[] = [];
     for (const cleanup of cleanups.splice(0).reverse()) {
       try {
@@ -772,6 +785,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     };
     const telemetries = createPinnedDerivation<Telemetry>({
       cache,
+      signal: lifetime.signal,
       inputsOf: derivedInputsOf('D2'),
       derive: async (current) => telemetryOf(current, await outboundNetworkOf(current.network)),
       retire: async (retired) => {
@@ -1012,6 +1026,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     handedCredential = credentialFromSupervisor(own.sockets.supervisor, options.env[CREDENTIAL_CAPABILITY_ENV], (value) => shared.redactor.add(value));
     const derivation = createPinnedDerivation<ProcessEpoch>({
       cache,
+      signal: lifetime.signal,
       inputsOf: derivedInputsOf('D1'),
       derive: (current, previous, deriveSignal) => deriveEpoch(shared, current, previous, deriveSignal),
       retire: async (epoch) => {

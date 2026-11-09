@@ -20,11 +20,14 @@ const resolveAndInstall = async (ports: NetworkPorts, settings: ResolvedSettings
 
 const networksByHome = new Map<string, PinnedDerivation<OutboundNetwork>>();
 
+const processLifetime = new AbortController();
+
 const networksOf = (ports: NetworkPorts): PinnedDerivation<OutboundNetwork> => {
   const known = networksByHome.get(ports.home);
   if (known !== undefined) return known;
   const created = createPinnedDerivation<OutboundNetwork>({
     cache: createUserSettingsCache({ home: ports.home, onWarning: (message) => warn(ports, message), keptRecords: noKeptRecords }),
+    signal: processLifetime.signal,
     inputsOf: derivedInputsOf('D4'),
     derive: (settings) => resolveAndInstall(ports, settings),
     retire: () => undefined,
@@ -34,22 +37,27 @@ const networksOf = (ports: NetworkPorts): PinnedDerivation<OutboundNetwork> => {
   return created;
 };
 
-export const processOutboundNetwork = async (ports: NetworkPorts): Promise<OutboundNetwork> => {
-  const lease = await networksOf(ports).admit(new AbortController().signal);
-  lease.release();
-  return lease.value;
+export const withOutboundNetwork = async <T>(ports: NetworkPorts, signal: AbortSignal, use: (network: OutboundNetwork) => Promise<T>): Promise<T> => {
+  const lease = await networksOf(ports).admit(signal);
+  try {
+    return await use(lease.value);
+  } finally {
+    lease.release();
+  }
 };
 
-export const withIdentityReadFetch = async <T>(ports: NetworkPorts, use: (fetch: OutboundFetch) => Promise<T>): Promise<T> => {
+export const withIdentityReadFetch = async <T>(ports: NetworkPorts, signal: AbortSignal, use: (fetch: OutboundFetch) => Promise<T>): Promise<T> => {
   const { IDENTITY_READ_TIMEOUT_MS } = await import('@momonga/gateway');
-  const dispatcher = createOutboundDispatcher(await processOutboundNetwork(ports), {
-    connectReplyTimeoutMs: IDENTITY_READ_TIMEOUT_MS,
-    headersTimeout: IDENTITY_READ_TIMEOUT_MS,
-    bodyTimeout: IDENTITY_READ_TIMEOUT_MS,
+  return withOutboundNetwork(ports, signal, async (network) => {
+    const dispatcher = createOutboundDispatcher(network, {
+      connectReplyTimeoutMs: IDENTITY_READ_TIMEOUT_MS,
+      headersTimeout: IDENTITY_READ_TIMEOUT_MS,
+      bodyTimeout: IDENTITY_READ_TIMEOUT_MS,
+    });
+    try {
+      return await use(outboundFetch(dispatcher));
+    } finally {
+      await dispatcher.close();
+    }
   });
-  try {
-    return await use(outboundFetch(dispatcher));
-  } finally {
-    await dispatcher.close();
-  }
 };

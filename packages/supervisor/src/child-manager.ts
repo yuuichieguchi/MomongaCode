@@ -164,6 +164,7 @@ type Life = {
   exited: boolean;
   abandoned: boolean;
   failed: boolean;
+  capability: string | undefined;
   timers: Partial<Record<LifeTimerName, unknown>>;
 };
 
@@ -194,7 +195,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   let leaked = false;
   let current: Life | undefined;
   let lastExit: LastExit | undefined;
-  let capability: string | undefined;
+  const capabilityHolders = new Set<Life>();
   let readyAt: number | undefined;
   let heldReason: string | undefined;
   let lastLoggedHeldReason: string | undefined;
@@ -385,7 +386,10 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     recordFailureWithoutProcess(reason, stopReason);
   };
 
-  const spawnProcess = (snapshot: Extract<UserSettingsSnapshot, { settings: unknown }>, handoff: LockHandoff | undefined): { marker: DaemonMarker; handle: ChildHandle } => {
+  const spawnProcess = (
+    snapshot: Extract<UserSettingsSnapshot, { settings: unknown }>,
+    handoff: LockHandoff | undefined,
+  ): { marker: DaemonMarker; handle: ChildHandle; capability: string | undefined } => {
     const skippedNames: string[] = [];
     const resolved = resolveLaunch({
       role,
@@ -401,7 +405,6 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     });
     if (role === 'gateway') reportSkippedNames(skippedNames);
     const spawnCapability = role === 'gateway' ? randomBytes(CAPABILITY_BYTES).toString('hex') : undefined;
-    capability = spawnCapability;
     const marker = openDaemonMarker(options.paths.markers.daemons, role, options.markerPorts?.files);
     try {
       const handle = options.spawn(resolved.command, resolved.args, {
@@ -410,7 +413,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
         detached: true,
         stdio: childStdio(marker.fd, handoff?.descriptor),
       });
-      return { marker, handle };
+      return { marker, handle, capability: spawnCapability };
     } catch (error) {
       marker.closeFd();
       marker.remove();
@@ -477,8 +480,14 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     ];
   };
 
+  const endCapability = (life: Life): void => {
+    life.capability = undefined;
+    capabilityHolders.delete(life);
+  };
+
   const failLifeWithoutProcess = (life: Life, error: NodeJS.ErrnoException): void => {
     life.failed = true;
+    endCapability(life);
     clearLifeTimers(life);
     destroyStreams(life);
     life.marker.remove();
@@ -533,6 +542,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
 
   const handleExit = async (life: Life, exit: ChildExit): Promise<void> => {
     life.exited = true;
+    endCapability(life);
     life.killStop.abort();
     clearLifeTimers(life);
     if (life.abandoned) {
@@ -601,7 +611,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     launches += 1;
     heldReason = undefined;
     readyAt = undefined;
-    let started: { marker: DaemonMarker; handle: ChildHandle };
+    let started: { marker: DaemonMarker; handle: ChildHandle; capability: string | undefined };
     try {
       started = spawnProcess(snapshot, handoff);
     } catch (error) {
@@ -610,7 +620,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       return;
     }
     handoff?.closeParentCopy();
-    const { marker, handle } = started;
+    const { marker, handle, capability } = started;
     marker.closeFd();
     const life: Life = {
       handle,
@@ -631,8 +641,10 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       exited: false,
       abandoned: false,
       failed: false,
+      capability,
       timers: {},
     };
+    if (capability !== undefined) capabilityHolders.add(life);
     current = life;
     setState('starting');
     handle.onSpawnError((error) => onHandleError(life, error));
@@ -816,10 +828,12 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
       recordFailureWithoutProcess(reason);
     },
     holdsCapability: (given) => {
-      if (capability === undefined) return false;
-      const expected = Buffer.from(capability);
       const offered = Buffer.from(given);
-      return offered.length === expected.length && timingSafeEqual(offered, expected);
+      return [...capabilityHolders].some((life) => {
+        if (life.capability === undefined) return false;
+        const expected = Buffer.from(life.capability);
+        return offered.length === expected.length && timingSafeEqual(offered, expected);
+      });
     },
     retryHeld: () => {
       if (options.isDraining() || state !== 'held-config') return;

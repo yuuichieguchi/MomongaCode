@@ -75,7 +75,21 @@ const appliedRecordOf = (file: string): AppliedRecord | undefined => {
   return { seq, settings };
 };
 
-export const writeAppliedRecord = (home: string, record: string, managedServers?: readonly ManagedServerDescription[]): AppliedRecordWrite => {
+type AppliedRecordRead = { kind: 'absent' } | { kind: 'readable'; record: AppliedRecord } | { kind: 'unreadable'; reason: string };
+
+const readAppliedRecord = (file: string): AppliedRecordRead => {
+  try {
+    const record = appliedRecordOf(file);
+    return record === undefined ? { kind: 'absent' } : { kind: 'readable', record };
+  } catch (error) {
+    rethrowIfTransient(error);
+    return { kind: 'unreadable', reason: error instanceof Error ? error.message : String(error) };
+  }
+};
+
+const unreadableRecordText = (file: string, reason: string): string => `the applied settings record ${file} is unreadable and was ignored: ${reason}`;
+
+export const writeAppliedRecord = (home: string, record: string, managedServers?: readonly ManagedServerDescription[], lastWrittenSeq?: number): AppliedRecordWrite => {
   let read: JsonFile;
   try {
     read = readUserJsonFile(home);
@@ -85,9 +99,9 @@ export const writeAppliedRecord = (home: string, record: string, managedServers?
     throw error;
   }
   const settings = read.found ? read.value : {};
-  const previous = appliedRecordOf(record);
-  if (previous !== undefined && canonicalJson(previous.settings) === canonicalJson(settings)) return { kind: 'unchanged', seq: previous.seq };
-  const seq = previous === undefined ? 1 : previous.seq + 1;
+  const previous = readAppliedRecord(record);
+  if (previous.kind === 'readable' && canonicalJson(previous.record.settings) === canonicalJson(settings)) return { kind: 'unchanged', seq: previous.record.seq };
+  const seq = (previous.kind === 'readable' ? previous.record.seq : (lastWrittenSeq ?? 0)) + 1;
   writeFileAtomicallySync(nodeFileSystemSync, systemRandom, record, `${JSON.stringify({ seq, settings })}\n`, { mode: APPLIED_RECORD_MODE });
   return { kind: 'written', seq };
 };
@@ -130,17 +144,41 @@ export const createUserSettingsCache = ({ home, onWarning, keptRecords, managedS
   let failedKey = '';
 
   let notedSeq: number | undefined;
+  let reportedRecordKey: string | undefined;
+
+  const readableRecord = (): AppliedRecord | undefined => {
+    if (appliedRecord === undefined) return undefined;
+    const identity = changeKeyOf(appliedRecord);
+    const recorded = readAppliedRecord(appliedRecord);
+    if (recorded.kind === 'readable') return recorded.record;
+    if (recorded.kind === 'unreadable') reportUnreadable(appliedRecord, identity, recorded.reason);
+    return undefined;
+  };
+
+  const reportUnreadable = (record: string, identity: string, reason: string): void => {
+    const key = `${identity}\u0000${reason}`;
+    if (reportedRecordKey === key) return;
+    reportedRecordKey = key;
+    onWarning(unreadableRecordText(record, reason));
+  };
 
   const noteRecordSeq = (): void => {
-    if (appliedRecord === undefined) return;
-    notedSeq = appliedRecordOf(appliedRecord)?.seq;
+    const recorded = readableRecord();
+    if (recorded !== undefined) notedSeq = recorded.seq;
   };
 
   const newerAppliedCopy = (): Kept<UserSettingsLoaded> => {
     if (appliedRecord === undefined) return undefined;
-    const recorded = appliedRecordOf(appliedRecord);
+    const recorded = readableRecord();
     if (recorded === undefined || (notedSeq !== undefined && recorded.seq <= notedSeq)) return undefined;
-    const rebuilt = userSettingsFrom(home, { found: true, value: recorded.settings }, managedServers);
+    let rebuilt: UserSettingsLoad;
+    try {
+      rebuilt = userSettingsFrom(home, { found: true, value: recorded.settings }, managedServers);
+    } catch (error) {
+      if (!(error instanceof ConfigError)) throw error;
+      reportUnreadable(appliedRecord, changeKeyOf(appliedRecord), error.message);
+      return undefined;
+    }
     notedSeq = recorded.seq;
     lastGood = { value: { settings: rebuilt.settings, user: rebuilt.user } };
     return lastGood;
