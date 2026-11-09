@@ -27,6 +27,7 @@ const run = async (argv: readonly string[]): Promise<void> => {
   const front = http.createServer((request, response) => {
     if (request.method === 'GET' && request.url === '/ready') return json(response, 200, { ready: true });
     if (request.method === 'GET' && request.url === '/models') return json(response, 200, { models: [{ name: FAKE_SERVER_MODEL }] });
+    if (request.method === 'GET' && request.url === '/v1/models') return forward(request, response, innerSocket);
     if (request.method === 'GET') return json(response, 404, { error: { message: 'fake: no such route' } });
     return forward(request, response, innerSocket);
   });
