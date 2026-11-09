@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -108,10 +108,10 @@ describe('the journal thread build', () => {
     async () => {
       const target = path.join(root, 'stale', 'journal-thread-code.generated.ts');
       fs.mkdirSync(path.dirname(target));
-      fs.writeFileSync(target, "export const JOURNAL_THREAD_CODE = 'stale';\n");
+      fs.writeFileSync(target, `export const JOURNAL_THREAD_CODE = ${JSON.stringify(randomUUID())};\n`);
       await writeJournalThreadModule(target);
-      expect(fs.readFileSync(target, 'utf8')).not.toContain("'stale'");
-      expect(fs.readFileSync(target, 'utf8')).toContain('JOURNAL_THREAD_CODE');
+      const replaced = (await import(pathToFileURL(target).href)) as { JOURNAL_THREAD_CODE: string };
+      expect(replaced.JOURNAL_THREAD_CODE).toBe(await bundleJournalThread());
       expect(fs.readdirSync(path.dirname(target))).toEqual(['journal-thread-code.generated.ts']);
     },
     UNBOUNDED_BUILD_WAIT_MS,
