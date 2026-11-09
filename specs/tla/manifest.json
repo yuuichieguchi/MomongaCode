@@ -3172,6 +3172,98 @@
       "measuredSeconds": 6.42,
       "measuredCpuSeconds": 9.04,
       "budgetCpuSeconds": 22
+    },
+    {
+      "config": "Retention",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 407102,
+      "measuredSeconds": 11.64,
+      "measuredCpuSeconds": 15.19,
+      "budgetCpuSeconds": 34
+    },
+    {
+      "config": "Retention.blobRace",
+      "role": "evidence",
+      "expect": {
+        "violates": "OwnedBlobReadable",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 111594,
+      "measuredSeconds": 4.25,
+      "measuredCpuSeconds": 5.98,
+      "budgetCpuSeconds": 15
+    },
+    {
+      "config": "Retention.singleMember",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoDanglingSessionRef",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 151,
+      "measuredSeconds": 2.25,
+      "measuredCpuSeconds": 1.79,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "Retention.noSweepRecord",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoUncoveredDangling",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 6863,
+      "measuredSeconds": 2.39,
+      "measuredCpuSeconds": 2.97,
+      "budgetCpuSeconds": 9
+    },
+    {
+      "config": "Retention.judgeByCreation",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoEarlyDelete",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1045,
+      "measuredSeconds": 2.49,
+      "measuredCpuSeconds": 2.11,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "Retention.live",
+      "role": "check",
+      "expect": "holds",
+      "args": [
+        "-lncheck",
+        "final"
+      ],
+      "tier": "deep",
+      "distinctStates": 153701,
+      "measuredSeconds": 63.59,
+      "measuredCpuSeconds": 81.05,
+      "budgetCpuSeconds": 166
+    },
+    {
+      "config": "Retention.chain",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 28120104,
+      "measuredSeconds": 1286.24,
+      "measuredCpuSeconds": 1492.52,
+      "budgetCpuSeconds": 2989
     }
   ]
 }
