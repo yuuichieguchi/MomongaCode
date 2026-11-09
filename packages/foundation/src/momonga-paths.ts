@@ -5,6 +5,11 @@ import util from 'node:util';
 import { ensureWindowsPrivateTree, modeIsPrivate, noFollowFlag, directoryFlag, ownerProblem } from './platform/privacy.ts';
 import { nodeCommandRunner } from './platform/command-runner.ts';
 import type { CommandRunner } from './platform/command-runner.ts';
+import { isAtomicWriteTemporary } from './atomic-file.ts';
+import type { LeftoverDirectory } from './leftover-sweep.ts';
+import { hostKernelLock } from './platform/host-kernel-lock.ts';
+import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
+import { claimNewEntry } from './platform/lock-form.ts';
 import { assertSocketPathLength, isPipePath, pipePathFor, refuseUnbindableUnixSocketPath } from './socket-path.ts';
 
 export interface MomongaPaths {
@@ -203,6 +208,7 @@ export type PlatformDirectoryPorts = {
   run?: CommandRunner;
   env?: Readonly<Record<string, string | undefined>>;
   signal?: AbortSignal | undefined;
+  lock?: KernelLockMechanism;
 };
 
 export class MomongaDirectoryError extends Error {
@@ -284,6 +290,21 @@ const createMomongaDirs = async (paths: MomongaPaths, ports: PlatformDirectoryPo
   }
 };
 
+const STORE_BLOBS_DIRECTORY = 'blobs';
+
+const everyName = (): boolean => true;
+
+const retainedByItsOwnersRule = (): boolean => true;
+
+export const leftoverDirectories = (paths: MomongaPaths): LeftoverDirectory[] => [
+  { directory: paths.planSessions, isLeftover: isAtomicWriteTemporary },
+  { directory: path.dirname(paths.gatewayKey), isLeftover: isAtomicWriteTemporary },
+  { directory: paths.tmp.spawn, isLeftover: everyName },
+  { directory: paths.tmp.sessions, isLeftover: everyName, retain: retainedByItsOwnersRule },
+  { directory: path.join(path.dirname(paths.databases.runtime), STORE_BLOBS_DIRECTORY), isLeftover: isAtomicWriteTemporary },
+  { directory: paths.probe, isLeftover: isAtomicWriteTemporary },
+];
+
 export const ensureMomongaDirs = async (paths: MomongaPaths, ports: PlatformDirectoryPorts = {}): Promise<void> => {
   await refuseUnfitGenerationSockets(generationLayout(path.dirname(paths.root), FIRST_GENERATION));
   await createMomongaDirs(paths, ports);
@@ -349,8 +370,41 @@ const ensureSessionTmpDirWindows = async (paths: MomongaPaths, sessionId: string
   return directory;
 };
 
+const heldSessionScratch = new Map<string, HeldKernelLock>();
+
+const claimSessionScratch = async (directory: string, lock: KernelLockMechanism): Promise<boolean> => {
+  if (heldSessionScratch.has(directory)) return false;
+  heldSessionScratch.set(directory, await claimNewEntry(lock, directory, 'sidecar'));
+  return true;
+};
+
+const releaseSessionScratch = (directory: string): void => {
+  const held = heldSessionScratch.get(directory);
+  heldSessionScratch.delete(directory);
+  held?.release();
+};
+
+const assertSessionsRootIsDirectory = async (root: string): Promise<void> => {
+  const stat = await lstatIfPresent(root);
+  if (stat === undefined || stat.isSymbolicLink() || !stat.isDirectory()) {
+    throw new SessionTmpDirError(`${root} is missing, a link, or not a directory; refusing to use it`);
+  }
+};
+
 export const ensureSessionTmpDir = async (paths: MomongaPaths, sessionId: string, ports: PlatformDirectoryPorts = {}): Promise<string> => {
   assertSessionId(sessionId);
+  const directory = path.join(paths.tmp.sessions, sessionId);
+  await assertSessionsRootIsDirectory(paths.tmp.sessions);
+  const claimedNow = await claimSessionScratch(directory, ports.lock ?? hostKernelLock());
+  try {
+    return await ensureClaimedSessionTmpDir(paths, sessionId, ports);
+  } catch (error) {
+    if (claimedNow) releaseSessionScratch(directory);
+    throw error;
+  }
+};
+
+const ensureClaimedSessionTmpDir = async (paths: MomongaPaths, sessionId: string, ports: PlatformDirectoryPorts): Promise<string> => {
   const platform = ports.platform ?? process.platform;
   if (platform === 'win32') return ensureSessionTmpDirWindows(paths, sessionId);
   const uid = process.getuid?.();

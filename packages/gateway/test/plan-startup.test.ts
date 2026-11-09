@@ -22,7 +22,7 @@ describe('startup of the session engine', () => {
   it('sweeps stale temp files in the sessions directory and keeps the records', async () => {
     const h = await harness();
     await signedIn(h, 'work');
-    const stale = path.join(h.paths.sessions, `${path.basename(recordFileOf(h, 'work'))}.4f2a.tmp`);
+    const stale = path.join(h.paths.sessions, `.${path.basename(recordFileOf(h, 'work'))}.4f2a.tmp`);
     await fs.writeFile(stale, 'partial', { mode: 0o600 });
     await h.reopen({ accounts: work });
     await expect(fs.stat(stale)).rejects.toMatchObject({ code: 'ENOENT' });

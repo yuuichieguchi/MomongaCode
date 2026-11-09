@@ -70,13 +70,15 @@ describe('T7 (b) a staging place on another filesystem than the marker is refuse
   it('createMarker rejects with StagingLinkError naming both paths and the reason, and leaves neither file behind', async () => {
     const { markerDir } = directories();
     const marker = path.join(markerDir, 'call-1');
-    const staged = path.join(path.dirname(markerDir), '.tools.call-1.creating');
     const failure = await createMarker(marker, { capability: fixedCapability('proved'), ops: twoStepCreateLockOps(() => undefined), files: crossDeviceLink }).then(
       () => undefined,
       (error: unknown) => error,
     );
     expect(failure).toBeInstanceOf(StagingLinkError);
-    expect(failure).toMatchObject({ name: 'StagingLinkError', stagingPath: staged, targetPath: marker });
+    const staged = (failure as StagingLinkError).stagingPath;
+    expect(path.dirname(staged)).toBe(path.dirname(markerDir));
+    expect(path.basename(staged)).toMatch(/^\.tools\.call-1\.[0-9a-f]{8,}\.creating$/);
+    expect(failure).toMatchObject({ name: 'StagingLinkError', targetPath: marker });
     expect((failure as Error).message).toBe(`${staged} cannot be hard-linked to ${marker}: the two paths are on different filesystems, so the locked file cannot be given its name without a moment in which it exists unlocked`);
     expect(((failure as Error).cause as NodeJS.ErrnoException).code).toBe('EXDEV');
     expect(fs.existsSync(marker)).toBe(false);

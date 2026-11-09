@@ -5,8 +5,8 @@ import type { EndpointProbeKey } from '@momonga/config';
 import type { ModelsSettings, ResolvedModels, SandboxSetting, UserModels } from '@momonga/config';
 import { caseSettingsFor, expandContextDataset, failedWithCleanup, liveBoundsFor, runContextDataset } from '@momonga/eval';
 import type { ContextCaseHost, ContextDataset, ExpandedCase, PolicyOverlay, Transcript, WorkspaceStep } from '@momonga/eval';
-import { FIRST_GENERATION, generationLayout, momongaLayout, socketPathLimit } from '@momonga/foundation';
-import type { MomongaPaths } from '@momonga/foundation';
+import { FIRST_GENERATION, claimPathOf, generationLayout, momongaLayout, socketPathLimit } from '@momonga/foundation';
+import type { KernelLockMechanism, MomongaPaths } from '@momonga/foundation';
 import { goldenRunApi } from '../client/golden-run-api.ts';
 import type { ReflectionSettle } from '../client/golden-run-api.ts';
 import type { RuntimeClient } from '../client/runtime-client.ts';
@@ -24,6 +24,7 @@ export type ContextRuntime = Pick<
 >;
 
 export type ContextHostEffects = {
+  lock: KernelLockMechanism;
   platform: NodeJS.Platform;
   env: Readonly<Record<string, string | undefined>>;
   sessionEnv(root: string): Promise<Record<string, string>>;
@@ -47,7 +48,6 @@ export type ContextHostEffects = {
   copyEndpointProbeRecord(probe: EndpointProbe, paths: MomongaPaths): Promise<void>;
   listRoots(): Promise<string[]>;
   readOwner(root: string): Promise<EvalOwner | 'legacy' | 'unreadable' | undefined>;
-  isAlive(pid: number): boolean;
 };
 
 const WORKSPACE_DIRECTORY = 'w';
@@ -204,10 +204,18 @@ export const sweepStaleHomes = async (effects: ContextHostEffects): Promise<Swee
       unowned.push(root);
       continue;
     }
-    if (owner === undefined || owner.home !== effects.ownerHome || effects.isAlive(owner.pid)) continue;
-    const holder = await effects.daemonHolder(momongaLayout(root, effects.platform, {}));
-    if (holder !== undefined) await effects.terminate(holder);
-    await effects.remove(root);
+    if (owner === undefined || owner.home !== effects.ownerHome) continue;
+    const claim = await effects.lock.claim(claimPathOf(effects.lock, root, 'sidecar'));
+    if (claim.kind === 'held') continue;
+    try {
+      const holder = await effects.daemonHolder(momongaLayout(root, effects.platform, {}));
+      if (holder !== undefined) await effects.terminate(holder);
+      await effects.remove(root);
+    } catch (error) {
+      claim.lock.release();
+      throw error;
+    }
+    claim.lock.dispose();
     removed.push(root);
   }
   return { removed, unreadable, unowned };

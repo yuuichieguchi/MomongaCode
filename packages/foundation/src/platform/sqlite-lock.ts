@@ -193,6 +193,7 @@ const probeDatabase = (ops: SqliteLockOps, lockPath: string): boolean => {
 export const createSqliteFileLock = (ops: SqliteLockOps): KernelLockMechanism => ({
   name: 'sqlite-lock',
   claim: async (lockPath) => claimDatabase(ops, lockPath),
+  claimSync: (lockPath) => claimDatabase(ops, lockPath),
   isHeld: async (lockPath) => probeDatabase(ops, lockPath),
   readHolder: readHolderFile,
   readHolderSync: readHolderFileSync,

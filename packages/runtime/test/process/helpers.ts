@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach } from 'vitest';
 import { createUserSettingsCache, diskKeptRecords, keptSettingsDirectory } from '@momonga/config';
 import type { UserSettingsCache } from '@momonga/config';
-import { ensureMomongaDirs, momongaPaths, nodeFileSystemSync } from '@momonga/foundation';
+import { claimPathOf, ensureMomongaDirs, hostKernelLock, momongaPaths, nodeFileSystemSync } from '@momonga/foundation';
 import type { JsonLogger, LogFields, MomongaPaths, ReapTiming } from '@momonga/foundation';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import * as runtime from '@momonga/runtime';
@@ -379,4 +379,13 @@ export const runBashThroughPort = async (
   const outcome = outcomes[0];
   if (outcome === undefined) throw new Error('no outcome');
   return { outcome, env, policy };
+};
+
+export const makeAbandonedDirectory = (directory: string): string => {
+  const lock = hostKernelLock();
+  const claimed = lock.claimSync?.(claimPathOf(lock, directory, 'sidecar'));
+  if (claimed?.kind !== 'claimed') throw new Error(`the sidecar of ${directory} could not be claimed by the test`);
+  fs.mkdirSync(directory, { recursive: true });
+  claimed.lock.release();
+  return directory;
 };

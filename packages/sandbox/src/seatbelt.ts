@@ -1,9 +1,9 @@
 import fs from 'node:fs';
-import path from 'node:path';
 import { canonicalizePath } from './canonical-path.ts';
 import { launch } from './process.ts';
 import { buildSeatbeltProfile } from './profile.ts';
-import { assertExistingDirectory, removePrivateTmpDir } from './scratch.ts';
+import { createOwnedDirectorySync } from '@momonga/foundation';
+import { assertExistingDirectory } from './scratch.ts';
 import type { Sandbox, SandboxCommand, SandboxDescriptors, SandboxPolicy, SandboxedProcess } from './types.ts';
 
 const DEFAULT_SANDBOX_EXEC_PATH = '/usr/bin/sandbox-exec';
@@ -41,7 +41,8 @@ export function createSeatbeltSandbox(options: SeatbeltSandboxOptions): Sandbox 
           afterExit: () => undefined,
         });
       }
-      const tmpDir = fs.mkdtempSync(path.join(tmpRoot, 'sandbox-'));
+      const scratch = createOwnedDirectorySync({ parent: tmpRoot, prefix: 'sandbox-' });
+      const tmpDir = scratch.path;
       try {
         const scratchDir = canonicalizePath(tmpDir);
         const { profile, params } = buildSeatbeltProfile({ ...policy, writableRoots: [...policy.writableRoots, scratchDir] }, { scratchDir });
@@ -55,10 +56,10 @@ export function createSeatbeltSandbox(options: SeatbeltSandboxOptions): Sandbox 
           env: { ...command.env, TMPDIR: tmpDir },
           signal,
           killGraceMs: options.killGraceMs,
-          afterExit: () => removePrivateTmpDir(tmpDir),
+          afterExit: () => scratch.dispose(),
         });
       } catch (error) {
-        removePrivateTmpDir(tmpDir);
+        scratch.dispose();
         throw error;
       }
     },
