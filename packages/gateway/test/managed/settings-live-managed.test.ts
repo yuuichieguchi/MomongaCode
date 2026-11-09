@@ -105,4 +105,19 @@ describe('S1 managed targets under a settings change (design-settings-live 3.1)'
     expect((await inFlight).status).toBe(200);
     await waitFor(() => !isAlive(apple.pid), { maxTurns: 50_000, description: 'the removed target server to stop after its last lease ended' });
   });
+
+  it('an edit a to b to a with a call in flight on a keeps one managed server for the counter of a (design-settings-live 15.4)', async () => {
+    const { fm, dumpFile, home } = await setup();
+    const settingsWith = (maxOutputTokens: number) => ({ models: { targets: { apple: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, ...declared(maxOutputTokens) } }, aliases: { default: ['apple'] } } });
+    replaceSettings(home, settingsWith(512));
+    const handle = await launch(home);
+    const inFlight = postJson(clientFor(handle.socketPath), '/v1/responses', ask('default')).then((response) => response.status, () => -1);
+    await waitFor(() => serves(dumpFile).length === 1, { description: 'the first incarnation to start' });
+    replaceSettings(home, settingsWith(256));
+    expect(await postJson(clientFor(handle.socketPath), '/v1/responses', ask('default')).then((response) => response.status)).toBe(200);
+    replaceSettings(home, settingsWith(512));
+    expect(await postJson(clientFor(handle.socketPath), '/v1/responses', ask('default')).then((response) => response.status)).toBe(200);
+    expect(serves(dumpFile).map(socketOf)).toEqual([path.join(targetsDirectory(home), 'apple-1.sock'), path.join(targetsDirectory(home), 'apple-2.sock')]);
+    expect(await inFlight).toBe(200);
+  });
 });
