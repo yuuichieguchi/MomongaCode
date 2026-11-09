@@ -7,6 +7,7 @@ import type { SupervisorHealth } from '@momonga/protocol';
 import { firstGeneration, killGroupsForCleanup } from '@momonga/testkit';
 import { readDb } from './db.ts';
 import { readLog } from './log-reader.ts';
+import { appendHarnessFile } from './run-env.ts';
 
 export const TOOL_GROUPS_SQL = 'SELECT pgid FROM idempotency WHERE pgid IS NOT NULL';
 export const UNREACHABLE_ERRNO_CODES: ReadonlySet<string> = new Set(['ECONNREFUSED', 'ENOENT']);
@@ -162,7 +163,7 @@ export const createProcessLedger = (options: CreateProcessLedgerOptions): Proces
     const entry: LedgerEntry = { pgid: pid, startTime: valueOrThrow(`reading the start time of ${pid}`, await ports.startTimeOf(pid), undefined), source };
     if (entries.has(pid)) return;
     entries.set(pid, entry);
-    fs.appendFileSync(pidsFile, formatPidsLine(entry), { mode: 0o600 });
+    appendHarnessFile(pidsFile, formatPidsLine(entry));
   };
 
   const collectHealth = async (health: () => Promise<SupervisorHealth>): Promise<void> => {
