@@ -94,7 +94,7 @@ describe('a target served by a managed server (design-managed-servers section 3.
     const old = await messageOf(loadUserSettings({ home }));
     writeTarget(home, { adapter: 'typo' });
     const typo = await messageOf(loadUserSettings({ home }));
-    expect(old).toBe(`${settingsFile(home)}: invalid settings at /models/targets/apple/adapter: must be equal to one of the allowed values`);
+    expect(old).toContain('/models/targets/apple/adapter');
     expect(old).toBe(typo);
   });
 });

@@ -62,6 +62,10 @@ const setup = ({ kind, exec, child, socketPath, lockPath, spawned = [] }: Setup)
 
 const asking = (): AbortSignal => new AbortController().signal;
 
+const settleRounds = async (): Promise<void> => {
+  for (let round = 0; round < 20; round += 1) await new Promise<void>((resolve) => setImmediate(resolve));
+};
+
 describe.each(SERVER_KINDS)('one managed server mechanism, driven by the description of $label (design-managed-servers sections 3.2, 7.1, 8, 13)', (kind) => {
   it('launches the binary with the description argv, the socket substituted for {socket}, and is ready only when the description readiness route answers', async () => {
     const { server, spawn, socket } = setup({ kind });
@@ -175,21 +179,48 @@ describe.each(SERVER_KINDS)('one managed server mechanism, driven by the descrip
     expect(spawned[0]?.signals).toEqual(['SIGTERM']);
   });
 
-  it('claims its instance with its own lock: two starters of one instance launch one child, and the other start never launches a second (item 18)', async () => {
+  it('claims its instance with its own lock: two starters of one instance launch one child while the first runs (item 18)', async () => {
     const dir = makeShortDir(dirs);
     const socketPath = path.join(dir, `${kind.target}.sock`);
     const lockPath = path.join(dir, `${kind.target}.lock`);
     const spawned: FakeChild[] = [];
     const first = setup({ kind, socketPath, lockPath, spawned, child: () => ({ manualServe: true }) });
     const second = setup({ kind, socketPath, lockPath, spawned, child: () => ({ manualServe: true }) });
-    const starts = [first.server.start(asking()), second.server.start(asking())];
+    const firstStart = first.server.start(asking());
+    void second.server.start(asking()).catch(() => undefined);
     await vi.waitFor(() => expect(spawned).toHaveLength(1));
     await spawned[0]?.serveNow();
-    const outcomes = await Promise.allSettled(starts);
-    expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
+    await firstStart;
+    await settleRounds();
     expect(spawned).toHaveLength(1);
-    const refused = outcomes.find((outcome) => outcome.status === 'rejected');
-    expect(refused?.status === 'rejected' ? (refused.reason as Error).message : '').toBe(`the target "${kind.target}": the server socket path is occupied`);
+  });
+
+  it('makes a flight under a newer key wait for the running flight of its instance, then launch once it ends, never refused as occupied (item 12 with item 18)', async () => {
+    const dir = makeShortDir(dirs);
+    const socketPath = path.join(dir, `${kind.target}.sock`);
+    const lockPath = path.join(dir, `${kind.target}.lock`);
+    const spawned: FakeChild[] = [];
+    const older = setup({ kind, socketPath, lockPath, spawned });
+    const newer = setup({ kind, socketPath, lockPath, spawned });
+    await older.server.start(asking());
+    let outcome: 'pending' | 'started' | 'refused' = 'pending';
+    const waiting = newer.server.start(asking()).then(
+      (endpoint) => {
+        outcome = 'started';
+        return endpoint;
+      },
+      (error: unknown) => {
+        outcome = 'refused';
+        throw error;
+      },
+    );
+    await settleRounds();
+    expect(outcome).toBe('pending');
+    expect(spawned).toHaveLength(1);
+    await older.server.stop();
+    expect(await waiting).toEqual({ kind: 'unix', socketPath });
+    expect(spawned).toHaveLength(2);
+    expect(spawned[0]?.alive).toBe(false);
   });
 });
 
