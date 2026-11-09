@@ -60,3 +60,60 @@ describe('Grep through the ripgrep locator on the tool context', () => {
     expect(released).toBe(1);
   });
 });
+
+const textStream = (text: string): AsyncIterable<Uint8Array> => ({
+  async *[Symbol.asyncIterator]() {
+    if (text !== '') yield Buffer.from(text);
+  },
+});
+
+const answeringSandbox = (answer: (argv: string[]) => string) => {
+  const spawned: string[][] = [];
+  const sandbox = {
+    kind: 'none' as const,
+    spawn: (command: { argv: string[] }, policy: unknown) => {
+      spawned.push(command.argv);
+      return { pid: 0, pgid: 0, policy, stdout: textStream(answer(command.argv)), stderr: textStream(''), exited: Promise.resolve({ code: 0, signal: null }) };
+    },
+  };
+  return { sandbox, spawned };
+};
+
+describe('Grep reports the ripgrep it ran as its backend (design 6.4)', () => {
+  it('carries the source and the manifest version of a bundled ripgrep, without running --version', async () => {
+    const { sandbox, spawned } = answeringSandbox(() => '');
+    const tools = await makeBuiltins({ sandbox: sandbox as never });
+    const target = tools.write('a.ts', 'alpha\n');
+    sandbox.spawn = ((command: { argv: string[] }, policy: unknown) => {
+      spawned.push(command.argv);
+      return { pid: 0, pgid: 0, policy, stdout: textStream(`${target}\0`), stderr: textStream(''), exited: Promise.resolve({ code: 0, signal: null }) };
+    }) as typeof sandbox.spawn;
+    const locator = { locate: async () => ({ ok: true as const, path: '/bundled/rg', source: 'bundled' as const, version: '15.2.0', release: async () => undefined }) };
+    const result = resultOf(await tools.run('Grep', { pattern: 'alpha' }, { ripgrep: locator } as never));
+    expect(result.backend).toEqual({ source: 'bundled', version: '15.2.0' });
+    expect(spawned.filter((argv) => argv.includes('--version'))).toEqual([]);
+  });
+
+  it('runs --version of a system ripgrep once per locator, inside the sandbox, and carries it on every call', async () => {
+    let target = '';
+    const { sandbox, spawned } = answeringSandbox((argv) => (argv[1] === '--version' ? 'ripgrep 14.1.1\n\nfeatures:+pcre2\n' : `${target}\0`));
+    const tools = await makeBuiltins({ sandbox: sandbox as never });
+    target = tools.write('a.ts', 'alpha\n');
+    const locator = { locate: async () => ({ ok: true as const, path: '/usr/bin/rg', source: 'system' as const, release: async () => undefined }) };
+    const first = resultOf(await tools.run('Grep', { pattern: 'alpha' }, { ripgrep: locator } as never));
+    const second = resultOf(await tools.run('Grep', { pattern: 'alpha' }, { ripgrep: locator } as never));
+    expect(first.backend).toEqual({ source: 'system', version: '14.1.1' });
+    expect(second.backend).toEqual({ source: 'system', version: '14.1.1' });
+    expect(spawned.filter((argv) => argv[1] === '--version')).toEqual([['/usr/bin/rg', '--version']]);
+  });
+
+  it('fails naming the executable when --version does not report a ripgrep version', async () => {
+    const { sandbox } = answeringSandbox((argv) => (argv[1] === '--version' ? 'not ripgrep\n' : ''));
+    const tools = await makeBuiltins({ sandbox: sandbox as never });
+    tools.write('a.ts', 'alpha\n');
+    const locator = { locate: async () => ({ ok: true as const, path: '/opt/rg', source: 'path' as const, release: async () => undefined }) };
+    const result = resultOf(await tools.run('Grep', { pattern: 'alpha' }, { ripgrep: locator } as never));
+    expect(result.status).toBe('failed');
+    expect(result.output).toContain('/opt/rg --version did not report a ripgrep version');
+  });
+});

@@ -201,3 +201,20 @@ describe('createTracerPort message content', () => {
     expect(spans.find((span) => span.attributes['gen_ai.operation.name'] === 'invoke_agent')?.attributes).not.toHaveProperty('gen_ai.tool.call.arguments');
   });
 });
+
+describe('createTracerPort tool backend', () => {
+  it('records the backend source and version on the tool span, also when message content is not captured', async () => {
+    const { tracer, finished } = setup();
+    const agent = tracer.startAgentSpan(AGENT);
+    const tool = tracer.startToolSpan(agent, { ...TOOL, toolName: 'Grep' });
+    tool.recordToolBackend({ source: 'bundled', version: '15.2.0' });
+    tool.end();
+    agent.end();
+
+    const spans = await finished();
+
+    const toolSpan = spans.find((span) => span.attributes['gen_ai.operation.name'] === 'execute_tool');
+    expect(toolSpan?.attributes['tool.backend.source']).toBe('bundled');
+    expect(toolSpan?.attributes['tool.backend.version']).toBe('15.2.0');
+  });
+});
