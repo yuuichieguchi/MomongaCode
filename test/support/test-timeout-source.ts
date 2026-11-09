@@ -98,3 +98,11 @@ export const fileLevelTestTimeout = (source: string, constant: string): boolean 
 
 export const importsFromTestkit = (source: string, name: string): boolean =>
   new RegExp(`import\\s*\\{[^}]*\\b${name}\\b[^}]*\\}\\s*from\\s*'@momonga/testkit'`).test(source);
+
+export const timeoutFormOffences = (source: string, constant: string): string[] => {
+  const fileLevel = new RegExp(`^testTimeout\\s*:\\s*${constant}$`);
+  return [
+    ...timeoutKeys(source).filter((key) => !fileLevel.test(key.trim())).map((key) => `declares a timeout option: ${key.trim()}`),
+    ...perTestTimeouts(source).map((timeout) => `passes a per-test timeout: ${timeout}`),
+  ];
+};

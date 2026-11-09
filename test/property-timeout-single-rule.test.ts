@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import * as testkit from '@momonga/testkit';
-import { fileLevelTestTimeout, importsFromTestkit, perTestTimeouts, repositoryTests, timeoutKeys } from './support/test-timeout-source.ts';
+import { fileLevelTestTimeout, importsFromTestkit, repositoryTests, timeoutFormOffences } from './support/test-timeout-source.ts';
 
 const SEEDED_CALL = /\bseeded\(/;
 const LOCAL_DECLARATION = /\b(?:const|let|var)\s+PROPERTY_TIMEOUT_MS\b/;
-const FILE_LEVEL_FORM = /^testTimeout\s*:\s*PROPERTY_TIMEOUT_MS$/;
 
 const propertyTests = (): Array<{ file: string; source: string }> =>
   repositoryTests().filter(({ file, source }) => SEEDED_CALL.test(source) && !file.startsWith('test/property-timeout-single-rule') && !file.startsWith('test/support/'));
@@ -14,8 +13,7 @@ const offendersOf = (file: string, source: string): string[] => {
   if (!importsFromTestkit(source, 'PROPERTY_TIMEOUT_MS')) reasons.push('does not import PROPERTY_TIMEOUT_MS from @momonga/testkit');
   if (LOCAL_DECLARATION.test(source)) reasons.push('declares its own PROPERTY_TIMEOUT_MS');
   if (!fileLevelTestTimeout(source, 'PROPERTY_TIMEOUT_MS')) reasons.push('has no file-level vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS })');
-  for (const key of timeoutKeys(source)) if (!FILE_LEVEL_FORM.test(key.trim())) reasons.push(`declares a timeout option: ${key.trim()}`);
-  for (const timeout of perTestTimeouts(source)) reasons.push(`passes a per-test timeout: ${timeout}`);
+  reasons.push(...timeoutFormOffences(source, 'PROPERTY_TIMEOUT_MS'));
   return reasons.map((reason) => `${file}: ${reason}`);
 };
 

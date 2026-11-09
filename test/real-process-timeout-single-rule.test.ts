@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import * as testkit from '@momonga/testkit';
-import { ROOT, fileLevelTestTimeout, importsFromTestkit, repositoryTests } from './support/test-timeout-source.ts';
+import { ROOT, fileLevelTestTimeout, importsFromTestkit, repositoryTests, timeoutFormOffences } from './support/test-timeout-source.ts';
 
 const PRODUCT_STARTS = ['startGatewayProcess', 'runGatewayEntry', 'startRuntimeProcess', 'runRuntimeEntry'] as const;
 const TEST_HELPER_STARTS: Readonly<Record<string, readonly string[]>> = {
@@ -30,6 +30,7 @@ const offendersOf = (file: string, source: string): string[] => {
   const reasons: string[] = [];
   if (!importsFromTestkit(source, 'REAL_PROCESS_TEST_TIMEOUT_MS')) reasons.push('does not import REAL_PROCESS_TEST_TIMEOUT_MS from @momonga/testkit');
   if (!fileLevelTestTimeout(source, 'REAL_PROCESS_TEST_TIMEOUT_MS')) reasons.push('has no file-level vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS })');
+  reasons.push(...timeoutFormOffences(source, 'REAL_PROCESS_TEST_TIMEOUT_MS'));
   return reasons.map((reason) => `${file}: ${reason}`);
 };
 
@@ -73,6 +74,17 @@ describe('every test file that starts a real gateway or runtime sets REAL_PROCES
     expect(callsRealStart("import { startGateway } from './gateway-helpers.ts';\nawait startGateway({});\n")).toBe(false);
     expect(callsRealStart("import { startGateway } from './run-helpers.ts';\nawait startGateway(temp);\n")).toBe(true);
     expect(callsRealStart("import { startGatewayProcess } from '@momonga/gateway';\nawait startGatewayProcess({ home });\n")).toBe(true);
+  });
+
+  it.each([
+    ['a describe options object', "describe('x', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {});"],
+    ['a per-test identifier', "it('x', async () => {}, PROCESS_TIMEOUT);"],
+    ['a per-test number', "it('x', async () => {}, 20_000);"],
+    ['an options object before the body', "it('x', { timeout: 5e3 }, async () => {});"],
+  ])('refuses %s beside the file-level form', (_form, line) => {
+    const source = `import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';\nvi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });\n${line}\n`;
+
+    expect(offendersOf('fixture.test.ts', source)).not.toEqual([]);
   });
 
   it('refuses a file that starts a real process with only a per-test timeout', () => {
