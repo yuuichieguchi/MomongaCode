@@ -1,5 +1,5 @@
 import { createStopValuesReader, readUserStopValues } from '@momonga/config';
-import { EXIT_ALREADY_RUNNING, EXIT_VERSION_MISMATCH, LIFELINE_FD, ORPHAN_REAP_GRACE_MS, STARTUP_TIMEOUT_MS, STOP_WAIT_WHEN_UNKNOWN_MS, currentGenerationLock, currentSocketResolver, daemonStopBoundMs, inspectProcessLock, stopWaitBoundMs as largestStopBoundMs } from '@momonga/foundation';
+import { EXIT_ALREADY_RUNNING, EXIT_VERSION_MISMATCH, LIFELINE_FD, ORPHAN_REAP_GRACE_MS, STARTUP_TIMEOUT_MS, STOP_WAIT_WHEN_UNKNOWN_MS, currentGenerationLock, startingSocketResolver, daemonStopBoundMs, inspectProcessLock, stopWaitBoundMs as largestStopBoundMs } from '@momonga/foundation';
 import type { MomongaPaths, StopValues } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { createSupervisorClient } from '../client/supervisor-client.ts';
@@ -83,7 +83,7 @@ export const waitForSupervisorGone = async (ports: Pick<DaemonPorts, 'clock'>, p
     ports.clock,
     async () => {
       const lockPath = await currentGenerationLock(paths, 'supervisor');
-      return lockPath === undefined || (await inspectProcessLock(lockPath)).state === 'free' ? true : undefined;
+      return (await inspectProcessLock(lockPath)).state === 'free' ? true : undefined;
     },
     { boundMs: stopMs, intervalMs: DAEMON_POLL_INTERVAL_MS, description: 'the previous supervisor to release its lock', ...(signal === undefined ? {} : { signal }) },
   );
@@ -96,7 +96,7 @@ const beginStop = async (ports: DaemonPorts, client: SupervisorClient, onNotice:
 };
 
 export const stopDaemon = async (ports: DaemonPorts, paths: MomongaPaths, bounds?: DaemonBounds, onNotice: StopNotice = NO_NOTICE_CHANNEL): Promise<{ stopped: boolean }> => {
-  const client = createSupervisorClient({ resolveSocket: currentSocketResolver(paths, 'supervisor') });
+  const client = createSupervisorClient({ resolveSocket: startingSocketResolver(paths, 'supervisor') });
   try {
     const health = await probeSupervisor(client);
     if (health === undefined) return { stopped: false };
@@ -174,7 +174,6 @@ const startDaemon = async (
 
 export type EnsureDaemonOptions = { bounds?: DaemonBounds; signal?: AbortSignal; lifeline?: boolean; onNotice?: StopNotice };
 
-
 export const restoreDaemon =
   (ports: DaemonPorts, paths: MomongaPaths, onNotice: StopNotice) =>
   async (signal: AbortSignal | undefined): Promise<void> => {
@@ -185,7 +184,7 @@ export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, opti
   const { signal } = options;
   signal?.throwIfAborted();
   const readyMs = options.bounds?.readyMs ?? (await daemonReadyBoundMs());
-  const client = createSupervisorClient({ resolveSocket: currentSocketResolver(paths, 'supervisor') });
+  const client = createSupervisorClient({ resolveSocket: startingSocketResolver(paths, 'supervisor') });
   try {
     const current = await probeSupervisor(client);
     if (current === undefined) return await startDaemon(ports, paths, client, readyMs, options.lifeline === true, signal);

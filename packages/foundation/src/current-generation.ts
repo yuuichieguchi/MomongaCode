@@ -2,8 +2,8 @@ import path from 'node:path';
 import { writeFileAtomically } from './atomic-file.ts';
 import type { AtomicWriteFileSystem } from './atomic-file.ts';
 import { parseOutsideJson } from './json-depth.ts';
-import { generationLayout } from './momonga-paths.ts';
-import type { GenerationRole, GenerationSockets, MomongaPaths } from './momonga-paths.ts';
+import { FIRST_GENERATION, generationLayout } from './momonga-paths.ts';
+import type { GenerationLayout, GenerationRole, GenerationSockets, MomongaPaths } from './momonga-paths.ts';
 import { nodeFileSystem } from './node-file-system.ts';
 import { systemRandom } from './system-random.ts';
 
@@ -74,7 +74,17 @@ export const currentSocketResolver =
   async () =>
     (await requireCurrentGeneration(paths)).sockets[role];
 
-export const currentGenerationLock = async (paths: MomongaPaths, role: GenerationRole): Promise<string | undefined> => {
+const homeOf = (paths: MomongaPaths): string => path.dirname(paths.root);
+
+const soughtGeneration = async (paths: MomongaPaths): Promise<Pick<GenerationLayout, 'sockets' | 'locks'>> => {
   const record = await readCurrentGeneration(paths);
-  return record === undefined ? undefined : generationLayout(path.dirname(paths.root), record.generation).locks[role];
+  if (record === undefined) return generationLayout(homeOf(paths), FIRST_GENERATION);
+  return { sockets: record.sockets, locks: generationLayout(homeOf(paths), record.generation).locks };
 };
+
+export const startingSocketResolver =
+  (paths: MomongaPaths, role: GenerationRole): (() => Promise<string>) =>
+  async () =>
+    (await soughtGeneration(paths)).sockets[role];
+
+export const currentGenerationLock = async (paths: MomongaPaths, role: GenerationRole): Promise<string> => (await soughtGeneration(paths)).locks[role];

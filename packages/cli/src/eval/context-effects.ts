@@ -1,8 +1,8 @@
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { applyWorkspaceStep } from '@momonga/eval';
-import { currentGenerationLock, ensureMomongaDirs, inspectProcessLock, isProcessAlive } from '@momonga/foundation';
+export { SHORT_TEMP_BASE, shortTempBase } from '@momonga/foundation';
+import { currentGenerationLock, ensureMomongaDirs, inspectProcessLock, isProcessAlive, shortTempBase } from '@momonga/foundation';
 import { DAEMON_POLL_INTERVAL_MS } from '../constants.ts';
 import { STOP_WAIT_WHEN_UNKNOWN_MS, ensureDaemon } from '../daemon/ensure-daemon.ts';
 import { stderrStopNotice } from '../daemon/stop-notice.ts';
@@ -11,8 +11,6 @@ import { connectRuntime, environmentSnapshot } from '../run/open-session.ts';
 import { pathsOf } from '../paths.ts';
 import { OWNER_FILE, ROOT_PREFIX, caseEnvironment, isLegacyOwnerMarker, parseEvalOwner } from './context-host.ts';
 import type { ContextHostEffects, EvalOwner } from './context-host.ts';
-
-export const SHORT_TEMP_BASE = '/tmp';
 
 export const MAX_TIMER_MS = 2_147_483_647;
 
@@ -27,8 +25,6 @@ const signalProcess = (pid: number, signal: NodeJS.Signals, group: boolean): voi
     if (!isMissingProcess(error)) throw error;
   }
 };
-
-export const shortTempBase = (platform: NodeJS.Platform): string => (platform === 'win32' ? os.tmpdir() : SHORT_TEMP_BASE);
 
 const gone = async (ports: Pick<CliPorts, 'clock'>, pid: number, boundMs: number): Promise<boolean> => {
   const until = ports.clock.now() + boundMs;
@@ -118,9 +114,7 @@ export const nodeContextEffects = (ports: CliPorts): ContextHostEffects => ({
   canonical: (directory) => fs.realpath(directory),
   startDaemon: async (root, paths, env) => (await ensureDaemon({ ...ports, home: root, env }, paths, { lifeline: true, onNotice: stderrStopNotice(ports) })).pid,
   daemonHolder: async (paths) => {
-    const lockPath = await currentGenerationLock(paths, 'supervisor');
-    if (lockPath === undefined) return undefined;
-    const lock = await inspectProcessLock(lockPath);
+    const lock = await inspectProcessLock(await currentGenerationLock(paths, 'supervisor'));
     return lock.state === 'held' ? lock.pid : undefined;
   },
   terminate: async (pid) => {
