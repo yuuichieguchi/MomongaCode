@@ -22,15 +22,20 @@ describe('priceCall names the cause of an unpriced call with a closed code', () 
     expect(price('unknown', { inputTokens: 100, outputTokens: 10 }, FULL)).toMatchObject({ kind: 'unpriced', code: 'unknown_billing' });
   });
 
+  it('gives the code cache_read_not_reported to a metered call whose cache-read count is absent', () => {
+    expect(price('metered', { inputTokens: 100, outputTokens: 10 }, FULL)).toMatchObject({ kind: 'unpriced', code: 'cache_read_not_reported' });
+  });
+
   it('gives the code no_price_entry to a metered call with no entry', () => {
-    expect(price('metered', { inputTokens: 100, outputTokens: 10 }, EMPTY)).toMatchObject({ kind: 'unpriced', code: 'no_price_entry' });
+    expect(price('metered', { inputTokens: 100, outputTokens: 10, cachedInputTokens: 0 }, EMPTY)).toMatchObject({ kind: 'unpriced', code: 'no_price_entry' });
   });
 
   it('gives the code unpriceable_usage to a count that is not a non-negative integer', () => {
-    expect(price('metered', { inputTokens: 1.5, outputTokens: 10 }, FULL)).toMatchObject({ kind: 'unpriced', code: 'unpriceable_usage' });
+    expect(price('metered', { inputTokens: 1.5, outputTokens: 10, cachedInputTokens: 0 }, FULL)).toMatchObject({ kind: 'unpriced', code: 'unpriceable_usage' });
   });
 
-  it('gives the code unpriceable_usage to a call at an invalid time', () => {
+  it('gives the code unpriceable_usage to a call at an invalid time, whether or not the cache-read count is reported', () => {
+    expect(price('metered', { inputTokens: 100, outputTokens: 10, cachedInputTokens: 0 }, FULL, new Date(Number.NaN))).toMatchObject({ kind: 'unpriced', code: 'unpriceable_usage' });
     expect(price('metered', { inputTokens: 100, outputTokens: 10 }, FULL, new Date(Number.NaN))).toMatchObject({ kind: 'unpriced', code: 'unpriceable_usage' });
   });
 
@@ -39,11 +44,11 @@ describe('priceCall names the cause of an unpriced call with a closed code', () 
   });
 
   it('gives the code unpriceable_usage to written input with no cache-write price', () => {
-    expect(price('metered', { inputTokens: 100, outputTokens: 10, cacheWriteInputTokens: 40 }, BARE)).toMatchObject({ kind: 'unpriced', code: 'unpriceable_usage' });
+    expect(price('metered', { inputTokens: 100, outputTokens: 10, cachedInputTokens: 0, cacheWriteInputTokens: 40 }, BARE)).toMatchObject({ kind: 'unpriced', code: 'unpriceable_usage' });
   });
 
   it('keeps the free-text reason beside the code', () => {
-    const outcome = price('metered', { inputTokens: 100, outputTokens: 10 }, EMPTY);
+    const outcome = price('metered', { inputTokens: 100, outputTokens: 10, cachedInputTokens: 0 }, EMPTY);
     expect(outcome).toMatchObject({ kind: 'unpriced', code: 'no_price_entry' });
     expect(typeof (outcome as { reason?: unknown }).reason).toBe('string');
   });
@@ -51,14 +56,15 @@ describe('priceCall names the cause of an unpriced call with a closed code', () 
 
 describe('every call lands in exactly one class (I-P2)', () => {
   const BILLINGS: readonly CallBilling[] = ['metered', 'local', 'plan', 'unknown'];
-  const CASES: readonly { usage: CostUsage; table: PriceTable; at: Date }[] = [
+  const COUNTS: readonly ('reported' | 'absent')[] = ['reported', 'absent'];
+  const OUTCOMES: readonly { usage: CostUsage; table: PriceTable; at: Date }[] = [
     { usage: { inputTokens: 100, outputTokens: 10 }, table: FULL, at: AT },
     { usage: { inputTokens: 100, outputTokens: 10 }, table: EMPTY, at: AT },
-    { usage: { inputTokens: 100, outputTokens: 10, cachedInputTokens: 40 }, table: BARE, at: AT },
     { usage: { inputTokens: 100, outputTokens: 10, cacheWriteInputTokens: 40 }, table: BARE, at: AT },
     { usage: { inputTokens: -1, outputTokens: 10 }, table: FULL, at: AT },
     { usage: { inputTokens: 100, outputTokens: 10 }, table: FULL, at: new Date(Number.NaN) },
   ];
+  const withCount = (usage: CostUsage, count: 'reported' | 'absent'): CostUsage => (count === 'reported' ? { ...usage, cachedInputTokens: 0 } : usage);
 
   const classOf = (outcome: ReturnType<typeof priceCall>): string => {
     const record = outcome as Record<string, unknown>;
@@ -70,14 +76,25 @@ describe('every call lands in exactly one class (I-P2)', () => {
     return String(record['code']);
   };
 
-  it('reaches every class of the product of billing and outcome, and no call lands in two or none', () => {
+  it('reaches every class of the product of billing, cache-read count and outcome, and no call lands in two or none', () => {
     const reached = new Set<string>();
-    for (const billing of BILLINGS) for (const entry of CASES) reached.add(classOf(price(billing, entry.usage, entry.table, entry.at)));
+    for (const billing of BILLINGS) {
+      for (const count of COUNTS) for (const entry of OUTCOMES) reached.add(classOf(price(billing, withCount(entry.usage, count), entry.table, entry.at)));
+    }
+    reached.add(classOf(price('metered', { inputTokens: 100, outputTokens: 10, cachedInputTokens: 40 }, BARE)));
     expect([...reached].sort()).toEqual(['priced', ...UNPRICED_CODES].sort());
   });
 
+  it('gives cache_read_not_reported only to a metered call: local, plan and unknown billing keep their class when the count is absent', () => {
+    const absent: CostUsage = { inputTokens: 100, outputTokens: 10 };
+    expect(classOf(price('metered', absent, FULL))).toBe('cache_read_not_reported');
+    expect(classOf(price('local', absent, FULL))).toBe('priced');
+    expect(classOf(price('plan', absent, FULL))).toBe('plan');
+    expect(classOf(price('unknown', absent, FULL))).toBe('unknown_billing');
+  });
+
   it('classes a local call as priced at nothing, never as unpriced, for any table', () => {
-    expect(classOf(price('local', { inputTokens: 100, outputTokens: 10 }, EMPTY))).toBe('priced');
-    expect(classOf(price('plan', { inputTokens: 100, outputTokens: 10 }, EMPTY))).toBe('plan');
+    expect(classOf(price('local', { inputTokens: 100, outputTokens: 10, cachedInputTokens: 0 }, EMPTY))).toBe('priced');
+    expect(classOf(price('plan', { inputTokens: 100, outputTokens: 10, cachedInputTokens: 0 }, EMPTY))).toBe('plan');
   });
 });

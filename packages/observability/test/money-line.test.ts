@@ -21,15 +21,15 @@ import { harness } from './helpers.ts';
 const AT = Date.parse('2026-07-10T00:00:00Z');
 const TABLE = definePriceTable([{ provider: 'acme', model: 'm1', effectiveFrom: '2026-01-01', inputPerMTok: 1, outputPerMTok: 4, currency: 'USD' }]);
 
-type Kind = 'metered' | 'local' | 'plan' | 'unknown' | 'noEntry' | 'unpriceable';
+type Kind = 'metered' | 'local' | 'plan' | 'unknown' | 'cacheAbsent' | 'noEntry' | 'unpriceable';
 
 const outcome = (kind: Kind): PricedCall => {
-  const billing: CallBilling = kind === 'noEntry' || kind === 'unpriceable' ? 'metered' : kind;
+  const billing: CallBilling = kind === 'noEntry' || kind === 'unpriceable' || kind === 'cacheAbsent' ? 'metered' : kind;
   return priceCall({
     provider: 'acme',
     model: kind === 'noEntry' ? 'unlisted' : 'm1',
     billing,
-    usage: { inputTokens: kind === 'unpriceable' ? 0.5 : 1_000_000, outputTokens: 0 },
+    usage: { inputTokens: kind === 'unpriceable' ? 0.5 : 1_000_000, outputTokens: 0, ...(kind === 'cacheAbsent' ? {} : { cachedInputTokens: 0 }) },
     at: new Date(AT),
     table: TABLE,
   });
@@ -42,6 +42,7 @@ describe('the code texts', () => {
     expect(UNPRICED_CODE_TEXT).toEqual({
       plan: 'plan usage, no per-token price',
       unknown_billing: 'billing unknown',
+      cache_read_not_reported: 'cache reads not reported',
       no_price_entry: 'no price entry',
       unpriceable_usage: 'usage cannot be priced',
     });
@@ -59,14 +60,16 @@ describe('the money line over the classes of the calls (R-B)', () => {
     ['plan and metered', ['plan', 'metered'], 'not complete: plan usage, no per-token price in 1 call(s); priced part: 1 USD over 1 of 2 call(s)'],
     ['plan and local', ['local', 'plan'], 'not complete: plan usage, no per-token price in 1 call(s); priced part: 0 USD over 1 of 2 call(s)'],
     ['local and no price entry', ['local', 'noEntry'], 'not complete: no price entry in 1 call(s); priced part: 0 USD over 1 of 2 call(s)'],
-    ['codes in the order of the list', ['unpriceable', 'noEntry', 'plan', 'unknown', 'plan'], 'not complete: plan usage, no per-token price in 2 call(s); billing unknown in 1 call(s); no price entry in 1 call(s); usage cannot be priced in 1 call(s)'],
+    ['all without a cache-read count', ['cacheAbsent', 'cacheAbsent'], 'not complete: cache reads not reported in 2 call(s)'],
+    ['cache reads not reported and metered', ['metered', 'cacheAbsent'], 'not complete: cache reads not reported in 1 call(s); priced part: 1 USD over 1 of 2 call(s)'],
+    ['codes in the order of the list', ['unpriceable', 'noEntry', 'cacheAbsent', 'plan', 'unknown', 'plan'], 'not complete: plan usage, no per-token price in 2 call(s); billing unknown in 1 call(s); cache reads not reported in 1 call(s); no price entry in 1 call(s); usage cannot be priced in 1 call(s)'],
   ])('%s', (_name, kinds, expected) => {
     expect(moneyLine(mix(...kinds))).toBe(expected);
   });
 });
 
 describe('the money line over random mixes', () => {
-  const KINDS: readonly Kind[] = ['metered', 'local', 'plan', 'unknown', 'noEntry', 'unpriceable'];
+  const KINDS: readonly Kind[] = ['metered', 'local', 'plan', 'unknown', 'cacheAbsent', 'noEntry', 'unpriceable'];
   const generator = (seed: number) => {
     let state = seed >>> 0;
     return (bound: number): number => {
@@ -103,7 +106,7 @@ describe('the report and the breakdown print the same money line for the same ca
     for (const [index, billing] of billings.entries()) {
       h.clock.set(AT + index);
       const chat = startChatSpan(h.telemetry.tracer, { providerName: 'acme', billing: billing as ChatBilling, requestModel: 'm1', stream: true, runId, step: index + 1, attempt: 1 }, parent);
-      recordChatResponse(chat, { finishReasons: ['stop'], usage: { inputTokens: 1_000_000, outputTokens: 0 } });
+      recordChatResponse(chat, { finishReasons: ['stop'], usage: { inputTokens: 1_000_000, outputTokens: 0, cachedInputTokens: 0 } });
       chat.end(h.clock.now());
     }
     agent.end(h.clock.now());

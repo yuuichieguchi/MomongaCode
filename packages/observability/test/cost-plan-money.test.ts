@@ -7,7 +7,7 @@ import { harness } from './helpers.ts';
 const AT = Date.parse('2026-07-10T00:00:00Z');
 const TABLE = definePriceTable([{ provider: 'acme', model: 'm1', effectiveFrom: '2026-01-01', inputPerMTok: 1, outputPerMTok: 4, currency: 'USD' }]);
 
-type Spec = { billing: CallBilling; model?: string };
+type Spec = { billing: CallBilling; model?: string; cacheReadAbsent?: true };
 
 const recorded = async (specs: readonly Spec[]) => {
   const h = harness();
@@ -20,7 +20,7 @@ const recorded = async (specs: readonly Spec[]) => {
       { providerName: 'acme', billing: spec.billing as ChatBilling, requestModel: spec.model ?? 'm1', stream: true, runId: 'run-a', step: index + 1, attempt: 1 },
       parent,
     );
-    recordChatResponse(chat, { finishReasons: ['stop'], usage: { inputTokens: 300, outputTokens: 40 } });
+    recordChatResponse(chat, { finishReasons: ['stop'], usage: { inputTokens: 300, outputTokens: 40, ...(spec.cacheReadAbsent === true ? {} : { cachedInputTokens: 0 }) } });
     chat.end(h.clock.now());
   }
   agent.end(h.clock.now());
@@ -64,11 +64,23 @@ describe('the breakdown keeps the priced part beside the unpriced calls', () => 
   });
 });
 
+describe('a metered call whose cache-read count was not reported', () => {
+  it('is counted through its code beside the priced part, in the report and in the breakdown', async () => {
+    const { report, text, breakdown } = await recorded([{ billing: 'metered' }, { billing: 'metered', cacheReadAbsent: true }]);
+    const line = 'not complete: cache reads not reported in 1 call(s); priced part: 0.00046 USD over 1 of 2 call(s)';
+
+    expect(text.split('\n').find((entry) => entry.startsWith('  total: '))).toContain(line);
+    expect(breakdown).toContain(`cost: ${line}`);
+    expect(report.total).toMatchObject({ amount: 0.00046, cacheReadUnpricedCalls: 1 });
+  });
+});
+
 describe('the wire amount of a scope (DC-4 (b))', () => {
   it.each<[string, Spec[]]>([
     ['all plan', [{ billing: 'plan' }]],
     ['all unknown billing', [{ billing: 'unknown' }]],
     ['all without a price entry', [{ billing: 'metered', model: 'unlisted' }]],
+    ['all metered without a cache-read count', [{ billing: 'metered', cacheReadAbsent: true }]],
   ])('is null when nothing is priced: %s', async (_name, specs) => {
     const { report } = await recorded(specs);
 

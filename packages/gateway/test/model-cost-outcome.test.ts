@@ -9,7 +9,7 @@ const ENTRY = { provider: 'scripted', model: 'upstream-model', effectiveFrom: '1
 const USAGE = { input_tokens: 10, output_tokens: 7, total_tokens: 17, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } };
 
 const plainTurn = () =>
-  anthropicStream([anthropicMessageStart({ input_tokens: 10, output_tokens: 1 }), ...anthropicTextBlock(0, ['done']), ...anthropicMessageEnd('end_turn', { output_tokens: 7 })]);
+  anthropicStream([anthropicMessageStart({ input_tokens: 10, cache_read_input_tokens: 0, output_tokens: 1 }), ...anthropicTextBlock(0, ['done']), ...anthropicMessageEnd('end_turn', { output_tokens: 7 })]);
 
 const billed = (billing: 'local' | 'plan') => ({ targets: { remote: { model: 'upstream-model', kind: 'remote', billing } }, aliases: { fast: ['remote'] } });
 
@@ -28,6 +28,15 @@ describe('modelCostOf returns the price outcome and never null', () => {
   it('returns the code plan for a plan call and unknown_billing for an unknown billing', () => {
     expect(outcomeOf('plan', definePriceTable([ENTRY]))).toMatchObject({ kind: 'unpriced', code: 'plan' });
     expect(outcomeOf('unknown', definePriceTable([ENTRY]))).toMatchObject({ kind: 'unpriced', code: 'unknown_billing' });
+  });
+
+  it('returns cache_read_not_reported for a metered call whose cache-read count is absent, and plan for a plan call without it', () => {
+    const absent = { ...USAGE, input_tokens_details: {} };
+    const at = (billing: 'metered' | 'plan') =>
+      modelCostOf({ provider: 'scripted', model: 'upstream-model', billing, usage: absent, cacheWriteInputTokens: undefined, at: 0, table: definePriceTable([ENTRY]) });
+
+    expect(at('metered')).toMatchObject({ kind: 'unpriced', code: 'cache_read_not_reported' });
+    expect(at('plan')).toMatchObject({ kind: 'unpriced', code: 'plan' });
   });
 
   it('returns no null for any billing, with or without a table', () => {
@@ -68,6 +77,14 @@ describe('the response records exactly one of cost and unpriced (I-P1)', () => {
 
     expect(terminal.response.momonga.cost).toEqual({ amount: 0, currency: 'USD', priceVersion: 'local' });
     expect('unpriced' in terminal.response.momonga).toBe(false);
+  });
+
+  it('records unpriced cache_read_not_reported and no cost when the upstream reports no cache-read count', async () => {
+    const silentCacheTurn = anthropicStream([anthropicMessageStart({ input_tokens: 10, output_tokens: 1 }), ...anthropicTextBlock(0, ['done']), ...anthropicMessageEnd('end_turn', { output_tokens: 7 })]);
+    const terminal = terminalOf(await streamResponse(await startAnthropicGateway({ script: [silentCacheTurn], priceTable: definePriceTable([ENTRY]) })));
+
+    expect(terminal.response.momonga.unpriced).toMatchObject({ code: 'cache_read_not_reported' });
+    expect('cost' in terminal.response.momonga).toBe(false);
   });
 
   it('records cost and no unpriced for a priced metered call', async () => {

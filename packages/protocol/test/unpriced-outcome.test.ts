@@ -14,13 +14,13 @@ const OLD_LINE =
   '{"id":7,"runId":"r1","sessionId":"s1","seq":4,"step":1,"createdAt":1800000000000,"type":"usage.charged","purpose":"compaction","inputTokens":5,"outputTokens":1,"totalTokens":6,"cost":{"amount":0.25,"currency":"USD","priceVersion":"2026-01-01"}}';
 
 describe('the closed list of unpriced codes', () => {
-  it('is plan, unknown_billing, no_price_entry and unpriceable_usage, in that order', () => {
-    expect(UNPRICED_CODES).toEqual(['plan', 'unknown_billing', 'no_price_entry', 'unpriceable_usage']);
+  it('is plan, unknown_billing, cache_read_not_reported, no_price_entry and unpriceable_usage, in that order', () => {
+    expect(UNPRICED_CODES).toEqual(['plan', 'unknown_billing', 'cache_read_not_reported', 'no_price_entry', 'unpriceable_usage']);
   });
 });
 
 describe('usage.charged carries the price outcome', () => {
-  it.each(['plan', 'unknown_billing', 'no_price_entry', 'unpriceable_usage'])('accepts unpriced with the code %s', (code) => {
+  it.each(['plan', 'unknown_billing', 'cache_read_not_reported', 'no_price_entry', 'unpriceable_usage'])('accepts unpriced with the code %s', (code) => {
     expect(acceptsEvent({ ...CHARGED, unpriced: { code, reason: 'why' } })).toBe(true);
   });
 

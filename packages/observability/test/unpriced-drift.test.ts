@@ -48,9 +48,10 @@ describe('UNPRICED_CODES is the one source of the codes (DC.6 item 8)', () => {
     const inputs: readonly { billing: CallBilling; model: string; usage: CostUsage }[] = [
       { billing: 'plan', model: 'm1', usage: { inputTokens: 1, outputTokens: 1 } },
       { billing: 'unknown', model: 'm1', usage: { inputTokens: 1, outputTokens: 1 } },
-      { billing: 'metered', model: 'unlisted', usage: { inputTokens: 1, outputTokens: 1 } },
-      { billing: 'metered', model: 'm1', usage: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 1 } },
+      { billing: 'metered', model: 'unlisted', usage: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0 } },
       { billing: 'metered', model: 'm1', usage: { inputTokens: 1, outputTokens: 1 } },
+      { billing: 'metered', model: 'm1', usage: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 1 } },
+      { billing: 'metered', model: 'm1', usage: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0 } },
     ];
     const codes = new Set(
       inputs.flatMap((input) => {
