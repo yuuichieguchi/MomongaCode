@@ -11,6 +11,7 @@ import {
   hostKernelLock,
   inspectProcessLock,
   nodeCommandRunner,
+  nodeDescriptorWriter,
   nodeFileSystem,
   sweepLeftovers,
   systemRandom,
@@ -51,14 +52,6 @@ export const undiciUpdateHttp = (
   };
 };
 
-const writeAll = async (handle: fs.FileHandle, chunk: Uint8Array): Promise<void> => {
-  let offset = 0;
-  while (offset < chunk.length) {
-    const { bytesWritten } = await handle.write(chunk, offset, chunk.length - offset);
-    offset += bytesWritten;
-  }
-};
-
 const REPLACE_REFUSED_CODES: ReadonlySet<string> = new Set(['EPERM', 'EACCES', 'EBUSY']);
 
 const errorCodeOf = (error: unknown): string | undefined => {
@@ -87,15 +80,15 @@ const publishReplacing = async (rename: Rename, staged: string, target: string):
 
 const isStaged = (name: string): boolean => name.startsWith(STAGING_PREFIX);
 
-const stagingFilesFor = (opened: { handle?: fs.FileHandle }): LockedEntryFiles => ({
+const stagingFiles: LockedEntryFiles = {
   open: async (file, flags, mode) => {
     const handle = await fs.open(file, flags, mode);
-    opened.handle = handle;
     if (mode !== undefined) await handle.chmod(mode);
     return { writeFile: (content) => handle.writeFile(content), sync: () => handle.sync(), close: () => handle.close() };
   },
   rm: (file) => fs.rm(file, { force: true }),
-});
+  descriptors: nodeDescriptorWriter,
+};
 
 export const nodeUpdateFs = (rename: Rename = fs.rename, lock: KernelLockMechanism = hostKernelLock()): UpdateFs => {
   const staging = new Map<string, LockedEntry>();
@@ -104,15 +97,12 @@ export const nodeUpdateFs = (rename: Rename = fs.rename, lock: KernelLockMechani
     modeOf: async (file) => (await fs.stat(file)).mode & 0o777,
     stage: async (directory, mode): Promise<StagedFile> => {
       const file = path.join(directory, `${STAGING_PREFIX}${randomBytes(6).toString('hex')}`);
-      const opened: { handle?: fs.FileHandle } = {};
-      const entry = await createLockedEntry(stagingFilesFor(opened), lock, file, mode);
-      const handle = opened.handle;
-      if (handle === undefined) throw new Error(`${file} was staged without an open handle`);
+      const entry = await createLockedEntry(stagingFiles, lock, file, mode);
       staging.set(file, entry);
       let closed = false;
       return {
         path: file,
-        write: (chunk) => writeAll(handle, chunk),
+        write: (chunk) => entry.handle.writeFile(chunk),
         close: async () => {
           if (closed) return;
           closed = true;

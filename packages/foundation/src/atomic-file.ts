@@ -3,7 +3,6 @@ import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock
 import { hostKernelLock } from './platform/host-kernel-lock.ts';
 import { claimNewEntry, claimNewEntrySync, lockFormOf } from './platform/lock-form.ts';
 import type { LockForm } from './platform/lock-form.ts';
-import { openFlagsOfLockForm } from './locked-entry.ts';
 import type { Random } from './random.ts';
 
 export type FileContent = string | Uint8Array;
@@ -14,8 +13,21 @@ export interface AtomicWriteFileHandle {
   close(): Promise<void>;
 }
 
+export interface DescriptorWriter {
+  write(descriptor: number, content: FileContent): Promise<void>;
+  sync(descriptor: number): Promise<void>;
+  chmod(descriptor: number, mode: number): Promise<void>;
+}
+
+export interface DescriptorWriterSync {
+  write(descriptor: number, content: FileContent): void;
+  sync(descriptor: number): void;
+  chmod(descriptor: number, mode: number): void;
+}
+
 export interface AtomicWriteFileSystem {
   open(file: string, flags: string, mode?: number): Promise<AtomicWriteFileHandle>;
+  readonly descriptors?: DescriptorWriter;
   rename(from: string, to: string): Promise<void>;
   link(from: string, to: string): Promise<void>;
   rm(file: string): Promise<void>;
@@ -23,6 +35,7 @@ export interface AtomicWriteFileSystem {
 
 export interface AtomicWriteFileSystemSync<Handle = string> {
   openSync(file: string, flags: string, mode?: number): Handle;
+  readonly descriptorsSync?: DescriptorWriterSync;
   writeFileSync(handle: Handle, content: FileContent): void;
   fsyncSync(handle: Handle): void;
   closeSync(handle: Handle): void;
@@ -89,6 +102,7 @@ export type CreateOutcome = { created: boolean };
 
 const TEMPORARY_SUFFIX_BYTES = 6;
 const READ_ONLY = 'r';
+const EXCLUSIVE_CREATE = 'wx';
 const TEMPORARY_PATTERN = /^\..+\.[0-9a-f]+\.tmp$/;
 
 export const isAtomicWriteTemporary = (name: string): boolean => TEMPORARY_PATTERN.test(name);
@@ -121,6 +135,7 @@ type Write<Handle> = {
   readonly temporary: string;
   held: HeldKernelLock | undefined;
   handle: Handle | undefined;
+  ownsTemporary: boolean;
   created: boolean;
 };
 
@@ -129,7 +144,49 @@ const startWrite = <Handle>(mechanism: KernelLockMechanism, random: Random, file
   temporary: temporaryOf(random, file),
   held: undefined,
   handle: undefined,
+  ownsTemporary: false,
   created: true,
+});
+
+export class ClaimedDescriptorUnwritableError extends Error {
+  constructor(entry: string) {
+    super(`${entry} is locked through a descriptor, and the filesystem given to the writer cannot write through a descriptor, so the entry is not reopened by its path`);
+    this.name = 'ClaimedDescriptorUnwritableError';
+  }
+}
+
+type SyncHandle = { write(content: FileContent): void; sync(): void; close(): void };
+
+const descriptorHandle = (writer: DescriptorWriter, descriptor: number): AtomicWriteFileHandle => ({
+  writeFile: (content) => writer.write(descriptor, content),
+  sync: () => writer.sync(descriptor),
+  close: async () => undefined,
+});
+
+const descriptorHandleSync = (writer: DescriptorWriterSync, descriptor: number): SyncHandle => ({
+  write: (content) => writer.write(descriptor, content),
+  sync: () => writer.sync(descriptor),
+  close: () => undefined,
+});
+
+export const openClaimedEntry = async (fs: Pick<AtomicWriteFileSystem, 'open' | 'descriptors'>, held: HeldKernelLock, entry: string, mode: number): Promise<AtomicWriteFileHandle> => {
+  if (held.descriptor === undefined) return fs.open(entry, EXCLUSIVE_CREATE, mode);
+  if (fs.descriptors === undefined) throw new ClaimedDescriptorUnwritableError(entry);
+  await fs.descriptors.chmod(held.descriptor, mode);
+  return descriptorHandle(fs.descriptors, held.descriptor);
+};
+
+const openClaimedEntrySync = <Handle>(fs: AtomicWriteFileSystemSync<Handle>, held: HeldKernelLock, entry: string, mode: number): SyncHandle => {
+  if (held.descriptor === undefined) return pathHandleSync(fs, fs.openSync(entry, EXCLUSIVE_CREATE, mode));
+  if (fs.descriptorsSync === undefined) throw new ClaimedDescriptorUnwritableError(entry);
+  fs.descriptorsSync.chmod(held.descriptor, mode);
+  return descriptorHandleSync(fs.descriptorsSync, held.descriptor);
+};
+
+const pathHandleSync = <Handle>(fs: AtomicWriteFileSystemSync<Handle>, handle: Handle): SyncHandle => ({
+  write: (content) => fs.writeFileSync(handle, content),
+  sync: () => fs.fsyncSync(handle),
+  close: () => fs.closeSync(handle),
 });
 
 const heldOf = <Handle>(write: Write<Handle>): HeldKernelLock => {
@@ -172,13 +229,15 @@ export async function writeFileAtomically(
   const perform: Record<AtomicWriteStep, () => Promise<void>> = {
     createLocked: async () => {
       write.held = await claimNewEntry(mechanism, temporary, 'entry');
-      write.handle = await fs.open(temporary, openFlagsOfLockForm('entry'), options.mode);
+      write.ownsTemporary = true;
+      write.handle = await openClaimedEntry(fs, write.held, temporary, options.mode);
     },
     lockSidecar: async () => {
       write.held = await claimNewEntry(mechanism, temporary, 'sidecar');
     },
     createTemporary: async () => {
-      write.handle = await fs.open(temporary, openFlagsOfLockForm('sidecar'), options.mode);
+      write.handle = await fs.open(temporary, EXCLUSIVE_CREATE, options.mode);
+      write.ownsTemporary = true;
     },
     write: async () => {
       const handle = handleOf(write);
@@ -224,7 +283,7 @@ export async function writeFileAtomically(
     const handle = write.handle;
     write.handle = undefined;
     if (handle !== undefined) await handle.close();
-    if (write.held !== undefined) await fs.rm(temporary);
+    if (write.held !== undefined && write.ownsTemporary) await fs.rm(temporary);
     releaseAfterFailure(write);
     throw error;
   }
@@ -255,27 +314,29 @@ export function writeFileAtomicallySync<Handle>(
 ): CreateOutcome | undefined {
   const publish = options.publish ?? 'replace';
   const mechanism = options.lock ?? hostKernelLock();
-  const write = startWrite<Handle>(mechanism, random, file);
+  const write = startWrite<SyncHandle>(mechanism, random, file);
   const { temporary } = write;
   const perform: Record<AtomicWriteStep, () => void> = {
     createLocked: () => {
       write.held = claimNewEntrySync(mechanism, temporary, 'entry');
-      write.handle = fs.openSync(temporary, openFlagsOfLockForm('entry'), options.mode);
+      write.ownsTemporary = true;
+      write.handle = openClaimedEntrySync(fs, write.held, temporary, options.mode);
     },
     lockSidecar: () => {
       write.held = claimNewEntrySync(mechanism, temporary, 'sidecar');
     },
     createTemporary: () => {
-      write.handle = fs.openSync(temporary, openFlagsOfLockForm('sidecar'), options.mode);
+      write.handle = pathHandleSync(fs, fs.openSync(temporary, EXCLUSIVE_CREATE, options.mode));
+      write.ownsTemporary = true;
     },
     write: () => {
       const handle = handleOf(write);
       try {
-        fs.writeFileSync(handle, content);
-        fs.fsyncSync(handle);
+        handle.write(content);
+        handle.sync();
       } finally {
         write.handle = undefined;
-        fs.closeSync(handle);
+        handle.close();
       }
     },
     publish: () => {
@@ -311,8 +372,8 @@ export function writeFileAtomicallySync<Handle>(
   } catch (error) {
     const handle = write.handle;
     write.handle = undefined;
-    if (handle !== undefined) fs.closeSync(handle);
-    if (write.held !== undefined) fs.rmSync(temporary);
+    if (handle !== undefined) handle.close();
+    if (write.held !== undefined && write.ownsTemporary) fs.rmSync(temporary);
     releaseAfterFailure(write);
     throw error;
   }

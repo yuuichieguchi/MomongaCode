@@ -1,3 +1,4 @@
+import { openClaimedEntry } from './atomic-file.ts';
 import type { AtomicWriteFileHandle, AtomicWriteFileSystem } from './atomic-file.ts';
 import type { HeldKernelLock, KernelLockMechanism } from './platform/kernel-lock.ts';
 import { claimNewEntry, lockFormOf } from './platform/lock-form.ts';
@@ -11,11 +12,7 @@ export type LockedEntry = {
   remove(): Promise<void>;
 };
 
-export type LockedEntryFiles = Pick<AtomicWriteFileSystem, 'open' | 'rm'>;
-
-const OPEN_FLAGS_OF_FORM: Readonly<Record<LockForm, string>> = { entry: 'w', sidecar: 'wx' };
-
-export const openFlagsOfLockForm = (form: LockForm): string => OPEN_FLAGS_OF_FORM[form];
+export type LockedEntryFiles = Pick<AtomicWriteFileSystem, 'open' | 'rm' | 'descriptors'>;
 
 const finisherOf = (form: LockForm, held: HeldKernelLock): (() => void) => {
   let finished = false;
@@ -33,9 +30,9 @@ export const createLockedEntry = async (files: LockedEntryFiles, lock: KernelLoc
   const finish = finisherOf(form, held);
   let handle: AtomicWriteFileHandle;
   try {
-    handle = await files.open(entry, OPEN_FLAGS_OF_FORM[form], mode);
+    handle = await openClaimedEntry(files, held, entry, mode);
   } catch (error) {
-    await files.rm(entry);
+    if (form === 'entry') await files.rm(entry);
     finish();
     throw error;
   }

@@ -44,9 +44,11 @@ export { createOAuthProvider } from './oauth-provider.ts';
 export type { OAuthProvider, OAuthProviderOptions } from './oauth-provider.ts';
 export { startLoopbackRedirect } from './loopback-redirect.ts';
 export type { LoopbackRedirect, LoopbackRedirectOptions } from './loopback-redirect.ts';
-export { ATOMIC_WRITE_STEP_ACTIONS, atomicWriteSteps, isAtomicWriteTemporary, syncDirectory, syncDirectorySync, writeFileAtomically, writeFileAtomicallySync } from './atomic-file.ts';
+export { ATOMIC_WRITE_STEP_ACTIONS, ClaimedDescriptorUnwritableError, atomicWriteSteps, isAtomicWriteTemporary, syncDirectory, syncDirectorySync, writeFileAtomically, writeFileAtomicallySync } from './atomic-file.ts';
 export type {
   AtomicWriteStep,
+  DescriptorWriter,
+  DescriptorWriterSync,
   AtomicWriteFileHandle,
   AtomicWriteFileSystem,
   AtomicWriteFileSystemSync,
@@ -63,7 +65,7 @@ export type { WaitOutcome, WaitUntilOptions } from './wait-until.ts';
 export type { Random } from './random.ts';
 export { systemTiming } from './system-timing.ts';
 export { systemRandom } from './system-random.ts';
-export { nodeFileSystem, nodeFileSystemSync } from './node-file-system.ts';
+export { nodeDescriptorWriter, nodeDescriptorWriterSync, nodeFileSystem, nodeFileSystemSync } from './node-file-system.ts';
 export type { AccessCheck, FileSystem, FileSystemSync, RemoveOptions } from './node-file-system.ts';
 export { GroupNotStoppedError, forceKillGroup, groupAlive, groupTerminationBoundMs, realGroupTiming, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from './process-group.ts';
 export type { ForceKillGroupOptions, GroupTiming, ProcessSignalSender, TerminateGroupOptions, TerminateOutcome } from './process-group.ts';

@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import type { AtomicWriteFileSystem, AtomicWriteFileSystemSync, FileContent } from './atomic-file.ts';
+import type { AtomicWriteFileSystem, AtomicWriteFileSystemSync, DescriptorWriter, DescriptorWriterSync, FileContent } from './atomic-file.ts';
 import { PRIVATE_MODE, assertPrivateRegularFile, noFollowFlag } from './platform/privacy.ts';
 
 export const OPEN_FLAGS = {
@@ -51,7 +51,37 @@ export interface FileSystemSync extends AtomicWriteFileSystemSync<number> {
 
 const accessMode = (check: AccessCheck): number => (check === 'execute' ? fs.constants.X_OK : fs.constants.F_OK);
 
+const bytesOf = (content: FileContent): Uint8Array => (typeof content === 'string' ? Buffer.from(content, 'utf8') : content);
+
+const writeAllAt = (descriptor: number, bytes: Uint8Array, offset: number): Promise<void> =>
+  new Promise((resolve, reject) => {
+    if (offset >= bytes.length) {
+      resolve();
+      return;
+    }
+    fs.write(descriptor, bytes, offset, bytes.length - offset, null, (error, written) => {
+      if (error !== null) reject(error);
+      else resolve(writeAllAt(descriptor, bytes, offset + written));
+    });
+  });
+
+const promised = (run: (done: (error: NodeJS.ErrnoException | null) => void) => void): Promise<void> =>
+  new Promise((resolve, reject) => run((error) => (error === null ? resolve() : reject(error))));
+
+export const nodeDescriptorWriter: DescriptorWriter = {
+  write: (descriptor, content) => writeAllAt(descriptor, bytesOf(content), 0),
+  sync: (descriptor) => promised((done) => fs.fsync(descriptor, done)),
+  chmod: (descriptor, mode) => promised((done) => fs.fchmod(descriptor, mode, done)),
+};
+
+export const nodeDescriptorWriterSync: DescriptorWriterSync = {
+  write: (descriptor, content) => fs.writeFileSync(descriptor, content),
+  sync: (descriptor) => fs.fsyncSync(descriptor),
+  chmod: (descriptor, mode) => fs.fchmodSync(descriptor, mode),
+};
+
 export const nodeFileSystem: FileSystem = {
+  descriptors: nodeDescriptorWriter,
   open: async (file, flags, mode) => {
     const handle = await fs.promises.open(file, flags, mode);
     if (mode !== undefined) await handle.chmod(mode);
@@ -110,6 +140,7 @@ export const nodeFileSystem: FileSystem = {
 };
 
 export const nodeFileSystemSync: FileSystemSync = {
+  descriptorsSync: nodeDescriptorWriterSync,
   openSync: (file, flags, mode) => {
     const descriptor = fs.openSync(file, flags, mode);
     if (mode !== undefined) fs.fchmodSync(descriptor, mode);
