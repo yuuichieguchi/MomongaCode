@@ -30,6 +30,8 @@ const TEST_TIMEOUT_MS = 10_000;
 const LOOKUP_PATH = `/repos/${REPO}/releases/latest`;
 const NO_TRUST_FAILURES: TrustReport = { sources: [], failures: [] };
 
+const isExecutableDownload = (requestPath: string): boolean => requestPath.startsWith('/cdn/') && !requestPath.endsWith('/SHA256SUMS') && !requestPath.endsWith('/SHA256SUMS.sig');
+
 type Rewrite = (requestPath: string, body: Buffer) => Buffer;
 
 type ProxyBehaviour = {
@@ -95,7 +97,8 @@ const forward = (behaviour: ProxyBehaviour, request: http.IncomingMessage, respo
     reply.on('end', () => {
       const original = Buffer.concat(chunks);
       const body = reply.statusCode === 200 && behaviour.rewrite !== undefined ? behaviour.rewrite(requestPath, original) : original;
-      const headers = { ...reply.headers, 'content-length': String(body.length) };
+      const { 'transfer-encoding': _chunked, connection: _connection, ...kept } = reply.headers;
+      const headers = { ...kept, 'content-length': String(body.length) };
       if (reply.statusCode === 200 && behaviour.stall?.(requestPath) === true) {
         response.writeHead(200, headers);
         response.write(body.subarray(0, 1));
@@ -344,7 +347,7 @@ describe('momonga update keeps its bound and its verification through a proxy', 
   it('ends a release body that stalls behind the proxy within the update bound and installs nothing', async (context: TestContext) => {
     const harness = await setupUpdate(context);
     publishNewRelease(harness);
-    const proxy = await startProxy({ routes: new Map([[RELEASE_HOST, releaseServerPort(harness)]]), stall: (requestPath) => requestPath.startsWith('/cdn/') });
+    const proxy = await startProxy({ routes: new Map([[RELEASE_HOST, releaseServerPort(harness)]]), stall: isExecutableDownload });
 
     const error = await rejection(run(harness, through(harness, networkOf(proxiedConfig(proxy.port)), `http://${RELEASE_HOST}`)));
 
@@ -360,7 +363,7 @@ describe('momonga update keeps its bound and its verification through a proxy', 
     const altered = Buffer.from('altered-binary-bytes-from-the-proxy');
     const proxy = await startProxy({
       routes: new Map([[RELEASE_HOST, releaseServerPort(harness)]]),
-      rewrite: (requestPath, body) => (requestPath.startsWith('/cdn/') && !requestPath.endsWith('SHA256SUMS') && !requestPath.endsWith('.sig') ? altered : body),
+      rewrite: (requestPath, body) => (isExecutableDownload(requestPath) ? altered : body),
     });
 
     const error = await rejection(run(harness, through(harness, networkOf(proxiedConfig(proxy.port)), `http://${RELEASE_HOST}`)));
