@@ -433,15 +433,109 @@ describe('the token cap', () => {
     expect(formatImproveOutcome(outcome)).toContain(GUIDELINE_NO_CANDIDATE_REASON);
   });
 
-  it('guards a late stop: a candidate that passed before the cap was reached still wins nothing', async () => {
+  it('keeps a winner when the cap affords one candidate and its benchmark crosses the cap (design.md:432)', async () => {
     const { outcome, benchmarked } = await improve({
       input: { tokenCap: 100 + 10 + 50 + 100 },
       byGuideline: (guideline) => (guideline === undefined ? measured({ failingOn: ['a'] }) : { ...measured(), tokens: 400 }),
     });
-    expect(outcome.status).toBe('stopped');
-    expect(outcome.winner).toBeUndefined();
-    expect(benchmarked).toHaveLength(2);
+    expect(outcome.candidateCount).toBe(1);
+    expect(benchmarked).toEqual([undefined, 'candidate 0']);
+    expect(outcome.status).toBe('winner');
+    expect(outcome.reason).toBeUndefined();
+    expect(outcome.winner).toMatchObject({ index: 0, text: 'candidate 0' });
     expect(outcome.tokens.benchmark + outcome.tokens.charged).toBeGreaterThanOrEqual(260);
+  });
+
+  it('guards a late stop: a planned candidate left unbenchmarked when the cap is reached means a candidate that passed wins nothing (design.md:432)', async () => {
+    const { outcome, benchmarked } = await improve({
+      input: { tokenCap: 100 + 2 * 10 + 2 * (100 + 10) },
+      byGuideline: (guideline) => (guideline === undefined ? measured({ failingOn: ['a'] }) : { ...measured(), tokens: 400 }),
+    });
+    expect(outcome.candidateCount).toBe(2);
+    expect(benchmarked).toEqual([undefined, 'candidate 0']);
+    expect(outcome.status).toBe('stopped');
+    expect(outcome.reason).toBe(GUIDELINE_CAP_REASON);
+    expect(outcome.winner).toBeUndefined();
+    expect(outcome.candidates[1]?.comparison).toBeUndefined();
+    expect(formatImproveOutcome(outcome)).toContain(GUIDELINE_CAP_REASON);
+  });
+
+  describe('the last benchmark crosses the cap after every candidate was measured', () => {
+    const crossing = (passing: readonly string[]) => (guideline: string | undefined) => {
+      if (guideline === undefined) return measured({ failingOn: ['a', 'b'] });
+      const run = passing.includes(guideline) ? measured() : measured({ failingOn: ['a', 'b', 'c'] });
+      return guideline === `candidate ${K - 1}` ? { ...run, tokens: 200 } : run;
+    };
+
+    it('keeps the work of the crossing benchmark: the winner is chosen from every measured candidate, fewest contrastive failures then lowest index', async () => {
+      const { outcome, benchmarked } = await improve({ byGuideline: crossing(['candidate 1', 'candidate 4']) });
+      expect(benchmarked).toEqual([undefined, 'candidate 0', 'candidate 1', 'candidate 2', 'candidate 3', 'candidate 4']);
+      expect(outcome.status).toBe('winner');
+      expect(outcome.reason).toBeUndefined();
+      expect(outcome.winner).toMatchObject({ index: 1, text: 'candidate 1', contrastiveFailures: 0, parent: null });
+    });
+
+    it('lets the candidate whose benchmark crossed the cap win when it is the best', async () => {
+      const { outcome } = await improve({ byGuideline: crossing(['candidate 4']) });
+      expect(outcome.status).toBe('winner');
+      expect(outcome.winner).toMatchObject({ index: 4, text: 'candidate 4' });
+    });
+
+    it('records the tokens spent against the cap, so the overrun is stated', async () => {
+      const { outcome } = await improve({ byGuideline: crossing(['candidate 1']) });
+      expect(outcome.tokenCap).toBe(TOKEN_CAP);
+      expect(outcome.tokens).toEqual({ benchmark: 100 + 4 * 100 + 200, charged: 2 * 10 + K * 10 });
+      expect(outcome.tokens.benchmark + outcome.tokens.charged).toBe(770);
+      const file = parseOutcomeFile(encodeOutcomeFile(outcomeFileOf(outcome, { name: 'improve', digest: 'e'.repeat(64) })));
+      expect(file).toMatchObject({ status: 'winner', tokenCap: TOKEN_CAP });
+    });
+
+    it('stores nothing: the winner is returned in the outcome, and the only spends are the charged calls', async () => {
+      const { outcome, charges, requests } = await improve({ byGuideline: crossing(['candidate 1']) });
+      expect(outcome.winner?.text).toBe('candidate 1');
+      expect(requests).toHaveLength(2 + K);
+      expect(charges).toHaveLength(2 + K);
+    });
+  });
+
+  describe('the rule "stop before the next token spend" at each earlier check point', () => {
+    const big = { inputTokens: 900, outputTokens: 100, totalTokens: 1000 };
+
+    it('stops after a baseline that reached the cap, before any analysis', async () => {
+      const { outcome, requests, benchmarked } = await improve({ input: { tokenCap: 100 } });
+      expect(outcome.status).toBe('stopped');
+      expect(outcome.reason).toBe(GUIDELINE_CAP_REASON);
+      expect(requests).toEqual([]);
+      expect(benchmarked).toEqual([undefined]);
+    });
+
+    it('stops before the next analysis when an analysis reached the cap', async () => {
+      const { outcome, requests, benchmarked } = await improve({ reply: (request, index) => ({ text: analysis(), usage: index === 0 ? big : USAGE }) });
+      expect(outcome.status).toBe('stopped');
+      expect(outcome.reason).toBe(GUIDELINE_CAP_REASON);
+      expect(only('analysis', requests)).toHaveLength(1);
+      expect(only('candidate', requests)).toEqual([]);
+      expect(benchmarked).toEqual([undefined]);
+    });
+
+    it('stops after the last analysis reached the cap, before any candidate call, with the cap reason', async () => {
+      const { outcome, requests } = await improve({ reply: (request, index) => ({ text: analysis(), usage: index === 1 ? big : USAGE }) });
+      expect(outcome.status).toBe('stopped');
+      expect(outcome.reason).toBe(GUIDELINE_CAP_REASON);
+      expect(only('analysis', requests)).toHaveLength(2);
+      expect(only('candidate', requests)).toEqual([]);
+    });
+
+    it('stops before the next candidate call when a candidate call reached the cap, and benchmarks no candidate', async () => {
+      const { outcome, requests, benchmarked } = await improve({
+        reply: (request, index) => (request.purpose === 'analysis' ? { text: analysis(), usage: USAGE } : { text: candidateReply(index), usage: index === 0 ? big : USAGE }),
+      });
+      expect(outcome.status).toBe('stopped');
+      expect(outcome.reason).toBe(GUIDELINE_CAP_REASON);
+      expect(outcome.winner).toBeUndefined();
+      expect(only('candidate', requests)).toHaveLength(1);
+      expect(benchmarked).toEqual([undefined]);
+    });
   });
 
   it('measures each distinct candidate once: a sampler that repeats a text is not benchmarked twice and K counts the distinct texts', async () => {
