@@ -3414,10 +3414,10 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 4082160,
-      "measuredSeconds": 33.63,
-      "measuredCpuSeconds": 170.94,
-      "budgetCpuSeconds": 345
+      "distinctStates": 10126392,
+      "measuredSeconds": 110.21,
+      "measuredCpuSeconds": 480.61,
+      "budgetCpuSeconds": 965
     },
     {
       "config": "ManagedServer.live",
@@ -3428,10 +3428,10 @@
         "final"
       ],
       "tier": "every-run",
-      "distinctStates": 15270,
-      "measuredSeconds": 6.74,
-      "measuredCpuSeconds": 28.06,
-      "budgetCpuSeconds": 60
+      "distinctStates": 39478,
+      "measuredSeconds": 10.85,
+      "measuredCpuSeconds": 36.9,
+      "budgetCpuSeconds": 77
     },
     {
       "config": "ManagedServer.liveWait",
@@ -3442,10 +3442,10 @@
         "final"
       ],
       "tier": "every-run",
-      "distinctStates": 27319,
-      "measuredSeconds": 14.8,
-      "measuredCpuSeconds": 63.25,
-      "budgetCpuSeconds": 130
+      "distinctStates": 39490,
+      "measuredSeconds": 9.31,
+      "measuredCpuSeconds": 39.71,
+      "budgetCpuSeconds": 83
     },
     {
       "config": "ManagedServer.cachedRefusal",
@@ -3456,9 +3456,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 80,
-      "measuredSeconds": 1.15,
-      "measuredCpuSeconds": 1.56,
+      "distinctStates": 83,
+      "measuredSeconds": 1.22,
+      "measuredCpuSeconds": 1.72,
       "budgetCpuSeconds": 7
     },
     {
@@ -3470,10 +3470,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 599,
-      "measuredSeconds": 1.18,
-      "measuredCpuSeconds": 1.93,
-      "budgetCpuSeconds": 7
+      "distinctStates": 688,
+      "measuredSeconds": 1.33,
+      "measuredCpuSeconds": 2.2,
+      "budgetCpuSeconds": 8
     },
     {
       "config": "ManagedServer.twoFlights",
@@ -3484,9 +3484,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 40,
-      "measuredSeconds": 1.16,
-      "measuredCpuSeconds": 1.55,
+      "distinctStates": 39,
+      "measuredSeconds": 1.29,
+      "measuredCpuSeconds": 1.75,
       "budgetCpuSeconds": 7
     },
     {
@@ -3498,10 +3498,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 2034,
-      "measuredSeconds": 1.22,
-      "measuredCpuSeconds": 2.27,
-      "budgetCpuSeconds": 8
+      "distinctStates": 2605,
+      "measuredSeconds": 1.46,
+      "measuredCpuSeconds": 2.54,
+      "budgetCpuSeconds": 9
     },
     {
       "config": "ManagedServer.unboundedClaim",
@@ -3515,10 +3515,10 @@
         "final"
       ],
       "tier": "every-run",
-      "distinctStates": 36004,
-      "measuredSeconds": 4.67,
-      "measuredCpuSeconds": 18.94,
-      "budgetCpuSeconds": 41
+      "distinctStates": 73610,
+      "measuredSeconds": 10.11,
+      "measuredCpuSeconds": 34.5,
+      "budgetCpuSeconds": 72
     },
     {
       "config": "ManagedServer.noGroupReap",
@@ -3532,10 +3532,10 @@
         "final"
       ],
       "tier": "every-run",
-      "distinctStates": 10574,
-      "measuredSeconds": 2.06,
-      "measuredCpuSeconds": 6.33,
-      "budgetCpuSeconds": 16
+      "distinctStates": 7376,
+      "measuredSeconds": 2.16,
+      "measuredCpuSeconds": 5.26,
+      "budgetCpuSeconds": 14
     },
     {
       "config": "ManagedServer.retryEveryStart",
@@ -3549,9 +3549,9 @@
         "final"
       ],
       "tier": "every-run",
-      "distinctStates": 1836,
-      "measuredSeconds": 1.63,
-      "measuredCpuSeconds": 4.36,
+      "distinctStates": 4438,
+      "measuredSeconds": 1.84,
+      "measuredCpuSeconds": 4.18,
       "budgetCpuSeconds": 12
     },
     {
@@ -3560,10 +3560,10 @@
       "expect": "holds",
       "args": [],
       "tier": "deep",
-      "distinctStates": 7941888,
-      "measuredSeconds": 66.99,
-      "measuredCpuSeconds": 342.45,
-      "budgetCpuSeconds": 688
+      "distinctStates": 19841688,
+      "measuredSeconds": 158.21,
+      "measuredCpuSeconds": 821.88,
+      "budgetCpuSeconds": 1647
     },
     {
       "config": "ManagedServer.twoTargets",
@@ -3571,10 +3571,10 @@
       "expect": "holds",
       "args": [],
       "tier": "deep",
-      "distinctStates": 15551226,
-      "measuredSeconds": 221.74,
-      "measuredCpuSeconds": 1147.53,
-      "budgetCpuSeconds": 2299
+      "distinctStates": 10211398,
+      "measuredSeconds": 130.55,
+      "measuredCpuSeconds": 673.61,
+      "budgetCpuSeconds": 1351
     },
     {
       "config": "ManagedServer.deepLive",
@@ -3585,10 +3585,10 @@
         "final"
       ],
       "tier": "deep",
-      "distinctStates": 118732,
-      "measuredSeconds": 126.23,
-      "measuredCpuSeconds": 507.93,
-      "budgetCpuSeconds": 1019
+      "distinctStates": 194518,
+      "measuredSeconds": 46.49,
+      "measuredCpuSeconds": 201.98,
+      "budgetCpuSeconds": 407
     },
     {
       "config": "RipgrepExtract",
