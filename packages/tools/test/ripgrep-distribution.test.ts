@@ -3,6 +3,7 @@ import path from 'node:path';
 import { brotliCompressSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { sha256Hex } from '@momonga/foundation';
+import type { ClaimOutcome, KernelLockMechanism } from '@momonga/foundation';
 import {
   RIPGREP_BINARY_ASSET,
   RIPGREP_MANIFEST_ASSET,
@@ -100,6 +101,21 @@ const makeFiles = () => {
 
 type Fixture = ReturnType<typeof makeFiles>;
 
+const memoryLock = (held: ReadonlySet<string> = new Set()): KernelLockMechanism => {
+  const claimSync = (lockPath: string): ClaimOutcome =>
+    held.has(lockPath) ? { kind: 'held' } : { kind: 'claimed', lock: { descriptor: undefined, writeHolder: () => undefined, release: () => undefined, dispose: () => undefined } };
+  return {
+    name: 'file-lock',
+    claim: async (lockPath) => claimSync(lockPath),
+    claimSync,
+    isHeld: async (lockPath) => held.has(lockPath),
+    readHolder: async () => undefined,
+    readHolderSync: () => undefined,
+    claimInheritable: undefined,
+    adoptInherited: undefined,
+  };
+};
+
 const portsOf = (fixture: Fixture, overrides: Partial<RipgrepDistributionPorts> = {}, assets: Record<string, Uint8Array> = {}): RipgrepDistributionPorts => {
   const table: Record<string, Uint8Array> = {
     [RIPGREP_MANIFEST_ASSET]: new TextEncoder().encode(JSON.stringify(manifestFor())),
@@ -120,7 +136,7 @@ const portsOf = (fixture: Fixture, overrides: Partial<RipgrepDistributionPorts> 
       return counter / 1000;
     },
     ownerId: 'self',
-    isOwnerRunning: async (owner) => owner === 'self',
+    lock: memoryLock(),
     files: fixture.files,
     ...overrides,
   };
@@ -268,14 +284,14 @@ describe('ensureBundledRipgrep', () => {
     expect(text(fixture.entries.get(FINAL))).toBe('#!rg-binary-bytes');
   });
 
-  it('sweeps staged files whose owner is gone and keeps the staged files of a running owner', async () => {
+  it('sweeps staged files whose lock no one holds and keeps the staged files whose writer holds their lock', async () => {
     const fixture = makeFiles();
     fixture.entries.set(DIRECTORY, { kind: 'directory' });
     const stale = path.join(DIRECTORY, 'rg.partial-gone-1-aaaa');
     const alive = path.join(DIRECTORY, 'rg.partial-other-2-bbbb');
     fixture.entries.set(stale, { kind: 'file', bytes: BINARY, mode: 0o700 });
     fixture.entries.set(alive, { kind: 'file', bytes: BINARY, mode: 0o700 });
-    const ports = portsOf(fixture, { isOwnerRunning: async (owner) => owner === 'self' || owner === 'other' });
+    const ports = portsOf(fixture, { lock: memoryLock(new Set([alive])) });
     await (await ensureBundledRipgrep(ports)).release();
     expect(fixture.entries.has(stale)).toBe(false);
     expect(fixture.entries.has(alive)).toBe(true);
@@ -285,7 +301,7 @@ describe('ensureBundledRipgrep', () => {
     const fixture = makeFiles();
     const [first, second] = await Promise.all([
       ensureBundledRipgrep(portsOf(fixture, { ownerId: 'a' })),
-      ensureBundledRipgrep(portsOf(fixture, { ownerId: 'b', isOwnerRunning: async () => true })),
+      ensureBundledRipgrep(portsOf(fixture, { ownerId: 'b' })),
     ]);
     expect(first.path).toBe(FINAL);
     expect(second.path).toBe(FINAL);

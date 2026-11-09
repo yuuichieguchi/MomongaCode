@@ -43,7 +43,7 @@ const holdEntry = async (entry: string): Promise<void> => {
   if (!fs.existsSync(entry)) fs.writeFileSync(entry, BINARY, { mode: 0o700 });
 };
 
-const portsOf = (root: string, isOwnerRunning: (owner: string) => Promise<boolean>): RipgrepDistributionPorts => {
+const portsOf = (root: string): RipgrepDistributionPorts => {
   let counter = 0;
   return {
     asset: (name) => {
@@ -57,29 +57,29 @@ const portsOf = (root: string, isOwnerRunning: (owner: string) => Promise<boolea
       return counter / 1000;
     },
     ownerId: 'self',
-    isOwnerRunning,
+    lock: hostKernelLock(),
     files: nodeFileSystem,
   };
 };
 
-describe('ripgrep-distribution.ts:138-144: a staged file whose owner holds its lock is kept, whatever the owner probe says', () => {
-  it('keeps a held staged file whose owner the probe reports gone (the pidOnly variant)', async () => {
+describe('ripgrep-distribution.ts:138-144: the staged files are judged by their lock alone (R1), never by an owner probe', () => {
+  it('keeps a staged file whose writer holds its lock (the pidOnly variant names a foreign owner)', async () => {
     const root = executablesRoot();
     const directory = path.join(root, ripgrepDirectoryName(MANIFEST));
     fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
     const staged = path.join(directory, `${RIPGREP_STAGED_PREFIX}foreign-1-aaaa`);
     await holdEntry(staged);
-    await (await ensureBundledRipgrep(portsOf(root, async (owner) => owner === 'self'))).release();
+    await (await ensureBundledRipgrep(portsOf(root))).release();
     expect(fs.existsSync(staged)).toBe(true);
   });
 
-  it('removes a staged file whose lock no one holds, even when the owner probe reports it running', async () => {
+  it('removes a staged file whose lock no one holds, whatever owner its name carries', async () => {
     const root = executablesRoot();
     const directory = path.join(root, ripgrepDirectoryName(MANIFEST));
     fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
     const staged = path.join(directory, `${RIPGREP_STAGED_PREFIX}other-2-bbbb`);
     fs.writeFileSync(staged, BINARY, { mode: 0o700 });
-    await (await ensureBundledRipgrep(portsOf(root, async () => true))).release();
+    await (await ensureBundledRipgrep(portsOf(root))).release();
     expect(fs.existsSync(staged)).toBe(false);
   });
 });

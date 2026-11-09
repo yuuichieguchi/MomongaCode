@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { LEFTOVER_LOCK_FORMS, createKernelLockMechanism, lockFormOf } from '@momonga/foundation';
+import { ATOMIC_WRITE_STEP_ACTIONS, LEFTOVER_LOCK_FORMS, atomicWriteSteps, createKernelLockMechanism, lockFormOf } from '@momonga/foundation';
 import { readManifest } from './formal/manifest.ts';
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -27,10 +27,27 @@ const leftoverConfigs = (): string[] =>
     .entries.map((entry) => entry.config)
     .filter((config) => config === 'LeftoverCleanup' || config.startsWith('LeftoverCleanup.'));
 
-const PLATFORM_FORMS: ReadonlyArray<{ platform: NodeJS.Platform; config: string }> = [
-  { platform: 'darwin', config: 'LeftoverCleanup' },
-  { platform: 'linux', config: 'LeftoverCleanup.sidecar' },
-  { platform: 'win32', config: 'LeftoverCleanup.sidecar' },
+const PLATFORM_FORMS: ReadonlyArray<{ platform: NodeJS.Platform; kind: 'file' | 'directory'; config: string }> = [
+  { platform: 'darwin', kind: 'file', config: 'LeftoverCleanup' },
+  { platform: 'darwin', kind: 'directory', config: 'LeftoverCleanup.sidecar' },
+  { platform: 'linux', kind: 'file', config: 'LeftoverCleanup.sidecar' },
+  { platform: 'linux', kind: 'directory', config: 'LeftoverCleanup.sidecar' },
+  { platform: 'win32', kind: 'file', config: 'LeftoverCleanup.sidecar' },
+  { platform: 'win32', kind: 'directory', config: 'LeftoverCleanup.sidecar' },
+];
+
+const WRITER_ACTION_ORDER = ['CreateLocked', 'Publish', 'Dispose'];
+
+const actionsDefined = (): Set<string> => new Set([...spec.matchAll(/^(\w+)\(w\) ==/gm)].map((match) => match[1] as string));
+
+const withoutRepeats = (names: readonly string[]): string[] => names.filter((name, index) => index === 0 || names[index - 1] !== name);
+
+const C8_OWNERS: readonly string[] = [
+  'packages/cli/src/eval/context-effects.ts',
+  'packages/cli/src/commands/evaluate.ts',
+  'packages/eval/src/bench-grade.ts',
+  'packages/sandbox/src/seatbelt.ts',
+  'packages/sandbox/src/bubblewrap.ts',
 ];
 
 const C5_WRITERS: readonly string[] = [
@@ -47,9 +64,9 @@ describe('T7: LeftoverCleanup.tla and the code name the same lock forms', () => 
     expect([...LEFTOVER_LOCK_FORMS].sort()).toEqual(assumedSet('LockForm'));
   });
 
-  for (const { platform, config } of PLATFORM_FORMS) {
-    it(`${platform} uses the lock form that ${config}.cfg checks`, () => {
-      expect(lockFormOf(createKernelLockMechanism(platform))).toBe(configValue(config, 'LockForm'));
+  for (const { platform, kind, config } of PLATFORM_FORMS) {
+    it(`${platform}, a ${kind} entry, uses the lock form that ${config}.cfg checks`, () => {
+      expect(lockFormOf(createKernelLockMechanism(platform), kind)).toBe(configValue(config, 'LockForm'));
     });
   }
 
@@ -77,6 +94,32 @@ describe('T7 and C5: every temporary writer of the actor table goes through the 
       const source = fs.readFileSync(path.join(root, writer), 'utf8');
       for (const pattern of OWN_TEMPORARY_NAMES) expect(source, `${writer} matches ${pattern}`).not.toMatch(pattern);
       expect(source).toMatch(/import \{[^}]*\bwriteFileAtomically(Sync)?\b[^}]*\} from '@momonga\/foundation'/);
+    });
+  }
+});
+
+describe('T7 and S3: the atomic write steps are the writer actions of LeftoverCleanup.tla, in their order', () => {
+  it('maps every step to a writer action the spec defines', () => {
+    const defined = actionsDefined();
+    for (const [step, action] of Object.entries(ATOMIC_WRITE_STEP_ACTIONS)) expect(defined, `${step} -> ${action}`).toContain(action);
+  });
+
+  for (const form of ['entry', 'sidecar'] as const) {
+    for (const publish of ['replace', 'create'] as const) {
+      it(`the ${form} form, ${publish}, runs CreateLocked, Publish and Dispose in that order`, () => {
+        const actions = atomicWriteSteps(form, publish).map((step) => ATOMIC_WRITE_STEP_ACTIONS[step]);
+        expect(withoutRepeats(actions)).toEqual(WRITER_ACTION_ORDER);
+      });
+    }
+  }
+});
+
+describe('T7 and C8: every eval and sandbox scratch owner creates its directory through the one owned-directory helper (S2)', () => {
+  for (const owner of C8_OWNERS) {
+    it(`${owner} makes no scratch directory of its own`, () => {
+      const source = fs.readFileSync(path.join(root, owner), 'utf8');
+      expect(source, owner).not.toMatch(/\bmkdtemp(Sync)?\(/);
+      expect(source).toMatch(/\bcreateOwnedDirectory(Sync)?\b/);
     });
   }
 });

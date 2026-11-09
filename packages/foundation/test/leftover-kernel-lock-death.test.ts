@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createKernelLockMechanism, lockFormOf, sweepLeftovers } from '@momonga/foundation';
+import { createKernelLockMechanism, createOwnedDirectory, lockFormOf, sweepLeftovers } from '@momonga/foundation';
 import type { LeftoverFiles, LockForm } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { exitOf, startHolder } from './support/lock-processes.ts';
@@ -25,7 +25,7 @@ describe('the kernel lock is released when its holder is killed with SIGKILL', (
       `${test}: a second process is refused while the holder lives and claims after the kill`,
       async (context) => {
         const mechanism = createKernelLockMechanism(platform);
-        expect(lockFormOf(mechanism)).toBe(form);
+        expect(lockFormOf(mechanism, 'file')).toBe(form);
         const entry = path.join(makeTemporaryDirectory(), ENTRY_NAME);
         const holder = await startHolder(context, entry, platform);
         expect((await mechanism.claim(entry)).kind).toBe('held');
@@ -60,5 +60,79 @@ describe('R1 on real kernel locks: the sweep keeps an entry whose holder lives a
       },
       REAL_PROCESS_TEST_TIMEOUT_MS,
     );
+  }
+});
+
+const DIRECTORY_SIDECARS: ReadonlyArray<{ platform: NodeJS.Platform; claimPathOf(directory: string): string; sidecarOf(directory: string): string }> = [
+  { platform: 'darwin', claimPathOf: (directory) => `${directory}.lock`, sidecarOf: (directory) => `${directory}.lock` },
+  { platform: 'linux', claimPathOf: (directory) => directory, sidecarOf: (directory) => `${directory}.sqlite` },
+];
+
+describe('S2: a directory entry has the sidecar form under every mechanism, on real kernel locks', () => {
+  for (const { platform, claimPathOf, sidecarOf } of DIRECTORY_SIDECARS) {
+    it(
+      `${platform} mechanism: a scratch directory is kept with its sidecar while its holder lives, and both go after SIGKILL`,
+      async (context) => {
+        const mechanism = createKernelLockMechanism(platform);
+        expect(lockFormOf(mechanism, 'directory')).toBe('sidecar');
+        const parent = makeTemporaryDirectory();
+        const scratch = path.join(parent, 'scratch-0a1b2c');
+        const holder = await startHolder(context, claimPathOf(scratch), platform);
+        fs.mkdirSync(scratch);
+        fs.writeFileSync(path.join(scratch, 'work.txt'), 'in use');
+        const registered = [{ directory: parent, isLeftover: (name: string) => name.startsWith('scratch-') }];
+        await sweepLeftovers({ directories: registered, lock: mechanism, files: nodeLeftoverFiles });
+        expect(fs.existsSync(path.join(scratch, 'work.txt'))).toBe(true);
+        expect(fs.existsSync(sidecarOf(scratch))).toBe(true);
+        holder.kill('SIGKILL');
+        await exitOf(holder);
+        await sweepLeftovers({ directories: registered, lock: mechanism, files: nodeLeftoverFiles });
+        expect(fs.readdirSync(parent)).toEqual([]);
+      },
+      REAL_PROCESS_TEST_TIMEOUT_MS,
+    );
+
+    it(
+      `${platform} mechanism: an orphaned sidecar is removed under its own claim, and kept while held`,
+      async (context) => {
+        const mechanism = createKernelLockMechanism(platform);
+        const parent = makeTemporaryDirectory();
+        const gone = path.join(parent, 'scratch-gone');
+        const holder = await startHolder(context, claimPathOf(gone), platform);
+        const registered = [{ directory: parent, isLeftover: (name: string) => name.startsWith('scratch-') }];
+        await sweepLeftovers({ directories: registered, lock: mechanism, files: nodeLeftoverFiles });
+        expect(fs.existsSync(sidecarOf(gone))).toBe(true);
+        holder.kill('SIGKILL');
+        await exitOf(holder);
+        await sweepLeftovers({ directories: registered, lock: mechanism, files: nodeLeftoverFiles });
+        expect(fs.readdirSync(parent)).toEqual([]);
+      },
+      REAL_PROCESS_TEST_TIMEOUT_MS,
+    );
+
+    it(`${platform} mechanism: createOwnedDirectory locks the sidecar before the directory exists, and dispose removes the directory, then the sidecar`, async () => {
+      const mechanism = createKernelLockMechanism(platform);
+      const parent = makeTemporaryDirectory();
+      const existedAtClaim: boolean[] = [];
+      const observing = {
+        ...mechanism,
+        claim: async (lockPath: string) => {
+          const directory = platform === 'darwin' ? lockPath.slice(0, -'.lock'.length) : lockPath;
+          existedAtClaim.push(fs.existsSync(directory));
+          return mechanism.claim(lockPath);
+        },
+      };
+      const owned = await createOwnedDirectory({ parent, prefix: 'scratch-', lock: observing });
+      expect(existedAtClaim).toEqual([false]);
+      expect(path.dirname(owned.path)).toBe(parent);
+      expect(path.basename(owned.path).startsWith('scratch-')).toBe(true);
+      expect(fs.statSync(owned.path).isDirectory()).toBe(true);
+      expect(await mechanism.isHeld(claimPathOf(owned.path))).toBe(true);
+      const registered = [{ directory: parent, isLeftover: (name: string) => name.startsWith('scratch-') }];
+      await sweepLeftovers({ directories: registered, lock: mechanism, files: nodeLeftoverFiles });
+      expect(fs.existsSync(owned.path)).toBe(true);
+      await owned.dispose();
+      expect(fs.readdirSync(parent)).toEqual([]);
+    });
   }
 });

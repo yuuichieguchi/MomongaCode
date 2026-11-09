@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { hostKernelLock, leftoverDirectories, momongaPaths, nodeFileLockOps, secretKeyFile } from '@momonga/foundation';
+import { hostKernelLock, leftoverDirectories, momongaPaths, nodeFileLockOps, sweepLeftovers } from '@momonga/foundation';
 import type { FileLockOps, HeldKernelLock } from '@momonga/foundation';
 import { createLockedFile } from '../src/platform/lock-capability.ts';
 import { OPEN_FLAGS } from '../src/node-file-system.ts';
@@ -16,16 +16,21 @@ const holdEntry = async (entry: string): Promise<HeldKernelLock> => {
   return outcome.lock;
 };
 
-describe('secret-key-file.ts:41-49: a temporary whose owner holds its lock is kept, whatever its pid probe says', () => {
-  it('keeps a held temporary whose name carries a pid the probe reports dead (the pidOnly variant: an owner in another pid namespace)', async () => {
-    const directory = makeTemporaryDirectory();
-    const keyPath = path.join(directory, 'gateway.key');
-    fs.writeFileSync(keyPath, Buffer.alloc(32, 7), { mode: 0o600 });
-    const temporary = path.join(directory, `gateway.key.${PID_NO_PROCESS_HAS}.aabbccddeeff.tmp`);
-    const lock = await holdEntry(temporary);
+describe('secret-key-file.ts:41-49 replaced (S1): the gateway start sweeps dirname(gatewayKey) through the registered list, by lock alone', () => {
+  it('keeps a held temporary whose name carries a pid the probe reports dead, and removes an unheld one named with this live pid', async () => {
+    const paths = momongaPaths(makeTemporaryDirectory());
+    const directory = path.dirname(paths.gatewayKey);
+    fs.mkdirSync(directory, { recursive: true });
+    const held = path.join(directory, `.gateway.key.${PID_NO_PROCESS_HAS}aabbcc.tmp`);
+    const unheld = path.join(directory, `.gateway.key.${process.pid}ddeeff.tmp`);
+    const lock = await holdEntry(held);
+    fs.writeFileSync(unheld, 'left by a crash', { mode: 0o600 });
     try {
-      expect(Buffer.from(secretKeyFile(keyPath))).toEqual(Buffer.alloc(32, 7));
-      expect(fs.existsSync(temporary)).toBe(true);
+      const registered = leftoverDirectories(paths).filter((entry) => entry.directory === directory);
+      expect(registered).toHaveLength(1);
+      await sweepLeftovers({ directories: registered, lock: hostKernelLock(), files: { readdir: (dir) => fs.promises.readdir(dir), rm: (file) => fs.promises.rm(file, { force: true }) } });
+      expect(fs.existsSync(held)).toBe(true);
+      expect(fs.existsSync(unheld)).toBe(false);
     } finally {
       lock.release();
     }
