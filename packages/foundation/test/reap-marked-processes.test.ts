@@ -944,7 +944,7 @@ describe('marker reap: AbortSignal (PT 3G: a reap path ends at its operation bou
 
 type TableProcess = { pgid: number; holdsMarker: boolean; ignoresTerm: boolean; holdsFromListing?: number; startMs?: number; startUnreadable?: boolean };
 
-type Reuses = { afterGroupRead?: Record<number, Record<number, TableProcess>>; afterStartRead?: Record<number, TableProcess> };
+type Reuses = { atListing?: Record<number, Record<number, TableProcess>>; afterGroupRead?: Record<number, Record<number, TableProcess>>; afterStartRead?: Record<number, TableProcess> };
 
 const processTable = (initial: Record<number, TableProcess>, exitsAfterListing: Record<number, number[]>, reuses: Reuses = {}) => {
   const table = new Map<number, TableProcess>(Object.entries(initial).map(([pid, entry]) => [Number(pid), entry]));
@@ -978,6 +978,7 @@ const processTable = (initial: Record<number, TableProcess>, exitsAfterListing: 
     },
     holdersOf: async () => {
       listings += 1;
+      reuse(reuses.atListing?.[listings] ?? {});
       const holders = [...table].filter(([, entry]) => entry.holdsMarker && listings >= (entry.holdsFromListing ?? 1)).map(([pid]) => pid);
       for (const pid of exitsAfterListing[listings] ?? []) table.delete(pid);
       return { kind: 'value', value: holders };
@@ -1053,6 +1054,34 @@ describe('a target is signalled only when its start time read at the listing rea
     expect(world.signals).toEqual([]);
     expect(warnings).toContain(`mcp marker ${marker}: process 200 is still alive but could not be verified as belonging to this call, so it was left alone`);
     expect(result).toEqual({ removed: false });
+  });
+
+  it('a holder that dropped the marker and whose pid was then reused is not reported as a holder still alive', async (context) => {
+    const marker = markerFile(withTempDir(context));
+    const world = processTable(
+      { 100: { pgid: 100, holdsMarker: true, ignoresTerm: false }, 200: { pgid: 200, holdsMarker: true, ignoresTerm: false } },
+      {},
+      { atListing: { 2: { 200: stranger(300) } } },
+    );
+    const result = await reconcileProcessGroup({ pgid: 100, marker }, { killGraceMs: 1000, kill: world.kill, timing: fakeTiming().timing, inspector: world.inspector });
+    expect(result.leftAlonePids).toEqual([]);
+  });
+
+  it('a marker with no recorded group: a holder that dropped the marker and whose pid was then reused is not reported as still alive', async (context) => {
+    const marker = markerFile(withTempDir(context));
+    const world = processTable({ 200: { pgid: 200, holdsMarker: true, ignoresTerm: false } }, {}, { atListing: { 2: { 200: stranger(300) } } });
+    const warnings: string[] = [];
+    await reapMarkedProcesses({ marker, killGraceMs: 1000, label: 'mcp', onWarning: (message) => warnings.push(message), kill: world.kill, timing: fakeTiming().timing, inspector: world.inspector });
+    expect(warnings.filter((warning) => warning.includes('process 200'))).toEqual([]);
+  });
+
+  it('a live group with no listed holder in it, while holders outside it exist, is reported left alone', async (context) => {
+    const marker = markerFile(withTempDir(context));
+    const world = processTable({ 100: { pgid: 100, holdsMarker: false, ignoresTerm: true }, 200: { pgid: 200, holdsMarker: true, ignoresTerm: false } }, {});
+    const result = await reconcileProcessGroup({ pgid: 100, marker }, { killGraceMs: 1000, kill: world.kill, timing: fakeTiming().timing, inspector: world.inspector });
+    expect(world.signals.filter(({ pid }) => pid === -100)).toEqual([]);
+    expect(result.leftAloneGroup).toBe(100);
+    expect(result.output).toContain('group 100');
   });
 
   it('a marker with no recorded group: a holder whose pid is reused after its start time was read gets no signal', async (context) => {
