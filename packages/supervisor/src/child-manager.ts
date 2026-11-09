@@ -1,3 +1,4 @@
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Duplex, Readable } from 'node:stream';
 import { createStopValuesReader } from '@momonga/config';
 import type { StopValuesReader, UserSettingsCache, UserSettingsSnapshot } from '@momonga/config';
@@ -13,6 +14,7 @@ import {
   parseReadyLine,
   reapMarkerDirectory,
   runtimeStopBudgetMs,
+  CREDENTIAL_CAPABILITY_ENV,
 } from '@momonga/foundation';
 import type { Clock, JsonLogger, KernelLockMechanism, LockHandoff, LockHandoffClaim, MomongaPaths, ReadyFields, RoleEndpoint, StopValues } from '@momonga/foundation';
 import type { SupervisorChildHealth, SupervisorChildState, SupervisorExitReason } from '@momonga/protocol';
@@ -72,6 +74,8 @@ export type SpawnPort = (command: string, args: readonly string[], options: Spaw
 
 export type ChildState = SupervisorChildState;
 
+const CAPABILITY_BYTES = 32;
+
 export type SpawnReason = 'initial' | 'backoff' | 'lock-free' | 'held-retry' | 'settings-change';
 
 export type HeldSource = 'child-exit' | 'settings';
@@ -120,6 +124,7 @@ export type ChildManager = {
   spawnFresh(reason: SpawnReason): void;
   failWithoutProcess(reason: 'settings-read-failed'): void;
   retryHeld(): void;
+  holdsCapability(given: string): boolean;
   stop(reason: StopReason, mode: StopMode, values?: StopValues): Promise<ChildStopResult>;
   enterDraining(): void;
   unreapedMarkers(): readonly string[];
@@ -187,6 +192,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   let leaked = false;
   let current: Life | undefined;
   let lastExit: LastExit | undefined;
+  let capability: string | undefined;
   let readyAt: number | undefined;
   let heldReason: string | undefined;
   let lastLoggedHeldReason: string | undefined;
@@ -392,11 +398,13 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
           : runtimeEnv(merged, snapshot.settings).env,
     });
     if (role === 'gateway') reportSkippedNames(skippedNames);
+    const spawnCapability = role === 'gateway' ? randomBytes(CAPABILITY_BYTES).toString('hex') : undefined;
+    capability = spawnCapability;
     const marker = openDaemonMarker(options.paths.markers.daemons, role, options.markerPorts?.files);
     try {
       const handle = options.spawn(resolved.command, resolved.args, {
         cwd: options.home,
-        env: handoff === undefined ? resolved.env : { ...resolved.env, ...handoff.env },
+        env: { ...resolved.env, ...(handoff === undefined ? {} : handoff.env), ...(spawnCapability === undefined ? {} : { [CREDENTIAL_CAPABILITY_ENV]: spawnCapability }) },
         detached: true,
         stdio: childStdio(marker.fd, handoff?.descriptor),
       });
@@ -804,6 +812,12 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     failWithoutProcess: (reason) => {
       beginAttempt();
       recordFailureWithoutProcess(reason);
+    },
+    holdsCapability: (given) => {
+      if (capability === undefined) return false;
+      const expected = Buffer.from(capability);
+      const offered = Buffer.from(given);
+      return offered.length === expected.length && timingSafeEqual(offered, expected);
     },
     retryHeld: () => {
       if (options.isDraining() || state !== 'held-config') return;

@@ -358,8 +358,9 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       socketPath: own.sockets.supervisor,
       timers,
       health,
-      credential: (name) => {
-        if (!handedCredentialNames(settings.read().settings).includes(name)) return { kind: 'undeclared' };
+      credential: (name, capability) => {
+        if (capability === undefined || !gateway.holdsCapability(capability)) return { kind: 'refused' };
+        if (!handedCredentialNames(settings.read().settings).includes(name)) return { kind: 'refused' };
         const value = env[name];
         return value === undefined || value === '' ? { kind: 'unset' } : { kind: 'value', value };
       },

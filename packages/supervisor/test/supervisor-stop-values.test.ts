@@ -68,7 +68,7 @@ describe('POST /v1/shutdown carries the requester values', () => {
       health: () => {
         throw new Error('health is not read here');
       },
-      credential: () => ({ kind: 'undeclared' }),
+      credential: () => ({ kind: 'refused' }),
       onShutdownRequested: (values?: StopValues) => requested.push(values),
       onError: () => undefined,
     });

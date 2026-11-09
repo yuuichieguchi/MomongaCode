@@ -312,3 +312,4 @@ export { patternRefusal, renderInstancePath } from './pattern-refusal.ts';
 export { defineProductSchema, productErrorsText, productSchemas } from './product-schema.ts';
 export type { ProductSchema, ProductValidator, ProductVerdict } from './product-schema.ts';
 export { SHORT_TEMP_BASE, shortTempBase } from './short-temp-base.ts';
+export { CREDENTIAL_CAPABILITY_ENV, CREDENTIAL_CAPABILITY_HEADER } from './process-contract.ts';
