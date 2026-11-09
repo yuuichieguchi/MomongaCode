@@ -127,16 +127,25 @@ describe('S6: the per-spawn capability ends with the child (design-settings-live
   });
 });
 
-describe('S6: the per-spawn capability ends when the child is stopped (design-settings-live 15.6)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
-  it('the capability of a gateway being stopped answers nothing, before the child has exited', async (context) => {
+describe('S6: the per-spawn capability ends when a stop has confirmed the child gone (design-settings-live 15.6)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+  it('a gateway draining after SIGTERM keeps its capability; once its exit is confirmed the capability answers nothing', async (context) => {
     const h = await watched(context);
     await declareTargetsWithKeys(h, DECLARED_LATER);
+    h.fake.setBehaviour('gateway', { autoReady: false, onTerm: 'ignore' });
+    await h.realWork.run(async () => {
+      h.fake.latest('gateway').exit(1);
+    });
+    await pumpUntil(h.timers, () => h.fake.spawnCount('gateway') === 2, { realWork: h.realWork, maxMs: 120_000, description: 'the gateway to be spawned again' });
     const capability = gatewayCapability(h);
-    expect((await requestCredential(context, h, DECLARED_LATER, capability)).status).toBe(200);
-    h.fake.setBehaviour('gateway', { onTerm: 'ignore' });
-    void h.supervisor.close();
-    await pumpUntil(h.timers, () => h.fake.latest('gateway').signals.includes('SIGTERM'), { realWork: h.realWork, maxMs: 120_000, description: 'the gateway to be asked to stop' });
-    expect(h.fake.latest('gateway').signals).toContain('SIGTERM');
+    await h.realWork.run(async () => {
+      h.fake.latest('gateway').ready({ service: 'not-the-gateway' });
+    });
+    await pumpUntil(h.timers, () => h.fake.latest('gateway').signals.includes('SIGTERM'), { realWork: h.realWork, maxMs: 120_000, description: 'the supervisor to stop the mismatched gateway' });
+    expect((await requestCredential(context, h, DECLARED_LATER, capability)).status, 'a draining gateway is still alive').toBe(200);
+    await h.realWork.run(async () => {
+      h.fake.latest('gateway').exit(0);
+    });
+    await pump(h.timers, h.realWork, 0);
     const response = await requestCredential(context, h, DECLARED_LATER, capability);
     expect(response.status).toBe(403);
     expect(response.text).not.toContain(ADDED_KEY_VALUE);
