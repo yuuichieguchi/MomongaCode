@@ -454,6 +454,8 @@ const registerSecret: CommandGroup = (program, deps) => {
     });
 };
 
+const EXIT_USAGE_MODELS = 2;
+
 const registerModels: CommandGroup = (program, deps) => {
   const models = program
     .command('models')
@@ -467,7 +469,10 @@ const registerModels: CommandGroup = (program, deps) => {
       const named = account === undefined ? {} : { account };
       if (options.add !== undefined) deps.complete(await runModelsAdd(deps.ports, paths, { slug: options.add, ...named }));
       else if (options.catalog === true) deps.complete(await runModelsCatalog(deps.ports, paths, { json: options.json === true, ...named }));
-      else deps.complete(await listModels(deps.ports, paths, options.json === true));
+      else if (account !== undefined) {
+        deps.ports.stderr.write('the account argument of momonga models is used with --catalog or --add\n');
+        deps.complete(EXIT_USAGE_MODELS);
+      } else deps.complete(await listModels(deps.ports, paths, options.json === true));
     });
   models
     .command('detect [url...]')

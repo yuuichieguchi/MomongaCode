@@ -1,6 +1,7 @@
 import { createPublicKey, verify } from 'node:crypto';
 import type { JsonWebKey } from 'node:crypto';
 import { isRecord } from './json.ts';
+import { parseOutsideJson } from './json-depth.ts';
 
 export type ParsedJwt = { header: Record<string, unknown>; claims: Record<string, unknown>; signingInput: string; signature: Buffer };
 
@@ -9,7 +10,7 @@ const JWT_PART = /^[A-Za-z0-9_-]*$/;
 const decodedObject = (part: string, what: string): Record<string, unknown> => {
   let value: unknown;
   try {
-    value = JSON.parse(Buffer.from(part, 'base64url').toString('utf8'));
+    value = parseOutsideJson(Buffer.from(part, 'base64url').toString('utf8'));
   } catch {
     throw new Error(`the JWT ${what} is not base64url JSON`);
   }

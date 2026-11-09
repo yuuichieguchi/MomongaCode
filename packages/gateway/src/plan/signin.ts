@@ -1,6 +1,6 @@
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import type { PlanProfile } from '@momonga/config';
-import { CLIENT_NAME, SECRET_NAME_PATTERN, isRecord, parseOutsideJson } from '@momonga/foundation';
+import { CLIENT_NAME, SECRET_NAME_PATTERN, isRecord, parseOutsideJson, systemRandom } from '@momonga/foundation';
 import type { Clock, FileSystem } from '@momonga/foundation';
 import { PLAN_SIGN_IN_FAILURE_RULES } from '@momonga/protocol';
 import type { PlanAccountRef, PlanSignInBeginRequest, PlanSignInBeginResponse, PlanSignInFailure } from '@momonga/protocol';
@@ -73,7 +73,7 @@ export const shownOAuthError = (raw: string | undefined): string => {
   return kept === '' ? UNSPECIFIED : kept;
 };
 
-const randomToken = (bytes: number): string => randomBytes(bytes).toString('base64url');
+const randomToken = (bytes: number): string => Buffer.from(systemRandom.bytes(bytes)).toString('base64url');
 
 const digest = (value: string): Buffer => createHash('sha256').update(value).digest();
 

@@ -6,9 +6,10 @@ import type { PlanCatalogEntry, PlanModelsResponse } from '@momonga/protocol';
 import { applyCredentialEffect, sendAuthorized } from '../adapters/shared/auth.ts';
 import { readTextLimited } from '../adapters/shared/body-reading.ts';
 import { createUpstreamClassifier } from '../adapters/shared/classify.ts';
-import { httpErrorOf, nestedErrorDetail } from '../adapters/shared/http-error.ts';
+import { nestedErrorDetail, retryAfterOf } from '../adapters/shared/http-error.ts';
+import { UpstreamHttpError } from '../adapters/shared/failures.ts';
+import { usableUpstreamJson } from '../adapters/shared/upstream-json.ts';
 import type { CompletionResponse } from '../adapters/shared/http-client.ts';
-import { CHAT_COMPLETIONS_VOCABULARY } from '../adapters/chat-completions/vocabulary.ts';
 import { gatewayErrorFromBody } from '../core/errors.ts';
 import { PLAN_SESSION_DEFAULTS, PLAN_SIGN_IN_DEFAULTS } from '../defaults.ts';
 import { reportedContextValue } from '../probe/run-probe.ts';
@@ -41,10 +42,16 @@ async function* bytesOf(text: string): AsyncGenerator<Uint8Array> {
 
 async function* noBytes(): AsyncGenerator<Uint8Array> {}
 
+const listErrorOf = async (response: CompletionResponse, clock: Clock): Promise<UpstreamHttpError> => {
+  const { text } = await readTextLimited(response.body, PLAN_SIGN_IN_DEFAULTS.authBodyBytes);
+  const code = nestedErrorDetail(usableUpstreamJson(text)).code ?? null;
+  return new UpstreamHttpError(response.status, code, `HTTP ${response.status}`, retryAfterOf(response, clock), false);
+};
+
 export const catalogKey = (profile: string, account: string): string => `${profile}/${account}`;
 
 const parseRecord = (text: string): CatalogRecord => {
-  const value: unknown = JSON.parse(text);
+  const value: unknown = parseOutsideJson(text);
   if (!isRecord(value) || typeof value['readAt'] !== 'string' || !isRecord(value['models'])) throw new Error('the plan catalog record has an unrecognised shape');
   const models: Record<string, RecordEntry> = {};
   for (const [slug, entry] of Object.entries(value['models'])) {
@@ -129,7 +136,7 @@ export const createPlanCatalog = (options: PlanCatalogOptions): PlanCatalog => {
       throw gatewayErrorFromBody(classify(error).error);
     }
     if (response.status !== SUCCESS_STATUS) {
-      const classified = classify(await httpErrorOf(response, options.clock, nestedErrorDetail, CHAT_COMPLETIONS_VOCABULARY));
+      const classified = classify(await listErrorOf(response, options.clock));
       await applyCredentialEffect(request.auth, classified, options.clock);
       throw gatewayErrorFromBody(classified.error);
     }
