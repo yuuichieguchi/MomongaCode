@@ -16,6 +16,12 @@ MarkerFile == "credential-key.json"
 LockName == "credential-key.lock"
 CreationSteps == <<"read_marker_again", "write_os_item", "write_marker">>
 
+ASSUME Head(CreationSteps) = "read_marker_again"
+
+ActionOfStep == [s \in {"write_os_item", "write_marker"} |-> IF s = "write_os_item" THEN "os" ELSE "marker"]
+
+DecidedOrder == [i \in 1..Len(Tail(CreationSteps)) |-> ActionOfStep[Tail(CreationSteps)[i]]] \o <<"unlock">>
+
 Names == 1..MaxNames
 
 VARIABLES marker, items, ever, records, lock, nextName, pc, ix, base, gen, key, todo, crashes, optIn, toggled, removed
@@ -25,7 +31,7 @@ vars == <<marker, items, ever, records, lock, nextName, pc, ix, base, gen, key, 
 Order ==
     CASE Variant = "markerBeforeKey" -> <<"marker", "os", "unlock">>
       [] Variant = "recordBeforeKey" -> <<"rec0", "os", "marker", "unlock">>
-      [] OTHER -> <<"os", "marker", "unlock">>
+      [] OTHER -> DecidedOrder
 
 Init ==
     /\ marker = 0

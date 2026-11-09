@@ -42,6 +42,16 @@ export type EncryptedCredentialStoreOptions = {
   ports?: FileLockPorts;
 };
 
+type CreationStep = (typeof CREDENTIAL_KEY_CREATION_STEPS)[number];
+
+type CreatedKey = { keyHex: string; name: string };
+
+type CreationState = { found: string | undefined; created: CreatedKey | undefined };
+
+const throwIfCancelled = (error: unknown, signal: AbortSignal | undefined): void => {
+  if (signal?.aborted === true && error === signal.reason) throw error;
+};
+
 const KEY_BYTES = 32;
 const KEY_NAME_BYTES = 8;
 const NONCE_BYTES = 12;
@@ -142,24 +152,40 @@ export const createEncryptedCredentialStore = (options: EncryptedCredentialStore
   };
 
   const createKey = async (store: SecretStore, signal: AbortSignal | undefined): Promise<string> => {
-    const keyHex = (await randomBytesAsync(KEY_BYTES)).toString('hex');
-    const name = `${CREDENTIAL_KEY_PREFIX}${(await randomBytesAsync(KEY_NAME_BYTES)).toString('hex')}`;
-    await store.write(name, keyHex, signal ?? NEVER_ABORTED);
-    await nodeFileSystem.mkdirPrivate(options.stateDirectory);
-    await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: ports.randomHex }, markerFile, `${JSON.stringify({ name })}\n`, { mode: FILE_MODE });
-    return keyHex;
+    const creation: CreationState = { found: undefined, created: undefined };
+    const steps: Readonly<Record<CreationStep, () => Promise<void>>> = {
+      read_marker_again: async () => {
+        creation.found = await readNamedKey(store, signal);
+      },
+      write_os_item: async () => {
+        const keyHex = (await randomBytesAsync(KEY_BYTES)).toString('hex');
+        const name = `${CREDENTIAL_KEY_PREFIX}${(await randomBytesAsync(KEY_NAME_BYTES)).toString('hex')}`;
+        await store.write(name, keyHex, signal ?? NEVER_ABORTED);
+        creation.created = { keyHex, name };
+      },
+      write_marker: async () => {
+        const { name } = creation.created as CreatedKey;
+        await writeFileAtomically(nodeFileSystem, { ...systemRandom, hex: ports.randomHex }, markerFile, `${JSON.stringify({ name })}\n`, { mode: FILE_MODE });
+      },
+    };
+    for (const step of CREDENTIAL_KEY_CREATION_STEPS) {
+      await steps[step]();
+      if (creation.found !== undefined) return creation.found;
+    }
+    return (creation.created as CreatedKey).keyHex;
   };
 
   const keyForWriting = async (store: SecretStore, signal: AbortSignal | undefined): Promise<string> => {
     const named = await readNamedKey(store, signal);
     if (named !== undefined) return named;
     await nodeFileSystem.mkdirPrivate(options.stateDirectory);
-    return withFileLock(lockFile, async () => (await readNamedKey(store, signal)) ?? createKey(store, signal), { ports, ...(signal === undefined ? {} : { signal }) });
+    return withFileLock(lockFile, () => createKey(store, signal), { ports, ...(signal === undefined ? {} : { signal }) });
   };
 
   const keyForReading = async (signal: AbortSignal | undefined, file: string): Promise<string> => {
-    if (options.secretStore.kind === 'none') throw new CredentialStoreError('store_unreadable', noStoreRefusal(options.secretStore.reason));
+    if (options.secretStore.kind === 'none') throw new CredentialStoreError('store_unreadable', noStoreRefusal(options.secretStore.reason), { cause: new Error(options.secretStore.reason) });
     const named = await readNamedKey(options.secretStore.store, signal).catch((error: unknown) => {
+      throwIfCancelled(error, signal);
       throw new CredentialStoreError('store_unreadable', `the key of the credential file ${file} could not be read: ${messageOf(error)}`, { cause: error });
     });
     if (named === undefined) throw new CredentialStoreError('store_unreadable', `the credential file ${file} is encrypted, but the marker ${markerFile} naming its key is missing`, { cause: new Error(`${markerFile} does not exist`) });
@@ -187,7 +213,7 @@ export const createEncryptedCredentialStore = (options: EncryptedCredentialStore
     if (options.secretStore.kind === 'none') throw new CredentialStoreError('store_unwritable', noStoreRefusal(options.secretStore.reason), { cause: new Error(options.secretStore.reason) });
     const store = options.secretStore.store;
     const keyHex = await keyForWriting(store, signal).catch((error: unknown) => {
-      if (signal?.aborted === true && error === signal.reason) throw error;
+      throwIfCancelled(error, signal);
       throw new CredentialStoreError('store_unwritable', `the credential key could not be read or created: ${messageOf(error)}`, { cause: error });
     });
     return JSON.stringify(await seal(keyHex, key, value));

@@ -1,14 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { CREDENTIAL_KEY_CREATION_STEPS, CREDENTIAL_KEY_MARKER_FILE, createEncryptedCredentialStore } from '@momonga/foundation';
+import { CREDENTIAL_KEY_CREATION_STEPS, CREDENTIAL_KEY_MARKER_FILE, createEncryptedCredentialStore, systemFileLockPorts } from '@momonga/foundation';
 import { createFakeKeyStore, recordFileOf } from './support/credential-key-fakes.ts';
 import { makeTemporaryDirectory as makeDir } from './support/temporary-directory.ts';
 
 const MODEL_STEP_OF_EVENT: Readonly<Record<string, string>> = {
   marker_absent_at_os_write: 'read_marker_again',
   os_item_written: 'write_os_item',
-  marker_present_at_record: 'write_marker',
+  marker_file_written: 'write_marker',
 };
 
 describe('encrypted credential store conforms to CredentialKey.tla (Reread, Creating os, Creating marker, Rec)', () => {
@@ -28,17 +28,21 @@ describe('encrypted credential store conforms to CredentialKey.tla (Reread, Crea
       if (!fs.existsSync(markerFile)) events.push('marker_absent_at_os_write');
       if (!fs.existsSync(recordFile)) events.push('os_item_written');
     };
+    const ports = { ...systemFileLockPorts, randomHex: (bytes: number) => {
+      if (!fs.existsSync(markerFile)) events.push('marker_file_written');
+      else if (!fs.existsSync(recordFile)) events.push('record_written_with_marker');
+      return systemFileLockPorts.randomHex(bytes);
+    } };
     const store = createEncryptedCredentialStore({
       directory,
       stateDirectory,
       secretStore: { kind: 'available', store: keys },
       plaintextTokenFiles: () => false,
+      ports,
     });
     await store.write('plan/p/a', 'token');
-    expect(fs.existsSync(markerFile)).toBe(true);
-    expect(fs.statSync(markerFile).mtimeMs).toBeLessThanOrEqual(fs.statSync(recordFile).mtimeMs);
-    events.push('marker_present_at_record');
-    expect(events.map((event) => MODEL_STEP_OF_EVENT[event])).toEqual([...CREDENTIAL_KEY_CREATION_STEPS]);
+    expect(events.at(-1)).toBe('record_written_with_marker');
+    expect(events.slice(0, -1).map((event) => MODEL_STEP_OF_EVENT[event])).toEqual([...CREDENTIAL_KEY_CREATION_STEPS]);
   });
 
   it('a writer that finds the marker after taking the lock creates nothing (Reread with marker /= 0)', async () => {
