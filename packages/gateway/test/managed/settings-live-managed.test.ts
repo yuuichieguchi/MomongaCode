@@ -108,40 +108,37 @@ describe('S1 managed targets under a settings change (design-settings-live 3.1)'
 
   it('an edit a to b to a with a call in flight on a keeps one managed server for the counter of a (design-settings-live 15.4)', async () => {
     const { fm, dumpFile, home } = await setup();
-    fm.configure({ envDumpFile: dumpFile, serve: { script: [{ kind: 'hang' }] } });
+    const releaseFile = path.join(makeDir(), 'release-first-reply');
+    const release = (): void => fs.writeFileSync(releaseFile, '');
+    fm.configure({ envDumpFile: dumpFile, serve: { holdFirstUntilFile: releaseFile } });
     const settingsWith = (maxOutputTokens: number) => ({ models: { targets: { apple: { adapter: 'managed', server: 'fm', binary: fm.binaryPath, ...declared(maxOutputTokens) } }, aliases: { default: ['apple'] } } });
-    replaceSettings(home, settingsWith(512));
-    const handle = await launch(home);
-    const heldClient = clientFor(handle.socketPath);
-    registerCleanup(() => heldClient.destroy());
-    let firstSettled = false;
-    void postJson(heldClient, '/v1/responses', ask('default')).then(
-      () => {
+    try {
+      replaceSettings(home, settingsWith(512));
+      const handle = await launch(home);
+      const statusOf = (pending: Promise<{ status: number }>) => pending.then((response) => response.status, () => -1);
+      let firstSettled = false;
+      const first = statusOf(postJson(clientFor(handle.socketPath), '/v1/responses', ask('default'))).finally(() => {
         firstSettled = true;
-      },
-      () => {
-        firstSettled = true;
-      },
-    );
-    await waitFor(() => serves(dumpFile).length === 1, { description: 'the first incarnation to start' });
-    fm.configure({ envDumpFile: dumpFile });
-    replaceSettings(home, settingsWith(256));
-    let secondStatus = 0;
-    void postJson(clientFor(handle.socketPath), '/v1/responses', ask('default')).then(
-      (response) => {
-        secondStatus = response.status;
-      },
-      () => {
-        secondStatus = -1;
-      },
-    );
-    await waitFor(() => secondStatus !== 0, { maxTurns: 20_000, description: 'the request of the epoch of b to end while the call pinned to apple-1 is still running (a second incarnation must not wait for the first)' });
-    expect(secondStatus).toBe(200);
-    replaceSettings(home, settingsWith(512));
-    void postJson(clientFor(handle.socketPath), '/v1/responses', ask('default')).catch(() => undefined);
-    for (let turn = 0; turn < 20_000 && serves(dumpFile).length < 3; turn += 1) await new Promise<void>((resolve) => setImmediate(resolve));
-    expect(firstSettled, 'the first call still holds its epoch while the third request runs').toBe(false);
-    expect(serves(dumpFile).map(socketOf)).toEqual([path.join(targetsDirectory(home), 'apple-1.sock'), path.join(targetsDirectory(home), 'apple-2.sock')]);
-    heldClient.destroy();
+      });
+      await waitFor(() => serves(dumpFile).length === 1, { description: 'the first incarnation to start' });
+      fm.configure({ envDumpFile: dumpFile });
+      replaceSettings(home, settingsWith(256));
+      let secondStatus = 0;
+      void statusOf(postJson(clientFor(handle.socketPath), '/v1/responses', ask('default'))).then((status) => {
+        secondStatus = status;
+      });
+      await waitFor(() => secondStatus !== 0, { description: 'the request of the epoch of b to end while the call pinned to apple-1 is still running' });
+      expect(secondStatus).toBe(200);
+      replaceSettings(home, settingsWith(512));
+      const third = statusOf(postJson(clientFor(handle.socketPath), '/v1/responses', ask('default')));
+      for (let turn = 0; turn < 200_000 && serves(dumpFile).length < 3; turn += 1) await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(firstSettled, 'the first call still holds its epoch while the third request starts').toBe(false);
+      expect(serves(dumpFile).map(socketOf)).toEqual([path.join(targetsDirectory(home), 'apple-1.sock'), path.join(targetsDirectory(home), 'apple-2.sock')]);
+      release();
+      expect(await first).toBe(200);
+      expect(await third).toBe(200);
+    } finally {
+      release();
+    }
   });
 });
