@@ -3575,10 +3575,10 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 131918,
-      "measuredSeconds": 67.11,
-      "measuredCpuSeconds": 76.14,
-      "budgetCpuSeconds": 156
+      "distinctStates": 1255970,
+      "measuredSeconds": 215.26,
+      "measuredCpuSeconds": 865.69,
+      "budgetCpuSeconds": 1735
     },
     {
       "config": "UpdateSwitch.sessions",
@@ -3586,10 +3586,10 @@
       "expect": "holds",
       "args": [],
       "tier": "every-run",
-      "distinctStates": 21489,
-      "measuredSeconds": 9.91,
-      "measuredCpuSeconds": 7.7,
-      "budgetCpuSeconds": 19
+      "distinctStates": 208253,
+      "measuredSeconds": 13.17,
+      "measuredCpuSeconds": 46.34,
+      "budgetCpuSeconds": 96
     },
     {
       "config": "UpdateSwitch.today",
@@ -3600,10 +3600,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 1571,
-      "measuredSeconds": 3.57,
-      "measuredCpuSeconds": 2.2,
-      "budgetCpuSeconds": 8
+      "distinctStates": 2733,
+      "measuredSeconds": 1.31,
+      "measuredCpuSeconds": 2.71,
+      "budgetCpuSeconds": 9
     },
     {
       "config": "UpdateSwitch.pausePending",
@@ -3614,9 +3614,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 104,
-      "measuredSeconds": 2.75,
-      "measuredCpuSeconds": 1.89,
+      "distinctStates": 47,
+      "measuredSeconds": 1.13,
+      "measuredCpuSeconds": 1.59,
       "budgetCpuSeconds": 7
     },
     {
@@ -3628,9 +3628,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 762,
-      "measuredSeconds": 2.88,
-      "measuredCpuSeconds": 2.3,
+      "distinctStates": 1194,
+      "measuredSeconds": 1.28,
+      "measuredCpuSeconds": 2.41,
       "budgetCpuSeconds": 8
     },
     {
@@ -3642,9 +3642,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 684,
-      "measuredSeconds": 2.85,
-      "measuredCpuSeconds": 2.23,
+      "distinctStates": 1153,
+      "measuredSeconds": 1.29,
+      "measuredCpuSeconds": 2.35,
       "budgetCpuSeconds": 8
     },
     {
@@ -3656,10 +3656,10 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 9272,
-      "measuredSeconds": 4.38,
-      "measuredCpuSeconds": 3.15,
-      "budgetCpuSeconds": 10
+      "distinctStates": 20743,
+      "measuredSeconds": 1.47,
+      "measuredCpuSeconds": 3.63,
+      "budgetCpuSeconds": 11
     },
     {
       "config": "UpdateSwitch.noNotice",
@@ -3670,9 +3670,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 60,
-      "measuredSeconds": 5.18,
-      "measuredCpuSeconds": 1.89,
+      "distinctStates": 49,
+      "measuredSeconds": 1.13,
+      "measuredCpuSeconds": 1.58,
       "budgetCpuSeconds": 7
     },
     {
@@ -3684,9 +3684,9 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 330,
-      "measuredSeconds": 3.67,
-      "measuredCpuSeconds": 2.0,
+      "distinctStates": 490,
+      "measuredSeconds": 1.2,
+      "measuredCpuSeconds": 1.93,
       "budgetCpuSeconds": 7
     },
     {
@@ -3698,10 +3698,38 @@
       },
       "args": [],
       "tier": "every-run",
-      "distinctStates": 10019,
-      "measuredSeconds": 9.1,
-      "measuredCpuSeconds": 5.1,
-      "budgetCpuSeconds": 14
+      "distinctStates": 29161,
+      "measuredSeconds": 4.57,
+      "measuredCpuSeconds": 16.24,
+      "budgetCpuSeconds": 36
+    },
+    {
+      "config": "UpdateSwitch.noReqWait",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoRequestCut",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 489,
+      "measuredSeconds": 1.22,
+      "measuredCpuSeconds": 1.97,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "UpdateSwitch.pinPath",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoRequestCut",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 4037,
+      "measuredSeconds": 1.34,
+      "measuredCpuSeconds": 2.92,
+      "budgetCpuSeconds": 9
     },
     {
       "config": "DerivedRepair",
