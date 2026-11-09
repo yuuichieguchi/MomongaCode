@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ProbeFailedError, createUninspectableRegistry, markerReapClockBoundMs, probeFailed, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, ProbeFailedError, createUninspectableRegistry, markerReapClockBoundMs, probeFailed, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import type { ReapMarkerDirectoryOptions } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, fakeReapTiming, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
@@ -372,7 +372,7 @@ describe('reapOrphans', () => {
 
 describe('orphan reap at supervisor start', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('reap shutdown bound relation', () => {
-    expect(ORPHAN_REAP_GRACE_MS + SHUTDOWN_RELEASE_BOUND_MS).toBeLessThan(supervisorMaxCloseMs(0));
+    expect(ORPHAN_REAP_GRACE_MS + SHUTDOWN_RELEASE_BOUND_MS).toBeLessThan(supervisorMaxCloseMs(0, DEFAULT_STOP_VALUES));
     expect(ORPHAN_REAP_GRACE_MS).toBe(15_000);
   });
 

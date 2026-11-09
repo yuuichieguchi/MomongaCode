@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { credentialEnvNames, loadUserSettings, probeRecordKeyOf, resolveNetwork, resolveTelemetrySettings, secretNames, upstreamEndpointOf } from '@momonga/config';
+import { createStopValuesReader, credentialEnvNames, loadUserSettings, probeRecordKeyOf, readUserStopValues, resolveNetwork, resolveTelemetrySettings, secretNames, upstreamEndpointOf } from '@momonga/config';
 import {
   acquireProcessLock,
   SecretEmptyError,
@@ -16,8 +16,8 @@ import {
   momongaPaths,
   secretKeyFile,
 } from '@momonga/foundation';
-import type { EndpointProbeKey } from '@momonga/config';
-import type { Clock, JsonLogger, MomongaPaths, NetworkConfig, OutboundNetwork, ProcessLock, ReadyFields, SecretStore, TextStream } from '@momonga/foundation';
+import type { EndpointProbeKey, StopValuesReader } from '@momonga/config';
+import type { Clock, JsonLogger, MomongaPaths, NetworkConfig, OutboundNetwork, ProcessLock, ReadyFields, SecretStore, StopValues, TextStream } from '@momonga/foundation';
 import { installTrust, proxyPasswordsOf } from '@momonga/foundation';
 import {
   buildCostReport,
@@ -106,6 +106,7 @@ export type StartGatewayProcessOptions = {
   measureFm?: MeasureProbe<ProbeRecordKey, ProbeReport>;
   measureEndpoint?: MeasureEndpointPort<EndpointMeasurement>;
   measureOllama?: MeasureEndpointPort<OllamaMeasurement>;
+  stopValues?: StopValuesReader;
 };
 
 export type GatewayCloseResult = {
@@ -118,8 +119,8 @@ export type GatewayCloseResult = {
 export type GatewayProcess = {
   ready: ReadyFields;
   socketPath: string;
-  close(): Promise<GatewayCloseResult>;
-  abort(): Promise<GatewayCloseResult>;
+  close(values?: StopValues): Promise<GatewayCloseResult>;
+  abort(values?: StopValues): Promise<GatewayCloseResult>;
   fatal: Promise<Error>;
 };
 
@@ -540,9 +541,12 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   let gatewayAbandonedRuns: () => number = () => 0;
   let abortRequested = false;
   let lifecycle: Promise<GatewayCloseResult> | undefined;
+  let closeValues: StopValues | undefined;
+  const stopValues = options.stopValues ?? createStopValuesReader({ load: () => readUserStopValues(options.home), onNotice: (message) => logger.warn(message) });
 
-  const shutdown = async (): Promise<GatewayCloseResult> => {
+  const shutdown = async (values: StopValues): Promise<GatewayCloseResult> => {
     phase = 'closing';
+    closeValues = values;
     const failures = await unwind();
     phase = 'closed';
     const abandonedRuns = gatewayAbandonedRuns();
@@ -555,14 +559,14 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     };
   };
 
-  const close = (): Promise<GatewayCloseResult> => {
-    lifecycle ??= shutdown();
+  const close = (values?: StopValues): Promise<GatewayCloseResult> => {
+    lifecycle ??= shutdown(values ?? stopValues.read());
     return lifecycle;
   };
 
-  const abort = (): Promise<GatewayCloseResult> => {
+  const abort = (values?: StopValues): Promise<GatewayCloseResult> => {
     abortRequested = true;
-    if (lifecycle === undefined) lifecycle = shutdown();
+    if (lifecycle === undefined) lifecycle = shutdown(values ?? stopValues.read());
     else requestGatewayAbort();
     return lifecycle;
   };
@@ -580,6 +584,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     signal?.throwIfAborted();
     const { settings, warnings } = await loadUserSettings({ home: options.home });
     for (const warning of warnings) logger.warn(warning);
+    stopValues.remember(settings.gateway);
     const networkConfig = resolveNetwork(settings.network, options.env);
     const network: OutboundNetwork = { config: networkConfig, trust: await installTrust(networkConfig, files) };
     for (const failure of network.trust.failures) logger.warn(`the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}`);
@@ -643,7 +648,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     });
     const probeServes = new Set<FmServe>();
     const closeProbes = async (): Promise<void> => {
-      await Promise.all([autoProbe.close(), ...[...probeServes].map((serve) => serve.stop())]);
+      await Promise.all([autoProbe.close(), ...[...probeServes].map((serve) => serve.stop(closeValues === undefined ? undefined : { stopGraceMs: closeValues.managedServerStopGraceMs }))]);
     };
     cleanups.push(closeProbes);
     const probes: ProbeWiring = {
@@ -652,6 +657,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       ...(options.measureOllama === undefined ? {} : { measureOllama: options.measureOllama }),
     };
     const startKey = fmTargets.length > 0 && (await files.isUsableBinary(binary)) ? await fmKeys.read('fm') : undefined;
+    const readStopGraceMs = (): number => stopValues.read().managedServerStopGraceMs;
     const fmTimers: FmServeTimers = { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout, now: () => clock.now() };
     const fmContext: FmContext | undefined =
       fmTargets.length === 0
@@ -665,6 +671,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
               socketPath: adapterSocketPath(options.home, 'fm', process.platform),
               env: childEnv,
               markerDirectory: path.join(paths.markers.targets, 'fm'),
+              readStopGraceMs,
               onWarning: (message) => logger.warn(message),
               exec,
               ...(options.spawn === undefined ? {} : { spawn: options.spawn }),
@@ -687,6 +694,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
                 ...modelFieldOf(fmModels.get(target)),
                 markerDirectory: path.join(paths.markers.targets, `fm-probe-${target}`),
                 serves: probeServes,
+                readStopGraceMs,
                 onWarning: (message) => logger.warn(message),
                 ...(options.spawn === undefined ? {} : { spawn: options.spawn }),
                 timers: fmTimers,
@@ -785,8 +793,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     if (gateway.tcpPort !== undefined) logger.info('gateway.debug_listener', { data: { host: DEBUG_TCP_HOST, port: gateway.tcpPort } });
     cleanups.splice(cleanups.indexOf(closeAdapters), 1);
     cleanups.splice(cleanups.indexOf(closeProbes), 1);
-    cleanups.push(() => closeTogether([abortRequested ? gateway.abort() : gateway.close(), closeProbes()]));
-    requestGatewayAbort = () => void gateway.abort();
+    cleanups.push(() => closeTogether([abortRequested ? gateway.abort(closeValues) : gateway.close(closeValues), closeProbes()]));
+    requestGatewayAbort = () => void gateway.abort(closeValues);
     gatewayAbandonedRuns = () => gateway.abandonedRuns;
     signal?.throwIfAborted();
     const ready: ReadyFields = { service: 'gateway', pid: process.pid, version: options.version, socketPath: gateway.socketPath, startedAt: gateway.startedAt };

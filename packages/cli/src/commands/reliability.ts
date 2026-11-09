@@ -4,6 +4,7 @@ import type { ReportPage } from '@momonga/protocol';
 import { aggregate, buildReliabilityReport, explainOf, formatReliabilityReport, merge } from '@momonga/reliability';
 import type { Aggregate, GroupKey } from '@momonga/reliability';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
+import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
 
@@ -35,7 +36,7 @@ export const reliabilityText = async (client: FactsPages, options: ReliabilityOp
 };
 
 export const showReliability = async (ports: CliPorts, paths: MomongaPaths, options: ReliabilityOptions): Promise<number> => {
-  await ensureDaemon(ports, paths);
+  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
   const client = connectRuntime(paths);
   try {
     ports.stdout.write(await reliabilityText(client, options));

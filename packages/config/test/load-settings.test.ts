@@ -28,6 +28,7 @@ describe('SETTINGS_SCHEMA', () => {
         'enableAllProjectMcpServers',
         'enabledMcpjsonServers',
         'env',
+        'gateway',
         'hooks',
         'mcp',
         'mcpServers',

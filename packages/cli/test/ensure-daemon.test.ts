@@ -168,9 +168,11 @@ describe('ensureDaemon', () => {
       return undefined;
     });
 
-    await restoreDaemon(portsWith(spawn), paths)(undefined);
+    const notices: string[] = [];
+    await restoreDaemon(portsWith(spawn), paths, (message) => notices.push(message))(undefined);
 
     expect(old.shutdowns).toBe(1);
+    expect(notices).toEqual([]);
   });
 
   it('reports a child held by its configuration instead of waiting for it', async (context) => {

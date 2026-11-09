@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { defineProductSchema, transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
+import { STOP_VALUE_NAMES, defineProductSchema, stopValueProblem, transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
 import type { AnthropicApiVersion, CapabilitiesCore, DialectDefinition, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetAnswers, TargetBilling, PermissionMode } from '@momonga/protocol';
 import { PLAN_PROFILES } from './plan-profiles.ts';
@@ -332,6 +332,7 @@ export type Settings = {
   mcp?: McpCallSettings;
   models?: ModelsSettings;
   autoUpdates?: boolean;
+  gateway?: GatewaySettings;
   sandbox?: SandboxSetting;
   telemetry?: TelemetrySettings;
   network?: NetworkSettings;
@@ -341,6 +342,8 @@ export type Settings = {
   context?: ContextSettings;
   tools?: ToolsSettings;
 };
+
+export type GatewaySettings = { closeGraceMs?: number; managedServerStopGraceMs?: number };
 
 export type HookGroups = NonNullable<HooksSettings[keyof HooksSettings]>;
 
@@ -371,11 +374,22 @@ const assertPlanAdapters = (value: unknown, source: string): void => {
   }
 };
 
+const assertGatewayStopValues = (value: unknown, source: string): void => {
+  const gateway = isRecord(value) ? value['gateway'] : undefined;
+  if (!isRecord(gateway)) return;
+  for (const name of STOP_VALUE_NAMES) {
+    if (!Object.hasOwn(gateway, name)) continue;
+    const problem = stopValueProblem(name, gateway[name]);
+    if (problem !== undefined) throw new Error(`${source}: gateway.${problem}`);
+  }
+};
+
 export const assertSettings = (value: unknown, source: string): Settings => {
   if (isRecord(value) && isRecord(value['mcpServers'])) {
     for (const [name, server] of Object.entries(value['mcpServers'])) assertNotHttpSse(server, source, name);
   }
   assertPlanAdapters(value, source);
+  assertGatewayStopValues(value, source);
   const verdict = validateSettings(value);
   if (!verdict.valid) throw new Error(`${source}: invalid settings at ${describeSchemaErrors(verdict.errors)}`);
   const settings = verdict.value;

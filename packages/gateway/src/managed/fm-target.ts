@@ -1,7 +1,7 @@
 import { canonicalJson, createUdsClient } from '@momonga/foundation';
 import { field, firstOf, parseJson } from '../probe/json.ts';
 import { countReplyOf } from '@momonga/protocol';
-import type { AllowedToolsForm } from '@momonga/protocol';
+import type { AdapterStop, AllowedToolsForm } from '@momonga/protocol';
 import type {
   AdapterTarget,
   Capabilities,
@@ -77,7 +77,7 @@ export type ManagedFmTarget = {
   health: (target: AdapterTarget) => Promise<HealthResult>;
   isGuardrail: (target: AdapterTarget, status: number, body: unknown) => boolean;
   vocabulary: ErrorVocabulary;
-  close: () => Promise<void>;
+  close: (stop?: AdapterStop) => Promise<void>;
 };
 
 const FM_ALLOWED_TOOLS: readonly AllowedToolsForm[] = ['envelope'];
@@ -289,6 +289,6 @@ export const createManagedFmTarget = async (options: ManagedFmTargetOptions): Pr
     health: () => options.fmServe.health(),
     isGuardrail: (_target, _status, body) => lastRecorded().isGuardrail(body),
     vocabulary: FM_VOCABULARY,
-    close: () => options.fmServe.stop(),
+    close: (stop) => options.fmServe.stop(stop === undefined ? undefined : { stopGraceMs: stop.managedServerStopGraceMs }),
   };
 };

@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { GATEWAY_MAX_CLOSE_MS, REAP_POLL_INTERVAL_MS, fmServeStopBoundMs, reapMarkedProcesses } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, REAP_POLL_INTERVAL_MS, gatewayMaxCloseMs, fmServeStopBoundMs, reapMarkedProcesses } from '@momonga/foundation';
 import type { ProcessInspector } from '@momonga/foundation';
 import { FM_SERVE_DEFAULTS, GATEWAY_CONFIG_DEFAULTS, createFmServe } from '@momonga/gateway';
 import type { FmChild, FmServeTimers } from '@momonga/gateway';
@@ -12,8 +12,8 @@ import { makeDir, registerCleanup, startGateway, userInput } from './gateway-hel
 import { advanceToNextWait, bigTextEvents, createHangingAdapter, openUnreadStream } from './gateway-support.ts';
 
 describe('gateway close budget', () => {
-  it('GATEWAY_MAX_CLOSE_MS is the close grace plus the fm stop bound at the default stop grace', () => {
-    expect(GATEWAY_MAX_CLOSE_MS).toBe(GATEWAY_CONFIG_DEFAULTS.closeGraceMs + fmServeStopBoundMs(FM_SERVE_DEFAULTS.stopGraceMs));
+  it('the gateway close at the default stop values is the close grace plus the managed-server stop bound at the default stop grace', () => {
+    expect(gatewayMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(GATEWAY_CONFIG_DEFAULTS.closeGraceMs + fmServeStopBoundMs(FM_SERVE_DEFAULTS.stopGraceMs));
   });
 });
 
@@ -109,6 +109,6 @@ describe('the gateway close bound against a gateway that holds an fm serve at th
     while (!closed) await advanceToNextWait(harness.timers, waits, () => closed, 'the next wait of the close');
     await closing;
 
-    expect(harness.clock.now() - closeBegan).toBeLessThanOrEqual(GATEWAY_MAX_CLOSE_MS);
+    expect(harness.clock.now() - closeBegan).toBeLessThanOrEqual(gatewayMaxCloseMs(DEFAULT_STOP_VALUES));
   });
 });

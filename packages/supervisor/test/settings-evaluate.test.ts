@@ -119,7 +119,7 @@ describe('supervisor-level settings evaluation', { timeout: REAL_PROCESS_TEST_TI
     const mark = h.order.length;
     await edit(h, validSettings({ model: 'gpt-y' }));
     await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2, { realWork: h.realWork, maxMs: 30_000 });
-    expect(after(h.order, mark)).toEqual(['SIGTERM:runtime', 'exit:runtime', 'SIGTERM:gateway', 'exit:gateway', 'spawn:gateway', 'spawn:runtime']);
+    expect(after(h.order, mark)).toEqual(['SIGTERM:runtime', 'exit:runtime', 'SIGTERM:gateway', 'exit:gateway', 'reapMarkerDirectory', 'spawn:gateway', 'spawn:runtime']);
     expect(h.fake.latest('gateway').index).toBeLessThan(h.fake.latest('runtime').index);
     expect(h.log.withMsg('plan.begin')).toEqual([expect.objectContaining({ roles: 'runtime,gateway', planned: 2 })]);
     const spawns = h.log.withMsg('child.spawn').slice(-2);

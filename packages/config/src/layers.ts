@@ -121,6 +121,11 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
     delete restricted.autoUpdates;
   }
 
+  if (settings.gateway !== undefined) {
+    warnings.push(`${source}: gateway is only honored in user settings; discarded`);
+    delete restricted.gateway;
+  }
+
   if (settings.tools?.ripgrep !== undefined) {
     warnings.push(`${source}: tools.ripgrep is only honored in user settings; discarded`);
     const { ripgrep: _ignored, ...remaining } = settings.tools;

@@ -1,4 +1,6 @@
 import type { Clock } from './clock.ts';
+import { REAP_POLL_INTERVAL_MS } from './platform/probe-timing.ts';
+import { parseOutsideJson } from './json-depth.ts';
 
 export const EXIT_OK = 0;
 export const EXIT_FAILURE = 1;
@@ -12,12 +14,12 @@ export const MINIMAL_CHILD_ENV_LC_PREFIX = 'LC_';
 export const RUNTIME_ABORT_BUDGET_MS = 5000;
 export const RUNTIME_TEARDOWN_BUDGET_MS = 10_000;
 export const RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS = 30_000;
-export const GATEWAY_CLOSE_GRACE_MS = 10_000;
-export const FM_STOP_GRACE_MS = 3000;
+export const STARTUP_TIMEOUT_MS = 60_000;
+export const ORPHAN_REAP_GRACE_MS = RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS;
 const FM_TERMINATE_GRACE_WAITS = 2;
-const MARKER_REAP_GRACE_WINDOWS = 4;
+export const MARKER_REAP_GRACE_WINDOWS = 4;
+export const markerReapClockBoundMs = (killGraceMs: number): number => MARKER_REAP_GRACE_WINDOWS * (killGraceMs + REAP_POLL_INTERVAL_MS);
 export const fmServeStopBoundMs = (stopGraceMs: number): number => (FM_TERMINATE_GRACE_WAITS + MARKER_REAP_GRACE_WINDOWS) * stopGraceMs;
-export const GATEWAY_MAX_CLOSE_MS = GATEWAY_CLOSE_GRACE_MS + fmServeStopBoundMs(FM_STOP_GRACE_MS);
 export const ENTRY_HARD_EXIT_MARGIN_MS = 3000;
 export const SHUTDOWN_MARGIN_MS = 5000;
 export const STDIO_EXIT_FLUSH_MS = 1000;
@@ -38,18 +40,103 @@ export const runtimeMaxCloseMs = (drainTimeoutMs: number): number => drainTimeou
 
 export const runtimeStopBudgetMs = (drainTimeoutMs: number): number => runtimeMaxCloseMs(drainTimeoutMs) + SHUTDOWN_MARGIN_MS;
 
-export const gatewayStopBudgetMs = (): number => GATEWAY_MAX_CLOSE_MS + SHUTDOWN_MARGIN_MS;
+export type StopValues = { readonly closeGraceMs: number; readonly managedServerStopGraceMs: number };
+
+export type StopValueName = keyof StopValues;
+
+export const SHUTDOWN_SETTING_LIMITS = {
+  closeGraceMs: { min: 0, max: 300_000, default: 10_000 },
+  managedServerStopGraceMs: { min: 0, max: 60_000, default: 3000 },
+} as const satisfies Record<StopValueName, { min: number; max: number; default: number }>;
+
+export const STOP_VALUE_NAMES = ['closeGraceMs', 'managedServerStopGraceMs'] as const satisfies readonly StopValueName[];
+
+export const DEFAULT_STOP_VALUES: StopValues = {
+  closeGraceMs: SHUTDOWN_SETTING_LIMITS.closeGraceMs.default,
+  managedServerStopGraceMs: SHUTDOWN_SETTING_LIMITS.managedServerStopGraceMs.default,
+};
+
+const MAXIMUM_STOP_VALUES: StopValues = {
+  closeGraceMs: SHUTDOWN_SETTING_LIMITS.closeGraceMs.max,
+  managedServerStopGraceMs: SHUTDOWN_SETTING_LIMITS.managedServerStopGraceMs.max,
+};
+
+export const stopValueProblem = (name: StopValueName, value: unknown): string | undefined => {
+  const { min, max } = SHUTDOWN_SETTING_LIMITS[name];
+  if (typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max) return undefined;
+  return `${name} must be an integer from ${min} to ${max} milliseconds; got ${JSON.stringify(value)}`;
+};
+
+export type StopValuesParse = { kind: 'values'; values: StopValues } | { kind: 'invalid'; reason: string };
+
+export const parseStopValues = (input: unknown): StopValuesParse => {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return { kind: 'invalid', reason: 'the stop values are not an object' };
+  const record = input as Readonly<Record<string, unknown>>;
+  for (const name of STOP_VALUE_NAMES) {
+    const problem = stopValueProblem(name, record[name]);
+    if (problem !== undefined) return { kind: 'invalid', reason: problem };
+  }
+  return { kind: 'values', values: { closeGraceMs: record['closeGraceMs'] as number, managedServerStopGraceMs: record['managedServerStopGraceMs'] as number } };
+};
+
+export const gatewayMaxCloseMs = (values: StopValues): number => values.closeGraceMs + fmServeStopBoundMs(values.managedServerStopGraceMs);
+
+export const gatewayStopBudgetMs = (values: StopValues): number => gatewayMaxCloseMs(values) + SHUTDOWN_MARGIN_MS;
+
+export const gatewayAbortCloseMs = (values: StopValues): number => fmServeStopBoundMs(values.managedServerStopGraceMs);
+
+export const gatewayAbortBudgetMs = (values: StopValues): number => gatewayAbortCloseMs(values) + SHUTDOWN_MARGIN_MS;
+
+export const managedServerReapBoundMs = (values: StopValues): number => markerReapClockBoundMs(values.managedServerStopGraceMs);
 
 export const killedChildSettleMs = (): number => KILL_CONFIRM_MS + CHILD_STDIO_FLUSH_MS;
 
-export const supervisorMaxCloseMs = (drainTimeoutMs: number): number =>
+export const supervisorMaxCloseMs = (drainTimeoutMs: number, values: StopValues): number =>
   SHUTDOWN_DRAIN_BOUND_MS +
   runtimeStopBudgetMs(drainTimeoutMs) +
   killedChildSettleMs() +
-  gatewayStopBudgetMs() +
+  gatewayStopBudgetMs(values) +
   killedChildSettleMs() +
+  managedServerReapBoundMs(values) +
   SHUTDOWN_REAP_BOUND_MS +
   SHUTDOWN_RELEASE_BOUND_MS;
+
+export const daemonStopBoundMs = (values: StopValues): number => supervisorMaxCloseMs(RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, values) + ENTRY_HARD_EXIT_MARGIN_MS;
+
+export const STOP_WAIT_WHEN_UNKNOWN_MS = daemonStopBoundMs(MAXIMUM_STOP_VALUES);
+
+export const stopWaitBoundMs = (reported: ReadonlyArray<number | undefined>): number =>
+  reported.reduce<number>((largest, bound) => Math.max(largest, bound ?? STOP_WAIT_WHEN_UNKNOWN_MS), 0);
+
+export const STOP_MESSAGE_MAX_BYTES = 256;
+
+export const STOP_MESSAGE_OVERLONG_REASON = `the line is longer than ${STOP_MESSAGE_MAX_BYTES} bytes`;
+
+const STOP_MESSAGE_EVENT = 'stop';
+
+const STOP_MESSAGE_FIELDS: ReadonlySet<string> = new Set(['event', ...STOP_VALUE_NAMES]);
+
+export const formatStopMessage = (values: StopValues): string =>
+  `${JSON.stringify({ event: STOP_MESSAGE_EVENT, closeGraceMs: values.closeGraceMs, managedServerStopGraceMs: values.managedServerStopGraceMs })}\n`;
+
+export type StopMessage = { kind: 'stop'; values: StopValues } | { kind: 'malformed'; reason: string };
+
+export const parseStopMessage = (line: string): StopMessage => {
+  if (Buffer.byteLength(line, 'utf8') > STOP_MESSAGE_MAX_BYTES) return { kind: 'malformed', reason: STOP_MESSAGE_OVERLONG_REASON };
+  let parsed: unknown;
+  try {
+    parsed = parseOutsideJson(line);
+  } catch (error) {
+    return { kind: 'malformed', reason: `the line is not JSON within the allowed depth: ${error instanceof Error ? error.message : String(error)}` };
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return { kind: 'malformed', reason: 'the line is not a JSON object' };
+  const record = parsed as Readonly<Record<string, unknown>>;
+  if (record['event'] !== STOP_MESSAGE_EVENT) return { kind: 'malformed', reason: `the event is not "${STOP_MESSAGE_EVENT}"` };
+  const extra = Object.keys(record).filter((key) => !STOP_MESSAGE_FIELDS.has(key));
+  if (extra.length > 0) return { kind: 'malformed', reason: `unknown fields: ${extra.join(', ')}` };
+  const values = parseStopValues(record);
+  return values.kind === 'values' ? { kind: 'stop', values: values.values } : { kind: 'malformed', reason: values.reason };
+};
 
 export const PLATFORM_CHILD_ENV_NAMES: Readonly<Record<'win32', readonly string[]>> = {
   win32: ['SystemRoot', 'SystemDrive', 'windir', 'ComSpec', 'PATHEXT', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'ProgramData', 'TEMP', 'TMP'],

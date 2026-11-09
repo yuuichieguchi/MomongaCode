@@ -154,9 +154,25 @@ export {
   DAEMON_MARKER_FD,
   ENTRY_HARD_EXIT_MARGIN_MS,
   LOCK_FD,
-  FM_STOP_GRACE_MS,
-  GATEWAY_CLOSE_GRACE_MS,
-  GATEWAY_MAX_CLOSE_MS,
+  DEFAULT_STOP_VALUES,
+  MARKER_REAP_GRACE_WINDOWS,
+  ORPHAN_REAP_GRACE_MS,
+  STARTUP_TIMEOUT_MS,
+  SHUTDOWN_SETTING_LIMITS,
+  STOP_MESSAGE_MAX_BYTES,
+  STOP_MESSAGE_OVERLONG_REASON,
+  STOP_VALUE_NAMES,
+  STOP_WAIT_WHEN_UNKNOWN_MS,
+  daemonStopBoundMs,
+  formatStopMessage,
+  gatewayAbortBudgetMs,
+  gatewayAbortCloseMs,
+  gatewayMaxCloseMs,
+  managedServerReapBoundMs,
+  parseStopMessage,
+  parseStopValues,
+  stopValueProblem,
+  stopWaitBoundMs,
   LIFELINE_FD,
   MINIMAL_CHILD_ENV_LC_PREFIX,
   MINIMAL_CHILD_ENV_NAMES,
@@ -189,7 +205,7 @@ export {
   runtimeMaxCloseMs,
   supervisorMaxCloseMs,
 } from './process-contract.ts';
-export type { JsonLogger, JsonLoggerOptions, LogFields, LogLevel, LogLineInput, ReadyFields, TextStream } from './process-contract.ts';
+export type { JsonLogger, JsonLoggerOptions, LogFields, LogLevel, LogLineInput, ReadyFields, StopMessage, StopValueName, StopValues, StopValuesParse, TextStream } from './process-contract.ts';
 export { MarkerReapError, REAP_POLL_INTERVAL_MS, findHolders, holderGroups, hostReapTiming, markerReapClockBoundMs, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, outlivedNotes, reconcileProcessGroup, reportUninspectableOnce, stoppedCommandResult } from './process-markers.ts';
 export type { FindHoldersOptions, MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirectoryOptions, ReapReport, ReapTiming } from './process-markers.ts';
 export { createLiveIdentities } from './platform/live-identities.ts';
@@ -210,6 +226,7 @@ export type { OwnerProblem, PrivacyKind } from './platform/privacy.ts';
 export { BASE_ENTRY_FLAGS, COMMON_ENTRY_FLAGS, EntryUsageError, parseFlags } from './entry-flags.ts';
 export type { FlagKind, FlagSpec, ParsedFlags } from './entry-flags.ts';
 export { watchLifeline } from './lifeline.ts';
+export type { LifelineHandlers, LifelineWatch } from './lifeline.ts';
 export { LOG_KEEP, LOG_MAX_BYTES, createRotatingLogFile } from './rotating-log.ts';
 export type { RotatingLogFile, RotatingLogFileOptions } from './rotating-log.ts';
 export { StartupCancelled, exitCodeForStartError, nodeEntryIo, runDaemonEntry } from './daemon-entry.ts';

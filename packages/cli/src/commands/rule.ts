@@ -2,6 +2,7 @@ import { InvalidArgumentError } from 'commander';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { GoverningEnforcement, GoverningKind } from '@momonga/protocol';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
+import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import type { CliPorts } from '../ports.ts';
 import { formatRuleAdded, formatRuleHistory, formatRuleList } from '../rule/format.ts';
 import { connectRuntime } from '../run/open-session.ts';
@@ -17,7 +18,7 @@ export type RuleAddOptions = {
 };
 
 const withRuntime = async <T>(ports: CliPorts, paths: MomongaPaths, use: (client: ReturnType<typeof connectRuntime>) => Promise<T>): Promise<T> => {
-  await ensureDaemon(ports, paths);
+  await ensureDaemon(ports, paths, { onNotice: stderrStopNotice(ports) });
   const client = connectRuntime(paths);
   try {
     return await use(client);

@@ -1,7 +1,7 @@
 import http from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { listenUnix } from '@momonga/foundation';
-import type { KernelLockMechanism } from '@momonga/foundation';
+import { listenUnix, parseOutsideJson, parseStopValues } from '@momonga/foundation';
+import type { KernelLockMechanism, StopValues } from '@momonga/foundation';
 import type { ErrorBody, SupervisorHealth, SupervisorShutdownResponse } from '@momonga/protocol';
 import { CONTROL_CLOSE_ALL_AFTER_MS, CONTROL_REQUEST_TIMEOUT_MS, SHUTDOWN_BODY_LIMIT_BYTES } from './constants.ts';
 import type { SupervisorTimers } from './constants.ts';
@@ -14,7 +14,8 @@ export type ShutdownResponseWriter = {
 
 export type ControlHandlerOptions = {
   health(): SupervisorHealth;
-  onShutdownRequested(): void;
+  onShutdownRequested(values?: StopValues): void;
+  onIgnoredStopValues?(reason: string): void;
 };
 
 export type ControlServerOptions = ControlHandlerOptions & {
@@ -52,7 +53,8 @@ const respondError = (
   extraHeaders: Readonly<Record<string, string>> = {},
 ): void => respondJson(request, response, status, { error: { ...error, param: null } }, extraHeaders);
 
-const readLimitedBody = (request: IncomingMessage, limitBytes: number, onComplete: () => void, onOverLimit: () => void): void => {
+const readLimitedBody = (request: IncomingMessage, limitBytes: number, onComplete: (body: string) => void, onOverLimit: () => void): void => {
+  const chunks: Buffer[] = [];
   let received = 0;
   let overLimit = false;
   request.on('data', (chunk: Buffer) => {
@@ -61,11 +63,27 @@ const readLimitedBody = (request: IncomingMessage, limitBytes: number, onComplet
     if (received > limitBytes) {
       overLimit = true;
       onOverLimit();
+      return;
     }
+    chunks.push(chunk);
   });
   request.on('end', () => {
-    if (!overLimit) onComplete();
+    if (!overLimit) onComplete(Buffer.concat(chunks).toString('utf8'));
   });
+};
+
+type ShutdownBody = { kind: 'values'; values: StopValues | undefined } | { kind: 'invalid'; reason: string };
+
+const parseShutdownBody = (body: string): ShutdownBody => {
+  if (body.length === 0) return { kind: 'values', values: undefined };
+  let parsed: unknown;
+  try {
+    parsed = parseOutsideJson(body);
+  } catch (error) {
+    return { kind: 'invalid', reason: `the request body is not JSON within the allowed depth: ${error instanceof Error ? error.message : String(error)}` };
+  }
+  const values = parseStopValues(parsed);
+  return values.kind === 'values' ? { kind: 'values', values: values.values } : { kind: 'invalid', reason: values.reason };
 };
 
 export const createControlRequestHandler = (options: ControlHandlerOptions): ((request: IncomingMessage, response: ServerResponse) => void) => {
@@ -88,7 +106,11 @@ export const createControlRequestHandler = (options: ControlHandlerOptions): ((r
       readLimitedBody(
         request,
         SHUTDOWN_BODY_LIMIT_BYTES,
-        () => respondShutdown(response, options.onShutdownRequested),
+        (body) => {
+          const parsed = parseShutdownBody(body);
+          if (parsed.kind === 'invalid') options.onIgnoredStopValues?.(parsed.reason);
+          respondShutdown(response, () => options.onShutdownRequested(parsed.kind === 'values' ? parsed.values : undefined));
+        },
         () =>
           respondError(
             request,

@@ -2,8 +2,8 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { FM_STOP_GRACE_MS, GATEWAY_CLOSE_GRACE_MS, GATEWAY_MAX_CLOSE_MS, REAP_POLL_INTERVAL_MS, adapterSocketPath, createJsonLogger, reapMarkedProcesses } from '@momonga/foundation';
-import type { ProcessInspector } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, REAP_POLL_INTERVAL_MS, gatewayMaxCloseMs, adapterSocketPath, createJsonLogger, reapMarkedProcesses } from '@momonga/foundation';
+import type { ProcessInspector, StopValues } from '@momonga/foundation';
 import { GATEWAY_CONFIG_DEFAULTS } from '@momonga/gateway';
 import type { FmChild } from '@momonga/gateway';
 import { DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, createFakeTimers, drivenReapTiming, fakeExec, startFakeChatCompletions, waitFor } from '@momonga/testkit';
@@ -74,11 +74,11 @@ const hostExec = async (file: string, args: readonly string[]) => {
 
 const POLLS = new Set([REAP_POLL_INTERVAL_MS]);
 
-const WAITS_OF_THE_CLOSE = new Set([GATEWAY_CLOSE_GRACE_MS, FM_STOP_GRACE_MS, REAP_POLL_INTERVAL_MS]);
+const waitsOfTheClose = (values: StopValues): Set<number> => new Set([values.closeGraceMs, values.managedServerStopGraceMs, REAP_POLL_INTERVAL_MS]);
 
 type CloseOutcome = { tookMs: number; probeTerminatedAfterMs: number[] };
 
-const closeWhileProbing = async (probePhase: ProbePhase): Promise<CloseOutcome> => {
+const closeWhileProbing = async (probePhase: ProbePhase, values: StopValues): Promise<CloseOutcome> => {
   const dir = makeDir();
   const fm = await createFakeFm({ dir: makeDir() });
   const home = makeHome();
@@ -126,21 +126,25 @@ const closeWhileProbing = async (probePhase: ProbePhase): Promise<CloseOutcome> 
 
   const closeBegan = clock.now();
   let closed = false;
-  const closing = handle.close().finally(() => {
+  const closing = handle.close(values).finally(() => {
     closed = true;
   });
   await waitFor(() => serves.probeTerminatedAt.length > 0, { description: 'the close to stop the probe fm serve before any of its waits' });
-  while (!closed) await advanceToNextWait(timers, WAITS_OF_THE_CLOSE, () => closed, 'the next wait of the close');
+  while (!closed) await advanceToNextWait(timers, waitsOfTheClose(values), () => closed, 'the next wait of the close');
   await closing;
   return { tookMs: clock.now() - closeBegan, probeTerminatedAfterMs: serves.probeTerminatedAt.map((at) => at - closeBegan) };
 };
 
 describe('the gateway process close bound with an fm probe in flight', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
-  it.each<[ProbePhase]>([['running'], ['waiting on health']])(
-    'ends within GATEWAY_MAX_CLOSE_MS and stops the probe fm serve when the close begins, while the probe fm serve is %s and the managed fm serve streams to a client that does not read',
-    async (phase) => {
-      const outcome = await closeWhileProbing(phase);
-      expect(outcome.tookMs).toBeLessThanOrEqual(GATEWAY_MAX_CLOSE_MS);
+  it.each<[ProbePhase, StopValues]>([
+    ['running', DEFAULT_STOP_VALUES],
+    ['waiting on health', DEFAULT_STOP_VALUES],
+    ['running', { closeGraceMs: 2000, managedServerStopGraceMs: 500 }],
+  ])(
+    'ends within the close bound of the values of that close and stops the probe server when the close begins, while the probe server is %s and the managed server streams to a client that does not read (values %o)',
+    async (phase, values) => {
+      const outcome = await closeWhileProbing(phase, values);
+      expect(outcome.tookMs).toBeLessThanOrEqual(gatewayMaxCloseMs(values));
       expect(outcome.probeTerminatedAfterMs).toEqual([0]);
     },
   );

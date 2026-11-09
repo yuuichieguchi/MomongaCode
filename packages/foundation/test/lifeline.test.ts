@@ -152,7 +152,7 @@ describe('watchLifeline on an unusable fd', () => {
     fs.closeSync(fd);
     let failure: unknown;
     try {
-      watchLifeline(fd, onEnd);
+      watchLifeline(fd, { onEnd, onLine: () => undefined, onOverlongLine: () => undefined });
     } catch (error) {
       failure = error;
     }
@@ -171,8 +171,8 @@ describe('watchLifeline on an unusable fd', () => {
       } catch {}
     });
     const onEnd = vi.fn();
-    expect(() => watchLifeline(fd, onEnd)).toThrow(EntryUsageError);
-    expect(() => watchLifeline(fd, onEnd)).toThrow(String(fd));
+    expect(() => watchLifeline(fd, { onEnd, onLine: () => undefined, onOverlongLine: () => undefined })).toThrow(EntryUsageError);
+    expect(() => watchLifeline(fd, { onEnd, onLine: () => undefined, onOverlongLine: () => undefined })).toThrow(String(fd));
     await new Promise((resolve) => setImmediate(resolve));
     expect(onEnd).not.toHaveBeenCalled();
   });

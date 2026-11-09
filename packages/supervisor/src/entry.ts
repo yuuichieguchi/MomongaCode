@@ -1,3 +1,5 @@
+import { createStopValuesReader, readUserStopValues } from '@momonga/config';
+import type { StopValuesReader } from '@momonga/config';
 import {
   COMMON_ENTRY_FLAGS,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
@@ -6,24 +8,30 @@ import {
   runDaemonEntry,
   supervisorMaxCloseMs,
 } from '@momonga/foundation';
-import type { EntryIo } from '@momonga/foundation';
+import type { EntryIo, JsonLogger } from '@momonga/foundation';
 import { SUPERVISOR_SERVICE } from './constants.ts';
 import { startSupervisor } from './start-supervisor.ts';
 import type { SupervisorOptions } from './start-supervisor.ts';
 
 export type SupervisorEntryDeps = Omit<
   SupervisorOptions,
-  'home' | 'env' | 'logger' | 'droppedLogLines' | 'stdout' | 'signal' | 'onShutdownRequested'
+  'home' | 'env' | 'logger' | 'droppedLogLines' | 'stdout' | 'signal' | 'onShutdownRequested' | 'stopValues'
 >;
 
 const pathsOf = (home: string): ReturnType<typeof momongaPaths> => momongaPaths(canonicalPath(home), process.platform, {});
 
-export const runSupervisorEntry = (io: EntryIo, deps: SupervisorEntryDeps): Promise<number> =>
-  runDaemonEntry(io, {
+export const runSupervisorEntry = (io: EntryIo, deps: SupervisorEntryDeps): Promise<number> => {
+  let stopValues: StopValuesReader | undefined;
+  const stopValuesOf = (home: string, logger: JsonLogger): StopValuesReader => {
+    stopValues ??= createStopValuesReader({ load: () => readUserStopValues(canonicalPath(home)), onNotice: (message) => logger.warn(message) });
+    return stopValues;
+  };
+  return runDaemonEntry(io, {
     service: SUPERVISOR_SERVICE,
     version: deps.version,
     flags: COMMON_ENTRY_FLAGS,
-    maxCloseMs: () => supervisorMaxCloseMs(deps.runtime?.drainTimeoutMs ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS),
+    maxCloseMs: (_flags, values) => supervisorMaxCloseMs(deps.runtime?.drainTimeoutMs ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, values),
+    readStopValues: ({ home, logger }) => stopValuesOf(home, logger).read(),
     ownLockPath: (home) => pathsOf(home).locks.supervisor,
     logPath: (home) => pathsOf(home).logFiles.supervisor,
     isConfigError: () => false,
@@ -40,8 +48,10 @@ export const runSupervisorEntry = (io: EntryIo, deps: SupervisorEntryDeps): Prom
         stdout: context.stdout,
         signal: context.signal,
         onShutdownRequested: context.requestShutdown,
+        stopValues: stopValuesOf(context.home, context.logger),
         acquireLock: context.acquireLock,
       });
       return { close: supervisor.close, abort: supervisor.abort, fatal: supervisor.fatal };
     },
   });
+};
