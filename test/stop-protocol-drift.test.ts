@@ -38,8 +38,9 @@ describe('StopProtocol.tla composes the stop bounds the way process-contract.ts 
     expect(definitionOf('CG')).toBe('v');
     expect(definitionOf('GW')).toBe('CG(v) + FmBound');
     expect(definitionOf('CHILD')).toBe('GW(v) + 1');
-    expect(definitionOf('SUP')).toBe('CHILD(v) + REAP + 1');
-    expect(definitionOf('DAEMON')).toBe('SUP(v) + 1');
+    expect(definitionOf('RT')).toBe('r + 1');
+    expect(definitionOf('SUP')).toBe('RT(r) + CHILD(v) + REAP');
+    expect(definitionOf('DAEMON')).toBe('SUP(v, r) + 1');
     expect(definitionOf('ABUD')).toBe('FmBound + 1');
     expect(definitionOf('REAP')).toBe('FmBound');
   });
@@ -54,6 +55,12 @@ describe('StopProtocol.tla composes the stop bounds the way process-contract.ts 
 
   it('REAP: the managed-server reap term is the bound of the marker reaper the supervisor calls', () => {
     for (const values of SAMPLED_VALUES) expect(managedServerReapBoundMs(values), JSON.stringify(values)).toBe(markerReapClockBoundMs(values.managedServerStopGraceMs));
+  });
+
+  it('RT: the runtime recipient carries its own value, read at the same begin as the gateway value, and its bound enters SUP', () => {
+    const spec = fs.readFileSync(specPath, 'utf8');
+    expect(spec).toMatch(/rtv\[g\]\.bound = sv\[g\]/);
+    expect(spec).toMatch(/sent\[g\] => rtv\[g\]\.applied = sv\[g\]/);
   });
 
   it('SUP: the supervisor close is the child stop budget plus the reap plus a part that depends on neither value', () => {
