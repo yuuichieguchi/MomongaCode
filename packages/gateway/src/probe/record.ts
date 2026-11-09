@@ -1,13 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { NeedsProbe, ProbeReport, ToolCallingMode, ToolCallingSetting } from '@momonga/protocol';
-import { modeIsPrivate } from '@momonga/foundation';
+import { canonicalJson, modeIsPrivate } from '@momonga/foundation';
 import { dialectsDigest } from '../dialect/candidates.ts';
 import type { DialectCurrency } from '../dialect/candidates.ts';
 import { decideToolCalling } from './decide.ts';
 import { isRecord } from './json.ts';
 import { preconditionOf } from './remedy.ts';
 import { isProbeReport } from './report-schema.ts';
+
+export const recordForIdentity = <Stored>(stored: Stored, storedIdentity: Readonly<Record<string, unknown>>, currentIdentity: Readonly<Record<string, unknown>>): Stored | null =>
+  canonicalJson(storedIdentity) === canonicalJson(currentIdentity) ? stored : null;
 
 export type ProbeRecordKey = {
   target: string;
@@ -88,8 +91,8 @@ export const loadProbeRecord = async (dir: string, key: ProbeRecordKey, currency
   if (typeof parsed['binarySha256'] !== 'string' || typeof parsed['osBuild'] !== 'string') {
     throw corruptRecord(file, key, 'missing key fields', new TypeError('binarySha256 or osBuild is missing'));
   }
-  if (parsed['binarySha256'] !== key.binarySha256 || parsed['osBuild'] !== key.osBuild) return null;
-  if (!isCurrentRecord(parsed, currency)) return null;
+  const matching = recordForIdentity(parsed, { binarySha256: parsed['binarySha256'], osBuild: parsed['osBuild'] }, { binarySha256: key.binarySha256, osBuild: key.osBuild });
+  if (matching === null || !isCurrentRecord(matching, currency)) return null;
   const report = parsed['report'];
   if (!isProbeReport(report)) {
     throw corruptRecord(file, key, 'invalid report', new TypeError('report does not match the probe report schema'));

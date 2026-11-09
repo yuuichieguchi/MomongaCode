@@ -1,14 +1,13 @@
 import { LOWEST_REASONING_EFFORT, imageCapability } from '@momonga/protocol';
 import type { Capabilities, Probing } from '@momonga/protocol';
 import { targetProbingError } from './auto-probe.ts';
-import { PreconditionFailedError } from '../adapters/shared/failures.ts';
 import type { OllamaEndpointRecord } from './endpoint-record.ts';
 import { resolveDialectId } from '../dialect/resolve-id.ts';
 import { layerOf, mergeCapabilities, withImageDefault } from './decide.ts';
 import { jsonModeCapabilityOf } from './json-mode.ts';
 import type { DeclaredCapabilities } from './decide.ts';
 import { memoizedVerification } from './endpoint-target.ts';
-import { needsProbeOf, preconditionOf, remedyOf } from './remedy.ts';
+import { recordForIdentity } from './record.ts';
 
 export type ProbedOllamaTargetOptions = {
   targetName: string;
@@ -27,31 +26,25 @@ export type ProbedOllamaTarget = {
 };
 
 export const createProbedOllamaTarget = (options: ProbedOllamaTargetOptions): ProbedOllamaTarget => {
-  const { targetName, endpoint, model, declared } = options;
+  const { declared } = options;
   let { record } = options;
   const declaredParts = layerOf(declared);
-  const needsProbe = needsProbeOf(
-    targetName,
-    `the ollama target "${targetName}" has no probe record`,
-    `no record for ${endpoint} and model ${model}`,
-  );
+  let currentDigest: { known: false } | { known: true; digest: string | undefined } = { known: false };
+
+  const usable = (found: OllamaEndpointRecord | null): OllamaEndpointRecord | null =>
+    found === null || !currentDigest.known ? found : recordForIdentity(found, { identity: found.identity }, { identity: currentDigest.digest });
 
   const verifyOnce = async (signal: AbortSignal): Promise<void> => {
-    if (record === null) throw preconditionOf(needsProbe);
-    const digest = await options.readDigest(signal);
-    if (digest !== record.identity) {
-      throw new PreconditionFailedError(
-        `the probe record of the target "${targetName}" is stale`,
-        `the server at ${endpoint} now reports ${digest === undefined ? 'no digest' : 'a different digest'} for model ${model} than when it was probed`,
-        remedyOf(targetName),
-      );
-    }
+    const found = await options.readRecord();
+    if (found !== null) currentDigest = { known: true, digest: await options.readDigest(signal) };
+    record = usable(found);
+    if (record === null) throw targetProbingError(await options.startProbe());
   };
 
   return {
     verify: memoizedVerification(verifyOnce),
     capabilities: async () => {
-      record = await options.readRecord();
+      record = usable(await options.readRecord());
       if (record === null) throw targetProbingError(await options.startProbe());
       const { report } = record;
       return mergeCapabilities({
