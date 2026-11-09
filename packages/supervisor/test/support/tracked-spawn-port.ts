@@ -1,4 +1,4 @@
-import { isProcessAlive } from '@momonga/foundation';
+import { groupAlive } from '@momonga/foundation';
 import { killGroupsForCleanup, registerCleanup } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import type { ChildHandle, SpawnPort } from '../../src/child-manager.ts';
@@ -11,7 +11,7 @@ export type TrackedSpawnPort = SpawnPort & {
 
 const killGroupAndAssertDead = async (pgid: number): Promise<void> => {
   await killGroupsForCleanup([pgid]);
-  if (isProcessAlive(pgid)) throw new Error(`tracked process ${pgid} is still alive after its group was killed`);
+  if (await groupAlive(pgid)) throw new Error(`tracked process ${pgid} is still alive after its group was killed`);
 };
 
 export const trackedSpawnPort = (context: CleanupContext, platform?: NodeJS.Platform): TrackedSpawnPort => {

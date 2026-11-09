@@ -1,4 +1,4 @@
-import { createUdsClient, isProcessAlive, fixedSocket } from '@momonga/foundation';
+import { createUdsClient, fixedSocket, groupAlive } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { killGroupsForCleanup, registerCleanup } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
@@ -51,7 +51,7 @@ export const trackSupervisorChildren = (context: CleanupContext, socketPath: str
     }
     await killGroupsForCleanup([...pids]);
     if (fetchFailure !== undefined) throw fetchFailure.error;
-    const survivors = [...pids].filter((pid) => isProcessAlive(pid));
+    const survivors = (await Promise.all([...pids].map(async (pgid) => ((await groupAlive(pgid)) ? [pgid] : [])))).flat();
     if (survivors.length > 0) throw new Error(`supervisor children still alive after cleanup: ${survivors.join(', ')}`);
   });
   return {

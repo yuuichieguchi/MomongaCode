@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { FIRST_GENERATION, createUdsClient, generationLayout, isProcessAlive, momongaPaths, fixedSocket } from '@momonga/foundation';
+import { FIRST_GENERATION, createUdsClient, generationLayout, groupAlive, isProcessAlive, momongaPaths, fixedSocket } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup, killPidsForCleanup, registerCleanup, spawnTracked, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
@@ -72,7 +72,7 @@ describe('trackedSpawnPort', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     port.trackGroup(detachedGrandchild);
     for (const pid of tracked) expect(isProcessAlive(pid)).toBe(true);
     await captured.run();
-    for (const pid of tracked) expect(isProcessAlive(pid), `pid ${pid}`).toBe(false);
+    for (const pgid of [inGroup.pid as number, ownGroup.pid as number, detachedGrandchild]) expect(await groupAlive(pgid), `group ${pgid}`).toBe(false);
   });
 
   it('cleanup of a child that already exited passes', async (context) => {
@@ -134,7 +134,7 @@ describe('trackSupervisorChildren', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, (
     childPids.push(extra.pid);
     tracker.record({ ...(last as SupervisorHealth), children: [{ role: 'runtime', state: 'ready', pid: extra.pid, restarts: 0, consecutiveFailures: 0 }] });
     await captured.run();
-    for (const pid of childPids) expect(isProcessAlive(pid), `pid ${pid}`).toBe(false);
+    for (const pgid of childPids) expect(await groupAlive(pgid), `group ${pgid}`).toBe(false);
     expect(isProcessAlive(supervisor.pid)).toBe(true);
   });
 });
