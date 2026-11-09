@@ -10,7 +10,6 @@ import {
   createRedactor,
   createLockCapability,
   ensureGenerationDirs,
-  ensureMomongaDirs,
   fixedSocket,
   generationLayout,
   momongaPaths,
@@ -306,8 +305,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   try {
     const paths = await step('dirs', async () => {
       const resolved = momongaPaths(canonicalHome, process.platform, {});
-      await ensureMomongaDirs(resolved, { signal });
-      await ensureGenerationDirs(resolved, options.generation);
+      await ensureGenerationDirs(resolved, options.generation, { signal });
       return resolved;
     });
     const own = generationLayout(canonicalHome, options.generation);

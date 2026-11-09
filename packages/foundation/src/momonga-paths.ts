@@ -236,12 +236,13 @@ export const ensureMomongaDirs = async (paths: MomongaPaths, ports: PlatformDire
   }
 };
 
-export const ensureGenerationDirs = async (paths: MomongaPaths, generation: number): Promise<void> => {
+export const ensureGenerationDirs = async (paths: MomongaPaths, generation: number, ports: PlatformDirectoryPorts = {}): Promise<void> => {
   const layout = generationLayout(path.dirname(paths.root), generation);
-  await ensurePrivateDirectory(layout.dir, process.platform);
   const sockets = Object.values(layout.sockets);
   for (const socket of sockets) assertSocketPathLength(socket);
   await Promise.all(sockets.filter((socket) => !isPipePath(socket)).map((socket) => refuseUnbindableUnixSocketPath(socket)));
+  await ensureMomongaDirs(paths, ports);
+  await ensurePrivateDirectory(layout.dir, ports.platform ?? process.platform);
 };
 
 export class SessionTmpDirError extends Error {}

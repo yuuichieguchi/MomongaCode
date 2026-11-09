@@ -9,7 +9,6 @@ import {
   createGivenSecretStore,
   givenSecretStoreChildEnv,
   EntryUsageError,
-  ensureMomongaDirs,
   minimalChildEnv,
   adapterSocketPath,
   codeDigestOfRunningProcess,
@@ -519,7 +518,6 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
   const paths = momongaPaths(options.home, process.platform, {});
   signal?.throwIfAborted();
   const own = generationLayout(options.home, options.generation);
-  await ensureMomongaDirs(paths);
   await ensureGenerationDirs(paths, options.generation);
   signal?.throwIfAborted();
   const lock = await (options.acquireLock ?? acquireProcessLock)(own.locks.gateway);

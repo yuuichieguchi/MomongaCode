@@ -11,7 +11,6 @@ import {
   createJsonLogger,
   daemonStopBoundMs,
   ensureGenerationDirs,
-  ensureMomongaDirs,
   generationLayout,
   momongaPaths,
   publishCurrentGeneration,
@@ -19,7 +18,7 @@ import {
   runtimeMaxCloseMs,
   systemClock,
 } from '@momonga/foundation';
-import type { Clock, JsonLogger, KernelLockMechanism, ProcessLock, ReadyFields, ReapTiming, StopValues, TextStream } from '@momonga/foundation';
+import type { AtomicWriteFileSystem, Clock, JsonLogger, KernelLockMechanism, ProcessLock, ReadyFields, ReapTiming, StopValues, TextStream } from '@momonga/foundation';
 import type { SupervisorHealth, SupervisorPhase } from '@momonga/protocol';
 import { SUPERVISOR_API_VERSION } from '@momonga/protocol';
 import { createChildManager } from './child-manager.ts';
@@ -67,6 +66,7 @@ export type SupervisorOptions = {
   lockMechanism?: KernelLockMechanism;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
   markerPorts?: MarkerPorts;
+  currentFileSystem?: AtomicWriteFileSystem;
   stdout?: TextStream;
   spawn: SpawnPort;
   signal?: AbortSignal;
@@ -124,7 +124,6 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
 
   const own = generationLayout(canonicalHome, SUPERVISOR_GENERATION);
 
-  await ensureMomongaDirs(paths);
   await ensureGenerationDirs(paths, own.generation);
   const lock = await (options.acquireLock ?? ((lockPath) => acquireProcessLock(lockPath, undefined, lockOptions)))(own.locks.supervisor);
 
@@ -238,7 +237,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
     publishOnceAllReady = (): void => {
       if (published || draining || !managers.every((manager) => manager.state() === 'ready')) return;
       published = true;
-      publishPromise = publishCurrentGeneration(paths, { generation: own.generation, version: options.version, sockets: own.sockets }).catch((error: unknown) =>
+      publishPromise = publishCurrentGeneration(paths, { generation: own.generation, version: options.version, sockets: own.sockets }, options.currentFileSystem).catch((error: unknown) =>
         reportBackground(error, 'publish-current'),
       );
     };

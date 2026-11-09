@@ -31,7 +31,7 @@ const recordingFileSystem = (renames: Rename[], failRename?: Error): AtomicWrite
   rm: (file) => nodeFileSystem.rm(file),
 });
 
-const withPublishPort = (port: AtomicWriteFileSystem): NonNullable<HarnessOptions['overrides']> => ({ currentFileSystem: port } satisfies PublishPort) as unknown as Partial<SupervisorOptions>;
+const withPublishPort = (port: AtomicWriteFileSystem): NonNullable<HarnessOptions['overrides']> => ({ currentFileSystem: port });
 
 const finish = async (h: Harness, closing: Promise<SupervisorCloseResult>, maxMs: number): Promise<SupervisorCloseResult> => {
   const flag = settledFlag(closing);
