@@ -41,7 +41,7 @@ CanStillRun(m) == state[m] \in {"live", "stuck"}
 
 GroupRunnable == {m \in Members : inGroup[m] /\ CanStillRun(m)}
 
-LiveGroupAlive == IF Variant = "exitingCountsAlive" THEN GroupOurs # {} ELSE GroupRunnable # {}
+GroupAlive == IF Variant = "exitingCountsAlive" THEN GroupOurs # {} ELSE GroupRunnable # {}
 
 Rowless(m) == state[m] = "gone" /\ ~swapped[m]
 
@@ -73,7 +73,7 @@ Init ==
     /\ unprovedSignalled = FALSE
     /\ begunUnproved = FALSE
 
-GroupSeen == IF mode = "live" THEN LiveGroupAlive ELSE GroupOurs # {} \/ other
+GroupSeen == IF mode = "live" THEN GroupAlive ELSE GroupAlive \/ other
 
 Seen == GroupSeen \/ \E m \in Members : HolderVisible(m)
 
@@ -203,9 +203,9 @@ KillWaitEnds ==
 
 CallerAborts ==
     /\ phase \in {"termWait", "killWait"}
-    /\ IF ~Seen
-       THEN Finish(IF phase = "termWait" THEN "terminated" ELSE "killed", FALSE)
-       ELSE Finish("unconfirmed", KeepOnUnconfirmed)
+    /\ \/ /\ ~Seen
+          /\ Finish(IF phase = "termWait" THEN "terminated" ELSE "killed", FALSE)
+       \/ Finish("unconfirmed", KeepOnUnconfirmed)
     /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, termSent, killSent, unprovedSignalled, begunUnproved>>
 
 Sweep ==
@@ -273,7 +273,7 @@ ExhaustedIsFinal ==
     [][(AllEventsSpent /\ phase = "done") => (phase' = "done" /\ termSent' = termSent /\ killSent' = killSent /\ hstage' = hstage)]_vars
 
 UnconfirmedOnlyWhileOneCanRun ==
-    [][(mode = "live" /\ phase # "done" /\ phase' = "done" /\ outcome' = "unconfirmed") => GroupRunnable # {}]_vars
+    [][((Begin \/ TermWaitEnds \/ KillWaitEnds) /\ mode = "live" /\ outcome' = "unconfirmed") => GroupRunnable # {}]_vars
 
 UnprovedEndsUnconfirmed == (phase = "done" /\ begunUnproved /\ GroupRunnable # {}) => (outcome = "unconfirmed" /\ marker = "kept")
 

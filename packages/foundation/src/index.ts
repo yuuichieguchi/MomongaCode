@@ -233,8 +233,8 @@ export { UnsupportedPlatformError, createProcessInspector, defaultProcessInspect
 export type { InspectorPorts } from './platform/process-inspector.ts';
 export { createAsyncSignalSender, createPosixGroupPort, createProcessGroupPort, hostAsyncSignalSender, hostProcessGroupPort, hostSignalSender } from './platform/group-port.ts';
 export { canStillRun } from './platform/run-state.ts';
-export type { GroupStatesReader } from './platform/run-state.ts';
-export type { AsyncSignalSender, ProcessGroupPort } from './platform/group-port.ts';
+export type { GroupReading, GroupStatesReader } from './platform/run-state.ts';
+export type { AsyncSignalSender, PosixGroupHost, ProcessGroupPort } from './platform/group-port.ts';
 export { deadlineSignal, hostProbeTiming, operationSignal } from './platform/probe-timing.ts';
 export type { ProbeTiming } from './platform/probe-timing.ts';
 export { nodeProcFs } from './platform/procfs.ts';

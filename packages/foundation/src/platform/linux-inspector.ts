@@ -1,10 +1,11 @@
 import os from 'node:os';
-import { failureOfError, isErrno, probeFailed } from './inspector-types.ts';
+import { ProbeFailedError, failureOfError, isErrno, probeFailed } from './inspector-types.ts';
 import { withListedState } from './marker-state.ts';
 import type { ProbeFailure, ProbeResult, ProcessInspector, UninspectableProcess } from './inspector-types.ts';
 import { auxvLayoutOf, isPidDirectoryName, parseBootTimeSeconds, parseClockTicksPerSecond, parseProcStat, parseRealUid } from './linux-parsers.ts';
 import type { AuxvLayout } from './linux-parsers.ts';
 import type { FileIdentity, ProcFs } from './procfs.ts';
+import { canStillRun } from './run-state.ts';
 import type { GroupStatesReader } from './run-state.ts';
 
 export type LinuxInspectorPorts = { procfs: ProcFs; uid: number; layout?: AuxvLayout };
@@ -13,7 +14,6 @@ const hostLayout = (): AuxvLayout => auxvLayoutOf(process.arch, os.endianness())
 
 const GONE_CODES = ['ENOENT', 'ESRCH'];
 const DENIED_CODES = ['EACCES', 'EPERM'];
-const EXITED_STATES = ['Z', 'X'];
 
 export const BOOT_TIME_RESOLUTION_MS = 1000;
 
@@ -98,7 +98,7 @@ export const createLinuxInspector = ({ procfs, uid, layout }: LinuxInspectorPort
       if (isErrno(error, ...GONE_CODES)) return absent;
       if (!isErrno(error, ...DENIED_CODES)) throw error;
       const stat = await statOf(pid);
-      if (stat === undefined || EXITED_STATES.includes(stat.state)) return absent;
+      if (stat === undefined || !canStillRun(stat.state)) return absent;
       const owner = await realUidOf(pid);
       if (owner === undefined || owner !== uid) return absent;
       if (await startedBeforeMarker(pid, scan.markerBirthMs)) return absent;
@@ -187,21 +187,29 @@ export const createLinuxInspector = ({ procfs, uid, layout }: LinuxInspectorPort
   });
 };
 
+const statesOfGroup = async (procfs: ProcFs, pgid: number, signal: AbortSignal | undefined): Promise<string[]> => {
+  const states: string[] = [];
+  for (const name of (await procfs.list('/proc')).filter(isPidDirectoryName)) {
+    signal?.throwIfAborted();
+    let text: string;
+    try {
+      text = await procfs.readText(`/proc/${name}/stat`);
+    } catch (error) {
+      if (isErrno(error, ...GONE_CODES)) continue;
+      throw error;
+    }
+    const stat = parseProcStat(text);
+    if (stat.groupId === pgid) states.push(stat.state);
+  }
+  return states;
+};
+
 export const createLinuxGroupStates =
   (procfs: ProcFs): GroupStatesReader =>
   async (pgid, { signal }) => {
-    const states: string[] = [];
-    for (const name of (await procfs.list('/proc')).filter(isPidDirectoryName)) {
-      signal?.throwIfAborted();
-      let text: string;
-      try {
-        text = await procfs.readText(`/proc/${name}/stat`);
-      } catch (error) {
-        if (isErrno(error, ...GONE_CODES)) continue;
-        throw error;
-      }
-      const stat = parseProcStat(text);
-      if (stat.groupId === pgid) states.push(stat.state);
+    try {
+      return await statesOfGroup(procfs, pgid, signal);
+    } catch (error) {
+      throw new ProbeFailedError(`reading the run states of process group ${pgid}`, failureOfError(error));
     }
-    return states;
   };

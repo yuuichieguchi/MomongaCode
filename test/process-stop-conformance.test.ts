@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { reapMarkedProcesses, reconcileProcessGroup } from '@momonga/foundation';
-import type { ProcessInspector, ReapTiming } from '@momonga/foundation';
+import { createPosixGroupPort, reapMarkedProcesses, reconcileProcessGroup } from '@momonga/foundation';
+import type { ProcessGroupPort, ProcessInspector, ReapTiming } from '@momonga/foundation';
 import { readManifest } from './formal/manifest.ts';
 
 const specDir = path.resolve(import.meta.dirname, '..', 'specs', 'tla');
@@ -25,7 +25,7 @@ const variants = (): string[] => {
 
 type Entry = { pgid: number; holdsMarker: boolean; startMs: number; startUnreadable?: boolean };
 
-type World = { signals: Array<{ target: number; signal: NodeJS.Signals }>; kill: (target: number, signal: NodeJS.Signals | 0) => void; inspector: ProcessInspector };
+type World = { signals: Array<{ target: number; signal: NodeJS.Signals }>; kill: (target: number, signal: NodeJS.Signals | 0) => void; inspector: ProcessInspector; groupPort: ProcessGroupPort };
 
 const world = (initial: Record<number, Entry>, reuseAtGroupRead: Record<number, Record<number, Entry>>): World => {
   const table = new Map<number, Entry>(Object.entries(initial).map(([pid, entry]) => [Number(pid), entry]));
@@ -52,7 +52,11 @@ const world = (initial: Record<number, Entry>, reuseAtGroupRead: Record<number, 
     },
     markerState: async () => 'free',
   } as unknown as ProcessInspector;
-  return { signals, kill, inspector };
+  const groupPort = createPosixGroupPort({
+    kill,
+    reading: { states: async (pgid) => [...table.values()].filter((entry) => entry.pgid === pgid).map(() => 'S'), successMeansRunnable: false },
+  });
+  return { signals, kill, inspector, groupPort };
 };
 
 const instantTiming = (): ReapTiming => {
@@ -79,7 +83,7 @@ const markerFile = (): string => {
   return marker;
 };
 
-const reconcile = async (scene: World) => reconcileProcessGroup({ pgid: 100, marker: markerFile() }, { killGraceMs: 1000, kill: scene.kill, timing: instantTiming(), inspector: scene.inspector });
+const reconcile = async (scene: World) => reconcileProcessGroup({ pgid: 100, marker: markerFile() }, { killGraceMs: 1000, kill: scene.kill, groupPort: scene.groupPort, timing: instantTiming(), inspector: scene.inspector });
 
 const stranger = (pgid: number): Entry => ({ pgid, holdsMarker: false, startMs: 999_999 });
 
@@ -130,7 +134,7 @@ describe('the reap signals only a target proved ours by the same start time at t
     expect([...result.leftAlonePids].sort()).toEqual([100, 200]);
     const unrecorded = world({ 200: { pgid: 200, holdsMarker: true, startMs: 2, startUnreadable: true } }, {});
     const warnings: string[] = [];
-    await reapMarkedProcesses({ marker: markerFile(), killGraceMs: 1000, label: 'tool', onWarning: (message) => warnings.push(message), kill: unrecorded.kill, timing: instantTiming(), inspector: unrecorded.inspector });
+    await reapMarkedProcesses({ marker: markerFile(), killGraceMs: 1000, label: 'tool', onWarning: (message) => warnings.push(message), kill: unrecorded.kill, groupPort: unrecorded.groupPort, timing: instantTiming(), inspector: unrecorded.inspector });
     expect(unrecorded.signals).toEqual([]);
     expect(warnings.some((warning) => warning.includes('process 200 is still alive but could not be verified as belonging to this call'))).toBe(true);
   });

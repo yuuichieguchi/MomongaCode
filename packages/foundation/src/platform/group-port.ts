@@ -6,7 +6,7 @@ import { createLinuxGroupStates } from './linux-inspector.ts';
 import { nodeProcFs } from './procfs.ts';
 import type { ProcFs } from './procfs.ts';
 import { canStillRun } from './run-state.ts';
-import type { GroupStatesReader } from './run-state.ts';
+import type { GroupReading, GroupStatesReader } from './run-state.ts';
 import { UnsupportedPlatformError } from './process-inspector.ts';
 import { createWindowsGroupControl } from './windows-inspector.ts';
 
@@ -24,28 +24,30 @@ const tolerated = (error: unknown): 'gone' | 'denied' | 'other' => {
   return 'other';
 };
 
-export const createPosixGroupPort = (states: GroupStatesReader): ProcessGroupPort => ({
+export type PosixGroupHost = { kill: SignalSender; reading: GroupReading };
+
+export const createPosixGroupPort = ({ kill, reading }: PosixGroupHost): ProcessGroupPort => ({
   signal: async (pgid, signal) => {
     try {
-      process.kill(-pgid, signal);
+      kill(-pgid, signal);
     } catch (error) {
       if (tolerated(error) === 'other') throw error;
     }
   },
   alive: async (pgid, options) => {
     try {
-      process.kill(-pgid, 0);
-      return true;
+      kill(-pgid, 0);
+      if (reading.successMeansRunnable) return true;
     } catch (error) {
       const verdict = tolerated(error);
       if (verdict === 'other') throw error;
       if (verdict === 'gone') return false;
-      return (await states(pgid, options)).some(canStillRun);
     }
+    return (await reading.states(pgid, options)).some(canStillRun);
   },
 });
 
-export type GroupPortPorts = { run: CommandRunner; env: Readonly<Record<string, string | undefined>>; procfs?: ProcFs };
+export type GroupPortPorts = { run: CommandRunner; env: Readonly<Record<string, string | undefined>>; procfs?: ProcFs; kill?: SignalSender };
 
 const unsupportedStates =
   (platform: NodeJS.Platform): GroupStatesReader =>
@@ -53,19 +55,19 @@ const unsupportedStates =
     throw new UnsupportedPlatformError(platform, 'reading the run states of a process group');
   };
 
-const groupStatesOf = (platform: NodeJS.Platform, ports: GroupPortPorts): GroupStatesReader => {
+const groupReadingOf = (platform: NodeJS.Platform, ports: GroupPortPorts): GroupReading => {
   switch (platform) {
     case 'darwin':
-      return createDarwinGroupStates(ports.run);
+      return { states: createDarwinGroupStates(ports.run), successMeansRunnable: true };
     case 'linux':
-      return createLinuxGroupStates(ports.procfs ?? nodeProcFs);
+      return { states: createLinuxGroupStates(ports.procfs ?? nodeProcFs), successMeansRunnable: false };
     default:
-      return unsupportedStates(platform);
+      return { states: unsupportedStates(platform), successMeansRunnable: false };
   }
 };
 
 export const createProcessGroupPort = (platform: NodeJS.Platform, ports: GroupPortPorts): ProcessGroupPort => {
-  if (platform !== 'win32') return createPosixGroupPort(groupStatesOf(platform, ports));
+  if (platform !== 'win32') return createPosixGroupPort({ kill: ports.kill ?? hostSignalSender, reading: groupReadingOf(platform, ports) });
   const control = createWindowsGroupControl({ run: ports.run, env: ports.env });
   return {
     signal: (pgid, _signal, options) => control.terminate(pgid, options),

@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { SignalSender } from './process-alive.ts';
-import { hostAsyncSignalSender } from './platform/group-port.ts';
-import type { AsyncSignalSender } from './platform/group-port.ts';
+import { nodeCommandRunner } from './platform/command-runner.ts';
+import { createProcessGroupPort, hostAsyncSignalSender, hostProcessGroupPort } from './platform/group-port.ts';
+import type { AsyncSignalSender, ProcessGroupPort } from './platform/group-port.ts';
 import type { MarkerMode } from './marker-state.ts';
 import { ProbeFailedError, valueOrThrow } from './platform/inspector-types.ts';
 import { noFollowFlag } from './platform/privacy.ts';
@@ -26,17 +27,8 @@ const asyncSenderOf = (kill: SignalSender | undefined): AsyncSignalSender =>
         kill(target, signal);
       };
 
-const aliveVia = async (send: AsyncSignalSender, target: number, signal: AbortSignal): Promise<boolean> => {
-  try {
-    await send(target, 0, { signal });
-    return true;
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ESRCH') return false;
-    if (code === 'EPERM') return true;
-    throw error;
-  }
-};
+const groupPortOf = (given: ProcessGroupPort | undefined, kill: SignalSender | undefined): ProcessGroupPort =>
+  given ?? (kill === undefined ? hostProcessGroupPort() : createProcessGroupPort(process.platform, { run: nodeCommandRunner, env: process.env, kill }));
 
 const graceSleep = async (timing: ReapTiming, ms: number, given: AbortSignal | undefined, stop: AbortSignal): Promise<void> => {
   if (given === undefined) {
@@ -207,6 +199,7 @@ export const stoppedCommandResult = (): MarkerReconcileResult => unknownResult('
 export type ReconcileProcessGroupOptions = {
   killGraceMs?: number;
   kill?: SignalSender;
+  groupPort?: ProcessGroupPort;
   timing?: ReapTiming;
   signal?: AbortSignal | undefined;
   inspector?: ProcessInspector;
@@ -215,11 +208,11 @@ export type ReconcileProcessGroupOptions = {
 
 export const reconcileProcessGroup = async (
   recorded: { pgid: number; marker: string },
-  { killGraceMs = 2000, kill, timing = hostReapTiming, signal, inspector = defaultProcessInspector(), unsettled }: ReconcileProcessGroupOptions = {},
+  { killGraceMs = 2000, kill, groupPort, timing = hostReapTiming, signal, inspector = defaultProcessInspector(), unsettled }: ReconcileProcessGroupOptions = {},
 ): Promise<MarkerReconcileResult> => {
   const operation = operationSignal(signal);
   try {
-    return await reconcileWithin(recorded, { given: signal, killGraceMs, kill, timing, stop: operation.signal, inspector, unsettled });
+    return await reconcileWithin(recorded, { given: signal, killGraceMs, kill, group: groupPortOf(groupPort, kill), timing, stop: operation.signal, inspector, unsettled });
   } finally {
     operation.end();
   }
@@ -229,18 +222,20 @@ type ReconcileWithin = {
   given: AbortSignal | undefined;
   killGraceMs: number;
   kill: SignalSender | undefined;
+  group: ProcessGroupPort;
   timing: ReapTiming;
   stop: AbortSignal;
   inspector: ProcessInspector;
   unsettled: Map<number, UninspectableProcess> | undefined;
 };
 
-const reconcileWithin = async (recorded: { pgid: number; marker: string }, { given, killGraceMs, kill, timing, stop, inspector, unsettled }: ReconcileWithin): Promise<MarkerReconcileResult> => {
+const reconcileWithin = async (recorded: { pgid: number; marker: string }, { given, killGraceMs, kill, group, timing, stop, inspector, unsettled }: ReconcileWithin): Promise<MarkerReconcileResult> => {
   const { pgid, marker } = recorded;
   const send = asyncSenderOf(kill);
+  const groupRunning = (): Promise<boolean> => group.alive(pgid, { signal: stop });
   const listing: Listing = { inspector, timing, signal: stop };
   const holders = await holdersUntil(marker, listing, timing.now() + killGraceMs, unsettled);
-  const groupAlive = await aliveVia(send, -pgid, stop);
+  const groupAlive = await groupRunning();
   if (!groupAlive && holders.length === 0) return unknownResult('The interrupted command is no longer running.', false);
   if (holders.length === 0) {
     return unknownResult(
@@ -264,11 +259,11 @@ const reconcileWithin = async (recorded: { pgid: number; marker: string }, { giv
   const remaining = await holdersUntil(marker, listing, timing.now() + killGraceMs, unsettled);
   if (stop.aborted) return waitEnded();
   const left = await splitByGroup(remaining, pgid, inspector, stop);
-  const stillInGroup = left.inGroup.length > 0 && (await aliveVia(send, -pgid, stop));
+  const stillInGroup = left.inGroup.length > 0 && (await groupRunning());
   const killPass = await signalProved(send, [...groupTarget(pgid, left.inGroup, stillInGroup), ...left.outsideGroup.map(ownProof)], 'SIGKILL', inspector, stop);
   for (const pid of killPass.unsignalled) unsignalled.add(pid);
 
-  const leftAloneGroup = !killPass.sent.includes(-pgid) && (await aliveVia(send, -pgid, stop)) ? pgid : undefined;
+  const leftAloneGroup = !killPass.sent.includes(-pgid) && (await groupRunning()) ? pgid : undefined;
   const leftAlonePids = new Set(await stillAliveOf([...listed.inGroup, ...listed.outsideGroup], remaining, inspector, stop));
   for (const pid of [...left.unreadable, ...killPass.unreadable]) leftAlonePids.add(pid);
   const findings: StructuredFindings = {
@@ -289,6 +284,7 @@ export type ReapMarkedProcessesOptions = {
   label: string;
   onWarning(message: string): void;
   kill?: SignalSender;
+  groupPort?: ProcessGroupPort;
   timing?: ReapTiming;
   signal?: AbortSignal | undefined;
   inspector?: ProcessInspector;
@@ -398,7 +394,7 @@ const reapWithin = async (options: ReapMarkedProcessesOptions, stop: AbortSignal
   const unsettled = new Map<number, UninspectableProcess>();
   let stopped: boolean;
   if (recorded !== undefined && recorded > 1 && recorded !== ownGroup) {
-    const result = await reconcileWithin({ pgid: recorded, marker }, { given: options.signal, killGraceMs, kill, timing, stop, inspector, unsettled });
+    const result = await reconcileWithin({ pgid: recorded, marker }, { given: options.signal, killGraceMs, kill, group: groupPortOf(options.groupPort, kill), timing, stop, inspector, unsettled });
     stopped = result.stopped;
     if (result.leftAloneGroup !== undefined) {
       onWarning(`${label} marker ${marker}: group ${result.leftAloneGroup} is still alive but could not be verified as belonging to this call, so it was left alone`);

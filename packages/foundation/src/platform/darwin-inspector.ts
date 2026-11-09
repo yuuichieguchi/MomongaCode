@@ -105,7 +105,8 @@ export const createDarwinGroupStates =
   (run: CommandRunner): GroupStatesReader =>
   async (pgid, { signal }) => {
     const operation = `reading the run states of process group ${pgid}`;
-    const result = await run(PS_BINARY, ['-A', '-o', 'pgid=,stat='], { env: { LC_ALL: 'C' }, signal });
+    const result = await attempt(() => run(PS_BINARY, ['-A', '-o', 'pgid=,stat='], { env: { LC_ALL: 'C' }, signal }));
+    if (isFailure(result)) throw new ProbeFailedError(operation, result);
     if (result.exitCode !== 0) throw new ProbeFailedError(operation, exitFailure('ps', result.exitCode, result.stderr));
     const rows = parseGroupStateRows(result.stdout);
     if (rows === undefined) throw new ProbeFailedError(operation, unparseable('ps', result.stdout));
