@@ -17,7 +17,7 @@ import type { AgentSet, ChildRuns } from '@momonga/agents';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
 import type { SkillSet } from '@momonga/skills';
 import type { Session } from '@momonga/store';
-import type { AnyTool, MarkerOwners, ShellHost, ToolExecutor, ToolSessionState, ToolSet, WorkTreeObserver } from '@momonga/tools';
+import type { AnyTool, MarkerOwners, RipgrepLocator, ShellHost, ToolExecutor, ToolSessionState, ToolSet, WorkTreeObserver } from '@momonga/tools';
 
 export type { Clock };
 
@@ -112,6 +112,7 @@ export type ToolRuntimePort = {
   recoveryContextFor(session: Session, options: { env: ToolEnv }): Promise<RecoveryContext>;
   executor: ToolExecutor;
   sandbox: Sandbox;
+  ripgrepLocator(env: ToolEnv): RipgrepLocator;
   shellHost: ShellHost;
   markerDir: string;
   owners?: MarkerOwners;
@@ -124,6 +125,7 @@ export type ToolRuntimePort = {
 export type TraceSpan = {
   traceparent: string;
   recordToolContent(content: { arguments: unknown; result?: unknown }): void;
+  recordToolBackend(backend: { source: string; version: string }): void;
   end(error?: unknown): void;
 };
 

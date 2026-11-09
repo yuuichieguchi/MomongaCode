@@ -4,6 +4,7 @@ import type { MarkerSettle } from './marker-settle.ts';
 import type { PermissionSubject } from '@momonga/policy';
 import type { ElicitationRequestView, ReferenceKind, SideEffect, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
 import type { Sandbox, SandboxPolicy } from '@momonga/sandbox';
+import type { RipgrepLocator } from './ripgrep-locator.ts';
 import type { BackgroundJobs, BlobPort, ToolIdempotencyRecord } from './ports.ts';
 
 export type ToolContent =
@@ -17,6 +18,8 @@ export type PlanEntry = {
 };
 
 export type SkillActivation = { name: string; content: string };
+
+export type ToolBackend = { source: string; version: string };
 
 export type ToolResult = {
   status: 'completed' | 'failed';
@@ -33,6 +36,7 @@ export type ToolResult = {
   memories?: string[];
   exitCode?: number;
   validatorFailure?: string;
+  backend?: ToolBackend;
 };
 
 export type ToolPending = { status: 'pending'; awaits: ToolAwait; wakeAt?: number };
@@ -62,6 +66,7 @@ export type ToolContext = ReconcileContext & {
   markerSettle?: MarkerSettle;
   sandbox: Sandbox;
   sandboxPolicy: SandboxPolicy;
+  ripgrep: RipgrepLocator;
   resume?: ToolResume;
   checkpoint(state: Record<string, unknown> | undefined): void;
   reportProgress(): void;

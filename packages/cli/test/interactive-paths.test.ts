@@ -37,7 +37,7 @@ describe('interactive session on a HOME that has never run momonga', () => {
     const entries: DaemonEntries = { supervise: entry, gateway: entry, runtime: entry };
     const program = buildProgram({
       ports,
-      policyVerify: () => nodePolicyVerifyHost(ports, { cacheBase: path.join(home, 'cache') }),
+      policyVerify: () => nodePolicyVerifyHost(ports, { executables: path.join(home, 'cache', 'executables') }),
       entries,
       update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
       interrupt: new AbortController().signal,

@@ -242,6 +242,7 @@ export const makeExecutor = (clock: FakeClock = createFakeClock(1_000_000), onWa
       env: {},
       session: { cwd: project, workingDirectory: project, readLedger: new Map() },
       sandbox: unusedSandbox,
+      ripgrep: { locate: () => Promise.reject(new Error('the MCP harness runs no Grep')) },
       sandboxPolicy: { writableRoots: [project], writeDenied: [], protectedSet: EMPTY_PROTECTED_SET, writeDeniedLiterals: [], fileRules: compileFileRuleSet([], [project], null, resolveCanonicalPath, volumeIsCaseInsensitive, HOST_FLAVOUR, ruleEnforcementOf('none')), readDenied: [], network: 'deny' },
       deadlineAt: clock.now() + 600_000,
       outputFit: UNBOUNDED_OUTPUT_FIT,

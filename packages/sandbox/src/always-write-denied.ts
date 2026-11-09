@@ -13,7 +13,9 @@ export type LauncherLinksStatus =
 export interface AlwaysWriteDenied {
   root: string;
   keychains: string;
+  executables: string;
   subtrees: readonly string[];
+  readDenied: readonly string[];
   literals: readonly string[];
   launcherLinks: LauncherLinksStatus;
 }
@@ -73,7 +75,9 @@ export function alwaysWriteDenied(home: string): AlwaysWriteDenied {
   return {
     root: paths.root,
     keychains: paths.keychains,
-    subtrees: [paths.root, paths.keychains],
+    executables: paths.executables,
+    subtrees: [paths.root, paths.keychains, paths.executables],
+    readDenied: [paths.root, paths.keychains],
     literals: [...new Set(lexical.flatMap((link) => [link, canonicalParentForm(link)]))],
     launcherLinks,
   };

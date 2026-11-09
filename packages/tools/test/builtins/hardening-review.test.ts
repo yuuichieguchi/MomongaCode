@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { volumeIsCaseInsensitive } from '@momonga/policy';
 import { SandboxPolicyError, validateSandboxPolicy } from '@momonga/sandbox';
-import { HAS_RG, JS_BACKEND_PATH, RG_PATH, makeBuiltins, resultOf } from './fixtures.ts';
+import { HAS_RG, RG_PATH, makeBuiltins, resultOf } from './fixtures.ts';
 import type { Builtins } from './fixtures.ts';
 
 afterEach(() => {
@@ -70,8 +70,8 @@ describe('validateSandboxPolicy rejects an invalid session tmp dir', () => {
 });
 
 describe('walking toward an allowed entry never reads inside the denied dir', () => {
-  const fixture = async () => {
-    const tools = await makeBuiltins();
+  const fixture = async (realSandbox = false) => {
+    const tools = await makeBuiltins({ realSandbox });
     const vault = path.join(tools.layout.project, 'vault');
     const allowedFile = tools.write('vault/ok/a.txt', 'alpha allowed\n');
     tools.write('vault/.gitignore', '*\n');
@@ -93,9 +93,9 @@ describe('walking toward an allowed entry never reads inside the denied dir', ()
     expect(lines(result.output)).toEqual([fx.visibleFile, fx.allowedFile].map((file) => path.relative(fx.tools.layout.project, file)).sort());
   });
 
-  it('Grep with the JS backend finds the allowed file despite an ignore-all file in the denied dir', async () => {
-    const fx = await fixture();
-    const result = resultOf(await fx.tools.run('Grep', { pattern: 'alpha' }, { sandboxPolicy: fx.sandboxPolicy, env: { PATH: JS_BACKEND_PATH, LANG: 'C' } }));
+  it.runIf(HAS_RG)('Grep with ripgrep under the real sandbox finds the allowed file despite an ignore-all file in the denied dir', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+    const fx = await fixture(true);
+    const result = resultOf(await fx.tools.run('Grep', { pattern: 'alpha' }, { sandboxPolicy: fx.sandboxPolicy, env: { PATH: RG_PATH, LANG: 'C' } }));
     expect(lines(result.output)).toEqual([fx.visibleFile, fx.allowedFile].map((file) => path.relative(fx.tools.layout.project, file)).sort());
   });
 
@@ -144,7 +144,6 @@ describe('Write through a dangling relative symlink reached via a directory syml
 });
 
 const grepBackends: Array<[string, string, boolean, boolean]> = [
-  ['JS fallback', JS_BACKEND_PATH, true, false],
   ['ripgrep', RG_PATH, HAS_RG, true],
 ];
 

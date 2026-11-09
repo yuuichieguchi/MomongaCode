@@ -13,7 +13,6 @@ import type { ApprovalSpec } from '../harness.ts';
 import { HAS_REAL_SANDBOX, createHostSandbox, policyFor, sessionTmpDirOf, sessionsTmpRootOf } from '../helpers.ts';
 
 export const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
-export const JS_BACKEND_PATH = '/nonexistent-ripgrep-directory';
 const RG_CANDIDATES = ['/opt/homebrew/bin/rg', '/usr/bin/rg'];
 export const RG_BIN = RG_CANDIDATES.find((candidate) => fs.existsSync(candidate)) ?? (RG_CANDIDATES[0] as string);
 export const HAS_RG = fs.existsSync(RG_BIN) && HAS_REAL_SANDBOX;

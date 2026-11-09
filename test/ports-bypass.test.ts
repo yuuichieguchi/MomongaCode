@@ -78,6 +78,7 @@ const PRESENT_BYPASSES_REASON = 'a present bypass of the Timing, Random or FileS
 const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/cli/src/commands/context.ts': { 'randomUUID': 1 },
   'packages/cli/src/eval/context-effects.ts': { 'setTimeout': 1, 'node:fs/promises': 1 },
+  'packages/cli/src/ripgrep/host.ts': { 'randomBytes': 1 },
   'packages/cli/src/verify/host.ts': { 'node:fs/promises': 1 },
   'packages/config/src/append-rule.ts': { 'node:fs': 1 },
   'packages/config/src/auto-fit.ts': { 'node:fs': 1 },
@@ -147,8 +148,8 @@ const PRESENT_BYPASSES: Readonly<Record<string, Counts>> = {
   'packages/tools/src/builtins/bash.ts': { 'randomBytes': 1 },
   'packages/tools/src/builtins/edit.ts': { 'node:fs': 1 },
   'packages/tools/src/builtins/files.ts': { 'randomBytes': 1, 'node:fs': 1 },
+  'packages/tools/src/ripgrep-locator.ts': { 'node:fs/promises': 1 },
   'packages/tools/src/builtins/glob.ts': { 'node:fs': 1 },
-  'packages/tools/src/builtins/grep.ts': { 'node:fs': 1 },
   'packages/tools/src/builtins/shell.ts': { 'node:fs': 1 },
   'packages/tools/src/builtins/walk.ts': { 'node:fs': 1 },
   'packages/tools/src/builtins/write.ts': { 'node:fs': 1 },

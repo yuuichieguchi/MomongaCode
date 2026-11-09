@@ -20,7 +20,7 @@ import {
   nodeFileSystem,
   nodeFileSystemSync,
 } from '@momonga/foundation';
-import type { Clock, JsonLogger, OutboundNetwork, ProcessLock, ReadyFields, TextStream } from '@momonga/foundation';
+import type { Clock, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, TextStream } from '@momonga/foundation';
 import { createTelemetry, exportersFor, openTraceStore, startBodyPurge } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
@@ -29,7 +29,7 @@ import type { Sandbox } from '@momonga/sandbox';
 import { isFatalStoreError, migrateRuntimeDatabase, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import { ShellNotFoundError, clearCallLocks, createMarkerOwners, createPolicyFilesystem, nodeShellHost, resolveBashPath } from '@momonga/tools';
-import type { ShellHost } from '@momonga/tools';
+import type { BundledRipgrepResolver, ShellHost } from '@momonga/tools';
 import { createFsInstructionReader } from '@momonga/context';
 import { createGatewayClient } from '../gateway-client.ts';
 import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../memory/journal-thread-limits.ts';
@@ -113,7 +113,10 @@ export type StartRuntimeProcessOptions = {
   drainTimeoutMs?: number;
   signal?: AbortSignal;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
+  bundledRipgrep?: BundledRipgrepSource;
 };
+
+export type BundledRipgrepSource = (paths: Pick<MomongaPaths, 'executables'>) => BundledRipgrepResolver;
 
 export type RuntimeCloseResult = {
   clean: boolean;
@@ -482,6 +485,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         reapTiming,
         leaseMs,
         heartbeatMs: heartbeatMsFor(leaseMs),
+        ...(options.bundledRipgrep === undefined ? {} : { bundledRipgrep: options.bundledRipgrep(paths) }),
       });
       const tracker: CancelUpstreamTracker = createCancelUpstream({ store, gatewayClient, timers });
       const skills = createSkillsPort({
