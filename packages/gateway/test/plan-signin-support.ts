@@ -1,0 +1,94 @@
+import type { PlanProfile } from '@momonga/config';
+import { FIRST_GENERATION, momongaLayout } from '@momonga/foundation';
+import { PLAN_API_PREFIX, PLAN_ROUTES } from '@momonga/protocol';
+import { createFakeSecretStore, startFakePlanResponses, startFakeSiwcAuth } from '@momonga/testkit';
+import type { FakePlanResponses, FakeSecretStore, SiwcAuth } from '@momonga/testkit';
+import { getJson, postJson, readJson, registerCleanup } from './gateway-helpers.ts';
+import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { PROFILE_ID, profileFor } from './plan-support.ts';
+
+export const CALLBACK_PORT = 49152;
+export const ACCOUNT = 'work';
+
+export type PlanGateway = {
+  home: string;
+  auth: SiwcAuth;
+  upstream: FakePlanResponses;
+  profile: PlanProfile;
+  secretStore: FakeSecretStore;
+  socketPath: string;
+  post(route: string, body: unknown): Promise<{ status: number; headers: Record<string, string>; body: any }>;
+  get(route: string): Promise<{ status: number; body: any }>;
+  restart(): Promise<void>;
+  close(): Promise<void>;
+};
+
+export const accountRoute = (route: string, account: string = ACCOUNT): string => route.replace(':account', encodeURIComponent(account));
+
+export type PlanGatewayOptions = { models?: readonly unknown[]; declaredCapabilities?: boolean };
+
+export const startPlanGateway = async (options: PlanGatewayOptions = {}): Promise<PlanGateway> => {
+  const home = makeHome();
+  const upstream = await startFakePlanResponses({ verifyBearer: () => 'valid', models: options.models ?? [] });
+  registerCleanup(() => upstream.close());
+  const loopback = `${upstream.origin}/v1`;
+  const auth = await startFakeSiwcAuth({ resource: loopback });
+  registerCleanup(() => auth.close());
+  const shipped = profileFor(auth);
+  const profile: PlanProfile = { ...shipped, oauth: { ...shipped.oauth, resource: loopback }, targetDefaults: { ...shipped.targetDefaults, baseUrl: loopback } };
+  const secretStore = createFakeSecretStore({});
+  writeSettings(home, {
+    models: {
+      aliases: { default: 'gpt' },
+      targets: {
+        gpt: {
+          adapter: 'open-responses',
+          model: 'plan-model',
+          ...(options.declaredCapabilities === false ? {} : { capabilities: { contextWindow: 128000, maxOutputTokens: 16000 } }),
+          plan: { profile: PROFILE_ID, account: ACCOUNT },
+        },
+      },
+    },
+  });
+  const launch = () => launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, secretStore, planProfiles: { [PROFILE_ID]: profile } });
+  let handle = await launch();
+  const gateway: PlanGateway = {
+    home,
+    auth,
+    upstream,
+    profile,
+    secretStore,
+    socketPath: handle.socketPath,
+    post: async (route, body) => readJson(await postJson(clientFor(handle.socketPath), `${PLAN_API_PREFIX}${route}`, body)),
+    get: (route) => getJson(clientFor(handle.socketPath), `${PLAN_API_PREFIX}${route}`),
+    restart: async () => {
+      await handle.close();
+      handle = await launch();
+      gateway.socketPath = handle.socketPath;
+    },
+    close: async () => {
+      await handle.close();
+    },
+  };
+  return gateway;
+};
+
+export const begin = (gateway: PlanGateway, extra: Record<string, unknown> = {}) =>
+  gateway.post(PLAN_ROUTES.signInBegin, { profile: PROFILE_ID, account: ACCOUNT, port: CALLBACK_PORT, ...extra });
+
+export const browse = async (authorizationUrl: string): Promise<URL> => {
+  const response = await fetch(authorizationUrl, { redirect: 'manual' });
+  const location = response.headers.get('location');
+  if (location === null) throw new Error(`the fake authorization server answered ${response.status} with no redirect`);
+  return new URL(location);
+};
+
+export const signIn = async (gateway: PlanGateway) => {
+  const begun = await begin(gateway);
+  if (begun.status !== 200) throw new Error(`begin answered ${begun.status}: ${JSON.stringify(begun.body)}`);
+  const callback = await browse(begun.body.authorizationUrl);
+  const completed = await gateway.post(PLAN_ROUTES.signInComplete, { attemptId: begun.body.attemptId, callbackUrl: callback.toString() });
+  return { begun, callback, completed };
+};
+
+export const sessionsDirectory = (home: string): string => momongaLayout(home).planSessions;
