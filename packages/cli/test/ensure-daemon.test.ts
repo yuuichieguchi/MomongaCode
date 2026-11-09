@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { EXIT_VERSION_MISMATCH, ensureMomongaDirs, fixedSocket, momongaPaths, startingSocketResolver } from '@momonga/foundation';
 import { firstGeneration, registerCleanup, withTempDir } from '@momonga/testkit';
 import type { TestContext } from 'vitest';
@@ -95,41 +97,58 @@ describe('ensureDaemon', () => {
     await expect(ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS })).rejects.toThrow('timed out after 500 ms waiting for the daemon to become ready');
   });
 
-  it('drains the daemon that is older than this CLI and starts one of this version', async (context) => {
+  it('starts a generation of this version beside the older daemon and never stops it (rule 1)', async (context) => {
     const { paths, start, portsWith } = await setup(context);
-    const old = await start({ version: '0.0.1' });
-    const { spawn, spawned } = recordingSpawn(() => {
-      void start({ version: VERSION });
+    fs.writeFileSync(path.join(paths.run, 'generation.counter'), '1');
+    const old = await start({ version: '0.0.1', holdsKernelLock: true });
+    const { spawn, spawned } = recordingSpawn((spec) => {
+      if (spec.args.includes('--generation=2')) void start({ version: VERSION, generation: 2, holdsKernelLock: true });
       return undefined;
     });
 
-    const health = await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS });
+    const health = await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS }).catch((error: unknown) => error);
 
-    expect(old.shutdowns).toBe(1);
-    expect(health.version).toBe(VERSION);
+    expect(old.shutdowns).toBe(0);
     expect(spawned).toHaveLength(1);
+    expect(health).toMatchObject({ version: VERSION });
   });
 
-  it('replaces an older daemon whose runtime is not ready, because only the direction of the versions decides', async (context) => {
+  it('starts beside an older daemon whose runtime is not ready, and stops nothing', async (context) => {
     const { paths, start, portsWith } = await setup(context);
-    const old = await start({ version: '0.0.1', children: [readyChildren()[0] as ReturnType<typeof readyChildren>[number], { role: 'runtime', state: 'starting', restarts: 1, consecutiveFailures: 0 }] });
-    const { spawn } = recordingSpawn(() => {
-      void start({ version: VERSION });
+    fs.writeFileSync(path.join(paths.run, 'generation.counter'), '1');
+    const old = await start({ version: '0.0.1', holdsKernelLock: true, children: [readyChildren()[0] as ReturnType<typeof readyChildren>[number], { role: 'runtime', state: 'starting', restarts: 1, consecutiveFailures: 0 }] });
+    const { spawn } = recordingSpawn((spec) => {
+      if (spec.args.includes('--generation=2')) void start({ version: VERSION, generation: 2, holdsKernelLock: true });
       return undefined;
     });
 
-    expect((await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS })).version).toBe(VERSION);
-    expect(old.shutdowns).toBe(1);
+    const health = await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS }).catch((error: unknown) => error);
+
+    expect(old.shutdowns).toBe(0);
+    expect(health).toMatchObject({ version: VERSION });
   });
 
-  it('stops waiting for an older daemon that never answers the shutdown request when the caller aborts', async (context) => {
+  it('sends no shutdown to an older daemon that would never answer one, and starts beside it', async (context) => {
     const { paths, start, portsWith } = await setup(context);
+    fs.writeFileSync(path.join(paths.run, 'generation.counter'), '1');
+    let shutdownRequests = 0;
     const controller = new AbortController();
-    await start({ version: '0.0.1', unresponsiveShutdown: { onRequest: () => controller.abort(new Error('interrupted')) } });
+    await start({
+      version: '0.0.1',
+      holdsKernelLock: true,
+      unresponsiveShutdown: {
+        onRequest: () => {
+          shutdownRequests += 1;
+          controller.abort(new Error('a shutdown was sent'));
+        },
+      },
+    });
     const { spawn, spawned } = recordingSpawn(() => undefined);
 
-    await expect(ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS, signal: controller.signal })).rejects.toThrow('interrupted');
-    expect(spawned).toEqual([]);
+    await ensureDaemon(portsWith(spawn), paths, { bounds: BOUNDS, signal: controller.signal }).catch(() => undefined);
+
+    expect(shutdownRequests).toBe(0);
+    expect(spawned).toHaveLength(1);
   });
 
   it('tells a session of the old version that meets a daemon of a newer version that momonga was updated and to reopen the session', async (context) => {
@@ -164,16 +183,17 @@ describe('ensureDaemon', () => {
 
   it('follows the same rule when the daemon is restored', async (context) => {
     const { paths, start, portsWith } = await setup(context);
-    const old = await start({ version: '0.0.1' });
-    const { spawn } = recordingSpawn(() => {
-      void start({ version: VERSION });
+    fs.writeFileSync(path.join(paths.run, 'generation.counter'), '1');
+    const old = await start({ version: '0.0.1', holdsKernelLock: true });
+    const { spawn } = recordingSpawn((spec) => {
+      if (spec.args.includes('--generation=2')) void start({ version: VERSION, generation: 2, holdsKernelLock: true });
       return undefined;
     });
 
     const notices: string[] = [];
-    await restoreDaemon(portsWith(spawn), paths, (message) => notices.push(message))(undefined);
+    await restoreDaemon(portsWith(spawn), paths, (message) => notices.push(message))(undefined).catch(() => undefined);
 
-    expect(old.shutdowns).toBe(1);
+    expect(old.shutdowns).toBe(0);
     expect(notices).toEqual([]);
   });
 
