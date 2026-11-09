@@ -27,7 +27,6 @@ export const e2eStartBoundMs = (deps: Parameters<typeof resolveStartTiming>[0]):
 export const E2E_READY_DEADLINE_MS = e2eStartBoundMs({ runtime: { drainTimeoutMs: E2E_DRAIN_TIMEOUT_MS } });
 export const E2E_HOOK_TIMEOUT_MS = 30_000;
 export const E2E_DISPOSE_BOUND_MS = 25_000;
-export const E2E_CHILD_READY_BOUND_MS = 5000;
 export const E2E_RESTART_BACKOFF_MS = 200;
 export const E2E_RESTART_POLICY = { baseMs: E2E_RESTART_BACKOFF_MS, maxMs: E2E_RESTART_BACKOFF_MS, minMs: E2E_RESTART_BACKOFF_MS } as const;
 export const E2E_RESTART_BOUND_MS = childRestartBoundMs({ policy: resolveRestartPolicy(E2E_RESTART_POLICY), startupTimeoutMs: STARTUP_TIMEOUT_MS, stdioFlushMs: STDIO_FLUSH_MS });
@@ -48,7 +47,6 @@ export const E2E_PHASE2_REACHED_BOUND_MS = E2E_ORPHAN_GRACE_MS + E2E_MARGIN_MS;
 export const E2E_LOCK_FREE_BOUND_MS = LOCK_WATCH_INTERVAL_MS + E2E_RESTART_BOUND_MS;
 export const E2E_RUN_COMPLETED_BOUND_MS = E2E_RECOVERY_BOUND_MS + E2E_MARGIN_MS;
 export const E2E_TEST_WAIT_BOUNDS_MS = {
-  E2E_CHILD_READY_BOUND_MS,
   E2E_RESTART_BOUND_MS,
   E2E_RECOVERY_BOUND_MS,
   E2E_SETTINGS_SEEN_BOUND_MS,
@@ -66,7 +64,7 @@ export const E2E_TEST_WAIT_BOUNDS_MS = {
   E2E_RUN_COMPLETED_BOUND_MS,
 } as const;
 export const E2E_TEST_TIMEOUT_MS = E2E_READY_DEADLINE_MS + Math.max(...Object.values(E2E_TEST_WAIT_BOUNDS_MS)) + E2E_MARGIN_MS;
-export const E2E_SOLVER_LOAD_ALLOWANCE_MS = E2E_CHILD_READY_BOUND_MS + E2E_MARGIN_MS;
+export const E2E_SOLVER_LOAD_ALLOWANCE_MS = STARTUP_TIMEOUT_MS + E2E_MARGIN_MS;
 export const policyVerifyBoundMs = async (): Promise<number> => (await daemonReadyBoundMs()) + E2E_SOLVER_LOAD_ALLOWANCE_MS + VERIFY_BUDGET_MS;
 export const daemonReplacingRunBoundMs = async (): Promise<number> => daemonStopBoundMs() + (await daemonReadyBoundMs()) + E2E_RUN_COMPLETED_BOUND_MS;
 export const UNTIL_DEFAULT_INTERVAL_MS = 20;
