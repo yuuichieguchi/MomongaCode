@@ -4472,9 +4472,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 12603,
-      "measuredSeconds": 3.21,
-      "measuredCpuSeconds": 3.16,
-      "budgetCpuSeconds": 10
+      "measuredSeconds": 2.21,
+      "measuredCpuSeconds": 2.59,
+      "budgetCpuSeconds": 9
     },
     {
       "config": "CredentialKey.userRemoves",
@@ -4483,9 +4483,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 92476,
-      "measuredSeconds": 3.62,
-      "measuredCpuSeconds": 4.14,
-      "budgetCpuSeconds": 12
+      "measuredSeconds": 2.57,
+      "measuredCpuSeconds": 3.43,
+      "budgetCpuSeconds": 10
     },
     {
       "config": "CredentialKey.noOsStore",
@@ -4494,9 +4494,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 387,
-      "measuredSeconds": 1.95,
-      "measuredCpuSeconds": 2.13,
-      "budgetCpuSeconds": 8
+      "measuredSeconds": 1.32,
+      "measuredCpuSeconds": 1.51,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "CredentialKey.noLock",
@@ -4508,9 +4508,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 976,
-      "measuredSeconds": 2.65,
-      "measuredCpuSeconds": 2.02,
-      "budgetCpuSeconds": 8
+      "measuredSeconds": 1.29,
+      "measuredCpuSeconds": 1.56,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "CredentialKey.noLockMarker",
@@ -4522,8 +4522,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 456,
-      "measuredSeconds": 2.65,
-      "measuredCpuSeconds": 2,
+      "measuredSeconds": 1.36,
+      "measuredCpuSeconds": 1.56,
       "budgetCpuSeconds": 7
     },
     {
@@ -4536,9 +4536,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 49,
-      "measuredSeconds": 2.27,
-      "measuredCpuSeconds": 1.88,
-      "budgetCpuSeconds": 7
+      "measuredSeconds": 1.29,
+      "measuredCpuSeconds": 1.41,
+      "budgetCpuSeconds": 6
     },
     {
       "config": "CredentialKey.markerBeforeKey",
@@ -4550,8 +4550,8 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 49,
-      "measuredSeconds": 2.15,
-      "measuredCpuSeconds": 1.88,
+      "measuredSeconds": 1.56,
+      "measuredCpuSeconds": 1.58,
       "budgetCpuSeconds": 7
     },
     {
@@ -4564,9 +4564,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 437,
-      "measuredSeconds": 2.26,
-      "measuredCpuSeconds": 2.08,
-      "budgetCpuSeconds": 8
+      "measuredSeconds": 1.57,
+      "measuredCpuSeconds": 1.78,
+      "budgetCpuSeconds": 7
     },
     {
       "config": "CredentialKey.plaintextFallback",
@@ -4578,9 +4578,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 9,
-      "measuredSeconds": 2.24,
-      "measuredCpuSeconds": 1.93,
-      "budgetCpuSeconds": 7
+      "measuredSeconds": 1.36,
+      "measuredCpuSeconds": 1.5,
+      "budgetCpuSeconds": 6
     }
   ]
 }
