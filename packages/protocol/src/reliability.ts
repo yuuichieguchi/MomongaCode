@@ -2,7 +2,11 @@ import type { Stored } from './stored-value.ts';
 import type { ApprovalBasis } from './permission-denial.ts';
 import type { PermissionMode, RunStatus, SideEffect, StopReason } from './run-types.ts';
 
-export const RELIABILITY_FORMAT = 'momonga-reliability/1';
+export const RELIABILITY_FORMAT = 'momonga-reliability/2';
+
+export const RETIRED_RELIABILITY_FORMATS: Readonly<Record<string, string>> = {
+  'momonga-reliability/1': 'the tasks whose run facts hold a value the build does not know',
+};
 export const MIN_RATE_POPULATION = 35;
 export const REVIEW_SAMPLE_SIZE = 73;
 export const REPORT_PAGE_ROWS = 500;
