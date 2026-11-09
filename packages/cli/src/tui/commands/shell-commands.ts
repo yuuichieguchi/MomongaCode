@@ -14,6 +14,7 @@ const always = (): boolean => true;
 export const SHELL_SLASH_COMMANDS: readonly ShellSlash[] = [
   { name: 'cost', usage: '[run-id] [--session <id>] [--all] [--breakdown] [--json]', description: 'show the model cost of a run, of a session, or of the sessions of this folder', longRunning: never },
   { name: 'reliability', usage: '[--group-by <key>] [--explain]', description: 'report the completion, recovery, duplicate, intervention, budget and time indicators of the terminal tasks', longRunning: never },
+  { name: 'auth', usage: 'status [--json] | logout <account>', description: 'show the saved subscription accounts, or sign one out', longRunning: never },
   { name: 'status', usage: '[run-id] [--json]', description: 'show a run, the subagent runs under it and the approvals waiting in them', longRunning: never },
   { name: 'jobs', usage: '[session-id] [--json]', description: 'list the background jobs of a session, including those of its subagents', longRunning: never },
   { name: 'trace', usage: '[run-id] [--json]', description: 'show the model and tool spans of a run', longRunning: never },
@@ -51,6 +52,7 @@ export const runShellCommand = async (name: string, args: string, context: Slash
 
 const commandOf = (entry: ShellSlash): SlashCommand => ({
   name: entry.name,
+  needsSession: false,
   usage: entry.usage,
   description: entry.description,
   run: (args, context) => runShellCommand(entry.name, args, context, entry.longRunning(args.split(/\s+/).filter((part) => part !== ''))),

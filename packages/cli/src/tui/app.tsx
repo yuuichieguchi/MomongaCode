@@ -1,7 +1,7 @@
 import { useEffect, useEffectEvent, useReducer, useRef, useState } from 'react';
 import { Box, Static, Text, useApp, useInput, usePaste, useStdout, useWindowSize } from 'ink';
-import { agentReadiness, autoModeNotice, escapeTerminalBlock, escapeTerminalLine, isProbingCapabilities } from '@momonga/protocol';
-import type { AliasCapabilities, ImageAttachment, MomongaModelEntry, PermissionMode, PermissionOption } from '@momonga/protocol';
+import { USAGE_LIMIT_CODES, agentReadiness, autoModeNotice, escapeTerminalBlock, escapeTerminalLine, isProbingCapabilities } from '@momonga/protocol';
+import type { AliasCapabilities, ImageAttachment, MomongaModelEntry, PermissionMode, PermissionOption, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
 import { cleanFailureMessage } from '@momonga/foundation';
 import { currentField, currentRequest, decide, enterValue, leaveFields, withError } from '../elicit/flow.ts';
 import type { ElicitationDecision, ElicitationFlow } from '../elicit/flow.ts';
@@ -11,13 +11,19 @@ import { describeAttachment, pastedImagePaths } from '../images.ts';
 import { describeFailure } from '../failure.ts';
 import { readinessNoticeOf } from '../readiness.ts';
 import { describeDenial } from '../policy-messages.ts';
-import { describeEnd } from '../run/headless.ts';
+import { describeRunEnd } from '../run/headless.ts';
+import { accountsOf, profileOf } from '../plan/accounts.ts';
 import type { StartRunOptions, TuiBackend } from './backend.ts';
 import { createBackgroundTasks } from './background-tasks.ts';
 import type { BackgroundTasks } from './background-tasks.ts';
 import { autoNoticeDue } from './notices.ts';
 import type { AutoNoticePair } from './notices.ts';
 import { DEFAULT_SLASH_COMMANDS } from './commands/index.ts';
+import { modelPickerCommand, planSlashCommands } from './commands/auth.ts';
+import { OverlayView } from './picker.tsx';
+import type { Overlay, OverlayPorts } from './picker.tsx';
+import { createPlanFlows } from './plan-flows.ts';
+import type { PlanFlows } from './plan-flows.ts';
 import { StartupScreen } from './startup.tsx';
 import type { StartupConfig } from './startup.tsx';
 import { skillCommands } from './commands/skills.ts';
@@ -65,7 +71,22 @@ const unavailableShell: ShellPort = {
   },
 };
 
-type Phase = { kind: 'starting' } | { kind: 'trust'; path: string } | { kind: 'ready' };
+type Phase = { kind: 'starting' } | { kind: 'trust'; path: string } | { kind: 'welcome' } | { kind: 'unconnected' } | { kind: 'ready' };
+
+type Invitation = { profile: PlanProfileView };
+
+const NO_MODEL_NOTE = 'No model is connected. Use /login to connect one.';
+const NEEDS_SESSION_NOTE = 'This command needs a session. Connect a model first with /login.';
+const UNCONNECTED_FOOTER = 'no model connected · /login';
+const INVITATION_ROWS = 2;
+const USAGE_PAUSED_CODE = 'plan_usage_paused';
+
+const isUsageLimitCode = (code: string): boolean => USAGE_LIMIT_CODES.some((member) => member === code);
+
+const longestLine = (text: string): number => Math.max(...text.split('\n').map((line) => line.length));
+
+const entryWidth = (entry: Entry, columns: number): number | undefined =>
+  (entry.kind === 'info' || entry.kind === 'notice') && longestLine(entry.text) > columns ? longestLine(entry.text) : undefined;
 
 type TranscriptAction =
   | { kind: 'event'; frame: RunEventFrame }
@@ -291,12 +312,26 @@ export function App(props: AppProps) {
   const { backend, onExit } = props;
   const { exit } = useApp();
   const { stdout } = useStdout();
+  const { columns } = useWindowSize();
   const baseSlash = props.slash ?? createSlashRegistry(DEFAULT_SLASH_COMMANDS);
   const ownTasks = useRef<BackgroundTasks>(props.tasks ?? createBackgroundTasks());
   const tasks = props.tasks ?? ownTasks.current;
   const lastAutoNotice = useRef<AutoNoticePair | undefined>(undefined);
   const [skillSlash, setSkillSlash] = useState<readonly SlashCommand[]>([]);
-  const slash = createSlashRegistry([...baseSlash.list(), ...skillSlash]);
+  const delegatingFlows: PlanFlows = {
+    login: (args) => flows.login(args),
+    logout: () => flows.logout(),
+    modelPicker: (current) => flows.modelPicker(current),
+    providerFlow: (profile) => flows.providerFlow(profile),
+    catalogPicker: (profile, account) => flows.catalogPicker(profile, account),
+    welcome: (listed) => flows.welcome(listed),
+    usageLimit: (profile) => flows.usageLimit(profile),
+  };
+  const slash = createSlashRegistry([
+    ...baseSlash.list().map((command) => (command.name === 'model' ? modelPickerCommand(delegatingFlows) : command)),
+    ...planSlashCommands(delegatingFlows),
+    ...skillSlash,
+  ]);
   const [phase, setPhase] = useState<Phase>({ kind: 'starting' });
   const [transcript, dispatch] = useReducer(transcriptReducer, initialTranscript);
   const [editor, setEditor] = useState<EditorState>(emptyEditor());
@@ -322,6 +357,52 @@ export function App(props: AppProps) {
   const attachmentsRef = useRef<readonly Attachment[]>([]);
   const elicitEditorRef = useRef<EditorState>(elicitEditor);
   const flowRef = useRef<{ inputId: string; flow: ElicitationFlow } | undefined>(undefined);
+  const [overlay, setOverlayState] = useState<Overlay | undefined>(undefined);
+  const overlayRef = useRef<Overlay | undefined>(undefined);
+  const [overlayIndex, setOverlayIndexState] = useState(0);
+  const overlayIndexRef = useRef(0);
+  const [confirming, setConfirmingState] = useState<number | undefined>(undefined);
+  const confirmingRef = useRef<number | undefined>(undefined);
+  const [overlayEditor, setOverlayEditor] = useState<EditorState>(emptyEditor());
+  const overlayEditorRef = useRef<EditorState>(overlayEditor);
+  const [profiles, setProfiles] = useState<readonly PlanProfileView[]>([]);
+  const [servedTarget, setServedTarget] = useState<string | undefined>(undefined);
+  const [invitation, setInvitation] = useState<Invitation | undefined>(undefined);
+  const [invitationIndex, setInvitationIndexState] = useState(0);
+  const invitationIndexRef = useRef(0);
+  const typedRef = useRef(false);
+  const aliasRef = useRef<string | undefined>(undefined);
+  const busyRef = useRef(false);
+
+  const showOverlay = (next: Overlay | undefined): void => {
+    overlayRef.current = next;
+    setOverlayState(next);
+  };
+
+  const setOverlayIndex = (index: number): void => {
+    overlayIndexRef.current = index;
+    setOverlayIndexState(index);
+  };
+
+  const setConfirming = (index: number | undefined): void => {
+    confirmingRef.current = index;
+    setConfirmingState(index);
+  };
+
+  const replaceOverlayEditor = (next: EditorState): void => {
+    overlayEditorRef.current = next;
+    setOverlayEditor(next);
+  };
+
+  const setInvitationIndex = (index: number): void => {
+    invitationIndexRef.current = index;
+    setInvitationIndexState(index);
+  };
+
+  const setBusyState = (value: boolean): void => {
+    busyRef.current = value;
+    setBusy(value);
+  };
 
   const setApprovalIndex = (index: number): void => {
     approvalIndexRef.current = index;
@@ -382,10 +463,11 @@ export function App(props: AppProps) {
     if (text !== undefined) dispatch({ kind: 'append', entry: { kind: 'notice', level: 'warning', text } });
   };
 
-  const openSession = async (): Promise<void> => {
-    const session = await backend.openSession();
+  const openSession = async (modelAlias: string | undefined): Promise<void> => {
+    const session = await backend.openSession(modelAlias);
     setModeState(session.permissionMode);
     showAutoNotice(session);
+    aliasRef.current = session.modelAlias;
     setAlias(session.modelAlias);
     setBypassAllowed(session.bypassAllowed);
     setAutoAvailable(await backend.autoModeAvailable());
@@ -413,6 +495,106 @@ export function App(props: AppProps) {
     );
   };
 
+  const runFlow = (work: () => Promise<void>): void => {
+    work().catch(reportError);
+  };
+
+  const applyModel = async (chosen: string): Promise<void> => {
+    const previous = aliasRef.current;
+    const session = await backend.setModel(chosen);
+    aliasRef.current = session.modelAlias;
+    setAlias(session.modelAlias);
+    note(
+      busyRef.current
+        ? `model: ${session.modelAlias}; the running task keeps ${previous}, the next task uses ${session.modelAlias}`
+        : `model: ${session.modelAlias}; applies from the next task`,
+    );
+    void backend.model().then(showModel, (error: unknown) => {
+      dispatch({ kind: 'append', entry: { kind: 'notice', level: 'warning', text: `model information unavailable: ${errorOf(error).message}` } });
+    });
+  };
+
+  const rememberProfiles = (listed: PlanAccountsResponse): void => {
+    setProfiles(listed.profiles);
+  };
+
+  const connectAlias = async (chosen: string): Promise<void> => {
+    if (aliasRef.current === undefined) {
+      await openSession(chosen);
+      return;
+    }
+    await applyModel(chosen);
+  };
+
+  const refreshConnection = async (): Promise<void> => {
+    rememberProfiles(await backend.plan.accounts());
+    if (aliasRef.current !== undefined) return;
+    if ((await backend.models()).length > 0) await openSession(undefined);
+    else setPhase({ kind: 'unconnected' });
+  };
+
+  const overlayPorts: OverlayPorts = {
+    pick: (request) =>
+      new Promise((resolve) => {
+        setOverlayIndex(0);
+        setConfirming(undefined);
+        showOverlay({ kind: 'pick', request, resolve });
+      }),
+    promptText: (request) =>
+      new Promise((resolve) => {
+        const initial = request.initial ?? '';
+        replaceOverlayEditor({ ...emptyEditor(), text: initial, cursor: initial.length });
+        showOverlay({ kind: 'text', request, resolve });
+      }),
+    waiting: (view, cancel) => showOverlay({ kind: 'waiting', view, cancel }),
+    closeWaiting: () => {
+      if (overlayRef.current?.kind === 'waiting') showOverlay(undefined);
+    },
+    loading: (title) => showOverlay({ kind: 'loading', title }),
+  };
+
+  const flows: PlanFlows = createPlanFlows({ ...overlayPorts, backend, info: note, connected: connectAlias, refreshConnection });
+
+  const showUsageLimit = async (code: string, plan: PlanAccountRef): Promise<void> => {
+    const listed = await backend.plan.accounts();
+    rememberProfiles(listed);
+    const profile = profileOf(listed.profiles, plan.profile);
+    dispatch({ kind: 'append', entry: { kind: 'notice', level: 'warning', text: `${profile.messages.identityLabel}\n${profile.messages.usageLimitMessage}` } });
+    if (code !== USAGE_PAUSED_CODE) await flows.usageLimit(profile);
+  };
+
+  const offerInvitation = async (listed: PlanAccountsResponse): Promise<void> => {
+    const dismissed = await backend.dismissedNotices();
+    const invited = listed.profiles.find((profile) => accountsOf(profile.id, listed.accounts).length === 0 && !Object.hasOwn(dismissed, `invite:${profile.id}`));
+    if (invited === undefined || typedRef.current) return;
+    setInvitationIndex(0);
+    setInvitation({ profile: invited });
+  };
+
+  const connectAtLaunch = async (): Promise<void> => {
+    const [entries, listed] = await Promise.all([backend.models(), backend.plan.accounts()]);
+    rememberProfiles(listed);
+    if (entries.length > 0) {
+      await openSession(undefined);
+      await offerInvitation(listed);
+      return;
+    }
+    if (listed.accounts.length === 0) {
+      setPhase({ kind: 'welcome' });
+      runFlow(async () => {
+        try {
+          await flows.welcome(listed.profiles);
+        } finally {
+          if (aliasRef.current === undefined) setPhase({ kind: 'unconnected' });
+        }
+      });
+      return;
+    }
+    setPhase({ kind: 'unconnected' });
+    const usable = listed.accounts.find((account) => account.active && (account.state === 'active' || account.state === 'plan_disabled'));
+    if (usable !== undefined) runFlow(() => flows.catalogPicker(profileOf(listed.profiles, usable.profile), usable.label));
+  };
+
   const boot = useEffectEvent(async (): Promise<void> => {
     try {
       const trust = await backend.boot();
@@ -420,7 +602,7 @@ export function App(props: AppProps) {
         setPhase({ kind: 'trust', path: trust.path });
         return;
       }
-      await openSession();
+      await connectAtLaunch();
     } catch (error) {
       fail(error);
     }
@@ -431,7 +613,7 @@ export function App(props: AppProps) {
   }, [backend]);
 
   const runPrompt = async (text: string, options: { skill?: string } = {}): Promise<void> => {
-    setBusy(true);
+    setBusyState(true);
     const sent = attachmentsRef.current;
     setAttachments([]);
     dispatch({ kind: 'append', entry: { kind: 'user', text } });
@@ -446,6 +628,7 @@ export function App(props: AppProps) {
       const run: RunView = await backend.follow(started.id, {
         onEvent: (frame) => {
           setReconnecting(false);
+          if (frame.data.type === 'model.responded' && frame.data.target !== undefined) setServedTarget(frame.data.target);
           dispatch({ kind: 'event', frame });
         },
         onChildEvent: (frame, agent) => {
@@ -455,12 +638,15 @@ export function App(props: AppProps) {
         onReconnecting: () => setReconnecting(true),
       });
       setReconnecting(false);
-      if (run.status !== 'COMPLETED') dispatch({ kind: 'append', entry: { kind: 'notice', level: run.status === 'CANCELLED' ? 'info' : 'error', text: describeEnd(run) } });
+      const stopped = run.error;
+      const plan = stopped?.plan;
+      if (stopped !== undefined && plan !== undefined && isUsageLimitCode(stopped.code)) runFlow(() => showUsageLimit(stopped.code, plan));
+      else if (run.status !== 'COMPLETED') dispatch({ kind: 'append', entry: { kind: 'notice', level: run.status === 'CANCELLED' ? 'info' : 'error', text: describeRunEnd(run, 'tui') } });
     } catch (error) {
       if (!exiting.current) reportError(error);
     } finally {
       runIdRef.current = undefined;
-      setBusy(false);
+      setBusyState(false);
     }
   };
 
@@ -472,8 +658,11 @@ export function App(props: AppProps) {
       note(`unknown command /${parsed.name}; /help lists the commands`);
       return true;
     }
-    if (alias === undefined) throw new Error('a slash command ran before the session was open');
-    await command.run(parsed.args, {
+    if (alias === undefined && command.needsSession !== false) {
+      note(NEEDS_SESSION_NOTE);
+      return true;
+    }
+    const ran = command.run(parsed.args, {
       mode,
       modelAlias: alias,
       bypassAllowed,
@@ -507,20 +696,13 @@ export function App(props: AppProps) {
         note(`permission mode: ${session.permissionMode}`);
         showAutoNotice(session);
       },
-      setModel: async (chosen) => {
-        const previous = alias;
-        const session = await backend.setModel(chosen);
-        setAlias(session.modelAlias);
-        note(
-          busy
-            ? `model: ${session.modelAlias}; the running task keeps ${previous}, the next task uses ${session.modelAlias}`
-            : `model: ${session.modelAlias}; applies from the next task`,
-        );
-        void backend.model().then(showModel, (error: unknown) => {
-          dispatch({ kind: 'append', entry: { kind: 'notice', level: 'warning', text: `model information unavailable: ${errorOf(error).message}` } });
-        });
-      },
+      setModel: applyModel,
     });
+    try {
+      await ran;
+    } finally {
+      if (overlayRef.current?.kind === 'loading') showOverlay(undefined);
+    }
     return true;
   };
 
@@ -531,6 +713,10 @@ export function App(props: AppProps) {
     }
     if (busy) {
       note('a task is running; press esc to cancel it');
+      return;
+    }
+    if (alias === undefined) {
+      note(NO_MODEL_NOTE);
       return;
     }
     await runPrompt(text);
@@ -677,9 +863,82 @@ export function App(props: AppProps) {
   const decideTrust = (decision: 'trusted' | 'untrusted'): void => {
     const decide = async (): Promise<void> => {
       await backend.decideTrust(decision);
-      await openSession();
+      await connectAtLaunch();
     };
     decide().catch(fail);
+  };
+
+  const closeOverlay = (): void => {
+    showOverlay(undefined);
+    setConfirming(undefined);
+  };
+
+  const choosePick = (current: Extract<Overlay, { kind: 'pick' }>, index: number): void => {
+    const row = current.request.rows[index];
+    if (row === undefined || row.disabled === true) return;
+    setOverlayIndex(index);
+    if (current.request.confirm !== undefined && confirmingRef.current !== index) {
+      setConfirming(index);
+      return;
+    }
+    closeOverlay();
+    current.resolve(index);
+  };
+
+  const overlayKey = (current: Overlay, input: string, key: Parameters<Parameters<typeof useInput>[0]>[1]): void => {
+    if (current.kind === 'waiting') {
+      if (key.escape) current.cancel();
+      return;
+    }
+    if (current.kind === 'loading') return;
+    if (current.kind === 'pick') {
+      const count = current.request.rows.length;
+      if (key.escape) {
+        closeOverlay();
+        current.resolve(undefined);
+      } else if (key.upArrow) {
+        setConfirming(undefined);
+        setOverlayIndex((overlayIndexRef.current + count - 1) % count);
+      } else if (key.downArrow) {
+        setConfirming(undefined);
+        setOverlayIndex((overlayIndexRef.current + 1) % count);
+      } else if (key.return) choosePick(current, overlayIndexRef.current);
+      else if (/^[1-9]$/.test(input)) choosePick(current, Number(input) - 1);
+      return;
+    }
+    if (key.escape) {
+      closeOverlay();
+      current.resolve(undefined);
+      return;
+    }
+    if (key.return) {
+      const text = overlayEditorRef.current.text;
+      const error = current.request.validate(text);
+      if (error !== undefined) {
+        showOverlay({ ...current, error });
+        return;
+      }
+      closeOverlay();
+      current.resolve(text);
+      return;
+    }
+    replaceOverlayEditor(applyKey(overlayEditorRef.current, { ...key, input }).state);
+  };
+
+  const invitationShown = invitation !== undefined && overlay === undefined && !busy && editor.text === '';
+
+  const invitationKey = (shown: Invitation, input: string, key: Parameters<Parameters<typeof useInput>[0]>[1]): boolean => {
+    const act = (index: number): void => {
+      setInvitation(undefined);
+      if (index === 0) runFlow(() => flows.providerFlow(shown.profile));
+      else backend.dismissNotice(`invite:${shown.profile.id}`).catch(reportError);
+    };
+    if (key.upArrow) setInvitationIndex((invitationIndexRef.current + INVITATION_ROWS - 1) % INVITATION_ROWS);
+    else if (key.downArrow) setInvitationIndex((invitationIndexRef.current + 1) % INVITATION_ROWS);
+    else if (key.return) act(invitationIndexRef.current);
+    else if (/^[1-2]$/.test(input)) act(Number(input) - 1);
+    else return false;
+    return true;
   };
 
   useInput((input, key) => {
@@ -696,7 +955,20 @@ export function App(props: AppProps) {
       if (choice !== undefined) decideTrust(choice.decision);
       return;
     }
+    const currentOverlay = overlayRef.current;
+    if (currentOverlay !== undefined) {
+      if (key.ctrl && input === 'c' && currentOverlay.kind === 'waiting') currentOverlay.cancel();
+      else overlayKey(currentOverlay, input, key);
+      return;
+    }
+    if (phase.kind === 'welcome') return;
+    if (invitation !== undefined && !busy && editorRef.current.text === '' && invitationKey(invitation, input, key)) return;
+    if (input !== '' && !key.ctrl && !key.meta) {
+      typedRef.current = true;
+      if (invitation !== undefined) setInvitation(undefined);
+    }
     if (key.tab && key.shift) {
+      if (alias === undefined) return;
       cycleMode();
       return;
     }
@@ -740,6 +1012,10 @@ export function App(props: AppProps) {
       return;
     }
     const outcome = applyKey(editorRef.current, { ...key, input });
+    if (outcome.submit !== undefined && alias === undefined && !outcome.submit.trim().startsWith('/')) {
+      note(NO_MODEL_NOTE);
+      return;
+    }
     replaceEditor(outcome.state);
     if (outcome.submit !== undefined) {
       backend.recordHistory(outcome.submit).catch(reportError);
@@ -758,6 +1034,12 @@ export function App(props: AppProps) {
     props.startup === undefined || alias === undefined ? null : (
       <StartupScreen config={props.startup} model={{ alias, targets: model?.targets }} mode={mode} cwd={backend.cwd} notices={notices} />
     );
+  const widthProps = (item: StaticItem): { width?: number; flexShrink?: number } => {
+    const width = item.kind === 'entry' ? entryWidth(item.entry, columns) : undefined;
+    return width === undefined ? {} : { width, flexShrink: 0 };
+  };
+  const servedPlan = servedTarget === undefined || model?.targetBilling?.[servedTarget] !== 'plan' ? undefined : model.targetPlan?.[servedTarget];
+  const servedProfile = servedPlan === undefined ? undefined : profiles.find((profile) => profile.id === servedPlan.profile);
   const staticItems: StaticItem[] = [
     ...(banner !== null && transcript.entries.length > 0 ? [{ kind: 'banner' } as const] : []),
     ...transcript.entries.slice(0, settled).map((entry): StaticItem => ({ kind: 'entry', entry })),
@@ -767,7 +1049,7 @@ export function App(props: AppProps) {
     <Box flexDirection="column">
       <Static key={epoch} items={staticItems}>
         {(item, index) => (
-          <Box key={index}>{item.kind === 'banner' ? banner : <EntryView entry={item.entry} />}</Box>
+          <Box key={index} {...widthProps(item)}>{item.kind === 'banner' ? banner : <EntryView entry={item.entry} />}</Box>
         )}
       </Static>
       {transcript.entries.slice(settled).map((entry, index) => (
@@ -785,11 +1067,21 @@ export function App(props: AppProps) {
           <Text dimColor>esc to exit</Text>
         </Box>
       ) : null}
+      {overlay === undefined ? null : <OverlayView overlay={overlay} selected={overlayIndex} confirming={confirming} editor={overlayEditor} />}
+      {phase.kind === 'ready' && invitationShown ? (
+        <Box flexDirection="column">
+          <Text bold>New</Text>
+          <Text>{escapeTerminalLine(invitation.profile.messages.inviteTitle)}</Text>
+          {[invitation.profile.loginLabel, 'Not now'].map((label, index) => (
+            <Text key={label}>{`${index === invitationIndex ? '›' : ' '} ${index + 1}. ${escapeTerminalLine(label)}`}</Text>
+          ))}
+        </Box>
+      ) : null}
       {phase.kind === 'ready' && transcript.approval !== undefined ? <ApprovalPrompt approval={transcript.approval} tool={pendingTool} selected={approvalIndex} workingDirectory={backend.cwd} /> : null}
       {phase.kind === 'ready' && transcript.elicitation !== undefined ? (
         <ElicitationPrompt elicitation={transcript.elicitation} title={pendingTitle} editor={elicitEditor} selected={approvalIndex} />
       ) : null}
-      {phase.kind === 'ready' && transcript.approval === undefined && transcript.elicitation === undefined ? (
+      {(phase.kind === 'ready' || phase.kind === 'unconnected') && overlay === undefined && transcript.approval === undefined && transcript.elicitation === undefined ? (
         <Box flexDirection="column">
           {attachments.map((attachment, index) => (
             <Text key={index} dimColor>{`attached ${describeAttachment(attachment.file, attachment.image)} (backspace on an empty input removes the last)`}</Text>
@@ -798,11 +1090,15 @@ export function App(props: AppProps) {
           {completion === undefined ? null : <Text dimColor>{completion.names.map((name) => `/${name}`).join('  ')} (tab completes)</Text>}
         </Box>
       ) : null}
-      {phase.kind === 'ready' ? (
+      {phase.kind === 'ready' && overlay === undefined ? (
         <Text dimColor>
           {`mode: ${mode} (shift+tab) · tokens: ${formatTokens(transcript.usage.totalTokens)}${transcript.waiting === undefined ? '' : ` · waiting for ${transcript.waiting}`}${contextPercent === undefined ? '' : ` · context: ${contextPercent}%`}${imageInput ? ' · image input: paste a file path' : ''}${busy ? ' · working (esc to cancel)' : ''}${reconnecting ? ' · reconnecting…' : ''}`}
         </Text>
       ) : null}
+      {phase.kind === 'ready' && servedProfile !== undefined ? (
+        <Text dimColor>{escapeTerminalLine(`${alias ?? ''} · ${servedProfile.messages.planInUseLabel} · ${servedProfile.messages.manageUsageLabel}: ${servedProfile.usageUrl}`)}</Text>
+      ) : null}
+      {phase.kind === 'unconnected' ? <Text dimColor>{UNCONNECTED_FOOTER}</Text> : null}
     </Box>
   );
 }

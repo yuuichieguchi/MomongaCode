@@ -1,8 +1,46 @@
 import { createUdsClient, isRecord } from '@momonga/foundation';
 import type { SocketResolver } from '@momonga/foundation';
-import { JSON_MODES, agentReadiness, isProbingCapabilities, isToolCallingState } from '@momonga/protocol';
-import type { AliasCapabilities, Capabilities, MomongaModelEntry, MomongaModelList, ProbingCapabilities, UsageReport } from '@momonga/protocol';
+import { JSON_MODES, PLAN_ACCOUNT_STATES, PLAN_API_PREFIX, PLAN_ROUTES, TARGET_BILLINGS, agentReadiness, isProbingCapabilities, isToolCallingState } from '@momonga/protocol';
+import type {
+  AliasCapabilities,
+  Capabilities,
+  GatewayHealth,
+  MomongaModelEntry,
+  MomongaModelList,
+  PlanAccountRef,
+  PlanAccountView,
+  PlanAccountsResponse,
+  PlanActiveRequest,
+  PlanActiveResponse,
+  PlanCatalogEntry,
+  PlanModelsResponse,
+  PlanProfileView,
+  PlanResumeRequest,
+  PlanSignInBeginRequest,
+  PlanSignInBeginResponse,
+  PlanSignInCancelRequest,
+  PlanSignInCompleteRequest,
+  PlanSignInCompleteResponse,
+  PlanSignOutRequest,
+  PlanSignOutResponse,
+  PlanTargetRequest,
+  PlanTargetResponse,
+  ProbingCapabilities,
+  TargetHealth,
+  UsageReport,
+} from '@momonga/protocol';
 
+export type PlanGatewayClient = {
+  accounts(): Promise<PlanAccountsResponse>;
+  signInBegin(request: PlanSignInBeginRequest): Promise<PlanSignInBeginResponse>;
+  signInComplete(request: PlanSignInCompleteRequest): Promise<PlanSignInCompleteResponse>;
+  signInCancel(request: PlanSignInCancelRequest): Promise<void>;
+  signOut(request: PlanSignOutRequest): Promise<PlanSignOutResponse>;
+  setActive(request: PlanActiveRequest): Promise<PlanActiveResponse>;
+  resume(account: string, request: PlanResumeRequest): Promise<void>;
+  accountModels(account: string): Promise<PlanModelsResponse>;
+  addTarget(account: string, request: PlanTargetRequest): Promise<PlanTargetResponse>;
+};
 
 export type GatewayClient = {
   models(): Promise<readonly MomongaModelEntry[]>;
@@ -10,6 +48,8 @@ export type GatewayClient = {
   capabilitiesOf(alias: string): Promise<AliasCapabilities | ProbingCapabilities>;
   contextWindowOf(alias: string): Promise<number>;
   usageOf(runId: string): Promise<UsageReport>;
+  health(): Promise<GatewayHealth>;
+  readonly plan: PlanGatewayClient;
   close(): Promise<void>;
 };
 
@@ -37,6 +77,16 @@ const isCapabilities = (value: unknown): value is Capabilities =>
 
 const isProbingListing = (value: unknown): boolean => isRecord(value) && isToolCallingState(value['toolCalling']) && agentReadiness({ toolCalling: value['toolCalling'] }).state === 'probing';
 
+const isRecordOf = (value: unknown, holds: (entry: unknown) => boolean): boolean => isRecord(value) && Object.values(value).every(holds);
+
+const isString = (value: unknown): value is string => typeof value === 'string';
+
+const isOptional = (value: unknown, holds: (entry: unknown) => boolean): boolean => value === undefined || holds(value);
+
+const isAccountRef = (value: unknown): value is PlanAccountRef => isRecord(value) && isString(value['profile']) && isString(value['account']);
+
+const isTargetPlan = (value: unknown): boolean => isRecord(value) && isString(value['profile']) && isOptional(value['account'], isString);
+
 const isModelList = (value: unknown): value is MomongaModelList =>
   isRecord(value) &&
   Array.isArray(value['data']) &&
@@ -46,8 +96,64 @@ const isModelList = (value: unknown): value is MomongaModelList =>
       typeof entry['id'] === 'string' &&
       Array.isArray(entry['targets']) &&
       entry['targets'].every((target) => typeof target === 'string') &&
-      (isCapabilities(entry['capabilities']) || isProbingListing(entry['capabilities'])),
+      (isCapabilities(entry['capabilities']) || isProbingListing(entry['capabilities'])) &&
+      isOptional(entry['targetBilling'], (billing) => isRecordOf(billing, (kind) => oneOf(kind, TARGET_BILLINGS))) &&
+      isOptional(entry['targetPlan'], (plans) => isRecordOf(plans, isTargetPlan)),
   );
+
+const isTargetHealth = (value: unknown): value is TargetHealth =>
+  isRecord(value) && typeof value['ok'] === 'boolean' && oneOf(value['breaker'], ['closed', 'open', 'half-open']) && isOptional(value['reason'], isString);
+
+const isGatewayHealth = (value: unknown): value is GatewayHealth =>
+  isRecord(value) && typeof value['ok'] === 'boolean' && isRecordOf(value['targets'], isTargetHealth) && isString(value['version']) && oneOf(value['state'], ['running', 'draining']);
+
+const isProfileMessages = (value: unknown): boolean =>
+  isRecord(value) &&
+  ['identityLabel', 'pickerLabel', 'apiKeyLabel', 'inviteTitle', 'description', 'planInUseLabel', 'manageUsageLabel', 'usageLimitMessage', 'signInExpiredMessage', 'signInRequiredMessage', 'planNotEnabledMessage', 'notEligibleMessage'].every((key) => isString(value[key])) &&
+  isRecord(value['firstSignIn']) &&
+  ['title', 'body', 'action'].every((key) => isRecord(value['firstSignIn']) && isString(value['firstSignIn'][key]));
+
+const isProfileView = (value: unknown): value is PlanProfileView =>
+  isRecord(value) && isString(value['id']) && isString(value['usageUrl']) && isString(value['loginLabel']) && isProfileMessages(value['messages']);
+
+const isAccountView = (value: unknown): value is PlanAccountView =>
+  isRecord(value) &&
+  isString(value['profile']) &&
+  isString(value['label']) &&
+  isOptional(value['email'], isString) &&
+  oneOf(value['state'], PLAN_ACCOUNT_STATES) &&
+  typeof value['active'] === 'boolean' &&
+  Array.isArray(value['pinnedBy']) &&
+  value['pinnedBy'].every(isString) &&
+  isOptional(value['paused'], (paused) => isRecord(paused) && isOptional(paused['until'], isString)) &&
+  isOptional(value['cause'], isString);
+
+const isAccountsResponse = (value: unknown): value is PlanAccountsResponse =>
+  isRecord(value) && Array.isArray(value['profiles']) && value['profiles'].every(isProfileView) && Array.isArray(value['accounts']) && value['accounts'].every(isAccountView);
+
+const isBeginResponse = (value: unknown): value is PlanSignInBeginResponse =>
+  isRecord(value) && isString(value['attemptId']) && isString(value['authorizationUrl']) && isString(value['state']) && isString(value['expiresAt']);
+
+const isCompleteResponse = (value: unknown): value is PlanSignInCompleteResponse =>
+  isRecord(value) &&
+  ((value['outcome'] === 'retry' && value['reason'] === 'invalid_grant') ||
+    (oneOf(value['outcome'], ['signed_in', 'plan_disabled']) && isAccountView(value['account']) && typeof value['firstSignIn'] === 'boolean'));
+
+const isSignOutResponse = (value: unknown): value is PlanSignOutResponse => isRecord(value) && oneOf(value['revocation'], ['confirmed', 'unconfirmed']) && isString(value['usageUrl']);
+
+const isActiveResponse = (value: unknown): value is PlanActiveResponse => isRecord(value) && isAccountRef(value['active']);
+
+const isCatalogEntry = (value: unknown): value is PlanCatalogEntry =>
+  isRecord(value) &&
+  isString(value['slug']) &&
+  isString(value['displayName']) &&
+  ((value['usable'] === true && typeof value['contextWindow'] === 'number' && typeof value['maxOutputTokens'] === 'number') || (value['usable'] === false && isString(value['reason'])));
+
+const isModelsResponse = (value: unknown): value is PlanModelsResponse => isRecord(value) && isString(value['readAt']) && Array.isArray(value['models']) && value['models'].every(isCatalogEntry);
+
+const isTargetResponse = (value: unknown): value is PlanTargetResponse => isRecord(value) && isString(value['target']) && isString(value['alias']);
+
+const accountRoute = (route: string, account: string): string => `${PLAN_API_PREFIX}${route.replace(':account', encodeURIComponent(account))}`;
 
 const isCount = (value: unknown): boolean => typeof value === 'number' && Number.isInteger(value) && value >= 0;
 
@@ -70,6 +176,37 @@ export const createGatewayClient = (options: { resolveSocket: SocketResolver }):
     if (response.status !== 200) throw new Error(`GET ${path} answered ${response.status}: ${text}`);
     return JSON.parse(text);
   };
+
+  const answer = async (method: 'GET' | 'POST', path: string, body: unknown): Promise<unknown> => {
+    const response = await http.request({ method, path, ...(body === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }) });
+    const text = await response.text();
+    if (response.status < 200 || response.status > 299) throw new Error(`${method} ${path} answered ${response.status}: ${text}`);
+    return text === '' ? undefined : JSON.parse(text);
+  };
+
+  const checked = async <T>(method: 'GET' | 'POST', path: string, body: unknown, holds: (value: unknown) => value is T, what: string): Promise<T> => {
+    const value = await answer(method, path, body);
+    if (!holds(value)) throw new Error(`${method} ${path} answered a body that is not ${what}: ${JSON.stringify(value)}`);
+    return value;
+  };
+
+  const plan: PlanGatewayClient = {
+    accounts: () => checked('GET', `${PLAN_API_PREFIX}${PLAN_ROUTES.accounts}`, undefined, isAccountsResponse, 'an account list'),
+    signInBegin: (request) => checked('POST', `${PLAN_API_PREFIX}${PLAN_ROUTES.signInBegin}`, request, isBeginResponse, 'a sign-in attempt'),
+    signInComplete: (request) => checked('POST', `${PLAN_API_PREFIX}${PLAN_ROUTES.signInComplete}`, request, isCompleteResponse, 'a sign-in outcome'),
+    signInCancel: async (request) => {
+      await answer('POST', `${PLAN_API_PREFIX}${PLAN_ROUTES.signInCancel}`, request);
+    },
+    signOut: (request) => checked('POST', `${PLAN_API_PREFIX}${PLAN_ROUTES.signOut}`, request, isSignOutResponse, 'a sign-out report'),
+    setActive: (request) => checked('POST', `${PLAN_API_PREFIX}${PLAN_ROUTES.accountsActive}`, request, isActiveResponse, 'an active account'),
+    resume: async (account, request) => {
+      await answer('POST', accountRoute(PLAN_ROUTES.accountResume, account), request);
+    },
+    accountModels: (account) => checked('GET', accountRoute(PLAN_ROUTES.accountModels, account), undefined, isModelsResponse, 'a model catalog'),
+    addTarget: (account, request) => checked('POST', accountRoute(PLAN_ROUTES.accountTargets, account), request, isTargetResponse, 'a created target'),
+  };
+
+  const health = (): Promise<GatewayHealth> => checked('GET', '/v1/momonga/health', undefined, isGatewayHealth, 'a gateway health report');
 
   const models = async (): Promise<readonly MomongaModelEntry[]> => {
     const body = await getJson('/v1/momonga/models');
@@ -98,5 +235,5 @@ export const createGatewayClient = (options: { resolveSocket: SocketResolver }):
     return body;
   };
 
-  return { models, modelOf, capabilitiesOf, contextWindowOf, usageOf, close: () => http.close() };
+  return { models, modelOf, capabilitiesOf, contextWindowOf, usageOf, health, plan, close: () => http.close() };
 };

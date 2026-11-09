@@ -15,6 +15,7 @@ import { mcpAuthorizationNotice } from '../mcp/messages.ts';
 import { describeRetryWait } from '../retry-wait.ts';
 import type { AttemptFailed } from '../retry-wait.ts';
 import { describeClassification, describeDenial, describeHook, describeRunError } from '../policy-messages.ts';
+import type { MessageSurface } from '../policy-messages.ts';
 import { asChildEvent } from './child-events.ts';
 import { followRun } from './follow.ts';
 import { openSession } from './open-session.ts';
@@ -69,14 +70,16 @@ export const resultOf = (run: RunView, result: string): RunResult => ({
   usage: run.usage,
 });
 
-const endReasonLines = (run: RunView): string[] => {
-  if (run.error !== undefined) return describeRunError(run.error);
+const endReasonLines = (run: RunView, surface: MessageSurface): string[] => {
+  if (run.error !== undefined) return describeRunError(run.error, surface);
   return run.stopReason === undefined ? [] : [run.stopReason];
 };
 
-export const describeEnd = (run: RunView): string => {
+export const describeEnd = (run: RunView): string => describeRunEnd(run, 'headless');
+
+export const describeRunEnd = (run: RunView, surface: MessageSurface): string => {
   const head = `momonga: run ${run.id} ${run.status}`;
-  const reason = endReasonLines(run);
+  const reason = endReasonLines(run, surface);
   if (reason.length === 0) return escapedLines([head]);
   const lines = [`${head} (${reason[0]}`, ...reason.slice(1)];
   lines[lines.length - 1] += ')';

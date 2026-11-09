@@ -1,4 +1,6 @@
-import { MAX_BUDGET_COUNT, imageCapability } from '@momonga/protocol';
+import { MAX_BUDGET_COUNT, imageCapability, maxOutputTokensFor } from '@momonga/protocol';
+
+export { maxOutputTokensFor };
 import type { Capabilities, CapabilitiesCore, DialectId, ImageCapability, ProbeReport, ToolCallingMode } from '@momonga/protocol';
 import { resolveDialectId } from '../dialect/resolve-id.ts';
 import { jsonModeCapabilityOf } from './json-mode.ts';
@@ -46,7 +48,6 @@ const parallelCallsDecision = (report: ProbeReport, thresholds: DecideThresholds
   return { parallelToolCalls: atLeast(parallel.multiCallRate, thresholds.minValidRate ?? DEFAULT_MIN_VALID_RATE) };
 };
 
-export const maxOutputTokensFor = (contextWindow: number): number => Math.min(contextWindow, Math.max(256, Math.ceil(contextWindow / 4)));
 
 export const capabilitiesFromProbe = (report: ProbeReport, decision: ToolCallingDecision, thresholds: DecideThresholds = {}): Capabilities => {
   const contextWindow = report.contextWindow.value;

@@ -44,6 +44,10 @@ export type PlanProfileMessages = {
 export const PLAN_ACCOUNT_STATES = ['active', 'plan_disabled', 'needs_sign_in', 'signing_out', 'registered', 'store_unreadable', 'store_unwritable'] as const;
 export type PlanAccountState = (typeof PLAN_ACCOUNT_STATES)[number];
 
+export const USAGE_LIMIT_CODES = ['plan_usage_limit', 'plan_workspace_usage_limit', 'plan_usage_paused'] as const;
+
+export const SIGN_IN_REQUIRED_CODE = 'sign_in_required';
+
 export const PLAN_API_PREFIX = '/v1/momonga/plan';
 
 export const PLAN_ROUTES = {

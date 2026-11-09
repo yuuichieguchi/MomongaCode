@@ -1084,7 +1084,7 @@ const runView = closed(
     ordinal: integer,
     status: storedEnumOf(RUN_STATUSES),
     stopReason: storedEnumOf(STOP_REASONS),
-    error: closed({ code: string, message: string }, ['code', 'message']),
+    error: closed({ code: string, message: string, plan: closed({ profile: string, account: string }, ['profile', 'account']) }, ['code', 'message']),
     usage,
     step: nonNegativeInteger,
     limits: runLimits,
