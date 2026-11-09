@@ -142,7 +142,7 @@ describe('the reap signals only a target proved ours by the same start time at t
 });
 
 describe('the settle says that a process is still running only while a holder or a member of its group can still run, as specs/tla/ProcessStop.tla states', () => {
-  it.each(['settleCandidate', 'settleCurrent', 'guardCurrent', 'jobCurrent'])('the variant %s is declared in the model', (variant) => {
+  it.each(['settleCandidate', 'settleCurrent', 'guardCurrent', 'jobCurrent', 'reconcileCurrent'])('the variant %s is declared in the model', (variant) => {
     expect(variants()).toContain(variant);
   });
 
@@ -160,7 +160,7 @@ describe('the settle says that a process is still running only while a holder or
 
   it('a claim that a process is still running carries the basis that some holder or group member can still run', () => {
     expect(definitionOf('Claimed')).toContain("basis' = SomeoneRuns");
-    expect(spec).toContain('NoteOnlyWhileRunning == shown # "none" => basis');
+    expect(spec).toContain('NoteOnlyWhileRunning == shown \\in {"running", "final", "guard"} => basis');
   });
 
   it.each([
@@ -169,6 +169,19 @@ describe('the settle says that a process is still running only while a holder or
     ['jobCurrent', 'RemovalSafe'],
   ])('the code without the check, variant %s, is an every-run evidence configuration that violates %s', (variant, property) => {
     expect(manifest.entries.find((entry) => entry.config === `ProcessStop.${variant}`)).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: property, exitCode: 12 } });
+  });
+
+  it.each([
+    ['ProcessStop.reconcileCurrent', 'NoLongerRunningOnlyWhenClear'],
+    ['ProcessStop.listFailCurrent', 'NoRunningClaimAfterListFailure'],
+  ])('the code without the check, %s, is an every-run evidence configuration that violates %s', (config, property) => {
+    expect(manifest.entries.find((entry) => entry.config === config)).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: property, exitCode: 12 } });
+  });
+
+  it('a list failure claims nothing running, and the reconcile claims no longer running only when nothing holds the marker or can run', () => {
+    expect(definitionOf('NoRunningClaimAfterListFailure')).toContain('listFailed => shown # "running"');
+    expect(definitionOf('NoLongerRunningOnlyWhenClear')).toContain('shown = "gone" => basis');
+    expect(definitionOf('ReconcileCall')).toContain('ObsHeld');
   });
 
   it('the candidate configuration holds every-run', () => {
