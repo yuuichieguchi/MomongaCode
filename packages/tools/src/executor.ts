@@ -29,7 +29,7 @@ import { cancellableTimer } from './timers.ts';
 import { observedToolFiles } from './work-tree-observer.ts';
 import type { WorkTreeMark, WorkTreeObserver } from './work-tree-observer.ts';
 import { ToolExecutionError, ToolInputError, ToolInputRequired, TransientToolError } from './types.ts';
-import type { AnyTool, OutputFit, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
+import type { AnyTool, CallOutputFit, OutputFit, ReconcileContext, ReconcileResult, ToolContent, ToolContext, ToolPending, ToolResult, ToolResume, ToolSessionState, SubjectContext } from './types.ts';
 import { cleanFailureMessage } from '@momonga/foundation';
 import { toolRefusalKey, unavailable, validateToolInput } from './validate.ts';
 import type { ValidationResult } from './validate.ts';
@@ -542,9 +542,14 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     return stored.handle;
   };
 
+  const fitOfCall = (fit: OutputFit, call: ToolCall): CallOutputFit => {
+    const identity = { callId: call.callId, tool: call.name };
+    return { fits: (text) => fit.fits(text, identity), fit: (text, handle) => fit.fit(text, handle, identity) };
+  };
+
   type FittedOutput = { output: string } | { output: string; truncated: boolean; handle: string };
 
-  const formattedResult = async (result: ToolResult, tool: AnyTool, fit: OutputFit, runId: string, formatOutput: BatchOutputFormatter | undefined) => {
+  const formattedResult = async (result: ToolResult, tool: AnyTool, fit: CallOutputFit, runId: string, formatOutput: BatchOutputFormatter | undefined) => {
     if (formatOutput === undefined || tool.pagesOutput === true) return undefined;
     let formatted: ReturnType<BatchOutputFormatter>;
     try {
@@ -565,7 +570,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     };
   };
 
-  const fittedOutput = async (result: ToolResult, fit: OutputFit, runId: string): Promise<FittedOutput> => {
+  const fittedOutput = async (result: ToolResult, fit: CallOutputFit, runId: string): Promise<FittedOutput> => {
     if (await fit.fits(result.output)) return { output: result.output };
     const handle = storedHandle(result.output, runId);
     return { output: await fit.fit(result.output, handle), truncated: true, handle };
@@ -574,7 +579,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   const finalizeResult = async (
     result: ToolResult,
     tool: AnyTool,
-    fit: OutputFit,
+    fit: CallOutputFit,
     runId: string,
     formatOutput?: BatchOutputFormatter,
   ): Promise<ResultOutcome['result']> => {
@@ -938,7 +943,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       step: batch.step,
       callId,
       idemKey: key,
-      outputFit: fit,
+      outputFit: fitOfCall(fit, call),
       ...(tool.sideEffect === 'exec' ? { processMarker } : {}),
       ...(trace === undefined ? {} : { traceparent: trace.traceparent }),
       ...(trace?.tracestate === undefined ? {} : { tracestate: trace.tracestate }),
@@ -1144,10 +1149,10 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       if (resumed.kind === 'outcome') return resumed.outcome;
       const reconcileOutcome = resumed.result;
       if (reconcileOutcome.outcome === 'not_applied') {
-        return scope.complete(await finalizeResult({ status: 'failed', output: cancelledOutput(tool) }, tool, fit, batch.runId), 'not_applied');
+        return scope.complete(await finalizeResult({ status: 'failed', output: cancelledOutput(tool) }, tool, fitOfCall(fit, call), batch.runId), 'not_applied');
       }
       const status = reconcileOutcome.outcome === 'already_applied' ? 'completed' : 'failed';
-      return scope.complete(await finalizeResult({ status, output: reconcileOutcome.output }, tool, fit, batch.runId), reconcileOutcome.outcome);
+      return scope.complete(await finalizeResult({ status, output: reconcileOutcome.output }, tool, fitOfCall(fit, call), batch.runId), reconcileOutcome.outcome);
     } finally {
       scope.release();
     }
@@ -1277,7 +1282,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       const executeWithMarker = async (marker: { handle: MarkerHandle; settle: MarkerSettle } | undefined, reconciled: ReconcileResult['outcome'] | undefined, resume: ToolResume | undefined): Promise<CallOutcome> => {
         const executionCtx: ToolContext = {
           ...contextForBasis(),
-          outputFit: batch.outputFit,
+          outputFit: fitOfCall(batch.outputFit, call),
           ...(resume === undefined ? {} : { resume }),
           ...(marker === undefined ? {} : { markerFd: marker.handle.fd, markerSettle: marker.settle }),
         };
@@ -1325,11 +1330,11 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           const hooked = await applyPostToolHooks(batch, call, tool, target.input, settled);
           const effects = observation === undefined || settled.detached === true ? {} : await closeWindow(batch, observation, window);
           const { detached, ...reported } = hooked;
-          return scope.complete(await finalizeResult({ ...reported, ...(detached === true ? {} : facts.command === undefined ? {} : { command: facts.command }), ...effects }, tool, batch.outputFit, batch.runId, batch.formatOutput), reconciled);
+          return scope.complete(await finalizeResult({ ...reported, ...(detached === true ? {} : facts.command === undefined ? {} : { command: facts.command }), ...effects }, tool, fitOfCall(batch.outputFit, call), batch.runId, batch.formatOutput), reconciled);
         }
         await settleWithin(running, ABORT_SETTLE_LIMIT_MS);
         return settleInterrupted(scope, tool, target.input, key, scope.abortReason() === 'timeout' ? 'timeout' : 'cancelled', {
-          fit: batch.outputFit,
+          fit: fitOfCall(batch.reconcileFit, call),
           runId: batch.runId,
           leaseLost: () => batch.leaseLost?.() === true,
           ...(batch.formatOutput === undefined ? {} : { formatOutput: batch.formatOutput }),
@@ -1367,7 +1372,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         return await execute('not_applied');
       }
       const status = reconcileOutcome.outcome === 'already_applied' ? 'completed' : 'failed';
-      return scope.complete(await finalizeResult({ status, output: reconcileOutcome.output }, tool, fit, batch.runId), reconcileOutcome.outcome);
+      return scope.complete(await finalizeResult({ status, output: reconcileOutcome.output }, tool, fitOfCall(fit, call), batch.runId), reconcileOutcome.outcome);
     } finally {
       scope.release();
     }
@@ -1423,7 +1428,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     input: unknown,
     key: string,
     reason: AbortReason,
-    limits: { fit: OutputFit; runId: string; formatOutput?: BatchOutputFormatter; leaseLost: () => boolean },
+    limits: { fit: CallOutputFit; runId: string; formatOutput?: BatchOutputFormatter; leaseLost: () => boolean },
   ): Promise<CallOutcome> => {
     if (limits.leaseLost()) return scope.deferred;
     const current = idempotency.get(key);

@@ -26,6 +26,7 @@ import { runLaunchTask } from './launch.ts';
 import type { ChildRole, GatewayTuning, Launcher, RuntimeTuning } from './launcher.ts';
 import { phaseChange, planBegin, planEnd, settingsChanged, settingsEvaluated, settingsInvalid, settingsReadFailed, settingsWarning, supervisorBackgroundFailed, supervisorBackgroundTransient, writeEvent } from './log-events.ts';
 import { omitUndefined } from './omit-undefined.ts';
+import { orphanReapBoundMs } from './orphans.ts';
 import type { MarkerPorts } from './orphans.ts';
 import { changedSections, digestsOf, planRoles, runRestartPlan } from './plan.ts';
 import type { RestartPlanPort } from './plan.ts';
@@ -66,6 +67,21 @@ export type SupervisorOptions = {
   onShutdownRequested?: () => void;
 };
 
+export type SupervisorStartTiming = { drainTimeoutMs: number; startupTimeoutMs: number; orphanGraceMs: number; orphanReapGraceMs: number; orphanPollMs: number };
+
+export const resolveStartTiming = (options: Pick<SupervisorOptions, 'runtime' | 'startupTimeoutMs' | 'orphanGraceMs' | 'orphanReapGraceMs' | 'intervals'>): SupervisorStartTiming => {
+  const drainTimeoutMs = options.runtime?.drainTimeoutMs ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS;
+  return {
+    drainTimeoutMs,
+    startupTimeoutMs: options.startupTimeoutMs ?? STARTUP_TIMEOUT_MS,
+    orphanGraceMs: options.orphanGraceMs ?? runtimeMaxCloseMs(drainTimeoutMs),
+    orphanReapGraceMs: options.orphanReapGraceMs ?? ORPHAN_REAP_GRACE_MS,
+    orphanPollMs: resolveIntervals(options.intervals).orphanPollMs,
+  };
+};
+
+export const supervisorStartBoundMs = (timing: SupervisorStartTiming): number => orphanReapBoundMs(timing) + timing.startupTimeoutMs;
+
 export type SupervisorCloseResult = { clean: boolean; killed: ChildRole[]; leaked: ChildRole[]; fatal?: Error; exitCode?: number };
 
 export type SupervisorProcess = {
@@ -92,8 +108,8 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
   const logger = options.logger ?? createJsonLogger({ service: SUPERVISOR_SERVICE, clock });
   const intervals = resolveIntervals(options.intervals);
   const restart = resolveRestartPolicy(options.restart);
-  const drainTimeoutMs = options.runtime?.drainTimeoutMs ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS;
-  const startupTimeoutMs = options.startupTimeoutMs ?? STARTUP_TIMEOUT_MS;
+  const startTiming = resolveStartTiming(options);
+  const { drainTimeoutMs, startupTimeoutMs } = startTiming;
   const canonicalHome = canonicalPath(options.home);
   const paths = momongaPaths(canonicalHome, process.platform, {});
   const env = { ...(options.env ?? process.env) };
@@ -366,9 +382,9 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       logger,
       reap: {
         markersDir: paths.markers.daemons,
-        orphanGraceMs: options.orphanGraceMs ?? runtimeMaxCloseMs(drainTimeoutMs),
-        orphanReapGraceMs: options.orphanReapGraceMs ?? ORPHAN_REAP_GRACE_MS,
-        orphanPollMs: intervals.orphanPollMs,
+        orphanGraceMs: startTiming.orphanGraceMs,
+        orphanReapGraceMs: startTiming.orphanReapGraceMs,
+        orphanPollMs: startTiming.orphanPollMs,
         drainTimeoutMs,
         timers,
         signal: launchController.signal,

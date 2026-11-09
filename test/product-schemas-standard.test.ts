@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { ataEngine, createUntrustedBoundary } from '@momonga/foundation';
 import type { ProductSchema } from '@momonga/foundation';
 import { OPEN_RESPONSES_OPENAPI, RUN_API_SCHEMAS } from '@momonga/protocol';
@@ -16,9 +16,10 @@ import {
   sameJson,
   validatedSchemaNames,
 } from './support/product-schemas.ts';
+import { NO_WALL_CLOCK_TIMEOUT_FOR_SYNCHRONOUS_WORK } from './support/synchronous-work.ts';
 
-let loaded: Promise<readonly ProductSchema[]> | undefined;
-const schemas = (): Promise<readonly ProductSchema[]> => (loaded ??= loadProductSchemas());
+const loaded = await loadProductSchemas();
+const schemas = async (): Promise<readonly ProductSchema[]> => loaded;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -71,16 +72,12 @@ const componentNames = (): string[] => {
 };
 
 describe('every product schema is standard JSON Schema 2020-12', () => {
-  beforeAll(async () => {
-    await schemas();
-  });
-
-  it('finds the modules that define product schemas by scanning every runtime source', () => {
+  it('finds the modules that define product schemas by scanning every runtime source', NO_WALL_CLOCK_TIMEOUT_FOR_SYNCHRONOUS_WORK, () => {
     const relative = productSchemaModules().map((file) => path.relative(repositoryRoot, file));
     expect(relative.length).toBeGreaterThan(0);
   });
 
-  it('enumerates product schemas with unique, non-empty identities', async () => {
+  it('enumerates product schemas with unique, non-empty identities', NO_WALL_CLOCK_TIMEOUT_FOR_SYNCHRONOUS_WORK, async () => {
     const entries = await schemas();
     expect(entries.length).toBeGreaterThan(0);
     const ids = entries.map((entry) => entry.id);
@@ -123,7 +120,7 @@ describe('every product schema is standard JSON Schema 2020-12', () => {
     expect(problems).toEqual([]);
   });
 
-  it('enumerates every Run API schema a runtime source validates against', async () => {
+  it('enumerates every Run API schema a runtime source validates against', NO_WALL_CLOCK_TIMEOUT_FOR_SYNCHRONOUS_WORK, async () => {
     const entries = await schemas();
     const referenced = runApiSchemaReferences();
     expect(referenced).toEqual(expect.arrayContaining(['CreateRunRequest', 'PublicRunEvent', 'RunReflection', 'RunView']));
@@ -132,14 +129,14 @@ describe('every product schema is standard JSON Schema 2020-12', () => {
     expect(missing).toEqual([]);
   });
 
-  it('enumerates the Open Responses registry with an entry for every component', async () => {
+  it('enumerates the Open Responses registry with an entry for every component', NO_WALL_CLOCK_TIMEOUT_FOR_SYNCHRONOUS_WORK, async () => {
     const entries = await schemas();
     const registries = entries.flatMap(remoteDocumentsOf).filter((document): document is Record<string, unknown> => isRecord(document) && isRecord(document['$defs']));
     const covering = registries.filter((registry) => sameJson(Object.keys(registry['$defs'] as Record<string, unknown>).sort(), componentNames()));
     expect(covering.length).toBeGreaterThan(0);
   });
 
-  it('carries no discriminator, nullable, components or other non-standard keyword', async () => {
+  it('carries no discriminator, nullable, components or other non-standard keyword', NO_WALL_CLOCK_TIMEOUT_FOR_SYNCHRONOUS_WORK, async () => {
     const entries = await schemas();
     expect(entries.length).toBeGreaterThan(0);
     const sites = entries.flatMap((entry) => [
@@ -149,7 +146,7 @@ describe('every product schema is standard JSON Schema 2020-12', () => {
     expect([...new Set(sites)]).toEqual([]);
   });
 
-  it('compiles every product schema through the foundation boundary', async () => {
+  it('compiles every product schema through the foundation boundary', NO_WALL_CLOCK_TIMEOUT_FOR_SYNCHRONOUS_WORK, async () => {
     const entries = await schemas();
     expect(entries.length).toBeGreaterThan(0);
     const failures = entries.flatMap((entry) => {
@@ -163,7 +160,7 @@ describe('every product schema is standard JSON Schema 2020-12', () => {
     expect(failures).toEqual([]);
   });
 
-  it('passes the Ajv strict-mode lint for every product schema', async () => {
+  it('passes the Ajv strict-mode lint for every product schema', NO_WALL_CLOCK_TIMEOUT_FOR_SYNCHRONOUS_WORK, async () => {
     const entries = await schemas();
     expect(entries.length).toBeGreaterThan(0);
     const failures = entries.flatMap((entry) => {
@@ -175,7 +172,7 @@ describe('every product schema is standard JSON Schema 2020-12', () => {
 });
 
 describe('the scanner that enumerates product schemas', () => {
-  it('finds a non-standard keyword at any schema position but not a property named after it', () => {
+  it('finds a non-standard keyword at any schema position but not a property named after it', NO_WALL_CLOCK_TIMEOUT_FOR_SYNCHRONOUS_WORK, () => {
     const schema = {
       type: 'object',
       properties: { nullable: { type: 'string' }, tag: { oneOf: [{ type: 'string', nullable: true }] } },
@@ -189,7 +186,7 @@ describe('the scanner that enumerates product schemas', () => {
     ]);
   });
 
-  it('flags the Ajv-only keywords a product schema carries today', () => {
+  it('flags the Ajv-only keywords a product schema carries today', NO_WALL_CLOCK_TIMEOUT_FOR_SYNCHRONOUS_WORK, () => {
     expect(strictLint({ id: 'probe', schema: { type: 'object', properties: { reason: { type: 'string', nullable: true } } }, remotes: new Map() })).toBeUndefined();
     expect(keywordSites({ type: 'object', properties: { reason: { type: 'string', nullable: true } } }, NON_STANDARD_KEYWORDS)).toEqual([
       { pointer: '/properties/reason', keyword: 'nullable' },

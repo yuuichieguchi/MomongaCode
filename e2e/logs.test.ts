@@ -11,7 +11,7 @@ import type { LogRecord } from './support/log-reader.ts';
 import { createRuntimeClient } from './support/runtime-client.ts';
 import { DEFAULT_E2E_DEPS, shutdownBarrier, startStack } from './support/stack.ts';
 import { childOf, pidOf } from './support/supervisor-client.ts';
-import { E2E_CHILD_READY_BOUND_MS, E2E_MARGIN_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
+import { E2E_MARGIN_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
 const NOISY_DAEMON_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'support', 'fixtures', 'noisy-daemon.ts');
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error'];
@@ -120,13 +120,12 @@ describe('logs', () => {
     });
     const health = await stack.client.health();
     const fixturePid = pidOf(health, 'gateway');
+    expect(childOf(health, 'gateway')).toMatchObject({ state: 'ready', pid: fixturePid, restarts: 0, consecutiveFailures: 0 });
+    expect(childOf(health, 'runtime')).toMatchObject({ state: 'ready', restarts: 0 });
 
-    const raw = await until(() => {
-      const records = supervisorLog(home.paths, stack.ready.pid);
-      const stderr = ofChild(records, 'child.stderr', 'gateway');
-      const stdout = ofChild(records, 'child.stdout', 'gateway');
-      return stderr.length >= NOISY_STDERR_LINES.length && stdout.length >= 1 ? { stderr, stdout, records } : undefined;
-    }, { deadlineMs: E2E_CHILD_READY_BOUND_MS, description: 'child.stderr and child.stdout records of the noisy gateway' });
+    await shutdownBarrier(stack);
+    const records = supervisorLog(home.paths, stack.ready.pid);
+    const raw = { records, stderr: ofChild(records, 'child.stderr', 'gateway'), stdout: ofChild(records, 'child.stdout', 'gateway') };
 
     expect(raw.stderr.map((record) => record.raw)).toEqual([...NOISY_STDERR_LINES]);
     for (const record of raw.stderr) {
@@ -155,13 +154,5 @@ describe('logs', () => {
     for (const text of RAW_TEXTS) expect(gatewayLogText.includes(text)).toBe(false);
     expect(fs.readFileSync(home.paths.logFiles.runtime, 'utf8').includes(NOISY_STDOUT_LINE)).toBe(false);
 
-    const after = await stack.client.health();
-    expect(childOf(after, 'gateway')).toMatchObject({ state: 'ready', pid: fixturePid, restarts: 0, consecutiveFailures: 0 });
-    expect(childOf(after, 'runtime')).toMatchObject({ state: 'ready', restarts: 0 });
-
-    await shutdownBarrier(stack);
-    const settled = supervisorLog(home.paths, stack.ready.pid);
-    expect(ofChild(settled, 'child.stdout', 'gateway')).toHaveLength(1);
-    expect(ofChild(settled, 'child.stderr', 'gateway').map((record) => record.raw)).toEqual([...NOISY_STDERR_LINES]);
   });
 });

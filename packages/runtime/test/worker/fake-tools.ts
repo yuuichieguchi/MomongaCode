@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { defineTool } from '@momonga/tools';
-import type { AnyTool, OutputFit, ToolContext } from '@momonga/tools';
+import type { AnyTool, CallOutputFit, ToolContext } from '@momonga/tools';
 import { deferred } from './deferred.ts';
 import type { Deferred } from './deferred.ts';
 
@@ -10,7 +10,7 @@ export type Execution = {
   callId: string;
   input: Record<string, unknown>;
   traceparent: string | undefined;
-  outputFit: OutputFit;
+  outputFit: CallOutputFit;
   step: number;
 };
 

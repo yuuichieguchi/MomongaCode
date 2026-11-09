@@ -22,7 +22,7 @@ import type { ActivatedSkill, ReferenceReaders, TokenMeter, BuildContextInput, C
 import { TRANSIENT_REQUEST_STATUSES, canonicalJson, sha256Hex } from '@momonga/foundation';
 import { resolveGoverning } from '@momonga/memory';
 import type { Session } from '@momonga/store';
-import { outputOriginOf } from '@momonga/tools';
+import { harnessOutputToolsOf } from '@momonga/tools';
 import { DETERMINISTIC_SUMMARY_TEXT, compactionSummaryMessage, decodeCompactionSummary, tokensForText, userMessageContent } from '@momonga/protocol';
 import type { CompactRequest, CompactResource, CompactionInputItem, ContentPart, FunctionTool, InputItem, MessageInputItem, NoticeReduction, RunEvent, RunEventPayload, RunState, SummaryFidelity } from '@momonga/protocol';
 import { foldRunState } from '@momonga/store';
@@ -222,7 +222,7 @@ const offeredInputOf = (
         }
       : {}),
     outputFormatters: ctx.token.outputFormatters,
-    harnessOutputTools: ctx.toolSet.tools.filter((tool) => outputOriginOf(tool) === 'harness').map((tool) => tool.name),
+    harnessOutputTools: harnessOutputToolsOf(ctx.toolSet.tools),
   };
   return { input, offered, governing: governingKey, kinds, joined: joined.map((tool) => tool.name) };
 };

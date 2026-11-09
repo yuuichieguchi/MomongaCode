@@ -30,7 +30,9 @@ import {
 } from './stack.ts';
 import { createSupervisorClient } from './supervisor-client.ts';
 import { E2E_DEPS_ENV, guardSupervisorHome } from './supervisor-main.ts';
-import { E2E_READY_DEADLINE_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS, E2E_TEST_TIMEOUT_MS, until, withinBound } from './wait.ts';
+import { E2E_READY_DEADLINE_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS, E2E_TEST_TIMEOUT_MS, e2eTestTimeoutMs, until, withinBound } from './wait.ts';
+
+const PARENT_KILLED_TIMEOUT_MS = e2eTestTimeoutMs(E2E_READY_DEADLINE_MS, E2E_READY_DEADLINE_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS);
 
 const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const STDERR_FLOOD_PATH = path.join(FIXTURES, 'stderr-flood-supervisor.ts');
@@ -54,7 +56,7 @@ const runMain = (context: CleanupContext, home: string, env: Record<string, stri
     stderr += chunk;
   });
   child.stdout?.resume();
-  return withinBound(once(child, 'close'), E2E_READY_DEADLINE_MS, 'supervisor-main exit').then(
+  return withinBound(once(child, 'close'), E2E_SUPERVISOR_CLOSE_BOUND_MS, 'supervisor-main exit').then(
     ([code]: unknown[]) => ({ code: typeof code === 'number' ? code : null, stderr }),
     (error: unknown) => {
       throw new Error(`${error instanceof Error ? error.message : String(error)}; stderr: ${stderr}`, { cause: error });
@@ -193,10 +195,10 @@ describe('supervisor-main lifeline and pipes', () => {
     expect(supervisor.stderrTail().length).toBeGreaterThan(0);
     expect(Buffer.byteLength(supervisor.stderrTail())).toBeLessThanOrEqual(STDERR_TAIL_BYTES);
     supervisor.child.stdin.end();
-    await expect(withinBound(supervisor.exited, E2E_READY_DEADLINE_MS, 'flood fixture exit after stdin EOF')).resolves.toEqual({ code: 0, signal: null });
+    await expect(withinBound(supervisor.exited, E2E_SUPERVISOR_CLOSE_BOUND_MS, 'flood fixture exit after stdin EOF')).resolves.toEqual({ code: 0, signal: null });
   });
 
-  it('a parent that is SIGKILLed leaves no supervisor and no daemon', { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {
+  it('a parent that is SIGKILLed leaves no supervisor and no daemon', { timeout: PARENT_KILLED_TIMEOUT_MS }, async (context) => {
     const home = await createE2eHome();
     const fake = await startFakeChatCompletions({ scenario: 'tools-ok', maxConcurrency: 8, socketPath: home.upstreamSocket });
     registerE2eCleanup(() => fake.close());

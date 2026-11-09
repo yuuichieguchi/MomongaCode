@@ -6,7 +6,7 @@ import { FAKE_LEASE, createFakeKernelLock, fakePolicyFilesystem, hostFilesystemO
 import type { PermissionSubject } from '@momonga/policy';
 import { createHostRipgrepLocator, createToolExecutor, createToolRegistry, defineTool, schemaIdentity } from '@momonga/tools';
 import { pinnedRipgrepPath } from '../../../test/support/pinned-ripgrep.ts';
-import type { AnyTool, ExecutionBatchInput, OutputFit, SideEffectBinding, ToolBody, ToolCall, ToolContext, ToolDefinition, ToolExecutorOptions, ToolSet, WorkTreeObserver } from '@momonga/tools';
+import type { AnyTool, CallOutputFit, ExecutionBatchInput, OutputCall, OutputFit, SideEffectBinding, ToolBody, ToolCall, ToolContext, ToolDefinition, ToolExecutorOptions, ToolSet, WorkTreeObserver } from '@momonga/tools';
 import type { PermissionRule } from '@momonga/policy';
 import type { PermissionMode, SideEffect } from '@momonga/protocol';
 import { fakeSandbox, makeBlobs, makeClock, makeIdempotency, makeLayout, minimalPolicyFor } from './helpers.ts';
@@ -25,6 +25,33 @@ export const charFit = (limit: number): OutputFit => ({
     return [text.slice(0, Math.ceil(kept / 2)), marker, text.slice(text.length - Math.floor(kept / 2))].filter((part) => part !== '').join('\n');
   },
 });
+
+export type FitAsk = { readonly text: string; readonly call: OutputCall };
+
+export const askingFit = (inner: OutputFit): { port: OutputFit; asks: FitAsk[] } => {
+  const asks: FitAsk[] = [];
+  return {
+    asks,
+    port: {
+      ...inner,
+      fits: async (text, call) => {
+        asks.push({ text, call });
+        return inner.fits(text, call);
+      },
+      fit: async (text, handle, call) => {
+        asks.push({ text, call });
+        return inner.fit(text, handle, call);
+      },
+    },
+  };
+};
+
+const ANSWERING_PROBE = 'which port answers this text';
+
+export const callAnsweredBy = async (seen: CallOutputFit, asked: { asks: readonly FitAsk[] }): Promise<OutputCall | undefined> => {
+  await seen.fits(ANSWERING_PROBE);
+  return asked.asks.find((ask) => ask.text === ANSWERING_PROBE)?.call;
+};
 
 export const OPEN_SCHEMA = { type: 'object', properties: { value: { type: 'string' } }, additionalProperties: false } as const;
 

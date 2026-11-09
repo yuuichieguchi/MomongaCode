@@ -6,7 +6,7 @@ import { runCli, startCli } from './cli.ts';
 import type { CliResult } from './cli.ts';
 import { createE2eHome, disposeAll } from './home.ts';
 import { baseSettings, writeSettingsFile } from './stack.ts';
-import { E2E_CHILD_READY_BOUND_MS, E2E_TEST_TIMEOUT_MS, abortableWait, until } from './wait.ts';
+import { E2E_MARGIN_MS, E2E_TEST_TIMEOUT_MS, abortableWait, until } from './wait.ts';
 
 describe('runCli', () => {
   it('records the daemon the CLI spawned before it returns, and the daemon is stopped when the home is disposed', { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
@@ -60,11 +60,11 @@ describe('runCli', () => {
         '',
       ].join('\n'),
     );
-    const boundMs = 2 * E2E_CHILD_READY_BOUND_MS;
+    const boundMs = E2E_MARGIN_MS;
     const quiet = { ...home, ledger: { ...home.ledger, collect: () => Promise.resolve() } };
 
     const running = startCli(quiet, [ready, release], { bundle: held, boundMs });
-    await until(() => fs.existsSync(ready), { deadlineMs: E2E_CHILD_READY_BOUND_MS, description: 'the held CLI to start' });
+    await until(() => fs.existsSync(ready), { deadlineMs: E2E_TEST_TIMEOUT_MS, description: 'the held CLI to start' });
     await abortableWait(boundMs);
     fs.writeFileSync(release, '');
 

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { createUdsClient } from '@momonga/foundation';
 import { ESTIMATED_CHARACTERS_PER_TOKEN } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
+import { DEFAULT_KEEP_RECENT_TURNS } from '../packages/context/src/levels.ts';
 import { isCompactionRequest, journalOfRows, ofType, overflowStepRange, summaryRoute, wireTokensOfBody } from './support/budget.ts';
 import type { JournalEvent } from './support/budget.ts';
 import { skipCase, titleOf } from './support/cases.ts';
@@ -175,7 +176,11 @@ describe('g: agent skills', () => {
         const tools = (post.body as { tools?: { function?: { name?: string } }[] }).tools ?? [];
         expect(tools.map((tool) => tool.function?.name)).toContain('activate_skill');
       }
-      for (const runId of [first.id, ...later]) expect(ofType(journalOf(home, runId), 'notice').map((event) => event.data['message'])).toEqual([]);
+      for (const [turn, runId] of [first.id, ...later].entries()) {
+        const journalOfRun = journalOf(home, runId);
+        const reductions = ofType(journalOfRun, 'context.compacted').map(() => ({ code: 'recent_turns_shrunk', reduction: { turn, from: DEFAULT_KEEP_RECENT_TURNS, to: 1 } }));
+        expect(ofType(journalOfRun, 'notice').map((event) => ({ code: event.data['code'], reduction: event.data['reduction'] }))).toEqual(reductions);
+      }
     } finally {
       await runtime.close();
     }

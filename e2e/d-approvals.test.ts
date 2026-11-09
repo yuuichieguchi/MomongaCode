@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { sha256Hex } from '@momonga/foundation';
+import { envelopeOf } from '@momonga/protocol';
 import { titleOf } from './support/cases.ts';
 import { createE2eHome } from './support/home.ts';
 import type { E2eHome } from './support/home.ts';
@@ -97,7 +98,7 @@ describe('d: approvals', () => {
       expect(calls).toHaveLength(2);
       const lastMessage = messagesOf(calls[1]).at(-1);
       expect(lastMessage?.role).toBe('tool');
-      expect(lastMessage?.content).toBe(REJECTED_OUTPUT);
+      expect(lastMessage?.content).toBe(envelopeOf({ content: REJECTED_OUTPUT, callId: String(lastMessage?.tool_call_id), tool: 'Write' }));
     } finally {
       await runtime.close();
     }

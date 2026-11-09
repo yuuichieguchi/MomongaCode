@@ -11,7 +11,7 @@ import { createRuntimeClient, framesOfType } from './support/runtime-client.ts';
 import type { RuntimeClient } from './support/runtime-client.ts';
 import { baseSettings, shutdownBarrier, startStack, withStructuredRole } from './support/stack.ts';
 import { chatCompletions, messagesOf, reportedTokensOfRequest, textReply, toolCallReply } from './support/upstream.ts';
-import { E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
+import { E2E_REFLECTION_SETTLED_BOUND_MS, E2E_RUN_COMPLETED_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
 
 type Json = Record<string, any>;
 
@@ -129,7 +129,14 @@ describe('learning loop', () => {
 
       const accepted = await runCli(home, ['memory', 'review', 'accept', memoryId]);
       expect(accepted.stdout).toBe(`accepted memory ${memoryId}\n`);
-      expect((await runCli(home, ['memory', 'review'])).stdout).toMatch(/^no memories waiting for review\nthe last reflection of this folder \(run \S+, \S+\) is done\n {2}the run is not a verified success\n$/);
+      const settled = await until(
+        async () => {
+          const review = await runCli(home, ['memory', 'review']);
+          return review.stdout.includes(') is done\n') ? review : undefined;
+        },
+        { deadlineMs: E2E_REFLECTION_SETTLED_BOUND_MS, intervalMs: 250, description: 'the sweeper of the runtime to reflect on the second run' },
+      );
+      expect(settled.stdout).toMatch(/^no memories waiting for review\nthe last reflection of this folder \(run \S+, \S+\) is done\n {2}the run is not a verified success\n$/);
 
       const { run: third } = await runtime.createRun(session.id, 'Save the same note again', { history: 'fresh' });
       await approveEachAskUntilEnd(runtime, third.id, 1);

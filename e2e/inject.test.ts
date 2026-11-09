@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { RELIABILITY_FORMAT } from '@momonga/protocol';
+import { titleOf } from './support/cases.ts';
 
 const SCENARIOS_FILE = path.join(import.meta.dirname, 'inject', 'scenarios.json');
 const RUNNER = './support/inject-runner.ts';
@@ -28,14 +29,14 @@ const runner = async (): Promise<InjectionRunner> => (await import(RUNNER)) as I
 const INJECT_TIMEOUT_MS = 1_800_000;
 
 describe('the injection scenario set (4.1, 4.3)', () => {
-  it('holds the ten faults of section 4.3, each in its own scenario, and only the out-of-disk fault needs the Linux container', () => {
+  it(titleOf('inject-faults'), () => {
     const all = scenarios();
     expect(new Set(all.map((scenario) => scenario.fault)).size).toBe(10);
     expect(new Set(all.map((scenario) => scenario.id)).size).toBe(all.length);
     expect(all.filter((scenario) => scenario.requires === 'linux-container')).toHaveLength(1);
   });
 
-  it('P9: in every scenario that can run on this host, every effect key is witnessed at most once', { timeout: INJECT_TIMEOUT_MS }, async () => {
+  it(titleOf('inject-p9'), { timeout: INJECT_TIMEOUT_MS }, async () => {
     const { runInjectionScenario } = await runner();
     const results: ScenarioResult[] = [];
     for (const scenario of scenarios().filter((candidate) => candidate.requires === 'any')) results.push(...(await runInjectionScenario(scenario, { linuxContainer: false })));
@@ -46,7 +47,7 @@ describe('the injection scenario set (4.1, 4.3)', () => {
     }
   });
 
-  it('reports the out-of-disk scenario "not run" with its reason off the container, and counts it in the population block', async () => {
+  it(titleOf('inject-not-run'), async () => {
     const { injectionReportOf, runInjectionScenario } = await runner();
     const diskFull = scenarios().find((scenario) => scenario.requires === 'linux-container');
     expect(diskFull).toBeDefined();
