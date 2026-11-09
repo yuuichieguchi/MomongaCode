@@ -595,7 +595,11 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         socketPath: own.sockets.runtime,
         pid: process.pid,
         startedAt,
-        sandboxKind: () => sandboxes.current().sandbox.kind,
+        sandboxKind: async (healthSignal) => {
+          const lease = await sandboxes.acquire(healthSignal);
+          lease.release();
+          return lease.value.sandbox.kind;
+        },
         protectedRootAreas: protectedRootAreasOf(paths, canonicalHome),
         notifier,
         modelAliases: async () => (await gatewayClient.models()).map((model) => model.id),

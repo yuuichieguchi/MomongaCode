@@ -12,7 +12,6 @@ import {
   readUserStopValues,
   resolveNetwork,
   resolveTelemetrySettings,
-  secretNames,
   settingsInputsDigest,
   upstreamEndpointOf,
 } from '@momonga/config';
@@ -184,20 +183,6 @@ const capabilitiesOf = (target: RemoteTarget, mode: ToolCallingMode): Capabiliti
 
 const startupFailureOf = (error: unknown): Error | undefined =>
   error instanceof SecretUnavailableError || error instanceof SecretEmptyError ? error : undefined;
-
-const warmSecrets = async (resolver: SecretResolver, names: readonly string[], signal: AbortSignal): Promise<ReadonlyMap<string, Error>> => {
-  const failures = new Map<string, Error>();
-  for (const name of names) {
-    try {
-      await resolver.read(name, signal);
-    } catch (error) {
-      const failure = startupFailureOf(error);
-      if (failure === undefined) throw error;
-      failures.set(name, failure);
-    }
-  }
-  return failures;
-};
 
 type HandedCredential = (name: string, signal: AbortSignal) => Promise<string | undefined>;
 
@@ -837,9 +822,13 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const codeDigest = await codeDigestOfRunningProcess();
     const secretStore =
       options.secretStore ?? createGivenSecretStore(options.execWithStdin ?? createExecWithStdin({ ...childEnv, ...givenSecretStoreChildEnv(options.env) }), options.env);
-    const secretResolver = createSecretResolver(secretStore);
-    const secretFailures = await warmSecrets(secretResolver, secretNames(settings), signal ?? new AbortController().signal);
-    for (const [name, failure] of secretFailures) logger.warn(`secret ${name} is unavailable: ${failure.message}`);
+    const secretResolverOfPart = (): SecretResolver => {
+      const resolver = createSecretResolver(secretStore);
+      resolver.onResolved((name, value) => {
+        for (const credential of credentialValuesOf({}, [], new Map([[name, value]]), (message) => logger.warn(message), undefined)) shared.redactor.add(credential);
+      });
+      return resolver;
+    };
     signal?.throwIfAborted();
 
     let handedCredential: HandedCredential = async () => undefined;
@@ -920,7 +909,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         const probed = await createProbedOllamaAdapter(name, target, paths.probe, clock, userDialects, liveness, outbound, probes);
         return unmanagedPart(keys.part, probed.adapter, targetCounterOf({ target, codeDigest, ...(probed.upstreamIdentity === undefined ? {} : { upstreamIdentity: probed.upstreamIdentity }) }));
       }
-      const readKey = apiKeyReader(options.env, secretResolver, target, handedCredential);
+      const readKey = apiKeyReader(options.env, secretResolverOfPart(), target, handedCredential);
       const identify = identificationOf(name, target, outbound);
       if (target.adapter === 'chat-completions' && target.toolCalling === 'auto') {
         const probed = await createAutoChatCompletionsAdapter(name, target, readKey, paths.probe, clock, identify, userDialects, liveness, outbound, probes);
@@ -1005,7 +994,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
         ...(previous === undefined ? {} : { previous: previous.gateway.router }),
         live: [...liveEpochs].map((epoch) => epoch.gateway.router),
       });
-      for (const credential of credentialValuesOf(options.env, credentialEnvNames(current), secretResolver.resolved(), (message) => logger.warn(message), outbound.config)) shared.redactor.add(credential);
+      for (const credential of credentialValuesOf(options.env, credentialEnvNames(current), new Map(), (message) => logger.warn(message), outbound.config)) shared.redactor.add(credential);
       const priceTable = definePriceTable(current.pricing === undefined ? [] : current.pricing);
       const epoch: ProcessEpoch = {
         gateway: { router, priceTable, telemetry: undefined },
@@ -1077,10 +1066,6 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       epochs,
       ...shared,
       credentials: [],
-      credentialFeed: (add) =>
-        secretResolver.onResolved((name, value) => {
-          for (const credential of credentialValuesOf({}, [], new Map([[name, value]]), (message) => logger.warn(message), undefined)) add(credential);
-        }),
       clock,
       timers,
       random,

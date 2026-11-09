@@ -39,7 +39,7 @@ export type RunServiceOptions = {
   socketPath: string;
   pid: number;
   startedAt: string;
-  sandboxKind: () => SandboxKind;
+  sandboxKind: (signal: AbortSignal) => Promise<SandboxKind>;
   protectedRootAreas: readonly string[];
   notifier: RunNotifier;
   modelAliases: () => Promise<readonly string[]>;

@@ -81,7 +81,7 @@ export type RunAppDeps = {
   evidenceRun: (project: string) => EvidenceRun;
   isDraining(): boolean;
   beginDraining(): void;
-  health: { pid: number; startedAt: string; sandbox: () => SandboxKind };
+  health: { pid: number; startedAt: string; sandbox: (signal: AbortSignal) => Promise<SandboxKind> };
   protectedRootAreas: readonly string[];
   defaults: RunServiceDefaults;
   notifier: RunNotifier;
@@ -170,7 +170,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     });
   };
 
-  const health: Handler = () =>
+  const health: Handler = async (context) =>
   json({
     status: 'ok',
     version: deps.version,
@@ -178,7 +178,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     pid: deps.health.pid,
     startedAt: deps.health.startedAt,
     state: deps.isDraining() ? 'draining' : 'running',
-    sandbox: deps.health.sandbox(),
+    sandbox: await deps.health.sandbox(context.req.raw.signal),
   });
 
   const drainingError = () => serviceUnavailable('draining', 'the service is draining and accepts no new work');

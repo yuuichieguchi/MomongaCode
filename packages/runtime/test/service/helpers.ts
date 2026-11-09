@@ -483,7 +483,7 @@ export const serviceOptions = (
   socketPath: base.socketPath,
   pid: SERVICE_PID,
   startedAt: STARTED_AT,
-  sandboxKind: () => overrides.sandboxKind ?? 'seatbelt',
+  sandboxKind: async () => overrides.sandboxKind ?? 'seatbelt',
   protectedRootAreas: overrides.protectedRootAreas ?? protectedAreasOf(base.home),
   modelAliases: base.ports.modelAliases,
   modelCapabilities: async () => {
