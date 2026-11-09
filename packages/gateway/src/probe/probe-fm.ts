@@ -7,7 +7,7 @@ import { FM_SERVE_DEFAULTS } from '../defaults.ts';
 import { createExecFn, createExecWithStdin } from '../managed/fm-processes.ts';
 import { readOsBuild, sha256OfFile } from '../managed/fm-record-key.ts';
 import { LICENSE_NOT_ACCEPTED_EXIT_CODE, LICENSE_REMEDIATION, PRECONDITION_MESSAGE, createFmServe, outputOf } from '../managed/fm-serve.ts';
-import type { ExecFn, FmServe } from '../managed/fm-serve.ts';
+import type { ExecFn, FmServe, FmServeTimers, SpawnFn } from '../managed/fm-serve.ts';
 import { parseCount } from '../managed/fm-target.ts';
 import { FM_VOCABULARY } from '../adapters/chat-completions/vocabulary.ts';
 import { decideToolCalling } from './decide.ts';
@@ -37,7 +37,7 @@ export type ProbeManagedFmOptions = {
 
 export type ProbeManagedFmResult = { report: ProbeReport; toolCalling: ToolCallingMode; record: ProbeRecordKey };
 
-export type MeasureManagedFmOptions = Omit<ProbeManagedFmOptions, 'paths' | 'target' | 'signal'> & { markerDirectory?: string; serves?: Set<FmServe> };
+export type MeasureManagedFmOptions = Omit<ProbeManagedFmOptions, 'paths' | 'target' | 'signal'> & { markerDirectory?: string; serves?: Set<FmServe>; spawn?: SpawnFn; timers?: FmServeTimers };
 
 const childEnvOf = (env: Readonly<Record<string, string | undefined>>): Record<string, string> => ({ ...minimalChildEnv(env), ...declaredChildEnv(env, FM_CHILD_ENV_NAMES) });
 
@@ -61,6 +61,8 @@ export const measureManagedFm =
       onWarning: options.onWarning,
       exec,
       ...(options.markerDirectory === undefined ? {} : { markerDirectory: options.markerDirectory }),
+      ...(options.spawn === undefined ? {} : { spawn: options.spawn }),
+      ...(options.timers === undefined ? {} : { timers: options.timers }),
     });
     options.serves?.add(fmServe);
     try {

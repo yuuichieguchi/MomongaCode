@@ -64,7 +64,7 @@ import { missingApiKeyError, secretUnavailableError } from './core/errors.ts';
 import { MIN_CREDENTIAL_CHARS } from './core/redaction.ts';
 import { PRECONDITION_MESSAGE, createFmServe } from './managed/fm-serve.ts';
 import { PreconditionFailedError } from './adapters/shared/failures.ts';
-import type { ExecFn, FmServe, SpawnFn } from './managed/fm-serve.ts';
+import type { ExecFn, FmServe, FmServeTimers, SpawnFn } from './managed/fm-serve.ts';
 import { createExecFn, createExecWithStdin } from './managed/fm-processes.ts';
 import { createFmKeyCache, readOsBuild } from './managed/fm-record-key.ts';
 import { PROBE_RETRY_AFTER_MS, createAutoProbe, targetNotReadyError } from './probe/auto-probe.ts';
@@ -647,6 +647,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       ...(options.measureOllama === undefined ? {} : { measureOllama: options.measureOllama }),
     };
     const startKey = fmTargets.length > 0 && (await files.isUsableBinary(binary)) ? await fmKeys.read('fm') : undefined;
+    const fmTimers: FmServeTimers = { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout, now: () => clock.now() };
     const fmContext: FmContext | undefined =
       fmTargets.length === 0
         ? undefined
@@ -662,7 +663,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
               onWarning: (message) => logger.warn(message),
               exec,
               ...(options.spawn === undefined ? {} : { spawn: options.spawn }),
-              timers: { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout, now: () => clock.now() },
+              timers: fmTimers,
             }),
             execWithStdin: options.execWithStdin ?? createExecWithStdin(childEnv),
             osBuild: startKey?.osBuild ?? (await readOsBuild(exec, AbortSignal.timeout(FM_SERVE_DEFAULTS.healthTimeoutMs))),
@@ -682,6 +683,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
                 markerDirectory: path.join(paths.markers.targets, `fm-probe-${target}`),
                 serves: probeServes,
                 onWarning: (message) => logger.warn(message),
+                ...(options.spawn === undefined ? {} : { spawn: options.spawn }),
+                timers: fmTimers,
               }),
           };
     signal?.throwIfAborted();
