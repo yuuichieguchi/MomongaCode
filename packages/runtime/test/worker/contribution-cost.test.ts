@@ -112,14 +112,15 @@ const terminalCounts = async (steps: number, path: Path): Promise<Counts> => {
   boundStore = env.store;
   boundPath = env.dbPath;
   const saver = env.enqueue('Save notes', { history: 'fresh' });
-  const saverClaim = env.seed(
+  const saverClaim = await env.seed(
     saver.id,
     Array.from({ length: MEMORIES }, (_unused, index): RunEventPayload => ({ type: 'tool.call', callId: `save_${index}`, providerCallId: `save_${index}`, name: 'MemorySave', kind: 'other', title: 'save', rawInput: {} })),
     'hold',
   );
-  const memoryIds = Array.from({ length: MEMORIES }, (_unused, index) =>
-    env.store.memories.save({ origin: 'trusted', scope: 'user', project: null, text: `note ${index} zorpWord${index} 設定ファイル${index}`, runId: saver.id, step: 1, callId: `save_${index}` }).memory.id,
-  );
+  const memoryIds: string[] = [];
+  for (let index = 0; index < MEMORIES; index += 1) {
+    memoryIds.push((await env.store.memories.save({ origin: 'trusted', scope: 'user', project: null, text: `note ${index} zorpWord${index} 設定ファイル${index}`, runId: saver.id, step: 1, callId: `save_${index}` })).memory.id);
+  }
   expect((await env.store.transition(saverClaim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
   env.clock.advance(1);
   const run = env.enqueue('Work through the logs', { history: 'fresh' });
@@ -132,7 +133,7 @@ const terminalCounts = async (steps: number, path: Path): Promise<Counts> => {
     events.push(...stepEvents(step));
     if (step === middle) events.push({ type: 'context.compacted', item: { type: 'message', role: 'user', content: 'summary' }, summary: 'summary', replacedThroughSeq: 1 + 2 * middle });
   }
-  const claim = env.seed(run.id, events, 'hold');
+  const claim = await env.seed(run.id, events, 'hold');
   const state = env.store.readRunEvents(run.id, 0, 100_000).reduce(foldRunState, initialRunState({ runId: run.id, sessionId: run.sessionId }));
   expect(env.store.writeSnapshot(claim, state.lastSeq, state).kind).toBe('ok');
 

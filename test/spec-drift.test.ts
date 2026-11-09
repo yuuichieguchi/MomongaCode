@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createKernelLockMechanism } from '@momonga/foundation';
-import { EVENT_TYPES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES } from '@momonga/protocol';
+import { EVENT_TYPES, RUN_STATUSES, STOP_REASONS, TERMINAL_STATUSES, UNKNOWN_VALUE } from '@momonga/protocol';
 import { moduleOf, readManifest } from './formal/manifest.ts';
 import { CLAIM_STATUSES, DEAD_LETTER_TRANSITIONS, SERVICE_TRANSITIONS, SWEEP_TRANSITIONS, WORKER_TRANSITIONS } from '@momonga/store';
 
@@ -83,8 +83,8 @@ describe('RunRecovery.tla against the implementation', () => {
     ['ServiceEdges', SERVICE_TRANSITIONS],
     ['SweepEdges', SWEEP_TRANSITIONS],
     ['DeadLetterEdges', DEAD_LETTER_TRANSITIONS],
-  ])('%s is the transition table of the store', (name, table) => {
-    expect(tableOf(name)).toEqual(codeTable(table));
+  ])('%s is the transition table of the store, and a status this build does not know has no edge', (name, table) => {
+    expect(codeTable(table)).toEqual({ ...tableOf(name), [UNKNOWN_VALUE]: [] });
   });
 
   it('ends a cancel of every non-terminal status through CANCELLING, in the model and in the store (O13): no service or sweep edge leads to CANCELLED', () => {

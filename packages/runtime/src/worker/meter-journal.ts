@@ -6,8 +6,8 @@ import { isRecord } from './json.ts';
 
 type ObservedRunEvent = Extract<RunEvent, { type: 'meter.observed' }>;
 
-export const foldMeterFor = (store: RuntimeStore, sessionId: string, capabilities: Capabilities, counter: string): MeterMemory => {
-  const record = store.meterRecordOf(sessionId, {
+export const foldMeterFor = async (store: RuntimeStore, sessionId: string, capabilities: Capabilities, counter: string): Promise<MeterMemory> => {
+  const record = await store.meterRecordOf(sessionId, {
     counter,
     contextWindow: capabilities.contextWindow,
     ...(capabilities.tokenErrorRatio === undefined ? {} : { tokenErrorRatio: capabilities.tokenErrorRatio }),

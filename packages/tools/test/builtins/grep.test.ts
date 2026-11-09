@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { HAS_RG, JS_BACKEND_PATH, RG_PATH, makeBuiltins, onCleanup, range, resultOf } from './fixtures.ts';
+import { HAS_RG, RG_PATH, makeBuiltins, onCleanup, range, resultOf } from './fixtures.ts';
 import type { Builtins } from './fixtures.ts';
 
 const BASE_TIME = 1_700_000_000;
@@ -33,7 +33,6 @@ const makeTree = async (realSandbox: boolean): Promise<Tree> => {
 
 const backends: Array<[string, string, boolean, boolean]> = [
   ['ripgrep', RG_PATH, HAS_RG, true],
-  ['JS fallback', JS_BACKEND_PATH, true, false],
 ];
 
 const grepIn = (tree: Tree, envPath: string) => async (args: Record<string, unknown>, extra: Parameters<Builtins['run']>[2] = {}) =>

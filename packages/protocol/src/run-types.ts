@@ -3,6 +3,7 @@ import type { ToolFile, WorkingFacts } from './working-facts.ts';
 import type { HookExecution } from './hooks.ts';
 import type { PrefixEvent } from './prefix-events.ts';
 import type { MemoryStatus } from './memory.ts';
+import type { Stored } from './stored-value.ts';
 import type { CompactionInputItem, InputItem, MessageInputItem } from './open-responses.ts';
 import type { ApprovalBasis, PermissionDenial } from './permission-denial.ts';
 import type { CallTiming, ModelCost, TokenAnatomy } from './token-anatomy.ts';
@@ -262,7 +263,7 @@ export type RunEventPayload =
   | { type: 'notice'; level: 'info' | 'warning' | 'error'; message: string; code?: string; toolKey?: string; reduction?: NoticeReduction };
 
 export type SessionEventPayload =
-  | { type: 'mode.changed'; mode: PermissionMode }
+  | { type: 'mode.changed'; mode: Stored<PermissionMode> }
   | { type: 'model.changed'; modelAlias: string; previousModelAlias: string };
 
 export type SessionEvent = SessionEventPayload & { id: number; sessionId: string; createdAt: number };

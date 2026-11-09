@@ -65,6 +65,24 @@ describe('release-key.ts', () => {
     expect(readPinnedReleaseKey(repoPinning(release.publicKey, release.publicKey))).toBe(release.publicKey);
   });
 
+  it('reads a declaration indented by the structure of the installer', () => {
+    const repo = repoPinning(release.publicKey, release.publicKey);
+    fs.writeFileSync(path.join(repo, 'scripts/install.ps1'), `& {\n  $signatureName = 'SHA256SUMS.sig'\n  $embeddedReleasePublicKey = '${release.publicKey}'\n}\n`);
+    expect(readPinnedReleaseKey(repo)).toBe(release.publicKey);
+  });
+
+  it('refuses an installer that declares the value twice', () => {
+    const repo = repoPinning(release.publicKey, release.publicKey);
+    fs.appendFileSync(path.join(repo, 'scripts/install.ps1'), `  $embeddedReleasePublicKey = '${release.publicKey}'\n`);
+    expect(() => readPinnedReleaseKey(repo)).toThrow('scripts/install.ps1 has 2 embedded release declarations');
+  });
+
+  it('refuses an installer that does not declare the value', () => {
+    const repo = repoPinning(release.publicKey, release.publicKey);
+    fs.writeFileSync(path.join(repo, 'scripts/install.sh'), '#!/bin/bash\n');
+    expect(() => readPinnedReleaseKey(repo)).toThrow('scripts/install.sh has no embedded release declaration');
+  });
+
   it('reads the installers of this repository, which pin no key until the maintainers choose one', () => {
     expect(() => readPinnedReleaseKey(repoRoot)).toThrow('no release signing key is pinned');
   });

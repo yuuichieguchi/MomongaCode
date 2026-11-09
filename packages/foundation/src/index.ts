@@ -23,7 +23,7 @@ export type { Redactor, RedactorOptions } from './redaction.ts';
 export { safeSlice } from './text-slice.ts';
 export { HISTORY_OUTPUT_HEAD_CHARS, HISTORY_OUTPUT_TAIL_CHARS, cutToChars, keepingHeadAndTail } from './history-output.ts';
 export { OUTPUT_READER_TOOL, TRUNCATION_MARKER_SOURCE, truncationMarker } from './output-marker.ts';
-export { immediateTx, joinedTx, migrate, openDatabase, readTx } from './sqlite.ts';
+export { highestAppliedMigration, immediateTx, joinedTx, migrate, openDatabase, readTx } from './sqlite.ts';
 export type { MigrateResult, Migration, OpenDatabaseOptions } from './sqlite.ts';
 export { SSE_RECONNECT_BASE_MS, SSE_RECONNECT_MAX_MS, decodeSse, encodeSse } from './sse.ts';
 export { createBrowserOpener, openCommandFor } from './open-browser.ts';
@@ -142,8 +142,8 @@ export type { SecretKeyFile, SecretKeyFileOptions } from './secret-key-file.ts';
 export { isLoopbackHost, redactedUrl, transportUrlMessage, transportUrlProblem } from './loopback.ts';
 export type { TransportUrlProblem } from './loopback.ts';
 export { matchesNoProxy, NETWORK_ENV_NAMES, routeOf } from './network-route.ts';
-export { OutboundConnectionError, createOutboundDispatcher, findOutboundError, installTrust, outboundFetch, proxyPasswordsOf } from './outbound.ts';
-export type { OutboundFailure, OutboundFetch, OutboundHop, OutboundNetwork, OutboundOptions, TrustFailure, TrustFiles, TrustReport, TrustSource } from './outbound.ts';
+export { OutboundConnectionError, createOutboundDispatcher, findOutboundError, installTrust, outboundFetch, outboundPlan, proxyHopError, proxyPasswordsOf, proxyReplyError } from './outbound.ts';
+export type { OutboundFailure, OutboundFetch, OutboundHop, OutboundNetwork, OutboundOptions, OutboundPlan, TrustFailure, TrustFiles, TrustReport, TrustSource } from './outbound.ts';
 export type { Destination, NetworkConfig, NetworkEnvName, NetworkSettingKey, NetworkSource, Route, SourcedValue, UnsupportedProxyReason } from './network-route.ts';
 export {
   EXIT_ALREADY_RUNNING,
@@ -154,6 +154,8 @@ export {
   DAEMON_MARKER_FD,
   ENTRY_HARD_EXIT_MARGIN_MS,
   LOCK_FD,
+  FM_STOP_GRACE_MS,
+  GATEWAY_CLOSE_GRACE_MS,
   GATEWAY_MAX_CLOSE_MS,
   LIFELINE_FD,
   MINIMAL_CHILD_ENV_LC_PREFIX,
@@ -183,6 +185,7 @@ export {
   minimalChildEnv,
   declaredChildEnv,
   parseReadyLine,
+  fmServeStopBoundMs,
   runtimeMaxCloseMs,
   supervisorMaxCloseMs,
 } from './process-contract.ts';

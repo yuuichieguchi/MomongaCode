@@ -1,3 +1,7 @@
+export { UNKNOWN_VALUE } from './stored-value.ts';
+export { enforcedBehaviorOf } from './governance.ts';
+export type { EnforcedBehavior } from './governance.ts';
+export type { Stored } from './stored-value.ts';
 export type {
   AllowedToolsForm,
   AdapterSampling,
@@ -257,6 +261,7 @@ export {
   RECOVERY_CAUSES,
   RECOVERY_OUTCOMES,
   RELIABILITY_FORMAT,
+  RETIRED_RELIABILITY_FORMATS,
   REPORT_PAGE_ROWS,
   REVIEW_SAMPLE_SIZE,
 } from './reliability.ts';
@@ -300,6 +305,8 @@ export type {
   McpAuthState,
   McpAuthorizationView,
   McpServerView,
+  OpaqueEvent,
+  PublicOpaqueEvent,
   PublicRunEvent,
   RunHealth,
   RunTraceCall,
@@ -351,6 +358,8 @@ export type {
   AddMemoryRequest,
   MemoriesResponse,
   MemoryEvidence,
+  StoredMemoryEvidence,
+  StoredMemorySource,
   MemoryEvidenceKind,
   MemoryKind,
   MemoryOrigin,

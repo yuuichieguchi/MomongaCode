@@ -230,7 +230,7 @@ describe('a pinned deferred tool counts as offered in the usage window (open ite
     await warmWindow(env);
 
     const first = await runDeferred(env, [textStep('Done.')]);
-    const window = toolUsageWindowOf(env.store, env.project);
+    const window = await toolUsageWindowOf(env.store, env.project);
     const second = await runDeferred(env, [textStep('Done.')]);
 
     expect(namesOf(first.requests[0]?.body)).toEqual([LOADER, 'Echo']);

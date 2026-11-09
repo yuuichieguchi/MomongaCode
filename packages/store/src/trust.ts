@@ -2,25 +2,26 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { comparableContains, type Clock } from '@momonga/foundation';
-import { expectOneOf, readerFor } from './rows.ts';
-import type { TrustDecision, TrustStore } from './types.ts';
+import { readerFor, storedOneOf } from './rows.ts';
+import type { DecodeContext } from './decode-context.ts';
+import type { StoredTrustDecision, TrustStore } from './types.ts';
 
 const DECISIONS = ['trusted', 'untrusted'] as const;
 
-export const createTrustStore = (db: DatabaseSync, clock: Clock, home: string): TrustStore => {
+export const createTrustStore = (db: DatabaseSync, clock: Clock, home: string, context: DecodeContext): TrustStore => {
   const select = db.prepare('SELECT * FROM trust WHERE path = :path');
   const upsert = db.prepare(
     `INSERT INTO trust (path, decision, decided_at) VALUES (:path, :decision, :decidedAt)
      ON CONFLICT (path) DO UPDATE SET decision = excluded.decision, decided_at = excluded.decided_at`,
   );
   const remove = db.prepare('DELETE FROM trust WHERE path = :path');
-  const decisionAt = (real: string): TrustDecision | undefined => {
+  const decisionAt = (real: string): StoredTrustDecision | undefined => {
     const row = select.get({ path: real });
     if (row === undefined) return undefined;
-    return expectOneOf('trust', real, 'decision', DECISIONS, readerFor('trust', real, row).string('decision'));
+    return storedOneOf(context, 'trust', real, 'decision', DECISIONS, readerFor('trust', real, row).string('decision'));
   };
   return {
-    get: (target): TrustDecision | undefined => decisionAt(fs.realpathSync.native(target)),
+    get: (target): StoredTrustDecision | undefined => decisionAt(fs.realpathSync.native(target)),
     decisionFor: (target) => {
       let start: string;
       try {

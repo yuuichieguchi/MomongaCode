@@ -145,8 +145,8 @@ export const enqueue = (store: RuntimeStore, sessionId: string, input = 'hello',
   return result.run;
 };
 
-export const cancel = (store: RuntimeStore, runId: string): Run => {
-  const result = store.requestCancel(runId);
+export const cancel = async (store: RuntimeStore, runId: string): Promise<Run> => {
+  const result = await store.requestCancel(runId);
   if (result.kind !== 'ok') throw new Error(`expected run ${runId} to exist, got ${result.kind}`);
   return result.run;
 };
@@ -159,7 +159,7 @@ export const deadLetterAll = async (store: RuntimeStore): Promise<string[]> => {
 };
 
 export const cancelToEnd =async (store: RuntimeStore, runId: string): Promise<Run> => {
-  const requested = cancel(store, runId);
+  const requested = await cancel(store, runId);
   if (requested.status !== 'CANCELLING') throw new Error(`expected run ${runId} to become CANCELLING, got ${requested.status}`);
   const failures: unknown[] = [];
   const finished = await store.finishCancelled((error) => void failures.push(error));

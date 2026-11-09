@@ -29,7 +29,7 @@ export const finalTextOf = (state: RunState): string => {
 };
 
 export const createChildRuns = ({ store, modelAliases }: ChildRunsOptions): ChildRuns => {
-  const outcomeOf = (run: Run): ChildRunOutcome => {
+  const outcomeOf = async (run: Run): Promise<ChildRunOutcome> => {
     if (!isTerminalStatus(run.status)) return { state: 'running', runId: run.id, sessionId: run.sessionId };
     return {
       state: 'finished',
@@ -38,12 +38,12 @@ export const createChildRuns = ({ store, modelAliases }: ChildRunsOptions): Chil
       status: run.status,
       ...(run.stopReason === undefined ? {} : { stopReason: run.stopReason }),
       ...(run.error === undefined ? {} : { error: run.error }),
-      text: store.finalTextOf(run.id),
+      text: await store.finalTextOf(run.id),
     };
   };
 
   return {
-    outcomeOf: (runId) => {
+    outcomeOf: async (runId) => {
       const run = store.getRun(runId);
       if (run === undefined) throw new Error(`unknown child run ${runId}`);
       return outcomeOf(run);

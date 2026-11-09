@@ -3381,6 +3381,92 @@
       "budgetCpuSeconds": 7
     },
     {
+      "config": "RipgrepExtract",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 7232,
+      "measuredSeconds": 2.92,
+      "measuredCpuSeconds": 4.53,
+      "budgetCpuSeconds": 13
+    },
+    {
+      "config": "RipgrepExtract.split",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 10442,
+      "measuredSeconds": 2.81,
+      "measuredCpuSeconds": 4.85,
+      "budgetCpuSeconds": 13
+    },
+    {
+      "config": "RipgrepExtract.blobBad",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 1816,
+      "measuredSeconds": 2.11,
+      "measuredCpuSeconds": 2.77,
+      "budgetCpuSeconds": 9
+    },
+    {
+      "config": "RipgrepExtract.repair",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 31596,
+      "measuredSeconds": 4.32,
+      "measuredCpuSeconds": 7.04,
+      "budgetCpuSeconds": 18
+    },
+    {
+      "config": "RipgrepExtract.renameDir",
+      "role": "evidence",
+      "expect": {
+        "violates": "SpuriousFree",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 158,
+      "measuredSeconds": 1.58,
+      "measuredCpuSeconds": 1.71,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "RipgrepExtract.noVerify",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoBadSpawn",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 88,
+      "measuredSeconds": 2.05,
+      "measuredCpuSeconds": 1.57,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "RipgrepExtract.sweepAll",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoLiveStagedLost",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 68,
+      "measuredSeconds": 1.53,
+      "measuredCpuSeconds": 1.54,
+      "budgetCpuSeconds": 7
+    },
+    {
       "config": "PlanCredential.persistDeterministicWide",
       "role": "check",
       "expect": "holds",
@@ -3616,6 +3702,98 @@
       "measuredSeconds": 9.1,
       "measuredCpuSeconds": 5.1,
       "budgetCpuSeconds": 14
+    },
+    {
+      "config": "DerivedRepair",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 5472,
+      "measuredSeconds": 2.6,
+      "measuredCpuSeconds": 5.76,
+      "budgetCpuSeconds": 15
+    },
+    {
+      "config": "DerivedRepair.sessionWatermark",
+      "role": "check",
+      "expect": "holds",
+      "args": [],
+      "tier": "deep",
+      "distinctStates": 18168,
+      "measuredSeconds": 6.02,
+      "measuredCpuSeconds": 11.38,
+      "budgetCpuSeconds": 26
+    },
+    {
+      "config": "DerivedRepair.today",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoBadRead",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 31,
+      "measuredSeconds": 1.7,
+      "measuredCpuSeconds": 1.91,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "DerivedRepair.sessionPerRun",
+      "role": "evidence",
+      "expect": {
+        "violates": "Coherence",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 61,
+      "measuredSeconds": 1.72,
+      "measuredCpuSeconds": 2.02,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "DerivedRepair.staleMark",
+      "role": "evidence",
+      "expect": {
+        "violates": "Coherence",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 335,
+      "measuredSeconds": 1.66,
+      "measuredCpuSeconds": 2.18,
+      "budgetCpuSeconds": 8
+    },
+    {
+      "config": "DerivedRepair.advanceAtEnd",
+      "role": "evidence",
+      "expect": {
+        "violates": "Coherence",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 107,
+      "measuredSeconds": 1.61,
+      "measuredCpuSeconds": 1.93,
+      "budgetCpuSeconds": 7
+    },
+    {
+      "config": "DerivedRepair.readAfterRepair",
+      "role": "evidence",
+      "expect": {
+        "violates": "NoBadRead",
+        "exitCode": 12
+      },
+      "args": [],
+      "tier": "every-run",
+      "distinctStates": 684,
+      "measuredSeconds": 1.74,
+      "measuredCpuSeconds": 2.44,
+      "budgetCpuSeconds": 8
     }
   ]
 }

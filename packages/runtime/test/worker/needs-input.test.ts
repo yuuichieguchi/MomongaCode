@@ -57,7 +57,7 @@ describe('worker input request', () => {
     const callId = env.gateway.callId('call_ask');
     const requested = env.ofType(run.id, 'tool.elicitation.requested');
     expect(requested).toEqual([expect.objectContaining({ callId, server: SERVER, requests: REQUESTS })]);
-    const pending = env.store.pendingElicitationViews(run.id);
+    const pending = await env.store.pendingElicitationViews(run.id);
     expect(pending).toEqual([expect.objectContaining({ id: requested[0]?.inputId, callId, server: SERVER, requests: REQUESTS, expiresAt: START_MS + DEFAULT_TTL_MS })]);
     expect(env.fold(run.id).pendingCalls[callId]).toMatchObject({ status: 'awaiting_input', input: { inputId: requested[0]?.inputId, server: SERVER, requests: REQUESTS } });
     const key = env.fold(run.id).pendingCalls[callId]?.idemKey;
@@ -71,7 +71,7 @@ describe('worker input request', () => {
 
     const { run } = await ask(env, [], { approvalTtlMs: 123_000 });
 
-    expect(env.store.pendingElicitationViews(run.id)[0]?.expiresAt).toBe(START_MS + 123_000);
+    expect((await env.store.pendingElicitationViews(run.id))[0]?.expiresAt).toBe(START_MS + 123_000);
   });
 
   it('never expires the request after the deadline of the run', async () => {
@@ -82,7 +82,7 @@ describe('worker input request', () => {
 
     await env.runOnce(env.worker('worker-1', { toolList: () => [askTool([])] }));
 
-    expect(env.store.pendingElicitationViews(run.id)[0]?.expiresAt).toBe(deadlineAt);
+    expect((await env.store.pendingElicitationViews(run.id))[0]?.expiresAt).toBe(deadlineAt);
   });
 
   it('resumes the call with the checkpoint and the answers of the person and completes the run', async () => {
@@ -120,10 +120,10 @@ describe('worker input request', () => {
 describe('cancelling a run that waits for input', () => {
   const USAGE = { input_tokens: 50, output_tokens: 5, total_tokens: 55 };
 
-  const seedAwaiting = (env: Env) => {
+  const seedAwaiting = async (env: Env) => {
     const run = env.enqueue('Ask the user');
     const key = toolKey(run.id, 1, 'call_ask');
-    const claim = env.seed(
+    const claim = await env.seed(
       run.id,
       [
         { type: 'model.responded', step: 1, attempt: 1, response: { status: 'completed', output: [functionCallItem({ callId: 'call_ask', name: 'Ask', args: {} })], usage: USAGE } },
@@ -136,14 +136,14 @@ describe('cancelling a run that waits for input', () => {
     const ledger = env.store.idempotency.holding(claim);
     ledger.begin(key, { expiresAt: START_MS + 86_400_000, meta: { tool: 'Ask' } });
     ledger.checkpoint(key, CHECKPOINT);
-    expect(env.cancel(run.id).status).toBe('CANCELLING');
+    expect((await env.cancel(run.id)).status).toBe('CANCELLING');
     return { run, key };
   };
 
   it('hands the checkpoint of the waiting call to its tool, clears it and cancels the run', async () => {
     const env = await makeEnv();
     const released: Array<Record<string, unknown>> = [];
-    const { run, key } = seedAwaiting(env);
+    const { run, key } = await seedAwaiting(env);
 
     await env.runOnce(env.worker('worker-1', { toolList: () => [askTool([], async (checkpoint) => void released.push(checkpoint))] }));
 
@@ -157,7 +157,7 @@ describe('cancelling a run that waits for input', () => {
 
   it('cancels the run and journals an error notice when the tool cannot release the checkpoint, keeping the record for retry', async () => {
     const env = await makeEnv();
-    const { run, key } = seedAwaiting(env);
+    const { run, key } = await seedAwaiting(env);
 
     await env.runOnce(
       env.worker('worker-1', {

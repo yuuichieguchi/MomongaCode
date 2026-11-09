@@ -19,6 +19,7 @@ export type RemoveOptions = { readonly recursive: boolean };
 export interface FileSystem extends AtomicWriteFileSystem {
   rm(file: string, options?: RemoveOptions): Promise<void>;
   stat(file: string): Promise<fs.Stats>;
+  lstat(file: string): Promise<fs.Stats>;
   readdir(directory: string): Promise<string[]>;
   readdirEntries(directory: string): Promise<fs.Dirent[]>;
   readFile(file: string): Promise<Uint8Array>;
@@ -63,6 +64,7 @@ export const nodeFileSystem: FileSystem = {
   link: (from, to) => fs.promises.link(from, to),
   rm: (file, options) => fs.promises.rm(file, { force: true, recursive: options?.recursive === true }),
   stat: (file) => fs.promises.stat(file),
+  lstat: (file) => fs.promises.lstat(file),
   readdir: (directory) => fs.promises.readdir(directory),
   readdirEntries: (directory) => fs.promises.readdir(directory, { withFileTypes: true }),
   readFile: async (file) => new Uint8Array(await fs.promises.readFile(file)),

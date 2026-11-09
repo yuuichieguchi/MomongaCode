@@ -1,3 +1,6 @@
+import { UNKNOWN_VALUE } from '@momonga/protocol';
+import type { Stored } from '@momonga/protocol';
+import type { DecodeContext } from './decode-context.ts';
 import type { SQLOutputValue } from 'node:sqlite';
 
 export type Row = Record<string, SQLOutputValue>;
@@ -67,6 +70,39 @@ export const expectStringRecord = (table: string, identity: string, column: stri
     if (typeof entry !== 'string') throw corrupt(table, identity, `column ${column} key ${key} must be a string`);
   }
   return record as Record<string, string>;
+};
+
+export { UNKNOWN_VALUE } from '@momonga/protocol';
+export type { Stored } from '@momonga/protocol';
+
+export class UnknownValueError extends Error {
+  constructor(what: string) {
+    super(`${what} holds a value this build does not know, so it is not acted on`);
+    this.name = 'UnknownValueError';
+  }
+}
+
+export const knownValue = <T extends string>(value: Stored<T>, what: string): T => {
+  if (value === UNKNOWN_VALUE) throw new UnknownValueError(what);
+  return value;
+};
+
+export const refuseUnknown = (what: string, values: readonly (string | null | undefined)[]): void => {
+  if (values.includes(UNKNOWN_VALUE)) throw new Error(`${what} holds a value this build does not know, so it is not written`);
+};
+
+export const storedOneOf = <T extends string>(
+  context: DecodeContext,
+  table: string,
+  identity: string,
+  column: string,
+  allowed: readonly T[],
+  value: string,
+): Stored<T> => {
+  const match = allowed.find((candidate) => candidate === value);
+  if (match !== undefined) return match;
+  if (context.databaseIsNewer()) return UNKNOWN_VALUE;
+  throw corrupt(table, identity, `column ${column} has unexpected value "${value}"`);
 };
 
 export const expectOneOf = <T extends string>(

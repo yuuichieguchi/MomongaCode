@@ -103,6 +103,24 @@ export type {
   ReadDenial,
   ReadDenialOptions,
 } from './history/index.ts';
+export {
+  RIPGREP_BINARY_ASSET,
+  RIPGREP_EXECUTABLE_MODE,
+  RIPGREP_MANIFEST_ASSET,
+  RIPGREP_NOTICE_FILE,
+  RIPGREP_NOTICES_ASSET,
+  RIPGREP_REPLACEMENT,
+  RIPGREP_RESOLUTION_STEPS,
+  RIPGREP_STAGED_PREFIX,
+  RipgrepDistributionError,
+  ensureBundledRipgrep,
+  parseRipgrepManifest,
+  ripgrepDirectoryName,
+  stagedOwnerOf,
+} from './ripgrep-distribution.ts';
+export type { BundledRipgrep, BundledRipgrepResolver, RipgrepDistributionFiles, RipgrepDistributionPorts, RipgrepEntryKind, RipgrepManifest, RipgrepResolutionStep } from './ripgrep-distribution.ts';
+export { createHostRipgrepLocator, createRipgrepLocator, findRipgrepOnPath, isRegularFileOnHost, ripgrepUnavailableMessage } from './ripgrep-locator.ts';
+export type { HostRipgrepLocatorOptions, RipgrepLocation, RipgrepLocator, RipgrepLocatorPorts, RipgrepSource } from './ripgrep-locator.ts';
 export { createMarkerOwners, unownedOf, unsettledKeys } from './marker-owners.ts';
 export type { MarkerOwner, MarkerOwners } from './marker-owners.ts';
 export { removeMarkerFile } from './marker-settle.ts';

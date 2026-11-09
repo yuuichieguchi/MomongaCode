@@ -30,14 +30,14 @@ const withPreparer = (replies: Reply[] = [], options: { maxAttempts?: number; ma
 };
 
 describe('the port of the store (ContributionPreparer, StalePreparation, JournalThreadError, createJournalReader)', () => {
-  it('exports the stale refusal and the thread failure as errors, and the journal reader as a function', () => {
+  it('exports the stale refusal and the thread failure as errors, and the journal reader as a function', async () => {
     expect(new StalePreparation('run-1')).toBeInstanceOf(Error);
     expect(new JournalThreadError('the journal thread exited')).toBeInstanceOf(Error);
     expect(new JournalThreadError('the journal thread exited').name).toBe('JournalThreadError');
     expect(typeof createJournalReader).toBe('function');
   });
 
-  it('has no prepareTerminal: a caller can no longer measure ahead of the operation', () => {
+  it('has no prepareTerminal: a caller can no longer measure ahead of the operation', async () => {
     const { store } = withPreparer();
     expect('prepareTerminal' in store).toBe(false);
   });
@@ -75,7 +75,7 @@ describe('a worker terminal is one operation: plan, await the preparer, commit',
     const claim = mustClaim(h.store, 'w1');
     const before = typesOf(h.store, run.id);
     const seenAtSecondCall: string[][] = [];
-    h.fake.during((_request, call) => {
+    h.fake.during(async (_request, call) => {
       if (call === 2) seenAtSecondCall.push(typesOf(h.store, run.id));
     });
 
@@ -106,7 +106,7 @@ describe('a worker terminal is one operation: plan, await the preparer, commit',
     const run = enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
     const before = typesOf(h.store, run.id);
-    h.fake.during(() => {
+    h.fake.during(async () => {
       h.clock.advance(LEASE_MS + 1);
       mustClaim(h.store, 'w2');
     });
@@ -122,8 +122,8 @@ describe('a worker terminal is one operation: plan, await the preparer, commit',
     const h = withPreparer();
     const run = enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
-    h.fake.during((_request, call) => {
-      if (call === 1) expect(h.store.requestCancel(run.id)).toMatchObject({ kind: 'ok', run: { status: 'CANCELLING' } });
+    h.fake.during(async (_request, call) => {
+      if (call === 1) expect(await h.store.requestCancel(run.id)).toMatchObject({ kind: 'ok', run: { status: 'CANCELLING' } });
     });
 
     expect((await h.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('conflict');
@@ -159,7 +159,7 @@ describe('a worker terminal is one operation: plan, await the preparer, commit',
 describe('approval expiry is an operation that awaits the preparer', () => {
   it('expireApprovals returns a promise and hands the preparer the expiry and the notice as leading events, which precede the contribution', async () => {
     const h = withPreparer();
-    const { runId } = awaitingInput(h.store, [{ callId: 'call_1' }], 'waiting');
+    const { runId } = await awaitingInput(h.store, [{ callId: 'call_1' }], 'waiting');
 
     const pending = h.store.expireApprovals(EXPIRES_MS, (error: unknown) => { throw error; });
 
@@ -171,7 +171,7 @@ describe('approval expiry is an operation that awaits the preparer', () => {
 });
 
 describe('one writer of context.contribution (O12)', () => {
-  it('store.append refuses a context.contribution event and the journal is unchanged', () => {
+  it('store.append refuses a context.contribution event and the journal is unchanged', async () => {
     const h = withPreparer();
     const run = enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');
@@ -184,7 +184,7 @@ describe('one writer of context.contribution (O12)', () => {
 });
 
 describe('the commit never measures (P4)', () => {
-  it('the store calls no measure other than the preparer port, and keeps no inline measurement', () => {
+  it('the store calls no measure other than the preparer port, and keeps no inline measurement', async () => {
     const source = fs.readFileSync(path.resolve(import.meta.dirname, '..', 'src', 'runtime-store.ts'), 'utf8');
     const measureCalls = [...source.matchAll(/([\w.]+)\.measure\(/g)].map((match) => match[1]);
     expect(measureCalls.length).toBeGreaterThan(0);

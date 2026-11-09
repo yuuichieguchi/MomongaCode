@@ -1,18 +1,19 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { MessageChannel, Worker } from 'node:worker_threads';
 import type { MessagePort } from 'node:worker_threads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { migrateRuntimeDatabase } from '../packages/store/src/index.ts';
+import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../packages/runtime/src/memory/journal-thread-limits.ts';
+import { blobDirectoryOf, migrateRuntimeDatabase } from '../packages/store/src/index.ts';
 import { bundle, bundleJournalThread, journalThreadModule, repoRoot, writeJournalThreadModule } from './bundle.ts';
 import { buildSea } from './sea.ts';
 import { RUNS_MACOS_ARM64_ARTIFACTS } from './support/host.ts';
+import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 
-const BUILD_TIMEOUT_MS = 300_000;
 const PING_FIXTURE = `${repoRoot}test/fixtures/sea/journal-thread-ping.ts`;
 const NO_NODE_ENV = (home: string): NodeJS.ProcessEnv => ({ PATH: '/usr/bin:/bin', HOME: home });
 
@@ -29,16 +30,31 @@ const freshDatabase = (root: string): { databasePath: string; dev: number; ino: 
 
 const nextMessage = (port: MessagePort, worker: Worker): Promise<Record<string, unknown>> =>
   new Promise((resolve, reject) => {
-    const onError = (error: Error): void => {
+    const silence = setTimeout(() => {
+      stopListening();
+      reject(new Error(`the journal thread posted nothing within its silence limit of ${JOURNAL_THREAD_SILENCE_LIMIT_MS} ms`));
+    }, JOURNAL_THREAD_SILENCE_LIMIT_MS);
+    const stopListening = (): void => {
+      clearTimeout(silence);
       port.off('message', onMessage);
+      worker.off('error', onError);
+      worker.off('exit', onExit);
+    };
+    const onError = (error: Error): void => {
+      stopListening();
       reject(error);
     };
+    const onExit = (exitCode: number): void => {
+      stopListening();
+      reject(new Error(`the journal thread exited with code ${exitCode} before it posted a message`));
+    };
     const onMessage = (message: Record<string, unknown>): void => {
-      worker.off('error', onError);
+      stopListening();
       resolve(message);
     };
     port.once('message', onMessage);
     worker.once('error', onError);
+    worker.once('exit', onExit);
   });
 
 describe('the journal thread build', () => {
@@ -60,7 +76,7 @@ describe('the journal thread build', () => {
       const code = await bundleJournalThread();
       const { databasePath, dev, ino } = freshDatabase(root);
       const { port1, port2 } = new MessageChannel();
-      const worker = new Worker(code, { eval: true, workerData: { databasePath, port: port2 }, transferList: [port2] });
+      const worker = new Worker(code, { eval: true, workerData: { databasePath, blobsDir: blobDirectoryOf(databasePath), port: port2 }, transferList: [port2] });
       try {
         expect(await nextMessage(port1, worker)).toEqual({ ready: true, dev, ino });
         const reply = nextMessage(port1, worker);
@@ -71,7 +87,7 @@ describe('the journal thread build', () => {
         await worker.terminate();
       }
     },
-    BUILD_TIMEOUT_MS,
+    UNBOUNDED_BUILD_WAIT_MS,
   );
 
   it(
@@ -84,7 +100,7 @@ describe('the journal thread build', () => {
       expect(generated.JOURNAL_THREAD_CODE).toBe(await bundleJournalThread());
       expect(fs.readdirSync(path.dirname(target))).toEqual(['journal-thread-code.generated.ts']);
     },
-    BUILD_TIMEOUT_MS,
+    UNBOUNDED_BUILD_WAIT_MS,
   );
 
   it(
@@ -92,13 +108,13 @@ describe('the journal thread build', () => {
     async () => {
       const target = path.join(root, 'stale', 'journal-thread-code.generated.ts');
       fs.mkdirSync(path.dirname(target));
-      fs.writeFileSync(target, "export const JOURNAL_THREAD_CODE = 'stale';\n");
+      fs.writeFileSync(target, `export const JOURNAL_THREAD_CODE = ${JSON.stringify(randomUUID())};\n`);
       await writeJournalThreadModule(target);
-      expect(fs.readFileSync(target, 'utf8')).not.toContain("'stale'");
-      expect(fs.readFileSync(target, 'utf8')).toContain('JOURNAL_THREAD_CODE');
+      const replaced = (await import(pathToFileURL(target).href)) as { JOURNAL_THREAD_CODE: string };
+      expect(replaced.JOURNAL_THREAD_CODE).toBe(await bundleJournalThread());
       expect(fs.readdirSync(path.dirname(target))).toEqual(['journal-thread-code.generated.ts']);
     },
-    BUILD_TIMEOUT_MS,
+    UNBOUNDED_BUILD_WAIT_MS,
   );
 
   it(
@@ -111,7 +127,7 @@ describe('the journal thread build', () => {
       await expect(writeJournalThreadModule(target)).rejects.toThrow();
       expect(fs.readdirSync(directory)).toEqual(['journal-thread-code.generated.ts']);
     },
-    BUILD_TIMEOUT_MS,
+    UNBOUNDED_BUILD_WAIT_MS,
   );
 
   it('ignores every generated module by pattern, in any package', () => {
@@ -136,7 +152,7 @@ describe('the journal thread build', () => {
       expect(fs.existsSync(outfile)).toBe(true);
       expect(sourceModuleState()).toBe(sourceBefore);
     },
-    BUILD_TIMEOUT_MS,
+    UNBOUNDED_BUILD_WAIT_MS,
   );
 });
 
@@ -152,7 +168,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('the journal thread in the single e
     const generated = path.join(root, 'generated', 'journal-thread-code.generated.ts');
     fs.mkdirSync(path.dirname(generated));
     await buildSea({ entry: PING_FIXTURE, output: binary, workDir: path.join(root, 'work'), journalThreadModule: generated });
-  }, BUILD_TIMEOUT_MS);
+  }, UNBOUNDED_BUILD_WAIT_MS);
 
   afterAll(() => {
     removeTempRoot(root);
@@ -165,5 +181,5 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('the journal thread in the single e
     expect({ status: result.status, stderr: result.stderr }).toEqual({ status: 0, stderr: '' });
     expect(JSON.parse(result.stdout)).toEqual({ pinged: true, codeSha256: sha256(await bundleJournalThread()) });
     expect(sourceModuleState()).toBe(sourceBefore);
-  });
+  }, UNBOUNDED_BUILD_WAIT_MS);
 });

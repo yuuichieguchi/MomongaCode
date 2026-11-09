@@ -3,8 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { bundle, defaultEntry } from './bundle.ts';
+import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 
-const BUNDLE_TIMEOUT_MS = 120_000;
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'momonga-bundle-'));
 
 afterAll(() => fs.rmSync(scratch, { recursive: true, force: true }));
@@ -21,6 +21,6 @@ describe('the single-file bundle', () => {
       expect(text).not.toContain('packages/ata-validator/lib/native-load.js');
       expect(text).not.toContain('packages/ata-validator/lib/compile-fn.js');
     },
-    BUNDLE_TIMEOUT_MS,
+    UNBOUNDED_BUILD_WAIT_MS,
   );
 });

@@ -52,6 +52,17 @@ export const normalizeHooks = (settings: Settings, source: string, warnings: str
   return { ...settings, hooks: supported };
 };
 
+const RIPGREP_NAMED_SETTINGS: readonly string[] = ['bundled', 'system'];
+
+const assertRipgrepSetting = (value: unknown, file: string): void => {
+  if (typeof value !== 'object' || value === null) return;
+  const tools: unknown = (value as Record<string, unknown>)['tools'];
+  if (typeof tools !== 'object' || tools === null || !Object.hasOwn(tools, 'ripgrep')) return;
+  const ripgrep: unknown = (tools as Record<string, unknown>)['ripgrep'];
+  if (typeof ripgrep === 'string' && (RIPGREP_NAMED_SETTINGS.includes(ripgrep) || path.isAbsolute(ripgrep))) return;
+  throw new ConfigError(`${file}: tools.ripgrep must be "bundled", "system" or an absolute path; got ${JSON.stringify(ripgrep)}`);
+};
+
 const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: string[]): Settings => {
   const restricted: Settings = { ...settings };
 
@@ -110,6 +121,12 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
     delete restricted.autoUpdates;
   }
 
+  if (settings.tools?.ripgrep !== undefined) {
+    warnings.push(`${source}: tools.ripgrep is only honored in user settings; discarded`);
+    const { ripgrep: _ignored, ...remaining } = settings.tools;
+    restricted.tools = remaining;
+  }
+
   if (settings.permissions?.defaultMode === 'bypassPermissions') {
     warnings.push(`${source}: bypassPermissions is only honored in user settings and on the command line; ignored`);
     const { defaultMode: _ignored, ...remaining } = settings.permissions;
@@ -140,6 +157,7 @@ const buildLayer = (
   warnings: string[],
 ): Layer | undefined => {
   if (!read.found) return undefined;
+  assertRipgrepSetting(read.value, file);
   const settings = normalizeHooks(assertSettings(read.value, file), file, warnings);
   for (const key of Object.keys(settings)) {
     if (!KNOWN_SETTINGS_KEYS.includes(key)) warnings.push(`${file}: unknown setting ${JSON.stringify(key)} ignored`);

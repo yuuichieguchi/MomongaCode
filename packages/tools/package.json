@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./memory-constants": "./src/memory/constants.ts"
   },
   "dependencies": {
     "@momonga/foundation": "*",

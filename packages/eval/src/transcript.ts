@@ -3,7 +3,7 @@ import type { ProductValidator } from '@momonga/foundation';
 import { MEMORY_ORIGINS, REFLECTION_JOB_STATES, RUN_API_SCHEMAS, RUN_STATUSES, STOP_REASONS } from '@momonga/protocol';
 import { validatePolicyOverlay } from './context-policy.ts';
 import type { PolicyOverlay } from './context-policy.ts';
-import type { ContextChargeView, MemoryOrigin, PublicRunEvent, ReflectionJobState, RunStatus, StopReason } from '@momonga/protocol';
+import type { ContextChargeView, MemoryOrigin, PublicRunEvent, ReflectionJobState, RunStatus, StopReason, Stored } from '@momonga/protocol';
 
 export const TRANSCRIPT_FORMAT = 'momonga-transcript/6';
 const RETIRED_TRANSCRIPT_FORMATS: Readonly<Record<string, string>> = {
@@ -31,7 +31,7 @@ export type Answerer = { target: string; adapter?: string; upstreamModel?: strin
 
 export type TranscriptChild = { runId: string; agent: string; events: PublicRunEvent[] };
 
-export type TranscriptReflection = { state: 'none' | ReflectionJobState; charges?: ContextChargeView[]; reason?: string };
+export type TranscriptReflection = { state: 'none' | Stored<ReflectionJobState>; charges?: ContextChargeView[]; reason?: string };
 
 export type Transcript = {
   caseId: string;

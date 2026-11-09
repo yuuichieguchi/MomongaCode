@@ -20,12 +20,12 @@ const typesOf = (store: RuntimeStore, runId: string): string[] =>
   store.readRunEvents(runId, 0, 1000).map((event) => (event.type === 'run.status' ? `run.status:${event.to}` : event.type));
 
 describe('a cancel request never terminates a run (O13 b3)', () => {
-  it('moves a QUEUED run to CANCELLING with cancel origin QUEUED, synchronously and without asking the preparer', () => {
+  it('moves a QUEUED run to CANCELLING with cancel origin QUEUED, synchronously and without asking the preparer', async () => {
     const h = withPreparer();
     const run = enqueue(h.store, newSession(h.store).id);
     expect(mustRun(h.store, run.id).cancelOrigin).toBeNull();
 
-    const result = h.store.requestCancel(run.id);
+    const result = await h.store.requestCancel(run.id);
 
     expect(result).not.toBeInstanceOf(Promise);
     expect(result).toMatchObject({ kind: 'ok', changed: true, run: { status: 'CANCELLING', cancelRequested: true, cancelOrigin: 'QUEUED', leaseOwner: null } });
@@ -34,35 +34,35 @@ describe('a cancel request never terminates a run (O13 b3)', () => {
     expect(h.fake.requests).toEqual([]);
   });
 
-  it('requestCancel on a WAITING_HUMAN run with a pending approval answers CANCELLING and withdraws the approval', () => {
+  it('requestCancel on a WAITING_HUMAN run with a pending approval answers CANCELLING and withdraws the approval', async () => {
     const h = withPreparer();
-    const { runId, approvals } = awaitingApproval(h.store, [{ callId: 'call_1' }], 'waiting');
+    const { runId, approvals } = await awaitingApproval(h.store, [{ callId: 'call_1' }], 'waiting');
     expect(h.store.approvals.listPending(runId)).toHaveLength(1);
 
-    expect(h.store.requestCancel(runId)).toMatchObject({ kind: 'ok', changed: true, run: { status: 'CANCELLING', cancelOrigin: 'WAITING_HUMAN' } });
+    expect(await h.store.requestCancel(runId)).toMatchObject({ kind: 'ok', changed: true, run: { status: 'CANCELLING', cancelOrigin: 'WAITING_HUMAN' } });
 
     expect(h.store.approvals.listPending(runId)).toEqual([]);
-    expect(h.store.approvalView(approvals[0]?.id ?? '')?.status).toBe('withdrawn');
+    expect((await h.store.approvalView(approvals[0]?.id ?? ''))?.status).toBe('withdrawn');
     expect(typesOf(h.store, runId).slice(-2)).toEqual(['tool.permission.cancelled', 'run.status:CANCELLING']);
     expect(h.fake.requests).toEqual([]);
   });
 
-  it('records the cancel origin RUNNING for a run cancelled while a worker holds it', () => {
+  it('records the cancel origin RUNNING for a run cancelled while a worker holds it', async () => {
     const h = withPreparer();
     const run = enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w1');
 
-    expect(h.store.requestCancel(run.id)).toMatchObject({ kind: 'ok', run: { status: 'CANCELLING', cancelOrigin: 'RUNNING' } });
+    expect(await h.store.requestCancel(run.id)).toMatchObject({ kind: 'ok', run: { status: 'CANCELLING', cancelOrigin: 'RUNNING' } });
   });
 
-  it('moves a running parent and its queued child to CANCELLING, each with its own origin, measuring nothing and writing no contribution', () => {
+  it('moves a running parent and its queued child to CANCELLING, each with its own origin, measuring nothing and writing no contribution', async () => {
     const h = withPreparer();
     const parent = enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w-parent');
     const created = h.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, modelAlias: 'fm' });
     if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
 
-    h.store.requestCancel(parent.id);
+    await h.store.requestCancel(parent.id);
 
     expect(mustRun(h.store, parent.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'RUNNING' });
     expect(mustRun(h.store, created.run.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'QUEUED' });
@@ -72,32 +72,32 @@ describe('a cancel request never terminates a run (O13 b3)', () => {
 });
 
 describe('the claim exclusion of sweeper-owned runs', () => {
-  it('never claims a CANCELLING run whose cancel origin is QUEUED, and leaves its attempts untouched', () => {
+  it('never claims a CANCELLING run whose cancel origin is QUEUED, and leaves its attempts untouched', async () => {
     const h = withPreparer();
     const run = enqueue(h.store, newSession(h.store).id);
-    h.store.requestCancel(run.id);
+    await h.store.requestCancel(run.id);
 
     expect(h.store.claim('w1')).toBeNull();
 
     expect(mustRun(h.store, run.id)).toMatchObject({ status: 'CANCELLING', leaseOwner: null, attempts: 0 });
   });
 
-  it('never claims a CANCELLING run whose cancel origin is WAITING_HUMAN', () => {
+  it('never claims a CANCELLING run whose cancel origin is WAITING_HUMAN', async () => {
     const h = withPreparer();
-    const { runId } = awaitingApproval(h.store, [{ callId: 'call_1' }], 'waiting');
+    const { runId } = await awaitingApproval(h.store, [{ callId: 'call_1' }], 'waiting');
     const attempts = mustRun(h.store, runId).attempts;
-    h.store.requestCancel(runId);
+    await h.store.requestCancel(runId);
 
     expect(h.store.claim('w2')).toBeNull();
 
     expect(mustRun(h.store, runId)).toMatchObject({ status: 'CANCELLING', leaseOwner: null, attempts });
   });
 
-  it('still claims a CANCELLING run whose cancel origin is RUNNING once its lease expired', () => {
+  it('still claims a CANCELLING run whose cancel origin is RUNNING once its lease expired', async () => {
     const h = withPreparer();
     const run = enqueue(h.store, newSession(h.store).id);
     mustClaim(h.store, 'w1');
-    h.store.requestCancel(run.id);
+    await h.store.requestCancel(run.id);
     h.clock.advance(LEASE_MS + 1);
 
     expect(h.store.claim('w2')).toMatchObject({ runId: run.id, status: 'CANCELLING' });
@@ -105,7 +105,7 @@ describe('the claim exclusion of sweeper-owned runs', () => {
 });
 
 describe('the runs.cancel_origin column', () => {
-  it('exists, is NULL for a run that is not CANCELLING, and refuses a value outside QUEUED, WAITING_HUMAN, RUNNING and WAITING_TOOL', () => {
+  it('exists, is NULL for a run that is not CANCELLING, and refuses a value outside QUEUED, WAITING_HUMAN, RUNNING and WAITING_TOOL', async () => {
     const h = withPreparer();
     const run = enqueue(h.store, newSession(h.store).id);
     const db = rawDb(h.dbPath);

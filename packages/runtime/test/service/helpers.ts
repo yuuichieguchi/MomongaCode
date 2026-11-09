@@ -20,7 +20,7 @@ import { journalReaderPreparer } from '../worker/harness.ts';
 import type { Claim, RuntimeStore, Session } from '@momonga/store';
 import { FAKE_LEASE, fakePolicyFilesystem, hostFilesystemOf, createFakeClock, createFakeKernelLock, createFakeTimers } from '@momonga/testkit';
 import type { FakeClock, FakeTimers } from '@momonga/testkit';
-import { createGitWorkTreeObserver, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
+import { createGitWorkTreeObserver, createHostRipgrepLocator, createToolExecutor, createToolRegistry, nodeShellHost } from '@momonga/tools';
 import type { AnyTool, ToolSessionState } from '@momonga/tools';
 import { within } from '../worker/deferred.ts';
 import { createFakeGateway } from '../worker/fake-gateway.ts';
@@ -668,13 +668,13 @@ export const toolCallPayload = (callId: string, target: string): RunEventPayload
   locations: [{ path: target }],
 });
 
-export const requestManualApproval = (
+export const requestManualApproval = async (
   env: ServiceEnv,
   claim: Claim,
   callId: string,
   extra: { suggestedRule?: string } = {},
-): string => {
-  const result = env.store.requestApproval(claim, {
+): Promise<string> => {
+  const result = await env.store.requestApproval(claim, {
     callId,
     options: OPTIONS,
     event: { subjectDigest: SUBJECT_DIGEST, reason: 'edits require approval', ...extra },
@@ -735,6 +735,7 @@ export const attachWorkerKit = (env: ServiceEnv): WorkerKit => {
     recoveryToolSet: async () => snapshotToolbox(),
     executor,
     sandbox: fakeSandbox,
+    ripgrepLocator: (target) => createHostRipgrepLocator({ setting: 'bundled', env: target }),
     shellHost: nodeShellHost(),
     markerDir: markers,
     policyFor: async (target: Session, policyOptions: { env: Readonly<Record<string, string>>; rules: readonly PermissionRule[] }) => ({

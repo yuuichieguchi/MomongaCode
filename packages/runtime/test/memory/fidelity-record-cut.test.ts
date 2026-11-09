@@ -141,7 +141,7 @@ describe('differential cases of the generator: via, omitted tasks, a compaction 
     b.started(claim, 'default');
     b.tool(claim);
     const retracted = b.createRun('Never mind this');
-    expect(h.store.requestCancel(retracted.id).kind).toBe('ok');
+    expect((await h.store.requestCancel(retracted.id)).kind).toBe('ok');
     await h.store.finishCancelled((error) => {
       throw error;
     });

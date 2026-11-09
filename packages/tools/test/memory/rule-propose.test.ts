@@ -11,7 +11,7 @@ const canonicalise = (absolute: string) => ({ ok: true as const, path: absolute 
 const fakePort = (added: { runId: string; callId: string; factId: string }[] = []) => {
   const proposed: unknown[] = [];
   const port: GovernancePort = {
-    propose: (request) => {
+    propose: async (request) => {
       proposed.push(request);
       return { factId: 'g1', created: proposed.length === 1 };
     },

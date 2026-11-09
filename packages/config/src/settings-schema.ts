@@ -487,7 +487,7 @@ export const SETTINGS_SCHEMA = {
     },
     tools: {
       type: 'object',
-      properties: { deferral: { type: 'boolean' }, conciseDescriptions: { type: 'boolean' } },
+      properties: { deferral: { type: 'boolean' }, conciseDescriptions: { type: 'boolean' }, ripgrep: { type: 'string', minLength: 1 } },
       additionalProperties: false,
     },
     autoUpdates: { type: 'boolean' },

@@ -65,7 +65,8 @@ export const createFakeToolbox = (): FakeToolbox => {
     subject: () => ({ kind: 'none', tool: 'Echo' }),
     execute: async (input, ctx) => {
       await record('Echo', input, ctx);
-      return { status: 'completed', output: `echo:${String(input['value'])}` };
+      const output = `echo:${String(input['value'])}`;
+      return input['value'] === 'with-backend' ? { status: 'completed', output, backend: { source: 'bundled', version: '15.2.0' } } : { status: 'completed', output };
     },
   });
 

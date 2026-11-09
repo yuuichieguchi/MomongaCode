@@ -53,6 +53,7 @@ export const createReadAccessMatcher = (policy: ReadAccessPolicy) => {
 
   return {
     deniesAnything: denied.length > 0,
+    hasReadRulesFor: (tool: ReadFamilyTool): boolean => readEntriesFor(tool).length > 0,
     blocksResolved,
     blocks: (target: string, cwd: string): boolean =>
       blocksResolved(canonicalPath(absoluteFrom(target, cwd))) || blocksResolved(path.resolve(cwd, target)),

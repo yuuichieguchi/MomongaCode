@@ -20,7 +20,7 @@ import {
   nodeFileSystem,
   nodeFileSystemSync,
 } from '@momonga/foundation';
-import type { Clock, JsonLogger, ProcessLock, ReadyFields, TextStream } from '@momonga/foundation';
+import type { Clock, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, TextStream } from '@momonga/foundation';
 import { createTelemetry, exportersFor, openTraceStore, startBodyPurge } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
@@ -29,7 +29,7 @@ import type { Sandbox } from '@momonga/sandbox';
 import { isFatalStoreError, migrateRuntimeDatabase, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
 import { ShellNotFoundError, clearCallLocks, createMarkerOwners, createPolicyFilesystem, nodeShellHost, resolveBashPath } from '@momonga/tools';
-import type { ShellHost } from '@momonga/tools';
+import type { BundledRipgrepResolver, ShellHost } from '@momonga/tools';
 import { createFsInstructionReader } from '@momonga/context';
 import { createGatewayClient } from '../gateway-client.ts';
 import { JOURNAL_THREAD_SILENCE_LIMIT_MS } from '../memory/journal-thread-limits.ts';
@@ -113,7 +113,10 @@ export type StartRuntimeProcessOptions = {
   drainTimeoutMs?: number;
   signal?: AbortSignal;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
+  bundledRipgrep?: BundledRipgrepSource;
 };
+
+export type BundledRipgrepSource = (paths: Pick<MomongaPaths, 'executables'>) => BundledRipgrepResolver;
 
 export type RuntimeCloseResult = {
   clean: boolean;
@@ -315,14 +318,15 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
     cleanups.push({ name: 'lock', run: () => lock.release() });
 
-    const { cache, settings } = await step('settings', async () => {
+    const { cache, settings, network } = await step('settings', async () => {
       const created = createUserSettingsCache({ home: canonicalHome, onWarning, keptRecords: diskKeptRecords(nodeFileSystemSync, keptSettingsDirectory(canonicalHome)) });
       const snapshot = created.snapshot();
       if ('error' in snapshot) throw snapshot.error;
       const networkConfig = resolveNetwork(snapshot.settings.network, process.env);
       const trust = await installTrust(networkConfig, nodeFileSystem);
       for (const failure of trust.failures) logger.warn(`the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}`);
-      return { cache: created, settings: snapshot.settings };
+      const outbound: OutboundNetwork = { config: networkConfig, trust };
+      return { cache: created, settings: snapshot.settings, network: outbound };
     });
 
     const kind: SandboxKind = settings.sandbox;
@@ -431,7 +435,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         serviceVersion: version,
         clock,
         store: traceStore,
-        exporters: exportersFor(settings.telemetry),
+        exporters: exportersFor(settings.telemetry, network),
         captureMessageContent: telemetrySettings.captureMessageContent,
         contentRetentionMs,
       }),
@@ -481,6 +485,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         reapTiming,
         leaseMs,
         heartbeatMs: heartbeatMsFor(leaseMs),
+        ...(options.bundledRipgrep === undefined ? {} : { bundledRipgrep: options.bundledRipgrep(paths) }),
       });
       const tracker: CancelUpstreamTracker = createCancelUpstream({ store, gatewayClient, timers });
       const skills = createSkillsPort({
@@ -569,7 +574,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
           const trace = runTraceOf(traceStore, runId);
           return trace === undefined
             ? undefined
-            : { ...trace, calls: traceCallsOf(store.readModelCallEvents(runId)), events: traceEventsOf(store.readRunEventsOfTypes(runId, [...TRACE_EVENT_TYPES])) };
+            : { ...trace, calls: traceCallsOf(await store.readModelCallEvents(runId)), events: traceEventsOf(store.readRunEventsOfTypes(runId, [...TRACE_EVENT_TYPES])) };
         },
         runCost: (runs, signal, includeRunless) => gatewayClient.cost(runs, signal, includeRunless),
         runCostBreakdown: (runs, signal, includeRunless) =>

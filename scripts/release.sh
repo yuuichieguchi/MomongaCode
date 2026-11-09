@@ -6,12 +6,14 @@ readonly ENTITLEMENTS="$ROOT/scripts/sea-entitlements.plist"
 readonly ASSET_NAME="momonga-darwin-arm64"
 readonly CHECKSUMS_NAME="SHA256SUMS"
 readonly SIGNATURE_NAME="SHA256SUMS.sig"
+readonly NOTICES_NAME="THIRD-PARTY-NOTICES.md"
 readonly SIGNATURE_NAMESPACE="momonga-release"
 readonly OUT_DIR="$ROOT/dist/release"
 readonly BINARY="$OUT_DIR/$ASSET_NAME"
 readonly ARCHIVE="$OUT_DIR/$ASSET_NAME.zip"
 readonly CHECKSUMS="$OUT_DIR/$CHECKSUMS_NAME"
 readonly SIGNATURE="$OUT_DIR/$SIGNATURE_NAME"
+readonly NOTICES="$OUT_DIR/$NOTICES_NAME"
 readonly MOMONGA_TEAM_ID="PQQBSRKD72"
 readonly SIGNING_IDENTITY="Developer ID Application: Yuuichi Eguchi ($MOMONGA_TEAM_ID)"
 readonly RELEASE_SIGNING_KEY="$HOME/.ssh/momonga-release"
@@ -71,6 +73,15 @@ assert_executable_format() {
   esac
 }
 
+assert_embedded_ripgrep() {
+  local file="$1" target="$2"
+  if [ "$DRY_RUN" = "1" ]; then
+    printf 'DRY_RUN: ripgrep-manifest %s %s\n' "$file" "$target"
+    return
+  fi
+  node "$ROOT/scripts/embedded-ripgrep.ts" check "$file" "$target" || fail "$file does not embed the ripgrep manifest of $target"
+}
+
 assert_binary_version() {
   local built
   if [ "$DRY_RUN" = "1" ]; then
@@ -88,7 +99,8 @@ delete_draft() {
 }
 
 write_checksums() {
-  (cd "$OUT_DIR" && shasum -a 256 "$ASSET_NAME" "${OTHER_ASSETS[@]}" > "$CHECKSUMS_NAME")
+  cp "$ROOT/$NOTICES_NAME" "$NOTICES"
+  (cd "$OUT_DIR" && shasum -a 256 "$ASSET_NAME" "${OTHER_ASSETS[@]}" "$NOTICES_NAME" > "$CHECKSUMS_NAME")
 }
 
 case "$DRY_RUN" in
@@ -143,6 +155,7 @@ run npm run test:packaging
 step "build single executable"
 run mkdir -p "$OUT_DIR"
 run npm run sea -- --unsigned --output "$BINARY" "${UPDATE_SOURCE_FLAGS[@]}"
+assert_embedded_ripgrep "$BINARY" darwin-arm64
 
 step "sign with Developer ID (hardened runtime, JIT entitlement)"
 run codesign --sign "$SIGNING_IDENTITY" --force --timestamp --options runtime --entitlements "$ENTITLEMENTS" "$BINARY"
@@ -171,6 +184,9 @@ done
 assert_executable_format "$OUT_DIR/momonga-linux-x64" ELF
 assert_executable_format "$OUT_DIR/momonga-linux-arm64" ELF
 assert_executable_format "$OUT_DIR/momonga-win-x64.exe" PE
+for index in "${!OTHER_TARGETS[@]}"; do
+  assert_embedded_ripgrep "$OUT_DIR/${OTHER_ASSETS[$index]}" "${OTHER_TARGETS[$index]}"
+done
 
 step "checksums and their signature"
 run write_checksums
@@ -181,7 +197,7 @@ run node "$RELEASE_KEY_TOOL" verify "$CHECKSUMS" "$SIGNATURE"
 step "publish $tag"
 printf 'release notes:\n%s\n' "$notes"
 draft_created=1
-run gh release create "$tag" "$BINARY" "${OTHER_ASSETS[@]/#/$OUT_DIR/}" "$CHECKSUMS" "$SIGNATURE" --repo "$MOMONGA_REPO" --draft --target "$commit" --title "$tag" --notes "$notes"
+run gh release create "$tag" "$BINARY" "${OTHER_ASSETS[@]/#/$OUT_DIR/}" "$NOTICES" "$CHECKSUMS" "$SIGNATURE" --repo "$MOMONGA_REPO" --draft --target "$commit" --title "$tag" --notes "$notes"
 run gh release edit "$tag" --repo "$MOMONGA_REPO" --draft=false
 draft_created=0
 run git fetch origin "refs/tags/$tag:refs/tags/$tag"

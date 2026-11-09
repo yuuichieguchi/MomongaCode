@@ -254,8 +254,8 @@ describe('sweeper inside the run service', () => {
     const run = await env.createRun(session.id, { timeoutMs: 60_000 });
     const claim = env.claimRun(run.id);
     env.append(claim, [toolCallPayload('call_1', path.join(env.layout.projectReal, 'a.txt'))]);
-    const approvalId = requestManualApproval(env, claim, 'call_1');
-    expect(env.store.release(claim, 'WAITING_HUMAN').kind).toBe('ok');
+    const approvalId = await requestManualApproval(env, claim, 'call_1');
+    expect((await env.store.release(claim, 'WAITING_HUMAN')).kind).toBe('ok');
     expect((await env.getRun(run.id)).status).toBe('WAITING_HUMAN');
 
     await tick(timers, 60_000);
@@ -273,7 +273,7 @@ describe('sweeper inside the run service', () => {
     const run = await env.createRun(session.id);
     const claim = env.claimRun(run.id);
     env.append(claim, [toolCallPayload('call_1', path.join(env.layout.projectReal, 'a.txt'))]);
-    const approvalId = requestManualApproval(env, claim, 'call_1');
+    const approvalId = await requestManualApproval(env, claim, 'call_1');
     const before = (await env.getRun(run.id)).lastSeq;
 
     await tick(timers, 5000);
@@ -292,9 +292,9 @@ describe('release of runs that stop while waiting for input', () => {
     const run = await env.createRun(session.id);
     const claim = env.claimRun(run.id);
     env.append(claim, [toolCallPayload('call_1', path.join(env.layout.projectReal, 'a.txt'))]);
-    const requested = env.store.requestElicitation(claim, { callId: 'call_1', expiresAt, server: 'remote', requests: REQUESTS });
+    const requested = await env.store.requestElicitation(claim, { callId: 'call_1', expiresAt, server: 'remote', requests: REQUESTS });
     if (requested.kind !== 'ok') throw new Error('expected an elicitation');
-    expect(env.store.release(claim, 'WAITING_HUMAN').kind).toBe('ok');
+    expect((await env.store.release(claim, 'WAITING_HUMAN')).kind).toBe('ok');
     return { run, id: requested.approval.id };
   };
 

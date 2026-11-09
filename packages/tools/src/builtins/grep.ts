@@ -1,17 +1,18 @@
-import { EMPTY_PROTECTED_SET } from '@momonga/foundation';
-import fs from 'node:fs';
+import { EMPTY_PROTECTED_SET, momongaLayout, nodeFileSystem, sha256Hex } from '@momonga/foundation';
 import path from 'node:path';
-import picomatch from 'picomatch';
 import type { SandboxPolicy } from '@momonga/sandbox';
 import { createReadAccessMatcher } from '../read-access.ts';
+import { ripgrepUnavailableMessage } from '../ripgrep-locator.ts';
 import type { ReadAccessMatcher } from '../read-access.ts';
 import { defineTool, ToolExecutionError } from '../types.ts';
-import type { ToolContext } from '../types.ts';
+import type { ToolBackend, ToolContext } from '../types.ts';
+import type { RipgrepLocator } from '../ripgrep-locator.ts';
 import { extensionsForType } from './file-types.ts';
-import { looksBinary, regularFileProblem, statIfExists } from './files.ts';
+import { regularFileProblem, statIfExists } from './files.ts';
 import { sortByMtimeThenPath } from './glob.ts';
 import { canonicalPathOf, resolvedPathOf, shownPath } from './paths.ts';
-import { isPermissionError, reachableAllowedRoots, walkFiles } from './walk.ts';
+import { reachableAllowedRoots, walkFiles } from './walk.ts';
+import type { RuleBlockedEntry } from './walk.ts';
 
 type OutputMode = 'content' | 'files_with_matches' | 'count';
 
@@ -42,34 +43,73 @@ const contextOf = (input: GrepInput): { before: number; after: number } => ({
 
 const lineNumbersWanted = (input: GrepInput): boolean => input['-n'] ?? true;
 
-const resolveRipgrep = (envPath: string | undefined): string | undefined => {
-  for (const directory of (envPath ?? '').split(path.delimiter)) {
-    if (directory === '') continue;
-    const candidate = path.join(directory, 'rg');
-    try {
-      fs.accessSync(candidate, fs.constants.X_OK);
-      if (fs.statSync(candidate).isFile()) return candidate;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT' && (error as NodeJS.ErrnoException).code !== 'EACCES') throw error;
-    }
-  }
-  return undefined;
-};
-
 const escapeGlob = (value: string): string => value.replace(/[\\[\]*?{}!]/g, '\\$&');
+
+const exclusionOf = (target: string, excluded: string, withContents: boolean): string[] => {
+  const relative = `/${escapeGlob(path.relative(target, excluded).split(path.sep).join('/'))}`;
+  return withContents ? ['--glob', exclusionLine(`!${relative}`), '--glob', `${exclusionLine(`!${relative}`)}/**`] : ['--glob', exclusionLine(`!${relative}`)];
+};
 
 const deniedGlobs = (access: ReadAccessMatcher, target: string, isDirectory: boolean): string[] => {
   if (!isDirectory) return [];
-  return access.deniedWithin(target).flatMap((resolved) => {
-    const relative = `/${escapeGlob(path.relative(target, resolved).split(path.sep).join('/'))}`;
-    return access.leadsToAllowed(resolved) ? ['--glob', `!${relative}`] : ['--glob', `!${relative}`, '--glob', `!${relative}/**`];
-  });
+  return access.deniedWithin(target).flatMap((resolved) => exclusionOf(target, resolved, !access.leadsToAllowed(resolved)));
 };
 
-const ripgrepArguments = (input: GrepInput, mode: OutputMode, target: string, access: ReadAccessMatcher, isDirectory: boolean, allowedRoots: readonly string[]): string[] => {
+const ruleBlockedGlobs = async (access: ReadAccessMatcher, target: string, isDirectory: boolean, ctx: ToolContext): Promise<string[]> => {
+  if (!isDirectory || !access.hasReadRulesFor('Grep')) return [];
+  const blocked: RuleBlockedEntry[] = [];
+  const walk = walkFiles({
+    root: target,
+    readDenied: ctx.sandboxPolicy.readDenied,
+    readAllowed: ctx.sandboxPolicy.readAllowed,
+    fileRules: ctx.sandboxPolicy.fileRules,
+    tool: 'Grep',
+    includeSymlinkedFiles: false,
+    signal: ctx.signal,
+    onUnreadable: () => undefined,
+    onRuleBlocked: (entry) => blocked.push(entry),
+  });
+  while (!(await walk.next()).done);
+  return blocked.flatMap((entry) => exclusionOf(target, entry.absolute, entry.isDirectory));
+};
+
+const LINE_BREAK = /[\n\r]/;
+const EDGE_WHITESPACE = /^\s|\s$/;
+const LEADING_LINE_COMMENT = '#';
+const NEWLINE_ONLY_CLASS = '[!\u0001-\u0009\u000b-\u{10ffff}]';
+
+const literalClassOf = (character: string): string => `[${character}]`;
+
+const exclusionLine = (glob: string): string => {
+  const lineFree = glob.replace(/\n/g, NEWLINE_ONLY_CLASS);
+  const last = [...lineFree].at(-1) as string;
+  return /\s/.test(last) ? `${lineFree.slice(0, lineFree.length - last.length)}${literalClassOf(last)}` : lineFree;
+};
+
+const ESCAPED_TRAILING_SPACE = '\\ ';
+
+const effectiveModelGlob = (glob: string): string => (glob.endsWith(ESCAPED_TRAILING_SPACE) ? glob : glob.trimEnd());
+
+const trailingSpaceAsClass = (glob: string): string => {
+  const body = glob.slice(0, -1);
+  const backslashes = body.length - body.replace(/\\+$/, '').length;
+  return backslashes % 2 === 1 ? `${body.slice(0, -1)}${literalClassOf(' ')}` : `${body}${literalClassOf(' ')}`;
+};
+
+const modelGlobFlags = (glob: string): string[] => {
+  if (LINE_BREAK.test(glob)) throw new ToolExecutionError('glob must not contain a line break');
+  const effective = effectiveModelGlob(glob);
+  if (effective === '') return [];
+  const lastKept = effective.endsWith(' ') ? trailingSpaceAsClass(effective) : effective;
+  const [first] = lastKept;
+  return ['--glob', first === LEADING_LINE_COMMENT || /\s/.test(first as string) ? `${literalClassOf(first as string)}${lastKept.slice(1)}` : lastKept];
+};
+
+const isConfigLine = (line: string): boolean => line !== '' && !LINE_BREAK.test(line) && !EDGE_WHITESPACE.test(line) && !line.startsWith(LEADING_LINE_COMMENT);
+
+const ripgrepFlags = (input: GrepInput, mode: OutputMode, target: string, access: ReadAccessMatcher, isDirectory: boolean, ruleBlocked: readonly string[]): string[] => {
   const { before, after } = contextOf(input);
   return [
-    '--no-config',
     '--color',
     'never',
     '--no-heading',
@@ -92,15 +132,34 @@ const ripgrepArguments = (input: GrepInput, mode: OutputMode, target: string, ac
     ...(input['-i'] === true ? ['-i'] : []),
     ...(input.multiline === true ? ['-U', '--multiline-dotall'] : []),
     ...(input.type === undefined ? [] : [...extensionsForType(input.type).flatMap((extension) => ['--type-add', `momonga:*.${extension}`]), '--type', 'momonga']),
-    ...(input.glob === undefined ? [] : ['--glob', input.glob]),
+    ...(input.glob === undefined ? [] : modelGlobFlags(input.glob)),
     ...deniedGlobs(access, target, isDirectory),
-    '-e',
-    input.pattern,
-    '--',
-    target,
-    ...allowedRoots,
+    ...ruleBlocked,
   ];
 };
+
+const ripgrepOperands = (input: GrepInput, target: string, allowedRoots: readonly string[]): string[] => ['-e', input.pattern, '--', target, ...allowedRoots];
+
+const configTextOf = (flags: readonly string[]): string => {
+  const unfit = flags.find((line) => !isConfigLine(line));
+  if (unfit !== undefined) throw new Error(`the ripgrep argument ${JSON.stringify(unfit)} cannot be one line of a ripgrep configuration file`);
+  return `${flags.join('\n')}\n`;
+};
+
+const writeArgumentFile = async (file: string, text: string): Promise<void> => {
+  await nodeFileSystem.mkdirPrivate(path.dirname(file));
+  await nodeFileSystem.rm(file);
+  const handle = await nodeFileSystem.open(file, 'wx', ARGUMENT_FILE_MODE);
+  try {
+    await handle.writeFile(text);
+  } finally {
+    await handle.close();
+  }
+};
+
+const ARGUMENT_FILE_MODE = 0o600;
+
+const argumentFileOf = (ctx: ToolContext): string => path.join(momongaLayout(ctx.home).grepArguments, `${sha256Hex(ctx.idemKey)}.rgrc`);
 
 const collect = async (stream: AsyncIterable<Uint8Array>): Promise<string> => {
   const chunks: Buffer[] = [];
@@ -159,6 +218,38 @@ const recordsOf = (stdout: string, mode: OutputMode, input: GrepInput, visible: 
 
 const GROUP_SEPARATOR = '--';
 
+const grepPolicyOf = (ctx: ToolContext): SandboxPolicy => {
+  const { readDenied, readAllowed } = ctx.sandboxPolicy;
+  return { writableRoots: [], writeDenied: [], writeDeniedLiterals: [], readDenied, ...(readAllowed === undefined ? {} : { readAllowed }), network: 'deny', fileRules: ctx.sandboxPolicy.fileRules, protectedSet: EMPTY_PROTECTED_SET };
+};
+
+const RIPGREP_VERSION_LINE = /^ripgrep (\S+)/;
+
+const reportedVersions = new WeakMap<RipgrepLocator, Map<string, Promise<string>>>();
+
+const runVersion = async (ripgrep: string, ctx: ToolContext): Promise<string> => {
+  const child = ctx.sandbox.spawn({ argv: [ripgrep, '--version'], cwd: ctx.session.cwd, env: ctx.env }, grepPolicyOf(ctx), ctx.signal);
+  const [stdout, stderr, exit] = await Promise.all([collect(child.stdout), collect(child.stderr), child.exited]);
+  const version = exit.code === 0 ? RIPGREP_VERSION_LINE.exec(stdout)?.[1] : undefined;
+  if (version === undefined) throw new ToolExecutionError(`${ripgrep} --version did not report a ripgrep version: ${(stdout + stderr).trim()}`);
+  return version;
+};
+
+const reportedVersionOf = (ripgrep: string, ctx: ToolContext): Promise<string> => {
+  let known = reportedVersions.get(ctx.ripgrep);
+  if (known === undefined) {
+    known = new Map();
+    reportedVersions.set(ctx.ripgrep, known);
+  }
+  const versions = known;
+  const existing = versions.get(ripgrep);
+  if (existing !== undefined) return existing;
+  const pending = runVersion(ripgrep, ctx);
+  versions.set(ripgrep, pending);
+  void pending.catch(() => versions.delete(ripgrep));
+  return pending;
+};
+
 const searchWithRipgrep = async (
   ripgrep: string,
   input: GrepInput,
@@ -173,9 +264,30 @@ const searchWithRipgrep = async (
   if (isDirectory) {
     for await (const root of reachableAllowedRoots(target, '', [], { signal: ctx.signal, onUnreadable: () => undefined }, access)) allowedRoots.push(root.absolute);
   }
-  const policy: SandboxPolicy = { writableRoots: [], writeDenied: [], writeDeniedLiterals: [], readDenied, ...(readAllowed === undefined ? {} : { readAllowed }), network: 'deny', fileRules: ctx.sandboxPolicy.fileRules, protectedSet: EMPTY_PROTECTED_SET };
+  const ruleBlocked = await ruleBlockedGlobs(access, target, isDirectory, ctx);
+  const argumentFile = argumentFileOf(ctx);
+  const policy = grepPolicyOf(ctx);
+  const spawnPolicy: SandboxPolicy = { ...policy, readAllowed: [...(policy.readAllowed ?? []), argumentFile] };
   const spawnCwd = isDirectory ? target : path.dirname(target);
-  const child = ctx.sandbox.spawn({ argv: [ripgrep, ...ripgrepArguments(input, mode, target, access, isDirectory, allowedRoots)], cwd: spawnCwd, env: ctx.env }, policy, ctx.signal);
+  const flags = configTextOf(ripgrepFlags(input, mode, target, access, isDirectory, ruleBlocked));
+  try {
+    await writeArgumentFile(argumentFile, flags);
+    return await runSearch(ctx, { argv: [ripgrep, ...ripgrepOperands(input, target, allowedRoots)], cwd: spawnCwd, env: { ...ctx.env, RIPGREP_CONFIG_PATH: argumentFile } }, spawnPolicy, mode, input, access, spawnCwd);
+  } finally {
+    await nodeFileSystem.rm(argumentFile);
+  }
+};
+
+const runSearch = async (
+  ctx: ToolContext,
+  command: { argv: string[]; cwd: string; env: Record<string, string> },
+  policy: SandboxPolicy,
+  mode: OutputMode,
+  input: GrepInput,
+  access: ReadAccessMatcher,
+  spawnCwd: string,
+): Promise<SearchResult> => {
+  const child = ctx.sandbox.spawn(command, policy, ctx.signal);
   const visibleCache = new Map<string, boolean>();
   const visible = (recordPath: string): boolean => {
     let verdict = visibleCache.get(recordPath);
@@ -206,141 +318,11 @@ const searchWithRipgrep = async (
   throw new ToolExecutionError(`ripgrep failed (${reason}): ${stderr.trim()}`);
 };
 
-const matchedLineNumbers = (text: string, lines: readonly string[], expression: RegExp, multiline: boolean): number[] => {
-  if (!multiline) {
-    const hits: number[] = [];
-    lines.forEach((line, index) => {
-      if (expression.test(line)) hits.push(index + 1);
-    });
-    return hits;
-  }
-  const lineStarts: number[] = [0];
-  for (let index = text.indexOf('\n'); index !== -1; index = text.indexOf('\n', index + 1)) lineStarts.push(index + 1);
-  const lineOf = (position: number): number => {
-    let low = 0;
-    let high = lineStarts.length - 1;
-    while (low < high) {
-      const middle = Math.ceil((low + high) / 2);
-      if ((lineStarts[middle] as number) <= position) low = middle;
-      else high = middle - 1;
-    }
-    return low + 1;
-  };
-  const hits = new Set<number>();
-  for (const match of text.matchAll(expression)) {
-    const first = lineOf(match.index);
-    const endPosition = match[0].length === 0 ? match.index : match.index + match[0].length - 1;
-    const last = Math.min(lineOf(endPosition), lines.length);
-    for (let line = first; line <= last; line += 1) hits.add(line);
-  }
-  return [...hits].sort((left, right) => left - right);
-};
-
-const contentLines = (
-  file: string,
-  lines: readonly string[],
-  hits: readonly number[],
-  input: GrepInput,
-): Array<{ lineNumber: number; text: string }> => {
-  const { before, after } = contextOf(input);
-  const withNumbers = lineNumbersWanted(input);
-  const hitSet = new Set(hits);
-  const shown = new Set<number>();
-  for (const hit of hits) {
-    for (let line = Math.max(1, hit - before); line <= Math.min(lines.length, hit + after); line += 1) shown.add(line);
-  }
-  return [...shown]
-    .sort((left, right) => left - right)
-    .map((lineNumber) => {
-      const separator = hitSet.has(lineNumber) ? ':' : '-';
-      const text = lines[lineNumber - 1] as string;
-      return { lineNumber, text: withNumbers ? `${file}${separator}${lineNumber}${separator}${text}` : `${file}${separator}${text}` };
-    });
-};
-
-const splitGroups = (shown: ReadonlyArray<{ lineNumber: number; text: string }>): string[][] => {
-  const groups: string[][] = [];
-  let previous = -1;
-  for (const line of shown) {
-    if (previous === -1 || line.lineNumber !== previous + 1) groups.push([]);
-    (groups[groups.length - 1] as string[]).push(line.text);
-    previous = line.lineNumber;
-  }
-  return groups;
-};
-
-const searchWithJavaScript = async (input: GrepInput, mode: OutputMode, target: string, isDirectory: boolean, ctx: ToolContext): Promise<SearchResult> => {
-  const multiline = input.multiline === true;
-  let expression: RegExp;
-  try {
-    expression = new RegExp(input.pattern, `${input['-i'] === true ? 'i' : ''}m${multiline ? 'gs' : ''}`);
-  } catch (error) {
-    throw new ToolExecutionError(`Invalid regular expression: ${(error as Error).message}`);
-  }
-  const extensions = input.type === undefined ? undefined : extensionsForType(input.type);
-  const globMatch = input.glob === undefined ? undefined : picomatch(input.glob, { dot: true, basename: true });
-  const { before, after } = contextOf(input);
-  const withContext = mode === 'content' && (before > 0 || after > 0);
-
-  let unreadable = false;
-  const candidates: string[] = [];
-  if (isDirectory) {
-    for await (const entry of walkFiles({
-      root: target,
-      readDenied: ctx.sandboxPolicy.readDenied,
-      readAllowed: ctx.sandboxPolicy.readAllowed,
-      fileRules: ctx.sandboxPolicy.fileRules,
-      tool: 'Grep',
-      includeSymlinkedFiles: false,
-      signal: ctx.signal,
-      onUnreadable: () => void (unreadable = true),
-    })) {
-      const extension = path.extname(entry.relative).slice(1);
-      if (extensions !== undefined && !extensions.includes(extension)) continue;
-      if (globMatch !== undefined && !globMatch(entry.relative)) continue;
-      candidates.push(entry.absolute);
-    }
-  } else {
-    candidates.push(target);
-  }
-
-  const files: string[] = [];
-  const groups: string[][] = [];
-  const entries: string[] = [];
-  for (const file of candidates) {
-    ctx.signal.throwIfAborted();
-    let text: string;
-    try {
-      if (await looksBinary(file)) continue;
-      text = await fs.promises.readFile(file, 'utf8');
-    } catch (error) {
-      if (!isPermissionError(error)) throw error;
-      unreadable = true;
-      continue;
-    }
-    const lines = text === '' ? [] : text.replace(/\n$/, '').split('\n');
-    const hits = matchedLineNumbers(text, lines, expression, multiline);
-    if (hits.length === 0) continue;
-    if (mode === 'files_with_matches') files.push(file);
-    else if (mode === 'count') entries.push(`${shownPath(ctx, file)}:${hits.length}`);
-    else groups.push(...splitGroups(contentLines(shownPath(ctx, file), lines, hits, input)));
-  }
-
-  if (mode === 'files_with_matches') return { entries: files, unreadable };
-  if (mode === 'count') return { entries, unreadable };
-  const joined: string[] = [];
-  groups.forEach((group, index) => {
-    if (index > 0 && withContext) joined.push('--');
-    joined.push(...group);
-  });
-  return { entries: joined, unreadable };
-};
-
 export const grepTool = defineTool<GrepInput>({
   name: 'Grep',
   tier: 'essential',
   description:
-    'Searches file contents with a regular expression (ripgrep syntax when available). path is a file or directory, defaults to the working directory, and a relative path is resolved against the working directory. output_mode: files_with_matches (default, newest first), content (path:line:text with optional -A/-B/-C context), or count. Respects .gitignore and .ignore, skips .git, includes dotfiles. head_limit and offset page through the output entries.',
+    'Searches file contents with a regular expression (ripgrep syntax). path is a file or directory, defaults to the working directory, and a relative path is resolved against the working directory. output_mode: files_with_matches (default, newest first), content (path:line:text with optional -A/-B/-C context), or count. Respects .gitignore and .ignore, skips .git, includes dotfiles. head_limit and offset page through the output entries.',
   conciseDescription:
     'Searches file contents with a regular expression. path is a file or directory; a relative path is resolved against the working directory, which is also the default. output_mode: files_with_matches (default), content, or count. Respects .gitignore, includes dotfiles. Page with head_limit and offset.',
   conciseParameterDescriptions: {
@@ -394,15 +376,20 @@ export const grepTool = defineTool<GrepInput>({
     const problem = stat.isDirectory() ? undefined : regularFileProblem(stat, shown);
     if (problem !== undefined) throw new ToolExecutionError(problem);
     const mode = input.output_mode ?? 'files_with_matches';
-    const ripgrep = resolveRipgrep(ctx.env['PATH']);
-    const found =
-      ripgrep === undefined
-        ? await searchWithJavaScript(input, mode, target, stat.isDirectory(), ctx)
-        : await searchWithRipgrep(ripgrep, input, mode, target, stat.isDirectory(), ctx);
+    const ripgrep = await ctx.ripgrep.locate(ctx.signal);
+    if (!ripgrep.ok) throw new ToolExecutionError(ripgrepUnavailableMessage(ripgrep.cause));
+    let found: SearchResult;
+    let backend: ToolBackend;
+    try {
+      backend = { source: ripgrep.source, version: ripgrep.version ?? (await reportedVersionOf(ripgrep.path, ctx)) };
+      found = await searchWithRipgrep(ripgrep.path, input, mode, target, stat.isDirectory(), ctx);
+    } finally {
+      await ripgrep.release();
+    }
     const ordered = mode === 'files_with_matches' ? (await sortByMtimeThenPath(found.entries)).map((file) => shownPath(ctx, file)) : found.entries;
     const skipped = ordered.slice(input.offset ?? 0);
     const limited = input.head_limit === undefined || input.head_limit === 0 ? skipped : skipped.slice(0, input.head_limit);
     const lines = limited.length === 0 ? ['No matches found'] : limited;
-    return { status: 'completed', output: [...lines, ...(found.unreadable ? [UNREADABLE_NOTE] : [])].join('\n') };
+    return { status: 'completed', output: [...lines, ...(found.unreadable ? [UNREADABLE_NOTE] : [])].join('\n'), backend };
   },
 });

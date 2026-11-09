@@ -19,14 +19,14 @@ export const createGovernancePort = ({ store, settings }: GovernancePortOptions)
     };
     const toolPort: GovernanceToolPort = {
       find,
-      propose: (request) => {
+      propose: async (request) => {
         const replayed = find(request.runId, request.callId);
         if (replayed !== undefined) return { factId: replayed.factId, created: false };
         const scope: GoverningFactView['scope'] = request.scope === 'user' ? { level: 'user' } : { level: 'project', project: session.cwd, paths: request.paths ?? [] };
         const target = normalizeTarget(request.target);
         const enforcement = request.enforcement ?? null;
         const supersedes = request.supersedes ?? [];
-        const seq = store.toolCallSeq(request.runId, request.callId);
+        const seq = await store.toolCallSeq(request.runId, request.callId);
         if (seq === undefined) throw new Error(`run ${request.runId} has no tool.call event for ${request.callId}`);
         const source = { kind: 'proposal' as const, sessionId: session.id, runId: request.runId, seq, callId: request.callId };
         const candidate: GoverningFactView = {

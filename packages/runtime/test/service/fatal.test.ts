@@ -110,7 +110,7 @@ describe('service fatal routing (fake timers)', () => {
     const session = await env.createSession();
     const run = await env.createRun(session.id);
     const corrupt = sqliteError(SQLITE_CORRUPT, 'database disk image is malformed');
-    faults.set('readRunEvents', corrupt);
+    faults.set('readRunEventStream', corrupt);
 
     const runStream = await env.stream(`/v1/runs/${run.id}/events`, { headers: { 'last-event-id': '0' } });
     expect(runStream.status).toBe(200);
@@ -119,7 +119,7 @@ describe('service fatal routing (fake timers)', () => {
     expect(env.errors).toEqual([]);
 
     const ioerr = sqliteError(SQLITE_IOERR, 'disk I/O error');
-    faults.set('readSessionEvents', ioerr);
+    faults.set('readSessionEventStream', ioerr);
     const sessionStream = await env.stream(`/v1/sessions/${session.id}/events`, { headers: { 'last-event-id': '0' }, idField: 'id' });
     expect(sessionStream.status).toBe(200);
     await waitUntil(() => env.fatals.length > 1 || env.errors.length > 0, 3000, 'the session stream read failure to be reported');

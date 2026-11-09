@@ -14,7 +14,7 @@ const pathAt = (index: number): string => `${PROJECT}/dir-${index}/file-${index}
 const sourceOf = (entries: TouchedEntry[]): { source: TouchedSource; rowsRead: () => number; reads: () => number; reset: () => void } => {
   let rows = 0;
   let calls = 0;
-  const source: TouchedSource = (after: TouchedCursor | null, limit: number) => {
+  const source: TouchedSource = async (after: TouchedCursor | null, limit: number) => {
     calls += 1;
     const found = entries.filter((entry) => after === null || entry.firstEventId > after.eventId || (entry.firstEventId === after.eventId && entry.path > after.path)).slice(0, limit);
     rows += found.length;

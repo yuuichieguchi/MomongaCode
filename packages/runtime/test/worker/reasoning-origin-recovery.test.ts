@@ -24,7 +24,7 @@ describe('the signed reasoning marker in encrypted_content survives the journal 
   it('keeps the marker in the recorded response and sends it in the next request after a crash', async () => {
     const env = await makeEnv();
     const run = env.enqueue('Echo x');
-    env.seed(
+    await env.seed(
       run.id,
       [
         requestedOffering(1, ['Echo']),

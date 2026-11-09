@@ -36,7 +36,7 @@ export type ChildRunRequest = { parentRunId: string; parentCallId: string; agent
 
 export type ChildRunSpawner = { spawn(request: ChildRunRequest): Promise<ChildRunOutcome> };
 
-export type ChildRuns = ChildRunSpawner & { outcomeOf(runId: string): ChildRunOutcome };
+export type ChildRuns = ChildRunSpawner & { outcomeOf(runId: string): Promise<ChildRunOutcome> };
 
 export type AgentSet = {
   agents: readonly AgentDefinition[];

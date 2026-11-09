@@ -42,7 +42,7 @@ const fakePort = (options: { found?: HistorySearchResult; page?: HistoryReadPage
       searches.push(request);
       return options.found ?? emptySearch;
     },
-    read: (request) => {
+    read: async (request) => {
       reads.push(request);
       return options.page === undefined ? pageOf([]) : options.page;
     },

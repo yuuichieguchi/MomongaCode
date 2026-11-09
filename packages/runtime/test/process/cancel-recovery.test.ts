@@ -99,7 +99,7 @@ const seedCancellingRun = async (temp: RunHome, call: SeedCall, holderScript?: s
       pgid = spawnHolder(path.join(temp.paths.markers.tools, key), holderScript);
       store.idempotency.attachProcess(key, { pgid, startedAt: SEED_MS });
     }
-    const cancelled = store.requestCancel(runId);
+    const cancelled = await store.requestCancel(runId);
     if (cancelled.kind !== 'ok' || cancelled.run.status !== 'CANCELLING') throw new Error('the seed run is not CANCELLING');
     return { runId, sessionId: session.id, key, pgid };
   } finally {

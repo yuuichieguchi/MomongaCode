@@ -30,6 +30,8 @@ const evidenceLine = (entry: MemoryView['evidence'][number]): string => {
       return `evidence: commit ${escapeTerminalLine(entry.sha)}`;
     case 'check':
       return `evidence: check ${escapeTerminalLine(entry.command)} exited ${entry.exitCode} (run ${entry.runId}, event ${entry.seq})`;
+    case 'unknown':
+      return 'evidence: of a kind this version does not know';
   }
 };
 
@@ -41,6 +43,8 @@ const sourceLine = (source: MemoryView['source']): string => {
       return `source: session ${source.sessionId}, run ${source.runId}, reflection candidate ${source.ordinal}`;
     case 'command':
       return `source: added by a person with momonga memory add at ${new Date(source.at).toISOString()}`;
+    case 'unknown':
+      return 'source: of a kind this version does not know';
   }
 };
 

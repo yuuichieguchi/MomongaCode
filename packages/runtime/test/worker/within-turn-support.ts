@@ -69,10 +69,10 @@ export const recordingStore = (env: Env, intercept?: (payloads: readonly RunEven
   return { store, appends };
 };
 
-export const stealLease = (env: Env): void => {
+export const stealLease = async (env: Env): Promise<void> => {
   env.clock.advance(60_000);
   const thief = env.store.claim('worker-thief');
   if (thief === null) throw new Error('the thief could not claim the run');
-  const released = env.store.release(thief, 'QUEUED');
+  const released = await env.store.release(thief, 'QUEUED');
   if (released.kind !== 'ok') throw new Error('the thief could not release the run');
 };
