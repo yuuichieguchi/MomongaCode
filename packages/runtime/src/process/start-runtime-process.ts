@@ -8,11 +8,13 @@ import {
   canonicalPath,
   createJsonLogger,
   createRedactor,
+  createLockCapability,
   ensureMomongaDirs,
   momongaPaths,
   ProcessLockHeldError,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
   reapMarkerDirectory,
+  resolveKernelLock,
   ruleEnforcementOf,
   systemClock,
   nodeFileSystem,
@@ -26,7 +28,7 @@ import { createNodeSkillFileSystem, createSkillLoader } from '@momonga/skills';
 import type { Sandbox } from '@momonga/sandbox';
 import { isFatalStoreError, migrateRuntimeDatabase, openRuntimeStore } from '@momonga/store';
 import type { RuntimeStore } from '@momonga/store';
-import { ShellNotFoundError, clearCallLocks, createPolicyFilesystem, nodeShellHost, resolveBashPath } from '@momonga/tools';
+import { ShellNotFoundError, clearCallLocks, createMarkerOwners, createPolicyFilesystem, nodeShellHost, resolveBashPath } from '@momonga/tools';
 import type { ShellHost } from '@momonga/tools';
 import { createFsInstructionReader } from '@momonga/context';
 import { createGatewayClient } from '../gateway-client.ts';
@@ -171,6 +173,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   const onWarning = (message: string): void => logger.warn(message);
 
   const cleanups: TeardownStep[] = [];
+  const markerOwners = createMarkerOwners();
   const workers: StartedWorker[] = [];
   const periodics: Periodic[] = [];
   let workersSettled = false;
@@ -296,7 +299,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   try {
     const paths = await step('dirs', async () => {
       const resolved = momongaPaths(canonicalHome, process.platform, {});
-      await ensureMomongaDirs(resolved);
+      await ensureMomongaDirs(resolved, { signal });
       return resolved;
     });
 
@@ -368,7 +371,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
 
     await step('mcp-markers', async () => {
-      await reapMarkerDirectory({ dir: paths.markers.mcp, killGraceMs: MARKER_REAP_KILL_GRACE_MS, label: 'mcp', onWarning, timing: reapTiming });
+      await reapMarkerDirectory({ dir: paths.markers.mcp, killGraceMs: MARKER_REAP_KILL_GRACE_MS, label: 'mcp', onWarning, timing: reapTiming, signal });
     });
 
     const { notifier, store, journalThread } = await step('store', async () => {
@@ -405,7 +408,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
 
     await step('tool-markers', async () => {
-      await reapToolMarkers({ dir: paths.markers.tools, store, killGraceMs: MARKER_REAP_KILL_GRACE_MS, onWarning, timing: reapTiming });
+      await reapToolMarkers({ dir: paths.markers.tools, store, killGraceMs: MARKER_REAP_KILL_GRACE_MS, onWarning, timing: reapTiming, signal, event: 'startup', owners: markerOwners });
       await clearCallLocks(paths.callLocks);
     });
 
@@ -456,9 +459,14 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     );
     cleanups.push({ name: 'gateway-client', run: () => gatewayClient.destroy() });
 
-    const ports = await step('ports', () => {
+    const ports = await step('ports', async () => {
       const composition = createSettingsComposition({ home: canonicalHome, cache, store });
+      const lockCapability = createLockCapability({ proofDir: paths.lockProof });
+      const kernelLock = await resolveKernelLock(paths.callLocks, { capability: lockCapability });
       const runtime: ToolRuntime = createToolRuntime({
+        owners: markerOwners,
+        lockCapability,
+        kernelLock,
         paths,
         home: canonicalHome,
         store,
@@ -510,6 +518,18 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       evidenceRunFor,
     } = ports;
     await step('background-jobs', () => toolRuntime.jobs.reconcileOrphans());
+    cleanups.push({
+      name: 'tool-markers',
+      run: async () => {
+        const stop = new AbortController();
+        const handle = timers.setTimeout(() => stop.abort(), RUNTIME_TEARDOWN_BUDGET_MS);
+        try {
+          await reapToolMarkers({ dir: paths.markers.tools, store, killGraceMs: MARKER_REAP_KILL_GRACE_MS, onWarning, timing: reapTiming, signal: stop.signal, event: 'shutdown', owners: toolRuntime.owners });
+        } finally {
+          timers.clearTimeout(handle);
+        }
+      },
+    });
     cleanups.push({ name: 'background-jobs', run: () => toolRuntime.jobs.stopAll() });
     cleanups.push({
       name: 'mcp-pools',
@@ -561,6 +581,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
             fetchPage: (runIds, cursor, limit) => gatewayClient.billedCalls(runIds, cursor, limit, includeRunless, signal),
           }),
         mcp: toolRuntime.mcpAdmin,
+        markerOwners: toolRuntime.owners,
         onError: (error) => logger.error('service error', { err: asError(error) }),
         onFatal: latchFatal,
       }),
@@ -646,6 +667,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
         reflect: (sweepSignal) => reflector.runOne(sweepSignal),
         onError: report,
       });
+      const sweepStop = new AbortController();
       const factsSweeper = startFactsSweeper({
         store,
         thread: journalThread,
@@ -692,7 +714,9 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
                 killGraceMs: MARKER_REAP_KILL_GRACE_MS,
                 onWarning,
                 timing: reapTiming,
-                scope: { deadLetterOnly: true, skipKeys: toolRuntime.inFlightKeys() },
+                signal: sweepStop.signal,
+                event: 'sweep',
+                owners: toolRuntime.owners,
               });
             } catch (error) {
               failures.push(error);
@@ -706,7 +730,10 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       );
       cleanups.push({
         name: 'timers',
-        run: async () => void (await Promise.all([memorySweeper.close(), factsSweeper.close(), ...periodics.map((periodic) => periodic.stop())])),
+        run: async () => {
+          sweepStop.abort();
+          await Promise.all([memorySweeper.close(), factsSweeper.close(), ...periodics.map((periodic) => periodic.stop())]);
+        },
       });
     });
 

@@ -23,9 +23,9 @@ export const recordingSandbox = (inner: Sandbox): { sandbox: Sandbox; spawns: Re
     spawns,
     sandbox: {
       kind: inner.kind,
-      spawn: (command, policy, signal) => {
+      spawn: (command, policy, signal, descriptors) => {
         spawns.push({ command, policy });
-        return inner.spawn(command, policy, signal);
+        return inner.spawn(command, policy, signal, descriptors);
       },
     },
   };

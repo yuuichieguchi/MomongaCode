@@ -323,6 +323,7 @@ export const fakeRuntime = (): FakeRuntime => {
     rules: unexpected('rules'),
     addRule: unexpected('addRule'),
     retireRule: unexpected('retireRule'),
+    ignoreMarker: unexpected('ignoreMarker'),
     ruleHistory: unexpected('ruleHistory'),
     policyGovernance: unexpected('policyGovernance'),
     guidelines: unexpected('guidelines'),

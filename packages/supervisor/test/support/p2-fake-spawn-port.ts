@@ -65,7 +65,7 @@ export const createFakeSpawnPort = (options: { firstPid?: number; role?: string 
         signals.push(signal);
         port.onSignal?.(child, signal);
       },
-      killGroup: () => {
+      killGroup: async () => {
         child.groupKills += 1;
         port.onSignal?.(child, 'group');
       },

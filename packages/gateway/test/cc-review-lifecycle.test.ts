@@ -30,7 +30,7 @@ class Child extends EventEmitter {
       else this.server = server;
     });
   }
-  kill(signal: string = 'SIGTERM'): boolean {
+  async kill(signal: string = 'SIGTERM'): Promise<boolean> {
     this.signals.push(signal);
     void this.exit();
     return true;

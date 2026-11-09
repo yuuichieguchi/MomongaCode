@@ -1,114 +1,113 @@
 import path from 'node:path';
-import { findHolders, reapMarkedProcesses, reportUninspectableOnce } from '@momonga/foundation';
-import type { ReapTiming, UninspectableRegistry } from '@momonga/foundation';
+import { claimRetry, operationSignal, reapMarkedProcesses } from '@momonga/foundation';
+import type { MarkerMode, MarkerState, ProcessInspector, ReapTiming, RetryKind, UninspectableRegistry } from '@momonga/foundation';
 import { TERMINAL_STATUSES } from '@momonga/protocol';
-import type { IdempotencyLookup, RuntimeStore } from '@momonga/store';
+import type { RuntimeStore } from '@momonga/store';
+import { createMarkerSettle, unownedOf } from '@momonga/tools';
+import type { MarkerOwners } from '@momonga/tools';
 import { asError } from './as-error.ts';
 import { nodeRuntimeFiles } from './runtime-files.ts';
 import type { RuntimeFiles } from './runtime-files.ts';
 
 const IDEMPOTENCY_KEY = /^[0-9a-f]{64}$/;
 
-type ReapPlan = { marker: string; pgid?: number | undefined; terminalRunId?: string };
-
-export type ReapToolMarkersScope = 'all' | { deadLetterOnly: true; skipKeys: ReadonlySet<string> };
-
-type PendingLookup = Extract<IdempotencyLookup, { s: 'PENDING' }>;
-
 const isTerminal = (status: string): boolean => (TERMINAL_STATUSES as readonly string[]).includes(status);
 
 export type ReapToolMarkersOptions = {
   dir: string;
   store: Pick<RuntimeStore, 'idempotency' | 'getRun'>;
-  scope?: ReapToolMarkersScope;
+  event: Exclude<RetryKind, 'guard'>;
+  owners: MarkerOwners;
+  signal?: AbortSignal | undefined;
   killGraceMs: number;
   onWarning(message: string): void;
   timing?: ReapTiming;
   reap?: typeof reapMarkedProcesses;
   files?: RuntimeFiles;
+  inspector?: ProcessInspector;
   uninspectable?: UninspectableRegistry;
 };
 
 export const reapToolMarkers = async ({
   dir,
   store,
+  event,
+  owners,
   killGraceMs,
   onWarning,
   timing,
+  signal: given,
   reap = reapMarkedProcesses,
-  scope = 'all',
   files = nodeRuntimeFiles,
+  inspector,
   uninspectable,
 }: ReapToolMarkersOptions): Promise<void> => {
-  let names: string[];
+  const operation = operationSignal(given);
   try {
-    names = await files.readdir(dir);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') onWarning(`tool marker directory ${dir} could not be read: ${asError(error).message}`);
-    return;
+    await sweep(operation.signal);
+  } finally {
+    operation.end();
   }
 
-  const deadLetteredRunOf = (lookup: PendingLookup, requireDeadLetter: boolean): string | undefined => {
-    const runId = lookup.rec.meta['runId'];
-    if (typeof runId !== 'string') return undefined;
-    const run = store.getRun(runId);
-    if (run === undefined || !isTerminal(run.status)) return undefined;
-    if (requireDeadLetter && !run.deadLetter) return undefined;
-    return runId;
-  };
-
-  const terminalRunPlan = (marker: string, lookup: PendingLookup, runId: string): ReapPlan => ({
-    marker,
-    pgid: lookup.rec.pgid,
-    terminalRunId: runId,
-  });
-
-  const periodicPlanFor = (name: string, skipKeys: ReadonlySet<string>): ReapPlan | undefined => {
-    if (!IDEMPOTENCY_KEY.test(name) || skipKeys.has(name)) return undefined;
-    const lookup = store.idempotency.get(name);
-    if (lookup?.s !== 'PENDING') return undefined;
-    const runId = deadLetteredRunOf(lookup, true);
-    return runId === undefined ? undefined : terminalRunPlan(path.join(dir, name), lookup, runId);
-  };
-
-  const planFor = async (name: string): Promise<ReapPlan | undefined> => {
-    const marker = path.join(dir, name);
-    let holders: number[];
+  async function sweep(signal: AbortSignal): Promise<void> {
+    let names: string[];
     try {
-      holders = await findHolders(marker, undefined, reportUninspectableOnce(onWarning, `tool marker ${marker}`, uninspectable));
+      names = await files.readdir(dir);
     } catch (error) {
-      onWarning(`tool marker ${marker} holders could not be determined: ${asError(error).message}`);
-      return undefined;
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') onWarning(`tool marker directory ${dir} could not be read: ${asError(error).message}`);
+      return;
     }
-    if (holders.length === 0) {
+
+    type Plan = { marker: string; mode: MarkerMode; pgid: number | undefined; terminalRunId: string | undefined };
+
+    const planOf = async (name: string): Promise<Plan | undefined> => {
+      const marker = path.join(dir, name);
+      const mode = owners.modeOf(name) ?? 'listed';
+      const settle = createMarkerSettle({ marker, mode, onWarning, killGraceMs, ...(inspector === undefined ? {} : { inspector }), ...(timing === undefined ? {} : { timing }) });
+      let state: MarkerState;
       try {
-        await files.unlink(marker);
+        state = await settle.state(signal);
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') onWarning(`tool marker ${marker} could not be removed: ${asError(error).message}`);
+        onWarning(`tool marker ${marker} holders could not be determined: ${asError(error).message}`);
+        return undefined;
       }
-      return undefined;
-    }
-    const lookup: IdempotencyLookup | undefined = IDEMPOTENCY_KEY.test(name) ? store.idempotency.get(name) : undefined;
-    if (lookup?.s === 'PENDING') {
-      const runId = deadLetteredRunOf(lookup, false);
-      return runId === undefined ? undefined : terminalRunPlan(marker, lookup, runId);
-    }
-    if (lookup?.s === 'UNKNOWN') return { marker, pgid: lookup.rec.pgid };
-    return { marker };
-  };
+      if (state === 'free') {
+        await settle.remove();
+        return undefined;
+      }
+      if (state !== 'held') return undefined;
+      const lookup = IDEMPOTENCY_KEY.test(name) ? store.idempotency.get(name) : undefined;
+      const pgid = lookup?.s === 'PENDING' || lookup?.s === 'UNKNOWN' ? lookup.rec.pgid : undefined;
+      const runId = lookup?.s === 'PENDING' ? lookup.rec.meta['runId'] : undefined;
+      const run = typeof runId === 'string' ? store.getRun(runId) : undefined;
+      return { marker, mode, pgid, terminalRunId: run !== undefined && isTerminal(run.status) ? run.id : undefined };
+    };
 
-  const planned =
-    scope === 'all' ? await Promise.all(names.map(planFor)) : names.map((name) => periodicPlanFor(name, scope.skipKeys));
-  const plans = planned.filter((plan): plan is ReapPlan => plan !== undefined);
+    const unsettled = unownedOf(names, owners);
+    const plans = (await Promise.all(unsettled.map(planOf))).filter((plan): plan is Plan => plan !== undefined);
 
-  const outcomes = await Promise.allSettled(
-    plans.map(({ marker, pgid }) =>
-      reap({ marker, ...(pgid === undefined ? {} : { pgid }), killGraceMs, label: 'tool', onWarning, ...(timing === undefined ? {} : { timing }), ...(uninspectable === undefined ? {} : { uninspectable }) }),
-    ),
-  );
-  outcomes.forEach((outcome, index) => {
-    const plan = plans[index];
-    if (outcome.status === 'rejected') onWarning(`tool marker ${plan?.marker} could not be reaped: ${asError(outcome.reason).message}`);
-    else if (plan?.terminalRunId !== undefined) onWarning(`tool marker ${plan.marker}: run ${plan.terminalRunId} is terminal, so its holder was reaped`);
-  });
+    const reapPlan = async ({ marker, mode, pgid }: Plan): Promise<boolean> => {
+      if ((await claimRetry(marker, event, { signal })) !== 'claimed') return false;
+      await reap({
+        marker,
+        ...(pgid === undefined ? {} : { pgid }),
+        killGraceMs,
+        label: 'tool',
+        onWarning,
+        signal,
+        markerMode: mode,
+        ...(timing === undefined ? {} : { timing }),
+        ...(inspector === undefined ? {} : { inspector }),
+        ...(uninspectable === undefined ? {} : { uninspectable }),
+      });
+      return true;
+    };
+
+    const outcomes = await Promise.allSettled(plans.map(reapPlan));
+    outcomes.forEach((outcome, index) => {
+      const plan = plans[index];
+      if (outcome.status === 'rejected') onWarning(`tool marker ${plan?.marker} could not be reaped: ${asError(outcome.reason).message}`);
+      else if (outcome.value && plan?.terminalRunId !== undefined) onWarning(`tool marker ${plan.marker}: run ${plan.terminalRunId} is terminal, so its holder was reaped`);
+    });
+  }
 };
