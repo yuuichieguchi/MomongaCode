@@ -21,6 +21,7 @@ const readiness = (socket: Duplex, event: 'connect' | 'secureConnect', signal: A
     const settle = (): void => {
       socket.off(event, onReady);
       socket.off('error', onError);
+      socket.off('close', onClose);
       signal.removeEventListener('abort', onAborted);
     };
     const onReady = (): void => {
@@ -31,13 +32,16 @@ const readiness = (socket: Duplex, event: 'connect' | 'secureConnect', signal: A
       settle();
       reject(signal.aborted ? onAbort() : error);
     };
-    const onAborted = (): void => {
+    const onClose = (): void => {
       settle();
-      socket.destroy();
-      reject(onAbort());
+      reject(signal.aborted ? onAbort() : new Error('the connection closed before it was ready'));
+    };
+    const onAborted = (): void => {
+      socket.destroy(onAbort());
     };
     socket.once(event, onReady);
     socket.once('error', onError);
+    socket.once('close', onClose);
     signal.addEventListener('abort', onAborted, { once: true });
   });
 
@@ -79,7 +83,7 @@ const directAgent = (base: typeof http.Agent, ready: 'connect' | 'secureConnect'
   callbackAgent(base, async (options, create) => {
     try {
       return await bounded(timeoutMs, async (signal) => {
-        const socket = create({ ...options, signal });
+        const socket = create(options);
         if (socket === null || socket === undefined) throw new TypeError('node:http created no socket for the OTLP collector');
         await readiness(socket, ready, signal, () => unfinishedConnection(timeoutMs));
         return socket;
@@ -117,12 +121,17 @@ class RoutedProxyAgent extends HttpsProxyAgent<string> {
     req.once('proxyConnect', (reply: { statusCode: number }) => {
       status = reply.statusCode;
     });
-    this.connectOpts = { ...this.#baseConnect, signal };
+    const proxyHop = new AbortController();
+    const abortProxyHop = (): void => proxyHop.abort();
+    signal.addEventListener('abort', abortProxyHop, { once: true });
+    this.connectOpts = { ...this.#baseConnect, signal: proxyHop.signal };
     let socket: net.Socket;
     try {
       socket = await super.connect(req, opts);
     } catch (error) {
       throw signal.aborted ? proxyTimeout() : proxyHopError(error);
+    } finally {
+      signal.removeEventListener('abort', abortProxyHop);
     }
     if (status === undefined) throw new TypeError('https-proxy-agent returned a tunnel without a CONNECT reply');
     if (status !== 200) {
