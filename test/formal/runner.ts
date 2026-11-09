@@ -43,21 +43,41 @@ export const treeCpuSeconds = async (rootPid: number): Promise<number> => {
 
 const liveGroups = new Set<number>();
 
-const liveMembersOf = (pgid: number): number[] =>
-  execFileSync('ps', ['-A', '-o', 'pid=,pgid=,stat='], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+export type GroupHost = {
+  signalGroup: (pgid: number) => void;
+  groupStates: () => string;
+};
+
+const hostGroups: GroupHost = {
+  signalGroup: (pgid) => process.kill(-pgid, 'SIGKILL'),
+  groupStates: () => execFileSync('ps', ['-A', '-o', 'pid=,pgid=,stat='], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }),
+};
+
+const RUN_STATES_PAST_RUNNING = new Set(['Z', 'X']);
+const EXITING_FLAG = 'E';
+
+const canStillRun = (stat: string): boolean => !RUN_STATES_PAST_RUNNING.has(stat.charAt(0)) && !stat.slice(1).includes(EXITING_FLAG);
+
+const membersThatCanStillRun = (host: GroupHost, pgid: number): number[] =>
+  host
+    .groupStates()
     .split('\n')
     .map((line) => line.trim().split(/\s+/))
-    .filter(([, group, stat]) => Number(group) === pgid && stat !== undefined && !stat.startsWith('Z'))
+    .filter(([, group, stat]) => Number(group) === pgid && stat !== undefined && canStillRun(stat))
     .map(([pid]) => Number(pid));
 
-export const killGroup = (pgid: number): void => {
-  try {
-    process.kill(-pgid, 'SIGKILL');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return;
-    if (liveMembersOf(pgid).length > 0) throw error;
-  }
-};
+export const groupKiller =
+  (host: GroupHost) =>
+  (pgid: number): void => {
+    try {
+      host.signalGroup(pgid);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ESRCH') return;
+      if (membersThatCanStillRun(host, pgid).length > 0) throw error;
+    }
+  };
+
+export const killGroup = groupKiller(hostGroups);
 
 process.on('exit', () => {
   for (const pgid of liveGroups) killGroup(pgid);
