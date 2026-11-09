@@ -41,15 +41,18 @@ describe('the gateway process loads plan profiles from the injected planProfiles
   });
 });
 
+const TOKEN_PREFIX_CHARS = 64;
+
 describe('plan tokens are redacted in every generation (M6, I-C1)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
-  it('keeps the refreshed token the upstream echoes out of the response, the log and the trace store', async () => {
+  it('keeps the loaded and the refreshed token, each echoed by the upstream in an error body after the refresh, out of the response, the log and every file under the home', async () => {
     const home = makeHome();
     const layout = momongaLayout(home);
     const secretStore = createFakeSecretStore({});
     const installed = new Set<string>();
+    const echoes: Array<(request: RecordedUpstreamRequest) => string> = [() => [...installed].join(' '), (request) => bearerOf(request)];
     const upstream = await startFakePlanResponses({
       verifyBearer: (bearer) => (bearer === undefined || installed.has(bearer) ? 'expired' : 'valid'),
-      respond: (request): FakeUpstreamReply => openResponsesTextReply([`echo ${bearerOf(request)}`]),
+      respond: (request): FakeUpstreamReply => ({ kind: 'error', status: 400, body: { error: { message: `echo ${(echoes.shift() ?? bearerOf)(request)}`, type: 'invalid_request_error', code: null, param: null } } }),
     });
     registerCleanup(() => upstream.close());
     const loopback = `${upstream.origin}/v1`;
@@ -84,18 +87,24 @@ describe('plan tokens are redacted in every generation (M6, I-C1)', { timeout: R
 
     writeSettings(home, { models: { aliases: { default: 'gpt' }, targets: { gpt: { adapter: 'open-responses', model: 'm', capabilities: CAPABILITIES, plan: { profile: PROFILE_ID, account: 'work' } } } } });
     const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, secretStore, planProfiles: { [PROFILE_ID]: profile } } as never);
-    const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: 'default', input: userInput('hi') }));
+    const ask = async () => readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: 'default', input: userInput('hi') }));
+    const responses = [await ask(), await ask()];
 
     const answered = upstream.requests.filter((request) => request.method === 'POST' && !installed.has(bearerOf(request)));
-    expect(answered).toHaveLength(1);
+    expect(answered).toHaveLength(2);
     const refreshed = bearerOf(answered[0] as RecordedUpstreamRequest);
     expect(refreshed).not.toBe('');
-    expect(response.status).toBe(200);
-    expect(outputText(response.body)).not.toContain(refreshed);
-    expect(JSON.stringify(response.body)).not.toContain(refreshed);
+    expect(answered.map(bearerOf)).toEqual([refreshed, refreshed]);
+    for (const response of responses) {
+      expect(response.status).toBe(400);
+      expect(JSON.stringify(response.body)).toContain('echo');
+    }
     await handle.close();
-    for (const file of filesUnder(layout.root ?? path.join(home, '.momonga'))) {
-      expect(fs.readFileSync(file).includes(refreshed), file).toBe(false);
+    const files = filesUnder(layout.root ?? path.join(home, '.momonga'));
+    for (const token of [signIn.tokens.access_token, refreshed]) {
+      const leaked = token.slice(0, TOKEN_PREFIX_CHARS);
+      for (const response of responses) expect(JSON.stringify(response.body)).not.toContain(leaked);
+      for (const file of files) expect(fs.readFileSync(file).includes(leaked), file).toBe(false);
     }
   });
 });
