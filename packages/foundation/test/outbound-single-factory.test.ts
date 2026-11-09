@@ -40,6 +40,8 @@ const sourceFiles = (dir: string): string[] =>
 const clientsIn = (text: string): string[] =>
   text.split('\n').filter((line) => OUTBOUND_CLIENT.some((pattern) => pattern.test(line)));
 
+const clientsInSource = (source: string): string[] => clientsIn(source).map((line) => line.trim());
+
 const offenders = (): Map<string, string[]> => {
   const found = new Map<string, string[]>();
   const excluded = new Set(EXCLUDED_PACKAGES.map((entry) => entry.file));
@@ -47,7 +49,7 @@ const offenders = (): Map<string, string[]> => {
     const src = path.join(packagesDir, pkg, 'src');
     if (excluded.has(pkg) || !fs.existsSync(src)) continue;
     for (const file of sourceFiles(src)) {
-      const lines = clientsIn(fs.readFileSync(file, 'utf8'));
+      const lines = clientsInSource(fs.readFileSync(file, 'utf8'));
       if (lines.length > 0) found.set(path.relative(packagesDir, file).split(path.sep).join('/'), lines);
     }
   }
@@ -76,27 +78,73 @@ describe('every outbound HTTP client comes from the one factory', () => {
   });
 });
 
-const CONSTRUCTIONS: readonly string[] = [
-  'const agent = new Agent({ keepAlive: true });',
-  'const agent = new http.Agent({ keepAlive: true });',
-  'const agent = new https.Agent({ keepAlive: true });',
-  'const agent = new HttpsProxyAgent(proxyUrl);',
-  'const proxy = new ProxyAgent({ uri });',
-  'const pool = new Pool(origin, options);',
-  'class Routed extends HttpsProxyAgent<string> {',
-  'class Direct extends http.Agent {',
-  'class Secure extends https.Agent {',
-  'class Undici extends Agent {',
-  'class Tunnel extends ProxyAgent {',
-  'class Outbound extends Dispatcher {',
-  'const build = (base: typeof http.Agent): http.Agent => new (class extends base {})();',
-  'const build = (base: typeof https.Agent): https.Agent => new (class extends base {})();',
-  'const response = await fetch(url);',
+type Construction = { imports: string; line: string };
+
+const CONSTRUCTIONS: readonly Construction[] = [
+  { imports: "import { Agent } from 'undici';", line: 'const agent = new Agent({ keepAlive: true });' },
+  { imports: "import http from 'node:http';", line: 'const agent = new http.Agent({ keepAlive: true });' },
+  { imports: "import https from 'node:https';", line: 'const agent = new https.Agent({ keepAlive: true });' },
+  { imports: "import { HttpsProxyAgent } from 'https-proxy-agent';", line: 'const agent = new HttpsProxyAgent(proxyUrl);' },
+  { imports: "import { ProxyAgent } from 'undici';", line: 'const proxy = new ProxyAgent({ uri });' },
+  { imports: "import { Pool } from 'undici';", line: 'const pool = new Pool(origin, options);' },
+  { imports: "import { HttpsProxyAgent } from 'https-proxy-agent';", line: 'class Routed extends HttpsProxyAgent<string> {}' },
+  { imports: "import http from 'node:http';", line: 'class Direct extends http.Agent {}' },
+  { imports: "import https from 'node:https';", line: 'class Secure extends https.Agent {}' },
+  { imports: "import { Agent } from 'undici';", line: 'class Undici extends Agent {}' },
+  { imports: "import { ProxyAgent } from 'undici';", line: 'class Tunnel extends ProxyAgent {}' },
+  { imports: "import { Dispatcher } from 'undici';", line: 'class Outbound extends Dispatcher {}' },
+  { imports: "import http from 'node:http';", line: 'const build = (base: typeof http.Agent): http.Agent => new (class extends base {})();' },
+  { imports: "import https from 'node:https';", line: 'const build = (base: typeof https.Agent): https.Agent => new (class extends base {})();' },
+  { imports: '', line: 'const response = await fetch(url);' },
+  { imports: '', line: 'const response = await globalThis.fetch(url);' },
+  { imports: "import { fetch } from 'undici';", line: 'const response = await fetch(url);' },
+  { imports: "import { fetch as get } from 'undici';", line: 'const response = await get(url);' },
+  { imports: "import * as undici from 'undici';", line: 'const response = await undici.fetch(url);' },
+  { imports: "import { Agent as A } from 'undici';", line: 'const agent = new A({ keepAlive: true });' },
+  { imports: "import * as u from 'undici';", line: 'const pool = new u.Pool(origin, options);' },
+  { imports: "import * as u from 'undici';", line: 'class Outbound extends u.Dispatcher {}' },
+  { imports: "import { Pool as P } from 'undici';", line: 'class Pooled extends P {}' },
+  { imports: "import { HttpsProxyAgent as Tunnel } from 'https-proxy-agent';", line: 'class Routed extends Tunnel<string> {}' },
+  { imports: "import { HttpProxyAgent } from 'http-proxy-agent';", line: 'const agent = new HttpProxyAgent(proxyUrl);' },
+  { imports: "import { Agent } from 'https';", line: 'const agent = new Agent({ keepAlive: true });' },
+  { imports: "import { Agent as Plain } from 'http';", line: 'const agent = new Plain({ keepAlive: true });' },
+  { imports: "import * as h from 'node:https';", line: 'const agent = new h.Agent({ keepAlive: true });' },
+];
+
+const sourceOf = (construction: Construction): string => [construction.imports, construction.line].filter((part) => part !== '').join('\n');
+
+const ALIASED_GLOBAL_FETCH: readonly { source: string; call: string }[] = [
+  { source: 'const f = fetch;\nconst response = await f(url);', call: 'const response = await f(url);' },
+  { source: 'const { fetch: get } = globalThis;\nconst response = await get(url);', call: 'const response = await get(url);' },
+  { source: 'const get = globalThis.fetch;\nconst response = await get(url);', call: 'const response = await get(url);' },
+];
+
+const LOCAL_NAMES: readonly string[] = [
+  'const fillPage = (after: number, fetch: (after: number, limit: number) => Row[]): Row[] => {\n  const rows = fetch(cursor, wanted);\n  return rows;\n};',
+  'function page(fetch: (key: string) => Row) {\n  return fetch(key);\n}',
+  'const fetch = (key: string): Row => rows[key];\nconst row = fetch(key);',
+  'function fetch(key: string): Row {\n  return rows[key];\n}\nconst row = fetch(key);',
+  "import { fetch } from './cache.js';\nconst row = fetch(key);",
+  "import { load as fetch } from './cache.js';\nconst row = fetch(key);",
+  'class Agent {}\nconst agent = new Agent({ keepAlive: true });',
+  'class Pool {}\nconst pool = new Pool(origin, options);',
+  'class Dispatcher {}\nclass Outbound extends Dispatcher {}',
+  'class ProxyAgent {}\nclass Tunnel extends ProxyAgent {}',
+  "import { Agent } from './model-agent.js';\nconst agent = new Agent({ keepAlive: true });",
+  "import { Pool } from './worker-pool.js';\nconst pool = new Pool(origin, options);",
+  "import { Dispatcher } from './events.js';\nclass Outbound extends Dispatcher {}",
+  "import { ProxyAgent } from './proxy-model.js';\nconst proxy = new ProxyAgent({ uri });",
+  "import * as u from './pools.js';\nconst pool = new u.Pool(origin, options);",
+  "import { Agent as A } from './model-agent.js';\nconst agent = new A({ keepAlive: true });",
 ];
 
 describe('the scanner recognises every way the code builds an outbound client', () => {
-  it.each(CONSTRUCTIONS)('finds %s', (line) => {
-    expect(clientsIn(line)).toEqual([line]);
+  it.each(CONSTRUCTIONS)('finds $line under $imports', (construction) => {
+    expect(clientsInSource(sourceOf(construction))).toEqual([construction.line]);
+  });
+
+  it.each(ALIASED_GLOBAL_FETCH)('finds the call of the global fetch through an alias in $source', ({ source, call }) => {
+    expect(clientsInSource(source)).toContain(call);
   });
 
   it('finds the OTLP agent, which is the one sanctioned place outside the factory', () => {
@@ -104,15 +152,23 @@ describe('the scanner recognises every way the code builds an outbound client', 
   });
 
   it('refuses the same construction in a file that is not sanctioned', () => {
-    const fixture = CONSTRUCTIONS.join('\n');
-    const refused = outsideAllowed(new Map([['gateway/src/some-client.ts', clientsIn(fixture)], ['observability/src/otlp-agent.ts', clientsIn(fixture)]]));
+    const lines = CONSTRUCTIONS.flatMap((construction) => clientsInSource(sourceOf(construction)));
+    const refused = outsideAllowed(new Map([['gateway/src/some-client.ts', lines], ['observability/src/otlp-agent.ts', lines]]));
     expect(refused).toHaveLength(1);
     expect(refused[0]?.startsWith('gateway/src/some-client.ts: ')).toBe(true);
     expect(refused[0]?.split(' | ')).toHaveLength(CONSTRUCTIONS.length);
   });
 
   it('does not take an unrelated class or call for a client', () => {
-    expect(clientsIn('class Failure extends Error {')).toEqual([]);
-    expect(clientsIn('const response = await http.request({ method: "GET", path });')).toEqual([]);
+    expect(clientsInSource('class Failure extends Error {}')).toEqual([]);
+    expect(clientsInSource("import http from 'node:http';\nconst response = await http.request({ method: 'GET', path });")).toEqual([]);
+  });
+
+  it.each(LOCAL_NAMES)('does not take a name bound in the file to something that is not a network client for one, in %s', (source) => {
+    expect(clientsInSource(source)).toEqual([]);
+  });
+
+  it('does not take the fetch parameter of fillPage in the runtime store for the global fetch', () => {
+    expect(offenders().has('store/src/runtime-store.ts')).toBe(false);
   });
 });
