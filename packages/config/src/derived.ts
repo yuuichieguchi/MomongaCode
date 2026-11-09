@@ -172,7 +172,8 @@ export const createPinnedDerivation = <T>({ cache, inputsOf, derive, retire, onW
       const failures: unknown[] = [];
       await Promise.all([...live].map((entry) => retireNow(entry).catch((error: unknown) => failures.push(error))));
       await Promise.all([...retirements]);
-      if (failures.length > 0) throw new AggregateError(failures, 'one or more settings objects failed to close');
+      if (failures.length === 1) throw failures[0];
+      if (failures.length > 1) throw new AggregateError(failures, 'one or more settings objects failed to close');
     },
   };
 };
