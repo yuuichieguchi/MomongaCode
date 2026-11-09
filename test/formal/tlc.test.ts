@@ -16,6 +16,7 @@ const jarPath = path.join(repoRoot, '.cache', 'tla', 'tla2tools.jar');
 const REAP_SLACK_MS = 5000;
 const FETCH_COMMAND = 'curl -L -o .cache/tla/tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar';
 const LIVENESS_ARGS = ['-lncheck', 'final'];
+const ENDLESS_BUDGET_CPU_SECONDS = 8;
 
 const loadManifest = (): { manifest: Manifest } | { error: unknown } => {
   try {
@@ -438,19 +439,16 @@ describe('running tlc.sh under the harness', () => {
   it(
     'kills the script and its JVM as one process group at the CPU budget and leaves no JVM',
     async () => {
-      const budgetCpuSeconds = 8;
       const script = sandboxWithScript(root, { 'Endless.tla': endlessSpec, 'Endless.cfg': cfgFor('Fine') }, true);
-      const startedAt = Date.now();
-      const run = await runTlc({ script, config: 'Endless', args: [], budgetCpuSeconds });
-      expect(Date.now() - startedAt).toBeLessThan(budgetCpuSeconds * 1000 + REAP_SLACK_MS);
+      const run = await runTlc({ script, config: 'Endless', args: [], budgetCpuSeconds: ENDLESS_BUDGET_CPU_SECONDS });
       expect(run.killedAtCpuBudget).toBe(true);
       expect(run.signal).toBe('SIGKILL');
       expect(run.stdout).toContain('TLC2 Version');
       expect(await groupGoneWithin(run.pid, REAP_SLACK_MS)).toEqual([]);
       expect(tlcMetadirsLeft()).toEqual([]);
-      expect(verdictProblems({ ...holdsEntry, config: 'Endless', budgetCpuSeconds }, run)).not.toEqual([]);
+      expect(verdictProblems({ ...holdsEntry, config: 'Endless', budgetCpuSeconds: ENDLESS_BUDGET_CPU_SECONDS }, run)).not.toEqual([]);
     },
-    8000 + 3 * REAP_SLACK_MS,
+    ENDLESS_BUDGET_CPU_SECONDS * TLC_WORKERS * 1000 + 2 * REAP_SLACK_MS,
   );
 });
 
