@@ -104,7 +104,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     try {
-      const endpoint = await options.resolveEndpoint(ctx.target);
+      const endpoint = await options.resolveEndpoint(ctx.target, signal);
       const apiKey = await options.apiKey(ctx.target, signal);
       let emitter: ResponseEmitter | undefined;
       let paused: Paused | undefined;
@@ -154,7 +154,7 @@ export const createAnthropicAdapter = (options: AnthropicAdapterOptions): Anthro
     const upstream = new AbortController();
     const signal = AbortSignal.any([ctx.signal, upstream.signal]);
     try {
-      const endpoint = await options.resolveEndpoint(ctx.target);
+      const endpoint = await options.resolveEndpoint(ctx.target, signal);
       const apiKey = await options.apiKey(ctx.target, signal);
       const response = await pool.clientFor(endpoint).post({
         headers: headersFor(apiKey, 'application/json'),

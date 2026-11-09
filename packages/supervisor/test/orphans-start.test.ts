@@ -53,9 +53,9 @@ const reapSetup = (dir: string, overrides: Partial<OrphanReapOptions> = {}) => {
 const recorded = (overrides: MarkerPorts = {}) => {
   const calls = { findHolders: 0, reap: [] as Array<{ options: ReapMarkerDirectoryOptions; abortedAtCall: boolean }> };
   const ports: MarkerPorts = {
-    findHolders: async (marker) => {
+    findHolders: async (marker, probe) => {
       calls.findHolders += 1;
-      return overrides.findHolders === undefined ? [] : overrides.findHolders(marker);
+      return overrides.findHolders === undefined ? [] : overrides.findHolders(marker, probe);
     },
     reapMarkerDirectory: async (options) => {
       calls.reap.push({ options, abortedAtCall: options.signal?.aborted ?? false });
@@ -91,7 +91,7 @@ describe('reapOrphans', () => {
     fs.writeFileSync(path.join(dir, 'runtime-03'), '', { mode: 0o600 });
     fs.writeFileSync(path.join(dir, 'runtime-04'), '', { mode: 0o600 });
     const ports: MarkerPorts = {
-      findHolders: async (_marker, _inspector, onUninspectable) => {
+      findHolders: async (_marker, { onUninspectable }) => {
         onUninspectable?.({ pid: 31_339, command: 'ssh-agent', startTicks: '616161' });
         return [];
       },
@@ -146,11 +146,11 @@ describe('reapOrphans', () => {
     expect(log.withMsg('orphans.reaping')).toEqual([expect.objectContaining({ holders: 1 })]);
   });
 
-  it('phase 1 is bounded by runtimeMaxCloseMs + 2000 even with a larger orphanGraceMs', async (context) => {
+  it('phase 1 is bounded by runtimeMaxCloseMs even with a larger orphanGraceMs', async (context) => {
     const dir = markersDir(context);
     fs.writeFileSync(path.join(dir, 'runtime-04'), '');
     const { calls, ports } = recorded({ findHolders: async () => [999_999] });
-    const bound = runtimeMaxCloseMs(30_000) + 2000;
+    const bound = runtimeMaxCloseMs(30_000);
     const { clock, reap, until } = reapSetup(dir, { markerPorts: ports, orphanGraceMs: 10 * bound });
     const result = reap();
     await until(() => calls.reap.length > 0, 250000);
@@ -317,7 +317,7 @@ describe('reapOrphans', () => {
 describe('orphan reap at supervisor start', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('reap shutdown bound relation', () => {
     expect(ORPHAN_REAP_GRACE_MS + SHUTDOWN_RELEASE_BOUND_MS).toBeLessThan(supervisorMaxCloseMs(0));
-    expect(ORPHAN_REAP_GRACE_MS).toBe(17_000);
+    expect(ORPHAN_REAP_GRACE_MS).toBe(15_000);
   });
 
   it('start reaps daemon markers before the first spawn', async (context) => {
@@ -431,13 +431,13 @@ describe('orphan reap at supervisor start', { timeout: REAL_PROCESS_TEST_TIMEOUT
     expect(h.markers.calls.reapMarkerDirectory[0]?.dir).toBe(h.paths.markers.daemons);
   });
 
-  it('orphanGraceMs defaults to runtimeMaxCloseMs(drainTimeoutMs) + 2000', async (context) => {
+  it('orphanGraceMs defaults to runtimeMaxCloseMs(drainTimeoutMs)', async (context) => {
     const h = await startHarness(context, {
       prepare: (_home, paths) => void writeMarker(paths, 'runtime-old'),
       markerPorts: { findHolders: async () => [999_999] },
       overrides: { runtime: { drainTimeoutMs: 1000 } },
     });
-    const bound = runtimeMaxCloseMs(1000) + 2000;
+    const bound = runtimeMaxCloseMs(1000);
     await pumpUntil(h.timers, () => h.clock.now() - Date.parse('2026-01-01T00:00:00.000Z') >= bound - 300, { realWork: h.realWork, maxMs: bound });
     expect(h.markers.calls.reapMarkerDirectory).toEqual([]);
     await pumpUntil(h.timers, () => h.markers.calls.reapMarkerDirectory.length === 1, { realWork: h.realWork, maxMs: 1000 });

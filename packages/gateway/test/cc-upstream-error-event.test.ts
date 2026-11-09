@@ -10,6 +10,7 @@ import { CC_CAPABILITIES, collect, terminalOf, userText } from './cc-support.ts'
 import { primed, recordKeyOptions } from './fm-record-support.ts';
 import { makeReport } from './report-fixture.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
+import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 const FM_ROLE_CHUNK = {
   id: 'chatcmpl-fm',
@@ -59,13 +60,13 @@ const unprobedFmAdapter = async (upstream: FakeUpstreamServer) => {
     }),
     key.target,
   );
-  const adapter = createChatCompletionsAdapter({ ...managed, clock: createFakeClock(START_MS) });
+  const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock: createFakeClock(START_MS) });
   registerCleanup(() => adapter.close());
   return adapter;
 };
 
 const genericAdapter = (upstream: FakeUpstreamServer) => {
-  const adapter = createChatCompletionsAdapter({ schemaDialect: () => 'json-schema-2020-12',
+  const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, schemaDialect: () => 'json-schema-2020-12',
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: upstream.socketPath }),
     capabilities: async () => CC_CAPABILITIES,
     clock: createFakeClock(START_MS),

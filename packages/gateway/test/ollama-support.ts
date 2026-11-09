@@ -8,6 +8,8 @@ import type { OllamaAdapterOptions } from '@momonga/gateway';
 import type { AdapterRequest, AdapterTarget, Capabilities, ProviderAdapter, StreamEvent } from '@momonga/protocol';
 import { createFakeClock, readBody, sendJson, startLoopbackServer } from '@momonga/testkit';
 import { START_MS, registerCleanup } from './gateway-helpers.ts';
+import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
+import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 const FIXTURE_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'ollama');
 
@@ -209,8 +211,8 @@ export const OLLAMA_CAPABILITIES: Capabilities = {
 };
 
 export const makeOllamaAdapter = (fake: FakeOllama, overrides: Partial<OllamaAdapterOptions> = {}): ProviderAdapter => {
-  const adapter = createOllamaAdapter({
-    resolveEndpoint: async () => ({ kind: 'tcp', baseUrl: fake.origin }),
+  const adapter = createOllamaAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
+    resolveEndpoint: async () => ({ kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }),
     capabilities: async () => OLLAMA_CAPABILITIES,
     clock: createFakeClock(START_MS),
     ...overrides,

@@ -103,6 +103,7 @@ describe('the user-facing sentences', () => {
       manageUsageLabel: 'Manage usage',
       usageLimitMessage: "Usage limit reached — Review your plan or this app's limit in ChatGPT settings.",
       signInExpiredMessage: 'ChatGPT sign-in expired',
+      signInRequiredMessage: 'Not signed in to ChatGPT',
       firstSignIn: {
         title: "You're using your ChatGPT plan",
         body: 'Eligible usage in this app uses your ChatGPT plan. Manage usage in your ChatGPT settings.',
@@ -144,6 +145,12 @@ describe('the error rules', () => {
     [503, 'server_error', 'plan_route_unavailable', true, 'failure', 'next', 'keep'],
   ])('decides an undocumented code on status %i', (status, type, code, retryable, verdict, fallback, credential) => {
     expect(statusRule(status)).toMatchObject({ type, code, retryable, verdict, fallback, credential });
+  });
+
+  it('refuses a profile without the not-signed-in sentence', () => {
+    const copy = structuredClone(profile()) as unknown as { messages: Record<string, unknown> };
+    delete copy.messages['signInRequiredMessage'];
+    expect(() => assertPlanProfile(copy, 'test')).toThrow(/signInRequiredMessage/);
   });
 
   it('keeps the parameter the server names on an unsupported capability only', () => {

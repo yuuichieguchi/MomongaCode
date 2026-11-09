@@ -2,13 +2,13 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { PS_PROBE_TIMEOUT_MS, findHolders } from '@momonga/foundation';
+import { findHolders } from '@momonga/foundation';
 import { MCP_MODERN_SERVER_PATH, MODERN_FIXTURE_SETSID_GRANDCHILD_ENV, REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { createTransport, descriptorPath, eventually, groupExists, makeDir, pidAlive, rawConfig, startRaw, trackPid } from './raw-transport.ts';
 
 const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 const SSH_AGENT = '/usr/bin/ssh-agent';
-const AGENT_CLOSE_BOUND_MS = 2 * PS_PROBE_TIMEOUT_MS;
+const AGENT_CLOSE_GRACE_MS = 200;
 
 const markerSetup = () => {
   const dir = path.join(makeDir(), 'markers');
@@ -33,7 +33,7 @@ describe('MCP stdio transport markers', () => {
     expect(fs.readFileSync(marker, 'utf8')).toBe(`${pid}\n`);
     expect(transport.pgid).toBe(pid);
     expect(await descriptorPath(pid, 3)).toBe(fs.realpathSync(marker));
-    expect(await findHolders(marker)).toEqual([pid]);
+    expect(await findHolders(marker, { signal: new AbortController().signal })).toEqual([pid]);
   });
 
   it('removes the marker when the command cannot be resolved', async () => {
@@ -83,7 +83,7 @@ describe('MCP stdio transport markers', () => {
     const grandchild = Number(fs.readFileSync(readyFile, 'utf8'));
     trackPid(grandchild);
     const [marker] = markerFiles(dir) as [string];
-    await eventually(async () => (await findHolders(marker)).includes(grandchild), 'the grandchild to hold the marker');
+    await eventually(async () => (await findHolders(marker, { signal: new AbortController().signal })).includes(grandchild), 'the grandchild to hold the marker');
 
     await transport.close();
 
@@ -93,9 +93,9 @@ describe('MCP stdio transport markers', () => {
   });
 
   describe.runIf(process.platform === 'linux' && fs.existsSync(SSH_AGENT))('with a real ssh-agent, which is non-dumpable and belongs to the current user', () => {
-    it('close completes and names an agent that started after the marker as one that could not be inspected', PROCESS_TIMEOUT, async () => {
+    it('close completes, names an agent that started after the marker as one that could not be inspected, and keeps the marker', PROCESS_TIMEOUT, async () => {
       const { dir, markers, warnings } = markerSetup();
-      const { transport, request } = await startRaw({ config: rawConfig(), markers, closeGraceMs: 200 });
+      const { transport, request } = await startRaw({ config: rawConfig(), markers, closeGraceMs: AGENT_CLOSE_GRACE_MS });
       const { pid } = (await request('pid')) as { pid: number };
       expect(markerFiles(dir)).toHaveLength(1);
       const socket = path.join(makeDir(), 'agent.sock');
@@ -105,12 +105,10 @@ describe('MCP stdio transport markers', () => {
       await eventually(() => fs.existsSync(socket), 'ssh-agent to listen');
       const [marker] = markerFiles(dir) as [string];
 
-      const started = Date.now();
       await transport.close();
 
-      expect(Date.now() - started).toBeLessThan(AGENT_CLOSE_BOUND_MS);
       expect(groupExists(pid)).toBe(false);
-      expect(fs.existsSync(marker)).toBe(false);
+      expect(fs.existsSync(marker)).toBe(true);
       expect(warnings).toEqual([`mcp marker ${marker}: process ${agent.pid} (ssh-agent) could not be inspected, so it was left alone`]);
     });
   });

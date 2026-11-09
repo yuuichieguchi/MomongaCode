@@ -1,5 +1,5 @@
 import { decodeSse, defineProductSchema } from '@momonga/foundation';
-import type { ProductValidator } from '@momonga/foundation';
+import type { OutboundNetwork, ProductValidator } from '@momonga/foundation';
 import {
   ESTIMATED_ERROR_BOUND_RATIO,
   DEFAULT_DIALECT_ID,
@@ -45,6 +45,7 @@ import { field, firstOf, isRecord, listedEntryOf, parseJson } from './json.ts';
 export interface ProbeOptions {
   socketPath?: string;
   baseUrl?: string;
+  network?: OutboundNetwork;
   headers?: Record<string, string>;
   managedHealthRoute?: boolean;
   vocabulary?: ErrorVocabulary;
@@ -137,7 +138,8 @@ const endpointOf = (options: ProbeOptions): ProbeEndpoint => {
   const { socketPath, baseUrl } = options;
   if ((socketPath === undefined) === (baseUrl === undefined)) throw new Error('A probe needs exactly one of socketPath and baseUrl');
   if (socketPath !== undefined) return { kind: 'unix', socketPath };
-  return { kind: 'tcp', baseUrl: baseUrl as string, ...(options.headers === undefined ? {} : { headers: options.headers }) };
+  if (options.network === undefined) throw new Error('A probe of a baseUrl needs the network configuration');
+  return { kind: 'tcp', baseUrl: baseUrl as string, network: options.network, ...(options.headers === undefined ? {} : { headers: options.headers }) };
 };
 
 export const runProbe = async (options: ProbeOptions): Promise<ProbeReport> => {

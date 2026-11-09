@@ -5,6 +5,7 @@ import type { AdapterRequest, AdapterTarget, Capabilities, StreamEvent, ToolCall
 import { createFakeClock, startFakeChatCompletions } from '@momonga/testkit';
 import type { FakeChatCompletionsOptions, FakeChatCompletionsServer } from '@momonga/testkit';
 import { START_MS, registerCleanup, validator } from './gateway-helpers.ts';
+import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 export const TARGET: AdapterTarget = { name: 'fm', model: 'system' };
 
@@ -36,7 +37,7 @@ export const makeAdapter = (
   mode: ToolCallingMode = 'native',
 ): ChatCompletionsAdapter => {
   const clock = createFakeClock(START_MS);
-  const adapter = createChatCompletionsAdapter({
+  const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
     capabilities: async () => ({ ...CC_CAPABILITIES, toolCalling: mode }),
     schemaDialect: () => CC_CAPABILITIES.schemaDialect,

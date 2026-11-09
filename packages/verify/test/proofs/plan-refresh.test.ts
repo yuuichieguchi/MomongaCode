@@ -1,7 +1,6 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { GATEWAY_CONFIG_DEFAULTS } from '@momonga/gateway';
+import { AUTHORIZATION_WAIT_MS } from '@momonga/foundation';
+import { GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS } from '@momonga/gateway';
 import { proofArith } from '../../src/proofs/arith.ts';
 import type { ProofArith, ProofInt } from '../../src/proofs/arith.ts';
 import { expectRefuted, prove } from '../../src/proofs/prove.ts';
@@ -12,18 +11,9 @@ type RetryDefaults = { totalWaitMs: number; baseMs: number; maxMs: number; maxAt
 
 const retry = (): RetryDefaults => GATEWAY_CONFIG_DEFAULTS.retry as unknown as RetryDefaults;
 
-const PLAN = {
-  accessLifetimeMs: 3_600_000,
-  attemptTimeoutMs: 15_000,
-  revocationTimeoutMs: 10_000,
-  skewMs: 60_000,
-  refreshBudgetMs: 61_000,
-  marginMs: 121_000,
-  authorizationWaitMs: 300_000,
-  attemptTtlMs: 315_000,
-  revocationBudgetMs: 31_500,
-  persistRetryMs: 30_000,
-} as const;
+const PLAN = PLAN_SESSION_DEFAULTS;
+
+const ATTEMPT_TTL_MS = 315_000;
 
 const backoffSumMs = (attempts: number, baseMs: number, maxMs: number): number => {
   let total = 0;
@@ -31,13 +21,7 @@ const backoffSumMs = (attempts: number, baseMs: number, maxMs: number): number =
   return total;
 };
 
-const authorizeSource = path.resolve(import.meta.dirname, '..', '..', '..', 'mcp', 'src', 'authorize.ts');
-
-const authorizationWaitMs = (): number => {
-  const match = /export const AUTHORIZATION_WAIT_MS = ([\d_]+);/.exec(fs.readFileSync(authorizeSource, 'utf8'));
-  if (match === null) throw new Error('AUTHORIZATION_WAIT_MS is not declared in packages/mcp/src/authorize.ts');
-  return Number((match[1] as string).replaceAll('_', ''));
-};
+const authorizationWaitMs = (): number => AUTHORIZATION_WAIT_MS;
 
 const constant = (arith: ProofArith, name: string, value: number): ProofInt => {
   const variable = arith.int(name);
@@ -63,7 +47,7 @@ describe('the plan credential numbers of design-chatgpt-plan.md section 6', () =
   });
 
   it('keeps the authorization wait of the plan sign-in equal to the constant of the MCP authorization', () => {
-    expect(authorizationWaitMs()).toBe(PLAN.authorizationWaitMs);
+    expect(authorizationWaitMs()).toBe(300_000);
   });
 
   const waitCapArith = (name: string, budgetMs: number, capMs: number) => {
@@ -182,7 +166,7 @@ describe('the plan credential numbers of design-chatgpt-plan.md section 6', () =
   );
 
   it(
-    'P4 proves that with the adoption rule expires_in > M, two lazy refreshes of one account start at least expires_in - M apart (3479 s for expires_in = 3600 s): the adopted token expires expires_in after the response, and a lazy refresh starts only when at most M remains',
+    'P4 proves that when expires_in > M, two lazy refreshes of one account start at least expires_in - M apart (3479 s for expires_in = 3600 s): the adopted token expires expires_in after the response, and a lazy refresh starts only when at most M remains',
     async () => {
       const arith = proofArith(z3.engine().api, 'P4');
       const lifetime = constant(arith, 'L', PLAN.accessLifetimeMs);
@@ -205,7 +189,7 @@ describe('the plan credential numbers of design-chatgpt-plan.md section 6', () =
   );
 
   it(
-    'P4w refutes the same spacing when a response with expires_in <= M is adopted: the next lazy refresh can start at once',
+    'P4w refutes the spacing for an adopted response with expires_in <= M (every 200 is adopted): the next lazy refresh can start at once, so the bound for that case is per read (P4s)',
     async () => {
       const arith = proofArith(z3.engine().api, 'P4w');
       const margin = constant(arith, 'M', PLAN.marginMs);
@@ -217,6 +201,20 @@ describe('the plan credential numbers of design-chatgpt-plan.md section 6', () =
       arith.given(secondStart.ge(firstEnd), expiresAt.sub(secondStart).le(margin));
       expect(await hypothesesSatisfiable(arith)).toBe(true);
       await expectRefuted(arith, secondStart.sub(firstEnd).ge(1));
+    },
+    SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'P4s proves that when expires_in <= M there is at most one refresh per read: a read joins the refresh in flight (single flight) or starts one, and the adopted token starts no refresh by itself',
+    async () => {
+      const arith = proofArith(z3.engine().api, 'P4s');
+      const reads = arith.int('reads');
+      const started = arith.int('started');
+      const joined = arith.int('joined');
+      arith.given(reads.ge(0), started.ge(0), joined.ge(0), started.add(joined).eq(reads));
+      expect(await hypothesesSatisfiable(arith)).toBe(true);
+      expect(await prove(arith, started.le(reads))).toEqual({ status: 'proved' });
     },
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );
@@ -275,7 +273,7 @@ describe('the plan credential numbers of design-chatgpt-plan.md section 6', () =
       const arith = proofArith(z3.engine().api, 'P7');
       const wait = constant(arith, 'wait', authorizationWaitMs());
       const timeout = constant(arith, 'T_a', PLAN.attemptTimeoutMs);
-      const ttl = constant(arith, 'ttl', PLAN.attemptTtlMs);
+      const ttl = constant(arith, 'ttl', ATTEMPT_TTL_MS);
       const begin = arith.int('begin');
       const arrival = arith.int('arrival');
       const exchange = arith.int('exchange');

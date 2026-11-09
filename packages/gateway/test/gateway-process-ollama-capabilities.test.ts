@@ -5,6 +5,7 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { outputText, postJson, readJson, userInput } from './gateway-helpers.ts';
 import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { OLLAMA_MODEL, chunkLine, doneLine, fixtureJson, startFakeOllama } from './ollama-support.ts';
+import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
 
 const CONTEXT_WINDOW = 12288;
 const IMAGE_TOKENS = { pixelsPerToken: 750, maxTokens: 1600, minTokens: 1 };
@@ -29,7 +30,7 @@ const gatewayOverProbedOllama = async (showCapabilities: readonly string[], repl
   });
   await probeOllamaTarget({
     probeRecordDir: momongaPaths(home, process.platform, {}).probe,
-    upstream: { kind: 'tcp', baseUrl: fake.origin }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL,
+    upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL,
     contextWindow: CONTEXT_WINDOW,
   });
   fake.requests.length = 0;

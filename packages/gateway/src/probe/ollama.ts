@@ -5,7 +5,6 @@ import type { UserDialects } from '../dialect/choice.ts';
 import type { UpstreamEndpoint } from '../adapters/shared/http-client.ts';
 import { buildOllamaChatBody } from '../adapters/ollama/request.ts';
 import { NO_REASONING_IS_OWN } from '../adapters/shared/reasoning-origin.ts';
-import { isConnectionFailure } from '../adapters/shared/classify.ts';
 import { StreamFailure, UpstreamHttpError } from '../adapters/shared/failures.ts';
 import { ProbeTimeoutError, createProbeClient } from './client.ts';
 import type { HttpResult, ProbeClient } from './client.ts';
@@ -82,18 +81,11 @@ const versionOf = (body: unknown): string | undefined => {
   return typeof version === 'string' ? version : undefined;
 };
 
-export const answersAsOllama = async (upstream: UpstreamEndpoint, signal: AbortSignal): Promise<boolean> => {
-  try {
-    return await withClient(upstream, signal, async (client) => {
-      const result = await client.request('GET', VERSION_PATH);
-      return result.status === 200 && versionOf(parseJson(result.text)) !== undefined;
-    });
-  } catch (error) {
-    signal.throwIfAborted();
-    if (error instanceof StreamFailure || isConnectionFailure(error)) return false;
-    throw error;
-  }
-};
+export const answersAsOllama = (upstream: UpstreamEndpoint, signal: AbortSignal): Promise<boolean> =>
+  withClient(upstream, signal, async (client) => {
+    const result = await client.request('GET', VERSION_PATH);
+    return result.status === 200 && versionOf(parseJson(result.text)) !== undefined;
+  });
 
 const tagMatches = (listed: string, model: string): boolean => listed === model || (!model.includes(':') && listed === `${model}:latest`);
 

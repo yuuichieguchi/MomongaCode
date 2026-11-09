@@ -22,6 +22,7 @@ import { makeReport } from './report-fixture.ts';
 import { PROBE_METHOD_VERSION } from '../src/probe/run-probe.ts';
 import { probingAnswer, recordKeyOptions } from './fm-record-support.ts';
 import type { Probing } from '@momonga/protocol';
+import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 const BINARY = '/usr/bin/fm';
 const POLL_MS = 25;
@@ -52,7 +53,7 @@ class FakeFmChild extends EventEmitter {
     return (this.server?.requests ?? []).filter((request) => request.path === '/v1/chat/completions').map((request) => request.body);
   }
 
-  kill(): boolean {
+  async kill(): Promise<boolean> {
     void this.exit();
     return true;
   }
@@ -147,7 +148,7 @@ const setup = async (config: Setup = {}) => {
 };
 
 const adapterFor = (managed: ManagedFmTarget, clock: FakeClock) => {
-  const adapter = createChatCompletionsAdapter({ ...managed, clock });
+  const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock });
   registerCleanup(() => adapter.close());
   return adapter;
 };

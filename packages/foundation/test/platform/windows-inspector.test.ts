@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { WindowsProcessRow } from '../../src/platform/windows-parsers.ts';
-import type { CommandResult, SyncCommandRunner } from '../../src/platform/command-runner.ts';
-import { createProcessGroupPort, createSignalSender } from '../../src/platform/group-port.ts';
+import type { CommandResult, CommandRunner } from '../../src/platform/command-runner.ts';
+import { createAsyncSignalSender, createProcessGroupPort } from '../../src/platform/group-port.ts';
 import { createWindowsGroupControl, createWindowsInspector } from '../../src/platform/windows-inspector.ts';
 import { groupMembers, groupOfPid, parsePidList, parseProcessTable, parseStartTimeMs } from '../../src/platform/windows-parsers.ts';
 import { holdersScript, powershellLiteral, startTimeScript } from '../../src/platform/windows-scripts.ts';
+
+const LIVE = { signal: new AbortController().signal };
 
 const ENV = { SystemRoot: 'C:\\Windows', TEMP: 'C:\\Temp' };
 const POWERSHELL = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
@@ -132,7 +134,7 @@ describe('windows inspector through an injected command runner', () => {
   it('asks Win32_Process for the creation time of one pid', async () => {
     calls.length = 0;
     const inspector = createWindowsInspector({ run: runnerReturning({ stdout: '1700000123456\r\n' }), env: ENV });
-    expect(await inspector.startTimeOf(321)).toEqual({ kind: 'value', value: 1700000123456 });
+    expect(await inspector.startTimeOf(321, LIVE)).toEqual({ kind: 'value', value: 1700000123456 });
     expect(calls[0]?.file).toBe(POWERSHELL);
     expect(calls[0]?.args.slice(0, 3)).toEqual(['-NoLogo', '-NoProfile', '-NonInteractive']);
     expect(decodeScript(calls[0]?.args ?? [])).toContain("Win32_Process -Filter 'ProcessId=321'");
@@ -141,12 +143,12 @@ describe('windows inspector through an injected command runner', () => {
 
   it('reports a pid without a row as gone', async () => {
     const inspector = createWindowsInspector({ run: runnerReturning({ stdout: '\r\n' }), env: ENV });
-    expect(await inspector.startTimeOf(321)).toEqual({ kind: 'gone' });
+    expect(await inspector.startTimeOf(321, LIVE)).toEqual({ kind: 'gone' });
   });
 
   it('reports a failing powershell as a deterministic failure instead of no process', async () => {
     const inspector = createWindowsInspector({ run: runnerReturning({ exitCode: 1, stderr: 'boom' }), env: ENV });
-    expect(await inspector.startTimeOf(321)).toEqual({
+    expect(await inspector.startTimeOf(321, LIVE)).toEqual({
       kind: 'failed',
       cause: 'deterministic',
       evidence: { kind: 'exit', exitCode: 1, detail: 'powershell exited with 1: boom' },
@@ -156,23 +158,23 @@ describe('windows inspector through an injected command runner', () => {
   it('reports a timed-out powershell as transient', async () => {
     const timedOut = Object.assign(new Error('Command failed: timed out'), { killed: true, signal: 'SIGKILL' });
     const inspector = createWindowsInspector({ run: async () => Promise.reject(timedOut), env: ENV });
-    expect(await inspector.startTimeOf(321)).toMatchObject({ kind: 'failed', cause: 'transient', evidence: { kind: 'timeout' } });
+    expect(await inspector.startTimeOf(321, LIVE)).toMatchObject({ kind: 'failed', cause: 'transient', evidence: { kind: 'timeout' } });
   });
 
   it('reports output it cannot parse as a deterministic failure', async () => {
     const inspector = createWindowsInspector({ run: runnerReturning({ stdout: 'Monday' }), env: ENV });
-    expect(await inspector.startTimeOf(321)).toMatchObject({ kind: 'failed', cause: 'deterministic', evidence: { kind: 'unparseable' } });
+    expect(await inspector.startTimeOf(321, LIVE)).toMatchObject({ kind: 'failed', cause: 'deterministic', evidence: { kind: 'unparseable' } });
   });
 
   it('needs SystemRoot to locate powershell', async () => {
     const inspector = createWindowsInspector({ run: runnerReturning({}), env: {} });
-    expect(await inspector.startTimeOf(321)).toMatchObject({ kind: 'failed', cause: 'deterministic', evidence: { detail: expect.stringContaining('SystemRoot') } });
+    expect(await inspector.startTimeOf(321, LIVE)).toMatchObject({ kind: 'failed', cause: 'deterministic', evidence: { detail: expect.stringContaining('SystemRoot') } });
   });
 
   it('lists marker holders through the Restart Manager', async () => {
     calls.length = 0;
     const inspector = createWindowsInspector({ run: runnerReturning({ stdout: '[812,4096]' }), env: ENV });
-    expect(await inspector.holdersOf('C:\\Users\\a\\marker')).toEqual({ kind: 'value', value: [812, 4096] });
+    expect(await inspector.holdersOf('C:\\Users\\a\\marker', LIVE)).toEqual({ kind: 'value', value: [812, 4096] });
     const script = decodeScript(calls[0]?.args ?? []);
     expect(script).toContain('rstrtmgr.dll');
     expect(script).toContain("Holders('C:\\Users\\a\\marker')");
@@ -180,7 +182,7 @@ describe('windows inspector through an injected command runner', () => {
 
   it('maps live pids to candidate groups from one process table snapshot', async () => {
     const inspector = createWindowsInspector({ run: runnerReturning({ stdout: TABLE }), env: ENV });
-    expect(await inspector.groupsOf([300, 400, 12345], [100])).toEqual({
+    expect(await inspector.groupsOf([300, 400, 12345], [100], LIVE)).toEqual({
       kind: 'value',
       value: new Map([
         [300, 100],
@@ -191,69 +193,69 @@ describe('windows inspector through an injected command runner', () => {
 });
 
 describe('windows process group port and signal sender', () => {
-  const syncRunner = (table: string, log: Array<{ file: string; args: readonly string[] }>, kill: Partial<CommandResult> = {}): SyncCommandRunner => (file, args) => {
+  const syncRunner = (table: string, log: Array<{ file: string; args: readonly string[] }>, kill: Partial<CommandResult> = {}): CommandRunner => async (file, args) => {
     log.push({ file, args });
     if (file.endsWith('taskkill.exe')) return { exitCode: 0, stdout: '', stderr: '', ...kill };
     return { exitCode: 0, stdout: table, stderr: '' };
   };
 
-  it('terminates every member of the tree with one taskkill', () => {
+  it('terminates every member of the tree with one taskkill', async () => {
     const log: Array<{ file: string; args: readonly string[] }> = [];
-    createProcessGroupPort('win32', { run: syncRunner(TABLE, log), env: ENV }).signal(100, 'SIGTERM');
+    await createProcessGroupPort('win32', { run: syncRunner(TABLE, log), env: ENV }).signal(100, 'SIGTERM', LIVE);
     expect(log[1]).toEqual({ file: 'C:\\Windows\\System32\\taskkill.exe', args: ['/F', '/PID', '100', '/PID', '200', '/PID', '300'] });
   });
 
-  it('does nothing when the tree is already gone and tolerates taskkill reporting not found', () => {
+  it('does nothing when the tree is already gone and tolerates taskkill reporting not found', async () => {
     const log: Array<{ file: string; args: readonly string[] }> = [];
-    createProcessGroupPort('win32', { run: syncRunner(TABLE, log), env: ENV }).signal(7777, 'SIGKILL');
+    await createProcessGroupPort('win32', { run: syncRunner(TABLE, log), env: ENV }).signal(7777, 'SIGKILL', LIVE);
     expect(log).toHaveLength(1);
     const racing: Array<{ file: string; args: readonly string[] }> = [];
-    expect(() => createProcessGroupPort('win32', { run: syncRunner(TABLE, racing, { exitCode: 128 }), env: ENV }).signal(100, 'SIGKILL')).not.toThrow();
+    await expect(createProcessGroupPort('win32', { run: syncRunner(TABLE, racing, { exitCode: 128 }), env: ENV }).signal(100, 'SIGKILL', LIVE)).resolves.toBeUndefined();
   });
 
-  it('propagates any other taskkill failure', () => {
+  it('propagates any other taskkill failure', async () => {
     const log: Array<{ file: string; args: readonly string[] }> = [];
     const port = createProcessGroupPort('win32', { run: syncRunner(TABLE, log, { exitCode: 5, stderr: 'denied' }), env: ENV });
-    expect(() => port.signal(100, 'SIGKILL')).toThrow('taskkill exited with 5: denied');
+    await expect(port.signal(100, 'SIGKILL', LIVE)).rejects.toThrow('taskkill exited with 5: denied');
   });
 
-  it('reports a tree as alive while the root or a descendant has a row', () => {
+  it('reports a tree as alive while the root or a descendant has a row', async () => {
     const port = createProcessGroupPort('win32', { run: syncRunner(TABLE, []), env: ENV });
-    expect(port.alive(100)).toBe(true);
-    expect(port.alive(999)).toBe(false);
-    expect(port.alive(7777)).toBe(false);
+    expect(await port.alive(100, LIVE)).toBe(true);
+    expect(await port.alive(999, LIVE)).toBe(false);
+    expect(await port.alive(7777, LIVE)).toBe(false);
   });
 
-  it('sends negative pids to the group port and signal 0 as an existence check', () => {
+  it('sends negative pids to the group port and signal 0 as an existence check', async () => {
     const calls: string[] = [];
-    const send = createSignalSender('win32', () => ({
-      signal: (pgid, signal) => void calls.push(`signal ${pgid} ${signal}`),
-      alive: (pgid) => pgid === 100,
+    const send = createAsyncSignalSender('win32', () => ({
+      signal: async (pgid, signal) => void calls.push(`signal ${pgid} ${signal}`),
+      alive: async (pgid) => pgid === 100,
     }));
-    send(-100, 'SIGTERM');
-    send(-100, 0);
-    expect(() => send(-5, 0)).toThrowError(expect.objectContaining({ code: 'ESRCH' }));
+    await send(-100, 'SIGTERM', LIVE);
+    await send(-100, 0, LIVE);
+    await expect(send(-5, 0, LIVE)).rejects.toMatchObject({ code: 'ESRCH' });
     expect(calls).toEqual(['signal 100 SIGTERM']);
   });
 });
 
 describe('windows group control keeps what it observed between probes', () => {
-  const rowsOf = (table: unknown[]): SyncCommandRunner => () => ({ exitCode: 0, stdout: JSON.stringify(table), stderr: '' });
+  const rowsOf = (table: unknown[]): CommandRunner => async () => ({ exitCode: 0, stdout: JSON.stringify(table), stderr: '' });
 
-  it('still reports a member after the root and its intermediate exit', () => {
+  it('still reports a member after the root and its intermediate exit', async () => {
     let table: unknown[] = [
       { pid: 7, ppid: 1, startMs: 5000 },
       { pid: 8, ppid: 7, startMs: 5100 },
       { pid: 9, ppid: 8, startMs: 5200 },
     ];
-    const control = createWindowsGroupControl({ run: () => ({ exitCode: 0, stdout: JSON.stringify(table), stderr: '' }), env: ENV });
-    expect(control.members(7)).toEqual([7, 8, 9]);
+    const control = createWindowsGroupControl({ run: async () => ({ exitCode: 0, stdout: JSON.stringify(table), stderr: '' }), env: ENV });
+    expect(await control.members(7, LIVE)).toEqual([7, 8, 9]);
     table = [{ pid: 9, ppid: 8, startMs: 5200 }];
-    expect(control.members(7)).toEqual([9]);
+    expect(await control.members(7, LIVE)).toEqual([9]);
   });
 
-  it('does not report the orphans of an earlier process that had the same pid', () => {
+  it('does not report the orphans of an earlier process that had the same pid', async () => {
     const control = createWindowsGroupControl({ run: rowsOf([{ pid: 50, ppid: 7, startMs: 1000 }]), env: ENV });
-    expect(control.members(7)).toEqual([]);
+    expect(await control.members(7, LIVE)).toEqual([]);
   });
 });

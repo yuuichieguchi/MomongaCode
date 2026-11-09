@@ -24,7 +24,7 @@ export { endpointKeyOf };
 export const probeEndpointOf = (upstream: UpstreamEndpoint, apiKey: string | undefined): ProbeEndpoint =>
   upstream.kind === 'unix'
     ? { kind: 'unix', socketPath: upstream.socketPath }
-    : { kind: 'tcp', baseUrl: upstream.baseUrl, ...(apiKey === undefined ? {} : { headers: { authorization: `Bearer ${apiKey}` } }) };
+    : { kind: 'tcp', baseUrl: upstream.baseUrl, network: upstream.network, ...(apiKey === undefined ? {} : { headers: { authorization: `Bearer ${apiKey}` } }) };
 
 export const readModelsListing = async (
   endpoint: ProbeEndpoint,

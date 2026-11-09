@@ -21,7 +21,7 @@ export { McpInputSuspension, parseCheckpoint } from './suspension.ts';
 export { McpParkedInputLostError } from './parked-input.ts';
 export type { McpCheckpoint, McpResume } from './suspension.ts';
 export { validateStructuredOutput } from './output-validation.ts';
-export { AUTHORIZATION_WAIT_MS, authorizeMcpServer } from './authorize.ts';
+export { authorizeMcpServer } from './authorize.ts';
 export type { AuthorizeMcpServerOptions, McpAuthorizationPorts, McpOAuthSettings } from './authorize.ts';
 export { createMcpOAuthProvider, credentialKey, mcpCredentialDirectory } from './mcp-oauth.ts';
 export type { McpCredentialStore, McpOAuthProvider, McpOAuthProviderOptions } from './mcp-oauth.ts';

@@ -10,6 +10,7 @@ import { collect, makeAdapter, userText } from './cc-support.ts';
 import { makeReport } from './report-fixture.ts';
 import { CURRENT_DIALECTS } from './dialect-currency.ts';
 import { primed, recordKeyOptions } from './fm-record-support.ts';
+import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 const RECORD_KEY = { target: 'fm', binarySha256: 'cd'.repeat(32), osBuild: '25A100' };
 
@@ -39,7 +40,7 @@ const fmAdapter = async (fake: FakeChatCompletionsServer, report?: ProbeReport) 
     toolCallingSetting: report === undefined ? 'native' : 'auto',
     declaredModel: 'system',
   }), RECORD_KEY.target);
-  const adapter = createChatCompletionsAdapter({ ...managed, clock: createFakeClock(START_MS) });
+  const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock: createFakeClock(START_MS) });
   registerCleanup(() => adapter.close());
   return adapter;
 };
