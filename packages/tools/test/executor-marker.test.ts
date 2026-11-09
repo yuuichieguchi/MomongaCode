@@ -2,11 +2,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ToolExecutionError } from '@momonga/tools';
+import type { ProcessInspector } from '@momonga/foundation';
 import type { ToolContext } from '@momonga/tools';
 import { call, makeHarness, makeTool, toolSetOf } from './harness.ts';
 import { keyFor } from './helpers.ts';
 
 const KEY = keyFor('run-1', 1, 'c1');
+
+const holderlessInspector: ProcessInspector = {
+  startTimeOf: async () => ({ kind: 'gone' }),
+  holdersOf: async () => ({ kind: 'value', value: [] }),
+  groupsOf: async () => ({ kind: 'value', value: new Map() }),
+  markerState: async () => 'free',
+};
 
 type Seen = { marker: string | undefined; exists: boolean; mode: number | undefined };
 
@@ -68,7 +76,7 @@ describe('process marker', () => {
   });
 
   it('passes the marker to reconcile and removes it after the reconciled record completes', async () => {
-    const harness = makeHarness();
+    const harness = makeHarness({ executor: { reap: { inspector: holderlessInspector, timing: { now: () => 0, sleep: async () => undefined }, killGraceMs: 100 } } });
     const marker = path.join(harness.markerDir, KEY);
     fs.writeFileSync(marker, '', { mode: 0o600 });
     harness.idempotency.seed(KEY, 'PENDING', { tool: 'Bash' });

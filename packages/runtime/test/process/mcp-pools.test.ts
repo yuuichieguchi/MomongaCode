@@ -113,6 +113,14 @@ describe('MCP pools through toolSet (real fixture processes; fake timers for the
     expect(f.counting.created[0]?.projectDir).toBe(f.temp.project);
   });
 
+  it('G2: passes mcp.toolIdleTimeoutMs and mcp.toolTotalTimeoutMs from the user settings to the pool and its tools', PROCESS_TIMEOUT, async () => {
+    const f = await realFixture();
+    writeUserSettings(f.temp.home, { mcpServers: { fx: fixtureServer }, mcp: { toolIdleTimeoutMs: 600_000, toolTotalTimeoutMs: 7_200_000 } });
+    const set = await f.toolRuntime.port.toolSet(newRun(f), { signal: signalNever(), env: toolEnv() });
+    expect(f.counting.created[0]).toMatchObject({ toolIdleTimeoutMs: 600_000, toolTotalTimeoutMs: 7_200_000 });
+    expect(set.tools.find((tool) => tool.name === 'mcp__fx__echo')).toMatchObject({ idleTimeoutMs: 600_000, timeoutMs: 7_200_000 });
+  });
+
   it('offers the tools of the servers a session carries and reports a name the user settings already use', PROCESS_TIMEOUT, async () => {
     const f = await realFixture();
     writeUserSettings(f.temp.home, { mcpServers: { taken: fixtureServer } });

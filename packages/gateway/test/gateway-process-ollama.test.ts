@@ -15,6 +15,7 @@ import {
   startFakeOllama,
 } from './ollama-support.ts';
 import type { FakeOllamaOptions } from './ollama-support.ts';
+import { TARGET_PROBING } from '@momonga/protocol';
 import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
 
 const CONTEXT_WINDOW = 12288;
@@ -42,17 +43,16 @@ const probedHome = async (options: FakeOllamaOptions) => {
 };
 
 describe('an ollama target in a started gateway', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
-  it('fails a request with precondition_failed naming the probe command while no probe record exists, without calling /api/chat', async () => {
+  it('answers a request 503 target_probing and starts the probe while no probe record exists, without calling /api/chat', async () => {
     const fake = await startFakeOllama({ chat: [textReply('never sent')] });
     const home = makeHome();
     writeSettings(home, { models: { aliases: { fast: ['local'] }, targets: { local: ollamaTarget(fake.origin) } } });
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, measureEndpoint: () => new Promise(() => undefined), measureOllama: () => new Promise(() => undefined) });
 
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: 'fast', input: userInput('hi') }));
 
-    expect(response.status).toBe(412);
-    expect(response.body.error.code).toBe('precondition_failed');
-    expect(response.body.error.message).toContain('momonga gateway probe local');
+    expect(response.status).toBe(503);
+    expect(response.body.error.code).toBe(TARGET_PROBING);
     expect(fake.chatBodies()).toEqual([]);
   });
 
@@ -84,17 +84,26 @@ describe('an ollama target in a started gateway', { timeout: REAL_PROCESS_TEST_T
     });
   });
 
-  it('fails every request once the model is pulled again under the same tag, until it is probed again', async () => {
+  it('P6 RecordMatchesKey: once the model is pulled again under the same tag, answers 503 target_probing and measures the new digest, sending no chat', async () => {
     let digest = DEVSTRAL_DIGEST;
     const { fake, home } = await probedHome({ tags: () => tagsWithDevstralDigest(digest), chat: [textReply('never sent')] });
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const measured: unknown[] = [];
+    const handle = await launchGateway({
+      home,
+      env: baseEnv(home),
+      version: PROCESS_VERSION,
+      measureOllama: ({ key }) => {
+        measured.push(key);
+        return new Promise(() => undefined);
+      },
+    });
     digest = QWEN_DIGEST;
 
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: 'fast', input: userInput('hi') }));
 
-    expect(response.status).toBe(412);
-    expect(response.body.error.code).toBe('precondition_failed');
-    expect(response.body.error.message).toContain('momonga gateway probe local');
+    expect(response.status).toBe(503);
+    expect(response.body.error.code).toBe(TARGET_PROBING);
+    expect(measured).toEqual([{ endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }]);
     expect(fake.chatBodies()).toEqual([]);
   });
 });

@@ -1,5 +1,5 @@
 import type { ErrorShape } from './budget-constants.ts';
-import type { AliasCapabilities, Capabilities, HealthResult } from './capabilities.ts';
+import type { AliasCapabilities, Capabilities, HealthResult, ProbingCapabilities } from './capabilities.ts';
 import type { FunctionTool, InputItem, ToolChoice } from './open-responses.ts';
 
 export const MOMONGA_EVENT_PREFIX = 'momonga:' as const;
@@ -83,13 +83,17 @@ export type ModelListEntry = { id: string; object: 'model'; created: number; own
 
 export type ModelList = { object: 'list'; data: ModelListEntry[] };
 
+export const TARGET_PROBING = 'target_probing';
+
+export const TARGET_PROBING_MESSAGE = 'measuring this model (once per model and OS build)';
+
 export type MomongaModelEntry = {
   id: string;
   object: 'model';
   targets: string[];
   targetCounters: Record<string, string>;
-  capabilities: AliasCapabilities;
-  targetCapabilities: Record<string, Capabilities>;
+  capabilities: AliasCapabilities | ProbingCapabilities;
+  targetCapabilities: Record<string, Capabilities | ProbingCapabilities>;
 };
 
 export type MomongaModelList = { object: 'list'; data: MomongaModelEntry[] };

@@ -1,4 +1,4 @@
-import { isRecord, isRetryableHttp, parseRetryAfter } from '@momonga/foundation';
+import { JsonDepthError, isRecord, isRetryableHttp, parseOutsideJson, parseRetryAfter } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import type { PlanProfile } from '@momonga/config';
 import { nextWait } from '../core/retry.ts';
@@ -21,9 +21,10 @@ export type RevokeRequest = {
 
 const parsed = (text: string): unknown => {
   try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return undefined;
+    return parseOutsideJson(text);
+  } catch (error) {
+    if (error instanceof SyntaxError || error instanceof JsonDepthError) return undefined;
+    throw error;
   }
 };
 

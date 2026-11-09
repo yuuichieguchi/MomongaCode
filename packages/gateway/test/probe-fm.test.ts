@@ -46,6 +46,6 @@ describe('probeManagedFm', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     const failure = await probeManagedFm({ ...options(paths), binary: unlicensed }).catch((error: unknown) => error);
 
     expect(failure).toMatchObject({ name: 'PreconditionFailedError', remediation: 'sudo fm license' });
-    expect(fs.existsSync(paths.probeDir)).toBe(false);
+    expect(fs.existsSync(path.join(paths.probeDir, 'fm.json'))).toBe(false);
   });
 });

@@ -1,5 +1,7 @@
 export { EarlierAttemptNotStoppedError, clearCallLocks } from './call-lock.ts';
 export { createToolExecutor, heldCallWaitMs, subjectDigestOf } from './executor.ts';
+export { callStopOf } from './call-stop.ts';
+export type { CallStop, CallStopTerms } from './call-stop.ts';
 export type {
   AbandonOutcome,
   AbandonTarget,
@@ -64,6 +66,7 @@ export type {
   ToolResult,
   ToolResume,
   ToolSessionState,
+  ToolStop,
   ToolTier,
 } from './types.ts';
 export { TOOL_VALIDATOR_FAILED_CODE, schemaIdentity, toolRefusalKey, validateToolInput } from './validate.ts';

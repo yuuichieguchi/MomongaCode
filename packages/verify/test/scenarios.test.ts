@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { formatReport } from '../src/index.ts';
 import type { PropertyId, PropertyResult, VerificationReport } from '../src/index.ts';
 import { SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, makeLayout, rulesOf, sshLocation, useZ3, verifyScenario } from './harness.ts';
 import type { RuleSpec, VerifyOptions } from './harness.ts';
@@ -52,6 +53,11 @@ describe('a clean rule set', () => {
     expect(limitsOf('rule-consistency')).toContain('the sandbox never makes a rule redundant');
     expect(limitsOf('bash-admission')).toContain('open yes or no');
     expect(report.outsideProof.join('\n')).toContain('arbitrary shell command');
+    const literalAllow =
+      'A Bash(...) allow rule matches the command text literally, so it allows every option of its program, including options that make the program run another program, such as git -c core.pager=<program> log under Bash(git:*), find . -exec <program> {} \\; under Bash(find:*), or npm test --script-shell=<program> under Bash(npm test:*). What those options do is not checked.';
+    expect(report.outsideProof).toContain(literalAllow);
+    expect(formatReport(report)).toContain(`  - ${literalAllow}`);
+    expect(JSON.parse(JSON.stringify(report)).outsideProof).toContain(literalAllow);
     expect(report.solver).toMatch(/^Z3 \d+\.\d+\.\d+/);
   }, SOLVER_MULTI_QUERY_TEST_TIMEOUT_MS);
 

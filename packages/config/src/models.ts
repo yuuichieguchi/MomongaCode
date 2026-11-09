@@ -54,6 +54,7 @@ const resolveFm = (target: FmTarget): ResolvedFmTarget => ({
   ...(target.model === undefined ? {} : { model: target.model }),
   ...(target.outputBoundField === undefined ? {} : { outputBoundField: target.outputBoundField }),
   toolCalling: target.toolCalling ?? 'auto',
+  ...(target.capabilities === undefined ? {} : { capabilities: target.capabilities }),
   billing: LOCAL_SERVER_DEFAULTS.billing,
   maxConcurrency: target.maxConcurrency ?? LOCAL_SERVER_DEFAULTS.maxConcurrency,
   admissionTimeoutMs: target.admissionTimeoutMs ?? 30000,

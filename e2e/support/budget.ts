@@ -1,5 +1,5 @@
 import { canonicalJson, createRedactor, systemClock } from '@momonga/foundation';
-import { createFsInstructionReader, createTokenMeter, outputRenderOf, proactiveGainFor, widestMandatoryWorkingStateMessage } from '@momonga/context';
+import { createFsInstructionReader, createTokenMeter, outputRenderOf, proactiveGainFor } from '@momonga/context';
 import type { ContextOverflowError, TokenCounter } from '@momonga/context';
 import { COMPACTION_INSTRUCTIONS_MARKER, wireOf, wireTokensOf } from '@momonga/gateway';
 import type { ChatWire } from '@momonga/gateway';
@@ -176,13 +176,7 @@ export const seenOutputTokens = async (count: GatewayCountClient, call: { callId
   return counted.input_tokens;
 };
 
-export const proactiveGainOf = async (count: GatewayCountClient, sizing: Sizing): Promise<number> => {
-  const counted = await count.gateway.countTokens(
-    { model: E2E_MODEL_ALIAS, input: [widestMandatoryWorkingStateMessage()], momonga: { lenient_items: { call_names: {}, with_tools: true } } },
-    { signal: AbortSignal.timeout(E2E_MARGIN_MS) },
-  );
-  return proactiveGainFor(sizing.summaryItem + counted.input_tokens, 0);
-};
+export const gainThresholdOf = (sizing: Sizing, workingStateTokens: number): number => proactiveGainFor(sizing.summaryItem + workingStateTokens, 0);
 
 const textItemOf = (tokens: number): InputItem => ({ type: 'message', role: 'user', content: 'x'.repeat(ESTIMATED_CHARACTERS_PER_TOKEN * tokens) });
 
