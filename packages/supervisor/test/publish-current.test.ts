@@ -4,11 +4,10 @@ import { describe, expect, it } from 'vitest';
 import { canonicalPath, generationLayout, nodeFileSystem } from '@momonga/foundation';
 import type { AtomicWriteFileSystem } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
-import type { SupervisorCloseResult, SupervisorOptions } from '../src/start-supervisor.ts';
+import type { SupervisorCloseResult } from '../src/start-supervisor.ts';
 import { TEST_VERSION, pumpUntil, quiesce, settledFlag, startHarness } from './fixtures/p3-harness.ts';
 import type { Harness, HarnessOptions } from './fixtures/p3-harness.ts';
 
-type PublishPort = { currentFileSystem: AtomicWriteFileSystem };
 type Rename = { from: string; to: string };
 
 const TEMPORARY_OF_CURRENT = /^current\.\d+\.[0-9a-f]+\.tmp$/;

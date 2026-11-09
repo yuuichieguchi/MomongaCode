@@ -1,12 +1,10 @@
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import fs from 'node:fs';
-import os from 'node:os';
 import { TEST_RUN_ENV } from '@momonga/testkit';
 import { E2E_CASES } from './support/cases.ts';
 import { CLI_FAKES_BUNDLE, CLI_FAKES_ENTRY } from './support/cli-bundles.ts';
 import { BUNDLE_SCRIPT } from './support/launcher.ts';
-import { E2E_RUN_ENV } from './support/run-env.ts';
+import { E2E_RUN_ENV, e2eTmpRoot } from './support/run-env.ts';
 import { SANDBOX_ENV, encodeSandboxProbe, runSandboxProbe, sandboxLine } from './support/sandbox.ts';
 import { runE2eTeardown } from './support/teardown.ts';
 
@@ -31,6 +29,6 @@ export default function setup(): () => Promise<void> {
   process.env[SANDBOX_ENV] = encodeSandboxProbe(probe);
   console.log(sandboxLine(probe, E2E_CASES));
   if (bothProjectsSelected(process.argv)) console.warn(BOTH_PROJECTS_WARNING);
-  const tmpRoot = fs.realpathSync(os.tmpdir());
+  const tmpRoot = e2eTmpRoot();
   return () => runE2eTeardown({ tmpRoot, run });
 }

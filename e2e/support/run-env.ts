@@ -1,10 +1,14 @@
+import fs from 'node:fs';
 import path from 'node:path';
+import { shortTempBase } from '@momonga/foundation';
 
 export const E2E_RUN_ENV = 'MOMONGA_E2E_RUN';
 export const E2E_RUN_PATTERN = /^[0-9a-f]{4}$/;
 export const E2E_DIR_PREFIX = 'mme-';
 export const LIVE_MARKER_SUFFIX = 'live';
 export const PIDS_FILE_SUFFIX = 'pids';
+
+export const e2eTmpRoot = (): string => fs.realpathSync(shortTempBase(process.platform));
 
 export const e2eEntryPrefix = (run: string): string => `${E2E_DIR_PREFIX}${run}-`;
 

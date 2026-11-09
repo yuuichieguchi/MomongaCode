@@ -13,7 +13,7 @@ import type { StackParentReport, StackParentRequest } from './fixtures/stack-par
 import { createE2eHome, registerE2eCleanup } from './home.ts';
 import { supervisorLog } from './log-reader.ts';
 import { isAlive } from './process.ts';
-import { E2E_RUN_ENV } from './run-env.ts';
+import { E2E_RUN_ENV, e2eTmpRoot } from './run-env.ts';
 import { resolveSandbox } from './sandbox.ts';
 import {
   DEFAULT_E2E_DEPS,
@@ -65,7 +65,7 @@ const runMain = (context: CleanupContext, home: string, env: Record<string, stri
 };
 
 const manualE2eRoot = (context: CleanupContext): string => {
-  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), `mme-${runToken()}-`));
+  const root = fs.mkdtempSync(path.join(e2eTmpRoot(), `mme-${runToken()}-`));
   registerCleanup(context, () => {
     fs.rmSync(root, { recursive: true, force: true });
   });

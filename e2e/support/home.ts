@@ -9,10 +9,10 @@ import { createProcessLedger } from './ledger.ts';
 import type { ProcessLedger } from './ledger.ts';
 import { groupAlive } from './process.ts';
 import { removeTree } from './remove-tree.ts';
-import { E2E_RUN_ENV, E2E_RUN_PATTERN, LIVE_MARKER_SUFFIX, PIDS_FILE_SUFFIX, e2eEntryPrefix, harnessFilePath } from './run-env.ts';
+import { E2E_RUN_ENV, E2E_RUN_PATTERN, LIVE_MARKER_SUFFIX, PIDS_FILE_SUFFIX, e2eEntryPrefix, e2eTmpRoot, harnessFilePath } from './run-env.ts';
 import { E2E_DISPOSE_BOUND_MS, withinBound } from './wait.ts';
 
-export { E2E_DIR_PREFIX, E2E_RUN_ENV, E2E_RUN_PATTERN, LIVE_MARKER_SUFFIX, PIDS_FILE_SUFFIX } from './run-env.ts';
+export { E2E_DIR_PREFIX, E2E_RUN_ENV, E2E_RUN_PATTERN, LIVE_MARKER_SUFFIX, PIDS_FILE_SUFFIX, e2eTmpRoot } from './run-env.ts';
 export const PROJECT_DIR_NAME = 'p';
 export const SESSION_TMP_DIR_NAME = 'session-tmp';
 export const UPSTREAM_SOCKET_NAME = 'u.sock';
@@ -42,8 +42,6 @@ const MARKER_FILE_MODE = 0o600;
 
 const cleanups: E2eCleanup[] = [];
 const homes: E2eHome[] = [];
-
-export const e2eTmpRoot = (): string => fs.realpathSync(os.tmpdir());
 
 const runTokenFrom = (value: string | undefined): string => {
   if (value === undefined) throw new Error(`${E2E_RUN_ENV} is not set; the e2e global setup did not run`);
