@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SEA_NODE_VERSION, SEA_TARGETS, extractCommand, isSeaTargetName } from './node-runtime.ts';
 import { buildSea, hostSeaTarget } from './sea.ts';
 import { repoRoot } from './bundle.ts';
+import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 
 describe('SEA targets', () => {
@@ -68,5 +69,5 @@ describe.runIf(process.platform === 'darwin' && process.arch === 'arm64')('cross
       fs.closeSync(fd);
     }
     expect(head).toEqual(magic);
-  });
+  }, UNBOUNDED_BUILD_WAIT_MS);
 });

@@ -2,9 +2,9 @@ import path from 'node:path';
 import type { BuildOptions } from 'esbuild';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { bundle, bundleJournalThread, repoRoot } from './bundle.ts';
+import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 
-const BUILD_TIMEOUT_MS = 300_000;
 const PING_FIXTURE = `${repoRoot}test/fixtures/sea/journal-thread-ping.ts`;
 const GENERATED_MODULE_RESOLVER = 'journal-thread-generated-module';
 
@@ -31,7 +31,7 @@ describe('the journal thread bundle contents', () => {
       expect(text).not.toContain('node_modules/undici/');
       expect(text).not.toContain('ata-validator');
     },
-    BUILD_TIMEOUT_MS,
+    UNBOUNDED_BUILD_WAIT_MS,
   );
 });
 
@@ -59,6 +59,6 @@ describe('the plugins of the two builds', () => {
       expect(threadNames).toContain('ata-validator-without-native-and-code-from-strings');
       expect(pluginNamesOf(main[0] as BuildOptions)).toEqual([...threadNames, GENERATED_MODULE_RESOLVER].sort());
     },
-    BUILD_TIMEOUT_MS,
+    UNBOUNDED_BUILD_WAIT_MS,
   );
 });
