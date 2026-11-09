@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createPosixGroupPort, reapMarkedProcesses, reconcileProcessGroup } from '@momonga/foundation';
 import type { ProcessGroupPort, ProcessInspector, ReapTiming } from '@momonga/foundation';
 import { readManifest } from './formal/manifest.ts';
+import { canStillRun } from '../packages/foundation/src/platform/run-state.ts';
 
 const specDir = path.resolve(import.meta.dirname, '..', 'specs', 'tla');
 const spec = fs.readFileSync(path.join(specDir, 'ProcessStop.tla'), 'utf8');
@@ -137,5 +138,40 @@ describe('the reap signals only a target proved ours by the same start time at t
     await reapMarkedProcesses({ marker: markerFile(), killGraceMs: 1000, label: 'tool', onWarning: (message) => warnings.push(message), kill: unrecorded.kill, groupPort: unrecorded.groupPort, timing: instantTiming(), inspector: unrecorded.inspector });
     expect(unrecorded.signals).toEqual([]);
     expect(warnings.some((warning) => warning.includes('process 200 is still alive but could not be verified as belonging to this call'))).toBe(true);
+  });
+});
+
+describe('the settle says that a process is still running only while a holder or a member of its group can still run, as specs/tla/ProcessStop.tla states', () => {
+  it.each(['settleCandidate', 'settleCurrent', 'guardCurrent', 'jobCurrent'])('the variant %s is declared in the model', (variant) => {
+    expect(variants()).toContain(variant);
+  });
+
+  it('a holder is a member that is live, stuck or exiting, so a zombie or a gone member holds nothing', () => {
+    expect(definitionOf('Holding')).toContain('"exiting"');
+    expect(definitionOf('Holding')).not.toContain('zombie');
+  });
+
+  it("the model's CanStillRun is the code's canStillRun: live and stuck run, and an exiting member or a zombie does not", () => {
+    expect(definitionOf('CanStillRun')).toContain('state[m] \\in {"live", "stuck"}');
+    expect(canStillRun('S')).toBe(true);
+    expect(canStillRun('SE')).toBe(false);
+    expect(canStillRun('Z')).toBe(false);
+  });
+
+  it('a claim that a process is still running carries the basis that some holder or group member can still run', () => {
+    expect(definitionOf('Claimed')).toContain("basis' = SomeoneRuns");
+    expect(spec).toContain('NoteOnlyWhileRunning == shown # "none" => basis');
+  });
+
+  it.each([
+    ['settleCurrent', 'NoteOnlyWhileRunning'],
+    ['guardCurrent', 'NoteOnlyWhileRunning'],
+    ['jobCurrent', 'RemovalSafe'],
+  ])('the code without the check, variant %s, is an every-run evidence configuration that violates %s', (variant, property) => {
+    expect(manifest.entries.find((entry) => entry.config === `ProcessStop.${variant}`)).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: property, exitCode: 12 } });
+  });
+
+  it('the candidate configuration holds every-run', () => {
+    expect(manifest.entries.find((entry) => entry.config === 'ProcessStop.settleCandidate')).toMatchObject({ role: 'check', tier: 'every-run', expect: 'holds' });
   });
 });
