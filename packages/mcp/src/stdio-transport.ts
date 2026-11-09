@@ -6,7 +6,7 @@ import type { Readable, Stream, Writable } from 'node:stream';
 import { deserializeMessage, serializeMessage, type JSONRPCMessage, type Transport } from '@modelcontextprotocol/client';
 import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
 import type { McpStdioServerConfig } from '@momonga/config';
-import { Deadline, groupTerminationBoundMs, operationSignal, reapMarkedProcesses, systemTiming, terminateGroup, type DeadlineTiming, type TerminateOutcome } from '@momonga/foundation';
+import { Deadline, GroupNotStoppedError, groupTerminationBoundMs, operationSignal, reapMarkedProcesses, systemTiming, terminateGroup, type DeadlineTiming, type TerminateOutcome } from '@momonga/foundation';
 
 const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 const STDERR_TAIL_BYTES = 64 * 1024;
@@ -220,7 +220,8 @@ class StdioTransportImpl implements StdioTransport {
         await this.raceTimeout(this.exited);
         let terminateFailure: { error: unknown } | undefined;
         try {
-          await (this.options.terminate ?? terminateGroup)(child.pid, { graceMs: this.closeGraceMs, signal: stopBound.signal });
+          const outcome = await (this.options.terminate ?? terminateGroup)(child.pid, { graceMs: this.closeGraceMs, signal: stopBound.signal });
+          if (outcome === 'unconfirmed') terminateFailure = { error: new GroupNotStoppedError(child.pid) };
         } catch (error) {
           terminateFailure = { error };
         } finally {

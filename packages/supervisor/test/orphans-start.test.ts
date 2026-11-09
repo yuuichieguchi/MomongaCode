@@ -1,12 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_STOP_VALUES, ProbeFailedError, createUninspectableRegistry, probeFailed, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, ProbeFailedError, createUninspectableRegistry, markerReapClockBoundMs, probeFailed, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import type { ReapMarkerDirectoryOptions } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, fakeReapTiming, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { ORPHAN_REAP_GRACE_MS, SHUTDOWN_RELEASE_BOUND_MS } from '../src/constants.ts';
-import { reapOrphans } from '../src/orphans.ts';
+import { orphanPhaseOneBoundMs, orphanReapBoundMs, reapOrphans } from '../src/orphans.ts';
 import type { MarkerPorts, OrphanReapOptions, OrphanReapResult } from '../src/orphans.ts';
 import { captureLog, createRealWorkScope, httpOver, pumpUntil, settledFlag, startHarness, writeMarker } from './fixtures/p3-harness.ts';
 
@@ -140,7 +140,7 @@ describe('reapOrphans', () => {
     const result = reap();
     await until(() => result.settled(), 5000);
     expect(reapAt ?? 0).toBeGreaterThanOrEqual(1000);
-    expect(reapAt ?? 0).toBeLessThan(1000 + 250 + 100);
+    expect(reapAt ?? 0).toBeLessThanOrEqual(orphanPhaseOneBoundMs(setup.options));
     expect(result.value()).toEqual({ reaped: 1, kept: 0, aborted: false });
     expect(log.withMsg('orphans.waiting')).toEqual([expect.objectContaining({ markers: 1, holders: 1 })]);
     expect(log.withMsg('orphans.reaping')).toEqual([expect.objectContaining({ holders: 1 })]);
@@ -157,6 +157,24 @@ describe('reapOrphans', () => {
     expect(clock.now()).toBeGreaterThanOrEqual(bound);
     expect(clock.now()).toBeLessThanOrEqual(bound + 250);
     await waitFor(() => result.settled());
+  });
+
+  it('a holder that never exits and a reap that spends its whole clock still settle within orphanReapBoundMs', async (context) => {
+    const dir = markersDir(context);
+    fs.writeFileSync(path.join(dir, 'runtime-06'), '');
+    const { ports } = recorded({
+      findHolders: async () => [HOLDER_PID],
+      reapMarkerDirectory: async (reapOptions) => {
+        await reapOptions.timing?.sleep(markerReapClockBoundMs(reapOptions.killGraceMs));
+        return { reaped: 0, kept: 1 };
+      },
+    });
+    const { clock, options, reap, until } = reapSetup(dir, { markerPorts: ports, orphanGraceMs: 1000 });
+    const result = reap();
+    await until(() => result.settled(), 100000);
+    expect(result.value()).toEqual({ reaped: 0, kept: 1, aborted: false });
+    expect(clock.now()).toBeGreaterThan(options.orphanGraceMs + markerReapClockBoundMs(options.orphanReapGraceMs) - options.orphanPollMs);
+    expect(clock.now()).toBeLessThanOrEqual(orphanReapBoundMs(options));
   });
 
   it('the reap receives the supervisor signal, timing and grace', async (context) => {
@@ -257,6 +275,44 @@ describe('reapOrphans', () => {
     await until(() => result.settled(), 10_000);
     await expect(result.promise).rejects.toBeInstanceOf(ProbeFailedError);
     expect(calls.reap).toEqual([]);
+  });
+
+  const abortedListing = (signal: AbortSignal): Promise<number[]> =>
+    new Promise<number[]>((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(new ProbeFailedError('listing marker holders', probeFailed({ kind: 'opaque', detail: 'The operation was aborted' }))), { once: true });
+    });
+
+  it('a listing still running at the phase deadline is aborted and counts as still visible: phase 2 reaps at the deadline', async (context) => {
+    const dir = markersDir(context);
+    fs.writeFileSync(path.join(dir, 'gateway-09'), '');
+    let listings = 0;
+    let abortedAt: number | undefined;
+    let reapAt: number | undefined;
+    let setup: ReturnType<typeof reapSetup> | undefined;
+    const { calls, ports } = recorded({
+      findHolders: async (_marker, probe) => {
+        listings += 1;
+        if (listings === 1) return [HOLDER_PID];
+        probe.signal.addEventListener('abort', () => {
+          abortedAt = setup?.clock.now();
+        }, { once: true });
+        return abortedListing(probe.signal);
+      },
+      reapMarkerDirectory: async () => {
+        reapAt = setup?.clock.now();
+        return { reaped: 1, kept: 0 };
+      },
+    });
+    setup = reapSetup(dir, { markerPorts: ports, orphanGraceMs: 1000 });
+    const { log, reap, until, options } = setup;
+    const result = reap();
+    await until(() => result.settled(), 5000);
+    expect(result.value()).toEqual({ reaped: 1, kept: 0, aborted: false });
+    expect(abortedAt).toBe(options.orphanGraceMs);
+    expect(reapAt).toBe(options.orphanGraceMs);
+    expect(reapAt).toBeLessThanOrEqual(orphanPhaseOneBoundMs(options));
+    expect(calls.reap).toHaveLength(1);
+    expect(log.withMsg('orphans.reaping')).toEqual([expect.objectContaining({ holders: 1 })]);
   });
 
   it('orphans.reaping is logged right before the phase-2 reap', async (context) => {

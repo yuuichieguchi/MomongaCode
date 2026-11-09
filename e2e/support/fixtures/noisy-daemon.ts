@@ -25,9 +25,9 @@ export const noisyDaemonMain = async (argv: readonly string[] = process.argv.sli
   const stop = (): never => process.exit(0);
   process.on('SIGTERM', stop);
   watchLifeline(lifelineFd, stop);
-  announceReady({ service: role, pid: process.pid, version: SUPERVISOR_APP_VERSION, socketPath: momongaPaths(home).sockets[role], startedAt: new Date().toISOString() });
   for (const line of NOISY_STDERR_LINES) await writeLine(process.stderr, line);
   await writeLine(process.stdout, NOISY_STDOUT_LINE);
+  announceReady({ service: role, pid: process.pid, version: SUPERVISOR_APP_VERSION, socketPath: momongaPaths(home).sockets[role], startedAt: new Date().toISOString() });
   setInterval(() => undefined, HOLD_OPEN_INTERVAL_MS);
 };
 

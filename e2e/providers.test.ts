@@ -11,6 +11,7 @@ import {
   startFakeAnthropic,
   startFakeOpenResponses,
 } from '@momonga/testkit';
+import { DEFAULT_ANTHROPIC_API_VERSION } from '@momonga/protocol';
 import type { FakeUpstreamReply, FakeUpstreamServer, RecordedUpstreamRequest } from '@momonga/testkit';
 import { titleOf } from './support/cases.ts';
 import { readDb } from './support/db.ts';
@@ -124,7 +125,7 @@ describe('providers through real processes', () => {
       expect(requests).toHaveLength(2);
       for (const request of requests) {
         expect(request.headers['x-api-key']).toBe(SECRET_VALUE);
-        expect(request.headers['anthropic-version']).toBe('2023-06-01');
+        expect(request.headers['anthropic-version']).toBe(DEFAULT_ANTHROPIC_API_VERSION);
       }
       const [first, second] = requests.map((request) => request.body as { model: string; stream: boolean; max_tokens: number; messages: Array<{ role: string; content: Array<Record<string, unknown>> }> });
       expect(first).toMatchObject({ model: 'upstream-model', stream: true, max_tokens: CAPABILITIES.maxOutputTokens });

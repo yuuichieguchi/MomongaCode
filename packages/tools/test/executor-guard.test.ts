@@ -9,6 +9,10 @@ const ROOT = path.resolve(import.meta.dirname, '..', '..', '..');
 
 const SETTLED_PREFIX = (name: string) => `Not run: a process started by an earlier command (marker ${name}, unidentified) may still be running and could not be stopped. `;
 const IGNORE_SUFFIX = (name: string) => `If it can stay running, ask the person to run /markers ignore ${name}.`;
+const COULD_NOT_CHECK = (name: string, reason: string) =>
+  `Note: MomongaCode could not check whether a process started by an earlier command (marker ${name}) is still running (${reason}). The command ran. It will check again before the next command that runs a process or changes files in this session.`;
+const FINAL_NOTICE = (name: string) =>
+  `Note: a process started by an earlier command (marker ${name}) may still be running. MomongaCode has used its four retries and will not try again. If it can stay running, ask the person to run /markers ignore ${name}.`;
 
 describe('T8 the guard, by the sideEffect field', () => {
   it('a write call after a command left a held marker is refused with the settled-call text, and a read-only call passes', async () => {
@@ -44,31 +48,30 @@ describe('T8 the guard, by the sideEffect field', () => {
     expect(h.sent).toEqual([]);
   });
 
-  it('(T16 f) a marker whose state cannot be read refuses with the "could not check" text and signals nothing', async () => {
+  it('(T16 f) a marker whose state cannot be read and that has no ledger row does not refuse: the command runs with the could-not-check note, the marker is kept and nothing is signalled', async () => {
     const h = world('unknown');
     const name = 'a'.repeat(64);
     fs.writeFileSync(path.join(h.harness.markerDir, name), 'r00000\n');
-    const refused = resultOf(await runOne(h, 'Writer', 'second'));
-    expect(refused.status).toBe('failed');
-    expect(refused.output.startsWith(`Not run: MomongaCode could not check whether a process started by an earlier command (marker ${name}) is still running. `)).toBe(true);
-    expect(refused.output.endsWith(`Retry. ${IGNORE_SUFFIX(name)}`)).toBe(true);
+    expect(resultOf(await runOne(h, 'Writer', 'second'))).toEqual({ status: 'completed', output: `wrote\n${COULD_NOT_CHECK(name, 'the marker state could not be read')}` });
+    expect(fs.existsSync(path.join(h.harness.markerDir, name))).toBe(true);
     expect(h.sent).toEqual([]);
   });
 
-  it('(T17 f) a marker of an interrupted call (no ledger row) refuses with the interrupted-call text', async () => {
+  it('(T17 f) a held marker with no ledger row records no process group, so it does not refuse: the command runs with the could-not-check note and the marker is kept', async () => {
     const h = world('held');
     const name = 'b'.repeat(64);
     fs.writeFileSync(path.join(h.harness.markerDir, name), 'r00000\n');
-    const refused = resultOf(await runOne(h, 'Writer', 'second'));
-    expect(refused.output.startsWith(`Not run: a process started by an earlier command that was interrupted when MomongaCode stopped (marker ${name}, unidentified) may still be running and could not be stopped. `)).toBe(true);
+    expect(resultOf(await runOne(h, 'Writer', 'second'))).toEqual({ status: 'completed', output: `wrote\n${COULD_NOT_CHECK(name, 'no process group is recorded for the marker')}` });
+    expect(fs.existsSync(path.join(h.harness.markerDir, name))).toBe(true);
+    expect(h.sent).toEqual([]);
   });
 
-  it('(T17 a, f) with all four retries spent the refusal says so and nothing is listed or signalled', async () => {
+  it('(T17 a, f) with all four retries spent on a held marker with no ledger row the command runs with the final notice, and nothing is listed or signalled', async () => {
     const h = world('held');
     const name = 'c'.repeat(64);
     fs.writeFileSync(path.join(h.harness.markerDir, name), 'r11110\n');
-    const refused = resultOf(await runOne(h, 'Writer', 'second'));
-    expect(refused.output).toContain('MomongaCode has used its four retries and will not try again.');
+    expect(resultOf(await runOne(h, 'Writer', 'second'))).toEqual({ status: 'completed', output: `wrote\n${FINAL_NOTICE(name)}` });
+    expect(fs.existsSync(path.join(h.harness.markerDir, name))).toBe(true);
     expect(h.listed).toEqual([]);
     expect(h.sent).toEqual([]);
   });

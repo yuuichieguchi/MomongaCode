@@ -35,6 +35,7 @@ export type LeasedIdempotencyPort = {
 
 export type IdempotencyPort = {
   get(key: string): ToolIdempotencyLookup | undefined;
+  processGroupOf(key: string): number | undefined;
   holding(fence: LeaseFence): LeasedIdempotencyPort;
   clearCheckpoint(key: string): void;
   markUnknown(key: string): void;

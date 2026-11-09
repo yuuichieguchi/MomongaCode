@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { HOST_FLAVOUR, compileFileRuleSet, resolveCanonicalPath, volumeIsCaseInsensitive, EMPTY_PROTECTED_SET, ruleEnforcementOf } from '@momonga/foundation';
+import { HOST_FLAVOUR, groupAlive, compileFileRuleSet, resolveCanonicalPath, volumeIsCaseInsensitive, EMPTY_PROTECTED_SET, ruleEnforcementOf } from '@momonga/foundation';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
@@ -37,14 +37,7 @@ export const pidAlive = (pid: number): boolean => {
   }
 };
 
-export const groupExists = (pgid: number): boolean => {
-  try {
-    process.kill(-pgid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
-};
+export const groupExists = (pgid: number): Promise<boolean> => groupAlive(pgid);
 
 export const makeDir = (): string => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-mcp-src-')));
@@ -142,6 +135,7 @@ const makeIdempotency = (): IdempotencyPort => {
       if (rec === undefined) return undefined;
       return rec.state === 'UNKNOWN' ? { s: 'UNKNOWN', rec } : { s: 'PENDING', rec };
     },
+    processGroupOf: (key) => open.get(key)?.pgid,
     holding: () => ({
       begin: (key, beginOptions): LeasedBegin => {
         if (completed.has(key)) return { s: 'COMPLETED', result: completed.get(key) };

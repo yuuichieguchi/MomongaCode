@@ -2,21 +2,14 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, groupAlive, sha256Hex } from '@momonga/foundation';
 import { createUnsandboxed } from '@momonga/sandbox';
 import { DAEMON_PROCESS_TEST_TIMEOUT_MS, waitFor } from '@momonga/testkit';
 import { createRun, createSession, makeRuntimeFixture, makeTempHome, runBashThroughPort, signalNever, trackGroup, writeUserSettings } from './helpers.ts';
 
 const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 
-const groupExists = (pgid: number): boolean => {
-  try {
-    process.kill(-pgid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
-};
+const groupExists = (pgid: number): Promise<boolean> => groupAlive(pgid);
 
 const spawnStubbornHolder = (marker: string): number => {
   const fd = fs.openSync(marker, 'w', 0o600);
@@ -71,7 +64,7 @@ describe('sandbox kind (system timers, none used)', () => {
     expect(outcomes).toEqual([{ idemKey, callId: 'call-a', outcome: 'unknown' }]);
     expect(f.reapTiming.sleeps.length).toBeGreaterThan(0);
     expect(f.clock.now()).toBeGreaterThan(startedAt);
-    await waitFor(() => !groupExists(pgid), { description: 'the stubborn holder to be killed' });
+    await waitFor(async () => !(await groupExists(pgid)), { description: 'the stubborn holder to be killed' });
     expect(fs.existsSync(marker)).toBe(false);
     expect(f.store.idempotency.get(idemKey)?.s).toBe('UNKNOWN');
   });

@@ -65,7 +65,7 @@ type FakeBegin =
   | { s: 'UNKNOWN'; rec: FakeRecord }
   | { s: 'COMPLETED'; result: unknown };
 
-type Entry = { kind: 'open'; rec: FakeRecord } | { kind: 'completed'; result: unknown };
+type Entry = { kind: 'open'; rec: FakeRecord } | { kind: 'completed'; result: unknown; pgid?: number };
 
 export type IdempotencyLog =
   | { op: 'begin'; key: string; expiresAt: number; meta: Record<string, unknown>; s: FakeBegin['s'] }
@@ -89,6 +89,11 @@ export const makeIdempotency = (clock: { now(): number }) => {
       if (existing === undefined) return undefined;
       if (existing.kind === 'completed') return { s: 'COMPLETED', result: existing.result };
       return existing.rec.state === 'UNKNOWN' ? { s: 'UNKNOWN', rec: existing.rec } : { s: 'PENDING', rec: existing.rec };
+    },
+    processGroupOf(key: string): number | undefined {
+      const existing = records.get(key);
+      if (existing === undefined) return undefined;
+      return existing.kind === 'completed' ? existing.pgid : existing.rec.pgid;
     },
     begin(key: string, options: { expiresAt: number; meta: Record<string, unknown> }): FakeBegin {
       const existing = records.get(key);
@@ -120,7 +125,9 @@ export const makeIdempotency = (clock: { now(): number }) => {
     },
     complete(key: string, result: unknown): void {
       log.push({ op: 'complete', key, result });
-      records.set(key, { kind: 'completed', result });
+      const existing = records.get(key);
+      const pgid = existing?.kind === 'open' ? existing.rec.pgid : undefined;
+      records.set(key, { kind: 'completed', result, ...(pgid === undefined ? {} : { pgid }) });
     },
     clearCheckpoint(key: string): void {
       port.checkpoint(key, undefined);

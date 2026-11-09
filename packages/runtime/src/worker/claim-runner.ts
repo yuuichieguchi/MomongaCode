@@ -33,7 +33,7 @@ import { deferredPinFor, tokenPinFor, tokenPolicyOf } from './token-pin.ts';
 import type { RunPins } from './pins.ts';
 import { createSkillAdmission } from './skill-admission.ts';
 import { createTerminals } from './terminals.ts';
-import { extendToolSet } from '@momonga/tools';
+import { extendToolSet, harnessOutputToolsOf } from '@momonga/tools';
 import { createLoadToolsTool } from './load-tools-tool.ts';
 import { createToolLoading } from './tool-admission.ts';
 import { offerFor, offeredRecordFor } from './tool-offer.ts';
@@ -502,7 +502,7 @@ const drive = async (
     windowShared: () => jobRunningNow() || childRunLive(),
     companions: () => ({ hostOf: Object.fromEntries(toolSet.companions), keepWithoutHost: keepCompanionsWithoutHost() }),
     systemPrompt,
-    outputFit: meteredOutputFit({ meter: aliasMeter, itemCap: async () => (await measurePinnedFor(ctx)).itemCap }),
+    outputFit: meteredOutputFit({ meter: aliasMeter, itemCap: async () => (await measurePinnedFor(ctx)).itemCap, harnessTools: new Set(harnessOutputToolsOf(offeredSet.tools)) }),
     reconcileFit: reconcileOutputFit(pins.capabilities),
     journal,
     control,

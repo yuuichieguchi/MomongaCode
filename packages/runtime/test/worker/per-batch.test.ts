@@ -64,7 +64,7 @@ describe('worker output fit per batch', () => {
     if (execution === undefined) throw new Error('expected the Probe execution');
     const pinnedTokens = inputTokensOf(env.gateway.streams[0]?.body ?? { model: 'fm' });
     const itemCap = itemCapFor(capabilities, inputCeilingFor(capabilities) - pinnedTokens);
-    const tokensOf = (output: string): number => tokensOfText(canonicalJson({ type: 'function_call_output', call_id: 'output-fit', output }));
+    const tokensOf = (output: string): number => tokensOfText(canonicalJson({ type: 'function_call_output', call_id: execution.callId, output }));
     let low = 1;
     let high = 8 * itemCap;
     while (low < high) {

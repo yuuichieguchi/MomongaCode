@@ -414,3 +414,41 @@ describe('T16 (a) a live background job owns its marker (PT 3H rule 4: "A marker
   });
 });
 
+
+describe('a finished job removes its marker only once the marker reads free', () => {
+  const readingState = (state: 'held' | 'free') => {
+    const read: string[] = [];
+    const probes = {
+      findHolders: async () => [],
+      markerState: async (marker: string) => {
+        read.push(marker);
+        return state;
+      },
+    };
+    return { probes, read };
+  };
+
+  it('keeps the marker of a job whose marker is still held with nobody named, and leaves it to the next occasion', async () => {
+    const owners = createMarkerOwners();
+    const { probes, read } = readingState('held');
+    const t = setup(probes, { owners });
+    const { jobId } = await t.start('call-1');
+    const key = t.store.jobs.get(jobId)?.idemKey ?? '';
+    t.spawned[0]?.exit({ code: 0, signal: null });
+    await t.settled(jobId);
+    expect(fs.existsSync(path.join(t.markerDir, key))).toBe(true);
+    expect(read).toEqual([path.join(t.markerDir, key)]);
+    expect(await unsettledKeys(t.markerDir, owners)).toEqual([key]);
+  });
+
+  it('removes the marker of a finished job whose marker reads free', async () => {
+    const { probes, read } = readingState('free');
+    const t = setup(probes);
+    const { jobId } = await t.start('call-1');
+    const key = t.store.jobs.get(jobId)?.idemKey ?? '';
+    t.spawned[0]?.exit({ code: 0, signal: null });
+    await t.settled(jobId);
+    expect(read).toEqual([path.join(t.markerDir, key)]);
+    expect(fs.existsSync(path.join(t.markerDir, key))).toBe(false);
+  });
+});

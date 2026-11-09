@@ -64,7 +64,7 @@ export { systemTiming } from './system-timing.ts';
 export { systemRandom } from './system-random.ts';
 export { nodeFileSystem, nodeFileSystemSync } from './node-file-system.ts';
 export type { AccessCheck, FileSystem, FileSystemSync, RemoveOptions } from './node-file-system.ts';
-export { forceKillGroup, groupAlive, groupTerminationBoundMs, realGroupTiming, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from './process-group.ts';
+export { GroupNotStoppedError, forceKillGroup, groupAlive, groupTerminationBoundMs, realGroupTiming, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from './process-group.ts';
 export type { ForceKillGroupOptions, GroupTiming, ProcessSignalSender, TerminateGroupOptions, TerminateOutcome } from './process-group.ts';
 export { procGroupMembers } from './platform/group-members.ts';
 export type { GroupMembersReader } from './platform/group-members.ts';
@@ -96,6 +96,8 @@ export type { LockCapability, LockCapabilityOptions, LockCapabilityProbe, Stagin
 export { UNMEASURED_CAPABILITY } from './platform/lock-capability.ts';
 export { MARKER_MODES, MARKER_PHASES, MARKER_STATES } from './marker-state.ts';
 export type { MarkerMode, MarkerPhase, MarkerState } from './marker-state.ts';
+export { UNNAMED_REASON, commandMayStillRun, refusedReason } from './command-liveness.ts';
+export type { CommandLiveness, CommandLivenessEvidence, GroupLiveness, HolderListing } from './command-liveness.ts';
 export { RETRY_KINDS, claimRetry, markIgnored, nodeRecordFiles, parseAttemptRecord, readAttemptRecord } from './platform/marker-record.ts';
 export type { AttemptRecord, ClaimOutcome as RetryClaim, RecordFiles, RetryKind } from './platform/marker-record.ts';
 export { closeMarkerDescriptor, createMarker } from './platform/marker-file.ts';
@@ -188,7 +190,7 @@ export {
   supervisorMaxCloseMs,
 } from './process-contract.ts';
 export type { JsonLogger, JsonLoggerOptions, LogFields, LogLevel, LogLineInput, ReadyFields, TextStream } from './process-contract.ts';
-export { MarkerReapError, REAP_POLL_INTERVAL_MS, findHolders, holderGroups, hostReapTiming, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, outlivedNotes, reconcileProcessGroup, reportUninspectableOnce, stoppedCommandResult } from './process-markers.ts';
+export { MarkerReapError, REAP_POLL_INTERVAL_MS, findHolders, holderGroups, hostReapTiming, markerReapClockBoundMs, reapMarkedProcesses, reapMarkedProcessesWithReport, reapMarkerDirectory, outlivedNotes, reconcileProcessGroup, reportUninspectableOnce, stoppedCommandResult } from './process-markers.ts';
 export type { FindHoldersOptions, MarkerReconcileResult, ReapMarkedProcessesOptions, ReapMarkerDirectoryOptions, ReapReport, ReapTiming } from './process-markers.ts';
 export { createLiveIdentities } from './platform/live-identities.ts';
 export type { LiveIdentities, LiveIdentitiesPorts } from './platform/live-identities.ts';
@@ -234,8 +236,10 @@ export { ProbeFailedError, classifyProbeCause, failureOfError, isTransientFailur
 export type { MarkerStateOptions, ProbeCause, ProbeEvidence, ProbeFailure, ProbeOptions, ProbeResult, ProcessInspector, UninspectableProcess } from './platform/inspector-types.ts';
 export { UnsupportedPlatformError, createProcessInspector, defaultProcessInspector, hostInspectorPorts, hostProcessInspector } from './platform/process-inspector.ts';
 export type { InspectorPorts } from './platform/process-inspector.ts';
-export { createAsyncSignalSender, createProcessGroupPort, hostAsyncSignalSender, hostProcessGroupPort, hostSignalSender, posixGroupPort } from './platform/group-port.ts';
-export type { AsyncSignalSender, ProcessGroupPort } from './platform/group-port.ts';
+export { createAsyncSignalSender, createPosixGroupPort, createProcessGroupPort, groupPortOf, hostAsyncSignalSender, hostProcessGroupPort, hostSignalSender } from './platform/group-port.ts';
+export { canStillRun } from './platform/run-state.ts';
+export type { GroupReading, GroupStatesReader } from './platform/run-state.ts';
+export type { AsyncSignalSender, PosixGroupHost, ProcessGroupPort } from './platform/group-port.ts';
 export { deadlineSignal, hostProbeTiming, operationSignal } from './platform/probe-timing.ts';
 export type { ProbeTiming } from './platform/probe-timing.ts';
 export { nodeProcFs } from './platform/procfs.ts';

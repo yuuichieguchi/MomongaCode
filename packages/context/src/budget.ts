@@ -1,4 +1,4 @@
-import { ITEM_CAP, LOWEST_REASONING_EFFORT, ITEM_ROOM, MIN_SUMMARY_TOKENS, ceilRatio, floorRatio, marginFloorFor, outputReserveFor, outputTokensFor, sizingFractionFor, summaryItemTokensFor, tokensForText } from '@momonga/protocol';
+import { COMPACTION_MIN_GAIN, ITEM_CAP, LOWEST_REASONING_EFFORT, ITEM_ROOM, MIN_SUMMARY_TOKENS, ceilRatio, floorRatio, marginFloorFor, outputReserveFor, outputTokensFor, sizingFractionFor, summaryItemTokensFor, tokensForText } from '@momonga/protocol';
 import type { Ratio } from '@momonga/protocol';
 import type { Capabilities } from '@momonga/protocol';
 import { omittedMarker } from './tool-output.ts';
@@ -7,6 +7,8 @@ import { WORKING_STATE_MESSAGE_MIN_TOKENS } from './working-state.ts';
 
 const DEFAULT_MEMORY_ROOM_SHARE = ITEM_ROOM.num / (ITEM_ROOM.den * 2);
 export const MIN_ITEM_CAP = 64;
+
+export const proactiveGainFor = (summaryItem: number, previousSummary: number): number => Math.max(ceilRatio(COMPACTION_MIN_GAIN, summaryItem), summaryItem + previousSummary);
 
 export const MIN_ROOM_TOKENS = MIN_ITEM_CAP + summaryItemTokensFor(MIN_SUMMARY_TOKENS) + WORKING_STATE_MESSAGE_MIN_TOKENS;
 

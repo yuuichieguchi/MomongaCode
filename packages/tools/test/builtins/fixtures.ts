@@ -8,14 +8,14 @@ import { createBuiltinTools } from '@momonga/tools';
 import type { BackgroundJobs, CallOutcome, ExecutionBatchInput, NeedsApprovalOutcome, ResultOutcome, ToolExecutorOptions, ToolSet } from '@momonga/tools';
 import type { PermissionRule } from '@momonga/policy';
 import type { PermissionMode } from '@momonga/protocol';
+import { pinnedRipgrepPath } from '../../../../test/support/pinned-ripgrep.ts';
 import { call, makeHarness, toolSetOf } from '../harness.ts';
 import type { ApprovalSpec } from '../harness.ts';
 import { HAS_REAL_SANDBOX, createHostSandbox, policyFor, sessionTmpDirOf, sessionsTmpRootOf } from '../helpers.ts';
 
 export const BASE_PATH = '/usr/bin:/bin:/usr/sbin:/sbin';
-const RG_CANDIDATES = ['/opt/homebrew/bin/rg', '/usr/bin/rg'];
-export const RG_BIN = RG_CANDIDATES.find((candidate) => fs.existsSync(candidate)) ?? (RG_CANDIDATES[0] as string);
-export const HAS_RG = fs.existsSync(RG_BIN) && HAS_REAL_SANDBOX;
+export const RG_BIN = pinnedRipgrepPath();
+export const HAS_RG = HAS_REAL_SANDBOX;
 export const RG_PATH = `${path.dirname(RG_BIN)}:${BASE_PATH}`;
 export const BASE_ENV = { PATH: BASE_PATH, LANG: 'C' };
 

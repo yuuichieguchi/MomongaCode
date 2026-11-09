@@ -10,7 +10,7 @@ import { roleMainOverride } from './support/launcher.ts';
 import { readLog } from './support/log-reader.ts';
 import { DEFAULT_E2E_DEPS, startStack } from './support/stack.ts';
 import { toolCallReply } from './support/upstream.ts';
-import { E2E_CHILD_READY_BOUND_MS, E2E_TEST_TIMEOUT_MS, until } from './support/wait.ts';
+import { E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
 
 const COMPLIANCE_DIR = path.join(import.meta.dirname, '..', 'compliance', 'open-responses');
 const BUN = path.join(COMPLIANCE_DIR, 'node_modules', '.bin', 'bun');
@@ -48,14 +48,11 @@ const runSuite = (baseUrl: string, cwd: string, env: Record<string, string>): Pr
     });
   });
 
-const waitForDebugPort = async (logFile: string): Promise<number> =>
-  until(
-    () => {
-      const record = readLog(logFile).find((entry) => entry.msg === 'gateway.debug_listener');
-      return typeof record?.['port'] === 'number' ? record['port'] : undefined;
-    },
-    { deadlineMs: E2E_CHILD_READY_BOUND_MS, description: 'the gateway to log its debug listener port' },
-  );
+const debugPortOf = (logFile: string): number => {
+  const port = readLog(logFile).find((entry) => entry.msg === 'gateway.debug_listener')?.['port'];
+  if (typeof port !== 'number') throw new Error(`the ready gateway logged no debug listener port in ${logFile}`);
+  return port;
+};
 
 describe('Open Responses compliance suite against the supervised gateway debug listener', () => {
   it(titleOf('open-responses-compliance'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
@@ -93,7 +90,7 @@ describe('Open Responses compliance suite against the supervised gateway debug l
         launcherOverrides: { gateway: roleMainOverride('gateway', SUPERVISOR_APP_VERSION, ['--debug-tcp-port=0', `--debug-tcp-token-file=${tokenFile}`]) },
       },
     });
-    const port = await waitForDebugPort(home.paths.logFiles.gateway);
+    const port = debugPortOf(home.paths.logFiles.gateway);
 
     const { output, exitCode } = await runSuite(`http://127.0.0.1:${port}/v1`, home.root, { PATH: '/usr/bin:/bin', HOME: home.home, TMPDIR: home.sessionTmp });
     for (const result of output.results) console.log(`${result.status.padEnd(7)} ${result.id}${result.errors === undefined ? '' : `: ${result.errors.join('; ')}`}`);

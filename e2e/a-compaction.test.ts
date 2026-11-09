@@ -15,6 +15,7 @@ import {
   journalOfRows,
   ofType,
   planScript,
+  seenOutputTokens,
   summaryRoute,
   summaryTextOf,
   upstreamRepliesOf,
@@ -42,7 +43,8 @@ const HISTORY_DENY = ['HistorySearch', 'HistoryRead'] as const;
 const FULL_DENY = [] as const;
 const LEAN_DENY = ['Write', 'Edit', 'Bash', ...MEMORY_DENY, ...HISTORY_DENY] as const;
 const CONSTRAINED_DENY = ['Read', 'Write', 'Edit', 'Bash', 'UpdatePlan', 'Glob', ...MEMORY_DENY, ...HISTORY_DENY] as const;
-const FULL_LINE_CHARS = [90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200] as const;
+const FULL_LINE_CHARS = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200] as const;
+const LEAN_LINE_CHARS = [90, 80, 70, 60, 50, 40, 30, 20, 10] as const;
 const EXPECTED_OUTPUT_RESERVE = 1024;
 const AFTER_COMPACTION = 'after compaction';
 
@@ -57,7 +59,7 @@ const PLANNED_CASES: readonly PlannedCase[] = [
   {
     id: 'a-compaction-lean',
     title: titleOf('a-compaction-lean'),
-    spec: { name: 'a-compaction-lean', toolCalling: 'native', deny: LEAN_DENY, grid: [{ tool: 'Read', lineChars: 90 }], probeFillers: 16, escalates: true },
+    spec: { name: 'a-compaction-lean', toolCalling: 'native', deny: LEAN_DENY, grid: LEAN_LINE_CHARS.map((lineChars) => ({ tool: 'Read', lineChars })), probeFillers: 16, escalates: true },
   },
   {
     id: 'a-compaction-constrained',
@@ -159,7 +161,7 @@ const assertAcceptance = async (
   expect(grep?.data['handle']).toBe(haystack.handle);
   const grepInline = String(grep?.data['output']);
   expect(grepInline.length).toBeLessThan(haystack.grepOutput.length);
-  expect(grepInline.length).toBeLessThanOrEqual(plan.sizing.inlineChars);
+  expect(await seenOutputTokens(count, { callId: String(grep?.data['callId']), tool: 'Grep' }, grepInline)).toBeLessThanOrEqual(plan.sizing.itemCap);
 
   expect(compacted.length).toBeGreaterThanOrEqual(1);
   const firstCompaction = compacted[0] as JournalEvent;

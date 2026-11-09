@@ -6,15 +6,23 @@ EXTENDS Naturals, FiniteSets
 
 CONSTANTS Members, Events, MaxAttempts, Variant
 
-ASSUME Variant \in {"decided", "noIdentityCheck", "termToReused", "signalUnlistedGroup", "throwOnSurvivor", "dropMarkerOnUnconfirmed", "signalUnprovedHolder", "killWithoutReproof", "retryReusesProof", "retryAnyEvent", "rowlessIsOutside", "groupProofWithoutStartTime"}
+ASSUME Variant \in {"decided", "noIdentityCheck", "termToReused", "signalUnlistedGroup", "throwOnSurvivor", "dropMarkerOnUnconfirmed", "signalUnprovedHolder", "killWithoutReproof", "retryReusesProof", "retryAnyEvent", "rowlessIsOutside", "groupProofWithoutStartTime", "exitingCountsAlive", "forkFromExiting", "settleCandidate", "settleCurrent", "guardCurrent", "jobCurrent", "reconcileCurrent", "guardUnknownCurrent", "guardHeldCurrent"}
 ASSUME MaxAttempts \in Nat \ {0}
 ASSUME Events # {}
 
-MemberStates == {"live", "stuck", "zombie", "gone"}
+MemberStates == {"live", "stuck", "exiting", "zombie", "gone"}
 
-VARIABLES inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved
+Settle == Variant \in {"settleCandidate", "settleCurrent", "guardCurrent", "guardUnknownCurrent", "guardHeldCurrent", "jobCurrent", "reconcileCurrent"}
+SettleCurrent == Variant = "settleCurrent"
+GuardCurrent == Variant = "guardCurrent"
+GuardUnknownCurrent == Variant = "guardUnknownCurrent"
+GuardHeldCurrent == Variant = "guardHeldCurrent"
+JobCurrent == Variant = "jobCurrent"
+ReconcileCurrent == Variant = "reconcileCurrent"
 
-vars == <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved>>
+VARIABLES inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved, shown, basis, listFailed, groupKnown
+
+vars == <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved, shown, basis, listFailed, groupKnown>>
 
 TypeOK ==
     /\ inGroup \in [Members -> BOOLEAN]
@@ -27,23 +35,52 @@ TypeOK ==
     /\ state \in [Members -> MemberStates]
     /\ other \in BOOLEAN
     /\ mode \in {"live", "recorded"}
-    /\ phase \in {"idle", "termWait", "killWait", "done"}
+    /\ phase \in {"idle", "termWait", "killWait", "done", "settle", "listing", "groupProbe"}
     /\ termSent \in BOOLEAN
     /\ killSent \in BOOLEAN
-    /\ outcome \in {"none", "gone", "terminated", "killed", "unconfirmed", "throw"}
+    /\ outcome \in {"none", "gone", "terminated", "killed", "unconfirmed", "throw", "free", "silent", "job", "unchecked"}
     /\ marker \in {"kept", "none"}
     /\ unprovedSignalled \in BOOLEAN
     /\ begunUnproved \in BOOLEAN
+    /\ shown \in {"none", "running", "final", "guard", "unchecked", "gone"}
+    /\ basis \in BOOLEAN
+    /\ listFailed \in BOOLEAN
+    /\ groupKnown \in BOOLEAN
 
 GroupOurs == {m \in Members : inGroup[m] /\ state[m] # "gone"}
+
+CanStillRun(m) == state[m] \in {"live", "stuck"}
+
+GroupRunnable == {m \in Members : inGroup[m] /\ CanStillRun(m)}
+
+GroupAlive == IF Variant = "exitingCountsAlive" THEN GroupOurs # {} ELSE GroupRunnable # {}
 
 Rowless(m) == state[m] = "gone" /\ ~swapped[m]
 
 Outside == {m \in Members : listed[m] /\ (~inGroup[m] \/ (Variant = "rowlessIsOutside" /\ Rowless(m)))}
 
-HolderVisible(m) == m \in Outside /\ state[m] # "gone"
+Holding(m) == state[m] \in {"live", "stuck", "exiting"}
 
-OursVisible == GroupOurs # {} \/ \E m \in Members : HolderVisible(m)
+SomeoneRuns == \E m \in Members : CanStillRun(m)
+
+Named == {m \in Members : listed[m] /\ Holding(m)}
+
+ObsHeld ==
+    IF mode = "live"
+    THEN \E m \in Members : Holding(m)
+    ELSE \E m \in Members : Holding(m) /\ (state[m] # "exiting" \/ listed[m])
+
+HolderVisible(m) == m \in Outside /\ (IF Settle THEN Holding(m) ELSE state[m] # "gone")
+
+OursVisible == GroupRunnable # {} \/ \E m \in Members : HolderVisible(m)
+
+AllEventsSpent == \A e \in Events : retried[e] >= 1
+
+Pos == (Named # {}) \/ (groupKnown /\ GroupRunnable # {})
+
+RefusalDue == IF GuardCurrent THEN ObsHeld ELSE IF GuardHeldCurrent THEN (ObsHeld /\ AllEventsSpent) ELSE (Pos \/ (GuardUnknownCurrent /\ ObsHeld /\ ~groupKnown))
+
+RefusedPossible == \E m \in Members : Holding(m) /\ ~listed[m]
 
 Init ==
     /\ inGroup \in [Members -> BOOLEAN]
@@ -58,16 +95,22 @@ Init ==
     /\ other \in BOOLEAN
     /\ (other => (mode = "recorded" /\ {m \in Members : inGroup[m] /\ state[m] # "gone"} = {}))
     /\ (mode = "live" => \A m \in Members : ~listed[m] /\ inGroup[m])
-    /\ \A m \in Members : (~inGroup[m] => listed[m])
-    /\ phase = "idle"
+    /\ \A m \in Members : (~Settle /\ ~inGroup[m]) => listed[m]
+    /\ (Settle => (\A m \in Members : inGroup[m] => ~CanStillRun(m)))
+    /\ phase = IF Settle THEN "settle" ELSE "idle"
     /\ termSent = FALSE
     /\ killSent = FALSE
     /\ outcome = "none"
     /\ marker = "kept"
     /\ unprovedSignalled = FALSE
     /\ begunUnproved = FALSE
+    /\ shown = "none"
+    /\ basis = FALSE
+    /\ listFailed = FALSE
+    /\ groupKnown \in BOOLEAN
+    /\ (~Settle => groupKnown)
 
-GroupSeen == IF mode = "live" THEN GroupOurs # {} ELSE GroupOurs # {} \/ other
+GroupSeen == IF mode = "live" THEN GroupAlive ELSE GroupAlive \/ other
 
 Seen == GroupSeen \/ \E m \in Members : HolderVisible(m)
 
@@ -96,31 +139,48 @@ Reuse ==
     /\ GroupOurs = {}
     /\ ~other
     /\ other' = TRUE
-    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved>>
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved, shown, basis, listFailed, groupKnown>>
 
 MemberExits(m) ==
     /\ state[m] \in {"live", "stuck"}
+    /\ state' = [state EXCEPT ![m] = "exiting"]
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved, shown, basis, listFailed, groupKnown>>
+
+Fork(m, n) ==
+    /\ inGroup[m]
+    /\ (CanStillRun(m) \/ (Variant = "forkFromExiting" /\ state[m] = "exiting"))
+    /\ inGroup[n]
+    /\ state[n] = "gone"
+    /\ ~swapped[n]
+    /\ state' = [state EXCEPT ![n] = "live"]
+    /\ listed' = [listed EXCEPT ![n] = listed[m]]
+    /\ provedOnce' = [provedOnce EXCEPT ![n] = FALSE]
+    /\ hstage' = [hstage EXCEPT ![n] = "idle"]
+    /\ UNCHANGED <<inGroup, swapped, attempts, retried, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved, shown, basis, listFailed, groupKnown>>
+
+MemberFinishesExit(m) ==
+    /\ state[m] = "exiting"
     /\ state' = [state EXCEPT ![m] = "zombie"]
-    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved>>
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved, shown, basis, listFailed, groupKnown>>
 
 InitReaps(m) ==
     /\ state[m] = "zombie"
     /\ state' = [state EXCEPT ![m] = "gone"]
-    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved>>
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved, shown, basis, listFailed, groupKnown>>
 
 MemberDies(m) ==
     /\ state[m] = "live"
     /\ inGroup[m]
     /\ (termSent \/ killSent)
-    /\ state' = [state EXCEPT ![m] = "zombie"]
-    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved>>
+    /\ state' = [state EXCEPT ![m] = "exiting"]
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved, shown, basis, listFailed, groupKnown>>
 
 ReusePid(m) ==
     /\ mode = "recorded"
     /\ state[m] = "gone"
     /\ ~swapped[m]
     /\ swapped' = [swapped EXCEPT ![m] = TRUE]
-    /\ UNCHANGED <<inGroup, listed, provedOnce, hstage, attempts, retried, state, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved>>
+    /\ UNCHANGED <<inGroup, listed, provedOnce, hstage, attempts, retried, state, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved, shown, basis, listFailed, groupKnown>>
 
 HolderTargetProved(m) == state[m] # "gone" /\ ~swapped[m]
 
@@ -142,72 +202,73 @@ SigK(m) == m \in Outside /\ hstage[m] = "term" /\ KillAllowed(m)
 Finish(result, keep) ==
     /\ phase' = "done"
     /\ outcome' = result
-    /\ marker' = IF keep THEN "kept" ELSE "none"
+    /\ marker' = IF Settle \/ keep THEN "kept" ELSE "none"
 
-GroupTermGo == GroupSeen /\ GateTerm
+GroupTermGo == groupKnown /\ GroupSeen /\ GateTerm
 
-GroupKillGo == GroupSeen /\ GateKill
+GroupKillGo == groupKnown /\ GroupSeen /\ GateKill
 
 Begin ==
     /\ phase = "idle"
     /\ IF ~Seen
        THEN /\ Finish("gone", FALSE)
-            /\ UNCHANGED <<termSent, unprovedSignalled, begunUnproved, state, hstage, provedOnce>>
+            /\ UNCHANGED <<termSent, unprovedSignalled, begunUnproved, state, hstage, provedOnce, listFailed, groupKnown>>
        ELSE IF ~(GroupTermGo \/ \E m \in Members : SigT(m))
             THEN /\ Finish("unconfirmed", KeepOnUnconfirmed)
                  /\ begunUnproved' = (GroupSeen /\ ~Proved)
-                 /\ UNCHANGED <<termSent, unprovedSignalled, state, hstage, provedOnce>>
+                 /\ UNCHANGED <<termSent, unprovedSignalled, state, hstage, provedOnce, listFailed, groupKnown>>
             ELSE /\ phase' = "termWait"
                  /\ termSent' = GroupTermGo
                  /\ unprovedSignalled' = (unprovedSignalled \/ (GroupTermGo /\ ~Proved) \/ \E m \in Members : SigT(m) /\ ~HolderTargetProved(m))
                  /\ begunUnproved' = (GroupSeen /\ ~Proved)
                  /\ hstage' = [m \in Members |-> IF SigT(m) THEN "term" ELSE "idle"]
                  /\ provedOnce' = [m \in Members |-> provedOnce[m] \/ (SigT(m) /\ HolderTargetProved(m))]
-                 /\ \E dies \in SUBSET Members : state' = [m \in Members |-> IF SigT(m) /\ state[m] = "live" /\ m \in dies THEN "zombie" ELSE state[m]]
-                 /\ UNCHANGED <<outcome, marker>>
-    /\ UNCHANGED <<inGroup, listed, swapped, attempts, retried, other, mode, killSent>>
+                 /\ \E dies \in SUBSET Members : state' = [m \in Members |-> IF SigT(m) /\ state[m] = "live" /\ m \in dies THEN "exiting" ELSE state[m]]
+                 /\ UNCHANGED <<outcome, marker, listFailed, groupKnown>>
+    /\ UNCHANGED <<inGroup, listed, swapped, attempts, retried, other, mode, killSent, shown, basis, listFailed, groupKnown>>
 
 TermWaitEnds ==
     /\ phase = "termWait"
     /\ IF ~Seen
        THEN /\ Finish("terminated", FALSE)
-            /\ UNCHANGED <<killSent, unprovedSignalled, state, hstage>>
+            /\ UNCHANGED <<killSent, unprovedSignalled, state, hstage, listFailed, groupKnown>>
        ELSE IF ~(GroupKillGo \/ \E m \in Members : SigK(m))
             THEN /\ Finish("unconfirmed", KeepOnUnconfirmed)
-                 /\ UNCHANGED <<killSent, unprovedSignalled, state, hstage>>
+                 /\ UNCHANGED <<killSent, unprovedSignalled, state, hstage, listFailed, groupKnown>>
             ELSE /\ phase' = "killWait"
                  /\ killSent' = GroupKillGo
                  /\ unprovedSignalled' = (unprovedSignalled \/ (GroupKillGo /\ ~Proved) \/ \E m \in Members : SigK(m) /\ ~HolderTargetProved(m))
                  /\ hstage' = [m \in Members |-> IF SigK(m) THEN "kill" ELSE hstage[m]]
-                 /\ state' = [m \in Members |-> IF SigK(m) /\ state[m] = "live" THEN "zombie" ELSE state[m]]
-                 /\ UNCHANGED <<outcome, marker>>
-    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, attempts, retried, other, mode, termSent, begunUnproved>>
+                 /\ state' = [m \in Members |-> IF SigK(m) /\ state[m] = "live" THEN "exiting" ELSE state[m]]
+                 /\ UNCHANGED <<outcome, marker, listFailed, groupKnown>>
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, attempts, retried, other, mode, termSent, begunUnproved, shown, basis, listFailed, groupKnown>>
 
 KillWaitEnds ==
     /\ phase = "killWait"
     /\ IF ~Seen
        THEN Finish("killed", FALSE)
        ELSE Finish(IF Variant = "throwOnSurvivor" THEN "throw" ELSE "unconfirmed", KeepOnUnconfirmed)
-    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, termSent, killSent, unprovedSignalled, begunUnproved>>
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, termSent, killSent, unprovedSignalled, begunUnproved, shown, basis, listFailed, groupKnown>>
 
 CallerAborts ==
     /\ phase \in {"termWait", "killWait"}
-    /\ IF ~Seen
-       THEN Finish(IF phase = "termWait" THEN "terminated" ELSE "killed", FALSE)
-       ELSE Finish("unconfirmed", KeepOnUnconfirmed)
-    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, termSent, killSent, unprovedSignalled, begunUnproved>>
+    /\ \/ /\ ~Seen
+          /\ Finish(IF phase = "termWait" THEN "terminated" ELSE "killed", FALSE)
+       \/ Finish("unconfirmed", KeepOnUnconfirmed)
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, termSent, killSent, unprovedSignalled, begunUnproved, shown, basis, listFailed, groupKnown>>
 
 Sweep ==
+    /\ ~Settle
     /\ phase = "done"
     /\ outcome = "unconfirmed"
     /\ ~OursVisible
     /\ marker = "kept"
     /\ marker' = "none"
-    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, phase, termSent, killSent, outcome, unprovedSignalled, begunUnproved>>
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, phase, termSent, killSent, outcome, unprovedSignalled, begunUnproved, shown, basis, listFailed, groupKnown>>
 
 Retry ==
     /\ phase = "done"
-    /\ outcome = "unconfirmed"
+    /\ (outcome = "unconfirmed" \/ (Settle /\ ObsHeld))
     /\ marker = "kept"
     /\ attempts < MaxAttempts
     /\ \E e \in Events :
@@ -220,16 +281,163 @@ Retry ==
     /\ outcome' = "none"
     /\ begunUnproved' = FALSE
     /\ hstage' = [m \in Members |-> "idle"]
-    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, state, other, mode, marker, unprovedSignalled>>
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, state, other, mode, marker, unprovedSignalled, shown, basis, listFailed, groupKnown>>
 
 Settled ==
     /\ phase = "done"
     /\ UNCHANGED vars
 
+Claimed ==
+    /\ shown' = "running"
+    /\ basis' = Pos
+    /\ phase' = "done"
+    /\ outcome' = "unconfirmed"
+
+SettleObserve ==
+    /\ phase = "settle"
+    /\ IF ObsHeld
+       THEN /\ phase' = "listing"
+            /\ UNCHANGED outcome
+       ELSE /\ phase' = "done"
+            /\ outcome' = "free"
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, termSent, killSent, marker, unprovedSignalled, begunUnproved, shown, basis, listFailed, groupKnown>>
+
+SettleListed ==
+    /\ phase = "listing"
+    /\ IF Named # {}
+       THEN /\ phase' = "idle"
+            /\ UNCHANGED <<shown, basis, outcome, listFailed, groupKnown>>
+       ELSE IF SettleCurrent
+            THEN Claimed
+            ELSE /\ phase' = "groupProbe"
+                 /\ UNCHANGED <<shown, basis, outcome, listFailed, groupKnown>>
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, termSent, killSent, marker, unprovedSignalled, begunUnproved, listFailed, groupKnown>>
+
+SettleListFails ==
+    /\ phase = "listing"
+    /\ listFailed' = TRUE
+    /\ IF SettleCurrent
+       THEN Claimed
+       ELSE /\ phase' = "done"
+            /\ outcome' = "unchecked"
+            /\ shown' = "unchecked"
+            /\ UNCHANGED basis
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, termSent, killSent, marker, unprovedSignalled, begunUnproved, groupKnown>>
+
+SettleGroup ==
+    /\ phase = "groupProbe"
+    /\ IF groupKnown /\ GroupRunnable # {}
+       THEN Claimed
+       ELSE /\ phase' = "done"
+            /\ outcome' = IF groupKnown THEN "silent" ELSE "unchecked"
+            /\ shown' = IF groupKnown THEN shown ELSE "unchecked"
+            /\ UNCHANGED basis
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, termSent, killSent, marker, unprovedSignalled, begunUnproved, groupKnown, listFailed>>
+
+JobFinish ==
+    /\ phase = "settle"
+    /\ IF Named # {}
+       THEN /\ phase' = "idle"
+            /\ UNCHANGED <<outcome, marker, listFailed, groupKnown>>
+       ELSE /\ phase' = "done"
+            /\ outcome' = "job"
+            /\ marker' = IF JobCurrent THEN "none" ELSE marker
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, termSent, killSent, unprovedSignalled, begunUnproved, shown, basis, listFailed, groupKnown>>
+
+Recheck ==
+    /\ Settle
+    /\ phase = "done"
+    /\ marker = "kept"
+    /\ ~ObsHeld
+    /\ marker' = "none"
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, phase, termSent, killSent, outcome, unprovedSignalled, begunUnproved, shown, basis, listFailed, groupKnown>>
+
+SettleUnreadable ==
+    /\ phase = "settle"
+    /\ phase' = "done"
+    /\ outcome' = "unchecked"
+    /\ shown' = "unchecked"
+    /\ UNCHANGED <<basis, inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, termSent, killSent, marker, unprovedSignalled, begunUnproved, groupKnown, listFailed>>
+
+SettleListRefused ==
+    /\ phase = "listing"
+    /\ \E m \in Members : Holding(m) /\ ~listed[m]
+    /\ IF Named # {}
+       THEN /\ phase' = "idle"
+            /\ UNCHANGED <<shown, basis, outcome, groupKnown>>
+       ELSE IF SettleCurrent \/ (groupKnown /\ GroupRunnable # {})
+            THEN Claimed
+            ELSE /\ phase' = "done"
+                 /\ outcome' = "unchecked"
+                 /\ shown' = "unchecked"
+                 /\ UNCHANGED basis
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, termSent, killSent, marker, unprovedSignalled, begunUnproved, groupKnown, listFailed>>
+
+GuardRefuse ==
+    /\ Settle
+    /\ phase = "done"
+    /\ marker = "kept"
+    /\ retried["guard"] >= 1
+    /\ RefusalDue
+    /\ shown' = "guard"
+    /\ basis' = Pos
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved, groupKnown, listFailed>>
+
+GuardUnreadable ==
+    /\ Settle
+    /\ phase = "done"
+    /\ marker = "kept"
+    /\ retried["guard"] >= 1
+    /\ IF GuardCurrent \/ GuardUnknownCurrent
+       THEN /\ shown' = "guard"
+            /\ basis' = Pos
+       ELSE /\ shown' = "unchecked"
+            /\ UNCHANGED basis
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved, groupKnown, listFailed>>
+
+GuardUnchecked ==
+    /\ Settle
+    /\ phase = "done"
+    /\ marker = "kept"
+    /\ retried["guard"] >= 1
+    /\ ObsHeld
+    /\ ~RefusalDue
+    /\ (~groupKnown \/ RefusedPossible)
+    /\ shown' = "unchecked"
+    /\ UNCHANGED <<basis, inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved, groupKnown, listFailed>>
+
+FinalNotice ==
+    /\ Settle
+    /\ phase = "done"
+    /\ marker = "kept"
+    /\ AllEventsSpent
+    /\ (Pos \/ ObsHeld)
+    /\ shown # "final"
+    /\ shown' = "final"
+    /\ basis' = (Pos \/ ObsHeld)
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved, groupKnown, listFailed>>
+
+ReconcileCall ==
+    /\ Settle
+    /\ phase = "done"
+    /\ Named = {}
+    /\ GroupRunnable = {}
+    /\ IF ReconcileCurrent
+       THEN /\ shown' = "gone"
+            /\ basis' = (~ObsHeld /\ ~SomeoneRuns)
+       ELSE IF groupKnown /\ ~ObsHeld
+            THEN /\ shown' = "gone"
+                 /\ basis' = TRUE
+            ELSE /\ shown' = "unchecked"
+                 /\ UNCHANGED basis
+    /\ UNCHANGED <<inGroup, listed, swapped, provedOnce, hstage, attempts, retried, state, other, mode, phase, termSent, killSent, outcome, marker, unprovedSignalled, begunUnproved, groupKnown, listFailed>>
+
 Next ==
     \/ Reuse
     \/ \E m \in Members :
         \/ MemberExits(m)
+        \/ MemberFinishesExit(m)
+        \/ \E n \in Members : Fork(m, n)
         \/ InitReaps(m)
         \/ MemberDies(m)
         \/ ReusePid(m)
@@ -240,8 +448,34 @@ Next ==
     \/ Sweep
     \/ Retry
     \/ Settled
+    \/ SettleObserve
+    \/ SettleListed
+    \/ SettleListFails
+    \/ SettleGroup
+    \/ JobFinish
+    \/ Recheck
+    \/ SettleUnreadable
+    \/ SettleListRefused
+    \/ GuardRefuse
+    \/ GuardUnreadable
+    \/ GuardUnchecked
+    \/ FinalNotice
+    \/ ReconcileCall
 
 Spec == Init /\ [][Next]_vars
+
+FairSpec ==
+    /\ Spec
+    /\ WF_vars(SettleObserve)
+    /\ WF_vars(SettleListed \/ SettleListFails \/ SettleListRefused)
+    /\ WF_vars(SettleGroup)
+    /\ WF_vars(Begin)
+    /\ WF_vars(TermWaitEnds)
+    /\ WF_vars(KillWaitEnds)
+    /\ WF_vars(Recheck)
+    /\ WF_vars(Retry)
+    /\ WF_vars(FinalNotice)
+    /\ \A m \in Members : WF_vars(MemberFinishesExit(m))
 
 NoThrow == outcome # "throw"
 
@@ -251,15 +485,30 @@ OutcomeIsTruthful == (outcome \in {"gone", "terminated", "killed"}) => ~OursVisi
 
 MarkerKeptWhileMembersRemain == marker = "none" => ~OursVisible
 
+RemovalSafe == marker = "none" => ~SomeoneRuns
+
+RefuseOnlyOnPositiveEvidence == shown \in {"running", "guard"} => basis
+
+FinalNoticeOnlyWhenHeldOrPositive == shown = "final" => basis
+
+NoLongerRunningOnlyWhenClear == shown = "gone" => basis
+
+NoRunningClaimAfterListFailure == listFailed => shown # "running"
+
 OneRetryPerEvent == \A e \in Events : retried[e] <= 1
 
 AtMostFourRetries == attempts <= Cardinality(Events)
 
-AllEventsSpent == \A e \in Events : retried[e] >= 1
-
 ExhaustedIsFinal ==
     [][(AllEventsSpent /\ phase = "done") => (phase' = "done" /\ termSent' = termSent /\ killSent' = killSent /\ hstage' = hstage)]_vars
 
-UnprovedEndsUnconfirmed == (phase = "done" /\ begunUnproved /\ GroupOurs # {}) => (outcome = "unconfirmed" /\ marker = "kept")
+UnconfirmedOnlyWhileOneCanRun ==
+    [][((Begin \/ TermWaitEnds \/ KillWaitEnds) /\ mode = "live" /\ outcome' = "unconfirmed") => GroupRunnable # {}]_vars
+
+UnprovedEndsUnconfirmed == (phase = "done" /\ begunUnproved /\ GroupRunnable # {}) => (outcome = "unconfirmed" /\ marker = "kept")
+
+TeardownOnlyFreed == []((marker = "kept" /\ ~SomeoneRuns) => <>(marker = "none"))
+
+SurvivorReachesNotice == [](SomeoneRuns => <>(shown = "final" \/ ~SomeoneRuns))
 
 =============================================================================

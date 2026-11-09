@@ -70,6 +70,7 @@ export type CostBreakdownView = {
   duration: TimingSummaryView | null;
   roles: Record<string, RoleBreakdownView>;
   cost: { amount: number | null; currency: 'USD'; unpricedCalls: number };
+  plan: { calls: number; inputTokens: number; outputTokens: number };
   unpriced: UnpricedCallView[];
   inconsistentUsage: UnpricedCallView[];
   callsWithoutResponseId: number;

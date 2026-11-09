@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ensureMomongaDirs, momongaPaths } from '@momonga/foundation';
+import { ensureMomongaDirs, groupAlive, momongaPaths } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
 import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeClock, spawnTracked, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
@@ -41,14 +41,7 @@ beforeEach(() => {
   control.lookupError = undefined;
 });
 
-const groupExists = (pgid: number): boolean => {
-  try {
-    process.kill(-pgid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM';
-  }
-};
+const groupExists = (pgid: number): Promise<boolean> => groupAlive(pgid);
 
 const spawnHolder = (marker: string, content?: (pid: number) => string): number => {
   const fd = fs.openSync(marker, 'w', 0o600);
@@ -82,10 +75,10 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
     await ensureMomongaDirs(stack.temp.paths);
     const marker = path.join(stack.temp.paths.markers.mcp, 'fx-left-behind');
     const pgid = spawnHolder(marker, (pid) => `${pid}\n`);
-    expect(groupExists(pgid)).toBe(true);
+    expect(await groupExists(pgid)).toBe(true);
     const launched = await launchRuntime(stack.temp);
     expect(stepsLogged(launched.logger)).toContain('mcp-markers');
-    expect(groupExists(pgid)).toBe(false);
+    expect(await groupExists(pgid)).toBe(false);
     expect(fs.existsSync(marker)).toBe(false);
   });
 
@@ -117,10 +110,10 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
     });
     const launched = await launchRuntime(stack.temp);
     expect(stepsLogged(launched.logger)).toContain('tool-markers');
-    expect(groupExists(holders['completed'] as number)).toBe(false);
-    expect(groupExists(holders['missing'] as number)).toBe(false);
-    expect(groupExists(holders['unknown'] as number)).toBe(false);
-    expect(groupExists(holders['pending'] as number)).toBe(false);
+    expect(await groupExists(holders['completed'] as number)).toBe(false);
+    expect(await groupExists(holders['missing'] as number)).toBe(false);
+    expect(await groupExists(holders['unknown'] as number)).toBe(false);
+    expect(await groupExists(holders['pending'] as number)).toBe(false);
     expect(fs.readdirSync(markers)).toEqual([]);
   });
 
@@ -137,7 +130,7 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
       pgid = spawnHolder(path.join(stack.temp.paths.markers.tools, idemKey));
       store.jobs.attachProcess(jobId, pgid);
     });
-    const seen: Record<string, { status: string | undefined; alive: boolean }> = {};
+    const seen: Record<string, { status: string | undefined; alive: Promise<boolean> }> = {};
     const logger = hookLogger((step, msg) => {
       if (msg !== 'startup.step' || (step !== 'service' && step !== 'workers')) return;
       seen[step] = { status: readDb<{ status: string }>(stack.temp.paths.databases.runtime, 'SELECT status FROM jobs WHERE id = ?', jobId)[0]?.status, alive: groupExists(pgid as number) };
@@ -145,7 +138,8 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
 
     await launchRuntime(stack.temp, { logger });
 
-    expect(seen).toEqual({ service: { status: 'unknown', alive: false }, workers: { status: 'unknown', alive: false } });
+    const settled = Object.fromEntries(await Promise.all(Object.entries(seen).map(async ([step, { status, alive }]) => [step, { status, alive: await alive }])));
+    expect(settled).toEqual({ service: { status: 'unknown', alive: false }, workers: { status: 'unknown', alive: false } });
   });
 
   it('a store error during tool-marker reaping fails startup before any process is signalled and unwinds', PROCESS_TIMEOUT, async () => {
@@ -160,7 +154,7 @@ describe('startup marker reaping through startRuntimeProcess (real processes, sy
     expect(error).toBe(injected);
     expect(stepsLogged(logger).at(-1)).toBe('tool-markers');
     expect(stepsLogged(logger, 'teardown.step')).toEqual(['store', 'lock']);
-    expect(groupExists(holder)).toBe(true);
+    expect(await groupExists(holder)).toBe(true);
     expect(await isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
     expect(stdout.chunks).toEqual([]);
   });
@@ -236,7 +230,7 @@ describe('dead-lettered runs: real holders (§8)', () => {
     const launched = await launchRuntime(temp);
 
     expect(stepsLogged(launched.logger)).toContain('tool-markers');
-    expect(groupExists(pgid)).toBe(false);
+    expect(await groupExists(pgid)).toBe(false);
     expect(fs.existsSync(marker)).toBe(false);
     expect(idempotencyState(temp)).toBe('PENDING');
   });
@@ -250,7 +244,7 @@ describe('dead-lettered runs: real holders (§8)', () => {
     const launched = await launchRuntime(temp);
 
     expect(stepsLogged(launched.logger)).toContain('tool-markers');
-    expect(groupExists(pgid)).toBe(false);
+    expect(await groupExists(pgid)).toBe(false);
     expect(fs.existsSync(marker)).toBe(false);
     expect(idempotencyState(temp)).toBe('PENDING');
   });

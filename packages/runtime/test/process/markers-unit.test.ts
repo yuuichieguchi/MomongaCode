@@ -88,6 +88,11 @@ const idempotencyOf = (lookups: Record<string, IdempotencyLookup | Error>) => {
           if (entry instanceof Error) throw entry;
           return entry;
         },
+        processGroupOf: (key: string): number | undefined => {
+          const entry = lookups[key];
+          if (entry instanceof Error) throw entry;
+          return entry === undefined || entry.s === 'COMPLETED' ? undefined : entry.rec.pgid;
+        },
       },
     } as never,
   };
@@ -331,7 +336,13 @@ const deadLetterStore = (lookups: Record<string, IdempotencyLookup>, runs: reado
   return {
     runsAsked,
     store: {
-      idempotency: { get: (key: string): IdempotencyLookup | undefined => lookups[key] },
+      idempotency: {
+        get: (key: string): IdempotencyLookup | undefined => lookups[key],
+        processGroupOf: (key: string): number | undefined => {
+          const entry = lookups[key];
+          return entry === undefined || entry.s === 'COMPLETED' ? undefined : entry.rec.pgid;
+        },
+      },
       getRun: (id: string): RunFixture | undefined => {
         runsAsked.push(id);
         return runs.find((run) => run.id === id);
