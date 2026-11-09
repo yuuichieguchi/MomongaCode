@@ -103,7 +103,7 @@ const setup = (probes: Parameters<typeof createBackgroundJobs>[0]['probes'] = {}
       findHolders: async () => holders,
       reconcileProcessGroup: async ({ pgid }) => {
         reconciled.push({ pgid });
-        return { outcome: 'unknown', output: '', stopped: false, leftAlonePids: [], unsignalledPids: [] };
+        return { outcome: 'unknown', output: '', stopped: holders.length > 0, stoppedHolders: [...holders], leftAlonePids: [], unsignalledPids: [] };
       },
       reapMarkedProcesses: async ({ marker, pgid }) => {
         reaped.push({ marker, pgid });
@@ -258,9 +258,22 @@ describe('background jobs', () => {
     expect((await t.jobs.read(t.run.id, jobId, { call: 'read-7' })).output).toContain('Terminated 1 process(es) that outlived the job.');
   });
 
+  it('counts only the holders the reap proved and signalled, and names the ones it left alone', async () => {
+    const t = setup({
+      reconcileProcessGroup: async () => ({ outcome: 'unknown', output: '', stopped: false, stoppedHolders: [], leftAlonePids: [777], unsignalledPids: [] }),
+    });
+    t.holders.push(777);
+    const { jobId } = await t.start('call-1');
+    t.spawned[0]?.exit({ code: 0, signal: null });
+    await t.settled(jobId);
+    const { output } = await t.jobs.read(t.run.id, jobId, { call: 'read-7' });
+    expect(output).not.toContain('Terminated');
+    expect(output).toContain('Still running but no longer verified as belonging to this call, so left alone: process 777.');
+  });
+
   const reportingSshd = {
-    findHolders: async (_marker: string, options: { onUninspectable?: (process: { pid: number; command: string; startTicks: string }) => void }): Promise<number[]> => {
-      options.onUninspectable?.({ pid: 31_338, command: 'sshd', startTicks: '515151' });
+    findHolders: async (_marker: string, options: { onUninspectable?: (process: { pid: number; command: string; startedAt: number }) => void }): Promise<number[]> => {
+      options.onUninspectable?.({ pid: 31_338, command: 'sshd', startedAt: 515151 });
       return [];
     },
   };

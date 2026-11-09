@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { canonicalJson, claimRetry, findHolders, reapMarkedProcesses, reconcileProcessGroup, reportUninspectableOnce, sha256Hex } from '@momonga/foundation';
+import { canonicalJson, claimRetry, findHolders, outlivedNotes, reapMarkedProcesses, reconcileProcessGroup, reportUninspectableOnce, sha256Hex } from '@momonga/foundation';
 import type { Clock, ReapTiming, UninspectableProcess, UninspectableRegistry } from '@momonga/foundation';
 import type { SandboxedProcess } from '@momonga/sandbox';
 import type { Job, JobResult, RuntimeStore } from '@momonga/store';
@@ -117,8 +117,9 @@ export const createBackgroundJobs = (options: BackgroundJobsOptions): Background
         },
       });
       if (holders.length > 0) {
-        await probes.reconcileProcessGroup({ pgid: process.pgid, marker }, { killGraceMs, timing: reapTiming, signal: lifecycle });
-        entry.output.push(Buffer.from(`\nTerminated ${holders.length} process(es) that outlived the job.\n`));
+        const reaped = await probes.reconcileProcessGroup({ pgid: process.pgid, marker }, { killGraceMs, timing: reapTiming, signal: lifecycle });
+        const notes = outlivedNotes(reaped, 'job');
+        if (notes.length > 0) entry.output.push(Buffer.from(`\n${notes.join('\n')}\n`));
       }
       let refused = false;
       const remaining =
