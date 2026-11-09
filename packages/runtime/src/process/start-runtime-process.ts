@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ConfigError, createUserSettingsCache, diskKeptRecords, keptSettingsDirectory, resolveNetwork, resolveTelemetrySettings } from '@momonga/config';
-import { installTrust } from '@momonga/foundation';
+import { installTrust, trustFailureText } from '@momonga/foundation';
 import {
   acquireProcessLock,
   announceReady,
@@ -330,7 +330,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       if ('error' in snapshot) throw snapshot.error;
       const networkConfig = resolveNetwork(snapshot.settings.network, process.env);
       const trust = await installTrust(networkConfig, nodeFileSystem);
-      for (const failure of trust.failures) logger.warn(`the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}`);
+      for (const failure of trust.failures) logger.warn(trustFailureText(failure));
       const outbound: OutboundNetwork = { config: networkConfig, trust };
       return { cache: created, settings: snapshot.settings, network: outbound };
     });

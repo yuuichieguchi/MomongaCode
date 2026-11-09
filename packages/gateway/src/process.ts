@@ -27,7 +27,7 @@ import {
 } from '@momonga/foundation';
 import type { EndpointProbeKey, StopValuesReader } from '@momonga/config';
 import type { BinaryHashCache, Clock, JsonLogger, MomongaPaths, NetworkConfig, OutboundNetwork, ProcessLock, ReadyFields, SecretStore, StopValues, TextStream } from '@momonga/foundation';
-import { installTrust, proxyPasswordsOf } from '@momonga/foundation';
+import { installTrust, trustFailureText, proxyPasswordsOf } from '@momonga/foundation';
 import {
   buildCostReport,
   closeTelemetry,
@@ -665,7 +665,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     stopValues.remember(settings.gateway);
     const networkConfig = resolveNetwork(settings.network, options.env);
     const network: OutboundNetwork = { config: networkConfig, trust: await installTrust(networkConfig, files) };
-    for (const failure of network.trust.failures) logger.warn(`the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}`);
+    for (const failure of network.trust.failures) logger.warn(trustFailureText(failure));
     signal?.throwIfAborted();
     await sweepLeftovers({ directories: leftoverDirectories(paths), lock: hostKernelLock(), warn: (message) => logger.warn(message) });
     const hmacKey = secretKeyFile(paths.gatewayKey, {

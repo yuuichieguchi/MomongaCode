@@ -1,5 +1,5 @@
 import { loadUserSettings, resolveNetwork } from '@momonga/config';
-import { createOutboundDispatcher, installTrust, outboundFetch } from '@momonga/foundation';
+import { createOutboundDispatcher, installTrust, trustFailureText, outboundFetch } from '@momonga/foundation';
 import type { OutboundFetch, OutboundNetwork } from '@momonga/foundation';
 import type { CliPorts } from './ports.ts';
 import { escapedLines } from './terminal-writer.ts';
@@ -12,7 +12,7 @@ const resolveAndInstall = async (ports: NetworkPorts): Promise<OutboundNetwork> 
   const { settings } = await loadUserSettings({ home: ports.home });
   const config = resolveNetwork(settings.network, ports.env);
   const trust = await installTrust(config, ports.files);
-  for (const failure of trust.failures) ports.stderr.write(`${escapedLines([`momonga: the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}`])}\n`);
+  for (const failure of trust.failures) ports.stderr.write(`${escapedLines([`momonga: ${trustFailureText(failure)}`])}\n`);
   return { config, trust };
 };
 

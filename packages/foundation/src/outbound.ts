@@ -1,5 +1,6 @@
 import { X509Certificate } from 'node:crypto';
 import tls from 'node:tls';
+import { Worker } from 'node:worker_threads';
 import { Agent, Dispatcher, Pool, ProxyAgent, fetch as undiciFetch } from 'undici';
 import type { RequestInit as UndiciRequestInit, Response as UndiciResponse, buildConnector } from 'undici';
 import { isLoopbackHost } from './loopback.ts';
@@ -11,7 +12,9 @@ export type TrustSource =
   | { readonly source: 'bundled' | 'system' | 'NODE_EXTRA_CA_CERTS'; readonly certificates: number }
   | { readonly source: NetworkSource; readonly file: string; readonly certificates: number };
 
-export type TrustFailure = { readonly file: string; readonly source: NetworkSource; readonly reason: string };
+export type TrustFailure =
+  | { readonly source: 'system'; readonly reason: string }
+  | { readonly file: string; readonly source: NetworkSource; readonly reason: string };
 
 export type TrustReport = { readonly sources: readonly TrustSource[]; readonly failures: readonly TrustFailure[] };
 
@@ -100,16 +103,50 @@ const loadCaFile = async (file: string, files: TrustFiles): Promise<LoadedFile> 
 
 export type TrustFiles = Pick<FileSystem, 'readTextFile'>;
 
-export const installTrust = async (config: NetworkConfig, files: TrustFiles): Promise<TrustReport> => {
+const SYSTEM_STORE_READER = "const { parentPort } = require('node:worker_threads'); parentPort.postMessage(require('node:tls').getCACertificates('system'));";
+
+const isStringList = (value: unknown): value is string[] => Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+
+export const readSystemCertificatesInWorker = (): Promise<string[]> =>
+  new Promise((resolve, reject) => {
+    const worker = new Worker(SYSTEM_STORE_READER, { eval: true });
+    let read: string[] | undefined;
+    worker.once('message', (message: unknown) => {
+      if (isStringList(message)) {
+        read = message;
+        return;
+      }
+      reject(new Error('the system store reader returned something other than a list of certificates'));
+    });
+    worker.once('error', reject);
+    worker.once('exit', (code) => {
+      if (read !== undefined) {
+        resolve(read);
+        return;
+      }
+      reject(new Error(`the system store reader exited with code ${code} before returning certificates`));
+    });
+  });
+
+export type InstallTrustOptions = { readonly readSystemCertificates?: () => Promise<readonly string[]> };
+
+export const installTrust = async (config: NetworkConfig, files: TrustFiles, options: InstallTrustOptions = {}): Promise<TrustReport> => {
+  const readSystemCertificates = options.readSystemCertificates ?? readSystemCertificatesInWorker;
   const bundled = tls.getCACertificates('bundled');
-  const system = tls.getCACertificates('system');
   const extra = tls.getCACertificates('extra');
+  const failures: TrustFailure[] = [];
+  const system = await readSystemCertificates().then(
+    (certificates) => [...certificates],
+    (error: unknown) => {
+      failures.push({ source: 'system', reason: error instanceof Error ? error.message : String(error) });
+      return [];
+    },
+  );
   const sources: TrustSource[] = [
     { source: 'bundled', certificates: bundled.length },
     { source: 'system', certificates: system.length },
     { source: 'NODE_EXTRA_CA_CERTS', certificates: extra.length },
   ];
-  const failures: TrustFailure[] = [];
   const fromFiles: string[] = [];
   for (const { value: file, source } of config.caFiles) {
     const loaded = await loadCaFile(file, files);
@@ -123,6 +160,9 @@ export const installTrust = async (config: NetworkConfig, files: TrustFiles): Pr
   tls.setDefaultCACertificates([...bundled, ...system, ...extra, ...fromFiles]);
   return { sources, failures };
 };
+
+export const trustFailureText = (failure: TrustFailure): string =>
+  'file' in failure ? `the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}` : `the ${failure.source} CA store was not read: ${failure.reason}`;
 
 const caSourceNames = (trust: TrustReport): string[] => trust.sources.map((entry) => ('file' in entry ? `${entry.source} ${entry.file}` : entry.source));
 
@@ -278,8 +318,8 @@ export type OutboundPlan =
 
 export const outboundPlan = (destination: URL, network: OutboundNetwork, client: { readonly forwardsPlainHttp: boolean; readonly signal: unknown }): OutboundPlan => {
   const caSources = caSourceNames(network.trust);
-  const [trustFailure] = network.trust.failures;
-  if (trustFailure !== undefined && TLS_SCHEMES.has(destination.protocol) && !isLoopbackHost(destination.hostname)) {
+  const trustFailure = network.trust.failures.find((failure) => 'file' in failure);
+  if (trustFailure !== undefined && 'file' in trustFailure && TLS_SCHEMES.has(destination.protocol) && !isLoopbackHost(destination.hostname)) {
     return { kind: 'refuse', error: new OutboundConnectionError({ kind: 'ca-file', ...trustFailure }) };
   }
   const route = routeOf(destination, network.config);
