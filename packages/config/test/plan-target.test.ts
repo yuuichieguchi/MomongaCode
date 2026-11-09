@@ -47,7 +47,7 @@ describe('a plan target', () => {
         outputBoundField: 'none',
         systemRole: 'developer',
         toolPlacement: 'additional_tools',
-        inputKinds: { content: ['text', 'image'], tools: ['function', 'custom'] },
+        inputKinds: { content: ['file'], tools: ['function', 'custom'] },
         maxConcurrency: 4,
       },
       maxConcurrency: 4,
@@ -204,9 +204,9 @@ describe('capabilities an open-responses target can declare for a route', () => 
   });
 
   it('accepts systemRole, toolPlacement and inputKinds', async () => {
-    const { result } = await loadTargets({ t: open({ systemRole: 'developer', toolPlacement: 'additional_tools', inputKinds: { content: ['text'], tools: ['function'] } }) });
+    const { result } = await loadTargets({ t: open({ systemRole: 'developer', toolPlacement: 'additional_tools', inputKinds: { content: ['file'], tools: ['function'] } }) });
     expect(result.settings.models.targets['t']).toMatchObject({
-      capabilities: { systemRole: 'developer', toolPlacement: 'additional_tools', inputKinds: { content: ['text'], tools: ['function'] } },
+      capabilities: { systemRole: 'developer', toolPlacement: 'additional_tools', inputKinds: { content: ['file'], tools: ['function'] } },
     });
   });
 
@@ -214,6 +214,10 @@ describe('capabilities an open-responses target can declare for a route', () => 
     await expectRejected({ targets: { t: open({ systemRole: 'root' }) } }, /systemRole/);
     await expectRejected({ targets: { t: open({ toolPlacement: 'namespace' }) } }, /toolPlacement/);
     await expectRejected({ targets: { t: open({ inputKinds: { content: ['smell'], tools: [] } }) } }, /inputKinds/);
+  });
+
+  it.each(['text', 'image'])('refuses the content kind %s, which every route carries or imageInput decides', async (kind) => {
+    await expectRejected({ targets: { t: open({ inputKinds: { content: [kind], tools: [] } }) } }, /inputKinds/);
   });
 
   it('refuses unboundedOutputTokens, which is derived and never declared', async () => {

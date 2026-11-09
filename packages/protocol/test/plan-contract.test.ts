@@ -66,7 +66,7 @@ describe('route carriage vocabularies', () => {
   });
 
   it('names the content kinds and the tool kinds a request can carry', () => {
-    expect([...INPUT_CONTENT_KINDS]).toEqual(['text', 'image', 'file', 'audio', 'video']);
+    expect([...INPUT_CONTENT_KINDS]).toEqual(['file', 'audio', 'video']);
     expect([...REQUEST_TOOL_KINDS]).toEqual([
       'function',
       'custom',

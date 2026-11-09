@@ -4,7 +4,7 @@ import { createScriptedAdapter, textResponseEvents, usageOf } from '@momonga/tes
 import type { ScriptedAdapter } from '@momonga/testkit';
 import { postJson, readJson, startGateway } from './gateway-helpers.ts';
 
-const TEXT_AND_IMAGE: CapabilityOverride = { inputKinds: { content: ['text', 'image'], tools: ['function', 'custom'] } };
+const TEXT_AND_IMAGE: CapabilityOverride = { inputKinds: { content: [], tools: ['function', 'custom'] } };
 
 const answering = (model: string, capabilities: CapabilityOverride): ScriptedAdapter =>
   createScriptedAdapter({ capabilities, calls: [{ events: textResponseEvents({ model, chunks: ['answer'], usage: usageOf(5, 1) }) }] });

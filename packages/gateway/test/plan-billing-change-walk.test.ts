@@ -42,6 +42,16 @@ describe('a fallback that changes the billing kind needs the user policy (M9, I-
     expect(response.status).toBe(502);
     expect(response.body.error.code).toBe('upstream_error');
     expect(alias.adapters['metered']?.calls).toHaveLength(0);
+    expect(response.body.error.message.endsWith(' Model target "metered" was not tried: changing from plan to metered billing is not allowed (models.billingChanges).')).toBe(true);
+  });
+
+  it('records the refused hop as a fallback cause of its own when a later member of the current kind answers', async () => {
+    const alias = await startAlias([PLAN_FAILING, METERED, { name: 'plan-second', billing: 'plan' }]);
+    const response = await alias.post();
+    expect(response.status).toBe(200);
+    expect(response.body.momonga.fallbackCauses).toContainEqual(
+      expect.objectContaining({ target: 'metered', code: 'billing_change_refused', reason: 'billing_change_refused', fromBilling: 'plan', toBilling: 'metered' }),
+    );
   });
 
   it('moves to the metered member when the policy holds plan to metered, recording both kinds and the reason', async () => {

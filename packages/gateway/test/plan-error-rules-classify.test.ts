@@ -132,9 +132,45 @@ describe('a classified plan error keeps the status, body shape, code and request
     expect(upstream).toEqual({ status: 403, bodyKeys: ['detail'], code: null, requestIds: { 'x-request-id': 'req_0003' } });
   });
 
-  it('ends the user-visible message with the request id', async () => {
+  it('composes a code-rule message from the rule sentence and the request id only, with no full stop after the id', async () => {
     const classified = await classifiedHttp(503, bodyOf({ upstream: 'subscription_sharing_usage_unavailable' }), { 'x-request-id': 'req_0004' });
     expect(classified.error.code).toBe('plan_usage_unavailable');
-    expect(classified.error.message.endsWith('req_0004')).toBe(true);
+    expect(classified.error.message.startsWith('Try again later')).toBe(true);
+    expect(classified.error.message.endsWith(' Request id: req_0004')).toBe(true);
+    expect(classified.error.message).not.toContain('subscription_sharing_usage_unavailable');
+    expect(classified.error.message).not.toContain('the route answers');
+  });
+
+  it('names the upstream code in a status-rule message and the first request-id header the response sent', async () => {
+    const classified = await classifiedHttp(503, { error: { code: 'subscription_sharing_not_yet_documented', message: 'try later', param: null } }, {
+      'openai-request-id': 'req_first',
+      'x-request-id': 'req_second',
+    });
+    expect(classified.error.code).toBe('plan_route_unavailable');
+    expect(classified.error.message.startsWith('Try again later')).toBe(true);
+    expect(classified.error.message).toContain('(upstream code subscription_sharing_not_yet_documented)');
+    expect(classified.error.message.endsWith(' Request id: req_first')).toBe(true);
+  });
+});
+
+describe('a usage-limit classification keeps Retry-After without becoming retryable (P3, M7)', () => {
+  it('keeps retryAfterMs on plan_usage_limit with retryable false', async () => {
+    const classified = await classifiedHttp(429, bodyOf(SECTION_7[0] as Row), { 'retry-after': '30' });
+    expect(classified.error.code).toBe('plan_usage_limit');
+    expect(classified.retryable).toBe(false);
+    expect(classified.retryAfterMs).toBe(30_000);
+  });
+});
+
+describe('a response.failed matches only code rules; status-only rules apply to HTTP answers (P3, Matching)', () => {
+  it('sends a response.failed with no code or an unlisted code to the generic path, while a listed code takes its rule', () => {
+    const listed = classify(new StreamFailure('subscription_sharing_usage_unavailable', 'server_error', 'unavailable'));
+    expect(listed.error.code).toBe('plan_usage_unavailable');
+    for (const code of ['', 'subscription_sharing_not_yet_documented']) {
+      const generic = classify(new StreamFailure(code, 'server_error', 'failed upstream'));
+      expect(generic.error.code).toBe(code);
+      expect(generic.error.type).toBe('server_error');
+      expect(decisionOf(generic)).toMatchObject({ verdict: undefined, fallback: undefined, credential: undefined });
+    }
   });
 });

@@ -34,7 +34,7 @@ describe('protocol capability types', () => {
         systemRole?: 'system' | 'developer';
         toolPlacement?: 'top_level' | 'additional_tools';
         inputKinds?: {
-          content: readonly ('text' | 'image' | 'file' | 'audio' | 'video')[];
+          content: readonly ('file' | 'audio' | 'video')[];
           tools: readonly ('function' | 'custom' | 'programmatic_tool_calling' | 'image_generation' | 'file_search' | 'code_interpreter' | 'computer_use' | 'mcp' | 'tool_search')[];
         };
         parallelToolCalls?: boolean;
