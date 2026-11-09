@@ -6,7 +6,7 @@ import type { MemoryStatus } from './memory.ts';
 import type { Stored } from './stored-value.ts';
 import type { CompactionInputItem, InputItem, MessageInputItem } from './open-responses.ts';
 import type { ApprovalBasis, PermissionDenial } from './permission-denial.ts';
-import type { CallTiming, ModelCost, TokenAnatomy } from './token-anatomy.ts';
+import type { CallTiming, ModelCost, TokenAnatomy, UnpricedOutcome } from './token-anatomy.ts';
 
 export const RUN_STATUSES = [
   'QUEUED',
@@ -74,7 +74,7 @@ export type ModelResponse = {
     input_tokens_details?: { cached_tokens: number };
     output_tokens_details?: { reasoning_tokens: number };
   };
-  momonga?: { cacheWriteInputTokens?: number; cacheReadNotReported?: true; cost?: ModelCost };
+  momonga?: { cacheWriteInputTokens?: number; cacheReadNotReported?: true; cost?: ModelCost; unpriced?: UnpricedOutcome };
   timing?: CallTiming;
 };
 
@@ -238,6 +238,7 @@ export type RunEventPayload =
       cachedInputTokens?: number;
       cacheWriteInputTokens?: number;
       cost?: ModelCost;
+      unpriced?: UnpricedOutcome;
       timing?: CallTiming;
       target?: string;
     }

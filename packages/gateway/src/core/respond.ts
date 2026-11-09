@@ -17,7 +17,7 @@ import type {
   Usage,
   UsageSource,
 } from '@momonga/protocol';
-import { modelCostOf } from './model-cost.ts';
+import { modelCostOf, pricingFieldsOf } from './model-cost.ts';
 import { MOMONGA_SPAN_NOTES, TERMINAL_STREAM_EVENT_TYPES, carriesOutput, isReasoningEffort, wireUsageOf } from '@momonga/protocol';
 import { startAttemptSpan } from './attempt-span.ts';
 import type { AttemptSpan, TraceParent } from './attempt-span.ts';
@@ -418,9 +418,9 @@ async function* relaySteps(
     jsonReply?: JsonReplyPath,
     cacheReadNotReported?: true,
   ): MomongaResponseExtension => {
-    const cost =
-      billed === undefined || services.priceTable === undefined
-        ? null
+    const pricing =
+      billed === undefined
+        ? undefined
         : modelCostOf({
             provider: target.provider,
             model: target.model,
@@ -442,7 +442,7 @@ async function* relaySteps(
       ...(contextInputTokens === undefined ? {} : { contextInputTokens }),
       ...(billed?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: billed.cacheWriteInputTokens }),
       ...(cacheReadNotReported === undefined ? {} : { cacheReadNotReported }),
-      ...(cost === null ? {} : { cost }),
+      ...(pricing === undefined ? {} : pricingFieldsOf(pricing)),
       ...(retryable === undefined ? {} : { retryable }),
     };
   };

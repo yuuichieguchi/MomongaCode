@@ -1,6 +1,6 @@
 import { amountOfUnits, priceCall } from '@momonga/observability';
 import type { CallBilling, PriceTable } from '@momonga/observability';
-import type { ModelCost, Usage } from '@momonga/protocol';
+import type { ModelCost, ModelPricing, UnpricedOutcome, Usage } from '@momonga/protocol';
 
 export type ModelCostInput = {
   provider: string;
@@ -9,10 +9,12 @@ export type ModelCostInput = {
   usage: Usage;
   cacheWriteInputTokens: number | undefined;
   at: number;
-  table: PriceTable;
+  table: PriceTable | undefined;
 };
 
-export const modelCostOf = (input: ModelCostInput): ModelCost | null => {
+export const NO_PRICE_TABLE_REASON = 'no price table';
+
+export const modelCostOf = (input: ModelCostInput): ModelPricing => {
   const priced = priceCall({
     provider: input.provider,
     model: input.model,
@@ -24,8 +26,11 @@ export const modelCostOf = (input: ModelCostInput): ModelCost | null => {
       ...(input.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: input.cacheWriteInputTokens }),
     },
     at: new Date(input.at),
-    table: input.table,
+    table: input.table ?? [],
   });
-  if (priced.kind === 'unpriced') return null;
-  return { amount: amountOfUnits(priced.units), currency: priced.currency, priceVersion: priced.priceVersion };
+  if (priced.kind === 'unpriced') return { kind: 'unpriced', code: priced.code, reason: priced.code === 'no_price_entry' && input.table === undefined ? NO_PRICE_TABLE_REASON : priced.reason };
+  return { kind: 'priced', cost: { amount: amountOfUnits(priced.units), currency: priced.currency, priceVersion: priced.priceVersion } };
 };
+
+export const pricingFieldsOf = (pricing: ModelPricing): { cost: ModelCost } | { unpriced: UnpricedOutcome } =>
+  pricing.kind === 'priced' ? { cost: pricing.cost } : { unpriced: { code: pricing.code, reason: pricing.reason } };

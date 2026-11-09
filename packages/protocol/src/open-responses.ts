@@ -1,5 +1,5 @@
 import type { SchemaNarrowing } from './dialect.ts';
-import type { ModelCost } from './token-anatomy.ts';
+import type { ModelCost, UnpricedOutcome } from './token-anatomy.ts';
 
 export const OPEN_RESPONSES_VERSION = '2026-04-24' as const;
 
@@ -236,6 +236,7 @@ export type MomongaResponseExtension = {
   cacheWriteInputTokens?: number;
   cacheReadNotReported?: true;
   cost?: ModelCost;
+  unpriced?: UnpricedOutcome;
   retryable?: boolean;
 };
 
@@ -415,5 +416,5 @@ export type CompactResource = {
   output: ItemField[];
   created_at: number;
   usage: Usage;
-  momonga?: { target: string; cacheWriteInputTokens?: number; cacheReadNotReported?: true; cost?: ModelCost };
+  momonga?: { target: string; cacheWriteInputTokens?: number; cacheReadNotReported?: true; cost?: ModelCost; unpriced?: UnpricedOutcome };
 };

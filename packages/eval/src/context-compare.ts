@@ -6,7 +6,7 @@ import { canonicalJson } from '@momonga/foundation';
 import type { PolicyOverlay } from './context-policy.ts';
 import { QUALITY_METRICS } from './context-quality.ts';
 import type { QualityMetric, QualityMetricName } from './context-quality.ts';
-import { describeClustered, unmeasuredCauseOf } from './context-report.ts';
+import { describeClustered, unmeasuredCauseOf, unmeasuredCostCauseOf } from './context-report.ts';
 import type { ClusteredProportion, ContextCaseReport, ContextReport } from './context-report.ts';
 import type { Answerer } from './transcript.ts';
 import { percent } from './report.ts';
@@ -277,7 +277,7 @@ const tokenPrimaryOf = (baseline: ContextReport, candidate: ContextReport, pairs
     metric === 'costPerSuccess'
       ? undefined
       : costMissing.length > 0
-        ? `cost per success is not measured in the ${costMissing.join(' and the ')} (a call carries no price, or no run succeeded)`
+        ? costMissing.map((side) => `cost per success is not measured in the ${side} (${unmeasuredCostCauseOf(reports[side].cases)})`).join('; ')
         : `the total cost of the ${costFree.join(' and the ')} is 0, which a cost per success cannot rank`;
   const complete = perSuccessPairsOf(pairs, (entry) => (entry.tokens === undefined ? undefined : metric === 'costPerSuccess' ? entry.tokens.cost : uncachedInputOf(entry.tokens)));
   const measured = complete !== undefined && baseline.metrics[metric] !== undefined && candidate.metrics[metric] !== undefined;

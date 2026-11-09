@@ -1,7 +1,7 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { TokenMeter } from '@momonga/context';
 import { LOWEST_REASONING_EFFORT, marginFloorFor, wireUsageOf } from '@momonga/protocol';
-import { cachedInputOf } from './model-stream.ts';
+import { billedDetailOf, priceOutcomeOf } from './model-stream.ts';
 import type { Capabilities, CreateResponseBody, ModelRejectionReason, FunctionTool, InputItem, ModelResponse, MomongaResponseExtension, ResponseResource, RunEventPayload, RunState } from '@momonga/protocol';
 import type { ClaimContext, Flow } from './claim-context.ts';
 import { modelKey } from '../model-key.ts';
@@ -126,12 +126,13 @@ const truncationFailure = (reported: number, observation: Pick<InputEstimate, 'e
 
 const billedExtensionOf = (extension: MomongaResponseExtension | undefined): ModelResponse['momonga'] => {
   if (extension === undefined) return undefined;
-  const { cacheWriteInputTokens, cacheReadNotReported, cost } = extension;
-  if (cacheWriteInputTokens === undefined && cacheReadNotReported === undefined && cost === undefined) return undefined;
+  const { cacheWriteInputTokens, cacheReadNotReported } = extension;
+  const outcome = priceOutcomeOf(extension);
+  if (cacheWriteInputTokens === undefined && cacheReadNotReported === undefined && Object.keys(outcome).length === 0) return undefined;
   return {
     ...(cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens }),
     ...(cacheReadNotReported === undefined ? {} : { cacheReadNotReported }),
-    ...(cost === undefined ? {} : { cost }),
+    ...outcome,
   };
 };
 
@@ -182,11 +183,7 @@ const handleResult = async (
               inputTokens: usage.input_tokens,
               outputTokens: usage.output_tokens,
               totalTokens: usage.total_tokens,
-              responseId: response.id,
-              ...cachedInputOf(usage, response.momonga),
-              ...(response.momonga?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: response.momonga.cacheWriteInputTokens }),
-              ...(response.momonga?.cost === undefined ? {} : { cost: response.momonga.cost }),
-              timing,
+              ...billedDetailOf(usage, response.momonga, timing, response.id),
               ...answeredTarget,
             },
           ]),

@@ -1,7 +1,7 @@
-import { PLAN_USAGE_LABEL, amountOfUnits } from './cost.ts';
+import { moneyAmountOf, moneyTallyOf } from './money-line.ts';
 import { CACHE_READ_TEXT, isCacheReadReported } from './cache-reads.ts';
 import type { CallBilling, PricedCall } from './cost.ts';
-import { CACHE_MISS_CAUSES, RUN_ROLE, escapeTerminalLine } from '@momonga/protocol';
+import { CACHE_MISS_CAUSES, RUN_ROLE, UNPRICED_CODE_TEXT, escapeTerminalLine } from '@momonga/protocol';
 import type { CacheMissCause, PrefixEvent } from '@momonga/protocol';
 
 export type BreakdownAnatomy = {
@@ -143,7 +143,6 @@ export const buildCostBreakdown = (calls: readonly BreakdownCall[], options: Cos
   const inconsistentUsage: UnpricedCall[] = [];
   const plan = { calls: 0, inputTokens: 0, outputTokens: 0 };
   let cacheReadNotReported = 0;
-  let units = 0n;
   for (const call of calls) {
     if (call.anatomy === undefined) {
       callsWithoutAnatomy += 1;
@@ -179,16 +178,15 @@ export const buildCostBreakdown = (calls: readonly BreakdownCall[], options: Cos
       if (call.timing.firstEventMs !== undefined) group.firstEvents.push(call.timing.firstEventMs);
       group.durations.push(call.timing.durationMs);
     }
-    if (call.billing === 'plan') {
+    if (call.price.kind === 'unpriced' && call.price.code === 'plan') {
       plan.calls += 1;
       plan.inputTokens += usage.inputTokens;
       plan.outputTokens += usage.outputTokens;
     } else if (call.price.kind === 'unpriced') {
       unpriced.push({ ...identity, reason: call.price.reason });
-    } else {
-      units += call.price.units;
     }
   }
+  const money = moneyTallyOf(calls.map((call) => call.price));
   const splitAbsent = calls.length > 0 && split.calls === 0;
   const billed = {
     inputTokens: totals.inputTokens,
@@ -228,7 +226,7 @@ export const buildCostBreakdown = (calls: readonly BreakdownCall[], options: Cos
     timeToFirstToken: main?.timeToFirstToken ?? null,
     duration: main?.duration ?? null,
     roles,
-    cost: { amount: unpriced.length === 0 ? amountOfUnits(units) : null, currency: 'USD', unpricedCalls: unpriced.length },
+    cost: { amount: moneyAmountOf(money), currency: 'USD', unpricedCalls: Object.values(money.unpriced).reduce((sum, count) => sum + count, 0) },
     plan,
     unpriced,
     inconsistentUsage,
@@ -310,7 +308,7 @@ export const formatCostBreakdown = (breakdown: CostBreakdown): string => {
     cost,
     ...(breakdown.plan.calls === 0
       ? []
-      : [`${PLAN_USAGE_LABEL}: ${breakdown.plan.calls} call(s), ${breakdown.plan.inputTokens} input + ${breakdown.plan.outputTokens} output tokens`]),
+      : [`${UNPRICED_CODE_TEXT.plan}: ${breakdown.plan.calls} call(s), ${breakdown.plan.inputTokens} input + ${breakdown.plan.outputTokens} output tokens`]),
     ...breakdown.unpriced.map(
       (entry) => `unpriced: ${entry.provider}/${entry.model} (run ${entry.runId}${entry.step === undefined ? '' : `, step ${entry.step}`}): ${entry.reason}`,
     ),

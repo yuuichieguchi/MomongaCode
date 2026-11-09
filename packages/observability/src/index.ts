@@ -9,8 +9,11 @@ export { MAX_BILLED_CALLS_PAGE, RUNLESS, billedCallsOfRun, billedUsageOf, pageBi
 export { CACHE_READ_TEXT, isCacheReadReported } from './cache-reads.ts';
 export type { CacheReadTally, CacheReadUsage, InputClause, SplitLine } from './cache-reads.ts';
 export type { BilledCall, BilledCallWire, BilledCallsCursor, BilledCallsPage } from './billed-calls.ts';
-export { LOCAL_PRICE_VERSION, PLAN_UNPRICED_REASON, PLAN_USAGE_LABEL, amountOfUnits, definePriceTable, findPriceEntry, priceCall } from './cost.ts';
-export type { CallBilling, CostInput, CostUsage, PriceCallInput, PriceEntry, PriceTable, PricedCall } from './cost.ts';
+export { UNPRICED_CODE_TEXT } from '@momonga/protocol';
+export { describeMoney, moneyAmountOf, moneyLine, moneyTallyOf } from './money-line.ts';
+export type { MoneyTally } from './money-line.ts';
+export { LOCAL_PRICE_VERSION, amountOfUnits, definePriceTable, findPriceEntry, priceCall } from './cost.ts';
+export type { CallBilling, CostInput, CostUsage, PriceCallInput, PriceEntry, PriceTable, PricedCall, UnpricedPrice } from './cost.ts';
 export { buildCostReport, formatCostReport } from './cost-report.ts';
 export type { CostReport, CostReportOptions, CostTotals, CostedRun, RoleCost, RunCost, SessionCost } from './cost-report.ts';
 export type { ClockedSpan, ClockedTracer } from './clocked-tracer.ts';

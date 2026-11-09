@@ -1,5 +1,5 @@
 import { anatomyLayerEntries, reportedCachedTokensOf } from '@momonga/protocol';
-import type { PublicRunEvent } from '@momonga/protocol';
+import type { ModelCost, PublicRunEvent, UnpricedCode, UnpricedOutcome } from '@momonga/protocol';
 import { ratioBootstrap } from './bootstrap.ts';
 import type { Cluster } from './bootstrap.ts';
 import { eventsOfType } from './observe.ts';
@@ -10,8 +10,14 @@ export type CallFacts = {
   cachedInputTokens: number | undefined;
   cacheWriteInputTokens: number;
   cost: number | undefined;
+  unpriced: UnpricedCode | undefined;
   durationMs: number | undefined;
 };
+
+const priceFactsOf = (record: { cost?: ModelCost; unpriced?: UnpricedOutcome } | undefined): Pick<CallFacts, 'cost' | 'unpriced'> => ({
+  cost: record?.cost?.amount,
+  unpriced: record?.unpriced?.code,
+});
 
 export type TokenFacts = {
   calls: CallFacts[];
@@ -29,6 +35,8 @@ export type CaseTokenTotals = {
   cachedInputTokens?: number;
   uncachedInputTokens?: number;
   cost?: number;
+  unpriced?: Partial<Record<UnpricedCode, number>>;
+  unrecordedPrice?: number;
   latencyMs?: number;
 };
 
@@ -56,7 +64,7 @@ const reflectionCallsOf = (reflection: TranscriptReflection | undefined): { call
         inputTokens: charge.inputTokens,
         cachedInputTokens: charge.detail?.cachedInputTokens,
         cacheWriteInputTokens: charge.detail?.cacheWriteInputTokens ?? 0,
-        cost: charge.detail?.cost?.amount,
+        ...priceFactsOf(charge.detail),
         durationMs: charge.detail?.timing?.durationMs,
       }),
     ),
@@ -76,7 +84,7 @@ export const tokenFactsOf = (runs: readonly (readonly PublicRunEvent[])[], refle
       inputTokens: response.usage.input_tokens,
       cachedInputTokens: reportedCachedTokensOf(response.usage, response.momonga),
       cacheWriteInputTokens: response.momonga?.cacheWriteInputTokens ?? 0,
-      cost: response.momonga?.cost?.amount,
+      ...priceFactsOf(response.momonga),
       durationMs: response.timing?.durationMs,
     }));
     const charged = eventsOfType(events, 'usage.charged').map(
@@ -84,7 +92,7 @@ export const tokenFactsOf = (runs: readonly (readonly PublicRunEvent[])[], refle
         inputTokens: event.inputTokens,
         cachedInputTokens: event.cachedInputTokens,
         cacheWriteInputTokens: event.cacheWriteInputTokens ?? 0,
-        cost: event.cost?.amount,
+        ...priceFactsOf(event),
         durationMs: event.timing?.durationMs,
       }),
     );
@@ -121,6 +129,16 @@ const cacheFiguresOf = (calls: readonly CallFacts[]): Pick<CaseTokenTotals, 'cac
   };
 };
 
+const priceOutcomeTotalsOf = (calls: readonly CallFacts[]): Pick<CaseTokenTotals, 'unpriced' | 'unrecordedPrice'> => {
+  const unpriced: Partial<Record<UnpricedCode, number>> = {};
+  let unrecordedPrice = 0;
+  for (const call of calls) {
+    if (call.unpriced !== undefined) unpriced[call.unpriced] = (unpriced[call.unpriced] ?? 0) + 1;
+    else if (call.cost === undefined) unrecordedPrice += 1;
+  }
+  return { ...(Object.keys(unpriced).length === 0 ? {} : { unpriced }), ...(unrecordedPrice === 0 ? {} : { unrecordedPrice }) };
+};
+
 export const caseTotalsOf = (facts: readonly TokenFacts[]): CaseTokenTotals => {
   const calls = facts.flatMap((entry) => entry.calls);
   const unsettledReflections = facts.reduce((sum, entry) => sum + entry.unsettledReflections, 0);
@@ -136,6 +154,7 @@ export const caseTotalsOf = (facts: readonly TokenFacts[]): CaseTokenTotals => {
     ...(inputTokens === undefined ? {} : { inputTokens }),
     ...cacheFiguresOf(calls),
     ...(cost === undefined ? {} : { cost }),
+    ...priceOutcomeTotalsOf(calls),
     ...(latencyMs === undefined ? {} : { latencyMs }),
   };
 };

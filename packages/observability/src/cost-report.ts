@@ -1,11 +1,11 @@
 import { describeFallbackCause } from '@momonga/foundation';
 import type { FallbackCause } from '@momonga/foundation';
-import { RUN_ROLE, escapeTerminalLine } from '@momonga/protocol';
-import { MOMONGA_ATTRIBUTES, UNKNOWN_BILLING } from './semconv.ts';
+import { RUN_ROLE, UNPRICED_CODE_TEXT, escapeTerminalLine } from '@momonga/protocol';
+import { MOMONGA_ATTRIBUTES } from './semconv.ts';
 import { billedCallOf, isBilledChat } from './billed-calls.ts';
 import type { BilledCall } from './billed-calls.ts';
 import { CACHE_READ_TEXT, isCacheReadReported, noCallReported } from './cache-reads.ts';
-import { LOCAL_PRICE_VERSION, PLAN_USAGE_LABEL, amountOfUnits, isCacheReadNotReported } from './cost.ts';
+import { LOCAL_PRICE_VERSION, amountOfUnits, isCacheReadNotReported } from './cost.ts';
 import type { PriceTable } from './cost.ts';
 import type { SpanRecord, TraceStore } from './trace-store.ts';
 
@@ -28,7 +28,7 @@ export type RoleCost = {
   inputTokens: number;
   outputTokens: number;
   cachedInputTokens: number | null;
-  amount: number;
+  amount: number | null;
   currency: 'USD';
   priceVersions: string[];
 };
@@ -124,6 +124,9 @@ const fallbackTotalsOf = (accumulator: Accumulator): Pick<CostTotals, 'fallbackC
   return { fallbackCalls: fallbacks.reduce((total, fallback) => total + fallback.calls, 0), fallbacks };
 };
 
+const pricedCallsOf = (accumulator: Accumulator): number =>
+  accumulator.calls - accumulator.planCalls - accumulator.unknownBillingCalls - accumulator.cacheReadUnpricedCalls - accumulator.unpricedCalls;
+
 const roleTotalsOf = (accumulator: Accumulator): RoleCost => ({
   ...fallbackTotalsOf(accumulator),
   calls: accumulator.calls,
@@ -138,7 +141,7 @@ const roleTotalsOf = (accumulator: Accumulator): RoleCost => ({
   inputTokens: accumulator.inputTokens,
   outputTokens: accumulator.outputTokens,
   cachedInputTokens: noCallReported({ calls: accumulator.calls, notReported: accumulator.cacheReadNotReportedCalls }) ? null : accumulator.cachedInputTokens,
-  amount: amountOfUnits(accumulator.units),
+  amount: accumulator.calls > 0 && pricedCallsOf(accumulator) === 0 ? null : amountOfUnits(accumulator.units),
   currency: 'USD',
   priceVersions: [...accumulator.priceVersions].sort(),
 });
@@ -170,19 +173,20 @@ const addSpan = (accumulator: Accumulator, span: SpanRecord, call: BilledCall): 
   if (isCacheReadReported(call.usage)) accumulator.cachedInputTokens += call.usage.cachedInputTokens;
   else accumulator.cacheReadNotReportedCalls += 1;
   if (call.billing === 'local') accumulator.localCalls += 1;
-  if (call.billing === 'plan') {
+  const { price } = call;
+  if (price.kind === 'priced') {
+    accumulator.units += price.units;
+    if (price.priceVersion !== LOCAL_PRICE_VERSION) accumulator.priceVersions.add(price.priceVersion);
+  } else if (price.code === 'plan') {
     accumulator.planCalls += 1;
     accumulator.planInputTokens += call.usage.inputTokens;
     accumulator.planOutputTokens += call.usage.outputTokens;
-  } else if (isCacheReadNotReported(call.price)) {
+  } else if (isCacheReadNotReported(price)) {
     accumulator.cacheReadUnpricedCalls += 1;
-  } else if (call.billing === UNKNOWN_BILLING) {
+  } else if (price.code === 'unknown_billing') {
     accumulator.unknownBillingCalls += 1;
-  } else if (call.price.kind === 'unpriced') {
-    accumulator.unpricedCalls += 1;
   } else {
-    accumulator.units += call.price.units;
-    if (call.price.priceVersion !== LOCAL_PRICE_VERSION) accumulator.priceVersions.add(call.price.priceVersion);
+    accumulator.unpricedCalls += 1;
   }
 };
 
@@ -238,7 +242,7 @@ const describeTotals = (totals: RoleCost): string => {
 };
 
 const planLines = (totals: RoleCost, indent: string): string[] =>
-  totals.planCalls === 0 ? [] : [`${indent}  ${PLAN_USAGE_LABEL}: ${totals.planCalls} call(s), ${totals.planInputTokens} input + ${totals.planOutputTokens} output tokens`];
+  totals.planCalls === 0 ? [] : [`${indent}  ${UNPRICED_CODE_TEXT.plan}: ${totals.planCalls} call(s), ${totals.planInputTokens} input + ${totals.planOutputTokens} output tokens`];
 
 export const formatCostReport = (report: CostReport): string => {
   const lines = ['cost report'];

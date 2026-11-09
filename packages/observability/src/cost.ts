@@ -1,3 +1,4 @@
+import type { UnpricedOutcome } from '@momonga/protocol';
 import { UNKNOWN_BILLING } from './semconv.ts';
 
 export type PriceEntry = {
@@ -89,20 +90,17 @@ export const amountOfUnits = (units: bigint): number => toAmount(units);
 
 export const LOCAL_PRICE_VERSION = 'local';
 
-export const PLAN_UNPRICED_REASON = 'plan';
-
 export const CACHE_READ_NOT_REPORTED_REASON = 'the upstream did not report the cache reads of the call';
-
-export const PLAN_USAGE_LABEL = 'plan usage, no per-token price';
 
 export type CallBilling = 'metered' | 'local' | 'plan' | typeof UNKNOWN_BILLING;
 
 export type PriceCallInput = CostInput & { billing: CallBilling };
 
-export type PricedCall = { kind: 'priced'; units: bigint; currency: 'USD'; priceVersion: string } | { kind: 'unpriced'; reason: string };
+export type UnpricedPrice = { kind: 'unpriced' } & UnpricedOutcome;
 
-export const isCacheReadNotReported = (price: PricedCall | { kind: 'unpriced'; reason: string }): boolean =>
-  price.kind === 'unpriced' && price.reason === CACHE_READ_NOT_REPORTED_REASON;
+export type PricedCall = { kind: 'priced'; units: bigint; currency: 'USD'; priceVersion: string } | UnpricedPrice;
+
+export const isCacheReadNotReported = (price: PricedCall): boolean => price.kind === 'unpriced' && price.code === 'cache_read_not_reported';
 
 const isCount = (value: number | undefined): boolean => value === undefined || (Number.isSafeInteger(value) && value >= 0);
 
@@ -111,23 +109,23 @@ export const priceCall = (input: PriceCallInput): PricedCall => {
   const cached = usage.cachedInputTokens;
   const written = usage.cacheWriteInputTokens ?? 0;
   if (![usage.inputTokens, usage.outputTokens, usage.cachedInputTokens, usage.cacheWriteInputTokens].every(isCount)) {
-    return { kind: 'unpriced', reason: 'a token count of the call is not a non-negative integer' };
+    return { kind: 'unpriced', code: 'unpriceable_usage', reason: 'a token count of the call is not a non-negative integer' };
   }
   if (cached !== undefined && cached + written > usage.inputTokens) {
-    return { kind: 'unpriced', reason: `cached input (${cached}) and written input (${written}) together exceed the input (${usage.inputTokens})` };
+    return { kind: 'unpriced', code: 'unpriceable_usage', reason: `cached input (${cached}) and written input (${written}) together exceed the input (${usage.inputTokens})` };
   }
-  if (billing === UNKNOWN_BILLING) return { kind: 'unpriced', reason: 'the billing of the target is unknown' };
+  if (billing === UNKNOWN_BILLING) return { kind: 'unpriced', code: 'unknown_billing', reason: 'the billing of the target is unknown' };
   if (billing === 'local') return { kind: 'priced', units: 0n, currency: 'USD', priceVersion: LOCAL_PRICE_VERSION };
-  if (billing === 'plan') return { kind: 'unpriced', reason: PLAN_UNPRICED_REASON };
-  if (Number.isNaN(input.at.getTime())) return { kind: 'unpriced', reason: 'the time of the call is not a valid date' };
-  if (cached === undefined) return { kind: 'unpriced', reason: CACHE_READ_NOT_REPORTED_REASON };
+  if (billing === 'plan') return { kind: 'unpriced', code: 'plan', reason: 'plan' };
+  if (Number.isNaN(input.at.getTime())) return { kind: 'unpriced', code: 'unpriceable_usage', reason: 'the time of the call is not a valid date' };
+  if (cached === undefined) return { kind: 'unpriced', code: 'cache_read_not_reported', reason: CACHE_READ_NOT_REPORTED_REASON };
   const entry = findPriceEntry(input.table, input.provider, input.model, input.at.getTime());
-  if (entry === undefined) return { kind: 'unpriced', reason: 'no price entry' };
+  if (entry === undefined) return { kind: 'unpriced', code: 'no_price_entry', reason: 'no price entry' };
   if (cached > 0 && entry.cachedInputPerMTok === undefined) {
-    return { kind: 'unpriced', reason: `${cached} cached input token(s) and the price entry has no cachedInputPerMTok` };
+    return { kind: 'unpriced', code: 'unpriceable_usage', reason: `${cached} cached input token(s) and the price entry has no cachedInputPerMTok` };
   }
   if (written > 0 && entry.cacheWritePerMTok === undefined) {
-    return { kind: 'unpriced', reason: `${written} cache write token(s) and the price entry has no cacheWritePerMTok` };
+    return { kind: 'unpriced', code: 'unpriceable_usage', reason: `${written} cache write token(s) and the price entry has no cacheWritePerMTok` };
   }
   const units =
     BigInt(usage.inputTokens - cached - written) * scaledPrice(entry.inputPerMTok) +

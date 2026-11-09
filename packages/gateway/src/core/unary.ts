@@ -19,7 +19,7 @@ import { ClientDisconnectedError, detachedRunExpiredError, gatewayErrorFromBody,
 import { parseIdempotencyKey, reusedError } from './idempotency.ts';
 import { inputHasImages, normalizeInput, resolveInput } from './input.ts';
 import type { ResolvedInput } from './input.ts';
-import { modelCostOf } from './model-cost.ts';
+import { modelCostOf, pricingFieldsOf } from './model-cost.ts';
 import { startAttemptSpan } from './attempt-span.ts';
 import type { AttemptSpan } from './attempt-span.ts';
 import { errorTypeOf, messageOf } from './respond.ts';
@@ -337,18 +337,15 @@ const compactOnce = async (
     id: identifier(services, 'cmp'),
     encrypted_content: services.codec.encode(outcome.value.summary),
   };
-  const cost =
-    services.priceTable === undefined
-      ? null
-      : modelCostOf({
-          provider: outcome.target.provider,
-          model: outcome.target.model,
-          billing: outcome.target.billing,
-          usage: outcome.value.usage,
-          cacheWriteInputTokens: outcome.value.cacheWriteInputTokens,
-          at: attempt.startedAtMs,
-          table: services.priceTable,
-        });
+  const pricing = modelCostOf({
+    provider: outcome.target.provider,
+    model: outcome.target.model,
+    billing: outcome.target.billing,
+    usage: outcome.value.usage,
+    cacheWriteInputTokens: outcome.value.cacheWriteInputTokens,
+    at: attempt.startedAtMs,
+    table: services.priceTable,
+  });
   const wire = wireUsageOf(outcome.value.usage);
   return {
     id: resourceId,
@@ -360,7 +357,7 @@ const compactOnce = async (
       target: outcome.target.name,
       ...(outcome.value.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: outcome.value.cacheWriteInputTokens }),
       ...(wire.cacheReadNotReported === undefined ? {} : { cacheReadNotReported: wire.cacheReadNotReported }),
-      ...(cost === null ? {} : { cost }),
+      ...pricingFieldsOf(pricing),
     },
   };
 };

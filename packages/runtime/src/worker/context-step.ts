@@ -24,7 +24,7 @@ import { resolveGoverning } from '@momonga/memory';
 import type { Session } from '@momonga/store';
 import { harnessOutputToolsOf } from '@momonga/tools';
 import { DETERMINISTIC_SUMMARY_TEXT, compactionSummaryMessage, decodeCompactionSummary, tokensForText, userMessageContent } from '@momonga/protocol';
-import { cachedInputOf } from './model-stream.ts';
+import { billedDetailOf } from './model-stream.ts';
 import type { CompactRequest, CompactResource, CompactionInputItem, ContentPart, FunctionTool, InputItem, MessageInputItem, NoticeReduction, RunEvent, RunEventPayload, RunState, SummaryFidelity } from '@momonga/protocol';
 import { foldRunState } from '@momonga/store';
 import { GatewayRequestError } from '../gateway-client.ts';
@@ -426,11 +426,7 @@ export const compactThrough = async (ctx: ClaimContext, plan: CompactionSource):
     inputTokens: resource.usage.input_tokens,
     outputTokens: resource.usage.output_tokens,
     totalTokens: resource.usage.total_tokens,
-    responseId: resource.id,
-    ...cachedInputOf(resource.usage, resource.momonga),
-    ...(resource.momonga?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: resource.momonga.cacheWriteInputTokens }),
-    ...(resource.momonga?.cost === undefined ? {} : { cost: resource.momonga.cost }),
-    timing: { durationMs: options.clock.now() - startedAt },
+    ...billedDetailOf(resource.usage, resource.momonga, { durationMs: options.clock.now() - startedAt }, resource.id),
     ...(resource.momonga === undefined ? {} : { target: resource.momonga.target }),
   };
   const unreadableNotices =

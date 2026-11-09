@@ -1,5 +1,5 @@
 import { isFatalStoreError } from '@momonga/store';
-import type { BilledDetail, CallTiming, CreateResponseBody, MomongaResponseExtension, ResponseResource, StreamEvent, Usage } from '@momonga/protocol';
+import type { BilledDetail, CallTiming, CreateResponseBody, ModelCost, ResponseResource, StreamEvent, UnpricedOutcome, Usage } from '@momonga/protocol';
 import type { RunEventPayload } from '@momonga/protocol';
 import { carriesOutput, reportedCachedTokensOf } from '@momonga/protocol';
 import type { ClaimContext } from './claim-context.ts';
@@ -95,11 +95,19 @@ export const cachedInputOf = (usage: Usage, extension: { cacheReadNotReported?: 
   return cachedInputTokens === undefined ? {} : { cachedInputTokens };
 };
 
-export const billedDetailOf = (usage: Usage | null, extension: MomongaResponseExtension | undefined, timing: CallTiming, responseId: string): BilledDetail => ({
+export type BilledExtension = { cacheReadNotReported?: true; cacheWriteInputTokens?: number; cost?: ModelCost; unpriced?: UnpricedOutcome };
+
+export const priceOutcomeOf = (extension: BilledExtension | undefined): { cost: ModelCost } | { unpriced: UnpricedOutcome } | Record<string, never> => {
+  if (extension?.cost !== undefined) return { cost: extension.cost };
+  if (extension?.unpriced !== undefined) return { unpriced: extension.unpriced };
+  return {};
+};
+
+export const billedDetailOf = (usage: Usage | null, extension: BilledExtension | undefined, timing: CallTiming, responseId: string): BilledDetail => ({
   responseId,
   ...(usage === null ? {} : cachedInputOf(usage, extension)),
   ...(extension?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: extension.cacheWriteInputTokens }),
-  ...(extension?.cost === undefined ? {} : { cost: extension.cost }),
+  ...priceOutcomeOf(extension),
   timing,
 });
 

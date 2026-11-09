@@ -34,9 +34,27 @@ export const anatomyLayerEntries = (layers: TokenAnatomyLayers): [string, number
 
 export type ModelCost = { amount: number; currency: 'USD'; priceVersion: string };
 
+export const UNPRICED_CODES = ['plan', 'unknown_billing', 'cache_read_not_reported', 'no_price_entry', 'unpriceable_usage'] as const;
+
+export type UnpricedCode = (typeof UNPRICED_CODES)[number];
+
+export type UnpricedOutcome = { code: UnpricedCode; reason: string };
+
+export type ModelPricing = { kind: 'priced'; cost: ModelCost } | ({ kind: 'unpriced' } & UnpricedOutcome);
+
+export const CACHE_READS_NOT_REPORTED = 'cache reads not reported';
+
+export const UNPRICED_CODE_TEXT: Readonly<Record<UnpricedCode, string>> = {
+  plan: 'plan usage, no per-token price',
+  unknown_billing: 'billing unknown',
+  cache_read_not_reported: CACHE_READS_NOT_REPORTED,
+  no_price_entry: 'no price entry',
+  unpriceable_usage: 'usage cannot be priced',
+};
+
 export type CallTiming = { firstEventMs?: number; durationMs: number };
 
-export type BilledDetail = { responseId?: string; cachedInputTokens?: number; cacheWriteInputTokens?: number; cost?: ModelCost; timing?: CallTiming };
+export type BilledDetail = { responseId?: string; cachedInputTokens?: number; cacheWriteInputTokens?: number; cost?: ModelCost; unpriced?: UnpricedOutcome; timing?: CallTiming };
 
 export type BilledTokensView = {
   inputTokens: number;
