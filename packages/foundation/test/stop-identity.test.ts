@@ -144,7 +144,23 @@ describe('a group is signalled only when one entry is, at the signal, alive with
 });
 
 describe('the stop says it stopped the command only after a fresh listing shows no holder outside the group', () => {
-  it('does not say the command was stopped while a holder outside the group still holds after SIGKILL', async () => {
+  it('says stopped when the listing after the last signal shows no holder outside the proved group', async () => {
+    const OUTSIDE = 80_005;
+    const world = worldOf({ [ENTRY]: { start: 100, group: GROUP, holds: true, survives: ['SIGTERM'] }, [OUTSIDE]: { start: 400, group: OUTSIDE, holds: true, survives: ['SIGTERM'] } });
+    let listingsAfterKill = 0;
+    const listing = world.inspector.holdersOf.bind(world.inspector);
+    world.inspector.holdersOf = async (...args) => {
+      if (world.sent.some(({ signal }) => signal === 'SIGKILL')) listingsAfterKill += 1;
+      return listing(...args);
+    };
+    const result = await reconcile(world, GROUP);
+    expect(world.sent).toContainEqual({ target: OUTSIDE, signal: 'SIGKILL' });
+    expect(listingsAfterKill).toBeGreaterThan(0);
+    expect(result.output.startsWith('The interrupted command was stopped.')).toBe(true);
+    expect(result.output).not.toContain('/markers ignore');
+  });
+
+  it('does not say stopped and carries the survivor notice while a holder outside the group still holds after SIGKILL', async () => {
     const OUTSIDE = 80_005;
     const world = worldOf({
       [ENTRY]: { start: 100, group: GROUP, holds: true },
@@ -153,6 +169,8 @@ describe('the stop says it stopped the command only after a fresh listing shows 
     const result = await reconcile(world, GROUP);
     expect(world.sent).toContainEqual({ target: OUTSIDE, signal: 'SIGKILL' });
     expect(result.output).not.toContain('The interrupted command was stopped.');
+    expect(result.output).toContain(`marker ${MARKER_NAME}`);
+    expect(result.output).toContain(`run /markers ignore ${MARKER_NAME}`);
   });
 });
 

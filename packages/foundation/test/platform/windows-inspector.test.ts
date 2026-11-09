@@ -39,7 +39,7 @@ describe('windows parsers (shape of ConvertTo-Json -Compress output)', () => {
     expect(parsePidList('12')).toEqual([12]);
     expect(parsePidList('')).toEqual([]);
     expect(() => parsePidList('[0]')).toThrow('positive integer');
-    expect(parseStartTimeMs('1700000123456\r\n')).toBe(1700000123456);
+    expect(parseStartTimeMs('133400000000000001\r\n')).not.toEqual(parseStartTimeMs('133400000000000002\r\n'));
     expect(parseStartTimeMs('')).toBeUndefined();
     expect(() => parseStartTimeMs('Monday')).toThrow('integer');
   });
@@ -120,7 +120,8 @@ describe('windows scripts', () => {
 
   it('rejects a non-positive pid for the creation-time query', () => {
     expect(() => startTimeScript(0)).toThrow(RangeError);
-    expect(startTimeScript(42)).toContain("ProcessId=42");
+    expect(startTimeScript(42)).toContain('42');
+    expect(startTimeScript(42)).toContain('GetProcessTimes');
   });
 });
 
@@ -131,13 +132,16 @@ describe('windows inspector through an injected command runner', () => {
     return { exitCode: 0, stdout: '', stderr: '', ...result };
   };
 
-  it('asks Win32_Process for the creation time of one pid', async () => {
+  it('asks GetProcessTimes for the creation FILETIME of one pid', async () => {
     calls.length = 0;
-    const inspector = createWindowsInspector({ run: runnerReturning({ stdout: '1700000123456\r\n' }), env: ENV });
-    expect(await inspector.startTimeOf(321, LIVE)).toEqual({ kind: 'value', value: 1700000123456 });
+    const inspector = createWindowsInspector({ run: runnerReturning({ stdout: '133400000000000001\r\n' }), env: ENV });
+    const read = await inspector.startTimeOf(321, LIVE);
+    expect(read.kind).toBe('value');
+    expect(await createWindowsInspector({ run: runnerReturning({ stdout: '133400000000000002\r\n' }), env: ENV }).startTimeOf(321, LIVE)).not.toEqual(read);
     expect(calls[0]?.file).toBe(POWERSHELL);
     expect(calls[0]?.args.slice(0, 3)).toEqual(['-NoLogo', '-NoProfile', '-NonInteractive']);
-    expect(decodeScript(calls[0]?.args ?? [])).toContain("Win32_Process -Filter 'ProcessId=321'");
+    expect(decodeScript(calls[0]?.args ?? [])).toContain('GetProcessTimes');
+    expect(decodeScript(calls[0]?.args ?? [])).toContain('321');
     expect(calls[0]?.env).toEqual(ENV);
   });
 

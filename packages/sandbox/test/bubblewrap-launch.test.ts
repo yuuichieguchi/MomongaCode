@@ -3,6 +3,7 @@ import type { SpawnOptions } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { GroupMembersReader } from '@momonga/foundation';
 import { EMPTY_FILE_RULES, EMPTY_PROTECTED_SET, groupTerminationBoundMs } from '@momonga/foundation';
 import { SandboxPolicyError, createBubblewrapSandbox, createPlaceholderJournal } from '@momonga/sandbox';
 import type { SandboxPolicy } from '@momonga/sandbox';
@@ -166,13 +167,19 @@ shift
 exec "$@"
 `;
 
-const psGroupMembers = (pgid: number): number[] =>
-  execFileSync('/bin/ps', ['-A', '-o', 'pid=,pgid='], { encoding: 'utf8' })
+const psRows = (): Array<{ pid: number; groupId: number; startTicks: bigint }> =>
+  execFileSync('/bin/ps', ['-A', '-o', 'pid=,pgid=,lstart='], { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' } })
     .split('\n')
     .flatMap((line) => {
-      const [pid, group] = line.trim().split(/\s+/).map(Number);
-      return pid !== undefined && group === pgid ? [pid] : [];
+      const row = /^\s*(\d+)\s+(\d+)\s+(.+?)\s*$/.exec(line);
+      const startMs = row === null ? Number.NaN : Date.parse(row[3] as string);
+      return row === null || Number.isNaN(startMs) ? [] : [{ pid: Number(row[1]), groupId: Number(row[2]), startTicks: BigInt(startMs) }];
     });
+
+const psGroupMembers: GroupMembersReader = {
+  members: (pgid) => psRows().flatMap(({ pid, groupId, startTicks }) => (groupId === pgid ? [{ pid, startTicks }] : [])),
+  statOf: (pid) => psRows().find((row) => row.pid === pid),
+};
 
 describe('bubblewrap cancel (a stand-in bwrap that, like bwrap --die-with-parent, runs the command as its child, dies of SIGTERM and takes the sandbox down with it)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   const GRACE_MS = 300;

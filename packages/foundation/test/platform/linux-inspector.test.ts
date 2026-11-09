@@ -97,9 +97,16 @@ describe('proc parsers (formats from proc_pid_stat(5), proc_stat(5), getauxval(3
 });
 
 describe('linux inspector through an injected procfs', () => {
-  it('computes the start time as boot time plus starttime ticks', async () => {
+  it('reads the start time as the exact starttime ticks, whatever the boot time', async () => {
     const inspector = createLinuxInspector({ procfs: fakeProcfs({ ...BASE_ENTRIES, '/proc/4242/stat': { text: STAT_SLEEP } }), layout: LAYOUT, uid: UID });
-    expect(await inspector.startTimeOf(4242, LIVE)).toEqual({ kind: 'value', value: 1700000000000 + 9876540 });
+    const rebooted = createLinuxInspector({
+      procfs: fakeProcfs({ ...BASE_ENTRIES, '/proc/stat': { text: 'cpu  1 2 3 4\nbtime 1700000777\nprocesses 5\n' }, '/proc/4242/stat': { text: STAT_SLEEP } }),
+      layout: LAYOUT,
+      uid: UID,
+    });
+    const read = await inspector.startTimeOf(4242, LIVE);
+    expect(read.kind).toBe('value');
+    expect(await rebooted.startTimeOf(4242, LIVE)).toEqual(read);
   });
 
   it('reports a missing process as gone and a failed read as a failure classified by errno', async () => {
@@ -130,8 +137,9 @@ describe('linux inspector through an injected procfs', () => {
     const inspector = createLinuxInspector({ procfs, layout: LAYOUT, uid: UID });
     const found = gapsOf();
     await inspector.holdersOf('/marker', LIVE, found.report);
-    expect(await inspector.startTimeOf(4242, LIVE)).toEqual({ kind: 'value', value: 1700000000000 + 9876540 });
-    expect(found.processes).toEqual([{ pid: 4242, command: 'sleep', startedAt: 1700000000000 + 9876540 }]);
+    const read = await inspector.startTimeOf(4242, LIVE);
+    if (read.kind !== 'value') throw new Error(`expected a start time, got ${read.kind}`);
+    expect(found.processes).toEqual([{ pid: 4242, command: 'sleep', startedAt: read.value }]);
   });
 
   it('startTimeOf reads nothing when the caller signal has already aborted', async () => {
@@ -176,7 +184,7 @@ describe('linux inspector through an injected procfs', () => {
     const inspector = createLinuxInspector({ procfs: flaky, layout: LAYOUT, uid: UID });
     expect(await inspector.startTimeOf(4242, LIVE)).toMatchObject({ kind: 'failed', cause: 'transient' });
     failing = false;
-    expect(await inspector.startTimeOf(4242, LIVE)).toEqual({ kind: 'value', value: 1700000000000 + 9876540 });
+    expect(await inspector.startTimeOf(4242, LIVE)).toEqual(await createLinuxInspector({ procfs, layout: LAYOUT, uid: UID }).startTimeOf(4242, LIVE));
   });
 
   it('lists the pids whose descriptors resolve to the marker file identity, skipping processes of other users whose descriptors are denied', async () => {

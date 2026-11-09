@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import type { GroupMembersReader, ProcessGroupPort } from '@momonga/foundation';
 import { forceKillGroup, groupAlive, procGroupMembers, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, killGroupsForCleanup } from '@momonga/testkit';
 
@@ -174,13 +175,24 @@ describe('signalGroup', () => {
   });
 });
 
-const psGroupMembers = (pgid: number): number[] =>
-  spawnSync('ps', ['-A', '-o', 'pid=,pgid='], { encoding: 'utf8' })
+const psRows = (): Array<{ pid: number; groupId: number; startTicks: bigint }> =>
+  spawnSync('ps', ['-A', '-o', 'pid=,pgid=,lstart='], { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' } })
     .stdout.split('\n')
     .flatMap((line) => {
-      const [pid, group] = line.trim().split(/\s+/).map(Number);
-      return pid !== undefined && group === pgid ? [pid] : [];
+      const row = /^\s*(\d+)\s+(\d+)\s+(.+?)\s*$/.exec(line);
+      const startMs = row === null ? Number.NaN : Date.parse(row[3] as string);
+      return row === null || Number.isNaN(startMs) ? [] : [{ pid: Number(row[1]), groupId: Number(row[2]), startTicks: BigInt(startMs) }];
     });
+
+const psGroupMembers: GroupMembersReader = {
+  members: (pgid) => psRows().flatMap(({ pid, groupId, startTicks }) => (groupId === pgid ? [{ pid, startTicks }] : [])),
+  statOf: (pid) => psRows().find((row) => row.pid === pid),
+};
+
+const listedReader = (pgid: number, pids: readonly number[]): GroupMembersReader => ({
+  members: (asked) => (asked === pgid ? pids.map((pid) => ({ pid, startTicks: BigInt(pid) })) : []),
+  statOf: (pid) => (pids.includes(pid) ? { groupId: pgid, startTicks: BigInt(pid) } : undefined),
+});
 
 describe('signalGroupExceptLeader', () => {
   it('delivers the signal to every member of the group but its leader', async () => {
@@ -201,37 +213,37 @@ describe('signalGroupExceptLeader', () => {
       const refusal = refusals[sent.length - 1];
       if (refusal !== undefined) throw refusal;
     };
-    expect(signalGroupExceptLeader(4000, 'SIGTERM', () => [4000, 4001, 4002, 4003], send)).toBe(3);
+    expect(signalGroupExceptLeader(4000, 'SIGTERM', listedReader(4000, [4000, 4001, 4002, 4003]), send)).toBe(3);
     expect(sent).toEqual([4001, 4002, 4003]);
   });
 
   it('signals nobody and answers 0 when the leader is the only member', () => {
     const sent: number[] = [];
-    expect(signalGroupExceptLeader(4000, 'SIGTERM', () => [4000], (pid) => void sent.push(pid))).toBe(0);
+    expect(signalGroupExceptLeader(4000, 'SIGTERM', listedReader(4000, [4000]), (pid) => void sent.push(pid))).toBe(0);
     expect(sent).toEqual([]);
   });
 
   it('propagates any other failure to signal a member', () => {
     const failure = Object.assign(new Error('EINVAL'), { code: 'EINVAL' });
     expect(() =>
-      signalGroupExceptLeader(4000, 'SIGTERM', () => [4001], () => {
+      signalGroupExceptLeader(4000, 'SIGTERM', listedReader(4000, [4001]), () => {
         throw failure;
       }),
     ).toThrow(failure);
   });
 
   it.each([0, 1, -5, 2.5])('refuses the unsafe group id %s', (pgid) => {
-    expect(() => signalGroupExceptLeader(pgid, 'SIGTERM', () => [])).toThrow(/refusing to signal process group/);
+    expect(() => signalGroupExceptLeader(pgid, 'SIGTERM', listedReader(pgid, []))).toThrow(/refusing to signal process group/);
   });
 });
 
 describe.skipIf(process.platform !== 'linux')('procGroupMembers (Linux /proc)', () => {
   it('lists the leader and the grandchild of a live group and nothing outside it', async () => {
     const group = await spawnGroup('normal');
-    const members = procGroupMembers(group.pgid);
+    const members = procGroupMembers.members(group.pgid).map(({ pid }) => pid);
     expect(members).toEqual(expect.arrayContaining([group.pgid, group.grandchildPid]));
     expect(members).not.toContain(process.pid);
-    expect([...members].sort((left, right) => left - right)).toEqual([...psGroupMembers(group.pgid)].sort((left, right) => left - right));
+    expect([...members].sort((left, right) => left - right)).toEqual(psGroupMembers.members(group.pgid).map(({ pid }) => pid).sort((left, right) => left - right));
   });
 });
 
@@ -339,5 +351,46 @@ describe('forceKillGroup', () => {
 
   it.each([0, 1, -5, 2.5])('refuses the unsafe group id %s', async (pgid) => {
     await expect(forceKillGroup(pgid, { deadline: Date.now() + 100 })).rejects.toThrow(/refusing to signal process group/);
+  });
+});
+
+describe('terminateGroup says gone, terminated or killed only after a fresh holder listing after the last signal shows no holder outside the group', () => {
+  const instantTiming = () => {
+    let now = 0;
+    return { now: () => now, sleep: async (ms: number) => void (now += ms) };
+  };
+
+  const groupDyingOn = (fatal: NodeJS.Signals | undefined, events: string[]): ProcessGroupPort => {
+    let alive = fatal !== undefined;
+    return {
+      signal: async (_pgid, signal) => {
+        events.push(`signal ${signal}`);
+        if (signal === fatal) alive = false;
+      },
+      alive: async () => alive,
+    };
+  };
+
+  const listingOf = (holders: number[], events: string[]) => async (): Promise<number[]> => {
+    events.push('list');
+    return holders;
+  };
+
+  it.each<[NodeJS.Signals | undefined, string]>([
+    [undefined, 'gone'],
+    ['SIGTERM', 'terminated'],
+    ['SIGKILL', 'killed'],
+  ])('with the group ending on %s it says %s when the listing after the last signal shows no holder', async (fatal, word) => {
+    const events: string[] = [];
+    const outcome = await terminateGroup(6000, { graceMs: 50, port: groupDyingOn(fatal, events), timing: instantTiming(), outsideHolders: listingOf([], events) });
+    expect(outcome).toBe(word);
+    const lastSignal = events.map((event) => event.startsWith('signal')).lastIndexOf(true);
+    expect(events.indexOf('list', lastSignal + 1)).toBeGreaterThan(lastSignal);
+  });
+
+  it.each<NodeJS.Signals | undefined>([undefined, 'SIGTERM', 'SIGKILL'])('with the group ending on %s it says unconfirmed while a holder outside the group remains', async (fatal) => {
+    const events: string[] = [];
+    const outcome = await terminateGroup(6000, { graceMs: 50, port: groupDyingOn(fatal, events), timing: instantTiming(), outsideHolders: listingOf([6100], events) });
+    expect(outcome).toBe('unconfirmed');
   });
 });
