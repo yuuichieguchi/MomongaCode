@@ -296,7 +296,7 @@ class ManagedConnection implements McpServerConnection {
       if (refusal !== undefined) return { state: 'refused', detail: this.redact(refusal.message) };
       return { state: 'unreachable', detail: this.redact(errorMessage(error)) };
     }
-    const stored = await remote.credentials.read(credentialKey(this.name, config.url));
+    const stored = await remote.credentials.read(credentialKey(this.name, config.url), this.lifetime.signal);
     return { state: stored === undefined ? 'not_required' : 'authorized' };
   }
 
@@ -635,6 +635,7 @@ class ManagedConnection implements McpServerConnection {
           resourceUrl: config.url,
           scope,
           store: remote.credentials,
+          signal: this.lifetime.signal,
           redirectUrl: undefined,
           randomToken: remote.randomToken,
           ...(config.oauth?.clientId === undefined ? {} : { preregisteredClientId: config.oauth.clientId }),

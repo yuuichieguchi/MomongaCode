@@ -54,6 +54,7 @@ export const authorizeMcpServer = async (options: AuthorizeMcpServerOptions): Pr
       resourceUrl: options.url,
       scope: options.scope,
       store: ports.store,
+      signal,
       redirectUrl: redirect.redirectUrl,
       randomToken: ports.randomToken,
       ...(oauth?.clientId === undefined ? {} : { preregisteredClientId: oauth.clientId }),
