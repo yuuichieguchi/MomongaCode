@@ -533,7 +533,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     clearLifeTimers(life);
     if (life.abandoned) {
       await flushStdio(life);
-      await reapManagedServers(life);
+      if (liveLife() === undefined) await reapManagedServers(life);
       return;
     }
     const arrivalGeneration = generation;
