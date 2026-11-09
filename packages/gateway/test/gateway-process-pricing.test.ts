@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createUdsClient, createJsonLogger, systemClock, FIRST_GENERATION, fixedSocket } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
-import { openResponsesTextReply, registerCleanup, startFakeOpenResponses, usageOf, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, openResponsesTextReply, registerCleanup, startFakeOpenResponses, usageOf, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { PROCESS_VERSION, baseEnv, writeSettings } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
@@ -60,23 +60,23 @@ describe('cost reporting with user-configured prices', () => {
     const client = await startPricedGateway(context, [PRICE]);
     const { report } = await costOfRun(client);
     expect(report.total).toMatchObject({ calls: 1, unpricedCalls: 0, amount: 17, currency: 'USD', priceVersions: ['2026-01-01'] });
-  });
+  }, REAL_PROCESS_TEST_TIMEOUT_MS);
 
   it('keeps a call visible as unpriced when no price is declared', async (context) => {
     const client = await startPricedGateway(context, undefined);
     const { report } = await costOfRun(client);
     expect(report.total).toMatchObject({ calls: 1, unpricedCalls: 1, unpriced: { no_price_entry: 1 }, amount: null, priceVersions: [] });
-  });
+  }, REAL_PROCESS_TEST_TIMEOUT_MS);
 
   it('reports a call to a target the user declared local as local, at no cost and not as unpriced', async (context) => {
     const client = await startPricedGateway(context, undefined, 'local');
     const { report } = await costOfRun(client);
     expect(report.total).toMatchObject({ calls: 1, localCalls: 1, unpricedCalls: 0, amount: 0, priceVersions: [] });
-  });
+  }, REAL_PROCESS_TEST_TIMEOUT_MS);
 
   it('keeps a call unpriced when the declared price is for another model', async (context) => {
     const client = await startPricedGateway(context, [{ ...PRICE, model: 'another-model' }]);
     const { report } = await costOfRun(client);
     expect(report.total).toMatchObject({ calls: 1, unpricedCalls: 1, unpriced: { no_price_entry: 1 }, amount: null });
-  });
+  }, REAL_PROCESS_TEST_TIMEOUT_MS);
 });

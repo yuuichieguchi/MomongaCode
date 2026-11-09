@@ -342,8 +342,16 @@ describe('the automatic probe of an fm target with no probe record', { timeout: 
       const markers = path.join(gateway.home, '.momonga', 'run', 'markers', `g${FIRST_GENERATION}`, 'targets', '_probe-fm');
 
       expectProbing(await gateway.send(false));
-      await until(() => fs.existsSync(markers) && fs.readdirSync(markers).length === 1, 'the probe fm serve is marked');
-      const pgid = await readMarkerGroup(path.join(markers, fs.readdirSync(markers)[0] as string));
+      const markerFile = (): string | undefined => {
+        if (!fs.existsSync(markers)) return undefined;
+        const entries = fs.readdirSync(markers);
+        return entries.length === 1 ? path.join(markers, entries[0] as string) : undefined;
+      };
+      await until(async () => {
+        const file = markerFile();
+        return file !== undefined && (await readMarkerGroup(file)) !== undefined;
+      }, 'the probe marker records the process group of the probe fm serve');
+      const pgid = await readMarkerGroup(markerFile() as string);
       if (pgid === undefined) throw new Error('the probe marker records no process group');
       registerCleanup(() => killGroupsForCleanup([pgid]));
 

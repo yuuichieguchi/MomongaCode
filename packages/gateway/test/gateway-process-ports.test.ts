@@ -2,7 +2,7 @@ import { request } from 'undici';
 import { describe, expect, it } from 'vitest';
 import { createJsonLogger, systemClock, FIRST_GENERATION } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
-import { registerCleanup, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, withTempDir } from '@momonga/testkit';
 import { PROCESS_VERSION, baseEnv, ccTarget, writeSettings } from './gateway-process-helpers.ts';
 
 const TOKEN = 'injected-debug-token';
@@ -43,5 +43,5 @@ describe('gateway process ports', () => {
     const response = await request(`http://127.0.0.1:${port}/v1/models`, { headers: { authorization: `Bearer ${TOKEN}` } });
     expect(response.statusCode).toBe(200);
     await response.body.dump();
-  });
+  }, REAL_PROCESS_TEST_TIMEOUT_MS);
 });
