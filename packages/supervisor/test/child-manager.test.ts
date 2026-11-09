@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { GATEWAY_MAX_CLOSE_MS, SHUTDOWN_MARGIN_MS } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, gatewayAbortBudgetMs, gatewayStopBudgetMs } from '@momonga/foundation';
 import { afterMicrotasks, createFakeKernelLock, waitFor } from '@momonga/testkit';
 import { DEFAULT_INTERVALS, HELD_RETRY_MS, KILL_CONFIRM_MS, STABLE_AFTER_MS, STARTUP_KILL_GRACE_MS, STARTUP_TIMEOUT_MS, STDIO_FLUSH_MS } from '../src/constants.ts';
 import { errnoError } from './support/p2-fake-spawn-port.ts';
@@ -561,19 +561,19 @@ describe('stop', () => {
     expect(harness.port.last().groupKills).toBe(1);
   });
 
-  it('the gateway budgets are GATEWAY_MAX_CLOSE_MS plus the margin and the abort budget', (context) => {
+  it('the gateway budgets are the stop and abort budgets of the stop values', (context) => {
     const harness = createManagerHarness(context, { role: 'gateway' });
     harness.spawnInitial();
-    void harness.manager.stop('shutdown', 'term');
-    harness.timers.advance(GATEWAY_MAX_CLOSE_MS + SHUTDOWN_MARGIN_MS - 1);
+    void harness.manager.stop('shutdown', 'term', DEFAULT_STOP_VALUES);
+    harness.timers.advance(gatewayStopBudgetMs(DEFAULT_STOP_VALUES) - 1);
     expect(harness.port.last().groupKills).toBe(0);
     harness.timers.advance(1);
     expect(harness.port.last().groupKills).toBe(1);
     const aborted = createManagerHarness(context, { role: 'gateway' });
     aborted.spawnInitial();
-    void aborted.manager.stop('shutdown', 'int');
+    void aborted.manager.stop('shutdown', 'int', DEFAULT_STOP_VALUES);
     expect(aborted.port.last().signals).toEqual(['SIGINT']);
-    aborted.timers.advance(9999);
+    aborted.timers.advance(23_000 - 1);
     expect(aborted.port.last().groupKills).toBe(0);
     aborted.timers.advance(1);
     expect(aborted.port.last().groupKills).toBe(1);

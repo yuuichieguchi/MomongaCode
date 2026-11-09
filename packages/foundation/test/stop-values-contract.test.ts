@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_STOP_VALUES,
   ENTRY_HARD_EXIT_MARGIN_MS,
-  GATEWAY_MAX_CLOSE_MS,
   SHUTDOWN_SETTING_LIMITS,
   STOP_MESSAGE_MAX_BYTES,
   daemonStopBoundMs,
+  gatewayAbortBudgetMs,
+  gatewayAbortCloseMs,
+  managedServerReapBoundMs,
   formatStopMessage,
   gatewayMaxCloseMs,
   gatewayStopBudgetMs,
@@ -28,13 +30,25 @@ describe('the stop values and their limits', () => {
 });
 
 describe('one formula over the values of a stop', () => {
-  it('gives 28000, 33000, 76000 and 109000 at the defaults', () => {
+  it('gives 28000, 33000, 88000, 118000 and 121000 at the defaults', () => {
     expect(gatewayMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(28_000);
     expect(gatewayStopBudgetMs(DEFAULT_STOP_VALUES)).toBe(33_000);
-    expect(supervisorMaxCloseMs(0, DEFAULT_STOP_VALUES)).toBe(76_000);
-    expect(supervisorMaxCloseMs(30_000, DEFAULT_STOP_VALUES)).toBe(106_000);
-    expect(daemonStopBoundMs(DEFAULT_STOP_VALUES)).toBe(109_000);
-    expect(GATEWAY_MAX_CLOSE_MS).toBe(gatewayMaxCloseMs(DEFAULT_STOP_VALUES));
+    expect(supervisorMaxCloseMs(0, DEFAULT_STOP_VALUES)).toBe(88_000);
+    expect(supervisorMaxCloseMs(30_000, DEFAULT_STOP_VALUES)).toBe(118_000);
+    expect(daemonStopBoundMs(DEFAULT_STOP_VALUES)).toBe(121_000);
+  });
+
+  it('reaps managed servers within 4 grace windows of the stop grace', () => {
+    expect(managedServerReapBoundMs(DEFAULT_STOP_VALUES)).toBe(12_000);
+    expect(managedServerReapBoundMs({ closeGraceMs: 999, managedServerStopGraceMs: 250 })).toBe(1000);
+    expect(managedServerReapBoundMs(ZERO)).toBe(0);
+  });
+
+  it('bounds an aborting gateway by its managed-server stop alone, plus the margin for the supervisor budget', () => {
+    expect(gatewayAbortCloseMs(DEFAULT_STOP_VALUES)).toBe(18_000);
+    expect(gatewayAbortBudgetMs(DEFAULT_STOP_VALUES)).toBe(23_000);
+    expect(gatewayAbortCloseMs({ closeGraceMs: 300_000, managedServerStopGraceMs: 500 })).toBe(3000);
+    expect(gatewayAbortBudgetMs(ZERO)).toBe(5000);
   });
 
   it('gives 0, 5000, 48000 and 81000 at zero values', () => {
@@ -44,23 +58,23 @@ describe('one formula over the values of a stop', () => {
     expect(daemonStopBoundMs(ZERO)).toBe(81_000);
   });
 
-  it('gives 660000 and 741000 at the allowed maxima', () => {
+  it('gives 660000 and 981000 at the allowed maxima', () => {
     expect(gatewayMaxCloseMs(MAXIMA)).toBe(660_000);
-    expect(daemonStopBoundMs(MAXIMA)).toBe(741_000);
+    expect(daemonStopBoundMs(MAXIMA)).toBe(981_000);
   });
 
   it.each([
     [0, { closeGraceMs: 1, managedServerStopGraceMs: 0 }, 48_001],
-    [0, { closeGraceMs: 0, managedServerStopGraceMs: 1 }, 48_006],
-    [7, { closeGraceMs: 100, managedServerStopGraceMs: 10 }, 48_167],
-    [30_000, { closeGraceMs: 2000, managedServerStopGraceMs: 500 }, 83_000],
-  ])('supervisor close at drain %d with %o is %d (drain + close grace + 6 x stop grace + 48000)', (drain, values, expected) => {
+    [0, { closeGraceMs: 0, managedServerStopGraceMs: 1 }, 48_010],
+    [7, { closeGraceMs: 100, managedServerStopGraceMs: 10 }, 48_207],
+    [30_000, { closeGraceMs: 2000, managedServerStopGraceMs: 500 }, 85_000],
+  ])('supervisor close at drain %d with %o is %d (drain + close grace + 10 x stop grace + 48000)', (drain, values, expected) => {
     expect(supervisorMaxCloseMs(drain, values)).toBe(expected);
   });
 
   it('the daemon stop bound is the supervisor close at the default drain plus the hard-exit margin', () => {
     const values = { closeGraceMs: 2000, managedServerStopGraceMs: 500 };
-    expect(daemonStopBoundMs(values)).toBe(83_000 + ENTRY_HARD_EXIT_MARGIN_MS);
+    expect(daemonStopBoundMs(values)).toBe(85_000 + ENTRY_HARD_EXIT_MARGIN_MS);
   });
 });
 
@@ -84,6 +98,7 @@ describe('the lifeline stop message', () => {
     ['a close grace over the maximum', '{"event":"stop","closeGraceMs":300001,"managedServerStopGraceMs":1}'],
     ['a stop grace over the maximum', '{"event":"stop","closeGraceMs":1,"managedServerStopGraceMs":60001}'],
     ['a string number', '{"event":"stop","closeGraceMs":"1","managedServerStopGraceMs":1}'],
+    ['a field beyond the three', '{"event":"stop","closeGraceMs":1,"managedServerStopGraceMs":1,"extra":true}'],
   ])('refuses %s as malformed with a reason', (_label, line) => {
     const parsed = parseStopMessage(line);
     expect(parsed.kind).toBe('malformed');

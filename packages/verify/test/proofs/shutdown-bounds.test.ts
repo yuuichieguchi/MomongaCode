@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CHILD_STDIO_FLUSH_MS,
-  FM_STOP_GRACE_MS,
-  GATEWAY_CLOSE_GRACE_MS,
-  GATEWAY_MAX_CLOSE_MS,
+  DEFAULT_STOP_VALUES,
   KILL_CONFIRM_MS,
   ENTRY_HARD_EXIT_MARGIN_MS,
   RUNTIME_ABORT_BUDGET_MS,
@@ -13,7 +11,12 @@ import {
   SHUTDOWN_MARGIN_MS,
   SHUTDOWN_REAP_BOUND_MS,
   SHUTDOWN_RELEASE_BOUND_MS,
+  daemonStopBoundMs,
   fmServeStopBoundMs,
+  gatewayAbortBudgetMs,
+  gatewayMaxCloseMs,
+  gatewayStopBudgetMs,
+  managedServerReapBoundMs,
   runtimeMaxCloseMs,
   supervisorMaxCloseMs,
 } from '@momonga/foundation';
@@ -40,8 +43,9 @@ const stageTermsOf = (arith: ProofArith, drainTimeout: ProofInt): ReadonlyArray<
     ['drain', constant(arith, SHUTDOWN_DRAIN_BOUND_MS)],
     ['runtimeStop', runtimeCloseOf(arith, drainTimeout).add(constant(arith, SHUTDOWN_MARGIN_MS))],
     ['runtimeKilledChildSettle', killedChildSettle],
-    ['gatewayStop', constant(arith, GATEWAY_CLOSE_GRACE_MS).add(constant(arith, fmServeStopBoundMs(FM_STOP_GRACE_MS))).add(constant(arith, SHUTDOWN_MARGIN_MS))],
+    ['gatewayStop', constant(arith, DEFAULT_STOP_VALUES.closeGraceMs).add(constant(arith, fmServeStopBoundMs(DEFAULT_STOP_VALUES.managedServerStopGraceMs))).add(constant(arith, SHUTDOWN_MARGIN_MS))],
     ['gatewayKilledChildSettle', killedChildSettle],
+    ['managedServerReap', constant(arith, managedServerReapBoundMs(DEFAULT_STOP_VALUES))],
     ['reap', constant(arith, SHUTDOWN_REAP_BOUND_MS)],
     ['release', constant(arith, SHUTDOWN_RELEASE_BOUND_MS)],
   ];
@@ -57,9 +61,10 @@ const SUPERVISOR_FIXED_CLOSE_MS =
   RUNTIME_TEARDOWN_BUDGET_MS +
   SHUTDOWN_MARGIN_MS +
   2 * (KILL_CONFIRM_MS + CHILD_STDIO_FLUSH_MS) +
-  GATEWAY_CLOSE_GRACE_MS +
-  fmServeStopBoundMs(FM_STOP_GRACE_MS) +
+  DEFAULT_STOP_VALUES.closeGraceMs +
+  fmServeStopBoundMs(DEFAULT_STOP_VALUES.managedServerStopGraceMs) +
   SHUTDOWN_MARGIN_MS +
+  managedServerReapBoundMs(DEFAULT_STOP_VALUES) +
   SHUTDOWN_REAP_BOUND_MS +
   SHUTDOWN_RELEASE_BOUND_MS;
 
@@ -67,33 +72,33 @@ describe('shutdown and start-up bounds (design-probe-timeout Z3 item 3)', () => 
   const z3 = useZ3();
 
   it('reads the closed forms of the code at sampled drain timeouts, so the proofs below describe the code and not themselves', () => {
-    const fixedTerms = SHUTDOWN_DRAIN_BOUND_MS + SHUTDOWN_MARGIN_MS + 2 * (KILL_CONFIRM_MS + CHILD_STDIO_FLUSH_MS) + GATEWAY_MAX_CLOSE_MS + SHUTDOWN_MARGIN_MS + SHUTDOWN_REAP_BOUND_MS + SHUTDOWN_RELEASE_BOUND_MS;
+    const fixedTerms = SHUTDOWN_DRAIN_BOUND_MS + SHUTDOWN_MARGIN_MS + 2 * (KILL_CONFIRM_MS + CHILD_STDIO_FLUSH_MS) + gatewayMaxCloseMs(DEFAULT_STOP_VALUES) + SHUTDOWN_MARGIN_MS + managedServerReapBoundMs(DEFAULT_STOP_VALUES) + SHUTDOWN_REAP_BOUND_MS + SHUTDOWN_RELEASE_BOUND_MS;
     for (const drainTimeout of SAMPLED_DRAIN_TIMEOUTS_MS) {
       expect(runtimeMaxCloseMs(drainTimeout)).toBe(drainTimeout + RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS);
-      expect(supervisorMaxCloseMs(drainTimeout)).toBe(drainTimeout + RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS + fixedTerms);
+      expect(supervisorMaxCloseMs(drainTimeout, DEFAULT_STOP_VALUES)).toBe(drainTimeout + RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS + fixedTerms);
     }
-    expect(GATEWAY_MAX_CLOSE_MS).toBe(GATEWAY_CLOSE_GRACE_MS + fmServeStopBoundMs(FM_STOP_GRACE_MS));
-    expect(supervisorMaxCloseMs(0)).toBe(SUPERVISOR_FIXED_CLOSE_MS);
-    expect(SUPERVISOR_FIXED_CLOSE_MS).toBe(76_000);
+    expect(gatewayMaxCloseMs(DEFAULT_STOP_VALUES)).toBe(DEFAULT_STOP_VALUES.closeGraceMs + fmServeStopBoundMs(DEFAULT_STOP_VALUES.managedServerStopGraceMs));
+    expect(supervisorMaxCloseMs(0, DEFAULT_STOP_VALUES)).toBe(SUPERVISOR_FIXED_CLOSE_MS);
+    expect(SUPERVISOR_FIXED_CLOSE_MS).toBe(88_000);
   });
 
-  it('S1 proves supervisorMaxCloseMs(d) is the sum of its seven stage terms, each non-negative, and equals d + the fixed close terms, the gateway close grace and the fm stop bound included, for every d >= 0', async () => {
+  it('S1 proves supervisorMaxCloseMs(d, defaults) is the sum of its eight stage terms, each non-negative, and equals d + the fixed close terms, the gateway close grace, the managed-server stop bound and the managed-server reap included, for every d >= 0', async () => {
     const arith = proofArith(z3.engine().api, 'S1');
     const drainTimeout = drainTimeoutOf(arith);
     const terms = stageTermsOf(arith, drainTimeout);
-    expect(terms.map(([name]) => name)).toEqual(['drain', 'runtimeStop', 'runtimeKilledChildSettle', 'gatewayStop', 'gatewayKilledChildSettle', 'reap', 'release']);
+    expect(terms.map(([name]) => name)).toEqual(['drain', 'runtimeStop', 'runtimeKilledChildSettle', 'gatewayStop', 'gatewayKilledChildSettle', 'managedServerReap', 'reap', 'release']);
     const total = sumOf(arith, terms.map(([, term]) => term));
     const { ctx } = arith;
     expect(await prove(arith, ctx.And(...terms.map(([, term]) => term.ge(0))))).toEqual({ status: 'proved' });
     expect(await prove(arith, total.eq(drainTimeout.add(SUPERVISOR_FIXED_CLOSE_MS)))).toEqual({ status: 'proved' });
-    for (const sample of SAMPLED_DRAIN_TIMEOUTS_MS) expect(supervisorMaxCloseMs(sample)).toBe(sample + SUPERVISOR_FIXED_CLOSE_MS);
+    for (const sample of SAMPLED_DRAIN_TIMEOUTS_MS) expect(supervisorMaxCloseMs(sample, DEFAULT_STOP_VALUES)).toBe(sample + SUPERVISOR_FIXED_CLOSE_MS);
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
-  it('S1w refutes a total one fm stop grace short, so the closed form of S1 is not satisfied by a wrong constant', async () => {
+  it('S1w refutes a total one managed-server stop grace short, so the closed form of S1 is not satisfied by a wrong constant', async () => {
     const arith = proofArith(z3.engine().api, 'S1w');
     const drainTimeout = drainTimeoutOf(arith);
     const total = sumOf(arith, stageTermsOf(arith, drainTimeout).map(([, term]) => term));
-    await expectRefuted(arith, total.eq(drainTimeout.add(SUPERVISOR_FIXED_CLOSE_MS - FM_STOP_GRACE_MS)));
+    await expectRefuted(arith, total.eq(drainTimeout.add(SUPERVISOR_FIXED_CLOSE_MS - DEFAULT_STOP_VALUES.managedServerStopGraceMs)));
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('S2 proves phaseOne(d) = runtimeMaxCloseMs(d) = d + abort budget + teardown budget, and that the margin-free reap grace equals abort + teardown, for every d >= 0', async () => {
@@ -134,20 +139,21 @@ describe('shutdown and start-up bounds (design-probe-timeout Z3 item 3)', () => 
 });
 
 const CLOSE_GRACE_MAX_MS = 300_000;
-const FM_STOP_GRACE_MAX_MS = 60_000;
-const FM_WAITS_PER_STOP = 6;
+const STOP_GRACE_MAX_MS = 60_000;
+const MANAGED_WAITS_PER_STOP = 6;
+const MANAGED_REAP_WINDOWS = 4;
 const SUPERVISOR_STAGES_FIXED_MS = SHUTDOWN_DRAIN_BOUND_MS + RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS + SHUTDOWN_MARGIN_MS + 2 * (KILL_CONFIRM_MS + CHILD_STDIO_FLUSH_MS) + SHUTDOWN_MARGIN_MS + SHUTDOWN_REAP_BOUND_MS + SHUTDOWN_RELEASE_BOUND_MS;
 
-type StopValues = { readonly closeGraceMs: ProofInt; readonly fmStopGraceMs: ProofInt };
+type StopValues = { readonly closeGraceMs: ProofInt; readonly managedServerStopGraceMs: ProofInt };
 
 const stopValuesOf = (arith: ProofArith, name: string): StopValues => {
   const closeGraceMs = arith.int(`${name}.closeGraceMs`);
-  const fmStopGraceMs = arith.int(`${name}.fmStopGraceMs`);
-  arith.given(closeGraceMs.ge(0), closeGraceMs.le(CLOSE_GRACE_MAX_MS), fmStopGraceMs.ge(0), fmStopGraceMs.le(FM_STOP_GRACE_MAX_MS));
-  return { closeGraceMs, fmStopGraceMs };
+  const managedServerStopGraceMs = arith.int(`${name}.managedServerStopGraceMs`);
+  arith.given(closeGraceMs.ge(0), closeGraceMs.le(CLOSE_GRACE_MAX_MS), managedServerStopGraceMs.ge(0), managedServerStopGraceMs.le(STOP_GRACE_MAX_MS));
+  return { closeGraceMs, managedServerStopGraceMs };
 };
 
-const gatewayCloseOf = (arith: ProofArith, values: StopValues): ProofInt => values.closeGraceMs.add(constant(arith, FM_WAITS_PER_STOP).mul(values.fmStopGraceMs));
+const gatewayCloseOf = (arith: ProofArith, values: StopValues): ProofInt => values.closeGraceMs.add(constant(arith, MANAGED_WAITS_PER_STOP).mul(values.managedServerStopGraceMs));
 
 const gatewayStopOf = (arith: ProofArith, values: StopValues): ProofInt => gatewayCloseOf(arith, values).add(constant(arith, SHUTDOWN_MARGIN_MS));
 
@@ -159,47 +165,57 @@ const supervisorCloseOf = (arith: ProofArith, drainTimeout: ProofInt, values: St
     killedChildSettle,
     gatewayStopOf(arith, values),
     killedChildSettle,
+    constant(arith, MANAGED_REAP_WINDOWS).mul(values.managedServerStopGraceMs),
     constant(arith, SHUTDOWN_REAP_BOUND_MS),
     constant(arith, SHUTDOWN_RELEASE_BOUND_MS),
   ]);
 };
+
+const gatewayAbortStopOf = (arith: ProofArith, values: StopValues): ProofInt => constant(arith, MANAGED_WAITS_PER_STOP).mul(values.managedServerStopGraceMs).add(constant(arith, SHUTDOWN_MARGIN_MS));
 
 const daemonStopOf = (arith: ProofArith, values: StopValues): ProofInt =>
   supervisorCloseOf(arith, constant(arith, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS), values).add(constant(arith, ENTRY_HARD_EXIT_MARGIN_MS));
 
 const maximalValues = (arith: ProofArith): StopValues => ({
   closeGraceMs: constant(arith, CLOSE_GRACE_MAX_MS),
-  fmStopGraceMs: constant(arith, FM_STOP_GRACE_MAX_MS),
+  managedServerStopGraceMs: constant(arith, STOP_GRACE_MAX_MS),
 });
 
-describe('read-at-stop: the values a stop carries bound every wait of that stop (design-close-grace-settings rev 2)', () => {
+describe('read-at-stop: the values a stop carries bound every wait of that stop (design-close-grace-settings rev 5)', () => {
   const z3 = useZ3();
 
   it('reads the closed forms the arithmetic below uses, from the code, at sampled values', () => {
-    expect(fmServeStopBoundMs(1000)).toBe(FM_WAITS_PER_STOP * 1000);
+    expect(fmServeStopBoundMs(1000)).toBe(MANAGED_WAITS_PER_STOP * 1000);
+    expect(managedServerReapBoundMs({ closeGraceMs: 0, managedServerStopGraceMs: 1000 })).toBe(MANAGED_REAP_WINDOWS * 1000);
+    const sample = { closeGraceMs: 1234, managedServerStopGraceMs: 567 };
+    expect(gatewayStopBudgetMs(sample)).toBe(1234 + MANAGED_WAITS_PER_STOP * 567 + SHUTDOWN_MARGIN_MS);
+    expect(gatewayAbortBudgetMs(sample)).toBe(MANAGED_WAITS_PER_STOP * 567 + SHUTDOWN_MARGIN_MS);
+    expect(supervisorMaxCloseMs(7, sample)).toBe(7 + 1234 + (MANAGED_WAITS_PER_STOP + MANAGED_REAP_WINDOWS) * 567 + SUPERVISOR_STAGES_FIXED_MS);
+    expect(daemonStopBoundMs(sample)).toBe(RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS + 1234 + 10 * 567 + SUPERVISOR_STAGES_FIXED_MS + ENTRY_HARD_EXIT_MARGIN_MS);
+    expect(daemonStopBoundMs({ closeGraceMs: CLOSE_GRACE_MAX_MS, managedServerStopGraceMs: STOP_GRACE_MAX_MS })).toBe(981_000);
     expect(SUPERVISOR_STAGES_FIXED_MS).toBe(48_000);
     expect(fmServeStopBoundMs(0)).toBe(0);
-    expect(FM_STOP_GRACE_MAX_MS).toBe(STARTUP_TIMEOUT_MS);
+    expect(STOP_GRACE_MAX_MS).toBe(STARTUP_TIMEOUT_MS);
     expect(SHUTDOWN_MARGIN_MS + ENTRY_HARD_EXIT_MARGIN_MS).toBe(8000);
   });
 
-  it('RS1 proves that for every allowed pair of values and every drain d >= 0, a stop\'s gateway close covers its close grace and its fm bound, its supervisor close covers its gateway stop budget, and its daemon stop bound covers its supervisor close', async () => {
+  it('RS1 proves that for every allowed pair of values and every drain d >= 0, a stop\'s gateway close covers its close grace and its managed-server stop bound, its supervisor close covers its gateway stop budget, and its daemon stop bound covers its supervisor close', async () => {
     const arith = proofArith(z3.engine().api, 'RS1');
     const values = stopValuesOf(arith, 'stop');
     const drainTimeout = drainTimeoutOf(arith);
     const { ctx } = arith;
     const gatewayClose = gatewayCloseOf(arith, values);
     const supervisorClose = supervisorCloseOf(arith, drainTimeout, values);
-    expect(await prove(arith, gatewayClose.ge(values.closeGraceMs.add(constant(arith, FM_WAITS_PER_STOP).mul(values.fmStopGraceMs))))).toEqual({ status: 'proved' });
+    expect(await prove(arith, gatewayClose.ge(values.closeGraceMs.add(constant(arith, MANAGED_WAITS_PER_STOP).mul(values.managedServerStopGraceMs))))).toEqual({ status: 'proved' });
     expect(await prove(arith, supervisorClose.ge(gatewayStopOf(arith, values)))).toEqual({ status: 'proved' });
     expect(await prove(arith, ctx.Implies(drainTimeout.eq(constant(arith, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS)), daemonStopOf(arith, values).ge(supervisorCloseOf(arith, drainTimeout, values))))).toEqual({ status: 'proved' });
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
-  it('RS2 proves the supervisor close of one stop is d + closeGrace + 6 fmStop + the fixed stages, for every allowed pair of values and every d >= 0', async () => {
+  it('RS2 proves the supervisor close of one stop is d + closeGrace + 10 managedServerStop + the fixed stages, for every allowed pair of values and every d >= 0', async () => {
     const arith = proofArith(z3.engine().api, 'RS2');
     const values = stopValuesOf(arith, 'stop');
     const drainTimeout = drainTimeoutOf(arith);
-    const closed = drainTimeout.add(values.closeGraceMs).add(constant(arith, FM_WAITS_PER_STOP).mul(values.fmStopGraceMs)).add(constant(arith, SUPERVISOR_STAGES_FIXED_MS));
+    const closed = drainTimeout.add(values.closeGraceMs).add(constant(arith, MANAGED_WAITS_PER_STOP + MANAGED_REAP_WINDOWS).mul(values.managedServerStopGraceMs)).add(constant(arith, SUPERVISOR_STAGES_FIXED_MS));
     expect(await prove(arith, supervisorCloseOf(arith, drainTimeout, values).eq(closed))).toEqual({ status: 'proved' });
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
@@ -211,7 +227,7 @@ describe('read-at-stop: the values a stop carries bound every wait of that stop 
     const drainSecond = arith.int('drainSecond');
     arith.given(drainSecond.ge(drainFirst));
     const { ctx } = arith;
-    const ordered = ctx.And(first.closeGraceMs.le(second.closeGraceMs), first.fmStopGraceMs.le(second.fmStopGraceMs));
+    const ordered = ctx.And(first.closeGraceMs.le(second.closeGraceMs), first.managedServerStopGraceMs.le(second.managedServerStopGraceMs));
     expect(await prove(arith, ctx.Implies(ordered, daemonStopOf(arith, first).le(daemonStopOf(arith, second))))).toEqual({ status: 'proved' });
     expect(await prove(arith, ctx.Implies(ctx.And(ordered, drainFirst.le(drainSecond)), supervisorCloseOf(arith, drainFirst, first).le(supervisorCloseOf(arith, drainSecond, second))))).toEqual({ status: 'proved' });
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
@@ -231,7 +247,7 @@ describe('read-at-stop: the values a stop carries bound every wait of that stop 
 
   it('RS5 proves zero values give the fixed part only: the daemon stop bound is 81 000 ms and the supervisor close at drain 0 is 48 000 ms', async () => {
     const arith = proofArith(z3.engine().api, 'RS5');
-    const zero: StopValues = { closeGraceMs: constant(arith, 0), fmStopGraceMs: constant(arith, 0) };
+    const zero: StopValues = { closeGraceMs: constant(arith, 0), managedServerStopGraceMs: constant(arith, 0) };
     const { ctx } = arith;
     expect(await prove(arith, ctx.And(daemonStopOf(arith, zero).eq(constant(arith, 81_000)), supervisorCloseOf(arith, constant(arith, 0), zero).eq(constant(arith, 48_000))))).toEqual({ status: 'proved' });
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
@@ -251,20 +267,31 @@ describe('read-at-stop: the values a stop carries bound every wait of that stop 
     const laterValues = stopValuesOf(arith, 'later');
     const { ctx } = arith;
     expect(await expectRefuted(arith, daemonStopOf(arith, laterValues).ge(daemonStopOf(arith, oldValues)))).toBeDefined();
-    expect(await prove(arith, ctx.Implies(ctx.And(oldValues.closeGraceMs.eq(laterValues.closeGraceMs), oldValues.fmStopGraceMs.eq(laterValues.fmStopGraceMs)), daemonStopOf(arith, laterValues).eq(daemonStopOf(arith, oldValues))))).toEqual({ status: 'proved' });
+    expect(await prove(arith, ctx.Implies(ctx.And(oldValues.closeGraceMs.eq(laterValues.closeGraceMs), oldValues.managedServerStopGraceMs.eq(laterValues.managedServerStopGraceMs)), daemonStopOf(arith, laterValues).eq(daemonStopOf(arith, oldValues))))).toEqual({ status: 'proved' });
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
-  it('RS8 refutes M3: a gateway close that ignores its stop\'s fm value (uses the default 3 000 ms) does not cover its close grace plus its fm bound', async () => {
+  it('RS8 refutes M3: a gateway close that ignores its stop\'s managed-server value (uses the default 3 000 ms) does not cover its close grace plus its managed-server stop bound', async () => {
     const arith = proofArith(z3.engine().api, 'RS8');
     const values = stopValuesOf(arith, 'stop');
-    const fixedFm = constant(arith, FM_WAITS_PER_STOP).mul(constant(arith, 3000));
-    expect(await expectRefuted(arith, values.closeGraceMs.add(fixedFm).ge(values.closeGraceMs.add(constant(arith, FM_WAITS_PER_STOP).mul(values.fmStopGraceMs))))).toBeDefined();
+    const fixedManaged = constant(arith, MANAGED_WAITS_PER_STOP).mul(constant(arith, 3000));
+    expect(await expectRefuted(arith, values.closeGraceMs.add(fixedManaged).ge(values.closeGraceMs.add(constant(arith, MANAGED_WAITS_PER_STOP).mul(values.managedServerStopGraceMs))))).toBeDefined();
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('RS9 refutes M4: a daemon stop bound that drops the gateway close does not cover the daemon close', async () => {
     const arith = proofArith(z3.engine().api, 'RS9');
     const values = stopValuesOf(arith, 'stop');
-    const withoutGateway = supervisorCloseOf(arith, constant(arith, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS), { closeGraceMs: constant(arith, 0), fmStopGraceMs: constant(arith, 0) }).add(constant(arith, ENTRY_HARD_EXIT_MARGIN_MS));
+    const withoutGateway = supervisorCloseOf(arith, constant(arith, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS), { closeGraceMs: constant(arith, 0), managedServerStopGraceMs: constant(arith, 0) }).add(constant(arith, ENTRY_HARD_EXIT_MARGIN_MS));
     expect(await expectRefuted(arith, withoutGateway.ge(daemonStopOf(arith, values)))).toBeDefined();
+  }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
+
+  it('RS10 proves the abort budget of a gateway never exceeds its term budget, so a switch to abort never lengthens the supervisor close, and that the supervisor close covers the managed-server reap of its stop', async () => {
+    const arith = proofArith(z3.engine().api, 'RS10');
+    const values = stopValuesOf(arith, 'stop');
+    const drainTimeout = drainTimeoutOf(arith);
+    const { ctx } = arith;
+    expect(await prove(arith, ctx.And(
+      gatewayAbortStopOf(arith, values).le(gatewayStopOf(arith, values)),
+      supervisorCloseOf(arith, drainTimeout, values).ge(gatewayStopOf(arith, values).add(constant(arith, MANAGED_REAP_WINDOWS).mul(values.managedServerStopGraceMs))),
+    ))).toEqual({ status: 'proved' });
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 });

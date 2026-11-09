@@ -4,7 +4,10 @@ import net from 'node:net';
 import { describe, expect, it, vi } from 'vitest';
 import {
   ENTRY_HARD_EXIT_MARGIN_MS,
-  GATEWAY_MAX_CLOSE_MS,
+  DEFAULT_STOP_VALUES,
+  gatewayAbortBudgetMs,
+  gatewayMaxCloseMs,
+  gatewayStopBudgetMs,
   RUNTIME_ABORT_BUDGET_MS,
   RUNTIME_TEARDOWN_BUDGET_MS,
   SHUTDOWN_MARGIN_MS,
@@ -15,7 +18,7 @@ import {
 import type { ReapMarkerDirectoryOptions } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, registerCleanup, spawnTracked, waitFor } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
-import { GATEWAY_ABORT_BUDGET_MS, KILL_CONFIRM_MS, SHUTDOWN_REAP_BOUND_MS, SHUTDOWN_RELEASE_BOUND_MS, STDIO_FLUSH_MS } from '../src/constants.ts';
+import { KILL_CONFIRM_MS, SHUTDOWN_REAP_BOUND_MS, SHUTDOWN_RELEASE_BOUND_MS, STDIO_FLUSH_MS } from '../src/constants.ts';
 import { childCloseBudgetMs } from '../src/shutdown.ts';
 import type { SupervisorCloseResult } from '../src/start-supervisor.ts';
 import {
@@ -36,7 +39,8 @@ import type { Harness, HarnessOptions } from './fixtures/p3-harness.ts';
 
 const DEFAULT_DRAIN = 30_000;
 const RUNTIME_TERM_BOUND = runtimeMaxCloseMs(DEFAULT_DRAIN) + SHUTDOWN_MARGIN_MS;
-const GATEWAY_TERM_BOUND = GATEWAY_MAX_CLOSE_MS + SHUTDOWN_MARGIN_MS;
+const GATEWAY_TERM_BOUND = gatewayStopBudgetMs(DEFAULT_STOP_VALUES);
+const GATEWAY_INT_BOUND = gatewayAbortBudgetMs(DEFAULT_STOP_VALUES);
 const RUNTIME_INT_BOUND = RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS + SHUTDOWN_MARGIN_MS;
 
 const running = async (context: CleanupContext, options: HarnessOptions = {}): Promise<Harness> => {
@@ -56,11 +60,11 @@ const finish = async (h: Harness, promise: Promise<SupervisorCloseResult>, maxMs
 
 describe('childCloseBudgetMs', () => {
   it('uses the foundation budgets', () => {
-    expect(childCloseBudgetMs('runtime', 'term', 0)).toBe(runtimeMaxCloseMs(0) + SHUTDOWN_MARGIN_MS);
-    expect(childCloseBudgetMs('runtime', 'term', DEFAULT_DRAIN)).toBe(RUNTIME_TERM_BOUND);
-    expect(childCloseBudgetMs('gateway', 'term', DEFAULT_DRAIN)).toBe(GATEWAY_TERM_BOUND);
-    expect(childCloseBudgetMs('runtime', 'int', DEFAULT_DRAIN)).toBe(RUNTIME_INT_BOUND);
-    expect(childCloseBudgetMs('gateway', 'int', DEFAULT_DRAIN)).toBe(GATEWAY_ABORT_BUDGET_MS);
+    expect(childCloseBudgetMs('runtime', 'term', 0, DEFAULT_STOP_VALUES)).toBe(runtimeMaxCloseMs(0) + SHUTDOWN_MARGIN_MS);
+    expect(childCloseBudgetMs('runtime', 'term', DEFAULT_DRAIN, DEFAULT_STOP_VALUES)).toBe(RUNTIME_TERM_BOUND);
+    expect(childCloseBudgetMs('gateway', 'term', DEFAULT_DRAIN, DEFAULT_STOP_VALUES)).toBe(GATEWAY_TERM_BOUND);
+    expect(childCloseBudgetMs('runtime', 'int', DEFAULT_DRAIN, DEFAULT_STOP_VALUES)).toBe(RUNTIME_INT_BOUND);
+    expect(childCloseBudgetMs('gateway', 'int', DEFAULT_DRAIN, DEFAULT_STOP_VALUES)).toBe(23_000);
   });
 });
 
@@ -121,9 +125,9 @@ describe('shutdown order and bounds', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS },
     await waitFor(() => h.fake.latest('runtime').signals.length === 1 && h.fake.latest('gateway').signals.length === 1);
     expect(h.fake.latest('runtime').signals).toEqual(['SIGINT']);
     expect(h.fake.latest('gateway').signals).toEqual(['SIGINT']);
-    await pumpUntil(h.timers, () => h.fake.latest('gateway').groupKills > 0, { realWork: h.realWork, maxMs: GATEWAY_ABORT_BUDGET_MS + 1000 });
-    expect(h.clock.now() - start).toBeGreaterThanOrEqual(GATEWAY_ABORT_BUDGET_MS);
-    expect(h.clock.now() - start).toBeLessThanOrEqual(GATEWAY_ABORT_BUDGET_MS + 50);
+    await pumpUntil(h.timers, () => h.fake.latest('gateway').groupKills > 0, { realWork: h.realWork, maxMs: GATEWAY_INT_BOUND + 1000 });
+    expect(h.clock.now() - start).toBeGreaterThanOrEqual(GATEWAY_INT_BOUND);
+    expect(h.clock.now() - start).toBeLessThanOrEqual(GATEWAY_INT_BOUND + 50);
     expect(h.fake.latest('runtime').groupKills).toBe(0);
     await pumpUntil(h.timers, () => h.fake.latest('runtime').groupKills > 0, { realWork: h.realWork, maxMs: RUNTIME_INT_BOUND });
     expect(h.clock.now() - start).toBeGreaterThanOrEqual(RUNTIME_INT_BOUND);
@@ -448,12 +452,12 @@ describe('shutdown and marker reaps', () => {
     });
     for (const role of ['runtime', 'gateway'] as const) h.fake.setBehaviour(role, { onTerm: 'ignore', holdPipes: true });
     const start = h.clock.now();
-    const result = await finish(h, h.supervisor.close(), supervisorMaxCloseMs(drain) + 10_000);
+    const result = await finish(h, h.supervisor.close(), supervisorMaxCloseMs(drain, DEFAULT_STOP_VALUES) + 10_000);
     const elapsed = h.clock.now() - start;
-    const floor = runtimeMaxCloseMs(drain) + SHUTDOWN_MARGIN_MS + GATEWAY_MAX_CLOSE_MS + SHUTDOWN_MARGIN_MS + 2 * STDIO_FLUSH_MS + SHUTDOWN_REAP_BOUND_MS;
+    const floor = runtimeMaxCloseMs(drain) + SHUTDOWN_MARGIN_MS + gatewayMaxCloseMs(DEFAULT_STOP_VALUES) + SHUTDOWN_MARGIN_MS + 2 * STDIO_FLUSH_MS + SHUTDOWN_REAP_BOUND_MS;
     expect(elapsed).toBeGreaterThanOrEqual(floor);
-    expect(elapsed).toBeLessThanOrEqual(supervisorMaxCloseMs(drain));
-    expect(elapsed).toBeLessThan(supervisorMaxCloseMs(drain) + ENTRY_HARD_EXIT_MARGIN_MS);
+    expect(elapsed).toBeLessThanOrEqual(supervisorMaxCloseMs(drain, DEFAULT_STOP_VALUES));
+    expect(elapsed).toBeLessThan(supervisorMaxCloseMs(drain, DEFAULT_STOP_VALUES) + ENTRY_HARD_EXIT_MARGIN_MS);
     expect(result.clean).toBe(false);
     expect([...result.killed].sort()).toEqual(['gateway', 'runtime']);
     expect(result.leaked).toEqual([]);

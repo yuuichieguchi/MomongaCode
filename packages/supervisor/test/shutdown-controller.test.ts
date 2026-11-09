@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createFakeClock, createFakeTimers, driveFakeTime, waitFor } from '@momonga/testkit';
 import type { ChildManager } from '../src/child-manager.ts';
-import { SHUTDOWN_DRAIN_BOUND_MS, killedChildSettleMs, supervisorMaxCloseMs } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, SHUTDOWN_DRAIN_BOUND_MS, killedChildSettleMs, supervisorMaxCloseMs } from '@momonga/foundation';
 import { stopBudgetMs } from '../src/child-manager.ts';
 import { SHUTDOWN_REAP_BOUND_MS, SHUTDOWN_RELEASE_BOUND_MS } from '../src/constants.ts';
 import type { ChildRole } from '../src/launcher.ts';
@@ -145,7 +145,7 @@ describe('shutdown step 1 bound and the sum of every wait', () => {
       ...fakeManager(role, [`/markers/${role}-x`], new Map([[`/markers/${role}-x`, new Promise(() => undefined)]])),
       stop: () =>
         new Promise((resolve) => {
-          timers.setTimeout(() => resolve({ killed: true, leaked: false }), stopBudgetMs(role, 'term', 0) + killedChildSettleMs());
+          timers.setTimeout(() => resolve({ killed: true, leaked: false }), stopBudgetMs(role, 'term', 0, DEFAULT_STOP_VALUES) + killedChildSettleMs());
         }),
     });
     const controller = createShutdownController({
@@ -154,7 +154,7 @@ describe('shutdown step 1 bound and the sum of every wait', () => {
       drainTimeoutMs: 0,
       timers,
       logger: log.logger,
-      markerPorts: { reapMarkedProcesses: () => new Promise(() => undefined) },
+      markerPorts: { reapMarkedProcesses: () => new Promise(() => undefined), reapMarkerDirectory: () => new Promise(() => undefined) },
       beginDraining: () => undefined,
       awaitBackground: () => new Promise(() => undefined),
       closeControl: () => new Promise(() => undefined),
@@ -162,7 +162,7 @@ describe('shutdown step 1 bound and the sum of every wait', () => {
       onFatal: () => undefined,
     });
     const result = settledResult(controller.close());
-    const limit = supervisorMaxCloseMs(0);
+    const limit = supervisorMaxCloseMs(0, DEFAULT_STOP_VALUES);
     await driveFakeTime(timers, { done: () => result() !== undefined, horizonAt: limit, description: 'close to settle' });
     expect(result()).toBeDefined();
     expect(clock.now()).toBe(limit);

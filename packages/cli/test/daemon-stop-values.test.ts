@@ -57,7 +57,7 @@ describe('daemon stop carries the values it read', () => {
     const timeout = await timeoutOf(stopping);
     await edited;
     expect(supervisor.shutdownBodies.map((body) => JSON.parse(body) as unknown)).toEqual([{ closeGraceMs: 2000, managedServerStopGraceMs: 500 }]);
-    expect(timeout.boundMs).toBe(30_000 + 2000 + 6 * 500 + 48_000 + 3000);
+    expect(timeout.boundMs).toBe(30_000 + 2000 + 10 * 500 + 48_000 + 3000);
   });
 
   it('posts the defaults when the user settings set nothing', async (context) => {
@@ -65,7 +65,7 @@ describe('daemon stop carries the values it read', () => {
     const supervisor = await start({ version: VERSION, keepsLock: true });
     const timeout = await timeoutOf(stopDaemon(ports, paths));
     expect(supervisor.shutdownBodies.map((body) => JSON.parse(body) as unknown)).toEqual([{ closeGraceMs: 10_000, managedServerStopGraceMs: 3000 }]);
-    expect(timeout.boundMs).toBe(109_000);
+    expect(timeout.boundMs).toBe(121_000);
   });
 
   it('waits on a stop it did not begin for the bound the draining supervisor reports', async (context) => {
@@ -86,8 +86,8 @@ describe('daemon stop carries the values it read', () => {
     const { paths, ports, start } = await setup(context);
     await start({ version: VERSION, phase: 'draining' });
     const timeout = await timeoutOf(stopDaemon(ports, paths));
-    expect(STOP_WAIT_WHEN_UNKNOWN_MS).toBe(741_000);
-    expect(timeout.boundMs).toBe(741_000);
+    expect(STOP_WAIT_WHEN_UNKNOWN_MS).toBe(981_000);
+    expect(timeout.boundMs).toBe(981_000);
   });
 });
 
@@ -110,6 +110,6 @@ describe('the wait over several generations', () => {
   });
 
   it('counts a generation that reports no bound at the allowed maxima', () => {
-    expect(stopWaitBoundMs([healthReporting(90_000), healthReporting(undefined)])).toBe(741_000);
+    expect(stopWaitBoundMs([healthReporting(90_000), healthReporting(undefined)])).toBe(981_000);
   });
 });
