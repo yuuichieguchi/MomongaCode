@@ -9,13 +9,14 @@ import { PROCESS_VERSION, baseEnv, clientFor, launchGateway, makeHome, writeSett
 
 const DECLARED = { toolCalling: 'native', capabilities: { contextWindow: 4096, maxOutputTokens: 512 } };
 const FITTING_TARGET = 'fm';
+const FIRST_INCARNATION_SUFFIX = '-1';
 
 const instanceSockets = (home: string): string => path.join(momongaPaths(home, process.platform, {}).run, `g${FIRST_GENERATION}`, 'targets');
 
 const instanceMarkers = (home: string, target: string): string => path.join(momongaPaths(home, process.platform, {}).markers.root, `g${FIRST_GENERATION}`, 'targets', target);
 
 const targetNameWhoseSocketIs = (home: string, byteLength: number): string => {
-  const prefix = Buffer.byteLength(path.join(instanceSockets(home), 'x.sock')) - 1;
+  const prefix = Buffer.byteLength(path.join(instanceSockets(home), `x${FIRST_INCARNATION_SUFFIX}.sock`)) - 1;
   return `t${'n'.repeat(byteLength - prefix - 1)}`;
 };
 
@@ -28,7 +29,7 @@ describe.skipIf(process.platform === 'win32')('an instance socket path that does
     const home = makeHome();
     const limit = socketPathLimit(process.platform);
     const longTarget = targetNameWhoseSocketIs(home, limit + 1);
-    const longSocket = path.join(instanceSockets(home), `${longTarget}.sock`);
+    const longSocket = path.join(instanceSockets(home), `${longTarget}${FIRST_INCARNATION_SUFFIX}.sock`);
     expect(Buffer.byteLength(longSocket)).toBe(limit + 1);
     writeSettings(home, {
       models: {
@@ -48,7 +49,7 @@ describe.skipIf(process.platform === 'win32')('an instance socket path that does
     expect(refused.body.error.code).toBe(TARGET_NOT_READY);
     expect(refused.body.error.message).toBe(unfitText(longTarget, limit + 1, limit));
     expect(fs.existsSync(longSocket)).toBe(false);
-    expect(fs.existsSync(instanceMarkers(home, longTarget))).toBe(false);
+    expect(fs.existsSync(instanceMarkers(home, `${longTarget}${FIRST_INCARNATION_SUFFIX}`))).toBe(false);
 
     const served = await readJson(await postJson(client, '/v1/responses', { model: 'default', input: userInput('hello') }));
     expect(served.status).toBe(200);

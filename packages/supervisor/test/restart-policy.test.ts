@@ -25,7 +25,6 @@ describe('classifyExit', () => {
   it('classifyExit table', () => {
     const stopRows: [StopReason, ExitClassification][] = [
       ['shutdown', { class: 'requested', reason: 'requested' }],
-      ['plan-restart', { class: 'plan-stopped', reason: 'requested' }],
       ['startup-timeout', { class: 'failure', reason: 'startup-timeout' }],
       ['ready-mismatch', { class: 'failure', reason: 'protocol-violation' }],
     ];
@@ -62,14 +61,6 @@ describe('decideAfterExit', () => {
       const classified = classifyExit({ ...exit, stop: 'shutdown' });
       expect(classified.class).toBe('requested');
       expect(decide(classified)).toEqual({ next: 'stopped' });
-    }
-  });
-
-  it('plan stop never yields backoff', () => {
-    for (const exit of ANY_EXITS) {
-      const classified = classifyExit({ ...exit, stop: 'plan-restart' });
-      expect(classified.class).toBe('plan-stopped');
-      for (const failures of [0, 3, 50]) expect(decide(classified, failures)).toEqual({ next: 'plan-stopped' });
     }
   });
 
@@ -151,9 +142,8 @@ describe('backoff', () => {
 });
 
 describe('stop reason rank', () => {
-  it('shutdown outranks plan-restart, which outranks the startup reasons', () => {
-    expect(stopReasonRank('shutdown')).toBe(3);
-    expect(stopReasonRank('plan-restart')).toBe(2);
+  it('shutdown outranks the startup reasons', () => {
+    expect(stopReasonRank('shutdown')).toBe(2);
     expect(stopReasonRank('startup-timeout')).toBe(1);
     expect(stopReasonRank('ready-mismatch')).toBe(1);
   });

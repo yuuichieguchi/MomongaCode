@@ -37,7 +37,7 @@ const settle = async (h: Watched): Promise<void> => {
 describe('S7: the supervisor writes the applied record (design-settings-live 15.1)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
   it('writes the settings at its start, before any child is spawned, and hands every child the record path', async (context) => {
     const h = await watched(context);
-    expect(readRecord(h.home)).toEqual(validSettings({ model: 'gpt-a' }));
+    expect(readRecord(h.home)).toEqual({ seq: 1, settings: validSettings({ model: 'gpt-a' }) });
     for (const role of ['gateway', 'runtime'] as const) expect(h.fake.latest(role).options.env?.[RECORD_ENV]).toBe(recordPath(h.home));
   });
 
@@ -45,7 +45,7 @@ describe('S7: the supervisor writes the applied record (design-settings-live 15.
     const h = await watched(context);
     writeSettings(h.home, validSettings({ model: 'gpt-bb' }));
     await settle(h);
-    expect(readRecord(h.home)).toEqual(validSettings({ model: 'gpt-bb' }));
+    expect(readRecord(h.home)).toEqual({ seq: 2, settings: validSettings({ model: 'gpt-bb' }) });
   });
 
   it('keeps the record on an invalid change', async (context) => {
@@ -54,7 +54,7 @@ describe('S7: the supervisor writes the applied record (design-settings-live 15.
     await settle(h);
     writeSettingsText(h.home, INVALID_SETTINGS_TEXT);
     await settle(h);
-    expect(readRecord(h.home)).toEqual(validSettings({ model: 'gpt-bb' }));
+    expect(readRecord(h.home)).toEqual({ seq: 2, settings: validSettings({ model: 'gpt-bb' }) });
   });
 
   it('the record seq starts at 1 and rises only when the recorded content changes', async (context) => {

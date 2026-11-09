@@ -121,7 +121,7 @@ describe('S1 managed targets under a settings change (design-settings-live 3.1)'
         firstSettled = true;
       });
       await waitFor(() => serves(dumpFile).length === 1, { description: 'the first incarnation to start' });
-      fm.configure({ envDumpFile: dumpFile });
+      fm.configure({ envDumpFile: dumpFile, serve: {} });
       replaceSettings(home, settingsWith(256));
       let secondStatus = 0;
       void statusOf(postJson(clientFor(handle.socketPath), '/v1/responses', ask('default'))).then((status) => {

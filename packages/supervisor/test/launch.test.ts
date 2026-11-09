@@ -19,16 +19,14 @@ const fakeManager = (role: ChildRole, calls: string[], snapshots: UserSettingsSn
     role,
     state: () => health.state,
     health: () => health,
-    isPlanStopped: () => false,
-    appliedDigests: () => undefined,
     spawnWith: (snapshot: UserSettingsSnapshot, reason: SpawnReason) => {
       calls.push(`spawnWith:${role}:${reason}`);
       snapshots.push(snapshot);
     },
     spawnFresh: (reason) => void calls.push(`spawnFresh:${role}:${reason}`),
     failWithoutProcess: (reason) => void calls.push(`failWithoutProcess:${role}:${reason}`),
-    planStart: () => void calls.push(`planStart:${role}`),
     retryHeld: () => void calls.push(`retryHeld:${role}`),
+    holdsCapability: () => false,
     stop: async () => ({ killed: false, leaked: false }),
     enterDraining: () => void calls.push(`enterDraining:${role}`),
     unreapedMarkers: () => [],

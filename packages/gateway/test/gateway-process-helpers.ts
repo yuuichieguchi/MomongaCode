@@ -31,8 +31,8 @@ export const homePaths = (home: string) => {
     settings: path.join(root, 'settings.json'),
     socket: own.sockets.gateway,
     lock: own.locks.gateway,
-    fmSocket: path.join(root, 'run', `g${FIRST_GENERATION}`, 'targets', 'fm.sock'),
-    fmMarkers: path.join(root, 'run', 'markers', `g${FIRST_GENERATION}`, 'targets', 'fm'),
+    fmSocket: path.join(root, 'run', `g${FIRST_GENERATION}`, 'targets', 'fm-1.sock'),
+    fmMarkers: path.join(root, 'run', 'markers', `g${FIRST_GENERATION}`, 'targets', 'fm-1'),
     db: path.join(root, 'state', 'gateway.db'),
     key: path.join(root, 'state', 'gateway.key'),
   };

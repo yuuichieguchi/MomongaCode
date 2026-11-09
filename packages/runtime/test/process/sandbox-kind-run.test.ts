@@ -18,13 +18,13 @@ describe('sandbox kind through startRuntimeProcess (system timers, in-process ga
     expect(approvals).toHaveLength(1);
   });
 
-  it('changing the setting at runtime does not change the kind or the Health value', PROCESS_TIMEOUT, async () => {
+  it.runIf(process.platform === 'darwin')('a sandbox change applies in place: the Health value shows the kind the next batch takes, with no restart', PROCESS_TIMEOUT, async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);
+    expect((await launched.http('GET', '/v1/health')).json).toMatchObject({ sandbox: 'none' });
     stack.settings({ sandbox: 'seatbelt' });
     const session = await launched.createSession();
     expect(session.id).toEqual(expect.any(String));
-    expect((await launched.http('GET', '/v1/health')).json).toMatchObject({ sandbox: 'none' });
-    expect(launched.handle.sandbox).toBe('none');
+    expect((await launched.http('GET', '/v1/health')).json).toMatchObject({ status: 'ok', sandbox: 'seatbelt', state: 'running' });
   });
 });

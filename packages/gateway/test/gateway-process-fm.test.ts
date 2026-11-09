@@ -102,7 +102,7 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
     }
   });
 
-  it('runs fm serve as the leader of its own process group and marks it under the gateway generation markers, markers/g1/targets/fm (18.2.1)', async () => {
+  it('runs fm serve as the leader of its own process group and marks it under the gateway generation markers, markers/g1/targets/fm-1 (18.2.1)', async () => {
     const { fm, dumpFile, home } = await fakeFmSetup();
     reapServeGroups(dumpFile);
     declareNativeFm(home, fm.binaryPath);
@@ -120,7 +120,7 @@ describe('managed fm under startGatewayProcess', { timeout: DAEMON_PROCESS_TEST_
     expect(fs.readdirSync(markers)).toEqual([]);
   });
 
-  it('reaps a stale fm group left behind by a killed gateway before claiming run/g1/targets/fm.sock (18.2.1, 18.2.3)', async () => {
+  it('reaps a stale fm group left behind by a killed gateway before claiming run/g1/targets/fm-1.sock (18.2.1, 18.2.3)', async () => {
     const { fm, dumpFile, home } = await fakeFmSetup();
     reapServeGroups(dumpFile);
     declareNativeFm(home, fm.binaryPath);

@@ -181,14 +181,17 @@ describe('shutdown order and bounds', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS },
     expect(h.fake.spawnCount('runtime')).toBe(1);
   });
 
-  it('a plan stop followed by close() sends one SIGTERM', async (context) => {
+  it('a settings change signals no child, and the close() after it sends one SIGTERM', async (context) => {
     const watch = fakeSettingsWatch();
     const h = await running(context, { overrides: { watchSettings: true, settingsWatch: watch.watch } });
     await pump200(h);
     h.fake.setBehaviour('runtime', { onTerm: 'ignore' });
     writeSettings(h.home, validSettings({ model: 'gpt-changed' }));
     watch.fire();
-    await pumpUntil(h.timers, () => h.fake.latest('runtime').signals.length === 1, { realWork: h.realWork, maxMs: 10_000 });
+    await pumpUntil(h.timers, () => h.log.withMsg('settings.changed').length === 1, { realWork: h.realWork, maxMs: 10_000 });
+    await pump200(h);
+    expect(h.fake.latest('runtime').signals).toEqual([]);
+    expect(h.fake.latest('gateway').signals).toEqual([]);
     const closing = h.supervisor.close();
     await quiesce(h.realWork);
     expect(h.fake.latest('runtime').signals).toEqual(['SIGTERM']);
@@ -527,15 +530,16 @@ describe('shutdown and marker reaps', () => {
   });
 });
 
-describe('shutdown and coordinated restarts', () => {
-  it('shutdown during a plan never spawns', async (context) => {
+describe('shutdown and settings changes', () => {
+  it('shutdown after a settings change never spawns: the change applies in place', async (context) => {
     const watch = fakeSettingsWatch();
     const h = await running(context, { overrides: { watchSettings: true, settingsWatch: watch.watch } });
     await pump200(h);
-    h.fake.setBehaviour('gateway', { autoReady: false });
     writeSettings(h.home, validSettings({ model: 'gpt-changed' }));
     watch.fire();
-    await pumpUntil(h.timers, () => h.fake.spawnCount('gateway') === 2, { realWork: h.realWork, maxMs: 20_000 });
+    await pumpUntil(h.timers, () => h.log.withMsg('settings.changed').length === 1, { realWork: h.realWork, maxMs: 20_000 });
+    await pump200(h);
+    expect(h.fake.spawnCount('gateway')).toBe(1);
     expect(h.fake.spawnCount('runtime')).toBe(1);
     const spawnsAtClose = h.fake.spawnCount();
     await finish(h, h.supervisor.close());

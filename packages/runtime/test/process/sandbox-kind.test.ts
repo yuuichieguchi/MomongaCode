@@ -40,12 +40,17 @@ describe('sandbox kind (system timers, none used)', () => {
     expect(outcome.suggestedRule).toBeUndefined();
   });
 
-  it('ToolRuntimePort.sandbox is the instance given', async () => {
+  it('a lease of ToolRuntimePort.sandboxes holds the instance given', async () => {
     const sandbox = createUnsandboxed();
     const f = await makeRuntimeFixture({ sandbox });
 
-    expect(f.toolRuntime.port.sandbox).toBe(sandbox);
-    expect(f.toolRuntime.port.sandbox.kind).toBe('none');
+    const lease = await f.toolRuntime.port.sandboxes.acquire(signalNever());
+    try {
+      expect(lease.value.sandbox).toBe(sandbox);
+      expect(lease.value.sandbox.kind).toBe('none');
+    } finally {
+      lease.release();
+    }
   });
 
   it('the executor reaps with the composition ReapTiming', PROCESS_TIMEOUT, async () => {

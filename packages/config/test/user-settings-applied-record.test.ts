@@ -29,11 +29,11 @@ const makeHome = () => {
     fs.writeFileSync(temporary, `${text}${' '.repeat(writes)}`, { mode: 0o600 });
     fs.renameSync(temporary, path.join(root, 'settings.json'));
   };
-  const recordFor = (generation: number, value: unknown): string => {
+  const recordFor = (generation: number, seq: number, settings: unknown): string => {
     const dir = path.join(root, 'run', `g${generation}`);
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     const file = path.join(dir, 'settings-applied.json');
-    fs.writeFileSync(file, JSON.stringify(value), { mode: 0o600 });
+    fs.writeFileSync(file, JSON.stringify({ seq, settings }), { mode: 0o600 });
     return file;
   };
   return { home, write, recordFor, recordPathOf: (generation: number) => path.join(root, 'run', `g${generation}`, 'settings-applied.json') };
@@ -48,17 +48,17 @@ describe('S7: the settings cache reads the applied record only on an invalid fil
   it('a valid file is used directly even when the record holds other content', () => {
     const tree = makeHome();
     tree.write(JSON.stringify(settingsWithModel('from-file')));
-    const cache = cacheOf(tree.home, tree.recordFor(1, settingsWithModel('from-record')));
+    const cache = cacheOf(tree.home, tree.recordFor(1, 1, settingsWithModel('from-record')));
     expect(modelOf(cache)).toBe('from-file');
   });
 
   it('an invalid file with a record path given takes the record, even when this process never read that content', () => {
     const tree = makeHome();
     tree.write(JSON.stringify(settingsWithModel('a')));
-    const cache = cacheOf(tree.home, tree.recordFor(1, settingsWithModel('a')));
+    const cache = cacheOf(tree.home, tree.recordFor(1, 1, settingsWithModel('a')));
     expect(modelOf(cache)).toBe('a');
     tree.write(JSON.stringify(settingsWithModel('b')));
-    tree.recordFor(1, settingsWithModel('b'));
+    tree.recordFor(1, 2, settingsWithModel('b'));
     tree.write('{ "models": ');
     expect(modelOf(cache)).toBe('b');
   });
@@ -66,7 +66,7 @@ describe('S7: the settings cache reads the applied record only on an invalid fil
   it('with no record path the cache keeps its own last read content', () => {
     const tree = makeHome();
     tree.write(JSON.stringify(settingsWithModel('a')));
-    tree.recordFor(1, settingsWithModel('b'));
+    tree.recordFor(1, 2, settingsWithModel('b'));
     const cache = cacheOf(tree.home);
     expect(modelOf(cache)).toBe('a');
     tree.write('{ "models": ');
@@ -76,10 +76,10 @@ describe('S7: the settings cache reads the applied record only on an invalid fil
   it('never reads the record of another generation', () => {
     const tree = makeHome();
     tree.write(JSON.stringify(settingsWithModel('a')));
-    tree.recordFor(1, settingsWithModel('from-old-generation'));
+    tree.recordFor(1, 5, settingsWithModel('from-old-generation'));
     const cache = cacheOf(tree.home, tree.recordPathOf(2));
     expect(modelOf(cache)).toBe('a');
-    tree.recordFor(2, settingsWithModel('b'));
+    tree.recordFor(2, 1, settingsWithModel('b'));
     tree.write('{ "models": ');
     expect(modelOf(cache)).toBe('b');
   });

@@ -40,7 +40,7 @@ const launch = (home: string, extra: Record<string, unknown> = {}) =>
   launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, ...extra } as GatewayProcessOptions);
 
 describe('each managed target has its own serving instance, named by the target (design-managed-servers section 17, item 19; test T1)', { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS }, () => {
-  it('runs two servers for two targets of server "fm", on run/g<N>/targets/<target>.sock with markers under markers/g<N>/targets/<target> (rule 18.2.1)', async () => {
+  it('runs two servers for two targets of server "fm", on run/g<N>/targets/<target>-<k>.sock with markers under markers/g<N>/targets/<target>-<k> (rule 18.2.1, design-settings-live 3.1)', async () => {
     const fm = await createFakeFm({ dir: makeDir() });
     const dumpFile = path.join(path.dirname(fm.binaryPath), 'argv.jsonl');
     fm.configure({ envDumpFile: dumpFile });
@@ -61,9 +61,9 @@ describe('each managed target has its own serving instance, named by the target 
     expect((await readJson(await postJson(client, '/v1/responses', ask('second')))).status).toBe(200);
     const serves = launched(dumpFile, 'serve');
     const places = generationTargets(home);
-    expect(serves.map(socketOf).sort()).toEqual([path.join(places.sockets, 'apple.sock'), path.join(places.sockets, 'banana.sock')]);
-    expect(fs.readdirSync(path.join(places.markers, 'apple'))).toHaveLength(1);
-    expect(fs.readdirSync(path.join(places.markers, 'banana'))).toHaveLength(1);
+    expect(serves.map(socketOf).sort()).toEqual([path.join(places.sockets, 'apple-1.sock'), path.join(places.sockets, 'banana-1.sock')]);
+    expect(fs.readdirSync(path.join(places.markers, 'apple-1'))).toHaveLength(1);
+    expect(fs.readdirSync(path.join(places.markers, 'banana-1'))).toHaveLength(1);
     expect(fs.existsSync(path.join(places.markers, 'fm'))).toBe(false);
     expect(fs.existsSync(momongaPaths(home, process.platform, {}).markers.targets)).toBe(false);
     expect(fs.existsSync(path.join(momongaPaths(home, process.platform, {}).run, 'managed-locks'))).toBe(false);
@@ -82,15 +82,15 @@ describe('a second kind of server runs through the registration port with no bra
     return { home, dumpFile, handle, client: clientFor(handle.socketPath) };
   };
 
-  it('answers a request through the fake server, launched as "run --socket run/g<N>/targets/workbench.sock", and stops it at close', async () => {
+  it('answers a request through the fake server, launched as "run --socket run/g<N>/targets/workbench-1.sock", and stops it at close', async () => {
     const { home, dumpFile, handle, client } = await setup(true);
     expect((await readJson(await postJson(client, '/v1/responses', ask('default')))).status).toBe(200);
     const runs = launched(dumpFile, 'run');
     expect(runs).toHaveLength(1);
-    expect(socketOf(runs[0] as DumpRecord)).toBe(path.join(generationTargets(home).sockets, 'workbench.sock'));
+    expect(socketOf(runs[0] as DumpRecord)).toBe(path.join(generationTargets(home).sockets, 'workbench-1.sock'));
     await handle.close();
     await until(() => !isAlive((runs[0] as DumpRecord).pid), 'the fake server to exit');
-    expect(fs.readdirSync(path.join(generationTargets(home).markers, 'workbench'))).toEqual([]);
+    expect(fs.readdirSync(path.join(generationTargets(home).markers, 'workbench-1'))).toEqual([]);
   });
 
   it('refuses with 412, the description text and its remedy when the precondition of the second kind is not met', async () => {

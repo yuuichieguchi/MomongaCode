@@ -43,14 +43,14 @@ const silentServer = async (): Promise<string> => {
 };
 
 describe('the CLI network', () => {
-  it('is resolved and installed once per process', async () => {
+  it('is resolved from the current settings for each outbound operation', async () => {
     const ports = portsWith([]);
 
-    const first = processOutboundNetwork(ports);
-    const second = processOutboundNetwork(ports);
+    const first = await processOutboundNetwork(ports);
+    const second = await processOutboundNetwork(ports);
 
-    expect(second).toBe(first);
-    expect((await first).config).toEqual({ caFiles: [] });
+    expect(first.config).toEqual({ caFiles: [] });
+    expect(second.config).toEqual(first.config);
   });
 
   it('ends models detect against a server that accepts and never answers at the identity read bound, without an interrupt', { timeout: IDENTITY_READ_TIMEOUT_MS * READS_PER_ADDRESS * (LOCAL_SERVER_CANDIDATES.length + 1) }, async () => {

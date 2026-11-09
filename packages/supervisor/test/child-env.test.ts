@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createUserSettingsCache, noKeptRecords } from '@momonga/config';
-import { MINIMAL_CHILD_PATH, NETWORK_ENV_NAMES, SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV } from '@momonga/foundation';
+import { MINIMAL_CHILD_PATH, NETWORK_ENV_NAMES, SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV, secretStoreEnvFor } from '@momonga/foundation';
 import { waitFor } from '@momonga/testkit';
 import { COLLIDING_CREDENTIAL_DETAIL, definedEnv, gatewayEnv, runtimeEnv } from '../src/child-env.ts';
 import type { CredentialSettings } from '../src/child-env.ts';
@@ -27,23 +27,21 @@ const configErrorMessage = (home: string): string => {
 };
 
 describe('gatewayEnv', () => {
-  it('gateway env has exactly the minimal names plus declared credentials', () => {
-    const env = gatewayEnv(
-      {
-        PATH: '/opt/homebrew/bin:/usr/bin',
-        HOME: '/Users/u',
-        LANG: 'en_US.UTF-8',
-        TMPDIR: '/var/tmp/u',
-        LC_ALL: 'C',
-        UPSTREAM_X: 'upstream-value',
-        AWS_SECRET_ACCESS_KEY: 'aws-value',
-        FOO: 'foo',
-        NODE_OPTIONS: '--require /x.js',
-      },
-      declaring('UPSTREAM_X', 'ABSENT_KEY'),
-      '/canonical/home',
-    );
+  it('gateway env has exactly the minimal names, the secret store location and the declared credentials', () => {
+    const source = {
+      PATH: '/opt/homebrew/bin:/usr/bin',
+      HOME: '/Users/u',
+      LANG: 'en_US.UTF-8',
+      TMPDIR: '/var/tmp/u',
+      LC_ALL: 'C',
+      UPSTREAM_X: 'upstream-value',
+      AWS_SECRET_ACCESS_KEY: 'aws-value',
+      FOO: 'foo',
+      NODE_OPTIONS: '--require /x.js',
+    };
+    const env = gatewayEnv(source, declaring('UPSTREAM_X', 'ABSENT_KEY'), '/canonical/home');
     expect(env).toEqual({
+      ...secretStoreEnvFor(source),
       PATH: MINIMAL_CHILD_PATH,
       HOME: '/Users/u',
       LANG: 'en_US.UTF-8',
@@ -74,26 +72,27 @@ describe('gatewayEnv', () => {
 
   it('gateway env skips colliding declared names', () => {
     const skipped: string[] = [];
+    const source = {
+      PATH: 'declared-path-value',
+      NODE_OPTIONS: 'declared-node-options',
+      LD_PRELOAD: 'declared-ld-preload',
+      DYLD_INSERT_LIBRARIES: 'declared-dyld',
+      HOME: '/Users/real-home',
+      LC_ALL: 'en_US.UTF-8',
+    };
     const env = gatewayEnv(
-      {
-        PATH: 'declared-path-value',
-        NODE_OPTIONS: 'declared-node-options',
-        LD_PRELOAD: 'declared-ld-preload',
-        DYLD_INSERT_LIBRARIES: 'declared-dyld',
-        HOME: '/Users/real-home',
-        LC_ALL: 'en_US.UTF-8',
-      },
+      source,
       declaring('PATH', 'NODE_OPTIONS', 'LD_PRELOAD', 'DYLD_INSERT_LIBRARIES', 'HOME', 'LC_ALL'),
       '/canonical/home',
       (name) => skipped.push(name),
     );
-    expect(env).toEqual({ PATH: MINIMAL_CHILD_PATH, HOME: '/Users/real-home', LC_ALL: 'en_US.UTF-8' });
+    expect(env).toEqual({ ...secretStoreEnvFor(source), PATH: MINIMAL_CHILD_PATH, HOME: '/Users/real-home', LC_ALL: 'en_US.UTF-8' });
     for (const value of ['declared-path-value', 'declared-node-options', 'declared-ld-preload', 'declared-dyld']) expect(Object.values(env)).not.toContain(value);
     expect([...skipped].sort()).toEqual(['DYLD_INSERT_LIBRARIES', 'HOME', 'LC_ALL', 'LD_PRELOAD', 'NODE_OPTIONS', 'PATH']);
   });
 
   it('gateway HOME comes from the canonical home when the env lacks it', () => {
-    expect(gatewayEnv({ PATH: '/bin', LANG: 'C' }, declaring(), '/canonical/home')).toEqual({ PATH: MINIMAL_CHILD_PATH, HOME: '/canonical/home', LANG: 'C' });
+    expect(gatewayEnv({ PATH: '/bin', LANG: 'C' }, declaring(), '/canonical/home')).toEqual({ ...secretStoreEnvFor({ PATH: '/bin', LANG: 'C' }), PATH: MINIMAL_CHILD_PATH, HOME: '/canonical/home', LANG: 'C' });
   });
 });
 
@@ -136,11 +135,12 @@ describe('gatewayEnv secret store discovery', () => {
     }
   });
 
-  it('chooses no store when no target references a secret', () => {
+  it('hands the store location even when no target references a secret', () => {
     const bin = binWith('security');
     try {
       const env = gatewayEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), '/home/u');
-      expect(env[SECRET_BACKEND_ENV]).toBeUndefined();
+      expect(env[SECRET_BACKEND_ENV]).toBe('keychain');
+      expect(env[SECRET_PROGRAM_ENV]).toBe(path.join(bin, 'security'));
     } finally {
       fs.rmSync(bin, { recursive: true, force: true });
     }
@@ -174,7 +174,7 @@ describe('undefined values', () => {
     expect(runtime.env).toEqual({ FOO: 'foo', PATH: '/bin' });
     expect(Object.keys(runtime.env)).not.toContain('GONE');
     const gateway = gatewayEnv(source, declaring(), '/h');
-    expect(gateway).toEqual({ PATH: MINIMAL_CHILD_PATH, HOME: '/h' });
+    expect(gateway).toEqual({ ...secretStoreEnvFor(definedEnv(source)), PATH: MINIMAL_CHILD_PATH, HOME: '/h' });
     expect(Object.values(gateway)).not.toContain(undefined);
   });
 });
