@@ -6,6 +6,7 @@ import type { FakeUpstreamServer } from '@momonga/testkit';
 import { CC_CAPABILITIES, completionBodies, makeAdapter, startFake } from './cc-support.ts';
 import { START_MS, postJson, readJson, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
 import { FAKE_API_KEY, REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
+import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 const FIRST_ANTHROPIC = 'anthropic-first';
 const SECOND_ANTHROPIC = 'anthropic-second';
@@ -17,7 +18,7 @@ type Upstream = { adapter: ProviderAdapter; sent: () => unknown[] };
 const anthropicUpstream = async (apiVersion: AnthropicApiVersion, capabilities: Capabilities): Promise<Upstream> => {
   const fake: FakeUpstreamServer = await startFakeAnthropic({ apiKey: FAKE_API_KEY, script: [anthropicTextReply(['from anthropic'])] });
   registerCleanup(() => fake.close());
-  const adapter = createAnthropicAdapter({
+  const adapter = createAnthropicAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
     apiKey: async () => FAKE_API_KEY,
     capabilities: async () => capabilities,

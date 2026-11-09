@@ -8,7 +8,7 @@ export type OllamaAdapterOptions = {
   capabilities: (target: AdapterTarget) => Promise<Capabilities>;
   health?: (target: AdapterTarget) => Promise<HealthResult>;
   clock: Clock;
-  liveness?: UpstreamLiveness;
+  liveness: UpstreamLiveness;
   userDialects?: UserDialects;
 };
 

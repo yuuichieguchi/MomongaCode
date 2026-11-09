@@ -10,6 +10,7 @@ import { CC_CAPABILITIES, makeAdapter, startFake } from './cc-support.ts';
 import { chunkLine, doneLine, makeOllamaAdapter, OLLAMA_CAPABILITIES, startFakeOllama } from './ollama-support.ts';
 import { contextOf } from './own-reasoning.ts';
 import { FAKE_API_KEY, REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
+import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 const EDIT_RECORD: WrapRecord = { tool: 'edit', wrapped: [{ at: [], property: 'note' }] };
 const VIEW_RECORD: WrapRecord = { tool: 'view', wrapped: [{ at: [], property: 'path' }] };
@@ -154,7 +155,7 @@ const ccConstrained = async (name: string, args: string): Promise<Reader> => {
 const anthropic = async (name: string, args: string): Promise<Reader> => {
   const fake = await startFakeAnthropic({ apiKey: FAKE_API_KEY, script: [anthropicToolUseReply('toolu_1', name, [args.slice(0, 7), args.slice(7)])] });
   registerCleanup(() => fake.close());
-  const adapter = createAnthropicAdapter({
+  const adapter = createAnthropicAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
     apiKey: async () => FAKE_API_KEY,
     capabilities: async () => strict(REMOTE_CAPABILITIES),
@@ -176,7 +177,7 @@ const ollama = async (name: string, args: string): Promise<Reader> => {
 const openResponses = async (name: string, args: string): Promise<Reader> => {
   const fake = await startFakeOpenResponses({ script: [openResponsesToolCallReply('call_1', name, [args.slice(0, 6), args.slice(6)])] });
   registerCleanup(() => fake.close());
-  const adapter = createOpenResponsesAdapter({
+  const adapter = createOpenResponsesAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
     capabilities: async () => strict(REMOTE_CAPABILITIES),
     clock: createFakeClock(START_MS),

@@ -25,6 +25,9 @@ describe('gateway process ports', () => {
           return TOKEN;
         },
         databaseExists: () => false,
+        readTextFile: async (file) => {
+          throw new Error(`no CA file is configured in this test, yet ${file} was read`);
+        },
       },
       random: () => 0.25,
       logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: { write: (chunk: string) => (lines.push(chunk), true) }, level: 'debug' }),

@@ -67,7 +67,7 @@ const recordingFetch = () => {
 };
 
 const run = (candidates: readonly string[], options: { typed?: readonly string[]; fetch?: typeof fetch } = {}) =>
-  detectLocalServers({ candidates, typed: options.typed ?? [], signal: new AbortController().signal, ...(options.fetch === undefined ? {} : { fetch: options.fetch }) });
+  detectLocalServers({ candidates, typed: options.typed ?? [], signal: new AbortController().signal, fetch: options.fetch ?? fetch });
 
 describe('detecting a local model server is a measurement that writes nothing', () => {
   it('ships its candidates as loopback data', () => {
@@ -127,7 +127,7 @@ describe('detecting a local model server is a measurement that writes nothing', 
     const cancel = new AbortController();
     const timeouts = vi.spyOn(AbortSignal, 'timeout');
 
-    const pending = detectLocalServers({ candidates: [live, silent], typed: [], signal: cancel.signal });
+    const pending = detectLocalServers({ candidates: [live, silent], typed: [], signal: cancel.signal, fetch });
     await arrived.promise;
     cancel.abort();
 

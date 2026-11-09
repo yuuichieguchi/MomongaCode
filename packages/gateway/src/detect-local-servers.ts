@@ -1,11 +1,16 @@
-import { isLoopbackHost, isRecord } from '@momonga/foundation';
+import { findOutboundError, isLoopbackHost, isRecord } from '@momonga/foundation';
 import type { DetectedLocalServer, LocalServerToolSupport } from '@momonga/protocol';
+
+export type DetectFetch = (
+  url: string,
+  init: { method: 'GET' | 'POST'; signal: AbortSignal; headers?: Record<string, string>; body?: string },
+) => Promise<{ ok: boolean; json(): Promise<unknown> }>;
 
 export type DetectLocalServersOptions = {
   candidates: readonly string[];
   typed: readonly string[];
   signal: AbortSignal;
-  fetch?: typeof fetch;
+  fetch: DetectFetch;
 };
 
 type Ask = (method: 'GET' | 'POST', path: string, body?: unknown) => Promise<unknown>;
@@ -14,7 +19,12 @@ type ShapeReader = (ask: Ask) => Promise<Pick<DetectedLocalServer, 'models'> | u
 
 const rootOf = (baseUrl: string): string => baseUrl.replace(/\/+$/, '').replace(/\/v1$/, '');
 
-const askerOf = (baseUrl: string, fetchFn: typeof fetch, signal: AbortSignal): Ask => {
+const nothingAnswered = (error: TypeError): boolean => {
+  const outbound = findOutboundError(error);
+  return outbound === undefined || outbound.failure.kind === 'origin-connection';
+};
+
+const askerOf = (baseUrl: string, fetchFn: DetectFetch, signal: AbortSignal): Ask => {
   const root = rootOf(baseUrl);
   return async (method, path, body) => {
     try {
@@ -26,7 +36,7 @@ const askerOf = (baseUrl: string, fetchFn: typeof fetch, signal: AbortSignal): A
       if (!response.ok) return undefined;
       return await response.json();
     } catch (error) {
-      if (signal.aborted || error instanceof TypeError || error instanceof SyntaxError) return undefined;
+      if (signal.aborted || error instanceof SyntaxError || (error instanceof TypeError && nothingAnswered(error))) return undefined;
       throw error;
     }
   };
@@ -62,7 +72,7 @@ const SHAPES = [
   ['openai', openAiShape],
 ] as const;
 
-const detectOne = async (baseUrl: string, fetchFn: typeof fetch, signal: AbortSignal): Promise<DetectedLocalServer | undefined> => {
+const detectOne = async (baseUrl: string, fetchFn: DetectFetch, signal: AbortSignal): Promise<DetectedLocalServer | undefined> => {
   const ask = askerOf(baseUrl, fetchFn, signal);
   for (const [shape, read] of SHAPES) {
     const answered = await read(ask);
@@ -72,7 +82,7 @@ const detectOne = async (baseUrl: string, fetchFn: typeof fetch, signal: AbortSi
 };
 
 export const detectLocalServers = async (options: DetectLocalServersOptions): Promise<DetectedLocalServer[]> => {
-  const fetchFn = options.fetch ?? fetch;
+  const fetchFn = options.fetch;
   const loopback = options.candidates.filter((candidate) => isLoopbackHost(new URL(candidate).hostname));
   const addresses = [...new Set([...loopback, ...options.typed])];
   const found: DetectedLocalServer[] = [];

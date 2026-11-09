@@ -16,6 +16,7 @@ import {
 import { contextOf } from './own-reasoning.ts';
 import { START_MS, postJson, readSse, registerCleanup, userInput } from './gateway-helpers.ts';
 import { FAKE_API_KEY, REMOTE_CAPABILITIES, readFileTool, startAnthropicGateway, streamResponse, terminalOf } from './upstream-gateway-support.ts';
+import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 const ADAPTIVE: ReasoningCapability = { control: 'thinking', form: 'adaptive', efforts: ['low', 'medium', 'high'] };
 const BUDGET: ReasoningCapability = { control: 'thinking', form: 'budget', budgets: { low: 2048, medium: 4096, high: 6000 } };
@@ -42,7 +43,7 @@ const REMOTE_TARGET = { name: 'remote', model: 'remote-model' };
 const directAdapter = async (reasoning: ReasoningCapability, reply: ReturnType<typeof anthropicTextReply>) => {
   const fake = await startFakeAnthropic({ apiKey: FAKE_API_KEY, script: [reply] });
   registerCleanup(() => fake.close());
-  const adapter = createAnthropicAdapter({
+  const adapter = createAnthropicAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
     apiKey: async () => FAKE_API_KEY,
     capabilities: async () => withReasoning(reasoning),

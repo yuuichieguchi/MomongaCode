@@ -10,6 +10,7 @@ import { isProbeReport } from '../src/probe/report-schema.ts';
 import { makeDir } from './gateway-helpers.ts';
 import { OLLAMA_MODEL, startFakeOllama } from './ollama-support.ts';
 import { REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
+import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
 
 type CachingBehaviour = 'automatic' | 'none' | 'unreported' | 'malformed';
 
@@ -148,7 +149,7 @@ describe('both probes read the cached-token count by one rule (S1)', () => {
     const chatCompletions = await outcomeOf(() => probeThrough('malformed'));
     const ollama = await outcomeOf(async () => {
       const fake = await startFakeOllama({ cacheProbe: 'malformed' });
-      return (await probeOllamaTarget({ probeRecordDir: makeDir(), upstream: { kind: 'tcp', baseUrl: fake.origin }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL, contextWindow: 32768 })).report;
+      return (await probeOllamaTarget({ probeRecordDir: makeDir(), upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL, contextWindow: 32768 })).report;
     });
     expect([{ kind: 'recorded', promptCache: undefined }, { kind: 'refused' }]).toContainEqual(chatCompletions);
     expect(ollama).toEqual(chatCompletions);
@@ -158,7 +159,7 @@ describe('both probes read the cached-token count by one rule (S1)', () => {
     const chatCompletions = await outcomeOf(() => probeThrough('unreported'));
     const ollama = await outcomeOf(async () => {
       const fake = await startFakeOllama({ cacheProbe: 'unreported' });
-      return (await probeOllamaTarget({ probeRecordDir: makeDir(), upstream: { kind: 'tcp', baseUrl: fake.origin }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL, contextWindow: 32768 })).report;
+      return (await probeOllamaTarget({ probeRecordDir: makeDir(), upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK }, key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL }, model: OLLAMA_MODEL, contextWindow: 32768 })).report;
     });
     expect(chatCompletions).toEqual({ kind: 'recorded', promptCache: undefined });
     expect(ollama).toEqual(chatCompletions);

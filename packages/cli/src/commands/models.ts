@@ -1,4 +1,4 @@
-import type { MomongaPaths } from '@momonga/foundation';
+import type { MomongaPaths, OutboundFetch } from '@momonga/foundation';
 import { LOCAL_SERVER_CANDIDATES, agentReadiness } from '@momonga/protocol';
 import type { AliasCapabilities, DetectedLocalServer, MomongaModelEntry } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
@@ -53,14 +53,14 @@ export const formatDetected = (servers: readonly DetectedLocalServer[], settings
 export const detectModels = async (
   ports: CliPorts,
   paths: MomongaPaths,
-  options: { typed: readonly string[]; json: boolean; interrupt: AbortSignal; fetch?: typeof fetch },
+  options: { typed: readonly string[]; json: boolean; interrupt: AbortSignal; fetch: OutboundFetch | typeof fetch },
 ): Promise<number> => {
   const { detectLocalServers } = await import('@momonga/gateway');
   const found = await detectLocalServers({
     candidates: LOCAL_SERVER_CANDIDATES,
     typed: options.typed,
     signal: options.interrupt,
-    ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+    fetch: options.fetch,
   });
   ports.stdout.write(`${options.json ? JSON.stringify(found) : formatDetected(found, paths.settingsFile)}\n`);
   return 0;

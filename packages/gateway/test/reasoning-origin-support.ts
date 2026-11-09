@@ -23,6 +23,7 @@ import { HMAC_KEY, START_MS, postJson, readSse, registerCleanup, startGateway, u
 import { completionBodies, makeAdapter, startFake } from './cc-support.ts';
 import { chunkLine, doneLine, makeOllamaAdapter, startFakeOllama } from './ollama-support.ts';
 import { FAKE_API_KEY, REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
+import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 export type AdapterKind = 'chat-completions' | 'anthropic' | 'ollama' | 'open-responses';
 export const ADAPTER_KINDS: readonly AdapterKind[] = ['chat-completions', 'anthropic', 'ollama', 'open-responses'];
@@ -103,7 +104,7 @@ const startUpstream = async (kind: AdapterKind, script: readonly Script[]): Prom
   if (kind === 'anthropic') {
     const fake = await startFakeAnthropic({ apiKey: FAKE_API_KEY, script: script.map(anthropicReply) });
     registerCleanup(() => fake.close());
-    const adapter = createAnthropicAdapter({
+    const adapter = createAnthropicAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
       resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
       apiKey: async () => FAKE_API_KEY,
       capabilities: async () => REMOTE_CAPABILITIES,
@@ -116,7 +117,7 @@ const startUpstream = async (kind: AdapterKind, script: readonly Script[]): Prom
   }
   const fake = await startFakeOpenResponses({ script: script.map(relayReply) });
   registerCleanup(() => fake.close());
-  const adapter = createOpenResponsesAdapter({
+  const adapter = createOpenResponsesAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
     capabilities: async () => REMOTE_CAPABILITIES,
     clock: createFakeClock(START_MS),
