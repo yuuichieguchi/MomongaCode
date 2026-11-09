@@ -1,6 +1,6 @@
 import { canonicalJson, sha256Hex } from '@momonga/foundation';
 import type { TokenMeter } from '@momonga/context';
-import { LOWEST_REASONING_EFFORT, marginFloorFor } from '@momonga/protocol';
+import { LOWEST_REASONING_EFFORT, cachedDetailOf, marginFloorFor } from '@momonga/protocol';
 import type { Capabilities, CreateResponseBody, ModelRejectionReason, FunctionTool, InputItem, ModelResponse, MomongaResponseExtension, ResponseResource, RunEventPayload, RunState } from '@momonga/protocol';
 import type { ClaimContext, Flow } from './claim-context.ts';
 import { modelKey } from '../model-key.ts';
@@ -181,7 +181,7 @@ const handleResult = async (
               outputTokens: usage.output_tokens,
               totalTokens: usage.total_tokens,
               responseId: response.id,
-              cachedInputTokens: usage.input_tokens_details.cached_tokens,
+              ...(usage.input_tokens_details.cached_tokens === undefined ? {} : { cachedInputTokens: usage.input_tokens_details.cached_tokens }),
               ...(response.momonga?.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: response.momonga.cacheWriteInputTokens }),
               ...(response.momonga?.cost === undefined ? {} : { cost: response.momonga.cost }),
               timing,
@@ -226,7 +226,7 @@ const handleResult = async (
           input_tokens: usage.input_tokens,
           output_tokens: usage.output_tokens,
           total_tokens: usage.total_tokens,
-          input_tokens_details: { cached_tokens: usage.input_tokens_details.cached_tokens },
+          input_tokens_details: cachedDetailOf(usage.input_tokens_details.cached_tokens),
           output_tokens_details: { reasoning_tokens: usage.output_tokens_details.reasoning_tokens },
         },
         ...(billed === undefined ? {} : { momonga: billed }),

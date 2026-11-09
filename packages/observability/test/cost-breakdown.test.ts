@@ -35,12 +35,7 @@ const callOf = (overrides: Partial<BreakdownCall> & Pick<BreakdownCall, 'usage'>
       provider: identity.provider,
       model: identity.model,
       billing: identity.billing,
-      usage: {
-        inputTokens: identity.usage.inputTokens,
-        outputTokens: identity.usage.outputTokens,
-        cachedInputTokens: identity.usage.cachedInputTokens,
-        cacheWriteInputTokens: identity.usage.cacheWriteInputTokens,
-      },
+      usage: identity.usage,
       at: identity.at,
       table: TABLE,
     }),

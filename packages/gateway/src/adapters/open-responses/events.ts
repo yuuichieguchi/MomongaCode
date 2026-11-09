@@ -1,4 +1,4 @@
-import { ERROR_TYPES } from '@momonga/protocol';
+import { ERROR_TYPES, cachedDetailOf } from '@momonga/protocol';
 import type { ErrorType, Usage } from '@momonga/protocol';
 import { UpstreamProtocolError } from '../shared/failures.ts';
 import { parseUpstreamJson } from '../shared/upstream-json.ts';
@@ -71,12 +71,12 @@ const tokenCount = (container: Record<string, unknown>, key: string, what: strin
   return value;
 };
 
-const optionalDetail = (container: Record<string, unknown>, group: string, key: string): number => {
+const reportedDetail = (container: Record<string, unknown>, group: string, key: string): number | undefined => {
   const details = container[group];
-  if (details === undefined || details === null) return 0;
+  if (details === undefined || details === null) return undefined;
   if (!isRecord(details)) throw invalid(`usage.${group} must be an object`);
   const value = details[key];
-  return value === undefined || value === null ? 0 : tokenCount(details, key, `usage.${group}`);
+  return value === undefined || value === null ? undefined : tokenCount(details, key, `usage.${group}`);
 };
 
 const usageOf = (value: unknown): Usage | undefined => {
@@ -88,8 +88,8 @@ const usageOf = (value: unknown): Usage | undefined => {
     input_tokens: input,
     output_tokens: output,
     total_tokens: input + output,
-    input_tokens_details: { cached_tokens: optionalDetail(value, 'input_tokens_details', 'cached_tokens') },
-    output_tokens_details: { reasoning_tokens: optionalDetail(value, 'output_tokens_details', 'reasoning_tokens') },
+    input_tokens_details: cachedDetailOf(reportedDetail(value, 'input_tokens_details', 'cached_tokens')),
+    output_tokens_details: { reasoning_tokens: reportedDetail(value, 'output_tokens_details', 'reasoning_tokens') ?? 0 },
   };
 };
 

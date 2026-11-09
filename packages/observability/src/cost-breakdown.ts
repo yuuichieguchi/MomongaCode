@@ -1,4 +1,4 @@
-import { PLAN_USAGE_LABEL, amountOfUnits } from './cost.ts';
+import { PLAN_USAGE_LABEL, amountOfUnits, isCacheReadNotReported } from './cost.ts';
 import type { CallBilling, PricedCall } from './cost.ts';
 import { CACHE_MISS_CAUSES, RUN_ROLE, escapeTerminalLine } from '@momonga/protocol';
 import type { CacheMissCause, PrefixEvent } from '@momonga/protocol';
@@ -21,7 +21,7 @@ export type BreakdownCall = {
   price: PricedCall;
   anatomy?: BreakdownAnatomy;
   prefix?: BreakdownPrefix;
-  usage: { inputTokens: number; cachedInputTokens: number; cacheWriteInputTokens: number; outputTokens: number; reasoningTokens: number };
+  usage: { inputTokens: number; cachedInputTokens?: number; cacheWriteInputTokens: number; outputTokens: number; reasoningTokens: number };
   timing?: { firstEventMs?: number; durationMs: number };
 };
 
@@ -60,6 +60,7 @@ export type CostBreakdown = {
   plan: { calls: number; inputTokens: number; outputTokens: number };
   unpriced: UnpricedCall[];
   inconsistentUsage: UnpricedCall[];
+  cacheReadNotReported: number;
   callsWithoutResponseId: number;
   unjoined: UnjoinedRecord[];
 };
@@ -138,6 +139,7 @@ export const buildCostBreakdown = (calls: readonly BreakdownCall[], options: Cos
   const unpriced: UnpricedCall[] = [];
   const inconsistentUsage: UnpricedCall[] = [];
   const plan = { calls: 0, inputTokens: 0, outputTokens: 0 };
+  let cacheReadNotReported = 0;
   let units = 0n;
   for (const call of calls) {
     if (call.anatomy === undefined) {
@@ -147,16 +149,19 @@ export const buildCostBreakdown = (calls: readonly BreakdownCall[], options: Cos
     }
     const { usage } = call;
     const identity = { runId: call.runId, provider: call.provider, model: call.model, ...(call.step === undefined ? {} : { step: call.step }) };
-    if (usage.cachedInputTokens + usage.cacheWriteInputTokens > usage.inputTokens) {
+    const cached = usage.cachedInputTokens;
+    if (cached === undefined) {
+      cacheReadNotReported += 1;
+    } else if (cached + usage.cacheWriteInputTokens > usage.inputTokens) {
       inconsistentUsage.push({
         ...identity,
-        reason: `cached input (${usage.cachedInputTokens}) and written input (${usage.cacheWriteInputTokens}) together exceed the input (${usage.inputTokens})`,
+        reason: `cached input (${cached}) and written input (${usage.cacheWriteInputTokens}) together exceed the input (${usage.inputTokens})`,
       });
     } else {
       billed.inputTokens += usage.inputTokens;
-      billed.cacheReadTokens += usage.cachedInputTokens;
+      billed.cacheReadTokens += cached;
       billed.cacheWriteTokens += usage.cacheWriteInputTokens;
-      billed.uncachedInputTokens += usage.inputTokens - usage.cachedInputTokens - usage.cacheWriteInputTokens;
+      billed.uncachedInputTokens += usage.inputTokens - cached - usage.cacheWriteInputTokens;
     }
     billed.outputTokens += usage.outputTokens;
     billed.reasoningTokens += usage.reasoningTokens;
@@ -177,6 +182,7 @@ export const buildCostBreakdown = (calls: readonly BreakdownCall[], options: Cos
       continue;
     }
     const priced = call.price;
+    if (isCacheReadNotReported(priced)) continue;
     if (priced.kind === 'unpriced') {
       unpriced.push({ ...identity, reason: priced.reason });
       continue;
@@ -216,6 +222,7 @@ export const buildCostBreakdown = (calls: readonly BreakdownCall[], options: Cos
     plan,
     unpriced,
     inconsistentUsage,
+    cacheReadNotReported,
     callsWithoutResponseId: options.callsWithoutResponseId ?? 0,
     unjoined: [...(options.unjoined ?? [])],
   };
@@ -256,6 +263,9 @@ export const formatCostBreakdown = (breakdown: CostBreakdown): string => {
     ...(breakdown.inconsistentUsage.length === 0
       ? []
       : [`billed tokens by kind are incomplete: ${breakdown.inconsistentUsage.length} of ${breakdown.calls} call(s) report more cached and written input than input and are excluded from the input figures`]),
+    ...(breakdown.cacheReadNotReported === 0
+      ? []
+      : [`cache reads not reported: ${breakdown.cacheReadNotReported} of ${breakdown.calls} call(s) are excluded from the input figures, the cache hit ratio, the cache-miss causes and the cost`]),
     `billed tokens: input ${billed.inputTokens} = uncached ${billed.uncachedInputTokens} + cache read ${billed.cacheReadTokens} + cache write ${billed.cacheWriteTokens}; output ${billed.outputTokens} (reasoning ${billed.reasoningTokens})`,
     breakdown.cacheHitRatio === null ? `cache hit ratio: none (${breakdown.inconsistentUsage.length > 0 ? 'a call has inconsistent usage' : 'no input'})` : `cache hit ratio: ${percent(breakdown.cacheHitRatio)}`,
     ...causeLine('cache breaks by cause', breakdown.cacheBreaks),

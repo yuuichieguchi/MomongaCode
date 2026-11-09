@@ -1,5 +1,6 @@
 import { isRecord } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
+import { cachedDetailOf } from '@momonga/protocol';
 import type { AdapterRequest, JsonReplyPath, SchemaNarrowing, StreamEvent, Usage, WrapRecord } from '@momonga/protocol';
 import { forbidsTools } from '../../core/tool-choice.ts';
 import { StreamFailure, UpstreamProtocolError } from '../shared/failures.ts';
@@ -27,8 +28,9 @@ const optionalString = (container: Record<string, unknown>, key: string, what: s
   return value;
 };
 
-const count = (container: Record<string, unknown>, key: string): number => {
-  const value = container[key] === undefined ? 0 : container[key];
+const reportedCount = (container: Record<string, unknown>, key: string): number | undefined => {
+  const value = container[key];
+  if (value === undefined) return undefined;
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
     throw new UpstreamProtocolError(`the upstream's done chunk has a ${key} that is not a non-negative integer`);
   }
@@ -36,14 +38,13 @@ const count = (container: Record<string, unknown>, key: string): number => {
 };
 
 const usageOf = (done: Record<string, unknown>): Usage => {
-  const input = count(done, 'prompt_eval_count');
-  const output = count(done, 'eval_count');
-  const cached = count(done, 'prompt_eval_cached_count');
+  const input = reportedCount(done, 'prompt_eval_count') ?? 0;
+  const output = reportedCount(done, 'eval_count') ?? 0;
   return {
     input_tokens: input,
     output_tokens: output,
     total_tokens: input + output,
-    input_tokens_details: { cached_tokens: cached },
+    input_tokens_details: cachedDetailOf(reportedCount(done, 'prompt_eval_cached_count')),
     output_tokens_details: { reasoning_tokens: 0 },
   };
 };

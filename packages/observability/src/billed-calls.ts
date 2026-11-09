@@ -16,7 +16,7 @@ export type BilledCall = {
   model: string;
   billing: CallBilling;
   startMs: number;
-  usage: { inputTokens: number; cachedInputTokens: number; cacheWriteInputTokens: number; outputTokens: number; reasoningTokens: number };
+  usage: { inputTokens: number; cachedInputTokens?: number; cacheWriteInputTokens: number; outputTokens: number; reasoningTokens: number };
   price: PricedCall;
 };
 
@@ -35,9 +35,9 @@ export const RUNLESS = '';
 export const isBilledChat = (span: SpanRecord): boolean =>
   span.attributes[A.ATTR_GEN_AI_OPERATION_NAME] === OPERATIONS.chat && span.attributes[A.ATTR_GEN_AI_USAGE_INPUT_TOKENS] !== undefined;
 
-const optionalNumber = (span: SpanRecord, key: string): number => {
+const reportedNumber = (span: SpanRecord, key: string): number | undefined => {
   const value = span.attributes[key];
-  if (value === undefined) return 0;
+  if (value === undefined) return undefined;
   if (typeof value !== 'number') throw new TypeError(`chat span ${span.spanId} attribute ${key} must be a number`);
   return value;
 };
@@ -58,12 +58,13 @@ export const billedCallOf = (runId: string, span: SpanRecord, table: PriceTable)
   const provider = optionalString(span, A.ATTR_GEN_AI_PROVIDER_NAME) ?? '';
   const model = optionalString(span, A.ATTR_GEN_AI_REQUEST_MODEL) ?? '';
   const billing = billingOf(span);
+  const cachedInputTokens = reportedNumber(span, A.ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS);
   const usage = {
-    inputTokens: optionalNumber(span, A.ATTR_GEN_AI_USAGE_INPUT_TOKENS),
-    cachedInputTokens: optionalNumber(span, A.ATTR_GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS),
-    cacheWriteInputTokens: optionalNumber(span, MOMONGA_ATTRIBUTES.cacheWriteInputTokens),
-    outputTokens: optionalNumber(span, A.ATTR_GEN_AI_USAGE_OUTPUT_TOKENS),
-    reasoningTokens: optionalNumber(span, A.ATTR_GEN_AI_USAGE_REASONING_OUTPUT_TOKENS),
+    inputTokens: reportedNumber(span, A.ATTR_GEN_AI_USAGE_INPUT_TOKENS) ?? 0,
+    ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
+    cacheWriteInputTokens: reportedNumber(span, MOMONGA_ATTRIBUTES.cacheWriteInputTokens) ?? 0,
+    outputTokens: reportedNumber(span, A.ATTR_GEN_AI_USAGE_OUTPUT_TOKENS) ?? 0,
+    reasoningTokens: reportedNumber(span, A.ATTR_GEN_AI_USAGE_REASONING_OUTPUT_TOKENS) ?? 0,
   };
   const step = span.attributes[MOMONGA_ATTRIBUTES.step];
   const role = optionalString(span, MOMONGA_ATTRIBUTES.role);
@@ -85,7 +86,7 @@ export const billedCallOf = (runId: string, span: SpanRecord, table: PriceTable)
       provider,
       model,
       billing,
-      usage: { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, cachedInputTokens: usage.cachedInputTokens, cacheWriteInputTokens: usage.cacheWriteInputTokens },
+      usage,
       at: new Date(span.startMs),
       table,
     }),

@@ -303,7 +303,7 @@ const PAYLOAD_SCHEMAS: { [Type in RunEventPayload['type'] | SessionEvent['type']
               input_tokens: nonNegativeInteger,
               output_tokens: nonNegativeInteger,
               total_tokens: nonNegativeInteger,
-              input_tokens_details: closed({ cached_tokens: nonNegativeInteger }, ['cached_tokens']),
+              input_tokens_details: closed({ cached_tokens: nonNegativeInteger }, []),
               output_tokens_details: closed({ reasoning_tokens: nonNegativeInteger }, ['reasoning_tokens']),
             },
             ['input_tokens', 'output_tokens', 'total_tokens'],
@@ -604,6 +604,7 @@ const costTotalsProperties: Record<string, JsonSchema> = {
   localCalls: nonNegativeInteger,
   unpricedCalls: nonNegativeInteger,
   unknownBillingCalls: nonNegativeInteger,
+  cacheReadNotReportedCalls: nonNegativeInteger,
   planCalls: nonNegativeInteger,
   planInputTokens: nonNegativeInteger,
   planOutputTokens: nonNegativeInteger,
@@ -734,10 +735,11 @@ const costBreakdownView = closed(
       type: 'array',
       items: closed({ runId: string, provider: string, model: string, step: nonNegativeInteger, reason: string }, ['runId', 'provider', 'model', 'reason']),
     },
+    cacheReadNotReported: nonNegativeInteger,
     callsWithoutResponseId: nonNegativeInteger,
     unjoined: { type: 'array', items: closed({ runId: string, step: nonNegativeInteger, reason: string }, ['runId', 'reason']) },
   },
-  ['calls', 'layers', 'billed', 'cacheHitRatio', 'cacheBreaks', 'cacheMissCauses', 'timeToFirstToken', 'duration', 'roles', 'cost', 'plan', 'unpriced', 'inconsistentUsage', 'callsWithoutResponseId', 'unjoined'],
+  ['calls', 'layers', 'billed', 'cacheHitRatio', 'cacheBreaks', 'cacheMissCauses', 'timeToFirstToken', 'duration', 'roles', 'cost', 'plan', 'unpriced', 'inconsistentUsage', 'cacheReadNotReported', 'callsWithoutResponseId', 'unjoined'],
 );
 
 const memoryScope = enumOf(MEMORY_SCOPES);
@@ -991,6 +993,7 @@ export type RoleCostView = {
   localCalls: number;
   unpricedCalls: number;
   unknownBillingCalls: number;
+  cacheReadNotReportedCalls: number;
   planCalls: number;
   planInputTokens: number;
   planOutputTokens: number;

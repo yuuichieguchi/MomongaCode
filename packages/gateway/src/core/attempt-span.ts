@@ -94,7 +94,7 @@ export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
         usage: {
           inputTokens: info.usage.input_tokens,
           outputTokens: info.usage.output_tokens,
-          cachedInputTokens: info.usage.input_tokens_details.cached_tokens,
+          ...(info.usage.input_tokens_details.cached_tokens === undefined ? {} : { cachedInputTokens: info.usage.input_tokens_details.cached_tokens }),
           ...(info.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: info.cacheWriteInputTokens }),
           reasoningTokens: info.usage.output_tokens_details.reasoning_tokens,
         },

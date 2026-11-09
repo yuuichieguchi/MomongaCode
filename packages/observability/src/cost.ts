@@ -91,6 +91,8 @@ export const LOCAL_PRICE_VERSION = 'local';
 
 export const PLAN_UNPRICED_REASON = 'plan';
 
+export const CACHE_READ_NOT_REPORTED_REASON = 'the upstream did not report the cache reads of the call';
+
 export const PLAN_USAGE_LABEL = 'plan usage, no per-token price';
 
 export type CallBilling = 'metered' | 'local' | 'plan' | typeof UNKNOWN_BILLING;
@@ -99,22 +101,26 @@ export type PriceCallInput = CostInput & { billing: CallBilling };
 
 export type PricedCall = { kind: 'priced'; units: bigint; currency: 'USD'; priceVersion: string } | { kind: 'unpriced'; reason: string };
 
+export const isCacheReadNotReported = (price: PricedCall | { kind: 'unpriced'; reason: string }): boolean =>
+  price.kind === 'unpriced' && price.reason === CACHE_READ_NOT_REPORTED_REASON;
+
 const isCount = (value: number | undefined): boolean => value === undefined || (Number.isSafeInteger(value) && value >= 0);
 
 export const priceCall = (input: PriceCallInput): PricedCall => {
   const { usage, billing } = input;
-  const cached = usage.cachedInputTokens ?? 0;
+  const cached = usage.cachedInputTokens;
   const written = usage.cacheWriteInputTokens ?? 0;
   if (![usage.inputTokens, usage.outputTokens, usage.cachedInputTokens, usage.cacheWriteInputTokens].every(isCount)) {
     return { kind: 'unpriced', reason: 'a token count of the call is not a non-negative integer' };
   }
-  if (cached + written > usage.inputTokens) {
+  if (cached !== undefined && cached + written > usage.inputTokens) {
     return { kind: 'unpriced', reason: `cached input (${cached}) and written input (${written}) together exceed the input (${usage.inputTokens})` };
   }
   if (billing === UNKNOWN_BILLING) return { kind: 'unpriced', reason: 'the billing of the target is unknown' };
   if (billing === 'local') return { kind: 'priced', units: 0n, currency: 'USD', priceVersion: LOCAL_PRICE_VERSION };
   if (billing === 'plan') return { kind: 'unpriced', reason: PLAN_UNPRICED_REASON };
   if (Number.isNaN(input.at.getTime())) return { kind: 'unpriced', reason: 'the time of the call is not a valid date' };
+  if (cached === undefined) return { kind: 'unpriced', reason: CACHE_READ_NOT_REPORTED_REASON };
   const entry = findPriceEntry(input.table, input.provider, input.model, input.at.getTime());
   if (entry === undefined) return { kind: 'unpriced', reason: 'no price entry' };
   if (cached > 0 && entry.cachedInputPerMTok === undefined) {

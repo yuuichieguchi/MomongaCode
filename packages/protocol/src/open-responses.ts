@@ -195,9 +195,12 @@ export type Usage = {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
-  input_tokens_details: { cached_tokens: number };
+  input_tokens_details: { cached_tokens?: number };
   output_tokens_details: { reasoning_tokens: number };
 };
+
+export const cachedDetailOf = (cachedTokens: number | undefined): Usage['input_tokens_details'] =>
+  cachedTokens === undefined ? {} : { cached_tokens: cachedTokens };
 
 export type ResponseError = { code: string; message: string; type?: ErrorType; retryAfterMs?: number };
 
