@@ -375,7 +375,7 @@ describe('minimum room at claim', () => {
 describe('inherited history and loop detection across compaction', () => {
   const completeSeeded = async (env: Env, task: string, payloads: readonly RunEventPayload[]): Promise<void> => {
     const run = env.enqueue(task);
-    const claim = env.seed(run.id, payloads, 'hold');
+    const claim = await env.seed(run.id, payloads, 'hold');
     expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
   };
 

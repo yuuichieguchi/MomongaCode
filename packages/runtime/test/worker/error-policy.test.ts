@@ -144,7 +144,7 @@ describe('worker gateway error policy: fatal 4xx', () => {
       attempt: 1,
       response: { status: 'completed', output: [assistantMessage(`msg_${step}`, text)], usage: { input_tokens: 50, output_tokens: 5, total_tokens: 55 } },
     });
-    env.seed(
+    await env.seed(
       run.id,
       [
         responded(1, 'x'.repeat(100_000)),

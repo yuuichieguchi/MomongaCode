@@ -24,7 +24,7 @@ const markNewer = (dbPath: string): void => {
 
 const savedMemory = async () => {
   const env = harness();
-  const { runId } = awaitingApproval(env.store, [{ callId: 'c1' }], 'waiting');
+  const { runId } = await awaitingApproval(env.store, [{ callId: 'c1' }], 'waiting');
   const memory = (await env.store.memories.save({
     origin: 'trusted',
     scope: 'project',

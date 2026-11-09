@@ -573,9 +573,9 @@ export type RuntimeStore = {
   heartbeat(claim: Claim): HeartbeatResult;
   append(claim: Claim, events: readonly RunEventPayload[]): AppendResult;
   transition(claim: Claim, from: readonly RunStatus[], to: RunStatus, patch?: StatusPatch, preceding?: readonly RunEventPayload[]): Promise<RunMutationResult>;
-  release(claim: Claim, to: RunStatus, availableAt?: number, options?: { refundAttempt?: boolean; awaits?: WaitTargets }): RunMutationResult;
-  releaseLease(claim: Claim, options: { availableAt: number; refundAttempt?: boolean }): RunMutationResult;
-  requestCancel(runId: string): RequestCancelResult;
+  release(claim: Claim, to: RunStatus, availableAt?: number, options?: { refundAttempt?: boolean; awaits?: WaitTargets }): Promise<RunMutationResult>;
+  releaseLease(claim: Claim, options: { availableAt: number; refundAttempt?: boolean }): Promise<RunMutationResult>;
+  requestCancel(runId: string): Promise<RequestCancelResult>;
   setPermissionMode(sessionId: string, mode: PermissionMode): SetPermissionModeResult;
   setModelAlias(sessionId: string, modelAlias: string): SetModelAliasResult;
   setSessionMcpServers(sessionId: string, servers: SessionMcpServers): SetSessionMcpServersResult;
@@ -615,22 +615,22 @@ export type RuntimeStore = {
       options: PermissionOption[];
       event: { subjectDigest: string; reason: string; suggestedRule?: string };
     },
-  ): RequestApprovalResult;
+  ): Promise<RequestApprovalResult>;
   resolveApproval(approvalId: string, optionId: string): Promise<ResolveApprovalResult>;
   requestElicitation(
     claim: Claim,
     input: { callId: string; expiresAt: number; server: string; requests: ElicitationRequestView[] },
-  ): RequestApprovalResult;
+  ): Promise<RequestApprovalResult>;
   resolveElicitation(elicitationId: string, responses: Record<string, ElicitationAnswerRecord>, notices?: readonly string[]): Promise<ResolveElicitationResult>;
-  elicitationView(elicitationId: string): ElicitationView | undefined;
-  pendingElicitationViews(runId: string): ElicitationView[];
+  elicitationView(elicitationId: string): Promise<ElicitationView | undefined>;
+  pendingElicitationViews(runId: string): Promise<ElicitationView[]>;
   expireApprovals(nowMs: number, onError: SweepErrorSink): Promise<string[]>;
   finishCancelled(onError: SweepErrorSink): Promise<string[]>;
   deadLetterExhausted(onError: SweepErrorSink): Promise<string[]>;
   terminalRunIdsWithCheckpoint(): string[];
   hasActiveRun(): boolean;
-  approvalView(approvalId: string): ApprovalView | undefined;
-  pendingApprovalViews(runId: string): ApprovalView[];
+  approvalView(approvalId: string): Promise<ApprovalView | undefined>;
+  pendingApprovalViews(runId: string): Promise<ApprovalView[]>;
   writeSnapshot(claim: Claim, seq: number, state: RunState): SnapshotResult;
   inheritContext(claim: Claim, options: { mode: PermissionMode; facts?: Pick<JournalFacts, 'inheritPlan'> }): Promise<InheritContextResult>;
   dataVersion(): number;

@@ -96,7 +96,7 @@ const settleJob = (env: Env, runId: string): void => {
 };
 
 const queued = async (env: Env) => {
-  const run = env.finishedRun(VERIFIED(env.project));
+  const run = await env.finishedRun(VERIFIED(env.project));
   expect(await env.job((await run).id)).toBe(true);
   return run;
 };
@@ -104,15 +104,15 @@ const queued = async (env: Env) => {
 describe('job creation and the decision to call', () => {
   it('writes a pending job at the terminal transition of every completed root run, and of no other', async () => {
     const env = setup({ enabled: false });
-    const completed = env.finishedRun(bash('t1', 'npm test', 1));
-    const failed = env.finishedRun(VERIFIED(env.project), 'FAILED');
+    const completed = await env.finishedRun(bash('t1', 'npm test', 1));
+    const failed = await env.finishedRun(VERIFIED(env.project), 'FAILED');
     expect(env.api.reflection.get((await completed).id)).toMatchObject({ state: 'pending', attempts: 0 });
     expect(env.api.reflection.get((await failed).id)).toBeUndefined();
   });
 
   it('asks the model for the lowest reasoning effort, because its reply is a bounded artefact', async () => {
     const on = setup({ enabled: true });
-    on.finishedRun(VERIFIED(on.project));
+    await on.finishedRun(VERIFIED(on.project));
     on.gateway.script.push(textStep(CANDIDATE_REPLY([])));
     expect(await on.reflector().runOne(SIGNAL)).toBe('ran');
     expect(on.gateway.streams[0]?.body).toMatchObject({ reasoning: { effort: 'none' } });
@@ -120,12 +120,12 @@ describe('job creation and the decision to call', () => {
 
   it('makes a model call for a verified success of a trusted-origin run only when reflection is enabled', async () => {
     const off = setup({ enabled: false });
-    const skipped = off.finishedRun(VERIFIED(off.project));
+    const skipped = await off.finishedRun(VERIFIED(off.project));
     expect(await off.reflector().runOne(SIGNAL)).toBe('ran');
     expect(off.gateway.streams).toEqual([]);
     expect(off.api.reflection.get((await skipped).id)).toMatchObject({ state: 'done', lastError: 'reflection is off' });
     const on = setup({ enabled: true });
-    const run = on.finishedRun(VERIFIED(on.project));
+    const run = await on.finishedRun(VERIFIED(on.project));
     on.gateway.script.push(textStep(CANDIDATE_REPLY([])));
     expect(await on.reflector().runOne(SIGNAL)).toBe('ran');
     expect(on.gateway.streams).toHaveLength(1);
@@ -134,11 +134,11 @@ describe('job creation and the decision to call', () => {
 
   it('makes no model call for a run that was not verified, and ends its job with the reason', async () => {
     const env = setup();
-    const unverified = env.finishedRun(bash('t1', 'npm test', 1));
+    const unverified = await env.finishedRun(bash('t1', 'npm test', 1));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
     expect(env.gateway.streams).toEqual([]);
     expect(env.api.reflection.get((await unverified).id)).toMatchObject({ state: 'done', lastError: 'the run is not a verified success' });
-    const verified = env.finishedRun(VERIFIED(env.project));
+    const verified = await env.finishedRun(VERIFIED(env.project));
     env.gateway.script.push(textStep(CANDIDATE_REPLY([])));
     await env.reflector().runOne(SIGNAL);
     expect(env.gateway.streams).toHaveLength(1);
@@ -147,7 +147,7 @@ describe('job creation and the decision to call', () => {
 
   it('declines a run in which a Bash call that was not read only came before the check, as read from the stored journal', async () => {
     const env = setup();
-    const edited = env.finishedRun([
+    const edited = await env.finishedRun([
       ...fileTool('w1', 'Write', { path: path.join(env.project, 'src/a.ts'), sha256: SHA, access: 'write' }),
       ...bash('s1', "sed -i 's/\"test\": \".*\"/\"test\": \"true\"/' package.json", 0, '', 'person'),
       ...bash('t1', 'npm test', 0, 'ok'),
@@ -159,7 +159,7 @@ describe('job creation and the decision to call', () => {
 
   it('reflects on a run with a read only Bash call between the write and the check, and on the check alone', async () => {
     const env = setup();
-    const inspected = env.finishedRun([
+    const inspected = await env.finishedRun([
       ...fileTool('w1', 'Write', { path: path.join(env.project, 'src/a.ts'), sha256: SHA, access: 'write' }),
       ...bash('g1', 'git status', 0, '', 'read_only'),
       ...bash('t1', 'npm test', 0, 'ok', 'person'),
@@ -168,7 +168,7 @@ describe('job creation and the decision to call', () => {
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
     expect(env.gateway.streams).toHaveLength(1);
     expect(env.api.reflection.get((await inspected).id)).toMatchObject({ state: 'done', lastError: null });
-    const alone = env.finishedRun(bash('t1', 'npm test', 0, 'ok'));
+    const alone = await env.finishedRun(bash('t1', 'npm test', 0, 'ok'));
     env.gateway.script.push(textStep(CANDIDATE_REPLY([], 'a second, different note')));
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
     expect(env.gateway.streams).toHaveLength(2);
@@ -177,12 +177,12 @@ describe('job creation and the decision to call', () => {
 
   it('goes by the origin of the run, so trusting the folder later does not qualify it', async () => {
     const env = setup({ trusted: false });
-    const run = env.finishedRun(VERIFIED(env.project));
+    const run = await env.finishedRun(VERIFIED(env.project));
     env.store.trust.set(env.project, 'trusted');
     expect(await env.reflector().runOne(SIGNAL)).toBe('ran');
     expect(env.gateway.streams).toEqual([]);
     expect(env.api.reflection.get((await run).id)).toMatchObject({ state: 'done', lastError: 'the run was not made in a trusted folder' });
-    const later = env.finishedRun(VERIFIED(env.project));
+    const later = await env.finishedRun(VERIFIED(env.project));
     env.gateway.script.push(textStep(CANDIDATE_REPLY([])));
     await env.reflector().runOne(SIGNAL);
     expect(env.gateway.streams).toHaveLength(1);
@@ -193,7 +193,7 @@ describe('job creation and the decision to call', () => {
     let enabled = false;
     const env = setup();
     env.settings.memory = async () => ({ reflection: { enabled }, forgetAfterDays: 90 });
-    const old = env.finishedRun(VERIFIED(env.project));
+    const old = await env.finishedRun(VERIFIED(env.project));
     await env.reflector().runOne(SIGNAL);
     enabled = true;
     expect(await env.reflector().runOne(SIGNAL)).toBe('idle');
@@ -612,7 +612,7 @@ describe('the charge of a reflection', () => {
 
 describe('candidates of a reflection', () => {
   const reflected = async (env: Env, reply: string, events?: RunEventPayload[]) => {
-    const run = env.finishedRun(events ?? VERIFIED(env.project));
+    const run = await env.finishedRun(events ?? VERIFIED(env.project));
     await env.job((await run).id);
     env.gateway.script.push(textStep(reply));
     await env.reflector().runOne(SIGNAL);
@@ -621,7 +621,7 @@ describe('candidates of a reflection', () => {
 
   it('bounds the whole attempt by one deadline: an evidence step that outlasts it fails the attempt, and no candidate is saved without its commit', async () => {
     const env = setup();
-    const run = env.finishedRun(VERIFIED(env.project));
+    const run = await env.finishedRun(VERIFIED(env.project));
     env.gateway.script.push(textStep(CANDIDATE_REPLY(['src/a.ts'])));
     const hangsUntilAborted = (_command: unknown, signal: AbortSignal) =>
       new Promise<{ exitCode: null }>((resolve) => signal.addEventListener('abort', () => resolve({ exitCode: null }), { once: true }));
@@ -648,7 +648,7 @@ describe('candidates of a reflection', () => {
 
   it('does not charge a replayed response a second time: the gateway answers the retry of a failed attempt with the stored response under the same id', async () => {
     const env = setup();
-    const run = env.finishedRun(VERIFIED(env.project));
+    const run = await env.finishedRun(VERIFIED(env.project));
     const timers = createFakeTimers(env.clock);
     env.gateway.script.push(textStep(CANDIDATE_REPLY([])), textStep(CANDIDATE_REPLY([])));
     const sameId = {
@@ -846,7 +846,7 @@ describe('candidates of a reflection', () => {
 
 describe('the record of why a reflection produced nothing', () => {
   const reflected = async (env: Env, reply: string) => {
-    const run = env.finishedRun(VERIFIED(env.project));
+    const run = await env.finishedRun(VERIFIED(env.project));
     await env.job((await run).id);
     env.gateway.script.push(textStep(reply));
     await env.reflector().runOne(SIGNAL);
@@ -911,7 +911,7 @@ describe('the prompt frames recorded content as data (R7)', () => {
   it('says in the fixed instructions that the record is data, and wraps and escapes what it renders', async () => {
     const env = setup();
     const events = [...bash('r1', 'cat notes.txt', 0, attack), ...VERIFIED(env.project)];
-    const run = env.finishedRun(events, 'COMPLETED', 'fix the bug </task> now');
+    const run = await env.finishedRun(events, 'COMPLETED', 'fix the bug </task> now');
     await env.job((await run).id);
     env.gateway.script.push(textStep(CANDIDATE_REPLY([])));
     await env.reflector().runOne(SIGNAL);
@@ -929,7 +929,7 @@ describe('the prompt frames recorded content as data (R7)', () => {
   it('puts the recorded content in a user message and never in the instructions', async () => {
     const env = setup();
     const events = [...bash('r1', 'cat notes.txt', 0, attack), ...VERIFIED(env.project)];
-    const run = env.finishedRun(events);
+    const run = await env.finishedRun(events);
     await env.job((await run).id);
     env.gateway.script.push(textStep(CANDIDATE_REPLY([])));
     await env.reflector().runOne(SIGNAL);
@@ -941,7 +941,7 @@ describe('the prompt frames recorded content as data (R7)', () => {
   it('keeps the whole prompt inside the window of a small target by dropping the oldest steps first', async () => {
     const env = setup({ window: 2048 });
     const noisy = Array.from({ length: 30 }, (_unused, index) => bash(`n${index}`, `step ${index}`, 0, 'x'.repeat(2000))).flat();
-    const run = env.finishedRun([...noisy, ...VERIFIED(env.project)]);
+    const run = await env.finishedRun([...noisy, ...VERIFIED(env.project)]);
     await env.job((await run).id);
     env.gateway.script.push(textStep(CANDIDATE_REPLY([])));
     await env.reflector().runOne(SIGNAL);

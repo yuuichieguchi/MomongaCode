@@ -17,7 +17,7 @@ describe('terminalRunIdsWithCheckpoint', () => {
     ledger.begin('d'.repeat(64), { expiresAt: EXPIRES_AT, meta: { tool: 'Ask', runId: withCheckpoint.id } });
     expect(store.terminalRunIdsWithCheckpoint()).toEqual([]);
 
-    expect(store.requestCancel(withCheckpoint.id)).toMatchObject({ kind: 'ok', run: { status: 'CANCELLING' } });
+    expect(await store.requestCancel(withCheckpoint.id)).toMatchObject({ kind: 'ok', run: { status: 'CANCELLING' } });
     expect((await store.transition(claim, ['CANCELLING'], 'CANCELLED'))).toMatchObject({ kind: 'ok' });
     const withoutCheckpoint = enqueue(store, sessionId, 'second');
     store.idempotency.begin('e'.repeat(64), { expiresAt: EXPIRES_AT, meta: { tool: 'Ask', runId: withoutCheckpoint.id } });
@@ -51,7 +51,7 @@ describe('terminalRunIdsWithCheckpoint', () => {
     const ledger = store.idempotency.holding(claim);
     ledger.begin(key, { expiresAt: EXPIRES_AT, meta: { tool: 'Ask', runId: run.id } });
     ledger.checkpoint(key, parkedCheckpoint);
-    store.requestCancel(run.id);
+    await store.requestCancel(run.id);
     (await store.transition(claim, ['CANCELLING'], 'CANCELLED'));
     expect(store.terminalRunIdsWithCheckpoint()).toEqual([run.id]);
 
@@ -69,7 +69,7 @@ describe('terminalRunIdsWithCheckpoint', () => {
     const ledger = store.idempotency.holding(claim);
     ledger.begin(key, { expiresAt: EXPIRES_AT, meta: { tool: 'Ask', runId: run.id } });
     ledger.checkpoint(key, parkedCheckpoint);
-    store.requestCancel(run.id);
+    await store.requestCancel(run.id);
     (await store.transition(claim, ['CANCELLING'], 'CANCELLED'));
     expect(store.terminalRunIdsWithCheckpoint()).toEqual([run.id]);
 

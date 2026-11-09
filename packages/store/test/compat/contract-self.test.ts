@@ -13,9 +13,9 @@ afterEach(() => {
   }
 });
 
-const openedCopy = (): ContractStore => {
+const openedCopy = async (): Promise<ContractStore> => {
   const template = path.join(makeStoreDir(), 'template.db');
-  buildCompatTemplate(template, 'self');
+  await buildCompatTemplate(template, 'self');
   const copy = copyTemplate(template);
   const contract = openContractStore(copy.dbPath);
   opened.push({ contract, remove: copy.remove });
@@ -23,11 +23,11 @@ const openedCopy = (): ContractStore => {
 };
 
 describe('the contract suite against a template this build writes', () => {
-  it('reads the rows the contract writer wrote', () => {
-    expect(openedCopy().store.listSessions()).toHaveLength(1);
+  it('reads the rows the contract writer wrote', async () => {
+    expect((await openedCopy()).store.listSessions()).toHaveLength(1);
   });
 
   it.each(CONTRACT_OPERATIONS.map((operation) => [operation.name, operation] as const))('%s', async (_name, operation) => {
-    await operation.run(openedCopy());
+    await operation.run(await openedCopy());
   });
 });

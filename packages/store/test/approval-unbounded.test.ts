@@ -23,21 +23,21 @@ const rowCounts = (dbPath: string, runId: string): { approvals: number; events: 
 };
 
 describe('a permission approval has no expiry of its own', () => {
-  it('stores no expiry on the row and shows none on the view', () => {
+  it('stores no expiry on the row and shows none on the view', async () => {
     const { dbPath, store } = harness();
-    const { runId, approvals } = awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
+    const { runId, approvals } = await awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
     const [approval] = approvals;
     if (approval === undefined) throw new Error('expected an approval');
 
     expect(approval).not.toHaveProperty('expiresAt');
-    expect(store.approvalView(approval.id)).not.toHaveProperty('expiresAt');
+    expect(await store.approvalView(approval.id)).not.toHaveProperty('expiresAt');
     expect(rawDb(dbPath).prepare('SELECT expires_at FROM approvals WHERE id = ?').get(approval.id)).toEqual({ expires_at: null });
-    expect(store.pendingApprovalViews(runId).map((view) => view.id)).toEqual([approval.id]);
+    expect((await store.pendingApprovalViews(runId)).map((view) => view.id)).toEqual([approval.id]);
   });
 
-  it('refuses a permission row that carries an expiry', () => {
+  it('refuses a permission row that carries an expiry', async () => {
     const { dbPath, store } = harness();
-    const { runId } = awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
+    const { runId } = await awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
     expect(() =>
       rawDb(dbPath)
         .prepare(
@@ -50,7 +50,7 @@ describe('a permission approval has no expiry of its own', () => {
 
   it('stays pending through every sweep before the run ends, and the sweeps write nothing', async () => {
     const { clock, dbPath, store } = harness();
-    const { runId, approvals } = awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
+    const { runId, approvals } = await awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
     const [approval] = approvals;
     if (approval === undefined) throw new Error('expected an approval');
     const before = { run: mustRun(store, runId), rows: rowCounts(dbPath, runId) };
@@ -67,18 +67,18 @@ describe('a permission approval has no expiry of its own', () => {
 
   it('ends when the person answers, however late before the run ends', async () => {
     const { clock, store } = harness();
-    const { runId, approvals } = awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
+    const { runId, approvals } = await awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
     clock.set(DEADLINE_MS - 1);
 
     expect(await store.resolveApproval(approvals[0]?.id ?? '', 'allow_once')).toMatchObject({ kind: 'ok', approval: { status: 'resolved' }, run: { id: runId, status: 'QUEUED' } });
   });
 
-  it('ends when the person cancels the run, withdrawn', () => {
+  it('ends when the person cancels the run, withdrawn', async () => {
     const { clock, store } = harness();
-    const { runId, approvals } = awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
+    const { runId, approvals } = await awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
     clock.set(DEADLINE_MS - 1);
 
-    cancel(store, runId);
+    await cancel(store, runId);
 
     expect(store.approvals.get(approvals[0]?.id ?? '')?.status).toBe('withdrawn');
     expect(store.readRunEvents(runId, 0, 100).map(payloadOf)).toContainEqual({ type: 'tool.permission.cancelled', approvalId: approvals[0]?.id, reason: 'withdrawn' });
@@ -86,7 +86,7 @@ describe('a permission approval has no expiry of its own', () => {
 
   it('ends when the run reaches its deadline: the run stops with timeout, never approval_timeout, and the approval is withdrawn', async () => {
     const { store } = harness();
-    const { runId, approvals } = awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
+    const { runId, approvals } = await awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
 
     expect(await store.expireApprovals(DEADLINE_MS, rethrow)).toEqual([runId]);
 

@@ -30,7 +30,7 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
       const claim = claimOf(store, run.id, 'contract-worker');
       ok(store.append(claim, [{ type: 'notice', level: 'info', message: 'contract' }]), 'append');
       ok(store.heartbeat(claim), 'heartbeat');
-      ok(store.release(claim, 'QUEUED'), 'release');
+      ok(await store.release(claim, 'QUEUED'), 'release');
       const again = claimOf(store, run.id, 'contract-worker');
       ok(await store.transition(again, ['RUNNING'], 'COMPLETED'), 'transition');
       expect(store.getRun(run.id)?.status).toBe('COMPLETED');
@@ -38,10 +38,10 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
   },
   {
     name: 'cancels a queued run',
-    run: ({ store }) => {
+    run: async ({ store }) => {
       const session = store.createSession({ cwd: '/work/contract', env: { PATH: '/usr/bin' }, permissionMode: 'default', modelAlias: 'fm' });
       const run = enqueue(store, session.id, 'to cancel');
-      expect(store.requestCancel(run.id).kind).toBe('ok');
+      expect((await store.requestCancel(run.id)).kind).toBe('ok');
     },
   },
   {
@@ -52,16 +52,16 @@ export const CONTRACT_OPERATIONS: readonly ContractOperation[] = [
       const claim = claimOf(store, run.id, 'asking-worker');
       ok(store.append(claim, [call('ask-1'), call('ask-2')]), 'append calls');
       const expiresAt = clock.now() + 60_000;
-      const approval = ok(store.requestApproval(claim, { callId: 'ask-1', options: OPTIONS, event: { subjectDigest: 'a'.repeat(64), reason: 'contract' } }), 'approval').approval;
-      const elicitation = ok(store.requestElicitation(claim, { callId: 'ask-2', expiresAt, server: 'remote', requests: REQUESTS }), 'elicitation').approval;
-      ok(store.release(claim, 'WAITING_HUMAN'), 'park');
+      const approval = ok(await store.requestApproval(claim, { callId: 'ask-1', options: OPTIONS, event: { subjectDigest: 'a'.repeat(64), reason: 'contract' } }), 'approval').approval;
+      const elicitation = ok(await store.requestElicitation(claim, { callId: 'ask-2', expiresAt, server: 'remote', requests: REQUESTS }), 'elicitation').approval;
+      ok(await store.release(claim, 'WAITING_HUMAN'), 'park');
       expect((await store.resolveApproval(approval.id, 'allow_once')).kind).toBe('ok');
       expect((await store.resolveElicitation(elicitation.id, { who: { action: 'accept', content: { name: 'contract' } } })).kind).toBe('ok');
     },
   },
   {
     name: 'starts and finishes a background job',
-    run: ({ store }) => {
+    run: async ({ store }) => {
       const session = store.createSession({ cwd: '/work/contract', env: { PATH: '/usr/bin' }, permissionMode: 'default', modelAlias: 'fm' });
       const run = enqueue(store, session.id, 'job');
       claimOf(store, run.id, 'job-worker');

@@ -51,18 +51,18 @@ export const ok = <T extends { kind: string }>(result: T, label: string): Extrac
   return result as Extract<T, { kind: 'ok' }>;
 };
 
-export const writeContractRows = (store: RuntimeStore, tag: string): void => {
+export const writeContractRows = async (store: RuntimeStore, tag: string): Promise<void> => {
   const session = store.createSession({ cwd: '/work/contract', env: { PATH: '/usr/bin' }, permissionMode: 'default', modelAlias: 'fm' });
   const run = enqueue(store, session.id, `written by ${tag}`);
   const claim = claimOf(store, run.id, `writer-${tag}`);
   ok(store.append(claim, [call(`${tag}-c1`), { type: 'notice', level: 'info', message: `written by ${tag}`, code: 'contract.writer' }]), 'append');
-  ok(store.release(claim, 'COMPLETED'), 'release');
+  ok(await store.release(claim, 'COMPLETED'), 'release');
 };
 
-export const buildCompatTemplate = (file: string, tag: string): void => {
+export const buildCompatTemplate = async (file: string, tag: string): Promise<void> => {
   const contract = openContractStore(file);
   try {
-    writeContractRows(contract.store, tag);
+    await writeContractRows(contract.store, tag);
   } finally {
     contract.close();
   }

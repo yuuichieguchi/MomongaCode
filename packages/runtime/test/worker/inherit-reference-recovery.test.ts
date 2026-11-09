@@ -145,7 +145,7 @@ describe('13.6: a run with an old-shape event resumes on today path', () => {
   it('folds the copy and makes no window request', async () => {
     const env = await makeEnv();
     await answered(env, 'Say hello', 'Hello there.');
-    const child = plantOldShapeChild(env, 'And again');
+    const child = await plantOldShapeChild(env, 'And again');
     env.gateway.script.push(textStep('Answer.'));
     const trace = newFactsTrace();
     await settle(env, child.id, env.worker('worker-1', { store: tracedStore(env.store, trace) }));

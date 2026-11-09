@@ -82,7 +82,12 @@ export type AppendRecords = {
   answeringTargetsOf(runId: string): string[];
   touchedAfter(sessionId: string, afterEventId: number, limit: number, afterPath?: string): SessionTouched[];
   touchedNewest(sessionId: string, limit: number): SessionTouched[];
+  permissionRequestOf(runId: string, approvalId: string): Row | undefined;
+  elicitationRequested(runId: string, approvalId: string): boolean;
+  toolCallEventOf(runId: string, callId: string): Row | undefined;
 };
+
+export type AppendRecordReaders = Omit<AppendRecords, 'record' | 'recordFor'>;
 
 export const answerTargetOf = (payload: RunEventPayload | SessionEventPayload): string | undefined => {
   switch (payload.type) {
@@ -114,6 +119,9 @@ const windowOf = (misses: readonly WindowMiss[]): WindowMiss[] => {
 
 export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (rows: number, bytes: number) => void } = {}): AppendRecords => {
   const sql = {
+    permissionRequest: db.prepare("SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.permission.requested' AND approval_id = :approvalId LIMIT 1"),
+    elicitationRequest: db.prepare("SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.elicitation.requested' AND approval_id = :approvalId LIMIT 1"),
+    toolCallEvent: db.prepare("SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.call' AND call_id = :callId LIMIT 1"),
     toolCallSeq: db.prepare("SELECT seq FROM events WHERE run_id = :runId AND type = 'tool.call' AND call_id = :callId LIMIT 1"),
     toolCallRow: db.prepare("SELECT seq, tool_name FROM events WHERE run_id = :runId AND type = 'tool.call' AND call_id = :callId LIMIT 1"),
     runRecord: db.prepare('SELECT final_text, in_flight_step, in_flight_attempt FROM run_records WHERE run_id = :runId'),
@@ -287,6 +295,9 @@ export const createAppendRecords = (db: DatabaseSync, options: { onDecode?: (row
         const reader = readerFor('started_calls', runId, row);
         return { callId: reader.string('call_id'), name: reader.string('name'), idemKey: reader.string('idem_key') };
       }),
+    permissionRequestOf: (runId, approvalId) => sql.permissionRequest.get({ runId, approvalId }),
+    elicitationRequested: (runId, approvalId) => sql.elicitationRequest.get({ runId, approvalId }) !== undefined,
+    toolCallEventOf: (runId, callId) => sql.toolCallEvent.get({ runId, callId }),
     modelCallRowsOf: (runId) => sql.modelCallRows.all({ runId }).sort((a, b) => readerFor('events', runId, a).number('seq') - readerFor('events', runId, b).number('seq')),
     toolCallNamesOf: (rootRunId) => sql.toolCallNames.all({ runId: rootRunId }).map((row) => readerFor('events', rootRunId, row).string('name')),
     hasNoticeCode: (runId, code) => sql.noticeCode.get({ runId, code }) !== undefined,

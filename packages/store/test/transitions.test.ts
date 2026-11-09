@@ -34,19 +34,19 @@ const arrange = async (from: RunStatus): Promise<Fixture> => {
     }
     case 'CANCELLING': {
       const claim = claimIt();
-      store.requestCancel(created.id);
+      await store.requestCancel(created.id);
       return { store, run: mustRun(store, created.id), claim: { ...claim, status: 'CANCELLING' } };
     }
     case 'CANCELLED':
-      store.requestCancel(created.id);
+      await store.requestCancel(created.id);
       expect(await store.finishCancelled(() => undefined)).toEqual([created.id]);
       return { store, run: mustRun(store, created.id) };
     case 'WAITING_HUMAN':
-      parkWaitingHuman(store, claimIt());
+      await parkWaitingHuman(store, claimIt());
       return { store, run: mustRun(store, created.id) };
     default: {
       const claim = claimIt();
-      expect(store.release(claim, from).kind).toBe('ok');
+      expect((await store.release(claim, from)).kind).toBe('ok');
       return { store, run: mustRun(store, created.id) };
     }
   }
@@ -60,7 +60,7 @@ const attempt = (fixture: Fixture, from: RunStatus, to: RunStatus) =>
 const cases = RUN_STATUSES.flatMap((from) => RUN_STATUSES.map((to) => [from, to, ALLOWED[from].includes(to)] as const));
 
 describe('transition table', () => {
-  it('covers all 81 pairs', () => {
+  it('covers all 81 pairs', async () => {
     expect(cases).toHaveLength(81);
   });
 

@@ -33,7 +33,7 @@ describe('claim selects only runs whose acted-on values this build knows (11.4)'
     expect(mustRun(store, run.id).leaseOwner).toBeNull();
   });
 
-  it('claims the same run once the value is one this build knows', () => {
+  it('claims the same run once the value is one this build knows', async () => {
     const { store, dbPath } = newerStore();
     const session = newSession(store);
     const run = enqueue(store, session.id);
@@ -45,14 +45,14 @@ describe('claim selects only runs whose acted-on values this build knows (11.4)'
 });
 
 describe('a held run whose status becomes unknown is yielded untouched (11.4)', () => {
-  it('releases the lease, keeps the unknown status and appends nothing', () => {
+  it('releases the lease, keeps the unknown status and appends nothing', async () => {
     const { store, dbPath } = newerStore();
     const run = enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w-old');
     const before = mustRun(store, run.id).lastSeq;
     writeUnknown(dbPath, 'runs', 'status', 'PAUSED', run.id);
 
-    expect(store.releaseLease(claim, { availableAt: 0, refundAttempt: true }).kind).toBe('ok');
+    expect((await store.releaseLease(claim, { availableAt: 0, refundAttempt: true })).kind).toBe('ok');
     const after = mustRun(store, run.id);
     expect(after.status).toBe('unknown');
     expect(after.leaseOwner).toBeNull();

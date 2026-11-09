@@ -27,7 +27,7 @@ if (PREVIOUS_RELEASE === undefined) {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-compat-ci-'));
   fs.chmodSync(work, 0o700);
   const template = path.join(work, 'template.db');
-  buildCompatTemplate(template, 'current');
+  await buildCompatTemplate(template, 'current');
   const previous = path.join(work, 'previous');
   run('git', ['worktree', 'add', '--detach', previous, PREVIOUS_RELEASE.tag], repoRoot);
   try {

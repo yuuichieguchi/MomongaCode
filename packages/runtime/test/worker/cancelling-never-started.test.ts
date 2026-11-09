@@ -39,7 +39,7 @@ describe('a run cancelled before any worker held it is the sweeper\'s to finish 
     env.gateway.script.push(textStep('never sent'));
     const run = env.enqueue('Work');
 
-    expect(env.cancel(run.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'QUEUED' });
+    expect(await env.cancel(run.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'QUEUED' });
 
     expect(env.store.claim('worker-1')).toBeNull();
     expect(await env.runOnce(env.worker('worker-2'))).toBe('idle');
@@ -51,7 +51,7 @@ describe('a run cancelled before any worker held it is the sweeper\'s to finish 
     const { env, fake } = await envWithPreparer();
     env.gateway.script.push(textStep('never sent'));
     const run = env.enqueue('Work');
-    env.cancel(run.id);
+    await env.cancel(run.id);
     const errors: unknown[] = [];
 
     await (await sweeperOf(env, errors)).sweep();
@@ -70,7 +70,7 @@ describe('a run cancelled before any worker held it is the sweeper\'s to finish 
     const { env, fake } = await envWithPreparer();
     const run = await waitingHumanRun(env);
 
-    expect(env.cancel(run.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'WAITING_HUMAN' });
+    expect(await env.cancel(run.id)).toMatchObject({ status: 'CANCELLING', cancelOrigin: 'WAITING_HUMAN' });
 
     expect(env.store.approvals.listPending(run.id)).toEqual([]);
     expect(env.ofType(run.id, 'tool.permission.cancelled').at(-1)).toMatchObject({ reason: 'withdrawn' });
@@ -82,7 +82,7 @@ describe('a run cancelled before any worker held it is the sweeper\'s to finish 
     const { env } = await envWithPreparer();
     const run = await waitingHumanRun(env);
     const streamsBefore = env.gateway.streams.length;
-    env.cancel(run.id);
+    await env.cancel(run.id);
 
     await (await sweeperOf(env)).sweep();
 

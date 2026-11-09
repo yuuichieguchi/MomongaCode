@@ -54,7 +54,7 @@ const sessionWithRuns = async (runs: number, eventsPerRun: number) => {
       payloads.push(requestedOf(inRun + 1, `r${100 + at}-${inRun}`), observedOf(capabilities, index));
       index += 1;
     }
-    const claim = env.seed(run.id, payloads, 'hold');
+    const claim = await env.seed(run.id, payloads, 'hold');
     env.scriptContribution(run.id, []);
     expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
   }

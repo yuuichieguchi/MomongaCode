@@ -80,7 +80,7 @@ describe('the service', () => {
     const env = await startService({ fakeTimers: true, sweepIntervalMs: 1000 });
     const session = await env.createSession();
     const run = await env.createRun(session.id, { input: `deploy notes ${FAKE_KEY}` });
-    env.store.requestCancel(run.id);
+    await env.store.requestCancel(run.id);
     env.timers?.advance(1000);
     await afterMicrotasks();
     env.timers?.advance(1000);

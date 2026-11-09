@@ -51,9 +51,9 @@ describe('worker cancel recovery with a hanging reconcile', () => {
       { type: 'tool.call', callId: 'call_s_1', providerCallId: 'call_s_1', name: 'Stall', kind: 'edit', title: 'Stall', rawInput: { value: 'x' } },
       { type: 'tool.started', callId: 'call_s_1', idemKey: key },
     ];
-    env.seed(run.id, payloads, 'crash');
+    await env.seed(run.id, payloads, 'crash');
     env.store.idempotency.begin(key, { expiresAt: START_MS + 86_400_000, meta: { tool: 'Stall' } });
-    expect(env.cancel(run.id).status).toBe('CANCELLING');
+    expect((await env.cancel(run.id)).status).toBe('CANCELLING');
     const executor = createToolExecutor({ fs: hostFilesystemOf(fakePolicyFilesystem()), ...FAKE_LEASE,
       idempotency: env.store.idempotency,
       blobs: env.store.blobs,
@@ -191,7 +191,7 @@ describe('worker classification of stream errors', () => {
     const run = env.enqueue('Talk');
     const running = env.runOnce(env.worker('worker-1', { gateway, cancelPollMs: 10 }));
     await within(reached.promise, 2_000, 'the stream to start');
-    env.store.requestCancel(run.id);
+    await env.store.requestCancel(run.id);
     await within(running, 3_000, 'the worker to finish after cancel');
 
     expect(env.run(run.id).status).toBe('CANCELLED');

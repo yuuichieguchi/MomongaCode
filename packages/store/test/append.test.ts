@@ -4,7 +4,7 @@ import { START_MS, enqueue, harness, mustClaim, mustRun, newSession, openStoreAt
 const usage = (input: number, output: number) => ({ input_tokens: input, output_tokens: output, total_tokens: input + output });
 
 describe('append', () => {
-  it('assigns contiguous seq, the lease token, the clock time and the current step', () => {
+  it('assigns contiguous seq, the lease token, the clock time and the current step', async () => {
     const { clock, store } = harness();
     const run = enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
@@ -24,7 +24,7 @@ describe('append', () => {
     expect(events[1]).toMatchObject({ body: { a: 1 }, digest: 'd' });
   });
 
-  it('projects step and usage totals onto the run', () => {
+  it('projects step and usage totals onto the run', async () => {
     const { store } = harness();
     const run = enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
@@ -41,31 +41,31 @@ describe('append', () => {
     });
   });
 
-  it('accepts an empty batch without writing', () => {
+  it('accepts an empty batch without writing', async () => {
     const { store } = harness();
     const run = enqueue(store, newSession(store).id);
     expect(store.append(mustClaim(store, 'w1'), [])).toEqual({ kind: 'ok', lastSeq: 1 });
     expect(store.readRunEvents(run.id, 0, 10)).toHaveLength(1);
   });
 
-  it('is allowed while CANCELLING', () => {
+  it('is allowed while CANCELLING', async () => {
     const { store } = harness();
     const run = enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
-    store.requestCancel(run.id);
+    await store.requestCancel(run.id);
     expect(store.append(claim, [{ type: 'notice', level: 'warning', message: 'stopping' }]).kind).toBe('ok');
   });
 
-  it('returns lease_lost once the lease was released or the run left RUNNING', () => {
+  it('returns lease_lost once the lease was released or the run left RUNNING', async () => {
     const { store } = harness();
     const run = enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
-    store.release(claim, 'WAITING_HUMAN');
+    await store.release(claim, 'WAITING_HUMAN');
     expect(store.append(claim, [{ type: 'notice', level: 'info', message: 'x' }])).toEqual({ kind: 'lease_lost' });
     expect(mustRun(store, run.id).lastSeq).toBe(2);
   });
 
-  it('returns lease_lost for a forged owner or token', () => {
+  it('returns lease_lost for a forged owner or token', async () => {
     const { store } = harness();
     enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');

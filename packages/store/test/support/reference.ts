@@ -335,7 +335,7 @@ export const chainBuilder = (h: ReferenceHarness) => {
 
   const end = async (claim: Claim, ending: Ending): Promise<void> => {
     if (ending.to === 'CANCELLED') {
-      const requestedCancel = h.store.requestCancel(claim.runId);
+      const requestedCancel = await h.store.requestCancel(claim.runId);
       if (requestedCancel.kind !== 'ok') throw new Error(`cancel of ${claim.runId} returned ${requestedCancel.kind}`);
       const result = await h.store.transition(claim, ['CANCELLING'], 'CANCELLED');
       if (result.kind !== 'ok') throw new Error(`cancel transition returned ${result.kind}`);

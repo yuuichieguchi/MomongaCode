@@ -629,7 +629,7 @@ export const buildNext = async (ctx: ClaimContext, options: { wrapUp?: WrapUpRea
     return await buildNextUnguarded(ctx, options);
   } catch (error) {
     if (!(error instanceof PrefixChangedError)) throw error;
-    ctx.terminals.yieldTo('QUEUED', ctx.options.clock.now(), { refundAttempt: true });
+    await ctx.terminals.yieldTo('QUEUED', ctx.options.clock.now(), { refundAttempt: true });
     return { kind: 'done' };
   }
 };

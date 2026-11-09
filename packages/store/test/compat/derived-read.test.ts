@@ -64,3 +64,16 @@ describe('a read of a derivation brings it up to date (H7, 11.5 correction rules
     expect(ticks).toBeGreaterThanOrEqual(2);
   });
 });
+
+describe('a writable read takes the write lock only to write a page (H7, 11.5, settled at I1 Stage C)', () => {
+  it('a read with no lag answers while another connection holds an open write transaction', async () => {
+    const { store, run, db } = finishedByOlderBuild(0);
+    expect(await store.finalTextOf(run.id)).toBe('first answer');
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      expect(await store.finalTextOf(run.id)).toBe('first answer');
+    } finally {
+      db.exec('ROLLBACK');
+    }
+  });
+});

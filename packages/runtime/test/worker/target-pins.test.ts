@@ -31,7 +31,7 @@ const prepared = async (roles: Record<string, string> = {}) => {
   const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
   env.settings.rolesValue = { ...roles };
   const run = env.enqueue('question one');
-  env.seed(run.id, conversation(), 'release');
+  await env.seed(run.id, conversation(), 'release');
   env.gateway.compactSummaries.push(CLEAN);
   env.gateway.script.push(textStep('Done.'));
   return { env, run };

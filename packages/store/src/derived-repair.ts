@@ -3,7 +3,7 @@ import { setImmediate as eventLoopTurn } from 'node:timers/promises';
 import { readTx } from '@momonga/foundation/sqlite';
 import type { RunEvent, RunEventPayload, SessionEventPayload } from '@momonga/protocol';
 import { APPEND_TIME_RECORDS_DERIVATION, RECORD_DERIVATIONS, RUN_ANSWERERS_DERIVATION, SESSION_TOUCHED_DERIVATION, columnsOf } from './append-records.ts';
-import type { AppendRecords, RecordDerivation, RecordedEvent } from './append-records.ts';
+import type { AppendRecordReaders, AppendRecords, RecordDerivation, RecordedEvent } from './append-records.ts';
 import { decodeRunEvents } from './codec.ts';
 import type { DecodeContext } from './codec.ts';
 import { decodeContextOf } from './decode-context.ts';
@@ -112,10 +112,12 @@ const TREE_OF = 'WITH RECURSIVE tree(id) AS (SELECT :runTree UNION ALL SELECT c.
 const LAGGING = `r.last_seq > 0 AND (SELECT COUNT(*) FROM derived_through d WHERE d.run_id = r.id AND d.through_seq >= r.last_seq) < ${DERIVATIONS.length}`;
 
 export type DerivedReads = {
-  read<T>(scope: DerivedScope, readCurrent: () => T): Promise<T>;
+  read<T>(scope: DerivedScope, readCurrent: (view: AppendRecordReaders) => T): Promise<T>;
+  write<T>(scope: DerivedScope, writeCurrent: (view: AppendRecordReaders) => T): Promise<T>;
+  readonly view: AppendRecordReaders;
 };
 
-export const createDerivedReads = (db: DatabaseSync, repair: DerivedRepair, transaction: <T>(fn: () => T) => T): DerivedReads => {
+export const createDerivedReads = (db: DatabaseSync, repair: DerivedRepair, records: AppendRecordReaders, transaction: <T>(fn: () => T) => T): DerivedReads => {
   const lagging = {
     run: db.prepare(`SELECT r.id, r.last_seq FROM runs r WHERE r.id = :runId AND ${LAGGING}`),
     session: db.prepare(`SELECT r.id, r.last_seq FROM runs r WHERE r.session_id = :sessionId AND ${LAGGING} ORDER BY r.rowid LIMIT 1`),
@@ -129,7 +131,43 @@ export const createDerivedReads = (db: DatabaseSync, repair: DerivedRepair, tran
     return { runId: reader.string('id'), lastSeq: reader.number('last_seq') };
   };
 
-  const read = async <T>(scope: DerivedScope, readCurrent: () => T): Promise<T> => {
+  let current = false;
+
+  const within = <T>(fn: (view: AppendRecordReaders) => T): T => {
+    const outer = current;
+    current = true;
+    try {
+      return fn(view);
+    } finally {
+      current = outer;
+    }
+  };
+
+  const guarded =
+    <A extends unknown[], R>(reader: (...args: A) => R) =>
+    (...args: A): R => {
+      if (!current) throw new Error('a derived record is read outside the read function of the store, so it may lag its events');
+      return reader(...args);
+    };
+
+  const view: AppendRecordReaders = {
+    toolCallSeq: guarded(records.toolCallSeq),
+    modelCallRowsOf: guarded(records.modelCallRowsOf),
+    toolCallNamesOf: guarded(records.toolCallNamesOf),
+    finalTextOf: guarded(records.finalTextOf),
+    inFlightModelRequestOf: guarded(records.inFlightModelRequestOf),
+    startedCallsOf: guarded(records.startedCallsOf),
+    hasNoticeCode: guarded(records.hasNoticeCode),
+    meterRecordOf: guarded(records.meterRecordOf),
+    answeringTargetsOf: guarded(records.answeringTargetsOf),
+    touchedAfter: guarded(records.touchedAfter),
+    touchedNewest: guarded(records.touchedNewest),
+    permissionRequestOf: guarded(records.permissionRequestOf),
+    elicitationRequested: guarded(records.elicitationRequested),
+    toolCallEventOf: guarded(records.toolCallEventOf),
+  };
+
+  const paged = async <T>(scope: DerivedScope, fn: (view: AppendRecordReaders) => T): Promise<T> => {
     for (;;) {
       const outcome = transaction((): { value: T } | undefined => {
         const behind = laggingRunOf(scope);
@@ -137,14 +175,19 @@ export const createDerivedReads = (db: DatabaseSync, repair: DerivedRepair, tran
           repair.repairPage(behind.runId, behind.lastSeq);
           if (laggingRunOf(scope) !== undefined) return undefined;
         }
-        return { value: readCurrent() };
+        return { value: within(fn) };
       });
       if (outcome !== undefined) return outcome.value;
       await eventLoopTurn();
     }
   };
 
-  return { read };
+  const read = async <T>(scope: DerivedScope, readCurrent: (view: AppendRecordReaders) => T): Promise<T> => {
+    const quiet = readTx(db, (): { value: T } | undefined => (laggingRunOf(scope) === undefined ? { value: within(readCurrent) } : undefined));
+    return quiet === undefined ? paged(scope, readCurrent) : quiet.value;
+  };
+
+  return { read, write: paged, view };
 };
 
 export type DerivedSnapshotView = {

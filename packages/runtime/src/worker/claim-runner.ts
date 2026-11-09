@@ -143,7 +143,7 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
     }
     try {
       if (control.shuttingDown() || cause instanceof UnknownValueError) {
-        terminals.yieldLease();
+        await terminals.yieldLease();
         return;
       }
       if (control.cancelRequested() && control.failure() === undefined) {
@@ -153,7 +153,7 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
         const keys = [control.inFlight.modelKey, control.inFlight.compactionKey].filter((key): key is string => key !== undefined);
         const failures = await cancelUpstream(options, control, keys);
         if (control.shuttingDown()) {
-          terminals.yieldLease();
+          await terminals.yieldLease();
           return;
         }
         recordUpstreamFailures(journal, failures);
@@ -222,7 +222,7 @@ const requeueOrStop = async (
       return;
     }
     journal.append([{ type: 'notice', level: 'info', message: disposition.message, code: disposition.code }]);
-    terminals.yieldTo('QUEUED', availableAt, { refundAttempt: true });
+    await terminals.yieldTo('QUEUED', availableAt, { refundAttempt: true });
     return;
   }
   const refund = disposition.kind === 'requeue' && disposition.refund;
@@ -259,7 +259,7 @@ const requeueOrStop = async (
   memory.streak += 1;
   if (disposition.kind === 'requeue' && disposition.interrupted) memory.interruptions += 1;
   journal.append([{ type: 'attempt.failed', attempt: claim.leaseToken, code: observedCodeOf(cause), retryAt: availableAt, limit: options.store.maxTotalAttempts }]);
-  terminals.yieldTo('QUEUED', availableAt, refund ? { refundAttempt: true } : undefined);
+  await terminals.yieldTo('QUEUED', availableAt, refund ? { refundAttempt: true } : undefined);
 };
 
 const drive = async (
@@ -283,7 +283,7 @@ const drive = async (
   }
   if (claim.status === 'CANCELLING' || run.cancelRequested) {
     if (control.shuttingDown()) {
-      terminals.yieldLease();
+      await terminals.yieldLease();
       return;
     }
     if (control.leaseLost()) control.lost();
@@ -300,7 +300,7 @@ const drive = async (
         if (error instanceof LeaseLostError || error instanceof ShutdownError) return;
         reportError(options, error, { workerId: options.workerId, runId: run.id });
       });
-      terminals.yieldLease();
+      await terminals.yieldLease();
       return;
     }
     recordUpstreamFailures(journal, await upstream);
@@ -534,7 +534,7 @@ const drive = async (
   if ((await resumeInFlight(ctx)) === 'done') return;
   for (let flow: Flow = 'continue'; flow === 'continue'; ) {
     if (control.shuttingDown()) {
-      terminals.yieldLease();
+      await terminals.yieldLease();
       return;
     }
     if (control.cancelRequested()) {
@@ -542,7 +542,7 @@ const drive = async (
       return;
     }
     if (modeWatch.changed()) {
-      terminals.yieldTo('QUEUED', clock.now(), { refundAttempt: true });
+      await terminals.yieldTo('QUEUED', clock.now(), { refundAttempt: true });
       return;
     }
     flow = await runModelStep(ctx);

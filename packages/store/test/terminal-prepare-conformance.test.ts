@@ -56,7 +56,7 @@ describe('facts that specs/tla/TerminalPrepare.tla relies on', () => {
     const settled = mustRun(h.store, run.id).lastSeq;
 
     expect(await h.store.transition(claim, ['RUNNING'], 'COMPLETED')).toEqual({ kind: 'lease_lost' });
-    expect(h.store.requestCancel(run.id)).toMatchObject({ kind: 'ok', changed: false });
+    expect(await h.store.requestCancel(run.id)).toMatchObject({ kind: 'ok', changed: false });
 
     expect(mustRun(h.store, run.id).lastSeq).toBe(settled);
     expect(contributionsOf(h.store, run.id)).toBe(1);
@@ -68,7 +68,7 @@ describe('facts that specs/tla/TerminalPrepare.tla relies on', () => {
     const claim = mustClaim(h.store, 'w1');
     const seen = mustRun(h.store, run.id).lastSeq;
 
-    expect(cancel(h.store, run.id).status).toBe('CANCELLING');
+    expect((await cancel(h.store, run.id)).status).toBe('CANCELLING');
 
     expect(mustRun(h.store, run.id).lastSeq).toBeGreaterThan(seen);
     expect((await h.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('conflict');
@@ -98,7 +98,7 @@ describe('facts that specs/tla/TerminalPrepare.tla relies on', () => {
   it('ApprovalRowsMatchJournal: the commit ends exactly the waits of prepared.leading when a request for input falls due after the preparation', async () => {
     const h = harness();
     const later = EXPIRES_MS + 60_000;
-    const { runId, approvals } = awaitingInput(h.store, [{ callId: 'call_1' }, { callId: 'call_2', expiresAt: later }], 'waiting');
+    const { runId, approvals } = await awaitingInput(h.store, [{ callId: 'call_1' }, { callId: 'call_2', expiresAt: later }], 'waiting');
     const [first, second] = approvals;
     if (first === undefined || second === undefined) throw new Error('expected two requests for input');
     h.fake.during(() => {
@@ -110,8 +110,8 @@ describe('facts that specs/tla/TerminalPrepare.tla relies on', () => {
     expect(h.fake.requests).toHaveLength(1);
     const leadingCancels = (h.fake.requests[0]?.leading ?? []).flatMap((event) => (event.type === 'tool.elicitation.cancelled' ? [{ inputId: event.inputId, reason: event.reason }] : []));
     expect(leadingCancels).toEqual([{ inputId: first.id, reason: 'expired' }]);
-    expect(h.store.elicitationView(first.id)?.status).toBe('expired');
-    expect(h.store.elicitationView(second.id)?.status).toBe('withdrawn');
+    expect((await h.store.elicitationView(first.id))?.status).toBe('expired');
+    expect((await h.store.elicitationView(second.id))?.status).toBe('withdrawn');
     const journalCancels = h.store
       .readRunEvents(runId, 0, 1000)
       .flatMap((event) => (event.type === 'tool.elicitation.cancelled' ? [{ inputId: event.inputId, reason: event.reason }] : []));
@@ -122,7 +122,7 @@ describe('facts that specs/tla/TerminalPrepare.tla relies on', () => {
     expect(mustRun(h.store, runId)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
   });
 
-  it('Keepalive is absent: a heartbeat appends no event, which RePrepareBounded and Terminates need', () => {
+  it('Keepalive is absent: a heartbeat appends no event, which RePrepareBounded and Terminates need', async () => {
     const h = harness();
     const run = enqueue(h.store, newSession(h.store).id);
     const claim = mustClaim(h.store, 'w1');

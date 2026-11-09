@@ -11,6 +11,7 @@ import { blobDirectoryOf, createBlobStore, prepareBlobDirectory } from './blobs.
 import { addUsage, foldRunState, initialRunState, spendOf } from './fold.ts';
 import { HISTORY_MODES, decodeContextOf, decodeKnownEvent, decodeRun, decodeRunEvents, decodeRunState, decodeSession, decodeStoredEvent, encodeRunState } from './codec.ts';
 import { createDerivedReads, createDerivedRepair } from './derived-repair.ts';
+import type { DerivedScope } from './derived-repair.ts';
 import { JournalThreadError, StalePreparation } from './journal-port.ts';
 import { createJournalReader, payloadStep } from './journal-reader.ts';
 import { StoreIdentityError, isFatalStoreError } from './fatal.ts';
@@ -275,15 +276,6 @@ const prepareStatements = (db: DatabaseSync) => ({
        )
      ORDER BY r.created_at, r.rowid`,
   ),
-  toolCallEvent: db.prepare(
-    "SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.call' AND call_id = :callId LIMIT 1",
-  ),
-  requestedEvent: db.prepare(
-    "SELECT payload_json FROM events WHERE run_id = :runId AND type = 'tool.permission.requested' AND approval_id = :approvalId LIMIT 1",
-  ),
-  elicitationRequestedEvent: db.prepare(
-    "SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.elicitation.requested' AND approval_id = :approvalId LIMIT 1",
-  ),
   runEvents: db.prepare('SELECT * FROM events WHERE run_id = :runId AND seq > :after ORDER BY seq LIMIT :limit'),
   lastTerminalRootRuns: db.prepare(
     `SELECT r.* FROM runs r JOIN sessions s ON s.id = r.session_id
@@ -346,9 +338,6 @@ const prepareStatements = (db: DatabaseSync) => ({
   releaseHeldLease: db.prepare(
     `UPDATE runs SET version = version + 1, lease_owner = NULL, lease_expires_at = NULL, available_at = :availableAt, failed_attempts = 0, attempts = :attempts
      WHERE id = :runId AND lease_token = :leaseToken AND lease_owner = :workerId`,
-  ),
-  approvalRequested: db.prepare(
-    "SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'tool.permission.requested' AND approval_id = :approvalId LIMIT 1",
   ),
   inheritedEvent: db.prepare("SELECT 1 AS present FROM events WHERE run_id = :runId AND type = 'context.inherited' LIMIT 1"),
   latestSnapshot: db.prepare('SELECT * FROM snapshots WHERE run_id = :runId ORDER BY seq DESC LIMIT 1'),
@@ -470,7 +459,8 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       throw error;
     }
   };
-  const derivedReads = createDerivedReads(db, derived, transaction);
+  const derivedReads = createDerivedReads(db, derived, records, transaction);
+  const derivedView = derivedReads.view;
 
 
   const observeDecode = (rows: readonly Row[]): void => {
@@ -533,7 +523,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   };
 
   const approvalAnnounced = (runId: string, approvalId: string): boolean =>
-    sql.requestedEvent.get({ runId, approvalId }) !== undefined || sql.elicitationRequestedEvent.get({ runId, approvalId }) !== undefined;
+    derivedView.permissionRequestOf(runId, approvalId) !== undefined || derivedView.elicitationRequested(runId, approvalId);
 
   const cancelledEvent = (approval: Approval, reason: 'expired' | 'withdrawn' | 'superseded'): RunEventPayload =>
     approval.kind === 'elicitation'
@@ -609,15 +599,15 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   type Need = { runId: string; leading: readonly RunEventPayload[]; expiring: readonly string[] };
   type Prepared = Need & { measured: ContributionMeasured | undefined };
 
-  const operate = async <T>(plan: () => Need | undefined, commit: (prepared: Prepared | undefined) => T): Promise<T> => {
+  const operate = async <T>(scope: DerivedScope, plan: () => Need | undefined, commit: (prepared: Prepared | undefined) => T): Promise<T> => {
     for (;;) {
-      const need = plan();
+      const need = await derivedReads.read(scope, plan);
       let prepared: Prepared | undefined;
       if (need !== undefined) {
         prepared = preparer === undefined ? { ...need, measured: undefined } : { ...need, measured: await preparer.measure({ runId: need.runId, leading: need.leading }) };
       }
       try {
-        return transaction(() => commit(prepared));
+        return await derivedReads.write(scope, () => commit(prepared));
       } catch (error) {
         if (!(error instanceof StalePreparation) || preparer === undefined) throw error;
       }
@@ -829,7 +819,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   };
 
   const toolCallOf = (approval: Approval): ApprovalView['toolCall'] => {
-    const row = sql.toolCallEvent.get({ runId: approval.runId, callId: approval.callId });
+    const row = derivedView.toolCallEventOf(approval.runId, approval.callId);
     if (row === undefined) throw corrupt('approvals', approval.id, `run ${approval.runId} has no tool.call event for call ${approval.callId}`);
     const payload = expectRecord('events', approval.id, 'payload_json', readerFor('events', approval.id, row).json('payload_json'));
     const { name, title, kind, locations } = payload;
@@ -847,7 +837,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   };
 
   const requestOf = (approval: Approval): { reason: string; suggestedRule?: string } => {
-    const row = sql.requestedEvent.get({ runId: approval.runId, approvalId: approval.id });
+    const row = derivedView.permissionRequestOf(approval.runId, approval.id);
     if (row === undefined) throw corrupt('approvals', approval.id, `run ${approval.runId} has no tool.permission.requested event for approval ${approval.id}`);
     const payload = expectRecord('events', approval.id, 'payload_json', readerFor('events', approval.id, row).json('payload_json'));
     const { reason, suggestedRule } = payload;
@@ -1319,6 +1309,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
 
     transition: (claim, from, to, patch, preceding = []) =>
       operate(
+        { runTree: claim.runId },
         () => {
           if (!isTerminal(to)) return undefined;
           const row = sql.selectRun.get({ id: claim.runId });
@@ -1332,7 +1323,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       ),
 
     release: (claim, to, availableAt, options) =>
-      transaction<RunMutationResult>(() => {
+      derivedReads.write<RunMutationResult>({ runTree: claim.runId }, () => {
         const run = fenced(claim);
         if (run === undefined) return leaseLost;
         const refund = options?.refundAttempt === true ? { refundAttempt: true } : {};
@@ -1346,7 +1337,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       }),
 
     releaseLease: (claim, options) =>
-      transaction<RunMutationResult>(() => {
+      derivedReads.write<RunMutationResult>({ runTree: claim.runId }, () => {
         const unknownHeld = sql.heldWithUnknownStatus.get({ runId: claim.runId, leaseToken: claim.leaseToken, workerId: claim.workerId });
         if (unknownHeld !== undefined) return releaseUntouched(decodeRun(unknownHeld, decodeContext), claim, options);
         const run = fenced(claim);
@@ -1363,7 +1354,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       }),
 
     requestCancel: (runId) =>
-      transaction<RequestCancelResult>(() => {
+      derivedReads.write<RequestCancelResult>({ runTree: runId }, () => {
         const row = sql.selectRun.get({ id: runId });
         if (row === undefined) return { kind: 'not_found' };
         const run = decodeRun(row, decodeContext);
@@ -1376,6 +1367,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     appendAsService: async (runId, expectedVersion, to, events, patch) => {
       rejectContribution(events);
       return operate(
+        { runTree: runId },
         () => {
           if (to === null || !isTerminal(to)) return undefined;
           const row = sql.selectRun.get({ id: runId });
@@ -1412,27 +1404,27 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return event as Extract<RunEvent, { type: T }> | undefined;
     },
 
-    readModelCallEvents: (runId) => derivedReads.read({ runId }, () => records.modelCallRowsOf(runId).map(decodeModelCallRecord)),
+    readModelCallEvents: (runId) => derivedReads.read({ runId }, (view) => view.modelCallRowsOf(runId).map(decodeModelCallRecord)),
 
-    toolCallSeq: (runId, callId) => derivedReads.read({ runId }, () => records.toolCallSeq(runId, callId)),
+    toolCallSeq: (runId, callId) => derivedReads.read({ runId }, (view) => view.toolCallSeq(runId, callId)),
 
-    finalTextOf: (runId) => derivedReads.read({ runId }, () => records.finalTextOf(runId)),
+    finalTextOf: (runId) => derivedReads.read({ runId }, (view) => view.finalTextOf(runId)),
 
-    inFlightModelRequestOf: (runId) => derivedReads.read({ runId }, () => records.inFlightModelRequestOf(runId)),
+    inFlightModelRequestOf: (runId) => derivedReads.read({ runId }, (view) => view.inFlightModelRequestOf(runId)),
 
-    startedCallsOf: (runId) => derivedReads.read({ runId }, () => records.startedCallsOf(runId)),
+    startedCallsOf: (runId) => derivedReads.read({ runId }, (view) => view.startedCallsOf(runId)),
 
-    hasNoticeCode: (runId, code) => derivedReads.read({ runId }, () => records.hasNoticeCode(runId, code)),
+    hasNoticeCode: (runId, code) => derivedReads.read({ runId }, (view) => view.hasNoticeCode(runId, code)),
 
-    meterRecordOf: (sessionId, key) => derivedReads.read({ sessionId }, () => records.meterRecordOf(sessionId, key)),
+    meterRecordOf: (sessionId, key) => derivedReads.read({ sessionId }, (view) => view.meterRecordOf(sessionId, key)),
 
-    answeringTargetsOf: (runId) => derivedReads.read({ runId }, () => records.answeringTargetsOf(runId)),
+    answeringTargetsOf: (runId) => derivedReads.read({ runId }, (view) => view.answeringTargetsOf(runId)),
 
     recordFidelityVerdicts: (runId, cwd, reply) => transaction(() => verdicts.record(runId, cwd, reply)),
 
     lastTerminalRootRuns: (project, limit) => sql.lastTerminalRootRuns.all({ project, limit }).map((row) => decodeRun(row, decodeContext)),
 
-    toolCallNames: (runId) => derivedReads.read({ runTree: runId }, () => records.toolCallNamesOf(runId)),
+    toolCallNames: (runId) => derivedReads.read({ runTree: runId }, (view) => view.toolCallNamesOf(runId)),
 
     toolOfferedNames: (runId) => {
       if (sql.hasToolOffered.get({ runId }) === undefined) throw new Error(`run ${runId} has no tool.offered record`);
@@ -1469,7 +1461,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     },
 
     requestApproval: (claim, input) =>
-      transaction<RequestApprovalResult>(() => {
+      derivedReads.write<RequestApprovalResult>({ runTree: claim.runId }, () => {
         const run = fenced(claim);
         if (run === undefined) return leaseLost;
         const requested = approvalOps.request({
@@ -1497,10 +1489,14 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         return { kind: 'ok', approval: requested.approval };
       }),
 
-    resolveApproval: async (approvalId, optionId) => transaction(() => resolveInTransaction(approvalId, optionId, clock.now())),
+    resolveApproval: async (approvalId, optionId) => {
+      const approval = approvalOps.store.get(approvalId);
+      if (approval === undefined) return { kind: 'not_found' };
+      return derivedReads.write({ runTree: approval.runId }, () => resolveInTransaction(approvalId, optionId, clock.now()));
+    },
 
     requestElicitation: (claim, input) =>
-      transaction<RequestApprovalResult>(() => {
+      derivedReads.write<RequestApprovalResult>({ runTree: claim.runId }, () => {
         const run = fenced(claim);
         if (run === undefined) return leaseLost;
         const requested = approvalOps.request({
@@ -1521,20 +1517,23 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         return { kind: 'ok', approval: requested.approval };
       }),
 
-    resolveElicitation: (elicitationId, responses, notices = []) => {
+    resolveElicitation: async (elicitationId, responses, notices = []) => {
       const now = clock.now();
+      const elicitation = approvalOps.store.get(elicitationId);
+      if (elicitation === undefined) return { kind: 'not_found' };
       return operate(
+        { runTree: elicitation.runId },
         () => lateInputNeed(elicitationId, now),
         (prepared) => resolveElicitationInTransaction(elicitationId, responses, notices, now, prepared),
       );
     },
 
-    elicitationView: (elicitationId) => {
+    elicitationView: async (elicitationId) => {
       const approval = approvalOps.store.get(elicitationId);
-      return approval === undefined || approval.kind !== 'elicitation' ? undefined : elicitationViewOf(approval);
+      return approval === undefined || approval.kind !== 'elicitation' ? undefined : derivedReads.read({ runId: approval.runId }, () => elicitationViewOf(approval));
     },
 
-    pendingElicitationViews: (runId) => approvalOps.store.listPending(runId).filter((approval) => approval.kind === 'elicitation').map(elicitationViewOf),
+    pendingElicitationViews: (runId) => derivedReads.read({ runId }, () => approvalOps.store.listPending(runId).filter((approval) => approval.kind === 'elicitation').map(elicitationViewOf)),
 
     hasActiveRun: () => {
       const row = sql.anyActiveRunExists.get({});
@@ -1550,6 +1549,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         const runId = readerFor('runs', 'due', row).string('id');
         try {
           const didStop = await operate(
+            { runTree: runId },
             () => stopNeed(runId, nowMs),
             (prepared) => stopWaitingRun(requireRun(runId), nowMs, prepared),
           );
@@ -1568,6 +1568,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         const runId = decodeRun(row, decodeContext).id;
         try {
           const didFinish = await operate(
+            { runTree: runId },
             () => (sql.sweeperOwnedById.get({ id: runId, now }) === undefined ? undefined : { runId, leading: [], expiring: [] }),
             (prepared) => {
               const current = sql.sweeperOwnedById.get({ id: runId, now });
@@ -1592,6 +1593,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
         const runId = decodeRun(row, decodeContext).id;
         try {
           const didEnd = await operate(
+            { runTree: runId },
             () => (sql.exhaustedById.get({ id: runId, ...exhausted }) === undefined ? undefined : { runId, leading: [], expiring: [] }),
             (prepared) => {
               const current = sql.exhaustedById.get({ id: runId, ...exhausted });
@@ -1608,12 +1610,12 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
       return ended;
     },
 
-    approvalView: (approvalId) => {
+    approvalView: async (approvalId) => {
       const approval = approvalOps.store.get(approvalId);
-      return approval === undefined || approval.kind !== 'permission' ? undefined : viewOf(approval);
+      return approval === undefined || approval.kind !== 'permission' ? undefined : derivedReads.read({ runId: approval.runId }, () => viewOf(approval));
     },
 
-    pendingApprovalViews: (runId) => approvalOps.store.listPending(runId).filter((approval) => approval.kind === 'permission').map(viewOf),
+    pendingApprovalViews: (runId) => derivedReads.read({ runId }, () => approvalOps.store.listPending(runId).filter((approval) => approval.kind === 'permission').map(viewOf)),
 
     writeSnapshot: (claim, seq, state) =>
       transaction(() => {
@@ -1637,10 +1639,10 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
     approvals: approvalOps.store,
     blobs: createBlobStore(db, clock, blobDirectory),
     trust,
-    memories: { ...memories, save: (input) => derivedReads.read({ runId: input.runId }, () => memories.save(input)) },
+    memories: { ...memories, save: (input) => derivedReads.write({ runId: input.runId }, () => memories.save(input)) },
     sessionTouched: {
-      after: (sessionId, afterEventId, limit, afterPath) => derivedReads.read({ sessionId }, () => records.touchedAfter(sessionId, afterEventId, limit, afterPath)),
-      newest: (sessionId, limit) => derivedReads.read({ sessionId }, () => records.touchedNewest(sessionId, limit)),
+      after: (sessionId, afterEventId, limit, afterPath) => derivedReads.read({ sessionId }, (view) => view.touchedAfter(sessionId, afterEventId, limit, afterPath)),
+      newest: (sessionId, limit) => derivedReads.read({ sessionId }, (view) => view.touchedNewest(sessionId, limit)),
     },
     reflection,
     contextCharges,

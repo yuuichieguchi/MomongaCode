@@ -13,7 +13,7 @@ describe('worker tool-set notices', () => {
     const known = 'Tool source "mcp-a" failed to list tools: connection refused';
     const fresh = 'Tool source "mcp-b": awaiting approval';
     const run = env.enqueue('Work');
-    env.seed(run.id, [{ type: 'notice', level: 'warning', message: known }], 'release');
+    await env.seed(run.id, [{ type: 'notice', level: 'warning', message: known }], 'release');
     env.gateway.script.push(textStep('Hello.'));
     const worker = env.worker('worker-1', {
       tools: {
@@ -133,7 +133,7 @@ describe('worker policyFor', () => {
     const env = await makeEnv();
     const run = env.enqueue('Mark it');
     const key = toolKey(run.id, 1, 'call_m_1');
-    env.seed(
+    await env.seed(
       run.id,
       [
         pinnedStart(),
@@ -150,7 +150,7 @@ describe('worker policyFor', () => {
       'crash',
     );
     env.store.idempotency.begin(key, { expiresAt: START_MS + 86_400_000, meta: { tool: 'Mark' } });
-    env.cancel(run.id);
+    await env.cancel(run.id);
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 

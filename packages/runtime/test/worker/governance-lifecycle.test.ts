@@ -50,12 +50,12 @@ describe('RulePropose in a delegated run', () => {
     expect(request?.options.map((option) => option.kind)).toEqual(['allow_once', 'reject_once']);
     expect(request).not.toHaveProperty('suggestedRule');
 
-    const walked = env.store.listChildRuns(parent.id).flatMap((run) => env.store.pendingApprovalViews(run.id));
+    const walked = (await Promise.all(env.store.listChildRuns(parent.id).map((run) => env.store.pendingApprovalViews(run.id)))).flat();
     expect(walked).toHaveLength(1);
     expect(walked[0]).toMatchObject({ runId: child.id, toolCall: { name: 'RulePropose' } });
     expect(walked[0]?.toolCall.title).toContain('Never use pandas.');
     expect(walked[0]?.options.map((option) => option.kind)).toEqual(['allow_once', 'reject_once']);
-    expect(env.store.pendingApprovalViews(parent.id)).toEqual([]);
+    expect(await env.store.pendingApprovalViews(parent.id)).toEqual([]);
 
     await env.resolveApproval(child.id, 'allow_once');
     env.gateway.script.push(textStep('proposed'), textStep('parent done'));
@@ -136,7 +136,7 @@ describe('RulePropose after a crash', () => {
             env.clock.advance(LEASE_MS + 1);
             const thief = env.store.claim('thief');
             if (thief === null) throw new Error('the lease did not expire');
-            env.store.release(thief, 'QUEUED');
+            await env.store.release(thief, 'QUEUED');
             return result;
           },
         })),

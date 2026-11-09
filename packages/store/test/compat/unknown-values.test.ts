@@ -16,7 +16,7 @@ const setColumn = (dbPath: string, table: string, column: string, value: string,
 
 const withUnknownValues = async (newer: boolean) => {
   const env = harness();
-  const { runId, approvals } = awaitingApproval(env.store, [{ callId: 'c1' }], 'waiting');
+  const { runId, approvals } = await awaitingApproval(env.store, [{ callId: 'c1' }], 'waiting');
   const approval = approvals[0];
   if (approval === undefined) throw new Error('no approval');
   const memory = (await env.store.memories.save({ origin: 'trusted', scope: 'project', project: '/work/a', text: 'tests live in test/', runId, step: 1, callId: 'c1' })).memory;
@@ -52,7 +52,7 @@ describe('a value of a closed set this build does not know (H7, 11.4 rule 3)', (
     expect(await store.expireApprovals(START_MS + 10 * DEADLINE_MS, rethrow)).toEqual([]);
     expect(await store.finishCancelled(rethrow)).toEqual([]);
     expect(await store.deadLetterExhausted(rethrow)).toEqual([]);
-    expect(store.requestCancel(queuedId).kind).not.toBe('ok');
+    expect((await store.requestCancel(queuedId)).kind).not.toBe('ok');
     expect((await store.resolveApproval(approvalId, 'allow_once')).kind).not.toBe('ok');
     expect(store.getRun(runId)?.status).toBe('unknown');
     expect(store.getRun(queuedId)?.status).toBe('unknown');

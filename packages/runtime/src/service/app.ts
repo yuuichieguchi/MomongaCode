@@ -397,9 +397,9 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
 
   const getRun: Handler = (context) => json({ run: toRunView(requireRun(context.req.param('id') ?? '')) });
 
-  const cancelRun: Handler = (context) => {
+  const cancelRun: Handler = async (context) => {
     const id = context.req.param('id') ?? '';
-    const result = store.requestCancel(id);
+    const result = await store.requestCancel(id);
     if (result.kind === 'not_found') throw notFound(`run ${id} does not exist`);
     if (result.kind === 'status_unknown') throw conflict('value_unknown', `run ${id} has a status this build does not know, so it is not cancelled by this build`);
     const settled = isTerminalStatus(result.run.status) && !result.changed;
@@ -460,14 +460,14 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
     return new Response(`${text}${chargesText === '' ? '' : `\n${chargesText}`}\n`, { status: 200, headers: { 'content-type': 'text/plain; charset=utf-8' } });
   };
 
-  const listRunApprovals: Handler = (context) => {
+  const listRunApprovals: Handler = async (context) => {
     const run = requireRun(context.req.param('id') ?? '');
-    return json({ approvals: store.pendingApprovalViews(run.id) });
+    return json({ approvals: await store.pendingApprovalViews(run.id) });
   };
 
-  const getApproval: Handler = (context) => {
+  const getApproval: Handler = async (context) => {
     const id = context.req.param('id') ?? '';
-    const approval = store.approvalView(id);
+    const approval = await store.approvalView(id);
     if (approval === undefined) throw notFound(`approval ${id} does not exist`);
     return json({ approval });
   };
@@ -488,7 +488,7 @@ export const createRunApp = (deps: RunAppDeps): Hono => {
       case 'option_not_offered':
         throw invalidRequest(`option ${body.optionId} was not offered for approval ${id}`, 'optionId');
       case 'ok': {
-        const approval = store.approvalView(result.approval.id);
+        const approval = await store.approvalView(result.approval.id);
         if (approval === undefined) throw new Error(`approval ${result.approval.id} vanished after it was resolved`);
         return json({ approval, run: toRunView(result.run) });
       }

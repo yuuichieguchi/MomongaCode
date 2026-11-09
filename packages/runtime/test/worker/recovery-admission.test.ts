@@ -106,7 +106,7 @@ describe('worker recovery of a started call with an existing record', () => {
       { type: 'tool.call', callId: 'call_w_1', providerCallId: 'call_w_1', name: 'Write', kind: 'edit', title: `Write ${target}`, rawInput: { file_path: target, content: 'x' } },
       { type: 'tool.started', callId: 'call_w_1', idemKey: key },
     ];
-    env.seed(run.id, payloads, 'crash');
+    await env.seed(run.id, payloads, 'crash');
     env.store.idempotency.begin(key, { expiresAt: START_MS + 86_400_000, meta: { tool: 'Write' } });
     env.setMode('default');
     env.gateway.script.push(textStep('Checked.'));

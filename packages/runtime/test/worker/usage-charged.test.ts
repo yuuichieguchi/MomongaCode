@@ -19,7 +19,7 @@ describe('token spend outside the main model calls counts against the run', () =
   it('charges a compaction call to the run, in the row, the fold and the tree total', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
     const run = env.enqueue('Task one');
-    env.seed(
+    await env.seed(
       run.id,
       [
         responded(1, [assistantMessage('msg_big', 'x'.repeat(100_000))]),
@@ -72,7 +72,7 @@ describe('token spend outside the main model calls counts against the run', () =
   it('copies the answering target of the compaction resource into its usage.charged (D17 section 7)', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
     const run = env.enqueue('Task one');
-    env.seed(
+    await env.seed(
       run.id,
       [
         responded(1, [assistantMessage('msg_big', 'x'.repeat(100_000))]),

@@ -14,16 +14,16 @@ const asWrittenByOlderBuild = (dbPath: string, runId: string): void => {
 describe('a read of approval_id inside a store operation, for a request an older build appended (H7, 11.5 correction rule 1; pending the person)', () => {
   it('resolveApproval finds the tool.permission.requested event and resolves', async () => {
     const { store, dbPath } = harness();
-    const { runId, approvals } = awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
+    const { runId, approvals } = await awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
     asWrittenByOlderBuild(dbPath, runId);
     expect((await store.resolveApproval(approvals[0]?.id ?? '', 'allow_once')).kind).toBe('ok');
   });
 
   it('cancelling the run appends tool.permission.cancelled for the withdrawn request', async () => {
     const { store, dbPath } = harness();
-    const { runId } = awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
+    const { runId } = await awaitingApproval(store, [{ callId: 'call_1' }], 'waiting');
     asWrittenByOlderBuild(dbPath, runId);
-    store.requestCancel(runId);
+    await store.requestCancel(runId);
     expect(rawDb(dbPath).prepare("SELECT COUNT(*) AS n FROM events WHERE run_id = ? AND type = 'tool.permission.cancelled'").get(runId)).toEqual({ n: 1 });
   });
 });

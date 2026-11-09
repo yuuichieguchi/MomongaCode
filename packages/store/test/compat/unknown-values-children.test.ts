@@ -3,7 +3,7 @@ import { enqueue, harness, mustRun, newSession, rawDb } from '../helpers.ts';
 import { recordNewerMigration } from './fixtures.ts';
 
 describe('cancelling a parent whose child holds a status this build does not know (11.4)', () => {
-  it('cancels the parent and leaves the child untouched', () => {
+  it('cancels the parent and leaves the child untouched', async () => {
     const { store, dbPath } = harness();
     const parent = enqueue(store, newSession(store).id);
     const created = store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, modelAlias: 'fm' });
@@ -15,7 +15,7 @@ describe('cancelling a parent whose child holds a status this build does not kno
     db.close();
     const childSeq = mustRun(store, created.run.id).lastSeq;
 
-    expect(store.requestCancel(parent.id).kind).toBe('ok');
+    expect((await store.requestCancel(parent.id)).kind).toBe('ok');
     expect(mustRun(store, parent.id).status).toBe('CANCELLING');
     expect(mustRun(store, created.run.id).status).toBe('unknown');
     expect(mustRun(store, created.run.id).lastSeq).toBe(childSeq);

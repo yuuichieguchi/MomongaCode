@@ -21,6 +21,28 @@ const constantOf = (name: string): string => {
   return match[1];
 };
 
+const headerEntries = (): { derivation: number; model: string; holds: string[]; scope: string }[] => {
+  const header = spec.slice(0, spec.indexOf('*****)', spec.indexOf('Derivations of the code')));
+  const rows = header.slice(header.indexOf('Derivations of the code'), header.indexOf('Actors of the code')).split('\n').slice(1);
+  const texts = rows.map((row) => row.replace(/^\(\*\s?/, '').replace(/\s*\*\)\s*$/, '')).filter((row) => row.trim() !== '');
+  const entries: { derivation: number; model: string; text: string }[] = [];
+  for (const text of texts) {
+    const start = /^\s*derivation (\d+)\s+(dn|ds)\s+(.*)$/.exec(text);
+    if (start !== null) entries.push({ derivation: Number(start[1]), model: start[2] as string, text: start[3] as string });
+    else {
+      const last = entries.at(-1);
+      if (last === undefined) throw new Error(`the header of DerivedRepair.tla has a derivation row without its derivation: ${text}`);
+      last.text = `${last.text} ${text.trim()}`;
+    }
+  }
+  return entries.map((entry) => {
+    const scope = /\b(run|session)\s*$/.exec(entry.text)?.[1];
+    if (scope === undefined) throw new Error(`the header row of derivation ${entry.derivation} names no scope`);
+    const holds = entry.text.replace(/\b(run|session)\s*$/, '').split(',').map((name) => name.trim()).filter((name) => name !== '');
+    return { derivation: entry.derivation, model: entry.model, holds, scope };
+  });
+};
+
 const DERIVED_TABLES = ['run_records', 'started_calls', 'meter_records', 'session_touched', 'run_answerers', 'derived_through'];
 const DERIVED_EVENT_COLUMNS = ['pinned_digest', 'call_id', 'approval_id', 'tool_name', 'notice_code', 'model_call_json'];
 const DERIVATION_FILES = ['append-records.ts', 'derived-repair.ts', 'schema.ts'];
@@ -37,6 +59,18 @@ describe('the store derivations against DerivedRepair.tla (H7, 11.5 correction)'
   it('every scope a derivation holds is a value scope of the model, and the model has no scope the code lacks', () => {
     const modelScopes = new Set([...definitionOf('ValScope').matchAll(/"(run|session)"/g)].map((match) => match[1]));
     expect(new Set(DERIVED_VALUES.map((value) => value.scope))).toEqual(modelScopes);
+  });
+
+  it('the derivations, values and scopes named in the DerivedRepair.tla header are exactly DERIVED_VALUES, and each scope is its model derivation\'s ValScope', () => {
+    const valScope = definitionOf('ValScope');
+    const modelScopeOf = (model: string): string => (new RegExp(`d = "${model}" THEN "(\\w+)"`).exec(valScope)?.[1] ?? /ELSE "(\w+)"/.exec(valScope)?.[1]) as string;
+    const named = headerEntries().flatMap((entry) => {
+      expect(entry.scope).toBe(modelScopeOf(entry.model));
+      return entry.holds.map((holds) => ({ derivation: entry.derivation, holds, scope: entry.scope }));
+    });
+    const qualified = named.map((value) => ({ ...value, holds: DERIVED_VALUES.some((code) => code.holds === value.holds) ? value.holds : `events.${value.holds}` }));
+    const key = (value: { derivation: number; holds: string; scope: string }): string => `${value.derivation} ${value.holds} ${value.scope}`;
+    expect(qualified.map(key).sort()).toEqual(DERIVED_VALUES.map(key).sort());
   });
 
   it('every derivation holds at least one value, and every value belongs to a derivation', () => {

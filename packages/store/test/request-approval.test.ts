@@ -21,11 +21,11 @@ const claimWithCall = (store: RuntimeStore): { runId: string; claim: Claim } => 
 };
 
 describe('store.requestApproval', () => {
-  it('creates the approval and appends tool.permission.requested in one call', () => {
+  it('creates the approval and appends tool.permission.requested in one call', async () => {
     const { store } = harness();
     const { runId, claim } = claimWithCall(store);
 
-    const result = store.requestApproval(claim, {
+    const result = await store.requestApproval(claim, {
       callId: 'call_1',
       options: OPTIONS,
       event: { subjectDigest: DIGEST, reason: 'edits require approval', suggestedRule: 'Write(/x)' },
@@ -47,12 +47,12 @@ describe('store.requestApproval', () => {
     });
   });
 
-  it('journals the reason the policy asked and reads it back on the event and on the approval view', () => {
+  it('journals the reason the policy asked and reads it back on the event and on the approval view', async () => {
     const { store } = harness();
     const { runId, claim } = claimWithCall(store);
     const reason = 'edit outside the workspace requires approval';
 
-    const result = store.requestApproval(claim, {
+    const result = await store.requestApproval(claim, {
       callId: 'call_1',
       options: OPTIONS,
       event: { subjectDigest: DIGEST, reason },
@@ -61,18 +61,18 @@ describe('store.requestApproval', () => {
     if (result.kind !== 'ok') throw new Error(`expected ok, got ${result.kind}`);
     const last = store.readRunEvents(runId, 0, 100).at(-1);
     expect(last).toMatchObject({ type: 'tool.permission.requested', approvalId: result.approval.id, reason });
-    expect(store.approvalView(result.approval.id)?.reason).toBe(reason);
-    expect(store.pendingApprovalViews(runId).map((view) => view.reason)).toEqual([reason]);
+    expect((await store.approvalView(result.approval.id))?.reason).toBe(reason);
+    expect((await store.pendingApprovalViews(runId)).map((view) => view.reason)).toEqual([reason]);
   });
 
-  it('returns lease_lost for a stale claim, creating no approval and appending no event', () => {
+  it('returns lease_lost for a stale claim, creating no approval and appending no event', async () => {
     const { clock, store } = harness();
     const { runId, claim } = claimWithCall(store);
     clock.advance(LEASE_MS + 1);
     mustClaim(store, 'worker-2');
     const lastSeq = mustRun(store, runId).lastSeq;
 
-    const result = store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, event: { subjectDigest: DIGEST, reason: 'edits require approval' } });
+    const result = await store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, event: { subjectDigest: DIGEST, reason: 'edits require approval' } });
 
     expect(result).toEqual({ kind: 'lease_lost' });
     expect(store.approvals.listPending(runId)).toEqual([]);
@@ -83,11 +83,11 @@ describe('store.requestApproval', () => {
   it('renews the approval once the previous one for the call is resolved', async () => {
     const { store } = harness();
     const { runId, claim } = claimWithCall(store);
-    const first = store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, event: { subjectDigest: DIGEST, reason: 'edits require approval' } });
+    const first = await store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, event: { subjectDigest: DIGEST, reason: 'edits require approval' } });
     if (first.kind !== 'ok') throw new Error('expected the first approval');
     expect((await store.resolveApproval(first.approval.id, 'allow_once')).kind).toBe('ok');
 
-    const second = store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, event: { subjectDigest: 'b'.repeat(64), reason: 'edits require approval' } });
+    const second = await store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, event: { subjectDigest: 'b'.repeat(64), reason: 'edits require approval' } });
 
     if (second.kind !== 'ok') throw new Error('expected the renewed approval');
     expect(second.approval.id).not.toBe(first.approval.id);

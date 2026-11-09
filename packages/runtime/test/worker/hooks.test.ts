@@ -69,7 +69,7 @@ describe('worker hooks', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     const counter = path.join(env.project, 'stop-runs.txt');
     env.settings.hooksValue = hooks('Stop', `echo run >> ${counter}`);
     const run = env.enqueue('hello');
-    env.seed(
+    await env.seed(
       run.id,
       [
         { type: 'model.responded', step: 1, attempt: 1, response: { status: 'completed', output: [assistantMessage('msg_1', 'done')], usage: { input_tokens: 5, output_tokens: 1, total_tokens: 6 } } },

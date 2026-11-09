@@ -124,9 +124,9 @@ const requireSuggestedRule = (callId: string, call: PendingCall): string => {
   return rule;
 };
 
-const requestApproval = (ctx: ClaimContext, outcome: NeedsApprovalOutcome): void => {
+const requestApproval = async (ctx: ClaimContext, outcome: NeedsApprovalOutcome): Promise<void> => {
   const { options, journal } = ctx;
-  const created = options.store.requestApproval(ctx.claim, {
+  const created = await options.store.requestApproval(ctx.claim, {
     callId: outcome.callId,
     options: approvalOptions(outcome.suggestedRule),
     event: {
@@ -139,9 +139,9 @@ const requestApproval = (ctx: ClaimContext, outcome: NeedsApprovalOutcome): void
   journal.sync();
 };
 
-const requestInput = (ctx: ClaimContext, outcome: NeedsInputOutcome): void => {
+const requestInput = async (ctx: ClaimContext, outcome: NeedsInputOutcome): Promise<void> => {
   const { options, journal } = ctx;
-  const created = options.store.requestElicitation(ctx.claim, {
+  const created = await options.store.requestElicitation(ctx.claim, {
     callId: outcome.callId,
     expiresAt: Math.min(options.clock.now() + ctx.limits.approvalTtlMs, ctx.run.deadlineAt),
     server: outcome.server,
@@ -296,8 +296,8 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   const asking = outcomes.filter((outcome): outcome is NeedsApprovalOutcome => outcome.kind === 'needs_approval');
   const inputs = outcomes.filter((outcome): outcome is NeedsInputOutcome => outcome.kind === 'needs_input');
   if (asking.length > 0 || inputs.length > 0) {
-    for (const outcome of asking) requestApproval(ctx, outcome);
-    for (const outcome of inputs) requestInput(ctx, outcome);
+    for (const outcome of asking) await requestApproval(ctx, outcome);
+    for (const outcome of inputs) await requestInput(ctx, outcome);
     return ctx.terminals.yieldTo('WAITING_HUMAN');
   }
   const waiting = outcomes.filter((outcome): outcome is WaitingOutcome => outcome.kind === 'waiting');
@@ -307,7 +307,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
 
 const sameAwait = (left: ToolAwait | undefined, right: ToolAwait): boolean => left !== undefined && canonicalJson(left) === canonicalJson(right);
 
-const yieldForTools = (ctx: ClaimContext, waiting: readonly WaitingOutcome[]): Flow => {
+const yieldForTools = async (ctx: ClaimContext, waiting: readonly WaitingOutcome[]): Promise<Flow> => {
   const fresh = waiting.filter((outcome) => !sameAwait(ctx.journal.state.pendingCalls[outcome.callId]?.awaiting, outcome.awaits));
   if (fresh.length > 0) {
     ctx.journal.append(

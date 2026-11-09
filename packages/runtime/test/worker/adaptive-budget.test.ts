@@ -25,7 +25,7 @@ const pastItems = ({ injected, used }: Past) => Array.from({ length: injected },
 const finishPast = async (env: Env, past: Past, session: Session = env.session, status: RunStatus = 'COMPLETED'): Promise<void> => {
   env.clock.advance(1);
   const run = createdRun(env.store.createRunAndEnqueue(session.id, { input: 'Past work', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
-  const claim = env.seed(run.id, pastEvents(past, env.clock.now()), 'hold');
+  const claim = await env.seed(run.id, pastEvents(past, env.clock.now()), 'hold');
   env.scriptContribution(run.id, pastItems(past));
   const result = await env.store.transition(claim, ['RUNNING'], status);
   if (result.kind !== 'ok') throw new Error(`past run could not finish: ${result.kind}`);
@@ -126,10 +126,10 @@ describe('adaptive memory budget at run start', () => {
     await finishPasts(env, 19, { injected: 1, used: 0 });
     env.clock.advance(1);
     const parent = createdRun(env.store.createRunAndEnqueue(env.session.id, { input: 'Parent', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
-    const parentClaim = env.seed(parent.id, pastEvents({ injected: 1, used: 0 }, env.clock.now()), 'hold');
+    const parentClaim = await env.seed(parent.id, pastEvents({ injected: 1, used: 0 }, env.clock.now()), 'hold');
     const created = env.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, modelAlias: 'fm' });
     if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
-    const childClaim = env.seed(created.run.id, pastEvents({ injected: 10, used: 10 }, env.clock.now()), 'hold');
+    const childClaim = await env.seed(created.run.id, pastEvents({ injected: 10, used: 10 }, env.clock.now()), 'hold');
     env.scriptContribution(created.run.id, pastItems({ injected: 10, used: 10 }));
     env.scriptContribution(parent.id, pastItems({ injected: 1, used: 0 }));
     expect((await env.store.transition(childClaim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
@@ -168,7 +168,7 @@ describe('a window of runs pinned at the current share', () => {
     for (let index = 0; index < 20; index += 1) {
       env.clock.advance(1);
       const run = createdRun(env.store.createRunAndEnqueue(env.session.id, { input: 'Past work', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
-      const claim = env.seed(
+      const claim = await env.seed(
         run.id,
         [
           { type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' },
@@ -212,10 +212,10 @@ describe('a pinned share', () => {
     const env = await adaptiveEnv();
     await finishPasts(env, 20, { injected: 1, used: 0 });
     const parent = createdRun(env.store.createRunAndEnqueue(env.session.id, { input: 'Parent', timeoutMs: DEADLINE_MS - env.clock.now(), limits: {}, pins: {}, history: 'fresh' }));
-    const claim = env.seed(parent.id, pastEvents({ injected: 0, used: 0, share: 1 / 8 }, env.clock.now()), 'hold');
+    const claim = await env.seed(parent.id, pastEvents({ injected: 0, used: 0, share: 1 / 8 }, env.clock.now()), 'hold');
     const created = env.store.createChildRun({ parentRunId: parent.id, parentCallId: 'call_child', input: 'Child', pins: {}, modelAlias: 'fm' });
     if (created.kind !== 'created') throw new Error(`child run was not created: ${created.kind}`);
-    expect(env.store.releaseLease(claim, { availableAt: env.clock.now() + 3_600_000 }).kind).toBe('ok');
+    expect((await env.store.releaseLease(claim, { availableAt: env.clock.now() + 3_600_000 })).kind).toBe('ok');
     env.settings.contextValue = { ...env.settings.contextValue, adaptiveBudget: false, autoCompact: true };
     env.gateway.script.push(textStep('Child done.'));
 
