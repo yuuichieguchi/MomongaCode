@@ -890,3 +890,18 @@ describe('createFmServe bounds the wait after SIGKILL by stopGraceMs', () => {
     expect(children[0]?.alive).toBe(true);
   });
 });
+
+describe('createFmServe stops with the stop grace of the stop that asks', () => {
+  it('a stop grace of 0 sends SIGKILL right after SIGTERM and never waits the configured grace', async () => {
+    const { server, manual } = setup({ child: { ignoreSigterm: true } });
+    await server.start();
+    const stopping = server.stop({ stopGraceMs: 0 });
+    await vi.waitFor(() => {
+      if (manual.delays().includes(0)) manual.fire(0);
+      expect(children[0]?.signals).toEqual(['SIGTERM', 'SIGKILL']);
+    });
+    expect(manual.delays()).not.toContain(GRACE_MS);
+    if (manual.delays().includes(0)) manual.fire(0);
+    await stopping;
+  });
+});
