@@ -231,6 +231,7 @@ describe('the token anatomy endpoints', () => {
     cacheHitRatio: null,
     cacheBreaks: {},
     cacheMissCauses: {},
+    cacheReadNotReported: 0,
     timeToFirstToken: null,
     duration: null,
     roles: { run: { calls: 1, timeToFirstToken: null, duration: null, totalDurationMs: null, timingNotRecorded: 1 } },

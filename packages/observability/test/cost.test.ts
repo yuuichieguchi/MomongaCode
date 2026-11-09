@@ -32,16 +32,20 @@ describe('priceCall on a metered target', () => {
     const usage = { inputTokens: 1_000_000, cachedInputTokens: 400_000, outputTokens: 500_000 };
     expect(cost('m1', '2025-12-31T23:59:59.999Z', usage)).toEqual({ amount: 6.6, currency: 'USD', priceVersion: '2025-01-01' });
     expect(cost('m1', '2026-01-01T00:00:00Z', usage)).toBeNull();
-    expect(cost('m1', '2026-01-01T00:00:00Z', { inputTokens: 1_000_000, outputTokens: 500_000 })).toEqual({ amount: 3.75, currency: 'USD', priceVersion: '2026-01-01' });
+    expect(cost('m1', '2026-01-01T00:00:00Z', { inputTokens: 1_000_000, cachedInputTokens: 0, outputTokens: 500_000 })).toEqual({ amount: 3.75, currency: 'USD', priceVersion: '2026-01-01' });
   });
 
-  it('treats absent cachedInputTokens as zero', () => {
-    expect(cost('m1', '2025-03-01T00:00:00Z', { inputTokens: 100_000, outputTokens: 100_000 })?.amount).toBe(1.25);
+  it('prices a reported zero cached count and leaves a call whose cached count was not reported unpriced', () => {
+    expect(cost('m1', '2025-03-01T00:00:00Z', { inputTokens: 100_000, cachedInputTokens: 0, outputTokens: 100_000 })?.amount).toBe(1.25);
+    expect(priceCall({ provider: 'acme', model: 'm1', usage: { inputTokens: 100_000, outputTokens: 100_000 }, at: new Date('2025-03-01T00:00:00Z'), table, billing: 'metered' })).toEqual({
+      kind: 'unpriced',
+      reason: 'the upstream did not report the cache reads of the call',
+    });
   });
 
   it('uses exact decimal arithmetic', () => {
-    expect(cost('m2', '2025-07-01T00:00:00Z', { inputTokens: 3, outputTokens: 7 })?.amount).toBe(0.000012);
-    expect(cost('m3', '2025-07-01T00:00:00Z', { inputTokens: 1_000_000, outputTokens: 1_000_000 })?.amount).toBe(0.3);
+    expect(cost('m2', '2025-07-01T00:00:00Z', { inputTokens: 3, cachedInputTokens: 0, outputTokens: 7 })?.amount).toBe(0.000012);
+    expect(cost('m3', '2025-07-01T00:00:00Z', { inputTokens: 1_000_000, cachedInputTokens: 0, outputTokens: 1_000_000 })?.amount).toBe(0.3);
   });
 
   it('returns null for unknown models, unknown providers and dates before the first entry', () => {
@@ -62,7 +66,7 @@ describe('priceCall on a metered target', () => {
 
   it('prices a user-declared zero-cost entry at zero rather than as unpriced', () => {
     const local = definePriceTable([{ provider: 'local', model: 'on-device', effectiveFrom: '2026-01-01', inputPerMTok: 0, outputPerMTok: 0, currency: 'USD' }]);
-    const result = metered({ provider: 'local', model: 'on-device', usage: { inputTokens: 123_456, outputTokens: 7_890 }, at: new Date('2026-10-23T00:00:00Z'), table: local });
+    const result = metered({ provider: 'local', model: 'on-device', usage: { inputTokens: 123_456, cachedInputTokens: 0, outputTokens: 7_890 }, at: new Date('2026-10-23T00:00:00Z'), table: local });
     expect(result).toEqual({ amount: 0, currency: 'USD', priceVersion: '2026-01-01' });
   });
 

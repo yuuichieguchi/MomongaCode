@@ -55,7 +55,8 @@ describe('native streaming: text', () => {
       script: [{ kind: 'stream', chunks: textChunks(['ok'], 'stop'), usage: { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 } }],
     });
     const { events } = await collect(makeAdapter(fake), plain);
-    expect(terminalOf(events).response.usage).toEqual(usageOf(11, 7));
+    const reported = usageOf(11, 7);
+    expect(terminalOf(events).response.usage).toEqual({ ...reported, input_tokens_details: {} });
   });
 
   it('leaves usage null when the upstream sends none so the gateway estimates', async () => {

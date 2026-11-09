@@ -21,7 +21,7 @@ const record = async (calls: readonly Call[]) => {
       role: call.role,
       ...(call.runId === undefined ? {} : { runId: call.runId }),
     });
-    recordChatResponse(chat, { finishReasons: ['stop'], usage: { inputTokens: call.input, outputTokens: call.output } });
+    recordChatResponse(chat, { finishReasons: ['stop'], usage: { inputTokens: call.input, cachedInputTokens: 0, outputTokens: call.output } });
     chat.end(h.clock.now());
   }
   await h.telemetry.forceFlush();
