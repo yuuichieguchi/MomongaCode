@@ -1326,7 +1326,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
 
   const interruptedText = async (tool: AnyTool, reason: AbortReason, stop: { bound: CallStop['bound']; ms: number }, record: ToolIdempotencyRecord, settled: ReconcileResult): Promise<string> => {
     const { stopText } = tool;
-    if (reason === 'timeout' && stop.bound !== 'deadline' && stopText !== undefined) {
+    if (reason === 'timeout' && stopText !== undefined) {
       const checkpoint = record.meta['checkpoint'];
       return stopText.call(tool, { bound: stop.bound, ms: stop.ms, checkpoint: isRecord(checkpoint) ? checkpoint : undefined });
     }

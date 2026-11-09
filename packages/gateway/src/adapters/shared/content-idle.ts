@@ -1,5 +1,5 @@
 import type { Capabilities } from '@momonga/protocol';
-import { StreamFailure } from './failures.ts';
+import { UpstreamStall } from './failures.ts';
 import { realTimers } from '../../process-ports.ts';
 import type { UpstreamLiveness } from './http-client.ts';
 
@@ -27,12 +27,12 @@ export const watchContent = (liveness: UpstreamLiveness | undefined): ContentWat
   const { idleTimeoutMs } = liveness;
   const timers = liveness.timers ?? realTimers;
   let timer: unknown;
-  let expired: StreamFailure | undefined;
-  let wake: ((failure: StreamFailure) => void) | undefined;
+  let expired: UpstreamStall | undefined;
+  let wake: ((failure: UpstreamStall) => void) | undefined;
   const arm = (): void => {
     timers.clearTimeout(timer);
     timer = timers.setTimeout(() => {
-      expired = new StreamFailure(UPSTREAM_IDLE_CODE, 'server_error', upstreamIdleText(idleTimeoutMs));
+      expired = new UpstreamStall(UPSTREAM_IDLE_CODE, upstreamIdleText(idleTimeoutMs));
       wake?.(expired);
     }, idleTimeoutMs);
   };

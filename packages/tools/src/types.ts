@@ -1,3 +1,4 @@
+import type { CallStop } from './call-stop.ts';
 import type { Clock } from '@momonga/foundation';
 import type { PermissionSubject } from '@momonga/policy';
 import type { ElicitationRequestView, ReferenceKind, SideEffect, ToolAwait, ToolFile, ToolKind } from '@momonga/protocol';
@@ -63,7 +64,7 @@ export type ToolContext = ReconcileContext & {
   reportProgress(): void;
 };
 
-export type ToolStop = { bound: 'idle' | 'total'; ms: number; checkpoint: Record<string, unknown> | undefined };
+export type ToolStop = { bound: CallStop['bound']; ms: number; checkpoint: Record<string, unknown> | undefined };
 
 export type OutputFit = {
   fits(text: string): Promise<boolean>;

@@ -121,7 +121,7 @@ describe('a stalled attempt ends the call at once and is never retried inside th
     expect((await ask(harness.client, false)).status).toBe(502);
     const next = await ask(harness.client, false);
     expect(next.status).toBe(200);
-    expect(next.body.momonga.fallbackFrom).toEqual([]);
+    expect(next.body.momonga).not.toHaveProperty('fallbackFrom');
     expect(responsesTo(remote)).toBe(2);
     expect(responsesTo(backup)).toBe(0);
   });

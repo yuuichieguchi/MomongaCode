@@ -39,10 +39,13 @@ const boundsOf = (options: McpToolSourceOptions): CallBounds => {
 
 const UNKNOWN_RUN = 'The server may have run it; check before repeating it.';
 
-const stopSentence = (server: string, tool: string, stop: ToolStop): string =>
-  stop.bound === 'idle'
-    ? `MCP server "${server}" sent no response or progress for ${durationText(stop.ms)}, so the call to ${tool} was stopped. ${UNKNOWN_RUN} To wait longer, raise mcp.toolIdleTimeoutMs.`
-    : `The call to ${tool} on MCP server "${server}" reached the overall limit of ${durationText(stop.ms)} and was stopped. ${UNKNOWN_RUN}`;
+const STOP_SENTENCES: Record<ToolStop['bound'], (server: string, tool: string, duration: string) => string> = {
+  idle: (server, tool, duration) => `MCP server "${server}" sent no response or progress for ${duration}, so the call to ${tool} was stopped. ${UNKNOWN_RUN} To wait longer, raise mcp.toolIdleTimeoutMs.`,
+  total: (server, tool, duration) => `The call to ${tool} on MCP server "${server}" reached the overall limit of ${duration} and was stopped. ${UNKNOWN_RUN}`,
+  deadline: (server, tool, duration) => `The call to ${tool} on MCP server "${server}" reached the run deadline after ${duration} and was stopped. ${UNKNOWN_RUN}`,
+};
+
+const stopSentence = (server: string, tool: string, stop: ToolStop): string => STOP_SENTENCES[stop.bound](server, tool, durationText(stop.ms));
 
 const cancelSentence = (cancelled: boolean): string =>
   cancelled ? 'The task was cancelled on the server.' : 'The task could not be cancelled and may still be running on the server.';
