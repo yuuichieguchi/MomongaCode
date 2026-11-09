@@ -146,7 +146,7 @@ class RoutedProxyAgent extends HttpsProxyAgent<string> {
 export const createOtlpAgent = (collector: URL, network: OutboundNetwork, timeoutMs: number): OtlpAgent => {
   const labels: Labels = new WeakMap();
   const labelled = (error: Error): Error => labels.get(error) ?? error;
-  const plan = outboundPlan(collector, network, { forwardsPlainHttp: false });
+  const plan = outboundPlan(collector, network, { forwardsPlainHttp: false, signal: undefined });
   const secure = collector.protocol === 'https:';
   const base = secure ? https.Agent : http.Agent;
   if (plan.kind === 'refuse') {

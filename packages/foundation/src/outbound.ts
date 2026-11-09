@@ -151,7 +151,8 @@ class ProxyReplyError extends Error {
   }
 }
 
-const isAbort = (error: unknown): boolean => (error instanceof Error && error.name === 'AbortError') || codeOf(error) === 'UND_ERR_ABORTED';
+const isAbort = (error: unknown, signal?: unknown): boolean =>
+  (error instanceof Error && error.name === 'AbortError') || codeOf(error) === 'UND_ERR_ABORTED' || (signal instanceof AbortSignal && signal.aborted && error === signal.reason);
 
 const markedProxyHop = (error: unknown): unknown => {
   if (typeof error === 'object' && error !== null && !isAbort(error)) Object.defineProperty(error, PROXY_HOP, { value: true });
@@ -275,7 +276,7 @@ export type OutboundPlan =
   | { readonly kind: 'refuse'; readonly error: OutboundConnectionError }
   | { readonly kind: 'route'; readonly route: Exclude<Route, { kind: 'unsupported' }>; readonly label: (error: Error) => Error };
 
-export const outboundPlan = (destination: URL, network: OutboundNetwork, client: { readonly forwardsPlainHttp: boolean }): OutboundPlan => {
+export const outboundPlan = (destination: URL, network: OutboundNetwork, client: { readonly forwardsPlainHttp: boolean; readonly signal: unknown }): OutboundPlan => {
   const caSources = caSourceNames(network.trust);
   const [trustFailure] = network.trust.failures;
   if (trustFailure !== undefined && TLS_SCHEMES.has(destination.protocol) && !isLoopbackHost(destination.hostname)) {
@@ -288,7 +289,7 @@ export const outboundPlan = (destination: URL, network: OutboundNetwork, client:
   const forwarded = client.forwardsPlainHttp && route.kind === 'proxy' && !TLS_SCHEMES.has(destination.protocol);
   const label = (error: Error): Error => {
     if (error instanceof OutboundConnectionError) return error;
-    if (isAbort(error) && !causeChain(error).some((entry) => entry instanceof ProxyReplyError)) return error;
+    if (isAbort(error, client.signal) && !causeChain(error).some((entry) => entry instanceof ProxyReplyError)) return error;
     const proxyFailure = route.kind === 'proxy' ? proxyFailureOf(route, error, caSources, forwarded) : undefined;
     if (proxyFailure !== undefined) return new OutboundConnectionError(proxyFailure, { cause: error });
     const certificateCode = certificateCodeOf(error);
@@ -326,7 +327,8 @@ class OutboundDispatcher extends Dispatcher {
 
   override dispatch(options: Dispatcher.DispatchOptions, handler: Dispatcher.DispatchHandler): boolean {
     const destination = new URL(String(options.origin));
-    const plan = outboundPlan(destination, this.#network, { forwardsPlainHttp: true });
+    const signal: unknown = 'signal' in options ? options.signal : undefined;
+    const plan = outboundPlan(destination, this.#network, { forwardsPlainHttp: true, signal });
     if (plan.kind === 'refuse') return this.#refuse(plan.error, options, handler);
     const target = plan.route.kind === 'proxy' ? this.#proxyFor(plan.route) : this.#direct;
     return target.dispatch(options, labelledHandler(handler, plan.label));

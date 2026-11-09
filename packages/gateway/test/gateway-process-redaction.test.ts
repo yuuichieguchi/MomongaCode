@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createJsonLogger, createUdsClient, decodeSse, systemClock } from '@momonga/foundation';
+import { GATEWAY_MAX_CLOSE_MS, createJsonLogger, createUdsClient, decodeSse, systemClock } from '@momonga/foundation';
 import type { TextStream, UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
@@ -75,9 +75,13 @@ const startKeyedStack = async (
     stdout: { write: () => true },
   });
   let closed = false;
-  registerCleanup(context, async () => {
-    if (!closed) await handle.close();
-  });
+  registerCleanup(
+    context,
+    async () => {
+      if (!closed) await handle.close();
+    },
+    GATEWAY_MAX_CLOSE_MS,
+  );
   const client = createUdsClient(handle.socketPath);
   registerCleanup(context, () => client.close());
   const closeAndScan = async (scan: ScanOptions = {}): Promise<void> => {
@@ -311,9 +315,13 @@ const startFmStack = async (context: CleanupContext, options: FmStackOptions) =>
     stdout: { write: () => true },
     logger: createJsonLogger({ service: 'gateway', clock: systemClock, stream: captureLog() }),
   });
-  registerCleanup(context, async () => {
-    await handle.close();
-  });
+  registerCleanup(
+    context,
+    async () => {
+      await handle.close();
+    },
+    GATEWAY_MAX_CLOSE_MS,
+  );
   const client = createUdsClient(handle.socketPath);
   registerCleanup(context, () => client.close());
   return { client };

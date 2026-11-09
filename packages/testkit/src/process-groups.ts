@@ -1,6 +1,6 @@
 import { forceKillGroup, inspectProcessLock, isProcessAlive, momongaLayout } from '@momonga/foundation';
 
-const CLEANUP_KILL_DEADLINE_MS = 5000;
+export const CLEANUP_KILL_DEADLINE_MS = 5000;
 const HOLDER_EXIT_POLL_MS = 20;
 
 const isMissingProcess = (error: unknown): boolean => (error as NodeJS.ErrnoException).code === 'ESRCH';
