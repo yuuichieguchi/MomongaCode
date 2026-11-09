@@ -1,10 +1,10 @@
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ProbeFailedError, currentGenerationLock, defaultProcessInspector, findHolders, isProcessAlive, judgeProcessIdentity, rotatedLogPath, valueOrThrow } from '@momonga/foundation';
+import { ProbeFailedError, defaultProcessInspector, findHolders, isProcessAlive, judgeProcessIdentity, rotatedLogPath, valueOrThrow } from '@momonga/foundation';
 import type { MomongaPaths, ProbeResult } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { killGroupsForCleanup } from '@momonga/testkit';
+import { firstGeneration, killGroupsForCleanup } from '@momonga/testkit';
 import { readDb } from './db.ts';
 import { readLog } from './log-reader.ts';
 
@@ -181,7 +181,7 @@ export const createProcessLedger = (options: CreateProcessLedgerOptions): Proces
   };
 
   const collectSupervisorLock = async (paths: MomongaPaths): Promise<void> => {
-    const text = readTextIfPresent(await currentGenerationLock(paths, 'supervisor'));
+    const text = readTextIfPresent(firstGeneration(paths).locks.supervisor);
     const pid = text === undefined ? Number.NaN : Number.parseInt(text, 10);
     if (Number.isInteger(pid) && pid > 1) await add(pid, 'supervisor');
   };
