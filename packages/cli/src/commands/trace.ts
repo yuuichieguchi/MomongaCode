@@ -1,4 +1,4 @@
-import { describeFallbackCause } from '@momonga/foundation';
+import { currentSocketResolver, describeFallbackCause } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { ERROR_TYPE_ATTRIBUTE, MOMONGA_ATTRIBUTES, anatomyLayerEntries } from '@momonga/protocol';
 import type { FallbackCauseView, RunTraceCall, RunTraceEvent, RunTraceSpan, RunTraceView, TokenAnatomy, UsageReport } from '@momonga/protocol';
@@ -80,7 +80,7 @@ export const showTrace = async (ports: CliPorts, paths: MomongaPaths, runId: str
   const client = connectRuntime(paths);
   try {
     const trace = await client.trace(runId ?? (await latestRunIdOf(client, ports.cwd)));
-    const gateway = createGatewayClient({ socketPath: paths.sockets.gateway });
+    const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway') });
     try {
       const usage = await gateway.usageOf(trace.runId);
       ports.stdout.write(`${json ? JSON.stringify({ ...trace, usage }) : renderTrace(trace, usage)}\n`);

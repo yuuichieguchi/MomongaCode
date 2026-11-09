@@ -10,8 +10,12 @@ import {
   canonicalPath,
   createJsonLogger,
   daemonStopBoundMs,
+  ensureGenerationDirs,
   ensureMomongaDirs,
+  generationLayout,
   momongaPaths,
+  publishCurrentGeneration,
+  roleEndpoint,
   runtimeMaxCloseMs,
   systemClock,
 } from '@momonga/foundation';
@@ -20,7 +24,7 @@ import type { SupervisorHealth, SupervisorPhase } from '@momonga/protocol';
 import { SUPERVISOR_API_VERSION } from '@momonga/protocol';
 import { createChildManager } from './child-manager.ts';
 import type { ChildManager, SpawnPort } from './child-manager.ts';
-import { HELD_RETRY_MS, LOCK_WAIT_DEADLINE_MS, ORPHAN_REAP_GRACE_MS, STARTUP_TIMEOUT_MS, SUPERVISOR_SERVICE, resolveIntervals } from './constants.ts';
+import { HELD_RETRY_MS, LOCK_WAIT_DEADLINE_MS, ORPHAN_REAP_GRACE_MS, STARTUP_TIMEOUT_MS, SUPERVISOR_GENERATION, SUPERVISOR_SERVICE, resolveIntervals } from './constants.ts';
 import type { SupervisorIntervals, SupervisorTimers } from './constants.ts';
 import { startControlServer } from './control-server.ts';
 import type { ControlServer } from './control-server.ts';
@@ -118,8 +122,11 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
   const env = { ...(options.env ?? process.env) };
   const lockOptions = omitUndefined({ mechanism: options.lockMechanism });
 
+  const own = generationLayout(canonicalHome, SUPERVISOR_GENERATION);
+
   await ensureMomongaDirs(paths);
-  const lock = await (options.acquireLock ?? ((lockPath) => acquireProcessLock(lockPath, undefined, lockOptions)))(paths.locks.supervisor);
+  await ensureGenerationDirs(paths, own.generation);
+  const lock = await (options.acquireLock ?? ((lockPath) => acquireProcessLock(lockPath, undefined, lockOptions)))(own.locks.supervisor);
 
   let server: ControlServer | undefined;
   try {
@@ -136,6 +143,9 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
     let versionMismatch = false;
     let requestShutdown: (values?: StopValues) => void = () => undefined;
     let stopBoundMs: number | undefined;
+    let published = false;
+    let publishPromise: Promise<void> = Promise.resolve();
+    let publishOnceAllReady: () => void = () => undefined;
     const launchController = new AbortController();
     const planController = new AbortController();
     const reportedSources = new Set<string>();
@@ -193,6 +203,8 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         role,
         home: canonicalHome,
         paths,
+        generation: own.generation,
+        endpoint: roleEndpoint(own, role),
         launcher: options.launcher,
         env,
         spawn: options.spawn,
@@ -213,6 +225,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
           requestShutdown();
         },
         stopValues,
+        onReady: () => publishOnceAllReady(),
         onBackgroundError: reportBackground,
         onTransientError: reportTransient,
         ...omitUndefined({ runtime: options.runtime, gateway: options.gateway, lockMechanism: options.lockMechanism, markerPorts: options.markerPorts }),
@@ -221,6 +234,14 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
     const gateway = createManager('gateway');
     const runtime = createManager('runtime');
     const managers = [gateway, runtime] as const;
+
+    publishOnceAllReady = (): void => {
+      if (published || draining || !managers.every((manager) => manager.state() === 'ready')) return;
+      published = true;
+      publishPromise = publishCurrentGeneration(paths, { generation: own.generation, version: options.version, sockets: own.sockets }).catch((error: unknown) =>
+        reportBackground(error, 'publish-current'),
+      );
+    };
     const managerOf = (role: ChildRole): ChildManager => (role === 'gateway' ? gateway : runtime);
 
     const health = (): SupervisorHealth => ({
@@ -352,7 +373,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         settingsWatcher?.stop();
       },
       awaitBackground: async () => {
-        await Promise.all([launchPromise, planPromise]);
+        await Promise.all([launchPromise, planPromise, publishPromise]);
       },
       closeControl: async () => {
         await server?.close();
@@ -388,7 +409,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
 
     options.signal?.throwIfAborted();
     server = await startControlServer({
-      socketPath: paths.sockets.supervisor,
+      socketPath: own.sockets.supervisor,
       timers,
       health,
       onShutdownRequested: (values) => requestShutdown(values),
@@ -397,7 +418,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       ...lockOptions,
     });
 
-    const ready: ReadyFields = { service: SUPERVISOR_SERVICE, pid: process.pid, version: options.version, socketPath: paths.sockets.supervisor, startedAt };
+    const ready: ReadyFields = { service: SUPERVISOR_SERVICE, pid: process.pid, version: options.version, socketPath: own.sockets.supervisor, startedAt };
     announceReady(ready, options.stdout);
 
     launchPromise = runLaunchTask({

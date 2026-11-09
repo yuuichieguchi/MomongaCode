@@ -1,4 +1,5 @@
 import { Command, CommanderError, InvalidArgumentError, Option } from 'commander';
+import { currentSocketResolver } from '@momonga/foundation';
 import type { EntryIo } from '@momonga/foundation';
 import { PERMISSION_MODES } from '@momonga/protocol';
 import type { PermissionMode } from '@momonga/protocol';
@@ -91,7 +92,7 @@ export const buildProgram = (given: ProgramDeps, options: { embedded?: boolean }
       if (options.print !== undefined) {
         const paths = await pathsOf(ports);
         const capabilitiesOf = async (alias: string) => {
-          const gateway = createGatewayClient({ socketPath: paths.sockets.gateway });
+          const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway') });
           try {
             return await gateway.capabilitiesOf(alias);
           } finally {

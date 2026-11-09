@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { TestContext } from 'vitest';
-import { SOCKET_PATH_LIMIT, forceKillGroup, isProcessAlive, momongaLayout } from '@momonga/foundation';
+import { FIRST_GENERATION, SOCKET_PATH_LIMIT, forceKillGroup, generationLayout, isProcessAlive } from '@momonga/foundation';
 import { stopSupervisorHolder } from './process-groups.ts';
 
 export const TEST_RUN_ENV = 'MOMONGA_TEST_RUN';
@@ -38,7 +38,7 @@ export const registerCleanup = (context: CleanupContext | undefined, cleanup: Cl
 };
 
 const longestSocketOf = (home: string): string => {
-  const sockets = Object.values(momongaLayout(home, 'darwin', {}).sockets);
+  const sockets = Object.values(generationLayout(home, FIRST_GENERATION, 'darwin').sockets);
   return sockets.reduce((longest, socket) => (Buffer.byteLength(socket) > Buffer.byteLength(longest) ? socket : longest));
 };
 

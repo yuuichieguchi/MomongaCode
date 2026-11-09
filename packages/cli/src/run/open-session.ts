@@ -1,4 +1,5 @@
 import { credentialEnvNames, loadUserSettings, stripCredentialEnv } from '@momonga/config';
+import { currentSocketResolver } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { PermissionMode } from '@momonga/protocol';
 import { createRuntimeClient } from '../client/runtime-client.ts';
@@ -27,7 +28,7 @@ export const autoModeConfigured = async (ports: Pick<DaemonPorts, 'home'>): Prom
   return settings.autoMode?.classifier !== undefined;
 };
 
-export const connectRuntime = (paths: MomongaPaths): RuntimeClient => createRuntimeClient({ socketPath: paths.sockets.runtime });
+export const connectRuntime = (paths: MomongaPaths): RuntimeClient => createRuntimeClient({ resolveSocket: currentSocketResolver(paths, 'runtime') });
 
 export const openSession = async (ports: DaemonPorts & Pick<CliPorts, 'cwd' | 'stderr'>, paths: MomongaPaths, options: SessionOptions): Promise<CliSession> => {
   const onNotice = stderrStopNotice(ports);

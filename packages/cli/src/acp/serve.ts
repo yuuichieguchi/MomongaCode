@@ -1,5 +1,5 @@
 import { ndJsonStream } from '@agentclientprotocol/sdk';
-import { canonicalPath } from '@momonga/foundation';
+import { canonicalPath, currentSocketResolver } from '@momonga/foundation';
 import { agentReadiness } from '@momonga/protocol';
 import type { MomongaPaths } from '@momonga/foundation';
 import { createGatewayClient } from '../client/gateway-client.ts';
@@ -16,7 +16,7 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
   if (ports.acpStdio === undefined) throw new Error('this build has no standard streams to speak the Agent Client Protocol on');
   const stdio = ports.acpStdio();
   const runtime = connectRuntime(paths);
-  const gateway = createGatewayClient({ socketPath: paths.sockets.gateway });
+  const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway') });
   const reconnectBoundMs = await daemonReadyBoundMs();
   const onNotice = (message: string): void => void ports.stderr.write(acpDiagnosticText(message));
   const app = createAcpAgent({

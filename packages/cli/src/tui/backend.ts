@@ -1,4 +1,5 @@
 import type { MomongaPaths } from '@momonga/foundation';
+import { currentSocketResolver } from '@momonga/foundation';
 import type { AddRuleRequest, ElicitationAnswerRecord, GoverningFactView, ImageAttachment, MemoryView, MomongaModelEntry, PermissionMode, RuleAddResponse, SkillsResponse } from '@momonga/protocol';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import type { MemoryFilter, RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
@@ -102,7 +103,7 @@ export const createTuiBackend = (
       return session;
     },
     models: async () => {
-      const gateway = createGatewayClient({ socketPath: paths.sockets.gateway });
+      const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway') });
       try {
         return await gateway.models();
       } finally {
@@ -150,7 +151,7 @@ export const createTuiBackend = (
     ruleHistory: (id) => runtime().ruleHistory(id),
     ignoreMarker: (name) => runtime().ignoreMarker(name),
     model: async () => {
-      const gateway = createGatewayClient({ socketPath: paths.sockets.gateway });
+      const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway') });
       try {
         return await gateway.modelOf(current().modelAlias);
       } finally {

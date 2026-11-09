@@ -1,5 +1,5 @@
 import { createUdsClient, decodeSse, parseRetryAfter } from '@momonga/foundation';
-import type { UdsClient, UdsResponse } from '@momonga/foundation';
+import type { SocketResolver, UdsClient, UdsResponse } from '@momonga/foundation';
 import { COMPACTION_RESULT_EVENT, DEFERRED_HEADER, ERROR_TYPES, ROLE_HEADER, RUN_ID_HEADER, STREAM_IDLE_HEADER, TARGET_PROBING, agentReadiness, isToolCallingState } from '@momonga/protocol';
 import type { BilledCallsCursorView, BilledCallsPageView, GatewayCostReportView, HeaderRole } from '@momonga/protocol';
 
@@ -53,7 +53,7 @@ export class GatewayRequestError extends Error {
 }
 
 export type GatewayClientOptions = {
-  socketPath: string;
+  resolveSocket: SocketResolver;
   clock: Clock;
   timers?: ServiceTimers;
   version: string;
@@ -179,7 +179,7 @@ export const createGatewayClient = (options: GatewayClientOptions): GatewayClien
   const unaryTimeoutMs = options.unaryTimeoutMs ?? DEFAULT_UNARY_TIMEOUT_MS;
   const cancelTimeoutMs = options.cancelTimeoutMs ?? DEFAULT_CANCEL_TIMEOUT_MS;
   const streamIdleTimeoutMs = options.streamIdleTimeoutMs ?? DEFAULT_STREAM_IDLE_TIMEOUT_MS;
-  const uds: UdsClient = createUdsClient(options.socketPath, { headersTimeoutMs: 0, bodyTimeoutMs: 0 });
+  const uds: UdsClient = createUdsClient(options.resolveSocket, { headersTimeoutMs: 0, bodyTimeoutMs: 0 });
   let destroyed = false;
 
   const clientDestroyed = (): GatewayRequestError => transportError('client_destroyed', 'the gateway client was destroyed');

@@ -1,12 +1,12 @@
 import { ConfigError, createStopValuesReader, readUserStopValues } from '@momonga/config';
 import type { StopValuesReader } from '@momonga/config';
-import { COMMON_ENTRY_FLAGS, EntryUsageError, canonicalPath, gatewayMaxCloseMs, momongaPaths, runDaemonEntry } from '@momonga/foundation';
+import { CHILD_ENTRY_FLAGS, EntryUsageError, canonicalPath, gatewayMaxCloseMs, generationLayout, momongaPaths, runDaemonEntry } from '@momonga/foundation';
 import type { EntryIo, FlagSpec, JsonLogger, SecretStore } from '@momonga/foundation';
 import { installOtelErrorHandler } from '@momonga/observability';
 import { startGatewayProcess } from './process.ts';
 
 export const GATEWAY_ENTRY_FLAGS = {
-  ...COMMON_ENTRY_FLAGS,
+  ...CHILD_ENTRY_FLAGS,
   'fm-binary': { kind: 'string' },
   'debug-tcp-port': { kind: 'int' },
   'debug-tcp-token-file': { kind: 'string' },
@@ -26,7 +26,7 @@ export const runGatewayEntry = (io: EntryIo, deps: GatewayEntryDeps): Promise<nu
     flags: GATEWAY_ENTRY_FLAGS,
     maxCloseMs: (_flags, values) => gatewayMaxCloseMs(values),
     readStopValues: ({ home, logger }) => stopValuesOf(home, logger).read(),
-    ownLockPath: (home) => momongaPaths(canonicalPath(home), process.platform, {}).locks.gateway,
+    ownLockPath: (home, flags) => generationLayout(canonicalPath(home), flags.generation).locks.gateway,
     logPath: (home) => momongaPaths(canonicalPath(home), process.platform, {}).logFiles.gateway,
     isConfigError: (error) => error instanceof ConfigError,
     start: async ({ version, flags, home, env, signal, logger, stdout, acquireLock }) => {
@@ -39,6 +39,7 @@ export const runGatewayEntry = (io: EntryIo, deps: GatewayEntryDeps): Promise<nu
       }
       const handle = await startGatewayProcess({
         home: canonicalPath(home),
+        generation: flags.generation,
         env,
         version,
         logger,

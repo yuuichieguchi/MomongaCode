@@ -5,7 +5,7 @@ import type { EndpointProbeKey } from '@momonga/config';
 import type { ModelsSettings, ResolvedModels, SandboxSetting, UserModels } from '@momonga/config';
 import { caseSettingsFor, expandContextDataset, failedWithCleanup, liveBoundsFor, runContextDataset } from '@momonga/eval';
 import type { ContextCaseHost, ContextDataset, ExpandedCase, PolicyOverlay, Transcript, WorkspaceStep } from '@momonga/eval';
-import { momongaLayout, socketPathLimit } from '@momonga/foundation';
+import { FIRST_GENERATION, generationLayout, momongaLayout, socketPathLimit } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { goldenRunApi } from '../client/golden-run-api.ts';
 import type { ReflectionSettle } from '../client/golden-run-api.ts';
@@ -63,7 +63,7 @@ export const caseEnvironment = (base: Readonly<Record<string, string | undefined
 
 export const assertSocketsFit = (root: string, platform: NodeJS.Platform): void => {
   const limit = socketPathLimit(platform);
-  for (const socket of Object.values(momongaLayout(root, platform, {}).sockets)) {
+  for (const socket of Object.values(generationLayout(root, FIRST_GENERATION, platform).sockets)) {
     const bytes = Buffer.byteLength(socket);
     if (bytes >= limit) {
       throw new ContextHostError(`the socket ${socket} of the temporary home would be ${bytes} bytes, but a socket path must be shorter than ${limit} bytes on ${platform}; the benchmark needs a shorter temporary directory`);

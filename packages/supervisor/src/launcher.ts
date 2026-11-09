@@ -29,8 +29,9 @@ const tuningFlags = (role: ChildRole, runtime: RuntimeTuning | undefined, gatewa
   ];
 };
 
-export const contractArgs = (input: { role: ChildRole; home: string; runtime?: RuntimeTuning; gateway?: GatewayTuning }): string[] => [
+export const contractArgs = (input: { role: ChildRole; home: string; generation: number; runtime?: RuntimeTuning; gateway?: GatewayTuning }): string[] => [
   `--home=${input.home}`,
+  `--generation=${input.generation}`,
   `--lifeline-fd=${LIFELINE_FD}`,
   '--log-target=file',
   ...tuningFlags(input.role, input.runtime, input.gateway),
@@ -43,6 +44,7 @@ export const resolveLaunch = (input: {
   role: ChildRole;
   launcher: Launcher;
   home: string;
+  generation: number;
   runtime?: RuntimeTuning;
   gateway?: GatewayTuning;
   baseEnv: Readonly<Record<string, string>>;
@@ -54,7 +56,7 @@ export const resolveLaunch = (input: {
   const tuning = omitUndefined({ runtime: input.runtime, gateway: input.gateway });
   return {
     command: spec.command,
-    args: [...spec.args, ...contractArgs({ role: input.role, home: input.home, ...tuning })],
+    args: [...spec.args, ...contractArgs({ role: input.role, home: input.home, generation: input.generation, ...tuning })],
     env: input.separateEnv(merged),
   };
 };

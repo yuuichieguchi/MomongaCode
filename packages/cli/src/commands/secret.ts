@@ -1,4 +1,4 @@
-import { SECRET_NAME_PATTERN } from '@momonga/foundation';
+import { SECRET_NAME_PATTERN, currentSocketResolver } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { createSupervisorClient } from '../client/supervisor-client.ts';
 import { probeSupervisor } from '../daemon/ensure-daemon.ts';
@@ -34,7 +34,7 @@ export const secretSet = async (ports: CliPorts, paths: MomongaPaths, name: stri
   await store.write(name, value, interrupt);
   if ((await store.read(name, interrupt)) !== value) throw new SecretVerificationError(name);
   ports.stdout.write(`stored secret ${name}\n`);
-  const supervisor = createSupervisorClient({ socketPath: paths.sockets.supervisor });
+  const supervisor = createSupervisorClient({ resolveSocket: currentSocketResolver(paths, 'supervisor') });
   try {
     if ((await probeSupervisor(supervisor)) !== undefined) {
       ports.stdout.write('the running daemon keeps a value of this secret it has already read; run `momonga daemon stop` so that the gateway reads the new one\n');

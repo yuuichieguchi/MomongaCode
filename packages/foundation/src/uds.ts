@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
-import { Agent, request } from 'undici';
+import { Agent, buildConnector, request } from 'undici';
 import { acquireProcessLock } from './process-lock.ts';
 import type { AcquireProcessLockOptions } from './process-lock.ts';
 import { modeIsPrivate, ownerProblem } from './platform/privacy.ts';
@@ -35,9 +35,24 @@ export interface UdsClientOptions {
   bodyTimeoutMs?: number;
 }
 
-export const createUdsClient = (socketPath: string, options: UdsClientOptions = {}): UdsClient => {
+export type SocketResolver = () => Promise<string>;
+
+export const fixedSocket =
+  (socketPath: string): SocketResolver =>
+  () =>
+    Promise.resolve(socketPath);
+
+const dialResolved =
+  (resolveSocket: SocketResolver): buildConnector.connector =>
+  (connectOptions, callback) => {
+    void resolveSocket()
+      .then((socketPath) => buildConnector({ socketPath })(connectOptions, callback))
+      .catch((error: unknown) => callback(error instanceof Error ? error : new Error(String(error)), null));
+  };
+
+export const createUdsClient = (resolveSocket: SocketResolver, options: UdsClientOptions = {}): UdsClient => {
   const agent = new Agent({
-    connect: { socketPath },
+    connect: dialResolved(resolveSocket),
     ...(options.headersTimeoutMs === undefined ? {} : { headersTimeout: options.headersTimeoutMs }),
     ...(options.bodyTimeoutMs === undefined ? {} : { bodyTimeout: options.bodyTimeoutMs }),
   });

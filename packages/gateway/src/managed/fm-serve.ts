@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { systemClock } from '@momonga/foundation';
 import { realTimers } from '../process-ports.ts';
-import { createUdsClient, isUnixSocketLive, type UdsClient } from '@momonga/foundation';
+import { createUdsClient, fixedSocket, isUnixSocketLive, type UdsClient } from '@momonga/foundation';
 import type { HealthResult } from '@momonga/protocol';
 import { createExecFn, createGroupSpawn, createPlainSpawn, reapStaleFmGroups } from './fm-processes.ts';
 import type { ChildEnv } from './fm-processes.ts';
@@ -469,7 +469,7 @@ export const createFmServe = (options: FmServeOptions): FmServe => {
   const performStart = async (startGeneration: number, startSignal: AbortSignal): Promise<FmServeEndpoint> => {
     const stale = client;
     if (stale !== undefined) await closeClient(stale);
-    const startClient = createUdsClient(options.socketPath);
+    const startClient = createUdsClient(fixedSocket(options.socketPath));
     client = startClient;
     let launched: ManagedChild | undefined;
     try {
