@@ -142,7 +142,7 @@ describe('the reap signals only a target proved ours by the same start time at t
 });
 
 describe('the settle says that a process is still running only while a holder or a member of its group can still run, as specs/tla/ProcessStop.tla states', () => {
-  it.each(['settleCandidate', 'settleCurrent', 'guardCurrent', 'guardUnknownCurrent', 'jobCurrent', 'reconcileCurrent'])('the variant %s is declared in the model', (variant) => {
+  it.each(['settleCandidate', 'settleCurrent', 'guardCurrent', 'guardUnknownCurrent', 'guardHeldCurrent', 'jobCurrent', 'reconcileCurrent'])('the variant %s is declared in the model', (variant) => {
     expect(variants()).toContain(variant);
   });
 
@@ -160,13 +160,15 @@ describe('the settle says that a process is still running only while a holder or
 
   it('a claim that a process is still running carries the basis of positive evidence', () => {
     expect(definitionOf('Claimed')).toContain("basis' = Pos");
-    expect(spec).toContain('EmitOnlyOnPositiveEvidence == shown \\in {"running", "final", "guard"} => basis');
+    expect(spec).toContain('RefuseOnlyOnPositiveEvidence == shown \\in {"running", "guard"} => basis');
+    expect(spec).toContain('FinalNoticeOnlyWhenHeldOrPositive == shown = "final" => basis');
   });
 
   it.each([
-    ['settleCurrent', 'EmitOnlyOnPositiveEvidence'],
-    ['guardCurrent', 'EmitOnlyOnPositiveEvidence'],
-    ['guardUnknownCurrent', 'EmitOnlyOnPositiveEvidence'],
+    ['settleCurrent', 'RefuseOnlyOnPositiveEvidence'],
+    ['guardCurrent', 'RefuseOnlyOnPositiveEvidence'],
+    ['guardUnknownCurrent', 'RefuseOnlyOnPositiveEvidence'],
+    ['guardHeldCurrent', 'RefuseOnlyOnPositiveEvidence'],
     ['jobCurrent', 'RemovalSafe'],
   ])('the code without the check, variant %s, is an every-run evidence configuration that violates %s', (variant, property) => {
     expect(manifest.entries.find((entry) => entry.config === `ProcessStop.${variant}`)).toMatchObject({ role: 'evidence', tier: 'every-run', expect: { violates: property, exitCode: 12 } });
@@ -188,6 +190,7 @@ describe('the settle says that a process is still running only while a holder or
   it('a refusal, a running claim and the final notice rest on positive evidence: a named holder, a runnable group member, or the marker still held after the four occasions', () => {
     expect(definitionOf('Pos')).toContain('groupKnown');
     expect(definitionOf('RefusalDue')).toContain('Pos');
+    expect(definitionOf('RefusalDue')).toContain('AllEventsSpent');
     expect(definitionOf('FinalNotice')).toContain('ObsHeld');
     expect(definitionOf('SurvivorReachesNotice')).toContain('SomeoneRuns');
   });

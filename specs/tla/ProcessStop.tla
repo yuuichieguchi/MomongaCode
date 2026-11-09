@@ -6,16 +6,17 @@ EXTENDS Naturals, FiniteSets
 
 CONSTANTS Members, Events, MaxAttempts, Variant
 
-ASSUME Variant \in {"decided", "noIdentityCheck", "termToReused", "signalUnlistedGroup", "throwOnSurvivor", "dropMarkerOnUnconfirmed", "signalUnprovedHolder", "killWithoutReproof", "retryReusesProof", "retryAnyEvent", "rowlessIsOutside", "groupProofWithoutStartTime", "exitingCountsAlive", "forkFromExiting", "settleCandidate", "settleCurrent", "guardCurrent", "jobCurrent", "reconcileCurrent", "guardUnknownCurrent"}
+ASSUME Variant \in {"decided", "noIdentityCheck", "termToReused", "signalUnlistedGroup", "throwOnSurvivor", "dropMarkerOnUnconfirmed", "signalUnprovedHolder", "killWithoutReproof", "retryReusesProof", "retryAnyEvent", "rowlessIsOutside", "groupProofWithoutStartTime", "exitingCountsAlive", "forkFromExiting", "settleCandidate", "settleCurrent", "guardCurrent", "jobCurrent", "reconcileCurrent", "guardUnknownCurrent", "guardHeldCurrent"}
 ASSUME MaxAttempts \in Nat \ {0}
 ASSUME Events # {}
 
 MemberStates == {"live", "stuck", "exiting", "zombie", "gone"}
 
-Settle == Variant \in {"settleCandidate", "settleCurrent", "guardCurrent", "guardUnknownCurrent", "jobCurrent", "reconcileCurrent"}
+Settle == Variant \in {"settleCandidate", "settleCurrent", "guardCurrent", "guardUnknownCurrent", "guardHeldCurrent", "jobCurrent", "reconcileCurrent"}
 SettleCurrent == Variant = "settleCurrent"
 GuardCurrent == Variant = "guardCurrent"
 GuardUnknownCurrent == Variant = "guardUnknownCurrent"
+GuardHeldCurrent == Variant = "guardHeldCurrent"
 JobCurrent == Variant = "jobCurrent"
 ReconcileCurrent == Variant = "reconcileCurrent"
 
@@ -77,7 +78,7 @@ AllEventsSpent == \A e \in Events : retried[e] >= 1
 
 Pos == (Named # {}) \/ (groupKnown /\ GroupRunnable # {})
 
-RefusalDue == IF GuardCurrent THEN ObsHeld ELSE (Pos \/ (GuardUnknownCurrent /\ ObsHeld /\ ~groupKnown))
+RefusalDue == IF GuardCurrent THEN ObsHeld ELSE IF GuardHeldCurrent THEN (ObsHeld /\ AllEventsSpent) ELSE (Pos \/ (GuardUnknownCurrent /\ ObsHeld /\ ~groupKnown))
 
 RefusedPossible == \E m \in Members : Holding(m) /\ ~listed[m]
 
@@ -486,7 +487,9 @@ MarkerKeptWhileMembersRemain == marker = "none" => ~OursVisible
 
 RemovalSafe == marker = "none" => ~SomeoneRuns
 
-EmitOnlyOnPositiveEvidence == shown \in {"running", "final", "guard"} => basis
+RefuseOnlyOnPositiveEvidence == shown \in {"running", "guard"} => basis
+
+FinalNoticeOnlyWhenHeldOrPositive == shown = "final" => basis
 
 NoLongerRunningOnlyWhenClear == shown = "gone" => basis
 
