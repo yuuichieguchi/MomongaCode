@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { flush, ownedHarness, settled } from './derived-fixture.ts';
 import type { Built, Lease } from './derived-fixture.ts';
@@ -146,5 +148,52 @@ describe('createPinnedDerivation conforms to SettingsSwap.tla over every action 
     expect(generated).toBeGreaterThan(0);
     expect(found.every((sequence) => sequence.length === DEPTH)).toBe(true);
     expect(checked).toBe(generated);
+  });
+});
+
+const specText = fs.readFileSync(path.resolve(import.meta.dirname, '..', '..', '..', 'specs', 'tla', 'SettingsSwap.tla'), 'utf8');
+
+const specActions = (): string[] => {
+  const next = /^Next ==\n([\s\S]*?)\n\n/m.exec(specText);
+  if (next === null) throw new Error('SettingsSwap.tla has no Next definition');
+  const names = [...(next[1] as string).matchAll(/\b([A-Z][A-Za-z]+)(?=\s*(?:\(|$|\n|\s\\\/))/gm)].map((match) => match[1] as string);
+  return [...new Set(names.filter((name) => name !== 'UNCHANGED'))].sort();
+};
+
+type Mapping = { driven: Action['kind'] } | { outside: string };
+
+const SPEC_ACTION_MAPPING: Readonly<Record<string, Mapping>> = {
+  WriteValid: { driven: 'edit' },
+  StartDirect: { driven: 'start' },
+  StartDerive: { driven: 'start' },
+  BeginDerive: { driven: 'start' },
+  StartJoin: { driven: 'start' },
+  StartQueue: { driven: 'start' },
+  StartRefuse: { driven: 'fail' },
+  FinishDerive: { driven: 'finish' },
+  Wake: { driven: 'finish' },
+  Abort: { driven: 'abort' },
+  Finish: { driven: 'release' },
+  Reap: { driven: 'release' },
+  WriteBroken: { outside: 'an invalid file is decided by the settings cache (user-settings tests), not by the derivation' },
+  Observe: { outside: 'the supervisor writes the applied record (settings-applied-record tests)' },
+  CorruptRecord: { outside: 'an unreadable record is decided by the settings cache (user-settings-applied-unreadable tests)' },
+  LockStart: { outside: 'a managed instance lock belongs to the gateway (settings-live-managed tests)' },
+  Use: { outside: 'the use of a derived object belongs to its process' },
+  Spawn: { outside: 'a sandboxed child belongs to the runtime' },
+  JobExit: { outside: 'a background job belongs to the runtime' },
+  Crash: { outside: 'a process crash ends the derivation with the process' },
+  SupervisorRestart: { outside: 'the supervisor restart belongs to the supervisor' },
+  Restart: { outside: 'a child restart belongs to the supervisor' },
+};
+
+describe('the conformance test covers every action of SettingsSwap.tla', () => {
+  it('every action of Next is driven by this test or stated as belonging to another layer, and no mapping names an action the spec lacks', () => {
+    expect(Object.keys(SPEC_ACTION_MAPPING).sort()).toEqual(specActions());
+  });
+
+  it('every driven action kind is one the enumeration generates', () => {
+    const generated: ReadonlySet<Action['kind']> = new Set(['edit', 'start', 'abort', 'release', 'finish', 'fail']);
+    for (const [action, mapping] of Object.entries(SPEC_ACTION_MAPPING)) if ('driven' in mapping) expect(generated.has(mapping.driven), action).toBe(true);
   });
 });
