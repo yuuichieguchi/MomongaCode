@@ -75,6 +75,7 @@ describe('encrypted credential store: the four operations of the one CredentialS
     const envelope = JSON.parse(text) as Record<string, string>;
     expect(Object.keys(envelope).sort()).toEqual(['ciphertext', 'format', 'key', 'nonce', 'tag']);
     expect(envelope['format']).toBe(FORMAT);
+    expect(envelope['key']).toBe('plan/p/a');
     const [name] = createdKeyNames(given.keys);
     expect(name).toMatch(/^credential-key-[0-9a-f]{16}$/);
     const keyHex = given.keys.items.get(name as string) as string;
