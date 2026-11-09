@@ -54,7 +54,7 @@ const runMain = (context: CleanupContext, home: string, env: Record<string, stri
     stderr += chunk;
   });
   child.stdout?.resume();
-  return withinBound(once(child, 'close'), E2E_READY_DEADLINE_MS, 'supervisor-main exit').then(
+  return withinBound(once(child, 'close'), E2E_SUPERVISOR_CLOSE_BOUND_MS, 'supervisor-main exit').then(
     ([code]: unknown[]) => ({ code: typeof code === 'number' ? code : null, stderr }),
     (error: unknown) => {
       throw new Error(`${error instanceof Error ? error.message : String(error)}; stderr: ${stderr}`, { cause: error });
@@ -193,7 +193,7 @@ describe('supervisor-main lifeline and pipes', () => {
     expect(supervisor.stderrTail().length).toBeGreaterThan(0);
     expect(Buffer.byteLength(supervisor.stderrTail())).toBeLessThanOrEqual(STDERR_TAIL_BYTES);
     supervisor.child.stdin.end();
-    await expect(withinBound(supervisor.exited, E2E_READY_DEADLINE_MS, 'flood fixture exit after stdin EOF')).resolves.toEqual({ code: 0, signal: null });
+    await expect(withinBound(supervisor.exited, E2E_SUPERVISOR_CLOSE_BOUND_MS, 'flood fixture exit after stdin EOF')).resolves.toEqual({ code: 0, signal: null });
   });
 
   it('a parent that is SIGKILLed leaves no supervisor and no daemon', { timeout: E2E_TEST_TIMEOUT_MS }, async (context) => {

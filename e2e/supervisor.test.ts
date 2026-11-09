@@ -654,7 +654,7 @@ describe('supervisor cases', () => {
     expect(second.depsFile).not.toBe(stack.supervisor.depsFile);
     const readyRejects = expect(second.ready()).rejects.toThrow();
     const secondExit = trackExit(second);
-    const exit = await until(() => secondExit(), { deadlineMs: E2E_READY_DEADLINE_MS, description: 'second supervisor exit' });
+    const exit = await until(() => secondExit(), { deadlineMs: E2E_SUPERVISOR_CLOSE_BOUND_MS, description: 'second supervisor exit' });
     expect(exit).toEqual({ code: 75, signal: null });
     await readyRejects;
     expect(second.stdoutLines()).toEqual([]);
