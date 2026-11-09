@@ -259,6 +259,43 @@ describe('reapOrphans', () => {
     expect(calls.reap).toEqual([]);
   });
 
+  const abortedListing = (signal: AbortSignal): Promise<number[]> =>
+    new Promise<number[]>((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(new ProbeFailedError('listing marker holders', probeFailed({ kind: 'opaque', detail: 'The operation was aborted' }))), { once: true });
+    });
+
+  it('a listing still running at the phase deadline is aborted and counts as still visible: phase 2 reaps at the deadline', async (context) => {
+    const dir = markersDir(context);
+    fs.writeFileSync(path.join(dir, 'gateway-09'), '');
+    let listings = 0;
+    let abortedAt: number | undefined;
+    let reapAt: number | undefined;
+    let setup: ReturnType<typeof reapSetup> | undefined;
+    const { calls, ports } = recorded({
+      findHolders: async (_marker, probe) => {
+        listings += 1;
+        if (listings === 1) return [HOLDER_PID];
+        probe.signal.addEventListener('abort', () => {
+          abortedAt = setup?.clock.now();
+        }, { once: true });
+        return abortedListing(probe.signal);
+      },
+      reapMarkerDirectory: async () => {
+        reapAt = setup?.clock.now();
+        return { reaped: 1, kept: 0 };
+      },
+    });
+    setup = reapSetup(dir, { markerPorts: ports, orphanGraceMs: 1000 });
+    const { log, reap, until, options } = setup;
+    const result = reap();
+    await until(() => result.settled(), 5000);
+    expect(result.value()).toEqual({ reaped: 1, kept: 0, aborted: false });
+    expect(abortedAt).toBe(options.orphanGraceMs);
+    expect(reapAt).toBe(options.orphanGraceMs);
+    expect(calls.reap).toHaveLength(1);
+    expect(log.withMsg('orphans.reaping')).toEqual([expect.objectContaining({ holders: 1 })]);
+  });
+
   it('orphans.reaping is logged right before the phase-2 reap', async (context) => {
     const dir = markersDir(context);
     fs.writeFileSync(path.join(dir, 'runtime-10'), '');
