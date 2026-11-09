@@ -39,10 +39,27 @@ import {
   E2E_SUPERVISOR_CLOSE_BOUND_MS,
   E2E_TEST_TIMEOUT_MS,
   until,
+  e2eStartBoundMs,
+  e2eTestTimeoutMs,
 } from './support/wait.ts';
 
 const S1C_PHASE1_ORPHAN_GRACE_MS = 30_000;
 const S7_LOCK_WAIT_MS = 1500;
+const KILLED_STACK_BOUND_MS = E2E_READY_DEADLINE_MS + E2E_MARGIN_MS;
+const S1_TIMEOUT_MS = e2eTestTimeoutMs(
+  E2E_READY_DEADLINE_MS,
+  E2E_MARGIN_MS,
+  E2E_ORPHAN_CLOSE_BOUND_MS,
+  2 * E2E_ORPHAN_CLOSE_BOUND_MS,
+  e2eStartBoundMs(DEFAULT_E2E_DEPS),
+  E2E_READY_DEADLINE_MS,
+);
+const S1B_TIMEOUT_MS = e2eTestTimeoutMs(KILLED_STACK_BOUND_MS, e2eStartBoundMs({ ...DEFAULT_E2E_DEPS, orphanGraceMs: E2E_ORPHAN_GRACE_MS }), E2E_MARGIN_MS, E2E_REAP_TO_RUNNING_BOUND_MS);
+const S1C_PHASE1_TIMEOUT_MS = e2eTestTimeoutMs(KILLED_STACK_BOUND_MS, e2eStartBoundMs({ ...DEFAULT_E2E_DEPS, orphanGraceMs: S1C_PHASE1_ORPHAN_GRACE_MS }), E2E_MARGIN_MS, E2E_REAP_CLOSE_BOUND_MS);
+const S1C_PHASE2_TIMEOUT_MS = e2eTestTimeoutMs(KILLED_STACK_BOUND_MS, e2eStartBoundMs({ ...DEFAULT_E2E_DEPS, orphanGraceMs: E2E_ORPHAN_GRACE_MS }), E2E_PHASE2_REACHED_BOUND_MS, E2E_REAP_CLOSE_BOUND_MS);
+const S5_TIMEOUT_MS = e2eTestTimeoutMs(E2E_READY_DEADLINE_MS, E2E_RESTART_BOUND_MS, E2E_SETTINGS_RESTART_BOUND_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS);
+const S5B_TIMEOUT_MS = e2eTestTimeoutMs(E2E_READY_DEADLINE_MS, E2E_RESTART_BOUND_MS, E2E_HELD_RETRY_MS + E2E_RESTART_BOUND_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS);
+const S7_TIMEOUT_MS = e2eTestTimeoutMs(E2E_READY_DEADLINE_MS, E2E_RESTART_BOUND_MS, E2E_MARGIN_MS, E2E_LOCK_FREE_BOUND_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS);
 const HANDS_LOCK_TO_CHILD = hostKernelLock().claimInheritable !== undefined;
 const FIXTURE_SLEEP_SECONDS = '300';
 const CHANGED_MODEL = 'system-changed';
@@ -159,7 +176,7 @@ const stopRuntimeAndKillSupervisor = async (home: E2eHome): Promise<{ orphanPid:
 };
 
 describe('supervisor cases', () => {
-  it(titleOf('s1'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('s1'), { timeout: S1_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const stack = await startStack({ home });
     const before = await stack.client.health();
@@ -218,7 +235,7 @@ describe('supervisor cases', () => {
     expect(ofChild(followUp, 'child.spawn', 'gateway')).toEqual([expect.objectContaining({ reason: 'initial', restarts: 0, childPid: pidOf(after, 'gateway') })]);
   });
 
-  it(titleOf('s1b'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('s1b'), { timeout: S1B_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const { orphanPid } = await stopRuntimeAndKillSupervisor(home);
 
@@ -266,7 +283,7 @@ describe('supervisor cases', () => {
     expect(markerEntries(home.paths).filter((entry) => entry.startsWith('runtime-'))).toHaveLength(1);
   });
 
-  it(titleOf('s1c-phase1'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('s1c-phase1'), { timeout: S1C_PHASE1_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const { orphanPid } = await stopRuntimeAndKillSupervisor(home);
     const orphanMarkers = markerEntries(home.paths);
@@ -305,7 +322,7 @@ describe('supervisor cases', () => {
     expect(await inspectProcessLock(home.paths.locks.supervisor)).toEqual({ state: 'free' });
   });
 
-  it(titleOf('s1c-phase2'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('s1c-phase2'), { timeout: S1C_PHASE2_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const { orphanPid } = await stopRuntimeAndKillSupervisor(home);
 
@@ -448,7 +465,7 @@ describe('supervisor cases', () => {
     for (const role of ['runtime', 'gateway'] as const) expect(childOf(after, role)).toMatchObject({ state: 'ready', restarts: 0 });
   });
 
-  it(titleOf('s5'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('s5'), { timeout: S5_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const stack = await startStack({
       home,
@@ -481,7 +498,7 @@ describe('supervisor cases', () => {
     expect(ofChild(records, 'child.held', 'runtime')).toHaveLength(1);
   });
 
-  it.skipIf(skipCase('s5b'))(titleOf('s5b'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+  it.skipIf(skipCase('s5b'))(titleOf('s5b'), { timeout: S5B_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const sandboxExecPath = path.join(home.root, 'sbx');
     const stack = await startStack({
@@ -548,7 +565,7 @@ describe('supervisor cases', () => {
     }
   });
 
-  it(titleOf('s7'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('s7'), { timeout: S7_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
     const holderPid = await startLockHolderFixture(home, home.paths.locks.runtime);
     expect(await inspectProcessLock(home.paths.locks.runtime)).toEqual({ state: 'held', pid: holderPid });

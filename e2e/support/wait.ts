@@ -65,7 +65,9 @@ export const E2E_TEST_WAIT_BOUNDS_MS = {
   E2E_LOCK_FREE_BOUND_MS,
   E2E_RUN_COMPLETED_BOUND_MS,
 } as const;
-export const E2E_TEST_TIMEOUT_MS = E2E_READY_DEADLINE_MS + Math.max(...Object.values(E2E_TEST_WAIT_BOUNDS_MS)) + E2E_MARGIN_MS;
+export const e2eTestTimeoutMs = (...sequentialBoundsMs: readonly number[]): number => sequentialBoundsMs.reduce((sum, boundMs) => sum + boundMs, 0) + E2E_MARGIN_MS;
+export const E2E_LONGEST_WAIT_MS = Math.max(...Object.values(E2E_TEST_WAIT_BOUNDS_MS));
+export const E2E_TEST_TIMEOUT_MS = e2eTestTimeoutMs(E2E_READY_DEADLINE_MS, E2E_LONGEST_WAIT_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS);
 export const E2E_SOLVER_LOAD_ALLOWANCE_MS = STARTUP_TIMEOUT_MS + E2E_MARGIN_MS;
 export const policyVerifyBoundMs = async (): Promise<number> => (await daemonReadyBoundMs()) + E2E_SOLVER_LOAD_ALLOWANCE_MS + VERIFY_BUDGET_MS;
 export const daemonReplacingRunBoundMs = async (): Promise<number> => daemonStopBoundMs() + (await daemonReadyBoundMs()) + E2E_RUN_COMPLETED_BOUND_MS;

@@ -20,6 +20,8 @@ import {
   E2E_SUPERVISOR_CLOSE_BOUND_MS,
   E2E_TEST_TIMEOUT_MS,
   E2E_TEST_WAIT_BOUNDS_MS,
+  e2eTestTimeoutMs,
+  E2E_LONGEST_WAIT_MS,
   abortableWait,
   e2eStartBoundMs,
   until,
@@ -46,7 +48,7 @@ describe('wait constants', () => {
     expect(E2E_READY_DEADLINE_MS).toBe(136_350);
     expect(E2E_REAP_TO_RUNNING_BOUND_MS).toBe(123_350);
     expect(E2E_PHASE2_REACHED_BOUND_MS).toBe(7250);
-    expect(E2E_TEST_TIMEOUT_MS).toBe(281_150);
+    expect(E2E_TEST_TIMEOUT_MS).toBe(352_150);
   });
 
   it('wait for a restarted child exactly as long as the supervisor of the e2e stack promises', () => {
@@ -60,6 +62,15 @@ describe('wait constants', () => {
 
   it('wait for phase 2 of the orphan reap exactly as long as phase 1 of the short-grace e2e supervisor lasts, plus the observer margin', () => {
     expect(E2E_PHASE2_REACHED_BOUND_MS).toBe(orphanPhaseOneBoundMs(resolveStartTiming({ ...DEFAULT_E2E_DEPS, orphanGraceMs: E2E_ORPHAN_GRACE_MS })) + E2E_MARGIN_MS);
+  });
+
+  it('give a test the sum of the bounds it waits on in sequence, plus the observer margin', () => {
+    expect(e2eTestTimeoutMs()).toBe(E2E_MARGIN_MS);
+    expect(e2eTestTimeoutMs(E2E_READY_DEADLINE_MS, E2E_RESTART_BOUND_MS)).toBe(E2E_READY_DEADLINE_MS + E2E_RESTART_BOUND_MS + E2E_MARGIN_MS);
+  });
+
+  it('give the common test, a stack start, its longest single wait and the shutdown barrier, their sum', () => {
+    expect(E2E_TEST_TIMEOUT_MS).toBe(e2eTestTimeoutMs(E2E_READY_DEADLINE_MS, E2E_LONGEST_WAIT_MS, E2E_SUPERVISOR_CLOSE_BOUND_MS));
   });
 
   it('keep every wait a test makes below the test timeout, so a broken promise fails with its own description', () => {
