@@ -15,6 +15,7 @@ import {
   momongaPaths,
   ProcessLockHeldError,
   RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
+  markerReapClockBoundMs,
   reapMarkerDirectory,
   resolveKernelLock,
   ruleEnforcementOf,
@@ -379,7 +380,14 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     });
 
     await step('mcp-markers', async () => {
-      await reapMarkerDirectory({ dir: paths.markers.mcp, killGraceMs: MARKER_REAP_KILL_GRACE_MS, label: 'mcp', onWarning, timing: reapTiming, signal });
+      const reapStop = new AbortController();
+      const bound = timers.setTimeout(() => reapStop.abort(), markerReapClockBoundMs(MARKER_REAP_KILL_GRACE_MS));
+      const reapSignal = signal === undefined ? reapStop.signal : AbortSignal.any([signal, reapStop.signal]);
+      try {
+        await reapMarkerDirectory({ dir: paths.markers.mcp, killGraceMs: MARKER_REAP_KILL_GRACE_MS, label: 'mcp', onWarning, timing: reapTiming, signal: reapSignal });
+      } finally {
+        timers.clearTimeout(bound);
+      }
     });
 
     const { notifier, store, journalThread } = await step('store', async () => {
