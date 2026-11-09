@@ -66,7 +66,7 @@ export const measureManagedFm =
     });
     options.serves?.add(fmServe);
     try {
-      const endpoint = await fmServe.start();
+      const endpoint = await fmServe.start(signal);
       return await runProbe({
         socketPath: endpoint.socketPath,
         managedHealthRoute: true,

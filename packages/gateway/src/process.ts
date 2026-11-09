@@ -131,6 +131,11 @@ const toError = (error: unknown): Error => (error instanceof Error ? error : new
 
 const failuresOf = (error: unknown): Error[] => (error instanceof AggregateError ? error.errors.map(toError) : [toError(error)]);
 
+const closeTogether = async (closing: readonly Promise<unknown>[]): Promise<void> => {
+  const failures = (await Promise.allSettled(closing)).flatMap((outcome) => (outcome.status === 'rejected' ? failuresOf(outcome.reason) : []));
+  if (failures.length > 0) throw new AggregateError(failures, 'the gateway and its probes did not close cleanly');
+};
+
 const DEFAULT_FM_BINARY = '/usr/bin/fm';
 
 type ResolvedTargets = Awaited<ReturnType<typeof loadUserSettings>>['settings']['models']['targets'];
@@ -637,10 +642,10 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       },
     });
     const probeServes = new Set<FmServe>();
-    cleanups.push(async () => {
-      await autoProbe.close();
-      await Promise.all([...probeServes].map((serve) => serve.stop()));
-    });
+    const closeProbes = async (): Promise<void> => {
+      await Promise.all([autoProbe.close(), ...[...probeServes].map((serve) => serve.stop())]);
+    };
+    cleanups.push(closeProbes);
     const probes: ProbeWiring = {
       autoProbe,
       ...(options.measureEndpoint === undefined ? {} : { measureEndpoint: options.measureEndpoint }),
@@ -779,7 +784,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     });
     if (gateway.tcpPort !== undefined) logger.info('gateway.debug_listener', { data: { host: DEBUG_TCP_HOST, port: gateway.tcpPort } });
     cleanups.splice(cleanups.indexOf(closeAdapters), 1);
-    cleanups.push(() => (abortRequested ? gateway.abort() : gateway.close()));
+    cleanups.splice(cleanups.indexOf(closeProbes), 1);
+    cleanups.push(() => closeTogether([abortRequested ? gateway.abort() : gateway.close(), closeProbes()]));
     requestGatewayAbort = () => void gateway.abort();
     gatewayAbandonedRuns = () => gateway.abandonedRuns;
     signal?.throwIfAborted();
