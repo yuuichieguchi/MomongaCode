@@ -16,6 +16,8 @@ const probingOr = async <Measured>(capabilities: Promise<Measured>): Promise<Mea
 import type { BilledCallsCursorView, BilledCallsPageView, GatewayCostReportView, GatewayHealth, ModelList, MomongaModelList } from '@momonga/protocol';
 import { ClientDisconnectedError, GatewayError, invalidRequest, notFound } from '../core/errors.ts';
 import type { ResponsesService, SubmitHeaders } from '../core/responses-service.ts';
+import type { PlanApi } from '../plan/api.ts';
+import { PLAN_API_PREFIX, PLAN_ROUTES } from '@momonga/protocol';
 import { roleOfHeader } from '../core/role.ts';
 import type { Services } from '../core/services.ts';
 import type { UnaryService } from '../core/unary.ts';
@@ -35,6 +37,7 @@ export type AppDependencies = {
   costReport: ((runs: readonly { runId: string; sessionId: string }[], includeRunless: boolean) => Promise<{ report: GatewayCostReportView; text: string }>) | undefined;
   billedCalls: ((runIds: readonly string[], cursor: BilledCallsCursorView, limit: number, includeRunless: boolean) => Promise<BilledCallsPageView>) | undefined;
   onError: ((error: unknown) => void) | undefined;
+  plan: PlanApi | undefined;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -166,11 +169,16 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     const data = await Promise.all(
       services.router.aliases().map(async (id) => {
         const targets = services.router.targetsOf(id);
+        const planned = targets.flatMap((target) => (target.plan === undefined ? [] : [[target.name, target.plan] as const]));
+        const keyed = targets.flatMap((target) => (target.keyGroup === undefined ? [] : [[target.name, { group: target.keyGroup }] as const]));
         const identity = {
           id,
           object: 'model' as const,
           targets: targets.map((target) => target.name),
           targetCounters: Object.fromEntries(targets.map((target) => [target.name, target.counter])),
+          targetBilling: Object.fromEntries(targets.map((target) => [target.name, target.billing])),
+          ...(planned.length === 0 ? {} : { targetPlan: Object.fromEntries(planned) }),
+          ...(keyed.length === 0 ? {} : { targetKey: Object.fromEntries(keyed) }),
         };
         return {
           ...identity,
@@ -240,6 +248,27 @@ export const createApp = (dependencies: AppDependencies): Hono => {
     }
     return context.json(await dependencies.billedCalls(runIds, { run: cursor['run'], after: cursor['after'] }, limit, includeRunless));
   });
+
+  const planRoute = (route: string): string => `${PLAN_API_PREFIX}${route}`;
+  const planApi = (): PlanApi => {
+    if (dependencies.plan === undefined) throw notFound('plan_unavailable', 'this gateway serves no plan sign-in');
+    return dependencies.plan;
+  };
+  const planBody = (context: Context): Promise<unknown> => readJsonBody(context.req.raw, services.config.limits.maxBodyBytes);
+  const accountParam = (context: Context): string => {
+    const account = context.req.param('account');
+    if (account === undefined || account === '') throw invalidRequest('invalid_path', 'the account label is missing from the path', 'account');
+    return account;
+  };
+
+  app.get(planRoute(PLAN_ROUTES.accounts), async (context) => context.json(await planApi().accounts()));
+  app.post(planRoute(PLAN_ROUTES.accountsActive), async (context) => context.json(await planApi().setActive(await planBody(context))));
+  app.post(planRoute(PLAN_ROUTES.signInBegin), async (context) => context.json(await planApi().begin(await planBody(context))));
+  app.post(planRoute(PLAN_ROUTES.signInComplete), async (context) => context.json(await planApi().complete(await planBody(context))));
+  app.post(planRoute(PLAN_ROUTES.signInCancel), async (context) => context.json(planApi().cancel(await planBody(context))));
+  app.post(planRoute(PLAN_ROUTES.signOut), async (context) => context.json(await planApi().signOut(await planBody(context))));
+  app.post(planRoute(PLAN_ROUTES.accountResume), async (context) => context.json(await planApi().resume(accountParam(context), await planBody(context))));
+  app.post(planRoute(PLAN_ROUTES.hostReset), async (context) => context.json(await planApi().resetHost()));
 
   return app;
 };

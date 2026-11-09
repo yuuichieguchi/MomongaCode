@@ -1,4 +1,4 @@
-import { DEFAULT_STOP_VALUES } from '@momonga/foundation';
+import { AUTHORIZATION_WAIT_MS, DEFAULT_STOP_VALUES } from '@momonga/foundation';
 import type { GatewayConfig } from './types.ts';
 
 const MIB = 1024 * 1024;
@@ -33,6 +33,22 @@ export const PLAN_SESSION_DEFAULTS = {
   marginMs: PLAN_SKEW_MS + PLAN_REFRESH_BUDGET_MS,
   revocationBudgetMs: planRetry.maxAttempts * PLAN_REVOCATION_TIMEOUT_MS + planRetry.baseMs + 2 * planRetry.baseMs,
   persistRetryMs: GATEWAY_CONFIG_DEFAULTS.breaker.openMs,
+} as const;
+
+const KIB = 1024;
+
+export const PLAN_SIGN_IN_DEFAULTS = {
+  attemptTtlMs: AUTHORIZATION_WAIT_MS + PLAN_ATTEMPT_TIMEOUT_MS,
+  exchangeTimeoutMs: PLAN_ATTEMPT_TIMEOUT_MS,
+  keysTimeoutMs: PLAN_REVOCATION_TIMEOUT_MS,
+  catalogTimeoutMs: PLAN_REVOCATION_TIMEOUT_MS,
+  keysRefetchMs: 60_000,
+  keysBodyBytes: 64 * KIB,
+  keysMaxCount: 16,
+  authBodyBytes: 256 * KIB,
+  errorTextChars: 64,
+  randomStateBytes: 16,
+  verifierBytes: 32,
 } as const;
 
 export const UPSTREAM_LIVENESS_DEFAULTS = { headersTimeoutMs: 300_000, idleTimeoutMs: 300_000 } as const;

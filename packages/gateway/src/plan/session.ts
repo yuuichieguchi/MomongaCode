@@ -77,7 +77,13 @@ export type OpenPlanSessionsOptions = {
 
 export type RegisterInput = { profile: string; account: string; clientId: string; hostId: string };
 
-export type InstallInput = RegisterInput & { subject: string; email: string; idToken: string; tokens: PlanTokenResponse };
+export type InstallInput = RegisterInput & { subject: string; email?: string; idToken: string; tokens: PlanTokenResponse };
+
+export type Installed = { outcome: 'signed_in' | 'plan_disabled'; firstSignIn: boolean };
+
+export type Registration = { clientId: string; subject?: string; email?: string; idToken?: string };
+
+export type KnownAccount = { profile: string; account: string; view: AccountView };
 
 export type Rejected = { outcome: 'rejected'; reason: 'registration_superseded' };
 
@@ -85,7 +91,11 @@ export type SignOutReport = { revocation: RevocationAnswer; usageUrl: string };
 
 export type PlanSessions = {
   register(input: RegisterInput): Promise<{ outcome: 'registered' } | Rejected>;
-  install(input: InstallInput): Promise<{ outcome: 'signed_in' | 'plan_disabled' } | Rejected>;
+  install(input: InstallInput): Promise<Installed | Rejected>;
+  registration(ref: PlanAccountRef): Promise<Registration | undefined>;
+  load(ref: PlanAccountRef): Promise<void>;
+  known(): Promise<readonly KnownAccount[]>;
+  resume(ref: PlanAccountRef): Promise<boolean>;
   selectActive(ref: PlanAccountRef): Promise<void>;
   signOut(ref: PlanAccountRef): Promise<SignOutReport>;
   authSource(target: { profile: string; account?: string }): AuthSource;
@@ -577,7 +587,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     });
   };
 
-  const install = async (input: InstallInput): Promise<{ outcome: 'signed_in' | 'plan_disabled' } | Rejected> => {
+  const install = async (input: InstallInput): Promise<Installed | Rejected> => {
     const account = accountOf(input.profile, input.account);
     const { tokens } = input;
     const problem = tokenResponseProblem(tokens, { refreshRequired: typeof tokens.scope === 'string' && refreshRequiredFor(tokens.scope) });
@@ -589,6 +599,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
         return { outcome: 'rejected' as const, reason: 'registration_superseded' as const };
       }
       const state: RecordState = grantsScope(tokens.scope, account.profile.oauth.requiredScope) ? 'active' : 'plan_disabled';
+      const firstSignIn = state === 'active' && !existing.welcomeShown;
       const record: PlanRecord = {
         version: RECORD_VERSION,
         profile: input.profile,
@@ -596,9 +607,9 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
         state,
         client_id: existing.client_id,
         ext_agent_host_id: input.hostId,
-        welcomeShown: existing.welcomeShown,
+        welcomeShown: existing.welcomeShown || firstSignIn,
         subject: input.subject,
-        email: input.email,
+        ...optional('email', input.email),
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token,
         id_token: input.idToken,
@@ -613,10 +624,33 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       account.unwritable = undefined;
       account.interrupted = false;
       account.forced.clear();
-      return { outcome: state === 'active' ? ('signed_in' as const) : ('plan_disabled' as const) };
+      return { outcome: state === 'active' ? ('signed_in' as const) : ('plan_disabled' as const), firstSignIn };
     });
     if (outcome.outcome !== 'rejected') await writeActiveAccount(fileSystem, paths.active, input.profile, input.account);
     return outcome;
+  };
+
+  const registration = async (ref: PlanAccountRef): Promise<Registration | undefined> => {
+    const account = accountOf(ref.profile, ref.account);
+    await load(account);
+    if (account.loaded?.kind === 'unreadable') throw conditionFailure({ reason: 'store_unreadable', code: 'plan_store_unreadable', detail: account.loaded.cause });
+    const record = recordOf(account);
+    if (record === undefined) return undefined;
+    return { clientId: record.client_id, ...optional('subject', record.subject), ...optional('email', record.email), ...optional('idToken', record.id_token) };
+  };
+
+  const known = async (): Promise<readonly KnownAccount[]> => {
+    const listed = [...accounts.values()];
+    await Promise.all(listed.map(load));
+    return listed.flatMap((account) => (account.loaded === undefined || account.loaded.kind === 'absent' ? [] : [{ profile: account.profile.id, account: account.label, view: viewOf(account) }]));
+  };
+
+  const resume = async (ref: PlanAccountRef): Promise<boolean> => {
+    const account = accountOf(ref.profile, ref.account);
+    await load(account);
+    if (recordOf(account)?.paused === undefined) return false;
+    await changeRecord(account, withoutPause);
+    return true;
   };
 
   const selectActive = async (ref: PlanAccountRef): Promise<void> => {
@@ -667,6 +701,10 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       }
       return outcome;
     },
+    registration,
+    load: (ref) => load(accountOf(ref.profile, ref.account)),
+    known,
+    resume,
     selectActive,
     signOut: (ref) => signOutAccount(accountOf(ref.profile, ref.account)),
     authSource,

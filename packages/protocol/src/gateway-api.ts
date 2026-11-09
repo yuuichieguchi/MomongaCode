@@ -96,6 +96,7 @@ export type MomongaModelEntry = {
   targetCapabilities: Record<string, Capabilities | ProbingCapabilities>;
   targetBilling?: Record<string, TargetBilling>;
   targetPlan?: Record<string, { profile: string; account?: string }>;
+  targetKey?: Record<string, { group: string }>;
 };
 
 export type MomongaModelList = { object: 'list'; data: MomongaModelEntry[] };

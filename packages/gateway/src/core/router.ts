@@ -33,6 +33,8 @@ export type TargetRuntime = {
   breaker: TargetBreaker;
   gate: AdmissionGate;
   capabilityOverride: CapabilityOverride | undefined;
+  plan: { profile: string; account?: string } | undefined;
+  keyGroup: string | undefined;
   lastFailure: { code: string | null; message: string } | undefined;
 };
 
@@ -180,6 +182,8 @@ export const createRouter = (options: RouterOptions): Router => {
         timers,
       }),
       capabilityOverride: target.capabilities,
+      plan: target.plan,
+      keyGroup: target.keyGroup,
       lastFailure: undefined,
     });
   }

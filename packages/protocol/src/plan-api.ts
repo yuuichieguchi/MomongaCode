@@ -61,6 +61,7 @@ export const PLAN_ROUTES = {
   accountResume: '/accounts/:account/resume',
   accountModels: '/accounts/:account/models',
   accountTargets: '/accounts/:account/targets',
+  hostReset: '/host/reset',
 } as const;
 
 export type PlanAccountRef = { profile: string; account: string };
@@ -90,8 +91,39 @@ export type PlanSignInBeginResponse = { attemptId: string; authorizationUrl: str
 
 export type PlanSignInCompleteRequest = { attemptId: string; callbackUrl: string };
 
-export const PLAN_SIGN_IN_FAILURES = ['attempt_not_found', 'access_denied', 'registration_incomplete', 'registration_superseded'] as const;
-export type PlanSignInFailure = (typeof PLAN_SIGN_IN_FAILURES)[number];
+export type PlanSignInFailureRule = { status: number; type: ErrorType; template: string };
+
+export const PLAN_SIGN_IN_FAILURE_RULES = {
+  attempt_not_found: { status: 404, type: 'not_found', template: 'This sign-in attempt is no longer open.' },
+  attempt_expired: { status: 400, type: 'invalid_request', template: 'This sign-in attempt expired before the browser returned.' },
+  state_mismatch: { status: 400, type: 'invalid_request', template: 'The sign-in response did not belong to this attempt and was ignored.' },
+  access_denied: { status: 400, type: 'invalid_request', template: 'Sign-in was cancelled in the browser.' },
+  authorization_failed: { status: 400, type: 'invalid_request', template: '{identityLabel} refused the sign-in ({error}).' },
+  registration_incomplete: { status: 400, type: 'invalid_request', template: '{identityLabel} did not return an app registration, so nothing was saved.' },
+  client_mismatch: {
+    status: 400,
+    type: 'invalid_request',
+    template: '{identityLabel} returned a different app registration than the one saved for this account. The saved account was left unchanged.',
+  },
+  registration_superseded: {
+    status: 409,
+    type: 'invalid_request',
+    template: 'Another sign-in for this account finished first. An app registered during this attempt remains listed in {identityLabel} settings; you can remove it there.',
+  },
+  exchange_rejected: { status: 400, type: 'invalid_request', template: '{identityLabel} rejected the sign-in code ({error}).' },
+  exchange_unavailable: { status: 502, type: 'server_error', template: '{identityLabel} could not be reached to finish the sign-in.' },
+  token_response_invalid: { status: 502, type: 'server_error', template: '{identityLabel} returned a sign-in response this version cannot use ({reason}). Nothing was saved.' },
+  id_token_invalid: { status: 400, type: 'invalid_request', template: 'The identity returned by {identityLabel} could not be verified ({check}). Nothing was saved.' },
+  jwks_unavailable: { status: 502, type: 'server_error', template: 'The keys needed to verify the identity returned by {identityLabel} could not be fetched.' },
+  identity_mismatch: { status: 400, type: 'invalid_request', template: 'The account that signed in is not the account saved under this label. Nothing was changed.' },
+} as const satisfies Readonly<Record<string, PlanSignInFailureRule>>;
+
+export type PlanSignInFailure = keyof typeof PLAN_SIGN_IN_FAILURE_RULES;
+
+export const PLAN_SIGN_IN_FAILURES = Object.keys(PLAN_SIGN_IN_FAILURE_RULES) as readonly PlanSignInFailure[];
+
+export const ID_TOKEN_CHECKS = ['algorithm', 'signature', 'issuer', 'audience', 'expired', 'nonce', 'subject'] as const;
+export type IdTokenCheck = (typeof ID_TOKEN_CHECKS)[number];
 
 export type PlanSignInCompleteResponse =
   | { outcome: 'signed_in' | 'plan_disabled'; account: PlanAccountView; firstSignIn: boolean }
@@ -99,11 +131,19 @@ export type PlanSignInCompleteResponse =
 
 export type PlanSignInCancelRequest = { attemptId: string };
 
+export type PlanSignInCancelResponse = { cancelled: boolean };
+
 export type PlanSignOutRequest = PlanAccountRef;
 
 export type PlanSignOutResponse = { revocation: 'confirmed' | 'unconfirmed'; usageUrl: string };
 
 export type PlanResumeRequest = { profile: string };
+
+export type PlanResumeResponse = { resumed: boolean };
+
+export type PlanHostResetResponse = { hostId: string };
+
+export type PlanModelsRequest = { profile: string; refresh?: boolean };
 
 export type PlanCatalogEntry =
   | { slug: string; displayName: string; usable: true; contextWindow: number; maxOutputTokens: number }

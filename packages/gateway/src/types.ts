@@ -1,5 +1,6 @@
 import type { Clock, StopValues } from '@momonga/foundation';
 import type { PriceTable, Telemetry } from '@momonga/observability';
+import type { PlanApi } from './plan/api.ts';
 import type { BilledCallsCursorView, BilledCallsPageView, CapabilityOverride, GatewayCostReportView, ProviderAdapter, TargetBilling } from '@momonga/protocol';
 
 export type GatewayTargetConfig = {
@@ -11,6 +12,8 @@ export type GatewayTargetConfig = {
   admissionTimeoutMs: number;
   counter: string;
   capabilities?: CapabilityOverride;
+  plan?: { profile: string; account?: string };
+  keyGroup?: string;
 };
 
 export type GatewayBillingChange = { from: TargetBilling; to: TargetBilling; alias?: string };
@@ -57,6 +60,7 @@ export type GatewayOptions = {
   random: () => number;
   version: string;
   onError?: (error: unknown) => void;
+  plan?: PlanApi;
   onFatal?: (error: Error) => void;
 };
 

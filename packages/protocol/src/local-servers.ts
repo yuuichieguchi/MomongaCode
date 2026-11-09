@@ -5,8 +5,20 @@ export type LocalServerShape = (typeof LOCAL_SERVER_SHAPES)[number];
 
 export type LocalServerToolSupport = 'yes' | 'no' | 'unknown';
 
+export type DetectedModel = { id: string; tools: LocalServerToolSupport; contextWindow?: number; trainedContext?: number };
+
 export type DetectedLocalServer = {
   baseUrl: string;
   shape: LocalServerShape;
-  models: readonly { id: string; tools: LocalServerToolSupport; contextWindow?: number; trainedContext?: number }[];
+  models: readonly DetectedModel[];
 };
+
+export type DetectedManagedServer = {
+  shape: 'managed';
+  id: string;
+  provider: string;
+  binary: string;
+  refused?: { message: string; remedy?: string };
+};
+
+export type LocalServerDetection = DetectedLocalServer | DetectedManagedServer;

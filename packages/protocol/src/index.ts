@@ -138,7 +138,7 @@ export {
 } from './capabilities.ts';
 export type { JsonMode, OutputTokenCapabilities, Readiness, ReadinessInput, TargetAnswers, TargetBilling } from './capabilities.ts';
 export { LOCAL_SERVER_CANDIDATES, LOCAL_SERVER_SHAPES } from './local-servers.ts';
-export type { DetectedLocalServer, LocalServerShape, LocalServerToolSupport } from './local-servers.ts';
+export type { DetectedLocalServer, DetectedManagedServer, DetectedModel, LocalServerDetection, LocalServerShape, LocalServerToolSupport } from './local-servers.ts';
 export { FM_SERVER, MANAGED_DECLARABLE_FIELDS, MANAGED_SERVERS, MANAGED_SERVER_ERROR_KINDS, PROBE_KEY_COMPONENTS, SOCKET_PLACEHOLDER, managedServerOf } from './managed-servers.ts';
 export type { ManagedDeclarableField, ManagedRecordedDefaults, ManagedServerDescription, ManagedServerErrorKind, ManagedTokenCount, Precondition, PreconditionRule, ProbeKeyComponent } from './managed-servers.ts';
 export {
@@ -150,6 +150,8 @@ export {
   PLAN_API_PREFIX,
   PLAN_ROUTES,
   PLAN_SIGN_IN_FAILURES,
+  PLAN_SIGN_IN_FAILURE_RULES,
+  ID_TOKEN_CHECKS,
   SIGN_IN_REQUIRED_CODE,
 } from './plan-api.ts';
 export type {
@@ -173,6 +175,12 @@ export type {
   PlanSignInBeginRequest,
   PlanSignInBeginResponse,
   PlanSignInCancelRequest,
+  PlanSignInCancelResponse,
+  PlanSignInFailureRule,
+  PlanResumeResponse,
+  PlanHostResetResponse,
+  PlanModelsRequest,
+  IdTokenCheck,
   PlanSignInCompleteRequest,
   PlanSignInCompleteResponse,
   PlanSignInFailure,

@@ -35,7 +35,7 @@ export type { SocketResolver, UdsClient, UdsClientOptions, UdsRequestOptions, Ud
 export { uuidv7 } from './uuidv7.ts';
 export { DEFAULT_LOCK_TIMEOUT_MS, createKeyedSerializer, systemFileLockPorts, withFileLock } from './file-lock.ts';
 export type { FileLockOptions, FileLockPorts, KeyedSerializer } from './file-lock.ts';
-export { createFileCredentialStore, createMemoryCredentialStore } from './credential-store.ts';
+export { createFileCredentialStore, createMemoryCredentialStore, credentialFileFor } from './credential-store.ts';
 export type { CredentialEntry, CredentialStore, FileCredentialStoreOptions } from './credential-store.ts';
 export {
   CREDENTIAL_ENVELOPE_FORMAT,
@@ -51,9 +51,11 @@ export type { CredentialSecretStore, CredentialStoreErrorCode, EncryptedCredenti
 export { AUTHORIZATION_WAIT_MS } from './authorization-wait.ts';
 export { OAuthAuthorizationError } from './oauth-authorization-error.ts';
 export type { AuthorizationFailure } from './oauth-authorization-error.ts';
-export { createOAuthProvider } from './oauth-provider.ts';
+export { CLIENT_NAME, createOAuthProvider } from './oauth-provider.ts';
 export type { OAuthProvider, OAuthProviderOptions } from './oauth-provider.ts';
 export { startLoopbackRedirect } from './loopback-redirect.ts';
+export { parseJwt, verifyRs256 } from './oidc.ts';
+export type { ParsedJwt } from './oidc.ts';
 export type { LoopbackRedirect, LoopbackRedirectOptions } from './loopback-redirect.ts';
 export { ATOMIC_WRITE_STEP_ACTIONS, ClaimedDescriptorUnwritableError, ClaimedEntryReplacedError, atomicWriteSteps, isAtomicWriteTemporary, syncDirectory, syncDirectorySync, writeFileAtomically, writeFileAtomicallySync } from './atomic-file.ts';
 export type {

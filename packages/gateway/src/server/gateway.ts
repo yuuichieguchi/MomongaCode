@@ -130,6 +130,7 @@ export const createGateway = async (options: GatewayOptions): Promise<Gateway> =
       startedAt,
       version: options.version,
       onError: options.onError,
+      plan: options.plan,
     });
     const handler: FetchHandler = (request, env) => app.fetch(request, env);
 

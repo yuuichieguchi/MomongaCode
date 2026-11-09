@@ -64,6 +64,8 @@ import { createOpenResponsesAdapter } from './adapters/open-responses/adapter.ts
 import { keyAuthSource, unauthenticatedSource } from './adapters/shared/auth.ts';
 import type { AdapterAuth } from './adapters/shared/auth.ts';
 import { openPlanSessions } from './plan/session.ts';
+import { createPlanApi } from './plan/api.ts';
+import { createPlanSignIn } from './plan/signin.ts';
 import type { AuthSource, PlanHealth } from './plan/auth-source.ts';
 import type { PlanFetch } from './plan/refresh.ts';
 import { createSettingsNow } from './user-settings-now.ts';
@@ -623,6 +625,18 @@ const providerNameOf = (target: ResolvedTarget, servers: readonly ManagedServerD
   }
 };
 
+const keyGroupOf = (target: ResolvedTarget, providerName: string): { keyGroup?: string } => {
+  const fields: Readonly<Record<string, unknown>> = target;
+  if (fields['apiKeyEnv'] === undefined && fields['apiKeySecret'] === undefined) return {};
+  const provider = fields['provider'];
+  if (typeof provider === 'string' && provider !== '') return { keyGroup: provider };
+  const baseUrl = fields['baseUrl'];
+  return { keyGroup: typeof baseUrl === 'string' ? new URL(baseUrl).origin : providerName };
+};
+
+const planRefOf = (target: ResolvedTarget): { plan?: { profile: string; account?: string } } =>
+  'plan' in target ? { plan: { profile: target.plan.profile, ...(target.plan.account === undefined ? {} : { account: target.plan.account }) } } : {};
+
 const requiredCounter = (counters: Readonly<Record<string, string>>, name: string): string => {
   const counter = counters[name];
   if (counter === undefined) throw new Error(`no counter was derived for the target ${name}`);
@@ -661,6 +675,8 @@ export const gatewayConfigOf = (
           billing: target.billing,
           maxConcurrency: target.maxConcurrency,
           admissionTimeoutMs: target.admissionTimeoutMs,
+          ...planRefOf(target),
+          ...keyGroupOf(target, providerNameOf(target, servers)),
         },
       ]),
     ),
@@ -838,39 +854,44 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const secretFailures = await warmSecrets(secretResolver, referencedSecrets, signal ?? new AbortController().signal);
     for (const [name, failure] of secretFailures) logger.warn(`secret ${name} is unavailable: ${failure.message}`);
     const planSecrets = createPlanSecretFeed();
-    const planDispatcher =
-      planTargets.length === 0
-        ? undefined
-        : createOutboundDispatcher(network, { connectReplyTimeoutMs: Math.max(PLAN_SESSION_DEFAULTS.attemptTimeoutMs, PLAN_SESSION_DEFAULTS.revocationTimeoutMs) });
-    if (planDispatcher !== undefined) cleanups.push(() => planDispatcher.close());
-    const planFetch: PlanFetch = (url, init) => {
-      if (planDispatcher === undefined) throw new Error('plan requests need the plan dispatcher');
-      return outboundFetch(planDispatcher)(url, init as never) as unknown as Promise<Response>;
-    };
-    const sessions =
-      planTargets.length === 0
-        ? undefined
-        : await openPlanSessions({
-            profiles: planProfiles,
-            paths: { sessions: paths.planSessions, host: paths.planHost, active: paths.planActive },
-            store: createEncryptedCredentialStore({
-              directory: paths.planSessions,
-              stateDirectory: paths.state,
-              secretStore:
-                options.secretStore === undefined
-                  ? givenCredentialSecretStore(options.execWithStdin ?? createExecWithStdin({ ...childEnv, ...givenSecretStoreChildEnv(options.env) }), options.env)
-                  : { kind: 'available', store: options.secretStore },
-              plaintextTokenFiles: () => settingsNow().credentials.plaintextTokenFiles,
-            }),
-            fileSystem: nodeFileSystem,
-            accounts: planTargets.flatMap(([, target]) => (target.plan.account === undefined ? [] : [{ profile: target.plan.profile, account: target.plan.account }])),
-            clock,
-            fetch: planFetch,
-            sleep: (ms, sleepSignal) => sleepOn(timers, ms, sleepSignal),
-            onSecret: planSecrets.add,
-            warn: (message) => logger.warn(message),
-          });
-    if (sessions !== undefined) cleanups.push(() => sessions.close());
+    const planDispatcher = createOutboundDispatcher(network, { connectReplyTimeoutMs: Math.max(PLAN_SESSION_DEFAULTS.attemptTimeoutMs, PLAN_SESSION_DEFAULTS.revocationTimeoutMs) });
+    cleanups.push(() => planDispatcher.close());
+    const planFetch: PlanFetch = (url, init) => outboundFetch(planDispatcher)(url, init as never) as unknown as Promise<Response>;
+    const planSleep = (ms: number, sleepSignal?: AbortSignal): Promise<void> => sleepOn(timers, ms, sleepSignal);
+    await nodeFileSystem.mkdirPrivate(paths.planSessions);
+    const sessions = await openPlanSessions({
+      profiles: planProfiles,
+      paths: { sessions: paths.planSessions, host: paths.planHost, active: paths.planActive },
+      store: createEncryptedCredentialStore({
+        directory: paths.planSessions,
+        stateDirectory: paths.state,
+        secretStore:
+          options.secretStore === undefined
+            ? givenCredentialSecretStore(options.execWithStdin ?? createExecWithStdin({ ...childEnv, ...givenSecretStoreChildEnv(options.env) }), options.env)
+            : { kind: 'available', store: options.secretStore },
+        plaintextTokenFiles: () => settingsNow().credentials.plaintextTokenFiles,
+      }),
+      fileSystem: nodeFileSystem,
+      accounts: planTargets.flatMap(([, target]) => (target.plan.account === undefined ? [] : [{ profile: target.plan.profile, account: target.plan.account }])),
+      clock,
+      fetch: planFetch,
+      sleep: planSleep,
+      onSecret: planSecrets.add,
+      warn: (message) => logger.warn(message),
+    });
+    cleanups.push(() => sessions.close());
+    const planApi = createPlanApi({
+      profiles: planProfiles,
+      sessions,
+      signIn: createPlanSignIn({ profiles: planProfiles, sessions, clock, ports: { fetch: planFetch, sleep: planSleep }, fileSystem: nodeFileSystem, hostFile: paths.planHost }),
+      fileSystem: nodeFileSystem,
+      paths: { host: paths.planHost, active: paths.planActive },
+      clock,
+      planTargets: () =>
+        Object.entries(settingsNow().models.targets).flatMap(([name, target]) =>
+          'plan' in target ? [{ name, profile: target.plan.profile, ...(target.plan.account === undefined ? {} : { account: target.plan.account }) }] : [],
+        ),
+    });
     signal?.throwIfAborted();
     const userDialects = settings.models.dialects;
     const liveness: UpstreamLiveness = { headersTimeoutMs: settings.models.headersTimeoutMs, idleTimeoutMs: settings.models.idleTimeoutMs, timers };
@@ -945,7 +966,6 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       }
     }
     for (const [name, target] of planTargets) {
-      if (sessions === undefined) throw new Error(`the plan target ${name} has no session engine`);
       adapters[name] = createPlanAdapter(name, target, sessions.authSource({ profile: target.plan.profile, ...(target.plan.account === undefined ? {} : { account: target.plan.account }) }), planProfiles, {
         clock,
         userDialects,
@@ -988,6 +1008,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       version: options.version,
       onError: (error) => logger.error('unhandled gateway error', { err: toError(error) }),
       onFatal: latchFatal,
+      plan: planApi,
     });
     if (gateway.tcpPort !== undefined) logger.info('gateway.debug_listener', { data: { host: DEBUG_TCP_HOST, port: gateway.tcpPort } });
     cleanups.splice(cleanups.indexOf(closeAdapters), 1);
