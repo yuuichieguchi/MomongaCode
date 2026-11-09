@@ -315,8 +315,17 @@ describe('the five sign-in failures settled in O-R5-4', { timeout: REAL_PROCESS_
     await gateway.close();
   });
 
+  it('adopts an exchange answer whose expires_in does not exceed the refresh margin (O-R5-5 item 1)', async () => {
+    const gateway = await startPlanGateway();
+    gateway.auth.scriptToken('authorization_code', [{ kind: 'expires_in', seconds: 121 }]);
+    const { completed } = await signIn(gateway);
+    expect(completed.status).toBe(200);
+    expect(completed.body).toMatchObject({ outcome: 'signed_in', account: { label: ACCOUNT, state: 'active' } });
+    await gateway.close();
+  });
+
   it.each([
-    [{ kind: 'expires_in', seconds: 121 }, 'the token response lifetime does not exceed the refresh margin'],
+    [{ kind: 'expires_in', seconds: 0 }, 'the token response has no positive integer expires_in'],
     [{ kind: 'no_replacement_refresh_token' }, 'the token response has no refresh token'],
   ] as const)('token_response_invalid: 502 naming the problem of %j, and nothing saved', async (step, reason) => {
     const gateway = await startPlanGateway();

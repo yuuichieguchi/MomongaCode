@@ -200,14 +200,23 @@ describe('transient refresh answers keep everything (I-C6) and are retried at mo
     });
   });
 
-  it('a 200 with expires_in equal to M is not adopted: the request goes on with the current token (tokenResponseProblem, O-R5-4)', async () => {
+  it('a 200 with expires_in equal to M is adopted, its replacement stored in the same write, and the next read refreshes once (O-R5-5 item 1)', async () => {
     const h = await harness();
     const signIn = await signedIn(h, 'work');
     h.auth.scriptToken('refresh_token', [{ kind: 'expires_in', seconds: 121 }]);
     toRefreshWindow(h, START_MS);
     const read = await readWork(h);
-    expect(read.bearer).toBe(signIn.tokens.access_token);
-    expect((await readRecord(h, 'work'))?.['access_token']).toBe(signIn.tokens.access_token);
+    expect(read.bearer).not.toBe(signIn.tokens.access_token);
+    expect(h.auth.calls.tokenRefreshToken).toBe(1);
+    const after = await readRecord(h, 'work');
+    expect(after).toMatchObject({ state: 'active', access_token: read.bearer });
+    expect(after?.['refresh_token']).not.toBe(signIn.tokens.refresh_token);
+    expect(h.auth.issuedSecrets()).toContain(after?.['refresh_token']);
+    expect(await rawRecord(h, 'work')).not.toContain(signIn.tokens.refresh_token);
+    const next = await readWork(h);
+    expect(h.auth.calls.tokenRefreshToken).toBe(2);
+    expect(next.bearer).not.toBe(read.bearer);
+    expect((await readRecord(h, 'work'))?.['state']).toBe('active');
   });
 
   it('never sends a refresh token again once a 200 carried its replacement (SingleUseServer)', async () => {

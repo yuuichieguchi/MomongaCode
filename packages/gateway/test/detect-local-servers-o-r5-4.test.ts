@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { FM_SERVER } from '@momonga/protocol';
 import type { ManagedServerDescription } from '@momonga/protocol';
 import { detectLocalServers } from '../src/index.ts';
+import { PreconditionCancelledError } from '../src/managed/preconditions.ts';
 
 type Route = (body: string) => { status: number; json?: unknown };
 
@@ -38,7 +39,7 @@ const detect = (options: Record<string, unknown>) =>
     signal: new AbortController().signal,
     fetch,
     servers: [],
-    exec: async () => ({ code: 0, stdout: '', stderr: '' }),
+    exec: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
     exists: async () => false,
     ...options,
   });
@@ -108,5 +109,59 @@ describe('managed server descriptions are listed when their binary exists (O-R5-
     expect(await detect({ servers: [described], exists: async () => false })).toEqual([]);
     const listed = await detect({ servers: [described], exists: async () => true });
     expect(listed).toHaveLength(1);
+  });
+});
+
+describe('managed preconditions run through runPreconditions at detection (O-R5-5 item 4)', () => {
+  const gated: ManagedServerDescription = { ...FM_SERVER, id: 'gated-server', provider: 'someone', binary: { defaultPath: '/opt/gated/serve' } };
+  const exitCodes = (codes: Readonly<Record<string, number>>) => async (file: string, args: readonly string[]) => {
+    expect(file).toBe('/opt/gated/serve');
+    return { exitCode: codes[args.join(' ')] ?? 0, stdout: '', stderr: '' };
+  };
+
+  it('lists a description whose preconditions are met with no refused field', async () => {
+    const found = await detect({ servers: [gated], exists: async () => true, exec: exitCodes({}) });
+    expect(found).toEqual([{ shape: 'managed', id: 'gated-server', provider: 'someone', binary: '/opt/gated/serve' }]);
+  });
+
+  it('lists a refused description with the message and remedy of the rule', async () => {
+    const found = await detect({ servers: [gated], exists: async () => true, exec: exitCodes({ 'license --status': 69 }) });
+    expect(found).toEqual([
+      {
+        shape: 'managed',
+        id: 'gated-server',
+        provider: 'someone',
+        binary: '/opt/gated/serve',
+        refused: { message: 'the Apple Foundation Models licence has not been accepted', remedy: 'sudo fm license' },
+      },
+    ]);
+  });
+
+  it('turns a spawn error into a refused row naming the precondition', async () => {
+    const found = await detect({
+      servers: [gated],
+      exists: async () => true,
+      exec: async () => {
+        throw new Error('spawn EACCES');
+      },
+    });
+    expect(found).toEqual([
+      { shape: 'managed', id: 'gated-server', provider: 'someone', binary: '/opt/gated/serve', refused: { message: 'the precondition "license --status" could not run: spawn EACCES' } },
+    ]);
+  });
+
+  it('ends the detection with PreconditionCancelledError when the signal aborts, listing nothing', async () => {
+    const control = new AbortController();
+    const detection = detect({
+      servers: [gated],
+      exists: async () => true,
+      signal: control.signal,
+      exec: (_file: string, _args: readonly string[], options: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
+          control.abort(new Error('the user left'));
+        }),
+    });
+    await expect(detection).rejects.toBeInstanceOf(PreconditionCancelledError);
   });
 });

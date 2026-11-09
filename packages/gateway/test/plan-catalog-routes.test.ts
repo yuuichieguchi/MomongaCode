@@ -135,6 +135,29 @@ describe('accounts/{account}/targets adds an unpinned target named by the P6.8 r
     await gateway.close();
   });
 
+  it('takes the first free of n, n-2, n-3 when n is a key of targets or aliases, and slugs that sanitise alike get distinct names (O-R5-5 item 3)', async () => {
+    const gateway = await startPlanGateway({
+      models: [
+        { slug: 'a b', display_name: 'Spaced', visibility: 'list', context_window: 100000 },
+        { slug: 'a-b', display_name: 'Dashed', visibility: 'list', context_window: 100000 },
+        { slug: 'taken', display_name: 'Taken', visibility: 'list', context_window: 100000 },
+      ],
+    });
+    await signIn(gateway);
+    await gateway.get(modelsRoute());
+    const settingsFile = path.join(gateway.home, '.momonga', 'settings.json');
+    const settings = settingsOf(gateway);
+    fs.writeFileSync(settingsFile, JSON.stringify({ ...settings, models: { ...settings.models, aliases: { ...settings.models.aliases, taken: 'gpt', 'taken-2': 'gpt' } } }));
+    expect((await add(gateway, 'a b')).body).toEqual({ target: 'a-b', alias: 'a-b' });
+    expect((await add(gateway, 'a-b')).body).toEqual({ target: 'a-b-2', alias: 'a-b-2' });
+    expect((await add(gateway, 'taken')).body).toEqual({ target: 'taken-3', alias: 'taken-3' });
+    expect((await add(gateway, 'a b')).body).toEqual({ target: 'a-b', alias: 'a-b' });
+    const after = settingsOf(gateway);
+    expect(after.models.targets['a-b-2']).toEqual({ adapter: 'open-responses', model: 'a-b', plan: { profile: 'chatgpt' } });
+    expect(after.models.targets['taken-3']).toEqual({ adapter: 'open-responses', model: 'taken', plan: { profile: 'chatgpt' } });
+    await gateway.close();
+  });
+
   it('refuses an unusable entry with plan_model_unusable and an unknown slug with plan_model_unknown', async () => {
     const gateway = await startPlanGateway({ models: LISTED });
     await signIn(gateway);
