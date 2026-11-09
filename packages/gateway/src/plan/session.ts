@@ -310,7 +310,7 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
         return;
       }
       const record = parseRecord(raw);
-      account.loaded = { kind: 'record', record };
+      adopt(account, record);
       account.interrupted = record.pendingRefresh !== undefined;
     } catch (error) {
       const cause = describeError(error);
@@ -333,11 +333,8 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
   };
 
   const adopt = (account: Account, record: PlanRecord): void => {
+    for (const value of [record.access_token, record.refresh_token, record.id_token]) if (value !== undefined) options.onSecret(value);
     account.loaded = { kind: 'record', record };
-  };
-
-  const feedSecrets = (...values: Array<string | undefined>): void => {
-    for (const value of values) if (value !== undefined) options.onSecret(value);
   };
 
   const ensureHost = async (): Promise<void> => {
@@ -435,7 +432,6 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
     };
     await persistAfterSend(account, entry, next);
     account.interrupted = intentKept;
-    feedSecrets(tokens.access_token, tokens.refresh_token, tokens.id_token);
   };
 
   const refreshInScope = async (account: Account, trigger: RefreshTrigger): Promise<void> => {
@@ -617,7 +613,6 @@ export const openPlanSessions = async (options: OpenPlanSessionsOptions): Promis
       account.unwritable = undefined;
       account.interrupted = false;
       account.forced.clear();
-      feedSecrets(tokens.access_token, tokens.refresh_token, input.idToken);
       return { outcome: state === 'active' ? ('signed_in' as const) : ('plan_disabled' as const) };
     });
     if (outcome.outcome !== 'rejected') await writeActiveAccount(fileSystem, paths.active, input.profile, input.account);
