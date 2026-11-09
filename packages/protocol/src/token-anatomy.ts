@@ -34,15 +34,39 @@ export const anatomyLayerEntries = (layers: TokenAnatomyLayers): [string, number
 
 export type ModelCost = { amount: number; currency: 'USD'; priceVersion: string };
 
+export const UNPRICED_CODES = ['plan', 'unknown_billing', 'usage_not_reported', 'cache_read_not_reported', 'no_price_entry', 'unpriceable_usage'] as const;
+
+export type UnpricedCode = (typeof UNPRICED_CODES)[number];
+
+export type UnpricedOutcome = { code: UnpricedCode; reason: string };
+
+export type ModelPricing = { kind: 'priced'; cost: ModelCost } | ({ kind: 'unpriced' } & UnpricedOutcome);
+
+export const CACHE_READS_NOT_REPORTED = 'cache reads not reported';
+
+export const PRICE_NOT_RECORDED = 'price not recorded';
+
+export type PriceNotRecorded = { kind: 'not_recorded' };
+
+export const UNPRICED_CODE_TEXT: Readonly<Record<UnpricedCode, string>> = {
+  plan: 'plan usage, no per-token price',
+  unknown_billing: 'billing unknown',
+  usage_not_reported: 'usage not reported',
+  cache_read_not_reported: CACHE_READS_NOT_REPORTED,
+  no_price_entry: 'no price entry',
+  unpriceable_usage: 'usage cannot be priced',
+};
+
 export type CallTiming = { firstEventMs?: number; durationMs: number };
 
-export type BilledDetail = { responseId?: string; cachedInputTokens?: number; cacheWriteInputTokens?: number; cost?: ModelCost; timing?: CallTiming };
+export type BilledDetail = { responseId?: string; cachedInputTokens?: number; cacheWriteInputTokens?: number; cost?: ModelCost; unpriced?: UnpricedOutcome; timing?: CallTiming };
 
 export type BilledTokensView = {
   inputTokens: number;
-  uncachedInputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
+  reportedInputTokens: number | null;
+  uncachedInputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
   outputTokens: number;
   reasoningTokens: number;
 };
@@ -57,7 +81,9 @@ export type RoleBreakdownView = {
   timingNotRecorded: number;
 };
 
-export type UnpricedCallView = { runId: string; provider: string; model: string; step?: number; reason: string };
+export type UnpricedCallView = { runId: string; provider: string; model: string; step?: number; code: UnpricedCode; reason: string };
+
+export type InconsistentUsageView = { runId: string; provider: string; model: string; step?: number; reason: string };
 
 export type CostBreakdownView = {
   calls: number;
@@ -69,10 +95,11 @@ export type CostBreakdownView = {
   timeToFirstToken: TimingSummaryView | null;
   duration: TimingSummaryView | null;
   roles: Record<string, RoleBreakdownView>;
-  cost: { amount: number | null; currency: 'USD'; unpricedCalls: number };
+  cost: { amount: number | null; currency: 'USD'; unpricedCalls: number; unpriced: Partial<Record<UnpricedCode, number>>; priceNotRecordedCalls: number; priceVersions: string[] };
   plan: { calls: number; inputTokens: number; outputTokens: number };
   unpriced: UnpricedCallView[];
-  inconsistentUsage: UnpricedCallView[];
+  inconsistentUsage: InconsistentUsageView[];
+  cacheReadNotReported: number;
   callsWithoutResponseId: number;
   unjoined: UnjoinedView[];
 };
@@ -89,8 +116,8 @@ export type BilledCallView = {
   model: string;
   billing: 'metered' | 'local' | 'plan' | 'unknown';
   startMs: number;
-  usage: { inputTokens: number; cachedInputTokens: number; cacheWriteInputTokens: number; outputTokens: number; reasoningTokens: number };
-  price: { kind: 'priced'; units: string; priceVersion: string } | { kind: 'unpriced'; reason: string };
+  usage: { inputTokens: number; cachedInputTokens?: number; cacheWriteInputTokens: number; outputTokens: number; reasoningTokens: number };
+  price: { kind: 'priced'; units: string; priceVersion: string } | { kind: 'unpriced'; code: UnpricedCode; reason: string } | PriceNotRecorded;
 };
 
 export type BilledCallsCursorView = { run: number; after: number };

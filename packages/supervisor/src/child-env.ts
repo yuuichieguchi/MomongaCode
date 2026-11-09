@@ -40,5 +40,8 @@ export const gatewayEnv = (env: SourceEnv, settings: CredentialSettings, home: s
   return result;
 };
 
-export const runtimeEnv = (env: SourceEnv, settings: CredentialSettings): { env: Record<string, string>; removed: string[] } =>
-  stripCredentialEnv(definedEnv(env), credentialEnvNames(settings), settings.credentials);
+export const runtimeEnv = (env: SourceEnv, settings: CredentialSettings): { env: Record<string, string>; removed: string[] } => {
+  const source = definedEnv(env);
+  const stripped = stripCredentialEnv(source, credentialEnvNames(settings), settings.credentials);
+  return { env: { ...stripped.env, ...secretStoreEnvFor(source) }, removed: stripped.removed };
+};

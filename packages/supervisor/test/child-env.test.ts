@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createUserSettingsCache, noKeptRecords } from '@momonga/config';
-import { MINIMAL_CHILD_PATH, NETWORK_ENV_NAMES, SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV, secretStoreEnvFor } from '@momonga/foundation';
+import { createUserSettingsCache, noKeptRecords, stripCredentialEnv } from '@momonga/config';
+import { MINIMAL_CHILD_PATH, NETWORK_ENV_NAMES, SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV, SECRET_REFUSAL_ENV, secretStoreEnvFor } from '@momonga/foundation';
 import { waitFor } from '@momonga/testkit';
 import { COLLIDING_CREDENTIAL_DETAIL, definedEnv, gatewayEnv, runtimeEnv } from '../src/child-env.ts';
 import type { CredentialSettings } from '../src/child-env.ts';
@@ -48,6 +48,7 @@ describe('gatewayEnv', () => {
       TMPDIR: '/var/tmp/u',
       LC_ALL: 'C',
       UPSTREAM_X: 'upstream-value',
+      ...secretStoreEnvFor(source),
     });
     expect(env).not.toHaveProperty('ABSENT_KEY');
   });
@@ -101,9 +102,9 @@ const referencingSecret = (): CredentialSettings =>
     models: { targets: { claude: { adapter: 'anthropic', model: 'm', apiKeySecret: 'anthropic-main' } } },
   }) as unknown as CredentialSettings;
 
-const binWith = (program: string): string => {
+const binWith = (...programs: string[]): string => {
   const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'mm-sup-bin-')));
-  fs.writeFileSync(path.join(dir, program), '#!/bin/sh\nexit 97\n', { mode: 0o755 });
+  for (const program of programs) fs.writeFileSync(path.join(dir, program), '#!/bin/sh\nexit 97\n', { mode: 0o755 });
   return dir;
 };
 
@@ -135,7 +136,7 @@ describe('gatewayEnv secret store discovery', () => {
     }
   });
 
-  it('hands the store location even when no target references a secret', () => {
+  it('passes the store choice even when no target references a secret, because the credential store needs it (N81)', () => {
     const bin = binWith('security');
     try {
       const env = gatewayEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), '/home/u');
@@ -145,23 +146,61 @@ describe('gatewayEnv secret store discovery', () => {
       fs.rmSync(bin, { recursive: true, force: true });
     }
   });
+
+  it('passes the reason when the host has no store, with no target referencing a secret (N81)', () => {
+    const bin = binWith();
+    try {
+      const env = gatewayEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'), '/home/u');
+      expect(env[SECRET_BACKEND_ENV]).toBeUndefined();
+      expect(env[SECRET_REFUSAL_ENV]).toMatch(/security \(Keychain\) is not on PATH/);
+    } finally {
+      fs.rmSync(bin, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('runtimeEnv secret store choice (N81)', () => {
+  it('passes the store choice to the runtime at every start, after the credential names are removed', () => {
+    const bin = binWith('security');
+    try {
+      const { env } = runtimeEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'));
+      expect(env[SECRET_BACKEND_ENV]).toBe('keychain');
+      expect(env[SECRET_PROGRAM_ENV]).toBe(path.join(bin, 'security'));
+    } finally {
+      fs.rmSync(bin, { recursive: true, force: true });
+    }
+  });
+
+  it('passes the reason to the runtime when the host has no store', () => {
+    const bin = binWith();
+    try {
+      const { env } = runtimeEnv({ PATH: bin, HOME: '/home/u' }, declaring('UPSTREAM_X'));
+      expect(env[SECRET_REFUSAL_ENV]).toMatch(/security \(Keychain\) is not on PATH/);
+    } finally {
+      fs.rmSync(bin, { recursive: true, force: true });
+    }
+  });
+
+  it('never hands the store choice to a tool child: the session env strip removes all three names', () => {
+    const { env, removed } = stripCredentialEnv({ [SECRET_BACKEND_ENV]: 'keychain', [SECRET_PROGRAM_ENV]: '/usr/bin/security', [SECRET_REFUSAL_ENV]: 'none', FOO: 'foo' }, []);
+    expect(env).toEqual({ FOO: 'foo' });
+    expect(removed.sort()).toEqual([SECRET_BACKEND_ENV, SECRET_PROGRAM_ENV, SECRET_REFUSAL_ENV].sort());
+  });
 });
 
 describe('runtimeEnv', () => {
   it('runtime env keeps neutral names, including a token-shaped value under a neutral name, and removes declared and credential-looking ones', () => {
-    const result = runtimeEnv(
-      {
-        FOO: 'foo',
-        PATH: '/opt/bin:/usr/bin',
-        UPSTREAM_X: 'upstream-value',
-        GITHUB_TOKEN: 'gh-value',
-        MY_API_KEY: 'key-value',
-        NEUTRAL_NAME: TOKEN_LIKE,
-        DATABASE_URL: 'postgres://u:p@h/db',
-      },
-      declaring('UPSTREAM_X'),
-    );
-    expect(result.env).toEqual({ FOO: 'foo', PATH: '/opt/bin:/usr/bin', NEUTRAL_NAME: TOKEN_LIKE });
+    const source = {
+      FOO: 'foo',
+      PATH: '/opt/bin:/usr/bin',
+      UPSTREAM_X: 'upstream-value',
+      GITHUB_TOKEN: 'gh-value',
+      MY_API_KEY: 'key-value',
+      NEUTRAL_NAME: TOKEN_LIKE,
+      DATABASE_URL: 'postgres://u:p@h/db',
+    };
+    const result = runtimeEnv(source, declaring('UPSTREAM_X'));
+    expect(result.env).toEqual({ FOO: 'foo', PATH: '/opt/bin:/usr/bin', NEUTRAL_NAME: TOKEN_LIKE, ...secretStoreEnvFor(source) });
     expect(result.removed).toEqual(['DATABASE_URL', 'GITHUB_TOKEN', 'MY_API_KEY', 'UPSTREAM_X']);
   });
 });
@@ -171,7 +210,7 @@ describe('undefined values', () => {
     const source = { FOO: 'foo', GONE: undefined, PATH: '/bin', HOME: undefined };
     expect(definedEnv(source)).toEqual({ FOO: 'foo', PATH: '/bin' });
     const runtime = runtimeEnv(source, declaring());
-    expect(runtime.env).toEqual({ FOO: 'foo', PATH: '/bin' });
+    expect(runtime.env).toEqual({ FOO: 'foo', PATH: '/bin', ...secretStoreEnvFor(definedEnv(source)) });
     expect(Object.keys(runtime.env)).not.toContain('GONE');
     const gateway = gatewayEnv(source, declaring(), '/h');
     expect(gateway).toEqual({ ...secretStoreEnvFor(definedEnv(source)), PATH: MINIMAL_CHILD_PATH, HOME: '/h' });

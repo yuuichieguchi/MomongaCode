@@ -474,7 +474,7 @@ export type ReapMarkerDirectoryOptions = {
   onWarning(message: string): void;
   kill?: SignalSender;
   timing?: ReapTiming;
-  signal?: AbortSignal | undefined;
+  signal: AbortSignal;
   inspector?: ProcessInspector;
   occasion?: RetryKind;
 };
@@ -556,7 +556,7 @@ export const reapMarkerDirectory = async ({
   const outcomes = await Promise.all(
     markers.map(async (marker): Promise<{ marker: string; removed: boolean } | { marker: string; failure: unknown }> => {
       try {
-        const { removed } = occasion === undefined ? await reap(marker) : await reapOnOccasion(marker, occasion, label, onWarning, signal ?? new AbortController().signal, reap);
+        const { removed } = occasion === undefined ? await reap(marker) : await reapOnOccasion(marker, occasion, label, onWarning, signal, reap);
         return { marker, removed };
       } catch (failure) {
         return { marker, failure };

@@ -287,7 +287,7 @@ export const makeRuntimeFixture = async (options: RuntimeFixtureOptions = {}): P
   const reporter = makeReporter();
   const pools = makeFakePoolFactory();
   const reapTiming = recordingReapTiming(fixture.clock, fixture.timers);
-  const composition = runtime.createSettingsComposition({ home: temp.home, cache, store: fixture.store });
+  const composition = runtime.createSettingsComposition({ home: temp.home, platform: process.platform, cache, store: fixture.store });
   const toolRuntime = runtime.createToolRuntime({
     paths: temp.paths,
     home: temp.home,

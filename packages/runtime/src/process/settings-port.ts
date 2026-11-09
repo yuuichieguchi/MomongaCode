@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { appendPermissionRule, autoFitKeyOf, readClassifierProbeKeys, ConfigError, systemFileLockPorts, credentialEnvNames, loadSettings, stripCredentialEnv } from '@momonga/config';
-import type { AutoFitKey, KeptLayers, LoadSettingsResult, ResolvedSettings, SettingsUse, TrustOracle, UserLayer, UserSettingsCache } from '@momonga/config';
+import type { AutoFitKey, CredentialRules, KeptLayers, LoadSettingsResult, ResolvedSettings, SettingsUse, TrustOracle, UserLayer, UserSettingsCache } from '@momonga/config';
 import { STARTUP_TIMEOUT_MS, createBinaryHashCache, createHeldHostReadings, createHostExec } from '@momonga/foundation';
 import { MANAGED_SERVERS } from '@momonga/protocol';
 import type { RuntimeStore, Session } from '@momonga/store';
@@ -8,12 +8,15 @@ import type { SettingsPort, ToolEnv } from '../ports.ts';
 import type { SessionCreateSettings } from '../service/app.ts';
 import { AUTO_CLASSIFIER_CODE } from '../worker/auto-classifier.ts';
 
-const hasCredentialRules = (rules: ResolvedSettings['credentials']): boolean => Object.values(rules).some((list) => list.length > 0);
+const credentialRulesOf = ({ env, keep, valuePatterns }: ResolvedSettings['credentials']): CredentialRules => ({ env, keep, valuePatterns });
+
+const hasCredentialRules = (rules: CredentialRules): boolean => Object.values(rules).some((list: readonly string[]) => list.length > 0);
 
 export type UserSnapshot = { settings: ResolvedSettings; user: UserLayer };
 
 export type SettingsCompositionOptions = {
   home: string;
+  platform: NodeJS.Platform;
   cache: UserSettingsCache;
   store: Pick<RuntimeStore, 'trust'>;
 };
@@ -31,12 +34,12 @@ export type SettingsComposition = {
   admitted<T>(admit: () => Promise<T> | T): Promise<T>;
 };
 
-export const createSettingsComposition = ({ home, cache, store }: SettingsCompositionOptions): SettingsComposition => {
+export const createSettingsComposition = ({ home, platform, cache, store }: SettingsCompositionOptions): SettingsComposition => {
   if (!path.isAbsolute(home)) throw new TypeError(`home must be an absolute path, got ${home}`);
 
   const trustOracle: TrustOracle = { isTrusted: (dir) => store.trust.decisionFor(dir).decision === 'trusted' };
 
-  const classifierKeyPorts = { servers: MANAGED_SERVERS, exec: createHostExec(), hashes: createBinaryHashCache(), host: createHeldHostReadings(), platform: process.platform };
+  const classifierKeyPorts = { servers: MANAGED_SERVERS, exec: createHostExec(), hashes: createBinaryHashCache(), host: createHeldHostReadings(), platform };
 
   const autoFitKeyFor = async (resolved: ResolvedSettings): Promise<AutoFitKey | undefined> => {
     const classifier = resolved.autoMode?.classifier;
@@ -83,7 +86,7 @@ export const createSettingsComposition = ({ home, cache, store }: SettingsCompos
       ...(origin === undefined || origin === 'cli' ? {} : { defaultModeOrigin: origin }),
       additionalDirectories: permissions.additionalDirectories,
       credentialEnvNames: credentialEnvNames(snapshot.settings),
-      ...(hasCredentialRules(snapshot.settings.credentials) ? { credentials: snapshot.settings.credentials } : {}),
+      ...(hasCredentialRules(credentialRulesOf(snapshot.settings.credentials)) ? { credentials: credentialRulesOf(snapshot.settings.credentials) } : {}),
       ...(classifier === undefined ? {} : { autoModeClassifier: classifier }),
       ...(autoModeKey === undefined ? {} : { autoModeKey }),
     };

@@ -68,7 +68,7 @@ const sweepEverything = async (paths: MomongaPaths, kill: (target: number, signa
   await reapToolMarkers({ event: 'startup', owners: createMarkerOwners(), dir: paths.markers.tools, store: { idempotency: { get: () => undefined }, getRun: () => undefined } as never, killGraceMs: 100, onWarning });
   await reapToolMarkers({ event: 'sweep', owners: createMarkerOwners(), dir: paths.markers.tools, store: { idempotency: { get: () => undefined }, getRun: () => undefined } as never, killGraceMs: 100, onWarning });
   for (const dir of [paths.markers.mcp, paths.markers.targets, paths.markers.daemons]) {
-    await reapMarkerDirectory({ dir, killGraceMs: 100, label: 'sweep', onWarning, kill: kill as never });
+    await reapMarkerDirectory({ dir, signal: new AbortController().signal, killGraceMs: 100, label: 'sweep', onWarning, kill: kill as never });
   }
   const timers = { setTimeout: (callback: () => void, ms: number) => setTimeout(callback, ms), clearTimeout: (handle: unknown) => clearTimeout(handle as NodeJS.Timeout) };
   await reapOrphans({

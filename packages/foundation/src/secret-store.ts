@@ -1,3 +1,4 @@
+import type { CredentialSecretStore } from './encrypted-credential-store.ts';
 import { findProgramOnPath } from './program-search.ts';
 import { declaredChildEnv } from './process-contract.ts';
 import { powershellArgs, powershellPath } from './platform/windows-scripts.ts';
@@ -242,7 +243,7 @@ const chooseSecretBackend = (env: SecretEnv): ChosenSecretStore => {
   if (findProgramOnPath('cmdkey', env) !== undefined) return { kind: 'chosen', id: 'credential-manager', program: powershellPath(env) };
   const secretServiceState =
     secretTool === undefined ? 'secret-tool (Secret Service) is not on PATH' : `secret-tool (Secret Service) is on PATH at ${secretTool}, but no D-Bus session is set (DBUS_SESSION_BUS_ADDRESS is empty)`;
-  return { kind: 'none', reason: `no secret store was found on this host: security (Keychain) is not on PATH; ${secretServiceState}; cmdkey (Credential Manager) is not on PATH` };
+  return { kind: 'none', reason: `security (Keychain) is not on PATH; ${secretServiceState}; cmdkey (Credential Manager) is not on PATH` };
 };
 
 const backendKindOf = (id: string): SecretBackendKind | undefined => (Object.hasOwn(SECRET_BACKENDS, id) ? SECRET_BACKENDS[id] : undefined);
@@ -272,11 +273,16 @@ export const givenSecretStoreChildEnv = (givenEnv: SecretEnv): Record<string, st
   return given.kind === 'none' ? {} : declaredChildEnv(givenEnv, given.backend.backend.childEnvNames);
 };
 
+export const givenCredentialSecretStore = (run: SecretProcessPort, givenEnv: SecretEnv): CredentialSecretStore => {
+  const given = givenSecretStore(givenEnv);
+  return given.kind === 'none' ? given : { kind: 'available', store: given.backend.create(run, given.program) };
+};
+
 export const createGivenSecretStore = (run: SecretProcessPort, givenEnv: SecretEnv): SecretStore => {
   const storeOf = (): SecretStore => {
-    const given = givenSecretStore(givenEnv);
-    if (given.kind === 'none') throw new Error(given.reason);
-    return given.backend.create(run, given.program);
+    const given = givenCredentialSecretStore(run, givenEnv);
+    if (given.kind === 'none') throw new Error(`no secret store is available to this process: ${given.reason}`);
+    return given.store;
   };
   return {
     read: async (name, signal) => storeOf().read(name, signal),
@@ -286,7 +292,7 @@ export const createGivenSecretStore = (run: SecretProcessPort, givenEnv: SecretE
 
 const storeFor = (run: SecretProcessPort, env: SecretEnv): SecretStore => {
   const chosen = chooseSecretBackend(env);
-  if (chosen.kind === 'none') throw new Error(chosen.reason);
+  if (chosen.kind === 'none') throw new Error(`no secret store was found on this host: ${chosen.reason}`);
   return (backendKindOf(chosen.id) as SecretBackendKind).create(run, chosen.program);
 };
 

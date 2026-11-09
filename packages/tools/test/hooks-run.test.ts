@@ -243,7 +243,7 @@ describe('updated input, halting and process markers', { timeout: REAL_PROCESS_T
     }
     const pid = Number(fs.readFileSync(pidFile, 'utf8').trim());
     const markerDir = path.join(dir, 'markers');
-    await reapMarkerDirectory({ dir: markerDir, killGraceMs: 200, label: 'tool', onWarning: (message) => { throw new Error(message); } });
+    await reapMarkerDirectory({ dir: markerDir, signal: new AbortController().signal, killGraceMs: 200, label: 'tool', onWarning: (message) => { throw new Error(message); } });
     expect(() => process.kill(pid, 0)).toThrow();
     controller.abort();
     await pending;

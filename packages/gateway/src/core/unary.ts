@@ -1,5 +1,5 @@
 import { canonicalJson, sha256Hex, uuidv7 } from '@momonga/foundation';
-import { COMPACTION_ROLE, LOWEST_REASONING_EFFORT, MOMONGA_REQUEST_FIELDS, outputTokensFor, summaryInputLimitFor, summaryTokenCapFor } from '@momonga/protocol';
+import { COMPACTION_ROLE, LOWEST_REASONING_EFFORT, MOMONGA_REQUEST_FIELDS, outputTokensFor, summaryInputLimitFor, summaryTokenCapFor, wireUsageOf } from '@momonga/protocol';
 import type {
   AdapterCompactRequest,
   Capabilities,
@@ -19,7 +19,7 @@ import { ClientDisconnectedError, detachedRunExpiredError, gatewayErrorFromBody,
 import { parseIdempotencyKey, reusedError } from './idempotency.ts';
 import { inputHasImages, normalizeInput, resolveInput } from './input.ts';
 import type { ResolvedInput } from './input.ts';
-import { modelCostOf } from './model-cost.ts';
+import { modelCostOf, pricingFieldsOf } from './model-cost.ts';
 import { startAttemptSpan } from './attempt-span.ts';
 import type { AttemptSpan } from './attempt-span.ts';
 import { errorTypeOf, messageOf } from './respond.ts';
@@ -329,6 +329,7 @@ const compactOnce = async (
     responseId: resourceId,
     finishReason: 'stop',
     usage: outcome.value.usage,
+    usageSource: outcome.value.usageSource,
     ...(outcome.value.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: outcome.value.cacheWriteInputTokens }),
     output: [],
     fallbackCauses: outcome.fallbackCauses,
@@ -338,28 +339,28 @@ const compactOnce = async (
     id: identifier(services, 'cmp'),
     encrypted_content: services.codec.encode(outcome.value.summary),
   };
-  const cost =
-    services.priceTable === undefined
-      ? null
-      : modelCostOf({
-          provider: outcome.target.provider,
-          model: outcome.target.model,
-          billing: outcome.target.billing,
-          usage: outcome.value.usage,
-          cacheWriteInputTokens: outcome.value.cacheWriteInputTokens,
-          at: attempt.startedAtMs,
-          table: services.priceTable,
-        });
+  const pricing = modelCostOf({
+    provider: outcome.target.provider,
+    model: outcome.target.model,
+    billing: outcome.target.billing,
+    usage: outcome.value.usage,
+    usageSource: outcome.value.usageSource,
+    cacheWriteInputTokens: outcome.value.cacheWriteInputTokens,
+    at: attempt.startedAtMs,
+    table: services.priceTable,
+  });
+  const wire = wireUsageOf(outcome.value.usage);
   return {
     id: resourceId,
     object: 'response.compaction',
     output: [item],
     created_at: Math.floor(services.clock.now() / 1000),
-    usage: outcome.value.usage,
+    usage: wire.usage,
     momonga: {
       target: outcome.target.name,
       ...(outcome.value.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: outcome.value.cacheWriteInputTokens }),
-      ...(cost === null ? {} : { cost }),
+      ...(wire.cacheReadNotReported === undefined ? {} : { cacheReadNotReported: wire.cacheReadNotReported }),
+      ...pricingFieldsOf(pricing),
     },
   };
 };

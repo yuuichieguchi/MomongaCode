@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { amountOfUnits, definePriceTable, priceCall } from '@momonga/observability';
 import type { CostInput, PriceEntry } from '@momonga/observability';
 
-const metered = (input: CostInput) => priceCall({ ...input, billing: 'metered' });
+const metered = (input: CostInput) => priceCall({ ...input, billing: 'metered', usageSource: 'reported' });
 
 const CACHING: PriceEntry = {
   provider: 'acme',
@@ -32,6 +32,7 @@ describe('the price of a cache write', () => {
     const table = definePriceTable([CACHING]);
     expect(metered({ provider: 'acme', model: 'm1', usage: { inputTokens: 100, cachedInputTokens: 60, cacheWriteInputTokens: 41, outputTokens: 0 }, at: AT, table })).toEqual({
       kind: 'unpriced',
+      code: 'unpriceable_usage',
       reason: expect.stringContaining('exceed'),
     });
   });

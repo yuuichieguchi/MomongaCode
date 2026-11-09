@@ -248,6 +248,7 @@ describe('reaping on time that only the test drives', () => {
     const warnings: string[] = [];
     const signalled: number[] = [];
     const reaping = reapMarkerDirectory({
+      signal: new AbortController().signal,
       dir: directory,
       killGraceMs: 100,
       label: 'daemon',

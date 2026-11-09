@@ -4,7 +4,7 @@ import type { BreakdownCall } from '@momonga/observability';
 import { CACHE_MISS_CAUSES, PREFIX_EVENTS, RUN_ROLE } from '@momonga/protocol';
 import type { PrefixEvent } from '@momonga/protocol';
 
-const UNPRICED = { kind: 'unpriced', reason: 'no price in the table' } as const;
+const UNPRICED = { kind: 'unpriced', code: 'no_price_entry', reason: 'no price in the table' } as const;
 
 type PrefixOf = { broken: false } | { broken: true; causes: PrefixEvent[] };
 

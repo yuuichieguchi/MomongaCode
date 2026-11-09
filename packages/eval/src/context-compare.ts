@@ -6,11 +6,12 @@ import { canonicalJson } from '@momonga/foundation';
 import type { PolicyOverlay } from './context-policy.ts';
 import { QUALITY_METRICS } from './context-quality.ts';
 import type { QualityMetric, QualityMetricName } from './context-quality.ts';
-import { describeClustered } from './context-report.ts';
+import { describeClustered, unmeasuredCauseOf, unmeasuredCostCauseOf } from './context-report.ts';
 import type { ClusteredProportion, ContextCaseReport, ContextReport } from './context-report.ts';
 import type { Answerer } from './transcript.ts';
 import { percent } from './report.ts';
 import { EvalError } from './runner.ts';
+import { uncachedInputOf } from './token-metrics.ts';
 
 export const GATE_CHECKS = [
   'real_model',
@@ -276,13 +277,19 @@ const tokenPrimaryOf = (baseline: ContextReport, candidate: ContextReport, pairs
     metric === 'costPerSuccess'
       ? undefined
       : costMissing.length > 0
-        ? `cost per success is not measured in the ${costMissing.join(' and the ')} (a call carries no price, or no run succeeded)`
+        ? costMissing.map((side) => `cost per success is not measured in the ${side} (${unmeasuredCostCauseOf(reports[side].cases)})`).join('; ')
         : `the total cost of the ${costFree.join(' and the ')} is 0, which a cost per success cannot rank`;
-  const complete = perSuccessPairsOf(pairs, (entry) => (metric === 'costPerSuccess' ? entry.tokens?.cost : entry.tokens?.uncachedInputTokens));
+  const complete = perSuccessPairsOf(pairs, (entry) => (entry.tokens === undefined ? undefined : metric === 'costPerSuccess' ? entry.tokens.cost : uncachedInputOf(entry.tokens)));
   const measured = complete !== undefined && baseline.metrics[metric] !== undefined && candidate.metrics[metric] !== undefined;
+  const uncachedNote =
+    metric === 'uncachedInputPerSuccess'
+      ? sideNames.flatMap((side) =>
+          reports[side].metrics.uncachedInputPerSuccess === undefined ? [`uncached input per success is not measured in the ${side} (${unmeasuredCauseOf(metric, reports[side].cases)})`] : [],
+        )
+      : [];
   const unsettled = pairs.reduce((sum, pair) => sum + (pair.baseline.tokens?.unsettledReflections ?? 0) + (pair.candidate.tokens?.unsettledReflections ?? 0), 0);
   const reflectionNote = unsettled === 0 ? undefined : `${unsettled} run(s) have a reflection that is pending, running past its bound or not recorded, so their token cost is not final`;
-  return { metric, interval: measured ? pairedRatioBootstrap(complete, { seed }) : undefined, why: [why, reflectionNote].filter((part) => part !== undefined).join('; ') || undefined };
+  return { metric, interval: measured ? pairedRatioBootstrap(complete, { seed }) : undefined, why: [why, ...uncachedNote, reflectionNote].filter((part) => part !== undefined).join('; ') || undefined };
 };
 
 const identityOf = (report: ContextReport): ReportIdentity => ({ dataset: report.dataset, model: report.model, policy: report.policy, codeDigest: report.codeDigest });

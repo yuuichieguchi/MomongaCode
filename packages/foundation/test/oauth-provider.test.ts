@@ -14,6 +14,7 @@ const build = (overrides: Partial<OAuthProviderOptions> = {}) => {
     key: KEY,
     subject: 'the test client',
     store,
+    signal: new AbortController().signal,
     redirectUrl: 'http://127.0.0.1:1/callback',
     randomToken: () => 'random-state',
     onAuthorizationUrl: (url) => {

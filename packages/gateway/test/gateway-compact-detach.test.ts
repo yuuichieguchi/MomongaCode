@@ -25,7 +25,7 @@ const createStubbornCompactAdapter = (): StubbornCompactAdapter => {
       const index = calls.length;
       calls.push(index);
       if (index === 0 && !open) await new Promise<void>((resolve) => waiters.push(resolve));
-      return { summary: `summary ${index}`, usage: usageOf(40, 8) };
+      return { summary: `summary ${index}`, usage: usageOf(40, 8), usageSource: 'reported' };
     },
   };
 };

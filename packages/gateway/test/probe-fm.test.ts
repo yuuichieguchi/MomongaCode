@@ -18,6 +18,7 @@ const setup = async () => {
 };
 
 const options = (context: Awaited<ReturnType<typeof setup>>, warnings: string[] = []) => ({
+  platform: process.platform,
   paths: context.paths,
   instance: context.instance,
   description: FM_SERVER,
@@ -46,6 +47,15 @@ describe('probeManagedFm', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     expect(['native', 'constrained', 'none']).toContain(result.toolCalling);
     expect(await loadProbeRecord(context.paths.probe, key, FM_CURRENCY, 'apple')).toEqual(result.report);
     expect(fs.existsSync(context.instance.socketPath)).toBe(false);
+  });
+
+  it('reads the probe key on the OS it is given and records nothing when that OS has no build reader', async () => {
+    const context = await setup();
+
+    const failure = await probeManagedFm({ ...options(context), platform: 'aix' }).catch((error: unknown) => error);
+
+    expect(String(failure)).toContain('no OS build reader exists on aix');
+    expect(fs.existsSync(context.paths.probe) ? fs.readdirSync(context.paths.probe).filter((name) => name.endsWith('.json')) : []).toEqual([]);
   });
 
   it('records nothing and reports the remedy when fm is not licensed', async () => {
