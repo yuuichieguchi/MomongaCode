@@ -30,6 +30,35 @@ const recordingFileSystem = (renames: Rename[], failRename?: Error): AtomicWrite
   rm: (file) => nodeFileSystem.rm(file),
 });
 
+type HeldRename = { port: AtomicWriteFileSystem; renameStarted(): boolean; release(): void };
+
+const heldRenameFileSystem = (): HeldRename => {
+  let started = false;
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return {
+    port: {
+      open: (file, flags, mode) => nodeFileSystem.open(file, flags, mode),
+      rename: async (from, to) => {
+        started = true;
+        await gate;
+        await nodeFileSystem.rename(from, to);
+      },
+      link: (from, to) => nodeFileSystem.link(from, to),
+      rm: (file) => nodeFileSystem.rm(file),
+    },
+    renameStarted: () => started,
+    release: () => release(),
+  };
+};
+
+const reportsReady = (h: Harness): boolean => {
+  const health = h.health();
+  return health.phase === 'running' && health.children.every((child) => child.state === 'ready');
+};
+
 const withPublishPort = (port: AtomicWriteFileSystem): NonNullable<HarnessOptions['overrides']> => ({ currentFileSystem: port });
 
 const finish = async (h: Harness, closing: Promise<SupervisorCloseResult>, maxMs: number): Promise<SupervisorCloseResult> => {
@@ -130,7 +159,24 @@ describe('the supervisor publishes run/current', { timeout: REAL_PROCESS_TEST_TI
     expect(fs.readFileSync(h.paths.current, 'utf8')).toBe(expectedText(h.home));
   });
 
-  it('a publish failure is reported on the background channel, the supervisor keeps serving, and its stop ends within its own bound', async (context) => {
+  it('does not report itself ready, phase running with every child ready, until run/current is published', async (context) => {
+    const held = heldRenameFileSystem();
+    const h = await startHarness(context, { overrides: withPublishPort(held.port) });
+    try {
+      await h.waitForState('gateway', 'ready', 10_000);
+      await h.waitForState('runtime', 'ready', 10_000);
+      await pumpUntil(h.timers, () => held.renameStarted(), { realWork: h.realWork, maxMs: 5000, description: 'publish rename started' });
+      expect(fs.existsSync(h.paths.current)).toBe(false);
+      expect(reportsReady(h)).toBe(false);
+    } finally {
+      held.release();
+    }
+    await published(h);
+    expect(h.health().phase).toBe('running');
+    expect(h.health().children.map((child) => child.state)).toEqual(['ready', 'ready']);
+  });
+
+  it('a publish failure is reported on the background channel, the generation never reports itself ready, and its stop ends within its own bound', async (context) => {
     const renames: Rename[] = [];
     const failure = Object.assign(new Error('injected rename failure'), { code: 'EIO' });
     const h = await startHarness(context, { overrides: withPublishPort(recordingFileSystem(renames, failure)) });
@@ -146,8 +192,7 @@ describe('the supervisor publishes run/current', { timeout: REAL_PROCESS_TEST_TI
     expect(renames).toHaveLength(1);
     expect(fs.existsSync(h.paths.current)).toBe(false);
     expect(leftoverTemporaries(h)).toEqual([]);
-    expect(h.health().phase).toBe('running');
-    expect(h.health().children.map((child) => child.state)).toEqual(['ready', 'ready']);
+    expect(reportsReady(h)).toBe(false);
     const result = await finish(h, h.supervisor.close(), stopBound(h));
     expect(result.clean).toBe(true);
   });

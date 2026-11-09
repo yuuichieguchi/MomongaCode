@@ -17,6 +17,7 @@ export type FakeSupervisorOptions = {
   pid?: number;
   generation?: number;
   work?: FakeWork;
+  publishGate?: Promise<void>;
 };
 
 export type FakeWork = {
@@ -114,11 +115,14 @@ const serveFakeSupervisor = async (options: FakeSupervisorOptions): Promise<Fake
     server.once('error', reject);
     server.listen(layout.sockets.supervisor, resolve);
   });
+  const publish = async (): Promise<void> => {
+    await options.publishGate;
+    await publishCurrentGeneration(paths, { generation, version: options.version, sockets: layout.sockets });
+  };
   const publishWhenServing = (): Promise<void> =>
-    phase === 'running' && children.every((child) => child.state === 'ready')
-      ? work.track(publishCurrentGeneration(paths, { generation, version: options.version, sockets: layout.sockets }))
-      : Promise.resolve();
-  await publishWhenServing();
+    phase === 'running' && children.every((child) => child.state === 'ready') ? work.track(publish()) : Promise.resolve();
+  const startPublish = publishWhenServing();
+  if (options.publishGate === undefined) await startPublish;
   let stopping: Promise<void> | undefined;
   const stop = (): Promise<void> => {
     stopping ??= new Promise<void>((resolve) => {
