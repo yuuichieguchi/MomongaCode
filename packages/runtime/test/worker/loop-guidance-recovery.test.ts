@@ -102,7 +102,7 @@ describe('the guidance stays pending until a response follows the warning (revie
   it('carries the guidance in the request rebuilt after compaction_rejected, and drops it once the model answered it', async () => {
     const env = await guidedEnv();
     const run = env.enqueue('question one', { limits: { loopThreshold: 2 } });
-    env.seed(
+    await env.seed(
       run.id,
       [
         { type: 'model.responded', step: 1, attempt: 1, response: { status: 'completed', output: [assistantMessage('msg_1', 'answer one')], usage: USAGE } },

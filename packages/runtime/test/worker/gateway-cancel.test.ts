@@ -20,9 +20,9 @@ const recordStatusAtCancel = (env: Env, runId: string): string[] => {
   return statuses;
 };
 
-const seedInFlightRequest = (env: Env, runId: string): void => {
+const seedInFlightRequest = async (env: Env, runId: string): Promise<void> => {
   const body = { model: 'fm', input: [{ type: 'message', role: 'user', content: 'Work' }], store: false, stream: true };
-  env.seed(runId, [{ type: 'model.requested', step: 1, attempt: 1, digest: bodyDigest(body), body }], 'crash');
+  await env.seed(runId, [{ type: 'model.requested', step: 1, attempt: 1, digest: bodyDigest(body), body }], 'crash');
 };
 
 const responded = (step: number, text: string): RunEventPayload => ({
@@ -42,7 +42,7 @@ describe('worker gateway cancel wiring', () => {
     const running = env.runOnce(env.worker('worker-1', { cancelPollMs: 10 }));
     await within(blocked.gate.reached.promise, 5_000, 'the stream to start');
 
-    env.store.requestCancel(run.id);
+    await env.store.requestCancel(run.id);
     await within(running, 5_000, 'the worker to finish after cancel');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
@@ -54,7 +54,7 @@ describe('worker gateway cancel wiring', () => {
   it('cancels the live compaction key upstream when the cancel lands while compacting', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
     const run = env.enqueue('Task one');
-    env.seed(
+    await env.seed(
       run.id,
       [
         responded(1, 'x'.repeat(100_000)),
@@ -77,7 +77,7 @@ describe('worker gateway cancel wiring', () => {
     const running = env.runOnce(env.worker('worker-1', { cancelPollMs: 10 }));
     await within(compacting.promise, 5_000, 'the compaction to start');
 
-    env.store.requestCancel(run.id);
+    await env.store.requestCancel(run.id);
     await within(running, 5_000, 'the worker to finish after cancel');
 
     expect(env.run(run.id).status).toBe('CANCELLED');
@@ -89,8 +89,8 @@ describe('worker gateway cancel wiring', () => {
   it('cancels the folded in-flight model key on a CANCELLING claim', async () => {
     const env = await makeEnv();
     const run = env.enqueue('Work');
-    seedInFlightRequest(env, run.id);
-    expect(env.cancel(run.id).status).toBe('CANCELLING');
+    await seedInFlightRequest(env, run.id);
+    expect((await env.cancel(run.id)).status).toBe('CANCELLING');
     const statuses = recordStatusAtCancel(env, run.id);
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
@@ -104,8 +104,8 @@ describe('worker gateway cancel wiring', () => {
   it('does not cancel upstream on a CANCELLING claim with no in-flight model request', async () => {
     const env = await makeEnv();
     const run = env.enqueue('Work');
-    env.seed(run.id, [], 'crash');
-    expect(env.cancel(run.id).status).toBe('CANCELLING');
+    await env.seed(run.id, [], 'crash');
+    expect((await env.cancel(run.id)).status).toBe('CANCELLING');
 
     expect(await env.runOnce(env.worker())).toBe('yielded');
 
@@ -116,8 +116,8 @@ describe('worker gateway cancel wiring', () => {
   it('reaches CANCELLED with a notice when the upstream cancel rejects', async () => {
     const env = await makeEnv();
     const run = env.enqueue('Work');
-    seedInFlightRequest(env, run.id);
-    env.cancel(run.id);
+    await seedInFlightRequest(env, run.id);
+    await env.cancel(run.id);
     env.gateway.cancelHook = async () => {
       throw new GatewayRequestError({ status: 0, type: 'transport', code: 'gateway_unavailable', message: 'connect ENOENT', provenNotSent: true });
     };
@@ -134,8 +134,8 @@ describe('worker gateway cancel wiring', () => {
   it('leaves the bound of the upstream cancel to the gateway client and aborts it only with the claim', async () => {
     const env = await makeEnv();
     const run = env.enqueue('Work');
-    seedInFlightRequest(env, run.id);
-    env.cancel(run.id);
+    await seedInFlightRequest(env, run.id);
+    await env.cancel(run.id);
     const abortedAtSettle: boolean[] = [];
     env.gateway.cancelHook = async (_key, signal) => {
       await new Promise<void>((resolve) => setTimeout(resolve, 1_500));
@@ -171,7 +171,7 @@ describe('worker gateway cancel wiring', () => {
     env.clock.advance(LEASE_MS + 1);
     expect(env.store.claim('worker-thief')?.runId).toBe(run.id);
     await waitUntil(() => env.gateway.streams[0]?.signal.reason === 'lease_lost', 3_000, 'the heartbeat to abort the stream for the lost lease');
-    env.store.requestCancel(run.id);
+    await env.store.requestCancel(run.id);
     blocked.gate.release.resolve();
     await within(running, 5_000, 'the first worker to stop after losing its lease');
 

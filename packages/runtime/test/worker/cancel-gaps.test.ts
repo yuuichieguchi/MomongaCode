@@ -31,7 +31,7 @@ describe('worker cancel before the model request', () => {
     const running = env.runOnce(env.worker('worker-1', { cancelPollMs: 10 }));
     try {
       await within(reached.promise, 5_000, 'countTokens to be called');
-      env.store.requestCancel(run.id);
+      await env.store.requestCancel(run.id);
       const [first] = env.gateway.countCalls;
       expect(first?.signal).toBeInstanceOf(AbortSignal);
       await waitUntil(() => first?.signal?.aborted === true, 3_000, 'the countTokens signal to abort');
@@ -48,7 +48,7 @@ describe('worker cancel before the model request', () => {
   it('makes no model request when the cancel arrives while compacting', async () => {
     const env = await makeEnv({ capabilities: capabilitiesFor(40_000) });
     const run = env.enqueue('Task one');
-    env.seed(
+    await env.seed(
       run.id,
       [
         responded(1, [assistantMessage('msg_big', 'x'.repeat(100_000))]),
@@ -70,7 +70,7 @@ describe('worker cancel before the model request', () => {
     const running = env.runOnce(env.worker('worker-1', { cancelPollMs: 10 }));
     try {
       await within(reached.promise, 2_000, 'compaction to start');
-      env.store.requestCancel(run.id);
+      await env.store.requestCancel(run.id);
       await waitUntil(() => env.gateway.compacts[0]?.signal.aborted === true, 2_000, 'the compaction signal to abort');
     } finally {
       gate.resolve();
@@ -106,7 +106,7 @@ describe('worker cancel with a non-cancel error', () => {
       }),
     );
     await within(reached.promise, 5_000, 'the batch to start');
-    env.store.requestCancel(run.id);
+    await env.store.requestCancel(run.id);
     await within(running, 5_000, 'the worker to finish after cancel');
 
     expect(env.run(run.id).status).toBe('CANCELLED');

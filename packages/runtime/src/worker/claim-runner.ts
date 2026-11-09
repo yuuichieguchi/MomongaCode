@@ -6,7 +6,7 @@ import type { TokenMeter } from '@momonga/context';
 import { computeBackoff, sha256Hex } from '@momonga/foundation';
 import { REFERENCE_KINDS, RUN_STATUSES, TARGET_NOT_READY, TERMINAL_STATUSES, agentReadiness, readinessText } from '@momonga/protocol';
 import type { Capabilities, FunctionTool } from '@momonga/protocol';
-import { isFatalStoreError } from '@momonga/store';
+import { UnknownValueError, isFatalStoreError } from '@momonga/store';
 import type { Claim, Session } from '@momonga/store';
 import type { ClaimContext, Flow, RunMemory, Terminals } from './claim-context.ts';
 import { reconcileStartedCalls, releaseWaitingOnCancel } from './cancel-recovery.ts';
@@ -49,6 +49,7 @@ import { buildSystemPrompt } from '../system-prompt.ts';
 import { summaryStopReason } from './wrap-up.ts';
 import { reportError } from './report.ts';
 import { GatewayRequestError } from '../gateway-client.ts';
+import { heldSessionOf } from './known.ts';
 
 const LIVE_RUN_STATUSES = RUN_STATUSES.filter((status) => !TERMINAL_STATUSES.some((terminal) => terminal === status));
 const DEFAULT_CANCEL_POLL_MS = 250;
@@ -141,8 +142,8 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
       throw cause;
     }
     try {
-      if (control.shuttingDown()) {
-        terminals.yieldLease();
+      if (control.shuttingDown() || cause instanceof UnknownValueError) {
+        await terminals.yieldLease();
         return;
       }
       if (control.cancelRequested() && control.failure() === undefined) {
@@ -152,7 +153,7 @@ export const runClaim = async (options: WorkerOptions, claim: Claim, host: Claim
         const keys = [control.inFlight.modelKey, control.inFlight.compactionKey].filter((key): key is string => key !== undefined);
         const failures = await cancelUpstream(options, control, keys);
         if (control.shuttingDown()) {
-          terminals.yieldLease();
+          await terminals.yieldLease();
           return;
         }
         recordUpstreamFailures(journal, failures);
@@ -221,7 +222,7 @@ const requeueOrStop = async (
       return;
     }
     journal.append([{ type: 'notice', level: 'info', message: disposition.message, code: disposition.code }]);
-    terminals.yieldTo('QUEUED', availableAt, { refundAttempt: true });
+    await terminals.yieldTo('QUEUED', availableAt, { refundAttempt: true });
     return;
   }
   const refund = disposition.kind === 'requeue' && disposition.refund;
@@ -258,7 +259,7 @@ const requeueOrStop = async (
   memory.streak += 1;
   if (disposition.kind === 'requeue' && disposition.interrupted) memory.interruptions += 1;
   journal.append([{ type: 'attempt.failed', attempt: claim.leaseToken, code: observedCodeOf(cause), retryAt: availableAt, limit: options.store.maxTotalAttempts }]);
-  terminals.yieldTo('QUEUED', availableAt, refund ? { refundAttempt: true } : undefined);
+  await terminals.yieldTo('QUEUED', availableAt, refund ? { refundAttempt: true } : undefined);
 };
 
 const drive = async (
@@ -273,8 +274,7 @@ const drive = async (
   const { store, gateway, tools, clock } = options;
   const run = store.getRun(claim.runId);
   if (run === undefined) throw new Error(`unknown run ${claim.runId}`);
-  const session = store.getSession(run.sessionId);
-  if (session === undefined) throw new Error(`unknown session ${run.sessionId}`);
+  const session = heldSessionOf(store, run.sessionId);
   if (journal.state.inherited === undefined) {
     const inherited = await store.inheritContext(claim, { mode: session.permissionMode, facts: store.journalFacts });
     if (inherited.kind === 'lease_lost') control.lost();
@@ -283,7 +283,7 @@ const drive = async (
   }
   if (claim.status === 'CANCELLING' || run.cancelRequested) {
     if (control.shuttingDown()) {
-      terminals.yieldLease();
+      await terminals.yieldLease();
       return;
     }
     if (control.leaseLost()) control.lost();
@@ -300,7 +300,7 @@ const drive = async (
         if (error instanceof LeaseLostError || error instanceof ShutdownError) return;
         reportError(options, error, { workerId: options.workerId, runId: run.id });
       });
-      terminals.yieldLease();
+      await terminals.yieldLease();
       return;
     }
     recordUpstreamFailures(journal, await upstream);
@@ -436,7 +436,7 @@ const drive = async (
     capabilities: aliasMeterCapabilities,
     observedCapacity: token.observedCapacity,
   });
-  aliasMeter.restore(foldMeterFor(options.store, session.id, aliasMeterCapabilities, aliasCounter));
+  aliasMeter.restore(await foldMeterFor(options.store, session.id, aliasMeterCapabilities, aliasCounter));
   const factsOf = async (target: string): Promise<{ meter: TokenMeter; capabilities: Capabilities; counter: string }> => {
     const known = targetFacts.get(target);
     if (known !== undefined) return known;
@@ -448,7 +448,7 @@ const drive = async (
       observedCapacity: token.observedCapacity,
     });
     const counter = counterOf(target);
-    meter.restore(foldMeterFor(options.store, session.id, capabilities, counter));
+    meter.restore(await foldMeterFor(options.store, session.id, capabilities, counter));
     const created = { capabilities, meter, counter };
     targetFacts.set(target, created);
     return created;
@@ -534,7 +534,7 @@ const drive = async (
   if ((await resumeInFlight(ctx)) === 'done') return;
   for (let flow: Flow = 'continue'; flow === 'continue'; ) {
     if (control.shuttingDown()) {
-      terminals.yieldLease();
+      await terminals.yieldLease();
       return;
     }
     if (control.cancelRequested()) {
@@ -542,7 +542,7 @@ const drive = async (
       return;
     }
     if (modeWatch.changed()) {
-      terminals.yieldTo('QUEUED', clock.now(), { refundAttempt: true });
+      await terminals.yieldTo('QUEUED', clock.now(), { refundAttempt: true });
       return;
     }
     flow = await runModelStep(ctx);

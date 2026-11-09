@@ -143,7 +143,7 @@ describe('R2 on fixed journals: every shape 13.7 lists', () => {
     b.started(claim, 'default');
     b.text(claim);
     const retracted = b.createRun('Never mind this');
-    const requested = h.store.requestCancel(retracted.id);
+    const requested = await h.store.requestCancel(retracted.id);
     expect(requested.kind).toBe('ok');
     await h.store.finishCancelled((error) => {
       throw error;

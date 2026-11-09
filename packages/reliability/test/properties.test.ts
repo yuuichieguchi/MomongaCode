@@ -334,8 +334,9 @@ describe('properties of foldFacts and aggregate on generated streams', () => {
         cancelled: generated.tasks.filter((task) => task.cancelled).length,
         pendingFacts: generated.tasks.filter((task) => task.stale).length,
         factsUnavailable: 0,
+        unknownValues: 0,
       });
-      expect(total.buckets.counted + total.buckets.cancelled + total.buckets.pendingFacts + total.buckets.factsUnavailable, message).toBe(TASKS_PER_SEED);
+      expect(total.buckets.counted + total.buckets.cancelled + total.buckets.pendingFacts + total.buckets.factsUnavailable + total.buckets.unknownValues, message).toBe(TASKS_PER_SEED);
       expect(total.completion, message).toEqual({
         k: counted.filter((task) => task.declared && task.met).length,
         n: counted.filter((task) => task.declared).length,

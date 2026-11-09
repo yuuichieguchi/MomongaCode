@@ -16,12 +16,13 @@ const iso = (ms: number): string => new Date(ms).toISOString();
 
 const sourceAttributesOf = (source: DeepReadonly<MemoryView['source']>): string => {
   if (source.kind === 'command') return ' source="person">';
+  if (source.kind === 'unknown') return ' source="unknown">';
   return ` source_run="${escapeXmlAttribute(source.runId)}"${source.kind === 'tool' ? ` source_step="${source.step}"` : ''}>`;
 };
 
 const noteOf = (memory: DeepReadonly<MemoryView>): string =>
   [
-    `<memory id="${escapeXmlAttribute(memory.id)}" scope="${memory.scope}" origin="${memory.origin}" status="${memory.status}"`,
+    `<memory id="${escapeXmlAttribute(memory.id)}" scope="${memory.scope}" origin="${memory.origin === 'trusted' ? 'trusted' : 'untrusted'}" status="${memory.status}"`,
     ` saved="${iso(memory.createdAt)}"`,
     sourceAttributesOf(memory.source),
     escapeXmlText(memory.text),

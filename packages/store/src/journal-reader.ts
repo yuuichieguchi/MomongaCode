@@ -2,8 +2,9 @@ import type { DatabaseSync } from 'node:sqlite';
 import { readTx } from '@momonga/foundation/sqlite';
 import type { Clock } from '@momonga/foundation';
 import type { RunEvent, RunEventPayload, RunState } from '@momonga/protocol';
-import { decodeRun, decodeRunEvents } from './codec.ts';
+import { decodeContextOf, decodeRun, decodeRunEvents } from './codec.ts';
 import { foldRunState, initialRunState } from './fold.ts';
+import { createDerivedSnapshot } from './derived-repair.ts';
 import { createGoverningFactStore } from './governing.ts';
 import { copyDigestOf, isReferenceInherited } from './inherit.ts';
 import type { InheritedPayload } from './inherit.ts';
@@ -72,18 +73,17 @@ const typePlaceholders = (types: readonly string[]): { list: string; bound: Reco
 export const createJournalReader = (db: DatabaseSync, options: JournalReaderOptions = {}): JournalReader => {
   const unit = options.unit ?? ((): void => undefined);
   const stepped = options.onRowsStepped ?? ((): void => undefined);
-  const { memories, governing } = options.lookups ?? { memories: createMemoryStore(db, NO_CLOCK), governing: createGoverningFactStore(db, NO_CLOCK) };
+  const decodeContext = decodeContextOf(db);
+  const { memories, governing } = options.lookups ?? { memories: createMemoryStore(db, NO_CLOCK, decodeContext), governing: createGoverningFactStore(db, NO_CLOCK, decodeContext) };
   const selectRun = db.prepare('SELECT * FROM runs WHERE id = :id');
   const reference = createReferenceReader(db, { unit, stepped, ...(options.onDecode === undefined ? {} : { onDecode: options.onDecode }), ...(options.onHop === undefined ? {} : { onHop: options.onHop }) });
-  const pinnedDigests = db.prepare("SELECT seq, pinned_digest FROM events WHERE run_id = :runId AND type = 'model.requested' ORDER BY seq");
+  const derived = createDerivedSnapshot(db, decodeContext);
 
   const decodeEach = (rows: Iterable<Row>): RunEvent[] => {
     const events: RunEvent[] = [];
     for (const row of rows) {
       options.onDecode?.(1, typeof row['payload_json'] === 'string' ? Buffer.byteLength(row['payload_json']) : 0);
-      const [event] = decodeRunEvents([row]);
-      if (event === undefined) throw new Error('a journal row did not decode to an event');
-      events.push(event);
+      events.push(...decodeRunEvents([row], decodeContext));
       unit();
     }
     return events;
@@ -92,12 +92,10 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
   const seqsOfNewPinnedLayers = (runId: string): number[] => {
     const known = new Set<string>();
     const wanted: number[] = [];
-    for (const row of pinnedDigests.iterate({ runId })) {
-      const reader = readerFor('events', runId, row);
-      const digest = reader.nullableString('pinned_digest');
-      if (digest !== null && known.has(digest)) continue;
-      if (digest !== null) known.add(digest);
-      wanted.push(reader.number('seq'));
+    for (const { seq, pinnedDigest } of derived.read((view) => view.pinnedDigestsOf(runId))) {
+      if (pinnedDigest !== null && known.has(pinnedDigest)) continue;
+      if (pinnedDigest !== null) known.add(pinnedDigest);
+      wanted.push(seq);
       unit();
     }
     return wanted;
@@ -106,7 +104,7 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
   const lastSeqOf = (runId: string): number => {
     const row = selectRun.get({ id: runId });
     if (row === undefined) throw new Error(`unknown run ${runId}`);
-    return decodeRun(row).lastSeq;
+    return decodeRun(row, decodeContext).lastSeq;
   };
 
   function* rangedRows(runId: string, lastSeq: number, types: readonly string[], excluding: boolean): Generator<Row> {
@@ -132,13 +130,11 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
     readTx(db, () => {
       const row = selectRun.get({ id: runId });
       if (row === undefined) throw new Error(`unknown run ${runId}`);
-      const run = decodeRun(row);
+      const run = decodeRun(row, decodeContext);
       if (types.length === 0) return run;
       for (const eventRow of rangedRows(runId, throughSeq === undefined ? run.lastSeq : Math.min(run.lastSeq, throughSeq), types, false)) {
         options.onDecode?.(1, typeof eventRow['payload_json'] === 'string' ? Buffer.byteLength(eventRow['payload_json']) : 0);
-        const [event] = decodeRunEvents([eventRow]);
-        if (event === undefined) throw new Error('a journal row did not decode to an event');
-        visit(event);
+        for (const event of decodeRunEvents([eventRow], decodeContext)) visit(event);
         unit();
       }
       return run;
@@ -152,7 +148,7 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
     const run = readTx(db, () => {
       const row = selectRun.get({ id: runId });
       if (row === undefined) throw new Error(`unknown run ${runId}`);
-      return decodeRun(row);
+      return decodeRun(row, decodeContext);
     });
     await walker.walk(runId, range.throughSeq === undefined ? run.lastSeq : Math.min(run.lastSeq, range.throughSeq), types, visit, units, range.from === undefined ? {} : { from: range.from });
     return run;
@@ -209,7 +205,7 @@ export const createJournalReader = (db: DatabaseSync, options: JournalReaderOpti
     readTx(db, () => {
       const row = selectRun.get({ id: request.runId });
       if (row === undefined) throw new Error(`unknown run ${request.runId}`);
-      const run = decodeRun(row);
+      const run = decodeRun(row, decodeContext);
       const leading = request.leading.map(
         (payload, index): RunEvent => ({
           ...payload,

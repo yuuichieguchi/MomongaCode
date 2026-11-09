@@ -37,7 +37,7 @@ const builtOf = (input: InputItem[], tools: FunctionTool[]): BuiltContext =>
 const reclaimedAfter = async (recorded: Recorded) => {
   const env = await makeEnv();
   const run = env.enqueue('Do the work.');
-  env.seed(
+  await env.seed(
     run.id,
     [
       { type: 'run.started', attempt: 1, now: env.clock.now(), pins: {}, mode: 'default' },

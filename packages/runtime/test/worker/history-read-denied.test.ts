@@ -33,7 +33,7 @@ const workingStateOf = async (deny: boolean): Promise<{ text: string; status: st
   const env = await makeEnv();
   if (deny) env.settings.extraRules.push({ effect: 'deny', rule: 'HistoryRead' });
   const run = env.enqueue('question one');
-  env.seed(run.id, compactedJournal(), 'release');
+  await env.seed(run.id, compactedJournal(), 'release');
   env.gateway.script.push(textStep('Done.'));
   expect(await env.runOnce(env.worker('worker-1', { toolList: () => [historyRead] }))).toBe('yielded');
   const body = env.gateway.streams.at(-1)?.body as { input: unknown[] } | undefined;

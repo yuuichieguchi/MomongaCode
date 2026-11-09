@@ -23,7 +23,7 @@ const respondedPayload = (step: number, output: unknown[]): RunEventPayload => (
 
 const completeSeeded = async (env: Env, task: string, payloads: readonly RunEventPayload[]): Promise<string> => {
   const run = env.enqueue(task);
-  const claim = env.seed(run.id, payloads, 'hold');
+  const claim = await env.seed(run.id, payloads, 'hold');
   expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
   return run.id;
 };

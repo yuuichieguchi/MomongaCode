@@ -94,7 +94,7 @@ describe('output fit from the pinned floor', () => {
     const env = await makeEnv({ capabilities: W4000 });
     const run = env.enqueue('Mark it');
     const key = toolKey(run.id, 1, 'call_m_1');
-    env.seed(
+    await env.seed(
       run.id,
       [
         requestedOffering(1, ['Mark']),
@@ -127,7 +127,7 @@ describe('output fit from the pinned floor', () => {
   it('fails pinned_overflow from the lazy measurement before executing a pending call', async () => {
     const env = await makeEnv({ capabilities: W4000 });
     const run = env.enqueue('Echo it');
-    env.seed(run.id, [requestedOffering(1, ['Echo']), responded(1, [functionCallItem({ callId: 'call_e_1', name: 'Echo', args: { value: 'x' } })])], 'crash');
+    await env.seed(run.id, [requestedOffering(1, ['Echo']), responded(1, [functionCallItem({ callId: 'call_e_1', name: 'Echo', args: { value: 'x' } })])], 'crash');
     env.instructions.files.set(`${env.project}/AGENTS.md`, 'r'.repeat(16_000));
 
     await env.runOnce(env.worker());

@@ -9,7 +9,7 @@ export type TouchedEntry = { path: string; firstEventId: number };
 
 export type TouchedCursor = { eventId: number; path: string };
 
-export type TouchedSource = (after: TouchedCursor | null, limit: number) => readonly TouchedEntry[];
+export type TouchedSource = (after: TouchedCursor | null, limit: number) => Promise<readonly TouchedEntry[]>;
 
 const yieldToLoop = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
@@ -21,7 +21,7 @@ const readFrom = async (
 ): Promise<TouchedCursor | null> => {
   let cursor = from;
   for (;;) {
-    const page = source(cursor, pageRows);
+    const page = await source(cursor, pageRows);
     await visit(page);
     const last = page.at(-1);
     if (last === undefined) return cursor;

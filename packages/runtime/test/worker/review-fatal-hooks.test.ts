@@ -114,7 +114,7 @@ describe('worker poll loop after stop', () => {
 describe('cancel recovery error hook failure', () => {
   it('folds the onError hook failure into the single cancel-recovery notice', async () => {
     const env = await makeEnv();
-    const { run } = seedStartedCalls(env, [{ callId: 'call_m_1', name: 'Mark', args: { value: 'one' } }]);
+    const { run } = await seedStartedCalls(env, [{ callId: 'call_m_1', name: 'Mark', args: { value: 'one' } }]);
     const worker = env.worker('worker-1', {
       onError: () => {
         throw new Error('hook broke');

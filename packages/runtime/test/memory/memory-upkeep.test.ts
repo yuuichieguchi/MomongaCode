@@ -21,11 +21,11 @@ const setup = (calls = 12) => {
   const callIds = Array.from({ length: calls }, (_unused, index) => `c${index}`);
   expect(store.append(mustClaim(store, 'w1'), callIds.map(callEvent)).kind).toBe('ok');
   const free = [...callIds];
-  const saveAt = (where: string, text: string, evidence: MemoryEvidence[] = [], origin: 'trusted' | 'untrusted' = 'trusted') => {
+  const saveAt = async (where: string, text: string, evidence: MemoryEvidence[] = [], origin: 'trusted' | 'untrusted' = 'trusted') => {
     const callId = free.shift();
     if (callId === undefined) throw new Error('out of calls');
     clock.advance(1);
-    return store.memories.save({ origin, scope: 'project', project: where, text, runId: run.id, step: 1, callId, evidence }).memory;
+    return (await store.memories.save({ origin, scope: 'project', project: where, text, runId: run.id, step: 1, callId, evidence })).memory;
   };
   const save = (text: string, evidence: MemoryEvidence[] = [], origin: 'trusted' | 'untrusted' = 'trusted') => saveAt(project, text, evidence, origin);
   const views = createRecordViews({ store, evidenceRun: () => async () => ({ exitCode: null }) });
@@ -41,8 +41,8 @@ const setup = (calls = 12) => {
 describe('runMemoryUpkeep', () => {
   it('marks the newer of two equal notes and keeps the older', async () => {
     const { store, save, upkeep } = setup();
-    const older = save('run the seed script first');
-    const newer = save('run the seed script first');
+    const older = await save('run the seed script first');
+    const newer = await save('run the seed script first');
     expect(await upkeep()).toMatchObject({ duplicates: 1 });
     expect(store.memories.get(newer.id)).toMatchObject({ state: 'duplicate', duplicateOf: older.id });
     expect(store.memories.get(older.id)).toMatchObject({ state: 'active', duplicateOf: null });
@@ -50,8 +50,8 @@ describe('runMemoryUpkeep', () => {
 
   it('never lets an untrusted copy replace a trusted one, whichever is older', async () => {
     const { store, project, save, upkeep } = setup();
-    const untrusted = save('run the seed script first', [], 'untrusted');
-    const trusted = save('run the seed script first');
+    const untrusted = await save('run the seed script first', [], 'untrusted');
+    const trusted = await save('run the seed script first');
     expect(await upkeep()).toMatchObject({ duplicates: 0 });
     expect(store.memories.get(untrusted.id)?.state).toBe('active');
     expect(store.memories.get(trusted.id)?.state).toBe('active');
@@ -60,9 +60,9 @@ describe('runMemoryUpkeep', () => {
 
   it('merges notes whose text differs only in Unicode form, case-sensitively', async () => {
     const { store, save, upkeep } = setup();
-    const first = save('use the café fixture');
-    const second = save('use  the café fixture ');
-    const third = save('Use the café fixture');
+    const first = await save('use the café fixture');
+    const second = await save('use  the café fixture ');
+    const third = await save('Use the café fixture');
     expect(await upkeep()).toMatchObject({ duplicates: 1 });
     expect(store.memories.get(second.id)).toMatchObject({ state: 'duplicate', duplicateOf: first.id });
     expect(store.memories.get(third.id)?.state).toBe('active');
@@ -70,9 +70,9 @@ describe('runMemoryUpkeep', () => {
 
   it('leaves a note a newer note replaced as it is, since recall already skips it', async () => {
     const { store, clock, project, run, save, upkeep } = setup();
-    const kept = save('kept note');
-    const replaced = save('old wording');
-    const replacement = store.memories.save({
+    const kept = await save('kept note');
+    const replaced = await save('old wording');
+    const replacement = (await store.memories.save({
       origin: 'trusted',
       scope: 'project',
       project,
@@ -81,7 +81,7 @@ describe('runMemoryUpkeep', () => {
       step: 1,
       callId: 'c11',
       supersedes: [replaced.id],
-    }).memory;
+    })).memory;
     clock.advance(FORGET_MS);
     store.memories.stampContributed([kept.id, replacement.id], clock.now());
     expect(await upkeep()).toMatchObject({ duplicates: 0, archived: 0 });
@@ -90,17 +90,17 @@ describe('runMemoryUpkeep', () => {
 
   it('does not merge use X with do not use X', async () => {
     const { store, project, save, upkeep } = setup();
-    const a = save('use X');
-    const b = save('do not use X');
+    const a = await save('use X');
+    const b = await save('do not use X');
     expect(await upkeep()).toMatchObject({ duplicates: 0 });
     expect(recalled(store, { trusted: true, project }).map((memory) => memory.id).sort()).toEqual([a.id, b.id].sort());
   });
 
   it('archives an idle unbound note and a stale one, and keeps a verified one of the same age', async () => {
     const { store, clock, project, save, upkeep, fileEvidence } = setup();
-    const unbound = save('unbound note');
-    const stale = save('stale note', fileEvidence('stale.txt', 'older content'));
-    const verified = save('verified note', fileEvidence('verified.txt', 'current'));
+    const unbound = await save('unbound note');
+    const stale = await save('stale note', fileEvidence('stale.txt', 'older content'));
+    const verified = await save('verified note', fileEvidence('verified.txt', 'current'));
     clock.advance(FORGET_MS);
     expect(await upkeep()).toMatchObject({ archived: 2 });
     expect(store.memories.get(unbound.id)?.state).toBe('archived');
@@ -112,8 +112,8 @@ describe('runMemoryUpkeep', () => {
 
   it('keeps a note that contributed inside the window', async () => {
     const { store, clock, save, upkeep } = setup();
-    const note = save('used note');
-    const other = save('idle note');
+    const note = await save('used note');
+    const other = await save('idle note');
     clock.advance(FORGET_MS - 1);
     store.memories.stampContributed([note.id], clock.now());
     clock.advance(1);
@@ -124,9 +124,9 @@ describe('runMemoryUpkeep', () => {
 
   it('deletes nothing', async () => {
     const { store, clock, save, upkeep } = setup();
-    save('same');
-    save('same');
-    save('idle');
+    await save('same');
+    await save('same');
+    await save('idle');
     clock.advance(FORGET_MS);
     await upkeep();
     expect(store.memories.list()).toHaveLength(3);
@@ -134,7 +134,7 @@ describe('runMemoryUpkeep', () => {
 
   it('does at most one bounded batch of marks per call and drains over calls', async () => {
     const { store, save, upkeep } = setup();
-    for (const text of ['a1', 'a1', 'b2', 'b2', 'c3', 'c3']) save(text);
+    for (const text of ['a1', 'a1', 'b2', 'b2', 'c3', 'c3']) await save(text);
     const marked = () => store.memories.list().filter((memory) => memory.state === 'duplicate').length;
     await upkeep(2);
     expect(marked()).toBeGreaterThan(0);
@@ -147,8 +147,8 @@ describe('runMemoryUpkeep', () => {
 
   it('is not starved by old notes that stay active', async () => {
     const { store, clock, save, upkeep, fileEvidence } = setup();
-    for (const name of ['v1', 'v2', 'v3']) save(name, fileEvidence(`${name}.txt`, 'current'));
-    const idle = save('idle note');
+    for (const name of ['v1', 'v2', 'v3']) await save(name, fileEvidence(`${name}.txt`, 'current'));
+    const idle = await save('idle note');
     clock.advance(FORGET_MS);
     for (let turn = 0; turn < 6; turn += 1) await upkeep(2);
     expect(store.memories.get(idle.id)?.state).toBe('archived');
@@ -167,11 +167,11 @@ describe('a pass over pages', () => {
 
   it('finds a duplicate whose copies sit on different pages, because the pass remembers what it kept', async () => {
     const env = setup();
-    const first = env.save('shared note');
-    env.save('filler one');
-    env.save('filler two');
-    env.save('filler three');
-    const copy = env.save('shared note');
+    const first = await env.save('shared note');
+    await env.save('filler one');
+    await env.save('filler two');
+    await env.save('filler three');
+    const copy = await env.save('shared note');
     const results = await pagesOf(env, 2);
     expect(results.length).toBeGreaterThan(1);
     expect(env.store.memories.get(copy.id)).toMatchObject({ state: 'duplicate', duplicateOf: first.id });
@@ -180,14 +180,14 @@ describe('a pass over pages', () => {
 
   it('reads one page per call and ends when a page comes back short', async () => {
     const env = setup();
-    for (const text of ['a', 'b', 'c', 'd', 'e']) env.save(text);
+    for (const text of ['a', 'b', 'c', 'd', 'e']) await env.save(text);
     const results = await pagesOf(env, 2);
     expect(results.map((result) => result.done)).toEqual([false, false, true]);
   });
 
   it('does not move past a page whose marks did not all fit, and finishes it on the next call', async () => {
     const env = setup();
-    for (const text of ['x', 'x', 'y', 'y', 'z', 'z']) env.save(text);
+    for (const text of ['x', 'x', 'y', 'y', 'z', 'z']) await env.save(text);
     const pass = beginUpkeepPass(env.store);
     const call = () => runMemoryUpkeep({ store: env.store, clock: env.clock, views: env.views, forgetAfterDays: async () => 90, batchSize: 2, signal: SIGNAL, pass, pageRows: 10 });
     expect(await call()).toMatchObject({ duplicates: 2, done: false });
@@ -199,8 +199,8 @@ describe('a pass over pages', () => {
     const env = setup();
     const gone = fs.realpathSync.native(makeStoreDir());
     env.store.trust.set(gone, 'trusted');
-    const orphan = env.saveAt(gone, 'orphan note');
-    const kept = env.save('idle note');
+    const orphan = await env.saveAt(gone, 'orphan note');
+    const kept = await env.save('idle note');
     env.clock.advance(FORGET_MS);
     fs.rmSync(gone, { recursive: true, force: true });
     const asked: (string | null)[] = [];
@@ -233,7 +233,7 @@ describe('the upkeep schedule', () => {
 
   it('runs a pass at start, then waits for a memory write or the interval', async () => {
     const env = setup();
-    env.save('a');
+    await env.save('a');
     const { tick } = schedule(env, 1000);
     expect(await tick()).toMatchObject({ done: true });
     expect(await tick()).toBeUndefined();
@@ -248,15 +248,15 @@ describe('the upkeep schedule', () => {
     const { tick } = schedule(env, 1_000_000);
     await tick();
     expect(await tick()).toBeUndefined();
-    env.save('same');
-    env.save('same');
+    await env.save('same');
+    await env.save('same');
     expect(await tick()).toMatchObject({ duplicates: 1 });
     expect(await tick()).toBeUndefined();
   });
 
   it('finishes the pass it is in before it starts the next one', async () => {
     const env = setup();
-    for (const text of ['a', 'b', 'c']) env.save(text);
+    for (const text of ['a', 'b', 'c']) await env.save(text);
     const created = createMemoryUpkeepSchedule({
       store: env.store,
       clock: env.clock,
@@ -268,7 +268,7 @@ describe('the upkeep schedule', () => {
       onSkipped: () => undefined,
     });
     expect(await created.tick(SIGNAL)).toMatchObject({ done: false });
-    env.save('d');
+    await env.save('d');
     expect(await created.tick(SIGNAL)).toMatchObject({ done: false });
     expect(await created.tick(SIGNAL)).toMatchObject({ done: true });
     expect(await created.tick(SIGNAL)).toMatchObject({ done: false });
@@ -277,7 +277,7 @@ describe('the upkeep schedule', () => {
   it('reports a vanished project once for the pass', async () => {
     const env = setup();
     const gone = fs.realpathSync.native(makeStoreDir());
-    env.saveAt(gone, 'orphan note');
+    await env.saveAt(gone, 'orphan note');
     fs.rmSync(gone, { recursive: true, force: true });
     const { tick, skipped } = schedule(env);
     await tick();
@@ -408,7 +408,7 @@ describe('wiring', () => {
     return fs.readdirSync(directory).filter((name) => name.endsWith('.ts')).map((name) => fs.readFileSync(path.join(directory, name), 'utf8')).join('\n');
   };
 
-  it('starts the memory sweeper in the runtime', () => {
+  it('starts the memory sweeper in the runtime', async () => {
     expect(`${sourcesUnder('service')}${sourcesUnder('process')}`).toMatch(/startMemorySweeper\(/);
   });
 });

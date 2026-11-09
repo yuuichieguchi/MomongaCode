@@ -57,7 +57,7 @@ describe('store.requestApproval with a pending approval migrated from v1 without
     ]);
     if (appended.kind !== 'ok') throw new Error('expected the append to succeed');
 
-    const result = store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, event: { subjectDigest: DIGEST, reason: 'edits require approval' } });
+    const result = await store.requestApproval(claim, { callId: 'call_1', options: OPTIONS, event: { subjectDigest: DIGEST, reason: 'edits require approval' } });
 
     if (result.kind !== 'ok') throw new Error(`expected ok, got ${result.kind}`);
     expect(result.approval.id).not.toBe('appr-legacy');
@@ -72,7 +72,7 @@ describe('store.requestApproval with a pending approval migrated from v1 without
     });
 
     expect((await store.resolveApproval(result.approval.id, 'allow_once')).kind).toBe('ok');
-    expect(store.release(claim, 'WAITING_HUMAN').kind).toBe('ok');
+    expect((await store.release(claim, 'WAITING_HUMAN')).kind).toBe('ok');
     expect(mustRun(store, 'run-1').status).toBe('QUEUED');
     expect(store.readRunEvents('run-1', 0, 100).reduce(foldRunState, fresh()).pendingCalls['call_1']).toMatchObject({
       status: 'requested',

@@ -64,7 +64,7 @@ const runCase = async ({ seed, window, autoCompact, heavyRuns }: Case, shape: Sh
     await b.end(claim, { to: 'COMPLETED' });
   }
   const trace: FactsTrace = newFactsTrace();
-  const child = shape === 'copy' ? plantOldShapeChild(env, 'the child task') : b.createRun('the child task');
+  const child = shape === 'copy' ? await plantOldShapeChild(env, 'the child task') : b.createRun('the child task');
   env.gateway.script.push(textStep('Done.'), textStep('Done again.'));
   const store = shape === 'reference' ? tracedStore(env.store, trace) : env.store;
   await settle(env, child.id, env.worker('worker-1', { store }));
@@ -113,7 +113,7 @@ describe('R2 and R15 through the worker: old and new give the same request for t
 });
 
 describe('the window request carries W = C + S over the claim targets and the marker floor (13.4)', () => {
-  it('inheritanceWindowFor is the input ceiling plus the summary input ceiling, maximised over targets', () => {
+  it('inheritanceWindowFor is the input ceiling plus the summary input ceiling, maximised over targets', async () => {
     const small = capabilitiesFor(8_000);
     const large = capabilitiesFor(200_000);
     expect(inheritanceWindowFor([small]).windowTokens).toBe(inputCeilingFor(small) + summaryInputCeilingFor(small));
@@ -193,7 +193,7 @@ describe('known differences of 13.7, pinned as stated', () => {
       b.compact(claim, 3);
       b.text(claim);
       await b.end(claim, { to: 'COMPLETED' });
-      const child = shape === 'copy' ? plantOldShapeChild(env, 'Again') : b.createRun('Again');
+      const child = shape === 'copy' ? await plantOldShapeChild(env, 'Again') : b.createRun('Again');
       env.gateway.script.push(callsStep([{ callId, name: 'Echo', args: { value: 'x' } }]), textStep('Done.'));
       await settle(env, child.id);
       return { run: env.run(child.id), state: env.fold(child.id) };
@@ -213,7 +213,7 @@ describe('D2: context.truncated records the output token count', () => {
     const run = env.enqueue('question one');
     const usage = { input_tokens: 50, output_tokens: 5, total_tokens: 55 };
     const responded = (step: number, output: unknown[]): RunEventPayload => ({ type: 'model.responded', step, attempt: 1, response: { status: 'completed', output, usage } }) as RunEventPayload;
-    env.seed(
+    await env.seed(
       run.id,
       [
         responded(1, [{ type: 'function_call', id: 'fc_c1', call_id: 'c1', name: 'Read', arguments: '{"file_path":"/proj/big.txt"}' }]),

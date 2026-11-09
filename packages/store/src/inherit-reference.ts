@@ -2,13 +2,15 @@ import type { DatabaseSync } from 'node:sqlite';
 import { readTx } from '@momonga/foundation/sqlite';
 import { ESTIMATED_CHARACTERS_PER_TOKEN, ESTIMATED_ERROR, TERMINAL_STATUSES, floorRatio, userMessageContent } from '@momonga/protocol';
 import type { ContentPart, InheritedReferencePayload, InheritedViaLink, InputItem, PermissionMode, RunEvent, RunState, RunStatus, TerminalStatus } from '@momonga/protocol';
-import { decodeRun, decodeRunEvents } from './codec.ts';
+import { decodeContextOf, decodeRun, decodeRunEvents } from './codec.ts';
+import { createDerivedSnapshot } from './derived-repair.ts';
 import { isFatalStoreError } from './fatal.ts';
 import { foldRunState, initialRunState } from './fold.ts';
 import { InheritanceError, isReferenceInherited, projectReference, rebaseOntoReference, referenceDigest, retractsTask, signReference } from './inherit.ts';
 import type { InheritanceOutcome } from './inherit.ts';
 import { createRecordWalker } from './record-walk.ts';
 import type { RecordVisit, WalkUnits } from './record-walk.ts';
+import { knownValue } from './rows.ts';
 import type { Row } from './rows.ts';
 import type { Run } from './types.ts';
 
@@ -161,9 +163,7 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
   );
   const firstTask = db.prepare("SELECT * FROM events WHERE run_id = :runId AND type = 'user.message' AND seq <= :bound ORDER BY seq LIMIT 1");
   const latestCompacted = db.prepare("SELECT * FROM events WHERE run_id = :runId AND type = 'context.compacted' AND seq <= :bound ORDER BY seq DESC LIMIT 1");
-  const callOwners = db.prepare(
-    "SELECT e.run_id AS run_id FROM events e WHERE e.type = 'tool.call' AND e.call_id = :callId AND e.run_id IN (SELECT id FROM runs WHERE session_id = :sessionId)",
-  );
+  const derived = createDerivedSnapshot(db);
   const recordedTokens = db.prepare(
     `SELECT json_extract(payload_json, '$.tokens') AS tokens FROM events
      WHERE run_id = :runId AND type = 'context.truncated' AND json_extract(payload_json, '$.callId') = :callId
@@ -173,18 +173,25 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
   const walker = createRecordWalker(db, { unit, stepped, ...(hooks.onDecode === undefined ? {} : { onDecode: hooks.onDecode }) });
   const foldRows = db.prepare(`SELECT ${FOLD_EVENT_COLUMNS} FROM events e WHERE e.run_id = :runId AND e.seq >= :from AND e.seq < :until ORDER BY e.seq`);
 
-  const decode = (row: Row): RunEvent => {
+  const decodeContext = decodeContextOf(db);
+
+  const decodeKnown = (row: Row): RunEvent[] => {
     hooks.onDecode?.(1, typeof row['payload_json'] === 'string' ? Buffer.byteLength(row['payload_json']) : 0);
-    const [event] = decodeRunEvents([row]);
-    if (event === undefined) throw new Error('a journal row did not decode to an event');
+    const events = decodeRunEvents([row], decodeContext);
     unit();
+    return events;
+  };
+
+  const decode = (row: Row): RunEvent => {
+    const [event] = decodeKnown(row);
+    if (event === undefined) throw new Error('a row of a requested known type did not decode to an event');
     return event;
   };
 
   const loadRun = (runId: string): Run => {
     const row = selectRun.get({ id: runId });
     if (row === undefined) throw new Error(`unknown run ${runId}`);
-    return decodeRun(row);
+    return decodeRun(row, decodeContext);
   };
 
   const inheritedEventOf = (runId: string): (RunEvent & { type: 'context.inherited' }) | undefined => {
@@ -317,8 +324,8 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
   });
 
   const tokensBeforeTheCopy = (sessionId: string, callId: string): number | undefined => {
-    for (const owner of callOwners.all({ callId, sessionId })) {
-      const row = recordedTokens.get({ runId: String(owner['run_id']), callId });
+    for (const owner of derived.read((view) => view.callOwnersOf(sessionId, callId))) {
+      const row = recordedTokens.get({ runId: owner, callId });
       unit();
       if (row !== undefined && typeof row['tokens'] === 'number') return row['tokens'];
     }
@@ -507,8 +514,7 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
       const rows = foldRows.all({ runId: run.id, from, until });
       stepped(until - from);
       unit();
-      for (const row of rows) {
-        const event = decode(row);
+      for (const event of rows.flatMap(decodeKnown)) {
         if (event.type === 'context.inherited') {
           carriedSkills = (event.activatedSkills ?? []).map((skill) => skill.name);
           if (!isReferenceInherited(event)) oldSummaryEventSeq = event.summary === undefined ? undefined : event.seq;
@@ -529,7 +535,7 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
 
   const outcomeOf = (run: Run & { status: TerminalStatus }): InheritanceOutcome => ({
     status: run.status,
-    ...(run.stopReason === undefined ? {} : { stopReason: run.stopReason }),
+    ...(run.stopReason === undefined ? {} : { stopReason: knownValue(run.stopReason, `the stop reason of run ${run.id}`) }),
     ...(run.error === undefined ? {} : { errorCode: run.error.code }),
   });
 
@@ -537,7 +543,7 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
     if (child.previousRunId === null) throw new InheritanceError('previous_run_inconsistent', `run ${child.id} has no previous run`);
     const row = selectRun.get({ id: child.previousRunId });
     if (row === undefined) throw new InheritanceError('previous_run_inconsistent', `previous run ${child.previousRunId} of run ${child.id} does not exist`);
-    const previous = decodeRun(row);
+    const previous = decodeRun(row, decodeContext);
     if (previous.sessionId !== child.sessionId || previous.ordinal !== child.ordinal - 1) {
       throw new InheritanceError('previous_run_inconsistent', `previous run ${previous.id} is not the run before ${child.id} in session ${child.sessionId}`);
     }
@@ -554,10 +560,10 @@ export const createReferenceReader = (db: DatabaseSync, hooks: ReferenceHooks): 
     let base: TerminalRun;
     for (let cursor = run; ; ) {
       const previous = predecessorOf(cursor);
-      if (!isTerminalStatus(previous.status)) return { kind: 'conflict', reason: `previous run ${previous.id} of run ${run.id} is ${previous.status}, not terminal` };
+      if (previous.status === 'unknown' || !isTerminalStatus(previous.status)) return { kind: 'conflict', reason: `previous run ${previous.id} of run ${run.id} is ${previous.status}, not terminal` };
       const terminal = previous as TerminalRun;
       walked.push({ runId: previous.id, lastSeq: previous.lastSeq, status: previous.status });
-      if (previous.history === 'fresh' || previous.previousRunId === null || hasInheritedEvent(previous.id)) {
+      if (knownValue(previous.history, `the history mode of run ${previous.id}`) === 'fresh' || previous.previousRunId === null || hasInheritedEvent(previous.id)) {
         base = terminal;
         break;
       }

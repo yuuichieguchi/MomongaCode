@@ -1,6 +1,6 @@
 import { encodeSse } from '@momonga/foundation';
 import { toPublicRunEvent } from '@momonga/protocol';
-import type { RunEvent, SessionEvent } from '@momonga/protocol';
+import type { OpaqueEvent, RunEvent, SessionEvent } from '@momonga/protocol';
 import type { Unsubscribe } from './notifier.ts';
 import type { ServiceTimers } from './timers.ts';
 
@@ -12,7 +12,7 @@ export const STREAM_HEADERS = { 'content-type': 'text/event-stream; charset=utf-
 
 const KEEP_ALIVE_FRAME = encoder.encode(': keep-alive\n\n');
 
-type StoredEvent = RunEvent | SessionEvent;
+type StoredEvent = RunEvent | SessionEvent | OpaqueEvent;
 
 export type EventSource = {
   read(cursor: number, limit: number): { events: readonly StoredEvent[]; endsAt: number | undefined };

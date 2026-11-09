@@ -55,7 +55,7 @@ const SEEKS_ANOTHER_KEY = /\b(call_id|approval_id|tool_name|notice_code|pinned_d
 
 const planOf = (db: DatabaseSync, text: string): string[] => db.prepare(`EXPLAIN QUERY PLAN ${text}`).all().map((row) => String(row['detail']));
 
-const typedReadsOfAStoreInUse = () => {
+const typedReadsOfAStoreInUse = async () => {
   const dir = makeStoreDir();
   const dbPath = path.join(dir, 'runtime.db');
   const captured = capturePrepared();
@@ -66,27 +66,27 @@ const typedReadsOfAStoreInUse = () => {
   const lastSeq = store.getRun(run.id)?.lastSeq ?? 0;
   const latest = store.readLatestRunEventBefore(run.id, 'model.requested', lastSeq + 1);
   const ofTypes = store.readRunEventsOfTypes(run.id, ['model.responded']);
-  const calls = store.readModelCallEvents(run.id);
+  const calls = await store.readModelCallEvents(run.id);
   createJournalReader(rawDb(dbPath)).eventsOfTypes(run.id, ['model.responded', 'model.requested']);
   captured.restore();
   return { dbPath, sql: [...new Set(captured.sql)], lastSeq, latest, ofTypes, calls };
 };
 
 describe('migration 21 adds one general typed-read index on events (O4 option b)', () => {
-  it('a new database has a non-partial index on events over exactly (run_id, type, seq)', () => {
+  it('a new database has a non-partial index on events over exactly (run_id, type, seq)', async () => {
     const dbPath = path.join(makeStoreDir(), 'runtime.db');
     openStoreAt(dbPath, createFakeClock(START_MS)).close();
 
     const db = rawDb(dbPath);
     expect(typedIndexesOf(db)).toHaveLength(1);
-    expect(db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toMatchObject({ version: 27 });
+    expect(db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toMatchObject({ version: 28 });
   });
 
-  it('the migration list holds 21 and the migrations after it', () => {
-    expect(MIGRATIONS.map((migration) => migration.version).slice(20)).toEqual([21, 22, 23, 24, 25, 26, 27]);
+  it('the migration list holds 21 and the migrations after it', async () => {
+    expect(MIGRATIONS.map((migration) => migration.version).slice(20)).toEqual([21, 22, 23, 24, 25, 26, 27, 28]);
   });
 
-  it('a version-20 database with events upgrades, gains the index and keeps every event row', () => {
+  it('a version-20 database with events upgrades, gains the index and keeps every event row', async () => {
     const dbPath = path.join(makeStoreDir(), 'runtime.db');
     const versionTwenty = new DatabaseSync(dbPath);
     migrate(versionTwenty, MIGRATIONS.filter((migration) => migration.version <= 20));
@@ -108,14 +108,14 @@ describe('migration 21 adds one general typed-read index on events (O4 option b)
 
     const db = rawDb(dbPath);
     expect(typedIndexesOf(db)).toHaveLength(1);
-    expect(db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toMatchObject({ version: 27 });
+    expect(db.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()).toMatchObject({ version: 28 });
     expect(db.prepare('SELECT seq, type FROM events WHERE run_id = :runId ORDER BY seq').all({ runId: run.id })).toEqual(eventsBefore);
   });
 });
 
 describe('every typed read of the events of a run seeks by (run_id, type) (section 7, count form)', () => {
-  it('captures the typed reads of the store and of the journal reader', () => {
-    const { sql } = typedReadsOfAStoreInUse();
+  it('captures the typed reads of the store and of the journal reader', async () => {
+    const { sql } = await typedReadsOfAStoreInUse();
     const typed = sql.filter((text) => SINGLE_TYPED_READ.test(text));
 
     expect(typed.some((text) => text.includes('seq < :beforeSeq'))).toBe(true);
@@ -123,8 +123,8 @@ describe('every typed read of the events of a run seeks by (run_id, type) (secti
     expect(typed.some((text) => /type IN \(:type0/.test(text))).toBe(true);
   });
 
-  it('no typed read scans events, and each one without a narrower id key seeks on run_id and type', () => {
-    const { dbPath, sql } = typedReadsOfAStoreInUse();
+  it('no typed read scans events, and each one without a narrower id key seeks on run_id and type', async () => {
+    const { dbPath, sql } = await typedReadsOfAStoreInUse();
     const db = rawDb(dbPath);
     const typed = sql.filter((text) => SINGLE_TYPED_READ.test(text));
 
@@ -146,8 +146,8 @@ describe('every typed read of the events of a run seeks by (run_id, type) (secti
     expect(offenders).toEqual([]);
   });
 
-  it('the latest event of a type before a seq, the events of some types and the model calls seek through the general index', () => {
-    const { dbPath, sql } = typedReadsOfAStoreInUse();
+  it('the latest event of a type before a seq, the events of some types and the model calls seek through the general index', async () => {
+    const { dbPath, sql } = await typedReadsOfAStoreInUse();
     const db = rawDb(dbPath);
     const [index] = typedIndexesOf(db);
     expect(index).toBeTypeOf('string');
@@ -162,8 +162,8 @@ describe('every typed read of the events of a run seeks by (run_id, type) (secti
     }
   });
 
-  it('the typed reads still return only the matches among thousands of other events of the run', () => {
-    const { lastSeq, latest, ofTypes, calls } = typedReadsOfAStoreInUse();
+  it('the typed reads still return only the matches among thousands of other events of the run', async () => {
+    const { lastSeq, latest, ofTypes, calls } = await typedReadsOfAStoreInUse();
 
     expect(latest?.seq).toBe(lastSeq);
     expect(latest?.step).toBe(2);

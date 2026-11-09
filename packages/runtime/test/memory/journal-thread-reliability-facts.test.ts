@@ -27,7 +27,7 @@ describe('the runFacts request of the embedded journal thread (P2: the stored fa
   it('answers with the facts and the call rows foldRunRecord computes over the same journal and the same run row', async () => {
     const env = await makeEnv();
     const run = env.enqueue('Work', { history: 'fresh' });
-    const claim = env.seed(
+    const claim = await env.seed(
       run.id,
       [
         { type: 'run.started', attempt: 1, now: env.clock.now(), pins: { modelAlias: 'fm' }, mode: 'default' },
@@ -48,7 +48,7 @@ describe('the runFacts request of the embedded journal thread (P2: the stored fa
         runId: run.id,
         rootRunId: run.id,
         sessionId: stored.sessionId,
-        status: stored.status,
+        status: storeModule.knownValue(stored.status, `the status of run ${run.id}`),
         createdAt: stored.createdAt,
         limits: {},
         deadlineAt: stored.deadlineAt,
@@ -70,7 +70,7 @@ describe('the runFacts request of the embedded journal thread (P2: the stored fa
     const FactsRefused = factsRefusedError();
     const env = await makeEnv();
     const run = env.enqueue('Work', { history: 'fresh' });
-    const claim = env.seed(run.id, [responded], 'hold');
+    const claim = await env.seed(run.id, [responded], 'hold');
     expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
     const { dev, ino } = fs.statSync(env.dbPath);
     const thread = await startJournalThread({ databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });
@@ -90,7 +90,7 @@ describe('the runFacts request of the embedded journal thread (P2: the stored fa
     const FactsRefused = factsRefusedError();
     const env = await makeEnv();
     const run = env.enqueue('Work', { history: 'fresh' });
-    const claim = env.seed(run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { modelAlias: 'fm' }, mode: 'default' }, responded], 'hold');
+    const claim = await env.seed(run.id, [{ type: 'run.started', attempt: 1, now: env.clock.now(), pins: { modelAlias: 'fm' }, mode: 'default' }, responded], 'hold');
     expect((await env.store.transition(claim, ['RUNNING'], 'COMPLETED')).kind).toBe('ok');
     const { dev, ino } = fs.statSync(env.dbPath);
     const thread = await startJournalThread({ databasePath: env.dbPath, identity: { dev, ino }, silenceLimitMs: JOURNAL_THREAD_SILENCE_LIMIT_MS });

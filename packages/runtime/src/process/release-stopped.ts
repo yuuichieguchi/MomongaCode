@@ -9,5 +9,5 @@ export const createStoppedRunReleaser =
     if (run === undefined) throw new Error(`unknown run ${runId}`);
     const session = store.getSession(run.sessionId);
     if (session === undefined) throw new Error(`unknown session ${run.sessionId}`);
-    await releaseCalls({ tools, run, session, targets: store.startedCallsOf(runId), signal });
+    await releaseCalls({ tools, run, session, targets: await store.startedCallsOf(runId), signal });
   };

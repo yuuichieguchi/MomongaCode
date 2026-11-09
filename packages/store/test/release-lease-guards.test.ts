@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { enqueue, harness, mustClaim, mustRun, newSession, rawDb } from './helpers.ts';
 
 describe('releaseLease source status', () => {
-  it('returns lease_lost when the leased run is neither RUNNING nor CANCELLING', () => {
+  it('returns lease_lost when the leased run is neither RUNNING nor CANCELLING', async () => {
     const { clock, dbPath, store } = harness();
     const run = enqueue(store, newSession(store).id);
     const claim = mustClaim(store, 'w1');
     rawDb(dbPath).prepare("UPDATE runs SET status = 'WAITING_TOOL' WHERE id = ?").run(run.id);
     const before = mustRun(store, run.id);
 
-    expect(store.releaseLease(claim, { availableAt: clock.now(), refundAttempt: true })).toEqual({ kind: 'lease_lost' });
+    expect(await store.releaseLease(claim, { availableAt: clock.now(), refundAttempt: true })).toEqual({ kind: 'lease_lost' });
 
     expect(mustRun(store, run.id)).toEqual(before);
   });
@@ -24,21 +24,21 @@ describe('refund with no attempts left', () => {
     return { ...fixture, run, claim };
   };
 
-  it('throws from release instead of clamping', () => {
+  it('throws from release instead of clamping', async () => {
     const { clock, store, run, claim } = zeroAttempts();
-    expect(() => store.release(claim, 'QUEUED', clock.now(), { refundAttempt: true })).toThrow();
+    await expect(store.release(claim, 'QUEUED', clock.now(), { refundAttempt: true })).rejects.toThrow();
     expect(mustRun(store, run.id)).toMatchObject({ status: 'RUNNING', attempts: 0, leaseOwner: 'w1' });
   });
 
-  it('throws from releaseLease instead of clamping', () => {
+  it('throws from releaseLease instead of clamping', async () => {
     const { clock, store, run, claim } = zeroAttempts();
-    expect(() => store.releaseLease(claim, { availableAt: clock.now(), refundAttempt: true })).toThrow();
+    await expect(store.releaseLease(claim, { availableAt: clock.now(), refundAttempt: true })).rejects.toThrow();
     expect(mustRun(store, run.id)).toMatchObject({ status: 'RUNNING', attempts: 0, leaseOwner: 'w1' });
   });
 
-  it('still releases without a refund', () => {
+  it('still releases without a refund', async () => {
     const { clock, store, run, claim } = zeroAttempts();
-    store.releaseLease(claim, { availableAt: clock.now() });
+    await store.releaseLease(claim, { availableAt: clock.now() });
     expect(mustRun(store, run.id)).toMatchObject({ status: 'QUEUED', attempts: 0 });
   });
 });

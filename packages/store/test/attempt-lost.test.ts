@@ -10,7 +10,7 @@ const lostRecords = (store: RuntimeStore, runId: string) => store.readRunEventsO
 const lastSeq = (store: RuntimeStore, runId: string): number => store.readRunEvents(runId, 0, 100_000).at(-1)?.seq ?? 0;
 
 describe('claim records a takeover as attempt.lost in its own transaction', () => {
-  it('a takeover of an expired RUNNING lease appends attempt.lost with lastLiveAt = previous lease_expires_at - leaseMs, the last heartbeat', () => {
+  it('a takeover of an expired RUNNING lease appends attempt.lost with lastLiveAt = previous lease_expires_at - leaseMs, the last heartbeat', async () => {
     const { clock, store } = harness();
     const run = enqueue(store, newSession(store).id);
     const first = mustClaim(store, 'w1');
@@ -25,17 +25,17 @@ describe('claim records a takeover as attempt.lost in its own transaction', () =
     expect(records[0]?.seq).toBe(lastSeq(store, run.id));
   });
 
-  it('a takeover of an expired CANCELLING lease appends attempt.lost too', () => {
+  it('a takeover of an expired CANCELLING lease appends attempt.lost too', async () => {
     const { clock, store } = harness();
     const run = enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
-    expect(cancel(store, run.id).status).toBe('CANCELLING');
+    expect((await cancel(store, run.id)).status).toBe('CANCELLING');
     clock.advance(LEASE_MS);
     expect(mustClaim(store, 'w2').status).toBe('CANCELLING');
     expect(lostRecords(store, run.id)).toEqual([expect.objectContaining({ lastLiveAt: START_MS })]);
   });
 
-  it('a chain of takeovers appends one attempt.lost per takeover, each with the last live instant of the holder it replaced', () => {
+  it('a chain of takeovers appends one attempt.lost per takeover, each with the last live instant of the holder it replaced', async () => {
     const { clock, store } = harness();
     const run = enqueue(store, newSession(store).id);
     mustClaim(store, 'w1');
@@ -48,12 +48,12 @@ describe('claim records a takeover as attempt.lost in its own transaction', () =
     expect(lostRecords(store, run.id).map((event) => (event as unknown as { lastLiveAt: number }).lastLiveAt)).toEqual([START_MS, START_MS + LEASE_MS + 200]);
   });
 
-  it('a first claim and a claim after a graceful drain append nothing; only the later takeover appends, once', () => {
+  it('a first claim and a claim after a graceful drain append nothing; only the later takeover appends, once', async () => {
     const { clock, store } = harness();
     const run = enqueue(store, newSession(store).id);
     const first = mustClaim(store, 'w1');
     expect(lostRecords(store, run.id)).toEqual([]);
-    expect(store.release(first, 'QUEUED', START_MS, { refundAttempt: true }).kind).toBe('ok');
+    expect((await store.release(first, 'QUEUED', START_MS, { refundAttempt: true })).kind).toBe('ok');
     mustClaim(store, 'w2');
     expect(lostRecords(store, run.id)).toEqual([]);
     clock.advance(LEASE_MS);

@@ -1,10 +1,11 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { JOB_STATUSES } from '@momonga/protocol';
-import { expectOneOf, readerFor } from './rows.ts';
+import { readerFor, storedOneOf } from './rows.ts';
+import type { DecodeContext } from './decode-context.ts';
 import type { Row } from './rows.ts';
 import type { Job } from './types.ts';
 
-export const decodeJob = (row: Row): Job => {
+export const decodeJob = (row: Row, context: DecodeContext): Job => {
   const identity = String(row['id']);
   const reader = readerFor('jobs', identity, row);
   const pgid = reader.nullableNumber('pgid');
@@ -21,7 +22,7 @@ export const decodeJob = (row: Row): Job => {
     runId: reader.string('run_id'),
     callId: reader.string('call_id'),
     command: reader.string('command'),
-    status: expectOneOf('jobs', identity, 'status', JOB_STATUSES, reader.string('status')),
+    status: storedOneOf(context, 'jobs', identity, 'status', JOB_STATUSES, reader.string('status')),
     ...(pgid === null ? {} : { pgid }),
     ...(exitCode === null ? {} : { exitCode }),
     ...(signal === null ? {} : { signal }),

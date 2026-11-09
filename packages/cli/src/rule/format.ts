@@ -6,8 +6,8 @@ const firstLine = (text: string): string => escapeTerminalLine(text.split('\n')[
 const iso = (ms: number): string => new Date(ms).toISOString();
 
 const placeOf = (fact: GoverningFactView): string =>
-  fact.scope.level === 'user'
-    ? 'user'
+  fact.scope.level === 'user' || fact.scope.level === 'unknown'
+    ? fact.scope.level
     : `project ${escapeTerminalLine(fact.scope.project)}${fact.scope.paths.length === 0 ? '' : ` ${fact.scope.paths.map(escapeTerminalLine).join(',')}`}`;
 
 const enforcementOf = (fact: GoverningFactView): string =>

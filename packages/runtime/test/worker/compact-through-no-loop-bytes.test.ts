@@ -57,7 +57,7 @@ describe('the loop reads no blob and builds no region for the fidelity check', (
     const env = await makeEnv({ capabilities: capabilitiesFor(WINDOW) });
     const run = env.enqueue('question one');
     const { handle } = await env.store.blobs.put(`${'y'.repeat(BLOB_BYTES)} src/only/in-blob.ts`, { mediaType: 'text/plain', runId: run.id });
-    env.seed(run.id, journal(handle), 'release');
+    await env.seed(run.id, journal(handle), 'release');
     env.gateway.compactSummaries.push(SUMMARY);
     env.gateway.script.push(textStep('Done.'));
     const { store, blobs, requests, reads } = wrapped(env);

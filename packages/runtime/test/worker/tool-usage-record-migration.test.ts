@@ -107,11 +107,11 @@ const storeWrittenBeforeTheRecord = (): string => {
 };
 
 describe('the offered-names record of runs written before it existed (person item 9, option 2)', () => {
-  it('derives each old run\'s record once at the upgrade, from its request bodies, its pinned deferred set and its child runs', () => {
+  it('derives each old run\'s record once at the upgrade, from its request bodies, its pinned deferred set and its child runs', async () => {
     const store = openStoreAt(storeWrittenBeforeTheRecord(), createFakeClock(START_MS + 100));
     const { store: watched, reads } = bodyWatchedStore(store);
 
-    const window = toolUsageWindowOf(watched, PROJECT);
+    const window = await toolUsageWindowOf(watched, PROJECT);
 
     expect(window).toEqual([
       { offered: ['Counter', 'Echo', 'Grep', LOADER, 'Write'], called: ['Grep', LOADER] },
@@ -120,7 +120,7 @@ describe('the offered-names record of runs written before it existed (person ite
     expect(reads.bodyReads).toEqual([]);
   });
 
-  it('gives a run that was not finished at the upgrade its record at last_seq + 1, folded over its snapshot, and lets the next append land after it', () => {
+  it('gives a run that was not finished at the upgrade its record at last_seq + 1, folded over its snapshot, and lets the next append land after it', async () => {
     const dbPath = storeWrittenBeforeTheRecord();
     const store = openStoreAt(dbPath, createFakeClock(START_MS + 100));
 
@@ -139,7 +139,7 @@ describe('the offered-names record of runs written before it existed (person ite
     expect(rawDb(dbPath).prepare("SELECT last_seq FROM runs WHERE id = 'r3'").get()).toEqual({ last_seq: 4 });
   });
 
-  it('gives a run that never recorded run.started no record', () => {
+  it('gives a run that never recorded run.started no record', async () => {
     const dbPath = storeWrittenBeforeTheRecord();
     openStoreAt(dbPath, createFakeClock(START_MS + 100));
 

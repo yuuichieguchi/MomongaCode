@@ -19,13 +19,16 @@ import {
 import { RUNTIME_TEARDOWN_BUDGET_MS } from '@momonga/foundation';
 import { OTLP_SPAN_KIND, decodeOtlpSpans, startOtlpCollector } from '@momonga/testkit';
 import type { OtlpCollector } from '@momonga/testkit';
+import type { OutboundNetwork } from '@momonga/foundation';
 import { RUN_ID, SENTINEL, harness, registerCleanup } from './helpers.ts';
 
 const UNREACHABLE_EXPORT_TIMEOUT_MS = 300;
 
+const DIRECT_NETWORK: OutboundNetwork = { config: { caFiles: [] }, trust: { sources: [], failures: [] } };
+
 const fixture = (collector: OtlpCollector, headers?: Record<string, string>, timeoutMs?: number) =>
   harness({
-    exporters: [createOtlpTraceExporter({ endpoint: collector.endpoint, ...(headers === undefined ? {} : { headers }) }, timeoutMs === undefined ? {} : { timeoutMs })],
+    exporters: [createOtlpTraceExporter({ endpoint: collector.endpoint, ...(headers === undefined ? {} : { headers }) }, { network: DIRECT_NETWORK, timeoutMs: timeoutMs ?? OTLP_EXPORT_TIMEOUT_MS })],
   });
 
 const recordRun = (h: ReturnType<typeof harness>) => {
@@ -132,7 +135,7 @@ describe('OTLP export of GenAI spans to a loopback collector', () => {
   it('exports no message content when capture is off: no content attribute and no recorded text reaches the payload', async () => {
     const collector = await startOtlpCollector();
     registerCleanup(() => collector.close());
-    const h = harness({ exporters: [createOtlpTraceExporter({ endpoint: collector.endpoint })] });
+    const h = harness({ exporters: [createOtlpTraceExporter({ endpoint: collector.endpoint }, { network: DIRECT_NETWORK, timeoutMs: OTLP_EXPORT_TIMEOUT_MS })] });
     const { chat } = recordRun(h);
     recordError(chat, new Error(SENTINEL), 'provider_error');
     await h.telemetry.forceFlush();
@@ -148,7 +151,7 @@ describe('OTLP export of GenAI spans to a loopback collector', () => {
     registerCleanup(() => collector.close());
     const h = harness({
       content: { retentionMs: 60_000 },
-      exporters: [createOtlpTraceExporter({ endpoint: collector.endpoint })],
+      exporters: [createOtlpTraceExporter({ endpoint: collector.endpoint }, { network: DIRECT_NETWORK, timeoutMs: OTLP_EXPORT_TIMEOUT_MS })],
     });
     const chat = startChatSpan(h.telemetry.tracer, { providerName: 'openai', billing: 'metered', requestModel: 'model-x', stream: false, runId: RUN_ID, step: 1, attempt: 1 });
     for (const key of Object.values(GENAI_CONTENT_SEMCONV)) chat.setAttribute(key, `${key} ${SENTINEL}`);
@@ -243,9 +246,9 @@ describe('OTLP exporter configuration', () => {
   });
 
   it('exports nothing unless telemetry settings name an OTLP endpoint', () => {
-    expect(exportersFor(undefined)).toEqual([]);
-    expect(exportersFor({})).toEqual([]);
-    expect(exportersFor({ otlp: { endpoint: 'http://127.0.0.1:4318' } })).toHaveLength(1);
+    expect(exportersFor(undefined, DIRECT_NETWORK)).toEqual([]);
+    expect(exportersFor({}, DIRECT_NETWORK)).toEqual([]);
+    expect(exportersFor({ otlp: { endpoint: 'http://127.0.0.1:4318' } }, DIRECT_NETWORK)).toHaveLength(1);
   });
 
   it('exports only when the batch is flushed', async () => {
