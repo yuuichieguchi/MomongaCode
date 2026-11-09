@@ -55,7 +55,7 @@ const portsFor = (memory: Memory, assets: Record<string, Uint8Array>): Distribut
     return bytes;
   },
   files: memoryFiles(memory),
-  cacheBase: CACHE,
+  executablesRoot: CACHE,
   random: () => 0.25,
 });
 

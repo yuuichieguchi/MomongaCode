@@ -111,5 +111,6 @@ export { RUNTIME_ABORT_BUDGET_MS, RUNTIME_TEARDOWN_BUDGET_MS } from './process/c
 export { runtimeMaxCloseMs } from './process/close-budget.ts';
 export { RuntimeAlreadyRunningError } from './process/errors.ts';
 export { startRuntimeProcess } from './process/start-runtime-process.ts';
+export type { BundledRipgrepSource } from './process/start-runtime-process.ts';
 export type { RuntimeCloseResult, RuntimeProcess, StartRuntimeProcessOptions } from './process/start-runtime-process.ts';
 export { RUNTIME_ENTRY_FLAGS, runRuntimeEntry } from './process/entry.ts';

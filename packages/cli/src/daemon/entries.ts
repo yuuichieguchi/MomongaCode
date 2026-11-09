@@ -1,5 +1,6 @@
 import type { EntryIo } from '@momonga/foundation';
 import type { SelfExecutable } from '../ports.ts';
+import { embeddedRipgrepSource } from '../ripgrep/host.ts';
 import { selfLauncher } from './launcher.ts';
 import { runSupervise } from './supervise.ts';
 
@@ -16,7 +17,9 @@ export const daemonEntries = (self: SelfExecutable, version: string): DaemonEntr
     return runGatewayEntry(io, { version });
   },
   runtime: async (io) => {
-    const { runRuntimeEntry } = await import('@momonga/runtime/entry');
-    return runRuntimeEntry(io, { version });
+    const entry = await import('@momonga/runtime/entry');
+    const { runRuntimeEntry } = entry;
+    const bundledRipgrep = embeddedRipgrepSource(entry);
+    return runRuntimeEntry(io, { version, ...(bundledRipgrep === undefined ? {} : { bundledRipgrep }) });
   },
 });

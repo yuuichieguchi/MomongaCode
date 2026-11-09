@@ -136,13 +136,13 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('single executable built from the r
       expect(report.solver).toMatch(/^Z3 \d+\.\d+\.\d+/);
       expect(report.results.map((result) => result.verdict.status)).toEqual(['proved', 'proved', 'proved', 'proved']);
       expect(report.outsideProof.length).toBeGreaterThan(0);
-      const extracted = fs.readdirSync(paths.cacheBase).filter((name) => name.startsWith('z3-'));
+      const extracted = fs.readdirSync(paths.executables).filter((name) => name.startsWith('z3-'));
       expect(extracted).toHaveLength(1);
-      expect(fs.readdirSync(path.join(paths.cacheBase, extracted[0] as string)).sort()).toEqual(['z3-api.cjs', 'z3-built.js']);
+      expect(fs.readdirSync(path.join(paths.executables, extracted[0] as string)).sort()).toEqual(['z3-api.cjs', 'z3-built.js']);
 
       const second = await run('policy', 'verify', '--json');
       expect(second.status).toBe(0);
-      expect(fs.readdirSync(paths.cacheBase).filter((name) => name.startsWith('z3-'))).toEqual(extracted);
+      expect(fs.readdirSync(paths.executables).filter((name) => name.startsWith('z3-'))).toEqual(extracted);
     } finally {
       fs.writeFileSync(paths.settingsFile, original);
     }

@@ -8,6 +8,8 @@ export const MOMONGA_ATTRIBUTES = {
   role: 'momonga.role',
   failureMessage: 'momonga.failure_message',
   fallbackCauses: 'momonga.fallback_causes',
+  toolBackendSource: 'tool.backend.source',
+  toolBackendVersion: 'tool.backend.version',
 } as const;
 
 export const ERROR_TYPE_ATTRIBUTE = 'error.type';

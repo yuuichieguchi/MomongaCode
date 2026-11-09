@@ -14,14 +14,14 @@ export type PolicyVerifyHost = {
   openSolver(verifier: VerifyModule): Promise<SolverEngine>;
 };
 
-export const nodePolicyVerifyHost = (ports: Pick<CliPorts, 'random'>, paths: Pick<MomongaPaths, 'cacheBase'>): PolicyVerifyHost => ({
+export const nodePolicyVerifyHost = (ports: Pick<CliPorts, 'random'>, paths: Pick<MomongaPaths, 'executables'>): PolicyVerifyHost => ({
   loadVerifier: () => import('@momonga/verify'),
   loadPolicyFilesystem: async () => (await import('@momonga/runtime')).createPolicyFilesystem(),
   openSolver: async (verifier) => {
     if (!isSea()) return verifier.openZ3({ entry: verifier.resolveInstalledZ3(import.meta.url) });
     const bundled = await verifier.ensureBundledZ3({
       asset: (name) => new Uint8Array(getRawAsset(name)),
-      cacheBase: paths.cacheBase,
+      executablesRoot: paths.executables,
       random: ports.random,
       files: {
         exists: async (target) => {

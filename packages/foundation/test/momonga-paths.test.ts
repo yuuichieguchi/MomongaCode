@@ -27,6 +27,7 @@ const expectedLayout = (home: string, cacheBase: string, keychains: string = pat
       supervisor: path.join(run, 'supervisor.lock'),
     },
     callLocks: path.join(run, 'call-locks'),
+    grepArguments: path.join(run, 'grep-arguments'),
     lockProof: path.join(run, 'lock-proof'),
     markers: {
       root: path.join(run, 'markers'),
@@ -62,6 +63,7 @@ const expectedLayout = (home: string, cacheBase: string, keychains: string = pat
     launcher: path.join(home, '.local', 'bin', 'momonga'),
     keychains,
     cacheBase,
+    executables: path.join(cacheBase, 'executables'),
     tmp: {
       root: path.join(cacheBase, 'tmp'),
       spawn: path.join(cacheBase, 'tmp', 'spawn'),

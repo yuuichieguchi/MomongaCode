@@ -94,7 +94,7 @@ const harness = (failingOn: number = 0, answers: Answers = 'script') => {
   const entries = {} as DaemonEntries;
   const program = buildProgram({
     ports,
-    policyVerify: () => nodePolicyVerifyHost(ports, { cacheBase: '/w/cache' }),
+    policyVerify: () => nodePolicyVerifyHost(ports, { executables: '/w/cache/executables' }),
     entries,
     update: () => ({ ports: { self: { kind: 'script', execPath: '/node', script: '/main.js' } } as unknown as UpdatePorts, build: { repo: undefined, teamId: undefined, publicKey: undefined }, endpoints: GITHUB_ENDPOINTS, checkIntervalMs: 1 }),
     interrupt: new AbortController().signal,
