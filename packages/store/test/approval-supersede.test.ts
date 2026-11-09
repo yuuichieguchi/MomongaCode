@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PermissionOption } from '@momonga/protocol';
 import type { Claim, RuntimeStore } from '@momonga/store';
-import { START_MS, enqueue, harness, mustClaim, newSession } from './helpers.ts';
+import { DEADLINE_MS, enqueue, harness, mustClaim, newSession } from './helpers.ts';
 
 const OPTIONS: PermissionOption[] = [
   { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
@@ -10,7 +10,6 @@ const OPTIONS: PermissionOption[] = [
 const WIDER: PermissionOption[] = [...OPTIONS, { optionId: 'allow_always', name: 'Always allow', kind: 'allow_always' }];
 const FIRST = 'a'.repeat(64);
 const SECOND = 'b'.repeat(64);
-const EXPIRES = START_MS + 60_000;
 
 const setup = () => {
   const { clock, store } = harness();
@@ -24,7 +23,7 @@ const setup = () => {
 };
 
 const request = (store: RuntimeStore, claim: Claim, options: PermissionOption[], subjectDigest: string) => {
-  const result = store.requestApproval(claim, { callId: 'call_1', options, expiresAt: EXPIRES, event: { subjectDigest, reason: 'edits require approval' } });
+  const result = store.requestApproval(claim, { callId: 'call_1', options, event: { subjectDigest, reason: 'edits require approval' } });
   if (result.kind !== 'ok') throw new Error(`expected ok, got ${result.kind}`);
   return result.approval;
 };
@@ -72,15 +71,15 @@ describe('approval subject digest and supersede', () => {
     expect(store.approvals.get(first.id)).not.toHaveProperty('optionId');
   });
 
-  it('leaves superseded approvals superseded when the pending one expires', async () => {
+  it('leaves superseded approvals superseded when the run ends at its deadline', async () => {
     const { store, runId, claim } = setup();
     const first = request(store, claim, OPTIONS, FIRST);
     const second = request(store, claim, OPTIONS, SECOND);
     expect(store.release(claim, 'WAITING_HUMAN').kind).toBe('ok');
 
-    expect(await store.expireApprovals(EXPIRES, (error: unknown) => { throw error; })).toEqual([runId]);
+    expect(await store.expireApprovals(DEADLINE_MS, (error: unknown) => { throw error; })).toEqual([runId]);
 
     expect(store.approvals.get(first.id)?.status).toBe('superseded');
-    expect(store.approvals.get(second.id)?.status).toBe('expired');
+    expect(store.approvals.get(second.id)?.status).toBe('withdrawn');
   });
 });

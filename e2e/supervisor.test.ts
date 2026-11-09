@@ -300,7 +300,7 @@ describe('supervisor cases', () => {
     expect(runtimeMarkers).toHaveLength(1);
     expect(entries.filter((entry) => entry.startsWith('gateway-'))).toHaveLength(1);
     expect(entries).toHaveLength(2);
-    expect(await findHolders(path.join(home.paths.markers.daemons, runtimeMarkers[0] ?? ''))).toContain(orphanPid);
+    expect(await findHolders(path.join(home.paths.markers.daemons, runtimeMarkers[0] ?? ''), { signal: new AbortController().signal })).toContain(orphanPid);
     expect(fs.existsSync(home.paths.sockets.supervisor)).toBe(false);
     expect(await inspectProcessLock(home.paths.locks.supervisor)).toEqual({ state: 'free' });
   });

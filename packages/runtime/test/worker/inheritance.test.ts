@@ -4,7 +4,7 @@ import type { RunEventPayload, StreamEvent } from '@momonga/protocol';
 import type { GatewayPort } from '@momonga/runtime';
 import { responseResource, usageOf } from '@momonga/testkit';
 import { within } from './deferred.ts';
-import { makeEnv } from './harness.ts';
+import { START_MS, makeEnv } from './harness.ts';
 import type { Env } from './harness.ts';
 import { MODEL_ALIAS, assistantMessage, callsStep, functionCallItem, gated, textStep, textThenCallsStep } from './scripts.ts';
 import {
@@ -184,20 +184,20 @@ describe('closures for the dangling calls of run 1, per cause', () => {
     expect(inheritedEventOf(env, second).closures[0]?.effect).toBe('unknown');
   });
 
-  it('closes a call whose approval timed out through the sweeper', async () => {
+  it('closes a call whose run reached its deadline while its approval waited', async () => {
     const env = await makeEnv();
     env.gateway.script.push(callsStep([writeCall(env, 'call_w_1')]));
-    const first = env.enqueue('Write it', { limits: { approvalTtlMs: 60_000 } });
+    const first = env.enqueue('Write it', { deadlineAt: START_MS + 60_000 });
     await env.runOnce(env.worker());
     expect(env.run(first.id).status).toBe('WAITING_HUMAN');
-    env.clock.advance(60_001);
+    env.clock.advance(60_000);
     expect((await env.store.expireApprovals(env.clock.now(), (error: unknown) => { throw error; }))).toEqual([first.id]);
-    expect(env.run(first.id)).toMatchObject({ status: 'STOPPED', stopReason: 'approval_timeout' });
+    expect(env.run(first.id)).toMatchObject({ status: 'STOPPED', stopReason: 'timeout' });
     const callId = env.gateway.callId('call_w_1');
 
     const second = await nextRun(env, 'Next task');
 
-    expectClosed(env, second, [[callId, CLOSURE_TEXT.approvalTimeout]], [true]);
+    expectClosed(env, second, [[callId, CLOSURE_TEXT.timeout]], [true]);
   });
 });
 

@@ -16,6 +16,7 @@ export { FmServeError, createFmServe } from './managed/fm-serve.ts';
 export { PreconditionFailedError } from './adapters/shared/failures.ts';
 export type {
   ExecFn,
+  ExecOptions,
   ExecResult,
   FmChild,
   FmServe,
@@ -61,12 +62,14 @@ export type { KeywordSupport } from './dialect/keyword-support.ts';
 export type { UserDialects } from './dialect/choice.ts';
 export type { EnvelopeShape } from './probe/envelope.ts';
 export { PROBE_METHOD_VERSION } from './probe/run-probe.ts';
-export { FM_SERVE_DEFAULTS, GATEWAY_CONFIG_DEFAULTS, UPSTREAM_LIVENESS_DEFAULTS } from './defaults.ts';
+export { IDENTITY_READ_TIMEOUT_MS } from './probe/endpoint-target.ts';
+export { FM_SERVE_DEFAULTS, GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS, UPSTREAM_LIVENESS_DEFAULTS } from './defaults.ts';
 export { gatewayConfigOf, startGatewayProcess } from './process.ts';
 export type { GatewayCloseResult, GatewayProcess, StartGatewayProcessOptions } from './process.ts';
 export { GATEWAY_ENTRY_FLAGS, runGatewayEntry } from './entry.ts';
 export type { GatewayEntryDeps } from './entry.ts';
-export type { UpstreamEndpoint, UpstreamLiveness } from './adapters/shared/http-client.ts';
+export { reachableEndpoint } from './adapters/shared/http-client.ts';
+export type { KeyedEndpoint, UpstreamEndpoint, UpstreamLiveness } from './adapters/shared/http-client.ts';
 export { createAnthropicAdapter } from './adapters/anthropic/adapter.ts';
 export type { AnthropicAdapter, AnthropicAdapterOptions } from './adapters/anthropic/types.ts';
 export { createOpenResponsesAdapter } from './adapters/open-responses/adapter.ts';
@@ -77,4 +80,4 @@ export { OLLAMA_VOCABULARY } from './adapters/ollama/vocabulary.ts';
 export { probeOllamaTarget } from './probe/ollama.ts';
 export type { ProbeOllamaTargetOptions, ProbeOllamaTargetResult } from './probe/ollama.ts';
 export { detectLocalServers } from './detect-local-servers.ts';
-export type { DetectLocalServersOptions } from './detect-local-servers.ts';
+export type { DetectFetch, DetectLocalServersOptions } from './detect-local-servers.ts';

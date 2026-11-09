@@ -80,7 +80,7 @@ export const openDaemonMarker = (directory: string, role: ChildRole, files: Mark
   };
 };
 
-export const reapDaemonMarker = async (input: { marker: string; logger: JsonLogger; markerPorts?: MarkerPorts }): Promise<{ removed: boolean }> => {
+export const reapDaemonMarker = async (input: { marker: string; logger: JsonLogger; signal?: AbortSignal; markerPorts?: MarkerPorts }): Promise<{ removed: boolean }> => {
   const reap = input.markerPorts?.reapMarkedProcesses ?? reapMarkedProcesses;
   try {
     return await reap({
@@ -88,6 +88,7 @@ export const reapDaemonMarker = async (input: { marker: string; logger: JsonLogg
       killGraceMs: DAEMON_MARKER_KILL_GRACE_MS,
       label: 'daemon',
       onWarning: (detail) => writeEvent(input.logger, orphansWarning({ detail, marker: input.marker })),
+      ...(input.signal === undefined ? {} : { signal: input.signal }),
     });
   } catch (error) {
     const failure = error instanceof Error ? error : new Error(String(error));
@@ -97,8 +98,6 @@ export const reapDaemonMarker = async (input: { marker: string; logger: JsonLogg
 };
 
 const listMarkerNames = (markersDir: string): Promise<string[]> => fs.promises.readdir(markersDir);
-
-const PHASE_ONE_MARGIN_MS = 2000;
 
 const failureOf = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
@@ -125,8 +124,8 @@ export const reapOrphans = async (options: OrphanReapOptions): Promise<OrphanRea
   const listNames = options.markerPorts?.listMarkers ?? listMarkerNames;
   const warn = (detail: string): void => writeEvent(logger, orphansWarning({ detail }));
 
-  const countHolders = async (markers: readonly string[]): Promise<number> => {
-    const lists = await Promise.all(markers.map((marker) => holdersOf(marker, undefined, reportUninspectableOnce(warn, `marker ${marker}`, options.uninspectable))));
+  const countHolders = async (markers: readonly string[], probeSignal: AbortSignal): Promise<number> => {
+    const lists = await Promise.all(markers.map((marker) => holdersOf(marker, { signal: probeSignal, onUninspectable: reportUninspectableOnce(warn, `marker ${marker}`, options.uninspectable) })));
     return lists.reduce((total, list) => total + list.length, 0);
   };
 
@@ -147,13 +146,17 @@ export const reapOrphans = async (options: OrphanReapOptions): Promise<OrphanRea
     writeEvent(logger, orphansWaiting({ markers: 0, holders: 0 }));
     return { reaped: 0, kept: 0, aborted: false };
   }
-  const graceMs = Math.min(options.orphanGraceMs, runtimeMaxCloseMs(options.drainTimeoutMs ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS) + PHASE_ONE_MARGIN_MS);
+  const graceMs = Math.min(options.orphanGraceMs, runtimeMaxCloseMs(options.drainTimeoutMs ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS));
   const deadline = now() + graceMs;
+  const phaseStop = new AbortController();
+  const phaseTimer = options.timers.setTimeout(() => phaseStop.abort(new Error(`the orphan phase deadline of ${graceMs} ms passed`)), graceMs);
+  const probeSignal = AbortSignal.any([signal, phaseStop.signal]);
 
   const observe = async (): Promise<number | undefined> => {
     try {
-      return await countHolders(markers);
+      return await countHolders(markers, probeSignal);
     } catch (error) {
+      if (signal.aborted) return undefined;
       if (isTransientFailure(error) && now() < deadline) {
         warn(`daemon marker holders could not be listed yet: ${failureOf(error).message}`);
         return undefined;
@@ -162,14 +165,19 @@ export const reapOrphans = async (options: OrphanReapOptions): Promise<OrphanRea
     }
   };
 
-  let holders = await observe();
-  if (holders !== undefined) writeEvent(logger, orphansWaiting({ markers: markers.length, holders }));
-  while (holders === undefined || holders > 0) {
-    await sleepUnlessAborted(options, options.orphanPollMs);
-    if (signal.aborted) return { reaped: 0, kept: 0, aborted: true };
+  let holders: number | undefined;
+  try {
     holders = await observe();
-    if (signal.aborted) return { reaped: 0, kept: 0, aborted: true };
-    if (holders !== undefined && holders > 0 && now() >= deadline) break;
+    if (holders !== undefined) writeEvent(logger, orphansWaiting({ markers: markers.length, holders }));
+    while (holders === undefined || holders > 0) {
+      await sleepUnlessAborted(options, options.orphanPollMs);
+      if (signal.aborted) return { reaped: 0, kept: 0, aborted: true };
+      holders = await observe();
+      if (signal.aborted) return { reaped: 0, kept: 0, aborted: true };
+      if (holders !== undefined && holders > 0 && now() >= deadline) break;
+    }
+  } finally {
+    options.timers.clearTimeout(phaseTimer);
   }
 
   writeEvent(logger, orphansReaping({ holders }));

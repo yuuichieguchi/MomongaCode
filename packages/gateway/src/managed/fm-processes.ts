@@ -12,9 +12,9 @@ const envOption = (env: ChildEnv | undefined): { env?: Record<string, string> } 
 
 export const createExecFn =
   (env: ChildEnv | undefined): ExecFn =>
-  (file, args) =>
+  (file, args, options) =>
     new Promise((resolve, reject) => {
-      execFile(file, [...args], envOption(env), (error, stdout, stderr) => {
+      execFile(file, [...args], { ...envOption(env), ...(options === undefined ? {} : { signal: options.signal }) }, (error, stdout, stderr) => {
         if (error === null) {
           resolve({ exitCode: 0, stdout, stderr });
           return;
@@ -31,8 +31,13 @@ export { createExecWithStdin } from '@momonga/foundation';
 
 export const createPlainSpawn =
   (env: ChildEnv | undefined): SpawnFn =>
-  (file, args) =>
-    nodeSpawn(file, [...args], { ...envOption(env), stdio: 'ignore' });
+  (file, args) => {
+    const child = nodeSpawn(file, [...args], { ...envOption(env), stdio: 'ignore' });
+    return {
+      kill: async (signal) => child.kill(signal),
+      once: child.once.bind(child) as FmChild['once'],
+    };
+  };
 
 const MARKER_FD_INDEX = 3;
 
@@ -43,9 +48,9 @@ const groupChildOf = (child: ChildProcess, marker: string, onWarning: WarningSin
   child.once('error', removeMarker);
   if (child.pid !== undefined) fs.writeFileSync(marker, `${child.pid}\n`);
   return {
-    kill: (signal = 'SIGTERM') => {
+    kill: async (signal = 'SIGTERM', stop) => {
       if (child.pid === undefined) return false;
-      signalGroup(child.pid, signal);
+      await signalGroup(child.pid, signal, undefined, stop);
       return true;
     },
     finalize: async (graceMs) => {

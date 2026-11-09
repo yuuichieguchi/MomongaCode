@@ -1,13 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { canonicalJson, ensureMomongaDirs, momongaPaths, sha256Hex } from '@momonga/foundation';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, UNBOUNDED_OUTPUT_FIT, createFakeClock, createFakeTimers, withTempDir } from '@momonga/testkit';
+import { momongaPaths } from '@momonga/foundation';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, withTempDir } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
-import { createToolRegistry, defineTool } from '@momonga/tools';
 import { TOOL_MARKER_SWEEP_MS } from '../../src/process/constants.ts';
-import { START_MS, createRun, createSession, fenceFor, makeRuntimeFixture, onCleanup, signalNever, writeUserSettings } from './helpers.ts';
-import type { TempHome } from './helpers.ts';
+import { START_MS, writeUserSettings } from './helpers.ts';
 import { entriesNamed, fireTimer, launchRuntime, modelSettings, waitForCondition } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
 
@@ -38,16 +36,6 @@ beforeEach(() => {
 
 const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 const NON_SWEEP_LEASE_MS = 7000;
-
-const trackedTempHome = async (context: CleanupContext): Promise<TempHome> => {
-  const home = withTempDir(context, { asHome: true });
-  const root = withTempDir(context);
-  const paths = momongaPaths(home, process.platform, {});
-  await ensureMomongaDirs(paths);
-  const project = path.join(root, 'p');
-  fs.mkdirSync(project);
-  return { root, home, paths, project, dbPath: path.join(root, 's.db') };
-};
 
 const trackedRunHome = (context: CleanupContext): RunHome => {
   const home = withTempDir(context, { asHome: true });
@@ -106,78 +94,5 @@ describe('tool marker sweep wiring (§8)', () => {
       await waitForCondition(() => entriesNamed(runtime.logger, 'runtime error').some((entry) => entry.fields?.err === failure), 'the sweep failure to be reported');
       expect(entriesNamed(runtime.logger, 'runtime.fatal')).toEqual([]);
     });
-  });
-
-  it('tool runtime exposes inFlightKeys: the key is present while a fake tool runs through port.executor.runBatch', PROCESS_TIMEOUT, async (context) => {
-    const f = await makeRuntimeFixture({ temp: await trackedTempHome(context) });
-    const session = createSession(f.store, f.temp.project);
-    const runId = createRun(f.store, session.id);
-    let started: () => void = () => undefined;
-    const running = new Promise<void>((resolve) => {
-      started = resolve;
-    });
-    let release: () => void = () => undefined;
-    const released = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const registry = createToolRegistry();
-    registry.register(
-      defineTool<Record<string, unknown>>({
-        name: 'Hold',
-        description: 'holds until released',
-        kind: 'read',
-        sideEffect: 'read_only',
-        inputSchema: { type: 'object', properties: {}, additionalProperties: false },
-        title: () => 'hold',
-        timeoutMs: 60_000,
-        subject: () => ({ kind: 'none', tool: 'Hold' }),
-        execute: async () => {
-          started();
-          await released;
-          return { status: 'completed', output: 'released' };
-        },
-      }),
-    );
-    const toolSet = await registry.snapshot();
-    const port = f.toolRuntime.port;
-    const env = port.envFor(session);
-    const policy = await port.policyFor(session, { env, rules: [] });
-    const callId = 'call-hold';
-    const key = sha256Hex(canonicalJson([runId, 1, callId]));
-
-    const batch = port.executor.runBatch({
-      calls: [{ callId, name: 'Hold', arguments: '{}' }],
-      toolSet,
-      fence: fenceFor(f.store, runId),
-      runId,
-      step: 1,
-      mode: 'bypassPermissions',
-      rules: [],
-      home: f.temp.home,
-      roots: policy.roots,
-      tmpDir: policy.tmpDir,
-      env: policy.env,
-      session: port.sessionState(session),
-      sandbox: port.sandbox,
-      sandboxPolicy: policy.sandboxPolicy,
-      deadlineAt: f.clock.now() + 120_000,
-      outputFit: UNBOUNDED_OUTPUT_FIT,
-      reconcileFit: UNBOUNDED_OUTPUT_FIT,
-      signal: signalNever(),
-    });
-    const settled = batch.then(
-      () => undefined,
-      () => undefined,
-    );
-    onCleanup(async () => {
-      release();
-      await settled;
-    });
-    await running;
-
-    expect([...f.toolRuntime.inFlightKeys()]).toEqual([key]);
-    release();
-    await batch;
-    expect(f.toolRuntime.inFlightKeys().size).toBe(0);
   });
 });

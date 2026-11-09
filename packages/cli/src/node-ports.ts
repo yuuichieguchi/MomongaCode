@@ -41,6 +41,7 @@ export const nodeClock: CliClock = { now: () => systemClock.now(), sleep };
 export const nodeFiles: CliFiles = {
   ...nodeEvalFiles,
   readFile: nodeFileSystem.readFile,
+  readTextFile: nodeFileSystem.readTextFile,
   mkdir: nodeFileSystem.mkdir,
   mkdtemp: nodeFileSystem.mkdtemp,
   rm: nodeFileSystem.rm,
