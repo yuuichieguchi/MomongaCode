@@ -703,7 +703,7 @@ export const openRuntimeStore = (options: RuntimeStoreOptions): RuntimeStore => 
   const cancelChildren = (runId: string): void => {
     for (const row of sql.childRuns.all({ runId })) {
       const child = decodeRun(row, decodeContext);
-      if (isTerminal(child.status) || child.status === 'CANCELLING') continue;
+      if (isTerminal(child.status) || child.status === 'CANCELLING' || child.status === UNKNOWN_VALUE) continue;
       changeStatus(child, 'CANCELLING', { edges: SERVICE_TRANSITIONS });
     }
   };
