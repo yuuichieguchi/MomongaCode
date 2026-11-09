@@ -122,6 +122,7 @@ export type ToolRuntimePort = {
 export type TraceSpan = {
   traceparent: string;
   recordToolContent(content: { arguments: unknown; result?: unknown }): void;
+  recordToolBackend(backend: { source: string; version: string }): void;
   end(error?: unknown): void;
 };
 

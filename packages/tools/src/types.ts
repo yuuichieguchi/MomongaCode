@@ -17,6 +17,8 @@ export type PlanEntry = {
 
 export type SkillActivation = { name: string; content: string };
 
+export type ToolBackend = { source: string; version: string };
+
 export type ToolResult = {
   status: 'completed' | 'failed';
   output: string;
@@ -32,6 +34,7 @@ export type ToolResult = {
   memories?: string[];
   exitCode?: number;
   validatorFailure?: string;
+  backend?: ToolBackend;
 };
 
 export type ToolPending = { status: 'pending'; awaits: ToolAwait; wakeAt?: number };

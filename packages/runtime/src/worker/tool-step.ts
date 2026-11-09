@@ -180,6 +180,11 @@ const recordToolContent = (spans: ReadonlyMap<string, TraceSpan>, calls: readonl
   });
 };
 
+const recordToolBackend = (spans: ReadonlyMap<string, TraceSpan>, outcome: ResultOutcome): void => {
+  if (outcome.result.backend === undefined) return;
+  spans.get(outcome.callId)?.recordToolBackend(outcome.result.backend);
+};
+
 export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
   const { options, journal, run } = ctx;
   await recordCalls(ctx);
@@ -275,6 +280,7 @@ export const settleCalls = async (ctx: ClaimContext): Promise<Flow> => {
         journal.append(outcomePayloads(outcome));
         if (outcome.result.toolsLoaded !== undefined) ctx.toolLoading?.rememberLoaded(outcome.result.toolsLoaded);
         recordToolContent(spans, calls, outcome);
+        recordToolBackend(spans, outcome);
       },
       toolUnavailable: (toolKey) => toolRefusedInJournal(ctx, toolKey),
       onWarning: (message, toolKey) => journal.append([{ type: 'notice', level: 'warning', message, code: TOOL_VALIDATOR_FAILED_CODE, toolKey }]),

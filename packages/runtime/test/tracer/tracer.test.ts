@@ -110,7 +110,7 @@ describe('createTracerPort tool span', () => {
 
   it('parents on a span known only by its traceparent', async () => {
     const { tracer, finished } = setup();
-    const remoteParent = { traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', recordToolContent: () => {}, end: () => {} };
+    const remoteParent = { traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01', recordToolContent: () => {}, recordToolBackend: () => {}, end: () => {} };
     tracer.startToolSpan(remoteParent, TOOL).end();
     const span = await onlySpan(finished);
     expect(span.spanContext().traceId).toBe('0af7651916cd43dd8448eb211c80319c');

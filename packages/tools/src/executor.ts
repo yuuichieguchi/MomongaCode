@@ -571,6 +571,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       ...(result.windowShared === undefined ? {} : { windowShared: result.windowShared }),
       ...(result.memories === undefined ? {} : { memories: result.memories }),
       ...(result.exitCode === undefined ? {} : { exitCode: result.exitCode }),
+      ...(result.backend === undefined ? {} : { backend: result.backend }),
       ...('truncated' in truncated ? { truncated: truncated.truncated, handle: truncated.handle } : {}),
       ...(formatted === undefined ? {} : { formatted: formatted.formatted }),
     };

@@ -5,7 +5,8 @@ import { createReadAccessMatcher } from '../read-access.ts';
 import { ripgrepUnavailableMessage } from '../ripgrep-locator.ts';
 import type { ReadAccessMatcher } from '../read-access.ts';
 import { defineTool, ToolExecutionError } from '../types.ts';
-import type { ToolContext } from '../types.ts';
+import type { ToolBackend, ToolContext } from '../types.ts';
+import type { RipgrepLocator } from '../ripgrep-locator.ts';
 import { extensionsForType } from './file-types.ts';
 import { regularFileProblem, statIfExists } from './files.ts';
 import { sortByMtimeThenPath } from './glob.ts';
@@ -166,6 +167,38 @@ const recordsOf = (stdout: string, mode: OutputMode, input: GrepInput, visible: 
 
 const GROUP_SEPARATOR = '--';
 
+const grepPolicyOf = (ctx: ToolContext): SandboxPolicy => {
+  const { readDenied, readAllowed } = ctx.sandboxPolicy;
+  return { writableRoots: [], writeDenied: [], writeDeniedLiterals: [], readDenied, ...(readAllowed === undefined ? {} : { readAllowed }), network: 'deny', fileRules: ctx.sandboxPolicy.fileRules, protectedSet: EMPTY_PROTECTED_SET };
+};
+
+const RIPGREP_VERSION_LINE = /^ripgrep (\S+)/;
+
+const reportedVersions = new WeakMap<RipgrepLocator, Map<string, Promise<string>>>();
+
+const runVersion = async (ripgrep: string, ctx: ToolContext): Promise<string> => {
+  const child = ctx.sandbox.spawn({ argv: [ripgrep, '--version'], cwd: ctx.session.cwd, env: ctx.env }, grepPolicyOf(ctx), ctx.signal);
+  const [stdout, stderr, exit] = await Promise.all([collect(child.stdout), collect(child.stderr), child.exited]);
+  const version = exit.code === 0 ? RIPGREP_VERSION_LINE.exec(stdout)?.[1] : undefined;
+  if (version === undefined) throw new ToolExecutionError(`${ripgrep} --version did not report a ripgrep version: ${(stdout + stderr).trim()}`);
+  return version;
+};
+
+const reportedVersionOf = (ripgrep: string, ctx: ToolContext): Promise<string> => {
+  let known = reportedVersions.get(ctx.ripgrep);
+  if (known === undefined) {
+    known = new Map();
+    reportedVersions.set(ctx.ripgrep, known);
+  }
+  const versions = known;
+  const existing = versions.get(ripgrep);
+  if (existing !== undefined) return existing;
+  const pending = runVersion(ripgrep, ctx);
+  versions.set(ripgrep, pending);
+  void pending.catch(() => versions.delete(ripgrep));
+  return pending;
+};
+
 const searchWithRipgrep = async (
   ripgrep: string,
   input: GrepInput,
@@ -181,7 +214,7 @@ const searchWithRipgrep = async (
     for await (const root of reachableAllowedRoots(target, '', [], { signal: ctx.signal, onUnreadable: () => undefined }, access)) allowedRoots.push(root.absolute);
   }
   const ruleBlocked = await ruleBlockedGlobs(access, target, isDirectory, ctx);
-  const policy: SandboxPolicy = { writableRoots: [], writeDenied: [], writeDeniedLiterals: [], readDenied, ...(readAllowed === undefined ? {} : { readAllowed }), network: 'deny', fileRules: ctx.sandboxPolicy.fileRules, protectedSet: EMPTY_PROTECTED_SET };
+  const policy = grepPolicyOf(ctx);
   const spawnCwd = isDirectory ? target : path.dirname(target);
   const child = ctx.sandbox.spawn({ argv: [ripgrep, ...ripgrepArguments(input, mode, target, access, isDirectory, allowedRoots, ruleBlocked)], cwd: spawnCwd, env: ctx.env }, policy, ctx.signal);
   const visibleCache = new Map<string, boolean>();
@@ -275,7 +308,9 @@ export const grepTool = defineTool<GrepInput>({
     const ripgrep = await ctx.ripgrep.locate();
     if (!ripgrep.ok) throw new ToolExecutionError(ripgrepUnavailableMessage(ripgrep.cause));
     let found: SearchResult;
+    let backend: ToolBackend;
     try {
+      backend = { source: ripgrep.source, version: ripgrep.version ?? (await reportedVersionOf(ripgrep.path, ctx)) };
       found = await searchWithRipgrep(ripgrep.path, input, mode, target, stat.isDirectory(), ctx);
     } finally {
       await ripgrep.release();
@@ -284,6 +319,6 @@ export const grepTool = defineTool<GrepInput>({
     const skipped = ordered.slice(input.offset ?? 0);
     const limited = input.head_limit === undefined || input.head_limit === 0 ? skipped : skipped.slice(0, input.head_limit);
     const lines = limited.length === 0 ? ['No matches found'] : limited;
-    return { status: 'completed', output: [...lines, ...(found.unreadable ? [UNREADABLE_NOTE] : [])].join('\n') };
+    return { status: 'completed', output: [...lines, ...(found.unreadable ? [UNREADABLE_NOTE] : [])].join('\n'), backend };
   },
 });
