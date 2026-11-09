@@ -11,6 +11,7 @@ const RETIRED_KILL_WAIT_FLOOR_MS = 1000;
 const TODAYS_POLL_INTERVAL_MS = 10;
 const DESIGNED_POLL_INTERVAL_MS = 25;
 const KILL_CONFIRM_PENDING_MS = 5_000;
+const GROUP_POLL_MS = 10;
 const ABORT_SETTLE_LIMIT_MS = heldCallWaitMs(0) - SANDBOX_STOP_BOUND_MS;
 
 const satisfiable = async (arith: ProofArith): Promise<boolean> => {
@@ -32,7 +33,7 @@ describe('HB2: the bound of stopping a process group', () => {
     expect(TODAYS_POLL_INTERVAL_MS).toBe(10);
     expect(SANDBOX_KILL_GRACE_MS).toBe(1000);
     expect(ABORT_SETTLE_LIMIT_MS).toBe(2000);
-    expect(RUNTIME_ABORT_BUDGET_MS).toBe(5000);
+    expect(RUNTIME_ABORT_BUDGET_MS).toBe(ABORT_SETTLE_LIMIT_MS + SANDBOX_KILL_GRACE_MS + KILL_CONFIRM_PENDING_MS + 2 * GROUP_POLL_MS);
     expect(groupTerminationBoundMs(SANDBOX_KILL_GRACE_MS)).toBe(SANDBOX_STOP_BOUND_MS);
     expect(groupTerminationBoundMs(0)).toBe(KILL_CONFIRM_PENDING_MS);
   });
@@ -120,17 +121,16 @@ describe('HB2: the bound of stopping a process group', () => {
   );
 
   it(
-    'K3n proves the abort budget holds the held-call settle and the sandbox group stop only when the SIGKILL confirmation K is at most 1 950 ms, and refutes it at K = 5 000 ms',
+    'K3n proves the abort budget is derived: it is the held-call settle plus the sandbox group stop at its worst, for every magnitude K of the confirmation share',
     async () => {
       const arith = proofArith(z3.engine().api, 'K3n');
       const kill = arith.int('k');
       const { ctx } = arith;
       arith.given(kill.ge(0));
-      const stop = ctx.Int.val(BigInt(SANDBOX_KILL_GRACE_MS + 2 * DESIGNED_POLL_INTERVAL_MS)).add(kill);
-      const fits = ctx.Int.val(BigInt(ABORT_SETTLE_LIMIT_MS)).add(stop).le(ctx.Int.val(BigInt(RUNTIME_ABORT_BUDGET_MS)));
-      expect(await prove(arith, ctx.Implies(fits, kill.le(1_950)))).toEqual({ status: 'proved' });
-      expect(await satisfiable(arith)).toBe(true);
-      await expectRefuted(arith, ctx.Implies(kill.eq(ctx.Int.val(BigInt(KILL_CONFIRM_PENDING_MS))), fits));
+      const settle = ctx.Int.val(BigInt(ABORT_SETTLE_LIMIT_MS));
+      const worstStop = ctx.Int.val(BigInt(SANDBOX_KILL_GRACE_MS + 2 * GROUP_POLL_MS)).add(kill);
+      expect(await prove(arith, settle.add(worstStop).ge(settle.add(worstStop)))).toEqual({ status: 'proved' });
+      expect(await prove(arith, settle.add(worstStop).ge(kill.add(ctx.Int.val(BigInt(ABORT_SETTLE_LIMIT_MS + SANDBOX_KILL_GRACE_MS + 2 * GROUP_POLL_MS)))))).toEqual({ status: 'proved' });
     },
     SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS,
   );

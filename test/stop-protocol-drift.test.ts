@@ -37,11 +37,11 @@ describe('StopProtocol.tla composes the stop bounds the way process-contract.ts 
   it('the model composes the gateway close, the child stop, the supervisor close, the daemon stop and the abort budget from these terms', () => {
     expect(definitionOf('CG')).toBe('v');
     expect(definitionOf('GW')).toBe('CG(v) + FmBound');
-    expect(definitionOf('CHILD')).toBe('GW(v) + 1');
+    expect(definitionOf('CHILD')).toBe('GW(v) + KILLCONF + 1');
     expect(definitionOf('RT')).toBe('r + 1');
-    expect(definitionOf('SUP')).toBe('RT(r) + CHILD(v) + REAP');
+    expect(definitionOf('SUP')).toBe('RT(r) + CHILD(v) + KILLCONF + REAP');
     expect(definitionOf('DAEMON')).toBe('SUP(v, r) + 1');
-    expect(definitionOf('ABUD')).toBe('FmBound + 1');
+    expect(definitionOf('ABUD')).toBe('FmBound + KILLCONF + 1');
     expect(definitionOf('REAP')).toBe('FmBound');
   });
 

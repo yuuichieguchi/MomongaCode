@@ -6,7 +6,10 @@ import { SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS, useZ3 } from '../harness.ts';
 
 const STARTUP_TIMEOUT_MS = 60_000;
 
-const RUNTIME_ABORT_MS = 5_000;
+const HELD_CALL_SETTLE_MS = 2_000;
+const SANDBOX_KILL_GRACE_MS = 1_000;
+const GROUP_POLL_INTERVAL_MS = 10;
+const RUNTIME_ABORT_MS = HELD_CALL_SETTLE_MS + SANDBOX_KILL_GRACE_MS + 5_000 + 2 * GROUP_POLL_INTERVAL_MS;
 const RUNTIME_TEARDOWN_MS = 10_000;
 const SHUTDOWN_MARGIN_MS = 5_000;
 const ENTRY_HARD_EXIT_MARGIN_MS = 3_000;
@@ -25,7 +28,7 @@ const DRAIN_MAX_MS = 300_000;
 const MCP_CLOSE_GRACE_MAX_MS = 30_000;
 const CANCEL_UPSTREAM_SETTLE_MS = 1_000;
 const TEARDOWN_OTHER_STEPS_MIN_MS = 9_000;
-const SUPERVISOR_FIXED_MS = 73_225;
+const SUPERVISOR_FIXED_MS = 76_245;
 
 const constant = (arith: ProofArith, value: number): ProofInt => arith.ctx.Int.val(BigInt(value));
 
@@ -106,7 +109,7 @@ describe('stop values: the derived bounds of the runtime and of the supervisor (
     const arith = proofArith(z3.engine().api, 'MS1');
     const v = valuesOf(arith, 'v');
     expect(await prove(arith, teardownOf(arith, v.mcpGrace).eq(v.mcpGrace.mul(constant(arith, 6)).add(constant(arith, RUNTIME_TEARDOWN_MS + 10_075))))).toEqual({ status: 'proved' });
-    expect(await prove(arith, runtimeMaxOf(arith, v).eq(v.drain.add(v.mcpGrace.mul(constant(arith, 6))).add(constant(arith, 25_075))))).toEqual({ status: 'proved' });
+    expect(await prove(arith, runtimeMaxOf(arith, v).eq(v.drain.add(v.mcpGrace.mul(constant(arith, 6))).add(constant(arith, 28_095))))).toEqual({ status: 'proved' });
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('MS2 refutes that today\'s fixed 10 000 ms teardown budget contains the mcp-pools step for every MCP grace in range (a counter-model exists; at grace 0 the step is 10 075 ms and at grace 30 000 it is 190 075 ms)', async () => {
@@ -134,7 +137,7 @@ describe('stop values: the derived bounds of the runtime and of the supervisor (
     expect(await prove(arith, ctx.And(daemonStopOf(arith, v).ge(supervisorCloseOf(arith, v)), supervisorCloseOf(arith, v).ge(runtimeStopOf(arith, v)), supervisorCloseOf(arith, v).ge(gatewayStopOf(arith, v))))).toEqual({ status: 'proved' });
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
-  it('MS4 proves every bound is monotone in every value, and the daemon stop bound is finite at the maxima (1 491 220 ms)', async () => {
+  it('MS4 proves every bound is monotone in every value, and the daemon stop bound is finite at the maxima (1 279 245 ms)', async () => {
     const arith = proofArith(z3.engine().api, 'MS4');
     const v = valuesOf(arith, 'v');
     const w = valuesOf(arith, 'w');
@@ -142,15 +145,15 @@ describe('stop values: the derived bounds of the runtime and of the supervisor (
     const bigger = { drain: w.drain, closeGrace: w.closeGrace, stopGrace: w.stopGrace, mcpGrace: w.mcpGrace };
     expect(await prove(arith, ctx.Implies(ctx.And(v.drain.le(w.drain), v.closeGrace.le(w.closeGrace), v.stopGrace.le(w.stopGrace), v.mcpGrace.le(w.mcpGrace)), daemonStopOf(arith, v).le(daemonStopOf(arith, bigger))))).toEqual({ status: 'proved' });
     const top = pinned(arith, { drain: DRAIN_MAX_MS, closeGrace: CLOSE_GRACE_MAX_MS, stopGrace: STOP_GRACE_MAX_MS, mcpGrace: MCP_CLOSE_GRACE_MAX_MS });
-    expect(await prove(arith, daemonStopOf(arith, top).eq(constant(arith, 1_276_225)))).toEqual({ status: 'proved' });
+    expect(await prove(arith, daemonStopOf(arith, top).eq(constant(arith, 1_279_245)))).toEqual({ status: 'proved' });
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
-  it('MS5 proves the zero values give the stated numbers: runtime maximum 25 075 and supervisor close 104 225 with the default gateway values', async () => {
+  it('MS5 proves the zero values give the stated numbers: runtime maximum 28 095 and supervisor close 107 245 with the default gateway values', async () => {
     const arith = proofArith(z3.engine().api, 'MS5');
     const zero = pinned(arith, { drain: 0, closeGrace: 0, stopGrace: 0, mcpGrace: 0 });
-    expect(await prove(arith, runtimeMaxOf(arith, zero).eq(constant(arith, 25_075)))).toEqual({ status: 'proved' });
+    expect(await prove(arith, runtimeMaxOf(arith, zero).eq(constant(arith, 28_095)))).toEqual({ status: 'proved' });
     const withDefaults = { ...zero, closeGrace: constant(arith, 10_000), stopGrace: constant(arith, 3_000) };
-    expect(await prove(arith, supervisorCloseOf(arith, withDefaults).eq(constant(arith, 104_225)))).toEqual({ status: 'proved' });
+    expect(await prove(arith, supervisorCloseOf(arith, withDefaults).eq(constant(arith, 107_245)))).toEqual({ status: 'proved' });
   }, SOLVER_SINGLE_QUERY_TEST_TIMEOUT_MS);
 
   it('MS6 proves the teardown order: the derived budget leaves mcp-pools at least its share after cancel-upstream, and the other steps at least 9 000 ms after it, for every MCP grace in range', async () => {
