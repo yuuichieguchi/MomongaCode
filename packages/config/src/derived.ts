@@ -1,0 +1,166 @@
+import { canonicalJson, sha256Hex } from '@momonga/foundation';
+import type { ResolvedSettings } from './load-settings.ts';
+import type { UserSettingsCache } from './user-settings.ts';
+
+export type SettingsSection = 'models' | 'network' | 'pricing' | 'telemetry' | 'sandbox';
+
+export type DerivedObjectDeclaration = { readonly id: DerivedObjectId; readonly inputs: readonly SettingsSection[] };
+
+export const DERIVED_OBJECTS = [
+  { id: 'D1', inputs: ['models', 'network', 'pricing'] },
+  { id: 'D2', inputs: ['network', 'telemetry'] },
+  { id: 'D3', inputs: ['sandbox'] },
+  { id: 'D4', inputs: ['network'] },
+] as const satisfies readonly { id: string; inputs: readonly SettingsSection[] }[];
+
+export type DerivedObjectId = (typeof DERIVED_OBJECTS)[number]['id'];
+
+export const settingsInputsDigest = (inputs: unknown): string => sha256Hex(canonicalJson(inputs));
+
+export const derivedInputsOf =
+  (id: DerivedObjectId) =>
+  (settings: ResolvedSettings): Record<string, unknown> => {
+    const declaration = DERIVED_OBJECTS.find((object) => object.id === id);
+    if (declaration === undefined) throw new Error(`unknown derived object ${id}`);
+    return Object.fromEntries(declaration.inputs.map((section) => [section, (settings as Record<string, unknown>)[section] ?? null]));
+  };
+
+export type Lease<T> = { readonly value: T; release(): void };
+
+export type PinnedDerivation<T> = {
+  acquire(signal: AbortSignal): Promise<Lease<T>>;
+  admit(signal: AbortSignal): Promise<Lease<T>>;
+  retireAll(): Promise<void>;
+};
+
+export type PinnedDerivationOptions<T> = {
+  cache: Pick<UserSettingsCache, 'read'>;
+  inputsOf(settings: ResolvedSettings): unknown;
+  derive(settings: ResolvedSettings, previous: T | undefined): T | Promise<T>;
+  retire(object: T): void | Promise<void>;
+  onWarning(message: string): void;
+};
+
+type Entry<T> = { readonly digest: string; readonly value: T; leases: number; retired: boolean };
+
+type Waiter<T> = { readonly admitting: boolean; resolve(lease: Lease<T>): void; reject(error: unknown): void; readonly signal: AbortSignal; detach(): void };
+
+type InFlight<T> = { readonly digest: string; readonly waiters: Set<Waiter<T>>; settled: Promise<void> };
+
+export const derivationFailureText = (reason: string): string => `the settings could not be applied: ${reason}; the last applied settings stay in use`;
+
+const reasonOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+export const createPinnedDerivation = <T>({ cache, inputsOf, derive, retire, onWarning }: PinnedDerivationOptions<T>): PinnedDerivation<T> => {
+  let current: Entry<T> | undefined;
+  let inFlight: InFlight<T> | undefined;
+  const warned = new Set<string>();
+  const retirements = new Set<Promise<void>>();
+
+  const retireIfIdle = (entry: Entry<T>): void => {
+    if (entry === current || entry.leases > 0 || entry.retired) return;
+    entry.retired = true;
+    const retirement = Promise.resolve()
+      .then(() => retire(entry.value))
+      .catch((error: unknown) => onWarning(`a replaced settings object could not be closed: ${reasonOf(error)}`))
+      .finally(() => retirements.delete(retirement));
+    retirements.add(retirement);
+  };
+
+  const leaseOf = (entry: Entry<T>): Lease<T> => {
+    entry.leases += 1;
+    let released = false;
+    return {
+      value: entry.value,
+      release: () => {
+        if (released) return;
+        released = true;
+        entry.leases -= 1;
+        retireIfIdle(entry);
+      },
+    };
+  };
+
+  const settle = (flight: InFlight<T>, outcome: { entry: Entry<T> } | { error: unknown }): void => {
+    for (const waiter of flight.waiters) {
+      waiter.detach();
+      if ('entry' in outcome) waiter.resolve(leaseOf(outcome.entry));
+      else if (waiter.admitting || current === undefined) waiter.reject(outcome.error);
+      else waiter.resolve(leaseOf(current));
+    }
+    flight.waiters.clear();
+  };
+
+  const start = (digest: string, settings: ResolvedSettings): InFlight<T> => {
+    const previous = current;
+    const flight: InFlight<T> = { digest, waiters: new Set<Waiter<T>>(), settled: Promise.resolve() };
+    flight.settled = (async () => {
+      await Promise.resolve();
+      try {
+        const value = await derive(settings, previous?.value);
+        const entry: Entry<T> = { digest, value, leases: 0, retired: false };
+        current = entry;
+        warned.delete(digest);
+        inFlight = undefined;
+        settle(flight, { entry });
+        if (previous !== undefined) retireIfIdle(previous);
+      } catch (error) {
+        if (!warned.has(digest)) {
+          warned.add(digest);
+          onWarning(derivationFailureText(reasonOf(error)));
+        }
+        inFlight = undefined;
+        settle(flight, { error });
+      }
+    })();
+    return flight;
+  };
+
+  const join = (flight: InFlight<T>, admitting: boolean, signal: AbortSignal): Promise<Lease<T>> =>
+    new Promise<Lease<T>>((resolve, reject) => {
+      const onAbort = (): void => {
+        flight.waiters.delete(waiter);
+        reject(signal.reason);
+      };
+      const waiter: Waiter<T> = { admitting, resolve, reject, signal, detach: () => signal.removeEventListener('abort', onAbort) };
+      flight.waiters.add(waiter);
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+
+  const awaitSettled = (flight: InFlight<T>, signal: AbortSignal): Promise<void> =>
+    new Promise<void>((resolve, reject) => {
+      const onAbort = (): void => reject(signal.reason);
+      signal.addEventListener('abort', onAbort, { once: true });
+      void flight.settled.then(() => {
+        signal.removeEventListener('abort', onAbort);
+        resolve();
+      });
+    });
+
+  const take = async (admitting: boolean, signal: AbortSignal): Promise<Lease<T>> => {
+    signal.throwIfAborted();
+    const { settings } = cache.read();
+    const digest = settingsInputsDigest(inputsOf(settings));
+    for (;;) {
+      if (current !== undefined && current.digest === digest) return leaseOf(current);
+      if (inFlight === undefined) {
+        inFlight = start(digest, settings);
+        return join(inFlight, admitting, signal);
+      }
+      if (inFlight.digest === digest) return join(inFlight, admitting, signal);
+      await awaitSettled(inFlight, signal);
+    }
+  };
+
+  return {
+    acquire: (signal) => take(false, signal),
+    admit: (signal) => take(true, signal),
+    retireAll: async () => {
+      if (inFlight !== undefined) await inFlight.settled;
+      const last = current;
+      current = undefined;
+      if (last !== undefined) retireIfIdle(last);
+      await Promise.all([...retirements]);
+    },
+  };
+};

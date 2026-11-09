@@ -105,3 +105,5 @@ export type {
   GatewaySettings,
   NetworkSettings,
 } from './settings.ts';
+export { DERIVED_OBJECTS, createPinnedDerivation, derivationFailureText, derivedInputsOf, settingsInputsDigest } from './derived.ts';
+export type { DerivedObjectDeclaration, DerivedObjectId, Lease, PinnedDerivation, PinnedDerivationOptions, SettingsSection } from './derived.ts';
