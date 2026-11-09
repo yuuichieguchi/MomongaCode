@@ -44,8 +44,11 @@ export { createOAuthProvider } from './oauth-provider.ts';
 export type { OAuthProvider, OAuthProviderOptions } from './oauth-provider.ts';
 export { startLoopbackRedirect } from './loopback-redirect.ts';
 export type { LoopbackRedirect, LoopbackRedirectOptions } from './loopback-redirect.ts';
-export { syncDirectory, syncDirectorySync, writeFileAtomically, writeFileAtomicallySync } from './atomic-file.ts';
+export { ATOMIC_WRITE_STEP_ACTIONS, ClaimedDescriptorUnwritableError, ClaimedEntryReplacedError, atomicWriteSteps, isAtomicWriteTemporary, syncDirectory, syncDirectorySync, writeFileAtomically, writeFileAtomicallySync } from './atomic-file.ts';
 export type {
+  AtomicWriteStep,
+  DescriptorWriter,
+  DescriptorWriterSync,
   AtomicWriteFileHandle,
   AtomicWriteFileSystem,
   AtomicWriteFileSystemSync,
@@ -62,7 +65,7 @@ export type { WaitOutcome, WaitUntilOptions } from './wait-until.ts';
 export type { Random } from './random.ts';
 export { systemTiming } from './system-timing.ts';
 export { systemRandom } from './system-random.ts';
-export { nodeFileSystem, nodeFileSystemSync } from './node-file-system.ts';
+export { nodeDescriptorWriter, nodeDescriptorWriterSync, nodeFileSystem, nodeFileSystemSync } from './node-file-system.ts';
 export type { AccessCheck, FileSystem, FileSystemSync, RemoveOptions } from './node-file-system.ts';
 export { GroupNotStoppedError, forceKillGroup, groupAlive, groupTerminationBoundMs, realGroupTiming, signalGroup, signalGroupExceptLeader, terminateGroup, waitForGroupGone } from './process-group.ts';
 export type { ForceKillGroupOptions, GroupTiming, ProcessSignalSender, TerminateGroupOptions, TerminateOutcome } from './process-group.ts';
@@ -91,6 +94,14 @@ export type {
 } from './process-lock.ts';
 export { bsdFileLock, createFileLock, nodeFileLockOps, resolveKernelLock, writeHolderOrRelease } from './platform/kernel-lock.ts';
 export { createKernelLockMechanism, hostKernelLock } from './platform/host-kernel-lock.ts';
+export { EntryLockHeldError, LEFTOVER_LOCK_FORMS, SyncClaimUnsupportedError, claimNewEntry, claimNewEntrySync, claimPathOf, lockFormOf, sidecarOf, sidecarSuffixOf } from './platform/lock-form.ts';
+export type { EntryKind, LockForm } from './platform/lock-form.ts';
+export { nodeLeftoverFiles, sweepLeftovers } from './leftover-sweep.ts';
+export type { LeftoverDirectory, LeftoverFiles, LeftoverSweep, SweepLeftoversOptions } from './leftover-sweep.ts';
+export { createOwnedDirectory, createOwnedDirectorySync } from './owned-directory.ts';
+export { createLockedEntry } from './locked-entry.ts';
+export type { LockedEntry, LockedEntryFiles } from './locked-entry.ts';
+export type { OwnedDirectory, OwnedDirectoryOptions, OwnedDirectorySync } from './owned-directory.ts';
 export { StagingLinkError, createLockCapability, hostLockCapability } from './platform/lock-capability.ts';
 export type { LockCapability, LockCapabilityOptions, LockCapabilityProbe, StagingFiles } from './platform/lock-capability.ts';
 export { UNMEASURED_CAPABILITY } from './platform/lock-capability.ts';
@@ -111,7 +122,7 @@ export type { ClaimWithinOutcome, ClaimWithinRequest } from './platform/claim-wi
 export type { ClaimOutcome, FileLockOps, HeldKernelLock, InheritedLockRequest, KernelLockMechanism } from './platform/kernel-lock.ts';
 export { judgeProcessIdentity } from './process-identity.ts';
 export type { ProcessIdentity } from './process-identity.ts';
-export { FIRST_GENERATION, GENERATION_ROLES, MomongaDirectoryError, SessionTmpDirError, adapterSocketPath, ensureGenerationDirs, ensureMomongaDirs, ensureSessionTmpDir, generationLayout, managedInstancePaths, momongaLayout, momongaPaths, roleEndpoint, rotatedLogPath } from './momonga-paths.ts';
+export { FIRST_GENERATION, GENERATION_ROLES, MomongaDirectoryError, SessionTmpDirError, adapterSocketPath, ensureGenerationDirs, ensureMomongaDirs, ensureSessionTmpDir, generationLayout, leftoverDirectories, managedInstancePaths, momongaLayout, momongaPaths, roleEndpoint, rotatedLogPath } from './momonga-paths.ts';
 export type { GenerationLayout, GenerationRole, GenerationSockets, ManagedInstance, ManagedInstancePaths, RoleEndpoint } from './momonga-paths.ts';
 export { PROBE_KEY_COMPONENT_LABELS, createBinaryHashCache, createHeldHostReadings, createHostExec, probeKeyComponentLabel, readProbeKeyComponents } from './host-identity.ts';
 export type { BinaryHashCache, HeldHostReadings, HostExec, HostExecAnswer, ProbeKeyReading, ProbeKeyReadings, ReadProbeKeyComponentsRequest } from './host-identity.ts';

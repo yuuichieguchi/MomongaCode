@@ -1,7 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { applyWorkspaceStep } from '@momonga/eval';
-import { STARTUP_TIMEOUT_MS, createBinaryHashCache, createHostExec, currentGenerationLock, ensureMomongaDirs, inspectProcessLock, isProcessAlive, shortTempBase } from '@momonga/foundation';
+import { STARTUP_TIMEOUT_MS, createBinaryHashCache, createHostExec, createOwnedDirectory, currentGenerationLock, ensureMomongaDirs, hostKernelLock, inspectProcessLock, isProcessAlive, shortTempBase } from '@momonga/foundation';
+import type { KernelLockMechanism, OwnedDirectory } from '@momonga/foundation';
 import { MANAGED_SERVERS, managedServerOf } from '@momonga/protocol';
 import { DAEMON_POLL_INTERVAL_MS } from '../constants.ts';
 import { STOP_WAIT_WHEN_UNKNOWN_MS, ensureDaemon } from '../daemon/ensure-daemon.ts';
@@ -96,58 +97,80 @@ export const listEvalRoots = async (base: string, uid: number | undefined): Prom
   return roots;
 };
 
-export const nodeContextEffects = (ports: CliPorts): ContextHostEffects => ({
-  platform: ports.platform,
-  env: ports.env,
-  ownerPid: process.pid,
-  ownerHome: ports.home,
-  isAlive: isProcessAlive,
-  readSecret: (name, signal) => ports.secretStore().read(name, signal),
-  copyEndpointProbeRecord: async (probe, paths) => {
-    await copyEndpointProbeRecord(ports.files, (await pathsOf(ports)).probe, paths.probe, probe);
-  },
-  copyProbeRecord: async (source, paths) => void (await copyProbeRecord(ports.files, (await pathsOf(ports)).probe, paths.probe, source, AbortSignal.timeout(STARTUP_TIMEOUT_MS))),
-  listRoots: () => listEvalRoots(shortTempBase(ports.platform), ports.platform === 'win32' ? undefined : process.getuid?.()),
-  readOwner: (root) => readEvalOwner(ports.files, root),
-  sessionEnv: (root) => environmentSnapshot({ home: ports.home, env: caseEnvironment(ports.env, root, ports.platform) }),
-  makeRoot: () => ports.files.mkdtemp(path.join(shortTempBase(ports.platform), ROOT_PREFIX)),
-  prepare: (paths) => ensureMomongaDirs(paths),
-  writeFile: async (file, text) => {
-    await ports.files.mkdir(path.dirname(file));
-    await ports.files.writeText(file, text);
-  },
-  makeDirectory: (directory) => ports.files.mkdir(directory),
-  canonical: (directory) => fs.realpath(directory),
-  startDaemon: async (root, paths, env) => (await ensureDaemon({ ...ports, home: root, env }, paths, { lifeline: true, onNotice: stderrStopNotice(ports) })).pid,
-  daemonHolder: async (paths) => {
-    const lock = await inspectProcessLock(await currentGenerationLock(paths, 'supervisor'));
-    return lock.state === 'held' ? lock.pid : undefined;
-  },
-  terminate: async (pid) => {
-    signalProcess(pid, 'SIGTERM', false);
-    if (await gone(ports, pid, STOP_WAIT_WHEN_UNKNOWN_MS)) return;
-    signalProcess(pid, 'SIGKILL', true);
-    signalProcess(pid, 'SIGKILL', false);
-    if (!(await gone(ports, pid, KILL_WAIT_MS))) throw new Error(`the daemon with pid ${pid} did not stop after SIGTERM and SIGKILL`);
-  },
-  remove: (directory) => ports.files.rm(directory, { recursive: true }),
-  connect: (paths) => connectRuntime(paths),
-  applyStep: (cwd, step) => applyWorkspaceStep(cwd, step),
-  now: () => ports.clock.now(),
-  after: (milliseconds, signal) =>
-    new Promise<void>((resolve, reject) => {
-      signal.throwIfAborted();
-      const onAbort = (): void => {
-        clearTimeout(timer);
-        reject(signal.reason);
-      };
-      const timer =
-        milliseconds > MAX_TIMER_MS
-          ? undefined
-          : setTimeout(() => {
-              signal.removeEventListener('abort', onAbort);
-              resolve();
-            }, milliseconds);
-      signal.addEventListener('abort', onAbort, { once: true });
-    }),
-});
+type OwnedRoots = { make(): Promise<string>; remove(directory: string): Promise<void> };
+
+const ownedRoots = (ports: CliPorts, lock: KernelLockMechanism): OwnedRoots => {
+  const owned = new Map<string, OwnedDirectory>();
+  return {
+    make: async () => {
+      const root = await createOwnedDirectory({ parent: shortTempBase(ports.platform), prefix: ROOT_PREFIX, lock });
+      owned.set(root.path, root);
+      return root.path;
+    },
+    remove: async (directory) => {
+      const root = owned.get(directory);
+      owned.delete(directory);
+      if (root === undefined) await ports.files.rm(directory, { recursive: true });
+      else await root.dispose();
+    },
+  };
+};
+
+export const nodeContextEffects = (ports: CliPorts, lock: KernelLockMechanism = hostKernelLock()): ContextHostEffects => {
+  const roots = ownedRoots(ports, lock);
+  return {
+    lock,
+    platform: ports.platform,
+    env: ports.env,
+    ownerPid: process.pid,
+    ownerHome: ports.home,
+    readSecret: (name, signal) => ports.secretStore().read(name, signal),
+    copyEndpointProbeRecord: async (probe, paths) => {
+      await copyEndpointProbeRecord(ports.files, (await pathsOf(ports)).probe, paths.probe, probe);
+    },
+    copyProbeRecord: async (source, paths) => void (await copyProbeRecord(ports.files, (await pathsOf(ports)).probe, paths.probe, source, AbortSignal.timeout(STARTUP_TIMEOUT_MS))),
+    listRoots: () => listEvalRoots(shortTempBase(ports.platform), ports.platform === 'win32' ? undefined : process.getuid?.()),
+    readOwner: (root) => readEvalOwner(ports.files, root),
+    sessionEnv: (root) => environmentSnapshot({ home: ports.home, env: caseEnvironment(ports.env, root, ports.platform) }),
+    makeRoot: () => roots.make(),
+    prepare: (paths) => ensureMomongaDirs(paths),
+    writeFile: async (file, text) => {
+      await ports.files.mkdir(path.dirname(file));
+      await ports.files.writeText(file, text);
+    },
+    makeDirectory: (directory) => ports.files.mkdir(directory),
+    canonical: (directory) => fs.realpath(directory),
+    startDaemon: async (root, paths, env) => (await ensureDaemon({ ...ports, home: root, env }, paths, { lifeline: true, onNotice: stderrStopNotice(ports) })).pid,
+    daemonHolder: async (paths) => {
+      const lock = await inspectProcessLock(await currentGenerationLock(paths, 'supervisor'));
+      return lock.state === 'held' ? lock.pid : undefined;
+    },
+    terminate: async (pid) => {
+      signalProcess(pid, 'SIGTERM', false);
+      if (await gone(ports, pid, STOP_WAIT_WHEN_UNKNOWN_MS)) return;
+      signalProcess(pid, 'SIGKILL', true);
+      signalProcess(pid, 'SIGKILL', false);
+      if (!(await gone(ports, pid, KILL_WAIT_MS))) throw new Error(`the daemon with pid ${pid} did not stop after SIGTERM and SIGKILL`);
+    },
+    remove: (directory) => roots.remove(directory),
+    connect: (paths) => connectRuntime(paths),
+    applyStep: (cwd, step) => applyWorkspaceStep(cwd, step),
+    now: () => ports.clock.now(),
+    after: (milliseconds, signal) =>
+      new Promise<void>((resolve, reject) => {
+        signal.throwIfAborted();
+        const onAbort = (): void => {
+          clearTimeout(timer);
+          reject(signal.reason);
+        };
+        const timer =
+          milliseconds > MAX_TIMER_MS
+            ? undefined
+            : setTimeout(() => {
+                signal.removeEventListener('abort', onAbort);
+                resolve();
+              }, milliseconds);
+        signal.addEventListener('abort', onAbort, { once: true });
+      }),
+  };
+};

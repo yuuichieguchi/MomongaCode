@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ensureMomongaDirs } from '@momonga/foundation';
+import { ensureMomongaDirs, hostKernelLock, sidecarOf } from '@momonga/foundation';
 import { openRuntimeStore } from '@momonga/store';
 import { DAEMON_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
 import type { FakeTimers } from '@momonga/testkit';
-import { START_MS } from './helpers.ts';
+import { START_MS, makeAbandonedDirectory } from './helpers.ts';
 import {
   FIVE_MINUTES_MS,
   HOUR_MS,
@@ -84,14 +84,15 @@ describe('runtime periodic timers (fake timers and fake clock, in-process gatewa
     const known = await launched.createSession();
     const knownDir = path.join(stack.temp.paths.tmp.sessions, known.id);
     const unknownDir = path.join(stack.temp.paths.tmp.sessions, 'unknown-session');
-    fs.mkdirSync(knownDir, { recursive: true });
-    fs.mkdirSync(unknownDir, { recursive: true });
+    makeAbandonedDirectory(knownDir);
+    makeAbandonedDirectory(unknownDir);
     timers.advance(HOUR_MS - 1);
     await afterMicrotasks();
     expect(fs.existsSync(unknownDir)).toBe(true);
     timers.advance(1);
-    await waitFor(() => fs.readdirSync(stack.temp.paths.tmp.sessions).join(',') === known.id, {
-      description: 'the hourly sweep to remove the unknown session dir and its renamed copy',
+    const kept = [known.id, path.basename(sidecarOf(hostKernelLock(), knownDir))].sort().join(',');
+    await waitFor(() => fs.readdirSync(stack.temp.paths.tmp.sessions).sort().join(',') === kept, {
+      description: 'the hourly sweep to remove the unknown session dir and its sidecar under its claim',
     });
     expect(fs.existsSync(knownDir)).toBe(true);
   });

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { CONTEXT_DATASET_FORMAT, buildContextReport, expandContextDataset, parseContextDataset } from '@momonga/eval';
 import type { Transcript } from '@momonga/eval';
 import { FIRST_GENERATION, generationLayout, momongaLayout, socketPathLimit } from '@momonga/foundation';
+import { createFakeKernelLock } from '@momonga/testkit';
 import type { MomongaPaths } from '@momonga/foundation';
 import type { PublicRunEvent } from '@momonga/protocol';
 import { ContextHostError, ContextInterrupted, assertSocketsFit, caseEnvironment, liveSettingsFor, runContextLive, sweepStaleHomes, unownedHomesNotice } from '../src/eval/context-host.ts';
@@ -82,7 +83,7 @@ type Behaviour = {
   failStartOnRoot?: number;
   rootLength?: number;
   secrets?: Record<string, string>;
-  staleRoots?: { root: string; owner: number; home?: string; holder?: number }[];
+  staleRoots?: { root: string; owner: number; home?: string; holder?: number; held?: boolean }[];
   unreadableRoots?: string[];
   legacyRoots?: string[];
   canonicalPrefix?: string;
@@ -94,7 +95,10 @@ const OWNER_HOME = '/home/person';
 
 const OTHER_HOME = '/home/someone-else';
 
+const HOME_SIDECAR_SUFFIX = '.lock';
+
 const harness = (behaviour: Behaviour = {}) => {
+  const lock = createFakeKernelLock({ inheritable: false });
   const files = new Map<string, string>();
   const startEnvs: Record<string, string>[] = [];
   const probeCopies: string[] = [];
@@ -152,6 +156,7 @@ const harness = (behaviour: Behaviour = {}) => {
     return runtime as unknown as ContextRuntime;
   };
   const effects: ContextHostEffects = {
+    lock,
     platform: 'darwin',
     env: { PATH: '/usr/bin', HOME: '/home/person', XDG_CACHE_HOME: '/home/person/cache', UPSTREAM_KEY: 'k' },
     sessionEnv: async (root) => {
@@ -165,7 +170,6 @@ const harness = (behaviour: Behaviour = {}) => {
     },
     ownerPid: OWNER,
     ownerHome: OWNER_HOME,
-    isAlive: (pid) => pid === OWNER || alive.has(pid),
     readSecret: async (name) => {
       secretReads.push(name);
       const value = behaviour.secrets?.[name];
@@ -228,8 +232,9 @@ const harness = (behaviour: Behaviour = {}) => {
       alive.add(stale.holder);
       holders.set(stale.root, stale.holder);
     }
+    if (stale.held === true) lock.holdExternally(`${stale.root}${HOME_SIDECAR_SUFFIX}`, stale.owner);
   }
-  return { effects, sessionRoots, roots, alive, terminated, stopped, memories, trusted, files, startEnvs, probeCopies, endpointProbeCopies, secretReads, removedDirectories, inputs, addedRules, adopted, order };
+  return { lock, effects, sessionRoots, roots, alive, terminated, stopped, memories, trusted, files, startEnvs, probeCopies, endpointProbeCopies, secretReads, removedDirectories, inputs, addedRules, adopted, order };
 };
 
 const input = (extra: Partial<Parameters<typeof runContextLive>[1]> = {}): Parameters<typeof runContextLive>[1] => ({
@@ -470,8 +475,8 @@ describe('the shipped context dataset with the fake model', () => {
 });
 
 describe('a home left by a CLI that was killed', () => {
-  it('is removed at the next start, with its daemon, when the owner is gone', async () => {
-    const context = harness({ staleRoots: [{ root: '/tmp/mc-stale0', owner: 99, holder: 5000 }] });
+  it('is removed at the next start, with its daemon, when no one holds the lock of its sidecar, even when its marker names a live pid', async () => {
+    const context = harness({ staleRoots: [{ root: '/tmp/mc-stale0', owner: OWNER, holder: 5000 }] });
     expect(await sweepStaleHomes(context.effects)).toEqual({ removed: ['/tmp/mc-stale0'], unreadable: 0, unowned: [] });
     expect(context.terminated).toEqual([5000]);
     expect(context.removedDirectories).toEqual(['/tmp/mc-stale0']);
@@ -511,8 +516,8 @@ describe('a home left by a CLI that was killed', () => {
     expect(context.roots.size).toBe(2);
   });
 
-  it('is left alone when its owner is still running, or when it names no owner', async () => {
-    const context = harness({ staleRoots: [{ root: '/tmp/mc-live', owner: OWNER, holder: 5000 }, { root: '/tmp/mc-foreign', owner: 99 }] });
+  it('is left alone while the lock of its sidecar is held, even when its marker names a dead pid, and when it names no owner', async () => {
+    const context = harness({ staleRoots: [{ root: '/tmp/mc-live', owner: 99, holder: 5000, held: true }, { root: '/tmp/mc-foreign', owner: 99 }] });
     context.files.delete('/tmp/mc-foreign/.momonga-eval-owner');
     expect(await sweepStaleHomes(context.effects)).toEqual({ removed: [], unreadable: 0, unowned: [] });
     expect(context.removedDirectories).toEqual([]);

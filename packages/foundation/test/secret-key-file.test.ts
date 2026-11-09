@@ -71,12 +71,12 @@ describe('secretKeyFile', () => {
     expect(hex(secretKeyFile(keyPath))).toBe(planted.toString('hex'));
   });
 
-  it('leaves no temporary files behind and sweeps stale ones', () => {
+  it('leaves no temporary of its own behind and sweeps nothing, because the gateway start sweeps this directory (S1)', () => {
     const dir = makeDir();
     const keyPath = path.join(dir, 'gateway.key');
     fs.writeFileSync(`${keyPath}.deadbeef.tmp`, 'stale', { mode: 0o600 });
     secretKeyFile(keyPath);
-    expect(fs.readdirSync(dir)).toEqual(['gateway.key']);
+    expect(fs.readdirSync(dir).sort()).toEqual(['gateway.key', 'gateway.key.deadbeef.tmp']);
   });
 
   it('gives concurrent creators in separate processes the same key', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
@@ -145,18 +145,18 @@ const exitedPid = (): number => {
   return result.pid;
 };
 
-describe('secretKeyFile stale temporaries with an existing key', () => {
-  it('sweeps a stale tmp file of a dead pid even when the key already exists', () => {
+describe('secretKeyFile reads an existing key without sweeping (S1)', () => {
+  it('leaves an unheld temporary named with a dead pid in place when the key already exists', () => {
     const dir = makeDir();
     const keyPath = path.join(dir, 'gateway.key');
     const created = secretKeyFile(keyPath);
     const stale = `${keyPath}.${exitedPid()}.0123456789ab.tmp`;
     fs.writeFileSync(stale, 'stale', { mode: 0o600 });
     expect(hex(secretKeyFile(keyPath))).toBe(hex(created));
-    expect(fs.existsSync(stale)).toBe(false);
+    expect(fs.existsSync(stale)).toBe(true);
   });
 
-  it('keeps a tmp file that belongs to a live pid', () => {
+  it('decides nothing by pid: temporaries named with a live pid and with a dead pid both remain after a read', () => {
     const dir = makeDir();
     const keyPath = path.join(dir, 'gateway.key');
     secretKeyFile(keyPath);
@@ -166,6 +166,6 @@ describe('secretKeyFile stale temporaries with an existing key', () => {
     fs.writeFileSync(stale, 'stale', { mode: 0o600 });
     secretKeyFile(keyPath);
     expect(fs.existsSync(live)).toBe(true);
-    expect(fs.existsSync(stale)).toBe(false);
+    expect(fs.existsSync(stale)).toBe(true);
   });
 });

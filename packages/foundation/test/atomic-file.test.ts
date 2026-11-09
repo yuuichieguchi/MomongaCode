@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { writeFileAtomically, writeFileAtomicallySync } from '@momonga/foundation';
-import type { AtomicWriteFileSystem, AtomicWriteFileSystemSync, Random } from '@momonga/foundation';
+import { atomicWriteSteps, writeFileAtomically, writeFileAtomicallySync } from '@momonga/foundation';
+import type { AtomicWriteFileSystem, AtomicWriteFileSystemSync, AtomicWriteStep, ClaimOutcome, KernelLockMechanism, LockForm, Random } from '@momonga/foundation';
 
 const DIRECTORY = '/state';
 const TARGET = `${DIRECTORY}/record.json`;
 const MODE = 0o600;
+const SIDECAR_SUFFIX = '.sqlite';
+const FORMS: readonly LockForm[] = ['entry', 'sidecar'];
 
 const errnoError = (code: string, message: string): NodeJS.ErrnoException => Object.assign(new Error(`${code}: ${message}`), { code });
 
@@ -22,21 +24,30 @@ const fixedRandom = (hexes: readonly string[]): Random => {
   };
 };
 
-const temporaryOf = (hex: string): string => `${TARGET}.${process.pid}.${hex}.tmp`;
+const temporaryOf = (hex: string): string => `${DIRECTORY}/.record.json.${hex}.tmp`;
 
 type Recording = AtomicWriteFileSystem &
   AtomicWriteFileSystemSync & {
     readonly ops: string[];
     readonly files: Map<string, Uint8Array>;
+    readonly lock: KernelLockMechanism;
     failAt(index: number, error: Error): void;
   };
 
-const recordingFileSystem = (initial: Readonly<Record<string, string>> = {}): Recording => {
+const recordingFileSystem = (form: LockForm, initial: Readonly<Record<string, string>> = {}): Recording => {
   const files = new Map<string, Uint8Array>(Object.entries(initial).map(([file, text]) => [file, new TextEncoder().encode(text)]));
   const directories = new Set<string>([DIRECTORY]);
+  const held = new Set<string>();
   const ops: string[] = [];
   let failure: { index: number; error: Error } | undefined;
   let fsOps = 0;
+  let nextDescriptor = 300;
+  const descriptorFiles = new Map<number, string>();
+  const fileOf = (descriptor: number): string => {
+    const file = descriptorFiles.get(descriptor);
+    if (file === undefined) throw errnoError('EBADF', `descriptor ${descriptor}`);
+    return file;
+  };
   const step = (op: string): void => {
     const index = fsOps;
     fsOps += 1;
@@ -49,10 +60,10 @@ const recordingFileSystem = (initial: Readonly<Record<string, string>> = {}): Re
       step(`open-directory ${file}`);
       return file;
     }
-    if (flags !== 'wx') throw new Error(`unexpected open of ${file} with ${flags}`);
-    step(`open-exclusive ${file} ${(mode ?? 0).toString(8)}`);
-    if (files.has(file)) throw errnoError('EEXIST', file);
-    files.set(file, new Uint8Array());
+    step(`open ${file} ${(mode ?? 0).toString(8)}`);
+    if (flags.includes('x') && files.has(file)) throw errnoError('EEXIST', file);
+    if (!flags.includes('x') && !held.has(file)) throw new Error(`${file} was opened without exclusive create and without its lock`);
+    if (!files.has(file) || flags.startsWith('w')) files.set(file, new Uint8Array());
     return file;
   };
   const writeTo = (file: string, content: string | Uint8Array): void => {
@@ -77,10 +88,51 @@ const recordingFileSystem = (initial: Readonly<Record<string, string>> = {}): Re
     ops.push(`rm ${file}`);
     files.delete(file);
   };
+  const lockFileOf = (lockPath: string): string => (form === 'entry' ? lockPath : `${lockPath}${SIDECAR_SUFFIX}`);
+  const claimSync = (lockPath: string): ClaimOutcome => {
+    const lockFile = lockFileOf(lockPath);
+    step(`claim ${lockFile}`);
+    if (held.has(lockFile)) return { kind: 'held' };
+    held.add(lockFile);
+    ops.push(`claimed ${lockFile}`);
+    if (!files.has(lockFile)) files.set(lockFile, new Uint8Array());
+    const descriptor = form === 'entry' ? nextDescriptor++ : undefined;
+    if (descriptor !== undefined) descriptorFiles.set(descriptor, lockFile);
+    const release = (): void => {
+      if (!held.delete(lockFile)) return;
+      ops.push(`release ${lockFile}`);
+    };
+    return {
+      kind: 'claimed',
+      lock: {
+        descriptor,
+        writeHolder: () => undefined,
+        release,
+        dispose: () => {
+          removeFile(lockFile);
+          release();
+        },
+      },
+    };
+  };
   const tick = (): Promise<void> => new Promise<void>((resolve) => setImmediate(resolve));
+  const lock: KernelLockMechanism = {
+    name: form === 'entry' ? 'file-lock' : 'sqlite-lock',
+    claim: async (lockPath) => {
+      await tick();
+      return claimSync(lockPath);
+    },
+    claimSync,
+    isHeld: async (lockPath) => held.has(lockFileOf(lockPath)),
+    readHolder: async () => undefined,
+    readHolderSync: () => undefined,
+    claimInheritable: undefined,
+    adoptInherited: undefined,
+  };
   return {
     ops,
     files,
+    lock,
     failAt: (index, error) => {
       failure = { index, error };
     },
@@ -114,6 +166,25 @@ const recordingFileSystem = (initial: Readonly<Record<string, string>> = {}): Re
       await tick();
       removeFile(file);
     },
+    descriptors: {
+      write: async (descriptor, content) => {
+        await tick();
+        writeTo(fileOf(descriptor), content);
+      },
+      sync: async (descriptor) => {
+        await tick();
+        step(`fsync ${fileOf(descriptor)}`);
+      },
+      chmod: async (descriptor, mode) => {
+        await tick();
+        step(`fchmod ${fileOf(descriptor)} ${mode.toString(8)}`);
+      },
+    },
+    descriptorsSync: {
+      write: (descriptor, content) => writeTo(fileOf(descriptor), content),
+      sync: (descriptor) => step(`fsync ${fileOf(descriptor)}`),
+      chmod: (descriptor, mode) => step(`fchmod ${fileOf(descriptor)} ${mode.toString(8)}`),
+    },
     openSync: (file, flags, mode) => openFile(file, flags, mode),
     writeFileSync: (handle, content) => writeTo(handle, content),
     fsyncSync: (handle) => step(`fsync ${handle}`),
@@ -140,27 +211,28 @@ const COMBINATIONS: Combination[] = (['replace', 'create'] as const).flatMap((pu
 const HEX = 'a1b2c3d4e5f6';
 const TEMPORARY = temporaryOf(HEX);
 
-const expectedSequence = (combination: Combination): string[] => [
-  `open-exclusive ${TEMPORARY} 600`,
-  `write ${TEMPORARY}`,
-  `fsync ${TEMPORARY}`,
-  `close ${TEMPORARY}`,
-  ...(combination.before ? ['beforePublish'] : []),
-  combination.publish === 'replace' ? `rename ${TEMPORARY} ${TARGET}` : `link ${TEMPORARY} ${TARGET}`,
-  ...(combination.after ? ['afterPublish'] : []),
-  ...(combination.publish === 'create' ? [`rm ${TEMPORARY}`] : []),
-  `open-directory ${DIRECTORY}`,
-  `fsync ${DIRECTORY}`,
-  `close ${DIRECTORY}`,
-];
+const STEPS_BY_HAND: Record<LockForm, Record<'replace' | 'create', readonly AtomicWriteStep[]>> = {
+  entry: {
+    replace: ['createLocked', 'write', 'publish', 'release'],
+    create: ['createLocked', 'write', 'publish', 'unlinkStaged', 'release'],
+  },
+  sidecar: {
+    replace: ['lockSidecar', 'createTemporary', 'write', 'publish', 'unlinkSidecar', 'release'],
+    create: ['lockSidecar', 'createTemporary', 'write', 'publish', 'unlinkStaged', 'unlinkSidecar', 'release'],
+  },
+};
 
-const asyncOptions = (combination: Combination, ops: string[], fail?: { at: 'beforePublish' | 'afterPublish'; error: Error }) => ({
+const lockFileOf = (form: LockForm): string => (form === 'entry' ? TEMPORARY : `${TEMPORARY}${SIDECAR_SUFFIX}`);
+
+const asyncOptions = (fs: Recording, combination: Combination, steps: AtomicWriteStep[] = [], fail?: { at: 'beforePublish' | 'afterPublish'; error: Error }) => ({
   mode: MODE,
   publish: combination.publish,
+  lock: fs.lock,
+  onStep: (name: AtomicWriteStep): void => void steps.push(name),
   ...(combination.before
     ? {
         beforePublish: async (): Promise<void> => {
-          ops.push('beforePublish');
+          fs.ops.push('beforePublish');
           if (fail?.at === 'beforePublish') throw fail.error;
         },
       }
@@ -168,142 +240,161 @@ const asyncOptions = (combination: Combination, ops: string[], fail?: { at: 'bef
   ...(combination.after
     ? {
         afterPublish: async (): Promise<void> => {
-          ops.push('afterPublish');
+          fs.ops.push('afterPublish');
           if (fail?.at === 'afterPublish') throw fail.error;
         },
       }
     : {}),
 });
 
-const syncOptions = (combination: Combination, ops: string[]) => ({
+const syncOptions = (fs: Recording, combination: Combination, steps: AtomicWriteStep[] = []) => ({
   mode: MODE,
   publish: combination.publish,
-  ...(combination.before ? { beforePublish: (): void => void ops.push('beforePublish') } : {}),
-  ...(combination.after ? { afterPublish: (): void => void ops.push('afterPublish') } : {}),
+  lock: fs.lock,
+  onStep: (name: AtomicWriteStep): void => void steps.push(name),
+  ...(combination.before ? { beforePublish: (): void => void fs.ops.push('beforePublish') } : {}),
+  ...(combination.after ? { afterPublish: (): void => void fs.ops.push('afterPublish') } : {}),
 });
 
 const bytes = (content: string | Uint8Array): Uint8Array => (typeof content === 'string' ? new TextEncoder().encode(content) : content);
 
-const temporaries = (files: Map<string, Uint8Array>): string[] => [...files.keys()].filter((file) => file.endsWith('.tmp'));
+const leftovers = (files: Map<string, Uint8Array>): string[] => [...files.keys()].filter((file) => file !== TARGET);
 
-describe('writeFileAtomically: P-A1 operation order', () => {
-  for (const combination of COMBINATIONS) {
-    it(`records the one step list for ${combination.label}`, async () => {
-      const fs = recordingFileSystem();
-      const result = await writeFileAtomically(fs, fixedRandom([HEX]), TARGET, combination.content, asyncOptions(combination, fs.ops));
-      expect(fs.ops).toEqual(expectedSequence(combination));
-      expect(fs.files.get(TARGET)).toEqual(bytes(combination.content));
-      expect(temporaries(fs.files)).toEqual([]);
-      if (combination.publish === 'create') expect(result).toEqual({ created: true });
-    });
-  }
-
-  it('replaces an existing file when publish is replace', async () => {
-    const fs = recordingFileSystem({ [TARGET]: 'old' });
-    await writeFileAtomically(fs, fixedRandom([HEX]), TARGET, 'new', { mode: MODE });
-    expect(new TextDecoder().decode(fs.files.get(TARGET))).toBe('new');
-    expect(fs.ops).toContain(`rename ${TEMPORARY} ${TARGET}`);
-  });
-
-  it('create against an existing file returns created false, keeps the winner, skips afterPublish and removes its temporary file', async () => {
-    const fs = recordingFileSystem({ [TARGET]: 'winner' });
-    const combination: Combination = { publish: 'create', before: true, after: true, content: 'loser', label: '' };
-    const result = await writeFileAtomically(fs, fixedRandom([HEX]), TARGET, 'loser', asyncOptions(combination, fs.ops));
-    expect(result).toEqual({ created: false });
-    expect(new TextDecoder().decode(fs.files.get(TARGET))).toBe('winner');
-    expect(fs.ops).toEqual([
-      `open-exclusive ${TEMPORARY} 600`,
-      `write ${TEMPORARY}`,
-      `fsync ${TEMPORARY}`,
-      `close ${TEMPORARY}`,
-      'beforePublish',
-      `link ${TEMPORARY} ${TARGET}`,
-      `rm ${TEMPORARY}`,
-      `open-directory ${DIRECTORY}`,
-      `fsync ${DIRECTORY}`,
-      `close ${DIRECTORY}`,
-    ]);
-    expect(temporaries(fs.files)).toEqual([]);
-  });
-});
-
-describe('writeFileAtomically: no temporary file remains after a failure at any step', () => {
-  for (const combination of COMBINATIONS) {
-    const fsSteps = expectedSequence(combination).filter((op) => op !== 'beforePublish' && op !== 'afterPublish' && !op.startsWith('rm '));
-    const publishIndex = fsSteps.findIndex((op) => op.startsWith('rename ') || op.startsWith('link '));
-    fsSteps.forEach((op, index) => {
-      it(`${combination.label}: failure at ${op.split(' ')[0]} (step ${index})`, async () => {
-        const fs = recordingFileSystem(combination.publish === 'replace' ? { [TARGET]: 'old' } : {});
-        const failure = errnoError('EIO', `injected at step ${index}`);
-        fs.failAt(index, failure);
-        await expect(writeFileAtomically(fs, fixedRandom([HEX]), TARGET, combination.content, asyncOptions(combination, fs.ops))).rejects.toBe(failure);
-        expect(temporaries(fs.files)).toEqual([]);
-        if (index <= publishIndex) {
-          if (combination.publish === 'replace') expect(new TextDecoder().decode(fs.files.get(TARGET))).toBe('old');
-          else expect(fs.files.has(TARGET)).toBe(false);
-        }
+for (const form of FORMS) {
+  describe(`writeFileAtomically, ${form} form: the one step list (S3) and R1 to R3`, () => {
+    for (const combination of COMBINATIONS) {
+      it(`runs the step list of LeftoverCleanup.tla for ${combination.label}`, async () => {
+        const fs = recordingFileSystem(form);
+        const steps: AtomicWriteStep[] = [];
+        const result = await writeFileAtomically(fs, fixedRandom([HEX]), TARGET, combination.content, asyncOptions(fs, combination, steps));
+        expect(steps).toEqual(STEPS_BY_HAND[form][combination.publish]);
+        expect(atomicWriteSteps(form, combination.publish)).toEqual(STEPS_BY_HAND[form][combination.publish]);
+        expect(fs.files.get(TARGET)).toEqual(bytes(combination.content));
+        expect(leftovers(fs.files)).toEqual([]);
+        if (combination.publish === 'create') expect(result).toEqual({ created: true });
       });
-    });
-    for (const at of ['beforePublish', 'afterPublish'] as const) {
-      if ((at === 'beforePublish' && !combination.before) || (at === 'afterPublish' && !combination.after)) continue;
-      it(`${combination.label}: failure in ${at}`, async () => {
-        const fs = recordingFileSystem();
-        const failure = new Error(`${at} refused`);
-        await expect(writeFileAtomically(fs, fixedRandom([HEX]), TARGET, combination.content, asyncOptions(combination, fs.ops, { at, error: failure }))).rejects.toBe(failure);
-        expect(temporaries(fs.files)).toEqual([]);
-        if (at === 'beforePublish') {
-          expect(fs.files.has(TARGET)).toBe(false);
-          expect(fs.ops.some((recorded) => recorded.startsWith('rename ') || recorded.startsWith('link '))).toBe(false);
-        }
+
+      it(`claims the lock before the temporary exists and releases it only after every name it made is unlinked, for ${combination.label}`, async () => {
+        const fs = recordingFileSystem(form);
+        await writeFileAtomically(fs, fixedRandom([HEX]), TARGET, combination.content, asyncOptions(fs, combination));
+        expect(fs.ops[0]).toBe(`claim ${lockFileOf(form)}`);
+        const release = fs.ops.indexOf(`release ${lockFileOf(form)}`);
+        expect(release).toBeGreaterThan(0);
+        const publish = fs.ops.findIndex((op) => op === `rename ${TEMPORARY} ${TARGET}` || op === `link ${TEMPORARY} ${TARGET}`);
+        expect(publish).toBeGreaterThan(0);
+        expect(publish).toBeLessThan(release);
+        if (combination.publish === 'create') expect(fs.ops.indexOf(`rm ${TEMPORARY}`)).toBeLessThan(release);
+        if (form === 'sidecar') expect(fs.ops.indexOf(`rm ${lockFileOf(form)}`)).toBeLessThan(release);
       });
     }
-  }
-});
 
-describe('writeFileAtomically: P-A2 create with two concurrent callers', () => {
-  it('gives exactly one created true and the loser reads the winner bytes', async () => {
-    const fs = recordingFileSystem();
-    const random = fixedRandom(['000000000001', '000000000002']);
-    const [first, second] = await Promise.all([
-      writeFileAtomically(fs, random, TARGET, 'first', { mode: MODE, publish: 'create' }),
-      writeFileAtomically(fs, random, TARGET, 'second', { mode: MODE, publish: 'create' }),
-    ]);
-    const outcomes = [first, second].map((result) => result.created);
-    expect(outcomes.filter(Boolean)).toHaveLength(1);
-    const winner = outcomes[0] === true ? 'first' : 'second';
-    expect(new TextDecoder().decode(fs.files.get(TARGET))).toBe(winner);
-    expect(temporaries(fs.files)).toEqual([]);
-  });
-});
-
-describe('writeFileAtomicallySync: the same step list as the async function', () => {
-  for (const combination of COMBINATIONS) {
-    it(`records the identical sequence for ${combination.label}`, async () => {
-      const asyncFs = recordingFileSystem();
-      await writeFileAtomically(asyncFs, fixedRandom([HEX]), TARGET, combination.content, asyncOptions(combination, asyncFs.ops));
-      const syncFs = recordingFileSystem();
-      const result = writeFileAtomicallySync(syncFs, fixedRandom([HEX]), TARGET, combination.content, syncOptions(combination, syncFs.ops));
-      expect(syncFs.ops).toEqual(asyncFs.ops);
-      expect(syncFs.ops).toEqual(expectedSequence(combination));
-      expect(syncFs.files.get(TARGET)).toEqual(bytes(combination.content));
-      if (combination.publish === 'create') expect(result).toEqual({ created: true });
+    it('replaces an existing file when publish is replace', async () => {
+      const fs = recordingFileSystem(form, { [TARGET]: 'old' });
+      await writeFileAtomically(fs, fixedRandom([HEX]), TARGET, 'new', { mode: MODE, lock: fs.lock });
+      expect(new TextDecoder().decode(fs.files.get(TARGET))).toBe('new');
+      expect(fs.ops).toContain(`rename ${TEMPORARY} ${TARGET}`);
+      expect(leftovers(fs.files)).toEqual([]);
     });
-  }
 
-  it('create against an existing file returns created false and leaves no temporary file', () => {
-    const fs = recordingFileSystem({ [TARGET]: 'winner' });
-    const result = writeFileAtomicallySync(fs, fixedRandom([HEX]), TARGET, 'loser', { mode: MODE, publish: 'create' });
-    expect(result).toEqual({ created: false });
-    expect(new TextDecoder().decode(fs.files.get(TARGET))).toBe('winner');
-    expect(temporaries(fs.files)).toEqual([]);
+    it('create against an existing file returns created false, keeps the winner, skips afterPublish and unlinks its temporary before the release', async () => {
+      const fs = recordingFileSystem(form, { [TARGET]: 'winner' });
+      const combination: Combination = { publish: 'create', before: true, after: true, content: 'loser', label: '' };
+      const result = await writeFileAtomically(fs, fixedRandom([HEX]), TARGET, 'loser', asyncOptions(fs, combination));
+      expect(result).toEqual({ created: false });
+      expect(new TextDecoder().decode(fs.files.get(TARGET))).toBe('winner');
+      expect(fs.ops).not.toContain('afterPublish');
+      expect(fs.ops.indexOf(`rm ${TEMPORARY}`)).toBeLessThan(fs.ops.indexOf(`release ${lockFileOf(form)}`));
+      expect(leftovers(fs.files)).toEqual([]);
+    });
   });
 
-  it('removes its temporary file and rethrows when the publish fails', () => {
-    const fs = recordingFileSystem({ [TARGET]: 'old' });
-    const failure = errnoError('EIO', 'rename failed');
-    fs.failAt(4, failure);
-    expect(() => writeFileAtomicallySync(fs, fixedRandom([HEX]), TARGET, 'new', { mode: MODE })).toThrow(failure);
-    expect(temporaries(fs.files)).toEqual([]);
-    expect(new TextDecoder().decode(fs.files.get(TARGET))).toBe('old');
+  describe(`writeFileAtomically, ${form} form: no temporary or sidecar remains after a failure at any step`, () => {
+    for (const combination of COMBINATIONS) {
+      it(`${combination.label}: a failure injected at each recorded step`, async () => {
+        const probe = recordingFileSystem(form, combination.publish === 'replace' ? { [TARGET]: 'old' } : {});
+        await writeFileAtomically(probe, fixedRandom([HEX]), TARGET, combination.content, asyncOptions(probe, combination));
+        const failable = probe.ops.filter((op) => op !== 'beforePublish' && op !== 'afterPublish' && !op.startsWith('rm ') && !op.startsWith('release ') && !op.startsWith('claimed '));
+        const publishIndex = failable.findIndex((op) => op.startsWith('rename ') || op.startsWith('link '));
+        expect(publishIndex).toBeGreaterThan(0);
+        for (let index = 0; index < failable.length; index += 1) {
+          const fs = recordingFileSystem(form, combination.publish === 'replace' ? { [TARGET]: 'old' } : {});
+          const failure = errnoError('EIO', `injected at step ${index}`);
+          fs.failAt(index, failure);
+          await expect(writeFileAtomically(fs, fixedRandom([HEX]), TARGET, combination.content, asyncOptions(fs, combination))).rejects.toBe(failure);
+          expect(leftovers(fs.files), `failure at ${failable[index]}`).toEqual([]);
+          expect(fs.ops.filter((op) => op.startsWith('claimed ')).length, `failure at ${failable[index]}`).toBe(fs.ops.filter((op) => op.startsWith('release ')).length);
+          if (index <= publishIndex && combination.publish === 'create') expect(fs.files.has(TARGET)).toBe(false);
+        }
+      });
+
+      for (const at of ['beforePublish', 'afterPublish'] as const) {
+        if ((at === 'beforePublish' && !combination.before) || (at === 'afterPublish' && !combination.after)) continue;
+        it(`${combination.label}: failure in ${at}`, async () => {
+          const fs = recordingFileSystem(form);
+          const failure = new Error(`${at} refused`);
+          await expect(writeFileAtomically(fs, fixedRandom([HEX]), TARGET, combination.content, asyncOptions(fs, combination, [], { at, error: failure }))).rejects.toBe(failure);
+          if (at === 'beforePublish') {
+            expect(leftovers(fs.files)).toEqual([]);
+            expect(fs.ops.some((recorded) => recorded.startsWith('rename ') || recorded.startsWith('link '))).toBe(false);
+          }
+        });
+      }
+    }
   });
-});
+
+  describe(`writeFileAtomically, ${form} form: create with two concurrent callers`, () => {
+    it('gives exactly one created true and the loser reads the winner bytes', async () => {
+      const fs = recordingFileSystem(form);
+      const random = fixedRandom(['000000000001', '000000000002']);
+      const [first, second] = await Promise.all([
+        writeFileAtomically(fs, random, TARGET, 'first', { mode: MODE, publish: 'create', lock: fs.lock }),
+        writeFileAtomically(fs, random, TARGET, 'second', { mode: MODE, publish: 'create', lock: fs.lock }),
+      ]);
+      const outcomes = [first, second].map((result) => result.created);
+      expect(outcomes.filter(Boolean)).toHaveLength(1);
+      const winner = outcomes[0] === true ? 'first' : 'second';
+      expect(new TextDecoder().decode(fs.files.get(TARGET))).toBe(winner);
+      expect(leftovers(fs.files)).toEqual([]);
+    });
+  });
+
+  describe(`writeFileAtomicallySync, ${form} form: the same step list in the same order as the async writer (S3)`, () => {
+    for (const combination of COMBINATIONS) {
+      it(`records the identical steps and operations for ${combination.label}`, async () => {
+        const asyncFs = recordingFileSystem(form);
+        const asyncSteps: AtomicWriteStep[] = [];
+        await writeFileAtomically(asyncFs, fixedRandom([HEX]), TARGET, combination.content, asyncOptions(asyncFs, combination, asyncSteps));
+        const syncFs = recordingFileSystem(form);
+        const syncSteps: AtomicWriteStep[] = [];
+        const result = writeFileAtomicallySync(syncFs, fixedRandom([HEX]), TARGET, combination.content, syncOptions(syncFs, combination, syncSteps));
+        expect(syncSteps).toEqual(STEPS_BY_HAND[form][combination.publish]);
+        expect(syncSteps).toEqual(asyncSteps);
+        expect(syncFs.ops).toEqual(asyncFs.ops);
+        expect(syncFs.files.get(TARGET)).toEqual(bytes(combination.content));
+        expect(leftovers(syncFs.files)).toEqual([]);
+        if (combination.publish === 'create') expect(result).toEqual({ created: true });
+      });
+    }
+
+    it('create against an existing file returns created false and leaves no temporary or sidecar', () => {
+      const fs = recordingFileSystem(form, { [TARGET]: 'winner' });
+      const result = writeFileAtomicallySync(fs, fixedRandom([HEX]), TARGET, 'loser', { mode: MODE, publish: 'create', lock: fs.lock });
+      expect(result).toEqual({ created: false });
+      expect(new TextDecoder().decode(fs.files.get(TARGET))).toBe('winner');
+      expect(leftovers(fs.files)).toEqual([]);
+    });
+
+    it('unlinks its temporary and sidecar, releases, and rethrows when the publish fails', () => {
+      const fs = recordingFileSystem(form, { [TARGET]: 'old' });
+      const failure = errnoError('EIO', 'rename failed');
+      const probe = recordingFileSystem(form, { [TARGET]: 'old' });
+      writeFileAtomicallySync(probe, fixedRandom([HEX]), TARGET, 'new', { mode: MODE, lock: probe.lock });
+      const failable = probe.ops.filter((op) => !op.startsWith('rm ') && !op.startsWith('release ') && !op.startsWith('claimed '));
+      fs.failAt(failable.findIndex((op) => op.startsWith('rename ')), failure);
+      expect(() => writeFileAtomicallySync(fs, fixedRandom([HEX]), TARGET, 'new', { mode: MODE, lock: fs.lock })).toThrow(failure);
+      expect(leftovers(fs.files)).toEqual([]);
+      expect(fs.ops).toContain(`release ${lockFileOf(form)}`);
+      expect(new TextDecoder().decode(fs.files.get(TARGET))).toBe('old');
+    });
+  });
+}

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { describe, expect, it } from 'vitest';
 import { FIRST_GENERATION, assertSocketPathLength, ensureMomongaDirs, generationLayout, ensureSessionTmpDir, isPipePath, listenUnix, momongaLayout, momongaPaths, pipePathFor } from '@momonga/foundation';
+import { realProcessTestSignal } from '@momonga/testkit';
 import type { CommandRunner } from '@momonga/foundation';
 
 describe('win32 layout', () => {
@@ -71,20 +72,20 @@ describe('listening on a named pipe', () => {
   it('binds the pipe without touching the filesystem', async () => {
     const pipe = pipePathFor('C:\\Users\\Alice', 'gateway');
     const { server, listened } = fakeServer('listening');
-    await listenUnix(server, pipe);
+    await listenUnix(server, pipe, undefined, realProcessTestSignal());
     expect(listened).toEqual([pipe]);
   });
 
   it('reports a second server on the same pipe as already in use', async () => {
     const pipe = pipePathFor('C:\\Users\\Alice', 'gateway');
     const { server } = fakeServer(Object.assign(new Error('EADDRINUSE'), { code: 'EADDRINUSE' }));
-    await expect(listenUnix(server, pipe)).rejects.toThrow(`${pipe} is already in use by a live server`);
+    await expect(listenUnix(server, pipe, undefined, realProcessTestSignal())).rejects.toThrow(`${pipe} is already in use by a live server`);
   });
 
   it('propagates other bind failures unchanged', async () => {
     const pipe = pipePathFor('C:\\Users\\Alice', 'gateway');
     const { server } = fakeServer(Object.assign(new Error('EACCES'), { code: 'EACCES' }));
-    await expect(listenUnix(server, pipe)).rejects.toThrow('EACCES');
+    await expect(listenUnix(server, pipe, undefined, realProcessTestSignal())).rejects.toThrow('EACCES');
   });
 });
 

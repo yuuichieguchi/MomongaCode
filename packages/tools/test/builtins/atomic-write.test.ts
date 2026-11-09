@@ -17,8 +17,27 @@ const patch = <K extends 'open' | 'realpath' | 'mkdir' | 'stat' | 'rename'>(name
   });
 };
 
-const isTemporaryFor = (candidate: string, target: string): boolean =>
-  path.dirname(candidate) === path.dirname(target) && path.basename(candidate).startsWith(`.${path.basename(target)}.`) && candidate.endsWith('.tmp');
+const SIDECAR_SUFFIXES: readonly string[] = ['.sqlite', '.lock'];
+
+const entryOf = (candidate: string): string => {
+  const suffix = SIDECAR_SUFFIXES.find((ending) => candidate.endsWith(ending));
+  return suffix === undefined ? candidate : candidate.slice(0, -suffix.length);
+};
+
+const isTemporaryFor = (candidate: string, target: string): boolean => {
+  const entry = entryOf(candidate);
+  return path.dirname(entry) === path.dirname(target) && path.basename(entry).startsWith(`.${path.basename(target)}.`) && entry.endsWith('.tmp');
+};
+
+const patchOpenSync = (replacement: typeof fs.openSync): void => {
+  const original = fs.openSync;
+  fs.openSync = replacement;
+  onCleanup(() => {
+    fs.openSync = original;
+  });
+};
+
+const createsAt = (flags: unknown): boolean => typeof flags === 'number' ? (flags & fs.constants.O_CREAT) !== 0 : typeof flags === 'string' && /[wax]/.test(flags);
 
 const recordEvents = (events: Event[]): void => {
   const realpath = fs.promises.realpath;
@@ -36,6 +55,11 @@ const recordEvents = (events: Event[]): void => {
     events.push({ op: 'mkdir', target: String(target) });
     return (mkdir as (...args: unknown[]) => Promise<string | undefined>)(target, ...rest);
   }) as typeof fs.promises.mkdir);
+  const openSync = fs.openSync;
+  patchOpenSync(((target: fs.PathLike, flags?: fs.OpenMode, mode?: fs.Mode | null) => {
+    if (createsAt(flags)) events.push({ op: 'open', target: String(target) });
+    return openSync(target, flags ?? 'r', mode);
+  }) as typeof fs.openSync);
 };
 
 const swapToSymlink = (dir: string, redirect: string): void => {
@@ -44,7 +68,7 @@ const swapToSymlink = (dir: string, redirect: string): void => {
   fs.symlinkSync(redirect, dir);
 };
 
-const lastParentCheckBeforeTemporaryOpen = (events: readonly Event[], target: string): number => {
+const lastParentCheckBeforeEntryCreate = (events: readonly Event[], target: string): number => {
   const openIndex = events.findIndex((event) => event.op === 'open' && isTemporaryFor(event.target, target));
   expect(openIndex).toBeGreaterThanOrEqual(0);
   const before = events.slice(0, openIndex);
@@ -56,27 +80,27 @@ const lastParentCheckBeforeTemporaryOpen = (events: readonly Event[], target: st
 const runWrite = async (tools: Builtins, file: string, content: string) => resultOf(await tools.run('Write', { file_path: file, content }, ACCEPT));
 
 describe('atomic write through a swapped parent directory', () => {
-  it('checks the parent location before opening the temporary file', async () => {
+  it('checks the parent location before the claim creates the temporary entry', async () => {
     const tools = await makeBuiltins();
     fs.mkdirSync(path.join(tools.layout.project, 'dir'));
     const file = path.join(tools.layout.project, 'dir', 'new.txt');
     const events: Event[] = [];
     recordEvents(events);
     expect((await runWrite(tools, file, 'payload')).status).toBe('completed');
-    lastParentCheckBeforeTemporaryOpen(events, file);
+    lastParentCheckBeforeEntryCreate(events, file);
   });
 
   it.each([
     ['a protected directory', (tools: Builtins) => path.join(tools.layout.project, '.git', 'hooks')],
     ['a readDenied directory', (tools: Builtins) => path.join(tools.layout.home, '.momonga')],
-  ])('Write never creates a temporary file in %s when the parent is swapped right before the temp file is opened', async (_label, redirectOf) => {
+  ])('Write never creates a temporary entry or its sidecar in %s when the parent is swapped right before the claim creates it', async (_label, redirectOf) => {
     const probe = await makeBuiltins();
     fs.mkdirSync(path.join(probe.layout.project, 'dir'));
     const probeFile = path.join(probe.layout.project, 'dir', 'probe.txt');
     const probeEvents: Event[] = [];
     recordEvents(probeEvents);
     await runWrite(probe, probeFile, 'payload');
-    const swapAtCheck = lastParentCheckBeforeTemporaryOpen(probeEvents, probeFile);
+    const swapAtCheck = lastParentCheckBeforeEntryCreate(probeEvents, probeFile);
 
     const tools = await makeBuiltins();
     const dir = path.join(tools.layout.project, 'dir');
@@ -99,6 +123,12 @@ describe('atomic write through a swapped parent directory', () => {
       if (isTemporaryFor(String(target), file) && fs.existsSync(redirect)) createdThroughLink.push(fs.readdirSync(redirect));
       return handle;
     }) as typeof fs.promises.open);
+    const openSync = fs.openSync;
+    patchOpenSync(((target: fs.PathLike, flags?: fs.OpenMode, mode?: fs.Mode | null) => {
+      const descriptor = openSync(target, flags ?? 'r', mode);
+      if (createsAt(flags) && isTemporaryFor(String(target), file) && fs.existsSync(redirect)) createdThroughLink.push(fs.readdirSync(redirect));
+      return descriptor;
+    }) as typeof fs.openSync);
 
     const result = await runWrite(tools, file, 'payload');
     expect(result.status).toBe('failed');

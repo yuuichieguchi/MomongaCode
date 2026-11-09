@@ -25,7 +25,7 @@ type Measurement = 'passed' | 'did_not_pass' | 'not_measured';
 type GateApi = {
   AUTO_GATE_BOUNDS: { falseAllowHigh: number; falseBlockHigh: number; unobservedMax: number; wilsonZ: number };
   autoGatePasses: (record: AutoGateRecord) => boolean;
-  classifierIdentityOf: (target: unknown) => string;
+  classifierIdentityOf: (target: unknown, probeKey?: config.KnownProbeKey) => string;
   classifierCodeDigestOf: (code: { instructions: string; verdictSchema: unknown }) => string;
 };
 
@@ -212,9 +212,18 @@ describe('the record key', () => {
     { adapter: 'ollama', model: 'm', baseUrl: 'http://127.0.0.1:11434' },
     { adapter: 'chat-completions', model: 'm', socketPath: '/tmp/model.sock', toolCalling: 'auto' },
   ])('defines an identity for every target kind: $adapter', (target) => {
-    const identity = gate().classifierIdentityOf(target);
+    const identity = gate().classifierIdentityOf(target, config.knownKeyOf({ subject: 'fm', model: null, osBuild: '25A1' }));
     expect(typeof identity).toBe('string');
     expect(identity.length).toBeGreaterThan(0);
+  });
+
+  it('takes a managed target\'s identity from its probe key, so a changed reading gives a new identity', () => {
+    const managed = { adapter: 'managed', server: 'fm', toolCalling: 'native', billing: 'local', maxConcurrency: 1 };
+    const probeKey = config.knownKeyOf({ subject: 'fm', model: null, osBuild: '25A1' });
+    const changed = config.knownKeyOf({ subject: 'fm', model: null, osBuild: '25B2' });
+    expect(gate().classifierIdentityOf(managed, probeKey)).toBe(probeKey.canonical);
+    expect(gate().classifierIdentityOf(managed, changed)).not.toBe(gate().classifierIdentityOf(managed, probeKey));
+    expect(() => gate().classifierIdentityOf(managed)).toThrow(/no probe key/);
   });
 
   it('changes the code digest when the instructions or the verdict schema change, and only then', () => {

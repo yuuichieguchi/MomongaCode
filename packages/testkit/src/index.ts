@@ -33,7 +33,7 @@ export { inlinedSubsetRefusalOf, strictClosedRefusalOf } from './dialect-checker
 export { UNCONFIGURED_NETWORK, UNDICI_DEFAULT_LIVENESS } from './outbound-network.ts';
 export { generateInstance, collectAllowedNames, findUsedKeywords } from './schema-instance.ts';
 export type { JsonSchema, InstancePreferences } from './schema-instance.ts';
-export { LOCK_HOLDER_MAIN, startLockHolder } from './lock-holder.ts';
+export { CLAIM_HOLDER_MAIN, LOCK_HOLDER_MAIN, startClaimHolder, startLockHolder } from './lock-holder.ts';
 export { LSOF_PATH } from './lsof.ts';
 export { EMPTY_SYMLINK_SUPPORTED } from './empty-symlink.ts';
 export { createFakeKernelLock } from './fake-kernel-lock.ts';
@@ -129,11 +129,13 @@ export {
   TEST_HEARTBEAT_MS,
   TEST_RUN_ENV,
   assertHomeSocketBudget,
+  isUnderTestTempBase,
   registerCleanup,
   spawnTracked,
   tempDirPrefixFor,
   testRunToken,
   withTempDir,
+  realProcessTestSignal,
 } from './test-support.ts';
 export type { CleanupContext, TempDirOptions, TrackedChild } from './test-support.ts';
 export { createFakeEntryIo, parseJsonLines } from './fake-entry-io.ts';

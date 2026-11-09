@@ -1,6 +1,6 @@
 import os from 'node:os';
 import path from 'node:path';
-import { nodeFileSystem } from '@momonga/foundation';
+import { createOwnedDirectory, nodeFileSystem } from '@momonga/foundation';
 import { parseBenchmark, treeDigest } from './bench.ts';
 import type { BenchTask, OracleCheck } from './bench.ts';
 
@@ -128,7 +128,8 @@ const validateTask = async (task: BenchTask, root: string, repository: { directo
 export const validateBenchmark = async (benchmarkFile: string, probe: WorkspaceProbe): Promise<Validation> => {
   const benchmark = parseBenchmark(await nodeFileSystem.readTextFile(benchmarkFile), benchmarkFile);
   const root = path.dirname(path.resolve(benchmarkFile));
-  const scratch = await nodeFileSystem.mkdtemp(path.join(os.tmpdir(), 'momonga-bench-validate-'));
+  const owned = await createOwnedDirectory({ parent: os.tmpdir(), prefix: 'momonga-bench-validate-' });
+  const scratch = owned.path;
   try {
     const tasks: TaskValidation[] = [];
     for (const task of benchmark.tasks) {
@@ -138,6 +139,6 @@ export const validateBenchmark = async (benchmarkFile: string, probe: WorkspaceP
     }
     return { tasks };
   } finally {
-    await nodeFileSystem.rm(scratch, { recursive: true });
+    await owned.dispose();
   }
 };

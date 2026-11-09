@@ -3,7 +3,7 @@ import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import { DAEMON_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
-import { START_MS } from './helpers.ts';
+import { START_MS, makeAbandonedDirectory } from './helpers.ts';
 import { HOUR_MS, entriesNamed, launchRuntime, settledState, startStack } from './run-helpers.ts';
 
 type Injection = { error: Error; frame: string } | undefined;
@@ -101,7 +101,7 @@ const expectLoggedOnly = async (launched: Awaited<ReturnType<typeof launchFake>>
 };
 
 const sweepSource = async (launched: Awaited<ReturnType<typeof launchFake>>, error: Error): Promise<void> => {
-  fs.mkdirSync(path.join(launched.stack.temp.paths.tmp.sessions, 'unknown-session'), { recursive: true });
+  makeAbandonedDirectory(path.join(launched.stack.temp.paths.tmp.sessions, 'unknown-session'));
   control.sessionActivity = { error, frame: 'tmp-sweep' };
   launched.timers.advance(HOUR_MS);
   await waitFor(() => control.injected > 0, { description: 'the hourly session sweep to reach sessionActivity' });
