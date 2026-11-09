@@ -62,6 +62,19 @@ export type RetryRequest<T> = {
   refusals?: readonly Refusal[];
 };
 
+export type WaitPolicy = { totalWaitMs: number; baseMs: number; maxMs: number; random: () => number };
+
+export type WaitDecision = { kind: 'wait'; ms: number } | { kind: 'leave' };
+
+export type WaitQuestion = { attempt: number; retryAfterMs?: number; elapsedMs: number; policy: WaitPolicy; lastCandidate?: boolean };
+
+export const nextWait = ({ attempt, retryAfterMs, elapsedMs, policy, lastCandidate = false }: WaitQuestion): WaitDecision => {
+  const backoffMs = computeBackoff({ attempt, baseMs: policy.baseMs, maxMs: policy.maxMs, random: policy.random, jitter: 'equal' });
+  const ms = Math.max(backoffMs, retryAfterMs ?? 0);
+  if ((!lastCandidate && ms > policy.maxMs) || elapsedMs + ms > policy.totalWaitMs) return { kind: 'leave' };
+  return { kind: 'wait', ms };
+};
+
 const sleep = (timers: GatewayTimers, ms: number, signal: AbortSignal): Promise<void> =>
   new Promise((resolve, reject) => {
     const onAbort = (): void => {
@@ -177,16 +190,16 @@ export const runWithRetry = async <T>(request: RetryRequest<T>): Promise<RetryOu
           verdict = breakerVerdictOf(classified.error.type, classified.error.code);
           if (!classified.retryable || classified.stalled === true) throw plainError(classified);
           lastFailure = { kind: 'upstream', classified };
-          const backoffMs = computeBackoff({
+          const decision = nextWait({
             attempt: sends - 1,
-            baseMs: policy.baseMs,
-            maxMs: policy.maxMs,
-            random: policy.random,
-            jitter: 'equal',
+            ...(classified.retryAfterMs === undefined ? {} : { retryAfterMs: classified.retryAfterMs }),
+            elapsedMs: elapsedMs(),
+            policy,
+            lastCandidate: next === undefined,
           });
-          const waitMs = Math.max(backoffMs, classified.retryAfterMs ?? 0);
-          if (next !== undefined && (sends >= policy.maxAttempts || waitMs > policy.maxMs || elapsedMs() + waitMs > policy.totalWaitMs)) break;
-          if (elapsedMs() + waitMs > policy.totalWaitMs) exhausted();
+          if (next !== undefined && (sends >= policy.maxAttempts || decision.kind === 'leave')) break;
+          if (decision.kind === 'leave') exhausted();
+          const waitMs = decision.kind === 'wait' ? decision.ms : 0;
           if (deadlineAt !== undefined && policy.clock.now() + waitMs > deadlineAt) {
             throw deadlineExceededError(`the next retry of target "${target.name}" would start after the request deadline`);
           }

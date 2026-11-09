@@ -1,0 +1,1 @@
+export const AUTHORIZATION_WAIT_MS = 300_000;

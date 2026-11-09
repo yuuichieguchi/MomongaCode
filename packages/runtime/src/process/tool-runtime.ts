@@ -36,7 +36,7 @@ export type ToolRuntimeOptions = {
   report(error: unknown): void;
   sandbox: Sandbox;
   shellHost: ShellHost;
-  settings: Pick<SettingsComposition, 'envFor' | 'takeUserSnapshot' | 'loadSessionSettings' | 'trustOracle'>;
+  settings: Pick<SettingsComposition, 'envFor' | 'takeUserSnapshot' | 'admitUserSnapshot' | 'keptLayers' | 'loadSessionSettings' | 'trustOracle'>;
   reapTiming: ReapTiming;
   leaseMs: number;
   heartbeatMs: number;
@@ -123,7 +123,7 @@ export const createToolRuntime = (options: ToolRuntimeOptions): ToolRuntime => {
     let acquiredHere = false;
     try {
       const loaded = await settings.loadSessionSettings(session.cwd, snapshot);
-      const mcp = await loadSessionMcpServers({ home, settings }, session, env, snapshot.user);
+      const mcp = await loadSessionMcpServers({ home, settings }, session, env, snapshot.user, 'read');
       const sources: McpPool['sources'] = [];
       if (mcp.enabled.length > 0) {
         const servers = mcp.enabled;

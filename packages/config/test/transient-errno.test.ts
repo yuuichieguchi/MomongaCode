@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ConfigError, createUserSettingsCache, loadMcpServers, loadSettings, loadUserSettings } from '@momonga/config';
+import { ConfigError, createUserSettingsCache, loadMcpServers, loadSettings, loadUserSettings, noKeptRecords } from '@momonga/config';
 import { localSettingsPath, makeTree, mcpJsonPath, projectSettingsPath, trusting, userSettingsPath, writeJson } from './helpers.ts';
 import type { Tree } from './helpers.ts';
 
@@ -71,7 +71,7 @@ describe('config transient errno propagation', () => {
       const injected = errnoError(code);
       failSyncRead(file, injected);
       expect(await rejectionOf(loadUserSettings({ home: tree.home }))).toBe(injected);
-      const cache = createUserSettingsCache({ home: tree.home, onWarning: () => undefined });
+      const cache = createUserSettingsCache({ home: tree.home, onWarning: () => undefined, keptRecords: noKeptRecords });
       let thrown: unknown;
       try {
         cache.snapshot();
@@ -97,7 +97,7 @@ describe('config transient errno propagation', () => {
     const file = writeJson(userSettingsPath(tree), {});
     failSyncRead(file, errnoError('EACCES'));
     expect(await rejectionOf(loadUserSettings({ home: tree.home }))).toBeInstanceOf(ConfigError);
-    const snapshot = createUserSettingsCache({ home: tree.home, onWarning: () => undefined }).snapshot();
+    const snapshot = createUserSettingsCache({ home: tree.home, onWarning: () => undefined, keptRecords: noKeptRecords }).snapshot();
     expect('error' in snapshot && snapshot.error).toBeInstanceOf(ConfigError);
   });
 });

@@ -1,7 +1,6 @@
 import fs from 'node:fs';
-import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { SECRET_TOOL_BINARY, SECURITY_BINARY, KEYCHAIN_SERVICE, createJsonLogger, secretStoreEnvFor, createUdsClient, systemClock } from '@momonga/foundation';
+import { SECRET_TOOL_BINARY, SECURITY_BINARY, KEYCHAIN_SERVICE, createJsonLogger, createUdsClient, systemClock } from '@momonga/foundation';
 import type { UdsClient } from '@momonga/foundation';
 import { startGatewayProcess } from '@momonga/gateway';
 import type { GatewayProcess } from '@momonga/gateway';
@@ -16,7 +15,8 @@ import {
   withTempDir,
 } from '@momonga/testkit';
 import type { CleanupContext, FakeSecurityPort, FakeUpstreamReply, FakeUpstreamServer } from '@momonga/testkit';
-import { PROCESS_VERSION, baseEnv, homePaths, writeSettings } from './gateway-process-helpers.ts';
+import { PROCESS_VERSION, baseEnv, fakeSecretHost, homePaths, portOnSecretHost, writeSettings } from './gateway-process-helpers.ts';
+import type { SecretHost } from './gateway-process-helpers.ts';
 import { userInput } from './gateway-helpers.ts';
 import { REDACTED, expectNoCredential } from './credential-support.ts';
 
@@ -55,24 +55,7 @@ const HOST_STORES: readonly HostStore[] = [
   },
 ];
 
-type HostPath = { env: Record<string, string>; programPath: string };
-
-const fakeHostPath = (context: CleanupContext, store: HostStore): HostPath => {
-  const bin = withTempDir(context);
-  const programPath = path.join(bin, store.program);
-  fs.writeFileSync(programPath, '#!/bin/sh\nexit 97\n', { mode: 0o755 });
-  return { env: secretStoreEnvFor({ PATH: bin, ...store.extraEnv }), programPath };
-};
-
-const portOnFakePath = (inner: FakeSecurityPort, store: HostStore, host: HostPath): FakeSecurityPort => {
-  const calls: FakeSecurityPort['calls'] = [];
-  const port = async (file: string, args: readonly string[], stdin: string, signal: AbortSignal) => {
-    calls.push({ file, args, stdin });
-    if (file !== host.programPath) throw new Error(`the gateway ran ${file}, not the fake ${store.program} on PATH at ${host.programPath}`);
-    return inner(store.canonicalBinary, args, stdin, signal);
-  };
-  return Object.assign(port, { calls });
-};
+const fakeHostPath = (context: CleanupContext, store: HostStore): SecretHost => fakeSecretHost(withTempDir(context), store);
 
 type Stack = {
   home: string;
@@ -105,7 +88,7 @@ const startStack = async (
     },
   });
   const host = fakeHostPath(context, store);
-  const security = portOnFakePath(createFakeSecurityPort(() => options.secrets), store, host);
+  const security = portOnSecretHost(createFakeSecurityPort(() => options.secrets), store, host);
   const lines: string[] = [];
   const handle = await startGatewayProcess({
     home,
