@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileRuleBlocks, procGroupMembers, signalGroup, signalGroupExceptLeader } from '@momonga/foundation';
-import type { FileRuleEntry, FileRuleSet, GroupMembersReader, PlaceholderForm } from '@momonga/foundation';
+import { createOwnedDirectorySync, fileRuleBlocks, procGroupMembers, signalGroup, signalGroupExceptLeader } from '@momonga/foundation';
+import type { FileRuleEntry, FileRuleSet, GroupMembersReader, OwnedDirectorySync, PlaceholderForm } from '@momonga/foundation';
 import { canonicalizePath } from './canonical-path.ts';
 import { SANDBOX_STOP_BOUND_MS, launch } from './process.ts';
 import type { LaunchOptions } from './process.ts';
@@ -10,7 +10,7 @@ import { SandboxPolicyError } from './policy-error.ts';
 import { validateSandboxPolicy } from './profile.ts';
 import { EMPTY_FILE_FORM, identityOf, isStillThePlaceholder, removePlaceholderEntry } from './placeholder-journal.ts';
 import type { PlaceholderIdentity, PlaceholderJournal } from './placeholder-journal.ts';
-import { assertExistingDirectory, removePrivateTmpDir } from './scratch.ts';
+import { assertExistingDirectory } from './scratch.ts';
 import type { DirectoryPort } from './scratch.ts';
 import type { Sandbox, SandboxCommand, SandboxDescriptors, SandboxPolicy, SandboxedProcess } from './types.ts';
 
@@ -28,8 +28,7 @@ export type FilesystemPort = {
   createPlaceholder(target: string, form: PlaceholderForm): PlaceholderIdentity;
   removePlaceholder(target: string, identity: PlaceholderIdentity, form: PlaceholderForm): void;
   requireExecutable(file: string): void;
-  makeTempDirectory(parent: string, prefix: string): string;
-  removePrivateDirectory(directory: string): void;
+  makeScratchDirectory(parent: string, prefix: string): OwnedDirectorySync;
 };
 
 const inspected = <T>(absent: T, read: () => T): T | Unreachable => {
@@ -45,8 +44,7 @@ const inspected = <T>(absent: T, read: () => T): T | Unreachable => {
 
 export const nodeFilesystemPort: FilesystemPort = {
   requireExecutable: (file) => fs.accessSync(file, fs.constants.X_OK),
-  makeTempDirectory: (parent, prefix) => fs.mkdtempSync(path.join(parent, prefix)),
-  removePrivateDirectory: removePrivateTmpDir,
+  makeScratchDirectory: (parent, prefix) => createOwnedDirectorySync({ parent, prefix }),
   kindOf: (target) =>
     inspected<EntryKind | undefined>(undefined, () => {
       const stat = fs.statSync(target, { throwIfNoEntry: false });
@@ -520,13 +518,13 @@ export function createBubblewrapSandbox(options: BubblewrapSandboxOptions): Sand
         assertExistingDirectory(command.tmpDir, directories);
         return launchWith(command, planBubblewrap(policy, { ...planned, tmpDir: command.tmpDir }, filesystem), command.tmpDir, signal, () => undefined, descriptors);
       }
-      const tmpDir = filesystem.makeTempDirectory(tmpRoot, 'sandbox-');
+      const scratch = filesystem.makeScratchDirectory(tmpRoot, 'sandbox-');
       try {
-        const scratchDir = canonicalizePath(tmpDir);
+        const scratchDir = canonicalizePath(scratch.path);
         const plan = planBubblewrap(policy, { ...planned, scratchDir }, filesystem);
-        return launchWith(command, plan, tmpDir, signal, () => filesystem.removePrivateDirectory(tmpDir), descriptors);
+        return launchWith(command, plan, scratch.path, signal, () => scratch.dispose(), descriptors);
       } catch (error) {
-        filesystem.removePrivateDirectory(tmpDir);
+        scratch.dispose();
         throw error;
       }
     },

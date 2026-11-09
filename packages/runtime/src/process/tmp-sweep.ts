@@ -1,47 +1,36 @@
-import type fs from 'node:fs';
-import path from 'node:path';
-import { uuidv7 } from '@momonga/foundation';
+import { hostKernelLock, sweepLeftovers } from '@momonga/foundation';
+import type { KernelLockMechanism, LeftoverFiles } from '@momonga/foundation';
 import type { RuntimeStore } from '@momonga/store';
 import { asError } from './as-error.ts';
 import { nodeRuntimeFiles } from './runtime-files.ts';
 import type { RuntimeFiles } from './runtime-files.ts';
 
-const SESSION_TMP_MAX_AGE_MS = 7 * 86_400_000;
-const REMOVING_PREFIX = '.removing-';
+const SESSION_TMP_RETENTION_MS = 7 * 86_400_000;
 
-const isMissing = (error: unknown): boolean => (error as NodeJS.ErrnoException).code === 'ENOENT';
+const everyName = (): boolean => true;
 
-const readNames = async (files: RuntimeFiles, dir: string, onWarning: (message: string) => void): Promise<string[]> => {
-  try {
-    return await files.readdir(dir);
-  } catch (error) {
-    if (!isMissing(error)) onWarning(`tmp directory ${dir} could not be read: ${asError(error).message}`);
-    return [];
-  }
-};
+const leftoverFilesOf = (files: RuntimeFiles): LeftoverFiles => ({
+  readdir: (directory) => files.readdir(directory),
+  rm: (entry) => files.rm(entry, { recursive: true }),
+});
 
-const removeEntry = async (files: RuntimeFiles, entry: string, stat: fs.Stats): Promise<void> => {
-  if (stat.isDirectory()) await files.rm(entry, { recursive: true });
-  else await files.unlink(entry);
-};
+const warnFor =
+  (what: string, onWarning: (message: string) => void) =>
+  (entry: string, error: unknown): void =>
+    onWarning(`${what} ${entry} could not be swept: ${asError(error).message}`);
 
 export const sweepSpawnTmp = async ({
   dir,
   onWarning,
   files = nodeRuntimeFiles,
+  lock = hostKernelLock(),
 }: {
   dir: string;
   onWarning(message: string): void;
   files?: RuntimeFiles;
+  lock?: KernelLockMechanism;
 }): Promise<void> => {
-  for (const name of await readNames(files, dir, onWarning)) {
-    const entry = path.join(dir, name);
-    try {
-      await removeEntry(files, entry, await files.lstat(entry));
-    } catch (error) {
-      if (!isMissing(error)) onWarning(`spawn tmp entry ${entry} could not be removed: ${asError(error).message}`);
-    }
-  }
+  await sweepLeftovers({ directories: [{ directory: dir, isLeftover: everyName }], lock, files: leftoverFilesOf(files), onEntryError: warnFor('spawn tmp entry', onWarning) });
 };
 
 export const sweepSessionTmp = async ({
@@ -51,6 +40,7 @@ export const sweepSessionTmp = async ({
   hasInMemoryState,
   onWarning,
   files = nodeRuntimeFiles,
+  lock = hostKernelLock(),
 }: {
   root: string;
   store: Pick<RuntimeStore, 'sessionActivity'>;
@@ -58,66 +48,18 @@ export const sweepSessionTmp = async ({
   hasInMemoryState(sessionId: string): boolean;
   onWarning(message: string): void;
   files?: RuntimeFiles;
+  lock?: KernelLockMechanism;
 }): Promise<{ removed: number; kept: number }> => {
-  const removable = (id: string): boolean => {
-    if (hasInMemoryState(id)) return false;
-    const activity = store.sessionActivity(id);
-    return activity === undefined || (!activity.hasActiveRun && now - activity.lastActivityAt >= SESSION_TMP_MAX_AGE_MS);
+  const retained = (sessionId: string): boolean => {
+    if (hasInMemoryState(sessionId)) return true;
+    const activity = store.sessionActivity(sessionId);
+    return activity !== undefined && (activity.hasActiveRun || now - activity.lastActivityAt < SESSION_TMP_RETENTION_MS);
   };
-
-  let removed = 0;
-  let kept = 0;
-  for (const name of await readNames(files, root, onWarning)) {
-    if (!removable(name)) {
-      kept += 1;
-      continue;
-    }
-    const entry = path.join(root, name);
-    try {
-      await files.lstat(entry);
-    } catch (error) {
-      if (!isMissing(error)) {
-        onWarning(`session tmp entry ${entry} could not be inspected: ${asError(error).message}`);
-        kept += 1;
-      }
-      continue;
-    }
-
-    let target: { path: string; stat: fs.Stats } | 'unlinked' | 'gone' | 'kept';
-    if (!removable(name)) target = 'kept';
-    else {
-      try {
-        const current = files.lstatSync(entry);
-        if (!current.isDirectory()) {
-          files.unlinkSync(entry);
-          target = 'unlinked';
-        } else if (name.startsWith(REMOVING_PREFIX)) target = { path: entry, stat: current };
-        else {
-          const renamed = path.join(root, `${REMOVING_PREFIX}${uuidv7()}`);
-          files.renameSync(entry, renamed);
-          target = { path: renamed, stat: current };
-        }
-      } catch (error) {
-        if (isMissing(error)) target = 'gone';
-        else {
-          onWarning(`session tmp entry ${entry} could not be removed: ${asError(error).message}`);
-          kept += 1;
-          continue;
-        }
-      }
-    }
-
-    if (target === 'kept') kept += 1;
-    else if (target === 'unlinked') removed += 1;
-    else if (target !== 'gone') {
-      try {
-        await removeEntry(files, target.path, target.stat);
-        removed += 1;
-      } catch (error) {
-        onWarning(`session tmp entry ${target.path} could not be removed: ${asError(error).message}`);
-        kept += 1;
-      }
-    }
-  }
-  return { removed, kept };
+  const swept = await sweepLeftovers({
+    directories: [{ directory: root, isLeftover: everyName, retain: retained }],
+    lock,
+    files: leftoverFilesOf(files),
+    onEntryError: warnFor('session tmp entry', onWarning),
+  });
+  return { removed: swept.removed.length, kept: swept.kept.length };
 };

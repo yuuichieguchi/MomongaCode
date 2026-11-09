@@ -5,6 +5,8 @@ import util from 'node:util';
 import { ensureWindowsPrivateTree, modeIsPrivate, noFollowFlag, directoryFlag, ownerProblem } from './platform/privacy.ts';
 import { nodeCommandRunner } from './platform/command-runner.ts';
 import type { CommandRunner } from './platform/command-runner.ts';
+import { isAtomicWriteTemporary } from './atomic-file.ts';
+import type { LeftoverDirectory } from './leftover-sweep.ts';
 import { assertSocketPathLength, isPipePath, pipePathFor, refuseUnbindableUnixSocketPath } from './socket-path.ts';
 
 export interface MomongaPaths {
@@ -241,6 +243,17 @@ const createMomongaDirs = async (paths: MomongaPaths, ports: PlatformDirectoryPo
     await ensureWindowsPrivateTree(paths.cacheBase, windows);
   }
 };
+
+const everyName = (): boolean => true;
+
+const retainedByItsOwnersRule = (): boolean => true;
+
+export const leftoverDirectories = (paths: MomongaPaths): LeftoverDirectory[] => [
+  { directory: paths.planSessions, isLeftover: isAtomicWriteTemporary },
+  { directory: path.dirname(paths.gatewayKey), isLeftover: isAtomicWriteTemporary },
+  { directory: paths.tmp.spawn, isLeftover: everyName },
+  { directory: paths.tmp.sessions, isLeftover: everyName, retain: retainedByItsOwnersRule },
+];
 
 export const ensureMomongaDirs = async (paths: MomongaPaths, ports: PlatformDirectoryPorts = {}): Promise<void> => {
   await refuseUnfitGenerationSockets(generationLayout(path.dirname(paths.root), FIRST_GENERATION));

@@ -2,8 +2,21 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { loadUserSettings } from '@momonga/config';
-import { ProcessLockHeldError, acquireProcessLock, createOutboundDispatcher, currentSocketResolver, inspectProcessLock, nodeCommandRunner } from '@momonga/foundation';
-import type { MomongaPaths, OutboundNetwork, OutboundOptions } from '@momonga/foundation';
+import {
+  ProcessLockHeldError,
+  acquireProcessLock,
+  createLockedEntry,
+  createOutboundDispatcher,
+  currentSocketResolver,
+  hostKernelLock,
+  inspectProcessLock,
+  nodeCommandRunner,
+  nodeFileSystem,
+  sweepLeftovers,
+  systemRandom,
+  writeFileAtomically,
+} from '@momonga/foundation';
+import type { KernelLockMechanism, LockedEntry, LockedEntryFiles, MomongaPaths, OutboundNetwork, OutboundOptions } from '@momonga/foundation';
 import { interceptors, request } from 'undici';
 import type { Dispatcher } from 'undici';
 import { processOutboundNetwork } from '../network.ts';
@@ -17,6 +30,7 @@ export const MAX_REDIRECTS = 5;
 export const STAGING_PREFIX = '.momonga-update.';
 export const UPDATE_LOCK_FILE = 'update.lock';
 export const UPDATE_STATE_FILE = 'update.json';
+const UPDATE_STATE_MODE = 0o600;
 
 export const undiciUpdateHttp = (
   network: Promise<OutboundNetwork>,
@@ -71,32 +85,57 @@ const publishReplacing = async (rename: Rename, staged: string, target: string):
   }
 };
 
-export const nodeUpdateFs = (rename: Rename = fs.rename): UpdateFs => ({
-  realpath: (file) => fs.realpath(file),
-  modeOf: async (file) => (await fs.stat(file)).mode & 0o777,
-  stage: async (directory, mode): Promise<StagedFile> => {
-    const file = path.join(directory, `${STAGING_PREFIX}${randomBytes(6).toString('hex')}`);
-    const handle = await fs.open(file, 'wx', mode);
-    let closed = false;
-    await handle.chmod(mode);
-    return {
-      path: file,
-      write: (chunk) => writeAll(handle, chunk),
-      close: async () => {
-        if (closed) return;
-        closed = true;
-        await handle.close();
-      },
-    };
+const isStaged = (name: string): boolean => name.startsWith(STAGING_PREFIX);
+
+const stagingFilesFor = (opened: { handle?: fs.FileHandle }): LockedEntryFiles => ({
+  open: async (file, flags, mode) => {
+    const handle = await fs.open(file, flags, mode);
+    opened.handle = handle;
+    if (mode !== undefined) await handle.chmod(mode);
+    return { writeFile: (content) => handle.writeFile(content), sync: () => handle.sync(), close: () => handle.close() };
   },
-  publish: (staged, target) => publishReplacing(rename, staged, target),
-  remove: (file) => fs.rm(file, { force: true }),
-  removeLeftovers: async (directory) => {
-    for (const entry of await fs.readdir(directory)) {
-      if (entry.startsWith(STAGING_PREFIX)) await fs.rm(path.join(directory, entry), { force: true });
-    }
-  },
+  rm: (file) => fs.rm(file, { force: true }),
 });
+
+export const nodeUpdateFs = (rename: Rename = fs.rename, lock: KernelLockMechanism = hostKernelLock()): UpdateFs => {
+  const staging = new Map<string, LockedEntry>();
+  return {
+    realpath: (file) => fs.realpath(file),
+    modeOf: async (file) => (await fs.stat(file)).mode & 0o777,
+    stage: async (directory, mode): Promise<StagedFile> => {
+      const file = path.join(directory, `${STAGING_PREFIX}${randomBytes(6).toString('hex')}`);
+      const opened: { handle?: fs.FileHandle } = {};
+      const entry = await createLockedEntry(stagingFilesFor(opened), lock, file, mode);
+      const handle = opened.handle;
+      if (handle === undefined) throw new Error(`${file} was staged without an open handle`);
+      staging.set(file, entry);
+      let closed = false;
+      return {
+        path: file,
+        write: (chunk) => writeAll(handle, chunk),
+        close: async () => {
+          if (closed) return;
+          closed = true;
+          await entry.handle.close();
+        },
+      };
+    },
+    publish: async (staged, target) => {
+      await publishReplacing(rename, staged, target);
+      staging.get(staged)?.finish();
+      staging.delete(staged);
+    },
+    remove: async (file) => {
+      const entry = staging.get(file);
+      staging.delete(file);
+      if (entry === undefined) await fs.rm(file, { force: true });
+      else await entry.remove();
+    },
+    removeLeftovers: async (directory) => {
+      await sweepLeftovers({ directories: [{ directory, isLeftover: isStaged }], lock });
+    },
+  };
+};
 
 export const nodeUpdateLock = (paths: MomongaPaths): UpdateLock => {
   const lockPath = path.join(paths.run, UPDATE_LOCK_FILE);
@@ -129,9 +168,7 @@ export const nodeUpdateState = (paths: MomongaPaths): UpdateStateStore => {
       return parsed;
     },
     write: async (state) => {
-      const temporary = `${file}.${process.pid}.tmp`;
-      await fs.writeFile(temporary, JSON.stringify(state), { mode: 0o600 });
-      await fs.rename(temporary, file);
+      await writeFileAtomically(nodeFileSystem, systemRandom, file, JSON.stringify(state), { mode: UPDATE_STATE_MODE });
     },
   };
 };

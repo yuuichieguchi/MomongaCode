@@ -54,6 +54,7 @@ const accessMode = (check: AccessCheck): number => (check === 'execute' ? fs.con
 export const nodeFileSystem: FileSystem = {
   open: async (file, flags, mode) => {
     const handle = await fs.promises.open(file, flags, mode);
+    if (mode !== undefined) await handle.chmod(mode);
     return {
       writeFile: (content) => handle.writeFile(content),
       sync: () => handle.sync(),
@@ -109,7 +110,11 @@ export const nodeFileSystem: FileSystem = {
 };
 
 export const nodeFileSystemSync: FileSystemSync = {
-  openSync: (file, flags, mode) => fs.openSync(file, flags, mode),
+  openSync: (file, flags, mode) => {
+    const descriptor = fs.openSync(file, flags, mode);
+    if (mode !== undefined) fs.fchmodSync(descriptor, mode);
+    return descriptor;
+  },
   openReadNoFollowSync: (file) => fs.openSync(file, fs.constants.O_RDONLY | noFollowFlag()),
   openDescriptorSync: (file, flags, mode) => fs.openSync(file, flags, mode),
   writeFileSync: (handle, content) => fs.writeFileSync(handle, content),

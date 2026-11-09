@@ -37,6 +37,7 @@ export type InheritedLockRequest = { lockPath: string; descriptor: number; expec
 export interface KernelLockMechanism {
   readonly name: 'file-lock' | 'sqlite-lock';
   claim(lockPath: string): Promise<ClaimOutcome>;
+  readonly claimSync?: (lockPath: string) => ClaimOutcome;
   isHeld(lockPath: string): Promise<boolean>;
   readHolder(lockPath: string): Promise<string | undefined>;
   readHolderSync(lockPath: string): string | undefined;
@@ -143,6 +144,7 @@ const adoptFile =
 export const createFileLock = (ops: FileLockOps): KernelLockMechanism => ({
   name: 'file-lock',
   claim: async (lockPath) => claimFile(ops)(lockPath),
+  claimSync: claimFile(ops),
   isHeld: async (lockPath) => probeFile(ops, lockPath),
   readHolder: readHolderFile,
   readHolderSync: readHolderFileSync,

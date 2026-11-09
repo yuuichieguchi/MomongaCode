@@ -24,8 +24,8 @@ import {
 import type { ContextDataset, EvalReport, GateName, GoldenCase, GoldenDataset, PolicyOverlay, RecordedRun, Transcript } from '@momonga/eval';
 import { decodeReliabilityReport } from '@momonga/reliability';
 import type { ReliabilityReport } from '@momonga/reliability';
-import { codeDigestOfRunningProcess } from '@momonga/foundation';
-import type { MomongaPaths } from '@momonga/foundation';
+import { codeDigestOfRunningProcess, createOwnedDirectory } from '@momonga/foundation';
+import type { MomongaPaths, OwnedDirectory } from '@momonga/foundation';
 import { goldenRunApi } from '../client/golden-run-api.ts';
 import { CONTEXT_BOOTSTRAP_SEED } from '../constants.ts';
 import { ensureDaemon } from '../daemon/ensure-daemon.ts';
@@ -68,20 +68,21 @@ const runLive = async (ports: CliPorts, paths: MomongaPaths, dataset: GoldenData
     wait: (milliseconds, signal) => ports.clock.sleep(milliseconds, signal),
     ...(interrupt === undefined ? {} : { signal: interrupt }),
   });
-  const workspaces: string[] = [];
+  const workspaces: OwnedDirectory[] = [];
   if (record !== undefined) await ports.files.mkdir(record);
   try {
     return await runDataset(dataset, {
       open: async (golden) => {
-        const cwd = await ports.files.mkdtemp(path.join(os.tmpdir(), WORKSPACE_PREFIX));
-        workspaces.push(cwd);
+        const workspace = await createOwnedDirectory({ parent: os.tmpdir(), prefix: WORKSPACE_PREFIX });
+        workspaces.push(workspace);
+        const cwd = workspace.path;
         await populate(ports, cwd, golden);
         return { api, workspace: { cwd, env }, close: async () => undefined };
       },
       ...(record === undefined ? {} : { onTranscript: async (run: RecordedRun) => void (await saveTranscript(ports.files, record, { ...run, policy: null, codeDigest: null })) }),
     });
   } finally {
-    await Promise.all(workspaces.map((directory) => ports.files.rm(directory, { recursive: true })));
+    await Promise.all(workspaces.map((workspace) => workspace.dispose()));
     await client.close();
   }
 };

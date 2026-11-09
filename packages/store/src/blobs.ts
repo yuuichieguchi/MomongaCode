@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { immediateTx, modeIsPrivate, nodeFileSystemSync, sha256Hex, syncDirectorySync, uuidv7 } from '@momonga/foundation';
+import { immediateTx, modeIsPrivate, nodeFileSystemSync, sha256Hex, systemRandom, writeFileAtomicallySync } from '@momonga/foundation';
 import type { Clock } from '@momonga/foundation';
 import { readerFor } from './rows.ts';
 import type { BlobByteRange, BlobByteSlice, BlobLineRange, BlobRef, BlobScope, BlobSlice, BlobStore } from './types.ts';
@@ -36,24 +36,8 @@ const assertUtf8 = (bytes: Uint8Array): void => {
   }
 };
 
-const writeAtomically = (dir: string, target: string, bytes: Uint8Array, clock: Clock): void => {
-  const temp = path.join(dir, `.tmp-${uuidv7(clock)}`);
-  try {
-    const fd = fs.openSync(temp, 'wx', BLOB_FILE_MODE);
-    try {
-      fs.fchmodSync(fd, BLOB_FILE_MODE);
-      let written = 0;
-      while (written < bytes.length) written += fs.writeSync(fd, bytes, written, bytes.length - written);
-      fs.fsyncSync(fd);
-    } finally {
-      fs.closeSync(fd);
-    }
-    fs.renameSync(temp, target);
-  } catch (error) {
-    fs.rmSync(temp, { force: true });
-    throw error;
-  }
-  syncDirectorySync(nodeFileSystemSync, dir);
+const writeAtomically = (target: string, bytes: Uint8Array): void => {
+  writeFileAtomicallySync(nodeFileSystemSync, systemRandom, target, bytes, { mode: BLOB_FILE_MODE });
 };
 
 const holdsContent = (target: string, sha256: string, byteLength: number): boolean => {
@@ -193,7 +177,7 @@ export const createBlobStore = (db: DatabaseSync, clock: Clock, dir: string): Bl
       assertUtf8(bytes);
       const sha256 = handleOfBytes(bytes);
       const target = path.join(dir, sha256);
-      if (!holdsContent(target, sha256, bytes.length)) writeAtomically(dir, target, bytes, clock);
+      if (!holdsContent(target, sha256, bytes.length)) writeAtomically(target, bytes);
       const lineCount = countLines(bytes);
       immediateTx(db, () => {
         insert.run({ sha256, byteLength: bytes.length, lineCount, mediaType: options.mediaType, createdAt: clock.now() });

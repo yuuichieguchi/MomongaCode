@@ -2,7 +2,6 @@ import path from 'node:path';
 import { writeFileAtomicallySync } from './atomic-file.ts';
 import { nodeFileSystemSync } from './node-file-system.ts';
 import type { FileSystemSync } from './node-file-system.ts';
-import { isProcessAlive } from './process-alive.ts';
 import { assertPrivateRegularFile } from './platform/privacy.ts';
 import type { Random } from './random.ts';
 import { systemRandom } from './system-random.ts';
@@ -38,17 +37,6 @@ export const createSecretKeyFile = (fs: FileSystemSync, random: Random): SecretK
     }
   };
 
-  const sweepStaleTemporaries = (keyPath: string): void => {
-    const directory = path.dirname(keyPath);
-    const prefix = `${path.basename(keyPath)}.`;
-    for (const name of fs.readdirSync(directory)) {
-      if (!name.startsWith(prefix) || !name.endsWith('.tmp')) continue;
-      const owner = /^(\d+)\./.exec(name.slice(prefix.length));
-      if (owner !== null && isProcessAlive(Number(owner[1]))) continue;
-      fs.rmSync(path.join(directory, name));
-    }
-  };
-
   const createKey = (keyPath: string, bytes: number): Uint8Array => {
     const key = random.bytes(bytes);
     if (writeFileAtomicallySync(fs, random, keyPath, key, { mode: KEY_FILE_MODE, publish: 'create' }).created) return key;
@@ -60,19 +48,14 @@ export const createSecretKeyFile = (fs: FileSystemSync, random: Random): SecretK
   return (keyPath: string, options: SecretKeyFileOptions = {}): Uint8Array => {
     const { bytes = 32, mustExist = false, dependentPath } = options;
     const existing = readKey(keyPath, bytes);
-    if (existing !== undefined) {
-      sweepStaleTemporaries(keyPath);
-      return existing;
-    }
+    if (existing !== undefined) return existing;
     if (mustExist) {
       if (dependentPath === undefined) throw new Error('secretKeyFile: mustExist requires dependentPath');
       throw new Error(
         `${path.basename(dependentPath)} exists but ${path.basename(keyPath)} is missing at ${keyPath}; stored compaction items can no longer be verified. Move ${dependentPath} aside to start fresh.`,
       );
     }
-    const created = createKey(keyPath, bytes);
-    sweepStaleTemporaries(keyPath);
-    return created;
+    return createKey(keyPath, bytes);
   };
 };
 

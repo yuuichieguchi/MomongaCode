@@ -1,6 +1,5 @@
-import path from 'node:path';
 import type { PlanProfile } from '@momonga/config';
-import { isRecord, isTransientErrno } from '@momonga/foundation';
+import { hostKernelLock, isAtomicWriteTemporary, isRecord, isTransientErrno, sweepLeftovers } from '@momonga/foundation';
 import type { Clock, CredentialEntry, CredentialStore, FileSystem } from '@momonga/foundation';
 import { PLAN_ACCOUNT_STATES } from '@momonga/protocol';
 import type { PlanAccountState } from '@momonga/protocol';
@@ -224,17 +223,12 @@ const signingOutRecord = (record: PlanRecord): PlanRecord => ({ ...record, state
 
 const describeError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-const isStaleTemporary = (name: string): boolean => name.endsWith('.tmp');
-
 const sweepTemporaries = async (fileSystem: FileSystem, directory: string): Promise<void> => {
-  let names: string[];
-  try {
-    names = await fileSystem.readdir(directory);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
-    throw error;
-  }
-  await Promise.all(names.filter(isStaleTemporary).map((name) => fileSystem.rm(path.join(directory, name))));
+  await sweepLeftovers({
+    directories: [{ directory, isLeftover: isAtomicWriteTemporary }],
+    lock: hostKernelLock(),
+    files: { readdir: (entries) => fileSystem.readdir(entries), rm: (entry) => fileSystem.rm(entry, { recursive: true }) },
+  });
 };
 
 const waitFor = <T>(work: Promise<T>, signal: AbortSignal): Promise<T> => {

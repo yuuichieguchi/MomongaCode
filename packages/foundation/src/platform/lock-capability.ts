@@ -40,9 +40,11 @@ const createLockedFlags = (access: number): number => access | OPEN_FLAGS.create
 
 const codeOf = (error: unknown): string | undefined => (error as NodeJS.ErrnoException | undefined)?.code;
 
-const stagingPathOf = (file: string): string => {
+const STAGING_SUFFIX_BYTES = 6;
+
+const stagingPathOf = (file: string, random: Random): string => {
   const dir = path.dirname(file);
-  return path.join(path.dirname(dir), `.${path.basename(dir)}.${path.basename(file)}.creating`);
+  return path.join(path.dirname(dir), `.${path.basename(dir)}.${path.basename(file)}.${random.hex(STAGING_SUFFIX_BYTES)}.creating`);
 };
 
 export class StagingLinkError extends Error {
@@ -74,9 +76,9 @@ export const createLockedFile = (
   mode: number,
   initialize: (staged: string) => void = () => undefined,
   files: StagingFiles = nodeFileSystemSync,
+  random: Random = systemRandom,
 ): number => {
-  const staged = stagingPathOf(file);
-  files.rmSync(staged);
+  const staged = stagingPathOf(file, random);
   const descriptor = ops.open(staged, createLockedFlags(access), mode);
   let linked = false;
   try {

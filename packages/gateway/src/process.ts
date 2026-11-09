@@ -14,6 +14,9 @@ import {
   codeDigestOfRunningProcess,
   momongaPaths,
   secretKeyFile,
+  sweepLeftovers,
+  hostKernelLock,
+  leftoverDirectories,
   ensureGenerationDirs,
   generationLayout,
 } from '@momonga/foundation';
@@ -592,6 +595,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     const network: OutboundNetwork = { config: networkConfig, trust: await installTrust(networkConfig, files) };
     for (const failure of network.trust.failures) logger.warn(`the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}`);
     signal?.throwIfAborted();
+    await sweepLeftovers({ directories: leftoverDirectories(paths), lock: hostKernelLock() });
     const hmacKey = secretKeyFile(paths.gatewayKey, {
       mustExist: files.databaseExists(paths.databases.gateway),
       dependentPath: paths.databases.gateway,

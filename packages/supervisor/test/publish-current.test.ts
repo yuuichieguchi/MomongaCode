@@ -10,7 +10,7 @@ import type { Harness, HarnessOptions } from './fixtures/p3-harness.ts';
 
 type Rename = { from: string; to: string };
 
-const TEMPORARY_OF_CURRENT = /^current\.\d+\.[0-9a-f]+\.tmp$/;
+const TEMPORARY_OF_CURRENT = /^\.current\.[0-9a-f]+\.tmp$/;
 
 const expectedText = (home: string): string => {
   const sockets = generationLayout(canonicalPath(home), 1).sockets;

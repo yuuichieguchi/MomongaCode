@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { NeedsProbe, ProbeReport, ToolCallingMode, ToolCallingSetting } from '@momonga/protocol';
-import { canonicalJson, modeIsPrivate } from '@momonga/foundation';
+import { canonicalJson, modeIsPrivate, nodeFileSystem, systemRandom, writeFileAtomically } from '@momonga/foundation';
 import { dialectsDigest } from '../dialect/candidates.ts';
 import type { DialectCurrency } from '../dialect/candidates.ts';
 import { decideToolCalling } from './decide.ts';
@@ -30,6 +30,7 @@ export const probeTargetName = (target: string): string => {
 const recordPath = (dir: string, target: string): string => path.join(dir, `${probeTargetName(target)}.json`);
 
 const PRIVATE_DIRECTORY_MODE = 0o700;
+const PRIVATE_RECORD_MODE = 0o600;
 
 export const ensurePrivateProbeDirectory = async (dir: string): Promise<void> => {
   await fs.promises.mkdir(dir, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
@@ -40,14 +41,7 @@ export const ensurePrivateProbeDirectory = async (dir: string): Promise<void> =>
 
 export const writePrivateRecord = async (dir: string, file: string, content: string): Promise<void> => {
   await ensurePrivateProbeDirectory(dir);
-  const temporary = `${file}.${process.pid}.tmp`;
-  try {
-    await fs.promises.writeFile(temporary, content, { mode: 0o600 });
-    await fs.promises.rename(temporary, file);
-  } catch (error) {
-    await fs.promises.rm(temporary, { force: true });
-    throw error;
-  }
+  await writeFileAtomically(nodeFileSystem, systemRandom, file, content, { mode: PRIVATE_RECORD_MODE });
 };
 
 export const currentStamp = (report: Pick<ProbeReport, 'schemaDialect'>, currency: DialectCurrency): { probeMethod: number; dialectsDigest: string | undefined } => ({

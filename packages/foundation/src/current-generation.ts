@@ -1,6 +1,8 @@
 import path from 'node:path';
 import { writeFileAtomically } from './atomic-file.ts';
 import type { AtomicWriteFileSystem } from './atomic-file.ts';
+import { hostKernelLock } from './platform/host-kernel-lock.ts';
+import type { KernelLockMechanism } from './platform/kernel-lock.ts';
 import { parseOutsideJson } from './json-depth.ts';
 import { FIRST_GENERATION, generationLayout } from './momonga-paths.ts';
 import type { GenerationLayout, GenerationRole, GenerationSockets, MomongaPaths } from './momonga-paths.ts';
@@ -47,9 +49,14 @@ export const readCurrentGeneration = async (paths: MomongaPaths): Promise<Curren
   return recordOf(paths.current, text);
 };
 
-export const publishCurrentGeneration = async (paths: MomongaPaths, record: CurrentGeneration, fs: AtomicWriteFileSystem = nodeFileSystem): Promise<void> => {
+export const publishCurrentGeneration = async (
+  paths: MomongaPaths,
+  record: CurrentGeneration,
+  fs: AtomicWriteFileSystem = nodeFileSystem,
+  lock: KernelLockMechanism = hostKernelLock(),
+): Promise<void> => {
   const content = `${JSON.stringify({ generation: record.generation, version: record.version, sockets: record.sockets })}\n`;
-  await writeFileAtomically(fs, systemRandom, paths.current, content, { mode: CURRENT_FILE_MODE });
+  await writeFileAtomically(fs, systemRandom, paths.current, content, { mode: CURRENT_FILE_MODE, lock });
 };
 
 export class NoCurrentGenerationError extends Error {
