@@ -61,6 +61,7 @@ const BACKGROUND = filesIn(sectionOf('a background reader', 'readers that start 
 const VIEW = filesIn(sectionOf('readers that start no new work', 'the kept copy'));
 
 const ADMIT_CALL = /\badmitUserSnapshot\(/;
+const SESSION_CREATE_CALL = /\bsessionCreateSettings\(/;
 const CACHE_CALL = /\bcache\.(snapshot|read)\(/;
 
 const configOf = (name: string): string => fs.readFileSync(path.join(specDir, `${name}.cfg`), 'utf8');
@@ -72,7 +73,12 @@ const constantOf = (cfg: string, name: string): string => {
 
 describe('the code follows SettingsHealth.tla (one rule for every settings file)', () => {
   it('the header of the model names the admission, in-run and background readers', () => {
-    expect(ADMISSION).toEqual(['runtime/src/process/mcp-admin.ts', 'runtime/src/process/settings-port.ts', 'runtime/src/service/app.ts']);
+    expect(ADMISSION).toEqual([
+      'runtime/src/process/mcp-admin.ts',
+      'runtime/src/process/settings-port.ts',
+      'runtime/src/process/start-runtime-process.ts',
+      'runtime/src/service/app.ts',
+    ]);
     expect(IN_RUN.length).toBeGreaterThanOrEqual(12);
     expect(BACKGROUND).toEqual(['runtime/src/process/start-runtime-process.ts']);
     expect(VIEW).toEqual(['runtime/src/service/app.ts']);
@@ -83,19 +89,33 @@ describe('the code follows SettingsHealth.tla (one rule for every settings file)
     for (const file of filesMatching(ADMIT_CALL)) expect(ADMISSION).toContain(file);
   });
 
+  it('only the admission readers of the model call sessionCreateSettings', () => {
+    expect(filesMatching(SESSION_CREATE_CALL)).toEqual([
+      'runtime/src/process/settings-port.ts',
+      'runtime/src/process/start-runtime-process.ts',
+      'runtime/src/service/app.ts',
+    ]);
+    for (const file of filesMatching(SESSION_CREATE_CALL)) expect(ADMISSION).toContain(file);
+  });
+
   it('no in-run or background reader of the model reaches admission', () => {
     for (const file of [...IN_RUN, ...BACKGROUND].filter((reader) => !ADMISSION.includes(reader))) {
       expect(textOf(file), file).not.toMatch(ADMIT_CALL);
-      expect(textOf(file), file).not.toMatch(/\bsessionCreateSettings\(/);
+      expect(textOf(file), file).not.toMatch(SESSION_CREATE_CALL);
     }
+    const process = textOf('runtime/src/process/start-runtime-process.ts');
+    const sweep = process.slice(process.indexOf('startMemorySweeper('));
+    expect(process.indexOf('startMemorySweeper(')).toBeGreaterThan(process.indexOf('sessionCreateSettings: async'));
+    expect(sweep).not.toMatch(SESSION_CREATE_CALL);
+    expect(sweep).not.toMatch(ADMIT_CALL);
   });
 
-  it('the run-creating call is admission: createRun goes through sessionSettingsOf (Admit)', () => {
+  it('the run-creating call is admission: createRun goes through sessionSettingsOf with the request signal (Admit)', () => {
     const app = textOf('runtime/src/service/app.ts');
     const start = app.indexOf('const createRun: Handler');
     const end = app.indexOf('\n  };\n', start);
     expect(start).toBeGreaterThan(-1);
-    expect(app.slice(start, end)).toMatch(/await sessionSettingsOf\(session\.cwd\)/);
+    expect(app.slice(start, end)).toMatch(/await sessionSettingsOf\(session\.cwd, context\.req\.raw\.signal\)/);
   });
 
   it('the readers that start no new work go through the read use: sessionViewOf and patchSession never call sessionSettingsOf (View)', () => {
