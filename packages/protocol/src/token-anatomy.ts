@@ -76,7 +76,9 @@ export type RoleBreakdownView = {
   timingNotRecorded: number;
 };
 
-export type UnpricedCallView = { runId: string; provider: string; model: string; step?: number; reason: string };
+export type UnpricedCallView = { runId: string; provider: string; model: string; step?: number; code: UnpricedCode; reason: string };
+
+export type InconsistentUsageView = { runId: string; provider: string; model: string; step?: number; reason: string };
 
 export type CostBreakdownView = {
   calls: number;
@@ -88,10 +90,10 @@ export type CostBreakdownView = {
   timeToFirstToken: TimingSummaryView | null;
   duration: TimingSummaryView | null;
   roles: Record<string, RoleBreakdownView>;
-  cost: { amount: number | null; currency: 'USD'; unpricedCalls: number };
+  cost: { amount: number | null; currency: 'USD'; unpricedCalls: number; priceVersions: string[] };
   plan: { calls: number; inputTokens: number; outputTokens: number };
   unpriced: UnpricedCallView[];
-  inconsistentUsage: UnpricedCallView[];
+  inconsistentUsage: InconsistentUsageView[];
   cacheReadNotReported: number;
   callsWithoutResponseId: number;
   unjoined: UnjoinedView[];
@@ -110,7 +112,7 @@ export type BilledCallView = {
   billing: 'metered' | 'local' | 'plan' | 'unknown';
   startMs: number;
   usage: { inputTokens: number; cachedInputTokens?: number; cacheWriteInputTokens: number; outputTokens: number; reasoningTokens: number };
-  price: { kind: 'priced'; units: string; priceVersion: string } | { kind: 'unpriced'; reason: string };
+  price: { kind: 'priced'; units: string; priceVersion: string } | { kind: 'unpriced'; code: UnpricedCode; reason: string };
 };
 
 export type BilledCallsCursorView = { run: number; after: number };

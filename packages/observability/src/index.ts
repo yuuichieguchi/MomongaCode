@@ -4,13 +4,13 @@ export type { BodyPurge, BodyPurgeOptions, BodyPurgeTimers } from './body-purge.
 export type { BodyQueue, BodyQueueLimits } from './body-queue.ts';
 export { installOtelErrorHandler } from './errors.ts';
 export { buildCostBreakdown, formatCostBreakdown } from './cost-breakdown.ts';
-export type { BreakdownAnatomy, BreakdownCall, BreakdownPrefix, CauseCounts, CostBreakdown, CostBreakdownOptions, TimingSummary, UnjoinedRecord, UnpricedCall } from './cost-breakdown.ts';
+export type { BreakdownAnatomy, BreakdownCall, BreakdownPrefix, CauseCounts, CostBreakdown, CostBreakdownOptions, InconsistentUsage, TimingSummary, UnjoinedRecord, UnpricedCall } from './cost-breakdown.ts';
 export { MAX_BILLED_CALLS_PAGE, RUNLESS, billedCallsOfRun, billedUsageOf, pageBilledCalls } from './billed-calls.ts';
 export { CACHE_READ_TEXT, isCacheReadReported } from './cache-reads.ts';
 export type { CacheReadTally, CacheReadUsage, InputClause, SplitLine } from './cache-reads.ts';
 export type { BilledCall, BilledCallWire, BilledCallsCursor, BilledCallsPage } from './billed-calls.ts';
 export { UNPRICED_CODE_TEXT } from '@momonga/protocol';
-export { describeMoney, moneyAmountOf, moneyLine, moneyTallyOf } from './money-line.ts';
+export { describeMoney, moneyAmountOf, moneyLine, moneyTallyOf, unpricedCallsOf } from './money-line.ts';
 export type { MoneyTally } from './money-line.ts';
 export { LOCAL_PRICE_VERSION, amountOfUnits, definePriceTable, findPriceEntry, priceCall } from './cost.ts';
 export type { CallBilling, CostInput, CostUsage, PriceCallInput, PriceEntry, PriceTable, PricedCall, UnpricedPrice } from './cost.ts';

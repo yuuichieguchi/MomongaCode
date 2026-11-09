@@ -1,11 +1,14 @@
 import { describeFallbackCause } from '@momonga/foundation';
 import type { FallbackCause } from '@momonga/foundation';
 import { RUN_ROLE, UNPRICED_CODE_TEXT, escapeTerminalLine } from '@momonga/protocol';
+import type { UnpricedCode } from '@momonga/protocol';
 import { MOMONGA_ATTRIBUTES } from './semconv.ts';
 import { billedCallOf, isBilledChat } from './billed-calls.ts';
 import type { BilledCall } from './billed-calls.ts';
 import { CACHE_READ_TEXT, isCacheReadReported, noCallReported } from './cache-reads.ts';
-import { LOCAL_PRICE_VERSION, amountOfUnits, isCacheReadNotReported } from './cost.ts';
+import { LOCAL_PRICE_VERSION, amountOfUnits } from './cost.ts';
+import { describeMoney, moneyAmountOf } from './money-line.ts';
+import type { MoneyTally } from './money-line.ts';
 import type { PriceTable } from './cost.ts';
 import type { SpanRecord, TraceStore } from './trace-store.ts';
 
@@ -31,6 +34,7 @@ export type RoleCost = {
   amount: number | null;
   currency: 'USD';
   priceVersions: string[];
+  unpriced: Partial<Record<UnpricedCode, number>>;
 };
 
 export type CostTotals = RoleCost & { roles: Record<string, RoleCost> };
@@ -44,11 +48,8 @@ export type CostReportOptions = { table: PriceTable; includeRunless?: boolean };
 type Accumulator = {
   calls: number;
   localCalls: number;
-  unpricedCalls: number;
-  unknownBillingCalls: number;
+  unpriced: Partial<Record<UnpricedCode, number>>;
   cacheReadNotReportedCalls: number;
-  cacheReadUnpricedCalls: number;
-  planCalls: number;
   planInputTokens: number;
   planOutputTokens: number;
   inputTokens: number;
@@ -65,11 +66,8 @@ const emptyAccumulator = (): Accumulator => ({
   roles: new Map(),
   calls: 0,
   localCalls: 0,
-  unpricedCalls: 0,
-  unknownBillingCalls: 0,
+  unpriced: {},
   cacheReadNotReportedCalls: 0,
-  cacheReadUnpricedCalls: 0,
-  planCalls: 0,
   planInputTokens: 0,
   planOutputTokens: 0,
   inputTokens: 0,
@@ -79,14 +77,17 @@ const emptyAccumulator = (): Accumulator => ({
   priceVersions: new Set(),
 });
 
+const addUnpriced = (accumulator: Accumulator, code: UnpricedCode, count: number): void => {
+  accumulator.unpriced[code] = (accumulator.unpriced[code] ?? 0) + count;
+};
+
+const countOf = (accumulator: Accumulator, code: UnpricedCode): number => accumulator.unpriced[code] ?? 0;
+
 const merge = (target: Accumulator, source: Accumulator): void => {
   target.calls += source.calls;
   target.localCalls += source.localCalls;
-  target.unpricedCalls += source.unpricedCalls;
-  target.unknownBillingCalls += source.unknownBillingCalls;
+  for (const [code, count] of Object.entries(source.unpriced) as [UnpricedCode, number][]) addUnpriced(target, code, count);
   target.cacheReadNotReportedCalls += source.cacheReadNotReportedCalls;
-  target.cacheReadUnpricedCalls += source.cacheReadUnpricedCalls;
-  target.planCalls += source.planCalls;
   target.planInputTokens += source.planInputTokens;
   target.planOutputTokens += source.planOutputTokens;
   target.inputTokens += source.inputTokens;
@@ -124,26 +125,31 @@ const fallbackTotalsOf = (accumulator: Accumulator): Pick<CostTotals, 'fallbackC
   return { fallbackCalls: fallbacks.reduce((total, fallback) => total + fallback.calls, 0), fallbacks };
 };
 
-const pricedCallsOf = (accumulator: Accumulator): number =>
-  accumulator.calls - accumulator.planCalls - accumulator.unknownBillingCalls - accumulator.cacheReadUnpricedCalls - accumulator.unpricedCalls;
+const moneyTallyOfAccumulator = (accumulator: Accumulator): MoneyTally => ({
+  calls: accumulator.calls,
+  unpriced: accumulator.unpriced,
+  amount: amountOfUnits(accumulator.units),
+  meteredPriceVersions: [...accumulator.priceVersions].sort(),
+});
 
 const roleTotalsOf = (accumulator: Accumulator): RoleCost => ({
   ...fallbackTotalsOf(accumulator),
   calls: accumulator.calls,
   localCalls: accumulator.localCalls,
-  unpricedCalls: accumulator.unpricedCalls,
-  unknownBillingCalls: accumulator.unknownBillingCalls,
+  unpricedCalls: countOf(accumulator, 'no_price_entry') + countOf(accumulator, 'unpriceable_usage'),
+  unknownBillingCalls: countOf(accumulator, 'unknown_billing'),
   cacheReadNotReportedCalls: accumulator.cacheReadNotReportedCalls,
-  cacheReadUnpricedCalls: accumulator.cacheReadUnpricedCalls,
-  planCalls: accumulator.planCalls,
+  cacheReadUnpricedCalls: countOf(accumulator, 'cache_read_not_reported'),
+  planCalls: countOf(accumulator, 'plan'),
   planInputTokens: accumulator.planInputTokens,
   planOutputTokens: accumulator.planOutputTokens,
   inputTokens: accumulator.inputTokens,
   outputTokens: accumulator.outputTokens,
   cachedInputTokens: noCallReported({ calls: accumulator.calls, notReported: accumulator.cacheReadNotReportedCalls }) ? null : accumulator.cachedInputTokens,
-  amount: accumulator.calls > 0 && pricedCallsOf(accumulator) === 0 ? null : amountOfUnits(accumulator.units),
+  amount: moneyAmountOf(moneyTallyOfAccumulator(accumulator)),
   currency: 'USD',
   priceVersions: [...accumulator.priceVersions].sort(),
+  unpriced: { ...accumulator.unpriced },
 });
 
 const totalsOf = (accumulator: Accumulator): CostTotals => ({
@@ -177,16 +183,12 @@ const addSpan = (accumulator: Accumulator, span: SpanRecord, call: BilledCall): 
   if (price.kind === 'priced') {
     accumulator.units += price.units;
     if (price.priceVersion !== LOCAL_PRICE_VERSION) accumulator.priceVersions.add(price.priceVersion);
-  } else if (price.code === 'plan') {
-    accumulator.planCalls += 1;
-    accumulator.planInputTokens += call.usage.inputTokens;
-    accumulator.planOutputTokens += call.usage.outputTokens;
-  } else if (isCacheReadNotReported(price)) {
-    accumulator.cacheReadUnpricedCalls += 1;
-  } else if (price.code === 'unknown_billing') {
-    accumulator.unknownBillingCalls += 1;
   } else {
-    accumulator.unpricedCalls += 1;
+    addUnpriced(accumulator, price.code, 1);
+    if (price.code === 'plan') {
+      accumulator.planInputTokens += call.usage.inputTokens;
+      accumulator.planOutputTokens += call.usage.outputTokens;
+    }
   }
 };
 
@@ -229,16 +231,12 @@ export const buildCostReport = (store: TraceStore, runs: readonly CostedRun[], o
 };
 
 const describeTotals = (totals: RoleCost): string => {
-  const versions = totals.priceVersions.length === 0 ? 'none' : totals.priceVersions.join(',');
-  const local = totals.localCalls === 0 ? '' : `, ${totals.localCalls} of ${totals.calls} call(s) ran locally and cost nothing`;
-  const unpriced = totals.unpricedCalls === 0 ? '' : `, ${totals.unpricedCalls} of ${totals.calls} call(s) have no price entry and are not counted`;
-  const unknown = totals.unknownBillingCalls === 0 ? '' : `, ${totals.unknownBillingCalls} of ${totals.calls} call(s) have unknown billing and are not counted`;
-  const cacheReadUnpriced = totals.cacheReadUnpricedCalls === 0 ? '' : CACHE_READ_TEXT.meteredUnpriced(totals.cacheReadUnpricedCalls, totals.calls);
   const fallback = (totals.fallbacks ?? []).map(
     (entry) =>
       `, ${entry.calls} of ${totals.calls} call(s) were answered by fallback target ${entry.answeredBy} after ${entry.failed.map(describeFallbackCause).join('; ')}`,
   );
-  return `${totals.calls} call(s), ${CACHE_READ_TEXT.inputClause({ calls: totals.calls, notReported: totals.cacheReadNotReportedCalls, inputTokens: totals.inputTokens, cachedInputTokens: totals.cachedInputTokens })} + ${totals.outputTokens} output tokens, ${totals.amount} ${totals.currency} at price version ${versions}${local}${unpriced}${unknown}${cacheReadUnpriced}${fallback.join('')}`;
+  const money = describeMoney({ calls: totals.calls, unpriced: totals.unpriced, amount: totals.amount, meteredPriceVersions: totals.priceVersions });
+  return `${totals.calls} call(s), ${CACHE_READ_TEXT.inputClause({ calls: totals.calls, notReported: totals.cacheReadNotReportedCalls, inputTokens: totals.inputTokens, cachedInputTokens: totals.cachedInputTokens })} + ${totals.outputTokens} output tokens, ${money}${fallback.join('')}`;
 };
 
 const planLines = (totals: RoleCost, indent: string): string[] =>

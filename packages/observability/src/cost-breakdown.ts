@@ -1,8 +1,8 @@
-import { moneyAmountOf, moneyTallyOf } from './money-line.ts';
+import { describeMoney, moneyAmountOf, moneyTallyOf, unpricedCallsOf } from './money-line.ts';
 import { CACHE_READ_TEXT, isCacheReadReported } from './cache-reads.ts';
 import type { CallBilling, PricedCall } from './cost.ts';
 import { CACHE_MISS_CAUSES, RUN_ROLE, UNPRICED_CODE_TEXT, escapeTerminalLine } from '@momonga/protocol';
-import type { CacheMissCause, PrefixEvent } from '@momonga/protocol';
+import type { CacheMissCause, PrefixEvent, UnpricedCode } from '@momonga/protocol';
 
 export type BreakdownAnatomy = {
   layers: Readonly<Record<string, number | Readonly<Record<string, number>> | undefined>>;
@@ -36,7 +36,9 @@ export type RoleBreakdown = {
   timingNotRecorded: number;
 };
 
-export type UnpricedCall = { runId: string; provider: string; model: string; step?: number; reason: string };
+export type UnpricedCall = { runId: string; provider: string; model: string; step?: number; code: UnpricedCode; reason: string };
+
+export type InconsistentUsage = { runId: string; provider: string; model: string; step?: number; reason: string };
 
 export type CauseCounts = Partial<Record<CacheMissCause, number>>;
 
@@ -58,10 +60,10 @@ export type CostBreakdown = {
   timeToFirstToken: TimingSummary | null;
   duration: TimingSummary | null;
   roles: Record<string, RoleBreakdown>;
-  cost: { amount: number | null; currency: 'USD'; unpricedCalls: number };
+  cost: { amount: number | null; currency: 'USD'; unpricedCalls: number; priceVersions: string[] };
   plan: { calls: number; inputTokens: number; outputTokens: number };
   unpriced: UnpricedCall[];
-  inconsistentUsage: UnpricedCall[];
+  inconsistentUsage: InconsistentUsage[];
   cacheReadNotReported: number;
   callsWithoutResponseId: number;
   unjoined: UnjoinedRecord[];
@@ -140,7 +142,7 @@ export const buildCostBreakdown = (calls: readonly BreakdownCall[], options: Cos
   const split = { calls: 0, reportedInputTokens: 0, uncachedInputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
   const byRole = new Map<string, { calls: number; firstEvents: number[]; durations: number[]; notRecorded: number }>();
   const unpriced: UnpricedCall[] = [];
-  const inconsistentUsage: UnpricedCall[] = [];
+  const inconsistentUsage: InconsistentUsage[] = [];
   const plan = { calls: 0, inputTokens: 0, outputTokens: 0 };
   let cacheReadNotReported = 0;
   for (const call of calls) {
@@ -183,7 +185,7 @@ export const buildCostBreakdown = (calls: readonly BreakdownCall[], options: Cos
       plan.inputTokens += usage.inputTokens;
       plan.outputTokens += usage.outputTokens;
     } else if (call.price.kind === 'unpriced') {
-      unpriced.push({ ...identity, reason: call.price.reason });
+      unpriced.push({ ...identity, code: call.price.code, reason: call.price.reason });
     }
   }
   const money = moneyTallyOf(calls.map((call) => call.price));
@@ -226,7 +228,7 @@ export const buildCostBreakdown = (calls: readonly BreakdownCall[], options: Cos
     timeToFirstToken: main?.timeToFirstToken ?? null,
     duration: main?.duration ?? null,
     roles,
-    cost: { amount: moneyAmountOf(money), currency: 'USD', unpricedCalls: Object.values(money.unpriced).reduce((sum, count) => sum + count, 0) },
+    cost: { amount: moneyAmountOf(money), currency: 'USD', unpricedCalls: unpricedCallsOf(money.unpriced), priceVersions: [...money.meteredPriceVersions] },
     plan,
     unpriced,
     inconsistentUsage,
@@ -274,6 +276,12 @@ const hitRatioLineOf = (breakdown: CostBreakdown): string => {
   return 'cache hit ratio: none (no input)';
 };
 
+const unpricedByCodeOf = (breakdown: CostBreakdown): Partial<Record<UnpricedCode, number>> => {
+  const counts: Partial<Record<UnpricedCode, number>> = breakdown.plan.calls === 0 ? {} : { plan: breakdown.plan.calls };
+  for (const entry of breakdown.unpriced) counts[entry.code] = (counts[entry.code] ?? 0) + 1;
+  return counts;
+};
+
 export const formatCostBreakdown = (breakdown: CostBreakdown): string => {
   const { billed } = breakdown;
   const shares = Object.entries(breakdown.layers.shares).filter(([, tokens]) => tokens > 0);
@@ -283,10 +291,7 @@ export const formatCostBreakdown = (breakdown: CostBreakdown): string => {
       : `layers (estimated): ${shares.map(([name, share]) => `${name} ${percent(share)}`).join(', ')}`;
   const withoutAnatomy =
     breakdown.layers.callsWithoutAnatomy === 0 ? '' : `, ${breakdown.layers.callsWithoutAnatomy} of ${breakdown.calls} call(s) have no recorded layers`;
-  const cost =
-    breakdown.cost.amount === null
-      ? `cost: unknown (${breakdown.cost.unpricedCalls} of ${breakdown.calls} call(s) have no price)`
-      : `cost: ${breakdown.cost.amount} ${breakdown.cost.currency}`;
+  const cost = `cost: ${describeMoney({ calls: breakdown.calls, unpriced: unpricedByCodeOf(breakdown), amount: breakdown.cost.amount, meteredPriceVersions: breakdown.cost.priceVersions })}`;
   return [
     `calls: ${breakdown.calls}`,
     `${layerLine}${withoutAnatomy}`,

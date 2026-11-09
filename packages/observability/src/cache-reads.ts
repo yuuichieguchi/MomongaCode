@@ -20,8 +20,6 @@ export const CACHE_READ_TEXT = {
     if (clause.notReported === 0) return `${clause.inputTokens} input (${clause.cachedInputTokens} cached)`;
     return `${clause.inputTokens} input (${clause.cachedInputTokens} cached in ${reportedCallsOf(clause)} of ${clause.calls} call(s); ${CACHE_READS_NOT_REPORTED} in ${clause.notReported} call(s))`;
   },
-  meteredUnpriced: (unpriced: number, calls: number): string =>
-    `, ${unpriced} of ${calls} call(s) are metered and did not report cache reads, so their price is unknown and they are not counted in the amount`,
   breakdownExclusion: (notReported: number, calls: number): string =>
     `${CACHE_READS_NOT_REPORTED}: ${notReported} of ${calls} call(s) are left out of the cache split, the cache hit ratio and the cache-miss causes`,
   split: (line: SplitLine): string =>

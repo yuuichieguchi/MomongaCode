@@ -2,6 +2,7 @@ import { GENAI_SEMCONV, MOMONGA_ATTRIBUTES, OPERATIONS, UNKNOWN_BILLING } from '
 import { priceCall } from './cost.ts';
 import type { CallBilling, PriceTable, PricedCall } from './cost.ts';
 import type { SpanRecord, TraceStore } from './trace-store.ts';
+import type { UnpricedCode } from '@momonga/protocol';
 
 const A = GENAI_SEMCONV.attributes;
 
@@ -21,7 +22,7 @@ export type BilledCall = {
 };
 
 export type BilledCallWire = Omit<BilledCall, 'price' | 'spanId'> & {
-  price: { kind: 'priced'; units: string; priceVersion: string } | { kind: 'unpriced'; reason: string };
+  price: { kind: 'priced'; units: string; priceVersion: string } | { kind: 'unpriced'; code: UnpricedCode; reason: string };
 };
 
 export type BilledCallsCursor = { run: number; after: number };

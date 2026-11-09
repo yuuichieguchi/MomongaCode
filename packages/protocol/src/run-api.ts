@@ -16,7 +16,7 @@ import { APPROVAL_STATUSES, IMAGE_MEDIA_TYPES, JOB_STATUSES, isInheritedReferenc
 import type { ImageMediaType, RunEvent, RunEventEnvelope, RunEventPayload, SessionEvent, SessionEventPayload } from './run-types.ts';
 import type { ReflectionJobView } from './memory.ts';
 import { UNPRICED_CODES } from './token-anatomy.ts';
-import type { BilledDetail, TokenAnatomy } from './token-anatomy.ts';
+import type { BilledDetail, TokenAnatomy, UnpricedCode } from './token-anatomy.ts';
 
 const DRAFT_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
 const DAY_MS = 86_400_000;
@@ -632,6 +632,7 @@ const costTotalsProperties: Record<string, JsonSchema> = {
   amount: nullable({ type: 'number', minimum: 0 }),
   currency: constant('USD'),
   priceVersions: { type: 'array', items: string },
+  unpriced: closed(Object.fromEntries(UNPRICED_CODES.map((code) => [code, { type: 'integer', minimum: 1 }])), []),
 };
 const roleCostRequired = Object.keys(costTotalsProperties);
 const costTotalsRequired = [...roleCostRequired, 'roles'];
@@ -744,11 +745,11 @@ const costBreakdownView = closed(
         ['calls', 'timeToFirstToken', 'duration', 'totalDurationMs', 'timingNotRecorded'],
       ),
     },
-    cost: closed({ amount: nullable({ type: 'number' }), currency: constant('USD'), unpricedCalls: nonNegativeInteger }, ['amount', 'currency', 'unpricedCalls']),
+    cost: closed({ amount: nullable({ type: 'number' }), currency: constant('USD'), unpricedCalls: nonNegativeInteger, priceVersions: { type: 'array', items: string } }, ['amount', 'currency', 'unpricedCalls', 'priceVersions']),
     plan: closed({ calls: nonNegativeInteger, inputTokens: nonNegativeInteger, outputTokens: nonNegativeInteger }, ['calls', 'inputTokens', 'outputTokens']),
     unpriced: {
       type: 'array',
-      items: closed({ runId: string, provider: string, model: string, step: nonNegativeInteger, reason: string }, ['runId', 'provider', 'model', 'reason']),
+      items: closed({ runId: string, provider: string, model: string, step: nonNegativeInteger, code: enumOf(UNPRICED_CODES), reason: string }, ['runId', 'provider', 'model', 'code', 'reason']),
     },
     inconsistentUsage: {
       type: 'array',
@@ -1024,6 +1025,7 @@ export type RoleCostView = {
   amount: number | null;
   currency: 'USD';
   priceVersions: string[];
+  unpriced: Partial<Record<UnpricedCode, number>>;
 };
 
 export type CostTotalsView = RoleCostView & { roles: Record<string, RoleCostView> };

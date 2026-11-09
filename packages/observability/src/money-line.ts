@@ -6,11 +6,11 @@ import type { PricedCall } from './cost.ts';
 export type MoneyTally = {
   calls: number;
   unpriced: Partial<Record<UnpricedCode, number>>;
-  units: bigint;
-  priceVersions: readonly string[];
+  amount: number | null;
+  meteredPriceVersions: readonly string[];
 };
 
-const pricedCallsOf = (tally: MoneyTally): number => tally.calls - Object.values(tally.unpriced).reduce((sum, count) => sum + count, 0);
+export const unpricedCallsOf = (unpriced: Partial<Record<UnpricedCode, number>>): number => Object.values(unpriced).reduce((sum, count) => sum + count, 0);
 
 export const moneyTallyOf = (outcomes: readonly PricedCall[]): MoneyTally => {
   const unpriced: Partial<Record<UnpricedCode, number>> = {};
@@ -21,29 +21,29 @@ export const moneyTallyOf = (outcomes: readonly PricedCall[]): MoneyTally => {
       unpriced[outcome.code] = (unpriced[outcome.code] ?? 0) + 1;
     } else {
       units += outcome.units;
-      versions.add(outcome.priceVersion);
+      if (outcome.priceVersion !== LOCAL_PRICE_VERSION) versions.add(outcome.priceVersion);
     }
   }
-  return { calls: outcomes.length, unpriced, units, priceVersions: [...versions].sort() };
+  return { calls: outcomes.length, unpriced, amount: amountOfUnits(units), meteredPriceVersions: [...versions].sort() };
 };
 
-export const moneyAmountOf = (tally: MoneyTally): number | null => (tally.calls > 0 && pricedCallsOf(tally) === 0 ? null : amountOfUnits(tally.units));
+export const moneyAmountOf = (tally: MoneyTally): number | null => (tally.calls > 0 && unpricedCallsOf(tally.unpriced) === tally.calls ? null : tally.amount);
 
 export const describeMoney = (tally: MoneyTally): string => {
-  const priced = pricedCallsOf(tally);
-  const amount = `${amountOfUnits(tally.units)} USD`;
   if (tally.calls === 0) return 'no calls';
+  const priced = tally.calls - unpricedCallsOf(tally.unpriced);
+  if (priced > 0 && tally.amount === null) throw new RangeError(`a scope with ${priced} priced call(s) has no amount`);
+  const amount = `${tally.amount} USD`;
   const missing = UNPRICED_CODES.flatMap((code) => {
-    const count = tally.unpriced[code];
-    return count === undefined || count === 0 ? [] : [`${UNPRICED_CODE_TEXT[code]} in ${count} call(s)`];
+    const count = tally.unpriced[code] ?? 0;
+    return count === 0 ? [] : [`${UNPRICED_CODE_TEXT[code]} in ${count} call(s)`];
   });
   if (missing.length > 0) {
     const part = priced === 0 ? '' : `; priced part: ${amount} over ${priced} of ${tally.calls} call(s)`;
     return `not complete: ${missing.join('; ')}${part}`;
   }
-  const metered = tally.priceVersions.filter((version) => version !== LOCAL_PRICE_VERSION);
-  if (metered.length === 0) return `${amount}, all ${tally.calls} call(s) ran locally and cost nothing`;
-  return `${amount} at price version ${metered.join(',')}`;
+  if (tally.meteredPriceVersions.length === 0) return `${amount}, all ${tally.calls} call(s) ran locally and cost nothing`;
+  return `${amount} at price version ${tally.meteredPriceVersions.join(',')}`;
 };
 
 export const moneyLine = (outcomes: readonly PricedCall[]): string => describeMoney(moneyTallyOf(outcomes));

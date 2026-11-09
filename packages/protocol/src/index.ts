@@ -342,6 +342,7 @@ export type {
   TokenAnatomy,
   TokenAnatomyLayers,
   UnpricedCallView,
+  InconsistentUsageView,
   UnpricedCode,
   UnpricedOutcome,
 } from './token-anatomy.ts';
