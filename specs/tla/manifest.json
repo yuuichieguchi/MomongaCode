@@ -3699,9 +3699,9 @@
       "args": [],
       "tier": "every-run",
       "distinctStates": 29161,
-      "measuredSeconds": 3.96,
-      "measuredCpuSeconds": 5.53,
-      "budgetCpuSeconds": 15
+      "measuredSeconds": 4.57,
+      "measuredCpuSeconds": 16.24,
+      "budgetCpuSeconds": 36
     },
     {
       "config": "UpdateSwitch.noReqWait",
