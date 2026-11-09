@@ -63,7 +63,7 @@ export type { UserDialects } from './dialect/choice.ts';
 export type { EnvelopeShape } from './probe/envelope.ts';
 export { PROBE_METHOD_VERSION } from './probe/run-probe.ts';
 export { IDENTITY_READ_TIMEOUT_MS } from './probe/endpoint-target.ts';
-export { FM_SERVE_DEFAULTS, GATEWAY_CONFIG_DEFAULTS, UPSTREAM_LIVENESS_DEFAULTS } from './defaults.ts';
+export { FM_SERVE_DEFAULTS, GATEWAY_CONFIG_DEFAULTS, PLAN_SESSION_DEFAULTS, UPSTREAM_LIVENESS_DEFAULTS } from './defaults.ts';
 export { gatewayConfigOf, startGatewayProcess } from './process.ts';
 export type { GatewayCloseResult, GatewayProcess, StartGatewayProcessOptions } from './process.ts';
 export { GATEWAY_ENTRY_FLAGS, runGatewayEntry } from './entry.ts';
