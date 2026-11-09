@@ -1,17 +1,14 @@
 import type { Duplex, Readable } from 'node:stream';
-import { createStopValuesReader } from '@momonga/config';
+import { createStopValuesReader, stopValuesOfSettings } from '@momonga/config';
 import type { ResolvedSettings, StopValuesReader, UserSettingsCache, UserSettingsSnapshot } from '@momonga/config';
 import {
-  RUNTIME_ABORT_BUDGET_MS,
-  RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
-  RUNTIME_TEARDOWN_BUDGET_MS,
-  SHUTDOWN_MARGIN_MS,
   claimLockForChild,
   formatStopMessage,
   gatewayAbortBudgetMs,
   gatewayStopBudgetMs,
   parseReadyLine,
   reapMarkerDirectory,
+  runtimeAbortStopBudgetMs,
   runtimeStopBudgetMs,
 } from '@momonga/foundation';
 import type { Clock, JsonLogger, KernelLockMechanism, LockHandoff, LockHandoffClaim, MomongaPaths, ReadyFields, RoleEndpoint, StopValues } from '@momonga/foundation';
@@ -132,14 +129,12 @@ export type ChildManager = {
   awaitLeave(from: ChildState, options: { timeoutMs: number; signal: AbortSignal }): Promise<ChildState>;
 };
 
-export const stopBudgetMs = (role: ChildRole, mode: StopMode, drainTimeoutMs: number, values: StopValues): number => {
-  if (role === 'runtime') {
-    return mode === 'term' ? runtimeStopBudgetMs(drainTimeoutMs) : RUNTIME_ABORT_BUDGET_MS + RUNTIME_TEARDOWN_BUDGET_MS + SHUTDOWN_MARGIN_MS;
-  }
+export const stopBudgetMs = (role: ChildRole, mode: StopMode, values: StopValues): number => {
+  if (role === 'runtime') return mode === 'term' ? runtimeStopBudgetMs(values) : runtimeAbortStopBudgetMs(values);
   return mode === 'term' ? gatewayStopBudgetMs(values) : gatewayAbortBudgetMs(values);
 };
 
-const carriesStopValues = (role: ChildRole): boolean => role === 'gateway';
+const runsManagedServers = (role: ChildRole): boolean => role === 'gateway';
 
 type LifeTimerName = 'startup' | 'stable' | 'budget' | 'confirm';
 
@@ -173,14 +168,13 @@ const isStartupReason = (reason: StopReason): boolean => stopReasonRank(reason) 
 
 export const createChildManager = (options: ChildManagerOptions): ChildManager => {
   const { role, timers, clock, logger } = options;
-  const drainTimeoutMs = options.runtime?.drainTimeoutMs ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS;
   const stopValuesReader =
     options.stopValues ??
     createStopValuesReader({
       load: () => {
         const snapshot = options.settings.snapshot();
         if ('error' in snapshot) throw snapshot.error;
-        return snapshot.settings.gateway;
+        return stopValuesOfSettings(snapshot.settings);
       },
       onNotice: (detail) => writeEvent(logger, settingsWarning({ detail })),
     });
@@ -522,7 +516,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   };
 
   const reapManagedServers = async (life: Life): Promise<void> => {
-    if (!carriesStopValues(role)) return;
+    if (!runsManagedServers(role)) return;
     const values = life.stopValues ?? stopValuesReader.read();
     await (options.markerPorts?.reapMarkerDirectory ?? reapMarkerDirectory)({
       dir: options.paths.markers.targets,
@@ -695,7 +689,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   };
 
   const budgetFor = (reason: StopReason, mode: StopMode, values: StopValues): number =>
-    isStartupReason(reason) && mode === 'term' ? options.restart.startupKillGraceMs : stopBudgetMs(role, mode, drainTimeoutMs, values);
+    isStartupReason(reason) && mode === 'term' ? options.restart.startupKillGraceMs : stopBudgetMs(role, mode, values);
 
   const signalOf = (mode: StopMode): NodeJS.Signals => (mode === 'int' ? 'SIGINT' : 'SIGTERM');
 
@@ -706,10 +700,6 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
   };
 
   const sendStop = (life: Life, values: StopValues): void => {
-    if (!carriesStopValues(role)) {
-      signalStop(life);
-      return;
-    }
     const lifeline = life.handle.lifeline;
     if (lifeline === null) {
       forceKill(life);

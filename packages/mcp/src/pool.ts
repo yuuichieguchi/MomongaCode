@@ -29,7 +29,7 @@ export type McpPoolOptions = {
 
 export type McpPool = {
   sources: ToolSource[];
-  close(): Promise<void>;
+  close(graceMs?: number): Promise<void>;
   diagnostics(): McpServerDiagnostics[];
 };
 
@@ -76,8 +76,8 @@ export const createMcpPool = (options: McpPoolOptions): McpAuthorizingPool => {
         ...(options.toolTotalTimeoutMs === undefined ? {} : { toolTotalTimeoutMs: options.toolTotalTimeoutMs }),
       }),
     ),
-    close: async () => {
-      await Promise.all(connections.map((connection) => connection.close()));
+    close: async (graceMs) => {
+      await Promise.all(connections.map((connection) => connection.close(graceMs)));
     },
     diagnostics: () => connections.map((connection) => connection.diagnostics()),
     authorize: (server, signal) => connectionNamed(server).then((connection) => connection.authorize(signal)),

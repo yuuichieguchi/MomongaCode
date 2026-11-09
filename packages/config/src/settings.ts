@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { STOP_VALUE_NAMES, defineProductSchema, stopValueProblem, transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
-import type { ProductValidator } from '@momonga/foundation';
+import { defineProductSchema, stopValueProblem, transportUrlMessage, transportUrlProblem, isRecord } from '@momonga/foundation';
+import type { ProductValidator, StopValueName } from '@momonga/foundation';
 import type { AnthropicApiVersion, CapabilitiesCore, DialectDefinition, HooksSettings, ImageCapability, ImageTokenModel, OutputBoundField, OutputFormatterName, TargetAnswers, TargetBilling, PermissionMode } from '@momonga/protocol';
 import { PLAN_PROFILES } from './plan-profiles.ts';
 import { describeSchemaErrors } from './schema-errors.ts';
@@ -335,10 +335,11 @@ export type Settings = {
   disabledMcpjsonServers?: string[];
   enableAllProjectMcpServers?: boolean;
   mcpServers?: Record<string, McpServerConfig>;
-  mcp?: McpCallSettings;
+  mcp?: McpSettings;
   models?: ModelsSettings;
   autoUpdates?: boolean;
   gateway?: GatewaySettings;
+  runtime?: RuntimeSettings;
   sandbox?: SandboxSetting;
   telemetry?: TelemetrySettings;
   network?: NetworkSettings;
@@ -350,6 +351,17 @@ export type Settings = {
 };
 
 export type GatewaySettings = { closeGraceMs?: number; managedServerStopGraceMs?: number };
+
+export type RuntimeSettings = { drainTimeoutMs?: number };
+
+export type McpSettings = McpCallSettings & { closeGraceMs?: number };
+
+export const STOP_SETTING_KEYS = {
+  closeGraceMs: { object: 'gateway', key: 'closeGraceMs' },
+  managedServerStopGraceMs: { object: 'gateway', key: 'managedServerStopGraceMs' },
+  drainTimeoutMs: { object: 'runtime', key: 'drainTimeoutMs' },
+  mcpCloseGraceMs: { object: 'mcp', key: 'closeGraceMs' },
+} as const satisfies Record<StopValueName, { object: 'gateway' | 'runtime' | 'mcp'; key: string }>;
 
 export type HookGroups = NonNullable<HooksSettings[keyof HooksSettings]>;
 
@@ -380,13 +392,13 @@ const assertPlanAdapters = (value: unknown, source: string): void => {
   }
 };
 
-const assertGatewayStopValues = (value: unknown, source: string): void => {
-  const gateway = isRecord(value) ? value['gateway'] : undefined;
-  if (!isRecord(gateway)) return;
-  for (const name of STOP_VALUE_NAMES) {
-    if (!Object.hasOwn(gateway, name)) continue;
-    const problem = stopValueProblem(name, gateway[name]);
-    if (problem !== undefined) throw new Error(`${source}: gateway.${problem}`);
+const assertStopValues = (value: unknown, source: string): void => {
+  if (!isRecord(value)) return;
+  for (const [name, { object, key }] of Object.entries(STOP_SETTING_KEYS) as Array<[StopValueName, (typeof STOP_SETTING_KEYS)[StopValueName]]>) {
+    const holder = value[object];
+    if (!isRecord(holder) || !Object.hasOwn(holder, key)) continue;
+    const problem = stopValueProblem(name, holder[key], `${object}.${key}`);
+    if (problem !== undefined) throw new Error(`${source}: ${problem}`);
   }
 };
 
@@ -395,7 +407,7 @@ export const assertSettings = (value: unknown, source: string): Settings => {
     for (const [name, server] of Object.entries(value['mcpServers'])) assertNotHttpSse(server, source, name);
   }
   assertPlanAdapters(value, source);
-  assertGatewayStopValues(value, source);
+  assertStopValues(value, source);
   const verdict = validateSettings(value);
   if (!verdict.valid) throw new Error(`${source}: invalid settings at ${describeSchemaErrors(verdict.errors)}`);
   const settings = verdict.value;

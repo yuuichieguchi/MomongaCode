@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ProcessLockHeldError, acquireProcessLock, createUdsClient, fixedSocket, isUnixSocketLive, socketPathLimit, systemClock } from '@momonga/foundation';
+import { KILL_CONFIRM_MS, ProcessLockHeldError, acquireProcessLock, createUdsClient, fixedSocket, isUnixSocketLive, socketPathLimit, systemClock } from '@momonga/foundation';
 import type { ProcessLock, UdsClient } from '@momonga/foundation';
 import { SOCKET_PLACEHOLDER } from '@momonga/protocol';
 import type { HealthResult, ManagedServerDescription } from '@momonga/protocol';
@@ -303,8 +303,8 @@ export const createManagedServer = (options: ManagedServerOptions): ManagedServe
         await sendKill('SIGTERM');
         if (!(await waitForExit(managed, graceMs))) {
           await sendKill('SIGKILL');
-          if (!(await waitForExit(managed, graceMs))) {
-            options.onWarning(said(`the server process was not confirmed stopped: it did not exit within ${graceMs} ms after SIGKILL`));
+          if (!(await waitForExit(managed, KILL_CONFIRM_MS))) {
+            options.onWarning(said(`the server process was not confirmed stopped: it did not exit within ${KILL_CONFIRM_MS} ms after SIGKILL`));
           }
         }
       }

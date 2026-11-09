@@ -88,7 +88,7 @@ export interface McpServerConnection {
   cancelOutcome(taskId: string): Promise<boolean> | undefined;
   redact(text: string): string;
   diagnostics(): McpServerDiagnostics;
-  close(): Promise<void>;
+  close(graceMs?: number): Promise<void>;
 }
 
 export type McpConnectionOptions = {
@@ -374,8 +374,8 @@ class ManagedConnection implements McpServerConnection {
     return this.cancels.get(taskId);
   }
 
-  close(): Promise<void> {
-    this.closing ??= this.shutdown();
+  close(graceMs: number = this.options.closeGraceMs ?? DEFAULT_CLOSE_GRACE_MS): Promise<void> {
+    this.closing ??= this.shutdown(graceMs);
     return this.closing;
   }
 
@@ -534,25 +534,25 @@ class ManagedConnection implements McpServerConnection {
     await session.guarded?.close();
   }
 
-  private async shutdown(): Promise<void> {
+  private async shutdown(graceMs: number): Promise<void> {
     this.lifetime.abort();
     this.inputs.closeAll();
-    await this.pendingTransport?.close();
+    await this.pendingTransport?.close(graceMs);
     await this.connecting?.catch(() => undefined);
     this.state = 'closed';
     const session = this.session;
     this.session = undefined;
     if (session === undefined) return;
     try {
-      if (session.transport.sessionId !== undefined) await this.endSession(session.transport);
+      if (session.transport.sessionId !== undefined) await this.endSession(session.transport, graceMs);
     } finally {
+      await session.transport.close(graceMs);
       await session.client.close();
       await session.guarded?.close();
     }
   }
 
-  private async endSession(transport: ConnectionTransport): Promise<void> {
-    const graceMs = this.options.closeGraceMs ?? DEFAULT_CLOSE_GRACE_MS;
+  private async endSession(transport: ConnectionTransport, graceMs: number): Promise<void> {
     const expired = new AbortController();
     const handle = this.timers.setTimeout(() => expired.abort(), graceMs);
     try {
@@ -622,6 +622,7 @@ class ManagedConnection implements McpServerConnection {
         baseEnv,
         ...(markers === undefined ? {} : { markers }),
         ...(closeGraceMs === undefined ? {} : { closeGraceMs }),
+        timing: { now: () => this.options.clock.now(), setTimeout: (callback, ms) => this.timers.setTimeout(callback, ms), clearTimeout: (handle) => this.timers.clearTimeout(handle) },
       });
       return { transport: Object.assign(transport, { terminateSession: () => Promise.resolve(), toolCallsDelivered: () => 0 }), guarded: undefined };
     }

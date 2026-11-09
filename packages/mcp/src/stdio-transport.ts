@@ -6,7 +6,7 @@ import type { Readable, Stream, Writable } from 'node:stream';
 import { deserializeMessage, serializeMessage, type JSONRPCMessage, type Transport } from '@modelcontextprotocol/client';
 import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
 import type { McpStdioServerConfig } from '@momonga/config';
-import { Deadline, GroupNotStoppedError, groupTerminationBoundMs, operationSignal, reapMarkedProcesses, systemTiming, terminateGroup, type DeadlineTiming, type TerminateOutcome } from '@momonga/foundation';
+import { Deadline, groupTerminationBoundMs, operationSignal, reapMarkedProcesses, systemTiming, terminateGroup, type DeadlineTiming, type GroupTiming, type TerminateOutcome } from '@momonga/foundation';
 
 const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 const STDERR_TAIL_BYTES = 64 * 1024;
@@ -22,7 +22,7 @@ export interface StdioTransportOptions {
   baseEnv: Record<string, string>;
   closeGraceMs?: number;
   markers?: McpMarkerOptions;
-  terminate?: (pgid: number, options: { graceMs: number; signal?: AbortSignal }) => Promise<TerminateOutcome>;
+  terminate?: (pgid: number, options: { graceMs: number; signal?: AbortSignal; timing?: GroupTiming }) => Promise<TerminateOutcome>;
   timing?: DeadlineTiming;
 }
 
@@ -38,6 +38,7 @@ export interface StdioTransportDiagnostics {
 
 export interface StdioTransport extends Transport {
   readonly pgid: number | undefined;
+  close(graceMs?: number): Promise<void>;
   diagnostics(): StdioTransportDiagnostics;
 }
 
@@ -99,10 +100,21 @@ class StdioTransportImpl implements StdioTransport {
   private markerPath: string | undefined;
 
   private readonly options: StdioTransportOptions;
+  private readonly timing: DeadlineTiming;
+  private readonly sleepTiming: GroupTiming;
 
   constructor(options: StdioTransportOptions) {
     this.options = options;
     this.closeGraceMs = options.closeGraceMs ?? DEFAULT_CLOSE_GRACE_MS;
+    const timing = options.timing ?? systemTiming;
+    this.timing = timing;
+    this.sleepTiming = {
+      now: () => timing.now(),
+      sleep: (ms) =>
+        new Promise((resolve) => {
+          timing.setTimeout(resolve, ms);
+        }),
+    };
   }
 
   get pgid(): number | undefined {
@@ -194,14 +206,14 @@ class StdioTransportImpl implements StdioTransport {
     });
   }
 
-  close(): Promise<void> {
+  close(graceMs: number = this.closeGraceMs): Promise<void> {
     this.deliveryStopped = true;
-    return this.beginClose(false);
+    return this.beginClose(false, graceMs);
   }
 
-  private beginClose(internal: boolean): Promise<void> {
+  private beginClose(internal: boolean, graceMs: number): Promise<void> {
     if (this.closing === undefined) {
-      const closing = this.shutdown();
+      const closing = this.shutdown(graceMs);
       this.closing = closing;
       if (internal) closing.catch((error: unknown) => this.reportError(error instanceof Error ? error : new Error(String(error))));
     }
@@ -209,31 +221,31 @@ class StdioTransportImpl implements StdioTransport {
   }
 
   private async drainThenClose(): Promise<void> {
-    await this.raceTimeout(this.stdoutEnded);
+    if (this.closing !== undefined) return;
+    await this.raceTimeout(this.stdoutEnded, this.closeGraceMs);
     this.closeReportingErrors();
   }
 
   private closeReportingErrors(): void {
-    void this.beginClose(true);
+    void this.beginClose(true, this.closeGraceMs);
   }
 
-  private async shutdown(): Promise<void> {
+  private async shutdown(graceMs: number): Promise<void> {
     try {
       const child = this.child;
       if (child !== undefined && child.pid !== undefined) {
-        const stopBound = Deadline.after(groupTerminationBoundMs(this.closeGraceMs), this.options.timing ?? systemTiming);
+        const stopBound = Deadline.after(groupTerminationBoundMs(graceMs), this.timing);
         child.stdin.end();
-        await this.raceTimeout(this.exited);
+        await this.raceTimeout(this.exited, graceMs);
         let terminateFailure: { error: unknown } | undefined;
         try {
-          const outcome = await (this.options.terminate ?? terminateGroup)(child.pid, { graceMs: this.closeGraceMs, signal: stopBound.signal });
-          if (outcome === 'unconfirmed') terminateFailure = { error: new GroupNotStoppedError(child.pid) };
+          await (this.options.terminate ?? terminateGroup)(child.pid, { graceMs, signal: stopBound.signal, timing: this.sleepTiming });
         } catch (error) {
           terminateFailure = { error };
         } finally {
           stopBound.dispose();
         }
-        await this.raceTimeout(this.stdoutEnded);
+        await this.raceTimeout(this.stdoutEnded, graceMs);
         let sweepFailure: { error: unknown } | undefined;
         if (this.markerPath !== undefined && this.options.markers !== undefined) {
           const sweep = operationSignal(undefined);
@@ -241,9 +253,10 @@ class StdioTransportImpl implements StdioTransport {
             await reapMarkedProcesses({
               marker: this.markerPath,
               pgid: child.pid,
-              killGraceMs: this.closeGraceMs,
+              killGraceMs: graceMs,
               label: 'mcp',
               onWarning: this.options.markers.onWarning,
+              timing: this.sleepTiming,
               signal: sweep.signal,
             });
           } catch (error) {
@@ -274,15 +287,15 @@ class StdioTransportImpl implements StdioTransport {
     }
   }
 
-  private async raceTimeout(promise: Promise<void>): Promise<void> {
-    let timer: NodeJS.Timeout | undefined;
+  private async raceTimeout(promise: Promise<void>, graceMs: number): Promise<void> {
+    let timer: unknown;
     const timeout = new Promise<void>((resolve) => {
-      timer = setTimeout(resolve, this.closeGraceMs);
+      timer = this.timing.setTimeout(resolve, graceMs);
     });
     try {
       await Promise.race([promise, timeout]);
     } finally {
-      clearTimeout(timer);
+      this.timing.clearTimeout(timer);
     }
   }
 

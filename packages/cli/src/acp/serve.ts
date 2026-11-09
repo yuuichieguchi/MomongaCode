@@ -3,7 +3,7 @@ import { canonicalPath, currentSocketResolver } from '@momonga/foundation';
 import { agentReadiness } from '@momonga/protocol';
 import type { MomongaPaths } from '@momonga/foundation';
 import { createGatewayClient } from '../client/gateway-client.ts';
-import { daemonReadyBoundMs, ensureDaemon, restoreDaemon } from '../daemon/ensure-daemon.ts';
+import { readyWaitBoundMs, ensureDaemon, restoreDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { DaemonUnreachable, followRun, followSession, retryAfterRestore } from '../run/follow.ts';
 import { autoModeConfigured, connectRuntime, environmentSnapshot } from '../run/open-session.ts';
@@ -17,7 +17,7 @@ export const serveAcp = async (ports: CliPorts, paths: MomongaPaths, interrupt: 
   const stdio = ports.acpStdio();
   const runtime = connectRuntime(paths);
   const gateway = createGatewayClient({ resolveSocket: currentSocketResolver(paths, 'gateway') });
-  const reconnectBoundMs = await daemonReadyBoundMs();
+  const reconnectBoundMs = await readyWaitBoundMs(paths);
   const onNotice = (message: string): void => void ports.stderr.write(acpDiagnosticText(message));
   const app = createAcpAgent({
     version: ports.version,

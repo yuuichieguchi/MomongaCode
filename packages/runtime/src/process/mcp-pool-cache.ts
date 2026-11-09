@@ -13,12 +13,13 @@ export type McpPoolCacheOptions = {
   timers: ServiceTimers;
   logger: JsonLogger;
   report(error: unknown): void;
+  readCloseGraceMs(): number;
 };
 
 export type McpPoolCache = {
   acquire(runId: string, spec: { key: string; create(): McpPool }): { pool: McpPool; changed: boolean };
   release(runId: string): boolean;
-  closeAll(): Promise<void>;
+  closeAll(graceMs: number): Promise<void>;
   size(): number;
 };
 
@@ -26,7 +27,7 @@ type Entry = { pool: McpPool; refs: Set<string>; idle?: unknown };
 
 type Reference = { key: string; unwatch(): void };
 
-export const createMcpPoolCache = ({ store, notifier, timers, logger, report }: McpPoolCacheOptions): McpPoolCache => {
+export const createMcpPoolCache = ({ store, notifier, timers, logger, report, readCloseGraceMs }: McpPoolCacheOptions): McpPoolCache => {
   const pools = new Map<string, Entry>();
   const runRefs = new Map<string, Reference>();
   const closing = new Set<Promise<void>>();
@@ -71,7 +72,7 @@ export const createMcpPoolCache = ({ store, notifier, timers, logger, report }: 
     if (pools.get(key) !== entry) return;
     pools.delete(key);
     delete entry.idle;
-    const settled = entry.pool.close().catch((error: unknown) => {
+    const settled = entry.pool.close(readCloseGraceMs()).catch((error: unknown) => {
       const failure = asError(error);
       logger.warn(`MCP pool idle close failed: ${failure.message}`, { err: failure });
     });
@@ -119,7 +120,7 @@ export const createMcpPoolCache = ({ store, notifier, timers, logger, report }: 
       return { pool: entry.pool, changed: true };
     },
     release,
-    closeAll: async () => {
+    closeAll: async (graceMs) => {
       closed = true;
       clearAudit();
       const open = [...pools.values()];
@@ -127,7 +128,7 @@ export const createMcpPoolCache = ({ store, notifier, timers, logger, report }: 
       for (const reference of runRefs.values()) reference.unwatch();
       runRefs.clear();
       pools.clear();
-      await Promise.allSettled([...open.map((entry) => entry.pool.close()), ...closing]);
+      await Promise.allSettled([...open.map((entry) => entry.pool.close(graceMs)), ...closing]);
     },
     size: () => pools.size,
   };

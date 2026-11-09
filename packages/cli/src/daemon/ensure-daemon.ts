@@ -1,5 +1,5 @@
 import { createStopValuesReader, readUserStopValues } from '@momonga/config';
-import { EXIT_ALREADY_RUNNING, EXIT_VERSION_MISMATCH, FIRST_GENERATION, LIFELINE_FD, ORPHAN_REAP_GRACE_MS, STARTUP_TIMEOUT_MS, STOP_WAIT_WHEN_UNKNOWN_MS, currentGenerationLock, startingSocketResolver, daemonStopBoundMs, inspectProcessLock, readCurrentGeneration, stopWaitBoundMs as largestStopBoundMs } from '@momonga/foundation';
+import { EXIT_ALREADY_RUNNING, EXIT_VERSION_MISMATCH, FIRST_GENERATION, LIFELINE_FD, MAXIMUM_STOP_VALUES, STOP_WAIT_WHEN_UNKNOWN_MS, currentGenerationLock, startingSocketResolver, daemonReadyBoundMs, daemonStopBoundMs, inspectProcessLock, readCurrentGeneration, readCurrentStopRecord, stopWaitBoundMs as largestStopBoundMs } from '@momonga/foundation';
 import type { MomongaPaths, StopValues } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { createSupervisorClient } from '../client/supervisor-client.ts';
@@ -42,9 +42,7 @@ export const probeSupervisor = async (client: SupervisorClient): Promise<Supervi
 
 export type DaemonBounds = { readyMs: number; stopMs: number };
 
-export const daemonReadyBoundMs = async (): Promise<number> => {
-  return ORPHAN_REAP_GRACE_MS + STARTUP_TIMEOUT_MS;
-};
+export const readyWaitBoundMs = async (paths: MomongaPaths): Promise<number> => daemonReadyBoundMs((await readCurrentStopRecord(paths)) ?? MAXIMUM_STOP_VALUES);
 
 export { STOP_WAIT_WHEN_UNKNOWN_MS };
 
@@ -183,7 +181,7 @@ export const restoreDaemon =
 export const ensureDaemon = async (ports: DaemonPorts, paths: MomongaPaths, options: EnsureDaemonOptions = {}): Promise<SupervisorHealth> => {
   const { signal } = options;
   signal?.throwIfAborted();
-  const readyMs = options.bounds?.readyMs ?? (await daemonReadyBoundMs());
+  const readyMs = options.bounds?.readyMs ?? (await readyWaitBoundMs(paths));
   const client = createSupervisorClient({ resolveSocket: startingSocketResolver(paths, 'supervisor') });
   try {
     const current = await probeSupervisor(client);

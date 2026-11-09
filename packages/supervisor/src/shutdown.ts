@@ -16,8 +16,8 @@ export type ShutdownMode = 'idle' | 'closing' | 'aborting';
 export type ShutdownControllerOptions = {
   runtime: ChildManager;
   gateway: ChildManager;
-  drainTimeoutMs: number;
   timers: SupervisorTimers;
+  recordStop(values: StopValues): Promise<void>;
   logger: JsonLogger;
   markerPorts?: MarkerPorts;
   beginDraining(): void;
@@ -34,7 +34,7 @@ export type ShutdownController = {
   readonly closed: Promise<SupervisorCloseResult>;
 };
 
-export const childCloseBudgetMs = (role: ChildRole, mode: StopMode, drainTimeoutMs: number, values: StopValues): number => stopBudgetMs(role, mode, drainTimeoutMs, values);
+export const childCloseBudgetMs = (role: ChildRole, mode: StopMode, values: StopValues): number => stopBudgetMs(role, mode, values);
 
 const MAX_REAP_ATTEMPTS = 2;
 
@@ -45,6 +45,7 @@ export const createShutdownController = (options: ShutdownControllerOptions): Sh
   const managers = [runtime, gateway] as const;
   let mode: ShutdownMode = 'idle';
   let stopValues: StopValues = DEFAULT_STOP_VALUES;
+  let recorded: Promise<void> = Promise.resolve();
   let resolveClosed: (result: SupervisorCloseResult) => void = () => undefined;
   const closed = new Promise<SupervisorCloseResult>((resolve) => {
     resolveClosed = resolve;
@@ -116,6 +117,7 @@ export const createShutdownController = (options: ShutdownControllerOptions): Sh
   };
 
   const run = async (): Promise<SupervisorCloseResult> => {
+    await recorded;
     log(shutdownBegin({ mode: mode === 'aborting' ? 'abort' : 'close' }));
     options.beginDraining();
     for (const manager of managers) manager.enterDraining();
@@ -182,6 +184,7 @@ export const createShutdownController = (options: ShutdownControllerOptions): Sh
   const begin = (next: 'closing' | 'aborting', values: StopValues | undefined): void => {
     mode = next;
     if (values !== undefined) stopValues = values;
+    recorded = options.recordStop(stopValues);
     run().then(resolveClosed, (error: unknown) => {
       const failure = failureOf(error);
       options.onFatal(failure);
@@ -190,7 +193,10 @@ export const createShutdownController = (options: ShutdownControllerOptions): Sh
   };
 
   const escalate = (): void => {
-    for (const manager of managers) void manager.stop('shutdown', 'int', stopValues);
+    const stopAll = (): void => {
+      for (const manager of managers) void manager.stop('shutdown', 'int', stopValues);
+    };
+    void recorded.then(stopAll, () => undefined);
   };
 
   return {

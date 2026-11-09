@@ -5,7 +5,7 @@ import { noTargetLines } from '../readiness.ts';
 import { RunApiError } from '../client/runtime-client.ts';
 import type { RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView } from '../client/views.ts';
-import { daemonReadyBoundMs, restoreDaemon } from '../daemon/ensure-daemon.ts';
+import { readyWaitBoundMs, restoreDaemon } from '../daemon/ensure-daemon.ts';
 import { stderrStopNotice } from '../daemon/stop-notice.ts';
 import type { CliPorts } from '../ports.ts';
 import { escapedLines } from '../terminal-writer.ts';
@@ -209,7 +209,7 @@ export const watchRun = async (ports: CliPorts, paths: MomongaPaths, options: Wa
     runId,
     ...(options.after === undefined ? {} : { seenThrough: options.after }),
     onSeenEvent: sink.absorb,
-    reconnectBoundMs: await daemonReadyBoundMs(),
+    reconnectBoundMs: await readyWaitBoundMs(paths),
     restoreConnection: restoreDaemon(ports, paths, stderrStopNotice(ports)),
     onEvent: sink.handle,
     onChildEvent: sink.handleChild,

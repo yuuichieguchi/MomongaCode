@@ -77,6 +77,7 @@ export type GenerationLayout = {
   dir: string;
   sockets: GenerationSockets;
   locks: Record<GenerationRole, string>;
+  stopRecord: string;
 };
 
 const byRole = (value: (role: GenerationRole) => string): Record<GenerationRole, string> => ({
@@ -94,6 +95,7 @@ export const generationLayout = (home: string, generation: number, platform: Nod
     dir,
     sockets: byRole((role) => (platform === 'win32' ? pipePathFor(home, `g${generation}-${role}`) : join(dir, `${role}.sock`))),
     locks: byRole((role) => join(dir, `${role}.lock`)),
+    stopRecord: join(dir, 'stop-values.json'),
   };
 };
 

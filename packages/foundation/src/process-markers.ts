@@ -13,7 +13,7 @@ import type { ProcessInspector, UninspectableProcess } from './platform/inspecto
 import { defaultProcessInspector } from './platform/process-inspector.ts';
 import { defaultUninspectableRegistry } from './uninspectable-registry.ts';
 import type { UninspectableRegistry } from './uninspectable-registry.ts';
-import { markerReapClockBoundMs } from './process-contract.ts';
+import { KILL_CONFIRM_MS, markerReapClockBoundMs } from './process-contract.ts';
 import { RETRY_KINDS, claimRetry, parseRecordedGroup, readAttemptRecord } from './platform/marker-record.ts';
 import type { AttemptRecord, RetryKind } from './platform/marker-record.ts';
 
@@ -423,7 +423,7 @@ const reapWithin = async (options: ReapMarkedProcessesOptions, stop: AbortSignal
   }
   if (stop.aborted) return ended(stopped, [...unsettled.values()]);
   const listing: Listing = { inspector, timing, signal: stop };
-  const deadline = timing.now() + killGraceMs;
+  const deadline = timing.now() + KILL_CONFIRM_MS;
   let remaining = await holdersUntil(marker, listing, deadline, unsettled);
   while ((remaining.length > 0 || unsettled.size > 0) && timing.now() < deadline && !stop.aborted) {
     await timing.sleep(REAP_POLL_INTERVAL_MS);

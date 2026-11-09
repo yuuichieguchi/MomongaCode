@@ -1,4 +1,3 @@
-export const MCP_CLOSE_GRACE_MS = 1000;
 export const POOL_IDLE_CLOSE_MS = 300_000;
 export const POOL_REFERENCE_AUDIT_MS = 300_000;
 export const SESSION_STATE_IDLE_MS = 1_800_000;

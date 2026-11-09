@@ -422,7 +422,11 @@ export const SETTINGS_SCHEMA = {
     mcpServers: { type: 'object', additionalProperties: MCP_SERVER_SCHEMA },
     mcp: {
       type: 'object',
-      properties: { toolIdleTimeoutMs: NON_NEGATIVE_INTEGER, toolTotalTimeoutMs: POSITIVE_INTEGER },
+      properties: {
+        toolIdleTimeoutMs: NON_NEGATIVE_INTEGER,
+        toolTotalTimeoutMs: POSITIVE_INTEGER,
+        closeGraceMs: { type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.mcpCloseGraceMs.min, maximum: SHUTDOWN_SETTING_LIMITS.mcpCloseGraceMs.max },
+      },
       additionalProperties: false,
     },
     models: {
@@ -506,6 +510,13 @@ export const SETTINGS_SCHEMA = {
       properties: {
         closeGraceMs: { type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.closeGraceMs.min, maximum: SHUTDOWN_SETTING_LIMITS.closeGraceMs.max },
         managedServerStopGraceMs: { type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.managedServerStopGraceMs.min, maximum: SHUTDOWN_SETTING_LIMITS.managedServerStopGraceMs.max },
+      },
+      additionalProperties: false,
+    },
+    runtime: {
+      type: 'object',
+      properties: {
+        drainTimeoutMs: { type: 'integer', minimum: SHUTDOWN_SETTING_LIMITS.drainTimeoutMs.min, maximum: SHUTDOWN_SETTING_LIMITS.drainTimeoutMs.max },
       },
       additionalProperties: false,
     },

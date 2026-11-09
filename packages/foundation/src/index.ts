@@ -172,7 +172,18 @@ export {
   LOCK_FD,
   DEFAULT_STOP_VALUES,
   MARKER_REAP_GRACE_WINDOWS,
-  ORPHAN_REAP_GRACE_MS,
+  MAXIMUM_STOP_VALUES,
+  READY_WAIT_WHEN_UNKNOWN_MS,
+  ABORT_SETTLE_LIMIT_MS,
+  SANDBOX_KILL_GRACE_MS,
+  GROUP_POLL_INTERVAL_MS,
+  mcpPoolCloseBoundMs,
+  mcpPoolsStepBoundMs,
+  runtimeTeardownBudgetMs,
+  runtimeAbortStopBudgetMs,
+  orphanReapGraceMs,
+  requirementOfStop,
+  daemonReadyBoundMs,
   STARTUP_TIMEOUT_MS,
   startDeadlineSignal,
   SHUTDOWN_SETTING_LIMITS,
@@ -219,7 +230,6 @@ export {
   declaredChildEnv,
   parseReadyLine,
   managedServerStopBoundMs,
-  MANAGED_SERVER_TERMINATE_GRACE_WAITS,
   runtimeMaxCloseMs,
   supervisorMaxCloseMs,
 } from './process-contract.ts';
@@ -312,3 +322,5 @@ export { patternRefusal, renderInstancePath } from './pattern-refusal.ts';
 export { defineProductSchema, productErrorsText, productSchemas } from './product-schema.ts';
 export type { ProductSchema, ProductValidator, ProductVerdict } from './product-schema.ts';
 export { SHORT_TEMP_BASE, shortTempBase } from './short-temp-base.ts';
+export { readStopRecord, writeStopRecord } from './stop-record.ts';
+export { readCurrentStopRecord } from './current-generation.ts';

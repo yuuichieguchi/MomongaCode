@@ -2,7 +2,6 @@ import { createStopValuesReader, readUserStopValues } from '@momonga/config';
 import type { StopValuesReader } from '@momonga/config';
 import {
   COMMON_ENTRY_FLAGS,
-  RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
   canonicalPath,
   generationLayout,
   momongaPaths,
@@ -31,7 +30,7 @@ export const runSupervisorEntry = (io: EntryIo, deps: SupervisorEntryDeps): Prom
     service: SUPERVISOR_SERVICE,
     version: deps.version,
     flags: COMMON_ENTRY_FLAGS,
-    maxCloseMs: (_flags, values) => supervisorMaxCloseMs(deps.runtime?.drainTimeoutMs ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, values),
+    maxCloseMs: (_flags, values) => supervisorMaxCloseMs(values),
     readStopValues: ({ home, logger }) => stopValuesOf(home, logger).read(),
     ownLockPath: (home) => generationLayout(canonicalPath(home), SUPERVISOR_GENERATION).locks.supervisor,
     logPath: (home) => pathsOf(home).logFiles.supervisor,

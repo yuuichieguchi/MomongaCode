@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { createStopValuesReader, credentialEnvNames, loadUserSettings, probeRecordKeyOf, readUserStopValues, resolveNetwork, resolveTelemetrySettings, secretNames, upstreamEndpointOf } from '@momonga/config';
+import { createStopValuesReader, credentialEnvNames, loadUserSettings, probeRecordKeyOf, readUserStopValues, resolveNetwork, resolveTelemetrySettings, secretNames, stopValuesOfSettings, upstreamEndpointOf } from '@momonga/config';
 import { MANAGED_SERVERS, managedServerOf } from '@momonga/protocol';
 import type { ManagedServerDescription } from '@momonga/protocol';
 import {
@@ -662,7 +662,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     signal?.throwIfAborted();
     const { settings, warnings } = await loadUserSettings({ home: options.home, managedServers });
     for (const warning of warnings) logger.warn(warning);
-    stopValues.remember(settings.gateway);
+    stopValues.remember(stopValuesOfSettings(settings));
     const networkConfig = resolveNetwork(settings.network, options.env);
     const network: OutboundNetwork = { config: networkConfig, trust: await installTrust(networkConfig, files) };
     for (const failure of network.trust.failures) logger.warn(`the CA file ${failure.file} from ${failure.source} was not loaded: ${failure.reason}`);

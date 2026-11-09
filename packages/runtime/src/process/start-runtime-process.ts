@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ConfigError, createUserSettingsCache, diskKeptRecords, keptSettingsDirectory, resolveNetwork, resolveTelemetrySettings } from '@momonga/config';
+import { ConfigError, createStopValuesReader, createUserSettingsCache, diskKeptRecords, readUserStopValues, keptSettingsDirectory, resolveNetwork, resolveTelemetrySettings } from '@momonga/config';
 import { installTrust } from '@momonga/foundation';
 import {
   acquireProcessLock,
@@ -14,15 +14,15 @@ import {
   generationLayout,
   momongaPaths,
   ProcessLockHeldError,
-  RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
   reapMarkerDirectory,
   resolveKernelLock,
   ruleEnforcementOf,
   systemClock,
   nodeFileSystem,
   nodeFileSystemSync,
+  runtimeTeardownBudgetMs,
 } from '@momonga/foundation';
-import type { Clock, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, TextStream } from '@momonga/foundation';
+import type { Clock, JsonLogger, MomongaPaths, OutboundNetwork, ProcessLock, ReadyFields, StopValues, TextStream } from '@momonga/foundation';
 import { createTelemetry, exportersFor, openTraceStore, startBodyPurge } from '@momonga/observability';
 import type { Telemetry, TraceStore } from '@momonga/observability';
 import { DEFAULT_BWRAP_PATH, createBubblewrapSandbox, createPlaceholderJournal, createSeatbeltSandbox, createUnsandboxed, heldMountPoints, probeBubblewrap, recoverPlaceholders } from '@momonga/sandbox';
@@ -113,7 +113,6 @@ export type StartRuntimeProcessOptions = {
   platform?: NodeJS.Platform;
   workerCount?: number;
   leaseMs?: number;
-  drainTimeoutMs?: number;
   signal?: AbortSignal;
   acquireLock?: (lockPath: string) => Promise<ProcessLock>;
   bundledRipgrep?: BundledRipgrepSource;
@@ -131,8 +130,8 @@ export type RuntimeCloseResult = {
 export type RuntimeProcess = {
   ready: ReadyFields;
   sandbox: SandboxKind;
-  close(): Promise<RuntimeCloseResult>;
-  abort(): Promise<RuntimeCloseResult>;
+  close(values?: StopValues): Promise<RuntimeCloseResult>;
+  abort(values?: StopValues): Promise<RuntimeCloseResult>;
   fatal: Promise<Error>;
 };
 
@@ -158,12 +157,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   if (options.gatewaySocketPath !== undefined) assertAbsolute('gatewaySocketPath', options.gatewaySocketPath);
   const workerCount = options.workerCount ?? 1;
   const leaseMs = options.leaseMs ?? DEFAULT_LEASE_MS;
-  const drainTimeoutMs = options.drainTimeoutMs ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS;
   assertPositiveInteger('workerCount', workerCount);
   assertPositiveInteger('leaseMs', leaseMs);
-  if (!Number.isSafeInteger(drainTimeoutMs) || drainTimeoutMs < 0) {
-    throw new RangeError(`drainTimeoutMs must be a non-negative integer, got ${drainTimeoutMs}`);
-  }
   const sandboxExecPath = options.sandboxExecPath;
   const shellHost = options.shellHost ?? nodeShellHost();
   const clock = options.clock ?? systemClock;
@@ -177,6 +172,9 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
   const canonicalHome = canonicalPath(home);
   const reapTiming = reapTimingOf(clock, timers);
   const onWarning = (message: string): void => logger.warn(message);
+  const stopValuesReader = createStopValuesReader({ load: () => readUserStopValues(canonicalHome), onNotice: onWarning });
+  const valuesOfStop = (given: StopValues | undefined): StopValues => given ?? stopValuesReader.read();
+  let stopMcpCloseGraceMs: number | undefined;
 
   const cleanups: TeardownStep[] = [];
   const markerOwners = createMarkerOwners();
@@ -238,7 +236,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     return stragglers;
   };
 
-  const drainWorkers = async (): Promise<'drained' | 'timeout' | 'abort'> => {
+  const drainWorkers = async (drainTimeoutMs: number): Promise<'drained' | 'timeout' | 'abort'> => {
     let handle: unknown;
     const expired = new Promise<'timeout'>((resolve) => {
       handle = timers.setTimeout(() => resolve('timeout'), drainTimeoutMs);
@@ -254,16 +252,23 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     }
   };
 
-  const teardown = (failureEvent?: string): Promise<string[]> =>
-    runTeardown({ steps: [...cleanups].reverse(), budgetMs: RUNTIME_TEARDOWN_BUDGET_MS, clock, timers, logger, ...(failureEvent === undefined ? {} : { failureEvent }) });
+  const teardown = (values: StopValues, failureEvent?: string): Promise<string[]> => {
+    stopMcpCloseGraceMs = values.mcpCloseGraceMs;
+    return runTeardown({ steps: [...cleanups].reverse(), budgetMs: runtimeTeardownBudgetMs(values.mcpCloseGraceMs), clock, timers, logger, ...(failureEvent === undefined ? {} : { failureEvent }) });
+  };
 
-  const shutdown = async (abortFirst: boolean): Promise<RuntimeCloseResult> => {
+  const mcpCloseGraceOfStop = (): number => {
+    if (stopMcpCloseGraceMs === undefined) throw new Error('the MCP pools were closed before the stop that closes them took its values');
+    return stopMcpCloseGraceMs;
+  };
+
+  const shutdown = async (abortFirst: boolean, values: StopValues): Promise<RuntimeCloseResult> => {
     let stragglers: string[] = [];
     let phaseFailed = false;
     try {
       phase = abortFirst ? 'aborting' : 'draining';
       service?.beginDraining();
-      const outcome = abortFirst ? 'abort' : await drainWorkers();
+      const outcome = abortFirst ? 'abort' : await drainWorkers(values.drainTimeoutMs);
       if (outcome === 'drained') workersSettled = true;
       else {
         phase = 'aborting';
@@ -274,7 +279,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       logger.error('shutdown failed', { err: asError(error) });
     }
     phase = 'tearingDown';
-    const abandoned = await teardown();
+    const abandoned = await teardown(values);
     phase = 'closed';
     const result: RuntimeCloseResult = {
       clean: !phaseFailed && abandoned.length === 0 && stragglers.length === 0 && fatalError === undefined,
@@ -285,13 +290,13 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     return result;
   };
 
-  const close = (): Promise<RuntimeCloseResult> => {
-    lifecycle ??= shutdown(false);
+  const close = (values?: StopValues): Promise<RuntimeCloseResult> => {
+    lifecycle ??= shutdown(false, valuesOfStop(values));
     return lifecycle;
   };
 
-  const abort = (): Promise<RuntimeCloseResult> => {
-    if (lifecycle === undefined) lifecycle = shutdown(true);
+  const abort = (values?: StopValues): Promise<RuntimeCloseResult> => {
+    if (lifecycle === undefined) lifecycle = shutdown(true, valuesOfStop(values));
     else requestAbort();
     return lifecycle;
   };
@@ -546,8 +551,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     cleanups.push({
       name: 'mcp-pools',
       run: async () => {
-        await toolRuntime.mcpPools.closeAll();
-        await toolRuntime.mcpAdmin.close();
+        const graceMs = mcpCloseGraceOfStop();
+        await Promise.all([toolRuntime.mcpPools.closeAll(graceMs), toolRuntime.mcpAdmin.close(graceMs)]);
       },
     });
     cleanups.push({ name: 'cancel-upstream', run: () => tracker.settle(CANCEL_UPSTREAM_SETTLE_MS) });
@@ -770,7 +775,7 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
     return { ready, sandbox: kind, close, abort, fatal };
   } catch (error) {
     phase = 'tearingDown';
-    await teardown('startup.cleanup_failed');
+    await teardown(valuesOfStop(undefined), 'startup.cleanup_failed');
     phase = 'closed';
     throw error;
   }

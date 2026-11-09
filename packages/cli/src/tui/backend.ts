@@ -5,7 +5,7 @@ import { createGatewayClient } from '../client/gateway-client.ts';
 import type { MemoryFilter, RunEventFrame, RuntimeClient } from '../client/runtime-client.ts';
 import type { RunView, SessionView, TrustView } from '../client/views.ts';
 import type { HistoryStore } from '../history-store.ts';
-import { daemonReadyBoundMs, ensureDaemon, restoreDaemon } from '../daemon/ensure-daemon.ts';
+import { readyWaitBoundMs, ensureDaemon, restoreDaemon } from '../daemon/ensure-daemon.ts';
 import type { CliPorts } from '../ports.ts';
 import { followRun } from '../run/follow.ts';
 import type { NoticeSource } from './notices.ts';
@@ -123,7 +123,7 @@ export const createTuiBackend = (
         clock: ports.clock,
         random: ports.random,
         runId,
-        reconnectBoundMs: await daemonReadyBoundMs(),
+        reconnectBoundMs: await readyWaitBoundMs(paths),
         restoreConnection: restoreDaemon(ports, paths, onNotice),
         onEvent: handlers.onEvent,
         onChildEvent: handlers.onChildEvent,

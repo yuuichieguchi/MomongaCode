@@ -128,6 +128,11 @@ const restrictToUserTrustLevel = (settings: Settings, source: string, warnings: 
     delete restricted.gateway;
   }
 
+  if (settings.runtime !== undefined) {
+    warnings.push(`${source}: runtime is only honored in user settings; discarded`);
+    delete restricted.runtime;
+  }
+
   if (settings.tools?.ripgrep !== undefined) {
     warnings.push(`${source}: tools.ripgrep is only honored in user settings; discarded`);
     const { ripgrep: _ignored, ...remaining } = settings.tools;

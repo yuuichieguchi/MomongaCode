@@ -161,7 +161,13 @@ export const createUserSettingsCache = ({ home, onWarning, keptRecords }: UserSe
 };
 
 
-export const readUserStopValues = (home: string): StopValues => loadUserSettingsSync(home, undefined).settings.gateway;
+export const stopValuesOfSettings = ({ gateway, runtime, mcp }: Pick<ResolvedSettings, 'gateway' | 'runtime' | 'mcp'>): StopValues => ({
+  ...gateway,
+  drainTimeoutMs: runtime.drainTimeoutMs ?? DEFAULT_STOP_VALUES.drainTimeoutMs,
+  mcpCloseGraceMs: mcp.closeGraceMs ?? DEFAULT_STOP_VALUES.mcpCloseGraceMs,
+});
+
+export const readUserStopValues = (home: string): StopValues => stopValuesOfSettings(loadUserSettingsSync(home, undefined).settings);
 
 export type StopValuesReaderOptions = { load(): StopValues; onNotice(message: string): void };
 
