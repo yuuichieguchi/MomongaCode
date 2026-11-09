@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type fs from 'node:fs';
-import { createStopValuesReader, createUserSettingsCache, noKeptRecords, userSettingsChangeKey } from '@momonga/config';
+import { createStopValuesReader, createUserSettingsCache, noKeptRecords, userSettingsChangeKey, writeAppliedRecord } from '@momonga/config';
 import type { StopValuesReader } from '@momonga/config';
 import {
   EXIT_VERSION_MISMATCH,
@@ -30,7 +30,7 @@ import { handedCredentialNames } from './child-env.ts';
 import type { ControlServer } from './control-server.ts';
 import { runLaunchTask } from './launch.ts';
 import type { ChildRole, GatewayTuning, Launcher, RuntimeTuning } from './launcher.ts';
-import { phaseChange, settingsChanged, settingsInvalid, settingsReadFailed, settingsWarning, supervisorBackgroundFailed, supervisorBackgroundTransient, writeEvent } from './log-events.ts';
+import { phaseChange, settingsChanged, settingsInvalid, settingsRecordFailed, settingsReadFailed, settingsWarning, supervisorBackgroundFailed, supervisorBackgroundTransient, writeEvent } from './log-events.ts';
 import { omitUndefined } from './omit-undefined.ts';
 import { orphanReapBoundMs } from './orphans.ts';
 import type { MarkerPorts } from './orphans.ts';
@@ -249,6 +249,17 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       ...(stopBoundMs === undefined ? {} : { stopBoundMs }),
     });
 
+    let recordFailedKey: string | undefined;
+    const recordApplied = (key: string | undefined): void => {
+      try {
+        writeAppliedRecord(canonicalHome, own.settingsApplied);
+      } catch (error) {
+        if (key === recordFailedKey) return;
+        recordFailedKey = key;
+        log(settingsRecordFailed({ detail: failureOf(error).message }));
+      }
+    };
+
     const reportReadFailure = (error: unknown): void => {
       const failure = failureOf(error);
       if (failure.message === lastReadFailure) return;
@@ -273,6 +284,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
         log(settingsInvalid({ detail: snapshot.error.message, action: 'keep-running-children-hold-spawns' }));
         return;
       }
+      recordApplied(key);
       log(settingsChanged({}));
     };
 
@@ -370,6 +382,7 @@ export const startSupervisor = async (options: SupervisorOptions): Promise<Super
       ...lockOptions,
     });
 
+    recordApplied(userSettingsChangeKey(canonicalHome));
     const ready: ReadyFields = { service: SUPERVISOR_SERVICE, pid: process.pid, version: options.version, socketPath: own.sockets.supervisor, startedAt };
     announceReady(ready, options.stdout);
 

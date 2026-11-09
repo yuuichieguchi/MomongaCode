@@ -77,7 +77,12 @@ export type GenerationLayout = {
   dir: string;
   sockets: GenerationSockets;
   locks: Record<GenerationRole, string>;
+  settingsApplied: string;
 };
+
+export const SETTINGS_APPLIED_FILE = 'settings-applied.json';
+
+export const SETTINGS_APPLIED_ENV = 'MOMONGA_SETTINGS_APPLIED';
 
 const byRole = (value: (role: GenerationRole) => string): Record<GenerationRole, string> => ({
   gateway: value('gateway'),
@@ -94,6 +99,7 @@ export const generationLayout = (home: string, generation: number, platform: Nod
     dir,
     sockets: byRole((role) => (platform === 'win32' ? pipePathFor(home, `g${generation}-${role}`) : join(dir, `${role}.sock`))),
     locks: byRole((role) => join(dir, `${role}.lock`)),
+    settingsApplied: join(dir, SETTINGS_APPLIED_FILE),
   };
 };
 

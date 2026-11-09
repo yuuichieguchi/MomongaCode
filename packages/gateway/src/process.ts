@@ -29,6 +29,7 @@ import {
   givenSecretStoreChildEnv,
   EntryUsageError,
   minimalChildEnv,
+  SETTINGS_APPLIED_ENV,
   nodeFileSystemSync,
   startDeadlineSignal,
   codeDigestOfRunningProcess,
@@ -601,6 +602,11 @@ export const gatewayConfigOf = (
   ...GATEWAY_CONFIG_DEFAULTS,
 });
 
+const appliedRecordOf = (env: StartGatewayProcessOptions['env']): { appliedRecord?: string } => {
+  const record = env[SETTINGS_APPLIED_ENV];
+  return record === undefined ? {} : { appliedRecord: record };
+};
+
 type Closable = { close(values: StopValues | undefined): Promise<void> };
 
 type ManagedPart = ManagedCore & { readonly key: string; readonly closable: Closable };
@@ -711,6 +717,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       onWarning: (message) => logger.warn(message),
       keptRecords: diskKeptRecords(nodeFileSystemSync, keptSettingsDirectory(options.home)),
       managedServers,
+      ...appliedRecordOf(options.env),
     });
     const started = cache.snapshot();
     if ('error' in started) throw started.error;

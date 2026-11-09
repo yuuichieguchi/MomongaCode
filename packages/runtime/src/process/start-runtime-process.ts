@@ -20,6 +20,7 @@ import {
   resolveKernelLock,
   ruleEnforcementOf,
   startDeadlineSignal,
+  SETTINGS_APPLIED_ENV,
   systemClock,
   nodeFileSystem,
   nodeFileSystemSync,
@@ -332,7 +333,8 @@ export const startRuntimeProcess = async (options: StartRuntimeProcessOptions): 
       return { config: networkConfig, trust };
     };
     const { cache, settings } = await step('settings', async () => {
-      const created = createUserSettingsCache({ home: canonicalHome, onWarning, keptRecords: diskKeptRecords(nodeFileSystemSync, keptSettingsDirectory(canonicalHome)) });
+      const appliedRecord = process.env[SETTINGS_APPLIED_ENV];
+      const created = createUserSettingsCache({ home: canonicalHome, onWarning, keptRecords: diskKeptRecords(nodeFileSystemSync, keptSettingsDirectory(canonicalHome)), ...(appliedRecord === undefined ? {} : { appliedRecord }) });
       const snapshot = created.snapshot();
       if ('error' in snapshot) throw snapshot.error;
       return { cache: created, settings: snapshot.settings };

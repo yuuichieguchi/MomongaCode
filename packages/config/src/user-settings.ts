@@ -1,7 +1,8 @@
 import fs from 'node:fs';
-import { DEFAULT_STOP_VALUES, isTransientErrno } from '@momonga/foundation';
+import { DEFAULT_STOP_VALUES, isTransientErrno, nodeFileSystemSync, systemRandom, writeFileAtomicallySync } from '@momonga/foundation';
 import type { StopValues } from '@momonga/foundation';
 import { ConfigError, rethrowIfTransient, toConfigError } from './config-error.ts';
+import { readJsonFileSync } from './json-file.ts';
 import type { JsonFile } from './json-file.ts';
 import { createKeptSettings } from './kept-settings.ts';
 import type { KeptRecords, KeptSettings } from './kept-settings.ts';
@@ -60,9 +61,25 @@ export const loadUserModels = ({ home }: LoadUserSettingsOptions): UserModels =>
   }
 };
 
+export type AppliedRecordWrite = { kind: 'written' } | { kind: 'invalid' };
+
+export const writeAppliedRecord = (home: string, record: string, managedServers?: readonly ManagedServerDescription[]): AppliedRecordWrite => {
+  const read = readUserJsonFile(home);
+  try {
+    userSettingsFrom(home, read, managedServers);
+  } catch (error) {
+    if (error instanceof ConfigError) return { kind: 'invalid' };
+    throw error;
+  }
+  writeFileAtomicallySync(nodeFileSystemSync, systemRandom, record, `${JSON.stringify(read.found ? read.value : {})}\n`, { mode: APPLIED_RECORD_MODE });
+  return { kind: 'written' };
+};
+
+const APPLIED_RECORD_MODE = 0o600;
+
 export const loadUserSettings = async ({ home, managedServers }: LoadUserSettingsOptions): Promise<LoadUserSettingsResult> => loadUserSettingsSync(home, managedServers);
 
-export type UserSettingsCacheOptions = { home: string; onWarning: (message: string) => void; keptRecords: KeptRecords; managedServers?: readonly ManagedServerDescription[] };
+export type UserSettingsCacheOptions = { home: string; onWarning: (message: string) => void; keptRecords: KeptRecords; managedServers?: readonly ManagedServerDescription[]; appliedRecord?: string };
 
 export type UserSettingsLoaded = { settings: ResolvedSettings; user: UserLayer };
 
@@ -87,7 +104,7 @@ const changeKeyOf = (file: string): string => {
 
 export const userSettingsChangeKey = (home: string): string => changeKeyOf(layoutOf(home).settingsFile);
 
-export const createUserSettingsCache = ({ home, onWarning, keptRecords, managedServers }: UserSettingsCacheOptions): UserSettingsCache => {
+export const createUserSettingsCache = ({ home, onWarning, keptRecords, managedServers, appliedRecord }: UserSettingsCacheOptions): UserSettingsCache => {
   const file = userSettingsFile(home);
   const kept = createKeptSettings({ records: keptRecords, onWarning });
   let latest: UserSettingsSnapshot | undefined;
@@ -95,7 +112,17 @@ export const createUserSettingsCache = ({ home, onWarning, keptRecords, managedS
   let seenKey: string | undefined;
   let failedKey = '';
 
+  const appliedCopy = (): Kept<UserSettingsLoaded> => {
+    if (appliedRecord === undefined) return undefined;
+    const recorded = readJsonFileSync(appliedRecord);
+    if (!recorded.found) return undefined;
+    const rebuilt = userSettingsFrom(home, recorded, managedServers);
+    return { value: { settings: rebuilt.settings, user: rebuilt.user } };
+  };
+
   const keptCopy = (): Kept<UserSettingsLoaded> => {
+    const applied = appliedCopy();
+    if (applied !== undefined) return applied;
     if (lastGood !== undefined) return lastGood;
     const recalled = kept.recall(file);
     if (recalled === undefined) return undefined;

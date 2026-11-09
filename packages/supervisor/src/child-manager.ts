@@ -15,6 +15,8 @@ import {
   reapMarkerDirectory,
   runtimeStopBudgetMs,
   CREDENTIAL_CAPABILITY_ENV,
+  SETTINGS_APPLIED_ENV,
+  generationLayout,
 } from '@momonga/foundation';
 import type { Clock, JsonLogger, KernelLockMechanism, LockHandoff, LockHandoffClaim, MomongaPaths, ReadyFields, RoleEndpoint, StopValues } from '@momonga/foundation';
 import type { SupervisorChildHealth, SupervisorChildState, SupervisorExitReason } from '@momonga/protocol';
@@ -404,7 +406,7 @@ export const createChildManager = (options: ChildManagerOptions): ChildManager =
     try {
       const handle = options.spawn(resolved.command, resolved.args, {
         cwd: options.home,
-        env: { ...resolved.env, ...(handoff === undefined ? {} : handoff.env), ...(spawnCapability === undefined ? {} : { [CREDENTIAL_CAPABILITY_ENV]: spawnCapability }) },
+        env: { ...resolved.env, [SETTINGS_APPLIED_ENV]: generationLayout(options.home, options.generation).settingsApplied, ...(handoff === undefined ? {} : handoff.env), ...(spawnCapability === undefined ? {} : { [CREDENTIAL_CAPABILITY_ENV]: spawnCapability }) },
         detached: true,
         stdio: childStdio(marker.fd, handoff?.descriptor),
       });

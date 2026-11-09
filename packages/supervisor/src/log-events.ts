@@ -57,6 +57,7 @@ export const settingsChanged = defineEvent<Record<string, never>>('settings.chan
 export const settingsInvalid = defineEvent<{ detail: string; action: 'keep-running-children-hold-spawns' }>('settings.invalid', 'warn');
 export const settingsReadFailed = defineEvent<{ detail: string }>('settings.read_failed', 'warn');
 export const settingsWarning = defineEvent<{ detail: string }>('settings.warning', 'warn');
+export const settingsRecordFailed = defineEvent<{ detail: string }>('settings.record_failed', 'warn');
 export const orphansWaiting = defineEvent<{ markers: number; holders: number }>('orphans.waiting', 'info');
 export const orphansReaping = defineEvent<{ holders: number }>('orphans.reaping', 'warn');
 export const orphansReaped = defineEvent<{ reaped: number; kept: number }>('orphans.reaped', (payload) => (payload.kept > 0 ? 'warn' : 'info'));
@@ -86,6 +87,7 @@ export const SUPERVISOR_EVENTS = {
   'supervisor.background_failed': supervisorBackgroundFailed,
   'supervisor.background_transient': supervisorBackgroundTransient,
   'settings.changed': settingsChanged,
+  'settings.record_failed': settingsRecordFailed,
   'settings.invalid': settingsInvalid,
   'settings.read_failed': settingsReadFailed,
   'settings.warning': settingsWarning,
