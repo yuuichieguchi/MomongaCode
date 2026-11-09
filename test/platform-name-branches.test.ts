@@ -23,8 +23,6 @@ const KEPT: readonly Kept[] = [
   { file: 'foundation/src/release-assets.ts', row: 'B19', reason: 'asset names are release-engineering names' },
   { file: 'cli/src/update/source.ts', row: 'B19', reason: 'signing is a macOS fact' },
   { file: 'supervisor/src/spawn-port.ts', row: 'B21', reason: 'the detached spawn form differs by API' },
-  { file: 'cli/src/commands/auto-mode.ts', row: 'M6.1', reason: 'the host OS-build reader table is keyed by the OS (design-managed-servers section 6.1, hostOsBuild); this passes the OS to it' },
-  { file: 'cli/src/eval/context-effects.ts', row: 'M6.1', reason: 'the host OS-build reader table is keyed by the OS (design-managed-servers section 6.1, hostOsBuild); this passes the OS to it' },
   { file: 'gateway/src/probe/probe-fm.ts', row: 'M6.1', reason: 'the host OS-build reader table is keyed by the OS (design-managed-servers section 6.1, hostOsBuild); this passes the OS to it' },
   { file: 'runtime/src/process/settings-port.ts', row: 'M6.1', reason: 'the host OS-build reader table is keyed by the OS (design-managed-servers section 6.1, hostOsBuild); this passes the OS to it' },
 ];
@@ -39,6 +37,7 @@ const BURN_DOWN: readonly BurnDown[] = [
   { file: 'tools/src/policy-filesystem.ts', rows: 'B6', owner: 'HB10e' },
   { file: 'config/src/settings.ts', rows: 'B8', owner: 'HB10c' },
   { file: 'runtime/src/process/start-runtime-process.ts', rows: 'B9 B15', owner: 'HB10c' },
+  { file: 'gateway/src/managed/server.ts', rows: 'B12', owner: 'HB10a, measuring the socket path by bind as uds.ts does' },
   { file: 'cli/src/node-ports.ts', rows: 'CliPorts.platform', owner: 'not classified by the HB10 table' },
 ];
 
