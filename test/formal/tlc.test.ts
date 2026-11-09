@@ -437,6 +437,21 @@ describe('running tlc.sh under the harness', () => {
   );
 
   it(
+    'keeps the standard modules TLC unpacks inside its own run, never in the shared Java temporary directory',
+    async () => {
+      const shared = path.join(root, 'shared-java-tmp');
+      const foreign = path.join(shared, 'Naturals.tla');
+      writeFile(foreign, 'owned by another run');
+      const script = sandboxWithScript(root, { 'Tiny.tla': tinySpec, 'Tiny.cfg': cfgFor('Small') }, true);
+      const run = await runTlc({ script, config: 'Tiny', args: [], budgetCpuSeconds: 30, env: { JAVA_TOOL_OPTIONS: `-Djava.io.tmpdir=${shared}` } });
+      expect(run.exitCode).toBe(0);
+      expect(fs.readdirSync(shared)).toEqual(['Naturals.tla']);
+      expect(fs.readFileSync(foreign, 'utf8')).toBe('owned by another run');
+    },
+    30000 + REAP_SLACK_MS,
+  );
+
+  it(
     'kills the script and its JVM as one process group at the CPU budget and leaves no JVM',
     async () => {
       const script = sandboxWithScript(root, { 'Endless.tla': endlessSpec, 'Endless.cfg': cfgFor('Fine') }, true);
