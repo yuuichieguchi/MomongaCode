@@ -11,7 +11,7 @@ const KEY_GENERATION = 0;
 const UNAUTHORIZED = 401;
 
 export const keyAuthSource =
-  (readKey: (target: AdapterTarget, signal: AbortSignal) => Promise<string | undefined>): AdapterAuth =>
+  (readKey: (target: AdapterTarget, signal: AbortSignal) => Promise<string>): AdapterAuth =>
   (target) => ({
     read: async (signal) => ({ bearer: await readKey(target, signal), generation: KEY_GENERATION }),
     rejected: async () => 'unchanged',
@@ -21,12 +21,20 @@ export const keyAuthSource =
     health: () => ({ ok: true }),
   });
 
+export const unauthenticatedSource: AdapterAuth = () => ({
+  read: async () => ({ bearer: undefined, generation: KEY_GENERATION }),
+  rejected: async () => 'unchanged',
+  pause: async () => {},
+  resume: async () => {},
+  status: () => ({ state: 'active' }),
+  health: () => ({ ok: true }),
+});
+
 export const sendAuthorized = async (
-  auth: AuthSource | undefined,
+  auth: AuthSource,
   signal: AbortSignal,
   send: (bearer: string | undefined) => Promise<CompletionResponse>,
 ): Promise<CompletionResponse> => {
-  if (auth === undefined) return send(undefined);
   const sent = await auth.read(signal);
   const response = await send(sent.bearer);
   if (response.status !== UNAUTHORIZED) return response;
@@ -36,7 +44,7 @@ export const sendAuthorized = async (
   return send(renewed.bearer);
 };
 
-export const applyCredentialEffect = async (auth: AuthSource | undefined, classified: ClassifiedError, clock: Clock): Promise<void> => {
-  if (auth === undefined || classified.credential !== 'pause') return;
+export const applyCredentialEffect = async (auth: AuthSource, classified: ClassifiedError, clock: Clock): Promise<void> => {
+  if (classified.credential !== 'pause') return;
   await auth.pause(classified.retryAfterMs === undefined ? {} : { untilMs: clock.now() + classified.retryAfterMs });
 };

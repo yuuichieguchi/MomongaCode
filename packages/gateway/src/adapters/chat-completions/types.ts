@@ -31,7 +31,7 @@ export type ChatCompletionsAdapterOptions = {
   constructSupport?: (target: AdapterTarget) => ConstructSupport | undefined;
   envelopeShape?: (target: AdapterTarget) => EnvelopeShape;
   userDialects?: UserDialects;
-  authSource?: AdapterAuth;
+  authSource: AdapterAuth;
   countTokens?: (target: AdapterTarget, request: CountTokensRequest, signal: AbortSignal) => Promise<CountTokensResult>;
   capabilities: (target: AdapterTarget) => Promise<Capabilities>;
   health?: (target: AdapterTarget) => Promise<HealthResult>;

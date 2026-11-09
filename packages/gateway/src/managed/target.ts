@@ -175,7 +175,7 @@ const probedOf = (report: ProbeReport, refusal: NeedsProbe | undefined, modeOf: 
   return { measured, layer: refusal === undefined ? layer : { ...layer, toolCalling: refusal } };
 };
 
-type Recorded = { report: ProbeReport | null; capabilities: Capabilities; isGuardrail: (body: unknown) => boolean };
+type Recorded = { report: ProbeReport | null; capabilities: () => Capabilities; isGuardrail: (body: unknown) => boolean };
 
 const keyText = (description: ManagedServerDescription, key: KnownProbeKey): string => {
   const fields = JSON.parse(key.canonical) as Record<string, unknown>;
@@ -193,7 +193,7 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
       ? undefined
       : {
           report: null,
-          capabilities: { ...recordedDefaultsOf(description, declaredMode, resolveDialectId(options.declaredDialect, null), declaredBounds), ...declaredField, source: 'declared' },
+          capabilities: () => ({ ...recordedDefaultsOf(description, declaredMode, resolveDialectId(options.declaredDialect, null), declaredBounds), ...declaredField, source: 'declared' }),
           isGuardrail: matchesGuardrailCode,
         };
 
@@ -202,13 +202,16 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
     const modeOf = (): ToolCallingMode => resolveToolCalling(options.toolCallingSetting, report, needsProbe).mode;
     const refusedDeclaration = options.toolCallingSetting === 'auto' ? declaredDialectRefusal(targetName, options.declaredDialect, report.schemaDialect, identityText) : undefined;
     const schemaDialect = resolveDialectId(options.declaredDialect, report);
-    const probed = probedOf(report, refusedDeclaration, modeOf, options.outputPolicy?.());
-    const capabilities = mergeCapabilities({
-      defaults: layerOf(recordedDefaultsOf(description, refusedDeclaration ?? modeOf(), schemaDialect, probed.measured)).core,
-      declared: { ...declaredField, ...(declaredBounds ?? {}), schemaDialect },
-      probed: probed.layer,
-      probedAt: report.probedAt,
-    });
+    const capabilities = (): Capabilities => {
+      const probed = probedOf(report, refusedDeclaration, modeOf, options.outputPolicy?.());
+      return mergeCapabilities({
+        defaults: layerOf(recordedDefaultsOf(description, refusedDeclaration ?? modeOf(), schemaDialect, probed.measured)).core,
+        declared: { ...declaredField, ...(declaredBounds ?? {}), schemaDialect },
+        probed: probed.layer,
+        probedAt: report.probedAt,
+      });
+    };
+    capabilities();
     return { report, capabilities, isGuardrail: guardrailMatcherOf(report) };
   };
 
@@ -287,11 +290,11 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
       return options.server.ensureRunning(signal);
     },
     keywordSupport: () => lastRecorded().report?.keywordSupport ?? FULL_KEYWORD_SUPPORT,
-    schemaDialect: () => lastRecorded().capabilities.schemaDialect,
+    schemaDialect: () => lastRecorded().capabilities().schemaDialect,
     constructSupport: () => lastRecorded().report?.constructSupport,
     envelopeShape: () => lastRecorded().report?.schemaDialect.shape ?? 'union',
     upstreamModel,
-    capabilities: async () => ({ ...(await readRecorded()).capabilities, allowedTools }),
+    capabilities: async () => ({ ...(await readRecorded()).capabilities(), allowedTools }),
     roomFacts: async () => {
       const { report } = await readRecorded();
       return {

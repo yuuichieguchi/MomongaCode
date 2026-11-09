@@ -136,7 +136,7 @@ export const createChatCompletionsAdapter = (options: ChatCompletionsAdapterOpti
       const vocabulary = withGuardrailMatcher(baseVocabulary, guardrailMatcher(ctx.target));
       const endpoint = await options.resolveEndpoint(ctx.target, signal);
       const upstreamModel = await options.upstreamModel?.(ctx.target, signal);
-      const response = await sendAuthorized(options.authSource?.(ctx.target), signal, (bearer) =>
+      const response = await sendAuthorized(options.authSource(ctx.target), signal, (bearer) =>
         pool.clientFor(endpoint).post({
           headers: {
             'content-type': 'application/json',

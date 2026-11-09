@@ -6,7 +6,7 @@ import type { UpstreamEndpoint, UpstreamLiveness } from '../shared/http-client.t
 
 export type OpenResponsesAdapterOptions = {
   resolveEndpoint: (target: AdapterTarget, signal: AbortSignal) => Promise<UpstreamEndpoint>;
-  authSource?: AdapterAuth;
+  authSource: AdapterAuth;
   errorRules?: ErrorRules;
   capabilities: (target: AdapterTarget) => Promise<Capabilities>;
   health?: (target: AdapterTarget) => Promise<HealthResult>;

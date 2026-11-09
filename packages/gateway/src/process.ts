@@ -61,7 +61,8 @@ import { createAnthropicAdapter } from './adapters/anthropic/adapter.ts';
 import { createChatCompletionsAdapter } from './adapters/chat-completions/adapter.ts';
 import { createOllamaAdapter } from './adapters/ollama/adapter.ts';
 import { createOpenResponsesAdapter } from './adapters/open-responses/adapter.ts';
-import { keyAuthSource } from './adapters/shared/auth.ts';
+import { keyAuthSource, unauthenticatedSource } from './adapters/shared/auth.ts';
+import type { AdapterAuth } from './adapters/shared/auth.ts';
 import { openPlanSessions } from './plan/session.ts';
 import type { AuthSource, PlanHealth } from './plan/auth-source.ts';
 import type { PlanFetch } from './plan/refresh.ts';
@@ -204,9 +205,12 @@ const apiKeyReader = (
 
 const requiredKey = async (read: ReturnType<typeof apiKeyReader>, target: AdapterTarget, signal: AbortSignal): Promise<string> => {
   const key = await read(target, signal);
-  if (key === undefined) throw new Error(`the anthropic target "${target.name}" has no credential reference`);
+  if (key === undefined) throw new Error(`the target "${target.name}" has no credential reference`);
   return key;
 };
+
+const authSourceOf = (target: Pick<KeyedTarget, 'apiKeyEnv' | 'apiKeySecret'>, read: ReturnType<typeof apiKeyReader>): AdapterAuth =>
+  target.apiKeyEnv === undefined && target.apiKeySecret === undefined ? unauthenticatedSource : keyAuthSource((adapterTarget, signal) => requiredKey(read, adapterTarget, signal));
 
 const credentialValuesOf = (
   env: StartGatewayProcessOptions['env'],
@@ -365,7 +369,7 @@ const createManagedAdapter = async (wiring: ManagedAdapterWiring): Promise<{ ada
     ...(target.model === undefined ? {} : { declaredModel: target.model }),
     ...(target.outputBoundField === undefined ? {} : { declaredOutputBoundField: target.outputBoundField }),
   });
-  const adapter = createChatCompletionsAdapter({ ...managed, sampling: SAMPLING_OF[description.sampling], clock: wiring.clock, userDialects: wiring.userDialects, liveness: wiring.liveness });
+  const adapter = createChatCompletionsAdapter({ ...managed, authSource: unauthenticatedSource, sampling: SAMPLING_OF[description.sampling], clock: wiring.clock, userDialects: wiring.userDialects, liveness: wiring.liveness });
   const startKey = (await wiring.files.isUsableBinary(target.binary)) ? await readKey(wiring.startSignal) : undefined;
   if (startKey?.kind !== 'known') return { adapter, probeKey: undefined, listedModel: undefined };
   return { adapter, probeKey: startKey.canonical, listedModel: await listedModelOf(wiring, startKey, currency) };
@@ -447,7 +451,7 @@ const createAutoChatCompletionsAdapter = async (
     envelopeShape: () => probed.envelopeShape(),
     capabilities: () => probed.capabilities(),
     onSummaryReasoning: (_target, hiddenReasoningTokens) => probed.raiseHeadroom(hiddenReasoningTokens),
-    authSource: keyAuthSource(readKey),
+    authSource: authSourceOf(target, readKey),
     clock,
     userDialects,
     liveness,
@@ -930,13 +934,13 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       };
       switch (target.adapter) {
         case 'chat-completions':
-          adapters[name] = createChatCompletionsAdapter({ ...common, schemaDialect: () => resolveDialectId(target.capabilities.schemaDialect, null), authSource: keyAuthSource(readKey) });
+          adapters[name] = createChatCompletionsAdapter({ ...common, schemaDialect: () => resolveDialectId(target.capabilities.schemaDialect, null), authSource: authSourceOf(target, readKey) });
           break;
         case 'open-responses':
-          adapters[name] = createOpenResponsesAdapter({ ...common, authSource: keyAuthSource(readKey) });
+          adapters[name] = createOpenResponsesAdapter({ ...common, authSource: authSourceOf(target, readKey) });
           break;
         case 'anthropic':
-          adapters[name] = createAnthropicAdapter({ ...common, apiVersion: target.apiVersion, authSource: keyAuthSource((adapterTarget, keySignal) => requiredKey(readKey, adapterTarget, keySignal)) });
+          adapters[name] = createAnthropicAdapter({ ...common, apiVersion: target.apiVersion, authSource: authSourceOf(target, readKey) });
           break;
       }
     }

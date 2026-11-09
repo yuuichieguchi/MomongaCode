@@ -65,7 +65,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
     let watch: ContentWatch | undefined;
     try {
       const endpoint = await options.resolveEndpoint(ctx.target, signal);
-      const auth = options.authSource?.(ctx.target);
+      const auth = options.authSource(ctx.target);
       const response = await sendAuthorized(auth, signal, (bearer) =>
         pool.clientFor(endpoint).post({
           headers: {
