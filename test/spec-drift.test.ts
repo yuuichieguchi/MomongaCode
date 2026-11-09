@@ -214,6 +214,7 @@ describe('the checked configurations against the repaired recovery design', () =
       'RunRecovery.fenceOnly': ['FALSE', 'TRUE', 'TRUE'],
       'RunRecovery.reapOnly': ['TRUE', 'TRUE', 'FALSE'],
       'RunRecovery.unfixed': ['TRUE', 'TRUE', 'TRUE'],
+      'RunRecovery.abortDropsLock': ['FALSE', 'FALSE', 'FALSE'],
     };
     expect([...evidenceNames].sort()).toEqual(Object.keys(switchesOf).sort());
     for (const name of evidenceNames) expect(repairs(name), name).toEqual(switchesOf[name]);
@@ -240,30 +241,17 @@ describe('the checked configurations against the repaired recovery design', () =
     }
   });
 
-  describe('the reasoning about the call lock', () => {
-    const proseBetween = (from: string, to: string): string => {
-      const prose = spec.replace(/\(\*|\*\)/g, ' ').replace(/\s+/g, ' ');
-      const start = prose.indexOf(from);
-      const end = prose.indexOf(to, start);
-      if (start === -1 || end === -1) throw new Error(`no prose between "${from}" and "${to}"`);
-      return prose.slice(start, end);
-    };
-
-    it('argues exclusion from the mechanism the code selects on each platform', () => {
-      const argument = proseBetween('Whether the older worker', 'The lock covers Write');
+  describe('the call lock of the model, against the code', () => {
+    it('takes exclusion from the kernel lock mechanism the code selects on each platform, and the model holds the lock in Held', () => {
       expect(createKernelLockMechanism('linux').name).toBe('sqlite-lock');
       expect(createKernelLockMechanism('win32').name).toBe('sqlite-lock');
-      expect(argument).toMatch(/sqlite/i);
-      expect(argument).not.toMatch(/EADDRINUSE|abstract socket|named pipe/);
+      expect(definitionOf('Held')).toContain('wlock[x]');
     });
 
-    it('derives the wait for a held lock from the heartbeat, the settle limit and the kill grace, not from the reconcile cap', () => {
-      const argument = proseBetween('The wait for a held lock', 'When the wait expires');
-      expect(argument).toMatch(/heartbeat/);
-      expect(argument).toMatch(/settle/);
-      expect(argument).toMatch(/kill grace/);
-      expect(argument).not.toMatch(/reconcile cap/);
-      expect(argument).not.toMatch(/10 s of the default/);
+    it('derives the wait for a held lock from the heartbeat, the settle limit and the kill grace, in the code the model names', () => {
+      const executor = fs.readFileSync(path.resolve(import.meta.dirname, '..', 'packages', 'tools', 'src', 'executor.ts'), 'utf8');
+      expect(executor).toMatch(/heldCallWaitMs = \(heartbeatMs: number\): number => heartbeatMs \+ ABORT_SETTLE_LIMIT_MS \+ SANDBOX_STOP_BOUND_MS/);
+      expect(definitionOf('LockWaitExpired')).toContain('Held(KeyOf(w))');
     });
   });
 
@@ -275,3 +263,33 @@ describe('the checked configurations against the repaired recovery design', () =
     }
   });
 });
+
+describe('the generation actors of RunRecovery.tla', () => {
+  it('keeps the call lock while the child of a stopped worker lives, in the abort and in the stale ledger, as the executor holds it until the tool settles', () => {
+    expect(definitionOf('Abort')).toContain('KeepsLockWhileChild');
+    expect(definitionOf('StaleLedger')).toContain('KeepsLockWhileChild');
+    expect(fs.readFileSync(path.resolve(import.meta.dirname, '..', 'packages', 'tools', 'src', 'executor.ts'), 'utf8')).toContain('callLockDir');
+  });
+
+  it('states the retiring-child invariant, and checks it with the lock and the generations in the generation configurations', () => {
+    expect(spec).toMatch(/^RetiringChildNeverReaped == ~flags\.reapedLive$/m);
+    for (const name of ['RunRecovery', 'RunRecovery.generations', 'RunRecovery.genDies']) {
+      expect(lists(name, 'RetiringChildNeverReaped'), name).toBe(true);
+      expect(constantsOf(name)['KeepsLockWhileChild'], name).toBe('TRUE');
+    }
+  });
+
+  it('declares the generation constants in every configuration, with the legacy values in the single-generation ones', () => {
+    for (const entry of recoveryEntries) {
+      const constants = constantsOf(entry.config);
+      for (const name of ['Gen2Workers', 'Promotes', 'GenDies', 'KeepsLockWhileChild']) expect(constants, `${entry.config} ${name}`).toHaveProperty(name);
+    }
+    expect(constantsOf('RunRecovery.generations')['Promotes']).toBe('TRUE');
+    expect(constantsOf('RunRecovery.genDies')['GenDies']).toBe('TRUE');
+  });
+
+  it('keeps the generation configurations free of symmetry, since their workers belong to different generations', () => {
+    for (const name of ['RunRecovery.generations', 'RunRecovery.genDies']) expect(configText(name), name).not.toMatch(/^SYMMETRY/m);
+  });
+});
+
