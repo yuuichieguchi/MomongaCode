@@ -416,5 +416,5 @@ export type CompactResource = {
   output: ItemField[];
   created_at: number;
   usage: Usage;
-  momonga?: { target: string; cacheWriteInputTokens?: number; cacheReadNotReported?: true; cost?: ModelCost; unpriced?: UnpricedOutcome };
+  momonga: { target: string; cacheWriteInputTokens?: number; cacheReadNotReported?: true; cost?: ModelCost; unpriced?: UnpricedOutcome };
 };

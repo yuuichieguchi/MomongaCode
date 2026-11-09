@@ -412,7 +412,7 @@ async function* relaySteps(
   const momongaFor = (
     usageSource: UsageSource,
     contextInputTokens?: number,
-    billed?: { usage: Usage; cacheWriteInputTokens: number | undefined },
+    billed?: { usage: Usage; usageSource: UsageSource; cacheWriteInputTokens: number | undefined },
     retryable?: boolean,
     schemaNarrowings?: SchemaNarrowing[],
     jsonReply?: JsonReplyPath,
@@ -426,6 +426,7 @@ async function* relaySteps(
             model: target.model,
             billing: target.billing,
             usage: billed.usage,
+            usageSource: billed.usageSource,
             cacheWriteInputTokens: billed.cacheWriteInputTokens,
             at: opened.span.startedAtMs,
             table: services.priceTable,
@@ -507,7 +508,7 @@ async function* relaySteps(
     momonga: momongaFor(
       usageSource,
       upstream.contextInputTokens,
-      reported === null ? undefined : { usage: reported, cacheWriteInputTokens: upstream.cacheWriteInputTokens },
+      { usage, usageSource, cacheWriteInputTokens: upstream.cacheWriteInputTokens },
       undefined,
       upstream.schemaNarrowings,
       upstream.jsonReply,
@@ -574,6 +575,7 @@ async function* relaySteps(
     responseId,
     finishReason: finishReasonOf(resource),
     usage,
+    usageSource,
     ...(upstream.cacheWriteInputTokens === undefined ? {} : { cacheWriteInputTokens: upstream.cacheWriteInputTokens }),
     output: resource.output,
     fallbackCauses,

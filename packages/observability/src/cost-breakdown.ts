@@ -1,6 +1,7 @@
 import { describeMoney, moneyAmountOf, moneyTallyOf, unpricedCallsOf } from './money-line.ts';
 import { CACHE_READ_TEXT, isCacheReadReported } from './cache-reads.ts';
-import type { CallBilling, PricedCall } from './cost.ts';
+import type { CallBilling } from './cost.ts';
+import type { CallPrice } from './money-line.ts';
 import { CACHE_MISS_CAUSES, RUN_ROLE, UNPRICED_CODE_TEXT, escapeTerminalLine } from '@momonga/protocol';
 import type { CacheMissCause, PrefixEvent, UnpricedCode } from '@momonga/protocol';
 
@@ -19,7 +20,7 @@ export type BreakdownCall = {
   target?: string;
   billing: CallBilling;
   at: Date;
-  price: PricedCall;
+  price: CallPrice;
   anatomy?: BreakdownAnatomy;
   prefix?: BreakdownPrefix;
   usage: { inputTokens: number; cachedInputTokens?: number; cacheWriteInputTokens: number; outputTokens: number; reasoningTokens: number };
@@ -60,7 +61,7 @@ export type CostBreakdown = {
   timeToFirstToken: TimingSummary | null;
   duration: TimingSummary | null;
   roles: Record<string, RoleBreakdown>;
-  cost: { amount: number | null; currency: 'USD'; unpricedCalls: number; priceVersions: string[] };
+  cost: { amount: number | null; currency: 'USD'; unpricedCalls: number; unpriced: Partial<Record<UnpricedCode, number>>; priceNotRecordedCalls: number; priceVersions: string[] };
   plan: { calls: number; inputTokens: number; outputTokens: number };
   unpriced: UnpricedCall[];
   inconsistentUsage: InconsistentUsage[];
@@ -228,7 +229,14 @@ export const buildCostBreakdown = (calls: readonly BreakdownCall[], options: Cos
     timeToFirstToken: main?.timeToFirstToken ?? null,
     duration: main?.duration ?? null,
     roles,
-    cost: { amount: moneyAmountOf(money), currency: 'USD', unpricedCalls: unpricedCallsOf(money.unpriced), priceVersions: [...money.meteredPriceVersions] },
+    cost: {
+      amount: moneyAmountOf(money),
+      currency: 'USD',
+      unpricedCalls: unpricedCallsOf(money.unpriced),
+      unpriced: money.unpriced,
+      priceNotRecordedCalls: money.priceNotRecorded,
+      priceVersions: [...money.meteredPriceVersions],
+    },
     plan,
     unpriced,
     inconsistentUsage,
@@ -276,12 +284,6 @@ const hitRatioLineOf = (breakdown: CostBreakdown): string => {
   return 'cache hit ratio: none (no input)';
 };
 
-const unpricedByCodeOf = (breakdown: CostBreakdown): Partial<Record<UnpricedCode, number>> => {
-  const counts: Partial<Record<UnpricedCode, number>> = breakdown.plan.calls === 0 ? {} : { plan: breakdown.plan.calls };
-  for (const entry of breakdown.unpriced) counts[entry.code] = (counts[entry.code] ?? 0) + 1;
-  return counts;
-};
-
 export const formatCostBreakdown = (breakdown: CostBreakdown): string => {
   const { billed } = breakdown;
   const shares = Object.entries(breakdown.layers.shares).filter(([, tokens]) => tokens > 0);
@@ -291,7 +293,7 @@ export const formatCostBreakdown = (breakdown: CostBreakdown): string => {
       : `layers (estimated): ${shares.map(([name, share]) => `${name} ${percent(share)}`).join(', ')}`;
   const withoutAnatomy =
     breakdown.layers.callsWithoutAnatomy === 0 ? '' : `, ${breakdown.layers.callsWithoutAnatomy} of ${breakdown.calls} call(s) have no recorded layers`;
-  const cost = `cost: ${describeMoney({ calls: breakdown.calls, unpriced: unpricedByCodeOf(breakdown), amount: breakdown.cost.amount, meteredPriceVersions: breakdown.cost.priceVersions })}`;
+  const cost = `cost: ${describeMoney({ calls: breakdown.calls, unpriced: breakdown.cost.unpriced, priceNotRecorded: breakdown.cost.priceNotRecordedCalls, amount: breakdown.cost.amount, meteredPriceVersions: breakdown.cost.priceVersions })}`;
   return [
     `calls: ${breakdown.calls}`,
     `${layerLine}${withoutAnatomy}`,

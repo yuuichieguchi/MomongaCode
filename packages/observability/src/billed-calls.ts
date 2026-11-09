@@ -2,7 +2,7 @@ import { GENAI_SEMCONV, MOMONGA_ATTRIBUTES, OPERATIONS, UNKNOWN_BILLING } from '
 import { priceCall } from './cost.ts';
 import type { CallBilling, PriceTable, PricedCall } from './cost.ts';
 import type { SpanRecord, TraceStore } from './trace-store.ts';
-import type { UnpricedCode } from '@momonga/protocol';
+import type { PriceNotRecorded, UnpricedCode, UsageSource } from '@momonga/protocol';
 
 const A = GENAI_SEMCONV.attributes;
 
@@ -18,11 +18,11 @@ export type BilledCall = {
   billing: CallBilling;
   startMs: number;
   usage: { inputTokens: number; cachedInputTokens?: number; cacheWriteInputTokens: number; outputTokens: number; reasoningTokens: number };
-  price: PricedCall;
+  price: PricedCall | PriceNotRecorded;
 };
 
 export type BilledCallWire = Omit<BilledCall, 'price' | 'spanId'> & {
-  price: { kind: 'priced'; units: string; priceVersion: string } | { kind: 'unpriced'; code: UnpricedCode; reason: string };
+  price: { kind: 'priced'; units: string; priceVersion: string } | { kind: 'unpriced'; code: UnpricedCode; reason: string } | PriceNotRecorded;
 };
 
 export type BilledCallsCursor = { run: number; after: number };
@@ -41,6 +41,12 @@ const reportedNumber = (span: SpanRecord, key: string): number | undefined => {
   if (value === undefined) return undefined;
   if (typeof value !== 'number') throw new TypeError(`chat span ${span.spanId} attribute ${key} must be a number`);
   return value;
+};
+
+const usageSourceOf = (span: SpanRecord): UsageSource | undefined => {
+  const value = optionalString(span, MOMONGA_ATTRIBUTES.usageSource);
+  if (value === undefined || value === 'reported' || value === 'estimated') return value;
+  throw new TypeError(`chat span ${span.spanId} attribute ${MOMONGA_ATTRIBUTES.usageSource} must be reported or estimated, got ${value}`);
 };
 
 const optionalString = (span: SpanRecord, key: string): string | undefined => {
@@ -71,6 +77,7 @@ export const billedCallOf = (runId: string, span: SpanRecord, table: PriceTable)
   const model = optionalString(span, A.ATTR_GEN_AI_REQUEST_MODEL) ?? '';
   const billing = billingOf(span);
   const usage = billedUsageOf(span);
+  const usageSource = usageSourceOf(span);
   const step = span.attributes[MOMONGA_ATTRIBUTES.step];
   const role = optionalString(span, MOMONGA_ATTRIBUTES.role);
   const responseId = optionalString(span, A.ATTR_GEN_AI_RESPONSE_ID);
@@ -87,14 +94,7 @@ export const billedCallOf = (runId: string, span: SpanRecord, table: PriceTable)
     billing,
     startMs: span.startMs,
     usage,
-    price: priceCall({
-      provider,
-      model,
-      billing,
-      usage,
-      at: new Date(span.startMs),
-      table,
-    }),
+    price: usageSource === undefined ? { kind: 'not_recorded' } : priceCall({ provider, model, billing, usageSource, usage, at: new Date(span.startMs), table }),
   };
 };
 

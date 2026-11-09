@@ -11,7 +11,7 @@ export type { CacheReadTally, CacheReadUsage, InputClause, SplitLine } from './c
 export type { BilledCall, BilledCallWire, BilledCallsCursor, BilledCallsPage } from './billed-calls.ts';
 export { UNPRICED_CODE_TEXT } from '@momonga/protocol';
 export { describeMoney, moneyAmountOf, moneyLine, moneyTallyOf, unpricedCallsOf } from './money-line.ts';
-export type { MoneyTally } from './money-line.ts';
+export type { CallPrice, MoneyTally } from './money-line.ts';
 export { LOCAL_PRICE_VERSION, amountOfUnits, definePriceTable, findPriceEntry, priceCall } from './cost.ts';
 export type { CallBilling, CostInput, CostUsage, PriceCallInput, PriceEntry, PriceTable, PricedCall, UnpricedPrice } from './cost.ts';
 export { buildCostReport, formatCostReport } from './cost-report.ts';

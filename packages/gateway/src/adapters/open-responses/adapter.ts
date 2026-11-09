@@ -106,7 +106,7 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
       const collected = summaryOfTerminal(event, cap);
       if (collected === undefined) continue;
       const usage = collected.usage ?? estimatedUsage(wireTokensOf(buildResponsesBody(summaryRequest, ctx.reasoningOrigin), capabilities.imageTokens), tokensForText(collected.summary));
-      return { summary: collected.summary, usage };
+      return { summary: collected.summary, usage, usageSource: collected.usage === null ? ('estimated' as const) : ('reported' as const) };
     }
     throw new StreamFailure('upstream_protocol_error', 'model_error', 'the upstream ended without a terminal event');
   };

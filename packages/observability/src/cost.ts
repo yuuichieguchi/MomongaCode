@@ -1,4 +1,4 @@
-import type { UnpricedOutcome } from '@momonga/protocol';
+import type { UnpricedOutcome, UsageSource } from '@momonga/protocol';
 import { UNKNOWN_BILLING } from './semconv.ts';
 
 export type PriceEntry = {
@@ -94,7 +94,7 @@ export const CACHE_READ_NOT_REPORTED_REASON = 'the upstream did not report the c
 
 export type CallBilling = 'metered' | 'local' | 'plan' | typeof UNKNOWN_BILLING;
 
-export type PriceCallInput = CostInput & { billing: CallBilling };
+export type PriceCallInput = CostInput & { billing: CallBilling; usageSource: UsageSource };
 
 export type UnpricedPrice = { kind: 'unpriced' } & UnpricedOutcome;
 
@@ -118,6 +118,7 @@ export const priceCall = (input: PriceCallInput): PricedCall => {
   if (billing === 'local') return { kind: 'priced', units: 0n, currency: 'USD', priceVersion: LOCAL_PRICE_VERSION };
   if (billing === 'plan') return { kind: 'unpriced', code: 'plan', reason: 'plan' };
   if (Number.isNaN(input.at.getTime())) return { kind: 'unpriced', code: 'unpriceable_usage', reason: 'the time of the call is not a valid date' };
+  if (input.usageSource === 'estimated') return { kind: 'unpriced', code: 'usage_not_reported', reason: 'the upstream reported no usage, so the usage on record is an estimate' };
   if (cached === undefined) return { kind: 'unpriced', code: 'cache_read_not_reported', reason: CACHE_READ_NOT_REPORTED_REASON };
   const entry = findPriceEntry(input.table, input.provider, input.model, input.at.getTime());
   if (entry === undefined) return { kind: 'unpriced', code: 'no_price_entry', reason: 'no price entry' };

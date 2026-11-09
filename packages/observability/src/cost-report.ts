@@ -7,7 +7,7 @@ import { billedCallOf, isBilledChat } from './billed-calls.ts';
 import type { BilledCall } from './billed-calls.ts';
 import { CACHE_READ_TEXT, isCacheReadReported, noCallReported } from './cache-reads.ts';
 import { LOCAL_PRICE_VERSION, amountOfUnits } from './cost.ts';
-import { describeMoney, moneyAmountOf } from './money-line.ts';
+import { describeMoney, moneyAmountOf, unpricedCallsOf } from './money-line.ts';
 import type { MoneyTally } from './money-line.ts';
 import type { PriceTable } from './cost.ts';
 import type { SpanRecord, TraceStore } from './trace-store.ts';
@@ -35,6 +35,7 @@ export type RoleCost = {
   currency: 'USD';
   priceVersions: string[];
   unpriced: Partial<Record<UnpricedCode, number>>;
+  priceNotRecordedCalls: number;
 };
 
 export type CostTotals = RoleCost & { roles: Record<string, RoleCost> };
@@ -49,6 +50,7 @@ type Accumulator = {
   calls: number;
   localCalls: number;
   unpriced: Partial<Record<UnpricedCode, number>>;
+  priceNotRecordedCalls: number;
   cacheReadNotReportedCalls: number;
   planInputTokens: number;
   planOutputTokens: number;
@@ -67,6 +69,7 @@ const emptyAccumulator = (): Accumulator => ({
   calls: 0,
   localCalls: 0,
   unpriced: {},
+  priceNotRecordedCalls: 0,
   cacheReadNotReportedCalls: 0,
   planInputTokens: 0,
   planOutputTokens: 0,
@@ -87,6 +90,7 @@ const merge = (target: Accumulator, source: Accumulator): void => {
   target.calls += source.calls;
   target.localCalls += source.localCalls;
   for (const [code, count] of Object.entries(source.unpriced) as [UnpricedCode, number][]) addUnpriced(target, code, count);
+  target.priceNotRecordedCalls += source.priceNotRecordedCalls;
   target.cacheReadNotReportedCalls += source.cacheReadNotReportedCalls;
   target.planInputTokens += source.planInputTokens;
   target.planOutputTokens += source.planOutputTokens;
@@ -128,6 +132,7 @@ const fallbackTotalsOf = (accumulator: Accumulator): Pick<CostTotals, 'fallbackC
 const moneyTallyOfAccumulator = (accumulator: Accumulator): MoneyTally => ({
   calls: accumulator.calls,
   unpriced: accumulator.unpriced,
+  priceNotRecorded: accumulator.priceNotRecordedCalls,
   amount: amountOfUnits(accumulator.units),
   meteredPriceVersions: [...accumulator.priceVersions].sort(),
 });
@@ -136,7 +141,7 @@ const roleTotalsOf = (accumulator: Accumulator): RoleCost => ({
   ...fallbackTotalsOf(accumulator),
   calls: accumulator.calls,
   localCalls: accumulator.localCalls,
-  unpricedCalls: countOf(accumulator, 'no_price_entry') + countOf(accumulator, 'unpriceable_usage'),
+  unpricedCalls: unpricedCallsOf(accumulator.unpriced),
   unknownBillingCalls: countOf(accumulator, 'unknown_billing'),
   cacheReadNotReportedCalls: accumulator.cacheReadNotReportedCalls,
   cacheReadUnpricedCalls: countOf(accumulator, 'cache_read_not_reported'),
@@ -150,6 +155,7 @@ const roleTotalsOf = (accumulator: Accumulator): RoleCost => ({
   currency: 'USD',
   priceVersions: [...accumulator.priceVersions].sort(),
   unpriced: { ...accumulator.unpriced },
+  priceNotRecordedCalls: accumulator.priceNotRecordedCalls,
 });
 
 const totalsOf = (accumulator: Accumulator): CostTotals => ({
@@ -180,7 +186,9 @@ const addSpan = (accumulator: Accumulator, span: SpanRecord, call: BilledCall): 
   else accumulator.cacheReadNotReportedCalls += 1;
   if (call.billing === 'local') accumulator.localCalls += 1;
   const { price } = call;
-  if (price.kind === 'priced') {
+  if (price.kind === 'not_recorded') {
+    accumulator.priceNotRecordedCalls += 1;
+  } else if (price.kind === 'priced') {
     accumulator.units += price.units;
     if (price.priceVersion !== LOCAL_PRICE_VERSION) accumulator.priceVersions.add(price.priceVersion);
   } else {
@@ -235,7 +243,7 @@ const describeTotals = (totals: RoleCost): string => {
     (entry) =>
       `, ${entry.calls} of ${totals.calls} call(s) were answered by fallback target ${entry.answeredBy} after ${entry.failed.map(describeFallbackCause).join('; ')}`,
   );
-  const money = describeMoney({ calls: totals.calls, unpriced: totals.unpriced, amount: totals.amount, meteredPriceVersions: totals.priceVersions });
+  const money = describeMoney({ calls: totals.calls, unpriced: totals.unpriced, priceNotRecorded: totals.priceNotRecordedCalls, amount: totals.amount, meteredPriceVersions: totals.priceVersions });
   return `${totals.calls} call(s), ${CACHE_READ_TEXT.inputClause({ calls: totals.calls, notReported: totals.cacheReadNotReportedCalls, inputTokens: totals.inputTokens, cachedInputTokens: totals.cachedInputTokens })} + ${totals.outputTokens} output tokens, ${money}${fallback.join('')}`;
 };
 

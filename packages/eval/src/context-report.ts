@@ -1,6 +1,6 @@
 import { canonicalJson, defineProductSchema, isRecord, sha256Hex } from '@momonga/foundation';
 import type { ProductValidator } from '@momonga/foundation';
-import { CACHE_READS_NOT_REPORTED, MODEL_KINDS, UNPRICED_CODES, UNPRICED_CODE_TEXT, escapeTerminalLine, modelKindOf } from '@momonga/protocol';
+import { CACHE_READS_NOT_REPORTED, MODEL_KINDS, PRICE_NOT_RECORDED, UNPRICED_CODES, UNPRICED_CODE_TEXT, escapeTerminalLine, modelKindOf } from '@momonga/protocol';
 import type { ModelKind } from '@momonga/protocol';
 import { clusterBootstrap } from './bootstrap.ts';
 import type { Cluster } from './bootstrap.ts';
@@ -409,8 +409,6 @@ export const unmeasuredCauseOf = (metric: CacheReadMetric, cases: readonly Conte
   if (totals.some(hasInconsistentCacheRead)) return CACHE_READ_CAUSES.inconsistent;
   return metric === 'uncachedInputPerSuccess' ? CACHE_READ_CAUSES.noSuccess : CACHE_READ_CAUSES.noInput;
 };
-
-const PRICE_NOT_RECORDED = 'price not recorded';
 
 const pricedCallCount = (calls: number, cases: number, text: string): string => `${text} in ${calls} call(s) of ${cases} case(s)`;
 

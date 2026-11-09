@@ -1,12 +1,13 @@
 import { amountOfUnits, priceCall } from '@momonga/observability';
 import type { CallBilling, PriceTable } from '@momonga/observability';
-import type { ModelCost, ModelPricing, UnpricedOutcome, Usage } from '@momonga/protocol';
+import type { ModelCost, ModelPricing, UnpricedOutcome, Usage, UsageSource } from '@momonga/protocol';
 
 export type ModelCostInput = {
   provider: string;
   model: string;
   billing: CallBilling;
   usage: Usage;
+  usageSource: UsageSource;
   cacheWriteInputTokens: number | undefined;
   at: number;
   table: PriceTable | undefined;
@@ -19,6 +20,7 @@ export const modelCostOf = (input: ModelCostInput): ModelPricing => {
     provider: input.provider,
     model: input.model,
     billing: input.billing,
+    usageSource: input.usageSource,
     usage: {
       inputTokens: input.usage.input_tokens,
       outputTokens: input.usage.output_tokens,

@@ -10,7 +10,7 @@ import {
 import type { FallbackCause } from '@momonga/foundation';
 import type { ChatBilling, Telemetry } from '@momonga/observability';
 import { MOMONGA_EVENTS } from '@momonga/protocol';
-import type { AdapterInputItem, FunctionTool, ItemField, Usage } from '@momonga/protocol';
+import type { AdapterInputItem, FunctionTool, ItemField, Usage, UsageSource } from '@momonga/protocol';
 import { chatRequestContentOf, chatResponseMessagesOf } from './chat-content.ts';
 
 export type TraceParent = ReturnType<Telemetry['propagation']['extract']>;
@@ -41,6 +41,7 @@ export type AttemptSpan = {
     responseId: string;
     finishReason: string;
     usage: Usage;
+    usageSource: UsageSource;
     cacheWriteInputTokens?: number;
     output: readonly ItemField[];
     fallbackCauses: readonly FallbackCause[];
@@ -91,6 +92,7 @@ export const startAttemptSpan = (input: AttemptSpanInput): AttemptSpan => {
         responseModel: info.responseModel,
         responseId: info.responseId,
         finishReasons: [info.finishReason],
+        usageSource: info.usageSource,
         usage: {
           inputTokens: info.usage.input_tokens,
           outputTokens: info.usage.output_tokens,

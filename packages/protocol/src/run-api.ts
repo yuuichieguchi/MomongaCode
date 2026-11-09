@@ -197,6 +197,8 @@ const modelCost = closed({ amount: { type: 'number', minimum: 0 }, currency: con
 
 const unpricedOutcome = closed({ code: enumOf(UNPRICED_CODES), reason: string }, ['code', 'reason']);
 
+const unpricedCounts = closed(Object.fromEntries(UNPRICED_CODES.map((code) => [code, { type: 'integer', minimum: 1 }])), []);
+
 const atMostOneOf = (keys: readonly string[]): JsonSchema => ({ not: { properties: Object.fromEntries(keys.map((key) => [key, anything])), required: keys } });
 
 const withOnePriceOutcome = (schema: JsonSchema): JsonSchema => ({ ...schema, ...atMostOneOf(['cost', 'unpriced']) });
@@ -632,7 +634,8 @@ const costTotalsProperties: Record<string, JsonSchema> = {
   amount: nullable({ type: 'number', minimum: 0 }),
   currency: constant('USD'),
   priceVersions: { type: 'array', items: string },
-  unpriced: closed(Object.fromEntries(UNPRICED_CODES.map((code) => [code, { type: 'integer', minimum: 1 }])), []),
+  unpriced: unpricedCounts,
+  priceNotRecordedCalls: nonNegativeInteger,
 };
 const roleCostRequired = Object.keys(costTotalsProperties);
 const costTotalsRequired = [...roleCostRequired, 'roles'];
@@ -745,7 +748,10 @@ const costBreakdownView = closed(
         ['calls', 'timeToFirstToken', 'duration', 'totalDurationMs', 'timingNotRecorded'],
       ),
     },
-    cost: closed({ amount: nullable({ type: 'number' }), currency: constant('USD'), unpricedCalls: nonNegativeInteger, priceVersions: { type: 'array', items: string } }, ['amount', 'currency', 'unpricedCalls', 'priceVersions']),
+    cost: closed(
+      { amount: nullable({ type: 'number' }), currency: constant('USD'), unpricedCalls: nonNegativeInteger, unpriced: unpricedCounts, priceNotRecordedCalls: nonNegativeInteger, priceVersions: { type: 'array', items: string } },
+      ['amount', 'currency', 'unpricedCalls', 'unpriced', 'priceNotRecordedCalls', 'priceVersions'],
+    ),
     plan: closed({ calls: nonNegativeInteger, inputTokens: nonNegativeInteger, outputTokens: nonNegativeInteger }, ['calls', 'inputTokens', 'outputTokens']),
     unpriced: {
       type: 'array',
@@ -1026,6 +1032,7 @@ export type RoleCostView = {
   currency: 'USD';
   priceVersions: string[];
   unpriced: Partial<Record<UnpricedCode, number>>;
+  priceNotRecordedCalls: number;
 };
 
 export type CostTotalsView = RoleCostView & { roles: Record<string, RoleCostView> };
