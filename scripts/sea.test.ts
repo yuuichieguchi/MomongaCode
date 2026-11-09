@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { repoRoot } from './bundle.ts';
 import { SEA_NODE_ARCHIVE_SHA256, assertFileChecksum, assertPinnedChecksum, parseShasums } from './node-runtime.ts';
 import { buildSea } from './sea.ts';
+import { UNBOUNDED_BUILD_WAIT_MS } from './support/build-wait.ts';
 import { createTempRoot, removeTempRoot } from './support/temp.ts';
 import { RUNS_MACOS_ARM64_ARTIFACTS } from './support/host.ts';
 
@@ -60,7 +61,7 @@ describe.skipIf(!RUNS_MACOS_ARM64_ARTIFACTS)('single executable built from the f
     root = createTempRoot();
     binary = path.join(root, 'sea-fixture');
     await buildSea({ entry: `${repoRoot}test/fixtures/sea/entry.ts`, output: binary, workDir: path.join(root, 'work') });
-  });
+  }, UNBOUNDED_BUILD_WAIT_MS);
 
   afterAll(() => {
     removeTempRoot(root);

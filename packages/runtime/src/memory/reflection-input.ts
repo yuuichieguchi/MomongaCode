@@ -4,7 +4,7 @@ import { cutToChars, jsonReplyInstructions, keepingHeadAndTail } from '@momonga/
 import { ESTIMATED_CHARACTERS_PER_TOKEN, assistantTextOf, escapeXmlAttribute, escapeXmlText, tokensForText } from '@momonga/protocol';
 import type { Capabilities, RunEvent } from '@momonga/protocol';
 import { HISTORY_OUTPUT_HEAD_CHARS, HISTORY_OUTPUT_TAIL_CHARS } from '@momonga/store';
-import { REFLECTION_REPLY_SCHEMA } from './reflection-reply.ts';
+import { REFLECTION_REPLY_SCHEMA } from './reflection-reply-schema.ts';
 
 const REFLECTION_TASK = [
   'You review the record of one finished coding run whose test command passed after its last change, and propose notes worth keeping for later sessions.',
