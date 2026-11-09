@@ -203,7 +203,7 @@ export type LeasedIdempotency = {
   authorise(key: string): LeasedOutcome;
   attachProcess(key: string, process: { pgid: number; startedAt: number }): LeasedOutcome;
   checkpoint(key: string, state: Record<string, unknown> | undefined): LeasedOutcome;
-  complete(key: string, result: unknown): LeasedOutcome;
+  complete(key: string, result: unknown, meta?: Record<string, unknown>): LeasedOutcome;
 };
 
 export type IdempotencyStore = {

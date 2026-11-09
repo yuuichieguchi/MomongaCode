@@ -14,6 +14,7 @@ import type { FakeUpstreamReply } from '@momonga/testkit';
 import { START_MS, postJson, readJson, readSse, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
 import { DEFERRED_HEADER } from './retry-support.ts';
 import { REMOTE_CAPABILITIES, startOpenResponsesGateway, terminalOf, textOf } from './upstream-gateway-support.ts';
+import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 const streamBody = { model: 'fast', stream: true, input: userInput('hello') };
 
@@ -26,7 +27,7 @@ const rateLimitedBeforeOutput = (headers?: Record<string, string>): FakeUpstream
 const openResponsesTarget = async (script: FakeUpstreamReply[]) => {
   const fake = await startFakeOpenResponses({ script });
   registerCleanup(() => fake.close());
-  const adapter = createOpenResponsesAdapter({
+  const adapter = createOpenResponsesAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
     resolveEndpoint: async () => ({ kind: 'unix', socketPath: fake.socketPath }),
     capabilities: async () => REMOTE_CAPABILITIES,
     clock: createFakeClock(START_MS),

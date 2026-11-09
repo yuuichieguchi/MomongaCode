@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { createUserSettingsCache } from '@momonga/config';
+import { createUserSettingsCache, noKeptRecords } from '@momonga/config';
 import { createJsonLogger, momongaPaths, systemClock } from '@momonga/foundation';
 import { DEFAULT_INTERVALS, HELD_RETRY_MS, STARTUP_TIMEOUT_MS } from '../../src/constants.ts';
 import { createChildManager } from '../../src/child-manager.ts';
@@ -30,7 +30,7 @@ const manager = createChildManager({
   launcher: () => ({ command: process.execPath, args: [child, ...flag('child-arg')] }),
   env: { PATH: process.env['PATH'] ?? '/usr/bin:/bin', HOME: home },
   spawn: createSpawnPort(),
-  settings: createUserSettingsCache({ home, onWarning: () => undefined }),
+  settings: createUserSettingsCache({ home, onWarning: () => undefined, keptRecords: noKeptRecords }),
   logger,
   clock: systemClock,
   timers: { setTimeout: (callback, ms) => setTimeout(callback, ms), clearTimeout: (handle) => clearTimeout(handle as NodeJS.Timeout) },

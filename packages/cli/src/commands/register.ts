@@ -5,6 +5,7 @@ import { GROUP_KEYS } from '@momonga/reliability';
 import type { GroupKey } from '@momonga/reliability';
 import { GOVERNING_KINDS, MEMORY_KINDS, MEMORY_SCOPES, PERMISSION_MODES } from '@momonga/protocol';
 import type { GoverningEnforcement, GoverningKind, MemoryKind, MemoryScope, PermissionMode } from '@momonga/protocol';
+import { withIdentityReadFetch } from '../network.ts';
 import { pathsOf } from '../paths.ts';
 import type { ProgramDeps } from '../program-deps.ts';
 import { contextImprove, guidelineAdopt, guidelineList, guidelineRollback } from './context.ts';
@@ -414,7 +415,8 @@ const registerModels: CommandGroup = (program, deps) => {
     .description('ask the usual local addresses, and any address you name, what model server answers there; nothing is written')
     .option('--json', 'print the servers as JSON')
     .action(async (typed: string[], options: { json?: true }) => {
-      deps.complete(await detectModels(deps.ports, await pathsOf(deps.ports), { typed, json: options.json === true, interrupt: deps.interrupt }));
+      const paths = await pathsOf(deps.ports);
+      deps.complete(await withIdentityReadFetch(deps.ports, (fetch) => detectModels(deps.ports, paths, { typed, json: options.json === true, interrupt: deps.interrupt, fetch })));
     });
 };
 

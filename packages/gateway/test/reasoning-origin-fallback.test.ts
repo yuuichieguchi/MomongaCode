@@ -16,6 +16,7 @@ import {
 import { START_MS, postJson, readSse, registerCleanup, startGateway, userInput } from './gateway-helpers.ts';
 import { QWEN_MODEL, chunkLine, doneLine, makeOllamaAdapter, startFakeOllama } from './ollama-support.ts';
 import { FAKE_API_KEY, REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
+import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 const ANTHROPIC_MODEL = 'claude-model-x';
 const THINKING = 'anthropic thinking of turn one';
@@ -46,7 +47,7 @@ describe('a fallback away and back on a mixed-adapter alias (item 5, decision 2(
       script: [thinkingReply(), anthropicErrorReply(529, 'overloaded_error', 'primary is overloaded'), anthropicTextReply(['three'])],
     });
     registerCleanup(() => anthropicFake.close());
-    const primary = createAnthropicAdapter({
+    const primary = createAnthropicAdapter({ liveness: UNDICI_DEFAULT_LIVENESS,
       resolveEndpoint: async () => ({ kind: 'unix', socketPath: anthropicFake.socketPath }),
       apiKey: async () => FAKE_API_KEY,
       capabilities: async () => REMOTE_CAPABILITIES,

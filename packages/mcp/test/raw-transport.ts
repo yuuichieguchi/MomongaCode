@@ -4,9 +4,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
 import type { McpStdioServerConfig } from '@momonga/config';
+import { groupTerminationBoundMs } from '@momonga/foundation';
 import { createStdioTransport } from '@momonga/mcp';
 import type { StdioTransport, StdioTransportOptions } from '@momonga/mcp';
 import { LSOF_PATH, MCP_RAW_STDIO_SERVER_PATH, killGroupsForCleanup, killPidsForCleanup } from '@momonga/testkit';
+import { DEFAULT_CLOSE_GRACE_MS } from '../src/stdio-transport.ts';
+
+export const transportCloseBoundMs = (closeGraceMs: number): number => closeGraceMs + groupTerminationBoundMs(closeGraceMs) + closeGraceMs + 2 * closeGraceMs;
 
 const cleanups: Array<() => Promise<void> | void> = [];
 
@@ -20,7 +24,7 @@ afterEach(async () => {
     }
   }
   if (failures.length > 0) throw new AggregateError(failures, 'test cleanup failed');
-});
+}, transportCloseBoundMs(DEFAULT_CLOSE_GRACE_MS));
 
 export const onCleanup = (cleanup: () => Promise<void> | void): void => {
   cleanups.push(cleanup);

@@ -7,6 +7,7 @@ import { START_MS, makeDir, postJson, readJson, registerCleanup, userInput } fro
 import { collect, ofType, readFileTool, startFake, userText } from './cc-support.ts';
 import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { OLLAMA_MODEL, startFakeOllama } from './ollama-support.ts';
+import { UNDICI_DEFAULT_LIVENESS } from '@momonga/testkit';
 
 const servingFake = (socketPath: string): FmServe => ({
   restarts: 0,
@@ -26,7 +27,7 @@ const unprobedFmAdapter = async (toolCallingSetting: 'auto' | 'native') => {
     recordKey: { target: 'fm', binarySha256: 'ab'.repeat(32), osBuild: '25A100' },
     toolCallingSetting,
   });
-  const adapter = createChatCompletionsAdapter({ ...managed, clock: createFakeClock(START_MS) });
+  const adapter = createChatCompletionsAdapter({ liveness: UNDICI_DEFAULT_LIVENESS, ...managed, clock: createFakeClock(START_MS) });
   registerCleanup(() => adapter.close());
   return { fake, adapter };
 };

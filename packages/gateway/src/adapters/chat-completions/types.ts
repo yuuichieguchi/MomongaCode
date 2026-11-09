@@ -36,7 +36,7 @@ export type ChatCompletionsAdapterOptions = {
   isGuardrail?: (target: AdapterTarget, status: number, body: unknown) => boolean;
   close?: () => Promise<void>;
   clock: Clock;
-  liveness?: UpstreamLiveness;
+  liveness: UpstreamLiveness;
 };
 
 export type ChatCompletionsAdapter = ProviderAdapter & { close(): Promise<void> };

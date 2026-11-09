@@ -10,6 +10,7 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, startFakeChatCompletions } from '@momonga
 import { createGatewayClient } from '../../src/gateway-client.ts';
 import { OLLAMA_MODEL, startFakeOllama } from '../../../gateway/test/ollama-support.ts';
 import { CLIENT_VERSION, fakeClock } from './fixtures.ts';
+import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
 
 const ALIAS = 'default';
 const CONTEXT_WINDOW = 12288;
@@ -73,7 +74,7 @@ const ollamaClient = async () => {
   await probeOllamaTarget({
     key: { endpoint: fake.origin, model: OLLAMA_MODEL },
     probeRecordDir: momongaPaths(home, process.platform, {}).probe,
-    upstream: { kind: 'tcp', baseUrl: fake.origin },
+    upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK },
     model: OLLAMA_MODEL,
     contextWindow: CONTEXT_WINDOW,
   });

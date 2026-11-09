@@ -107,6 +107,13 @@ describe('supervisor-level settings evaluation', { timeout: REAL_PROCESS_TEST_TI
     expect(h.fake.spawnCount('runtime')).toBe(2);
   });
 
+  it('a network-only change is logged as a settings change and restarts the runtime and the gateway', async (context) => {
+    const h = await watched(context, { settings: validSettings() });
+    await edit(h, { ...validSettings(), network: { httpsProxy: 'http://proxy.corp:3128' } });
+    await pumpUntil(h.timers, () => h.fake.spawnCount('runtime') === 2 && h.fake.spawnCount('gateway') === 2, { realWork: h.realWork, maxMs: 30_000 });
+    expect(h.log.withMsg('settings.changed')).toEqual([expect.objectContaining({ models: false, sandbox: false, telemetry: false, network: true })]);
+  });
+
   it('models change restarts runtime then gateway then runtime comes up', async (context) => {
     const h = await watched(context);
     const mark = h.order.length;

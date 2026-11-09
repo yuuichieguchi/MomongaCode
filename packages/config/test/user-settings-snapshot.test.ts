@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ConfigError, createUserSettingsCache, loadMcpServers, loadSettings } from '@momonga/config';
+import { ConfigError, createUserSettingsCache, loadMcpServers, loadSettings, noKeptRecords } from '@momonga/config';
 import type { UserLayer, UserSettingsSnapshot } from '@momonga/config';
 import { makeTree, trusting, userSettingsPath, writeJson, writeText } from './helpers.ts';
 import type { Tree } from './helpers.ts';
@@ -22,7 +22,7 @@ const writeTextAt = (file: string, text: string, at: Date): void => {
 
 const cacheFor = (tree: Tree) => {
   const warnings: string[] = [];
-  const cache = createUserSettingsCache({ home: tree.home, onWarning: (message) => warnings.push(message) });
+  const cache = createUserSettingsCache({ home: tree.home, onWarning: (message) => warnings.push(message), keptRecords: noKeptRecords });
   return { cache, warnings };
 };
 

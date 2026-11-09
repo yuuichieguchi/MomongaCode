@@ -5,6 +5,7 @@ import { ADAPTER_NEUTRAL_ERROR_CODES } from '@momonga/protocol';
 import { JSON_OBJECT_UNSUPPORTED_MESSAGE, waitFor } from '@momonga/testkit';
 import { makeDir } from './gateway-helpers.ts';
 import { TARGET, collect, makeAdapter, startFake, userText } from './cc-support.ts';
+import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
 
 const plain = { model: 'system', input: [userText('hi')] };
 
@@ -112,7 +113,7 @@ describe('chat-completions error classification', () => {
 
   it('maps a refused tcp connection to a retryable server_error provider_unavailable', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
-    const adapter = makeAdapter(fake, { resolveEndpoint: async () => ({ kind: 'tcp', baseUrl: 'http://127.0.0.1:1' }) });
+    const adapter = makeAdapter(fake, { resolveEndpoint: async () => ({ kind: 'tcp', baseUrl: 'http://127.0.0.1:1', network: UNCONFIGURED_NETWORK }) });
     const { error } = await collect(adapter, plain);
     expect(adapter.classify(error)).toMatchObject({ retryable: true, error: { type: 'server_error', code: 'provider_unavailable' } });
   });

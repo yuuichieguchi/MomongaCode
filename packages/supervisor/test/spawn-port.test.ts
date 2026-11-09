@@ -39,7 +39,7 @@ describe('real SpawnPort', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     await pollUntil(() => /"grandchild":\d+/.test(child.output()), 5000, 'grandchild reported');
     const grandchild = Number(/"grandchild":(\d+)/.exec(child.output())?.[1]);
     child.handle.kill('SIGTERM');
-    child.handle.killGroup();
+    await child.handle.killGroup();
     await expect(child.exit).resolves.toEqual({ code: null, signal: 'SIGKILL' });
     await pollUntil(() => !isProcessAlive(grandchild), 5000, 'grandchild gone');
   });

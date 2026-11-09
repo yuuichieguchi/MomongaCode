@@ -1,7 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalJson, canonicalPath, comparableFromParts, containsByComponents, computeBackoff, displayToolPath, fileRuleFingerprint, hostKernelLock, hostReapTiming, lexicallyWithin, locateThroughFiles, momongaLayout, reapMarkedProcessesWithReport, resolveCanonicalPath, sha256Hex, writableAreaOf, writableCheckOf } from '@momonga/foundation';
-import type { Clock, FileRuleProvenance, KernelLockMechanism, PathResolution, ProcessInspector, ReapReport, ReapTiming, SignalSender, UninspectableRegistry } from '@momonga/foundation';
+import { UNMEASURED_CAPABILITY, canonicalJson, canonicalPath, comparableFromParts, containsByComponents, computeBackoff, createMarker, defaultProcessInspector, displayToolPath, fileRuleFingerprint, hostKernelLock, hostReapTiming, lexicallyWithin, locateThroughFiles, momongaLayout, reapMarkedProcessesWithReport, resolveCanonicalPath, sha256Hex, writableAreaOf, writableCheckOf } from '@momonga/foundation';
+import { createMarkerGuard } from './marker-guard.ts';
+import { createMarkerOwners } from './marker-owners.ts';
+import type { MarkerOwners } from './marker-owners.ts';
+import { createMarkerSettle } from './marker-settle.ts';
+import type { MarkerSettle } from './marker-settle.ts';
+import type { Clock, FileRuleProvenance, KernelLockMechanism, MarkerHandle, PathResolution, ProcessInspector, ReapReport, ReapTiming, SignalSender, UninspectableRegistry } from '@momonga/foundation';
 import { absoluteFrom, createGlobDeadline, decide, fileRuleSpecsOf, globBudgetMs, prepareGlobs, settleGlobs, suggestAllowRule } from '@momonga/policy';
 import type { Decision, PermissionRule, PermissionSubject, PolicyHostFilesystem } from '@momonga/policy';
 import { permissionDeniedOutput } from '@momonga/protocol';
@@ -148,6 +153,7 @@ export type ToolExecutorOptions = {
   maxParallel?: number;
   jobs?: BackgroundJobs;
   processMarkerDir: string;
+  owners?: MarkerOwners;
   callLockDir: string;
   kernelLock?: KernelLockMechanism;
   fs: PolicyHostFilesystem;
@@ -486,6 +492,18 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     }
   };
   const activeKeys = new Map<string, number>();
+  const owners = options.owners ?? createMarkerOwners();
+  const guard = createMarkerGuard({
+    markerDir: options.processMarkerDir,
+    owners,
+    settledRow: (name) => idempotency.get(name)?.s === 'COMPLETED',
+    onWarning: options.onWarning,
+    killGraceMs: options.reap?.killGraceMs ?? ABANDON_KILL_GRACE_MS,
+    timing: reapTiming,
+    ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
+    ...(options.reap?.inspector === undefined ? {} : { inspector: options.reap.inspector }),
+    ...(options.reap?.uninspectable === undefined ? {} : { uninspectable: options.reap.uninspectable }),
+  });
 
   const isRefused = (batch: BatchCore, tool: AnyTool): boolean => batch.toolUnavailable?.(toolRefusalKey(tool)) === true;
 
@@ -848,6 +866,8 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     extendTimerToDeadline(): void;
     disarmTimer(): void;
     closeContext(): void;
+    openMarker(): Promise<{ handle: MarkerHandle; settle: MarkerSettle }>;
+    settleMarker(): Promise<void>;
     ledger: LeasedIdempotencyPort;
     holding(outcome: LeasedOutcome): boolean;
     deferred: CallOutcome;
@@ -865,6 +885,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     let abortReason: AbortReason | undefined;
     let recordCompleted = false;
     let contextClosed = false;
+    let markerSettle: MarkerSettle | undefined;
+    let markerOwned = false;
+    let processAttached = false;
     let timer: NodeJS.Timeout | undefined;
     let timerMs = 0;
     let heldLock: CallLock | undefined;
@@ -905,6 +928,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       ...(options.jobs === undefined ? {} : { jobs: options.jobs }),
       session: batch.session,
       attachProcess: (processInfo) => {
+        processAttached = true;
         if (!leaseLost() && !contextClosed) holding(ledger.attachProcess(key, processInfo));
       },
       update: (content) => {
@@ -931,6 +955,37 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       disarmTimer: () => clearTimeout(timer),
       closeContext: () => {
         contextClosed = true;
+      },
+      openMarker: async () => {
+        const inspector = options.reap?.inspector ?? defaultProcessInspector();
+        markerOwned = true;
+        owners.register(key, { alive: () => markerOwned });
+        const handle = await createMarker(processMarker, { capability: inspector.capability ?? UNMEASURED_CAPABILITY });
+        const settle = createMarkerSettle({
+          marker: processMarker,
+          mode: handle.mode,
+          inspector,
+          onWarning: options.onWarning,
+          ...(options.reap?.killGraceMs === undefined ? {} : { killGraceMs: options.reap.killGraceMs }),
+          ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
+          timing: reapTiming,
+        });
+        markerSettle = settle;
+        owners.remember(key, handle.mode);
+        return { handle, settle };
+      },
+      settleMarker: async () => {
+        try {
+          if (markerSettle === undefined || !recordCompleted) return;
+          if (!processAttached) {
+            await markerSettle.discard();
+            return;
+          }
+          await markerSettle.state(controller.signal);
+          await markerSettle.remove();
+        } finally {
+          markerOwned = false;
+        }
       },
       ledger,
       holding,
@@ -959,7 +1014,9 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
           ...(reconciled === undefined ? {} : { reconciled }),
           ...(interrupted === undefined ? {} : { interrupted }),
         };
-        if (!holding(ledger.complete(key, outcome))) return deferred;
+        const markerState = markerSettle?.cached();
+        const meta = markerSettle === undefined || markerState === undefined ? undefined : { markerState, markerMode: markerSettle.mode };
+        if (!holding(ledger.complete(key, outcome, meta))) return deferred;
         recordCompleted = true;
         return outcome;
       },
@@ -982,18 +1039,11 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         const remaining = (activeKeys.get(key) ?? 0) - 1;
         if (remaining > 0) activeKeys.set(key, remaining);
         else activeKeys.delete(key);
-        if (recordCompleted && tool.sideEffect === 'exec') {
-          try {
-            fs.rmSync(processMarker, { force: true });
-          } catch (error) {
-            options.onWarning(`the process marker of call ${key} could not be removed: ${error instanceof Error ? error.message : String(error)}`);
-          }
-        }
       },
     };
   };
 
-  const reapEarlierAttempt = async (key: string, pgid: number | undefined): Promise<NonNullable<ReconcileContext['earlierAttempt']>> => {
+  const reapEarlierAttempt = async (key: string, pgid: number | undefined, signal: AbortSignal): Promise<NonNullable<ReconcileContext['earlierAttempt']>> => {
     const marker = path.join(options.processMarkerDir, key);
     let reaped: ReapReport;
     try {
@@ -1004,6 +1054,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         label: 'tool',
         onWarning: options.onWarning,
         timing: reapTiming,
+        signal,
         ...(options.reap?.kill === undefined ? {} : { kill: options.reap.kill }),
         ...(options.reap?.inspector === undefined ? {} : { inspector: options.reap.inspector }),
         ...(options.reap?.uninspectable === undefined ? {} : { uninspectable: options.reap.uninspectable }),
@@ -1016,10 +1067,13 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
       );
     }
     if (!reaped.removed) {
+      if (reaped.uninspectable.length > 0 || signal.aborted) {
+        throw new EarlierAttemptNotStoppedError(
+          `a process holding the marker of the earlier attempt of call ${key} could not be inspected, so it could not be verified as stopped: ${reaped.uninspectable.map(({ pid, command }) => `${pid} (${command})`).join(', ')}`,
+          'unverifiable',
+        );
+      }
       throw new EarlierAttemptNotStoppedError(`a process of the earlier attempt of call ${key} survived the attempt to stop it`, 'survived');
-    }
-    if (reaped.uninspectable.length > 0) {
-      return { stopped: false, uninspectable: reaped.uninspectable.map(({ pid, command }) => ({ pid, command })) };
     }
     return { stopped: reaped.stopped };
   };
@@ -1029,7 +1083,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
   const reconcileAsHolder = async (scope: CallScope, callId: string, tool: AnyTool, input: unknown, record: ToolIdempotencyRecord): Promise<Resumed> => {
     if ((await scope.holdCall()) === 'aborted') return { kind: 'outcome', outcome: failedOutcome(callId, `${tool.name} was cancelled`) };
     if (!scope.holding(scope.ledger.authorise(record.key))) return { kind: 'outcome', outcome: scope.deferred };
-    const earlierAttempt = await reapEarlierAttempt(record.key, record.pgid);
+    const earlierAttempt = await reapEarlierAttempt(record.key, record.pgid, scope.controller.signal);
     try {
       const ctx: ReconcileContext = { ...scope.reconcileCtx, earlierAttempt };
       return { kind: 'reconciled', result: await reconcileWithin(tool, input, record, ctx, () => scope.abortWith('timeout'), scope.closeContext) };
@@ -1170,11 +1224,27 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
         await batch.outputFit.ready?.();
         if ((await scope.holdCall()) === 'aborted') return failedOutcome(callId, `${tool.name} was cancelled`);
         if (!scope.holding(scope.ledger.authorise(key))) return scope.deferred;
-        const executionCtx: ToolContext = { ...contextForBasis(), outputFit: batch.outputFit, ...(resume === undefined ? {} : { resume }) };
-        if (tool.sideEffect === 'exec') {
-          fs.rmSync(scope.processMarker, { force: true });
-          fs.closeSync(fs.openSync(scope.processMarker, 'wx', 0o600));
+        if (tool.sideEffect !== 'read_only') {
+          const refusal = await guard.check(scope.controller.signal, key);
+          if (scope.abortReason() !== undefined) return failedOutcome(callId, `${tool.name} was cancelled`);
+          if (refusal !== undefined) return scope.complete({ status: 'failed', output: refusal });
         }
+        const marker = tool.sideEffect === 'exec' ? await scope.openMarker() : undefined;
+        try {
+          return await executeWithMarker(marker, reconciled, resume);
+        } finally {
+          marker?.handle.close();
+          await scope.settleMarker();
+        }
+      };
+
+      const executeWithMarker = async (marker: { handle: MarkerHandle; settle: MarkerSettle } | undefined, reconciled: ReconcileResult['outcome'] | undefined, resume: ToolResume | undefined): Promise<CallOutcome> => {
+        const executionCtx: ToolContext = {
+          ...contextForBasis(),
+          outputFit: batch.outputFit,
+          ...(resume === undefined ? {} : { resume }),
+          ...(marker === undefined ? {} : { markerFd: marker.handle.fd, markerSettle: marker.settle }),
+        };
         const requestedMs = typeof tool.timeoutMs === 'function' ? tool.timeoutMs(target.input) : tool.timeoutMs;
         const timeoutMs = Math.max(0, Math.min(requestedMs, batch.deadlineAt - clock.now()));
 
@@ -1475,7 +1545,7 @@ export const createToolExecutor = (options: ToolExecutorOptions): InspectableToo
     const lock = await callLocks.acquire(key, signal);
     if (lock === 'aborted') throw signal.reason;
     try {
-      await reapEarlierAttempt(key, pgid);
+      await reapEarlierAttempt(key, pgid, signal);
     } finally {
       releaseCallLock(lock);
     }

@@ -10,6 +10,7 @@ import { HMAC_KEY, START_MS, buildConfig, makeDir, registerCleanup } from './gat
 import { CC_CAPABILITIES, makeAdapter, startFake } from './cc-support.ts';
 import { OLLAMA_MODEL, startFakeOllama } from './ollama-support.ts';
 import { REMOTE_CAPABILITIES } from './upstream-gateway-support.ts';
+import { UNCONFIGURED_NETWORK } from '@momonga/testkit';
 
 type JsonMode = 'json_object' | 'none' | undefined;
 
@@ -33,7 +34,7 @@ describe('the Ollama probe measures the JSON-only mode through the same item', (
     const fake = await startFakeOllama({ jsonModeProbe });
     const result = await probeOllamaTarget({
       probeRecordDir: makeDir(),
-      upstream: { kind: 'tcp', baseUrl: fake.origin },
+      upstream: { kind: 'tcp', baseUrl: fake.origin, network: UNCONFIGURED_NETWORK },
       key: { endpoint: endpointKeyOf({ kind: 'tcp', baseUrl: fake.origin }), model: OLLAMA_MODEL },
       model: OLLAMA_MODEL,
       contextWindow: 32768,

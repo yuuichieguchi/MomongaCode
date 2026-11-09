@@ -30,7 +30,7 @@ export type LeasedIdempotencyPort = {
   authorise(key: string): LeasedOutcome;
   attachProcess(key: string, process: { pgid: number; startedAt: number }): LeasedOutcome;
   checkpoint(key: string, state: Record<string, unknown> | undefined): LeasedOutcome;
-  complete(key: string, result: unknown): LeasedOutcome;
+  complete(key: string, result: unknown, meta?: Record<string, unknown>): LeasedOutcome;
 };
 
 export type IdempotencyPort = {
@@ -57,7 +57,7 @@ export type BackgroundJobStart = {
   callId: string;
   command: string;
   timeoutMs: number;
-  spawn(markerFile: string, signal: AbortSignal): SandboxedProcess;
+  spawn(markerFile: string, signal: AbortSignal, markerFd?: number): SandboxedProcess;
 };
 
 export type BackgroundJobRead = { job: JobView; output: string };

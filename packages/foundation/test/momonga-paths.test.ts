@@ -27,6 +27,7 @@ const expectedLayout = (home: string, cacheBase: string, keychains: string = pat
       supervisor: path.join(run, 'supervisor.lock'),
     },
     callLocks: path.join(run, 'call-locks'),
+    lockProof: path.join(run, 'lock-proof'),
     markers: {
       root: path.join(run, 'markers'),
       tools: path.join(run, 'markers', 'tools'),
@@ -46,6 +47,9 @@ const expectedLayout = (home: string, cacheBase: string, keychains: string = pat
     },
     gatewayKey: path.join(state, 'gateway.key'),
     probe: path.join(state, 'probe'),
+    planSessions: path.join(state, 'plan-sessions'),
+    planHost: path.join(state, 'plan-host.json'),
+    planActive: path.join(state, 'plan-active.json'),
     logs: path.join(root, 'logs'),
     logFiles: {
       supervisor: path.join(root, 'logs', 'supervisor.log'),
