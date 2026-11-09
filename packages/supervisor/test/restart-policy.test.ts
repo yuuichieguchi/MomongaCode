@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { classifyExit, decideAfterExit, DEFAULT_RESTART_POLICY, backoffDelay, failureWithoutProcess, resolveRestartPolicy, stopReasonRank } from '../src/restart-policy.ts';
+import { markerReapClockBoundMs } from '@momonga/foundation';
+import { DAEMON_MARKER_KILL_GRACE_MS, STARTUP_TIMEOUT_MS, STDIO_FLUSH_MS } from '../src/constants.ts';
+import { childRestartBoundMs, classifyExit, decideAfterExit, DEFAULT_RESTART_POLICY, backoffDelay, failureWithoutProcess, resolveRestartPolicy, stopReasonRank } from '../src/restart-policy.ts';
 import type { ExitClassification, StopReason } from '../src/restart-policy.ts';
 
 type ExitInput = { code: number | null; signal: NodeJS.Signals | null };
@@ -154,5 +156,26 @@ describe('stop reason rank', () => {
     expect(stopReasonRank('plan-restart')).toBe(2);
     expect(stopReasonRank('startup-timeout')).toBe(1);
     expect(stopReasonRank('ready-mismatch')).toBe(1);
+  });
+});
+
+describe('childRestartBoundMs', () => {
+  const POLICIES = [DEFAULT_RESTART_POLICY, resolveRestartPolicy({ baseMs: 200, maxMs: 200, minMs: 200 }), resolveRestartPolicy({ baseMs: 50, maxMs: 10, minMs: 400 })];
+
+  it('sums the stdio flush, the marker reap clock, the longest backoff and the startup timeout of the crashed child', () => {
+    for (const restartPolicy of POLICIES) {
+      expect(childRestartBoundMs({ policy: restartPolicy, startupTimeoutMs: STARTUP_TIMEOUT_MS, stdioFlushMs: STDIO_FLUSH_MS })).toBe(
+        STDIO_FLUSH_MS + markerReapClockBoundMs(DAEMON_MARKER_KILL_GRACE_MS) + Math.max(restartPolicy.minMs, restartPolicy.maxMs) + STARTUP_TIMEOUT_MS,
+      );
+    }
+  });
+
+  it('covers every backoff delay the policy can draw', () => {
+    for (const restartPolicy of POLICIES) {
+      const bound = childRestartBoundMs({ policy: restartPolicy, startupTimeoutMs: 0, stdioFlushMs: 0 }) - markerReapClockBoundMs(DAEMON_MARKER_KILL_GRACE_MS);
+      for (let attempt = 0; attempt <= 100; attempt += 1) {
+        for (const draw of [0, 0.5, 0.999999]) expect(backoffDelay({ consecutiveFailures: attempt, policy: restartPolicy, random: () => draw })).toBeLessThanOrEqual(bound);
+      }
+    }
   });
 });

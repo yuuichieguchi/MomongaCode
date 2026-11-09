@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { ProcessLockHeldError, parseReadyLine, inspectProcessLock } from '@momonga/foundation';
+import { ProcessLockHeldError, RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, parseReadyLine, inspectProcessLock, runtimeMaxCloseMs } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeKernelLock, createFakeClock, createFakeTimers, spawnTracked, waitFor } from '@momonga/testkit';
-import { startSupervisor } from '../src/start-supervisor.ts';
+import { ORPHAN_POLL_MS, ORPHAN_REAP_GRACE_MS, STARTUP_TIMEOUT_MS } from '../src/constants.ts';
+import { orphanReapBoundMs } from '../src/orphans.ts';
+import { resolveStartTiming, startSupervisor, supervisorStartBoundMs } from '../src/start-supervisor.ts';
 import {
   INVALID_SETTINGS_TEXT,
   TEST_VERSION,
@@ -270,5 +272,32 @@ describe('startSupervisor', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
     expect(unhandled).toEqual([]);
     const sources = h.log.withMsg('supervisor.background_failed').map((line) => String(line['source']));
     expect(new Set(sources).size).toBe(sources.length);
+  });
+});
+
+describe('resolveStartTiming', () => {
+  it('resolves the start-up timing a supervisor runs with when nothing is injected', () => {
+    expect(resolveStartTiming({})).toEqual({
+      drainTimeoutMs: RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS,
+      startupTimeoutMs: STARTUP_TIMEOUT_MS,
+      orphanGraceMs: runtimeMaxCloseMs(RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS),
+      orphanReapGraceMs: ORPHAN_REAP_GRACE_MS,
+      orphanPollMs: ORPHAN_POLL_MS,
+    });
+  });
+
+  it('takes every injected value in place of its default', () => {
+    expect(resolveStartTiming({ runtime: { drainTimeoutMs: 1000 }, startupTimeoutMs: 7000, orphanGraceMs: 3000, orphanReapGraceMs: 400, intervals: { orphanPollMs: 50 } })).toEqual({
+      drainTimeoutMs: 1000,
+      startupTimeoutMs: 7000,
+      orphanGraceMs: 3000,
+      orphanReapGraceMs: 400,
+      orphanPollMs: 50,
+    });
+  });
+
+  it('bounds the start as the orphan reap followed by the startup timeout of the children', () => {
+    const timing = resolveStartTiming({ orphanGraceMs: 3000 });
+    expect(supervisorStartBoundMs(timing)).toBe(orphanReapBoundMs(timing) + timing.startupTimeoutMs);
   });
 });

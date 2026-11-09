@@ -75,12 +75,19 @@ export type ToolContext = ReconcileContext & {
   reportProgress(): void;
 };
 
+export type OutputCall = { readonly callId: string; readonly tool: string };
+
 export type ToolStop = { bound: CallStop['bound']; ms: number; checkpoint: Record<string, unknown> | undefined };
 
 export type OutputFit = {
+  fits(text: string, call: OutputCall): Promise<boolean>;
+  fit(text: string, handle: string, call: OutputCall): Promise<string>;
+  ready?(): Promise<void>;
+};
+
+export type CallOutputFit = {
   fits(text: string): Promise<boolean>;
   fit(text: string, handle: string): Promise<string>;
-  ready?(): Promise<void>;
 };
 
 export type ReconcileContext = SubjectContext & {
@@ -88,7 +95,7 @@ export type ReconcileContext = SubjectContext & {
   step: number;
   callId: string;
   idemKey: string;
-  outputFit: OutputFit;
+  outputFit: CallOutputFit;
   tmpDir?: string;
   processMarker?: string;
   earlierAttempt?: { stopped: boolean };
@@ -164,6 +171,8 @@ export type AnyTool = ToolDefinition<unknown>;
 export const outputOriginOf = (tool: AnyTool): ToolOutputOrigin => (tool.server === undefined ? (tool.output ?? 'external') : 'external');
 
 export const startsProcesses = (tool: AnyTool): boolean => tool.sideEffect === 'exec' || tool.startsProcesses === true;
+
+export const harnessOutputToolsOf = (tools: readonly AnyTool[]): string[] => tools.filter((tool) => outputOriginOf(tool) === 'harness').map((tool) => tool.name);
 
 export const defineTool = <Input>(definition: ToolDefinition<Input>): AnyTool => definition as unknown as AnyTool;
 

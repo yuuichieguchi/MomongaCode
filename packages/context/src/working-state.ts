@@ -63,7 +63,9 @@ export const workingStateCapFor = (capabilities: Capabilities): number => {
 
 export const workingStateMessage = (text: string): MessageInputItem => recordedDataMessage({ tag: WORKING_STATE_TAG, origin: FRAMING, text });
 
-export const WORKING_STATE_MESSAGE_MIN_TOKENS = tokensForText(String(workingStateMessage(widestMandatoryText()).content));
+export const widestMandatoryWorkingStateMessage = (): MessageInputItem => workingStateMessage(widestMandatoryText());
+
+export const WORKING_STATE_MESSAGE_MIN_TOKENS = tokensForText(String(widestMandatoryWorkingStateMessage().content));
 
 const exitClause = (exitCode: number | undefined): string => (exitCode === undefined ? 'exit code unknown' : `exit code ${exitCode}`);
 

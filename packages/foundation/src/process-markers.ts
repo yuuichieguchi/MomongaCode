@@ -448,6 +448,10 @@ const reapObserved = async (options: ReapMarkedProcessesOptions): Promise<ReapRe
   }
 };
 
+const MARKER_REAP_GRACE_WINDOWS = 4;
+
+export const markerReapClockBoundMs = (killGraceMs: number): number => MARKER_REAP_GRACE_WINDOWS * (killGraceMs + REAP_POLL_INTERVAL_MS);
+
 export const reapMarkedProcessesWithReport = async (options: ReapMarkedProcessesOptions): Promise<ReapReport> => {
   const outcome = await reapObserved(options);
   const context = `${options.label} marker ${options.marker}`;

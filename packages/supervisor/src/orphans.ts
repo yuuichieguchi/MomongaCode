@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, findHolders, isTransientFailure, reapMarkedProcesses, reapMarkerDirectory, reportUninspectableOnce, runtimeMaxCloseMs, uuidv7 } from '@momonga/foundation';
+import { RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS, findHolders, isTransientFailure, markerReapClockBoundMs, reapMarkedProcesses, reapMarkerDirectory, reportUninspectableOnce, runtimeMaxCloseMs, uuidv7 } from '@momonga/foundation';
 import type { JsonLogger, ReapTiming, UninspectableRegistry } from '@momonga/foundation';
 import { DAEMON_MARKER_KILL_GRACE_MS } from './constants.ts';
 import type { SupervisorTimers } from './constants.ts';
@@ -101,6 +101,17 @@ export const reapDaemonMarker = async (input: { marker: string; logger: JsonLogg
 
 const listMarkerNames = (markersDir: string): Promise<string[]> => fs.promises.readdir(markersDir);
 
+type Observation = { kind: 'listed'; holders: number } | { kind: 'unlisted'; error: Error } | { kind: 'deadline' } | { kind: 'aborted' };
+
+type OrphanReapTiming = Pick<OrphanReapOptions, 'orphanGraceMs' | 'orphanReapGraceMs' | 'orphanPollMs' | 'drainTimeoutMs'>;
+
+const phaseOneGraceMs = (timing: Pick<OrphanReapTiming, 'orphanGraceMs' | 'drainTimeoutMs'>): number =>
+  Math.min(timing.orphanGraceMs, runtimeMaxCloseMs(timing.drainTimeoutMs ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS));
+
+export const orphanPhaseOneBoundMs = (timing: Pick<OrphanReapTiming, 'orphanGraceMs' | 'orphanPollMs' | 'drainTimeoutMs'>): number => phaseOneGraceMs(timing) + timing.orphanPollMs;
+
+export const orphanReapBoundMs = (timing: OrphanReapTiming): number => orphanPhaseOneBoundMs(timing) + markerReapClockBoundMs(timing.orphanReapGraceMs);
+
 const failureOf = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
 const sleepUnlessAborted = (options: OrphanReapOptions, ms: number): Promise<void> =>
@@ -148,35 +159,48 @@ export const reapOrphans = async (options: OrphanReapOptions): Promise<OrphanRea
     writeEvent(logger, orphansWaiting({ markers: 0, holders: 0 }));
     return { reaped: 0, kept: 0, aborted: false };
   }
-  const graceMs = Math.min(options.orphanGraceMs, runtimeMaxCloseMs(options.drainTimeoutMs ?? RUNTIME_DEFAULT_DRAIN_TIMEOUT_MS));
+  const graceMs = phaseOneGraceMs(options);
   const deadline = now() + graceMs;
   const phaseStop = new AbortController();
+  const phaseEnded = new Promise<Observation>((resolve) => phaseStop.signal.addEventListener('abort', () => resolve({ kind: 'deadline' }), { once: true }));
   const phaseTimer = options.timers.setTimeout(() => phaseStop.abort(new Error(`the orphan phase deadline of ${graceMs} ms passed`)), graceMs);
   const probeSignal = AbortSignal.any([signal, phaseStop.signal]);
 
-  const observe = async (): Promise<number | undefined> => {
+  const listing = async (): Promise<Observation> => {
     try {
-      return await countHolders(markers, probeSignal);
+      return { kind: 'listed', holders: await countHolders(markers, probeSignal) };
     } catch (error) {
-      if (signal.aborted) return undefined;
-      if (isTransientFailure(error) && now() < deadline) {
-        warn(`daemon marker holders could not be listed yet: ${failureOf(error).message}`);
-        return undefined;
-      }
+      if (signal.aborted) return { kind: 'aborted' };
+      if (phaseStop.signal.aborted) return { kind: 'deadline' };
+      if (isTransientFailure(error) && now() < deadline) return { kind: 'unlisted', error: failureOf(error) };
       throw error;
     }
   };
 
+  const observe = (): Promise<Observation> => (phaseStop.signal.aborted ? phaseEnded : Promise.race([listing(), phaseEnded]));
+
   let holders: number | undefined;
+  let unlisted: Error | undefined;
   try {
-    holders = await observe();
-    if (holders !== undefined) writeEvent(logger, orphansWaiting({ markers: markers.length, holders }));
-    while (holders === undefined || holders > 0) {
-      await sleepUnlessAborted(options, options.orphanPollMs);
+    for (let first = true; ; first = false) {
+      if (!first) await sleepUnlessAborted(options, options.orphanPollMs);
       if (signal.aborted) return { reaped: 0, kept: 0, aborted: true };
-      holders = await observe();
-      if (signal.aborted) return { reaped: 0, kept: 0, aborted: true };
-      if (holders !== undefined && holders > 0 && now() >= deadline) break;
+      const seen = await observe();
+      if (signal.aborted || seen.kind === 'aborted') return { reaped: 0, kept: 0, aborted: true };
+      if (seen.kind === 'deadline') {
+        if (holders !== undefined) break;
+        throw unlisted ?? new Error(`no listing of the daemon marker holders finished within the orphan phase deadline of ${graceMs} ms`);
+      }
+      if (seen.kind === 'unlisted') {
+        unlisted = seen.error;
+        holders = undefined;
+        warn(`daemon marker holders could not be listed yet: ${seen.error.message}`);
+        continue;
+      }
+      if (first) writeEvent(logger, orphansWaiting({ markers: markers.length, holders: seen.holders }));
+      unlisted = undefined;
+      holders = seen.holders;
+      if (holders === 0 || now() >= deadline) break;
     }
   } finally {
     options.timers.clearTimeout(phaseTimer);

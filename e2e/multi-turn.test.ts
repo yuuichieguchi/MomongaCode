@@ -13,11 +13,13 @@ import type { ChatMessage } from './support/upstream.ts';
 import {
   E2E_CANCEL_STREAM_BOUND_MS,
   E2E_MARGIN_MS,
+  E2E_READY_DEADLINE_MS,
   E2E_RECOVERY_BOUND_MS,
   E2E_RESTART_BOUND_MS,
   E2E_RESTART_POLICY,
   E2E_RUN_COMPLETED_BOUND_MS,
   E2E_TEST_TIMEOUT_MS,
+  e2eTestTimeoutMs,
   until,
 } from './support/wait.ts';
 
@@ -143,6 +145,15 @@ describe('multi-turn sessions', () => {
     }
   });
 
+  const KILL_DURING_INHERITED_CALL_TIMEOUT_MS = e2eTestTimeoutMs(
+    E2E_READY_DEADLINE_MS,
+    E2E_RUN_COMPLETED_BOUND_MS,
+    E2E_MARGIN_MS,
+    E2E_RESTART_BOUND_MS,
+    E2E_RECOVERY_BOUND_MS,
+    E2E_RUN_COMPLETED_BOUND_MS,
+  );
+
   const killDuringInheritedCall = async (release: 'after-claim' | 'while-down'): Promise<void> => {
     const home = await createE2eHome();
     const stack = await startStack({ home, deps: { ...DEFAULT_E2E_DEPS, restart: E2E_RESTART_POLICY }, script: [textReply('first'), textReply('second')] });
@@ -217,11 +228,11 @@ describe('multi-turn sessions', () => {
     }
   };
 
-  it(titleOf('mt2-join'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('mt2-join'), { timeout: KILL_DURING_INHERITED_CALL_TIMEOUT_MS }, async () => {
     await killDuringInheritedCall('after-claim');
   });
 
-  it(titleOf('mt2-replay'), { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
+  it(titleOf('mt2-replay'), { timeout: KILL_DURING_INHERITED_CALL_TIMEOUT_MS }, async () => {
     await killDuringInheritedCall('while-down');
   });
 

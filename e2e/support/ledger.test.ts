@@ -85,14 +85,14 @@ describe('process ledger: kill', () => {
     const grandchild = Number(await firstLine(parent.stdout as NodeJS.ReadableStream));
     registerCleanup(context, () => killGroupsForCleanup([grandchild]));
     expect(Number.isInteger(grandchild) && grandchild > 0).toBe(true);
-    expect(groupAlive(grandchild)).toBe(true);
+    expect(await groupAlive(grandchild)).toBe(true);
     const ledger = createProcessLedger({ pidsFile: pidsFileIn(context) });
     await ledger.add(parent.pid, 'fixture');
     await ledger.add(grandchild, 'fixture');
     const killed = await ledger.kill();
     expect([...killed].sort((a, b) => a - b)).toEqual([parent.pid, grandchild].sort((a, b) => a - b));
-    expect(groupAlive(parent.pid)).toBe(false);
-    expect(groupAlive(grandchild)).toBe(false);
+    expect(await groupAlive(parent.pid)).toBe(false);
+    expect(await groupAlive(grandchild)).toBe(false);
   });
 
   it('kills the union of recorded and freshly read groups', async (context) => {

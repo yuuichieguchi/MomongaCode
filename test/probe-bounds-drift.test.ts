@@ -64,7 +64,7 @@ describe('T12 no private probe number remains and the + 2000 margins are gone', 
   it('the orphan phase deadline and the default orphanGraceMs are runtimeMaxCloseMs(d) with no margin', () => {
     const orphans = read('packages/supervisor/src/orphans.ts');
     expect(orphans).not.toContain('PHASE_ONE_MARGIN_MS');
-    expect(orphans).toMatch(/Math\.min\(options\.orphanGraceMs, runtimeMaxCloseMs\([^)]*\)\)/);
+    expect(orphans).toMatch(/Math\.min\(\w+\.orphanGraceMs, runtimeMaxCloseMs\([^)]*\)\)/);
     expect(read('packages/supervisor/src/start-supervisor.ts')).toMatch(/orphanGraceMs: options\.orphanGraceMs \?\? runtimeMaxCloseMs\(drainTimeoutMs\),/);
     expect(read('packages/supervisor/src/constants.ts')).not.toMatch(/ORPHAN_REAP_GRACE_MS = [^;\n]*\+ 2000/);
   });

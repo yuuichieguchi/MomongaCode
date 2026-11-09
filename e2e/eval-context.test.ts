@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { TRANSCRIPT_FORMAT } from '@momonga/eval';
 import { envelopeOf } from '@momonga/protocol';
 import type { FakeRoute } from '@momonga/testkit';
 import { ROOT_PREFIX } from '../packages/cli/src/eval/context-host.ts';
@@ -209,7 +210,7 @@ describe('momonga eval context live', () => {
     const names = fs.readdirSync(recordings).sort();
     expect(names).toHaveLength(10);
     const header = JSON.parse(fs.readFileSync(path.join(recordings, 'long-on.0.transcript.jsonl'), 'utf8').split('\n')[0] ?? '{}');
-    expect(header).toMatchObject({ format: 'momonga-transcript/6', policy: {}, datasetSeed: 7, run: { modelAlias: 'default' } });
+    expect(header).toMatchObject({ format: TRANSCRIPT_FORMAT, policy: {}, datasetSeed: 7, run: { modelAlias: 'default' } });
 
     const callsBefore = chatCompletions(fake).length;
     const replayed = await runCli(home, ['eval', 'context', dataset, '--replay', recordings, '--report', replayFile]);

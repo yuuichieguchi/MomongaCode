@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { EXIT_AFTER_READY_CODE } from './fixtures/exit-after-ready-supervisor.ts';
 import { createE2eHome } from './home.ts';
 import { STRUCTURED_TARGET, UPSTREAM_TARGET, baseSettings, startStack, withClassifierAlias, withStructuredRole } from './stack.ts';
-import { E2E_CHILD_READY_BOUND_MS, E2E_TEST_TIMEOUT_MS } from './wait.ts';
+import { E2E_TEST_TIMEOUT_MS } from './wait.ts';
 
 const EXIT_AFTER_READY_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'exit-after-ready-supervisor.ts');
 
@@ -14,7 +14,7 @@ const failureOf = async (promise: Promise<unknown>): Promise<unknown> => promise
 describe('startStack readiness', () => {
   it('rejects at once when the supervisor exits after its ready line, not at the readiness deadline', { timeout: E2E_TEST_TIMEOUT_MS }, async () => {
     const home = await createE2eHome();
-    const failure = await failureOf(startStack({ home, supervisorScript: EXIT_AFTER_READY_PATH, readinessDeadlineMs: E2E_CHILD_READY_BOUND_MS }));
+    const failure = await failureOf(startStack({ home, supervisorScript: EXIT_AFTER_READY_PATH }));
     expect(failure).toBeInstanceOf(Error);
     expect((failure as Error).message).toMatch(new RegExp(`^the supervisor exited \\(code ${EXIT_AFTER_READY_CODE}, signal null\\) while waiting for readiness`));
   });
