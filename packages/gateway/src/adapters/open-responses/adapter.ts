@@ -46,6 +46,8 @@ export const createOpenResponsesAdapter = (options: OpenResponsesAdapterOptions)
         ledger,
         jsonReply,
         carriesOutputBound: carriesResponsesOutputBound(capabilities),
+        ...(capabilities.systemRole === undefined ? {} : { systemRole: capabilities.systemRole }),
+        ...(capabilities.toolPlacement === undefined ? {} : { toolPlacement: capabilities.toolPlacement }),
         ...(options.userDialects === undefined ? {} : { userDialects: options.userDialects }),
       }),
       ...(capabilities.promptCache?.kind === 'key' && request.promptCacheKey !== undefined ? { prompt_cache_key: request.promptCacheKey } : {}),

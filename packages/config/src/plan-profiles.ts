@@ -234,7 +234,7 @@ const CHATGPT_PROFILE_DATA = {
       outputBoundField: 'none',
       systemRole: 'developer',
       toolPlacement: 'additional_tools',
-      inputKinds: { content: ['text', 'image'], tools: ['function', 'custom'] },
+      inputKinds: { content: ['file'], tools: ['function', 'custom'] },
     },
   },
   errorRules: [

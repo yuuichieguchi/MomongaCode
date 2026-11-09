@@ -6,6 +6,7 @@ import { HOOK_EVENTS, HOOK_OUTCOMES, HOOK_PRE_TOOL_DECISIONS } from './hooks.ts'
 import { CONTEXT_CHARGE_PURPOSES, CONTRIBUTION_KINDS, SUMMARY_SECTION_COVERAGES, SUMMARY_SOURCES } from './context-record.ts';
 import { CACHE_MISS_CAUSES, PREFIX_EVENTS } from './prefix-events.ts';
 import type { PrefixEvent } from './prefix-events.ts';
+import type { FallbackCauseRecord } from './open-responses.ts';
 import { MEMORY_KINDS, MEMORY_ORIGINS, MEMORY_SCOPES, MEMORY_STATES, MEMORY_STATUSES, REFLECTION_DROP_CAUSES, REFLECTION_JOB_STATES, VALIDITY_CLOSERS } from './memory.ts';
 import type { ContextChargePurpose, SummaryFidelity, SummarySource } from './context-record.ts';
 import { AUTO_FIT_FAILED_BOUNDS, AUTO_FIT_MEASUREMENTS } from './auto-mode-gate.ts';
@@ -980,7 +981,7 @@ export type JobView = {
 };
 
 export type JobsResponse = { jobs: JobView[] };
-export type FallbackCauseView = { target: string; code: string | null; message: string };
+export type FallbackCauseView = FallbackCauseRecord;
 
 export type CostFallbackView = { answeredBy: string; calls: number; failed: FallbackCauseView[] };
 

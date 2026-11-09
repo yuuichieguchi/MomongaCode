@@ -16,6 +16,7 @@ import { MemoryEvidenceError, bindMemoryEvidence, readGitHead, runFactsOf } from
 import type { EvidenceRun } from './evidence.ts';
 import { REFLECTION_INSTRUCTIONS } from './reflection-input.ts';
 import { REFLECTION_REPLY_SCHEMA, validateReflectionReply } from './reflection-reply.ts';
+import { outputBoundOf } from '../worker/output-bound.ts';
 
 export type ReflectorOptions = {
   store: Pick<RuntimeStore, 'reflection' | 'memories' | 'contextCharges' | 'getRun' | 'getSession' | 'readRunEventsOfTypes' | 'journalFacts'>;
@@ -183,7 +184,7 @@ export const createReflector = (options: ReflectorOptions): Reflector => {
       text: { format: { type: 'json_schema', name: 'memory_candidates', schema: { ...REFLECTION_REPLY_SCHEMA }, strict: true } },
       tool_choice: 'none',
       reasoning: { effort: LOWEST_REASONING_EFFORT },
-      max_output_tokens: Math.min(memorySettings.reflection.maxTokens ?? Number.POSITIVE_INFINITY, summaryTokenCapFor(capabilities)),
+      ...outputBoundOf(capabilities, Math.min(memorySettings.reflection.maxTokens ?? Number.POSITIVE_INFINITY, summaryTokenCapFor(capabilities))),
       store: false,
       stream: true,
       metadata: { run_id: runId, purpose: 'reflection' },

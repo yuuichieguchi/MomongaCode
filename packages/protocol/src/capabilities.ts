@@ -59,7 +59,7 @@ export type ToolPlacement = (typeof TOOL_PLACEMENTS)[number];
 
 export const DEFAULT_TOOL_PLACEMENT: ToolPlacement = 'top_level';
 
-export const INPUT_CONTENT_KINDS = ['text', 'image', 'file', 'audio', 'video'] as const;
+export const INPUT_CONTENT_KINDS = ['file', 'audio', 'video'] as const;
 export type InputContentKind = (typeof INPUT_CONTENT_KINDS)[number];
 
 export const REQUEST_TOOL_KINDS = [

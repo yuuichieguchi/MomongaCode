@@ -7,7 +7,7 @@ import type { CompletionResponse } from './http-client.ts';
 import { MAX_ERROR_BODY_BYTES } from './limits.ts';
 import type { ErrorVocabulary } from './vocabulary.ts';
 
-export type UpstreamErrorDetail = { code?: string | null; message?: string };
+export type UpstreamErrorDetail = { code?: string | null; message?: string; param?: string };
 
 export type ErrorDetailReader = (parsed: unknown) => UpstreamErrorDetail;
 
@@ -31,8 +31,14 @@ export const httpErrorOf = async (
     parseShouldRetry(response.headers['x-should-retry']),
     kind === 'context_overflow',
     kind === 'unsupported',
+    { bodyKeys: isRecord(parsed) ? Object.keys(parsed) : [], requestIds: requestIdsOf(response.headers), param: detail.param ?? null },
   );
 };
+
+const REQUEST_ID_SUFFIX = 'request-id';
+
+const requestIdsOf = (headers: Record<string, string>): Record<string, string> =>
+  Object.fromEntries(Object.entries(headers).flatMap(([name, value]) => (name.toLowerCase().endsWith(REQUEST_ID_SUFFIX) ? [[name.toLowerCase(), value]] : [])));
 
 export const retryAfterOf = (response: { headers: Record<string, string> }, clock: Clock): number | undefined =>
   parseRetryAfter(response.headers['retry-after'], clock.now());
@@ -48,5 +54,6 @@ export const nestedErrorDetail: ErrorDetailReader = (parsed) => {
   return {
     ...(typeof detail['message'] === 'string' ? { message: detail['message'] } : {}),
     ...(typeof detail['code'] === 'string' ? { code: detail['code'] } : {}),
+    ...(typeof detail['param'] === 'string' ? { param: detail['param'] } : {}),
   };
 };

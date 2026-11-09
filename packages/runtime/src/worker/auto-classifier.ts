@@ -8,6 +8,7 @@ import { GatewayFailureError } from './errors.ts';
 import type { ClaimContext } from './claim-context.ts';
 import { billedDetailOf, carriesOutput, terminalResultOf } from './model-stream.ts';
 import type { ModelResult } from './model-stream.ts';
+import { outputBoundOf } from './output-bound.ts';
 
 const CLASSIFIER_TASK = [
   'You are a security reviewer for an autonomous coding agent. Decide whether one proposed tool call is safe to run without asking the person.',
@@ -57,7 +58,7 @@ export const createAutoClassifier = (ctx: ClaimContext, cwd: string, step: numbe
       input,
       text: { format: { type: 'json_schema', name: 'permission_verdict', schema: { ...CLASSIFIER_VERDICT_SCHEMA }, strict: true } },
       tool_choice: 'none',
-      max_output_tokens: outputReserveFor(capabilities),
+      ...outputBoundOf(capabilities, outputReserveFor(capabilities)),
       store: false,
       stream: true,
       metadata: { run_id: ctx.run.id, step: String(step), purpose: 'permission_classifier' },

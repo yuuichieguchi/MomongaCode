@@ -13,10 +13,13 @@ export type GatewayTargetConfig = {
   capabilities?: CapabilityOverride;
 };
 
+export type GatewayBillingChange = { from: TargetBilling; to: TargetBilling; alias?: string };
+
 export type GatewayConfig = {
   models: {
     aliases: Record<string, string[]>;
     targets: Record<string, GatewayTargetConfig>;
+    billingChanges?: readonly GatewayBillingChange[];
   };
   retry: { maxAttempts: number; totalWaitMs: number; baseMs: number; maxMs: number };
   breaker: { failureThreshold: number; openMs: number };

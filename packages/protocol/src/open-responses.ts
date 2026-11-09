@@ -207,13 +207,21 @@ export type ResponseStatus = 'in_progress' | 'completed' | 'failed' | 'incomplet
 
 export type JsonReplyPath = 'enforced' | 'prompt';
 
+export const BILLING_CHANGE_REASONS = ['billing_change_allowed', 'billing_change_refused'] as const;
+export type BillingChangeReason = (typeof BILLING_CHANGE_REASONS)[number];
+
+export type FallbackCauseRecord = { target: string; code: string | null; message: string } & (
+  | { fromBilling: string; toBilling: string; reason: BillingChangeReason }
+  | { fromBilling?: never; toBilling?: never; reason?: never }
+);
+
 export type MomongaResponseExtension = {
   alias: string;
   target: string;
   counter: string;
   attempts: number;
   fallbackFrom?: string[];
-  fallbackCauses?: { target: string; code: string | null; message: string }[];
+  fallbackCauses?: FallbackCauseRecord[];
   schemaNarrowings?: SchemaNarrowing[];
   jsonReply?: JsonReplyPath;
   usageSource: 'reported' | 'estimated';

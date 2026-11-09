@@ -1,5 +1,6 @@
 import type { AdapterSampling, AllowedToolsForm, Capabilities, HealthResult, ReasoningEffort } from './capabilities.ts';
 import type { CountTokensRequest, CountTokensResult } from './gateway-api.ts';
+import type { BreakerVerdict, CredentialEffect, ErrorFallback } from './plan-api.ts';
 import type { CompactMomongaExtension, ErrorBody, FunctionTool, InputItem, PromptCacheCounts, ReasoningInputItem, StreamEvent, TextField, ToolChoice, Usage } from './open-responses.ts';
 
 export const ADAPTER_NEUTRAL_ERROR_CODES = [
@@ -47,11 +48,22 @@ export type AdapterContext = {
   capabilities: Capabilities;
 };
 
+export type UpstreamFailureFacts = {
+  status: number;
+  bodyKeys: string[];
+  code: string | null;
+  requestIds: Record<string, string>;
+};
+
 export type ClassifiedError = {
   retryable: boolean;
   stalled?: true;
   retryAfterMs?: number;
   error: ErrorBody;
+  verdict?: BreakerVerdict;
+  fallback?: ErrorFallback;
+  credential?: CredentialEffect;
+  upstream?: UpstreamFailureFacts;
 };
 
 export type AdapterCountTokensResult = CountTokensResult;

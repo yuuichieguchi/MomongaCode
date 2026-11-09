@@ -40,6 +40,11 @@ const STATUS_BY_CODE: Record<string, number> = {
   secret_unavailable: 401,
   precondition_failed: 412,
   [TARGET_NOT_READY]: 412,
+  sign_in_required: 401,
+  plan_use_not_enabled: 403,
+  plan_usage_paused: 429,
+  plan_store_unreadable: 500,
+  plan_store_unwritable: 500,
 };
 
 export const statusFor = (type: ErrorType, code: string | null): number =>
