@@ -1,4 +1,7 @@
 --------------------------- MODULE ProcessStop ---------------------------
+\* Limits the code inherits from the platforms, checked by test/process-stop-conformance.test.ts:
+\* - darwin reads a start time with ps -o lstart, whose resolution is one second, so a pid reused within the same second reads the same start time.
+\* - Begin and TermWaitEnds prove a target and signal it in one step. The code reads a start time only after holdersOf has listed the pid, so the window between holdersOf and the first startTimeOf cannot be closed where the listing carries no start time.
 EXTENDS Naturals, FiniteSets
 
 CONSTANTS Members, Events, MaxAttempts, Variant

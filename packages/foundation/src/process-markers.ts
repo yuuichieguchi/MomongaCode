@@ -138,10 +138,10 @@ const reprove = async (proof: readonly Identity[], inspector: ProcessInspector, 
   return { proved: false, unreadable };
 };
 
-type SignalPass = { sent: number[]; unsignalled: number[]; unreadable: number[] };
+type SignalPass = { sent: number[]; stoppedHolders: number[]; unsignalled: number[]; unreadable: number[] };
 
 const signalProved = async (send: AsyncSignalSender, targets: readonly ProvedTarget[], signal: NodeJS.Signals, inspector: ProcessInspector, stop: AbortSignal): Promise<SignalPass> => {
-  const pass: SignalPass = { sent: [], unsignalled: [], unreadable: [] };
+  const pass: SignalPass = { sent: [], stoppedHolders: [], unsignalled: [], unreadable: [] };
   for (const { target, proof } of targets) {
     const reproof = await reprove(proof, inspector, stop);
     if (!reproof.proved) {
@@ -149,6 +149,7 @@ const signalProved = async (send: AsyncSignalSender, targets: readonly ProvedTar
       continue;
     }
     pass.sent.push(target);
+    pass.stoppedHolders.push(...proof.map(({ pid }) => pid));
     try {
       await send(target, signal, { signal: stop });
     } catch (error) {
@@ -160,21 +161,42 @@ const signalProved = async (send: AsyncSignalSender, targets: readonly ProvedTar
   return pass;
 };
 
+const stillAliveOf = async (listed: readonly Identity[], remaining: readonly number[], inspector: ProcessInspector, stop: AbortSignal): Promise<number[]> => {
+  const alive: number[] = [];
+  for (const identity of listed) if (!remaining.includes(identity.pid) && (await reprove([identity], inspector, stop)).proved) alive.push(identity.pid);
+  return alive;
+};
+
 export type MarkerReconcileResult = {
   outcome: 'unknown';
   output: string;
   stopped: boolean;
+  stoppedHolders: number[];
   leftAloneGroup?: number;
   leftAlonePids: number[];
   unsignalledPids: number[];
 };
 
-type StructuredFindings = { leftAloneGroup?: number; leftAlonePids?: number[]; unsignalledPids?: number[] };
+type StructuredFindings = { stoppedHolders?: number[]; leftAloneGroup?: number; leftAlonePids?: number[]; unsignalledPids?: number[] };
 
-const unknownResult = (detail: string, stopped: boolean, { leftAloneGroup, leftAlonePids = [], unsignalledPids = [] }: StructuredFindings = {}): MarkerReconcileResult => ({
+const findingNotes = ({ leftAloneGroup, leftAlonePids = [], unsignalledPids = [] }: StructuredFindings): string[] => {
+  const leftAlone = [...(leftAloneGroup === undefined ? [] : [`group ${leftAloneGroup}`]), ...leftAlonePids.map((pid) => `process ${pid}`)];
+  return [
+    ...(unsignalledPids.length === 0 ? [] : [`Could not signal process ${unsignalledPids.join(', ')}.`]),
+    ...(leftAlone.length === 0 ? [] : [`Still running but no longer verified as belonging to this call, so left alone: ${leftAlone.join(', ')}.`]),
+  ];
+};
+
+export const outlivedNotes = (result: MarkerReconcileResult, subject: string): string[] => [
+  ...(result.stoppedHolders.length === 0 ? [] : [`Terminated ${result.stoppedHolders.length} process(es) that outlived the ${subject}.`]),
+  ...findingNotes(result),
+];
+
+const unknownResult = (detail: string, stopped: boolean, { stoppedHolders = [], leftAloneGroup, leftAlonePids = [], unsignalledPids = [] }: StructuredFindings = {}): MarkerReconcileResult => ({
   outcome: 'unknown',
   output: `${detail} The effect of the interrupted command is unknown; inspect the current state before retrying it.`,
   stopped,
+  stoppedHolders,
   ...(leftAloneGroup === undefined ? {} : { leftAloneGroup }),
   leftAlonePids,
   unsignalledPids,
@@ -232,6 +254,7 @@ const reconcileWithin = async (recorded: { pgid: number; marker: string }, { giv
   const unsignalled = new Set(termPass.unsignalled);
   const waitEnded = (): MarkerReconcileResult =>
     unknownResult('The interrupted command was sent SIGTERM; the wait for it ended with its operation before its exit could be confirmed.', termPass.sent.length > 0, {
+      stoppedHolders: [...new Set(termPass.stoppedHolders)],
       leftAlonePids: [...new Set([...listed.unreadable, ...termPass.unreadable])],
       unsignalledPids: [...unsignalled],
     });
@@ -245,21 +268,18 @@ const reconcileWithin = async (recorded: { pgid: number; marker: string }, { giv
   const killPass = await signalProved(send, [...groupTarget(pgid, left.inGroup, stillInGroup), ...left.outsideGroup.map(ownProof)], 'SIGKILL', inspector, stop);
   for (const pid of killPass.unsignalled) unsignalled.add(pid);
 
-  const notes: string[] = [];
-  if (unsignalled.size > 0) notes.push(`Could not signal process ${[...unsignalled].join(', ')}.`);
-  const leftAloneGroup = termPass.sent.includes(-pgid) && !killPass.sent.includes(-pgid) && (await aliveVia(send, -pgid, stop)) ? pgid : undefined;
-  const leftAlonePids = new Set<number>();
-  for (const pid of holders) if (!remaining.includes(pid) && (await aliveVia(send, pid, stop))) leftAlonePids.add(pid);
+  const leftAloneGroup = !killPass.sent.includes(-pgid) && (await aliveVia(send, -pgid, stop)) ? pgid : undefined;
+  const leftAlonePids = new Set(await stillAliveOf([...listed.inGroup, ...listed.outsideGroup], remaining, inspector, stop));
   for (const pid of [...left.unreadable, ...killPass.unreadable]) leftAlonePids.add(pid);
-  const leftAlone = [...(leftAloneGroup === undefined ? [] : [`group ${pgid}`]), ...[...leftAlonePids].map((pid) => `process ${pid}`)];
-  if (leftAlone.length > 0) notes.push(`Still running but no longer verified as belonging to this call, so left alone: ${leftAlone.join(', ')}.`);
-  const stopped = termPass.sent.length > 0 || killPass.sent.length > 0;
-  const summary = stopped ? 'The interrupted command was stopped.' : 'No process of the interrupted command could be verified as belonging to this call, so none was signalled.';
-  return unknownResult([summary, ...notes].join(' '), stopped, {
+  const findings: StructuredFindings = {
+    stoppedHolders: [...new Set([...termPass.stoppedHolders, ...killPass.stoppedHolders])],
     ...(leftAloneGroup === undefined ? {} : { leftAloneGroup }),
     leftAlonePids: [...leftAlonePids],
     unsignalledPids: [...unsignalled],
-  });
+  };
+  const stopped = termPass.sent.length > 0 || killPass.sent.length > 0;
+  const summary = stopped ? 'The interrupted command was stopped.' : 'No process of the interrupted command could be verified as belonging to this call, so none was signalled.';
+  return unknownResult([summary, ...findingNotes(findings)].join(' '), stopped, findings);
 };
 
 export type ReapMarkedProcessesOptions = {
@@ -328,8 +348,7 @@ const signalHoldersOnly = async (
     remaining = await holdersUntil(marker, listing, deadline, unsettled);
   }
   if (stop.aborted) return { unsignalled, leftAlone: [...new Set([...listed.unreadable, ...termPass.unreadable])], signalled: termPass.sent.length > 0 };
-  const leftAlone = new Set<number>();
-  for (const pid of holders) if (!remaining.includes(pid) && (await aliveVia(send, pid, stop))) leftAlone.add(pid);
+  const leftAlone = new Set(await stillAliveOf(listed.identities, remaining, inspector, stop));
   const kept = await identify(remaining.filter((pid) => pid > 1), inspector, stop);
   const killPass = await signalProved(send, kept.identities.map(ownProof), 'SIGKILL', inspector, stop);
   for (const pid of killPass.unsignalled) unsignalled.add(pid);
@@ -382,7 +401,7 @@ const reapWithin = async (options: ReapMarkedProcessesOptions, stop: AbortSignal
     const result = await reconcileWithin({ pgid: recorded, marker }, { given: options.signal, killGraceMs, kill, timing, stop, inspector, unsettled });
     stopped = result.stopped;
     if (result.leftAloneGroup !== undefined) {
-      onWarning(`${label} marker ${marker}: group ${result.leftAloneGroup} is still alive but no marker holder is in it, so it was left alone`);
+      onWarning(`${label} marker ${marker}: group ${result.leftAloneGroup} is still alive but could not be verified as belonging to this call, so it was left alone`);
     }
     if (result.leftAlonePids.length > 0) onWarning(leftAloneWarning(label, marker, result.leftAlonePids));
     if (result.unsignalledPids.length > 0) {

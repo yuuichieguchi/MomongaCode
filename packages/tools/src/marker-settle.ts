@@ -1,4 +1,4 @@
-import { defaultProcessInspector, nodeFileSystem, findHolders, reconcileProcessGroup } from '@momonga/foundation';
+import { defaultProcessInspector, nodeFileSystem, findHolders, outlivedNotes, reconcileProcessGroup } from '@momonga/foundation';
 import type { MarkerMode, MarkerReconcileResult, MarkerState, ProcessInspector, ReapTiming, SignalSender, UninspectableProcess } from '@momonga/foundation';
 
 export type MarkerListing = { holders: number[]; refused: UninspectableProcess[] };
@@ -91,8 +91,5 @@ export const settleFinishedCommand = async (settle: MarkerSettle, { pgid, exit, 
   }
   const reaped = await settle.reap(pgid, signal);
   await settle.state(signal);
-  return [
-    `Terminated ${listing.holders.length} process(es) that outlived the command.`,
-    ...(reaped.unsignalledPids.length === 0 ? [] : [`Could not signal process ${reaped.unsignalledPids.join(', ')}.`]),
-  ];
+  return outlivedNotes(reaped, 'command');
 };

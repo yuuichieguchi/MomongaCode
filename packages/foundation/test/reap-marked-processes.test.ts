@@ -293,7 +293,7 @@ describe('reapMarkedProcesses', () => {
       const warnings: string[] = [];
       const result = await reapMarkedProcesses({ marker, pgid: group.pgid, killGraceMs: 200, label: 'mcp', onWarning: (m) => warnings.push(m), kill, timing: fake.timing });
       expect(result).toEqual({ removed: true });
-      expect(warnings).toEqual([`mcp marker ${marker}: group ${group.pgid} is still alive but no marker holder is in it, so it was left alone`]);
+      expect(warnings).toEqual([`mcp marker ${marker}: group ${group.pgid} is still alive but could not be verified as belonging to this call, so it was left alone`]);
       expect(signals).toEqual([]);
       expect(alive(-group.pgid)).toBe(true);
     });

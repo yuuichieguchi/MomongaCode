@@ -22,6 +22,20 @@ type Scan = { markerBirthMs: number; report: ((process: UninspectableProcess) =>
 
 class UnparseableProcfs extends Error {}
 
+const untilAborted = async <T>(signal: AbortSignal, read: () => Promise<T>): Promise<T> => {
+  signal.throwIfAborted();
+  let stop: () => void = () => undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    stop = () => reject(signal.reason);
+    signal.addEventListener('abort', stop, { once: true });
+  });
+  try {
+    return await Promise.race([read(), aborted]);
+  } finally {
+    signal.removeEventListener('abort', stop);
+  }
+};
+
 const parsed = <T>(read: () => T): T => {
   try {
     return read();
@@ -63,13 +77,17 @@ export const createLinuxInspector = ({ procfs, uid, layout }: LinuxInspectorPort
     }
   };
 
+  const startedMsOf = async (startTicks: bigint): Promise<number> => {
+    const { bootMs, ticksPerSecond } = await clockParameters();
+    return bootMs + Number((startTicks * 1000n) / BigInt(ticksPerSecond));
+  };
+
   const startedBeforeMarker = async (pid: number, markerBirthMs: number): Promise<boolean> => {
     if (markerBirthMs <= 0) return false;
     const stat = await statOf(pid);
     if (stat === undefined) return true;
-    const { bootMs, ticksPerSecond } = await clockParameters();
-    const startedMs = bootMs + Number((stat.startTicks * 1000n) / BigInt(ticksPerSecond));
-    return startedMs + 1000 / ticksPerSecond + BOOT_TIME_RESOLUTION_MS < markerBirthMs;
+    const { ticksPerSecond } = await clockParameters();
+    return (await startedMsOf(stat.startTicks)) + 1000 / ticksPerSecond + BOOT_TIME_RESOLUTION_MS < markerBirthMs;
   };
 
   const unlessUnsettled = async <T>(pid: number, scan: Scan, absent: T, read: () => Promise<T>): Promise<T> => {
@@ -83,7 +101,7 @@ export const createLinuxInspector = ({ procfs, uid, layout }: LinuxInspectorPort
       const owner = await realUidOf(pid);
       if (owner === undefined || owner !== uid) return absent;
       if (await startedBeforeMarker(pid, scan.markerBirthMs)) return absent;
-      scan.report?.({ pid, command: stat.command, startTicks: String(stat.startTicks) });
+      scan.report?.({ pid, command: stat.command, startedAt: await startedMsOf(stat.startTicks) });
       return absent;
     }
   };
@@ -121,13 +139,14 @@ export const createLinuxInspector = ({ procfs, uid, layout }: LinuxInspectorPort
   };
 
   return withListedState({
-    startTimeOf: (pid) =>
-      guarded(async () => {
-        const stat = await statOf(pid);
-        if (stat === undefined) return { kind: 'gone' };
-        const { bootMs, ticksPerSecond } = await clockParameters();
-        return { kind: 'value', value: bootMs + Number((stat.startTicks * 1000n) / BigInt(ticksPerSecond)) };
-      }),
+    startTimeOf: (pid, { signal }) =>
+      guarded(() =>
+        untilAborted(signal, async () => {
+          const stat = await statOf(pid);
+          if (stat === undefined) return { kind: 'gone' };
+          return { kind: 'value', value: await startedMsOf(stat.startTicks) };
+        }),
+      ),
     holdersOf: (marker, { signal }, onUninspectable) =>
       guarded(async () => {
         let target: FileIdentity;
