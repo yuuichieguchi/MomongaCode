@@ -34,7 +34,7 @@ describe('decision 12: a marker held through the four occasions reaches the fina
     const h = world('held', {}, new Set([LEAVER_PGID]));
     await runOne(h, 'Leaver', 'first');
     const name = keyFor('run-1', 1, 'first');
-    fs.writeFileSync(markerOf(h, 'first'), 'r11110\n');
+    fs.writeFileSync(markerOf(h, 'first'), `r11110\ng${String(LEAVER_PGID).padStart(10, '0')}\n`);
     const refused = resultOf(await runOne(h, 'Writer', 'second'));
     expect(refused.status).toBe('failed');
     expect(refused.output).toBe(`${SETTLED_PREFIX(name)}${FINAL_NOTICE_END(name)}`);
