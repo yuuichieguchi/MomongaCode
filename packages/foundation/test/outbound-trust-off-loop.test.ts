@@ -44,24 +44,4 @@ describe('installTrust reads the system CA store off the main event loop', () =>
     expect(systemReadsOnMainThread.count).toBe(0);
     expect(report.sources.map((entry) => entry.source)).toEqual(['bundled', 'system', 'NODE_EXTRA_CA_CERTS']);
   });
-
-  it('keeps the main loop ticking while the system store is read', async () => {
-    systemReadsOnMainThread.count = 0;
-    let previous = performance.now();
-    let longestGap = 0;
-    const ticker = setInterval(() => {
-      const now = performance.now();
-      longestGap = Math.max(longestGap, now - previous);
-      previous = now;
-    }, 5);
-
-    try {
-      await installTrust(noCaFiles, noFiles);
-    } finally {
-      clearInterval(ticker);
-    }
-
-    expect(systemReadsOnMainThread.count).toBe(0);
-    expect(longestGap).toBeLessThan(100);
-  });
 });

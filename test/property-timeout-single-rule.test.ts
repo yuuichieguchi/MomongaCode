@@ -1,48 +1,31 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import * as testkit from '@momonga/testkit';
-
-const ROOT = path.resolve(import.meta.dirname, '..');
-
-const testFiles = (dir: string): string[] =>
-  fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    if (entry.name === 'node_modules' || entry.name === 'dist') return [];
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) return testFiles(full);
-    return entry.name.endsWith('.test.ts') ? [full] : [];
-  });
-
-const repositoryTests = (): string[] => [
-  ...fs
-    .readdirSync(path.join(ROOT, 'packages'))
-    .map((name) => path.join(ROOT, 'packages', name, 'test'))
-    .filter((dir) => fs.existsSync(dir))
-    .flatMap(testFiles),
-  ...testFiles(path.join(ROOT, 'test')),
-];
+import { fileLevelTestTimeout, importsFromTestkit, perTestTimeouts, repositoryTests, timeoutKeys } from './support/test-timeout-source.ts';
 
 const SEEDED_CALL = /\bseeded\(/;
-const SHARED_IMPORT = /import\s*\{[^}]*\bPROPERTY_TIMEOUT_MS\b[^}]*\}\s*from\s*'@momonga\/testkit'/;
 const LOCAL_DECLARATION = /\b(?:const|let|var)\s+PROPERTY_TIMEOUT_MS\b/;
-const NUMERIC_TIMEOUT = /\btimeout\s*:\s*\d|testTimeout\s*:\s*\d|\}\s*,\s*\d[\d_]{3,}\s*\)/;
-const TIMEOUT_USE = /,\s*PROPERTY_TIMEOUT_MS\s*\)|\btimeout\s*:\s*PROPERTY_TIMEOUT_MS\b|testTimeout\s*:\s*PROPERTY_TIMEOUT_MS\b/;
-
-const relative = (file: string): string => path.relative(ROOT, file);
+const FILE_LEVEL_FORM = /^testTimeout\s*:\s*PROPERTY_TIMEOUT_MS$/;
 
 const propertyTests = (): Array<{ file: string; source: string }> =>
-  repositoryTests()
-    .map((file) => ({ file: relative(file), source: fs.readFileSync(file, 'utf8') }))
-    .filter(({ file, source }) => SEEDED_CALL.test(source) && !file.endsWith('property-timeout-single-rule.test.ts'));
+  repositoryTests().filter(({ file, source }) => SEEDED_CALL.test(source) && !file.startsWith('test/property-timeout-single-rule') && !file.startsWith('test/support/'));
 
-describe('every test that loops over generated cases takes the one shared PROPERTY_TIMEOUT_MS', () => {
+const offendersOf = (file: string, source: string): string[] => {
+  const reasons: string[] = [];
+  if (!importsFromTestkit(source, 'PROPERTY_TIMEOUT_MS')) reasons.push('does not import PROPERTY_TIMEOUT_MS from @momonga/testkit');
+  if (LOCAL_DECLARATION.test(source)) reasons.push('declares its own PROPERTY_TIMEOUT_MS');
+  if (!fileLevelTestTimeout(source, 'PROPERTY_TIMEOUT_MS')) reasons.push('has no file-level vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS })');
+  for (const key of timeoutKeys(source)) if (!FILE_LEVEL_FORM.test(key.trim())) reasons.push(`declares a timeout option: ${key.trim()}`);
+  for (const timeout of perTestTimeouts(source)) reasons.push(`passes a per-test timeout: ${timeout}`);
+  return reasons.map((reason) => `${file}: ${reason}`);
+};
+
+describe('every test that draws from seeded( takes PROPERTY_TIMEOUT_MS in one form: a file-level testTimeout', () => {
   it('testkit exports PROPERTY_TIMEOUT_MS as the 600 000 ms hang guard', () => {
     expect((testkit as Record<string, unknown>)['PROPERTY_TIMEOUT_MS']).toBe(600_000);
   });
 
   it('finds the property tests it guards', () => {
-    const files = propertyTests().map((entry) => entry.file);
-    expect(files).toEqual(
+    expect(propertyTests().map((entry) => entry.file)).toEqual(
       expect.arrayContaining([
         'packages/context/test/one-input-one-decomposition-property.test.ts',
         'packages/context/test/eviction-pass-property.test.ts',
@@ -53,15 +36,46 @@ describe('every test that loops over generated cases takes the one shared PROPER
     );
   });
 
-  it('every file that calls seeded( imports PROPERTY_TIMEOUT_MS from testkit, passes it as a timeout, and declares no timeout of its own', () => {
-    const offenders = propertyTests().flatMap(({ file, source }) => {
-      const reasons: string[] = [];
-      if (!SHARED_IMPORT.test(source)) reasons.push('does not import PROPERTY_TIMEOUT_MS from @momonga/testkit');
-      if (LOCAL_DECLARATION.test(source)) reasons.push('declares its own PROPERTY_TIMEOUT_MS');
-      if (!TIMEOUT_USE.test(source)) reasons.push('never passes PROPERTY_TIMEOUT_MS as a timeout');
-      if (NUMERIC_TIMEOUT.test(source)) reasons.push('passes a numeric timeout');
-      return reasons.map((reason) => `${file}: ${reason}`);
-    });
-    expect(offenders).toEqual([]);
+  it.each([
+    ['a number after the body', "it('x', () => {}, 600_000);"],
+    ['an exponent literal after the body', "it('x', async () => {}, 6e5);"],
+    ['the shared constant after the body', "it('x', () => {}, PROPERTY_TIMEOUT_MS);"],
+    ['another identifier after the body', "test('x', () => {}, LONG);"],
+    ['an expression after the body', "it('x', () => {}, 2 * BASE);"],
+    ['an options object before the body', "it('x', { timeout: PROPERTY_TIMEOUT_MS }, () => {});"],
+    ['a describe options object', "describe('x', { timeout: 1e4 }, () => {});"],
+    ['an each table with a trailing timeout', "it.each([1, 2])('x %i', (n) => {}, 5000);"],
+  ])('refuses %s', (_form, line) => {
+    const source = `import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';\nvi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });\nseeded(1);\n${line}\n`;
+
+    expect(offendersOf('fixture.test.ts', source)).not.toEqual([]);
+  });
+
+  it.each([
+    ['a file-level testTimeout of another value', "vi.setConfig({ testTimeout: 600_000 });"],
+    ['a file-level testTimeout of another identifier', "vi.setConfig({ testTimeout: LONG_MS });"],
+  ])('refuses %s', (_form, line) => {
+    const source = `import { PROPERTY_TIMEOUT_MS } from '@momonga/testkit';\n${line}\nseeded(1);\nit('x', () => {});\n`;
+
+    expect(offendersOf('fixture.test.ts', source)).not.toEqual([]);
+  });
+
+  it('accepts the one form: a file-level testTimeout and no per-test timeout', () => {
+    const source = [
+      "import { PROPERTY_TIMEOUT_MS, seeded } from '@momonga/testkit';",
+      'vi.setConfig({ testTimeout: PROPERTY_TIMEOUT_MS });',
+      "describe('d', () => {",
+      "  it('a', () => { seeded(1); }, );",
+      "  it.each([1, 2])('b %i', (n) => { expect(n).toBeGreaterThan(0); });",
+      "  it('c', async () => { await Promise.resolve({ value: 1 }); });",
+      '});',
+      '',
+    ].join('\n');
+
+    expect(offendersOf('fixture.test.ts', source)).toEqual([]);
+  });
+
+  it('every file that calls seeded( has the file-level PROPERTY_TIMEOUT_MS and no other timeout form', () => {
+    expect(propertyTests().flatMap(({ file, source }) => offendersOf(file, source))).toEqual([]);
   });
 });
