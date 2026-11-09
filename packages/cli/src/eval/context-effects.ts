@@ -1,7 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { applyWorkspaceStep } from '@momonga/eval';
-export { SHORT_TEMP_BASE, shortTempBase } from '@momonga/foundation';
 import { currentGenerationLock, ensureMomongaDirs, inspectProcessLock, isProcessAlive, shortTempBase } from '@momonga/foundation';
 import { DAEMON_POLL_INTERVAL_MS } from '../constants.ts';
 import { STOP_WAIT_WHEN_UNKNOWN_MS, ensureDaemon } from '../daemon/ensure-daemon.ts';

@@ -12,6 +12,7 @@ import { createRuntimeClient } from './support/runtime-client.ts';
 import { DEFAULT_E2E_DEPS, shutdownBarrier, startStack } from './support/stack.ts';
 import { childOf, pidOf } from './support/supervisor-client.ts';
 import { E2E_MARGIN_MS, E2E_TEST_TIMEOUT_MS } from './support/wait.ts';
+import { firstGeneration } from '@momonga/testkit';
 
 const NOISY_DAEMON_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'support', 'fixtures', 'noisy-daemon.ts');
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error'];
@@ -103,7 +104,7 @@ describe('logs', () => {
     expect(scoped).toEqual(supervisorRecords);
     for (const [role, pid] of [['runtime', runtimePid], ['gateway', gatewayPid]] as const) {
       expect(ofChild(scoped, 'child.spawn', role)).toEqual([expect.objectContaining({ childPid: pid, reason: 'initial', restarts: 0 })]);
-      expect(ofChild(scoped, 'child.ready', role)).toEqual([expect.objectContaining({ childPid: pid, socketPath: home.paths.sockets[role] })]);
+      expect(ofChild(scoped, 'child.ready', role)).toEqual([expect.objectContaining({ childPid: pid, socketPath: firstGeneration(home.paths).sockets[role] })]);
     }
     expect(scoped.filter((record) => record.service === 'runtime' || record.service === 'gateway')).toEqual([]);
     expect([...gatewayRecords, ...runtimeRecords].filter((record) => record.service === 'supervisor')).toEqual([]);

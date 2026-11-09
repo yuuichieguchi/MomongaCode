@@ -14,6 +14,7 @@ import type { GatewayCountClient } from './gateway-count.ts';
 import type { E2eHome } from './home.ts';
 import { chatCompletions, textReply, toolCallReply } from './upstream.ts';
 import { E2E_MARGIN_MS } from './wait.ts';
+import { firstGeneration } from '@momonga/testkit';
 
 export const PREFIX_PROBE_TASK = 'Report the size of the prefix.';
 
@@ -117,7 +118,7 @@ export const measureWindow = async (home: E2eHome, fake: Pick<FakeChatCompletion
   if (small === undefined || large === undefined) throw new Error('the calibration needs two file sizes');
   const growth = (entry: { first: number; afterRead: number }): number => entry.afterRead - entry.first;
   const readLineTokens = (growth(large) - growth(small)) / (large.lines - small.lines);
-  const client = createGatewayCountClient(home.paths.sockets.gateway);
+  const client = createGatewayCountClient(firstGeneration(home.paths).sockets.gateway);
   const capabilities = await client.capabilities();
   return {
     capabilities,

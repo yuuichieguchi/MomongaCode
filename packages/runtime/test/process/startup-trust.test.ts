@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { DAEMON_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { writeUserSettings } from './helpers.ts';
 import { RUNTIME_VERSION, captureStream, hookLogger, makeRunHome, startRuntimeProcess } from './run-helpers.ts';
+import { FIRST_GENERATION } from '@momonga/foundation';
 
 const FIXTURE = path.resolve(import.meta.dirname, '..', '..', '..', 'foundation', 'test', 'fixtures', 'test-ca.pem');
 
@@ -22,7 +23,7 @@ describe('runtime process start', () => {
     const pem = fs.readFileSync(FIXTURE, 'utf8');
     expect(installed(pem)).toBe(false);
 
-    const runtimeProcess = await startRuntimeProcess({ home: temp.home, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout: captureStream() });
+    const runtimeProcess = await startRuntimeProcess({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout: captureStream() });
     try {
       expect(installed(pem)).toBe(true);
     } finally {

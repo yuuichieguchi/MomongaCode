@@ -6,6 +6,7 @@ import { DAEMON_PROCESS_TEST_TIMEOUT_MS, createFakeFm, fakeExec, killGroupsForCl
 import { onCleanup, writeUserSettings } from './helpers.ts';
 import { GATEWAY_VERSION, launchRuntime, makeRunHome, readDb, sessionEnvFor, waitForCondition } from './run-helpers.ts';
 import type { RunHome } from './run-helpers.ts';
+import { FIRST_GENERATION } from '@momonga/foundation';
 
 const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 const GUARDRAIL_TRIGGER = 'FORBIDDEN-TOPIC';
@@ -45,7 +46,7 @@ const startFmGateway = async (temp: RunHome): Promise<void> => {
   });
   const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((() => true) as typeof process.stdout.write);
   try {
-    const gateway = await startGatewayProcess({ home: temp.home, env: sessionEnvFor(temp.home), version: GATEWAY_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });
+    const gateway = await startGatewayProcess({ generation: FIRST_GENERATION, home: temp.home, env: sessionEnvFor(temp.home), version: GATEWAY_VERSION, fmBinary: fm.binaryPath, exec: fakeExec });
     onCleanup(async () => {
       await gateway.close();
     });

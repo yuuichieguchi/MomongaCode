@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { isProcessAlive, momongaPaths } from '@momonga/foundation';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, registerCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, afterMicrotasks, registerCleanup, spawnTracked, waitFor, withTempDir, firstGeneration } from '@momonga/testkit';
 import { openDaemonMarker } from '../src/orphans.ts';
 import { errnoError } from './support/p2-fake-spawn-port.ts';
 import { createManagerHarness } from './support/p2-manager-harness.ts';
@@ -139,7 +139,7 @@ describe('daemon markers at spawn', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, (
       const paths = momongaPaths(home, process.platform, {});
       const args = [SUPERVISOR_FIXTURE, `--home=${home}`, `--child=${CHILD_FIXTURE}`, ...(leak ? ['--leak-marker-fd'] : [])];
       const supervisor = spawnTracked(context, process.execPath, args, { stdio: ['ignore', 'ignore', 'pipe'] });
-      trackSupervisorChildren(context, paths.sockets.supervisor);
+      trackSupervisorChildren(context, firstGeneration(paths).sockets.supervisor);
       let errors = '';
       supervisor.stderr?.on('data', (chunk: Buffer) => {
         errors += chunk.toString();

@@ -16,7 +16,33 @@ export type FakeSupervisorOptions = {
   keepsLock?: boolean;
   pid?: number;
   generation?: number;
+  work?: FakeWork;
 };
+
+export type FakeWork = {
+  track<T>(work: Promise<T>): Promise<T>;
+  settled(): Promise<void>;
+};
+
+export const createFakeWork = (): FakeWork => {
+  const open = new Set<Promise<unknown>>();
+  return {
+    track: (work) => {
+      const settled = work.then(
+        () => undefined,
+        () => undefined,
+      );
+      open.add(settled);
+      void settled.then(() => open.delete(settled));
+      return work;
+    },
+    settled: async () => {
+      while (open.size > 0) await Promise.all(open);
+    },
+  };
+};
+
+const untracked: FakeWork = { track: (work) => work, settled: async () => undefined };
 
 export const readyChildren = (): SupervisorChildHealth[] => [
   { role: 'gateway', state: 'ready', pid: 101, restarts: 0, consecutiveFailures: 0 },
@@ -31,8 +57,11 @@ export type FakeSupervisor = {
   stop(): Promise<void>;
 };
 
-export const startFakeSupervisor = async (options: FakeSupervisorOptions): Promise<FakeSupervisor> => {
+export const startFakeSupervisor = (options: FakeSupervisorOptions): Promise<FakeSupervisor> => (options.work ?? untracked).track(serveFakeSupervisor(options));
+
+const serveFakeSupervisor = async (options: FakeSupervisorOptions): Promise<FakeSupervisor> => {
   const { paths } = options;
+  const work = options.work ?? untracked;
   const generation = options.generation ?? FIRST_GENERATION;
   const layout = generationLayout(path.dirname(paths.root), generation);
   let phase = options.phase ?? 'running';
@@ -85,11 +114,10 @@ export const startFakeSupervisor = async (options: FakeSupervisorOptions): Promi
     server.once('error', reject);
     server.listen(layout.sockets.supervisor, resolve);
   });
-  const publishWhenServing = async (): Promise<void> => {
-    if (phase === 'running' && children.every((child) => child.state === 'ready')) {
-      await publishCurrentGeneration(paths, { generation, version: options.version, sockets: layout.sockets });
-    }
-  };
+  const publishWhenServing = (): Promise<void> =>
+    phase === 'running' && children.every((child) => child.state === 'ready')
+      ? work.track(publishCurrentGeneration(paths, { generation, version: options.version, sockets: layout.sockets }))
+      : Promise.resolve();
   await publishWhenServing();
   let stopping: Promise<void> | undefined;
   const stop = (): Promise<void> => {
@@ -120,11 +148,12 @@ export const startFakeSupervisor = async (options: FakeSupervisorOptions): Promi
   };
 };
 
-export const virtualClock = (): CliClock => {
+export const virtualClock = (work: FakeWork = untracked): CliClock => {
   let now = 0;
   return {
     now: () => now,
     sleep: async (ms) => {
+      await work.settled();
       now += ms;
       await new Promise<void>((resolve) => setImmediate(resolve));
     },

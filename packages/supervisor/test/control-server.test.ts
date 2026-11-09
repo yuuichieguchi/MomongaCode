@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ProcessLockHeldError, listenUnix, momongaPaths, parseReadyLine, inspectProcessLock } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
-import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, registerCleanup, spawnTracked, waitFor, withTempDir } from '@momonga/testkit';
+import { LSOF_PATH, REAL_PROCESS_TEST_TIMEOUT_MS, createFakeClock, createFakeTimers, registerCleanup, spawnTracked, waitFor, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { createControlRequestHandler, respondShutdown, startControlServer } from '../src/control-server.ts';
 import type { ControlServer } from '../src/control-server.ts';
@@ -262,7 +262,7 @@ describe('control API through the supervisor', () => {
     const h = await startHarness(context);
     await h.waitForState('runtime', 'ready');
     await h.waitForState('gateway', 'ready');
-    const response = await httpOver(context, h.paths.sockets.supervisor, 'GET', '/v1/health');
+    const response = await httpOver(context, firstGeneration(h.paths).sockets.supervisor, 'GET', '/v1/health');
     expect(response.status).toBe(200);
     const body = JSON.parse(response.text) as Record<string, unknown> & SupervisorHealth;
     expect(body).not.toHaveProperty('state');
@@ -282,7 +282,7 @@ describe('control API through the supervisor', () => {
   it('health carries env: frozen at supervisor start', async (context) => {
     const h = await startHarness(context);
     expect(h.health().env).toBe('frozen at supervisor start');
-    expect(JSON.parse((await httpOver(context, h.paths.sockets.supervisor, 'GET', '/v1/health')).text)).toMatchObject({ env: 'frozen at supervisor start' });
+    expect(JSON.parse((await httpOver(context, firstGeneration(h.paths).sockets.supervisor, 'GET', '/v1/health')).text)).toMatchObject({ env: 'frozen at supervisor start' });
   });
 
   it('health reflects the state machine', async (context) => {
@@ -300,7 +300,7 @@ describe('control API through the supervisor', () => {
     expect(runtime.lastExit).toMatchObject({ code: 1, signal: null, reason: 'failure' });
     expect(runtime.consecutiveFailures).toBe(1);
     expect(h.child('gateway').heldReason).toBe('child exited 78: sandbox-exec is missing');
-    const wire = JSON.parse((await httpOver(context, h.paths.sockets.supervisor, 'GET', '/v1/health')).text) as SupervisorHealth;
+    const wire = JSON.parse((await httpOver(context, firstGeneration(h.paths).sockets.supervisor, 'GET', '/v1/health')).text) as SupervisorHealth;
     expect(wire.children[1]?.nextAttemptAt).toBe(runtime.nextAttemptAt);
     expect(wire.children[0]?.heldReason).toBe('child exited 78: sandbox-exec is missing');
   });
@@ -311,7 +311,7 @@ describe('control API through the supervisor', () => {
       markerPorts: { findHolders: async () => [999_999] },
     });
     await waitFor(() => h.markers.calls.findHolders.length > 0, { description: 'phase 1 polling' });
-    const response = await httpOver(context, h.paths.sockets.supervisor, 'GET', '/v1/health');
+    const response = await httpOver(context, firstGeneration(h.paths).sockets.supervisor, 'GET', '/v1/health');
     expect(response.status).toBe(200);
     const body = JSON.parse(response.text) as SupervisorHealth;
     expect(body.phase).toBe('reaping-orphans');
@@ -342,7 +342,7 @@ describe('control API through the supervisor', () => {
       markerPorts: { findHolders: async () => [999_999] },
     });
     await waitFor(() => h.markers.calls.findHolders.length > 0);
-    const response = await httpOver(context, h.paths.sockets.supervisor, 'POST', '/v1/shutdown');
+    const response = await httpOver(context, firstGeneration(h.paths).sockets.supervisor, 'POST', '/v1/shutdown');
     expect(response.status).toBe(202);
     expect(JSON.parse(response.text)).toEqual({ phase: 'draining' });
     await waitFor(() => h.health().phase === 'draining', { description: 'draining after the 202' });
@@ -362,7 +362,7 @@ describe('control API through the supervisor', () => {
     await h.waitForState('runtime', 'ready');
     await h.waitForState('gateway', 'ready');
     const closed = settledFlag(h.supervisor.closed);
-    expect((await httpOver(context, h.paths.sockets.supervisor, 'POST', '/v1/shutdown')).status).toBe(202);
+    expect((await httpOver(context, firstGeneration(h.paths).sockets.supervisor, 'POST', '/v1/shutdown')).status).toBe(202);
     await pumpUntil(h.timers, () => closed.settled(), { realWork: h.realWork, maxMs: 120_000 });
     expect(closed.value()).toEqual({ clean: true, killed: [], leaked: [] });
     expect(h.fake.latest('runtime').signals).toEqual(['SIGTERM']);
@@ -373,7 +373,7 @@ describe('control API through the supervisor', () => {
     let requested = 0;
     const h = await startHarness(context, { overrides: { onShutdownRequested: () => void (requested += 1) } });
     await h.waitForState('runtime', 'ready');
-    expect((await httpOver(context, h.paths.sockets.supervisor, 'POST', '/v1/shutdown')).status).toBe(202);
+    expect((await httpOver(context, firstGeneration(h.paths).sockets.supervisor, 'POST', '/v1/shutdown')).status).toBe(202);
     await waitFor(() => requested === 1);
     await quiesce(h.realWork);
     expect(h.fake.latest('runtime').signals).toEqual([]);
@@ -384,9 +384,9 @@ describe('control API through the supervisor', () => {
     await h.waitForState('runtime', 'ready');
     await h.waitForState('gateway', 'ready');
     h.fake.setBehaviour('runtime', { onTerm: 'ignore' });
-    expect((await httpOver(context, h.paths.sockets.supervisor, 'POST', '/v1/shutdown')).status).toBe(202);
+    expect((await httpOver(context, firstGeneration(h.paths).sockets.supervisor, 'POST', '/v1/shutdown')).status).toBe(202);
     await waitFor(() => h.fake.latest('runtime').signals.length === 1);
-    expect((await httpOver(context, h.paths.sockets.supervisor, 'POST', '/v1/shutdown')).status).toBe(202);
+    expect((await httpOver(context, firstGeneration(h.paths).sockets.supervisor, 'POST', '/v1/shutdown')).status).toBe(202);
     await quiesce(h.realWork);
     expect(h.log.withMsg('shutdown.begin')).toHaveLength(1);
     expect(h.fake.latest('runtime').signals).toEqual(['SIGTERM']);
@@ -400,9 +400,9 @@ describe('control API through the supervisor', () => {
     const h = await startHarness(context);
     await h.waitForState('runtime', 'ready');
     h.fake.setBehaviour('runtime', { onTerm: 'ignore' });
-    expect((await httpOver(context, h.paths.sockets.supervisor, 'POST', '/v1/shutdown')).status).toBe(202);
+    expect((await httpOver(context, firstGeneration(h.paths).sockets.supervisor, 'POST', '/v1/shutdown')).status).toBe(202);
     await waitFor(() => h.fake.latest('runtime').signals.length === 1);
-    const response = await httpOver(context, h.paths.sockets.supervisor, 'GET', '/v1/health');
+    const response = await httpOver(context, firstGeneration(h.paths).sockets.supervisor, 'GET', '/v1/health');
     expect(response.status).toBe(200);
     const body = JSON.parse(response.text) as SupervisorHealth;
     expect(body.phase).toBe('draining');
@@ -453,9 +453,9 @@ describe('control API transport', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () 
     const home = withTempDir(context, { asHome: true });
     const paths = momongaPaths(home, process.platform, {});
     const supervisor = spawnTracked(context, process.execPath, [SUPERVISOR_FIXTURE, `--home=${home}`, `--child=${CHILD_FIXTURE}`], { stdio: ['ignore', 'pipe', 'pipe'] });
-    trackSupervisorChildren(context, paths.sockets.supervisor);
+    trackSupervisorChildren(context, firstGeneration(paths).sockets.supervisor);
     const ready = parseReadyLine(await firstStdoutLine(supervisor, (line) => parseReadyLine(line) !== undefined, 'fixture supervisor'));
-    expect(ready).toMatchObject({ service: 'supervisor', pid: supervisor.pid, socketPath: paths.sockets.supervisor });
+    expect(ready).toMatchObject({ service: 'supervisor', pid: supervisor.pid, socketPath: firstGeneration(paths).sockets.supervisor });
     const probe = probeTcpListeners(supervisor.pid as number);
     expect(probe.stderr).toBe('');
     expect([0, 1]).toContain(probe.status);

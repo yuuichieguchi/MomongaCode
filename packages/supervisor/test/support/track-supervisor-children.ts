@@ -1,4 +1,4 @@
-import { createUdsClient, isProcessAlive } from '@momonga/foundation';
+import { createUdsClient, isProcessAlive, fixedSocket } from '@momonga/foundation';
 import type { SupervisorHealth } from '@momonga/protocol';
 import { killGroupsForCleanup, registerCleanup } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
@@ -27,7 +27,7 @@ const childPidsFromBody = (body: unknown): number[] => {
 };
 
 const fetchChildPids = async (socketPath: string, healthTimeoutMs: number): Promise<number[]> => {
-  const client = createUdsClient(socketPath, { headersTimeoutMs: healthTimeoutMs, bodyTimeoutMs: healthTimeoutMs });
+  const client = createUdsClient(fixedSocket(socketPath), { headersTimeoutMs: healthTimeoutMs, bodyTimeoutMs: healthTimeoutMs });
   try {
     const response = await client.request({ method: 'GET', path: '/v1/health' });
     if (response.status !== 200) throw new Error(`supervisor health answered ${response.status}`);

@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Worker, WorkerOptions } from '@momonga/runtime';
 import { RUNTIME_VERSION, captureStream, hookLogger, isLockFree, startRuntimeProcess, startStack } from './run-helpers.ts';
-import { DAEMON_PROCESS_TEST_TIMEOUT_MS, waitFor } from '@momonga/testkit';
+import { DAEMON_PROCESS_TEST_TIMEOUT_MS, waitFor, firstGeneration } from '@momonga/testkit';
 import type { RuntimeProcess } from './run-helpers.ts';
+import { FIRST_GENERATION } from '@momonga/foundation';
 
 const control = vi.hoisted(() => ({ onFatal: [] as ((error: Error) => void)[], aborts: 0 }));
 
@@ -52,10 +53,10 @@ describe('fatal at the ready line (system timers, in-process gateway)', () => {
         else queueMicrotask(fire);
         return written;
       };
-      const outcome = await outcomeOf(startRuntimeProcess({ home: stack.temp.home, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout }));
+      const outcome = await outcomeOf(startRuntimeProcess({ generation: FIRST_GENERATION, home: stack.temp.home, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout }));
       if ('error' in outcome) {
         expect(outcome.error).toBe(fatal);
-        expect(await isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
+        expect(await isLockFree(firstGeneration(stack.temp.paths).locks.runtime)).toBe(true);
         return;
       }
       const { handle } = outcome;
@@ -63,7 +64,7 @@ describe('fatal at the ready line (system timers, in-process gateway)', () => {
       await waitFor(() => control.aborts === 1, { description: 'the fatal-triggered abort' });
       const result = await handle.close();
       expect(result).toMatchObject({ clean: false, fatal });
-      expect(await isLockFree(stack.temp.paths.locks.runtime)).toBe(true);
+      expect(await isLockFree(firstGeneration(stack.temp.paths).locks.runtime)).toBe(true);
     },
     DAEMON_PROCESS_TEST_TIMEOUT_MS,
   );

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadUserSettings } from '@momonga/config';
-import { KEYCHAIN_SERVICE, SECURITY_BINARY, codeDigestOfRunningProcess, createJsonLogger, systemClock } from '@momonga/foundation';
+import { KEYCHAIN_SERVICE, SECURITY_BINARY, codeDigestOfRunningProcess, createJsonLogger, systemClock, FIRST_GENERATION } from '@momonga/foundation';
 import { saveEndpointRecord, targetCounterOf } from '@momonga/gateway';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, createFakeSecurityPort } from '@momonga/testkit';
 import { startFake } from './cc-support.ts';
@@ -34,7 +34,7 @@ describe('the counters a started gateway lists', { timeout: REAL_PROCESS_TEST_TI
     const fake = await startFake({ scenario: 'tools-ok' });
     const home = makeHome();
     writeSettings(home, { models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath, { toolCalling: 'native' }) } } });
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
 
     const counters = await listedCounters(handle.socketPath);
 
@@ -49,10 +49,10 @@ describe('the counters a started gateway lists', { timeout: REAL_PROCESS_TEST_TI
     const secondHome = makeHome();
     writeSettings(secondHome, settings);
 
-    const first = await launchGateway({ home: firstHome, env: baseEnv(firstHome, { [KEY_VARIABLE]: 'first-value-of-the-key' }), version: PROCESS_VERSION });
+    const first = await launchGateway({ generation: FIRST_GENERATION, home: firstHome, env: baseEnv(firstHome, { [KEY_VARIABLE]: 'first-value-of-the-key' }), version: PROCESS_VERSION });
     const firstCounters = await listedCounters(first.socketPath);
     await first.close();
-    const second = await launchGateway({ home: secondHome, env: baseEnv(secondHome, { [KEY_VARIABLE]: 'second-value-of-the-key' }), version: PROCESS_VERSION });
+    const second = await launchGateway({ generation: FIRST_GENERATION, home: secondHome, env: baseEnv(secondHome, { [KEY_VARIABLE]: 'second-value-of-the-key' }), version: PROCESS_VERSION });
     const secondCounters = await listedCounters(second.socketPath);
 
     expect(firstCounters['primary']).toMatch(/^[0-9a-f]{64}$/);
@@ -69,7 +69,7 @@ describe('the counters a started gateway lists', { timeout: REAL_PROCESS_TEST_TI
       const security = portOnSecretHost(createFakeSecurityPort(() => ({ [SECRET_NAME]: value })), KEYCHAIN_HOST, host);
       const lines: string[] = [];
       const logger = createJsonLogger({ service: 'gateway', clock: systemClock, stream: { write: (chunk: string) => (lines.push(chunk), true) }, level: 'debug' });
-      const handle = await launchGateway({ home, env: baseEnv(home, host.env), version: PROCESS_VERSION, execWithStdin: security, logger });
+      const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home, host.env), version: PROCESS_VERSION, execWithStdin: security, logger });
       const counters = await listedCounters(handle.socketPath);
       await handle.close();
       return { counters, reads: security.calls, programPath: host.programPath, log: lines.join('') };
@@ -95,7 +95,7 @@ describe('the counters a started gateway lists', { timeout: REAL_PROCESS_TEST_TI
       const home = makeHome();
       writeSettings(home, settings);
       await saveEndpointRecord(path.join(homePaths(home).root, 'state', 'probe'), key, identity, IDENTITY_FIELDS, makeReport(1, 1), CURRENT_DIALECTS);
-      const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+      const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
       const counters = await listedCounters(handle.socketPath);
       await handle.close();
       return { counters, target: await resolvedPrimary(home) };

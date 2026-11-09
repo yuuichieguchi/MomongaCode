@@ -5,7 +5,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { LOCK_DATABASE_SUFFIX, ProcessLockHeldError, createUdsClient, hostKernelLock, inspectProcessLock, listenUnix, setSocketBind } from '@momonga/foundation';
+import { LOCK_DATABASE_SUFFIX, ProcessLockHeldError, createUdsClient, hostKernelLock, inspectProcessLock, listenUnix, setSocketBind, fixedSocket } from '@momonga/foundation';
 import type { KernelLockMechanism } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS, registerCleanup, withTempDir } from '@momonga/testkit';
 import { startHolder } from './support/lock-processes.ts';
@@ -67,7 +67,7 @@ const echoServer = (): http.Server =>
   );
 
 const client = (socketPath: string): ReturnType<typeof createUdsClient> => {
-  const created = createUdsClient(socketPath);
+  const created = createUdsClient(fixedSocket(socketPath));
   cleanups.push(() => created.close());
   return created;
 };
@@ -374,7 +374,7 @@ describe('createUdsClient close', () => {
       });
     });
     await listenUnix(server, socketPath);
-    const created = createUdsClient(socketPath);
+    const created = createUdsClient(fixedSocket(socketPath));
     expect((await created.request({ method: 'GET', path: '/' })).status).toBe(200);
     expect(connections).toBe(1);
     await created.close();
@@ -384,13 +384,13 @@ describe('createUdsClient close', () => {
   it('rejects requests made after close', async () => {
     const socketPath = path.join(makeDir(), 'd.sock');
     await listenUnix(echoServer(), socketPath);
-    const created = createUdsClient(socketPath);
+    const created = createUdsClient(fixedSocket(socketPath));
     await created.close();
     await expect(created.request({ method: 'GET', path: '/' })).rejects.toThrow();
   });
 
   it('allows close to be called twice', async () => {
-    const created = createUdsClient(path.join(makeDir(), 'e.sock'));
+    const created = createUdsClient(fixedSocket(path.join(makeDir(), 'e.sock')));
     await created.close();
     await created.close();
   });
@@ -411,14 +411,14 @@ describe('createUdsClient timeouts', () => {
 
   it('fails with a headers timeout when headersTimeoutMs is exceeded', async () => {
     const socketPath = await slowServer(3000);
-    const limited = createUdsClient(socketPath, { headersTimeoutMs: 100 });
+    const limited = createUdsClient(fixedSocket(socketPath), { headersTimeoutMs: 100 });
     cleanups.push(() => limited.close());
     await expect(limited.request({ method: 'GET', path: '/' })).rejects.toMatchObject({ code: 'UND_ERR_HEADERS_TIMEOUT' });
   });
 
   it('disables the headers timeout with headersTimeoutMs 0', async () => {
     const socketPath = await slowServer(100);
-    const unbounded = createUdsClient(socketPath, { headersTimeoutMs: 0, bodyTimeoutMs: 0 });
+    const unbounded = createUdsClient(fixedSocket(socketPath), { headersTimeoutMs: 0, bodyTimeoutMs: 0 });
     cleanups.push(() => unbounded.close());
     const response = await unbounded.request({ method: 'GET', path: '/' });
     expect(await response.text()).toBe('late');

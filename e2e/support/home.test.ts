@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SOCKET_PATH_LIMIT, isProcessAlive } from '@momonga/foundation';
-import { registerCleanup, spawnTracked, startLockHolder, withTempDir } from '@momonga/testkit';
+import { registerCleanup, spawnTracked, startLockHolder, withTempDir, firstGeneration } from '@momonga/testkit';
 import type { CleanupContext } from '@momonga/testkit';
 import { OVERLAP_MESSAGE, assertInside, createE2eHome, disposeAll, registerE2eCleanup } from './home.ts';
 import { parsePidsFile } from './ledger.ts';
@@ -62,10 +62,10 @@ describe('createE2eHome', () => {
   it('keeps the longest socket within the budget: supervisor.sock is the temp dir plus 45 bytes', async (context) => {
     ownMarkerCleanup(context);
     const created = await createE2eHome();
-    const longest = Buffer.byteLength(created.paths.sockets.supervisor);
+    const longest = Buffer.byteLength(firstGeneration(created.paths).sockets.supervisor);
     expect(longest).toBe(Buffer.byteLength(realTmp()) + 45);
     expect(longest).toBeLessThanOrEqual(SOCKET_PATH_LIMIT - 1);
-    for (const socket of Object.values(created.paths.sockets)) expect(Buffer.byteLength(socket)).toBeLessThanOrEqual(longest);
+    for (const socket of Object.values(firstGeneration(created.paths).sockets)) expect(Buffer.byteLength(socket)).toBeLessThanOrEqual(longest);
   });
 
   it('rejects a temp dir that would push the longest socket over the budget, naming the budget', async (context) => {
@@ -167,7 +167,7 @@ describe('disposing a home whose daemon appeared after the ledger was swept', ()
     const created = await createE2eHome();
     let holderPid: number | undefined;
     registerE2eCleanup(async () => {
-      holderPid = (await startLockHolder(context, created.paths.locks.supervisor)).pid;
+      holderPid = (await startLockHolder(context, firstGeneration(created.paths).locks.supervisor)).pid;
     });
 
     await disposeAll();

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { momongaLayout } from '@momonga/foundation';
+import { FIRST_GENERATION, generationLayout, momongaLayout } from '@momonga/foundation';
 import { REAL_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { HAS_REAL_SANDBOX } from '../helpers.ts';
 import { makeBuiltins, resultOf } from './fixtures.ts';
@@ -12,7 +12,7 @@ import { makeBuiltins, resultOf } from './fixtures.ts';
 describe.runIf(HAS_REAL_SANDBOX && process.platform === 'darwin')('T17 (d) a sandboxed Bash command cannot reach the runtime socket that serves /markers ignore', () => {
   it('a curl to POST /v1/markers/:name/ignore over the runtime socket never connects', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
     const tools = await makeBuiltins({ realSandbox: true });
-    const socket = momongaLayout(tools.layout.home).sockets.runtime;
+    const socket = generationLayout(tools.layout.home, FIRST_GENERATION).sockets.runtime;
     const socketDir = path.dirname(socket);
     const socketName = path.basename(socket);
     const cwd = process.cwd();

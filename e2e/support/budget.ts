@@ -1,4 +1,4 @@
-import { canonicalJson, createRedactor, systemClock } from '@momonga/foundation';
+import { canonicalJson, createRedactor, systemClock, fixedSocket } from '@momonga/foundation';
 import { createFsInstructionReader, createTokenMeter, outputRenderOf, proactiveGainFor } from '@momonga/context';
 import type { ContextOverflowError, TokenCounter } from '@momonga/context';
 import { COMPACTION_INSTRUCTIONS_MARKER, wireOf, wireTokensOf } from '@momonga/gateway';
@@ -400,7 +400,7 @@ export type DryRunRecord = DryRun & { readonly journal: readonly JournalEvent[];
 
 export const dryRun = async ({ plan, steps, perturbation, fillers }: DryRunInput): Promise<DryRunRecord> => {
   const env = await makeEnv();
-  const client = createGatewayClient({ socketPath: plan.gatewaySocket, clock: env.clock, version: SUPERVISOR_APP_VERSION });
+  const client = createGatewayClient({ resolveSocket: fixedSocket(plan.gatewaySocket), clock: env.clock, version: SUPERVISOR_APP_VERSION });
   try {
     const fake = env.gateway;
     const listing = await client.model(E2E_MODEL_ALIAS, { signal: AbortSignal.timeout(30_000) });

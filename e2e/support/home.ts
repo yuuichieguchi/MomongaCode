@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach } from 'vitest';
-import { SOCKET_PATH_LIMIT, ensureMomongaDirs, isProcessAlive, momongaLayout, momongaPaths } from '@momonga/foundation';
+import { FIRST_GENERATION, SOCKET_PATH_LIMIT, ensureMomongaDirs, generationLayout, isProcessAlive, momongaPaths } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { stopSupervisorHolder } from '@momonga/testkit';
 import { createProcessLedger } from './ledger.ts';
@@ -63,7 +63,7 @@ export const assertInside = (candidate: string, container: string): void => {
 };
 
 const longestSocketBytes = (tmpRoot: string, run: string): number => {
-  const sockets = Object.values(momongaLayout(path.join(tmpRoot, `${e2eEntryPrefix(run)}${ROOT_SUFFIX_PLACEHOLDER}`)).sockets);
+  const sockets = Object.values(generationLayout(path.join(tmpRoot, `${e2eEntryPrefix(run)}${ROOT_SUFFIX_PLACEHOLDER}`), FIRST_GENERATION).sockets);
   return Math.max(...sockets.map((socket) => Buffer.byteLength(socket)));
 };
 

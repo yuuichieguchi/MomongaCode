@@ -4,6 +4,7 @@ import { DAEMON_PROCESS_TEST_TIMEOUT_MS } from '@momonga/testkit';
 import { ConfigError } from '@momonga/config';
 import { writeUserSettings } from './helpers.ts';
 import { RUNTIME_VERSION, captureStream, hookLogger, makeRunHome, startRuntimeProcess } from './run-helpers.ts';
+import { FIRST_GENERATION } from '@momonga/foundation';
 
 const PROCESS_TIMEOUT = { timeout: DAEMON_PROCESS_TEST_TIMEOUT_MS };
 
@@ -21,7 +22,7 @@ describe('startup with an unusable path rule in user settings (system timers)', 
     const temp = makeRunHome();
     fs.mkdirSync(temp.paths.root, { recursive: true, mode: 0o700 });
     writeUserSettings(temp.home, { sandbox: 'none', permissions: { deny: ['Read(a[b)'] } });
-    const started = startRuntimeProcess({ home: temp.home, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout: captureStream() });
+    const started = startRuntimeProcess({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout: captureStream() });
     const error = await failureOrClose(started);
     expect(error).toBeInstanceOf(ConfigError);
     expect((error as Error).message).toContain(temp.paths.settingsFile);

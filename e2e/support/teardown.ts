@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { shortTempBase } from '@momonga/foundation';
 import { TEMP_DIR_PREFIX, stopSupervisorHolder } from '@momonga/testkit';
 import { OWNER_FILE, ROOT_PREFIX, parseEvalOwner } from '../../packages/cli/src/eval/context-host.ts';
-import { shortTempBase } from '../../packages/cli/src/eval/context-effects.ts';
 import { defaultLedgerPorts, killSelectedGroups, parsePidsFile, selectGroupsToSignal } from './ledger.ts';
 import type { LedgerPorts } from './ledger.ts';
 import { removeTree } from './remove-tree.ts';

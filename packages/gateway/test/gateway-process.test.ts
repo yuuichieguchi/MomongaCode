@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ConfigError } from '@momonga/config';
 import { FM_SERVE_DEFAULTS, GATEWAY_CONFIG_DEFAULTS } from '@momonga/gateway';
@@ -17,7 +18,7 @@ import {
   spawnSleeper,
   writeSettings,
 } from './gateway-process-helpers.ts';
-import { inspectProcessLock } from '@momonga/foundation';
+import { FIRST_GENERATION, inspectProcessLock } from '@momonga/foundation';
 
 const API_KEY_VALUE = 'momonga-test-api-key';
 const body = { model: 'fast', input: userInput('hi') };
@@ -34,10 +35,10 @@ const ccHome = async () => {
 };
 
 describe('startGatewayProcess', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
-  it('listens on run/gateway.sock and prints exactly one ready line', async () => {
+  it('listens on its generation\'s run/g1/gateway.sock and prints exactly one ready line', async () => {
     const { home } = await ccHome();
     const stdout = captureStdout();
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     expect(handle.socketPath).toBe(homePaths(home).socket);
     const lines = stdout.lines();
     expect(lines).toHaveLength(1);
@@ -50,12 +51,12 @@ describe('startGatewayProcess', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () =>
     expect(health.body).toMatchObject({ version: PROCESS_VERSION, apiVersion: 1, pid: process.pid, state: 'running', startedAt: ready.startedAt });
   });
 
-  it('takes run/gateway.lock before opening gateway.db, so a second instance fails without touching it', async (context) => {
+  it('takes its generation\'s run/g1/gateway.lock before opening gateway.db, so a second instance fails without touching it', async (context) => {
     const { home } = await ccHome();
     const paths = homePaths(home);
-    fs.mkdirSync(`${paths.root}/run`, { recursive: true, mode: 0o700 });
+    fs.mkdirSync(path.dirname(paths.lock), { recursive: true, mode: 0o700 });
     const holder = (await startLockHolder(context, paths.lock)).pid;
-    await expect(launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION })).rejects.toThrow(String(holder));
+    await expect(launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION })).rejects.toThrow(String(holder));
     expect(fs.existsSync(paths.db)).toBe(false);
     expect(fs.existsSync(paths.key)).toBe(false);
     expect(fs.readFileSync(paths.lock, 'utf8').trim()).toBe(String(holder));
@@ -63,9 +64,9 @@ describe('startGatewayProcess', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () =>
 
   it('refuses a second live instance on the same home', async () => {
     const { home } = await ccHome();
-    await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     const dbStat = fs.statSync(homePaths(home).db);
-    await expect(launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION })).rejects.toThrow(String(process.pid));
+    await expect(launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION })).rejects.toThrow(String(process.pid));
     expect(fs.statSync(homePaths(home).db).mtimeMs).toBe(dbStat.mtimeMs);
   });
 
@@ -73,7 +74,7 @@ describe('startGatewayProcess', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () =>
     const home = makeHome();
     writeSettings(home, { models: { targets: { '9-bad-name': { adapter: 'fm' } } } });
     const paths = homePaths(home);
-    const failure = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION }).then(
+    const failure = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION }).then(
       () => undefined,
       (error: unknown) => error,
     );
@@ -86,24 +87,24 @@ describe('startGatewayProcess', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () =>
   it('creates a 32-byte 0600 key file once and reuses it on restart', async () => {
     const { home } = await ccHome();
     const paths = homePaths(home);
-    const first = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const first = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     const stat = fs.lstatSync(paths.key);
     expect(stat.isFile()).toBe(true);
     expect(stat.mode & 0o777).toBe(0o600);
     expect(stat.size).toBe(32);
     const original = fs.readFileSync(paths.key);
     await first.close();
-    await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     expect(fs.readFileSync(paths.key).equals(original)).toBe(true);
   });
 
   it('refuses to start when gateway.db exists but gateway.key is missing', async () => {
     const { home } = await ccHome();
     const paths = homePaths(home);
-    const first = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const first = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     await first.close();
     fs.rmSync(paths.key);
-    await expect(launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION })).rejects.toThrow(
+    await expect(launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION })).rejects.toThrow(
       `gateway.db exists but gateway.key is missing at ${paths.key}; stored compaction items can no longer be verified. Move ${paths.db} aside to start fresh.`,
     );
     expect(fs.existsSync(paths.key)).toBe(false);
@@ -113,14 +114,14 @@ describe('startGatewayProcess', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () =>
   it('close() releases the lock and removes the socket, and is idempotent', async () => {
     const { home } = await ccHome();
     const paths = homePaths(home);
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     expect(fs.existsSync(paths.lock)).toBe(true);
     expect(fs.readFileSync(paths.lock, 'utf8').trim()).toBe(String(process.pid));
     await handle.close();
     expect((await inspectProcessLock(paths.lock)).state).toBe('free');
     expect(fs.existsSync(paths.socket)).toBe(false);
     await handle.close();
-    const again = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const again = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     expect(again.socketPath).toBe(paths.socket);
   });
 
@@ -128,7 +129,7 @@ describe('startGatewayProcess', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () =>
     const { fake, home } = await ccHome();
     const clock = createFakeClock(START_MS);
     const timers = createFakeTimers(clock);
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION, clock, timers });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, clock, timers });
     const client = clientFor(handle.socketPath);
     const key = { 'idempotency-key': 'ttl-default' };
     const first = await readJson(await postJson(client, '/v1/responses', body, key));
@@ -152,7 +153,7 @@ describe('startGatewayProcess credentials', { timeout: REAL_PROCESS_TEST_TIMEOUT
     writeSettings(home, {
       models: { aliases: { fast: ['primary'] }, targets: { primary: ccTarget(fake.socketPath, { apiKeyEnv: 'MOMONGA_TEST_KEY' }) } },
     });
-    const handle = await launchGateway({ home, env: baseEnv(home, { MOMONGA_TEST_KEY: API_KEY_VALUE }), version: PROCESS_VERSION });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home, { MOMONGA_TEST_KEY: API_KEY_VALUE }), version: PROCESS_VERSION });
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', body));
     expect(response.status).toBe(200);
     expect(outputText(response.body)).toBe(FAKE_DETERMINISTIC_REPLY);
@@ -173,7 +174,7 @@ describe('startGatewayProcess credentials', { timeout: REAL_PROCESS_TEST_TIMEOUT
         targets: { keyed: ccTarget(keyed.socketPath, { apiKeyEnv: 'MOMONGA_MISSING_KEY' }), backup: ccTarget(backup.socketPath) },
       },
     });
-    const handle = await launchGateway({ home, env: baseEnv(home, extraEnv), version: PROCESS_VERSION });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home, extraEnv), version: PROCESS_VERSION });
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', body));
     expect(response.status).toBe(200);
     expect(response.body.momonga.target).toBe('backup');
@@ -188,7 +189,7 @@ describe('startGatewayProcess credentials', { timeout: REAL_PROCESS_TEST_TIMEOUT
     writeSettings(home, {
       models: { aliases: { fast: ['keyed'] }, targets: { keyed: ccTarget(keyed.socketPath, { apiKeyEnv: 'MOMONGA_MISSING_KEY' }) } },
     });
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     const response = await readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', body));
     expect(response.status).toBe(401);
     expectErrorBody(response.body, { type: 'invalid_request', code: 'missing_api_key', param: 'MOMONGA_MISSING_KEY' });
@@ -203,7 +204,7 @@ describe('startGatewayProcess credentials', { timeout: REAL_PROCESS_TEST_TIMEOUT
     writeSettings(home, {
       models: { aliases: { first: ['one'], second: ['two'] }, targets: { one: ccTarget(one.socketPath), two: ccTarget(two.socketPath) } },
     });
-    const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+    const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
     const client = clientFor(handle.socketPath);
     expect((await readJson(await postJson(client, '/v1/responses', { ...body, model: 'second' }))).status).toBe(200);
     expect(completions(one)).toHaveLength(0);

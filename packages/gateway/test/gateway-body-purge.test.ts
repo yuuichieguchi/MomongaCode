@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BODY_PURGE_INTERVAL_MS } from '@momonga/observability';
 import { startFake } from './cc-support.ts';
 import { PROCESS_VERSION, baseEnv, captureStdout, ccTarget, homePaths, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
+import { FIRST_GENERATION } from '@momonga/foundation';
 
 type Purge = { ticks: (() => void)[]; legacyRetentionMs: number | undefined; stops: number };
 
@@ -68,7 +69,7 @@ const startWith = async (telemetry?: Record<string, unknown>) => {
     ...(telemetry === undefined ? {} : { telemetry }),
   });
   captureStdout();
-  const handle = await launchGateway({ home, env: baseEnv(home), version: PROCESS_VERSION });
+  const handle = await launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION });
   return { home, handle };
 };
 

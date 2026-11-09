@@ -8,6 +8,7 @@ import { postJson, readJson, userInput } from './gateway-helpers.ts';
 import { readFileTool, startFake } from './cc-support.ts';
 import { PROCESS_VERSION, baseEnv, ccTarget, clientFor, launchGateway, makeHome, writeSettings } from './gateway-process-helpers.ts';
 import { OLLAMA_MODEL, startFakeOllama } from './ollama-support.ts';
+import { FIRST_GENERATION } from '@momonga/foundation';
 
 const launchWith = async (target: Record<string, unknown>) => {
   const home = makeHome();
@@ -18,6 +19,7 @@ const launchWith = async (target: Record<string, unknown>) => {
     return new Promise<T>(() => undefined);
   };
   const handle = await launchGateway({
+    generation: FIRST_GENERATION,
     home,
     env: baseEnv(home),
     version: PROCESS_VERSION,

@@ -4,7 +4,7 @@ import { DEFAULT_VERIFICATION_COMMANDS, DEFAULT_VERIFICATION_MANIFESTS } from '@
 import { canonicalJson, momongaPaths, sha256Hex } from '@momonga/foundation';
 import type { MemoryRecord, RunEventPayload } from '@momonga/protocol';
 import { protectedRootAreasOf } from '@momonga/runtime';
-import { createFakeTimers, usageOf } from '@momonga/testkit';
+import { createFakeTimers, usageOf, firstGeneration } from '@momonga/testkit';
 import type { RuntimeStore } from '@momonga/store';
 import { MEMORY_TEXT_MAX_CHARS, createMemoryTools } from '@momonga/tools';
 import { REQUEUE_BASE_MS, REQUEUE_MAX_MS } from '../../src/process/constants.ts';
@@ -967,6 +967,6 @@ describe('the model has no way to decide on a candidate', () => {
   it('keeps the review routes behind the runtime socket, which the sandbox protects from the model', async () => {
     const paths = momongaPaths('/home/user');
     const areas = protectedRootAreasOf(paths, '/home/user');
-    expect(areas.some((area) => paths.sockets.runtime.startsWith(`${area}/`) || paths.sockets.runtime === area)).toBe(true);
+    expect(areas.some((area) => firstGeneration(paths).sockets.runtime.startsWith(`${area}/`) || firstGeneration(paths).sockets.runtime === area)).toBe(true);
   });
 });

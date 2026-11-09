@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createUserSettingsCache, noKeptRecords } from '@momonga/config';
 import type { UserSettingsCache, UserSettingsSnapshot } from '@momonga/config';
-import { createJsonLogger, momongaPaths } from '@momonga/foundation';
+import { FIRST_GENERATION, createJsonLogger, generationLayout, momongaPaths, roleEndpoint } from '@momonga/foundation';
 import type { MomongaPaths } from '@momonga/foundation';
 import { createFakeClock, createFakeKernelLock, createFakeTimers, parseJsonLines, withTempDir } from '@momonga/testkit';
 import type { CleanupContext, FakeClock, FakeKernelLock, FakeTimers, JsonLine } from '@momonga/testkit';
@@ -118,6 +118,8 @@ export const createManagerHarness = (context: CleanupContext, options: ManagerHa
   const paths = momongaPaths(home, process.platform, {});
   fs.mkdirSync(paths.markers.daemons, { recursive: true });
   fs.mkdirSync(paths.logs, { recursive: true });
+  const layout = generationLayout(home, FIRST_GENERATION);
+  fs.mkdirSync(layout.dir, { recursive: true });
   writeSettings(home, options.settings ?? {});
   const clock = createFakeClock(T0);
   const timers = createFakeTimers(clock);
@@ -168,6 +170,8 @@ export const createManagerHarness = (context: CleanupContext, options: ManagerHa
     },
     home,
     paths,
+    generation: FIRST_GENERATION,
+    endpoint: roleEndpoint(layout, role),
     launcher,
     env: options.env ?? { PATH: '/usr/bin:/bin', HOME: home, FOO: 'foo' },
     spawn: options.port ?? port,
@@ -199,6 +203,7 @@ export const createManagerHarness = (context: CleanupContext, options: ManagerHa
     onBackgroundError: (error, source) => {
       backgroundErrors.push({ error, source });
     },
+    onReady: () => undefined,
     ...options.overrides,
   };
   harness.manager = createChildManager(managerOptions);
