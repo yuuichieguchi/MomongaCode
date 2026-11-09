@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { MessageChannel, Worker } from 'node:worker_threads';
 import type { MessagePort } from 'node:worker_threads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { migrateRuntimeDatabase } from '../packages/store/src/index.ts';
+import { blobDirectoryOf, migrateRuntimeDatabase } from '../packages/store/src/index.ts';
 import { bundle, bundleJournalThread, journalThreadModule, repoRoot, writeJournalThreadModule } from './bundle.ts';
 import { buildSea } from './sea.ts';
 import { RUNS_MACOS_ARM64_ARTIFACTS } from './support/host.ts';
@@ -29,16 +29,26 @@ const freshDatabase = (root: string): { databasePath: string; dev: number; ino: 
 
 const nextMessage = (port: MessagePort, worker: Worker): Promise<Record<string, unknown>> =>
   new Promise((resolve, reject) => {
-    const onError = (error: Error): void => {
+    const stopListening = (): void => {
       port.off('message', onMessage);
+      worker.off('error', onError);
+      worker.off('exit', onExit);
+    };
+    const onError = (error: Error): void => {
+      stopListening();
       reject(error);
     };
+    const onExit = (exitCode: number): void => {
+      stopListening();
+      reject(new Error(`the journal thread exited with code ${exitCode} before it posted a message`));
+    };
     const onMessage = (message: Record<string, unknown>): void => {
-      worker.off('error', onError);
+      stopListening();
       resolve(message);
     };
     port.once('message', onMessage);
     worker.once('error', onError);
+    worker.once('exit', onExit);
   });
 
 describe('the journal thread build', () => {
@@ -60,7 +70,7 @@ describe('the journal thread build', () => {
       const code = await bundleJournalThread();
       const { databasePath, dev, ino } = freshDatabase(root);
       const { port1, port2 } = new MessageChannel();
-      const worker = new Worker(code, { eval: true, workerData: { databasePath, port: port2 }, transferList: [port2] });
+      const worker = new Worker(code, { eval: true, workerData: { databasePath, blobsDir: blobDirectoryOf(databasePath), port: port2 }, transferList: [port2] });
       try {
         expect(await nextMessage(port1, worker)).toEqual({ ready: true, dev, ino });
         const reply = nextMessage(port1, worker);
