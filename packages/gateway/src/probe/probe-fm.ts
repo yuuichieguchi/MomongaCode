@@ -1,5 +1,5 @@
 import { declaredChildEnv, minimalChildEnv, probeKeyComponentLabel, readProbeKeyComponents } from '@momonga/foundation';
-import type { BinaryHashCache, ManagedInstancePaths, MomongaPaths } from '@momonga/foundation';
+import type { BinaryHashCache, HeldHostReadings, ManagedInstancePaths, MomongaPaths } from '@momonga/foundation';
 import { knownKeyOf, managedServerDigest, probeKeyOf } from '@momonga/config';
 import type { ProbeKey } from '@momonga/config';
 import type { DialectId, ManagedServerDescription, ProbeReport, ToolCallingMode } from '@momonga/protocol';
@@ -31,6 +31,7 @@ export type ManagedKeyReaderOptions = {
   exec: ExecFn;
   platform: NodeJS.Platform;
   hashes: BinaryHashCache;
+  host?: HeldHostReadings;
 };
 
 export const managedKeyReader =
@@ -39,7 +40,7 @@ export const managedKeyReader =
     probeKeyOf({
       subject: options.description.id,
       identity: options.description.identity,
-      readings: await readProbeKeyComponents({ identity: options.description.identity, binary: options.binary, platform: options.platform, exec: options.exec, signal, hashes: options.hashes }),
+      readings: await readProbeKeyComponents({ identity: options.description.identity, binary: options.binary, platform: options.platform, exec: options.exec, signal, hashes: options.hashes, ...(options.host === undefined ? {} : { host: options.host }) }),
       model: options.model,
     });
 

@@ -68,9 +68,35 @@ export const createBinaryHashCache = (): BinaryHashCache => {
   };
 };
 
+export type HeldHostReadings = { held(component: string, read: () => Promise<ProbeKeyReading>): Promise<ProbeKeyReading>; release(): void };
+
+export const createHeldHostReadings = (): HeldHostReadings => {
+  const readings = new Map<string, Promise<ProbeKeyReading>>();
+  return {
+    held: (component, read) => {
+      const known = readings.get(component);
+      if (known !== undefined) return known;
+      const reading = read();
+      readings.set(component, reading);
+      reading.then(
+        (result) => {
+          if (result.kind === 'unreadable' && readings.get(component) === reading) readings.delete(component);
+        },
+        () => {
+          if (readings.get(component) === reading) readings.delete(component);
+        },
+      );
+      return reading;
+    },
+    release: () => readings.clear(),
+  };
+};
+
+const UNHELD: HeldHostReadings = { held: (_component, read) => read(), release: () => undefined };
+
 const UNCACHED: BinaryHashCache = { sha256Of: (file, signal) => streamedSha256(file, signal) };
 
-type ComponentRequest = { binary: string; platform: NodeJS.Platform; exec: HostExec; signal: AbortSignal; hashes: BinaryHashCache };
+type ComponentRequest = { binary: string; platform: NodeJS.Platform; exec: HostExec; signal: AbortSignal; hashes: BinaryHashCache; host: HeldHostReadings };
 
 type ComponentReader = (request: ComponentRequest) => Promise<ProbeKeyReading>;
 
@@ -100,9 +126,10 @@ const COMPONENT_READERS: Readonly<Record<string, ComponentReader>> = {
       return { kind: 'unreadable', reason: `the executable ${binary} cannot be read: ${reasonOf(error)}` };
     }
   },
-  hostOsBuild: async ({ platform, exec, signal }) => {
+  hostOsBuild: async ({ platform, exec, signal, host }) => {
     const reader = OS_BUILD_READERS[platform];
-    return reader === undefined ? { kind: 'unreadable', reason: `no OS build reader exists on ${platform}` } : reader({ exec, signal });
+    if (reader === undefined) return { kind: 'unreadable', reason: `no OS build reader exists on ${platform}` };
+    return host.held('hostOsBuild', () => reader({ exec, signal }));
   },
 };
 
@@ -113,15 +140,17 @@ export type ReadProbeKeyComponentsRequest = {
   exec: HostExec;
   signal: AbortSignal;
   hashes?: BinaryHashCache;
+  host?: HeldHostReadings;
 };
 
 export const readProbeKeyComponents = async (request: ReadProbeKeyComponentsRequest): Promise<ProbeKeyReadings> => {
   const hashes = request.hashes ?? UNCACHED;
+  const host = request.host ?? UNHELD;
   const readings: ProbeKeyReadings = {};
   for (const component of request.identity) {
     const reader = COMPONENT_READERS[component];
     if (reader === undefined) throw new Error(`the probe key component ${component} has no reader`);
-    readings[component] = await reader({ binary: request.binary, platform: request.platform, exec: request.exec, signal: request.signal, hashes });
+    readings[component] = await reader({ binary: request.binary, platform: request.platform, exec: request.exec, signal: request.signal, hashes, host });
   }
   return readings;
 };

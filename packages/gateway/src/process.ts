@@ -15,6 +15,7 @@ import {
   STARTUP_TIMEOUT_MS,
   codeDigestOfRunningProcess,
   createBinaryHashCache,
+  createHeldHostReadings,
   managedInstancePaths,
   momongaPaths,
   secretKeyFile,
@@ -265,7 +266,9 @@ const createManagedAdapter = async (wiring: ManagedAdapterWiring): Promise<{ ada
   const { name, target, description, paths } = wiring;
   const serving = managedInstancePaths(paths, { owner: 'gateway', purpose: 'serve', target: name });
   const probing = managedInstancePaths(paths, { owner: 'gateway', purpose: 'probe', target: name });
-  const readKey = managedKeyReader({ description, binary: target.binary, model: target.model, exec: wiring.exec, platform: process.platform, hashes: wiring.hashes });
+  const host = createHeldHostReadings();
+  const readKey = managedKeyReader({ description, binary: target.binary, model: target.model, exec: wiring.exec, platform: process.platform, hashes: wiring.hashes, host });
+  const freshKey = managedKeyReader({ description, binary: target.binary, model: target.model, exec: wiring.exec, platform: process.platform, hashes: wiring.hashes });
   const currency = managedCurrencyOf(description, { userDialects: wiring.userDialects });
   const spawnPort = wiring.spawn === undefined ? {} : { spawn: wiring.spawn };
   let managed: ManagedTarget | undefined;
@@ -306,7 +309,7 @@ const createManagedAdapter = async (wiring: ManagedAdapterWiring): Promise<{ ada
     target: name,
     precondition: managedPrecondition(description, name, target.binary, wiring.exec, wiring.files.isUsableBinary, wiring.requestLimitMs),
     probeRecordDir: paths.probe,
-    readKey,
+    readKey: freshKey,
     keySignal: () => AbortSignal.timeout(wiring.requestLimitMs),
     measure,
     currency,
@@ -321,6 +324,7 @@ const createManagedAdapter = async (wiring: ManagedAdapterWiring): Promise<{ ada
     requestLimitMs: wiring.requestLimitMs,
     isUsableBinary: wiring.files.isUsableBinary,
     readKey,
+    onInstanceEnd: () => host.release(),
     startProbe: (key) => wiring.autoProbe.ensure(subject, lockKeyOf(key)),
     instanceProbe: (unknown) =>
       createInstanceProbe({

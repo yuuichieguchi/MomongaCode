@@ -56,6 +56,7 @@ export type ManagedTargetOptions = {
   requestLimitMs: number;
   isUsableBinary: (binary: string) => Promise<boolean>;
   readKey: (signal: AbortSignal) => Promise<ProbeKey>;
+  onInstanceEnd: () => void;
   startProbe: (key: KnownProbeKey) => Promise<Probing>;
   instanceProbe: (unknown: { component: string; reason: string }) => InstanceProbe<ProbeReport>;
   currency: ManagedRecordCurrency;
@@ -306,7 +307,10 @@ export const createManagedTarget = async (options: ManagedTargetOptions): Promis
     },
     isGuardrail: (_target, _status, body) => lastRecorded().isGuardrail(body),
     vocabulary,
-    childExited: () => unknownProbe?.probe.restarted(),
+    childExited: () => {
+      options.onInstanceEnd();
+      unknownProbe?.probe.restarted();
+    },
     close: async (stop) => {
       await Promise.all([options.server.stop(stop === undefined ? undefined : { stopGraceMs: stop.managedServerStopGraceMs }), unknownProbe?.probe.close()]);
     },
