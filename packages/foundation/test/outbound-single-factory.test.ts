@@ -4,8 +4,12 @@ import { describe, expect, it } from 'vitest';
 
 const packagesDir = path.resolve(import.meta.dirname, '..', '..');
 
+const CLIENT_CLASS = '(?:https?\\.)?(?:Agent|ProxyAgent|EnvHttpProxyAgent|Socks5ProxyAgent|HttpsProxyAgent|HttpProxyAgent|Pool|Dispatcher)';
+
 const OUTBOUND_CLIENT = [
-  /\bnew\s+(?:Agent|ProxyAgent|EnvHttpProxyAgent|Socks5ProxyAgent)\s*\(/,
+  new RegExp(`\\bnew\\s+${CLIENT_CLASS}\\s*[(<]`),
+  new RegExp(`\\bextends\\s+${CLIENT_CLASS}\\b`),
+  /\btypeof\s+https?\.Agent\b/,
   /(?<![.\w$])fetch\s*\(/,
   /\b(?:undici|globalThis)\.fetch\b/,
 ];
