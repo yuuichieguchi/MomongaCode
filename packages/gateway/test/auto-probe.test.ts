@@ -4,7 +4,8 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createJsonLogger, FIRST_GENERATION } from '@momonga/foundation';
 import { TARGET_NOT_READY, TARGET_PROBING, TARGET_PROBING_MESSAGE } from '@momonga/protocol';
-import type { ProbeReport } from '@momonga/protocol';
+import type { Probing, ProbeReport } from '@momonga/protocol';
+import * as gatewayModule from '@momonga/gateway';
 import { ProbeInProgressError, acquireProbeLock, probeManagedFm } from '@momonga/gateway';
 import type { ProbeRecordKey } from '@momonga/gateway';
 import { DAEMON_PROCESS_TEST_TIMEOUT_MS, FAKE_OS_BUILD, createFakeClock, createFakeFm, fakeExec, killGroupsForCleanup } from '@momonga/testkit';
@@ -328,5 +329,109 @@ describe('the automatic probe of an fm target with no probe record', { timeout: 
       expect(gateway.logLines.some((line) => line.includes('the automatic probe of the target fm was stopped'))).toBe(true);
       expect(gateway.logLines.some((line) => line.includes('failed and recorded nothing'))).toBe(false);
     });
+  });
+});
+
+type Report = { contextWindow: number };
+type Ensured = { kind: 'probing'; probing: Probing } | { kind: 'measured'; report: Report };
+type InstanceProbe = { ensure(): Promise<Ensured>; restarted(): void; close(): Promise<void> };
+type InstanceProbeOptions = {
+  target: string;
+  unknown: { component: string; reason: string };
+  dir: string;
+  measure: (signal: AbortSignal) => Promise<Report>;
+  retryAfterMs: number;
+  onNotice: (text: string) => void;
+};
+
+const createInstanceProbe = (options: InstanceProbeOptions): InstanceProbe => {
+  const value = (gatewayModule as Record<string, unknown>)['createInstanceProbe'];
+  if (value === undefined) throw new Error('@momonga/gateway does not export createInstanceProbe');
+  return (value as (options: InstanceProbeOptions) => InstanceProbe)(options);
+};
+
+const RETRY_AFTER_MS = 120_000;
+const REASON = 'sw_vers is not on PATH';
+const NOTICE = `the target "apple": its probe key needs the OS build, which cannot be read: ${REASON}; it is measured each time its server starts and no probe record is kept`;
+
+const deferredReport = <T>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+};
+
+const setupInstance = () => {
+  const dir = makeDir();
+  const notices: string[] = [];
+  const pending: Array<ReturnType<typeof deferredReport<Report>>> = [];
+  const probe = createInstanceProbe({
+    target: 'apple',
+    dir,
+    unknown: { component: 'hostOsBuild', reason: REASON },
+    measure: () => {
+      const next = deferredReport<Report>();
+      pending.push(next);
+      return next.promise;
+    },
+    retryAfterMs: RETRY_AFTER_MS,
+    onNotice: (text) => notices.push(text),
+  });
+  return { probe, notices, pending, dir };
+};
+
+const settleRounds = async (): Promise<void> => {
+  for (let round = 0; round < 10; round += 1) await new Promise<void>((resolve) => setImmediate(resolve));
+};
+
+describe('P11 NoRecordUnderUnknown and P12 MemoryIsThisInstance: a probe key component that cannot be read (design-managed-servers section 17, item 10)', () => {
+  it('P11 NoRecordUnderUnknown: reads and writes no record and takes no record lock in the probe directory, before or after the measurement', async () => {
+    const { probe, pending, dir } = setupInstance();
+    await probe.ensure();
+    pending[0]?.resolve({ contextWindow: 4096 });
+    await settleRounds();
+    await probe.ensure();
+    expect(fs.readdirSync(dir)).toEqual([]);
+  });
+
+  it('answers the first request with the D5 probing answer and starts one measurement of the running instance', async () => {
+    const { probe, pending } = setupInstance();
+    expect(await probe.ensure()).toEqual({ kind: 'probing', probing: { state: 'probing', message: TARGET_PROBING_MESSAGE, retryAfterSeconds: 120 } });
+    expect(pending).toHaveLength(1);
+  });
+
+  it('says once per instance, in English, which component cannot be read and that no record is kept', async () => {
+    const { probe, notices } = setupInstance();
+    await probe.ensure();
+    await probe.ensure();
+    expect(notices).toEqual([NOTICE]);
+  });
+
+  it('runs one measurement while requests keep arriving', async () => {
+    const { probe, pending } = setupInstance();
+    await probe.ensure();
+    expect((await probe.ensure()).kind).toBe('probing');
+    expect(pending).toHaveLength(1);
+  });
+
+  it('P12 MemoryIsThisInstance: serves from the in-memory result of this instance once the measurement ends', async () => {
+    const { probe, pending } = setupInstance();
+    await probe.ensure();
+    pending[0]?.resolve({ contextWindow: 4096 });
+    await settleRounds();
+    expect(await probe.ensure()).toEqual({ kind: 'measured', report: { contextWindow: 4096 } });
+    expect(pending).toHaveLength(1);
+  });
+
+  it('P12 MemoryIsThisInstance: measures again, and says so again, when its server starts again', async () => {
+    const { probe, pending, notices } = setupInstance();
+    await probe.ensure();
+    pending[0]?.resolve({ contextWindow: 4096 });
+    await settleRounds();
+    probe.restarted();
+    expect((await probe.ensure()).kind).toBe('probing');
+    expect(pending).toHaveLength(2);
+    expect(notices).toEqual([NOTICE, NOTICE]);
   });
 });
