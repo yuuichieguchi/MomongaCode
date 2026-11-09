@@ -1,12 +1,13 @@
 import type { MomongaPaths } from '@momonga/foundation';
 import { currentSocketResolver } from '@momonga/foundation';
 import { LOCAL_SERVER_CANDIDATES } from '@momonga/protocol';
-import type { AddRuleRequest, DetectedLocalServer, ElicitationAnswerRecord, GatewayHealth, GoverningFactView, ImageAttachment, MemoryView, MomongaModelEntry, PermissionMode, RuleAddResponse, SkillsResponse } from '@momonga/protocol';
+import type { AddRuleRequest, ElicitationAnswerRecord, LocalServerDetection, GatewayHealth, GoverningFactView, ImageAttachment, MemoryView, MomongaModelEntry, PermissionMode, RuleAddResponse, SkillsResponse } from '@momonga/protocol';
 import { addModelConnection } from '@momonga/config';
 import type { ModelConnection, WrittenConnection } from '@momonga/config';
 import { createGatewayClient } from '../client/gateway-client.ts';
 import type { GatewayClient, PlanGatewayClient } from '../client/gateway-client.ts';
 import { withIdentityReadFetch } from '../network.ts';
+import { localManagedPorts } from '../local-managed-ports.ts';
 import { loopbackSignInListener } from '../plan/sign-in.ts';
 import type { SandboxKind, SignInListener, StartSignInListener } from '../plan/sign-in.ts';
 import { dismissNotice, readDismissedNotices } from './dismissed-notices.ts';
@@ -66,7 +67,7 @@ export type TuiBackend = {
   health(): Promise<GatewayHealth>;
   sandbox(): Promise<SandboxKind>;
   startSignInListener: StartSignInListener;
-  detectLocalServers(typed: readonly string[]): Promise<readonly DetectedLocalServer[]>;
+  detectLocalServers(typed: readonly string[]): Promise<readonly LocalServerDetection[]>;
   addModelConnection(connection: ModelConnection): Promise<WrittenConnection>;
   dismissedNotices(): Promise<DismissedNotices>;
   dismissNotice(key: string): Promise<void>;
@@ -113,7 +114,8 @@ export const createTuiBackend = (
     signOut: (request) => withGateway((gateway) => gateway.plan.signOut(request)),
     setActive: (request) => withGateway((gateway) => gateway.plan.setActive(request)),
     resume: (account, request) => withGateway((gateway) => gateway.plan.resume(account, request)),
-    accountModels: (account) => withGateway((gateway) => gateway.plan.accountModels(account)),
+    resetHost: () => withGateway((gateway) => gateway.plan.resetHost()),
+    accountModels: (account, request) => withGateway((gateway) => gateway.plan.accountModels(account, request)),
     addTarget: (account, request) => withGateway((gateway) => gateway.plan.addTarget(account, request)),
   };
 
@@ -125,7 +127,7 @@ export const createTuiBackend = (
     startSignInListener: loopbackSignInListener(closing.signal),
     detectLocalServers: async (typed) => {
       const { detectLocalServers } = await import('@momonga/gateway');
-      return withIdentityReadFetch(ports, (fetch) => detectLocalServers({ candidates: LOCAL_SERVER_CANDIDATES, typed, signal: closing.signal, fetch }));
+      return withIdentityReadFetch(ports, (fetch) => detectLocalServers({ candidates: LOCAL_SERVER_CANDIDATES, typed, signal: closing.signal, fetch, ...localManagedPorts() }));
     },
     addModelConnection: (connection) => addModelConnection(paths.settingsFile, connection),
     dismissedNotices: () => readDismissedNotices(paths.state, onNotice),

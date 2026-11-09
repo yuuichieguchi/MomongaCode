@@ -57,3 +57,21 @@ export const signIn = async (ports: SignInPorts, request: SignInRequest): Promis
     await listener.close();
   }
 };
+
+const PASTED_CALLBACK_MAX_BYTES = 8 * 1024;
+
+export const PASTED_CALLBACK_PROBLEMS = {
+  tooLong: 'That text is too long to be a redirect URL.',
+  notRedirect: 'That is not a redirect URL from the browser.',
+  otherSignIn: 'That URL did not belong to this sign-in. Paste the URL again.',
+} as const;
+
+const parsedUrl = (text: string): URL | undefined => (URL.canParse(text) ? new URL(text) : undefined);
+
+export const pastedCallbackProblem = (text: string, state: string): string | undefined => {
+  if (Buffer.byteLength(text, 'utf8') > PASTED_CALLBACK_MAX_BYTES) return PASTED_CALLBACK_PROBLEMS.tooLong;
+  const query = parsedUrl(text.trim())?.searchParams;
+  const returned = query?.get('state');
+  if (query === undefined || returned === null || returned === undefined || (!query.has('code') && !query.has('error'))) return PASTED_CALLBACK_PROBLEMS.notRedirect;
+  return returned === state ? undefined : PASTED_CALLBACK_PROBLEMS.otherSignIn;
+};

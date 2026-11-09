@@ -1,5 +1,5 @@
 import { SECRET_NAME_PATTERN } from '@momonga/foundation';
-import type { DetectedLocalServer, MomongaModelEntry, PlanAccountView, PlanAccountsResponse, PlanProfileView, TargetHealth } from '@momonga/protocol';
+import type { DetectedLocalServer, DetectedManagedServer, LocalServerDetection, MomongaModelEntry, PlanAccountView, PlanAccountsResponse, PlanProfileView, TargetHealth } from '@momonga/protocol';
 import type { ModelConnection } from '@momonga/config';
 import { SANDBOX_OFF_NOTICE, accountRowLabel, accountsOf, nextAccountLabel, profileOf, profileStateText, savedAccountAction } from '../plan/accounts.ts';
 import { signIn } from '../plan/sign-in.ts';
@@ -11,6 +11,7 @@ export type PlanFlowPorts = OverlayPorts & {
   info(text: string): void;
   connected(alias: string): Promise<void>;
   refreshConnection(): Promise<void>;
+  signedIn(): Promise<void>;
 };
 
 export type PlanFlows = {
@@ -70,7 +71,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
   };
 
   const catalogPicker = async (profile: PlanProfileView, account: string): Promise<void> => {
-    const catalog = await backend.plan.accountModels(account);
+    const catalog = await backend.plan.accountModels(account, { profile: profile.id });
     if (catalog.models.length === 0) {
       ports.info(`${profile.messages.identityLabel} lists no model for ${account}`);
       return;
@@ -142,6 +143,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
       case 'signed_in':
         ports.info(`Signed in as ${answer.account.label}${answer.account.email === undefined ? '' : ` (${answer.account.email})`}`);
         await afterSignIn(profile, answer.account, answer.firstSignIn);
+        await ports.signedIn();
         return;
     }
   };
@@ -221,14 +223,30 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     }
     await chooseFrom(
       { title: 'Local model servers' },
-      servers.flatMap((server) =>
-        server.models.map((model): Choice => {
-          const reason = unusableReason(server, model);
-          if (reason !== undefined) return { row: { label: `${model.id} · ${server.baseUrl} · ${reason}`, disabled: true }, act: async () => undefined };
-          return { row: { label: `${model.id} · ${server.baseUrl} · ${server.shape}` }, act: () => connectLocalModel(server, model) };
-        }),
-      ),
+      servers.flatMap(detectedChoices),
     );
+  };
+
+  const managedChoice = (server: DetectedManagedServer): Choice => {
+    if (server.refused !== undefined) {
+      const remedy = server.refused.remedy === undefined ? '' : ` (${server.refused.remedy})`;
+      return { row: { label: `${server.id} · ${server.binary} · ${server.refused.message}${remedy}`, disabled: true }, act: async () => undefined };
+    }
+    return { row: { label: `${server.id} · ${server.binary} · managed` }, act: () => connectManagedServer(server) };
+  };
+
+  const detectedChoices = (server: LocalServerDetection): Choice[] => {
+    if (server.shape === 'managed') return [managedChoice(server)];
+    return server.models.map((model): Choice => {
+      const reason = unusableReason(server, model);
+      if (reason !== undefined) return { row: { label: `${model.id} · ${server.baseUrl} · ${reason}`, disabled: true }, act: async () => undefined };
+      return { row: { label: `${model.id} · ${server.baseUrl} · ${server.shape}` }, act: () => connectLocalModel(server, model) };
+    });
+  };
+
+  const connectManagedServer = async (server: DetectedManagedServer): Promise<void> => {
+    const written = await backend.addModelConnection({ kind: 'managed', server: server.id });
+    await ports.connected(written.alias);
   };
 
   const connectLocalModel = async (server: DetectedLocalServer, model: DetectedLocalServer['models'][number]): Promise<void> => {
@@ -318,7 +336,7 @@ export const createPlanFlows = (ports: PlanFlowPorts): PlanFlows => {
     const [entries, health, listed] = await Promise.all([backend.models(), backend.health(), backend.plan.accounts()]);
     const targeted = new Set(entries.flatMap((entry) => entry.targets));
     const signedIn = listed.accounts.filter((account) => account.state === 'active');
-    const catalogs = await Promise.all(signedIn.map(async (account) => ({ account, profile: profileOf(listed.profiles, account.profile), catalog: await backend.plan.accountModels(account.label) })));
+    const catalogs = await Promise.all(signedIn.map(async (account) => ({ account, profile: profileOf(listed.profiles, account.profile), catalog: await backend.plan.accountModels(account.label, { profile: account.profile }) })));
     const catalogChoices = catalogs.flatMap(({ account, profile, catalog }) =>
       catalog.models
         .filter((entry) => !targeted.has(entry.slug))

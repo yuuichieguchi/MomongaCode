@@ -8,7 +8,7 @@ import type { GoverningEnforcement, GoverningKind, MemoryKind, MemoryScope, Perm
 import { withIdentityReadFetch } from '../network.ts';
 import { pathsOf } from '../paths.ts';
 import type { ProgramDeps } from '../program-deps.ts';
-import { runAuthLogin, runAuthLogout, runAuthStatus } from './auth-wiring.ts';
+import { runAuthLogin, runAuthLogout, runAuthResetHost, runAuthResume, runAuthStatus, runModelsAdd, runModelsCatalog } from './auth-wiring.ts';
 import { contextImprove, guidelineAdopt, guidelineList, guidelineRollback } from './context.ts';
 import { showCost } from './cost.ts';
 import { elicit } from './elicit.ts';
@@ -109,6 +109,19 @@ const registerAuth: CommandGroup = (program, deps) => {
     .option('--json', 'print the accounts as JSON')
     .action(async (options: { json?: true }) => {
       deps.complete(await runAuthStatus(deps.ports, await pathsOf(deps.ports), options.json === true));
+    });
+  auth
+    .command('resume <account>')
+    .description('resume plan use of an account paused by a usage limit')
+    .action(async (account: string) => {
+      deps.complete(await runAuthResume(deps.ports, await pathsOf(deps.ports), account));
+    });
+  auth
+    .command('reset-host')
+    .description('register this computer as a new host; asks first, or needs --yes without a terminal')
+    .option('--yes', 'reset without asking')
+    .action(async (options: { yes?: true }) => {
+      deps.complete(await runAuthResetHost(deps.ports, await pathsOf(deps.ports), options.yes === true, deps.interrupt));
     });
 };
 
@@ -445,9 +458,16 @@ const registerModels: CommandGroup = (program, deps) => {
   const models = program
     .command('models')
     .description('list the model aliases with the capabilities their targets declare')
+    .argument('[account]', 'the account whose model list --catalog and --add use; the active one when only one could answer')
     .option('--json', 'print the models as JSON')
-    .action(async (options: { json?: true }) => {
-      deps.complete(await listModels(deps.ports, await pathsOf(deps.ports), options.json === true));
+    .option('--catalog', 'list the models of a signed-in subscription account, read again from the provider')
+    .option('--add <slug>', 'add a model of a signed-in subscription account as a target and an alias')
+    .action(async (account: string | undefined, options: { json?: true; catalog?: true; add?: string }) => {
+      const paths = await pathsOf(deps.ports);
+      const named = account === undefined ? {} : { account };
+      if (options.add !== undefined) deps.complete(await runModelsAdd(deps.ports, paths, { slug: options.add, ...named }));
+      else if (options.catalog === true) deps.complete(await runModelsCatalog(deps.ports, paths, { json: options.json === true, ...named }));
+      else deps.complete(await listModels(deps.ports, paths, options.json === true));
     });
   models
     .command('detect [url...]')

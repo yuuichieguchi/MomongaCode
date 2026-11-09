@@ -8,7 +8,8 @@ import { loopbackSignInListener } from '../plan/sign-in.ts';
 import { terminalChoice } from '../plan/terminal-choice.ts';
 import type { CliPorts } from '../ports.ts';
 import { connectRuntime } from '../run/open-session.ts';
-import { authLogin, authLogout, authStatus } from './auth.ts';
+import { authLogin, authLogout, authResetHost, authResume, authStatus } from './auth.ts';
+import { modelsAdd, modelsCatalog } from './models.ts';
 import type { AuthLoginOptions } from './auth.ts';
 
 const withGateway = async (ports: CliPorts, paths: MomongaPaths, work: (gateway: GatewayClient) => Promise<number>): Promise<number> => {
@@ -22,7 +23,22 @@ const withGateway = async (ports: CliPorts, paths: MomongaPaths, work: (gateway:
 };
 
 export const runAuthStatus = (ports: CliPorts, paths: MomongaPaths, json: boolean): Promise<number> =>
-  withGateway(ports, paths, (gateway) => authStatus({ stdout: ports.stdout, plan: gateway.plan }, { json }));
+  withGateway(ports, paths, (gateway) => authStatus({ stdout: ports.stdout, plan: gateway.plan, models: () => gateway.models() }, { json }));
+
+const terminalPorts = (ports: CliPorts, interrupt: AbortSignal) =>
+  ports.terminal === undefined ? { isTerminal: false as const } : { isTerminal: true as const, choose: terminalChoice(ports.terminal, interrupt) };
+
+export const runAuthResume = (ports: CliPorts, paths: MomongaPaths, account: string): Promise<number> =>
+  withGateway(ports, paths, (gateway) => authResume({ stdout: ports.stdout, stderr: ports.stderr, plan: gateway.plan }, { account }));
+
+export const runAuthResetHost = (ports: CliPorts, paths: MomongaPaths, yes: boolean, interrupt: AbortSignal): Promise<number> =>
+  withGateway(ports, paths, (gateway) => authResetHost({ stdout: ports.stdout, stderr: ports.stderr, plan: gateway.plan, ...terminalPorts(ports, interrupt) }, { yes }));
+
+export const runModelsCatalog = (ports: CliPorts, paths: MomongaPaths, options: { json: boolean; account?: string }): Promise<number> =>
+  withGateway(ports, paths, (gateway) => modelsCatalog({ stdout: ports.stdout, stderr: ports.stderr, plan: gateway.plan }, options));
+
+export const runModelsAdd = (ports: CliPorts, paths: MomongaPaths, options: { slug: string; account?: string }): Promise<number> =>
+  withGateway(ports, paths, (gateway) => modelsAdd({ stdout: ports.stdout, stderr: ports.stderr, plan: gateway.plan }, options));
 
 export const runAuthLogin = (ports: CliPorts, paths: MomongaPaths, options: AuthLoginOptions, interrupt: AbortSignal): Promise<number> =>
   withGateway(ports, paths, (gateway) =>
@@ -31,6 +47,7 @@ export const runAuthLogin = (ports: CliPorts, paths: MomongaPaths, options: Auth
         stdout: ports.stdout,
         stderr: ports.stderr,
         plan: gateway.plan,
+        ...terminalPorts(ports, interrupt),
         startListener: loopbackSignInListener(interrupt),
         openUrl: (url) => ports.openUrl(url, interrupt),
         sandbox: async () => {
@@ -48,10 +65,5 @@ export const runAuthLogin = (ports: CliPorts, paths: MomongaPaths, options: Auth
 
 export const runAuthLogout = (ports: CliPorts, paths: MomongaPaths, account: string | undefined, interrupt: AbortSignal): Promise<number> =>
   withGateway(ports, paths, (gateway) => {
-    const common = { stdout: ports.stdout, stderr: ports.stderr, plan: gateway.plan };
-    const terminal = ports.terminal;
-    return authLogout(
-      terminal === undefined ? { ...common, isTerminal: false } : { ...common, isTerminal: true, choose: terminalChoice(terminal, interrupt) },
-      account === undefined ? {} : { account },
-    );
+    return authLogout({ stdout: ports.stdout, stderr: ports.stderr, plan: gateway.plan, ...terminalPorts(ports, interrupt) }, account === undefined ? {} : { account });
   });

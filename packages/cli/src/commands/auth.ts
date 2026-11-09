@@ -1,4 +1,4 @@
-import type { PlanAccountView, PlanAccountsResponse, PlanProfileView, PlanSignInCompleteResponse } from '@momonga/protocol';
+import type { MomongaModelEntry, PlanAccountView, PlanAccountsResponse, PlanProfileView, PlanSignInCompleteResponse, TargetBilling } from '@momonga/protocol';
 import type { PlanGatewayClient } from '../client/gateway-client.ts';
 import { SANDBOX_OFF_NOTICE, accountStateWord, accountsOf, nextAccountLabel, profileOf } from '../plan/accounts.ts';
 import { signIn } from '../plan/sign-in.ts';
@@ -19,12 +19,31 @@ const accountLines = (account: PlanAccountView): string[] => [
   ...(account.cause === undefined ? [] : [`    cause: ${account.cause}`]),
 ];
 
-export type AuthStatusPorts = { stdout: Writer; plan: PlanGatewayClient };
+export type AuthStatusPorts = { stdout: Writer; plan: PlanGatewayClient; models(): Promise<readonly MomongaModelEntry[]> };
 
-export const authStatus = async (ports: AuthStatusPorts, options: { json: boolean }): Promise<number> => {
+export const DEFAULT_ALIAS = 'default';
+
+type ModelLine = { alias: string; targets: { name: string; billing: TargetBilling }[] } | null;
+
+const billingOf = (entry: MomongaModelEntry, target: string): TargetBilling => {
+  const billing = entry.targetBilling?.[target];
+  if (billing === undefined) throw new Error(`the gateway did not report the billing of the target ${target}`);
+  return billing;
+};
+
+export const modelLineOf = (models: readonly MomongaModelEntry[], alias: string): ModelLine => {
+  const entry = models.find((model) => model.id === alias);
+  return entry === undefined ? null : { alias, targets: entry.targets.map((name) => ({ name, billing: billingOf(entry, name) })) };
+};
+
+export const modelLineText = (line: ModelLine): string =>
+  line === null ? 'model: none' : `model: ${line.alias} -> ${line.targets.map((target) => `${target.name} (${target.billing})`).join(', ')}`;
+
+export const authStatus = async (ports: AuthStatusPorts, options: { json: boolean; alias?: string }): Promise<number> => {
   const listed = await ports.plan.accounts();
+  const model = modelLineOf(await ports.models(), options.alias ?? DEFAULT_ALIAS);
   if (options.json) {
-    ports.stdout.write(`${JSON.stringify(listed)}\n`);
+    ports.stdout.write(`${JSON.stringify({ ...listed, model })}\n`);
     return 0;
   }
   const lines = listed.profiles.flatMap((profile) => {
@@ -35,9 +54,13 @@ export const authStatus = async (ports: AuthStatusPorts, options: { json: boolea
       `${profile.messages.manageUsageLabel}: ${profile.usageUrl}`,
     ];
   });
-  print(ports.stdout, lines.length === 0 ? ['no subscription provider is available'] : lines);
+  print(ports.stdout, [...(lines.length === 0 ? ['no subscription provider is available'] : lines), modelLineText(model)]);
   return 0;
 };
+
+type Choose = (question: string, choices: readonly string[]) => Promise<number | undefined>;
+
+type TerminalPorts = { isTerminal: false } | { isTerminal: true; choose: Choose };
 
 export type AuthLoginPorts = {
   stdout: Writer;
@@ -46,17 +69,22 @@ export type AuthLoginPorts = {
   startListener: StartSignInListener;
   openUrl(url: URL): Promise<void>;
   sandbox(): Promise<SandboxKind>;
-};
+} & TerminalPorts;
 
 const NEVER_INTERRUPTED = new AbortController().signal;
 
 export type AuthLoginOptions = { provider?: string; account?: string; reconsent?: boolean; browser?: boolean };
 
-const chosenProfile = (listed: PlanAccountsResponse, provider: string | undefined): PlanProfileView => {
+const chosenProfile = async (ports: AuthLoginPorts, listed: PlanAccountsResponse, provider: string | undefined): Promise<PlanProfileView | undefined> => {
   if (provider !== undefined) return profileOf(listed.profiles, provider);
   const [only, ...others] = listed.profiles;
-  if (only === undefined || others.length > 0) throw new Error(`name the provider to sign in to: momonga auth login <provider>; the providers are ${listed.profiles.map((profile) => profile.id).join(', ')}`);
-  return only;
+  if (only !== undefined && others.length === 0) return only;
+  if (!ports.isTerminal || only === undefined) {
+    print(ports.stderr, [`name the provider to sign in to: momonga auth login <provider>; the providers are ${listed.profiles.map((profile) => profile.id).join(', ')}`]);
+    return undefined;
+  }
+  const index = await ports.choose('Sign in to which provider?', listed.profiles.map((profile) => `${profile.messages.pickerLabel} (${profile.id})`));
+  return index === undefined ? undefined : listed.profiles[index];
 };
 
 const outcomeLines = (profile: PlanProfileView, answer: PlanSignInCompleteResponse): string[] => {
@@ -75,7 +103,8 @@ const outcomeLines = (profile: PlanProfileView, answer: PlanSignInCompleteRespon
 
 export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions): Promise<number> => {
   const listed = await ports.plan.accounts();
-  const profile = chosenProfile(listed, options.provider);
+  const profile = await chosenProfile(ports, listed, options.provider);
+  if (profile === undefined) return EXIT_USAGE;
   const account = options.account ?? nextAccountLabel(profile.id, listed.accounts);
   if ((await ports.sandbox()) === 'none') print(ports.stderr, SANDBOX_OFF_NOTICE);
   print(ports.stdout, [profile.messages.description]);
@@ -98,10 +127,7 @@ export const authLogin = async (ports: AuthLoginPorts, options: AuthLoginOptions
   return answer.outcome === 'signed_in' ? 0 : EXIT_NOT_SIGNED_IN;
 };
 
-export type AuthLogoutPorts = { stdout: Writer; stderr: Writer; plan: PlanGatewayClient } & (
-  | { isTerminal: false }
-  | { isTerminal: true; choose(question: string, choices: readonly string[]): Promise<number | undefined> }
-);
+export type AuthLogoutPorts = { stdout: Writer; stderr: Writer; plan: PlanGatewayClient } & TerminalPorts;
 
 const accountNamed = (accounts: readonly PlanAccountView[], label: string): PlanAccountView => {
   const matching = accounts.filter((account) => account.label === label);
@@ -130,5 +156,43 @@ export const authLogout = async (ports: AuthLogoutPorts, options: { account?: st
     `Signed out ${chosen.label}`,
     ...(report.revocation === 'confirmed' ? [] : [`The sign-in could not be confirmed as revoked; disconnect the app in ${profile.messages.identityLabel} settings: ${report.usageUrl}`]),
   ]);
+  return 0;
+};
+
+export type AuthResumePorts = { stdout: Writer; stderr: Writer; plan: PlanGatewayClient };
+
+export const authResume = async (ports: AuthResumePorts, options: { account: string }): Promise<number> => {
+  const listed = await ports.plan.accounts();
+  if (!listed.accounts.some((account) => account.label === options.account)) {
+    print(ports.stderr, [`no saved account is labelled ${JSON.stringify(options.account)}; momonga auth status lists them`]);
+    return EXIT_NOT_SIGNED_IN;
+  }
+  const chosen = accountNamed(listed.accounts, options.account);
+  const answer = await ports.plan.resume(chosen.label, { profile: chosen.profile });
+  print(ports.stdout, [answer.resumed ? `Resumed plan use for ${chosen.label}` : `${chosen.label} is not paused`]);
+  return 0;
+};
+
+export const RESET_HOST_WARNING =
+  'This computer will be registered as a new host with ChatGPT. Saved accounts keep their records; whether ChatGPT accepts them under the new host is not documented, so sign in again if one stops working.';
+
+const RESET_HOST_CONFIRM = 'Register this computer as a new host';
+
+const RESET_HOST_CHOICES = ['Cancel', RESET_HOST_CONFIRM] as const;
+
+export type AuthResetHostPorts = { stdout: Writer; stderr: Writer; plan: PlanGatewayClient } & TerminalPorts;
+
+export const authResetHost = async (ports: AuthResetHostPorts, options: { yes: boolean }): Promise<number> => {
+  if (!options.yes && !ports.isTerminal) {
+    print(ports.stderr, ['momonga auth reset-host needs --yes when it does not run in a terminal']);
+    return EXIT_USAGE;
+  }
+  print(ports.stdout, [RESET_HOST_WARNING]);
+  if (!options.yes && ports.isTerminal) {
+    const chosen = await ports.choose('Reset the host identity?', RESET_HOST_CHOICES);
+    if (chosen === undefined || RESET_HOST_CHOICES[chosen] !== RESET_HOST_CONFIRM) return EXIT_USAGE;
+  }
+  const reset = await ports.plan.resetHost();
+  print(ports.stdout, [`This computer is now the host ${reset.hostId}`]);
   return 0;
 };

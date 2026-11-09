@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useReducer, useRef, useState } from 'react';
 import { Box, Static, Text, useApp, useInput, usePaste, useStdout, useWindowSize } from 'ink';
-import { USAGE_LIMIT_CODES, agentReadiness, autoModeNotice, escapeTerminalBlock, escapeTerminalLine, isProbingCapabilities } from '@momonga/protocol';
+import { SIGN_IN_REQUIRED_CODE, USAGE_LIMIT_CODES, agentReadiness, autoModeNotice, escapeTerminalBlock, escapeTerminalLine, isProbingCapabilities } from '@momonga/protocol';
 import type { AliasCapabilities, ImageAttachment, MomongaModelEntry, PermissionMode, PermissionOption, PlanAccountRef, PlanAccountsResponse, PlanProfileView } from '@momonga/protocol';
 import { cleanFailureMessage } from '@momonga/foundation';
 import { currentField, currentRequest, decide, enterValue, leaveFields, withError } from '../elicit/flow.ts';
@@ -76,6 +76,7 @@ type Phase = { kind: 'starting' } | { kind: 'trust'; path: string } | { kind: 'w
 type Invitation = { profile: PlanProfileView };
 
 const NO_MODEL_NOTE = 'No model is connected. Use /login to connect one.';
+const RESUBMIT_NOTICE = 'Signed in again. Retrying your last prompt.';
 const NEEDS_SESSION_NOTE = 'This command needs a session. Connect a model first with /login.';
 const UNCONNECTED_FOOTER = 'no model connected · /login';
 const INVITATION_ROWS = 2;
@@ -372,6 +373,7 @@ export function App(props: AppProps) {
   const invitationIndexRef = useRef(0);
   const typedRef = useRef(false);
   const aliasRef = useRef<string | undefined>(undefined);
+  const signInFailedRun = useRef<{ text: string; options: StartRunOptions; alias: string } | undefined>(undefined);
   const busyRef = useRef(false);
 
   const showOverlay = (next: Overlay | undefined): void => {
@@ -553,7 +555,18 @@ export function App(props: AppProps) {
     loading: (title) => showOverlay({ kind: 'loading', title }),
   };
 
-  const flows: PlanFlows = createPlanFlows({ ...overlayPorts, backend, info: note, connected: connectAlias, refreshConnection });
+  const resubmitAfterSignIn = async (): Promise<void> => {
+    const kept = signInFailedRun.current;
+    if (kept === undefined) return;
+    const [entries, health] = await Promise.all([backend.models(), backend.health()]);
+    const entry = entries.find((candidate) => candidate.id === kept.alias);
+    if (entry === undefined || !entry.targets.some((target) => health.targets[target]?.ok === true)) return;
+    signInFailedRun.current = undefined;
+    note(RESUBMIT_NOTICE);
+    await runPrompt(kept.text, kept.options);
+  };
+
+  const flows: PlanFlows = createPlanFlows({ ...overlayPorts, backend, info: note, connected: connectAlias, refreshConnection, signedIn: resubmitAfterSignIn });
 
   const showUsageLimit = async (code: string, plan: PlanAccountRef): Promise<void> => {
     const listed = await backend.plan.accounts();
@@ -612,8 +625,9 @@ export function App(props: AppProps) {
     void boot();
   }, [backend]);
 
-  const runPrompt = async (text: string, options: { skill?: string } = {}): Promise<void> => {
+  const runPrompt = async (text: string, options: StartRunOptions = {}): Promise<void> => {
     setBusyState(true);
+    signInFailedRun.current = undefined;
     const sent = attachmentsRef.current;
     setAttachments([]);
     dispatch({ kind: 'append', entry: { kind: 'user', text } });
@@ -621,7 +635,8 @@ export function App(props: AppProps) {
     try {
       const history = nextHistory.current;
       nextHistory.current = 'inherit';
-      const runOptions: StartRunOptions = { ...options, ...(sent.length === 0 ? {} : { images: sent.map((attachment) => attachment.image) }) };
+      const runOptions: StartRunOptions = { ...options, ...(sent.length === 0 ? {} : { images: [...(options.images ?? []), ...sent.map((attachment) => attachment.image)] }) };
+      const runAlias = aliasRef.current;
       const started = await backend.startRun(text, history, runOptions);
       runIdRef.current = started.id;
       dispatch({ kind: 'run-started', runId: started.id });
@@ -639,6 +654,7 @@ export function App(props: AppProps) {
       });
       setReconnecting(false);
       const stopped = run.error;
+      if (run.status === 'FAILED' && stopped?.code === SIGN_IN_REQUIRED_CODE && runAlias !== undefined) signInFailedRun.current = { text, options: runOptions, alias: runAlias };
       const plan = stopped?.plan;
       if (stopped !== undefined && plan !== undefined && isUsageLimitCode(stopped.code)) runFlow(() => showUsageLimit(stopped.code, plan));
       else if (run.status !== 'COMPLETED') dispatch({ kind: 'append', entry: { kind: 'notice', level: run.status === 'CANCELLED' ? 'info' : 'error', text: describeRunEnd(run, 'tui') } });
@@ -678,6 +694,7 @@ export function App(props: AppProps) {
         await runPrompt(task, runOptions);
       },
       clear: () => {
+        signInFailedRun.current = undefined;
         nextHistory.current = 'fresh';
         dispatch({ kind: 'reset' });
         stdout.write(CLEAR_SCREEN);

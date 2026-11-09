@@ -13,9 +13,12 @@ import type {
   PlanActiveRequest,
   PlanActiveResponse,
   PlanCatalogEntry,
+  PlanHostResetResponse,
+  PlanModelsRequest,
   PlanModelsResponse,
   PlanProfileView,
   PlanResumeRequest,
+  PlanResumeResponse,
   PlanSignInBeginRequest,
   PlanSignInBeginResponse,
   PlanSignInCancelRequest,
@@ -37,8 +40,9 @@ export type PlanGatewayClient = {
   signInCancel(request: PlanSignInCancelRequest): Promise<void>;
   signOut(request: PlanSignOutRequest): Promise<PlanSignOutResponse>;
   setActive(request: PlanActiveRequest): Promise<PlanActiveResponse>;
-  resume(account: string, request: PlanResumeRequest): Promise<void>;
-  accountModels(account: string): Promise<PlanModelsResponse>;
+  resume(account: string, request: PlanResumeRequest): Promise<PlanResumeResponse>;
+  resetHost(): Promise<PlanHostResetResponse>;
+  accountModels(account: string, request: PlanModelsRequest): Promise<PlanModelsResponse>;
   addTarget(account: string, request: PlanTargetRequest): Promise<PlanTargetResponse>;
 };
 
@@ -167,6 +171,12 @@ const isModelsResponse = (value: unknown): value is PlanModelsResponse => isReco
 
 const isTargetResponse = (value: unknown): value is PlanTargetResponse => isRecord(value) && isString(value['target']) && isString(value['alias']);
 
+const isResumeResponse = (value: unknown): value is PlanResumeResponse => isRecord(value) && typeof value['resumed'] === 'boolean';
+
+const isHostResetResponse = (value: unknown): value is PlanHostResetResponse => isRecord(value) && isString(value['hostId']);
+
+const modelsQuery = (request: PlanModelsRequest): string => new URLSearchParams({ profile: request.profile, ...(request.refresh === true ? { refresh: '1' } : {}) }).toString();
+
 const accountRoute = (route: string, account: string): string => `${PLAN_API_PREFIX}${route.replace(':account', encodeURIComponent(account))}`;
 
 const isCount = (value: unknown): boolean => typeof value === 'number' && Number.isInteger(value) && value >= 0;
@@ -213,10 +223,9 @@ export const createGatewayClient = (options: { resolveSocket: SocketResolver }):
     },
     signOut: (request) => checked('POST', `${PLAN_API_PREFIX}${PLAN_ROUTES.signOut}`, request, isSignOutResponse, 'a sign-out report'),
     setActive: (request) => checked('POST', `${PLAN_API_PREFIX}${PLAN_ROUTES.accountsActive}`, request, isActiveResponse, 'an active account'),
-    resume: async (account, request) => {
-      await answer('POST', accountRoute(PLAN_ROUTES.accountResume, account), request);
-    },
-    accountModels: (account) => checked('GET', accountRoute(PLAN_ROUTES.accountModels, account), undefined, isModelsResponse, 'a model catalog'),
+    resume: (account, request) => checked('POST', accountRoute(PLAN_ROUTES.accountResume, account), request, isResumeResponse, 'a resume answer'),
+    resetHost: () => checked('POST', `${PLAN_API_PREFIX}${PLAN_ROUTES.hostReset}`, {}, isHostResetResponse, 'a host identity'),
+    accountModels: (account, request) => checked('GET', `${accountRoute(PLAN_ROUTES.accountModels, account)}?${modelsQuery(request)}`, undefined, isModelsResponse, 'a model catalog'),
     addTarget: (account, request) => checked('POST', accountRoute(PLAN_ROUTES.accountTargets, account), request, isTargetResponse, 'a created target'),
   };
 
