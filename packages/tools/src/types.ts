@@ -61,10 +61,12 @@ export type ToolResume = {
   inputResponses: Record<string, unknown> | undefined;
 };
 
+export type SpawnMarker = { file: string; fd: number; settle: MarkerSettle };
+
 export type ToolContext = ReconcileContext & {
   markerFd?: number;
   markerSettle?: MarkerSettle;
-  releaseMarker?(): void;
+  spawnMarker?(): Promise<SpawnMarker>;
   sandbox: Sandbox;
   sandboxPolicy: SandboxPolicy;
   ripgrep: RipgrepLocator;

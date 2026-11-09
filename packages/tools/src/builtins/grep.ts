@@ -1,7 +1,7 @@
 import { EMPTY_PROTECTED_SET, momongaLayout, nodeFileSystem, sha256Hex } from '@momonga/foundation';
 import path from 'node:path';
 import type { SandboxExit, SandboxPolicy } from '@momonga/sandbox';
-import { requireProcessMarker, settleFinishedCommand } from '../marker-settle.ts';
+import { requireSpawnMarker, settleFinishedCommand } from '../marker-settle.ts';
 import { createReadAccessMatcher } from '../read-access.ts';
 import { ripgrepUnavailableMessage } from '../ripgrep-locator.ts';
 import type { ReadAccessMatcher } from '../read-access.ts';
@@ -233,24 +233,22 @@ type RipgrepCommand = { argv: string[]; cwd: string; env: Record<string, string>
 type RipgrepRun = { stdout: string; stderr: string; exit: SandboxExit };
 
 const runRipgrep = async (ctx: ToolContext, command: RipgrepCommand, policy: SandboxPolicy, notes: string[]): Promise<RipgrepRun> => {
-  const { marker, settle } = requireProcessMarker(ctx, 'Grep');
-  const child = ctx.sandbox.spawn({ ...command, markerFile: marker }, policy, ctx.signal, ctx.markerFd === undefined ? {} : { markerFd: ctx.markerFd });
-  ctx.releaseMarker?.();
+  const { file, fd, settle } = await requireSpawnMarker(ctx, 'Grep');
+  const child = ctx.sandbox.spawn({ ...command, markerFile: file }, policy, ctx.signal, { markerFd: fd });
   ctx.attachProcess({ pgid: child.pgid, startedAt: ctx.clock.now() });
   const [stdout, stderr, exit] = await Promise.all([collect(child.stdout), collect(child.stderr), child.exited]);
   notes.push(...(await settleFinishedCommand(settle, { pgid: child.pgid, exit, signal: ctx.signal })));
   return { stdout, stderr, exit };
 };
 
-const runVersion = async (ripgrep: string, ctx: ToolContext): Promise<string> => {
-  const child = ctx.sandbox.spawn({ argv: [ripgrep, '--version'], cwd: ctx.session.cwd, env: ctx.env }, grepPolicyOf(ctx), ctx.signal);
-  const [stdout, stderr, exit] = await Promise.all([collect(child.stdout), collect(child.stderr), child.exited]);
+const runVersion = async (ripgrep: string, ctx: ToolContext, notes: string[]): Promise<string> => {
+  const { stdout, stderr, exit } = await runRipgrep(ctx, { argv: [ripgrep, '--version'], cwd: ctx.session.cwd, env: ctx.env }, grepPolicyOf(ctx), notes);
   const version = exit.code === 0 ? RIPGREP_VERSION_LINE.exec(stdout)?.[1] : undefined;
   if (version === undefined) throw new ToolExecutionError(`${ripgrep} --version did not report a ripgrep version: ${(stdout + stderr).trim()}`);
   return version;
 };
 
-const reportedVersionOf = (ripgrep: string, ctx: ToolContext): Promise<string> => {
+const reportedVersionOf = (ripgrep: string, ctx: ToolContext, notes: string[]): Promise<string> => {
   let known = reportedVersions.get(ctx.ripgrep);
   if (known === undefined) {
     known = new Map();
@@ -259,7 +257,7 @@ const reportedVersionOf = (ripgrep: string, ctx: ToolContext): Promise<string> =
   const versions = known;
   const existing = versions.get(ripgrep);
   if (existing !== undefined) return existing;
-  const pending = runVersion(ripgrep, ctx);
+  const pending = runVersion(ripgrep, ctx, notes);
   versions.set(ripgrep, pending);
   void pending.catch(() => versions.delete(ripgrep));
   return pending;
@@ -399,7 +397,7 @@ export const grepTool = defineTool<GrepInput>({
     let backend: ToolBackend;
     const notes: string[] = [];
     try {
-      backend = { source: ripgrep.source, version: ripgrep.version ?? (await reportedVersionOf(ripgrep.path, ctx)) };
+      backend = { source: ripgrep.source, version: ripgrep.version ?? (await reportedVersionOf(ripgrep.path, ctx, notes)) };
       found = await searchWithRipgrep(ripgrep.path, input, mode, target, stat.isDirectory(), ctx, notes);
     } finally {
       await ripgrep.release();

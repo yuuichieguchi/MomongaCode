@@ -6,7 +6,7 @@ import type { SandboxExit } from '@momonga/sandbox';
 import type { BackgroundJobs } from '../ports.ts';
 import type { ReconcileContext, ToolContext, ToolResult } from '../types.ts';
 import { createCapture, pumpOutput } from '../capture.ts';
-import { requireProcessMarker, settleFinishedCommand } from '../marker-settle.ts';
+import { requireSpawnMarker, settleFinishedCommand } from '../marker-settle.ts';
 import { describeJobStatus } from './jobs.ts';
 import { canonicalDirectories, insideAny, shownPath } from './paths.ts';
 import { nodeShellPorts, resolveBashPath } from './shell.ts';
@@ -110,7 +110,7 @@ export const bashTool = defineTool<BashInput>({
   locations: (input, ctx) => readPathsOfCommand(input.command, commandSpecsFor(process.platform)).map((target) => ({ path: resolveToolPath(ctx.cwd, target) })),
   execute: async (input, ctx) => {
     if (input.run_in_background === true) return startBackgroundJob(input, ctx);
-    const { marker, settle } = requireProcessMarker(ctx, 'Bash');
+    const { file: marker, fd: markerFd, settle } = await requireSpawnMarker(ctx, 'Bash');
     const nonce = randomBytes(16).toString('hex');
     const script = `${trapScript(nonce)}\n${input.command}`;
     const child = ctx.sandbox.spawn(
@@ -123,7 +123,7 @@ export const bashTool = defineTool<BashInput>({
       },
       ctx.sandboxPolicy,
       ctx.signal,
-      ctx.markerFd === undefined ? {} : { markerFd: ctx.markerFd },
+      { markerFd },
     );
     ctx.attachProcess({ pgid: child.pgid, startedAt: ctx.clock.now() });
 

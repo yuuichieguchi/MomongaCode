@@ -2,7 +2,7 @@ import { UNNAMED_REASON, commandMayStillRun, refusedReason, defaultProcessInspec
 import type { CommandLiveness, HolderListing, MarkerMode, MarkerReconcileResult, MarkerState, ProcessGroupPort, ProcessInspector, ReapTiming, SignalSender, UninspectableProcess } from '@momonga/foundation';
 
 import { ToolExecutionError } from './types.ts';
-import type { ToolContext } from './types.ts';
+import type { SpawnMarker, ToolContext } from './types.ts';
 
 export type MarkerListing = { holders: number[]; refused: UninspectableProcess[] };
 
@@ -108,7 +108,7 @@ export const settleFinishedCommand = async (settle: MarkerSettle, { pgid, exit, 
   return outlivedNotes(reaped, 'command');
 };
 
-export const requireProcessMarker = (ctx: ToolContext, toolName: string): { marker: string; settle: MarkerSettle } => {
-  if (ctx.processMarker === undefined || ctx.markerSettle === undefined) throw new ToolExecutionError(`${toolName} needs a process marker from the executor`);
-  return { marker: ctx.processMarker, settle: ctx.markerSettle };
+export const requireSpawnMarker = (ctx: ToolContext, toolName: string): Promise<SpawnMarker> => {
+  if (ctx.spawnMarker === undefined) throw new ToolExecutionError(`${toolName} needs a process marker from the executor`);
+  return ctx.spawnMarker();
 };

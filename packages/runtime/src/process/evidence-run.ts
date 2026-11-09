@@ -69,12 +69,11 @@ export const createEvidenceRunner =
         return { exitCode: null, notStarted: error instanceof Error ? error.message : String(error) };
       }
       spawned = true;
-      handle.close();
       const [stdout, , exit] = await Promise.all([textOf(child.stdout), textOf(child.stderr), child.exited]);
       await settleFinishedCommand(settle, { pgid: child.pgid, exit, signal });
       return { exitCode: exit.code, stdout };
     } finally {
-      handle?.close();
+      if (!spawned) handle?.close();
       if (handle !== undefined && !spawned) await settle?.discard();
       else await settle?.remove();
       running = false;
