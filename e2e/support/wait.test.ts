@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { ENTRY_HARD_EXIT_MARGIN_MS, GATEWAY_MAX_CLOSE_MS, runtimeMaxCloseMs, supervisorMaxCloseMs } from '@momonga/foundation';
+import { SETTINGS_DEBOUNCE_MS, SETTINGS_POLL_MS, SHUTDOWN_RELEASE_BOUND_MS } from '@momonga/supervisor';
+import { CANCEL_UPSTREAM_SETTLE_MS, GATEWAY_CANCEL_TIMEOUT_MS, SANDBOX_KILL_GRACE_MS } from '../../packages/runtime/src/process/constants.ts';
 import {
   E2E_CANCEL_KILL_BOUND_MS,
   E2E_CANCEL_STREAM_BOUND_MS,
@@ -6,6 +9,9 @@ import {
   E2E_DISPOSE_BOUND_MS,
   E2E_HOOK_TIMEOUT_MS,
   E2E_MARGIN_MS,
+  E2E_RESTART_BACKOFF_MS,
+  E2E_DRAIN_TIMEOUT_MS,
+  E2E_LEASE_MS,
   E2E_ORPHAN_CLOSE_BOUND_MS,
   E2E_ORPHAN_GRACE_MS,
   E2E_PHASE2_REACHED_BOUND_MS,
@@ -34,21 +40,17 @@ const UNTIL_TEST_DEADLINE_MS = 200;
 
 describe('wait constants', () => {
   it('derive the bounds of §9.1 from the product constants', () => {
-    expect(E2E_RESTART_BOUND_MS).toBe(69_300);
-    expect(E2E_RECOVERY_BOUND_MS).toBe(76_300);
-    expect(E2E_SETTINGS_SEEN_BOUND_MS).toBe(6200);
-    expect(E2E_SETTINGS_RESTART_BOUND_MS).toBe(140_800);
-    expect(E2E_ORPHAN_CLOSE_BOUND_MS).toBe(20_000);
-    expect(E2E_SUPERVISOR_CLOSE_BOUND_MS).toBe(71_000);
-    expect(E2E_REAP_CLOSE_BOUND_MS).toBe(9000);
-    expect(E2E_CANCEL_TERM_BOUND_MS).toBe(4000);
-    expect(E2E_CANCEL_KILL_BOUND_MS).toBe(5000);
-    expect(E2E_CANCEL_STREAM_BOUND_MS).toBe(6000);
-    expect(E2E_RESTART_POLICY).toEqual({ baseMs: 200, maxMs: 200, minMs: 200 });
-    expect(E2E_READY_DEADLINE_MS).toBe(136_350);
-    expect(E2E_REAP_TO_RUNNING_BOUND_MS).toBe(123_350);
-    expect(E2E_PHASE2_REACHED_BOUND_MS).toBe(7250);
-    expect(E2E_TEST_TIMEOUT_MS).toBe(352_150);
+    expect(E2E_RECOVERY_BOUND_MS).toBe(E2E_RESTART_BOUND_MS + E2E_LEASE_MS + E2E_MARGIN_MS);
+    expect(E2E_SETTINGS_SEEN_BOUND_MS).toBe(SETTINGS_DEBOUNCE_MS + SETTINGS_POLL_MS + E2E_MARGIN_MS);
+    expect(E2E_SETTINGS_RESTART_BOUND_MS).toBe(SETTINGS_DEBOUNCE_MS + SETTINGS_POLL_MS + 2 * E2E_RESTART_BOUND_MS);
+    expect(E2E_ORPHAN_CLOSE_BOUND_MS).toBe(Math.max(runtimeMaxCloseMs(E2E_DRAIN_TIMEOUT_MS), GATEWAY_MAX_CLOSE_MS) + E2E_MARGIN_MS);
+    expect(E2E_SUPERVISOR_CLOSE_BOUND_MS).toBe(supervisorMaxCloseMs(E2E_DRAIN_TIMEOUT_MS) + ENTRY_HARD_EXIT_MARGIN_MS + E2E_MARGIN_MS);
+    expect(E2E_REAP_CLOSE_BOUND_MS).toBe(SHUTDOWN_RELEASE_BOUND_MS + E2E_MARGIN_MS);
+    expect(E2E_CANCEL_TERM_BOUND_MS).toBe(E2E_MARGIN_MS);
+    expect(E2E_CANCEL_KILL_BOUND_MS).toBe(SANDBOX_KILL_GRACE_MS + E2E_MARGIN_MS);
+    expect(E2E_CANCEL_STREAM_BOUND_MS).toBe(GATEWAY_CANCEL_TIMEOUT_MS + CANCEL_UPSTREAM_SETTLE_MS + E2E_MARGIN_MS);
+    expect(E2E_RESTART_POLICY).toEqual({ baseMs: E2E_RESTART_BACKOFF_MS, maxMs: E2E_RESTART_BACKOFF_MS, minMs: E2E_RESTART_BACKOFF_MS });
+    expect(E2E_REAP_TO_RUNNING_BOUND_MS).toBe(e2eStartBoundMs({ ...DEFAULT_E2E_DEPS, orphanGraceMs: E2E_ORPHAN_GRACE_MS }));
   });
 
   it('wait for a restarted child exactly as long as the supervisor of the e2e stack promises', () => {

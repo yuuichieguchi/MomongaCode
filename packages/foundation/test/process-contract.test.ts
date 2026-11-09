@@ -6,6 +6,8 @@ import {
   EXIT_OK,
   DAEMON_MARKER_FD,
   ENTRY_HARD_EXIT_MARGIN_MS,
+  FM_STOP_GRACE_MS,
+  GATEWAY_CLOSE_GRACE_MS,
   GATEWAY_MAX_CLOSE_MS,
   LIFELINE_FD,
   MINIMAL_CHILD_ENV_LC_PREFIX,
@@ -21,6 +23,7 @@ import {
   SHUTDOWN_DRAIN_BOUND_MS,
   SHUTDOWN_REAP_BOUND_MS,
   SHUTDOWN_RELEASE_BOUND_MS,
+  fmServeStopBoundMs,
   gatewayStopBudgetMs,
   killedChildSettleMs,
   runtimeStopBudgetMs,
@@ -233,7 +236,8 @@ describe('close budgets', () => {
   });
 
   it('pins GATEWAY_MAX_CLOSE_MS, the margins and the stdio flushes', () => {
-    expect(GATEWAY_MAX_CLOSE_MS).toBe(15_000);
+    expect(GATEWAY_MAX_CLOSE_MS).toBe(GATEWAY_CLOSE_GRACE_MS + fmServeStopBoundMs(FM_STOP_GRACE_MS));
+    expect([GATEWAY_CLOSE_GRACE_MS, FM_STOP_GRACE_MS, fmServeStopBoundMs(FM_STOP_GRACE_MS), GATEWAY_MAX_CLOSE_MS]).toEqual([10_000, 3000, 18_000, 28_000]);
     expect(ENTRY_HARD_EXIT_MARGIN_MS).toBe(3000);
     expect(SHUTDOWN_MARGIN_MS).toBe(5000);
     expect(STDIO_EXIT_FLUSH_MS).toBe(1000);
@@ -258,8 +262,8 @@ describe('close budgets', () => {
   });
 
   it('supervisorMaxCloseMs counts every wait of the orderly shutdown once', () => {
-    expect(supervisorMaxCloseMs(30_000)).toBe(93_000);
-    expect(supervisorMaxCloseMs(0)).toBe(63_000);
+    expect(supervisorMaxCloseMs(30_000)).toBe(106_000);
+    expect(supervisorMaxCloseMs(0)).toBe(76_000);
     for (const drain of [1, 1000, 12_345]) {
       const steps = [
         SHUTDOWN_DRAIN_BOUND_MS,

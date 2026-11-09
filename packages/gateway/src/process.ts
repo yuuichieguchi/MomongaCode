@@ -64,7 +64,7 @@ import { missingApiKeyError, secretUnavailableError } from './core/errors.ts';
 import { MIN_CREDENTIAL_CHARS } from './core/redaction.ts';
 import { PRECONDITION_MESSAGE, createFmServe } from './managed/fm-serve.ts';
 import { PreconditionFailedError } from './adapters/shared/failures.ts';
-import type { ExecFn, FmServe, SpawnFn } from './managed/fm-serve.ts';
+import type { ExecFn, FmServe, FmServeTimers, SpawnFn } from './managed/fm-serve.ts';
 import { createExecFn, createExecWithStdin } from './managed/fm-processes.ts';
 import { createFmKeyCache, readOsBuild } from './managed/fm-record-key.ts';
 import { PROBE_RETRY_AFTER_MS, createAutoProbe, targetNotReadyError } from './probe/auto-probe.ts';
@@ -130,6 +130,11 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const toError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
 const failuresOf = (error: unknown): Error[] => (error instanceof AggregateError ? error.errors.map(toError) : [toError(error)]);
+
+const closeTogether = async (closing: readonly Promise<unknown>[]): Promise<void> => {
+  const failures = (await Promise.allSettled(closing)).flatMap((outcome) => (outcome.status === 'rejected' ? failuresOf(outcome.reason) : []));
+  if (failures.length > 0) throw new AggregateError(failures, 'the gateway and its probes did not close cleanly');
+};
 
 const DEFAULT_FM_BINARY = '/usr/bin/fm';
 
@@ -637,16 +642,17 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
       },
     });
     const probeServes = new Set<FmServe>();
-    cleanups.push(async () => {
-      await autoProbe.close();
-      await Promise.all([...probeServes].map((serve) => serve.stop()));
-    });
+    const closeProbes = async (): Promise<void> => {
+      await Promise.all([autoProbe.close(), ...[...probeServes].map((serve) => serve.stop())]);
+    };
+    cleanups.push(closeProbes);
     const probes: ProbeWiring = {
       autoProbe,
       ...(options.measureEndpoint === undefined ? {} : { measureEndpoint: options.measureEndpoint }),
       ...(options.measureOllama === undefined ? {} : { measureOllama: options.measureOllama }),
     };
     const startKey = fmTargets.length > 0 && (await files.isUsableBinary(binary)) ? await fmKeys.read('fm') : undefined;
+    const fmTimers: FmServeTimers = { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout, now: () => clock.now() };
     const fmContext: FmContext | undefined =
       fmTargets.length === 0
         ? undefined
@@ -662,7 +668,7 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
               onWarning: (message) => logger.warn(message),
               exec,
               ...(options.spawn === undefined ? {} : { spawn: options.spawn }),
-              timers: { setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout, now: () => clock.now() },
+              timers: fmTimers,
             }),
             execWithStdin: options.execWithStdin ?? createExecWithStdin(childEnv),
             osBuild: startKey?.osBuild ?? (await readOsBuild(exec, AbortSignal.timeout(FM_SERVE_DEFAULTS.healthTimeoutMs))),
@@ -682,6 +688,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
                 markerDirectory: path.join(paths.markers.targets, `fm-probe-${target}`),
                 serves: probeServes,
                 onWarning: (message) => logger.warn(message),
+                ...(options.spawn === undefined ? {} : { spawn: options.spawn }),
+                timers: fmTimers,
               }),
           };
     signal?.throwIfAborted();
@@ -776,7 +784,8 @@ export const startGatewayProcess = async (options: StartGatewayProcessOptions): 
     });
     if (gateway.tcpPort !== undefined) logger.info('gateway.debug_listener', { data: { host: DEBUG_TCP_HOST, port: gateway.tcpPort } });
     cleanups.splice(cleanups.indexOf(closeAdapters), 1);
-    cleanups.push(() => (abortRequested ? gateway.abort() : gateway.close()));
+    cleanups.splice(cleanups.indexOf(closeProbes), 1);
+    cleanups.push(() => closeTogether([abortRequested ? gateway.abort() : gateway.close(), closeProbes()]));
     requestGatewayAbort = () => void gateway.abort();
     gatewayAbandonedRuns = () => gateway.abandonedRuns;
     signal?.throwIfAborted();
