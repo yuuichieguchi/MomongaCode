@@ -76,8 +76,9 @@ export const reapToolMarkers = async ({
         return undefined;
       }
       if (state !== 'held') return undefined;
-      const lookup = IDEMPOTENCY_KEY.test(name) ? store.idempotency.get(name) : undefined;
-      const pgid = lookup?.s === 'PENDING' || lookup?.s === 'UNKNOWN' ? lookup.rec.pgid : undefined;
+      const keyed = IDEMPOTENCY_KEY.test(name);
+      const lookup = keyed ? store.idempotency.get(name) : undefined;
+      const pgid = keyed ? store.idempotency.processGroupOf(name) : undefined;
       const runId = lookup?.s === 'PENDING' ? lookup.rec.meta['runId'] : undefined;
       const run = typeof runId === 'string' ? store.getRun(runId) : undefined;
       return { marker, mode, pgid, terminalRunId: run !== undefined && isTerminal(run.status) ? run.id : undefined };
