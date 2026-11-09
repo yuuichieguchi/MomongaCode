@@ -66,6 +66,7 @@ const recordingSandbox = (kind: Sandbox['kind'], stdout: (command: SandboxComman
   const sandbox: Sandbox = {
     kind,
     spawn: (command, policy): SandboxedProcess => {
+      if (command.argv[1] === '--version') return { pid: 0, pgid: 0, stdout: stream('ripgrep 15.2.0\n'), stderr: stream(''), exited: Promise.resolve({ code: 0, signal: null }) };
       spawned.push({ command, policy });
       const text = stdout(command);
       return { pid: 0, pgid: 0, stdout: stream(text), stderr: stream(''), exited: Promise.resolve({ code: text === '' ? 1 : 0, signal: null }) };
