@@ -4,8 +4,6 @@ import { launchRuntime, prepareStack, startGateway, waitForStatus } from './run-
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
-
 const finalEnvelope = {
   kind: 'stream' as const,
   chunks: [{ delta: { role: 'assistant', content: '{"kind":"final","text":"Done."}' }, finishReason: 'stop' }],
@@ -31,7 +29,7 @@ const constrainedModels = (socketPath: string, contextWindow: number) => ({
 const CONTEXT_WINDOW = 8192;
 
 describe('a constrained target whose server leaves response_format out of prompt_tokens, as LM Studio does', () => {
-  it('completes a one-step run instead of failing it as input_truncated', PROCESS_TIMEOUT, async () => {
+  it('completes a one-step run instead of failing it as input_truncated', async () => {
     const stack = await prepareStack({ scenario: 'json-schema-only', contextWindow: CONTEXT_WINDOW, script: [finalEnvelope] });
     stack.settings(constrainedModels(stack.fake.socketPath, CONTEXT_WINDOW));
     await startGateway(stack.temp);

@@ -100,7 +100,7 @@ const post = async (client: UdsClient, payload: unknown): Promise<{ status: numb
   return { status: response.status, text: await response.text() };
 };
 
-describe('gateway: the proxy password is a credential', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('gateway: the proxy password is a credential', () => {
   it.for([
     { label: 'the network.httpsProxy setting', network: { httpsProxy: `http://user:${PROXY_PASSWORD}@proxy.corp:3128` }, env: {} },
     { label: 'the HTTPS_PROXY variable', network: undefined, env: { HTTPS_PROXY: `http://user:${PROXY_PASSWORD}@proxy.corp:3128` } },
@@ -122,7 +122,7 @@ describe('gateway: the proxy password is a credential', { timeout: REAL_PROCESS_
   });
 });
 
-describe('gateway: a model call to a remote target goes through the configured proxy', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('gateway: a model call to a remote target goes through the configured proxy', () => {
   it('sends the CONNECT to the proxy from network.httpsProxy and names the proxy hop and its source when it refuses', async (context) => {
     const proxy = await startRefusingProxy(context);
     const remote = {
@@ -158,7 +158,7 @@ const REMOTE_TARGET = {
   capabilities: { contextWindow: 4096, maxOutputTokens: 1024 },
 };
 
-describe('gateway: a model call through a proxy that never answers CONNECT', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('gateway: a model call through a proxy that never answers CONNECT', () => {
   it('ends every attempt at the model headers bound and names the proxy hop and its source', async (context) => {
     const proxy = await startSilentProxy(context);
     const clock = createFakeClock(Date.now());

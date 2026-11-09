@@ -32,7 +32,7 @@ const startedWith = async (adapter: 'chat-completions' | 'open-responses', optio
 
 const ask = async (socketPath: string) => readJson(await postJson(clientFor(socketPath), '/v1/responses', { model: 'fast', input: userInput('hi') }));
 
-describe('decision 3: a chat-completions or open-responses target whose server is Ollama', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('decision 3: a chat-completions or open-responses target whose server is Ollama', () => {
   it('does not ask at start, and asks the origin of the baseUrl for GET /api/version at the first use, before the request is sent', async () => {
     const { fake, handle } = await startedWith('chat-completions', { version: { status: 404, body: { error: 'not found' } } });
     const versions = () => fake.requests.filter((request) => request.method === 'GET' && request.path === '/api/version');

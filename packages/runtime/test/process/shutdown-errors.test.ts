@@ -96,8 +96,6 @@ vi.mock('@momonga/store', async (importOriginal) => {
   };
 });
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
-
 beforeEach(() => {
   control.failDrain = undefined;
   control.serviceOnError = [];
@@ -119,9 +117,9 @@ describe('shutdown and logging errors (system timers, in-process gateway)', () =
     expect(await isLockFree(firstGeneration(stack.temp.paths).locks.runtime)).toBe(true);
     expect(control.storeCloses).toBe(1);
     expect(fs.existsSync(firstGeneration(stack.temp.paths).sockets.runtime)).toBe(false);
-  }, REAL_PROCESS_TEST_TIMEOUT_MS);
+  });
 
-  it('a rejecting telemetry.forceFlush still calls telemetry.shutdown during teardown', PROCESS_TIMEOUT, async () => {
+  it('a rejecting telemetry.forceFlush still calls telemetry.shutdown during teardown', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);
     control.flushError = new Error('flush failed');
@@ -130,7 +128,7 @@ describe('shutdown and logging errors (system timers, in-process gateway)', () =
     expect(await isLockFree(firstGeneration(stack.temp.paths).locks.runtime)).toBe(true);
   });
 
-  it('a non-fatal service error is logged as service error and does not latch', PROCESS_TIMEOUT, async () => {
+  it('a non-fatal service error is logged as service error and does not latch', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);
     const error = new Error('service hiccup');
@@ -140,7 +138,7 @@ describe('shutdown and logging errors (system timers, in-process gateway)', () =
     expect(await settledState(launched.handle.fatal)).toBe('pending');
   });
 
-  it('a fatal store error inside a request handler reaches fatal through the service', PROCESS_TIMEOUT, async () => {
+  it('a fatal store error inside a request handler reaches fatal through the service', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);
     const error = fatalStoreError();
@@ -152,7 +150,7 @@ describe('shutdown and logging errors (system timers, in-process gateway)', () =
     expect((await launched.handle.close()).fatal).toBe(error);
   });
 
-  it('a failing cleanup during a failed-startup unwind is logged as startup.cleanup_failed and the original error is rethrown', PROCESS_TIMEOUT, async () => {
+  it('a failing cleanup during a failed-startup unwind is logged as startup.cleanup_failed and the original error is rethrown', async () => {
     const temp = makeRunHome();
     writeUserSettings(temp.home, { sandbox: 'none' });
     await ensureMomongaDirs(temp.paths);

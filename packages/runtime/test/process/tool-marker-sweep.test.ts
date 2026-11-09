@@ -36,7 +36,6 @@ beforeEach(() => {
   sandboxSweeps.failure = undefined;
 });
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 const NON_SWEEP_LEASE_MS = 7000;
 
 const trackedRunHome = (context: CleanupContext): RunHome => {
@@ -51,7 +50,7 @@ describe('tool marker sweep wiring (§8)', () => {
     expect(TOOL_MARKER_SWEEP_MS).toBe(30_000);
   });
 
-  it('timers teardown: the sweep timer is armed while running and no sweep timer is pending after close (fake timers)', PROCESS_TIMEOUT, async (context) => {
+  it('timers teardown: the sweep timer is armed while running and no sweep timer is pending after close (fake timers)', async (context) => {
     const temp = trackedRunHome(context);
     const clock = createFakeClock(START_MS);
     const timers = createFakeTimers(clock);
@@ -77,7 +76,7 @@ describe('tool marker sweep wiring (§8)', () => {
       return { timers, launched: launchRuntime(temp, { clock, fakeTimers: timers, leaseMs: NON_SWEEP_LEASE_MS, platform: 'linux', sandboxExecPath: bwrap }) };
     };
 
-    it('are retried by the tool marker sweep at each interval, not only at the next command', PROCESS_TIMEOUT, async (context) => {
+    it('are retried by the tool marker sweep at each interval, not only at the next command', async (context) => {
       const { timers, launched } = launchBubblewrap(bubblewrapHome(context));
       await launched;
       expect(sandboxSweeps.calls).toBe(0);
@@ -87,7 +86,7 @@ describe('tool marker sweep wiring (§8)', () => {
       await waitForCondition(() => sandboxSweeps.calls === 2, 'the second sandbox sweep');
     });
 
-    it('report a sweep that fails without stopping the runtime', PROCESS_TIMEOUT, async (context) => {
+    it('report a sweep that fails without stopping the runtime', async (context) => {
       const failure = new Error('the kept placeholder could not be removed');
       sandboxSweeps.failure = failure;
       const { timers, launched } = launchBubblewrap(bubblewrapHome(context));

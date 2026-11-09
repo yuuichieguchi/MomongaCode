@@ -20,7 +20,7 @@ const servePidsIn = (dumpFile: string): number[] =>
         .map((record) => record.pid)
     : [];
 
-describe('an fm target renders no sampling field', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('an fm target renders no sampling field', () => {
   it('refuses temperature with a 400 naming the field and the target, instead of dropping it', async () => {
     const fm = await createFakeFm({ dir: makeDir() });
     const dumpFile = path.join(path.dirname(fm.binaryPath), 'env.jsonl');

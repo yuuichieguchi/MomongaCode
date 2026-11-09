@@ -11,7 +11,6 @@ vi.mock('../../../foundation/src/untrusted-engine.ts', async (importOriginal) =>
   return { ...original, ataEngine: injectEngineFailure(original.ataEngine) };
 });
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 const WINDOW_HOLDING_EVERY_TOOL = 65_536;
 const THROWING = 'mcp__fx__validator_throws';
 const ENGINE_MESSAGE = ENGINE_FAILURE_MESSAGE;
@@ -40,7 +39,7 @@ const settledOrRetried = async (temp: RunHome, runId: string): Promise<{ status:
 const offeredToolNames = (body: any): string[] => (Array.isArray(body?.tools) ? body.tools.map((tool: any) => tool?.function?.name ?? tool?.name) : []);
 
 describe('a run whose MCP tool validator throws while validating (system timers, in-process gateway)', () => {
-  it('answers both calls with the unavailable tool error, keeps the offered tool set and completes on its first attempt', PROCESS_TIMEOUT, async () => {
+  it('answers both calls with the unavailable tool error, keeps the offered tool set and completes on its first attempt', async () => {
     const stack = await prepareStack({ script: [scriptedToolCall(THROWING, {}, 'call_1'), scriptedToolCall(THROWING, {}, 'call_2'), finalAnswer], contextWindow: WINDOW_HOLDING_EVERY_TOOL });
     stack.settings({ ...modelSettings(stack.fake.socketPath, WINDOW_HOLDING_EVERY_TOOL), ...MCP_SETTINGS });
     await startGateway(stack.temp);

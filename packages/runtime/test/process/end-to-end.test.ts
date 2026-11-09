@@ -17,8 +17,6 @@ vi.mock('@momonga/observability', async (importOriginal) => {
   };
 });
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
-
 beforeEach(() => {
   control.serviceNames = [];
 });
@@ -27,7 +25,7 @@ const leaseOwners = (dbPath: string): (string | null)[] =>
   readDb<{ lease_owner: string | null }>(dbPath, 'SELECT lease_owner FROM runs ORDER BY id').map((row) => row.lease_owner);
 
 describe('runtime end to end over runtime.sock (system timers, in-process gateway)', () => {
-  it('a session and run reach COMPLETED over runtime.sock with SSE', PROCESS_TIMEOUT, async () => {
+  it('a session and run reach COMPLETED over runtime.sock with SSE', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);
     const session = await launched.createSession();
@@ -40,7 +38,7 @@ describe('runtime end to end over runtime.sock (system timers, in-process gatewa
     expect(stack.completions()).toBe(1);
   });
 
-  it('the lease owner is runtime-<pid>-<startedAtMs>-0', PROCESS_TIMEOUT, async () => {
+  it('the lease owner is runtime-<pid>-<startedAtMs>-0', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);
     const startedAtMs = Date.parse(launched.handle.ready.startedAt);
@@ -52,7 +50,7 @@ describe('runtime end to end over runtime.sock (system timers, in-process gatewa
     hold.release();
   });
 
-  it('workerCount 2 gives worker ids ending in -0 and -1', PROCESS_TIMEOUT, async () => {
+  it('workerCount 2 gives worker ids ending in -0 and -1', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp, { workerCount: 2 });
     const holds = [stack.hold(), stack.hold()];
@@ -66,7 +64,7 @@ describe('runtime end to end over runtime.sock (system timers, in-process gatewa
     for (const hold of holds) hold.release();
   });
 
-  it('no trace body is stored, and the runtime telemetry service.name is momonga-runtime', PROCESS_TIMEOUT, async () => {
+  it('no trace body is stored, and the runtime telemetry service.name is momonga-runtime', async () => {
     const stack = await startStack();
     const namesBefore = control.serviceNames.length;
     const launched = await launchRuntime(stack.temp);

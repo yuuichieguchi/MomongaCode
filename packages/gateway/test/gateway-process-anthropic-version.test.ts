@@ -37,7 +37,7 @@ const launchWith = async (apiVersion: string | undefined) => {
   return { created, counted, versionOn };
 };
 
-describe('the anthropic API version in settings reaches the upstream header through the gateway process', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the anthropic API version in settings reaches the upstream header through the gateway process', () => {
   it('sends 2023-06-01 on create and on count_tokens when the target declares it', async () => {
     const { created, counted, versionOn } = await launchWith('2023-06-01');
     expect(created.status).toBe(200);

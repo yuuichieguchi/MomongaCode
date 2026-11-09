@@ -31,7 +31,7 @@ const resolvedPrimary = async (home: string) => {
   return target;
 };
 
-describe('the counters a started gateway lists', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the counters a started gateway lists', () => {
   it('derives a target counter from its resolved definition and the code digest of the running gateway', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     const home = makeHome();

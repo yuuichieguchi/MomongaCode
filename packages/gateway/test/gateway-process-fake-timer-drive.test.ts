@@ -45,7 +45,7 @@ const settledFlag = (promise: Promise<unknown>): (() => boolean) => {
   return () => settled;
 };
 
-describe('driving the injected fake timers of an in-process gateway whose body purge is armed on them', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('driving the injected fake timers of an in-process gateway whose body purge is armed on them', () => {
   it('settles a request to a closed upstream within the retry budget horizon and leaves the purge timer unfired', async () => {
     const { clock, timers, startedAt, handle } = await launchAgainstClosedUpstream();
 

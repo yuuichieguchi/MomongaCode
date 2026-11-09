@@ -12,7 +12,6 @@ import { FM_SERVER } from '@momonga/protocol';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 const GUARDRAIL_TRIGGER = 'FORBIDDEN-TOPIC';
 const SETTLED = ['COMPLETED', 'FAILED', 'CANCELLED', 'STOPPED'];
 
@@ -67,7 +66,7 @@ const startFmGateway = async (temp: RunHome): Promise<void> => {
 };
 
 describe('a run whose model step meets the guardrail error event the real fm sends', () => {
-  it('stops with the refusal stop reason on its first attempt and is not requeued', PROCESS_TIMEOUT, async () => {
+  it('stops with the refusal stop reason on its first attempt and is not requeued', async () => {
     const temp = makeRunHome();
     await startFmGateway(temp);
     const launched = await launchRuntime(temp);

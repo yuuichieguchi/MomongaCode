@@ -37,7 +37,7 @@ const setup = async (appleReport: ProbeReport) => {
   return clientFor(handle.socketPath);
 };
 
-describe('R-ALIAS is checked when a request is served, with the declared or measured values (design-managed-servers section 18, item 3)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('R-ALIAS is checked when a request is served, with the declared or measured values (design-managed-servers section 18, item 3)', () => {
   it('refuses the alias with the R-ALIAS text when a member measured as unbounded sits beside a member whose maxOutputTokens is neither declared nor reported after its probe', async () => {
     const client = await setup(unboundedReport);
     const answered = await readJson(await postJson(client, '/v1/responses', { model: 'default', input: userInput('hello') }));

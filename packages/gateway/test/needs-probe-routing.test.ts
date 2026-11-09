@@ -60,7 +60,7 @@ const launch = async (kind: Kind, aliasTargets: readonly string[], extraTargets:
 
 const completionRequests = (fake: Awaited<ReturnType<typeof startFake>>) => fake.requests.filter((entry) => entry.path === '/v1/chat/completions');
 
-describe.each(KINDS)('an auto %s target with no probe record through the router', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, (kind) => {
+describe.each(KINDS)('an auto %s target with no probe record through the router', (kind) => {
   it('lists the alias with the probing readiness state and no capability numbers', async () => {
     const client = await launch(kind, ['local'], {});
     await postJson(client, '/v1/responses', { model: 'fast', input: userInput('call read_file for a.txt'), tools: [readFileTool] });

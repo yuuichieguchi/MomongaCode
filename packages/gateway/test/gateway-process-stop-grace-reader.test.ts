@@ -34,7 +34,7 @@ const settingsWith = (managedServerStopGraceMs: number) => ({
   models: { aliases: { default: ['apple'] }, targets: { apple: { adapter: 'managed', server: 'fm' } } },
 });
 
-describe('the gateway process wires the settings file into its managed server stops begun outside a close (design 3.2)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the gateway process wires the settings file into its managed server stops begun outside a close (design 3.2)', () => {
   it('the managed server reads its stop grace from the user settings at each stop begin', async () => {
     const fm = await createFakeFm({ dir: makeDir() });
     const home = makeHome();

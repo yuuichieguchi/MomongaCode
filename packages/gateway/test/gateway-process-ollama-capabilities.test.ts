@@ -51,7 +51,7 @@ const imageInput = [
   },
 ];
 
-describe('a started gateway follows the probed Ollama capabilities (W2)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('a started gateway follows the probed Ollama capabilities (W2)', () => {
   it('sends an image to a target whose probe found no vision when the settings declare image input', async () => {
     const { fake, client } = await gatewayOverProbedOllama(['completion', 'tools'], [textReply('seen')]);
 

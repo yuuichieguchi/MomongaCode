@@ -44,7 +44,7 @@ const probedHome = async (options: FakeOllamaOptions) => {
   return { fake, home };
 };
 
-describe('an ollama target in a started gateway', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('an ollama target in a started gateway', () => {
   it('answers a request 503 target_probing and starts the probe while no probe record exists, without calling /api/chat', async () => {
     const fake = await startFakeOllama({ chat: [textReply('never sent')] });
     const home = makeHome();

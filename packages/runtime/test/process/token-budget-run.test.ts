@@ -6,10 +6,8 @@ import { finishApprovingPrompts, launchRuntime, scriptedToolCall, startStack } f
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
-
 describe('token budget against the input tokens a server reports (system timers, in-process gateway)', () => {
-  it('a run with contextWindow 8192 whose server reports prompt_tokens 10 for a context of thousands fails with input_truncated, not pinned_overflow', PROCESS_TIMEOUT, async () => {
+  it('a run with contextWindow 8192 whose server reports prompt_tokens 10 for a context of thousands fails with input_truncated, not pinned_overflow', async () => {
     const stack = await startStack((temp) => ({
       script: [scriptedToolCall('Read', { file_path: path.join(temp.project, 'notes.txt') }, 'call_1', { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 })],
     }));
@@ -25,7 +23,7 @@ describe('token budget against the input tokens a server reports (system timers,
     expect(stack.completions()).toBe(1);
   });
 
-  it('a run with contextWindow 8192 whose server counts the request it received reaches COMPLETED', PROCESS_TIMEOUT, async () => {
+  it('a run with contextWindow 8192 whose server counts the request it received reaches COMPLETED', async () => {
     const stack = await startStack((temp) => ({ script: [scriptedToolCall('Read', { file_path: path.join(temp.project, 'notes.txt') })] }));
     fs.writeFileSync(path.join(stack.temp.project, 'notes.txt'), 'remember this\n');
     const launched = await launchRuntime(stack.temp);

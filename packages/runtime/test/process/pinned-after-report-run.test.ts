@@ -10,7 +10,6 @@ import { finishApprovingPrompts, launchRuntime, prepareStack, readDb, scriptedTo
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 const WINDOW = 4096;
 const OUTPUT = 1024;
 
@@ -28,7 +27,7 @@ const payloadsOf = (rows: readonly EventRow[], type: string): Record<string, any
   rows.filter((row) => row.type === type).map((row) => JSON.parse(row.payload_json) as Record<string, any>);
 
 describe('the pinned part admitted at run start, after the server reports it within the estimator bound (LM Studio lms-3/4/5)', () => {
-  it('a run whose first request is reported at the estimator bound, with room left in the input budget, keeps its offer and completes', PROCESS_TIMEOUT, async () => {
+  it('a run whose first request is reported at the estimator bound, with room left in the input budget, keeps its offer and completes', async () => {
     const stack = await prepareStack((temp) => ({
       contextWindow: WINDOW,
       script: [

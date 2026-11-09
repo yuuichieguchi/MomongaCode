@@ -4,10 +4,8 @@ import { eventTypes, launchRuntime, readDb, startStack, waitForStatus } from './
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
-
 describe('scenario b1: abort mid-request, then restart (system timers, in-process gateway)', () => {
-  it('a run aborted while its model request is in flight completes after a restart with a single upstream request', PROCESS_TIMEOUT, async () => {
+  it('a run aborted while its model request is in flight completes after a restart with a single upstream request', async () => {
     const stack = await startStack();
     const first = await launchRuntime(stack.temp);
     const session = await first.createSession();

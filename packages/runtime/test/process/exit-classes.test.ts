@@ -10,8 +10,6 @@ import { REAL_PROCESS_TEST_TIMEOUT_MS, startLockHolder, firstGeneration } from '
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
-
 const exitClassOf = (error: unknown): number => {
   if (error instanceof ConfigError) return EXIT_CONFIG;
   if (error instanceof runtimeAlreadyRunningError()) return EXIT_ALREADY_RUNNING;
@@ -31,7 +29,7 @@ const startFailure = (temp: RunHome, extra: Record<string, unknown> = {}): Promi
   failureOf(startRuntimeProcess({ generation: FIRST_GENERATION, home: temp.home, version: RUNTIME_VERSION, logger: hookLogger(() => undefined), stdout: captureStream(), ...extra }));
 
 describe('exit classes of startRuntimeProcess errors (system timers)', () => {
-  it('exit 75 applies only when the error is a ProcessLockHeldError with lockPath equal to paths.locks.runtime', PROCESS_TIMEOUT, async () => {
+  it('exit 75 applies only when the error is a ProcessLockHeldError with lockPath equal to paths.locks.runtime', async () => {
     const stack = await startStack();
     await launchRuntime(stack.temp);
     const error = await startFailure(stack.temp);
@@ -43,7 +41,7 @@ describe('exit classes of startRuntimeProcess errors (system timers)', () => {
     expect(exitClassOf(foreign)).toBe(1);
   });
 
-  it('a ProcessLockHeldError from listenUnix (lockPath <runtime.sock>.lock) is classified as exit 1', PROCESS_TIMEOUT, async (context) => {
+  it('a ProcessLockHeldError from listenUnix (lockPath <runtime.sock>.lock) is classified as exit 1', async (context) => {
     const temp = makeRunHome();
     writeUserSettings(temp.home, { sandbox: 'none' });
     await ensureMomongaDirs(temp.paths);
@@ -55,7 +53,7 @@ describe('exit classes of startRuntimeProcess errors (system timers)', () => {
     expect(exitClassOf(error)).toBe(1);
   });
 
-  it('ConfigError is classified as 78 and any other error as 1', PROCESS_TIMEOUT, async () => {
+  it('ConfigError is classified as 78 and any other error as 1', async () => {
     const invalid = makeRunHome();
     fs.mkdirSync(invalid.paths.root, { recursive: true, mode: 0o700 });
     writeInvalidUserSettings(invalid.home);

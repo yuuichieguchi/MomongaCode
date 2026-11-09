@@ -34,7 +34,7 @@ const launchWith = async (target: Record<string, unknown>) => {
   return { home, measured, ask };
 };
 
-describe('P10 RecordUnderLock: every probe-able auto target takes the automatic probe and its lock', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('P10 RecordUnderLock: every probe-able auto target takes the automatic probe and its lock', () => {
   it('answers a chat-completions auto target with no record 503 target_probing and measures its endpoint key once', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     const gateway = await launchWith(ccTarget(fake.socketPath, { toolCalling: 'auto' }));

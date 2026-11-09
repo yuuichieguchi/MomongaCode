@@ -4,10 +4,8 @@ import { launchRuntime, startStack, waitForStatus } from './run-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
-
 describe('sandbox kind through startRuntimeProcess (system timers, in-process gateway)', () => {
-  it('health reports none under sandbox none, and Bash asks even in bypassPermissions', PROCESS_TIMEOUT, async () => {
+  it('health reports none under sandbox none, and Bash asks even in bypassPermissions', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);
     expect(launched.handle.sandbox).toBe('none');
@@ -20,7 +18,7 @@ describe('sandbox kind through startRuntimeProcess (system timers, in-process ga
     expect(approvals).toHaveLength(1);
   });
 
-  it('changing the setting at runtime does not change the kind or the Health value', PROCESS_TIMEOUT, async () => {
+  it('changing the setting at runtime does not change the kind or the Health value', async () => {
     const stack = await startStack();
     const launched = await launchRuntime(stack.temp);
     stack.settings({ sandbox: 'seatbelt' });

@@ -32,7 +32,7 @@ const runThroughFakeFm = async (settings: unknown, alias: string) => {
   return readJson(await postJson(clientFor(handle.socketPath), '/v1/responses', { model: alias, input: userInput('hello fm') }));
 };
 
-describe('the model id a run sends to fm serve when the target declares one', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the model id a run sends to fm serve when the target declares one', () => {
   it('is the declared model, which fm serve accepts when it lists it', async () => {
     const reply = await runThroughFakeFm({ models: { targets: { fm: { adapter: 'managed', server: 'fm', model: 'system', toolCalling: 'native' } }, aliases: { default: ['fm'] } } }, 'default');
     expect(reply.body.error ?? null).toBeNull();

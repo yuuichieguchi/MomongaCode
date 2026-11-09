@@ -41,7 +41,7 @@ const generationTargets = (home: string): { sockets: string; markers: string } =
 const launch = (home: string, extra: Record<string, unknown> = {}) =>
   launchGateway({ generation: FIRST_GENERATION, home, env: baseEnv(home), version: PROCESS_VERSION, ...extra } as GatewayProcessOptions);
 
-describe('each managed target has its own serving instance, named by the target (design-managed-servers section 17, item 19; test T1)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('each managed target has its own serving instance, named by the target (design-managed-servers section 17, item 19; test T1)', () => {
   it('runs two servers for two targets of server "fm", on run/g<N>/targets/<target>.sock with markers under markers/g<N>/targets/<target> (rule 18.2.1)', async () => {
     const fm = await createFakeFm({ dir: makeDir() });
     const dumpFile = path.join(path.dirname(fm.binaryPath), 'argv.jsonl');
@@ -72,7 +72,7 @@ describe('each managed target has its own serving instance, named by the target 
   });
 });
 
-describe('a second kind of server runs through the registration port with no branch on its id (design section 13.2)', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('a second kind of server runs through the registration port with no branch on its id (design section 13.2)', () => {
   const setup = async (keySet: boolean) => {
     const fake = await createFakeManagedServer({ dir: makeDir() });
     const dumpFile = path.join(path.dirname(fake.binaryPath), 'argv.jsonl');

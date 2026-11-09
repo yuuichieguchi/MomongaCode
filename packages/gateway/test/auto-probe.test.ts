@@ -116,7 +116,7 @@ const expectProbing = (response: { status: number; body: { error: { code: string
 
 const probeStarted = (gateway: Awaited<ReturnType<typeof setup>>, count = 1) => until(() => gateway.probes().length === count, `probe fm serve number ${count} to start`);
 
-describe('the automatic probe of an fm target with no probe record', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the automatic probe of an fm target with no probe record', () => {
   describe('P3 NoRecordGets503 and RetryAfterIsHonest', () => {
     it('answers a request with tools 503 target_probing with Retry-After, never 412, and starts the probe for the current key', async () => {
       const gateway = await setup();

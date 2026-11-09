@@ -137,7 +137,7 @@ const closeWhileProbing = async (probePhase: ProbePhase, values: StopValues): Pr
   return { tookMs: clock.now() - closeBegan, probeTerminatedAfterMs: serves.probeTerminatedAt.map((at) => at - closeBegan) };
 };
 
-describe('the gateway process close bound with an fm probe in flight', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('the gateway process close bound with an fm probe in flight', () => {
   it.each<[ProbePhase, StopValues]>([
     ['running', DEFAULT_STOP_VALUES],
     ['waiting on health', DEFAULT_STOP_VALUES],

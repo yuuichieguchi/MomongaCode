@@ -18,7 +18,7 @@ const installed = (pem: string): boolean => {
 };
 
 describe('runtime process start', () => {
-  it('installs the trust of the network settings before it serves', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, async () => {
+  it('installs the trust of the network settings before it serves', async () => {
     const temp = makeRunHome();
     fs.mkdirSync(temp.paths.root, { recursive: true, mode: 0o700 });
     writeUserSettings(temp.home, { sandbox: 'none', network: { extraCaFiles: [FIXTURE] } });

@@ -10,7 +10,6 @@ import type { RunHome } from './run-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 const DAY_MS = 86_400_000;
 const RUNTIME_MS = START_MS + 8 * DAY_MS;
 
@@ -35,7 +34,7 @@ const seedSessions = async (temp: RunHome): Promise<Seeded> => {
 };
 
 describe('startup tmp sweeps through startRuntimeProcess (system timers, fake clock, in-process gateway)', () => {
-  it('removes spawn entries whose sidecar no one holds at start, and keeps a spawn symlink, which cannot carry a lock, without following it', PROCESS_TIMEOUT, async () => {
+  it('removes spawn entries whose sidecar no one holds at start, and keeps a spawn symlink, which cannot carry a lock, without following it', async () => {
     const stack = await startStack();
     await ensureMomongaDirs(stack.temp.paths);
     const spawnRoot = stack.temp.paths.tmp.spawn;
@@ -52,7 +51,7 @@ describe('startup tmp sweeps through startRuntimeProcess (system timers, fake cl
     expect(fs.readFileSync(path.join(outside, 'keep.txt'), 'utf8')).toBe('keep');
   });
 
-  it('sweeps session dirs at start under their sidecar claims: unknown and idle sessions are removed, recent and active ones are kept, symlinks and a dir with no sidecar are kept, and symlinks are never followed', PROCESS_TIMEOUT, async () => {
+  it('sweeps session dirs at start under their sidecar claims: unknown and idle sessions are removed, recent and active ones are kept, symlinks and a dir with no sidecar are kept, and symlinks are never followed', async () => {
     const stack = await startStack();
     const seeded = await seedSessions(stack.temp);
     const root = stack.temp.paths.tmp.sessions;

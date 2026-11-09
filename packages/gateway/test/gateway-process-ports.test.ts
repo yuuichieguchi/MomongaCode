@@ -45,5 +45,5 @@ describe('gateway process ports', () => {
     const response = await request(`http://127.0.0.1:${port}/v1/models`, { headers: { authorization: `Bearer ${TOKEN}` } });
     expect(response.statusCode).toBe(200);
     await response.body.dump();
-  }, REAL_PROCESS_TEST_TIMEOUT_MS);
+  });
 });

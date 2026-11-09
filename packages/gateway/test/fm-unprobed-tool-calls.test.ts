@@ -58,7 +58,7 @@ describe('an fm target with no probe record', () => {
   });
 });
 
-describe('every other auto target with a probe and no probe record', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('every other auto target with a probe and no probe record', () => {
   it('answers a chat-completions target 503 target_probing and sends nothing upstream', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     const home = makeHome();

@@ -5,7 +5,6 @@ import type { Stack } from './run-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 const RUNTIME_RESOURCE_KINDS = new Set(['Timeout', 'PipeServerWrap', 'PipeWrap', 'ProcessWrap']);
 
 const counts = (): Map<string, number> => {
@@ -33,7 +32,7 @@ const runOnce = async (stack: Stack): Promise<void> => {
 };
 
 describe('leak contract (system timers, in-process gateway)', () => {
-  it('leaves no runtime-created handles after a clean close', PROCESS_TIMEOUT, async () => {
+  it('leaves no runtime-created handles after a clean close', async () => {
     const stack = await startStack();
     await runOnce(stack);
     await afterMicrotasks();

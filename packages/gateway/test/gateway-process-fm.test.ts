@@ -70,7 +70,7 @@ const reapServeGroups = (dumpFile: string): void => {
   registerCleanup(() => killGroupsForCleanup(servePids(dumpFile)));
 };
 
-describe('managed fm under startGatewayProcess', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('managed fm under startGatewayProcess', () => {
   it('gives every fm invocation exactly the minimal env', async () => {
     const { fm, dumpFile, home } = await fakeFmSetup();
     reapServeGroups(dumpFile);

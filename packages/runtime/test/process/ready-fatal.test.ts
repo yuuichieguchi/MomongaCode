@@ -27,8 +27,6 @@ vi.mock('../../src/worker/worker.ts', async (importOriginal) => {
   };
 });
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
-
 beforeEach(() => {
   control.onFatal = [];
   control.aborts = 0;
@@ -68,6 +66,5 @@ describe('fatal at the ready line (system timers, in-process gateway)', () => {
       expect(result).toMatchObject({ clean: false, fatal });
       expect(await isLockFree(firstGeneration(stack.temp.paths).locks.runtime)).toBe(true);
     },
-    REAL_PROCESS_TEST_TIMEOUT_MS,
   );
 });

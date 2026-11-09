@@ -3,7 +3,7 @@ import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { McpPool, McpPoolOptions } from '@momonga/mcp';
 import type { GatewayClient, GatewayClientOptions, Worker, WorkerOptions } from '@momonga/runtime';
-import { REAL_PROCESS_TEST_TIMEOUT_MS, BUILT_BINARY_TEST_TIMEOUT_MS, MCP_MODERN_SERVER_PATH, createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
+import { REAL_PROCESS_TEST_TIMEOUT_MS, MCP_MODERN_SERVER_PATH, createFakeClock, createFakeTimers, waitFor } from '@momonga/testkit';
 import { START_MS, trackGroup } from './helpers.ts';
 import {
   ABORT_BUDGET_MS,
@@ -98,7 +98,6 @@ vi.mock('../../src/gateway-client.ts', async (importOriginal) => {
   };
 });
 
-const PROCESS_TIMEOUT = { timeout: BUILT_BINARY_TEST_TIMEOUT_MS };
 const DRAIN_MS = 60_000;
 const CLEAN = { clean: true, abandoned: [], stragglers: [] };
 
@@ -128,7 +127,7 @@ const runningRequest = async (stack: Awaited<ReturnType<typeof startStack>>, lau
 };
 
 describe('close and abort (manual fake timers for every runtime timer, in-process gateway)', () => {
-  it('close waits for a claim to yield at the step boundary', PROCESS_TIMEOUT, async () => {
+  it('close waits for a claim to yield at the step boundary', async () => {
     const stack = await startStack((temp) => ({ script: [scriptedToolCall('Read', { file_path: path.join(temp.project, 'notes.txt') })] }));
     fs.writeFileSync(path.join(stack.temp.project, 'notes.txt'), 'remember this\n');
     const first = await launchFake(stack);
@@ -152,7 +151,7 @@ describe('close and abort (manual fake timers for every runtime timer, in-proces
     expect(await second.handle.close()).toEqual(CLEAN);
   });
 
-  it('when drainTimeoutMs expires abort runs, the run is QUEUED and a restart completes it', PROCESS_TIMEOUT, async () => {
+  it('when drainTimeoutMs expires abort runs, the run is QUEUED and a restart completes it', async () => {
     const stack = await startStack({ script: [scriptedToolCall('Bash', { command: 'sleep 30' })] });
     const first = await launchFake(stack);
     const session = await first.createSession({ permissionMode: 'bypassPermissions', bypassAllowed: true });
@@ -174,7 +173,7 @@ describe('close and abort (manual fake timers for every runtime timer, in-proces
     await second.handle.close();
   });
 
-  it('abort during close resolves both with one teardown and the same result', PROCESS_TIMEOUT, async () => {
+  it('abort during close resolves both with one teardown and the same result', async () => {
     const stack = await startStack();
     const launched = await launchFake(stack);
     await runningRequest(stack, launched);
@@ -189,7 +188,7 @@ describe('close and abort (manual fake timers for every runtime timer, in-proces
     expect(launched.timers.pending()).toEqual([]);
   });
 
-  it('close returns the same promise', PROCESS_TIMEOUT, async () => {
+  it('close returns the same promise', async () => {
     const stack = await startStack();
     const launched = await launchFake(stack);
     const first = launched.handle.close();
@@ -198,7 +197,7 @@ describe('close and abort (manual fake timers for every runtime timer, in-proces
     expect(await first).toEqual(CLEAN);
   });
 
-  it('a clean close resolves { clean: true, abandoned: [], stragglers: [] }', PROCESS_TIMEOUT, async () => {
+  it('a clean close resolves { clean: true, abandoned: [], stragglers: [] }', async () => {
     const stack = await startStack();
     const launched = await launchFake(stack);
     const result = await launched.handle.close();
@@ -208,7 +207,7 @@ describe('close and abort (manual fake timers for every runtime timer, in-proces
     expect(launched.timers.pending()).toEqual([]);
   });
 
-  it('abort stragglers are logged with abort.stragglers (count and ids), listed with their worker ids in the result, and make clean false', PROCESS_TIMEOUT, async () => {
+  it('abort stragglers are logged with abort.stragglers (count and ids), listed with their worker ids in the result, and make clean false', async () => {
     control.stuckAbort = true;
     const stack = await startStack();
     const launched = await launchFake(stack);
@@ -225,7 +224,7 @@ describe('close and abort (manual fake timers for every runtime timer, in-proces
     expect(launched.timers.pending()).toEqual([]);
   });
 
-  it('a stuck MCP server makes teardown log teardown.abandoned, list the step in result.abandoned, set clean false and close within runtimeMaxCloseMs', PROCESS_TIMEOUT, async () => {
+  it('a stuck MCP server makes teardown log teardown.abandoned, list the step in result.abandoned, set clean false and close within runtimeMaxCloseMs', async () => {
     control.stuckPool = true;
     const stack = await startStack({}, { mcpServers: { fx: { command: process.execPath, args: [MCP_MODERN_SERVER_PATH] } } });
     const launched = await launchFake(stack);
@@ -246,7 +245,7 @@ describe('close and abort (manual fake timers for every runtime timer, in-proces
     expect(launched.timers.pending()).toEqual([]);
   });
 
-  it('the drain race, the abort race and every teardown step race clear their timers: fakeTimers.pending() is empty after close resolves', PROCESS_TIMEOUT, async () => {
+  it('the drain race, the abort race and every teardown step race clear their timers: fakeTimers.pending() is empty after close resolves', async () => {
     const stack = await startStack();
     const launched = await launchFake(stack);
     const run = await runningRequest(stack, launched);
@@ -258,7 +257,7 @@ describe('close and abort (manual fake timers for every runtime timer, in-proces
     expect(await waitForStatus(stack.temp, run.id, ['QUEUED', 'COMPLETED', 'FAILED'])).toBe('QUEUED');
   });
 
-  it('a run created just before draining stays QUEUED for the next start', PROCESS_TIMEOUT, async () => {
+  it('a run created just before draining stays QUEUED for the next start', async () => {
     const stack = await startStack();
     const launched = await launchFake(stack);
     await runningRequest(stack, launched);
@@ -271,7 +270,7 @@ describe('close and abort (manual fake timers for every runtime timer, in-proces
     expect(eventTypes(stack.temp, late.id).filter((type) => type.startsWith('model.'))).toEqual([]);
   });
 
-  it('a gateway cancel that never answers does not hold teardown past the cancel-upstream step, and pending() is empty afterwards', PROCESS_TIMEOUT, async () => {
+  it('a gateway cancel that never answers does not hold teardown past the cancel-upstream step, and pending() is empty afterwards', async () => {
     const stack = await startStack();
     const first = await launchFake(stack);
     const run = await runningRequest(stack, first);

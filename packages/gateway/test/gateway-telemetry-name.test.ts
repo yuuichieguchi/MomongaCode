@@ -45,5 +45,5 @@ describe('gateway process telemetry name (system timers)', () => {
       traces.close();
     }
     expect(control.serviceNames).toEqual(['momonga-gateway']);
-  }, REAL_PROCESS_TEST_TIMEOUT_MS);
+  });
 });

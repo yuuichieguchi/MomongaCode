@@ -37,8 +37,6 @@ vi.mock('@momonga/observability', async (importOriginal) => {
   };
 });
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
-
 const DAY_MS = 86_400_000;
 const BODY_KIND = 'gen_ai.input.messages';
 
@@ -59,7 +57,7 @@ beforeEach(() => {
 });
 
 describe('the runtime process owns a trace store and starts the body purge', () => {
-  it('starts one purge timer on the runtime trace store, purges expired bodies on its tick and stops it at close', PROCESS_TIMEOUT, async () => {
+  it('starts one purge timer on the runtime trace store, purges expired bodies on its tick and stops it at close', async () => {
     const stack = await startStack();
     control.purges = [];
     const launched = await launchRuntime(stack.temp);
@@ -80,7 +78,7 @@ describe('the runtime process owns a trace store and starts the body purge', () 
     expect(purge.stops).toBe(1);
   });
 
-  it('hands the content retention to the legacy move: 30 days by default', PROCESS_TIMEOUT, async () => {
+  it('hands the content retention to the legacy move: 30 days by default', async () => {
     const stack = await startStack();
     control.purges = [];
     await launchRuntime(stack.temp);
@@ -88,7 +86,7 @@ describe('the runtime process owns a trace store and starts the body purge', () 
     expect(control.purges[0]?.legacyRetentionMs).toBe(30 * DAY_MS);
   });
 
-  it('hands the configured telemetry.contentRetentionDays to the legacy move', PROCESS_TIMEOUT, async () => {
+  it('hands the configured telemetry.contentRetentionDays to the legacy move', async () => {
     const stack = await startStack({}, { telemetry: { contentRetentionDays: 7 } });
     control.purges = [];
     await launchRuntime(stack.temp);

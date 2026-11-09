@@ -7,7 +7,6 @@ import type { RunHome } from './run-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
 const TEST_API_KEY = 'momonga-test-api-key';
 const TEST_API_KEY_ENV = 'MOMONGA_TEST_KEY';
 const REDACTED = '[REDACTED]';
@@ -58,7 +57,7 @@ const startKeyedRun = async (reply: FakeScriptedReply) => {
 };
 
 describe('T7: a credential echoed by the upstream stays out of the runtime journal', () => {
-  it('fails the run with authentication_failed and a redacted error, and keeps the journal and the gateway log clean', PROCESS_TIMEOUT, async () => {
+  it('fails the run with authentication_failed and a redacted error, and keeps the journal and the gateway log clean', async () => {
     const { stack, launched, gatewayLog, runId } = await startKeyedRun(ECHO_401);
     expect(await waitForStatus(stack.temp, runId, TERMINAL)).toBe('FAILED');
     const view = (await launched.http('GET', `/v1/runs/${runId}`)).json.run;
@@ -71,7 +70,7 @@ describe('T7: a credential echoed by the upstream stays out of the runtime journ
     expectNoCredential(launched.stdout.chunks.join(''), TEST_API_KEY);
   });
 
-  it('keeps the retry notice clean when the finish_reason echoes the key', PROCESS_TIMEOUT, async () => {
+  it('keeps the retry notice clean when the finish_reason echoes the key', async () => {
     const { stack, gatewayLog, runId } = await startKeyedRun(FINISH_REASON_ECHO);
     await waitForCondition(() => {
       const status = runStatus(stack.temp, runId);

@@ -9,8 +9,6 @@ import type { Launched, RunHome, Stack } from './run-helpers.ts';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
-
 const MAX_STEPS_INSTRUCTION =
   'You have reached the max_steps limit. Summarize what you accomplished, what remains, and any state the user must know. Do not call tools.';
 
@@ -82,7 +80,7 @@ const startWrapUpRun = async (second: FakeScriptedReply, options: { repeat?: num
 };
 
 describe('wrap-up call on the wire (in-process gateway, fake chat-completions upstream)', () => {
-  it('sends the max_steps wrap-up without tools, with plain-text tool history and the instruction last in the final user message', PROCESS_TIMEOUT, async () => {
+  it('sends the max_steps wrap-up without tools, with plain-text tool history and the instruction last in the final user message', async () => {
     const { stack, launched, runId } = await startWrapUpRun(SUMMARY_REPLY);
 
     expect(await settle(launched, stack.temp, runId)).toBe('STOPPED');
@@ -104,7 +102,7 @@ describe('wrap-up call on the wire (in-process gateway, fake chat-completions up
     expect((last?.content as string).endsWith(`</tool_result>\n\n${MAX_STEPS_INSTRUCTION}`)).toBe(true);
   });
 
-  it('stops with max_steps and a notice when the upstream answers HTTP 400 to the wrap-up call, without requeueing', PROCESS_TIMEOUT, async () => {
+  it('stops with max_steps and a notice when the upstream answers HTTP 400 to the wrap-up call, without requeueing', async () => {
     const { stack, launched, runId } = await startWrapUpRun(REJECTION);
 
     const status = await settle(launched, stack.temp, runId);
@@ -114,7 +112,7 @@ describe('wrap-up call on the wire (in-process gateway, fake chat-completions up
     expect(stack.completions()).toBe(2);
   });
 
-  it('dead-letters a run whose wrap-up stream fails after it opened at the total attempt limit before the deadline, with at most one wrap-up POST per attempt', PROCESS_TIMEOUT, async () => {
+  it('dead-letters a run whose wrap-up stream fails after it opened at the total attempt limit before the deadline, with at most one wrap-up POST per attempt', async () => {
     const clock = createFakeClock(START_MS);
     const timers = createFakeTimers(clock);
     const { stack, launched, runId } = await startWrapUpRun(BROKEN_STREAM, { repeat: 40, launch: { clock, fakeTimers: timers } });

@@ -36,7 +36,7 @@ const ccHome = async () => {
   return { fake, home };
 };
 
-describe('startGatewayProcess', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('startGatewayProcess', () => {
   it('listens on its generation\'s run/g1/gateway.sock and prints exactly one ready line', async () => {
     const { home } = await ccHome();
     const stdout = captureStdout();
@@ -148,7 +148,7 @@ describe('startGatewayProcess', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () =>
   });
 });
 
-describe('startGatewayProcess credentials', { timeout: REAL_PROCESS_TEST_TIMEOUT_MS }, () => {
+describe('startGatewayProcess credentials', () => {
   it('sends the apiKeyEnv value upstream as a bearer token', async () => {
     const fake = await startFake({ scenario: 'tools-ok' });
     const home = makeHome();

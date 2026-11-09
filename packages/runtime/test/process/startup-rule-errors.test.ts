@@ -8,8 +8,6 @@ import { FIRST_GENERATION } from '@momonga/foundation';
 
 vi.setConfig({ testTimeout: REAL_PROCESS_TEST_TIMEOUT_MS });
 
-const PROCESS_TIMEOUT = { timeout: REAL_PROCESS_TEST_TIMEOUT_MS };
-
 const failureOrClose = async (started: ReturnType<typeof startRuntimeProcess>): Promise<unknown> =>
   started.then(
     async (runtimeProcess) => {
@@ -20,7 +18,7 @@ const failureOrClose = async (started: ReturnType<typeof startRuntimeProcess>): 
   );
 
 describe('startup with an unusable path rule in user settings (system timers)', () => {
-  it('stops with a ConfigError naming the settings file for Read(a[b)', PROCESS_TIMEOUT, async () => {
+  it('stops with a ConfigError naming the settings file for Read(a[b)', async () => {
     const temp = makeRunHome();
     fs.mkdirSync(temp.paths.root, { recursive: true, mode: 0o700 });
     writeUserSettings(temp.home, { sandbox: 'none', permissions: { deny: ['Read(a[b)'] } });
