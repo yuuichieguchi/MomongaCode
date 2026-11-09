@@ -69,7 +69,9 @@ describe.runIf(process.platform === 'darwin' || process.platform === 'linux')('B
       reportProgress: () => undefined,
     } as unknown as ToolContext;
 
-    const result = await bashTool.execute({ command: 'sleep 30 >/dev/null 2>&1 & echo "pid:$!"; sleep 0.2; echo finished' }, ctx, undefined);
+    const ready = path.join(layout.project, 'escaped');
+    const command = `perl -e 'use POSIX; POSIX::setsid(); open(my $f, ">", $ARGV[0]); close $f; sleep 30' ${ready} >/dev/null 2>&1 & while [ ! -e ${ready} ]; do sleep 0.05; done; echo "pid:$!"; echo finished`;
+    const result = await bashTool.execute({ command }, ctx, undefined);
 
     const output = (result as { output: string }).output;
     const outlived = Number(/pid:(\d+)/.exec(output)?.[1]);
